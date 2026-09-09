@@ -135,3 +135,43 @@ def test_pasting_the_consent_page_is_caught():
     message = str(excinfo.value)
     assert "chưa bấm nút phê duyệt" in message
     assert "Authorize" in message
+
+
+@pytest.mark.parametrize(
+    "pasted",
+    ["ac_1a2b3c4d5e6f", "abc-DEF_123.xyz", "0123456789abcdef"],
+)
+def test_bare_code_is_accepted(pasted):
+    """xAI hiện thẳng code lên màn hình khi trình duyệt ở máy khác.
+
+    Đây là con đường thực tế khi cài trên VPS: không có chuyển hướng về
+    loopback nào cả, người dùng chỉ có mỗi đoạn mã để chép.
+    """
+    assert _parse_manual_redirect(pasted) == {"code": pasted}
+
+
+def test_state_is_optional_for_bare_code():
+    """Dán mã trần thì không có state; luồng vẫn phải đi tiếp được."""
+    import inspect
+
+    import xai_auth
+
+    source = inspect.getsource(xai_auth._finish_login)
+    assert "returned_state is not None" in source
+
+
+def test_state_still_enforced_when_present():
+    import asyncio
+
+    import xai_auth
+
+    with pytest.raises(xai_auth.XaiAuthError, match="State"):
+        asyncio.run(
+            xai_auth._finish_login(
+                {"code": "ABC", "state": "khong-khop"},
+                state="that-su",
+                verifier="v",
+                challenge="c",
+                redirect_uri="http://127.0.0.1:56122/callback",
+            )
+        )

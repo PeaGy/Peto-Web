@@ -327,6 +327,12 @@ def _parse_manual_redirect(raw: str) -> dict[str, str]:
     if not raw:
         raise XaiAuthError("Bạn chưa dán gì cả.")
 
+    # Khi mở link trên MÁY KHÁC, xAI không chuyển hướng về loopback mà hiện
+    # thẳng authorization code lên màn hình để người dùng dán vào CLI. Nhận
+    # luôn dạng này — nó là con đường thực tế khi cài trên VPS.
+    if "=" not in raw and "/" not in raw and len(raw.split()) == 1:
+        return {"code": raw}
+
     parsed = urllib.parse.urlparse(raw)
     host = (parsed.hostname or "").lower()
 
@@ -377,7 +383,13 @@ async def _finish_login(
         raise XaiAuthError(
             f"xAI trả lỗi: {result.get('error_description') or result['error']}"
         )
-    if result.get("state") != state:
+
+    # Khi người dùng dán thẳng code hiện trên màn hình, không có `state` để đối
+    # chiếu. State chống việc bị nhét code lạ qua chuyển hướng; ở đây chính
+    # người dùng chép giá trị từ trang của xAI nên đường tấn công đó không có.
+    # Có `state` thì vẫn bắt buộc phải khớp.
+    returned_state = result.get("state")
+    if returned_state is not None and returned_state != state:
         raise XaiAuthError("State không khớp — hủy đăng nhập.")
     code = result.get("code")
     if not code:
@@ -434,19 +446,21 @@ async def login(*, manual: bool = False) -> None:
 
     if manual:
         # VPS không có trình duyệt: mở link trên máy cá nhân rồi dán URL trả về.
-        print("BƯỚC 1 — mở link này trên máy có trình duyệt, rồi đăng nhập xAI:")
+        print("BƯỚC 1 — mở link này trên máy có trình duyệt, đăng nhập xAI rồi")
+        print("bấm nút phê duyệt (Authorize / Allow):")
         print()
         print(authorize_url)
         print()
-        print("BƯỚC 2 — đăng nhập xong, trình duyệt sẽ tự nhảy sang một địa chỉ")
-        print(f"khác, bắt đầu bằng http://{REDIRECT_HOST}:{REDIRECT_PORT}"
+        print("BƯỚC 2 — sau khi phê duyệt sẽ ra MỘT TRONG HAI thứ sau:")
+        print()
+        print("  (a) Trang hiện một đoạn mã để copy  ->  dán chính đoạn mã đó")
+        print(f"  (b) Trình duyệt nhảy tới http://{REDIRECT_HOST}:{REDIRECT_PORT}"
               f"{REDIRECT_PATH}?code=...")
-        print("Trang đó sẽ báo 'không kết nối được' — ĐÚNG như vậy, không sao cả.")
+        print("      và báo 'không kết nối được'  ->  dán nguyên dòng địa chỉ đó")
         print()
-        print("BƯỚC 3 — copy dòng địa chỉ MỚI đó ở thanh URL và dán vào đây.")
-        print("(Đừng dán lại cái link dài ở bước 1.)")
+        print("Kiểu nào cũng được, dán vào đây. Đừng dán lại link ở bước 1.")
         print()
-        pasted = input("URL sau khi đăng nhập: ").strip()
+        pasted = input("Mã hoặc URL: ").strip()
         result = _parse_manual_redirect(pasted)
         return await _finish_login(
             result, state=state, verifier=verifier, challenge=challenge,
