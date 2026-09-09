@@ -1,0 +1,22 @@
+# Bi mat va du lieu — khong bao gio commit
+.env
+backend/data/
+*.db
+*.db-wal
+*.db-shm
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Node
+node_modules/
+frontend/dist/
+
+# Build artifacts
+frontend/tsconfig.tsbuildinfo
+
+# Token xAI rieng cua web
+backend/data/xai_tokens.json

@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+aiosqlite
+python-dotenv
+httpx
+itsdangerous
+openai
+
+# chỉ dùng khi chạy test
+pytest
+pytest-asyncio
