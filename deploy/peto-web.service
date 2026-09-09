@@ -1,0 +1,48 @@
+# Peto Web — systemd unit mẫu.
+#
+# Chép lên VPS:
+#   sudo cp deploy/peto-web.service /etc/systemd/system/peto-web.service
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now peto-web
+#
+# Đặt cạnh peto.service (bot Discord), không thay thế nó. Hai dịch vụ chạy
+# độc lập; tắt cái này không ảnh hưởng cái kia.
+
+[Unit]
+Description=Peto Web - giao dien chat rieng cho Peto
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/peto-web/backend
+
+# Chỉ nghe loopback. Cloudflare Tunnel là thứ duy nhất được phép nói chuyện
+# với cổng này — không mở firewall cho nó.
+ExecStart=/home/ubuntu/peto-web/.venv/bin/python -m uvicorn main:app \
+    --host 127.0.0.1 --port 8001 --proxy-headers --forwarded-allow-ips 127.0.0.1
+
+Restart=on-failure
+RestartSec=5
+KillSignal=SIGINT
+TimeoutStopSec=20
+
+# Cấu hình đọc từ /home/ubuntu/peto-web/.env (config.py tự nạp).
+Environment=PYTHONUNBUFFERED=1
+
+# --- Giới hạn quyền -------------------------------------------------------
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=false
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+
+# Chỉ được ghi vào đúng thư mục dữ liệu của web: database và token xAI.
+ReadWritePaths=/home/ubuntu/peto-web/backend/data
+
+[Install]
+WantedBy=multi-user.target

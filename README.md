@@ -47,6 +47,15 @@ không cần cấu hình CORS khi chạy local.
 Chưa biết Discord ID? Cứ đăng nhập thử — nếu chưa được cho phép, trang sẽ hiện
 đúng ID của tài khoản đó để bạn thêm vào danh sách.
 
+## Đưa lên VPS
+
+Xem [DEPLOY.md](DEPLOY.md) — từng bước cho VPS đang chạy bot, kèm cách bật
+trí nhớ từ Discord và bảng tra khi hỏng.
+
+Ở production, backend phục vụ luôn giao diện đã build (`frontend/dist`), nên
+chỉ cần một tiến trình và một cổng cho Cloudflare Tunnel trỏ vào — không cần
+nginx. Lúc dev không có `dist` nên Vite vẫn lo phần giao diện như cũ.
+
 ## Kiểm thử
 
 ```bash

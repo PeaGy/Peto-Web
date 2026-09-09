@@ -327,7 +327,55 @@ def _parse_manual_redirect(raw: str) -> dict[str, str]:
     }
 
 
-async def login() -> None:
+async def _finish_login(
+    result: dict[str, str],
+    *,
+    state: str,
+    verifier: str,
+    challenge: str,
+    redirect_uri: str,
+) -> None:
+    """Kiểm tra kết quả callback rồi đổi code lấy token và lưu lại."""
+    if "error" in result:
+        raise XaiAuthError(
+            f"xAI trả lỗi: {result.get('error_description') or result['error']}"
+        )
+    if result.get("state") != state:
+        raise XaiAuthError("State không khớp — hủy đăng nhập.")
+    code = result.get("code")
+    if not code:
+        raise XaiAuthError("Không nhận được authorization code.")
+
+    started = time.time()
+    async with httpx.AsyncClient(timeout=30) as client:
+        endpoint = await _discover_token_endpoint(client)
+        response = await client.post(
+            endpoint,
+            data={
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": redirect_uri,
+                "client_id": XAI_CLIENT_ID,
+                "code_verifier": verifier,
+                # xAI yêu cầu echo lại code_challenge khi exchange.
+                "code_challenge": challenge,
+                "code_challenge_method": "S256",
+            },
+            headers={"Accept": "application/json"},
+        )
+    if response.status_code >= 400:
+        raise XaiAuthError(
+            f"Đổi code thất bại (HTTP {response.status_code}): {response.text[:300]}"
+        )
+
+    bundle = _parse_token_response(
+        response.json(), started_at=started, token_endpoint=endpoint
+    )
+    save_tokens(bundle, XAI_TOKEN_PATH)
+    print(f"Đã lưu token vào {XAI_TOKEN_PATH}")
+
+
+async def login(*, manual: bool = False) -> None:
     verifier, challenge = generate_pkce()
     state = secrets.token_urlsafe(24)
     nonce = secrets.token_urlsafe(16)
@@ -346,6 +394,25 @@ async def login() -> None:
         "referrer": "hermes-agent",
     }
     authorize_url = f"{XAI_AUTHORIZE_URL}?{urllib.parse.urlencode(params)}"
+
+    if manual:
+        # VPS không có trình duyệt: mở link trên máy cá nhân rồi dán URL trả về.
+        print("Mở link này trên máy có trình duyệt và đăng nhập xAI:")
+        print()
+        print(authorize_url)
+        print()
+        print("Đăng nhập xong, trình duyệt sẽ nhảy tới một địa chỉ")
+        print(f"http://{REDIRECT_HOST}:{REDIRECT_PORT}{REDIRECT_PATH}?... và báo lỗi")
+        print("không kết nối được — điều đó là bình thường. Copy nguyên địa chỉ")
+        print("trên thanh URL rồi dán vào đây.")
+        pasted = input("URL: ").strip()
+        result = _parse_manual_redirect(pasted) if pasted else {}
+        if not result:
+            raise XaiAuthError("Không đọc được URL bạn dán.")
+        return await _finish_login(
+            result, state=state, verifier=verifier, challenge=challenge,
+            redirect_uri=redirect_uri,
+        )
 
     try:
         server = _CallbackServer((REDIRECT_HOST, REDIRECT_PORT), _CallbackHandler)
@@ -387,41 +454,14 @@ async def login() -> None:
             result = _parse_manual_redirect(pasted)
     if not result:
         raise XaiAuthError("Hết thời gian chờ đăng nhập.")
-    if "error" in result:
-        raise XaiAuthError(f"xAI trả lỗi: {result.get('error_description') or result['error']}")
-    if result.get("state") != state:
-        raise XaiAuthError("State không khớp — hủy đăng nhập.")
-    code = result.get("code")
-    if not code:
-        raise XaiAuthError("Không nhận được authorization code.")
 
-    started = time.time()
-    async with httpx.AsyncClient(timeout=30) as client:
-        endpoint = await _discover_token_endpoint(client)
-        response = await client.post(
-            endpoint,
-            data={
-                "grant_type": "authorization_code",
-                "code": code,
-                "redirect_uri": redirect_uri,
-                "client_id": XAI_CLIENT_ID,
-                "code_verifier": verifier,
-                # xAI yêu cầu echo lại code_challenge khi exchange.
-                "code_challenge": challenge,
-                "code_challenge_method": "S256",
-            },
-            headers={"Accept": "application/json"},
-        )
-    if response.status_code >= 400:
-        raise XaiAuthError(
-            f"Đổi code thất bại (HTTP {response.status_code}): {response.text[:300]}"
-        )
-
-    bundle = _parse_token_response(
-        response.json(), started_at=started, token_endpoint=endpoint
+    await _finish_login(
+        result,
+        state=state,
+        verifier=verifier,
+        challenge=challenge,
+        redirect_uri=redirect_uri,
     )
-    save_tokens(bundle, XAI_TOKEN_PATH)
-    print(f"Đã lưu token vào {XAI_TOKEN_PATH}")
 
 
 def _force_utf8_output() -> None:
@@ -446,11 +486,16 @@ def _main(argv: list[str] | None = None) -> int:
 
     parser = argparse.ArgumentParser(prog="xai_auth", description="OAuth xAI cho Peto Web")
     parser.add_argument("command", choices=["login", "status", "logout"])
+    parser.add_argument(
+        "--manual",
+        action="store_true",
+        help="Máy không có trình duyệt (VPS): in link rồi dán URL trả về.",
+    )
     args = parser.parse_args(argv)
 
     if args.command == "login":
         try:
-            asyncio.run(login())
+            asyncio.run(login(manual=args.manual))
         except XaiAuthError as err:
             print(f"Lỗi: {err}")
             return 1

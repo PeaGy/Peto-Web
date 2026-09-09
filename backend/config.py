@@ -115,6 +115,13 @@ RESPONSE_TIMEOUTS = {
 MAX_HISTORY_MESSAGES = _env_int("PETO_MAX_HISTORY", 20, 2, 100)
 MAX_INPUT_CHARS = _env_int("PETO_MAX_INPUT_CHARS", 4000, 100, 20000)
 
+# --- Phục vụ frontend đã build (production) ------------------------------
+# Khi thư mục này tồn tại, backend phục vụ luôn giao diện; VPS chỉ cần một
+# tiến trình và một cổng. Lúc dev thì không có `dist`, Vite lo phần giao diện.
+STATIC_DIR = Path(
+    os.getenv("PETO_STATIC_DIR", str(BASE_DIR.parent / "frontend" / "dist"))
+)
+
 # --- CORS ----------------------------------------------------------------
 # Chỉ cho phép dev server của Vite. Không dùng "*" — mở rộng khi deploy thật.
 ALLOWED_ORIGINS = [

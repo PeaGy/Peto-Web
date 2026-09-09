@@ -374,3 +374,46 @@ Bất biến đã cài vào code và có test chặn:
 - Ghi ngược từ web về trí nhớ Discord: chưa làm, chưa duyệt.
 - Trên VPS, `.env` không đi theo `git pull` — phải thêm biến bằng tay rồi
   `sudo systemctl restart peto`.
+
+## 16. Chuẩn bị deploy lên VPS (09/09/2026)
+
+Người dùng đã commit phần Memory Gateway ở repo bot (`c3e87e2`, sạch — đúng 3
+file, không lẫn bí mật). Bước tiếp theo đã chọn: đưa web lên VPS.
+
+Lý do chọn deploy trước giọng nói: web đang ở `localhost` nên nhóm bạn chưa
+dùng được, và trí nhớ từ Discord đòi web + bot **cùng máy** nên cũng chưa bật
+được. Deploy tháo cả hai nút thắt.
+
+### Đã làm
+- `backend/static_files.py` — backend phục vụ luôn `frontend/dist` ở production.
+  Một tiến trình, một cổng, không cần nginx. Có SPA fallback, cache dài cho
+  file có hash, `no-cache` cho `index.html`, và **chặn path traversal**.
+- `backend/config.py` — thêm `PETO_STATIC_DIR`.
+- `deploy/peto-web.service` — unit systemd mẫu, chỉ nghe `127.0.0.1:8001`,
+  có `NoNewPrivileges`/`ProtectSystem=strict`, chỉ được ghi vào `backend/data`.
+- `DEPLOY.md` — 9 bước, kèm bảng tra lỗi thường gặp.
+- `xai_auth login --manual` — đăng nhập xAI trên máy không có trình duyệt:
+  in link để mở ở máy cá nhân rồi dán URL trả về vào terminal SSH.
+
+### Đã kiểm thử
+**78 test, OK** (trước là 67). Thêm `tests/test_static_files.py` (11 test),
+trong đó có 4 test path traversal.
+
+Chạy thật ở chế độ production (có `dist`): `/` trả giao diện, đường dẫn lạ rơi
+về `index.html`, `/api/sai` ra 404 chứ không ra HTML, `/api/conversations` khi
+chưa đăng nhập ra 401, và `/.env` **không** lộ file thật.
+
+### Còn phải làm trên VPS — người dùng tự chạy
+Theo `DEPLOY.md`. Những chỗ dễ sai nhất:
+1. `PETO_COOKIE_SECURE=true` — thiếu là đăng nhập xong bị đá về lại.
+2. Thêm redirect production vào Discord Developer Portal.
+3. `PETO_SESSION_SECRET` phải sinh MỚI, khác máy cá nhân.
+4. `xai_auth login --manual` chứ không phải `login` thường.
+5. `MEMORY_GATEWAY_TOKEN` phải khớp giữa hai `.env`, rồi restart cả hai service.
+6. Cổng trí nhớ 8766 **không** được thêm vào `cloudflared`.
+
+### Đã chốt: build trên VPS
+VPS có sẵn **Node v22.22.1**, thỏa yêu cầu `>=22.12.0` của Vite 8. Nên
+`frontend/dist` giữ nguyên trong `.gitignore` — bản build không đi qua git, mà
+chạy `npm ci && npm run build` trên VPS. `package-lock.json` đã được theo dõi
+nên `npm ci` dùng được.

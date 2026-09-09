@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field
 
 import auth
 import db
+import static_files
 from ai import ChatMessage, ProviderError, get_provider
 from ai.routing import choose_effort
 from auth import current_owner
@@ -33,6 +34,7 @@ from config import (
     MAX_HISTORY_MESSAGES,
     MAX_INPUT_CHARS,
     RESPONSE_TIMEOUTS,
+    STATIC_DIR,
     discord_id_from_owner,
 )
 from discord_memory import discord_memory
@@ -228,3 +230,7 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner)):
             "X-Accel-Buffering": "no",
         },
     )
+
+
+# Phải gắn SAU mọi route API, vì nó bắt mọi đường dẫn còn lại.
+static_files.mount(app, STATIC_DIR)
