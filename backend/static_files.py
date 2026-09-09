@@ -44,7 +44,11 @@ def mount(app: FastAPI, static_dir: Path) -> bool:
         )
         return False
 
-    @app.get("/{full_path:path}", include_in_schema=False)
+    # Nhận cả HEAD: công cụ giám sát uptime và `curl -I` dùng HEAD, và FastAPI
+    # không tự thêm method này cho route GET.
+    @app.api_route(
+        "/{full_path:path}", methods=["GET", "HEAD"], include_in_schema=False
+    )
     async def spa(full_path: str) -> FileResponse:
         # Route API đã được đăng ký trước nên tới được đây nghĩa là không khớp;
         # đừng trả index.html cho chúng, kẻo lỗi 404 hiện ra thành trang web.

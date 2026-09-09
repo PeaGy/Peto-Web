@@ -90,3 +90,17 @@ async def test_path_traversal_cannot_escape_build_dir(site_client, attack):
 def test_mount_is_skipped_without_a_build(tmp_path):
     app = FastAPI()
     assert static_files.mount(app, tmp_path / "khong-ton-tai") is False
+
+
+async def test_head_is_supported(site_client):
+    """`curl -I` và công cụ giám sát uptime dùng HEAD.
+
+    FastAPI không tự thêm HEAD cho route GET, nên phải khai báo rõ — thiếu là
+    kiểm tra deploy bằng `curl -sI` sẽ ra 405 và làm người ta tưởng hỏng.
+    """
+    response = await site_client.head("/")
+    assert response.status_code == 200
+
+
+async def test_head_on_unknown_path_also_falls_back(site_client):
+    assert (await site_client.head("/hoi-thoai/abc")).status_code == 200

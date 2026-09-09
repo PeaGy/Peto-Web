@@ -174,9 +174,40 @@ curl -s http://127.0.0.1:8001/api/health
 
 ## 8. Cho Cloudflare Tunnel trỏ vào
 
-Thêm hostname mới vào cấu hình `cloudflared` đang có (thường là
-`/etc/cloudflared/config.yml`) — **thêm** vào danh sách `ingress`, đừng thay
-mục của download gateway:
+Trước hết chắc chắn bước 7 đã chạy:
+
+```bash
+curl -s http://127.0.0.1:8001/api/health     # {"ok":true,"provider":"xai"}
+```
+
+`cloudflared` có **hai kiểu cấu hình**, cách làm khác hẳn nhau:
+
+```bash
+systemctl cat cloudflared | grep ExecStart
+```
+
+| `ExecStart` chứa | Kiểu | Sửa ở đâu |
+| --- | --- | --- |
+| `--token eyJ...` | Dashboard quản lý | Trên web Cloudflare; `config.yml` vô dụng |
+| `--config .../config.yml` hoặc `tunnel run <tên>` | File local | Sửa `config.yml` |
+
+### Kiểu A — Dashboard quản lý
+
+https://one.dash.cloudflare.com → **Networks** → **Tunnels** → chọn tunnel →
+**Configure** → **Public Hostname** → **Add a public hostname**:
+
+- Subdomain `peto`, Domain `pearto.shop`, Type `HTTP`, URL `127.0.0.1:8001`
+
+DNS tạo tự động. Không cần restart `cloudflared`.
+
+### Kiểu B — File local
+
+```bash
+sudo cp /etc/cloudflared/config.yml /etc/cloudflared/config.yml.bak
+sudo nano /etc/cloudflared/config.yml
+```
+
+**Thêm** một mục vào `ingress`, giữ nguyên mục download gateway:
 
 ```yaml
 ingress:
@@ -187,16 +218,45 @@ ingress:
   - service: http_status:404
 ```
 
-Mục `http_status:404` phải luôn nằm cuối cùng.
+- Khớp từ trên xuống, lấy mục đầu tiên trúng — **thứ tự quan trọng**.
+- `http_status:404` **phải là mục cuối cùng**.
+- YAML dùng dấu cách, không dùng tab.
+
+Kiểm tra cú pháp **trước khi** restart:
+
+```bash
+cloudflared tunnel ingress validate --config /etc/cloudflared/config.yml
+cloudflared tunnel ingress rule --config /etc/cloudflared/config.yml \
+    https://peto.pearto.shop
+```
+
+Lệnh sau phải nói là khớp `http://127.0.0.1:8001`. Đúng rồi mới restart và tạo
+DNS:
 
 ```bash
 sudo systemctl restart cloudflared
+cloudflared tunnel list
+cloudflared tunnel route dns <tên-tunnel> peto.pearto.shop
 ```
 
-Rồi tạo bản ghi DNS cho `peto.pearto.shop` trỏ vào tunnel (Cloudflare
-Dashboard, hoặc `cloudflared tunnel route dns <tên-tunnel> peto.pearto.shop`).
+### Kiểm tra
 
-Mở https://peto.pearto.shop — phải thấy màn hình đăng nhập Discord.
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' https://peto.pearto.shop/
+curl -s https://peto.pearto.shop/api/health
+```
+
+Đừng dùng `curl -I` để kiểm tra — nó gửi request **HEAD**, và tuy app có nhận
+HEAD, việc đọc kết quả HEAD dễ gây hiểu nhầm. Cứ dùng GET như trên.
+
+| Kết quả | Nghĩa là |
+| --- | --- |
+| `200` và `{"ok":true,"provider":"xai"}` | Xong |
+| `502` / `503` | Tunnel tới được nhưng `peto-web` chết — xem `journalctl -u peto-web` |
+| `530` | Tunnel chưa nhận hostname — sai ingress hoặc chưa restart |
+| Không phân giải được tên | Thiếu bản ghi DNS |
+
+**Đừng thêm cổng 8766 (trí nhớ) vào tunnel** — nó phải ở lại loopback.
 
 ---
 

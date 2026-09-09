@@ -77,7 +77,7 @@ def sse(payload: dict) -> str:
     return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
-@app.get("/api/health")
+@app.api_route("/api/health", methods=["GET", "HEAD"])
 async def health() -> dict:
     return {"ok": True, "provider": get_provider().name}
 

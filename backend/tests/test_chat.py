@@ -110,3 +110,8 @@ def test_effort_routing(text, expected):
     from ai.routing import choose_effort
 
     assert choose_effort(text) == expected
+
+
+async def test_health_accepts_head(client):
+    """Giám sát uptime thường dùng HEAD chứ không phải GET."""
+    assert (await client.head("/api/health")).status_code == 200
