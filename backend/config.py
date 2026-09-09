@@ -121,6 +121,19 @@ RESPONSE_TIMEOUTS = {
 MAX_HISTORY_MESSAGES = _env_int("PETO_MAX_HISTORY", 20, 2, 100)
 MAX_INPUT_CHARS = _env_int("PETO_MAX_INPUT_CHARS", 4000, 100, 20000)
 
+# --- Tệp đính kèm --------------------------------------------------------
+UPLOAD_DIR = Path(os.getenv("PETO_UPLOAD_DIR", str(BASE_DIR / "data" / "uploads")))
+MAX_ATTACHMENTS = _env_int("PETO_MAX_ATTACHMENTS", 4, 1, 8)
+MAX_ATTACHMENT_BYTES = _env_int(
+    "PETO_MAX_ATTACHMENT_BYTES", 8 * 1024 * 1024, 64 * 1024, 20 * 1024 * 1024
+)
+MAX_TOTAL_ATTACHMENT_BYTES = _env_int(
+    "PETO_MAX_TOTAL_ATTACHMENT_BYTES", 16 * 1024 * 1024, 64 * 1024, 40 * 1024 * 1024
+)
+# Số ảnh gần nhất được gửi lại cho mô hình khi có lịch sử.
+MAX_HISTORY_IMAGES = _env_int("PETO_MAX_HISTORY_IMAGES", 4, 1, 8)
+MAX_TEXT_EXCERPT_CHARS = _env_int("PETO_MAX_TEXT_EXCERPT_CHARS", 80_000, 1000, 200_000)
+
 # --- Phục vụ frontend đã build (production) ------------------------------
 # Khi thư mục này tồn tại, backend phục vụ luôn giao diện; VPS chỉ cần một
 # tiến trình và một cổng. Lúc dev thì không có `dist`, Vite lo phần giao diện.

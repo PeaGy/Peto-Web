@@ -1,9 +1,26 @@
 export type Role = "user" | "assistant";
+export type Effort = "auto" | "low" | "medium" | "high";
+
+export interface ChatAttachment {
+  id: string;
+  name: string;
+  mime: string;
+  kind: "image" | "file";
+  size: number;
+  url: string;
+}
+
+export interface OutgoingAttachment {
+  name: string;
+  mime: string;
+  data: string;
+}
 
 export interface Message {
   role: Role;
   content: string;
   created_at?: number;
+  attachments?: ChatAttachment[];
 }
 
 export interface Conversation {
@@ -93,8 +110,12 @@ export async function deleteConversation(conversationId: string): Promise<void> 
  * người dùng bấm dừng giữa chừng.
  */
 export async function sendMessage(
-  message: string,
-  conversationId: string | null,
+  payload: {
+    message: string;
+    conversationId: string | null;
+    effort: Effort;
+    attachments?: OutgoingAttachment[];
+  },
   handlers: ChatHandlers,
   signal?: AbortSignal,
 ): Promise<void> {
@@ -102,8 +123,10 @@ export async function sendMessage(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      message,
-      conversation_id: conversationId,
+      message: payload.message,
+      conversation_id: payload.conversationId,
+      effort: payload.effort,
+      attachments: payload.attachments ?? [],
     }),
     signal,
   });

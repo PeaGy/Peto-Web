@@ -7,10 +7,11 @@ from inspect import isclass
 
 from config import AI_PROVIDER
 
-from .base import ChatMessage, ChatProvider, ProviderError
+from .base import ChatAttachment, ChatMessage, ChatProvider, ProviderError
 from .mock import MockProvider
 
 __all__ = [
+    "ChatAttachment",
     "ChatMessage",
     "ChatProvider",
     "ProviderError",

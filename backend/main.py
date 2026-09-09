@@ -17,20 +17,26 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
+from pathlib import Path
+
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
+import attachments as attachment_lib
 import auth
 import db
 import static_files
-from ai import ChatMessage, ProviderError, get_provider
+from ai import ChatAttachment, ChatMessage, ProviderError, get_provider
 from ai.routing import choose_effort
+from attachments import AttachmentError
 from auth import current_owner
 from config import (
     ALLOWED_DISCORD_IDS,
     ALLOWED_ORIGINS,
+    MAX_ATTACHMENTS,
+    MAX_HISTORY_IMAGES,
     MAX_HISTORY_MESSAGES,
     MAX_INPUT_CHARS,
     MEMORY_GATEWAY_TOKEN,
@@ -83,9 +89,106 @@ app.add_middleware(
 app.include_router(auth.router)
 
 
+class AttachmentIn(BaseModel):
+    name: str = Field(min_length=1, max_length=180)
+    mime: str = Field(default="", max_length=120)
+    data: str = Field(min_length=8)
+
+
 class ChatRequest(BaseModel):
-    message: str = Field(min_length=1)
+    message: str = ""
     conversation_id: str | None = None
+    effort: str | None = None
+    attachments: list[AttachmentIn] = Field(default_factory=list)
+
+
+ALLOWED_EFFORTS = {"auto", "low", "medium", "high"}
+
+
+def _public_attachment(row: dict) -> dict:
+    return {
+        "id": row["id"],
+        "name": row["filename"],
+        "mime": row["mime"],
+        "kind": row["kind"],
+        "size": row["size"],
+        "url": f"/api/attachments/{row['id']}",
+    }
+
+
+def _public_message(row: dict) -> dict:
+    return {
+        "role": row["role"],
+        "content": row["content"],
+        "created_at": row["created_at"],
+        "attachments": [_public_attachment(item) for item in row.get("attachments") or []],
+    }
+
+
+def _resolve_effort(requested: str | None, text: str) -> str:
+    value = (requested or "auto").strip().lower()
+    if value not in ALLOWED_EFFORTS:
+        raise HTTPException(
+            status_code=400,
+            detail="Mức suy nghĩ phải là auto, low, medium hoặc high",
+        )
+    return choose_effort(text) if value == "auto" else value
+
+
+def _title_from(text: str, files: list[attachment_lib.ValidatedAttachment]) -> str:
+    cleaned = " ".join(text.split())
+    if cleaned:
+        return cleaned
+    if not files:
+        return ""
+    first = files[0]
+    prefix = "Ảnh" if first.kind == "image" else "Tệp"
+    return f"{prefix}: {first.name}"
+
+
+def _to_chat_messages(rows: list[dict]) -> list[ChatMessage]:
+    image_ids: list[str] = []
+    for row in reversed(rows):
+        for item in row.get("attachments") or []:
+            if item.get("kind") == "image":
+                image_ids.append(item["id"])
+                if len(image_ids) >= MAX_HISTORY_IMAGES:
+                    break
+        if len(image_ids) >= MAX_HISTORY_IMAGES:
+            break
+    load_images = set(image_ids)
+
+    out: list[ChatMessage] = []
+    for row in rows:
+        attached: list[ChatAttachment] = []
+        for item in row.get("attachments") or []:
+            data_url = ""
+            excerpt = ""
+            path = item.get("path")
+            try:
+                if item.get("kind") == "image" and item["id"] in load_images and path:
+                    data_url = attachment_lib.as_data_url(path, item["mime"])
+                elif item.get("kind") == "file" and path:
+                    excerpt = attachment_lib.read_text_excerpt(path, item["mime"])
+            except OSError:
+                logger.warning("Không đọc được tệp đính kèm %s", item.get("id"))
+            attached.append(
+                ChatAttachment(
+                    kind=item["kind"],
+                    name=item["filename"],
+                    mime=item["mime"],
+                    data_url=data_url,
+                    text_excerpt=excerpt,
+                )
+            )
+        out.append(
+            ChatMessage(
+                role=row["role"],
+                content=row["content"],
+                attachments=tuple(attached),
+            )
+        )
+    return out
 
 
 def sse(payload: dict) -> str:
@@ -108,7 +211,26 @@ async def get_messages(
 ) -> dict:
     if not await db.owns_conversation(owner, conversation_id):
         raise HTTPException(status_code=404, detail="Không tìm thấy hội thoại")
-    return {"messages": await db.get_messages(owner, conversation_id)}
+    rows = await db.get_messages(owner, conversation_id)
+    return {"messages": [_public_message(row) for row in rows]}
+
+
+@app.get("/api/attachments/{attachment_id}")
+async def get_attachment(attachment_id: str, owner: str = Depends(current_owner)):
+    record = await db.get_attachment(owner, attachment_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Không tìm thấy tệp")
+    path = Path(record["path"])
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="Không tìm thấy tệp")
+    inline = record["kind"] == "image"
+    return FileResponse(
+        path,
+        media_type=record["mime"],
+        filename=record["filename"],
+        content_disposition_type="inline" if inline else "attachment",
+        headers={"Cache-Control": "private, max-age=3600"},
+    )
 
 
 @app.delete("/api/conversations/{conversation_id}")
@@ -158,13 +280,28 @@ async def _stream_reply(
 @app.post("/api/chat")
 async def chat(request: ChatRequest, owner: str = Depends(current_owner)):
     text = request.message.strip()
-    if not text:
-        raise HTTPException(status_code=400, detail="Tin nhắn trống")
     if len(text) > MAX_INPUT_CHARS:
         raise HTTPException(
             status_code=400,
             detail=f"Tin nhắn quá dài (tối đa {MAX_INPUT_CHARS} ký tự)",
         )
+    if len(request.attachments) > MAX_ATTACHMENTS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Mỗi tin chỉ gửi tối đa {MAX_ATTACHMENTS} tệp",
+        )
+
+    try:
+        files = attachment_lib.validate_batch(
+            [item.model_dump() for item in request.attachments]
+        )
+    except AttachmentError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+
+    if not text and not files:
+        raise HTTPException(status_code=400, detail="Tin nhắn trống")
+
+    effort = _resolve_effort(request.effort, text)
 
     if request.conversation_id:
         conversation_id = request.conversation_id
@@ -173,16 +310,32 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner)):
     else:
         conversation_id = await db.create_conversation(owner)
 
-    await db.add_message(conversation_id, "user", text)
-    await db.set_title_if_empty(conversation_id, text)
+    saved_paths: list[Path] = []
+    try:
+        message_id = await db.add_message(conversation_id, "user", text)
+        for item in files:
+            attachment_id, path = attachment_lib.write_file(conversation_id, item)
+            saved_paths.append(path)
+            await db.add_attachment(
+                attachment_id=attachment_id,
+                owner=owner,
+                conversation_id=conversation_id,
+                message_id=message_id,
+                filename=item.name,
+                mime=item.mime,
+                kind=item.kind,
+                size=len(item.data),
+                path=str(path),
+            )
+    except Exception:
+        attachment_lib.delete_files(saved_paths)
+        raise
 
-    history = [
-        ChatMessage(role=row["role"], content=row["content"])
-        for row in await db.get_messages(
-            owner, conversation_id, limit=MAX_HISTORY_MESSAGES
-        )
-    ]
-    effort = choose_effort(text)
+    await db.set_title_if_empty(conversation_id, _title_from(text, files))
+
+    history = _to_chat_messages(
+        await db.get_messages(owner, conversation_id, limit=MAX_HISTORY_MESSAGES)
+    )
     system_prompt = await _build_system_prompt(owner)
 
     async def event_stream() -> AsyncIterator[str]:

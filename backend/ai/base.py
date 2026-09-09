@@ -9,13 +9,28 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+
+
+@dataclass(frozen=True)
+class ChatAttachment:
+    """Một tệp đính kèm đã được máy chủ kiểm tra.
+
+    ``data_url`` dùng cho ảnh gửi sang xAI; ``text_excerpt`` dùng cho tệp chữ.
+    """
+
+    kind: str  # "image" | "file"
+    name: str
+    mime: str
+    data_url: str = ""
+    text_excerpt: str = ""
 
 
 @dataclass(frozen=True)
 class ChatMessage:
     role: str  # "user" | "assistant"
     content: str
+    attachments: tuple[ChatAttachment, ...] = field(default_factory=tuple)
 
 
 class ProviderError(RuntimeError):

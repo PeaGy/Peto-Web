@@ -70,9 +70,9 @@ class MockProvider(ChatProvider):
         messages: list[ChatMessage],
         effort: str = "low",
     ) -> AsyncIterator[str]:
-        last_user = next(
-            (m.content for m in reversed(messages) if m.role == "user"), ""
-        )
+        last = next((m for m in reversed(messages) if m.role == "user"), None)
+        last_user = last.content if last else ""
+        names = [item.name for item in last.attachments] if last else []
 
         if "__error__" in last_user:
             raise ProviderError(
@@ -82,7 +82,15 @@ class MockProvider(ChatProvider):
         if "__slow__" in last_user:
             await asyncio.sleep(3600)
 
+        if not last_user.strip() and names:
+            last_user = f"[đính kèm {', '.join(names)}]"
+
         reply = _pick_reply(last_user)
+        if names:
+            reply = (
+                f"Peto thấy cậu gửi kèm {', '.join(names)}. "
+                "Đang chạy phản hồi giả nên chưa đọc thật nội dung tệp đâu. "
+            ) + reply
 
         # Cắt theo từ để giống nhịp stream thật, giữ nguyên dấu cách.
         buffer = ""
