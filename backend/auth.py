@@ -35,6 +35,7 @@ from config import (
     SESSION_COOKIE_SECURE,
     SESSION_MAX_AGE,
     SESSION_SECRET,
+    discord_id_from_owner,
     owner_key,
 )
 
@@ -84,9 +85,17 @@ def read_session(token: str | None) -> str | None:
     return owner if isinstance(owner, str) and owner else None
 
 
+def allowed_session(token: str | None) -> str | None:
+    """Cookie cũ cũng phải tuân theo allowlist đang được máy chủ sử dụng."""
+    owner = read_session(token)
+    if not owner or discord_id_from_owner(owner) not in ALLOWED_DISCORD_IDS:
+        return None
+    return owner
+
+
 def current_owner(request: Request) -> str:
     """Dependency: bắt buộc đã đăng nhập."""
-    owner = read_session(request.cookies.get(SESSION_COOKIE))
+    owner = allowed_session(request.cookies.get(SESSION_COOKIE))
     if not owner:
         raise HTTPException(status_code=401, detail="Chưa đăng nhập")
     return owner
@@ -236,7 +245,7 @@ async def discord_callback(
 
 @router.get("/me")
 async def me(request: Request) -> dict:
-    owner = read_session(request.cookies.get(SESSION_COOKIE))
+    owner = allowed_session(request.cookies.get(SESSION_COOKIE))
     if not owner:
         return {"authenticated": False, "login_configured": is_configured()}
 

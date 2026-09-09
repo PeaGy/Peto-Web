@@ -11,6 +11,9 @@ import tempfile
 from pathlib import Path
 
 _TMP_DIR = Path(tempfile.mkdtemp(prefix="peto_web_test_"))
+os.environ["PYTHON_DOTENV_DISABLED"] = "1"
+os.environ["PETO_MEMORY_GATEWAY_URL"] = ""
+os.environ["PETO_MEMORY_GATEWAY_TOKEN"] = ""
 os.environ["PETO_WEB_DB"] = str(_TMP_DIR / "test.db")
 os.environ["PETO_XAI_TOKEN_PATH"] = str(_TMP_DIR / "xai_tokens.json")
 os.environ["PETO_UPLOAD_DIR"] = str(_TMP_DIR / "uploads")

@@ -103,7 +103,7 @@ def test_allowlist_blocks_unknown_discord_id():
     assert BLOCKED_DISCORD_ID not in ALLOWED_DISCORD_IDS
 
 
-async def test_conversations_are_isolated_between_users(client, anon_client):
+async def test_conversations_are_isolated_between_users(client, anon_client, monkeypatch):
     """Người khác không đọc được hội thoại của mình, dù biết đúng ID."""
     async with client.stream(
         "POST", "/api/chat", json={"message": "riêng tư"}
@@ -114,6 +114,7 @@ async def test_conversations_are_isolated_between_users(client, anon_client):
     conversation_id = events[0]["conversation_id"]
 
     other_owner = owner_key(BLOCKED_DISCORD_ID)
+    monkeypatch.setattr(auth, "ALLOWED_DISCORD_IDS", {TEST_DISCORD_ID, BLOCKED_DISCORD_ID})
     anon_client.cookies.set(SESSION_COOKIE, auth._sign(other_owner))
 
     assert (

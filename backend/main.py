@@ -19,7 +19,8 @@ from contextlib import asynccontextmanager
 
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException
+import anyio
+from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
@@ -118,8 +119,10 @@ def _public_attachment(row: dict) -> dict:
 
 def _public_message(row: dict) -> dict:
     return {
+        "id": row["id"],
         "role": row["role"],
         "content": row["content"],
+        "status": row.get("status", "complete"),
         "created_at": row["created_at"],
         "attachments": [_public_attachment(item) for item in row.get("attachments") or []],
     }
@@ -201,8 +204,13 @@ async def health() -> dict:
 
 
 @app.get("/api/conversations")
-async def list_conversations(owner: str = Depends(current_owner)) -> dict:
-    return {"conversations": await db.list_conversations(owner)}
+async def list_conversations(
+    owner: str = Depends(current_owner),
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+) -> dict:
+    rows = await db.list_conversations(owner, limit=limit + 1, offset=offset)
+    return {"conversations": rows[:limit], "has_more": len(rows) > limit}
 
 
 @app.get("/api/conversations/{conversation_id}/messages")
@@ -229,7 +237,7 @@ async def get_attachment(attachment_id: str, owner: str = Depends(current_owner)
         media_type=record["mime"],
         filename=record["filename"],
         content_disposition_type="inline" if inline else "attachment",
-        headers={"Cache-Control": "private, max-age=3600"},
+        headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"},
     )
 
 
@@ -307,43 +315,44 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner)):
         conversation_id = request.conversation_id
         if not await db.owns_conversation(owner, conversation_id):
             raise HTTPException(status_code=404, detail="Không tìm thấy hội thoại")
-    else:
-        conversation_id = await db.create_conversation(owner)
-
-    saved_paths: list[Path] = []
-    try:
-        message_id = await db.add_message(conversation_id, "user", text)
-        for item in files:
-            attachment_id, path = attachment_lib.write_file(conversation_id, item)
-            saved_paths.append(path)
-            await db.add_attachment(
-                attachment_id=attachment_id,
-                owner=owner,
-                conversation_id=conversation_id,
-                message_id=message_id,
-                filename=item.name,
-                mime=item.mime,
-                kind=item.kind,
-                size=len(item.data),
-                path=str(path),
-            )
-    except Exception:
-        attachment_lib.delete_files(saved_paths)
-        raise
-
-    await db.set_title_if_empty(conversation_id, _title_from(text, files))
-
-    history = _to_chat_messages(
-        await db.get_messages(owner, conversation_id, limit=MAX_HISTORY_MESSAGES)
-    )
-    system_prompt = await _build_system_prompt(owner)
 
     async def event_stream() -> AsyncIterator[str]:
-        yield sse({"type": "meta", "conversation_id": conversation_id, "effort": effort})
-
+        conversation_id = request.conversation_id
         collected: list[str] = []
+        complete = False
+        failure: str | None = None
         try:
             async with admission.slot(owner):
+                # Từ chối cooldown/hàng chờ trước khi ghi bất kỳ tin nhắn nào.
+                if conversation_id and not await db.owns_conversation(owner, conversation_id):
+                    raise ProviderError("Hội thoại đã bị xóa. Mở cuộc trò chuyện mới nhé.")
+                with anyio.CancelScope(shield=True):
+                    if not conversation_id:
+                        conversation_id = await db.create_conversation(owner)
+                    saved_paths: list[Path] = []
+                    try:
+                        message_id = await db.add_message(conversation_id, "user", text)
+                        for item in files:
+                            attachment_id, path = attachment_lib.write_file(conversation_id, item)
+                            saved_paths.append(path)
+                            await db.add_attachment(
+                                attachment_id=attachment_id, owner=owner,
+                                conversation_id=conversation_id, message_id=message_id,
+                                filename=item.name, mime=item.mime, kind=item.kind,
+                                size=len(item.data), path=str(path),
+                            )
+                    except Exception:
+                        attachment_lib.delete_files(saved_paths)
+                        raise
+                    await db.set_title_if_empty(conversation_id, _title_from(text, files))
+                    rows = await db.get_messages(owner, conversation_id, limit=MAX_HISTORY_MESSAGES)
+                stored_user = next(row for row in rows if row["id"] == message_id)
+                yield sse({
+                    "type": "meta", "conversation_id": conversation_id, "effort": effort,
+                    "message": _public_message(stored_user),
+                })
+                history = _to_chat_messages(rows)
+                system_prompt = await _build_system_prompt(owner)
                 try:
                     async for chunk in _stream_reply(system_prompt, history, effort):
                         collected.append(chunk)
@@ -359,35 +368,35 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner)):
                     ):
                         collected.append(chunk)
                         yield sse({"type": "delta", "text": chunk})
+                complete = bool("".join(collected).strip())
+                if not complete:
+                    failure = "Peto chưa trả lời được lượt này. Nhắn lại giúp nha."
         except AdmissionDenied as denied:
-            yield sse({"type": "error", "message": denied.message})
-            return
+            failure = denied.message
         except ProviderError as err:
             logger.warning("Provider lỗi: %s", err)
-            yield sse({"type": "error", "message": str(err)})
-            return
+            failure = str(err)
         except TimeoutError:
             logger.warning("Timeout sau %ss (effort=%s)", RESPONSE_TIMEOUTS[effort], effort)
-            yield sse(
-                {"type": "error", "message": "Peto nghĩ lâu quá nên bỏ lượt này. Thử lại nha."}
-            )
-            return
-        except asyncio.CancelledError:
-            # Người dùng đóng tab hoặc bấm dừng: giữ lại phần đã trả lời.
-            if collected:
-                await db.add_message(conversation_id, "assistant", "".join(collected))
-            raise
+            failure = "Peto nghĩ lâu quá nên dừng lượt này. Phần đã trả lời được giữ lại."
         except Exception:
             logger.exception("Lỗi không mong đợi khi gọi AI")
-            yield sse(
-                {"type": "error", "message": "Có lỗi ở phía máy chủ. Thử lại sau nha."}
-            )
-            return
-
-        reply = "".join(collected).strip()
-        if reply:
-            await db.add_message(conversation_id, "assistant", reply)
-        yield sse({"type": "done"})
+            failure = "Có lỗi ở phía máy chủ. Thử lại sau nha."
+        finally:
+            # Cả timeout/lỗi lẫn đóng tab đều giữ phần đã phát. Shield tránh
+            # cancel scope của StreamingResponse hủy luôn thao tác lưu SQLite.
+            reply = "".join(collected).strip()
+            if reply and conversation_id:
+                with anyio.CancelScope(shield=True):
+                    if await db.owns_conversation(owner, conversation_id):
+                        await db.add_message(
+                            conversation_id, "assistant", reply,
+                            status="complete" if complete else "incomplete",
+                        )
+        if failure:
+            yield sse({"type": "error", "message": failure})
+        else:
+            yield sse({"type": "done"})
 
     return StreamingResponse(
         event_stream(),

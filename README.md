@@ -1,10 +1,10 @@
 # Peto Web
 
-Giao diện chat riêng cho Peto, tách khỏi Discord. Bước 1: **chat chữ**.
+Giao diện chat riêng cho Peto: **chat chữ, xem ảnh và đọc tệp chữ**.
 
-Bot Discord (`Tracen Jukebox`) vẫn phát triển độc lập. Project này không đọc,
-không ghi và không chia sẻ dữ liệu với bot cũ. Xem `PETO_WEB_HANDOFF.md` để
-biết bối cảnh và những gì còn để ngỏ.
+Bot Discord (`Tracen Jukebox`) vẫn phát triển độc lập. Web có database riêng;
+có thể bật đọc bản tóm tắt trí nhớ từ bot qua Memory Gateway, không ghi ngược
+vào bot. `PETO_WEB_HANDOFF.md` là bối cảnh ban đầu; README này mô tả code hiện tại.
 
 ## Chạy
 
@@ -47,6 +47,10 @@ không cần cấu hình CORS khi chạy local.
 Chưa biết Discord ID? Cứ đăng nhập thử — nếu chưa được cho phép, trang sẽ hiện
 đúng ID của tài khoản đó để bạn thêm vào danh sách.
 
+Sau khi sửa `PETO_ALLOWED_DISCORD_IDS`, **khởi động lại dịch vụ web** để nạp
+cấu hình mới. Quyền được kiểm tra ở mỗi yêu cầu API, nên phiên cũ của tài khoản
+đã bị xóa khỏi danh sách cũng bị chặn. Không cần đổi khóa ký để thu hồi một người.
+
 ## Đưa lên VPS
 
 Xem [DEPLOY.md](DEPLOY.md) — từng bước cho VPS đang chạy bot, kèm cách bật
@@ -64,6 +68,22 @@ cd backend
 ```
 
 Toàn bộ test chạy bằng nhà cung cấp giả và database tạm — không chạm dữ liệu thật.
+
+Kiểm thử giao diện và build:
+
+```bash
+cd frontend
+npm test
+npm run build
+```
+
+Sau đợt cải tiến 09/09/2026: **118 test backend, 11 test frontend đạt**;
+TypeScript và Vite build đạt. Các test bao gồm thu hồi quyền, chuyển hội thoại
+với kết quả tải về không đúng thứ tự, giữ bản nháp, dừng phản hồi, lưu câu trả lời
+dở dang, nâng cấp schema, ẩn danh, phân trang và bảng Markdown.
+
+Khi cập nhật bản này, cài lại dependencies, build frontend rồi khởi động lại web.
+Backend tự bổ sung cột trạng thái tin nhắn khi khởi động; giữ nguyên dữ liệu cũ.
 
 ## Kiến trúc
 
@@ -132,14 +152,16 @@ Giới hạn cố ý của phần này:
 - **Chỉ đọc.** Web không có đường nào ghi vào `bot_memory.db`.
 - **Loopback.** Cổng của bot chỉ nghe `127.0.0.1`, không bao giờ đặt sau
   Cloudflare Tunnel.
-- **Tôn trọng chế độ ẩn danh.** Ai đang bật ẩn danh thì không đọc gì cả.
+- **Tôn trọng chế độ ẩn danh.** Mỗi lượt chat hỏi lại gateway để xác minh trạng
+  thái mới; không dùng cache trí nhớ từ lượt trước. Biến `PETO_MEMORY_CACHE_TTL`
+  cũ không còn có tác dụng. Việc bật ẩn danh không xóa câu trả lời web đã lưu.
 - **Hỏng thì bỏ qua.** Bot tắt hay token sai thì chat vẫn chạy, chỉ mất trí nhớ.
 
 ## Ranh giới đang được giữ
 
 - Prompt của web không chứa tên thật hay Discord ID của thành viên. Có test
   chặn (`tests/test_persona.py`).
-- Peto ở web nói rõ là chưa có nhạc, ảnh, tìm kiếm hay giọng nói — không hứa hão.
+- Peto xem được ảnh đính kèm, nhưng chưa có nhạc, tạo/sửa ảnh, tìm kiếm hay giọng nói.
 - Database riêng và **file token xAI riêng**; không dùng chung file nào với
   production Discord.
 - Không có credential AI nào xuống trình duyệt. Discord access token chỉ dùng
@@ -148,8 +170,27 @@ Giới hạn cố ý của phần này:
   công khai.
 - Mọi truy vấn hội thoại lọc theo `owner` ở backend; biết ID của người khác cũng
   không đọc được.
-- Chưa deploy public. Chỉ chạy local.
+- Có hướng dẫn triển khai và unit dịch vụ mẫu. Trạng thái VPS thực tế không
+  được xác nhận chỉ bằng việc đọc repository hoặc chạy test local.
+
+## Trải nghiệm chat hiện có
+
+- Chuyển hội thoại có trạng thái tải và bỏ qua kết quả cũ; chưa gửi được khi
+  nội dung hội thoại chưa tải xong.
+- Bản nháp và tệp được giữ lại nếu yêu cầu chưa được máy chủ xác nhận. Khi đã
+  nhận tin, UI dùng đường dẫn tệp thật từ backend. Nếu mất kết nối trước xác
+  nhận, hãy kiểm tra lịch sử trước khi gửi lại để tránh gửi trùng.
+- Dừng/lỗi/timeout giữ phần trả lời đã nhận và đánh dấu chưa hoàn tất. Dừng
+  trước khi có chữ không để lại dấu đang trả lời chạy mãi.
+- Xóa hội thoại có xác nhận; danh sách có nút tải thêm các hội thoại cũ hơn 50.
+- Bảng Markdown và khối mã cuộn ngang; đọc tin cũ không bị kéo xuống mỗi đoạn
+  trả lời mới. Giữ tông tím tối, thu gọn cột chat trên màn hình rộng.
+- Tối đa 4 tệp/tin, 8 MB/tệp, tổng 16 MB theo cấu hình mặc định. Ảnh và tệp chữ
+  được chuyển vào ngữ cảnh AI. **PDF chỉ được lưu để tải lại, chưa trích nội dung**;
+  giao diện nhắc rõ giới hạn này. Tệp được kiểm tra và chỉ chủ sở hữu đọc được.
 
 ## Chưa có ở bước này
 
-Upload ảnh, gọi công cụ, giọng nói, nhân vật 3D, đồng bộ trí nhớ với Discord, deploy.
+Đọc nội dung PDF, gọi công cụ, giọng nói, nhân vật 3D, ghi hoặc đồng bộ trí nhớ
+hai chiều với Discord. Chưa kiểm chứng chất lượng AI thật và hoạt động VPS trong
+đợt kiểm thử local nêu trên.

@@ -95,7 +95,7 @@ async def test_non_numeric_id_is_never_requested(patch_httpx):
     assert (await memory.fetch("../etc/passwd")).is_empty
 
 
-async def test_result_is_cached(patch_httpx):
+async def test_permission_is_rechecked_each_turn(patch_httpx):
     calls = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -106,11 +106,11 @@ async def test_result_is_cached(patch_httpx):
     memory = DiscordMemory(base_url="http://gateway.test", token="token-test", ttl=300)
     await memory.fetch(TEST_DISCORD_ID)
     await memory.fetch(TEST_DISCORD_ID)
-    assert len(calls) == 1
+    assert len(calls) == 2
 
     memory.forget(TEST_DISCORD_ID)
     await memory.fetch(TEST_DISCORD_ID)
-    assert len(calls) == 2
+    assert len(calls) == 3
 
 
 # --- Ghép vào prompt -----------------------------------------------------

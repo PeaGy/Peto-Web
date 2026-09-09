@@ -54,6 +54,12 @@ async def init_db() -> None:
             "CREATE INDEX IF NOT EXISTS idx_messages_conversation "
             "ON messages(conversation_id, id)"
         )
+        # Migration bổ sung, giữ nguyên tin nhắn trong database hiện có.
+        columns = await (await db.execute("PRAGMA table_info(messages)")).fetchall()
+        if "status" not in {column[1] for column in columns}:
+            await db.execute(
+                "ALTER TABLE messages ADD COLUMN status TEXT NOT NULL DEFAULT 'complete'"
+            )
         await db.execute(
             """
             CREATE TABLE IF NOT EXISTS attachments (
@@ -162,7 +168,7 @@ async def owns_conversation(owner: str, conversation_id: str) -> bool:
         return await cursor.fetchone() is not None
 
 
-async def list_conversations(owner: str, limit: int = 50) -> list[dict]:
+async def list_conversations(owner: str, limit: int = 50, offset: int = 0) -> list[dict]:
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
@@ -172,10 +178,10 @@ async def list_conversations(owner: str, limit: int = 50) -> list[dict]:
                      WHERE m.conversation_id = c.id) AS message_count
               FROM conversations c
              WHERE c.owner = ?
-             ORDER BY c.updated_at DESC
-             LIMIT ?
+             ORDER BY c.updated_at DESC, c.id DESC
+             LIMIT ? OFFSET ?
             """,
-            (owner, limit),
+            (owner, limit, offset),
         )
         return [dict(row) for row in await cursor.fetchall()]
 
@@ -189,7 +195,7 @@ async def get_messages(
         if limit is None:
             cursor = await db.execute(
                 """
-                SELECT m.id, m.role, m.content, m.created_at
+                SELECT m.id, m.role, m.content, m.created_at, m.status
                   FROM messages m
                   JOIN conversations c ON c.id = m.conversation_id
                  WHERE m.conversation_id = ? AND c.owner = ?
@@ -202,7 +208,7 @@ async def get_messages(
             # Lấy N tin gần nhất rồi đảo lại, tránh đọc toàn bộ hội thoại dài.
             cursor = await db.execute(
                 """
-                SELECT m.id, m.role, m.content, m.created_at
+                SELECT m.id, m.role, m.content, m.created_at, m.status
                   FROM messages m
                   JOIN conversations c ON c.id = m.conversation_id
                  WHERE m.conversation_id = ? AND c.owner = ?
@@ -301,13 +307,16 @@ async def list_attachment_paths(conversation_id: str) -> list[str]:
         return [str(row[0]) for row in await cursor.fetchall()]
 
 
-async def add_message(conversation_id: str, role: str, content: str) -> int:
+async def add_message(
+    conversation_id: str, role: str, content: str, status: str = "complete"
+) -> int:
     now = time.time()
     async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("PRAGMA foreign_keys=ON")
         cursor = await db.execute(
-            "INSERT INTO messages (conversation_id, role, content, created_at) "
-            "VALUES (?, ?, ?, ?)",
-            (conversation_id, role, content, now),
+            "INSERT INTO messages (conversation_id, role, content, created_at, status) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (conversation_id, role, content, now, status),
         )
         await db.execute(
             "UPDATE conversations SET updated_at = ? WHERE id = ?",

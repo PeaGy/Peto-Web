@@ -102,7 +102,8 @@ def discord_id_from_owner(owner: str) -> str:
 MEMORY_GATEWAY_URL = os.getenv("PETO_MEMORY_GATEWAY_URL", "").strip()
 MEMORY_GATEWAY_TOKEN = os.getenv("PETO_MEMORY_GATEWAY_TOKEN", "").strip()
 MEMORY_GATEWAY_TIMEOUT = _env_float("PETO_MEMORY_GATEWAY_TIMEOUT", 3.0, 0.5, 30.0)
-MEMORY_CACHE_TTL = _env_float("PETO_MEMORY_CACHE_TTL", 300.0, 0.0, 3600.0)
+# Giữ tương thích cấu hình cũ; web hiện luôn xác minh lại gateway mỗi lượt.
+MEMORY_CACHE_TTL = 0.0
 
 # --- Giới hạn tải (rút gọn từ guild_ai_settings.py của bot Discord) -------
 MAX_CONCURRENT = _env_int("PETO_MAX_CONCURRENT", 3, 1, 20)

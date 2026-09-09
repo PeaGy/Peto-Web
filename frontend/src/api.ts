@@ -17,8 +17,10 @@ export interface OutgoingAttachment {
 }
 
 export interface Message {
+  id?: number;
   role: Role;
   content: string;
+  status?: "complete" | "incomplete";
   created_at?: number;
   attachments?: ChatAttachment[];
 }
@@ -32,13 +34,13 @@ export interface Conversation {
 }
 
 type ChatEvent =
-  | { type: "meta"; conversation_id: string; effort: string }
+  | { type: "meta"; conversation_id: string; effort: string; message?: Message }
   | { type: "delta"; text: string }
   | { type: "error"; message: string }
   | { type: "done" };
 
 interface ChatHandlers {
-  onMeta?: (conversationId: string, effort: string) => void;
+  onMeta?: (conversationId: string, effort: string, message?: Message) => void;
   onDelta?: (text: string) => void;
   onError?: (message: string) => void;
   onDone?: () => void;
@@ -68,7 +70,7 @@ async function json<T>(response: Response): Promise<T> {
   if (response.status === 401) throw new UnauthorizedError();
   if (!response.ok) {
     const detail = await response.json().catch(() => null);
-    throw new Error(detail?.detail ?? `Lỗi ${response.status}`);
+    throw new Error(typeof detail?.detail === "string" ? detail.detail : `Yêu cầu không hợp lệ (${response.status}).`);
   }
   return response.json() as Promise<T>;
 }
@@ -79,19 +81,20 @@ export async function getAuthState(): Promise<AuthState> {
 }
 
 export async function logout(): Promise<void> {
-  await fetch("/api/auth/logout", { method: "POST" });
+  await json(await fetch("/api/auth/logout", { method: "POST" }));
 }
 
 export const DISCORD_LOGIN_URL = "/api/auth/discord/login";
 
-export async function listConversations(): Promise<Conversation[]> {
-  const response = await fetch("/api/conversations");
-  const data = await json<{ conversations: Conversation[] }>(response);
-  return data.conversations;
+export async function listConversations(offset = 0, limit = 50): Promise<{
+  conversations: Conversation[]; has_more: boolean;
+}> {
+  const response = await fetch(`/api/conversations?offset=${offset}&limit=${limit}`);
+  return json(response);
 }
 
-export async function getMessages(conversationId: string): Promise<Message[]> {
-  const response = await fetch(`/api/conversations/${conversationId}/messages`);
+export async function getMessages(conversationId: string, signal?: AbortSignal): Promise<Message[]> {
+  const response = await fetch(`/api/conversations/${conversationId}/messages`, { signal });
   const data = await json<{ messages: Message[] }>(response);
   return data.messages;
 }
@@ -134,7 +137,7 @@ export async function sendMessage(
   if (response.status === 401) throw new UnauthorizedError();
   if (!response.ok) {
     const detail = await response.json().catch(() => null);
-    handlers.onError?.(detail?.detail ?? `Lỗi ${response.status}`);
+    handlers.onError?.(typeof detail?.detail === "string" ? detail.detail : `Yêu cầu không hợp lệ (${response.status}).`);
     return;
   }
   if (!response.body) {
@@ -146,31 +149,40 @@ export async function sendMessage(
   const decoder = new TextDecoder();
   let buffer = "";
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
+  let ended = false;
+  try {
+    while (!ended) {
+      const { done, value } = await reader.read();
+      if (done) throw new Error("Kết nối bị ngắt trước khi Peto trả lời xong.");
+      buffer += decoder.decode(value, { stream: true });
 
-    // Mỗi sự kiện SSE kết thúc bằng một dòng trống.
-    let boundary = buffer.indexOf("\n\n");
-    while (boundary !== -1) {
-      const raw = buffer.slice(0, boundary);
-      buffer = buffer.slice(boundary + 2);
-      boundary = buffer.indexOf("\n\n");
+      // Mỗi sự kiện SSE kết thúc bằng một dòng trống.
+      let boundary = buffer.indexOf("\n\n");
+      while (boundary !== -1) {
+        const raw = buffer.slice(0, boundary);
+        buffer = buffer.slice(boundary + 2);
+        boundary = buffer.indexOf("\n\n");
 
-      const line = raw.split("\n").find((l) => l.startsWith("data: "));
-      if (!line) continue;
+        const line = raw.split("\n").find((l) => l.startsWith("data: "));
+        if (!line) continue;
 
-      const event = JSON.parse(line.slice(6)) as ChatEvent;
-      if (event.type === "meta") {
-        handlers.onMeta?.(event.conversation_id, event.effort);
-      } else if (event.type === "delta") {
-        handlers.onDelta?.(event.text);
-      } else if (event.type === "error") {
-        handlers.onError?.(event.message);
-      } else if (event.type === "done") {
-        handlers.onDone?.();
+        const event = JSON.parse(line.slice(6)) as ChatEvent;
+        if (event.type === "meta") {
+          handlers.onMeta?.(event.conversation_id, event.effort, event.message);
+        } else if (event.type === "delta") {
+          handlers.onDelta?.(event.text);
+        } else if (event.type === "error") {
+          handlers.onError?.(event.message);
+          ended = true;
+        } else if (event.type === "done") {
+          handlers.onDone?.();
+          ended = true;
+        }
+        if (ended) break;
       }
     }
+  } finally {
+    await reader.cancel().catch(() => {});
+    reader.releaseLock();
   }
 }

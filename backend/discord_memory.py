@@ -11,7 +11,6 @@ này làm chết một cuộc trò chuyện.
 from __future__ import annotations
 
 import logging
-import time
 from dataclasses import dataclass, field
 
 import httpx
@@ -50,7 +49,7 @@ class DiscordMemory:
     ):
         self.base_url = base_url.rstrip("/")
         self.token = token
-        self.ttl = ttl
+        self.ttl = ttl  # Tham số cũ được giữ tương thích; không dùng để bỏ qua gateway.
         self.timeout = timeout
         self._cache: dict[str, tuple[float, MemorySnapshot]] = {}
 
@@ -66,10 +65,9 @@ class DiscordMemory:
         if not self.enabled or not discord_id.isdigit():
             return EMPTY
 
-        now = time.monotonic()
-        cached = self._cache.get(discord_id)
-        if cached and cached[0] > now:
-            return cached[1]
+        # Gateway đồng thời xác nhận quyền dùng trí nhớ (ẩn danh/xóa dữ liệu).
+        # Luôn hỏi lại mỗi lượt; không tái dùng một bản nhớ đã được cho phép cũ.
+        self.forget(discord_id)
 
         url = f"{self.base_url}/internal/memory/{discord_id}"
         try:
@@ -98,11 +96,17 @@ class DiscordMemory:
             logger.warning("Memory Gateway trả về JSON hỏng")
             return EMPTY
 
+        if not isinstance(payload, dict):
+            logger.warning("Memory Gateway trả về dữ liệu không hợp lệ")
+            return EMPTY
+
         if not payload.get("available"):
             # Chưa có trí nhớ, hoặc người này đang bật chế độ ẩn danh.
             snapshot = EMPTY
         else:
             explicit = payload.get("explicit") or []
+            if not isinstance(explicit, list):
+                explicit = []
             snapshot = MemorySnapshot(
                 summary=str(payload.get("summary") or "").strip(),
                 explicit=tuple(
@@ -110,7 +114,6 @@ class DiscordMemory:
                 ),
             )
 
-        self._cache[discord_id] = (now + self.ttl, snapshot)
         return snapshot
 
 

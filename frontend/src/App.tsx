@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   DISCORD_LOGIN_URL,
   UnauthorizedError,
@@ -20,6 +21,7 @@ import {
 const EFFORT_KEY = "peto-effort";
 const MAX_FILES = 4;
 const MAX_FILE_BYTES = 8 * 1024 * 1024;
+const MAX_TOTAL_BYTES = 16 * 1024 * 1024;
 const ACCEPT =
   "image/jpeg,image/png,image/webp,image/gif,.txt,.md,.csv,.json,.pdf,.py,.js,.ts,.tsx,.css,.html";
 
@@ -129,8 +131,17 @@ export default function App() {
   const [activeEffort, setActiveEffort] = useState<string | null>(null);
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [dragging, setDragging] = useState(false);
+  const [loadingConversation, setLoadingConversation] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingList, setLoadingList] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Conversation | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [showJump, setShowJump] = useState(false);
+  const [stopping, setStopping] = useState(false);
 
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -138,6 +149,14 @@ export default function App() {
   const fileRef = useRef<HTMLInputElement>(null);
   const dragDepth = useRef(0);
   const draftFilesRef = useRef<DraftFile[]>([]);
+  const loadRef = useRef<AbortController | null>(null);
+  const loadVersion = useRef(0);
+  const listVersion = useRef(0);
+  const listCount = useRef(50);
+  const nearBottom = useRef(true);
+  const messagesRef = useRef<HTMLDivElement>(null);
+  const deleteDialogRef = useRef<HTMLDialogElement>(null);
+  const authVersion = useRef(0);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -166,6 +185,8 @@ export default function App() {
 
   useEffect(() => {
     return () => {
+      abortRef.current?.abort();
+      loadRef.current?.abort();
       for (const item of draftFilesRef.current) {
         if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
       }
@@ -174,18 +195,48 @@ export default function App() {
 
   /** Phiên hết hạn giữa chừng: quay về màn hình đăng nhập thay vì báo lỗi lạ. */
   const handleUnauthorized = useCallback(() => {
+    authVersion.current += 1;
+    loadVersion.current += 1;
+    listVersion.current += 1;
+    loadRef.current?.abort();
+    abortRef.current?.abort();
     setAuth({ authenticated: false, login_configured: true });
     setMessages([]);
     setConversations([]);
     setConversationId(null);
-    setAuthError("Phiên đăng nhập đã hết hạn. Đăng nhập lại nhé.");
+    setDraft("");
+    setNotice(null);
+    for (const item of draftFilesRef.current) if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+    setDraftFiles([]);
+    setLoadingConversation(false);
+    setLoadingList(false);
+    setDeleteTarget(null);
+    setHasMore(false);
+    listCount.current = 50;
+    setAuthError("Phiên đăng nhập đã hết hạn hoặc tài khoản không còn được cho phép.");
   }, []);
 
   const refreshConversations = useCallback(async () => {
+    const version = ++listVersion.current;
+    setLoadingList(true);
     try {
-      setConversations(await listConversations());
+      const all: Conversation[] = [];
+      let more = true;
+      while (more && all.length < listCount.current) {
+        const page = await listConversations(all.length);
+        if (version !== listVersion.current) return;
+        all.push(...page.conversations);
+        more = page.has_more;
+        if (!page.conversations.length) break;
+      }
+      setConversations(all);
+      setHasMore(more);
     } catch (err) {
+      if (version !== listVersion.current) return;
       if (err instanceof UnauthorizedError) handleUnauthorized();
+      else setError("Không tải được danh sách hội thoại. Thử tải lại nhé.");
+    } finally {
+      if (version === listVersion.current) setLoadingList(false);
     }
   }, [handleUnauthorized]);
 
@@ -194,10 +245,17 @@ export default function App() {
   }, [auth?.authenticated, refreshConversations]);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (nearBottom.current) bottomRef.current?.scrollIntoView({ behavior: "instant", block: "end" });
+    else setShowJump(true);
   }, [messages, streaming]);
 
+  useEffect(() => {
+    if (deleteTarget) deleteDialogRef.current?.showModal();
+    else deleteDialogRef.current?.close();
+  }, [deleteTarget]);
+
   const addFiles = useCallback((list: FileList | File[]) => {
+    if (abortRef.current) return;
     const incoming = Array.from(list);
     setError(null);
     setDraftFiles((prev) => {
@@ -215,6 +273,10 @@ export default function App() {
           (item) => item.file.name === file.name && item.file.size === file.size,
         );
         if (duplicate) continue;
+        if (next.reduce((total, item) => total + item.file.size, 0) + file.size > MAX_TOTAL_BYTES) {
+          setError("Tổng tệp đính kèm tối đa 16 MB mỗi tin.");
+          continue;
+        }
         next.push({
           id: crypto.randomUUID(),
           file,
@@ -259,8 +321,7 @@ export default function App() {
             </a>
           ) : (
             <div className="error">
-              Máy chủ chưa cấu hình <code>DISCORD_CLIENT_ID</code> và{" "}
-              <code>DISCORD_CLIENT_SECRET</code>.
+              Chưa kết nối được dịch vụ đăng nhập. Thử tải lại trang hoặc báo người quản trị nhé.
             </div>
           )}
 
@@ -274,48 +335,86 @@ export default function App() {
   }
 
   async function openConversation(id: string) {
-    if (streaming) return;
+    if (abortRef.current || deleting) return;
+    loadRef.current?.abort();
+    const controller = new AbortController();
+    loadRef.current = controller;
+    const version = ++loadVersion.current;
     setError(null);
+    setNotice(null);
     setConversationId(id);
+    setMessages([]);
+    setLoadingConversation(true);
+    setLoadFailed(false);
+    nearBottom.current = true;
+    setShowJump(false);
     setSidebarOpen(false);
     try {
-      setMessages(await getMessages(id));
+      const loaded = await getMessages(id, controller.signal);
+      if (version !== loadVersion.current) return;
+      setMessages(loaded);
     } catch (err) {
+      if (version !== loadVersion.current || controller.signal.aborted) return;
       if (err instanceof UnauthorizedError) return handleUnauthorized();
+      setLoadFailed(true);
       setError(err instanceof Error ? err.message : "Không mở được hội thoại");
+    } finally {
+      if (version === loadVersion.current) {
+        setLoadingConversation(false);
+        loadRef.current = null;
+      }
     }
   }
 
   function newConversation() {
-    if (streaming) return;
+    if (abortRef.current) return;
+    loadRef.current?.abort();
+    loadVersion.current += 1;
+    setLoadingConversation(false);
+    setLoadFailed(false);
+    nearBottom.current = true;
+    setShowJump(false);
     setConversationId(null);
     setMessages([]);
     setError(null);
+    setNotice(null);
     setSidebarOpen(false);
     textareaRef.current?.focus();
   }
 
   async function removeConversation(id: string) {
-    if (streaming) return;
+    if (abortRef.current || deleting) return;
+    setDeleting(true);
     try {
       await deleteConversation(id);
       if (id === conversationId) newConversation();
+      setDeleteTarget(null);
       await refreshConversations();
     } catch (err) {
       if (err instanceof UnauthorizedError) return handleUnauthorized();
       setError(err instanceof Error ? err.message : "Không xóa được");
+      setDeleteTarget(null);
+    } finally {
+      setDeleting(false);
     }
   }
 
   async function submit() {
     const text = draft.trim();
-    if ((!text && draftFiles.length === 0) || streaming) return;
+    if ((!text && draftFiles.length === 0) || abortRef.current || loadingConversation || loadFailed) return;
+    if (text.length > 4000) {
+      setError("Tin nhắn tối đa 4.000 ký tự. Nội dung vẫn ở đây để cậu chỉnh lại.");
+      return;
+    }
 
     const pending = draftFiles;
-    setDraft("");
-    setDraftFiles([]);
+    const previousMessages = messages;
     setError(null);
+    setNotice(null);
     setStreaming(true);
+    setStopping(false);
+    nearBottom.current = true;
+    setShowJump(false);
     setActiveEffort(effort === "auto" ? null : effort);
 
     const optimistic: ChatAttachment[] = pending.map((item) => ({
@@ -336,14 +435,20 @@ export default function App() {
     const controller = new AbortController();
     abortRef.current = controller;
     let activeId = conversationId;
+    let accepted = false;
+    let completed = false;
+    const session = authVersion.current;
 
-    const appendToReply = (chunk: string) =>
+    const appendToReply = (chunk: string) => {
+      if (session !== authVersion.current) return;
       setMessages((prev) => {
         const next = [...prev];
         const last = next[next.length - 1];
+        if (last?.role !== "assistant") return prev;
         next[next.length - 1] = { ...last, content: last.content + chunk };
         return next;
       });
+    };
 
     try {
       const attachments: OutgoingAttachment[] = await Promise.all(
@@ -362,21 +467,22 @@ export default function App() {
           attachments,
         },
         {
-          onMeta: (id, usedEffort) => {
+          onMeta: (id, usedEffort, storedMessage) => {
+            if (session !== authVersion.current) return;
+            accepted = true;
             activeId = id;
             setConversationId(id);
             setActiveEffort(usedEffort);
+            setDraft("");
+            setDraftFiles([]);
+            if (storedMessage) setMessages((prev) => [...prev.slice(0, -2), storedMessage, prev[prev.length - 1]]);
           },
           onDelta: appendToReply,
           onError: (message) => {
+            if (session !== authVersion.current) return;
             setError(message);
-            setMessages((prev) => {
-              const last = prev[prev.length - 1];
-              return last?.role === "assistant" && !last.content
-                ? prev.slice(0, -1)
-                : prev;
-            });
           },
+          onDone: () => { completed = true; },
         },
         controller.signal,
       );
@@ -384,32 +490,49 @@ export default function App() {
       if (err instanceof UnauthorizedError) {
         handleUnauthorized();
       } else if (!controller.signal.aborted) {
-        setError(err instanceof Error ? err.message : "Mất kết nối tới máy chủ");
+        const message = err instanceof Error ? err.message : "Mất kết nối tới máy chủ";
+        setError(accepted ? message : `${message} Bản nháp được giữ lại; kiểm tra lịch sử trước khi gửi lại nếu kết nối bị ngắt.`);
       }
     } finally {
+      if (session === authVersion.current) {
+        if (!accepted) setMessages(previousMessages);
+        else {
+          setMessages((prev) => {
+            const last = prev[prev.length - 1];
+            if (last?.role !== "assistant") return prev;
+            return last.content
+              ? [...prev.slice(0, -1), { ...last, status: completed ? "complete" : "incomplete" }]
+              : prev.slice(0, -1);
+          });
+        }
+        if (controller.signal.aborted) setNotice(accepted ? "Đã dừng. Phần đã trả lời được giữ lại." : "Đã dừng gửi. Bản nháp vẫn được giữ lại.");
+        if (activeId || !accepted) void refreshConversations();
+      }
+      if (accepted) for (const item of pending) if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
       setStreaming(false);
+      setStopping(false);
       setActiveEffort(null);
       abortRef.current = null;
-      if (activeId) void refreshConversations();
       textareaRef.current?.focus();
     }
   }
 
   function stop() {
+    setStopping(true);
     abortRef.current?.abort();
-    setStreaming(false);
-    setActiveEffort(null);
   }
 
   async function signOut() {
-    await logout();
-    setAuth({ authenticated: false, login_configured: true });
-    setMessages([]);
-    setConversations([]);
-    setConversationId(null);
+    try {
+      await logout();
+      handleUnauthorized();
+      setAuthError(null);
+    } catch {
+      setError("Chưa đăng xuất được. Thử lại nhé.");
+    }
   }
 
-  const canSend = (draft.trim().length > 0 || draftFiles.length > 0) && !streaming;
+  const canSend = (draft.trim().length > 0 || draftFiles.length > 0) && !streaming && !loadingConversation && !loadFailed;
   const effortMeta = EFFORTS.find((item) => item.value === effort) ?? EFFORTS[0];
 
   return (
@@ -423,11 +546,11 @@ export default function App() {
       )}
 
       <aside className={sidebarOpen ? "sidebar open" : "sidebar"}>
-        <button className="new-chat" onClick={newConversation} disabled={streaming}>
+        <button className="new-chat" onClick={newConversation} disabled={streaming || deleting}>
           + Trò chuyện mới
         </button>
         <nav className="conversation-list">
-          {conversations.length === 0 && (
+          {conversations.length === 0 && !loadingList && (
             <p className="empty-hint">Chưa có cuộc trò chuyện nào.</p>
           )}
           {conversations.map((conversation) => (
@@ -439,8 +562,10 @@ export default function App() {
             >
               <button
                 className="conv-open"
+                aria-current={conversation.id === conversationId ? "page" : undefined}
+                title={conversation.title}
                 onClick={() => void openConversation(conversation.id)}
-                disabled={streaming}
+                disabled={streaming || deleting}
               >
                 {conversation.title || "Chưa có tiêu đề"}
               </button>
@@ -448,13 +573,18 @@ export default function App() {
                 className="conv-delete"
                 title="Xóa hội thoại"
                 aria-label="Xóa hội thoại"
-                onClick={() => void removeConversation(conversation.id)}
-                disabled={streaming}
+                onClick={() => setDeleteTarget(conversation)}
+                disabled={streaming || deleting}
               >
                 ×
               </button>
             </div>
           ))}
+          {loadingList && <p className="empty-hint" role="status">Đang tải danh sách…</p>}
+          {hasMore && <button className="load-more" disabled={loadingList || streaming} onClick={() => {
+            listCount.current = conversations.length + 50;
+            void refreshConversations();
+          }}>Xem hội thoại cũ hơn</button>}
         </nav>
 
         <div className="account">
@@ -501,16 +631,26 @@ export default function App() {
           </div>
         </header>
 
-        <div className="messages">
-          {messages.length === 0 && !streaming && (
+        <div className="messages" ref={messagesRef} onScroll={() => {
+          const element = messagesRef.current;
+          if (!element) return;
+          nearBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 80;
+          setShowJump(!nearBottom.current);
+        }}>
+          {loadingConversation && <p className="loading-chat" role="status">Đang mở hội thoại…</p>}
+          {loadFailed && <div className="loading-chat">
+            <p>Chưa tải được nội dung hội thoại.</p>
+            <button className="load-more" onClick={() => conversationId && void openConversation(conversationId)}>Thử mở lại</button>
+          </div>}
+          {messages.length === 0 && !streaming && !loadingConversation && !loadFailed && (
             <div className="welcome">
               <span className="avatar big">P</span>
               <h1>Chào {auth.user?.display_name}</h1>
               <p>Nhắn gì đó, gửi ảnh, hoặc đính kèm tệp — Peto đang nghe đây.</p>
               <div className="welcome-hints">
-                <span>Mức suy nghĩ: thấp / trung bình / cao</span>
-                <span>Ảnh JPEG, PNG, WebP, GIF</span>
-                <span>Tệp chữ và PDF</span>
+                {["Hôm nay cậu thế nào?", "Giải thích giúp mình một bài khó", "Cùng lên kế hoạch cuối tuần nhé"].map((hint) => (
+                  <button key={hint} type="button" onClick={() => { setDraft(hint); textareaRef.current?.focus(); }}>{hint}</button>
+                ))}
               </div>
             </div>
           )}
@@ -548,24 +688,40 @@ export default function App() {
                 </div>
               )}
               {message.content ? (
-                <Markdown>{message.content}</Markdown>
-              ) : message.role === "assistant" ? (
+                <Markdown remarkPlugins={[remarkGfm]} components={{
+                  table: ({children}) => <div className="table-scroll" tabIndex={0} role="region" aria-label="Bảng nội dung"><table>{children}</table></div>,
+                  a: ({children, href}) => <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>,
+                }}>{message.content}</Markdown>
+              ) : message.role === "assistant" && streaming && !stopping && index === messages.length - 1 ? (
                 <span className="typing" aria-label={THINKING[activeEffort ?? "low"]}>
                   <i />
                   <i />
                   <i />
                 </span>
               ) : null}
+              {message.status === "incomplete" && <p className="message-status">Câu trả lời chưa hoàn tất</p>}
             </article>
           ))}
           <div ref={bottomRef} />
         </div>
 
+        {showJump && <button className="jump-latest" onClick={() => {
+          nearBottom.current = true;
+          setShowJump(false);
+          bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+        }}>↓ Tin mới nhất</button>}
+
         {error && (
           <div className="error" role="alert">
             {error}
+            <button type="button" className="dismiss-error" aria-label="Đóng thông báo" onClick={() => setError(null)}>×</button>
           </div>
         )}
+
+        {notice && <div className="error notice" role="status">
+          {notice}
+          <button type="button" className="dismiss-error" aria-label="Đóng thông báo trạng thái" onClick={() => setNotice(null)}>×</button>
+        </div>}
 
         <form
           className={dragging ? "composer-wrap dragging" : "composer-wrap"}
@@ -609,6 +765,7 @@ export default function App() {
                     </span>
                     <button
                       type="button"
+                      disabled={streaming}
                       className="chip-remove"
                       aria-label={`Gỡ ${item.file.name}`}
                       onClick={() => removeDraftFile(item.id)}
@@ -625,6 +782,8 @@ export default function App() {
               value={draft}
               rows={1}
               placeholder="Nhắn cho Peto…"
+              aria-label="Nhắn cho Peto"
+              disabled={streaming}
               onChange={(event) => setDraft(event.target.value)}
               onPaste={(event) => {
                 const files = Array.from(event.clipboardData.files);
@@ -634,7 +793,7 @@ export default function App() {
                 }
               }}
               onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.shiftKey) {
+                if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
                   event.preventDefault();
                   void submit();
                 }
@@ -683,8 +842,8 @@ export default function App() {
               </div>
 
               {streaming ? (
-                <button type="button" className="stop" onClick={stop}>
-                  Dừng
+                <button type="button" className="stop" disabled={stopping} onClick={stop}>
+                  {stopping ? "Đang dừng…" : "Dừng"}
                 </button>
               ) : (
                 <button type="submit" className="send" disabled={!canSend} aria-label="Gửi">
@@ -693,8 +852,24 @@ export default function App() {
               )}
             </div>
           </div>
+          <p className="composer-note">
+            {draftFiles.some((item) => /\.pdf$/i.test(item.file.name) || item.file.type === "application/pdf")
+              ? "PDF được lưu để tải lại; Peto chưa đọc nội dung PDF. Dán phần chữ cần hỏi vào tin nhắn nhé."
+              : "Gửi ảnh hoặc tệp chữ · tối đa 4 tệp, 8 MB/tệp, tổng 16 MB. PDF chỉ lưu để tải lại."}
+          </p>
         </form>
       </main>
+      <dialog ref={deleteDialogRef} className="confirm-dialog" aria-labelledby="delete-title" onCancel={(event) => {
+        event.preventDefault();
+        if (!deleting) setDeleteTarget(null);
+      }}>
+        <h2 id="delete-title">Xóa hội thoại này?</h2>
+        <p>“{deleteTarget?.title || "Chưa có tiêu đề"}” và các tệp đính kèm sẽ bị xóa. Không thể hoàn tác.</p>
+        <div className="dialog-actions">
+          <button autoFocus disabled={deleting} onClick={() => setDeleteTarget(null)}>Giữ lại</button>
+          <button className="danger-button" disabled={deleting} onClick={() => deleteTarget && void removeConversation(deleteTarget.id)}>{deleting ? "Đang xóa…" : "Xóa hội thoại"}</button>
+        </div>
+      </dialog>
     </div>
   );
 }

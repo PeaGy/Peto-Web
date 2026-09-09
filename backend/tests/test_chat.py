@@ -260,7 +260,7 @@ async def test_bad_attachment_is_rejected(client):
     assert response.status_code == 400
 
 
-async def test_attachment_is_not_visible_to_another_user(client):
+async def test_attachment_is_not_visible_to_another_user(client, monkeypatch):
     events = await _send(
         client,
         "bí mật",
@@ -275,6 +275,7 @@ async def test_attachment_is_not_visible_to_another_user(client):
     import auth
     from config import SESSION_COOKIE, owner_key
 
+    monkeypatch.setattr(auth, "ALLOWED_DISCORD_IDS", auth.ALLOWED_DISCORD_IDS | {"222222222222222222"})
     client.cookies.set(SESSION_COOKIE, auth._sign(owner_key("222222222222222222")))
     assert (await client.get(url)).status_code == 404
 
