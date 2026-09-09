@@ -330,15 +330,23 @@ def _parse_manual_redirect(raw: str) -> dict[str, str]:
     parsed = urllib.parse.urlparse(raw)
     host = (parsed.hostname or "").lower()
 
-    # Dấu hiệu của link ĐI (authorize), không phải URL VỀ (callback).
+    # URL còn nằm trên x.ai nghĩa là chưa đi hết luồng: hoặc là link authorize
+    # vừa in ra, hoặc là trang consent mà người dùng chưa bấm phê duyệt.
     if host.endswith("x.ai") or "code_challenge" in raw:
+        if "consent" in (parsed.path or ""):
+            where = (
+                "Bạn đang ở TRANG XIN QUYỀN và chưa bấm nút phê duyệt.\n"
+                "Bấm nút Authorize / Allow trên trang đó trước đã."
+            )
+        else:
+            where = "Bạn đang dán lại chính cái link đăng nhập vừa in ra."
         raise XaiAuthError(
-            "Bạn đang dán chính cái link đăng nhập vừa in ra.\n"
-            "Cần dán địa chỉ mà trình duyệt nhảy TỚI sau khi bạn đăng nhập "
-            "xong — nó bắt đầu bằng\n"
+            f"{where}\n"
+            "Sau khi phê duyệt, trình duyệt sẽ nhảy sang một địa chỉ khác bắt "
+            "đầu bằng\n"
             f"  http://{REDIRECT_HOST}:{REDIRECT_PORT}{REDIRECT_PATH}?code=...\n"
-            "và trang đó sẽ báo không kết nối được. Cứ copy nguyên dòng địa chỉ "
-            "đó ở thanh URL."
+            "Trang đó báo 'không kết nối được' là đúng. Copy nguyên dòng địa "
+            "chỉ đó ở thanh URL rồi dán vào đây."
         )
 
     query = parsed.query or raw.lstrip("?")

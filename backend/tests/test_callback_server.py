@@ -120,3 +120,18 @@ def test_user_cancellation_is_passed_through():
         "http://127.0.0.1:56122/callback?error=access_denied&state=CeH"
     )
     assert result["error"] == "access_denied"
+
+
+def test_pasting_the_consent_page_is_caught():
+    """Trang consent vẫn ở trên x.ai và chưa có code — phải nói rõ."""
+    from xai_auth import XaiAuthError
+
+    consent = (
+        "https://accounts.x.ai/oauth2/consent?response_type=code"
+        "&client_id=b1a&state=kbfO&code_challenge=cZhV"
+    )
+    with pytest.raises(XaiAuthError) as excinfo:
+        _parse_manual_redirect(consent)
+    message = str(excinfo.value)
+    assert "chưa bấm nút phê duyệt" in message
+    assert "Authorize" in message

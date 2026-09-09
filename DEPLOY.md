@@ -110,16 +110,23 @@ cd /home/ubuntu/peto-web/backend
 /home/ubuntu/peto-web/.venv/bin/python -m xai_auth login --manual
 ```
 
-Có **hai URL khác nhau** trong bước này, đừng nhầm:
+Trình duyệt sẽ đi qua **ba trang**. Chỉ trang cuối mới là cái cần copy:
 
-1. CLI in ra một link dài bắt đầu bằng `https://auth.x.ai/oauth2/authorize?...`
-   → **mở link này trên máy cá nhân** và đăng nhập xAI.
-2. Đăng nhập xong, trình duyệt tự nhảy sang địa chỉ **khác**, bắt đầu bằng
-   `http://127.0.0.1:56122/callback?code=...`. Trang này sẽ báo **không kết nối
-   được** — đúng như vậy, vì máy bạn không chạy Peto Web.
-   → **copy địa chỉ MỚI này** ở thanh URL và dán vào terminal SSH.
+| | Địa chỉ | Làm gì |
+| --- | --- | --- |
+| 1 | `auth.x.ai/oauth2/authorize?...` | Link CLI in ra. Mở trên máy cá nhân, đăng nhập xAI |
+| 2 | `accounts.x.ai/oauth2/consent?...` | Trang xin quyền. **Bấm nút Authorize / Allow** |
+| 3 | `127.0.0.1:56122/callback?code=...` | **Copy dòng này** ở thanh URL |
 
-Dán nhầm link số 1 vào là hỏng. CLI có kiểm tra và sẽ nói rõ nếu bạn nhầm.
+Trang 3 sẽ hiện lỗi *"This site can't be reached"* — **đúng như vậy**. Máy bạn
+không chạy Peto Web, chỉ VPS chạy. Ta chỉ cần chuỗi URL, không cần trang tải
+được.
+
+Hai chỗ hay nhầm:
+- Dán lại link ở **trang 1** (link CLI vừa in). Không có `code`.
+- Dán URL ở **trang 2** khi chưa bấm nút phê duyệt. Cũng chưa có `code`.
+
+CLI kiểm tra cả hai trường hợp và sẽ nói rõ bạn đang nhầm chỗ nào.
 
 Sau mỗi lần thất bại, phải **chạy lại lệnh** để lấy link mới — mã bí mật đi kèm
 lần chạy trước đã mất khi tiến trình thoát, dùng lại link cũ sẽ không được.
