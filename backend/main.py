@@ -32,6 +32,7 @@ import static_files
 from ai import ChatAttachment, ChatMessage, ProviderError, get_provider
 from ai.routing import choose_effort
 from attachments import AttachmentError
+from app_identity import get_app_identity
 from auth import current_owner
 from config import (
     ALLOWED_DISCORD_IDS,
@@ -201,6 +202,16 @@ def sse(payload: dict) -> str:
 @app.api_route("/api/health", methods=["GET", "HEAD"])
 async def health() -> dict:
     return {"ok": True, "provider": get_provider().name}
+
+
+@app.get("/api/app-info")
+async def app_info() -> dict:
+    """Tên và avatar của Peto, lấy từ chính Discord application.
+
+    Không yêu cầu đăng nhập vì màn hình đăng nhập cũng cần hiển thị, và nội
+    dung trả về vốn đã là thông tin công khai của application.
+    """
+    return await get_app_identity()
 
 
 @app.get("/api/conversations")

@@ -616,3 +616,9 @@ button:focus-visible, a:focus-visible, .table-scroll:focus-visible {
   .typing i { animation: none; }
   * { scroll-behavior: auto !important; }
 }
+
+/* Avatar that cua Peto lay tu Discord application */
+.avatar-image {
+  object-fit: cover;
+  background: var(--panel-2);
+}

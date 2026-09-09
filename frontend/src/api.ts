@@ -86,6 +86,18 @@ export async function logout(): Promise<void> {
 
 export const DISCORD_LOGIN_URL = "/api/auth/discord/login";
 
+export interface AppInfo {
+  name: string;
+  avatar_url: string | null;
+}
+
+/** Tên và avatar của Peto, lấy từ Discord application ở phía máy chủ. */
+export async function getAppInfo(): Promise<AppInfo> {
+  const response = await fetch("/api/app-info");
+  if (!response.ok) return { name: "Peto", avatar_url: null };
+  return (await response.json()) as AppInfo;
+}
+
 export async function listConversations(offset = 0, limit = 50): Promise<{
   conversations: Conversation[]; has_more: boolean;
 }> {

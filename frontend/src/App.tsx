@@ -5,11 +5,13 @@ import {
   DISCORD_LOGIN_URL,
   UnauthorizedError,
   deleteConversation,
+  getAppInfo,
   getAuthState,
   getMessages,
   listConversations,
   logout,
   sendMessage,
+  type AppInfo,
   type AuthState,
   type ChatAttachment,
   type Conversation,
@@ -118,8 +120,26 @@ function FileGlyph({ name, kind }: { name: string; kind: "image" | "file" }) {
   return <span className="file-ext">{ext}</span>;
 }
 
+/** Avatar của Peto: ảnh thật từ Discord application, chữ cái đầu nếu chưa có. */
+function PetoAvatar({ info, big }: { info: AppInfo | null; big?: boolean }) {
+  const className = big ? "avatar big" : "avatar";
+  if (info?.avatar_url) {
+    return (
+      <img
+        className={`${className} avatar-image`}
+        src={info.avatar_url}
+        alt={info.name}
+        width={big ? 56 : 34}
+        height={big ? 56 : 34}
+      />
+    );
+  }
+  return <span className={className}>{(info?.name ?? "Peto").charAt(0)}</span>;
+}
+
 export default function App() {
   const [auth, setAuth] = useState<AuthState | null>(null);
+  const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -171,6 +191,14 @@ export default function App() {
     void getAuthState()
       .then(setAuth)
       .catch(() => setAuth({ authenticated: false, login_configured: false }));
+  }, []);
+
+  // Avatar và tên lấy từ Discord application. Hỏng thì giữ chữ cái đầu, không
+  // để ảnh hưởng tới việc đăng nhập hay chat.
+  useEffect(() => {
+    void getAppInfo()
+      .then(setAppInfo)
+      .catch(() => setAppInfo(null));
   }, []);
 
   useEffect(() => {
@@ -303,8 +331,8 @@ export default function App() {
     return (
       <div className="login">
         <div className="login-card">
-          <span className="avatar big">P</span>
-          <h1>Peto</h1>
+          <PetoAvatar info={appInfo} big />
+          <h1>{appInfo?.name ?? "Peto"}</h1>
           <p className="login-sub">
             Đăng nhập bằng Discord để Peto biết cậu là ai.
           </p>
@@ -620,9 +648,9 @@ export default function App() {
           >
             <MenuIcon />
           </button>
-          <span className="avatar">P</span>
+          <PetoAvatar info={appInfo} />
           <div className="header-copy">
-            <strong>Peto</strong>
+            <strong>{appInfo?.name ?? "Peto"}</strong>
             <span className="subtitle">
               {streaming
                 ? THINKING[activeEffort ?? "low"]
@@ -644,7 +672,7 @@ export default function App() {
           </div>}
           {messages.length === 0 && !streaming && !loadingConversation && !loadFailed && (
             <div className="welcome">
-              <span className="avatar big">P</span>
+              <PetoAvatar info={appInfo} big />
               <h1>Chào {auth.user?.display_name}</h1>
               <p>Nhắn gì đó, gửi ảnh, hoặc đính kèm tệp — Peto đang nghe đây.</p>
               <div className="welcome-hints">
