@@ -417,3 +417,55 @@ VPS có sẵn **Node v22.22.1**, thỏa yêu cầu `>=22.12.0` của Vite 8. Nê
 `frontend/dist` giữ nguyên trong `.gitignore` — bản build không đi qua git, mà
 chạy `npm ci && npm run build` trên VPS. `package-lock.json` đã được theo dõi
 nên `npm ci` dùng được.
+
+## 17. Đã chạy thật trên VPS, trí nhớ đã thông (09/09/2026)
+
+**Mục tiêu ban đầu của dự án đã đạt.** Peto Web chạy tại
+`https://peto.pearto.shop`, nhóm bạn đăng nhập bằng Discord và dùng được, và
+Peto nhớ được người chat nhờ trí nhớ dài hạn từ bot Discord.
+
+Kiến trúc đang chạy trên VPS:
+
+```
+Cloudflare Tunnel → 127.0.0.1:8001  peto-web.service
+                                      ├── phục vụ frontend đã build
+                                      ├── xAI Grok qua OAuth (token riêng)
+                                      └── đọc trí nhớ ──┐
+                                                        │ loopback, chỉ đọc
+127.0.0.1:8766  Memory Gateway (trong peto.service) ◄───┘
+```
+
+### Bốn lỗi gặp khi deploy, đều đã sửa gốc
+Ghi lại vì đều là loại "chạy local thì đúng, deploy mới lộ":
+
+1. **`UnicodeEncodeError`** khi chạy `xai_auth login` — console Linux/Windows
+   không phải UTF-8. Sửa: ép UTF-8 cho stdout/stderr.
+2. **Luồng OAuth xAI trên máy không có trình duyệt** — thực tế xAI **hiện
+   thẳng mã lên màn hình** chứ không chuyển hướng về loopback như tôi tưởng.
+   Sửa: `--manual` nhận cả mã trần lẫn URL callback; bỏ kiểm tra `state` khi
+   dán mã trần (không có state để đối chiếu, và người dùng tự chép từ trang
+   của xAI nên không có đường bị nhét mã lạ).
+3. **`PETO_FRONTEND_URL` mặc định `localhost:5173`** — deploy xong đăng nhập
+   bị ném về máy nhà. Sửa: mặc định chuyển hướng **tương đối**, không cấu
+   hình gì cũng đúng.
+4. **Thiếu `PETO_MEMORY_GATEWAY_TOKEN`** trong `.env` của web — trí nhớ tắt
+   lặng lẽ, chỉ biểu hiện là "Peto không nhớ gì". Sửa: log rõ lúc khởi động
+   BẬT/TẮT và thiếu biến nào.
+
+Ngoài ra, hai chỗ trong `.env` phải tự sửa, không code nào cứu được:
+`DISCORD_REDIRECT_URI` và danh sách Redirects trong Discord Developer Portal.
+
+### Ghi chú vận hành
+- `.env` của bot dùng xuống dòng CRLF. `python-dotenv` xử lý được, **không cần
+  sửa**; nhưng khi lấy giá trị bằng `bash` phải thêm `| tr -d '\r'`.
+- `uvicorn --reload` **không** theo dõi `.env`. Sửa `.env` là phải restart.
+- Bot và web ăn chung hạn mức xAI vì cùng một tài khoản.
+
+### Trạng thái
+- Bot: **303 test, OK**. Web: **96 test, OK**.
+- Trí nhớ vẫn **một chiều**: web đọc từ Discord, không ghi ngược. Chưa duyệt
+  phần ghi ngược.
+
+### Lộ trình còn lại
+Theo mục 3 của tài liệu này: **giọng nói**, rồi **nhân vật 3D**. Cả hai đều
+chưa bắt đầu.
