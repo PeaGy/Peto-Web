@@ -211,3 +211,23 @@ async def test_memory_reaches_the_provider(client, patch_httpx, monkeypatch):
     assert seen
     assert "Rất thích Limbus." in seen[0]
     assert "Người Test" in seen[0]
+
+
+def test_half_configured_gateway_is_disabled():
+    """Đặt URL mà quên token thì phải coi như tắt, không gọi bừa."""
+    assert not DiscordMemory(base_url="http://gateway.test", token="").enabled
+    assert not DiscordMemory(base_url="", token="token-test").enabled
+    assert DiscordMemory(base_url="http://gateway.test", token="t").enabled
+
+
+def test_startup_warns_about_half_configuration():
+    """Thiếu một nửa cấu hình phải cảnh báo lúc khởi động, không im lặng.
+
+    Đây đúng là tình huống đã xảy ra khi deploy: `.env` của web có URL nhưng
+    thiếu token, nên trí nhớ tắt lặng lẽ và chỉ biểu hiện là 'Peto không nhớ gì'.
+    """
+    import inspect
+
+    source = inspect.getsource(main.lifespan)
+    assert "PETO_MEMORY_GATEWAY_TOKEN" in source
+    assert "Trí nhớ từ Discord" in source
