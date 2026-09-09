@@ -54,7 +54,13 @@ DISCORD_REDIRECT_URI = os.getenv(
 ).strip()
 
 # Nơi đưa người dùng về sau khi đăng nhập xong.
-FRONTEND_URL = os.getenv("PETO_FRONTEND_URL", "http://localhost:5173").strip()
+#
+# Để TRỐNG là tốt nhất: khi đó backend chuyển hướng bằng đường dẫn tương đối
+# ("/"), nên người dùng luôn quay lại đúng domain họ vừa đến — chạy local hay
+# chạy trên VPS đều đúng, không phải cấu hình gì.
+#
+# Chỉ đặt giá trị khi frontend nằm ở domain KHÁC với backend.
+FRONTEND_URL = os.getenv("PETO_FRONTEND_URL", "").strip()
 
 # Khóa ký cookie phiên. Bắt buộc đặt thật khi deploy — đổi khóa = đăng xuất tất cả.
 SESSION_SECRET = os.getenv("PETO_SESSION_SECRET", "").strip()

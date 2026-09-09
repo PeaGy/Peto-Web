@@ -78,7 +78,6 @@ DISCORD_REDIRECT_URI=https://peto.pearto.shop/api/auth/discord/callback
 
 PETO_ALLOWED_DISCORD_IDS=<4 ID của nhóm, cách nhau bằng dấu phẩy>
 PETO_SESSION_SECRET=<sinh MỚI, đừng dùng lại khóa của máy cá nhân>
-PETO_FRONTEND_URL=https://peto.pearto.shop
 
 # Bắt buộc khi chạy HTTPS — không có dòng này thì trình duyệt
 # sẽ không giữ cookie đăng nhập.
@@ -317,6 +316,7 @@ sudo journalctl -u peto-web -n 50 --no-pager
 | Hiện tượng | Nguyên nhân hay gặp |
 | --- | --- |
 | Đăng nhập xong lại quay về màn hình đăng nhập | Thiếu `PETO_COOKIE_SECURE=true`, cookie bị trình duyệt bỏ |
+| Đăng nhập xong bị ném về `localhost:5173` | `PETO_FRONTEND_URL` còn giá trị cũ — xóa hẳn dòng đó đi |
 | Discord báo `Invalid OAuth2 redirect_uri` | Chưa thêm redirect production vào Developer Portal |
 | Vào web thấy 404 | Chưa build frontend, hoặc thiếu `frontend/dist` |
 | `provider` là `mock` | Thiếu `PETO_AI_PROVIDER=xai` trong `.env` |

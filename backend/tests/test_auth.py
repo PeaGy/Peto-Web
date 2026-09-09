@@ -149,3 +149,32 @@ async def test_logout_clears_cookie(client):
     response = await client.post("/api/auth/logout")
     assert response.status_code == 200
     assert response.json() == {"ok": True}
+
+
+def test_redirect_target_is_relative_by_default():
+    """Không cấu hình gì thì phải quay về ĐÚNG domain người dùng vừa đến.
+
+    Trước đây mặc định là http://localhost:5173, nên deploy lên VPS mà quên đặt
+    PETO_FRONTEND_URL là đăng nhập xong bị ném về localhost.
+    """
+    assert auth._frontend_url() == "/"
+    assert auth._frontend_url(auth_error="hong").startswith("/?auth_error=")
+
+
+def test_failed_login_redirects_relatively():
+    response = auth._fail("thu nghiem")
+    location = response.headers["location"]
+    assert location.startswith("/?auth_error=")
+    assert "localhost" not in location
+
+
+def test_absolute_frontend_url_is_respected(monkeypatch):
+    """Vẫn cho phép ép domain khác khi frontend tách riêng."""
+    monkeypatch.setattr(auth, "FRONTEND_URL", "https://peto.example/app")
+    assert auth._frontend_url() == "https://peto.example/app"
+    assert auth._frontend_url(auth_error="x") == (
+        "https://peto.example/app?auth_error=x"
+    )
+
+    monkeypatch.setattr(auth, "FRONTEND_URL", "https://peto.example/?a=1")
+    assert auth._frontend_url(auth_error="x") == "https://peto.example/?a=1&auth_error=x"

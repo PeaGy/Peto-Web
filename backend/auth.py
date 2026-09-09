@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 import secrets
+from urllib.parse import urlencode
 
 import httpx
 from fastapi import APIRouter, Cookie, HTTPException, Request, Response
@@ -137,9 +138,22 @@ async def discord_login() -> RedirectResponse:
     return response
 
 
+def _frontend_url(**params: str) -> str:
+    """Địa chỉ đưa người dùng về sau khi xong việc ở Discord.
+
+    Mặc định là đường dẫn tương đối, nên trình duyệt tự quay lại đúng origin
+    vừa gọi callback — local ra local, domain thật ra domain thật. Không cấu
+    hình gì thì không sai được.
+    """
+    base = FRONTEND_URL or "/"
+    if not params:
+        return base
+    query = urlencode(params)
+    return f"{base}{'&' if '?' in base else '?'}{query}"
+
+
 def _fail(message: str) -> RedirectResponse:
-    url = httpx.URL(FRONTEND_URL, params={"auth_error": message})
-    return RedirectResponse(str(url), status_code=307)
+    return RedirectResponse(_frontend_url(auth_error=message), status_code=307)
 
 
 @router.get("/discord/callback")
@@ -206,7 +220,7 @@ async def discord_callback(
         avatar_url=_avatar_url(user),
     )
 
-    response = RedirectResponse(FRONTEND_URL, status_code=307)
+    response = RedirectResponse(_frontend_url(), status_code=307)
     response.set_cookie(
         SESSION_COOKIE,
         _sign(owner),
