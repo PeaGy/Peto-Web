@@ -84,3 +84,39 @@ def test_port_is_released_after_close():
 )
 def test_manual_redirect_paste_accepts_common_shapes(pasted):
     assert _parse_manual_redirect(pasted) == {"code": "abc", "state": "xyz"}
+
+
+def test_pasting_the_authorize_link_is_caught():
+    """Lỗi rất dễ mắc: dán lại chính link đăng nhập thay vì URL trả về."""
+    from xai_auth import XaiAuthError
+
+    authorize = (
+        "https://auth.x.ai/oauth2/authorize?response_type=code"
+        "&client_id=b1a&code_challenge=xVro&state=CeH"
+    )
+    with pytest.raises(XaiAuthError) as excinfo:
+        _parse_manual_redirect(authorize)
+    assert "link đăng nhập" in str(excinfo.value)
+
+
+def test_missing_code_is_reported_clearly():
+    from xai_auth import XaiAuthError
+
+    with pytest.raises(XaiAuthError) as excinfo:
+        _parse_manual_redirect("http://127.0.0.1:56122/callback?state=CeH")
+    assert "code" in str(excinfo.value)
+
+
+def test_empty_paste_is_reported():
+    from xai_auth import XaiAuthError
+
+    with pytest.raises(XaiAuthError):
+        _parse_manual_redirect("   ")
+
+
+def test_user_cancellation_is_passed_through():
+    # Có `error` thì cho qua, để tầng trên báo đúng lý do xAI trả về.
+    result = _parse_manual_redirect(
+        "http://127.0.0.1:56122/callback?error=access_denied&state=CeH"
+    )
+    assert result["error"] == "access_denied"

@@ -31,7 +31,7 @@ git clone https://github.com/PeaGy/Peto-Web.git peto-web
 cd peto-web
 
 python3 -m venv .venv
-.venv/bin/pip install -r backend/requirements.txt
+/home/ubuntu/peto-web/.venv/bin/pip install -r backend/requirements.txt
 ```
 
 Nếu repo để **private**, VPS sẽ bị hỏi mật khẩu. Cách gọn nhất là tạo một
@@ -101,22 +101,33 @@ chmod 600 .env
 
 ## 5. Đăng nhập xAI trên VPS
 
-VPS không có trình duyệt, nên dùng chế độ thủ công:
+VPS không có trình duyệt, nên dùng chế độ thủ công. Dùng **đường dẫn tuyệt đối**
+tới python của venv, không dùng `../.venv/...` (dạng tương đối làm Python in ra
+`RuntimeWarning: Unexpected value in sys.prefix`, vô hại nhưng gây rối):
 
 ```bash
 cd /home/ubuntu/peto-web/backend
-../.venv/bin/python -m xai_auth login --manual
+/home/ubuntu/peto-web/.venv/bin/python -m xai_auth login --manual
 ```
 
-Nó in ra một link. Mở link đó **trên máy cá nhân**, đăng nhập xAI. Trình duyệt
-sẽ nhảy tới `http://127.0.0.1:56122/callback?...` và báo **không kết nối được**
-— chuyện đó là bình thường và đúng như mong đợi. Copy nguyên địa chỉ trên thanh
-URL, dán vào terminal SSH.
+Có **hai URL khác nhau** trong bước này, đừng nhầm:
+
+1. CLI in ra một link dài bắt đầu bằng `https://auth.x.ai/oauth2/authorize?...`
+   → **mở link này trên máy cá nhân** và đăng nhập xAI.
+2. Đăng nhập xong, trình duyệt tự nhảy sang địa chỉ **khác**, bắt đầu bằng
+   `http://127.0.0.1:56122/callback?code=...`. Trang này sẽ báo **không kết nối
+   được** — đúng như vậy, vì máy bạn không chạy Peto Web.
+   → **copy địa chỉ MỚI này** ở thanh URL và dán vào terminal SSH.
+
+Dán nhầm link số 1 vào là hỏng. CLI có kiểm tra và sẽ nói rõ nếu bạn nhầm.
+
+Sau mỗi lần thất bại, phải **chạy lại lệnh** để lấy link mới — mã bí mật đi kèm
+lần chạy trước đã mất khi tiến trình thoát, dùng lại link cũ sẽ không được.
 
 Kiểm tra:
 
 ```bash
-../.venv/bin/python -m xai_auth status     # phải ra "Chế độ: oauth"
+/home/ubuntu/peto-web/.venv/bin/python -m xai_auth status   # phải ra "Chế độ: oauth"
 ```
 
 ---
@@ -224,7 +235,7 @@ firewall cho nó.
 cd /home/ubuntu/peto-web
 git status --short          # có thay đổi lạ thì dừng lại xem, đừng ép pull
 git pull --ff-only origin main
-.venv/bin/pip install -r backend/requirements.txt
+/home/ubuntu/peto-web/.venv/bin/pip install -r backend/requirements.txt
 cd frontend && npm ci && npm run build && cd ..
 sudo systemctl restart peto-web
 sudo journalctl -u peto-web -n 50 --no-pager

@@ -81,10 +81,19 @@ async def test_session_cookie_is_signed():
     assert auth.read_session("gia-mao") is None
     assert auth.read_session(None) is None
 
-    # Sửa một ký tự trong chữ ký là phải hỏng.
+    # Sửa phần payload là chữ ký phải hỏng.
+    #
+    # Cố ý KHÔNG sửa ký tự cuối của chữ ký: chữ ký là base64url, ký tự cuối
+    # mang bit thừa nên hai ký tự khác nhau có thể giải mã ra cùng chuỗi byte
+    # và chữ ký vẫn hợp lệ — sửa ở đó làm test lúc xanh lúc đỏ.
     token = auth._sign(TEST_OWNER)
-    tampered = token[:-1] + ("a" if token[-1] != "a" else "b")
-    assert auth.read_session(tampered) is None
+    middle = len(token) // 2
+    flipped = token[:middle] + ("A" if token[middle] != "A" else "B") + token[middle + 1:]
+    assert flipped != token
+    assert auth.read_session(flipped) is None
+
+    # Cắt cụt cũng phải hỏng.
+    assert auth.read_session(token[:middle]) is None
 
 
 def test_allowlist_blocks_unknown_discord_id():
