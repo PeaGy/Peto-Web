@@ -263,6 +263,21 @@ HEAD, việc đọc kết quả HEAD dễ gây hiểu nhầm. Cứ dùng GET nh�
 
 Giờ web và bot đã cùng máy, phần này mới dùng được.
 
+**Trước hết: bot trên VPS phải có code Memory Gateway.** Nó nằm ở repo bot,
+nên VPS phải pull về. Theo đúng quy trình trong `AGENTS.md` của repo đó:
+
+```bash
+cd /home/ubuntu/peto
+git status --short          # có thay đổi lạ thì DỪNG, đừng ép pull
+git pull --ff-only origin main
+source .venv/bin/activate
+python -m unittest tests.test_memory_gateway
+```
+
+Test phải kết thúc `OK` rồi mới đi tiếp.
+
+Sau đó sinh token dùng chung:
+
 ```bash
 python3 -c "import secrets; print(secrets.token_urlsafe(32))"
 ```
@@ -294,6 +309,16 @@ curl -s http://127.0.0.1:8766/health
 
 Cổng này **chỉ nghe loopback**. Đừng thêm nó vào `cloudflared`, đừng mở
 firewall cho nó.
+
+**Kiểm tra thật:** vào web hỏi Peto một điều bạn từng kể với nó trên
+Discord. Nhớ được là xong.
+
+Nếu Peto vẫn không nhớ gì mà chat vẫn chạy bình thường thì đó là thiết kế:
+phần trí nhớ hỏng sẽ bị bỏ qua chứ không chặn cuộc trò chuyện. Xem lý do:
+
+```bash
+sudo journalctl -u peto-web -n 50 --no-pager | grep -i memory
+```
 
 ---
 
