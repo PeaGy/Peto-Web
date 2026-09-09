@@ -4,6 +4,18 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Peto</title>
+    <script>
+      // Gắn giao diện đã lưu trước khi React chạy để không nháy sáng khi mở trang.
+      (function () {
+        var theme = "dark";
+        try {
+          var saved = localStorage.getItem("peto-theme");
+          if (saved === "light" || saved === "dark") theme = saved;
+          else if (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches) theme = "light";
+        } catch (error) {}
+        document.documentElement.dataset.theme = theme;
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

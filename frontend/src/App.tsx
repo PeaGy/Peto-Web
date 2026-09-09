@@ -21,6 +21,7 @@ import {
 } from "./api";
 
 const EFFORT_KEY = "peto-effort";
+const THEME_KEY = "peto-theme";
 const MAX_FILES = 4;
 const MAX_FILE_BYTES = 8 * 1024 * 1024;
 const MAX_TOTAL_BYTES = 16 * 1024 * 1024;
@@ -32,6 +33,14 @@ const EFFORTS: { value: Effort; label: string; hint: string }[] = [
   { value: "low", label: "Thấp", hint: "Trả lời nhanh, chat thường" },
   { value: "medium", label: "Trung bình", hint: "Cân bằng tốc độ và độ sâu" },
   { value: "high", label: "Cao", hint: "Suy nghĩ kỹ cho bài khó" },
+];
+
+type ThemeChoice = "light" | "dark" | "system";
+
+const THEMES: { value: ThemeChoice; label: string; hint: string }[] = [
+  { value: "light", label: "Sáng", hint: "Nền trắng, hợp ban ngày" },
+  { value: "dark", label: "Tối", hint: "Nền tối, dịu mắt buổi đêm" },
+  { value: "system", label: "Theo máy", hint: "Đổi theo cài đặt của thiết bị" },
 ];
 
 const THINKING: Record<string, string> = {
@@ -52,6 +61,26 @@ function readStoredEffort(): Effort {
     return EFFORTS.some((item) => item.value === value) ? (value as Effort) : "auto";
   } catch {
     return "auto";
+  }
+}
+
+function readStoredTheme(): ThemeChoice {
+  try {
+    const value = localStorage.getItem(THEME_KEY);
+    return THEMES.some((item) => item.value === value) ? (value as ThemeChoice) : "system";
+  } catch {
+    return "system";
+  }
+}
+
+/** Trình duyệt cũ hoặc môi trường test có thể không có matchMedia. */
+function lightMediaQuery(): MediaQueryList | null {
+  try {
+    return typeof window.matchMedia === "function"
+      ? window.matchMedia("(prefers-color-scheme: light)")
+      : null;
+  } catch {
+    return null;
   }
 }
 
@@ -114,6 +143,21 @@ function MenuIcon() {
   );
 }
 
+function GearIcon() {
+  return (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="3.1" stroke="currentColor" strokeWidth="1.7" />
+      <path
+        d="M19.4 14.2a1.6 1.6 0 0 0 .32 1.77l.06.06a1.9 1.9 0 1 1-2.7 2.7l-.05-.06a1.6 1.6 0 0 0-1.78-.32 1.6 1.6 0 0 0-.96 1.46v.17a1.9 1.9 0 1 1-3.8 0v-.09a1.6 1.6 0 0 0-1.05-1.46 1.6 1.6 0 0 0-1.77.32l-.06.06a1.9 1.9 0 1 1-2.7-2.7l.06-.06a1.6 1.6 0 0 0 .32-1.77 1.6 1.6 0 0 0-1.46-.96h-.17a1.9 1.9 0 0 1 0-3.8h.09a1.6 1.6 0 0 0 1.46-1.05 1.6 1.6 0 0 0-.32-1.78l-.06-.05a1.9 1.9 0 1 1 2.7-2.7l.06.06a1.6 1.6 0 0 0 1.77.32h.08a1.6 1.6 0 0 0 .96-1.46v-.17a1.9 1.9 0 1 1 3.8 0v.09a1.6 1.6 0 0 0 .96 1.46 1.6 1.6 0 0 0 1.78-.32l.05-.06a1.9 1.9 0 1 1 2.7 2.7l-.06.06a1.6 1.6 0 0 0-.32 1.77v.08a1.6 1.6 0 0 0 1.46.96h.17a1.9 1.9 0 0 1 0 3.8h-.09a1.6 1.6 0 0 0-1.46.96Z"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 function FileGlyph({ name, kind }: { name: string; kind: "image" | "file" }) {
   if (kind === "image") return null;
   const ext = name.split(".").pop()?.slice(0, 4).toUpperCase() || "FILE";
@@ -162,6 +206,8 @@ export default function App() {
   const [deleting, setDeleting] = useState(false);
   const [showJump, setShowJump] = useState(false);
   const [stopping, setStopping] = useState(false);
+  const [theme, setTheme] = useState<ThemeChoice>(readStoredTheme);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -176,6 +222,7 @@ export default function App() {
   const nearBottom = useRef(true);
   const messagesRef = useRef<HTMLDivElement>(null);
   const deleteDialogRef = useRef<HTMLDialogElement>(null);
+  const settingsDialogRef = useRef<HTMLDialogElement>(null);
   const authVersion = useRef(0);
 
   useEffect(() => {
@@ -206,6 +253,23 @@ export default function App() {
       localStorage.setItem(EFFORT_KEY, effort);
     } catch {}
   }, [effort]);
+
+  // Giao diện sáng/tối: "Theo máy" bám theo cài đặt hệ thống và đổi ngay khi
+  // hệ thống đổi, hai lựa chọn còn lại thì giữ nguyên.
+  useEffect(() => {
+    try {
+      localStorage.setItem(THEME_KEY, theme);
+    } catch {}
+    const media = lightMediaQuery();
+    const apply = () => {
+      document.documentElement.dataset.theme =
+        theme === "system" ? (media?.matches ? "light" : "dark") : theme;
+    };
+    apply();
+    if (theme !== "system" || !media?.addEventListener) return;
+    media.addEventListener("change", apply);
+    return () => media.removeEventListener("change", apply);
+  }, [theme]);
 
   useEffect(() => {
     draftFilesRef.current = draftFiles;
@@ -239,6 +303,7 @@ export default function App() {
     setLoadingConversation(false);
     setLoadingList(false);
     setDeleteTarget(null);
+    setSettingsOpen(false);
     setHasMore(false);
     listCount.current = 50;
     setAuthError("Phiên đăng nhập đã hết hạn hoặc tài khoản không còn được cho phép.");
@@ -281,6 +346,11 @@ export default function App() {
     if (deleteTarget) deleteDialogRef.current?.showModal();
     else deleteDialogRef.current?.close();
   }, [deleteTarget]);
+
+  useEffect(() => {
+    if (settingsOpen) settingsDialogRef.current?.showModal();
+    else settingsDialogRef.current?.close();
+  }, [settingsOpen]);
 
   const addFiles = useCallback((list: FileList | File[]) => {
     if (abortRef.current) return;
@@ -615,25 +685,29 @@ export default function App() {
           }}>Xem hội thoại cũ hơn</button>}
         </nav>
 
-        <div className="account">
-          <img
-            className="account-avatar"
-            src={auth.user?.avatar_url}
-            alt=""
-            width={32}
-            height={32}
-          />
-          <div className="account-name">
-            <strong>{auth.user?.display_name}</strong>
-            <span>@{auth.user?.username}</span>
-          </div>
+        <div className="sidebar-foot">
           <button
-            className="logout"
-            onClick={() => void signOut()}
-            disabled={streaming}
-            title="Đăng xuất"
+            type="button"
+            className="account"
+            aria-haspopup="dialog"
+            aria-label={`Cài đặt · ${auth.user?.display_name}`}
+            title="Mở cài đặt"
+            onClick={() => setSettingsOpen(true)}
           >
-            Thoát
+            <img
+              className="account-avatar"
+              src={auth.user?.avatar_url}
+              alt=""
+              width={32}
+              height={32}
+            />
+            <div className="account-name">
+              <strong>{auth.user?.display_name}</strong>
+              <span>@{auth.user?.username}</span>
+            </div>
+            <span className="account-gear">
+              <GearIcon />
+            </span>
           </button>
         </div>
       </aside>
@@ -887,6 +961,85 @@ export default function App() {
           </p>
         </form>
       </main>
+      <dialog
+        ref={settingsDialogRef}
+        className="settings-dialog"
+        aria-labelledby="settings-title"
+        onCancel={(event) => {
+          event.preventDefault();
+          setSettingsOpen(false);
+        }}
+      >
+        <div className="settings-head">
+          <h2 id="settings-title">Cài đặt</h2>
+          <button
+            type="button"
+            className="dialog-close"
+            aria-label="Đóng cài đặt"
+            onClick={() => setSettingsOpen(false)}
+          >
+            ×
+          </button>
+        </div>
+
+        <section className="settings-section">
+          <h3>Giao diện</h3>
+          <p className="settings-hint">Chọn nền sáng, nền tối, hoặc để Peto theo cài đặt của máy.</p>
+          <div className="theme-options">
+            {THEMES.map((item) => (
+              <label
+                key={item.value}
+                className={theme === item.value ? "theme-option selected" : "theme-option"}
+              >
+                <input
+                  type="radio"
+                  name="theme"
+                  value={item.value}
+                  checked={theme === item.value}
+                  onChange={() => setTheme(item.value)}
+                />
+                <span className={`theme-preview ${item.value}`} aria-hidden="true">
+                  <i />
+                  <i />
+                  <i />
+                </span>
+                <strong>{item.label}</strong>
+                <em>{item.hint}</em>
+              </label>
+            ))}
+          </div>
+        </section>
+
+        <section className="settings-section">
+          <h3>Tài khoản</h3>
+          <div className="settings-account">
+            <img
+              className="account-avatar"
+              src={auth.user?.avatar_url}
+              alt=""
+              width={38}
+              height={38}
+            />
+            <div className="account-name">
+              <strong>{auth.user?.display_name}</strong>
+              <span>@{auth.user?.username}</span>
+            </div>
+          </div>
+          <div className="settings-actions">
+            <button
+              type="button"
+              className="logout"
+              disabled={streaming}
+              onClick={() => {
+                setSettingsOpen(false);
+                void signOut();
+              }}
+            >
+              Đăng xuất
+            </button>
+          </div>
+        </section>
+      </dialog>
       <dialog ref={deleteDialogRef} className="confirm-dialog" aria-labelledby="delete-title" onCancel={(event) => {
         event.preventDefault();
         if (!deleting) setDeleteTarget(null);

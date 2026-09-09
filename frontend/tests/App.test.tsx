@@ -21,6 +21,7 @@ const deferred = <T,>() => {
 
 beforeEach(() => {
   vi.resetAllMocks();
+  localStorage.clear();
   vi.mocked(api.getAuthState).mockResolvedValue({ authenticated: true, login_configured: true,
     user: { discord_id: '111', username: 'demo', display_name: 'Demo', avatar_url: '' } });
   vi.mocked(api.listConversations).mockResolvedValue({ conversations: [conversation('A'), conversation('B')], has_more: false });
@@ -133,6 +134,18 @@ it('asks before deleting and keeps the conversation when cancelled', async () =>
   expect(api.deleteConversation).not.toHaveBeenCalled();
   fireEvent.click(within(dialog).getByRole('button', {name:'Giữ lại'}));
   expect(api.deleteConversation).not.toHaveBeenCalled();
+  expect(screen.queryByRole('dialog')).toBeNull();
+});
+
+it('opens settings from the account box and switches to the light theme', async () => {
+  await openApp();
+  expect(document.documentElement.dataset.theme).toBe('dark');
+  fireEvent.click(screen.getByRole('button', {name: /Cài đặt · Demo/}));
+  const dialog = screen.getByRole('dialog');
+  fireEvent.click(within(dialog).getByRole('radio', {name: /Sáng/}));
+  expect(document.documentElement.dataset.theme).toBe('light');
+  expect(localStorage.getItem('peto-theme')).toBe('light');
+  fireEvent.click(within(dialog).getByRole('button', {name: 'Đóng cài đặt'}));
   expect(screen.queryByRole('dialog')).toBeNull();
 });
 
