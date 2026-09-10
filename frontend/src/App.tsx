@@ -688,29 +688,32 @@ export default function App() {
               <span className="studio-eyebrow">Peto tạo ảnh</span>
               <p>Một chút tưởng tượng,<br />một thế giới của riêng bạn.</p>
             </div>
-            <nav className="imagine-job-list" aria-label="Ảnh đã tạo">
-              {imagineJobs.length === 0 && (
-                <p className="empty-hint">Chưa có ảnh nào. Ảnh bạn tạo sẽ hiện ở đây.</p>
-              )}
-              {imagineJobs.map((job) => (
-                <button
-                  key={job.id}
-                  className="job-link"
-                  title={job.prompt}
-                  onClick={() => {
-                    setFocusJobId(job.id);
-                    setSidebarOpen(false);
-                  }}
-                >
-                  {job.images[0] ? (
-                    <img src={job.images[0].url} alt="" loading="lazy" />
-                  ) : (
-                    <span className="job-link-blank" aria-hidden="true" />
-                  )}
-                  <span>{job.prompt}</span>
-                </button>
-              ))}
-            </nav>
+            <div className="imagine-library">
+              <h2 className="imagine-library-title">Thư viện</h2>
+              <nav className="imagine-job-list" aria-label="Thư viện">
+                {imagineJobs.length === 0 && (
+                  <p className="empty-hint">Chưa có ảnh nào. Ảnh bạn tạo sẽ hiện ở đây.</p>
+                )}
+                {imagineJobs.map((job) => (
+                  <button
+                    key={job.id}
+                    className="job-link"
+                    title={job.prompt}
+                    aria-label={job.prompt}
+                    onClick={() => {
+                      setFocusJobId(job.id);
+                      setSidebarOpen(false);
+                    }}
+                  >
+                    {job.images[0] ? (
+                      <img src={job.images[0].url} alt="" loading="lazy" />
+                    ) : (
+                      <span className="job-link-blank" aria-hidden="true" />
+                    )}
+                  </button>
+                ))}
+              </nav>
+            </div>
           </>
         )}
         {view === "chat" && (

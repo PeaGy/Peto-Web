@@ -103,48 +103,57 @@ body {
   color: var(--text);
 }
 
-.imagine-sidebar-note { padding: 22px 12px 14px; }
+.imagine-sidebar-note { padding: 22px 12px 0; }
 .imagine-sidebar-note p { color: var(--text); font-size: 17px; line-height: 1.6; }
+
+/* Thư viện: lưới hai ảnh mỗi hàng, vừa đúng bề ngang cột. */
+.imagine-library {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.imagine-library-title {
+  padding: 0 2px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
 
 .imagine-job-list {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-content: start;
+  gap: 6px;
 }
 
+.imagine-job-list .empty-hint { grid-column: 1 / -1; }
+
 .job-link {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  width: 100%;
-  padding: 7px 8px;
-  border: 0;
-  border-radius: 8px;
-  background: none;
-  color: var(--text);
-  font-size: 14px;
-  text-align: left;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--panel-2);
+  aspect-ratio: 1;
   cursor: pointer;
 }
 
-.job-link:hover { background: var(--panel-2); }
+.job-link:hover, .job-link:focus-visible { border-color: var(--accent); }
 
 .job-link img, .job-link-blank {
-  flex: none;
-  width: 30px;
-  height: 30px;
-  border-radius: 6px;
+  display: block;
+  width: 100%;
+  height: 100%;
   object-fit: cover;
   background: var(--panel-2);
-}
-
-.job-link > span {
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
 }
 
 .conversation-list {

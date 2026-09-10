@@ -81,10 +81,12 @@ it('liệt kê lượt tạo ảnh ở cột trái và cuộn tới lượt đư
   vi.mocked(api.listImagineJobs).mockResolvedValue([job('j1', 'Ngôi nhà bên hồ'), job('j2', 'Mèo trên mặt trăng')]);
   await openApp();
   fireEvent.click(screen.getByRole('button', { name: 'Tạo ảnh', exact: true }));
-  const list = await screen.findByRole('navigation', { name: 'Ảnh đã tạo' });
+  const list = await screen.findByRole('navigation', { name: 'Thư viện' });
   await within(list).findByRole('button', { name: 'Ngôi nhà bên hồ' });
-  expect(within(list).getAllByRole('button').map((item) => item.textContent))
+  expect(within(list).getAllByRole('button').map((item) => item.getAttribute('aria-label')))
     .toEqual(['Ngôi nhà bên hồ', 'Mèo trên mặt trăng']);
+  expect([...list.querySelectorAll('img')].map((item) => item.getAttribute('src')))
+    .toEqual(['/api/imagine/images/j1', '/api/imagine/images/j2']);
 
   const scrolled = vi.mocked(Element.prototype.scrollIntoView);
   scrolled.mockClear();
@@ -96,7 +98,7 @@ it('liệt kê lượt tạo ảnh ở cột trái và cuộn tới lượt đư
 it('báo cột trái trống khi chưa có ảnh nào', async () => {
   await openApp();
   fireEvent.click(screen.getByRole('button', { name: 'Tạo ảnh', exact: true }));
-  const list = await screen.findByRole('navigation', { name: 'Ảnh đã tạo' });
+  const list = await screen.findByRole('navigation', { name: 'Thư viện' });
   expect(within(list).getByText('Chưa có ảnh nào. Ảnh bạn tạo sẽ hiện ở đây.')).toBeTruthy();
   expect(within(list).queryAllByRole('button')).toHaveLength(0);
 });
@@ -109,7 +111,7 @@ it('thêm lượt vừa tạo vào cột trái', async () => {
   await screen.findByRole('heading', { name: /Bạn tưởng tượng/ });
   fireEvent.change(screen.getByLabelText('Bức ảnh bạn muốn tạo'), { target: { value: 'Mèo tím' } });
   fireEvent.submit(screen.getByLabelText('Bức ảnh bạn muốn tạo').closest('form')!);
-  const list = await screen.findByRole('navigation', { name: 'Ảnh đã tạo' });
+  const list = await screen.findByRole('navigation', { name: 'Thư viện' });
   await waitFor(() => expect(within(list).getByRole('button', { name: 'Mèo tím' })).toBeTruthy());
 });
 
