@@ -16,6 +16,8 @@
   --overlay-soft: rgba(20, 19, 26, 0.72);
   --shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
   --shadow-strong: 12px 0 40px rgba(0, 0, 0, 0.35);
+  --scroll-thumb: #3f3c54;
+  --scroll-thumb-hover: #565273;
   --dialog-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
   color-scheme: dark;
 }
@@ -36,6 +38,8 @@
   --overlay-soft: rgba(255, 255, 255, 0.78);
   --shadow: 0 10px 30px rgba(72, 55, 110, 0.12);
   --shadow-strong: 12px 0 40px rgba(72, 55, 110, 0.18);
+  --scroll-thumb: #cfc8e4;
+  --scroll-thumb-hover: #b4a9d3;
   --dialog-shadow: 0 24px 60px rgba(48, 36, 78, 0.22);
   color-scheme: light;
 }
@@ -48,6 +52,37 @@ body {
   background: var(--bg);
   color: var(--text);
   font: 15px/1.6 "Segoe UI", system-ui, -apple-system, sans-serif;
+}
+
+/* Thanh cuộn mặc định của Windows quá dày và còn cả nút mũi tên.
+   Chromium bỏ qua ::-webkit-scrollbar ngay khi thấy scrollbar-width, nên phải để
+   nhánh webkit đứng một mình ở đây và đẩy thuộc tính chuẩn xuống @supports bên
+   dưới — đổi thứ tự là mất quyền chỉnh bề rộng lẫn bo góc.
+   Viền trong suốt cộng background-clip tạo khoảng đệm, cho thanh cuộn bo tròn
+   mảnh nằm giữa rãnh thay vì dán sát mép. */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+
+::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: var(--scroll-thumb);
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  border-width: 2px;
+  background: var(--scroll-thumb-hover);
+  background-clip: content-box;
+}
+
+/* Firefox không có ::-webkit-scrollbar nên chỉ nó chạy vào đây. Hai thuộc tính
+   này tự kế thừa xuống mọi vùng cuộn, khai báo một lần là đủ. */
+@supports not selector(::-webkit-scrollbar) {
+  html {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scroll-thumb) transparent;
+  }
 }
 
 .app { display: flex; height: 100dvh; }
