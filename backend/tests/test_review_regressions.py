@@ -9,14 +9,21 @@ import auth
 import db
 import main
 from ai.base import ProviderError
+from config import SESSION_COOKIE
 from conftest import TEST_DISCORD_ID, TEST_OWNER, read_events
 from discord_memory import DiscordMemory
 from rate_limit import Admission
 
 
-async def test_revoked_cookie_cannot_use_any_private_endpoint(client, monkeypatch):
+async def test_cookie_hong_khong_dung_duoc_endpoint_rieng_tu_nao(client):
+    """Cookie không hợp lệ phải bị chặn ở MỌI endpoint riêng tư.
+
+    Bản trước kiểm tra việc thu hồi quyền bằng cách xóa Discord ID khỏi
+    allowlist. Allowlist đã bị gỡ có chủ đích, nên giờ kiểm tra thứ còn lại và
+    vẫn quan trọng: chữ ký hỏng thì không cửa nào mở.
+    """
     conversation = await db.create_conversation(TEST_OWNER)
-    monkeypatch.setattr(auth, "ALLOWED_DISCORD_IDS", set())
+    client.cookies.set(SESSION_COOKIE, 'khong-phai-chu-ky-that')
     assert (await client.get('/api/auth/me')).json()['authenticated'] is False
     for method, path in [
         ('GET', '/api/conversations'),

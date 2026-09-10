@@ -1,12 +1,13 @@
-"""Đăng nhập bằng Discord OAuth2.
+"""Đăng nhập bằng Discord, Google, hoặc vào thẳng với tư cách khách.
 
 Nguyên tắc lấy từ mục 8 của PETO_WEB_HANDOFF.md:
 - Chỉ ánh xạ danh tính SAU KHI máy chủ tự đổi code lấy token và tự hỏi Discord
   "người này là ai". Không bao giờ tin Discord ID do trình duyệt gửi lên.
-- Không mở đăng ký công khai: chỉ những Discord ID nằm trong
-  ``PETO_ALLOWED_DISCORD_IDS`` mới vào được.
-- Access token của Discord chỉ dùng một lần để đọc hồ sơ rồi bỏ. Không lưu
-  token, không lưu email, không xuống trình duyệt.
+- KHÔNG có allowlist: ai đăng nhập được thì dùng được. Đây là lựa chọn có chủ
+  đích của chủ máy chủ, đổi lại bất kỳ ai có địa chỉ đều tiêu quota AI — đừng
+  "sửa lại cho an toàn" nếu không được yêu cầu.
+- Access token của Discord/Google chỉ dùng một lần để đọc hồ sơ rồi bỏ. Không
+  lưu token, không lưu email, không xuống trình duyệt.
 
 Đăng nhập ở đây mới chỉ xác định "ai đang chat". Việc dùng chung trí nhớ với
 bot Discord vẫn là một quyết định riêng và chưa được duyệt — lịch sử web hiện
@@ -15,8 +16,10 @@ vẫn tách hoàn toàn.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import secrets
+import uuid
 from urllib.parse import urlencode
 
 import httpx
@@ -26,17 +29,19 @@ from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
 import db
 from config import (
-    ALLOWED_DISCORD_IDS,
     DISCORD_CLIENT_ID,
     DISCORD_CLIENT_SECRET,
     DISCORD_REDIRECT_URI,
     FRONTEND_URL,
+    GOOGLE_CLIENT_ID,
+    GOOGLE_CLIENT_SECRET,
+    GOOGLE_REDIRECT_URI,
     SESSION_COOKIE,
     SESSION_COOKIE_SECURE,
     SESSION_MAX_AGE,
     SESSION_SECRET,
-    discord_id_from_owner,
     owner_key,
+    provider_from_owner,
 )
 
 logger = logging.getLogger("peto_web.auth")
@@ -46,7 +51,15 @@ DISCORD_TOKEN_URL = "https://discord.com/api/oauth2/token"
 DISCORD_USER_URL = "https://discord.com/api/users/@me"
 DISCORD_SCOPE = "identify"
 
+GOOGLE_AUTHORIZE_URL = "https://accounts.google.com/o/oauth2/v2/auth"
+GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+GOOGLE_USER_URL = "https://openidconnect.googleapis.com/v1/userinfo"
+# Cố ý KHÔNG xin "email": màn hình đăng nhập hứa Peto chỉ đọc tên và ảnh đại
+# diện, xin thêm quyền là lời hứa đó thành sai.
+GOOGLE_SCOPE = "openid profile"
+
 STATE_COOKIE = "peto_oauth_state"
+GOOGLE_STATE_COOKIE = "peto_oauth_state_google"
 STATE_MAX_AGE = 600
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -66,7 +79,25 @@ _serializer = URLSafeTimedSerializer(_secret, salt="peto-session")
 
 
 def is_configured() -> bool:
+    """Discord đã cấu hình chưa."""
     return bool(DISCORD_CLIENT_ID and DISCORD_CLIENT_SECRET)
+
+
+def google_configured() -> bool:
+    return bool(GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET)
+
+
+def available_providers() -> dict[str, bool]:
+    """Cách nào đang dùng được. Khách luôn bật vì không cần cấu hình gì."""
+    return {"discord": is_configured(), "google": google_configured(), "guest": True}
+
+
+def account_id(owner: str) -> str:
+    """Mã tài khoản để frontend làm React key, không lộ khóa owner.
+
+    Khóa của khách là uuid ngẫu nhiên nên càng không nên gửi nguyên xuống.
+    """
+    return hashlib.sha256(owner.encode("utf-8")).hexdigest()[:16]
 
 
 def _sign(owner: str) -> str:
@@ -85,20 +116,43 @@ def read_session(token: str | None) -> str | None:
     return owner if isinstance(owner, str) and owner else None
 
 
-def allowed_session(token: str | None) -> str | None:
-    """Cookie cũ cũng phải tuân theo allowlist đang được máy chủ sử dụng."""
+def session_owner(token: str | None) -> str | None:
+    """Owner trong cookie, hoặc None nếu cookie hỏng, hết hạn, hay khóa lạ."""
     owner = read_session(token)
-    if not owner or discord_id_from_owner(owner) not in ALLOWED_DISCORD_IDS:
-        return None
-    return owner
+    return owner if owner and provider_from_owner(owner) else None
 
 
 def current_owner(request: Request) -> str:
     """Dependency: bắt buộc đã đăng nhập."""
-    owner = allowed_session(request.cookies.get(SESSION_COOKIE))
+    owner = session_owner(request.cookies.get(SESSION_COOKIE))
     if not owner:
         raise HTTPException(status_code=401, detail="Chưa đăng nhập")
     return owner
+
+
+def _set_session(response: Response, owner: str) -> None:
+    """Đặt cookie phiên. Ba lối đăng nhập dùng chung đúng một chỗ này."""
+    response.set_cookie(
+        SESSION_COOKIE,
+        _sign(owner),
+        max_age=SESSION_MAX_AGE,
+        httponly=True,
+        samesite="lax",
+        secure=SESSION_COOKIE_SECURE,
+        path="/",
+    )
+
+
+def _set_state(response: Response, cookie_name: str, state: str) -> None:
+    response.set_cookie(
+        cookie_name,
+        state,
+        max_age=STATE_MAX_AGE,
+        httponly=True,
+        samesite="lax",
+        secure=SESSION_COOKIE_SECURE,
+        path="/api/auth",
+    )
 
 
 def _avatar_url(user: dict) -> str:
@@ -135,15 +189,7 @@ async def discord_login() -> RedirectResponse:
 
     response = RedirectResponse(str(url), status_code=307)
     # State chống CSRF: đặt trong cookie httponly, đối chiếu ở callback.
-    response.set_cookie(
-        STATE_COOKIE,
-        state,
-        max_age=STATE_MAX_AGE,
-        httponly=True,
-        samesite="lax",
-        secure=SESSION_COOKIE_SECURE,
-        path="/api/auth",
-    )
+    _set_state(response, STATE_COOKIE, state)
     return response
 
 
@@ -212,17 +258,10 @@ async def discord_callback(
     if not discord_id:
         return _fail("Hồ sơ Discord thiếu ID.")
 
-    # Chốt chặn "không mở đăng ký công khai".
-    if discord_id not in ALLOWED_DISCORD_IDS:
-        logger.warning("Từ chối Discord ID chưa nằm trong allowlist: %s", discord_id)
-        return _fail(
-            f"Tài khoản này chưa được cho phép. Discord ID của bạn là {discord_id} "
-            "— thêm vào PETO_ALLOWED_DISCORD_IDS rồi thử lại."
-        )
-
-    owner = owner_key(discord_id)
+    owner = owner_key("discord", discord_id)
     await db.upsert_user(
         owner=owner,
+        provider="discord",
         discord_id=discord_id,
         username=str(user.get("username") or ""),
         display_name=str(user.get("global_name") or user.get("username") or ""),
@@ -230,34 +269,153 @@ async def discord_callback(
     )
 
     response = RedirectResponse(_frontend_url(), status_code=307)
-    response.set_cookie(
-        SESSION_COOKIE,
-        _sign(owner),
-        max_age=SESSION_MAX_AGE,
-        httponly=True,
-        samesite="lax",
-        secure=SESSION_COOKIE_SECURE,
-        path="/",
-    )
+    _set_session(response, owner)
     response.delete_cookie(STATE_COOKIE, path="/api/auth")
     return response
 
 
+@router.get("/google/login")
+async def google_login() -> RedirectResponse:
+    if not google_configured():
+        raise HTTPException(
+            status_code=503,
+            detail="Chưa cấu hình GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET",
+        )
+
+    state = secrets.token_urlsafe(24)
+    params = {
+        "client_id": GOOGLE_CLIENT_ID,
+        "redirect_uri": GOOGLE_REDIRECT_URI,
+        "response_type": "code",
+        "scope": GOOGLE_SCOPE,
+        "state": state,
+        # Không xin refresh token: hồ sơ chỉ đọc đúng một lần lúc đăng nhập.
+        "access_type": "online",
+        # Cho người đang có nhiều tài khoản Google được chọn, thay vì lặng lẽ
+        # dùng tài khoản đăng nhập gần nhất.
+        "prompt": "select_account",
+    }
+    response = RedirectResponse(
+        str(httpx.URL(GOOGLE_AUTHORIZE_URL, params=params)), status_code=307
+    )
+    _set_state(response, GOOGLE_STATE_COOKIE, state)
+    return response
+
+
+@router.get("/google/callback")
+async def google_callback(
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+    peto_oauth_state_google: str | None = Cookie(default=None, alias=GOOGLE_STATE_COOKIE),
+) -> RedirectResponse:
+    if error:
+        return _fail("Bạn đã hủy đăng nhập Google.")
+    if not code or not state:
+        return _fail("Thiếu thông tin trả về từ Google.")
+    if not peto_oauth_state_google or not secrets.compare_digest(
+        state, peto_oauth_state_google
+    ):
+        return _fail("Phiên đăng nhập không khớp. Thử lại nhé.")
+
+    async with httpx.AsyncClient(timeout=20) as client:
+        token_response = await client.post(
+            GOOGLE_TOKEN_URL,
+            data={
+                "client_id": GOOGLE_CLIENT_ID,
+                "client_secret": GOOGLE_CLIENT_SECRET,
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": GOOGLE_REDIRECT_URI,
+            },
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+        if token_response.status_code >= 400:
+            logger.warning(
+                "Google đổi code thất bại: HTTP %s", token_response.status_code
+            )
+            return _fail("Google từ chối đăng nhập. Thử lại nhé.")
+
+        access_token = token_response.json().get("access_token")
+        if not access_token:
+            return _fail("Google không trả access token.")
+
+        user_response = await client.get(
+            GOOGLE_USER_URL, headers={"Authorization": f"Bearer {access_token}"}
+        )
+        if user_response.status_code >= 400:
+            return _fail("Không đọc được hồ sơ Google.")
+        user = user_response.json()
+
+    # `sub` là mã tài khoản ổn định của Google; tên và ảnh đều đổi được nên
+    # không bao giờ dùng chúng làm khóa.
+    subject = str(user.get("sub") or "")
+    if not subject:
+        return _fail("Hồ sơ Google thiếu mã tài khoản.")
+
+    display_name = str(user.get("name") or user.get("given_name") or "Bạn")
+    owner = owner_key("google", subject)
+    await db.upsert_user(
+        owner=owner,
+        provider="google",
+        username=display_name,
+        display_name=display_name,
+        avatar_url=str(user.get("picture") or ""),
+    )
+
+    response = RedirectResponse(_frontend_url(), status_code=307)
+    _set_session(response, owner)
+    response.delete_cookie(GOOGLE_STATE_COOKIE, path="/api/auth")
+    return response
+
+
+@router.post("/guest")
+async def guest_login(response: Response) -> dict:
+    """Vào thẳng, không qua nhà cung cấp nào.
+
+    Mỗi lần bấm là một owner mới: khách không có cách nào chứng minh mình là
+    khách cũ, nên mất cookie là mất luôn hội thoại. Nói rõ điều đó ở giao diện.
+    """
+    owner = owner_key("guest", uuid.uuid4().hex)
+    await db.upsert_user(
+        owner=owner,
+        provider="guest",
+        username="khach",
+        display_name="Khách",
+        avatar_url="",
+    )
+    _set_session(response, owner)
+    return {"ok": True}
+
+
 @router.get("/me")
 async def me(request: Request) -> dict:
-    owner = allowed_session(request.cookies.get(SESSION_COOKIE))
+    providers = available_providers()
+    # Khách luôn bật nên trường này giờ luôn đúng; giữ lại vì frontend cũ và
+    # test đều đang đọc nó.
+    anonymous = {
+        "authenticated": False,
+        "login_configured": any(providers.values()),
+        "providers": providers,
+    }
+
+    owner = session_owner(request.cookies.get(SESSION_COOKIE))
     if not owner:
-        return {"authenticated": False, "login_configured": is_configured()}
+        return anonymous
 
     user = await db.get_user(owner)
     if not user:
-        return {"authenticated": False, "login_configured": is_configured()}
+        return anonymous
 
     return {
         "authenticated": True,
         "login_configured": True,
+        "providers": providers,
         "user": {
-            "discord_id": user["discord_id"],
+            # Không gửi khóa owner xuống trình duyệt; đây là mã băm ổn định,
+            # đủ để frontend biết "vẫn là tài khoản đó" khi đổi phiên.
+            "id": account_id(owner),
+            "provider": user["provider"],
             "username": user["username"],
             "display_name": user["display_name"],
             "avatar_url": user["avatar_url"],

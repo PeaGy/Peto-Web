@@ -25,10 +25,13 @@ os.environ.pop("XAI_API_KEY", None)
 # Thông tin Discord giả — đủ để bật luồng đăng nhập, không gọi ra ngoài.
 os.environ["DISCORD_CLIENT_ID"] = "test-client-id"
 os.environ["DISCORD_CLIENT_SECRET"] = "test-client-secret"
+os.environ["GOOGLE_CLIENT_ID"] = "test-google-client-id"
+os.environ["GOOGLE_CLIENT_SECRET"] = "test-google-client-secret"
 os.environ["PETO_SESSION_SECRET"] = "test-session-secret"
 TEST_DISCORD_ID = "111111111111111111"
-BLOCKED_DISCORD_ID = "999999999999999999"
-os.environ["PETO_ALLOWED_DISCORD_IDS"] = TEST_DISCORD_ID
+# Người dùng thứ hai, dùng cho các bài kiểm tra cách ly dữ liệu. Không còn
+# allowlist nên đây chỉ là "một người khác", không phải "người bị chặn".
+OTHER_DISCORD_ID = "999999999999999999"
 
 import pytest  # noqa: E402
 from httpx import ASGITransport, AsyncClient  # noqa: E402
@@ -38,7 +41,7 @@ import db  # noqa: E402
 from config import SESSION_COOKIE, owner_key  # noqa: E402
 from main import app  # noqa: E402
 
-TEST_OWNER = owner_key(TEST_DISCORD_ID)
+TEST_OWNER = owner_key("discord", TEST_DISCORD_ID)
 
 
 def _make_client() -> AsyncClient:
@@ -61,6 +64,7 @@ async def client() -> AsyncClient:
     await db.init_db()
     await db.upsert_user(
         owner=TEST_OWNER,
+        provider="discord",
         discord_id=TEST_DISCORD_ID,
         username="nguoi_test",
         display_name="Người Test",

@@ -48,8 +48,7 @@ async def test_edit_existing_image_preserves_original_and_copies_source(client):
 
 async def test_source_and_edit_request_are_private(client, monkeypatch):
     job = (await client.post("/api/imagine", json={"prompt": "ảnh riêng", "source_image": UPLOAD})).json()["job"]
-    monkeypatch.setattr(auth, "ALLOWED_DISCORD_IDS", auth.ALLOWED_DISCORD_IDS | {"333333333333333333"})
-    client.cookies.set(SESSION_COOKIE, auth._sign(owner_key("333333333333333333")))
+    client.cookies.set(SESSION_COOKIE, auth._sign(owner_key("discord", "333333333333333333")))
     provider = AsyncMock()
     monkeypatch.setattr(imagine_api, "generate_images", provider)
     for image in [job["source_image"], *job["images"]]:

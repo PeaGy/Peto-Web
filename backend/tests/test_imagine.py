@@ -74,8 +74,7 @@ async def test_imagine_image_hidden_from_other_user(client, monkeypatch):
         "/api/imagine", json={"prompt": "bí mật", "n": 1}
     )
     url = created.json()["job"]["images"][0]["url"]
-    monkeypatch.setattr(auth, "ALLOWED_DISCORD_IDS", auth.ALLOWED_DISCORD_IDS | {"222222222222222222"})
-    client.cookies.set(SESSION_COOKIE, auth._sign(owner_key("222222222222222222")))
+    client.cookies.set(SESSION_COOKIE, auth._sign(owner_key("discord", "222222222222222222")))
     assert (await client.get(url)).status_code == 404
 
 
@@ -133,8 +132,7 @@ async def test_image_timeout_releases_slot_and_does_not_save_job(client, monkeyp
 async def test_other_owner_cannot_list_or_delete_images(client, monkeypatch):
     created = await client.post("/api/imagine", json={"prompt": "riêng tư"})
     job_id = created.json()["job"]["id"]
-    monkeypatch.setattr(auth, "ALLOWED_DISCORD_IDS", auth.ALLOWED_DISCORD_IDS | {"222222222222222222"})
-    client.cookies.set(SESSION_COOKIE, auth._sign(owner_key("222222222222222222")))
+    client.cookies.set(SESSION_COOKIE, auth._sign(owner_key("discord", "222222222222222222")))
     assert (await client.get("/api/imagine")).json()["jobs"] == []
     assert (await client.delete(f"/api/imagine/{job_id}")).status_code == 404
 

@@ -55,6 +55,15 @@ DISCORD_REDIRECT_URI = os.getenv(
     "DISCORD_REDIRECT_URI", "http://localhost:5173/api/auth/discord/callback"
 ).strip()
 
+# --- Đăng nhập Google ----------------------------------------------------
+# Phải tự tạo OAuth client trong Google Cloud Console rồi khai vào .env. Thiếu
+# một trong hai giá trị là nút Google tự ẩn, không làm hỏng cách đăng nhập khác.
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "").strip()
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "").strip()
+GOOGLE_REDIRECT_URI = os.getenv(
+    "GOOGLE_REDIRECT_URI", "http://localhost:5173/api/auth/google/callback"
+).strip()
+
 # Nơi đưa người dùng về sau khi đăng nhập xong.
 #
 # Để TRỐNG là tốt nhất: khi đó backend chuyển hướng bằng đường dẫn tương đối
@@ -72,25 +81,33 @@ SESSION_COOKIE_SECURE = os.getenv("PETO_COOKIE_SECURE", "").strip().lower() in {
     "1", "true", "yes",
 }
 
-# Danh sách Discord ID được phép dùng web. RỖNG = không ai vào được.
-# Đây là chốt chặn thay cho "không mở đăng ký công khai" ở mục 8 của handoff.
-ALLOWED_DISCORD_IDS = {
-    value.strip()
-    for value in os.getenv("PETO_ALLOWED_DISCORD_IDS", "").split(",")
-    if value.strip()
-}
+# Ba cách đăng nhập. KHÔNG còn allowlist — đăng ký mở, ai vào cũng được.
+PROVIDERS = ("discord", "google", "guest")
 
 
-def owner_key(discord_id: str) -> str:
-    """Khóa chủ sở hữu trong database.
+def owner_key(provider: str, external_id: str) -> str:
+    """Khóa chủ sở hữu trong database, dạng ``<provider>:<id>``.
 
-    Có tiền tố nền tảng để sau này thêm cách đăng nhập khác không bị đụng ID.
+    Tiền tố giữ cho hai người trùng ID ở hai nền tảng khác nhau không đụng dữ
+    liệu của nhau, và là căn cứ duy nhất để biết ai có Discord ID thật.
     """
-    return f"discord:{discord_id}"
+    if provider not in PROVIDERS:
+        raise ValueError(f"Nền tảng đăng nhập lạ: {provider!r}")
+    return f"{provider}:{external_id}"
+
+
+def provider_from_owner(owner: str) -> str:
+    """Nền tảng đã tạo ra khóa owner này. Trả về "" nếu khóa không hợp lệ."""
+    provider, _, external_id = owner.partition(":")
+    return provider if external_id and provider in PROVIDERS else ""
 
 
 def discord_id_from_owner(owner: str) -> str:
-    """Lấy lại Discord ID từ khóa owner. Trả về "" nếu không phải owner Discord."""
+    """Lấy lại Discord ID từ khóa owner. Trả về "" nếu không phải owner Discord.
+
+    Cổng trí nhớ của bot dựa vào đây, nên khách và người dùng Google không bao
+    giờ chạm được tới trí nhớ của ai.
+    """
     prefix = "discord:"
     if owner.startswith(prefix):
         candidate = owner[len(prefix):]

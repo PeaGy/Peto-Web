@@ -2,8 +2,8 @@
 
 Chat chữ, lịch sử riêng từng người, stream câu trả lời qua SSE.
 
-Danh tính đến từ đăng nhập Discord OAuth (``auth.py``); ``owner`` có dạng
-``discord:<id>`` và mọi truy vấn hội thoại đều lọc theo nó ở backend.
+Danh tính đến từ ``auth.py``: Discord, Google, hoặc khách. ``owner`` có dạng
+``<provider>:<id>`` và mọi truy vấn hội thoại đều lọc theo nó ở backend.
 
 Nếu Memory Gateway của bot được bật, prompt sẽ được ghép thêm trí nhớ dài hạn
 của đúng người đang đăng nhập — một chiều, chỉ đọc, và hỏng thì bỏ qua.
@@ -37,7 +37,6 @@ from app_identity import get_app_identity
 from auth import current_owner
 from chat_tools import ToolInputError, resolve_timezone, time_context
 from config import (
-    ALLOWED_DISCORD_IDS,
     ALLOWED_ORIGINS,
     MAX_ATTACHMENTS,
     MAX_HISTORY_IMAGES,
@@ -61,12 +60,14 @@ async def lifespan(app: FastAPI):
     resolve_timezone()  # Báo lỗi cấu hình sớm nếu thiếu dữ liệu múi giờ.
     await db.init_db()
     logger.info("Peto Web sẵn sàng — provider=%s", get_provider().name)
-    if not auth.is_configured():
-        logger.warning("Chưa cấu hình Discord OAuth — chưa ai đăng nhập được.")
-    elif not ALLOWED_DISCORD_IDS:
-        logger.warning(
-            "PETO_ALLOWED_DISCORD_IDS đang rỗng — mọi lượt đăng nhập sẽ bị từ chối."
-        )
+    mo = [name for name, ready in auth.available_providers().items() if ready]
+    logger.info("Cách đăng nhập đang bật: %s", ", ".join(mo))
+    # Không còn allowlist: nói thẳng ở log để người vận hành không tưởng nhầm
+    # đây vẫn là bản riêng tư.
+    logger.warning(
+        "Đăng ký mở: bất kỳ ai mở được địa chỉ này đều dùng được và đều "
+        "tiêu quota AI của máy chủ."
+    )
 
     # Cấu hình nửa vời rất dễ xảy ra và trước đây im lặng hoàn toàn: đặt URL mà
     # quên token thì trí nhớ tắt lặng lẽ, người dùng chỉ thấy "Peto không nhớ gì".

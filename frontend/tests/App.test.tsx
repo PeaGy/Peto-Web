@@ -8,7 +8,7 @@ vi.mock('../src/api', async (original) => ({
   ...await original<typeof import('../src/api')>(),
   getAuthState: vi.fn(), listConversations: vi.fn(), getMessages: vi.fn(),
   sendMessage: vi.fn(), deleteConversation: vi.fn(), logout: vi.fn(),
-  listImagineJobs: vi.fn(), createImagineJob: vi.fn(),
+  listImagineJobs: vi.fn(), createImagineJob: vi.fn(), guestLogin: vi.fn(),
 }));
 
 const conversation = (id: string): api.Conversation => ({ id, title: id, created_at: 0, updated_at: 0, message_count: 2 });
@@ -25,7 +25,8 @@ beforeEach(() => {
   localStorage.clear();
   window.history.replaceState(null, '', '/');
   vi.mocked(api.getAuthState).mockResolvedValue({ authenticated: true, login_configured: true,
-    user: { discord_id: '111', username: 'demo', display_name: 'Demo', avatar_url: '' } });
+    providers: { discord: true, google: true, guest: true },
+    user: { id: 'acc-111', provider: 'discord', username: 'demo', display_name: 'Demo', avatar_url: '' } });
   vi.mocked(api.listConversations).mockResolvedValue({ conversations: [conversation('A'), conversation('B')], has_more: false });
   vi.mocked(api.getMessages).mockResolvedValue([]);
   vi.mocked(api.deleteConversation).mockResolvedValue();
@@ -308,6 +309,59 @@ describe('Khối code trong chat', () => {
     await openChat();
     fireEvent.click(await screen.findByRole('button', { name: /Sao chép/ }));
     await screen.findByRole('button', { name: /Chưa chép được/ });
+  });
+});
+
+describe('Màn hình đăng nhập', () => {
+  const chuaDangNhap = (providers: Record<string, boolean>) => {
+    vi.mocked(api.getAuthState).mockResolvedValue({ authenticated: false,
+      login_configured: true, providers: providers as never });
+  };
+
+  it('bày đủ ba cách đăng nhập', async () => {
+    chuaDangNhap({ discord: true, google: true, guest: true });
+    render(<App />);
+    expect(await screen.findByRole('link', { name: /Đăng nhập bằng Discord/ })).toBeTruthy();
+    expect(screen.getByText('Đăng nhập bằng cách khác')).toBeTruthy();
+    expect(screen.getByRole('link', { name: /Google/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Khách/ })).toBeTruthy();
+  });
+
+  it('ẩn nút Google khi chưa khai credential', async () => {
+    chuaDangNhap({ discord: true, google: false, guest: true });
+    render(<App />);
+    await screen.findByRole('link', { name: /Đăng nhập bằng Discord/ });
+    expect(screen.queryByRole('link', { name: /Google/ })).toBeNull();
+    // Khách không cần cấu hình gì nên luôn còn.
+    expect(screen.getByRole('button', { name: /Khách/ })).toBeTruthy();
+  });
+
+  it('vào được với tư cách khách', async () => {
+    // Lần hỏi đầu là lúc mở trang (chưa đăng nhập); lần sau là ngay sau khi
+    // bấm Khách, nên phải trả trạng thái đã vào được.
+    vi.mocked(api.getAuthState)
+      .mockResolvedValueOnce({ authenticated: false, login_configured: true,
+        providers: { discord: true, google: true, guest: true } })
+      .mockResolvedValue({ authenticated: true, login_configured: true,
+        providers: { discord: true, google: true, guest: true },
+        user: { id: 'acc-khach', provider: 'guest', username: 'khach', display_name: 'Khách', avatar_url: '' } });
+    vi.mocked(api.guestLogin).mockResolvedValue(undefined);
+    render(<App />);
+    fireEvent.click(await screen.findByRole('button', { name: /Khách/ }));
+    await waitFor(() => expect(api.guestLogin).toHaveBeenCalled());
+    await screen.findByRole('button', { name: 'A', exact: true });
+    // Không có ảnh đại diện thì rơi về chữ cái đầu, không phải <img src="">.
+    // Hiện ở cả khối tài khoản lẫn hộp cài đặt.
+    expect(screen.getAllByText('K')).toHaveLength(2);
+    expect(document.querySelector('img.account-avatar')).toBeNull();
+  });
+
+  it('báo lỗi khi không vào được bằng khách', async () => {
+    chuaDangNhap({ discord: true, google: true, guest: true });
+    vi.mocked(api.guestLogin).mockRejectedValue(new Error('Máy chủ đang bận'));
+    render(<App />);
+    fireEvent.click(await screen.findByRole('button', { name: /Khách/ }));
+    expect(await screen.findByRole('alert')).toHaveProperty('textContent', 'Máy chủ đang bận');
   });
 });
 

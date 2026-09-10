@@ -49,8 +49,12 @@ interface ChatHandlers {
   onDone?: () => void;
 }
 
-export interface DiscordUser {
-  discord_id: string;
+export type AuthProvider = "discord" | "google" | "guest";
+
+export interface AccountUser {
+  /** Mã băm ổn định do server sinh. KHÔNG phải khóa owner. */
+  id: string;
+  provider: AuthProvider;
   username: string;
   display_name: string;
   avatar_url: string;
@@ -59,7 +63,9 @@ export interface DiscordUser {
 export interface AuthState {
   authenticated: boolean;
   login_configured: boolean;
-  user?: DiscordUser;
+  /** Cách đăng nhập nào đang dùng được. Thiếu cấu hình thì nút tự ẩn. */
+  providers?: Record<AuthProvider, boolean>;
+  user?: AccountUser;
 }
 
 /** Ném ra khi phiên hết hạn — giao diện quay lại màn hình đăng nhập. */
@@ -88,6 +94,12 @@ export async function logout(): Promise<void> {
 }
 
 export const DISCORD_LOGIN_URL = "/api/auth/discord/login";
+export const GOOGLE_LOGIN_URL = "/api/auth/google/login";
+
+/** Vào thẳng, không qua nhà cung cấp nào. Server tự tạo owner mới mỗi lần. */
+export async function guestLogin(): Promise<void> {
+  await json(await fetch("/api/auth/guest", { method: "POST" }));
+}
 
 export function browserTimezone(): string | undefined {
   try {

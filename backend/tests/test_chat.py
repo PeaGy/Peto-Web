@@ -280,8 +280,7 @@ async def test_attachment_is_not_visible_to_another_user(client, monkeypatch):
     import auth
     from config import SESSION_COOKIE, owner_key
 
-    monkeypatch.setattr(auth, "ALLOWED_DISCORD_IDS", auth.ALLOWED_DISCORD_IDS | {"222222222222222222"})
-    client.cookies.set(SESSION_COOKIE, auth._sign(owner_key("222222222222222222")))
+    client.cookies.set(SESSION_COOKIE, auth._sign(owner_key("discord", "222222222222222222")))
     assert (await client.get(url)).status_code == 404
 
 

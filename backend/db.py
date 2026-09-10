@@ -95,7 +95,8 @@ async def init_db() -> None:
             """
             CREATE TABLE IF NOT EXISTS users (
                 owner TEXT PRIMARY KEY,
-                discord_id TEXT NOT NULL UNIQUE,
+                provider TEXT NOT NULL DEFAULT 'discord',
+                discord_id TEXT UNIQUE,
                 username TEXT NOT NULL DEFAULT '',
                 display_name TEXT NOT NULL DEFAULT '',
                 avatar_url TEXT NOT NULL DEFAULT '',
@@ -104,6 +105,39 @@ async def init_db() -> None:
             )
             """
         )
+        # Bảng cũ có `discord_id NOT NULL UNIQUE`, không chứa nổi tài khoản
+        # Google hay khách. Nới NOT NULL thì SQLite bắt dựng lại bảng chứ không
+        # ALTER được — nhiều NULL vẫn hợp lệ với UNIQUE nên ràng buộc "một tài
+        # khoản Discord một dòng" giữ nguyên. Chỉ chạy khi thiếu cột `provider`.
+        user_columns = await (await db.execute("PRAGMA table_info(users)")).fetchall()
+        if "provider" not in {column[1] for column in user_columns}:
+            await db.execute(
+                """
+                CREATE TABLE users_moi (
+                    owner TEXT PRIMARY KEY,
+                    provider TEXT NOT NULL DEFAULT 'discord',
+                    discord_id TEXT UNIQUE,
+                    username TEXT NOT NULL DEFAULT '',
+                    display_name TEXT NOT NULL DEFAULT '',
+                    avatar_url TEXT NOT NULL DEFAULT '',
+                    first_login_at REAL NOT NULL,
+                    last_login_at REAL NOT NULL
+                )
+                """
+            )
+            await db.execute(
+                """
+                INSERT INTO users_moi (owner, provider, discord_id, username,
+                                       display_name, avatar_url,
+                                       first_login_at, last_login_at)
+                     SELECT owner, 'discord', discord_id, username,
+                            display_name, avatar_url,
+                            first_login_at, last_login_at
+                       FROM users
+                """
+            )
+            await db.execute("DROP TABLE users")
+            await db.execute("ALTER TABLE users_moi RENAME TO users")
         await db.execute(
             """
             CREATE TABLE IF NOT EXISTS imagine_jobs (
@@ -148,25 +182,28 @@ async def init_db() -> None:
 async def upsert_user(
     *,
     owner: str,
-    discord_id: str,
+    provider: str,
     username: str,
     display_name: str,
     avatar_url: str,
+    discord_id: str | None = None,
 ) -> None:
+    """Ghi hồ sơ đăng nhập. ``discord_id`` để None với Google và khách."""
     now = time.time()
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
             """
-            INSERT INTO users (owner, discord_id, username, display_name,
+            INSERT INTO users (owner, provider, discord_id, username, display_name,
                                avatar_url, first_login_at, last_login_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(owner) DO UPDATE SET
+                provider = excluded.provider,
                 username = excluded.username,
                 display_name = excluded.display_name,
                 avatar_url = excluded.avatar_url,
                 last_login_at = excluded.last_login_at
             """,
-            (owner, discord_id, username, display_name, avatar_url, now, now),
+            (owner, provider, discord_id, username, display_name, avatar_url, now, now),
         )
         await db.commit()
 
@@ -175,8 +212,8 @@ async def get_user(owner: str) -> dict | None:
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
-            "SELECT owner, discord_id, username, display_name, avatar_url, "
-            "first_login_at, last_login_at FROM users WHERE owner = ?",
+            "SELECT owner, provider, discord_id, username, display_name, "
+            "avatar_url, first_login_at, last_login_at FROM users WHERE owner = ?",
             (owner,),
         )
         row = await cursor.fetchone()

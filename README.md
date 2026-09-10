@@ -39,17 +39,31 @@ không cần cấu hình CORS khi chạy local.
 2. Tab **OAuth2**: copy `CLIENT ID` và `CLIENT SECRET` vào `.env`.
 3. Vẫn tab đó, thêm **Redirect**:
    `http://localhost:5173/api/auth/discord/callback`
-4. Điền `PETO_ALLOWED_DISCORD_IDS` bằng Discord ID của từng người trong nhóm,
-   cách nhau bằng dấu phẩy. **Rỗng nghĩa là không ai vào được.**
-5. Sinh `PETO_SESSION_SECRET`:
+4. Sinh `PETO_SESSION_SECRET`:
    `python -c "import secrets; print(secrets.token_urlsafe(32))"`
 
-Chưa biết Discord ID? Cứ đăng nhập thử — nếu chưa được cho phép, trang sẽ hiện
-đúng ID của tài khoản đó để bạn thêm vào danh sách.
+### Đăng nhập bằng Google (tùy chọn)
 
-Sau khi sửa `PETO_ALLOWED_DISCORD_IDS`, **khởi động lại dịch vụ web** để nạp
-cấu hình mới. Quyền được kiểm tra ở mỗi yêu cầu API, nên phiên cũ của tài khoản
-đã bị xóa khỏi danh sách cũng bị chặn. Không cần đổi khóa ký để thu hồi một người.
+Tạo OAuth client loại **Web application** ở
+[Google Cloud Console](https://console.cloud.google.com/apis/credentials), thêm
+Authorized redirect URI khớp `GOOGLE_REDIRECT_URI`, rồi điền `GOOGLE_CLIENT_ID`
+và `GOOGLE_CLIENT_SECRET`. Thiếu một trong hai thì nút Google tự ẩn, Discord và
+Khách vẫn chạy bình thường.
+
+### Đăng ký là MỞ
+
+Không còn allowlist. Bất kỳ ai mở được địa chỉ này đều đăng nhập được — bằng
+Discord, bằng Google, hoặc bấm **Khách** để vào thẳng không cần tài khoản nào.
+
+Đây là lựa chọn có chủ đích, và cái giá là **mọi lượt chat và tạo ảnh của người
+lạ đều tính vào quota xAI của bạn**. `PETO_MAX_CONCURRENT` chỉ giới hạn số lượt
+chạy cùng lúc, không giới hạn tổng số lượt. Đừng công khai địa chỉ nếu bạn chưa
+sẵn sàng trả cho phần đó.
+
+Khách nhận một `owner` riêng gắn với cookie trình duyệt: có hội thoại riêng,
+không thấy dữ liệu của ai, và **mất cookie là mất luôn lịch sử** — không có cách
+nào chứng minh mình là khách cũ. Khách và người dùng Google không có Discord ID
+nên không bao giờ chạm tới trí nhớ dài hạn của bot.
 
 ## Đưa lên VPS
 
@@ -252,8 +266,8 @@ Giới hạn cố ý của phần này:
   production Discord.
 - Không có credential AI nào xuống trình duyệt. Discord access token chỉ dùng
   một lần để đọc hồ sơ rồi bỏ, không lưu.
-- Chỉ Discord ID trong `PETO_ALLOWED_DISCORD_IDS` mới vào được — chưa mở đăng ký
-  công khai.
+- Đăng ký MỞ: Discord, Google, hoặc khách — không có allowlist. Ai có địa chỉ
+  cũng dùng được và cũng tiêu quota AI của máy chủ.
 - Mọi truy vấn hội thoại lọc theo `owner` ở backend; biết ID của người khác cũng
   không đọc được.
 - Có hướng dẫn triển khai và unit dịch vụ mẫu. Trạng thái VPS thực tế không

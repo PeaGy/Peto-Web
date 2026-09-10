@@ -10,7 +10,8 @@ its own database, its own xAI token file, its own persona prompt. The only link 
 bot is a read-only memory gateway (see below).
 
 Stack: FastAPI + SQLite (aiosqlite) backend, React 19 + Vite frontend, xAI Grok via the
-Responses API. Access is limited to an explicit Discord ID allowlist.
+Responses API. Registration is **open**: Discord, Google, or guest — there is no
+allowlist.
 
 ## Language convention
 
@@ -76,9 +77,19 @@ server-side, calls `/users/@me` itself, and discards the Discord access token im
 (nothing stored, nothing sent to the client). The session is an `itsdangerous` signed
 cookie holding only the owner key.
 
-`auth.current_owner` re-checks `PETO_ALLOWED_DISCORD_IDS` on **every request**, not just at
-login. Removing an ID from the allowlist therefore revokes live sessions without rotating
-the signing key. `tests/test_review_regressions.py` locks this behavior in.
+There are three ways in, all in `auth.py`: Discord OAuth, Google OAuth, and `POST
+/api/auth/guest`, which mints a `guest:<uuid>` owner with no external account behind it.
+`owner_key(provider, external_id)` builds every owner; `provider_from_owner` is what
+`session_owner` uses to reject a signed cookie carrying a malformed key.
+
+The allowlist was **deliberately removed** — anyone who can reach the deployment can use
+it and spend the server's AI quota. That was the owner's explicit call after being shown
+the cost; do not reintroduce a gate unless asked. `tests/test_auth.py` asserts
+`config.ALLOWED_DISCORD_IDS` no longer exists so a well-meaning revert gets caught.
+
+Only `discord:` owners carry a Discord ID, so `discord_id_from_owner` returns `""` for
+Google and guest accounts and `main.py` skips the memory gateway entirely for them. That
+is what keeps open registration from exposing members' long-term memory.
 
 ### AI provider abstraction
 
@@ -232,8 +243,10 @@ half-configured setups log a warning at startup rather than failing silently.
 - Nothing writes back to the bot's memory. The gateway is read-only and loopback-only; it
   must never sit behind Cloudflare Tunnel.
 - No AI credential ever reaches the browser.
-- The allowlist is the registration gate — there is no public sign-up, and an empty
-  `PETO_ALLOWED_DISCORD_IDS` means nobody can log in (by design).
+- Registration is open by the owner's explicit decision. Do not add an allowlist, invite
+  code, or per-account quota back unless asked for it.
+- Guest and Google accounts must never resolve to a Discord ID — that isolation is the
+  only thing keeping the bot's memory private now that anyone can sign in.
 - Do not rename model slugs (`grok-4.6`, `grok-imagine-image-2.0`), the `/api/imagine` path,
   or table names into branded equivalents — the API needs the real identifiers. Product
   naming ("Peto tạo ảnh") belongs in display strings only.

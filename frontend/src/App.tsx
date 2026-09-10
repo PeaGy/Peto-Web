@@ -20,10 +20,12 @@ import yaml from "highlight.js/lib/languages/yaml";
 import Imagine from "./Imagine";
 import {
   DISCORD_LOGIN_URL,
+  GOOGLE_LOGIN_URL,
   UnauthorizedError,
   deleteConversation,
   getAppInfo,
   getAuthState,
+  guestLogin,
   getMessages,
   listConversations,
   logout,
@@ -32,6 +34,7 @@ import {
   type AuthState,
   type ChatAttachment,
   type Conversation,
+  type AccountUser,
   type Effort,
   type ImagineJob,
   type Message,
@@ -293,6 +296,33 @@ function FileGlyph({ name, kind }: { name: string; kind: "image" | "file" }) {
 }
 
 /** Avatar của Peto: ảnh thật từ Discord application, chữ cái đầu nếu chưa có. */
+function GoogleIcon() {
+  return <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M21.6 12.2c0-.7-.06-1.4-.18-2.05H12v3.88h5.38a4.6 4.6 0 0 1-2 3.02v2.5h3.24c1.89-1.74 2.98-4.3 2.98-7.35Z" fill="#4285F4" />
+    <path d="M12 22c2.7 0 4.965-.9 6.62-2.43l-3.24-2.51c-.9.6-2.05.96-3.38.96-2.6 0-4.8-1.76-5.59-4.12H3.06v2.59A10 10 0 0 0 12 22Z" fill="#34A853" />
+    <path d="M6.41 13.9a6 6 0 0 1 0-3.83V7.48H3.06a10 10 0 0 0 0 9.01l3.35-2.6Z" fill="#FBBC05" />
+    <path d="M12 5.95c1.47 0 2.78.5 3.82 1.5l2.86-2.86C16.96 2.99 14.7 2 12 2a10 10 0 0 0-8.94 5.48l3.35 2.6C7.2 7.7 9.4 5.95 12 5.95Z" fill="#EA4335" />
+  </svg>;
+}
+
+function GuestIcon() {
+  return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <circle cx="12" cy="8" r="3.6" stroke="currentColor" strokeWidth="1.7" />
+    <path d="M4.8 20a7.2 7.2 0 0 1 14.4 0" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+  </svg>;
+}
+
+/** Avatar người dùng. Khách không có ảnh nên rơi về chữ cái đầu. */
+function AccountAvatar({ user, size }: { user?: AccountUser; size: number }) {
+  if (user?.avatar_url) {
+    return <img className="account-avatar avatar-image" src={user.avatar_url}
+      alt="" width={size} height={size} />;
+  }
+  return <span className="account-avatar account-initial" style={{ width: size, height: size }}>
+    {(user?.display_name || "?").charAt(0).toUpperCase()}
+  </span>;
+}
+
 function PetoAvatar({ info, big }: { info: AppInfo | null; big?: boolean }) {
   const className = big ? "avatar big" : "avatar";
   if (info?.avatar_url) {
@@ -313,6 +343,7 @@ export default function App() {
   const [auth, setAuth] = useState<AuthState | null>(null);
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [guestBusy, setGuestBusy] = useState(false);
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [conversationId, setConversationId] = useState<string | null>(null);
@@ -529,6 +560,19 @@ export default function App() {
     });
   }
 
+  async function enterAsGuest() {
+    if (guestBusy) return;
+    setGuestBusy(true);
+    setAuthError(null);
+    try {
+      await guestLogin();
+      setAuth(await getAuthState());
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : "Chưa vào được. Thử lại nhé.");
+      setGuestBusy(false);
+    }
+  }
+
   if (auth === null) {
     return <div className="boot">Đang tải…</div>;
   }
@@ -540,7 +584,7 @@ export default function App() {
           <PetoAvatar info={appInfo} big />
           <h1>{appInfo?.name ?? "Peto"}</h1>
           <p className="login-sub">
-            Đăng nhập bằng Discord để Peto biết cậu là ai.
+            Đăng nhập để Peto biết cậu là ai.
           </p>
 
           {authError && (
@@ -549,19 +593,37 @@ export default function App() {
             </div>
           )}
 
-          {auth.login_configured ? (
+          {auth.providers?.discord !== false && (
             <a className="discord-button" href={DISCORD_LOGIN_URL}>
               Đăng nhập bằng Discord
             </a>
-          ) : (
-            <div className="error">
-              Chưa kết nối được dịch vụ đăng nhập. Thử tải lại trang hoặc báo người quản trị nhé.
-            </div>
           )}
 
+          <div className="login-divider">
+            <span>Đăng nhập bằng cách khác</span>
+          </div>
+
+          <div className="login-alts">
+            {auth.providers?.google && (
+              <a className="alt-login" href={GOOGLE_LOGIN_URL}>
+                <GoogleIcon />
+                Google
+              </a>
+            )}
+            <button
+              type="button"
+              className="alt-login"
+              disabled={guestBusy}
+              onClick={() => void enterAsGuest()}
+            >
+              <GuestIcon />
+              {guestBusy ? "Đang vào…" : "Khách"}
+            </button>
+          </div>
+
           <p className="login-note">
-            Chỉ những tài khoản đã được cho phép mới vào được. Peto chỉ đọc tên
-            và ảnh đại diện của cậu.
+            Peto chỉ đọc tên và ảnh đại diện của cậu. Vào với tư cách khách thì
+            hội thoại gắn với trình duyệt này — xóa cookie là mất.
           </p>
         </div>
       </div>
@@ -906,13 +968,7 @@ export default function App() {
             title="Mở cài đặt"
             onClick={() => setSettingsOpen(true)}
           >
-            <img
-              className="account-avatar"
-              src={auth.user?.avatar_url}
-              alt=""
-              width={32}
-              height={32}
-            />
+            <AccountAvatar user={auth.user} size={32} />
             <div className="account-name">
               <strong>{auth.user?.display_name}</strong>
               <span>@{auth.user?.username}</span>
@@ -926,7 +982,7 @@ export default function App() {
 
       {imageVisited && (
         <Imagine
-          key={auth.user?.discord_id}
+          key={auth.user?.id}
           active={view === "imagine"}
           onUnauthorized={handleUnauthorized}
           onOpenSidebar={() => setSidebarOpen(true)}
@@ -1238,13 +1294,7 @@ export default function App() {
         <section className="settings-section">
           <h3>Tài khoản</h3>
           <div className="settings-account">
-            <img
-              className="account-avatar"
-              src={auth.user?.avatar_url}
-              alt=""
-              width={38}
-              height={38}
-            />
+            <AccountAvatar user={auth.user} size={38} />
             <div className="account-name">
               <strong>{auth.user?.display_name}</strong>
               <span>@{auth.user?.username}</span>

@@ -122,6 +122,16 @@ def test_owner_key_roundtrip():
     assert discord_id_from_owner("discord:khong-phai-so") == ""
 
 
+def test_khach_va_google_khong_cham_toi_tri_nho_cua_ai():
+    """Chỉ owner Discord mới có ID để hỏi cổng trí nhớ.
+
+    Đây là thứ giữ cho việc mở đăng ký không làm lộ trí nhớ dài hạn của thành
+    viên: không có Discord ID thì main.py không gọi cổng, chấm hết.
+    """
+    assert discord_id_from_owner("guest:" + "a" * 32) == ""
+    assert discord_id_from_owner("google:111111111111111111") == ""
+
+
 def test_memory_context_without_memory_says_so():
     context = build_memory_context(display_name="Người Test")
     assert "chưa có ký ức" in context.casefold()

@@ -76,7 +76,11 @@ DISCORD_CLIENT_ID=<như trên máy bạn>
 DISCORD_CLIENT_SECRET=<như trên máy bạn>
 DISCORD_REDIRECT_URI=https://peto.pearto.shop/api/auth/discord/callback
 
-PETO_ALLOWED_DISCORD_IDS=<4 ID của nhóm, cách nhau bằng dấu phẩy>
+# Tùy chọn — thiếu thì nút Google tự ẩn.
+GOOGLE_CLIENT_ID=<từ Google Cloud Console>
+GOOGLE_CLIENT_SECRET=<từ Google Cloud Console>
+GOOGLE_REDIRECT_URI=https://peto.pearto.shop/api/auth/google/callback
+
 PETO_SESSION_SECRET=<sinh MỚI, đừng dùng lại khóa của máy cá nhân>
 
 # Bắt buộc khi chạy HTTPS — không có dòng này thì trình duyệt
@@ -362,7 +366,9 @@ sudo journalctl -u peto -n 100 --no-pager -a -l
 - `.env`, `backend/data/peto_web.db` và `backend/data/xai_tokens.json` **không
   bao giờ** được commit. `.gitignore` đã chặn sẵn.
 - Dùng `PETO_SESSION_SECRET` **khác** giữa máy cá nhân và VPS.
-- Chỉ Discord ID trong `PETO_ALLOWED_DISCORD_IDS` vào được. Muốn thêm bạn thì
-  thêm ID rồi restart — không có đăng ký công khai.
+- **Đăng ký là MỞ.** Không còn allowlist: ai mở được `peto.pearto.shop` cũng
+  đăng nhập được bằng Discord, Google, hoặc bấm Khách vào thẳng. Mỗi lượt chat
+  và tạo ảnh của họ đều tính vào quota xAI của bạn, và `PETO_MAX_CONCURRENT`
+  chỉ chặn số lượt chạy cùng lúc chứ không chặn tổng số lượt.
 - Bot và web **ăn chung hạn mức xAI** vì cùng tài khoản. Bị giới hạn tần suất
   thì đó là lý do.
