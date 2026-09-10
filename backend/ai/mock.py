@@ -15,6 +15,7 @@ import random
 from collections.abc import AsyncIterator
 
 from .base import ChatMessage, ChatProvider, ProviderError
+from chat_tools import execute_tool
 
 _CHUNK_DELAY = 0.035
 
@@ -45,12 +46,24 @@ _TOOL_WORDS = (
 )
 
 
-def _pick_reply(user_text: str) -> str:
+def _pick_reply(user_text: str, timezone: str | None = None) -> str:
     lowered = user_text.casefold().strip()
     if not lowered:
         return "Ủa, cậu gửi tin trống kìa. Gõ gì đi Peto nghe."
     if lowered in {"chào", "hi", "hello", "hey", "alo", "chao"}:
         return random.choice(_GREETING)
+    if any(marker in lowered for marker in (
+        "mấy giờ", "may gio", "ngày mấy", "ngay may", "ngày bao nhiêu", "thứ mấy",
+        "hôm nay ngày", "hôm nay là ngày", "ngày giờ hiện tại", "current time", "what time",
+    )):
+        clock = execute_tool("get_current_datetime", "{}", timezone=timezone)
+        if "error" in clock:
+            return "Chưa xác định được múi giờ. Cậu nói rõ múi giờ muốn xem nhé."
+        year, month, day = clock["date"].split("-")
+        return (
+            f"Bây giờ là {clock['time']}, {clock['weekday']}, ngày {day}/{month}/{year} "
+            f"({clock['timezone']}, {clock['utc_offset']})."
+        )
     if any(word in lowered for word in _TOOL_WORDS):
         return _TOOL_REFUSAL
     from .routing import looks_like_math
@@ -69,6 +82,7 @@ class MockProvider(ChatProvider):
         system_prompt: str,
         messages: list[ChatMessage],
         effort: str = "low",
+        timezone: str | None = None,
     ) -> AsyncIterator[str]:
         last = next((m for m in reversed(messages) if m.role == "user"), None)
         last_user = last.content if last else ""
@@ -85,7 +99,7 @@ class MockProvider(ChatProvider):
         if not last_user.strip() and names:
             last_user = f"[đính kèm {', '.join(names)}]"
 
-        reply = _pick_reply(last_user)
+        reply = _pick_reply(last_user, timezone)
         if names:
             reply = (
                 f"Peto thấy cậu gửi kèm {', '.join(names)}. "

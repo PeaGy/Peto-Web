@@ -22,3 +22,13 @@ it('reports a truncated stream instead of treating it as complete', async () => 
   await expect(sendMessage({message:'hi',conversationId:null,effort:'auto'}, {onDone})).rejects.toThrow('Kết nối bị ngắt');
   expect(onDone).not.toHaveBeenCalled();
 });
+
+it('sends only the browser timezone, never the browser clock', async () => {
+  const fetchMock = vi.fn(async () => new Response(event({type:'done'})));
+  vi.stubGlobal('fetch', fetchMock);
+  await sendMessage({message:'Mấy giờ?',conversationId:null,effort:'auto'}, {});
+  const body = JSON.parse((fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].body as string);
+  expect(body.timezone).toBe(Intl.DateTimeFormat().resolvedOptions().timeZone);
+  expect(body).not.toHaveProperty('timestamp');
+  expect(body).not.toHaveProperty('current_time');
+});

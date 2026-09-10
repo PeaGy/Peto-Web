@@ -500,10 +500,6 @@ export default function App() {
   async function submit() {
     const text = draft.trim();
     if ((!text && draftFiles.length === 0) || abortRef.current || loadingConversation || loadFailed) return;
-    if (text.length > 4000) {
-      setError("Tin nhắn tối đa 4.000 ký tự. Nội dung vẫn ở đây để cậu chỉnh lại.");
-      return;
-    }
 
     const pending = draftFiles;
     const previousMessages = messages;

@@ -87,9 +87,10 @@ async def test_provider_error_becomes_error_event(client):
 
 
 async def test_empty_and_oversized_messages_rejected(client):
+    from config import MAX_INPUT_CHARS
     assert (await client.post("/api/chat", json={"message": "   "})).status_code == 400
     assert (
-        await client.post("/api/chat", json={"message": "a" * 5000})
+        await client.post("/api/chat", json={"message": "a" * (MAX_INPUT_CHARS + 1)})
     ).status_code == 400
 
 
@@ -129,10 +130,10 @@ async def test_effort_can_be_overridden(client, monkeypatch):
 
     original = MockProvider.stream
 
-    async def spy(self, *, system_prompt, messages, effort="low"):
+    async def spy(self, *, system_prompt, messages, effort="low", timezone=None):
         seen.append(effort)
         async for chunk in original(
-            self, system_prompt=system_prompt, messages=messages, effort=effort
+            self, system_prompt=system_prompt, messages=messages, effort=effort, timezone=timezone
         ):
             yield chunk
 
@@ -167,10 +168,10 @@ async def test_image_reaches_the_provider(client, monkeypatch):
 
     original = MockProvider.stream
 
-    async def spy(self, *, system_prompt, messages, effort="low"):
+    async def spy(self, *, system_prompt, messages, effort="low", timezone=None):
         seen.append(messages)
         async for chunk in original(
-            self, system_prompt=system_prompt, messages=messages, effort=effort
+            self, system_prompt=system_prompt, messages=messages, effort=effort, timezone=timezone
         ):
             yield chunk
 

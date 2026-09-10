@@ -86,6 +86,14 @@ export async function logout(): Promise<void> {
 
 export const DISCORD_LOGIN_URL = "/api/auth/discord/login";
 
+export function browserTimezone(): string | undefined {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export interface AppInfo {
   name: string;
   avatar_url: string | null;
@@ -141,6 +149,7 @@ export async function sendMessage(
       message: payload.message,
       conversation_id: payload.conversationId,
       effort: payload.effort,
+      timezone: browserTimezone(),
       attachments: payload.attachments ?? [],
     }),
     signal,

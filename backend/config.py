@@ -39,7 +39,9 @@ AI_PROVIDER = os.getenv("PETO_AI_PROVIDER", "mock").strip().lower()
 
 XAI_MODEL = os.getenv("XAI_MODEL", "grok-4.6").strip()
 XAI_API_BASE = os.getenv("XAI_BASE_URL", "https://api.x.ai/v1").strip()
-XAI_MAX_OUTPUT_TOKENS = _env_int("XAI_MAX_OUTPUT_TOKENS", 1200, 128, 32000)
+# Ngân sách phản hồi dành cho web, không gắn với độ dài tin nhắn Discord.
+XAI_MAX_OUTPUT_TOKENS = _env_int("XAI_MAX_OUTPUT_TOKENS", 8192, 128, 32000)
+DEFAULT_TIMEZONE = os.getenv("PETO_DEFAULT_TIMEZONE", "Asia/Ho_Chi_Minh").strip()
 
 # Token của RIÊNG Peto Web. Không trỏ vào .xai_tokens.json của bot Discord.
 XAI_TOKEN_PATH = Path(
@@ -111,16 +113,16 @@ MAX_QUEUE = _env_int("PETO_MAX_QUEUE", 6, 0, 50)
 QUEUE_TIMEOUT_SECONDS = _env_float("PETO_QUEUE_TIMEOUT_SECONDS", 60.0, 5.0, 300.0)
 COOLDOWN_SECONDS = _env_float("PETO_COOLDOWN_SECONDS", 3.0, 0.0, 300.0)
 
-# --- Timeout theo mức suy luận (giữ đúng tinh thần bot cũ) ----------------
+# --- Thời gian cho phép để suy nghĩ và stream câu trả lời dài trên web ---
 RESPONSE_TIMEOUTS = {
-    "low": _env_float("PETO_TIMEOUT_LOW_SECONDS", 45.0, 5.0, 600.0),
-    "medium": _env_float("PETO_TIMEOUT_MEDIUM_SECONDS", 180.0, 5.0, 600.0),
-    "high": _env_float("PETO_TIMEOUT_HIGH_SECONDS", 240.0, 5.0, 600.0),
+    "low": _env_float("PETO_TIMEOUT_LOW_SECONDS", 180.0, 5.0, 600.0),
+    "medium": _env_float("PETO_TIMEOUT_MEDIUM_SECONDS", 300.0, 5.0, 600.0),
+    "high": _env_float("PETO_TIMEOUT_HIGH_SECONDS", 480.0, 5.0, 600.0),
 }
 
 # --- Ngữ cảnh ------------------------------------------------------------
 MAX_HISTORY_MESSAGES = _env_int("PETO_MAX_HISTORY", 20, 2, 100)
-MAX_INPUT_CHARS = _env_int("PETO_MAX_INPUT_CHARS", 4000, 100, 20000)
+MAX_INPUT_CHARS = _env_int("PETO_MAX_INPUT_CHARS", 32000, 100, 200000)
 
 # --- Tệp đính kèm --------------------------------------------------------
 UPLOAD_DIR = Path(os.getenv("PETO_UPLOAD_DIR", str(BASE_DIR / "data" / "uploads")))

@@ -77,10 +77,11 @@ npm test
 npm run build
 ```
 
-Sau đợt cải tiến 09/09/2026: **118 test backend, 11 test frontend đạt**;
+Sau đợt cải tiến 10/09/2026: **147 test backend, 14 test frontend đạt**;
 TypeScript và Vite build đạt. Các test bao gồm thu hồi quyền, chuyển hội thoại
 với kết quả tải về không đúng thứ tự, giữ bản nháp, dừng phản hồi, lưu câu trả lời
-dở dang, nâng cấp schema, ẩn danh, phân trang và bảng Markdown.
+dở dang, nâng cấp schema, ẩn danh, phân trang, bảng Markdown, ngày giờ/múi giờ,
+vòng gọi công cụ và tin nhắn dài.
 
 Khi cập nhật bản này, cài lại dependencies, build frontend rồi khởi động lại web.
 Backend tự bổ sung cột trạng thái tin nhắn khi khởi động; giữ nguyên dữ liệu cũ.
@@ -96,9 +97,10 @@ backend/
   rate_limit.py  Cooldown + đồng thời + hàng chờ có timeout
   xai_auth.py    OAuth xAI riêng của web + CLI login/status/logout
   config.py      Đọc biến môi trường
+  chat_tools.py  Đồng hồ máy chủ, múi giờ IANA và bộ chạy công cụ đã đăng ký
   ai/
     base.py      Interface ChatProvider — phần còn lại chỉ nói chuyện qua đây
-    xai.py       Grok qua xAI Responses API, có stream
+    xai.py       Grok Responses API: stream và vòng gọi công cụ có giới hạn
     mock.py      Trả lời giả, không gọi mạng
     routing.py   Chọn mức suy luận low/medium/high
 frontend/
@@ -114,6 +116,40 @@ phải sửa route, database hay giới hạn tải.
 
 Đặt `PETO_AI_PROVIDER=mock` bất cứ lúc nào để làm việc trên giao diện mà không
 tốn hạn mức xAI.
+
+## Ngày giờ và độ dài dành cho web
+
+- Mỗi lượt gửi kèm múi giờ IANA từ trình duyệt, ví dụ `Asia/Barnaul`.
+  **Ngày giờ lấy từ đồng hồ máy chủ**, không lấy giờ do trình duyệt tự khai.
+  Khi trình duyệt không cung cấp múi giờ, dùng `PETO_DEFAULT_TIMEZONE`, mặc định
+  `Asia/Ho_Chi_Minh`. Múi giờ không hợp lệ bị từ chối, không âm thầm đoán.
+- Mốc thời gian mới được đưa vào ngữ cảnh ngay trước mỗi lượt gọi AI, kể cả
+  khi hội thoại cũ được mở lại hoặc đã chờ trong hàng đợi. Peto có thể dùng mốc
+  đó để hiểu hôm nay/hôm qua/ngày mai; không mặc định biết vị trí của người dùng.
+- Công cụ `get_current_datetime` cho phép AI tra lại giờ hiện tại ở múi giờ
+  khác. Python `zoneinfo` và dependency `tzdata` xử lý ngày đổi theo múi giờ và
+  giờ mùa hè trên cả Windows và Linux. Đây chưa phải công cụ lịch, nhắc việc
+  hay tra lịch âm.
+- xAI nhận schema công cụ, backend kiểm tra và chạy công cụ rồi gửi kết quả
+  trở lại AI. Giao diện chỉ nhận phần văn bản trả lời. Tối đa 3 vòng thực thi,
+  8 lời gọi công cụ trong một lượt; kết thúc bằng thông báo rõ nếu vượt giới hạn.
+  Luồng giữ ngữ cảnh công cụ trong lượt với `store=false`, theo
+  [tài liệu function calling](https://docs.x.ai/developers/tools/function-calling)
+  và [hướng dẫn giữ trạng thái trong input](https://docs.x.ai/developers/tools/advanced-usage).
+- Không còn chốt 4.000 ký tự ở giao diện hoặc luật ép 1–3 câu. Mặc định web
+  nhận **32.000 ký tự/tin**, AI có ngân sách **8.192 token/phản hồi** (token không
+  tương đương ký tự, còn phụ thuộc model và phần suy luận). Có thể chỉnh qua
+  `PETO_MAX_INPUT_CHARS` và `XAI_MAX_OUTPUT_TOKENS`; cấu hình rõ trong `.env`
+  được ưu tiên. Không tự cắt hoặc chia tin theo giới hạn của Discord.
+- Timeout mặc định thấp/trung bình/cao là 180/300/480 giây để đủ thời gian
+  stream nội dung dài. Khi AI chạm giới hạn hoặc kết nối dừng giữa chừng, giữ
+  phần đã viết và đánh dấu chưa hoàn tất, không giả vờ trả lời xong.
+
+Thử: “Bây giờ mấy giờ?”, “Hôm nay thứ mấy?”, “Ở New York hiện tại là mấy giờ?”.
+Provider `mock` trả lời các câu hỏi ngày giờ đơn giản bằng đồng hồ thật để thử
+luồng web; khả năng hiểu câu hỏi linh hoạt và chọn múi giờ khác cần provider AI.
+Chưa gọi xAI thật trong đợt kiểm thử này. Khi cập nhật VPS, cài lại requirements
+(có `tzdata`), build frontend rồi khởi động lại web.
 
 ## Danh tính
 

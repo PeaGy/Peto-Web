@@ -75,6 +75,15 @@ describe('Conversation navigation', () => {
 });
 
 describe('Sending and stopping', () => {
+  it('allows messages longer than the former 4,000 character limit', async () => {
+    vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers) => handlers.onError?.('Giữ bản nháp để kiểm tra'));
+    await openApp();
+    const longText = 'Nội dung web đầy đủ. '.repeat(300);
+    fireEvent.change(screen.getByPlaceholderText('Nhắn cho Peto…'), {target:{value:longText}});
+    fireEvent.click(screen.getByRole('button', {name:'Gửi',exact:true}));
+    await screen.findByText('Giữ bản nháp để kiểm tra');
+    expect(vi.mocked(api.sendMessage).mock.calls[0][0].message).toBe(longText.trim());
+  });
   it('keeps the draft and selected file on rejection, then sends it once successfully', async () => {
     vi.mocked(api.sendMessage).mockImplementationOnce(async (_payload, handlers) => handlers.onError?.('Tạm thời bận'))
       .mockImplementationOnce(async (_payload, handlers) => {

@@ -34,6 +34,7 @@ from ai.routing import choose_effort
 from attachments import AttachmentError
 from app_identity import get_app_identity
 from auth import current_owner
+from chat_tools import ToolInputError, resolve_timezone, time_context
 from config import (
     ALLOWED_DISCORD_IDS,
     ALLOWED_ORIGINS,
@@ -56,6 +57,7 @@ logger = logging.getLogger("peto_web")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    resolve_timezone()  # Báo lỗi cấu hình sớm nếu thiếu dữ liệu múi giờ.
     await db.init_db()
     logger.info("Peto Web sẵn sàng — provider=%s", get_provider().name)
     if not auth.is_configured():
@@ -101,6 +103,7 @@ class ChatRequest(BaseModel):
     message: str = ""
     conversation_id: str | None = None
     effort: str | None = None
+    timezone: str | None = Field(default=None, max_length=100)
     attachments: list[AttachmentIn] = Field(default_factory=list)
 
 
@@ -284,20 +287,25 @@ async def _build_system_prompt(owner: str) -> str:
 
 
 async def _stream_reply(
-    system_prompt: str, history: list[ChatMessage], effort: str
+    system_prompt: str, history: list[ChatMessage], effort: str, timezone: str | None = None
 ) -> AsyncIterator[str]:
     """Gọi provider một lần, có timeout theo effort. Trả về từng mảnh text."""
     provider = get_provider()
     timeout = RESPONSE_TIMEOUTS.get(effort, RESPONSE_TIMEOUTS["low"])
     async with asyncio.timeout(timeout):
         async for chunk in provider.stream(
-            system_prompt=system_prompt, messages=history, effort=effort
+            system_prompt=f"{system_prompt}\n\n{time_context(timezone)}",
+            messages=history, effort=effort, timezone=timezone,
         ):
             yield chunk
 
 
 @app.post("/api/chat")
 async def chat(request: ChatRequest, owner: str = Depends(current_owner)):
+    try:
+        timezone = resolve_timezone(request.timezone)
+    except ToolInputError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
     text = request.message.strip()
     if len(text) > MAX_INPUT_CHARS:
         raise HTTPException(
@@ -365,7 +373,7 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner)):
                 history = _to_chat_messages(rows)
                 system_prompt = await _build_system_prompt(owner)
                 try:
-                    async for chunk in _stream_reply(system_prompt, history, effort):
+                    async for chunk in _stream_reply(system_prompt, history, effort, timezone):
                         collected.append(chunk)
                         yield sse({"type": "delta", "text": chunk})
                 except TimeoutError:
@@ -375,7 +383,7 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner)):
                         raise
                     logger.warning("Timeout effort=low — thử lại 1 lần")
                     async for chunk in _stream_reply(
-                        system_prompt, history, effort
+                        system_prompt, history, effort, timezone
                     ):
                         collected.append(chunk)
                         yield sse({"type": "delta", "text": chunk})

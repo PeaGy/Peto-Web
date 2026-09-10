@@ -2,6 +2,7 @@ fastapi
 uvicorn[standard]
 aiosqlite
 anyio
+tzdata
 python-dotenv
 httpx
 itsdangerous

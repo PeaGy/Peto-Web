@@ -53,6 +53,7 @@ class ChatProvider(ABC):
         system_prompt: str,
         messages: list[ChatMessage],
         effort: str = "low",
+        timezone: str | None = None,
     ) -> AsyncIterator[str]:
         """Sinh ra các mảnh text nối tiếp nhau tạo thành câu trả lời.
 
