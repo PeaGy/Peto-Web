@@ -29,6 +29,8 @@
         --muted: #9a94b0;
         --accent: #b58cf0;
         --on-accent: #14131a;
+        --scroll-thumb: #3f3c54;
+        --scroll-thumb-hover: #565273;
         color-scheme: dark;
       }
 
@@ -40,16 +42,23 @@
         --muted: #67617d;
         --accent: #7444c9;
         --on-accent: #ffffff;
+        --scroll-thumb: #cfc8e4;
+        --scroll-thumb-hover: #b4a9d3;
         color-scheme: light;
       }
 
       * { box-sizing: border-box; }
 
-      html, body { height: 100%; margin: 0; }
+      html { height: 100%; }
 
+      /* min-height chứ không phải height: màn hình thấp thì body phải giãn ra
+         theo thẻ. Và căn giữa bằng `margin: auto` trên thẻ chứ không phải
+         `align-items: center` — cách kia khi nội dung cao hơn khung sẽ đẩy phần
+         thừa lên trên vùng cuộn, cắt mất đầu thẻ mà không kéo tới được. */
       body {
+        min-height: 100%;
+        margin: 0;
         display: flex;
-        align-items: center;
         justify-content: center;
         padding: 24px;
         background: var(--bg);
@@ -57,9 +66,35 @@
         font: 15px/1.6 "Segoe UI", system-ui, -apple-system, sans-serif;
       }
 
+      /* Giữ giống styles.css. Chromium bỏ qua ::-webkit-scrollbar ngay khi thấy
+         scrollbar-width, nên thuộc tính chuẩn phải nằm trong @supports bên dưới. */
+      ::-webkit-scrollbar { width: 10px; height: 10px; }
+      ::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+
+      ::-webkit-scrollbar-thumb {
+        border: 3px solid transparent;
+        border-radius: 999px;
+        background: var(--scroll-thumb);
+        background-clip: content-box;
+      }
+
+      ::-webkit-scrollbar-thumb:hover {
+        border-width: 2px;
+        background: var(--scroll-thumb-hover);
+        background-clip: content-box;
+      }
+
+      @supports not selector(::-webkit-scrollbar) {
+        html {
+          scrollbar-width: thin;
+          scrollbar-color: var(--scroll-thumb) transparent;
+        }
+      }
+
       main {
         width: 100%;
         max-width: 420px;
+        margin: auto;
         padding: 40px 32px;
         border: 1px solid var(--line);
         border-radius: 18px;
@@ -67,7 +102,7 @@
         text-align: center;
       }
 
-      .mark { display: block; margin: 0 auto 18px; color: var(--accent); }
+      .mark { display: block; margin: 0 auto 18px; color: var(--muted); }
 
       .code {
         color: var(--accent);
@@ -100,9 +135,11 @@
   </head>
   <body>
     <main>
+      <!-- Kính lúp soi vào chỗ trống. Ngôi sao lấp lánh là dấu hiệu "tạo ảnh"
+           của app, dùng ở trang lỗi sẽ đọc nhầm thành có gì đó vui. -->
       <svg class="mark" width="40" height="40" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-        <path d="m12 3 1.8 6.2L20 11l-6.2 1.8L12 19l-1.8-6.2L4 11l6.2-1.8L12 3Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" />
-        <path d="m19 16 .7 2.3L22 19l-2.3.7L19 22l-.7-2.3L16 19l2.3-.7L19 16Z" fill="currentColor" />
+        <circle cx="10.5" cy="10.5" r="6.75" stroke="currentColor" stroke-width="1.5" />
+        <path d="m15.5 15.5 5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
       </svg>
       <span class="code">Lỗi 404</span>
       <h1>Ở đây không có gì cả.</h1>
