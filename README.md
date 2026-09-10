@@ -76,7 +76,7 @@ npm test
 npm run build
 ```
 
-Sau đợt thêm tìm web 10/09/2026: **208 test backend, 55 test frontend đạt**;
+Sau đợt thêm tìm web và menu dấu +: **208 test backend, 56 test frontend đạt**;
 TypeScript và Vite build đạt. Các test bao gồm thu hồi quyền, chuyển hội thoại
 với kết quả tải về không đúng thứ tự, giữ bản nháp, dừng phản hồi, lưu câu trả lời
 dở dang, nâng cấp schema, ẩn danh, phân trang, bảng Markdown, ngày giờ/múi giờ,
@@ -170,17 +170,17 @@ hay chỉnh sửa thật, hoặc xác minh xác thực với dịch vụ xAI th�
 
 ## Tìm kiếm web trong chat
 
-Ô **Tìm web** cạnh phần **Suy nghĩ** có ba chế độ:
+Peto **tự động tìm web** khi câu hỏi cần thông tin mới, khi bạn yêu cầu
+tìm/kiểm chứng hoặc đưa một URL cần đọc. Khung chat không còn ô chọn tìm web.
 
-- **Tự động** (mặc định): Peto quyết định tra khi câu hỏi cần thông tin mới,
-  khi bạn yêu cầu tìm/kiểm chứng hoặc đưa một URL cần đọc.
-- **Luôn tìm**: yêu cầu dịch vụ dùng công cụ web trước khi trả lời. Nếu dịch vụ
-  không xác nhận đã tìm, lượt đó báo chưa được kiểm chứng.
-- **Tắt**: không gửi công cụ tìm web cho lượt đó; ngày giờ vẫn dùng được.
+Nút **+** cạnh **Suy nghĩ** mở menu với **Thêm ảnh hoặc tệp** và **Tắt tìm kiếm
+web**. Khi đã tắt, mục này đổi thành **Bật tìm kiếm web** để trở về tự động.
+Tắt tìm web vẫn dùng được công cụ ngày giờ. Menu đóng khi chọn một mục,
+nhấn Escape hoặc nhấp bên ngoài; được khóa khi đang trả lời.
 
 Ví dụ: “Tìm thông báo mới nhất về Python và dẫn nguồn chính thức”, hoặc
 “Đọc trang này rồi tóm tắt giúp mình: https://docs.python.org/3/”.
-Lựa chọn giữ trong phiên trang hiện tại; tải lại trang về Tự động.
+Lựa chọn bật/tắt giữ trong phiên trang hiện tại; tải lại trang về tự động.
 
 Khi dịch vụ báo bắt đầu tra, giao diện hiện **Peto đang tìm trên web…**; sau đó
 hiện tiến trình tổng hợp. Nguồn nằm dưới câu trả lời, bấm để mở danh sách và
@@ -201,7 +201,7 @@ Backend dùng `web_search` của xAI Responses với kết nối hiện có, the
 công cụ ngày giờ vẫn có giới hạn riêng. Có thể phát sinh phí tìm kiếm theo
 tài khoản dịch vụ. `PETO_WEB_SEARCH_ENABLED=true` mặc định; đặt `false` để
 tắt toàn bộ tìm web. Quyền tìm kiếm thực tế còn phụ thuộc model và kết nối
-AI; nếu dịch vụ không hỗ trợ, chọn **Tắt** để chat tiếp.
+AI; nếu dịch vụ không hỗ trợ, mở **+ → Tắt tìm kiếm web** để chat tiếp.
 
 Prompt yêu cầu ưu tiên nguồn chính thức, phân biệt ngày đăng/ngày sự kiện,
 không bịa nguồn và bỏ qua chỉ dẫn nằm trong trang web. Đây là chỉ dẫn cho AI,

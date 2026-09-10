@@ -41,10 +41,10 @@ async function openApp() {
   await screen.findByRole('button', { name: 'A', exact: true });
 }
 
-it('chọn tìm web, hiển thị tiến trình và nguồn cùng câu trả lời', async () => {
+it('tự động tìm web, hiển thị tiến trình và nguồn cùng câu trả lời', async () => {
   const result = deferred<void>();
   vi.mocked(api.sendMessage).mockImplementation(async (payload, handlers) => {
-    expect(payload.webSearch).toBe('on');
+    expect(payload.webSearch).toBe('auto');
     handlers.onMeta?.('C', 'low', row('Tìm Python'));
     handlers.onSearch?.('searching');
     await result.promise;
@@ -53,11 +53,11 @@ it('chọn tìm web, hiển thị tiến trình và nguồn cùng câu trả l�
     handlers.onDone?.();
   });
   await openApp();
-  fireEvent.change(screen.getByLabelText('Tìm kiếm web'), { target: { value: 'on' } });
+  expect(screen.queryByLabelText('Tìm kiếm web')).toBeNull();
   fireEvent.change(screen.getByLabelText('Nhắn cho Peto'), { target: { value: 'Tìm Python' } });
   fireEvent.click(screen.getByRole('button', { name: 'Gửi', exact: true }));
   await screen.findByText('Peto đang tìm trên web…');
-  expect((screen.getByLabelText('Tìm kiếm web') as HTMLSelectElement).disabled).toBe(true);
+  expect((screen.getByRole('button', { name: 'Thêm ảnh và tùy chọn' }) as HTMLButtonElement).disabled).toBe(true);
   await act(async () => result.resolve());
   await screen.findByText('Có tài liệu chính thức.');
   expect(screen.queryByText('Peto đang tìm trên web…')).toBeNull();
@@ -100,13 +100,44 @@ it('dừng lúc đang tìm web không để tiến trình treo hoặc nhận ngu
 it('giữ chế độ tìm và bản nháp khi máy chủ từ chối, gửi đúng chế độ tắt', async () => {
   vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers) => handlers.onError?.('Đang bận'));
   await openApp();
-  fireEvent.change(screen.getByLabelText('Tìm kiếm web'), { target: { value: 'off' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Thêm ảnh và tùy chọn' }));
+  fireEvent.click(screen.getByRole('button', { name: /Tắt tìm kiếm web/ }));
   fireEvent.change(screen.getByLabelText('Nhắn cho Peto'), { target: { value: 'Giải thích Python' } });
   fireEvent.click(screen.getByRole('button', { name: 'Gửi', exact: true }));
   await screen.findByText('Đang bận');
-  expect((screen.getByLabelText('Tìm kiếm web') as HTMLSelectElement).value).toBe('off');
+  fireEvent.click(screen.getByRole('button', { name: 'Thêm ảnh và tùy chọn' }));
+  expect(screen.getByRole('button', { name: /Bật tìm kiếm web/ })).toBeTruthy();
   expect((screen.getByLabelText('Nhắn cho Peto') as HTMLTextAreaElement).value).toBe('Giải thích Python');
   expect(vi.mocked(api.sendMessage).mock.calls[0][0].webSearch).toBe('off');
+});
+
+it('menu dấu cộng chọn được tệp, đóng bằng Escape và bật lại tìm web tự động', async () => {
+  vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers) => handlers.onError?.('Giữ bản nháp'));
+  await openApp();
+  const trigger = screen.getByRole('button', { name: 'Thêm ảnh và tùy chọn' });
+  fireEvent.click(trigger);
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: /Thêm ảnh hoặc tệp/ }));
+  fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
+  expect(screen.queryByRole('group', { name: 'Tùy chọn tin nhắn' })).toBeNull();
+  expect(document.activeElement).toBe(trigger);
+  fireEvent.click(trigger);
+  fireEvent.pointerDown(screen.getByLabelText('Nhắn cho Peto'));
+  expect(screen.queryByRole('group', { name: 'Tùy chọn tin nhắn' })).toBeNull();
+  fireEvent.click(trigger);
+  const input = document.querySelector('input[type=file]') as HTMLInputElement;
+  const picker = vi.spyOn(input, 'click');
+  fireEvent.click(screen.getByRole('button', { name: /Thêm ảnh hoặc tệp/ }));
+  expect(picker).toHaveBeenCalledOnce();
+  picker.mockRestore();
+  await userEvent.upload(input, new File(['ghi chú'], 'note.txt', { type: 'text/plain' }));
+  expect(screen.getByRole('button', { name: 'Gỡ note.txt' })).toBeTruthy();
+  fireEvent.click(trigger);
+  fireEvent.click(screen.getByRole('button', { name: /Tắt tìm kiếm web/ }));
+  fireEvent.click(trigger);
+  fireEvent.click(screen.getByRole('button', { name: /Bật tìm kiếm web/ }));
+  fireEvent.click(screen.getByRole('button', { name: 'Gửi', exact: true }));
+  await screen.findByText('Giữ bản nháp');
+  expect(vi.mocked(api.sendMessage).mock.calls[0][0].webSearch).toBe('auto');
 });
 
 it('keeps image generation alive while navigating to chat and back', async () => {

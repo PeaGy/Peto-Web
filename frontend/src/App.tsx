@@ -18,6 +18,7 @@ import typescript from "highlight.js/lib/languages/typescript";
 import xml from "highlight.js/lib/languages/xml";
 import yaml from "highlight.js/lib/languages/yaml";
 import Imagine from "./Imagine";
+import ComposerMenu from "./ComposerMenu";
 import WebSources, { GlobeIcon, safeSources } from "./WebSources";
 import {
   DISCORD_LOGIN_URL,
@@ -153,20 +154,6 @@ function fileToBase64(file: File): Promise<string> {
     reader.onerror = () => reject(reader.error ?? new Error("Không đọc được tệp"));
     reader.readAsDataURL(file);
   });
-}
-
-function PaperclipIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path
-        d="M21 12.5 12.12 21.38a5 5 0 0 1-7.07-7.07L14.5 4.86a3.5 3.5 0 0 1 4.95 4.95L10.12 19.14a2 2 0 0 1-2.83-2.83L16 7.6"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
 }
 
 function SendIcon() {
@@ -1250,16 +1237,8 @@ export default function App() {
                     event.target.value = "";
                   }}
                 />
-                <button
-                  type="button"
-                  className="icon-btn"
-                  title="Đính kèm ảnh hoặc tệp"
-                  aria-label="Đính kèm ảnh hoặc tệp"
-                  disabled={streaming}
-                  onClick={() => fileRef.current?.click()}
-                >
-                  <PaperclipIcon />
-                </button>
+                <ComposerMenu disabled={streaming || view !== "chat"} webDisabled={webSearch === "off"}
+                  onAttach={() => fileRef.current?.click()} onToggleWeb={() => setWebSearch((mode) => mode === "off" ? "auto" : "off")} />
 
                 <label className="effort-select">
                   <span className="effort-label">Suy nghĩ</span>
@@ -1275,14 +1254,6 @@ export default function App() {
                         {item.label}
                       </option>
                     ))}
-                  </select>
-                </label>
-                <label className="effort-select web-search-select">
-                  <span className="effort-label"><GlobeIcon /> Tìm web</span>
-                  <select aria-label="Tìm kiếm web" value={webSearch} disabled={streaming} onChange={(event) => setWebSearch(event.target.value as WebSearchMode)} title="Tự động: Peto tra khi cần tin mới. Luôn tìm: tra trước khi trả lời. Tắt: không dùng web.">
-                    <option value="auto">Tự động</option>
-                    <option value="on">Luôn tìm</option>
-                    <option value="off">Tắt</option>
                   </select>
                 </label>
               </div>

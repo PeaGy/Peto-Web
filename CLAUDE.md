@@ -167,6 +167,9 @@ for links. Persist them in `messages.sources`, return them in history, and inclu
 as clearly marked old references in the next model input. Frontend `WebSources.tsx`
 renders source links without downloading favicons; SSE `search` and `sources` events
 flow through `api.ts` and stay separate from `delta` and `thinking`.
+The chat UI always starts in auto mode. `ComposerMenu.tsx` puts attachments and the
+auto/off switch under a plus button next to effort; it does not expose the API's forced
+`on` mode. Close the menu on Escape, outside interaction, tab changes or streaming.
 
 ### Date and time
 

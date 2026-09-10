@@ -682,7 +682,17 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   min-width: 0;
 }
 
-.web-search-select .effort-label { display: inline-flex; align-items: center; gap: 5px; }
+.composer-menu { position: relative; flex-shrink: 0; }
+.composer-plus { position: relative; }
+.composer-plus[aria-expanded="true"] { border-color: var(--accent); color: var(--accent); }
+.web-off-dot { position: absolute; right: 3px; bottom: 3px; width: 6px; height: 6px; border-radius: 50%; background: var(--muted); border: 1px solid var(--panel); }
+.composer-options { position: absolute; z-index: 20; left: 0; bottom: calc(100% + 10px); width: min(280px, calc(100vw - 56px)); padding: 6px; border: 1px solid var(--line); border-radius: 16px; background: var(--panel); box-shadow: var(--shadow); }
+.composer-options > button { display: flex; align-items: center; gap: 12px; width: 100%; border: 0; border-radius: 10px; padding: 12px; background: transparent; color: var(--text); text-align: left; font: inherit; cursor: pointer; }
+.composer-options > button:hover, .composer-options > button:focus-visible { background: var(--panel-2); outline: 2px solid var(--accent); outline-offset: -2px; }
+.composer-options > button > svg { flex-shrink: 0; color: var(--accent); }
+.composer-options > button > span { display: grid; gap: 4px; }
+.composer-options strong { font-size: 13px; font-weight: 500; }
+.composer-options small { font-size: 11px; color: var(--muted); }
 .web-search-status { display: flex; align-items: center; gap: 8px; color: var(--accent); font-size: 13px; padding: 7px 0; }
 .web-search-status svg { flex-shrink: 0; }
 .web-sources { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line); font-size: 13px; }

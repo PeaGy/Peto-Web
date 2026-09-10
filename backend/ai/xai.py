@@ -232,7 +232,7 @@ class XAIProvider(ChatProvider):
             except APIStatusError as err:
                 logger.warning("xAI HTTP %s", err.status_code)
                 if search_enabled and err.status_code in {400, 403}:
-                    raise ProviderError("Peto chưa dùng được tìm web với kết nối AI hiện tại. Chọn Tắt ở Tìm web để chat tiếp, hoặc nhờ người quản trị kiểm tra quyền tìm kiếm của dịch vụ.") from err
+                    raise ProviderError("Peto chưa dùng được tìm web với kết nối AI hiện tại. Mở menu + rồi chọn Tắt tìm kiếm web để chat tiếp, hoặc nhờ người quản trị kiểm tra quyền tìm kiếm của dịch vụ.") from err
                 raise ProviderError("Peto gặp lỗi kết nối với dịch vụ AI. Thử lại sau nha.", retryable=err.status_code >= 500) from err
             finally:
                 if stream is not None:
