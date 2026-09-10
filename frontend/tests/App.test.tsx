@@ -336,6 +336,21 @@ describe('Màn hình đăng nhập', () => {
     expect(screen.getByRole('button', { name: /Khách/ })).toBeTruthy();
   });
 
+  it('đăng xuất xong vẫn còn đủ các cách đăng nhập', async () => {
+    // handleUnauthorized từng dựng AuthState mới toanh, làm mất `providers`,
+    // nên nút Google biến mất tới khi F5. Đăng xuất không đổi gì ở máy chủ.
+    vi.mocked(api.logout).mockResolvedValue(undefined);
+    await openApp();
+    fireEvent.click(screen.getByRole('button', { name: /Cài đặt/ }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Đăng xuất' }));
+
+    expect(await screen.findByRole('link', { name: /Đăng nhập bằng Discord/ })).toBeTruthy();
+    expect(screen.getByRole('link', { name: /Google/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Khách/ })).toBeTruthy();
+    // Không gọi lại /api/auth/me: thông tin đã biết thì giữ lấy.
+    expect(api.getAuthState).toHaveBeenCalledTimes(1);
+  });
+
   it('báo lỗi thay vì bày nút chết khi không gọi được /api/auth/me', async () => {
     // getAuthState hỏng -> login_configured false. Trước đây màn hình vẫn bày
     // nút Discord bấm không ăn thua và giấu Google, làm người dùng tưởng thiếu

@@ -799,6 +799,10 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .login-card .error { margin: 0; width: 100%; }
 
 .discord-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
   width: 100%;
   padding: 12px 18px;
   border-radius: 12px;
