@@ -152,9 +152,15 @@ unknown parameter keys. Currently the only tool is `get_current_datetime`.
 
 ### Date and time
 
-The **server clock** is the source of truth. The browser only supplies an IANA timezone
-name, which is validated via `zoneinfo` and rejected with a 400 if unrecognized — never
-silently guessed. `chat_tools.time_context()` is appended to the system prompt on **every**
+The **server clock** is the source of truth. The browser supplies an IANA timezone name
+with every chat turn; `chat_tools.resolve_browser_timezone` validates it via `zoneinfo` and
+falls back to `PETO_DEFAULT_TIMEZONE` with a logged warning when it does not resolve. It
+used to return a 400, which meant a phone reporting something like `GMT+7` could not chat
+at all — and sending *no* timezone already fell back, so the strict path was punishing the
+better-informed case.
+
+`get_current_datetime` stays strict on purpose: there the model asked for one specific zone,
+so a bad name must surface as a tool error rather than silently becoming Vietnam time. `chat_tools.time_context()` is appended to the system prompt on **every**
 model call, including when an old conversation is reopened or a queued request finally
 runs, so "today" is always current. The `tzdata` dependency is what makes this behave
 identically on Windows and Linux.

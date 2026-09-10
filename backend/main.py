@@ -35,7 +35,7 @@ from ai.routing import choose_effort
 from attachments import AttachmentError
 from app_identity import get_app_identity
 from auth import current_owner
-from chat_tools import ToolInputError, resolve_timezone, time_context
+from chat_tools import resolve_browser_timezone, resolve_timezone, time_context
 from config import (
     ALLOWED_ORIGINS,
     MAX_ATTACHMENTS,
@@ -311,10 +311,7 @@ async def _stream_reply(
 
 @app.post("/api/chat")
 async def chat(request: ChatRequest, owner: str = Depends(current_owner)):
-    try:
-        timezone = resolve_timezone(request.timezone)
-    except ToolInputError as err:
-        raise HTTPException(status_code=400, detail=str(err)) from err
+    timezone = resolve_browser_timezone(request.timezone)
     text = request.message.strip()
     if len(text) > MAX_INPUT_CHARS:
         raise HTTPException(

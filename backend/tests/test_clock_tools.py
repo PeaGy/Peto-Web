@@ -60,9 +60,33 @@ async def test_web_clock_reaches_chat_and_persists_plain_text(client, fixed_cloc
     assert saved[-1]['content'] == text.strip()
 
 
-async def test_invalid_timezone_is_rejected_before_saving(client):
-    response = await client.post('/api/chat', json={'message':'hi', 'timezone':'not-valid'})
-    assert response.status_code == 400
+async def test_mui_gio_la_thi_roi_ve_mac_dinh_chu_khong_chan_chat(client, fixed_clock):
+    """Trình duyệt gửi múi giờ lạ vẫn phải chat được.
+
+    Bản trước trả 400 và chặn hẳn tin nhắn. Nhưng gửi RỖNG thì vốn đã được rơi
+    về mặc định, nên chặn cứng trường hợp "có gửi nhưng dạng lạ" là bất đối
+    xứng — và nó làm cả một loại thiết bị không chat được (điện thoại gửi những
+    thứ như 'GMT+7').
+    """
+    response = await client.post('/api/chat', json={'message':'Bây giờ mấy giờ?', 'timezone':'GMT+7'})
+    events = await read_events(response)
+    assert events[-1]['type'] == 'done'
+    text = ''.join(e['text'] for e in events if e['type'] == 'delta')
+    # Rơi về PETO_DEFAULT_TIMEZONE, và lượt chat được lưu bình thường.
+    assert 'Asia/Ho_Chi_Minh' in text
+    saved = (await client.get(f"/api/conversations/{events[0]['conversation_id']}/messages")).json()['messages']
+    assert saved[-1]['content'] == text.strip()
+
+
+def test_cong_cu_van_bao_loi_khi_model_doi_mui_gio_sai():
+    """Chỉ múi giờ của trình duyệt mới được rơi về mặc định.
+
+    Model gọi get_current_datetime là nó đòi ĐÚNG một múi giờ cụ thể; lặng lẽ
+    đổi sang mặc định sẽ khiến Peto trả lời giờ Việt Nam khi được hỏi giờ Paris.
+    """
+    ket_qua = chat_tools.execute_tool('get_current_datetime', '{"timezone": "GMT+7"}')
+    assert 'GMT+7' in ket_qua['error']
+    assert 'datetime' not in ket_qua
 
 
 async def test_each_request_gets_own_timezone_and_fresh_clock(client, monkeypatch, fixed_clock):

@@ -5,10 +5,13 @@ Hiện chỉ có đồng hồ, không đọc dữ liệu riêng hoặc thực hi
 from __future__ import annotations
 
 import json
+import logging
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from config import DEFAULT_TIMEZONE
+
+logger = logging.getLogger("peto_web.chat_tools")
 
 WEEKDAYS = ("Thứ Hai", "Thứ Ba", "Thứ Tư", "Thứ Năm", "Thứ Sáu", "Thứ Bảy", "Chủ nhật")
 
@@ -25,8 +28,37 @@ def resolve_timezone(name: str | None = None) -> str:
     try:
         ZoneInfo(value)
     except (ZoneInfoNotFoundError, ValueError):
-        raise ToolInputError("Không nhận diện được múi giờ. Dùng tên IANA như Asia/Ho_Chi_Minh.") from None
+        # Kèm giá trị nhận được: thiếu nó thì lỗi này không chẩn được, người
+        # dùng chỉ thấy "không nhận diện được" mà không biết trình duyệt của
+        # mình đã gửi gì.
+        raise ToolInputError(
+            f"Không nhận diện được múi giờ {value!r}. Dùng tên IANA như Asia/Ho_Chi_Minh."
+        ) from None
     return value
+
+
+def resolve_browser_timezone(name: str | None) -> str:
+    """Múi giờ do trình duyệt gửi kèm mỗi lượt chat — thứ tốt nhất có được, không
+    phải yêu cầu của người dùng.
+
+    Hỏng thì rơi về mặc định thay vì chặn cả tin nhắn: gửi rỗng vốn đã được rơi
+    về mặc định rồi, nên chặn cứng trường hợp "có gửi nhưng dạng lạ" là bất đối
+    xứng, mà cái giá là cả một loại thiết bị không chat được.
+
+    Công cụ ``get_current_datetime`` KHÔNG dùng hàm này: ở đó model đòi đúng một
+    múi giờ cụ thể, đưa nhầm thì phải được báo lỗi chứ không được lặng lẽ đổi.
+    """
+    if name is None:
+        return resolve_timezone(None)
+    try:
+        return resolve_timezone(name)
+    except ToolInputError:
+        fallback = resolve_timezone(None)
+        logger.warning(
+            "Trình duyệt gửi múi giờ %r không nhận diện được — dùng %s cho lượt này.",
+            name, fallback,
+        )
+        return fallback
 
 
 def current_datetime(timezone: str | None = None, *, now: datetime | None = None) -> dict:
