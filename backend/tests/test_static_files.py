@@ -14,6 +14,7 @@ def site(tmp_path):
     """Một bản build giả, đủ giống thứ Vite sinh ra."""
     (tmp_path / "assets").mkdir()
     (tmp_path / "index.html").write_text("<h1>Peto</h1>", encoding="utf-8")
+    (tmp_path / "404.html").write_text("<h1>Ở đây không có gì cả.</h1>", encoding="utf-8")
     (tmp_path / "assets" / "index-abc123.js").write_text("console.log(1)", encoding="utf-8")
     (tmp_path / "favicon.ico").write_text("x", encoding="utf-8")
 
@@ -55,11 +56,33 @@ async def test_index_is_not_cached(site_client):
     assert response.headers["cache-control"] == "no-cache"
 
 
-async def test_unknown_path_falls_back_to_app(site_client):
-    """Router phía client cần index.html cho đường dẫn lạ, không phải 404."""
+async def test_unknown_path_serves_custom_404(site_client):
+    """Giao diện chuyển tab bằng hash nên không có route theo đường dẫn.
+
+    Trước đây chỗ này trả index.html kèm status 200, khiến mọi đường dẫn gõ sai
+    hiện ra y như trang chủ.
+    """
     response = await site_client.get("/hoi-thoai/abc")
-    assert response.status_code == 200
-    assert "Peto" in response.text
+    assert response.status_code == 404
+    assert "Ở đây không có gì cả." in response.text
+
+
+async def test_custom_404_is_not_cached(site_client):
+    response = await site_client.get("/khong-co-that")
+    assert response.headers["cache-control"] == "no-cache"
+
+
+async def test_unknown_path_is_404_even_without_a_custom_page(tmp_path):
+    """Bản build thiếu 404.html vẫn không được trả trang chủ kèm status 200."""
+    (tmp_path / "index.html").write_text("<h1>Peto</h1>", encoding="utf-8")
+    app = FastAPI()
+    assert static_files.mount(app, tmp_path)
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.get("/khong-co-that")
+    assert response.status_code == 404
+    assert "Peto" not in response.text
 
 
 async def test_api_routes_are_not_shadowed(site_client):
@@ -102,5 +125,5 @@ async def test_head_is_supported(site_client):
     assert response.status_code == 200
 
 
-async def test_head_on_unknown_path_also_falls_back(site_client):
-    assert (await site_client.head("/hoi-thoai/abc")).status_code == 200
+async def test_head_on_unknown_path_is_also_404(site_client):
+    assert (await site_client.head("/hoi-thoai/abc")).status_code == 404

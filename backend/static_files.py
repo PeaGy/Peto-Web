@@ -5,6 +5,9 @@ lo phần giao diện và module này đứng ngoài.
 
 Trên VPS, cách này giúp chỉ cần một tiến trình và một cổng cho Cloudflare
 Tunnel trỏ tới, thay vì phải dựng thêm nginx.
+
+Đường dẫn không khớp file nào sẽ nhận ``404.html`` kèm status 404. Nếu sau này
+giao diện dùng router theo đường dẫn thật, chỗ đó phải đổi lại thành index.html.
 """
 
 from __future__ import annotations
@@ -36,6 +39,7 @@ def mount(app: FastAPI, static_dir: Path) -> bool:
     """Gắn phần phục vụ file tĩnh. Trả về True nếu đã bật."""
     static_dir = static_dir.resolve()
     index = static_dir / "index.html"
+    not_found = static_dir / "404.html"
     if not index.is_file():
         logger.info(
             "Không thấy %s — backend chỉ phục vụ API. "
@@ -55,7 +59,10 @@ def mount(app: FastAPI, static_dir: Path) -> bool:
         if full_path.startswith("api/"):
             raise HTTPException(status_code=404, detail="Not found")
 
-        target = _safe_path(static_dir, full_path) if full_path else None
+        if not full_path:
+            return FileResponse(index, headers={"Cache-Control": "no-cache"})
+
+        target = _safe_path(static_dir, full_path)
         if target is not None:
             top = target.relative_to(static_dir).parts[0]
             cache = (
@@ -65,8 +72,14 @@ def mount(app: FastAPI, static_dir: Path) -> bool:
             )
             return FileResponse(target, headers={"Cache-Control": cache})
 
-        # Mọi đường dẫn khác trả về app: router phía client tự xử lý.
-        return FileResponse(index, headers={"Cache-Control": "no-cache"})
+        # Giao diện chuyển tab bằng hash (`#imagine`), không có router theo đường
+        # dẫn. Nên đường dẫn lạ là 404 thật, trả index.html kèm status 200 chỉ
+        # khiến mọi lỗi gõ nhầm trông như trang chủ.
+        if not_found.is_file():
+            return FileResponse(
+                not_found, status_code=404, headers={"Cache-Control": "no-cache"}
+            )
+        raise HTTPException(status_code=404, detail="Not found")
 
     logger.info("Phục vụ giao diện từ %s", static_dir)
     return True
