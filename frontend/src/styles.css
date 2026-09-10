@@ -100,6 +100,15 @@ body {
 .app { display: flex; height: 100dvh; }
 
 /* ---------- Sidebar ---------- */
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 2px 4px;
+}
+
+.sidebar-brand strong { font-size: 15px; }
+
 .sidebar {
   width: 260px;
   flex-shrink: 0;
@@ -275,6 +284,10 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .menu-btn { display: none; }
 .icon-btn { display: grid; }
+
+/* Khung chat không còn thanh tiêu đề, nhưng dưới 720px sidebar là ngăn kéo nên
+   vẫn phải chừa một lối mở. Luật .menu-btn ở trên giữ nó ẩn trên desktop. */
+.chat-menu { align-self: flex-start; margin: 10px 0 0 14px; }
 
 .menu-btn:hover,
 .icon-btn:hover:not(:disabled) {

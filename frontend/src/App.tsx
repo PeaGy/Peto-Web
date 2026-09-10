@@ -796,6 +796,10 @@ export default function App() {
       )}
 
       <aside className={sidebarOpen ? "sidebar open" : "sidebar"}>
+        <div className="sidebar-brand">
+          <PetoAvatar info={appInfo} />
+          <strong>{appInfo?.name ?? "Peto"}</strong>
+        </div>
         <nav className="app-tabs" aria-label="Khu vực">
           <button
             type="button"
@@ -932,25 +936,14 @@ export default function App() {
         />
       )}
       <main className="chat" hidden={view !== "chat"}>
-        <header className="chat-header">
-          <button
-            type="button"
-            className="menu-btn"
-            aria-label="Mở danh sách hội thoại"
-            onClick={() => setSidebarOpen(true)}
-          >
-            <MenuIcon />
-          </button>
-          <PetoAvatar info={appInfo} />
-          <div className="header-copy">
-            <strong>{appInfo?.name ?? "Peto"}</strong>
-            <span className="subtitle">
-              {streaming
-                ? THINKING[activeEffort ?? "low"]
-                : `${effortMeta.label} · có thể gửi ảnh và tệp`}
-            </span>
-          </div>
-        </header>
+        <button
+          type="button"
+          className="menu-btn chat-menu"
+          aria-label="Mở danh sách hội thoại"
+          onClick={() => setSidebarOpen(true)}
+        >
+          <MenuIcon />
+        </button>
 
         <div className="messages" ref={messagesRef} onScroll={() => {
           const element = messagesRef.current;
