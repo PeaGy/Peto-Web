@@ -1,6 +1,22 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import rehypeHighlight from "rehype-highlight";
+// Nạp từng grammar một thay vì bộ `common` của lowlight: rehype-highlight chỉ
+// đụng tới `common` khi không được truyền `languages`, nên cách này cho phép
+// tree-shaking bỏ hơn ba chục ngôn ngữ mà Peto gần như không bao giờ trả về.
+import bash from "highlight.js/lib/languages/bash";
+import css from "highlight.js/lib/languages/css";
+import diff from "highlight.js/lib/languages/diff";
+import ini from "highlight.js/lib/languages/ini";
+import javascript from "highlight.js/lib/languages/javascript";
+import json from "highlight.js/lib/languages/json";
+import markdown from "highlight.js/lib/languages/markdown";
+import python from "highlight.js/lib/languages/python";
+import sql from "highlight.js/lib/languages/sql";
+import typescript from "highlight.js/lib/languages/typescript";
+import xml from "highlight.js/lib/languages/xml";
+import yaml from "highlight.js/lib/languages/yaml";
 import Imagine from "./Imagine";
 import {
   DISCORD_LOGIN_URL,
@@ -21,6 +37,30 @@ import {
   type Message,
   type OutgoingAttachment,
 } from "./api";
+
+const HIGHLIGHT_LANGUAGES = {
+  bash, css, diff, ini, javascript, json, markdown, python, sql, typescript, xml, yaml,
+};
+
+// Grammar tự khai báo alias riêng, nhưng khai thêm ở đây cho chắc: đây là những
+// tên Peto hay viết sau dấu ``` nhất.
+const HIGHLIGHT_ALIASES = {
+  bash: ["sh", "shell", "console", "zsh"],
+  ini: ["toml"],
+  javascript: ["js", "jsx"],
+  markdown: ["md"],
+  typescript: ["ts", "tsx"],
+  xml: ["html"],
+  yaml: ["yml"],
+};
+
+const CODE_LABELS: Record<string, string> = {
+  bash: "Bash", console: "Bash", css: "CSS", diff: "Diff", html: "HTML", ini: "INI",
+  javascript: "JavaScript", js: "JavaScript", json: "JSON", jsx: "JSX", markdown: "Markdown",
+  md: "Markdown", python: "Python", sh: "Bash", shell: "Bash", sql: "SQL", toml: "TOML",
+  ts: "TypeScript", tsx: "TSX", typescript: "TypeScript", xml: "HTML", yaml: "YAML",
+  yml: "YAML", zsh: "Bash",
+};
 
 const EFFORT_KEY = "peto-effort";
 const THEME_KEY = "peto-theme";
@@ -161,6 +201,58 @@ function GearIcon() {
   );
 }
 
+function CopyIcon() {
+  return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <rect x="9" y="9" width="11" height="11" rx="2.5" stroke="currentColor" strokeWidth="1.7" />
+    <path d="M15 5.5A2.5 2.5 0 0 0 12.5 3h-7A2.5 2.5 0 0 0 3 5.5v7A2.5 2.5 0 0 0 5.5 15" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+  </svg>;
+}
+
+function CheckIcon() {
+  return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="m5 12.5 4.5 4.5L19 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>;
+}
+
+function CodeBlock({ language, children }: { language: string; children: ReactNode }) {
+  const preRef = useRef<HTMLPreElement>(null);
+  const [state, setState] = useState<"idle" | "done" | "fail">("idle");
+  const resetTimer = useRef<number | undefined>(undefined);
+
+  useEffect(() => () => window.clearTimeout(resetTimer.current), []);
+
+  async function copy() {
+    // Lấy chữ từ DOM chứ không dựng lại từ cây hast: sau khi tô màu, code bị cắt
+    // thành hàng chục thẻ con, còn textContent thì luôn đúng nguyên bản.
+    const text = preRef.current?.textContent ?? "";
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      setState("done");
+    } catch {
+      setState("fail");
+    }
+    window.clearTimeout(resetTimer.current);
+    resetTimer.current = window.setTimeout(() => setState("idle"), 2200);
+  }
+
+  const label = CODE_LABELS[language] ?? (language ? language.toUpperCase() : "Mã");
+  const copyText = state === "done" ? "Đã chép" : state === "fail" ? "Chưa chép được" : "Sao chép";
+
+  return (
+    <div className="code-block">
+      <div className="code-head">
+        <span className="code-lang">{label}</span>
+        <button type="button" className="code-copy" onClick={() => void copy()}>
+          {state === "done" ? <CheckIcon /> : <CopyIcon />}
+          {copyText}
+        </button>
+      </div>
+      <pre ref={preRef}>{children}</pre>
+    </div>
+  );
+}
+
 function ThinkingPanel({
   live,
   text,
@@ -170,10 +262,11 @@ function ThinkingPanel({
   text: string;
   label: string;
 }) {
-  const [open, setOpen] = useState(live);
-  useEffect(() => {
-    setOpen(live);
-  }, [live]);
+  // Tự mở lúc đang nghĩ, tự đóng khi câu trả lời tới — nhưng người dùng bấm thì
+  // ý họ thắng. Suy ngay trong lúc render, không qua useEffect: effect chạy sau
+  // khi commit nên panel loé mở đúng một khung hình lúc câu trả lời vừa hiện.
+  const [choice, setChoice] = useState<boolean | null>(null);
+  const open = choice ?? live;
   if (!live && !text) return null;
   return (
     <div className="thinking-panel">
@@ -181,7 +274,7 @@ function ThinkingPanel({
         type="button"
         className="thinking-toggle"
         aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
+        onClick={() => setChoice(!open)}
       >
         <span className={open ? "thinking-chevron open" : "thinking-chevron"} aria-hidden="true">
           ▸
@@ -926,9 +1019,18 @@ export default function App() {
                 />
               ) : null}
               {message.content ? (
-                <Markdown remarkPlugins={[remarkGfm]} components={{
+                <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[[rehypeHighlight, {
+                  languages: HIGHLIGHT_LANGUAGES, aliases: HIGHLIGHT_ALIASES, ignoreMissing: true,
+                }]]} components={{
                   table: ({children}) => <div className="table-scroll" tabIndex={0} role="region" aria-label="Bảng nội dung"><table>{children}</table></div>,
                   a: ({children, href}) => <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>,
+                  pre: ({node, children}) => {
+                    const code = node?.children?.[0];
+                    const names = code?.type === "element" && Array.isArray(code.properties?.className)
+                      ? code.properties.className.map(String) : [];
+                    const tag = names.find((name) => name.startsWith("language-"));
+                    return <CodeBlock language={tag ? tag.slice("language-".length) : ""}>{children}</CodeBlock>;
+                  },
                 }}>{message.content}</Markdown>
               ) : null}
               {message.status === "incomplete" && <p className="message-status">Câu trả lời chưa hoàn tất</p>}

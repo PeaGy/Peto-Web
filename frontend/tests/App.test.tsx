@@ -261,6 +261,56 @@ it('renders Markdown tables as a scrollable table', async () => {
   expect(screen.getByRole('region', {name:'Bảng nội dung'})).toBeTruthy();
 });
 
+describe('Khối code trong chat', () => {
+  const withCode = (fence: string) => {
+    vi.mocked(api.getMessages).mockResolvedValue([{ role: 'assistant', content: fence }]);
+  };
+  const openChat = async () => {
+    await openApp();
+    fireEvent.click(screen.getByRole('button', { name: 'A', exact: true }));
+  };
+  const PY_CODE = '```python\ndef chao():\n    return "xin chào"\n```';
+
+  it('gắn nhãn ngôn ngữ và tô màu cú pháp', async () => {
+    withCode(PY_CODE);
+    await openChat();
+    expect(await screen.findByText('Python')).toBeTruthy();
+    // `def` phải thành thẻ riêng mang lớp của highlight.js, không còn chữ trơn.
+    expect(document.querySelector('.hljs-keyword')?.textContent).toBe('def');
+    expect(document.querySelector('.hljs-string')?.textContent).toBe('"xin chào"');
+  });
+
+  it('nhận alias viết sau dấu ba nháy', async () => {
+    withCode('```ts\nconst x: number = 1;\n```');
+    await openChat();
+    expect(await screen.findByText('TypeScript')).toBeTruthy();
+  });
+
+  it('vẫn dựng khối cho code không ghi ngôn ngữ', async () => {
+    withCode('```\nkhong ro ngon ngu\n```');
+    await openChat();
+    expect(await screen.findByText('Mã')).toBeTruthy();
+  });
+
+  it('nút sao chép chép đúng nguyên văn code', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+    withCode(PY_CODE);
+    await openChat();
+    fireEvent.click(await screen.findByRole('button', { name: /Sao chép/ }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('def chao():\n    return "xin chào"\n'));
+    await screen.findByRole('button', { name: /Đã chép/ });
+  });
+
+  it('báo khi trình duyệt chặn clipboard', async () => {
+    Object.assign(navigator, { clipboard: { writeText: vi.fn().mockRejectedValue(new Error('bi chan')) } });
+    withCode('```python\nx = 1\n```');
+    await openChat();
+    fireEvent.click(await screen.findByRole('button', { name: /Sao chép/ }));
+    await screen.findByRole('button', { name: /Chưa chép được/ });
+  });
+});
+
 it('loads conversations beyond the first 50', async () => {
   const first = Array.from({length:50}, (_, i) => conversation(i === 0 ? 'A' : `Chat ${i}`));
   vi.mocked(api.listConversations).mockImplementation(async (offset = 0) => offset === 0

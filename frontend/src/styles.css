@@ -18,6 +18,12 @@
   --shadow-strong: 12px 0 40px rgba(0, 0, 0, 0.35);
   --scroll-thumb: #3f3c54;
   --scroll-thumb-hover: #565273;
+  --hl-keyword: #c792ea;
+  --hl-string: #a5d6a2;
+  --hl-number: #f0b36b;
+  --hl-comment: #6e6a85;
+  --hl-function: #82aaff;
+  --hl-attr: #7fd4c1;
   --dialog-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
   color-scheme: dark;
 }
@@ -40,6 +46,12 @@
   --shadow-strong: 12px 0 40px rgba(72, 55, 110, 0.18);
   --scroll-thumb: #cfc8e4;
   --scroll-thumb-hover: #b4a9d3;
+  --hl-keyword: #7b34c4;
+  --hl-string: #2c7148;
+  --hl-number: #9a5406;
+  --hl-comment: #7a7490;
+  --hl-function: #2a55b8;
+  --hl-attr: #0e6459;
   --dialog-shadow: 0 24px 60px rgba(48, 36, 78, 0.22);
   color-scheme: light;
 }
@@ -411,15 +423,92 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   object-fit: cover;
 }
 
-.bubble pre {
-  background: var(--code-bg);
+/* ---------- Khối code trong chat ---------- */
+
+.code-block {
+  margin: 10px 0;
   border: 1px solid var(--line);
-  padding: 12px;
   border-radius: 10px;
+  overflow: hidden;
+  background: var(--code-bg);
+}
+
+.code-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 8px 6px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel-2);
+}
+
+.code-lang {
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.code-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 9px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.code-copy:hover { border-color: var(--line); color: var(--text); }
+.code-copy svg { flex: none; }
+
+.bubble .code-block pre {
+  margin: 0;
+  padding: 12px;
+  border: 0;
+  border-radius: 0;
+  background: none;
   overflow-x: auto;
 }
 
 .bubble code { font-family: Consolas, "Cascadia Code", monospace; font-size: 13px; }
+
+/* Code lẻ giữa câu văn: thêm nền để tách khỏi chữ thường. Phải loại trừ code
+   nằm trong pre, kẻo mỗi khối lại có thêm một lớp nền lồng bên trong. */
+.bubble :not(pre) > code {
+  padding: 1px 5px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--code-bg);
+}
+
+/* Tô màu cú pháp. Tên lớp do highlight.js sinh; gom về sáu vai trò màu để bảng
+   màu còn đọc được, thay vì bê nguyên theme của thư viện vốn chỉ hợp một nền. */
+.hljs-keyword, .hljs-selector-tag, .hljs-literal, .hljs-type,
+.hljs-doctag, .hljs-name, .hljs-tag { color: var(--hl-keyword); }
+
+.hljs-string, .hljs-regexp, .hljs-addition,
+.hljs-template-variable, .hljs-quote { color: var(--hl-string); }
+
+.hljs-number, .hljs-bullet, .hljs-symbol, .hljs-link { color: var(--hl-number); }
+
+.hljs-comment, .hljs-meta, .hljs-deletion { color: var(--hl-comment); }
+.hljs-comment { font-style: italic; }
+
+.hljs-title, .hljs-title.function_, .hljs-built_in,
+.hljs-section, .hljs-class { color: var(--hl-function); }
+
+.hljs-attr, .hljs-attribute, .hljs-property,
+.hljs-variable, .hljs-params, .hljs-selector-attr { color: var(--hl-attr); }
+
+.hljs-emphasis { font-style: italic; }
+.hljs-strong { font-weight: 600; }
 
 .thinking-panel { margin-bottom: 8px; }
 
