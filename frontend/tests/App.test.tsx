@@ -61,6 +61,20 @@ it('keeps image generation alive while navigating to chat and back', async () =>
   expect(api.listImagineJobs).toHaveBeenCalledTimes(1);
 });
 
+it('giữ ảnh gốc và yêu cầu chỉnh sửa khi chuyển sang chat rồi quay lại', async () => {
+  await openApp();
+  fireEvent.click(screen.getByRole('button', { name: 'Tạo ảnh', exact: true }));
+  await screen.findByRole('heading', { name: /Bạn tưởng tượng/ });
+  fireEvent.change(screen.getByLabelText('Chọn ảnh để sửa'), { target: { files: [new File(['anh-gia'], 'anh-goc.png', { type: 'image/png' })] } });
+  const prompt = await screen.findByLabelText('Bạn muốn sửa gì trong ảnh?');
+  fireEvent.change(prompt, { target: { value: 'Đổi nền xanh' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Trò chuyện', exact: true }));
+  fireEvent.click(screen.getByRole('button', { name: 'Tạo ảnh', exact: true }));
+  expect((screen.getByLabelText('Bạn muốn sửa gì trong ảnh?') as HTMLTextAreaElement).value).toBe('Đổi nền xanh');
+  expect(screen.getByRole('img', { name: 'Ảnh gốc để chỉnh sửa' })).toBeTruthy();
+  expect(api.createImagineJob).not.toHaveBeenCalled();
+});
+
 describe('Conversation navigation', () => {
   it('ignores late A results after choosing B', async () => {
     const a = deferred<api.Message[]>();

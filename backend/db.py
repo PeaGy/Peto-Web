@@ -138,6 +138,10 @@ async def init_db() -> None:
             "CREATE INDEX IF NOT EXISTS idx_imagine_images_job "
             "ON imagine_images(job_id)"
         )
+        # Ảnh cũ luôn là kết quả; ảnh gốc của lượt sửa được lưu riêng trong cùng bảng.
+        image_columns = await (await db.execute("PRAGMA table_info(imagine_images)")).fetchall()
+        if "kind" not in {column[1] for column in image_columns}:
+            await db.execute("ALTER TABLE imagine_images ADD COLUMN kind TEXT NOT NULL DEFAULT 'output'")
         await db.commit()
 
 
@@ -428,15 +432,16 @@ async def add_imagine_image(
     owner: str,
     mime: str,
     path: str,
+    kind: str = "output",
 ) -> None:
     now = time.time()
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
             """
-            INSERT INTO imagine_images (id, job_id, owner, mime, path, created_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO imagine_images (id, job_id, owner, mime, path, created_at, kind)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (image_id, job_id, owner, mime, path, now),
+            (image_id, job_id, owner, mime, path, now, kind),
         )
         await db.commit()
 
@@ -461,7 +466,7 @@ async def list_imagine_jobs(owner: str, limit: int = 40) -> list[dict]:
         placeholders = ",".join("?" * len(ids))
         cursor = await db.execute(
             f"""
-            SELECT id, job_id, mime, created_at
+            SELECT id, job_id, mime, created_at, kind
               FROM imagine_images
              WHERE owner = ? AND job_id IN ({placeholders})
              ORDER BY created_at, id

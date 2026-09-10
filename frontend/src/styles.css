@@ -998,6 +998,25 @@ button:focus-visible, a:focus-visible, .table-scroll:focus-visible {
 .studio-composer-wrap { width: 100%; padding: 12px max(24px, calc((100% - 980px) / 2)) 20px; }
 .imagine-composer { box-shadow: var(--shadow); }
 .studio-prompt-label { color: var(--text); font-size: 12px; font-weight: 600; padding: 6px 6px 0; }
+.source-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.source-toolbar .studio-prompt-label { padding-top: 0; }
+.source-file-input { display: none; }
+.add-source { display: inline-flex; align-items: center; gap: 7px; flex-shrink: 0; padding: 7px 11px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); color: var(--accent); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+.add-source:hover:not(:disabled) { border-color: var(--accent); }
+.source-preview { display: flex; align-items: center; gap: 12px; padding: 8px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-2); }
+.source-preview > img { width: 60px; height: 60px; object-fit: contain; border-radius: 7px; background: var(--code-bg); }
+.source-preview > div { flex: 1; min-width: 0; display: grid; gap: 3px; }
+.source-preview strong { font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.source-preview span { color: var(--muted); font-size: 11px; }
+.source-preview > button { border: 0; border-radius: 8px; background: none; color: var(--muted); font-size: 22px; min-width: 36px; min-height: 36px; cursor: pointer; }
+.source-preview > button:hover:not(:disabled) { color: var(--danger); background: var(--panel); }
+.studio-composer-wrap .drop-hint { pointer-events: none; }
+.edit-suggestions { display: flex; gap: 8px; flex-wrap: wrap; }
+.edit-suggestions button { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: var(--panel); color: var(--muted); font: inherit; font-size: 12px; text-align: left; cursor: pointer; }
+.edit-suggestions button:hover { border-color: var(--accent); color: var(--text); }
+.job-source { display: inline-flex; align-items: center; gap: 8px; margin-bottom: 12px; padding: 5px 10px 5px 5px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--muted); font: inherit; font-size: 12px; cursor: pointer; }
+.job-source img { width: 32px; height: 32px; object-fit: contain; border-radius: 5px; }
+.job-source:hover { border-color: var(--accent); color: var(--text); }
 .imagine-composer textarea { font-size: 14px; max-height: 150px; }
 .imagine-composer .composer-bar { border-top: 1px solid var(--line); padding: 12px 4px 2px; margin-top: 4px; }
 

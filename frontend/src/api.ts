@@ -143,6 +143,7 @@ export interface ImagineJob {
   aspect_ratio: string;
   created_at: number | null;
   images: ImagineImage[];
+  source_image?: ImagineImage | null;
 }
 
 export async function listImagineJobs(): Promise<ImagineJob[]> {
@@ -157,6 +158,8 @@ export async function createImagineJob(payload: {
   resolution: ImagineResolution;
   aspect_ratio: string;
   n: number;
+  source_image?: { data: string };
+  source_image_id?: string;
 }): Promise<ImagineJob> {
   const response = await fetch("/api/imagine", {
     method: "POST",

@@ -1,8 +1,18 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { sendMessage } from '../src/api';
+import { createImagineJob, sendMessage } from '../src/api';
 
 afterEach(() => vi.unstubAllGlobals());
 const event = (value: object) => `data: ${JSON.stringify(value)}\n\n`;
+
+it.each([{ source_image: { data: 'anh-base64' } }, { source_image_id: 'anh-da-luu' }])('gửi ảnh gốc trong yêu cầu chỉnh sửa', async (source) => {
+  const fetchMock = vi.fn(async () => new Response(JSON.stringify({ job: { id: 'ket-qua' } })));
+  vi.stubGlobal('fetch', fetchMock);
+  const payload = { prompt: 'Đổi nền', quality: 'low' as const, resolution: '1k' as const, aspect_ratio: 'auto', n: 1, ...source };
+  expect(await createImagineJob(payload)).toEqual({ id: 'ket-qua' });
+  const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+  expect(url).toBe('/api/imagine');
+  expect(JSON.parse(init.body as string)).toEqual(payload);
+});
 
 it('decodes UTF-8 and SSE boundaries split across network chunks', async () => {
   const encoded = new TextEncoder().encode(event({type:'delta',text:'Tiếng Việt'}) + event({type:'done'}));

@@ -133,6 +133,13 @@ yêu cầu tạo ảnh chỉ gửi khi người dùng bấm tạo hoặc nhấn 
   trong lúc đang tạo chưa có cơ chế theo dõi tiến trình nền.
 - Nhấp ảnh để xem toàn bộ khung hình, chuyển giữa các ảnh trong lượt và tải
   xuống với tên `peto-…`. Escape đóng khung xem; hộp thoại hỗ trợ bàn phím.
+- **Sửa ảnh:** bấm **Thêm ảnh**, chọn PNG/JPEG/WebP (tối đa 8 MB), nhập yêu cầu
+  rồi bấm **Sửa ảnh**. Có xem trước, đổi/gỡ ảnh, kéo thả và dán ảnh vào ô nhập.
+  Khi mở một ảnh trong bộ ảnh, bấm **Sửa ảnh này** để tiếp tục chỉnh sửa ảnh đó.
+- Mỗi lượt sửa dùng một ảnh gốc và lưu kết quả thành lượt mới. **Xem ảnh gốc**
+  mở bản gốc được lưu riêng; **Dùng lại mô tả** nạp cả ảnh gốc lẫn yêu cầu sửa.
+  Xóa lượt cũ không làm mất bản gốc của lượt sửa mới. Nếu lỗi, ảnh đã chọn và
+  yêu cầu vẫn được giữ; chuyển sang chat rồi quay lại cũng không mất bản nháp.
 - Xóa yêu cầu xác nhận và cho biết số ảnh sẽ mất. Nếu tạo hoặc xóa lỗi,
   mô tả/ảnh hiện có vẫn được giữ để thử lại.
 - Giao diện dùng **Peto tạo ảnh**, **Tạo ảnh** và thông báo của Peto. Các tên
@@ -143,14 +150,21 @@ yêu cầu tạo ảnh chỉ gửi khi người dùng bấm tạo hoặc nhấn 
   và chữ ký định dạng ảnh được kiểm tra trước khi lưu.
 
 Các tùy chọn kết nối vẫn theo [tài liệu tạo ảnh của xAI](https://docs.x.ai/developers/model-capabilities/images/generation).
+Khi có ảnh gốc, backend dùng `/images/edits` với ảnh dạng data URI theo
+[tài liệu sửa ảnh](https://docs.x.ai/developers/model-capabilities/images/editing).
+Trình duyệt chỉ gửi nội dung ảnh hoặc ID ảnh thuộc tài khoản đang đăng nhập;
+không nhận URL ảnh tùy ý. Bảng ảnh cũ được bổ sung cột `kind` khi khởi động,
+mặc định các ảnh cũ là kết quả tạo ảnh. Ảnh gốc dùng cùng quyền truy cập riêng tư.
 Mặc định `PETO_IMAGINE_MODEL=grok-imagine-image-2.0`,
 `PETO_IMAGINE_TIMEOUT_SECONDS=90`, `PETO_MAX_IMAGINE_N=4`,
-`PETO_MAX_IMAGINE_PROMPT_CHARS=2000`. Xem `.env.example` để cấu hình.
+`PETO_MAX_IMAGINE_PROMPT_CHARS=2000`, `PETO_MAX_IMAGINE_SOURCE_BYTES=8388608`.
+Giới hạn chọn tệp ở giao diện là 8 MB; máy chủ có thể đặt mức thấp hơn qua biến
+môi trường trên. Xem `.env.example` để cấu hình.
 
 Đợt sửa này đã thử giao diện tối/sáng ở máy tính và điện thoại, tạo/xem ảnh
-với nhà cung cấp giả, kiểm thử lỗi dịch vụ và quyền truy cập. Ảnh giả chỉ là
+và sửa ảnh với nhà cung cấp giả, kiểm thử lỗi dịch vụ và quyền truy cập. Ảnh giả chỉ là
 PNG một điểm ảnh để kiểm tra đường đi dữ liệu; chưa đánh giá chất lượng ảnh
-hoặc xác minh xác thực với dịch vụ xAI thật. Chưa triển khai lên VPS.
+hay chỉnh sửa thật, hoặc xác minh xác thực với dịch vụ xAI thật. Chưa triển khai lên VPS.
 
 ## Ngày giờ và độ dài dành cho web
 
@@ -232,7 +246,8 @@ Giới hạn cố ý của phần này:
 
 - Prompt của web không chứa tên thật hay Discord ID của thành viên. Có test
   chặn (`tests/test_persona.py`).
-- Peto xem được ảnh đính kèm, nhưng chưa có nhạc, tạo/sửa ảnh, tìm kiếm hay giọng nói.
+- Peto xem được ảnh đính kèm trong chat, tạo/sửa ảnh trong tab Tạo ảnh; chưa có
+  nhạc, tìm kiếm hay giọng nói.
 - Database riêng và **file token xAI riêng**; không dùng chung file nào với
   production Discord.
 - Không có credential AI nào xuống trình duyệt. Discord access token chỉ dùng

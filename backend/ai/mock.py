@@ -31,7 +31,8 @@ _TOOL_REFUSAL = (
 
 _IMAGE_REFUSAL = (
     "Muốn tạo ảnh thì mở tab Tạo ảnh rồi nhập mô tả cho Peto nhé. "
-    "Cậu có thể chọn tỉ lệ, độ phân giải và số ảnh ở đó."
+    "Còn sửa ảnh thì bấm Thêm ảnh, chọn ảnh gốc, kể Peto nghe muốn đổi gì "
+    "rồi bấm Sửa ảnh."
 )
 
 _MATH = (
@@ -45,7 +46,7 @@ _DEFAULT = (
     "sử và hiển thị chữ chảy dần thì đang hoạt động đúng rồi đó."
 )
 
-_IMAGE_WORDS = ("vẽ", "tạo ảnh", "vẽ ảnh", "generate image")
+_IMAGE_WORDS = ("vẽ", "tạo ảnh", "vẽ ảnh", "sửa ảnh", "chỉnh ảnh", "chỉnh sửa ảnh", "generate image", "edit image")
 _TOOL_WORDS = (
     "phát nhạc", "mở bài", "mở nhạc", "tìm ảnh",
     "search", "tìm kiếm", "tra web",

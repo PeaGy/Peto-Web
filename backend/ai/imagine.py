@@ -1,6 +1,6 @@
 """Peto tạo ảnh — chỉ gọi từ tab Tạo ảnh, không phải từ chat.
 
-Dùng REST ``/v1/images/generations`` của xAI. Chat thường cố ý không có công
+Dùng REST ``/v1/images/generations`` hoặc ``/v1/images/edits`` của xAI. Chat thường cố ý không có công
 cụ tạo ảnh để tránh vẽ nhầm khi người dùng chỉ đang nói chuyện.
 """
 
@@ -101,6 +101,7 @@ async def generate_images(
     resolution: str,
     aspect_ratio: str,
     n: int,
+    source_image: GeneratedImage | None = None,
 ) -> list[GeneratedImage]:
     """Gọi xAI (hoặc mock) và trả về bytes ảnh đã sẵn sàng để lưu."""
     if AI_PROVIDER == "mock":
@@ -125,7 +126,11 @@ async def generate_images(
         "resolution": resolution,
         "aspect_ratio": aspect_ratio,
     }
-    url = f"{XAI_API_BASE.rstrip('/')}/images/generations"
+    endpoint = "edits" if source_image is not None else "generations"
+    if source_image is not None:
+        encoded = base64.b64encode(source_image.data).decode("ascii")
+        payload["image"] = {"url": f"data:{source_image.mime};base64,{encoded}", "type": "image_url"}
+    url = f"{XAI_API_BASE.rstrip('/')}/images/{endpoint}"
 
     try:
         async with httpx.AsyncClient(timeout=IMAGINE_TIMEOUT_SECONDS) as client:
