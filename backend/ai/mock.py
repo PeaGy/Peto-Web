@@ -29,6 +29,11 @@ _TOOL_REFUSAL = (
     "Ngồi kể chuyện suông với Peto vậy :))"
 )
 
+_IMAGE_REFUSAL = (
+    "Ê, muốn tạo ảnh thì sang tab Imagine giúp. Chat này Peto không vẽ được đâu, "
+    "cố ý tách ra để khỏi vẽ nhầm khi đang nói chuyện."
+)
+
 _MATH = (
     "Ố, bài này phải ngồi tính đàng hoàng đây. Mà Peto đang chạy bằng phản hồi "
     "giả nên chưa giải thật được — cậu cắm nhà cung cấp AI vào rồi Peto làm cho."
@@ -40,8 +45,9 @@ _DEFAULT = (
     "sử và hiển thị chữ chảy dần thì đang hoạt động đúng rồi đó."
 )
 
+_IMAGE_WORDS = ("vẽ", "tạo ảnh", "vẽ ảnh", "generate image")
 _TOOL_WORDS = (
-    "phát nhạc", "mở bài", "mở nhạc", "vẽ", "tạo ảnh", "tìm ảnh",
+    "phát nhạc", "mở bài", "mở nhạc", "tìm ảnh",
     "search", "tìm kiếm", "tra web",
 )
 
@@ -64,6 +70,8 @@ def _pick_reply(user_text: str, timezone: str | None = None) -> str:
             f"Bây giờ là {clock['time']}, {clock['weekday']}, ngày {day}/{month}/{year} "
             f"({clock['timezone']}, {clock['utc_offset']})."
         )
+    if any(word in lowered for word in _IMAGE_WORDS):
+        return _IMAGE_REFUSAL
     if any(word in lowered for word in _TOOL_WORDS):
         return _TOOL_REFUSAL
     from .routing import looks_like_math

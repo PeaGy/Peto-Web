@@ -28,6 +28,7 @@ from pydantic import BaseModel, Field
 import attachments as attachment_lib
 import auth
 import db
+import imagine_api
 import static_files
 from ai import ChatAttachment, ChatMessage, ProviderError, get_provider
 from ai.routing import choose_effort
@@ -91,6 +92,7 @@ app.add_middleware(
     allow_headers=["Content-Type"],
 )
 app.include_router(auth.router)
+app.include_router(imagine_api.router)
 
 
 class AttachmentIn(BaseModel):

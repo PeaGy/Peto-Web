@@ -126,6 +126,52 @@ export async function deleteConversation(conversationId: string): Promise<void> 
   await json<{ deleted: boolean }>(response);
 }
 
+export type ImagineQuality = "low" | "medium";
+export type ImagineResolution = "1k" | "2k";
+
+export interface ImagineImage {
+  id: string;
+  mime: string;
+  url: string;
+}
+
+export interface ImagineJob {
+  id: string;
+  prompt: string;
+  quality: ImagineQuality;
+  resolution: ImagineResolution;
+  aspect_ratio: string;
+  created_at: number | null;
+  images: ImagineImage[];
+}
+
+export async function listImagineJobs(): Promise<ImagineJob[]> {
+  const response = await fetch("/api/imagine");
+  const data = await json<{ jobs: ImagineJob[] }>(response);
+  return data.jobs;
+}
+
+export async function createImagineJob(payload: {
+  prompt: string;
+  quality: ImagineQuality;
+  resolution: ImagineResolution;
+  aspect_ratio: string;
+  n: number;
+}): Promise<ImagineJob> {
+  const response = await fetch("/api/imagine", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = await json<{ job: ImagineJob }>(response);
+  return data.job;
+}
+
+export async function deleteImagineJob(jobId: string): Promise<void> {
+  const response = await fetch(`/api/imagine/${jobId}`, { method: "DELETE" });
+  await json<{ deleted: boolean }>(response);
+}
+
 /**
  * Gửi tin nhắn và đọc SSE từ backend.
  *

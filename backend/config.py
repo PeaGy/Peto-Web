@@ -137,6 +137,12 @@ MAX_TOTAL_ATTACHMENT_BYTES = _env_int(
 MAX_HISTORY_IMAGES = _env_int("PETO_MAX_HISTORY_IMAGES", 4, 1, 8)
 MAX_TEXT_EXCERPT_CHARS = _env_int("PETO_MAX_TEXT_EXCERPT_CHARS", 80_000, 1000, 200_000)
 
+# --- Imagine (tạo ảnh, tách khỏi chat) -----------------------------------
+IMAGINE_MODEL = os.getenv("PETO_IMAGINE_MODEL", "grok-imagine-image-2.0").strip()
+IMAGINE_TIMEOUT_SECONDS = _env_float("PETO_IMAGINE_TIMEOUT_SECONDS", 90.0, 10.0, 300.0)
+MAX_IMAGINE_PROMPT_CHARS = _env_int("PETO_MAX_IMAGINE_PROMPT_CHARS", 2000, 20, 8000)
+MAX_IMAGINE_N = _env_int("PETO_MAX_IMAGINE_N", 4, 1, 10)
+
 # --- Phục vụ frontend đã build (production) ------------------------------
 # Khi thư mục này tồn tại, backend phục vụ luôn giao diện; VPS chỉ cần một
 # tiến trình và một cổng. Lúc dev thì không có `dist`, Vite lo phần giao diện.

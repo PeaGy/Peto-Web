@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import Imagine from "./Imagine";
 import {
   DISCORD_LOGIN_URL,
   UnauthorizedError,
@@ -36,6 +37,7 @@ const EFFORTS: { value: Effort; label: string; hint: string }[] = [
 ];
 
 type ThemeChoice = "light" | "dark" | "system";
+type AppView = "chat" | "imagine";
 
 const THEMES: { value: ThemeChoice; label: string; hint: string }[] = [
   { value: "light", label: "Sáng", hint: "Nền trắng, hợp ban ngày" },
@@ -208,6 +210,9 @@ export default function App() {
   const [stopping, setStopping] = useState(false);
   const [theme, setTheme] = useState<ThemeChoice>(readStoredTheme);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [view, setView] = useState<AppView>(() =>
+    typeof window !== "undefined" && window.location.hash === "#imagine" ? "imagine" : "chat",
+  );
 
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -629,6 +634,13 @@ export default function App() {
   const canSend = (draft.trim().length > 0 || draftFiles.length > 0) && !streaming && !loadingConversation && !loadFailed;
   const effortMeta = EFFORTS.find((item) => item.value === effort) ?? EFFORTS[0];
 
+  function go(next: AppView) {
+    setView(next);
+    setSidebarOpen(false);
+    const url = next === "imagine" ? "#imagine" : `${window.location.pathname}${window.location.search}`;
+    window.history.replaceState(null, "", url);
+  }
+
   return (
     <div className="app">
       {sidebarOpen && (
@@ -640,9 +652,33 @@ export default function App() {
       )}
 
       <aside className={sidebarOpen ? "sidebar open" : "sidebar"}>
+        <nav className="app-tabs" aria-label="Khu vực">
+          <button
+            type="button"
+            className={view === "chat" ? "on" : ""}
+            aria-current={view === "chat" ? "page" : undefined}
+            onClick={() => go("chat")}
+          >
+            Chat
+          </button>
+          <button
+            type="button"
+            className={view === "imagine" ? "on" : ""}
+            aria-current={view === "imagine" ? "page" : undefined}
+            onClick={() => go("imagine")}
+          >
+            Imagine
+          </button>
+        </nav>
+        {view === "chat" && (
         <button className="new-chat" onClick={newConversation} disabled={streaming || deleting}>
           + Trò chuyện mới
         </button>
+        )}
+        {view === "imagine" && (
+          <p className="empty-hint imagine-sidebar-note">Tạo ảnh ở khung bên phải. Chat thường cố ý không vẽ.</p>
+        )}
+        {view === "chat" && (
         <nav className="conversation-list">
           {conversations.length === 0 && !loadingList && (
             <p className="empty-hint">Chưa có cuộc trò chuyện nào.</p>
@@ -680,6 +716,7 @@ export default function App() {
             void refreshConversations();
           }}>Xem hội thoại cũ hơn</button>}
         </nav>
+        )}
 
         <div className="sidebar-foot">
           <button
@@ -708,6 +745,13 @@ export default function App() {
         </div>
       </aside>
 
+      {view === "imagine" ? (
+        <Imagine
+          appInfo={appInfo}
+          onUnauthorized={handleUnauthorized}
+          onOpenSidebar={() => setSidebarOpen(true)}
+        />
+      ) : (
       <main className="chat">
         <header className="chat-header">
           <button
@@ -957,6 +1001,7 @@ export default function App() {
           </p>
         </form>
       </main>
+      )}
       <dialog
         ref={settingsDialogRef}
         className="settings-dialog"

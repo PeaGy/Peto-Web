@@ -76,6 +76,35 @@ body {
 
 .new-chat:hover:not(:disabled) { border-color: var(--accent); }
 
+.app-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel-2);
+}
+
+.app-tabs button {
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted);
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.app-tabs button.on {
+  background: var(--panel);
+  color: var(--text);
+}
+
+.imagine-sidebar-note { flex: 1; }
+
 .conversation-list {
   flex: 1;
   overflow-y: auto;
@@ -823,4 +852,199 @@ button:focus-visible, a:focus-visible, .table-scroll:focus-visible {
 @media (prefers-reduced-motion: reduce) {
   .account-gear { transition: none; }
   .account:hover .account-gear { transform: none; }
+}
+
+/* ---------- Imagine ---------- */
+.imagine {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+}
+
+.imagine-mark,
+.imagine-hero {
+  display: grid;
+  place-items: center;
+  color: var(--accent);
+}
+
+.imagine-mark {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+}
+
+.imagine-hero {
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+}
+
+.imagine-gallery {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.imagine-job-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  margin-bottom: 10px;
+}
+
+.imagine-prompt {
+  margin: 0;
+  font-weight: 600;
+}
+
+.imagine-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  color: var(--muted);
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.imagine-delete {
+  border: 0;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+}
+
+.imagine-delete:hover { color: var(--danger); }
+
+.imagine-thumbs {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.imagine-thumb {
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--panel-2);
+  cursor: pointer;
+  aspect-ratio: 1;
+}
+
+.imagine-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.imagine-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 0 4px;
+}
+
+.seg {
+  display: flex;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel-2);
+}
+
+.seg button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 6px 12px;
+  border-radius: 999px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.seg button.on {
+  background: var(--panel);
+  color: var(--text);
+}
+
+.imagine-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.imagine-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.62);
+}
+
+.imagine-lightbox-card {
+  width: min(880px, 100%);
+  max-height: 92dvh;
+  overflow: auto;
+  padding: 14px;
+  border-radius: 18px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  box-shadow: var(--dialog-shadow);
+}
+
+.imagine-lightbox-card img {
+  display: block;
+  width: 100%;
+  max-height: 70dvh;
+  object-fit: contain;
+  border-radius: 12px;
+  background: var(--code-bg);
+}
+
+.imagine-lightbox-card p {
+  margin: 12px 0 8px;
+}
+
+.imagine-lightbox-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.imagine-lightbox-actions a,
+.imagine-lightbox-actions button {
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--text);
+  text-decoration: none;
+  font: inherit;
+  cursor: pointer;
+}
+
+@media (max-width: 720px) {
+  .imagine-job-head { flex-direction: column; }
+  .imagine-thumbs { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
 }
