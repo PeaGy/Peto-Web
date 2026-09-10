@@ -382,6 +382,32 @@ describe('Màn hình đăng nhập', () => {
     expect(document.querySelector('img.account-avatar')).toBeNull();
   });
 
+  it('vào bằng khách rồi đăng xuất thì nút Khách dùng lại được', async () => {
+    // guestBusy từng chỉ được dọn trong nhánh catch. Vào được thì cờ ở nguyên
+    // true, và vì App không unmount, đăng xuất là nút kẹt "Đang vào…" mãi mãi.
+    vi.mocked(api.getAuthState)
+      .mockResolvedValueOnce({ authenticated: false, login_configured: true,
+        providers: { discord: true, google: true, guest: true } })
+      .mockResolvedValue({ authenticated: true, login_configured: true,
+        providers: { discord: true, google: true, guest: true },
+        user: { id: 'acc-khach', provider: 'guest', username: 'khach', display_name: 'Khách', avatar_url: '' } });
+    vi.mocked(api.guestLogin).mockResolvedValue(undefined);
+    vi.mocked(api.logout).mockResolvedValue(undefined);
+
+    render(<App />);
+    fireEvent.click(await screen.findByRole('button', { name: /Khách/ }));
+    await screen.findByRole('button', { name: 'A', exact: true });
+
+    fireEvent.click(screen.getByRole('button', { name: /Cài đặt/ }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Đăng xuất' }));
+    await screen.findByRole('link', { name: /Đăng nhập bằng Discord/ });
+
+    const nut = document.querySelector('.login-alts button') as HTMLButtonElement;
+    expect(nut.disabled).toBe(false);
+    expect(nut.textContent).toContain('Khách');
+    expect(screen.queryByText(/Đang vào/)).toBeNull();
+  });
+
   it('báo lỗi khi không vào được bằng khách', async () => {
     chuaDangNhap({ discord: true, google: true, guest: true });
     vi.mocked(api.guestLogin).mockRejectedValue(new Error('Máy chủ đang bận'));

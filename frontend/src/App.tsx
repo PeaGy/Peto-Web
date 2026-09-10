@@ -482,6 +482,13 @@ export default function App() {
     setDraftFiles([]);
     setLoadingConversation(false);
     setLoadingList(false);
+    // Rác của tài khoản trước. Máy chủ vẫn lọc theo owner nên không lộ nội dung
+    // của ai, nhưng người kế tiếp không có lý do gì phải thấy danh sách ảnh cũ
+    // nhấp nháy, hay ô soạn bị khóa vì một lần tải hỏng của người trước.
+    setImagineJobs([]);
+    setFocusJobId(null);
+    setLoadFailed(false);
+    setError(null);
     setDeleteTarget(null);
     setSettingsOpen(false);
     setHasMore(false);
@@ -582,6 +589,10 @@ export default function App() {
       setAuth(await getAuthState());
     } catch (error) {
       setAuthError(error instanceof Error ? error.message : "Chưa vào được. Thử lại nhé.");
+    } finally {
+      // Phải dọn cả khi thành công. App không unmount lúc đăng nhập xong, nên
+      // đăng xuất là thẻ này quay lại — bỏ sót ở đây thì nút kẹt "Đang vào…"
+      // vĩnh viễn và không ai bấm được nữa.
       setGuestBusy(false);
     }
   }
