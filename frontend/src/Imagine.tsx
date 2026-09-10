@@ -76,10 +76,13 @@ function IdeaArt({ style }: { style: string }) {
 const ratioLabel = (value: string) => value === "auto" ? "Tự động" : value;
 const qualityLabel = (value: string) => value === "low" ? "Nhanh" : "Chi tiết";
 
-export default function Imagine({ active, onUnauthorized, onOpenSidebar }: {
+export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsChange, focusJobId, onFocusHandled }: {
   active: boolean;
   onUnauthorized: () => void;
   onOpenSidebar: () => void;
+  onJobsChange?: (jobs: ImagineJob[]) => void;
+  focusJobId?: string | null;
+  onFocusHandled?: () => void;
 }) {
   const [prompt, setPrompt] = useState("");
   const [source, setSource] = useState<DraftSource | null>(null);
@@ -141,6 +144,14 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar }: {
     if (active && deleteTarget) deleteRef.current?.showModal();
     else deleteRef.current?.close();
   }, [active, deleteTarget]);
+  // Cột trái ở App.tsx liệt kê danh sách này, nhưng Imagine vẫn giữ trạng thái gốc
+  // để lượt tạo ảnh đang chạy không mất khi người dùng sang tab trò chuyện.
+  useEffect(() => { onJobsChange?.(jobs); }, [jobs, onJobsChange]);
+  useEffect(() => {
+    if (!active || !focusJobId) return;
+    galleryRef.current?.querySelector(`[data-job-id="${focusJobId}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    onFocusHandled?.();
+  }, [active, focusJobId, onFocusHandled]);
   useEffect(() => writeStored(QUALITY_KEY, quality), [quality]);
   useEffect(() => writeStored(RES_KEY, resolution), [resolution]);
   useEffect(() => writeStored(RATIO_KEY, aspect), [aspect]);
@@ -271,7 +282,7 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar }: {
         <div className="imagine-thumbs" aria-hidden="true">{Array.from({ length: count }, (_, index) => <div className="image-placeholder" key={index}><SparkleIcon /></div>)}</div>
       </section>}
       {jobs.length > 0 && <div className="studio-library-head"><h1>Ảnh của bạn</h1><span>{jobs.length} lượt gần đây</span></div>}
-      {jobs.map((job) => <section key={job.id} className="imagine-job">
+      {jobs.map((job) => <section key={job.id} data-job-id={job.id} className="imagine-job">
         <div className="imagine-job-head">
           <div className="imagine-job-copy"><p className="imagine-prompt">{job.prompt}</p><div className="imagine-meta">
             <span>{qualityLabel(job.quality)}</span><span>{job.resolution.toUpperCase()}</span><span>{ratioLabel(job.aspect_ratio)}</span><span>{job.images.length} ảnh</span>

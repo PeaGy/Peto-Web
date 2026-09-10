@@ -103,9 +103,49 @@ body {
   color: var(--text);
 }
 
-.imagine-sidebar-note { flex: 1; padding: 22px 12px; }
+.imagine-sidebar-note { padding: 22px 12px 14px; }
 .imagine-sidebar-note p { color: var(--text); font-size: 17px; line-height: 1.6; }
-.imagine-sidebar-note > span:last-child { color: var(--muted); font-size: 12px; }
+
+.imagine-job-list {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.job-link {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--text);
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.job-link:hover { background: var(--panel-2); }
+
+.job-link img, .job-link-blank {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  object-fit: cover;
+  background: var(--panel-2);
+}
+
+.job-link > span {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
 
 .conversation-list {
   flex: 1;

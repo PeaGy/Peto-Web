@@ -17,6 +17,7 @@ import {
   type ChatAttachment,
   type Conversation,
   type Effort,
+  type ImagineJob,
   type Message,
   type OutgoingAttachment,
 } from "./api";
@@ -214,6 +215,10 @@ export default function App() {
     typeof window !== "undefined" && window.location.hash === "#imagine" ? "imagine" : "chat",
   );
   const [imageVisited, setImageVisited] = useState(view === "imagine");
+  // Bản sao chỉ để vẽ cột trái; Imagine.tsx mới là nơi tạo, xóa và giữ danh sách.
+  const [imagineJobs, setImagineJobs] = useState<ImagineJob[]>([]);
+  const [focusJobId, setFocusJobId] = useState<string | null>(null);
+  const clearFocusJob = useCallback(() => setFocusJobId(null), []);
 
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -678,11 +683,35 @@ export default function App() {
         </button>
         )}
         {view === "imagine" && (
-          <div className="imagine-sidebar-note">
-            <span className="studio-eyebrow">Peto tạo ảnh</span>
-            <p>Một chút tưởng tượng,<br />một thế giới của riêng bạn.</p>
-            <span>Ảnh đã tạo được lưu tại đây để bạn xem và tải lại.</span>
-          </div>
+          <>
+            <div className="imagine-sidebar-note">
+              <span className="studio-eyebrow">Peto tạo ảnh</span>
+              <p>Một chút tưởng tượng,<br />một thế giới của riêng bạn.</p>
+            </div>
+            <nav className="imagine-job-list" aria-label="Ảnh đã tạo">
+              {imagineJobs.length === 0 && (
+                <p className="empty-hint">Chưa có ảnh nào. Ảnh bạn tạo sẽ hiện ở đây.</p>
+              )}
+              {imagineJobs.map((job) => (
+                <button
+                  key={job.id}
+                  className="job-link"
+                  title={job.prompt}
+                  onClick={() => {
+                    setFocusJobId(job.id);
+                    setSidebarOpen(false);
+                  }}
+                >
+                  {job.images[0] ? (
+                    <img src={job.images[0].url} alt="" loading="lazy" />
+                  ) : (
+                    <span className="job-link-blank" aria-hidden="true" />
+                  )}
+                  <span>{job.prompt}</span>
+                </button>
+              ))}
+            </nav>
+          </>
         )}
         {view === "chat" && (
         <nav className="conversation-list">
@@ -757,6 +786,9 @@ export default function App() {
           active={view === "imagine"}
           onUnauthorized={handleUnauthorized}
           onOpenSidebar={() => setSidebarOpen(true)}
+          onJobsChange={setImagineJobs}
+          focusJobId={focusJobId}
+          onFocusHandled={clearFocusJob}
         />
       )}
       <main className="chat" hidden={view !== "chat"}>

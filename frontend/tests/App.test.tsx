@@ -75,6 +75,44 @@ it('giữ ảnh gốc và yêu cầu chỉnh sửa khi chuyển sang chat rồi 
   expect(api.createImagineJob).not.toHaveBeenCalled();
 });
 
+it('liệt kê lượt tạo ảnh ở cột trái và cuộn tới lượt được chọn', async () => {
+  const job = (id: string, prompt: string): api.ImagineJob => ({ id, prompt, quality: 'low', resolution: '1k',
+    aspect_ratio: 'auto', created_at: null, images: [{ id: id + '-1', mime: 'image/png', url: '/api/imagine/images/' + id }] });
+  vi.mocked(api.listImagineJobs).mockResolvedValue([job('j1', 'Ngôi nhà bên hồ'), job('j2', 'Mèo trên mặt trăng')]);
+  await openApp();
+  fireEvent.click(screen.getByRole('button', { name: 'Tạo ảnh', exact: true }));
+  const list = await screen.findByRole('navigation', { name: 'Ảnh đã tạo' });
+  await within(list).findByRole('button', { name: 'Ngôi nhà bên hồ' });
+  expect(within(list).getAllByRole('button').map((item) => item.textContent))
+    .toEqual(['Ngôi nhà bên hồ', 'Mèo trên mặt trăng']);
+
+  const scrolled = vi.mocked(Element.prototype.scrollIntoView);
+  scrolled.mockClear();
+  fireEvent.click(within(list).getByRole('button', { name: 'Mèo trên mặt trăng' }));
+  await waitFor(() => expect(scrolled).toHaveBeenCalled());
+  expect(scrolled.mock.instances[0]).toBe(document.querySelector('[data-job-id="j2"]'));
+});
+
+it('báo cột trái trống khi chưa có ảnh nào', async () => {
+  await openApp();
+  fireEvent.click(screen.getByRole('button', { name: 'Tạo ảnh', exact: true }));
+  const list = await screen.findByRole('navigation', { name: 'Ảnh đã tạo' });
+  expect(within(list).getByText('Chưa có ảnh nào. Ảnh bạn tạo sẽ hiện ở đây.')).toBeTruthy();
+  expect(within(list).queryAllByRole('button')).toHaveLength(0);
+});
+
+it('thêm lượt vừa tạo vào cột trái', async () => {
+  vi.mocked(api.createImagineJob).mockResolvedValue({ id: 'moi', prompt: 'Mèo tím', quality: 'low', resolution: '1k',
+    aspect_ratio: 'auto', created_at: null, images: [{ id: 'anh-1', mime: 'image/png', url: '/api/imagine/images/anh-1' }] });
+  await openApp();
+  fireEvent.click(screen.getByRole('button', { name: 'Tạo ảnh', exact: true }));
+  await screen.findByRole('heading', { name: /Bạn tưởng tượng/ });
+  fireEvent.change(screen.getByLabelText('Bức ảnh bạn muốn tạo'), { target: { value: 'Mèo tím' } });
+  fireEvent.submit(screen.getByLabelText('Bức ảnh bạn muốn tạo').closest('form')!);
+  const list = await screen.findByRole('navigation', { name: 'Ảnh đã tạo' });
+  await waitFor(() => expect(within(list).getByRole('button', { name: 'Mèo tím' })).toBeTruthy());
+});
+
 describe('Conversation navigation', () => {
   it('ignores late A results after choosing B', async () => {
     const a = deferred<api.Message[]>();
