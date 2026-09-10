@@ -50,21 +50,6 @@ Authorized redirect URI khớp `GOOGLE_REDIRECT_URI`, rồi điền `GOOGLE_CLIE
 và `GOOGLE_CLIENT_SECRET`. Thiếu một trong hai thì nút Google tự ẩn, Discord và
 Khách vẫn chạy bình thường.
 
-### Đăng ký là MỞ
-
-Không còn allowlist. Bất kỳ ai mở được địa chỉ này đều đăng nhập được — bằng
-Discord, bằng Google, hoặc bấm **Khách** để vào thẳng không cần tài khoản nào.
-
-Đây là lựa chọn có chủ đích, và cái giá là **mọi lượt chat và tạo ảnh của người
-lạ đều tính vào quota xAI của bạn**. `PETO_MAX_CONCURRENT` chỉ giới hạn số lượt
-chạy cùng lúc, không giới hạn tổng số lượt. Đừng công khai địa chỉ nếu bạn chưa
-sẵn sàng trả cho phần đó.
-
-Khách nhận một `owner` riêng gắn với cookie trình duyệt: có hội thoại riêng,
-không thấy dữ liệu của ai, và **mất cookie là mất luôn lịch sử** — không có cách
-nào chứng minh mình là khách cũ. Khách và người dùng Google không có Discord ID
-nên không bao giờ chạm tới trí nhớ dài hạn của bot.
-
 ## Đưa lên VPS
 
 Xem [DEPLOY.md](DEPLOY.md) — từng bước cho VPS đang chạy bot, kèm cách bật
