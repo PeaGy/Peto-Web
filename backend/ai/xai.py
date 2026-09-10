@@ -92,7 +92,7 @@ class XAIProvider(ChatProvider):
             self._client.api_key = await self._auth.get_access_token()
         except XaiAuthError as err:
             raise ProviderError(
-                "Máy chủ chưa đăng nhập xAI nên Peto chưa trả lời được. "
+                "Peto chưa được kết nối với dịch vụ AI nên chưa trả lời được. "
                 "Người quản trị cần chạy lại lệnh đăng nhập."
             ) from err
 
@@ -148,16 +148,16 @@ class XAIProvider(ChatProvider):
                     elif event_type == "response.incomplete":
                         raise ProviderError("Câu trả lời chạm giới hạn của lượt AI. Phần đã viết được giữ lại; cậu có thể yêu cầu tiếp tục.")
                     elif event_type in {"response.failed", "error"}:
-                        raise ProviderError("xAI báo lỗi giữa chừng. Thử lại nha.", retryable=True)
+                        raise ProviderError("Peto gặp lỗi khi đang trả lời. Thử lại nha.", retryable=True)
             except AuthenticationError as err:
-                raise ProviderError("Token xAI không còn hợp lệ. Người quản trị cần đăng nhập lại.") from err
+                raise ProviderError("Kết nối AI của Peto đã hết hạn. Người quản trị cần đăng nhập lại.") from err
             except RateLimitError as err:
-                raise ProviderError("xAI đang giới hạn tần suất. Đợi chút rồi thử lại nha.", retryable=True) from err
+                raise ProviderError("Peto đang nhận nhiều yêu cầu quá. Đợi chút rồi thử lại nha.", retryable=True) from err
             except APIConnectionError as err:
-                raise ProviderError("Không kết nối được tới xAI. Kiểm tra mạng giúp nha.", retryable=True) from err
+                raise ProviderError("Peto chưa kết nối được với dịch vụ AI. Thử lại sau chút nhé.", retryable=True) from err
             except APIStatusError as err:
                 logger.warning("xAI HTTP %s", err.status_code)
-                raise ProviderError(f"xAI trả lỗi {err.status_code}. Thử lại sau nha.", retryable=err.status_code >= 500) from err
+                raise ProviderError("Peto gặp lỗi kết nối với dịch vụ AI. Thử lại sau nha.", retryable=err.status_code >= 500) from err
             finally:
                 if stream is not None:
                     with anyio.CancelScope(shield=True):

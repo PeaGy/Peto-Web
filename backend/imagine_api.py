@@ -1,7 +1,8 @@
-"""HTTP API cho tab Imagine — tách khỏi /api/chat."""
+"""HTTP API cho Peto tạo ảnh — tách khỏi /api/chat."""
 
 from __future__ import annotations
 
+import asyncio
 import time
 import uuid
 from pathlib import Path
@@ -59,14 +60,14 @@ def _public_job(row: dict) -> dict:
 
 
 def _validate(request: ImagineRequest) -> tuple[str, str, str, str, int]:
-    prompt = " ".join(request.prompt.split())
+    prompt = request.prompt.strip()
     if not prompt:
-        raise HTTPException(status_code=400, detail="Prompt trống")
+        raise HTTPException(status_code=400, detail="Bạn chưa nhập mô tả ảnh.")
     quality = request.quality.strip().lower()
     resolution = request.resolution.strip().lower()
     aspect = request.aspect_ratio.strip()
     if quality not in QUALITIES:
-        raise HTTPException(status_code=400, detail="Chất lượng phải là low (Nhanh) hoặc medium (Chất lượng)")
+        raise HTTPException(status_code=400, detail="Chọn chế độ Nhanh hoặc Chi tiết để tạo ảnh.")
     if resolution not in RESOLUTIONS:
         raise HTTPException(status_code=400, detail="Độ phân giải phải là 1k hoặc 2k")
     if aspect not in ASPECT_RATIOS:
@@ -86,13 +87,14 @@ async def create_job(request: ImagineRequest, owner: str = Depends(current_owner
 
     try:
         async with admission.slot(f"imagine:{owner}"):
-            images = await generate_images(
-                prompt=prompt,
-                quality=quality,
-                resolution=resolution,
-                aspect_ratio=aspect,
-                n=n,
-            )
+            async with asyncio.timeout(IMAGINE_TIMEOUT_SECONDS):
+                images = await generate_images(
+                    prompt=prompt,
+                    quality=quality,
+                    resolution=resolution,
+                    aspect_ratio=aspect,
+                    n=n,
+                )
     except AdmissionDenied as denied:
         raise HTTPException(status_code=429, detail=denied.message) from denied
     except ProviderError as err:
@@ -100,7 +102,7 @@ async def create_job(request: ImagineRequest, owner: str = Depends(current_owner
     except TimeoutError as err:
         raise HTTPException(
             status_code=504,
-            detail=f"Tạo ảnh quá {IMAGINE_TIMEOUT_SECONDS:.0f}s nên bỏ lượt này.",
+            detail="Peto tạo ảnh lâu quá nên đã dừng lượt này. Bạn có thể thử lại.",
         ) from err
 
     job_id = await db.create_imagine_job(
@@ -169,7 +171,7 @@ async def get_image(
     return FileResponse(
         path,
         media_type=record["mime"],
-        filename=f"imagine-{image_id}{ext}",
+        filename=f"peto-{image_id}{ext}",
         content_disposition_type="attachment" if download else "inline",
         headers={"Cache-Control": "private, max-age=3600"},
     )

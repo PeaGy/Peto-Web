@@ -1,4 +1,4 @@
-"""Tạo ảnh Grok Imagine — chỉ gọi từ tab Imagine, không phải từ chat.
+"""Peto tạo ảnh — chỉ gọi từ tab Tạo ảnh, không phải từ chat.
 
 Dùng REST ``/v1/images/generations`` của xAI. Chat thường cố ý không có công
 cụ tạo ảnh để tránh vẽ nhầm khi người dùng chỉ đang nói chuyện.
@@ -55,28 +55,28 @@ class GeneratedImage:
 def _friendly_http_error(status: int, body: str) -> str:
     lowered = (body or "").casefold()
     if status in {401, 403}:
-        return "Token xAI không còn hợp lệ. Người quản trị cần đăng nhập lại."
+        return "Peto cần được kết nối lại với dịch vụ tạo ảnh. Báo người quản trị giúp nhé."
     if status == 429:
-        return "xAI đang giới hạn tần suất tạo ảnh. Đợi chút rồi thử lại nha."
+        return "Peto đang tạo nhiều ảnh quá. Đợi chút rồi thử lại nha."
     if status == 400:
         if "moderat" in lowered or "content policy" in lowered:
-            return "xAI không nhận prompt này. Đổi mô tả rồi thử lại nhé."
-        return "Yêu cầu tạo ảnh không hợp lệ. Thử đổi prompt hoặc tùy chọn."
-    return "xAI tạo ảnh lỗi. Thử lại sau nha."
+            return "Peto chưa thể tạo ảnh từ mô tả này. Đổi mô tả rồi thử lại nhé."
+        return "Yêu cầu tạo ảnh không hợp lệ. Thử đổi mô tả hoặc tùy chọn."
+    return "Peto gặp lỗi khi tạo ảnh. Thử lại sau nha."
 
 
 def _decode_payload(item: dict) -> GeneratedImage | None:
     raw = b""
     if item.get("b64_json"):
         try:
-            raw = base64.b64decode(item["b64_json"], validate=False)
+            raw = base64.b64decode(item["b64_json"], validate=True)
         except (ValueError, TypeError):
             return None
     if not raw:
         return None
-    mime = sniff_image_mime(raw) or str(item.get("mime_type") or "image/jpeg")
-    if mime not in {"image/jpeg", "image/png", "image/webp", "image/gif"}:
-        mime = "image/jpeg"
+    mime = sniff_image_mime(raw)
+    if mime is None:
+        return None
     return GeneratedImage(data=raw, mime=mime)
 
 
@@ -85,12 +85,12 @@ async def _download_url(client: httpx.AsyncClient, url: str) -> GeneratedImage |
         response = await client.get(url)
         response.raise_for_status()
     except httpx.HTTPError:
-        logger.warning("Không tải được ảnh Imagine từ URL tạm")
+        logger.warning("Không tải được ảnh từ URL tạm")
         return None
     raw = response.content
-    mime = sniff_image_mime(raw) or response.headers.get("content-type", "image/jpeg").split(";")[0]
-    if mime not in {"image/jpeg", "image/png", "image/webp", "image/gif"}:
-        mime = "image/jpeg"
+    mime = sniff_image_mime(raw)
+    if mime is None:
+        return None
     return GeneratedImage(data=raw, mime=mime)
 
 
@@ -112,8 +112,8 @@ async def generate_images(
         token = await XaiAuth().get_access_token()
     except XaiAuthError as err:
         raise ProviderError(
-            "Máy chủ chưa đăng nhập xAI nên chưa tạo ảnh được. "
-            "Người quản trị cần chạy lại lệnh đăng nhập."
+            "Peto chưa được kết nối với dịch vụ tạo ảnh. "
+            "Báo người quản trị giúp nhé."
         ) from err
 
     payload = {
@@ -143,8 +143,12 @@ async def generate_images(
                     retryable=response.status_code >= 500 or response.status_code == 429,
                 )
             body = response.json()
+            if not isinstance(body, dict) or not isinstance(body.get("data"), list):
+                raise ProviderError("Peto nhận được dữ liệu ảnh không hợp lệ. Thử lại nhé.", retryable=True)
             images: list[GeneratedImage] = []
-            for item in body.get("data") or []:
+            for item in body["data"][:n]:
+                if not isinstance(item, dict):
+                    continue
                 decoded = _decode_payload(item)
                 if decoded is None and item.get("url"):
                     decoded = await _download_url(client, str(item["url"]))
@@ -155,10 +159,10 @@ async def generate_images(
     except httpx.TimeoutException as err:
         raise ProviderError("Tạo ảnh lâu quá nên bỏ lượt này. Thử lại nha.", retryable=True) from err
     except httpx.HTTPError as err:
-        raise ProviderError("Không kết nối được tới xAI. Kiểm tra mạng giúp nha.", retryable=True) from err
+        raise ProviderError("Peto chưa kết nối được với dịch vụ tạo ảnh. Thử lại sau chút nhé.", retryable=True) from err
     except ValueError as err:
-        raise ProviderError("xAI trả dữ liệu ảnh lạ. Thử lại nha.", retryable=True) from err
+        raise ProviderError("Peto nhận được dữ liệu ảnh không hợp lệ. Thử lại nha.", retryable=True) from err
 
     if not images:
-        raise ProviderError("xAI không trả ảnh nào. Đổi prompt rồi thử lại nhé.")
+        raise ProviderError("Peto chưa tạo được ảnh nào. Đổi mô tả rồi thử lại nhé.")
     return images

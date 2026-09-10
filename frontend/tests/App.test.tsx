@@ -8,6 +8,7 @@ vi.mock('../src/api', async (original) => ({
   ...await original<typeof import('../src/api')>(),
   getAuthState: vi.fn(), listConversations: vi.fn(), getMessages: vi.fn(),
   sendMessage: vi.fn(), deleteConversation: vi.fn(), logout: vi.fn(),
+  listImagineJobs: vi.fn(), createImagineJob: vi.fn(),
 }));
 
 const conversation = (id: string): api.Conversation => ({ id, title: id, created_at: 0, updated_at: 0, message_count: 2 });
@@ -22,11 +23,14 @@ const deferred = <T,>() => {
 beforeEach(() => {
   vi.resetAllMocks();
   localStorage.clear();
+  window.history.replaceState(null, '', '/');
   vi.mocked(api.getAuthState).mockResolvedValue({ authenticated: true, login_configured: true,
     user: { discord_id: '111', username: 'demo', display_name: 'Demo', avatar_url: '' } });
   vi.mocked(api.listConversations).mockResolvedValue({ conversations: [conversation('A'), conversation('B')], has_more: false });
   vi.mocked(api.getMessages).mockResolvedValue([]);
   vi.mocked(api.deleteConversation).mockResolvedValue();
+  vi.mocked(api.listImagineJobs).mockResolvedValue([]);
+  Element.prototype.scrollTo = vi.fn();
   URL.createObjectURL = vi.fn(() => 'blob:review');
   URL.revokeObjectURL = vi.fn();
 });
@@ -35,6 +39,27 @@ async function openApp() {
   render(<App />);
   await screen.findByRole('button', { name: 'A', exact: true });
 }
+
+it('keeps image generation alive while navigating to chat and back', async () => {
+  const generated = deferred<api.ImagineJob>();
+  vi.mocked(api.createImagineJob).mockReturnValue(generated.promise);
+  await openApp();
+  fireEvent.click(screen.getByRole('button', { name: 'Tạo ảnh', exact: true }));
+  await screen.findByRole('heading', { name: /Bạn tưởng tượng/ });
+  fireEvent.change(screen.getByLabelText('Bức ảnh bạn muốn tạo'), { target: { value: 'Mèo tím' } });
+  fireEvent.submit(screen.getByLabelText('Bức ảnh bạn muốn tạo').closest('form')!);
+  await screen.findByText('Peto đang tạo 1 ảnh…');
+  fireEvent.click(screen.getByRole('button', { name: 'Trò chuyện', exact: true }));
+  const chat = screen.getByLabelText('Nhắn cho Peto');
+  chat.focus();
+  await act(async () => generated.resolve({ id: 'image-job', prompt: 'Mèo tím', quality: 'low', resolution: '1k', aspect_ratio: 'auto', created_at: null,
+    images: [{ id: 'image-1', mime: 'image/png', url: '/api/imagine/images/image-1' }] }));
+  expect(document.activeElement).toBe(chat);
+  fireEvent.click(screen.getByRole('button', { name: 'Tạo ảnh', exact: true }));
+  await screen.findByRole('button', { name: 'Xem ảnh 1: Mèo tím' });
+  expect(api.createImagineJob).toHaveBeenCalledTimes(1);
+  expect(api.listImagineJobs).toHaveBeenCalledTimes(1);
+});
 
 describe('Conversation navigation', () => {
   it('ignores late A results after choosing B', async () => {

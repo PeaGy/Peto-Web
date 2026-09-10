@@ -77,11 +77,12 @@ npm test
 npm run build
 ```
 
-Sau đợt cải tiến 10/09/2026: **147 test backend, 14 test frontend đạt**;
+Sau đợt cải tiến 10/09/2026: **169 test backend, 23 test frontend đạt**;
 TypeScript và Vite build đạt. Các test bao gồm thu hồi quyền, chuyển hội thoại
 với kết quả tải về không đúng thứ tự, giữ bản nháp, dừng phản hồi, lưu câu trả lời
 dở dang, nâng cấp schema, ẩn danh, phân trang, bảng Markdown, ngày giờ/múi giờ,
-vòng gọi công cụ và tin nhắn dài.
+vòng gọi công cụ, tin nhắn dài, tạo ảnh, đổi tab khi đang tạo, xác nhận xóa ảnh,
+giữ mô tả khi lỗi, thời hạn tạo ảnh và phản hồi ảnh không hợp lệ.
 
 Khi cập nhật bản này, cài lại dependencies, build frontend rồi khởi động lại web.
 Backend tự bổ sung cột trạng thái tin nhắn khi khởi động; giữ nguyên dữ liệu cũ.
@@ -98,14 +99,17 @@ backend/
   xai_auth.py    OAuth xAI riêng của web + CLI login/status/logout
   config.py      Đọc biến môi trường
   chat_tools.py  Đồng hồ máy chủ, múi giờ IANA và bộ chạy công cụ đã đăng ký
+  imagine_api.py API Peto tạo ảnh: tạo, liệt kê, tải và xóa ảnh theo tài khoản
   ai/
     base.py      Interface ChatProvider — phần còn lại chỉ nói chuyện qua đây
     xai.py       Grok Responses API: stream và vòng gọi công cụ có giới hạn
     mock.py      Trả lời giả, không gọi mạng
     routing.py   Chọn mức suy luận low/medium/high
+    imagine.py   Kết nối dịch vụ tạo ảnh; kiểm tra dữ liệu ảnh trả về
 frontend/
   src/api.ts     Đọc SSE bằng fetch (endpoint là POST nên không dùng EventSource)
   src/App.tsx    Màn hình đăng nhập + giao diện chat
+  src/Imagine.tsx Peto tạo ảnh: gợi ý, tiến trình, bộ ảnh và khung xem ảnh
 ```
 
 ### Đổi nhà cung cấp AI
@@ -116,6 +120,37 @@ phải sửa route, database hay giới hạn tải.
 
 Đặt `PETO_AI_PROVIDER=mock` bất cứ lúc nào để làm việc trên giao diện mà không
 tốn hạn mức xAI.
+
+## Peto tạo ảnh
+
+Mở tab **Tạo ảnh**, nhập mô tả hoặc chọn một gợi ý rồi bấm **Tạo ảnh**.
+Giao diện có hai chế độ **Nhanh / Chi tiết**, độ phân giải **1K / 2K**, tỉ lệ
+khung hình và số ảnh. Chọn gợi ý hoặc **Dùng lại mô tả** chỉ điền nội dung;
+yêu cầu tạo ảnh chỉ gửi khi người dùng bấm tạo hoặc nhấn Enter.
+
+- Có thể chuyển sang Trò chuyện trong lúc chờ rồi quay lại: mô tả, yêu cầu
+  đang chạy và kết quả được giữ trong phiên trang hiện tại. Tải lại cả trang
+  trong lúc đang tạo chưa có cơ chế theo dõi tiến trình nền.
+- Nhấp ảnh để xem toàn bộ khung hình, chuyển giữa các ảnh trong lượt và tải
+  xuống với tên `peto-…`. Escape đóng khung xem; hộp thoại hỗ trợ bàn phím.
+- Xóa yêu cầu xác nhận và cho biết số ảnh sẽ mất. Nếu tạo hoặc xóa lỗi,
+  mô tả/ảnh hiện có vẫn được giữ để thử lại.
+- Giao diện dùng **Peto tạo ảnh**, **Tạo ảnh** và thông báo của Peto. Các tên
+  model, biến môi trường, đường dẫn `/api/imagine` và bảng dữ liệu được giữ
+  tương thích. Không đổi slug model thành tên thương hiệu vì API cần tên thật.
+- API lọc ảnh theo tài khoản đăng nhập. Thời hạn gọi dịch vụ áp dụng cho toàn
+  bộ lượt tạo và tải ảnh, thay vì chỉ cho từng lần đọc dữ liệu. Phản hồi JSON
+  và chữ ký định dạng ảnh được kiểm tra trước khi lưu.
+
+Các tùy chọn kết nối vẫn theo [tài liệu tạo ảnh của xAI](https://docs.x.ai/developers/model-capabilities/images/generation).
+Mặc định `PETO_IMAGINE_MODEL=grok-imagine-image-2.0`,
+`PETO_IMAGINE_TIMEOUT_SECONDS=90`, `PETO_MAX_IMAGINE_N=4`,
+`PETO_MAX_IMAGINE_PROMPT_CHARS=2000`. Xem `.env.example` để cấu hình.
+
+Đợt sửa này đã thử giao diện tối/sáng ở máy tính và điện thoại, tạo/xem ảnh
+với nhà cung cấp giả, kiểm thử lỗi dịch vụ và quyền truy cập. Ảnh giả chỉ là
+PNG một điểm ảnh để kiểm tra đường đi dữ liệu; chưa đánh giá chất lượng ảnh
+hoặc xác minh xác thực với dịch vụ xAI thật. Chưa triển khai lên VPS.
 
 ## Ngày giờ và độ dài dành cho web
 

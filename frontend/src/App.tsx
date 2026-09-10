@@ -213,6 +213,7 @@ export default function App() {
   const [view, setView] = useState<AppView>(() =>
     typeof window !== "undefined" && window.location.hash === "#imagine" ? "imagine" : "chat",
   );
+  const [imageVisited, setImageVisited] = useState(view === "imagine");
 
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -635,6 +636,7 @@ export default function App() {
   const effortMeta = EFFORTS.find((item) => item.value === effort) ?? EFFORTS[0];
 
   function go(next: AppView) {
+    if (next === "imagine") setImageVisited(true);
     setView(next);
     setSidebarOpen(false);
     const url = next === "imagine" ? "#imagine" : `${window.location.pathname}${window.location.search}`;
@@ -659,7 +661,7 @@ export default function App() {
             aria-current={view === "chat" ? "page" : undefined}
             onClick={() => go("chat")}
           >
-            Chat
+            Trò chuyện
           </button>
           <button
             type="button"
@@ -667,7 +669,7 @@ export default function App() {
             aria-current={view === "imagine" ? "page" : undefined}
             onClick={() => go("imagine")}
           >
-            Imagine
+            Tạo ảnh
           </button>
         </nav>
         {view === "chat" && (
@@ -676,7 +678,11 @@ export default function App() {
         </button>
         )}
         {view === "imagine" && (
-          <p className="empty-hint imagine-sidebar-note">Tạo ảnh ở khung bên phải. Chat thường cố ý không vẽ.</p>
+          <div className="imagine-sidebar-note">
+            <span className="studio-eyebrow">Peto tạo ảnh</span>
+            <p>Một chút tưởng tượng,<br />một thế giới của riêng bạn.</p>
+            <span>Ảnh đã tạo được lưu tại đây để bạn xem và tải lại.</span>
+          </div>
         )}
         {view === "chat" && (
         <nav className="conversation-list">
@@ -745,14 +751,15 @@ export default function App() {
         </div>
       </aside>
 
-      {view === "imagine" ? (
+      {imageVisited && (
         <Imagine
-          appInfo={appInfo}
+          key={auth.user?.discord_id}
+          active={view === "imagine"}
           onUnauthorized={handleUnauthorized}
           onOpenSidebar={() => setSidebarOpen(true)}
         />
-      ) : (
-      <main className="chat">
+      )}
+      <main className="chat" hidden={view !== "chat"}>
         <header className="chat-header">
           <button
             type="button"
@@ -1001,7 +1008,6 @@ export default function App() {
           </p>
         </form>
       </main>
-      )}
       <dialog
         ref={settingsDialogRef}
         className="settings-dialog"

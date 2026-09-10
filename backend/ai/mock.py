@@ -30,8 +30,8 @@ _TOOL_REFUSAL = (
 )
 
 _IMAGE_REFUSAL = (
-    "Ê, muốn tạo ảnh thì sang tab Imagine giúp. Chat này Peto không vẽ được đâu, "
-    "cố ý tách ra để khỏi vẽ nhầm khi đang nói chuyện."
+    "Muốn tạo ảnh thì mở tab Tạo ảnh rồi nhập mô tả cho Peto nhé. "
+    "Cậu có thể chọn tỉ lệ, độ phân giải và số ảnh ở đó."
 )
 
 _MATH = (
