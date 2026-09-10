@@ -421,22 +421,53 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .bubble code { font-family: Consolas, "Cascadia Code", monospace; font-size: 13px; }
 
-.typing { display: inline-flex; gap: 4px; padding: 4px 0; }
+.thinking-panel { margin-bottom: 8px; }
 
-.typing i {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--muted);
-  animation: blink 1.2s infinite;
+.thinking-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
 }
 
-.typing i:nth-child(2) { animation-delay: 0.2s; }
-.typing i:nth-child(3) { animation-delay: 0.4s; }
+.thinking-chevron {
+  display: inline-block;
+  font-size: 11px;
+  transition: transform 0.15s ease;
+}
 
-@keyframes blink {
-  0%, 60%, 100% { opacity: 0.25; }
-  30% { opacity: 1; }
+.thinking-chevron.open { transform: rotate(90deg); }
+
+.thinking-pulse {
+  background: linear-gradient(90deg, var(--muted) 0%, var(--text) 45%, var(--muted) 100%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: thinking-shimmer 1.6s ease-in-out infinite;
+}
+
+.thinking-body {
+  margin-top: 8px;
+  padding: 2px 0 2px 12px;
+  border-left: 2px solid var(--line);
+  color: var(--muted);
+  font-size: 13.5px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+@keyframes thinking-shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
 }
 
 .error {
@@ -779,7 +810,7 @@ button:focus-visible, a:focus-visible, .table-scroll:focus-visible {
   outline: 2px solid var(--accent); outline-offset: 3px;
 }
 @media (prefers-reduced-motion: reduce) {
-  .typing i { animation: none; }
+  .thinking-pulse { animation: none; color: var(--muted); background: none; }
   * { scroll-behavior: auto !important; }
 }
 

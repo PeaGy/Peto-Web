@@ -7,7 +7,7 @@ from inspect import isclass
 
 from config import AI_PROVIDER
 
-from .base import ChatAttachment, ChatMessage, ChatProvider, ProviderError
+from .base import ChatAttachment, ChatMessage, ChatProvider, ProviderError, StreamChunk
 from .mock import MockProvider
 
 __all__ = [
@@ -15,6 +15,7 @@ __all__ = [
     "ChatMessage",
     "ChatProvider",
     "ProviderError",
+    "StreamChunk",
     "get_provider",
 ]
 

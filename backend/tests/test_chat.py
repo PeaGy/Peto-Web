@@ -44,12 +44,16 @@ async def test_chat_streams_and_persists(client):
     assert len(deltas) > 1, "phải stream nhiều mảnh, không phải một cục"
     reply = "".join(deltas).strip()
     assert reply
+    thinking = "".join(e["text"] for e in events if e["type"] == "thinking")
+    assert "Đọc tin nhắn" in thinking
+    assert thinking not in reply
 
     stored = await client.get(f"/api/conversations/{conversation_id}/messages")
     messages = stored.json()["messages"]
     assert [m["role"] for m in messages] == ["user", "assistant"]
     assert messages[0]["content"] == "chào"
     assert messages[1]["content"] == reply
+    assert thinking not in messages[1]["content"]
 
 
 async def test_history_is_reused_in_same_conversation(client):

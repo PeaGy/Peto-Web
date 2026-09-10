@@ -19,7 +19,12 @@ from config import MAX_HISTORY_IMAGES, XAI_API_BASE, XAI_MAX_OUTPUT_TOKENS, XAI_
 from xai_auth import XaiAuth, XaiAuthError
 from chat_tools import TOOL_SCHEMAS, execute_tool
 
-from .base import ChatMessage, ChatProvider, ProviderError
+from .base import ChatMessage, ChatProvider, ProviderError, StreamChunk
+
+_REASONING_DELTA_TYPES = {
+    "response.reasoning_text.delta",
+    "response.reasoning_summary_text.delta",
+}
 
 logger = logging.getLogger("peto_web.xai")
 
@@ -103,7 +108,7 @@ class XAIProvider(ChatProvider):
         messages: list[ChatMessage],
         effort: str = "low",
         timezone: str | None = None,
-    ) -> AsyncIterator[str]:
+    ) -> AsyncIterator[str | StreamChunk]:
         await self._prepare()
 
         payload_input = build_input_payload(messages)
@@ -131,7 +136,11 @@ class XAIProvider(ChatProvider):
                 stream = await self._client.responses.create(**create_kwargs)
                 async for event in stream:
                     event_type = getattr(event, "type", "")
-                    if event_type == "response.output_text.delta":
+                    if event_type in _REASONING_DELTA_TYPES:
+                        delta = getattr(event, "delta", "")
+                        if delta:
+                            yield StreamChunk("thinking", delta)
+                    elif event_type == "response.output_text.delta":
                         delta = getattr(event, "delta", "")
                         if delta:
                             emitted_text = True

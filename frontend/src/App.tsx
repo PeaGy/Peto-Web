@@ -161,6 +161,38 @@ function GearIcon() {
   );
 }
 
+function ThinkingPanel({
+  live,
+  text,
+  label,
+}: {
+  live: boolean;
+  text: string;
+  label: string;
+}) {
+  const [open, setOpen] = useState(live);
+  useEffect(() => {
+    setOpen(live);
+  }, [live]);
+  if (!live && !text) return null;
+  return (
+    <div className="thinking-panel">
+      <button
+        type="button"
+        className="thinking-toggle"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <span className={open ? "thinking-chevron open" : "thinking-chevron"} aria-hidden="true">
+          ▸
+        </span>
+        <span className={live ? "thinking-pulse" : undefined}>{live ? label : "Đã suy nghĩ"}</span>
+      </button>
+      {open && text ? <div className="thinking-body">{text}</div> : null}
+    </div>
+  );
+}
+
 function FileGlyph({ name, kind }: { name: string; kind: "image" | "file" }) {
   if (kind === "image") return null;
   const ext = name.split(".").pop()?.slice(0, 4).toUpperCase() || "FILE";
@@ -555,6 +587,17 @@ export default function App() {
       });
     };
 
+    const appendThinking = (chunk: string) => {
+      if (session !== authVersion.current) return;
+      setMessages((prev) => {
+        const next = [...prev];
+        const last = next[next.length - 1];
+        if (last?.role !== "assistant") return prev;
+        next[next.length - 1] = { ...last, thinking: (last.thinking ?? "") + chunk };
+        return next;
+      });
+    };
+
     try {
       const attachments: OutgoingAttachment[] = await Promise.all(
         pending.map(async (item) => ({
@@ -583,6 +626,7 @@ export default function App() {
             if (storedMessage) setMessages((prev) => [...prev.slice(0, -2), storedMessage, prev[prev.length - 1]]);
           },
           onDelta: appendToReply,
+          onThinking: appendThinking,
           onError: (message) => {
             if (session !== authVersion.current) return;
             setError(message);
@@ -871,17 +915,21 @@ export default function App() {
                   )}
                 </div>
               )}
+              {message.role === "assistant" && (
+                message.thinking ||
+                (streaming && !stopping && index === messages.length - 1)
+              ) ? (
+                <ThinkingPanel
+                  live={streaming && !stopping && index === messages.length - 1 && !message.content}
+                  text={message.thinking ?? ""}
+                  label={THINKING[activeEffort ?? "low"]}
+                />
+              ) : null}
               {message.content ? (
                 <Markdown remarkPlugins={[remarkGfm]} components={{
                   table: ({children}) => <div className="table-scroll" tabIndex={0} role="region" aria-label="Bảng nội dung"><table>{children}</table></div>,
                   a: ({children, href}) => <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>,
                 }}>{message.content}</Markdown>
-              ) : message.role === "assistant" && streaming && !stopping && index === messages.length - 1 ? (
-                <span className="typing" aria-label={THINKING[activeEffort ?? "low"]}>
-                  <i />
-                  <i />
-                  <i />
-                </span>
               ) : null}
               {message.status === "incomplete" && <p className="message-status">Câu trả lời chưa hoàn tất</p>}
             </article>

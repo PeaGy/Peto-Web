@@ -14,7 +14,7 @@ import asyncio
 import random
 from collections.abc import AsyncIterator
 
-from .base import ChatMessage, ChatProvider, ProviderError
+from .base import ChatMessage, ChatProvider, ProviderError, StreamChunk
 from chat_tools import execute_tool
 
 _CHUNK_DELAY = 0.035
@@ -92,7 +92,7 @@ class MockProvider(ChatProvider):
         messages: list[ChatMessage],
         effort: str = "low",
         timezone: str | None = None,
-    ) -> AsyncIterator[str]:
+    ) -> AsyncIterator[str | StreamChunk]:
         last = next((m for m in reversed(messages) if m.role == "user"), None)
         last_user = last.content if last else ""
         names = [item.name for item in last.attachments] if last else []
@@ -114,6 +114,9 @@ class MockProvider(ChatProvider):
                 f"Peto thấy cậu gửi kèm {', '.join(names)}. "
                 "Đang chạy phản hồi giả nên chưa đọc thật nội dung tệp đâu. "
             ) + reply
+
+        await asyncio.sleep(_CHUNK_DELAY)
+        yield StreamChunk("thinking", "Đọc tin nhắn rồi nghĩ cách trả lời…")
 
         # Cắt theo từ để giống nhịp stream thật, giữ nguyên dấu cách.
         buffer = ""

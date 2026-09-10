@@ -186,6 +186,22 @@ describe('Sending and stopping', () => {
     expect(api.sendMessage).toHaveBeenCalledTimes(2);
   });
 
+  it('shows Grok thinking separately from the answer', async () => {
+    vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers) => {
+      handlers.onMeta?.('C', 'medium', row('Giải giúp'));
+      handlers.onThinking?.('Nhẩm từng bước…');
+      handlers.onDelta?.('Kết quả là 4.');
+      handlers.onDone?.();
+    });
+    await openApp();
+    fireEvent.change(screen.getByPlaceholderText('Nhắn cho Peto…'), {target: {value: 'Giải giúp'}});
+    fireEvent.click(screen.getByRole('button', {name:'Gửi', exact:true}));
+    await screen.findByText('Kết quả là 4.');
+    expect(screen.queryByText('Nhẩm từng bước…')).toBeNull();
+    fireEvent.click(screen.getByRole('button', {name: 'Đã suy nghĩ'}));
+    expect(screen.getByText('Nhẩm từng bước…')).toBeTruthy();
+  });
+
   it('stops an empty reply without leaving a typing indicator', async () => {
     vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers, signal) => {
       handlers.onMeta?.('C', 'low', row('Xin chào'));
@@ -197,7 +213,7 @@ describe('Sending and stopping', () => {
     await screen.findByRole('button', {name:'Dừng', exact:true});
     fireEvent.click(screen.getByRole('button', {name:'Dừng', exact:true}));
     await screen.findByText('Đã dừng. Phần đã trả lời được giữ lại.');
-    expect(document.querySelector('.typing')).toBeNull();
+    expect(document.querySelector('.thinking-panel')).toBeNull();
     expect(document.querySelectorAll('.bubble.assistant').length).toBe(0);
   });
 

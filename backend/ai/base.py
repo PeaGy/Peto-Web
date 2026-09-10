@@ -33,6 +33,18 @@ class ChatMessage:
     attachments: tuple[ChatAttachment, ...] = field(default_factory=tuple)
 
 
+@dataclass(frozen=True)
+class StreamChunk:
+    """Một mảnh stream từ nhà cung cấp.
+
+    ``text`` là câu trả lời sẽ lưu. ``thinking`` là tóm tắt suy nghĩ của Grok,
+    chỉ hiện lúc đang trả lời, không trộn vào tin nhắn.
+    """
+
+    kind: str  # "text" | "thinking"
+    text: str
+
+
 class ProviderError(RuntimeError):
     """Lỗi từ nhà cung cấp AI, đã được diễn đạt để hiển thị cho người dùng."""
 
@@ -54,11 +66,12 @@ class ChatProvider(ABC):
         messages: list[ChatMessage],
         effort: str = "low",
         timezone: str | None = None,
-    ) -> AsyncIterator[str]:
+    ) -> AsyncIterator[str | StreamChunk]:
         """Sinh ra các mảnh text nối tiếp nhau tạo thành câu trả lời.
 
-        Phải raise ``ProviderError`` cho lỗi đã biết cách diễn đạt; các lỗi
-        khác để nguyên cho tầng trên bắt và ghi log.
+        Có thể yield ``str`` (câu trả lời) hoặc ``StreamChunk``. Phải raise
+        ``ProviderError`` cho lỗi đã biết cách diễn đạt; các lỗi khác để nguyên
+        cho tầng trên bắt và ghi log.
         """
         raise NotImplementedError
         yield ""  # pragma: no cover - giữ chữ ký async generator

@@ -30,7 +30,7 @@ import auth
 import db
 import imagine_api
 import static_files
-from ai import ChatAttachment, ChatMessage, ProviderError, get_provider
+from ai import ChatAttachment, ChatMessage, ProviderError, StreamChunk, get_provider
 from ai.routing import choose_effort
 from attachments import AttachmentError
 from app_identity import get_app_identity
@@ -288,10 +288,16 @@ async def _build_system_prompt(owner: str) -> str:
     return f"{SYSTEM_PROMPT}\n\n{context}" if context else SYSTEM_PROMPT
 
 
+def _as_chunk(item: str | StreamChunk) -> StreamChunk:
+    if isinstance(item, StreamChunk):
+        return item
+    return StreamChunk("text", item)
+
+
 async def _stream_reply(
     system_prompt: str, history: list[ChatMessage], effort: str, timezone: str | None = None
-) -> AsyncIterator[str]:
-    """Gọi provider một lần, có timeout theo effort. Trả về từng mảnh text."""
+) -> AsyncIterator[StreamChunk]:
+    """Gọi provider một lần, có timeout theo effort. Trả về từng mảnh stream."""
     provider = get_provider()
     timeout = RESPONSE_TIMEOUTS.get(effort, RESPONSE_TIMEOUTS["low"])
     async with asyncio.timeout(timeout):
@@ -299,7 +305,7 @@ async def _stream_reply(
             system_prompt=f"{system_prompt}\n\n{time_context(timezone)}",
             messages=history, effort=effort, timezone=timezone,
         ):
-            yield chunk
+            yield _as_chunk(chunk)
 
 
 @app.post("/api/chat")
@@ -376,8 +382,11 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner)):
                 system_prompt = await _build_system_prompt(owner)
                 try:
                     async for chunk in _stream_reply(system_prompt, history, effort, timezone):
-                        collected.append(chunk)
-                        yield sse({"type": "delta", "text": chunk})
+                        if chunk.kind == "thinking":
+                            yield sse({"type": "thinking", "text": chunk.text})
+                            continue
+                        collected.append(chunk.text)
+                        yield sse({"type": "delta", "text": chunk.text})
                 except TimeoutError:
                     # Chat thường được thử lại đúng 1 lần, và chỉ khi chưa kịp
                     # phát ra chữ nào — giống cách bot Discord giới hạn retry.
@@ -387,8 +396,11 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner)):
                     async for chunk in _stream_reply(
                         system_prompt, history, effort, timezone
                     ):
-                        collected.append(chunk)
-                        yield sse({"type": "delta", "text": chunk})
+                        if chunk.kind == "thinking":
+                            yield sse({"type": "thinking", "text": chunk.text})
+                            continue
+                        collected.append(chunk.text)
+                        yield sse({"type": "delta", "text": chunk.text})
                 complete = bool("".join(collected).strip())
                 if not complete:
                     failure = "Peto chưa trả lời được lượt này. Nhắn lại giúp nha."

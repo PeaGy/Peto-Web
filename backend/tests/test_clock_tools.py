@@ -9,7 +9,7 @@ import pytest
 
 import chat_tools
 import main
-from ai.base import ChatMessage, ProviderError
+from ai.base import ChatMessage, ProviderError, StreamChunk
 from ai.xai import MAX_TOOL_ROUNDS, XAIProvider
 from config import XAI_MAX_OUTPUT_TOKENS
 from conftest import read_events
@@ -158,6 +158,22 @@ async def test_xai_tool_roundtrip_preserves_context_and_hides_tool_data(monkeypa
     assert result['call_id'] == 'call_1'
     assert json.loads(result['output'])['datetime'] == '2026-09-10T01:05:06+07:00'
     assert any(item.get('encrypted_content') == 'opaque-test-value' for item in requests[1]['input'])
+
+
+async def test_reasoning_summary_is_not_mixed_into_the_answer(monkeypatch):
+    stream = FakeStream([
+        SimpleNamespace(type='response.reasoning_summary_text.delta', delta='Xét vận tốc rơi.'),
+        SimpleNamespace(type='response.reasoning_text.delta', delta=' g=10.'),
+        SimpleNamespace(type='response.output_text.delta', delta='42 m/s'),
+        done(),
+    ])
+    provider, _ = fake_provider(monkeypatch, [stream])
+    chunks = [part async for part in provider.stream(system_prompt='Peto', messages=[])]
+    thinking = ''.join(part.text for part in chunks if isinstance(part, StreamChunk) and part.kind == 'thinking')
+    answer = ''.join(part if isinstance(part, str) else part.text for part in chunks if not isinstance(part, StreamChunk) or part.kind == 'text')
+    assert thinking == 'Xét vận tốc rơi. g=10.'
+    assert answer == '42 m/s'
+    assert stream.closed
 
 
 async def test_incomplete_xai_reply_is_reported_and_stream_closed(monkeypatch):

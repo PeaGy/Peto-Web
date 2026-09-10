@@ -23,6 +23,7 @@ export interface Message {
   status?: "complete" | "incomplete";
   created_at?: number;
   attachments?: ChatAttachment[];
+  thinking?: string;
 }
 
 export interface Conversation {
@@ -36,12 +37,14 @@ export interface Conversation {
 type ChatEvent =
   | { type: "meta"; conversation_id: string; effort: string; message?: Message }
   | { type: "delta"; text: string }
+  | { type: "thinking"; text: string }
   | { type: "error"; message: string }
   | { type: "done" };
 
 interface ChatHandlers {
   onMeta?: (conversationId: string, effort: string, message?: Message) => void;
   onDelta?: (text: string) => void;
+  onThinking?: (text: string) => void;
   onError?: (message: string) => void;
   onDone?: () => void;
 }
@@ -241,6 +244,8 @@ export async function sendMessage(
           handlers.onMeta?.(event.conversation_id, event.effort, event.message);
         } else if (event.type === "delta") {
           handlers.onDelta?.(event.text);
+        } else if (event.type === "thinking") {
+          handlers.onThinking?.(event.text);
         } else if (event.type === "error") {
           handlers.onError?.(event.message);
           ended = true;
