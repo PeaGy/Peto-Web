@@ -303,7 +303,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   padding: 24px max(20px, calc((100% - 900px) / 2));
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 22px;
 }
 
 .welcome {
@@ -337,15 +337,24 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 }
 .welcome-hints button:hover { color: var(--text); border-color: var(--accent); }
 
-.bubble {
+.bubble { overflow-wrap: anywhere; }
+
+.bubble.user {
+  align-self: flex-end;
   max-width: min(680px, 82%);
   padding: 10px 14px;
   border-radius: 14px;
-  overflow-wrap: anywhere;
+  background: var(--user);
 }
 
-.bubble.user { align-self: flex-end; background: var(--user); }
-.bubble.assistant { align-self: flex-start; background: var(--panel-2); }
+/* Lời Peto không có khung: chữ chạy hết bề ngang cột như một trang tài liệu,
+   nên câu trả lời dài và khối code đều rộng hơn hẳn. Bong bóng giờ chỉ còn ở
+   lời người dùng — vẫn đủ để nhìn là biết ai đang nói. */
+.bubble.assistant {
+  align-self: stretch;
+  padding: 2px 0;
+  background: none;
+}
 
 .bubble :first-child { margin-top: 0; }
 .bubble :last-child { margin-bottom: 0; }
@@ -733,7 +742,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
     background: rgba(0, 0, 0, 0.45);
   }
   .menu-btn { display: grid; }
-  .bubble { max-width: 92%; }
+  .bubble.user { max-width: 92%; }
   .composer-wrap { padding: 10px 12px 16px; }
 }
 
