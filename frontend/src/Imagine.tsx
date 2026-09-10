@@ -32,11 +32,9 @@ function SparkleIcon() {
     <path d="m19 16 .7 2.3L22 19l-2.3.7L19 22l-.7-2.3L16 19l2.3-.7L19 16Z" fill="currentColor" />
   </svg>;
 }
-function ImageIcon() {
+function PlusIcon() {
   return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-    <rect x="3" y="3" width="18" height="18" rx="4" stroke="currentColor" strokeWidth="1.6" />
-    <circle cx="8.5" cy="8.5" r="1.5" fill="currentColor" />
-    <path d="m3 17 5-5 4 4 4-6 5 7" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+    <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" />
   </svg>;
 }
 function readSourceFile(file: File): Promise<DraftSource> {
@@ -300,26 +298,31 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar }: {
       onDrop={(event) => { event.preventDefault(); dragDepth.current = 0; setDraggingSource(false); void chooseSource(event.dataTransfer.files); }}>
       {draggingSource && <div className="drop-hint">Thả ảnh vào đây để Peto chỉnh sửa</div>}
       <div className="composer imagine-composer">
-        <div className="source-toolbar"><label className="studio-prompt-label" htmlFor="image-prompt">{source ? "Bạn muốn sửa gì trong ảnh?" : "Bức ảnh bạn muốn tạo"}</label>
-          <input ref={fileRef} className="source-file-input" type="file" accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp" aria-label="Chọn ảnh để sửa" disabled={generating} onChange={(event) => { const files = Array.from(event.target.files ?? []); event.target.value = ""; void chooseSource(files); }} />
-          <button className="add-source" type="button" disabled={generating || readingSource} onClick={() => fileRef.current?.click()}><ImageIcon />{readingSource ? "Đang đọc ảnh…" : source ? "Đổi ảnh" : "Thêm ảnh"}</button>
-        </div>
+        <label className="studio-prompt-label" htmlFor="image-prompt">{source ? "Bạn muốn sửa gì trong ảnh?" : "Bức ảnh bạn muốn tạo"}</label>
+        <input ref={fileRef} className="source-file-input" type="file" accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp" aria-label="Chọn ảnh để sửa" disabled={generating} onChange={(event) => { const files = Array.from(event.target.files ?? []); event.target.value = ""; void chooseSource(files); }} />
         {source && <div className="source-preview"><img src={source.preview} alt="Ảnh gốc để chỉnh sửa" /><div><strong>{source.name}</strong><span>Ảnh gốc · kết quả được lưu riêng</span></div><button type="button" disabled={generating} aria-label="Gỡ ảnh gốc" onClick={clearSource}>×</button></div>}
         <textarea id="image-prompt" ref={textareaRef} value={prompt} rows={2} placeholder={source ? "Đổi nền thành bãi biển, giữ nguyên người và trang phục…" : "Một chú mèo trên mặt trăng, màu nước, ánh sáng dịu…"} disabled={generating} onChange={(event) => setPrompt(event.target.value)}
           onPaste={(event) => { if (event.clipboardData.files.length) { event.preventDefault(); void chooseSource(event.clipboardData.files); } }} onKeyDown={(event) => {
           if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void generate(); }
         }} />
         <div className="imagine-controls">
+          {/* Dấu + thay cho nút "Thêm ảnh" cũ ở góc trên: mở hộp chọn ảnh gốc. */}
+          <button className="add-source" type="button" disabled={generating || readingSource}
+            aria-label={readingSource ? "Đang đọc ảnh…" : source ? "Đổi ảnh gốc" : "Thêm ảnh để chỉnh sửa"}
+            title={readingSource ? "Đang đọc ảnh…" : (source ? "Đổi ảnh gốc" : "Thêm ảnh để chỉnh sửa") + " · PNG, JPEG, WebP · tối đa 8 MB"}
+            onClick={() => fileRef.current?.click()}><PlusIcon /></button>
           <div className="seg" role="group" aria-label="Mức chi tiết">
             {(["low", "medium"] as const).map((value) => <button type="button" key={value} className={quality === value ? "on" : ""} aria-pressed={quality === value} disabled={controlsDisabled} title={value === "low" ? "Tạo nhanh, phù hợp để thử ý tưởng" : "Dành thêm thời gian cho chi tiết"} onClick={() => setQuality(value)}>{qualityLabel(value)}</button>)}
           </div>
           <div className="seg" role="group" aria-label="Độ phân giải">
             {(["1k", "2k"] as const).map((value) => <button type="button" key={value} className={resolution === value ? "on" : ""} aria-pressed={resolution === value} disabled={controlsDisabled} onClick={() => setResolution(value)}>{value.toUpperCase()}</button>)}
           </div>
-          <label className="effort-select"><span className="effort-label">Tỉ lệ</span><select aria-label="Tỉ lệ" value={aspect} disabled={controlsDisabled} onChange={(event) => setAspect(event.target.value)}>{RATIOS.map((ratio) => <option key={ratio} value={ratio}>{ratioLabel(ratio)}</option>)}</select></label>
-          <label className="effort-select"><span className="effort-label">Số ảnh</span><select aria-label="Số ảnh" value={count} disabled={controlsDisabled} onChange={(event) => setCount(Number(event.target.value))}>{[1, 2, 3, 4].map((n) => <option key={n} value={n}>{n} ảnh</option>)}</select></label>
+          <div className="imagine-actions">
+            <label className="effort-select"><span className="effort-label">Tỉ lệ</span><select aria-label="Tỉ lệ" value={aspect} disabled={controlsDisabled} onChange={(event) => setAspect(event.target.value)}>{RATIOS.map((ratio) => <option key={ratio} value={ratio}>{ratioLabel(ratio)}</option>)}</select></label>
+            <label className="effort-select"><span className="effort-label">Số ảnh</span><select aria-label="Số ảnh" value={count} disabled={controlsDisabled} onChange={(event) => setCount(Number(event.target.value))}>{[1, 2, 3, 4].map((n) => <option key={n} value={n}>{n} ảnh</option>)}</select></label>
+            <button type="submit" className="send" disabled={!prompt.trim() || controlsDisabled}><SparkleIcon />{generating ? source ? "Đang sửa…" : "Đang tạo…" : source ? "Sửa ảnh" : "Tạo ảnh"}</button>
+          </div>
         </div>
-        <div className="composer-bar"><p className="imagine-hint">{generating ? "Peto sẽ giữ ảnh ở đây khi hoàn tất." : source ? "Enter để sửa · Shift + Enter để xuống dòng" : "Thêm hoặc kéo thả ảnh · PNG, JPEG, WebP · tối đa 8 MB"}</p><button type="submit" className="send" disabled={!prompt.trim() || controlsDisabled}><SparkleIcon />{generating ? source ? "Đang sửa…" : "Đang tạo…" : source ? "Sửa ảnh" : "Tạo ảnh"}</button></div>
       </div>
     </form>
 
