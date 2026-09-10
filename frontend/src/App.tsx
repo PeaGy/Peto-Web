@@ -593,33 +593,45 @@ export default function App() {
             </div>
           )}
 
-          {auth.providers?.discord !== false && (
-            <a className="discord-button" href={DISCORD_LOGIN_URL}>
-              Đăng nhập bằng Discord
-            </a>
+          {/* Gọi /api/auth/me hỏng thì login_configured là false. Không có
+              cờ này thì màn hình bày ra nút bấm không ăn thua mà chẳng báo gì —
+              đúng cái bẫy làm người ta tưởng nút Google bị thiếu. */}
+          {auth.login_configured ? (
+            <>
+              {auth.providers?.discord !== false && (
+                <a className="discord-button" href={DISCORD_LOGIN_URL}>
+                  Đăng nhập bằng Discord
+                </a>
+              )}
+
+              <div className="login-divider">
+                <span>Đăng nhập bằng cách khác</span>
+              </div>
+
+              <div className="login-alts">
+                {auth.providers?.google && (
+                  <a className="alt-login" href={GOOGLE_LOGIN_URL}>
+                    <GoogleIcon />
+                    Google
+                  </a>
+                )}
+                <button
+                  type="button"
+                  className="alt-login"
+                  disabled={guestBusy}
+                  onClick={() => void enterAsGuest()}
+                >
+                  <GuestIcon />
+                  {guestBusy ? "Đang vào…" : "Khách"}
+                </button>
+              </div>
+            </>
+          ) : (
+            <div className="error">
+              Chưa kết nối được dịch vụ đăng nhập. Thử tải lại trang hoặc báo
+              người quản trị nhé.
+            </div>
           )}
-
-          <div className="login-divider">
-            <span>Đăng nhập bằng cách khác</span>
-          </div>
-
-          <div className="login-alts">
-            {auth.providers?.google && (
-              <a className="alt-login" href={GOOGLE_LOGIN_URL}>
-                <GoogleIcon />
-                Google
-              </a>
-            )}
-            <button
-              type="button"
-              className="alt-login"
-              disabled={guestBusy}
-              onClick={() => void enterAsGuest()}
-            >
-              <GuestIcon />
-              {guestBusy ? "Đang vào…" : "Khách"}
-            </button>
-          </div>
 
           <p className="login-note">
             Peto chỉ đọc tên và ảnh đại diện của cậu. Vào với tư cách khách thì

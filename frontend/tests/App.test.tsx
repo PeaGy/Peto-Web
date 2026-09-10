@@ -336,6 +336,17 @@ describe('Màn hình đăng nhập', () => {
     expect(screen.getByRole('button', { name: /Khách/ })).toBeTruthy();
   });
 
+  it('báo lỗi thay vì bày nút chết khi không gọi được /api/auth/me', async () => {
+    // getAuthState hỏng -> login_configured false. Trước đây màn hình vẫn bày
+    // nút Discord bấm không ăn thua và giấu Google, làm người dùng tưởng thiếu
+    // cấu hình Google trong khi thật ra backend không chạy.
+    vi.mocked(api.getAuthState).mockRejectedValue(new Error('mat mang'));
+    render(<App />);
+    expect(await screen.findByText(/Chưa kết nối được dịch vụ đăng nhập/)).toBeTruthy();
+    expect(screen.queryByRole('link', { name: /Đăng nhập bằng Discord/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Khách/ })).toBeNull();
+  });
+
   it('vào được với tư cách khách', async () => {
     // Lần hỏi đầu là lúc mở trang (chưa đăng nhập); lần sau là ngay sau khi
     // bấm Khách, nên phải trả trạng thái đã vào được.
