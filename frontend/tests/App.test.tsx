@@ -41,6 +41,74 @@ async function openApp() {
   await screen.findByRole('button', { name: 'A', exact: true });
 }
 
+it('chọn tìm web, hiển thị tiến trình và nguồn cùng câu trả lời', async () => {
+  const result = deferred<void>();
+  vi.mocked(api.sendMessage).mockImplementation(async (payload, handlers) => {
+    expect(payload.webSearch).toBe('on');
+    handlers.onMeta?.('C', 'low', row('Tìm Python'));
+    handlers.onSearch?.('searching');
+    await result.promise;
+    handlers.onSources?.([{ url: 'https://docs.python.org/3/', title: 'Tài liệu Python' }]);
+    handlers.onDelta?.('Có tài liệu chính thức.');
+    handlers.onDone?.();
+  });
+  await openApp();
+  fireEvent.change(screen.getByLabelText('Tìm kiếm web'), { target: { value: 'on' } });
+  fireEvent.change(screen.getByLabelText('Nhắn cho Peto'), { target: { value: 'Tìm Python' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Gửi', exact: true }));
+  await screen.findByText('Peto đang tìm trên web…');
+  expect((screen.getByLabelText('Tìm kiếm web') as HTMLSelectElement).disabled).toBe(true);
+  await act(async () => result.resolve());
+  await screen.findByText('Có tài liệu chính thức.');
+  expect(screen.queryByText('Peto đang tìm trên web…')).toBeNull();
+  fireEvent.click(screen.getByText('1 nguồn tham khảo'));
+  expect(screen.getByRole('link', { name: /Tài liệu Python/ }).getAttribute('href')).toBe('https://docs.python.org/3/');
+});
+
+it('nguồn xuất hiện khi mở lịch sử và loại bỏ liên kết không an toàn', async () => {
+  vi.mocked(api.getMessages).mockResolvedValue([{ role: 'assistant', content: 'Câu trả lời cũ', sources: [
+    { url: 'https://docs.python.org/3/', title: 'Tài liệu Python' },
+    { url: 'https://docs.python.org/3/', title: 'Trùng' },
+    { url: 'javascript:alert(1)', title: 'Nguồn nguy hiểm' },
+  ] }]);
+  await openApp();
+  fireEvent.click(screen.getByRole('button', { name: 'A', exact: true }));
+  fireEvent.click(await screen.findByText('1 nguồn tham khảo'));
+  expect(screen.getByRole('link', { name: /Tài liệu Python/ }).getAttribute('rel')).toContain('noreferrer');
+  expect(screen.queryByText('Nguồn nguy hiểm')).toBeNull();
+});
+
+it('dừng lúc đang tìm web không để tiến trình treo hoặc nhận nguồn đến muộn', async () => {
+  vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers, signal) => {
+    handlers.onMeta?.('C', 'low', row('Tìm Python'));
+    handlers.onSearch?.('searching');
+    await new Promise<void>((_resolve, reject) => signal?.addEventListener('abort', () => {
+      handlers.onSources?.([{ url: 'https://example.com', title: 'Nguồn đến muộn' }]);
+      reject(new DOMException('Đã dừng', 'AbortError'));
+    }));
+  });
+  await openApp();
+  fireEvent.change(screen.getByLabelText('Nhắn cho Peto'), { target: { value: 'Tìm Python' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Gửi', exact: true }));
+  await screen.findByText('Peto đang tìm trên web…');
+  fireEvent.click(screen.getByRole('button', { name: 'Dừng', exact: true }));
+  await screen.findByText('Đã dừng. Phần đã trả lời được giữ lại.');
+  expect(screen.queryByText('Peto đang tìm trên web…')).toBeNull();
+  expect(screen.queryByText('1 nguồn tham khảo')).toBeNull();
+});
+
+it('giữ chế độ tìm và bản nháp khi máy chủ từ chối, gửi đúng chế độ tắt', async () => {
+  vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers) => handlers.onError?.('Đang bận'));
+  await openApp();
+  fireEvent.change(screen.getByLabelText('Tìm kiếm web'), { target: { value: 'off' } });
+  fireEvent.change(screen.getByLabelText('Nhắn cho Peto'), { target: { value: 'Giải thích Python' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Gửi', exact: true }));
+  await screen.findByText('Đang bận');
+  expect((screen.getByLabelText('Tìm kiếm web') as HTMLSelectElement).value).toBe('off');
+  expect((screen.getByLabelText('Nhắn cho Peto') as HTMLTextAreaElement).value).toBe('Giải thích Python');
+  expect(vi.mocked(api.sendMessage).mock.calls[0][0].webSearch).toBe('off');
+});
+
 it('keeps image generation alive while navigating to chat and back', async () => {
   const generated = deferred<api.ImagineJob>();
   vi.mocked(api.createImagineJob).mockReturnValue(generated.promise);

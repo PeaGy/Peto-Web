@@ -1,5 +1,7 @@
 export type Role = "user" | "assistant";
 export type Effort = "auto" | "low" | "medium" | "high";
+export type WebSearchMode = "auto" | "on" | "off";
+export interface WebSource { url: string; title: string }
 
 export interface ChatAttachment {
   id: string;
@@ -24,6 +26,8 @@ export interface Message {
   created_at?: number;
   attachments?: ChatAttachment[];
   thinking?: string;
+  sources?: WebSource[];
+  search_status?: "searching" | "completed";
 }
 
 export interface Conversation {
@@ -38,6 +42,8 @@ type ChatEvent =
   | { type: "meta"; conversation_id: string; effort: string; message?: Message }
   | { type: "delta"; text: string }
   | { type: "thinking"; text: string }
+  | { type: "search"; status: "searching" | "completed" }
+  | { type: "sources"; sources: WebSource[] }
   | { type: "error"; message: string }
   | { type: "done" };
 
@@ -45,6 +51,8 @@ interface ChatHandlers {
   onMeta?: (conversationId: string, effort: string, message?: Message) => void;
   onDelta?: (text: string) => void;
   onThinking?: (text: string) => void;
+  onSearch?: (status: "searching" | "completed") => void;
+  onSources?: (sources: WebSource[]) => void;
   onError?: (message: string) => void;
   onDone?: () => void;
 }
@@ -201,6 +209,7 @@ export async function sendMessage(
     message: string;
     conversationId: string | null;
     effort: Effort;
+    webSearch?: WebSearchMode;
     attachments?: OutgoingAttachment[];
   },
   handlers: ChatHandlers,
@@ -213,6 +222,7 @@ export async function sendMessage(
       message: payload.message,
       conversation_id: payload.conversationId,
       effort: payload.effort,
+      web_search: payload.webSearch ?? "auto",
       timezone: browserTimezone(),
       attachments: payload.attachments ?? [],
     }),
@@ -258,6 +268,10 @@ export async function sendMessage(
           handlers.onDelta?.(event.text);
         } else if (event.type === "thinking") {
           handlers.onThinking?.(event.text);
+        } else if (event.type === "search") {
+          handlers.onSearch?.(event.status);
+        } else if (event.type === "sources") {
+          handlers.onSources?.(event.sources);
         } else if (event.type === "error") {
           handlers.onError?.(event.message);
           ended = true;

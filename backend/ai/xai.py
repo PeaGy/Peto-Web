@@ -15,9 +15,10 @@ from openai import (
     RateLimitError,
 )
 
-from config import MAX_HISTORY_IMAGES, XAI_API_BASE, XAI_MAX_OUTPUT_TOKENS, XAI_MODEL
+from config import MAX_HISTORY_IMAGES, XAI_API_BASE, XAI_MAX_OUTPUT_TOKENS, XAI_MODEL, WEB_SEARCH_ENABLED
 from xai_auth import XaiAuth, XaiAuthError
 from chat_tools import TOOL_SCHEMAS, execute_tool
+from web_search import normalize_sources, search_context
 
 from .base import ChatMessage, ChatProvider, ProviderError, StreamChunk
 
@@ -31,6 +32,21 @@ logger = logging.getLogger("peto_web.xai")
 _TEXT_TYPE = {"user": "input_text", "assistant": "output_text"}
 MAX_TOOL_ROUNDS = 3
 MAX_TOOL_CALLS = 8
+
+
+def _dump(item) -> dict:
+    return item if isinstance(item, dict) else item.model_dump(mode="json", exclude_none=True)
+
+
+def _item_sources(item: dict) -> list[dict]:
+    candidates = []
+    if item.get("type") == "message":
+        for part in item.get("content") or []:
+            if part.get("type") == "output_text":
+                candidates.extend(annotation for annotation in part.get("annotations") or [] if annotation.get("type") == "url_citation")
+    elif item.get("type") == "web_search_call":
+        candidates.extend((item.get("action") or {}).get("sources") or [])
+    return normalize_sources(candidates)
 
 
 def build_input_payload(messages: list[ChatMessage]) -> list[dict]:
@@ -67,6 +83,9 @@ def build_input_payload(messages: list[ChatMessage]) -> list[dict]:
                 )
         if message.content:
             parts.append({"type": text_type, "text": message.content})
+        sources = normalize_sources(message.sources)
+        if message.role == "assistant" and sources:
+            parts.append({"type": "output_text", "text": "[Nguồn tham khảo của câu trả lời trước, không phải kết quả tra mới]\n" + json.dumps(sources, ensure_ascii=False)})
         if not parts:
             parts.append({"type": text_type, "text": ""})
         payload.append({"role": message.role, "content": parts})
@@ -108,26 +127,52 @@ class XAIProvider(ChatProvider):
         messages: list[ChatMessage],
         effort: str = "low",
         timezone: str | None = None,
+        web_search: str = "auto",
     ) -> AsyncIterator[str | StreamChunk]:
+        if web_search == "on" and not WEB_SEARCH_ENABLED:
+            raise ProviderError("Tìm kiếm web đang tắt trên máy chủ. Chọn Tự động hoặc Tắt để tiếp tục chat.")
         await self._prepare()
 
         payload_input = build_input_payload(messages)
+        search_enabled = WEB_SEARCH_ENABLED and web_search != "off"
+        instructions = f"{system_prompt}\n\n{search_context(web_search, search_enabled)}"
+        sources: list[dict] = []
+        search_finished = False
+
+        def observe_item(item: dict):
+            nonlocal sources, search_finished
+            if item.get("type") == "web_search_call":
+                if item.get("status") == "failed":
+                    raise ProviderError("Peto chưa tra cứu web được lượt này. Bạn thử lại nhé.")
+                search_finished = search_finished or item.get("status") == "completed"
+                yield StreamChunk("search", "completed" if item.get("status") == "completed" else "searching")
+            merged = normalize_sources([*sources, *_item_sources(item)])
+            if merged != sources:
+                sources = merged
+                yield StreamChunk("sources", sources=tuple(sources))
+
         calls_used = 0
         for round_index in range(MAX_TOOL_ROUNDS + 1):
             create_kwargs: dict = {
                 "model": XAI_MODEL,
-                "instructions": system_prompt,
+                "instructions": instructions,
                 "input": payload_input,
                 "max_output_tokens": XAI_MAX_OUTPUT_TOKENS,
                 "reasoning": {
                     "effort": effort if effort in {"low", "medium", "high"} else "low"
                 },
                 "stream": True,
-                "tools": TOOL_SCHEMAS,
+                "tools": [*TOOL_SCHEMAS, *([{"type": "web_search"}] if search_enabled else [])],
                 "include": ["reasoning.encrypted_content"],
                 # Tự giữ các item trong lượt này, không cần lưu hội thoại ở xAI.
                 "store": False,
             }
+            if search_enabled:
+                create_kwargs["include"].append("web_search_call.action.sources")
+                if web_search == "on" and round_index == 0:
+                    # Chỉ đưa công cụ tìm web ở lần đầu để 'required' không bị thỏa bởi đồng hồ.
+                    create_kwargs["tools"] = [{"type": "web_search"}]
+                    create_kwargs["tool_choice"] = "required"
             stream = None
             output_items: list[dict] = []
             completed = False
@@ -136,7 +181,22 @@ class XAIProvider(ChatProvider):
                 stream = await self._client.responses.create(**create_kwargs)
                 async for event in stream:
                     event_type = getattr(event, "type", "")
-                    if event_type in _REASONING_DELTA_TYPES:
+                    if event_type in {"response.web_search_call.in_progress", "response.web_search_call.searching"}:
+                        yield StreamChunk("search", "searching")
+                    elif event_type == "response.web_search_call.completed":
+                        search_finished = True
+                        yield StreamChunk("search", "completed")
+                    elif event_type == "response.output_item.added":
+                        if getattr(event.item, "type", "") == "web_search_call":
+                            yield StreamChunk("search", "searching")
+                    elif event_type == "response.output_text.annotation.added":
+                        annotation = _dump(event.annotation)
+                        if annotation.get("type") == "url_citation":
+                            merged = normalize_sources([*sources, annotation])
+                            if merged != sources:
+                                sources = merged
+                                yield StreamChunk("sources", sources=tuple(sources))
+                    elif event_type in _REASONING_DELTA_TYPES:
                         delta = getattr(event, "delta", "")
                         if delta:
                             yield StreamChunk("thinking", delta)
@@ -146,14 +206,19 @@ class XAIProvider(ChatProvider):
                             emitted_text = True
                             yield delta
                     elif event_type == "response.output_item.done":
-                        item = event.item
-                        output_items.append(item.model_dump(mode="json", exclude_none=True))
+                        item = _dump(event.item)
+                        output_items.append(item)
+                        for chunk in observe_item(item):
+                            yield chunk
                     elif event_type == "response.completed":
                         if getattr(event.response, "status", "completed") != "completed":
                             raise ProviderError("Peto chưa trả lời xong. Phần đã viết được giữ lại; cậu có thể yêu cầu tiếp tục.")
                         completed = True
                         if getattr(event.response, "output", None):
-                            output_items = [item.model_dump(mode="json", exclude_none=True) for item in event.response.output]
+                            output_items = [_dump(item) for item in event.response.output]
+                            for item in output_items:
+                                for chunk in observe_item(item):
+                                    yield chunk
                     elif event_type == "response.incomplete":
                         raise ProviderError("Câu trả lời chạm giới hạn của lượt AI. Phần đã viết được giữ lại; cậu có thể yêu cầu tiếp tục.")
                     elif event_type in {"response.failed", "error"}:
@@ -166,6 +231,8 @@ class XAIProvider(ChatProvider):
                 raise ProviderError("Peto chưa kết nối được với dịch vụ AI. Thử lại sau chút nhé.", retryable=True) from err
             except APIStatusError as err:
                 logger.warning("xAI HTTP %s", err.status_code)
+                if search_enabled and err.status_code in {400, 403}:
+                    raise ProviderError("Peto chưa dùng được tìm web với kết nối AI hiện tại. Chọn Tắt ở Tìm web để chat tiếp, hoặc nhờ người quản trị kiểm tra quyền tìm kiếm của dịch vụ.") from err
                 raise ProviderError("Peto gặp lỗi kết nối với dịch vụ AI. Thử lại sau nha.", retryable=err.status_code >= 500) from err
             finally:
                 if stream is not None:
@@ -176,6 +243,8 @@ class XAIProvider(ChatProvider):
                 raise ProviderError("Kết nối tới AI bị ngắt trước khi trả lời xong.", retryable=True)
             tool_calls = [item for item in output_items if item.get("type") == "function_call"]
             if not tool_calls:
+                if web_search == "on" and not search_finished and not sources:
+                    raise ProviderError("Dịch vụ chưa xác nhận đã tra web. Peto chưa thể xem câu trả lời này là đã kiểm chứng; bạn thử lại nhé.")
                 return
             calls_used += len(tool_calls)
             if round_index >= MAX_TOOL_ROUNDS or calls_used > MAX_TOOL_CALLS:

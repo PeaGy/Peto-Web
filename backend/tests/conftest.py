@@ -18,6 +18,7 @@ os.environ["PETO_WEB_DB"] = str(_TMP_DIR / "test.db")
 os.environ["PETO_XAI_TOKEN_PATH"] = str(_TMP_DIR / "xai_tokens.json")
 os.environ["PETO_UPLOAD_DIR"] = str(_TMP_DIR / "uploads")
 os.environ["PETO_AI_PROVIDER"] = "mock"
+os.environ["PETO_WEB_SEARCH_ENABLED"] = "true"
 os.environ["PETO_COOLDOWN_SECONDS"] = "0"
 # Không để credential thật của máy lọt vào test.
 os.environ.pop("XAI_API_KEY", None)

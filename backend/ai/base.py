@@ -31,6 +31,7 @@ class ChatMessage:
     role: str  # "user" | "assistant"
     content: str
     attachments: tuple[ChatAttachment, ...] = field(default_factory=tuple)
+    sources: tuple[dict, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)
@@ -39,10 +40,12 @@ class StreamChunk:
 
     ``text`` là câu trả lời sẽ lưu. ``thinking`` là tóm tắt suy nghĩ của Grok,
     chỉ hiện lúc đang trả lời, không trộn vào tin nhắn.
+    ``search`` là tiến trình tra web; ``sources`` là nguồn tham khảo để lưu và hiển thị riêng.
     """
 
-    kind: str  # "text" | "thinking"
-    text: str
+    kind: str  # "text" | "thinking" | "search" | "sources"
+    text: str = ""
+    sources: tuple[dict, ...] = field(default_factory=tuple)
 
 
 class ProviderError(RuntimeError):
@@ -66,6 +69,7 @@ class ChatProvider(ABC):
         messages: list[ChatMessage],
         effort: str = "low",
         timezone: str | None = None,
+        web_search: str = "auto",
     ) -> AsyncIterator[str | StreamChunk]:
         """Sinh ra các mảnh text nối tiếp nhau tạo thành câu trả lời.
 

@@ -18,6 +18,7 @@ import typescript from "highlight.js/lib/languages/typescript";
 import xml from "highlight.js/lib/languages/xml";
 import yaml from "highlight.js/lib/languages/yaml";
 import Imagine from "./Imagine";
+import WebSources, { GlobeIcon, safeSources } from "./WebSources";
 import {
   DISCORD_LOGIN_URL,
   GOOGLE_LOGIN_URL,
@@ -39,6 +40,7 @@ import {
   type ImagineJob,
   type Message,
   type OutgoingAttachment,
+  type WebSearchMode,
 } from "./api";
 
 const HIGHLIGHT_LANGUAGES = {
@@ -357,6 +359,7 @@ export default function App() {
   const [draft, setDraft] = useState("");
   const [draftFiles, setDraftFiles] = useState<DraftFile[]>([]);
   const [effort, setEffort] = useState<Effort>(readStoredEffort);
+  const [webSearch, setWebSearch] = useState<WebSearchMode>("auto");
   const [activeEffort, setActiveEffort] = useState<string | null>(null);
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -478,6 +481,7 @@ export default function App() {
     setConversationId(null);
     setDraft("");
     setNotice(null);
+    setWebSearch("auto");
     for (const item of draftFilesRef.current) if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
     setDraftFiles([]);
     setLoadingConversation(false);
@@ -790,6 +794,14 @@ export default function App() {
       });
     };
 
+    const updateSearch = (update: Partial<Message>) => {
+      if (session !== authVersion.current || controller.signal.aborted) return;
+      setMessages((prev) => {
+        const last = prev[prev.length - 1];
+        return last?.role === "assistant" ? [...prev.slice(0, -1), { ...last, ...update }] : prev;
+      });
+    };
+
     try {
       const attachments: OutgoingAttachment[] = await Promise.all(
         pending.map(async (item) => ({
@@ -804,6 +816,7 @@ export default function App() {
           message: text,
           conversationId,
           effort,
+          webSearch,
           attachments,
         },
         {
@@ -819,6 +832,8 @@ export default function App() {
           },
           onDelta: appendToReply,
           onThinking: appendThinking,
+          onSearch: (status) => updateSearch({ search_status: status }),
+          onSources: (sources) => updateSearch({ sources: safeSources(sources) }),
           onError: (message) => {
             if (session !== authVersion.current) return;
             setError(message);
@@ -1096,7 +1111,7 @@ export default function App() {
               )}
               {message.role === "assistant" && (
                 message.thinking ||
-                (streaming && !stopping && index === messages.length - 1)
+                (streaming && !stopping && index === messages.length - 1 && !message.search_status)
               ) ? (
                 <ThinkingPanel
                   live={streaming && !stopping && index === messages.length - 1 && !message.content}
@@ -1104,6 +1119,7 @@ export default function App() {
                   label={THINKING[activeEffort ?? "low"]}
                 />
               ) : null}
+              {message.role === "assistant" && message.search_status && streaming && !stopping && index === messages.length - 1 && !message.content && <div className="web-search-status" role="status"><GlobeIcon /><span>{message.search_status === "searching" ? "Peto đang tìm trên web…" : "Peto đang tổng hợp nguồn…"}</span></div>}
               {message.content ? (
                 <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[[rehypeHighlight, {
                   languages: HIGHLIGHT_LANGUAGES, aliases: HIGHLIGHT_ALIASES, ignoreMissing: true,
@@ -1119,6 +1135,7 @@ export default function App() {
                   },
                 }}>{message.content}</Markdown>
               ) : null}
+              {message.role === "assistant" && <WebSources sources={message.sources} />}
               {message.status === "incomplete" && <p className="message-status">Câu trả lời chưa hoàn tất</p>}
             </article>
           ))}
@@ -1248,6 +1265,7 @@ export default function App() {
                   <span className="effort-label">Suy nghĩ</span>
                   <select
                     value={effort}
+                    aria-label="Suy nghĩ"
                     disabled={streaming}
                     title={effortMeta.hint}
                     onChange={(event) => setEffort(event.target.value as Effort)}
@@ -1257,6 +1275,14 @@ export default function App() {
                         {item.label}
                       </option>
                     ))}
+                  </select>
+                </label>
+                <label className="effort-select web-search-select">
+                  <span className="effort-label"><GlobeIcon /> Tìm web</span>
+                  <select aria-label="Tìm kiếm web" value={webSearch} disabled={streaming} onChange={(event) => setWebSearch(event.target.value as WebSearchMode)} title="Tự động: Peto tra khi cần tin mới. Luôn tìm: tra trước khi trả lời. Tắt: không dùng web.">
+                    <option value="auto">Tự động</option>
+                    <option value="on">Luôn tìm</option>
+                    <option value="off">Tắt</option>
                   </select>
                 </label>
               </div>

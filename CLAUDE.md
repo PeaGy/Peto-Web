@@ -93,7 +93,9 @@ is what keeps open registration from exposing members' long-term memory.
 
 ### AI provider abstraction
 
-`ai/base.py` defines `ChatProvider.stream()` — an async generator yielding text chunks.
+`ai/base.py` defines `ChatProvider.stream()` — an async generator yielding text or
+`StreamChunk` values (`thinking`, `search`, `sources`). Search progress stays transient;
+source metadata is persisted with the assistant message, independently of answer text.
 Nothing outside `backend/ai/` knows which provider is active. To add one: write a module in
 `backend/ai/`, register it in `_PROVIDERS` in `ai/__init__.py`, set `PETO_AI_PROVIDER`.
 Routes, DB and rate limiting need no changes. `xai` is imported lazily so running `mock`
@@ -149,6 +151,22 @@ clear message instead of looping.
 `chat_tools.execute_tool` is a hard-coded allowlist keyed by tool name. It never evals a
 name or arguments produced by the model, caps the argument string length, and rejects
 unknown parameter keys. Currently the only tool is `get_current_datetime`.
+
+Web search is a separate native xAI tool, executed on xAI rather than by
+`execute_tool`. Chat accepts `web_search: auto | on | off`. Auto exposes search and
+lets the model decide; off omits the tool; on exposes only web search in the first
+request with `tool_choice=required`, then checks for search completion or sources.
+`PETO_WEB_SEARCH_ENABLED=false` disables it globally. Native search uses the service's
+default bounds and the existing chat timeout; do not confuse the local clock-tool
+round limit with native search calls. Do not automatically retry a timed-out turn once
+search activity has been observed, or a forced search turn.
+
+`web_search.py` validates HTTP(S) source URLs, removes duplicates and bounds the list.
+Extract sources from tool outputs or URL annotations, never by scraping model prose
+for links. Persist them in `messages.sources`, return them in history, and include them
+as clearly marked old references in the next model input. Frontend `WebSources.tsx`
+renders source links without downloading favicons; SSE `search` and `sources` events
+flow through `api.ts` and stay separate from `delta` and `thinking`.
 
 ### Date and time
 

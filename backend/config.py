@@ -42,6 +42,7 @@ XAI_API_BASE = os.getenv("XAI_BASE_URL", "https://api.x.ai/v1").strip()
 # Ngân sách phản hồi dành cho web, không gắn với độ dài tin nhắn Discord.
 XAI_MAX_OUTPUT_TOKENS = _env_int("XAI_MAX_OUTPUT_TOKENS", 8192, 128, 32000)
 DEFAULT_TIMEZONE = os.getenv("PETO_DEFAULT_TIMEZONE", "Asia/Ho_Chi_Minh").strip()
+WEB_SEARCH_ENABLED = os.getenv("PETO_WEB_SEARCH_ENABLED", "true").strip().lower() in {"1", "true", "yes"}
 
 # Token của RIÊNG Peto Web. Không trỏ vào .xai_tokens.json của bot Discord.
 XAI_TOKEN_PATH = Path(

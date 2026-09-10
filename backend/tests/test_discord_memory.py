@@ -209,9 +209,9 @@ async def test_memory_reaches_the_provider(client, patch_httpx, monkeypatch):
     provider = main.get_provider()
     original = provider.stream
 
-    def spy(*, system_prompt, messages, effort, timezone=None):
+    def spy(*, system_prompt, messages, effort, timezone=None, web_search="auto"):
         seen.append(system_prompt)
-        return original(system_prompt=system_prompt, messages=messages, effort=effort, timezone=timezone)
+        return original(system_prompt=system_prompt, messages=messages, effort=effort, timezone=timezone, web_search=web_search)
 
     monkeypatch.setattr(provider, "stream", spy)
 

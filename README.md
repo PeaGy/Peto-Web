@@ -76,12 +76,13 @@ npm test
 npm run build
 ```
 
-Sau đợt cải tiến 10/09/2026: **169 test backend, 23 test frontend đạt**;
+Sau đợt thêm tìm web 10/09/2026: **208 test backend, 55 test frontend đạt**;
 TypeScript và Vite build đạt. Các test bao gồm thu hồi quyền, chuyển hội thoại
 với kết quả tải về không đúng thứ tự, giữ bản nháp, dừng phản hồi, lưu câu trả lời
 dở dang, nâng cấp schema, ẩn danh, phân trang, bảng Markdown, ngày giờ/múi giờ,
 vòng gọi công cụ, tin nhắn dài, tạo ảnh, đổi tab khi đang tạo, xác nhận xóa ảnh,
-giữ mô tả khi lỗi, thời hạn tạo ảnh và phản hồi ảnh không hợp lệ.
+giữ mô tả khi lỗi, thời hạn tạo ảnh, sửa ảnh, tìm web, nguồn trong lịch sử và
+dừng tra cứu khi lỗi hoặc người dùng yêu cầu.
 
 Khi cập nhật bản này, cài lại dependencies, build frontend rồi khởi động lại web.
 Backend tự bổ sung cột trạng thái tin nhắn khi khởi động; giữ nguyên dữ liệu cũ.
@@ -98,6 +99,7 @@ backend/
   xai_auth.py    OAuth xAI riêng của web + CLI login/status/logout
   config.py      Đọc biến môi trường
   chat_tools.py  Đồng hồ máy chủ, múi giờ IANA và bộ chạy công cụ đã đăng ký
+  web_search.py  Quy tắc tra web, kiểm tra và chuẩn hóa nguồn tham khảo
   imagine_api.py API Peto tạo ảnh: tạo, liệt kê, tải và xóa ảnh theo tài khoản
   ai/
     base.py      Interface ChatProvider — phần còn lại chỉ nói chuyện qua đây
@@ -108,6 +110,7 @@ backend/
 frontend/
   src/api.ts     Đọc SSE bằng fetch (endpoint là POST nên không dùng EventSource)
   src/App.tsx    Màn hình đăng nhập + giao diện chat
+  src/WebSources.tsx Nguồn tham khảo có thể mở từ câu trả lời
   src/Imagine.tsx Peto tạo ảnh: gợi ý, tiến trình, bộ ảnh và khung xem ảnh
 ```
 
@@ -165,6 +168,51 @@ và sửa ảnh với nhà cung cấp giả, kiểm thử lỗi dịch vụ và 
 PNG một điểm ảnh để kiểm tra đường đi dữ liệu; chưa đánh giá chất lượng ảnh
 hay chỉnh sửa thật, hoặc xác minh xác thực với dịch vụ xAI thật. Chưa triển khai lên VPS.
 
+## Tìm kiếm web trong chat
+
+Ô **Tìm web** cạnh phần **Suy nghĩ** có ba chế độ:
+
+- **Tự động** (mặc định): Peto quyết định tra khi câu hỏi cần thông tin mới,
+  khi bạn yêu cầu tìm/kiểm chứng hoặc đưa một URL cần đọc.
+- **Luôn tìm**: yêu cầu dịch vụ dùng công cụ web trước khi trả lời. Nếu dịch vụ
+  không xác nhận đã tìm, lượt đó báo chưa được kiểm chứng.
+- **Tắt**: không gửi công cụ tìm web cho lượt đó; ngày giờ vẫn dùng được.
+
+Ví dụ: “Tìm thông báo mới nhất về Python và dẫn nguồn chính thức”, hoặc
+“Đọc trang này rồi tóm tắt giúp mình: https://docs.python.org/3/”.
+Lựa chọn giữ trong phiên trang hiện tại; tải lại trang về Tự động.
+
+Khi dịch vụ báo bắt đầu tra, giao diện hiện **Peto đang tìm trên web…**; sau đó
+hiện tiến trình tổng hợp. Nguồn nằm dưới câu trả lời, bấm để mở danh sách và
+đọc trang gốc. Chỉ lấy nguồn từ dữ liệu công cụ/annotations của dịch vụ,
+không suy ra nguồn từ liên kết AI tự viết. Tối đa 30 URL HTTP(S) khác nhau,
+không tải favicon hay truy cập URL nguồn từ máy chủ Peto.
+
+Nguồn được lưu cùng tin nhắn, kể cả phần trả lời dở khi mất kết nối; mở lại
+hội thoại vẫn xem được và Peto có thể hiểu câu hỏi tiếp về nguồn đó. Cột
+`messages.sources` tự được bổ sung khi khởi động, giữ nguyên tin cũ. Mọi lượt
+đọc lịch sử vẫn lọc theo tài khoản. **Dừng** ngắt luồng; sau khi đã nhận tiến
+trình tra cứu, backend không tự thử lại khi timeout.
+
+Backend dùng `web_search` của xAI Responses với kết nối hiện có, theo
+[tài liệu tìm web](https://docs.x.ai/developers/tools/web-search) và
+[nguồn trích dẫn](https://docs.x.ai/developers/tools/citations). Công cụ chạy
+ở xAI, dùng giới hạn mặc định của dịch vụ và thời hạn chat hiện có; vòng gọi
+công cụ ngày giờ vẫn có giới hạn riêng. Có thể phát sinh phí tìm kiếm theo
+tài khoản dịch vụ. `PETO_WEB_SEARCH_ENABLED=true` mặc định; đặt `false` để
+tắt toàn bộ tìm web. Quyền tìm kiếm thực tế còn phụ thuộc model và kết nối
+AI; nếu dịch vụ không hỗ trợ, chọn **Tắt** để chat tiếp.
+
+Prompt yêu cầu ưu tiên nguồn chính thức, phân biệt ngày đăng/ngày sự kiện,
+không bịa nguồn và bỏ qua chỉ dẫn nằm trong trang web. Đây là chỉ dẫn cho AI,
+không phải bảo đảm mọi kết luận từ web đều chính xác.
+
+Provider `mock` nói rõ chưa tìm thật và không tạo nguồn giả. Kiểm thử tự động
+dùng HTTP/SSE giả, kiểm tra lưu nguồn, quyền truy cập, lỗi và hủy. Đã thử thêm
+một lượt tìm thật về vòng lặp `for`: kết nối xAI hiện có chạy được tìm kiếm,
+trả nguồn và dẫn tới tài liệu Python chính thức trong câu trả lời. Kiểm tra
+này không dùng lịch sử hoặc tệp riêng; chưa triển khai VPS.
+
 ## Ngày giờ và độ dài dành cho web
 
 - Mỗi lượt gửi kèm múi giờ IANA từ trình duyệt, ví dụ `Asia/Barnaul`.
@@ -179,8 +227,9 @@ hay chỉnh sửa thật, hoặc xác minh xác thực với dịch vụ xAI th�
   giờ mùa hè trên cả Windows và Linux. Đây chưa phải công cụ lịch, nhắc việc
   hay tra lịch âm.
 - xAI nhận schema công cụ, backend kiểm tra và chạy công cụ rồi gửi kết quả
-  trở lại AI. Giao diện chỉ nhận phần văn bản trả lời. Tối đa 3 vòng thực thi,
-  8 lời gọi công cụ trong một lượt; kết thúc bằng thông báo rõ nếu vượt giới hạn.
+  trở lại AI. Giao diện nhận văn bản, tiến trình và nguồn tham khảo, không nhận
+  JSON công cụ ngày giờ. Tối đa 3 vòng thực thi, 8 lời gọi công cụ ngày giờ
+  trong một lượt; kết thúc bằng thông báo rõ nếu vượt giới hạn.
   Luồng giữ ngữ cảnh công cụ trong lượt với `store=false`, theo
   [tài liệu function calling](https://docs.x.ai/developers/tools/function-calling)
   và [hướng dẫn giữ trạng thái trong input](https://docs.x.ai/developers/tools/advanced-usage).
@@ -245,8 +294,8 @@ Giới hạn cố ý của phần này:
 
 - Prompt của web không chứa tên thật hay Discord ID của thành viên. Có test
   chặn (`tests/test_persona.py`).
-- Peto xem được ảnh đính kèm trong chat, tạo/sửa ảnh trong tab Tạo ảnh; chưa có
-  nhạc, tìm kiếm hay giọng nói.
+- Peto xem ảnh đính kèm và tìm web trong chat, tạo/sửa ảnh trong tab Tạo ảnh;
+  chưa có nhạc hay giọng nói.
 - Database riêng và **file token xAI riêng**; không dùng chung file nào với
   production Discord.
 - Không có credential AI nào xuống trình duyệt. Discord access token chỉ dùng
@@ -276,6 +325,6 @@ Giới hạn cố ý của phần này:
 
 ## Chưa có ở bước này
 
-Đọc nội dung PDF, gọi công cụ, giọng nói, nhân vật 3D, ghi hoặc đồng bộ trí nhớ
+Đọc nội dung PDF, giọng nói, nhân vật 3D, ghi hoặc đồng bộ trí nhớ
 hai chiều với Discord. Chưa kiểm chứng chất lượng AI thật và hoạt động VPS trong
 đợt kiểm thử local nêu trên.

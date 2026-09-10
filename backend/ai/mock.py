@@ -92,6 +92,7 @@ class MockProvider(ChatProvider):
         messages: list[ChatMessage],
         effort: str = "low",
         timezone: str | None = None,
+        web_search: str = "auto",
     ) -> AsyncIterator[str | StreamChunk]:
         last = next((m for m in reversed(messages) if m.role == "user"), None)
         last_user = last.content if last else ""
@@ -109,6 +110,14 @@ class MockProvider(ChatProvider):
             last_user = f"[đính kèm {', '.join(names)}]"
 
         reply = _pick_reply(last_user, timezone)
+        search_requested = web_search == "on" or any(word in last_user.casefold() for word in ("tìm kiếm", "tìm web", "tra web", "tra cứu", "mới nhất", "search"))
+        if search_requested:
+            reply = (
+                "Tìm web đang tắt cho lượt này. Peto chưa xác minh thông tin mới."
+                if web_search == "off" else
+                "Peto đang chạy bằng phản hồi giả nên chưa tìm web thật và chưa có nguồn đã xác minh. "
+                "Khi kết nối AI thật, Peto sẽ tra cứu và hiện nguồn ngay dưới câu trả lời."
+            )
         if names:
             reply = (
                 f"Peto thấy cậu gửi kèm {', '.join(names)}. "

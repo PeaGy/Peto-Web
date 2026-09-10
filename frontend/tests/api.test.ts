@@ -4,6 +4,19 @@ import { createImagineJob, sendMessage } from '../src/api';
 afterEach(() => vi.unstubAllGlobals());
 const event = (value: object) => `data: ${JSON.stringify(value)}\n\n`;
 
+it('gửi chế độ tìm web và đọc nguồn qua SSE mà không trộn vào văn bản', async () => {
+  const sources = [{ url: 'https://docs.python.org/3/', title: 'Tài liệu Python' }];
+  const fetchMock = vi.fn(async () => new Response(event({ type: 'search', status: 'searching' }) + event({ type: 'sources', sources }) + event({ type: 'delta', text: 'Có nguồn' }) + event({ type: 'done' })));
+  vi.stubGlobal('fetch', fetchMock);
+  const onSources = vi.fn(), onSearch = vi.fn(), onDelta = vi.fn();
+  await sendMessage({ message: 'Tìm Python', conversationId: null, effort: 'auto', webSearch: 'on' }, { onSources, onSearch, onDelta });
+  expect(onSearch).toHaveBeenCalledWith('searching');
+  expect(onSources).toHaveBeenCalledWith(sources);
+  expect(onDelta).toHaveBeenCalledExactlyOnceWith('Có nguồn');
+  const body = JSON.parse((fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].body as string);
+  expect(body.web_search).toBe('on');
+});
+
 it.each([{ source_image: { data: 'anh-base64' } }, { source_image_id: 'anh-da-luu' }])('gửi ảnh gốc trong yêu cầu chỉnh sửa', async (source) => {
   const fetchMock = vi.fn(async () => new Response(JSON.stringify({ job: { id: 'ket-qua' } })));
   vi.stubGlobal('fetch', fetchMock);

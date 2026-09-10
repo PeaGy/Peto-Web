@@ -18,6 +18,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from pathlib import Path
+from typing import Literal
 
 import anyio
 from fastapi import Depends, FastAPI, HTTPException, Query
@@ -46,11 +47,13 @@ from config import (
     MEMORY_GATEWAY_URL,
     RESPONSE_TIMEOUTS,
     STATIC_DIR,
+    WEB_SEARCH_ENABLED,
     discord_id_from_owner,
 )
 from discord_memory import discord_memory
 from persona import SYSTEM_PROMPT, build_memory_context
 from rate_limit import AdmissionDenied, admission
+from web_search import normalize_sources
 
 logger = logging.getLogger("peto_web")
 
@@ -108,6 +111,7 @@ class ChatRequest(BaseModel):
     effort: str | None = None
     timezone: str | None = Field(default=None, max_length=100)
     attachments: list[AttachmentIn] = Field(default_factory=list)
+    web_search: Literal["auto", "on", "off"] = "auto"
 
 
 ALLOWED_EFFORTS = {"auto", "low", "medium", "high"}
@@ -132,6 +136,7 @@ def _public_message(row: dict) -> dict:
         "status": row.get("status", "complete"),
         "created_at": row["created_at"],
         "attachments": [_public_attachment(item) for item in row.get("attachments") or []],
+        "sources": normalize_sources(row.get("sources")),
     }
 
 
@@ -196,6 +201,7 @@ def _to_chat_messages(rows: list[dict]) -> list[ChatMessage]:
                 role=row["role"],
                 content=row["content"],
                 attachments=tuple(attached),
+                sources=tuple(normalize_sources(row.get("sources"))),
             )
         )
     return out
@@ -296,7 +302,7 @@ def _as_chunk(item: str | StreamChunk) -> StreamChunk:
 
 
 async def _stream_reply(
-    system_prompt: str, history: list[ChatMessage], effort: str, timezone: str | None = None
+    system_prompt: str, history: list[ChatMessage], effort: str, timezone: str | None = None, web_search: str = "auto"
 ) -> AsyncIterator[StreamChunk]:
     """Gọi provider một lần, có timeout theo effort. Trả về từng mảnh stream."""
     provider = get_provider()
@@ -305,12 +311,15 @@ async def _stream_reply(
         async for chunk in provider.stream(
             system_prompt=f"{system_prompt}\n\n{time_context(timezone)}",
             messages=history, effort=effort, timezone=timezone,
+            web_search=web_search,
         ):
             yield _as_chunk(chunk)
 
 
 @app.post("/api/chat")
 async def chat(request: ChatRequest, owner: str = Depends(current_owner)):
+    if request.web_search == "on" and not WEB_SEARCH_ENABLED:
+        raise HTTPException(400, "Tìm kiếm web đang tắt trên máy chủ. Chọn Tự động hoặc Tắt để tiếp tục chat.")
     timezone = resolve_browser_timezone(request.timezone)
     text = request.message.strip()
     if len(text) > MAX_INPUT_CHARS:
@@ -344,6 +353,23 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner)):
     async def event_stream() -> AsyncIterator[str]:
         conversation_id = request.conversation_id
         collected: list[str] = []
+        sources: list[dict] = []
+        search_started = False
+
+        def chunk_event(chunk: StreamChunk) -> str:
+            nonlocal sources, search_started
+            if chunk.kind == "search":
+                search_started = True
+                return sse({"type": "search", "status": chunk.text})
+            if chunk.kind == "sources":
+                sources = normalize_sources([*sources, *chunk.sources])
+                search_started = True
+                return sse({"type": "sources", "sources": sources})
+            if chunk.kind == "thinking":
+                return sse({"type": "thinking", "text": chunk.text})
+            collected.append(chunk.text)
+            return sse({"type": "delta", "text": chunk.text})
+
         complete = False
         failure: str | None = None
         try:
@@ -379,26 +405,18 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner)):
                 history = _to_chat_messages(rows)
                 system_prompt = await _build_system_prompt(owner)
                 try:
-                    async for chunk in _stream_reply(system_prompt, history, effort, timezone):
-                        if chunk.kind == "thinking":
-                            yield sse({"type": "thinking", "text": chunk.text})
-                            continue
-                        collected.append(chunk.text)
-                        yield sse({"type": "delta", "text": chunk.text})
+                    async for chunk in _stream_reply(system_prompt, history, effort, timezone, request.web_search):
+                        yield chunk_event(chunk)
                 except TimeoutError:
                     # Chat thường được thử lại đúng 1 lần, và chỉ khi chưa kịp
                     # phát ra chữ nào — giống cách bot Discord giới hạn retry.
-                    if collected or effort != "low":
+                    if collected or search_started or request.web_search == "on" or effort != "low":
                         raise
                     logger.warning("Timeout effort=low — thử lại 1 lần")
                     async for chunk in _stream_reply(
-                        system_prompt, history, effort, timezone
+                        system_prompt, history, effort, timezone, request.web_search
                     ):
-                        if chunk.kind == "thinking":
-                            yield sse({"type": "thinking", "text": chunk.text})
-                            continue
-                        collected.append(chunk.text)
-                        yield sse({"type": "delta", "text": chunk.text})
+                        yield chunk_event(chunk)
                 complete = bool("".join(collected).strip())
                 if not complete:
                     failure = "Peto chưa trả lời được lượt này. Nhắn lại giúp nha."
@@ -423,6 +441,7 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner)):
                         await db.add_message(
                             conversation_id, "assistant", reply,
                             status="complete" if complete else "incomplete",
+                            sources=sources,
                         )
         if failure:
             yield sse({"type": "error", "message": failure})

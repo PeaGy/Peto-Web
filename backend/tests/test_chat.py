@@ -134,10 +134,10 @@ async def test_effort_can_be_overridden(client, monkeypatch):
 
     original = MockProvider.stream
 
-    async def spy(self, *, system_prompt, messages, effort="low", timezone=None):
+    async def spy(self, *, system_prompt, messages, effort="low", timezone=None, web_search="auto"):
         seen.append(effort)
         async for chunk in original(
-            self, system_prompt=system_prompt, messages=messages, effort=effort, timezone=timezone
+            self, system_prompt=system_prompt, messages=messages, effort=effort, timezone=timezone, web_search=web_search
         ):
             yield chunk
 
@@ -172,10 +172,10 @@ async def test_image_reaches_the_provider(client, monkeypatch):
 
     original = MockProvider.stream
 
-    async def spy(self, *, system_prompt, messages, effort="low", timezone=None):
+    async def spy(self, *, system_prompt, messages, effort="low", timezone=None, web_search="auto"):
         seen.append(messages)
         async for chunk in original(
-            self, system_prompt=system_prompt, messages=messages, effort=effort, timezone=timezone
+            self, system_prompt=system_prompt, messages=messages, effort=effort, timezone=timezone, web_search=web_search
         ):
             yield chunk
 

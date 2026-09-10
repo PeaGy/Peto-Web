@@ -10,12 +10,14 @@ tin conversation_id do trình duyệt gửi là bằng chứng sở hữu.
 
 from __future__ import annotations
 
+import json
 import time
 import uuid
 
 import aiosqlite
 
 from config import DB_PATH
+from web_search import normalize_sources
 
 
 async def init_db() -> None:
@@ -60,6 +62,8 @@ async def init_db() -> None:
             await db.execute(
                 "ALTER TABLE messages ADD COLUMN status TEXT NOT NULL DEFAULT 'complete'"
             )
+        if "sources" not in {column[1] for column in columns}:
+            await db.execute("ALTER TABLE messages ADD COLUMN sources TEXT NOT NULL DEFAULT '[]'")
         await db.execute(
             """
             CREATE TABLE IF NOT EXISTS attachments (
@@ -270,7 +274,7 @@ async def get_messages(
         if limit is None:
             cursor = await db.execute(
                 """
-                SELECT m.id, m.role, m.content, m.created_at, m.status
+                SELECT m.id, m.role, m.content, m.created_at, m.status, m.sources
                   FROM messages m
                   JOIN conversations c ON c.id = m.conversation_id
                  WHERE m.conversation_id = ? AND c.owner = ?
@@ -283,7 +287,7 @@ async def get_messages(
             # Lấy N tin gần nhất rồi đảo lại, tránh đọc toàn bộ hội thoại dài.
             cursor = await db.execute(
                 """
-                SELECT m.id, m.role, m.content, m.created_at, m.status
+                SELECT m.id, m.role, m.content, m.created_at, m.status, m.sources
                   FROM messages m
                   JOIN conversations c ON c.id = m.conversation_id
                  WHERE m.conversation_id = ? AND c.owner = ?
@@ -294,6 +298,11 @@ async def get_messages(
             )
             rows = [dict(row) for row in await cursor.fetchall()]
             rows.reverse()
+        for row in rows:
+            try:
+                row["sources"] = normalize_sources(json.loads(row["sources"]))
+            except (ValueError, TypeError):
+                row["sources"] = []
         return await _attach_files(db, rows)
 
 
@@ -383,15 +392,15 @@ async def list_attachment_paths(conversation_id: str) -> list[str]:
 
 
 async def add_message(
-    conversation_id: str, role: str, content: str, status: str = "complete"
+    conversation_id: str, role: str, content: str, status: str = "complete", sources: list[dict] | None = None
 ) -> int:
     now = time.time()
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("PRAGMA foreign_keys=ON")
         cursor = await db.execute(
-            "INSERT INTO messages (conversation_id, role, content, created_at, status) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (conversation_id, role, content, now, status),
+            "INSERT INTO messages (conversation_id, role, content, created_at, status, sources) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (conversation_id, role, content, now, status, json.dumps(normalize_sources(sources), ensure_ascii=False)),
         )
         await db.execute(
             "UPDATE conversations SET updated_at = ? WHERE id = ?",
