@@ -247,8 +247,23 @@ plus `ALTER TABLE` — there is no migration framework and no version table. Add
 same way, preserving existing rows. Note that `PRAGMA foreign_keys=ON` is set per connection
 where cascade deletes matter (SQLite has it off by default).
 
-Tables: `conversations`, `messages`, `attachments`, `users`, `imagine_jobs`,
-`imagine_images`. `users` is the only place mapping a web account to a Discord ID.
+Tables: `conversations`, `messages`, `attachments`, `users`, `user_profiles`,
+`imagine_jobs`, `imagine_images`. `users` is the only place mapping a web account to a Discord ID.
+
+### User profile (Settings → Hồ sơ)
+
+`profile_api.py` stores a self-written profile per owner in `user_profiles` — kept apart
+from `users`, which is overwritten from Discord/Google on every login: full name, what
+Peto should call them, an occupation code from a fixed server-side list, and free-form
+instructions (1500 chars). `main._build_system_prompt` re-reads it on **every** turn and
+appends `persona.build_profile_context` after the memory block, so an edit applies to the
+very next message. Instructions are fenced with `USER_INSTRUCTIONS_START/END`, copies of
+those markers are stripped from user text, and the block states it cannot override the
+rules above it. Validation errors are Vietnamese 400s, not Pydantic's English 422s.
+
+`ProfileSettings.tsx` ties labels to inputs with `htmlFor` instead of wrapping them:
+every `<label>` is `user-select: none` for tap handling, and iOS Safari can refuse to
+edit inputs nested inside such an element.
 
 ### Discord memory gateway
 

@@ -19,6 +19,7 @@ import xml from "highlight.js/lib/languages/xml";
 import yaml from "highlight.js/lib/languages/yaml";
 import Imagine from "./Imagine";
 import EffortMenu from "./EffortMenu";
+import ProfileSettings from "./ProfileSettings";
 import ComposerMenu from "./ComposerMenu";
 import WebSources, { GlobeIcon, safeSources } from "./WebSources";
 import {
@@ -1374,6 +1375,12 @@ export default function App() {
             ×
           </button>
         </div>
+
+        <ProfileSettings
+          open={settingsOpen}
+          avatar={<AccountAvatar user={auth.user} size={40} />}
+          onUnauthorized={handleUnauthorized}
+        />
 
         <section className="settings-section">
           <h3>Giao diện</h3>

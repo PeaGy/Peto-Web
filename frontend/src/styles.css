@@ -989,11 +989,14 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .alt-login:hover:not(:disabled) { border-color: var(--accent); }
 
-.account-initial {
+/* Chữ cái đầu cho tài khoản không có ảnh (khách). Hai lớp để thắng
+   `.account-avatar` đứng sau trong file: trước đây nó đè nền thành xám tối
+   trong khi chữ vẫn màu tối, nên chữ gần như biến mất. */
+.account-avatar.account-initial {
   display: grid;
   place-items: center;
-  background: var(--accent);
-  color: var(--on-accent);
+  background: color-mix(in srgb, var(--text) 16%, var(--panel));
+  color: var(--text);
   font-size: 13px;
   font-weight: 700;
 }
@@ -1126,7 +1129,7 @@ button:focus-visible, a:focus-visible, .table-scroll:focus-visible {
 
 /* ---------- Bang cai dat ---------- */
 .settings-dialog {
-  width: min(520px, calc(100% - 32px));
+  width: min(600px, calc(100% - 32px));
   max-height: calc(100dvh - 40px);
   overflow-y: auto;
   padding: 0;
@@ -1695,4 +1698,111 @@ label,
 @media (prefers-reduced-motion: reduce) {
   .effort-chevron { transition: none; }
   .effort-options { transition: opacity 180ms ease; }
+}
+
+/* ---------- Hồ sơ trong Cài đặt ---------- */
+/* Mỗi hàng: nhãn bên trái, ô nhập bên phải, kẻ vạch ngăn — như Cài đặt của
+   Claude. Màn hẹp thì nhãn nằm trên ô. */
+.profile-form { margin-top: 10px; }
+
+.profile-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 58px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.profile-label { color: var(--text); font-size: 14px; font-weight: 500; }
+
+.profile-row input,
+.profile-row select,
+.profile-notes textarea {
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  background-color: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.profile-row input { width: min(260px, 55%); height: 38px; padding: 0 12px; }
+
+.profile-row select {
+  appearance: none;
+  width: min(260px, 55%);
+  height: 38px;
+  padding: 0 34px 0 12px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%239b9b9b' d='M1.2 1.6 6 6.4l4.8-4.8'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  cursor: pointer;
+}
+
+:root[data-theme="light"] .profile-row select { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%236b6b6b' d='M1.2 1.6 6 6.4l4.8-4.8'/%3E%3C/svg%3E"); }
+
+.profile-row input:focus,
+.profile-row select:focus,
+.profile-notes textarea:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--text) 30%, var(--line));
+}
+
+.profile-notes { display: grid; gap: 6px; padding-top: 14px; }
+.profile-notes .settings-hint { margin: 0; }
+
+.profile-notes textarea {
+  width: 100%;
+  min-height: 110px;
+  padding: 10px 12px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.profile-count { justify-self: end; color: var(--muted); font-size: 12px; }
+
+.profile-actions { display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin-top: 12px; }
+.profile-status { color: var(--muted); font-size: 13px; }
+.profile-status.error { color: var(--danger); }
+
+.profile-save {
+  height: 36px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.profile-load-error { display: flex; align-items: center; gap: 10px; margin-top: 10px; color: var(--muted); font-size: 13px; }
+
+.profile-load-error button {
+  padding: 5px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+@media (max-width: 520px) {
+  .profile-row { flex-direction: column; align-items: stretch; gap: 8px; }
+  .profile-row input, .profile-row select { width: 100%; }
+  .profile-row:first-child { flex-direction: row; align-items: center; }
+}
+
+/* Quy tắc chữ 16px trên màn cảm ứng ở đầu file thua các ô này vì cùng độ ưu
+   tiên mà đứng trước; phải nhắc lại ngay sau chúng, kẻo iOS lại tự phóng to. */
+@media (pointer: coarse) {
+  .profile-row input,
+  .profile-row select,
+  .profile-notes textarea { font-size: 16px; }
 }

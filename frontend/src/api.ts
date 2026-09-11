@@ -119,6 +119,34 @@ export async function guestLogin(): Promise<void> {
   await json(await fetch("/api/auth/guest", { method: "POST" }));
 }
 
+/** Hồ sơ người dùng tự điền trong Cài đặt. Máy chủ ghép nó vào mọi lượt chat. */
+export interface Profile {
+  full_name: string;
+  nickname: string;
+  occupation: string;
+  instructions: string;
+}
+
+export interface ProfileData {
+  profile: Profile;
+  occupations: { value: string; label: string }[];
+  limits: { full_name: number; nickname: number; instructions: number };
+}
+
+export async function getProfile(): Promise<ProfileData> {
+  return json<ProfileData>(await fetch("/api/profile"));
+}
+
+/** Lưu và trả về hồ sơ ĐÃ chuẩn hóa (máy chủ gộp khoảng trắng, cắt ký tự lạ). */
+export async function saveProfile(profile: Profile): Promise<Profile> {
+  const response = await fetch("/api/profile", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(profile),
+  });
+  return (await json<{ profile: Profile }>(response)).profile;
+}
+
 export function browserTimezone(): string | undefined {
   try {
     return Intl.DateTimeFormat().resolvedOptions().timeZone || undefined;

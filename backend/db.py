@@ -184,6 +184,20 @@ async def init_db() -> None:
         image_columns = await (await db.execute("PRAGMA table_info(imagine_images)")).fetchall()
         if "kind" not in {column[1] for column in image_columns}:
             await db.execute("ALTER TABLE imagine_images ADD COLUMN kind TEXT NOT NULL DEFAULT 'output'")
+        # Hồ sơ người dùng tự điền trong Cài đặt. Tách khỏi `users` vì bảng đó bị
+        # ghi đè bằng dữ liệu Discord/Google mỗi lần đăng nhập, còn hồ sơ là của họ.
+        await db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS user_profiles (
+                owner TEXT PRIMARY KEY,
+                full_name TEXT NOT NULL DEFAULT '',
+                nickname TEXT NOT NULL DEFAULT '',
+                occupation TEXT NOT NULL DEFAULT '',
+                instructions TEXT NOT NULL DEFAULT '',
+                updated_at REAL NOT NULL
+            )
+            """
+        )
         await db.commit()
 
 
@@ -212,6 +226,44 @@ async def upsert_user(
                 last_login_at = excluded.last_login_at
             """,
             (owner, provider, discord_id, username, display_name, avatar_url, now, now),
+        )
+        await db.commit()
+
+
+PROFILE_FIELDS = ("full_name", "nickname", "occupation", "instructions")
+
+
+async def get_profile(owner: str) -> dict:
+    """Hồ sơ tự điền của owner. Chưa từng lưu thì trả về các trường rỗng."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            "SELECT full_name, nickname, occupation, instructions "
+            "FROM user_profiles WHERE owner = ?",
+            (owner,),
+        )
+        row = await cursor.fetchone()
+    return dict(row) if row else {field: "" for field in PROFILE_FIELDS}
+
+
+async def save_profile(
+    *, owner: str, full_name: str, nickname: str, occupation: str, instructions: str
+) -> None:
+    now = time.time()
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            """
+            INSERT INTO user_profiles (owner, full_name, nickname, occupation,
+                                       instructions, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(owner) DO UPDATE SET
+                full_name = excluded.full_name,
+                nickname = excluded.nickname,
+                occupation = excluded.occupation,
+                instructions = excluded.instructions,
+                updated_at = excluded.updated_at
+            """,
+            (owner, full_name, nickname, occupation, instructions, now),
         )
         await db.commit()
 

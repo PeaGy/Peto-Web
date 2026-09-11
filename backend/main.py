@@ -31,6 +31,7 @@ import auth
 import db
 import document_reader
 import imagine_api
+import profile_api
 import static_files
 from ai import ChatAttachment, ChatMessage, ProviderError, StreamChunk, get_provider
 from ai.routing import choose_effort
@@ -53,7 +54,7 @@ from config import (
     discord_id_from_owner,
 )
 from discord_memory import discord_memory
-from persona import SYSTEM_PROMPT, build_memory_context
+from persona import SYSTEM_PROMPT, build_memory_context, build_profile_context
 from rate_limit import AdmissionDenied, admission
 from web_search import normalize_sources
 
@@ -99,6 +100,7 @@ app.add_middleware(
 )
 app.include_router(auth.router)
 app.include_router(imagine_api.router)
+app.include_router(profile_api.router)
 
 
 class AttachmentIn(BaseModel):
@@ -318,7 +320,8 @@ async def delete_conversation(
 
 
 async def _build_system_prompt(owner: str) -> str:
-    """Prompt gốc, ghép thêm trí nhớ từ Discord nếu lấy được.
+    """Prompt gốc, ghép thêm trí nhớ từ Discord (nếu lấy được) và hồ sơ người
+    dùng tự điền trong Cài đặt.
 
     Trí nhớ chỉ được tra bằng Discord ID lấy từ phiên đã xác minh — không bao
     giờ từ dữ liệu do trình duyệt gửi lên. Lấy không được thì bỏ qua, chat vẫn
@@ -336,7 +339,16 @@ async def _build_system_prompt(owner: str) -> str:
         summary=snapshot.summary if snapshot else "",
         explicit=snapshot.explicit if snapshot else (),
     )
-    return f"{SYSTEM_PROMPT}\n\n{context}" if context else SYSTEM_PROMPT
+    # Đọc lại ở MỖI lượt, không đệm: người dùng sửa hồ sơ trong Cài đặt thì
+    # ngay tin nhắn kế tiếp đã theo.
+    profile = await db.get_profile(owner)
+    profile_block = build_profile_context(
+        full_name=profile["full_name"],
+        nickname=profile["nickname"],
+        occupation=profile_api.occupation_label(profile["occupation"]),
+        instructions=profile["instructions"],
+    )
+    return "\n\n".join(part for part in (SYSTEM_PROMPT, context, profile_block) if part)
 
 
 def _as_chunk(item: str | StreamChunk) -> StreamChunk:

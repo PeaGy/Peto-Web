@@ -356,6 +356,22 @@ giải nén, tệp lỗi/mã hóa, quyền riêng tư, dừng đọc và dữ li
 trên giao diện máy tính và điện thoại bằng máy chủ riêng với phản hồi giả;
 đợt này chưa kiểm chứng câu trả lời tài liệu bằng AI thật hoặc cập nhật VPS.
 
+## Hồ sơ cá nhân
+
+Trong **Cài đặt → Hồ sơ**, mỗi người tự điền họ tên, tên muốn Peto gọi, công việc
+(chọn trong danh sách) và **Hướng dẫn cho Peto** — tối đa 1.500 ký tự, ví dụ "giải
+thích ngắn gọn, đi thẳng vào vấn đề".
+
+- Lưu theo tài khoản trong bảng `user_profiles`, tách khỏi thông tin Discord/Google
+  vốn bị ghi đè mỗi lần đăng nhập.
+- Máy chủ ghép hồ sơ vào prompt ở mỗi lượt chat, nên lưu xong là tin nhắn kế tiếp đã
+  theo, kể cả trong hội thoại cũ.
+- Hướng dẫn riêng được đóng khung và ghi rõ không thay được quy tắc của Peto; người
+  dùng không thể tự chèn dấu kết thúc khung để viết tiếp như lệnh hệ thống.
+- Chỉ dùng cho Peto trên web này, không gửi sang bot Discord.
+- Ảnh đại diện lấy từ Discord/Google, khách thì hiện chữ cái đầu; chưa tải được ảnh
+  riêng lên.
+
 ## Chưa có ở bước này
 
 OCR tài liệu scan, giọng nói, nhân vật 3D, ghi hoặc đồng bộ trí nhớ

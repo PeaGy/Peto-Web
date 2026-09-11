@@ -9,6 +9,7 @@ vi.mock('../src/api', async (original) => ({
   getAuthState: vi.fn(), listConversations: vi.fn(), getMessages: vi.fn(),
   sendMessage: vi.fn(), deleteConversation: vi.fn(), logout: vi.fn(),
   listImagineJobs: vi.fn(), createImagineJob: vi.fn(), guestLogin: vi.fn(),
+  getProfile: vi.fn(), saveProfile: vi.fn(),
 }));
 
 const conversation = (id: string): api.Conversation => ({ id, title: id, created_at: 0, updated_at: 0, message_count: 2 });
@@ -31,6 +32,9 @@ beforeEach(() => {
   vi.mocked(api.getMessages).mockResolvedValue([]);
   vi.mocked(api.deleteConversation).mockResolvedValue();
   vi.mocked(api.listImagineJobs).mockResolvedValue([]);
+  // vi.fn() trả undefined: không cài sẵn thì mọi test mở Cài đặt vỡ ở .then().
+  vi.mocked(api.getProfile).mockResolvedValue({ profile: { full_name: '', nickname: '', occupation: '', instructions: '' },
+    occupations: [], limits: { full_name: 80, nickname: 40, instructions: 1500 } });
   Element.prototype.scrollTo = vi.fn();
   URL.createObjectURL = vi.fn(() => 'blob:review');
   URL.revokeObjectURL = vi.fn();
@@ -678,6 +682,59 @@ describe('Chọn mức suy nghĩ', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Gửi', exact: true }));
     await waitFor(() => expect(api.sendMessage).toHaveBeenCalled());
     expect(vi.mocked(api.sendMessage).mock.calls[0][0]).toMatchObject({ effort: 'medium' });
+  });
+});
+
+describe('Hồ sơ trong Cài đặt', () => {
+  const PROFILE = { full_name: 'Nguyễn An', nickname: 'An', occupation: 'student', instructions: 'Trả lời ngắn.' };
+  const data = () => ({ profile: PROFILE, limits: { full_name: 80, nickname: 40, instructions: 1500 },
+    occupations: [{ value: 'student', label: 'Học sinh, sinh viên' }, { value: 'other', label: 'Khác' }] });
+  const openSettings = async () => {
+    await openApp();
+    fireEvent.click(screen.getByRole('button', { name: /Cài đặt/ }));
+  };
+
+  it('tải hồ sơ vào các ô và chỉ cho lưu khi có thay đổi', async () => {
+    vi.mocked(api.getProfile).mockResolvedValue(data());
+    await openSettings();
+    expect((await screen.findByLabelText('Họ và tên') as HTMLInputElement).value).toBe('Nguyễn An');
+    expect((screen.getByLabelText('Peto nên gọi bạn là gì?') as HTMLInputElement).value).toBe('An');
+    expect((screen.getByLabelText('Công việc của bạn') as HTMLSelectElement).value).toBe('student');
+    expect((screen.getByLabelText('Hướng dẫn cho Peto') as HTMLTextAreaElement).value).toBe('Trả lời ngắn.');
+    const save = screen.getByRole('button', { name: 'Lưu thay đổi' });
+    expect(save).toHaveProperty('disabled', true);
+    fireEvent.change(screen.getByLabelText('Peto nên gọi bạn là gì?'), { target: { value: 'Bé An' } });
+    expect(save).toHaveProperty('disabled', false);
+  });
+
+  it('lưu đúng giá trị rồi hiện bản máy chủ đã chuẩn hóa', async () => {
+    vi.mocked(api.getProfile).mockResolvedValue(data());
+    vi.mocked(api.saveProfile).mockResolvedValue({ ...PROFILE, nickname: 'Bé An', occupation: 'other' });
+    await openSettings();
+    fireEvent.change(await screen.findByLabelText('Peto nên gọi bạn là gì?'), { target: { value: '  Bé   An ' } });
+    fireEvent.change(screen.getByLabelText('Công việc của bạn'), { target: { value: 'other' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Lưu thay đổi' }));
+    await screen.findByText('Đã lưu');
+    expect(api.saveProfile).toHaveBeenCalledWith({ ...PROFILE, nickname: '  Bé   An ', occupation: 'other' });
+    expect((screen.getByLabelText('Peto nên gọi bạn là gì?') as HTMLInputElement).value).toBe('Bé An');
+    expect(screen.getByRole('button', { name: 'Lưu thay đổi' })).toHaveProperty('disabled', true);
+  });
+
+  it('lưu hỏng thì báo lỗi và giữ nguyên chữ đang gõ', async () => {
+    vi.mocked(api.getProfile).mockResolvedValue(data());
+    vi.mocked(api.saveProfile).mockRejectedValue(new Error('Tên để Peto gọi dài quá, tối đa 40 ký tự nhé.'));
+    await openSettings();
+    fireEvent.change(await screen.findByLabelText('Peto nên gọi bạn là gì?'), { target: { value: 'Tên mới' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Lưu thay đổi' }));
+    expect(await screen.findByRole('alert')).toHaveProperty('textContent', 'Tên để Peto gọi dài quá, tối đa 40 ký tự nhé.');
+    expect((screen.getByLabelText('Peto nên gọi bạn là gì?') as HTMLInputElement).value).toBe('Tên mới');
+  });
+
+  it('không tải được hồ sơ thì cho thử lại', async () => {
+    vi.mocked(api.getProfile).mockRejectedValueOnce(new Error('mat mang')).mockResolvedValue(data());
+    await openSettings();
+    fireEvent.click(await screen.findByRole('button', { name: 'Thử lại' }));
+    expect((await screen.findByLabelText('Họ và tên') as HTMLInputElement).value).toBe('Nguyễn An');
   });
 });
 
