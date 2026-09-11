@@ -16,6 +16,7 @@ from document_reader import DOCX_MIME, decode_text
 from config import (
     MAX_ATTACHMENT_BYTES,
     MAX_ATTACHMENTS,
+    MAX_MEDIA_ATTACHMENTS,
     MAX_TOTAL_ATTACHMENT_BYTES,
     UPLOAD_DIR,
 )
@@ -174,12 +175,18 @@ def classify(name: str, declared_mime: str, data: bytes) -> tuple[str, str]:
     )
 
 
+def is_media_attachment(kind: str, mime: str) -> bool:
+    """Ảnh, PDF, Word chiếm chỗ nặng hơn tệp chữ/code."""
+    return kind == "image" or mime in {"application/pdf", DOCX_MIME}
+
+
 def validate_batch(items: list[dict]) -> list[ValidatedAttachment]:
     if len(items) > MAX_ATTACHMENTS:
         raise AttachmentError(f"Mỗi tin chỉ gửi tối đa {MAX_ATTACHMENTS} tệp")
 
     out: list[ValidatedAttachment] = []
     total = 0
+    media = 0
     for item in items:
         name = _safe_filename(str(item.get("name") or "tep"))
         data = decode_base64_payload(str(item.get("data") or ""))
@@ -193,6 +200,12 @@ def validate_batch(items: list[dict]) -> list[ValidatedAttachment]:
             limit_mb = MAX_TOTAL_ATTACHMENT_BYTES / (1024 * 1024)
             raise AttachmentError(f"Tổng tệp đính kèm vượt {limit_mb:.0f} MB")
         kind, mime = classify(name, str(item.get("mime") or ""), data)
+        if is_media_attachment(kind, mime):
+            media += 1
+            if media > MAX_MEDIA_ATTACHMENTS:
+                raise AttachmentError(
+                    f"Mỗi tin chỉ gửi tối đa {MAX_MEDIA_ATTACHMENTS} ảnh, PDF hoặc Word"
+                )
         out.append(ValidatedAttachment(name=name, mime=mime, kind=kind, data=data))
     return out
 

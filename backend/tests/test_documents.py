@@ -294,3 +294,44 @@ async def test_document_migration_preserves_old_attachment(tmp_path, monkeypatch
     await db.init_db()
     with sqlite3.connect(path) as connection:
         assert connection.execute("SELECT filename, document FROM attachments").fetchone() == ("giu.pdf", "")
+
+
+PNG_1x1_B64 = (
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+)
+
+
+def _code_item(index: int) -> dict:
+    return {
+        "name": f"mod{index}.py",
+        "mime": "text/x-python",
+        "data": base64.b64encode(f"print({index})\n".encode()).decode(),
+    }
+
+
+def test_sixteen_code_files_are_accepted():
+    files = attachments.validate_batch([_code_item(i) for i in range(16)])
+    assert len(files) == 16
+
+
+def test_seventeenth_code_file_is_rejected():
+    with pytest.raises(attachments.AttachmentError, match="16 tệp"):
+        attachments.validate_batch([_code_item(i) for i in range(17)])
+
+
+def test_fifth_image_is_rejected():
+    items = [
+        {"name": f"anh{i}.png", "mime": "image/png", "data": PNG_1x1_B64}
+        for i in range(5)
+    ]
+    with pytest.raises(attachments.AttachmentError, match="ảnh, PDF hoặc Word"):
+        attachments.validate_batch(items)
+
+
+def test_four_images_and_twelve_code_files_are_accepted():
+    items = [
+        {"name": f"anh{i}.png", "mime": "image/png", "data": PNG_1x1_B64}
+        for i in range(4)
+    ]
+    items.extend(_code_item(i) for i in range(12))
+    assert len(attachments.validate_batch(items)) == 16

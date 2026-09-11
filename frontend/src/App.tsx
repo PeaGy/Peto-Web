@@ -72,7 +72,8 @@ const CODE_LABELS: Record<string, string> = {
 const EFFORT_KEY = "peto-effort";
 const THEME_KEY = "peto-theme";
 const SIDEBAR_KEY = "peto-sidebar-collapsed";
-const MAX_FILES = 4;
+const MAX_FILES = 16;
+const MAX_MEDIA_FILES = 4;
 const MAX_FILE_BYTES = 8 * 1024 * 1024;
 const MAX_TOTAL_BYTES = 16 * 1024 * 1024;
 const ACCEPT =
@@ -145,6 +146,16 @@ function lightMediaQuery(): MediaQueryList | null {
 
 function isImageFile(file: File): boolean {
   return file.type.startsWith("image/") || /\.(png|jpe?g|gif|webp)$/i.test(file.name);
+}
+
+function isMediaFile(file: File): boolean {
+  return (
+    isImageFile(file) ||
+    file.type === "application/pdf" ||
+    /\.pdf$/i.test(file.name) ||
+    file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+    /\.docx$/i.test(file.name)
+  );
 }
 
 function formatSize(bytes: number): string {
@@ -586,6 +597,10 @@ export default function App() {
         if (next.length >= MAX_FILES) {
           setError(`Mỗi tin chỉ gửi tối đa ${MAX_FILES} tệp`);
           break;
+        }
+        if (isMediaFile(file) && next.filter((item) => isMediaFile(item.file)).length >= MAX_MEDIA_FILES) {
+          setError(`Mỗi tin chỉ gửi tối đa ${MAX_MEDIA_FILES} ảnh, PDF hoặc Word`);
+          continue;
         }
         if (file.size > MAX_FILE_BYTES) {
           setError(`«${file.name}» quá nặng (tối đa 8 MB)`);
@@ -1335,7 +1350,7 @@ export default function App() {
           <p className="composer-note">
             {draftFiles.some((item) => /\.pdf$/i.test(item.file.name) || item.file.type === "application/pdf")
               ? "Peto đọc lớp chữ trong PDF và dẫn số trang. PDF ảnh scan chưa có chữ cần OCR trước nhé."
-              : "Ảnh, PDF, Word (.docx) và tệp chữ · tối đa 4 tệp, 8 MB/tệp, tổng 16 MB."}
+              : "Tệp chữ/code tối đa 16 · ảnh, PDF, Word tối đa 4 · 8 MB/tệp, tổng 16 MB."}
           </p>
         </form>
       </main>

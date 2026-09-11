@@ -199,6 +199,20 @@ it('menu dấu cộng chọn được tệp, đóng bằng Escape và bật lạ
   expect(vi.mocked(api.sendMessage).mock.calls[0][0].webSearch).toBe('auto');
 });
 
+it('allows many code files but keeps the image, PDF and Word cap', async () => {
+  await openApp();
+  const input = document.querySelector('input[type=file]') as HTMLInputElement;
+  const code = Array.from({ length: 5 }, (_, i) => new File(['x'], `mod${i}.py`, { type: 'text/x-python' }));
+  await userEvent.upload(input, code);
+  expect(screen.getByRole('button', { name: 'Gỡ mod4.py' })).toBeTruthy();
+  expect(screen.queryByText(/tối đa 4 ảnh, PDF hoặc Word/)).toBeNull();
+  const images = Array.from({ length: 5 }, (_, i) => new File(['x'], `anh${i}.png`, { type: 'image/png' }));
+  await userEvent.upload(input, images);
+  expect(screen.getByText(/Mỗi tin chỉ gửi tối đa 4 ảnh, PDF hoặc Word/)).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Gỡ anh3.png' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Gỡ anh4.png' })).toBeNull();
+});
+
 it('keeps image generation alive while navigating to chat and back', async () => {
   const generated = deferred<api.ImagineJob>();
   vi.mocked(api.createImagineJob).mockReturnValue(generated.promise);

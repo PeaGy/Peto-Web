@@ -144,7 +144,9 @@ MAX_INPUT_CHARS = _env_int("PETO_MAX_INPUT_CHARS", 32000, 100, 200000)
 
 # --- Tệp đính kèm --------------------------------------------------------
 UPLOAD_DIR = Path(os.getenv("PETO_UPLOAD_DIR", str(BASE_DIR / "data" / "uploads")))
-MAX_ATTACHMENTS = _env_int("PETO_MAX_ATTACHMENTS", 4, 1, 8)
+# Tệp chữ/code được gửi nhiều hơn; ảnh, PDF, Word vẫn bị giới hạn riêng.
+MAX_ATTACHMENTS = _env_int("PETO_MAX_ATTACHMENTS", 16, 1, 32)
+MAX_MEDIA_ATTACHMENTS = _env_int("PETO_MAX_MEDIA_ATTACHMENTS", 4, 1, 8)
 MAX_ATTACHMENT_BYTES = _env_int(
     "PETO_MAX_ATTACHMENT_BYTES", 8 * 1024 * 1024, 64 * 1024, 20 * 1024 * 1024
 )

@@ -319,9 +319,9 @@ Giới hạn cố ý của phần này:
 - Xóa hội thoại có xác nhận; danh sách có nút tải thêm các hội thoại cũ hơn 50.
 - Bảng Markdown và khối mã cuộn ngang; đọc tin cũ không bị kéo xuống mỗi đoạn
   trả lời mới. Giữ tông tím tối, thu gọn cột chat trên màn hình rộng.
-- Tối đa 4 tệp/tin, 8 MB/tệp, tổng 16 MB theo cấu hình mặc định. Ảnh, lớp chữ PDF,
-  phần thân và bảng Word (.docx), tệp chữ được chuyển vào ngữ cảnh AI.
-  Tệp được kiểm tra và chỉ chủ sở hữu đọc được.
+- Tối đa 16 tệp/tin, trong đó ảnh, PDF và Word tối đa 4; 8 MB/tệp, tổng 16 MB
+  theo cấu hình mặc định. Ảnh, lớp chữ PDF, phần thân và bảng Word (.docx),
+  tệp chữ/code được chuyển vào ngữ cảnh AI. Tệp được kiểm tra và chỉ chủ sở hữu đọc được.
 
 ## Đọc tài liệu
 
@@ -334,7 +334,8 @@ hoặc **Chưa đọc được**. Bấm trạng thái để xem chi tiết, bấ
   tự gán số trang. Peto được hướng dẫn dẫn tên tệp và vị trí khi trả lời.
 - Nội dung đã trích lưu trong SQLite riêng của web, dùng lại khi hỏi tiếp trong
   phạm vi lịch sử gần nhất (mặc định 20 tin). Tệp gửi từ bản cũ được đọc dần khi
-  hỏi tiếp, tối đa 4 tệp mỗi lượt tính cả tệp mới. Xóa hội thoại xóa cả bản trích.
+  hỏi tiếp, tối đa 16 tệp mỗi lượt tính cả tệp mới (ảnh, PDF, Word vẫn tối đa 4).
+  Xóa hội thoại xóa cả bản trích.
 - Mặc định đọc tối đa 100 trang PDF, 80.000 ký tự/tệp, 160.000 ký tự tài liệu
   cho cả lượt. Ưu tiên tệp mới, chia phần còn lại giữa các tệp cùng tin nhắn;
   Peto nhận thông báo khi nội dung bị cắt. Tài liệu dài nên chia riêng phần cần hỏi.
