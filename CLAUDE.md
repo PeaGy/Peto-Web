@@ -15,6 +15,10 @@ allowlist.
 
 ## Language convention
 
+Agent/Work planning context is recorded in [PETO_AGENT_PLAN.md](PETO_AGENT_PLAN.md).
+It distinguishes agreed direction from open implementation choices and does not
+authorize deployment. Consult it when continuing Agent/Work discussions or work.
+
 **Every comment, docstring, log message, error message, and user-facing string in this
 codebase is written in Vietnamese.** Keep it that way when adding code — an English error
 string would be visibly out of place in the UI. Identifiers, type names and this file stay
