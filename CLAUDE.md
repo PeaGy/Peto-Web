@@ -299,6 +299,10 @@ half-configured setups log a warning at startup rather than failing silently.
   the message (the `meta` event). Stop, error and disconnect all keep the draft.
 - Modals are native `<dialog>` with `showModal()`; `tests/setup.ts` polyfills those methods
   for jsdom.
+- An empty chat puts greeting + composer together mid-screen on desktop
+  (`.chat.empty-state`); phones keep the composer docked. Only the **first send** slides
+  the composer down (FLIP via `element.animate` in `App.tsx`); opening a conversation or
+  starting a new one switches instantly on purpose — those are frequent navigation.
 - Per-user preferences (effort, theme, imagine quality/resolution/ratio/count) live in
   `localStorage` behind try/catch helpers. In-flight Imagine state lives in component state,
   so it survives switching tabs but not a page reload.

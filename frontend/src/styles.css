@@ -29,6 +29,7 @@
   /* Đường cong mạnh cho UI, lấy nguyên từ bộ chuẩn — đừng tự chế thêm. */
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
   color-scheme: dark;
 }
 
@@ -399,13 +400,12 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   max-width: 440px;
 }
 .welcome h1 { color: var(--text); font-size: 22px; margin: 8px 0 0; text-wrap: balance; }
-.welcome p { margin: 0; }
 .welcome-hints {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
   gap: 8px;
-  margin-top: 10px;
+  margin-top: 14px;
 }
 .welcome-hints button {
   padding: 6px 10px;
@@ -418,6 +418,21 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   cursor: pointer;
 }
 .welcome-hints button:hover { color: var(--text); border-color: var(--accent); }
+
+/* Cuộc trò chuyện còn trống: lời chào và ô nhắn đứng chung một khối giữa màn
+   hình như Claude, hơi lệch lên trên cho cân mắt; gợi ý nằm dưới ô nhắn. Canh
+   giữa bằng margin auto chứ không justify-content: center, để cửa sổ thấp thì
+   khối này tràn xuống dưới chứ không bị cắt mất phần đầu.
+   Điện thoại giữ ô nhắn ở đáy cho dễ với tay và không bị bàn phím che. */
+@media (min-width: 721px) {
+  .chat.empty-state { padding-bottom: 10vh; }
+  .chat.empty-state > .messages { flex: none; overflow: visible; margin-top: auto; }
+  .chat.empty-state > .composer-wrap { margin-bottom: auto; }
+  .chat.empty-state .welcome { flex-direction: row; gap: 14px; max-width: 100%; text-align: left; }
+  .chat.empty-state .welcome .avatar { width: 44px; height: 44px; }
+  .chat.empty-state .welcome h1 { margin: 0; font-size: 30px; font-weight: 600; letter-spacing: -0.01em; }
+  .chat.empty-state .composer-note { text-align: center; }
+}
 
 .bubble { overflow-wrap: anywhere; }
 
@@ -891,7 +906,9 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   .menu-btn { display: grid; }
   .sidebar-toggle { display: none; }
   .bubble.user { max-width: 92%; }
-  .composer-wrap { padding: 10px 12px 16px; }
+  /* Ô nhắn ở đáy nên gợi ý đứng ngay trên nó, trong tầm ngón cái. */
+  .composer-wrap { display: flex; flex-direction: column; padding: 10px 12px 16px; }
+  .composer-wrap .welcome-hints { order: -1; margin: 0 0 10px; }
 }
 
 @media (max-width: 420px) {

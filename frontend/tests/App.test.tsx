@@ -788,6 +788,74 @@ describe('Lời chào theo giờ', () => {
   });
 });
 
+describe('Bố cục màn hình trống', () => {
+  const originalMatchMedia = window.matchMedia;
+  let animate: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    animate = vi.fn();
+    // jsdom không có Web Animations API và không tính bố cục, nên giả cả hai: ô
+    // nhắn "ở giữa" (top 400) khi còn trống, "ở đáy" (top 700) khi đã có tin.
+    Object.defineProperty(HTMLElement.prototype, 'animate', { value: animate, configurable: true, writable: true });
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(() => {
+      const top = document.querySelector('main.chat')?.classList.contains('empty-state') ? 400 : 700;
+      return { top, bottom: top, left: 0, right: 0, width: 0, height: 0, x: 0, y: top, toJSON() {} } as DOMRect;
+    });
+    // Như máy chủ thật: meta xác nhận đã lưu tin, thiếu nó App trả lại danh sách cũ.
+    vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers) => {
+      handlers.onMeta?.('C', 'low', row('Chào Peto'));
+      handlers.onDone?.();
+    });
+  });
+  afterEach(() => {
+    delete (HTMLElement.prototype as { animate?: unknown }).animate;
+    window.matchMedia = originalMatchMedia;
+  });
+
+  const send = (text: string) => {
+    fireEvent.change(screen.getByPlaceholderText('Nhắn cho Peto…'), { target: { value: text } });
+    fireEvent.click(screen.getByRole('button', { name: 'Gửi', exact: true }));
+  };
+
+  it('còn trống thì gợi ý nằm cùng ô nhắn, gửi tin đầu là về bố cục thường', async () => {
+    await openApp();
+    const main = document.querySelector('main.chat')!;
+    expect(main.classList.contains('empty-state')).toBe(true);
+    const hint = screen.getByRole('button', { name: 'Hôm nay cậu thế nào?' });
+    expect(hint.closest('form')).toBe(screen.getByPlaceholderText('Nhắn cho Peto…').closest('form'));
+    send('Chào Peto');
+    await waitFor(() => expect(api.sendMessage).toHaveBeenCalled());
+    expect(main.classList.contains('empty-state')).toBe(false);
+    expect(screen.queryByRole('button', { name: 'Hôm nay cậu thế nào?' })).toBeNull();
+  });
+
+  it('gửi tin đầu thì ô nhắn trượt từ giữa xuống đáy', async () => {
+    await openApp();
+    send('Chào Peto');
+    await waitFor(() => expect(animate).toHaveBeenCalledTimes(1));
+    expect(animate.mock.calls[0][0]).toEqual([{ transform: 'translateY(-300px)' }, { transform: 'none' }]);
+    expect(animate.mock.calls[0][1]).toMatchObject({ duration: 300 });
+  });
+
+  it('bật giảm chuyển động thì chỉ hiện dần, không trượt', async () => {
+    window.matchMedia = vi.fn((query: string) => ({ matches: query.includes('reduce'), media: query,
+      addEventListener: vi.fn(), removeEventListener: vi.fn() })) as unknown as typeof window.matchMedia;
+    await openApp();
+    send('Chào Peto');
+    await waitFor(() => expect(animate).toHaveBeenCalledTimes(1));
+    expect(animate.mock.calls[0][0]).toEqual([{ opacity: 0 }, { opacity: 1 }]);
+  });
+
+  it('mở hội thoại từ màn hình trống thì đổi ngay, không hiệu ứng', async () => {
+    vi.mocked(api.getMessages).mockResolvedValue([row('Nội dung A')]);
+    await openApp();
+    fireEvent.click(screen.getByRole('button', { name: 'A', exact: true }));
+    await screen.findByText('Nội dung A');
+    expect(document.querySelector('main.chat')!.classList.contains('empty-state')).toBe(false);
+    expect(animate).not.toHaveBeenCalled();
+  });
+});
+
 it('loads conversations beyond the first 50', async () => {
   const first = Array.from({length:50}, (_, i) => conversation(i === 0 ? 'A' : `Chat ${i}`));
   vi.mocked(api.listConversations).mockImplementation(async (offset = 0) => offset === 0

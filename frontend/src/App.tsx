@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
@@ -464,6 +464,11 @@ export default function App() {
   const messagesRef = useRef<HTMLDivElement>(null);
   const deleteDialogRef = useRef<HTMLDialogElement>(null);
   const settingsDialogRef = useRef<HTMLDialogElement>(null);
+  const composerRef = useRef<HTMLFormElement>(null);
+  const composerBoxRef = useRef<HTMLDivElement>(null);
+  // Chỗ ô nhắn đứng lúc còn ở giữa màn hình, đo ngay trước khi gửi tin đầu.
+  const composerFrom = useRef<number | null>(null);
+  const composerMove = useRef<Animation | null>(null);
   const authVersion = useRef(0);
 
   useEffect(() => {
@@ -676,6 +681,38 @@ export default function App() {
     }
   }
 
+  // Cuộc trò chuyện còn trống thì lời chào và ô nhắn đứng chung giữa màn hình như
+  // Claude; có tin nhắn là ô nhắn về đáy (CSS .chat.empty-state).
+  const emptyChat = messages.length === 0 && !streaming && !loadingConversation && !loadFailed;
+
+  // Chỉ lần gửi tin đầu mới trượt ô nhắn xuống (FLIP): mắt người dùng đang ở đúng
+  // ô đó, để nó nhảy cóc là mất dấu. Mở hội thoại hay tạo cuộc mới là điều hướng,
+  // làm nhiều lần trong ngày, nên đổi ngay không hiệu ứng.
+  useLayoutEffect(() => {
+    const from = composerFrom.current;
+    composerFrom.current = null;
+    if (emptyChat) {
+      composerMove.current?.cancel();
+      return;
+    }
+    const form = composerRef.current;
+    const box = composerBoxRef.current;
+    if (from === null || !form || !box || typeof form.animate !== "function") return;
+    const distance = from - box.getBoundingClientRect().top;
+    // Điện thoại giữ ô nhắn ở đáy cả hai lúc, nên không có gì để trượt.
+    if (Math.abs(distance) < 1) return;
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches) {
+      // Giảm chuyển động: bỏ quãng trượt, chỉ để ô nhắn hiện dần ở chỗ mới.
+      composerMove.current = form.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 200, easing: "ease" });
+      return;
+    }
+    const easing = getComputedStyle(document.documentElement).getPropertyValue("--ease-in-out").trim();
+    composerMove.current = form.animate(
+      [{ transform: `translateY(${distance}px)` }, { transform: "none" }],
+      { duration: 300, easing: easing || "ease-in-out" },
+    );
+  }, [emptyChat]);
+
   if (auth === null) {
     return <div className="boot">Đang tải…</div>;
   }
@@ -819,6 +856,8 @@ export default function App() {
     const previousMessages = messages;
     setError(null);
     setNotice(null);
+    // Tin đầu của cuộc mới: nhớ chỗ ô nhắn đang đứng để trượt nó xuống đáy.
+    if (emptyChat) composerFrom.current = composerBoxRef.current?.getBoundingClientRect().top ?? null;
     setStreaming(true);
     setStopping(false);
     nearBottom.current = true;
@@ -1143,7 +1182,7 @@ export default function App() {
           onFocusHandled={clearFocusJob}
         />
       )}
-      <main className="chat" hidden={view !== "chat"}>
+      <main className={emptyChat ? "chat empty-state" : "chat"} hidden={view !== "chat"}>
         <button
           type="button"
           className="menu-btn chat-menu"
@@ -1164,16 +1203,10 @@ export default function App() {
             <p>Chưa tải được nội dung hội thoại.</p>
             <button className="load-more" onClick={() => conversationId && void openConversation(conversationId)}>Thử mở lại</button>
           </div>}
-          {messages.length === 0 && !streaming && !loadingConversation && !loadFailed && (
+          {emptyChat && (
             <div className="welcome">
               <PetoAvatar info={appInfo} big />
               <Greeting name={auth.user?.nickname?.trim() || auth.user?.display_name || "cậu"} />
-              <p>Nhắn gì đó, gửi ảnh, hoặc đính kèm tệp — Peto đang nghe đây.</p>
-              <div className="welcome-hints">
-                {["Hôm nay cậu thế nào?", "Giải thích giúp mình một bài khó", "Cùng lên kế hoạch cuối tuần nhé"].map((hint) => (
-                  <button key={hint} type="button" onClick={() => { setDraft(hint); textareaRef.current?.focus(); }}>{hint}</button>
-                ))}
-              </div>
             </div>
           )}
 
@@ -1268,6 +1301,7 @@ export default function App() {
         </div>}
 
         <form
+          ref={composerRef}
           className={dragging ? "composer-wrap dragging" : "composer-wrap"}
           onSubmit={(event) => {
             event.preventDefault();
@@ -1293,7 +1327,7 @@ export default function App() {
         >
           {dragging && <div className="drop-hint">Thả ảnh hoặc tệp vào đây</div>}
 
-          <div className="composer">
+          <div className="composer" ref={composerBoxRef}>
             {draftFiles.length > 0 && (
               <ul className="attach-list">
                 {draftFiles.map((item) => (
@@ -1374,6 +1408,13 @@ export default function App() {
               )}
             </div>
           </div>
+          {emptyChat && (
+            <div className="welcome-hints">
+              {["Hôm nay cậu thế nào?", "Giải thích giúp mình một bài khó", "Cùng lên kế hoạch cuối tuần nhé"].map((hint) => (
+                <button key={hint} type="button" onClick={() => { setDraft(hint); textareaRef.current?.focus(); }}>{hint}</button>
+              ))}
+            </div>
+          )}
           <p className="composer-note">
             {draftFiles.some((item) => /\.pdf$/i.test(item.file.name) || item.file.type === "application/pdf")
               ? "Peto đọc lớp chữ trong PDF và dẫn số trang. PDF ảnh scan chưa có chữ cần OCR trước nhé."
