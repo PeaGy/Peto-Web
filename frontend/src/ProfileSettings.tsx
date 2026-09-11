@@ -13,10 +13,12 @@ const FIELDS = Object.keys(EMPTY) as (keyof Profile)[];
  * đang user-select: none, và iOS Safari có lỗi khiến ô nhập nằm trong phần tử
  * như vậy không gõ hay bôi chọn được chữ.
  */
-export default function ProfileSettings({ open, avatar, onUnauthorized }: {
+export default function ProfileSettings({ open, avatar, onUnauthorized, onSaved }: {
   open: boolean;
   avatar: ReactNode;
   onUnauthorized: () => void;
+  /** Báo bản vừa lưu lên App, để lời chào ở màn hình trống đổi tên ngay. */
+  onSaved?: (profile: Profile) => void;
 }) {
   const [data, setData] = useState<ProfileData | null>(null);
   const [form, setForm] = useState<Profile>(EMPTY);
@@ -75,6 +77,7 @@ export default function ProfileSettings({ open, avatar, onUnauthorized }: {
       const next = await saveProfile(form);
       setForm(next);
       setSaved(next);
+      onSaved?.(next);
       setJustSaved(true);
       window.clearTimeout(savedTimer.current);
       savedTimer.current = window.setTimeout(() => setJustSaved(false), 2500);

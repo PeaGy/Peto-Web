@@ -272,6 +272,12 @@ rules above it. Validation errors are Vietnamese 400s, not Pydantic's English 42
 every `<label>` is `user-select: none` for tap handling, and iOS Safari can refuse to
 edit inputs nested inside such an element.
 
+`/api/auth/me` also returns the profile's `nickname`, so the empty-state greeting can use
+it on first paint without a second request or a visible name swap. The greeting line
+comes from `frontend/src/timeGreeting.ts`: a few lines per time-of-day slot on the
+**browser** clock (unlike chat, which trusts the server clock), re-picked when the tab
+becomes visible again in a new slot or day.
+
 ### Discord memory gateway
 
 `discord_memory.py` calls the bot's gateway over loopback. It is **one-way, read-only, and

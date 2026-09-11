@@ -398,7 +398,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   gap: 8px;
   max-width: 440px;
 }
-.welcome h1 { color: var(--text); font-size: 22px; margin: 8px 0 0; }
+.welcome h1 { color: var(--text); font-size: 22px; margin: 8px 0 0; text-wrap: balance; }
 .welcome p { margin: 0; }
 .welcome-hints {
   display: flex;

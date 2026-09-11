@@ -369,6 +369,9 @@ thích ngắn gọn, đi thẳng vào vấn đề".
 - Hướng dẫn riêng được đóng khung và ghi rõ không thay được quy tắc của Peto; người
   dùng không thể tự chèn dấu kết thúc khung để viết tiếp như lệnh hệ thống.
 - Chỉ dùng cho Peto trên web này, không gửi sang bot Discord.
+- Lời chào ở màn hình trống gọi bằng tên này (chưa đặt thì dùng tên tài khoản) và
+  đổi theo giờ trên máy: sáng, trưa, chiều, tối, khuya; ban ngày thỉnh thoảng có câu
+  theo thứ trong tuần.
 - Ảnh đại diện lấy từ Discord/Google, khách thì hiện chữ cái đầu; chưa tải được ảnh
   riêng lên.
 

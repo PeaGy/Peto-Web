@@ -406,6 +406,7 @@ async def me(request: Request) -> dict:
     user = await db.get_user(owner)
     if not user:
         return anonymous
+    profile = await db.get_profile(owner)
 
     return {
         "authenticated": True,
@@ -419,6 +420,10 @@ async def me(request: Request) -> dict:
             "username": user["username"],
             "display_name": user["display_name"],
             "avatar_url": user["avatar_url"],
+            # Tên tự đặt trong Cài đặt → Hồ sơ. Lời chào ở màn hình trống dùng
+            # nó ngay lúc tải trang; gửi kèm ở đây thì khỏi tải hồ sơ riêng rồi
+            # thấy tên nhảy từ tên Discord sang.
+            "nickname": profile["nickname"],
         },
     }
 

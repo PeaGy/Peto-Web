@@ -20,6 +20,7 @@ import yaml from "highlight.js/lib/languages/yaml";
 import Imagine from "./Imagine";
 import EffortMenu from "./EffortMenu";
 import ProfileSettings from "./ProfileSettings";
+import { fillName, greetingKey, pickGreeting } from "./timeGreeting";
 import ComposerMenu from "./ComposerMenu";
 import WebSources, { GlobeIcon, safeSources } from "./WebSources";
 import {
@@ -383,6 +384,31 @@ function PetoAvatar({ info, big }: { info: AppInfo | null; big?: boolean }) {
     );
   }
   return <span className={className}>{(info?.name ?? "Peto").charAt(0)}</span>;
+}
+
+/**
+ * Lời chào đổi theo giờ trên máy, như Claude. Chọn một câu mỗi lần màn hình
+ * trống hiện ra để chữ không nhảy trong lúc đang đọc. Quay lại tab khi đã sang
+ * buổi khác hoặc ngày khác thì chọn lại, kẻo sáng ra vẫn còn "Khuya rồi".
+ */
+function Greeting({ name }: { name: string }) {
+  const [greeting, setGreeting] = useState(() => {
+    const now = new Date();
+    return { key: greetingKey(now), text: pickGreeting(now) };
+  });
+
+  useEffect(() => {
+    function refresh() {
+      if (document.visibilityState !== "visible") return;
+      const now = new Date();
+      const key = greetingKey(now);
+      setGreeting((prev) => (prev.key === key ? prev : { key, text: pickGreeting(now) }));
+    }
+    document.addEventListener("visibilitychange", refresh);
+    return () => document.removeEventListener("visibilitychange", refresh);
+  }, []);
+
+  return <h1>{fillName(greeting.text, name)}</h1>;
 }
 
 export default function App() {
@@ -1141,7 +1167,7 @@ export default function App() {
           {messages.length === 0 && !streaming && !loadingConversation && !loadFailed && (
             <div className="welcome">
               <PetoAvatar info={appInfo} big />
-              <h1>Chào {auth.user?.display_name}</h1>
+              <Greeting name={auth.user?.nickname?.trim() || auth.user?.display_name || "cậu"} />
               <p>Nhắn gì đó, gửi ảnh, hoặc đính kèm tệp — Peto đang nghe đây.</p>
               <div className="welcome-hints">
                 {["Hôm nay cậu thế nào?", "Giải thích giúp mình một bài khó", "Cùng lên kế hoạch cuối tuần nhé"].map((hint) => (
@@ -1382,6 +1408,9 @@ export default function App() {
             open={settingsOpen}
             avatar={<AccountAvatar user={auth.user} size={40} />}
             onUnauthorized={handleUnauthorized}
+            onSaved={(profile) => setAuth((prev) => (prev?.user
+              ? { ...prev, user: { ...prev.user, nickname: profile.nickname } }
+              : prev))}
           />
 
           <section className="settings-section">

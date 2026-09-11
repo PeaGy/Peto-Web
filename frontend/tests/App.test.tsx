@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from '../src/App';
 import * as api from '../src/api';
 
@@ -314,7 +314,7 @@ describe('Conversation navigation', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Trò chuyện', exact: true }));
     await act(async () => a.resolve([row('Nội dung cũ')]));
     expect(screen.queryByText('Nội dung cũ')).toBeNull();
-    expect(screen.getByRole('heading', { name: 'Chào Demo' })).toBeTruthy();
+    expect(screen.getByRole('heading', { level: 1, name: /Demo/ })).toBeTruthy();
   });
 
   it('blocks send while history failed and offers to reload it', async () => {
@@ -636,7 +636,7 @@ describe('Thanh bên', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Trò chuyện', exact: true }));
     expect(screen.queryByText('Nội dung A')).toBeNull();
-    expect(screen.getByRole('heading', { name: 'Chào Demo' })).toBeTruthy();
+    expect(screen.getByRole('heading', { level: 1, name: /Demo/ })).toBeTruthy();
   });
 });
 
@@ -735,6 +735,56 @@ describe('Hồ sơ trong Cài đặt', () => {
     await openSettings();
     fireEvent.click(await screen.findByRole('button', { name: 'Thử lại' }));
     expect((await screen.findByLabelText('Họ và tên') as HTMLInputElement).value).toBe('Nguyễn An');
+  });
+});
+
+describe('Lời chào theo giờ', () => {
+  // Chỉ giả lập Date; timer vẫn chạy thật để findBy/waitFor không bị treo.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(2026, 8, 11, 20, 30)); // tối thứ Sáu
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it('chào theo buổi trên máy thay cho "Chào tên"', async () => {
+    await openApp();
+    expect(screen.getByRole('heading', { level: 1, name: 'Chào buổi tối, Demo' })).toBeTruthy();
+  });
+
+  it('gọi bằng tên đặt trong Hồ sơ nếu có', async () => {
+    vi.mocked(api.getAuthState).mockResolvedValue({ authenticated: true, login_configured: true,
+      providers: { discord: true, google: true, guest: true },
+      user: { id: 'acc-111', provider: 'discord', username: 'demo', display_name: 'Demo', avatar_url: '', nickname: 'Bé Na' } });
+    await openApp();
+    expect(screen.getByRole('heading', { level: 1, name: 'Chào buổi tối, Bé Na' })).toBeTruthy();
+  });
+
+  it('lưu tên mới trong Hồ sơ là lời chào đổi theo ngay', async () => {
+    vi.mocked(api.saveProfile).mockResolvedValue({ full_name: '', nickname: 'Bé An', occupation: '', instructions: '' });
+    await openApp();
+    fireEvent.click(screen.getByRole('button', { name: /Cài đặt/ }));
+    fireEvent.change(await screen.findByLabelText('Peto nên gọi bạn là gì?'), { target: { value: 'Bé An' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Lưu thay đổi' }));
+    await screen.findByText('Đã lưu');
+    expect(screen.getByRole('heading', { level: 1, name: 'Chào buổi tối, Bé An' })).toBeTruthy();
+  });
+
+  it('quay lại tab khi đã sang buổi khác thì chọn câu hợp giờ', async () => {
+    await openApp();
+    vi.mocked(Math.random).mockReturnValue(0.99);
+    const comeBack = () => act(() => { document.dispatchEvent(new Event('visibilitychange')); });
+
+    vi.setSystemTime(new Date(2026, 8, 11, 21, 45)); // vẫn buổi tối: giữ câu cũ
+    comeBack();
+    expect(screen.getByRole('heading', { level: 1, name: 'Chào buổi tối, Demo' })).toBeTruthy();
+
+    vi.setSystemTime(new Date(2026, 8, 12, 7, 0)); // sáng thứ Bảy
+    comeBack();
+    expect(screen.getByRole('heading', { level: 1, name: 'Cuối tuần vui chứ, Demo?' })).toBeTruthy();
   });
 });
 

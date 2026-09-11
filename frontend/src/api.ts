@@ -76,6 +76,8 @@ export interface AccountUser {
   username: string;
   display_name: string;
   avatar_url: string;
+  /** Tên tự đặt trong Cài đặt → Hồ sơ; rỗng nếu chưa đặt. */
+  nickname?: string;
 }
 
 export interface AuthState {
