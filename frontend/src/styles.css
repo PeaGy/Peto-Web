@@ -1556,3 +1556,33 @@ button:focus-visible, a:focus-visible, .table-scroll:focus-visible {
   .composer textarea,
   .effort-select select { font-size: 16px; }
 }
+
+/* ---------- Chạm trên điện thoại ---------- */
+/* Bỏ lớp phủ màu mà trình duyệt tự vẽ lên phần tử vừa chạm (Chrome Android và
+   Samsung Internet vẽ màu xanh). Thuộc tính này kế thừa, đặt ở gốc là đủ. */
+html { -webkit-tap-highlight-color: transparent; }
+
+/* Giữ ngón tay trên nút là trình duyệt bôi chọn chữ trên nhãn, và vùng chọn cũng
+   xanh. Chỉ chặn trên thứ để bấm: chữ trong tin nhắn vẫn phải bôi chọn và sao
+   chép được như thường. Không <label> nào ở đây bọc ô nhập chữ. */
+button,
+summary,
+label,
+.discord-button,
+.alt-login { -webkit-user-select: none; user-select: none; }
+
+/* Bỏ lớp phủ của trình duyệt thì app phải tự báo "đã nhận cú bấm". Nút gọn co
+   nhẹ khi nhấn. Các hàng dài (mục điều hướng, dòng hội thoại, ô tài khoản, mục
+   trong menu dấu +) chỉ đổi nền như lúc rê chuột, vì co cả một hàng trông giật;
+   lớp phủ ngăn kéo thì phủ kín màn hình nên càng không được co. */
+:where(button, .discord-button, .alt-login) { transition: transform 160ms var(--ease-out); }
+
+:where(button, .discord-button, .alt-login):active:not(
+  :disabled, .nav-item, .conv-open, .account, .thinking-toggle, .sidebar-backdrop,
+  .composer-options > button
+) { transform: scale(0.97); }
+
+/* Giảm chuyển động: vẫn co để báo đã bấm, chỉ bỏ phần chạy chuyển tiếp. */
+@media (prefers-reduced-motion: reduce) {
+  :where(button, .discord-button, .alt-login) { transition: none; }
+}
