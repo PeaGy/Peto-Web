@@ -622,6 +622,51 @@ describe('Thanh bên', () => {
   });
 });
 
+describe('Chọn mức suy nghĩ', () => {
+  beforeEach(() => localStorage.removeItem('peto-effort'));
+
+  it('mở menu, đánh dấu mức đang chọn và đổi được mức', async () => {
+    await openApp();
+    const trigger = screen.getByRole('button', { name: 'Mức suy nghĩ: Tự động' });
+    fireEvent.click(trigger);
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getAllByRole('menuitemradio').map((item) => item.textContent))
+      .toEqual(['Tự động', 'Thấp', 'Trung bình', 'Cao']);
+    expect(screen.getByRole('menuitemradio', { name: 'Tự động' }).getAttribute('aria-checked')).toBe('true');
+
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'Cao' }));
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Mức suy nghĩ: Cao' })).toBeTruthy();
+    expect(localStorage.getItem('peto-effort')).toBe('high');
+  });
+
+  it('dùng được bằng bàn phím, Escape trả con trỏ về nút', async () => {
+    await openApp();
+    const trigger = screen.getByRole('button', { name: /Mức suy nghĩ/ });
+    fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+    const auto = await screen.findByRole('menuitemradio', { name: 'Tự động' });
+    await waitFor(() => expect(document.activeElement).toBe(auto));
+    fireEvent.keyDown(auto, { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(screen.getByRole('menuitemradio', { name: 'Thấp' }));
+    fireEvent.keyDown(auto, { key: 'End' });
+    expect(document.activeElement).toBe(screen.getByRole('menuitemradio', { name: 'Cao' }));
+    fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it('gửi đúng mức đã chọn lên máy chủ', async () => {
+    vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers) => { handlers.onDone?.(); });
+    await openApp();
+    fireEvent.click(screen.getByRole('button', { name: /Mức suy nghĩ/ }));
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'Trung bình' }));
+    fireEvent.change(screen.getByPlaceholderText('Nhắn cho Peto…'), { target: { value: 'Giải giúp' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Gửi', exact: true }));
+    await waitFor(() => expect(api.sendMessage).toHaveBeenCalled());
+    expect(vi.mocked(api.sendMessage).mock.calls[0][0]).toMatchObject({ effort: 'medium' });
+  });
+});
+
 it('loads conversations beyond the first 50', async () => {
   const first = Array.from({length:50}, (_, i) => conversation(i === 0 ? 'A' : `Chat ${i}`));
   vi.mocked(api.listConversations).mockImplementation(async (offset = 0) => offset === 0

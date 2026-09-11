@@ -18,6 +18,7 @@ import typescript from "highlight.js/lib/languages/typescript";
 import xml from "highlight.js/lib/languages/xml";
 import yaml from "highlight.js/lib/languages/yaml";
 import Imagine from "./Imagine";
+import EffortMenu from "./EffortMenu";
 import ComposerMenu from "./ComposerMenu";
 import WebSources, { GlobeIcon, safeSources } from "./WebSources";
 import {
@@ -923,7 +924,6 @@ export default function App() {
   }
 
   const canSend = (draft.trim().length > 0 || draftFiles.length > 0) && !streaming && !loadingConversation && !loadFailed;
-  const effortMeta = EFFORTS.find((item) => item.value === effort) ?? EFFORTS[0];
 
   // Như Grok: đang ở Trò chuyện mà bấm lại thì mở cuộc mới. Từ Tạo ảnh quay về
   // thì giữ nguyên cuộc đang dở, vì người ta hay qua lại giữa hai tab.
@@ -1318,22 +1318,7 @@ export default function App() {
                 <ComposerMenu disabled={streaming || view !== "chat"} webDisabled={webSearch === "off"}
                   onAttach={() => fileRef.current?.click()} onToggleWeb={() => setWebSearch((mode) => mode === "off" ? "auto" : "off")} />
 
-                <label className="effort-select">
-                  <span className="effort-label">Suy nghĩ</span>
-                  <select
-                    value={effort}
-                    aria-label="Suy nghĩ"
-                    disabled={streaming}
-                    title={effortMeta.hint}
-                    onChange={(event) => setEffort(event.target.value as Effort)}
-                  >
-                    {EFFORTS.map((item) => (
-                      <option key={item.value} value={item.value}>
-                        {item.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <EffortMenu value={effort} options={EFFORTS} disabled={streaming} onChange={setEffort} />
               </div>
 
               {streaming ? (

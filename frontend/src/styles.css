@@ -1573,16 +1573,96 @@ label,
 
 /* Bỏ lớp phủ của trình duyệt thì app phải tự báo "đã nhận cú bấm". Nút gọn co
    nhẹ khi nhấn. Các hàng dài (mục điều hướng, dòng hội thoại, ô tài khoản, mục
-   trong menu dấu +) chỉ đổi nền như lúc rê chuột, vì co cả một hàng trông giật;
+   trong menu dấu + và menu mức suy nghĩ) chỉ đổi nền như lúc rê chuột, vì co cả một hàng trông giật;
    lớp phủ ngăn kéo thì phủ kín màn hình nên càng không được co. */
 :where(button, .discord-button, .alt-login) { transition: transform 160ms var(--ease-out); }
 
 :where(button, .discord-button, .alt-login):active:not(
   :disabled, .nav-item, .conv-open, .account, .thinking-toggle, .sidebar-backdrop,
-  .composer-options > button
+  .composer-options > button, .effort-option
 ) { transform: scale(0.97); }
 
 /* Giảm chuyển động: vẫn co để báo đã bấm, chỉ bỏ phần chạy chuyển tiếp. */
 @media (prefers-reduced-motion: reduce) {
   :where(button, .discord-button, .alt-login) { transition: none; }
+}
+
+/* ---------- Chọn mức suy nghĩ, kiểu menu của Grok ---------- */
+.effort-menu { position: relative; flex-shrink: 0; }
+
+.effort-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 10px 0 13px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--panel-2);
+  color: var(--muted);
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.effort-trigger:hover:not(:disabled),
+.effort-trigger[aria-expanded="true"] { color: var(--text); }
+
+.effort-trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.effort-chevron { transition: transform 180ms var(--ease-out); }
+.effort-trigger[aria-expanded="true"] .effort-chevron { transform: rotate(180deg); }
+
+/* Mọc ra từ chính cái nút: gốc biến đổi đặt ở góc dưới bên trái, sát nút,
+   chứ không bung ra từ giữa như một hộp thoại. */
+.effort-options {
+  position: absolute;
+  z-index: 20;
+  left: 0;
+  bottom: calc(100% + 8px);
+  width: min(236px, calc(100vw - 32px));
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  transform-origin: bottom left;
+  transition: opacity 180ms var(--ease-out), transform 180ms var(--ease-out);
+}
+
+@starting-style {
+  .effort-options { opacity: 0; transform: scale(0.95); }
+}
+
+.effort-heading { margin: 4px 10px 6px; color: var(--muted); font-size: 12px; }
+
+.effort-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  height: 40px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.effort-option svg { flex-shrink: 0; }
+.effort-option:hover { background: var(--panel-2); }
+.effort-option:focus-visible { background: var(--panel-2); outline: 2px solid var(--accent); outline-offset: -2px; }
+.effort-option-label { flex: 1; }
+.effort-check { color: var(--muted); }
+
+/* Giảm chuyển động: chỉ còn mờ dần. transform không nằm trong danh sách chuyển
+   tiếp nên scale(0.95) lúc bắt đầu nhảy thẳng về 1, không có chuyển động. */
+@media (prefers-reduced-motion: reduce) {
+  .effort-chevron { transition: none; }
+  .effort-options { transition: opacity 180ms ease; }
 }
