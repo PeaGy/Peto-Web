@@ -231,7 +231,7 @@ async def test_text_file_attachment_is_accepted(client):
         attachments=[{"name": "note.txt", "mime": "text/plain", "data": payload}],
     )
     assert events[-1]["type"] == "done"
-    conversation_id = events[0]["conversation_id"]
+    conversation_id = next(event["conversation_id"] for event in events if event["type"] == "meta")
     stored = await client.get(f"/api/conversations/{conversation_id}/messages")
     att = stored.json()["messages"][0]["attachments"][0]
     assert att["kind"] == "file"

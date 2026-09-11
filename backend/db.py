@@ -91,6 +91,10 @@ async def init_db() -> None:
             "ON attachments(conversation_id)"
         )
 
+        attachment_columns = await (await db.execute("PRAGMA table_info(attachments)")).fetchall()
+        if "document" not in {column[1] for column in attachment_columns}:
+            await db.execute("ALTER TABLE attachments ADD COLUMN document TEXT NOT NULL DEFAULT ''")
+
         # Danh tính đã được máy chủ xác minh qua OAuth Discord. Đây là chỗ
         # duy nhất ánh xạ người dùng web sang Discord user ID — và là nền cho
         # việc liên kết trí nhớ sau này, NẾU được duyệt. Không bao giờ nhận
@@ -314,7 +318,7 @@ async def _attach_files(db: aiosqlite.Connection, rows: list[dict]) -> list[dict
     placeholders = ",".join("?" * len(ids))
     cursor = await db.execute(
         f"""
-        SELECT id, message_id, filename, mime, kind, size, path, created_at
+        SELECT id, message_id, filename, mime, kind, size, path, created_at, document
           FROM attachments
          WHERE message_id IN ({placeholders})
          ORDER BY created_at, id
@@ -340,6 +344,7 @@ async def add_attachment(
     kind: str,
     size: int,
     path: str,
+    document: dict | None = None,
 ) -> None:
     now = time.time()
     async with aiosqlite.connect(DB_PATH) as db:
@@ -347,8 +352,8 @@ async def add_attachment(
             """
             INSERT INTO attachments (
                 id, owner, conversation_id, message_id, filename,
-                mime, kind, size, path, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                mime, kind, size, path, created_at, document
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 attachment_id,
@@ -361,6 +366,7 @@ async def add_attachment(
                 size,
                 path,
                 now,
+                json.dumps(document, ensure_ascii=False) if document is not None else "",
             ),
         )
         await db.commit()
@@ -380,6 +386,14 @@ async def get_attachment(owner: str, attachment_id: str) -> dict | None:
         )
         row = await cursor.fetchone()
         return dict(row) if row else None
+
+
+async def save_document(owner: str, attachment_id: str, document: dict) -> None:
+    """Lưu chữ cho tệp cũ, chỉ cập nhật tệp của đúng chủ sở hữu."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("UPDATE attachments SET document = ? WHERE id = ? AND owner = ?",
+                         (json.dumps(document, ensure_ascii=False), attachment_id, owner))
+        await db.commit()
 
 
 async def list_attachment_paths(conversation_id: str) -> list[str]:

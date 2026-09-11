@@ -1,6 +1,6 @@
 # Peto Web
 
-Giao diện chat riêng cho Peto: **chat chữ, xem ảnh và đọc tệp chữ**.
+Giao diện chat riêng cho Peto: **chat chữ, xem ảnh, đọc PDF, Word và tệp chữ**.
 
 Bot Discord (`Tracen Jukebox`) vẫn phát triển độc lập. Web có database riêng;
 có thể bật đọc bản tóm tắt trí nhớ từ bot qua Memory Gateway, không ghi ngược
@@ -319,12 +319,44 @@ Giới hạn cố ý của phần này:
 - Xóa hội thoại có xác nhận; danh sách có nút tải thêm các hội thoại cũ hơn 50.
 - Bảng Markdown và khối mã cuộn ngang; đọc tin cũ không bị kéo xuống mỗi đoạn
   trả lời mới. Giữ tông tím tối, thu gọn cột chat trên màn hình rộng.
-- Tối đa 4 tệp/tin, 8 MB/tệp, tổng 16 MB theo cấu hình mặc định. Ảnh và tệp chữ
-  được chuyển vào ngữ cảnh AI. **PDF chỉ được lưu để tải lại, chưa trích nội dung**;
-  giao diện nhắc rõ giới hạn này. Tệp được kiểm tra và chỉ chủ sở hữu đọc được.
+- Tối đa 4 tệp/tin, 8 MB/tệp, tổng 16 MB theo cấu hình mặc định. Ảnh, lớp chữ PDF,
+  phần thân và bảng Word (.docx), tệp chữ được chuyển vào ngữ cảnh AI.
+  Tệp được kiểm tra và chỉ chủ sở hữu đọc được.
+
+## Đọc tài liệu
+
+Bấm **+ → Thêm ảnh hoặc tệp**, chọn PDF, Word **.docx** hoặc tệp chữ rồi gửi
+câu hỏi, chẳng hạn “Tóm tắt tài liệu này” hoặc “So sánh hai bản kế hoạch”.
+Chat hiện tiến trình đọc; dưới mỗi tệp có **Đã đọc chữ**, **Đọc được một phần**
+hoặc **Chưa đọc được**. Bấm trạng thái để xem chi tiết, bấm tên tệp để tải lại.
+
+- PDF được trích lớp chữ kèm số trang. Word giữ thứ tự đoạn và bảng, không
+  tự gán số trang. Peto được hướng dẫn dẫn tên tệp và vị trí khi trả lời.
+- Nội dung đã trích lưu trong SQLite riêng của web, dùng lại khi hỏi tiếp trong
+  phạm vi lịch sử gần nhất (mặc định 20 tin). Tệp gửi từ bản cũ được đọc dần khi
+  hỏi tiếp, tối đa 4 tệp mỗi lượt tính cả tệp mới. Xóa hội thoại xóa cả bản trích.
+- Mặc định đọc tối đa 100 trang PDF, 80.000 ký tự/tệp, 160.000 ký tự tài liệu
+  cho cả lượt. Ưu tiên tệp mới, chia phần còn lại giữa các tệp cùng tin nhắn;
+  Peto nhận thông báo khi nội dung bị cắt. Tài liệu dài nên chia riêng phần cần hỏi.
+- Bộ đọc chạy trong tiến trình riêng, có thể dừng và có thời hạn 15 giây/tệp.
+  Word được kiểm tra kích thước nén/XML và chặn thực thể ngoài; PDF giới hạn
+  stream giải nén. Không chạy macro, tệp nhúng hoặc lệnh chứa trong tài liệu.
+- **Chưa OCR PDF dạng ảnh scan**, chưa xem ảnh/biểu đồ/bố cục gốc trong PDF hoặc
+  Word. Word chưa đọc đầu/chân trang, chú thích, tệp nhúng và định dạng **.doc** cũ.
+  PDF có mã hóa/mật khẩu cần gửi bản đã mở khóa. Tệp lỗi vẫn lưu để tải lại,
+  nhưng Peto nhận đúng trạng thái chưa đọc được.
+
+Khi cập nhật máy chủ, cài lại `backend/requirements.txt` để có `pypdf` và
+`defusedxml`, xây dựng lại frontend rồi khởi động lại backend. Cột lưu chữ được
+bổ sung tự động, giữ nguyên hội thoại cũ. Các giới hạn có trong `.env.example`.
+
+Đã kiểm tra trích chữ bằng PDF/Word mẫu, hỏi tiếp từ bản trích đã lưu, giới hạn
+giải nén, tệp lỗi/mã hóa, quyền riêng tư, dừng đọc và dữ liệu cũ. Đã thử tải tệp
+trên giao diện máy tính và điện thoại bằng máy chủ riêng với phản hồi giả;
+đợt này chưa kiểm chứng câu trả lời tài liệu bằng AI thật hoặc cập nhật VPS.
 
 ## Chưa có ở bước này
 
-Đọc nội dung PDF, giọng nói, nhân vật 3D, ghi hoặc đồng bộ trí nhớ
+OCR tài liệu scan, giọng nói, nhân vật 3D, ghi hoặc đồng bộ trí nhớ
 hai chiều với Discord. Chưa kiểm chứng chất lượng AI thật và hoạt động VPS trong
 đợt kiểm thử local nêu trên.

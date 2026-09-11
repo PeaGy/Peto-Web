@@ -7,6 +7,8 @@ python-dotenv
 httpx
 itsdangerous
 openai
+pypdf==6.18.0
+defusedxml==0.7.1
 
 # chỉ dùng khi chạy test
 pytest

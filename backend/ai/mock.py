@@ -121,7 +121,7 @@ class MockProvider(ChatProvider):
         if names:
             reply = (
                 f"Peto thấy cậu gửi kèm {', '.join(names)}. "
-                "Đang chạy phản hồi giả nên chưa đọc thật nội dung tệp đâu. "
+                "Bộ đọc xử lý tệp riêng; đang chạy phản hồi giả nên Peto chưa phân tích nội dung bằng AI thật. "
             ) + reply
 
         await asyncio.sleep(_CHUNK_DELAY)

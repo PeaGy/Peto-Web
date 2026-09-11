@@ -29,6 +29,7 @@ from pydantic import BaseModel, Field
 import attachments as attachment_lib
 import auth
 import db
+import document_reader
 import imagine_api
 import static_files
 from ai import ChatAttachment, ChatMessage, ProviderError, StreamChunk, get_provider
@@ -40,6 +41,7 @@ from chat_tools import resolve_browser_timezone, resolve_timezone, time_context
 from config import (
     ALLOWED_ORIGINS,
     MAX_ATTACHMENTS,
+    MAX_DOCUMENT_CONTEXT_CHARS,
     MAX_HISTORY_IMAGES,
     MAX_HISTORY_MESSAGES,
     MAX_INPUT_CHARS,
@@ -125,6 +127,7 @@ def _public_attachment(row: dict) -> dict:
         "kind": row["kind"],
         "size": row["size"],
         "url": f"/api/attachments/{row['id']}",
+        "document": document_reader.public_document(row.get("document")),
     }
 
 
@@ -162,6 +165,29 @@ def _title_from(text: str, files: list[attachment_lib.ValidatedAttachment]) -> s
 
 
 def _to_chat_messages(rows: list[dict]) -> list[ChatMessage]:
+    # Ưu tiên tệp mới; chia đều phần còn lại giữa các tệp cùng một tin nhắn.
+    excerpts: dict[str, str] = {}
+    remaining = MAX_DOCUMENT_CONTEXT_CHARS
+    for row in reversed(rows):
+        files = [item for item in row.get("attachments") or [] if item.get("kind") == "file"]
+        documents = {item["id"]: document_reader.cached_document(item.get("document")) for item in files}
+        lengths = {key: len(document.get("text", "")) if document else 0 for key, document in documents.items()}
+        allowances: dict[str, int] = {}
+        # Tệp ngắn chỉ lấy phần cần dùng, nhường chỗ còn lại cho tệp dài cùng lượt.
+        for index, key in enumerate(sorted(lengths, key=lengths.get)):
+            allowances[key] = min(lengths[key], remaining // (len(files) - index))
+            remaining -= allowances[key]
+        for item in files:
+            document = documents[item["id"]]
+            if document is None:
+                excerpts[item["id"]] = "Tệp chưa được đọc trong lượt này. Không suy đoán nội dung từ tên tệp."
+                continue
+            text = document.get("text", "")
+            excerpt = text[:allowances[item["id"]]]
+            notice = document["notice"]
+            if len(excerpt) < len(text):
+                notice += " Chỉ một phần hoặc không có nội dung tệp trong ngữ cảnh lượt này do tổng tài liệu quá dài. Nói rõ nếu thiếu phần cần hỏi."
+            excerpts[item["id"]] = f"[Trạng thái đọc: {notice}]\n{excerpt}"
     image_ids: list[str] = []
     for row in reversed(rows):
         for item in row.get("attachments") or []:
@@ -183,8 +209,8 @@ def _to_chat_messages(rows: list[dict]) -> list[ChatMessage]:
             try:
                 if item.get("kind") == "image" and item["id"] in load_images and path:
                     data_url = attachment_lib.as_data_url(path, item["mime"])
-                elif item.get("kind") == "file" and path:
-                    excerpt = attachment_lib.read_text_excerpt(path, item["mime"])
+                elif item.get("kind") == "file":
+                    excerpt = excerpts[item["id"]]
             except OSError:
                 logger.warning("Không đọc được tệp đính kèm %s", item.get("id"))
             attached.append(
@@ -205,6 +231,24 @@ def _to_chat_messages(rows: list[dict]) -> list[ChatMessage]:
             )
         )
     return out
+
+
+async def _read_legacy_documents(owner: str, rows: list[dict], budget: int) -> None:
+    """Bổ sung chữ cho tệp cũ khi hỏi tiếp, giới hạn việc đọc lại mỗi lượt."""
+    for row in reversed(rows):
+        for item in row.get("attachments") or []:
+            if item.get("kind") != "file" or document_reader.cached_document(item.get("document")):
+                continue
+            if budget <= 0:
+                return
+            budget -= 1
+            try:
+                data = await anyio.to_thread.run_sync(Path(item["path"]).read_bytes)
+                document = await document_reader.read_document(data, item["mime"])
+            except OSError:
+                document = document_reader.result("unreadable", "Không tìm thấy tệp đã lưu. Hãy gửi lại tài liệu nhé.")
+            await db.save_document(owner, item["id"], document)
+            item["document"] = document
 
 
 def sse(payload: dict) -> str:
@@ -377,13 +421,22 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner)):
                 # Từ chối cooldown/hàng chờ trước khi ghi bất kỳ tin nhắn nào.
                 if conversation_id and not await db.owns_conversation(owner, conversation_id):
                     raise ProviderError("Hội thoại đã bị xóa. Mở cuộc trò chuyện mới nhé.")
+                documents: list[dict | None] = []
+                document_count = sum(item.kind == "file" for item in files)
+                if document_count:
+                    yield sse({"type": "reading", "text": f"Peto đang đọc {document_count} tài liệu…"})
+                for item in files:
+                    documents.append(await document_reader.read_document(item.data, item.mime) if item.kind == "file" else None)
+                # Hội thoại có thể bị xóa trong lúc bộ đọc đang xử lý tệp.
+                if conversation_id and not await db.owns_conversation(owner, conversation_id):
+                    raise ProviderError("Hội thoại đã bị xóa. Mở cuộc trò chuyện mới nhé.")
                 with anyio.CancelScope(shield=True):
                     if not conversation_id:
                         conversation_id = await db.create_conversation(owner)
                     saved_paths: list[Path] = []
                     try:
                         message_id = await db.add_message(conversation_id, "user", text)
-                        for item in files:
+                        for item, document in zip(files, documents):
                             attachment_id, path = attachment_lib.write_file(conversation_id, item)
                             saved_paths.append(path)
                             await db.add_attachment(
@@ -391,6 +444,7 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner)):
                                 conversation_id=conversation_id, message_id=message_id,
                                 filename=item.name, mime=item.mime, kind=item.kind,
                                 size=len(item.data), path=str(path),
+                                document=document,
                             )
                     except Exception:
                         attachment_lib.delete_files(saved_paths)
@@ -402,7 +456,14 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner)):
                     "type": "meta", "conversation_id": conversation_id, "effort": effort,
                     "message": _public_message(stored_user),
                 })
-                history = _to_chat_messages(rows)
+                if MAX_ATTACHMENTS > document_count and any(
+                    item.get("kind") == "file" and not document_reader.cached_document(item.get("document"))
+                    for row in rows for item in row.get("attachments") or []
+                ):
+                    yield sse({"type": "reading", "text": "Peto đang đọc tài liệu đã gửi trước đó…"})
+                    await _read_legacy_documents(owner, rows, MAX_ATTACHMENTS - document_count)
+                    yield sse({"type": "reading", "text": ""})
+                history = await anyio.to_thread.run_sync(_to_chat_messages, rows)
                 system_prompt = await _build_system_prompt(owner)
                 try:
                     async for chunk in _stream_reply(system_prompt, history, effort, timezone, request.web_search):

@@ -1,8 +1,7 @@
 """Kiểm tra, lưu và đọc tệp đính kèm của hội thoại.
 
-Ảnh được gửi sang xAI dưới dạng data URL. Tệp chữ được trích nội dung rồi
-nhét vào prompt. PDF và các file nhị phân khác chỉ được lưu để xem lại —
-mô hình nhận một dòng mô tả, không đọc nội dung.
+Ảnh được gửi sang xAI dưới dạng data URL. Lớp chữ của PDF, DOCX và tệp chữ
+được đọc riêng trong document_reader rồi lưu cùng tệp để hỏi tiếp.
 """
 
 from __future__ import annotations
@@ -12,11 +11,11 @@ import binascii
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
+from document_reader import DOCX_MIME, decode_text
 
 from config import (
     MAX_ATTACHMENT_BYTES,
     MAX_ATTACHMENTS,
-    MAX_TEXT_EXCERPT_CHARS,
     MAX_TOTAL_ATTACHMENT_BYTES,
     UPLOAD_DIR,
 )
@@ -55,6 +54,7 @@ EXT_MIME = {
     ".csv": "text/csv",
     ".json": "application/json",
     ".pdf": "application/pdf",
+    ".docx": DOCX_MIME,
     ".py": "text/x-python",
     ".js": "text/javascript",
     ".ts": "text/plain",
@@ -113,15 +113,10 @@ def _looks_like_pdf(data: bytes) -> bool:
 
 
 def _is_probably_text(data: bytes) -> bool:
-    sample = data[:2048]
-    if b"\x00" in sample:
-        return False
-    if not sample:
-        return True
     try:
-        sample.decode("utf-8")
+        decode_text(data)
         return True
-    except UnicodeDecodeError:
+    except (UnicodeDecodeError, ValueError):
         return False
 
 
@@ -154,7 +149,7 @@ def classify(name: str, declared_mime: str, data: bytes) -> tuple[str, str]:
             f"«{filename}» không phải ảnh hợp lệ (chỉ nhận JPEG, PNG, WebP, GIF)"
         )
 
-    mime = declared if declared in TEXT_MIMES or declared == "application/pdf" else ""
+    mime = declared if declared in TEXT_MIMES or declared in {"application/pdf", DOCX_MIME} else ""
     if not mime:
         mime = EXT_MIME.get(ext, "")
 
@@ -163,6 +158,11 @@ def classify(name: str, declared_mime: str, data: bytes) -> tuple[str, str]:
             raise AttachmentError(f"«{filename}» không phải file PDF hợp lệ")
         return "file", "application/pdf"
 
+    if mime == DOCX_MIME or ext == ".docx":
+        if not data.startswith(b"PK\x03\x04"):
+            raise AttachmentError(f"«{filename}» không phải Word DOCX hợp lệ; hãy xuất lại thành .docx")
+        return "file", DOCX_MIME
+
     if mime in TEXT_MIMES or ext in EXT_MIME:
         if not _is_probably_text(data):
             raise AttachmentError(f"«{filename}» không phải tệp chữ đọc được")
@@ -170,7 +170,7 @@ def classify(name: str, declared_mime: str, data: bytes) -> tuple[str, str]:
 
     raise AttachmentError(
         f"Không nhận loại tệp «{filename}». "
-        "Gửi ảnh (JPEG/PNG/WebP/GIF) hoặc tệp chữ/PDF nhé."
+        "Gửi ảnh (JPEG/PNG/WebP/GIF), PDF, Word (.docx) hoặc tệp chữ nhé."
     )
 
 
@@ -237,15 +237,3 @@ def as_data_url(path: str | Path, mime: str) -> str:
     data = Path(path).read_bytes()
     encoded = base64.b64encode(data).decode("ascii")
     return f"data:{mime};base64,{encoded}"
-
-
-def read_text_excerpt(path: str | Path, mime: str) -> str:
-    if mime == "application/pdf":
-        return ""
-    raw = Path(path).read_bytes()
-    if not _is_probably_text(raw):
-        return ""
-    text = raw.decode("utf-8", errors="replace")
-    if len(text) > MAX_TEXT_EXCERPT_CHARS:
-        return text[:MAX_TEXT_EXCERPT_CHARS] + "\n… (đã cắt bớt)"
-    return text

@@ -190,8 +190,20 @@ identically on Windows and Linux.
 
 `attachments.py` validates by **magic bytes first**, then declared MIME / extension. A file
 claiming to be an image but failing `sniff_image_mime` is rejected outright. Images become
-data URLs for the model; text files are excerpted into the prompt; **PDFs are stored for
-re-download only — their contents are never extracted**, and the UI says so.
+data URLs for the model. `document_reader.py` reads PDF text with page labels, DOCX body
+paragraphs/tables, and UTF-8/UTF-16 text in a cancellable AnyIO worker process. PDF scans
+are NOT OCRed; encrypted/broken/oversized documents retain honest reading status.
+Do not promise image/chart/layout understanding for PDF/DOCX or legacy .doc support.
+
+The `attachments.document` JSON cache stores text plus version/status/notice and counts.
+`_public_attachment` exposes only the status metadata, never text or disk paths. Read new
+documents inside admission, before shielded writes; emit `reading` SSE without treating it
+as acceptance. `meta` acknowledges persistence. Legacy files are lazily cached with an
+owner-filtered UPDATE, at most MAX_ATTACHMENTS total reads per turn including new files.
+`_to_chat_messages` applies MAX_DOCUMENT_CONTEXT_CHARS, newest message first and shared
+between files in that message. Always tell the model when text is missing/truncated.
+PDF parsing has page/decompression/time limits; DOCX ZIP/XML has size limits and rejects
+DTD/external entities. Dependencies: pinned pypdf and defusedxml in requirements.txt.
 
 Only the `MAX_HISTORY_IMAGES` (default 4) most recent images are re-sent to the model;
 older ones degrade to a text placeholder. This is computed twice — in

@@ -41,6 +41,65 @@ async function openApp() {
   await screen.findByRole('button', { name: 'A', exact: true });
 }
 
+it('gửi Word qua dấu cộng, giữ bản nháp khi đọc và hiện trạng thái sau khi nhận', async () => {
+  const result = deferred<void>();
+  vi.mocked(api.sendMessage).mockImplementation(async (payload, handlers) => {
+    expect(payload.attachments?.[0].name).toBe('ke-hoach.docx');
+    handlers.onReading?.('Peto đang đọc 1 tài liệu…');
+    await result.promise;
+    handlers.onMeta?.('C', 'low', { role: 'user', content: 'Tóm tắt', attachments: [{
+      id: 'word-1', name: 'ke-hoach.docx', mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', kind: 'file', size: 1200,
+      url: '/api/attachments/word-1', document: { status: 'ready', notice: 'Đã đọc phần thân văn bản và bảng biểu trong Word.', characters: 500 },
+    }] });
+    handlers.onDelta?.('Đây là tóm tắt giả để kiểm tra giao diện.');
+    handlers.onDone?.();
+  });
+  await openApp();
+  const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+  expect(input.accept).toContain('.docx');
+  await userEvent.upload(input, new File(['tai lieu gia'], 'ke-hoach.docx', { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }));
+  fireEvent.change(screen.getByLabelText('Nhắn cho Peto'), { target: { value: 'Tóm tắt' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Gửi', exact: true }));
+  await screen.findByText('Peto đang đọc 1 tài liệu…');
+  expect((screen.getByLabelText('Nhắn cho Peto') as HTMLTextAreaElement).value).toBe('Tóm tắt');
+  await act(async () => result.resolve());
+  await screen.findByText('Đã đọc chữ');
+  expect(screen.queryByText('Peto đang đọc 1 tài liệu…')).toBeNull();
+  expect((screen.getByLabelText('Nhắn cho Peto') as HTMLTextAreaElement).value).toBe('');
+  expect(screen.getByRole('link', { name: /ke-hoach.docx/ }).getAttribute('href')).toBe('/api/attachments/word-1');
+});
+
+it('lịch sử PDF báo rõ phần không đọc được và vẫn tải lại được', async () => {
+  vi.mocked(api.getMessages).mockResolvedValue([{ role: 'user', content: 'Xem PDF', attachments: [{
+    id: 'pdf-1', name: 'ban-scan.pdf', mime: 'application/pdf', kind: 'file', size: 1200, url: '/api/attachments/pdf-1',
+    document: { status: 'partial', notice: 'Có trang không có lớp chữ đọc được. Chưa hỗ trợ OCR.', characters: 100, pages: 3 },
+  }] }]);
+  await openApp();
+  fireEvent.click(screen.getByRole('button', { name: 'A', exact: true }));
+  fireEvent.click(await screen.findByText('Đọc được một phần · 3 trang'));
+  expect(screen.getByText('Có trang không có lớp chữ đọc được. Chưa hỗ trợ OCR.')).toBeTruthy();
+  expect(screen.getByRole('link', { name: /ban-scan.pdf/ }).getAttribute('download')).toBe('ban-scan.pdf');
+});
+
+it('dừng khi đang đọc tệp giữ bản nháp và bỏ trạng thái đang đọc', async () => {
+  vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers, signal) => {
+    handlers.onReading?.('Peto đang đọc 1 tài liệu…');
+    await new Promise<void>((_resolve, reject) => signal?.addEventListener('abort', () => {
+      handlers.onReading?.('Trạng thái đến muộn');
+      reject(new DOMException('Đã dừng', 'AbortError'));
+    }));
+  });
+  await openApp();
+  fireEvent.change(screen.getByLabelText('Nhắn cho Peto'), { target: { value: 'Đọc tài liệu' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Gửi', exact: true }));
+  await screen.findByText('Peto đang đọc 1 tài liệu…');
+  fireEvent.click(screen.getByRole('button', { name: 'Dừng', exact: true }));
+  await screen.findByText('Đã dừng gửi. Bản nháp vẫn được giữ lại.');
+  expect((screen.getByLabelText('Nhắn cho Peto') as HTMLTextAreaElement).value).toBe('Đọc tài liệu');
+  expect(screen.queryByText('Peto đang đọc 1 tài liệu…')).toBeNull();
+  expect(screen.queryByText('Trạng thái đến muộn')).toBeNull();
+});
+
 it('tự động tìm web, hiển thị tiến trình và nguồn cùng câu trả lời', async () => {
   const result = deferred<void>();
   vi.mocked(api.sendMessage).mockImplementation(async (payload, handlers) => {

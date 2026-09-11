@@ -438,6 +438,16 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   text-align: center;
 }
 
+.document-card { max-width: min(280px, 100%); min-width: 0; }
+.document-card .file-chip { max-width: 100%; }
+.document-details { margin: 5px 3px 0; font-size: 11.5px; color: var(--muted); }
+.document-details summary { cursor: pointer; line-height: 1.5; }
+.document-details.ready summary { color: var(--accent); }
+.document-details.limited summary { font-weight: 600; }
+.document-details p { margin: 5px 0 0; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.document-reading { display: flex; align-items: center; gap: 9px; color: var(--muted); font-size: 13px; padding: 6px 0; }
+.document-reading-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
+
 .attach-chip img {
   width: 36px;
   height: 36px;

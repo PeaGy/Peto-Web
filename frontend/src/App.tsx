@@ -74,7 +74,7 @@ const MAX_FILES = 4;
 const MAX_FILE_BYTES = 8 * 1024 * 1024;
 const MAX_TOTAL_BYTES = 16 * 1024 * 1024;
 const ACCEPT =
-  "image/jpeg,image/png,image/webp,image/gif,.txt,.md,.csv,.json,.pdf,.py,.js,.ts,.tsx,.css,.html";
+  "image/jpeg,image/png,image/webp,image/gif,.txt,.md,.csv,.json,.pdf,.docx,.py,.js,.ts,.tsx,.jsx,.css,.html,.xml,.yml,.yaml,.rs,.go,.java,.c,.cpp,.h,.sql,.log";
 
 const EFFORTS: { value: Effort; label: string; hint: string }[] = [
   { value: "auto", label: "Tự động", hint: "Peto tự chọn mức phù hợp" },
@@ -815,10 +815,12 @@ export default function App() {
             setActiveEffort(usedEffort);
             setDraft("");
             setDraftFiles([]);
+            updateSearch({ reading: undefined });
             if (storedMessage) setMessages((prev) => [...prev.slice(0, -2), storedMessage, prev[prev.length - 1]]);
           },
           onDelta: appendToReply,
           onThinking: appendThinking,
+          onReading: (text) => updateSearch({ reading: text || undefined }),
           onSearch: (status) => updateSearch({ search_status: status }),
           onSources: (sources) => updateSearch({ sources: safeSources(sources) }),
           onError: (message) => {
@@ -1080,25 +1082,31 @@ export default function App() {
                         <img src={file.url} alt={file.name} className="bubble-image" />
                       </a>
                     ) : (
-                      <a
-                        key={file.id}
-                        href={file.url || undefined}
-                        className="file-chip"
-                        download={file.name}
-                      >
-                        <FileGlyph name={file.name} kind="file" />
-                        <span>
-                          <strong>{file.name}</strong>
-                          <em>{formatSize(file.size)}</em>
-                        </span>
-                      </a>
+                      <div className="document-card" key={file.id}>
+                        <a href={file.url || undefined} className="file-chip" download={file.name}>
+                          <FileGlyph name={file.name} kind="file" />
+                          <span>
+                            <strong>{file.name}</strong>
+                            <em>{formatSize(file.size)}</em>
+                          </span>
+                        </a>
+                        {file.document && (
+                          <details className={`document-details ${file.document.status === "ready" ? "ready" : "limited"}`}>
+                            <summary>
+                              {file.document.status === "ready" ? "Đã đọc chữ" : file.document.status === "partial" ? "Đọc được một phần" : "Chưa đọc được"}
+                              {file.document.pages != null && ` · ${file.document.pages} trang`}
+                            </summary>
+                            <p>{file.document.notice}</p>
+                          </details>
+                        )}
+                      </div>
                     ),
                   )}
                 </div>
               )}
               {message.role === "assistant" && (
                 message.thinking ||
-                (streaming && !stopping && index === messages.length - 1 && !message.search_status)
+                (streaming && !stopping && index === messages.length - 1 && !message.search_status && !message.reading)
               ) ? (
                 <ThinkingPanel
                   live={streaming && !stopping && index === messages.length - 1 && !message.content}
@@ -1106,6 +1114,7 @@ export default function App() {
                   label={THINKING[activeEffort ?? "low"]}
                 />
               ) : null}
+              {message.role === "assistant" && message.reading && streaming && !stopping && index === messages.length - 1 && !message.content && <div className="document-reading" role="status"><span className="document-reading-dot" aria-hidden="true" />{message.reading}</div>}
               {message.role === "assistant" && message.search_status && streaming && !stopping && index === messages.length - 1 && !message.content && <div className="web-search-status" role="status"><GlobeIcon /><span>{message.search_status === "searching" ? "Peto đang tìm trên web…" : "Peto đang tổng hợp nguồn…"}</span></div>}
               {message.content ? (
                 <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[[rehypeHighlight, {
@@ -1271,8 +1280,8 @@ export default function App() {
           </div>
           <p className="composer-note">
             {draftFiles.some((item) => /\.pdf$/i.test(item.file.name) || item.file.type === "application/pdf")
-              ? "PDF được lưu để tải lại; Peto chưa đọc nội dung PDF. Dán phần chữ cần hỏi vào tin nhắn nhé."
-              : "Gửi ảnh hoặc tệp chữ · tối đa 4 tệp, 8 MB/tệp, tổng 16 MB. PDF chỉ lưu để tải lại."}
+              ? "Peto đọc lớp chữ trong PDF và dẫn số trang. PDF ảnh scan chưa có chữ cần OCR trước nhé."
+              : "Ảnh, PDF, Word (.docx) và tệp chữ · tối đa 4 tệp, 8 MB/tệp, tổng 16 MB."}
           </p>
         </form>
       </main>

@@ -4,6 +4,14 @@ import { createImagineJob, sendMessage } from '../src/api';
 afterEach(() => vi.unstubAllGlobals());
 const event = (value: object) => `data: ${JSON.stringify(value)}\n\n`;
 
+it('tiến trình đọc tệp không trộn vào câu trả lời', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(event({ type: 'reading', text: 'Peto đang đọc 1 tài liệu…' }) + event({ type: 'delta', text: 'Nội dung' }) + event({ type: 'done' }))));
+  const onReading = vi.fn(), onDelta = vi.fn();
+  await sendMessage({ message: 'Tóm tắt', conversationId: null, effort: 'auto' }, { onReading, onDelta });
+  expect(onReading).toHaveBeenCalledExactlyOnceWith('Peto đang đọc 1 tài liệu…');
+  expect(onDelta).toHaveBeenCalledExactlyOnceWith('Nội dung');
+});
+
 it('gửi chế độ tìm web và đọc nguồn qua SSE mà không trộn vào văn bản', async () => {
   const sources = [{ url: 'https://docs.python.org/3/', title: 'Tài liệu Python' }];
   const fetchMock = vi.fn(async () => new Response(event({ type: 'search', status: 'searching' }) + event({ type: 'sources', sources }) + event({ type: 'delta', text: 'Có nguồn' }) + event({ type: 'done' })));

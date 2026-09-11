@@ -10,6 +10,13 @@ export interface ChatAttachment {
   kind: "image" | "file";
   size: number;
   url: string;
+  document?: {
+    status: "ready" | "partial" | "no_text" | "encrypted" | "unreadable" | "timeout";
+    notice: string;
+    characters: number;
+    pages?: number;
+    pages_processed?: number;
+  } | null;
 }
 
 export interface OutgoingAttachment {
@@ -26,6 +33,7 @@ export interface Message {
   created_at?: number;
   attachments?: ChatAttachment[];
   thinking?: string;
+  reading?: string;
   sources?: WebSource[];
   search_status?: "searching" | "completed";
 }
@@ -42,6 +50,7 @@ type ChatEvent =
   | { type: "meta"; conversation_id: string; effort: string; message?: Message }
   | { type: "delta"; text: string }
   | { type: "thinking"; text: string }
+  | { type: "reading"; text: string }
   | { type: "search"; status: "searching" | "completed" }
   | { type: "sources"; sources: WebSource[] }
   | { type: "error"; message: string }
@@ -51,6 +60,7 @@ interface ChatHandlers {
   onMeta?: (conversationId: string, effort: string, message?: Message) => void;
   onDelta?: (text: string) => void;
   onThinking?: (text: string) => void;
+  onReading?: (text: string) => void;
   onSearch?: (status: "searching" | "completed") => void;
   onSources?: (sources: WebSource[]) => void;
   onError?: (message: string) => void;
@@ -268,6 +278,8 @@ export async function sendMessage(
           handlers.onDelta?.(event.text);
         } else if (event.type === "thinking") {
           handlers.onThinking?.(event.text);
+        } else if (event.type === "reading") {
+          handlers.onReading?.(event.text);
         } else if (event.type === "search") {
           handlers.onSearch?.(event.status);
         } else if (event.type === "sources") {

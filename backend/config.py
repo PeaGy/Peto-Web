@@ -154,6 +154,9 @@ MAX_TOTAL_ATTACHMENT_BYTES = _env_int(
 # Số ảnh gần nhất được gửi lại cho mô hình khi có lịch sử.
 MAX_HISTORY_IMAGES = _env_int("PETO_MAX_HISTORY_IMAGES", 4, 1, 8)
 MAX_TEXT_EXCERPT_CHARS = _env_int("PETO_MAX_TEXT_EXCERPT_CHARS", 80_000, 1000, 200_000)
+MAX_DOCUMENT_PAGES = _env_int("PETO_MAX_DOCUMENT_PAGES", 100, 1, 300)
+DOCUMENT_TIMEOUT = _env_float("PETO_DOCUMENT_TIMEOUT", 15, 1, 60)
+MAX_DOCUMENT_CONTEXT_CHARS = _env_int("PETO_MAX_DOCUMENT_CONTEXT_CHARS", 160_000, 1000, 400_000)
 
 # --- Imagine (tạo ảnh, tách khỏi chat) -----------------------------------
 IMAGINE_MODEL = os.getenv("PETO_IMAGINE_MODEL", "grok-imagine-image-2.0").strip()
