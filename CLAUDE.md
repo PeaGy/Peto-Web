@@ -15,9 +15,11 @@ allowlist.
 
 ## Language convention
 
-Agent/Work planning context is recorded in [PETO_AGENT_PLAN.md](PETO_AGENT_PLAN.md).
+Agent/CLI planning context is recorded in [PETO_AGENT_PLAN.md](PETO_AGENT_PLAN.md).
+The clarified direction is a Windows CLI executing local project tools, with VPS
+authentication, model calls and orchestration. Docker is optional; web Work is later scope.
 It distinguishes agreed direction from open implementation choices and does not
-authorize deployment. Consult it when continuing Agent/Work discussions or work.
+authorize deployment. Consult it when continuing Agent/CLI discussions or work.
 
 **Every comment, docstring, log message, error message, and user-facing string in this
 codebase is written in Vietnamese.** Keep it that way when adding code — an English error

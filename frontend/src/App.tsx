@@ -70,6 +70,7 @@ const CODE_LABELS: Record<string, string> = {
 
 const EFFORT_KEY = "peto-effort";
 const THEME_KEY = "peto-theme";
+const SIDEBAR_KEY = "peto-sidebar-collapsed";
 const MAX_FILES = 4;
 const MAX_FILE_BYTES = 8 * 1024 * 1024;
 const MAX_TOTAL_BYTES = 16 * 1024 * 1024;
@@ -119,6 +120,14 @@ function readStoredTheme(): ThemeChoice {
     return THEMES.some((item) => item.value === value) ? (value as ThemeChoice) : "system";
   } catch {
     return "system";
+  }
+}
+
+function readStoredCollapsed(): boolean {
+  try {
+    return localStorage.getItem(SIDEBAR_KEY) === "1";
+  } catch {
+    return false;
   }
 }
 
@@ -174,6 +183,35 @@ function MenuIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/** Bút trên tờ giấy: như Grok, mục Trò chuyện cũng là nơi mở cuộc mới. */
+function ComposeIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M12 4H7a3 3 0 0 0-3 3v10a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3v-5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+      <path d="m17.5 3.5 3 3L12 15l-3.5.5.5-3.5 8.5-8.5Z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function ImageIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <rect x="3.5" y="3.5" width="17" height="17" rx="4" stroke="currentColor" strokeWidth="1.7" />
+      <circle cx="9" cy="9" r="1.6" fill="currentColor" />
+      <path d="m4 17 4.5-4.5 3.5 3.5 3-3.5 5 5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function SidebarIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <rect x="3.5" y="4.5" width="17" height="15" rx="3" stroke="currentColor" strokeWidth="1.7" />
+      <path d="M9.5 4.5v15" stroke="currentColor" strokeWidth="1.7" />
     </svg>
   );
 }
@@ -352,6 +390,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(readStoredCollapsed);
   const [dragging, setDragging] = useState(false);
   const [loadingConversation, setLoadingConversation] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -416,6 +455,12 @@ export default function App() {
       localStorage.setItem(EFFORT_KEY, effort);
     } catch {}
   }, [effort]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(SIDEBAR_KEY, collapsed ? "1" : "0");
+    } catch {}
+  }, [collapsed]);
 
   // Giao diện sáng/tối: "Theo máy" bám theo cài đặt hệ thống và đổi ngay khi
   // hệ thống đổi, hai lựa chọn còn lại thì giữ nguyên.
@@ -880,6 +925,16 @@ export default function App() {
   const canSend = (draft.trim().length > 0 || draftFiles.length > 0) && !streaming && !loadingConversation && !loadFailed;
   const effortMeta = EFFORTS.find((item) => item.value === effort) ?? EFFORTS[0];
 
+  // Như Grok: đang ở Trò chuyện mà bấm lại thì mở cuộc mới. Từ Tạo ảnh quay về
+  // thì giữ nguyên cuộc đang dở, vì người ta hay qua lại giữa hai tab.
+  function goChat() {
+    if (view !== "chat") {
+      go("chat");
+    } else if (!deleting) {
+      newConversation();
+    }
+  }
+
   function go(next: AppView) {
     if (next === "imagine") setImageVisited(true);
     setView(next);
@@ -898,36 +953,47 @@ export default function App() {
         />
       )}
 
-      <aside className={sidebarOpen ? "sidebar open" : "sidebar"}>
-        <div className="sidebar-brand">
-          <PetoAvatar info={appInfo} />
-          <strong>{appInfo?.name ?? "Peto"}</strong>
-        </div>
-        <nav className="app-tabs" aria-label="Khu vực">
+      <aside className={["sidebar", sidebarOpen && "open", collapsed && "collapsed"].filter(Boolean).join(" ")}>
+        <div className="sidebar-head">
+          <div className="sidebar-brand">
+            <PetoAvatar info={appInfo} />
+            <strong>{appInfo?.name ?? "Peto"}</strong>
+          </div>
           <button
             type="button"
-            className={view === "chat" ? "on" : ""}
-            aria-current={view === "chat" ? "page" : undefined}
-            onClick={() => go("chat")}
+            className="sidebar-toggle"
+            aria-expanded={!collapsed}
+            aria-label={collapsed ? "Mở rộng thanh bên" : "Thu gọn thanh bên"}
+            title={collapsed ? "Mở rộng thanh bên" : "Thu gọn thanh bên"}
+            onClick={() => setCollapsed((value) => !value)}
           >
-            Trò chuyện
+            <SidebarIcon />
+          </button>
+        </div>
+        <nav className="app-nav" aria-label="Khu vực">
+          <button
+            type="button"
+            className={view === "chat" ? "nav-item on" : "nav-item"}
+            aria-current={view === "chat" ? "page" : undefined}
+            title={view === "chat" ? "Trò chuyện mới" : collapsed ? "Trò chuyện" : undefined}
+            onClick={goChat}
+          >
+            <ComposeIcon />
+            <span className="nav-label">Trò chuyện</span>
           </button>
           <button
             type="button"
-            className={view === "imagine" ? "on" : ""}
+            className={view === "imagine" ? "nav-item on" : "nav-item"}
             aria-current={view === "imagine" ? "page" : undefined}
+            title={collapsed ? "Tạo ảnh" : undefined}
             onClick={() => go("imagine")}
           >
-            Tạo ảnh
+            <ImageIcon />
+            <span className="nav-label">Tạo ảnh</span>
           </button>
         </nav>
-        {view === "chat" && (
-        <button className="new-chat" onClick={newConversation} disabled={streaming || deleting}>
-          + Trò chuyện mới
-        </button>
-        )}
         {view === "imagine" && (
-          <>
+          <div className="sidebar-section">
             <div className="imagine-sidebar-note">
               <span className="studio-eyebrow">Peto tạo ảnh</span>
               <p>Một chút tưởng tượng,<br />một thế giới của riêng bạn.</p>
@@ -958,10 +1024,12 @@ export default function App() {
                 ))}
               </nav>
             </div>
-          </>
+          </div>
         )}
         {view === "chat" && (
-        <nav className="conversation-list">
+        <div className="sidebar-section">
+        <h2 className="sidebar-label" id="sidebar-recent">Gần đây</h2>
+        <nav className="conversation-list" aria-labelledby="sidebar-recent">
           {conversations.length === 0 && !loadingList && (
             <p className="empty-hint">Chưa có cuộc trò chuyện nào.</p>
           )}
@@ -998,6 +1066,7 @@ export default function App() {
             void refreshConversations();
           }}>Xem hội thoại cũ hơn</button>}
         </nav>
+        </div>
         )}
 
         <div className="sidebar-foot">

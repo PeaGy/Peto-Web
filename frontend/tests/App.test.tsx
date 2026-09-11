@@ -293,7 +293,7 @@ describe('Conversation navigation', () => {
     vi.mocked(api.getMessages).mockReturnValue(a.promise);
     await openApp();
     fireEvent.click(screen.getByRole('button', { name: 'A', exact: true }));
-    fireEvent.click(screen.getByRole('button', { name: '+ Trò chuyện mới' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Trò chuyện', exact: true }));
     await act(async () => a.resolve([row('Nội dung cũ')]));
     expect(screen.queryByText('Nội dung cũ')).toBeNull();
     expect(screen.getByRole('heading', { name: 'Chào Demo' })).toBeTruthy();
@@ -572,6 +572,53 @@ describe('Màn hình đăng nhập', () => {
     render(<App />);
     fireEvent.click(await screen.findByRole('button', { name: /Khách/ }));
     expect(await screen.findByRole('alert')).toHaveProperty('textContent', 'Máy chủ đang bận');
+  });
+});
+
+describe('Thanh bên', () => {
+  beforeEach(() => localStorage.removeItem('peto-sidebar-collapsed'));
+
+  it('thu gọn, mở lại và nhớ lựa chọn', async () => {
+    await openApp();
+    const sidebar = document.querySelector('.sidebar')!;
+    fireEvent.click(screen.getByRole('button', { name: 'Thu gọn thanh bên' }));
+    expect(sidebar.classList.contains('collapsed')).toBe(true);
+    expect(localStorage.getItem('peto-sidebar-collapsed')).toBe('1');
+
+    const expand = screen.getByRole('button', { name: 'Mở rộng thanh bên' });
+    expect(expand.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(expand);
+    expect(sidebar.classList.contains('collapsed')).toBe(false);
+    expect(localStorage.getItem('peto-sidebar-collapsed')).toBe('0');
+  });
+
+  it('mở app vẫn thu gọn nếu lần trước đã thu gọn', async () => {
+    localStorage.setItem('peto-sidebar-collapsed', '1');
+    await openApp();
+    expect(document.querySelector('.sidebar')!.classList.contains('collapsed')).toBe(true);
+    // Thu gọn chỉ là chuyện hiển thị: tên mục vẫn còn cho trình đọc màn hình.
+    expect(screen.getByRole('button', { name: 'Tạo ảnh', exact: true })).toBeTruthy();
+  });
+
+  it('có nhãn Gần đây ngay trên lịch sử trò chuyện', async () => {
+    await openApp();
+    expect(screen.getByRole('heading', { name: 'Gần đây' })).toBeTruthy();
+    expect(screen.getByRole('navigation', { name: 'Gần đây' })).toBeTruthy();
+  });
+
+  it('từ Tạo ảnh quay về thì giữ cuộc đang mở, bấm lại mới mở cuộc mới', async () => {
+    vi.mocked(api.getMessages).mockResolvedValue([row('Nội dung A')]);
+    await openApp();
+    fireEvent.click(screen.getByRole('button', { name: 'A', exact: true }));
+    await screen.findByText('Nội dung A');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Tạo ảnh', exact: true }));
+    fireEvent.click(screen.getByRole('button', { name: 'Trò chuyện', exact: true }));
+    expect(screen.getByText('Nội dung A')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Trò chuyện', exact: true }));
+    expect(screen.queryByText('Nội dung A')).toBeNull();
+    expect(screen.getByRole('heading', { name: 'Chào Demo' })).toBeTruthy();
   });
 });
 

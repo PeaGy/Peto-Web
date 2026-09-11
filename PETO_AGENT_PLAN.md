@@ -1,106 +1,116 @@
-# Kế hoạch Peto Agent / Work
+# Kế hoạch Peto Agent / CLI
 
-Cập nhật: 11/09/2026. Ghi lại hướng đã thống nhất trong cuộc trao đổi với người dùng.
-Trạng thái: lập kế hoạch; chưa triển khai Work, chưa cài hoặc cấu hình Docker trong đợt này.
-Tài liệu này không phải yêu cầu tự động triển khai hoặc thay đổi VPS.
+Cập nhật: 11/09/2026, sau khi người dùng làm rõ nơi thực thi công việc.
+Trạng thái: lập kế hoạch; chưa triển khai CLI, bộ điều phối agent hoặc Docker.
+Tài liệu ghi lại định hướng, không phải yêu cầu tự động triển khai hay thay đổi VPS.
 
-## Mục tiêu và ưu tiên
+## Hướng hiện hành
 
-Phát triển Peto thành agent có thể nhận nhiệm vụ, chọn công cụ, thực hiện,
-quan sát kết quả và điều chỉnh cho đến khi hoàn thành hoặc cần người dùng hỗ trợ.
-Giữ tính cách và trải nghiệm trò chuyện của Peto.
+Người dùng muốn mở Peto CLI trên Windows và nhờ Peto sửa trực tiếp dự án trên
+máy mình, trong khi dịch vụ Peto vẫn được triển khai trên VPS.
 
-Người dùng chọn ưu tiên: thao tác ứng dụng, trình duyệt và hỗ trợ viết code.
-Thứ tự triển khai dự kiến: sửa code → kiểm tra bằng trình duyệt → mở rộng ứng dụng.
-Agent nghiên cứu tài liệu/tìm web/tạo báo cáo không còn là hướng ưu tiên cho bản đầu.
+**VPS điều phối; Windows thực thi.** Hướng này thay thế phương án Work thực thi
+trong Docker trên VPS được ghi trước đó do hiểu nhầm yêu cầu.
 
-## Những quyết định đã thống nhất
+## Những quyết định đã làm rõ
 
-- Tiếp tục phát triển repository Peto-Web hiện tại; không dựng một sản phẩm mới từ đầu.
-- Chia hai khu vực Chat và Work trong cùng Peto, dùng chung tài khoản.
-  Chat phục vụ trò chuyện và hỏi đáp; Work gắn với dự án, tác vụ, tệp thay đổi,
-  tiến trình thực hiện và kết quả kiểm tra. Tính năng tạo ảnh hiện có vẫn được giữ.
-- Peto Web tiếp tục chạy trên VPS. Docker cho phần thực thi Work cũng chạy trên VPS.
-- Giai đoạn đầu giữ cách vận hành Peto Web hiện tại; không bắt buộc chuyển toàn bộ
-  Peto hay các dịch vụ đang chạy vào Docker.
-- Windows của người dùng chỉ cần trình duyệt để giao việc và xem kết quả.
-  Desktop app hoặc chương trình kết nối Windows chưa thuộc bản đầu.
-- Mô hình AI tiếp tục được gọi qua dịch vụ hiện có; chưa quyết định đổi nhà cung cấp
-  hoặc chạy mô hình trực tiếp trên VPS.
-- Không clone nguyên một dự án agent mẫu để thay Peto. Các nguồn bên dưới dùng để
-  tham khảo thiết kế và các phần triển khai phù hợp.
+- Ưu tiên agent hỗ trợ viết code, thao tác trình duyệt rồi mở rộng sang ứng dụng.
+- Peto CLI trên Windows nhận yêu cầu, hiển thị tiến trình, thực thi công cụ trong
+  phạm vi được cho phép và trình bày phần thay đổi cùng kết quả kiểm tra.
+- VPS phục vụ tài khoản, gọi mô hình AI và điều phối vòng làm việc. Chưa chốt
+  đổi nhà cung cấp hoặc chạy mô hình trực tiếp trên VPS.
+- Tận dụng dự án Peto-Web hiện tại. Cách tổ chức package/thư mục CLI sẽ chốt khi
+  triển khai; không cần clone nguyên một dự án mẫu để thay Peto.
+- Chat và tạo ảnh trên web vẫn được giữ. Work trên web là khả năng mở rộng sau
+  này, không còn là giao diện bắt buộc cho bản agent đầu.
+- Không cần desktop app có giao diện đồ họa. CLI là chương trình kết nối và
+  thực thi trên máy Windows, không phải chỉ là màn hình nhập lệnh từ xa.
+- Docker không bắt buộc cho bản đầu. Nếu dùng Docker để cách ly công việc cục bộ,
+  Docker chạy trên Windows. Đóng gói backend trên VPS là một quyết định riêng.
 
 ## Kiến trúc dự kiến
 
 ```text
-Người dùng mở Peto trên trình duyệt
-    → Peto Web: Chat / Work
-    → Quản lý tác vụ, quyền truy cập và tiến độ
-    → Bộ thực thi tạo môi trường Docker riêng
-        → Bản sao dự án được giao
-        → Công cụ đọc/sửa tệp, Git, chạy code và kiểm tra
-        → Trình duyệt riêng để kiểm tra website
-    → Lưu kết quả và phần thay đổi để người dùng xem
+Windows của người dùng
+└── Peto CLI, mở trong thư mục dự án được chọn
+    ├── Nhận yêu cầu và hiển thị tiến trình
+    ├── Kiểm tra quyền dùng công cụ tại máy người dùng
+    ├── Đọc/sửa tệp, chạy lệnh và kiểm tra code
+    ├── Điều khiển trình duyệt cục bộ khi đã bổ sung công cụ
+    └── Gửi kết quả công cụ về VPS
+               ↕ Kết nối có xác thực
+VPS
+└── Dịch vụ Peto
+    ├── Tài khoản và Peto Web hiện tại
+    ├── Gọi mô hình AI
+    ├── Điều phối bước tiếp theo và lưu trạng thái tác vụ
+    └── Gửi yêu cầu dùng công cụ xuống đúng phiên CLI
 ```
 
-Dự án mà Peto sửa nằm trong vùng làm việc riêng. Nếu sửa chính Peto-Web thì cũng
-sửa một bản sao, không sửa trực tiếp bản đang phục vụ người dùng trên VPS.
-Môi trường thực thi không được tiếp cận database, token, .env thật hoặc thư mục
-vận hành các dịch vụ khác. Quyền và đường dẫn phải được kiểm tra ở máy chủ.
-Docker cần cấu hình cách ly và giới hạn tài nguyên; container không phải bảo đảm
-an toàn tuyệt đối khi chạy mã không tin cậy.
+Ví dụ: mở CLI trong C:\Projects\website-a, yêu cầu sửa lỗi đăng nhập. Peto
+điều phối trên VPS; CLI đọc/sửa tệp và chạy kiểm tra ngay trong website-a trên
+Windows. Kết quả công cụ được trả về để mô hình tiếp tục hoặc báo hoàn tất.
 
-Code đã sửa, kết quả kiểm tra và tệp đầu ra cần được lưu ra vùng lưu trữ riêng
-theo chủ sở hữu trước khi dọn môi trường thực thi. Trình duyệt của agent là phiên
-riêng trên VPS, không tự có tab hoặc phiên đăng nhập trên máy cá nhân.
+Không cần tải toàn bộ repository lên VPS trước. Tuy nhiên, nội dung tệp, đoạn
+code và kết quả lệnh cần cho suy luận có thể đi qua VPS tới nhà cung cấp AI.
+Không mô tả kiến trúc này là xử lý hoàn toàn offline hoặc code không rời máy.
+Phạm vi ngữ cảnh gửi đi và xử lý thông tin nhạy cảm cần được thiết kế rõ.
 
 ## Phạm vi bản thử đầu
 
-- Dùng dự án của chủ hệ thống trước, mỗi lần một tác vụ Work.
-- Đưa dự án vào bằng kho Git hoặc tải lên; cần chốt cách nhập đầu tiên khi triển khai.
-- Đọc, sửa code, chạy kiểm tra và trình bày phần thay đổi.
-- Chạy website thử rồi dùng trình duyệt kiểm tra kết quả.
-- Có tiến trình, nút dừng và bằng chứng hoàn thành; không báo thành công chỉ dựa
-  vào lời mô hình nếu công cụ chưa xác nhận.
-- Có giới hạn thời gian, số bước, tài nguyên và cách xử lý lỗi để tránh chạy vòng lặp.
-- Lưu trạng thái công việc riêng với tin nhắn. Khả năng chạy tiếp khi đóng tab,
-  khôi phục sau gián đoạn cần được triển khai và kiểm tra riêng; chat hiện tại
-  không mặc nhiên đã có các khả năng đó.
-- Xem lại thay đổi trước khi đưa vào kho Git hoặc cập nhật bản đang chạy.
-  Việc gửi nội dung ra ngoài, xóa dữ liệu hoặc triển khai cần phạm vi cho phép rõ ràng.
-- Nội dung trang web/tài liệu/kho mã là dữ liệu tham khảo, không được tự cấp quyền
-  hoặc thay đổi giới hạn thực thi.
+1. Kết nối/đăng nhập CLI với dịch vụ trên VPS và chọn thư mục dự án.
+2. Đọc, tìm kiếm, sửa tệp và chạy kiểm tra phù hợp trên Windows.
+3. Quan sát kết quả công cụ, điều chỉnh khi lỗi và trình bày phần thay đổi.
+4. Hiện tiến trình, cho dừng và lưu kết quả cục bộ.
+5. Bổ sung chạy website thử và kiểm tra bằng trình duyệt cục bộ.
 
-Bài thử đầu: sửa một lỗi nhỏ trong bản sao dự án → chạy kiểm tra → mở website thử
-→ kiểm tra kết quả → trả lại phần thay đổi và báo cáo. Đồng thời đo tài nguyên và
-ảnh hưởng lên Peto Web trước khi quyết định mở rộng.
+Bài thử đầu: mở CLI trong dự án thử trên Windows → giao một lỗi nhỏ → Peto sửa
+code tại máy → chạy kiểm tra → trình bày phần thay đổi và kết quả. Khi công cụ
+trình duyệt đã có, thêm bước kiểm tra giao diện website thử.
 
-## VPS hiện tại
+Giữ tính cách Peto. Thành công phải dựa trên kết quả công cụ, không chỉ lời mô hình.
+Không mang trở lại giới hạn ký tự hoặc cơ chế quyền riêng của Discord.
 
-Số liệu người dùng gửi ngày 11/09/2026:
+## Quyền thực thi, dữ liệu và gián đoạn
 
-- 2 vCPU; RAM tổng 3,7 GiB, khả dụng 2,6 GiB tại thời điểm đo.
-- Phân vùng chính 38 GB, còn trống khoảng 28 GB; chưa có swap.
-- Đang chạy Peto Web, bot Peto Discord, bgutil-pot, cloudflared, warp-svc
-  cùng các dịch vụ hệ thống. Chưa xác minh Docker đã được cài hay chưa.
+- CLI kiểm tra quyền cục bộ trước khi thực thi yêu cầu từ VPS. VPS không mặc
+  nhiên có quyền đọc toàn bộ máy hoặc chạy mọi lệnh.
+- Kiểm soát đường dẫn, phạm vi thư mục, quyền chạy lệnh và hành động ra bên ngoài.
+  Giới hạn thư mục trong công cụ đọc tệp không tự cách ly lệnh shell tùy ý;
+  cách kiểm soát shell/sandbox cần được chốt và kiểm tra khi triển khai.
+- Bảo toàn thay đổi có sẵn của người dùng; không tự ghi đè, reset hoặc xóa công việc.
+  Nếu sửa Peto-Web thì sửa checkout cục bộ, không sửa bản đang chạy trên VPS.
+- Code và tệp đầu ra nằm tại dự án/vùng làm việc cục bộ. Mất kết nối không được
+  tự xóa kết quả hoặc tự phát lại lệnh có tác dụng phụ.
+- Phiên đăng nhập, tác vụ, thiết bị và kết quả công cụ phải gắn đúng chủ sở hữu.
+- Có giới hạn thời gian/số bước và cơ chế dừng tiến trình đang chạy, không chỉ
+  ngừng hiển thị câu trả lời. Mức giới hạn cụ thể chưa chốt.
+- Chỉ dẫn trong tài liệu, trang web hay kho mã không tự cấp thêm quyền cho agent.
+- Trình duyệt cục bộ dự kiến dùng phiên riêng; dùng phiên đăng nhập có sẵn cần
+  lựa chọn và cấp quyền rõ ràng.
+- Khi CLI đóng, máy ngủ hoặc mất mạng, VPS không thể tiếp tục thực thi công cụ
+  trên Windows. Chạy nền, kết nối lại và khôi phục tiến độ cần được xây riêng.
 
-Đánh giá sơ bộ: có thể thử tác vụ nhỏ có kiểm soát, chưa phải cam kết đủ tài nguyên
-cho build nặng hoặc nhiều người. Chỉ một tác vụ chạy mỗi lần, ưu tiên chạy build
-và kiểm tra trình duyệt lần lượt; dọn tiến trình khi xong và quản lý dung lượng.
-Mức CPU/RAM cấp cho bộ thực thi và việc thêm swap chưa được chốt hoặc thực hiện.
+## Vai trò VPS và tài nguyên
 
-Khi phục vụ nhiều người, dự án không tin cậy hoặc tác vụ nặng, ưu tiên tách bộ
-thực thi sang máy/sandbox riêng. Peto Web và tài khoản vẫn có thể ở VPS hiện tại.
+Số liệu người dùng cung cấp ngày 11/09/2026: 2 vCPU; RAM tổng 3,7 GiB, khả dụng
+2,6 GiB tại thời điểm đo; ổ chính còn khoảng 28 GB; chưa có swap. Máy đang chạy
+Peto Web, bot Discord, bgutil-pot, cloudflared, warp-svc và các dịch vụ hệ thống.
 
-## Giai đoạn sau và những lựa chọn còn mở
+Theo kiến trúc mới, build code và trình duyệt chạy trên Windows. Không dùng số
+liệu VPS để suy ra sức chứa tác vụ cục bộ. VPS vẫn cần đo tải cho kết nối,
+điều phối, lưu trạng thái và dịch vụ web. Chưa đo cấu hình Windows, chưa chốt
+số tác vụ đồng thời, chưa cần quyết định nâng cấp VPS hay cài Docker để bắt đầu CLI.
 
-- Tích hợp ứng dụng: chọn ứng dụng cụ thể, cách truy cập và quyền cần thiết.
-  Điều khiển ứng dụng Windows trên máy người dùng cần thêm thành phần kết nối.
-- Hoàn thiện tác vụ dài: chạy nền, lưu điểm tiếp tục và khôi phục sau sự cố.
-- Chưa chốt framework agent, giao thức quản lý bộ thực thi, image Docker,
-  cách cấp quyền Git, cơ chế xem thử website và thông số giới hạn cụ thể.
-- Chưa cần nhiều agent phối hợp trong bản đầu.
-- Không mang trở lại giới hạn ký tự hoặc cơ chế quyền riêng của Discord.
+## Những lựa chọn còn mở
+
+- Ngôn ngữ/package CLI, cách cài đặt và cập nhật trên Windows.
+- Giao thức kết nối, xác thực thiết bị và quản lý phiên CLI với VPS.
+- Framework agent hoặc cách mở rộng vòng công cụ hiện có; chưa cần nhiều agent.
+- Chính sách quyền shell, cách ly và Docker cục bộ nếu cần.
+- Lưu tiến độ, hủy tác vụ, khôi phục kết nối và chống thực thi lặp.
+- Công cụ trình duyệt, ứng dụng Windows và phạm vi quyền cụ thể.
+- Work trên web hoặc desktop GUI sau này; không bắt buộc trong bản đầu.
 
 ## Nguồn tham khảo
 
@@ -109,6 +119,4 @@ thực thi sang máy/sandbox riêng. Peto Web và tài khoản vẫn có thể �
 - [Hugging Face Agents Course](https://huggingface.co/learn/agents-course/en/unit0/introduction)
 - [GenAI Agents](https://github.com/NirDiamant/GenAI_Agents)
 - [LangGraph Persistence](https://docs.langchain.com/oss/python/langgraph/persistence)
-- [Docker Security](https://docs.docker.com/engine/security/)
-- [Docker Resource Constraints](https://docs.docker.com/engine/containers/resource_constraints/)
-- [Playwright Docker](https://playwright.dev/docs/docker)
+- [Docker Security](https://docs.docker.com/engine/security/) — khi chọn cách ly bằng Docker.
