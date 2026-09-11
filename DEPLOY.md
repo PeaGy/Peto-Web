@@ -351,6 +351,7 @@ sudo journalctl -u peto-web -n 50 --no-pager
 | `provider` là `mock` | Thiếu `PETO_AI_PROVIDER=xai` trong `.env` |
 | Peto không nhớ gì từ Discord | Token hai bên không khớp, hoặc bot chưa restart |
 | Bảo "chưa đăng nhập xAI" | Chưa chạy `xai_auth login --manual` trên VPS |
+| Dán link vào Discord không có thẻ xem trước, hoặc vẫn là thẻ cũ | Discord nhớ thẻ của mỗi link một thời gian — thêm `?v=2` vào cuối link để nó đọc lại |
 
 Log:
 

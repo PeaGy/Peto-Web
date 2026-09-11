@@ -68,6 +68,16 @@ async def test_error_statuses_fall_back(patch_discord, status):
     assert (await get_app_identity())["avatar_url"] is None
 
 
+@pytest.mark.parametrize(
+    "body",
+    [{"text": "<html>không phải JSON</html>"}, {"json": ["không", "phải", "object"]}],
+)
+async def test_malformed_payload_falls_back(patch_discord, body):
+    """Trang chủ chờ hàm này, nên dữ liệu hỏng mà raise là cả web sập theo."""
+    patch_discord(lambda request: httpx.Response(200, **body))
+    assert await get_app_identity() == {"name": "Peto", "avatar_url": None}
+
+
 async def test_result_is_cached(patch_discord):
     calls: list[str] = []
 

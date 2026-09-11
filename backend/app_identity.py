@@ -8,7 +8,8 @@ Dùng endpoint công khai ``/applications/{id}/rpc`` — chỉ cần Client ID, 
 cần client secret hay bot token. Chỉ trả về thông tin vốn đã công khai: tên,
 icon, mô tả.
 
-Hỏng thì bỏ qua: giao diện tự quay về chữ cái đầu như cũ.
+Hỏng thì bỏ qua: giao diện tự quay về chữ cái đầu như cũ. Trang chủ cũng chờ
+hàm này (để chèn ảnh xem trước link), nên nó tuyệt đối không được raise.
 """
 
 from __future__ import annotations
@@ -24,7 +25,9 @@ from config import DISCORD_CLIENT_ID
 logger = logging.getLogger("peto_web.app_identity")
 
 RPC_URL = "https://discord.com/api/v10/applications/{app_id}/rpc"
-CDN_ICON = "https://cdn.discordapp.com/app-icons/{app_id}/{icon}.png?size=128"
+# 256 chứ không phải 128: URL này còn làm ảnh thu nhỏ khi dán link vào Discord,
+# và ô 80px ở đó trên màn hình 2–3x cần hơn 128px mới nét.
+CDN_ICON = "https://cdn.discordapp.com/app-icons/{app_id}/{icon}.png?size=256"
 
 # Icon bot hầu như không đổi, nên cache lâu. Đổi icon thì restart là xong.
 CACHE_TTL = 3600.0
@@ -65,6 +68,8 @@ async def get_app_identity() -> dict[str, str | None]:
             response = await client.get(RPC_URL.format(app_id=DISCORD_CLIENT_ID))
         if response.status_code == 200:
             payload = response.json()
+            if not isinstance(payload, dict):
+                raise ValueError("dữ liệu không phải object")
             icon = str(payload.get("icon") or "")
             if icon and not AVATAR_OVERRIDE:
                 result["avatar_url"] = CDN_ICON.format(
@@ -80,6 +85,12 @@ async def get_app_identity() -> dict[str, str | None]:
             )
     except httpx.HTTPError as err:
         logger.warning("Không gọi được Discord: %s", type(err).__name__)
+    except ValueError as err:
+        # JSON hỏng, vd. một trang HTML trả 200. Không bắt thì trang chủ sập theo,
+        # và vì lỗi không được cache nên lượt nào cũng sập lại.
+        logger.warning(
+            "Discord trả về dữ liệu không đọc được: %s", type(err).__name__
+        )
 
     _cache = (now + CACHE_TTL, result)
     return result

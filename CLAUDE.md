@@ -72,6 +72,13 @@ is the last statement in `main.py`. Move it earlier and API 404s start returning
 `index.html`. The handler also explicitly rejects paths starting with `api/` as a second
 line of defense, and blocks path traversal by resolving under `static_dir`.
 
+The index page is not served verbatim: the handler inserts `og:image` (plus alt text)
+from `app_identity.get_app_identity()` — the bot's Discord CDN icon, already the absolute
+URL Open Graph requires. That keeps the domain out of the build and makes link previews
+follow the bot icon. The other preview tags are static in `frontend/index.html`; crawlers
+such as Discordbot never run JS, so they must stay in the HTML. Because the home page now
+awaits `get_app_identity`, that function must never raise.
+
 ### Identity and data isolation
 
 `owner` is the single tenancy key, formatted `discord:<id>` (`config.owner_key`). Every
