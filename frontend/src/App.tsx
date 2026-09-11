@@ -1376,63 +1376,66 @@ export default function App() {
           </button>
         </div>
 
-        <ProfileSettings
-          open={settingsOpen}
-          avatar={<AccountAvatar user={auth.user} size={40} />}
-          onUnauthorized={handleUnauthorized}
-        />
+        {/* Chỉ phần dưới đường ngăn được cuộn; tiêu đề "Cài đặt" đứng yên. */}
+        <div className="settings-body">
+          <ProfileSettings
+            open={settingsOpen}
+            avatar={<AccountAvatar user={auth.user} size={40} />}
+            onUnauthorized={handleUnauthorized}
+          />
 
-        <section className="settings-section">
-          <h3>Giao diện</h3>
-          <p className="settings-hint">Chọn nền sáng, nền tối, hoặc để Peto theo cài đặt của máy.</p>
-          <div className="theme-options">
-            {THEMES.map((item) => (
-              <label
-                key={item.value}
-                className={theme === item.value ? "theme-option selected" : "theme-option"}
-              >
-                <input
-                  type="radio"
-                  name="theme"
-                  value={item.value}
-                  checked={theme === item.value}
-                  onChange={() => setTheme(item.value)}
-                />
-                <span className={`theme-preview ${item.value}`} aria-hidden="true">
-                  <i />
-                  <i />
-                  <i />
-                </span>
-                <strong>{item.label}</strong>
-                <em>{item.hint}</em>
-              </label>
-            ))}
-          </div>
-        </section>
-
-        <section className="settings-section">
-          <h3>Tài khoản</h3>
-          <div className="settings-account">
-            <AccountAvatar user={auth.user} size={38} />
-            <div className="account-name">
-              <strong>{auth.user?.display_name}</strong>
-              <span>@{auth.user?.username}</span>
+          <section className="settings-section">
+            <h3>Giao diện</h3>
+            <p className="settings-hint">Chọn nền sáng, nền tối, hoặc để Peto theo cài đặt của máy.</p>
+            <div className="theme-options">
+              {THEMES.map((item) => (
+                <label
+                  key={item.value}
+                  className={theme === item.value ? "theme-option selected" : "theme-option"}
+                >
+                  <input
+                    type="radio"
+                    name="theme"
+                    value={item.value}
+                    checked={theme === item.value}
+                    onChange={() => setTheme(item.value)}
+                  />
+                  <span className={`theme-preview ${item.value}`} aria-hidden="true">
+                    <i />
+                    <i />
+                    <i />
+                  </span>
+                  <strong>{item.label}</strong>
+                  <em>{item.hint}</em>
+                </label>
+              ))}
             </div>
-          </div>
-          <div className="settings-actions">
-            <button
-              type="button"
-              className="logout"
-              disabled={streaming}
-              onClick={() => {
-                setSettingsOpen(false);
-                void signOut();
-              }}
-            >
-              Đăng xuất
-            </button>
-          </div>
-        </section>
+          </section>
+
+          <section className="settings-section">
+            <h3>Tài khoản</h3>
+            <div className="settings-account">
+              <AccountAvatar user={auth.user} size={38} />
+              <div className="account-name">
+                <strong>{auth.user?.display_name}</strong>
+                <span>@{auth.user?.username}</span>
+              </div>
+            </div>
+            <div className="settings-actions">
+              <button
+                type="button"
+                className="logout"
+                disabled={streaming}
+                onClick={() => {
+                  setSettingsOpen(false);
+                  void signOut();
+                }}
+              >
+                Đăng xuất
+              </button>
+            </div>
+          </section>
+        </div>
       </dialog>
       <dialog ref={deleteDialogRef} className="confirm-dialog" aria-labelledby="delete-title" onCancel={(event) => {
         event.preventDefault();
