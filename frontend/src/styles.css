@@ -1546,3 +1546,13 @@ button:focus-visible, a:focus-visible, .table-scroll:focus-visible {
   .studio-welcome > p { margin-bottom: 20px; }
   .idea-art { height: 84px; }
 }
+
+/* iOS Safari tự phóng to trang khi chạm vào ô nhập có chữ dưới 16px, và không
+   tự thu lại — trang kéo ngang được dù bố cục không hề tràn. Chỉ áp cho màn cảm
+   ứng để máy tính giữ cỡ chữ gọn như cũ. Đừng "sửa" bằng maximum-scale=1: cách
+   đó chặn luôn thao tác phóng to của người cần đọc chữ lớn.
+   Phải nằm cuối file: .imagine-composer textarea (14px) có cùng độ ưu tiên. */
+@media (pointer: coarse) {
+  .composer textarea,
+  .effort-select select { font-size: 16px; }
+}
