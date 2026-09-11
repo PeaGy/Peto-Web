@@ -45,3 +45,11 @@ def test_core_personality_survived():
     for marker in ("Peto là ai", "Nhịp trò chuyện", "Cảm giác hiện diện"):
         assert marker in persona.SYSTEM_PROMPT
     assert len(persona.SYSTEM_PROMPT) > 3000
+
+
+def test_huong_dan_trinh_bay_tren_web():
+    """Thiếu phần này thì Peto trả lời bài học thành một khối chữ liền: cùng mô
+    hình Grok nhưng đọc khó hơn hẳn giao diện gốc của Grok. Chuyện phiếm thì vẫn
+    phải được nhắn tự nhiên, không bị ép thành tài liệu."""
+    for marker in ("Mỗi khối code chỉ minh họa một ý", "tiêu đề ngắn", "Chuyện phiếm"):
+        assert marker in persona.SYSTEM_PROMPT

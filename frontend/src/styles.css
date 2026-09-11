@@ -11,7 +11,7 @@
   --on-accent: #141414;
   --user: #262626;
   --danger: #ff8a8a;
-  --code-bg: #0f0f0f;
+  --code-bg: #1b1b1b;
   --drop-active: #1f1f1f;
   --overlay-soft: rgba(20, 20, 20, 0.72);
   --shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
@@ -24,6 +24,7 @@
   --hl-comment: #6a9955;
   --hl-function: #dcdcaa;
   --hl-attr: #9cdcfe;
+  --inline-code: #f29b7b;
   --dialog-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
   /* Đường cong mạnh cho UI, lấy nguyên từ bộ chuẩn — đừng tự chế thêm. */
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
@@ -55,6 +56,7 @@
   --hl-comment: #008000;
   --hl-function: #795e26;
   --hl-attr: #001080;
+  --inline-code: #b43d1b;
   --dialog-shadow: 0 24px 60px rgba(0, 0, 0, 0.16);
   color-scheme: light;
 }
@@ -439,6 +441,31 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .bubble :first-child { margin-top: 0; }
 .bubble :last-child { margin-bottom: 0; }
 
+/* ---------- Chữ trong câu trả lời ---------- */
+/* Trước đây không có quy tắc nào cho tiêu đề, đoạn, danh sách: tất cả rơi về
+   mặc định của trình duyệt. Nhịp dưới đây bám theo Grok — chữ 16px, dòng thưa,
+   tiêu đề rõ bậc, khoảng cách giữa các khối đều nhau. */
+.bubble { font-size: 16px; line-height: 1.7; }
+
+.bubble p { margin: 0.8em 0; }
+
+.bubble h1, .bubble h2, .bubble h3, .bubble h4 { margin: 1.3em 0 0.5em; line-height: 1.35; font-weight: 650; }
+.bubble h1 { font-size: 1.5em; }
+.bubble h2 { font-size: 1.32em; }
+.bubble h3 { font-size: 1.15em; }
+.bubble h4 { font-size: 1em; }
+
+.bubble ul, .bubble ol { margin: 0.8em 0; padding-left: 1.5em; }
+.bubble li { margin: 0.35em 0; }
+.bubble li > p { margin: 0.35em 0; }
+.bubble li::marker { color: var(--muted); }
+
+.bubble strong { font-weight: 650; }
+
+.bubble blockquote { margin: 1em 0; padding: 0.1em 0 0.1em 1em; border-left: 3px solid var(--line); color: var(--muted); }
+
+.bubble hr { margin: 1.6em 0; border: 0; border-top: 1px solid var(--line); }
+
 .bubble-files {
   display: flex;
   flex-wrap: wrap;
@@ -525,9 +552,9 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 /* ---------- Khối code trong chat ---------- */
 
 .code-block {
-  margin: 10px 0;
+  margin: 1em 0;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: 12px;
   overflow: hidden;
   background: var(--code-bg);
 }
@@ -537,18 +564,12 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 6px 8px 6px 12px;
+  padding: 8px 8px 8px 16px;
   border-bottom: 1px solid var(--line);
-  background: var(--panel-2);
+  background: none;
 }
 
-.code-lang {
-  color: var(--muted);
-  font-size: 11.5px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
+.code-lang { color: var(--muted); font-size: 12.5px; font-weight: 500; }
 
 .code-copy {
   display: inline-flex;
@@ -567,24 +588,33 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .code-copy:hover { border-color: var(--line); color: var(--text); }
 .code-copy svg { flex: none; }
 
+/* Cỡ chữ và chiều cao dòng phải đặt ngay trên pre: dòng của pre cao theo cỡ chữ
+   của chính pre. Để pre kế thừa cỡ chữ văn bản còn code bên trong ép 13px thì
+   mỗi dòng cao ~24px cho chữ 13px — code trông giãn như cách dòng đôi. */
 .bubble .code-block pre {
   margin: 0;
-  padding: 12px;
+  padding: 14px 16px;
   border: 0;
   border-radius: 0;
   background: none;
   overflow-x: auto;
+  font-family: Consolas, "Cascadia Code", monospace;
+  font-size: 13.5px;
+  line-height: 1.6;
 }
 
-.bubble code { font-family: Consolas, "Cascadia Code", monospace; font-size: 13px; }
+.bubble code { font-family: Consolas, "Cascadia Code", monospace; font-size: 0.875em; }
+.bubble pre code { font-size: inherit; }
 
-/* Code lẻ giữa câu văn: thêm nền để tách khỏi chữ thường. Phải loại trừ code
-   nằm trong pre, kẻo mỗi khối lại có thêm một lớp nền lồng bên trong. */
+/* Code lẻ giữa câu văn: chữ có màu trên nền nhạt như Grok, thay cho khối trắng
+   có viền trông nặng. Cỡ theo em nên code nằm trong tiêu đề sẽ to theo tiêu đề,
+   không còn là một mẩu 13px trơ trọi. Loại trừ code trong pre, kẻo khối code
+   có thêm một lớp nền lồng bên trong. */
 .bubble :not(pre) > code {
-  padding: 1px 5px;
-  border: 1px solid var(--line);
-  border-radius: 5px;
-  background: var(--code-bg);
+  padding: 0.12em 0.38em;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  color: var(--inline-code);
 }
 
 /* Tô màu cú pháp. Tên lớp do highlight.js sinh; gom về sáu vai trò màu để bảng
