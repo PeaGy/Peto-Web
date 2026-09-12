@@ -69,7 +69,19 @@ không cần khóa của ai.
 Giới hạn phải biết trước: `speechSynthesis` **không cho chạm vào luồng âm thanh**,
 nên bước này chưa nhép miệng theo biên độ thật được. Nhép miệng thật phải đợi bước 2.
 
-## Bước 2 — Cắm dịch vụ giọng thật
+## Bước 2 — Cắm dịch vụ giọng thật — XONG
+
+Đã có ElevenLabs và OpenAI, chọn trong Cài đặt → Giọng nói. Đo thật trước khi viết:
+**cả ElevenLabs, OpenAI, Azure và Google đều cho gọi thẳng từ trình duyệt**, không bị
+CORS chặn, nên bỏ được dự định nhờ backend chuyển tiếp cho Azure. Âm thanh phát qua
+một `AudioContext` dùng chung, mẩu sau hẹn đúng lúc mẩu trước dứt nên không hở tiếng,
+và giữ đúng thứ tự kể cả khi mẩu sau tải xong trước. `AnalyserNode` đã nối sẵn cho
+bước 3.
+
+Chưa làm: Azure và Google (mới chỉ biết là gọi được), và đường qua backend dùng chung
+khóa của chủ dự án.
+
+Ghi chú gốc của bước này:
 
 - Tách lớp `SpeechProvider` ở frontend, đúng kiểu `ChatProvider` bên backend:
   `browser` (mặc định, miễn phí), `elevenlabs`, `azure`, `openai-compatible`.

@@ -446,7 +446,12 @@ export default function App() {
   // qua ref này.
   const voiceRef = useRef(voice);
   const speechRef = useRef<SpeechQueue | null>(null);
-  const speech = (speechRef.current ??= new SpeechQueue(() => voiceRef.current));
+  const [voiceChars, setVoiceChars] = useState(0);
+  const speech = (speechRef.current ??= new SpeechQueue(() => voiceRef.current, {
+    // Dịch vụ đọc hỏng thì báo ngay, đừng để người dùng ngồi đoán vì sao Peto im.
+    onError: (message) => setNotice(message),
+    onChars: (added) => setVoiceChars((prev) => prev + added),
+  }));
   const [loadingConversation, setLoadingConversation] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
   const [hasMore, setHasMore] = useState(false);
@@ -1430,7 +1435,12 @@ export default function App() {
             </div>
           </section>
 
-          <VoiceSettings value={voice} onChange={changeVoice} />
+          <VoiceSettings
+            value={voice}
+            onChange={changeVoice}
+            chars={voiceChars}
+            onChars={(added) => setVoiceChars((prev) => prev + added)}
+          />
 
           <section className="settings-section">
             <h3>Tài khoản</h3>

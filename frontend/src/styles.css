@@ -1226,7 +1226,20 @@ button:focus-visible, a:focus-visible, .table-scroll:focus-visible {
   font: inherit;
   font-size: 13px;
 }
+.voice-row input:not([type="range"]):not([type="checkbox"]) {
+  flex: 1;
+  min-width: 0;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
 .voice-rate { min-width: 36px; color: var(--muted); font-size: 12px; text-align: right; }
+.voice-error { color: var(--danger); }
 .voice-test {
   justify-self: start;
   padding: 7px 12px;
@@ -1874,5 +1887,6 @@ label,
 }
 
 @media (pointer: coarse) {
-  .voice-row select { font-size: 16px; }
+  .voice-row select,
+  .voice-row input:not([type="range"]):not([type="checkbox"]) { font-size: 16px; }
 }

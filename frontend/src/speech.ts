@@ -1,13 +1,16 @@
 /**
- * Đọc câu trả lời của Peto bằng giọng có sẵn trong máy (Web Speech API).
+ * Đọc câu trả lời của Peto thành tiếng.
  *
- * Không tốn tiền và không cần khóa của ai, đổi lại chất lượng tùy máy: Windows
- * và Android có giọng tiếng Việt, máy khác thì có thể không. Đây là bước đệm để
- * dựng xong đường đi của tiếng nói trước khi cắm dịch vụ giọng thật.
+ * Hai đường: giọng có sẵn trong máy (Web Speech, miễn phí, chất lượng tùy máy)
+ * hoặc một dịch vụ trả tiền do chính người dùng cắm khóa (ElevenLabs, OpenAI).
+ * Khóa nằm trong trình duyệt của họ, không đi qua máy chủ Peto.
  *
- * Đọc dần theo từng câu ngay trong lúc chữ còn đang chảy về, nên Peto bắt đầu
- * nói gần như cùng lúc với lúc mình đọc được chữ đầu tiên.
+ * Cả hai đường đều đọc dần theo mẩu ngay trong lúc chữ còn chảy về, nên Peto
+ * bắt đầu nói gần như cùng lúc với lúc mình đọc được chữ đầu tiên.
  */
+
+import { sharedAudio } from "./audioQueue";
+import { providerById, type CloudConfig } from "./speechProviders";
 
 const FENCE = "```";
 const KEY = "peto-voice";
@@ -15,21 +18,37 @@ const ENDERS = ".!?…;:";
 
 export interface VoiceSettings {
   on: boolean;
-  /** Rỗng nghĩa là để máy tự chọn giọng. */
+  /** "browser" là giọng trong máy; còn lại là id của một dịch vụ. */
+  provider: string;
+  /** Giọng của máy; rỗng là để máy tự chọn. Chỉ dùng khi provider là "browser". */
   voiceURI: string;
   rate: number;
+  /** Cấu hình từng dịch vụ, giữ riêng để đổi qua lại không mất khóa. */
+  cloud: Record<string, CloudConfig>;
+}
+
+export interface SpeechHooks {
+  /** Dịch vụ hỏng thì người dùng phải biết vì sao Peto im. */
+  onError?: (message: string) => void;
+  /** Số ký tự vừa gửi cho dịch vụ trả tiền; chỗ gọi tự cộng dồn. */
+  onChars?: (added: number) => void;
 }
 
 // Giọng cài sẵn trong Windows đọc chậm hơn hẳn giọng của các dịch vụ trên mạng ở
 // cùng mức 1.0, nên mặc định nhanh hơn một chút.
-export const DEFAULT_VOICE: VoiceSettings = { on: false, voiceURI: "", rate: 1.2 };
+export const DEFAULT_VOICE: VoiceSettings = {
+  on: false,
+  provider: "browser",
+  voiceURI: "",
+  rate: 1.2,
+  cloud: {},
+};
 
 // Bản 1 lưu rate 1.0 vì đó là mặc định cũ chứ không phải người dùng chọn.
-const SETTINGS_VERSION = 2;
+const SETTINGS_VERSION = 3;
 
-// Mỗi lượt đọc đều có quãng im ở đầu và cuối, nên càng ít lượt thì càng nghe liền
-// mạch như người nói. Mẩu đầu đọc ngay cho kịp lúc chữ vừa hiện, rồi dồn dần: mẩu
-// thứ hai dài hơn, từ mẩu thứ ba trở đi dài hẳn.
+// Mỗi lượt đọc của giọng máy đều có quãng im ở đầu và cuối, nên càng ít lượt thì
+// càng nghe liền mạch. Mẩu đầu đọc ngay cho kịp lúc chữ vừa hiện, rồi dồn dần.
 const CHUNK_STEPS = [0, 240, 480];
 const MAX_CHUNK = 500;
 // Chrome âm thầm tạm dừng lượt đọc dài quá ~15 giây; gọi resume đều đặn để nó đọc hết.
@@ -43,6 +62,19 @@ export function listVoices(): SpeechSynthesisVoice[] {
   return speechSupported() ? window.speechSynthesis.getVoices() : [];
 }
 
+function cleanCloud(value: unknown): Record<string, CloudConfig> {
+  const out: Record<string, CloudConfig> = {};
+  if (!value || typeof value !== "object") return out;
+  for (const [id, config] of Object.entries(value as Record<string, Partial<CloudConfig>>)) {
+    out[id] = {
+      key: typeof config?.key === "string" ? config.key : "",
+      voice: typeof config?.voice === "string" ? config.voice : "",
+      model: typeof config?.model === "string" ? config.model : "",
+    };
+  }
+  return out;
+}
+
 export function loadVoiceSettings(): VoiceSettings {
   try {
     const raw = localStorage.getItem(KEY);
@@ -52,10 +84,12 @@ export function loadVoiceSettings(): VoiceSettings {
     const rate = value >= 0.5 && value <= 2 ? value : DEFAULT_VOICE.rate;
     return {
       on: saved.on === true,
+      provider: typeof saved.provider === "string" ? saved.provider : "browser",
       voiceURI: typeof saved.voiceURI === "string" ? saved.voiceURI : "",
-      // Bản cũ chưa có số hiệu: nếu đang để đúng mặc định cũ thì nâng lên mặc định
-      // mới một lần. Sau đó tôn trọng mọi giá trị người dùng đã tự chỉnh.
-      rate: saved.v === SETTINGS_VERSION ? rate : rate === 1 ? DEFAULT_VOICE.rate : rate,
+      // Bản cũ chưa có số hiệu: đang để đúng mặc định cũ thì nâng lên mặc định mới
+      // một lần. Sau đó tôn trọng mọi giá trị người dùng đã tự chỉnh.
+      rate: (saved.v ?? 1) >= 2 ? rate : rate === 1 ? DEFAULT_VOICE.rate : rate,
+      cloud: cleanCloud(saved.cloud),
     };
   } catch {
     return DEFAULT_VOICE;
@@ -147,11 +181,20 @@ export class SpeechQueue {
   private buffer = "";
   /** Câu đã đủ nhưng còn chờ gom thêm cho đỡ ngắt quãng. */
   private pending = "";
-  /** Đếm số lượt đã đọc trong câu trả lời này; mẩu đầu được ưu tiên đọc ngay. */
+  /** Đếm số mẩu đã đọc trong câu trả lời này; mẩu đầu được ưu tiên đọc ngay. */
   private said = 0;
   private keepAlive: ReturnType<typeof setInterval> | undefined;
+  private audio = sharedAudio;
+  /** Tải song song cho nhanh, nhưng phát theo đúng thứ tự đã xếp. */
+  private chain: Promise<unknown> = Promise.resolve();
+  private aborter = new AbortController();
+  /** Hỏng một mẩu là thôi cả lượt, đừng báo lỗi liên tục từng mẩu một. */
+  private broken = false;
 
-  constructor(private readonly settings: () => VoiceSettings) {}
+  constructor(
+    private readonly settings: () => VoiceSettings,
+    private readonly hooks: SpeechHooks = {},
+  ) {}
 
   push(delta: string): void {
     this.buffer += delta;
@@ -161,8 +204,9 @@ export class SpeechQueue {
   /** Hết lượt trả lời: đọc nốt phần lẻ còn lại. */
   flush(): void {
     this.drain(true);
-    // Lượt trả lời sau lại được đọc ngay từ câu đầu.
+    // Lượt sau lại được đọc ngay từ câu đầu, và được thử lại nếu vừa hỏng.
     this.said = 0;
+    this.broken = false;
   }
 
   /** Im ngay và quên phần chưa đọc. */
@@ -170,12 +214,22 @@ export class SpeechQueue {
     this.buffer = "";
     this.pending = "";
     this.said = 0;
+    this.broken = false;
     this.stopKeepAlive();
+    this.aborter.abort();
+    this.aborter = new AbortController();
+    this.chain = Promise.resolve();
+    this.audio.stop();
     if (speechSupported()) window.speechSynthesis.cancel();
   }
 
+  /** Biên độ tiếng nói hiện tại, 0 tới 1. Bước 3 dùng để nhép miệng. */
+  level(): number {
+    return this.audio.level();
+  }
+
   private drain(final: boolean): void {
-    if (!this.settings().on || !speechSupported()) {
+    if (!this.settings().on) {
       // Đang tắt thì đừng giữ chữ lại, kẻo bật lên là đọc dồn cả bài cũ.
       this.buffer = "";
       this.pending = "";
@@ -222,16 +276,58 @@ export class SpeechQueue {
     const clean = speakableText(text);
     if (!clean) return;
     this.said += 1;
-    const utterance = new SpeechSynthesisUtterance(clean);
-    const { voiceURI, rate } = this.settings();
-    const voice = listVoices().find((item) => item.voiceURI === voiceURI);
+    const settings = this.settings();
+    if (settings.provider === "browser") this.speakNative(clean, settings);
+    else this.speakCloud(clean, settings);
+  }
+
+  private speakNative(text: string, settings: VoiceSettings): void {
+    if (!speechSupported()) return;
+    const utterance = new SpeechSynthesisUtterance(text);
+    const voice = listVoices().find((item) => item.voiceURI === settings.voiceURI);
     if (voice) {
       utterance.voice = voice;
       utterance.lang = voice.lang;
     }
-    utterance.rate = rate;
+    utterance.rate = settings.rate;
     window.speechSynthesis.speak(utterance);
     this.startKeepAlive();
+  }
+
+  private speakCloud(text: string, settings: VoiceSettings): void {
+    if (this.broken) return;
+    const provider = providerById(settings.provider);
+    if (!provider) {
+      this.fail("Chưa biết dịch vụ đọc nào tên như vậy.");
+      return;
+    }
+    const config = settings.cloud[provider.id];
+    if (!config?.key) {
+      this.fail(`Chưa điền khóa API cho ${provider.label}.`);
+      return;
+    }
+
+    this.hooks.onChars?.(text.length);
+
+    const { signal } = this.aborter;
+    const loading = provider.synthesize(text, config, signal);
+    // Bắt sẵn ở đây: lỗi về trước lượt của nó thì đừng thành unhandled rejection.
+    loading.catch(() => {});
+    this.chain = this.chain
+      .then(() => loading)
+      .then((bytes) => (signal.aborted ? undefined : this.audio.play(bytes)))
+      .catch((err: unknown) => {
+        if (signal.aborted) return;
+        this.fail(err instanceof Error ? err.message : `${provider.label} không đọc được.`);
+      });
+  }
+
+  private fail(message: string): void {
+    if (this.broken) return;
+    this.broken = true;
+    this.buffer = "";
+    this.pending = "";
+    this.hooks.onError?.(message);
   }
 
   private startKeepAlive(): void {

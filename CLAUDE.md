@@ -330,6 +330,14 @@ half-configured setups log a warning at startup rather than failing silently.
   outside React, so it reads settings through a ref that `changeVoice` updates synchronously
   — going through state would speak one turn behind. Turning it on speaks one short line on
   purpose: iOS only allows audio that starts inside a user gesture.
+- Paid voices (`speechProviders.ts`) are called straight from the browser with the user's
+  own key, kept in `localStorage` and never sent to our server — checked live: ElevenLabs,
+  OpenAI, Azure and Google all answer browser calls, no CORS block, so no backend proxy is
+  needed. `audioQueue.ts` decodes each clip and schedules it at the previous clip's end on
+  one shared `AudioContext`: playback is gapless and stays in order even when a later
+  request finishes first, and its `AnalyserNode` is what step 3 reads for lip-sync. Failures
+  surface once per reply through `onError` (App shows a notice) instead of one alert per
+  chunk, and `onChars` reports characters billed so Settings can show what a session costs.
 - Per-user preferences (effort, theme, imagine quality/resolution/ratio/count) live in
   `localStorage` behind try/catch helpers. In-flight Imagine state lives in component state,
   so it survives switching tabs but not a page reload.
