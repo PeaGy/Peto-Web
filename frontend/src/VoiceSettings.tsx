@@ -57,6 +57,10 @@ export default function VoiceSettings({ value, onChange, chars, onChars }: {
     return () => controller.abort();
   }, [providerId, key]);
 
+  // Giọng lấy được từ tài khoản thì ưu tiên; không có thì dùng danh sách cố định
+  // của dịch vụ; không có nữa thì để người dùng tự gõ mã giọng.
+  const voiceOptions = cloudVoices.length > 0 ? cloudVoices : provider?.voices ?? [];
+
   function setCloud(patch: Partial<CloudConfig>) {
     if (!provider || !config) return;
     onChange({ ...value, cloud: { ...value.cloud, [provider.id]: { ...config, ...patch } } });
@@ -155,13 +159,13 @@ export default function VoiceSettings({ value, onChange, chars, onChars }: {
 
             <div className="voice-row">
               <label htmlFor="voice-cloud-voice">Giọng</label>
-              {cloudVoices.length > 0 ? (
+              {voiceOptions.length > 0 ? (
                 <select
                   id="voice-cloud-voice"
                   value={config?.voice ?? ""}
                   onChange={(event) => setCloud({ voice: event.target.value })}
                 >
-                  {cloudVoices.map((item) => (
+                  {voiceOptions.map((item) => (
                     <option key={item.id} value={item.id}>{item.name}</option>
                   ))}
                 </select>

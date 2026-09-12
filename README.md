@@ -327,8 +327,8 @@ Giới hạn cố ý của phần này:
 - Nút loa trong ô nhắn cho Peto đọc câu trả lời bằng giọng có sẵn trong máy: đọc dần
   theo từng câu ngay khi chữ còn đang chảy về, bỏ qua khối mã, bấm Dừng là im ngay.
   Chọn giọng và tốc độ ở **Cài đặt → Giọng nói**; máy không có giọng nào thì nút tự ẩn.
-  Muốn giọng tự nhiên hơn thì cắm khóa ElevenLabs hoặc OpenAI của chính bạn, cũng ở mục
-  đó. Khóa nằm trong trình duyệt của bạn, không gửi lên máy chủ, và tiền là bạn trả theo
+  Muốn giọng tự nhiên hơn thì cắm khóa của chính bạn, cũng ở mục đó: **Gemini** (khóa lấy
+  miễn phí ở aistudio.google.com, không cần thẻ), ElevenLabs hoặc OpenAI. Khóa nằm trong trình duyệt của bạn, không gửi lên máy chủ, và tiền là bạn trả theo
   số ký tự đã đọc; Cài đặt có đếm sẵn số ký tự của phiên.
 - Tối đa 16 tệp/tin, trong đó ảnh, PDF và Word tối đa 4; 8 MB/tệp, tổng 16 MB
   theo cấu hình mặc định. Ảnh, lớp chữ PDF, phần thân và bảng Word (.docx),

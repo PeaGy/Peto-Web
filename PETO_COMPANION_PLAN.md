@@ -78,8 +78,21 @@ một `AudioContext` dùng chung, mẩu sau hẹn đúng lúc mẩu trước d�
 và giữ đúng thứ tự kể cả khi mẩu sau tải xong trước. `AnalyserNode` đã nối sẵn cho
 bước 3.
 
-Chưa làm: Azure và Google (mới chỉ biết là gọi được), và đường qua backend dùng chung
-khóa của chủ dự án.
+Có ba dịch vụ: **Gemini (Google AI Studio)**, ElevenLabs và OpenAI. Gemini là đường dễ
+nhất cho nhóm mình: khóa lấy miễn phí ở aistudio.google.com, không cần thẻ. Nó trả PCM
+thô nên phải bọc thành WAV mới phát được, còn khóa thì gửi bằng header `x-goog-api-key`
+chứ không nhét vào đường dẫn.
+
+Thông báo lỗi bám vào **nội dung** lỗi chứ không chỉ mã số: Google trả 400 cho khóa sai,
+nhìn mỗi mã số là báo nhầm thành sai mã giọng. Kèm luôn câu giải thích của chính dịch vụ.
+
+**Không dùng Official Speech Provider của AIRI.** Theo tài liệu của họ, nó chạy bằng
+phiên đăng nhập AIRI và tính tiền bằng số dư Flux, không có khóa cho bên thứ ba, và họ
+dặn rõ đừng chia sẻ dữ liệu phiên. Muốn xài ké thì phải bê session của người dùng sang,
+tức là đúng thứ họ cấm.
+
+Chưa làm: Azure và Google Cloud TTS (mới chỉ đo là gọi được từ trình duyệt), và đường qua
+backend dùng chung khóa của chủ dự án.
 
 Ghi chú gốc của bước này:
 

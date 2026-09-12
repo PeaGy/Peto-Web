@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CLOUD_PROVIDERS, defaultConfig } from '../src/speechProviders';
 
 const elevenlabs = CLOUD_PROVIDERS.elevenlabs;
+const gemini = CLOUD_PROVIDERS.gemini;
 const openai = CLOUD_PROVIDERS.openai;
 const signal = () => new AbortController().signal;
 
@@ -37,9 +38,50 @@ describe('Dịch vụ đọc thành tiếng', () => {
     });
   });
 
+  it('Gemini gửi khóa qua header và bọc PCM thành WAV', async () => {
+    const pcm = new Uint8Array([1, 2, 3, 4]);
+    const calls: { url: string; init?: RequestInit }[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push({ url: String(url), init });
+      return new Response(JSON.stringify({
+        candidates: [{ content: { parts: [{
+          inlineData: { mimeType: 'audio/L16;codec=pcm;rate=24000', data: btoa(String.fromCharCode(...pcm)) },
+        }] } }],
+      }), { status: 200 });
+    }));
+
+    const bytes = await gemini.synthesize('chào', { key: 'k-gemini', voice: 'Kore', model: 'm-tts' }, signal());
+    // 44 byte tiêu đề WAV rồi mới tới dữ liệu; thiếu nó là trình duyệt không phát được.
+    expect(new TextDecoder().decode(bytes.slice(0, 4))).toBe('RIFF');
+    expect(bytes.byteLength).toBe(44 + pcm.length);
+    expect(new DataView(bytes).getUint32(24, true)).toBe(24000);
+    expect((calls[0].init?.headers as Record<string, string>)['x-goog-api-key']).toBe('k-gemini');
+    // Khóa không được nằm trong đường dẫn, kẻo lọt vào log của mọi thứ trên đường đi.
+    expect(calls[0].url).not.toContain('k-gemini');
+  });
+
+  it('Gemini không trả âm thanh thì nói rõ chứ không im lặng', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ candidates: [] }), { status: 200 })));
+    await expect(gemini.synthesize('chào', defaultConfig(gemini), signal()))
+      .rejects.toThrow(/không trả về âm thanh/);
+  });
+
   it('khóa sai thì báo bằng tiếng Việt chứ không ném mã lỗi trần', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => new Response('nope', { status: 401 })));
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(
+      JSON.stringify({ detail: { message: 'Invalid API key' } }), { status: 401 },
+    )));
+    // Kèm luôn câu của chính dịch vụ: người dùng cần biết vì sao, không chỉ là "sai".
     await expect(elevenlabs.synthesize('chào', defaultConfig(elevenlabs), signal()))
+      .rejects.toThrow(/không nhận khóa API.*Invalid API key/s);
+  });
+
+  it('khóa sai mà dịch vụ trả 400 thì vẫn nói là lỗi khóa', async () => {
+    // Google trả 400 cho khóa sai; nhìn mỗi mã số thì báo nhầm thành sai mã giọng.
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(
+      JSON.stringify({ error: { message: 'API key not valid. Please pass a valid API key.' } }),
+      { status: 400 },
+    )));
+    await expect(gemini.synthesize('chào', defaultConfig(gemini), signal()))
       .rejects.toThrow(/không nhận khóa API/);
   });
 
