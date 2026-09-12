@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_VOICE, SpeechQueue, chunkLong, loadVoiceSettings, saveVoiceSettings,
   speakableText, splitSentences, type VoiceSettings } from '../src/speech';
 
@@ -11,10 +11,12 @@ class FakeUtterance {
 
 const spoken: string[] = [];
 let cancels = 0;
+let resumes = 0;
 
 beforeEach(() => {
   spoken.length = 0;
   cancels = 0;
+  resumes = 0;
   localStorage.clear();
   // jsdom không có Web Speech API, nên dựng một cái giả đủ dùng.
   Object.defineProperty(window, 'speechSynthesis', {
@@ -22,6 +24,8 @@ beforeEach(() => {
     value: {
       speak: (utterance: FakeUtterance) => { spoken.push(utterance.text); },
       cancel: () => { cancels += 1; },
+      resume: () => { resumes += 1; },
+      speaking: true,
       getVoices: () => [],
     },
   });
@@ -122,9 +126,9 @@ describe('Hàng đợi đọc', () => {
     const queue = queueWith({ ...DEFAULT_VOICE, on: true });
     const cau = 'Câu dài để thử ngưỡng gom mẩu cho đủ chữ. ';
     queue.push('Mở đầu. ');
-    queue.push(cau.repeat(4));
+    queue.push(cau.repeat(8));
     expect(spoken.length).toBe(2);
-    expect(spoken[1].length).toBeGreaterThanOrEqual(120);
+    expect(spoken[1].length).toBeGreaterThanOrEqual(240);
   });
 
   it('lượt trả lời sau lại được đọc ngay từ câu đầu', () => {
@@ -134,6 +138,24 @@ describe('Hàng đợi đọc', () => {
     spoken.length = 0;
     queue.push('Lượt sau. ');
     expect(spoken).toEqual(['Lượt sau.']);
+  });
+
+  it('gọi resume đều đặn để Chrome không cắt ngang lượt đọc dài', () => {
+    vi.useFakeTimers();
+    try {
+      const queue = queueWith({ ...DEFAULT_VOICE, on: true });
+      queue.push('Một câu đủ dài để bắt đầu đọc. ');
+      expect(resumes).toBe(0);
+      vi.advanceTimersByTime(11000);
+      expect(resumes).toBeGreaterThan(0);
+
+      queue.cancel();
+      const after = resumes;
+      vi.advanceTimersByTime(11000);
+      expect(resumes).toBe(after);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('dừng thì im ngay và quên phần chưa đọc', () => {

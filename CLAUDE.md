@@ -320,10 +320,11 @@ half-configured setups log a warning at startup rather than failing silently.
 - Voice (`speech.ts`, `VoiceSettings.tsx`) reads replies aloud with the device's own Web
   Speech voices — no key, no server cost. `SpeechQueue` buffers the SSE deltas and speaks
   sentence by sentence, holding back everything after an unclosed code fence so a snippet is
-  never read out character by character. Short sentences are merged up to ~120 chars and
-  anything over ~220 is split at a space: every utterance carries its own leading and
-  trailing silence, and Chrome cuts off utterances longer than ~15s. The first chunk of
-  each reply still goes out immediately, so merging costs nothing at the start.
+  never read out character by character. Every utterance carries its own leading and
+  trailing silence, so the chunks ramp up — first sentence out immediately, then ~240
+  chars, then ~480 — and a periodic `resume()` stops Chrome silently pausing utterances
+  longer than ~15s. Fewer utterances is the whole point: that is what makes it sound like
+  one person talking instead of a list of sentences read one at a time.
   `App.tsx` feeds it from `onDelta`, flushes on
   `onDone`, and cancels on stop, error, conversation switch and tab switch. The queue lives
   outside React, so it reads settings through a ref that `changeVoice` updates synchronously

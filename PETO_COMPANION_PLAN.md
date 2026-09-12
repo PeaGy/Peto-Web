@@ -40,10 +40,11 @@ tạm ở đó; khi dựng Companion thì chuyển sang. Máy Windows có sẵn 
 (Microsoft An), nên ở bước này Peto nói tiếng Việt được — hạn chế tiếng Việt chỉ
 đúng với các dịch vụ trả tiền ở bước 2.
 
-Đã chỉnh sau lần nghe thử đầu: tốc độ mặc định lên 1.2 (giọng Windows đọc chậm hơn
-giọng trên mạng ở cùng mức 1.0, và bản lưu cũ ở mức 1.0 được nâng một lần), các câu
-ngắn được gom tới ~120 ký tự cho đỡ ngắt quãng, mẩu dài quá ~220 ký tự thì cắt ở
-khoảng trắng cho khỏi dính lỗi Chrome cắt ngang lượt đọc quá 15 giây.
+Đã chỉnh sau hai lần nghe thử. Tốc độ mặc định lên 1.2, và bản lưu cũ ở mức 1.0 được
+nâng một lần. Quan trọng hơn: người nghe thấy giật là vì mỗi lượt đọc của Web Speech
+đều có quãng im ở đầu và cuối, nên giờ mẩu đọc phình dần (câu đầu đọc ngay, rồi ~240,
+rồi ~480 ký tự) và có nhịp `resume()` để Chrome không tự tắt tiếng ở lượt đọc dài quá
+15 giây. AIRI không gặp chuyện này vì họ phát nguyên file âm thanh từ dịch vụ.
 
 Hai thứ trong bước này bị dời đi: ô chọn ngôn ngữ và trường `language` của
 `/api/chat` dời sang lúc dựng Companion (giọng của máy tự khớp ngôn ngữ nên chưa

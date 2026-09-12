@@ -27,10 +27,13 @@ export const DEFAULT_VOICE: VoiceSettings = { on: false, voiceURI: "", rate: 1.2
 // Bản 1 lưu rate 1.0 vì đó là mặc định cũ chứ không phải người dùng chọn.
 const SETTINGS_VERSION = 2;
 
-// Dồn vài câu ngắn vào một lượt đọc cho đỡ ngắt quãng: mỗi lượt đều có quãng im ở
-// đầu và cuối. Nhưng đừng dồn quá dài, Chrome cắt ngang lượt đọc quá ~15 giây.
-const MIN_CHUNK = 120;
-const MAX_CHUNK = 220;
+// Mỗi lượt đọc đều có quãng im ở đầu và cuối, nên càng ít lượt thì càng nghe liền
+// mạch như người nói. Mẩu đầu đọc ngay cho kịp lúc chữ vừa hiện, rồi dồn dần: mẩu
+// thứ hai dài hơn, từ mẩu thứ ba trở đi dài hẳn.
+const CHUNK_STEPS = [0, 240, 480];
+const MAX_CHUNK = 500;
+// Chrome âm thầm tạm dừng lượt đọc dài quá ~15 giây; gọi resume đều đặn để nó đọc hết.
+const KEEP_ALIVE_MS = 5000;
 
 export function speechSupported(): boolean {
   return typeof window !== "undefined" && "speechSynthesis" in window;
@@ -146,6 +149,7 @@ export class SpeechQueue {
   private pending = "";
   /** Đếm số lượt đã đọc trong câu trả lời này; mẩu đầu được ưu tiên đọc ngay. */
   private said = 0;
+  private keepAlive: ReturnType<typeof setInterval> | undefined;
 
   constructor(private readonly settings: () => VoiceSettings) {}
 
@@ -166,6 +170,7 @@ export class SpeechQueue {
     this.buffer = "";
     this.pending = "";
     this.said = 0;
+    this.stopKeepAlive();
     if (speechSupported()) window.speechSynthesis.cancel();
   }
 
@@ -203,7 +208,8 @@ export class SpeechQueue {
     const piece = sentence.trim();
     if (!piece) return;
     this.pending = this.pending ? `${this.pending} ${piece}` : piece;
-    if (this.said === 0 || this.pending.length >= MIN_CHUNK) this.sayPending();
+    const needed = CHUNK_STEPS[Math.min(this.said, CHUNK_STEPS.length - 1)];
+    if (this.pending.length >= needed) this.sayPending();
   }
 
   private sayPending(): void {
@@ -225,5 +231,26 @@ export class SpeechQueue {
     }
     utterance.rate = rate;
     window.speechSynthesis.speak(utterance);
+    this.startKeepAlive();
+  }
+
+  private startKeepAlive(): void {
+    if (this.keepAlive !== undefined) return;
+    this.keepAlive = setInterval(() => {
+      const synth = window.speechSynthesis;
+      if (!synth.speaking) {
+        this.stopKeepAlive();
+        return;
+      }
+      // Lúc đang đọc bình thường thì resume không ảnh hưởng gì; chỉ khi Chrome tự
+      // tạm dừng giữa chừng nó mới có tác dụng.
+      synth.resume();
+    }, KEEP_ALIVE_MS);
+  }
+
+  private stopKeepAlive(): void {
+    if (this.keepAlive === undefined) return;
+    clearInterval(this.keepAlive);
+    this.keepAlive = undefined;
   }
 }
