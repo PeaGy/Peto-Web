@@ -8,6 +8,30 @@ chục package, phạm vi gấp nhiều lần mình.
 Tài liệu này ghi hướng đã chốt và thứ tự làm. Nó không cho phép triển khai gì cả:
 mỗi bước vẫn bàn lại trước khi viết code.
 
+## Đã thử bước 1 và 2 rồi gỡ (12/9/2026)
+
+Code vẫn nằm trong lịch sử git, từ `b295c79` tới `5b8b7fc`, gỡ bằng `c1003dc`. Muốn lấy
+lại phần nào cũng được. Những gì đã học, để lần lên kế hoạch sau khỏi dẫm lại:
+
+- **Giọng có sẵn trong máy nghe giật.** Mỗi lượt đọc của Web Speech đều có quãng im ở đầu
+  và cuối, nên đọc dần từng câu là nghe rời rạc. Gom mẩu to hơn thì đỡ, nhưng Chrome lại
+  tự tắt tiếng ở lượt đọc dài quá 15 giây, phải gọi `resume()` đều đặn để chữa. Windows có
+  sẵn giọng tiếng Việt (Microsoft An) nên vẫn nói tiếng Việt được.
+- **Mọi dịch vụ đều gọi thẳng từ trình duyệt được.** Đo thật: ElevenLabs, OpenAI, Azure và
+  Google đều không bị CORS chặn. Không cần backend chuyển tiếp, khóa nằm ở máy người dùng.
+- **Chỗ chết là hạn mức của gói miễn phí.** Gemini chỉ cho 3 lượt gọi mỗi phút, mà đọc dần
+  thì một câu trả lời đã tốn 2–5 lượt; gộp cả lượt thành một request thì chạy được nhưng
+  Peto nói muộn hẳn. OpenAI phải nạp tiền trước. ElevenLabs khó tìm chỗ lấy khóa.
+- **Azure F0 là gói dễ thở nhất** nhưng chưa kịp thử bằng khóa thật: 20 lượt mỗi phút, 500
+  nghìn ký tự mỗi tháng, có giọng tiếng Việt HoaiMy và NamMinh.
+- **Không dùng được Official Speech Provider của AIRI:** nó chạy bằng phiên đăng nhập AIRI,
+  không có khóa cho bên thứ ba, và tài liệu của họ dặn đừng chia sẻ dữ liệu phiên.
+- **Bài học chung:** phần khó không nằm ở code đọc tiếng — chỗ đó làm xong và chạy đúng —
+  mà ở việc tìm một nguồn giọng vừa nghe được, vừa không bắt ai trả tiền hay điền khóa.
+
+Phần tách `Composer.tsx` và `files.tsx` (commit `99ba39a`) được giữ lại: đó là dọn dẹp
+thuần túy, có test riêng, không dính gì tới giọng nói.
+
 ## Đã chốt
 
 - **Mỗi người tự cắm khóa API của mình**, khóa nằm trong trình duyệt của họ, không
