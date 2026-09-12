@@ -20,7 +20,17 @@ export interface VoiceSettings {
   rate: number;
 }
 
-export const DEFAULT_VOICE: VoiceSettings = { on: false, voiceURI: "", rate: 1 };
+// Giọng cài sẵn trong Windows đọc chậm hơn hẳn giọng của các dịch vụ trên mạng ở
+// cùng mức 1.0, nên mặc định nhanh hơn một chút.
+export const DEFAULT_VOICE: VoiceSettings = { on: false, voiceURI: "", rate: 1.2 };
+
+// Bản 1 lưu rate 1.0 vì đó là mặc định cũ chứ không phải người dùng chọn.
+const SETTINGS_VERSION = 2;
+
+// Dồn vài câu ngắn vào một lượt đọc cho đỡ ngắt quãng: mỗi lượt đều có quãng im ở
+// đầu và cuối. Nhưng đừng dồn quá dài, Chrome cắt ngang lượt đọc quá ~15 giây.
+const MIN_CHUNK = 120;
+const MAX_CHUNK = 220;
 
 export function speechSupported(): boolean {
   return typeof window !== "undefined" && "speechSynthesis" in window;
@@ -34,12 +44,15 @@ export function loadVoiceSettings(): VoiceSettings {
   try {
     const raw = localStorage.getItem(KEY);
     if (!raw) return DEFAULT_VOICE;
-    const saved = JSON.parse(raw) as Partial<VoiceSettings>;
-    const rate = typeof saved.rate === "number" ? saved.rate : 1;
+    const saved = JSON.parse(raw) as Partial<VoiceSettings> & { v?: number };
+    const value = typeof saved.rate === "number" ? saved.rate : DEFAULT_VOICE.rate;
+    const rate = value >= 0.5 && value <= 2 ? value : DEFAULT_VOICE.rate;
     return {
       on: saved.on === true,
       voiceURI: typeof saved.voiceURI === "string" ? saved.voiceURI : "",
-      rate: rate >= 0.5 && rate <= 2 ? rate : 1,
+      // Bản cũ chưa có số hiệu: nếu đang để đúng mặc định cũ thì nâng lên mặc định
+      // mới một lần. Sau đó tôn trọng mọi giá trị người dùng đã tự chỉnh.
+      rate: saved.v === SETTINGS_VERSION ? rate : rate === 1 ? DEFAULT_VOICE.rate : rate,
     };
   } catch {
     return DEFAULT_VOICE;
@@ -48,7 +61,7 @@ export function loadVoiceSettings(): VoiceSettings {
 
 export function saveVoiceSettings(value: VoiceSettings): void {
   try {
-    localStorage.setItem(KEY, JSON.stringify(value));
+    localStorage.setItem(KEY, JSON.stringify({ ...value, v: SETTINGS_VERSION }));
   } catch {
     // Trình duyệt chặn localStorage thì thôi, không đáng làm hỏng lượt chat.
   }
@@ -107,14 +120,32 @@ export function splitSentences(buffer: string): { ready: string[]; rest: string 
   return { ready, rest: buffer.slice(start) };
 }
 
+/** Cắt mẩu quá dài ở khoảng trắng gần nhất, để không lượt đọc nào quá dài. */
+export function chunkLong(text: string, max = MAX_CHUNK): string[] {
+  const pieces: string[] = [];
+  let rest = text.trim();
+  while (rest.length > max) {
+    const space = rest.lastIndexOf(" ", max);
+    const at = space > max / 2 ? space : max;
+    pieces.push(rest.slice(0, at).trim());
+    rest = rest.slice(at).trim();
+  }
+  if (rest) pieces.push(rest);
+  return pieces;
+}
+
 /**
- * Gom chữ chảy về rồi đọc từng câu một.
+ * Gom chữ chảy về rồi đọc từng mẩu một.
  *
  * Giữ lại phần sau dấu mở khối mã cho tới khi khối đó đóng, để không đọc nửa
  * chừng đoạn mã rồi mới biết đó là mã.
  */
 export class SpeechQueue {
   private buffer = "";
+  /** Câu đã đủ nhưng còn chờ gom thêm cho đỡ ngắt quãng. */
+  private pending = "";
+  /** Đếm số lượt đã đọc trong câu trả lời này; mẩu đầu được ưu tiên đọc ngay. */
+  private said = 0;
 
   constructor(private readonly settings: () => VoiceSettings) {}
 
@@ -126,11 +157,15 @@ export class SpeechQueue {
   /** Hết lượt trả lời: đọc nốt phần lẻ còn lại. */
   flush(): void {
     this.drain(true);
+    // Lượt trả lời sau lại được đọc ngay từ câu đầu.
+    this.said = 0;
   }
 
   /** Im ngay và quên phần chưa đọc. */
   cancel(): void {
     this.buffer = "";
+    this.pending = "";
+    this.said = 0;
     if (speechSupported()) window.speechSynthesis.cancel();
   }
 
@@ -138,6 +173,7 @@ export class SpeechQueue {
     if (!this.settings().on || !speechSupported()) {
       // Đang tắt thì đừng giữ chữ lại, kẻo bật lên là đọc dồn cả bài cũ.
       this.buffer = "";
+      this.pending = "";
       return;
     }
 
@@ -151,19 +187,35 @@ export class SpeechQueue {
     }
 
     const { ready, rest } = splitSentences(stripCode(safe));
-    for (const piece of ready) this.speak(piece);
+    for (const piece of ready) this.enqueue(piece);
     this.buffer = rest + held;
 
     if (final) {
       const last = this.buffer;
       this.buffer = "";
-      this.speak(last);
+      this.enqueue(last);
+      this.sayPending();
     }
+  }
+
+  /** Mẩu đầu đọc ngay cho kịp lúc chữ vừa hiện; các câu sau gom lại cho liền mạch. */
+  private enqueue(sentence: string): void {
+    const piece = sentence.trim();
+    if (!piece) return;
+    this.pending = this.pending ? `${this.pending} ${piece}` : piece;
+    if (this.said === 0 || this.pending.length >= MIN_CHUNK) this.sayPending();
+  }
+
+  private sayPending(): void {
+    const text = this.pending;
+    this.pending = "";
+    for (const piece of chunkLong(text)) this.speak(piece);
   }
 
   private speak(text: string): void {
     const clean = speakableText(text);
     if (!clean) return;
+    this.said += 1;
     const utterance = new SpeechSynthesisUtterance(clean);
     const { voiceURI, rate } = this.settings();
     const voice = listVoices().find((item) => item.voiceURI === voiceURI);
