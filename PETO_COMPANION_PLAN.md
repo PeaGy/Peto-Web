@@ -33,22 +33,7 @@ mỗi bước vẫn bàn lại trước khi viết code.
 - Không làm Discord, Minecraft, Telegram như họ.
 - Chưa nhận tiếng Việt cho phần nói ra.
 
-## Bước 1 — Giọng nói bằng giọng sẵn có của trình duyệt — XONG
-
-Nút loa hiện nằm trong ô nhắn của tab **Trò chuyện**, chưa có tab Companion nên để
-tạm ở đó; khi dựng Companion thì chuyển sang. Máy Windows có sẵn giọng tiếng Việt
-(Microsoft An), nên ở bước này Peto nói tiếng Việt được — hạn chế tiếng Việt chỉ
-đúng với các dịch vụ trả tiền ở bước 2.
-
-Đã chỉnh sau hai lần nghe thử. Tốc độ mặc định lên 1.2, và bản lưu cũ ở mức 1.0 được
-nâng một lần. Quan trọng hơn: người nghe thấy giật là vì mỗi lượt đọc của Web Speech
-đều có quãng im ở đầu và cuối, nên giờ mẩu đọc phình dần (câu đầu đọc ngay, rồi ~240,
-rồi ~480 ký tự) và có nhịp `resume()` để Chrome không tự tắt tiếng ở lượt đọc dài quá
-15 giây. AIRI không gặp chuyện này vì họ phát nguyên file âm thanh từ dịch vụ.
-
-Hai thứ trong bước này bị dời đi: ô chọn ngôn ngữ và trường `language` của
-`/api/chat` dời sang lúc dựng Companion (giọng của máy tự khớp ngôn ngữ nên chưa
-cần), còn nhép miệng phải đợi bước 2 mới có luồng âm thanh để đo.
+## Bước 1 — Giọng nói bằng giọng sẵn có của trình duyệt
 
 Mục tiêu: dựng xong **toàn bộ đường đi của tiếng nói** mà không tốn đồng nào và
 không cần khóa của ai.
@@ -69,42 +54,7 @@ không cần khóa của ai.
 Giới hạn phải biết trước: `speechSynthesis` **không cho chạm vào luồng âm thanh**,
 nên bước này chưa nhép miệng theo biên độ thật được. Nhép miệng thật phải đợi bước 2.
 
-## Bước 2 — Cắm dịch vụ giọng thật — XONG
-
-Đã có ElevenLabs và OpenAI, chọn trong Cài đặt → Giọng nói. Đo thật trước khi viết:
-**cả ElevenLabs, OpenAI, Azure và Google đều cho gọi thẳng từ trình duyệt**, không bị
-CORS chặn, nên bỏ được dự định nhờ backend chuyển tiếp cho Azure. Âm thanh phát qua
-một `AudioContext` dùng chung, mẩu sau hẹn đúng lúc mẩu trước dứt nên không hở tiếng,
-và giữ đúng thứ tự kể cả khi mẩu sau tải xong trước. `AnalyserNode` đã nối sẵn cho
-bước 3.
-
-Có ba dịch vụ: **Gemini (Google AI Studio)**, ElevenLabs và OpenAI. Gemini là đường dễ
-nhất cho nhóm mình: khóa lấy miễn phí ở aistudio.google.com, không cần thẻ. Nó trả PCM
-thô nên phải bọc thành WAV mới phát được, còn khóa thì gửi bằng header `x-goog-api-key`
-chứ không nhét vào đường dẫn.
-
-Thông báo lỗi bám vào **nội dung** lỗi chứ không chỉ mã số: Google trả 400 cho khóa sai,
-nhìn mỗi mã số là báo nhầm thành sai mã giọng. Kèm luôn câu giải thích của chính dịch vụ.
-
-**Không dùng Official Speech Provider của AIRI.** Theo tài liệu của họ, nó chạy bằng
-phiên đăng nhập AIRI và tính tiền bằng số dư Flux, không có khóa cho bên thứ ba, và họ
-dặn rõ đừng chia sẻ dữ liệu phiên. Muốn xài ké thì phải bê session của người dùng sang,
-tức là đúng thứ họ cấm.
-
-**Bài học về hạn mức, sau khi thử bằng khóa thật:** gói miễn phí của Gemini chỉ cho **3
-lượt gọi mỗi phút**, mà cách chia mẩu để đọc dần lại tốn 2–5 lượt cho một câu trả lời, nên
-chạm trần ngay. Vì vậy `CloudProvider` có cờ `oneShot`: dịch vụ nào bị siết thì gom cả câu
-trả lời rồi gọi đúng một lần, đổi độ trễ lấy số lượt gọi. Gemini bật cờ này, và giao diện
-nói rõ cho người dùng biết vì sao Peto đọc muộn hơn.
-
-Đã thêm **Azure Speech** vì gói F0 dễ thở hơn nhiều: 20 lượt gọi mỗi phút, 500 nghìn ký tự
-mỗi tháng, lại có giọng tiếng Việt HoaiMy và NamMinh. Azure cần thêm ô Vùng, nên `CloudConfig`
-có `region`, và chữ phải rào XML trước khi nhét vào SSML.
-
-Chưa làm: Google Cloud TTS (mới chỉ đo là gọi được từ trình duyệt), và đường qua backend
-dùng chung khóa của chủ dự án.
-
-Ghi chú gốc của bước này:
+## Bước 2 — Cắm dịch vụ giọng thật
 
 - Tách lớp `SpeechProvider` ở frontend, đúng kiểu `ChatProvider` bên backend:
   `browser` (mặc định, miễn phí), `elevenlabs`, `azure`, `openai-compatible`.

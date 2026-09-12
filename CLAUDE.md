@@ -317,34 +317,6 @@ half-configured setups log a warning at startup rather than failing silently.
   deliberately not used. Anything else renders as plain text under an uppercased tag, so a
   new language needs a grammar import **and** a label. Each grammar costs bundle size; add
   ones Peto actually answers with.
-- Voice (`speech.ts`, `VoiceSettings.tsx`) reads replies aloud with the device's own Web
-  Speech voices — no key, no server cost. `SpeechQueue` buffers the SSE deltas and speaks
-  sentence by sentence, holding back everything after an unclosed code fence so a snippet is
-  never read out character by character. Every utterance carries its own leading and
-  trailing silence, so the chunks ramp up — first sentence out immediately, then ~240
-  chars, then ~480 — and a periodic `resume()` stops Chrome silently pausing utterances
-  longer than ~15s. Fewer utterances is the whole point: that is what makes it sound like
-  one person talking instead of a list of sentences read one at a time.
-  `App.tsx` feeds it from `onDelta`, flushes on
-  `onDone`, and cancels on stop, error, conversation switch and tab switch. The queue lives
-  outside React, so it reads settings through a ref that `changeVoice` updates synchronously
-  — going through state would speak one turn behind. Turning it on speaks one short line on
-  purpose: iOS only allows audio that starts inside a user gesture.
-- Paid voices (`speechProviders.ts` — Gemini, Azure, ElevenLabs, OpenAI) are called straight
-  from the browser with the user's own key, kept in `localStorage` and never sent to our server — checked live: ElevenLabs,
-  OpenAI, Azure and Google all answer browser calls, no CORS block, so no backend proxy is
-  needed. `audioQueue.ts` decodes each clip and schedules it at the previous clip's end on
-  one shared `AudioContext`: playback is gapless and stays in order even when a later
-  request finishes first, and its `AnalyserNode` is what step 3 reads for lip-sync. Failures
-  surface once per reply through `onError` (App shows a notice) instead of one alert per
-  chunk, and `onChars` reports characters billed so Settings can show what a session costs.
-  Error wording keys off the response **body**, not just the status: Google answers 400 for
-  a bad key, so status alone would blame the voice id. Gemini returns raw PCM, which
-  `decodeAudioData` refuses — `wavFromPcm` adds the 44-byte header — and its key goes in the
-  `x-goog-api-key` header rather than the query string. A provider can set `oneShot` when its
-  free tier rations requests — Gemini allows 3 per minute, and streaming chunks burn that in
-  one reply — so the queue holds the whole answer and sends exactly one request, trading
-  latency for quota; Azure's F0 tier allows 20 per minute and streams normally.
 - Per-user preferences (effort, theme, imagine quality/resolution/ratio/count) live in
   `localStorage` behind try/catch helpers. In-flight Imagine state lives in component state,
   so it survives switching tabs but not a page reload.

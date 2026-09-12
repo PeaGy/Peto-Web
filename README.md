@@ -324,14 +324,6 @@ Giới hạn cố ý của phần này:
 - Bảng Markdown và khối mã cuộn ngang; đọc tin cũ không bị kéo xuống mỗi đoạn
   trả lời mới. Giao diện chạy theo cài đặt sáng/tối của máy, đổi tay được trong
   Cài đặt; cột chat thu gọn trên màn hình rộng và thanh bên thu lại được.
-- Nút loa trong ô nhắn cho Peto đọc câu trả lời bằng giọng có sẵn trong máy: đọc dần
-  theo từng câu ngay khi chữ còn đang chảy về, bỏ qua khối mã, bấm Dừng là im ngay.
-  Chọn giọng và tốc độ ở **Cài đặt → Giọng nói**; máy không có giọng nào thì nút tự ẩn.
-  Muốn giọng tự nhiên hơn thì cắm khóa của chính bạn, cũng ở mục đó: **Azure** (gói F0 miễn
-  phí, có giọng tiếng Việt HoaiMy và NamMinh, 20 lượt gọi mỗi phút), **Gemini** (khóa lấy
-  miễn phí ở aistudio.google.com, không cần thẻ, nhưng chỉ 3 lượt mỗi phút nên Peto đọc sau
-  khi trả lời xong), ElevenLabs hoặc OpenAI. Khóa nằm trong trình duyệt của bạn, không gửi lên máy chủ, và tiền là bạn trả theo
-  số ký tự đã đọc; Cài đặt có đếm sẵn số ký tự của phiên.
 - Tối đa 16 tệp/tin, trong đó ảnh, PDF và Word tối đa 4; 8 MB/tệp, tổng 16 MB
   theo cấu hình mặc định. Ảnh, lớp chữ PDF, phần thân và bảng Word (.docx),
   tệp chữ/code được chuyển vào ngữ cảnh AI. Tệp được kiểm tra và chỉ chủ sở hữu đọc được.
@@ -390,6 +382,6 @@ thích ngắn gọn, đi thẳng vào vấn đề".
 
 ## Chưa có ở bước này
 
-OCR tài liệu scan, nói vào cho Peto nghe, nhân vật 3D, ghi hoặc đồng bộ trí nhớ hai
-chiều với Discord. Chưa kiểm chứng chất lượng AI thật và hoạt động VPS trong
+OCR tài liệu scan, giọng nói, nhân vật 3D, ghi hoặc đồng bộ trí nhớ
+hai chiều với Discord. Chưa kiểm chứng chất lượng AI thật và hoạt động VPS trong
 đợt kiểm thử local nêu trên.
