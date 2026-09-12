@@ -1208,6 +1208,38 @@ button:focus-visible, a:focus-visible, .table-scroll:focus-visible {
 .settings-section h3 { margin: 0; font-size: 14px; font-weight: 600; }
 .settings-hint { margin: 4px 0 0; color: var(--muted); font-size: 12.5px; }
 
+/* ---------- Giong noi ---------- */
+.voice-toggle.on { border-color: var(--accent); color: var(--accent); }
+
+.voice-form { display: grid; gap: 12px; margin-top: 12px; max-width: 420px; }
+.voice-row { display: flex; align-items: center; gap: 10px; }
+.voice-row > label { min-width: 92px; color: var(--muted); font-size: 13px; }
+.voice-check > label { min-width: 0; color: var(--text); font-size: 14px; }
+.voice-row select, .voice-row input[type="range"] { flex: 1; min-width: 0; }
+.voice-row select {
+  height: 34px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+.voice-rate { min-width: 36px; color: var(--muted); font-size: 12px; text-align: right; }
+.voice-test {
+  justify-self: start;
+  padding: 7px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.voice-test:hover { border-color: var(--accent); color: var(--accent); }
+
 .theme-options {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -1839,4 +1871,8 @@ label,
   .profile-row input,
   .profile-row select,
   .profile-notes textarea { font-size: 16px; }
+}
+
+@media (pointer: coarse) {
+  .voice-row select { font-size: 16px; }
 }

@@ -36,6 +36,9 @@ import yaml from "highlight.js/lib/languages/yaml";
 import Imagine from "./Imagine";
 import ProfileSettings from "./ProfileSettings";
 import Composer from "./Composer";
+import VoiceSettings from "./VoiceSettings";
+import { SpeechQueue, loadVoiceSettings, saveVoiceSettings, speechSupported,
+  type VoiceSettings as VoicePrefs } from "./speech";
 import { FileGlyph, formatSize, type DraftFile } from "./files";
 import { fillName, greetingKey, pickGreeting } from "./timeGreeting";
 import WebSources, { GlobeIcon, safeSources } from "./WebSources";
@@ -438,6 +441,12 @@ export default function App() {
   const [notice, setNotice] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(readStoredCollapsed);
+  const [voice, setVoice] = useState<VoicePrefs>(loadVoiceSettings);
+  // SpeechQueue sống ngoài vòng render nên không thấy state mới; nó hỏi cài đặt
+  // qua ref này.
+  const voiceRef = useRef(voice);
+  const speechRef = useRef<SpeechQueue | null>(null);
+  const speech = (speechRef.current ??= new SpeechQueue(() => voiceRef.current));
   const [loadingConversation, setLoadingConversation] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
   const [hasMore, setHasMore] = useState(false);
@@ -791,6 +800,7 @@ export default function App() {
 
   async function openConversation(id: string) {
     if (abortRef.current || deleting) return;
+    speech.cancel();
     loadRef.current?.abort();
     const controller = new AbortController();
     loadRef.current = controller;
@@ -951,16 +961,20 @@ export default function App() {
             updateSearch({ reading: undefined });
             if (storedMessage) setMessages((prev) => [...prev.slice(0, -2), storedMessage, prev[prev.length - 1]]);
           },
-          onDelta: appendToReply,
+          onDelta: (chunk) => {
+            appendToReply(chunk);
+            if (session === authVersion.current) speech.push(chunk);
+          },
           onThinking: appendThinking,
           onReading: (text) => updateSearch({ reading: text || undefined }),
           onSearch: (status) => updateSearch({ search_status: status }),
           onSources: (sources) => updateSearch({ sources: safeSources(sources) }),
           onError: (message) => {
+            speech.cancel();
             if (session !== authVersion.current) return;
             setError(message);
           },
-          onDone: () => { completed = true; },
+          onDone: () => { completed = true; speech.flush(); },
         },
         controller.signal,
       );
@@ -995,9 +1009,30 @@ export default function App() {
     }
   }
 
+  function changeVoice(next: VoicePrefs) {
+    // Cập nhật ref ngay: SpeechQueue hỏi cài đặt trong lúc chữ đang chảy về, đợi
+    // tới lượt render sau là đọc theo cài đặt cũ.
+    voiceRef.current = next;
+    if (!next.on) speech.cancel();
+    setVoice(next);
+    saveVoiceSettings(next);
+  }
+
+  function toggleVoice() {
+    const next = { ...voice, on: !voice.on };
+    changeVoice(next);
+    // Bật bằng một cú chạm rồi đọc luôn một câu: iOS chỉ cho phát tiếng ngay trong
+    // cử chỉ của người dùng, và người vừa bật cũng cần nghe thử giọng đang chọn.
+    if (next.on) {
+      speech.push("Peto đọc câu trả lời nha. ");
+      speech.flush();
+    }
+  }
+
   function stop() {
     setStopping(true);
     abortRef.current?.abort();
+    speech.cancel();
   }
 
   async function signOut() {
@@ -1023,6 +1058,7 @@ export default function App() {
   }
 
   function go(next: AppView) {
+    speech.cancel();
     if (next === "imagine") setImageVisited(true);
     setView(next);
     setSidebarOpen(false);
@@ -1325,6 +1361,9 @@ export default function App() {
           menuDisabled={streaming || view !== "chat"}
           hints={emptyChat ? CHAT_HINTS : []}
           onPickHint={(hint) => { setDraft(hint); textareaRef.current?.focus(); }}
+          voiceOn={voice.on}
+          voiceSupported={speechSupported()}
+          onToggleVoice={toggleVoice}
           formRef={composerRef}
           boxRef={composerBoxRef}
           textareaRef={textareaRef}
@@ -1390,6 +1429,8 @@ export default function App() {
               ))}
             </div>
           </section>
+
+          <VoiceSettings value={voice} onChange={changeVoice} />
 
           <section className="settings-section">
             <h3>Tài khoản</h3>

@@ -317,6 +317,14 @@ half-configured setups log a warning at startup rather than failing silently.
   deliberately not used. Anything else renders as plain text under an uppercased tag, so a
   new language needs a grammar import **and** a label. Each grammar costs bundle size; add
   ones Peto actually answers with.
+- Voice (`speech.ts`, `VoiceSettings.tsx`) reads replies aloud with the device's own Web
+  Speech voices — no key, no server cost. `SpeechQueue` buffers the SSE deltas and speaks
+  sentence by sentence, holding back everything after an unclosed code fence so a snippet is
+  never read out character by character. `App.tsx` feeds it from `onDelta`, flushes on
+  `onDone`, and cancels on stop, error, conversation switch and tab switch. The queue lives
+  outside React, so it reads settings through a ref that `changeVoice` updates synchronously
+  — going through state would speak one turn behind. Turning it on speaks one short line on
+  purpose: iOS only allows audio that starts inside a user gesture.
 - Per-user preferences (effort, theme, imagine quality/resolution/ratio/count) live in
   `localStorage` behind try/catch helpers. In-flight Imagine state lives in component state,
   so it survives switching tabs but not a page reload.

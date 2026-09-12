@@ -33,7 +33,16 @@ mỗi bước vẫn bàn lại trước khi viết code.
 - Không làm Discord, Minecraft, Telegram như họ.
 - Chưa nhận tiếng Việt cho phần nói ra.
 
-## Bước 1 — Giọng nói bằng giọng sẵn có của trình duyệt
+## Bước 1 — Giọng nói bằng giọng sẵn có của trình duyệt — XONG
+
+Nút loa hiện nằm trong ô nhắn của tab **Trò chuyện**, chưa có tab Companion nên để
+tạm ở đó; khi dựng Companion thì chuyển sang. Máy Windows có sẵn giọng tiếng Việt
+(Microsoft An), nên ở bước này Peto nói tiếng Việt được — hạn chế tiếng Việt chỉ
+đúng với các dịch vụ trả tiền ở bước 2.
+
+Hai thứ trong bước này bị dời đi: ô chọn ngôn ngữ và trường `language` của
+`/api/chat` dời sang lúc dựng Companion (giọng của máy tự khớp ngôn ngữ nên chưa
+cần), còn nhép miệng phải đợi bước 2 mới có luồng âm thanh để đo.
 
 Mục tiêu: dựng xong **toàn bộ đường đi của tiếng nói** mà không tốn đồng nào và
 không cần khóa của ai.

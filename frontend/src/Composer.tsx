@@ -21,6 +21,19 @@ function SendIcon() {
   );
 }
 
+function SpeakerIcon({ on }: { on: boolean }) {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M4 9v6h4l5 4V5L8 9H4z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+      {on ? (
+        <path d="M16.5 8.5a5 5 0 0 1 0 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      ) : (
+        <path d="M17 9.5l4 5M21 9.5l-4 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      )}
+    </svg>
+  );
+}
+
 interface ComposerProps {
   draft: string;
   onDraftChange: (value: string) => void;
@@ -42,6 +55,10 @@ interface ComposerProps {
   /** Gợi ý ở màn hình trống; mảng rỗng thì không hiện gì. */
   hints: string[];
   onPickHint: (hint: string) => void;
+  voiceOn: boolean;
+  /** Trình duyệt không đọc được thì giấu luôn nút loa cho đỡ rối. */
+  voiceSupported: boolean;
+  onToggleVoice: () => void;
   formRef: RefObject<HTMLFormElement | null>;
   boxRef: RefObject<HTMLDivElement | null>;
   textareaRef: RefObject<HTMLTextAreaElement | null>;
@@ -59,7 +76,8 @@ export default function Composer({
   draft, onDraftChange, files, onAddFiles, onRemoveFile,
   streaming, stopping, canSend, onSubmit, onStop,
   effort, efforts, onEffortChange, webSearch, onToggleWeb, menuDisabled,
-  hints, onPickHint, formRef, boxRef, textareaRef, fileRef,
+  hints, onPickHint, voiceOn, voiceSupported, onToggleVoice,
+  formRef, boxRef, textareaRef, fileRef,
 }: ComposerProps) {
   const [dragging, setDragging] = useState(false);
   const dragDepth = useRef(0);
@@ -160,6 +178,19 @@ export default function Composer({
               onAttach={() => fileRef.current?.click()} onToggleWeb={onToggleWeb} />
 
             <EffortMenu value={effort} options={efforts} disabled={streaming} onChange={onEffortChange} />
+
+            {voiceSupported && (
+              <button
+                type="button"
+                className={voiceOn ? "icon-btn voice-toggle on" : "icon-btn voice-toggle"}
+                aria-pressed={voiceOn}
+                aria-label={voiceOn ? "Tắt đọc thành tiếng" : "Đọc câu trả lời thành tiếng"}
+                title={voiceOn ? "Tắt đọc thành tiếng" : "Đọc câu trả lời thành tiếng"}
+                onClick={onToggleVoice}
+              >
+                <SpeakerIcon on={voiceOn} />
+              </button>
+            )}
           </div>
 
           {streaming ? (
