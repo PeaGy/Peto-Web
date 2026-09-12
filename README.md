@@ -316,9 +316,14 @@ Giới hạn cố ý của phần này:
   nhận, hãy kiểm tra lịch sử trước khi gửi lại để tránh gửi trùng.
 - Dừng/lỗi/timeout giữ phần trả lời đã nhận và đánh dấu chưa hoàn tất. Dừng
   trước khi có chữ không để lại dấu đang trả lời chạy mãi.
+- Tên hội thoại là câu tóm tắt ngắn do AI đặt ngay ở lượt đầu, không phải tin nhắn
+  đầu bị cắt. Tên được đặt song song với câu trả lời nên không phải chờ thêm; đặt
+  hỏng, quá chậm, hoặc tin nhắn chỉ có tệp thì giữ tên cắt tạm. Các lượt sau không
+  đổi tên nữa.
 - Xóa hội thoại có xác nhận; danh sách có nút tải thêm các hội thoại cũ hơn 50.
 - Bảng Markdown và khối mã cuộn ngang; đọc tin cũ không bị kéo xuống mỗi đoạn
-  trả lời mới. Giữ tông tím tối, thu gọn cột chat trên màn hình rộng.
+  trả lời mới. Giao diện chạy theo cài đặt sáng/tối của máy, đổi tay được trong
+  Cài đặt; cột chat thu gọn trên màn hình rộng và thanh bên thu lại được.
 - Tối đa 16 tệp/tin, trong đó ảnh, PDF và Word tối đa 4; 8 MB/tệp, tổng 16 MB
   theo cấu hình mặc định. Ảnh, lớp chữ PDF, phần thân và bảng Word (.docx),
   tệp chữ/code được chuyển vào ngữ cảnh AI. Tệp được kiểm tra và chỉ chủ sở hữu đọc được.

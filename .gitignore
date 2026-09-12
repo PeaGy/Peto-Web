@@ -23,3 +23,7 @@ backend/data/xai_tokens.json
 
 .claude/
 skills-lock.json
+
+PETO_AGENT_PLAN.md
+PETO_WEB_HANDOFF.md
+DEPLOY.md

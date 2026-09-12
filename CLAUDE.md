@@ -142,6 +142,15 @@ Order of operations inside `event_stream()`, and why:
    `effort == "low"` *and* no text has been emitted yet — mirroring how the Discord bot
    caps retries.
 
+A new conversation is also named here. The cut-from-first-message title is only a
+fallback: the first turn starts a second, tiny provider call (`titles.suggest_title`)
+**concurrently** with the answer and overwrites the title before the stream ends — the UI
+refreshes the sidebar right after `done`, so no extra SSE event is needed. `titles.resolve`
+caps the wait so a slow title never holds the turn, any failure keeps the fallback, and a
+message with no text (attachments only) skips it since the title call cannot see images.
+The mock provider recognises the request by `titles.TITLE_MARKER`; provider spies in tests
+must filter it out or they capture the title call instead of the chat call.
+
 `effort` is `auto` by default and resolved by `ai/routing.py`, which keyword-matches the
 user text (math/technical markers give `medium`, multi-step reasoning markers give `high`).
 Each level has its own timeout in `config.RESPONSE_TIMEOUTS` (180/300/480s).

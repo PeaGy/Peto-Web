@@ -98,6 +98,15 @@ class MockProvider(ChatProvider):
         last_user = last.content if last else ""
         names = [item.name for item in last.attachments] if last else []
 
+        # Lượt đặt tên hội thoại: trả về tên gọn lấy từ chính tin nhắn, để bản
+        # chạy thử vẫn thấy đúng kiểu web thật đặt tên.
+        from titles import TITLE_MARKER  # import muộn cho khỏi vòng import
+
+        if TITLE_MARKER in system_prompt:
+            title = " ".join(last_user.split()[:6]) or "Trò chuyện mới"
+            yield title[:1].upper() + title[1:]
+            return
+
         if "__error__" in last_user:
             raise ProviderError(
                 "Nhà cung cấp AI đang lỗi (giả lập). Thử lại sau nhé.",

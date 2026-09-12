@@ -33,6 +33,7 @@ import document_reader
 import imagine_api
 import profile_api
 import static_files
+import titles
 from ai import ChatAttachment, ChatMessage, ProviderError, StreamChunk, get_provider
 from ai.routing import choose_effort
 from attachments import AttachmentError
@@ -428,6 +429,8 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner)):
 
         complete = False
         failure: str | None = None
+        # Lượt đặt tên hội thoại, chạy song song với câu trả lời (xem titles.py).
+        title_task: asyncio.Task[str] | None = None
         try:
             async with admission.slot(owner):
                 # Từ chối cooldown/hàng chờ trước khi ghi bất kỳ tin nhắn nào.
@@ -442,6 +445,7 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner)):
                 # Hội thoại có thể bị xóa trong lúc bộ đọc đang xử lý tệp.
                 if conversation_id and not await db.owns_conversation(owner, conversation_id):
                     raise ProviderError("Hội thoại đã bị xóa. Mở cuộc trò chuyện mới nhé.")
+                is_new_conversation = not conversation_id
                 with anyio.CancelScope(shield=True):
                     if not conversation_id:
                         conversation_id = await db.create_conversation(owner)
@@ -463,6 +467,14 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner)):
                         raise
                     await db.set_title_if_empty(conversation_id, _title_from(text, files))
                     rows = await db.get_messages(owner, conversation_id, limit=MAX_HISTORY_MESSAGES)
+                # Tên cắt từ tin nhắn đầu chỉ là tạm. Đặt tên tóm tắt bằng một lượt
+                # AI riêng chạy song song với câu trả lời, cuối lượt mới ghi đè.
+                # Không có chữ thì chẳng có gì để tóm tắt (lượt đặt tên không xem
+                # được ảnh): giữ nguyên tên "Ảnh: ..." cắt tạm.
+                if is_new_conversation and text.strip():
+                    title_task = asyncio.create_task(
+                        titles.suggest_title(text, [item.name for item in files])
+                    )
                 stored_user = next(row for row in rows if row["id"] == message_id)
                 yield sse({
                     "type": "meta", "conversation_id": conversation_id, "effort": effort,
@@ -516,6 +528,13 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner)):
                             status="complete" if complete else "incomplete",
                             sources=sources,
                         )
+            if title_task is not None:
+                # Shield như phần lưu tin nhắn: đóng tab giữa chừng thì tên vẫn
+                # kịp ghi, mở lại đã thấy tên tóm tắt.
+                with anyio.CancelScope(shield=True):
+                    title = await titles.resolve(title_task)
+                    if title and conversation_id:
+                        await db.set_title(owner, conversation_id, title)
         if failure:
             yield sse({"type": "error", "message": failure})
         else:

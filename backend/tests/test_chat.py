@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+import titles
 from conftest import read_events
 
 
@@ -66,11 +67,16 @@ async def test_history_is_reused_in_same_conversation(client):
     assert len(stored.json()["messages"]) == 4
 
 
-async def test_conversation_list_has_title_from_first_message(client):
+async def test_conversation_list_has_generated_title(client):
+    """Tên hội thoại là câu tóm tắt do AI đặt, không phải tin nhắn đầu bị cắt.
+
+    Nhà cung cấp giả rút còn sáu từ đầu và viết hoa chữ cái đầu; phần đặt tên
+    được kiểm kỹ ở test_titles.py.
+    """
     await _send(client, "tiêu đề lấy từ đây")
     response = await client.get("/api/conversations")
-    titles = [c["title"] for c in response.json()["conversations"]]
-    assert "tiêu đề lấy từ đây" in titles
+    listed = [c["title"] for c in response.json()["conversations"]]
+    assert listed[0] == "Tiêu đề lấy từ đây"
 
 
 async def test_unknown_conversation_is_rejected(client):
@@ -135,7 +141,9 @@ async def test_effort_can_be_overridden(client, monkeypatch):
     original = MockProvider.stream
 
     async def spy(self, *, system_prompt, messages, effort="low", timezone=None, web_search="auto"):
-        seen.append(effort)
+        # Lượt đặt tên hội thoại cũng đi qua đây; chỉ đếm lượt chat chính.
+        if titles.TITLE_MARKER not in system_prompt:
+            seen.append(effort)
         async for chunk in original(
             self, system_prompt=system_prompt, messages=messages, effort=effort, timezone=timezone, web_search=web_search
         ):
@@ -173,7 +181,8 @@ async def test_image_reaches_the_provider(client, monkeypatch):
     original = MockProvider.stream
 
     async def spy(self, *, system_prompt, messages, effort="low", timezone=None, web_search="auto"):
-        seen.append(messages)
+        if titles.TITLE_MARKER not in system_prompt:
+            seen.append(messages)
         async for chunk in original(
             self, system_prompt=system_prompt, messages=messages, effort=effort, timezone=timezone, web_search=web_search
         ):

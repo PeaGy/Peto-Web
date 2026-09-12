@@ -489,6 +489,19 @@ async def set_title_if_empty(conversation_id: str, title: str) -> None:
         await db.commit()
 
 
+async def set_title(owner: str, conversation_id: str, title: str) -> None:
+    """Ghi đè tiêu đề bằng tên tóm tắt do AI đặt ở cuối lượt đầu tiên."""
+    cleaned = " ".join(title.split())[:60]
+    if not cleaned:
+        return
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE conversations SET title = ? WHERE id = ? AND owner = ?",
+            (cleaned, conversation_id, owner),
+        )
+        await db.commit()
+
+
 async def delete_conversation(owner: str, conversation_id: str) -> bool:
     paths = await list_attachment_paths(conversation_id)
     async with aiosqlite.connect(DB_PATH) as db:

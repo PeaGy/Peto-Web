@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import httpx
 import pytest
+import titles
 from conftest import TEST_DISCORD_ID, TEST_OWNER, read_events
 
 import main
@@ -210,7 +211,9 @@ async def test_memory_reaches_the_provider(client, patch_httpx, monkeypatch):
     original = provider.stream
 
     def spy(*, system_prompt, messages, effort, timezone=None, web_search="auto"):
-        seen.append(system_prompt)
+        # Bỏ qua lượt đặt tên hội thoại, chỉ giữ prompt của lượt chat chính.
+        if titles.TITLE_MARKER not in system_prompt:
+            seen.append(system_prompt)
         return original(system_prompt=system_prompt, messages=messages, effort=effort, timezone=timezone, web_search=web_search)
 
     monkeypatch.setattr(provider, "stream", spy)
