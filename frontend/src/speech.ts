@@ -51,6 +51,8 @@ const SETTINGS_VERSION = 3;
 // càng nghe liền mạch. Mẩu đầu đọc ngay cho kịp lúc chữ vừa hiện, rồi dồn dần.
 const CHUNK_STEPS = [0, 240, 480];
 const MAX_CHUNK = 500;
+// Dịch vụ bị siết lượt gọi thì đọc cả lượt trong một request, nên mẩu dài hơn nhiều.
+const ONE_SHOT_MAX = 4000;
 // Chrome âm thầm tạm dừng lượt đọc dài quá ~15 giây; gọi resume đều đặn để nó đọc hết.
 const KEEP_ALIVE_MS = 5000;
 
@@ -257,11 +259,20 @@ export class SpeechQueue {
     }
   }
 
+  /** Gói miễn phí của vài dịch vụ siết số lượt gọi mỗi phút, nên gộp cả lượt. */
+  private oneShot(): boolean {
+    const settings = this.settings();
+    if (settings.provider === "browser") return false;
+    return providerById(settings.provider)?.oneShot === true;
+  }
+
   /** Mẩu đầu đọc ngay cho kịp lúc chữ vừa hiện; các câu sau gom lại cho liền mạch. */
   private enqueue(sentence: string): void {
     const piece = sentence.trim();
     if (!piece) return;
     this.pending = this.pending ? `${this.pending} ${piece}` : piece;
+    // Gộp cả lượt thì đợi hết câu trả lời mới gọi, đổi độ trễ lấy số lượt gọi.
+    if (this.oneShot()) return;
     const needed = CHUNK_STEPS[Math.min(this.said, CHUNK_STEPS.length - 1)];
     if (this.pending.length >= needed) this.sayPending();
   }
@@ -269,7 +280,7 @@ export class SpeechQueue {
   private sayPending(): void {
     const text = this.pending;
     this.pending = "";
-    for (const piece of chunkLong(text)) this.speak(piece);
+    for (const piece of chunkLong(text, this.oneShot() ? ONE_SHOT_MAX : MAX_CHUNK)) this.speak(piece);
   }
 
   private speak(text: string): void {

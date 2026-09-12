@@ -3,6 +3,7 @@ import { CLOUD_PROVIDERS, defaultConfig } from '../src/speechProviders';
 
 const elevenlabs = CLOUD_PROVIDERS.elevenlabs;
 const gemini = CLOUD_PROVIDERS.gemini;
+const azure = CLOUD_PROVIDERS.azure;
 const openai = CLOUD_PROVIDERS.openai;
 const signal = () => new AbortController().signal;
 
@@ -58,6 +59,21 @@ describe('Dịch vụ đọc thành tiếng', () => {
     expect((calls[0].init?.headers as Record<string, string>)['x-goog-api-key']).toBe('k-gemini');
     // Khóa không được nằm trong đường dẫn, kẻo lọt vào log của mọi thứ trên đường đi.
     expect(calls[0].url).not.toContain('k-gemini');
+  });
+
+  it('Azure gọi đúng vùng, gửi SSML và rào chữ của người dùng', async () => {
+    const calls: { url: string; init?: RequestInit }[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push({ url: String(url), init });
+      return new Response(new ArrayBuffer(2), { status: 200 });
+    }));
+
+    await azure.synthesize('cậu & tôi', { key: 'k-azure', voice: 'vi-VN-HoaiMyNeural', model: '', region: 'eastasia' }, signal());
+    expect(calls[0].url).toContain('https://eastasia.tts.speech.microsoft.com/');
+    expect((calls[0].init?.headers as Record<string, string>)['Ocp-Apim-Subscription-Key']).toBe('k-azure');
+    // Dấu & mà không rào thì SSML hỏng, Azure trả 400.
+    expect(String(calls[0].init?.body)).toContain('cậu &amp; tôi');
+    expect(String(calls[0].init?.body)).toContain("name='vi-VN-HoaiMyNeural'");
   });
 
   it('Gemini không trả âm thanh thì nói rõ chứ không im lặng', async () => {

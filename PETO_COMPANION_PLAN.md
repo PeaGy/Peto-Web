@@ -91,8 +91,18 @@ phiên đăng nhập AIRI và tính tiền bằng số dư Flux, không có khó
 dặn rõ đừng chia sẻ dữ liệu phiên. Muốn xài ké thì phải bê session của người dùng sang,
 tức là đúng thứ họ cấm.
 
-Chưa làm: Azure và Google Cloud TTS (mới chỉ đo là gọi được từ trình duyệt), và đường qua
-backend dùng chung khóa của chủ dự án.
+**Bài học về hạn mức, sau khi thử bằng khóa thật:** gói miễn phí của Gemini chỉ cho **3
+lượt gọi mỗi phút**, mà cách chia mẩu để đọc dần lại tốn 2–5 lượt cho một câu trả lời, nên
+chạm trần ngay. Vì vậy `CloudProvider` có cờ `oneShot`: dịch vụ nào bị siết thì gom cả câu
+trả lời rồi gọi đúng một lần, đổi độ trễ lấy số lượt gọi. Gemini bật cờ này, và giao diện
+nói rõ cho người dùng biết vì sao Peto đọc muộn hơn.
+
+Đã thêm **Azure Speech** vì gói F0 dễ thở hơn nhiều: 20 lượt gọi mỗi phút, 500 nghìn ký tự
+mỗi tháng, lại có giọng tiếng Việt HoaiMy và NamMinh. Azure cần thêm ô Vùng, nên `CloudConfig`
+có `region`, và chữ phải rào XML trước khi nhét vào SSML.
+
+Chưa làm: Google Cloud TTS (mới chỉ đo là gọi được từ trình duyệt), và đường qua backend
+dùng chung khóa của chủ dự án.
 
 Ghi chú gốc của bước này:
 

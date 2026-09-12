@@ -43,6 +43,7 @@ export default function VoiceSettings({ value, onChange, chars, onChars }: {
 
   const providerId = provider?.id;
   const key = config?.key ?? "";
+  const region = config?.region ?? "";
   useEffect(() => {
     const fetchVoices = providerId ? CLOUD_PROVIDERS[providerId]?.listVoices : undefined;
     if (!fetchVoices || !key) {
@@ -50,12 +51,12 @@ export default function VoiceSettings({ value, onChange, chars, onChars }: {
       return;
     }
     const controller = new AbortController();
-    fetchVoices(key, controller.signal)
+    fetchVoices({ key, voice: "", model: "", region }, controller.signal)
       .then(setCloudVoices)
       // Khóa sai hay mạng hỏng thì thôi, để người dùng tự gõ mã giọng.
       .catch(() => setCloudVoices([]));
     return () => controller.abort();
-  }, [providerId, key]);
+  }, [providerId, key, region]);
 
   // Giọng lấy được từ tài khoản thì ưu tiên; không có thì dùng danh sách cố định
   // của dịch vụ; không có nữa thì để người dùng tự gõ mã giọng.
@@ -157,6 +158,17 @@ export default function VoiceSettings({ value, onChange, chars, onChars }: {
               {provider.keyHint} Khóa chỉ nằm trong trình duyệt này, không gửi lên máy chủ Peto.
             </p>
 
+            {provider.needsRegion && (
+              <div className="voice-row">
+                <label htmlFor="voice-region">Vùng</label>
+                <input
+                  id="voice-region"
+                  value={config?.region ?? ""}
+                  onChange={(event) => setCloud({ region: event.target.value })}
+                />
+              </div>
+            )}
+
             <div className="voice-row">
               <label htmlFor="voice-cloud-voice">Giọng</label>
               {voiceOptions.length > 0 ? (
@@ -178,14 +190,23 @@ export default function VoiceSettings({ value, onChange, chars, onChars }: {
               )}
             </div>
 
-            <div className="voice-row">
-              <label htmlFor="voice-model">Model</label>
-              <input
-                id="voice-model"
-                value={config?.model ?? ""}
-                onChange={(event) => setCloud({ model: event.target.value })}
-              />
-            </div>
+            {provider.defaultModel !== "" && (
+              <div className="voice-row">
+                <label htmlFor="voice-model">Model</label>
+                <input
+                  id="voice-model"
+                  value={config?.model ?? ""}
+                  onChange={(event) => setCloud({ model: event.target.value })}
+                />
+              </div>
+            )}
+
+            {provider.oneShot && (
+              <p className="settings-hint">
+                Gói miễn phí của {provider.label} siết số lượt gọi mỗi phút, nên Peto đọc sau
+                khi trả lời xong thay vì đọc dần từng câu.
+              </p>
+            )}
 
             {chars > 0 && (
               <p className="settings-hint">

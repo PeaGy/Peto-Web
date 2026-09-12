@@ -13,6 +13,8 @@ export interface CloudConfig {
   key: string;
   voice: string;
   model: string;
+  /** Chỉ Azure cần: vùng của tài nguyên Speech. */
+  region?: string;
 }
 
 export interface CloudProvider {
@@ -24,8 +26,16 @@ export interface CloudProvider {
   keyHint: string;
   /** Danh sách giọng cố định, cho dịch vụ không có API liệt kê giọng. */
   voices?: { id: string; name: string }[];
+  /** Azure cần vùng; các bên khác thì không. */
+  needsRegion?: boolean;
+  defaultRegion?: string;
+  /**
+   * Gói miễn phí siết số lượt gọi mỗi phút (Gemini chỉ cho 3), nên gom cả câu trả
+   * lời rồi gọi đúng một lần. Đổi lại Peto đọc sau khi trả lời xong, không đọc dần.
+   */
+  oneShot?: boolean;
   /** Lấy danh sách giọng của tài khoản; không hỗ trợ thì bỏ trống. */
-  listVoices?: (key: string, signal: AbortSignal) => Promise<{ id: string; name: string }[]>;
+  listVoices?: (config: CloudConfig, signal: AbortSignal) => Promise<{ id: string; name: string }[]>;
   synthesize: (text: string, config: CloudConfig, signal: AbortSignal) => Promise<ArrayBuffer>;
 }
 
@@ -79,9 +89,9 @@ const elevenlabs: CloudProvider = {
   // Flash v2.5 nhanh và rẻ nhất, đủ nhiều thứ tiếng.
   defaultModel: "eleven_flash_v2_5",
   keyHint: "Lấy ở elevenlabs.io, mục Profile → API Keys.",
-  async listVoices(key, signal) {
+  async listVoices(config, signal) {
     const response = await fetch("https://api.elevenlabs.io/v1/voices", {
-      headers: { "xi-api-key": key },
+      headers: { "xi-api-key": config.key },
       signal,
     });
     if (!response.ok) throw new Error(explain(response.status, "ElevenLabs", await detailOf(response)));
@@ -164,6 +174,8 @@ const gemini: CloudProvider = {
   label: "Gemini (Google AI Studio)",
   defaultVoice: "Kore",
   defaultModel: "gemini-2.5-flash-preview-tts",
+  // Gói miễn phí chỉ cho 3 lượt gọi mỗi phút, chia mẩu là chạm trần ngay.
+  oneShot: true,
   keyHint: "Lấy miễn phí ở aistudio.google.com, mục API keys — không cần thẻ.",
   voices: [
     { id: "Kore", name: "Kore — nữ, chắc giọng" },
@@ -205,12 +217,65 @@ const gemini: CloudProvider = {
   },
 };
 
-export const CLOUD_PROVIDERS: Record<string, CloudProvider> = { gemini, elevenlabs, openai };
+/** SSML là XML, nên chữ của người dùng phải được rào trước khi nhét vào. */
+function escapeXml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+const azure: CloudProvider = {
+  id: "azure",
+  label: "Azure Speech",
+  // Giọng nữ miền Bắc; Azure có sẵn cả NamMinh và vài giọng vùng khác.
+  defaultVoice: "vi-VN-HoaiMyNeural",
+  defaultModel: "",
+  needsRegion: true,
+  defaultRegion: "southeastasia",
+  keyHint: "Tạo tài nguyên Speech ở portal.azure.com rồi lấy Key và Region. Gói F0 miễn phí: 500 nghìn ký tự mỗi tháng, 20 lượt gọi mỗi phút.",
+  async listVoices(config, signal) {
+    const region = config.region || "southeastasia";
+    const response = await fetch(`https://${region}.tts.speech.microsoft.com/cognitiveservices/voices/list`, {
+      headers: { "Ocp-Apim-Subscription-Key": config.key },
+      signal,
+    });
+    if (!response.ok) throw new Error(explain(response.status, "Azure", await detailOf(response)));
+    const body = (await response.json()) as { ShortName: string; LocalName: string; Locale: string }[];
+    return body
+      // Giọng tiếng Việt lên đầu: danh sách đầy đủ dài mấy trăm dòng.
+      .sort((a, b) => Number(b.Locale.startsWith("vi-")) - Number(a.Locale.startsWith("vi-")))
+      .map((item) => ({ id: item.ShortName, name: `${item.LocalName} (${item.Locale})` }));
+  },
+  async synthesize(text, config, signal) {
+    const region = config.region || "southeastasia";
+    const response = await fetch(`https://${region}.tts.speech.microsoft.com/cognitiveservices/v1`, {
+      method: "POST",
+      signal,
+      headers: {
+        "Ocp-Apim-Subscription-Key": config.key,
+        "Content-Type": "application/ssml+xml",
+        "X-Microsoft-OutputFormat": "audio-24khz-48kbitrate-mono-mp3",
+      },
+      body: `<speak version='1.0' xml:lang='vi-VN'><voice name='${config.voice}'>${escapeXml(text)}</voice></speak>`,
+    });
+    return audioFrom(response, "Azure");
+  },
+};
+
+export const CLOUD_PROVIDERS: Record<string, CloudProvider> = { gemini, azure, elevenlabs, openai };
 
 export function providerById(id: string): CloudProvider | undefined {
   return CLOUD_PROVIDERS[id];
 }
 
 export function defaultConfig(provider: CloudProvider): CloudConfig {
-  return { key: "", voice: provider.defaultVoice, model: provider.defaultModel };
+  return {
+    key: "",
+    voice: provider.defaultVoice,
+    model: provider.defaultModel,
+    region: provider.defaultRegion ?? "",
+  };
 }

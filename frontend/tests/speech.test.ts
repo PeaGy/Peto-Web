@@ -247,6 +247,23 @@ describe('Đọc bằng dịch vụ trả tiền', () => {
     expect(played).toEqual([1, 2]);
   });
 
+  it('dịch vụ bị siết lượt gọi thì cả câu trả lời chỉ tốn một lượt', async () => {
+    const fetchMock = vi.fn(async () => new Response(new ArrayBuffer(1), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const queue = new SpeechQueue(() => cloudSettings({
+      provider: 'gemini',
+      cloud: { gemini: { key: 'k', voice: 'Kore', model: 'm' } },
+    }));
+
+    queue.push('Câu một. ');
+    queue.push('Câu hai. Câu ba. ');
+    // Gemini miễn phí chỉ cho 3 lượt mỗi phút, nên chưa xong thì chưa được gọi.
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    queue.flush();
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+  });
+
   it('chưa điền khóa thì báo lỗi và không gọi mạng', () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
