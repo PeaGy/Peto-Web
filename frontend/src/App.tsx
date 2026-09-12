@@ -34,10 +34,10 @@ import typescript from "highlight.js/lib/languages/typescript";
 import xml from "highlight.js/lib/languages/xml";
 import yaml from "highlight.js/lib/languages/yaml";
 import Imagine from "./Imagine";
-import EffortMenu from "./EffortMenu";
 import ProfileSettings from "./ProfileSettings";
+import Composer from "./Composer";
+import { FileGlyph, formatSize, type DraftFile } from "./files";
 import { fillName, greetingKey, pickGreeting } from "./timeGreeting";
-import ComposerMenu from "./ComposerMenu";
 import WebSources, { GlobeIcon, safeSources } from "./WebSources";
 import {
   DISCORD_LOGIN_URL,
@@ -110,8 +110,12 @@ const MAX_FILES = 16;
 const MAX_MEDIA_FILES = 4;
 const MAX_FILE_BYTES = 8 * 1024 * 1024;
 const MAX_TOTAL_BYTES = 16 * 1024 * 1024;
-const ACCEPT =
-  "image/jpeg,image/png,image/webp,image/gif,.txt,.md,.csv,.json,.pdf,.docx,.py,.js,.ts,.tsx,.jsx,.css,.html,.xml,.yml,.yaml,.rs,.go,.java,.c,.cpp,.h,.sql,.log";
+// Gợi ý ở màn hình trống, hiện ngay dưới ô nhắn.
+const CHAT_HINTS = [
+  "Hôm nay cậu thế nào?",
+  "Giải thích giúp mình một bài khó",
+  "Cùng lên kế hoạch cuối tuần nhé",
+];
 
 const EFFORTS: { value: Effort; label: string; hint: string }[] = [
   { value: "auto", label: "Tự động", hint: "Peto tự chọn mức phù hợp" },
@@ -135,11 +139,6 @@ const THINKING: Record<string, string> = {
   high: "Đang suy nghĩ sâu…",
 };
 
-interface DraftFile {
-  id: string;
-  file: File;
-  previewUrl: string | null;
-}
 
 function readStoredEffort(): Effort {
   try {
@@ -192,11 +191,6 @@ function isMediaFile(file: File): boolean {
   );
 }
 
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
 
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -211,19 +205,6 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
-function SendIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path
-        d="M5 12h14M13 6l6 6-6 6"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
 
 function MenuIcon() {
   return (
@@ -362,11 +343,6 @@ function ThinkingPanel({
   );
 }
 
-function FileGlyph({ name, kind }: { name: string; kind: "image" | "file" }) {
-  if (kind === "image") return null;
-  const ext = name.split(".").pop()?.slice(0, 4).toUpperCase() || "FILE";
-  return <span className="file-ext">{ext}</span>;
-}
 
 /** Avatar của Peto: ảnh thật từ Discord application, chữ cái đầu nếu chưa có. */
 function DiscordIcon() {
@@ -462,7 +438,6 @@ export default function App() {
   const [notice, setNotice] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(readStoredCollapsed);
-  const [dragging, setDragging] = useState(false);
   const [loadingConversation, setLoadingConversation] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
   const [hasMore, setHasMore] = useState(false);
@@ -486,7 +461,6 @@ export default function App() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-  const dragDepth = useRef(0);
   const draftFilesRef = useRef<DraftFile[]>([]);
   const loadRef = useRef<AbortController | null>(null);
   const loadVersion = useRef(0);
@@ -1332,127 +1306,30 @@ export default function App() {
           <button type="button" className="dismiss-error" aria-label="Đóng thông báo trạng thái" onClick={() => setNotice(null)}>×</button>
         </div>}
 
-        <form
-          ref={composerRef}
-          className={dragging ? "composer-wrap dragging" : "composer-wrap"}
-          onSubmit={(event) => {
-            event.preventDefault();
-            void submit();
-          }}
-          onDragEnter={(event) => {
-            event.preventDefault();
-            dragDepth.current += 1;
-            setDragging(true);
-          }}
-          onDragOver={(event) => event.preventDefault()}
-          onDragLeave={(event) => {
-            event.preventDefault();
-            dragDepth.current = Math.max(0, dragDepth.current - 1);
-            if (dragDepth.current === 0) setDragging(false);
-          }}
-          onDrop={(event) => {
-            event.preventDefault();
-            dragDepth.current = 0;
-            setDragging(false);
-            if (event.dataTransfer.files.length) addFiles(event.dataTransfer.files);
-          }}
-        >
-          {dragging && <div className="drop-hint">Thả ảnh hoặc tệp vào đây</div>}
-
-          <div className="composer" ref={composerBoxRef}>
-            {draftFiles.length > 0 && (
-              <ul className="attach-list">
-                {draftFiles.map((item) => (
-                  <li key={item.id} className="attach-chip">
-                    {item.previewUrl ? (
-                      <img src={item.previewUrl} alt="" />
-                    ) : (
-                      <FileGlyph name={item.file.name} kind="file" />
-                    )}
-                    <span>
-                      <strong>{item.file.name}</strong>
-                      <em>{formatSize(item.file.size)}</em>
-                    </span>
-                    <button
-                      type="button"
-                      disabled={streaming}
-                      className="chip-remove"
-                      aria-label={`Gỡ ${item.file.name}`}
-                      onClick={() => removeDraftFile(item.id)}
-                    >
-                      ×
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-
-            <textarea
-              ref={textareaRef}
-              value={draft}
-              rows={1}
-              placeholder="Nhắn cho Peto…"
-              aria-label="Nhắn cho Peto"
-              disabled={streaming}
-              onChange={(event) => setDraft(event.target.value)}
-              onPaste={(event) => {
-                const files = Array.from(event.clipboardData.files);
-                if (files.length) {
-                  event.preventDefault();
-                  addFiles(files);
-                }
-              }}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-                  event.preventDefault();
-                  void submit();
-                }
-              }}
-            />
-
-            <div className="composer-bar">
-              <div className="composer-tools">
-                <input
-                  ref={fileRef}
-                  type="file"
-                  hidden
-                  multiple
-                  accept={ACCEPT}
-                  onChange={(event) => {
-                    if (event.target.files) addFiles(event.target.files);
-                    event.target.value = "";
-                  }}
-                />
-                <ComposerMenu disabled={streaming || view !== "chat"} webDisabled={webSearch === "off"}
-                  onAttach={() => fileRef.current?.click()} onToggleWeb={() => setWebSearch((mode) => mode === "off" ? "auto" : "off")} />
-
-                <EffortMenu value={effort} options={EFFORTS} disabled={streaming} onChange={setEffort} />
-              </div>
-
-              {streaming ? (
-                <button type="button" className="stop" disabled={stopping} onClick={stop}>
-                  {stopping ? "Đang dừng…" : "Dừng"}
-                </button>
-              ) : (
-                <button type="submit" className="send" disabled={!canSend} aria-label="Gửi">
-                  Gửi <SendIcon />
-                </button>
-              )}
-            </div>
-          </div>
-          {emptyChat && (
-            <div className="welcome-hints">
-              {["Hôm nay cậu thế nào?", "Giải thích giúp mình một bài khó", "Cùng lên kế hoạch cuối tuần nhé"].map((hint) => (
-                <button key={hint} type="button" onClick={() => { setDraft(hint); textareaRef.current?.focus(); }}>{hint}</button>
-              ))}
-            </div>
-          )}
-          <p className="composer-note">
-            {draftFiles.some((item) => /\.pdf$/i.test(item.file.name) || item.file.type === "application/pdf")
-              ? "Peto đọc lớp chữ trong PDF và dẫn số trang. PDF ảnh scan chưa có chữ cần OCR trước nhé."
-              : "Tệp chữ/code tối đa 16 · ảnh, PDF, Word tối đa 4 · 8 MB/tệp, tổng 16 MB."}
-          </p>
-        </form>
+        <Composer
+          draft={draft}
+          onDraftChange={setDraft}
+          files={draftFiles}
+          onAddFiles={addFiles}
+          onRemoveFile={removeDraftFile}
+          streaming={streaming}
+          stopping={stopping}
+          canSend={canSend}
+          onSubmit={submit}
+          onStop={stop}
+          effort={effort}
+          efforts={EFFORTS}
+          onEffortChange={setEffort}
+          webSearch={webSearch}
+          onToggleWeb={() => setWebSearch((mode) => (mode === "off" ? "auto" : "off"))}
+          menuDisabled={streaming || view !== "chat"}
+          hints={emptyChat ? CHAT_HINTS : []}
+          onPickHint={(hint) => { setDraft(hint); textareaRef.current?.focus(); }}
+          formRef={composerRef}
+          boxRef={composerBoxRef}
+          textareaRef={textareaRef}
+          fileRef={fileRef}
+        />
       </main>
       <dialog
         ref={settingsDialogRef}

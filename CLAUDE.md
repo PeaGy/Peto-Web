@@ -323,6 +323,11 @@ half-configured setups log a warning at startup rather than failing silently.
 - `App.tsx` owns chat plus the app shell; `Imagine.tsx` is mounted alongside it and receives
   an `active` prop rather than being unmounted — that is what keeps a running generation
   alive when the user switches back to Chat.
+- The composer is `Composer.tsx`, presentational only: draft text, the file list and the send
+  flow stay in `App.tsx` because they hang off the draft-preservation rule; just the drag
+  state is local to it. `files.tsx` holds what the composer and the message bubbles share
+  (`DraftFile`, `formatSize`, `FileGlyph`) so `Composer.tsx` never imports from `App.tsx`
+  and no import cycle can form.
 
 ## Invariants — do not break these
 

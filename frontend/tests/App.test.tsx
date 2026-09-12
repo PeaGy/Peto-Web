@@ -331,6 +331,18 @@ describe('Conversation navigation', () => {
 });
 
 describe('Sending and stopping', () => {
+  it('kéo tệp thả vào ô nhắn thì thành đính kèm', async () => {
+    await openApp();
+    const form = screen.getByPlaceholderText('Nhắn cho Peto…').closest('form')!;
+    const file = new File(['xin chào'], 'ghi-chu.txt', { type: 'text/plain' });
+    const dataTransfer = { files: [file], types: ['Files'] };
+    fireEvent.dragEnter(form, { dataTransfer });
+    expect(screen.getByText('Thả ảnh hoặc tệp vào đây')).toBeTruthy();
+    fireEvent.drop(form, { dataTransfer });
+    expect(await screen.findByText('ghi-chu.txt')).toBeTruthy();
+    expect(screen.queryByText('Thả ảnh hoặc tệp vào đây')).toBeNull();
+  });
+
   it('allows messages longer than the former 4,000 character limit', async () => {
     vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers) => handlers.onError?.('Giữ bản nháp để kiểm tra'));
     await openApp();
