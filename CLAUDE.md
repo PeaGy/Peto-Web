@@ -303,6 +303,11 @@ half-configured setups log a warning at startup rather than failing silently.
   (`.chat.empty-state`); phones keep the composer docked. Only the **first send** slides
   the composer down (FLIP via `element.animate` in `App.tsx`); opening a conversation or
   starting a new one switches instantly on purpose — those are frequent navigation.
+- Code blocks only colour the grammars registered in `App.tsx` (`HIGHLIGHT_LANGUAGES`,
+  `HIGHLIGHT_ALIASES`, display names in `CODE_LABELS`) — the `common` bundle is
+  deliberately not used. Anything else renders as plain text under an uppercased tag, so a
+  new language needs a grammar import **and** a label. Each grammar costs bundle size; add
+  ones Peto actually answers with.
 - Per-user preferences (effort, theme, imagine quality/resolution/ratio/count) live in
   `localStorage` behind try/catch helpers. In-flight Imagine state lives in component state,
   so it survives switching tabs but not a page reload.

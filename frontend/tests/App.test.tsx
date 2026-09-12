@@ -457,6 +457,14 @@ describe('Khối code trong chat', () => {
     expect(document.querySelector('.hljs-string')?.textContent).toBe('"xin chào"');
   });
 
+  it('tô màu C# và các ngôn ngữ ngoài web, kèm nhãn gọn', async () => {
+    withCode('```cs\npublic class Xin { public string Ten = "An"; }\n```');
+    await openChat();
+    expect(await screen.findByText('C#')).toBeTruthy();
+    expect(document.querySelector('.hljs-keyword')?.textContent).toBe('public');
+    expect(document.querySelector('.hljs-string')?.textContent).toBe('"An"');
+  });
+
   it('nhận alias viết sau dấu ba nháy', async () => {
     withCode('```ts\nconst x: number = 1;\n```');
     await openChat();

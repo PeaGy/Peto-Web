@@ -4,15 +4,31 @@ import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 // Nạp từng grammar một thay vì bộ `common` của lowlight: rehype-highlight chỉ
 // đụng tới `common` khi không được truyền `languages`, nên cách này cho phép
-// tree-shaking bỏ hơn ba chục ngôn ngữ mà Peto gần như không bao giờ trả về.
+// tree-shaking bỏ hơn ba trăm ngôn ngữ Peto gần như không bao giờ trả về. Thêm
+// ngôn ngữ mới thì thêm cả nhãn vào CODE_LABELS, không thì đầu khối code hiện
+// tên thô viết hoa như "CSHARP".
 import bash from "highlight.js/lib/languages/bash";
+import c from "highlight.js/lib/languages/c";
+import cpp from "highlight.js/lib/languages/cpp";
+import csharp from "highlight.js/lib/languages/csharp";
 import css from "highlight.js/lib/languages/css";
+import dart from "highlight.js/lib/languages/dart";
 import diff from "highlight.js/lib/languages/diff";
+import dockerfile from "highlight.js/lib/languages/dockerfile";
+import go from "highlight.js/lib/languages/go";
 import ini from "highlight.js/lib/languages/ini";
+import java from "highlight.js/lib/languages/java";
 import javascript from "highlight.js/lib/languages/javascript";
 import json from "highlight.js/lib/languages/json";
+import kotlin from "highlight.js/lib/languages/kotlin";
+import lua from "highlight.js/lib/languages/lua";
 import markdown from "highlight.js/lib/languages/markdown";
+import php from "highlight.js/lib/languages/php";
+import plaintext from "highlight.js/lib/languages/plaintext";
+import powershell from "highlight.js/lib/languages/powershell";
 import python from "highlight.js/lib/languages/python";
+import ruby from "highlight.js/lib/languages/ruby";
+import rust from "highlight.js/lib/languages/rust";
 import sql from "highlight.js/lib/languages/sql";
 import typescript from "highlight.js/lib/languages/typescript";
 import xml from "highlight.js/lib/languages/xml";
@@ -48,27 +64,43 @@ import {
 } from "./api";
 
 const HIGHLIGHT_LANGUAGES = {
-  bash, css, diff, ini, javascript, json, markdown, python, sql, typescript, xml, yaml,
+  bash, c, cpp, csharp, css, dart, diff, dockerfile, go, ini, java, javascript, json,
+  kotlin, lua, markdown, php, plaintext, powershell, python, ruby, rust, sql, typescript,
+  xml, yaml,
 };
 
 // Grammar tự khai báo alias riêng, nhưng khai thêm ở đây cho chắc: đây là những
 // tên Peto hay viết sau dấu ``` nhất.
 const HIGHLIGHT_ALIASES = {
   bash: ["sh", "shell", "console", "zsh"],
+  cpp: ["c++", "cc"],
+  csharp: ["cs", "c#"],
+  dockerfile: ["docker"],
+  go: ["golang"],
   ini: ["toml"],
   javascript: ["js", "jsx"],
+  kotlin: ["kt"],
   markdown: ["md"],
+  plaintext: ["text", "txt"],
+  powershell: ["ps1", "pwsh"],
+  ruby: ["rb"],
+  rust: ["rs"],
   typescript: ["ts", "tsx"],
   xml: ["html"],
   yaml: ["yml"],
 };
 
 const CODE_LABELS: Record<string, string> = {
-  bash: "Bash", console: "Bash", css: "CSS", diff: "Diff", html: "HTML", ini: "INI",
-  javascript: "JavaScript", js: "JavaScript", json: "JSON", jsx: "JSX", markdown: "Markdown",
-  md: "Markdown", python: "Python", sh: "Bash", shell: "Bash", sql: "SQL", toml: "TOML",
-  ts: "TypeScript", tsx: "TSX", typescript: "TypeScript", xml: "HTML", yaml: "YAML",
-  yml: "YAML", zsh: "Bash",
+  bash: "Bash", c: "C", "c#": "C#", "c++": "C++", cc: "C++", console: "Bash", cpp: "C++",
+  cs: "C#", csharp: "C#", css: "CSS", dart: "Dart", diff: "Diff", docker: "Dockerfile",
+  dockerfile: "Dockerfile", go: "Go", golang: "Go", h: "C", html: "HTML", ini: "INI",
+  java: "Java", javascript: "JavaScript", js: "JavaScript", json: "JSON", jsx: "JSX",
+  kotlin: "Kotlin", kt: "Kotlin", lua: "Lua", markdown: "Markdown", md: "Markdown",
+  php: "PHP", plaintext: "Văn bản", powershell: "PowerShell", ps1: "PowerShell",
+  pwsh: "PowerShell", python: "Python", rb: "Ruby", rs: "Rust", ruby: "Ruby",
+  rust: "Rust", sh: "Bash", shell: "Bash", sql: "SQL", text: "Văn bản", toml: "TOML",
+  ts: "TypeScript", tsx: "TSX", txt: "Văn bản", typescript: "TypeScript", xml: "HTML",
+  yaml: "YAML", yml: "YAML", zsh: "Bash",
 };
 
 const EFFORT_KEY = "peto-effort";
