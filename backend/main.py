@@ -55,7 +55,7 @@ from config import (
     discord_id_from_owner,
 )
 from discord_memory import discord_memory
-from persona import SYSTEM_PROMPT, build_memory_context, build_profile_context
+from persona import COMPANION_PROMPT, SYSTEM_PROMPT, build_memory_context, build_profile_context
 from rate_limit import AdmissionDenied, admission
 from web_search import normalize_sources
 
@@ -117,9 +117,12 @@ class ChatRequest(BaseModel):
     timezone: str | None = Field(default=None, max_length=100)
     attachments: list[AttachmentIn] = Field(default_factory=list)
     web_search: Literal["auto", "on", "off"] = "auto"
+    # "companion" khi nhắn từ tab Companion: persona trả lời ngắn bằng tiếng Anh, mạch trò chuyện riêng.
+    mode: str = Field(default="chat", max_length=16)
 
 
 ALLOWED_EFFORTS = {"auto", "low", "medium", "high"}
+CONVERSATION_MODES = {"chat", "companion"}
 
 
 def _public_attachment(row: dict) -> dict:
@@ -154,6 +157,13 @@ def _resolve_effort(requested: str | None, text: str) -> str:
             detail="Mức suy nghĩ phải là auto, low, medium hoặc high",
         )
     return choose_effort(text) if value == "auto" else value
+
+
+def _resolve_mode(requested: str) -> str:
+    """Tab gửi tin; sai giá trị thì báo lỗi thay vì lặng lẽ coi như tab Trò chuyện."""
+    if requested not in CONVERSATION_MODES:
+        raise HTTPException(status_code=400, detail="Chế độ trò chuyện không hợp lệ")
+    return requested
 
 
 def _title_from(text: str, files: list[attachment_lib.ValidatedAttachment]) -> str:
@@ -320,17 +330,28 @@ async def delete_conversation(
     return {"deleted": True}
 
 
-async def _build_system_prompt(owner: str) -> str:
-    """Prompt gốc, ghép thêm trí nhớ từ Discord (nếu lấy được) và hồ sơ người
-    dùng tự điền trong Cài đặt.
+@app.get("/api/companion")
+async def get_companion(owner: str = Depends(current_owner)) -> dict:
+    """Mạch trò chuyện của tab Companion: cuộc mới nhất cùng các tin gần đây."""
+    conversation_id = await db.latest_conversation(owner, "companion")
+    if not conversation_id:
+        return {"conversation_id": None, "messages": []}
+    rows = await db.get_messages(owner, conversation_id, limit=MAX_HISTORY_MESSAGES)
+    return {"conversation_id": conversation_id, "messages": [_public_message(row) for row in rows]}
+
+
+async def _build_system_prompt(owner: str, mode: str = "chat") -> str:
+    """Prompt gốc, ghép thêm trí nhớ từ Discord (nếu lấy được), hồ sơ người
+    dùng tự điền trong Cài đặt, và persona riêng khi nhắn từ tab Companion.
 
     Trí nhớ chỉ được tra bằng Discord ID lấy từ phiên đã xác minh — không bao
     giờ từ dữ liệu do trình duyệt gửi lên. Lấy không được thì bỏ qua, chat vẫn
     chạy bình thường.
     """
+    mode_block = COMPANION_PROMPT if mode == "companion" else ""
     user = await db.get_user(owner)
     if not user:
-        return SYSTEM_PROMPT
+        return "\n\n".join(part for part in (SYSTEM_PROMPT, mode_block) if part)
 
     discord_id = discord_id_from_owner(owner)
     snapshot = await discord_memory.fetch(discord_id) if discord_id else None
@@ -349,7 +370,8 @@ async def _build_system_prompt(owner: str) -> str:
         occupation=profile_api.occupation_label(profile["occupation"]),
         instructions=profile["instructions"],
     )
-    return "\n\n".join(part for part in (SYSTEM_PROMPT, context, profile_block) if part)
+    # Persona Companion đứng sau trí nhớ và hồ sơ để thắng thói quen trả lời dài bằng tiếng Việt ở trên.
+    return "\n\n".join(part for part in (SYSTEM_PROMPT, context, profile_block, mode_block) if part)
 
 
 def _as_chunk(item: str | StreamChunk) -> StreamChunk:
@@ -401,11 +423,21 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner)):
         raise HTTPException(status_code=400, detail="Tin nhắn trống")
 
     effort = _resolve_effort(request.effort, text)
+    mode = _resolve_mode(request.mode)
+    web_search = request.web_search
+    if mode == "companion":
+        if files:
+            raise HTTPException(status_code=400, detail="Companion chưa nhận ảnh hay tệp đính kèm")
+        # Companion phải trả lời thật nhanh để kịp đọc thành tiếng: suy nghĩ ít, không tìm web.
+        effort = "low"
+        web_search = "off"
 
     if request.conversation_id:
-        conversation_id = request.conversation_id
-        if not await db.owns_conversation(owner, conversation_id):
+        existing_mode = await db.conversation_mode(owner, request.conversation_id)
+        if existing_mode is None:
             raise HTTPException(status_code=404, detail="Không tìm thấy hội thoại")
+        if existing_mode != mode:
+            raise HTTPException(status_code=400, detail="Hội thoại này thuộc tab khác")
 
     async def event_stream() -> AsyncIterator[str]:
         conversation_id = request.conversation_id
@@ -448,7 +480,7 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner)):
                 is_new_conversation = not conversation_id
                 with anyio.CancelScope(shield=True):
                     if not conversation_id:
-                        conversation_id = await db.create_conversation(owner)
+                        conversation_id = await db.create_conversation(owner, mode=mode)
                     saved_paths: list[Path] = []
                     try:
                         message_id = await db.add_message(conversation_id, "user", text)
@@ -471,7 +503,8 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner)):
                 # AI riêng chạy song song với câu trả lời, cuối lượt mới ghi đè.
                 # Không có chữ thì chẳng có gì để tóm tắt (lượt đặt tên không xem
                 # được ảnh): giữ nguyên tên "Ảnh: ..." cắt tạm.
-                if is_new_conversation and text.strip():
+                # Mạch Companion không hiện ở thanh bên nên khỏi đặt tên, bớt một lượt gọi AI.
+                if is_new_conversation and mode == "chat" and text.strip():
                     title_task = asyncio.create_task(
                         titles.suggest_title(text, [item.name for item in files])
                     )
@@ -488,18 +521,18 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner)):
                     await _read_legacy_documents(owner, rows, MAX_ATTACHMENTS - document_count)
                     yield sse({"type": "reading", "text": ""})
                 history = await anyio.to_thread.run_sync(_to_chat_messages, rows)
-                system_prompt = await _build_system_prompt(owner)
+                system_prompt = await _build_system_prompt(owner, mode)
                 try:
-                    async for chunk in _stream_reply(system_prompt, history, effort, timezone, request.web_search):
+                    async for chunk in _stream_reply(system_prompt, history, effort, timezone, web_search):
                         yield chunk_event(chunk)
                 except TimeoutError:
                     # Chat thường được thử lại đúng 1 lần, và chỉ khi chưa kịp
                     # phát ra chữ nào — giống cách bot Discord giới hạn retry.
-                    if collected or search_started or request.web_search == "on" or effort != "low":
+                    if collected or search_started or web_search == "on" or effort != "low":
                         raise
                     logger.warning("Timeout effort=low — thử lại 1 lần")
                     async for chunk in _stream_reply(
-                        system_prompt, history, effort, timezone, request.web_search
+                        system_prompt, history, effort, timezone, web_search
                     ):
                         yield chunk_event(chunk)
                 complete = bool("".join(collected).strip())

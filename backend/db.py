@@ -39,6 +39,10 @@ async def init_db() -> None:
             "CREATE INDEX IF NOT EXISTS idx_conversations_owner "
             "ON conversations(owner, updated_at DESC)"
         )
+        conversation_columns = await (await db.execute("PRAGMA table_info(conversations)")).fetchall()
+        if "mode" not in {column[1] for column in conversation_columns}:
+            # Tab Companion có mạch trò chuyện riêng; hội thoại có từ trước đều thuộc tab Trò chuyện.
+            await db.execute("ALTER TABLE conversations ADD COLUMN mode TEXT NOT NULL DEFAULT 'chat'")
         await db.execute(
             """
             CREATE TABLE IF NOT EXISTS messages (
@@ -280,14 +284,14 @@ async def get_user(owner: str) -> dict | None:
         return dict(row) if row else None
 
 
-async def create_conversation(owner: str, title: str = "") -> str:
+async def create_conversation(owner: str, title: str = "", mode: str = "chat") -> str:
     conversation_id = uuid.uuid4().hex
     now = time.time()
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
-            "INSERT INTO conversations (id, owner, title, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (conversation_id, owner, title[:120], now, now),
+            "INSERT INTO conversations (id, owner, title, created_at, updated_at, mode) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (conversation_id, owner, title[:120], now, now, mode),
         )
         await db.commit()
     return conversation_id
@@ -303,7 +307,31 @@ async def owns_conversation(owner: str, conversation_id: str) -> bool:
         return await cursor.fetchone() is not None
 
 
+async def conversation_mode(owner: str, conversation_id: str) -> str | None:
+    """Tab của một hội thoại ("chat" hay "companion"); None nếu không phải của owner."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "SELECT mode FROM conversations WHERE id = ? AND owner = ?",
+            (conversation_id, owner),
+        )
+        row = await cursor.fetchone()
+        return row[0] if row else None
+
+
+async def latest_conversation(owner: str, mode: str) -> str | None:
+    """Hội thoại mới nhất của một tab; Companion chỉ dùng đúng một mạch này."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "SELECT id FROM conversations WHERE owner = ? AND mode = ? "
+            "ORDER BY updated_at DESC, id DESC LIMIT 1",
+            (owner, mode),
+        )
+        row = await cursor.fetchone()
+        return row[0] if row else None
+
+
 async def list_conversations(owner: str, limit: int = 50, offset: int = 0) -> list[dict]:
+    """Hội thoại của tab Trò chuyện; mạch Companion không hiện ở thanh bên."""
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
@@ -312,7 +340,7 @@ async def list_conversations(owner: str, limit: int = 50, offset: int = 0) -> li
                    (SELECT COUNT(*) FROM messages m
                      WHERE m.conversation_id = c.id) AS message_count
               FROM conversations c
-             WHERE c.owner = ?
+             WHERE c.owner = ? AND c.mode = 'chat'
              ORDER BY c.updated_at DESC, c.id DESC
              LIMIT ? OFFSET ?
             """,

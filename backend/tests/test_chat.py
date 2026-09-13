@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import sqlite3
+
 import pytest
 
+import db
 import titles
 from conftest import read_events
 
@@ -15,8 +18,11 @@ async def _send(
     *,
     effort: str | None = None,
     attachments: list[dict] | None = None,
+    mode: str | None = None,
 ):
     payload: dict = {"message": message}
+    if mode is not None:
+        payload["mode"] = mode
     if conversation_id:
         payload["conversation_id"] = conversation_id
     if effort is not None:
@@ -160,6 +166,84 @@ async def test_invalid_effort_is_rejected(client):
         "/api/chat", json={"message": "hi", "effort": "ultra"}
     )
     assert response.status_code == 400
+
+
+async def test_companion_mode_uses_short_english_persona(client, monkeypatch):
+    """Tab Companion dặn Peto trả lời ngắn bằng tiếng Anh, suy nghĩ ít và không tìm web."""
+    calls: list[dict] = []
+    from ai.mock import MockProvider
+
+    original = MockProvider.stream
+
+    async def spy(self, *, system_prompt, messages, effort="low", timezone=None, web_search="auto"):
+        calls.append({"system_prompt": system_prompt, "effort": effort, "web_search": web_search})
+        async for chunk in original(
+            self, system_prompt=system_prompt, messages=messages, effort=effort, timezone=timezone, web_search=web_search
+        ):
+            yield chunk
+
+    monkeypatch.setattr(MockProvider, "stream", spy)
+    events = await _send(client, "chào", effort="high", mode="companion")
+    assert events[0]["effort"] == "low"
+    assert len(calls) == 1, "mạch Companion không hiện ở thanh bên nên không có lượt đặt tên"
+    assert calls[0]["effort"] == "low"
+    assert calls[0]["web_search"] == "off"
+    assert "## Chế độ Companion" in calls[0]["system_prompt"]
+
+    calls.clear()
+    await _send(client, "chào")
+    chat_prompts = [call["system_prompt"] for call in calls if titles.TITLE_MARKER not in call["system_prompt"]]
+    assert chat_prompts
+    assert "## Chế độ Companion" not in chat_prompts[0]
+
+
+async def test_unknown_mode_is_rejected(client):
+    response = await client.post("/api/chat", json={"message": "hi", "mode": "voice"})
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Chế độ trò chuyện không hợp lệ"
+
+
+async def test_companion_thread_stays_out_of_chat_list(client):
+    companion_id = (await _send(client, "hello", mode="companion"))[0]["conversation_id"]
+    chat_id = (await _send(client, "chào"))[0]["conversation_id"]
+
+    listed = {row["id"] for row in (await client.get("/api/conversations?limit=100")).json()["conversations"]}
+    assert chat_id in listed
+    assert companion_id not in listed
+
+    thread = (await client.get("/api/companion")).json()
+    assert thread["conversation_id"] == companion_id
+    assert [message["role"] for message in thread["messages"]] == ["user", "assistant"]
+
+    # Không trộn hai tab: nhắn kiểu Companion vào cuộc Trò chuyện, hay ngược lại, đều bị từ chối.
+    response = await client.post("/api/chat", json={"message": "hi", "conversation_id": chat_id, "mode": "companion"})
+    assert response.status_code == 400
+    response = await client.post("/api/chat", json={"message": "hi", "conversation_id": companion_id})
+    assert response.status_code == 400
+
+
+async def test_companion_rejects_attachments(client):
+    response = await client.post("/api/chat", json={
+        "message": "xem ảnh này",
+        "mode": "companion",
+        "attachments": [{"name": "cham.png", "mime": "image/png", "data": PNG_1x1_B64}],
+    })
+    assert response.status_code == 400
+
+
+async def test_schema_upgrade_marks_existing_conversations_as_chat(tmp_path, monkeypatch):
+    path = tmp_path / "legacy-conversations.db"
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            "CREATE TABLE conversations (id TEXT PRIMARY KEY, owner TEXT NOT NULL, "
+            "title TEXT NOT NULL DEFAULT '', created_at REAL NOT NULL, updated_at REAL NOT NULL)"
+        )
+        connection.execute("INSERT INTO conversations VALUES ('cu', 'discord:1', 'Cũ', 0, 0)")
+    monkeypatch.setattr(db, "DB_PATH", path)
+    await db.init_db()
+    await db.init_db()
+    with sqlite3.connect(path) as connection:
+        assert connection.execute("SELECT mode FROM conversations").fetchone() == ("chat",)
 
 
 async def test_auto_effort_still_uses_routing(client):

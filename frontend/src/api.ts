@@ -1,6 +1,8 @@
 export type Role = "user" | "assistant";
 export type Effort = "auto" | "low" | "medium" | "high";
 export type WebSearchMode = "auto" | "on" | "off";
+/** Tab gửi tin: Companion có persona trả lời ngắn bằng tiếng Anh và mạch trò chuyện riêng. */
+export type ConversationMode = "chat" | "companion";
 export interface WebSource { url: string; title: string }
 
 export interface ChatAttachment {
@@ -189,6 +191,13 @@ export async function deleteConversation(conversationId: string): Promise<void> 
   await json<{ deleted: boolean }>(response);
 }
 
+/** Mạch trò chuyện của tab Companion; chưa nhắn lần nào thì conversation_id là null. */
+export async function getCompanion(signal?: AbortSignal): Promise<{
+  conversation_id: string | null; messages: Message[];
+}> {
+  return json(await fetch("/api/companion", { signal }));
+}
+
 export type ImagineQuality = "low" | "medium";
 export type ImagineResolution = "1k" | "2k";
 
@@ -251,6 +260,7 @@ export async function sendMessage(
     effort: Effort;
     webSearch?: WebSearchMode;
     attachments?: OutgoingAttachment[];
+    mode?: ConversationMode;
   },
   handlers: ChatHandlers,
   signal?: AbortSignal,
@@ -265,6 +275,7 @@ export async function sendMessage(
       web_search: payload.webSearch ?? "auto",
       timezone: browserTimezone(),
       attachments: payload.attachments ?? [],
+      mode: payload.mode ?? "chat",
     }),
     signal,
   });

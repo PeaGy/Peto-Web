@@ -155,6 +155,13 @@ must filter it out or they capture the title call instead of the chat call.
 user text (math/technical markers give `medium`, multi-step reasoning markers give `high`).
 Each level has its own timeout in `config.RESPONSE_TIMEOUTS` (180/300/480s).
 
+`mode` is `chat` by default; `companion` comes only from the Companion tab. `_resolve_mode`
+rejects anything else with a Vietnamese 400. A companion turn is forced to `effort="low"` and
+`web_search="off"`, refuses attachments, skips the title call, and `_build_system_prompt` appends
+`persona.COMPANION_PROMPT` last (one or two short English sentences). Conversations store their
+`mode` and a turn must match the conversation's mode; `list_conversations` only returns `chat`
+ones, and `GET /api/companion` returns the latest `companion` thread with its recent messages.
+
 ### Frontend SSE reader
 
 The endpoint is POST, so `EventSource` cannot be used. `src/api.ts` does the framing by
@@ -265,6 +272,8 @@ where cascade deletes matter (SQLite has it off by default).
 
 Tables: `conversations`, `messages`, `attachments`, `users`, `user_profiles`,
 `imagine_jobs`, `imagine_images`. `users` is the only place mapping a web account to a Discord ID.
+`conversations.mode` (`chat` or `companion`) was added with the same manual migration; older rows
+default to `chat`.
 
 ### User profile (Settings → Hồ sơ)
 
@@ -298,6 +307,33 @@ disabled. `PETO_MEMORY_CACHE_TTL` is kept only for config compatibility and does
 Disabled unless both `PETO_MEMORY_GATEWAY_URL` and `PETO_MEMORY_GATEWAY_TOKEN` are set;
 half-configured setups log a warning at startup rather than failing silently.
 
+### Companion tab and local voice
+
+`Companion.tsx` is mounted alongside Chat like `Imagine.tsx` (an `active` prop, kept alive once
+visited) and owns one continuous thread from `GET /api/companion`; "Bắt đầu lại" deletes it. It
+sends `mode: "companion"`, speaks each completed reply unless muted, and stops speaking when the
+tab is left.
+
+Speech runs on the user's own machine, never on the VPS. `local-tts/speak_server.py` lives in a
+gitignored experiment folder with its own venvs, loads Qwen3-TTS 0.6B through faster-qwen3-tts,
+and serves `GET /health` and `POST /speak` (up to 300 characters in, WAV out) on
+`127.0.0.1:7862`. It rejects any Origin other than the production site and the local dev origins,
+and any Host other than 127.0.0.1/localhost (DNS rebinding). There is no credential anywhere.
+
+`localSpeech.ts` holds markdown → speakable text, chunking and the player; `LocalVoice.tsx` holds
+`useLocalVoice`, `SpeakButton` and `VoiceControls`. Keep those file names distinct beyond letter
+case: on Windows `./LocalVoice` resolves to a `localVoice.ts` before the `.tsx`.
+
+- Voice stays off until the user presses "Bật giọng nói trên máy này", and nothing touches
+  127.0.0.1 before that: a public origin fetching loopback triggers Chrome's Local Network Access
+  prompt, and visitors who never asked for voice must not see it. `tests/Companion.test.tsx`
+  asserts this.
+- Chunks stay roughly equal (target 150 characters). Generation is only slightly faster than real
+  time; the next chunk is requested when the previous one arrives, so it is ready in time only if
+  it is not much longer than the one playing.
+- Never add TTS models or their npm packages to the frontend, and never proxy speech through the
+  backend: `npm ci` on the VPS would ship them to every user.
+
 ## Frontend conventions
 
 - **Stale-response guarding.** Async loads use a monotonically increasing `useRef` counter
@@ -317,11 +353,12 @@ half-configured setups log a warning at startup rather than failing silently.
   deliberately not used. Anything else renders as plain text under an uppercased tag, so a
   new language needs a grammar import **and** a label. Each grammar costs bundle size; add
   ones Peto actually answers with.
-- Per-user preferences (effort, theme, imagine quality/resolution/ratio/count) live in
+- Per-user preferences (effort, theme, imagine quality/resolution/ratio/count, local voice on/off and voice, Companion
+  mute) live in
   `localStorage` behind try/catch helpers. In-flight Imagine state lives in component state,
   so it survives switching tabs but not a page reload.
-- `App.tsx` owns chat plus the app shell; `Imagine.tsx` is mounted alongside it and receives
-  an `active` prop rather than being unmounted — that is what keeps a running generation
+- `App.tsx` owns chat plus the app shell; `Imagine.tsx` and `Companion.tsx` are mounted alongside
+  it and receive an `active` prop rather than being unmounted — that is what keeps a running generation
   alive when the user switches back to Chat.
 - The composer is `Composer.tsx`, presentational only: draft text, the file list and the send
   flow stay in `App.tsx` because they hang off the draft-preservation rule; just the drag

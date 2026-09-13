@@ -295,7 +295,7 @@ Giới hạn cố ý của phần này:
 - Prompt của web không chứa tên thật hay Discord ID của thành viên. Có test
   chặn (`tests/test_persona.py`).
 - Peto xem ảnh đính kèm và tìm web trong chat, tạo/sửa ảnh trong tab Tạo ảnh;
-  chưa có nhạc hay giọng nói.
+  chưa có nhạc. Tab Companion nói thành tiếng trên máy nào tự chạy máy chủ giọng nói (xem bên dưới).
 - Database riêng và **file token xAI riêng**; không dùng chung file nào với
   production Discord.
 - Không có credential AI nào xuống trình duyệt. Discord access token chỉ dùng
@@ -380,8 +380,34 @@ thích ngắn gọn, đi thẳng vào vấn đề".
 - Ảnh đại diện lấy từ Discord/Google, khách thì hiện chữ cái đầu; chưa tải được ảnh
   riêng lên.
 
+## Companion
+
+Tab **Companion** nằm cạnh Trò chuyện và Tạo ảnh. Ở đây Peto trả lời một hai câu ngắn bằng tiếng
+Anh như bạn bè nhắn tin, rồi tự nói thành tiếng. Tab Trò chuyện vẫn giữ nguyên tính cách và cách trả
+lời đầy đủ bằng tiếng Việt.
+
+- Companion có một mạch trò chuyện riêng, không hiện trong danh sách Trò chuyện. Nút **Bắt đầu lại**
+  xóa mạch đó sau khi xác nhận.
+- Lượt Companion luôn suy nghĩ ở mức thấp, không tìm web, không nhận ảnh hay tệp và không đặt tên
+  hội thoại, để trả lời nhanh nhất có thể.
+- Giọng đọc chạy trên chính máy người dùng, không trên VPS: máy chủ giọng nói
+  `local-tts/speak_server.py` (thư mục `local-tts` không nằm trong git) dùng Qwen3-TTS 0.6B trên GPU
+  của máy đó, với giọng mẫu người dùng tự chọn. Chỉ khi bấm **Bật giọng nói trên máy này**, trang mới
+  gọi `http://127.0.0.1:7862`, nên người khác không bị Chrome hỏi quyền truy cập mạng cục bộ.
+- Có giọng nói thì Peto đọc ngay khi trả lời xong. **Tắt tiếng** thì thôi tự đọc; bấm **Nghe** dưới
+  tin để nghe lại. Chọn giọng ngay dưới ảnh Peto. Rời tab thì Peto thôi đọc.
+- Máy chủ giọng nói chỉ nghe ở 127.0.0.1, chỉ nhận yêu cầu từ trang Peto và kiểm tra Host để chặn DNS
+  rebinding. Không có khóa hay credential nào.
+- Trên GTX 1650 Ti, tạo tiếng mất xấp xỉ độ dài câu nói: câu 7 giây chờ khoảng 7 giây. Chưa đọc dần
+  trong lúc Peto đang trả lời, và chưa có nhân vật 3D.
+
+Đã thử tab Companion trên máy local với phản hồi giả: bật giọng nói, gửi tin, Peto tự nói khi trả lời
+xong và bắt đầu lại đều chạy trong trình duyệt. Chưa thử trên production, nơi Chrome có thể hỏi quyền
+truy cập mạng cục bộ, và chưa thử persona Companion với Grok thật.
+
 ## Chưa có ở bước này
 
-OCR tài liệu scan, giọng nói, nhân vật 3D, ghi hoặc đồng bộ trí nhớ
+OCR tài liệu scan, giọng nói cho người không tự chạy máy chủ giọng nói, đọc dần trong lúc Peto
+đang trả lời, nhân vật 3D, ghi hoặc đồng bộ trí nhớ
 hai chiều với Discord. Chưa kiểm chứng chất lượng AI thật và hoạt động VPS trong
 đợt kiểm thử local nêu trên.

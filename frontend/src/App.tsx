@@ -33,6 +33,7 @@ import sql from "highlight.js/lib/languages/sql";
 import typescript from "highlight.js/lib/languages/typescript";
 import xml from "highlight.js/lib/languages/xml";
 import yaml from "highlight.js/lib/languages/yaml";
+import Companion, { CompanionIcon } from "./Companion";
 import Imagine from "./Imagine";
 import ProfileSettings from "./ProfileSettings";
 import Composer from "./Composer";
@@ -125,7 +126,7 @@ const EFFORTS: { value: Effort; label: string; hint: string }[] = [
 ];
 
 type ThemeChoice = "light" | "dark" | "system";
-type AppView = "chat" | "imagine";
+type AppView = "chat" | "imagine" | "companion";
 
 const THEMES: { value: ThemeChoice; label: string; hint: string }[] = [
   { value: "light", label: "Sáng", hint: "Nền trắng, hợp ban ngày" },
@@ -448,10 +449,12 @@ export default function App() {
   const [stopping, setStopping] = useState(false);
   const [theme, setTheme] = useState<ThemeChoice>(readStoredTheme);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [view, setView] = useState<AppView>(() =>
-    typeof window !== "undefined" && window.location.hash === "#imagine" ? "imagine" : "chat",
-  );
+  const [view, setView] = useState<AppView>(() => {
+    const hash = typeof window !== "undefined" ? window.location.hash : "";
+    return hash === "#imagine" ? "imagine" : hash === "#companion" ? "companion" : "chat";
+  });
   const [imageVisited, setImageVisited] = useState(view === "imagine");
+  const [companionVisited, setCompanionVisited] = useState(view === "companion");
   // Bản sao chỉ để vẽ cột trái; Imagine.tsx mới là nơi tạo, xóa và giữ danh sách.
   const [imagineJobs, setImagineJobs] = useState<ImagineJob[]>([]);
   const [focusJobId, setFocusJobId] = useState<string | null>(null);
@@ -1024,9 +1027,10 @@ export default function App() {
 
   function go(next: AppView) {
     if (next === "imagine") setImageVisited(true);
+    if (next === "companion") setCompanionVisited(true);
     setView(next);
     setSidebarOpen(false);
-    const url = next === "imagine" ? "#imagine" : `${window.location.pathname}${window.location.search}`;
+    const url = next === "chat" ? `${window.location.pathname}${window.location.search}` : `#${next}`;
     window.history.replaceState(null, "", url);
   }
 
@@ -1077,6 +1081,16 @@ export default function App() {
           >
             <ImageIcon />
             <span className="nav-label">Tạo ảnh</span>
+          </button>
+          <button
+            type="button"
+            className={view === "companion" ? "nav-item on" : "nav-item"}
+            aria-current={view === "companion" ? "page" : undefined}
+            title={collapsed ? "Companion" : undefined}
+            onClick={() => go("companion")}
+          >
+            <CompanionIcon />
+            <span className="nav-label">Companion</span>
           </button>
         </nav>
         {view === "imagine" && (
@@ -1186,6 +1200,15 @@ export default function App() {
           onJobsChange={setImagineJobs}
           focusJobId={focusJobId}
           onFocusHandled={clearFocusJob}
+        />
+      )}
+      {companionVisited && (
+        <Companion
+          key={auth.user?.id}
+          active={view === "companion"}
+          appInfo={appInfo}
+          onUnauthorized={handleUnauthorized}
+          onOpenSidebar={() => setSidebarOpen(true)}
         />
       )}
       <main className={emptyChat ? "chat empty-state" : "chat"} hidden={view !== "chat"}>
