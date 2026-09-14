@@ -1,8 +1,8 @@
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import Live2DStage from '../src/Live2DStage';
 
-const mocks = vi.hoisted(() => ({ from: vi.fn(), destroy: vi.fn(), start: vi.fn(), stop: vi.fn(), tick: null as null | (() => void) }));
+const mocks = vi.hoisted(() => ({ from: vi.fn(), destroy: vi.fn(), start: vi.fn(), stop: vi.fn(), tick: null as null | (() => void), mouth: 0 }));
 vi.mock('pixi.js', () => ({ Application: class {
   view = document.createElement('canvas');
   stage = { addChild: vi.fn() };
@@ -12,31 +12,95 @@ vi.mock('pixi.js', () => ({ Application: class {
   destroy = () => { this.view.remove(); mocks.destroy(); };
 } }));
 vi.mock('pixi-live2d-display/cubism4', () => ({ Live2DModel: { from: mocks.from }, MotionPreloadStrategy: { IDLE: 'IDLE' } }));
+vi.mock('../src/voiceActivity', () => ({ voiceMouth: () => mocks.mouth }));
 
+type Point = { x: number; y: number };
 function fakeModel() {
-  return { width: 1000, height: 2000, anchor: { set: vi.fn() }, scale: { set: vi.fn() },
-    position: { set: vi.fn() }, destroy: vi.fn(), update: vi.fn(),
-    internalModel: { on: vi.fn(), update: vi.fn(), coreModel: { setParameterValueById: vi.fn(), update: vi.fn() } } };
+  return { width: 1000, height: 2000, anchor: { set: vi.fn() },
+    scale: { x: 1, y: 1, set: vi.fn(function (this: Point, value: number) { this.x = value; this.y = value; }) },
+    position: { x: 0, y: 0, set: vi.fn(function (this: Point, x: number, y: number) { this.x = x; this.y = y; }) },
+    destroy: vi.fn(), update: vi.fn(),
+    internalModel: { on: vi.fn(), update: vi.fn(), focusController: { focus: vi.fn() },
+      coreModel: { setParameterValueById: vi.fn(), update: vi.fn() } } };
 }
+
+async function mount(motion?: 'system' | 'always') {
+  const model = fakeModel();
+  mocks.from.mockResolvedValue(model);
+  const view = render(<Live2DStage name="Peto" motion={motion} />);
+  await waitFor(() => expect(mocks.start).toHaveBeenCalled());
+  const host = view.container.querySelector('.character-canvas') as HTMLElement;
+  return { model, view, host };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
+  localStorage.clear();
+  mocks.mouth = 0;
   vi.stubGlobal('Live2DCubismCore', {});
   vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
   vi.stubGlobal('matchMedia', () => ({ matches: true }));
   vi.spyOn(document, 'hidden', 'get').mockReturnValue(false);
+  vi.spyOn(Element.prototype, 'clientWidth', 'get').mockReturnValue(800);
+  vi.spyOn(Element.prototype, 'clientHeight', 'get').mockReturnValue(600);
 });
 afterEach(() => vi.unstubAllGlobals());
 
 it('giảm chuyển động vẫn áp dụng pose và giải phóng renderer khi rời trang', async () => {
-  const model = fakeModel();
-  mocks.from.mockResolvedValue(model);
-  const view = render(<Live2DStage name="Peto" />);
-  await waitFor(() => expect(mocks.start).toHaveBeenCalled());
+  const { model, view } = await mount();
   mocks.tick!();
   expect(model.internalModel.update).toHaveBeenCalledWith(0, 0);
   expect(model.update).not.toHaveBeenCalled();
   view.unmount();
   expect(mocks.destroy).toHaveBeenCalledTimes(1);
+});
+
+it('chọn Luôn cử động thì nhân vật cử động dù thiết bị bật giảm chuyển động', async () => {
+  const { model } = await mount('always');
+  mocks.tick!();
+  expect(model.update).toHaveBeenCalledWith(33);
+  expect(model.internalModel.update).not.toHaveBeenCalled();
+});
+
+it('cuộn chuột phóng to quanh con trỏ, bấm đúp về cỡ vừa khung và nhớ góc nhìn', async () => {
+  const { model, view, host } = await mount();
+  const fitted = model.scale.set.mock.calls.at(-1)![0];
+  fireEvent.wheel(host, { deltaY: -100, clientX: 400, clientY: 300 });
+  expect(model.scale.y).toBeGreaterThan(fitted);
+  fireEvent.doubleClick(host);
+  expect(model.scale.y).toBeCloseTo(fitted);
+  fireEvent.wheel(host, { deltaY: -200, clientX: 400, clientY: 100 });
+  view.unmount();
+  expect(JSON.parse(localStorage.getItem('peto-character-view')!).zoom).toBeGreaterThan(1);
+});
+
+it('nhìn theo con trỏ khi được cử động, đứng yên thì không', async () => {
+  const look = (x: number, y: number) => {
+    const event = new MouseEvent('pointermove', { clientX: x, clientY: y, bubbles: true });
+    Object.defineProperty(event, 'pointerType', { value: 'mouse' });
+    window.dispatchEvent(event);
+  };
+  const still = await mount();
+  look(800, 0);
+  expect(still.model.internalModel.focusController.focus).not.toHaveBeenCalled();
+  still.view.unmount();
+
+  const moving = await mount('always');
+  look(800, 0);
+  const [x, y] = moving.model.internalModel.focusController.focus.mock.calls.at(-1)!;
+  expect(x).toBe(1);
+  expect(y).toBeGreaterThan(0);
+});
+
+it('miệng mở theo âm thanh đang phát và khép lại khi im lặng', async () => {
+  const { model } = await mount();
+  const [, beforeModelUpdate] = model.internalModel.on.mock.calls.find(([name]) => name === 'beforeModelUpdate')!;
+  mocks.mouth = 1;
+  beforeModelUpdate();
+  expect(model.internalModel.coreModel.setParameterValueById).toHaveBeenLastCalledWith('ParamMouthOpenY', 0.7);
+  mocks.mouth = 0;
+  for (let i = 0; i < 12; i++) beforeModelUpdate();
+  expect(model.internalModel.coreModel.setParameterValueById).toHaveBeenLastCalledWith('ParamMouthOpenY', 0);
 });
 
 it('tải lỗi vẫn có thông báo và nút thử lại', async () => {

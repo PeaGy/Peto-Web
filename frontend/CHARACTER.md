@@ -25,8 +25,16 @@ giả, không thay đường phát âm thanh. Tạm dừng, kết thúc, hủy v
 Đây là mở miệng theo cường độ, chưa phân loại nguyên âm như wLipSync của AIRI.
 WAV không hỗ trợ vẫn phát bình thường, chỉ không điều khiển miệng.
 
+Tương tác: cuộn chuột hoặc chụm hai ngón để phóng quanh chỗ đang chỉ, kéo để dời, bấm đúp để về cỡ
+vừa khung; góc nhìn lưu ở `peto-character-view`. Khi được cử động, nhân vật chạy motion nhóm Idle,
+thở, chớp mắt và nhìn theo con trỏ trên cả trang, không theo ngón tay vì ngón tay dùng để kéo.
+Phần tính toán nằm ở `src/characterView.ts`. `headHeight` trong `characterConfig.ts` là vị trí đầu
+tính từ chân lên theo chiều cao model; thay model có tỉ lệ khác thì chỉnh lại số này.
+
 Không hỗ trợ WebGL hoặc tải model lỗi: dùng ảnh đại diện dự phòng, chat và giọng vẫn hoạt động.
-Tôn trọng giảm chuyển động: tắt chuyển động tự động, giữ mở miệng theo âm thanh.
+Cử động do người dùng chọn ở Cài đặt → Giao diện → Nhân vật cử động, lưu ở `peto-character-motion`.
+"Theo máy" (mặc định) tôn trọng giảm chuyển động: nhân vật đứng yên, miệng vẫn theo âm thanh.
+"Luôn cử động" bỏ qua cài đặt đó. Windows tắt Animation effects được trình duyệt báo là giảm chuyển động.
 
 Sau khi cập nhật VPS: `npm ci` và `npm run build` trong frontend như thường lệ.
 Model và Core đi kèm thư mục public (~5 MB); không cần cài model AI hay đổi relay.

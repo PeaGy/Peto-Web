@@ -442,6 +442,16 @@ it('opens settings from the account box and switches to the light theme', async 
   expect(screen.queryByRole('dialog')).toBeNull();
 });
 
+it('lưu lựa chọn Luôn cử động cho nhân vật Companion', async () => {
+  await openApp();
+  fireEvent.click(screen.getByRole('button', {name: /Cài đặt · Demo/}));
+  const dialog = screen.getByRole('dialog');
+  const group = within(dialog).getByRole('radiogroup', {name: 'Nhân vật cử động'});
+  expect((within(group).getByRole('radio', {name: /Theo máy/}) as HTMLInputElement).checked).toBe(true);
+  fireEvent.click(within(group).getByRole('radio', {name: /Luôn cử động/}));
+  expect(localStorage.getItem('peto-character-motion')).toBe('always');
+});
+
 it('renders Markdown tables as a scrollable table', async () => {
   vi.mocked(api.getMessages).mockResolvedValue([{ role:'assistant', content:'| A | B |\n| --- | --- |\n| Một | Hai |'}]);
   await openApp();

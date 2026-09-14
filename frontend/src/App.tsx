@@ -42,6 +42,8 @@ import Imagine from "./Imagine";
 import { useLocalVoice } from "./LocalVoice";
 import ProfileSettings from "./ProfileSettings";
 import VoiceSettings from "./VoiceSettings";
+import CharacterSettings from "./CharacterSettings";
+import { readCharacterMotion, writeCharacterMotion, type CharacterMotion } from "./characterView";
 import Composer from "./Composer";
 import { FileGlyph, formatSize, type DraftFile } from "./files";
 import { fillName, greetingKey, pickGreeting } from "./timeGreeting";
@@ -454,6 +456,11 @@ export default function App() {
   const [showJump, setShowJump] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [theme, setTheme] = useState<ThemeChoice>(readStoredTheme);
+  const [characterMotion, setCharacterMotion] = useState<CharacterMotion>(readCharacterMotion);
+  const changeCharacterMotion = useCallback((value: CharacterMotion) => {
+    setCharacterMotion(value);
+    writeCharacterMotion(value);
+  }, []);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [view, setView] = useState<AppView>(() => {
     const hash = typeof window !== "undefined" ? window.location.hash : "";
@@ -1219,6 +1226,7 @@ export default function App() {
           active={view === "companion"}
           appInfo={appInfo}
           voice={localVoice}
+          characterMotion={characterMotion}
           onUnauthorized={handleUnauthorized}
           onOpenSidebar={() => setSidebarOpen(true)}
         />
@@ -1424,6 +1432,7 @@ export default function App() {
                 </label>
               ))}
             </div>
+            <CharacterSettings value={characterMotion} onChange={changeCharacterMotion} />
           </section>
 
           <VoiceSettings voice={localVoice} open={settingsOpen} />

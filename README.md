@@ -393,9 +393,15 @@ lời đầy đủ bằng tiếng Việt.
   xóa mạch đó sau khi xác nhận.
 - Lượt Companion luôn suy nghĩ ở mức thấp, không tìm web, không nhận ảnh hay tệp và không đặt tên
   hội thoại, để trả lời nhanh nhất có thể.
-- Màn hình chia hai: bên trái là sân khấu chỉ có hình Peto (tạm là ảnh bot, sau này là nhân vật
-  Live2D/3D), bên phải là cột chat với trạng thái Peto đang nhắn hay đang nói, nút **Tắt tiếng** và
-  nút **Bắt đầu lại**.
+- Màn hình chia hai: bên trái là sân khấu chỉ có nhân vật Live2D (model mẫu Hiyori Momose của Live2D
+  Inc.), bên phải là cột chat với trạng thái Peto đang nhắn hay đang nói, nút **Tắt tiếng** và nút
+  **Bắt đầu lại**.
+- Cuộn chuột hoặc chụm hai ngón trên sân khấu để phóng to/thu nhỏ quanh chỗ đang chỉ, kéo để dời,
+  bấm đúp để về cỡ vừa khung; trình duyệt nhớ góc nhìn đã chọn.
+- Nhân vật lắc lư theo motion có sẵn, thở, chớp mắt và nhìn theo con trỏ ở mọi chỗ trên trang. Miệng
+  mấp máy theo giọng đọc đang phát; không có tiếng thì ngậm miệng.
+- Thiết bị bật giảm chuyển động (trên Windows là tắt Animation effects) thì mặc định nhân vật đứng yên.
+  Muốn vẫn cử động, chọn **Luôn cử động** ở **Cài đặt → Giao diện → Nhân vật cử động**.
 - Giọng đọc được tạo trên máy Windows của chủ web, không trên VPS. Máy chủ giọng nói
   `local-tts/speak_server.py` (thư mục `local-tts` không nằm trong git) dùng Qwen3-TTS 0.6B trên GPU
   của máy đó với hai giọng mẫu `playful-1` và `gentle-2`. Chương trình `voice-worker/relay.py` trên

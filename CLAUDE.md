@@ -316,11 +316,25 @@ sends `mode: "companion"`, speaks each completed reply unless muted, and stops s
 tab is left.
 
 The layout is a stage on the left and a ~380px chat column on the right. The stage holds only the
-character (the bot avatar for now, a Live2D/3D model later): no text, status or controls go there,
-by the owner's explicit call. The chat column carries the speaking status, the mute toggle, "Bắt
-đầu lại", a notice when voice is on but the voice machine is offline, and the Chat tab's composer
-styles. Enabling voice, its status, choosing a voice and "Nghe thử" live in Settings, in
-`VoiceSettings.tsx`.
+character and the model's credit line: no text, status or controls go there, by the owner's explicit
+call. The chat column carries the speaking status, the mute toggle, "Bắt đầu lại", a notice when
+voice is on but the voice machine is offline, and the Chat tab's composer styles. Enabling voice,
+its status, choosing a voice and "Nghe thử" live in Settings, in `VoiceSettings.tsx`.
+
+The character is Live2D. `Live2DStage.tsx` is lazy-loaded and mounted only while Companion is active,
+and renders the Hiyori sample model from `public/characters` with PixiJS 6 and
+`pixi-live2d-display/cubism4`. The model path, mouth parameter and head height live in
+`characterConfig.ts`; licensing notes are in `frontend/CHARACTER.md`. Because the stage has no
+controls, the view changes by gesture: wheel or pinch zooms around the pointer, dragging pans,
+double-click resets, and the view is saved in `localStorage`. The pure math (zoom, pan limits, look
+direction, wheel steps) lives in `characterView.ts` with its own tests.
+
+When motion is allowed the model plays its `Idle` motions, breathes, blinks and turns toward the
+pointer anywhere on the page; otherwise it holds its pose. "Nhân vật cử động" in Settings → Giao diện
+picks `system` (the default, which follows `prefers-reduced-motion`) or `always`. Windows with
+Animation effects off reports reduced motion, which is why the owner asked for the override. The
+mouth always follows the audio that is playing (`voiceActivity.ts` reads the WAV's 20 ms loudness
+envelope against `currentTime`) and stays closed when nothing plays.
 
 Speech is generated on the owner's Windows PC, never on the VPS, and reaches listeners through the
 VPS in three hops:
@@ -392,7 +406,7 @@ Vietnamese message, and each caller shows its own error. Companion's speech keys
   new language needs a grammar import **and** a label. Each grammar costs bundle size; add
   ones Peto actually answers with.
 - Per-user preferences (effort, theme, imagine quality/resolution/ratio/count, local voice on/off and voice, Companion
-  mute) live in
+  mute, character motion and view) live in
   `localStorage` behind try/catch helpers. In-flight Imagine state lives in component state,
   so it survives switching tabs but not a page reload.
 - `App.tsx` owns chat plus the app shell; `Imagine.tsx` and `Companion.tsx` are mounted alongside

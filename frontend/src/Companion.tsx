@@ -9,6 +9,7 @@ import {
 } from "./api";
 import { SendIcon } from "./Composer";
 import { SpeakButton, SpeakerIcon, SpeakerOffIcon, type LocalVoice } from "./LocalVoice";
+import type { CharacterMotion } from "./characterView";
 
 const MUTED_KEY = "peto-companion-muted";
 const Live2DStage = lazy(() => import("./Live2DStage"));
@@ -59,10 +60,11 @@ function RestartIcon() {
  * Được giữ mounted như Imagine (prop `active`) để câu trả lời đang về không bị cắt khi đổi tab;
  * rời tab thì Peto thôi đọc và giải phóng renderer nhân vật.
  */
-export default function Companion({ active, appInfo, voice, onUnauthorized, onOpenSidebar }: {
+export default function Companion({ active, appInfo, voice, characterMotion, onUnauthorized, onOpenSidebar }: {
   active: boolean;
   appInfo: AppInfo | null;
   voice: LocalVoice;
+  characterMotion: CharacterMotion;
   onUnauthorized: () => void;
   onOpenSidebar: () => void;
 }) {
@@ -255,7 +257,7 @@ export default function Companion({ active, appInfo, voice, onUnauthorized, onOp
 
       <section className="companion-stage" aria-label={name}>
         {active && <Suspense fallback={<p role="status">Đang tải nhân vật…</p>}>
-          <Live2DStage fallbackUrl={appInfo?.avatar_url ?? undefined} name={name} />
+          <Live2DStage fallbackUrl={appInfo?.avatar_url ?? undefined} name={name} motion={characterMotion} />
         </Suspense>}
       </section>
 
