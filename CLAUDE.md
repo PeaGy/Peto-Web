@@ -315,9 +315,9 @@ visited) and owns one continuous thread from `GET /api/companion`; "Bắt đầu
 sends `mode: "companion"`, speaks each completed reply unless muted, and stops speaking when the
 tab is left.
 
-The layout is a stage on the left and a ~380px chat column on the right. The stage holds only the
-character and the model's credit line: no text, status or controls go there, by the owner's explicit
-call. The chat column carries the speaking status, the mute toggle, "Bắt đầu lại", a notice when
+On desktop the layout is a stage on the left and a ~380px chat column on the right. The stage holds
+only the character and the model's credit line: no text, status or controls go there, by the owner's
+explicit call. The chat column carries the speaking status, the mute toggle, "Bắt đầu lại", a notice when
 voice is on but the voice machine is offline, and the Chat tab's composer styles. Enabling voice,
 its status, choosing a voice and "Nghe thử" live in Settings, in `VoiceSettings.tsx`.
 
@@ -335,6 +335,13 @@ picks `system` (the default, which follows `prefers-reduced-motion`) or `always`
 Animation effects off reports reduced motion, which is why the owner asked for the override. The
 mouth always follows the audio that is playing (`voiceActivity.ts` reads the WAV's 20 ms loudness
 envelope against `currentTime`) and stays closed when nothing plays.
+
+Phones get AIRI's mobile look instead, at the owner's request. Below `COMPACT_QUERY` (the same 720px
+breakpoint as the CSS) the character fills the screen in a fixed frame (`compactHeight` and
+`compactTop` in `characterConfig.ts`). The header, messages and a pill composer float over it in
+translucent `--stage-*` colours defined on `.companion`. Zoom, drag and double-click are ignored
+there. Instead, a finger held on the screen acts as the pointer, and the character looks at it until
+the finger lifts.
 
 Speech is generated on the owner's Windows PC, never on the VPS, and reaches listeners through the
 VPS in three hops:

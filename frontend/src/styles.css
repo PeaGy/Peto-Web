@@ -1847,8 +1847,8 @@ label,
 }
 
 /* ---------- Companion ---------- */
-/* Sân khấu bên trái chỉ để nhân vật: giờ là ảnh bot, sau này là Live2D/3D. Chữ và nút nằm ở cột chat
-   bên phải; bật giọng nói và chọn giọng thì ở Cài đặt. */
+/* Máy tính: sân khấu bên trái chỉ để nhân vật Live2D, chữ và nút nằm ở cột chat bên phải; bật giọng nói và
+   chọn giọng thì ở Cài đặt. Điện thoại: bố cục kiểu AIRI ở khối @media cuối phần này. */
 .companion {
   flex: 1;
   display: grid;
@@ -1856,8 +1856,36 @@ label,
   min-width: 0;
   min-height: 0;
   position: relative;
+  /* Màu riêng cho sân khấu điện thoại, lấy theo AIRI: nền đen họa tiết dấu cộng, thanh tiêu đề xanh mòng két. */
+  --stage-bg: #07090a;
+  --stage-pattern: rgba(22, 88, 104, 0.28);
+  --stage-accent: #0c4a5e;
+  --stage-accent-strong: #127089;
+  --stage-button: rgba(8, 26, 32, 0.8);
+  --stage-surface: rgba(28, 30, 32, 0.74);
+  --stage-bubble-a: rgba(12, 74, 94, 0.82);
+  --stage-bubble-b: rgba(92, 120, 124, 0.46);
+  --stage-input: rgba(16, 18, 20, 0.8);
+  --stage-line: rgba(255, 255, 255, 0.16);
+  --stage-text: #e9f4f6;
+  --stage-muted: rgba(233, 244, 246, 0.62);
+  --stage-outline: rgba(12, 74, 94, 0.9);
 }
-.companion-menu { position: absolute; top: 10px; left: 12px; z-index: 2; }
+:root[data-theme="light"] .companion {
+  --stage-bg: #eef5f7;
+  --stage-pattern: rgba(20, 110, 130, 0.16);
+  --stage-accent: #8fcfdc;
+  --stage-accent-strong: #2f8ea5;
+  --stage-button: rgba(255, 255, 255, 0.74);
+  --stage-surface: rgba(255, 255, 255, 0.74);
+  --stage-bubble-a: rgba(143, 207, 220, 0.8);
+  --stage-bubble-b: rgba(255, 255, 255, 0.62);
+  --stage-input: rgba(255, 255, 255, 0.82);
+  --stage-line: rgba(13, 42, 49, 0.14);
+  --stage-text: #0d2a31;
+  --stage-muted: rgba(13, 42, 49, 0.6);
+  --stage-outline: rgba(47, 142, 165, 0.5);
+}
 .companion-stage {
   display: grid;
   place-items: center;
@@ -1924,6 +1952,7 @@ label,
 .companion-title { flex: 1; min-width: 0; display: grid; line-height: 1.35; }
 .companion-title strong { font-size: 15px; }
 .companion-title span { overflow: hidden; color: var(--muted); font-size: 12px; white-space: nowrap; text-overflow: ellipsis; }
+.companion-tools { display: flex; align-items: center; gap: 4px; }
 .companion-tool {
   display: grid;
   place-items: center;
@@ -2011,10 +2040,119 @@ label,
   .companion-tool, .companion-notice button, .message-speak { transition: none; }
 }
 @media (max-width: 720px) {
-  .companion { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(160px, 36dvh) minmax(0, 1fr); }
-  .companion-stage { padding: 8px 12px 0; }
-  .companion-portrait { width: min(160px, 24dvh); font-size: 56px; }
-  .companion-panel { border-left: 0; border-top: 1px solid var(--line); }
+  /* Điện thoại: bố cục kiểu AIRI theo yêu cầu của chủ web. Nhân vật khóa khung phủ cả màn hình; tiêu đề,
+     tin nhắn và ô nhắn nổi trong suốt bên trên. Giữ ngón tay trên màn hình thì nhân vật nhìn theo. */
+  .companion { display: block; overflow: hidden; background: var(--stage-bg); color: var(--stage-text); }
+  .companion::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: var(--stage-pattern);
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='58' height='58'%3E%3Cpath d='M29 23v12M23 29h12' stroke='black' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E") 0 0 / 58px 58px repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='58' height='58'%3E%3Cpath d='M29 23v12M23 29h12' stroke='black' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E") 0 0 / 58px 58px repeat;
+    pointer-events: none;
+  }
+  .companion-stage { position: absolute; inset: 0; padding: 0; }
+  .companion .character-canvas { inset: 0; cursor: default; }
+  .companion .character-canvas canvas { filter: drop-shadow(10px 4px 0 var(--stage-outline)); }
+  .companion .character-glow { display: none; }
+  .companion .character-credit { bottom: calc(8px + env(safe-area-inset-bottom)); color: var(--stage-muted); }
+
+  .companion-panel { position: absolute; inset: 0; border-left: 0; pointer-events: none; }
+  .companion-panel > * { pointer-events: auto; }
+  .companion-head {
+    position: relative;
+    z-index: 0;
+    display: grid;
+    grid-template-columns: 48px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px;
+    min-height: 0;
+    padding: calc(12px + env(safe-area-inset-top)) 14px 36px;
+    border-bottom: 0;
+  }
+  .companion-head::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background: var(--stage-accent);
+    -webkit-mask: linear-gradient(#000 0 0) top / 100% calc(100% - 25px) no-repeat, url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 26' preserveAspectRatio='none'%3E%3Cpath d='M0 0H400V12C372 22 336 26 300 18C258 9 142 9 100 18C64 26 28 22 0 12Z'/%3E%3C/svg%3E") bottom / 100% 26px no-repeat;
+    mask: linear-gradient(#000 0 0) top / 100% calc(100% - 25px) no-repeat, url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 26' preserveAspectRatio='none'%3E%3Cpath d='M0 0H400V12C372 22 336 26 300 18C258 9 142 9 100 18C64 26 28 22 0 12Z'/%3E%3C/svg%3E") bottom / 100% 26px no-repeat;
+  }
+  .companion-head .menu-btn,
+  .companion-head .companion-tool {
+    width: 48px;
+    height: 48px;
+    border: 0;
+    border-radius: 50%;
+    background: var(--stage-button);
+    color: var(--stage-text);
+  }
+  .companion-head .menu-btn:hover,
+  .companion-head .companion-tool:hover:not(:disabled) { background: var(--stage-button); color: var(--stage-text); }
+  .companion-head .companion-tool[aria-pressed="true"] { background: var(--stage-accent-strong); }
+  .companion-title { justify-items: center; text-align: center; }
+  .companion-title strong { font-size: 18px; color: var(--stage-text); }
+  .companion-title span { max-width: 100%; color: var(--stage-muted); font-size: 11.5px; }
+  .companion-tools { gap: 8px; }
+  .companion-notice {
+    margin: 4px 14px 0;
+    border: 0;
+    background: var(--stage-surface);
+    color: var(--stage-text);
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+  }
+
+  .companion-messages {
+    flex: 0 1 auto;
+    max-height: 50dvh;
+    margin-top: auto;
+    padding: 48px 14px 10px;
+    gap: 10px;
+    -webkit-mask-image: linear-gradient(to bottom, transparent, #000 72px);
+    mask-image: linear-gradient(to bottom, transparent, #000 72px);
+  }
+  .companion-messages .bubble,
+  .companion-empty,
+  .companion-messages .loading-chat {
+    margin: 0;
+    padding: 12px 16px;
+    border-radius: 18px;
+    color: var(--stage-text);
+    text-align: left;
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+  }
+  .companion-messages .bubble.user { align-self: flex-start; max-width: 85%; background: var(--stage-surface); }
+  .companion-messages .bubble.assistant { background: linear-gradient(120deg, var(--stage-bubble-a), var(--stage-bubble-b)); }
+  .companion-empty,
+  .companion-messages .loading-chat { background: var(--stage-surface); }
+  .companion-messages .message-speak,
+  .companion-typing { color: var(--stage-muted); }
+  .companion-messages .message-speak:hover,
+  .companion-messages .message-speak.playing { background: var(--stage-button); color: var(--stage-text); }
+
+  .companion-composer { padding: 6px 14px calc(30px + env(safe-area-inset-bottom)); }
+  .companion-composer .composer {
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 5px 5px 20px;
+    border: 1px solid var(--stage-line);
+    border-radius: 999px;
+    background: var(--stage-input);
+    box-shadow: none;
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+  }
+  .companion-composer .composer:focus-within { border-color: var(--stage-accent-strong); }
+  .companion-composer .composer textarea { min-height: 42px; max-height: 96px; padding: 10px 0; color: var(--stage-text); }
+  .companion-composer .composer textarea::placeholder { color: var(--stage-muted); }
+  .companion-composer .send { width: 42px; height: 42px; padding: 0; justify-content: center; background: var(--stage-accent-strong); color: #fff; }
+  .companion-composer .send-text { display: none; }
+  .companion-composer .stop { padding: 10px 14px; }
 }
 
 /* ---------- Giọng nói trong Cài đặt ---------- */

@@ -24,6 +24,8 @@ export const CHARACTER_VIEW_KEY = "peto-character-view";
 export const DEFAULT_VIEW: CharacterView = { zoom: 1, panX: 0, panY: 0 };
 export const MIN_ZOOM = 0.6;
 export const MAX_ZOOM = 4;
+/** Cùng mốc với CSS: dưới mốc này Companion dùng giao diện điện thoại, nhân vật khóa khung. */
+export const COMPACT_QUERY = "(max-width: 720px)";
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 

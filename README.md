@@ -393,11 +393,14 @@ lời đầy đủ bằng tiếng Việt.
   xóa mạch đó sau khi xác nhận.
 - Lượt Companion luôn suy nghĩ ở mức thấp, không tìm web, không nhận ảnh hay tệp và không đặt tên
   hội thoại, để trả lời nhanh nhất có thể.
-- Màn hình chia hai: bên trái là sân khấu chỉ có nhân vật Live2D (model mẫu Hiyori Momose của Live2D
+- Trên máy tính, màn hình chia hai: bên trái là sân khấu chỉ có nhân vật Live2D (model mẫu Hiyori Momose của Live2D
   Inc.), bên phải là cột chat với trạng thái Peto đang nhắn hay đang nói, nút **Tắt tiếng** và nút
   **Bắt đầu lại**.
-- Cuộn chuột hoặc chụm hai ngón trên sân khấu để phóng to/thu nhỏ quanh chỗ đang chỉ, kéo để dời,
-  bấm đúp để về cỡ vừa khung; trình duyệt nhớ góc nhìn đã chọn.
+- Trên máy tính, cuộn chuột hoặc chụm hai ngón trên sân khấu để phóng to/thu nhỏ quanh chỗ đang chỉ,
+  kéo để dời, bấm đúp để về cỡ vừa khung; trình duyệt nhớ góc nhìn đã chọn.
+- Trên điện thoại, giao diện theo kiểu AIRI: nhân vật phủ cả màn hình ở khung cố định; tiêu đề, tin
+  nhắn và ô nhắn nổi trong suốt bên trên. Không phóng hay kéo được; giữ ngón tay trên màn hình thì
+  nhân vật nhìn theo ngón tay, nhấc tay thì nhìn thẳng lại.
 - Nhân vật lắc lư theo motion có sẵn, thở, chớp mắt và nhìn theo con trỏ ở mọi chỗ trên trang. Miệng
   mấp máy theo giọng đọc đang phát; không có tiếng thì ngậm miệng.
 - Thiết bị bật giảm chuyển động (trên Windows là tắt Animation effects) thì mặc định nhân vật đứng yên.

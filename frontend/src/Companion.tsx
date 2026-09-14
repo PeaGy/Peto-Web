@@ -56,6 +56,7 @@ function RestartIcon() {
  *
  * Sân khấu bên trái hiển thị Live2D và ghi công model. Mọi thứ
  * để nhắn và nghe nằm ở cột chat; bật giọng nói và chọn giọng nằm trong Cài đặt (`VoiceSettings.tsx`).
+ * Trên điện thoại, nhân vật phủ cả màn hình; tiêu đề, tin nhắn và ô nhắn nổi trong suốt bên trên như AIRI.
  *
  * Được giữ mounted như Imagine (prop `active`) để câu trả lời đang về không bị cắt khi đổi tab;
  * rời tab thì Peto thôi đọc và giải phóng renderer nhân vật.
@@ -251,10 +252,6 @@ export default function Companion({ active, appInfo, voice, characterMotion, onU
 
   return (
     <main className="companion" hidden={!active}>
-      <button type="button" className="menu-btn companion-menu" aria-label="Mở menu" onClick={onOpenSidebar}>
-        <MenuIcon />
-      </button>
-
       <section className="companion-stage" aria-label={name}>
         {active && <Suspense fallback={<p role="status">Đang tải nhân vật…</p>}>
           <Live2DStage fallbackUrl={appInfo?.avatar_url ?? undefined} name={name} motion={characterMotion} />
@@ -263,32 +260,37 @@ export default function Companion({ active, appInfo, voice, characterMotion, onU
 
       <section className="companion-panel" aria-label="Trò chuyện trong Companion">
         <header className="companion-head">
+          <button type="button" className="menu-btn companion-menu" aria-label="Mở menu" onClick={onOpenSidebar}>
+            <MenuIcon />
+          </button>
           <div className="companion-title">
             <strong>{name}</strong>
             <span aria-live="polite">{stateText}</span>
           </div>
-          {voice.status === "ready" && (
+          <div className="companion-tools">
+            {voice.status === "ready" && (
+              <button
+                type="button"
+                className="companion-tool"
+                aria-label="Tắt tiếng"
+                aria-pressed={muted}
+                title={muted ? "Bật tiếng" : "Tắt tiếng"}
+                onClick={() => setMuted((value) => !value)}
+              >
+                {muted ? <SpeakerOffIcon /> : <SpeakerIcon />}
+              </button>
+            )}
             <button
               type="button"
               className="companion-tool"
-              aria-label="Tắt tiếng"
-              aria-pressed={muted}
-              title={muted ? "Bật tiếng" : "Tắt tiếng"}
-              onClick={() => setMuted((value) => !value)}
+              aria-label="Bắt đầu lại"
+              title="Bắt đầu lại"
+              disabled={!conversationId || streaming || resetting}
+              onClick={() => setConfirmReset(true)}
             >
-              {muted ? <SpeakerOffIcon /> : <SpeakerIcon />}
+              <RestartIcon />
             </button>
-          )}
-          <button
-            type="button"
-            className="companion-tool"
-            aria-label="Bắt đầu lại"
-            title="Bắt đầu lại"
-            disabled={!conversationId || streaming || resetting}
-            onClick={() => setConfirmReset(true)}
-          >
-            <RestartIcon />
-          </button>
+          </div>
         </header>
 
         {voice.status === "missing" && (
@@ -376,7 +378,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, onU
                 </button>
               ) : (
                 <button type="submit" className="send" disabled={!canSend} aria-label="Gửi">
-                  Gửi <SendIcon />
+                  <span className="send-text">Gửi</span> <SendIcon />
                 </button>
               )}
             </div>

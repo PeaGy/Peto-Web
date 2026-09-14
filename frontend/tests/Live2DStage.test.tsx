@@ -1,8 +1,12 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import Live2DStage from '../src/Live2DStage';
+import { CHARACTER } from '../src/characterConfig';
 
-const mocks = vi.hoisted(() => ({ from: vi.fn(), destroy: vi.fn(), start: vi.fn(), stop: vi.fn(), tick: null as null | (() => void), mouth: 0 }));
+const mocks = vi.hoisted(() => ({
+  from: vi.fn(), destroy: vi.fn(), start: vi.fn(), stop: vi.fn(), tick: null as null | (() => void),
+  mouth: 0, reduced: true, compact: false,
+}));
 vi.mock('pixi.js', () => ({ Application: class {
   view = document.createElement('canvas');
   stage = { addChild: vi.fn() };
@@ -33,13 +37,24 @@ async function mount(motion?: 'system' | 'always') {
   return { model, view, host };
 }
 
+function pointer(type: string, x: number, y: number, pointerType: string, pointerId = 1) {
+  const event = new MouseEvent(type, { clientX: x, clientY: y, bubbles: true });
+  Object.defineProperty(event, 'pointerType', { value: pointerType });
+  Object.defineProperty(event, 'pointerId', { value: pointerId });
+  return event;
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   localStorage.clear();
   mocks.mouth = 0;
+  mocks.reduced = true;
+  mocks.compact = false;
   vi.stubGlobal('Live2DCubismCore', {});
   vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
-  vi.stubGlobal('matchMedia', () => ({ matches: true }));
+  vi.stubGlobal('matchMedia', (query: string) => ({
+    matches: query.includes('reduce') ? mocks.reduced : query.includes('max-width') ? mocks.compact : false,
+  }));
   vi.spyOn(document, 'hidden', 'get').mockReturnValue(false);
   vi.spyOn(Element.prototype, 'clientWidth', 'get').mockReturnValue(800);
   vi.spyOn(Element.prototype, 'clientHeight', 'get').mockReturnValue(600);
@@ -74,22 +89,55 @@ it('cuộn chuột phóng to quanh con trỏ, bấm đúp về cỡ vừa khung 
   expect(JSON.parse(localStorage.getItem('peto-character-view')!).zoom).toBeGreaterThan(1);
 });
 
+it('điện thoại khóa khung: cuộn, kéo hay bấm đúp đều không đổi góc nhìn', async () => {
+  mocks.compact = true;
+  localStorage.setItem('peto-character-view', JSON.stringify({ zoom: 3, panX: 0.4, panY: 1 }));
+  const { model, view, host } = await mount();
+  const locked = model.scale.y;
+  expect(locked).toBeCloseTo(600 * CHARACTER.compactHeight / 2000);
+  expect(model.position.x).toBe(400);
+  fireEvent.wheel(host, { deltaY: -200, clientX: 400, clientY: 300 });
+  host.dispatchEvent(pointer('pointerdown', 400, 300, 'touch'));
+  host.dispatchEvent(pointer('pointermove', 480, 360, 'touch'));
+  fireEvent.doubleClick(host);
+  expect(model.scale.y).toBe(locked);
+  expect(model.position.x).toBe(400);
+  view.unmount();
+  expect(JSON.parse(localStorage.getItem('peto-character-view')!)).toEqual({ zoom: 3, panX: 0.4, panY: 1 });
+});
+
 it('nhìn theo con trỏ khi được cử động, đứng yên thì không', async () => {
-  const look = (x: number, y: number) => {
-    const event = new MouseEvent('pointermove', { clientX: x, clientY: y, bubbles: true });
-    Object.defineProperty(event, 'pointerType', { value: 'mouse' });
-    window.dispatchEvent(event);
-  };
   const still = await mount();
-  look(800, 0);
+  window.dispatchEvent(pointer('pointermove', 800, 0, 'mouse'));
   expect(still.model.internalModel.focusController.focus).not.toHaveBeenCalled();
   still.view.unmount();
 
   const moving = await mount('always');
-  look(800, 0);
+  window.dispatchEvent(pointer('pointermove', 800, 0, 'mouse'));
   const [x, y] = moving.model.internalModel.focusController.focus.mock.calls.at(-1)!;
   expect(x).toBe(1);
   expect(y).toBeGreaterThan(0);
+});
+
+it('điện thoại: giữ ngón tay trên màn hình thì nhân vật nhìn theo, nhấc tay thì nhìn thẳng', async () => {
+  mocks.compact = true;
+  const { model } = await mount('always');
+  const focus = model.internalModel.focusController.focus;
+  window.dispatchEvent(pointer('pointerdown', 800, 0, 'touch', 7));
+  const [x, y] = focus.mock.calls.at(-1)!;
+  expect(x).toBe(1);
+  expect(y).toBeGreaterThan(0);
+  window.dispatchEvent(pointer('pointermove', 0, 600, 'touch', 8));
+  expect(focus).toHaveBeenCalledTimes(1);
+  window.dispatchEvent(pointer('pointerup', 800, 0, 'touch', 7));
+  expect(focus).toHaveBeenLastCalledWith(0, 0);
+});
+
+it('máy tính: chạm màn hình để kéo, không làm nhân vật nhìn theo ngón tay', async () => {
+  const { model } = await mount('always');
+  window.dispatchEvent(pointer('pointerdown', 800, 0, 'touch', 3));
+  window.dispatchEvent(pointer('pointermove', 700, 50, 'touch', 3));
+  expect(model.internalModel.focusController.focus).not.toHaveBeenCalled();
 });
 
 it('miệng mở theo âm thanh đang phát và khép lại khi im lặng', async () => {

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Application } from "pixi.js";
 import { CHARACTER } from "./characterConfig";
 import {
+  COMPACT_QUERY,
   DEFAULT_VIEW,
   lookTarget,
   motionEnabled,
@@ -42,9 +43,10 @@ function loadCore() {
 /**
  * Sân khấu Live2D của Companion.
  *
- * Cuộn chuột hoặc chụm hai ngón để phóng to/thu nhỏ quanh chỗ đang chỉ, kéo để dời, bấm đúp để về cỡ vừa
- * khung; góc nhìn được nhớ trong trình duyệt. Khi được cử động (`motionEnabled`), nhân vật chạy motion Idle,
- * thở, chớp mắt và nhìn theo con trỏ. Miệng luôn theo âm thanh đang phát, kể cả khi nhân vật đứng yên.
+ * Máy tính: cuộn chuột hoặc chụm hai ngón để phóng to/thu nhỏ quanh chỗ đang chỉ, kéo để dời, bấm đúp để về
+ * cỡ vừa khung; góc nhìn được nhớ trong trình duyệt. Điện thoại (`COMPACT_QUERY`): khung khóa cứng như AIRI,
+ * giữ ngón tay trên màn hình thì nhân vật nhìn theo ngón tay. Khi được cử động (`motionEnabled`), nhân vật
+ * chạy motion Idle, thở, chớp mắt và nhìn theo con trỏ. Miệng luôn theo âm thanh đang phát.
  */
 export default function Live2DStage({ fallbackUrl, name, motion = "system" }: {
   fallbackUrl?: string;
@@ -86,11 +88,15 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system" }: {
       const originalHeight = current.height;
       current.anchor.set(0.5, 1);
 
-      // Phóng và dời chỉ nhân thêm lên cỡ vừa khung, nên đổi cỡ cửa sổ vẫn giữ đúng góc nhìn đã chọn.
+      const compact = window.matchMedia(COMPACT_QUERY);
+      const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+      const moving = () => motionEnabled(motionRef.current, reducedMotion.matches);
+
+      // Máy tính: phóng và dời chỉ nhân thêm lên cỡ vừa khung, nên đổi cỡ cửa sổ vẫn giữ đúng góc nhìn đã chọn.
       let view = readCharacterView();
       const box: StageBox = { width: 1, height: 1, baseX: 0, baseY: 0, baseScale: 1 };
       const place = () => {
-        const { scale, x, y } = placement(view, box);
+        const { scale, x, y } = placement(compact.matches ? DEFAULT_VIEW : view, box);
         current.scale.set(scale);
         current.position.set(x, y);
       };
@@ -98,12 +104,17 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system" }: {
         if (!app) return;
         const width = Math.max(1, container.clientWidth), height = Math.max(1, container.clientHeight);
         app.renderer.resize(width, height);
-        const closeUp = width < 720 && height < 400;
         box.width = width;
         box.height = height;
-        box.baseScale = Math.min(width * 0.94 / originalWidth, height * (closeUp ? 1.65 : 0.96) / originalHeight);
         box.baseX = width / 2;
-        box.baseY = closeUp ? originalHeight * box.baseScale + height * 0.02 : height * 0.99;
+        if (compact.matches) {
+          // Điện thoại: nửa trên nhân vật phủ màn hình, đỉnh đầu nằm ngay dưới thanh tiêu đề.
+          box.baseScale = height * CHARACTER.compactHeight / originalHeight;
+          box.baseY = height * CHARACTER.compactTop + originalHeight * box.baseScale;
+        } else {
+          box.baseScale = Math.min(width * 0.94 / originalWidth, height * 0.96 / originalHeight);
+          box.baseY = height * 0.99;
+        }
         place();
       };
       observer = new ResizeObserver(fit);
@@ -126,13 +137,14 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system" }: {
       };
 
       const onWheel = (event: WheelEvent) => {
+        if (compact.matches) return;
         event.preventDefault();
         const point = local(event);
         changeView(zoomAt(view, wheelZoomFactor(event.deltaY, event.deltaMode), point.x, point.y, box));
       };
       const pointers = new Map<number, { x: number; y: number }>();
       const onPointerDown = (event: PointerEvent) => {
-        if (event.pointerType === "mouse" && event.button !== 0) return;
+        if (compact.matches || (event.pointerType === "mouse" && event.button !== 0)) return;
         pointers.set(event.pointerId, local(event));
         container.setPointerCapture?.(event.pointerId);
         container.classList.add("dragging");
@@ -159,18 +171,30 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system" }: {
         pointers.delete(event.pointerId);
         if (!pointers.size) container.classList.remove("dragging");
       };
-      const onDoubleClick = () => changeView(DEFAULT_VIEW);
+      const onDoubleClick = () => {
+        if (!compact.matches) changeView(DEFAULT_VIEW);
+      };
 
-      const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
-      const moving = () => motionEnabled(motionRef.current, reducedMotion.matches);
       const internal = current.internalModel;
-      // Nhìn theo con trỏ ở mọi chỗ trên trang như AIRI. Chạm màn hình thì không, vì ngón tay đang kéo nhân vật.
+      let touchId: number | null = null;
+      // Nhìn theo con trỏ ở mọi chỗ trên trang như AIRI. Trên điện thoại, ngón tay đang giữ trên màn hình đóng
+      // vai con trỏ; trên máy tính thì chạm dùng để kéo nhân vật nên không tính.
       const onLook = (event: PointerEvent) => {
-        if (event.pointerType === "touch" || !moving()) return;
+        if (!moving()) return;
+        if (event.pointerType === "touch") {
+          if (!compact.matches) return;
+          if (event.type === "pointerdown") touchId = event.pointerId;
+          if (event.pointerId !== touchId) return;
+        }
         const point = local(event);
         const headY = current.position.y - originalHeight * current.scale.y * CHARACTER.headHeight;
         const target = lookTarget(point.x, point.y, current.position.x, headY, box.width, box.height);
         internal.focusController.focus(target.x, target.y);
+      };
+      const onTouchEnd = (event: PointerEvent) => {
+        if (touchId === null || event.pointerId !== touchId) return;
+        touchId = null;
+        internal.focusController.focus(0, 0);
       };
       const onLookAway = () => internal.focusController.focus(0, 0);
 
@@ -206,11 +230,15 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system" }: {
       container.addEventListener("pointerup", onPointerEnd);
       container.addEventListener("pointercancel", onPointerEnd);
       container.addEventListener("dblclick", onDoubleClick);
+      window.addEventListener("pointerdown", onLook);
       window.addEventListener("pointermove", onLook);
+      window.addEventListener("pointerup", onTouchEnd);
+      window.addEventListener("pointercancel", onTouchEnd);
       window.addEventListener("blur", onLookAway);
       document.documentElement.addEventListener("pointerleave", onLookAway);
       document.addEventListener("visibilitychange", visible);
       canvas.addEventListener("webglcontextlost", lost);
+      compact.addEventListener?.("change", fit);
       removeEvents = () => {
         container.removeEventListener("wheel", onWheel);
         container.removeEventListener("pointerdown", onPointerDown);
@@ -219,11 +247,15 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system" }: {
         container.removeEventListener("pointercancel", onPointerEnd);
         container.removeEventListener("dblclick", onDoubleClick);
         container.classList.remove("dragging");
+        window.removeEventListener("pointerdown", onLook);
         window.removeEventListener("pointermove", onLook);
+        window.removeEventListener("pointerup", onTouchEnd);
+        window.removeEventListener("pointercancel", onTouchEnd);
         window.removeEventListener("blur", onLookAway);
         document.documentElement.removeEventListener("pointerleave", onLookAway);
         document.removeEventListener("visibilitychange", visible);
         canvas.removeEventListener("webglcontextlost", lost);
+        compact.removeEventListener?.("change", fit);
         if (saveTimer !== undefined) {
           window.clearTimeout(saveTimer);
           writeCharacterView(view);

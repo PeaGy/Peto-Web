@@ -27,7 +27,9 @@ WAV không hỗ trợ vẫn phát bình thường, chỉ không điều khiển 
 
 Tương tác: cuộn chuột hoặc chụm hai ngón để phóng quanh chỗ đang chỉ, kéo để dời, bấm đúp để về cỡ
 vừa khung; góc nhìn lưu ở `peto-character-view`. Khi được cử động, nhân vật chạy motion nhóm Idle,
-thở, chớp mắt và nhìn theo con trỏ trên cả trang, không theo ngón tay vì ngón tay dùng để kéo.
+thở, chớp mắt và nhìn theo con trỏ trên cả trang. Trên máy tính, chạm màn hình dùng để kéo nên không
+tính. Trên điện thoại (dưới 720px) khung khóa cứng, không phóng hay kéo, và ngón tay đang giữ trên màn
+hình đóng vai con trỏ.
 Phần tính toán nằm ở `src/characterView.ts`. `headHeight` trong `characterConfig.ts` là vị trí đầu
 tính từ chân lên theo chiều cao model; thay model có tỉ lệ khác thì chỉnh lại số này.
 
