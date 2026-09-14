@@ -6,9 +6,9 @@ const SAMPLE_TEXT = "Hi, it's Peto! This is how I sound when we talk in Companio
 const SAMPLE_KEY = "voice-sample";
 
 const STATUS_TEXT: Record<Exclude<LocalVoiceStatus, "off">, string> = {
-  checking: "Đang tìm máy chủ giọng nói trên máy này…",
+  checking: "Đang kiểm tra giọng nói Peto…",
   ready: "Giọng nói đã sẵn sàng: Peto sẽ nói khi trả lời xong trong Companion.",
-  missing: "Chưa thấy máy chủ giọng nói trên máy này. Bật máy chủ rồi bấm Kiểm tra lại.",
+  missing: "Giọng nói Peto đang ngoại tuyến. Bạn vẫn có thể chat chữ và thử lại sau.",
 };
 
 /**
@@ -46,15 +46,15 @@ export default function VoiceSettings({ voice, open }: { voice: LocalVoice; open
     <section className="settings-section" aria-labelledby="voice-settings-title">
       <h3 id="voice-settings-title">Giọng nói</h3>
       <p className="settings-hint">
-        Peto nói thành tiếng trong Companion bằng máy chủ giọng nói chạy trên chính máy này. Không có máy
-        chủ thì Companion vẫn nhắn chữ như thường.
+        Peto có thể nói thành tiếng trong Companion. Khi giọng nói chưa sẵn sàng,
+        bạn vẫn nhắn chữ như thường.
       </p>
 
       {!voice.enabled ? (
         <div className="voice-row">
-          <p className="settings-hint">Nếu Chrome hỏi quyền truy cập thiết bị trong mạng cục bộ, chọn Cho phép.</p>
+          <p className="settings-hint">Chọn giọng bạn thích và nghe Peto trả lời.</p>
           <button type="button" className="settings-button" onClick={() => toggle(true)}>
-            Bật giọng nói trên máy này
+            Bật giọng nói
           </button>
         </div>
       ) : (

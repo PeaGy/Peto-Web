@@ -53,7 +53,7 @@ beforeEach(() => {
 
 afterEach(() => vi.unstubAllGlobals());
 
-const localCalls = () => fetchMock.mock.calls.filter(([url]) => String(url).startsWith('http://127.0.0.1'));
+const localCalls = () => fetchMock.mock.calls.filter(([url]) => String(url).startsWith('/api/voice'));
 const speakBodies = () => fetchMock.mock.calls
   .filter(([url]) => String(url).endsWith('/speak'))
   .map(([, init]) => JSON.parse(String(init?.body)));
@@ -75,7 +75,7 @@ async function sendInCompanion(text: string) {
   await waitFor(() => expect(api.sendMessage).toHaveBeenCalled());
 }
 
-it('không gọi tới 127.0.0.1 cho tới khi bật giọng nói trong Cài đặt', async () => {
+it('chỉ gọi giọng nói qua VPS sau khi bật trong Cài đặt', async () => {
   await openCompanion();
   expect(await screen.findByText(/Chào Peto một câu đi/)).toBeTruthy();
   expect(window.location.hash).toBe('#companion');
@@ -83,7 +83,7 @@ it('không gọi tới 127.0.0.1 cho tới khi bật giọng nói trong Cài đ�
   const settings = await openSettings();
   expect(localCalls()).toHaveLength(0);
 
-  fireEvent.click(settings.getByRole('button', { name: 'Bật giọng nói trên máy này' }));
+  fireEvent.click(settings.getByRole('button', { name: 'Bật giọng nói' }));
   expect(await settings.findByText(/Giọng nói đã sẵn sàng/)).toBeTruthy();
   expect(localCalls()).toHaveLength(1);
   expect(await chatColumn().findByRole('button', { name: 'Tắt tiếng' })).toBeTruthy();

@@ -1,12 +1,6 @@
-/**
- * Giọng nói chạy trên chính máy người dùng (local-tts/speak_server.py), không đi qua VPS.
- *
- * Trang chỉ gọi 127.0.0.1 khi người dùng tự bật trong Cài đặt: trang công khai gọi địa chỉ nội bộ
- * thì Chrome hỏi quyền truy cập mạng cục bộ, không nên bắt mọi người gặp hộp hỏi đó. Không có khóa;
- * máy chủ giọng nói tự kiểm tra yêu cầu có đến từ trang Peto không.
- */
+/** Âm thanh từ máy tạo giọng của Peto được VPS chuyển về phiên người nghe. */
 
-export const LOCAL_VOICE_ORIGIN = "http://127.0.0.1:7862";
+export const LOCAL_VOICE_ORIGIN = "/api/voice";
 export const LOCAL_VOICE_ENABLED_KEY = "peto-local-voice";
 export const LOCAL_VOICE_NAME_KEY = "peto-local-voice-name";
 
@@ -18,7 +12,7 @@ const TAIL_MERGE = 40;
 
 export type SpeakPhase = "loading" | "playing";
 
-/** Hỏi máy chủ giọng nói trên máy này; trả danh sách giọng, hoặc null nếu nó chưa chạy. */
+/** Hỏi trạng thái máy tạo giọng qua VPS. */
 export async function probeLocalVoice(signal?: AbortSignal): Promise<string[] | null> {
   try {
     const response = await fetch(`${LOCAL_VOICE_ORIGIN}/health`, { signal });
@@ -115,7 +109,7 @@ async function requestSpeech(text: string, voice: string, signal: AbortSignal): 
     });
   } catch (error) {
     if (signal.aborted) throw error;
-    throw new Error("Mất kết nối tới máy chủ giọng nói trên máy này.");
+    throw new Error("Mất kết nối tới giọng nói Peto. Hãy thử lại.");
   }
   if (!response.ok) {
     const data = (await response.json().catch(() => null)) as { detail?: unknown } | null;

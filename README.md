@@ -8,6 +8,9 @@ vào bot. `PETO_WEB_HANDOFF.md` là bối cảnh ban đầu; README này mô t�
 
 ## Chạy
 
+Giọng nói dùng chung qua VPS: xem [hướng dẫn kết nối máy tạo giọng](voice-worker/README.md).
+Model vẫn chạy trên Windows; người nghe không cần cài model.
+
 Cần Python 3.12+ và Node 20+.
 
 ```bash

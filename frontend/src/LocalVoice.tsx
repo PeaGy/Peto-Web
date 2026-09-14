@@ -57,8 +57,7 @@ function readVoiceName(): string {
  * Trạng thái giọng nói trên máy, dùng chung cho Companion và mục Giọng nói trong Cài đặt: đã bật chưa,
  * máy chủ có đang chạy không, và đoạn nào đang được đọc.
  *
- * Chỉ dò 127.0.0.1 khi người dùng đã bật và `active` đúng. App truyền `active` là "đã mở Companion hoặc
- * Cài đặt đang mở", nên người chỉ dùng tab Trò chuyện không gọi gì ra máy.
+ * Chỉ dò dịch vụ qua VPS khi người dùng đã bật và `active` đúng (Companion hoặc Cài đặt).
  */
 export function useLocalVoice(active: boolean): LocalVoice {
   const [enabled, setEnabled] = useState(readEnabled);

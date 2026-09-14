@@ -32,6 +32,7 @@ import db
 import document_reader
 import imagine_api
 import profile_api
+import voice_api
 import static_files
 import titles
 from ai import ChatAttachment, ChatMessage, ProviderError, StreamChunk, get_provider
@@ -102,6 +103,7 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(imagine_api.router)
 app.include_router(profile_api.router)
+app.include_router(voice_api.router)
 
 
 class AttachmentIn(BaseModel):
