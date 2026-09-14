@@ -193,3 +193,19 @@ it('Bắt đầu lại xóa mạch cũ sau khi xác nhận', async () => {
   expect(await screen.findByText(/Chào Peto một câu đi/)).toBeTruthy();
   expect(screen.queryByText('Hey there.')).toBeNull();
 });
+
+it('chuyển qua lại giữa Companion và Tạo ảnh không nhân đôi tab nào', async () => {
+  const consoleError = vi.spyOn(console, 'error');
+  await openCompanion();
+  expect(await screen.findByText(/Chào Peto một câu đi/)).toBeTruthy();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Tạo ảnh', exact: true }));
+  await waitFor(() => expect(api.listImagineJobs).toHaveBeenCalled());
+  fireEvent.click(screen.getByRole('button', { name: 'Companion' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Tạo ảnh', exact: true }));
+
+  await waitFor(() => expect(document.querySelectorAll('main.imagine')).toHaveLength(1));
+  expect(document.querySelectorAll('main.companion')).toHaveLength(1);
+  expect(api.listImagineJobs).toHaveBeenCalledTimes(1);
+  expect(consoleError.mock.calls.some((args) => args.some((arg) => String(arg).includes('same key')))).toBe(false);
+});

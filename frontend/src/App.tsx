@@ -1200,9 +1200,11 @@ export default function App() {
         </div>
       </aside>
 
+      {/* Imagine và Companion nằm cạnh nhau trong cùng một danh sách con, nên key phải khác nhau. Trùng
+          key thì React nhân đôi tab, và mỗi bản Imagine mới lại tải danh sách ảnh, lặp mãi không dừng. */}
       {imageVisited && (
         <Imagine
-          key={auth.user?.id}
+          key={`imagine-${auth.user?.id}`}
           active={view === "imagine"}
           onUnauthorized={handleUnauthorized}
           onOpenSidebar={() => setSidebarOpen(true)}
@@ -1213,7 +1215,7 @@ export default function App() {
       )}
       {companionVisited && (
         <Companion
-          key={auth.user?.id}
+          key={`companion-${auth.user?.id}`}
           active={view === "companion"}
           appInfo={appInfo}
           voice={localVoice}
