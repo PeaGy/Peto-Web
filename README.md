@@ -390,12 +390,17 @@ lời đầy đủ bằng tiếng Việt.
   xóa mạch đó sau khi xác nhận.
 - Lượt Companion luôn suy nghĩ ở mức thấp, không tìm web, không nhận ảnh hay tệp và không đặt tên
   hội thoại, để trả lời nhanh nhất có thể.
+- Màn hình chia hai: bên trái là sân khấu chỉ có hình Peto (tạm là ảnh bot, sau này là nhân vật
+  Live2D/3D), bên phải là cột chat với trạng thái Peto đang nhắn hay đang nói, nút **Tắt tiếng** và
+  nút **Bắt đầu lại**.
 - Giọng đọc chạy trên chính máy người dùng, không trên VPS: máy chủ giọng nói
   `local-tts/speak_server.py` (thư mục `local-tts` không nằm trong git) dùng Qwen3-TTS 0.6B trên GPU
-  của máy đó, với giọng mẫu người dùng tự chọn. Chỉ khi bấm **Bật giọng nói trên máy này**, trang mới
-  gọi `http://127.0.0.1:7862`, nên người khác không bị Chrome hỏi quyền truy cập mạng cục bộ.
-- Có giọng nói thì Peto đọc ngay khi trả lời xong. **Tắt tiếng** thì thôi tự đọc; bấm **Nghe** dưới
-  tin để nghe lại. Chọn giọng ngay dưới ảnh Peto. Rời tab thì Peto thôi đọc.
+  của máy đó, với giọng mẫu người dùng tự chọn. Bật trong **Cài đặt → Giọng nói** bằng nút **Bật giọng
+  nói trên máy này**; chỉ khi đó trang mới gọi `http://127.0.0.1:7862`, nên người khác không bị Chrome
+  hỏi quyền truy cập mạng cục bộ. Chọn giọng và **Nghe thử** cũng nằm ở mục này.
+- Có giọng nói thì Peto đọc ngay khi trả lời xong. **Tắt tiếng** thì thôi tự đọc; bấm biểu tượng loa
+  dưới tin để nghe lại. Rời tab thì Peto thôi đọc. Đã bật giọng nói mà chưa thấy máy chủ thì cột chat
+  báo và có nút **Kiểm tra lại**.
 - Máy chủ giọng nói chỉ nghe ở 127.0.0.1, chỉ nhận yêu cầu từ trang Peto và kiểm tra Host để chặn DNS
   rebinding. Không có khóa hay credential nào.
 - Trên GTX 1650 Ti, tạo tiếng mất xấp xỉ độ dài câu nói: câu 7 giây chờ khoảng 7 giây. Chưa đọc dần

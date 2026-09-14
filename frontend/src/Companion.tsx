@@ -7,9 +7,12 @@ import {
   type AppInfo,
   type Message,
 } from "./api";
-import { SpeakButton, VoiceControls, useLocalVoice } from "./LocalVoice";
+import { SendIcon } from "./Composer";
+import { SpeakButton, SpeakerIcon, SpeakerOffIcon, type LocalVoice } from "./LocalVoice";
 
 const MUTED_KEY = "peto-companion-muted";
+/** Khóa đọc của Companion có tiền tố riêng, để câu nghe thử trong Cài đặt không làm đổi trạng thái ở đây. */
+const SPEECH_PREFIX = "companion-";
 
 function readMuted(): boolean {
   try {
@@ -36,16 +39,29 @@ function MenuIcon() {
   );
 }
 
+function RestartIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M3 3v5h5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 /**
  * Tab Companion: Peto trả lời một hai câu bằng tiếng Anh như bạn bè nhắn tin, rồi tự nói thành tiếng
  * bằng giọng chạy trên máy người dùng. Chỉ có một mạch trò chuyện, tách khỏi danh sách Trò chuyện.
  *
+ * Sân khấu bên trái chỉ để nhân vật (giờ là ảnh bot, sau này Live2D/3D), không đặt chữ hay nút. Mọi thứ
+ * để nhắn và nghe nằm ở cột chat; bật giọng nói và chọn giọng nằm trong Cài đặt (`VoiceSettings.tsx`).
+ *
  * Được giữ mounted như Imagine (prop `active`) để câu trả lời đang về không bị cắt khi đổi tab;
  * rời tab thì Peto thôi đọc.
  */
-export default function Companion({ active, appInfo, onUnauthorized, onOpenSidebar }: {
+export default function Companion({ active, appInfo, voice, onUnauthorized, onOpenSidebar }: {
   active: boolean;
   appInfo: AppInfo | null;
+  voice: LocalVoice;
   onUnauthorized: () => void;
   onOpenSidebar: () => void;
 }) {
@@ -60,7 +76,6 @@ export default function Companion({ active, appInfo, onUnauthorized, onOpenSideb
   const [muted, setMuted] = useState(readMuted);
   const [confirmReset, setConfirmReset] = useState(false);
   const [resetting, setResetting] = useState(false);
-  const voice = useLocalVoice(setError);
   const stopVoice = voice.stop;
   const loadVersion = useRef(0);
   const loadRef = useRef<AbortController | null>(null);
@@ -108,6 +123,9 @@ export default function Companion({ active, appInfo, onUnauthorized, onOpenSideb
     if (!active) stopVoice();
   }, [active, stopVoice]);
 
+  // Giọng nói sống ở App, lâu hơn tab này (đăng xuất thì tab bị gỡ), nên gỡ tab thì cũng thôi đọc.
+  useEffect(() => () => stopVoice(), [stopVoice]);
+
   useEffect(() => {
     try {
       localStorage.setItem(MUTED_KEY, muted ? "1" : "0");
@@ -123,6 +141,10 @@ export default function Companion({ active, appInfo, onUnauthorized, onOpenSideb
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: "end" });
   }, [messages]);
+
+  function reportSpeechError(err: unknown) {
+    setError(err instanceof Error ? err.message : "Chưa đọc được tin này.");
+  }
 
   async function send() {
     const text = draft.trim();
@@ -189,7 +211,7 @@ export default function Companion({ active, appInfo, onUnauthorized, onOpenSideb
     }
     const now = latest.current;
     if (completed && reply.trim() && now.active && !now.muted && now.voice.status === "ready") {
-      now.voice.speak(String(replyIndex), reply);
+      now.voice.speak(`${SPEECH_PREFIX}${replyIndex}`, reply).catch(reportSpeechError);
     }
   }
 
@@ -217,10 +239,11 @@ export default function Companion({ active, appInfo, onUnauthorized, onOpenSideb
     }
   }
 
-  const phase = voice.speaking?.phase;
-  const stageText = phase === "playing" ? "Peto đang nói…"
-    : phase === "loading" ? "Peto sắp nói…"
-      : streaming ? "Peto đang nhắn…" : "Peto đang nghe";
+  const name = appInfo?.name ?? "Peto";
+  const speech = voice.speaking?.key.startsWith(SPEECH_PREFIX) ? voice.speaking : null;
+  const stateText = speech?.phase === "playing" ? "Đang nói…"
+    : speech?.phase === "loading" ? "Sắp nói…"
+      : streaming ? "Đang nhắn…" : "Trả lời ngắn bằng tiếng Anh";
   const canSend = draft.trim().length > 0 && !streaming && !loading && !loadFailed;
 
   return (
@@ -229,31 +252,50 @@ export default function Companion({ active, appInfo, onUnauthorized, onOpenSideb
         <MenuIcon />
       </button>
 
-      <section className="companion-stage" aria-label="Peto">
-        <div className={phase === "playing" ? "companion-portrait speaking" : "companion-portrait"}>
+      <section className="companion-stage" aria-label={name}>
+        <div className={speech?.phase === "playing" ? "companion-portrait speaking" : "companion-portrait"}>
           {appInfo?.avatar_url
             ? <img src={appInfo.avatar_url} alt="" />
-            : <span aria-hidden="true">{(appInfo?.name ?? "Peto").charAt(0)}</span>}
+            : <span aria-hidden="true">{name.charAt(0)}</span>}
         </div>
-        <p className="companion-state" aria-live="polite">{stageText}</p>
-        <VoiceControls voice={voice} muted={muted} onToggleMute={() => setMuted((value) => !value)} />
       </section>
 
       <section className="companion-panel" aria-label="Trò chuyện trong Companion">
         <header className="companion-head">
-          <div>
-            <strong>{appInfo?.name ?? "Peto"}</strong>
-            <span>Trả lời ngắn bằng tiếng Anh</span>
+          <div className="companion-title">
+            <strong>{name}</strong>
+            <span aria-live="polite">{stateText}</span>
           </div>
+          {voice.status === "ready" && (
+            <button
+              type="button"
+              className="companion-tool"
+              aria-label="Tắt tiếng"
+              aria-pressed={muted}
+              title={muted ? "Bật tiếng" : "Tắt tiếng"}
+              onClick={() => setMuted((value) => !value)}
+            >
+              {muted ? <SpeakerOffIcon /> : <SpeakerIcon />}
+            </button>
+          )}
           <button
             type="button"
-            className="companion-button"
+            className="companion-tool"
+            aria-label="Bắt đầu lại"
+            title="Bắt đầu lại"
             disabled={!conversationId || streaming || resetting}
             onClick={() => setConfirmReset(true)}
           >
-            Bắt đầu lại
+            <RestartIcon />
           </button>
         </header>
+
+        {voice.status === "missing" && (
+          <div className="companion-notice">
+            <span>Chưa thấy máy chủ giọng nói, Peto chỉ nhắn chữ.</span>
+            <button type="button" onClick={voice.recheck}>Kiểm tra lại</button>
+          </div>
+        )}
 
         <div className="companion-messages">
           {loading && <p className="loading-chat" role="status">Đang mở Companion…</p>}
@@ -269,14 +311,24 @@ export default function Companion({ active, appInfo, onUnauthorized, onOpenSideb
             </p>
           )}
           {messages.map((message, index) => {
+            if (message.role === "user") {
+              return (
+                <article key={index} className="bubble user">
+                  <p>{message.content}</p>
+                </article>
+              );
+            }
             const live = streaming && index === messages.length - 1;
+            const key = `${SPEECH_PREFIX}${index}`;
             return (
-              <article key={index} className={`companion-bubble ${message.role}`}>
-                <p>{message.content || (live ? "…" : "")}</p>
-                {message.role === "assistant" && message.content && !live && voice.status === "ready" && (
+              <article key={index} className="bubble assistant companion-reply">
+                {message.content
+                  ? <p>{message.content}</p>
+                  : live && <p className="companion-typing" aria-hidden="true">…</p>}
+                {message.content && !live && voice.status === "ready" && (
                   <SpeakButton
-                    phase={voice.speaking?.key === String(index) ? voice.speaking.phase : null}
-                    onSpeak={() => voice.speak(String(index), message.content)}
+                    phase={voice.speaking?.key === key ? voice.speaking.phase : null}
+                    onSpeak={() => voice.speak(key, message.content).catch(reportSpeechError)}
                     onStop={stopVoice}
                   />
                 )}
@@ -301,27 +353,33 @@ export default function Companion({ active, appInfo, onUnauthorized, onOpenSideb
             void send();
           }}
         >
-          <textarea
-            value={draft}
-            rows={1}
-            placeholder="Nhắn cho Peto…"
-            aria-label="Nhắn cho Peto trong Companion"
-            disabled={streaming}
-            onChange={(event) => setDraft(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-                event.preventDefault();
-                void send();
-              }
-            }}
-          />
-          {streaming ? (
-            <button type="button" className="companion-button" disabled={stopping} onClick={stop}>
-              {stopping ? "Đang dừng…" : "Dừng"}
-            </button>
-          ) : (
-            <button type="submit" className="companion-send" disabled={!canSend}>Gửi</button>
-          )}
+          <div className="composer">
+            <textarea
+              value={draft}
+              rows={1}
+              placeholder="Nhắn cho Peto…"
+              aria-label="Nhắn cho Peto trong Companion"
+              disabled={streaming}
+              onChange={(event) => setDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                  event.preventDefault();
+                  void send();
+                }
+              }}
+            />
+            <div className="composer-bar">
+              {streaming ? (
+                <button type="button" className="stop" disabled={stopping} onClick={stop}>
+                  {stopping ? "Đang dừng…" : "Dừng"}
+                </button>
+              ) : (
+                <button type="submit" className="send" disabled={!canSend} aria-label="Gửi">
+                  Gửi <SendIcon />
+                </button>
+              )}
+            </div>
+          </div>
         </form>
       </section>
 

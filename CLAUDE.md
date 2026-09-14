@@ -314,6 +314,13 @@ visited) and owns one continuous thread from `GET /api/companion`; "Bắt đầu
 sends `mode: "companion"`, speaks each completed reply unless muted, and stops speaking when the
 tab is left.
 
+The layout is a stage on the left and a ~380px chat column on the right. The stage holds only the
+character (the bot avatar for now, a Live2D/3D model later): no text, status or controls go there,
+by the owner's explicit call. The chat column carries the speaking status, the mute toggle, "Bắt
+đầu lại", a notice when voice is on but the server is missing, and the Chat tab's composer styles.
+Enabling voice, the server status, choosing a voice and "Nghe thử" live in Settings, in
+`VoiceSettings.tsx`.
+
 Speech runs on the user's own machine, never on the VPS. `local-tts/speak_server.py` lives in a
 gitignored experiment folder with its own venvs, loads Qwen3-TTS 0.6B through faster-qwen3-tts,
 and serves `GET /health` and `POST /speak` (up to 300 characters in, WAV out) on
@@ -321,13 +328,19 @@ and serves `GET /health` and `POST /speak` (up to 300 characters in, WAV out) on
 and any Host other than 127.0.0.1/localhost (DNS rebinding). There is no credential anywhere.
 
 `localSpeech.ts` holds markdown → speakable text, chunking and the player; `LocalVoice.tsx` holds
-`useLocalVoice`, `SpeakButton` and `VoiceControls`. Keep those file names distinct beyond letter
+`useLocalVoice`, `SpeakButton` and the speaker icons. Keep those file names distinct beyond letter
 case: on Windows `./LocalVoice` resolves to a `localVoice.ts` before the `.tsx`.
 
-- Voice stays off until the user presses "Bật giọng nói trên máy này", and nothing touches
-  127.0.0.1 before that: a public origin fetching loopback triggers Chrome's Local Network Access
-  prompt, and visitors who never asked for voice must not see it. `tests/Companion.test.tsx`
-  asserts this.
+`useLocalVoice` is called once in `App.tsx` and passed to both Companion and `VoiceSettings`, so they
+share one enabled flag, probe result and player. `speak()` returns a promise that rejects with a
+Vietnamese message, and each caller shows its own error. Companion's speech keys start with
+`companion-` so the Settings sample does not change Companion's status line.
+
+- Voice stays off until the user presses "Bật giọng nói trên máy này" in Settings, and nothing
+  touches 127.0.0.1 before that: a public origin fetching loopback triggers Chrome's Local Network
+  Access prompt, and visitors who never asked for voice must not see it. Even once enabled, the hook
+  only probes after Companion has been opened or while Settings is open, so the Chat tab never calls
+  loopback. `tests/Companion.test.tsx` asserts both.
 - Chunks stay roughly equal (target 150 characters). Generation is only slightly faster than real
   time; the next chunk is requested when the previous one arrives, so it is ready in time only if
   it is not much longer than the one playing.

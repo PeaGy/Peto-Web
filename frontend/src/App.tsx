@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
+import "katex/dist/katex.min.css";
+import { normalizeMath } from "./mathMarkdown";
 import rehypeHighlight from "rehype-highlight";
 // Nạp từng grammar một thay vì bộ `common` của lowlight: rehype-highlight chỉ
 // đụng tới `common` khi không được truyền `languages`, nên cách này cho phép
@@ -35,7 +39,9 @@ import xml from "highlight.js/lib/languages/xml";
 import yaml from "highlight.js/lib/languages/yaml";
 import Companion, { CompanionIcon } from "./Companion";
 import Imagine from "./Imagine";
+import { useLocalVoice } from "./LocalVoice";
 import ProfileSettings from "./ProfileSettings";
+import VoiceSettings from "./VoiceSettings";
 import Composer from "./Composer";
 import { FileGlyph, formatSize, type DraftFile } from "./files";
 import { fillName, greetingKey, pickGreeting } from "./timeGreeting";
@@ -455,6 +461,9 @@ export default function App() {
   });
   const [imageVisited, setImageVisited] = useState(view === "imagine");
   const [companionVisited, setCompanionVisited] = useState(view === "companion");
+  // Giọng nói dùng chung cho Companion và mục Giọng nói trong Cài đặt. Chỉ dò 127.0.0.1 sau khi đã mở
+  // Companion hoặc lúc Cài đặt đang mở, để tab Trò chuyện không gọi gì ra máy.
+  const localVoice = useLocalVoice(companionVisited || settingsOpen);
   // Bản sao chỉ để vẽ cột trái; Imagine.tsx mới là nơi tạo, xóa và giữ danh sách.
   const [imagineJobs, setImagineJobs] = useState<ImagineJob[]>([]);
   const [focusJobId, setFocusJobId] = useState<string | null>(null);
@@ -1207,6 +1216,7 @@ export default function App() {
           key={auth.user?.id}
           active={view === "companion"}
           appInfo={appInfo}
+          voice={localVoice}
           onUnauthorized={handleUnauthorized}
           onOpenSidebar={() => setSidebarOpen(true)}
         />
@@ -1290,7 +1300,7 @@ export default function App() {
               {message.role === "assistant" && message.reading && streaming && !stopping && index === messages.length - 1 && !message.content && <div className="document-reading" role="status"><span className="document-reading-dot" aria-hidden="true" />{message.reading}</div>}
               {message.role === "assistant" && message.search_status && streaming && !stopping && index === messages.length - 1 && !message.content && <div className="web-search-status" role="status"><GlobeIcon /><span>{message.search_status === "searching" ? "Peto đang tìm trên web…" : "Peto đang tổng hợp nguồn…"}</span></div>}
               {message.content ? (
-                <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[[rehypeHighlight, {
+                <Markdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[[rehypeKatex, { trust: false, strict: "ignore" }], [rehypeHighlight, {
                   languages: HIGHLIGHT_LANGUAGES, aliases: HIGHLIGHT_ALIASES, ignoreMissing: true,
                 }]]} components={{
                   table: ({children}) => <div className="table-scroll" tabIndex={0} role="region" aria-label="Bảng nội dung"><table>{children}</table></div>,
@@ -1302,7 +1312,7 @@ export default function App() {
                     const tag = names.find((name) => name.startsWith("language-"));
                     return <CodeBlock language={tag ? tag.slice("language-".length) : ""}>{children}</CodeBlock>;
                   },
-                }}>{message.content}</Markdown>
+                }}>{normalizeMath(message.content)}</Markdown>
               ) : null}
               {message.role === "assistant" && <WebSources sources={message.sources} />}
               {message.status === "incomplete" && <p className="message-status">Câu trả lời chưa hoàn tất</p>}
@@ -1413,6 +1423,8 @@ export default function App() {
               ))}
             </div>
           </section>
+
+          <VoiceSettings voice={localVoice} open={settingsOpen} />
 
           <section className="settings-section">
             <h3>Tài khoản</h3>

@@ -8,20 +8,12 @@ import {
 } from "./localSpeech";
 
 /** Tên hiển thị của các giọng mẫu đã chọn ở local-tts; giọng lạ thì hiện nguyên mã. */
-const VOICE_LABELS: Record<string, string> = {
+export const VOICE_LABELS: Record<string, string> = {
   "playful-1": "Sáng & tinh nghịch",
   "gentle-2": "Dịu & vui vẻ",
 };
 
 export type LocalVoiceStatus = "off" | "checking" | "ready" | "missing";
-
-const STATUS_TEXT: Record<LocalVoiceStatus, string> = {
-  off: "",
-  checking: "Đang tìm máy chủ giọng nói trên máy này…",
-  ready: "Giọng nói đã sẵn sàng: Peto sẽ nói khi trả lời xong.",
-  missing: "Chưa thấy máy chủ giọng nói trên máy này. Bật máy chủ rồi bấm Kiểm tra lại, hoặc tắt giọng nói "
-    + "để chỉ chat bằng chữ.",
-};
 
 interface Speaking {
   key: string;
@@ -37,7 +29,11 @@ export interface LocalVoice {
   setVoice: (value: string) => void;
   recheck: () => void;
   speaking: Speaking | null;
-  speak: (key: string, text: string) => void;
+  /**
+   * Đọc một đoạn. Lỗi thì Promise bị từ chối kèm câu báo tiếng Việt; bị dừng hay bị lượt đọc khác thay
+   * chỗ thì kết thúc êm, không báo lỗi.
+   */
+  speak: (key: string, text: string) => Promise<void>;
   stop: () => void;
 }
 
@@ -58,10 +54,13 @@ function readVoiceName(): string {
 }
 
 /**
- * Trạng thái giọng nói trên máy: đã bật chưa, máy chủ có đang chạy không, và tin nào đang được
- * đọc. Chỉ dò 127.0.0.1 khi người dùng đã bật.
+ * Trạng thái giọng nói trên máy, dùng chung cho Companion và mục Giọng nói trong Cài đặt: đã bật chưa,
+ * máy chủ có đang chạy không, và đoạn nào đang được đọc.
+ *
+ * Chỉ dò 127.0.0.1 khi người dùng đã bật và `active` đúng. App truyền `active` là "đã mở Companion hoặc
+ * Cài đặt đang mở", nên người chỉ dùng tab Trò chuyện không gọi gì ra máy.
  */
-export function useLocalVoice(onError: (message: string) => void): LocalVoice {
+export function useLocalVoice(active: boolean): LocalVoice {
   const [enabled, setEnabled] = useState(readEnabled);
   const [voiceName, setVoice] = useState(readVoiceName);
   const [voices, setVoices] = useState<string[]>([]);
@@ -70,11 +69,6 @@ export function useLocalVoice(onError: (message: string) => void): LocalVoice {
   const [speaking, setSpeaking] = useState<Speaking | null>(null);
   const player = useRef<LocalVoicePlayer | null>(null);
   const speakVersion = useRef(0);
-  const reportError = useRef(onError);
-
-  useEffect(() => {
-    reportError.current = onError;
-  }, [onError]);
 
   const voice = voices.includes(voiceName) ? voiceName : (voices[0] ?? "");
 
@@ -104,6 +98,7 @@ export function useLocalVoice(onError: (message: string) => void): LocalVoice {
       stop();
       return;
     }
+    if (!active) return;
     const controller = new AbortController();
     setStatus("checking");
     void probeLocalVoice(controller.signal).then((found) => {
@@ -112,37 +107,36 @@ export function useLocalVoice(onError: (message: string) => void): LocalVoice {
       setStatus(found ? "ready" : "missing");
     });
     return () => controller.abort();
-  }, [enabled, probe, stop]);
+  }, [enabled, active, probe, stop]);
 
-  // Người dùng hay bật máy chủ rồi mới quay lại trang: dò lại khi tab được chọn lại.
+  // Người dùng hay bật máy chủ rồi mới quay lại trang: dò lại khi cửa sổ được chọn lại.
   useEffect(() => {
-    if (status !== "missing") return;
+    if (status !== "missing" || !active) return;
     const again = () => setProbe((count) => count + 1);
     window.addEventListener("focus", again);
     return () => window.removeEventListener("focus", again);
-  }, [status]);
+  }, [status, active]);
 
   useEffect(() => () => {
     speakVersion.current += 1;
     player.current?.stop();
   }, []);
 
-  const speak = useCallback((key: string, text: string) => {
+  const speak = useCallback(async (key: string, text: string) => {
     if (!player.current) player.current = new LocalVoicePlayer();
     const version = ++speakVersion.current;
     setSpeaking({ key, phase: "loading" });
-    player.current.speak(text, voice, (phase) => {
-      if (version === speakVersion.current) setSpeaking({ key, phase });
-    }).then(
-      () => {
-        if (version === speakVersion.current) setSpeaking(null);
-      },
-      (error: unknown) => {
-        if (version !== speakVersion.current) return;
-        setSpeaking(null);
-        reportError.current(error instanceof Error ? error.message : "Chưa đọc được tin này.");
-      },
-    );
+    try {
+      await player.current.speak(text, voice, (phase) => {
+        if (version === speakVersion.current) setSpeaking({ key, phase });
+      });
+    } catch (error) {
+      if (version === speakVersion.current) {
+        throw error instanceof Error ? error : new Error("Chưa đọc được đoạn này.");
+      }
+    } finally {
+      if (version === speakVersion.current) setSpeaking(null);
+    }
   }, [voice]);
 
   const recheck = useCallback(() => setProbe((count) => count + 1), []);
@@ -150,15 +144,33 @@ export function useLocalVoice(onError: (message: string) => void): LocalVoice {
   return { enabled, setEnabled, status, voices, voice, setVoice, recheck, speaking, speak, stop };
 }
 
-function SpeakerIcon() {
+export function SpeakerIcon({ size = 16 }: { size?: number }) {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path d="M4 9h4l5-4v14l-5-4H4z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
       <path d="M17 9a4 4 0 0 1 0 6M19.5 6.5a8 8 0 0 1 0 11" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
     </svg>
   );
 }
 
+export function SpeakerOffIcon({ size = 16 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M4 9h4l5-4v14l-5-4H4z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+      <path d="M17 9.5l5 5M22 9.5l-5 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function StopIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <rect x="5" y="5" width="14" height="14" rx="2" fill="currentColor" />
+    </svg>
+  );
+}
+
+/** Nút nghe lại dưới tin của Peto: chỉ một icon nhỏ, còn nhãn đọc màn hình nói rõ đang ở bước nào. */
 export function SpeakButton({ phase, onSpeak, onStop }: {
   phase: SpeakPhase | null;
   onSpeak: () => void;
@@ -169,58 +181,12 @@ export function SpeakButton({ phase, onSpeak, onStop }: {
   return (
     <button
       type="button"
-      className={phase ? "message-speak active" : "message-speak"}
+      className={phase ? `message-speak ${phase}` : "message-speak"}
       aria-label={label}
+      title={label}
       onClick={phase ? onStop : onSpeak}
     >
-      <SpeakerIcon />
-      {phase === "loading" ? "Đang chuẩn bị…" : phase === "playing" ? "Dừng" : "Nghe"}
+      {phase === "playing" ? <StopIcon /> : <SpeakerIcon size={15} />}
     </button>
-  );
-}
-
-/** Nút bật giọng nói, trạng thái máy chủ, chọn giọng và tắt tiếng, đặt dưới ảnh Peto trong Companion. */
-export function VoiceControls({ voice, muted, onToggleMute }: {
-  voice: LocalVoice;
-  muted: boolean;
-  onToggleMute: () => void;
-}) {
-  if (!voice.enabled) {
-    return (
-      <div className="companion-voice">
-        <button type="button" className="companion-button" onClick={() => voice.setEnabled(true)}>
-          Bật giọng nói trên máy này
-        </button>
-        <p>
-          Giọng nói chỉ dùng được trên máy đã cài máy chủ giọng nói của Peto; không có thì vẫn chat bằng chữ
-          bình thường. Nếu Chrome hỏi quyền truy cập thiết bị trong mạng cục bộ, chọn Cho phép.
-        </p>
-      </div>
-    );
-  }
-  return (
-    <div className="companion-voice">
-      <p role="status">{STATUS_TEXT[voice.status]}</p>
-      <div className="companion-voice-actions">
-        {voice.status === "missing" && (
-          <button type="button" className="companion-button" onClick={voice.recheck}>Kiểm tra lại</button>
-        )}
-        {voice.status === "ready" && voice.voices.length > 1 && (
-          <select aria-label="Giọng" value={voice.voice} onChange={(event) => voice.setVoice(event.target.value)}>
-            {voice.voices.map((name) => (
-              <option key={name} value={name}>{VOICE_LABELS[name] ?? name}</option>
-            ))}
-          </select>
-        )}
-        {voice.status === "ready" && (
-          <button type="button" className="companion-button" aria-pressed={muted} onClick={onToggleMute}>
-            Tắt tiếng
-          </button>
-        )}
-        <button type="button" className="companion-button" onClick={() => voice.setEnabled(false)}>
-          Tắt giọng nói
-        </button>
-      </div>
-    </div>
   );
 }

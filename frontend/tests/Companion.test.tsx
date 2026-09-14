@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import App from '../src/App';
 import * as api from '../src/api';
@@ -54,10 +54,19 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 const localCalls = () => fetchMock.mock.calls.filter(([url]) => String(url).startsWith('http://127.0.0.1'));
+const speakBodies = () => fetchMock.mock.calls
+  .filter(([url]) => String(url).endsWith('/speak'))
+  .map(([, init]) => JSON.parse(String(init?.body)));
+const chatColumn = () => within(screen.getByRole('region', { name: 'Trò chuyện trong Companion' }));
 
 async function openCompanion() {
   render(<App />);
   fireEvent.click(await screen.findByRole('button', { name: 'Companion' }));
+}
+
+async function openSettings() {
+  fireEvent.click(await screen.findByRole('button', { name: /Cài đặt · Demo/ }));
+  return within(screen.getByRole('dialog', { name: 'Cài đặt' }));
 }
 
 async function sendInCompanion(text: string) {
@@ -66,15 +75,28 @@ async function sendInCompanion(text: string) {
   await waitFor(() => expect(api.sendMessage).toHaveBeenCalled());
 }
 
-it('mặc định không gọi tới 127.0.0.1 cho tới khi bật giọng nói', async () => {
+it('không gọi tới 127.0.0.1 cho tới khi bật giọng nói trong Cài đặt', async () => {
   await openCompanion();
   expect(await screen.findByText(/Chào Peto một câu đi/)).toBeTruthy();
-  expect(screen.getByRole('button', { name: 'Bật giọng nói trên máy này' })).toBeTruthy();
   expect(window.location.hash).toBe('#companion');
+
+  const settings = await openSettings();
   expect(localCalls()).toHaveLength(0);
 
-  fireEvent.click(screen.getByRole('button', { name: 'Bật giọng nói trên máy này' }));
-  expect(await screen.findByText(/Giọng nói đã sẵn sàng/)).toBeTruthy();
+  fireEvent.click(settings.getByRole('button', { name: 'Bật giọng nói trên máy này' }));
+  expect(await settings.findByText(/Giọng nói đã sẵn sàng/)).toBeTruthy();
+  expect(localCalls()).toHaveLength(1);
+  expect(await chatColumn().findByRole('button', { name: 'Tắt tiếng' })).toBeTruthy();
+});
+
+it('đã bật từ trước thì tab Trò chuyện chưa dò, mở Companion mới dò', async () => {
+  localStorage.setItem('peto-local-voice', '1');
+  render(<App />);
+  const companionTab = await screen.findByRole('button', { name: 'Companion' });
+  expect(localCalls()).toHaveLength(0);
+
+  fireEvent.click(companionTab);
+  expect(await chatColumn().findByRole('button', { name: 'Tắt tiếng' })).toBeTruthy();
   expect(localCalls()).toHaveLength(1);
 });
 
@@ -87,18 +109,17 @@ it('gửi ở chế độ Companion và Peto tự nói khi trả lời xong', as
     handlers.onDone?.();
   });
   await openCompanion();
-  await screen.findByText(/Giọng nói đã sẵn sàng/);
+  await chatColumn().findByRole('button', { name: 'Tắt tiếng' });
 
   await sendInCompanion('hi');
   expect(vi.mocked(api.sendMessage).mock.calls[0][0]).toMatchObject({
     message: 'hi', conversationId: null, mode: 'companion', effort: 'low', webSearch: 'off',
   });
   await waitFor(() => expect(played).toHaveLength(1));
-  const speakCall = fetchMock.mock.calls.find(([url]) => String(url).endsWith('/speak'));
-  expect(JSON.parse(String(speakCall?.[1]?.body))).toEqual({ text: 'Hey! Good to see you.', voice: 'gentle-2' });
+  expect(speakBodies()).toEqual([{ text: 'Hey! Good to see you.', voice: 'gentle-2' }]);
 });
 
-it('tắt tiếng thì Peto không tự nói, bấm Nghe vẫn nghe lại được', async () => {
+it('tắt tiếng ở cột chat thì Peto không tự nói, bấm nghe vẫn nghe lại được', async () => {
   localStorage.setItem('peto-local-voice', '1');
   localStorage.setItem('peto-companion-muted', '1');
   vi.mocked(api.getCompanion).mockResolvedValue({ conversation_id: 'C1', messages: [
@@ -112,8 +133,8 @@ it('tắt tiếng thì Peto không tự nói, bấm Nghe vẫn nghe lại đư�
   });
   await openCompanion();
   await screen.findByText('Hey there.');
-  await screen.findByText(/Giọng nói đã sẵn sàng/);
-  expect(screen.getByRole('button', { name: 'Tắt tiếng' }).getAttribute('aria-pressed')).toBe('true');
+  const mute = await chatColumn().findByRole('button', { name: 'Tắt tiếng' });
+  expect(mute.getAttribute('aria-pressed')).toBe('true');
 
   await sendInCompanion('ok');
   expect(vi.mocked(api.sendMessage).mock.calls[0][0]).toMatchObject({ conversationId: 'C1' });
@@ -123,6 +144,39 @@ it('tắt tiếng thì Peto không tự nói, bấm Nghe vẫn nghe lại đư�
 
   fireEvent.click(screen.getAllByRole('button', { name: /Nghe Peto/ })[0]);
   await waitFor(() => expect(played).toHaveLength(1));
+});
+
+it('chưa thấy máy chủ thì cột chat báo, bấm Kiểm tra lại thì dò lại', async () => {
+  localStorage.setItem('peto-local-voice', '1');
+  let serverUp = false;
+  fetchMock.mockImplementation(async (url: string) => {
+    if (url.endsWith('/health')) {
+      if (!serverUp) throw new TypeError('Failed to fetch');
+      return new Response(JSON.stringify({ ok: true, voices: ['playful-1', 'gentle-2'] }));
+    }
+    throw new Error(`Không mong đợi ${url}`);
+  });
+  await openCompanion();
+  const column = chatColumn();
+  expect(await column.findByText(/Chưa thấy máy chủ giọng nói/)).toBeTruthy();
+  expect(column.queryByRole('button', { name: 'Tắt tiếng' })).toBeNull();
+
+  serverUp = true;
+  fireEvent.click(column.getByRole('button', { name: 'Kiểm tra lại' }));
+  expect(await column.findByRole('button', { name: 'Tắt tiếng' })).toBeTruthy();
+  expect(column.queryByText(/Chưa thấy máy chủ giọng nói/)).toBeNull();
+});
+
+it('chọn giọng trong Cài đặt rồi Nghe thử thì đọc câu mẫu bằng giọng đó', async () => {
+  localStorage.setItem('peto-local-voice', '1');
+  render(<App />);
+  const settings = await openSettings();
+  fireEvent.click(await settings.findByRole('radio', { name: 'Dịu & vui vẻ' }));
+  fireEvent.click(settings.getByRole('button', { name: 'Nghe thử' }));
+
+  await waitFor(() => expect(played).toHaveLength(1));
+  expect(speakBodies()).toEqual([{ text: expect.stringContaining('Peto'), voice: 'gentle-2' }]);
+  expect(localStorage.getItem('peto-local-voice-name')).toBe('gentle-2');
 });
 
 it('Bắt đầu lại xóa mạch cũ sau khi xác nhận', async () => {
