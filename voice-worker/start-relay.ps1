@@ -1,4 +1,4 @@
-$ErrorActionPreference = 'Stop'
+﻿$ErrorActionPreference = 'Stop'
 $runner = Join-Path $PSScriptRoot '..\local-tts\.runtime\venv-fast\Scripts\python.exe'
 if (-not (Test-Path -LiteralPath $runner)) { throw 'Chưa cài bộ chạy giọng nói venv-fast.' }
 if (-not $env:PETO_VOICE_SERVER_URL) {
