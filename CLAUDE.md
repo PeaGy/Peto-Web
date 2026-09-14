@@ -341,7 +341,10 @@ breakpoint as the CSS) the character fills the screen in a fixed frame (`compact
 `compactTop` in `characterConfig.ts`). The header, messages and a pill composer float over it in
 translucent `--stage-*` colours defined on `.companion`. Zoom, drag and double-click are ignored
 there. Instead, a finger held on the screen acts as the pointer, and the character looks at it until
-the finger lifts.
+the finger lifts. `index.html` sets `interactive-widget=resizes-content`, so on Chrome for Android the
+keyboard shrinks the layout instead of panning the page away. The compact frame keeps the tallest stage
+height seen at the current width, so the shorter stage leaves the character's size and position alone.
+Safari on iOS ignores that viewport setting.
 
 Speech is generated on the owner's Windows PC, never on the VPS, and reaches listeners through the
 VPS in three hops:

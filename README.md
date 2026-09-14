@@ -401,6 +401,9 @@ lời đầy đủ bằng tiếng Việt.
 - Trên điện thoại, giao diện theo kiểu AIRI: nhân vật phủ cả màn hình ở khung cố định; tiêu đề, tin
   nhắn và ô nhắn nổi trong suốt bên trên. Không phóng hay kéo được; giữ ngón tay trên màn hình thì
   nhân vật nhìn theo ngón tay, nhấc tay thì nhìn thẳng lại.
+- Trên điện thoại Android, mở bàn phím thì cả giao diện co lên phía trên bàn phím: hàng nút vẫn ở trên
+  cùng, nhân vật giữ nguyên cỡ và chỗ đứng, tin nhắn và ô nhắn nằm ngay trên bàn phím. Safari trên iPhone
+  chưa hỗ trợ cách này.
 - Nhân vật lắc lư theo motion có sẵn, thở, chớp mắt và nhìn theo con trỏ ở mọi chỗ trên trang. Miệng
   mấp máy theo giọng đọc đang phát; không có tiếng thì ngậm miệng.
 - Thiết bị bật giảm chuyển động (trên Windows là tắt Animation effects) thì mặc định nhân vật đứng yên.

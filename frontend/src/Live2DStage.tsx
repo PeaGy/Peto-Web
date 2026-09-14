@@ -100,6 +100,10 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system" }: {
         current.scale.set(scale);
         current.position.set(x, y);
       };
+      // Bàn phím điện thoại làm sân khấu thấp đi nhưng bề ngang giữ nguyên. Khung điện thoại tính theo chiều cao
+      // lớn nhất đã thấy ở bề ngang hiện tại, để mở bàn phím không làm nhân vật nhỏ lại hay trôi mặt đi.
+      let frameWidth = 0;
+      let frameHeight = 0;
       const fit = () => {
         if (!app) return;
         const width = Math.max(1, container.clientWidth), height = Math.max(1, container.clientHeight);
@@ -108,9 +112,15 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system" }: {
         box.height = height;
         box.baseX = width / 2;
         if (compact.matches) {
-          // Điện thoại: nửa trên nhân vật phủ màn hình, đỉnh đầu nằm ngay dưới thanh tiêu đề.
-          box.baseScale = height * CHARACTER.compactHeight / originalHeight;
-          box.baseY = height * CHARACTER.compactTop + originalHeight * box.baseScale;
+          if (width !== frameWidth) {
+            frameWidth = width;
+            frameHeight = height;
+          } else {
+            frameHeight = Math.max(frameHeight, height);
+          }
+          // Điện thoại: nửa trên nhân vật phủ màn hình, đỉnh đầu nằm ngay dưới hàng nút.
+          box.baseScale = frameHeight * CHARACTER.compactHeight / originalHeight;
+          box.baseY = frameHeight * CHARACTER.compactTop + originalHeight * box.baseScale;
         } else {
           box.baseScale = Math.min(width * 0.94 / originalWidth, height * 0.96 / originalHeight);
           box.baseY = height * 0.99;

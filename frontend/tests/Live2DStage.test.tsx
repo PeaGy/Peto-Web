@@ -5,7 +5,7 @@ import { CHARACTER } from '../src/characterConfig';
 
 const mocks = vi.hoisted(() => ({
   from: vi.fn(), destroy: vi.fn(), start: vi.fn(), stop: vi.fn(), tick: null as null | (() => void),
-  mouth: 0, reduced: true, compact: false,
+  mouth: 0, reduced: true, compact: false, resize: null as null | (() => void),
 }));
 vi.mock('pixi.js', () => ({ Application: class {
   view = document.createElement('canvas');
@@ -51,7 +51,11 @@ beforeEach(() => {
   mocks.reduced = true;
   mocks.compact = false;
   vi.stubGlobal('Live2DCubismCore', {});
-  vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
+  vi.stubGlobal('ResizeObserver', class {
+    constructor(callback: () => void) { mocks.resize = callback; }
+    observe() {}
+    disconnect() {}
+  });
   vi.stubGlobal('matchMedia', (query: string) => ({
     matches: query.includes('reduce') ? mocks.reduced : query.includes('max-width') ? mocks.compact : false,
   }));
@@ -104,6 +108,21 @@ it('điện thoại khóa khung: cuộn, kéo hay bấm đúp đều không đ�
   expect(model.position.x).toBe(400);
   view.unmount();
   expect(JSON.parse(localStorage.getItem('peto-character-view')!)).toEqual({ zoom: 3, panX: 0.4, panY: 1 });
+});
+
+it('điện thoại mở bàn phím: sân khấu thấp đi nhưng nhân vật giữ cỡ và chỗ đứng', async () => {
+  mocks.compact = true;
+  const { model } = await mount();
+  const scale = model.scale.y;
+  const bottom = model.position.y;
+  vi.spyOn(Element.prototype, 'clientHeight', 'get').mockReturnValue(340);
+  mocks.resize!();
+  expect(model.scale.y).toBe(scale);
+  expect(model.position.y).toBe(bottom);
+  // Xoay máy đổi bề ngang thì khung được tính lại theo chiều cao mới.
+  vi.spyOn(Element.prototype, 'clientWidth', 'get').mockReturnValue(600);
+  mocks.resize!();
+  expect(model.scale.y).toBeCloseTo(340 * CHARACTER.compactHeight / 2000);
 });
 
 it('nhìn theo con trỏ khi được cử động, đứng yên thì không', async () => {
