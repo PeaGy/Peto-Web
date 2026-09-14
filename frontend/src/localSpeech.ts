@@ -1,3 +1,4 @@
+import { trackVoice } from "./voiceActivity";
 /** Âm thanh từ máy tạo giọng của Peto được VPS chuyển về phiên người nghe. */
 
 export const LOCAL_VOICE_ORIGIN = "/api/voice";
@@ -167,8 +168,10 @@ export class LocalVoicePlayer {
     return new Promise((resolve, reject) => {
       const url = URL.createObjectURL(blob);
       const audio = new Audio(url);
+      const stopTracking = trackVoice(audio, blob);
       this.audio = audio;
       const finish = (error?: Error) => {
+        stopTracking();
         signal.removeEventListener("abort", onAbort);
         audio.onended = null;
         audio.onerror = null;

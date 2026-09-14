@@ -23,6 +23,7 @@ def test_relay_sends_audio_and_keeps_token_off_local_server(monkeypatch):
         def read(self, limit): return self.body
     class Opener:
         def open(self, request, timeout):
+            assert request.get_header('User-agent') == 'Peto-Voice-Worker/1.0'
             calls.append(request)
             if len(calls) == 4:
                 raise KeyboardInterrupt
@@ -46,3 +47,11 @@ def test_relay_requires_https(monkeypatch):
     monkeypatch.setenv('PETO_VOICE_SERVER_URL', 'http://peto.example')
     with pytest.raises(SystemExit, match='HTTPS'):
         relay.main()
+
+
+def test_error_message_does_not_expose_credentials():
+    error = relay.urllib.error.HTTPError('https://example.com/secret', 401, 'private-token', {}, None)
+    message = relay.error_hint(error)
+    assert '401' in message
+    assert 'private-token' not in message
+    assert 'secret' not in message

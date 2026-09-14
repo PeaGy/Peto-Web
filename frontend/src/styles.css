@@ -1863,8 +1863,16 @@ label,
   place-items: center;
   min-width: 0;
   min-height: 0;
-  padding: 32px;
+  padding: 12px 12px 0;
 }
+.character-stage { position: relative; width: 100%; height: 100%; min-height: 0; overflow: hidden; }
+.character-canvas { position: absolute; inset: 0 0 30px; }
+.character-canvas canvas { display: block; }
+.character-glow { position: absolute; inset: 15% 8% 8%; background: radial-gradient(ellipse, color-mix(in srgb, var(--accent) 10%, transparent), transparent 68%); pointer-events: none; }
+.character-credit { position: absolute; bottom: 10px; left: 0; right: 0; text-align: center; font-size: 10px; color: var(--muted); text-decoration: none; }
+.character-credit:hover { text-decoration: underline; }
+.character-fallback { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 24px; text-align: center; color: var(--muted); font-size: 13px; }
+.character-fallback img { width: min(120px, 28%); border-radius: 50%; }
 .companion-portrait {
   position: relative;
   display: grid;
@@ -2002,7 +2010,7 @@ label,
 }
 @media (max-width: 720px) {
   .companion { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(160px, 36dvh) minmax(0, 1fr); }
-  .companion-stage { padding: 52px 16px 16px; }
+  .companion-stage { padding: 8px 12px 0; }
   .companion-portrait { width: min(160px, 24dvh); font-size: 56px; }
   .companion-panel { border-left: 0; border-top: 1px solid var(--line); }
 }

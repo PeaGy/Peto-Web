@@ -257,7 +257,8 @@ key (`imagine:<owner>`) so image jobs and chat do not consume each other's coold
 `config.py` is where environment variables are read. Every numeric knob goes through
 `_env_int` / `_env_float`, which clamp to a min/max so a bad value degrades instead of
 crashing. When adding a setting: declare it in `config.py` **and** document it in
-`.env.example`. One exception exists — `XAI_API_KEY` is read directly in `xai_auth.py`.
+`.env.example`. Two exceptions exist: `XAI_API_KEY` is read directly in `xai_auth.py`, and
+`PETO_VOICE_WORKER_TOKEN` is read on every worker request in `voice_api.py` (see the voice relay below).
 
 `XaiAuth` prefers OAuth tokens (`backend/data/xai_tokens.json`), refreshes them on expiry,
 and falls back to `XAI_API_KEY` if refresh fails or no token file exists.
@@ -307,7 +308,7 @@ disabled. `PETO_MEMORY_CACHE_TTL` is kept only for config compatibility and does
 Disabled unless both `PETO_MEMORY_GATEWAY_URL` and `PETO_MEMORY_GATEWAY_TOKEN` are set;
 half-configured setups log a warning at startup rather than failing silently.
 
-### Companion tab and local voice
+### Companion tab and voice relay
 
 `Companion.tsx` is mounted alongside Chat like `Imagine.tsx` (an `active` prop, kept alive once
 visited) and owns one continuous thread from `GET /api/companion`; "Bắt đầu lại" deletes it. It
@@ -317,35 +318,59 @@ tab is left.
 The layout is a stage on the left and a ~380px chat column on the right. The stage holds only the
 character (the bot avatar for now, a Live2D/3D model later): no text, status or controls go there,
 by the owner's explicit call. The chat column carries the speaking status, the mute toggle, "Bắt
-đầu lại", a notice when voice is on but the server is missing, and the Chat tab's composer styles.
-Enabling voice, the server status, choosing a voice and "Nghe thử" live in Settings, in
+đầu lại", a notice when voice is on but the voice machine is offline, and the Chat tab's composer
+styles. Enabling voice, its status, choosing a voice and "Nghe thử" live in Settings, in
 `VoiceSettings.tsx`.
 
-Speech runs on the user's own machine, never on the VPS. `local-tts/speak_server.py` lives in a
-gitignored experiment folder with its own venvs, loads Qwen3-TTS 0.6B through faster-qwen3-tts,
-and serves `GET /health` and `POST /speak` (up to 300 characters in, WAV out) on
-`127.0.0.1:7862`. It rejects any Origin other than the production site and the local dev origins,
-and any Host other than 127.0.0.1/localhost (DNS rebinding). There is no credential anywhere.
+Speech is generated on the owner's Windows PC, never on the VPS, and reaches listeners through the
+VPS in three hops:
 
-`localSpeech.ts` holds markdown → speakable text, chunking and the player; `LocalVoice.tsx` holds
-`useLocalVoice`, `SpeakButton` and the speaker icons. Keep those file names distinct beyond letter
-case: on Windows `./LocalVoice` resolves to a `localVoice.ts` before the `.tsx`.
+1. `local-tts/speak_server.py` lives in a gitignored experiment folder with its own venvs. It loads
+   Qwen3-TTS 0.6B through faster-qwen3-tts and serves `GET /health` and `POST /speak` (up to 300
+   characters in, WAV out) on `127.0.0.1:7862` only. It still rejects foreign Origins and any Host
+   other than 127.0.0.1/localhost, but browsers no longer call it.
+2. `voice-worker/relay.py` (run by `voice-worker/start-relay.ps1` in the same venv) connects **out**
+   to the site over HTTPS, so the PC opens no port. Every 5 s it checks the local server and, if both
+   voices are loaded, posts a heartbeat. It polls `GET /api/voice/worker/next`, has the local server
+   speak the job, and posts the WAV to `/api/voice/worker/result/{id}`, or an empty body with
+   `X-Voice-Error: 1` if speaking failed. It sends `PETO_VOICE_WORKER_TOKEN` (32+ characters, the
+   same value as on the VPS) only to the site, requires an HTTPS `PETO_VOICE_SERVER_URL`, and never
+   follows redirects. `tests/test_voice_worker.py` checks the token never reaches the local server.
+3. `backend/voice_api.py` serves signed-in users. `GET /api/voice/health` lists the voices only if a
+   heartbeat arrived in the last 15 s. `POST /api/voice/speak` accepts `playful-1` or `gentle-2` and
+   up to 300 characters, queues a job and waits up to 120 s for the audio: 429 when four jobs are
+   already queued or this owner has one, 503 when the worker is offline or reports a failure, 504 on
+   timeout. Results must be a RIFF/WAVE body under 8 MB. A listener disconnect removes the job, late
+   audio is rejected instead of reaching another listener, and nothing is written to disk.
+   `tests/test_voice.py` covers this with fake WAVs.
+
+The queue and heartbeat live in process memory, so the backend must run as a **single** uvicorn
+process with a single relay. A restart drops waiting jobs, and a job claimed by a relay that dies
+waits out the 120 s timeout. Registration is open, so any signed-in account, guests included, can
+use the owner's GPU while the relay runs; stopping the relay stops sharing. Setup and operating
+limits are in `voice-worker/README.md`.
+
+`localSpeech.ts` holds markdown → speakable text, chunking and the player, which calls
+`/api/voice`; `LocalVoice.tsx` holds `useLocalVoice`, `SpeakButton` and the speaker icons. The
+"local" names date from the first design, where the browser called 127.0.0.1 directly. Keep the
+`peto-local-voice*` storage keys so saved choices survive, and keep those file names distinct beyond
+letter case: on Windows `./LocalVoice` resolves to a `localVoice.ts` before the `.tsx`.
 
 `useLocalVoice` is called once in `App.tsx` and passed to both Companion and `VoiceSettings`, so they
 share one enabled flag, probe result and player. `speak()` returns a promise that rejects with a
 Vietnamese message, and each caller shows its own error. Companion's speech keys start with
 `companion-` so the Settings sample does not change Companion's status line.
 
-- Voice stays off until the user presses "Bật giọng nói trên máy này" in Settings, and nothing
-  touches 127.0.0.1 before that: a public origin fetching loopback triggers Chrome's Local Network
-  Access prompt, and visitors who never asked for voice must not see it. Even once enabled, the hook
-  only probes after Companion has been opened or while Settings is open, so the Chat tab never calls
-  loopback. `tests/Companion.test.tsx` asserts both.
+- Voice stays off until the user presses "Bật giọng nói" in Settings, and nothing calls
+  `/api/voice` before that. Even once enabled, the hook only probes after Companion has been opened
+  or while Settings is open, so the Chat tab never calls it. `tests/Companion.test.tsx` asserts both.
 - Chunks stay roughly equal (target 150 characters). Generation is only slightly faster than real
   time; the next chunk is requested when the previous one arrives, so it is ready in time only if
-  it is not much longer than the one playing.
-- Never add TTS models or their npm packages to the frontend, and never proxy speech through the
-  backend: `npm ci` on the VPS would ship them to every user.
+  it is not much longer than the one playing. One request at a time also fits the backend's
+  one-job-per-owner limit. An aborted request frees that slot only once the backend notices the
+  disconnect (it checks every 0.25 s), so a request sent right after an abort can get 429.
+- The backend only relays text and WAV bytes. Never add TTS models or their packages to the backend
+  or the frontend: `pip install` and `npm ci` on the VPS would ship them to every deployment.
 
 ## Frontend conventions
 
@@ -388,7 +413,7 @@ Vietnamese message, and each caller shows its own error. Companion's speech keys
   asserts this. Personal context is loaded per account at runtime, not baked into the prompt.
 - Nothing writes back to the bot's memory. The gateway is read-only and loopback-only; it
   must never sit behind Cloudflare Tunnel.
-- No AI credential ever reaches the browser.
+- No AI credential ever reaches the browser, and neither does `PETO_VOICE_WORKER_TOKEN`.
 - Registration is open by the owner's explicit decision. Do not add an allowlist, invite
   code, or per-account quota back unless asked for it.
 - Guest and Google accounts must never resolve to a Discord ID — that isolation is the
@@ -419,5 +444,7 @@ regressions, not flaky tests.
 - `README.md` — user-facing description of current behavior, Discord OAuth setup, and an
   explicit list of what each feature does *not* do yet.
 - `DEPLOY.md` — VPS deployment, systemd unit in `deploy/`, Cloudflare Tunnel, troubleshooting.
+- `voice-worker/README.md` — connecting the Windows voice machine to the VPS, and the relay's
+  operating limits.
 - `PETO_WEB_HANDOFF.md` — original project brief. Historical context, **not** a description
   of the current code; prefer `README.md` and the source when they disagree.

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import {
   UnauthorizedError,
   deleteConversation,
@@ -11,6 +11,7 @@ import { SendIcon } from "./Composer";
 import { SpeakButton, SpeakerIcon, SpeakerOffIcon, type LocalVoice } from "./LocalVoice";
 
 const MUTED_KEY = "peto-companion-muted";
+const Live2DStage = lazy(() => import("./Live2DStage"));
 /** Khóa đọc của Companion có tiền tố riêng, để câu nghe thử trong Cài đặt không làm đổi trạng thái ở đây. */
 const SPEECH_PREFIX = "companion-";
 
@@ -50,13 +51,13 @@ function RestartIcon() {
 
 /**
  * Tab Companion: Peto trả lời một hai câu bằng tiếng Anh như bạn bè nhắn tin, rồi tự nói thành tiếng
- * bằng giọng chạy trên máy người dùng. Chỉ có một mạch trò chuyện, tách khỏi danh sách Trò chuyện.
+ * bằng âm thanh từ máy tạo giọng chuyển qua VPS. Chỉ có một mạch trò chuyện, tách khỏi danh sách Trò chuyện.
  *
- * Sân khấu bên trái chỉ để nhân vật (giờ là ảnh bot, sau này Live2D/3D), không đặt chữ hay nút. Mọi thứ
+ * Sân khấu bên trái hiển thị Live2D và ghi công model. Mọi thứ
  * để nhắn và nghe nằm ở cột chat; bật giọng nói và chọn giọng nằm trong Cài đặt (`VoiceSettings.tsx`).
  *
  * Được giữ mounted như Imagine (prop `active`) để câu trả lời đang về không bị cắt khi đổi tab;
- * rời tab thì Peto thôi đọc.
+ * rời tab thì Peto thôi đọc và giải phóng renderer nhân vật.
  */
 export default function Companion({ active, appInfo, voice, onUnauthorized, onOpenSidebar }: {
   active: boolean;
@@ -253,11 +254,9 @@ export default function Companion({ active, appInfo, voice, onUnauthorized, onOp
       </button>
 
       <section className="companion-stage" aria-label={name}>
-        <div className={speech?.phase === "playing" ? "companion-portrait speaking" : "companion-portrait"}>
-          {appInfo?.avatar_url
-            ? <img src={appInfo.avatar_url} alt="" />
-            : <span aria-hidden="true">{name.charAt(0)}</span>}
-        </div>
+        {active && <Suspense fallback={<p role="status">Đang tải nhân vật…</p>}>
+          <Live2DStage fallbackUrl={appInfo?.avatar_url ?? undefined} name={name} />
+        </Suspense>}
       </section>
 
       <section className="companion-panel" aria-label="Trò chuyện trong Companion">
