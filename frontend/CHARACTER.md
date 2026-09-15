@@ -27,7 +27,9 @@ không chạy script hoặc tải tài nguyên mạng do model cung cấp. Bỏ 
 VRM phải là GLB có phần mở rộng VRM và tài nguyên nhúng. Thư viện không tải model của người dùng lên VPS.
 
 VRM có tư thế nghỉ, chớp mắt, nhìn theo con trỏ và biểu cảm miệng `aa` theo WAV đang phát. Model cần có
-các biểu cảm tương ứng. Trên máy tính: cuộn để phóng, chuột giữa để dời, chuột phải để xoay, bấm đúp để
+các biểu cảm tương ứng. Tư thế tay được tính theo hướng xương thực trong `src/vrmPose.ts`, tránh xoay
+ngược thành chữ V trên VRM 0 khi áp dụng góc dành cho VRM 1. Không cần nhập lại model sau bản sửa.
+Trên máy tính: cuộn để phóng, chuột giữa để dời, chuột phải để xoay, bấm đúp để
 về khung ban đầu. Bản đầu chưa nhập animation VRMA hay lưu góc nhìn VRM. Live2D giữ góc nhìn riêng theo
 ID model, dùng nhóm `LipSync` nếu có, nếu không thì thử `ParamMouthOpenY`.
 
@@ -84,4 +86,7 @@ Kiểm thử: 148 kiểm thử frontend đạt, build thành công. ZIP Hiyori c
 được nhập qua giao diện bản xem thử riêng. Kiểm tra đổi tên, lựa chọn sau tải lại, xóa model đang dùng,
 giao diện máy tính/điện thoại; kiểm thử tự động bao gồm file sai, lưu/xóa tài nguyên, miệng VRM và cleanup.
 Giọng Qwen thật trên VPS chưa được kiểm thử lại cùng thay đổi này.
+Bản sửa tư thế tay: 5 kiểm thử VRM đạt, build thành công; kiểm thử dùng bộ xương chuẩn hóa thật của
+three-vrm cho cả VRM 0/1, kiểm tra khuỷu/bàn tay nằm dưới vai và độ dài tay không đổi. Đã kiểm tra
+hiển thị trên model VRM 0 gặp lỗi của người dùng trong bản xem thử tại máy.
 `local-tts/speak_server.py` hiện trả WAV PCM16 đúng định dạng được hỗ trợ.

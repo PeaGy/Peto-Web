@@ -4,6 +4,7 @@ import type { VRM } from '@pixiv/three-vrm';
 import { characterThumbnail, getCharacterAssets, type CharacterModel } from './characterLibrary';
 import { COMPACT_QUERY, motionEnabled, type CharacterMotion } from './characterView';
 import { voiceMouth } from './voiceActivity';
+import { relaxVRMArms } from './vrmPose';
 
 export default function VRMStage({ character, motion, onPreview }: {
   character: CharacterModel; motion: CharacterMotion; onPreview?: (id: string, image: string) => void;
@@ -44,8 +45,7 @@ export default function VRMStage({ character, motion, onPreview }: {
       if (!loaded || disposed) { VRMUtils.deepDispose(gltf.scene); if (!disposed) throw new Error('Không đọc được nhân vật VRM.'); return; }
       disposeModel = () => VRMUtils.deepDispose(loaded.scene);
       VRMUtils.rotateVRM0(loaded);
-      // Hạ hai cánh tay khỏi tư thế chữ T, dùng bộ xương chuẩn hóa cho cả VRM 0 và 1.
-      loaded.humanoid.setNormalizedPose({ leftUpperArm: { rotation: [0, 0, Math.sin(-0.55), Math.cos(-0.55)] }, rightUpperArm: { rotation: [0, 0, Math.sin(0.55), Math.cos(0.55)] } });
+      relaxVRMArms(loaded.humanoid);
       loaded.update(0);
       const scene = new THREE.Scene();
       scene.add(loaded.scene);
