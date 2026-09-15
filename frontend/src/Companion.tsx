@@ -271,10 +271,17 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
           <button type="button" className="menu-btn companion-menu" aria-label="Mở menu" onClick={onOpenSidebar}>
             <MenuIcon />
           </button>
-          <div className="companion-title">
+          <button
+            type="button"
+            className="companion-title"
+            aria-label={`Đổi nhân vật ${name}`}
+            aria-haspopup="dialog"
+            title="Đổi nhân vật"
+            onClick={onOpenCharacters}
+          >
             <strong>{name}</strong>
             <span aria-live="polite">{stateText}</span>
-          </div>
+          </button>
           <div className="companion-tools">
             {voice.status === "ready" && (
               <button

@@ -6,7 +6,9 @@ Giới hạn 30 FPS và độ phân giải 1,5 lần để giảm tải điện 
 
 ## Thư viện nhân vật
 
-Mở nút **Nhân vật** trên sân khấu Companion, hoặc **Cài đặt → Giao diện → Chọn nhân vật**.
+Nhấn chữ **Peto** ở thanh tiêu đề Companion để đổi model. Trên máy tính còn có nút **Nhân vật**
+trên sân khấu; điện thoại ẩn nút này để không che nút tắt tiếng/bắt đầu lại. Cũng có thể mở từ
+**Cài đặt → Giao diện → Chọn nhân vật**.
 Nút **Thêm model** hỗ trợ:
 
 - Live2D: ZIP hoặc toàn bộ thư mục chứa đúng một `.model3.json`, `.moc3`, texture và các tệp motion/pose liên quan.

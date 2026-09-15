@@ -1987,7 +1987,7 @@ label,
 .character-library-notice, .character-library-error { padding: 11px 14px; border-radius: 10px; font-size: 13px; line-height: 1.5; background: #4096ae15; }
 .character-library-error { background: #d6545415; color: #dd6666; }
 @media (max-width: 720px) {
-  .companion-character-button { top: calc(12px + env(safe-area-inset-top)); color: var(--stage-text); background: var(--stage-button); border-color: var(--stage-line); }
+  .companion-character-button { display: none; }
 }
 @media (max-width: 540px) {
   .character-picker { width: calc(100vw - 16px); max-height: calc(100dvh - 16px); border-radius: 17px; }
@@ -2045,7 +2045,7 @@ label,
   padding: 10px 12px 10px 18px;
   border-bottom: 1px solid var(--line);
 }
-.companion-title { flex: 1; min-width: 0; display: grid; line-height: 1.35; }
+.companion-title { flex: 1; min-width: 0; display: grid; padding: 0; border: 0; border-radius: 8px; background: none; color: inherit; font: inherit; line-height: 1.35; text-align: left; cursor: pointer; }
 .companion-title strong { font-size: 15px; }
 .companion-title span { overflow: hidden; color: var(--muted); font-size: 12px; white-space: nowrap; text-overflow: ellipsis; }
 .companion-tools { display: flex; align-items: center; gap: 4px; }
@@ -2177,7 +2177,7 @@ label,
   .companion-head .menu-btn:hover,
   .companion-head .companion-tool:hover:not(:disabled) { background: var(--stage-button); color: var(--stage-text); }
   .companion-head .companion-tool[aria-pressed="true"] { background: var(--stage-accent-strong); }
-  .companion-title { justify-items: center; text-align: center; text-shadow: 0 1px 8px var(--stage-bg); }
+  .companion-title { min-height: 42px; align-content: center; justify-items: center; text-align: center; text-shadow: 0 1px 8px var(--stage-bg); }
   .companion-title strong { font-size: 16px; color: var(--stage-text); }
   .companion-title span { max-width: 100%; color: var(--stage-muted); font-size: 11px; }
   .companion-tools { gap: 6px; }
