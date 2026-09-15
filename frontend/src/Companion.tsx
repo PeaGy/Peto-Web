@@ -10,9 +10,11 @@ import {
 import { SendIcon } from "./Composer";
 import { SpeakButton, SpeakerIcon, SpeakerOffIcon, type LocalVoice } from "./LocalVoice";
 import type { CharacterMotion } from "./characterView";
+import { DEFAULT_CHARACTER, type CharacterModel } from './characterLibrary';
 
 const MUTED_KEY = "peto-companion-muted";
 const Live2DStage = lazy(() => import("./Live2DStage"));
+const VRMStage = lazy(() => import('./VRMStage'));
 /** Khóa đọc của Companion có tiền tố riêng, để câu nghe thử trong Cài đặt không làm đổi trạng thái ở đây. */
 const SPEECH_PREFIX = "companion-";
 
@@ -61,11 +63,14 @@ function RestartIcon() {
  * Được giữ mounted như Imagine (prop `active`) để câu trả lời đang về không bị cắt khi đổi tab;
  * rời tab thì Peto thôi đọc và giải phóng renderer nhân vật.
  */
-export default function Companion({ active, appInfo, voice, characterMotion, onUnauthorized, onOpenSidebar }: {
+export default function Companion({ active, appInfo, voice, characterMotion, character = DEFAULT_CHARACTER, onCharacterPreview, onOpenCharacters, onUnauthorized, onOpenSidebar }: {
   active: boolean;
   appInfo: AppInfo | null;
   voice: LocalVoice;
   characterMotion: CharacterMotion;
+  character?: CharacterModel;
+  onCharacterPreview?: (id: string, image: string) => void;
+  onOpenCharacters?: () => void;
   onUnauthorized: () => void;
   onOpenSidebar: () => void;
 }) {
@@ -253,8 +258,11 @@ export default function Companion({ active, appInfo, voice, characterMotion, onU
   return (
     <main className="companion" hidden={!active}>
       <section className="companion-stage" aria-label={name}>
+        <button className="companion-character-button" onClick={onOpenCharacters} aria-label="Chọn nhân vật">◇ <span>Nhân vật</span></button>
         {active && <Suspense fallback={<p role="status">Đang tải nhân vật…</p>}>
-          <Live2DStage fallbackUrl={appInfo?.avatar_url ?? undefined} name={name} motion={characterMotion} />
+          {character.format === 'vrm'
+            ? <VRMStage key={character.id} character={character} motion={characterMotion} onPreview={onCharacterPreview} />
+            : <Live2DStage key={character.id} character={character} fallbackUrl={appInfo?.avatar_url ?? undefined} name={name} motion={characterMotion} onPreview={onCharacterPreview} />}
         </Suspense>}
       </section>
 

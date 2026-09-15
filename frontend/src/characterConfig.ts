@@ -1,4 +1,4 @@
-/** Chỉ dùng tài nguyên đi kèm ứng dụng; thay model tại đây khi có nhân vật riêng. */
+/** Model mặc định đi kèm Peto; model nhập riêng được quản lý trong characterLibrary.ts. */
 export const CHARACTER = {
   id: "hiyori",
   name: "Hiyori Momose",

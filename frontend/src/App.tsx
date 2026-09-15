@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
@@ -43,6 +43,8 @@ import { useLocalVoice } from "./LocalVoice";
 import ProfileSettings from "./ProfileSettings";
 import VoiceSettings from "./VoiceSettings";
 import CharacterSettings from "./CharacterSettings";
+import { useCharacters } from './useCharacters';
+const CharacterPicker = lazy(() => import('./CharacterPicker'));
 import { readCharacterMotion, writeCharacterMotion, type CharacterMotion } from "./characterView";
 import Composer from "./Composer";
 import { FileGlyph, formatSize, type DraftFile } from "./files";
@@ -319,6 +321,14 @@ function CodeBlock({ language, children }: { language: string; children: ReactNo
   );
 }
 
+function compactThinking(text: string, limit = 420): string {
+  const cleaned = text.replace(/\n{3,}/g, "\n\n").trim();
+  if (cleaned.length <= limit) return cleaned;
+  const cut = cleaned.slice(0, limit);
+  const at = cut.lastIndexOf(" ");
+  return `${(at > 280 ? cut.slice(0, at) : cut).trimEnd()}…`;
+}
+
 function ThinkingPanel({
   live,
   text,
@@ -333,7 +343,8 @@ function ThinkingPanel({
   // khi commit nên panel loé mở đúng một khung hình lúc câu trả lời vừa hiện.
   const [choice, setChoice] = useState<boolean | null>(null);
   const open = choice ?? live;
-  if (!live && !text) return null;
+  const summary = compactThinking(text);
+  if (!live && !summary) return null;
   return (
     <div className="thinking-panel">
       <button
@@ -347,7 +358,7 @@ function ThinkingPanel({
         </span>
         <span className={live ? "thinking-pulse" : undefined}>{live ? label : "Đã suy nghĩ"}</span>
       </button>
-      {open && text ? <div className="thinking-body">{text}</div> : null}
+      {open && summary ? <div className="thinking-body">{summary}</div> : null}
     </div>
   );
 }
@@ -457,6 +468,8 @@ export default function App() {
   const [stopping, setStopping] = useState(false);
   const [theme, setTheme] = useState<ThemeChoice>(readStoredTheme);
   const [characterMotion, setCharacterMotion] = useState<CharacterMotion>(readCharacterMotion);
+  const characters = useCharacters();
+  const [characterPickerOpen, setCharacterPickerOpen] = useState(false);
   const changeCharacterMotion = useCallback((value: CharacterMotion) => {
     setCharacterMotion(value);
     writeCharacterMotion(value);
@@ -1227,6 +1240,9 @@ export default function App() {
           appInfo={appInfo}
           voice={localVoice}
           characterMotion={characterMotion}
+          character={characters.selected}
+          onCharacterPreview={characters.savePreview}
+          onOpenCharacters={() => setCharacterPickerOpen(true)}
           onUnauthorized={handleUnauthorized}
           onOpenSidebar={() => setSidebarOpen(true)}
         />
@@ -1432,7 +1448,7 @@ export default function App() {
                 </label>
               ))}
             </div>
-            <CharacterSettings value={characterMotion} onChange={changeCharacterMotion} />
+            <CharacterSettings value={characterMotion} onChange={changeCharacterMotion} onOpenCharacters={() => setCharacterPickerOpen(true)} selectedName={characters.selected.name} />
           </section>
 
           <VoiceSettings voice={localVoice} open={settingsOpen} />
@@ -1462,6 +1478,7 @@ export default function App() {
           </section>
         </div>
       </dialog>
+      {characterPickerOpen && <Suspense fallback={null}><CharacterPicker library={characters} onClose={() => setCharacterPickerOpen(false)} /></Suspense>}
       <dialog ref={deleteDialogRef} className="confirm-dialog" aria-labelledby="delete-title" onCancel={(event) => {
         event.preventDefault();
         if (!deleting) setDeleteTarget(null);

@@ -59,9 +59,9 @@ export function clampView(view: CharacterView): CharacterView {
   };
 }
 
-export function readCharacterView(): CharacterView {
+export function readCharacterView(modelId = 'hiyori'): CharacterView {
   try {
-    const raw = JSON.parse(localStorage.getItem(CHARACTER_VIEW_KEY) ?? "null") as Partial<CharacterView> | null;
+    const raw = JSON.parse(localStorage.getItem(modelId === 'hiyori' ? CHARACTER_VIEW_KEY : `${CHARACTER_VIEW_KEY}:${modelId}`) ?? "null") as Partial<CharacterView> | null;
     if (!raw || typeof raw !== "object") return DEFAULT_VIEW;
     return clampView({ zoom: Number(raw.zoom), panX: Number(raw.panX), panY: Number(raw.panY) });
   } catch {
@@ -69,9 +69,9 @@ export function readCharacterView(): CharacterView {
   }
 }
 
-export function writeCharacterView(view: CharacterView) {
+export function writeCharacterView(view: CharacterView, modelId = 'hiyori') {
   try {
-    localStorage.setItem(CHARACTER_VIEW_KEY, JSON.stringify(view));
+    localStorage.setItem(modelId === 'hiyori' ? CHARACTER_VIEW_KEY : `${CHARACTER_VIEW_KEY}:${modelId}`, JSON.stringify(view));
   } catch {}
 }
 

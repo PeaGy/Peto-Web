@@ -47,6 +47,13 @@ def test_core_personality_survived():
     assert len(persona.SYSTEM_PROMPT) > 3000
 
 
+def test_does_not_invent_source_from_screenshots():
+    lowered = persona.SYSTEM_PROMPT.casefold()
+    assert "không bịa source" in lowered or "không bịa" in lowered
+    assert "đính kèm" in lowered
+    assert "ảnh chụp màn hình" in lowered or "ảnh màn hình" in lowered
+
+
 def test_huong_dan_trinh_bay_tren_web():
     """Thiếu phần này thì Peto trả lời bài học thành một khối chữ liền: cùng mô
     hình Grok nhưng đọc khó hơn hẳn giao diện gốc của Grok. Chuyện phiếm thì vẫn

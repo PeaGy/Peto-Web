@@ -22,8 +22,8 @@ from web_search import normalize_sources, search_context
 
 from .base import ChatMessage, ChatProvider, ProviderError, StreamChunk
 
+# Chỉ lấy bản tóm tắt. reasoning_text là suy nghĩ thô, dài và dễ lộ bước bịa.
 _REASONING_DELTA_TYPES = {
-    "response.reasoning_text.delta",
     "response.reasoning_summary_text.delta",
 }
 

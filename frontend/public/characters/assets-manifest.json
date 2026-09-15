@@ -95,6 +95,11 @@
     "sha256": "ba0ba6764a80459432ffd48d6bd5ba261fd25f196208ade3016be74efb9d3dfc"
   },
   {
+    "path": "vendor/live2d/fflate-LICENSE.txt",
+    "bytes": 1069,
+    "sha256": "0a1df3a083d0c010560aa342e87959c8c1070e6fd54545741f083f22d0c8b551"
+  },
+  {
     "path": "vendor/live2d/LICENSE.md",
     "bytes": 520,
     "sha256": "b81e37048010ef1d336106151201a0323c3309cae44aecdedf57831fe88fa991"
@@ -113,5 +118,15 @@
     "path": "vendor/live2d/PixiJS-LICENSE.txt",
     "bytes": 1092,
     "sha256": "536a16e090f0b6c1454a7c0b47ee8414a39a2f1724a154f10ca1edc750a2dcfd"
+  },
+  {
+    "path": "vendor/live2d/three-vrm-LICENSE.txt",
+    "bytes": 1072,
+    "sha256": "279ec82987aec7e72ecb9850bb704a87e352d577bc7581454c30f3551a88ea92"
+  },
+  {
+    "path": "vendor/live2d/ThreeJS-LICENSE.txt",
+    "bytes": 1081,
+    "sha256": "bfe119ea4fd413f5f7ca3fcd63adb0c4a073ed39daa2fe7d3e6b769e21272601"
   }
 ]

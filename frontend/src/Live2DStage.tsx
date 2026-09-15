@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Application } from "pixi.js";
 import { CHARACTER } from "./characterConfig";
+import { DEFAULT_CHARACTER, getCharacterAssets, characterThumbnail, type CharacterModel } from './characterLibrary';
 import {
   COMPACT_QUERY,
   DEFAULT_VIEW,
@@ -48,13 +49,17 @@ function loadCore() {
  * giữ ngón tay trên màn hình thì nhân vật nhìn theo ngón tay. Khi được cử động (`motionEnabled`), nhân vật
  * chạy motion Idle, thở, chớp mắt và nhìn theo con trỏ. Miệng luôn theo âm thanh đang phát.
  */
-export default function Live2DStage({ fallbackUrl, name, motion = "system" }: {
+export default function Live2DStage({ fallbackUrl, name, motion = "system", character = DEFAULT_CHARACTER, onPreview }: {
   fallbackUrl?: string;
   name: string;
   motion?: CharacterMotion;
+  character?: CharacterModel;
+  onPreview?: (id: string, image: string) => void;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const motionRef = useRef(motion);
+  const previewRef = useRef(onPreview);
+  previewRef.current = onPreview;
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [attempt, setAttempt] = useState(0);
 
@@ -68,11 +73,12 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system" }: {
     let app: Application | undefined;
     let observer: ResizeObserver | undefined;
     let removeEvents = () => {};
+    const objectUrls: string[] = [];
     setStatus("loading");
 
     async function start() {
       await loadCore();
-      const [{ Application: PixiApp }, { Live2DModel: Model, MotionPreloadStrategy }] = await Promise.all([
+      const [{ Application: PixiApp }, { Live2DModel: Model, MotionPreloadStrategy, Cubism4ModelSettings }] = await Promise.all([
         import("pixi.js"), import("pixi-live2d-display/cubism4"),
       ]);
       if (disposed) return;
@@ -81,7 +87,33 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system" }: {
       const canvas = app.view as HTMLCanvasElement;
       canvas.setAttribute("aria-hidden", "true");
       container.append(canvas);
-      const current = await Model.from(CHARACTER.modelUrl, { autoUpdate: false, autoInteract: false, motionPreload: MotionPreloadStrategy.IDLE });
+      let source: string | InstanceType<typeof Cubism4ModelSettings> = CHARACTER.modelUrl;
+      let mouthParameters = [CHARACTER.mouthParameter];
+      if (!character.builtin) {
+        const assets = await getCharacterAssets(character.id);
+        if (disposed) return;
+        const entry = assets?.files.find(file => file.path === assets.entry);
+        if (!assets || !entry) throw new Error('Không còn tìm thấy tệp của model này. Hãy nhập lại model.');
+        const json = JSON.parse(await entry.blob.text());
+        if (disposed) return;
+        json.url = '/imported/model.model3.json';
+        const settings = new Cubism4ModelSettings(json);
+        const lipSync = json.Groups?.find((group: { Name: string }) => group.Name === 'LipSync')?.Ids;
+        if (Array.isArray(lipSync) && lipSync.length) mouthParameters = lipSync;
+        const urls = new Map(assets.files.map(file => {
+          const mime = /\.png$/i.test(file.path) ? 'image/png' : /\.jpe?g$/i.test(file.path) ? 'image/jpeg' : /\.webp$/i.test(file.path) ? 'image/webp' : 'application/octet-stream';
+          const url = URL.createObjectURL(new Blob([file.blob], { type: mime }));
+          objectUrls.push(url);
+          return [file.path, url];
+        }));
+        settings.resolveURL = path => {
+          const url = urls.get(path);
+          if (!url) throw new Error(`Thiếu tài nguyên model: ${path}`);
+          return url;
+        };
+        source = settings;
+      }
+      const current = await Model.from(source, { autoUpdate: false, autoInteract: false, motionPreload: MotionPreloadStrategy.IDLE });
       if (disposed) { current.destroy({ children: true, texture: true, baseTexture: true }); return; }
       app.stage.addChild(current);
       const originalWidth = current.width;
@@ -93,7 +125,7 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system" }: {
       const moving = () => motionEnabled(motionRef.current, reducedMotion.matches);
 
       // Máy tính: phóng và dời chỉ nhân thêm lên cỡ vừa khung, nên đổi cỡ cửa sổ vẫn giữ đúng góc nhìn đã chọn.
-      let view = readCharacterView();
+      let view = readCharacterView(character.id);
       const box: StageBox = { width: 1, height: 1, baseX: 0, baseY: 0, baseScale: 1 };
       const place = () => {
         const { scale, x, y } = placement(compact.matches ? DEFAULT_VIEW : view, box);
@@ -138,7 +170,7 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system" }: {
         window.clearTimeout(saveTimer);
         saveTimer = window.setTimeout(() => {
           saveTimer = undefined;
-          writeCharacterView(view);
+          writeCharacterView(view, character.id);
         }, 300);
       };
       const local = (event: MouseEvent) => {
@@ -221,22 +253,27 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system" }: {
         const target = voiceMouth();
         mouth += (target - mouth) * (target > mouth ? 0.7 : 0.45);
         // Ép trạng thái miệng sau motion để model không nói khi âm thanh đang im lặng.
-        core.setParameterValueById(CHARACTER.mouthParameter, mouth < 0.01 ? 0 : mouth);
+        for (const parameter of mouthParameters) core.setParameterValueById(parameter, mouth < 0.01 ? 0 : mouth);
       });
       app.ticker.maxFPS = 30;
       let still = false;
+      let captured = false;
       app.ticker.add(() => {
         if (moving()) {
           still = false;
           current.update(Math.min(app!.ticker.deltaMS, 50));
-          return;
+        } else {
+          if (!still) {
+            internal.focusController.focus(0, 0, true);
+            still = true;
+          }
+          // Vẫn áp dụng pose (ẩn tư thế tay thay thế) và miệng theo âm thanh, nhưng giữ thời gian motion đứng yên.
+          internal.update(0, 0);
         }
-        if (!still) {
-          internal.focusController.focus(0, 0, true);
-          still = true;
+        if (!captured && previewRef.current) {
+          captured = true;
+          try { app!.renderer.render(app!.stage); previewRef.current(character.id, characterThumbnail(canvas)); } catch { /* Ảnh xem trước không chặn model. */ }
         }
-        // Vẫn áp dụng pose (ẩn tư thế tay thay thế) và miệng theo âm thanh, nhưng giữ thời gian motion đứng yên.
-        internal.update(0, 0);
       });
 
       const visible = () => document.hidden ? app?.stop() : app?.start();
@@ -279,7 +316,7 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system" }: {
         compact.removeEventListener?.("change", fit);
         if (saveTimer !== undefined) {
           window.clearTimeout(saveTimer);
-          writeCharacterView(view);
+          writeCharacterView(view, character.id);
         }
       };
       visible();
@@ -296,8 +333,9 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system" }: {
       observer?.disconnect();
       removeEvents();
       app?.destroy(true, { children: true, texture: true, baseTexture: true });
+      objectUrls.forEach(url => URL.revokeObjectURL(url));
     };
-  }, [attempt]);
+  }, [attempt, character.id]);
 
   return <div className="character-stage">
     <div className="character-glow" aria-hidden="true" />
@@ -307,6 +345,8 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system" }: {
       <p role="status">{status === "loading" ? "Đang đưa nhân vật lên sân khấu…" : "Chưa hiển thị được nhân vật. Bạn vẫn có thể nhắn và nghe Peto."}</p>
       {status === "error" && <button className="settings-button" onClick={() => setAttempt((v) => v + 1)}>Thử tải lại nhân vật</button>}
     </div>}
-    <a className="character-credit" href={CHARACTER.creditUrl} target="_blank" rel="noopener noreferrer">Model mẫu {CHARACTER.name} · © Live2D Inc.</a>
+    {character.builtin
+      ? <a className="character-credit" href={CHARACTER.creditUrl} target="_blank" rel="noopener noreferrer">Model mẫu {CHARACTER.name} · © Live2D Inc.</a>
+      : <span className="character-credit">{character.name} · Model của bạn</span>}
   </div>;
 }

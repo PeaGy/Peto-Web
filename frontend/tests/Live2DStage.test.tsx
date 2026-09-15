@@ -15,7 +15,7 @@ vi.mock('pixi.js', () => ({ Application: class {
   start = mocks.start; stop = mocks.stop;
   destroy = () => { this.view.remove(); mocks.destroy(); };
 } }));
-vi.mock('pixi-live2d-display/cubism4', () => ({ Live2DModel: { from: mocks.from }, MotionPreloadStrategy: { IDLE: 'IDLE' } }));
+vi.mock('pixi-live2d-display/cubism4', () => ({ Live2DModel: { from: mocks.from }, MotionPreloadStrategy: { IDLE: 'IDLE' }, Cubism4ModelSettings: class {} }));
 vi.mock('../src/voiceActivity', () => ({ voiceMouth: () => mocks.mouth }));
 
 type Point = { x: number; y: number };

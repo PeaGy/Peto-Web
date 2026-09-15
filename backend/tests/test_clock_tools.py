@@ -195,7 +195,8 @@ async def test_reasoning_summary_is_not_mixed_into_the_answer(monkeypatch):
     chunks = [part async for part in provider.stream(system_prompt='Peto', messages=[])]
     thinking = ''.join(part.text for part in chunks if isinstance(part, StreamChunk) and part.kind == 'thinking')
     answer = ''.join(part if isinstance(part, str) else part.text for part in chunks if not isinstance(part, StreamChunk) or part.kind == 'text')
-    assert thinking == 'Xét vận tốc rơi. g=10.'
+    assert thinking == 'Xét vận tốc rơi.'
+    assert 'g=10' not in thinking
     assert answer == '42 m/s'
     assert stream.closed
 
