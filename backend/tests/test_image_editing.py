@@ -127,5 +127,5 @@ async def test_migration_keeps_old_images_as_outputs(tmp_path, monkeypatch):
     await db.init_db()
     await db.init_db()
     async with aiosqlite.connect(path) as connection:
-        row = await (await connection.execute("SELECT id, kind FROM imagine_images")).fetchone()
-    assert row == ("cu", "output")
+        row = await (await connection.execute("SELECT id, kind, liked FROM imagine_images")).fetchone()
+    assert row == ("cu", "output", 0)

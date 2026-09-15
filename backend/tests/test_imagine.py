@@ -137,6 +137,62 @@ async def test_other_owner_cannot_list_or_delete_images(client, monkeypatch):
     assert (await client.delete(f"/api/imagine/{job_id}")).status_code == 404
 
 
+async def test_delete_one_image_keeps_the_rest_then_last_image_removes_job(client):
+    created = await client.post("/api/imagine", json={"prompt": "hai con mèo", "n": 2})
+    job = created.json()["job"]
+    first, second = job["images"]
+    folder = Path(UPLOAD_DIR) / "imagine" / job["id"]
+    assert len(list(folder.iterdir())) == 2
+
+    deleted = await client.delete(first["url"])
+    assert deleted.status_code == 200
+    assert deleted.json() == {"deleted": True, "job_deleted": False}
+    kept = next(item for item in (await client.get("/api/imagine")).json()["jobs"] if item["id"] == job["id"])
+    assert [image["id"] for image in kept["images"]] == [second["id"]]
+    assert len(list(folder.iterdir())) == 1
+    assert (await client.get(first["url"])).status_code == 404
+    assert (await client.delete(first["url"])).status_code == 404
+
+    last = await client.delete(second["url"])
+    assert last.json() == {"deleted": True, "job_deleted": True}
+    assert all(item["id"] != job["id"] for item in (await client.get("/api/imagine")).json()["jobs"])
+    assert not folder.exists() or not any(folder.iterdir())
+
+
+async def test_like_image_is_saved_and_listed(client):
+    created = await client.post("/api/imagine", json={"prompt": "ảnh để thích", "n": 2})
+    job = created.json()["job"]
+    assert [image["liked"] for image in job["images"]] == [False, False]
+    image_id = job["images"][1]["id"]
+
+    def likes() -> dict:
+        return {image["id"]: image["liked"] for item in listed if item["id"] == job["id"] for image in item["images"]}
+
+    liked = await client.put(f"/api/imagine/images/{image_id}/like", json={"liked": True})
+    assert liked.status_code == 200
+    assert liked.json() == {"liked": True}
+    listed = (await client.get("/api/imagine")).json()["jobs"]
+    assert likes() == {job["images"][0]["id"]: False, image_id: True}
+
+    await client.put(f"/api/imagine/images/{image_id}/like", json={"liked": False})
+    listed = (await client.get("/api/imagine")).json()["jobs"]
+    assert likes()[image_id] is False
+
+
+async def test_source_and_foreign_images_cannot_be_deleted_or_liked(client):
+    source = base64.b64encode(imagine._MOCK_PNG).decode()
+    created = await client.post("/api/imagine", json={"prompt": "sửa ảnh", "source_image": {"data": source}})
+    job = created.json()["job"]
+    source_id = job["source_image"]["id"]
+    assert (await client.delete(f"/api/imagine/images/{source_id}")).status_code == 404
+    assert (await client.put(f"/api/imagine/images/{source_id}/like", json={"liked": True})).status_code == 404
+
+    image_id = job["images"][0]["id"]
+    client.cookies.set(SESSION_COOKIE, auth._sign(owner_key("discord", "222222222222222222")))
+    assert (await client.delete(f"/api/imagine/images/{image_id}")).status_code == 404
+    assert (await client.put(f"/api/imagine/images/{image_id}/like", json={"liked": True})).status_code == 404
+
+
 @pytest.mark.parametrize("item", [
     {"b64_json": "not base64"},
     {"b64_json": base64.b64encode(b"<html>bad gateway</html>").decode(), "mime_type": "image/png"},

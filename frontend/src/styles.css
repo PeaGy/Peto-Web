@@ -834,36 +834,6 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .web-source-card small { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .composer-bar > .send, .composer-bar > .stop { flex-shrink: 0; }
 
-.effort-select {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-
-.effort-label {
-  color: var(--muted);
-  font-size: 12px;
-  white-space: nowrap;
-}
-
-.effort-select select {
-  appearance: none;
-  padding: 7px 28px 7px 12px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--panel-2) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%239a94b0' d='M1.2 1.6 6 6.4l4.8-4.8'/%3E%3C/svg%3E") no-repeat right 10px center;
-  color: var(--text);
-  font: inherit;
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.effort-select select:focus {
-  outline: none;
-  border-color: var(--accent);
-}
-
 .composer .send,
 .composer .stop {
   display: inline-flex;
@@ -913,10 +883,6 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   /* Ô nhắn ở đáy nên gợi ý đứng ngay trên nó, trong tầm ngón cái. */
   .composer-wrap { display: flex; flex-direction: column; padding: 10px 12px 16px; }
   .composer-wrap .welcome-hints { order: -1; margin: 0 0 10px; }
-}
-
-@media (max-width: 420px) {
-  .effort-label { display: none; }
 }
 
 /* ---------- Dang nhap ---------- */
@@ -1307,11 +1273,6 @@ button:focus-visible, a:focus-visible, .table-scroll:focus-visible {
   .theme-preview { height: 40px; }
 }
 
-/* Mui ten cua o "Suy nghi" phai doi mau theo nen sang. */
-:root[data-theme="light"] .effort-select select {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%2367617d' d='M1.2 1.6 6 6.4l4.8-4.8'/%3E%3C/svg%3E");
-}
-
 @media (prefers-reduced-motion: reduce) {
   .account-gear { transition: none; }
   .account:hover .account-gear { transform: none; }
@@ -1456,13 +1417,19 @@ button:focus-visible, a:focus-visible, .table-scroll:focus-visible {
 .image-placeholder { display: grid; place-items: center; aspect-ratio: 1; max-width: 300px; border: 1px solid var(--line); border-radius: 12px; color: var(--accent); background: linear-gradient(110deg, var(--panel-2) 20%, var(--drop-active) 45%, var(--panel-2) 70%); background-size: 250% 100%; animation: image-shimmer 2.5s ease-in-out infinite; }
 .image-placeholder svg { width: 32px; height: 32px; }
 @keyframes image-shimmer { to { background-position: -200% 0; } }
-.studio-composer-wrap { width: 100%; padding: 12px max(24px, calc((100% - 980px) / 2)) 20px; }
-.imagine-composer { box-shadow: var(--shadow); }
-.studio-prompt-label { color: var(--text); font-size: 12px; font-weight: 600; padding: 6px 6px 0; }
+/* Ô nhập kiểu Grok: hàng chip tùy chọn ở trên, khung bo tròn ở dưới. Máy tính luôn thấy đủ;
+   điện thoại thu thành một thanh nổi trên bộ ảnh (khối @media ngay sau phần này). */
+.studio-dock { width: 100%; padding: 8px max(24px, calc((100% - 980px) / 2)) 20px; }
+.studio-dock .error { margin: 0 0 10px; }
+.studio-composer-wrap { width: 100%; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.studio-options { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.studio-library, .studio-options-toggle { display: none; }
+.studio-library img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.imagine-composer { gap: 6px; padding: 12px 12px 10px; border-radius: 24px; }
 .source-file-input { display: none; }
-/* Nút thêm ảnh gốc, đứng ngay trước cặp nút Nhanh/Chi tiết. */
-.add-source { display: grid; place-items: center; flex-shrink: 0; width: 34px; height: 34px; border: 1px solid var(--line); border-radius: 999px; background: var(--panel-2); color: var(--accent); cursor: pointer; }
-.add-source:hover:not(:disabled) { border-color: var(--accent); background: var(--drop-active); }
+.add-source { position: relative; display: grid; place-items: center; flex-shrink: 0; width: 40px; height: 40px; padding: 0; border: 0; border-radius: 50%; background: var(--panel-2); color: var(--text); cursor: pointer; }
+.add-source:hover:not(:disabled) { background: color-mix(in srgb, var(--text) 10%, var(--panel-2)); }
+.add-source-thumb { display: none; }
 .source-preview { display: flex; align-items: center; gap: 12px; padding: 8px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-2); }
 .source-preview > img { width: 60px; height: 60px; object-fit: contain; border-radius: 7px; background: var(--code-bg); }
 .source-preview > div { flex: 1; min-width: 0; display: grid; gap: 3px; }
@@ -1470,7 +1437,7 @@ button:focus-visible, a:focus-visible, .table-scroll:focus-visible {
 .source-preview span { color: var(--muted); font-size: 11px; }
 .source-preview > button { border: 0; border-radius: 8px; background: none; color: var(--muted); font-size: 22px; min-width: 36px; min-height: 36px; cursor: pointer; }
 .source-preview > button:hover:not(:disabled) { color: var(--danger); background: var(--panel); }
-.studio-composer-wrap .drop-hint { pointer-events: none; }
+.studio-composer-wrap .drop-hint { inset: 0; border-radius: 24px; pointer-events: none; }
 .edit-suggestions { display: flex; gap: 8px; flex-wrap: wrap; }
 .edit-suggestions button { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: var(--panel); color: var(--muted); font: inherit; font-size: 12px; text-align: left; cursor: pointer; }
 .edit-suggestions button:hover { border-color: var(--accent); color: var(--text); }
@@ -1479,50 +1446,31 @@ button:focus-visible, a:focus-visible, .table-scroll:focus-visible {
 .job-source:hover { border-color: var(--accent); color: var(--text); }
 .imagine-composer textarea { font-size: 14px; max-height: 150px; }
 
-/* Một hàng điều khiển duy nhất: bên trái là cách tạo, bên phải là tùy chọn
-   đầu ra và nút gửi — bỏ hàng chú thích cũ dưới cùng cho ô gọn lại. */
-.imagine-controls {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 4px 2px;
-  margin-top: 4px;
-  border-top: 1px solid var(--line);
-}
+/* Hàng dưới trong khung: thêm ảnh, 1K/2K, còn nút gửi tròn đứng ở mép phải. */
+.imagine-controls { display: flex; align-items: center; gap: 8px; }
 
-.imagine-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-left: auto;
-  min-width: 0;
-}
+/* Cặp nút chọn một (Nhanh/Chi tiết, 1K/2K): nút đang chọn sáng hẳn lên như Grok. */
+.seg { display: inline-flex; flex-shrink: 0; padding: 3px; border-radius: 999px; background: var(--panel-2); }
+.seg button { height: 34px; padding: 0 14px; border: 0; border-radius: 999px; background: transparent; color: var(--muted); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
+.seg button:hover:not(:disabled, .on) { color: var(--text); }
+.seg button.on { background: var(--accent); color: var(--on-accent); }
 
-.seg {
-  display: flex;
-  padding: 3px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--panel-2);
-}
+.studio-menu { position: relative; flex-shrink: 0; }
+.studio-chip { display: inline-flex; align-items: center; gap: 7px; height: 40px; padding: 0 14px 0 12px; border: 0; border-radius: 999px; background: var(--panel-2); color: var(--text); font: inherit; font-size: 14px; font-weight: 500; white-space: nowrap; cursor: pointer; }
+.studio-chip:hover:not(:disabled), .studio-chip[aria-expanded="true"] { background: color-mix(in srgb, var(--text) 10%, var(--panel-2)); }
+.studio-chip svg { flex-shrink: 0; color: var(--muted); }
+/* Menu mượn kiểu của Mức suy nghĩ (.effort-options nằm sau trong file, nên cần hai lớp để thắng). */
+.effort-options.studio-menu-list { width: 168px; max-height: min(420px, calc(100dvh - 180px)); overflow-y: auto; }
+.effort-options.studio-menu-list.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; width: 256px; }
+.studio-menu-list.end { left: auto; right: 0; transform-origin: bottom right; }
+.studio-menu-list .effort-option { height: 38px; gap: 8px; padding: 0 8px; }
+.studio-menu-list .effort-option-label { white-space: nowrap; }
+.studio-menu-list .effort-option > svg:first-child { color: var(--muted); }
 
-.seg button {
-  border: 0;
-  background: transparent;
-  color: var(--muted);
-  padding: 6px 12px;
-  border-radius: 999px;
-  font: inherit;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.seg button.on {
-  background: var(--panel);
-  color: var(--text);
-}
+.studio-send { display: grid; place-items: center; flex-shrink: 0; width: 40px; height: 40px; margin-left: auto; padding: 0; border: 0; border-radius: 50%; background: var(--accent); color: var(--on-accent); cursor: pointer; }
+.imagine .studio-send:disabled { opacity: 1; background: var(--panel-2); color: var(--muted); }
+.studio-spinner { width: 18px; height: 18px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: studio-spin 0.8s linear infinite; }
+@keyframes studio-spin { to { transform: rotate(360deg); } }
 
 .imagine-lightbox {
   width: min(880px, 100%);
@@ -1565,6 +1513,64 @@ button:focus-visible, a:focus-visible, .table-scroll:focus-visible {
   flex-wrap: wrap;
 }
 .lightbox-navigation { display: flex; gap: 6px; margin-right: auto; }
+.imagine-lightbox-actions .lightbox-like { display: inline-flex; align-items: center; gap: 6px; }
+.imagine-lightbox-actions .lightbox-like.on { color: var(--danger); border-color: var(--danger); }
+.imagine-lightbox-card .lightbox-error { margin: 0 0 8px; color: var(--danger); font-size: 13px; }
+
+/* Chỉ trình đọc màn hình nghe thấy. */
+.sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+/* ---------- Thư viện ảnh kiểu Grok (mở từ thanh nhập trên điện thoại) ---------- */
+/* Hàng nút trên và thanh dưới nổi trên lưới ảnh, cùng kiểu kính mờ với thanh nhập. */
+.imagine-library-view {
+  --glass: color-mix(in srgb, var(--panel-2) 78%, transparent);
+  --glass-line: color-mix(in srgb, var(--text) 10%, transparent);
+  width: 100%; max-width: none; height: 100%; max-height: none; margin: 0; padding: 0;
+  border: 0; background: var(--bg); color: var(--text); overflow: hidden;
+}
+.imagine-library-view[open] { display: flex; flex-direction: column; }
+.imagine-library-view::backdrop { background: var(--bg); }
+.library-top {
+  position: absolute; top: 0; left: 0; right: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between;
+  padding: calc(12px + env(safe-area-inset-top)) 14px 12px; pointer-events: none;
+}
+.library-top > * { pointer-events: auto; }
+.library-round, .library-pill, .library-search, .library-actions {
+  border: 1px solid var(--glass-line); background: var(--glass); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
+}
+.library-round { display: grid; place-items: center; flex-shrink: 0; width: 48px; height: 48px; padding: 0; border-radius: 50%; color: var(--text); cursor: pointer; }
+.library-pill { height: 48px; padding: 0 20px; border-radius: 999px; color: var(--text); font: inherit; font-size: 16px; font-weight: 600; cursor: pointer; }
+.library-grid {
+  flex: 1; display: grid; grid-template-columns: repeat(var(--library-columns, 2), minmax(0, 1fr)); align-content: start; gap: 4px;
+  overflow-y: auto; padding: calc(72px + env(safe-area-inset-top)) 4px calc(96px + env(safe-area-inset-bottom));
+}
+.library-empty { grid-column: 1 / -1; margin: 40px 16px; color: var(--muted); font-size: 14px; text-align: center; }
+/* Giữ lâu để mở menu: tắt menu hình ảnh và kéo ảnh của trình duyệt trên ô. */
+.library-tile { position: relative; aspect-ratio: 2 / 3; padding: 0; border: 0; border-radius: 10px; overflow: hidden; background: var(--panel-2); cursor: pointer; -webkit-touch-callout: none; }
+.library-tile img { display: block; width: 100%; height: 100%; object-fit: cover; transition: opacity 160ms var(--ease-out); }
+.library-tile.selected img { opacity: 0.5; }
+/* Dấu chọn nằm trên ảnh nên luôn trắng, không theo nền sáng/tối. */
+.library-check { position: absolute; top: 10px; right: 10px; display: grid; place-items: center; width: 26px; height: 26px; border: 2px solid #fff; border-radius: 50%; background: rgba(0, 0, 0, 0.2); color: #141414; }
+.library-tile.selected .library-check { background: #fff; }
+.library-bottom { position: absolute; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); z-index: 2; display: flex; align-items: center; gap: 8px; }
+.library-search { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; height: 52px; padding: 0 18px; border-radius: 999px; color: var(--muted); }
+.library-search:focus-within { border-color: color-mix(in srgb, var(--text) 30%, transparent); }
+.library-search input { flex: 1; min-width: 0; padding: 0; border: 0; background: transparent; color: var(--text); font: inherit; font-size: 16px; outline: none; }
+.library-filter { position: relative; flex-shrink: 0; }
+.library-filter .library-round { width: 52px; height: 52px; }
+.effort-options.library-filter-panel { left: auto; right: 0; bottom: calc(100% + 10px); width: 220px; transform-origin: bottom right; }
+.library-filter-panel .seg { display: flex; margin: 0 6px 6px; }
+.library-filter-panel .seg button { flex: 1; }
+.library-actions { position: absolute; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); z-index: 2; display: flex; justify-content: space-around; padding: 8px; border-radius: 24px; }
+.library-actions button { display: grid; justify-items: center; gap: 4px; min-width: 76px; padding: 6px 8px; border: 0; border-radius: 14px; background: transparent; color: var(--text); font: inherit; font-size: 13px; cursor: pointer; }
+.library-actions button:hover:not(:disabled) { background: color-mix(in srgb, var(--text) 8%, transparent); }
+.library-actions button:disabled { opacity: 0.4; cursor: not-allowed; }
+.library-actions .danger, .effort-option.danger { color: var(--danger); }
+.effort-options.library-menu { position: fixed; bottom: auto; z-index: 3; width: 200px; transform-origin: top left; }
+.library-notice { position: absolute; left: 12px; right: 12px; bottom: calc(84px + env(safe-area-inset-bottom)); z-index: 2; margin: 0; background: var(--panel); }
+@media (prefers-reduced-motion: reduce) {
+  .library-tile img { transition: none; }
+}
 .delete-prompt-preview { max-height: 8em; overflow: auto; overflow-wrap: anywhere; color: var(--muted); font-size: 13px; }
 .imagine button:focus-visible, .imagine a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .imagine button:disabled { opacity: .5; cursor: not-allowed; }
@@ -1585,19 +1591,14 @@ button:focus-visible, a:focus-visible, .table-scroll:focus-visible {
 @media (max-width: 720px) {
   .imagine-job-head { flex-direction: column; }
   .imagine-thumbs { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
-  .imagine-gallery { padding: 22px 16px; }
-  .studio-composer-wrap { padding: 10px 12px 16px; }
+  /* Chừa đáy cho thanh nhập nổi, để lượt ảnh cuối không nằm khuất sau nó. */
+  .imagine-gallery { padding: 22px 16px calc(96px + env(safe-area-inset-bottom)); }
   .studio-welcome { padding: 0; }
   .studio-welcome h1 { font-size: 34px; }
   .studio-ideas { gap: 8px; }
   .studio-idea > span:last-child { padding: 10px; }
   .studio-idea > span:last-child > span { display: none; }
   .idea-art { height: 76px; }
-  .imagine-controls { gap: 8px; }
-  .imagine-controls .effort-label { display: inline; }
-  /* Hẹp thì cụm bên phải xuống hàng riêng và nút gửi ăn hết phần còn lại. */
-  .imagine-actions { width: 100%; margin-left: 0; }
-  .imagine-actions .send { margin-left: auto; }
   .imagine-lightbox { max-width: calc(100% - 20px); }
   .imagine-lightbox-card { padding: 12px; }
   .imagine-job-actions { width: 100%; justify-content: flex-end; }
@@ -1605,10 +1606,51 @@ button:focus-visible, a:focus-visible, .table-scroll:focus-visible {
 }
 @media (max-width: 380px) {
   .studio-idea strong { font-size: 11px; }
-  .imagine-controls .effort-label { display: none; }
+}
+/* Điện thoại: ô nhập nổi trên bộ ảnh như Grok. Chưa bấm thì chỉ là một thanh gồm ảnh đại diện, ô nhập
+   một dòng và nút tùy chọn; bấm vào ô nhập hoặc nút tùy chọn thì .expanded mở đủ khung. */
+@media (max-width: 720px) {
+  .studio-dock { position: absolute; left: 0; right: 0; bottom: 0; z-index: 5; padding: 0 10px calc(10px + env(safe-area-inset-bottom)); }
+  .studio-dock .error { margin: 0 2px 8px; background: var(--panel); }
+  .studio-options { gap: 6px; }
+  .studio-options .seg button { padding: 0 11px; }
+  .studio-chip { gap: 6px; padding: 0 11px 0 10px; }
+  /* Kính mờ lấy màu từ token nên nền sáng và tối đều đúng; ảnh phía sau vẫn thấy lờ mờ. */
+  .studio-dock .imagine-composer,
+  .studio-options .seg,
+  .studio-chip,
+  .studio-library,
+  .studio-options-toggle {
+    border: 1px solid color-mix(in srgb, var(--text) 10%, transparent);
+    background: color-mix(in srgb, var(--panel-2) 78%, transparent);
+    -webkit-backdrop-filter: blur(16px);
+    backdrop-filter: blur(16px);
+  }
+  .studio-dock .imagine-composer { box-shadow: none; }
+  .studio-dock .imagine-controls .seg,
+  .studio-dock .add-source { background: color-mix(in srgb, var(--text) 9%, transparent); }
+
+  .studio-dock:not(.expanded) .studio-composer-wrap { flex-direction: row; align-items: center; gap: 8px; }
+  .studio-dock:not(.expanded) :is(.studio-options, .source-preview, .imagine-controls .seg, .studio-send) { display: none; }
+  .studio-dock:not(.expanded) :is(.studio-library, .studio-options-toggle) {
+    display: grid; place-items: center; flex-shrink: 0; width: 48px; height: 48px; padding: 0;
+    border-radius: 50%; color: var(--text); overflow: hidden; cursor: pointer;
+  }
+  .studio-dock:not(.expanded) .imagine-composer {
+    flex: 1; min-width: 0; flex-direction: row; align-items: center; gap: 2px;
+    height: 48px; padding: 0 16px 0 3px; border-radius: 999px;
+  }
+  /* Nút thêm ảnh chui vào trong thanh, đứng trước chữ như Grok. */
+  .studio-dock:not(.expanded) .imagine-controls { display: contents; }
+  .studio-dock:not(.expanded) .add-source { order: -1; background: transparent; }
+  .studio-dock:not(.expanded) .imagine-composer textarea {
+    min-height: 0; height: 24px; padding: 0; overflow: hidden;
+    line-height: 24px; white-space: nowrap; field-sizing: fixed;
+  }
+  .studio-dock:not(.expanded) .add-source-thumb { display: block; position: absolute; inset: 6px; width: 28px; height: 28px; border-radius: 8px; object-fit: cover; background: var(--panel-2); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .image-placeholder { animation: none; }
+  .image-placeholder, .studio-spinner { animation: none; }
   .studio-idea, .image-open-hint { transition: none; }
   .studio-idea:hover { transform: none; }
 }
@@ -1625,8 +1667,7 @@ button:focus-visible, a:focus-visible, .table-scroll:focus-visible {
    đó chặn luôn thao tác phóng to của người cần đọc chữ lớn.
    Phải nằm cuối file: .imagine-composer textarea (14px) có cùng độ ưu tiên. */
 @media (pointer: coarse) {
-  .composer textarea,
-  .effort-select select { font-size: 16px; }
+  .composer textarea { font-size: 16px; }
 }
 
 /* ---------- Chạm trên điện thoại ---------- */

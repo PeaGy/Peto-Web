@@ -1,11 +1,12 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import Imagine from '../src/Imagine';
 import * as api from '../src/api';
 
 vi.mock('../src/api', async (original) => ({
   ...await original<typeof import('../src/api')>(),
   listImagineJobs: vi.fn(), createImagineJob: vi.fn(), deleteImagineJob: vi.fn(),
+  deleteImagineImage: vi.fn(), setImagineImageLiked: vi.fn(),
 }));
 const job: api.ImagineJob = {
   id: 'job-1', prompt: 'Mèo trên mặt trăng', quality: 'medium', resolution: '2k',
@@ -29,7 +30,15 @@ beforeEach(() => {
   vi.mocked(api.listImagineJobs).mockResolvedValue([]);
   vi.mocked(api.createImagineJob).mockResolvedValue(job);
   vi.mocked(api.deleteImagineJob).mockResolvedValue();
+  vi.mocked(api.deleteImagineImage).mockResolvedValue({ job_deleted: false });
+  vi.mocked(api.setImagineImageLiked).mockImplementation(async (_id, liked) => liked);
 });
+afterEach(() => vi.unstubAllGlobals());
+/** Giả lập điện thoại: CSS đổi bố cục ở mốc 720px, còn JS đọc cùng mốc qua matchMedia. */
+function stubPhone() {
+  vi.stubGlobal('matchMedia', (query: string) => ({ matches: query.includes('max-width'), media: query,
+    addEventListener: vi.fn(), removeEventListener: vi.fn() }));
+}
 async function open() {
   const view = render(<Imagine {...props} />);
   await waitFor(() => expect(screen.queryByText('Đang mở bộ ảnh của bạn…')).toBeNull());
@@ -42,8 +51,11 @@ it('fills an idea without generating, then sends the chosen options', async () =
   expect(api.createImagineJob).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: 'Chi tiết', exact: true }));
   fireEvent.click(screen.getByRole('button', { name: '2K', exact: true }));
-  fireEvent.change(screen.getByLabelText('Tỉ lệ'), { target: { value: '16:9' } });
-  fireEvent.change(screen.getByLabelText('Số ảnh'), { target: { value: '2' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Tỉ lệ: Tự động' }));
+  fireEvent.click(screen.getByRole('menuitemradio', { name: '16:9' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Số ảnh: 1 ảnh' }));
+  fireEvent.click(screen.getByRole('menuitemradio', { name: '2 ảnh' }));
+  expect(screen.getByRole('button', { name: 'Tỉ lệ: 16:9' })).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: 'Tạo ảnh', exact: true }));
   await screen.findByRole('button', { name: /Xem ảnh 1:/ });
   expect(api.createImagineJob).toHaveBeenCalledWith({
@@ -221,4 +233,110 @@ it('nhận ảnh kéo thả và ảnh dán vào ô nhập', async () => {
   fireEvent.paste(screen.getByLabelText('Bức ảnh bạn muốn tạo'), { clipboardData: { files: [sourceFile()] } });
   await screen.findByRole('button', { name: 'Gỡ ảnh gốc' });
   expect(api.createImagineJob).not.toHaveBeenCalled();
+});
+
+it('menu tỉ lệ mở ở mục đang chọn, đi bằng phím, Escape trả về nút, chạm ngoài thì đóng', async () => {
+  const request = deferred<api.ImagineJob>();
+  vi.mocked(api.createImagineJob).mockReturnValue(request.promise);
+  await open();
+  const ratio = screen.getByRole('button', { name: 'Tỉ lệ: Tự động' });
+  fireEvent.click(ratio);
+  expect(document.activeElement).toBe(screen.getByRole('menuitemradio', { name: 'Tự động' }));
+  // Hai cột: mũi tên xuống nhảy cả hàng.
+  fireEvent.keyDown(document.activeElement!, { key: 'ArrowDown' });
+  expect(document.activeElement).toBe(screen.getByRole('menuitemradio', { name: '16:9' }));
+  fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
+  expect(screen.queryByRole('menu')).toBeNull();
+  expect(document.activeElement).toBe(ratio);
+  fireEvent.click(ratio);
+  fireEvent.pointerDown(document.body);
+  expect(screen.queryByRole('menu')).toBeNull();
+  fireEvent.change(screen.getByLabelText('Bức ảnh bạn muốn tạo'), { target: { value: job.prompt } });
+  fireEvent.click(screen.getByRole('button', { name: 'Tạo ảnh', exact: true }));
+  expect((screen.getByRole('button', { name: 'Tỉ lệ: Tự động' }) as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByRole('button', { name: 'Số ảnh: 1 ảnh' }) as HTMLButtonElement).disabled).toBe(true);
+  await act(async () => request.resolve(job));
+});
+
+it('điện thoại: thanh thu gọn mở khi bấm vào ô nhập hoặc nút tùy chọn, chạm ra ngoài thì thu lại', async () => {
+  stubPhone();
+  render(<Imagine {...props} />);
+  await waitFor(() => expect(screen.queryByText('Đang mở bộ ảnh của bạn…')).toBeNull());
+  const dock = document.querySelector('.studio-dock')!;
+  const input = screen.getByLabelText('Bức ảnh bạn muốn tạo') as HTMLTextAreaElement;
+  expect(dock.classList.contains('expanded')).toBe(false);
+  expect(input.placeholder).toBe('Gõ để tưởng tượng');
+  act(() => { input.focus(); });
+  expect(dock.classList.contains('expanded')).toBe(true);
+  expect(input.placeholder).toBe('Nhập để tạo hình ảnh');
+  // Chạm vào bộ ảnh: thanh thu lại và bàn phím ẩn theo.
+  fireEvent.pointerDown(document.body);
+  expect(dock.classList.contains('expanded')).toBe(false);
+  expect(document.activeElement).not.toBe(input);
+  fireEvent.click(screen.getByRole('button', { name: 'Mở tùy chọn tạo ảnh' }));
+  expect(dock.classList.contains('expanded')).toBe(true);
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Nhanh', exact: true }));
+  fireEvent.click(screen.getByRole('button', { name: 'Mở thư viện ảnh' }));
+  expect(screen.getByRole('dialog', { name: 'Thư viện ảnh' })).toBeTruthy();
+});
+
+it('xóa từng ảnh trong thư viện: lượt còn ảnh thì ở lại, xóa ảnh cuối thì lượt biến mất', async () => {
+  vi.mocked(api.listImagineJobs).mockResolvedValue([job]);
+  vi.mocked(api.deleteImagineImage).mockResolvedValueOnce({ job_deleted: false }).mockResolvedValueOnce({ job_deleted: true });
+  await open();
+  fireEvent.click(screen.getByRole('button', { name: 'Mở thư viện ảnh' }));
+  const library = screen.getByRole('dialog', { name: 'Thư viện ảnh' });
+  const removeFirstTile = async () => {
+    fireEvent.click(within(library).getByRole('button', { name: 'Chọn' }));
+    fireEvent.click(within(library).getAllByRole('button', { name: /^Chọn ảnh: / })[0]);
+    fireEvent.click(within(library).getByRole('button', { name: 'Xóa' }));
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'Xóa ảnh này?' })).getByRole('button', { name: 'Xóa ảnh' }));
+    await within(library).findByRole('button', { name: 'Chọn' });
+  };
+
+  await removeFirstTile();
+  expect(api.deleteImagineImage).toHaveBeenLastCalledWith('img-1');
+  expect(document.querySelectorAll('.imagine-job')).toHaveLength(1);
+  expect(screen.getAllByRole('button', { name: /^Xem ảnh \d: / })).toHaveLength(1);
+  expect(within(library).getAllByRole('button', { name: /^Xem ảnh: / })).toHaveLength(1);
+
+  await removeFirstTile();
+  expect(api.deleteImagineImage).toHaveBeenLastCalledWith('img-2');
+  expect(document.querySelectorAll('.imagine-job')).toHaveLength(0);
+  expect(within(library).getByText('Chưa có ảnh nào. Ảnh bạn tạo sẽ hiện ở đây.')).toBeTruthy();
+});
+
+it('nút thư viện hiện ảnh mới nhất; nút thích trong khung xem ảnh lưu lên máy chủ, lỗi thì trả lại', async () => {
+  vi.mocked(api.listImagineJobs).mockResolvedValue([job]);
+  vi.mocked(api.setImagineImageLiked).mockRejectedValueOnce(new Error('Chưa lưu được, thử lại nhé.'));
+  await open();
+  expect(screen.getByRole('button', { name: 'Mở thư viện ảnh' }).querySelector('img')!.getAttribute('src')).toBe(job.images[0].url);
+  fireEvent.click(screen.getByRole('button', { name: /Xem ảnh 2:/ }));
+  const dialog = screen.getByRole('dialog', { name: 'Xem ảnh đã tạo' });
+  const like = () => within(dialog).getByRole('button', { name: 'Thích' });
+  expect(like().getAttribute('aria-pressed')).toBe('false');
+  fireEvent.click(like());
+  expect(like().getAttribute('aria-pressed')).toBe('true');
+  expect((await within(dialog).findByRole('alert')).textContent).toContain('Chưa lưu được');
+  expect(like().getAttribute('aria-pressed')).toBe('false');
+  fireEvent.click(like());
+  await waitFor(() => expect(api.setImagineImageLiked).toHaveBeenLastCalledWith('img-2', true));
+  expect(like().getAttribute('aria-pressed')).toBe('true');
+  expect(within(dialog).queryByRole('alert')).toBeNull();
+});
+
+it('điện thoại: bấm tạo ảnh thì thanh thu lại, ô nhập bỏ focus và vẫn giữ mô tả', async () => {
+  stubPhone();
+  const request = deferred<api.ImagineJob>();
+  vi.mocked(api.createImagineJob).mockReturnValue(request.promise);
+  await open();
+  const input = screen.getByLabelText('Bức ảnh bạn muốn tạo') as HTMLTextAreaElement;
+  act(() => { input.focus(); });
+  fireEvent.change(input, { target: { value: job.prompt } });
+  fireEvent.click(screen.getByRole('button', { name: 'Tạo ảnh', exact: true }));
+  expect(document.querySelector('.studio-dock')!.classList.contains('expanded')).toBe(false);
+  expect(document.activeElement).not.toBe(input);
+  await act(async () => request.resolve(job));
+  expect(document.activeElement).not.toBe(input);
+  expect(input.value).toBe(job.prompt);
 });

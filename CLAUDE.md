@@ -252,6 +252,23 @@ persistence fails partway, files and the job row are rolled back. Returned image
 format-sniffed before being written. It uses the same `admission` limiter under a separate
 key (`imagine:<owner>`) so image jobs and chat do not consume each other's cooldown.
 
+The composer copies Grok's Imagine at the owner's request. Chips above the box pick Nhanh/Chi tiết, the
+count and the ratio (`StudioMenu.tsx`, a popover reusing the `.effort-options` classes). The box holds the
+source-image button, 1K/2K where Grok has Image/Video, and a round send button whose accessible name stays
+"Tạo ảnh"/"Sửa ảnh". Desktop always shows all of it. Below the 720px breakpoint `.studio-dock` floats over
+the gallery and collapses to a bar (a library button showing the newest image, a one-line prompt, an options
+button) until the prompt is focused or the options button is pressed. A tap outside or a submit collapses it
+and blurs the prompt so the phone keyboard hides.
+
+The library button opens `ImagineLibrary.tsx`, a full-screen `<dialog>` that only phones can reach (desktop keeps
+the sidebar list). It shows one tile per output image of the loaded jobs (the API returns the latest 40), searches
+prompts ignoring Vietnamese diacritics, and offers 2 or 3 columns (kept in `localStorage`) plus a liked-only
+filter. "Chọn", or a 500 ms long press or right click, selects tiles to share (Web Share with files, hidden when
+unsupported), download or delete. Deletion is per image: `DELETE /api/imagine/images/{id}` removes one output
+and deletes the job, source image included, once no output is left. `PUT /api/imagine/images/{id}/like` stores
+`imagine_images.liked`. Source images of edits cannot be deleted or liked on their own. The heart button lives
+in the lightbox, which opens on top of the library.
+
 ### Configuration
 
 `config.py` is where environment variables are read. Every numeric knob goes through

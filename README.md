@@ -128,10 +128,18 @@ tốn hạn mức xAI.
 
 ## Peto tạo ảnh
 
-Mở tab **Tạo ảnh**, nhập mô tả hoặc chọn một gợi ý rồi bấm **Tạo ảnh**.
-Giao diện có hai chế độ **Nhanh / Chi tiết**, độ phân giải **1K / 2K**, tỉ lệ
-khung hình và số ảnh. Chọn gợi ý hoặc **Dùng lại mô tả** chỉ điền nội dung;
-yêu cầu tạo ảnh chỉ gửi khi người dùng bấm tạo hoặc nhấn Enter.
+Mở tab **Tạo ảnh**, nhập mô tả hoặc chọn một gợi ý rồi bấm nút mũi tên để tạo.
+Ô nhập theo kiểu Grok: hàng nút phía trên chọn **Nhanh / Chi tiết**, số ảnh và
+tỉ lệ khung hình; trong khung có nút thêm ảnh để sửa và **1K / 2K**. Trên điện
+thoại, ô nhập thu thành một thanh nổi ở đáy (nút trái mở thư viện ảnh, nút phải
+mở tùy chọn) và chỉ mở đủ khi bấm vào; máy tính luôn hiện đủ. Chọn gợi ý
+hoặc **Dùng lại mô tả** chỉ điền nội dung; yêu cầu tạo ảnh chỉ gửi khi người
+dùng bấm tạo hoặc nhấn Enter.
+
+- Trên điện thoại, nút Thư viện (hiện ảnh mới nhất) mở lưới mọi ảnh của 40 lượt
+  gần nhất: tìm theo mô tả, chọn bố cục 2 hoặc 3 cột, lọc ảnh đã thích. Bấm
+  **Chọn** hoặc giữ lâu một ảnh để chia sẻ, tải xuống hay xóa từng ảnh; lượt nào
+  hết ảnh thì bị xóa theo. Nút **Thích** trong khung xem ảnh lưu trên máy chủ.
 
 - Có thể chuyển sang Trò chuyện trong lúc chờ rồi quay lại: mô tả, yêu cầu
   đang chạy và kết quả được giữ trong phiên trang hiện tại. Tải lại cả trang

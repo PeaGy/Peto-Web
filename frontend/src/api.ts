@@ -204,6 +204,8 @@ export type ImagineResolution = "1k" | "2k";
 export interface ImagineImage {
   id: string;
   mime: string;
+  /** Chỉ ảnh kết quả mới có; ảnh gốc của lượt sửa không thích được. */
+  liked?: boolean;
   url: string;
 }
 
@@ -245,6 +247,22 @@ export async function createImagineJob(payload: {
 export async function deleteImagineJob(jobId: string): Promise<void> {
   const response = await fetch(`/api/imagine/${jobId}`, { method: "DELETE" });
   await json<{ deleted: boolean }>(response);
+}
+
+/** Xóa một ảnh trong thư viện. `job_deleted` báo đó là ảnh cuối nên cả lượt bị xóa theo. */
+export async function deleteImagineImage(imageId: string): Promise<{ job_deleted: boolean }> {
+  const response = await fetch(`/api/imagine/images/${imageId}`, { method: "DELETE" });
+  return json<{ deleted: boolean; job_deleted: boolean }>(response);
+}
+
+export async function setImagineImageLiked(imageId: string, liked: boolean): Promise<boolean> {
+  const response = await fetch(`/api/imagine/images/${imageId}/like`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ liked }),
+  });
+  const data = await json<{ liked: boolean }>(response);
+  return data.liked;
 }
 
 /**

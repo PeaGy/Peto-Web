@@ -186,8 +186,12 @@ async def init_db() -> None:
         )
         # Ảnh cũ luôn là kết quả; ảnh gốc của lượt sửa được lưu riêng trong cùng bảng.
         image_columns = await (await db.execute("PRAGMA table_info(imagine_images)")).fetchall()
-        if "kind" not in {column[1] for column in image_columns}:
+        image_column_names = {column[1] for column in image_columns}
+        if "kind" not in image_column_names:
             await db.execute("ALTER TABLE imagine_images ADD COLUMN kind TEXT NOT NULL DEFAULT 'output'")
+        # Ảnh đã thích trong thư viện. Lưu ở máy chủ để mọi thiết bị của tài khoản đều thấy.
+        if "liked" not in image_column_names:
+            await db.execute("ALTER TABLE imagine_images ADD COLUMN liked INTEGER NOT NULL DEFAULT 0")
         # Hồ sơ người dùng tự điền trong Cài đặt. Tách khỏi `users` vì bảng đó bị
         # ghi đè bằng dữ liệu Discord/Google mỗi lần đăng nhập, còn hồ sơ là của họ.
         await db.execute(
@@ -619,7 +623,7 @@ async def list_imagine_jobs(owner: str, limit: int = 40) -> list[dict]:
         placeholders = ",".join("?" * len(ids))
         cursor = await db.execute(
             f"""
-            SELECT id, job_id, mime, created_at, kind
+            SELECT id, job_id, mime, created_at, kind, liked
               FROM imagine_images
              WHERE owner = ? AND job_id IN ({placeholders})
              ORDER BY created_at, id
@@ -671,3 +675,57 @@ async def delete_imagine_job(owner: str, job_id: str) -> bool:
 
         delete_files(paths)
     return deleted
+
+
+async def delete_imagine_image(owner: str, image_id: str) -> str | None:
+    """Xóa một ảnh kết quả trong thư viện.
+
+    Trả "image" khi lượt còn ảnh khác, "job" khi đó là ảnh cuối nên cả lượt (kèm ảnh gốc) bị xóa theo,
+    và None khi không thấy ảnh kết quả nào của owner này. Ảnh gốc của lượt sửa không xóa riêng được.
+    """
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            "SELECT job_id, path FROM imagine_images WHERE id = ? AND owner = ? AND kind = 'output'",
+            (image_id, owner),
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        job_id = row["job_id"]
+        paths = [str(row["path"])]
+        # DELETE mở giao dịch ghi trước, nên lần đếm ngay sau đó không bị một lượt xóa song song làm lệch.
+        cursor = await db.execute(
+            "DELETE FROM imagine_images WHERE id = ? AND owner = ? AND kind = 'output'",
+            (image_id, owner),
+        )
+        if cursor.rowcount == 0:
+            await db.commit()
+            return None
+        cursor = await db.execute(
+            "SELECT COUNT(*) FROM imagine_images WHERE job_id = ? AND kind = 'output'",
+            (job_id,),
+        )
+        (remaining,) = await cursor.fetchone()
+        result = "image"
+        if remaining == 0:
+            cursor = await db.execute("SELECT path FROM imagine_images WHERE job_id = ?", (job_id,))
+            paths += [str(item["path"]) for item in await cursor.fetchall()]
+            await db.execute("DELETE FROM imagine_images WHERE job_id = ?", (job_id,))
+            await db.execute("DELETE FROM imagine_jobs WHERE id = ? AND owner = ?", (job_id, owner))
+            result = "job"
+        await db.commit()
+    from attachments import delete_files
+
+    delete_files(paths)
+    return result
+
+
+async def set_imagine_image_liked(owner: str, image_id: str, liked: bool) -> bool:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "UPDATE imagine_images SET liked = ? WHERE id = ? AND owner = ? AND kind = 'output'",
+            (1 if liked else 0, image_id, owner),
+        )
+        await db.commit()
+        return cursor.rowcount > 0

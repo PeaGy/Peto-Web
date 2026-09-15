@@ -98,6 +98,7 @@ def _public_job(row: dict) -> dict:
                 "id": image["id"],
                 "mime": image["mime"],
                 "url": f"/api/imagine/images/{image['id']}",
+                "liked": bool(image.get("liked")),
             }
             for image in all_images if image.get("kind", "output") == "output"
         ],
@@ -186,7 +187,7 @@ async def create_job(request: ImagineRequest, owner: str = Depends(current_owner
             if kind == "source":
                 public_source = public_image
             else:
-                public_images.append(public_image)
+                public_images.append({**public_image, "liked": False})
     except Exception:
         delete_files(saved)
         await db.delete_imagine_job(owner, job_id)
@@ -226,6 +227,26 @@ async def get_image(
         content_disposition_type="attachment" if download else "inline",
         headers={"Cache-Control": "private, max-age=3600"},
     )
+
+
+class LikeRequest(BaseModel):
+    liked: bool
+
+
+@router.delete("/api/imagine/images/{image_id}")
+async def delete_image(image_id: str, owner: str = Depends(current_owner)) -> dict:
+    """Xóa một ảnh trong thư viện; lượt không còn ảnh nào thì bị xóa theo."""
+    result = await db.delete_imagine_image(owner, image_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Không tìm thấy ảnh")
+    return {"deleted": True, "job_deleted": result == "job"}
+
+
+@router.put("/api/imagine/images/{image_id}/like")
+async def like_image(image_id: str, request: LikeRequest, owner: str = Depends(current_owner)) -> dict:
+    if not await db.set_imagine_image_liked(owner, image_id, request.liked):
+        raise HTTPException(status_code=404, detail="Không tìm thấy ảnh")
+    return {"liked": request.liked}
 
 
 @router.delete("/api/imagine/{job_id}")
