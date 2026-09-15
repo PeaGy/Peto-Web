@@ -342,8 +342,9 @@ The character is Live2D. `Live2DStage.tsx` is lazy-loaded and mounted only while
 and renders the Hiyori sample model from `public/characters` with PixiJS 6 and
 `pixi-live2d-display/cubism4`. The model path, mouth parameter and head height live in
 `characterConfig.ts`; licensing notes are in `frontend/CHARACTER.md`. Because the stage has no
-controls, the view changes by gesture: wheel or pinch zooms around the pointer, dragging pans,
-double-click resets, and the view is saved in `localStorage`. The pure math (zoom, pan limits, look
+controls, the view changes by gesture: wheel or pinch zooms around the pointer, dragging pans (with the
+middle mouse button at the owner's request, or one finger on a touchscreen), double-click resets, and the view is
+saved in `localStorage`. The pure math (zoom, pan limits, look
 direction, wheel steps) lives in `characterView.ts` with its own tests.
 
 When motion is allowed the model plays its `Idle` motions, breathes, blinks and turns toward the

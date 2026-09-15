@@ -405,7 +405,8 @@ lời đầy đủ bằng tiếng Việt.
   Inc.), bên phải là cột chat với trạng thái Peto đang nhắn hay đang nói, nút **Tắt tiếng** và nút
   **Bắt đầu lại**.
 - Trên máy tính, cuộn chuột hoặc chụm hai ngón trên sân khấu để phóng to/thu nhỏ quanh chỗ đang chỉ,
-  kéo để dời, bấm đúp để về cỡ vừa khung; trình duyệt nhớ góc nhìn đã chọn.
+  giữ chuột giữa (hoặc một ngón tay trên màn cảm ứng) kéo để dời, bấm đúp để về cỡ vừa khung; trình duyệt
+  nhớ góc nhìn đã chọn.
 - Trên điện thoại, giao diện theo kiểu AIRI: nhân vật phủ cả màn hình ở khung cố định; tiêu đề, tin
   nhắn và ô nhắn nổi trong suốt bên trên. Không phóng hay kéo được; giữ ngón tay trên màn hình thì
   nhân vật nhìn theo ngón tay, nhấc tay thì nhìn thẳng lại.

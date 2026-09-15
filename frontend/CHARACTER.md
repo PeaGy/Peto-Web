@@ -25,7 +25,8 @@ giả, không thay đường phát âm thanh. Tạm dừng, kết thúc, hủy v
 Đây là mở miệng theo cường độ, chưa phân loại nguyên âm như wLipSync của AIRI.
 WAV không hỗ trợ vẫn phát bình thường, chỉ không điều khiển miệng.
 
-Tương tác: cuộn chuột hoặc chụm hai ngón để phóng quanh chỗ đang chỉ, kéo để dời, bấm đúp để về cỡ
+Tương tác: cuộn chuột hoặc chụm hai ngón để phóng quanh chỗ đang chỉ, giữ chuột giữa (hoặc một ngón tay)
+kéo để dời, bấm đúp để về cỡ
 vừa khung; góc nhìn lưu ở `peto-character-view`. Khi được cử động, nhân vật chạy motion nhóm Idle,
 thở, chớp mắt và nhìn theo con trỏ trên cả trang. Trên máy tính, chạm màn hình dùng để kéo nên không
 tính. Trên điện thoại (dưới 720px) khung khóa cứng, không phóng hay kéo, và ngón tay đang giữ trên màn

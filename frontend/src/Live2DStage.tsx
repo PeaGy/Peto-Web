@@ -43,7 +43,7 @@ function loadCore() {
 /**
  * Sân khấu Live2D của Companion.
  *
- * Máy tính: cuộn chuột hoặc chụm hai ngón để phóng to/thu nhỏ quanh chỗ đang chỉ, kéo để dời, bấm đúp để về
+ * Máy tính: cuộn chuột hoặc chụm hai ngón để phóng to/thu nhỏ quanh chỗ đang chỉ, giữ chuột giữa kéo để dời, bấm đúp để về
  * cỡ vừa khung; góc nhìn được nhớ trong trình duyệt. Điện thoại (`COMPACT_QUERY`): khung khóa cứng như AIRI,
  * giữ ngón tay trên màn hình thì nhân vật nhìn theo ngón tay. Khi được cử động (`motionEnabled`), nhân vật
  * chạy motion Idle, thở, chớp mắt và nhìn theo con trỏ. Miệng luôn theo âm thanh đang phát.
@@ -153,8 +153,9 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system" }: {
         changeView(zoomAt(view, wheelZoomFactor(event.deltaY, event.deltaMode), point.x, point.y, box));
       };
       const pointers = new Map<number, { x: number; y: number }>();
+      // Chuột dời nhân vật bằng nút giữa theo lựa chọn của chủ web, để chuột trái rảnh; chạm vẫn kéo bằng một ngón.
       const onPointerDown = (event: PointerEvent) => {
-        if (compact.matches || (event.pointerType === "mouse" && event.button !== 0)) return;
+        if (compact.matches || (event.pointerType === "mouse" && event.button !== 1)) return;
         pointers.set(event.pointerId, local(event));
         container.setPointerCapture?.(event.pointerId);
         container.classList.add("dragging");
@@ -162,6 +163,8 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system" }: {
       const onPointerMove = (event: PointerEvent) => {
         const previous = pointers.get(event.pointerId);
         if (!previous) return;
+        // Nhả nút giữa trong lúc vẫn giữ nút khác thì trình duyệt không bắn pointerup, nên tự dừng kéo.
+        if (event.pointerType === "mouse" && (event.buttons & 4) === 0) return onPointerEnd(event);
         const point = local(event);
         const other = [...pointers].find(([id]) => id !== event.pointerId)?.[1];
         pointers.set(event.pointerId, point);
@@ -183,6 +186,10 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system" }: {
       };
       const onDoubleClick = () => {
         if (!compact.matches) changeView(DEFAULT_VIEW);
+      };
+      // Nhấn nút giữa: Chrome trên Windows bật cuộn tự động, Linux dán chữ. Chặn trên sân khấu để kéo được nhân vật.
+      const onMiddleButton = (event: MouseEvent) => {
+        if (event.button === 1 && !compact.matches) event.preventDefault();
       };
 
       const internal = current.internalModel;
@@ -240,6 +247,8 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system" }: {
       container.addEventListener("pointerup", onPointerEnd);
       container.addEventListener("pointercancel", onPointerEnd);
       container.addEventListener("dblclick", onDoubleClick);
+      container.addEventListener("mousedown", onMiddleButton);
+      container.addEventListener("auxclick", onMiddleButton);
       window.addEventListener("pointerdown", onLook);
       window.addEventListener("pointermove", onLook);
       window.addEventListener("pointerup", onTouchEnd);
@@ -256,6 +265,8 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system" }: {
         container.removeEventListener("pointerup", onPointerEnd);
         container.removeEventListener("pointercancel", onPointerEnd);
         container.removeEventListener("dblclick", onDoubleClick);
+        container.removeEventListener("mousedown", onMiddleButton);
+        container.removeEventListener("auxclick", onMiddleButton);
         container.classList.remove("dragging");
         window.removeEventListener("pointerdown", onLook);
         window.removeEventListener("pointermove", onLook);

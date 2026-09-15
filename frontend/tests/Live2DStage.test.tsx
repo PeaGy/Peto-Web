@@ -93,6 +93,34 @@ it('cuộn chuột phóng to quanh con trỏ, bấm đúp về cỡ vừa khung 
   expect(JSON.parse(localStorage.getItem('peto-character-view')!).zoom).toBeGreaterThan(1);
 });
 
+it('máy tính: giữ chuột giữa để dời nhân vật, kéo bằng chuột trái thì không', async () => {
+  const { model, host } = await mount();
+  const mouse = (type: string, x: number, button: number, buttons: number) => {
+    const event = new MouseEvent(type, { clientX: x, clientY: 300, button, buttons, bubbles: true, cancelable: true });
+    Object.defineProperty(event, 'pointerType', { value: 'mouse' });
+    Object.defineProperty(event, 'pointerId', { value: 1 });
+    return event;
+  };
+  const start = model.position.x;
+  host.dispatchEvent(mouse('pointerdown', 400, 0, 1));
+  host.dispatchEvent(mouse('pointermove', 470, 0, 1));
+  host.dispatchEvent(mouse('pointerup', 470, 0, 0));
+  expect(model.position.x).toBe(start);
+
+  // Nút giữa: chặn cuộn tự động của trình duyệt rồi mới kéo.
+  const press = mouse('mousedown', 400, 1, 4);
+  host.dispatchEvent(press);
+  expect(press.defaultPrevented).toBe(true);
+  host.dispatchEvent(mouse('pointerdown', 400, 1, 4));
+  host.dispatchEvent(mouse('pointermove', 470, 1, 4));
+  const moved = model.position.x;
+  expect(moved).toBeGreaterThan(start);
+  // Nhả nút giữa nhưng vẫn giữ nút trái: không có pointerup, vẫn phải dừng kéo.
+  host.dispatchEvent(mouse('pointermove', 520, 1, 1));
+  host.dispatchEvent(mouse('pointermove', 560, 1, 1));
+  expect(model.position.x).toBe(moved);
+});
+
 it('điện thoại khóa khung: cuộn, kéo hay bấm đúp đều không đổi góc nhìn', async () => {
   mocks.compact = true;
   localStorage.setItem('peto-character-view', JSON.stringify({ zoom: 3, panX: 0.4, panY: 1 }));
