@@ -2046,7 +2046,8 @@ label,
   border-bottom: 1px solid var(--line);
 }
 .companion-title { flex: 1; min-width: 0; display: grid; padding: 0; border: 0; border-radius: 8px; background: none; color: inherit; font: inherit; line-height: 1.35; text-align: left; cursor: pointer; }
-.companion-title strong { font-size: 15px; }
+.companion-title strong { display: inline-flex; align-items: center; gap: 6px; font-size: 15px; }
+.companion-title strong svg { flex-shrink: 0; }
 .companion-title span { overflow: hidden; color: var(--muted); font-size: 12px; white-space: nowrap; text-overflow: ellipsis; }
 .companion-tools { display: flex; align-items: center; gap: 4px; }
 .companion-tool {

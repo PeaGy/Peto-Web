@@ -279,7 +279,12 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
             title="Đổi nhân vật"
             onClick={onOpenCharacters}
           >
-            <strong>{name}</strong>
+            <strong>
+              {name}
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="m6 9 6 6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </strong>
             <span aria-live="polite">{stateText}</span>
           </button>
           <div className="companion-tools">
