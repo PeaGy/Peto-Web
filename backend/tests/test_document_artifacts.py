@@ -31,6 +31,11 @@ async def test_natural_request_creates_real_files_inline_and_persists(client, an
     assert len(text) < 400 and 'Trong một thế giới' not in text
     assert artifact['pages'] >= 2
     base = f"/api/documents/{artifact['id']}"
+    listing = (await client.get(f'/api/documents?conversation_id={conversation}')).json()['documents']
+    assert listing[0]['format'] == 'docx' and listing[0]['pages'] == artifact['pages']
+    assert 'content' not in listing[0] and 'pdf' not in listing[0]
+    detail = (await client.get(base + '?version=1')).json()
+    assert detail['format'] == 'docx' and detail['pages'] == artifact['pages']
     word = await client.get(base + '/export/docx?version=1')
     doc = Document(BytesIO(word.content))
     assert doc.styles['Normal'].font.name == 'Times New Roman'

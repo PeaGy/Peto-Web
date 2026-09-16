@@ -2,21 +2,18 @@ import { useEffect, useRef, useState } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { UnauthorizedError } from './api';
-import { deleteDocument, downloadDocument, draftTitle, getDocument, listDocuments, saveDocument, type DocumentDraftRequest, type DocumentSummary, type SavedDocument } from './documentApi';
+import { deleteDocument, downloadDocument, draftTitle, getDocument, saveDocument, type DocumentDraftRequest, type SavedDocument } from './documentApi';
 
 export function DocumentIcon() {
   return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9l-6-6Zm0 0v6h6M8 13h8M8 17h6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>;
 }
 
-export default function DocumentWorkspace({ conversationId, request, onUnauthorized, selection, refreshKey = 0 }: {
-  conversationId: string | null; request: DocumentDraftRequest | null; onUnauthorized: () => void;
-  selection?: { id: string; version: number; key: number } | null; refreshKey?: number;
+export default function DocumentWorkspace({ request, onUnauthorized, selection, onChanged }: {
+  request: DocumentDraftRequest | null; onUnauthorized: () => void;
+  selection?: { id: string; version: number; key: number } | null; onChanged?: (document?: SavedDocument) => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const body = useRef<HTMLDivElement>(null);
-  const [documents, setDocuments] = useState<DocumentSummary[]>([]);
-  const [listError, setListError] = useState(false);
-  const [reload, setReload] = useState(0);
   const [open, setOpen] = useState(false);
   const [saved, setSaved] = useState<SavedDocument | null>(null);
   const [sourceConversation, setSourceConversation] = useState('');
@@ -32,18 +29,6 @@ export default function DocumentWorkspace({ conversationId, request, onUnauthori
   const dirty = !saved || saved.title !== title || saved.content !== content;
 
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
-  useEffect(() => {
-    const controller = new AbortController();
-    setDocuments([]); setListError(false);
-    if (conversationId) void listDocuments(conversationId, controller.signal).then(result => {
-      if (!controller.signal.aborted) setDocuments(result.documents);
-    }).catch(reason => {
-      if (controller.signal.aborted) return;
-      if (reason instanceof UnauthorizedError) onUnauthorized();
-      else setListError(true);
-    });
-    return () => controller.abort();
-  }, [conversationId, reload, refreshKey, onUnauthorized]);
   useEffect(() => {
     if (selection) void load(selection.id, selection.version);
   }, [selection]);
@@ -92,7 +77,7 @@ export default function DocumentWorkspace({ conversationId, request, onUnauthori
   async function ensureSaved() {
     if (!dirty && saved) return saved;
     const result = await saveDocument({ title: title.trim(), content: content.trim() }, sourceConversation, saved);
-    if (alive.current) { show(result); setReload(value => value + 1); }
+    if (alive.current) { show(result); onChanged?.(result); }
     return result;
   }
   async function save(close = false) {
@@ -120,17 +105,12 @@ export default function DocumentWorkspace({ conversationId, request, onUnauthori
   async function remove() {
     if (!saved) return;
     setBusy('Đang xóa…'); setError('');
-    try { await deleteDocument(saved.id); if (alive.current) { setOpen(false); setReload(value => value + 1); } }
+    try { await deleteDocument(saved.id); if (alive.current) { setOpen(false); onChanged?.(); } }
     catch (reason) { report(reason); }
     finally { if (alive.current) setBusy(''); }
   }
 
   return <>
-    {documents.length > 0 && <nav className="document-shelf" aria-label="Tài liệu trong hội thoại">
-      <span><DocumentIcon /> Tài liệu</span>
-      {documents.map(document => <button key={document.id} aria-label={`${document.title} · Phiên bản ${document.version}`} onClick={() => void load(document.id)}><span>{document.title}</span><small>v{document.version}</small></button>)}
-    </nav>}
-    {listError && <div className="document-shelf-error">Chưa tải được danh sách tài liệu. <button onClick={() => setReload(value => value + 1)}>Thử lại</button></div>}
     <dialog ref={dialog} className="document-workspace" aria-labelledby="document-workspace-title" onCancel={event => { event.preventDefault(); close(); }}>
       <header className="document-workspace-head">
         <div><span className="document-eyebrow"><DocumentIcon /> TÀI LIỆU CỦA BẠN</span><h2 id="document-workspace-title">{saved ? 'Xem và chỉnh tài liệu' : 'Bản nháp từ Peto'}</h2></div>

@@ -48,8 +48,9 @@ async def list_documents(owner, conversation_id):
         if not owns:
             raise HTTPException(404, "Không tìm thấy hội thoại")
         rows = await (await connection.execute("""
-            SELECT d.id, d.conversation_id, v.version, v.title, v.created_at
+            SELECT d.id, d.conversation_id, v.version, v.title, v.created_at, a.format, a.pages
             FROM chat_documents d JOIN chat_document_versions v ON v.document_id=d.id
+            LEFT JOIN document_assets a ON a.document_id=v.document_id AND a.version=v.version
             WHERE d.owner=? AND d.conversation_id=? AND v.version=(
                 SELECT MAX(version) FROM chat_document_versions WHERE document_id=d.id
             ) ORDER BY v.created_at DESC
@@ -61,8 +62,9 @@ async def get_document(owner, document_id, version=None):
     async with aiosqlite.connect(DB_PATH) as connection:
         connection.row_factory = aiosqlite.Row
         row = await (await connection.execute("""
-            SELECT d.id, d.conversation_id, v.version, v.title, v.content, v.created_at, v.style
+            SELECT d.id, d.conversation_id, v.version, v.title, v.content, v.created_at, v.style, a.format, a.pages
             FROM chat_documents d JOIN chat_document_versions v ON v.document_id=d.id
+            LEFT JOIN document_assets a ON a.document_id=v.document_id AND a.version=v.version
             WHERE d.id=? AND d.owner=? AND v.version=COALESCE(?, (
                 SELECT MAX(version) FROM chat_document_versions WHERE document_id=d.id
             ))

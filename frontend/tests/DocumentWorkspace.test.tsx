@@ -18,7 +18,7 @@ beforeEach(() => {
 });
 
 it('xem bản nháp, sửa nội dung rồi lưu trước khi xuất tệp', async () => {
-  render(<DocumentWorkspace conversationId="C1" request={draft} onUnauthorized={unauthorized} />);
+  render(<DocumentWorkspace request={draft} onUnauthorized={unauthorized} />);
   const dialog = within(await screen.findByRole('dialog', { name: 'Bản nháp từ Peto' }));
   expect(dialog.getByRole('article', { name: 'Nội dung tài liệu' }).textContent).toContain('quan trọng');
   fireEvent.click(dialog.getByRole('button', { name: 'Chỉnh nội dung' }));
@@ -32,7 +32,7 @@ it('xem bản nháp, sửa nội dung rồi lưu trước khi xuất tệp', asy
 });
 
 it('đóng bản nháp chưa lưu phải cho người dùng giữ lại', async () => {
-  render(<DocumentWorkspace conversationId="C1" request={draft} onUnauthorized={unauthorized} />);
+  render(<DocumentWorkspace request={draft} onUnauthorized={unauthorized} />);
   fireEvent.click(await screen.findByRole('button', { name: 'Đóng tài liệu' }));
   expect(screen.getByText('Bạn có thay đổi chưa lưu.')).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: 'Tiếp tục sửa' }));
@@ -42,7 +42,7 @@ it('đóng bản nháp chưa lưu phải cho người dùng giữ lại', async 
 
 it('lỗi lưu giữ bản nháp và không tải bản cũ', async () => {
   vi.mocked(api.saveDocument).mockRejectedValue(new Error('Mất kết nối'));
-  render(<DocumentWorkspace conversationId="C1" request={draft} onUnauthorized={unauthorized} />);
+  render(<DocumentWorkspace request={draft} onUnauthorized={unauthorized} />);
   fireEvent.click(await screen.findByRole('button', { name: 'Tải DOCX' }));
   expect(await screen.findByRole('alert')).toHaveProperty('textContent', 'Mất kết nối');
   expect(api.downloadDocument).not.toHaveBeenCalled();
@@ -53,8 +53,7 @@ it('mở lại tài liệu đã lưu và tải đúng phiên bản cũ đang xem
   vi.mocked(api.listDocuments).mockResolvedValue({ documents: [{ ...saved, version: 2 }] });
   const old = { ...saved, versions: [{ version: 2, title: 'Mới', created_at: 2 }, ...saved.versions] };
   vi.mocked(api.getDocument).mockResolvedValueOnce({ ...old, version: 2, title: 'Mới' }).mockResolvedValueOnce(old);
-  render(<DocumentWorkspace conversationId="C1" request={null} onUnauthorized={unauthorized} />);
-  fireEvent.click(await screen.findByRole('button', { name: 'Kế hoạch · Phiên bản 2' }));
+  render(<DocumentWorkspace request={null} selection={{ id: 'D1', version: 2, key: 1 }} onUnauthorized={unauthorized} />);
   fireEvent.change(await screen.findByLabelText('Phiên bản tài liệu'), { target: { value: '1' } });
   await waitFor(() => expect(screen.getByLabelText('Phiên bản tài liệu')).toHaveProperty('value', '1'));
   fireEvent.click(screen.getByRole('button', { name: 'Tải DOCX' }));

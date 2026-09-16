@@ -3,6 +3,8 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from '../src/App';
 import * as api from '../src/api';
+import * as documentApi from '../src/documentApi';
+vi.mock('../src/documentApi', async original => ({ ...await original<typeof import('../src/documentApi')>(), listDocuments: vi.fn(), getDocument: vi.fn() }));
 
 vi.mock('../src/api', async (original) => ({
   ...await original<typeof import('../src/api')>(),
@@ -32,6 +34,7 @@ beforeEach(() => {
   vi.mocked(api.getMessages).mockResolvedValue([]);
   vi.mocked(api.deleteConversation).mockResolvedValue();
   vi.mocked(api.listImagineJobs).mockResolvedValue([]);
+  vi.mocked(documentApi.listDocuments).mockResolvedValue({ documents: [] });
   // vi.fn() trả undefined: không cài sẵn thì mọi test mở Cài đặt vỡ ở .then().
   vi.mocked(api.getProfile).mockResolvedValue({ profile: { full_name: '', nickname: '', occupation: '', instructions: '' },
     occupations: [], limits: { full_name: 80, nickname: 40, instructions: 1500 } });
@@ -47,6 +50,9 @@ async function openApp() {
 
 it('yêu cầu file bằng chat thường nhận thẻ xem trước, không mở trình sửa hay bắt bấm tạo lại', async () => {
   const artifact: api.DocumentArtifact = { id: 'D1', title: 'Bài văn', filename: 'Bài văn.docx', format: 'docx', style: 'essay', pages: 2, version: 1 };
+  const saved = { ...artifact, conversation_id: 'C', created_at: 1, content: '# Bài văn\nNội dung mẫu', versions: [{ version: 1, title: 'Bài văn', created_at: 1 }] };
+  vi.mocked(documentApi.listDocuments).mockResolvedValue({ documents: [saved] });
+  vi.mocked(documentApi.getDocument).mockResolvedValue(saved);
   vi.mocked(api.sendMessage).mockImplementation(async (payload, handlers) => {
     expect(payload.documentMode).toBe(false);
     handlers.onMeta?.('C', 'low', row('Tạo file Word'));
@@ -62,6 +68,17 @@ it('yêu cầu file bằng chat thường nhận thẻ xem trước, không mở
   expect(screen.queryByRole('button', { name: 'Tạo tài liệu', exact: true })).toBeNull();
   expect(screen.queryByRole('dialog')).toBeNull();
   expect(screen.queryByText('Đang tạo tệp')).toBeNull();
+  expect(document.querySelector('.document-shelf')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Mở rộng Bài văn.docx' }));
+  const panel = within(await screen.findByRole('complementary', { name: 'Tài liệu trong hội thoại' }));
+  expect(await panel.findByRole('img', { name: 'Bài văn — trang 1' })).toBeTruthy();
+  expect(screen.getByLabelText('Nhắn cho Peto')).toBeTruthy();
+  fireEvent.click(panel.getByRole('button', { name: 'Đóng bảng tài liệu' }));
+  expect(screen.queryByRole('complementary', { name: 'Tài liệu trong hội thoại' })).toBeNull();
+  fireEvent.keyDown(window, { code: 'KeyB', ctrlKey: true, altKey: true });
+  expect(await screen.findByRole('complementary', { name: 'Tài liệu trong hội thoại' })).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'B', exact: true }));
+  await waitFor(() => expect(screen.queryByRole('complementary', { name: 'Tài liệu trong hội thoại' })).toBeNull());
 });
 
 it('gửi Word qua dấu cộng, giữ bản nháp khi đọc và hiện trạng thái sau khi nhận', async () => {

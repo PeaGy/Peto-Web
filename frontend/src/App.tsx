@@ -49,6 +49,7 @@ import { readCharacterMotion, writeCharacterMotion, type CharacterMotion } from 
 import Composer from "./Composer";
 import DocumentWorkspace, { DocumentIcon } from './DocumentWorkspace';
 import DocumentArtifactCard from './DocumentArtifactCard';
+import DocumentPanel, { RightPanelIcon, type DocumentPanelSelection } from './DocumentPanel';
 import type { DocumentDraftRequest } from './documentApi';
 import { FileGlyph, formatSize, type DraftFile } from "./files";
 import { fillName, greetingKey, pickGreeting } from "./timeGreeting";
@@ -459,6 +460,14 @@ export default function App() {
   const [documentRequest, setDocumentRequest] = useState<DocumentDraftRequest | null>(null);
   const [documentSelection, setDocumentSelection] = useState<{ id: string; version: number; key: number } | null>(null);
   const [documentRefresh, setDocumentRefresh] = useState(0);
+  const [documentPanelOpen, setDocumentPanelOpen] = useState(false);
+  const [documentPanelExpanded, setDocumentPanelExpanded] = useState(false);
+  const [documentPreview, setDocumentPreview] = useState<DocumentPanelSelection | null>(null);
+  const closeDocumentPanel = useCallback(() => { setDocumentPanelOpen(false); setDocumentPanelExpanded(false); }, []);
+  function previewDocument(item: { id: string; version: number }) {
+    setDocumentPreview({ id: item.id, version: item.version, key: Date.now() });
+    setDocumentPanelOpen(true);
+  }
   const [draftFiles, setDraftFiles] = useState<DraftFile[]>([]);
   const [effort, setEffort] = useState<Effort>(readStoredEffort);
   const [webSearch, setWebSearch] = useState<WebSearchMode>("auto");
@@ -490,6 +499,19 @@ export default function App() {
     return hash === "#imagine" ? "imagine" : hash === "#companion" ? "companion" : "chat";
   });
   const [imageVisited, setImageVisited] = useState(view === "imagine");
+  useEffect(() => {
+    setDocumentPanelOpen(false); setDocumentPanelExpanded(false); setDocumentPreview(null); setDocumentSelection(null);
+  }, [conversationId]);
+  useEffect(() => {
+    if (view !== 'chat') return;
+    const shortcut = (event: KeyboardEvent) => {
+      if (event.ctrlKey && event.altKey && event.code === 'KeyB' && !document.querySelector('.document-workspace[open], .settings-dialog[open]')) {
+        event.preventDefault(); setDocumentPanelOpen(value => !value); setDocumentPanelExpanded(false);
+      }
+    };
+    window.addEventListener('keydown', shortcut);
+    return () => window.removeEventListener('keydown', shortcut);
+  }, [view]);
   const [companionVisited, setCompanionVisited] = useState(view === "companion");
   // Giọng nói dùng chung cho Companion và mục Giọng nói trong Cài đặt. Chỉ dò 127.0.0.1 sau khi đã mở
   // Companion hoặc lúc Cài đặt đang mở, để tab Trò chuyện không gọi gì ra máy.
@@ -589,6 +611,7 @@ export default function App() {
   const handleUnauthorized = useCallback(() => {
     setDocumentRequest(null); setDocumentMode(false);
     setDocumentSelection(null);
+    closeDocumentPanel(); setDocumentPreview(null);
     authVersion.current += 1;
     loadVersion.current += 1;
     listVersion.current += 1;
@@ -1301,7 +1324,9 @@ export default function App() {
           onOpenSidebar={() => setSidebarOpen(true)}
         />
       )}
-      <main className={emptyChat ? "chat empty-state" : "chat"} hidden={view !== "chat"}>
+      <div className={`chat-layout${documentPanelOpen ? ' documents-open' : ''}${documentPanelOpen && documentPanelExpanded ? ' documents-expanded' : ''}`} hidden={view !== 'chat'}>
+      <main className={emptyChat ? "chat empty-state" : "chat"}>
+        <div className="chat-tools">
         <button
           type="button"
           className="menu-btn chat-menu"
@@ -1310,6 +1335,8 @@ export default function App() {
         >
           <MenuIcon />
         </button>
+        <button type="button" className="artifact-icon document-panel-toggle" aria-label={documentPanelOpen ? 'Đóng bảng tài liệu' : 'Mở bảng tài liệu'} aria-expanded={documentPanelOpen} aria-controls="document-panel" title="Tài liệu · Ctrl+Alt+B" onClick={() => { setDocumentPanelOpen(value => !value); setDocumentPanelExpanded(false); }}><RightPanelIcon /></button>
+        </div>
 
         <div className="messages" ref={messagesRef} onScroll={() => {
           const element = messagesRef.current;
@@ -1394,7 +1421,7 @@ export default function App() {
                 }}>{normalizeMath(message.content)}</Markdown>
               ) : null}
               {message.role === "assistant" && <WebSources sources={message.sources} />}
-              {message.artifacts?.map(artifact => <DocumentArtifactCard key={`${artifact.id}-${artifact.version}`} artifact={artifact} onEdit={item => setDocumentSelection({ id: item.id, version: item.version, key: Date.now() })} />)}
+              {message.artifacts?.map(artifact => <DocumentArtifactCard key={`${artifact.id}-${artifact.version}`} artifact={artifact} onOpen={previewDocument} onEdit={item => setDocumentSelection({ id: item.id, version: item.version, key: Date.now() })} />)}
               {message.status === "incomplete" && <p className="message-status">Câu trả lời chưa hoàn tất</p>}
               {message.role === 'assistant' && !message.artifacts?.length && message.content && conversationId && !(streaming && index === messages.length - 1) && <button className="message-document-action" onClick={() => {
                 const sources = safeSources(message.sources);
@@ -1424,7 +1451,6 @@ export default function App() {
           <button type="button" className="dismiss-error" aria-label="Đóng thông báo trạng thái" onClick={() => setNotice(null)}>×</button>
         </div>}
 
-        <DocumentWorkspace key={auth.user?.id || 'session'} conversationId={conversationId} request={documentRequest} selection={documentSelection} refreshKey={documentRefresh} onUnauthorized={handleUnauthorized} />
         <Composer
           draft={draft}
           onDraftChange={setDraft}
@@ -1452,6 +1478,12 @@ export default function App() {
           fileRef={fileRef}
         />
       </main>
+      <DocumentPanel key={`${auth.user?.id}-${conversationId}`} conversationId={conversationId} open={documentPanelOpen && view === 'chat'} expanded={documentPanelExpanded} selection={documentPreview} refreshKey={documentRefresh} onClose={closeDocumentPanel} onExpand={() => setDocumentPanelExpanded(value => !value)} onEdit={item => setDocumentSelection({ ...item, key: Date.now() })} onUnauthorized={handleUnauthorized} />
+      </div>
+      <DocumentWorkspace key={auth.user?.id || 'session'} request={documentRequest} selection={documentSelection} onUnauthorized={handleUnauthorized} onChanged={item => {
+        setDocumentRefresh(value => value + 1);
+        if (item?.conversation_id === conversationId) setDocumentPreview({ id: item.id, version: item.version, key: Date.now() });
+      }} />
       <dialog
         ref={settingsDialogRef}
         className="settings-dialog"

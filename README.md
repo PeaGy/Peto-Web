@@ -1,9 +1,10 @@
 # Peto Web
 
 Giao diện chat riêng cho Peto: **chat chữ, xem ảnh, đọc PDF, Word và tệp chữ;
-tạo tệp DOCX/PDF với thẻ xem trước ngay trong chat**.
+tạo tệp DOCX/PDF với thẻ xem trước ngay trong chat và bảng tài liệu bên phải**.
 
-Nhắn “tạo file Word/PDF…” để Peto tạo tệp, xem trước và tải trực tiếp:
+Nhắn “tạo file Word/PDF…” để Peto tạo tệp, xem trước, tải trực tiếp và mở
+trong bảng tài liệu:
 xem [hướng dẫn tài liệu](DOCUMENTS.md).
 
 Bot Discord (`Tracen Jukebox`) vẫn phát triển độc lập. Web có database riêng;
@@ -83,7 +84,7 @@ npm test
 npm run build
 ```
 
-Sau đợt thêm tìm web và menu dấu +: **208 test backend, 56 test frontend đạt**;
+Sau đợt thêm tài liệu, tìm web và menu dấu +: **294 test backend, 164 test frontend đạt**;
 TypeScript và Vite build đạt. Các test bao gồm thu hồi quyền, chuyển hội thoại
 với kết quả tải về không đúng thứ tự, giữ bản nháp, dừng phản hồi, lưu câu trả lời
 dở dang, nâng cấp schema, ẩn danh, phân trang, bảng Markdown, ngày giờ/múi giờ,
@@ -117,6 +118,8 @@ backend/
 frontend/
   src/api.ts     Đọc SSE bằng fetch (endpoint là POST nên không dùng EventSource)
   src/App.tsx    Màn hình đăng nhập + giao diện chat
+  src/DocumentPanel.tsx Bảng tài liệu bên phải: danh sách, xem trước, phiên bản và tải tệp
+  src/DocumentArtifactCard.tsx Thẻ tệp tạo trực tiếp trong tin nhắn
   src/WebSources.tsx Nguồn tham khảo có thể mở từ câu trả lời
   src/Imagine.tsx Peto tạo ảnh: gợi ý, tiến trình, bộ ảnh và khung xem ảnh
 ```

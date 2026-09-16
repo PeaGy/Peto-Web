@@ -6,17 +6,24 @@
    Peto gọi công cụ tạo tệp, lưu xong rồi trả lời ngắn và hiện thẻ tài liệu.
    Không cần chọn chế độ hoặc bấm tạo lại. **+ → Viết tài liệu** vẫn là một
    lối tắt tùy chọn khi chưa ghi rõ định dạng; mặc định tạo DOCX.
-2. Thẻ hiện tên tệp, trang đầu, nút tải và nút mở rộng. Mở rộng để lật trang.
+2. Thẻ hiện tên tệp, trang đầu, nút tải và nút mở rộng. Nhấn tên tệp hoặc
+   mở rộng để xem trong **bảng tài liệu bên phải**, cạnh cuộc trò chuyện.
+   Có thể lật trang, tải tệp, tìm theo tên và chuyển phiên bản tại đây.
    Tệp và bản xem trước thuộc tài khoản của bạn, vẫn có trong lịch sử.
 3. Bấm **Sửa nội dung** trên thẻ để mở trình chỉnh sửa tên và nội dung.
    Ô sửa dùng Markdown: giữ các dấu tiêu đề, danh sách và bảng khi cần giữ
    định dạng. Có thể chuyển lại **Xem trước** bất cứ lúc nào.
 4. Bấm **Lưu**, **Tải DOCX** hoặc **Tải PDF**. Nếu có thay đổi, Peto lưu một
    phiên bản mới trước khi xuất; tải lại bản đã lưu không tạo thêm phiên bản.
-5. Tài liệu đã lưu xuất hiện trên ô nhắn của hội thoại. Mở lại để sửa hoặc
-   chọn một phiên bản cũ rồi tải xuống. Sửa từ bản cũ sẽ tạo phiên bản mới.
+5. Nút biểu tượng panel ở góc trên bên phải mở/đóng bảng tài liệu
+   (**Ctrl+Alt+B**). Danh sách gồm tài liệu của hội thoại đang mở; chuyển
+   hội thoại sẽ đóng bảng cũ. Có nút ẩn/hiện danh sách tệp và phóng rộng
+   vùng xem. Trên điện thoại/màn hình hẹp, bảng mở toàn màn hình.
+   Mở lại để sửa hoặc chọn một phiên bản cũ rồi tải xuống.
+   Sửa từ bản cũ sẽ tạo phiên bản mới.
    Thẻ trong tin nhắn giữ đúng phiên bản được tạo ở lượt đó, không âm thầm
-   thay bằng bản mới. Bản sửa thủ công được tải từ cửa sổ chỉnh sửa.
+   thay bằng bản mới. Bản sửa thủ công có trong danh sách với bản xem
+   nội dung; có thể tải từ bảng tài liệu hoặc cửa sổ chỉnh sửa.
 
 Với câu trả lời thông thường, nút **Tạo tài liệu** vẫn cho chuyển nội dung
 có sẵn thành bản nháp thủ công như trước. Chức năng này không bắt buộc khi
