@@ -2325,10 +2325,6 @@ button.artifact-name { cursor: pointer; }
   .artifact-icon { flex-basis: 36px; height: 36px; }
   .artifact-preview-crop { max-height: 350px; }
 }
-.message-document-action { display: inline-flex; align-items: center; gap: 7px; margin-top: 10px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 9px; background: transparent; color: var(--muted); font: inherit; font-size: 12px; cursor: pointer; }
-.message-document-action:hover { color: var(--text); background: var(--panel); }
-.document-mode-chip { display: flex; align-items: center; gap: 12px; width: fit-content; max-width: 100%; margin: 10px 12px 0; padding: 5px 9px; border-radius: 8px; background: var(--panel-2); color: var(--text); font-size: 12px; }
-.document-mode-chip button { border: 0; padding: 2px 5px; background: none; color: var(--muted); font-size: 18px; cursor: pointer; }
 .document-workspace { position: fixed; inset: 0 0 0 auto; width: min(900px, 100vw); height: 100dvh; max-width: none; max-height: none; margin: 0; padding: 0; border: 0; border-left: 1px solid var(--line); border-radius: 0; color: var(--text); background: var(--bg); box-shadow: -20px 0 80px #0005; overflow: hidden; }
 .document-workspace[open] { display: flex; flex-direction: column; }
 .document-workspace::backdrop { background: #0005; }

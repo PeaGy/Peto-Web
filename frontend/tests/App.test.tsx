@@ -54,7 +54,6 @@ it('yêu cầu file bằng chat thường nhận thẻ xem trước, không mở
   vi.mocked(documentApi.listDocuments).mockResolvedValue({ documents: [saved] });
   vi.mocked(documentApi.getDocument).mockResolvedValue(saved);
   vi.mocked(api.sendMessage).mockImplementation(async (payload, handlers) => {
-    expect(payload.documentMode).toBe(false);
     handlers.onMeta?.('C', 'low', row('Tạo file Word'));
     handlers.onDocumentStatus?.('Đang tạo tệp');
     handlers.onArtifact?.(artifact);
@@ -216,6 +215,7 @@ it('menu dấu cộng chọn được tệp, đóng bằng Escape và bật lạ
   const trigger = screen.getByRole('button', { name: 'Thêm ảnh và tùy chọn' });
   fireEvent.click(trigger);
   expect(document.activeElement).toBe(screen.getByRole('button', { name: /Thêm ảnh hoặc tệp/ }));
+  expect(screen.queryByRole('button', { name: 'Viết tài liệu', exact: true })).toBeNull();
   fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
   expect(screen.queryByRole('group', { name: 'Tùy chọn tin nhắn' })).toBeNull();
   expect(document.activeElement).toBe(trigger);

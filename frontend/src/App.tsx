@@ -456,7 +456,6 @@ export default function App() {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [draft, setDraft] = useState("");
-  const [documentMode, setDocumentMode] = useState(false);
   const [documentRequest, setDocumentRequest] = useState<DocumentDraftRequest | null>(null);
   const [documentSelection, setDocumentSelection] = useState<{ id: string; version: number; key: number } | null>(null);
   const [documentRefresh, setDocumentRefresh] = useState(0);
@@ -609,7 +608,7 @@ export default function App() {
 
   /** Phiên hết hạn giữa chừng: quay về màn hình đăng nhập thay vì báo lỗi lạ. */
   const handleUnauthorized = useCallback(() => {
-    setDocumentRequest(null); setDocumentMode(false);
+    setDocumentRequest(null);
     setDocumentSelection(null);
     closeDocumentPanel(); setDocumentPreview(null);
     authVersion.current += 1;
@@ -1009,7 +1008,6 @@ export default function App() {
           effort,
           webSearch,
           attachments,
-          documentMode,
         },
         {
           onMeta: (id, _usedEffort, storedMessage) => {
@@ -1018,7 +1016,6 @@ export default function App() {
             activeId = id;
             setConversationId(id);
             setDraft("");
-            setDocumentMode(false);
             setDraftFiles([]);
             updateSearch({ reading: undefined });
             if (storedMessage) setMessages((prev) => [...prev.slice(0, -2), storedMessage, prev[prev.length - 1]]);
@@ -1423,11 +1420,6 @@ export default function App() {
               {message.role === "assistant" && <WebSources sources={message.sources} />}
               {message.artifacts?.map(artifact => <DocumentArtifactCard key={`${artifact.id}-${artifact.version}`} artifact={artifact} onOpen={previewDocument} onEdit={item => setDocumentSelection({ id: item.id, version: item.version, key: Date.now() })} />)}
               {message.status === "incomplete" && <p className="message-status">Câu trả lời chưa hoàn tất</p>}
-              {message.role === 'assistant' && !message.artifacts?.length && message.content && conversationId && !(streaming && index === messages.length - 1) && <button className="message-document-action" onClick={() => {
-                const sources = safeSources(message.sources);
-                const references = sources.length ? '\n\n## Nguồn tham khảo\n' + sources.map(source => `- ${source.title}: ${source.url}`).join('\n') : '';
-                setDocumentRequest({ conversationId, content: message.content + references, key: Date.now() });
-              }}><DocumentIcon /> Tạo tài liệu</button>}
             </article>
           ))}
           <div ref={bottomRef} />
@@ -1467,8 +1459,6 @@ export default function App() {
           onEffortChange={setEffort}
           webSearch={webSearch}
           onToggleWeb={() => setWebSearch((mode) => (mode === "off" ? "auto" : "off"))}
-          documentMode={documentMode}
-          onToggleDocument={() => { setDocumentMode(value => !value); textareaRef.current?.focus(); }}
           menuDisabled={streaming || view !== "chat"}
           hints={emptyChat ? CHAT_HINTS : []}
           onPickHint={(hint) => { setDraft(hint); textareaRef.current?.focus(); }}
