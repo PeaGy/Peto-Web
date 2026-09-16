@@ -24,6 +24,8 @@ SYSTEM_PROMPT = f"""{TITLE_MARKER}.
 
 Đọc tin nhắn đầu của người dùng rồi đặt tên cho cuộc đó:
 - Cùng ngôn ngữ với người dùng.
+- Nếu người dùng viết tiếng Việt, dùng Unicode tiếng Việt đầy đủ dấu (ă, â, ê,
+  ô, ơ, ư, đ và dấu thanh); tuyệt đối không viết tiêu đề tiếng Việt không dấu.
 - Tối đa 6 từ, nêu đúng chủ đề.
 - Không ngoặc kép, không chấm cuối, không mở đầu bằng "Cuộc trò chuyện về".
 - Chỉ trả về đúng cái tên, không thêm lời nào khác."""

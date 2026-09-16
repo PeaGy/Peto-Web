@@ -83,6 +83,19 @@ async def test_tool_is_private_validated_and_idempotent(client):
     assert len(session.created) == 1
 
 
+async def test_obvious_unaccented_vietnamese_is_rejected_before_render(client):
+    conversation = await db.create_conversation('accent-account', 'Dấu tiếng Việt')
+    session = DocumentSession('accent-account', conversation)
+    result = await session.create(json.dumps({
+        'title': 'Nghi luan xa hoi doc sach trong thoi dai so',
+        'content': '# Nghi luan xa hoi\n\nDay la noi dung ve trach nhiem cua gioi tre trong thoi dai so.',
+        'format': 'pdf', 'style': 'essay',
+    }))
+    assert 'không dấu' in result['error']
+    assert not session.created
+    assert not await document_store.list_documents('accent-account', conversation)
+
+
 async def test_quota_or_render_failure_never_publishes_an_artifact(client, monkeypatch):
     monkeypatch.setattr(document_store, 'MAX_ASSET_BYTES', 1)
     events = await read_events(await client.post('/api/chat', json={'message': 'Tạo file PDF bài văn'}))

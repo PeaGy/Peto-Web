@@ -84,7 +84,7 @@ npm test
 npm run build
 ```
 
-Sau đợt thêm tài liệu, tìm web và menu dấu +: **294 test backend, 164 test frontend đạt**;
+Sau đợt thêm tài liệu, tìm web và menu dấu +: **295 test backend, 164 test frontend đạt**;
 TypeScript và Vite build đạt. Các test bao gồm thu hồi quyền, chuyển hội thoại
 với kết quả tải về không đúng thứ tự, giữ bản nháp, dừng phản hồi, lưu câu trả lời
 dở dang, nâng cấp schema, ẩn danh, phân trang, bảng Markdown, ngày giờ/múi giờ,

@@ -38,6 +38,9 @@ cũng xóa tài liệu và các phiên bản thuộc hội thoại đó.
 
 - Xuất tiêu đề, đoạn văn, chữ đậm/nghiêng/gạch ngang, danh sách, trích dẫn,
   đoạn code và bảng đơn giản; giữ địa chỉ nguồn tham khảo trong tệp.
+- Với yêu cầu tiếng Việt, Peto giữ tiêu đề và nội dung bằng Unicode tiếng Việt
+  đầy đủ dấu. Nếu model gửi nội dung không dấu, hãy cập nhật code rồi thử lại;
+  hệ thống không tự đoán và thay dấu vì có thể làm sai nghĩa.
 - Mẫu **bài nghị luận**: DOCX khổ A4, Times New Roman 13 pt, giãn dòng 1,5,
   căn đều, có đầu trang và số trang. PDF dùng Noto Serif đi kèm. Mẫu
   **báo cáo/kế hoạch** giữ kiểu chữ sans-serif và bảng đơn giản.
@@ -98,7 +101,8 @@ nội dung tiếng Việt, nguồn tham khảo, bảng nhiều trang và tạo b
 giữ bản nháp khi lỗi, nhắc thay đổi chưa lưu và tải đúng phiên bản đang xem.
 `test_document_artifacts.py` kiểm tra yêu cầu tự nhiên, tệp thật, phân quyền
 ảnh xem trước, lưu lịch sử, đọc lại nội dung, lỗi sau khi tạo, dung lượng và
-vòng gọi công cụ xAI bằng dịch vụ giả. Các test giao diện kiểm tra thẻ tệp,
+vòng gọi công cụ xAI bằng dịch vụ giả, đồng thời chặn bản tiếng Việt không dấu.
+Các test giao diện kiểm tra thẻ tệp,
 phóng to/lật trang, đường dẫn tải và việc không mở trình sửa ngoài ý muốn.
 
 Tài liệu triển khai công cụ: [xAI Function Calling](https://docs.x.ai/developers/tools/function-calling).
