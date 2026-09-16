@@ -44,6 +44,14 @@ export interface Message {
   search_status?: "searching" | "completed";
   artifacts?: DocumentArtifact[];
   document_status?: string;
+  workSteps?: WorkStep[];
+  workedMs?: number;
+}
+
+export interface WorkStep {
+  id: string;
+  label: string;
+  live?: boolean;
 }
 
 export interface Conversation {

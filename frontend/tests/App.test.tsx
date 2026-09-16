@@ -138,11 +138,11 @@ it('tự động tìm web, hiển thị tiến trình và nguồn cùng câu tr�
   expect(screen.queryByLabelText('Tìm kiếm web')).toBeNull();
   fireEvent.change(screen.getByLabelText('Nhắn cho Peto'), { target: { value: 'Tìm Python' } });
   fireEvent.click(screen.getByRole('button', { name: 'Gửi', exact: true }));
-  await screen.findByText('Peto đang tìm trên web…');
+  await screen.findByText('Đang tìm trên web…');
   expect((screen.getByRole('button', { name: 'Thêm ảnh và tùy chọn' }) as HTMLButtonElement).disabled).toBe(true);
   await act(async () => result.resolve());
   await screen.findByText('Có tài liệu chính thức.');
-  expect(screen.queryByText('Peto đang tìm trên web…')).toBeNull();
+  expect(screen.queryByText('Đang tìm trên web…')).toBeNull();
   fireEvent.click(screen.getByText('1 nguồn tham khảo'));
   expect(screen.getByRole('link', { name: /Tài liệu Python/ }).getAttribute('href')).toBe('https://docs.python.org/3/');
 });
@@ -172,10 +172,10 @@ it('dừng lúc đang tìm web không để tiến trình treo hoặc nhận ngu
   await openApp();
   fireEvent.change(screen.getByLabelText('Nhắn cho Peto'), { target: { value: 'Tìm Python' } });
   fireEvent.click(screen.getByRole('button', { name: 'Gửi', exact: true }));
-  await screen.findByText('Peto đang tìm trên web…');
+  await screen.findByText('Đang tìm trên web…');
   fireEvent.click(screen.getByRole('button', { name: 'Dừng', exact: true }));
   await screen.findByText('Đã dừng. Phần đã trả lời được giữ lại.');
-  expect(screen.queryByText('Peto đang tìm trên web…')).toBeNull();
+  expect(screen.queryByText('Đang tìm trên web…')).toBeNull();
   expect(screen.queryByText('1 nguồn tham khảo')).toBeNull();
 });
 
@@ -394,10 +394,12 @@ describe('Sending and stopping', () => {
     expect(api.sendMessage).toHaveBeenCalledTimes(2);
   });
 
-  it('shows Grok thinking separately from the answer', async () => {
+  it('shows a work log with steps instead of raw thinking', async () => {
     vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers) => {
       handlers.onMeta?.('C', 'medium', row('Giải giúp'));
-      handlers.onThinking?.('Nhẩm từng bước…');
+      handlers.onThinking?.('The user wants me to create a DOCX file according to the instructions');
+      handlers.onSearch?.('searching');
+      handlers.onSearch?.('completed');
       handlers.onDelta?.('Kết quả là 4.');
       handlers.onDone?.();
     });
@@ -405,9 +407,10 @@ describe('Sending and stopping', () => {
     fireEvent.change(screen.getByPlaceholderText('Nhắn cho Peto…'), {target: {value: 'Giải giúp'}});
     fireEvent.click(screen.getByRole('button', {name:'Gửi', exact:true}));
     await screen.findByText('Kết quả là 4.');
-    expect(screen.queryByText('Nhẩm từng bước…')).toBeNull();
-    fireEvent.click(screen.getByRole('button', {name: 'Đã suy nghĩ'}));
-    expect(screen.getByText('Nhẩm từng bước…')).toBeTruthy();
+    expect(screen.queryByText(/The user wants me/)).toBeNull();
+    fireEvent.click(screen.getByRole('button', {name: /Đã làm trong \d+ giây/}));
+    expect(screen.getByText('Đã tìm trên web')).toBeTruthy();
+    expect(screen.getByText('Đã suy nghĩ')).toBeTruthy();
   });
 
   it('stops an empty reply without leaving a typing indicator', async () => {

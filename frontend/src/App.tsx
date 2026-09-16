@@ -147,13 +147,6 @@ const THEMES: { value: ThemeChoice; label: string; hint: string }[] = [
   { value: "system", label: "Theo máy", hint: "Đổi theo cài đặt của thiết bị" },
 ];
 
-const THINKING: Record<string, string> = {
-  low: "Đang trả lời…",
-  medium: "Đang suy nghĩ…",
-  high: "Đang suy nghĩ sâu…",
-};
-
-
 function readStoredEffort(): Effort {
   try {
     const value = localStorage.getItem(EFFORT_KEY);
@@ -324,32 +317,27 @@ function CodeBlock({ language, children }: { language: string; children: ReactNo
   );
 }
 
-function compactThinking(text: string, limit = 420): string {
-  const cleaned = text.replace(/\n{3,}/g, "\n\n").trim();
-  if (cleaned.length <= limit) return cleaned;
-  const cut = cleaned.slice(0, limit);
-  const at = cut.lastIndexOf(" ");
-  return `${(at > 280 ? cut.slice(0, at) : cut).trimEnd()}…`;
+function formatWorked(ms: number): string {
+  const seconds = Math.max(1, Math.round(ms / 1000));
+  return `Đã làm trong ${seconds} giây`;
 }
 
-function ThinkingPanel({
+function WorkLog({
   live,
-  text,
-  label,
+  steps,
+  ms,
 }: {
   live: boolean;
-  text: string;
-  label: string;
+  steps?: { id: string; label: string; live?: boolean }[];
+  ms?: number;
 }) {
-  // Tự mở lúc đang nghĩ, tự đóng khi câu trả lời tới — nhưng người dùng bấm thì
-  // ý họ thắng. Suy ngay trong lúc render, không qua useEffect: effect chạy sau
-  // khi commit nên panel loé mở đúng một khung hình lúc câu trả lời vừa hiện.
   const [choice, setChoice] = useState<boolean | null>(null);
   const open = choice ?? live;
-  const summary = compactThinking(text);
-  if (!live && !summary) return null;
+  const list = steps ?? [];
+  if (!live && list.length === 0 && ms == null) return null;
+  const label = live ? "Đang làm…" : formatWorked(ms ?? 0);
   return (
-    <div className="thinking-panel">
+    <div className="thinking-panel work-log">
       <button
         type="button"
         className="thinking-toggle"
@@ -359,9 +347,24 @@ function ThinkingPanel({
         <span className={open ? "thinking-chevron open" : "thinking-chevron"} aria-hidden="true">
           ▸
         </span>
-        <span className={live ? "thinking-pulse" : undefined}>{live ? label : "Đã suy nghĩ"}</span>
+        <span className={live ? "thinking-pulse" : undefined}>{label}</span>
       </button>
-      {open && summary ? <div className="thinking-body">{summary}</div> : null}
+      {open && list.length > 0 ? (
+        <ul className="work-steps">
+          {list.map((step) => (
+            <li key={step.id} className={step.live ? "live" : undefined}>
+              {step.id === "search" ? (
+                <GlobeIcon />
+              ) : step.id === "document" ? (
+                <DocumentIcon />
+              ) : (
+                <span className="work-dot" aria-hidden="true" />
+              )}
+              {step.label}
+            </li>
+          ))}
+        </ul>
+      ) : null}
     </div>
   );
 }
@@ -459,7 +462,7 @@ export default function App() {
   const [draftFiles, setDraftFiles] = useState<DraftFile[]>([]);
   const [effort, setEffort] = useState<Effort>(readStoredEffort);
   const [webSearch, setWebSearch] = useState<WebSearchMode>("auto");
-  const [activeEffort, setActiveEffort] = useState<string | null>(null);
+
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -909,7 +912,7 @@ export default function App() {
     setStopping(false);
     nearBottom.current = true;
     setShowJump(false);
-    setActiveEffort(effort === "auto" ? null : effort);
+
 
     const optimistic: ChatAttachment[] = pending.map((item) => ({
       id: item.id,
@@ -932,6 +935,7 @@ export default function App() {
     let accepted = false;
     let completed = false;
     const session = authVersion.current;
+    const startedAt = performance.now();
 
     const appendToReply = (chunk: string) => {
       if (session !== authVersion.current) return;
@@ -944,14 +948,17 @@ export default function App() {
       });
     };
 
-    const appendThinking = (chunk: string) => {
+    const addWorkStep = (id: string, label: string, live = false) => {
       if (session !== authVersion.current) return;
       setMessages((prev) => {
-        const next = [...prev];
-        const last = next[next.length - 1];
+        const last = prev[prev.length - 1];
         if (last?.role !== "assistant") return prev;
-        next[next.length - 1] = { ...last, thinking: (last.thinking ?? "") + chunk };
-        return next;
+        const steps = [...(last.workSteps ?? [])];
+        const index = steps.findIndex((step) => step.id === id);
+        const step = { id, label, live };
+        if (index >= 0) steps[index] = step;
+        else steps.push(step);
+        return [...prev.slice(0, -1), { ...last, workSteps: steps }];
       });
     };
 
@@ -982,12 +989,11 @@ export default function App() {
           documentMode,
         },
         {
-          onMeta: (id, usedEffort, storedMessage) => {
+          onMeta: (id, _usedEffort, storedMessage) => {
             if (session !== authVersion.current) return;
             accepted = true;
             activeId = id;
             setConversationId(id);
-            setActiveEffort(usedEffort);
             setDraft("");
             setDocumentMode(false);
             setDraftFiles([]);
@@ -995,18 +1001,37 @@ export default function App() {
             if (storedMessage) setMessages((prev) => [...prev.slice(0, -2), storedMessage, prev[prev.length - 1]]);
           },
           onDelta: appendToReply,
-          onThinking: appendThinking,
-          onReading: (text) => updateSearch({ reading: text || undefined }),
-          onSearch: (status) => updateSearch({ search_status: status }),
+          onThinking: () => addWorkStep("think", "Đang suy nghĩ…", true),
+          onReading: (text) => {
+            updateSearch({ reading: text || undefined });
+            addWorkStep("reading", text || "Đã đọc tài liệu", Boolean(text));
+          },
+          onSearch: (status) => {
+            updateSearch({ search_status: status });
+            addWorkStep(
+              "search",
+              status === "searching" ? "Đang tìm trên web…" : "Đã tìm trên web",
+              status === "searching",
+            );
+          },
           onSources: (sources) => updateSearch({ sources: safeSources(sources) }),
-          onDocumentStatus: (text) => updateSearch({ document_status: text || undefined }),
+          onDocumentStatus: (text) => {
+            updateSearch({ document_status: text || undefined });
+            if (text) addWorkStep("document", text, true);
+          },
           onArtifact: (artifact) => {
             if (session !== authVersion.current || controller.signal.aborted) return;
             setMessages(previous => {
               const last = previous[previous.length - 1];
               if (last?.role !== 'assistant') return previous;
               const artifacts = [...(last.artifacts || []).filter(item => item.id !== artifact.id || item.version !== artifact.version), artifact];
-              return [...previous.slice(0, -1), { ...last, artifacts, document_status: undefined }];
+              const steps = [...(last.workSteps ?? [])];
+              const index = steps.findIndex((step) => step.id === "document");
+              const label = artifact.filename ? `Đã tạo ${artifact.filename}` : "Đã tạo tệp";
+              const step = { id: "document", label, live: false };
+              if (index >= 0) steps[index] = step;
+              else steps.push(step);
+              return [...previous.slice(0, -1), { ...last, artifacts, document_status: undefined, workSteps: steps }];
             });
             setDocumentRefresh(value => value + 1);
           },
@@ -1035,7 +1060,13 @@ export default function App() {
             const last = prev[prev.length - 1];
             if (last?.role !== "assistant") return prev;
             return last.content || last.artifacts?.length
-              ? [...prev.slice(0, -1), { ...last, document_status: undefined, status: completed ? "complete" : "incomplete" }]
+              ? [...prev.slice(0, -1), {
+                  ...last,
+                  document_status: undefined,
+                  status: completed ? "complete" : "incomplete",
+                  workedMs: Math.round(performance.now() - startedAt),
+                  workSteps: (last.workSteps ?? []).map((step) => ({ ...step, live: false, label: step.id === "think" && step.live ? "Đã suy nghĩ" : step.label })),
+                }]
               : prev.slice(0, -1);
           });
         }
@@ -1045,7 +1076,6 @@ export default function App() {
       if (accepted) for (const item of pending) if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
       setStreaming(false);
       setStopping(false);
-      setActiveEffort(null);
       abortRef.current = null;
       textareaRef.current?.focus();
     }
@@ -1338,18 +1368,16 @@ export default function App() {
                 </div>
               )}
               {message.role === "assistant" && (
-                message.thinking ||
-                (streaming && !stopping && index === messages.length - 1 && !message.search_status && !message.reading && !message.document_status)
+                (streaming && !stopping && index === messages.length - 1) ||
+                message.workSteps?.length ||
+                message.workedMs != null
               ) ? (
-                <ThinkingPanel
-                  live={streaming && !stopping && index === messages.length - 1 && !message.content}
-                  text={message.thinking ?? ""}
-                  label={THINKING[activeEffort ?? "low"]}
+                <WorkLog
+                  live={streaming && !stopping && index === messages.length - 1}
+                  steps={message.workSteps}
+                  ms={message.workedMs}
                 />
               ) : null}
-              {message.role === "assistant" && message.reading && streaming && !stopping && index === messages.length - 1 && !message.content && <div className="document-reading" role="status"><span className="document-reading-dot" aria-hidden="true" />{message.reading}</div>}
-              {message.document_status && streaming && index === messages.length - 1 && <div className="document-reading" role="status"><DocumentIcon />{message.document_status}</div>}
-              {message.role === "assistant" && message.search_status && streaming && !stopping && index === messages.length - 1 && !message.content && <div className="web-search-status" role="status"><GlobeIcon /><span>{message.search_status === "searching" ? "Peto đang tìm trên web…" : "Peto đang tổng hợp nguồn…"}</span></div>}
               {message.content ? (
                 <Markdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[[rehypeKatex, { trust: false, strict: "ignore" }], [rehypeHighlight, {
                   languages: HIGHLIGHT_LANGUAGES, aliases: HIGHLIGHT_ALIASES, ignoreMissing: true,

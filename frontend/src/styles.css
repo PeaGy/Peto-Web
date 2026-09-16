@@ -691,18 +691,40 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   animation: thinking-shimmer 1.6s ease-in-out infinite;
 }
 
-.thinking-body {
-  margin-top: 6px;
-  padding: 0 0 0 12px;
-  max-height: 6.4em;
-  overflow: auto;
-  border-left: 2px solid var(--line);
+.work-steps {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
   color: var(--muted);
-  font-size: 12.5px;
-  line-height: 1.45;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+  font-size: 13px;
 }
+
+.work-steps li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.work-steps li.live { color: var(--text); }
+
+.work-steps svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.work-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--muted);
+  flex-shrink: 0;
+}
+
+.work-steps li.live .work-dot { background: var(--accent); }
 
 @keyframes thinking-shimmer {
   0% { background-position: 100% 0; }
