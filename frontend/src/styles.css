@@ -2277,6 +2277,67 @@ label,
 
 /* ---------- Nhân vật trong Cài đặt ---------- */
 .settings-subsection { margin-top: 20px; }
+
+/* Chat documents: review before exporting, with a separate saved revision. */
+.message-document-action { display: inline-flex; align-items: center; gap: 7px; margin-top: 10px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 9px; background: transparent; color: var(--muted); font: inherit; font-size: 12px; cursor: pointer; }
+.message-document-action:hover { color: var(--text); background: var(--panel); }
+.document-mode-chip { display: flex; align-items: center; gap: 12px; width: fit-content; max-width: 100%; margin: 10px 12px 0; padding: 5px 9px; border-radius: 8px; background: var(--panel-2); color: var(--text); font-size: 12px; }
+.document-mode-chip button { border: 0; padding: 2px 5px; background: none; color: var(--muted); font-size: 18px; cursor: pointer; }
+.document-shelf { display: flex; align-items: center; gap: 8px; flex-shrink: 0; padding: 8px 20px; overflow-x: auto; }
+.document-shelf > span { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; white-space: nowrap; }
+.document-shelf button { display: flex; gap: 10px; align-items: center; flex-shrink: 0; max-width: 240px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--text); cursor: pointer; }
+.document-shelf button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.document-shelf small { color: var(--muted); }
+.document-shelf-error { padding: 6px 20px; font-size: 12px; color: var(--muted); }
+.document-shelf-error button { color: inherit; border: 0; background: none; text-decoration: underline; cursor: pointer; }
+.document-workspace { position: fixed; inset: 0 0 0 auto; width: min(900px, 100vw); height: 100dvh; max-width: none; max-height: none; margin: 0; padding: 0; border: 0; border-left: 1px solid var(--line); border-radius: 0; color: var(--text); background: var(--bg); box-shadow: -20px 0 80px #0005; overflow: hidden; }
+.document-workspace[open] { display: flex; flex-direction: column; }
+.document-workspace::backdrop { background: #0005; }
+.document-workspace-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; padding: 24px 28px 18px; }
+.document-eyebrow { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 10px; letter-spacing: 1.3px; }
+.document-workspace-head h2 { font-size: 23px; font-weight: 600; margin: 8px 0 0; letter-spacing: -.5px; }
+.document-workspace-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 12px 24px; border-block: 1px solid var(--line); }
+.document-workspace-toolbar button, .document-workspace-toolbar select, .document-unsaved button { min-height: 36px; border: 1px solid var(--line); border-radius: 8px; padding: 7px 11px; background: var(--panel); color: var(--text); font: inherit; font-size: 12px; cursor: pointer; }
+.document-workspace-toolbar button.active { border-color: var(--accent); }
+.document-workspace-toolbar .document-download-primary { background: var(--text); color: var(--bg); }
+.document-save-state { flex: 1; font-size: 11px; color: var(--muted); }
+.document-workspace-status, .document-workspace-error { padding: 10px 24px; margin: 0; font-size: 13px; }
+.document-workspace-status { color: var(--muted); }
+.document-workspace-error { color: var(--danger); }
+.document-unsaved { margin: 12px 24px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); font-size: 13px; }
+.document-unsaved p { margin: 0 0 10px; }
+.document-unsaved button { margin: 0 8px 4px 0; }
+.document-workspace-body { flex: 1; min-height: 0; padding: 24px; overflow: auto; background: var(--panel); }
+.document-paper { max-width: 700px; min-height: 700px; margin: auto; padding: 46px 48px; color: #202124; background: #fff; box-shadow: 0 2px 14px #0001; font-family: Arial, sans-serif; font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; }
+.document-paper h1 { font-size: 28px; line-height: 1.25; margin: 0 0 22px; }
+.document-paper h2 { font-size: 21px; margin: 24px 0 10px; }
+.document-paper h3 { font-size: 17px; }
+.document-paper table { border-collapse: collapse; table-layout: fixed; width: 100%; margin-block: 18px; }
+.document-paper th, .document-paper td { border: 1px solid #bdc5ce; padding: 8px 10px; text-align: left; vertical-align: top; }
+.document-paper th { background: #edf0f4; }
+.document-paper blockquote { margin-left: 0; padding-left: 16px; border-left: 3px solid #bdc5ce; }
+.document-paper a { color: #28568a; }
+.document-paper pre { white-space: pre-wrap; padding: 12px; background: #f3f4f6; border-radius: 6px; }
+.document-editor { display: flex; flex-direction: column; gap: 9px; height: 100%; min-height: 380px; font-size: 13px; }
+.document-editor input, .document-editor textarea { width: 100%; min-width: 0; border: 1px solid var(--line); border-radius: 9px; padding: 12px; background: var(--bg); color: var(--text); font: inherit; }
+.document-editor textarea { flex: 1; resize: vertical; min-height: 260px; line-height: 1.65; }
+.document-editor small { color: var(--muted); }
+.document-workspace-foot { display: flex; align-items: center; gap: 16px; padding: 12px 24px; border-top: 1px solid var(--line); }
+.document-workspace-foot p { flex: 1; margin: 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
+.document-workspace-foot button { border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 11px; white-space: nowrap; }
+@media (max-width: 600px) {
+  .document-workspace-head { padding: 18px 16px; }
+  .document-workspace-head h2 { font-size: 20px; }
+  .document-workspace-toolbar { padding: 10px 12px; gap: 6px; }
+  .document-workspace-toolbar button, .document-workspace-toolbar select { min-height: 40px; }
+  .document-save-state { min-width: 45px; }
+  .document-workspace-body { padding: 12px; }
+  .document-paper { padding: 26px 20px; min-height: 500px; font-size: 13px; }
+  .document-paper h1 { font-size: 24px; }
+  .document-paper th, .document-paper td { padding: 6px; font-size: 11px; }
+  .document-workspace-foot { padding: 10px 14px calc(10px + env(safe-area-inset-bottom)); }
+  .document-shelf { padding: 6px 14px; }
+}
 .settings-subsection h4 { margin: 0; font-size: 13.5px; font-weight: 600; }
 .pair-options { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 @media (max-width: 520px) {

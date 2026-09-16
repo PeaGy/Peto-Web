@@ -1,6 +1,9 @@
 # Peto Web
 
-Giao diện chat riêng cho Peto: **chat chữ, xem ảnh, đọc PDF, Word và tệp chữ**.
+Giao diện chat riêng cho Peto: **chat chữ, xem ảnh, đọc PDF, Word và tệp chữ;
+tạo bản nháp và tải DOCX/PDF**.
+
+Tạo và chỉnh bản nháp ngay trong chat: xem [hướng dẫn tài liệu](DOCUMENTS.md).
 
 Bot Discord (`Tracen Jukebox`) vẫn phát triển độc lập. Web có database riêng;
 có thể bật đọc bản tóm tắt trí nhớ từ bot qua Memory Gateway, không ghi ngược

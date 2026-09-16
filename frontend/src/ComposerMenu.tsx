@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { GlobeIcon } from './WebSources';
+import { DocumentIcon } from './DocumentWorkspace';
 
-export default function ComposerMenu({ disabled, webDisabled, onToggleWeb, onAttach }: {
+export default function ComposerMenu({ disabled, webDisabled, onToggleWeb, onAttach, documentMode, onToggleDocument }: {
   disabled: boolean;
   webDisabled: boolean;
   onToggleWeb: () => void;
   onAttach: () => void;
+  documentMode: boolean;
+  onToggleDocument: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
@@ -45,6 +48,9 @@ export default function ComposerMenu({ disabled, webDisabled, onToggleWeb, onAtt
       </button>
       <button type="button" onClick={() => { onToggleWeb(); close(); }}>
         <GlobeIcon /><span><strong>{webDisabled ? 'Bật tìm kiếm web' : 'Tắt tìm kiếm web'}</strong><small>{webDisabled ? 'Đang tắt · bật lại để tự động tra cứu' : 'Đang tự động tìm khi cần'}</small></span>
+      </button>
+      <button type="button" onClick={() => { close(); onToggleDocument(); }}>
+        <DocumentIcon /><span><strong>{documentMode ? 'Tắt viết tài liệu' : 'Viết tài liệu'}</strong><small>Soạn bản nháp để tải DOCX hoặc PDF</small></span>
       </button>
     </div>}
   </div>;

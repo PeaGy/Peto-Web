@@ -37,6 +37,8 @@ interface ComposerProps {
   onEffortChange: (value: Effort) => void;
   webSearch: WebSearchMode;
   onToggleWeb: () => void;
+  documentMode: boolean;
+  onToggleDocument: () => void;
   /** Menu dấu cộng tắt khi đang trả lời hoặc khi người dùng đang ở tab khác. */
   menuDisabled: boolean;
   /** Gợi ý ở màn hình trống; mảng rỗng thì không hiện gì. */
@@ -58,7 +60,7 @@ interface ComposerProps {
 export default function Composer({
   draft, onDraftChange, files, onAddFiles, onRemoveFile,
   streaming, stopping, canSend, onSubmit, onStop,
-  effort, efforts, onEffortChange, webSearch, onToggleWeb, menuDisabled,
+  effort, efforts, onEffortChange, webSearch, onToggleWeb, documentMode, onToggleDocument, menuDisabled,
   hints, onPickHint, formRef, boxRef, textareaRef, fileRef,
 }: ComposerProps) {
   const [dragging, setDragging] = useState(false);
@@ -93,6 +95,7 @@ export default function Composer({
       {dragging && <div className="drop-hint">Thả ảnh hoặc tệp vào đây</div>}
 
       <div className="composer" ref={boxRef}>
+        {documentMode && <div className="document-mode-chip">Viết tài liệu · DOCX / PDF<button type="button" disabled={streaming} aria-label="Tắt viết tài liệu" onClick={onToggleDocument}>×</button></div>}
         {files.length > 0 && (
           <ul className="attach-list">
             {files.map((item) => (
@@ -124,7 +127,7 @@ export default function Composer({
           ref={textareaRef}
           value={draft}
           rows={1}
-          placeholder="Nhắn cho Peto…"
+          placeholder={documentMode ? 'Mô tả tài liệu bạn muốn Peto soạn…' : 'Nhắn cho Peto…'}
           aria-label="Nhắn cho Peto"
           disabled={streaming}
           onChange={(event) => onDraftChange(event.target.value)}
@@ -157,7 +160,7 @@ export default function Composer({
               }}
             />
             <ComposerMenu disabled={menuDisabled} webDisabled={webSearch === "off"}
-              onAttach={() => fileRef.current?.click()} onToggleWeb={onToggleWeb} />
+              onAttach={() => fileRef.current?.click()} onToggleWeb={onToggleWeb} documentMode={documentMode} onToggleDocument={onToggleDocument} />
 
             <EffortMenu value={effort} options={efforts} disabled={streaming} onChange={onEffortChange} />
           </div>

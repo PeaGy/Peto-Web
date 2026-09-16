@@ -15,6 +15,7 @@ import time
 import uuid
 
 import aiosqlite
+from document_store import init_tables as init_document_tables
 
 from config import DB_PATH
 from web_search import normalize_sources
@@ -206,6 +207,7 @@ async def init_db() -> None:
             )
             """
         )
+        await init_document_tables(db)
         await db.commit()
 
 

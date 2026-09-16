@@ -9,6 +9,9 @@ itsdangerous
 openai
 pypdf==6.18.0
 defusedxml==0.7.1
+python-docx==1.2.0
+reportlab==5.0.1
+markdown-it-py==4.2.0
 
 # chỉ dùng khi chạy test
 pytest

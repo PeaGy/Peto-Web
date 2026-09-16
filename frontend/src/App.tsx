@@ -47,6 +47,8 @@ import { useCharacters } from './useCharacters';
 const CharacterPicker = lazy(() => import('./CharacterPicker'));
 import { readCharacterMotion, writeCharacterMotion, type CharacterMotion } from "./characterView";
 import Composer from "./Composer";
+import DocumentWorkspace, { DocumentIcon } from './DocumentWorkspace';
+import type { DocumentDraftRequest } from './documentApi';
 import { FileGlyph, formatSize, type DraftFile } from "./files";
 import { fillName, greetingKey, pickGreeting } from "./timeGreeting";
 import WebSources, { GlobeIcon, safeSources } from "./WebSources";
@@ -449,6 +451,8 @@ export default function App() {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [draft, setDraft] = useState("");
+  const [documentMode, setDocumentMode] = useState(false);
+  const [documentRequest, setDocumentRequest] = useState<DocumentDraftRequest | null>(null);
   const [draftFiles, setDraftFiles] = useState<DraftFile[]>([]);
   const [effort, setEffort] = useState<Effort>(readStoredEffort);
   const [webSearch, setWebSearch] = useState<WebSearchMode>("auto");
@@ -577,6 +581,7 @@ export default function App() {
 
   /** Phiên hết hạn giữa chừng: quay về màn hình đăng nhập thay vì báo lỗi lạ. */
   const handleUnauthorized = useCallback(() => {
+    setDocumentRequest(null); setDocumentMode(false);
     authVersion.current += 1;
     loadVersion.current += 1;
     listVersion.current += 1;
@@ -922,10 +927,13 @@ export default function App() {
     let activeId = conversationId;
     let accepted = false;
     let completed = false;
+    let documentReply = '';
+    let documentSources: Message['sources'] = [];
     const session = authVersion.current;
 
     const appendToReply = (chunk: string) => {
       if (session !== authVersion.current) return;
+      documentReply += chunk;
       setMessages((prev) => {
         const next = [...prev];
         const last = next[next.length - 1];
@@ -970,6 +978,7 @@ export default function App() {
           effort,
           webSearch,
           attachments,
+          documentMode,
         },
         {
           onMeta: (id, usedEffort, storedMessage) => {
@@ -979,6 +988,7 @@ export default function App() {
             setConversationId(id);
             setActiveEffort(usedEffort);
             setDraft("");
+            setDocumentMode(false);
             setDraftFiles([]);
             updateSearch({ reading: undefined });
             if (storedMessage) setMessages((prev) => [...prev.slice(0, -2), storedMessage, prev[prev.length - 1]]);
@@ -987,12 +997,21 @@ export default function App() {
           onThinking: appendThinking,
           onReading: (text) => updateSearch({ reading: text || undefined }),
           onSearch: (status) => updateSearch({ search_status: status }),
-          onSources: (sources) => updateSearch({ sources: safeSources(sources) }),
+          onSources: (sources) => {
+            documentSources = safeSources(sources);
+            updateSearch({ sources: documentSources });
+          },
           onError: (message) => {
             if (session !== authVersion.current) return;
             setError(message);
           },
-          onDone: () => { completed = true; },
+          onDone: () => {
+            completed = true;
+            if (documentMode && activeId && documentReply.trim() && session === authVersion.current) {
+              const references = documentSources?.length ? '\n\n## Nguồn tham khảo\n' + documentSources.map(source => `- ${source.title}: ${source.url}`).join('\n') : '';
+              setDocumentRequest({ conversationId: activeId, content: documentReply.trim() + references, key: Date.now() });
+            }
+          },
         },
         controller.signal,
       );
@@ -1342,6 +1361,11 @@ export default function App() {
               ) : null}
               {message.role === "assistant" && <WebSources sources={message.sources} />}
               {message.status === "incomplete" && <p className="message-status">Câu trả lời chưa hoàn tất</p>}
+              {message.role === 'assistant' && message.content && conversationId && !(streaming && index === messages.length - 1) && <button className="message-document-action" onClick={() => {
+                const sources = safeSources(message.sources);
+                const references = sources.length ? '\n\n## Nguồn tham khảo\n' + sources.map(source => `- ${source.title}: ${source.url}`).join('\n') : '';
+                setDocumentRequest({ conversationId, content: message.content + references, key: Date.now() });
+              }}><DocumentIcon /> Tạo tài liệu</button>}
             </article>
           ))}
           <div ref={bottomRef} />
@@ -1365,6 +1389,7 @@ export default function App() {
           <button type="button" className="dismiss-error" aria-label="Đóng thông báo trạng thái" onClick={() => setNotice(null)}>×</button>
         </div>}
 
+        <DocumentWorkspace key={auth.user?.id || 'session'} conversationId={conversationId} request={documentRequest} onUnauthorized={handleUnauthorized} />
         <Composer
           draft={draft}
           onDraftChange={setDraft}
@@ -1381,6 +1406,8 @@ export default function App() {
           onEffortChange={setEffort}
           webSearch={webSearch}
           onToggleWeb={() => setWebSearch((mode) => (mode === "off" ? "auto" : "off"))}
+          documentMode={documentMode}
+          onToggleDocument={() => { setDocumentMode(value => !value); textareaRef.current?.focus(); }}
           menuDisabled={streaming || view !== "chat"}
           hints={emptyChat ? CHAT_HINTS : []}
           onPickHint={(hint) => { setDraft(hint); textareaRef.current?.focus(); }}

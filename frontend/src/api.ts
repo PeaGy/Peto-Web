@@ -279,6 +279,7 @@ export async function sendMessage(
     webSearch?: WebSearchMode;
     attachments?: OutgoingAttachment[];
     mode?: ConversationMode;
+    documentMode?: boolean;
   },
   handlers: ChatHandlers,
   signal?: AbortSignal,
@@ -294,6 +295,7 @@ export async function sendMessage(
       timezone: browserTimezone(),
       attachments: payload.attachments ?? [],
       mode: payload.mode ?? "chat",
+      ...(payload.documentMode ? { document_mode: true } : {}),
     }),
     signal,
   });

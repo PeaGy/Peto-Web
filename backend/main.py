@@ -30,6 +30,7 @@ import attachments as attachment_lib
 import auth
 import db
 import document_reader
+import document_api
 import imagine_api
 import profile_api
 import voice_api
@@ -104,6 +105,7 @@ app.include_router(auth.router)
 app.include_router(imagine_api.router)
 app.include_router(profile_api.router)
 app.include_router(voice_api.router)
+app.include_router(document_api.router)
 
 
 class AttachmentIn(BaseModel):
@@ -121,6 +123,7 @@ class ChatRequest(BaseModel):
     web_search: Literal["auto", "on", "off"] = "auto"
     # "companion" khi nhắn từ tab Companion: persona trả lời ngắn bằng tiếng Anh, mạch trò chuyện riêng.
     mode: str = Field(default="chat", max_length=16)
+    document_mode: bool = False
 
 
 ALLOWED_EFFORTS = {"auto", "low", "medium", "high"}
@@ -524,6 +527,8 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner)):
                     yield sse({"type": "reading", "text": ""})
                 history = await anyio.to_thread.run_sync(_to_chat_messages, rows)
                 system_prompt = await _build_system_prompt(owner, mode)
+                if request.document_mode and mode == 'chat':
+                    system_prompt += '\n\n[PETO_DOCUMENT_DRAFT]\nLượt này người dùng chọn Viết tài liệu. Chỉ viết bản nháp hoàn chỉnh bằng Markdown để xuất DOCX/PDF, bắt đầu bằng một tiêu đề. Không kèm lời chào, lời dẫn, hướng dẫn tải hay kết luận ngoài tài liệu. Không tự bịa thông tin còn thiếu; dùng chỗ trống rõ ràng.'
                 try:
                     async for chunk in _stream_reply(system_prompt, history, effort, timezone, web_search):
                         yield chunk_event(chunk)

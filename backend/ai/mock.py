@@ -119,6 +119,14 @@ class MockProvider(ChatProvider):
             last_user = f"[đính kèm {', '.join(names)}]"
 
         reply = _pick_reply(last_user, timezone)
+        if '[PETO_DOCUMENT_DRAFT]' in system_prompt:
+            reply = ('# Kế hoạch học tập cùng Peto\n\n'
+                     'Đây là tài liệu mẫu để kiểm thử giao diện và xuất tệp. Nội dung này chưa được AI soạn theo yêu cầu thực tế.\n\n'
+                     '## Mục tiêu\n\nXây dựng thói quen học tập đều đặn, ghi lại tiến độ và điều chỉnh kế hoạch mỗi tuần.\n\n'
+                     '## Việc cần làm\n\n1. Chọn nội dung cần học.\n2. Dành thời gian thực hành mỗi ngày.\n3. Tổng kết vào cuối tuần.\n\n'
+                     '## Lịch dự kiến\n\n| Ngày | Nội dung | Thời gian |\n| --- | --- | --- |\n'
+                     '| Thứ hai | Đọc tài liệu | 30 phút |\n| Thứ tư | Thực hành | 45 phút |\n| Chủ nhật | Ôn tập | 30 phút |\n\n'
+                     '**Ghi chú:** Điều chỉnh lịch cho phù hợp với công việc và sức khỏe.')
         search_requested = web_search == "on" or any(word in last_user.casefold() for word in ("tìm kiếm", "tìm web", "tra web", "tra cứu", "mới nhất", "search"))
         if search_requested:
             reply = (
