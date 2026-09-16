@@ -12,10 +12,27 @@ from __future__ import annotations
 
 import asyncio
 import random
+import json
 from collections.abc import AsyncIterator
 
 from .base import ChatMessage, ChatProvider, ProviderError, StreamChunk
 from chat_tools import execute_tool
+from document_tools import current_session
+
+DOCUMENT_SAMPLE = '''# Giữ sự tử tế trong xã hội số
+
+Trong một thế giới mà mỗi người có thể gửi đi hàng trăm tin nhắn mỗi ngày, sự tử tế không còn chỉ thể hiện ở những cuộc gặp trực tiếp. Nó còn nằm trong cách chúng ta đọc một lời tâm sự, phản hồi một ý kiến khác biệt và dừng lại trước khi chia sẻ điều chưa được kiểm chứng. Không gian số giúp con người đến gần nhau, nhưng khoảng cách phía sau màn hình cũng có thể khiến ta quên rằng bên kia là một con người có cảm xúc.
+
+Sự tử tế là thái độ tôn trọng, biết quan tâm và có trách nhiệm với hành động của mình. Trên mạng, điều ấy bắt đầu từ những việc rất nhỏ: không chế giễu một người chỉ vì họ mắc lỗi, không biến nỗi đau của người khác thành trò vui, không dùng những lời cay nghiệt để giành phần thắng. Tử tế không có nghĩa là đồng ý với mọi quan điểm. Ta hoàn toàn có thể phản biện thẳng thắn mà vẫn giữ sự công bằng và tôn trọng đối phương.
+
+Thực tế cho thấy nhiều người sẵn sàng giúp đỡ nhau qua những nhóm học tập, chia sẻ kiến thức và kết nối cộng đồng. Một lời động viên đúng lúc có thể giúp ai đó vượt qua ngày khó khăn. Tuy vậy, cũng có những cuộc tranh luận nhanh chóng trở thành công kích cá nhân. Khi số lượt thích được xem như thước đo duy nhất, con người dễ chạy theo những phát ngôn gây chú ý mà bỏ qua hậu quả của chúng.
+
+Nguyên nhân không chỉ đến từ tính ẩn danh. Nhịp thông tin quá nhanh khiến chúng ta phản ứng trước khi suy nghĩ, trong khi những mẩu chuyện bị tách khỏi bối cảnh lại dễ tạo ra hiểu lầm. Vì vậy, trách nhiệm của người sử dụng mạng không dừng ở việc tránh nói lời xúc phạm. Mỗi người còn cần học cách kiểm tra thông tin, lắng nghe nhiều phía và thừa nhận khi mình sai.
+
+Để giữ sự tử tế, trước hết hãy tạo một khoảng dừng trước khi bình luận hoặc chia sẻ. Tự hỏi lời nói của mình có đúng sự thật, có cần thiết và có giúp ích hay không. Gia đình và nhà trường cũng cần tạo cơ hội để người trẻ thực hành tranh luận văn minh, thay vì chỉ yêu cầu im lặng trước bất đồng. Các nền tảng trực tuyến cần có cách tiếp nhận phản ánh rõ ràng và hỗ trợ người bị quấy rối.
+
+Xã hội số trở nên đáng sống hơn khi mỗi người nhìn thấy con người phía sau tài khoản. Một hành động nhỏ không thể giải quyết mọi vấn đề, nhưng nhiều lựa chọn có trách nhiệm sẽ tạo nên thói quen chung. Giữ sự tử tế vì thế là việc có thể bắt đầu ngay hôm nay, từ chính lời nói tiếp theo mà chúng ta gửi đi.
+'''
 
 _CHUNK_DELAY = 0.035
 
@@ -119,14 +136,25 @@ class MockProvider(ChatProvider):
             last_user = f"[đính kèm {', '.join(names)}]"
 
         reply = _pick_reply(last_user, timezone)
-        if '[PETO_DOCUMENT_DRAFT]' in system_prompt:
-            reply = ('# Kế hoạch học tập cùng Peto\n\n'
-                     'Đây là tài liệu mẫu để kiểm thử giao diện và xuất tệp. Nội dung này chưa được AI soạn theo yêu cầu thực tế.\n\n'
-                     '## Mục tiêu\n\nXây dựng thói quen học tập đều đặn, ghi lại tiến độ và điều chỉnh kế hoạch mỗi tuần.\n\n'
-                     '## Việc cần làm\n\n1. Chọn nội dung cần học.\n2. Dành thời gian thực hành mỗi ngày.\n3. Tổng kết vào cuối tuần.\n\n'
-                     '## Lịch dự kiến\n\n| Ngày | Nội dung | Thời gian |\n| --- | --- | --- |\n'
-                     '| Thứ hai | Đọc tài liệu | 30 phút |\n| Thứ tư | Thực hành | 45 phút |\n| Chủ nhật | Ôn tập | 30 phút |\n\n'
-                     '**Ghi chú:** Điều chỉnh lịch cho phù hợp với công việc và sức khỏe.')
+        session = current_session.get()
+        lowered = last_user.casefold()
+        # Only the offline mock uses keyword routing. The real provider chooses its tool.
+        create_requested = '[PETO_DOCUMENT_CREATE]' in system_prompt or (
+            any(word in lowered for word in ('tạo', 'xuất', 'create', 'generate')) and
+            any(word in lowered for word in ('docx', 'pdf', 'word', 'tài liệu', 'file')))
+        if session and create_requested:
+            format = 'pdf' if 'pdf' in lowered and 'docx' not in lowered else 'docx'
+            yield StreamChunk('document_status', 'Đang soạn và dàn trang tài liệu…')
+            result = await session.create(json.dumps({'title': 'Giữ sự tử tế trong xã hội số', 'content': DOCUMENT_SAMPLE,
+                'format': format, 'style': 'essay'}, ensure_ascii=False))
+            if result.get('ok'):
+                yield StreamChunk('artifact', artifact=result['artifact'])
+                yield StreamChunk('document_status', '')
+                yield 'Đã tạo tệp mẫu chứa bài nghị luận **Giữ sự tử tế trong xã hội số**.\n\nBạn có thể xem từng trang và tải tệp bên dưới. Đây là nội dung mẫu của chế độ kiểm thử, chưa dùng AI thật.'
+            else:
+                yield StreamChunk('document_status', '')
+                yield 'Chưa tạo được tệp: ' + result['error']
+            return
         search_requested = web_search == "on" or any(word in last_user.casefold() for word in ("tìm kiếm", "tìm web", "tra web", "tra cứu", "mới nhất", "search"))
         if search_requested:
             reply = (

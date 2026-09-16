@@ -45,6 +45,25 @@ async function openApp() {
   await screen.findByRole('button', { name: 'A', exact: true });
 }
 
+it('yêu cầu file bằng chat thường nhận thẻ xem trước, không mở trình sửa hay bắt bấm tạo lại', async () => {
+  const artifact: api.DocumentArtifact = { id: 'D1', title: 'Bài văn', filename: 'Bài văn.docx', format: 'docx', style: 'essay', pages: 2, version: 1 };
+  vi.mocked(api.sendMessage).mockImplementation(async (payload, handlers) => {
+    expect(payload.documentMode).toBe(false);
+    handlers.onMeta?.('C', 'low', row('Tạo file Word'));
+    handlers.onDocumentStatus?.('Đang tạo tệp');
+    handlers.onArtifact?.(artifact);
+    handlers.onDelta?.('Đã tạo bài nghị luận.');
+    handlers.onDone?.();
+  });
+  await openApp();
+  fireEvent.change(screen.getByLabelText('Nhắn cho Peto'), { target: { value: 'Tạo file Word' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Gửi', exact: true }));
+  expect(await screen.findByRole('link', { name: 'Tải Bài văn.docx' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Tạo tài liệu', exact: true })).toBeNull();
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(screen.queryByText('Đang tạo tệp')).toBeNull();
+});
+
 it('gửi Word qua dấu cộng, giữ bản nháp khi đọc và hiện trạng thái sau khi nhận', async () => {
   const result = deferred<void>();
   vi.mocked(api.sendMessage).mockImplementation(async (payload, handlers) => {

@@ -2,6 +2,7 @@ import { UnauthorizedError } from './api';
 
 export interface DocumentSummary { id: string; conversation_id: string; title: string; version: number; created_at: number }
 export interface SavedDocument extends DocumentSummary {
+  style?: 'report' | 'essay';
   content: string;
   versions: { version: number; title: string; created_at: number }[];
 }
@@ -22,7 +23,7 @@ export const listDocuments = (id: string, signal?: AbortSignal) => json<{ docume
 export const getDocument = (id: string, version?: number) => json<SavedDocument>(`/api/documents/${encodeURIComponent(id)}${version ? `?version=${version}` : ''}`);
 export const saveDocument = (draft: { title: string; content: string }, conversationId: string, previous: SavedDocument | null) => json<SavedDocument>(
   previous ? `/api/documents/${encodeURIComponent(previous.id)}/versions` : '/api/documents',
-  { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...draft, ...(previous ? { base_version: previous.versions[0].version } : { conversation_id: conversationId }) }) },
+  { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...draft, style: previous?.style || 'report', ...(previous ? { base_version: previous.versions[0].version } : { conversation_id: conversationId }) }) },
 );
 export const deleteDocument = (id: string) => json(`/api/documents/${encodeURIComponent(id)}`, { method: 'DELETE' });
 export async function downloadDocument(document: SavedDocument, format: 'docx' | 'pdf') {

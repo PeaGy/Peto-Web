@@ -18,6 +18,7 @@ from openai import (
 from config import MAX_HISTORY_IMAGES, XAI_API_BASE, XAI_MAX_OUTPUT_TOKENS, XAI_MODEL, WEB_SEARCH_ENABLED
 from xai_auth import XaiAuth, XaiAuthError
 from chat_tools import TOOL_SCHEMAS, execute_tool
+from document_tools import current_session, SCHEMA as DOCUMENT_SCHEMA
 from web_search import normalize_sources, search_context
 
 from .base import ChatMessage, ChatProvider, ProviderError, StreamChunk
@@ -152,6 +153,7 @@ class XAIProvider(ChatProvider):
                 yield StreamChunk("sources", sources=tuple(sources))
 
         calls_used = 0
+        document_session = current_session.get()
         for round_index in range(MAX_TOOL_ROUNDS + 1):
             create_kwargs: dict = {
                 "model": XAI_MODEL,
@@ -162,7 +164,7 @@ class XAIProvider(ChatProvider):
                     "effort": effort if effort in {"low", "medium", "high"} else "low"
                 },
                 "stream": True,
-                "tools": [*TOOL_SCHEMAS, *([{"type": "web_search"}] if search_enabled else [])],
+                "tools": [*TOOL_SCHEMAS, *([DOCUMENT_SCHEMA] if document_session else []), *([{"type": "web_search"}] if search_enabled else [])],
                 "include": ["reasoning.encrypted_content"],
                 # Tự giữ các item trong lượt này, không cần lưu hội thoại ở xAI.
                 "store": False,
@@ -253,7 +255,14 @@ class XAIProvider(ChatProvider):
             for call in tool_calls:
                 if not call.get("call_id"):
                     raise ProviderError("AI trả về yêu cầu công cụ không hợp lệ. Thử lại nhé.")
-                result = execute_tool(call.get("name", ""), call.get("arguments", ""), timezone=timezone)
+                if call.get('name') == 'create_document' and document_session:
+                    yield StreamChunk('document_status', 'Đang dàn trang và tạo tệp…')
+                    result = await document_session.create(call.get('arguments', ''))
+                    if result.get('ok'):
+                        yield StreamChunk('artifact', artifact=result['artifact'])
+                    yield StreamChunk('document_status', '')
+                else:
+                    result = execute_tool(call.get("name", ""), call.get("arguments", ""), timezone=timezone)
                 payload_input.append({
                     "type": "function_call_output", "call_id": call["call_id"],
                     "output": json.dumps(result, ensure_ascii=False),

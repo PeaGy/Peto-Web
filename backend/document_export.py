@@ -121,29 +121,38 @@ def _body(title, content):
     return blocks
 
 
-def render_docx(title: str, content: str) -> bytes:
+def render_docx(title: str, content: str, layout: str = 'report') -> bytes:
     from docx import Document
-    from docx.shared import Inches, Pt, RGBColor
+    from docx.shared import Inches, Cm, Pt, RGBColor
     from docx.oxml import OxmlElement
     from docx.oxml.ns import qn
     from docx.enum.text import WD_ALIGN_PARAGRAPH
 
     document = Document()
     section = document.sections[0]
-    section.page_width, section.page_height = Inches(8.5), Inches(11)
+    essay = layout == 'essay'
+    section.page_width, section.page_height = (Cm(21), Cm(29.7)) if essay else (Inches(8.5), Inches(11))
     section.top_margin = section.bottom_margin = Inches(.75)
     section.left_margin = section.right_margin = Inches(.75)
     for name in ['Normal', 'Title', *[f'Heading {n}' for n in range(1, 7)]]:
         style = document.styles[name]
-        style.font.name = 'Arial'
+        style.font.name = 'Times New Roman' if essay else 'Arial'
         style.font.color.rgb = RGBColor(0, 0, 0)
     normal = document.styles['Normal']
-    normal.font.size = Pt(11)
-    normal.paragraph_format.line_spacing = 1.25
+    normal.font.size = Pt(13 if essay else 11)
+    normal.paragraph_format.line_spacing = 1.5 if essay else 1.25
+    if essay:
+        normal.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+        normal.paragraph_format.first_line_indent = Cm(.75)
+        header = section.header.paragraphs[0]
+        header.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        header.add_run('Nghị luận xã hội').italic = True
     normal.paragraph_format.space_after = Pt(7)
     document.styles['Title'].font.size = Pt(24)
     document.core_properties.title, document.core_properties.author = title, 'Peto'
-    document.add_paragraph(title, 'Title')
+    title_paragraph = document.add_paragraph(title, 'Title')
+    title_paragraph.paragraph_format.first_line_indent = 0
+    if essay: title_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
     def write(paragraph, runs, prefix=''):
         if prefix: paragraph.add_run(prefix)
@@ -171,6 +180,9 @@ def render_docx(title: str, content: str) -> bytes:
         else:
             style = f'Heading {block.level}' if block.kind == 'heading' else 'Normal'
             paragraph = document.add_paragraph(style=style)
+            if block.kind == 'heading':
+                paragraph.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.LEFT
+                paragraph.paragraph_format.first_line_indent = 0
             if block.level and block.kind != 'heading': paragraph.paragraph_format.left_indent = Inches(.2 * block.level)
             if block.kind == 'quote': paragraph.paragraph_format.left_indent = Inches(.25)
             if block.kind == 'code': paragraph.paragraph_format.space_after = Pt(0)
@@ -191,21 +203,34 @@ def _register_fonts():
             for suffix, style in [('', 'Regular'), ('-Bold', 'Bold'), ('-Italic', 'Italic'), ('-BoldItalic', 'BoldItalic')]:
                 pdfmetrics.registerFont(TTFont('PetoSans' + suffix, str(FONT_DIR / f'NotoSans-{style}.ttf')))
             pdfmetrics.registerFontFamily('PetoSans', normal='PetoSans', bold='PetoSans-Bold', italic='PetoSans-Italic', boldItalic='PetoSans-BoldItalic')
+        if 'PetoSerif' not in pdfmetrics.getRegisteredFontNames():
+            for suffix, style in [('', 'Regular'), ('-Bold', 'Bold'), ('-Italic', 'Italic'), ('-BoldItalic', 'BoldItalic')]:
+                pdfmetrics.registerFont(TTFont('PetoSerif' + suffix, str(FONT_DIR / f'NotoSerif-{style}.ttf')))
+            pdfmetrics.registerFontFamily('PetoSerif', normal='PetoSerif', bold='PetoSerif-Bold', italic='PetoSerif-Italic', boldItalic='PetoSerif-BoldItalic')
 
 
-def render_pdf(title: str, content: str) -> bytes:
+def render_pdf(title: str, content: str, layout: str = 'report') -> bytes:
     from reportlab.lib import colors
-    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.pagesizes import letter, A4
     from reportlab.lib.styles import ParagraphStyle
     from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, LongTable, TableStyle, HRFlowable
     from reportlab.pdfbase import pdfmetrics
 
     _register_fonts()
-    if any(not char.isspace() and ord(char) not in pdfmetrics.getFont('PetoSans').face.charToGlyph for char in title + content):
+    essay = layout == 'essay'
+    font = 'PetoSerif' if essay else 'PetoSans'
+    page_size = A4 if essay else letter
+    if any(not char.isspace() and ord(char) not in pdfmetrics.getFont(font).face.charToGlyph for char in title + content):
         raise ValueError('PDF chưa hỗ trợ một số ký tự trong bản nháp (chẳng hạn emoji hoặc chữ tượng hình). Hãy bỏ các ký tự đó hoặc tải DOCX.')
     body = ParagraphStyle('Body', fontName='PetoSans', fontSize=11, leading=16, spaceAfter=8, splitLongWords=True)
     heading = {n: ParagraphStyle(f'Heading{n}', parent=body, fontName='PetoSans-Bold', fontSize=max(11, 20-2*n), leading=max(16, 25-2*n), spaceBefore=12, keepWithNext=True) for n in range(1, 7)}
     title_style = ParagraphStyle('Title', parent=body, fontName='PetoSans-Bold', fontSize=24, leading=31, spaceAfter=18)
+    if essay:
+        body.fontName, body.fontSize, body.leading = font, 13, 20
+        body.alignment, body.firstLineIndent = 4, 21
+        for style in heading.values(): style.fontName = font + '-Bold'
+        title_style.fontName, title_style.fontSize, title_style.leading = font + '-Bold', 21, 29
+        title_style.alignment, title_style.spaceAfter = 1, 26
 
     def markup(runs):
         chunks = []
@@ -222,9 +247,9 @@ def render_pdf(title: str, content: str) -> bytes:
     for block in _body(title, content):
         if block.kind == 'table' and block.rows:
             cell_style = ParagraphStyle('Cell', parent=body, fontSize=10, leading=14, spaceAfter=0)
-            head_style = ParagraphStyle('CellHead', parent=cell_style, fontName='PetoSans-Bold')
+            head_style = ParagraphStyle('CellHead', parent=cell_style, fontName=font + '-Bold')
             rows = [[Paragraph(markup(cell), head_style if i == 0 else cell_style) for cell in row] for i, row in enumerate(block.rows)]
-            table = LongTable(rows, colWidths=[504 / len(rows[0])] * len(rows[0]), repeatRows=1, splitByRow=1, splitInRow=1)
+            table = LongTable(rows, colWidths=[(page_size[0] - 108) / len(rows[0])] * len(rows[0]), repeatRows=1, splitByRow=1, splitInRow=1)
             table.setStyle(TableStyle([
                 ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#EDF0F4')),
                 ('GRID', (0,0), (-1,-1), .5, colors.HexColor('#BDC5CE')),
@@ -240,10 +265,14 @@ def render_pdf(title: str, content: str) -> bytes:
             if block.kind == 'code': style.fontSize, style.leading, style.spaceAfter = 10, 14, 0
             story.append(Paragraph(escape(block.prefix) + markup(block.runs), style))
     def page_footer(canvas, document):
-        canvas.saveState(); canvas.setFont('PetoSans', 9)
-        canvas.drawCentredString(letter[0] / 2, 30, f'Trang {document.page}')
+        canvas.saveState(); canvas.setFont(font, 9)
+        canvas.drawCentredString(page_size[0] / 2, 30, f'Trang {document.page}')
+        if essay:
+            canvas.setFont(font + '-Italic', 9)
+            canvas.setFillColor(colors.HexColor('#506279'))
+            canvas.drawRightString(page_size[0] - 54, page_size[1] - 34, 'Nghị luận xã hội')
         canvas.restoreState()
     output = BytesIO()
-    document = SimpleDocTemplate(output, pagesize=letter, topMargin=54, bottomMargin=54, leftMargin=54, rightMargin=54, title=title, author='Peto')
+    document = SimpleDocTemplate(output, pagesize=page_size, topMargin=62 if essay else 54, bottomMargin=54, leftMargin=54, rightMargin=54, title=title, author='Peto')
     document.build(story, onFirstPage=page_footer, onLaterPages=page_footer)
     return output.getvalue()

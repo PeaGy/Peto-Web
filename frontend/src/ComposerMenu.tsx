@@ -50,7 +50,7 @@ export default function ComposerMenu({ disabled, webDisabled, onToggleWeb, onAtt
         <GlobeIcon /><span><strong>{webDisabled ? 'Bật tìm kiếm web' : 'Tắt tìm kiếm web'}</strong><small>{webDisabled ? 'Đang tắt · bật lại để tự động tra cứu' : 'Đang tự động tìm khi cần'}</small></span>
       </button>
       <button type="button" onClick={() => { close(); onToggleDocument(); }}>
-        <DocumentIcon /><span><strong>{documentMode ? 'Tắt viết tài liệu' : 'Viết tài liệu'}</strong><small>Soạn bản nháp để tải DOCX hoặc PDF</small></span>
+        <DocumentIcon /><span><strong>{documentMode ? 'Tắt viết tài liệu' : 'Viết tài liệu'}</strong><small>Tạo tệp DOCX hoặc PDF ngay trong chat</small></span>
       </button>
     </div>}
   </div>;

@@ -115,5 +115,6 @@ async def test_document_mode_goes_through_normal_chat_and_saves_reply(client):
     response = await client.post('/api/chat', json={'message': 'Soạn kế hoạch học', 'document_mode': True})
     events = await read_events(response)
     reply = ''.join(event.get('text', '') for event in events if event['type'] == 'delta')
-    assert reply.startswith('# Kế hoạch học tập')
+    assert reply.startswith('Đã tạo tệp mẫu')
+    assert any(event['type'] == 'artifact' for event in events)
     assert events[-1]['type'] == 'done'

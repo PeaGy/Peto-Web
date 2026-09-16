@@ -4,6 +4,16 @@ import { createImagineJob, sendMessage } from '../src/api';
 afterEach(() => vi.unstubAllGlobals());
 const event = (value: object) => `data: ${JSON.stringify(value)}\n\n`;
 
+it('thẻ tài liệu và tiến trình tạo tệp tách khỏi lời trả lời', async () => {
+  const artifact = { id: 'D1', filename: 'Bài văn.docx', title: 'Bài văn', version: 1, pages: 2, format: 'docx', style: 'essay' };
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(event({ type: 'document_status', text: 'Đang tạo tệp' }) + event({ type: 'artifact', artifact }) + event({ type: 'delta', text: 'Đã tạo.' }) + event({ type: 'done' }))));
+  const onArtifact = vi.fn(), onDocumentStatus = vi.fn(), onDelta = vi.fn();
+  await sendMessage({ message: 'Tạo Word', conversationId: null, effort: 'auto' }, { onArtifact, onDocumentStatus, onDelta });
+  expect(onArtifact).toHaveBeenCalledExactlyOnceWith(artifact);
+  expect(onDocumentStatus).toHaveBeenCalledWith('Đang tạo tệp');
+  expect(onDelta).toHaveBeenCalledExactlyOnceWith('Đã tạo.');
+});
+
 it('tiến trình đọc tệp không trộn vào câu trả lời', async () => {
   vi.stubGlobal('fetch', vi.fn(async () => new Response(event({ type: 'reading', text: 'Peto đang đọc 1 tài liệu…' }) + event({ type: 'delta', text: 'Nội dung' }) + event({ type: 'done' }))));
   const onReading = vi.fn(), onDelta = vi.fn();

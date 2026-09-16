@@ -69,6 +69,8 @@ async def init_db() -> None:
             )
         if "sources" not in {column[1] for column in columns}:
             await db.execute("ALTER TABLE messages ADD COLUMN sources TEXT NOT NULL DEFAULT '[]'")
+        if 'artifacts' not in {column[1] for column in columns}:
+            await db.execute("ALTER TABLE messages ADD COLUMN artifacts TEXT NOT NULL DEFAULT '[]'")
         await db.execute(
             """
             CREATE TABLE IF NOT EXISTS attachments (
@@ -364,7 +366,7 @@ async def get_messages(
         if limit is None:
             cursor = await db.execute(
                 """
-                SELECT m.id, m.role, m.content, m.created_at, m.status, m.sources
+                SELECT m.id, m.role, m.content, m.created_at, m.status, m.sources, m.artifacts
                   FROM messages m
                   JOIN conversations c ON c.id = m.conversation_id
                  WHERE m.conversation_id = ? AND c.owner = ?
@@ -377,7 +379,7 @@ async def get_messages(
             # Lấy N tin gần nhất rồi đảo lại, tránh đọc toàn bộ hội thoại dài.
             cursor = await db.execute(
                 """
-                SELECT m.id, m.role, m.content, m.created_at, m.status, m.sources
+                SELECT m.id, m.role, m.content, m.created_at, m.status, m.sources, m.artifacts
                   FROM messages m
                   JOIN conversations c ON c.id = m.conversation_id
                  WHERE m.conversation_id = ? AND c.owner = ?
@@ -393,6 +395,20 @@ async def get_messages(
                 row["sources"] = normalize_sources(json.loads(row["sources"]))
             except (ValueError, TypeError):
                 row["sources"] = []
+            try: row['artifacts'] = json.loads(row['artifacts'])
+            except (ValueError, TypeError): row['artifacts'] = []
+            # Verify that every artifact still belongs to this account and chat.
+            existing, generated = [], []
+            for artifact in row['artifacts'] if isinstance(row['artifacts'], list) else []:
+                if not isinstance(artifact, dict): continue
+                document = await (await db.execute('''SELECT v.title, v.content FROM chat_document_versions v
+                    JOIN chat_documents d ON d.id=v.document_id
+                    WHERE d.owner=? AND d.conversation_id=? AND d.id=? AND v.version=?''',
+                    (owner, conversation_id, artifact.get('id'), artifact.get('version')))).fetchone()
+                if document:
+                    existing.append(artifact)
+                    generated.append({'id': artifact['id'], 'filename': artifact['filename'], 'content': document['content']})
+            row['artifacts'], row['generated_documents'] = existing, generated
         return await _attach_files(db, rows)
 
 
@@ -492,15 +508,15 @@ async def list_attachment_paths(conversation_id: str) -> list[str]:
 
 
 async def add_message(
-    conversation_id: str, role: str, content: str, status: str = "complete", sources: list[dict] | None = None
+    conversation_id: str, role: str, content: str, status: str = "complete", sources: list[dict] | None = None, artifacts: list[dict] | None = None
 ) -> int:
     now = time.time()
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("PRAGMA foreign_keys=ON")
         cursor = await db.execute(
-            "INSERT INTO messages (conversation_id, role, content, created_at, status, sources) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (conversation_id, role, content, now, status, json.dumps(normalize_sources(sources), ensure_ascii=False)),
+            "INSERT INTO messages (conversation_id, role, content, created_at, status, sources, artifacts) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (conversation_id, role, content, now, status, json.dumps(normalize_sources(sources), ensure_ascii=False), json.dumps(artifacts or [], ensure_ascii=False)),
         )
         await db.execute(
             "UPDATE conversations SET updated_at = ? WHERE id = ?",

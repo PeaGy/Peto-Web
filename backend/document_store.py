@@ -9,6 +9,7 @@ from config import DB_PATH
 
 MAX_DOCUMENTS = 100
 MAX_VERSIONS = 20
+MAX_ASSET_BYTES = 32 * 1024 * 1024
 
 
 async def init_tables(connection):
@@ -25,7 +26,17 @@ async def init_tables(connection):
             PRIMARY KEY(document_id, version),
             FOREIGN KEY(document_id) REFERENCES chat_documents(id) ON DELETE CASCADE
         );
+        CREATE TABLE IF NOT EXISTS document_assets (
+            document_id TEXT NOT NULL, version INTEGER NOT NULL,
+            format TEXT NOT NULL, pages INTEGER NOT NULL,
+            docx BLOB NOT NULL, pdf BLOB NOT NULL, preview BLOB NOT NULL,
+            PRIMARY KEY(document_id, version),
+            FOREIGN KEY(document_id, version) REFERENCES chat_document_versions(document_id, version) ON DELETE CASCADE
+        );
     """)
+    columns = await (await connection.execute('PRAGMA table_info(chat_document_versions)')).fetchall()
+    if 'style' not in {column[1] for column in columns}:
+        await connection.execute("ALTER TABLE chat_document_versions ADD COLUMN style TEXT NOT NULL DEFAULT 'report'")
 
 
 async def list_documents(owner, conversation_id):
@@ -50,7 +61,7 @@ async def get_document(owner, document_id, version=None):
     async with aiosqlite.connect(DB_PATH) as connection:
         connection.row_factory = aiosqlite.Row
         row = await (await connection.execute("""
-            SELECT d.id, d.conversation_id, v.version, v.title, v.content, v.created_at
+            SELECT d.id, d.conversation_id, v.version, v.title, v.content, v.created_at, v.style
             FROM chat_documents d JOIN chat_document_versions v ON v.document_id=d.id
             WHERE d.id=? AND d.owner=? AND v.version=COALESCE(?, (
                 SELECT MAX(version) FROM chat_document_versions WHERE document_id=d.id
@@ -65,7 +76,7 @@ async def get_document(owner, document_id, version=None):
         return {**dict(row), "versions": [dict(item) for item in versions]}
 
 
-async def save_document(owner, conversation_id, title, content, document_id=None, base_version=None):
+async def save_document(owner, conversation_id, title, content, document_id=None, base_version=None, *, style='report', assets=None):
     async with aiosqlite.connect(DB_PATH) as connection:
         await connection.execute("PRAGMA foreign_keys=ON")
         await connection.execute("BEGIN IMMEDIATE")
@@ -95,10 +106,27 @@ async def save_document(owner, conversation_id, title, content, document_id=None
             document_id, version = uuid.uuid4().hex, 1
             await connection.execute("INSERT INTO chat_documents VALUES (?, ?, ?, ?)",
                                      (document_id, owner, conversation_id, time.time()))
-        await connection.execute("INSERT INTO chat_document_versions VALUES (?, ?, ?, ?, ?)",
-                                 (document_id, version, title, content, time.time()))
+        await connection.execute("INSERT INTO chat_document_versions (document_id, version, title, content, created_at, style) VALUES (?, ?, ?, ?, ?, ?)",
+                                 (document_id, version, title, content, time.time(), style))
+        if assets:
+            used = await (await connection.execute('''SELECT COALESCE(SUM(length(a.docx)+length(a.pdf)+length(a.preview)),0)
+                FROM document_assets a JOIN chat_documents d ON d.id=a.document_id WHERE d.owner=?''', (owner,))).fetchone()
+            size = sum(len(assets[k]) for k in ('docx', 'pdf', 'preview'))
+            if used[0] + size > MAX_ASSET_BYTES:
+                raise HTTPException(400, 'Kho tệp tài liệu đã đầy (32 MB). Hãy xóa tài liệu không còn cần.')
+            await connection.execute('INSERT INTO document_assets VALUES (?, ?, ?, ?, ?, ?, ?)',
+                (document_id, version, assets['format'], assets['pages'], assets['docx'], assets['pdf'], assets['preview']))
         await connection.commit()
     return await get_document(owner, document_id, version)
+
+
+async def get_assets(owner, document_id, version):
+    async with aiosqlite.connect(DB_PATH) as connection:
+        connection.row_factory = aiosqlite.Row
+        row = await (await connection.execute('''SELECT a.* FROM document_assets a
+            JOIN chat_documents d ON d.id=a.document_id WHERE d.owner=? AND a.document_id=? AND a.version=?''',
+            (owner, document_id, version))).fetchone()
+        return dict(row) if row else None
 
 
 async def delete_document(owner, document_id):

@@ -4,6 +4,10 @@ export type WebSearchMode = "auto" | "on" | "off";
 /** Tab gửi tin: Companion có persona trả lời ngắn bằng tiếng Anh và mạch trò chuyện riêng. */
 export type ConversationMode = "chat" | "companion";
 export interface WebSource { url: string; title: string }
+export interface DocumentArtifact {
+  id: string; title: string; filename: string; version: number;
+  format: 'docx' | 'pdf'; style: 'report' | 'essay'; pages: number;
+}
 
 export interface ChatAttachment {
   id: string;
@@ -38,6 +42,8 @@ export interface Message {
   reading?: string;
   sources?: WebSource[];
   search_status?: "searching" | "completed";
+  artifacts?: DocumentArtifact[];
+  document_status?: string;
 }
 
 export interface Conversation {
@@ -55,6 +61,8 @@ type ChatEvent =
   | { type: "reading"; text: string }
   | { type: "search"; status: "searching" | "completed" }
   | { type: "sources"; sources: WebSource[] }
+  | { type: 'artifact'; artifact: DocumentArtifact }
+  | { type: 'document_status'; text: string }
   | { type: "error"; message: string }
   | { type: "done" };
 
@@ -65,6 +73,8 @@ interface ChatHandlers {
   onReading?: (text: string) => void;
   onSearch?: (status: "searching" | "completed") => void;
   onSources?: (sources: WebSource[]) => void;
+  onArtifact?: (artifact: DocumentArtifact) => void;
+  onDocumentStatus?: (text: string) => void;
   onError?: (message: string) => void;
   onDone?: () => void;
 }
@@ -345,6 +355,10 @@ export async function sendMessage(
           handlers.onSearch?.(event.status);
         } else if (event.type === "sources") {
           handlers.onSources?.(event.sources);
+        } else if (event.type === 'artifact') {
+          handlers.onArtifact?.(event.artifact);
+        } else if (event.type === 'document_status') {
+          handlers.onDocumentStatus?.(event.text);
         } else if (event.type === "error") {
           handlers.onError?.(event.message);
           ended = true;

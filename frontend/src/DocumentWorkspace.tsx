@@ -8,8 +8,9 @@ export function DocumentIcon() {
   return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9l-6-6Zm0 0v6h6M8 13h8M8 17h6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>;
 }
 
-export default function DocumentWorkspace({ conversationId, request, onUnauthorized }: {
+export default function DocumentWorkspace({ conversationId, request, onUnauthorized, selection, refreshKey = 0 }: {
   conversationId: string | null; request: DocumentDraftRequest | null; onUnauthorized: () => void;
+  selection?: { id: string; version: number; key: number } | null; refreshKey?: number;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const body = useRef<HTMLDivElement>(null);
@@ -42,7 +43,10 @@ export default function DocumentWorkspace({ conversationId, request, onUnauthori
       else setListError(true);
     });
     return () => controller.abort();
-  }, [conversationId, reload, onUnauthorized]);
+  }, [conversationId, reload, refreshKey, onUnauthorized]);
+  useEffect(() => {
+    if (selection) void load(selection.id, selection.version);
+  }, [selection]);
   useEffect(() => {
     if (!request) return;
     setSaved(null); setSourceConversation(request.conversationId);
