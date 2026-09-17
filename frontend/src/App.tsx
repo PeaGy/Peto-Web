@@ -1072,6 +1072,14 @@ export default function App() {
             if (storedMessage) setMessages((prev) => [...prev.slice(0, -2), storedMessage, prev[prev.length - 1]]);
           },
           onDelta: appendToReply,
+          onReplace: () => {
+            if (session !== authVersion.current) return;
+            setMessages((prev) => {
+              const last = prev[prev.length - 1];
+              if (last?.role !== "assistant") return prev;
+              return [...prev.slice(0, -1), { ...last, content: "" }];
+            });
+          },
           onThinking: () => addWorkStep("think", "Đang suy nghĩ…", true),
           onReading: (text) => {
             updateSearch({ reading: text || undefined });

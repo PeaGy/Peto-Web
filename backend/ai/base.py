@@ -43,7 +43,7 @@ class StreamChunk:
     ``search`` là tiến trình tra web; ``sources`` là nguồn tham khảo để lưu và hiển thị riêng.
     """
 
-    kind: str  # "text" | "thinking" | "search" | "sources" | "document_status" | "artifact"
+    kind: str  # "text" | "thinking" | "search" | "sources" | "document_status" | "artifact" | "replace"
     text: str = ""
     sources: tuple[dict, ...] = field(default_factory=tuple)
     artifact: dict | None = None

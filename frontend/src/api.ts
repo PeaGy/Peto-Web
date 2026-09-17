@@ -70,6 +70,7 @@ export interface Conversation {
 type ChatEvent =
   | { type: "meta"; conversation_id: string; effort: string; message?: Message }
   | { type: "delta"; text: string }
+  | { type: "replace" }
   | { type: "thinking"; text: string }
   | { type: "reading"; text: string }
   | { type: "search"; status: "searching" | "completed" }
@@ -82,6 +83,7 @@ type ChatEvent =
 interface ChatHandlers {
   onMeta?: (conversationId: string, effort: string, message?: Message) => void;
   onDelta?: (text: string) => void;
+  onReplace?: () => void;
   onThinking?: (text: string) => void;
   onReading?: (text: string) => void;
   onSearch?: (status: "searching" | "completed") => void;
@@ -407,6 +409,8 @@ export async function sendMessage(
           handlers.onMeta?.(event.conversation_id, event.effort, event.message);
         } else if (event.type === "delta") {
           handlers.onDelta?.(event.text);
+        } else if (event.type === "replace") {
+          handlers.onReplace?.();
         } else if (event.type === "thinking") {
           handlers.onThinking?.(event.text);
         } else if (event.type === "reading") {

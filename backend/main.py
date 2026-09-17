@@ -525,6 +525,9 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                 return sse({"type": "sources", "sources": sources})
             if chunk.kind == "thinking":
                 return sse({"type": "thinking", "text": chunk.text})
+            if chunk.kind == "replace":
+                collected.clear()
+                return sse({"type": "replace"})
             collected.append(chunk.text)
             return sse({"type": "delta", "text": chunk.text})
 

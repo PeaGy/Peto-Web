@@ -74,12 +74,71 @@ async def test_forced_search_cannot_silently_return_unsearched_answer(monkeypatc
     assert stream.closed
 
 
+async def test_draft_written_before_search_is_dropped(monkeypatch):
+    """Grok hay viết móc câu, search, rồi viết lại từ đầu. Bản nháp không được giữ."""
+    stream = FakeStream([
+        SimpleNamespace(type="response.output_text.delta", delta="Không giống đâu ad. Bản nháp dài."),
+        SimpleNamespace(type="response.web_search_call.in_progress"),
+        SimpleNamespace(type="response.output_item.added", item=search_call("in_progress")),
+        SimpleNamespace(type="response.web_search_call.completed"),
+        SimpleNamespace(type="response.output_item.done", item=search_call()),
+        SimpleNamespace(type="response.output_text.delta", delta="Không giống đâu ad. Có nguồn.[1]"),
+        done(search_call(), cited_message()),
+    ])
+    provider, _ = fake_provider(monkeypatch, [stream])
+    chunks = [chunk async for chunk in provider.stream(system_prompt="Peto", messages=[ChatMessage("user", "So sánh")])]
+    kept: list[str] = []
+    for chunk in chunks:
+        if isinstance(chunk, StreamChunk) and chunk.kind == "replace":
+            kept = []
+        elif isinstance(chunk, str):
+            kept.append(chunk)
+    assert "".join(kept) == "Không giống đâu ad. Có nguồn.[1]"
+    assert "Bản nháp" not in "".join(kept)
+    assert any(isinstance(chunk, StreamChunk) and chunk.kind == "replace" for chunk in chunks)
+    assert stream.closed
+
+
+async def test_search_after_answer_does_not_erase_the_final_text(monkeypatch):
+    """Sự kiện search completed lúc cuối không được xóa câu đã viết sau khi tra xong."""
+    stream = FakeStream([
+        SimpleNamespace(type="response.output_item.added", item=search_call("in_progress")),
+        SimpleNamespace(type="response.web_search_call.completed"),
+        SimpleNamespace(type="response.output_text.delta", delta="Câu đã kiểm chứng."),
+        SimpleNamespace(type="response.output_item.done", item=search_call()),
+        done(search_call(), cited_message()),
+    ])
+    provider, _ = fake_provider(monkeypatch, [stream])
+    chunks = [chunk async for chunk in provider.stream(system_prompt="Peto", messages=[])]
+    assert not any(isinstance(chunk, StreamChunk) and chunk.kind == "replace" for chunk in chunks)
+    assert "Câu đã kiểm chứng." in "".join(chunk for chunk in chunks if isinstance(chunk, str))
+
+
 async def test_failed_search_is_reported(monkeypatch):
     stream = FakeStream([done(search_call("failed"))])
     provider, _ = fake_provider(monkeypatch, [stream])
     with pytest.raises(ProviderError, match="chưa tra cứu"):
         _ = [chunk async for chunk in provider.stream(system_prompt="Peto", messages=[])]
     assert stream.closed
+
+
+async def test_replaced_draft_is_not_saved(client, monkeypatch):
+    class RestartProvider:
+        async def stream(self, **kwargs):
+            yield "Không giống đâu ad. Bản nháp."
+            yield StreamChunk("replace")
+            yield StreamChunk("search", "searching")
+            yield StreamChunk("search", "completed")
+            yield "Không giống đâu ad. Có nguồn."
+    monkeypatch.setattr(main, "get_provider", lambda: RestartProvider())
+    events = await read_events(await client.post("/api/chat", json={"message": "So sánh", "web_search": "on"}))
+    assert any(event["type"] == "replace" for event in events)
+    text = "".join(event["text"] for event in events if event["type"] == "delta")
+    # SSE vẫn có bản nháp trước replace; tin lưu chỉ giữ bản sau.
+    assert "Bản nháp" in text
+    saved = (await client.get(f"/api/conversations/{events[0]['conversation_id']}/messages")).json()["messages"][-1]
+    assert saved["content"] == "Không giống đâu ad. Có nguồn."
+    assert "Bản nháp" not in saved["content"]
 
 
 async def test_sources_stream_save_reload_and_stay_private(client, monkeypatch):

@@ -179,17 +179,34 @@ class XAIProvider(ChatProvider):
             output_items: list[dict] = []
             completed = False
             emitted_text = False
+            dropped_draft = False
+
+            def drop_pre_search_draft() -> StreamChunk | None:
+                """Grok hay viết móc câu rồi search rồi viết lại từ đầu — bỏ bản nháp trước search."""
+                nonlocal dropped_draft, emitted_text
+                if emitted_text and not dropped_draft:
+                    dropped_draft = True
+                    emitted_text = False
+                    return StreamChunk("replace")
+                return None
+
             try:
                 stream = await self._client.responses.create(**create_kwargs)
                 async for event in stream:
                     event_type = getattr(event, "type", "")
                     if event_type in {"response.web_search_call.in_progress", "response.web_search_call.searching"}:
+                        draft = drop_pre_search_draft()
+                        if draft is not None:
+                            yield draft
                         yield StreamChunk("search", "searching")
                     elif event_type == "response.web_search_call.completed":
                         search_finished = True
                         yield StreamChunk("search", "completed")
                     elif event_type == "response.output_item.added":
                         if getattr(event.item, "type", "") == "web_search_call":
+                            draft = drop_pre_search_draft()
+                            if draft is not None:
+                                yield draft
                             yield StreamChunk("search", "searching")
                     elif event_type == "response.output_text.annotation.added":
                         annotation = _dump(event.annotation)

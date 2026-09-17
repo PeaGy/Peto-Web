@@ -160,6 +160,23 @@ it('dừng khi đang đọc tệp giữ bản nháp và bỏ trạng thái đang
   expect(screen.queryByText('Trạng thái đến muộn')).toBeNull();
 });
 
+it('bỏ bản nháp khi Grok viết lại câu trả lời sau khi tìm web', async () => {
+  vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers) => {
+    handlers.onMeta?.('C', 'low', row('So sánh'));
+    handlers.onDelta?.('Không giống đâu ad. Bản nháp.');
+    handlers.onReplace?.();
+    handlers.onSearch?.('searching');
+    handlers.onSearch?.('completed');
+    handlers.onDelta?.('Không giống đâu ad. Có nguồn.');
+    handlers.onDone?.();
+  });
+  await openApp();
+  fireEvent.change(screen.getByLabelText('Nhắn cho Peto'), { target: { value: 'So sánh' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Gửi', exact: true }));
+  await screen.findByText(/Có nguồn/);
+  expect(screen.queryByText('Không giống đâu ad. Bản nháp.')).toBeNull();
+});
+
 it('tự động tìm web, hiển thị tiến trình và nguồn cùng câu trả lời', async () => {
   const result = deferred<void>();
   vi.mocked(api.sendMessage).mockImplementation(async (payload, handlers) => {
