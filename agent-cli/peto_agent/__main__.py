@@ -20,7 +20,7 @@ from .workspace import Workspace
 HINT_WITH_MENU = "Gõ yêu cầu cho Peto · / chọn lệnh · Alt+V dán ảnh · Ctrl+C dừng yêu cầu"
 HINT_PLAIN = "Gõ yêu cầu cho Peto · /help xem các lệnh · Ctrl+C dừng yêu cầu"
 # Lệnh không nhận gì phía sau; gõ thêm chữ thì nhắc chứ không gửi cả câu cho Peto.
-PLAIN_COMMANDS = {"/thoat", "/exit", "/quit", "/moi", "/help", "/resume", "/usage"}
+PLAIN_COMMANDS = {"/thoat", "/exit", "/quit", "/moi", "/help", "/resume", "/usage", "/retry"}
 EFFORT_LABELS = {"low": "thấp", "medium": "vừa", "high": "cao"}
 # Gõ không dấu cho dễ, như /moi và /thoat; có dấu hay tên tiếng Anh cũng nhận.
 EFFORT_ALIASES = {"thap": "low", "thấp": "low", "low": "low", "vua": "medium", "vừa": "medium", "tb": "medium",
@@ -137,11 +137,13 @@ def _resume(ui: UI, work: Session) -> None:
     if work.items == saved.items:
         ui.line("  Đang ở đúng hội thoại gần nhất rồi.", "dim")
         return
-    work.resume(saved.items)
+    work.resume(saved.items, retryable=saved.retryable)
     ui.success(f"Đã mở lại hội thoại {history.when(saved.saved_at)}:")
     for who, text in history.recap(saved.items):
         ui.line(f"    {who} › {text}", "dim")
     ui.line("  Peto không chạy lại lệnh nào; muốn sửa tệp thì sẽ đọc lại tệp trước.", "dim")
+    if work.can_retry:
+        ui.line("  Hội thoại này bị gián đoạn kết nối. Gõ /retry để thử lại bước chưa xong.", "yellow")
 
 
 def login(ui: UI, server_arg: str | None) -> int:
@@ -250,9 +252,8 @@ def session(ui: UI) -> int:
     effort = _effort(me)
     if ui.editor is None:
         ui.editor = line_editor.create(ui.out, enable_vt)
-    ui.line(f"{ui.paint('Peto Agent', 'cyan')} {__version__} · {root.name} · {me.get('account')} · "
-            f"mức {EFFORT_LABELS[effort]} · hôm nay còn {_steps_left(me)} bước")
-    ui.line(HINT_WITH_MENU if ui.editor is not None else HINT_PLAIN, "dim")
+    ui.session_header(__version__, str(root), str(me.get("account") or ""), EFFORT_LABELS[effort], _steps_left(me),
+                      HINT_WITH_MENU if ui.editor is not None else HINT_PLAIN)
     _update_notice(ui, client, me)
     work = Session(client, Workspace(root), ui, log=TaskLog(root.name), effort=effort)
     saved = history.load(root, client.server)
@@ -283,6 +284,9 @@ def session(ui: UI) -> int:
             continue
         if name == "/resume":
             _resume(ui, work)
+            continue
+        if name == "/retry":
+            work.retry_task()
             continue
         if name == "/usage":
             _usage(ui, work)

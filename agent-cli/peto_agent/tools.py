@@ -14,7 +14,7 @@ import re
 from pathlib import Path
 
 from . import runner
-from .ui import UI
+from .presentation import AgentUI
 from .workspace import SKIPPED_DIRS, Workspace, WorkspaceError
 
 MAX_READ_LINES = 400
@@ -25,7 +25,8 @@ REFUSED = "Người dùng không đồng ý {action}. Đừng lặp lại y nguy
 
 def changed_lines(before: str, after: str) -> tuple[int, int]:
     added = removed = 0
-    for line in list(difflib.unified_diff(before.splitlines(), after.splitlines(), lineterm="", n=0))[2:]:
+    for line in list(difflib.unified_diff(before.splitlines(keepends=True), after.splitlines(keepends=True),
+                                       lineterm="", n=0))[2:]:
         if line.startswith("+"):
             added += 1
         elif line.startswith("-"):
@@ -34,7 +35,7 @@ def changed_lines(before: str, after: str) -> tuple[int, int]:
 
 
 class Tools:
-    def __init__(self, workspace: Workspace, ui: UI):
+    def __init__(self, workspace: Workspace, ui: AgentUI):
         self.ws = workspace
         self.ui = ui
         self.approve_all = False
@@ -227,19 +228,14 @@ class Tools:
         if not command:
             raise WorkspaceError("Lệnh đang trống.")
         timeout = max(1, min(600, timeout_seconds or 120))
-        self.ui.line(f"  ▶ Muốn chạy: {command}", "blue")
+        self.ui.command(command, str(self.ws.root), timeout)
         if not self._approve():
             self.ui.failure("Không chạy lệnh")
             return {"error": REFUSED.format(action="chạy lệnh này")}
-        result = runner.run(command, self.ws.root, timeout)
+        try:
+            result = runner.run(command, self.ws.root, timeout, on_progress=self.ui.command_progress)
+        finally:
+            self.ui.clear_status()
         self.commands.append({"command": command, "exit_code": result["exit_code"], "error": result.get("error")})
-        summary = f"{command} · {result['seconds']} giây"
-        if result.get("error"):
-            self.ui.failure(f"{summary} · {result['error']}")
-        elif result["exit_code"] == 0:
-            self.ui.success(f"{summary} · xong")
-        else:
-            self.ui.failure(f"{summary} · mã thoát {result['exit_code']}")
-            for line in [line for line in result["output"].splitlines() if line.strip()][-3:]:
-                self.ui.line(f"    {line[:200]}", "dim")
+        self.ui.command_result(result)
         return result

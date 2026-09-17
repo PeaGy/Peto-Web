@@ -11,9 +11,9 @@ from datetime import datetime
 from . import history
 from .client import ApiError, Client
 from .config import log_dir
+from .presentation import AgentUI
 from .runner import cap_text
 from .tools import Tools
-from .ui import UI
 from .workspace import Workspace
 
 MAX_STEPS_PER_TASK = 40
@@ -103,35 +103,8 @@ class TaskLog:
             pass
 
 
-class ReplyWriter:
-    """In chữ Peto đang viết theo từng dòng hoàn chỉnh, để tô được chữ đậm và mã. Dòng đầu mang nhãn "Peto › "."""
-
-    def __init__(self, ui: UI):
-        self.ui = ui
-        self.pending = ""
-        self.started = False
-
-    def feed(self, text: str) -> None:
-        self.pending += text
-        while "\n" in self.pending:
-            line, self.pending = self.pending.split("\n", 1)
-            self._emit(line)
-
-    def finish(self) -> None:
-        if self.pending:
-            self._emit(self.pending)
-            self.pending = ""
-        self.started = False
-        self.ui.end_markdown()
-
-    def _emit(self, line: str) -> None:
-        label = "" if self.started else self.ui.paint("Peto › ", "cyan")
-        self.started = True
-        self.ui.line(label + self.ui.markdown(line.rstrip("\r")))
-
-
 class Session:
-    def __init__(self, client: Client, workspace: Workspace, ui: UI, *, log: TaskLog | None = None,
+    def __init__(self, client: Client, workspace: Workspace, ui: AgentUI, *, log: TaskLog | None = None,
                  effort: str = "medium"):
         self.client = client
         self.ws = workspace
@@ -144,15 +117,18 @@ class Session:
         self.steps_limit: int | None = None
         # Độ dài hội thoại mô hình thấy ở bước gần nhất (token vào + ra): cho biết lúc nào nên /moi.
         self.context_tokens: int | None = None
+        self.can_retry = False
 
     def reset(self) -> None:
         self.items = []
         self.context_tokens = None
+        self.can_retry = False
 
-    def resume(self, items: list[dict]) -> None:
+    def resume(self, items: list[dict], *, retryable: bool = False) -> None:
         """Mở lại hội thoại đã lưu. Quên các tệp đã đọc, để Peto phải đọc lại trước khi sửa."""
         self.items = list(items)
         self.context_tokens = None
+        self.can_retry = retryable
         self.ws.read_digests.clear()
 
     def _log(self, kind: str, **data) -> None:
@@ -161,11 +137,25 @@ class Session:
 
     def run_task(self, text: str, images=()) -> None:
         """Chạy một yêu cầu. ``images`` là các cặp (số ảnh, ảnh) dán kèm bằng Alt+V hay kéo thả."""
-        self.tools.reset_task()
         self.items.append(user_message(text, images))
         drop_old_images(self.items)
         # Nhật ký chỉ ghi số ảnh, không ghi dữ liệu ảnh.
         self._log("task", text=text, effort=self.effort, images=len(images))
+        self._run()
+
+    def retry_task(self) -> None:
+        """Gửi lại bước chưa nhận đủ, với kết quả công cụ đã lưu; không phát lại công cụ cũ."""
+        if not self.can_retry:
+            self.ui.line("  Không có bước bị gián đoạn để thử lại.", "dim")
+            return
+        self.ui.step("Đang thử lại bước bị gián đoạn")
+        self._log("retry")
+        self._run()
+
+    def _run(self) -> None:
+        # /retry là một lần tiếp tục do người dùng yêu cầu: không kế thừa quyền a từ lần trước.
+        self.tools.reset_task()
+        self.can_retry = False
         started = time.monotonic()
         outcome = "done"
         pending: list[dict] = []
@@ -201,13 +191,14 @@ class Session:
             self.ui.line("Đã dừng yêu cầu. Gõ yêu cầu mới, hoặc /thoat để thoát.", "yellow")
             self._log("stopped")
         finally:
+            self.tools.approve_all = False
             self._summary(time.monotonic() - started, outcome)
-            history.save(self.ws.root, self.client.server, self.items)
+            history.save(self.ws.root, self.client.server, self.items, retryable=self.can_retry)
 
     def _step(self) -> list[dict] | None:
         body = {"input": self.items, "effort": self.effort, "context": {
             "project": self.ws.root.name, "os": f"{platform.system()} {platform.release()}".strip()}}
-        writer = ReplyWriter(self.ui)
+        writer = self.ui.reply()
         started = time.monotonic()
         phase = "nghĩ"
         output = None
@@ -229,13 +220,17 @@ class Session:
                         writer.feed(str(event.get("text", "")))
                         waiting()
                     elif kind == "done":
-                        output = [item for item in event.get("output") or []
+                        if not isinstance(event.get("output"), list):
+                            raise ApiError(0, "Máy chủ trả kết quả bước không đúng định dạng.")
+                        output = [item for item in event["output"]
                                   if isinstance(item, dict) and item.get("type") in KEPT_ITEM_TYPES]
                         usage = event.get("usage") if isinstance(event.get("usage"), dict) else {}
                         total = sum(value for value in (usage.get("input_tokens"), usage.get("output_tokens"))
                                     if isinstance(value, int) and value > 0)
                         if total:
                             self.context_tokens = total
+                        # done là ranh giới hoàn tất. Không để lỗi đóng socket sau đó làm mất bước đã nhận.
+                        return output
                     elif kind == "error":
                         message = str(event.get("message") or "Máy chủ báo lỗi ở bước này.")
                         writer.finish()
@@ -246,13 +241,21 @@ class Session:
             writer.finish()
             self.ui.failure(err.message)
             self._log("error", message=err.message, status=err.status)
+            if err.status in {0, 408, 502, 503, 504}:
+                self._interrupted()
             return None
         finally:
             writer.finish()
             self.ui.clear_status()
         if output is None:
-            self.ui.failure("Kết nối bị ngắt trước khi Peto làm xong bước này. Thử lại nhé.")
+            self.ui.failure("Kết nối bị ngắt trước khi Peto làm xong bước này.")
+            self._interrupted()
         return output
+
+    def _interrupted(self) -> None:
+        self.can_retry = True
+        self.ui.line("  Đã giữ kết quả các bước hoàn tất. Khi có mạng, gõ /retry để thử lại bước này.", "yellow")
+        self.ui.line("  Phần trả lời đang nhận chưa hoàn tất. Thử lại có thể dùng thêm một bước trên máy chủ.", "dim")
 
     def _summary(self, elapsed: float, outcome: str) -> None:
         parts = [f"{OUTCOME_LABELS[outcome]} {format_duration(elapsed)}"]

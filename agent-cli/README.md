@@ -102,6 +102,8 @@ nào được chọn, nên Enter không tự chạy gì. Các lệnh:
 - `/moi`: bắt đầu hội thoại mới.
 - `/resume`: mở lại hội thoại gần nhất của thư mục này, kể cả sau khi đã thoát. Không lệnh nào được chạy lại, và muốn
   sửa tệp thì Peto phải đọc lại tệp trước. Mở `peto` ở thư mục có hội thoại cũ sẽ có dòng nhắc.
+- `/retry`: thử lại bước bị gián đoạn kết nối, dùng kết quả các bước đã hoàn tất. Không tự phát lại lệnh hay thao tác
+  sửa tệp cũ; thao tác mới vẫn hỏi quyền. Nếu đã thoát thì `/resume` trước, rồi `/retry`.
 - `/effort thap`, `/effort vua`, `/effort cao`: mức suy nghĩ, được nhớ trên máy này cho lần sau. Mức cao suy nghĩ kỹ
   hơn nhưng mỗi bước tính 2 bước. Gõ `/effort` để xem mức đang dùng; chưa chọn thì theo mặc định của máy chủ. Gõ
   `/effort` kèm dấu cách thì chọn mức trong danh sách.
@@ -145,10 +147,15 @@ mới, nên mỗi lần xóa bỏ đúng một ký tự như ô nhập thường
 terminal của bạn, đặt `$env:PETO_AGENT_SIMPLE_INPUT = '1'` trước khi chạy `peto` để quay về dòng nhập đơn giản, không có
 danh sách lệnh, lịch sử, dán nhiều dòng hay gửi ảnh. Khi input được chuyển từ tệp hay ống dẫn, `peto` cũng dùng dòng nhập đơn giản.
 
-Trong lúc chờ, một dòng tạm `… Peto đang nghĩ · 8s` tự đếm giây rồi biến mất khi có chữ. Câu trả lời hiện theo từng dòng
-để tô được chữ đậm và `mã`; khi output bị chuyển sang tệp thì giữ nguyên chữ gốc.
+Trong lúc chờ, một dòng tạm `… Peto đang nghĩ · 8s` tự đếm giây rồi biến mất khi có chữ. Câu dài đang viết hiện dần trên
+dòng tạm; khi xong dòng sẽ in đủ nội dung cùng chữ đậm và `mã`. Nội dung đã in nằm trong lịch sử cuộn của terminal.
+Không chuyển sang màn hình toàn phần, không cần cài thêm thư viện. `NO_COLOR` tắt màu; khi output chuyển sang tệp hoặc
+ống dẫn, không có mã điều khiển hay dòng trạng thái vẽ lại.
 
-Mỗi lần Peto muốn sửa hay tạo tệp, CLI hiện diff; mỗi lần muốn chạy lệnh, CLI hiện lệnh đó. Bạn trả lời:
+Mỗi lần Peto muốn sửa hay tạo tệp, CLI hiện diff có cột **Cũ / Mới**, số dòng thêm/xóa và ngắt dòng code dài theo chiều
+rộng terminal. Diff dài hiện từng phần; gõ `v` tại câu hỏi đồng ý để xem phần tiếp theo, không cấp quyền sửa tệp.
+Mỗi lần muốn chạy lệnh, CLI hiện nguyên lệnh, thư mục và giới hạn thời gian. Khi chạy có bộ đếm thời gian và dòng output
+mới nhất (ở terminal đủ rộng); khi xong hiện tối đa 8 dòng output cuối cùng cùng kết quả hoặc mã lỗi. Bạn trả lời:
 
 - `y`: đồng ý bước này.
 - `n`: không đồng ý. Peto được báo lại để hỏi bạn cách khác.
@@ -157,6 +164,22 @@ Mỗi lần Peto muốn sửa hay tạo tệp, CLI hiện diff; mỗi lần mu�
 Cuối mỗi yêu cầu có một dòng tổng kết: thời gian, số tệp đã sửa, số lệnh đã chạy, độ dài hội thoại (tính bằng token) và
 số bước còn lại hôm nay. Mỗi bước gửi lại cả hội thoại cho Peto, nên khi hội thoại dài làm Peto chậm hay báo lỗi thì gõ
 `/moi`. Nhật ký từng phiên lưu ở `%LOCALAPPDATA%\PetoAgent\logs\`.
+
+### Khi mất kết nối
+
+CLI chỉ chạy công cụ sau khi nhận đủ sự kiện hoàn tất bước. Kết nối bị cắt giữa câu trả lời thì giữ kết quả các bước
+trước, đánh dấu bước hiện tại chưa xong và trả về ô nhập. Khi mạng ổn, gõ `/retry`. Không tự gửi lại ngầm, vì một bước
+AI mà máy chủ đã nhận có thể vẫn được tính vào lượt dùng. `/retry` cũng xóa quyền `a` cũ, nên thao tác mới sẽ hỏi lại.
+
+Nếu đã đóng CLI, mở lại trong cùng thư mục, gõ `/resume` rồi `/retry`. `/moi` hoặc gửi yêu cầu mới bỏ trạng thái chờ thử
+lại. Lỗi đăng nhập hay hết lượt vẫn cần xử lý theo thông báo; `/retry` không bỏ qua các giới hạn đó. Khi mạng im lặng
+hoàn toàn, socket có thể cần chờ tới timeout mới nhận ra; Ctrl+C vẫn dừng được trong lúc đọc stream.
+
+### Cấu trúc giao diện
+
+`presentation.py` khai báo giao diện mà `Session` và `Tools` sử dụng; `ui.py` chịu trách nhiệm Markdown đang stream,
+diff, câu hỏi quyền, khối lệnh và các dòng trạng thái. Bộ chạy lệnh chỉ báo tiến độ qua callback, không tự in chữ.
+Nhờ đó có thể thay lớp hiển thị sau này mà không thay cách thực thi công cụ hay lưu hội thoại.
 
 ## Giới hạn và an toàn
 

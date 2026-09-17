@@ -94,10 +94,14 @@ class Client:
             if not self.token:
                 raise ApiError(401, HINTS[401])
             headers["Authorization"] = f"Bearer {self.token}"
-        connection = self._connection(timeout)
+        connection = self._connection(min(self.timeout, timeout))
         try:
             connection.request(method, path, body=data, headers=headers)
+            # Giữ socket ngay cả khi http.client tách nó khỏi connection (HTTP/1.0 / Connection: close).
+            transport = connection.sock
             response = connection.getresponse()
+            if transport is not None:
+                transport.settimeout(timeout)
         except ssl.SSLError:
             connection.close()
             raise ApiError(0, "Không xác minh được chứng chỉ HTTPS của máy chủ Peto.") from None
@@ -106,17 +110,19 @@ class Client:
             raise ApiError(0, "Không kết nối được máy chủ Peto: kiểm tra mạng và địa chỉ máy chủ.") from None
         if response.status >= 300:
             message = _error_message(response)
+            response.close()
             connection.close()
             raise ApiError(response.status, message)
-        return connection, response
+        return connection, response, transport
 
     def json(self, method: str, path: str, body: dict | None = None, *, auth: bool = True) -> dict:
-        connection, response = self._send(method, path, body, auth=auth, timeout=self.timeout)
+        connection, response, _ = self._send(method, path, body, auth=auth, timeout=self.timeout)
         try:
             raw = response.read(MAX_JSON_BYTES + 1)
         except (OSError, http.client.HTTPException):
             raise ApiError(0, "Kết nối tới máy chủ Peto bị ngắt.") from None
         finally:
+            response.close()
             connection.close()
         if len(raw) > MAX_JSON_BYTES:
             raise ApiError(0, "Phản hồi của máy chủ lớn bất thường.")
@@ -133,7 +139,7 @@ class Client:
 
         ``on_idle`` được gọi khoảng 5 lần mỗi giây khi chưa có sự kiện mới, để cập nhật dòng trạng thái.
         """
-        connection, response = self._send("POST", path, body, auth=True, timeout=timeout)
+        connection, response, transport = self._send("POST", path, body, auth=True, timeout=timeout)
         events: queue.Queue = queue.Queue()
 
         def reader() -> None:
@@ -141,16 +147,21 @@ class Client:
                 data: list[str] = []
                 while line := response.readline():
                     text = line.decode("utf-8").rstrip("\r\n")
-                    if text.startswith("data: "):
-                        data.append(text[6:])
+                    if text.startswith("data:"):
+                        data.append(text[5:].removeprefix(" "))
                     elif not text and data:
-                        events.put(("event", json.loads("\n".join(data))))
+                        event = json.loads("\n".join(data))
+                        events.put(("event", event))
                         data = []
+                        if isinstance(event, dict) and event.get("type") in {"done", "error"}:
+                            break
                 if data:
                     events.put(("event", json.loads("\n".join(data))))
                 events.put(("end", None))
             except Exception as err:  # noqa: BLE001 - chuyển mọi lỗi đọc sang luồng chính
                 events.put(("error", err))
+            finally:
+                response.close()
 
         threading.Thread(target=reader, daemon=True).start()
         finished = False
@@ -163,6 +174,8 @@ class Client:
                         on_idle()
                     continue
                 if kind == "event":
+                    if not isinstance(value, dict) or not isinstance(value.get("type"), str):
+                        raise ApiError(0, "Máy chủ trả sự kiện không đúng định dạng của Peto.")
                     yield value
                 elif kind == "end":
                     finished = True
@@ -170,9 +183,9 @@ class Client:
                 else:
                     raise ApiError(0, "Kết nối tới máy chủ Peto bị ngắt giữa chừng.")
         finally:
-            if not finished and connection.sock is not None:
+            if not finished and transport is not None:
                 try:
-                    connection.sock.shutdown(socket.SHUT_RDWR)
+                    transport.shutdown(socket.SHUT_RDWR)
                 except OSError:
                     pass
             connection.close()

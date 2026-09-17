@@ -17,6 +17,7 @@ class Command:
 COMMANDS = (
     Command("/moi", "Bắt đầu hội thoại mới"),
     Command("/resume", "Mở lại hội thoại gần nhất của thư mục này"),
+    Command("/retry", "Thử lại bước bị gián đoạn kết nối"),
     Command("/effort", "Xem hoặc đổi mức suy nghĩ: thap, vua, cao",
             (("thap", "Nhanh, suy nghĩ ít"), ("vua", "Cân bằng giữa nhanh và kỹ"),
              ("cao", "Suy nghĩ kỹ hơn, mỗi bước tính 2 bước"))),

@@ -35,8 +35,9 @@ def labels(text: str) -> list[str]:
 
 
 def test_suggestions_filter_commands_and_effort_levels():
-    assert labels("/") == ["/moi", "/resume", "/effort", "/usage", "/help", "/thoat"]
-    assert labels("/re") == ["/resume"]
+    assert labels("/") == ["/moi", "/resume", "/retry", "/effort", "/usage", "/help", "/thoat"]
+    assert labels("/re") == ["/resume", "/retry"]
+    assert labels("/ret") == ["/retry"]
     assert labels("/thoát") == ["/thoat"], "bộ gõ tiếng Việt thêm dấu vẫn khớp"
     assert labels("/sume") == ["/resume"], "gõ phần giữa tên lệnh cũng tìm ra"
     assert labels("/effort ") == ["thap", "vua", "cao"]
@@ -156,7 +157,8 @@ def test_layout_wraps_before_the_last_column_and_draws_the_menu():
     state = EditorState()
     feed(state, typed("/re"))
     frame = layout(state, prompt=PROMPT, width=80, height=24)
-    assert frame.lines == ["Bạn › /re", "  ❯ /resume  Mở lại hội thoại gần nhất của thư mục này"]
+    assert frame.lines == ["Bạn › /re", "  ❯ /resume  Mở lại hội thoại gần nhất của thư mục này",
+                           "    /retry   Thử lại bước bị gián đoạn kết nối"]
     assert (frame.cursor_row, frame.cursor_col) == (0, 9)
 
     state.clear()
@@ -196,7 +198,8 @@ def test_line_editor_redraws_in_place():
     editor = LineEditor(console, out, size=lambda: (80, 24))
     assert editor.read(PROMPT) == "/resume"
     text = out.getvalue()
-    assert "Bạn › /re\r\n  ❯ /resume  Mở lại hội thoại gần nhất của thư mục này\033[1A\r\033[9C" in text
+    assert ("Bạn › /re\r\n  ❯ /resume  Mở lại hội thoại gần nhất của thư mục này\r\n"
+            "    /retry   Thử lại bước bị gián đoạn kết nối\033[2A\r\033[9C") in text
     assert text.endswith("\r\033[JBạn › /resume\r\033[13C\033[?25h\r\n"), "lần vẽ cuối xóa bảng gợi ý rồi xuống dòng"
 
     console = FakeConsole([typed("a" * 30), [Key("interrupt")], [Key("interrupt")]])

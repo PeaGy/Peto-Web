@@ -27,6 +27,7 @@ RECAP_CHARS = 160
 class Saved:
     saved_at: float
     items: list[dict]
+    retryable: bool = False
 
     @property
     def message_count(self) -> int:
@@ -39,12 +40,13 @@ def _path(root: Path) -> Path:
     return sessions_dir() / f"{key}.json"
 
 
-def save(root: Path, server: str, items: list[dict]) -> None:
+def save(root: Path, server: str, items: list[dict], *, retryable: bool = False) -> None:
     """Ghi đè hội thoại của thư mục. Ghi đĩa lỗi thì bỏ qua: mất bản lưu không được làm hỏng phiên đang chạy."""
     if not items:
         return
     target = _path(root)
-    data = {"version": VERSION, "root": str(root), "server": server, "saved_at": time.time(), "items": items}
+    data = {"version": VERSION, "root": str(root), "server": server, "saved_at": time.time(), "items": items,
+            "retryable": retryable}
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
         temporary = target.with_suffix(".tmp")
@@ -71,7 +73,8 @@ def load(root: Path, server: str) -> Saved | None:
     if not all(isinstance(item, dict) and item.get("type", "message") in ITEM_TYPES for item in items):
         return None
     saved_at = data.get("saved_at")
-    return Saved(saved_at=float(saved_at) if isinstance(saved_at, (int, float)) else 0.0, items=items)
+    return Saved(saved_at=float(saved_at) if isinstance(saved_at, (int, float)) else 0.0, items=items,
+                 retryable=data.get("retryable") is True)
 
 
 def _prune(keep: Path) -> None:

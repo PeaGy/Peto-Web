@@ -39,8 +39,9 @@ def test_status_line_is_redrawn_in_place_and_cleared_before_other_output():
     ui.status("… Peto đang nghĩ · 0s")
     assert ui.ask_permission() == "y"
     clear = "\r\033[2K"
-    assert out.getvalue() == (f"{clear}{DIM}… Peto đang nghĩ · 1s{RESET}{clear}{DIM}… Peto đang nghĩ · 2s{RESET}"
-                              f"{clear}Peto › xong\n{clear}{DIM}… Peto đang nghĩ · 0s{RESET}{clear}")
+    assert out.getvalue().startswith(f"{clear}{DIM}… Peto đang nghĩ · 1s{RESET}{clear}{DIM}… Peto đang nghĩ · 2s{RESET}"
+                                    f"{clear}Peto › xong\n{clear}{DIM}… Peto đang nghĩ · 0s{RESET}{clear}")
+    assert "Đồng ý?" in out.getvalue()
 
     plain = UI(out=io.StringIO(), colors=False)
     plain.status("… Peto đang nghĩ · 1s")

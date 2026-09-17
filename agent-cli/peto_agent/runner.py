@@ -7,6 +7,7 @@ import signal
 import subprocess
 import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 MAX_RESULT_CHARS = 20_000
@@ -34,7 +35,7 @@ def kill_tree(process: subprocess.Popen) -> None:
             pass
 
 
-def run(command: str, cwd: Path, timeout: float) -> dict:
+def run(command: str, cwd: Path, timeout: float, *, on_progress: Callable[[float, str], None] | None = None) -> dict:
     """Trả mã thoát, thời gian và output đã cắt gọn. Ctrl+C thì giết cây tiến trình rồi ném lại KeyboardInterrupt."""
     env = dict(os.environ, PYTHONUTF8="1", PYTHONIOENCODING="utf-8")
     # Nhóm tiến trình riêng: Ctrl+C trong cửa sổ chỉ tới CLI, CLI tự quyết định dừng lệnh.
@@ -44,11 +45,17 @@ def run(command: str, cwd: Path, timeout: float) -> dict:
     process = subprocess.Popen(command, shell=True, cwd=cwd, env=env, stdin=subprocess.DEVNULL,
                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, **options)
     head, tail = bytearray(), bytearray()
+    recent = bytearray()
+    recent_lock = threading.Lock()
     dropped = 0
 
     def reader() -> None:
         nonlocal dropped
         while chunk := process.stdout.read1(65536):
+            if on_progress is not None:
+                with recent_lock:
+                    recent.extend(chunk)
+                    del recent[:-2048]
             room = KEEP_BYTES - len(head)
             if room > 0:
                 head.extend(chunk[:room])
@@ -64,10 +71,15 @@ def run(command: str, cwd: Path, timeout: float) -> dict:
     timed_out = False
     try:
         while process.poll() is None:
-            if time.monotonic() - started > timeout:
+            elapsed = time.monotonic() - started
+            if elapsed > timeout:
                 timed_out = True
                 kill_tree(process)
                 break
+            if on_progress is not None:
+                with recent_lock:
+                    latest = bytes(recent)
+                on_progress(elapsed, latest.decode("utf-8", errors="replace"))
             time.sleep(0.1)
     except KeyboardInterrupt:
         kill_tree(process)

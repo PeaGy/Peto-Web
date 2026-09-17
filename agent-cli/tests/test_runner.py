@@ -8,6 +8,8 @@ import sys
 import textwrap
 import time
 
+import pytest
+
 from peto_agent import runner
 
 
@@ -49,3 +51,26 @@ def test_cap_text_keeps_the_start_and_the_end():
     capped = runner.cap_text(text, 1000)
     assert capped.startswith("đầu") and capped.endswith("cuối")
     assert "bỏ bớt" in capped and len(capped) < 1100
+
+
+def test_progress_shows_output_before_process_exits_and_interrupt_kills_tree(tmp_path):
+    marker = tmp_path / "grandchild.pid"
+    script = tmp_path / "progress.py"
+    script.write_text(textwrap.dedent(f"""
+        import subprocess, sys, time
+        child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+        open(r"{marker}", "w").write(str(child.pid))
+        print("Đang kiểm tra", flush=True)
+        time.sleep(60)
+    """), encoding="utf-8")
+    progress = []
+
+    def interrupt(seconds, output):
+        progress.append(output)
+        if "Đang kiểm tra" in output:
+            raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        runner.run(f'"{sys.executable}" "{script}"', tmp_path, 10, on_progress=interrupt)
+    assert any("Đang kiểm tra" in chunk for chunk in progress)
+    assert not alive(int(marker.read_text()))

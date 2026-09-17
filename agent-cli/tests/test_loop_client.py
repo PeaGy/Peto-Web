@@ -6,6 +6,7 @@ import json
 import re
 import sys
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
@@ -60,6 +61,15 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             return
         status, payload = self.server.reply(self.path, body)
+        if isinstance(payload, bytes):
+            self.send_response(status)
+            self.send_header("Content-Type", "text/event-stream")
+            self.end_headers()
+            self.wfile.write(payload)
+            self.wfile.flush()
+            if hold := getattr(self.server, "hold", None):
+                hold.wait(3)
+            return
         if status != 200 or not isinstance(payload, list):
             data = json.dumps(payload if status == 200 else {"detail": payload}, ensure_ascii=False).encode()
             self.send_response(status)
@@ -298,3 +308,123 @@ def test_split_command():
     assert cli.split_command("/") == ("/", "")
     for text in ("/api/users lỗi 500", "sửa /moi", "/moi\nthêm dòng"):
         assert cli.split_command(text) == ("", "")
+
+
+def test_disconnect_after_edit_and_command_can_resume_without_replaying(project, peto, monkeypatch):
+    """Cắt TCP thật sau một phần câu trả lời; mở lại phiên và thử bước đó với lịch sử đã lưu."""
+    attempts = 0
+
+    def broken(path, body):
+        nonlocal attempts
+        results = [item for item in body.get("input", []) if item.get("type") == "function_call_output"]
+        if len(results) == 3:
+            attempts += 1
+            # JSON bị cắt, không có done: phần trả lời này không được đưa vào lịch sử đã xác nhận.
+            return 200, b'data: {"type":"delta","text":"Partial reply"}\n\ndata: {"type":"done","output":['
+        return demo_reply(path, body)
+
+    peto.reply = broken
+    session, ui = start(project, peto, ["a"])
+    session.run_task("Sửa README")
+    saved = history.load(project, peto.url)
+    assert attempts == 1 and session.can_retry and saved.retryable
+    assert "gõ /retry" in ui.text
+    assert not session.tools.approve_all
+    assert_every_call_has_output(saved.items)
+    assert "Partial reply" not in json.dumps(saved.items)
+    assert (project / "README.md").read_text(encoding="utf-8").count("(Peto)") == 1
+
+    before = len(peto.requests)
+    resumed = Session(Client(peto.url, "peto_token_thu"), Workspace(project), FakeUI())
+    cli._resume(resumed.ui, resumed)
+    assert resumed.can_retry and not resumed.ws.read_digests
+    peto.reply = demo_reply
+    monkeypatch.setattr(resumed.tools, "call", lambda *args: pytest.fail("công cụ cũ bị chạy lại"))
+    resumed.retry_task()
+    assert len(peto.requests) == before + 1
+    assert peto.requests[-1]["body"]["input"] == saved.items
+    assert "Xong rồi nè." in resumed.ui.text
+    assert not resumed.can_retry and not history.load(project, peto.url).retryable
+    assert sum(item.get("role") == "user" for item in resumed.items) == 1
+
+
+def test_retry_requires_fresh_permission_for_new_tools(project, peto):
+    session, ui = start(project, peto, ["a", "n"])
+
+    def interrupted(path, body):
+        results = [item for item in body["input"] if item.get("type") == "function_call_output"]
+        if len(results) == 2:
+            return 200, [{"type": "delta", "text": "Chưa xong"}]
+        return demo_reply(path, body)
+
+    peto.reply = interrupted
+    session.run_task("Sửa README")
+    assert session.can_retry and ui.answers == ["n"]
+    peto.reply = demo_reply
+    session.retry_task()
+    assert ui.answers == [] and session.tools.commands == []
+    assert "Không chạy lệnh" in ui.text
+    assert_every_call_has_output(session.items)
+
+
+@pytest.mark.parametrize("events", [b'data: []\n\n', b'data: {"type":"done","output":{}}\n\n'])
+def test_malformed_stream_is_an_error_not_a_crash(project, peto, events):
+    peto.reply = lambda path, body: (200, events)
+    session, ui = start(project, peto, [])
+    session.run_task("Xin chào")
+    assert session.can_retry and "không đúng định dạng" in ui.text
+    assert session.items == [{"type": "message", "role": "user", "content": "Xin chào"}]
+
+
+def test_done_does_not_wait_for_socket_close(peto):
+    peto.hold = threading.Event()
+    peto.reply = lambda path, body: (200, b'data: {"type":"done","output":[]}\n\n')
+    try:
+        started = time.monotonic()
+        assert list(Client(peto.url, "test").stream("/step", {})) == [{"type": "done", "output": []}]
+        assert time.monotonic() - started < 2
+    finally:
+        peto.hold.set()
+
+
+def test_ctrl_c_during_a_silent_stream_closes_connection_and_does_not_enable_retry(project, peto):
+    peto.hold = threading.Event()
+    peto.reply = lambda path, body: (200, b': waiting\n\n')
+    session, ui = start(project, peto, [])
+    original = session.client.stream
+
+    def interrupted(path, body, **kwargs):
+        def cancel():
+            raise KeyboardInterrupt
+        return original(path, body, on_idle=cancel)
+
+    session.client.stream = interrupted
+    try:
+        started = time.monotonic()
+        session.run_task("Xin chào")
+        assert time.monotonic() - started < 2
+        assert not session.can_retry and "Đã dừng yêu cầu" in ui.text
+        assert not history.load(project, peto.url).retryable
+    finally:
+        peto.hold.set()
+
+
+def test_slash_retry_dispatches_only_when_a_step_was_interrupted(project, peto, monkeypatch):
+    attempts = 0
+
+    def reply(path, body):
+        nonlocal attempts
+        if path == "/api/agent/me":
+            return 200, {"account": "Bình", "steps_used": 0, "steps_limit": 200}
+        attempts += 1
+        if attempts == 1:
+            return 200, [{"type": "delta", "text": "Đang xem"}]
+        return 200, [{"type": "delta", "text": "Đã xong"}, {"type": "done", "output": [message("Đã xong")]}]
+
+    peto.reply = reply
+    config.save({"server": peto.url, "token": "test"})
+    monkeypatch.chdir(project)
+    ui = FakeUI(answers=["/retry", "Xin chào", "/retry", "/retry", "/thoat"])
+    assert cli.session(ui) == 0
+    assert attempts == 2
+    assert ui.text.count("Không có bước bị gián đoạn") == 2
