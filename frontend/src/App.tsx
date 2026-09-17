@@ -60,6 +60,7 @@ import {
   DISCORD_LOGIN_URL,
   GOOGLE_LOGIN_URL,
   UnauthorizedError,
+  confirmRoleplayAge,
   deleteConversation,
   getAppInfo,
   getAuthState,
@@ -77,6 +78,7 @@ import {
   type ImagineJob,
   type Message,
   type OutgoingAttachment,
+  type Persona,
   type WebSearchMode,
 } from "./api";
 
@@ -129,7 +131,7 @@ const MAX_FILE_BYTES = 8 * 1024 * 1024;
 const MAX_TOTAL_BYTES = 16 * 1024 * 1024;
 // Gợi ý ở màn hình trống, hiện ngay dưới ô nhắn.
 const CHAT_HINTS = [
-  "Hôm nay cậu thế nào?",
+  "Viết giúp mình một email ngắn",
   "Giải thích giúp mình một bài khó",
   "Cùng lên kế hoạch cuối tuần nhé",
 ];
@@ -486,6 +488,11 @@ export default function App() {
   const [loadingList, setLoadingList] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Conversation | null>(null);
   const [deleting, setDeleting] = useState(false);
+  // Chế độ của hội thoại đang mở; hội thoại mới thì là lựa chọn trong menu dấu cộng, gửi tin đầu là chốt.
+  const [persona, setPersona] = useState<Persona>("assistant");
+  const [consentOpen, setConsentOpen] = useState(false);
+  const [consentBusy, setConsentBusy] = useState(false);
+  const [consentError, setConsentError] = useState<string | null>(null);
   const [showJump, setShowJump] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [theme, setTheme] = useState<ThemeChoice>(readStoredTheme);
@@ -536,6 +543,7 @@ export default function App() {
   const nearBottom = useRef(true);
   const messagesRef = useRef<HTMLDivElement>(null);
   const deleteDialogRef = useRef<HTMLDialogElement>(null);
+  const consentDialogRef = useRef<HTMLDialogElement>(null);
   const settingsDialogRef = useRef<HTMLDialogElement>(null);
   const composerRef = useRef<HTMLFormElement>(null);
   const composerBoxRef = useRef<HTMLDivElement>(null);
@@ -634,6 +642,8 @@ export default function App() {
     setDraft("");
     setNotice(null);
     setWebSearch("auto");
+    setPersona("assistant");
+    setConsentOpen(false);
     for (const item of draftFilesRef.current) if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
     setDraftFiles([]);
     setLoadingConversation(false);
@@ -689,6 +699,11 @@ export default function App() {
     if (deleteTarget) deleteDialogRef.current?.showModal();
     else deleteDialogRef.current?.close();
   }, [deleteTarget]);
+
+  useEffect(() => {
+    if (consentOpen) consentDialogRef.current?.showModal();
+    else consentDialogRef.current?.close();
+  }, [consentOpen]);
 
   useEffect(() => {
     if (settingsOpen) settingsDialogRef.current?.showModal();
@@ -800,7 +815,7 @@ export default function App() {
           <PetoAvatar info={appInfo} big />
           <h1>{appInfo?.name ?? "Peto"}</h1>
           <p className="login-sub">
-            Đăng nhập để Peto biết cậu là ai.
+            Đăng nhập để Peto biết bạn là ai.
           </p>
 
           {authError && (
@@ -851,7 +866,7 @@ export default function App() {
           )}
 
           <p className="login-note">
-            Peto chỉ đọc tên và ảnh đại diện của cậu. Vào với tư cách khách thì
+            Peto chỉ đọc tên và ảnh đại diện của bạn. Vào với tư cách khách thì
             hội thoại gắn với trình duyệt này — xóa cookie là mất.
           </p>
         </div>
@@ -868,6 +883,7 @@ export default function App() {
     setError(null);
     setNotice(null);
     setConversationId(id);
+    setPersona(conversations.find((item) => item.id === id)?.persona ?? "assistant");
     setMessages([]);
     setLoadingConversation(true);
     setLoadFailed(false);
@@ -900,11 +916,41 @@ export default function App() {
     nearBottom.current = true;
     setShowJump(false);
     setConversationId(null);
+    setPersona("assistant");
     setMessages([]);
     setError(null);
     setNotice(null);
     setSidebarOpen(false);
     textareaRef.current?.focus();
+  }
+
+  /** Bật/tắt chế độ nhập vai cho hội thoại chưa bắt đầu. Lần đầu bật thì hỏi xác nhận đủ 18 tuổi. */
+  function toggleRoleplay() {
+    if (conversationId || abortRef.current) return;
+    if (persona === "roleplay") {
+      setPersona("assistant");
+    } else if (auth?.user?.roleplay_confirmed) {
+      setPersona("roleplay");
+    } else {
+      setConsentError(null);
+      setConsentOpen(true);
+    }
+  }
+
+  async function confirmRoleplay() {
+    setConsentBusy(true);
+    setConsentError(null);
+    try {
+      await confirmRoleplayAge();
+      setAuth((prev) => (prev?.user ? { ...prev, user: { ...prev.user, roleplay_confirmed: true } } : prev));
+      setPersona("roleplay");
+      setConsentOpen(false);
+    } catch (err) {
+      if (err instanceof UnauthorizedError) return handleUnauthorized();
+      setConsentError(err instanceof Error ? err.message : "Chưa lưu được xác nhận. Thử lại nhé.");
+    } finally {
+      setConsentBusy(false);
+    }
   }
 
   async function removeConversation(id: string) {
@@ -1012,6 +1058,7 @@ export default function App() {
           effort,
           webSearch,
           attachments,
+          persona,
         },
         {
           onMeta: (id, _usedEffort, storedMessage) => {
@@ -1255,7 +1302,8 @@ export default function App() {
                 onClick={() => void openConversation(conversation.id)}
                 disabled={streaming || deleting}
               >
-                {conversation.title || "Chưa có tiêu đề"}
+                <span className="conv-title">{conversation.title || "Chưa có tiêu đề"}</span>
+                {conversation.persona === "roleplay" && <span className="conv-persona">· Nhập vai</span>}
               </button>
               <button
                 className="conv-delete"
@@ -1353,7 +1401,7 @@ export default function App() {
           {emptyChat && (
             <div className="welcome">
               <PetoAvatar info={appInfo} big />
-              <Greeting name={auth.user?.nickname?.trim() || auth.user?.display_name || "cậu"} />
+              <Greeting name={auth.user?.nickname?.trim() || auth.user?.display_name || "bạn"} />
             </div>
           )}
 
@@ -1463,6 +1511,12 @@ export default function App() {
           onEffortChange={setEffort}
           webSearch={webSearch}
           onToggleWeb={() => setWebSearch((mode) => (mode === "off" ? "auto" : "off"))}
+          persona={persona}
+          roleplay={view === "chat" && !conversationId ? {
+            active: persona === "roleplay",
+            unavailable: auth?.user?.provider === "guest" ? "Cần tài khoản Discord hoặc Google" : null,
+            onToggle: toggleRoleplay,
+          } : undefined}
           menuDisabled={streaming || view !== "chat"}
           hints={emptyChat ? CHAT_HINTS : []}
           onPickHint={(hint) => { setDraft(hint); textareaRef.current?.focus(); }}
@@ -1580,6 +1634,18 @@ export default function App() {
         <div className="dialog-actions">
           <button autoFocus disabled={deleting} onClick={() => setDeleteTarget(null)}>Giữ lại</button>
           <button className="danger-button" disabled={deleting} onClick={() => deleteTarget && void removeConversation(deleteTarget.id)}>{deleting ? "Đang xóa…" : "Xóa hội thoại"}</button>
+        </div>
+      </dialog>
+      <dialog ref={consentDialogRef} className="confirm-dialog" aria-labelledby="roleplay-consent-title" onCancel={(event) => {
+        event.preventDefault();
+        if (!consentBusy) setConsentOpen(false);
+      }}>
+        <h2 id="roleplay-consent-title">Bật chế độ nhập vai?</h2>
+        <p>Ở chế độ này Peto nhập vai như bot Discord và có thể có nội dung người lớn (18+). Chế độ gắn với hội thoại mới này; muốn quay lại trợ lý thì mở hội thoại mới.</p>
+        {consentError && <p className="consent-error" role="alert">{consentError}</p>}
+        <div className="dialog-actions">
+          <button autoFocus disabled={consentBusy} onClick={() => setConsentOpen(false)}>Để sau</button>
+          <button className="primary-button" disabled={consentBusy} onClick={() => void confirmRoleplay()}>{consentBusy ? "Đang lưu…" : "Tôi đủ 18 tuổi"}</button>
         </div>
       </dialog>
     </div>

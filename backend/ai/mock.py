@@ -37,30 +37,30 @@ Xã hội số trở nên đáng sống hơn khi mỗi người nhìn thấy con
 _CHUNK_DELAY = 0.035
 
 _GREETING = (
-    "A, cậu đây rồi! Peto đợi mãi. Nay có gì vui kể nghe đi.",
-    "Ê, chào cậu. Hôm nay thế nào rồi?",
+    "Chào bạn! Hôm nay mình giúp gì được cho bạn?",
+    "Chào bạn, bạn cần mình hỗ trợ việc gì?",
 )
 
 _TOOL_REFUSAL = (
-    "Ê, ở web này Peto chưa làm được vụ đó đâu, chưa có phần đó luôn. "
-    "Ngồi kể chuyện suông với Peto vậy :))"
+    "Web này chưa có công cụ cho việc đó nên mình chưa làm được. "
+    "Nếu bạn muốn, mình có thể giúp theo cách khác."
 )
 
 _IMAGE_REFUSAL = (
-    "Muốn tạo ảnh thì mở tab Tạo ảnh rồi nhập mô tả cho Peto nhé. "
-    "Còn sửa ảnh thì bấm Thêm ảnh, chọn ảnh gốc, kể Peto nghe muốn đổi gì "
+    "Muốn tạo ảnh thì bạn mở tab Tạo ảnh rồi nhập mô tả nhé. "
+    "Còn sửa ảnh thì bấm Thêm ảnh, chọn ảnh gốc, nhập điều muốn thay đổi "
     "rồi bấm Sửa ảnh."
 )
 
 _MATH = (
-    "Ố, bài này phải ngồi tính đàng hoàng đây. Mà Peto đang chạy bằng phản hồi "
-    "giả nên chưa giải thật được — cậu cắm nhà cung cấp AI vào rồi Peto làm cho."
+    "Bài này cần tính cẩn thận. Hiện Peto đang chạy bằng phản hồi giả nên chưa "
+    "giải thật được; khi nối nhà cung cấp AI, mình sẽ giải từng bước."
 )
 
 _DEFAULT = (
-    "Peto nghe rồi nha. Hiện tại Peto đang chạy bằng phản hồi giả để cậu thử "
-    "giao diện, nên câu trả lời chưa phải của AI thật đâu. Luồng chat, lưu lịch "
-    "sử và hiển thị chữ chảy dần thì đang hoạt động đúng rồi đó."
+    "Mình đã nhận tin nhắn. Hiện Peto đang chạy bằng phản hồi giả để thử giao "
+    "diện, nên câu trả lời này chưa phải của AI thật. Luồng chat, lưu lịch sử và "
+    "hiển thị chữ chảy dần đang hoạt động bình thường."
 )
 
 _IMAGE_WORDS = ("vẽ", "tạo ảnh", "vẽ ảnh", "sửa ảnh", "chỉnh ảnh", "chỉnh sửa ảnh", "generate image", "edit image")
@@ -73,7 +73,7 @@ _TOOL_WORDS = (
 def _pick_reply(user_text: str, timezone: str | None = None) -> str:
     lowered = user_text.casefold().strip()
     if not lowered:
-        return "Ủa, cậu gửi tin trống kìa. Gõ gì đi Peto nghe."
+        return "Tin nhắn đang trống. Bạn nhập nội dung rồi gửi lại nhé."
     if lowered in {"chào", "hi", "hello", "hey", "alo", "chao"}:
         return random.choice(_GREETING)
     if any(marker in lowered for marker in (
@@ -82,7 +82,7 @@ def _pick_reply(user_text: str, timezone: str | None = None) -> str:
     )):
         clock = execute_tool("get_current_datetime", "{}", timezone=timezone)
         if "error" in clock:
-            return "Chưa xác định được múi giờ. Cậu nói rõ múi giờ muốn xem nhé."
+            return "Chưa xác định được múi giờ. Bạn cho mình biết múi giờ muốn xem nhé."
         year, month, day = clock["date"].split("-")
         return (
             f"Bây giờ là {clock['time']}, {clock['weekday']}, ngày {day}/{month}/{year} "
@@ -165,8 +165,8 @@ class MockProvider(ChatProvider):
             )
         if names:
             reply = (
-                f"Peto thấy cậu gửi kèm {', '.join(names)}. "
-                "Bộ đọc xử lý tệp riêng; đang chạy phản hồi giả nên Peto chưa phân tích nội dung bằng AI thật. "
+                f"Mình thấy bạn gửi kèm {', '.join(names)}. "
+                "Bộ đọc xử lý tệp riêng; đang chạy phản hồi giả nên mình chưa phân tích nội dung bằng AI thật. "
             ) + reply
 
         await asyncio.sleep(_CHUNK_DELAY)

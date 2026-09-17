@@ -1,7 +1,8 @@
 # Peto Web
 
-Giao diện chat riêng cho Peto: **chat chữ, xem ảnh, đọc PDF, Word và tệp chữ;
-tạo tệp DOCX/PDF với thẻ xem trước ngay trong chat và bảng tài liệu bên phải**.
+Giao diện chat riêng cho Peto, **trợ lý AI** trả lời trung thực và đi thẳng vào việc: **chat chữ, xem ảnh, đọc
+PDF, Word và tệp chữ; tạo tệp DOCX/PDF với thẻ xem trước ngay trong chat và bảng tài liệu bên phải**. Tên Peto lấy từ
+bot Discord, nhưng web không dùng persona nhập vai của bot.
 
 Nhắn “tạo file Word/PDF…” để Peto tạo tệp, xem trước, tải trực tiếp và mở
 trong bảng tài liệu:
@@ -107,7 +108,7 @@ Backend tự bổ sung cột trạng thái tin nhắn khi khởi động; giữ 
 backend/
   main.py        FastAPI: /api/chat (SSE), /api/conversations, /api/health
   auth.py        Đăng nhập Discord OAuth2, cookie phiên có chữ ký
-  persona.py     Tính cách Peto, đã tách khỏi Discord
+  persona.py     Lời nhắc hệ thống: Peto là trợ lý AI
   db.py          SQLite riêng; mọi truy vấn lọc theo owner
   rate_limit.py  Cooldown + đồng thời + hàng chờ có timeout
   xai_auth.py    OAuth xAI riêng của web + CLI login/status/logout
@@ -407,8 +408,7 @@ thích ngắn gọn, đi thẳng vào vấn đề".
 ## Companion
 
 Tab **Companion** nằm cạnh Trò chuyện và Tạo ảnh. Ở đây Peto trả lời một hai câu ngắn bằng tiếng
-Anh như bạn bè nhắn tin, rồi tự nói thành tiếng. Tab Trò chuyện vẫn giữ nguyên tính cách và cách trả
-lời đầy đủ bằng tiếng Việt.
+Anh như đang trò chuyện, rồi tự nói thành tiếng. Tab Trò chuyện vẫn trả lời đầy đủ bằng tiếng Việt.
 
 - Companion có một mạch trò chuyện riêng, không hiện trong danh sách Trò chuyện. Nút **Bắt đầu lại**
   xóa mạch đó sau khi xác nhận.

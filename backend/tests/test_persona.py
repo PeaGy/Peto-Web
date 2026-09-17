@@ -55,11 +55,43 @@ def test_states_web_has_no_tools():
     assert "không phải Discord" in persona.SYSTEM_PROMPT
 
 
-def test_core_personality_survived():
+def test_core_sections_survived():
     # Nếu ai đó rút gọn prompt, các phần tạo nên Peto phải còn nguyên.
-    for marker in ("Peto là ai", "Nhịp trò chuyện", "Cảm giác hiện diện"):
+    for marker in ("Peto là ai", "Cách trả lời", "Trung thực và an toàn", "Khi người dùng chia sẻ cảm xúc"):
         assert marker in persona.SYSTEM_PROMPT
     assert len(persona.SYSTEM_PROMPT) > 3000
+
+
+def test_web_persona_is_an_assistant_not_the_discord_roleplay_character():
+    """Ngày 17/09/2026 chủ web thay persona nhập vai lấy từ bot Discord bằng một trợ lý AI trung thực."""
+    lowered = persona.SYSTEM_PROMPT.casefold()
+    assert "trợ lý ai" in lowered and "bạn là ai, không phải con người" in lowered
+    assert "không nhập vai tình dục" in lowered
+    for leftover in ("nsfw", "18+", "lưỡng tính", "cà lại", "punching bag", "đừng lúc nào cũng chiều theo",
+                     "*peto nghiêng đầu", "pet play", "roleplay"):
+        assert leftover not in lowered, f"prompt trợ lý còn dấu vết persona nhập vai: {leftover}"
+    assert persona.MATURE_TONE_PROMPT not in persona.SYSTEM_PROMPT
+    assert persona.PRESENCE_AND_ROLEPLAY_PROMPT not in persona.SYSTEM_PROMPT
+
+
+def test_roleplay_mode_keeps_the_discord_persona_and_the_web_rules():
+    """Chế độ nhập vai tự bật dùng lại nguyên persona của bot, nhưng vẫn theo luật nền tảng web và không mang tên thật."""
+    prompt = persona.ROLEPLAY_SYSTEM_PROMPT
+    for marker in ("20 tuổi", "Nhịp trò chuyện", "Cảm giác hiện diện", "roleplay 18+", "*Peto nghiêng đầu",
+                   "không phải Discord", "chưa có nhạc", "Tính liên tục và trí nhớ"):
+        assert marker in prompt
+    assert "trợ lý AI của Peto Web" not in prompt
+    lowered = prompt.casefold()
+    for name in FORBIDDEN_NAMES:
+        assert name.casefold() not in lowered, f"prompt nhập vai còn tên thật: {name}"
+    assert not re.search(r"\b\d{17,20}\b", prompt)
+
+
+def test_agent_does_its_work_instead_of_refusing_on_taste():
+    """Grok thật từng từ chối "tạo thử một đoạn code lỗi" vì persona cũ cho phép "không chiều theo người dùng"."""
+    assert "kể cả cố ý tạo code lỗi để thử" in persona.AGENT_PROMPT
+    assert "khi thật cần" not in persona.AGENT_PROMPT
+    assert "trợ lý AI" in persona.PERSONA_PROMPT
 
 
 def test_does_not_invent_source_from_screenshots():

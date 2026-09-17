@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 
 import db
 from auth import current_owner
+from config import provider_from_owner
 
 router = APIRouter(tags=["profile"])
 
@@ -112,3 +113,15 @@ async def update_profile(body: ProfileIn, owner: str = Depends(current_owner)) -
         instructions=instructions,
     )
     return {"profile": _public(await db.get_profile(owner))}
+
+
+@router.post("/api/profile/roleplay-consent")
+async def confirm_roleplay_age(owner: str = Depends(current_owner)) -> dict:
+    """Người dùng tự xác nhận đủ 18 tuổi để bật chế độ nhập vai. Chỉ hỏi một lần cho mỗi tài khoản.
+
+    Tài khoản khách ai cũng tạo được nên không được xác nhận; máy chủ còn kiểm lại lúc mở hội thoại nhập vai.
+    """
+    if provider_from_owner(owner) == "guest":
+        raise HTTPException(403, "Chế độ nhập vai chỉ dùng được với tài khoản Discord hoặc Google.")
+    await db.add_roleplay_consent(owner)
+    return {"roleplay_confirmed": True}

@@ -140,6 +140,8 @@ RESPONSE_TIMEOUTS = {
 
 # --- Ngữ cảnh ------------------------------------------------------------
 MAX_HISTORY_MESSAGES = _env_int("PETO_MAX_HISTORY", 20, 2, 100)
+# Hội thoại ở chế độ nhập vai gửi nhiều tin cũ hơn để giữ mạch truyện dài; mỗi lượt tốn token hơn tương ứng.
+ROLEPLAY_MAX_HISTORY = _env_int("PETO_ROLEPLAY_MAX_HISTORY", 100, 2, 300)
 MAX_INPUT_CHARS = _env_int("PETO_MAX_INPUT_CHARS", 32000, 100, 200000)
 
 # --- Tệp đính kèm --------------------------------------------------------

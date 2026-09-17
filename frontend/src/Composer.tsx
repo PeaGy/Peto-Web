@@ -1,8 +1,8 @@
 import { useRef, useState, type RefObject } from "react";
-import ComposerMenu from "./ComposerMenu";
+import ComposerMenu, { type RoleplayOption } from "./ComposerMenu";
 import EffortMenu from "./EffortMenu";
 import { FileGlyph, formatSize, type DraftFile } from "./files";
-import type { Effort, WebSearchMode } from "./api";
+import type { Effort, Persona, WebSearchMode } from "./api";
 
 const ACCEPT =
   "image/jpeg,image/png,image/webp,image/gif,.txt,.md,.csv,.json,.pdf,.docx,.py,.js,.ts,.tsx,.jsx,.css,.html,.xml,.yml,.yaml,.rs,.go,.java,.c,.cpp,.h,.sql,.log";
@@ -37,6 +37,10 @@ interface ComposerProps {
   onEffortChange: (value: Effort) => void;
   webSearch: WebSearchMode;
   onToggleWeb: () => void;
+  /** Chế độ của hội thoại đang mở; nhập vai thì hiện nhãn cạnh mức suy nghĩ. */
+  persona: Persona;
+  /** Mục bật/tắt nhập vai trong menu dấu cộng; chỉ có khi hội thoại chưa bắt đầu. */
+  roleplay?: RoleplayOption;
   /** Menu dấu cộng tắt khi đang trả lời hoặc khi người dùng đang ở tab khác. */
   menuDisabled: boolean;
   /** Gợi ý ở màn hình trống; mảng rỗng thì không hiện gì. */
@@ -58,7 +62,7 @@ interface ComposerProps {
 export default function Composer({
   draft, onDraftChange, files, onAddFiles, onRemoveFile,
   streaming, stopping, canSend, onSubmit, onStop,
-  effort, efforts, onEffortChange, webSearch, onToggleWeb, menuDisabled,
+  effort, efforts, onEffortChange, webSearch, onToggleWeb, persona, roleplay, menuDisabled,
   hints, onPickHint, formRef, boxRef, textareaRef, fileRef,
 }: ComposerProps) {
   const [dragging, setDragging] = useState(false);
@@ -157,9 +161,19 @@ export default function Composer({
               }}
             />
             <ComposerMenu disabled={menuDisabled} webDisabled={webSearch === "off"}
-              onAttach={() => fileRef.current?.click()} onToggleWeb={onToggleWeb} />
+              onAttach={() => fileRef.current?.click()} onToggleWeb={onToggleWeb} roleplay={roleplay} />
 
             <EffortMenu value={effort} options={efforts} disabled={streaming} onChange={onEffortChange} />
+
+            {persona === "roleplay" && (
+              <span className="persona-chip">
+                Nhập vai
+                {/* Hội thoại đã bắt đầu thì giữ chế độ, nên chỉ hội thoại mới có nút tắt. */}
+                {roleplay && (
+                  <button type="button" aria-label="Tắt chế độ nhập vai" disabled={streaming} onClick={roleplay.onToggle}>×</button>
+                )}
+              </span>
+            )}
           </div>
 
           {streaming ? (

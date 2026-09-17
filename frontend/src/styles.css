@@ -296,6 +296,9 @@ body {
 .conv:hover, .conv.active { background: var(--panel-2); }
 
 .conv-open {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
   flex: 1;
   min-width: 0;
   padding: 9px 10px;
@@ -306,9 +309,12 @@ body {
   text-align: left;
   white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis;
   cursor: pointer;
 }
+
+/* Tiêu đề dài thì cắt bớt, nhãn chế độ nhập vai vẫn luôn hiện. */
+.conv-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.conv-persona { flex-shrink: 0; color: var(--muted); font-size: 12px; }
 
 .conv-delete {
   border: 0;
@@ -843,6 +849,13 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .composer-options > button > span { display: grid; gap: 4px; }
 .composer-options strong { font-size: 13px; font-weight: 500; }
 .composer-options small { font-size: 11px; color: var(--muted); }
+.composer-options > button:disabled { cursor: default; opacity: 0.55; }
+.composer-options > button:disabled:hover { background: transparent; outline: none; }
+/* Nhãn chế độ nhập vai cạnh mức suy nghĩ; hội thoại mới thì có nút × để tắt. */
+.persona-chip { display: inline-flex; align-items: center; gap: 2px; height: 34px; padding: 0 6px 0 13px; border-radius: 999px; background: var(--panel-2); color: var(--accent); font-size: 13.5px; font-weight: 500; flex-shrink: 0; }
+.persona-chip button { display: grid; place-items: center; width: 24px; height: 24px; border: 0; border-radius: 50%; background: transparent; color: var(--muted); font: inherit; font-size: 16px; line-height: 1; cursor: pointer; }
+.persona-chip button:hover:not(:disabled) { color: var(--text); background: var(--panel); }
+.persona-chip button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .web-search-status { display: flex; align-items: center; gap: 8px; color: var(--accent); font-size: 13px; padding: 7px 0; }
 .web-search-status svg { flex-shrink: 0; }
 .web-sources { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line); font-size: 13px; }
@@ -1125,6 +1138,8 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .confirm-dialog p { color: var(--muted); overflow-wrap: anywhere; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
 .dialog-actions .danger-button { color: var(--danger); border-color: var(--danger); }
+.dialog-actions .primary-button { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.confirm-dialog .consent-error { color: var(--danger); }
 button:focus-visible, a:focus-visible, .table-scroll:focus-visible {
   outline: 2px solid var(--accent); outline-offset: 3px;
 }

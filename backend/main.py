@@ -56,12 +56,21 @@ from config import (
     MEMORY_GATEWAY_TOKEN,
     MEMORY_GATEWAY_URL,
     RESPONSE_TIMEOUTS,
+    ROLEPLAY_MAX_HISTORY,
     STATIC_DIR,
     WEB_SEARCH_ENABLED,
     discord_id_from_owner,
+    provider_from_owner,
 )
 from discord_memory import discord_memory
-from persona import COMPANION_PROMPT, SYSTEM_PROMPT, build_agent_guide, build_memory_context, build_profile_context
+from persona import (
+    COMPANION_PROMPT,
+    ROLEPLAY_SYSTEM_PROMPT,
+    SYSTEM_PROMPT,
+    build_agent_guide,
+    build_memory_context,
+    build_profile_context,
+)
 from rate_limit import AdmissionDenied, admission
 from web_search import normalize_sources
 
@@ -130,11 +139,14 @@ class ChatRequest(BaseModel):
     web_search: Literal["auto", "on", "off"] = "auto"
     # "companion" khi nhắn từ tab Companion: persona trả lời ngắn bằng tiếng Anh, mạch trò chuyện riêng.
     mode: str = Field(default="chat", max_length=16)
+    # "roleplay" khi người dùng bật Chế độ nhập vai lúc bắt đầu; hội thoại đã có thì luôn theo persona đã lưu.
+    persona: str = Field(default="assistant", max_length=16)
     document_mode: bool = False
 
 
 ALLOWED_EFFORTS = {"auto", "low", "medium", "high"}
 CONVERSATION_MODES = {"chat", "companion"}
+CONVERSATION_PERSONAS = {"assistant", "roleplay"}
 
 
 def _public_attachment(row: dict) -> dict:
@@ -177,6 +189,19 @@ def _resolve_mode(requested: str) -> str:
     if requested not in CONVERSATION_MODES:
         raise HTTPException(status_code=400, detail="Chế độ trò chuyện không hợp lệ")
     return requested
+
+
+async def _check_roleplay_start(owner: str, mode: str) -> None:
+    """Chỉ mở hội thoại nhập vai (có thể có nội dung 18+) cho tài khoản Discord/Google đã xác nhận đủ 18 tuổi.
+
+    Kiểm ở máy chủ, không tin giao diện: tài khoản khách ai cũng tạo được nên không được bật.
+    """
+    if mode != "chat":
+        raise HTTPException(status_code=400, detail="Tab Companion không dùng chế độ nhập vai.")
+    if provider_from_owner(owner) == "guest":
+        raise HTTPException(status_code=403, detail="Chế độ nhập vai chỉ dùng được với tài khoản Discord hoặc Google.")
+    if not await db.has_roleplay_consent(owner):
+        raise HTTPException(status_code=403, detail="Bạn cần xác nhận đủ 18 tuổi trước khi bật chế độ nhập vai.")
 
 
 def _title_from(text: str, files: list[attachment_lib.ValidatedAttachment]) -> str:
@@ -359,22 +384,25 @@ async def get_companion(owner: str = Depends(current_owner)) -> dict:
     return {"conversation_id": conversation_id, "messages": [_public_message(row) for row in rows]}
 
 
-async def _build_system_prompt(owner: str, mode: str = "chat", install_command: str = "") -> str:
-    """Prompt gốc, ghép thêm hướng dẫn Peto Agent, trí nhớ từ Discord (nếu lấy
-    được), hồ sơ người dùng tự điền trong Cài đặt, và persona riêng khi nhắn từ
-    tab Companion.
+async def _build_system_prompt(
+    owner: str, mode: str = "chat", install_command: str = "", persona: str = "assistant"
+) -> str:
+    """Prompt gốc (trợ lý, hoặc persona nhập vai khi hội thoại bật chế độ đó), ghép
+    thêm hướng dẫn Peto Agent, trí nhớ từ Discord (nếu lấy được), hồ sơ người dùng
+    tự điền trong Cài đặt, và persona riêng khi nhắn từ tab Companion.
 
     Trí nhớ chỉ được tra bằng Discord ID lấy từ phiên đã xác minh — không bao
     giờ từ dữ liệu do trình duyệt gửi lên. Lấy không được thì bỏ qua, chat vẫn
     chạy bình thường.
     """
+    base = ROLEPLAY_SYSTEM_PROMPT if persona == "roleplay" else SYSTEM_PROMPT
     mode_block = COMPANION_PROMPT if mode == "companion" else ""
     # Hướng dẫn Peto Agent giống nhau với mọi người trên cùng trang, nên đứng ngay sau prompt gốc, trước phần riêng
     # của từng người. Lệnh cài lấy từ địa chỉ trang đang mở (agent_install.install_command).
     agent_guide = build_agent_guide(install_command=install_command, daily_steps=AGENT_DAILY_STEPS)
     user = await db.get_user(owner)
     if not user:
-        return "\n\n".join(part for part in (SYSTEM_PROMPT, agent_guide, mode_block) if part)
+        return "\n\n".join(part for part in (base, agent_guide, mode_block) if part)
 
     discord_id = discord_id_from_owner(owner)
     snapshot = await discord_memory.fetch(discord_id) if discord_id else None
@@ -394,7 +422,7 @@ async def _build_system_prompt(owner: str, mode: str = "chat", install_command: 
         instructions=profile["instructions"],
     )
     # Persona Companion đứng sau trí nhớ và hồ sơ để thắng thói quen trả lời dài bằng tiếng Việt ở trên.
-    return "\n\n".join(part for part in (SYSTEM_PROMPT, agent_guide, context, profile_block, mode_block) if part)
+    return "\n\n".join(part for part in (base, agent_guide, context, profile_block, mode_block) if part)
 
 
 def _as_chunk(item: str | StreamChunk) -> StreamChunk:
@@ -462,12 +490,20 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
         effort = "low"
         web_search = "off"
 
+    if request.persona not in CONVERSATION_PERSONAS:
+        raise HTTPException(status_code=400, detail="Chế độ trả lời không hợp lệ")
+    persona = request.persona
     if request.conversation_id:
-        existing_mode = await db.conversation_mode(owner, request.conversation_id)
-        if existing_mode is None:
+        settings = await db.conversation_settings(owner, request.conversation_id)
+        if settings is None:
             raise HTTPException(status_code=404, detail="Không tìm thấy hội thoại")
-        if existing_mode != mode:
+        if settings["mode"] != mode:
             raise HTTPException(status_code=400, detail="Hội thoại này thuộc tab khác")
+        # Chế độ chọn lúc bắt đầu và giữ cả hội thoại, để lịch sử không trộn giọng trợ lý với giọng nhập vai.
+        persona = settings["persona"]
+    elif persona == "roleplay":
+        await _check_roleplay_start(owner, mode)
+    history_limit = ROLEPLAY_MAX_HISTORY if persona == "roleplay" else MAX_HISTORY_MESSAGES
 
     async def event_stream() -> AsyncIterator[str]:
         conversation_id = request.conversation_id
@@ -513,7 +549,7 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                 is_new_conversation = not conversation_id
                 with anyio.CancelScope(shield=True):
                     if not conversation_id:
-                        conversation_id = await db.create_conversation(owner, mode=mode)
+                        conversation_id = await db.create_conversation(owner, mode=mode, persona=persona)
                     saved_paths: list[Path] = []
                     try:
                         message_id = await db.add_message(conversation_id, "user", text)
@@ -531,7 +567,7 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                         attachment_lib.delete_files(saved_paths)
                         raise
                     await db.set_title_if_empty(conversation_id, _title_from(text, files))
-                    rows = await db.get_messages(owner, conversation_id, limit=MAX_HISTORY_MESSAGES)
+                    rows = await db.get_messages(owner, conversation_id, limit=history_limit)
                 # Tên cắt từ tin nhắn đầu chỉ là tạm. Đặt tên tóm tắt bằng một lượt
                 # AI riêng chạy song song với câu trả lời, cuối lượt mới ghi đè.
                 # Không có chữ thì chẳng có gì để tóm tắt (lượt đặt tên không xem
@@ -554,7 +590,7 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                     await _read_legacy_documents(owner, rows, MAX_ATTACHMENTS - document_count)
                     yield sse({"type": "reading", "text": ""})
                 history = await anyio.to_thread.run_sync(_to_chat_messages, rows)
-                system_prompt = await _build_system_prompt(owner, mode, install_command)
+                system_prompt = await _build_system_prompt(owner, mode, install_command, persona)
                 document_session = DocumentSession(owner, conversation_id) if mode == 'chat' else None
                 if request.document_mode and mode == 'chat':
                     system_prompt += '\n\n[PETO_DOCUMENT_CREATE]\nNgười dùng chọn tạo tài liệu: hãy gọi create_document để tạo tệp theo yêu cầu, mặc định DOCX nếu chưa chọn định dạng. Trả lời ngắn sau khi có kết quả; nội dung dài đặt trong công cụ.'

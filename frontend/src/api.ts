@@ -54,12 +54,17 @@ export interface WorkStep {
   live?: boolean;
 }
 
+/** Cách Peto trả lời trong một hội thoại: trợ lý AI (mặc định) hoặc nhập vai. Chọn lúc bắt đầu, giữ cả hội thoại. */
+export type Persona = "assistant" | "roleplay";
+
 export interface Conversation {
   id: string;
   title: string;
   created_at: number;
   updated_at: number;
   message_count: number;
+  /** Máy chủ cũ chưa trả trường này thì coi như trợ lý. */
+  persona?: Persona;
 }
 
 type ChatEvent =
@@ -98,6 +103,8 @@ export interface AccountUser {
   avatar_url: string;
   /** Tên tự đặt trong Cài đặt → Hồ sơ; rỗng nếu chưa đặt. */
   nickname?: string;
+  /** Đã xác nhận đủ 18 tuổi để bật chế độ nhập vai. */
+  roleplay_confirmed?: boolean;
 }
 
 export interface AuthState {
@@ -167,6 +174,11 @@ export async function saveProfile(profile: Profile): Promise<Profile> {
     body: JSON.stringify(profile),
   });
   return (await json<{ profile: Profile }>(response)).profile;
+}
+
+/** Lưu xác nhận đủ 18 tuổi cho tài khoản, để bật được chế độ nhập vai. Tài khoản khách bị từ chối. */
+export async function confirmRoleplayAge(): Promise<void> {
+  await json(await fetch("/api/profile/roleplay-consent", { method: "POST" }));
 }
 
 export function browserTimezone(): string | undefined {
@@ -337,6 +349,7 @@ export async function sendMessage(
     webSearch?: WebSearchMode;
     attachments?: OutgoingAttachment[];
     mode?: ConversationMode;
+    persona?: Persona;
   },
   handlers: ChatHandlers,
   signal?: AbortSignal,
@@ -352,6 +365,7 @@ export async function sendMessage(
       timezone: browserTimezone(),
       attachments: payload.attachments ?? [],
       mode: payload.mode ?? "chat",
+      persona: payload.persona ?? "assistant",
     }),
     signal,
   });

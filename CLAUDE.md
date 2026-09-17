@@ -4,10 +4,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Peto Web is a private chat UI for "Peto", a character that also exists as a Discord bot
+Peto Web is a private chat UI for Peto, an AI assistant. The name comes from a Discord bot
 (`Tracen Jukebox`) in a **separate repository**. This web app is deliberately independent:
 its own database, its own xAI token file, its own persona prompt. The only link back to the
 bot is a read-only memory gateway (see below).
+
+On 2026-09-17 the owner replaced the web's persona, which had been adapted from the bot's roleplay
+character, with an honest, helpful AI assistant (`persona.py`): it says it is an AI running on Grok,
+addresses users as "bạn", refuses only genuinely harmful requests, and has no roleplay or adult-content
+mode. The Peto Agent prompt uses the same core (`PERSONA_PROMPT`).
 
 Stack: FastAPI + SQLite (aiosqlite) backend, React 19 + Vite frontend, xAI Grok via the
 Responses API. Registration is **open**: Discord, Google, or guest — there is no
@@ -532,6 +537,9 @@ results in the next step. The server stores no conversation (`store=False`), and
   with the bot's production data.
 - `persona.py` must not contain real names or Discord IDs of members — `tests/test_persona.py`
   asserts this. Personal context is loaded per account at runtime, not baked into the prompt.
+- Peto on the web is an AI assistant by the owner's decision. Do not bring back the Discord bot's roleplay
+  persona (age/identity, "don't always comply", insult-back, NSFW or pet roleplay, `*action*` narration)
+  unless asked; `tests/test_persona.py` checks for those leftovers.
 - Nothing writes back to the bot's memory. The gateway is read-only and loopback-only; it
   must never sit behind Cloudflare Tunnel.
 - No AI credential ever reaches the browser, and neither does `PETO_VOICE_WORKER_TOKEN`.

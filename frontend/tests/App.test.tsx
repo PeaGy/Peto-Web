@@ -13,6 +13,7 @@ vi.mock('../src/api', async (original) => ({
   listImagineJobs: vi.fn(), createImagineJob: vi.fn(), guestLogin: vi.fn(),
   getProfile: vi.fn(), saveProfile: vi.fn(),
   getAgentDevice: vi.fn(), answerAgentDevice: vi.fn(), listAgentDevices: vi.fn(), revokeAgentDevice: vi.fn(),
+  confirmRoleplayAge: vi.fn(),
 }));
 
 const conversation = (id: string): api.Conversation => ({ id, title: id, created_at: 0, updated_at: 0, message_count: 2 });
@@ -910,12 +911,12 @@ describe('Bố cục màn hình trống', () => {
     await openApp();
     const main = document.querySelector('main.chat')!;
     expect(main.classList.contains('empty-state')).toBe(true);
-    const hint = screen.getByRole('button', { name: 'Hôm nay cậu thế nào?' });
+    const hint = screen.getByRole('button', { name: 'Viết giúp mình một email ngắn' });
     expect(hint.closest('form')).toBe(screen.getByPlaceholderText('Nhắn cho Peto…').closest('form'));
     send('Chào Peto');
     await waitFor(() => expect(api.sendMessage).toHaveBeenCalled());
     expect(main.classList.contains('empty-state')).toBe(false);
-    expect(screen.queryByRole('button', { name: 'Hôm nay cậu thế nào?' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Viết giúp mình một email ngắn' })).toBeNull();
   });
 
   it('gửi tin đầu thì ô nhắn trượt từ giữa xuống đáy', async () => {
@@ -953,4 +954,68 @@ it('loads conversations beyond the first 50', async () => {
   fireEvent.click(screen.getByRole('button', {name:'Xem hội thoại cũ hơn'}));
   await screen.findByRole('button', {name:'Hội thoại cũ', exact:true});
   expect(api.listConversations).toHaveBeenCalledWith(50);
+});
+
+describe('Chế độ nhập vai', () => {
+  const openPlusMenu = () => fireEvent.click(screen.getByRole('button', { name: 'Thêm ảnh và tùy chọn' }));
+
+  it('lần đầu bật thì hỏi đủ 18 tuổi, hiện nhãn, gửi kèm chế độ và lần sau không hỏi lại', async () => {
+    vi.mocked(api.confirmRoleplayAge).mockResolvedValue();
+    vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers) => {
+      handlers.onMeta?.('R', 'low', row('Kể chuyện đi'));
+      handlers.onDelta?.('*Peto nghiêng đầu*');
+      handlers.onDone?.();
+    });
+    await openApp();
+    openPlusMenu();
+    fireEvent.click(screen.getByRole('button', { name: /Chế độ nhập vai/ }));
+    const dialog = await screen.findByRole('dialog', { name: 'Bật chế độ nhập vai?' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Tôi đủ 18 tuổi' }));
+    const turnOff = await screen.findByRole('button', { name: 'Tắt chế độ nhập vai' });
+    expect(api.confirmRoleplayAge).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(turnOff);
+    expect(screen.queryByRole('button', { name: 'Tắt chế độ nhập vai' })).toBeNull();
+    openPlusMenu();
+    fireEvent.click(screen.getByRole('button', { name: /Chế độ nhập vai/ }));
+    expect(screen.queryByRole('dialog', { name: 'Bật chế độ nhập vai?' })).toBeNull();
+    expect(api.confirmRoleplayAge).toHaveBeenCalledTimes(1);
+
+    fireEvent.change(screen.getByLabelText('Nhắn cho Peto'), { target: { value: 'Kể chuyện đi' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Gửi', exact: true }));
+    await waitFor(() => expect(api.sendMessage).toHaveBeenCalled());
+    expect(vi.mocked(api.sendMessage).mock.calls[0][0].persona).toBe('roleplay');
+  });
+
+  it('hội thoại nhập vai có nhãn ở thanh bên; mở lại thì giữ chế độ và không tắt được', async () => {
+    vi.mocked(api.listConversations).mockResolvedValue({
+      conversations: [{ ...conversation('A'), persona: 'roleplay' }, conversation('B')], has_more: false });
+    vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers) => { handlers.onDone?.(); });
+    render(<App />);
+    fireEvent.click(await screen.findByRole('button', { name: /^A.*Nhập vai$/ }));
+    await waitFor(() => expect(api.getMessages).toHaveBeenCalled());
+    expect(document.querySelector('.persona-chip')?.textContent).toBe('Nhập vai');
+    expect(screen.queryByRole('button', { name: 'Tắt chế độ nhập vai' })).toBeNull();
+    openPlusMenu();
+    expect(screen.queryByRole('button', { name: /Chế độ nhập vai/ })).toBeNull();
+
+    fireEvent.change(screen.getByLabelText('Nhắn cho Peto'), { target: { value: 'kể tiếp' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Gửi', exact: true }));
+    await waitFor(() => expect(api.sendMessage).toHaveBeenCalled());
+    expect(vi.mocked(api.sendMessage).mock.calls[0][0]).toMatchObject({ conversationId: 'A', persona: 'roleplay' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'B', exact: true }));
+    await waitFor(() => expect(document.querySelector('.persona-chip')).toBeNull());
+  });
+
+  it('tài khoản khách thấy mục nhập vai bị khóa', async () => {
+    vi.mocked(api.getAuthState).mockResolvedValue({ authenticated: true, login_configured: true,
+      providers: { discord: true, google: true, guest: true },
+      user: { id: 'guest-1', provider: 'guest', username: 'khach', display_name: 'Khách', avatar_url: '' } });
+    await openApp();
+    openPlusMenu();
+    const item = screen.getByRole('button', { name: /Chế độ nhập vai/ }) as HTMLButtonElement;
+    expect(item.disabled).toBe(true);
+    expect(item.textContent).toContain('Cần tài khoản Discord hoặc Google');
+  });
 });

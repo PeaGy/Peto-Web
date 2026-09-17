@@ -44,6 +44,9 @@ async def init_db() -> None:
         if "mode" not in {column[1] for column in conversation_columns}:
             # Tab Companion có mạch trò chuyện riêng; hội thoại có từ trước đều thuộc tab Trò chuyện.
             await db.execute("ALTER TABLE conversations ADD COLUMN mode TEXT NOT NULL DEFAULT 'chat'")
+        if "persona" not in {column[1] for column in conversation_columns}:
+            # "assistant" hoặc "roleplay", chọn lúc bắt đầu hội thoại; hội thoại cũ đều là trợ lý.
+            await db.execute("ALTER TABLE conversations ADD COLUMN persona TEXT NOT NULL DEFAULT 'assistant'")
         await db.execute(
             """
             CREATE TABLE IF NOT EXISTS messages (
@@ -240,6 +243,15 @@ async def init_db() -> None:
             )
             """
         )
+        # Tài khoản đã xác nhận đủ 18 tuổi để bật chế độ nhập vai. Tách khỏi `users` (bị ghi đè mỗi lần đăng nhập).
+        await db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS roleplay_consents (
+                owner TEXT PRIMARY KEY,
+                confirmed_at REAL NOT NULL
+            )
+            """
+        )
         await init_document_tables(db)
         await db.commit()
 
@@ -323,14 +335,14 @@ async def get_user(owner: str) -> dict | None:
         return dict(row) if row else None
 
 
-async def create_conversation(owner: str, title: str = "", mode: str = "chat") -> str:
+async def create_conversation(owner: str, title: str = "", mode: str = "chat", persona: str = "assistant") -> str:
     conversation_id = uuid.uuid4().hex
     now = time.time()
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
-            "INSERT INTO conversations (id, owner, title, created_at, updated_at, mode) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (conversation_id, owner, title[:120], now, now, mode),
+            "INSERT INTO conversations (id, owner, title, created_at, updated_at, mode, persona) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (conversation_id, owner, title[:120], now, now, mode, persona),
         )
         await db.commit()
     return conversation_id
@@ -346,15 +358,31 @@ async def owns_conversation(owner: str, conversation_id: str) -> bool:
         return await cursor.fetchone() is not None
 
 
-async def conversation_mode(owner: str, conversation_id: str) -> str | None:
-    """Tab của một hội thoại ("chat" hay "companion"); None nếu không phải của owner."""
+async def conversation_settings(owner: str, conversation_id: str) -> dict | None:
+    """Tab ("chat" hay "companion") và persona ("assistant" hay "roleplay") của một hội thoại; None nếu không phải
+    của owner."""
     async with aiosqlite.connect(DB_PATH) as db:
         cursor = await db.execute(
-            "SELECT mode FROM conversations WHERE id = ? AND owner = ?",
+            "SELECT mode, persona FROM conversations WHERE id = ? AND owner = ?",
             (conversation_id, owner),
         )
         row = await cursor.fetchone()
-        return row[0] if row else None
+        return {"mode": row[0], "persona": row[1]} if row else None
+
+
+async def has_roleplay_consent(owner: str) -> bool:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute("SELECT 1 FROM roleplay_consents WHERE owner = ?", (owner,))
+        return await cursor.fetchone() is not None
+
+
+async def add_roleplay_consent(owner: str) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "INSERT INTO roleplay_consents (owner, confirmed_at) VALUES (?, ?) ON CONFLICT(owner) DO NOTHING",
+            (owner, time.time()),
+        )
+        await db.commit()
 
 
 async def latest_conversation(owner: str, mode: str) -> str | None:
@@ -375,7 +403,7 @@ async def list_conversations(owner: str, limit: int = 50, offset: int = 0) -> li
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
             """
-            SELECT c.id, c.title, c.created_at, c.updated_at,
+            SELECT c.id, c.title, c.created_at, c.updated_at, c.persona,
                    (SELECT COUNT(*) FROM messages m
                      WHERE m.conversation_id = c.id) AS message_count
               FROM conversations c
