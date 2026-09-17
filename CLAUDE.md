@@ -17,8 +17,8 @@ roleplay mode (`persona.ROLEPLAY_SYSTEM_PROMPT`, see "Roleplay mode" below). Pet
 use the assistant core (`PERSONA_PROMPT`).
 
 Stack: FastAPI + SQLite (aiosqlite) backend, React 19 + Vite frontend, xAI Grok via the
-Responses API. Registration is **open**: Discord, Google, or guest — there is no
-allowlist.
+Responses API, plus OpenAI's GPT-5.6 models as a user-selectable option (see "Model choice"). Registration is **open**:
+Discord, Google, or guest — there is no allowlist.
 
 ## Language convention
 
@@ -128,6 +128,29 @@ does not require the `openai` SDK.
 Providers must raise `ProviderError` for anything the user should see; the message is shown
 verbatim in the UI, so it must be written in Vietnamese and be user-appropriate. Anything
 else propagates and gets logged as an unexpected error behind a generic message.
+
+### Model choice (Peto and GPT-5.6)
+
+On 2026-09-17 the owner added OpenAI API billing and picked this design from mockups. `ai_models.py` holds the catalog
+and the access rules; the server checks them on every chat turn and agent step, never trusting the UI:
+
+- `peto` (Grok through the web's xAI account) for everyone; `luna` (`gpt-5.6-luna`) for Discord and Google accounts,
+  on the web and in the CLI; `terra` and `sol` (`gpt-5.6-terra`, `gpt-5.6-sol`) only in the CLI and only for owners
+  listed in `PETO_OWNER_ACCOUNTS` (`discord:<id>` or `google:<id>`, bare digits mean Discord). Without `OPENAI_API_KEY`
+  only Peto is offered (503 if a turn asks for another model); under `PETO_AI_PROVIDER=mock` every model uses the mock.
+- `get_provider(model)` caches one provider per model. `ai/xai.py` holds `ResponsesProvider`, the tool loop, web search
+  and sources shared by `XAIProvider` and `ai/gpt.py`'s `GPTProvider`; subclasses only set the client, model, output
+  budget (`PETO_OPENAI_MAX_OUTPUT_TOKENS`, 16000, since reasoning tokens count) and Vietnamese error messages. OpenAI
+  reasoning summaries are not requested, because they can require organization verification.
+- `POST /api/chat` takes `model` per message, so switching mid-conversation works (history is plain text). Companion and
+  roleplay conversations must stay on `peto` (400): the roleplay prompt can be 18+, and it must not reach the owner's
+  OpenAI account. The title call uses the same model as the first message. `/api/auth/me` returns the account's web
+  `models`; `ModelMenu.tsx` sits left of the send button (hidden with fewer than two models or in roleplay), remembers
+  the choice in `localStorage` (`peto-model`), and phones show the send button as an arrow only to keep the bar on
+  one row.
+- The persona rule still holds: whatever model runs, Peto does not name the model behind it.
+- Tests patch `main.get_provider` with a callable that accepts the model (`lambda model="peto": ...`).
+  `tests/test_models.py` covers the access rules, step costs and the OpenAI call shape with fake clients.
 
 ### Chat request lifecycle (`POST /api/chat`)
 
@@ -466,6 +489,13 @@ results in the next step. The server stores no conversation (`store=False`), and
 - **Effort.** `/step` takes `effort` (`low` / `medium` / `high`, default `PETO_AGENT_REASONING`, which `/me` returns as
   `default_effort`). `STEP_COST` makes `high` cost 2 steps, taken and refunded together, by the owner's call. The CLI's
   `/effort thap|vua|cao` is remembered in its `config.json`.
+- **Model.** `/step` takes `model` (default `peto`, checked by `ai_models.resolve` before any step is taken). A step costs
+  `STEP_COST[effort] × step_cost` of the model (Luna 1, Terra 2, Sol 4), by the owner's call. `/me` returns the account's
+  `models`; the CLI's `/model` offers only those (`commands.use_models` rewrites the menu options) and remembers the
+  choice in `config.json`. Switching models, or resuming a session saved with another model (`history` stores `model`),
+  runs `loop.portable`: it drops `reasoning` items, whose encrypted content only the producing service can read, and
+  item `id`s, whose formats differ between services. Peto goes through `_xai_step`, others through `_openai_step`; both
+  share `_responses_step`.
 - **`/step` input is validated**: body size (`PETO_AGENT_MAX_REQUEST_BYTES`, 16 MB by default because images are
   resent every step), at most 300 items, only `message` / `function_call` / `function_call_output` / `reasoning`, and
   messages only as `user` or `assistant`. A user message's content is a string or a list of `input_text` and
@@ -607,13 +637,16 @@ results in the next step. The server stores no conversation (`store=False`), and
   Companion prompts; `tests/test_persona.py` checks both prompts.
 - Nothing writes back to the bot's memory. The gateway is read-only and loopback-only; it
   must never sit behind Cloudflare Tunnel.
-- No AI credential ever reaches the browser, and neither does `PETO_VOICE_WORKER_TOKEN`.
+- No AI credential ever reaches the browser or the CLI, including `OPENAI_API_KEY`, and neither does
+  `PETO_VOICE_WORKER_TOKEN`.
 - Registration is open by the owner's explicit decision. Do not add an allowlist, invite
   code, or per-account quota back unless asked for it. The Peto Agent daily step cap is the one per-account
-  quota the owner asked for; keep it scoped to the agent.
+  quota the owner asked for; keep it scoped to the agent. The OpenAI model gates in `ai_models.py` (Luna for
+  Discord/Google, Terra and Sol for `PETO_OWNER_ACCOUNTS`) are also the owner's call, because those models spend the
+  owner's API billing; Peto itself stays open to everyone.
 - Guest and Google accounts must never resolve to a Discord ID — that isolation is the
   only thing keeping the bot's memory private now that anyone can sign in.
-- Do not rename model slugs (`grok-4.6`, `grok-imagine-image-2.0`), the `/api/imagine` path,
+- Do not rename model slugs (`grok-4.6`, `grok-imagine-image-2.0`, `gpt-5.6-luna`/`-terra`/`-sol`), the `/api/imagine` path,
   or table names into branded equivalents — the API needs the real identifiers. Product
   naming ("Peto tạo ảnh") belongs in display strings only.
 

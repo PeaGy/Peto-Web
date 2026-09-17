@@ -28,6 +28,7 @@ from pydantic import BaseModel, Field
 
 import agent_api
 import agent_install
+import ai_models
 import attachments as attachment_lib
 import auth
 import db
@@ -142,6 +143,8 @@ class ChatRequest(BaseModel):
     # "roleplay" khi người dùng bật Chế độ nhập vai lúc bắt đầu; hội thoại đã có thì luôn theo persona đã lưu.
     persona: str = Field(default="assistant", max_length=16)
     document_mode: bool = False
+    # Model chọn ở nút cạnh nút Gửi (ai_models.MODELS); mỗi tin một lựa chọn, đổi giữa chừng được.
+    model: str = Field(default=ai_models.DEFAULT_MODEL, max_length=16)
 
 
 ALLOWED_EFFORTS = {"auto", "low", "medium", "high"}
@@ -432,10 +435,11 @@ def _as_chunk(item: str | StreamChunk) -> StreamChunk:
 
 
 async def _stream_reply(
-    system_prompt: str, history: list[ChatMessage], effort: str, timezone: str | None = None, web_search: str = "auto", document_session=None
+    system_prompt: str, history: list[ChatMessage], effort: str, timezone: str | None = None, web_search: str = "auto",
+    document_session=None, model: str = ai_models.DEFAULT_MODEL,
 ) -> AsyncIterator[StreamChunk]:
-    """Gọi provider một lần, có timeout theo effort. Trả về từng mảnh stream."""
-    provider = get_provider()
+    """Gọi provider của model đã chọn một lần, có timeout theo effort. Trả về từng mảnh stream."""
+    provider = get_provider(model)
     timeout = RESPONSE_TIMEOUTS.get(effort, RESPONSE_TIMEOUTS["low"])
     token = document_session_context.set(document_session)
     try:
@@ -504,6 +508,16 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
     elif persona == "roleplay":
         await _check_roleplay_start(owner, mode)
     history_limit = ROLEPLAY_MAX_HISTORY if persona == "roleplay" else MAX_HISTORY_MESSAGES
+    if request.model != ai_models.DEFAULT_MODEL:
+        if mode == "companion":
+            raise HTTPException(status_code=400, detail="Tab Companion chỉ dùng Peto.")
+        # Persona nhập vai có thể có nội dung 18+: không gửi sang tài khoản OpenAI của chủ web.
+        if persona == "roleplay":
+            raise HTTPException(status_code=400, detail="Chế độ nhập vai chỉ dùng Peto.")
+    try:
+        model = ai_models.resolve(owner, request.model, "web").key
+    except ai_models.ModelUnavailable as err:
+        raise HTTPException(status_code=err.status, detail=err.message) from None
 
     async def event_stream() -> AsyncIterator[str]:
         conversation_id = request.conversation_id
@@ -578,7 +592,7 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                 # Mạch Companion không hiện ở thanh bên nên khỏi đặt tên, bớt một lượt gọi AI.
                 if is_new_conversation and mode == "chat" and text.strip():
                     title_task = asyncio.create_task(
-                        titles.suggest_title(text, [item.name for item in files])
+                        titles.suggest_title(text, [item.name for item in files], model)
                     )
                 stored_user = next(row for row in rows if row["id"] == message_id)
                 yield sse({
@@ -598,7 +612,8 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                 if request.document_mode and mode == 'chat':
                     system_prompt += '\n\n[PETO_DOCUMENT_CREATE]\nNgười dùng chọn tạo tài liệu: hãy gọi create_document để tạo tệp theo yêu cầu, mặc định DOCX nếu chưa chọn định dạng. Trả lời ngắn sau khi có kết quả; nội dung dài đặt trong công cụ.'
                 try:
-                    async for chunk in _stream_reply(system_prompt, history, effort, timezone, web_search, document_session):
+                    async for chunk in _stream_reply(system_prompt, history, effort, timezone, web_search, document_session,
+                                                     model):
                         yield chunk_event(chunk)
                 except TimeoutError:
                     # Chat thường được thử lại đúng 1 lần, và chỉ khi chưa kịp
@@ -607,7 +622,7 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                         raise
                     logger.warning("Timeout effort=low — thử lại 1 lần")
                     async for chunk in _stream_reply(
-                        system_prompt, history, effort, timezone, web_search, document_session
+                        system_prompt, history, effort, timezone, web_search, document_session, model
                     ):
                         yield chunk_event(chunk)
                 if document_session and document_session.created and not ''.join(collected).strip():

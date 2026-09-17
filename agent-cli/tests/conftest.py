@@ -41,6 +41,14 @@ def project(tmp_path: Path) -> Path:
 
 
 @pytest.fixture(autouse=True)
+def command_list(monkeypatch):
+    """Phiên đặt lại lựa chọn của /model theo máy chủ giả; trả danh sách lệnh về như cũ sau mỗi test."""
+    from peto_agent import commands
+
+    monkeypatch.setattr(commands, "COMMANDS", commands.COMMANDS)
+
+
+@pytest.fixture(autouse=True)
 def agent_home(tmp_path: Path, monkeypatch) -> Path:
     home = tmp_path / "agent-home"
     monkeypatch.setenv("PETO_AGENT_HOME", str(home))

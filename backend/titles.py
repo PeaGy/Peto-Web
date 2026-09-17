@@ -54,8 +54,11 @@ def clean_title(raw: str) -> str:
     return title
 
 
-async def suggest_title(first_message: str, attachment_names: list[str] | None = None) -> str:
-    """Tên gợi ý cho hội thoại; chuỗi rỗng nếu không lấy được. Không bao giờ raise."""
+async def suggest_title(first_message: str, attachment_names: list[str] | None = None, model: str = "peto") -> str:
+    """Tên gợi ý cho hội thoại; chuỗi rỗng nếu không lấy được. Không bao giờ raise.
+
+    ``model`` là model người dùng chọn cho tin đầu, để lúc Peto hết lượt thì vẫn đặt tên bằng model đang dùng được.
+    """
     content = " ".join(first_message.split())
     if attachment_names:
         content = f"{content} [đính kèm: {', '.join(attachment_names)}]".strip()
@@ -65,7 +68,7 @@ async def suggest_title(first_message: str, attachment_names: list[str] | None =
     parts: list[str] = []
     try:
         async with asyncio.timeout(GENERATE_TIMEOUT):
-            async for chunk in get_provider().stream(
+            async for chunk in get_provider(model).stream(
                 system_prompt=SYSTEM_PROMPT,
                 messages=[ChatMessage(role="user", content=content[:2000])],
                 effort="low",

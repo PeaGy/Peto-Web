@@ -102,6 +102,10 @@ def _pick_reply(user_text: str, timezone: str | None = None) -> str:
 class MockProvider(ChatProvider):
     name = "mock"
 
+    def __init__(self, model: str = "peto") -> None:
+        # Model người dùng chọn; phản hồi giả không đổi theo model, nhưng test đọc được lượt nào đi vào model nào.
+        self.model = model
+
     async def stream(
         self,
         *,

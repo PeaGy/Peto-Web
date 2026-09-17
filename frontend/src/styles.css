@@ -870,6 +870,8 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .web-source-card strong { font-size: 12px; font-weight: 500; overflow-wrap: anywhere; }
 .web-source-card small { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .composer-bar > .send, .composer-bar > .stop { flex-shrink: 0; }
+/* Bên phải thanh: nút chọn model (khi tài khoản có hơn một model) rồi tới nút Gửi. */
+.composer-send { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 
 .composer .send,
 .composer .stop {
@@ -920,6 +922,9 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   /* Ô nhắn ở đáy nên gợi ý đứng ngay trên nó, trong tầm ngón cái. */
   .composer-wrap { display: flex; flex-direction: column; padding: 10px 12px 16px; }
   .composer-wrap .welcome-hints { order: -1; margin: 0 0 10px; }
+  /* Điện thoại: nút Gửi chỉ còn mũi tên (bản phác chủ web chọn), chừa chỗ cho nút chọn model mà thanh không xuống hàng. */
+  .composer-send .send { width: 36px; height: 36px; padding: 0; justify-content: center; }
+  .composer-send .send-text { display: none; }
 }
 
 /* ---------- Dang nhap ---------- */
@@ -1818,6 +1823,12 @@ label,
   .effort-chevron { transition: none; }
   .effort-options { transition: opacity 180ms ease; }
 }
+
+/* Nút chọn model nằm sát nút Gửi ở mép phải: menu canh theo mép phải và mọc ra từ góc dưới bên phải. */
+.effort-options.model-options { left: auto; right: 0; width: min(248px, calc(100vw - 32px)); transform-origin: bottom right; }
+.model-option { height: auto; min-height: 48px; padding: 7px 10px; }
+.model-option-text { display: grid; flex: 1; gap: 2px; min-width: 0; }
+.model-option-text small { color: var(--muted); font-size: 12px; }
 
 /* ---------- Hồ sơ trong Cài đặt ---------- */
 /* Mỗi hàng: nhãn bên trái, ô nhập bên phải, kẻ vạch ngăn — như Cài đặt của

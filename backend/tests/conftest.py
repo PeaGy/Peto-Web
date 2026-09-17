@@ -22,6 +22,8 @@ os.environ["PETO_WEB_SEARCH_ENABLED"] = "true"
 os.environ["PETO_COOLDOWN_SECONDS"] = "0"
 # Không để credential thật của máy lọt vào test.
 os.environ.pop("XAI_API_KEY", None)
+os.environ.pop("OPENAI_API_KEY", None)
+os.environ["PETO_OWNER_ACCOUNTS"] = ""
 
 # Thông tin Discord giả — đủ để bật luồng đăng nhập, không gọi ra ngoài.
 os.environ["DISCORD_CLIENT_ID"] = "test-client-id"

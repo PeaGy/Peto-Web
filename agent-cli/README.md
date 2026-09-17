@@ -78,7 +78,7 @@ sau 10 phút.
 
 Token được lưu ở `%APPDATA%\PetoAgent\config.json`. Đừng chia sẻ tệp này.
 
-- `peto status`: tài khoản, tên máy, mức suy nghĩ, số bước còn lại và số token đã dùng hôm nay.
+- `peto status`: tài khoản, tên máy, model, mức suy nghĩ, số bước còn lại và số token đã dùng hôm nay.
 - `peto logout`: ngắt kết nối máy này.
 - Ngắt từ xa (ví dụ mất máy): trên web, **Cài đặt → Peto Agent → Ngắt kết nối**.
 
@@ -110,7 +110,12 @@ nào được chọn, nên Enter không tự chạy gì. Các lệnh:
 - `/effort thap`, `/effort vua`, `/effort cao`: mức suy nghĩ, được nhớ trên máy này cho lần sau. Mức cao suy nghĩ kỹ
   hơn nhưng mỗi bước tính 2 bước. Gõ `/effort` để xem mức đang dùng; chưa chọn thì theo mặc định của máy chủ. Gõ
   `/effort` kèm dấu cách thì chọn mức trong danh sách.
-- `/usage`: số bước còn lại và số token đã dùng hôm nay, độ dài hội thoại đang mở và mức suy nghĩ.
+- `/model peto`, `/model luna`: đổi model, được nhớ trên máy này cho lần sau. Peto là mặc định; 5.6 Luna (của OpenAI)
+  dùng được với tài khoản Discord/Google. Chủ web còn chọn được `/model terra` và `/model sol`. Gõ `/model` để xem model
+  đang dùng và các model tài khoản của bạn được chọn; gõ `/model` kèm dấu cách thì chọn trong danh sách. Model đắt hơn
+  tính nhiều bước hơn: Terra 2, Sol 4, nhân với mức suy nghĩ. Đổi model giữa hội thoại vẫn làm tiếp được; phần suy nghĩ
+  của model cũ được bỏ vì model mới không đọc được.
+- `/usage`: số bước còn lại và số token đã dùng hôm nay, độ dài hội thoại đang mở, model và mức suy nghĩ.
 - `/help`: xem các lệnh. `/thoat`: thoát. Tên lệnh gõ có dấu (`/thoát`) vẫn được nhận.
 - **Ctrl+C**: dừng yêu cầu đang chạy; lệnh đang chạy bị dừng cả cây tiến trình. Ở dòng nhập, Ctrl+C xóa chữ đang gõ;
   dòng đã trống thì thoát.
@@ -197,13 +202,14 @@ Nhờ đó có thể thay lớp hiển thị sau này mà không thay cách th�
 - **Chạy lệnh:** chạy bằng `cmd` trong thư mục dự án, mặc định dừng sau 120 giây (tối đa 600). Lệnh test cũng chạy code
   nằm trong dự án, nên hãy xem kỹ các thay đổi trước khi đồng ý chạy.
 - **Giới hạn bước:** mỗi yêu cầu tối đa 40 bước; mỗi tài khoản có số bước mỗi ngày do máy chủ đặt (mặc định 200). Ở mức
-  suy nghĩ cao, mỗi bước tính 2.
+  suy nghĩ cao, mỗi bước tính 2; với 5.6 Terra nhân thêm 2, với 5.6 Sol nhân thêm 4.
 
 ## Dữ liệu gửi đi
 
-Nội dung tệp Peto đọc, kết quả tìm kiếm, diff, output lệnh và ảnh bạn gửi kèm đi qua máy chủ Peto tới dịch vụ AI (xAI)
-để Peto quyết định bước tiếp theo. Máy chủ không lưu hội thoại; nó chỉ lưu tên máy, mã băm của token và số bước đã dùng. Đừng mở Peto Agent
-trong thư mục có dữ liệu bạn không muốn gửi đi.
+Nội dung tệp Peto đọc, kết quả tìm kiếm, diff, output lệnh và ảnh bạn gửi kèm đi qua máy chủ Peto tới dịch vụ AI của
+model đang chọn (xAI với Peto, OpenAI với 5.6 Luna, Terra, Sol) để Peto quyết định bước tiếp theo. Máy chủ không lưu hội
+thoại; nó chỉ lưu tên máy, mã băm của token và số bước đã dùng. Đừng mở Peto Agent trong thư mục có dữ liệu bạn không
+muốn gửi đi.
 
 Để `/resume` hoạt động, hội thoại gần nhất của mỗi thư mục được lưu trên chính máy bạn ở
 `%LOCALAPPDATA%\PetoAgent\sessions\`, gồm cả nội dung tệp Peto đã đọc, output lệnh và các ảnh còn giữ trong hội thoại. Tệp không dùng quá 30 ngày được tự

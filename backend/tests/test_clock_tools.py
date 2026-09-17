@@ -96,7 +96,7 @@ async def test_each_request_gets_own_timezone_and_fresh_clock(client, monkeypatc
             seen.append(kwargs)
             await asyncio.sleep(0)
             yield 'OK'
-    monkeypatch.setattr(main, 'get_provider', lambda: Spy())
+    monkeypatch.setattr(main, 'get_provider', lambda model="peto": Spy())
     await asyncio.gather(*[
         client.post('/api/chat', json={'message':'hi', 'timezone':zone})
         for zone in ['UTC', 'Asia/Barnaul']
@@ -120,7 +120,7 @@ async def test_long_web_messages_and_replies_are_not_cut(client, monkeypatch):
         async def stream(self, **kwargs):
             assert kwargs['messages'][-1].content == long_input.strip()
             yield long_reply
-    monkeypatch.setattr(main, 'get_provider', lambda: LongProvider())
+    monkeypatch.setattr(main, 'get_provider', lambda model="peto": LongProvider())
     events = await read_events(await client.post('/api/chat', json={'message':long_input}))
     assert events[-1]['type'] == 'done'
     assert ''.join(e['text'] for e in events if e['type'] == 'delta') == long_reply

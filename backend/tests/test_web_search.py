@@ -130,7 +130,7 @@ async def test_replaced_draft_is_not_saved(client, monkeypatch):
             yield StreamChunk("search", "searching")
             yield StreamChunk("search", "completed")
             yield "Không giống đâu ad. Có nguồn."
-    monkeypatch.setattr(main, "get_provider", lambda: RestartProvider())
+    monkeypatch.setattr(main, "get_provider", lambda model="peto": RestartProvider())
     events = await read_events(await client.post("/api/chat", json={"message": "So sánh", "web_search": "on"}))
     assert any(event["type"] == "replace" for event in events)
     text = "".join(event["text"] for event in events if event["type"] == "delta")
@@ -148,7 +148,7 @@ async def test_sources_stream_save_reload_and_stay_private(client, monkeypatch):
             yield StreamChunk("search", "searching")
             yield StreamChunk("sources", sources=(SOURCE, SOURCE, {"url": "javascript:alert(1)"}))
             yield "Theo tài liệu Python."
-    monkeypatch.setattr(main, "get_provider", lambda: SearchProvider())
+    monkeypatch.setattr(main, "get_provider", lambda model="peto": SearchProvider())
     events = await read_events(await client.post("/api/chat", json={"message": "Tìm tài liệu Python", "web_search": "on"}))
     assert events[-1]["type"] == "done"
     assert next(event for event in events if event["type"] == "sources")["sources"] == [SOURCE]
@@ -166,7 +166,7 @@ async def test_partial_answer_keeps_sources_after_failure(client, monkeypatch):
             yield "Phần đã tra được."
             yield StreamChunk("sources", sources=(SOURCE,))
             raise ProviderError("Mất kết nối khi tìm tiếp")
-    monkeypatch.setattr(main, "get_provider", lambda: Broken())
+    monkeypatch.setattr(main, "get_provider", lambda model="peto": Broken())
     events = await read_events(await client.post("/api/chat", json={"message": "Tra cứu"}))
     assert events[-1]["type"] == "error"
     saved = (await client.get(f"/api/conversations/{events[0]['conversation_id']}/messages")).json()["messages"][-1]
@@ -180,7 +180,7 @@ async def test_no_automatic_retry_after_search_has_started(client, monkeypatch):
             calls.append(1)
             yield StreamChunk("search", "searching")
             raise TimeoutError()
-    monkeypatch.setattr(main, "get_provider", lambda: Timeout())
+    monkeypatch.setattr(main, "get_provider", lambda model="peto": Timeout())
     events = await read_events(await client.post("/api/chat", json={"message": "Tìm", "effort": "low"}))
     assert events[-1]["type"] == "error"
     assert len(calls) == 1

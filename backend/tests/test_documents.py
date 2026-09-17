@@ -186,7 +186,7 @@ async def test_upload_provider_followup_cache_and_privacy(client, monkeypatch, n
     class SpyProvider:
         stream = spy
 
-    monkeypatch.setattr(main, "get_provider", SpyProvider)
+    monkeypatch.setattr(main, "get_provider", lambda model="peto": SpyProvider())
     events = await read_events(await client.post("/api/chat", json={"message": "Tóm tắt tài liệu", "attachments": [outgoing(data, name, mime)]}))
     assert events[0]["type"] == "reading"
     assert events[-1]["type"] == "done", events

@@ -49,6 +49,22 @@ XAI_TOKEN_PATH = Path(
     os.getenv("PETO_XAI_TOKEN_PATH", str(BASE_DIR / "data" / "xai_tokens.json"))
 )
 
+# --- OpenAI (dòng GPT-5.6, xem ai_models.py) -----------------------------------
+# Khóa API cho 5.6 Luna, Terra và Sol, tính tiền vào billing OpenAI của chủ web; để trống thì chỉ còn Peto. Khóa chỉ
+# dùng ở máy chủ, không bao giờ gửi xuống trình duyệt hay CLI.
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
+# Model suy luận tính cả token suy nghĩ vào giới hạn này, nên để rộng hơn của Grok.
+OPENAI_MAX_OUTPUT_TOKENS = _env_int("PETO_OPENAI_MAX_OUTPUT_TOKENS", 16000, 1024, 128000)
+def parse_owner_accounts(raw: str) -> frozenset[str]:
+    """``discord:1,google:2,3`` thành các khóa owner; chỉ ghi số thì hiểu là Discord ID."""
+    items = (part.strip() for part in raw.split(","))
+    return frozenset(item if ":" in item else f"discord:{item}" for item in items if item)
+
+
+# Tài khoản của chủ web, được dùng 5.6 Terra và 5.6 Sol trong Peto Agent. Ngăn cách bằng dấu phẩy, dạng
+# discord:<Discord ID> hoặc google:<mã Google>.
+OWNER_ACCOUNTS = parse_owner_accounts(os.getenv("PETO_OWNER_ACCOUNTS", ""))
+
 # --- Đăng nhập Discord ---------------------------------------------------
 DISCORD_CLIENT_ID = os.getenv("DISCORD_CLIENT_ID", "").strip()
 DISCORD_CLIENT_SECRET = os.getenv("DISCORD_CLIENT_SECRET", "").strip()

@@ -107,6 +107,15 @@ export interface AccountUser {
   nickname?: string;
   /** Đã xác nhận đủ 18 tuổi để bật chế độ nhập vai. */
   roleplay_confirmed?: boolean;
+  /** Model tài khoản này chọn được ở nút cạnh nút Gửi; chỉ một model thì ẩn nút. */
+  models?: ModelOption[];
+}
+
+export interface ModelOption {
+  key: string;
+  label: string;
+  description: string;
+  step_cost: number;
 }
 
 export interface AuthState {
@@ -352,6 +361,8 @@ export async function sendMessage(
     attachments?: OutgoingAttachment[];
     mode?: ConversationMode;
     persona?: Persona;
+    /** Model cho tin này; máy chủ kiểm quyền, thiếu thì dùng Peto. */
+    model?: string;
   },
   handlers: ChatHandlers,
   signal?: AbortSignal,
@@ -368,6 +379,7 @@ export async function sendMessage(
       attachments: payload.attachments ?? [],
       mode: payload.mode ?? "chat",
       persona: payload.persona ?? "assistant",
+      model: payload.model ?? "peto",
     }),
     signal,
   });

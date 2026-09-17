@@ -264,7 +264,7 @@ def test_commands_usage_and_update_notice(project, peto, monkeypatch):
     assert "  /effort  Xem hoặc đổi mức suy nghĩ: thap, vua, cao" in ui.text
     steps = [request["body"] for request in peto.requests if request["path"] == "/api/agent/step"]
     assert [step["input"][0]["content"] for step in steps] == ["/api/users lỗi 500"], "đường dẫn API không phải lệnh"
-    assert "  Hôm nay còn 190/200 bước · đã dùng 1.2k token · hội thoại này 1k token · mức vừa." in ui.text
+    assert "  Hôm nay còn 190/200 bước · đã dùng 1.2k token · hội thoại này 1k token · Peto · mức vừa." in ui.text
     assert "Lệnh /moi không nhận thêm gì phía sau." in ui.text and "Không có lệnh này" in ui.text
     assert ui.answers == ["/usage"], "/thoát gõ có dấu vẫn thoát"
 
@@ -300,6 +300,77 @@ def test_pasted_images_are_sent_and_only_the_last_four_are_kept(project, peto):
     assert history.recap(session.items) == [("Bạn", "còn đây nữa [Ảnh 5]"), ("Peto", "Đã xem ảnh.")]
     logged = log.path.read_text(encoding="utf-8")
     assert '"images": 1' in logged and "base64" not in logged, "nhật ký không chứa dữ liệu ảnh"
+
+
+PETO = {"key": "peto", "label": "Peto", "description": "Mặc định", "step_cost": 1}
+LUNA = {"key": "luna", "label": "5.6 Luna", "description": "Nhanh, của OpenAI", "step_cost": 1}
+SOL = {"key": "sol", "label": "5.6 Sol", "description": "Mạnh nhất, của OpenAI", "step_cost": 4}
+
+
+def test_model_command_switches_models_and_remembers_the_choice(project, peto, monkeypatch):
+    me = {"account": "Bình", "device_name": "MAY-THU", "steps_used": 10, "steps_limit": 200, "tokens_used": 0,
+          "default_effort": "medium", "models": [PETO, LUNA, SOL]}
+
+    def reply(path, body):
+        if path == "/api/agent/me":
+            return 200, me
+        text = "Xong rồi nè."
+        return 200, [{"type": "delta", "text": text},
+                     {"type": "done", "output": [message(text)], "usage": {"input_tokens": 900, "output_tokens": 100}}]
+
+    peto.reply = reply
+    config.save({"server": peto.url, "token": "peto_token_thu"})
+    monkeypatch.chdir(project)
+
+    ui = FakeUI(answers=["/model", "/model terra", "/model Luna", "làm việc", "/effort cao", "/model 5.6 sol",
+                         "/usage", "/thoat"])
+    assert cli.session(ui) == 0
+    assert "Peto Agent" in ui.text and "· Bình · Peto · mức vừa ·" in ui.text
+    assert "  Model: Peto. Đổi bằng /model peto, /model luna, /model sol." in ui.text
+    assert "    sol   5.6 Sol · Mạnh nhất, của OpenAI · tính 4 bước" in ui.text
+    assert "Tài khoản này không dùng được model đó." in ui.text
+    assert "Đã chuyển sang 5.6 Luna." in ui.text and "Đã chuyển sang mức cao; mỗi bước tính 2 bước." in ui.text
+    assert "Đã chuyển sang 5.6 Sol; mỗi bước tính 8 bước." in ui.text
+    assert "· 5.6 Sol · mức cao, mỗi bước tính 8 bước." in ui.text
+    steps = [request["body"] for request in peto.requests if request["path"] == "/api/agent/step"]
+    assert [step["model"] for step in steps] == ["luna"]
+    assert config.load()["model"] == "sol"
+
+    me["models"] = [PETO, LUNA]
+    again = FakeUI(answers=["/thoat"])
+    assert cli.session(again) == 0
+    assert "Tài khoản này không còn dùng được model sol nên peto dùng Peto." in again.text
+    assert "· Bình · Peto · mức cao ·" in again.text
+
+
+def test_switching_models_drops_what_only_the_old_model_can_read(project, peto):
+    session = Session(Client(peto.url, "peto_token_thu"), Workspace(project), FakeUI())
+    session.items = [
+        {"type": "message", "role": "user", "content": "sửa README"},
+        {"type": "reasoning", "id": "rs_1", "encrypted_content": "bí mật của xAI"},
+        {"type": "function_call", "id": "fc_1", "call_id": "call_1", "name": "read_file", "arguments": "{}"},
+        {"type": "function_call_output", "call_id": "call_1", "output": "{}"},
+        {"type": "message", "id": "msg_1", "role": "assistant", "content": [{"type": "output_text", "text": "Xong"}]},
+    ]
+    kept = list(session.items)
+    session.set_model("peto")
+    assert session.items == kept, "chọn lại đúng model đang dùng thì không đụng hội thoại"
+    session.set_model("sol", 4)
+    assert session.items == [
+        {"type": "message", "role": "user", "content": "sửa README"},
+        {"type": "function_call", "call_id": "call_1", "name": "read_file", "arguments": "{}"},
+        {"type": "function_call_output", "call_id": "call_1", "output": "{}"},
+        {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "Xong"}]},
+    ]
+    assert (session.model, session.model_step_cost) == ("sol", 4)
+
+    session.resume(kept, model="sol")
+    assert session.items == kept, "mở lại hội thoại của đúng model thì giữ nguyên"
+    session.resume(kept, model="peto")
+    assert not any(item.get("type") == "reasoning" or "id" in item for item in session.items)
+
+    history.save(project, peto.url, kept, model="luna")
+    assert history.load(project, peto.url).model == "luna"
 
 
 def test_split_command():

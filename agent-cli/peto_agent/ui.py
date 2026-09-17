@@ -133,9 +133,10 @@ class UI:
     def reply(self) -> ReplyWriter:
         return ReplyWriter(self)
 
-    def session_header(self, version: str, directory: str, account: str, effort: str, quota: str, hint: str) -> None:
+    def session_header(self, version: str, directory: str, account: str, effort: str, quota: str, hint: str, *,
+                       model: str = "Peto") -> None:
         if not self.terminal:
-            self.line(f"Peto Agent {version} · {os.path.basename(directory)} · {account} · mức {effort} · "
+            self.line(f"Peto Agent {version} · {os.path.basename(directory)} · {account} · {model} · mức {effort} · "
                       f"hôm nay còn {quota} bước")
             self.line(hint, "dim")
             return
@@ -143,7 +144,7 @@ class UI:
         self.line(self.paint("  Peto Agent", "cyan") + self.paint(f"  {version}", "dim"))
         self._rule()
         self._wrapped("  ", visible(directory))
-        self._wrapped("  ", f"{visible(account)} · mức {effort} · còn {quota} bước", "dim")
+        self._wrapped("  ", f"{visible(account)} · {model} · mức {effort} · còn {quota} bước", "dim")
         self._rule()
         self._wrapped("  ", hint, "dim")
         self.line()

@@ -15,7 +15,8 @@ from dataclasses import dataclass, field
 
 import anyio
 
-from config import AGENT_MODEL, AGENT_REASONING, AI_PROVIDER, XAI_API_BASE, XAI_MAX_OUTPUT_TOKENS
+from config import (AGENT_MODEL, AGENT_REASONING, AI_PROVIDER, OPENAI_API_KEY, OPENAI_MAX_OUTPUT_TOKENS, XAI_API_BASE,
+                    XAI_MAX_OUTPUT_TOKENS)
 
 from .base import ProviderError
 
@@ -31,12 +32,15 @@ class AgentEvent:
 
 
 async def agent_step(
-    *, instructions: str, input_items: list[dict], tools: list[dict], effort: str = AGENT_REASONING
+    *, instructions: str, input_items: list[dict], tools: list[dict], effort: str = AGENT_REASONING,
+    model: str = "peto",
 ) -> AsyncIterator[AgentEvent]:
+    """``model`` đã được ``ai_models.resolve`` kiểm quyền: Peto đi qua xAI, các model khác qua OpenAI."""
     if AI_PROVIDER == "mock":
         events = _mock_step(input_items)
     elif AI_PROVIDER == "xai":
-        events = _xai_step(instructions, input_items, tools, effort)
+        events = (_xai_step(instructions, input_items, tools, effort) if model == "peto"
+                  else _openai_step(instructions, input_items, tools, effort, model))
     else:
         raise ProviderError("Nhà cung cấp AI hiện tại chưa hỗ trợ Peto Agent.")
     async for event in events:
@@ -47,6 +51,7 @@ async def agent_step(
 
 _client = None
 _auth = None
+_openai_client = None
 
 
 def _dump(item) -> dict:
@@ -68,7 +73,7 @@ def _describe(error) -> str:
 
 async def _xai_step(instructions: str, items: list[dict], tools: list[dict], effort: str) -> AsyncIterator[AgentEvent]:
     # Import trễ như ai/__init__.py: chạy mock không cần SDK openai.
-    from openai import APIConnectionError, APIStatusError, AsyncOpenAI, AuthenticationError, RateLimitError
+    from openai import AsyncOpenAI
 
     from xai_auth import XaiAuth, XaiAuthError
 
@@ -80,15 +85,49 @@ async def _xai_step(instructions: str, items: list[dict], tools: list[dict], eff
         _client.api_key = await _auth.get_access_token()
     except XaiAuthError as err:
         raise ProviderError("Peto chưa được kết nối với dịch vụ AI. Người quản trị cần chạy lại lệnh đăng nhập.") from err
+    async for event in _responses_step(
+        _client, "xAI", AGENT_MODEL, XAI_MAX_OUTPUT_TOKENS, instructions, items, tools, effort,
+        auth_message="Kết nối AI của Peto đã hết hạn. Người quản trị cần đăng nhập lại.",
+        rate_message="Dịch vụ AI đang nhận nhiều yêu cầu quá. Đợi chút rồi thử lại nhé.",
+    ):
+        yield event
+
+
+async def _openai_step(instructions: str, items: list[dict], tools: list[dict], effort: str,
+                       model: str) -> AsyncIterator[AgentEvent]:
+    from openai import AsyncOpenAI
+
+    from ai_models import MODELS
+
+    global _openai_client
+    if not OPENAI_API_KEY:
+        raise ProviderError("Máy chủ Peto chưa có khóa OpenAI. Gõ /model peto để làm tiếp nhé.")
+    if _openai_client is None:
+        _openai_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
+    info = MODELS[model]
+    async for event in _responses_step(
+        _openai_client, "OpenAI", info.slug, OPENAI_MAX_OUTPUT_TOKENS, instructions, items, tools, effort,
+        auth_message="Khóa OpenAI của máy chủ Peto không dùng được. Gõ /model peto để làm tiếp nhé.",
+        rate_message=f"{info.label} đang bị OpenAI giới hạn lượt hoặc đã hết hạn mức. Gõ /model peto để làm tiếp, "
+                     "hoặc thử lại sau nhé.",
+    ):
+        yield event
+
+
+async def _responses_step(client, service: str, model: str, max_output_tokens: int, instructions: str,
+                          items: list[dict], tools: list[dict], effort: str, *, auth_message: str,
+                          rate_message: str) -> AsyncIterator[AgentEvent]:
+    """Một lần gọi Responses API. xAI và OpenAI chỉ khác client, tên model và lời báo lỗi."""
+    from openai import APIConnectionError, APIStatusError, AuthenticationError, RateLimitError
 
     stream = None
     try:
-        stream = await _client.responses.create(
-            model=AGENT_MODEL,
+        stream = await client.responses.create(
+            model=model,
             instructions=instructions,
             input=items,
             tools=tools,
-            max_output_tokens=XAI_MAX_OUTPUT_TOKENS,
+            max_output_tokens=max_output_tokens,
             reasoning={"effort": effort},
             include=["reasoning.encrypted_content"],
             store=False,
@@ -106,7 +145,7 @@ async def _xai_step(instructions: str, items: list[dict], tools: list[dict], eff
                 response = event.response
                 status = getattr(response, "status", "completed")
                 if status != "completed":
-                    logger.warning("xAI kết thúc bước agent với trạng thái %s", _clip(status))
+                    logger.warning("%s kết thúc bước agent với trạng thái %s", service, _clip(status))
                     raise ProviderError("Mô hình chưa làm xong bước này. Thử lại nhé.")
                 usage = getattr(response, "usage", None)
                 yield AgentEvent(
@@ -120,25 +159,25 @@ async def _xai_step(instructions: str, items: list[dict], tools: list[dict], eff
                 return
             elif event_type == "response.incomplete":
                 details = getattr(getattr(event, "response", None), "incomplete_details", None)
-                logger.warning("xAI dừng bước agent giữa chừng: %s", _clip(getattr(details, "reason", "")))
+                logger.warning("%s dừng bước agent giữa chừng: %s", service, _clip(getattr(details, "reason", "")))
                 raise ProviderError("Bước này chạm giới hạn độ dài của mô hình. Thử chia nhỏ yêu cầu nhé.")
             elif event_type in {"response.failed", "error"}:
                 error = getattr(getattr(event, "response", None), "error", None) if event_type == "response.failed" else event
-                logger.warning("xAI báo lỗi trong bước agent: %s", _describe(error))
+                logger.warning("%s báo lỗi trong bước agent: %s", service, _describe(error))
                 raise ProviderError("Mô hình gặp lỗi ở bước này. Thử lại nhé.")
         raise ProviderError("Kết nối tới AI bị ngắt trước khi xong bước này. Thử lại nhé.")
     except AuthenticationError as err:
         # Không ghi lời báo: lỗi xác thực có thể kèm một phần khóa.
-        logger.warning("xAI từ chối xác thực ở bước agent (HTTP %s)", err.status_code)
-        raise ProviderError("Kết nối AI của Peto đã hết hạn. Người quản trị cần đăng nhập lại.") from err
+        logger.warning("%s từ chối xác thực ở bước agent (HTTP %s)", service, err.status_code)
+        raise ProviderError(auth_message) from err
     except RateLimitError as err:
-        logger.warning("xAI giới hạn lượt ở bước agent: %s", _clip(err.message))
-        raise ProviderError("Dịch vụ AI đang nhận nhiều yêu cầu quá. Đợi chút rồi thử lại nhé.") from err
+        logger.warning("%s giới hạn lượt ở bước agent: %s", service, _clip(err.message))
+        raise ProviderError(rate_message) from err
     except APIConnectionError as err:
-        logger.warning("Không kết nối được xAI ở bước agent: %s", _clip(err.message))
+        logger.warning("Không kết nối được %s ở bước agent: %s", service, _clip(err.message))
         raise ProviderError("Máy chủ Peto chưa kết nối được dịch vụ AI. Thử lại sau chút nhé.") from err
     except APIStatusError as err:
-        logger.warning("xAI trả lỗi HTTP %s ở bước agent: %s", err.status_code, _clip(err.message))
+        logger.warning("%s trả lỗi HTTP %s ở bước agent: %s", service, err.status_code, _clip(err.message))
         if err.status_code == 400:
             raise ProviderError("Dịch vụ AI không nhận nội dung bước này. Gõ /moi để bắt đầu hội thoại mới nhé.") from err
         raise ProviderError("Peto gặp lỗi kết nối với dịch vụ AI. Thử lại sau nhé.") from err

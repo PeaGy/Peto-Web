@@ -27,6 +27,7 @@ from fastapi import APIRouter, Cookie, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
+import ai_models
 import db
 from config import (
     DISCORD_CLIENT_ID,
@@ -426,6 +427,8 @@ async def me(request: Request) -> dict:
             "nickname": profile["nickname"],
             # Đã xác nhận đủ 18 tuổi để bật chế độ nhập vai; giao diện chỉ hỏi lần đầu.
             "roleplay_confirmed": await db.has_roleplay_consent(owner),
+            # Model tài khoản này chọn được ở nút cạnh nút Gửi; chỉ một model thì giao diện ẩn nút.
+            "models": ai_models.public(ai_models.usable(owner, "web")),
         },
     }
 

@@ -7,6 +7,7 @@ import io
 
 import pytest
 
+from peto_agent import commands
 from peto_agent import images as image_files
 from peto_agent import line_editor
 from peto_agent.commands import suggestions
@@ -35,7 +36,7 @@ def labels(text: str) -> list[str]:
 
 
 def test_suggestions_filter_commands_and_effort_levels():
-    assert labels("/") == ["/moi", "/resume", "/retry", "/effort", "/usage", "/help", "/thoat"]
+    assert labels("/") == ["/moi", "/resume", "/retry", "/model", "/effort", "/usage", "/help", "/thoat"]
     assert labels("/re") == ["/resume", "/retry"]
     assert labels("/ret") == ["/retry"]
     assert labels("/thoát") == ["/thoat"], "bộ gõ tiếng Việt thêm dấu vẫn khớp"
@@ -44,6 +45,12 @@ def test_suggestions_filter_commands_and_effort_levels():
     assert [item.text for item in suggestions("/effort C")] == ["/effort cao"]
     for text in ("/effort cao thêm", "/moi ", "xin chào", "/moi\n"):
         assert labels(text) == []
+
+    assert labels("/model ") == ["peto"], "chưa hỏi máy chủ thì chỉ gợi ý Peto"
+    commands.use_models([{"key": "peto", "label": "Peto", "description": "Mặc định", "step_cost": 1},
+                         {"key": "sol", "label": "5.6 Sol", "description": "Mạnh nhất, của OpenAI", "step_cost": 4}])
+    assert [(item.text, item.description) for item in suggestions("/model s")] == [
+        ("/model sol", "5.6 Sol · Mạnh nhất, của OpenAI · tính 4 bước")]
 
 
 def test_enter_runs_the_highlighted_command_only_after_something_was_typed():

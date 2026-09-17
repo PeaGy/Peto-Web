@@ -2,7 +2,8 @@ import { useRef, useState, type RefObject } from "react";
 import ComposerMenu, { type RoleplayOption } from "./ComposerMenu";
 import EffortMenu from "./EffortMenu";
 import { FileGlyph, formatSize, type DraftFile } from "./files";
-import type { Effort, Persona, WebSearchMode } from "./api";
+import ModelMenu from "./ModelMenu";
+import type { Effort, ModelOption, Persona, WebSearchMode } from "./api";
 
 const ACCEPT =
   "image/jpeg,image/png,image/webp,image/gif,.txt,.md,.csv,.json,.pdf,.docx,.py,.js,.ts,.tsx,.jsx,.css,.html,.xml,.yml,.yaml,.rs,.go,.java,.c,.cpp,.h,.sql,.log";
@@ -43,6 +44,10 @@ interface ComposerProps {
   roleplay?: RoleplayOption;
   /** Menu dấu cộng tắt khi đang trả lời hoặc khi người dùng đang ở tab khác. */
   menuDisabled: boolean;
+  /** Model cho tin sắp gửi, chọn ở nút bên trái nút Gửi. Dưới hai model thì không hiện nút. */
+  model: string;
+  models: ModelOption[];
+  onModelChange: (value: string) => void;
   /** Gợi ý ở màn hình trống; mảng rỗng thì không hiện gì. */
   hints: string[];
   onPickHint: (hint: string) => void;
@@ -63,7 +68,7 @@ export default function Composer({
   draft, onDraftChange, files, onAddFiles, onRemoveFile,
   streaming, stopping, canSend, onSubmit, onStop,
   effort, efforts, onEffortChange, webSearch, onToggleWeb, persona, roleplay, menuDisabled,
-  hints, onPickHint, formRef, boxRef, textareaRef, fileRef,
+  model, models, onModelChange, hints, onPickHint, formRef, boxRef, textareaRef, fileRef,
 }: ComposerProps) {
   const [dragging, setDragging] = useState(false);
   const dragDepth = useRef(0);
@@ -176,15 +181,20 @@ export default function Composer({
             )}
           </div>
 
-          {streaming ? (
-            <button type="button" className="stop" disabled={stopping} onClick={onStop}>
-              {stopping ? "Đang dừng…" : "Dừng"}
-            </button>
-          ) : (
-            <button type="submit" className="send" disabled={!canSend} aria-label="Gửi">
-              Gửi <SendIcon />
-            </button>
-          )}
+          <div className="composer-send">
+            {models.length > 1 && (
+              <ModelMenu value={model} options={models} disabled={streaming} onChange={onModelChange} />
+            )}
+            {streaming ? (
+              <button type="button" className="stop" disabled={stopping} onClick={onStop}>
+                {stopping ? "Đang dừng…" : "Dừng"}
+              </button>
+            ) : (
+              <button type="submit" className="send" disabled={!canSend} aria-label="Gửi">
+                <span className="send-text">Gửi</span> <SendIcon />
+              </button>
+            )}
+          </div>
         </div>
       </div>
       {hints.length > 0 && (

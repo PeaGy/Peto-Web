@@ -1036,3 +1036,58 @@ describe('Chế độ nhập vai', () => {
     expect(item.textContent).toContain('Cần tài khoản Discord hoặc Google');
   });
 });
+
+describe('Chọn model', () => {
+  const MODELS: api.ModelOption[] = [
+    { key: 'peto', label: 'Peto', description: 'Mặc định', step_cost: 1 },
+    { key: 'luna', label: '5.6 Luna', description: 'Nhanh, của OpenAI', step_cost: 1 },
+  ];
+  const signIn = (models: api.ModelOption[], extra: Partial<api.AccountUser> = {}) =>
+    vi.mocked(api.getAuthState).mockResolvedValue({ authenticated: true, login_configured: true,
+      providers: { discord: true, google: true, guest: true },
+      user: { id: 'acc-111', provider: 'discord', username: 'demo', display_name: 'Demo', avatar_url: '', models, ...extra } });
+  const send = async (text: string) => {
+    fireEvent.change(screen.getByLabelText('Nhắn cho Peto'), { target: { value: text } });
+    fireEvent.click(screen.getByRole('button', { name: 'Gửi', exact: true }));
+    await waitFor(() => expect(api.sendMessage).toHaveBeenCalled());
+    return vi.mocked(api.sendMessage).mock.calls[0][0];
+  };
+
+  it('nút Peto bên trái nút Gửi đổi sang 5.6 Luna, nhớ lựa chọn và gửi kèm tin nhắn', async () => {
+    signIn(MODELS);
+    vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers) => handlers.onError?.('Giữ bản nháp'));
+    await openApp();
+    const trigger = screen.getByRole('button', { name: 'Model: Peto' });
+    expect(trigger.closest('.composer-send')?.lastElementChild?.getAttribute('aria-label')).toBe('Gửi');
+    fireEvent.click(trigger);
+    const menu = await screen.findByRole('menu', { name: 'Model' });
+    expect(within(menu).getByRole('menuitemradio', { name: /Peto/ }).getAttribute('aria-checked')).toBe('true');
+    fireEvent.click(within(menu).getByRole('menuitemradio', { name: /5\.6 Luna.*Nhanh, của OpenAI/ }));
+    expect(screen.queryByRole('menu', { name: 'Model' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Model: 5.6 Luna' })).toBeTruthy();
+    expect(localStorage.getItem('peto-model')).toBe('luna');
+    expect((await send('chào')).model).toBe('luna');
+  });
+
+  it('tài khoản chỉ có Peto thì không có nút, lựa chọn cũ không còn dùng được thì gửi bằng Peto', async () => {
+    localStorage.setItem('peto-model', 'luna');
+    signIn([MODELS[0]]);
+    vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers) => handlers.onError?.('Giữ bản nháp'));
+    await openApp();
+    expect(screen.queryByRole('button', { name: /^Model:/ })).toBeNull();
+    expect((await send('chào')).model).toBe('peto');
+  });
+
+  it('chế độ nhập vai ẩn nút chọn model và luôn gửi bằng Peto', async () => {
+    localStorage.setItem('peto-model', 'luna');
+    signIn(MODELS, { roleplay_confirmed: true });
+    vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers) => handlers.onError?.('Giữ bản nháp'));
+    await openApp();
+    expect(screen.getByRole('button', { name: 'Model: 5.6 Luna' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Thêm ảnh và tùy chọn' }));
+    fireEvent.click(screen.getByRole('button', { name: /Chế độ nhập vai/ }));
+    await screen.findByRole('button', { name: 'Tắt chế độ nhập vai' });
+    expect(screen.queryByRole('button', { name: /^Model:/ })).toBeNull();
+    expect(await send('kể chuyện đi')).toMatchObject({ persona: 'roleplay', model: 'peto' });
+  });
+});

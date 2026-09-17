@@ -123,6 +123,7 @@ const CODE_LABELS: Record<string, string> = {
 };
 
 const EFFORT_KEY = "peto-effort";
+const MODEL_KEY = "peto-model";
 const THEME_KEY = "peto-theme";
 const SIDEBAR_KEY = "peto-sidebar-collapsed";
 const MAX_FILES = 16;
@@ -151,6 +152,15 @@ const THEMES: { value: ThemeChoice; label: string; hint: string }[] = [
   { value: "dark", label: "Tối", hint: "Nền tối, dịu mắt buổi đêm" },
   { value: "system", label: "Theo máy", hint: "Đổi theo cài đặt của thiết bị" },
 ];
+
+/** Model đã chọn lần trước; tài khoản không còn được dùng model đó thì lúc gửi tự về Peto. */
+function readStoredModel(): string {
+  try {
+    return localStorage.getItem(MODEL_KEY) || "peto";
+  } catch {
+    return "peto";
+  }
+}
 
 function readStoredEffort(): Effort {
   try {
@@ -475,6 +485,7 @@ export default function App() {
   }
   const [draftFiles, setDraftFiles] = useState<DraftFile[]>([]);
   const [effort, setEffort] = useState<Effort>(readStoredEffort);
+  const [model, setModel] = useState<string>(readStoredModel);
   const [webSearch, setWebSearch] = useState<WebSearchMode>("auto");
 
   const [streaming, setStreaming] = useState(false);
@@ -580,6 +591,12 @@ export default function App() {
       localStorage.setItem(EFFORT_KEY, effort);
     } catch {}
   }, [effort]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(MODEL_KEY, model);
+    } catch {}
+  }, [model]);
 
   useEffect(() => {
     try {
@@ -775,6 +792,9 @@ export default function App() {
   // Cuộc trò chuyện còn trống thì lời chào và ô nhắn đứng chung giữa màn hình như
   // Claude; có tin nhắn là ô nhắn về đáy (CSS .chat.empty-state).
   const emptyChat = messages.length === 0 && !streaming && !loadingConversation && !loadFailed;
+  // Chế độ nhập vai chỉ dùng Peto (máy chủ cũng chặn), nên không hiện nút chọn model.
+  const models = persona === "roleplay" ? [] : auth?.user?.models ?? [];
+  const chosenModel = models.some((item) => item.key === model) ? model : "peto";
 
   // Chỉ lần gửi tin đầu mới trượt ô nhắn xuống (FLIP): mắt người dùng đang ở đúng
   // ô đó, để nó nhảy cóc là mất dấu. Mở hội thoại hay tạo cuộc mới là điều hướng,
@@ -1059,6 +1079,7 @@ export default function App() {
           webSearch,
           attachments,
           persona,
+          model: chosenModel,
         },
         {
           onMeta: (id, _usedEffort, storedMessage) => {
@@ -1526,6 +1547,9 @@ export default function App() {
             onToggle: toggleRoleplay,
           } : undefined}
           menuDisabled={streaming || view !== "chat"}
+          model={chosenModel}
+          models={models}
+          onModelChange={setModel}
           hints={emptyChat ? CHAT_HINTS : []}
           onPickHint={(hint) => { setDraft(hint); textareaRef.current?.focus(); }}
           formRef={composerRef}

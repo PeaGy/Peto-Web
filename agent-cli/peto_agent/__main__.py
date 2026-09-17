@@ -10,9 +10,9 @@ import time
 import webbrowser
 from pathlib import Path
 
-from . import __version__, config, history, line_editor
+from . import __version__, commands, config, history, line_editor
 from .client import ApiError, Client
-from .commands import COMMANDS, fold
+from .commands import fold
 from .loop import Session, TaskLog, format_tokens
 from .ui import UI, enable_vt
 from .workspace import Workspace
@@ -22,6 +22,10 @@ HINT_PLAIN = "Gõ yêu cầu cho Peto · /help xem các lệnh · Ctrl+C dừng 
 # Lệnh không nhận gì phía sau; gõ thêm chữ thì nhắc chứ không gửi cả câu cho Peto.
 PLAIN_COMMANDS = {"/thoat", "/exit", "/quit", "/moi", "/help", "/resume", "/usage", "/retry"}
 EFFORT_LABELS = {"low": "thấp", "medium": "vừa", "high": "cao"}
+# Giống STEP_COST của máy chủ: mức cao tính gấp đôi, nhân với số bước của model.
+EFFORT_COST = {"low": 1, "medium": 1, "high": 2}
+# Máy chủ cũ chưa có /model thì chỉ có Peto.
+DEFAULT_MODELS = [{"key": "peto", "label": "Peto", "description": "Mặc định", "step_cost": 1}]
 # Gõ không dấu cho dễ, như /moi và /thoat; có dấu hay tên tiếng Anh cũng nhận.
 EFFORT_ALIASES = {"thap": "low", "thấp": "low", "low": "low", "vua": "medium", "vừa": "medium", "tb": "medium",
                   "medium": "medium", "cao": "high", "high": "high"}
@@ -82,6 +86,38 @@ def _usage_parts(me: dict) -> list[str]:
     return parts
 
 
+def _models(me: dict) -> list[dict]:
+    """Model tài khoản này được dùng, theo thứ tự máy chủ trả (Peto đứng đầu)."""
+    models = [model for model in me.get("models") or []
+              if isinstance(model, dict) and isinstance(model.get("key"), str)]
+    return models or DEFAULT_MODELS
+
+
+def _find_model(value: str, models: list[dict]) -> dict | None:
+    """Nhận "luna", "Luna" hay "5.6 Luna"."""
+    wanted = fold(value).replace(" ", "")
+    for model in models:
+        label = fold(str(model.get("label") or "")).split()
+        if wanted in {fold(model["key"]), "".join(label), label[-1] if label else ""}:
+            return model
+    return None
+
+
+def _model(models: list[dict]) -> dict:
+    """Model đã chọn bằng /model trên máy này, nếu tài khoản còn được dùng; không thì model đầu (Peto)."""
+    saved = config.load().get("model")
+    return next((model for model in models if model["key"] == saved), models[0])
+
+
+def _cost(work: Session) -> int:
+    return EFFORT_COST[work.effort] * work.model_step_cost
+
+
+def _cost_note(work: Session) -> str:
+    cost = _cost(work)
+    return f"mỗi bước tính {cost} bước" if cost > 1 else ""
+
+
 def _effort(me: dict) -> str:
     """Mức người dùng đã chọn bằng /effort trên máy này; chưa chọn thì theo mặc định của máy chủ."""
     for value in (config.load().get("effort"), me.get("default_effort")):
@@ -103,12 +139,38 @@ def _change_effort(ui: UI, work: Session, value: str) -> None:
     settings = config.load()
     settings["effort"] = effort
     config.save(settings)
-    ui.success(f"Đã chuyển sang mức {EFFORT_LABELS[effort]}" + ("; mỗi bước tính 2 bước." if effort == "high" else "."))
+    note = _cost_note(work)
+    ui.success(f"Đã chuyển sang mức {EFFORT_LABELS[effort]}" + (f"; {note}." if note else "."))
+
+
+def _change_model(ui: UI, work: Session, value: str, models: list[dict]) -> None:
+    choices = ", ".join(f"/model {model['key']}" for model in models)
+    if not value:
+        current = next((model for model in models if model["key"] == work.model), models[0])
+        ui.line(f"  Model: {current.get('label') or current['key']}. Đổi bằng {choices}.")
+        width = max(len(model["key"]) for model in models)
+        for key, description in map(commands.model_option, models):
+            ui.line(f"    {key.ljust(width)}  {description}", "dim")
+        return
+    model = _find_model(value, models)
+    if model is None:
+        ui.line(f"  Tài khoản này không dùng được model đó. Chọn {choices}.", "yellow")
+        return
+    label = model.get("label") or model["key"]
+    if model["key"] == work.model:
+        ui.line(f"  Đang dùng {label} rồi.", "dim")
+        return
+    work.set_model(model["key"], int(model.get("step_cost") or 1))
+    settings = config.load()
+    settings["model"] = model["key"]
+    config.save(settings)
+    note = _cost_note(work)
+    ui.success(f"Đã chuyển sang {label}" + (f"; {note}." if note else "."))
 
 
 def _help(ui: UI) -> None:
-    width = max(len(command.name) for command in COMMANDS)
-    for command in COMMANDS:
+    width = max(len(command.name) for command in commands.COMMANDS)
+    for command in commands.COMMANDS:
         ui.line(f"  {command.name.ljust(width)}  {command.description}", "dim")
     ui.line("  Ctrl+C dừng yêu cầu đang chạy.", "dim")
     if ui.editor is not None:
@@ -124,7 +186,9 @@ def _usage(ui: UI, work: Session) -> None:
     parts = _usage_parts(me)
     if work.context_tokens:
         parts.append(f"hội thoại này {format_tokens(work.context_tokens)} token")
-    parts.append(f"mức {EFFORT_LABELS[work.effort]}" + (", mỗi bước tính 2 bước" if work.effort == "high" else ""))
+    model = next((model for model in _models(me) if model["key"] == work.model), {})
+    note = _cost_note(work)
+    parts.append(f"{model.get('label') or work.model} · mức {EFFORT_LABELS[work.effort]}" + (f", {note}" if note else ""))
     summary = " · ".join(parts)
     ui.line(f"  {summary[:1].upper()}{summary[1:]}.")
 
@@ -137,7 +201,7 @@ def _resume(ui: UI, work: Session) -> None:
     if work.items == saved.items:
         ui.line("  Đang ở đúng hội thoại gần nhất rồi.", "dim")
         return
-    work.resume(saved.items, retryable=saved.retryable)
+    work.resume(saved.items, retryable=saved.retryable, model=saved.model)
     ui.success(f"Đã mở lại hội thoại {history.when(saved.saved_at)}:")
     for who, text in history.recap(saved.items):
         ui.line(f"    {who} › {text}", "dim")
@@ -226,8 +290,10 @@ def status(ui: UI) -> int:
     except ApiError as err:
         ui.failure(err.message)
         return 1
+    model = _model(_models(me))
     ui.line(f"Đã đăng nhập {client.server} · tài khoản {me.get('account')} · máy {me.get('device_name')} · "
-            f"mức {EFFORT_LABELS[_effort(me)]} · {' · '.join(_usage_parts(me))} · peto {__version__}.")
+            f"{model.get('label') or model['key']} · mức {EFFORT_LABELS[_effort(me)]} · {' · '.join(_usage_parts(me))} · "
+            f"peto {__version__}.")
     _update_notice(ui, client, me)
     return 0
 
@@ -250,12 +316,19 @@ def session(ui: UI) -> int:
         ui.failure(err.message)
         return 1
     effort = _effort(me)
+    models = _models(me)
+    model = _model(models)
+    commands.use_models(models)
     if ui.editor is None:
         ui.editor = line_editor.create(ui.out, enable_vt)
     ui.session_header(__version__, str(root), str(me.get("account") or ""), EFFORT_LABELS[effort], _steps_left(me),
-                      HINT_WITH_MENU if ui.editor is not None else HINT_PLAIN)
+                      HINT_WITH_MENU if ui.editor is not None else HINT_PLAIN, model=model.get("label") or model["key"])
     _update_notice(ui, client, me)
-    work = Session(client, Workspace(root), ui, log=TaskLog(root.name), effort=effort)
+    saved_model = config.load().get("model")
+    if isinstance(saved_model, str) and saved_model != model["key"]:
+        ui.line(f"Tài khoản này không còn dùng được model {saved_model} nên peto dùng {model.get('label')}.", "yellow")
+    work = Session(client, Workspace(root), ui, log=TaskLog(root.name), effort=effort, model=model["key"],
+                   model_step_cost=int(model.get("step_cost") or 1))
     saved = history.load(root, client.server)
     if saved is not None:
         ui.line(f"Có hội thoại {history.when(saved.saved_at)} ({saved.message_count} tin) · gõ /resume để mở lại.",
@@ -266,7 +339,8 @@ def session(ui: UI) -> int:
                 folder = str(Path("~") / root.relative_to(Path.home()))
             except ValueError:
                 folder = str(root)
-            text = ui.prompt(footer=f"Peto · mức {EFFORT_LABELS[work.effort]} · {folder}").strip()
+            label = next((item.get("label") for item in models if item["key"] == work.model), None) or work.model
+            text = ui.prompt(footer=f"{label} · mức {EFFORT_LABELS[work.effort]} · {folder}").strip()
         except (EOFError, KeyboardInterrupt):
             ui.line()
             break
@@ -297,6 +371,9 @@ def session(ui: UI) -> int:
             continue
         if name == "/effort":
             _change_effort(ui, work, fold(value))
+            continue
+        if name == "/model":
+            _change_model(ui, work, value, models)
             continue
         if name and not value:
             ui.line("Không có lệnh này. Gõ /help để xem các lệnh.", "yellow")

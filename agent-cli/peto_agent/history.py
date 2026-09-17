@@ -28,6 +28,8 @@ class Saved:
     saved_at: float
     items: list[dict]
     retryable: bool = False
+    # Model đã chạy hội thoại; mở lại bằng model khác thì bỏ phần chỉ model cũ đọc được.
+    model: str = "peto"
 
     @property
     def message_count(self) -> int:
@@ -40,13 +42,13 @@ def _path(root: Path) -> Path:
     return sessions_dir() / f"{key}.json"
 
 
-def save(root: Path, server: str, items: list[dict], *, retryable: bool = False) -> None:
+def save(root: Path, server: str, items: list[dict], *, retryable: bool = False, model: str = "peto") -> None:
     """Ghi đè hội thoại của thư mục. Ghi đĩa lỗi thì bỏ qua: mất bản lưu không được làm hỏng phiên đang chạy."""
     if not items:
         return
     target = _path(root)
     data = {"version": VERSION, "root": str(root), "server": server, "saved_at": time.time(), "items": items,
-            "retryable": retryable}
+            "retryable": retryable, "model": model}
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
         temporary = target.with_suffix(".tmp")
@@ -74,7 +76,8 @@ def load(root: Path, server: str) -> Saved | None:
         return None
     saved_at = data.get("saved_at")
     return Saved(saved_at=float(saved_at) if isinstance(saved_at, (int, float)) else 0.0, items=items,
-                 retryable=data.get("retryable") is True)
+                 retryable=data.get("retryable") is True,
+                 model=data["model"] if isinstance(data.get("model"), str) and data["model"] else "peto")
 
 
 def _prune(keep: Path) -> None:

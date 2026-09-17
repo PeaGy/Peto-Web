@@ -36,6 +36,13 @@ def cap_result(value):
     return value
 
 
+def portable(items: list[dict]) -> list[dict]:
+    """Hội thoại dùng tiếp được với model khác: bỏ suy nghĩ đã mã hóa, vì chỉ model tạo ra nó đọc được, và bỏ mã item
+    của dịch vụ cũ, vì mỗi dịch vụ đặt mã một kiểu."""
+    return [{key: value for key, value in item.items() if key != "id"}
+            for item in items if item.get("type") != "reasoning"]
+
+
 def user_message(text: str, images=()) -> dict:
     """Tin của người dùng; có ảnh thì mỗi ảnh đi sau nhãn [Ảnh N] mà chữ đã gõ nhắc tới."""
     if not images:
@@ -105,13 +112,16 @@ class TaskLog:
 
 class Session:
     def __init__(self, client: Client, workspace: Workspace, ui: AgentUI, *, log: TaskLog | None = None,
-                 effort: str = "medium"):
+                 effort: str = "medium", model: str = "peto", model_step_cost: int = 1):
         self.client = client
         self.ws = workspace
         self.ui = ui
         self.tools = Tools(workspace, ui)
         self.log = log
         self.effort = effort
+        # Model chọn bằng /model, và số bước mỗi lần gọi model đó (trước khi nhân mức suy nghĩ).
+        self.model = model
+        self.model_step_cost = model_step_cost
         self.items: list[dict] = []
         self.steps_used: int | None = None
         self.steps_limit: int | None = None
@@ -124,9 +134,15 @@ class Session:
         self.context_tokens = None
         self.can_retry = False
 
-    def resume(self, items: list[dict], *, retryable: bool = False) -> None:
+    def set_model(self, model: str, step_cost: int = 1) -> None:
+        """Đổi model; hội thoại đang dở vẫn giữ, chỉ bỏ phần model cũ tạo ra mà model mới không đọc được."""
+        if model != self.model and self.items:
+            self.items = portable(self.items)
+        self.model, self.model_step_cost = model, step_cost
+
+    def resume(self, items: list[dict], *, retryable: bool = False, model: str = "peto") -> None:
         """Mở lại hội thoại đã lưu. Quên các tệp đã đọc, để Peto phải đọc lại trước khi sửa."""
-        self.items = list(items)
+        self.items = list(items) if model == self.model else portable(items)
         self.context_tokens = None
         self.can_retry = retryable
         self.ws.read_digests.clear()
@@ -140,7 +156,7 @@ class Session:
         self.items.append(user_message(text, images))
         drop_old_images(self.items)
         # Nhật ký chỉ ghi số ảnh, không ghi dữ liệu ảnh.
-        self._log("task", text=text, effort=self.effort, images=len(images))
+        self._log("task", text=text, effort=self.effort, model=self.model, images=len(images))
         self._run()
 
     def retry_task(self) -> None:
@@ -193,10 +209,10 @@ class Session:
         finally:
             self.tools.approve_all = False
             self._summary(time.monotonic() - started, outcome)
-            history.save(self.ws.root, self.client.server, self.items, retryable=self.can_retry)
+            history.save(self.ws.root, self.client.server, self.items, retryable=self.can_retry, model=self.model)
 
     def _step(self) -> list[dict] | None:
-        body = {"input": self.items, "effort": self.effort, "context": {
+        body = {"input": self.items, "effort": self.effort, "model": self.model, "context": {
             "project": self.ws.root.name, "os": f"{platform.system()} {platform.release()}".strip()}}
         writer = self.ui.reply()
         started = time.monotonic()

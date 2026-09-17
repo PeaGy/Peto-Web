@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 
 @dataclass(frozen=True)
@@ -18,6 +18,8 @@ COMMANDS = (
     Command("/moi", "Bắt đầu hội thoại mới"),
     Command("/resume", "Mở lại hội thoại gần nhất của thư mục này"),
     Command("/retry", "Thử lại bước bị gián đoạn kết nối"),
+    # Lựa chọn thật theo quyền của tài khoản được đặt lại bằng use_models() sau khi hỏi máy chủ.
+    Command("/model", "Xem hoặc đổi model", (("peto", "Peto · Mặc định"),)),
     Command("/effort", "Xem hoặc đổi mức suy nghĩ: thap, vua, cao",
             (("thap", "Nhanh, suy nghĩ ít"), ("vua", "Cân bằng giữa nhanh và kỹ"),
              ("cao", "Suy nghĩ kỹ hơn, mỗi bước tính 2 bước"))),
@@ -35,6 +37,21 @@ class Suggestion:
     label: str
     description: str
     has_options: bool = False
+
+
+def model_option(model: dict) -> tuple[str, str]:
+    """("sol", "5.6 Sol · Mạnh nhất, của OpenAI · tính 4 bước") từ một model máy chủ trả trong /api/agent/me."""
+    cost = int(model.get("step_cost") or 1)
+    description = f"{model.get('label') or model['key']} · {model.get('description') or ''}".rstrip(" ·")
+    return model["key"], description + (f" · tính {cost} bước" if cost > 1 else "")
+
+
+def use_models(models: list[dict]) -> None:
+    """Đặt lựa chọn của /model theo các model tài khoản này được dùng, để bảng gợi ý không mời chọn model bị cấm."""
+    global COMMANDS
+    options = tuple(model_option(model) for model in models)
+    COMMANDS = tuple(replace(command, options=options) if command.name == "/model" else command
+                     for command in COMMANDS)
 
 
 def fold(text: str) -> str:

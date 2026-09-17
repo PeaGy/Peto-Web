@@ -42,7 +42,7 @@ async def test_partial_reply_survives_errors(client, monkeypatch, failure):
         async def stream(self, **kwargs):
             yield 'Phần đã nhìn thấy'
             raise failure
-    monkeypatch.setattr(main, 'get_provider', lambda: BrokenProvider())
+    monkeypatch.setattr(main, 'get_provider', lambda model="peto": BrokenProvider())
     response = await client.post('/api/chat', json={'message': 'hello'})
     events = await read_events(response)
     assert events[-1]['type'] == 'error'
@@ -58,7 +58,7 @@ async def test_cancelled_stream_saves_partial_text(client, monkeypatch):
         async def stream(self, **kwargs):
             yield 'Đã nhận một phần'
             await asyncio.sleep(3600)
-    monkeypatch.setattr(main, 'get_provider', lambda: SlowProvider())
+    monkeypatch.setattr(main, 'get_provider', lambda model="peto": SlowProvider())
     response = await main.chat(main.ChatRequest(message='cancel test'), owner=TEST_OWNER)
     stream = response.body_iterator
     import json

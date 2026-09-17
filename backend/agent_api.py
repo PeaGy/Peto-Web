@@ -28,6 +28,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+import ai_models
 import auth
 import db
 from agent_install import cli_version
@@ -273,6 +274,8 @@ async def me(device: dict = Depends(device_auth)) -> dict:
         "default_effort": AGENT_REASONING,
         # Bản peto máy chủ đang phát; CLI cũ hơn thì nhắc chạy lại lệnh cài.
         "cli_version": cli_version(),
+        # Model tài khoản này chọn được bằng /model, kèm số bước mỗi lần gọi (trước khi nhân mức suy nghĩ).
+        "models": ai_models.public(ai_models.usable(owner, "agent")),
     }
 
 
@@ -365,7 +368,9 @@ def _parse_step(raw: bytes) -> tuple[list[dict], dict, str]:
     if not isinstance(effort, str) or effort not in STEP_COST:
         raise HTTPException(status_code=400, detail="Mức suy nghĩ chỉ nhận low, medium hoặc high.")
     context = payload.get("context")
-    return items, context if isinstance(context, dict) else {}, effort
+    # CLI cũ không gửi model thì dùng Peto.
+    model = payload.get("model") or ai_models.DEFAULT_MODEL
+    return items, context if isinstance(context, dict) else {}, effort, model
 
 
 def _instructions(context: dict) -> str:
@@ -378,16 +383,21 @@ def _instructions(context: dict) -> str:
 
 @router.post("/step")
 async def step(request: Request, device: dict = Depends(device_auth)):
-    items, context, effort = _parse_step(await _read_body(request))
+    items, context, effort, model_key = _parse_step(await _read_body(request))
     owner = device["owner"]
+    try:
+        model = ai_models.resolve(owner, model_key, "agent")
+    except ai_models.ModelUnavailable as err:
+        raise HTTPException(status_code=err.status, detail=err.message) from None
     day = _today()
-    cost = STEP_COST[effort]
+    # Chủ web chọn tính bước theo giá: model đắt tính nhiều bước hơn, nhân với mức suy nghĩ.
+    cost = STEP_COST[effort] * model.step_cost
     used = await db.take_agent_step(owner, day, AGENT_DAILY_STEPS, cost)
     if used is None:
         left = max(0, AGENT_DAILY_STEPS - await db.get_agent_steps(owner, day))
         if 0 < left < cost:
-            detail = (f"Mức suy nghĩ cao tính {cost} bước mỗi lần, nhưng hôm nay chỉ còn {left} bước. "
-                      "Gõ /effort vua để dùng nốt.")
+            detail = (f"Mỗi bước {model.label} ở mức suy nghĩ này tính {cost} bước, nhưng hôm nay chỉ còn {left} bước. "
+                      "Gõ /effort vua hoặc /model peto để dùng nốt.")
         else:
             detail = f"Hôm nay tài khoản của bạn đã dùng hết {AGENT_DAILY_STEPS} bước Peto Agent. Lượt mới bắt đầu lúc 0 giờ."
         raise HTTPException(status_code=429, detail=detail)
@@ -401,7 +411,7 @@ async def step(request: Request, device: dict = Depends(device_auth)):
             async with admission.slot(f"agent:{owner}"):
                 async with asyncio.timeout(AGENT_STEP_TIMEOUT_SECONDS):
                     async for event in agent_step(instructions=instructions, input_items=items, tools=TOOL_SCHEMAS,
-                                                  effort=effort):
+                                                  effort=effort, model=model.key):
                         produced = True
                         if event.kind == "done":
                             with anyio.CancelScope(shield=True):

@@ -1,4 +1,8 @@
-"""Grok Responses API: stream văn bản và chạy công cụ được đăng ký của web."""
+"""Responses API: stream văn bản và chạy công cụ được đăng ký của web.
+
+xAI (Peto) và OpenAI (dòng GPT-5.6, ``ai/gpt.py``) dùng cùng dạng Responses API, nên ``ResponsesProvider`` giữ chung
+vòng công cụ, tìm web và nguồn tham khảo; mỗi dịch vụ chỉ khác cách lấy khóa, tên model và lời báo lỗi.
+"""
 
 from __future__ import annotations
 
@@ -37,6 +41,10 @@ MAX_TOOL_CALLS = 8
 
 def _dump(item) -> dict:
     return item if isinstance(item, dict) else item.model_dump(mode="json", exclude_none=True)
+
+
+def _clip(value) -> str:
+    return " ".join(str(value or "").split())[:500] or "không rõ lý do"
 
 
 def _item_sources(item: dict) -> list[dict]:
@@ -104,22 +112,20 @@ def _recent_image_keys(messages: list[ChatMessage], limit: int) -> set[tuple[int
     return set(keys)
 
 
-class XAIProvider(ChatProvider):
-    name = "xai"
+class ResponsesProvider(ChatProvider):
+    """Phần chung của các dịch vụ dùng Responses API. Lớp con đặt ``_client``, ``model`` và ``max_output_tokens``."""
 
-    def __init__(self) -> None:
-        self._auth = XaiAuth()
-        # api_key được thay trước mỗi lượt gọi; giá trị khởi tạo chỉ là chỗ giữ.
-        self._client = AsyncOpenAI(api_key="pending", base_url=XAI_API_BASE)
+    name = "responses"
+    # Tên dịch vụ trong log máy chủ.
+    service = "AI"
+    auth_error_message = "Kết nối AI của Peto đã hết hạn. Người quản trị cần đăng nhập lại."
+    rate_limit_message = "Peto đang nhận nhiều yêu cầu quá. Đợi chút rồi thử lại nha."
+    _client: AsyncOpenAI
+    model: str
+    max_output_tokens: int
 
     async def _prepare(self) -> None:
-        try:
-            self._client.api_key = await self._auth.get_access_token()
-        except XaiAuthError as err:
-            raise ProviderError(
-                "Peto chưa được kết nối với dịch vụ AI nên chưa trả lời được. "
-                "Người quản trị cần chạy lại lệnh đăng nhập."
-            ) from err
+        """Lấy khóa trước mỗi lượt gọi."""
 
     async def stream(
         self,
@@ -156,17 +162,17 @@ class XAIProvider(ChatProvider):
         document_session = current_session.get()
         for round_index in range(MAX_TOOL_ROUNDS + 1):
             create_kwargs: dict = {
-                "model": XAI_MODEL,
+                "model": self.model,
                 "instructions": instructions,
                 "input": payload_input,
-                "max_output_tokens": XAI_MAX_OUTPUT_TOKENS,
+                "max_output_tokens": self.max_output_tokens,
                 "reasoning": {
                     "effort": effort if effort in {"low", "medium", "high"} else "low"
                 },
                 "stream": True,
                 "tools": [*TOOL_SCHEMAS, *([DOCUMENT_SCHEMA] if document_session else []), *([{"type": "web_search"}] if search_enabled else [])],
                 "include": ["reasoning.encrypted_content"],
-                # Tự giữ các item trong lượt này, không cần lưu hội thoại ở xAI.
+                # Tự giữ các item trong lượt này, không cần lưu hội thoại ở dịch vụ AI.
                 "store": False,
             }
             if search_enabled:
@@ -231,7 +237,7 @@ class XAIProvider(ChatProvider):
                             yield chunk
                     elif event_type == "response.completed":
                         if getattr(event.response, "status", "completed") != "completed":
-                            raise ProviderError("Peto chưa trả lời xong. Phần đã viết được giữ lại; cậu có thể yêu cầu tiếp tục.")
+                            raise ProviderError("Peto chưa trả lời xong. Phần đã viết được giữ lại; bạn có thể yêu cầu tiếp tục.")
                         completed = True
                         if getattr(event.response, "output", None):
                             output_items = [_dump(item) for item in event.response.output]
@@ -239,17 +245,19 @@ class XAIProvider(ChatProvider):
                                 for chunk in observe_item(item):
                                     yield chunk
                     elif event_type == "response.incomplete":
-                        raise ProviderError("Câu trả lời chạm giới hạn của lượt AI. Phần đã viết được giữ lại; cậu có thể yêu cầu tiếp tục.")
+                        raise ProviderError("Câu trả lời chạm giới hạn của lượt AI. Phần đã viết được giữ lại; bạn có thể yêu cầu tiếp tục.")
                     elif event_type in {"response.failed", "error"}:
                         raise ProviderError("Peto gặp lỗi khi đang trả lời. Thử lại nha.", retryable=True)
             except AuthenticationError as err:
-                raise ProviderError("Kết nối AI của Peto đã hết hạn. Người quản trị cần đăng nhập lại.") from err
+                raise ProviderError(self.auth_error_message) from err
             except RateLimitError as err:
-                raise ProviderError("Peto đang nhận nhiều yêu cầu quá. Đợi chút rồi thử lại nha.", retryable=True) from err
+                # Lời báo giới hạn lượt/hết hạn mức không chứa nội dung hội thoại hay khóa; ghi để biết là hết tiền hay chỉ quá tải.
+                logger.warning("%s giới hạn lượt: %s", self.service, _clip(err.message))
+                raise ProviderError(self.rate_limit_message, retryable=True) from err
             except APIConnectionError as err:
                 raise ProviderError("Peto chưa kết nối được với dịch vụ AI. Thử lại sau chút nhé.", retryable=True) from err
             except APIStatusError as err:
-                logger.warning("xAI HTTP %s", err.status_code)
+                logger.warning("%s HTTP %s: %s", self.service, err.status_code, _clip(err.message))
                 if search_enabled and err.status_code in {400, 403}:
                     raise ProviderError("Peto chưa dùng được tìm web với kết nối AI hiện tại. Mở menu + rồi chọn Tắt tìm kiếm web để chat tiếp, hoặc nhờ người quản trị kiểm tra quyền tìm kiếm của dịch vụ.") from err
                 raise ProviderError("Peto gặp lỗi kết nối với dịch vụ AI. Thử lại sau nha.", retryable=err.status_code >= 500) from err
@@ -267,7 +275,7 @@ class XAIProvider(ChatProvider):
                 return
             calls_used += len(tool_calls)
             if round_index >= MAX_TOOL_ROUNDS or calls_used > MAX_TOOL_CALLS:
-                raise ProviderError("Peto chưa hoàn tất việc tra cứu trong lượt này. Cậu thử hỏi lại cụ thể hơn nhé.")
+                raise ProviderError("Peto chưa hoàn tất việc tra cứu trong lượt này. Bạn thử hỏi lại cụ thể hơn nhé.")
             payload_input.extend(output_items)
             for call in tool_calls:
                 if not call.get("call_id"):
@@ -286,3 +294,26 @@ class XAIProvider(ChatProvider):
                 })
             if emitted_text:
                 yield "\n\n"
+
+
+class XAIProvider(ResponsesProvider):
+    """Peto: Grok qua tài khoản xAI riêng của web (OAuth, hoặc XAI_API_KEY dự phòng)."""
+
+    name = "xai"
+    service = "xAI"
+
+    def __init__(self) -> None:
+        self._auth = XaiAuth()
+        # api_key được thay trước mỗi lượt gọi; giá trị khởi tạo chỉ là chỗ giữ.
+        self._client = AsyncOpenAI(api_key="pending", base_url=XAI_API_BASE)
+        self.model = XAI_MODEL
+        self.max_output_tokens = XAI_MAX_OUTPUT_TOKENS
+
+    async def _prepare(self) -> None:
+        try:
+            self._client.api_key = await self._auth.get_access_token()
+        except XaiAuthError as err:
+            raise ProviderError(
+                "Peto chưa được kết nối với dịch vụ AI nên chưa trả lời được. "
+                "Người quản trị cần chạy lại lệnh đăng nhập."
+            ) from err

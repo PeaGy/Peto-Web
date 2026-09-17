@@ -88,7 +88,7 @@ def _spy(monkeypatch) -> list[dict]:
             seen.append(kwargs)
             yield "OK"
 
-    monkeypatch.setattr(main, "get_provider", lambda: Spy())
+    monkeypatch.setattr(main, "get_provider", lambda model="peto": Spy())
     return seen
 
 
