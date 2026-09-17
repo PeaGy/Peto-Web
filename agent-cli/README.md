@@ -89,11 +89,14 @@ cd C:\Projects\website-a
 peto
 ```
 
-Gõ yêu cầu như nhắn tin cho Peto. Gõ `/` thì danh sách lệnh hiện ngay dưới dòng nhập và lọc dần theo chữ bạn gõ:
+Gõ yêu cầu trong khung nền xám trải ngang terminal. Khung trống hiện **Nhờ Peto làm gì đó…**; bên dưới là mức suy nghĩ
+và thư mục đang mở. Khi nhập nhiều dòng, khung tự giãn theo nội dung; tin quá dài được cuộn quanh vị trí con trỏ.
+Gõ `/` thì danh sách lệnh hiện ngay dưới khung nhập và lọc dần theo chữ bạn gõ:
 
 ```text
-Bạn › /re
+› /re
   ❯ /resume  Mở lại hội thoại gần nhất của thư mục này
+    /retry   Thử lại bước bị gián đoạn kết nối
 ```
 
 Mũi tên lên/xuống chọn lệnh, Tab điền lệnh, Enter chạy lệnh đang chọn, Esc ẩn danh sách. Mới gõ mỗi `/` thì chưa có lệnh
@@ -131,7 +134,7 @@ Muốn Peto xem ảnh, ví dụ ảnh chụp lỗi giao diện:
 Ảnh hiện thành nhãn ngay chỗ con trỏ, rồi bạn gõ tiếp như thường:
 
 ```text
-Bạn › giao diện lỗi như [Ảnh 1] sửa giúp mình
+› giao diện lỗi như [Ảnh 1] sửa giúp mình
 ```
 
 Xóa nhãn là bỏ ảnh. Ảnh được đánh số tăng dần trong phiên. Clipboard không có ảnh thì một dòng nhắc màu vàng hiện dưới
@@ -145,7 +148,8 @@ dòng nhập, gõ phím tiếp là biến mất.
 Dòng nhập này tự đọc từng phím của console Windows. Bộ gõ như Unikey, EVKey sửa chữ bằng cách gửi phím xóa rồi gửi chữ
 mới, nên mỗi lần xóa bỏ đúng một ký tự như ô nhập thường. Nếu dòng nhập hiển thị sai hay gõ tiếng Việt bị lỗi trong
 terminal của bạn, đặt `$env:PETO_AGENT_SIMPLE_INPUT = '1'` trước khi chạy `peto` để quay về dòng nhập đơn giản, không có
-danh sách lệnh, lịch sử, dán nhiều dòng hay gửi ảnh. Khi input được chuyển từ tệp hay ống dẫn, `peto` cũng dùng dòng nhập đơn giản.
+danh sách lệnh, lịch sử, dán nhiều dòng hay gửi ảnh. Khi input được chuyển từ tệp hay ống dẫn, `peto` cũng dùng dấu nhắc
+đơn giản `›`, không vẽ khung. `NO_COLOR` tắt cả màu nền của khung.
 
 Trong lúc chờ, một dòng tạm `… Peto đang nghĩ · 8s` tự đếm giây rồi biến mất khi có chữ. Câu dài đang viết hiện dần trên
 dòng tạm; khi xong dòng sẽ in đủ nội dung cùng chữ đậm và `mã`. Nội dung đã in nằm trong lịch sử cuộn của terminal.

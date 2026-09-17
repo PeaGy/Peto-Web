@@ -274,7 +274,7 @@ def test_falls_back_to_input_outside_a_console(monkeypatch):
     assert not line_editor.simple_input_requested()
 
     class BrokenEditor:
-        def read(self, prompt, paint):
+        def read(self, prompt, paint, **kwargs):
             raise OSError("console không cho đọc phím")
 
     ui = UI(out=io.StringIO(), reader=lambda prompt: "chữ gõ", colors=False)

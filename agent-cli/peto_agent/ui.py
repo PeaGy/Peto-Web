@@ -10,6 +10,7 @@ import sys
 import unicodedata
 
 COLORS = {"dim": "2", "bold": "1", "red": "31", "green": "32", "yellow": "33", "blue": "34", "cyan": "36"}
+COLORS.update(input="48;5;236;38;5;252", input_hint="48;5;236;38;5;245", input_marker="48;5;236;38;5;117")
 MAX_DIFF_LINES = 120
 MAX_OUTPUT_LINES = 8
 PERMISSION_QUESTION = "    Đồng ý? [y] có  [n] không  [a] có cho mọi bước trong yêu cầu này › "
@@ -324,20 +325,19 @@ class UI:
                 return answer
             self.line("    Gõ y, n hoặc a nhé.", "yellow")
 
-    def prompt(self) -> str:
+    def prompt(self, *, footer: str = "") -> str:
         self.clear_status()
         self.attached = []
-        self._rule()
         if self.editor is not None:
             try:
-                text = self.editor.read("Bạn › ", self.paint)
+                text = self.editor.read("› ", self.paint, boxed=True, footer=footer)
                 self.attached = list(self.editor.last_images)
                 return text
             except OSError:
                 # Console không cho đọc phím thô nữa: quay về input() cho hết phiên.
                 self.editor = None
                 self.line()
-        return self.reader(self.paint("Bạn › ", "yellow"))
+        return self.reader(self.paint("› ", "yellow"))
 
 
 class ReplyWriter:

@@ -262,7 +262,11 @@ def session(ui: UI) -> int:
                 "yellow")
     while True:
         try:
-            text = ui.prompt().strip()
+            try:
+                folder = str(Path("~") / root.relative_to(Path.home()))
+            except ValueError:
+                folder = str(root)
+            text = ui.prompt(footer=f"Peto · mức {EFFORT_LABELS[work.effort]} · {folder}").strip()
         except (EOFError, KeyboardInterrupt):
             ui.line()
             break

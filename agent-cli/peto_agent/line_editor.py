@@ -1,4 +1,4 @@
-"""Ô nhập "Bạn ›" có bảng gợi ý lệnh khi gõ "/", tự đọc từng phím trong console Windows.
+"""Khung nhập có nền riêng và bảng gợi ý lệnh khi gõ "/", đọc từng phím trong console Windows.
 
 input() chỉ trả chữ về khi người dùng bấm Enter, nên muốn hiện gợi ý ngay lúc gõ thì phải tự đọc phím. Mô-đun chỉ dùng
 thư viện chuẩn và chia ba phần:
@@ -42,6 +42,7 @@ READING_IMAGE = "Đang đọc ảnh…"
 TEXT_KEYS = {"char": "", "enter": "\r", "newline": "\n", "tab": "\t"}
 
 HIDE_CURSOR, SHOW_CURSOR = "\033[?25l", "\033[?25h"
+INPUT_PLACEHOLDER = "Nhờ Peto làm gì đó…"
 
 
 @dataclass(frozen=True)
@@ -314,19 +315,31 @@ def _no_paint(text: str, color: str | None) -> str:
     return text
 
 
-def layout(state: EditorState, *, prompt: str, width: int, height: int, paint=_no_paint) -> Frame:
+def layout(state: EditorState, *, prompt: str, width: int, height: int, paint=_no_paint,
+           boxed: bool = False, footer: str = "", placeholder: str = INPUT_PLACEHOLDER) -> Frame:
     """Các hàng cần vẽ và chỗ đặt con trỏ. Hàng nối tiếp thụt vào bằng độ rộng dấu nhắc."""
     # Không bao giờ viết vào cột cuối, để khỏi phụ thuộc cách từng terminal tự xuống dòng.
-    usable = max(width, 20) - 1
+    usable = max(width, 8) - 1
+    # Khi gửi/hủy, khung và các dòng phụ biến mất; chỉ tin đã nhập nằm trong lịch sử cuộn.
+    boxed = boxed and not state.finished
+    prompt = clip(prompt, max(1, usable - 2))
     indent = display_width(prompt)
-    rows: list[list[str]] = [[paint(prompt, "yellow")]]
+
+    def input_paint(text: str, color: str | None = None) -> str:
+        if boxed:
+            return paint(text, "input_marker" if color == "cyan" else "input")
+        return paint(text, color)
+
+    rows: list[list[str]] = [[input_paint(prompt, "yellow")]]
+    row_widths = [indent]
     column = indent
     cursor: tuple[int, int] | None = None
     for index, char in enumerate(state.text):
         if index == state.cursor:
             cursor = (len(rows) - 1, column)
         if char == "\n":
-            rows.append([" " * indent])
+            rows.append([input_paint(" " * indent)])
+            row_widths.append(indent)
             column = indent
             continue
         color = None
@@ -336,18 +349,25 @@ def layout(state: EditorState, *, prompt: str, width: int, height: int, paint=_n
             glyph = "    " if char == "\t" else char
         size = display_width(glyph)
         if column + size > usable and column > indent:
-            rows.append([" " * indent])
+            rows.append([input_paint(" " * indent)])
+            row_widths.append(indent)
             column = indent
             if index == state.cursor:
                 cursor = (len(rows) - 1, column)
-        rows[-1].append(paint(glyph, color))
+        rows[-1].append(input_paint(glyph, color))
         column += size
+        row_widths[-1] = column
     if cursor is None:
         cursor = (len(rows) - 1, column)
+    if boxed and not state.text:
+        hint = clip(placeholder, usable - indent)
+        rows[0].append(paint(hint, "input_hint"))
+        row_widths[0] += display_width(hint)
 
     popup = []
-    if state.notice:
+    if state.notice and not state.finished:
         popup.extend(paint(f"  {line}", "yellow") for line in wrap(state.notice, usable - 2))
+    notice_rows = len(popup)
     items = state.items()
     if items:
         label_width = max(display_width(item.label) for item in items)
@@ -358,13 +378,29 @@ def layout(state: EditorState, *, prompt: str, width: int, height: int, paint=_n
             description = clip(item.description, usable - display_width(head))
             popup.append(paint(head, "cyan" if chosen else None) + (paint(description, "dim") if description else ""))
 
-    # Chữ dài hơn màn hình thì chỉ vẽ những hàng quanh con trỏ: di chuyển con trỏ lên không vượt quá mép trên màn hình.
-    available = max(1, height - 1 - len(popup))
+    # Dành chỗ cho padding, footer và ít nhất một dòng nhập. Popup không được đẩy con trỏ khỏi màn hình thấp.
+    budget = max(1, height - 1)
+    padding = 2 if boxed and budget >= 4 + bool(popup) else 0
+    footer_lines = ([paint("  " + clip(clean(footer), usable - 2), "dim")]
+                    if boxed and footer and budget >= padding + 2 else [])
+    popup_space = max(0, budget - padding - len(footer_lines) - 1)
+    selected_row = notice_rows + (state.selected or 0) if items else 0
+    popup_top = min(max(0, selected_row - popup_space + 1), max(0, len(popup) - popup_space))
+    popup = popup[popup_top:popup_top + popup_space]
+    available = max(1, budget - padding - len(footer_lines) - len(popup))
     top = 0
     if len(rows) > available:
         top = min(max(0, cursor[0] - available + 1), len(rows) - available)
-    lines = ["".join(row) for row in rows[top:top + available]] + popup
-    return Frame(lines, cursor[0] - top, cursor[1])
+    lines = []
+    for index in range(top, min(len(rows), top + available)):
+        row = "".join(rows[index])
+        if boxed:
+            row += paint(" " * max(0, usable - row_widths[index]), "input")
+        lines.append(row)
+    if padding:
+        blank = paint(" " * usable, "input")
+        lines = [blank, *lines, blank]
+    return Frame(lines + popup + footer_lines, cursor[0] - top + padding // 2, cursor[1])
 
 
 def group_paste(keys: list[Key]) -> list[Key]:
@@ -564,34 +600,47 @@ class LineEditor:
         # Hàng đang có con trỏ, tính từ hàng dấu nhắc, để lần vẽ sau quay về đúng chỗ.
         self._row = 0
         self._pending: list[Key] = []
+        self._boxed = False
+        self._footer = ""
 
-    def read(self, prompt: str, paint=_no_paint) -> str:
+    def read(self, prompt: str, paint=_no_paint, *, boxed: bool = False, footer: str = "") -> str:
         """Đọc một lượt nhập. Ctrl+C lúc ô trống ném KeyboardInterrupt như input()."""
         state = self.state
         state.clear()
         self.last_images = []
         self._row = 0
+        self._boxed, self._footer = boxed, footer
         result = None
-        with self.console.raw():
-            self._draw(prompt, paint)
-            while result is None:
-                keys, self._pending = self._pending or self.console.keys(), []
-                for position, key in enumerate(keys):
-                    if key.name == "image":
-                        self._attach(prompt, paint, self.clipboard)
-                        continue
-                    # Kéo thả tệp ảnh vào terminal thì terminal dán đường dẫn tệp: đổi thành ảnh gửi kèm.
-                    if key.name == "paste" and (paths := image_files.dropped_paths(key.text)):
-                        self._attach(prompt, paint, lambda: self.files(paths))
-                        continue
-                    result = state.handle(key)
-                    if result is not None:
-                        self._pending = keys[position + 1:]
-                        break
-                if keys and result is None:
+        try:
+            with self.console.raw():
+                self._draw(prompt, paint)
+                while result is None:
+                    keys, self._pending = self._pending or self.console.keys(), []
+                    for position, key in enumerate(keys):
+                        if key.name == "image":
+                            self._attach(prompt, paint, self.clipboard)
+                            continue
+                        # Kéo thả tệp ảnh vào terminal thì terminal dán đường dẫn tệp: đổi thành ảnh gửi kèm.
+                        if key.name == "paste" and (paths := image_files.dropped_paths(key.text)):
+                            self._attach(prompt, paint, lambda: self.files(paths))
+                            continue
+                        result = state.handle(key)
+                        if result is not None:
+                            self._pending = keys[position + 1:]
+                            break
+                    if keys and result is None:
+                        self._draw(prompt, paint)
+                state.finished = True
+                self._draw(prompt, paint)
+        except BaseException:
+            # Lỗi đọc phím không được để nền ô nhập hoặc con trỏ ẩn ảnh hưởng phần trả lời tiếp theo.
+            if boxed:
+                state.finished = True
+                with contextlib.suppress(OSError):
                     self._draw(prompt, paint)
-            state.finished = True
-            self._draw(prompt, paint)
+                    self.out.write("\033[0m" + SHOW_CURSOR)
+                    self.out.flush()
+            raise
         kind, text = result
         if kind == INTERRUPT:
             raise KeyboardInterrupt
@@ -615,7 +664,8 @@ class LineEditor:
 
     def _draw(self, prompt: str, paint) -> None:
         columns, lines = self.size()
-        frame = layout(self.state, prompt=prompt, width=columns, height=lines, paint=paint)
+        frame = layout(self.state, prompt=prompt, width=columns, height=lines, paint=paint,
+                       boxed=self._boxed, footer=self._footer)
         parts = [HIDE_CURSOR]
         if self._row:
             parts.append(f"\033[{self._row}A")
