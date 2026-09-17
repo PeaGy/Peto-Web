@@ -207,16 +207,19 @@ async def test_memory_reaches_the_provider(client, patch_httpx, monkeypatch):
     monkeypatch.setattr(main.discord_memory, "token", "token-test", raising=False)
     main.discord_memory.forget(TEST_DISCORD_ID)
 
-    provider = main.get_provider()
-    original = provider.stream
+    provider_class = type(main.get_provider())
+    original = provider_class.stream
 
-    def spy(*, system_prompt, messages, effort, timezone=None, web_search="auto"):
+    def spy(self, *, system_prompt, messages, effort, timezone=None, web_search="auto"):
         # Bỏ qua lượt đặt tên hội thoại, chỉ giữ prompt của lượt chat chính.
         if titles.TITLE_MARKER not in system_prompt:
             seen.append(system_prompt)
-        return original(system_prompt=system_prompt, messages=messages, effort=effort, timezone=timezone, web_search=web_search)
+        return original(self, system_prompt=system_prompt, messages=messages, effort=effort, timezone=timezone,
+                        web_search=web_search)
 
-    monkeypatch.setattr(provider, "stream", spy)
+    # Vá trên class, không vá trên đối tượng provider dùng chung: monkeypatch trả lại một thuộc tính riêng trên đối
+    # tượng, che mất mọi bản vá class của các test chạy sau.
+    monkeypatch.setattr(provider_class, "stream", spy)
 
     async with client.stream("POST", "/api/chat", json={"message": "chào"}) as response:
         await read_events(response)

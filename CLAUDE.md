@@ -9,10 +9,11 @@ Peto Web is a private chat UI for Peto, an AI assistant. The name comes from a D
 its own database, its own xAI token file, its own persona prompt. The only link back to the
 bot is a read-only memory gateway (see below).
 
-On 2026-09-17 the owner replaced the web's persona, which had been adapted from the bot's roleplay
-character, with an honest, helpful AI assistant (`persona.py`): it says it is an AI running on Grok,
-addresses users as "bạn", refuses only genuinely harmful requests, and has no roleplay or adult-content
-mode. The Peto Agent prompt uses the same core (`PERSONA_PROMPT`).
+On 2026-09-17 the owner made the default persona an honest, helpful AI assistant (`persona.SYSTEM_PROMPT`):
+it says it is an AI running on Grok, addresses users as "bạn", and refuses only genuinely harmful requests.
+The bot's roleplay character, which the web used before, survives only as an opt-in per-conversation
+roleplay mode (`persona.ROLEPLAY_SYSTEM_PROMPT`, see "Roleplay mode" below). Peto Agent and Companion always
+use the assistant core (`PERSONA_PROMPT`).
 
 Stack: FastAPI + SQLite (aiosqlite) backend, React 19 + Vite frontend, xAI Grok via the
 Responses API. Registration is **open**: Discord, Google, or guest — there is no
@@ -298,10 +299,11 @@ same way, preserving existing rows. Note that `PRAGMA foreign_keys=ON` is set pe
 where cascade deletes matter (SQLite has it off by default).
 
 Tables: `conversations`, `messages`, `attachments`, `users`, `user_profiles`,
-`imagine_jobs`, `imagine_images`, `agent_devices`, `agent_usage`. `users` is the only place mapping a web account to a
-Discord ID.
+`imagine_jobs`, `imagine_images`, `agent_devices`, `agent_usage`, `roleplay_consents`. `users` is the only place mapping
+a web account to a Discord ID.
 `conversations.mode` (`chat` or `companion`) was added with the same manual migration; older rows
-default to `chat`.
+default to `chat`. `conversations.persona` (`assistant` or `roleplay`) was added the same way; older rows default to
+`assistant`.
 
 ### User profile (Settings → Hồ sơ)
 
@@ -323,6 +325,24 @@ it on first paint without a second request or a visible name swap. The greeting 
 comes from `frontend/src/timeGreeting.ts`: a few lines per time-of-day slot on the
 **browser** clock (unlike chat, which trusts the server clock), re-picked when the tab
 becomes visible again in a new slot or day.
+
+### Roleplay mode
+
+A conversation's `persona` is `assistant` (default) or `roleplay`, chosen before its first message and stored on the
+row; the owner picked this design from mockups. `POST /api/chat` only honours `persona` when it creates the
+conversation. Later turns always use the stored value, so a history never mixes the two voices.
+`_check_roleplay_start` rejects roleplay for Companion (400), guest accounts (403) and accounts with no row in
+`roleplay_consents` (403). `POST /api/profile/roleplay-consent` records the self-declared 18+ confirmation (guests get
+403), and `/api/auth/me` returns `roleplay_confirmed` so the dialog only shows once.
+
+Roleplay turns use `persona.ROLEPLAY_SYSTEM_PROMPT`: the bot's persona blocks verbatim, plus the continuity and web
+platform rules shared with the assistant. They send `PETO_ROLEPLAY_MAX_HISTORY` (default 100) past messages instead of
+`PETO_MAX_HISTORY` (20), for long stories. Memory, profile and the agent guide are appended as usual.
+
+In the UI, `ComposerMenu.tsx` shows "Chế độ nhập vai" only while the conversation has not started (disabled for
+guests). `Composer.tsx` shows a "Nhập vai" chip whose × only exists before the first message, and the sidebar marks
+roleplay conversations with "· Nhập vai". `App.tsx` holds `persona`: a new conversation or sign-out resets it, and
+opening a conversation takes it from the list.
 
 ### Discord memory gateway
 
@@ -537,9 +557,10 @@ results in the next step. The server stores no conversation (`store=False`), and
   with the bot's production data.
 - `persona.py` must not contain real names or Discord IDs of members — `tests/test_persona.py`
   asserts this. Personal context is loaded per account at runtime, not baked into the prompt.
-- Peto on the web is an AI assistant by the owner's decision. Do not bring back the Discord bot's roleplay
-  persona (age/identity, "don't always comply", insult-back, NSFW or pet roleplay, `*action*` narration)
-  unless asked; `tests/test_persona.py` checks for those leftovers.
+- Peto on the web is an AI assistant by default, by the owner's decision. The Discord bot's roleplay persona
+  (age/identity, "don't always comply", insult-back, NSFW or pet roleplay, `*action*` narration) lives only in
+  `ROLEPLAY_SYSTEM_PROMPT` behind the roleplay mode's checks. Never mix it into `SYSTEM_PROMPT` or the Agent and
+  Companion prompts; `tests/test_persona.py` checks both prompts.
 - Nothing writes back to the bot's memory. The gateway is read-only and loopback-only; it
   must never sit behind Cloudflare Tunnel.
 - No AI credential ever reaches the browser, and neither does `PETO_VOICE_WORKER_TOKEN`.
@@ -564,6 +585,9 @@ Tests use `PETO_AI_PROVIDER=mock`, a temp directory for DB/uploads/tokens, and
 `httpx.ASGITransport` (no network, no live server). Fixtures: `client` is authenticated as a
 fake Discord identity, `anon_client` is not. `read_events(response)` collects SSE events
 from a streaming response.
+
+Provider spies must patch the class (`MockProvider.stream`), never the shared instance from `get_provider()`: undoing
+an instance patch leaves an instance attribute behind, which silently hides class patches in every later test file.
 
 `tests/test_review_regressions.py` holds regressions from a prior review pass — revoked
 access, partial-reply persistence, pagination, anonymity. Treat failures there as behavioral

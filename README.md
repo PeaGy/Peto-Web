@@ -2,7 +2,7 @@
 
 Giao diện chat riêng cho Peto, **trợ lý AI** trả lời trung thực và đi thẳng vào việc: **chat chữ, xem ảnh, đọc
 PDF, Word và tệp chữ; tạo tệp DOCX/PDF với thẻ xem trước ngay trong chat và bảng tài liệu bên phải**. Tên Peto lấy từ
-bot Discord, nhưng web không dùng persona nhập vai của bot.
+bot Discord; khi muốn, người dùng bật [Chế độ nhập vai](#chế-độ-nhập-vai) để Peto trò chuyện bằng persona nhập vai của bot.
 
 Nhắn “tạo file Word/PDF…” để Peto tạo tệp, xem trước, tải trực tiếp và mở
 trong bảng tài liệu:
@@ -319,6 +319,8 @@ Giới hạn cố ý của phần này:
 
 - Prompt của web không chứa tên thật hay Discord ID của thành viên. Có test
   chặn (`tests/test_persona.py`).
+- Prompt trợ lý không chứa phần nhập vai hay nội dung người lớn. Persona nhập vai chỉ bật được ở hội thoại mới, cho
+  tài khoản Discord/Google đã xác nhận đủ 18 tuổi (có test).
 - Peto xem ảnh đính kèm và tìm web trong chat, tạo/sửa ảnh trong tab Tạo ảnh;
   chưa có nhạc. Tab Companion nói thành tiếng khi máy tạo giọng của chủ web đang kết nối (xem bên dưới).
 - Database riêng và **file token xAI riêng**; không dùng chung file nào với
@@ -404,6 +406,20 @@ thích ngắn gọn, đi thẳng vào vấn đề".
   theo thứ trong tuần.
 - Ảnh đại diện lấy từ Discord/Google, khách thì hiện chữ cái đầu; chưa tải được ảnh
   riêng lên.
+
+## Chế độ nhập vai
+
+Mặc định Peto là trợ lý AI. Muốn Peto trò chuyện như nhân vật của bot Discord, bấm dấu **+** cạnh ô nhắn ở một hội
+thoại mới rồi chọn **Chế độ nhập vai**.
+
+- Chế độ được chọn lúc bắt đầu và giữ suốt hội thoại: ô nhắn có nhãn **Nhập vai**, thanh bên ghi **· Nhập vai**. Muốn
+  quay lại trợ lý thì mở hội thoại mới.
+- Persona nhập vai có thể có nội dung người lớn, nên chỉ tài khoản Discord hoặc Google bật được, và lần đầu phải xác
+  nhận đủ 18 tuổi (lưu theo tài khoản). Máy chủ tự kiểm tra lại điều kiện này, không chỉ dựa vào giao diện.
+- Để giữ mạch truyện dài, hội thoại nhập vai gửi 100 tin gần nhất cho AI thay vì 20 tin như chat thường (đổi bằng
+  `PETO_ROLEPLAY_MAX_HISTORY`), nên mỗi lượt tốn token hơn.
+- Trí nhớ từ Discord, hồ sơ cá nhân, đọc tệp và tìm web vẫn dùng như chat thường. Tab Companion và Peto Agent luôn là
+  trợ lý.
 
 ## Companion
 
