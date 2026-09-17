@@ -253,6 +253,17 @@ class UI:
             self.line("    Nội dung không đổi.", "dim")
         self._show_diff_page()
 
+    def review_diff(self, title: str, before: str, after: str) -> None:
+        self.diff(title, before, after)
+        while self._diff_position < len(self._diff_rows):
+            try:
+                if self.reader("    [v] xem tiếp · Enter bỏ qua › ").strip().lower() != "v":
+                    break
+            except EOFError:
+                break
+            self._show_diff_page()
+        self._diff_rows = []
+
     def _diff_row(self, old: int | None, new: int | None, sign: str, text: str, digits: int,
                   color: str | None) -> None:
         prefix = f"    {str(old or ''):>{digits}} {str(new or ''):>{digits}} │ {sign} "
@@ -302,12 +313,14 @@ class UI:
         else:
             self.failure(f"{summary} · mã thoát {result['exit_code']}")
 
-    def ask_permission(self) -> str:
+    def ask_permission(self, *, allow_session: bool = False) -> str:
         """Hỏi y/n/a. Hết đầu vào (EOF) thì coi như không đồng ý."""
         self.clear_status()
         while True:
             try:
                 question = PERMISSION_QUESTION
+                if allow_session:
+                    question = "    [s] nhớ đúng lệnh này trong phiên · " + question.strip()
                 if self._diff_position < len(self._diff_rows):
                     question = "    [v] xem thêm diff · " + question.strip()
                 if self.terminal:
@@ -321,10 +334,10 @@ class UI:
             if answer == "v" and self._diff_position < len(self._diff_rows):
                 self._show_diff_page()
                 continue
-            if answer in {"y", "n", "a"}:
+            if answer in ({"y", "n", "a", "s"} if allow_session else {"y", "n", "a"}):
                 self._diff_rows = []
                 return answer
-            self.line("    Gõ y, n hoặc a nhé.", "yellow")
+            self.line("    Gõ y, n, a hoặc s nhé." if allow_session else "    Gõ y, n hoặc a nhé.", "yellow")
 
     def prompt(self, *, footer: str = "") -> str:
         self.clear_status()

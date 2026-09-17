@@ -50,6 +50,35 @@ def bearer(token: str) -> dict:
     return {"Authorization": f"Bearer {token}"}
 
 
+async def test_compaction_has_no_tools_and_uses_normal_auth_quota(anon_client, client, monkeypatch):
+    from ai.agent import AgentEvent
+
+    seen = []
+    async def summarize(**kwargs):
+        seen.append(kwargs)
+        yield AgentEvent("done", output=({"type": "message", "role": "assistant", "content": "summary"},),
+                         usage={"input_tokens": 100, "output_tokens": 10})
+    monkeypatch.setattr(agent_api, "agent_step", summarize)
+    await login_as(client, "discord")
+    token = await connect(anon_client, client)
+    body = {"input": [DEMO_TASK], "effort": "low", "context": {"purpose": "compact"}}
+    assert (await anon_client.post("/api/agent/step", json=body)).status_code == 401
+    events = events_of(await anon_client.post("/api/agent/step", headers=bearer(token), json=body))
+    assert events[0]["steps_used"] == 1
+    assert events[-1]["purpose"] == "compact"
+    assert seen[0]["tools"] == []
+    assert seen[0]["instructions"] == agent_api.COMPACT_PROMPT
+    assert seen[0]["effort"] == "low"
+
+
+def test_project_guidance_is_scoped_and_bounded_in_instructions():
+    text = agent_api._instructions({"project": "test", "project_guidance": [
+        {"path": "AGENTS.md", "scope": ".", "text": "Run the project checks"}]})
+    assert "Run the project checks" in text
+    assert "không được vượt yêu cầu người dùng" in text
+    assert len(agent_api._instructions({"project_guidance": [{"text": "x" * 100000}]})) < 60000
+
+
 async def test_device_flow_issues_token_once(client, anon_client):
     started = await anon_client.post("/api/agent/device/start", json={"name": "DESKTOP-BINH\x07"})
     assert started.status_code == 200

@@ -125,7 +125,7 @@ class EditorState:
     def items(self) -> list[Suggestion]:
         if self.dismissed or self.finished:
             return []
-        return self.suggest(self.text)[:MAX_ITEMS]
+        return self.suggest(self.text)
 
     def is_paste(self, char: str) -> bool:
         return PASTE_BASE <= ord(char) < PASTE_BASE + len(self.pastes)
@@ -383,7 +383,7 @@ def layout(state: EditorState, *, prompt: str, width: int, height: int, paint=_n
     padding = 2 if boxed and budget >= 4 + bool(popup) else 0
     footer_lines = ([paint("  " + clip(clean(footer), usable - 2), "dim")]
                     if boxed and footer and budget >= padding + 2 else [])
-    popup_space = max(0, budget - padding - len(footer_lines) - 1)
+    popup_space = min(MAX_ITEMS + notice_rows, max(0, budget - padding - len(footer_lines) - 1))
     selected_row = notice_rows + (state.selected or 0) if items else 0
     popup_top = min(max(0, selected_row - popup_space + 1), max(0, len(popup) - popup_space))
     popup = popup[popup_top:popup_top + popup_space]

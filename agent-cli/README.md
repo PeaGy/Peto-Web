@@ -107,6 +107,19 @@ nào được chọn, nên Enter không tự chạy gì. Các lệnh:
   sửa tệp thì Peto phải đọc lại tệp trước. Mở `peto` ở thư mục có hội thoại cũ sẽ có dòng nhắc.
 - `/retry`: thử lại bước bị gián đoạn kết nối, dùng kết quả các bước đã hoàn tất. Không tự phát lại lệnh hay thao tác
   sửa tệp cũ; thao tác mới vẫn hỏi quyền. Nếu đã thoát thì `/resume` trước, rồi `/retry`.
+- `/diff`: xem thay đổi do công cụ sửa/ghi tệp tạo ra trong yêu cầu gần nhất. Diff dài có thể xem tiếp bằng `v`.
+- `/undo`: xem diff rồi xác nhận hoàn tác yêu cầu gần nhất; giữ nguyên BOM và kiểu xuống dòng ban đầu, xóa các tệp
+  mới do công cụ ghi tạo ra. Nếu bất kỳ tệp nào đã bị sửa/xóa bên ngoài, từ chối trước khi hoàn tác. Đây là bản nhớ
+  trong phiên, không còn sau khi thoát, `/moi`, `/resume` hoặc bắt đầu yêu cầu mới; `/retry` vẫn giữ bản nhớ đó.
+  Thay đổi do lệnh terminal, đổi tên/xóa qua shell không thuộc bản hoàn tác. Nếu lỗi ổ đĩa xảy ra giữa chừng,
+  những tệp chưa khôi phục vẫn được giữ trong bản nhớ để kiểm tra lại; không có giao dịch nguyên khối nhiều tệp.
+- `/permissions`: xem lệnh được ghi nhớ trong phiên; `/permissions clear` thu hồi tất cả. Quyền không lưu xuống đĩa
+  và bị xóa khi `/moi` hoặc `/resume`.
+- `/compact`: tóm tắt phần hội thoại cũ, giữ các bước gần nhất và yêu cầu gần nhất nằm trong phần được tóm tắt.
+  Peto cũng tự tóm tắt giữa các bước khi lịch sử đạt 180 mục hoặc khoảng 200.000 ký tự chữ. Tóm tắt dùng một lượt
+  gọi model ở mức suy nghĩ thấp, vẫn tính bước theo model và token như bình thường. Cần cập nhật cả VPS và CLI.
+  Không chạy công cụ khi tóm tắt, không tách cặp gọi công cụ/kết quả. Lỗi, hủy hoặc máy chủ cũ thì giữ nguyên lịch sử.
+  Tóm tắt có thể bỏ sót chi tiết; tệp phải được đọc lại trước khi sửa và ảnh cũ trong phần tóm tắt được thay bằng ghi chú.
 - `/effort thap`, `/effort vua`, `/effort cao`: mức suy nghĩ, được nhớ trên máy này cho lần sau. Mức cao suy nghĩ kỹ
   hơn nhưng mỗi bước tính 2 bước. Gõ `/effort` để xem mức đang dùng; chưa chọn thì theo mặc định của máy chủ. Gõ
   `/effort` kèm dấu cách thì chọn mức trong danh sách.
@@ -169,16 +182,33 @@ mới nhất (ở terminal đủ rộng); khi xong hiện tối đa 8 dòng outp
 - `y`: đồng ý bước này.
 - `n`: không đồng ý. Peto được báo lại để hỏi bạn cách khác.
 - `a`: đồng ý mọi bước còn lại trong yêu cầu đang chạy.
+- `s` (chỉ khi chạy lệnh): đồng ý và ghi nhớ **đúng chuỗi lệnh, thư mục, thời hạn** trong phiên. Không phải quyền theo
+  tiền tố: `npm test` không cấp quyền cho `npm test && ...` hay lệnh có tham số khác. Script mà lệnh gọi vẫn có thể
+  thay đổi theo nội dung dự án; chỉ ghi nhớ lệnh bạn tin tưởng.
+
+### Hướng dẫn dự án và kiểm tra sau sửa
+
+`AGENTS.md` ở gốc dự án được đọc lại ở mỗi bước. Khi đọc một tệp, Peto nhận thêm hướng dẫn trên đường từ gốc tới
+thư mục chứa tệp đó; thư mục con có phạm vi riêng, không áp dụng sang thư mục ngang hàng. Khi hướng dẫn mới xuất hiện
+hoặc thay đổi, công cụ sửa sẽ trả hướng dẫn trước và yêu cầu Peto xem lại rồi mới sửa. Tổng hướng dẫn cho một tệp
+giới hạn 32.000 ký tự; vượt giới hạn thì báo lỗi, không âm thầm cắt. Không đọc hướng dẫn bên ngoài thư mục dự án.
+
+Peto chọn test/build/lint từ hướng dẫn và cấu hình đã đọc. Nếu kết thúc sau khi sửa mà chưa chạy lệnh nào kể từ lần
+sửa cuối, CLI nhắc kiểm tra thêm một lần; không cần hoặc không thể kiểm tra thì Peto phải nói rõ. Mọi lệnh vẫn qua
+cơ chế xin quyền. Sau tổng cộng 3 lệnh trả lỗi trong một yêu cầu, chặn chạy lệnh và sửa tiếp, để Peto báo việc còn lại.
+`/retry` giữ bộ đếm này; yêu cầu mới bắt đầu bộ đếm mới. CLI không tự coi mã thoát 0 của một lệnh bất kỳ là bằng chứng
+rằng toàn bộ dự án đã được kiểm thử.
 
 Cuối mỗi yêu cầu có một dòng tổng kết: thời gian, số tệp đã sửa, số lệnh đã chạy, độ dài hội thoại (tính bằng token) và
-số bước còn lại hôm nay. Mỗi bước gửi lại cả hội thoại cho Peto, nên khi hội thoại dài làm Peto chậm hay báo lỗi thì gõ
-`/moi`. Nhật ký từng phiên lưu ở `%LOCALAPPDATA%\PetoAgent\logs\`.
+số bước còn lại hôm nay. Có thể dùng `/compact` để giảm ngữ cảnh hoặc `/moi` để bắt đầu việc khác.
+Nhật ký từng phiên lưu ở `%LOCALAPPDATA%\PetoAgent\logs\`.
 
 ### Khi mất kết nối
 
 CLI chỉ chạy công cụ sau khi nhận đủ sự kiện hoàn tất bước. Kết nối bị cắt giữa câu trả lời thì giữ kết quả các bước
 trước, đánh dấu bước hiện tại chưa xong và trả về ô nhập. Khi mạng ổn, gõ `/retry`. Không tự gửi lại ngầm, vì một bước
-AI mà máy chủ đã nhận có thể vẫn được tính vào lượt dùng. `/retry` cũng xóa quyền `a` cũ, nên thao tác mới sẽ hỏi lại.
+AI mà máy chủ đã nhận có thể vẫn được tính vào lượt dùng. `/retry` xóa quyền `a` cũ; quyền `s` cho đúng lệnh vẫn giữ
+trong phiên, các thao tác khác sẽ hỏi lại.
 
 Nếu đã đóng CLI, mở lại trong cùng thư mục, gõ `/resume` rồi `/retry`. `/moi` hoặc gửi yêu cầu mới bỏ trạng thái chờ thử
 lại. Lỗi đăng nhập hay hết lượt vẫn cần xử lý theo thông báo; `/retry` không bỏ qua các giới hạn đó. Khi mạng im lặng

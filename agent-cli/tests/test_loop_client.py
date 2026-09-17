@@ -261,7 +261,7 @@ def test_commands_usage_and_update_notice(project, peto, monkeypatch):
               f"  irm {peto.url}/install.ps1 | iex\n")
     assert notice in ui.text, "so phiên bản theo từng số"
     assert f"Peto Agent {__version__} · project · Bình" in ui.text and "/help xem các lệnh" in ui.text
-    assert "  /effort  Xem hoặc đổi mức suy nghĩ: thap, vua, cao" in ui.text
+    assert re.search(r"/effort\s+Xem hoặc đổi mức suy nghĩ: thap, vua, cao", ui.text)
     steps = [request["body"] for request in peto.requests if request["path"] == "/api/agent/step"]
     assert [step["input"][0]["content"] for step in steps] == ["/api/users lỗi 500"], "đường dẫn API không phải lệnh"
     assert "  Hôm nay còn 190/200 bước · đã dùng 1.2k token · hội thoại này 1k token · Peto · mức vừa." in ui.text

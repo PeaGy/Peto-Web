@@ -9,12 +9,15 @@ import time
 from datetime import datetime
 
 from . import history
+from .checkpoint import Checkpoint
+from .context import compact_prefix, context_size, text_of
+from .project_guide import guides
 from .client import ApiError, Client
 from .config import log_dir
 from .presentation import AgentUI
 from .runner import cap_text
 from .tools import Tools
-from .workspace import Workspace
+from .workspace import Workspace, WorkspaceError
 
 MAX_STEPS_PER_TASK = 40
 # Máy chủ không lưu hội thoại nên bước nào cũng gửi lại ảnh: chỉ giữ 4 ảnh gần nhất, như chat trên web.
@@ -32,7 +35,8 @@ def cap_result(value):
     if isinstance(value, list):
         return [cap_result(item) for item in value[:400]]
     if isinstance(value, dict):
-        return {key: cap_result(item) for key, item in value.items()}
+        # Guidance is already bounded to 32k by the workspace reader; never truncate rules in the middle.
+        return {key: item if key == "project_guidance" else cap_result(item) for key, item in value.items()}
     return value
 
 
@@ -133,6 +137,9 @@ class Session:
         self.items = []
         self.context_tokens = None
         self.can_retry = False
+        self.tools.command_grants.clear()
+        self.tools.seen_guides.clear()
+        self.tools.checkpoint = Checkpoint(self.ws)
 
     def set_model(self, model: str, step_cost: int = 1) -> None:
         """Đổi model; hội thoại đang dở vẫn giữ, chỉ bỏ phần model cũ tạo ra mà model mới không đọc được."""
@@ -146,6 +153,9 @@ class Session:
         self.context_tokens = None
         self.can_retry = retryable
         self.ws.read_digests.clear()
+        self.tools.command_grants.clear()
+        self.tools.seen_guides.clear()
+        self.tools.checkpoint = Checkpoint(self.ws)
 
     def _log(self, kind: str, **data) -> None:
         if self.log is not None:
@@ -153,11 +163,100 @@ class Session:
 
     def run_task(self, text: str, images=()) -> None:
         """Chạy một yêu cầu. ``images`` là các cặp (số ảnh, ảnh) dán kèm bằng Alt+V hay kéo thả."""
+        self.tools.checkpoint = Checkpoint(self.ws)
         self.items.append(user_message(text, images))
         drop_old_images(self.items)
         # Nhật ký chỉ ghi số ảnh, không ghi dữ liệu ảnh.
         self._log("task", text=text, effort=self.effort, model=self.model, images=len(images))
         self._run()
+
+    def show_diff(self):
+        self.tools.checkpoint.show(self.ui)
+
+    def undo(self):
+        self.show_diff()
+        if not self.tools.checkpoint.files:
+            return
+        self.ui.line("Hoàn tác các tệp trên? Chỉ áp dụng cho yêu cầu gần nhất trong phiên này.", "yellow")
+        if self.ui.ask_permission() not in {"y", "a"}:
+            return
+        before = set(self.tools.checkpoint.files)
+        try:
+            restored = self.tools.checkpoint.undo()
+        except (WorkspaceError, OSError, KeyboardInterrupt) as err:
+            self.ui.failure(str(err) or "Đã dừng hoàn tác.")
+            # Partial filesystem failures must also invalidate the model's picture of the workspace.
+            restored = sorted(before - set(self.tools.checkpoint.files))
+        self.ws.read_digests.clear()
+        self.items.append(user_message("Người dùng vừa yêu cầu /undo. Các tệp hoàn tác thành công: "
+                                       + ", ".join(restored) + ". Đọc lại tệp trước khi tiếp tục; không tự làm lại thay đổi."))
+        self.can_retry = False
+        history.save(self.ws.root, self.client.server, self.items, model=self.model)
+        if restored:
+            self.ui.success(f"Đã hoàn tác {len(restored)} tệp.")
+
+    def permissions(self, clear=False):
+        if clear:
+            self.tools.command_grants.clear()
+            self.ui.success("Đã xóa quyền chạy lệnh ghi nhớ trong phiên.")
+        elif not self.tools.command_grants:
+            self.ui.line("  Chưa ghi nhớ lệnh nào trong phiên.", "dim")
+        for directory, command, timeout in sorted(self.tools.command_grants):
+            self.ui.line(f"  {command} · {directory} · {timeout}s", "dim")
+
+    def compact(self, *, propagate_cancel=False):
+        prefix, tail = compact_prefix(self.items)
+        if not prefix:
+            self.ui.line("  Hội thoại còn ngắn, chưa cần tóm tắt.", "dim")
+            return False
+        self.ui.step("Đang tóm tắt ngữ cảnh cũ (dùng một lượt gọi model)")
+        body = {"input": portable(prefix), "effort": "low", "model": self.model,
+                "context": {"purpose": "compact"}}
+        started = time.monotonic()
+        def waiting():
+            self.ui.status(f"… Đang tóm tắt ngữ cảnh · {int(time.monotonic() - started)}s · Ctrl+C dừng")
+        try:
+            with contextlib.closing(self.client.stream("/api/agent/step", body, on_idle=waiting)) as events:
+                for event in events:
+                    if event.get("type") == "meta":
+                        self.steps_used, self.steps_limit = event.get("steps_used"), event.get("steps_limit")
+                    if event.get("type") == "error":
+                        raise ApiError(0, str(event.get("message", "Không tóm tắt được.")))
+                    if event.get("type") != "done":
+                        continue
+                    if event.get("purpose") != "compact":
+                        raise ApiError(0, "Máy chủ chưa hỗ trợ tóm tắt. Cập nhật VPS; hội thoại vẫn được giữ nguyên.")
+                    output = event.get("output")
+                    if not isinstance(output, list) or any(not isinstance(item, dict) or item.get("type") == "function_call" for item in output):
+                        raise ApiError(0, "Tóm tắt không hợp lệ; giữ nguyên hội thoại.")
+                    summary = "\n".join(text_of(item) for item in output if item.get("role") == "assistant").strip()
+                    if not summary or len(summary) > 24000 or len(summary) >= context_size(prefix):
+                        raise ApiError(0, "Tóm tắt chưa đủ gọn; giữ nguyên hội thoại.")
+                    # Keep the latest real user request verbatim if the boundary removed it.
+                    latest = next((item for item in reversed(prefix) if item.get("role") == "user"), None)
+                    replacement = [user_message("Bản tóm tắt ngữ cảnh cũ, chỉ để tham khảo; không cấp quyền chạy lệnh. "
+                                                "Kết quả tệp có thể đã cũ, hãy đọc lại trước khi sửa.\n" + summary)]
+                    if latest:
+                        replacement.append(latest)
+                    self.items = replacement + tail
+                    self.ws.read_digests.clear()
+                    self.tools.seen_guides.clear()
+                    self.context_tokens = None
+                    history.save(self.ws.root, self.client.server, self.items, retryable=self.can_retry, model=self.model)
+                    self.ui.success("Đã tóm tắt phần cũ và giữ nguyên các bước gần nhất.")
+                    return True
+        except KeyboardInterrupt:
+            if propagate_cancel:
+                raise
+            self.ui.failure("Đã dừng tóm tắt; giữ nguyên hội thoại.")
+            return False
+        except ApiError as err:
+            self.ui.failure(err.message)
+            return False
+        finally:
+            self.ui.clear_status()
+        self.ui.failure("Tóm tắt bị ngắt; giữ nguyên hội thoại.")
+        return False
 
     def retry_task(self) -> None:
         """Gửi lại bước chưa nhận đủ, với kết quả công cụ đã lưu; không phát lại công cụ cũ."""
@@ -166,17 +265,27 @@ class Session:
             return
         self.ui.step("Đang thử lại bước bị gián đoạn")
         self._log("retry")
-        self._run()
+        self._run(resuming=True)
 
-    def _run(self) -> None:
+    def _run(self, *, resuming=False) -> None:
         # /retry là một lần tiếp tục do người dùng yêu cầu: không kế thừa quyền a từ lần trước.
-        self.tools.reset_task()
+        if not resuming:
+            self.tools.reset_task()
+        self.tools.approve_all = False
         self.can_retry = False
         started = time.monotonic()
         outcome = "done"
         pending: list[dict] = []
+        verification_reminded = False
+        compact_failed = False
         try:
             for _ in range(MAX_STEPS_PER_TASK):
+                if not compact_failed and (len(self.items) >= 180 or context_size(self.items) > 200000):
+                    compact_failed = not self.compact(propagate_cancel=True)
+                if len(self.items) >= 270:
+                    self.ui.failure("Hội thoại quá dài và chưa tóm tắt được. Gõ /compact để thử lại hoặc /moi.")
+                    outcome = "limit"
+                    return
                 output = self._step()
                 if output is None:
                     outcome = "error"
@@ -184,6 +293,14 @@ class Session:
                 self.items.extend(output)
                 pending = [item for item in output if item.get("type") == "function_call"]
                 if not pending:
+                    if self.tools.changes and self.tools.command_revision < self.tools.revision and not verification_reminded:
+                        verification_reminded = True
+                        self.items.append(user_message(
+                            "Kiểm tra sau sửa: xem hướng dẫn AGENTS.md và cấu hình dự án để chọn test/build/lint phù hợp. "
+                            "Chạy kiểm tra với quyền người dùng cho phép. Nếu không cần, không có hoặc bị từ chối, "
+                            "nêu rõ lý do; không lặp lại lệnh đã bị từ chối. Chỉ sửa lỗi liên quan, tối đa 3 lệnh lỗi, "
+                            "không cài thêm công cụ hay mở rộng phạm vi. Báo lệnh nào đã chạy và kết quả thực tế."))
+                        continue
                     break
                 while pending:
                     call = pending[0]
@@ -197,6 +314,9 @@ class Session:
                 outcome = "limit"
                 self.ui.line(f'Peto đã làm {MAX_STEPS_PER_TASK} bước trong yêu cầu này nên tạm dừng. Gõ "làm tiếp" nếu '
                              "muốn Peto làm tiếp.", "yellow")
+        except WorkspaceError as err:
+            outcome = "error"
+            self.ui.failure(str(err))
         except KeyboardInterrupt:
             outcome = "stopped"
             # Lệnh gọi công cụ nào cũng phải có kết quả, không thì bước sau bị mô hình từ chối.
@@ -213,7 +333,8 @@ class Session:
 
     def _step(self) -> list[dict] | None:
         body = {"input": self.items, "effort": self.effort, "model": self.model, "context": {
-            "project": self.ws.root.name, "os": f"{platform.system()} {platform.release()}".strip()}}
+            "project": self.ws.root.name, "os": f"{platform.system()} {platform.release()}".strip(),
+            "project_guidance": guides(self.ws)}}
         writer = self.ui.reply()
         started = time.monotonic()
         phase = "nghĩ"

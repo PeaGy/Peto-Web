@@ -20,7 +20,7 @@ from .workspace import Workspace
 HINT_WITH_MENU = "Gõ yêu cầu cho Peto · / chọn lệnh · Alt+V dán ảnh · Ctrl+C dừng yêu cầu"
 HINT_PLAIN = "Gõ yêu cầu cho Peto · /help xem các lệnh · Ctrl+C dừng yêu cầu"
 # Lệnh không nhận gì phía sau; gõ thêm chữ thì nhắc chứ không gửi cả câu cho Peto.
-PLAIN_COMMANDS = {"/thoat", "/exit", "/quit", "/moi", "/help", "/resume", "/usage", "/retry"}
+PLAIN_COMMANDS = {"/thoat", "/exit", "/quit", "/moi", "/help", "/resume", "/usage", "/retry", "/diff", "/undo", "/compact"}
 EFFORT_LABELS = {"low": "thấp", "medium": "vừa", "high": "cao"}
 # Giống STEP_COST của máy chủ: mức cao tính gấp đôi, nhân với số bước của model.
 EFFORT_COST = {"low": 1, "medium": 1, "high": 2}
@@ -365,6 +365,18 @@ def session(ui: UI) -> int:
             continue
         if name == "/retry":
             work.retry_task()
+            continue
+        if name in {"/diff", "/undo", "/compact"}:
+            try:
+                {"/diff": work.show_diff, "/undo": work.undo, "/compact": work.compact}[name]()
+            except (KeyboardInterrupt, EOFError):
+                ui.line("Đã dừng.", "dim")
+            continue
+        if name == "/permissions":
+            if value not in {"", "clear"}:
+                ui.line("Dùng /permissions hoặc /permissions clear.", "yellow")
+            else:
+                work.permissions(clear=value == "clear")
             continue
         if name == "/usage":
             _usage(ui, work)

@@ -14,6 +14,8 @@ import re
 from pathlib import Path
 
 from . import runner
+from .checkpoint import Checkpoint
+from .project_guide import GuideUpdate, guides
 from .presentation import AgentUI
 from .workspace import SKIPPED_DIRS, Workspace, WorkspaceError
 
@@ -41,6 +43,12 @@ class Tools:
         self.approve_all = False
         self.changes: dict[str, list[int]] = {}
         self.commands: list[dict] = []
+        self.checkpoint = Checkpoint(workspace)
+        self.command_grants: set[tuple[str, str, int]] = set()
+        self.seen_guides: dict[str, str] = {}
+        self.failed_commands = 0
+        self.revision = 0
+        self.command_revision = -1
         self._handlers = {
             "list_files": self.list_files,
             "read_file": self.read_file,
@@ -54,11 +62,25 @@ class Tools:
         self.approve_all = False
         self.changes = {}
         self.commands = []
+        self.failed_commands = 0
+        self.revision = 0
+        self.command_revision = -1
+
+    def _guidance(self, target, *, reading=False):
+        current = guides(self.ws, target)
+        changed = any(self.seen_guides.get(item['path']) != item['digest'] for item in current)
+        for item in current:
+            self.seen_guides[item['path']] = item['digest']
+        if changed and not reading:
+            raise GuideUpdate(current)
+        return current
 
     def call(self, name: str, arguments: str) -> dict:
         handler = self._handlers.get(name)
         if handler is None:
             return {"error": f"Peto Agent không có công cụ {name}."}
+        if self.failed_commands >= 3 and name in {"edit_file", "write_file"}:
+            return {"error": "Đã có 3 lệnh lỗi. Dừng sửa tiếp, báo phần còn lại và đợi yêu cầu mới."}
         try:
             params = json.loads(arguments or "{}")
         except (TypeError, ValueError):
@@ -71,6 +93,9 @@ class Tools:
             return {"error": f"Tham số không đúng với công cụ {name}."}
         try:
             return handler(**params)
+        except GuideUpdate as err:
+            self.ui.step(str(err))
+            return {"error": str(err), "project_guidance": err.guidance}
         except WorkspaceError as err:
             self.ui.failure(str(err))
             return {"error": str(err)}
@@ -140,7 +165,7 @@ class Tools:
         end = max(0, min(total, end_line or total, start + MAX_READ_LINES - 1))
         self.ui.step(f"Đọc {rel} (dòng {start}–{end})" if total else f"Đọc {rel} (tệp trống)")
         return {"path": rel, "start_line": start, "end_line": end, "total_lines": total,
-                "content": "\n".join(lines[start - 1:end])}
+                "content": "\n".join(lines[start - 1:end]), "project_guidance": self._guidance(target, reading=True)}
 
     def search_files(self, pattern: str, path: str | None = None, glob: str | None = None) -> dict:
         try:
@@ -172,6 +197,8 @@ class Tools:
 
     def edit_file(self, path: str, old_text: str, new_text: str) -> dict:
         target = self.ws.resolve(path)
+        self._guidance(target)
+        self.checkpoint.check(target)
         rel = self.ws.relative(target)
         known = self.ws.read_digests.get(target)
         if known is None:
@@ -194,13 +221,19 @@ class Tools:
             return {"error": REFUSED.format(action=f"sửa {rel}")}
         if self.ws.read(target).digest != file.digest:
             raise WorkspaceError(f"{rel} vừa bị đổi trong lúc chờ đồng ý. Đọc lại rồi sửa nhé.")
+        self._guidance(target)
+        raw = target.read_bytes()
         self.ws.write(target, updated, newline=file.newline, bom=file.bom)
+        self.checkpoint.record(target, raw, target.read_bytes())
+        self.revision += 1
         added, removed = self._record(rel, file.text, updated)
         self.ui.success(f"Đã sửa {rel} (+{added} −{removed})")
         return {"ok": True, "path": rel, "added_lines": added, "removed_lines": removed}
 
     def write_file(self, path: str, content: str) -> dict:
         target = self.ws.resolve(path, must_exist=False)
+        self._guidance(target)
+        self.checkpoint.check(target)
         rel = self.ws.relative(target)
         if target.is_dir():
             raise WorkspaceError(f"{rel} là thư mục.")
@@ -218,7 +251,11 @@ class Tools:
             return {"error": REFUSED.format(action=f"ghi {rel}")}
         if (self.ws.read(target).digest != original) if existed else target.exists():
             raise WorkspaceError(f"{rel} vừa bị đổi trong lúc chờ đồng ý. Đọc lại rồi ghi nhé.")
+        self._guidance(target)
+        raw = target.read_bytes() if existed else None
         self.ws.write(target, after, newline=newline, bom=bom)
+        self.checkpoint.record(target, raw, target.read_bytes())
+        self.revision += 1
         added, removed = self._record(rel, before, after)
         self.ui.success(("Đã ghi đè " if existed else "Đã tạo ") + f"{rel} (+{added} −{removed})")
         return {"ok": True, "path": rel, "created": not existed, "added_lines": added, "removed_lines": removed}
@@ -228,14 +265,30 @@ class Tools:
         if not command:
             raise WorkspaceError("Lệnh đang trống.")
         timeout = max(1, min(600, timeout_seconds or 120))
+        if self.failed_commands >= 3:
+            return {"error": "Đã có 3 lệnh lỗi trong yêu cầu này. Dừng thử sửa/chạy tiếp và báo lỗi còn lại cho người dùng."}
         self.ui.command(command, str(self.ws.root), timeout)
-        if not self._approve():
+        grant = (str(self.ws.root), command, timeout)
+        allowed = self.approve_all or grant in self.command_grants
+        if not allowed:
+            answer = self.ui.ask_permission(allow_session=True)
+            allowed = answer in {"y", "a", "s"}
+            if answer == "a":
+                self.approve_all = True
+            if answer == "s":
+                self.command_grants.add(grant)
+                self.ui.line("  Đã nhớ đúng lệnh, thư mục và thời hạn này trong phiên. /permissions để xem hoặc xóa.", "dim")
+        if not allowed:
             self.ui.failure("Không chạy lệnh")
             return {"error": REFUSED.format(action="chạy lệnh này")}
         try:
+            self.checkpoint.shell_used = True
             result = runner.run(command, self.ws.root, timeout, on_progress=self.ui.command_progress)
         finally:
             self.ui.clear_status()
         self.commands.append({"command": command, "exit_code": result["exit_code"], "error": result.get("error")})
+        self.command_revision = self.revision
+        if result["exit_code"] != 0 or result.get("error"):
+            self.failed_commands += 1
         self.ui.command_result(result)
         return result

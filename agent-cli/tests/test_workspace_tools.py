@@ -53,7 +53,7 @@ def test_edit_needs_a_fresh_read_and_keeps_crlf(project):
     assert "read_file" in tools.call("edit_file", args(path="app.py", old_text="line2", new_text="x"))["error"]
 
     read = tools.call("read_file", args(path="app.py", start_line=2, end_line=3))
-    assert read == {"path": "app.py", "start_line": 2, "end_line": 3, "total_lines": 3, "content": "line2\nline3"}
+    assert read == {"path": "app.py", "start_line": 2, "end_line": 3, "total_lines": 3, "content": "line2\nline3", "project_guidance": []}
     (project / "app.py").write_bytes(b"line1\r\nchanged\r\nline3\r\n")
     assert "đã thay đổi" in tools.call("edit_file", args(path="app.py", old_text="changed", new_text="x"))["error"]
 
