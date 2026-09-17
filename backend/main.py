@@ -26,6 +26,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
+import agent_api
+import agent_install
 import attachments as attachment_lib
 import auth
 import db
@@ -107,6 +109,9 @@ app.include_router(imagine_api.router)
 app.include_router(profile_api.router)
 app.include_router(voice_api.router)
 app.include_router(document_api.router)
+app.include_router(agent_api.router)
+# /install.ps1 nằm ngoài /api: phải đăng ký trước static_files.mount ở cuối tệp.
+app.include_router(agent_install.router)
 
 
 class AttachmentIn(BaseModel):

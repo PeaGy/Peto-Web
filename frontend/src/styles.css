@@ -2297,6 +2297,20 @@ label,
   .settings-button { transition: none; }
 }
 
+/* ---------- Peto Agent: hộp cho phép kết nối và mục trong Cài đặt ---------- */
+.confirm-dialog .agent-code {
+  margin: 14px 0 0; padding: 10px; border-radius: 10px; background: var(--panel-2); color: var(--text);
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 20px; letter-spacing: 0.12em; text-align: center;
+}
+.agent-device-name { color: var(--text); font-weight: 600; }
+.dialog-actions .agent-allow { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.agent-devices { list-style: none; margin: 10px 0 0; padding: 0; }
+.agent-devices li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); }
+.agent-devices li > div { display: grid; gap: 2px; min-width: 0; }
+.agent-devices strong { font-size: 13.5px; font-weight: 600; overflow-wrap: anywhere; }
+.agent-devices span { color: var(--muted); font-size: 12px; }
+.agent-empty code { font-size: 12px; }
+
 /* ---------- Nhân vật trong Cài đặt ---------- */
 .settings-subsection { margin-top: 20px; }
 

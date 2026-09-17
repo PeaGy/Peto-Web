@@ -167,6 +167,21 @@ MAX_IMAGINE_PROMPT_CHARS = _env_int("PETO_MAX_IMAGINE_PROMPT_CHARS", 2000, 20, 8
 MAX_IMAGINE_N = _env_int("PETO_MAX_IMAGINE_N", 4, 1, 10)
 MAX_IMAGINE_SOURCE_BYTES = _env_int("PETO_MAX_IMAGINE_SOURCE_BYTES", 8 * 1024 * 1024, 1024, 20 * 1024 * 1024)
 
+# --- Peto Agent (CLI trên máy người dùng) --------------------------------
+# CLI giữ vòng lặp và tự chạy công cụ; máy chủ chỉ xác thực, đếm bước và gọi mô hình.
+AGENT_MODEL = os.getenv("PETO_AGENT_MODEL", "").strip() or XAI_MODEL
+AGENT_REASONING = os.getenv("PETO_AGENT_REASONING", "medium").strip().lower()
+if AGENT_REASONING not in {"low", "medium", "high"}:
+    AGENT_REASONING = "medium"
+# Mỗi lần gọi mô hình là một bước. Chủ web yêu cầu giới hạn này riêng cho agent;
+# chat vẫn không giới hạn lượt.
+AGENT_DAILY_STEPS = _env_int("PETO_AGENT_DAILY_STEPS", 200, 1, 10000)
+AGENT_MAX_CONCURRENT = _env_int("PETO_AGENT_MAX_CONCURRENT", 2, 1, 10)
+AGENT_MAX_QUEUE = _env_int("PETO_AGENT_MAX_QUEUE", 4, 0, 50)
+AGENT_MAX_REQUEST_BYTES = _env_int("PETO_AGENT_MAX_REQUEST_BYTES", 2 * 1024 * 1024, 64 * 1024, 16 * 1024 * 1024)
+AGENT_TOKEN_IDLE_DAYS = _env_int("PETO_AGENT_TOKEN_IDLE_DAYS", 30, 1, 365)
+AGENT_STEP_TIMEOUT_SECONDS = _env_float("PETO_AGENT_STEP_TIMEOUT_SECONDS", 300.0, 10.0, 600.0)
+
 # --- Phục vụ frontend đã build (production) ------------------------------
 # Khi thư mục này tồn tại, backend phục vụ luôn giao diện; VPS chỉ cần một
 # tiến trình và một cổng. Lúc dev thì không có `dist`, Vite lo phần giao diện.

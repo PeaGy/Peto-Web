@@ -16,8 +16,9 @@ allowlist.
 ## Language convention
 
 Agent/CLI planning context is recorded in [PETO_AGENT_PLAN.md](PETO_AGENT_PLAN.md).
-The clarified direction is a Windows CLI executing local project tools, with VPS
-authentication, model calls and orchestration. Docker is optional; web Work is later scope.
+The clarified direction is a Windows CLI that runs the loop and executes local project tools, with VPS
+authentication, step limits and model calls (first version: "Peto Agent (CLI)" below). Docker is optional; web
+Work is later scope.
 It distinguishes agreed direction from open implementation choices and does not
 authorize deployment. Consult it when continuing Agent/CLI discussions or work.
 
@@ -49,6 +50,9 @@ cd frontend && npm test                          # vitest run
 cd frontend && npx vitest run tests/App.test.tsx
 cd frontend && npx vitest run tests/App.test.tsx -t "partial test name"
 cd frontend && npm run build                     # tsc -b && vite build -> frontend/dist
+
+# Peto Agent CLI tests (stdlib-only CLI; uses the repo venv's pytest)
+.venv/Scripts/python.exe -m pytest agent-cli/tests
 
 # xAI login (run once on the machine hosting the server; only for PETO_AI_PROVIDER=xai)
 cd backend && ../.venv/Scripts/python.exe -m xai_auth login    # or: status | logout
@@ -289,7 +293,8 @@ same way, preserving existing rows. Note that `PRAGMA foreign_keys=ON` is set pe
 where cascade deletes matter (SQLite has it off by default).
 
 Tables: `conversations`, `messages`, `attachments`, `users`, `user_profiles`,
-`imagine_jobs`, `imagine_images`. `users` is the only place mapping a web account to a Discord ID.
+`imagine_jobs`, `imagine_images`, `agent_devices`, `agent_usage`. `users` is the only place mapping a web account to a
+Discord ID.
 `conversations.mode` (`chat` or `companion`) was added with the same manual migration; older rows
 default to `chat`.
 
@@ -414,6 +419,54 @@ Vietnamese message, and each caller shows its own error. Companion's speech keys
 - The backend only relays text and WAV bytes. Never add TTS models or their packages to the backend
   or the frontend: `pip install` and `npm ci` on the VPS would ship them to every deployment.
 
+### Peto Agent (CLI)
+
+`agent-cli/` is a stdlib-only Python CLI (`peto`) that runs on the user's machine. **The CLI owns the loop**: it
+sends the whole conversation to `POST /api/agent/step`, the backend makes exactly one model call and streams `meta` /
+`thinking` / `delta` / `done{output, usage}` / `error`, and the CLI runs the requested tools locally and sends their
+results in the next step. The server stores no conversation (`store=False`), and the xAI credential never leaves it.
+
+- **Login** is a device-code flow in `agent_api.py`. `device/start` returns a `XXXX-XXXX` code; the user opens
+  `/?agent_code=…`, where `AgentConnectDialog.tsx` keeps the code in `sessionStorage` across OAuth redirects; `POST
+  device/{code}` allows or denies; `device/token` hands the CLI a `peto_…` token exactly once. The fixed routes must stay
+  declared before `/device/{user_code}`. Pending codes live in RAM for 10 minutes, so this needs the single-process
+  backend, like the voice relay. Only the token's SHA-256 is stored (`agent_devices`), and tokens unused for
+  `PETO_AGENT_TOKEN_IDLE_DAYS` stop working. Settings → Peto Agent (`AgentSettings.tsx`) lists and revokes devices.
+- **Guest accounts cannot use the agent**, by the owner's call: `web_owner` and `device_auth` reject `guest:` owners.
+- **Daily step cap.** `PETO_AGENT_DAILY_STEPS`, counted in `agent_usage` by `DEFAULT_TIMEZONE` day, is a per-account
+  quota the owner explicitly asked for, and only for the agent; chat stays unlimited. `take_agent_step` checks and
+  increments in one statement, and a step that fails before the model produces anything is refunded. Agent steps use
+  their own `Admission` instance, so they never take chat's slots.
+- **`/step` input is validated**: body size (`PETO_AGENT_MAX_REQUEST_BYTES`), at most 300 items, only `message` /
+  `function_call` / `function_call_output` / `reasoning`, and messages only as `user` or `assistant`. The instructions
+  are always the server's: `PERSONA_PROMPT` + `persona.AGENT_PROMPT` + time context + project/OS line. Tool schemas are
+  server-owned (`agent_tools.py`). `ai/agent.py` holds the xAI call and a mock that runs a scripted `__demo__` task (read
+  `README.md` → edit its first line → run a command → summarize) based on the tool results the CLI sends back.
+- **The CLI enforces permissions locally** (`workspace.py`, `tools.py`, `runner.py`):
+  - Resolved paths, following symlinks and junctions, must stay under the folder it was opened in, which cannot be a
+    drive root or the home directory.
+  - `.env*`, keys and `.git` are never read or written.
+  - An edit needs a prior `read_file`, an exact unique match and an unchanged file, and keeps CRLF/BOM.
+  - Every edit, write and command asks `[y/n/a]`, where `a` lasts for the current request only.
+  - Commands run with a timeout; timeout or Ctrl+C kills the whole tree with `taskkill /T`.
+  - Tool results are capped at 20k characters. A stopped request still appends an output for every pending call, so the
+    next step stays valid for the model.
+- **One-line install** (`irm https://<site>/install.ps1 | iex`). `agent_install.py` serves `GET /install.ps1`, which is
+  outside `/api`, so its router must stay included before the static catch-all, plus `GET /api/agent/download/<wheel>`.
+  The backend builds a pure-Python wheel of `agent-cli` itself with `zipfile` from `pyproject.toml` (no setuptools) and
+  adds `peto_agent/default_server.txt`, the last fallback `config.default_server()` gives `peto login`. Builds are
+  byte-for-byte reproducible (fixed zip timestamps), so the SHA-256 filled into the script matches the download that
+  follows. The origin comes from the request, because `PETO_FRONTEND_URL` is normally empty; it must be https or loopback
+  http, which in production relies on uvicorn's `--proxy-headers` behind Cloudflare Tunnel.
+- **`agent-cli/install.ps1`** is the template. It must run on Windows PowerShell 5.1, and the response needs
+  `charset=utf-8`, or 5.1 decodes the Vietnamese wrongly and the mangled bytes can break its quoting. Everything runs
+  inside `& { }` and never calls `exit`, which under `iex` would close the user's window. It creates a venv under
+  `%LOCALAPPDATA%\PetoAgent`, copies `peto.exe` into `bin` (renaming a running copy aside), and appends `bin` to the user
+  PATH through the registry without expanding existing `%VAR%` entries. It has no automated test: after editing it, run
+  it against a local backend with `PETO_AGENT_INSTALL_DIR` and `PETO_AGENT_NO_MODIFY_PATH=1`, as in `agent-cli/README.md`.
+- `backend/tests/test_agent_api.py`, `backend/tests/test_agent_install.py` (including a real `pip install` of the wheel)
+  and `agent-cli/tests/` cover this; the CLI tests run the loop against a fake SSE server on 127.0.0.1.
+
 ## Frontend conventions
 
 - **Stale-response guarding.** Async loads use a monotonically increasing `useRef` counter
@@ -457,7 +510,8 @@ Vietnamese message, and each caller shows its own error. Companion's speech keys
   must never sit behind Cloudflare Tunnel.
 - No AI credential ever reaches the browser, and neither does `PETO_VOICE_WORKER_TOKEN`.
 - Registration is open by the owner's explicit decision. Do not add an allowlist, invite
-  code, or per-account quota back unless asked for it.
+  code, or per-account quota back unless asked for it. The Peto Agent daily step cap is the one per-account
+  quota the owner asked for; keep it scoped to the agent.
 - Guest and Google accounts must never resolve to a Discord ID — that isolation is the
   only thing keeping the bot's memory private now that anyone can sign in.
 - Do not rename model slugs (`grok-4.6`, `grok-imagine-image-2.0`), the `/api/imagine` path,

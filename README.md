@@ -84,6 +84,12 @@ npm test
 npm run build
 ```
 
+Kiểm thử Peto Agent CLI (chỉ dùng thư viện chuẩn, chạy bằng pytest của venv):
+
+```bash
+.venv/Scripts/python.exe -m pytest agent-cli/tests
+```
+
 Sau đợt thêm tài liệu, tìm web và menu dấu +: **295 test backend, 164 test frontend đạt**;
 TypeScript và Vite build đạt. Các test bao gồm thu hồi quyền, chuyển hội thoại
 với kết quả tải về không đúng thứ tự, giữ bản nháp, dừng phản hồi, lưu câu trả lời
@@ -451,6 +457,27 @@ bắt đầu lại đều chạy trong trình duyệt; đợt đó chưa thử p
 giọng qua VPS có test tự động bằng WAV giả (`backend/tests/test_voice.py`,
 `backend/tests/test_voice_worker.py`); nghe thật qua mạng sau khi triển khai cần thử theo mục
 **Kiểm chứng trước khi dùng thật** trong `voice-worker/README.md`.
+
+## Peto Agent
+
+Peto Agent là chương trình dòng lệnh chạy trên máy Windows của bạn, nằm ở `agent-cli/`. Mở nó trong thư mục dự án
+rồi nhờ Peto sửa code: Peto đọc, tìm, sửa tệp và chạy lệnh kiểm tra ngay trên máy bạn, còn VPS chỉ xác thực, đếm số bước
+và gọi mô hình AI. Cách cài, đăng nhập và sử dụng nằm trong `agent-cli/README.md`.
+
+- **Cài:** mở PowerShell và chạy `irm https://<địa chỉ Peto>/install.ps1 | iex` (cần Python 3.12 trở lên). Bộ cài tải
+  gói từ chính VPS, cài vào `%LOCALAPPDATA%\PetoAgent` và thêm lệnh `peto` vào PATH; chạy lại lệnh đó để cập nhật.
+- **Tài khoản:** chỉ Discord hoặc Google dùng được; tài khoản khách thì không.
+- **Đăng nhập CLI:** lệnh `peto login` in một liên kết kèm mã. Mở liên kết trên trình duyệt đã đăng nhập Peto,
+  bấm **Cho phép** khi mã khớp. **Cài đặt → Peto Agent** hiện số bước còn lại hôm nay và các máy đã kết nối, ngắt được
+  từng máy.
+- **Giới hạn bước:** mỗi lần gọi mô hình là một bước; mỗi tài khoản có 200 bước mỗi ngày (đổi bằng
+  `PETO_AGENT_DAILY_STEPS`). Bước bị lỗi trước khi mô hình kịp phản hồi thì được trả lại.
+- **Quyền:** đọc và tìm trong thư mục thì Peto tự làm; sửa tệp, tạo tệp và chạy lệnh luôn hỏi bạn trước. Peto không đọc
+  hay sửa `.env`, khóa và `.git`, và không ra ngoài thư mục dự án.
+- **Dữ liệu:** nội dung tệp Peto đọc và output lệnh đi qua VPS tới dịch vụ AI; VPS không lưu hội thoại.
+
+Bản đầu mới được thử trên máy với phản hồi giả; chưa thử với mô hình thật và chưa triển khai lên VPS. Chưa có công cụ
+trình duyệt, Docker, chạy nền hay nối lại tác vụ khi mất mạng.
 
 ## Chưa có ở bước này
 

@@ -42,6 +42,8 @@ import Imagine from "./Imagine";
 import { useLocalVoice } from "./LocalVoice";
 import ProfileSettings from "./ProfileSettings";
 import VoiceSettings from "./VoiceSettings";
+import AgentConnectDialog, { forgetAgentCode, takeAgentCode } from "./AgentConnectDialog";
+import AgentSettings from "./AgentSettings";
 import CharacterSettings from "./CharacterSettings";
 import { useCharacters } from './useCharacters';
 const CharacterPicker = lazy(() => import('./CharacterPicker'));
@@ -451,6 +453,8 @@ export default function App() {
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
   const [guestBusy, setGuestBusy] = useState(false);
+  // Liên kết do peto login in ra mang ?agent_code=; mã được giữ qua lúc đăng nhập chuyển hướng.
+  const [agentCode, setAgentCode] = useState<string | null>(takeAgentCode);
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [conversationId, setConversationId] = useState<string | null>(null);
@@ -1537,6 +1541,8 @@ export default function App() {
 
           <VoiceSettings voice={localVoice} open={settingsOpen} />
 
+          <AgentSettings open={settingsOpen} isGuest={auth.user?.provider === "guest"} onUnauthorized={handleUnauthorized} />
+
           <section className="settings-section">
             <h3>Tài khoản</h3>
             <div className="settings-account">
@@ -1563,6 +1569,8 @@ export default function App() {
         </div>
       </dialog>
       {characterPickerOpen && <Suspense fallback={null}><CharacterPicker library={characters} onClose={() => setCharacterPickerOpen(false)} /></Suspense>}
+      {agentCode && <AgentConnectDialog code={agentCode} isGuest={auth.user?.provider === "guest"}
+        onClose={() => { forgetAgentCode(); setAgentCode(null); }} onUnauthorized={handleUnauthorized} />}
       <dialog ref={deleteDialogRef} className="confirm-dialog" aria-labelledby="delete-title" onCancel={(event) => {
         event.preventDefault();
         if (!deleting) setDeleteTarget(null);

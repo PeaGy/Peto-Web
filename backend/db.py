@@ -209,6 +209,37 @@ async def init_db() -> None:
             )
             """
         )
+        # Peto Agent: mỗi máy chạy CLI có một token riêng; chỉ lưu mã băm, không lưu token.
+        await db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS agent_devices (
+                id TEXT PRIMARY KEY,
+                owner TEXT NOT NULL,
+                name TEXT NOT NULL,
+                token_hash TEXT NOT NULL UNIQUE,
+                created_at REAL NOT NULL,
+                last_used_at REAL NOT NULL,
+                revoked_at REAL
+            )
+            """
+        )
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_agent_devices_owner "
+            "ON agent_devices(owner, last_used_at DESC)"
+        )
+        # Số bước agent đã dùng theo ngày (giờ PETO_DEFAULT_TIMEZONE) cho mỗi tài khoản.
+        await db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS agent_usage (
+                owner TEXT NOT NULL,
+                day TEXT NOT NULL,
+                steps INTEGER NOT NULL DEFAULT 0,
+                input_tokens INTEGER NOT NULL DEFAULT 0,
+                output_tokens INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (owner, day)
+            )
+            """
+        )
         await init_document_tables(db)
         await db.commit()
 
@@ -747,3 +778,115 @@ async def set_imagine_image_liked(owner: str, image_id: str, liked: bool) -> boo
         )
         await db.commit()
         return cursor.rowcount > 0
+
+
+async def create_agent_device(*, owner: str, name: str, token_hash: str) -> dict:
+    device_id = uuid.uuid4().hex
+    now = time.time()
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "INSERT INTO agent_devices (id, owner, name, token_hash, created_at, last_used_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (device_id, owner, name, token_hash, now, now),
+        )
+        await db.commit()
+    return {"id": device_id, "name": name, "created_at": now, "last_used_at": now}
+
+
+async def find_agent_device(token_hash: str, *, idle_seconds: float) -> dict | None:
+    """Máy ứng với token, bỏ qua token đã thu hồi hoặc lâu không dùng."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            """
+            SELECT id, owner, name, created_at, last_used_at
+              FROM agent_devices
+             WHERE token_hash = ? AND revoked_at IS NULL AND last_used_at >= ?
+            """,
+            (token_hash, time.time() - idle_seconds),
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+
+async def touch_agent_device(owner: str, device_id: str) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE agent_devices SET last_used_at = ? WHERE id = ? AND owner = ?",
+            (time.time(), device_id, owner),
+        )
+        await db.commit()
+
+
+async def list_agent_devices(owner: str) -> list[dict]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            """
+            SELECT id, name, created_at, last_used_at
+              FROM agent_devices
+             WHERE owner = ? AND revoked_at IS NULL
+             ORDER BY last_used_at DESC
+            """,
+            (owner,),
+        )
+        return [dict(row) for row in await cursor.fetchall()]
+
+
+async def revoke_agent_device(owner: str, device_id: str) -> bool:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "UPDATE agent_devices SET revoked_at = ? WHERE id = ? AND owner = ? AND revoked_at IS NULL",
+            (time.time(), device_id, owner),
+        )
+        await db.commit()
+        return cursor.rowcount > 0
+
+
+async def take_agent_step(owner: str, day: str, limit: int) -> int | None:
+    """Trừ một bước của ngày. Trả về số bước đã dùng sau khi trừ, hoặc None nếu đã hết lượt.
+
+    Một câu lệnh vừa kiểm vừa cộng, nên hai bước chạy cùng lúc không vượt được giới hạn.
+    """
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            """
+            INSERT INTO agent_usage (owner, day, steps) VALUES (?, ?, 1)
+            ON CONFLICT(owner, day) DO UPDATE SET steps = steps + 1 WHERE steps < ?
+            """,
+            (owner, day, limit),
+        )
+        if cursor.rowcount == 0:
+            await db.commit()
+            return None
+        cursor = await db.execute("SELECT steps FROM agent_usage WHERE owner = ? AND day = ?", (owner, day))
+        (steps,) = await cursor.fetchone()
+        await db.commit()
+        return int(steps)
+
+
+async def refund_agent_step(owner: str, day: str) -> None:
+    """Trả lại bước khi mô hình lỗi trước khi làm được gì, để người dùng không mất lượt oan."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE agent_usage SET steps = MAX(steps - 1, 0) WHERE owner = ? AND day = ?",
+            (owner, day),
+        )
+        await db.commit()
+
+
+async def add_agent_tokens(owner: str, day: str, input_tokens: int, output_tokens: int) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE agent_usage SET input_tokens = input_tokens + ?, output_tokens = output_tokens + ? "
+            "WHERE owner = ? AND day = ?",
+            (max(0, input_tokens), max(0, output_tokens), owner, day),
+        )
+        await db.commit()
+
+
+async def get_agent_steps(owner: str, day: str) -> int:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute("SELECT steps FROM agent_usage WHERE owner = ? AND day = ?", (owner, day))
+        row = await cursor.fetchone()
+        return int(row[0]) if row else 0

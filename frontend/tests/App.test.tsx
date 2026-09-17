@@ -12,6 +12,7 @@ vi.mock('../src/api', async (original) => ({
   sendMessage: vi.fn(), deleteConversation: vi.fn(), logout: vi.fn(),
   listImagineJobs: vi.fn(), createImagineJob: vi.fn(), guestLogin: vi.fn(),
   getProfile: vi.fn(), saveProfile: vi.fn(),
+  getAgentDevice: vi.fn(), answerAgentDevice: vi.fn(), listAgentDevices: vi.fn(), revokeAgentDevice: vi.fn(),
 }));
 
 const conversation = (id: string): api.Conversation => ({ id, title: id, created_at: 0, updated_at: 0, message_count: 2 });
@@ -26,6 +27,8 @@ const deferred = <T,>() => {
 beforeEach(() => {
   vi.resetAllMocks();
   localStorage.clear();
+  // Mã Peto Agent còn sót từ test trước sẽ mở hộp kết nối trong mọi test sau.
+  sessionStorage.clear();
   window.history.replaceState(null, '', '/');
   vi.mocked(api.getAuthState).mockResolvedValue({ authenticated: true, login_configured: true,
     providers: { discord: true, google: true, guest: true },
@@ -34,6 +37,7 @@ beforeEach(() => {
   vi.mocked(api.getMessages).mockResolvedValue([]);
   vi.mocked(api.deleteConversation).mockResolvedValue();
   vi.mocked(api.listImagineJobs).mockResolvedValue([]);
+  vi.mocked(api.listAgentDevices).mockResolvedValue({ devices: [], steps_used: 0, steps_limit: 200 });
   vi.mocked(documentApi.listDocuments).mockResolvedValue({ documents: [] });
   // vi.fn() trả undefined: không cài sẵn thì mọi test mở Cài đặt vỡ ở .then().
   vi.mocked(api.getProfile).mockResolvedValue({ profile: { full_name: '', nickname: '', occupation: '', instructions: '' },
@@ -45,8 +49,24 @@ beforeEach(() => {
 
 async function openApp() {
   render(<App />);
-  await screen.findByRole('button', { name: 'A', exact: true });
+  // Lần dựng đầu tiên trong tệp mất hơn 1 giây khi chạy cả bộ test song song.
+  await screen.findByRole('button', { name: 'A', exact: true }, { timeout: 5000 });
 }
+
+it('liên kết của peto login mở hộp cho phép kết nối sau khi vào app', async () => {
+  window.history.replaceState(null, '', '/?agent_code=kxmt-4p2q');
+  vi.mocked(api.getAgentDevice).mockResolvedValue({ user_code: 'KXMT-4P2Q', name: 'DESKTOP-BINH', expires_in: 500 });
+  vi.mocked(api.answerAgentDevice).mockResolvedValue();
+  await openApp();
+  const dialog = await screen.findByRole('dialog', { name: 'Kết nối Peto Agent?' });
+  expect(window.location.search).toBe('');
+  fireEvent.click(await within(dialog).findByRole('button', { name: 'Cho phép' }));
+  await within(dialog).findByText(/đã dùng được Peto Agent/);
+  expect(api.answerAgentDevice).toHaveBeenCalledWith('KXMT-4P2Q', true);
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Xong' }));
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Đã kết nối' })).toBeNull());
+  expect(sessionStorage.getItem('peto-agent-code')).toBeNull();
+});
 
 it('yêu cầu file bằng chat thường nhận thẻ xem trước, không mở trình sửa hay bắt bấm tạo lại', async () => {
   const artifact: api.DocumentArtifact = { id: 'D1', title: 'Bài văn', filename: 'Bài văn.docx', format: 'docx', style: 'essay', pages: 2, version: 1 };

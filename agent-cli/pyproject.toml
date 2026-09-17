@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "peto"
+version = "0.1.0"
+description = "Peto Agent: nhờ Peto sửa code ngay trong thư mục dự án trên máy bạn."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = []
+
+[project.scripts]
+peto = "peto_agent.__main__:main"
+
+[tool.setuptools]
+packages = ["peto_agent"]

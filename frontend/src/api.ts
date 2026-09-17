@@ -283,6 +283,46 @@ export async function setImagineImageLiked(imageId: string, liked: boolean): Pro
   return data.liked;
 }
 
+/** Máy đang chờ được cho phép dùng Peto Agent, theo mã mà lệnh peto login in ra. */
+export interface AgentDevicePending {
+  user_code: string;
+  name: string;
+  expires_in: number;
+}
+
+export interface AgentDevice {
+  id: string;
+  name: string;
+  created_at: number;
+  last_used_at: number;
+}
+
+export interface AgentDevices {
+  devices: AgentDevice[];
+  steps_used: number;
+  steps_limit: number;
+}
+
+export async function getAgentDevice(userCode: string, signal?: AbortSignal): Promise<AgentDevicePending> {
+  return json<AgentDevicePending>(await fetch(`/api/agent/device/${encodeURIComponent(userCode)}`, { signal }));
+}
+
+export async function answerAgentDevice(userCode: string, allow: boolean): Promise<void> {
+  await json(await fetch(`/api/agent/device/${encodeURIComponent(userCode)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ allow }),
+  }));
+}
+
+export async function listAgentDevices(): Promise<AgentDevices> {
+  return json<AgentDevices>(await fetch("/api/agent/devices"));
+}
+
+export async function revokeAgentDevice(deviceId: string): Promise<void> {
+  await json(await fetch(`/api/agent/devices/${encodeURIComponent(deviceId)}`, { method: "DELETE" }));
+}
+
 /**
  * Gửi tin nhắn và đọc SSE từ backend.
  *
