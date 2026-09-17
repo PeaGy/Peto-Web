@@ -31,7 +31,8 @@ def test_agent_guide_teaches_the_given_install_command():
     guide = persona.build_agent_guide(install_command=command, daily_steps=150)
     assert f"`{command}`" in guide
     for marker in ("150 bước mỗi ngày", "peto login", "Python 3.12", "Tài khoản khách không dùng được",
-                   "hỏi trước khi sửa tệp", "peto logout", "/resume", "/effort cao", "cao tính 2 bước"):
+                   "hỏi trước khi sửa tệp", "peto logout", "/resume", "/effort cao", "cao tính 2 bước",
+                   "is not recognized"):
         assert marker in guide
     generic = persona.build_agent_guide(install_command="", daily_steps=200)
     assert "https://<địa chỉ Peto>/install.ps1" in generic and "đừng tự đoán tên miền" in generic

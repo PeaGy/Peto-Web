@@ -25,8 +25,16 @@ Bộ cài lấy mọi thứ từ chính máy chủ Peto đó:
 - chép `peto.exe` sang `%LOCALAPPDATA%\PetoAgent\bin` và thêm thư mục đó vào PATH của tài khoản Windows;
 - ghi địa chỉ Peto vào gói, nên `peto login` không phải hỏi.
 
-Cửa sổ vừa chạy lệnh cài gõ được `peto` ngay; các cửa sổ dòng lệnh đang mở khác cần mở lại. Muốn cập nhật thì chạy lại
-đúng lệnh trên, kể cả khi đang có cửa sổ khác chạy `peto`. Biến môi trường tùy chọn: `PETO_AGENT_INSTALL_DIR` để cài chỗ
+`peto` được cài một lần cho cả tài khoản Windows và dùng được ở mọi thư mục; không cần cài lại cho từng thư mục. Muốn cập
+nhật thì chạy lại đúng lệnh trên, kể cả khi đang có cửa sổ khác chạy `peto`.
+
+Cửa sổ vừa chạy lệnh cài gõ được `peto` ngay. Cửa sổ khác báo `The term 'peto' is not recognized` là vì ứng dụng terminal
+mở từ trước lúc cài (Windows Terminal, VS Code…) vẫn giữ PATH cũ, kể cả khi mở tab mới. Đóng hẳn ứng dụng rồi mở lại,
+hoặc mở PowerShell từ menu Start. Muốn dùng ngay trong cửa sổ đó thì nạp lại PATH:
+
+```powershell
+$env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('Path', 'User')
+``` Biến môi trường tùy chọn: `PETO_AGENT_INSTALL_DIR` để cài chỗ
 khác, `PETO_AGENT_NO_MODIFY_PATH=1` để không sửa PATH.
 
 Ai mở được trang Peto cũng tải được bộ cài và mã nguồn CLI; trong đó không có bí mật nào.

@@ -406,6 +406,9 @@ def build_agent_guide(*, install_command: str, daily_steps: int) -> str:
         "- Cần: Windows có Python 3.12 trở lên, và tài khoản Peto đăng nhập bằng Discord hoặc Google. Tài khoản khách "
         "không dùng được. Chưa có Python thì cài bằng `winget install -e --id Python.Python.3.14` hoặc tải ở python.org.",
         install,
+        "- `peto` cài một lần cho cả tài khoản Windows, dùng được ở mọi thư mục. Gõ `peto` mà báo không nhận ra lệnh "
+        "(The term 'peto' is not recognized) thì không cần cài lại: ứng dụng terminal mở từ trước lúc cài vẫn giữ PATH cũ, "
+        "kể cả tab mới. Đóng hẳn ứng dụng đó rồi mở lại, hoặc mở PowerShell từ menu Start.",
         "- Đăng nhập: chạy `peto login`, mở liên kết hiện ra trên trình duyệt đã đăng nhập Peto bằng Discord hoặc Google, "
         "thấy mã trên web giống hệt mã trong cửa sổ dòng lệnh thì bấm Cho phép.",
         "- Dùng: vào thư mục dự án (`cd`), gõ `peto` rồi nhắn yêu cầu. Trong phiên: `/moi` bắt đầu hội thoại mới, "

@@ -190,7 +190,10 @@
             $pathNote = "Chưa thêm vào PATH vì có PETO_AGENT_NO_MODIFY_PATH; gọi bằng đường dẫn đầy đủ: $launcher"
         } else {
             if (Add-PetoPath $bin) {
-                $pathNote = 'Đã thêm peto vào PATH. Các cửa sổ dòng lệnh đang mở khác cần mở lại mới gõ được peto.'
+                # Tab mới trong một ứng dụng terminal mở từ trước lúc cài vẫn mang PATH cũ, nên phải nói rõ cách xử lý.
+                $pathNote = ('Đã thêm peto vào PATH: cửa sổ này gõ peto được ngay. Cửa sổ khác báo không nhận ra peto thì ' +
+                    'đóng hẳn ứng dụng terminal (Windows Terminal, VS Code...) rồi mở lại, hoặc mở PowerShell từ menu Start. ' +
+                    'Không cần cài lại cho từng thư mục.')
             }
             $session = @($env:Path -split ';' | ForEach-Object { $_.TrimEnd('\') })
             if ($session -notcontains $bin.TrimEnd('\')) { $env:Path = $env:Path.TrimEnd(';') + ';' + $bin }
