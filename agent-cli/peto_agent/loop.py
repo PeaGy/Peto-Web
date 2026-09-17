@@ -40,6 +40,17 @@ def format_duration(seconds: float) -> str:
     return f"{minutes} phút {rest} giây" if rest else f"{minutes} phút"
 
 
+def format_tokens(count: int) -> str:
+    """850, 1.2k, 18k, 1.3M."""
+    if count < 1000:
+        return str(count)
+    if count < 9950:
+        return f"{count / 1000:.1f}k".replace(".0k", "k")
+    if count < 999_500:
+        return f"{round(count / 1000)}k"
+    return f"{count / 1_000_000:.1f}M".replace(".0M", "M")
+
+
 class TaskLog:
     """Nhật ký mỗi phiên, lưu trên máy người dùng. Không bao giờ chứa token."""
 
@@ -102,13 +113,17 @@ class Session:
         self.items: list[dict] = []
         self.steps_used: int | None = None
         self.steps_limit: int | None = None
+        # Độ dài hội thoại mô hình thấy ở bước gần nhất (token vào + ra): cho biết lúc nào nên /moi.
+        self.context_tokens: int | None = None
 
     def reset(self) -> None:
         self.items = []
+        self.context_tokens = None
 
     def resume(self, items: list[dict]) -> None:
         """Mở lại hội thoại đã lưu. Quên các tệp đã đọc, để Peto phải đọc lại trước khi sửa."""
         self.items = list(items)
+        self.context_tokens = None
         self.ws.read_digests.clear()
 
     def _log(self, kind: str, **data) -> None:
@@ -184,6 +199,11 @@ class Session:
                     elif kind == "done":
                         output = [item for item in event.get("output") or []
                                   if isinstance(item, dict) and item.get("type") in KEPT_ITEM_TYPES]
+                        usage = event.get("usage") if isinstance(event.get("usage"), dict) else {}
+                        total = sum(value for value in (usage.get("input_tokens"), usage.get("output_tokens"))
+                                    if isinstance(value, int) and value > 0)
+                        if total:
+                            self.context_tokens = total
                     elif kind == "error":
                         message = str(event.get("message") or "Máy chủ báo lỗi ở bước này.")
                         writer.finish()
@@ -209,6 +229,8 @@ class Session:
         if self.tools.commands:
             failed = sum(1 for command in self.tools.commands if command["exit_code"] != 0 or command["error"])
             parts.append(f"chạy {len(self.tools.commands)} lệnh" + (f" ({failed} lỗi)" if failed else ""))
+        if self.context_tokens:
+            parts.append(f"hội thoại {format_tokens(self.context_tokens)} token")
         if self.steps_used is not None and self.steps_limit is not None:
             parts.append(f"hôm nay còn {max(0, self.steps_limit - self.steps_used)}/{self.steps_limit} bước")
         self.ui.line("  " + " · ".join(parts), "dim")

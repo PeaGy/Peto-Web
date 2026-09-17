@@ -444,7 +444,16 @@ results in the next step. The server stores no conversation (`store=False`), and
   `function_call` / `function_call_output` / `reasoning`, and messages only as `user` or `assistant`. The instructions
   are always the server's: `PERSONA_PROMPT` + `persona.AGENT_PROMPT` + time context + project/OS line. Tool schemas are
   server-owned (`agent_tools.py`). `ai/agent.py` holds the xAI call and a mock that runs a scripted `__demo__` task (read
-  `README.md` → edit its first line → run a command → summarize) based on the tool results the CLI sends back.
+  `README.md` → edit its first line → run a command → summarize) based on the tool results the CLI sends back. The mock
+  estimates usage at about 4 characters per token so the CLI's token display has numbers.
+- **xAI failures are logged, not shown.** `ai/agent.py` logs the reason xAI gives (HTTP errors, `error` /
+  `response.failed` / `response.incomplete` stream events), clipped to 500 characters and without conversation content.
+  Users still get the Vietnamese `ProviderError`. Authentication errors log only the status, since their message can
+  include part of a key.
+- **Tokens.** Each `done` carries `usage`. The CLI's summary line shows the last step's input + output as `hội thoại N
+  token`, the size the model sees, so users know when to `/moi`. There is deliberately no context-window percentage,
+  because the CLI does not know the model's window. `/me` returns `tokens_used`, today's input + output total including
+  the conversation resent at every step, and `peto status` prints it.
 - **The CLI enforces permissions locally** (`workspace.py`, `tools.py`, `runner.py`):
   - Resolved paths, following symlinks and junctions, must stay under the folder it was opened in, which cannot be a
     drive root or the home directory.

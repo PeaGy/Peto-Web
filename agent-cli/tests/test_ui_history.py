@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 
 from peto_agent import history
+from peto_agent.loop import format_duration, format_tokens
 from peto_agent.ui import UI
 
 BOLD, CYAN, DIM, RESET = "\033[1m", "\033[36m", "\033[2m", "\033[0m"
@@ -61,3 +62,9 @@ def test_saved_conversation_belongs_to_one_folder_and_server(project, tmp_path):
 
     history._path(project).write_text("{hỏng", encoding="utf-8")
     assert history.load(project, "https://peto.example") is None
+
+
+def test_durations_and_token_counts_read_naturally():
+    assert [format_duration(value) for value in (0.4, 42, 60, 125)] == ["0 giây", "42 giây", "1 phút", "2 phút 5 giây"]
+    assert [format_tokens(value) for value in (850, 1000, 1234, 9960, 18432, 999_499, 999_500, 1_250_000)] == [
+        "850", "1k", "1.2k", "10k", "18k", "999k", "1M", "1.2M"]

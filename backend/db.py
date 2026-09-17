@@ -888,6 +888,17 @@ async def add_agent_tokens(owner: str, day: str, input_tokens: int, output_token
         await db.commit()
 
 
+async def get_agent_usage(owner: str, day: str) -> dict:
+    """Số bước và token Peto Agent đã dùng trong ngày."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "SELECT steps, input_tokens, output_tokens FROM agent_usage WHERE owner = ? AND day = ?", (owner, day)
+        )
+        row = await cursor.fetchone()
+    steps, input_tokens, output_tokens = row if row else (0, 0, 0)
+    return {"steps": int(steps), "input_tokens": int(input_tokens), "output_tokens": int(output_tokens)}
+
+
 async def get_agent_steps(owner: str, day: str) -> int:
     async with aiosqlite.connect(DB_PATH) as db:
         cursor = await db.execute("SELECT steps FROM agent_usage WHERE owner = ? AND day = ?", (owner, day))

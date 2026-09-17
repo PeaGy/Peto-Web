@@ -53,6 +53,19 @@ def _dump(item) -> dict:
     return item if isinstance(item, dict) else item.model_dump(mode="json", exclude_none=True)
 
 
+# Lý do lỗi xAI trả về chỉ ghi vào log máy chủ, để chủ web biết vì sao một bước hỏng (hội thoại quá dài, item bị từ
+# chối, khai báo công cụ sai...). Người dùng vẫn chỉ thấy câu báo tiếng Việt.
+MAX_LOGGED_REASON = 500
+
+
+def _clip(value) -> str:
+    return " ".join(str(value or "").split())[:MAX_LOGGED_REASON] or "không rõ lý do"
+
+
+def _describe(error) -> str:
+    return _clip(f"{getattr(error, 'code', '') or ''} {getattr(error, 'message', '') or ''}")
+
+
 async def _xai_step(instructions: str, items: list[dict], tools: list[dict], effort: str) -> AsyncIterator[AgentEvent]:
     # Import trễ như ai/__init__.py: chạy mock không cần SDK openai.
     from openai import APIConnectionError, APIStatusError, AsyncOpenAI, AuthenticationError, RateLimitError
@@ -91,7 +104,9 @@ async def _xai_step(instructions: str, items: list[dict], tools: list[dict], eff
                     yield AgentEvent("delta", delta)
             elif event_type == "response.completed":
                 response = event.response
-                if getattr(response, "status", "completed") != "completed":
+                status = getattr(response, "status", "completed")
+                if status != "completed":
+                    logger.warning("xAI kết thúc bước agent với trạng thái %s", _clip(status))
                     raise ProviderError("Mô hình chưa làm xong bước này. Thử lại nhé.")
                 usage = getattr(response, "usage", None)
                 yield AgentEvent(
@@ -104,18 +119,26 @@ async def _xai_step(instructions: str, items: list[dict], tools: list[dict], eff
                 )
                 return
             elif event_type == "response.incomplete":
+                details = getattr(getattr(event, "response", None), "incomplete_details", None)
+                logger.warning("xAI dừng bước agent giữa chừng: %s", _clip(getattr(details, "reason", "")))
                 raise ProviderError("Bước này chạm giới hạn độ dài của mô hình. Thử chia nhỏ yêu cầu nhé.")
             elif event_type in {"response.failed", "error"}:
+                error = getattr(getattr(event, "response", None), "error", None) if event_type == "response.failed" else event
+                logger.warning("xAI báo lỗi trong bước agent: %s", _describe(error))
                 raise ProviderError("Mô hình gặp lỗi ở bước này. Thử lại nhé.")
         raise ProviderError("Kết nối tới AI bị ngắt trước khi xong bước này. Thử lại nhé.")
     except AuthenticationError as err:
+        # Không ghi lời báo: lỗi xác thực có thể kèm một phần khóa.
+        logger.warning("xAI từ chối xác thực ở bước agent (HTTP %s)", err.status_code)
         raise ProviderError("Kết nối AI của Peto đã hết hạn. Người quản trị cần đăng nhập lại.") from err
     except RateLimitError as err:
+        logger.warning("xAI giới hạn lượt ở bước agent: %s", _clip(err.message))
         raise ProviderError("Dịch vụ AI đang nhận nhiều yêu cầu quá. Đợi chút rồi thử lại nhé.") from err
     except APIConnectionError as err:
+        logger.warning("Không kết nối được xAI ở bước agent: %s", _clip(err.message))
         raise ProviderError("Máy chủ Peto chưa kết nối được dịch vụ AI. Thử lại sau chút nhé.") from err
     except APIStatusError as err:
-        logger.warning("xAI HTTP %s ở bước agent", err.status_code)
+        logger.warning("xAI trả lỗi HTTP %s ở bước agent: %s", err.status_code, _clip(err.message))
         if err.status_code == 400:
             raise ProviderError("Dịch vụ AI không nhận nội dung bước này. Gõ /moi để bắt đầu hội thoại mới nhé.") from err
         raise ProviderError("Peto gặp lỗi kết nối với dịch vụ AI. Thử lại sau nhé.") from err
@@ -162,12 +185,14 @@ def _result(item: dict) -> dict:
     return value if isinstance(value, dict) else {}
 
 
-async def _speak(text: str, calls: list[dict]) -> AsyncIterator[AgentEvent]:
+async def _speak(text: str, calls: list[dict], items: list[dict]) -> AsyncIterator[AgentEvent]:
     words = text.split(" ")
     for index, word in enumerate(words):
         await asyncio.sleep(_MOCK_DELAY)
         yield AgentEvent("delta", word if index == len(words) - 1 else word + " ")
-    yield AgentEvent("done", output=(_message(text), *calls), usage={"input_tokens": 0, "output_tokens": 0})
+    # Ước lượng thô khoảng 4 ký tự một token, để dòng token của CLI có số khi chạy bằng phản hồi giả.
+    usage = {"input_tokens": len(json.dumps(items, ensure_ascii=False)) // 4, "output_tokens": len(text) // 4 + 1}
+    yield AgentEvent("done", output=(_message(text), *calls), usage=usage)
 
 
 async def _mock_step(items: list[dict]) -> AsyncIterator[AgentEvent]:
@@ -179,30 +204,33 @@ async def _mock_step(items: list[dict]) -> AsyncIterator[AgentEvent]:
     last = _result(results[-1]) if results else {}
     yield AgentEvent("thinking", "Đang xem bước tiếp theo…")
 
+    def speak(text: str, calls: list[dict]) -> AsyncIterator[AgentEvent]:
+        return _speak(text, calls, items)
+
     if "__demo__" not in task:
         reply = ("Peto đang chạy bằng phản hồi giả nên chưa làm việc thật được. Gõ một yêu cầu có __demo__ để xem "
                  "thử một vòng đọc, sửa và chạy lệnh.")
-        steps = _speak(reply, [])
+        steps = speak(reply, [])
     elif not results:
-        steps = _speak("Để Peto xem README.md trước nha.",
+        steps = speak("Để Peto xem README.md trước nha.",
                        [_call(0, "read_file", {"path": "README.md", "start_line": None, "end_line": None})])
     elif len(results) == 1:
         first = next((line for line in str(last.get("content", "")).splitlines() if line.strip()), "")
         if last.get("error") or not first:
-            steps = _speak(f"Peto chưa đọc được README.md: {last.get('error') or 'tệp trống'}.", [])
+            steps = speak(f"Peto chưa đọc được README.md: {last.get('error') or 'tệp trống'}.", [])
         else:
-            steps = _speak("Thêm một dấu vết nhỏ vào dòng đầu nhé.", [_call(1, "edit_file", {
+            steps = speak("Thêm một dấu vết nhỏ vào dòng đầu nhé.", [_call(1, "edit_file", {
                 "path": "README.md", "old_text": first, "new_text": f"{first} (Peto đã ghé qua)"})])
     elif len(results) == 2:
         if last.get("error") or not last.get("ok"):
-            steps = _speak(f"Chưa sửa được README.md nên Peto dừng ở đây: {last.get('error') or 'không rõ lý do'}.", [])
+            steps = speak(f"Chưa sửa được README.md nên Peto dừng ở đây: {last.get('error') or 'không rõ lý do'}.", [])
         else:
-            steps = _speak("Giờ chạy thử một lệnh kiểm tra.", [_call(2, "run_command", {
+            steps = speak("Giờ chạy thử một lệnh kiểm tra.", [_call(2, "run_command", {
                 "command": "python -c \"print('ok')\"", "timeout_seconds": None})])
     elif last.get("exit_code") == 0:
-        steps = _speak("Xong rồi nè: đã thêm một câu vào dòng đầu README.md, lệnh kiểm tra chạy ổn.", [])
+        steps = speak("Xong rồi nè: đã thêm một câu vào dòng đầu README.md, lệnh kiểm tra chạy ổn.", [])
     else:
         reason = last.get("error") or f"mã thoát {last.get('exit_code')}"
-        steps = _speak(f"Đã sửa README.md nhưng lệnh kiểm tra chưa qua: {reason}.", [])
+        steps = speak(f"Đã sửa README.md nhưng lệnh kiểm tra chưa qua: {reason}.", [])
     async for event in steps:
         yield event

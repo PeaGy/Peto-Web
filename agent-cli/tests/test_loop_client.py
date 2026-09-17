@@ -44,7 +44,9 @@ def demo_reply(path: str, body: dict):
         text, calls = "Bạn chưa cho sửa nên Peto dừng.", []
     else:
         text, calls = "Xong rồi nè.", []
-    return 200, [*events, {"type": "delta", "text": text}, {"type": "done", "output": [message(text), *calls]}]
+    usage = {"input_tokens": 12000 + 2000 * len(results), "output_tokens": 400}
+    return 200, [*events, {"type": "delta", "text": text},
+                 {"type": "done", "output": [message(text), *calls], "usage": usage}]
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -111,7 +113,7 @@ def test_task_reads_edits_runs_and_summarizes(project, peto):
     assert (project / "README.md").read_bytes() == "# Dự án thử (Peto)\r\nnội dung\r\n".encode()
     assert "Peto › Xong rồi nè." in ui.text
     assert "· xong" in ui.text
-    assert "  Xong trong 0 giây · sửa 1 tệp · chạy 1 lệnh · hôm nay còn 196/200 bước" in ui.text
+    assert "  Xong trong 0 giây · sửa 1 tệp · chạy 1 lệnh · hội thoại 18k token · hôm nay còn 196/200 bước" in ui.text
     assert "Peto đang nghĩ" not in ui.text, "không có màu thì không vẽ dòng trạng thái tạm"
     assert all(request["body"]["effort"] == "medium" for request in peto.requests)
     assert all(request["auth"] == "Bearer peto_token_thu" for request in peto.requests)
@@ -188,7 +190,7 @@ def test_effort_is_remembered_and_resume_reopens_the_last_conversation(project, 
     def reply(path, body):
         if path == "/api/agent/me":
             return 200, {"account": "Bình", "device_name": "MAY-THU", "steps_used": 4, "steps_limit": 200,
-                         "default_effort": "low"}
+                         "tokens_used": 45210, "default_effort": "low"}
         return demo_reply(path, body)
 
     peto.reply = reply
@@ -214,3 +216,7 @@ def test_effort_is_remembered_and_resume_reopens_the_last_conversation(project, 
     step = next(request for request in peto.requests if request["path"] == "/api/agent/step")
     assert step["body"]["input"][0] == {"type": "message", "role": "user", "content": "Sửa README"}
     assert step["body"]["input"][-1] == {"type": "message", "role": "user", "content": "Làm tiếp nhé"}
+
+    status = FakeUI()
+    assert cli.status(status) == 0
+    assert "· mức cao · hôm nay còn 196/200 bước · đã dùng 45k token." in status.text

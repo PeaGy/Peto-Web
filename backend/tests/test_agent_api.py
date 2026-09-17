@@ -212,6 +212,17 @@ async def test_effort_reaches_the_model_and_high_costs_two_steps(anon_client, cl
     assert (await client.get("/api/agent/devices")).json()["steps_used"] == 0, "bước lỗi ở mức cao trả lại đủ 2 bước"
 
 
+async def test_me_reports_steps_tokens_and_default_effort(anon_client, client):
+    owner = await login_as(client, "google")
+    token = await connect(anon_client, client)
+    day = agent_api._today()
+    await db.take_agent_step(owner, day, agent_api.AGENT_DAILY_STEPS)
+    await db.add_agent_tokens(owner, day, 1200, 300)
+    me = (await anon_client.get("/api/agent/me", headers=bearer(token))).json()
+    assert me["steps_used"] == 1 and me["tokens_used"] == 1500
+    assert me["default_effort"] == agent_api.AGENT_REASONING
+
+
 async def test_step_rejects_bad_input_without_spending_steps(anon_client, client, monkeypatch):
     await login_as(client, "google")
     token = await connect(anon_client, client)

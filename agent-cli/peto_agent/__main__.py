@@ -12,7 +12,7 @@ from pathlib import Path
 
 from . import __version__, config, history
 from .client import ApiError, Client
-from .loop import Session, TaskLog
+from .loop import Session, TaskLog, format_tokens
 from .ui import UI
 from .workspace import Workspace
 
@@ -160,8 +160,11 @@ def status(ui: UI) -> int:
     except ApiError as err:
         ui.failure(err.message)
         return 1
+    tokens = me.get("tokens_used")
+    # Máy chủ cũ chưa trả số token thì bỏ phần này.
+    usage = f" · đã dùng {format_tokens(tokens)} token" if isinstance(tokens, int) else ""
     ui.line(f"Đã đăng nhập {client.server} · tài khoản {me.get('account')} · máy {me.get('device_name')} · "
-            f"mức {EFFORT_LABELS[_effort(me)]} · hôm nay còn {_steps_left(me)} bước.")
+            f"mức {EFFORT_LABELS[_effort(me)]} · hôm nay còn {_steps_left(me)} bước{usage}.")
     return 0
 
 

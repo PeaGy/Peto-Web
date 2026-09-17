@@ -411,7 +411,8 @@ def build_agent_guide(*, install_command: str, daily_steps: int) -> str:
         "- Dùng: vào thư mục dự án (`cd`), gõ `peto` rồi nhắn yêu cầu. Trong phiên: `/moi` bắt đầu hội thoại mới, "
         "`/resume` mở lại hội thoại gần nhất của thư mục đó (không chạy lại lệnh nào), `/effort thap`, `/effort vua` "
         "hoặc `/effort cao` đổi mức suy nghĩ và được nhớ cho lần sau, `/thoat` để thoát, Ctrl+C dừng yêu cầu đang "
-        "chạy. `peto status` xem tài khoản, mức suy nghĩ và số bước còn lại.",
+        "chạy. `peto status` xem tài khoản, mức suy nghĩ, số bước còn lại và số token đã dùng hôm nay. Cuối mỗi yêu "
+        "cầu có dòng tổng kết ghi độ dài hội thoại; hội thoại dài làm Peto chậm hay lỗi thì gõ `/moi`.",
         "- An toàn: Peto tự đọc và tìm trong thư mục dự án, nhưng luôn hỏi trước khi sửa tệp hay chạy lệnh (y đồng ý, "
         "n từ chối, a đồng ý mọi bước còn lại của yêu cầu đó). Không đụng `.env`, khóa bí mật, thư mục `.git` hay tệp "
         "ngoài thư mục dự án.",

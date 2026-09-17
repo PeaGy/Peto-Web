@@ -64,7 +64,7 @@ sau 10 phút.
 
 Token được lưu ở `%APPDATA%\PetoAgent\config.json`. Đừng chia sẻ tệp này.
 
-- `peto status`: tài khoản, tên máy, số bước còn lại hôm nay.
+- `peto status`: tài khoản, tên máy, mức suy nghĩ, số bước còn lại và số token đã dùng hôm nay.
 - `peto logout`: ngắt kết nối máy này.
 - Ngắt từ xa (ví dụ mất máy): trên web, **Cài đặt → Peto Agent → Ngắt kết nối**.
 
@@ -94,8 +94,9 @@ Mỗi lần Peto muốn sửa hay tạo tệp, CLI hiện diff; mỗi lần mu�
 - `n`: không đồng ý. Peto được báo lại để hỏi bạn cách khác.
 - `a`: đồng ý mọi bước còn lại trong yêu cầu đang chạy.
 
-Cuối mỗi yêu cầu có một dòng tổng kết: thời gian, số tệp đã sửa, số lệnh đã chạy và số bước còn lại hôm nay. Nhật ký
-từng phiên lưu ở `%LOCALAPPDATA%\PetoAgent\logs\`.
+Cuối mỗi yêu cầu có một dòng tổng kết: thời gian, số tệp đã sửa, số lệnh đã chạy, độ dài hội thoại (tính bằng token) và
+số bước còn lại hôm nay. Mỗi bước gửi lại cả hội thoại cho Peto, nên khi hội thoại dài làm Peto chậm hay báo lỗi thì gõ
+`/moi`. Nhật ký từng phiên lưu ở `%LOCALAPPDATA%\PetoAgent\logs\`.
 
 ## Giới hạn và an toàn
 

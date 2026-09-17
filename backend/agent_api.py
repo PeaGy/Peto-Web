@@ -252,11 +252,14 @@ async def revoke_device(device_id: str, owner: str = Depends(web_owner)) -> dict
 @router.get("/me")
 async def me(device: dict = Depends(device_auth)) -> dict:
     owner = device["owner"]
+    usage = await db.get_agent_usage(owner, _today())
     return {
         "account": _account_name(await db.get_user(owner)),
         "device_name": device["name"],
-        "steps_used": await db.get_agent_steps(owner, _today()),
+        "steps_used": usage["steps"],
         "steps_limit": AGENT_DAILY_STEPS,
+        # Tổng token cả ngày, tính cả phần hội thoại gửi lại ở mỗi bước: đúng lượng dịch vụ AI tính.
+        "tokens_used": usage["input_tokens"] + usage["output_tokens"],
         # CLI dùng mức này khi người dùng chưa chọn bằng /effort.
         "default_effort": AGENT_REASONING,
     }
