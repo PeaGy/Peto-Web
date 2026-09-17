@@ -306,6 +306,15 @@ class UI:
         for line in lines[-MAX_OUTPUT_LINES:]:
             self._wrapped("    │ ", line, "dim", code=True)
         summary = f"{result['seconds']} giây"
+        if result.get("classification") == "no_match":
+            self.line(f"  {summary} · không tìm thấy kết quả", "dim")
+            return
+        if result.get("classification") == "environment_error":
+            self.failure(f"{summary} · có dấu hiệu lỗi môi trường; chưa xác minh được code")
+            return
+        if result.get("classification") == "no_tests":
+            self.line(f"  {summary} · không thu thập được bài kiểm thử; chưa xác minh được code", "yellow")
+            return
         if result.get("error"):
             self.failure(f"{summary} · {result['error']}")
         elif result["exit_code"] == 0:

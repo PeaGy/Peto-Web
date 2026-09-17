@@ -131,7 +131,7 @@ def test_task_reads_edits_runs_and_summarizes(project, peto):
     assert "Peto đang nghĩ" not in ui.text, "không có màu thì không vẽ dòng trạng thái tạm"
     assert all(request["body"]["effort"] == "medium" for request in peto.requests)
     assert all(request["auth"] == "Bearer peto_token_thu" for request in peto.requests)
-    assert len(peto.requests) == 4
+    assert len(peto.requests) == 5, "printing ok is not a project check; ask for verification once"
     assert_every_call_has_output(session.items)
     assert peto.requests[0]["body"]["context"]["project"] == "project"
 
@@ -219,12 +219,12 @@ def test_effort_is_remembered_and_resume_reopens_the_last_conversation(project, 
     assert "Không có lệnh này" in first.text and "gõ /resume" not in first.text
     assert config.load()["effort"] == "high"
     steps = [request for request in peto.requests if request["path"] == "/api/agent/step"]
-    assert len(steps) == 4 and all(request["body"]["effort"] == "high" for request in steps)
+    assert len(steps) == 5 and all(request["body"]["effort"] == "high" for request in steps)
 
     peto.requests.clear()
     second = FakeUI(answers=["/resume", "Làm tiếp nhé", "/thoat"])
     assert cli.session(second) == 0
-    assert "mức cao" in second.text and "(5 tin) · gõ /resume để mở lại." in second.text
+    assert "mức cao" in second.text and "(7 tin) · gõ /resume để mở lại." in second.text
     assert "Đã mở lại hội thoại lúc" in second.text
     assert "    Bạn › Sửa README" in second.text and "    Peto › Xong rồi nè." in second.text
     step = next(request for request in peto.requests if request["path"] == "/api/agent/step")

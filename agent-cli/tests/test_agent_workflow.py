@@ -165,8 +165,8 @@ def test_three_failed_commands_stop_execution_and_further_edits(project, monkeyp
     monkeypatch.setattr("peto_agent.runner.run", run)
     tools = Tools(Workspace(project), FakeUI(["a"]))
     for _ in range(3):
-        tools.run_command("test")
-    assert "3 lệnh lỗi" in tools.run_command("test")["error"]
+        tools.run_command("npm test")
+    assert "3 lần kiểm tra" in tools.run_command("npm test")["error"]
     assert "error" in tools.call("write_file", '{"path":"a","content":"x"}')
     assert len(executed) == 3 and not (project / "a").exists()
 

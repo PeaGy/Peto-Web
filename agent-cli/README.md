@@ -193,15 +193,31 @@ thư mục chứa tệp đó; thư mục con có phạm vi riêng, không áp d�
 hoặc thay đổi, công cụ sửa sẽ trả hướng dẫn trước và yêu cầu Peto xem lại rồi mới sửa. Tổng hướng dẫn cho một tệp
 giới hạn 32.000 ký tự; vượt giới hạn thì báo lỗi, không âm thầm cắt. Không đọc hướng dẫn bên ngoài thư mục dự án.
 
-Peto chọn test/build/lint từ hướng dẫn và cấu hình đã đọc. Nếu kết thúc sau khi sửa mà chưa chạy lệnh nào kể từ lần
+Peto chọn test/build/lint từ hướng dẫn và cấu hình đã đọc. Nếu kết thúc sau khi sửa mà chưa nhận diện được lệnh kiểm tra kể từ lần
 sửa cuối, CLI nhắc kiểm tra thêm một lần; không cần hoặc không thể kiểm tra thì Peto phải nói rõ. Mọi lệnh vẫn qua
-cơ chế xin quyền. Sau tổng cộng 3 lệnh trả lỗi trong một yêu cầu, chặn chạy lệnh và sửa tiếp, để Peto báo việc còn lại.
+cơ chế xin quyền. Sau tổng cộng 3 lần kiểm tra code thất bại, chặn sửa và chạy kiểm tra tiếp; vẫn cho đọc/chẩn đoán.
+Tìm kiếm đơn giản bằng `rg`, `grep`, `findstr` trả mã 1 và output trống được báo là không có kết quả, không tính lỗi.
+Lỗi có dấu hiệu thiếu công cụ/module/script, timeout và lỗi chưa phân loại không tiêu hao bộ đếm sửa code.
+Một chuỗi lệnh lỗi lặp lại 3 lần sẽ bị chặn riêng để tránh vòng lặp. Lệnh ghép và script tùy chỉnh có thể chưa được
+nhận diện; phân loại chỉ là gợi ý, Peto vẫn phải đọc output. Không tự cấp quyền hay cài thêm công cụ.
 `/retry` giữ bộ đếm này; yêu cầu mới bắt đầu bộ đếm mới. CLI không tự coi mã thoát 0 của một lệnh bất kỳ là bằng chứng
 rằng toàn bộ dự án đã được kiểm thử.
 
 Cuối mỗi yêu cầu có một dòng tổng kết: thời gian, số tệp đã sửa, số lệnh đã chạy, độ dài hội thoại (tính bằng token) và
 số bước còn lại hôm nay. Có thể dùng `/compact` để giảm ngữ cảnh hoặc `/moi` để bắt đầu việc khác.
 Nhật ký từng phiên lưu ở `%LOCALAPPDATA%\PetoAgent\logs\`.
+
+### Đo thời gian và token
+
+Cuối yêu cầu hiện riêng thời gian AI/kết nối, chạy lệnh, công cụ khác, tóm tắt và chờ bạn trả lời xin quyền.
+Thời gian AI là đo từ CLI, gồm mạng, hàng đợi và nhận phản hồi; không phải thời gian tính toán riêng trên GPU.
+Các nhóm không tính chồng thời gian chờ quyền/chạy lệnh vào công cụ khác. Tổng thời gian yêu cầu còn có xử lý nội bộ.
+
+Token vào/ra được cộng từ usage máy chủ báo qua tất cả lượt trong yêu cầu; token tóm tắt hiển thị riêng. Lượt bị
+ngắt hoặc máy chủ không báo usage được ghi là thiếu số liệu, không đoán bằng 0. Đây không phải báo giá tiền.
+`/retry` cộng tiếp vào yêu cầu hiện tại, không tính thời gian bạn nghỉ giữa hai lần; yêu cầu mới đặt lại thống kê.
+Sau khi thoát hoặc `/resume`, không khôi phục số đo cũ. `/compact` thủ công có thống kê riêng, không cộng vào yêu cầu trước.
+Nhật ký `summary.metrics` lưu các số đo này để so sánh khi tối ưu; không có thêm dịch vụ thu thập thống kê từ xa.
 
 ### Khi mất kết nối
 

@@ -15,6 +15,8 @@ from pathlib import Path
 
 from . import runner
 from .checkpoint import Checkpoint
+from .command_outcome import classify, command_kind
+from .metrics import Metrics
 from .project_guide import GuideUpdate, guides
 from .presentation import AgentUI
 from .workspace import SKIPPED_DIRS, Workspace, WorkspaceError
@@ -47,6 +49,8 @@ class Tools:
         self.command_grants: set[tuple[str, str, int]] = set()
         self.seen_guides: dict[str, str] = {}
         self.failed_commands = 0
+        self.command_failures: dict[str, int] = {}
+        self.metrics = Metrics()
         self.revision = 0
         self.command_revision = -1
         self._handlers = {
@@ -63,6 +67,7 @@ class Tools:
         self.changes = {}
         self.commands = []
         self.failed_commands = 0
+        self.command_failures = {}
         self.revision = 0
         self.command_revision = -1
 
@@ -80,7 +85,7 @@ class Tools:
         if handler is None:
             return {"error": f"Peto Agent không có công cụ {name}."}
         if self.failed_commands >= 3 and name in {"edit_file", "write_file"}:
-            return {"error": "Đã có 3 lệnh lỗi. Dừng sửa tiếp, báo phần còn lại và đợi yêu cầu mới."}
+            return {"error": "Đã có 3 lần kiểm tra thất bại. Dừng sửa tiếp, báo phần còn lại và đợi yêu cầu mới."}
         try:
             params = json.loads(arguments or "{}")
         except (TypeError, ValueError):
@@ -107,7 +112,8 @@ class Tools:
     def _approve(self) -> bool:
         if self.approve_all:
             return True
-        answer = self.ui.ask_permission()
+        with self.metrics.measure("permission"):
+            answer = self.ui.ask_permission()
         if answer == "a":
             self.approve_all = True
         return answer in {"y", "a"}
@@ -265,13 +271,16 @@ class Tools:
         if not command:
             raise WorkspaceError("Lệnh đang trống.")
         timeout = max(1, min(600, timeout_seconds or 120))
-        if self.failed_commands >= 3:
-            return {"error": "Đã có 3 lệnh lỗi trong yêu cầu này. Dừng thử sửa/chạy tiếp và báo lỗi còn lại cho người dùng."}
+        if self.failed_commands >= 3 and command_kind(command) == "check":
+            return {"error": "Đã có 3 lần kiểm tra thất bại. Dừng thử sửa/kiểm tra tiếp và báo kết quả cho người dùng."}
+        if self.command_failures.get(command, 0) >= 3:
+            return {"error": "Lệnh này đã lỗi 3 lần; không lặp lại y nguyên. Đọc lỗi và báo nguyên nhân hoặc chọn cách khác."}
         self.ui.command(command, str(self.ws.root), timeout)
         grant = (str(self.ws.root), command, timeout)
         allowed = self.approve_all or grant in self.command_grants
         if not allowed:
-            answer = self.ui.ask_permission(allow_session=True)
+            with self.metrics.measure("permission"):
+                answer = self.ui.ask_permission(allow_session=True)
             allowed = answer in {"y", "a", "s"}
             if answer == "a":
                 self.approve_all = True
@@ -283,12 +292,19 @@ class Tools:
             return {"error": REFUSED.format(action="chạy lệnh này")}
         try:
             self.checkpoint.shell_used = True
-            result = runner.run(command, self.ws.root, timeout, on_progress=self.ui.command_progress)
+            with self.metrics.measure("commands"):
+                result = runner.run(command, self.ws.root, timeout, on_progress=self.ui.command_progress)
         finally:
             self.ui.clear_status()
-        self.commands.append({"command": command, "exit_code": result["exit_code"], "error": result.get("error")})
-        self.command_revision = self.revision
-        if result["exit_code"] != 0 or result.get("error"):
+        classification = classify(command, result)
+        result["classification"] = classification
+        self.commands.append({"command": command, "exit_code": result["exit_code"], "error": result.get("error"),
+                              "classification": classification})
+        if classification in {"passed", "check_failed"}:
+            self.command_revision = self.revision
+        if classification == "check_failed":
             self.failed_commands += 1
+        if classification not in {"passed", "success", "no_match"}:
+            self.command_failures[command] = self.command_failures.get(command, 0) + 1
         self.ui.command_result(result)
         return result

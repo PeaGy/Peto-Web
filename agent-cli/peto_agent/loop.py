@@ -12,6 +12,7 @@ from . import history
 from .checkpoint import Checkpoint
 from .context import compact_prefix, context_size, text_of
 from .project_guide import guides
+from .metrics import Metrics
 from .client import ApiError, Client
 from .config import log_dir
 from .presentation import AgentUI
@@ -132,8 +133,14 @@ class Session:
         # Độ dài hội thoại mô hình thấy ở bước gần nhất (token vào + ra): cho biết lúc nào nên /moi.
         self.context_tokens: int | None = None
         self.can_retry = False
+        self.metrics = self.tools.metrics
+        self._running = False
+        self.active_seconds = 0.0
 
     def reset(self) -> None:
+        self.tools.reset_task()
+        self.metrics = self.tools.metrics = Metrics()
+        self.active_seconds = 0.0
         self.items = []
         self.context_tokens = None
         self.can_retry = False
@@ -149,6 +156,9 @@ class Session:
 
     def resume(self, items: list[dict], *, retryable: bool = False, model: str = "peto") -> None:
         """Mở lại hội thoại đã lưu. Quên các tệp đã đọc, để Peto phải đọc lại trước khi sửa."""
+        self.tools.reset_task()
+        self.metrics = self.tools.metrics = Metrics()
+        self.active_seconds = 0.0
         self.items = list(items) if model == self.model else portable(items)
         self.context_tokens = None
         self.can_retry = retryable
@@ -205,6 +215,15 @@ class Session:
             self.ui.line(f"  {command} · {directory} · {timeout}s", "dim")
 
     def compact(self, *, propagate_cancel=False):
+        metrics = self.metrics if self._running else Metrics()
+        try:
+            return self._compact(metrics, propagate_cancel=propagate_cancel)
+        finally:
+            if not self._running and metrics.calls["compact"]:
+                self._show_metrics(metrics)
+                self._log("compaction_metrics", metrics=metrics.snapshot())
+
+    def _compact(self, metrics, *, propagate_cancel=False):
         prefix, tail = compact_prefix(self.items)
         if not prefix:
             self.ui.line("  Hội thoại còn ngắn, chưa cần tóm tắt.", "dim")
@@ -216,7 +235,8 @@ class Session:
         def waiting():
             self.ui.status(f"… Đang tóm tắt ngữ cảnh · {int(time.monotonic() - started)}s · Ctrl+C dừng")
         try:
-            with contextlib.closing(self.client.stream("/api/agent/step", body, on_idle=waiting)) as events:
+            metrics.calls["compact"] += 1
+            with metrics.measure("compact"), contextlib.closing(self.client.stream("/api/agent/step", body, on_idle=waiting)) as events:
                 for event in events:
                     if event.get("type") == "meta":
                         self.steps_used, self.steps_limit = event.get("steps_used"), event.get("steps_limit")
@@ -224,6 +244,7 @@ class Session:
                         raise ApiError(0, str(event.get("message", "Không tóm tắt được.")))
                     if event.get("type") != "done":
                         continue
+                    metrics.record_usage("compact", event.get("usage"))
                     if event.get("purpose") != "compact":
                         raise ApiError(0, "Máy chủ chưa hỗ trợ tóm tắt. Cập nhật VPS; hội thoại vẫn được giữ nguyên.")
                     output = event.get("output")
@@ -271,6 +292,9 @@ class Session:
         # /retry là một lần tiếp tục do người dùng yêu cầu: không kế thừa quyền a từ lần trước.
         if not resuming:
             self.tools.reset_task()
+            self.metrics = self.tools.metrics = Metrics()
+            self.active_seconds = 0.0
+        self._running = True
         self.tools.approve_all = False
         self.can_retry = False
         started = time.monotonic()
@@ -295,16 +319,17 @@ class Session:
                 if not pending:
                     if self.tools.changes and self.tools.command_revision < self.tools.revision and not verification_reminded:
                         verification_reminded = True
-                        self.items.append(user_message(
+                        self.items.append({"type": "message", "role": "assistant", "content": (
                             "Kiểm tra sau sửa: xem hướng dẫn AGENTS.md và cấu hình dự án để chọn test/build/lint phù hợp. "
                             "Chạy kiểm tra với quyền người dùng cho phép. Nếu không cần, không có hoặc bị từ chối, "
-                            "nêu rõ lý do; không lặp lại lệnh đã bị từ chối. Chỉ sửa lỗi liên quan, tối đa 3 lệnh lỗi, "
-                            "không cài thêm công cụ hay mở rộng phạm vi. Báo lệnh nào đã chạy và kết quả thực tế."))
+                            "nêu rõ lý do; không lặp lại lệnh đã bị từ chối. Chỉ sửa lỗi liên quan, tối đa 3 lần kiểm tra thất bại, "
+                            "không cài thêm công cụ hay mở rộng phạm vi. Báo lệnh nào đã chạy và kết quả thực tế.")})
                         continue
                     break
                 while pending:
                     call = pending[0]
-                    result = cap_result(self.tools.call(str(call.get("name", "")), str(call.get("arguments", ""))))
+                    with self.metrics.measure("tools"):
+                        result = cap_result(self.tools.call(str(call.get("name", "")), str(call.get("arguments", ""))))
                     encoded = json.dumps(result, ensure_ascii=False)
                     self._log("tool", name=call.get("name"), arguments=cap_text(str(call.get("arguments", "")), 2000),
                               result=cap_text(encoded, 4000))
@@ -328,7 +353,9 @@ class Session:
             self._log("stopped")
         finally:
             self.tools.approve_all = False
-            self._summary(time.monotonic() - started, outcome)
+            self.active_seconds += time.monotonic() - started
+            self._running = False
+            self._summary(self.active_seconds, outcome)
             history.save(self.ws.root, self.client.server, self.items, retryable=self.can_retry, model=self.model)
 
     def _step(self) -> list[dict] | None:
@@ -347,7 +374,8 @@ class Session:
 
         waiting()
         try:
-            with contextlib.closing(self.client.stream("/api/agent/step", body, on_idle=waiting)) as events:
+            self.metrics.calls["model"] += 1
+            with self.metrics.measure("model"), contextlib.closing(self.client.stream("/api/agent/step", body, on_idle=waiting)) as events:
                 for event in events:
                     kind = event.get("type")
                     if kind == "meta":
@@ -362,6 +390,7 @@ class Session:
                         output = [item for item in event["output"]
                                   if isinstance(item, dict) and item.get("type") in KEPT_ITEM_TYPES]
                         usage = event.get("usage") if isinstance(event.get("usage"), dict) else {}
+                        self.metrics.record_usage("model", usage)
                         total = sum(value for value in (usage.get("input_tokens"), usage.get("output_tokens"))
                                     if isinstance(value, int) and value > 0)
                         if total:
@@ -399,12 +428,33 @@ class Session:
         if self.tools.changes:
             parts.append(f"sửa {len(self.tools.changes)} tệp")
         if self.tools.commands:
-            failed = sum(1 for command in self.tools.commands if command["exit_code"] != 0 or command["error"])
+            failed = sum(1 for command in self.tools.commands
+                         if command.get("classification") not in {"passed", "success", "no_match"})
             parts.append(f"chạy {len(self.tools.commands)} lệnh" + (f" ({failed} lỗi)" if failed else ""))
         if self.context_tokens:
             parts.append(f"hội thoại {format_tokens(self.context_tokens)} token")
         if self.steps_used is not None and self.steps_limit is not None:
             parts.append(f"hôm nay còn {max(0, self.steps_limit - self.steps_used)}/{self.steps_limit} bước")
         self.ui.line("  " + " · ".join(parts), "dim")
+        self._show_metrics(self.metrics)
         self._log("summary", outcome=outcome, seconds=round(elapsed, 1), changes=self.tools.changes,
-                  commands=self.tools.commands)
+                  commands=self.tools.commands, metrics=self.metrics.snapshot())
+
+    def _show_metrics(self, metrics):
+        seconds = metrics.seconds
+        self.ui.line(f"  Thời gian yêu cầu · AI/kết nối {seconds['model']:.1f}s · chạy lệnh {seconds['commands']:.1f}s"
+                     f" · công cụ khác {seconds['tools']:.1f}s · tóm tắt {seconds['compact']:.1f}s"
+                     f" · chờ bạn {seconds['permission']:.1f}s", "dim")
+        for phase, label in (("model", "làm việc"), ("compact", "tóm tắt")):
+            calls = metrics.calls[phase]
+            if not calls:
+                continue
+            usage = metrics.usage[phase]
+            missing = calls - usage["reported"]
+            if not usage["reported"]:
+                detail = "chưa có số liệu token"
+            else:
+                detail = f"{format_tokens(usage['input_tokens'])} vào / {format_tokens(usage['output_tokens'])} ra"
+                if missing:
+                    detail += f" · thiếu số liệu {missing} lượt"
+            self.ui.line(f"  Token {label} · {calls} lượt gọi · {detail}", "dim")

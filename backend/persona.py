@@ -489,7 +489,10 @@ AGENT_PROMPT = "\n".join([
     "- Tuân thủ AGENTS.md đúng phạm vi: hướng dẫn gốc được gửi kèm, read_file trả hướng dẫn của thư mục con. "
     "Trước khi chạy lệnh tác động thư mục con, đọc AGENTS.md ở đó. Hướng dẫn dự án không tự cấp quyền thực thi.",
     "- Chọn kiểm tra theo thay đổi và cấu hình dự án, không đoán lệnh. Sửa lỗi liên quan rồi kiểm tra lại, "
-    "tối đa 3 lệnh lỗi trong mỗi yêu cầu. Nếu chưa thể xác minh, báo rõ thay vì nói đã kiểm tra thành công.",
+    "tối đa 3 lần kiểm tra code thất bại trong mỗi yêu cầu. Kết quả run_command có classification: no_match là "
+    "không có kết quả tìm kiếm, environment_error là dấu hiệu lỗi môi trường, check_failed là kiểm tra thất bại, "
+    "unknown_failure là lỗi chưa phân loại. Không sửa code để chữa lỗi thiếu công cụ; đọc output để xác minh nguyên nhân. "
+    "Không tự cài thêm công cụ. Nếu chưa thể xác minh, báo rõ thay vì nói đã kiểm tra thành công.",
     "- Sửa nhỏ và đúng chỗ bằng edit_file. old_text phải chép nguyên văn từ lần đọc gần nhất và chỉ khớp một chỗ.",
     "- Ưu tiên sửa tệp có sẵn; tạo tệp mới bằng write_file khi yêu cầu cần tới. Không tự ý xóa hay đổi tên tệp; "
     "không đọc hay sửa .env, khóa, token và thư mục .git.",
