@@ -466,6 +466,8 @@ và gọi mô hình AI. Cách cài, đăng nhập và sử dụng nằm trong `a
 
 - **Cài:** mở PowerShell và chạy `irm https://<địa chỉ Peto>/install.ps1 | iex` (cần Python 3.12 trở lên). Bộ cài tải
   gói từ chính VPS, cài vào `%LOCALAPPDATA%\PetoAgent` và thêm lệnh `peto` vào PATH; chạy lại lệnh đó để cập nhật.
+  Lệnh này không đăng ở đâu khác: hỏi Peto trong khung chat (ví dụ "cách cài Peto Agent") là Peto đưa đúng lệnh cài
+  của trang đang mở cùng các bước đăng nhập và sử dụng.
 - **Tài khoản:** chỉ Discord hoặc Google dùng được; tài khoản khách thì không.
 - **Đăng nhập CLI:** lệnh `peto login` in một liên kết kèm mã. Mở liên kết trên trình duyệt đã đăng nhập Peto,
   bấm **Cho phép** khi mã khớp. **Cài đặt → Peto Agent** hiện số bước còn lại hôm nay và các máy đã kết nối, ngắt được

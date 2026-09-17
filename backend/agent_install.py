@@ -72,6 +72,12 @@ def public_origin(request: Request) -> str | None:
     return f"{scheme}://{netloc}:{port}" if port else f"{scheme}://{netloc}"
 
 
+def install_command(request: Request) -> str:
+    """Lệnh cài một dòng cho đúng trang người dùng đang mở; chuỗi rỗng khi trang đó không cài qua mạng được."""
+    server = public_origin(request)
+    return f"irm {server}/install.ps1 | iex" if server else ""
+
+
 def _record_hash(content: bytes) -> str:
     digest = base64.urlsafe_b64encode(hashlib.sha256(content).digest()).rstrip(b"=").decode("ascii")
     return f"sha256={digest}"

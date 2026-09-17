@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Literal
 
 import anyio
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
@@ -46,6 +46,7 @@ from app_identity import get_app_identity
 from auth import current_owner
 from chat_tools import resolve_browser_timezone, resolve_timezone, time_context
 from config import (
+    AGENT_DAILY_STEPS,
     ALLOWED_ORIGINS,
     MAX_ATTACHMENTS,
     MAX_DOCUMENT_CONTEXT_CHARS,
@@ -60,7 +61,7 @@ from config import (
     discord_id_from_owner,
 )
 from discord_memory import discord_memory
-from persona import COMPANION_PROMPT, SYSTEM_PROMPT, build_memory_context, build_profile_context
+from persona import COMPANION_PROMPT, SYSTEM_PROMPT, build_agent_guide, build_memory_context, build_profile_context
 from rate_limit import AdmissionDenied, admission
 from web_search import normalize_sources
 
@@ -358,18 +359,22 @@ async def get_companion(owner: str = Depends(current_owner)) -> dict:
     return {"conversation_id": conversation_id, "messages": [_public_message(row) for row in rows]}
 
 
-async def _build_system_prompt(owner: str, mode: str = "chat") -> str:
-    """Prompt gốc, ghép thêm trí nhớ từ Discord (nếu lấy được), hồ sơ người
-    dùng tự điền trong Cài đặt, và persona riêng khi nhắn từ tab Companion.
+async def _build_system_prompt(owner: str, mode: str = "chat", install_command: str = "") -> str:
+    """Prompt gốc, ghép thêm hướng dẫn Peto Agent, trí nhớ từ Discord (nếu lấy
+    được), hồ sơ người dùng tự điền trong Cài đặt, và persona riêng khi nhắn từ
+    tab Companion.
 
     Trí nhớ chỉ được tra bằng Discord ID lấy từ phiên đã xác minh — không bao
     giờ từ dữ liệu do trình duyệt gửi lên. Lấy không được thì bỏ qua, chat vẫn
     chạy bình thường.
     """
     mode_block = COMPANION_PROMPT if mode == "companion" else ""
+    # Hướng dẫn Peto Agent giống nhau với mọi người trên cùng trang, nên đứng ngay sau prompt gốc, trước phần riêng
+    # của từng người. Lệnh cài lấy từ địa chỉ trang đang mở (agent_install.install_command).
+    agent_guide = build_agent_guide(install_command=install_command, daily_steps=AGENT_DAILY_STEPS)
     user = await db.get_user(owner)
     if not user:
-        return "\n\n".join(part for part in (SYSTEM_PROMPT, mode_block) if part)
+        return "\n\n".join(part for part in (SYSTEM_PROMPT, agent_guide, mode_block) if part)
 
     discord_id = discord_id_from_owner(owner)
     snapshot = await discord_memory.fetch(discord_id) if discord_id else None
@@ -389,7 +394,7 @@ async def _build_system_prompt(owner: str, mode: str = "chat") -> str:
         instructions=profile["instructions"],
     )
     # Persona Companion đứng sau trí nhớ và hồ sơ để thắng thói quen trả lời dài bằng tiếng Việt ở trên.
-    return "\n\n".join(part for part in (SYSTEM_PROMPT, context, profile_block, mode_block) if part)
+    return "\n\n".join(part for part in (SYSTEM_PROMPT, agent_guide, context, profile_block, mode_block) if part)
 
 
 def _as_chunk(item: str | StreamChunk) -> StreamChunk:
@@ -418,7 +423,10 @@ async def _stream_reply(
 
 
 @app.post("/api/chat")
-async def chat(request: ChatRequest, owner: str = Depends(current_owner)):
+async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_request: Request = None):
+    # FastAPI nhận ra tham số Request qua kiểu khai báo nên luôn truyền vào (đừng đổi thành Request | None). Mặc định
+    # None để các test gọi thẳng chat() như trước; khi đó hướng dẫn Peto Agent không kèm tên miền.
+    install_command = agent_install.install_command(http_request) if http_request is not None else ""
     if request.web_search == "on" and not WEB_SEARCH_ENABLED:
         raise HTTPException(400, "Tìm kiếm web đang tắt trên máy chủ. Chọn Tự động hoặc Tắt để tiếp tục chat.")
     timezone = resolve_browser_timezone(request.timezone)
@@ -546,7 +554,7 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner)):
                     await _read_legacy_documents(owner, rows, MAX_ATTACHMENTS - document_count)
                     yield sse({"type": "reading", "text": ""})
                 history = await anyio.to_thread.run_sync(_to_chat_messages, rows)
-                system_prompt = await _build_system_prompt(owner, mode)
+                system_prompt = await _build_system_prompt(owner, mode, install_command)
                 document_session = DocumentSession(owner, conversation_id) if mode == 'chat' else None
                 if request.document_mode and mode == 'chat':
                     system_prompt += '\n\n[PETO_DOCUMENT_CREATE]\nNgười dùng chọn tạo tài liệu: hãy gọi create_document để tạo tệp theo yêu cầu, mặc định DOCX nếu chưa chọn định dạng. Trả lời ngắn sau khi có kết quả; nội dung dài đặt trong công cụ.'

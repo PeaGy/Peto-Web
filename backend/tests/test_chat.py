@@ -197,6 +197,39 @@ async def test_companion_mode_uses_short_english_persona(client, monkeypatch):
     assert "## Chế độ Companion" not in chat_prompts[0]
 
 
+async def test_prompt_teaches_peto_agent_with_this_sites_install_command(client, monkeypatch):
+    """Lệnh cài Peto Agent không công bố ở đâu khác: Peto phải biết đúng lệnh của trang đang mở, cả ở tab Companion."""
+    prompts: list[str] = []
+    from ai.mock import MockProvider
+
+    original = MockProvider.stream
+
+    async def spy(self, *, system_prompt, messages, effort="low", timezone=None, web_search="auto"):
+        if titles.TITLE_MARKER not in system_prompt:
+            prompts.append(system_prompt)
+        async for chunk in original(
+            self, system_prompt=system_prompt, messages=messages, effort=effort, timezone=timezone, web_search=web_search
+        ):
+            yield chunk
+
+    monkeypatch.setattr(MockProvider, "stream", spy)
+    for mode in ("chat", "companion"):
+        payload = {"message": "cài Peto Agent sao vậy?", "mode": mode}
+        async with client.stream("POST", "https://peto.example/api/chat", json=payload) as response:
+            assert response.status_code == 200
+            await read_events(response)
+    assert len(prompts) == 2
+    for prompt in prompts:
+        assert "`irm https://peto.example/install.ps1 | iex`" in prompt
+    # Phần giống nhau với mọi người đứng trước phần riêng của từng người.
+    assert prompts[0].index("## Peto Agent") < prompts[0].index("## Người đang nói chuyện với bạn")
+
+    prompts.clear()
+    await _send(client, "chào")
+    assert "`irm https://<địa chỉ Peto>/install.ps1 | iex`" in prompts[0], "không có HTTPS thì không đưa tên miền"
+    assert "http://test" not in prompts[0]
+
+
 async def test_unknown_mode_is_rejected(client):
     response = await client.post("/api/chat", json={"message": "hi", "mode": "voice"})
     assert response.status_code == 400

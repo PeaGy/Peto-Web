@@ -464,6 +464,12 @@ results in the next step. The server stores no conversation (`store=False`), and
   `%LOCALAPPDATA%\PetoAgent`, copies `peto.exe` into `bin` (renaming a running copy aside), and appends `bin` to the user
   PATH through the registry without expanding existing `%VAR%` entries. It has no automated test: after editing it, run
   it against a local backend with `PETO_AGENT_INSTALL_DIR` and `PETO_AGENT_NO_MODIFY_PATH=1`, as in `agent-cli/README.md`.
+- **Peto in the web chat explains the agent**, because the install command is published nowhere else.
+  `persona.build_agent_guide` goes right after `SYSTEM_PROMPT` on every chat and Companion turn, before the per-user
+  blocks. Its install command comes from `agent_install.install_command(request)`, and it falls back to a
+  `<địa chỉ Peto>` placeholder when the origin is not https. Never hardcode the site's domain in `persona.py`: it would
+  go stale across deployments, and `tests/test_persona.py` forbids member names a domain can contain. When the install
+  or usage flow changes, update the guide too.
 - `backend/tests/test_agent_api.py`, `backend/tests/test_agent_install.py` (including a real `pip install` of the wheel)
   and `agent-cli/tests/` cover this; the CLI tests run the loop against a fake SSE server on 127.0.0.1.
 

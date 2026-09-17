@@ -26,6 +26,20 @@ def test_no_discord_user_ids():
     assert not re.search(r"\b\d{17,20}\b", persona.SYSTEM_PROMPT)
 
 
+def test_agent_guide_teaches_the_given_install_command():
+    command = "irm https://peto.example/install.ps1 | iex"
+    guide = persona.build_agent_guide(install_command=command, daily_steps=150)
+    assert f"`{command}`" in guide
+    for marker in ("150 bước mỗi ngày", "peto login", "Python 3.12", "Tài khoản khách không dùng được",
+                   "hỏi trước khi sửa tệp", "peto logout"):
+        assert marker in guide
+    generic = persona.build_agent_guide(install_command="", daily_steps=200)
+    assert "https://<địa chỉ Peto>/install.ps1" in generic and "đừng tự đoán tên miền" in generic
+    for text in (guide, generic):
+        lowered = text.casefold()
+        assert not [name for name in FORBIDDEN_NAMES if name.casefold() in lowered]
+
+
 def test_does_not_promise_tools_web_lacks():
     assert not hasattr(persona, "KNOWN_PEOPLE_PROMPT")
     assert not hasattr(persona, "SPECIAL_USERS")
