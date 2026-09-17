@@ -54,15 +54,15 @@ cũng xóa tài liệu và các phiên bản thuộc hội thoại đó.
   mỗi tài liệu tối đa 20 phiên bản, mỗi tài khoản tối đa 100 tài liệu.
   Công cụ tạo tối đa 2 tệp mỗi lượt, 40 trang xem trước mỗi tệp và tổng
   32 MB tệp xuất đã lưu mỗi tài khoản. Xóa tài liệu sẽ giải phóng phần này.
-- Chưa xuất hình ảnh, sơ đồ hay công thức LaTeX. Chưa chỉnh trực tiếp PDF,
-  chưa OCR, chưa giữ nguyên bố cục/chú thích của DOCX tải lên. Tệp đính kèm
-  vẫn được đọc bằng chức năng đọc tài liệu hiện có; có thể nhờ Peto viết
-  lại nội dung thành một bản nháp mới.
-- Peto nhận nội dung tệp đã tạo trong ngữ cảnh hội thoại, dùng chung giới
-  hạn đọc với tài liệu đính kèm. Có thể nhờ tạo tệp mới với nội dung sửa lại;
-  chưa có công cụ ghi đè nguyên tệp cũ hay bảo toàn bố cục tài liệu tải lên.
-
-## Cập nhật lên VPS
+- Chưa xuất hình ảnh, sơ đồ hay công thức LaTeX. Chưa chỉnh trực tiếp PDF,T
+  chưa OCR, chưa giữ nguyên bố cục/chú thích của DOCX tải lên. Tệp đính kèmT
+  vẫn được đọc bằng chức năng đọc tài liệu hiện có; có thể nhờ Peto viếtT
+  lại nội dung thành một bản nháp mới.T
+- Peto nhận nội dung tệp đã tạo trong ngữ cảnh hội thoại, dùng chung giớiT
+  hạn đọc với tài liệu đính kèm. Có thể nhờ tạo tệp mới với nội dung sửa lại;T
+  chưa có công cụ ghi đè nguyên tệp cũ hay bảo toàn bố cục tài liệu tải lên.T
+T
+## Cập nhật lên VPST
 
 Không cần thêm biến môi trường, Word, LibreOffice, GPU hay dịch vụ chuyển
 đổi trả phí. Sau khi code đã được đưa lên Git, SSH vào VPS, đến thư mục

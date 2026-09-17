@@ -31,6 +31,11 @@ def log_dir() -> Path:
     return Path(base) / "PetoAgent" / "logs"
 
 
+def sessions_dir() -> Path:
+    """Nơi lưu hội thoại gần nhất của từng thư mục dự án, cạnh thư mục nhật ký."""
+    return log_dir().parent / "sessions"
+
+
 def load() -> dict:
     try:
         data = json.loads((home() / "config.json").read_text(encoding="utf-8"))

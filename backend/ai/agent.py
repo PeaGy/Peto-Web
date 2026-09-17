@@ -30,11 +30,13 @@ class AgentEvent:
     usage: dict = field(default_factory=dict)
 
 
-async def agent_step(*, instructions: str, input_items: list[dict], tools: list[dict]) -> AsyncIterator[AgentEvent]:
+async def agent_step(
+    *, instructions: str, input_items: list[dict], tools: list[dict], effort: str = AGENT_REASONING
+) -> AsyncIterator[AgentEvent]:
     if AI_PROVIDER == "mock":
         events = _mock_step(input_items)
     elif AI_PROVIDER == "xai":
-        events = _xai_step(instructions, input_items, tools)
+        events = _xai_step(instructions, input_items, tools, effort)
     else:
         raise ProviderError("Nhà cung cấp AI hiện tại chưa hỗ trợ Peto Agent.")
     async for event in events:
@@ -51,7 +53,7 @@ def _dump(item) -> dict:
     return item if isinstance(item, dict) else item.model_dump(mode="json", exclude_none=True)
 
 
-async def _xai_step(instructions: str, items: list[dict], tools: list[dict]) -> AsyncIterator[AgentEvent]:
+async def _xai_step(instructions: str, items: list[dict], tools: list[dict], effort: str) -> AsyncIterator[AgentEvent]:
     # Import trễ như ai/__init__.py: chạy mock không cần SDK openai.
     from openai import APIConnectionError, APIStatusError, AsyncOpenAI, AuthenticationError, RateLimitError
 
@@ -74,7 +76,7 @@ async def _xai_step(instructions: str, items: list[dict], tools: list[dict]) -> 
             input=items,
             tools=tools,
             max_output_tokens=XAI_MAX_OUTPUT_TOKENS,
-            reasoning={"effort": AGENT_REASONING},
+            reasoning={"effort": effort},
             include=["reasoning.encrypted_content"],
             store=False,
             stream=True,

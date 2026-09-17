@@ -174,6 +174,44 @@ async def test_daily_limit_is_per_account_and_failed_steps_are_refunded(anon_cli
     assert (await anon_client.post("/api/agent/step", headers=bearer(other), json={"input": [DEMO_TASK]})).status_code == 200
 
 
+async def test_effort_reaches_the_model_and_high_costs_two_steps(anon_client, client, monkeypatch):
+    seen: list[str] = []
+    original = agent_api.agent_step
+
+    async def spy(**kwargs):
+        seen.append(kwargs["effort"])
+        async for event in original(**kwargs):
+            yield event
+
+    monkeypatch.setattr(agent_api, "agent_step", spy)
+    monkeypatch.setattr(agent_api, "AGENT_DAILY_STEPS", 4)
+    await login_as(client, "google")
+    token = await connect(anon_client, client)
+
+    async def send(body):
+        return await anon_client.post("/api/agent/step", headers=bearer(token), json=body)
+
+    assert events_of(await send({"input": [DEMO_TASK]}))[0]["steps_used"] == 1
+    assert events_of(await send({"input": [DEMO_TASK], "effort": "high"}))[0]["steps_used"] == 3
+    assert seen == [agent_api.AGENT_REASONING, "high"]
+
+    short = await send({"input": [DEMO_TASK], "effort": "high"})
+    assert short.status_code == 429
+    assert "chỉ còn 1 bước" in short.json()["detail"] and "/effort vua" in short.json()["detail"]
+    assert (await send({"input": [DEMO_TASK], "effort": "low"})).status_code == 200
+    blocked = await send({"input": [DEMO_TASK], "effort": "high"})
+    assert blocked.status_code == 429 and "dùng hết 4 bước" in blocked.json()["detail"]
+    for bad in ("max", ["high"]):
+        assert (await send({"input": [DEMO_TASK], "effort": bad})).status_code == 400
+
+    await login_as(client, "discord")
+    other = await connect(anon_client, client, "Máy khác")
+    failed = await anon_client.post("/api/agent/step", headers=bearer(other),
+                                    json={"input": [{"role": "user", "content": "__error__"}], "effort": "high"})
+    assert events_of(failed)[-1]["type"] == "error"
+    assert (await client.get("/api/agent/devices")).json()["steps_used"] == 0, "bước lỗi ở mức cao trả lại đủ 2 bước"
+
+
 async def test_step_rejects_bad_input_without_spending_steps(anon_client, client, monkeypatch):
     await login_as(client, "google")
     token = await connect(anon_client, client)

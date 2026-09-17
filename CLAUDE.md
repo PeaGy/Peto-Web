@@ -437,6 +437,9 @@ results in the next step. The server stores no conversation (`store=False`), and
   quota the owner explicitly asked for, and only for the agent; chat stays unlimited. `take_agent_step` checks and
   increments in one statement, and a step that fails before the model produces anything is refunded. Agent steps use
   their own `Admission` instance, so they never take chat's slots.
+- **Effort.** `/step` takes `effort` (`low` / `medium` / `high`, default `PETO_AGENT_REASONING`, which `/me` returns as
+  `default_effort`). `STEP_COST` makes `high` cost 2 steps, taken and refunded together, by the owner's call. The CLI's
+  `/effort thap|vua|cao` is remembered in its `config.json`.
 - **`/step` input is validated**: body size (`PETO_AGENT_MAX_REQUEST_BYTES`), at most 300 items, only `message` /
   `function_call` / `function_call_output` / `reasoning`, and messages only as `user` or `assistant`. The instructions
   are always the server's: `PERSONA_PROMPT` + `persona.AGENT_PROMPT` + time context + project/OS line. Tool schemas are
@@ -451,6 +454,14 @@ results in the next step. The server stores no conversation (`store=False`), and
   - Commands run with a timeout; timeout or Ctrl+C kills the whole tree with `taskkill /T`.
   - Tool results are capped at 20k characters. A stopped request still appends an output for every pending call, so the
     next step stays valid for the model.
+- **CLI display** (picked by the owner from mockups): tool steps stay as permanent lines; while waiting for the model
+  there is one transient `… Peto đang nghĩ · Ns` status line (`UI.status`, redrawn with `\r\033[2K`, only when colors
+  are on); each request ends with one summary line. `ReplyWriter` prints replies line by line so `UI.markdown` can color
+  bold, inline code, headings, bullets and fenced code; without colors (piped output, tests) text stays raw.
+- **`/resume`.** `history.py` keeps the latest conversation per project folder (keyed by the normalized path, and only
+  for the same server) in `sessions/` next to `logs/`, overwritten after every request and pruned after 30 days. It
+  holds file contents Peto read, so it stays local. Resuming reruns nothing and clears `Workspace.read_digests`, so any
+  edit needs a fresh `read_file`. `/moi` leaves the saved conversation resumable until the new one is saved.
 - **One-line install** (`irm https://<site>/install.ps1 | iex`). `agent_install.py` serves `GET /install.ps1`, which is
   outside `/api`, so its router must stay included before the static catch-all, plus `GET /api/agent/download/<wheel>`.
   The backend builds a pure-Python wheel of `agent-cli` itself with `zipfile` from `pyproject.toml` (no setuptools) and

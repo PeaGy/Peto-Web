@@ -843,18 +843,21 @@ async def revoke_agent_device(owner: str, device_id: str) -> bool:
         return cursor.rowcount > 0
 
 
-async def take_agent_step(owner: str, day: str, limit: int) -> int | None:
-    """Trừ một bước của ngày. Trả về số bước đã dùng sau khi trừ, hoặc None nếu đã hết lượt.
+async def take_agent_step(owner: str, day: str, limit: int, cost: int = 1) -> int | None:
+    """Trừ ``cost`` bước của ngày (mức suy nghĩ cao tính 2). Trả về số bước đã dùng sau khi trừ, hoặc None nếu
+    không còn đủ lượt.
 
     Một câu lệnh vừa kiểm vừa cộng, nên hai bước chạy cùng lúc không vượt được giới hạn.
     """
+    if cost > limit:
+        return None
     async with aiosqlite.connect(DB_PATH) as db:
         cursor = await db.execute(
             """
-            INSERT INTO agent_usage (owner, day, steps) VALUES (?, ?, 1)
-            ON CONFLICT(owner, day) DO UPDATE SET steps = steps + 1 WHERE steps < ?
+            INSERT INTO agent_usage (owner, day, steps) VALUES (?, ?, ?)
+            ON CONFLICT(owner, day) DO UPDATE SET steps = steps + excluded.steps WHERE steps + excluded.steps <= ?
             """,
-            (owner, day, limit),
+            (owner, day, cost, limit),
         )
         if cursor.rowcount == 0:
             await db.commit()
@@ -865,12 +868,12 @@ async def take_agent_step(owner: str, day: str, limit: int) -> int | None:
         return int(steps)
 
 
-async def refund_agent_step(owner: str, day: str) -> None:
+async def refund_agent_step(owner: str, day: str, cost: int = 1) -> None:
     """Trả lại bước khi mô hình lỗi trước khi làm được gì, để người dùng không mất lượt oan."""
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
-            "UPDATE agent_usage SET steps = MAX(steps - 1, 0) WHERE owner = ? AND day = ?",
-            (owner, day),
+            "UPDATE agent_usage SET steps = MAX(steps - ?, 0) WHERE owner = ? AND day = ?",
+            (cost, owner, day),
         )
         await db.commit()
 

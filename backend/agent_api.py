@@ -37,6 +37,7 @@ from config import (
     AGENT_MAX_CONCURRENT,
     AGENT_MAX_QUEUE,
     AGENT_MAX_REQUEST_BYTES,
+    AGENT_REASONING,
     AGENT_STEP_TIMEOUT_SECONDS,
     AGENT_TOKEN_IDLE_DAYS,
     provider_from_owner,
@@ -54,6 +55,8 @@ POLL_INTERVAL_SECONDS = 3
 MAX_PENDING_CODES = 50
 MAX_ITEMS = 300
 ALLOWED_ITEM_TYPES = {"message", "function_call", "function_call_output", "reasoning"}
+# Mức suy nghĩ CLI chọn bằng /effort. Mức cao tốn nhiều token hơn nên tính 2 bước, theo quyết định của chủ web.
+STEP_COST = {"low": 1, "medium": 1, "high": 2}
 # Bỏ các ký tự dễ đọc nhầm như O/0 và I/1.
 CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
@@ -254,6 +257,8 @@ async def me(device: dict = Depends(device_auth)) -> dict:
         "device_name": device["name"],
         "steps_used": await db.get_agent_steps(owner, _today()),
         "steps_limit": AGENT_DAILY_STEPS,
+        # CLI dùng mức này khi người dùng chưa chọn bằng /effort.
+        "default_effort": AGENT_REASONING,
     }
 
 
@@ -279,7 +284,7 @@ async def _read_body(request: Request) -> bytes:
     return bytes(body)
 
 
-def _parse_step(raw: bytes) -> tuple[list[dict], dict]:
+def _parse_step(raw: bytes) -> tuple[list[dict], dict, str]:
     try:
         payload = json.loads(raw)
     except (UnicodeDecodeError, json.JSONDecodeError):
@@ -296,8 +301,12 @@ def _parse_step(raw: bytes) -> tuple[list[dict], dict]:
         # Chỉ dẫn hệ thống do máy chủ viết; CLI không được chèn vai system hay developer.
         if kind == "message" and item.get("role") not in {"user", "assistant"}:
             raise HTTPException(status_code=400, detail="Chỉ nhận tin của người dùng hoặc của Peto trong bước gửi lên.")
+    # CLI cũ không gửi mức suy nghĩ thì dùng mức mặc định của máy chủ.
+    effort = payload.get("effort") or AGENT_REASONING
+    if not isinstance(effort, str) or effort not in STEP_COST:
+        raise HTTPException(status_code=400, detail="Mức suy nghĩ chỉ nhận low, medium hoặc high.")
     context = payload.get("context")
-    return items, context if isinstance(context, dict) else {}
+    return items, context if isinstance(context, dict) else {}, effort
 
 
 def _instructions(context: dict) -> str:
@@ -310,15 +319,19 @@ def _instructions(context: dict) -> str:
 
 @router.post("/step")
 async def step(request: Request, device: dict = Depends(device_auth)):
-    items, context = _parse_step(await _read_body(request))
+    items, context, effort = _parse_step(await _read_body(request))
     owner = device["owner"]
     day = _today()
-    used = await db.take_agent_step(owner, day, AGENT_DAILY_STEPS)
+    cost = STEP_COST[effort]
+    used = await db.take_agent_step(owner, day, AGENT_DAILY_STEPS, cost)
     if used is None:
-        raise HTTPException(
-            status_code=429,
-            detail=f"Hôm nay tài khoản của bạn đã dùng hết {AGENT_DAILY_STEPS} bước Peto Agent. Lượt mới bắt đầu lúc 0 giờ.",
-        )
+        left = max(0, AGENT_DAILY_STEPS - await db.get_agent_steps(owner, day))
+        if 0 < left < cost:
+            detail = (f"Mức suy nghĩ cao tính {cost} bước mỗi lần, nhưng hôm nay chỉ còn {left} bước. "
+                      "Gõ /effort vua để dùng nốt.")
+        else:
+            detail = f"Hôm nay tài khoản của bạn đã dùng hết {AGENT_DAILY_STEPS} bước Peto Agent. Lượt mới bắt đầu lúc 0 giờ."
+        raise HTTPException(status_code=429, detail=detail)
     instructions = _instructions(context)
 
     async def event_stream() -> AsyncIterator[str]:
@@ -328,7 +341,8 @@ async def step(request: Request, device: dict = Depends(device_auth)):
             yield _sse({"type": "meta", "steps_used": used, "steps_limit": AGENT_DAILY_STEPS})
             async with admission.slot(f"agent:{owner}"):
                 async with asyncio.timeout(AGENT_STEP_TIMEOUT_SECONDS):
-                    async for event in agent_step(instructions=instructions, input_items=items, tools=TOOL_SCHEMAS):
+                    async for event in agent_step(instructions=instructions, input_items=items, tools=TOOL_SCHEMAS,
+                                                  effort=effort):
                         produced = True
                         if event.kind == "done":
                             with anyio.CancelScope(shield=True):
@@ -353,7 +367,7 @@ async def step(request: Request, device: dict = Depends(device_auth)):
             # Mô hình chưa kịp phản hồi gì thì trả lại bước, người dùng không mất lượt oan.
             if failure and not produced:
                 with anyio.CancelScope(shield=True):
-                    await db.refund_agent_step(owner, day)
+                    await db.refund_agent_step(owner, day, cost)
         if failure:
             yield _sse({"type": "error", "message": failure})
 

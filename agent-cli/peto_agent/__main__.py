@@ -4,18 +4,24 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import sys
 import time
 import webbrowser
 from pathlib import Path
 
-from . import __version__, config
+from . import __version__, config, history
 from .client import ApiError, Client
 from .loop import Session, TaskLog
 from .ui import UI
 from .workspace import Workspace
 
-HELP_LINE = "Gõ yêu cầu cho Peto. /moi: hội thoại mới · /thoat: thoát · Ctrl+C: dừng yêu cầu đang chạy"
+HELP_LINE = ("Gõ yêu cầu cho Peto. /moi: hội thoại mới · /resume: mở lại hội thoại trước · /effort: mức suy nghĩ · "
+             "/thoat: thoát · Ctrl+C: dừng yêu cầu đang chạy")
+EFFORT_LABELS = {"low": "thấp", "medium": "vừa", "high": "cao"}
+# Gõ không dấu cho dễ, như /moi và /thoat; có dấu hay tên tiếng Anh cũng nhận.
+EFFORT_ALIASES = {"thap": "low", "thấp": "low", "low": "low", "vua": "medium", "vừa": "medium", "tb": "medium",
+                  "medium": "medium", "cao": "high", "high": "high"}
 
 
 def _saved_client(ui: UI) -> Client | None:
@@ -33,6 +39,45 @@ def _saved_client(ui: UI) -> Client | None:
 def _steps_left(me: dict) -> str:
     limit = int(me.get("steps_limit") or 0)
     return f"{max(0, limit - int(me.get('steps_used') or 0))}/{limit}"
+
+
+def _effort(me: dict) -> str:
+    """Mức người dùng đã chọn bằng /effort trên máy này; chưa chọn thì theo mặc định của máy chủ."""
+    for value in (config.load().get("effort"), me.get("default_effort")):
+        if value in EFFORT_LABELS:
+            return value
+    return "medium"
+
+
+def _change_effort(ui: UI, work: Session, value: str) -> None:
+    if not value:
+        ui.line(f"  Mức suy nghĩ: {EFFORT_LABELS[work.effort]}. Đổi bằng /effort thap, /effort vua hoặc /effort cao.")
+        ui.line("  Mức cao suy nghĩ kỹ hơn nhưng mỗi bước tính 2 bước.", "dim")
+        return
+    effort = EFFORT_ALIASES.get(value.lower())
+    if effort is None:
+        ui.line("  Chỉ có /effort thap, /effort vua hoặc /effort cao.", "yellow")
+        return
+    work.effort = effort
+    settings = config.load()
+    settings["effort"] = effort
+    config.save(settings)
+    ui.success(f"Đã chuyển sang mức {EFFORT_LABELS[effort]}" + ("; mỗi bước tính 2 bước." if effort == "high" else "."))
+
+
+def _resume(ui: UI, work: Session) -> None:
+    saved = history.load(work.ws.root, work.client.server)
+    if saved is None:
+        ui.line("  Chưa có hội thoại nào được lưu ở thư mục này.", "dim")
+        return
+    if work.items == saved.items:
+        ui.line("  Đang ở đúng hội thoại gần nhất rồi.", "dim")
+        return
+    work.resume(saved.items)
+    ui.success(f"Đã mở lại hội thoại {history.when(saved.saved_at)}:")
+    for who, text in history.recap(saved.items):
+        ui.line(f"    {who} › {text}", "dim")
+    ui.line("  Peto không chạy lại lệnh nào; muốn sửa tệp thì sẽ đọc lại tệp trước.", "dim")
 
 
 def login(ui: UI, server_arg: str | None) -> int:
@@ -116,7 +161,7 @@ def status(ui: UI) -> int:
         ui.failure(err.message)
         return 1
     ui.line(f"Đã đăng nhập {client.server} · tài khoản {me.get('account')} · máy {me.get('device_name')} · "
-            f"hôm nay còn {_steps_left(me)} bước.")
+            f"mức {EFFORT_LABELS[_effort(me)]} · hôm nay còn {_steps_left(me)} bước.")
     return 0
 
 
@@ -137,9 +182,15 @@ def session(ui: UI) -> int:
     except ApiError as err:
         ui.failure(err.message)
         return 1
-    ui.line(f"{ui.paint('Peto Agent', 'cyan')} · {root.name} · {me.get('account')} · hôm nay còn {_steps_left(me)} bước")
+    effort = _effort(me)
+    ui.line(f"{ui.paint('Peto Agent', 'cyan')} · {root.name} · {me.get('account')} · mức {EFFORT_LABELS[effort]} · "
+            f"hôm nay còn {_steps_left(me)} bước")
     ui.line(HELP_LINE, "dim")
-    work = Session(client, Workspace(root), ui, log=TaskLog(root.name))
+    work = Session(client, Workspace(root), ui, log=TaskLog(root.name), effort=effort)
+    saved = history.load(root, client.server)
+    if saved is not None:
+        ui.line(f"Có hội thoại {history.when(saved.saved_at)} ({saved.message_count} tin) · gõ /resume để mở lại.",
+                "yellow")
     while True:
         try:
             text = ui.prompt().strip()
@@ -151,8 +202,21 @@ def session(ui: UI) -> int:
         if text in {"/thoat", "/exit", "/quit"}:
             break
         if text == "/moi":
+            # Hội thoại cũ vẫn mở lại được bằng /resume cho tới khi hội thoại mới được lưu đè sau yêu cầu đầu tiên.
             work.reset()
             ui.line("Đã bắt đầu hội thoại mới.", "dim")
+            continue
+        if text == "/help":
+            ui.line(HELP_LINE, "dim")
+            continue
+        if text == "/resume":
+            _resume(ui, work)
+            continue
+        if text == "/effort" or text.startswith("/effort "):
+            _change_effort(ui, work, text[len("/effort"):].strip())
+            continue
+        if re.fullmatch(r"/[A-Za-z]+", text):
+            ui.line("Không có lệnh này. Gõ /help để xem các lệnh.", "yellow")
             continue
         work.run_task(text)
     ui.line("Tạm biệt!", "dim")
@@ -160,10 +224,11 @@ def session(ui: UI) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    # Khi output bị chuyển sang tệp hay ống dẫn, Windows dùng bảng mã cũ và vỡ tiếng Việt; ép UTF-8.
+    # Khi output bị chuyển sang tệp hay ống dẫn, Windows dùng bảng mã cũ và vỡ tiếng Việt; ép UTF-8. Stdin dùng
+    # utf-8-sig vì Windows PowerShell 5.1 chèn BOM vào đầu dữ liệu truyền qua ống, làm lệnh ở dòng đầu không khớp.
     for stream in (sys.stdin, sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure") and not stream.isatty():
-            stream.reconfigure(encoding="utf-8", errors="replace")
+            stream.reconfigure(encoding="utf-8-sig" if stream is sys.stdin else "utf-8", errors="replace")
     parser = argparse.ArgumentParser(prog="peto", description="Nhờ Peto sửa code ngay trong thư mục dự án trên máy bạn.")
     parser.add_argument("--version", action="version", version=f"peto {__version__}")
     commands = parser.add_subparsers(dest="command")

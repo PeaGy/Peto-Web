@@ -473,7 +473,10 @@ và gọi mô hình AI. Cách cài, đăng nhập và sử dụng nằm trong `a
   bấm **Cho phép** khi mã khớp. **Cài đặt → Peto Agent** hiện số bước còn lại hôm nay và các máy đã kết nối, ngắt được
   từng máy.
 - **Giới hạn bước:** mỗi lần gọi mô hình là một bước; mỗi tài khoản có 200 bước mỗi ngày (đổi bằng
-  `PETO_AGENT_DAILY_STEPS`). Bước bị lỗi trước khi mô hình kịp phản hồi thì được trả lại.
+  `PETO_AGENT_DAILY_STEPS`). Mức suy nghĩ cao (`/effort cao`) tính 2 bước mỗi lần. Bước bị lỗi trước khi mô hình kịp
+  phản hồi thì được trả lại.
+- **Trong phiên:** `/moi` bắt đầu hội thoại mới, `/resume` mở lại hội thoại gần nhất của thư mục (lưu trên máy người
+  dùng, không chạy lại lệnh nào), `/effort thap|vua|cao` đổi mức suy nghĩ và được nhớ cho lần sau.
 - **Quyền:** đọc và tìm trong thư mục thì Peto tự làm; sửa tệp, tạo tệp và chạy lệnh luôn hỏi bạn trước. Peto không đọc
   hay sửa `.env`, khóa và `.git`, và không ra ngoài thư mục dự án.
 - **Dữ liệu:** nội dung tệp Peto đọc và output lệnh đi qua VPS tới dịch vụ AI; VPS không lưu hội thoại.

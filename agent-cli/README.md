@@ -78,8 +78,15 @@ peto
 Gõ yêu cầu như nhắn tin cho Peto. Trong phiên:
 
 - `/moi`: bắt đầu hội thoại mới.
-- `/thoat`: thoát.
+- `/resume`: mở lại hội thoại gần nhất của thư mục này, kể cả sau khi đã thoát. Không lệnh nào được chạy lại, và muốn
+  sửa tệp thì Peto phải đọc lại tệp trước. Mở `peto` ở thư mục có hội thoại cũ sẽ có dòng nhắc.
+- `/effort thap`, `/effort vua`, `/effort cao`: mức suy nghĩ, được nhớ trên máy này cho lần sau. Mức cao suy nghĩ kỹ
+  hơn nhưng mỗi bước tính 2 bước. Gõ `/effort` để xem mức đang dùng; chưa chọn thì theo mặc định của máy chủ.
+- `/help`: xem các lệnh. `/thoat`: thoát.
 - **Ctrl+C**: dừng yêu cầu đang chạy; lệnh đang chạy bị dừng cả cây tiến trình.
+
+Trong lúc chờ, một dòng tạm `… Peto đang nghĩ · 8s` tự đếm giây rồi biến mất khi có chữ. Câu trả lời hiện theo từng dòng
+để tô được chữ đậm và `mã`; khi output bị chuyển sang tệp thì giữ nguyên chữ gốc.
 
 Mỗi lần Peto muốn sửa hay tạo tệp, CLI hiện diff; mỗi lần muốn chạy lệnh, CLI hiện lệnh đó. Bạn trả lời:
 
@@ -87,8 +94,8 @@ Mỗi lần Peto muốn sửa hay tạo tệp, CLI hiện diff; mỗi lần mu�
 - `n`: không đồng ý. Peto được báo lại để hỏi bạn cách khác.
 - `a`: đồng ý mọi bước còn lại trong yêu cầu đang chạy.
 
-Cuối mỗi yêu cầu có tóm tắt tệp đã sửa, lệnh đã chạy và số bước còn lại. Nhật ký từng phiên lưu ở
-`%LOCALAPPDATA%\PetoAgent\logs\`.
+Cuối mỗi yêu cầu có một dòng tổng kết: thời gian, số tệp đã sửa, số lệnh đã chạy và số bước còn lại hôm nay. Nhật ký
+từng phiên lưu ở `%LOCALAPPDATA%\PetoAgent\logs\`.
 
 ## Giới hạn và an toàn
 
@@ -101,13 +108,18 @@ Cuối mỗi yêu cầu có tóm tắt tệp đã sửa, lệnh đã chạy và 
   (CRLF/LF) và BOM được giữ nguyên.
 - **Chạy lệnh:** chạy bằng `cmd` trong thư mục dự án, mặc định dừng sau 120 giây (tối đa 600). Lệnh test cũng chạy code
   nằm trong dự án, nên hãy xem kỹ các thay đổi trước khi đồng ý chạy.
-- **Giới hạn bước:** mỗi yêu cầu tối đa 40 bước; mỗi tài khoản có số bước mỗi ngày do máy chủ đặt (mặc định 200).
+- **Giới hạn bước:** mỗi yêu cầu tối đa 40 bước; mỗi tài khoản có số bước mỗi ngày do máy chủ đặt (mặc định 200). Ở mức
+  suy nghĩ cao, mỗi bước tính 2.
 
 ## Dữ liệu gửi đi
 
 Nội dung tệp Peto đọc, kết quả tìm kiếm, diff và output lệnh đi qua máy chủ Peto tới dịch vụ AI (xAI) để Peto quyết định
 bước tiếp theo. Máy chủ không lưu hội thoại; nó chỉ lưu tên máy, mã băm của token và số bước đã dùng. Đừng mở Peto Agent
 trong thư mục có dữ liệu bạn không muốn gửi đi.
+
+Để `/resume` hoạt động, hội thoại gần nhất của mỗi thư mục được lưu trên chính máy bạn ở
+`%LOCALAPPDATA%\PetoAgent\sessions\`, gồm cả nội dung tệp Peto đã đọc và output lệnh. Tệp không dùng quá 30 ngày được tự
+xóa; gỡ Peto Agent cũng xóa thư mục này.
 
 ## Thử trên máy
 

@@ -10,8 +10,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import pytest
 from conftest import FakeUI
 
+from peto_agent import __main__ as cli
 from peto_agent import config
-from peto_agent.__main__ import login
 from peto_agent.client import ApiError, Client, normalize_server
 from peto_agent.loop import Session
 from peto_agent.workspace import Workspace
@@ -110,7 +110,10 @@ def test_task_reads_edits_runs_and_summarizes(project, peto):
     session.run_task("Sửa README")
     assert (project / "README.md").read_bytes() == "# Dự án thử (Peto)\r\nnội dung\r\n".encode()
     assert "Peto › Xong rồi nè." in ui.text
-    assert "Đã sửa: README.md (+1 −1)" in ui.text and "· xong" in ui.text
+    assert "· xong" in ui.text
+    assert "  Xong trong 0 giây · sửa 1 tệp · chạy 1 lệnh · hôm nay còn 196/200 bước" in ui.text
+    assert "Peto đang nghĩ" not in ui.text, "không có màu thì không vẽ dòng trạng thái tạm"
+    assert all(request["body"]["effort"] == "medium" for request in peto.requests)
     assert all(request["auth"] == "Bearer peto_token_thu" for request in peto.requests)
     assert len(peto.requests) == 4
     assert_every_call_has_output(session.items)
@@ -175,7 +178,39 @@ def test_login_uses_the_server_bundled_by_the_installer(peto, tmp_path, monkeypa
 
     peto.reply = reply
     ui = FakeUI()
-    assert login(ui, None) == 0
+    assert cli.login(ui, None) == 0
     assert config.load()["server"] == peto.url
     assert [request["path"] for request in peto.requests] == ["/api/agent/device/start", "/api/agent/device/token"]
     assert f"{peto.url}/?agent_code=KXMT-4P2Q" in ui.text
+
+
+def test_effort_is_remembered_and_resume_reopens_the_last_conversation(project, peto, monkeypatch):
+    def reply(path, body):
+        if path == "/api/agent/me":
+            return 200, {"account": "Bình", "device_name": "MAY-THU", "steps_used": 4, "steps_limit": 200,
+                         "default_effort": "low"}
+        return demo_reply(path, body)
+
+    peto.reply = reply
+    config.save({"server": peto.url, "token": "peto_token_thu"})
+    (project / "README.md").write_bytes("# Dự án thử\r\nnội dung\r\n".encode())
+    monkeypatch.chdir(project)
+
+    first = FakeUI(answers=["/effort", "/effort cao", "/efort", "Sửa README", "y", "y", "/thoat"])
+    assert cli.session(first) == 0
+    assert "mức thấp" in first.text and "Mức suy nghĩ: thấp." in first.text
+    assert "Đã chuyển sang mức cao; mỗi bước tính 2 bước." in first.text
+    assert "Không có lệnh này" in first.text and "gõ /resume" not in first.text
+    assert config.load()["effort"] == "high"
+    steps = [request for request in peto.requests if request["path"] == "/api/agent/step"]
+    assert len(steps) == 4 and all(request["body"]["effort"] == "high" for request in steps)
+
+    peto.requests.clear()
+    second = FakeUI(answers=["/resume", "Làm tiếp nhé", "/thoat"])
+    assert cli.session(second) == 0
+    assert "mức cao" in second.text and "(5 tin) · gõ /resume để mở lại." in second.text
+    assert "Đã mở lại hội thoại lúc" in second.text
+    assert "    Bạn › Sửa README" in second.text and "    Peto › Xong rồi nè." in second.text
+    step = next(request for request in peto.requests if request["path"] == "/api/agent/step")
+    assert step["body"]["input"][0] == {"type": "message", "role": "user", "content": "Sửa README"}
+    assert step["body"]["input"][-1] == {"type": "message", "role": "user", "content": "Làm tiếp nhé"}

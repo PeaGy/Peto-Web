@@ -126,8 +126,11 @@ class Client:
             raise ApiError(0, "Phản hồi không đúng định dạng của Peto.")
         return payload
 
-    def stream(self, path: str, body: dict, *, timeout: float = 600.0) -> Iterator[dict]:
-        """Đọc từng sự kiện SSE. Ctrl+C lúc đang chờ thì đóng kết nối rồi để KeyboardInterrupt đi tiếp."""
+    def stream(self, path: str, body: dict, *, timeout: float = 600.0, on_idle=None) -> Iterator[dict]:
+        """Đọc từng sự kiện SSE. Ctrl+C lúc đang chờ thì đóng kết nối rồi để KeyboardInterrupt đi tiếp.
+
+        ``on_idle`` được gọi khoảng 5 lần mỗi giây khi chưa có sự kiện mới, để cập nhật dòng trạng thái.
+        """
         connection, response = self._send("POST", path, body, auth=True, timeout=timeout)
         events: queue.Queue = queue.Queue()
 
@@ -154,6 +157,8 @@ class Client:
                 try:
                     kind, value = events.get(timeout=0.2)
                 except queue.Empty:
+                    if on_idle is not None:
+                        on_idle()
                     continue
                 if kind == "event":
                     yield value

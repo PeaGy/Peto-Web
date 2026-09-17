@@ -409,12 +409,15 @@ def build_agent_guide(*, install_command: str, daily_steps: int) -> str:
         "- Đăng nhập: chạy `peto login`, mở liên kết hiện ra trên trình duyệt đã đăng nhập Peto bằng Discord hoặc Google, "
         "thấy mã trên web giống hệt mã trong cửa sổ dòng lệnh thì bấm Cho phép.",
         "- Dùng: vào thư mục dự án (`cd`), gõ `peto` rồi nhắn yêu cầu. Trong phiên: `/moi` bắt đầu hội thoại mới, "
-        "`/thoat` để thoát, Ctrl+C dừng yêu cầu đang chạy. `peto status` xem tài khoản và số bước còn lại.",
+        "`/resume` mở lại hội thoại gần nhất của thư mục đó (không chạy lại lệnh nào), `/effort thap`, `/effort vua` "
+        "hoặc `/effort cao` đổi mức suy nghĩ và được nhớ cho lần sau, `/thoat` để thoát, Ctrl+C dừng yêu cầu đang "
+        "chạy. `peto status` xem tài khoản, mức suy nghĩ và số bước còn lại.",
         "- An toàn: Peto tự đọc và tìm trong thư mục dự án, nhưng luôn hỏi trước khi sửa tệp hay chạy lệnh (y đồng ý, "
         "n từ chối, a đồng ý mọi bước còn lại của yêu cầu đó). Không đụng `.env`, khóa bí mật, thư mục `.git` hay tệp "
         "ngoài thư mục dự án.",
-        f"- Giới hạn: mỗi tài khoản có {daily_steps} bước mỗi ngày; mỗi lần Peto gọi mô hình AI là một bước. Trên web, "
-        "Cài đặt → Peto Agent hiện số bước còn lại và các máy đã kết nối, ngắt được từng máy.",
+        f"- Giới hạn: mỗi tài khoản có {daily_steps} bước mỗi ngày; mỗi lần Peto gọi mô hình AI là một bước, riêng mức "
+        "suy nghĩ cao tính 2 bước. Trên web, Cài đặt → Peto Agent hiện số bước còn lại và các máy đã kết nối, ngắt "
+        "được từng máy.",
         "- Dữ liệu: nội dung tệp Peto đọc và kết quả lệnh đi qua máy chủ Peto tới dịch vụ AI; máy chủ không lưu hội "
         "thoại. Đừng mở Peto Agent trong thư mục có dữ liệu không muốn gửi đi.",
         "- Gỡ: chạy `peto logout`, rồi xóa hai thư mục `%LOCALAPPDATA%\\PetoAgent` và `%APPDATA%\\PetoAgent`.",
