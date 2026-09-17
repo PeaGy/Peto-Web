@@ -17,8 +17,8 @@ from .loop import Session, TaskLog, format_tokens
 from .ui import UI, enable_vt
 from .workspace import Workspace
 
-HINT_WITH_MENU = "Gõ yêu cầu cho Peto · gõ / để chọn lệnh · Ctrl+C dừng yêu cầu đang chạy"
-HINT_PLAIN = "Gõ yêu cầu cho Peto · /help xem các lệnh · Ctrl+C dừng yêu cầu đang chạy"
+HINT_WITH_MENU = "Gõ yêu cầu cho Peto · / chọn lệnh · Alt+V dán ảnh · Ctrl+C dừng yêu cầu"
+HINT_PLAIN = "Gõ yêu cầu cho Peto · /help xem các lệnh · Ctrl+C dừng yêu cầu"
 # Lệnh không nhận gì phía sau; gõ thêm chữ thì nhắc chứ không gửi cả câu cho Peto.
 PLAIN_COMMANDS = {"/thoat", "/exit", "/quit", "/moi", "/help", "/resume", "/usage"}
 EFFORT_LABELS = {"low": "thấp", "medium": "vừa", "high": "cao"}
@@ -110,7 +110,9 @@ def _help(ui: UI) -> None:
     width = max(len(command.name) for command in COMMANDS)
     for command in COMMANDS:
         ui.line(f"  {command.name.ljust(width)}  {command.description}", "dim")
-    ui.line("  Ctrl+C dừng yêu cầu đang chạy." + (" ↑/↓ gọi lại tin đã gửi." if ui.editor is not None else ""), "dim")
+    ui.line("  Ctrl+C dừng yêu cầu đang chạy.", "dim")
+    if ui.editor is not None:
+        ui.line("  ↑/↓ gọi lại tin đã gửi. Alt+V dán ảnh trong clipboard, hoặc kéo tệp ảnh thả vào cửa sổ.", "dim")
 
 
 def _usage(ui: UI, work: Session) -> None:
@@ -291,7 +293,7 @@ def session(ui: UI) -> int:
         if name and not value:
             ui.line("Không có lệnh này. Gõ /help để xem các lệnh.", "yellow")
             continue
-        work.run_task(text)
+        work.run_task(text, ui.attached)
     ui.line("Tạm biệt!", "dim")
     return 0
 

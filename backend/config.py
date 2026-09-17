@@ -180,7 +180,8 @@ if AGENT_REASONING not in {"low", "medium", "high"}:
 AGENT_DAILY_STEPS = _env_int("PETO_AGENT_DAILY_STEPS", 200, 1, 10000)
 AGENT_MAX_CONCURRENT = _env_int("PETO_AGENT_MAX_CONCURRENT", 2, 1, 10)
 AGENT_MAX_QUEUE = _env_int("PETO_AGENT_MAX_QUEUE", 4, 0, 50)
-AGENT_MAX_REQUEST_BYTES = _env_int("PETO_AGENT_MAX_REQUEST_BYTES", 2 * 1024 * 1024, 64 * 1024, 16 * 1024 * 1024)
+# Cả hội thoại gửi lại mỗi bước, kể cả tới 4 ảnh CLI giữ lại (mỗi ảnh dưới 2 MB, thêm một phần ba khi mã hóa base64).
+AGENT_MAX_REQUEST_BYTES = _env_int("PETO_AGENT_MAX_REQUEST_BYTES", 16 * 1024 * 1024, 64 * 1024, 32 * 1024 * 1024)
 AGENT_TOKEN_IDLE_DAYS = _env_int("PETO_AGENT_TOKEN_IDLE_DAYS", 30, 1, 365)
 AGENT_STEP_TIMEOUT_SECONDS = _env_float("PETO_AGENT_STEP_TIMEOUT_SECONDS", 300.0, 10.0, 600.0)
 

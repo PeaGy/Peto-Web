@@ -118,10 +118,32 @@ Dòng nhập còn có:
   ký tự hiện gọn thành `[Đã dán 42 dòng]` nhưng vẫn gửi đủ; gõ thêm lời nhắn rồi Enter để gửi.
 - **Shift+Enter** xuống dòng trong Windows Terminal và cửa sổ PowerShell.
 
+### Gửi ảnh
+
+Muốn Peto xem ảnh, ví dụ ảnh chụp lỗi giao diện:
+
+- **Alt+V** dán ảnh trong clipboard: ảnh vừa chụp bằng Win+Shift+S hay PrtScn, ảnh copy từ trình duyệt, hoặc tệp ảnh copy
+  trong Explorer. Ctrl+V vẫn là dán chữ, vì terminal giữ phím đó.
+- **Kéo tệp ảnh** (.png, .jpg, .gif, .webp, .bmp) từ Explorer thả vào cửa sổ terminal.
+
+Ảnh hiện thành nhãn ngay chỗ con trỏ, rồi bạn gõ tiếp như thường:
+
+```text
+Bạn › giao diện lỗi như [Ảnh 1] sửa giúp mình
+```
+
+Xóa nhãn là bỏ ảnh. Ảnh được đánh số tăng dần trong phiên. Clipboard không có ảnh thì một dòng nhắc màu vàng hiện dưới
+dòng nhập, gõ phím tiếp là biến mất.
+
+- **Ảnh lớn:** ảnh có cạnh dài quá 2000px được thu nhỏ còn 2000px; ảnh vẫn nặng quá 2 MB thì chuyển sang JPEG hoặc thu
+  nhỏ thêm. Ảnh chụp bằng điện thoại được xoay theo đúng chiều chụp. Ảnh WebP không thu nhỏ được nên phải dưới 2 MB.
+- **Gửi lại ảnh:** máy chủ không lưu hội thoại, nên bước nào Peto cũng gửi lại các ảnh trong hội thoại. Peto chỉ giữ 4
+  ảnh gần nhất; ảnh cũ hơn được thay bằng một dòng ghi chú.
+
 Dòng nhập này tự đọc từng phím của console Windows. Bộ gõ như Unikey, EVKey sửa chữ bằng cách gửi phím xóa rồi gửi chữ
 mới, nên mỗi lần xóa bỏ đúng một ký tự như ô nhập thường. Nếu dòng nhập hiển thị sai hay gõ tiếng Việt bị lỗi trong
 terminal của bạn, đặt `$env:PETO_AGENT_SIMPLE_INPUT = '1'` trước khi chạy `peto` để quay về dòng nhập đơn giản, không có
-danh sách lệnh, lịch sử hay dán nhiều dòng. Khi input được chuyển từ tệp hay ống dẫn, `peto` cũng dùng dòng nhập đơn giản.
+danh sách lệnh, lịch sử, dán nhiều dòng hay gửi ảnh. Khi input được chuyển từ tệp hay ống dẫn, `peto` cũng dùng dòng nhập đơn giản.
 
 Trong lúc chờ, một dòng tạm `… Peto đang nghĩ · 8s` tự đếm giây rồi biến mất khi có chữ. Câu trả lời hiện theo từng dòng
 để tô được chữ đậm và `mã`; khi output bị chuyển sang tệp thì giữ nguyên chữ gốc.
@@ -152,12 +174,12 @@ số bước còn lại hôm nay. Mỗi bước gửi lại cả hội thoại c
 
 ## Dữ liệu gửi đi
 
-Nội dung tệp Peto đọc, kết quả tìm kiếm, diff và output lệnh đi qua máy chủ Peto tới dịch vụ AI (xAI) để Peto quyết định
-bước tiếp theo. Máy chủ không lưu hội thoại; nó chỉ lưu tên máy, mã băm của token và số bước đã dùng. Đừng mở Peto Agent
+Nội dung tệp Peto đọc, kết quả tìm kiếm, diff, output lệnh và ảnh bạn gửi kèm đi qua máy chủ Peto tới dịch vụ AI (xAI)
+để Peto quyết định bước tiếp theo. Máy chủ không lưu hội thoại; nó chỉ lưu tên máy, mã băm của token và số bước đã dùng. Đừng mở Peto Agent
 trong thư mục có dữ liệu bạn không muốn gửi đi.
 
 Để `/resume` hoạt động, hội thoại gần nhất của mỗi thư mục được lưu trên chính máy bạn ở
-`%LOCALAPPDATA%\PetoAgent\sessions\`, gồm cả nội dung tệp Peto đã đọc và output lệnh. Tệp không dùng quá 30 ngày được tự
+`%LOCALAPPDATA%\PetoAgent\sessions\`, gồm cả nội dung tệp Peto đã đọc, output lệnh và các ảnh còn giữ trong hội thoại. Tệp không dùng quá 30 ngày được tự
 xóa; gỡ Peto Agent cũng xóa thư mục này.
 
 ## Thử trên máy
@@ -179,7 +201,8 @@ Script bộ cài chưa có test tự động; khi sửa `install.ps1`, chạy l�
 
 Phần đọc phím của dòng nhập (`WindowsConsole` trong `line_editor.py`) không chạy được trong pytest, vì pytest không có
 console thật. Khi sửa nó, thử lại trong Windows Terminal và cửa sổ PowerShell: gõ `/` rồi chọn lệnh, dán nhiều dòng, gõ
-chữ dài tới lúc xuống hàng, gõ tiếng Việt bằng bộ gõ, và trả lời câu hỏi y/n sau đó.
+chữ dài tới lúc xuống hàng, gõ tiếng Việt bằng bộ gõ, Alt+V một ảnh chụp màn hình, kéo thả một tệp ảnh, và trả lời câu hỏi
+y/n sau đó. Phần giải mã và thu nhỏ ảnh (GDI+) thì có test; phần đọc clipboard thật thì không.
 
 Mỗi lần đổi CLI, tăng `version` trong `pyproject.toml` cùng `__version__` trong `peto_agent/__init__.py` (hai số phải bằng
 nhau). Không tăng thì máy đang cài bản cũ không được nhắc cập nhật.

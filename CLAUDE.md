@@ -466,8 +466,12 @@ results in the next step. The server stores no conversation (`store=False`), and
 - **Effort.** `/step` takes `effort` (`low` / `medium` / `high`, default `PETO_AGENT_REASONING`, which `/me` returns as
   `default_effort`). `STEP_COST` makes `high` cost 2 steps, taken and refunded together, by the owner's call. The CLI's
   `/effort thap|vua|cao` is remembered in its `config.json`.
-- **`/step` input is validated**: body size (`PETO_AGENT_MAX_REQUEST_BYTES`), at most 300 items, only `message` /
-  `function_call` / `function_call_output` / `reasoning`, and messages only as `user` or `assistant`. The instructions
+- **`/step` input is validated**: body size (`PETO_AGENT_MAX_REQUEST_BYTES`, 16 MB by default because images are
+  resent every step), at most 300 items, only `message` / `function_call` / `function_call_output` / `reasoning`, and
+  messages only as `user` or `assistant`. A user message's content is a string or a list of `input_text` and
+  `input_image` parts. Images must be base64 data URLs whose magic bytes match the declared PNG/JPEG/GIF/WebP type (never
+  a web URL, so the AI service fetches nothing on the CLI's behalf), at most `MAX_STEP_IMAGES` (8) per step and
+  `MAX_STEP_IMAGE_BYTES` (3 MB) each. Rejected images cost no step. The instructions
   are always the server's: `PERSONA_PROMPT` + `persona.AGENT_PROMPT` + time context + project/OS line. Tool schemas are
   server-owned (`agent_tools.py`). `ai/agent.py` holds the xAI call and a mock that runs a scripted `__demo__` task (read
   `README.md` → edit its first line → run a command → summarize) based on the tool results the CLI sends back. The mock
@@ -515,6 +519,22 @@ results in the next step. The server stores no conversation (`store=False`), and
     pytest, so after changing it try it in Windows Terminal and the classic PowerShell window. On 2026-09-17 it was
     checked in a ConPTY by dumping the screen buffer, with plain VT and win32-input-mode keys, but never with a real
     Unikey/EVKey.
+- **Images** (`images.py`; the owner picked the Claude Code style from mockups). Alt+V in the input line reads the
+  clipboard: the registered `PNG` format first (browsers, Snipping Tool; keeps transparency), then `CF_DIB` wrapped into
+  a BMP (screenshots), then `CF_HDROP` image files (copied in Explorer). A paste burst that is nothing but absolute
+  paths to existing image files (what a terminal pastes when files are dropped on it) is treated the same way. Each image
+  becomes a `[Ảnh N]` label in the text, a private-use placeholder like pastes, numbered for the whole session;
+  deleting the label drops the image, and failures show as a yellow notice under the line until the next key.
+  - Processing uses GDI+ (`gdiplus.dll`) through ctypes, still stdlib-only. Images longer than 2000px on either side
+    are scaled with high-quality bicubic by the owner's choice, EXIF orientation is applied, transparency survives, and
+    the result stays under 2 MB (PNG, JPEG when the PNG is over 1 MB and JPEG is smaller, then smaller sizes). Small
+    PNG/JPEG/GIF files are sent unchanged. GDI+ cannot decode WebP, so WebP is sent as-is only when under 2 MB.
+  - `loop.user_message` sends the typed text, then `[Ảnh N]` + `input_image` (`detail: high`) for each image.
+    `drop_old_images` keeps the 4 most recent images in the conversation (like chat's `MAX_HISTORY_IMAGES`) and
+    replaces older ones with a note, so saved sessions stay small too. The task log records only the image count.
+  - Tests: `test_images.py` checks the GDI+ pipeline on synthetic images with a small PNG decoder. Reading the real
+    clipboard is not in pytest; on 2026-09-17 it was checked in a separate, unnamed window station (its own clipboard,
+    so the user's clipboard was never touched), and Alt+V/drag-and-drop in a ConPTY with a fake clipboard.
 - **Update notice.** `/me` returns `cli_version`, read from `agent-cli/pyproject.toml` by `agent_install.cli_version`. The
   CLI compares the dotted numbers and, when the server's is newer, prints the install command in the session header and
   `peto status`. Bump `version` and `peto_agent.__version__` together whenever the CLI changes (`test_agent_install.py`

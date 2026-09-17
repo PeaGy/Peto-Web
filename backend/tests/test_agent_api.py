@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import re
 import tomllib
@@ -246,6 +247,42 @@ async def test_step_rejects_bad_input_without_spending_steps(anon_client, client
     huge = {"input": [{"role": "user", "content": "x" * 2000}]}
     assert (await anon_client.post("/api/agent/step", headers=bearer(token), json=huge)).status_code == 413
     assert (await client.get("/api/agent/devices")).json()["steps_used"] == 0
+
+
+def image_part(data: bytes, mime: str = "image/png", **extra) -> dict:
+    return {"type": "input_image", "image_url": f"data:{mime};base64,{base64.b64encode(data).decode()}", **extra}
+
+
+async def test_step_accepts_pasted_images_and_rejects_bad_ones(anon_client, client, monkeypatch):
+    await login_as(client, "google")
+    token = await connect(anon_client, client)
+    png = b"\x89PNG\r\n\x1a\n" + bytes(2048)
+    message = {"type": "message", "role": "user", "content": [
+        {"type": "input_text", "text": "Giao diện lỗi như [Ảnh 1]"}, {"type": "input_text", "text": "[Ảnh 1]"},
+        image_part(png, detail="high")]}
+    accepted = await anon_client.post("/api/agent/step", headers=bearer(token), json={"input": [message]})
+    assert accepted.status_code == 200
+    reply = "".join(event.get("text", "") for event in events_of(accepted) if event["type"] == "delta")
+    assert reply.startswith("Peto đã nhận 1 ảnh (PNG 2 KB)")
+
+    def user(*parts) -> dict:
+        return {"input": [{"type": "message", "role": "user", "content": list(parts)}]}
+
+    rejected = [
+        user(image_part(png, mime="image/jpeg")),
+        user({"type": "input_image", "image_url": "https://example.com/anh.png"}),
+        user({"type": "input_image", "image_url": "data:image/png;base64,@@@"}),
+        user({"type": "input_image", "image_url": "data:image/svg+xml;base64,PHN2Zz4="}),
+        user(image_part(png, detail="rat-cao")),
+        user({"type": "input_file", "file_id": "tep-bat-ky"}),
+        user(*[image_part(png)] * (agent_api.MAX_STEP_IMAGES + 1)),
+        {"input": [{"type": "message", "role": "user", "content": {"text": "sai dạng"}}]},
+    ]
+    for body in rejected:
+        assert (await anon_client.post("/api/agent/step", headers=bearer(token), json=body)).status_code == 400
+    monkeypatch.setattr(agent_api, "MAX_STEP_IMAGE_BYTES", 1024)
+    assert (await anon_client.post("/api/agent/step", headers=bearer(token), json=user(image_part(png)))).status_code == 413
+    assert (await client.get("/api/agent/devices")).json()["steps_used"] == 1, "ảnh bị từ chối không tốn bước"
 
 
 async def test_devices_are_isolated_between_accounts(client, anon_client):

@@ -538,6 +538,8 @@ def build_agent_guide(*, install_command: str, daily_steps: int) -> str:
         "mục đó (không chạy lại lệnh nào), `/effort thap`, `/effort vua` hoặc `/effort cao` đổi mức suy nghĩ và được "
         "nhớ cho lần sau, `/usage` xem số bước còn lại và số token đã dùng hôm nay, `/thoat` để thoát. Ctrl+C dừng yêu "
         "cầu đang chạy. Dán nhiều dòng (ví dụ log lỗi) thì cả đoạn nằm trong một tin, không bị gửi từng dòng. "
+        "Muốn Peto xem ảnh (ví dụ ảnh chụp lỗi giao diện): bấm Alt+V để dán ảnh vừa chụp màn hình hoặc vừa copy, hoặc "
+        "kéo tệp ảnh thả vào cửa sổ terminal; ảnh hiện thành [Ảnh 1] trong dòng nhập, ảnh lớn được tự thu nhỏ. "
         "`peto status` xem tài khoản, mức suy nghĩ và số bước ngoài phiên. Cuối mỗi yêu cầu có dòng tổng kết ghi độ "
         "dài hội thoại; hội thoại dài làm Peto chậm hay lỗi thì gõ `/moi`.",
         "- An toàn: Peto tự đọc và tìm trong thư mục dự án, nhưng luôn hỏi trước khi sửa tệp hay chạy lệnh (y đồng ý, "

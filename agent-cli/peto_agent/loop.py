@@ -17,6 +17,9 @@ from .ui import UI
 from .workspace import Workspace
 
 MAX_STEPS_PER_TASK = 40
+# Máy chủ không lưu hội thoại nên bước nào cũng gửi lại ảnh: chỉ giữ 4 ảnh gần nhất, như chat trên web.
+MAX_KEPT_IMAGES = 4
+OLD_IMAGE_NOTE = "(Ảnh này đã gửi ở tin trước; để hội thoại nhẹ, peto không gửi lại.)"
 KEPT_ITEM_TYPES = {"message", "function_call", "reasoning"}
 STOPPED_RESULT = {"error": "Người dùng đã dừng yêu cầu bằng Ctrl+C."}
 OUTCOME_LABELS = {"done": "Xong trong", "stopped": "Đã dừng sau", "error": "Dừng vì lỗi sau", "limit": "Tạm dừng sau"}
@@ -31,6 +34,32 @@ def cap_result(value):
     if isinstance(value, dict):
         return {key: cap_result(item) for key, item in value.items()}
     return value
+
+
+def user_message(text: str, images=()) -> dict:
+    """Tin của người dùng; có ảnh thì mỗi ảnh đi sau nhãn [Ảnh N] mà chữ đã gõ nhắc tới."""
+    if not images:
+        return {"type": "message", "role": "user", "content": text}
+    content: list[dict] = [{"type": "input_text", "text": text}]
+    for number, image in images:
+        content.append({"type": "input_text", "text": f"[Ảnh {number}]"})
+        content.append({"type": "input_image", "image_url": image.data_url(), "detail": "high"})
+    return {"type": "message", "role": "user", "content": content}
+
+
+def drop_old_images(items: list[dict], keep: int = MAX_KEPT_IMAGES) -> None:
+    """Thay các ảnh cũ hơn ``keep`` ảnh gần nhất bằng một dòng ghi chú, ngay trong hội thoại."""
+    seen = 0
+    for item in reversed(items):
+        content = item.get("content")
+        if item.get("role") != "user" or not isinstance(content, list):
+            continue
+        for index in range(len(content) - 1, -1, -1):
+            part = content[index]
+            if isinstance(part, dict) and part.get("type") == "input_image":
+                seen += 1
+                if seen > keep:
+                    content[index] = {"type": "input_text", "text": OLD_IMAGE_NOTE}
 
 
 def format_duration(seconds: float) -> str:
@@ -130,10 +159,13 @@ class Session:
         if self.log is not None:
             self.log.write(kind, **data)
 
-    def run_task(self, text: str) -> None:
+    def run_task(self, text: str, images=()) -> None:
+        """Chạy một yêu cầu. ``images`` là các cặp (số ảnh, ảnh) dán kèm bằng Alt+V hay kéo thả."""
         self.tools.reset_task()
-        self.items.append({"type": "message", "role": "user", "content": text})
-        self._log("task", text=text, effort=self.effort)
+        self.items.append(user_message(text, images))
+        drop_old_images(self.items)
+        # Nhật ký chỉ ghi số ảnh, không ghi dữ liệu ảnh.
+        self._log("task", text=text, effort=self.effort, images=len(images))
         started = time.monotonic()
         outcome = "done"
         pending: list[dict] = []

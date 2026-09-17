@@ -22,6 +22,7 @@ import unicodedata
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from . import images as image_files
 from .commands import Suggestion, suggestions
 
 SUBMIT, INTERRUPT = "submit", "interrupt"
@@ -31,9 +32,13 @@ PASTE_MIN_KEYS = 3
 # Đoạn dán từ 4 dòng hoặc dài hơn 1000 ký tự thì chỉ hiện "[Đã dán N dòng]"; lúc gửi vẫn gửi đủ.
 COLLAPSE_LINES = 4
 COLLAPSE_CHARS = 1000
-# Mỗi đoạn dán thu gọn là một ký tự trong vùng dùng riêng U+100000 trở đi; chữ gõ hay dán vào bị bỏ ký tự vùng này.
+# Mỗi đoạn dán thu gọn, và mỗi ảnh gửi kèm, là một ký tự trong vùng dùng riêng U+100000 trở đi: đoạn dán ở nửa đầu,
+# ảnh ở nửa sau. Chữ gõ hay dán vào bị bỏ ký tự vùng này.
 PASTE_BASE = 0x100000
-MAX_PASTES = 0xFFFE
+IMAGE_BASE = 0x108000
+MAX_PASTES = IMAGE_BASE - PASTE_BASE
+MAX_IMAGES = 0x10FFFE - IMAGE_BASE
+READING_IMAGE = "Đang đọc ảnh…"
 TEXT_KEYS = {"char": "", "enter": "\r", "newline": "\n", "tab": "\t"}
 
 HIDE_CURSOR, SHOW_CURSOR = "\033[?25l", "\033[?25h"
@@ -81,10 +86,26 @@ def clip(text: str, width: int) -> str:
     return "".join(kept) + "…"
 
 
+def wrap(text: str, width: int) -> list[str]:
+    """Ngắt chữ thành các dòng không quá ``width`` cột, ngắt ở dấu cách; một từ dài hơn cả dòng thì bị cắt."""
+    lines, current = [], ""
+    for word in text.split(" "):
+        candidate = f"{current} {word}" if current else word
+        if current and display_width(candidate) > width:
+            lines.append(current)
+            current = word
+        else:
+            current = candidate
+    lines.append(current)
+    return [clip(line, width) for line in lines]
+
+
 class EditorState:
     def __init__(self, suggest: Callable[[str], list[Suggestion]] = suggestions):
         self.suggest = suggest
         self.pastes: list[str] = []
+        # Ảnh đã dán trong phiên, đánh số [Ảnh 1], [Ảnh 2]… theo thứ tự dán như Claude Code.
+        self.images: list[image_files.Image] = []
         self.history: list[str] = []
         self.clear()
 
@@ -95,6 +116,8 @@ class EditorState:
         self.selected: int | None = None
         self.dismissed = False
         self.finished = False
+        # Dòng nhắc màu vàng dưới ô nhập, như "Clipboard chưa có ảnh"; phím kế tiếp là mất.
+        self.notice: str | None = None
         self._browsing: int | None = None
         self._draft = ""
 
@@ -106,17 +129,45 @@ class EditorState:
     def is_paste(self, char: str) -> bool:
         return PASTE_BASE <= ord(char) < PASTE_BASE + len(self.pastes)
 
-    def paste_label(self, char: str) -> str:
+    def is_image(self, char: str) -> bool:
+        return IMAGE_BASE <= ord(char) < IMAGE_BASE + len(self.images)
+
+    def label(self, char: str) -> str:
+        """Chữ hiện thay cho ký tự đại diện: "[Đã dán 42 dòng]" hay "[Ảnh 1]"."""
+        if self.is_image(char):
+            return f"[Ảnh {ord(char) - IMAGE_BASE + 1}]"
         text = self.pastes[ord(char) - PASTE_BASE]
         lines = text.count("\n") + 1
         return f"[Đã dán {lines} dòng]" if lines > 1 else f"[Đã dán {len(text)} ký tự]"
 
     def expanded(self) -> str:
-        return "".join(self.pastes[ord(char) - PASTE_BASE] if self.is_paste(char) else char for char in self.text)
+        """Chữ sẽ gửi: đoạn dán được trả lại đủ, ảnh thành nhãn [Ảnh N] để Peto biết người dùng nhắc tới ảnh nào."""
+        return "".join(self.pastes[ord(char) - PASTE_BASE] if self.is_paste(char)
+                       else self.label(char) if self.is_image(char) else char for char in self.text)
+
+    def attached(self) -> list[tuple[int, image_files.Image]]:
+        """Các ảnh còn nằm trong ô nhập, theo thứ tự xuất hiện, kèm số của ảnh."""
+        found: list[tuple[int, image_files.Image]] = []
+        for char in self.text:
+            if self.is_image(char):
+                number = ord(char) - IMAGE_BASE + 1
+                if all(number != known for known, _ in found):
+                    found.append((number, self.images[number - 1]))
+        return found
+
+    def insert_images(self, images: list[image_files.Image]) -> None:
+        markers = []
+        for image in images:
+            if len(self.images) >= MAX_IMAGES:
+                break
+            self.images.append(image)
+            markers.append(chr(IMAGE_BASE + len(self.images) - 1) + " ")
+        self._insert("".join(markers))
 
     def handle(self, key: Key) -> tuple[str, str] | None:
         """Xử lý một phím. Trả ("submit", chữ) khi gửi, ("interrupt", "") khi bấm Ctrl+C lúc ô trống, còn lại None."""
         name = key.name
+        self.notice = None
         items = self.items()
         if name == "interrupt":
             if not self.text:
@@ -279,8 +330,8 @@ def layout(state: EditorState, *, prompt: str, width: int, height: int, paint=_n
             column = indent
             continue
         color = None
-        if state.is_paste(char):
-            glyph, color = clip(state.paste_label(char), usable - indent), "cyan"
+        if state.is_paste(char) or state.is_image(char):
+            glyph, color = clip(state.label(char), usable - indent), "cyan"
         else:
             glyph = "    " if char == "\t" else char
         size = display_width(glyph)
@@ -295,6 +346,8 @@ def layout(state: EditorState, *, prompt: str, width: int, height: int, paint=_n
         cursor = (len(rows) - 1, column)
 
     popup = []
+    if state.notice:
+        popup.extend(paint(f"  {line}", "yellow") for line in wrap(state.notice, usable - 2))
     items = state.items()
     if items:
         label_width = max(display_width(item.label) for item in items)
@@ -348,7 +401,7 @@ def group_paste(keys: list[Key]) -> list[Key]:
 # --- Console Windows --------------------------------------------------------
 
 KEY_EVENT = 0x0001
-VK_BACK, VK_TAB, VK_RETURN, VK_MENU, VK_ESCAPE = 0x08, 0x09, 0x0D, 0x12, 0x1B
+VK_BACK, VK_TAB, VK_RETURN, VK_MENU, VK_ESCAPE, VK_V = 0x08, 0x09, 0x0D, 0x12, 0x1B, 0x56
 NAVIGATION = {0x23: "end", 0x24: "home", 0x25: "left", 0x26: "up", 0x27: "right", 0x28: "down", 0x2E: "delete"}
 RIGHT_ALT, LEFT_ALT, RIGHT_CTRL, LEFT_CTRL, SHIFT = 0x01, 0x02, 0x04, 0x08, 0x10
 # Tắt Ctrl+C thành tín hiệu, nhập theo dòng, tự in phím, sự kiện cửa sổ và chuột, và mã VT cho phím.
@@ -374,6 +427,10 @@ def translate(vk: int, char: str, state: int) -> Key | None:
         return Key(NAVIGATION[vk], ctrl=ctrl)
     if char == "\x03":
         return Key("interrupt")
+    if state & (LEFT_ALT | RIGHT_ALT) and not ctrl and (vk == VK_V or char in ("v", "V")):
+        # Alt+V dán ảnh trong clipboard như Claude Code trên Windows: Ctrl+V đã bị terminal giữ để dán chữ.
+        # AltGr là Ctrl+Alt phải, nên bàn phím dùng AltGr+V để gõ ký tự không bị nhầm.
+        return Key("image")
     if char == "\x17":
         # Ctrl+W, và là thứ terminal của VS Code gửi khi bấm Ctrl+Backspace.
         return Key("backspace", ctrl=True)
@@ -493,11 +550,17 @@ class WindowsConsole:
 
 class LineEditor:
     def __init__(self, console, out, *, size: Callable[[], tuple[int, int]] = shutil.get_terminal_size,
-                 suggest: Callable[[str], list[Suggestion]] = suggestions):
+                 suggest: Callable[[str], list[Suggestion]] = suggestions,
+                 clipboard: Callable[[], list[image_files.Image]] | None = None,
+                 files: Callable[[list], list[image_files.Image]] | None = None):
         self.console = console
         self.out = out
         self.size = size
         self.state = EditorState(suggest)
+        self.clipboard = clipboard or image_files.from_clipboard
+        self.files = files or image_files.from_files
+        # Ảnh gửi kèm lượt nhập vừa xong: (số ảnh, ảnh).
+        self.last_images: list[tuple[int, image_files.Image]] = []
         # Hàng đang có con trỏ, tính từ hàng dấu nhắc, để lần vẽ sau quay về đúng chỗ.
         self._row = 0
         self._pending: list[Key] = []
@@ -506,6 +569,7 @@ class LineEditor:
         """Đọc một lượt nhập. Ctrl+C lúc ô trống ném KeyboardInterrupt như input()."""
         state = self.state
         state.clear()
+        self.last_images = []
         self._row = 0
         result = None
         with self.console.raw():
@@ -513,6 +577,13 @@ class LineEditor:
             while result is None:
                 keys, self._pending = self._pending or self.console.keys(), []
                 for position, key in enumerate(keys):
+                    if key.name == "image":
+                        self._attach(prompt, paint, self.clipboard)
+                        continue
+                    # Kéo thả tệp ảnh vào terminal thì terminal dán đường dẫn tệp: đổi thành ảnh gửi kèm.
+                    if key.name == "paste" and (paths := image_files.dropped_paths(key.text)):
+                        self._attach(prompt, paint, lambda: self.files(paths))
+                        continue
                     result = state.handle(key)
                     if result is not None:
                         self._pending = keys[position + 1:]
@@ -524,9 +595,23 @@ class LineEditor:
         kind, text = result
         if kind == INTERRUPT:
             raise KeyboardInterrupt
+        self.last_images = state.attached()
         self.out.write("\r\n")
         self.out.flush()
         return text
+
+    def _attach(self, prompt: str, paint, load: Callable[[], list[image_files.Image]]) -> None:
+        state = self.state
+        # Thu nhỏ ảnh lớn mất một lúc: báo trước để người dùng không tưởng peto bị treo.
+        state.notice = READING_IMAGE
+        self._draw(prompt, paint)
+        try:
+            found = load()
+        except image_files.ImageError as err:
+            state.notice = err.message
+            return
+        state.notice = None
+        state.insert_images(found)
 
     def _draw(self, prompt: str, paint) -> None:
         columns, lines = self.size()

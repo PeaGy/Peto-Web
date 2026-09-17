@@ -12,6 +12,8 @@ một tiến trình; khởi động lại giữa lúc đăng nhập thì CLI ph�
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
 import hashlib
 import json
 import logging
@@ -31,6 +33,7 @@ import db
 from agent_install import cli_version
 from agent_tools import TOOL_SCHEMAS
 from ai.agent import agent_step
+from attachments import sniff_image_mime
 from ai.base import ProviderError
 from chat_tools import resolve_timezone, time_context
 from config import (
@@ -56,6 +59,11 @@ POLL_INTERVAL_SECONDS = 3
 MAX_PENDING_CODES = 50
 MAX_ITEMS = 300
 ALLOWED_ITEM_TYPES = {"message", "function_call", "function_call_output", "reasoning"}
+# Ảnh CLI dán kèm tin (Alt+V, kéo thả). CLI giữ 4 ảnh gần nhất và thu nhỏ mỗi ảnh dưới 2 MB; máy chủ nới hơn một chút.
+MAX_STEP_IMAGES = 8
+MAX_STEP_IMAGE_BYTES = 3 * 1024 * 1024
+STEP_IMAGE_MIMES = {"image/png", "image/jpeg", "image/gif", "image/webp"}
+BAD_IMAGE = "Ảnh gửi kèm không hợp lệ. Peto nhận ảnh PNG, JPEG, GIF hoặc WebP."
 # Mức suy nghĩ CLI chọn bằng /effort. Mức cao tốn nhiều token hơn nên tính 2 bước, theo quyết định của chủ web.
 STEP_COST = {"low": 1, "medium": 1, "high": 2}
 # Bỏ các ký tự dễ đọc nhầm như O/0 và I/1.
@@ -277,7 +285,7 @@ async def logout(device: dict = Depends(device_auth)) -> dict:
 async def _read_body(request: Request) -> bytes:
     too_large = HTTPException(
         status_code=413,
-        detail="Bước gửi lên quá lớn. Gõ /moi để bắt đầu hội thoại mới, hoặc đọc ít tệp hơn mỗi lần.",
+        detail="Bước gửi lên quá lớn. Gõ /moi để bắt đầu hội thoại mới, hoặc đọc ít tệp và gửi ít ảnh hơn mỗi lần.",
     )
     declared = request.headers.get("content-length", "")
     if declared.isdigit() and int(declared) > AGENT_MAX_REQUEST_BYTES:
@@ -290,6 +298,45 @@ async def _read_body(request: Request) -> bytes:
     return bytes(body)
 
 
+def _check_image(part: dict) -> None:
+    """Ảnh chỉ nhận dạng data URL đúng loại: không nhận địa chỉ web, để dịch vụ AI không phải tải gì theo lệnh của CLI."""
+    url = part.get("image_url")
+    if set(part) - {"type", "image_url", "detail"} or part.get("detail", "auto") not in {"auto", "low", "high"}:
+        raise HTTPException(status_code=400, detail=BAD_IMAGE)
+    if not isinstance(url, str) or not url.startswith("data:"):
+        raise HTTPException(status_code=400, detail=BAD_IMAGE)
+    header, separator, encoded = url.partition(",")
+    mime = header[len("data:"):].removesuffix(";base64")
+    if not separator or not header.endswith(";base64") or mime not in STEP_IMAGE_MIMES:
+        raise HTTPException(status_code=400, detail=BAD_IMAGE)
+    if len(encoded) // 4 * 3 > MAX_STEP_IMAGE_BYTES:
+        raise HTTPException(status_code=413, detail=f"Mỗi ảnh gửi kèm tối đa {MAX_STEP_IMAGE_BYTES // 1024 // 1024} MB.")
+    try:
+        data = base64.b64decode(encoded, validate=True)
+    except (binascii.Error, ValueError):
+        raise HTTPException(status_code=400, detail=BAD_IMAGE) from None
+    if sniff_image_mime(data) != mime:
+        raise HTTPException(status_code=400, detail=BAD_IMAGE)
+
+
+def _count_images(content) -> int:
+    """Kiểm nội dung tin của người dùng: chữ, hoặc danh sách phần chữ và ảnh. Trả số ảnh."""
+    if isinstance(content, str):
+        return 0
+    if not isinstance(content, list):
+        raise HTTPException(status_code=400, detail="Tin của người dùng không đúng định dạng.")
+    images = 0
+    for part in content:
+        kind = part.get("type") if isinstance(part, dict) else None
+        if kind == "input_text" and isinstance(part.get("text"), str):
+            continue
+        if kind != "input_image":
+            raise HTTPException(status_code=400, detail="Tin của người dùng chỉ được có chữ và ảnh.")
+        _check_image(part)
+        images += 1
+    return images
+
+
 def _parse_step(raw: bytes) -> tuple[list[dict], dict, str]:
     try:
         payload = json.loads(raw)
@@ -300,6 +347,7 @@ def _parse_step(raw: bytes) -> tuple[list[dict], dict, str]:
         raise HTTPException(status_code=400, detail="Bước gửi lên chưa có nội dung.")
     if len(items) > MAX_ITEMS:
         raise HTTPException(status_code=400, detail=f"Hội thoại đã quá {MAX_ITEMS} mục. Gõ /moi để bắt đầu hội thoại mới nhé.")
+    images = 0
     for item in items:
         kind = item.get("type", "message") if isinstance(item, dict) else None
         if kind not in ALLOWED_ITEM_TYPES:
@@ -307,6 +355,11 @@ def _parse_step(raw: bytes) -> tuple[list[dict], dict, str]:
         # Chỉ dẫn hệ thống do máy chủ viết; CLI không được chèn vai system hay developer.
         if kind == "message" and item.get("role") not in {"user", "assistant"}:
             raise HTTPException(status_code=400, detail="Chỉ nhận tin của người dùng hoặc của Peto trong bước gửi lên.")
+        if kind == "message" and item.get("role") == "user":
+            images += _count_images(item.get("content"))
+    if images > MAX_STEP_IMAGES:
+        raise HTTPException(status_code=400, detail=f"Mỗi bước gửi kèm tối đa {MAX_STEP_IMAGES} ảnh. Gõ /moi để bắt đầu "
+                                                    "hội thoại mới nhé.")
     # CLI cũ không gửi mức suy nghĩ thì dùng mức mặc định của máy chủ.
     effort = payload.get("effort") or AGENT_REASONING
     if not isinstance(effort, str) or effort not in STEP_COST:

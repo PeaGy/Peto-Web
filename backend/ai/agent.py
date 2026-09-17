@@ -177,6 +177,18 @@ def _text_of(item: dict) -> str:
     return ""
 
 
+def _images_of(item: dict) -> list[str]:
+    """Mô tả ngắn các ảnh trong một tin, ví dụ "PNG 240 KB", để phản hồi giả xác nhận đã nhận ảnh."""
+    content = item.get("content")
+    found = []
+    for part in content if isinstance(content, list) else []:
+        if isinstance(part, dict) and part.get("type") == "input_image":
+            header, _, encoded = str(part.get("image_url", "")).partition(",")
+            kind = header.removeprefix("data:image/").removesuffix(";base64").upper()
+            found.append(f"{kind} {max(1, round(len(encoded) * 3 / 4 / 1024))} KB")
+    return found
+
+
 def _result(item: dict) -> dict:
     try:
         value = json.loads(item.get("output") or "{}")
@@ -210,6 +222,8 @@ async def _mock_step(items: list[dict]) -> AsyncIterator[AgentEvent]:
     if "__demo__" not in task:
         reply = ("Peto đang chạy bằng phản hồi giả nên chưa làm việc thật được. Gõ một yêu cầu có __demo__ để xem "
                  "thử một vòng đọc, sửa và chạy lệnh.")
+        if images := _images_of(items[last_user]):
+            reply = f"Peto đã nhận {len(images)} ảnh ({', '.join(images)}) nhưng phản hồi giả không xem được ảnh."
         steps = speak(reply, [])
     elif not results:
         steps = speak("Để Peto xem README.md trước nha.",

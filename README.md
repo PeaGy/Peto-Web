@@ -495,6 +495,9 @@ và gọi mô hình AI. Cách cài, đăng nhập và sử dụng nằm trong `a
   `/moi` bắt đầu hội thoại mới, `/resume` mở lại hội thoại gần nhất của thư mục (lưu trên máy người dùng, không chạy lại
   lệnh nào), `/effort thap|vua|cao` đổi mức suy nghĩ và được nhớ cho lần sau, `/usage` xem số bước và token hôm nay.
   Dán nhiều dòng không bị gửi từng dòng; đoạn dài hiện gọn thành `[Đã dán N dòng]`.
+- **Gửi ảnh:** Alt+V dán ảnh trong clipboard (ảnh chụp màn hình, ảnh copy từ trình duyệt, tệp ảnh copy trong Explorer),
+  hoặc kéo tệp ảnh thả vào cửa sổ terminal; ảnh hiện thành `[Ảnh 1]` trong dòng nhập. Ảnh có cạnh dài quá 2000px được
+  thu nhỏ, và mỗi bước chỉ gửi lại 4 ảnh gần nhất.
 - **Cập nhật:** khi VPS có bản `peto` mới hơn bản trên máy, CLI nhắc chạy lại lệnh cài.
 - **Quyền:** đọc và tìm trong thư mục thì Peto tự làm; sửa tệp, tạo tệp và chạy lệnh luôn hỏi bạn trước. Peto không đọc
   hay sửa `.env`, khóa và `.git`, và không ra ngoài thư mục dự án.

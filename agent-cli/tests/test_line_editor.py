@@ -7,8 +7,10 @@ import io
 
 import pytest
 
+from peto_agent import images as image_files
 from peto_agent import line_editor
 from peto_agent.commands import suggestions
+from peto_agent.images import Image, ImageError
 from peto_agent.line_editor import INTERRUPT, SUBMIT, EditorState, Key, LineEditor, group_paste, layout, translate
 from peto_agent.ui import UI
 
@@ -208,6 +210,57 @@ def test_line_editor_redraws_in_place():
     editor = LineEditor(console, io.StringIO(), size=lambda: (80, 24))
     assert editor.read(PROMPT) == "hi"
     assert editor.read(PROMPT) == "yo", "phím tới sau Enter được giữ cho lượt nhập sau"
+
+
+SHOT = Image(b"\x89PNG\r\n\x1a\nanh-chup", "image/png", 1920, 1080)
+
+
+def test_alt_v_pastes_clipboard_images_as_labels():
+    assert translate(0x56, "v", 0x02) == Key("image")
+    assert translate(0x56, "@", 0x01 | 0x08) == Key("char", "@"), "AltGr (Ctrl+Alt phải) vẫn gõ ra ký tự"
+
+    answers = [[SHOT], ImageError(image_files.NO_IMAGE)]
+
+    def clipboard():
+        answer = answers.pop(0)
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    console = FakeConsole([typed("giao diện lỗi như "), [Key("image")], typed("sửa giúp"), [Key("image")], [Key("enter")]])
+    out = io.StringIO()
+    editor = LineEditor(console, out, size=lambda: (80, 24), clipboard=clipboard)
+    assert editor.read(PROMPT) == "giao diện lỗi như [Ảnh 1] sửa giúp"
+    assert editor.last_images == [(1, SHOT)]
+    text = out.getvalue()
+    assert "  Đang đọc ảnh…" in text and "Bạn › giao diện lỗi như [Ảnh 1] " in text
+    assert ("\r\n  Clipboard chưa có ảnh. Chụp màn hình (Win+Shift+S) hoặc copy ảnh rồi bấm\r\n  Alt+V.\033[2A" in text), \
+        "dòng nhắc dài tự xuống hàng thay vì bị cắt"
+    assert text.endswith("Bạn › giao diện lỗi như [Ảnh 1] sửa giúp\r\033[40C\033[?25h\r\n"), "dòng nhắc biến mất khi gửi"
+
+    console = FakeConsole([[Key("image")], [Key("backspace"), Key("backspace")], typed("chữ\r")])
+    editor = LineEditor(console, io.StringIO(), size=lambda: (80, 24), clipboard=lambda: [SHOT])
+    assert editor.read(PROMPT) == "chữ" and editor.last_images == [], "xóa nhãn là bỏ ảnh"
+    console.batches = [[Key("image")], [Key("enter")]]
+    assert editor.read(PROMPT) == "[Ảnh 2] " and editor.last_images == [(2, SHOT)], "số ảnh tăng dần trong phiên"
+
+
+def test_dropping_image_files_attaches_them(tmp_path):
+    shot = tmp_path / "lỗi giao diện.png"
+    shot.write_bytes(b"x")
+    loaded = []
+
+    def files(paths):
+        loaded.append(paths)
+        return [SHOT]
+
+    console = FakeConsole([group_paste(typed(f'"{shot}"')), [Key("enter")]])
+    editor = LineEditor(console, io.StringIO(), size=lambda: (80, 24), files=files)
+    assert editor.read(PROMPT) == "[Ảnh 1] " and loaded == [[shot]]
+
+    note = str(tmp_path / "ghi-chu.txt")
+    console.batches = [group_paste(typed(note)), [Key("enter")]]
+    assert editor.read(PROMPT) == note and len(loaded) == 1, "đường dẫn tệp không phải ảnh vẫn là chữ"
 
 
 def test_falls_back_to_input_outside_a_console(monkeypatch):

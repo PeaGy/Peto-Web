@@ -63,6 +63,8 @@ class UI:
         self._in_code = False
         # Ô nhập có gợi ý lệnh (line_editor); None thì dấu nhắc dùng reader như input().
         self.editor = None
+        # Ảnh gửi kèm lượt nhập vừa xong: (số ảnh, ảnh). Chỉ ô nhập mới dán được ảnh.
+        self.attached: list = []
 
     def paint(self, text: str, color: str | None) -> str:
         if not color or not self.colors:
@@ -163,9 +165,12 @@ class UI:
 
     def prompt(self) -> str:
         self.clear_status()
+        self.attached = []
         if self.editor is not None:
             try:
-                return self.editor.read("Bạn › ", self.paint)
+                text = self.editor.read("Bạn › ", self.paint)
+                self.attached = list(self.editor.last_images)
+                return text
             except OSError:
                 # Console không cho đọc phím thô nữa: quay về input() cho hết phiên.
                 self.editor = None

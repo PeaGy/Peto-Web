@@ -100,7 +100,9 @@ def when(saved_at: float) -> str:
 def _text(item: dict) -> str:
     content = item.get("content")
     if isinstance(content, list):
-        content = " ".join(str(part.get("text", "")) for part in content if isinstance(part, dict))
+        parts = [str(part.get("text", "")) for part in content if isinstance(part, dict) and part.get("text")]
+        # Tin kèm ảnh của người dùng: phần đầu là chữ đã gõ, sau đó là nhãn và ảnh.
+        content = parts[0] if item.get("role") == "user" and parts else " ".join(parts)
     text = " ".join(str(content or "").split())
     return text if len(text) <= RECAP_CHARS else text[: RECAP_CHARS - 1] + "…"
 

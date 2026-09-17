@@ -12,9 +12,10 @@ import pytest
 from conftest import FakeUI
 
 from peto_agent import __main__ as cli
-from peto_agent import config
+from peto_agent import __version__, config, history
 from peto_agent.client import ApiError, Client, normalize_server
-from peto_agent.loop import Session
+from peto_agent.images import Image
+from peto_agent.loop import OLD_IMAGE_NOTE, Session, TaskLog
 from peto_agent.workspace import Workspace
 
 COMMAND = f'"{sys.executable}" -c "print(\'ok\')"'
@@ -222,13 +223,16 @@ def test_effort_is_remembered_and_resume_reopens_the_last_conversation(project, 
 
     status = FakeUI()
     assert cli.status(status) == 0
-    assert "· mức cao · hôm nay còn 196/200 bước · đã dùng 45k token · peto 0.2.0." in status.text
+    assert f"· mức cao · hôm nay còn 196/200 bước · đã dùng 45k token · peto {__version__}." in status.text
     assert "Có bản peto mới" not in status.text, "máy chủ không báo phiên bản thì không nhắc"
 
 
 def test_commands_usage_and_update_notice(project, peto, monkeypatch):
+    major, minor, _ = (int(part) for part in __version__.split("."))
+    # Số phụ hai chữ số: so theo chuỗi thì bản mới này lại "nhỏ hơn", so theo từng số mới đúng.
+    newer = f"{major}.{minor + 7}.0"
     me = {"account": "Bình", "device_name": "MAY-THU", "steps_used": 10, "steps_limit": 200, "tokens_used": 1234,
-          "default_effort": "medium", "cli_version": "0.10.0"}
+          "default_effort": "medium", "cli_version": newer}
 
     def reply(path, body):
         if path == "/api/agent/me":
@@ -243,10 +247,10 @@ def test_commands_usage_and_update_notice(project, peto, monkeypatch):
 
     ui = FakeUI(answers=["/help", "/api/users lỗi 500", "/usage", "/moi thêm", "/xyz", "/thoát", "/usage"])
     assert cli.session(ui) == 0
-    notice = (f"Có bản peto mới 0.10.0 (máy này đang dùng 0.2.0). Thoát peto rồi chạy lệnh cài để cập nhật:\n"
+    notice = (f"Có bản peto mới {newer} (máy này đang dùng {__version__}). Thoát peto rồi chạy lệnh cài để cập nhật:\n"
               f"  irm {peto.url}/install.ps1 | iex\n")
-    assert notice in ui.text, "so theo từng số: 0.10.0 mới hơn 0.2.0"
-    assert "Peto Agent 0.2.0 · project · Bình" in ui.text and "/help xem các lệnh" in ui.text
+    assert notice in ui.text, "so phiên bản theo từng số"
+    assert f"Peto Agent {__version__} · project · Bình" in ui.text and "/help xem các lệnh" in ui.text
     assert "  /effort  Xem hoặc đổi mức suy nghĩ: thap, vua, cao" in ui.text
     steps = [request["body"] for request in peto.requests if request["path"] == "/api/agent/step"]
     assert [step["input"][0]["content"] for step in steps] == ["/api/users lỗi 500"], "đường dẫn API không phải lệnh"
@@ -254,10 +258,38 @@ def test_commands_usage_and_update_notice(project, peto, monkeypatch):
     assert "Lệnh /moi không nhận thêm gì phía sau." in ui.text and "Không có lệnh này" in ui.text
     assert ui.answers == ["/usage"], "/thoát gõ có dấu vẫn thoát"
 
-    me["cli_version"] = "0.2.0"
+    me["cli_version"] = __version__
     same = FakeUI(answers=["/thoat"])
     assert cli.session(same) == 0
     assert "Có bản peto mới" not in same.text
+
+
+def test_pasted_images_are_sent_and_only_the_last_four_are_kept(project, peto):
+    def reply(path, body):
+        return 200, [{"type": "delta", "text": "Đã xem ảnh."}, {"type": "done", "output": [message("Đã xem ảnh.")],
+                                                                "usage": {"input_tokens": 3000, "output_tokens": 20}}]
+
+    peto.reply = reply
+    shot = Image(b"\x89PNG\r\n\x1a\nanh-chup", "image/png", 1920, 1080)
+    log = TaskLog("project")
+    session = Session(Client(peto.url, "peto_token_thu"), Workspace(project), FakeUI(), log=log)
+    session.run_task("giao diện lỗi như [Ảnh 1]", [(1, shot)])
+    assert peto.requests[-1]["body"]["input"][0]["content"] == [
+        {"type": "input_text", "text": "giao diện lỗi như [Ảnh 1]"},
+        {"type": "input_text", "text": "[Ảnh 1]"},
+        {"type": "input_image", "image_url": shot.data_url(), "detail": "high"},
+    ]
+
+    for number in range(2, 6):
+        session.run_task(f"còn đây nữa [Ảnh {number}]", [(number, shot)])
+    sent = peto.requests[-1]["body"]["input"]
+    parts = [part for item in sent if isinstance(item.get("content"), list) for part in item["content"]]
+    assert sum(part["type"] == "input_image" for part in parts) == 4
+    assert sent[0]["content"][1:] == [{"type": "input_text", "text": "[Ảnh 1]"},
+                                      {"type": "input_text", "text": OLD_IMAGE_NOTE}], "ảnh cũ nhất thành ghi chú"
+    assert history.recap(session.items) == [("Bạn", "còn đây nữa [Ảnh 5]"), ("Peto", "Đã xem ảnh.")]
+    logged = log.path.read_text(encoding="utf-8")
+    assert '"images": 1' in logged and "base64" not in logged, "nhật ký không chứa dữ liệu ảnh"
 
 
 def test_split_command():
