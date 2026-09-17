@@ -10,18 +10,33 @@ import time
 import webbrowser
 from pathlib import Path
 
-from . import __version__, config, history
+from . import __version__, config, history, line_editor
 from .client import ApiError, Client
+from .commands import COMMANDS, fold
 from .loop import Session, TaskLog, format_tokens
-from .ui import UI
+from .ui import UI, enable_vt
 from .workspace import Workspace
 
-HELP_LINE = ("Gõ yêu cầu cho Peto. /moi: hội thoại mới · /resume: mở lại hội thoại trước · /effort: mức suy nghĩ · "
-             "/thoat: thoát · Ctrl+C: dừng yêu cầu đang chạy")
+HINT_WITH_MENU = "Gõ yêu cầu cho Peto · gõ / để chọn lệnh · Ctrl+C dừng yêu cầu đang chạy"
+HINT_PLAIN = "Gõ yêu cầu cho Peto · /help xem các lệnh · Ctrl+C dừng yêu cầu đang chạy"
+# Lệnh không nhận gì phía sau; gõ thêm chữ thì nhắc chứ không gửi cả câu cho Peto.
+PLAIN_COMMANDS = {"/thoat", "/exit", "/quit", "/moi", "/help", "/resume", "/usage"}
 EFFORT_LABELS = {"low": "thấp", "medium": "vừa", "high": "cao"}
 # Gõ không dấu cho dễ, như /moi và /thoat; có dấu hay tên tiếng Anh cũng nhận.
 EFFORT_ALIASES = {"thap": "low", "thấp": "low", "low": "low", "vua": "medium", "vừa": "medium", "tb": "medium",
                   "medium": "medium", "cao": "high", "high": "high"}
+
+
+def split_command(text: str) -> tuple[str, str]:
+    """"/effort cao" thành ("/effort", "cao"); chữ không có dạng lệnh thành ("", "").
+
+    Tên lệnh so theo chữ thường không dấu, vì bộ gõ tiếng Việt có thể biến "/thoat" thành "/thoát". Chữ như
+    "/api/users lỗi 500" có dấu gạch chéo thứ hai nên không bị coi là lệnh.
+    """
+    if not re.fullmatch(r"/[^\s/]*( .*)?", text):
+        return "", ""
+    name, _, value = text.partition(" ")
+    return fold(name), value.strip()
 
 
 def _saved_client(ui: UI) -> Client | None:
@@ -39,6 +54,32 @@ def _saved_client(ui: UI) -> Client | None:
 def _steps_left(me: dict) -> str:
     limit = int(me.get("steps_limit") or 0)
     return f"{max(0, limit - int(me.get('steps_used') or 0))}/{limit}"
+
+
+def _version(value: object) -> tuple[int, ...]:
+    """"0.2.0" thành (0, 2, 0); chuỗi lạ thành () để không bao giờ nhắc nhầm."""
+    try:
+        return tuple(int(part) for part in str(value).split("."))
+    except ValueError:
+        return ()
+
+
+def _update_notice(ui: UI, client: Client, me: dict) -> None:
+    latest = me.get("cli_version")
+    if _version(latest) > _version(__version__):
+        # Lệnh cài nằm riêng một dòng: dòng dài bị terminal cắt ngang giữa lệnh thì khó chép.
+        ui.line(f"Có bản peto mới {latest} (máy này đang dùng {__version__}). Thoát peto rồi chạy lệnh cài để cập nhật:",
+                "yellow")
+        ui.line(f"  irm {client.server}/install.ps1 | iex", "cyan")
+
+
+def _usage_parts(me: dict) -> list[str]:
+    parts = [f"hôm nay còn {_steps_left(me)} bước"]
+    tokens = me.get("tokens_used")
+    # Máy chủ cũ chưa trả số token thì bỏ phần này.
+    if isinstance(tokens, int):
+        parts.append(f"đã dùng {format_tokens(tokens)} token")
+    return parts
 
 
 def _effort(me: dict) -> str:
@@ -63,6 +104,27 @@ def _change_effort(ui: UI, work: Session, value: str) -> None:
     settings["effort"] = effort
     config.save(settings)
     ui.success(f"Đã chuyển sang mức {EFFORT_LABELS[effort]}" + ("; mỗi bước tính 2 bước." if effort == "high" else "."))
+
+
+def _help(ui: UI) -> None:
+    width = max(len(command.name) for command in COMMANDS)
+    for command in COMMANDS:
+        ui.line(f"  {command.name.ljust(width)}  {command.description}", "dim")
+    ui.line("  Ctrl+C dừng yêu cầu đang chạy." + (" ↑/↓ gọi lại tin đã gửi." if ui.editor is not None else ""), "dim")
+
+
+def _usage(ui: UI, work: Session) -> None:
+    try:
+        me = work.client.json("GET", "/api/agent/me")
+    except ApiError as err:
+        ui.failure(err.message)
+        return
+    parts = _usage_parts(me)
+    if work.context_tokens:
+        parts.append(f"hội thoại này {format_tokens(work.context_tokens)} token")
+    parts.append(f"mức {EFFORT_LABELS[work.effort]}" + (", mỗi bước tính 2 bước" if work.effort == "high" else ""))
+    summary = " · ".join(parts)
+    ui.line(f"  {summary[:1].upper()}{summary[1:]}.")
 
 
 def _resume(ui: UI, work: Session) -> None:
@@ -160,11 +222,9 @@ def status(ui: UI) -> int:
     except ApiError as err:
         ui.failure(err.message)
         return 1
-    tokens = me.get("tokens_used")
-    # Máy chủ cũ chưa trả số token thì bỏ phần này.
-    usage = f" · đã dùng {format_tokens(tokens)} token" if isinstance(tokens, int) else ""
     ui.line(f"Đã đăng nhập {client.server} · tài khoản {me.get('account')} · máy {me.get('device_name')} · "
-            f"mức {EFFORT_LABELS[_effort(me)]} · hôm nay còn {_steps_left(me)} bước{usage}.")
+            f"mức {EFFORT_LABELS[_effort(me)]} · {' · '.join(_usage_parts(me))} · peto {__version__}.")
+    _update_notice(ui, client, me)
     return 0
 
 
@@ -186,9 +246,12 @@ def session(ui: UI) -> int:
         ui.failure(err.message)
         return 1
     effort = _effort(me)
-    ui.line(f"{ui.paint('Peto Agent', 'cyan')} · {root.name} · {me.get('account')} · mức {EFFORT_LABELS[effort]} · "
-            f"hôm nay còn {_steps_left(me)} bước")
-    ui.line(HELP_LINE, "dim")
+    if ui.editor is None:
+        ui.editor = line_editor.create(ui.out, enable_vt)
+    ui.line(f"{ui.paint('Peto Agent', 'cyan')} {__version__} · {root.name} · {me.get('account')} · "
+            f"mức {EFFORT_LABELS[effort]} · hôm nay còn {_steps_left(me)} bước")
+    ui.line(HINT_WITH_MENU if ui.editor is not None else HINT_PLAIN, "dim")
+    _update_notice(ui, client, me)
     work = Session(client, Workspace(root), ui, log=TaskLog(root.name), effort=effort)
     saved = history.load(root, client.server)
     if saved is not None:
@@ -202,23 +265,30 @@ def session(ui: UI) -> int:
             break
         if not text:
             continue
-        if text in {"/thoat", "/exit", "/quit"}:
+        name, value = split_command(text)
+        if name in PLAIN_COMMANDS and value:
+            ui.line(f"Lệnh {name} không nhận thêm gì phía sau.", "yellow")
+            continue
+        if name in {"/thoat", "/exit", "/quit"}:
             break
-        if text == "/moi":
+        if name == "/moi":
             # Hội thoại cũ vẫn mở lại được bằng /resume cho tới khi hội thoại mới được lưu đè sau yêu cầu đầu tiên.
             work.reset()
             ui.line("Đã bắt đầu hội thoại mới.", "dim")
             continue
-        if text == "/help":
-            ui.line(HELP_LINE, "dim")
+        if name == "/help":
+            _help(ui)
             continue
-        if text == "/resume":
+        if name == "/resume":
             _resume(ui, work)
             continue
-        if text == "/effort" or text.startswith("/effort "):
-            _change_effort(ui, work, text[len("/effort"):].strip())
+        if name == "/usage":
+            _usage(ui, work)
             continue
-        if re.fullmatch(r"/[A-Za-z]+", text):
+        if name == "/effort":
+            _change_effort(ui, work, fold(value))
+            continue
+        if name and not value:
             ui.line("Không có lệnh này. Gõ /help để xem các lệnh.", "yellow")
             continue
         work.run_task(text)

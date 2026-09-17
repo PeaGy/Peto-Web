@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import json
 import re
+import tomllib
 import uuid
 
 import pytest
 
 import agent_api
+import agent_install
 import auth
 import db
 from config import AGENT_DAILY_STEPS, SESSION_COOKIE, owner_key
@@ -212,7 +214,7 @@ async def test_effort_reaches_the_model_and_high_costs_two_steps(anon_client, cl
     assert (await client.get("/api/agent/devices")).json()["steps_used"] == 0, "bước lỗi ở mức cao trả lại đủ 2 bước"
 
 
-async def test_me_reports_steps_tokens_and_default_effort(anon_client, client):
+async def test_me_reports_steps_tokens_effort_and_cli_version(anon_client, client):
     owner = await login_as(client, "google")
     token = await connect(anon_client, client)
     day = agent_api._today()
@@ -221,6 +223,8 @@ async def test_me_reports_steps_tokens_and_default_effort(anon_client, client):
     me = (await anon_client.get("/api/agent/me", headers=bearer(token))).json()
     assert me["steps_used"] == 1 and me["tokens_used"] == 1500
     assert me["default_effort"] == agent_api.AGENT_REASONING
+    project = tomllib.loads((agent_install.CLI_DIR / "pyproject.toml").read_text(encoding="utf-8"))
+    assert me["cli_version"] == project["project"]["version"], "peto so bản này để nhắc cập nhật"
 
 
 async def test_step_rejects_bad_input_without_spending_steps(anon_client, client, monkeypatch):

@@ -34,8 +34,14 @@ hoặc mở PowerShell từ menu Start. Muốn dùng ngay trong cửa sổ đó 
 
 ```powershell
 $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('Path', 'User')
-``` Biến môi trường tùy chọn: `PETO_AGENT_INSTALL_DIR` để cài chỗ
-khác, `PETO_AGENT_NO_MODIFY_PATH=1` để không sửa PATH.
+```
+
+Biến môi trường tùy chọn: `PETO_AGENT_INSTALL_DIR` để cài chỗ khác, `PETO_AGENT_NO_MODIFY_PATH=1` để không sửa PATH.
+
+### Cập nhật
+
+Khi máy chủ có bản `peto` mới hơn bản trên máy, `peto` nhắc ngay lúc mở phiên và trong `peto status`, kèm lệnh cài để
+chạy lại. `peto --version` xem bản đang dùng.
 
 Ai mở được trang Peto cũng tải được bộ cài và mã nguồn CLI; trong đó không có bí mật nào.
 
@@ -83,15 +89,39 @@ cd C:\Projects\website-a
 peto
 ```
 
-Gõ yêu cầu như nhắn tin cho Peto. Trong phiên:
+Gõ yêu cầu như nhắn tin cho Peto. Gõ `/` thì danh sách lệnh hiện ngay dưới dòng nhập và lọc dần theo chữ bạn gõ:
+
+```text
+Bạn › /re
+  ❯ /resume  Mở lại hội thoại gần nhất của thư mục này
+```
+
+Mũi tên lên/xuống chọn lệnh, Tab điền lệnh, Enter chạy lệnh đang chọn, Esc ẩn danh sách. Mới gõ mỗi `/` thì chưa có lệnh
+nào được chọn, nên Enter không tự chạy gì. Các lệnh:
 
 - `/moi`: bắt đầu hội thoại mới.
 - `/resume`: mở lại hội thoại gần nhất của thư mục này, kể cả sau khi đã thoát. Không lệnh nào được chạy lại, và muốn
   sửa tệp thì Peto phải đọc lại tệp trước. Mở `peto` ở thư mục có hội thoại cũ sẽ có dòng nhắc.
 - `/effort thap`, `/effort vua`, `/effort cao`: mức suy nghĩ, được nhớ trên máy này cho lần sau. Mức cao suy nghĩ kỹ
-  hơn nhưng mỗi bước tính 2 bước. Gõ `/effort` để xem mức đang dùng; chưa chọn thì theo mặc định của máy chủ.
-- `/help`: xem các lệnh. `/thoat`: thoát.
-- **Ctrl+C**: dừng yêu cầu đang chạy; lệnh đang chạy bị dừng cả cây tiến trình.
+  hơn nhưng mỗi bước tính 2 bước. Gõ `/effort` để xem mức đang dùng; chưa chọn thì theo mặc định của máy chủ. Gõ
+  `/effort` kèm dấu cách thì chọn mức trong danh sách.
+- `/usage`: số bước còn lại và số token đã dùng hôm nay, độ dài hội thoại đang mở và mức suy nghĩ.
+- `/help`: xem các lệnh. `/thoat`: thoát. Tên lệnh gõ có dấu (`/thoát`) vẫn được nhận.
+- **Ctrl+C**: dừng yêu cầu đang chạy; lệnh đang chạy bị dừng cả cây tiến trình. Ở dòng nhập, Ctrl+C xóa chữ đang gõ;
+  dòng đã trống thì thoát.
+
+Dòng nhập còn có:
+
+- **Mũi tên lên/xuống** (khi không có danh sách lệnh) gọi lại các tin đã gửi trong phiên, hoặc chuyển dòng khi tin có
+  nhiều dòng.
+- **Dán nhiều dòng**, ví dụ log lỗi: cả đoạn nằm trong một tin, không bị gửi từng dòng. Đoạn từ 4 dòng hoặc dài hơn 1000
+  ký tự hiện gọn thành `[Đã dán 42 dòng]` nhưng vẫn gửi đủ; gõ thêm lời nhắn rồi Enter để gửi.
+- **Shift+Enter** xuống dòng trong Windows Terminal và cửa sổ PowerShell.
+
+Dòng nhập này tự đọc từng phím của console Windows. Bộ gõ như Unikey, EVKey sửa chữ bằng cách gửi phím xóa rồi gửi chữ
+mới, nên mỗi lần xóa bỏ đúng một ký tự như ô nhập thường. Nếu dòng nhập hiển thị sai hay gõ tiếng Việt bị lỗi trong
+terminal của bạn, đặt `$env:PETO_AGENT_SIMPLE_INPUT = '1'` trước khi chạy `peto` để quay về dòng nhập đơn giản, không có
+danh sách lệnh, lịch sử hay dán nhiều dòng. Khi input được chuyển từ tệp hay ống dẫn, `peto` cũng dùng dòng nhập đơn giản.
 
 Trong lúc chờ, một dòng tạm `… Peto đang nghĩ · 8s` tự đếm giây rồi biến mất khi có chữ. Câu trả lời hiện theo từng dòng
 để tô được chữ đậm và `mã`; khi output bị chuyển sang tệp thì giữ nguyên chữ gốc.
@@ -146,6 +176,13 @@ irm http://127.0.0.1:8000/install.ps1 | iex
 ```
 
 Script bộ cài chưa có test tự động; khi sửa `install.ps1`, chạy lại lệnh trên bằng Windows PowerShell 5.1.
+
+Phần đọc phím của dòng nhập (`WindowsConsole` trong `line_editor.py`) không chạy được trong pytest, vì pytest không có
+console thật. Khi sửa nó, thử lại trong Windows Terminal và cửa sổ PowerShell: gõ `/` rồi chọn lệnh, dán nhiều dòng, gõ
+chữ dài tới lúc xuống hàng, gõ tiếng Việt bằng bộ gõ, và trả lời câu hỏi y/n sau đó.
+
+Mỗi lần đổi CLI, tăng `version` trong `pyproject.toml` cùng `__version__` trong `peto_agent/__init__.py` (hai số phải bằng
+nhau). Không tăng thì máy đang cài bản cũ không được nhắc cập nhật.
 
 ## Test
 

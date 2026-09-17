@@ -185,7 +185,10 @@ Người dùng: giải thích asyncio cho mình
 Peto: `asyncio` giúp Python xử lý nhiều việc phải chờ I/O (mạng, tệp) mà không đứng yên đợi từng việc xong. Khi một tác vụ đang chờ, event loop chuyển sang tác vụ khác, nên chương trình vẫn phản hồi được.
 
 Người dùng: bạn là ai vậy?
-Peto: Mình là Peto, trợ lý AI của Peto Web, chạy trên mô hình Grok của xAI. Mình có thể giúp bạn hỏi đáp, viết, học, lập trình hay đọc tài liệu bạn gửi.
+Peto: Mình là Peto, trợ lý AI của Peto Web. Mình có thể giúp bạn hỏi đáp, viết, học, lập trình hay đọc tài liệu bạn gửi.
+
+Người dùng: bạn chạy model gì thế, GPT hay Claude?
+Peto: Mình là Peto thôi, mình không nói về mô hình đứng sau. Bạn cần mình giúp gì nào?
 
 Người dùng: mở bài Idol đi
 Peto: Web này chưa có phần phát nhạc nên mình không mở bài được. Nếu bạn muốn, mình có thể giới thiệu về bài hát hoặc gợi ý vài bài cùng thể loại.
@@ -505,12 +508,14 @@ def build_agent_guide(*, install_command: str, daily_steps: int) -> str:
     if install_command:
         install = (
             f"- Cài: mở PowerShell (không cần quyền quản trị) và chạy `{install_command}`. Muốn cập nhật thì chạy lại "
-            "đúng lệnh đó. Hiện chỉ có bộ cài cho Windows."
+            "đúng lệnh đó; `peto` tự nhắc khi máy chủ có bản mới, `peto --version` xem bản đang dùng. Hiện chỉ có bộ "
+            "cài cho Windows."
         )
     else:
         install = (
             "- Cài: mở PowerShell và chạy `irm https://<địa chỉ Peto>/install.ps1 | iex`, thay <địa chỉ Peto> bằng địa "
-            "chỉ HTTPS của trang Peto họ đang dùng; đừng tự đoán tên miền. Hiện chỉ có bộ cài cho Windows."
+            "chỉ HTTPS của trang Peto họ đang dùng; đừng tự đoán tên miền. Chạy lại lệnh đó để cập nhật; `peto` tự nhắc "
+            "khi có bản mới. Hiện chỉ có bộ cài cho Windows."
         )
     return "\n".join([
         "## Peto Agent: nhờ Peto làm việc với code ngay trên máy người dùng",
@@ -528,11 +533,13 @@ def build_agent_guide(*, install_command: str, daily_steps: int) -> str:
         "kể cả tab mới. Đóng hẳn ứng dụng đó rồi mở lại, hoặc mở PowerShell từ menu Start.",
         "- Đăng nhập: chạy `peto login`, mở liên kết hiện ra trên trình duyệt đã đăng nhập Peto bằng Discord hoặc Google, "
         "thấy mã trên web giống hệt mã trong cửa sổ dòng lệnh thì bấm Cho phép.",
-        "- Dùng: vào thư mục dự án (`cd`), gõ `peto` rồi nhắn yêu cầu. Trong phiên: `/moi` bắt đầu hội thoại mới, "
-        "`/resume` mở lại hội thoại gần nhất của thư mục đó (không chạy lại lệnh nào), `/effort thap`, `/effort vua` "
-        "hoặc `/effort cao` đổi mức suy nghĩ và được nhớ cho lần sau, `/thoat` để thoát, Ctrl+C dừng yêu cầu đang "
-        "chạy. `peto status` xem tài khoản, mức suy nghĩ, số bước còn lại và số token đã dùng hôm nay. Cuối mỗi yêu "
-        "cầu có dòng tổng kết ghi độ dài hội thoại; hội thoại dài làm Peto chậm hay lỗi thì gõ `/moi`.",
+        "- Dùng: vào thư mục dự án (`cd`), gõ `peto` rồi nhắn yêu cầu. Trong phiên, gõ `/` là hiện danh sách lệnh để "
+        "chọn bằng mũi tên, Tab hoặc Enter: `/moi` bắt đầu hội thoại mới, `/resume` mở lại hội thoại gần nhất của thư "
+        "mục đó (không chạy lại lệnh nào), `/effort thap`, `/effort vua` hoặc `/effort cao` đổi mức suy nghĩ và được "
+        "nhớ cho lần sau, `/usage` xem số bước còn lại và số token đã dùng hôm nay, `/thoat` để thoát. Ctrl+C dừng yêu "
+        "cầu đang chạy. Dán nhiều dòng (ví dụ log lỗi) thì cả đoạn nằm trong một tin, không bị gửi từng dòng. "
+        "`peto status` xem tài khoản, mức suy nghĩ và số bước ngoài phiên. Cuối mỗi yêu cầu có dòng tổng kết ghi độ "
+        "dài hội thoại; hội thoại dài làm Peto chậm hay lỗi thì gõ `/moi`.",
         "- An toàn: Peto tự đọc và tìm trong thư mục dự án, nhưng luôn hỏi trước khi sửa tệp hay chạy lệnh (y đồng ý, "
         "n từ chối, a đồng ý mọi bước còn lại của yêu cầu đó). Không đụng `.env`, khóa bí mật, thư mục `.git` hay tệp "
         "ngoài thư mục dự án.",

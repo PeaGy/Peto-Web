@@ -17,7 +17,9 @@ import threading
 from collections.abc import Iterator
 from urllib.parse import urlsplit
 
-USER_AGENT = "Peto-Agent-CLI/0.1"
+from . import __version__
+
+USER_AGENT = f"Peto-Agent-CLI/{__version__}"
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
 MAX_JSON_BYTES = 2 * 1024 * 1024
 HINTS = {

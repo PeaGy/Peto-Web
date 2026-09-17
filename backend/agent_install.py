@@ -72,6 +72,15 @@ def public_origin(request: Request) -> str | None:
     return f"{scheme}://{netloc}:{port}" if port else f"{scheme}://{netloc}"
 
 
+def cli_version() -> str:
+    """Phiên bản ``peto`` máy chủ đang phát, để CLI cũ biết mà nhắc cập nhật; chuỗi rỗng khi không đọc được."""
+    try:
+        project = tomllib.loads((CLI_DIR / "pyproject.toml").read_text(encoding="utf-8"))
+        return str(project["project"]["version"])
+    except (OSError, KeyError, TypeError, ValueError):
+        return ""
+
+
 def install_command(request: Request) -> str:
     """Lệnh cài một dòng cho đúng trang người dùng đang mở; chuỗi rỗng khi trang đó không cài qua mạng được."""
     server = public_origin(request)

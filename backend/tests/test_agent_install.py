@@ -101,3 +101,7 @@ def test_pip_installs_the_wheel_and_the_cli_knows_its_server(tmp_path):
     result = subprocess.run([sys.executable, "-c", probe], cwd=tmp_path, capture_output=True, text=True, check=True,
                             env={**os.environ, "PYTHONPATH": str(target)})
     assert result.stdout.strip() == ORIGIN
+    # Chạy lệnh thật từ gói đã cài: thiếu một mô-đun trong gói thì lỗi ngay ở đây.
+    version = subprocess.run([sys.executable, "-m", "peto_agent", "--version"], cwd=tmp_path, capture_output=True,
+                             text=True, check=True, env={**os.environ, "PYTHONPATH": str(target)})
+    assert version.stdout.strip() == f"peto {wheel.filename.split('-')[1]}"

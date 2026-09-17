@@ -1,3 +1,3 @@
 """Peto Agent CLI: chạy trên máy người dùng, gọi máy chủ Peto từng bước và tự chạy công cụ trong thư mục dự án."""
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"

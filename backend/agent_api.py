@@ -28,6 +28,7 @@ from pydantic import BaseModel, Field
 
 import auth
 import db
+from agent_install import cli_version
 from agent_tools import TOOL_SCHEMAS
 from ai.agent import agent_step
 from ai.base import ProviderError
@@ -262,6 +263,8 @@ async def me(device: dict = Depends(device_auth)) -> dict:
         "tokens_used": usage["input_tokens"] + usage["output_tokens"],
         # CLI dùng mức này khi người dùng chưa chọn bằng /effort.
         "default_effort": AGENT_REASONING,
+        # Bản peto máy chủ đang phát; CLI cũ hơn thì nhắc chạy lại lệnh cài.
+        "cli_version": cli_version(),
     }
 
 

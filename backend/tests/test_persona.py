@@ -32,7 +32,7 @@ def test_agent_guide_teaches_the_given_install_command():
     assert f"`{command}`" in guide
     for marker in ("150 bước mỗi ngày", "peto login", "Python 3.12", "Tài khoản khách không dùng được",
                    "hỏi trước khi sửa tệp", "peto logout", "/resume", "/effort cao", "cao tính 2 bước",
-                   "is not recognized"):
+                   "is not recognized", "/usage", "gõ `/` là hiện danh sách lệnh", "tự nhắc khi máy chủ có bản mới"):
         assert marker in guide
     generic = persona.build_agent_guide(install_command="", daily_steps=200)
     assert "https://<địa chỉ Peto>/install.ps1" in generic and "đừng tự đoán tên miền" in generic
@@ -92,6 +92,16 @@ def test_agent_does_its_work_instead_of_refusing_on_taste():
     assert "kể cả cố ý tạo code lỗi để thử" in persona.AGENT_PROMPT
     assert "khi thật cần" not in persona.AGENT_PROMPT
     assert "trợ lý AI" in persona.PERSONA_PROMPT
+
+
+def test_prompts_never_name_the_model_behind_peto():
+    """Chủ web muốn Peto chỉ nói mình là Peto: một ví dụ cũ "chạy trên mô hình Grok của xAI" đã dạy ngược lại luật đó."""
+    assert "không trả lời các câu hỏi về Peto thuộc model nào" in persona.PERSONA_PROMPT
+    guide = persona.build_agent_guide(install_command="irm https://peto.example/install.ps1 | iex", daily_steps=200)
+    for text in (persona.SYSTEM_PROMPT, persona.ROLEPLAY_SYSTEM_PROMPT, persona.AGENT_PROMPT,
+                 persona.COMPANION_PROMPT, guide):
+        lowered = text.casefold()
+        assert "grok" not in lowered and "xai" not in lowered
 
 
 def test_does_not_invent_source_from_screenshots():

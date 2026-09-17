@@ -24,8 +24,9 @@ BOLD = re.compile(r"\*\*(?=\S)(.+?)(?<=\S)\*\*")
 LINK = re.compile(r"\[([^\]\n]+)\]\((https?://[^)\s]+)\)")
 
 
-def enable_colors(stream) -> bool:
-    if os.environ.get("NO_COLOR") or not hasattr(stream, "isatty") or not stream.isatty():
+def enable_vt(stream) -> bool:
+    """Bật mã điều khiển ANSI (màu, di chuyển con trỏ) cho terminal; False khi output không phải terminal."""
+    if not hasattr(stream, "isatty") or not stream.isatty():
         return False
     if os.name == "nt":
         # Bật xử lý mã màu ANSI cho cửa sổ console cũ; Windows Terminal thì vốn đã bật.
@@ -43,6 +44,10 @@ def enable_colors(stream) -> bool:
     return True
 
 
+def enable_colors(stream) -> bool:
+    return not os.environ.get("NO_COLOR") and enable_vt(stream)
+
+
 def _plain(text: str) -> str:
     """Bỏ dấu Markdown trong đoạn sẽ được tô nguyên dòng (tiêu đề, trích dẫn)."""
     text = INLINE_CODE.sub(lambda match: match.group(1)[1:-1], text)
@@ -56,6 +61,8 @@ class UI:
         self.colors = enable_colors(self.out) if colors is None else colors
         self._status: str | None = None
         self._in_code = False
+        # Ô nhập có gợi ý lệnh (line_editor); None thì dấu nhắc dùng reader như input().
+        self.editor = None
 
     def paint(self, text: str, color: str | None) -> str:
         if not color or not self.colors:
@@ -156,4 +163,11 @@ class UI:
 
     def prompt(self) -> str:
         self.clear_status()
+        if self.editor is not None:
+            try:
+                return self.editor.read("Bạn › ", self.paint)
+            except OSError:
+                # Console không cho đọc phím thô nữa: quay về input() cho hết phiên.
+                self.editor = None
+                self.line()
         return self.reader(self.paint("Bạn › ", "yellow"))

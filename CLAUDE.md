@@ -10,7 +10,8 @@ its own database, its own xAI token file, its own persona prompt. The only link 
 bot is a read-only memory gateway (see below).
 
 On 2026-09-17 the owner made the default persona an honest, helpful AI assistant (`persona.SYSTEM_PROMPT`):
-it says it is an AI running on Grok, addresses users as "bạn", and refuses only genuinely harmful requests.
+it says it is Peto, an AI assistant, addresses users as "bạn", and refuses only genuinely harmful requests. By the
+owner's call it never names the model behind it (no Grok or xAI in any prompt), and `tests/test_persona.py` checks that.
 The bot's roleplay character, which the web used before, survives only as an opt-in per-conversation
 roleplay mode (`persona.ROLEPLAY_SYSTEM_PROMPT`, see "Roleplay mode" below). Peto Agent and Companion always
 use the assistant core (`PERSONA_PROMPT`).
@@ -496,6 +497,29 @@ results in the next step. The server stores no conversation (`store=False`), and
   for the same server) in `sessions/` next to `logs/`, overwritten after every request and pruned after 30 days. It
   holds file contents Peto read, so it stays local. Resuming reruns nothing and clears `Workspace.read_digests`, so any
   edit needs a fresh `read_file`. `/moi` leaves the saved conversation resumable until the new one is saved.
+- **Input line with a command menu** (`line_editor.py`, the owner's pick over a plain list printed on `/`). In a Windows
+  console the `Bạn ›` prompt reads raw key events with `ReadConsoleInputW`, so typing `/` shows a filtered menu under
+  the line. The commands live in `commands.py`, shared with `/help`, and matching ignores case and Vietnamese diacritics.
+  - Arrows select, Tab completes, Esc hides. Enter runs the highlighted item only once something follows `/` (or
+    `/effort `), so a lone `/` never runs `/moi`.
+  - ↑/↓ recall this session's messages. Shift+Enter inserts a newline.
+  - Keys that arrive together are grouped as a paste: an Enter inside it is a newline, and 4+ lines or 1000+ characters
+    show as `[Đã dán N dòng]`, a private-use placeholder character expanded on submit. An Enter at the very end still
+    submits unless the burst already had one, so an IME that commits a word together with Enter still sends.
+  - Unikey/EVKey send Backspace then new characters, so one Backspace deletes one code point.
+  - Rows are drawn with relative cursor moves and never touch the last column, so terminal auto-wrap is never involved.
+    Text taller than the window shows only the rows around the cursor.
+  - The console mode is restored after every read, so `input()` prompts (permissions) keep working. Pipes, non-Windows,
+    a console error or `PETO_AGENT_SIMPLE_INPUT=1` fall back to `input()`.
+  - `EditorState`, `layout`, `group_paste` and `translate` are pure and unit-tested. `WindowsConsole` cannot run under
+    pytest, so after changing it try it in Windows Terminal and the classic PowerShell window. On 2026-09-17 it was
+    checked in a ConPTY by dumping the screen buffer, with plain VT and win32-input-mode keys, but never with a real
+    Unikey/EVKey.
+- **Update notice.** `/me` returns `cli_version`, read from `agent-cli/pyproject.toml` by `agent_install.cli_version`. The
+  CLI compares the dotted numbers and, when the server's is newer, prints the install command in the session header and
+  `peto status`. Bump `version` and `peto_agent.__version__` together whenever the CLI changes (`test_agent_install.py`
+  checks they match), or installed copies are never told to update. `/usage` shows today's steps and tokens, the open
+  conversation's size and the effort.
 - **One-line install** (`irm https://<site>/install.ps1 | iex`). `agent_install.py` serves `GET /install.ps1`, which is
   outside `/api`, so its router must stay included before the static catch-all, plus `GET /api/agent/download/<wheel>`.
   The backend builds a pure-Python wheel of `agent-cli` itself with `zipfile` from `pyproject.toml` (no setuptools) and

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -113,7 +114,9 @@ def test_task_reads_edits_runs_and_summarizes(project, peto):
     assert (project / "README.md").read_bytes() == "# Dự án thử (Peto)\r\nnội dung\r\n".encode()
     assert "Peto › Xong rồi nè." in ui.text
     assert "· xong" in ui.text
-    assert "  Xong trong 0 giây · sửa 1 tệp · chạy 1 lệnh · hội thoại 18k token · hôm nay còn 196/200 bước" in ui.text
+    # Máy bận thì vòng này có thể quá nửa giây, nên không đòi đúng "0 giây".
+    assert re.search(r"  Xong trong \d+ giây · sửa 1 tệp · chạy 1 lệnh · hội thoại 18k token · hôm nay còn 196/200 bước",
+                     ui.text)
     assert "Peto đang nghĩ" not in ui.text, "không có màu thì không vẽ dòng trạng thái tạm"
     assert all(request["body"]["effort"] == "medium" for request in peto.requests)
     assert all(request["auth"] == "Bearer peto_token_thu" for request in peto.requests)
@@ -219,4 +222,47 @@ def test_effort_is_remembered_and_resume_reopens_the_last_conversation(project, 
 
     status = FakeUI()
     assert cli.status(status) == 0
-    assert "· mức cao · hôm nay còn 196/200 bước · đã dùng 45k token." in status.text
+    assert "· mức cao · hôm nay còn 196/200 bước · đã dùng 45k token · peto 0.2.0." in status.text
+    assert "Có bản peto mới" not in status.text, "máy chủ không báo phiên bản thì không nhắc"
+
+
+def test_commands_usage_and_update_notice(project, peto, monkeypatch):
+    me = {"account": "Bình", "device_name": "MAY-THU", "steps_used": 10, "steps_limit": 200, "tokens_used": 1234,
+          "default_effort": "medium", "cli_version": "0.10.0"}
+
+    def reply(path, body):
+        if path == "/api/agent/me":
+            return 200, me
+        text = "Để Peto xem route đó."
+        return 200, [{"type": "delta", "text": text},
+                     {"type": "done", "output": [message(text)], "usage": {"input_tokens": 900, "output_tokens": 100}}]
+
+    peto.reply = reply
+    config.save({"server": peto.url, "token": "peto_token_thu"})
+    monkeypatch.chdir(project)
+
+    ui = FakeUI(answers=["/help", "/api/users lỗi 500", "/usage", "/moi thêm", "/xyz", "/thoát", "/usage"])
+    assert cli.session(ui) == 0
+    notice = (f"Có bản peto mới 0.10.0 (máy này đang dùng 0.2.0). Thoát peto rồi chạy lệnh cài để cập nhật:\n"
+              f"  irm {peto.url}/install.ps1 | iex\n")
+    assert notice in ui.text, "so theo từng số: 0.10.0 mới hơn 0.2.0"
+    assert "Peto Agent 0.2.0 · project · Bình" in ui.text and "/help xem các lệnh" in ui.text
+    assert "  /effort  Xem hoặc đổi mức suy nghĩ: thap, vua, cao" in ui.text
+    steps = [request["body"] for request in peto.requests if request["path"] == "/api/agent/step"]
+    assert [step["input"][0]["content"] for step in steps] == ["/api/users lỗi 500"], "đường dẫn API không phải lệnh"
+    assert "  Hôm nay còn 190/200 bước · đã dùng 1.2k token · hội thoại này 1k token · mức vừa." in ui.text
+    assert "Lệnh /moi không nhận thêm gì phía sau." in ui.text and "Không có lệnh này" in ui.text
+    assert ui.answers == ["/usage"], "/thoát gõ có dấu vẫn thoát"
+
+    me["cli_version"] = "0.2.0"
+    same = FakeUI(answers=["/thoat"])
+    assert cli.session(same) == 0
+    assert "Có bản peto mới" not in same.text
+
+
+def test_split_command():
+    assert cli.split_command("/effort Cao") == ("/effort", "Cao")
+    assert cli.split_command("/Thoát") == ("/thoat", "")
+    assert cli.split_command("/") == ("/", "")
+    for text in ("/api/users lỗi 500", "sửa /moi", "/moi\nthêm dòng"):
+        assert cli.split_command(text) == ("", "")
