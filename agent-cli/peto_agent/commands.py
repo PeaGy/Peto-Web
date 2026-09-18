@@ -18,8 +18,8 @@ COMMANDS = (
     Command("/moi", "Bắt đầu hội thoại mới"),
     Command("/resume", "Mở lại hội thoại gần nhất của thư mục này"),
     Command("/retry", "Thử lại bước bị gián đoạn kết nối"),
-    Command("/diff", "Xem các tệp Peto sửa trực tiếp trong yêu cầu gần nhất"),
-    Command("/undo", "Hoàn tác các tệp Peto sửa trực tiếp trong yêu cầu gần nhất"),
+    Command("/diff", "Xem bản sửa tệp trực tiếp gần nhất đã lưu của dự án"),
+    Command("/undo", "Hoàn tác bản sửa tệp trực tiếp gần nhất, kể cả sau khi đóng CLI"),
     Command("/compact", "Tóm tắt hội thoại dài (dùng một lượt gọi model)"),
     Command("/permissions", "Xem quyền chạy lệnh đã ghi nhớ", (("clear", "Xóa mọi quyền ghi nhớ trong phiên"),)),
     # Lựa chọn thật theo quyền của tài khoản được đặt lại bằng use_models() sau khi hỏi máy chủ.

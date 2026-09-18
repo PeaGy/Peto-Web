@@ -10,7 +10,7 @@ from datetime import datetime
 
 from . import history
 from .checkpoint import Checkpoint
-from .context import compact_prefix, context_size, text_of
+from .context import compact_prefix, context_size, text_of, efficient_input
 from .project_guide import guides
 from .metrics import Metrics
 from .client import ApiError, Client
@@ -181,13 +181,19 @@ class Session:
         self._run()
 
     def show_diff(self):
+        if not self.tools.checkpoint.files:
+            try:
+                self.tools.checkpoint = Checkpoint.restore(self.ws)
+            except WorkspaceError as err:
+                self.ui.failure(str(err))
+                return
         self.tools.checkpoint.show(self.ui)
 
     def undo(self):
         self.show_diff()
         if not self.tools.checkpoint.files:
             return
-        self.ui.line("Hoàn tác các tệp trên? Chỉ áp dụng cho yêu cầu gần nhất trong phiên này.", "yellow")
+        self.ui.line("Hoàn tác các tệp trên? Đây là bản sửa trực tiếp gần nhất được lưu cho dự án này.", "yellow")
         if self.ui.ask_permission() not in {"y", "a"}:
             return
         before = set(self.tools.checkpoint.files)
@@ -229,7 +235,7 @@ class Session:
             self.ui.line("  Hội thoại còn ngắn, chưa cần tóm tắt.", "dim")
             return False
         self.ui.step("Đang tóm tắt ngữ cảnh cũ (dùng một lượt gọi model)")
-        body = {"input": portable(prefix), "effort": "low", "model": self.model,
+        body = {"input": efficient_input(portable(prefix)), "effort": "low", "model": self.model,
                 "context": {"purpose": "compact"}}
         started = time.monotonic()
         def waiting():
@@ -359,7 +365,7 @@ class Session:
             history.save(self.ws.root, self.client.server, self.items, retryable=self.can_retry, model=self.model)
 
     def _step(self) -> list[dict] | None:
-        body = {"input": self.items, "effort": self.effort, "model": self.model, "context": {
+        body = {"input": efficient_input(self.items), "effort": self.effort, "model": self.model, "context": {
             "project": self.ws.root.name, "os": f"{platform.system()} {platform.release()}".strip(),
             "project_guidance": guides(self.ws)}}
         writer = self.ui.reply()

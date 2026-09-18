@@ -107,10 +107,15 @@ nào được chọn, nên Enter không tự chạy gì. Các lệnh:
   sửa tệp thì Peto phải đọc lại tệp trước. Mở `peto` ở thư mục có hội thoại cũ sẽ có dòng nhắc.
 - `/retry`: thử lại bước bị gián đoạn kết nối, dùng kết quả các bước đã hoàn tất. Không tự phát lại lệnh hay thao tác
   sửa tệp cũ; thao tác mới vẫn hỏi quyền. Nếu đã thoát thì `/resume` trước, rồi `/retry`.
-- `/diff`: xem thay đổi do công cụ sửa/ghi tệp tạo ra trong yêu cầu gần nhất. Diff dài có thể xem tiếp bằng `v`.
+- `/diff`: xem bản sửa/ghi tệp trực tiếp gần nhất đã lưu cho dự án. Diff dài có thể xem tiếp bằng `v`.
 - `/undo`: xem diff rồi xác nhận hoàn tác yêu cầu gần nhất; giữ nguyên BOM và kiểu xuống dòng ban đầu, xóa các tệp
-  mới do công cụ ghi tạo ra. Nếu bất kỳ tệp nào đã bị sửa/xóa bên ngoài, từ chối trước khi hoàn tác. Đây là bản nhớ
-  trong phiên, không còn sau khi thoát, `/moi`, `/resume` hoặc bắt đầu yêu cầu mới; `/retry` vẫn giữ bản nhớ đó.
+  mới do công cụ ghi tạo ra. Nếu bất kỳ tệp nào đã bị sửa/xóa bên ngoài, từ chối trước khi hoàn tác. Bản lưu nằm ở
+  `%LOCALAPPDATA%\PetoAgent\checkpoints`, mở lại CLI tại đúng dự án rồi dùng `/diff` hoặc `/undo`, không cần `/resume`.
+  `/moi`, `/resume` và yêu cầu chỉ đọc không xóa bản này; yêu cầu mới có sửa tệp sẽ thay thế bằng bản của yêu cầu mới.
+  Mỗi dự án giữ một bản, tối đa 16 MB/bản (tính cả mã hóa), tổng 64 MB, dọn bản cũ nhất khi vượt dung lượng và hết hạn
+  sau 30 ngày. Bản đã hoàn tác được lưu trạng thái rỗng để không khôi phục lần nữa. `/retry` tiếp tục cùng bản.
+  Checkpoint chứa nội dung trước/sau của tệp, chỉ nằm trên máy, không gửi lên VPS. Nếu lưu checkpoint lỗi hoặc vượt
+  giới hạn, thao tác ghi mới bị chặn. Đây không thay thế Git/backup và không bảo đảm giao dịch nhiều tệp khi mất điện.
   Thay đổi do lệnh terminal, đổi tên/xóa qua shell không thuộc bản hoàn tác. Nếu lỗi ổ đĩa xảy ra giữa chừng,
   những tệp chưa khôi phục vẫn được giữ trong bản nhớ để kiểm tra lại; không có giao dịch nguyên khối nhiều tệp.
 - `/permissions`: xem lệnh được ghi nhớ trong phiên; `/permissions clear` thu hồi tất cả. Quyền không lưu xuống đĩa
@@ -206,6 +211,17 @@ rằng toàn bộ dự án đã được kiểm thử.
 Cuối mỗi yêu cầu có một dòng tổng kết: thời gian, số tệp đã sửa, số lệnh đã chạy, độ dài hội thoại (tính bằng token) và
 số bước còn lại hôm nay. Có thể dùng `/compact` để giảm ngữ cảnh hoặc `/moi` để bắt đầu việc khác.
 Nhật ký từng phiên lưu ở `%LOCALAPPDATA%\PetoAgent\logs\`.
+
+### Giảm nội dung gửi cho model
+
+Mặc định `read_file` đọc 160 dòng; chỉ định khoảng thì tối đa 400 dòng. Kết quả cho biết dòng tiếp theo khi còn nội
+dung. Peto được hướng dẫn tìm từ khóa trước rồi đọc đúng khoảng cần thiết; mỗi lần đọc vẫn kiểm tra nội dung trên đĩa.
+
+Trước khi gửi, CLI thay các kết quả đọc trùng hoàn toàn (nội dung, khoảng dòng và hướng dẫn giống nhau) bằng tham
+chiếu tới bản mới hơn vẫn có đầy đủ trong cùng ngữ cảnh. Bản khác nội dung hoặc phạm vi không bị gộp. Output lệnh
+cũ hơn 6 kết quả công cụ gần nhất được thu gọn còn khoảng 4.000 ký tự đầu/cuối; mã thoát, lỗi và phân loại vẫn giữ.
+Các kết quả gần nhất giữ như cũ. Việc này không gọi thêm model, không chạy lại lệnh và không đổi lịch sử lưu tại máy.
+Lịch sử cục bộ vẫn tuân theo giới hạn output ban đầu và cơ chế `/compact`, không phải nhật ký output không giới hạn.
 
 ### Đo thời gian và token
 

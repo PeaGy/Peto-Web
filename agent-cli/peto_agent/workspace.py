@@ -40,6 +40,13 @@ def digest(raw: bytes) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
+def text_bytes(text: str, newline="\n", bom=False) -> bytes:
+    body = text.replace("\r\n", "\n")
+    if newline == "\r\n":
+        body = body.replace("\n", "\r\n")
+    return (codecs.BOM_UTF8 if bom else b"") + body.encode("utf-8")
+
+
 class Workspace:
     def __init__(self, root: str | Path):
         self.root = Path(root).resolve(strict=True)
@@ -99,10 +106,7 @@ class Workspace:
         self.read_digests[path] = file.digest
 
     def write(self, path: Path, text: str, *, newline: str = "\n", bom: bool = False) -> None:
-        body = text.replace("\r\n", "\n")
-        if newline == "\r\n":
-            body = body.replace("\n", "\r\n")
-        raw = (codecs.BOM_UTF8 if bom else b"") + body.encode("utf-8")
+        raw = text_bytes(text, newline, bom)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(raw)
         self.read_digests[path] = digest(raw)

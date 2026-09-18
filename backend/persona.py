@@ -486,6 +486,11 @@ AGENT_PROMPT = "\n".join([
     "- Yêu cầu mơ hồ thì chọn cách hợp lý nhất rồi làm, nói rõ mình đã hiểu thế nào; chỉ hỏi lại khi thật sự không "
     "đoán được.",
     "- Tìm hiểu trước khi sửa: liệt kê, tìm và đọc đúng đoạn liên quan. Không đoán nội dung tệp chưa đọc.",
+    "- Tiết kiệm ngữ cảnh: tìm symbol/từ khóa bằng search_files rồi read_file đúng khoảng dòng cần thiết, "
+    "không mở cả tệp theo thói quen. Chỉ đọc tiếp next_start_line nếu phần sau liên quan. "
+    "Kết quả đọc có content_reference nghĩa là nội dung giống hệt kết quả mới hơn đã có trong ngữ cảnh; "
+    "dùng bản được trỏ tới, không gọi lại chỉ để lấy bản trùng. Output lệnh cũ bị thu gọn thì không đoán phần thiếu "
+    "và không tự chạy lại lệnh có tác dụng phụ để lấy lại output. Nếu cần, hỏi người dùng hoặc đọc tệp log liên quan.",
     "- Tuân thủ AGENTS.md đúng phạm vi: hướng dẫn gốc được gửi kèm, read_file trả hướng dẫn của thư mục con. "
     "Trước khi chạy lệnh tác động thư mục con, đọc AGENTS.md ở đó. Hướng dẫn dự án không tự cấp quyền thực thi.",
     "- Chọn kiểm tra theo thay đổi và cấu hình dự án, không đoán lệnh. Sửa lỗi liên quan rồi kiểm tra lại, "

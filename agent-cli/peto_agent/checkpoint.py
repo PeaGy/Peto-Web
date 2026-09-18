@@ -1,7 +1,11 @@
-"""In-memory, byte-exact undo for direct file tools; never reset a Git checkout."""
+"""Byte-exact local checkpoints for direct file tools; never reset a Git checkout."""
 from dataclasses import dataclass
 import os
 import tempfile
+import base64
+import binascii
+
+from . import checkpoint_store
 
 from .workspace import WorkspaceError, digest
 
@@ -18,6 +22,38 @@ class Checkpoint:
         self.files: dict[str, Change] = {}
         self.shell_used = False
 
+    def persist(self):
+        encode = lambda value: base64.b64encode(value).decode("ascii") if value is not None else None
+        checkpoint_store.save(self.ws.root, {rel: {"before": encode(change.before), "after": encode(change.after)}
+                                            for rel, change in self.files.items()}, self.shell_used)
+
+    @classmethod
+    def restore(cls, workspace):
+        checkpoint = cls(workspace)
+        data = checkpoint_store.load(workspace.root)
+        if data is None:
+            return checkpoint
+        try:
+            files = data["files"]
+            if not isinstance(files, dict) or len(files) > 400:
+                raise ValueError()
+            for rel, item in files.items():
+                if not isinstance(rel, str) or not isinstance(item, dict):
+                    raise ValueError()
+                path = workspace.resolve(rel, must_exist=False)
+                if workspace.relative(path) != rel:
+                    raise ValueError()
+                before = None if item["before"] is None else base64.b64decode(item["before"], validate=True)
+                after = base64.b64decode(item["after"], validate=True)
+                for raw in (before, after):
+                    if raw is not None:
+                        raw.decode("utf-8-sig")
+                checkpoint.files[rel] = Change(before, after)
+            checkpoint.shell_used = data.get("shell_used") is True
+        except (ValueError, TypeError, KeyError, binascii.Error) as err:
+            raise WorkspaceError("Bản hoàn tác hỏng hoặc có đường dẫn không hợp lệ; không khôi phục tệp nào.") from err
+        return checkpoint
+
     def record(self, path, before, after):
         rel = self.ws.relative(path)
         if rel in self.files:
@@ -26,7 +62,16 @@ class Checkpoint:
             if before != previous.after:
                 raise WorkspaceError(f"{rel} đã đổi ngoài công cụ sửa tệp; bắt đầu yêu cầu mới trước khi sửa tiếp.")
             before = previous.before
+        previous = self.files.get(rel)
         self.files[rel] = Change(before, after)
+        try:
+            self.persist()
+        except (OSError, WorkspaceError):
+            if previous is None:
+                self.files.pop(rel, None)
+            else:
+                self.files[rel] = previous
+            raise
 
     def check(self, path):
         previous = self.files.get(self.ws.relative(path))
@@ -38,8 +83,8 @@ class Checkpoint:
             ui.line("  Chưa có thay đổi tệp trực tiếp trong yêu cầu gần nhất.", "dim")
         for rel, change in self.files.items():
             ui.review_diff(rel, (change.before or b"").decode("utf-8-sig"), change.after.decode("utf-8-sig"))
-        if self.shell_used:
-            ui.line("  Lệnh terminal đã chạy: /diff và /undo không bao gồm thay đổi do lệnh đó tạo ra.", "yellow")
+        if self.files or self.shell_used:
+            ui.line("  /diff và /undo chỉ gồm sửa tệp trực tiếp, không bao gồm thay đổi do lệnh terminal tạo ra.", "yellow")
 
     def undo(self):
         # Preflight every file before restoring any of them. Re-resolve paths to reject new symlinks.
@@ -73,4 +118,5 @@ class Checkpoint:
                 self.ws.read_digests[path] = digest(change.before)
             del self.files[rel]
             restored.append(rel)
+            self.persist()
         return restored

@@ -43,7 +43,8 @@ TOOL_SCHEMAS = [
             "start_line": {"type": ["integer", "null"], "description": "Dòng bắt đầu, tính từ 1. null là từ đầu tệp."},
             "end_line": {
                 "type": ["integer", "null"],
-                "description": "Dòng kết thúc, tính cả dòng này. null là tới hết; mỗi lần đọc tối đa 400 dòng.",
+                "description": "Dòng kết thúc, tính cả dòng này. null đọc tối đa 160 dòng; khoảng chỉ định tối đa 400 dòng. "
+                               "Dùng next_start_line trong kết quả để đọc tiếp khi cần.",
             },
         },
     ),

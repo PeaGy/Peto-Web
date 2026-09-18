@@ -19,7 +19,7 @@ from .command_outcome import classify, command_kind
 from .metrics import Metrics
 from .project_guide import GuideUpdate, guides
 from .presentation import AgentUI
-from .workspace import SKIPPED_DIRS, Workspace, WorkspaceError
+from .workspace import SKIPPED_DIRS, Workspace, WorkspaceError, text_bytes
 
 MAX_READ_LINES = 400
 MAX_LIST_ENTRIES = 400
@@ -168,10 +168,12 @@ class Tools:
         start = max(1, start_line or 1)
         if total and start > total:
             raise WorkspaceError(f"{rel} chỉ có {total} dòng.")
-        end = max(0, min(total, end_line or total, start + MAX_READ_LINES - 1))
+        limit = MAX_READ_LINES if end_line is not None else 160
+        end = max(0, min(total, end_line or total, start + limit - 1))
         self.ui.step(f"Đọc {rel} (dòng {start}–{end})" if total else f"Đọc {rel} (tệp trống)")
         return {"path": rel, "start_line": start, "end_line": end, "total_lines": total,
-                "content": "\n".join(lines[start - 1:end]), "project_guidance": self._guidance(target, reading=True)}
+                "content": "\n".join(lines[start - 1:end]), "project_guidance": self._guidance(target, reading=True),
+                **({"next_start_line": end + 1, "truncated": True} if end < total else {})}
 
     def search_files(self, pattern: str, path: str | None = None, glob: str | None = None) -> dict:
         try:
@@ -229,8 +231,8 @@ class Tools:
             raise WorkspaceError(f"{rel} vừa bị đổi trong lúc chờ đồng ý. Đọc lại rồi sửa nhé.")
         self._guidance(target)
         raw = target.read_bytes()
+        self.checkpoint.record(target, raw, text_bytes(updated, file.newline, file.bom))
         self.ws.write(target, updated, newline=file.newline, bom=file.bom)
-        self.checkpoint.record(target, raw, target.read_bytes())
         self.revision += 1
         added, removed = self._record(rel, file.text, updated)
         self.ui.success(f"Đã sửa {rel} (+{added} −{removed})")
@@ -259,8 +261,8 @@ class Tools:
             raise WorkspaceError(f"{rel} vừa bị đổi trong lúc chờ đồng ý. Đọc lại rồi ghi nhé.")
         self._guidance(target)
         raw = target.read_bytes() if existed else None
+        self.checkpoint.record(target, raw, text_bytes(after, newline, bom))
         self.ws.write(target, after, newline=newline, bom=bom)
-        self.checkpoint.record(target, raw, target.read_bytes())
         self.revision += 1
         added, removed = self._record(rel, before, after)
         self.ui.success(("Đã ghi đè " if existed else "Đã tạo ") + f"{rel} (+{added} −{removed})")
