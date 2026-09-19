@@ -49,8 +49,6 @@ interface ComposerProps {
   models: ModelOption[];
   onModelChange: (value: string) => void;
   /** Gợi ý ở màn hình trống; mảng rỗng thì không hiện gì. */
-  hints: string[];
-  onPickHint: (hint: string) => void;
   formRef: RefObject<HTMLFormElement | null>;
   boxRef: RefObject<HTMLDivElement | null>;
   textareaRef: RefObject<HTMLTextAreaElement | null>;
@@ -68,7 +66,7 @@ export default function Composer({
   draft, onDraftChange, files, onAddFiles, onRemoveFile,
   streaming, stopping, canSend, onSubmit, onStop,
   effort, efforts, onEffortChange, webSearch, onToggleWeb, persona, roleplay, menuDisabled,
-  model, models, onModelChange, hints, onPickHint, formRef, boxRef, textareaRef, fileRef,
+  model, models, onModelChange, formRef, boxRef, textareaRef, fileRef,
 }: ComposerProps) {
   const [dragging, setDragging] = useState(false);
   const dragDepth = useRef(0);
@@ -197,13 +195,6 @@ export default function Composer({
           </div>
         </div>
       </div>
-      {hints.length > 0 && (
-        <div className="welcome-hints">
-          {hints.map((hint) => (
-            <button key={hint} type="button" onClick={() => onPickHint(hint)}>{hint}</button>
-          ))}
-        </div>
-      )}
       <p className="composer-note">
         {files.some((item) => /\.pdf$/i.test(item.file.name) || item.file.type === "application/pdf")
           ? "Peto đọc lớp chữ trong PDF và dẫn số trang. PDF ảnh scan chưa có chữ cần OCR trước nhé."

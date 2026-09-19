@@ -924,12 +924,11 @@ describe('Bố cục màn hình trống', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Gửi', exact: true }));
   };
 
-  it('còn trống thì gợi ý nằm cùng ô nhắn, gửi tin đầu là về bố cục thường', async () => {
+  it('còn trống không có gợi ý, gửi tin đầu là về bố cục thường', async () => {
     await openApp();
     const main = document.querySelector('main.chat')!;
     expect(main.classList.contains('empty-state')).toBe(true);
-    const hint = screen.getByRole('button', { name: 'Viết giúp mình một email ngắn' });
-    expect(hint.closest('form')).toBe(screen.getByPlaceholderText('Nhắn cho Peto…').closest('form'));
+    expect(document.querySelector('.welcome-hints')).toBeNull();
     send('Chào Peto');
     await waitFor(() => expect(api.sendMessage).toHaveBeenCalled());
     expect(main.classList.contains('empty-state')).toBe(false);

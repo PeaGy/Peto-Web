@@ -130,12 +130,6 @@ const MAX_FILES = 16;
 const MAX_MEDIA_FILES = 4;
 const MAX_FILE_BYTES = 8 * 1024 * 1024;
 const MAX_TOTAL_BYTES = 16 * 1024 * 1024;
-// Gợi ý ở màn hình trống, hiện ngay dưới ô nhắn.
-const CHAT_HINTS = [
-  "Viết giúp mình một email ngắn",
-  "Giải thích giúp mình một bài khó",
-  "Cùng lên kế hoạch cuối tuần nhé",
-];
 
 const EFFORTS: { value: Effort; label: string; hint: string }[] = [
   { value: "auto", label: "Tự động", hint: "Peto tự chọn mức phù hợp" },
@@ -1550,8 +1544,6 @@ export default function App() {
           model={chosenModel}
           models={models}
           onModelChange={setModel}
-          hints={emptyChat ? CHAT_HINTS : []}
-          onPickHint={(hint) => { setDraft(hint); textareaRef.current?.focus(); }}
           formRef={composerRef}
           boxRef={composerBoxRef}
           textareaRef={textareaRef}

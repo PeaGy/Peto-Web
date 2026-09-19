@@ -406,27 +406,9 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   max-width: 440px;
 }
 .welcome h1 { color: var(--text); font-size: 22px; margin: 8px 0 0; text-wrap: balance; }
-.welcome-hints {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 8px;
-  margin-top: 14px;
-}
-.welcome-hints button {
-  padding: 6px 10px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--panel);
-  font-size: 12px;
-  font-family: inherit;
-  color: var(--muted);
-  cursor: pointer;
-}
-.welcome-hints button:hover { color: var(--text); border-color: var(--accent); }
 
 /* Cuộc trò chuyện còn trống: lời chào và ô nhắn đứng chung một khối giữa màn
-   hình như Claude, hơi lệch lên trên cho cân mắt; gợi ý nằm dưới ô nhắn. Canh
+   hình như Claude, hơi lệch lên trên cho cân mắt. Canh
    giữa bằng margin auto chứ không justify-content: center, để cửa sổ thấp thì
    khối này tràn xuống dưới chứ không bị cắt mất phần đầu.
    Điện thoại giữ ô nhắn ở đáy cho dễ với tay và không bị bàn phím che. */
@@ -919,9 +901,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   .menu-btn { display: grid; }
   .sidebar-toggle { display: none; }
   .bubble.user { max-width: 92%; }
-  /* Ô nhắn ở đáy nên gợi ý đứng ngay trên nó, trong tầm ngón cái. */
   .composer-wrap { display: flex; flex-direction: column; padding: 10px 12px 16px; }
-  .composer-wrap .welcome-hints { order: -1; margin: 0 0 10px; }
   /* Điện thoại: nút Gửi chỉ còn mũi tên (bản phác chủ web chọn), chừa chỗ cho nút chọn model mà thanh không xuống hàng. */
   .composer-send .send { width: 36px; height: 36px; padding: 0; justify-content: center; }
   .composer-send .send-text { display: none; }
