@@ -8,7 +8,7 @@ import platform
 import time
 from datetime import datetime
 
-from . import history
+from . import history, mentions
 from .checkpoint import Checkpoint
 from .context import compact_prefix, context_size, text_of, efficient_input
 from .project_guide import guides
@@ -45,6 +45,10 @@ chạy; các thư mục chính dùng để làm gì; quy ước code và ngôn n
 INIT_EXISTING = ("Dự án đã có AGENTS.md: đọc trước, giữ những phần còn đúng và chỉ sửa chỗ sai hoặc thiếu bằng "
                  "edit_file.")
 OUTCOME_LABELS = {"done": "Xong trong", "stopped": "Đã dừng sau", "error": "Dừng vì lỗi sau", "limit": "Tạm dừng sau"}
+# Nhãn trên tiêu đề cửa sổ, để người dùng làm việc khác vẫn thấy Peto xong chưa.
+TITLE_LABELS = {"done": "xong", "stopped": "đã dừng", "error": "lỗi", "limit": "tạm dừng"}
+# Yêu cầu lâu hơn ngần này giây thì kêu một tiếng khi xong; việc vài giây thì kêu chỉ tổ ồn.
+BELL_AFTER_SECONDS = 10.0
 
 
 def cap_result(value):
@@ -192,10 +196,16 @@ class Session:
     def run_task(self, text: str, images=()) -> None:
         """Chạy một yêu cầu. ``images`` là các cặp (số ảnh, ảnh) dán kèm bằng Alt+V hay kéo thả."""
         self.tools.checkpoint = Checkpoint(self.ws)
-        self.items.append(user_message(text, images))
+        attached = mentions.attach(self.ws, self.tools, text)
+        for step in attached.steps:
+            self.ui.step(step)
+        for notice in attached.notices:
+            self.ui.line(f"  {notice}", "yellow")
+        self.items.append(user_message(attached.text, images))
         drop_old_images(self.items)
-        # Nhật ký chỉ ghi số ảnh, không ghi dữ liệu ảnh.
-        self._log("task", text=text, effort=self.effort, model=self.model, images=len(images))
+        # Nhật ký chỉ ghi số ảnh và đường dẫn đính kèm, không ghi dữ liệu ảnh hay nội dung tệp.
+        self._log("task", text=text, effort=self.effort, model=self.model, images=len(images),
+                  **({"mentions": attached.paths} if attached.paths else {}))
         self._run()
 
     def init_guide(self) -> None:
@@ -252,8 +262,8 @@ class Session:
             self.ui.success("Đã xóa quyền chạy lệnh ghi nhớ trong phiên.")
         elif not self.tools.command_grants:
             self.ui.line("  Chưa ghi nhớ lệnh nào trong phiên.", "dim")
-        for directory, command, timeout in sorted(self.tools.command_grants):
-            self.ui.line(f"  {command} · {directory} · {timeout}s", "dim")
+        for directory, command, timeout, shell in sorted(self.tools.command_grants):
+            self.ui.line(f"  {command} · {directory} · {timeout}s" + (f" · {shell}" if shell != "cmd" else ""), "dim")
 
     def compact(self, *, propagate_cancel=False):
         metrics = self.metrics if self._running else Metrics()
@@ -336,6 +346,7 @@ class Session:
             self.metrics = self.tools.metrics = Metrics()
             self.active_seconds = 0.0
         self._running = True
+        self.ui.title(f"Peto · đang làm · {self.ws.root.name}")
         self.tools.approve_all = False
         self.can_retry = False
         started = time.monotonic()
@@ -474,6 +485,9 @@ class Session:
         self.ui.line("  Phần trả lời đang nhận chưa hoàn tất. Thử lại có thể dùng thêm một bước trên máy chủ.", "dim")
 
     def _summary(self, elapsed: float, outcome: str) -> None:
+        self.ui.title(f"Peto · {TITLE_LABELS[outcome]} · {self.ws.root.name}")
+        if elapsed >= BELL_AFTER_SECONDS:
+            self.ui.bell()
         parts = [f"{OUTCOME_LABELS[outcome]} {format_duration(elapsed)}"]
         if self.tools.changes:
             parts.append(f"sửa {len(self.tools.changes)} tệp")
@@ -481,6 +495,10 @@ class Session:
             failed = sum(1 for command in self.tools.commands
                          if command.get("classification") not in {"passed", "success", "no_match"})
             parts.append(f"chạy {len(self.tools.commands)} lệnh" + (f" ({failed} lỗi)" if failed else ""))
+        if running := self.tools.jobs.running():
+            parts.append(f"đang chạy {len(running)} lệnh nền")
+        if left := sum(1 for step in self.tools.plan if step.get("status") != "done"):
+            parts.append(f"còn {left} việc chưa xong")
         if self.context_tokens:
             parts.append(f"hội thoại {format_tokens(self.context_tokens)} token")
         if self.steps_used is not None and self.steps_limit is not None:

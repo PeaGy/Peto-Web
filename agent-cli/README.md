@@ -150,6 +150,23 @@ Dòng nhập còn có:
   ký tự hiện gọn thành `[Đã dán 42 dòng]` nhưng vẫn gửi đủ; gõ thêm lời nhắn rồi Enter để gửi.
 - **Shift+Enter** xuống dòng trong Windows Terminal và cửa sổ PowerShell.
 
+### Đính kèm tệp bằng @
+
+Gõ `@` rồi tên tệp ngay trong yêu cầu thì bảng gợi ý đường dẫn hiện ra như bảng lệnh; Tab hoặc Enter điền tiếp.
+
+```text
+› sửa hàm đăng nhập trong @src/auth.ts cho khớp @docs/api.md
+```
+
+Lúc gửi, peto đọc các tệp đó trên máy bạn và gắn nội dung vào chính yêu cầu, nên Peto khỏi tốn một bước gọi công cụ
+đọc tệp. Nội dung này được tính là đã đọc: Peto sửa thẳng bằng công cụ sửa tệp, vẫn hiện diff và vẫn hỏi bạn trước khi
+ghi. Nếu tệp bị đổi sau lúc đính kèm, lần sửa vẫn bị từ chối như thường.
+
+- Gõ `@` một thư mục thì đính kèm danh sách tệp trong đó (tối đa 200 mục), không kèm nội dung.
+- Tệp bị chặn (`.env`, khóa, `.git`), tệp nhị phân hay tệp trên 1 MB thì không đính kèm được; một dòng vàng nói rõ lý do.
+- Tệp dài chỉ đính kèm 1000 dòng đầu, và mỗi tin đính kèm tối đa 120.000 ký tự; phần còn lại Peto tự đọc khi cần.
+- Chuỗi không phải đường dẫn trong dự án (`a@b.com`, `@app.route`) được để nguyên, không báo gì.
+
 ### Gửi ảnh
 
 Muốn Peto xem ảnh, ví dụ ảnh chụp lỗi giao diện:
@@ -202,6 +219,18 @@ chạy ở phía dịch vụ AI, không mở gì trên máy bạn; trong CLI nó
 Peto được nhắc chỉ đưa từ khóa cần thiết vào truy vấn, không đưa nội dung tệp hay đường dẫn trên máy bạn, và coi nội
 dung trang web là dữ liệu chứ không phải lệnh. Mỗi lượt tìm tính phí vào tài khoản dịch vụ AI của chủ web, nên chủ web
 tắt được bằng `PETO_AGENT_WEB_SEARCH=false`; khi tắt, Peto được yêu cầu nói rõ là mình không tra cứu được.
+
+### Việc dài, lệnh nền và chuông báo
+
+- **Danh sách việc:** yêu cầu từ ba việc trở lên thì Peto liệt kê các việc định làm và cập nhật khi xong từng mục, hiện
+  ngay trong terminal: `☑` đã xong, `▶` đang làm, `☐` chưa làm. Còn mục chưa xong thì dòng tóm tắt cuối yêu cầu nói rõ
+  còn bao nhiêu, để không ai tưởng đã xong hết.
+- **Lệnh nền:** lệnh không tự kết thúc (dev server, `--watch`) được chạy nền và trả về ngay, thay vì chờ tới khi xong.
+  Bạn vẫn duyệt trước khi chạy, và ô hỏi nói rõ lệnh sẽ sống tiếp sau khi yêu cầu xong. Tối đa 3 lệnh nền một lúc;
+  Peto đọc output khi cần và tự dừng khi xong việc. **Đóng peto là mọi lệnh nền bị dừng**, cả cây tiến trình.
+- **Chuông và tiêu đề cửa sổ:** terminal kêu một tiếng khi Peto cần bạn duyệt và khi một yêu cầu chạy quá 10 giây vừa
+  xong; tiêu đề cửa sổ đổi theo trạng thái (`Peto · đang làm · tên-thư-mục`, `· cần bạn duyệt`, `· xong`) nên liếc
+  thanh tác vụ là biết. Đặt `PETO_AGENT_NO_BELL=1` để tắt tiếng chuông, tiêu đề vẫn đổi.
 
 ### Hướng dẫn dự án và kiểm tra sau sửa
 
@@ -277,8 +306,9 @@ Nhờ đó có thể thay lớp hiển thị sau này mà không thay cách th�
   thì hiện đường dẫn cũ và mới. Cả hai đi qua bản nhớ hoàn tác nên `/undo` lấy lại được, khác với xóa bằng lệnh
   terminal. Peto chỉ xóa được tệp chữ đọc được (không phải thư mục, tệp nhị phân hay tệp trên 1 MB), vì bản hoàn tác
   phải giữ được nội dung; đích của đổi tên phải là chỗ chưa có tệp.
-- **Chạy lệnh:** chạy bằng `cmd` trong thư mục dự án, mặc định dừng sau 120 giây (tối đa 600). Lệnh test cũng chạy code
-  nằm trong dự án, nên hãy xem kỹ các thay đổi trước khi đồng ý chạy.
+- **Chạy lệnh:** chạy trong thư mục dự án bằng `cmd`, hoặc bằng PowerShell khi lệnh cần cmdlet hay biến `$env:` (ô hỏi
+  ghi rõ `PS>`). Mặc định dừng sau 120 giây (tối đa 600). Lệnh test cũng chạy code nằm trong dự án, nên hãy xem kỹ các
+  thay đổi trước khi đồng ý chạy. Lệnh nền không có thời hạn nhưng bị dừng khi bạn đóng peto.
 - **Giới hạn bước:** mỗi yêu cầu tối đa 40 bước; mỗi tài khoản có số bước mỗi ngày do máy chủ đặt (mặc định 200). Ở mức
   suy nghĩ cao, mỗi bước tính 2; với 5.6 Terra nhân thêm 2, với 5.6 Sol nhân thêm 4.
 

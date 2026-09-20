@@ -400,3 +400,30 @@ def test_delete_and_move_are_offered_as_tools_with_undo_wording():
     assert set(tools["move_file"]["parameters"]["properties"]) == {"path", "new_path"}
     assert "/undo" in tools["delete_file"]["description"] and "run_command" in tools["delete_file"]["description"]
     assert all(tool["strict"] for tool in TOOL_SCHEMAS)
+
+
+def test_tool_schemas_stay_strict_and_cover_the_new_abilities():
+    """Công cụ mới phải giữ đúng dạng strict, không thì dịch vụ AI từ chối cả bước."""
+    from agent_tools import TOOL_SCHEMAS
+
+    tools = {tool["name"]: tool for tool in TOOL_SCHEMAS}
+    assert {"update_plan", "start_command", "read_command_output", "stop_command"} <= set(tools)
+    assert tools["run_command"]["parameters"]["properties"]["shell"]["type"] == ["string", "null"]
+    steps = tools["update_plan"]["parameters"]["properties"]["steps"]
+    assert steps["items"]["required"] == ["title", "status"]
+    assert steps["items"]["additionalProperties"] is False
+    assert steps["items"]["properties"]["status"]["enum"] == ["pending", "running", "done"]
+    for tool in TOOL_SCHEMAS:
+        parameters = tool["parameters"]
+        assert tool["strict"] and parameters["additionalProperties"] is False
+        assert parameters["required"] == list(parameters["properties"]), tool["name"]
+
+
+def test_agent_prompt_explains_the_step_budget_and_the_new_tools():
+    """Công cụ có mà chỉ dẫn không nói thì Peto không dùng; giữ hai thứ đi cùng nhau."""
+    from persona import AGENT_PROMPT
+
+    assert "gọi cùng một lúc trong một bước" in AGENT_PROMPT
+    assert "update_plan" in AGENT_PROMPT
+    assert "start_command" in AGENT_PROMPT and "stop_command" in AGENT_PROMPT
+    assert "git status --short" in AGENT_PROMPT

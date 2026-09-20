@@ -12,6 +12,9 @@ from pathlib import Path
 
 MAX_RESULT_CHARS = 20_000
 KEEP_BYTES = 512 * 1024
+# -NoProfile để hồ sơ PowerShell của người dùng không in thêm gì, -NonInteractive để lệnh không đứng chờ bàn phím.
+POWERSHELL = ["powershell", "-NoProfile", "-NonInteractive", "-Command"]
+SHELLS = ("cmd", "powershell")
 
 
 def cap_text(text: str, limit: int = MAX_RESULT_CHARS) -> str:
@@ -35,15 +38,23 @@ def kill_tree(process: subprocess.Popen) -> None:
             pass
 
 
-def run(command: str, cwd: Path, timeout: float, *, on_progress: Callable[[float, str], None] | None = None) -> dict:
-    """Trả mã thoát, thời gian và output đã cắt gọn. Ctrl+C thì giết cây tiến trình rồi ném lại KeyboardInterrupt."""
+def spawn(command: str, cwd: Path, shell: str = "cmd") -> subprocess.Popen:
+    """Mở tiến trình cho một lệnh, bằng shell mặc định của hệ hoặc bằng PowerShell."""
     env = dict(os.environ, PYTHONUTF8="1", PYTHONIOENCODING="utf-8")
     # Nhóm tiến trình riêng: Ctrl+C trong cửa sổ chỉ tới CLI, CLI tự quyết định dừng lệnh.
     options: dict = ({"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == "nt"
                      else {"start_new_session": True})
+    # PowerShell nhận cả lệnh qua một tham số nên không phải lo trích dẫn như khi để shell tự tách.
+    argv: list[str] | str = [*POWERSHELL, command] if shell == "powershell" else command
+    return subprocess.Popen(argv, shell=shell != "powershell", cwd=cwd, env=env, stdin=subprocess.DEVNULL,
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, **options)
+
+
+def run(command: str, cwd: Path, timeout: float, *, shell: str = "cmd",
+        on_progress: Callable[[float, str], None] | None = None) -> dict:
+    """Trả mã thoát, thời gian và output đã cắt gọn. Ctrl+C thì giết cây tiến trình rồi ném lại KeyboardInterrupt."""
     started = time.monotonic()
-    process = subprocess.Popen(command, shell=True, cwd=cwd, env=env, stdin=subprocess.DEVNULL,
-                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT, **options)
+    process = spawn(command, cwd, shell)
     head, tail = bytearray(), bytearray()
     recent = bytearray()
     recent_lock = threading.Lock()

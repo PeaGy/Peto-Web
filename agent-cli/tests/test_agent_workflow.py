@@ -149,10 +149,12 @@ def test_session_permission_exact_command_timeout_and_revocation(project, monkey
     tools.run_command("npm test")
     assert "error" in tools.run_command("npm test && echo other")
     assert "error" in tools.run_command("npm test", 121)
+    work.permissions()
+    assert "npm test · " in ui.text and "120s" in ui.text, "/permissions liệt kê đúng quyền đã nhớ"
     work.permissions(clear=True)
     assert "error" in tools.run_command("npm test")
     assert len(executed) == 2
-    tools.command_grants.add((str(project), "x", 120))
+    tools.command_grants.add((str(project), "x", 120, "cmd"))
     work.reset()
     assert not tools.command_grants
 

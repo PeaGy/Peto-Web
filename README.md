@@ -516,6 +516,12 @@ và gọi mô hình AI. Cách cài, đăng nhập và sử dụng nằm trong `a
   lệnh nào), `/effort thap|vua|cao` đổi mức suy nghĩ và `/model` đổi model (cả hai được nhớ cho lần sau), `/usage` xem
   số bước và token hôm nay, `/init` nhờ Peto khảo sát dự án rồi viết `AGENTS.md` để những yêu cầu sau bám đúng quy ước
   của dự án.
+- **Đính kèm tệp:** gõ `@src/app.py` trong yêu cầu thì bảng gợi ý đường dẫn hiện ra, và nội dung tệp được gắn thẳng vào
+  yêu cầu. Peto sửa được ngay mà không tốn thêm bước để đọc tệp; mọi lần ghi vẫn hỏi bạn.
+- **Việc dài và lệnh nền:** yêu cầu nhiều việc thì Peto hiện danh sách việc và đánh dấu tiến độ ngay trong terminal.
+  Lệnh không tự kết thúc (dev server, watch) chạy nền và trả về ngay, tối đa 3 lệnh, và dừng hết khi bạn đóng `peto`.
+- **Chuông báo:** terminal kêu khi Peto cần bạn duyệt hoặc vừa xong một yêu cầu chạy lâu, và tiêu đề cửa sổ đổi theo
+  trạng thái, nên bạn làm việc khác trong lúc chờ được.
   Dán nhiều dòng không bị gửi từng dòng; đoạn dài hiện gọn thành `[Đã dán N dòng]`.
 - **Gửi ảnh:** Alt+V dán ảnh trong clipboard (ảnh chụp màn hình, ảnh copy từ trình duyệt, tệp ảnh copy trong Explorer),
   hoặc kéo tệp ảnh thả vào cửa sổ terminal; ảnh hiện thành `[Ảnh 1]` trong dòng nhập. Ảnh có cạnh dài quá 2000px được

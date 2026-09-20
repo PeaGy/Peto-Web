@@ -512,6 +512,27 @@ results in the next step. The server stores no conversation (`store=False`), and
   accepts a text file the workspace can read (so the checkpoint can hold its bytes) and shows the content that is about
   to be lost; move refuses an existing destination and records the pair as "old path deleted, new path created".
   `Change.after is None` is what "the file must not exist" means in `checkpoint.py`, including for undo's preflight.
+- **`@path` mentions** (`mentions.py`) attach a file's content to the request itself, because every model call costs a
+  step from the daily cap and the user often already knows which file matters. An attachment **counts as a read**:
+  `Workspace.remember` stores the digest and `Tools.guidance_for` records the sub-directory `AGENTS.md` (sent inside the
+  block, since the root one is already in the step's instructions), so the first `edit_file` is not spent on re-reading
+  or on a `GuideUpdate`. The digest check still runs, so a file changed after attaching is still refused. Tokens that do
+  not resolve inside the project (`a@b.com`, `@app.route`) are left alone silently; blocked, binary or oversized files
+  get a yellow notice instead. Caps: 8 mentions, 1000 lines / 60k chars per file, 120k chars per message, 200 entries
+  for a directory listing. The `@` completion menu reuses the `/` command menu: `__main__._suggester` chains
+  `commands.suggestions` and `mentions.suggest`, and `line_editor.create` takes the combined callable.
+- **`update_plan`** renders the model's own task list (`☑ ▶ ☐`) and needs no permission, since it touches nothing. At
+  most 10 items; unfinished ones are named in the request's summary line so "xong" cannot hide a half-done plan.
+- **Background commands** (`background.py`): `start_command` / `read_command_output` / `stop_command`. `runner.spawn`
+  is shared with `run_command`, output is collected by a reader thread into a 256 KB tail buffer, and `read` waits up to
+  30 s for new output so one step is worth spending. At most 3 running jobs. They deliberately outlive a request (a dev
+  server is the point) but never the session: `__main__.session` stops all of them in a `finally`.
+- **`shell`** on `run_command` and `start_command` picks `cmd` (default) or `powershell`, because this project's own
+  commands are PowerShell. PowerShell runs as an argv list (no quoting games) and `command_outcome` reads its
+  "not recognized as the name of a cmdlet" as an environment error.
+- **Bell and window title** (`UI.bell`, `UI.title`, off with `PETO_AGENT_NO_BELL=1`): a permission question rings once
+  and restores the previous title afterwards, and a request longer than 10 s rings when it ends. The title uses OSC with
+  an ST terminator, never BEL, so setting a title never rings.
 - **Web search** is the AI service's own tool, added to the step's tools when `PETO_AGENT_WEB_SEARCH` (and
   `PETO_WEB_SEARCH_ENABLED`) allow it, never during compaction. It runs on the service, so nothing is fetched on the
   user's machine; `ai/agent.py` turns the stream's `web_search_call` events into `search` events, the CLI prints one

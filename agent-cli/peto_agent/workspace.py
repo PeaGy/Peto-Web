@@ -47,6 +47,34 @@ def text_bytes(text: str, newline="\n", bom=False) -> bytes:
     return (codecs.BOM_UTF8 if bom else b"") + body.encode("utf-8")
 
 
+def list_entries(workspace: "Workspace", base: Path, max_depth: int, limit: int) -> tuple[list[str], bool]:
+    """Đường dẫn tương đối dưới ``base``, thư mục có dấu / ở cuối. Trả kèm cờ đã cắt bớt vì chạm giới hạn."""
+    entries: list[str] = []
+    truncated = False
+
+    def walk(directory: Path, level: int) -> None:
+        nonlocal truncated
+        try:
+            children = sorted(directory.iterdir(), key=lambda item: (not item.is_dir(), item.name.lower()))
+        except OSError:
+            return
+        for child in children:
+            if truncated:
+                return
+            if child.name in SKIPPED_DIRS or not workspace.inside(child) or workspace.blocked(child):
+                continue
+            is_dir = child.is_dir()
+            entries.append(workspace.relative(child) + ("/" if is_dir else ""))
+            if len(entries) >= limit:
+                truncated = True
+                return
+            if is_dir and level < max_depth:
+                walk(child, level + 1)
+
+    walk(base, 1)
+    return entries, truncated
+
+
 class Workspace:
     def __init__(self, root: str | Path):
         self.root = Path(root).resolve(strict=True)

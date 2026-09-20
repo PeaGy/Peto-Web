@@ -47,6 +47,7 @@ def classify(command, result):
         if code in {2, 3, 4}:
             return "execution_error"
     if re.search(r"(?im)(not recognized as an internal or external command|command not found|"
+                 r"is not recognized as the name of a cmdlet|CommandNotFoundException|"
                  r"ModuleNotFoundError:|No module named |Missing script:|ENOENT|No such file or directory)", output):
         return "environment_error"
     return "check_failed" if kind == "check" else "unknown_failure"

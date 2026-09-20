@@ -111,6 +111,8 @@ class UI:
         self._in_code = False
         self._diff_rows: list[tuple[str, str, str | None]] = []
         self._diff_position = 0
+        # Tiêu đề cửa sổ đang đặt, để hỏi quyền xong thì trả lại trạng thái trước đó.
+        self._title = ""
         # Ô nhập có gợi ý lệnh (line_editor); None thì dấu nhắc dùng reader như input().
         self.editor = None
         # Ảnh gửi kèm lượt nhập vừa xong: (số ảnh, ảnh). Chỉ ô nhập mới dán được ảnh.
@@ -216,6 +218,28 @@ class UI:
                 parts.append(BOLD.sub(lambda match: self.paint(match.group(1), "bold"), part))
         return "".join(parts)
 
+    def plan(self, steps: list[dict]) -> None:
+        """Danh sách việc của yêu cầu dài, in lại mỗi lần Peto cập nhật để thấy đang tới đâu."""
+        marks = {"done": ("☑ ", "dim"), "running": ("▶ ", "blue")}
+        self.line()
+        for step in steps:
+            mark, color = marks.get(step.get("status"), ("☐ ", None))
+            self._wrapped("  " + mark, visible(str(step.get("title", ""))), color)
+
+    def bell(self) -> None:
+        """Kêu một tiếng khi Peto cần người dùng hoặc vừa xong việc lâu. Tắt bằng PETO_AGENT_NO_BELL=1."""
+        if self.terminal and not os.environ.get("PETO_AGENT_NO_BELL"):
+            self.out.write("\a")
+            self.out.flush()
+
+    def title(self, text: str) -> None:
+        """Đổi tiêu đề cửa sổ terminal, để liếc thanh tác vụ là biết Peto xong chưa."""
+        self._title = text
+        if self.terminal:
+            # Kết thúc bằng ST (ESC \) chứ không phải BEL, để tiếng chuông chỉ vang khi Peto thật sự gọi.
+            self.out.write(f"\033]0;{visible(text)}\033\\")
+            self.out.flush()
+
     def step(self, text: str) -> None:
         self.line(f"  • {text}", "dim")
 
@@ -280,15 +304,19 @@ class UI:
         if end < len(self._diff_rows):
             self._wrapped("    ", f"Còn {len(self._diff_rows) - end} dòng · gõ v để xem tiếp trước khi quyết định.", "dim")
 
-    def command(self, command: str, directory: str, timeout: int) -> None:
+    def command(self, command: str, directory: str, timeout: int, *, shell: str = "cmd",
+                background: bool = False) -> None:
+        powershell = shell == "powershell"
         self._diff_rows = []
         self.line()
-        self.line("  ▶ Muốn chạy lệnh", "blue")
+        self.line(("  ▶ Muốn chạy lệnh nền" if background else "  ▶ Muốn chạy lệnh")
+                  + (" bằng PowerShell" if powershell else ""), "blue")
         self._wrapped("    ", visible(directory), "dim")
-        self._wrapped("    ", f"Giới hạn {timeout} giây · Ctrl+C dừng lệnh", "dim")
+        self._wrapped("    ", "Chạy tiếp sau khi yêu cầu xong, tới khi Peto dừng hoặc bạn đóng peto" if background
+                      else f"Giới hạn {timeout} giây · Ctrl+C dừng lệnh", "dim")
         self._rule()
         for line in command.split("\n"):
-            self._wrapped("    $ ", visible(line.expandtabs(4)), code=True)
+            self._wrapped("    PS> " if powershell else "    $ ", visible(line.expandtabs(4)), code=True)
         self._rule()
 
     def command_progress(self, seconds: float, output: str) -> None:
@@ -325,6 +353,15 @@ class UI:
     def ask_permission(self, *, allow_session: bool = False) -> str:
         """Hỏi y/n/a. Hết đầu vào (EOF) thì coi như không đồng ý."""
         self.clear_status()
+        waiting = self._title
+        self.title("Peto · cần bạn duyệt")
+        self.bell()
+        try:
+            return self._ask(allow_session)
+        finally:
+            self.title(waiting)
+
+    def _ask(self, allow_session: bool) -> str:
         while True:
             try:
                 question = PERMISSION_QUESTION

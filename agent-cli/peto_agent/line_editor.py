@@ -686,7 +686,8 @@ def simple_input_requested() -> bool:
     return os.environ.get("PETO_AGENT_SIMPLE_INPUT", "").strip() not in ("", "0")
 
 
-def create(out, enable_vt: Callable[[object], bool]) -> LineEditor | None:
+def create(out, enable_vt: Callable[[object], bool],
+           suggest: Callable[[str], list[Suggestion]] | None = None) -> LineEditor | None:
     """Ô nhập có gợi ý khi chạy trong console Windows; None thì phiên dùng input() như cũ."""
     if os.name != "nt" or simple_input_requested():
         return None
@@ -695,6 +696,6 @@ def create(out, enable_vt: Callable[[object], bool]) -> LineEditor | None:
     if not enable_vt(out):
         return None
     try:
-        return LineEditor(WindowsConsole(), out)
+        return LineEditor(WindowsConsole(), out, **({"suggest": suggest} if suggest is not None else {}))
     except OSError:
         return None

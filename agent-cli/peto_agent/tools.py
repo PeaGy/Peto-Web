@@ -11,19 +11,22 @@ import fnmatch
 import inspect
 import json
 import re
-from pathlib import Path
 
 from . import runner
+from .background import Jobs
 from .checkpoint import Checkpoint
 from .command_outcome import classify, command_kind
 from .metrics import Metrics
 from .project_guide import GuideUpdate, guides
 from .presentation import AgentUI
-from .workspace import SKIPPED_DIRS, Workspace, WorkspaceError, digest, text_bytes
+from .workspace import Workspace, WorkspaceError, digest, list_entries, text_bytes
 
 MAX_READ_LINES = 400
 MAX_LIST_ENTRIES = 400
 MAX_MATCHES = 100
+MAX_PLAN_STEPS = 10
+MAX_PLAN_TITLE = 120
+PLAN_STATUS = ("pending", "running", "done")
 REFUSED = "Người dùng không đồng ý {action}. Đừng lặp lại y nguyên; hỏi họ muốn làm khác thế nào."
 
 
@@ -46,14 +49,20 @@ class Tools:
         self.changes: dict[str, list[int]] = {}
         self.commands: list[dict] = []
         self.checkpoint = Checkpoint(workspace)
-        self.command_grants: set[tuple[str, str, int]] = set()
+        # Lệnh nền sống qua nhiều yêu cầu, chỉ bị dừng khi Peto dừng hoặc khi đóng phiên.
+        self.jobs = Jobs()
+        # Quyền chạy lệnh nhớ trong phiên: (thư mục, lệnh, thời hạn, shell).
+        self.command_grants: set[tuple[str, str, int, str]] = set()
         self.seen_guides: dict[str, str] = {}
+        # Danh sách việc Peto tự ghi cho yêu cầu đang chạy; rỗng nghĩa là yêu cầu ngắn, không cần.
+        self.plan: list[dict] = []
         self.failed_commands = 0
         self.command_failures: dict[str, int] = {}
         self.metrics = Metrics()
         self.revision = 0
         self.command_revision = -1
         self._handlers = {
+            "update_plan": self.update_plan,
             "list_files": self.list_files,
             "read_file": self.read_file,
             "search_files": self.search_files,
@@ -62,10 +71,14 @@ class Tools:
             "delete_file": self.delete_file,
             "move_file": self.move_file,
             "run_command": self.run_command,
+            "start_command": self.start_command,
+            "read_command_output": self.read_command_output,
+            "stop_command": self.stop_command,
         }
 
     def reset_task(self) -> None:
         self.approve_all = False
+        self.plan = []
         self.changes = {}
         self.commands = []
         self.failed_commands = 0
@@ -127,36 +140,37 @@ class Tools:
         total[1] += removed
         return added, removed
 
+    def update_plan(self, steps: list) -> dict:
+        """Danh sách việc cho yêu cầu dài. Không đụng tệp nào nên không hỏi quyền, chỉ hiện ra cho người dùng theo dõi."""
+        if not isinstance(steps, list) or not steps:
+            raise WorkspaceError("steps phải là danh sách ít nhất một việc.")
+        if len(steps) > MAX_PLAN_STEPS:
+            raise WorkspaceError(f"Danh sách việc tối đa {MAX_PLAN_STEPS} mục; gộp các việc nhỏ lại.")
+        plan = []
+        for step in steps:
+            title = step.get("title") if isinstance(step, dict) else None
+            if not isinstance(title, str) or not title.strip() or step.get("status") not in PLAN_STATUS:
+                raise WorkspaceError("Mỗi việc cần title là chữ và status là pending, running hoặc done.")
+            plan.append({"title": title.strip()[:MAX_PLAN_TITLE], "status": step["status"]})
+        self.plan = plan
+        self.ui.plan(plan)
+        return {"ok": True, "steps": len(plan), "left": sum(1 for step in plan if step["status"] != "done")}
+
     def list_files(self, path: str = ".", depth: int | None = None) -> dict:
         base = self.ws.resolve(path)
         if not base.is_dir():
             raise WorkspaceError(f"{self.ws.relative(base)} không phải thư mục.")
-        max_depth = max(1, min(4, depth or 2))
-        entries: list[str] = []
-        truncated = False
-
-        def walk(directory: Path, level: int) -> None:
-            nonlocal truncated
-            try:
-                children = sorted(directory.iterdir(), key=lambda item: (not item.is_dir(), item.name.lower()))
-            except OSError:
-                return
-            for child in children:
-                if truncated:
-                    return
-                if child.name in SKIPPED_DIRS or not self.ws.inside(child) or self.ws.blocked(child):
-                    continue
-                is_dir = child.is_dir()
-                entries.append(self.ws.relative(child) + ("/" if is_dir else ""))
-                if len(entries) >= MAX_LIST_ENTRIES:
-                    truncated = True
-                    return
-                if is_dir and level < max_depth:
-                    walk(child, level + 1)
-
-        walk(base, 1)
+        entries, truncated = list_entries(self.ws, base, max(1, min(4, depth or 2)), MAX_LIST_ENTRIES)
         self.ui.step(f"Xem thư mục {self.ws.relative(base)}")
         return {"path": self.ws.relative(base), "entries": entries, "truncated": truncated}
+
+    def guidance_for(self, target) -> list[dict]:
+        """Hướng dẫn AGENTS.md áp dụng cho một tệp, và ghi nhận là đã thấy.
+
+        Dùng cho tệp người dùng đính kèm bằng @: nội dung tệp đã nằm trong tin nhắn, nên hướng dẫn của thư mục cũng
+        phải tới cùng lúc, không thì lần sửa đầu tiên lại tốn một bước chỉ để nhận hướng dẫn.
+        """
+        return self._guidance(target, reading=True)
 
     def read_file(self, path: str, start_line: int | None = None, end_line: int | None = None) -> dict:
         target = self.ws.resolve(path)
@@ -340,17 +354,52 @@ class Tools:
         self.ui.success(f"Đã đổi tên {old_rel} → {new_rel}")
         return {"ok": True, "path": new_rel, "moved_from": old_rel}
 
-    def run_command(self, command: str, timeout_seconds: int | None = None) -> dict:
+    def start_command(self, command: str, shell: str | None = None) -> dict:
+        """Chạy lệnh nền và trả về ngay. Hỏi quyền như run_command, và nói rõ lệnh sống lâu hơn yêu cầu này."""
+        command = command.strip()
+        if not command:
+            raise WorkspaceError("Lệnh đang trống.")
+        shell = self._shell(shell)
+        self.ui.command(command, str(self.ws.root), 0, shell=shell, background=True)
+        if not (self.approve_all or self._approve()):
+            self.ui.failure("Không chạy lệnh nền")
+            return {"error": REFUSED.format(action="chạy lệnh nền này")}
+        self.checkpoint.shell_used = True
+        job = self.jobs.start(command, self.ws.root, shell)
+        self.ui.success(f"Đã chạy nền #{job.id}: {command}")
+        return {"ok": True, "id": job.id, "command": command,
+                "note": "Lệnh chạy tiếp sau khi yêu cầu này xong. Đọc output bằng read_command_output, dừng bằng "
+                        "stop_command."}
+
+    def read_command_output(self, job_id: str, wait_seconds: int | None = None) -> dict:
+        result = self.jobs.read(str(job_id), wait_seconds)
+        state = "đang chạy" if result["running"] else f"đã dừng, mã thoát {result['exit_code']}"
+        self.ui.step(f"Đọc output lệnh nền #{result['id']} ({state})")
+        return result
+
+    def stop_command(self, job_id: str) -> dict:
+        result = self.jobs.stop(str(job_id))
+        self.ui.success(f"Đã dừng lệnh nền #{result['id']}: {result['command']}")
+        return result
+
+    def _shell(self, shell: str | None) -> str:
+        chosen = (shell or "cmd").strip().lower()
+        if chosen not in runner.SHELLS:
+            raise WorkspaceError(f"shell chỉ nhận {' hoặc '.join(runner.SHELLS)}.")
+        return chosen
+
+    def run_command(self, command: str, timeout_seconds: int | None = None, shell: str | None = None) -> dict:
         command = command.strip()
         if not command:
             raise WorkspaceError("Lệnh đang trống.")
         timeout = max(1, min(600, timeout_seconds or 120))
+        shell = self._shell(shell)
         if self.failed_commands >= 3 and command_kind(command) == "check":
             return {"error": "Đã có 3 lần kiểm tra thất bại. Dừng thử sửa/kiểm tra tiếp và báo kết quả cho người dùng."}
         if self.command_failures.get(command, 0) >= 3:
             return {"error": "Lệnh này đã lỗi 3 lần; không lặp lại y nguyên. Đọc lỗi và báo nguyên nhân hoặc chọn cách khác."}
-        self.ui.command(command, str(self.ws.root), timeout)
-        grant = (str(self.ws.root), command, timeout)
+        self.ui.command(command, str(self.ws.root), timeout, shell=shell)
+        grant = (str(self.ws.root), command, timeout, shell)
         allowed = self.approve_all or grant in self.command_grants
         if not allowed:
             with self.metrics.measure("permission"):
@@ -367,7 +416,10 @@ class Tools:
         try:
             self.checkpoint.shell_used = True
             with self.metrics.measure("commands"):
-                result = runner.run(command, self.ws.root, timeout, on_progress=self.ui.command_progress)
+                result = runner.run(command, self.ws.root, timeout, shell=shell,
+                                    on_progress=self.ui.command_progress)
+        except FileNotFoundError:
+            raise WorkspaceError(f"Máy này không chạy được {shell}. Thử lại bằng shell khác nhé.") from None
         finally:
             self.ui.clear_status()
         classification = classify(command, result)

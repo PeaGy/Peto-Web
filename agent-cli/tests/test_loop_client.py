@@ -547,3 +547,40 @@ def test_refusing_a_delete_leaves_the_file_and_tells_the_model(project, peto):
     session.run_task("xóa hộ mình")
     assert (project / "bo.py").exists()
     assert "Đừng lặp lại y nguyên" in peto.requests[-1]["body"]["input"][-1]["output"]
+
+
+def test_unfinished_plan_items_are_named_in_the_summary(project, peto):
+    """Peto không được nói xong khi danh sách việc còn dang dở."""
+    def reply(path, body):
+        results = [item for item in body["input"] if item.get("type") == "function_call_output"]
+        if not results:
+            return 200, [{"type": "done", "output": [message("Bắt đầu nhé."), call(0, "update_plan", steps=[
+                {"title": "Sửa lỗi", "status": "running"}, {"title": "Chạy test", "status": "pending"}])]}]
+        return 200, [{"type": "done", "output": [message("Mình dừng ở đây.")]}]
+
+    peto.reply = reply
+    session, ui = start(project, peto, [])
+    session.run_task("làm giúp mình")
+    assert "▶ Sửa lỗi" in ui.text and "☐ Chạy test" in ui.text
+    assert "còn 2 việc chưa xong" in ui.text
+
+
+def test_file_mentioned_with_at_is_editable_without_spending_a_read_step(project, peto):
+    """Cả điểm của @tệp: nội dung tới cùng yêu cầu, nên bước đầu đã sửa được luôn."""
+    def reply(path, body):
+        results = [item for item in body["input"] if item.get("type") == "function_call_output"]
+        if not results:
+            return 200, [{"type": "done", "output": [
+                message("Sửa ngay."),
+                call(0, "edit_file", path="README.md", old_text="nội dung", new_text="nội dung mới")]}]
+        return 200, [{"type": "done", "output": [message("Xong rồi nè.")]}]
+
+    peto.reply = reply
+    session, ui = start(project, peto, ["y"])
+    session.run_task("sửa @README.md giúp mình")
+
+    assert (project / "README.md").read_bytes() == "# Dự án thử\r\nnội dung mới\r\n".encode()
+    sent = peto.requests[0]["body"]["input"][0]["content"]
+    assert "[Tệp đính kèm: README.md · 2 dòng]" in sent and "sửa @README.md giúp mình" in sent
+    assert all(item.get("name") != "read_file" for item in session.items), "không tốn bước nào để đọc lại"
+    assert "Đính kèm README.md (2 dòng)" in ui.text

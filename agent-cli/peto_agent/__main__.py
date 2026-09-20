@@ -10,7 +10,7 @@ import time
 import webbrowser
 from pathlib import Path
 
-from . import __version__, commands, config, history, line_editor
+from . import __version__, commands, config, history, line_editor, mentions
 from .client import ApiError, Client
 from .commands import fold
 from .loop import Session, TaskLog, format_tokens
@@ -299,6 +299,12 @@ def status(ui: UI) -> int:
     return 0
 
 
+def _suggester(workspace: Workspace):
+    """Bảng gợi ý của ô nhập: lệnh khi dòng bắt đầu bằng "/", đường dẫn tệp khi từ cuối bắt đầu bằng "@"."""
+    files = mentions.Files(workspace)
+    return lambda text: commands.suggestions(text) or mentions.suggest(text, files)
+
+
 def too_broad(root: Path) -> bool:
     return root == Path(root.anchor) or root == Path.home().resolve()
 
@@ -320,79 +326,86 @@ def session(ui: UI) -> int:
     models = _models(me)
     model = _model(models)
     commands.use_models(models)
+    workspace = Workspace(root)
     if ui.editor is None:
-        ui.editor = line_editor.create(ui.out, enable_vt)
+        ui.editor = line_editor.create(ui.out, enable_vt, _suggester(workspace))
     ui.session_header(__version__, str(root), str(me.get("account") or ""), EFFORT_LABELS[effort], _steps_left(me),
                       HINT_WITH_MENU if ui.editor is not None else HINT_PLAIN, model=model.get("label") or model["key"])
     _update_notice(ui, client, me)
     saved_model = config.load().get("model")
     if isinstance(saved_model, str) and saved_model != model["key"]:
         ui.line(f"Tài khoản này không còn dùng được model {saved_model} nên peto dùng {model.get('label')}.", "yellow")
-    work = Session(client, Workspace(root), ui, log=TaskLog(root.name), effort=effort, model=model["key"],
+    work = Session(client, workspace, ui, log=TaskLog(root.name), effort=effort, model=model["key"],
                    model_step_cost=int(model.get("step_cost") or 1))
+    ui.title(f"Peto · {root.name}")
     saved = history.load(root, client.server)
     if saved is not None:
         ui.line(f"Có hội thoại {history.when(saved.saved_at)} ({saved.message_count} tin) · gõ /resume để mở lại.",
                 "yellow")
-    while True:
-        try:
+    try:
+        while True:
             try:
-                folder = str(Path("~") / root.relative_to(Path.home()))
-            except ValueError:
-                folder = str(root)
-            label = next((item.get("label") for item in models if item["key"] == work.model), None) or work.model
-            text = ui.prompt(footer=f"{label} · mức {EFFORT_LABELS[work.effort]} · {folder}").strip()
-        except (EOFError, KeyboardInterrupt):
-            ui.line()
-            break
-        if not text:
-            continue
-        name, value = split_command(text)
-        if name in PLAIN_COMMANDS and value:
-            ui.line(f"Lệnh {name} không nhận thêm gì phía sau.", "yellow")
-            continue
-        if name in {"/thoat", "/exit", "/quit"}:
-            break
-        if name == "/moi":
-            # Hội thoại cũ vẫn mở lại được bằng /resume cho tới khi hội thoại mới được lưu đè sau yêu cầu đầu tiên.
-            work.reset()
-            ui.line("Đã bắt đầu hội thoại mới.", "dim")
-            continue
-        if name == "/help":
-            _help(ui)
-            continue
-        if name == "/resume":
-            _resume(ui, work)
-            continue
-        if name == "/retry":
-            work.retry_task()
-            continue
-        if name in {"/diff", "/undo", "/compact", "/init"}:
-            try:
-                {"/diff": work.show_diff, "/undo": work.undo, "/compact": work.compact,
-                 "/init": work.init_guide}[name]()
-            except (KeyboardInterrupt, EOFError):
-                ui.line("Đã dừng.", "dim")
-            continue
-        if name == "/permissions":
-            if value not in {"", "clear"}:
-                ui.line("Dùng /permissions hoặc /permissions clear.", "yellow")
-            else:
-                work.permissions(clear=value == "clear")
-            continue
-        if name == "/usage":
-            _usage(ui, work)
-            continue
-        if name == "/effort":
-            _change_effort(ui, work, fold(value))
-            continue
-        if name == "/model":
-            _change_model(ui, work, value, models)
-            continue
-        if name and not value:
-            ui.line("Không có lệnh này. Gõ /help để xem các lệnh.", "yellow")
-            continue
-        work.run_task(text, ui.attached)
+                try:
+                    folder = str(Path("~") / root.relative_to(Path.home()))
+                except ValueError:
+                    folder = str(root)
+                label = next((item.get("label") for item in models if item["key"] == work.model), None) or work.model
+                text = ui.prompt(footer=f"{label} · mức {EFFORT_LABELS[work.effort]} · {folder}").strip()
+            except (EOFError, KeyboardInterrupt):
+                ui.line()
+                break
+            if not text:
+                continue
+            name, value = split_command(text)
+            if name in PLAIN_COMMANDS and value:
+                ui.line(f"Lệnh {name} không nhận thêm gì phía sau.", "yellow")
+                continue
+            if name in {"/thoat", "/exit", "/quit"}:
+                break
+            if name == "/moi":
+                # Hội thoại cũ vẫn mở lại được bằng /resume cho tới khi hội thoại mới được lưu đè sau yêu cầu đầu tiên.
+                work.reset()
+                ui.line("Đã bắt đầu hội thoại mới.", "dim")
+                continue
+            if name == "/help":
+                _help(ui)
+                continue
+            if name == "/resume":
+                _resume(ui, work)
+                continue
+            if name == "/retry":
+                work.retry_task()
+                continue
+            if name in {"/diff", "/undo", "/compact", "/init"}:
+                try:
+                    {"/diff": work.show_diff, "/undo": work.undo, "/compact": work.compact,
+                     "/init": work.init_guide}[name]()
+                except (KeyboardInterrupt, EOFError):
+                    ui.line("Đã dừng.", "dim")
+                continue
+            if name == "/permissions":
+                if value not in {"", "clear"}:
+                    ui.line("Dùng /permissions hoặc /permissions clear.", "yellow")
+                else:
+                    work.permissions(clear=value == "clear")
+                continue
+            if name == "/usage":
+                _usage(ui, work)
+                continue
+            if name == "/effort":
+                _change_effort(ui, work, fold(value))
+                continue
+            if name == "/model":
+                _change_model(ui, work, value, models)
+                continue
+            if name and not value:
+                ui.line("Không có lệnh này. Gõ /help để xem các lệnh.", "yellow")
+                continue
+            work.run_task(text, ui.attached)
+    finally:
+        # Lệnh nền không sống lâu hơn phiên: đóng peto là dừng hết, kể cả khi thoát vì lỗi.
+        if stopped := work.tools.jobs.stop_all():
+            ui.line(f"Đã dừng {len(stopped)} lệnh nền: " + ", ".join(stopped), "dim")
     ui.line("Tạm biệt!", "dim")
     return 0
 
