@@ -517,7 +517,8 @@ và gọi mô hình AI. Cách cài, đăng nhập và sử dụng nằm trong `a
   số bước và token hôm nay, `/init` nhờ Peto khảo sát dự án rồi viết `AGENTS.md` để những yêu cầu sau bám đúng quy ước
   của dự án.
 - **Đính kèm tệp:** gõ `@src/app.py` trong yêu cầu thì bảng gợi ý đường dẫn hiện ra, và nội dung tệp được gắn thẳng vào
-  yêu cầu. Peto sửa được ngay mà không tốn thêm bước để đọc tệp; mọi lần ghi vẫn hỏi bạn.
+  yêu cầu. Peto sửa được ngay mà không tốn thêm bước để đọc tệp; mọi lần ghi vẫn hỏi bạn. Tệp lớn thì gõ khoảng dòng,
+  `@src/app.py:120-180`, để chỉ gửi đúng đoạn cần.
 - **Việc dài và lệnh nền:** yêu cầu nhiều việc thì Peto hiện danh sách việc và đánh dấu tiến độ ngay trong terminal.
   Lệnh không tự kết thúc (dev server, watch) chạy nền và trả về ngay, tối đa 3 lệnh, và dừng hết khi bạn đóng `peto`.
 - **Chuông báo:** terminal kêu khi Peto cần bạn duyệt hoặc vừa xong một yêu cầu chạy lâu, và tiêu đề cửa sổ đổi theo

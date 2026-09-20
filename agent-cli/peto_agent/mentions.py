@@ -19,6 +19,9 @@ from .workspace import Workspace, WorkspaceError, list_entries
 TOKEN = re.compile(r"(?:(?<=\s)|^)@([^\s@'\"`<>|]+)")
 # Dấu câu người ta hay gõ ngay sau đường dẫn; tên tệp thật gần như không kết thúc bằng mấy ký tự này.
 TRAILING = ".,;:!?)]}\"'"
+# Khoảng dòng gõ ở cuối: "@src/app.py:120-180" hay "@src/app.py:120". Phải có số ngay sau dấu hai chấm, nên đường
+# dẫn tuyệt đối kiểu "C:\du-an\app.py" không bị hiểu nhầm thành khoảng dòng.
+RANGE = re.compile(r":(\d+)(?:-(\d+))?$")
 MAX_MENTIONS = 8
 MAX_LINES_PER_FILE = 1000
 MAX_CHARS_PER_FILE = 60_000
@@ -56,6 +59,18 @@ def find(text: str) -> list[str]:
     return found
 
 
+def split_range(token: str) -> tuple[str, tuple[int, int | None] | None]:
+    """"src/app.py:120-180" thành ("src/app.py", (120, 180)); không ghi khoảng dòng thì phần sau là None."""
+    match = RANGE.search(token)
+    if match is None:
+        return token, None
+    start = int(match.group(1))
+    end = int(match.group(2)) if match.group(2) else None
+    if start < 1 or (end is not None and end < start):
+        return token, None
+    return token[:match.start()], (start, end)
+
+
 def _clip(text: str, lines: list[str]) -> tuple[str, str]:
     """Cắt bớt tệp dài; trả (nội dung, ghi chú) với ghi chú rỗng khi không phải cắt."""
     if len(lines) > MAX_LINES_PER_FILE:
@@ -73,25 +88,37 @@ def _directory(workspace: Workspace, target: Path, rel: str) -> tuple[str, str]:
     return block, f"Đính kèm {rel} ({len(entries)} mục)"
 
 
-def _file(workspace: Workspace, tools, target: Path, rel: str, budget: int) -> tuple[str, str]:
+def _file(workspace: Workspace, tools, target: Path, rel: str, budget: int,
+          span: tuple[int, int | None] | None = None) -> tuple[str, str]:
     file = workspace.read(target)
     lines = file.text.split("\n")
     if file.text.endswith("\n"):
         lines.pop()
     total = len(lines)
-    content, note = _clip(file.text, lines)
+    if span is None:
+        content, note = _clip(file.text, lines)
+        label, step = f"{total} dòng", f"{total} dòng"
+    else:
+        start = span[0]
+        if start > total:
+            raise WorkspaceError(f"{rel} chỉ có {total} dòng.")
+        end = max(start, min(total, span[1] or total, start + MAX_LINES_PER_FILE - 1))
+        content = "\n".join(lines[start - 1:end])
+        note = ("Chỉ đính kèm khoảng dòng người dùng chỉ định; phần còn lại đọc bằng read_file."
+                if (start > 1 or end < total) else "")
+        label, step = f"dòng {start}–{end} / {total} dòng", f"dòng {start}–{end}"
     if len(content) > budget:
         content, note = content[:budget], "Hết chỗ đính kèm nên chỉ gửi phần đầu; đọc tiếp bằng read_file."
     workspace.remember(target, file)
     # Hướng dẫn của thư mục con phải đi cùng nội dung, vì lần sửa đầu tiên không còn bước read_file để nhận nó nữa.
     # Hướng dẫn ở gốc dự án thì máy chủ đã gửi sẵn trong chỉ dẫn của mỗi bước.
     guides = [item for item in tools.guidance_for(target) if item.get("scope") != "."]
-    header = f"[Tệp đính kèm: {rel} · {total} dòng]"
+    header = f"[Tệp đính kèm: {rel} · {label}]"
     if note:
         header += f"\n{note}"
     for guide in guides:
         header += f"\n[Hướng dẫn {guide['path']} áp dụng cho {guide['scope']}]\n{guide['text']}"
-    return f"{header}\n{content}\n[Hết {rel}]", f"Đính kèm {rel} ({total} dòng)"
+    return f"{header}\n{content}\n[Hết {rel}]", f"Đính kèm {rel} ({step})"
 
 
 def attach(workspace: Workspace, tools, text: str) -> Attached:
@@ -100,8 +127,11 @@ def attach(workspace: Workspace, tools, text: str) -> Attached:
     blocks: list[str] = []
     budget = MAX_TOTAL_CHARS
     for token in find(text):
+        path_text, span = split_range(token)
+        if not path_text:
+            continue
         try:
-            target = workspace.resolve(token, must_exist=False)
+            target = workspace.resolve(path_text, must_exist=False)
         except WorkspaceError as err:
             # Chỉ có thể là ngoài thư mục dự án hoặc tệp bí mật: người dùng gõ hẳn ra thì đáng được báo.
             result.notices.append(f"Không đính kèm @{token}: {err}")
@@ -115,7 +145,7 @@ def attach(workspace: Workspace, tools, text: str) -> Attached:
             continue
         try:
             block, step = (_directory(workspace, target, rel) if target.is_dir()
-                           else _file(workspace, tools, target, rel, budget))
+                           else _file(workspace, tools, target, rel, budget, span))
         except (WorkspaceError, OSError) as err:
             result.notices.append(f"Không đính kèm @{token}: {err}")
             continue

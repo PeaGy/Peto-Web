@@ -518,8 +518,9 @@ results in the next step. The server stores no conversation (`store=False`), and
   block, since the root one is already in the step's instructions), so the first `edit_file` is not spent on re-reading
   or on a `GuideUpdate`. The digest check still runs, so a file changed after attaching is still refused. Tokens that do
   not resolve inside the project (`a@b.com`, `@app.route`) are left alone silently; blocked, binary or oversized files
-  get a yellow notice instead. Caps: 8 mentions, 1000 lines / 60k chars per file, 120k chars per message, 200 entries
-  for a directory listing. The `@` completion menu reuses the `/` command menu: `__main__._suggester` chains
+  get a yellow notice instead. `@path:120-180` (or `:120` to the end) attaches only that range, which is what keeps a
+  big file from costing 10k tokens for one function. Caps: 8 mentions, 1000 lines / 60k chars per file, 120k chars per
+  message, 200 entries for a directory listing. The `@` completion menu reuses the `/` command menu: `__main__._suggester` chains
   `commands.suggestions` and `mentions.suggest`, and `line_editor.create` takes the combined callable.
 - **`update_plan`** renders the model's own task list (`☑ ▶ ☐`) and needs no permission, since it touches nothing. At
   most 10 items; unfinished ones are named in the request's summary line so "xong" cannot hide a half-done plan.

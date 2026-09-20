@@ -162,6 +162,8 @@ Lúc gửi, peto đọc các tệp đó trên máy bạn và gắn nội dung v�
 đọc tệp. Nội dung này được tính là đã đọc: Peto sửa thẳng bằng công cụ sửa tệp, vẫn hiện diff và vẫn hỏi bạn trước khi
 ghi. Nếu tệp bị đổi sau lúc đính kèm, lần sửa vẫn bị từ chối như thường.
 
+- **Chỉ một đoạn:** `@backend/main.py:120-180` đính kèm đúng khoảng dòng đó, `@backend/main.py:120` thì từ dòng 120
+  tới cuối tệp. Tệp lớn mà bạn biết chỗ cần thì dùng cách này cho đỡ tốn token.
 - Gõ `@` một thư mục thì đính kèm danh sách tệp trong đó (tối đa 200 mục), không kèm nội dung.
 - Tệp bị chặn (`.env`, khóa, `.git`), tệp nhị phân hay tệp trên 1 MB thì không đính kèm được; một dòng vàng nói rõ lý do.
 - Tệp dài chỉ đính kèm 1000 dòng đầu, và mỗi tin đính kèm tối đa 120.000 ký tự; phần còn lại Peto tự đọc khi cần.

@@ -54,6 +54,37 @@ def test_subfolder_guidance_travels_with_the_file(project):
     assert tools.edit_file("web/app.ts", "1", "2")["ok"] is True
 
 
+def test_a_line_range_attaches_only_that_part(project):
+    """Tệp lớn mà chỉ cần một đoạn thì gõ @tệp:đầu-cuối, khỏi tốn token cho cả tệp."""
+    (project / "app.py").write_text("".join(f"hàm {index}\n" for index in range(1, 21)), encoding="utf-8")
+    workspace, tools = setup(project)
+
+    attached = mentions.attach(workspace, tools, "xem @app.py:5-8 giúp mình")
+    assert attached.steps == ["Đính kèm app.py (dòng 5–8)"]
+    assert "[Tệp đính kèm: app.py · dòng 5–8 / 20 dòng]" in attached.text
+    assert "hàm 5" in attached.text and "hàm 8" in attached.text
+    assert "hàm 4" not in attached.text and "hàm 9" not in attached.text
+    assert "phần còn lại đọc bằng read_file" in attached.text
+
+
+def test_open_ended_range_runs_to_the_end_and_a_too_big_start_is_refused(project):
+    (project / "app.py").write_text("".join(f"hàm {index}\n" for index in range(1, 21)), encoding="utf-8")
+    workspace, tools = setup(project)
+
+    assert mentions.attach(workspace, tools, "@app.py:18").steps == ["Đính kèm app.py (dòng 18–20)"]
+    quá = mentions.attach(workspace, tools, "@app.py:99")
+    assert "chỉ có 20 dòng" in quá.notices[0] and not quá.steps
+
+
+def test_only_a_real_line_range_is_split_off_the_path():
+    assert mentions.split_range("src/app.py:120-180") == ("src/app.py", (120, 180))
+    assert mentions.split_range("src/app.py:120") == ("src/app.py", (120, None))
+    # Đường dẫn tuyệt đối trên Windows cũng có dấu hai chấm, và khoảng dòng vô lý thì coi như không có.
+    assert mentions.split_range(r"C:\du-an\app.py") == (r"C:\du-an\app.py", None)
+    assert mentions.split_range("src/app.py:0") == ("src/app.py:0", None)
+    assert mentions.split_range("src/app.py:80-20") == ("src/app.py:80-20", None)
+
+
 def test_paths_that_are_not_files_are_left_alone_and_refusals_are_explained(project):
     (project / ".env").write_text("TOKEN=1", encoding="utf-8")
     (project / "anh.png").write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 40)
