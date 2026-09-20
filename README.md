@@ -514,14 +514,20 @@ và gọi mô hình AI. Cách cài, đăng nhập và sử dụng nằm trong `a
 - **Trong phiên:** gõ `/` là hiện danh sách lệnh, lọc dần theo chữ gõ; mũi tên chọn, Tab điền, Enter chạy, Esc ẩn.
   `/moi` bắt đầu hội thoại mới, `/resume` mở lại hội thoại gần nhất của thư mục (lưu trên máy người dùng, không chạy lại
   lệnh nào), `/effort thap|vua|cao` đổi mức suy nghĩ và `/model` đổi model (cả hai được nhớ cho lần sau), `/usage` xem
-  số bước và token hôm nay.
+  số bước và token hôm nay, `/init` nhờ Peto khảo sát dự án rồi viết `AGENTS.md` để những yêu cầu sau bám đúng quy ước
+  của dự án.
   Dán nhiều dòng không bị gửi từng dòng; đoạn dài hiện gọn thành `[Đã dán N dòng]`.
 - **Gửi ảnh:** Alt+V dán ảnh trong clipboard (ảnh chụp màn hình, ảnh copy từ trình duyệt, tệp ảnh copy trong Explorer),
   hoặc kéo tệp ảnh thả vào cửa sổ terminal; ảnh hiện thành `[Ảnh 1]` trong dòng nhập. Ảnh có cạnh dài quá 2000px được
   thu nhỏ, và mỗi bước chỉ gửi lại 4 ảnh gần nhất.
 - **Cập nhật:** khi VPS có bản `peto` mới hơn bản trên máy, CLI nhắc chạy lại lệnh cài.
-- **Quyền:** đọc và tìm trong thư mục thì Peto tự làm; sửa tệp, tạo tệp và chạy lệnh luôn hỏi bạn trước. Peto không đọc
-  hay sửa `.env`, khóa và `.git`, và không ra ngoài thư mục dự án.
+- **Quyền:** đọc và tìm trong thư mục thì Peto tự làm; sửa tệp, tạo tệp, xóa tệp, đổi tên tệp và chạy lệnh luôn hỏi bạn
+  trước. Peto không đọc hay sửa `.env`, khóa và `.git`, và không ra ngoài thư mục dự án.
+- **Hoàn tác:** `/diff` xem, `/undo` hoàn tác bản sửa tệp trực tiếp gần nhất, gồm cả tệp Peto xóa hay đổi tên bằng công
+  cụ. Thay đổi do lệnh terminal thì nằm ngoài bản hoàn tác.
+- **Tìm web:** khi cần tài liệu thư viện hay thông báo lỗi lạ, Peto tra web ngay trong bước đó; việc tìm chạy ở phía
+  dịch vụ AI chứ không mở gì trên máy người dùng. Mỗi lượt tìm tính phí vào tài khoản dịch vụ AI, tắt được bằng
+  `PETO_AGENT_WEB_SEARCH=false`.
 - **Dữ liệu:** nội dung tệp Peto đọc và output lệnh đi qua VPS tới dịch vụ AI của model đang chọn (xAI với Peto,
   OpenAI với dòng 5.6); VPS không lưu hội thoại.
 

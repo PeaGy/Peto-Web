@@ -497,15 +497,34 @@ results in the next step. The server stores no conversation (`store=False`), and
   item `id`s, whose formats differ between services. Peto goes through `_xai_step`, others through `_openai_step`; both
   share `_responses_step`.
 - **`/step` input is validated**: body size (`PETO_AGENT_MAX_REQUEST_BYTES`, 16 MB by default because images are
-  resent every step), at most 300 items, only `message` / `function_call` / `function_call_output` / `reasoning`, and
+  resent every step), at most 300 items, only `message` / `function_call` / `function_call_output` / `reasoning` /
+  `web_search_call` (the last one is produced by the AI service itself and resent verbatim), and
   messages only as `user` or `assistant`. A user message's content is a string or a list of `input_text` and
   `input_image` parts. Images must be base64 data URLs whose magic bytes match the declared PNG/JPEG/GIF/WebP type (never
   a web URL, so the AI service fetches nothing on the CLI's behalf), at most `MAX_STEP_IMAGES` (8) per step and
   `MAX_STEP_IMAGE_BYTES` (3 MB) each. Rejected images cost no step. The instructions
-  are always the server's: `PERSONA_PROMPT` + `persona.AGENT_PROMPT` + time context + project/OS line. Tool schemas are
-  server-owned (`agent_tools.py`). `ai/agent.py` holds the xAI call and a mock that runs a scripted `__demo__` task (read
+  are always the server's: `PERSONA_PROMPT` + `persona.AGENT_PROMPT` + the search prompt for the current setting + time
+  context + project/OS line. Tool schemas are server-owned (`agent_tools.py`). `ai/agent.py` holds the xAI call and a mock that runs a scripted `__demo__` task (read
   `README.md` → edit its first line → run a command → summarize) based on the tool results the CLI sends back. The mock
   estimates usage at about 4 characters per token so the CLI's token display has numbers.
+- **Deleting and renaming are tools, not shell commands** (`delete_file`, `move_file`). They go through the CLI's
+  checkpoint, so `/undo` restores them, which `del` or `move` in a terminal cannot; `AGENT_PROMPT` says so. Delete only
+  accepts a text file the workspace can read (so the checkpoint can hold its bytes) and shows the content that is about
+  to be lost; move refuses an existing destination and records the pair as "old path deleted, new path created".
+  `Change.after is None` is what "the file must not exist" means in `checkpoint.py`, including for undo's preflight.
+- **Web search** is the AI service's own tool, added to the step's tools when `PETO_AGENT_WEB_SEARCH` (and
+  `PETO_WEB_SEARCH_ENABLED`) allow it, never during compaction. It runs on the service, so nothing is fetched on the
+  user's machine; `ai/agent.py` turns the stream's `web_search_call` events into `search` events, the CLI prints one
+  `• Tìm trên web` line per step, and `loop.portable` drops those items when switching services. A 400/403 before any
+  output retries the step once without the search tool instead of failing it. `persona.AGENT_SEARCH_PROMPT` and
+  `AGENT_NO_SEARCH_PROMPT` tell the model which case it is in, keep queries free of file contents and machine paths, and
+  repeat that web text is data.
+- **Slow steps are logged.** A step over `PETO_AGENT_SLOW_STEP_SECONDS` (20) logs one warning with the wait before the
+  first event and the total, and the agent clients' httpx hook logs every HTTP error, since the `openai` SDK retries
+  429/5xx silently. That distinguishes "the service thought for a long time" from "the SDK waited and resent".
+- **`/init`** builds an ordinary request (`loop.init_guide`) that asks for an `AGENTS.md`, with the local file listing
+  already attached so the first step does not spend one on `list_files`. It costs several steps and every write still
+  asks the user; an existing `AGENTS.md` is read and amended, not overwritten blindly.
 - **xAI failures are logged, not shown.** `ai/agent.py` logs the reason xAI gives (HTTP errors, `error` /
   `response.failed` / `response.incomplete` stream events), clipped to 500 characters and without conversation content.
   Users still get the Vietnamese `ProviderError`. Authentication errors log only the status, since their message can
@@ -519,7 +538,7 @@ results in the next step. The server stores no conversation (`store=False`), and
     drive root or the home directory.
   - `.env*`, keys and `.git` are never read or written.
   - An edit needs a prior `read_file`, an exact unique match and an unchanged file, and keeps CRLF/BOM.
-  - Every edit, write and command asks `[y/n/a]`, where `a` lasts for the current request only.
+  - Every edit, write, delete, rename and command asks `[y/n/a]`, where `a` lasts for the current request only.
   - Commands run with a timeout; timeout or Ctrl+C kills the whole tree with `taskkill /T`.
   - Tool results are capped at 20k characters. A stopped request still appends an output for every pending call, so the
     next step stays valid for the model.

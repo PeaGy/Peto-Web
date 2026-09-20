@@ -109,5 +109,5 @@ def test_list_and_search_skip_heavy_folders_and_secrets(project):
     assert found == {"matches": ["src/login.js:1: function handleLogin() {}"], "truncated": False}
     assert "không hợp lệ" in tools.call("search_files", args(pattern="(", path=None, glob=None))["error"]
     assert "Tham số" in tools.call("read_file", args(file="src/login.js"))["error"]
-    assert "không có công cụ" in tools.call("delete_file", "{}")["error"]
+    assert "không có công cụ" in tools.call("format_disk", "{}")["error"]
     assert "bí mật" in tools.call("read_file", args(path=".env", start_line=None, end_line=None))["error"]

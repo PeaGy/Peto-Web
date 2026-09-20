@@ -499,3 +499,51 @@ def test_slash_retry_dispatches_only_when_a_step_was_interrupted(project, peto, 
     assert cli.session(ui) == 0
     assert attempts == 2
     assert ui.text.count("Không có bước bị gián đoạn") == 2
+
+
+def test_deleting_and_renaming_run_through_the_real_step_loop(project, peto):
+    """Xóa rồi đổi tên đi đúng đường truyền thật, và /undo trả lại cả hai."""
+    def reply(path, body):
+        results = [item for item in body["input"] if item.get("type") == "function_call_output"]
+        if not results:
+            return 200, [{"type": "done", "output": [message("Dọn giúp bạn nhé."),
+                                                     call(0, "delete_file", path="bo.py")]}]
+        if len(results) == 1:
+            return 200, [{"type": "done", "output": [message("Đổi tên nốt."),
+                                                     call(1, "move_file", path="cu.py", new_path="src/moi.py")]}]
+        return 200, [{"type": "done", "output": [message("Xong rồi nè.")]}]
+
+    peto.reply = reply
+    (project / "bo.py").write_text("rác\n", encoding="utf-8")
+    (project / "cu.py").write_text("giữ lại\n", encoding="utf-8")
+    session, ui = start(project, peto, ["y", "y", "y"])
+
+    session.run_task("dọn hộ mình")
+    assert not (project / "bo.py").exists()
+    assert (project / "src" / "moi.py").read_text(encoding="utf-8") == "giữ lại\n"
+    sent = [json.loads(item["output"]) for request in peto.requests
+            for item in request["body"]["input"] if item.get("type") == "function_call_output"]
+    assert {"ok": True, "path": "src/moi.py", "moved_from": "cu.py"} in sent
+    assert {"ok": True, "path": "bo.py", "deleted": True, "removed_lines": 1} in sent
+    assert_every_call_has_output(session.items)
+
+    session.undo()
+    assert (project / "bo.py").read_text(encoding="utf-8") == "rác\n"
+    assert (project / "cu.py").read_text(encoding="utf-8") == "giữ lại\n"
+    assert not (project / "src" / "moi.py").exists()
+    assert "Đã hoàn tác 3 tệp." in ui.text
+
+
+def test_refusing_a_delete_leaves_the_file_and_tells_the_model(project, peto):
+    def reply(path, body):
+        results = [item for item in body["input"] if item.get("type") == "function_call_output"]
+        if not results:
+            return 200, [{"type": "done", "output": [message("Xóa nhé."), call(0, "delete_file", path="bo.py")]}]
+        return 200, [{"type": "done", "output": [message("Vậy Peto giữ nguyên tệp.")]}]
+
+    peto.reply = reply
+    (project / "bo.py").write_text("rác\n", encoding="utf-8")
+    session, ui = start(project, peto, ["n"])
+    session.run_task("xóa hộ mình")
+    assert (project / "bo.py").exists()
+    assert "Đừng lặp lại y nguyên" in peto.requests[-1]["body"]["input"][-1]["output"]

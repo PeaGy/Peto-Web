@@ -116,10 +116,14 @@ nào được chọn, nên Enter không tự chạy gì. Các lệnh:
   sau 30 ngày. Bản đã hoàn tác được lưu trạng thái rỗng để không khôi phục lần nữa. `/retry` tiếp tục cùng bản.
   Checkpoint chứa nội dung trước/sau của tệp, chỉ nằm trên máy, không gửi lên VPS. Nếu lưu checkpoint lỗi hoặc vượt
   giới hạn, thao tác ghi mới bị chặn. Đây không thay thế Git/backup và không bảo đảm giao dịch nhiều tệp khi mất điện.
-  Thay đổi do lệnh terminal, đổi tên/xóa qua shell không thuộc bản hoàn tác. Nếu lỗi ổ đĩa xảy ra giữa chừng,
-  những tệp chưa khôi phục vẫn được giữ trong bản nhớ để kiểm tra lại; không có giao dịch nguyên khối nhiều tệp.
+  Xóa và đổi tên do Peto làm bằng công cụ thì thuộc bản hoàn tác; thay đổi do lệnh terminal thì không. Nếu lỗi ổ đĩa
+  xảy ra giữa chừng, những tệp chưa khôi phục vẫn được giữ trong bản nhớ để kiểm tra lại; không có giao dịch nguyên
+  khối nhiều tệp.
 - `/permissions`: xem lệnh được ghi nhớ trong phiên; `/permissions clear` thu hồi tất cả. Quyền không lưu xuống đĩa
   và bị xóa khi `/moi` hoặc `/resume`.
+- `/init`: Peto xem qua dự án (cấu trúc thư mục được gửi sẵn trong yêu cầu, khỏi tốn một bước), đọc README cùng các tệp
+  cấu hình rồi viết `AGENTS.md` ở gốc dự án. Đây là một yêu cầu bình thường nên tốn vài bước, và bản ghi tệp vẫn hiện
+  diff để bạn đồng ý. Dự án đã có `AGENTS.md` thì Peto đọc trước và chỉ sửa chỗ sai hoặc thiếu.
 - `/compact`: tóm tắt phần hội thoại cũ, giữ các bước gần nhất và yêu cầu gần nhất nằm trong phần được tóm tắt.
   Peto cũng tự tóm tắt giữa các bước khi lịch sử đạt 180 mục hoặc khoảng 200.000 ký tự chữ. Tóm tắt dùng một lượt
   gọi model ở mức suy nghĩ thấp, vẫn tính bước theo model và token như bình thường. Cần cập nhật cả VPS và CLI.
@@ -191,6 +195,14 @@ mới nhất (ở terminal đủ rộng); khi xong hiện tối đa 8 dòng outp
   tiền tố: `npm test` không cấp quyền cho `npm test && ...` hay lệnh có tham số khác. Script mà lệnh gọi vẫn có thể
   thay đổi theo nội dung dự án; chỉ ghi nhớ lệnh bạn tin tưởng.
 
+### Tìm web
+
+Khi câu trả lời nằm ngoài dự án (tài liệu thư viện, thông báo lỗi lạ, API hay phiên bản mới), Peto tự tra web. Việc tìm
+chạy ở phía dịch vụ AI, không mở gì trên máy bạn; trong CLI nó hiện thành một dòng `• Tìm trên web` trong bước đó.
+Peto được nhắc chỉ đưa từ khóa cần thiết vào truy vấn, không đưa nội dung tệp hay đường dẫn trên máy bạn, và coi nội
+dung trang web là dữ liệu chứ không phải lệnh. Mỗi lượt tìm tính phí vào tài khoản dịch vụ AI của chủ web, nên chủ web
+tắt được bằng `PETO_AGENT_WEB_SEARCH=false`; khi tắt, Peto được yêu cầu nói rõ là mình không tra cứu được.
+
 ### Hướng dẫn dự án và kiểm tra sau sửa
 
 `AGENTS.md` ở gốc dự án được đọc lại ở mỗi bước. Khi đọc một tệp, Peto nhận thêm hướng dẫn trên đường từ gốc tới
@@ -261,6 +273,10 @@ Nhờ đó có thể thay lớp hiển thị sau này mà không thay cách th�
   hơn 1 MB không được đọc.
 - **Sửa tệp:** chỉ sửa tệp đã đọc và chưa bị đổi từ lúc đọc; đoạn cần thay phải khớp đúng một chỗ. Kiểu xuống dòng
   (CRLF/LF) và BOM được giữ nguyên.
+- **Xóa và đổi tên:** Peto có công cụ riêng cho hai việc này và luôn hỏi trước; xóa thì hiện nội dung sắp mất, đổi tên
+  thì hiện đường dẫn cũ và mới. Cả hai đi qua bản nhớ hoàn tác nên `/undo` lấy lại được, khác với xóa bằng lệnh
+  terminal. Peto chỉ xóa được tệp chữ đọc được (không phải thư mục, tệp nhị phân hay tệp trên 1 MB), vì bản hoàn tác
+  phải giữ được nội dung; đích của đổi tên phải là chỗ chưa có tệp.
 - **Chạy lệnh:** chạy bằng `cmd` trong thư mục dự án, mặc định dừng sau 120 giây (tối đa 600). Lệnh test cũng chạy code
   nằm trong dự án, nên hãy xem kỹ các thay đổi trước khi đồng ý chạy.
 - **Giới hạn bước:** mỗi yêu cầu tối đa 40 bước; mỗi tài khoản có số bước mỗi ngày do máy chủ đặt (mặc định 200). Ở mức
@@ -268,7 +284,7 @@ Nhờ đó có thể thay lớp hiển thị sau này mà không thay cách th�
 
 ## Dữ liệu gửi đi
 
-Nội dung tệp Peto đọc, kết quả tìm kiếm, diff, output lệnh và ảnh bạn gửi kèm đi qua máy chủ Peto tới dịch vụ AI của
+Nội dung tệp Peto đọc, kết quả tìm trong dự án, diff, output lệnh và ảnh bạn gửi kèm đi qua máy chủ Peto tới dịch vụ AI của
 model đang chọn (xAI với Peto, OpenAI với 5.6 Luna, Terra, Sol) để Peto quyết định bước tiếp theo. Máy chủ không lưu hội
 thoại; nó chỉ lưu tên máy, mã băm của token và số bước đã dùng. Đừng mở Peto Agent trong thư mục có dữ liệu bạn không
 muốn gửi đi.

@@ -24,8 +24,26 @@ MAX_STEPS_PER_TASK = 40
 # Máy chủ không lưu hội thoại nên bước nào cũng gửi lại ảnh: chỉ giữ 4 ảnh gần nhất, như chat trên web.
 MAX_KEPT_IMAGES = 4
 OLD_IMAGE_NOTE = "(Ảnh này đã gửi ở tin trước; để hội thoại nhẹ, peto không gửi lại.)"
-KEPT_ITEM_TYPES = {"message", "function_call", "reasoning"}
+# web_search_call do dịch vụ AI sinh ra khi Peto tra web: giữ lại để hội thoại gửi đi không hụt mục.
+KEPT_ITEM_TYPES = {"message", "function_call", "reasoning", "web_search_call"}
 STOPPED_RESULT = {"error": "Người dùng đã dừng yêu cầu bằng Ctrl+C."}
+# Số mục nhiều nhất đưa vào lời nhờ của /init: đủ để thấy bố cục mà không thổi phồng bước đầu tiên.
+MAX_INIT_ENTRIES = 200
+INIT_TASK = """Hãy viết tệp AGENTS.md ở gốc dự án này.
+
+AGENTS.md là hướng dẫn cho chính bạn ở những yêu cầu sau: mỗi bước của Peto Agent đều được gửi kèm nội dung tệp này.
+
+Các việc cần làm:
+1. Đọc README, các tệp cấu hình (package.json, pyproject.toml, Makefile, cấu hình CI…) và vài tệp mã tiêu biểu.
+2. Viết AGENTS.md gồm: dự án này là gì và chạy bằng gì; lệnh cài, chạy, test, build, lint kèm thư mục phải đứng khi \
+chạy; các thư mục chính dùng để làm gì; quy ước code và ngôn ngữ của comment cùng chuỗi hiển thị; những chỗ không \
+được đụng vào.
+3. Chỉ ghi điều kiểm chứng được trong dự án. Không chép mẫu chung, không đoán lệnh; mục nào không chắc thì bỏ.
+4. Viết gọn, dưới 60 dòng, ưu tiên gạch đầu dòng. Tệp này đi kèm mọi bước sau nên dài là tốn ngữ cảnh của mọi yêu cầu.
+5. Dùng ngôn ngữ mà tài liệu của dự án đang dùng.
+6. Ghi tệp rồi tóm tắt ngắn những gì đã đưa vào. Không sửa tệp nào khác."""
+INIT_EXISTING = ("Dự án đã có AGENTS.md: đọc trước, giữ những phần còn đúng và chỉ sửa chỗ sai hoặc thiếu bằng "
+                 "edit_file.")
 OUTCOME_LABELS = {"done": "Xong trong", "stopped": "Đã dừng sau", "error": "Dừng vì lỗi sau", "limit": "Tạm dừng sau"}
 
 
@@ -42,10 +60,10 @@ def cap_result(value):
 
 
 def portable(items: list[dict]) -> list[dict]:
-    """Hội thoại dùng tiếp được với model khác: bỏ suy nghĩ đã mã hóa, vì chỉ model tạo ra nó đọc được, và bỏ mã item
-    của dịch vụ cũ, vì mỗi dịch vụ đặt mã một kiểu."""
+    """Hội thoại dùng tiếp được với model khác: bỏ suy nghĩ đã mã hóa, vì chỉ model tạo ra nó đọc được, bỏ lượt tìm
+    web của dịch vụ cũ, và bỏ mã item, vì mỗi dịch vụ đặt mã một kiểu."""
     return [{key: value for key, value in item.items() if key != "id"}
-            for item in items if item.get("type") != "reasoning"]
+            for item in items if item.get("type") not in {"reasoning", "web_search_call"}]
 
 
 def user_message(text: str, images=()) -> dict:
@@ -179,6 +197,23 @@ class Session:
         # Nhật ký chỉ ghi số ảnh, không ghi dữ liệu ảnh.
         self._log("task", text=text, effort=self.effort, model=self.model, images=len(images))
         self._run()
+
+    def init_guide(self) -> None:
+        """/init: khảo sát dự án rồi viết AGENTS.md. Chạy như một yêu cầu thường nên tốn vài bước, và mọi lần ghi tệp
+        vẫn hỏi người dùng."""
+        existing = (self.ws.root / "AGENTS.md").exists()
+        try:
+            listing = self.tools.list_files(".", 3)
+        except (WorkspaceError, OSError) as err:
+            self.ui.failure(str(err) or "Không đọc được thư mục dự án.")
+            return
+        entries = listing.get("entries", [])[:MAX_INIT_ENTRIES]
+        lines = [INIT_TASK]
+        if existing:
+            lines.append(INIT_EXISTING)
+        lines.append("Cấu trúc thư mục (đã bỏ node_modules, .venv, .git…):\n" + "\n".join(entries))
+        self.ui.line("  Peto sẽ xem qua dự án rồi đề xuất AGENTS.md; bạn vẫn duyệt như mọi lần ghi tệp.", "dim")
+        self.run_task("\n\n".join(lines))
 
     def show_diff(self):
         if not self.tools.checkpoint.files:
@@ -372,6 +407,7 @@ class Session:
         started = time.monotonic()
         phase = "nghĩ"
         output = None
+        searching = False
 
         def waiting() -> None:
             # Dòng tạm chỉ hiện tới khi Peto in được dòng chữ đầu tiên của bước này.
@@ -386,6 +422,14 @@ class Session:
                     kind = event.get("type")
                     if kind == "meta":
                         self.steps_used, self.steps_limit = event.get("steps_used"), event.get("steps_limit")
+                    elif kind == "search":
+                        # Tìm web chạy ở phía dịch vụ AI; ở đây chỉ báo cho người dùng biết bước này có tra web.
+                        if event.get("text") == "searching" and not searching:
+                            searching = True
+                            phase = "tìm web"
+                            self.ui.step("Tìm trên web")
+                            self._log("search")
+                        waiting()
                     elif kind == "delta":
                         phase = "viết"
                         writer.feed(str(event.get("text", "")))

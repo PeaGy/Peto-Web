@@ -78,6 +78,21 @@ TOOL_SCHEMAS = [
         },
     ),
     _tool(
+        "delete_file",
+        "Xóa một tệp chữ trong dự án. Người dùng xem nội dung sắp mất và phải đồng ý; sau đó họ hoàn tác được bằng "
+        "/undo. Chỉ xóa khi yêu cầu cần tới. Đừng xóa bằng run_command: lệnh xóa của hệ điều hành không hoàn tác được.",
+        {"path": _PATH},
+    ),
+    _tool(
+        "move_file",
+        "Đổi tên hoặc chuyển một tệp chữ sang chỗ khác trong dự án, nội dung giữ nguyên. Người dùng phải đồng ý; sau "
+        "đó họ hoàn tác được bằng /undo. Đích phải chưa có tệp. Đừng đổi tên bằng run_command.",
+        {
+            "path": _PATH,
+            "new_path": {"type": "string", "description": "Đường dẫn mới, tương đối tính từ gốc dự án."},
+        },
+    ),
+    _tool(
         "run_command",
         "Chạy một lệnh trong thư mục gốc dự án trên máy người dùng (Windows chạy bằng cmd). Người dùng phải đồng ý "
         "trước. Dùng cho test, build, lint. Trả về mã thoát và output đã cắt gọn.",

@@ -15,8 +15,8 @@ from dataclasses import dataclass, field
 
 import anyio
 
-from config import (AGENT_MODEL, AGENT_REASONING, AI_PROVIDER, OPENAI_API_KEY, OPENAI_MAX_OUTPUT_TOKENS, XAI_API_BASE,
-                    XAI_MAX_OUTPUT_TOKENS)
+from config import (AGENT_MODEL, AGENT_REASONING, AGENT_STEP_TIMEOUT_SECONDS, AI_PROVIDER, OPENAI_API_KEY,
+                    OPENAI_MAX_OUTPUT_TOKENS, XAI_API_BASE, XAI_MAX_OUTPUT_TOKENS)
 
 from .base import ProviderError
 
@@ -25,7 +25,7 @@ logger = logging.getLogger("peto_web.agent")
 
 @dataclass(frozen=True)
 class AgentEvent:
-    kind: str  # "thinking" | "delta" | "done"
+    kind: str  # "thinking" | "delta" | "search" | "done"
     text: str = ""
     output: tuple[dict, ...] = ()
     usage: dict = field(default_factory=dict)
@@ -33,14 +33,14 @@ class AgentEvent:
 
 async def agent_step(
     *, instructions: str, input_items: list[dict], tools: list[dict], effort: str = AGENT_REASONING,
-    model: str = "peto",
+    model: str = "peto", web_search: bool = False,
 ) -> AsyncIterator[AgentEvent]:
     """``model`` đã được ``ai_models.resolve`` kiểm quyền: Peto đi qua xAI, các model khác qua OpenAI."""
     if AI_PROVIDER == "mock":
-        events = _mock_step(input_items)
+        events = _mock_step(input_items, web_search)
     elif AI_PROVIDER == "xai":
-        events = (_xai_step(instructions, input_items, tools, effort) if model == "peto"
-                  else _openai_step(instructions, input_items, tools, effort, model))
+        events = (_xai_step(instructions, input_items, tools, effort, web_search) if model == "peto"
+                  else _openai_step(instructions, input_items, tools, effort, model, web_search))
     else:
         raise ProviderError("Nhà cung cấp AI hiện tại chưa hỗ trợ Peto Agent.")
     async for event in events:
@@ -71,7 +71,24 @@ def _describe(error) -> str:
     return _clip(f"{getattr(error, 'code', '') or ''} {getattr(error, 'message', '') or ''}")
 
 
-async def _xai_step(instructions: str, items: list[dict], tools: list[dict], effort: str) -> AsyncIterator[AgentEvent]:
+def _http_client():
+    """Client HTTP riêng cho agent, có móc ghi lại mã lỗi.
+
+    SDK openai tự chờ rồi gửi lại sau 429 hay lỗi 5xx mà không báo gì, nên một bước chậm bất thường trông y hệt một
+    bước mà dịch vụ AI nghĩ lâu. Dòng log này là chỗ phân biệt hai trường hợp đó.
+    """
+    import httpx
+
+    async def log_status(response) -> None:
+        if response.status_code >= 400:
+            logger.warning("Dịch vụ AI trả HTTP %s ở bước agent; SDK có thể tự chờ rồi gửi lại.", response.status_code)
+
+    return httpx.AsyncClient(timeout=httpx.Timeout(AGENT_STEP_TIMEOUT_SECONDS, connect=10.0),
+                             event_hooks={"response": [log_status]})
+
+
+async def _xai_step(instructions: str, items: list[dict], tools: list[dict], effort: str,
+                    web_search: bool = False) -> AsyncIterator[AgentEvent]:
     # Import trễ như ai/__init__.py: chạy mock không cần SDK openai.
     from openai import AsyncOpenAI
 
@@ -80,7 +97,7 @@ async def _xai_step(instructions: str, items: list[dict], tools: list[dict], eff
     global _client, _auth
     if _client is None:
         _auth = XaiAuth()
-        _client = AsyncOpenAI(api_key="pending", base_url=XAI_API_BASE)
+        _client = AsyncOpenAI(api_key="pending", base_url=XAI_API_BASE, http_client=_http_client())
     try:
         _client.api_key = await _auth.get_access_token()
     except XaiAuthError as err:
@@ -89,12 +106,13 @@ async def _xai_step(instructions: str, items: list[dict], tools: list[dict], eff
         _client, "xAI", AGENT_MODEL, XAI_MAX_OUTPUT_TOKENS, instructions, items, tools, effort,
         auth_message="Kết nối AI của Peto đã hết hạn. Người quản trị cần đăng nhập lại.",
         rate_message="Dịch vụ AI đang nhận nhiều yêu cầu quá. Đợi chút rồi thử lại nhé.",
+        web_search=web_search,
     ):
         yield event
 
 
 async def _openai_step(instructions: str, items: list[dict], tools: list[dict], effort: str,
-                       model: str) -> AsyncIterator[AgentEvent]:
+                       model: str, web_search: bool = False) -> AsyncIterator[AgentEvent]:
     from openai import AsyncOpenAI
 
     from ai_models import MODELS
@@ -103,30 +121,33 @@ async def _openai_step(instructions: str, items: list[dict], tools: list[dict], 
     if not OPENAI_API_KEY:
         raise ProviderError("Máy chủ Peto chưa có khóa OpenAI. Gõ /model peto để làm tiếp nhé.")
     if _openai_client is None:
-        _openai_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
+        _openai_client = AsyncOpenAI(api_key=OPENAI_API_KEY, http_client=_http_client())
     info = MODELS[model]
     async for event in _responses_step(
         _openai_client, "OpenAI", info.slug, OPENAI_MAX_OUTPUT_TOKENS, instructions, items, tools, effort,
         auth_message="Khóa OpenAI của máy chủ Peto không dùng được. Gõ /model peto để làm tiếp nhé.",
         rate_message=f"{info.label} đang bị OpenAI giới hạn lượt hoặc đã hết hạn mức. Gõ /model peto để làm tiếp, "
                      "hoặc thử lại sau nhé.",
+        web_search=web_search,
     ):
         yield event
 
 
 async def _responses_step(client, service: str, model: str, max_output_tokens: int, instructions: str,
                           items: list[dict], tools: list[dict], effort: str, *, auth_message: str,
-                          rate_message: str) -> AsyncIterator[AgentEvent]:
+                          rate_message: str, web_search: bool = False) -> AsyncIterator[AgentEvent]:
     """Một lần gọi Responses API. xAI và OpenAI chỉ khác client, tên model và lời báo lỗi."""
     from openai import APIConnectionError, APIStatusError, AuthenticationError, RateLimitError
 
     stream = None
+    produced = False
     try:
         stream = await client.responses.create(
             model=model,
             instructions=instructions,
             input=items,
-            tools=tools,
+            # Tìm web là công cụ sẵn có của dịch vụ AI, chạy bên đó; công cụ tệp và lệnh vẫn chạy trên máy người dùng.
+            tools=[*tools, *([{"type": "web_search"}] if web_search else [])],
             max_output_tokens=max_output_tokens,
             reasoning={"effort": effort},
             include=["reasoning.encrypted_content"],
@@ -137,10 +158,22 @@ async def _responses_step(client, service: str, model: str, max_output_tokens: i
             event_type = getattr(event, "type", "")
             if event_type == "response.reasoning_summary_text.delta":
                 if delta := getattr(event, "delta", ""):
+                    produced = True
                     yield AgentEvent("thinking", delta)
             elif event_type == "response.output_text.delta":
                 if delta := getattr(event, "delta", ""):
+                    produced = True
                     yield AgentEvent("delta", delta)
+            elif event_type in {"response.web_search_call.in_progress", "response.web_search_call.searching"}:
+                produced = True
+                yield AgentEvent("search", "searching")
+            elif event_type == "response.web_search_call.completed":
+                produced = True
+                yield AgentEvent("search", "completed")
+            elif event_type == "response.output_item.added":
+                if getattr(getattr(event, "item", None), "type", "") == "web_search_call":
+                    produced = True
+                    yield AgentEvent("search", "searching")
             elif event_type == "response.completed":
                 response = event.response
                 status = getattr(response, "status", "completed")
@@ -178,6 +211,14 @@ async def _responses_step(client, service: str, model: str, max_output_tokens: i
         raise ProviderError("Máy chủ Peto chưa kết nối được dịch vụ AI. Thử lại sau chút nhé.") from err
     except APIStatusError as err:
         logger.warning("%s trả lỗi HTTP %s ở bước agent: %s", service, err.status_code, _clip(err.message))
+        # Dịch vụ không nhận công cụ tìm web thì làm tiếp không tìm web, thay vì hỏng cả bước.
+        if web_search and not produced and err.status_code in {400, 403}:
+            logger.warning("%s không nhận công cụ tìm web ở bước agent; gọi lại không kèm tìm web.", service)
+            async for event in _responses_step(client, service, model, max_output_tokens, instructions, items, tools,
+                                               effort, auth_message=auth_message, rate_message=rate_message,
+                                               web_search=False):
+                yield event
+            return
         if err.status_code == 400:
             raise ProviderError("Dịch vụ AI không nhận nội dung bước này. Gõ /moi để bắt đầu hội thoại mới nhé.") from err
         raise ProviderError("Peto gặp lỗi kết nối với dịch vụ AI. Thử lại sau nhé.") from err
@@ -246,7 +287,7 @@ async def _speak(text: str, calls: list[dict], items: list[dict]) -> AsyncIterat
     yield AgentEvent("done", output=(_message(text), *calls), usage=usage)
 
 
-async def _mock_step(items: list[dict]) -> AsyncIterator[AgentEvent]:
+async def _mock_step(items: list[dict], web_search: bool = False) -> AsyncIterator[AgentEvent]:
     last_user = max((index for index, item in enumerate(items) if item.get("role") == "user"), default=-1)
     task = _text_of(items[last_user]) if last_user >= 0 else ""
     if "__error__" in task:
@@ -254,6 +295,15 @@ async def _mock_step(items: list[dict]) -> AsyncIterator[AgentEvent]:
     results = [item for item in items[last_user + 1:] if item.get("type") == "function_call_output"]
     last = _result(results[-1]) if results else {}
     yield AgentEvent("thinking", "Đang xem bước tiếp theo…")
+    if "__search__" in task and not results:
+        # Tìm web chạy ở phía dịch vụ AI, nên bản giả chỉ phát đúng hai sự kiện đó rồi trả lời.
+        yield AgentEvent("search", "searching")
+        yield AgentEvent("search", "completed")
+        reply = ("Peto vừa tra web (giả lập)." if web_search
+                 else "Chủ web đang tắt tìm web nên Peto không tra được (giả lập).")
+        async for event in _speak(reply, [], items):
+            yield event
+        return
 
     def speak(text: str, calls: list[dict]) -> AsyncIterator[AgentEvent]:
         return _speak(text, calls, items)

@@ -73,10 +73,18 @@ async def test_compaction_has_no_tools_and_uses_normal_auth_quota(anon_client, c
 
 def test_project_guidance_is_scoped_and_bounded_in_instructions():
     text = agent_api._instructions({"project": "test", "project_guidance": [
-        {"path": "AGENTS.md", "scope": ".", "text": "Run the project checks"}]})
+        {"path": "AGENTS.md", "scope": ".", "text": "Run the project checks"}]}, False)
     assert "Run the project checks" in text
     assert "không được vượt yêu cầu người dùng" in text
-    assert len(agent_api._instructions({"project_guidance": [{"text": "x" * 100000}]})) < 60000
+    assert len(agent_api._instructions({"project_guidance": [{"text": "x" * 100000}]}, False)) < 60000
+
+
+def test_instructions_state_whether_web_search_is_available():
+    """Bật hay tắt tìm web đều phải nói rõ trong chỉ dẫn, để Peto không tự nhận đã tra cứu."""
+    assert "Mỗi lần tìm tốn phí" in agent_api._instructions({}, True)
+    off = agent_api._instructions({}, False)
+    assert "Công cụ tìm web đang tắt" in off
+    assert "Mỗi lần tìm tốn phí" not in off
 
 
 async def test_device_flow_issues_token_once(client, anon_client):
@@ -323,3 +331,72 @@ async def test_devices_are_isolated_between_accounts(client, anon_client):
     assert all(device["id"] != mine["id"] for device in others)
     assert (await anon_client.delete(f"/api/agent/devices/{mine['id']}")).status_code == 404
     assert (await client.get("/api/agent/me", headers=bearer(token))).status_code == 200
+
+
+async def test_web_search_is_offered_to_the_model_and_shown_to_the_cli(anon_client, client, monkeypatch):
+    """Tìm web chạy ở phía dịch vụ AI: CLI chỉ nhận sự kiện search để in ra, không tự gọi công cụ nào."""
+    monkeypatch.setattr(agent_api, "AGENT_WEB_SEARCH", True)
+    await login_as(client, "discord")
+    token = await connect(anon_client, client)
+    body = {"input": [{"type": "message", "role": "user", "content": "phiên bản mới nhất là gì __search__"}],
+            "effort": "low"}
+    events = events_of(await anon_client.post("/api/agent/step", headers=bearer(token), json=body))
+    assert [event["text"] for event in events if event["type"] == "search"] == ["searching", "completed"]
+    assert "tra web" in "".join(event.get("text", "") for event in events if event["type"] == "delta")
+
+
+async def test_web_search_off_leaves_the_tool_out(anon_client, client, monkeypatch):
+    monkeypatch.setattr(agent_api, "AGENT_WEB_SEARCH", False)
+    seen = []
+
+    async def record(**kwargs):
+        seen.append(kwargs)
+        from ai.agent import AgentEvent
+        yield AgentEvent("done", output=(), usage={"input_tokens": 1, "output_tokens": 1})
+
+    monkeypatch.setattr(agent_api, "agent_step", record)
+    await login_as(client, "discord")
+    token = await connect(anon_client, client)
+    await anon_client.post("/api/agent/step", headers=bearer(token), json={"input": [DEMO_TASK], "effort": "low"})
+    assert seen[0]["web_search"] is False
+    assert "Công cụ tìm web đang tắt" in seen[0]["instructions"]
+
+
+async def test_compaction_never_searches_even_when_enabled(anon_client, client, monkeypatch):
+    monkeypatch.setattr(agent_api, "AGENT_WEB_SEARCH", True)
+    seen = []
+
+    async def record(**kwargs):
+        seen.append(kwargs)
+        from ai.agent import AgentEvent
+        yield AgentEvent("done", output=(), usage={"input_tokens": 1, "output_tokens": 1})
+
+    monkeypatch.setattr(agent_api, "agent_step", record)
+    await login_as(client, "discord")
+    token = await connect(anon_client, client)
+    await anon_client.post("/api/agent/step", headers=bearer(token),
+                           json={"input": [DEMO_TASK], "effort": "low", "context": {"purpose": "compact"}})
+    assert seen[0]["web_search"] is False and seen[0]["tools"] == []
+
+
+async def test_step_accepts_the_search_item_the_service_produced(anon_client, client):
+    """Mục web_search_call do dịch vụ AI sinh ra; CLI gửi lại nguyên văn nên máy chủ phải nhận."""
+    await login_as(client, "discord")
+    token = await connect(anon_client, client)
+    history = [DEMO_TASK, {"type": "web_search_call", "id": "ws_1", "status": "completed"}]
+    accepted = await anon_client.post("/api/agent/step", headers=bearer(token),
+                                      json={"input": history, "effort": "low"})
+    assert accepted.status_code == 200
+    refused = await anon_client.post("/api/agent/step", headers=bearer(token),
+                                     json={"input": [DEMO_TASK, {"type": "computer_call"}], "effort": "low"})
+    assert refused.status_code == 400
+
+
+def test_delete_and_move_are_offered_as_tools_with_undo_wording():
+    """Hai công cụ này tồn tại để bản xóa/đổi tên đi qua checkpoint của CLI, khác hẳn lệnh xóa của hệ điều hành."""
+    from agent_tools import TOOL_SCHEMAS
+
+    tools = {tool["name"]: tool for tool in TOOL_SCHEMAS}
+    assert set(tools["move_file"]["parameters"]["properties"]) == {"path", "new_path"}
+    assert "/undo" in tools["delete_file"]["description"] and "run_command" in tools["delete_file"]["description"]
+    assert all(tool["strict"] for tool in TOOL_SCHEMAS)

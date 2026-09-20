@@ -200,6 +200,10 @@ AGENT_MAX_QUEUE = _env_int("PETO_AGENT_MAX_QUEUE", 4, 0, 50)
 AGENT_MAX_REQUEST_BYTES = _env_int("PETO_AGENT_MAX_REQUEST_BYTES", 16 * 1024 * 1024, 64 * 1024, 32 * 1024 * 1024)
 AGENT_TOKEN_IDLE_DAYS = _env_int("PETO_AGENT_TOKEN_IDLE_DAYS", 30, 1, 365)
 AGENT_STEP_TIMEOUT_SECONDS = _env_float("PETO_AGENT_STEP_TIMEOUT_SECONDS", 300.0, 10.0, 600.0)
+# Tìm web cho agent chạy ở phía dịch vụ AI và tính phí theo lượt tìm, nên tắt được riêng, không cần tắt tìm web của chat.
+AGENT_WEB_SEARCH = WEB_SEARCH_ENABLED and os.getenv("PETO_AGENT_WEB_SEARCH", "true").strip().lower() in {"1", "true", "yes"}
+# Bước chậm hơn ngần này thì ghi một dòng cảnh báo kèm thời gian, để biết chậm ở chỗ chờ dịch vụ AI hay lúc viết.
+AGENT_SLOW_STEP_SECONDS = _env_float("PETO_AGENT_SLOW_STEP_SECONDS", 20.0, 1.0, 600.0)
 
 # --- Phục vụ frontend đã build (production) ------------------------------
 # Khi thư mục này tồn tại, backend phục vụ luôn giao diện; VPS chỉ cần một

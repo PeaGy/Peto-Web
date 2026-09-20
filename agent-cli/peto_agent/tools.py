@@ -19,7 +19,7 @@ from .command_outcome import classify, command_kind
 from .metrics import Metrics
 from .project_guide import GuideUpdate, guides
 from .presentation import AgentUI
-from .workspace import SKIPPED_DIRS, Workspace, WorkspaceError, text_bytes
+from .workspace import SKIPPED_DIRS, Workspace, WorkspaceError, digest, text_bytes
 
 MAX_READ_LINES = 400
 MAX_LIST_ENTRIES = 400
@@ -59,6 +59,8 @@ class Tools:
             "search_files": self.search_files,
             "edit_file": self.edit_file,
             "write_file": self.write_file,
+            "delete_file": self.delete_file,
+            "move_file": self.move_file,
             "run_command": self.run_command,
         }
 
@@ -84,7 +86,7 @@ class Tools:
         handler = self._handlers.get(name)
         if handler is None:
             return {"error": f"Peto Agent không có công cụ {name}."}
-        if self.failed_commands >= 3 and name in {"edit_file", "write_file"}:
+        if self.failed_commands >= 3 and name in {"edit_file", "write_file", "delete_file", "move_file"}:
             return {"error": "Đã có 3 lần kiểm tra thất bại. Dừng sửa tiếp, báo phần còn lại và đợi yêu cầu mới."}
         try:
             params = json.loads(arguments or "{}")
@@ -267,6 +269,76 @@ class Tools:
         added, removed = self._record(rel, before, after)
         self.ui.success(("Đã ghi đè " if existed else "Đã tạo ") + f"{rel} (+{added} −{removed})")
         return {"ok": True, "path": rel, "created": not existed, "added_lines": added, "removed_lines": removed}
+
+    def _undoable(self, target):
+        """Đọc tệp sắp bị xóa hay chuyển đi. Bản nhớ hoàn tác chỉ giữ được tệp chữ, nên tệp nào không đọc được thì
+        không đụng tới: xóa mà không hoàn tác được thì tệ hơn là không xóa."""
+        try:
+            return self.ws.read(target)
+        except WorkspaceError as err:
+            raise WorkspaceError(f"{err} Bản hoàn tác chỉ giữ được tệp chữ đọc được, nên Peto không xóa hay chuyển "
+                                 "tệp này; nhờ người dùng tự làm nếu họ muốn.") from None
+
+    def delete_file(self, path: str) -> dict:
+        """Xóa một tệp chữ. Đi qua bản nhớ hoàn tác, khác hẳn lệnh xóa của hệ điều hành."""
+        target = self.ws.resolve(path)
+        self._guidance(target)
+        self.checkpoint.check(target)
+        rel = self.ws.relative(target)
+        if target.is_dir():
+            raise WorkspaceError(f"{rel} là thư mục; Peto chỉ xóa được từng tệp.")
+        file = self._undoable(target)
+        self.ui.diff(f"Muốn xóa {rel}", file.text, "")
+        if not self._approve():
+            self.ui.failure(f"Không xóa {rel}")
+            return {"error": REFUSED.format(action=f"xóa {rel}")}
+        raw = target.read_bytes()
+        if digest(raw) != file.digest:
+            raise WorkspaceError(f"{rel} vừa bị đổi trong lúc chờ đồng ý. Đọc lại rồi tính tiếp nhé.")
+        self._guidance(target)
+        self.checkpoint.record(target, raw, None)
+        target.unlink()
+        self.ws.read_digests.pop(target, None)
+        self.revision += 1
+        added, removed = self._record(rel, file.text, "")
+        self.ui.success(f"Đã xóa {rel} (−{removed})")
+        return {"ok": True, "path": rel, "deleted": True, "removed_lines": removed}
+
+    def move_file(self, path: str, new_path: str) -> dict:
+        """Đổi tên hoặc chuyển tệp trong dự án; nội dung giữ nguyên nên không hiện diff."""
+        source = self.ws.resolve(path)
+        destination = self.ws.resolve(new_path, must_exist=False)
+        old_rel, new_rel = self.ws.relative(source), self.ws.relative(destination)
+        self._guidance(source)
+        self._guidance(destination)
+        self.checkpoint.check(source)
+        self.checkpoint.check(destination)
+        if old_rel == new_rel:
+            raise WorkspaceError("Đường dẫn mới trùng đường dẫn cũ.")
+        if source.is_dir():
+            raise WorkspaceError(f"{old_rel} là thư mục; Peto chỉ chuyển được từng tệp.")
+        if destination.exists():
+            raise WorkspaceError(f"{new_rel} đã có sẵn; chọn tên khác, hoặc sửa tệp đó rồi xóa tệp cũ.")
+        file = self._undoable(source)
+        self.ui.line()
+        self.ui.line(f"  ✎ Muốn đổi tên {old_rel} → {new_rel}", "blue")
+        self.ui.line("    Nội dung giữ nguyên.", "dim")
+        if not self._approve():
+            self.ui.failure(f"Không đổi tên {old_rel}")
+            return {"error": REFUSED.format(action=f"đổi tên {old_rel}")}
+        raw = source.read_bytes()
+        if digest(raw) != file.digest or destination.exists():
+            raise WorkspaceError(f"{old_rel} hoặc {new_rel} vừa bị đổi trong lúc chờ đồng ý. Đọc lại rồi tính tiếp nhé.")
+        self._guidance(source)
+        self._guidance(destination)
+        self.checkpoint.record_move(source, destination, raw)
+        self.ws.read_digests.pop(source, None)
+        self.ws.read_digests[destination] = file.digest
+        self.revision += 1
+        self._record(old_rel, file.text, "")
+        self._record(new_rel, "", file.text)
+        self.ui.success(f"Đã đổi tên {old_rel} → {new_rel}")
+        return {"ok": True, "path": new_rel, "moved_from": old_rel}
 
     def run_command(self, command: str, timeout_seconds: int | None = None) -> dict:
         command = command.strip()
