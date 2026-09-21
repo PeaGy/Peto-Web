@@ -295,6 +295,11 @@ hoàn toàn, socket có thể cần chờ tới timeout mới nhận ra; Ctrl+C 
 diff, câu hỏi quyền, khối lệnh và các dòng trạng thái. Bộ chạy lệnh chỉ báo tiến độ qua callback, không tự in chữ.
 Nhờ đó có thể thay lớp hiển thị sau này mà không thay cách thực thi công cụ hay lưu hội thoại.
 
+Terminal không vẽ được LaTeX, nên công thức trong câu trả lời được `texmath.py` đổi sang ký hiệu Unicode trước khi in:
+`\lnot A \lor B` hiện thành `¬A ∨ B`, `x^2` thành `x²`, `\frac{a+1}{2}` thành `(a+1)/2`, khối `\[ … \]` in thụt vào và
+bỏ các dòng chỉ có dấu mở, đóng. Chỉ phần nằm trong dấu công thức mới bị đổi (`$5` hay `$HOME` giữ nguyên), code
+không bao giờ bị đổi, và hội thoại gửi lại cho Peto vẫn là chữ gốc.
+
 ## Giới hạn và an toàn
 
 - **Phạm vi:** Peto chỉ đụng tới tệp trong thư mục đang mở. Đường dẫn ra ngoài, kể cả qua symlink hay junction, bị chặn.

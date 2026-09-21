@@ -568,6 +568,13 @@ results in the next step. The server stores no conversation (`store=False`), and
   there is one transient `… Peto đang nghĩ · Ns` status line (`UI.status`, redrawn with `\r\033[2K`, only when colors
   are on); each request ends with one summary line. `ReplyWriter` prints replies line by line so `UI.markdown` can color
   bold, inline code, headings, bullets and fenced code; without colors (piped output, tests) text stays raw.
+- **LaTeX in agent replies** is turned into Unicode for display (`texmath.py`), with or without colors, because a
+  terminal cannot draw it and on 2026-09-21 the owner saw raw `\[`, `\begin{align*}`, `\lnot` and `&`. Only delimited
+  math is converted (`\(…\)`, `\[…\]`, `$$…$$`, and `$…$` when it contains a command, `^`, `_` or `{`, so `$HOME` or
+  `$5` survive); code spans and fences never are. Display blocks print indented, their delimiter lines print nothing
+  (`UI.markdown` returns None and the `Peto ›` label waits for the first real line), and `end_markdown` resets the
+  state. The conversation sent back to the model keeps the original text. `AGENT_PROMPT` also asks for Unicode math
+  instead of LaTeX; the converter is the safety net.
 - **`/resume`.** `history.py` keeps the latest conversation per project folder (keyed by the normalized path, and only
   for the same server) in `sessions/` next to `logs/`, overwritten after every request and pruned after 30 days. It
   holds file contents Peto read, so it stays local. Resuming reruns nothing and clears `Workspace.read_digests`, so any
@@ -652,6 +659,13 @@ results in the next step. The server stores no conversation (`store=False`), and
   deliberately not used. Anything else renders as plain text under an uppercased tag, so a
   new language needs a grammar import **and** a label. Each grammar costs bundle size; add
   ones Peto actually answers with.
+- Math renders with `remark-math` + `rehype-katex` (`trust: false`, `strict: "ignore"`) after
+  `mathMarkdown.normalizeMath` turns `\(…\)` / `\[…\]` into dollar delimiters, skipping code. It also runs
+  `tildeNegation`: in LaTeX `~` is a non-breaking space, so a model writing negation as `~p` (common in discrete-math
+  textbooks) rendered as " p" and a correct answer looked wrong (reported 2026-09-21). Only a `~` in operand position
+  (start of the formula, after an opening bracket, a logic operator or another negation) becomes `{\sim}`; `a~b` and
+  `\text{…}~x` stay spaces. It scans by hand instead of using lookbehind so older Safari can parse the bundle. The chat
+  prompt also asks for `\lnot` or `\overline{…}`.
 - Per-user preferences (effort, theme, imagine quality/resolution/ratio/count, local voice on/off and voice, Companion
   mute, character motion and view) live in
   `localStorage` behind try/catch helpers. In-flight Imagine state lives in component state,

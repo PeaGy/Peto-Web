@@ -9,6 +9,8 @@ import shutil
 import sys
 import unicodedata
 
+from . import texmath
+
 COLORS = {"dim": "2", "bold": "1", "red": "31", "green": "32", "yellow": "33", "blue": "34", "cyan": "36"}
 COLORS.update(input="48;5;236;38;5;252", input_hint="48;5;236;38;5;245", input_marker="48;5;236;38;5;117")
 MAX_DIFF_LINES = 120
@@ -109,6 +111,7 @@ class UI:
         self._width = width
         self._status: str | None = None
         self._in_code = False
+        self._in_math = False
         self._diff_rows: list[tuple[str, str, str | None]] = []
         self._diff_position = 0
         # Tiêu đề cửa sổ đang đặt, để hỏi quyền xong thì trả lại trạng thái trước đó.
@@ -184,15 +187,34 @@ class UI:
             self.out.flush()
             self._status = None
 
-    def markdown(self, line: str) -> str:
-        """Tô một dòng Markdown. Không có màu (output vào tệp, NO_COLOR) thì giữ nguyên chữ gốc."""
-        if not self.colors:
-            return line
+    def markdown(self, line: str) -> str | None:
+        """Một dòng Markdown của câu trả lời.
+
+        Công thức LaTeX được đổi sang ký hiệu Unicode vì terminal không vẽ được LaTeX, kể cả khi không có màu; phần
+        tô màu chỉ làm khi terminal có màu. Trả None cho dòng chỉ là dấu mở hay đóng công thức (\\[, \\], $$,
+        \\begin{align*}…), để khỏi in những dòng trống thừa.
+        """
         if FENCE.match(line):
             self._in_code = not self._in_code
-            return self.paint(line, "dim")
+            return self.paint(line, "dim") if self.colors else line
         if self._in_code:
-            return self.paint(line, "cyan")
+            return self.paint(line, "cyan") if self.colors else line
+        stripped = line.strip()
+        if self._in_math:
+            if stripped.endswith("\\]") or stripped == "$$":
+                self._in_math = False
+                stripped = stripped[:-2]
+            text = texmath.convert(stripped)
+            return f"    {text}" if text else None
+        if stripped in ("\\[", "$$") or (stripped.startswith("\\[") and "\\]" not in stripped):
+            self._in_math = True
+            text = texmath.convert(stripped[2:])
+            return f"    {text}" if text else None
+        if (formula := texmath.display_line(line)) is not None:
+            return f"    {formula}"
+        line = texmath.inline(line)
+        if not self.colors:
+            return line
         if RULE.match(line):
             return self.paint("─" * 40, "dim")
         if match := HEADING.match(line):
@@ -204,8 +226,9 @@ class UI:
         return self._inline(line)
 
     def end_markdown(self) -> None:
-        """Hết một câu trả lời: khối code chưa đóng không được tô lan sang chữ in sau."""
+        """Hết một câu trả lời: khối code hay công thức chưa đóng không được lan sang chữ in sau."""
         self._in_code = False
+        self._in_math = False
 
     def _inline(self, text: str) -> str:
         parts = []
@@ -429,6 +452,10 @@ class ReplyWriter:
         self.ui.end_markdown()
 
     def _emit(self, line: str) -> None:
+        rendered = self.ui.markdown(visible(line.rstrip("\r").expandtabs(4)))
+        if rendered is None:
+            # Dòng chỉ là dấu mở hay đóng công thức: không in, và nhãn "Peto ›" để dành cho dòng có chữ đầu tiên.
+            return
         label = "" if self._emitted else self.ui.paint("Peto › ", "cyan")
         self._emitted = True
-        self.ui.line(label + self.ui.markdown(visible(line.rstrip("\r").expandtabs(4))))
+        self.ui.line(label + rendered)
