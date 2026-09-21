@@ -287,17 +287,14 @@ function CheckIcon() {
   </svg>;
 }
 
-function CodeBlock({ language, children }: { language: string; children: ReactNode }) {
-  const preRef = useRef<HTMLPreElement>(null);
+/** Chép chữ vào clipboard rồi giữ kết quả 2,2 giây, để nút đổi thành "Đã chép" hay "Chưa chép được". */
+function useCopy() {
   const [state, setState] = useState<"idle" | "done" | "fail">("idle");
   const resetTimer = useRef<number | undefined>(undefined);
 
   useEffect(() => () => window.clearTimeout(resetTimer.current), []);
 
-  async function copy() {
-    // Lấy chữ từ DOM chứ không dựng lại từ cây hast: sau khi tô màu, code bị cắt
-    // thành hàng chục thẻ con, còn textContent thì luôn đúng nguyên bản.
-    const text = preRef.current?.textContent ?? "";
+  async function copy(text: string) {
     if (!text) return;
     try {
       await navigator.clipboard.writeText(text);
@@ -309,19 +306,44 @@ function CodeBlock({ language, children }: { language: string; children: ReactNo
     resetTimer.current = window.setTimeout(() => setState("idle"), 2200);
   }
 
+  const label = state === "done" ? "Đã chép" : state === "fail" ? "Chưa chép được" : "Sao chép";
+  return { state, label, copy };
+}
+
+function CodeBlock({ language, children }: { language: string; children: ReactNode }) {
+  const preRef = useRef<HTMLPreElement>(null);
+  const { state, label: copyText, copy } = useCopy();
   const label = CODE_LABELS[language] ?? (language ? language.toUpperCase() : "Mã");
-  const copyText = state === "done" ? "Đã chép" : state === "fail" ? "Chưa chép được" : "Sao chép";
 
   return (
     <div className="code-block">
       <div className="code-head">
         <span className="code-lang">{label}</span>
-        <button type="button" className="code-copy" onClick={() => void copy()}>
+        {/* Lấy chữ từ DOM chứ không dựng lại từ cây hast: sau khi tô màu, code bị cắt thành hàng chục thẻ con,
+            còn textContent thì luôn đúng nguyên bản. */}
+        <button type="button" className="code-copy" onClick={() => void copy(preRef.current?.textContent ?? "")}>
           {state === "done" ? <CheckIcon /> : <CopyIcon />}
           {copyText}
         </button>
       </div>
       <pre ref={preRef}>{children}</pre>
+    </div>
+  );
+}
+
+/**
+ * Nút chép cả câu trả lời. Chép chữ gốc Markdown chứ không phải chữ đã hiển thị, nên công thức LaTeX, bảng hay khối
+ * code còn nguyên; đó cũng là cách xem model thật sự viết gì khi web hiển thị sai (như vụ dấu ~ bị KaTeX nuốt).
+ */
+function MessageCopy({ text }: { text: string }) {
+  const { state, label, copy } = useCopy();
+  return (
+    <div className="message-actions">
+      <button type="button" className={state === "done" ? "message-copy done" : "message-copy"}
+        aria-label={`${label} câu trả lời`} onClick={() => void copy(text)}>
+        {state === "done" ? <CheckIcon /> : <CopyIcon />}
+        {label}
+      </button>
     </div>
   );
 }
@@ -1495,6 +1517,10 @@ export default function App() {
               {message.role === "assistant" && <WebSources sources={message.sources} />}
               {message.artifacts?.map(artifact => <DocumentArtifactCard key={`${artifact.id}-${artifact.version}`} artifact={artifact} onOpen={previewDocument} onEdit={item => setDocumentSelection({ id: item.id, version: item.version, key: Date.now() })} />)}
               {message.status === "incomplete" && <p className="message-status">Câu trả lời chưa hoàn tất</p>}
+              {/* Tin đang được viết thì chưa có gì trọn vẹn để chép. */}
+              {message.role === "assistant" && message.content && !(streaming && index === messages.length - 1) && (
+                <MessageCopy text={message.content} />
+              )}
             </article>
           ))}
           <div ref={bottomRef} />

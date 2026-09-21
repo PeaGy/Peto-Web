@@ -595,6 +595,24 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .code-copy:hover { border-color: var(--line); color: var(--text); }
 .code-copy svg { flex: none; }
 
+/* Nút chép cả câu trả lời: luôn hiện (điện thoại không rê chuột được), nhỏ và mờ để không át nội dung. */
+.message-actions { display: flex; gap: 6px; margin-top: 10px; }
+.message-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 9px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.message-copy:hover, .message-copy.done { color: var(--text); }
+.message-copy svg { flex: none; }
+
 /* Cỡ chữ và chiều cao dòng phải đặt ngay trên pre: dòng của pre cao theo cỡ chữ
    của chính pre. Để pre kế thừa cỡ chữ văn bản còn code bên trong ép 13px thì
    mỗi dòng cao ~24px cho chữ 13px — code trông giãn như cách dòng đôi. */

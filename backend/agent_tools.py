@@ -32,8 +32,8 @@ def _tool(name: str, description: str, properties: dict) -> dict:
 TOOL_SCHEMAS = [
     _tool(
         "list_files",
-        "Liệt kê tệp và thư mục trong dự án, bỏ qua node_modules, .venv, .git, dist, build. Dùng để nắm cấu trúc "
-        "trước khi đọc.",
+        "Liệt kê tệp và thư mục trong dự án, bỏ qua node_modules, .venv, .git, dist, build và những gì .gitignore ở "
+        "gốc dự án bỏ qua (biết đường dẫn thì vẫn đọc được bằng read_file). Dùng để nắm cấu trúc trước khi đọc.",
         {
             "path": _PATH,
             "depth": {"type": ["integer", "null"], "description": "Số tầng thư mục, 1 đến 4. null là 2."},
@@ -55,8 +55,8 @@ TOOL_SCHEMAS = [
     ),
     _tool(
         "search_files",
-        "Tìm biểu thức chính quy (cú pháp Python re) trong các tệp chữ của dự án. Trả về tối đa 100 dòng khớp kèm "
-        "tên tệp và số dòng.",
+        "Tìm biểu thức chính quy (cú pháp Python re) trong các tệp chữ của dự án, bỏ qua thư mục nặng và những gì "
+        ".gitignore bỏ qua. Trả về tối đa 100 dòng khớp kèm tên tệp và số dòng.",
         {
             "pattern": {"type": "string", "description": "Biểu thức chính quy cần tìm."},
             "path": {"type": ["string", "null"], "description": "Thư mục hoặc tệp để tìm. null là cả dự án."},

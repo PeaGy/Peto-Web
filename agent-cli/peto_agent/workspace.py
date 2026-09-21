@@ -22,10 +22,56 @@ SKIPPED_DIRS = {".git", "node_modules", ".venv", "venv", "__pycache__", "dist", 
                 ".mypy_cache", ".next"}
 MAX_FILE_BYTES = 1_000_000
 MAX_WALK_FILES = 5000
+MAX_GITIGNORE_RULES = 500
 
 
 class WorkspaceError(Exception):
     """Lỗi về đường dẫn hay tệp; nội dung được gửi lại cho Peto như kết quả công cụ."""
+
+
+@dataclass(frozen=True)
+class IgnoreRule:
+    pattern: str
+    negate: bool
+    directory_only: bool
+    # Mẫu có "/" ở đầu hay ở giữa thì so với đường dẫn từ gốc dự án; còn lại so với tên ở mọi tầng, như git.
+    anchored: bool
+
+
+def parse_gitignore(text: str) -> list[IgnoreRule]:
+    """Phần .gitignore đủ dùng để bỏ qua thư mục sinh ra (coverage/, target/, *.log…) khi liệt kê và tìm.
+
+    Không làm hết luật của git: chỉ tệp ở gốc dự án, không đọc .gitignore của thư mục con hay cấu hình git toàn máy.
+    Dòng "!" được tính, và dòng sau thắng dòng trước như git.
+    """
+    rules: list[IgnoreRule] = []
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        negate = line.startswith("!")
+        line = line[1:] if negate else line
+        directory_only = line.endswith("/")
+        body = line.rstrip("/")
+        anchored = body.startswith("/") or "/" in body
+        pattern = body.lstrip("/")
+        if pattern:
+            rules.append(IgnoreRule(pattern, negate, directory_only, anchored))
+        if len(rules) >= MAX_GITIGNORE_RULES:
+            break
+    return rules
+
+
+def gitignored(rules: list[IgnoreRule], relative: str, is_dir: bool) -> bool:
+    name = relative.rsplit("/", 1)[-1]
+    result = False
+    for rule in rules:
+        if rule.directory_only and not is_dir:
+            continue
+        # fnmatch không phân biệt hoa thường trên Windows, giống git ở đó.
+        if fnmatch.fnmatch(relative if rule.anchored else name, rule.pattern):
+            result = not rule.negate
+    return result
 
 
 @dataclass(frozen=True)
@@ -64,6 +110,8 @@ def list_entries(workspace: "Workspace", base: Path, max_depth: int, limit: int)
             if child.name in SKIPPED_DIRS or not workspace.inside(child) or workspace.blocked(child):
                 continue
             is_dir = child.is_dir()
+            if workspace.ignored(child, is_dir):
+                continue
             entries.append(workspace.relative(child) + ("/" if is_dir else ""))
             if len(entries) >= limit:
                 truncated = True
@@ -80,6 +128,31 @@ class Workspace:
         self.root = Path(root).resolve(strict=True)
         # Mã băm của tệp ở lần đọc hoặc ghi gần nhất: sửa tệp chưa đọc hay đã bị đổi thì từ chối.
         self.read_digests: dict[Path, str] = {}
+        # Luật .gitignore ở gốc, đọc lại khi tệp đổi (theo thời điểm sửa) để khỏi đọc đĩa ở mỗi mục được duyệt.
+        self._ignore_stamp: float | None = None
+        self._ignore_rules: list[IgnoreRule] = []
+
+    def gitignore_rules(self) -> list[IgnoreRule]:
+        path = self.root / ".gitignore"
+        try:
+            stamp = path.stat().st_mtime
+        except OSError:
+            self._ignore_stamp, self._ignore_rules = None, []
+            return []
+        if stamp != self._ignore_stamp:
+            try:
+                self._ignore_rules = parse_gitignore(path.read_text(encoding="utf-8", errors="replace"))
+            except OSError:
+                self._ignore_rules = []
+            self._ignore_stamp = stamp
+        return self._ignore_rules
+
+    def ignored(self, path: Path, is_dir: bool | None = None) -> bool:
+        """Mục .gitignore bỏ qua thì không liệt kê, không tìm; đọc thẳng theo đường dẫn thì vẫn được."""
+        rules = self.gitignore_rules()
+        if not rules:
+            return False
+        return gitignored(rules, self.relative(path), path.is_dir() if is_dir is None else is_dir)
 
     def inside(self, path: Path) -> bool:
         try:
@@ -140,7 +213,7 @@ class Workspace:
         self.read_digests[path] = digest(raw)
 
     def iter_files(self, base: Path) -> Iterator[Path]:
-        """Duyệt tệp dưới base, bỏ thư mục nặng, liên kết ra ngoài dự án và tệp bị chặn."""
+        """Duyệt tệp dưới base, bỏ thư mục nặng, mục .gitignore bỏ qua, liên kết ra ngoài dự án và tệp bị chặn."""
         stack, seen, count = [base], set(), 0
         while stack:
             directory = stack.pop()
@@ -155,7 +228,10 @@ class Workspace:
             for child in children:
                 if child.name in SKIPPED_DIRS or not self.inside(child) or self.blocked(child):
                     continue
-                if child.is_dir():
+                is_dir = child.is_dir()
+                if self.ignored(child, is_dir):
+                    continue
+                if is_dir:
                     stack.append(child)
                 elif child.is_file():
                     yield child

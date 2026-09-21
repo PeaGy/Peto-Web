@@ -21,6 +21,8 @@ from .tools import Tools
 from .workspace import Workspace, WorkspaceError
 
 MAX_STEPS_PER_TASK = 40
+# Mỗi lời Peto ghi vào nhật ký giữ tối đa ngần này ký tự (phần đầu và phần cuối), để nhật ký không phình theo code dài.
+MAX_LOGGED_REPLY = 4000
 # Máy chủ không lưu hội thoại nên bước nào cũng gửi lại ảnh: chỉ giữ 4 ảnh gần nhất, như chat trên web.
 MAX_KEPT_IMAGES = 4
 OLD_IMAGE_NOTE = "(Ảnh này đã gửi ở tin trước; để hội thoại nhẹ, peto không gửi lại.)"
@@ -366,6 +368,12 @@ class Session:
                 if output is None:
                     outcome = "error"
                     return
+                reply = "\n".join(text_of(item) for item in output
+                                  if item.get("type") == "message" and item.get("role") == "assistant").strip()
+                if reply:
+                    # Ghi cả lời Peto để nhật ký đọc được như một bản chép lại; tệp hội thoại cho /resume chỉ giữ lần
+                    # gần nhất của mỗi dự án nên không dùng để xem lại những lần cũ được.
+                    self._log("reply", text=cap_text(reply, MAX_LOGGED_REPLY))
                 self.items.extend(output)
                 pending = [item for item in output if item.get("type") == "function_call"]
                 if not pending:

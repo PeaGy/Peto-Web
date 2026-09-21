@@ -555,6 +555,15 @@ results in the next step. The server stores no conversation (`store=False`), and
   token`, the size the model sees, so users know when to `/moi`. There is deliberately no context-window percentage,
   because the CLI does not know the model's window. `/me` returns `tokens_used`, today's input + output total including
   the conversation resent at every step, and `peto status` prints it.
+- **The task log is a transcript.** Besides `task` / `tool` / `summary` entries, each step's assistant text is logged
+  as `reply` (head and tail kept, 4000 characters), because the owner's habit is "check the log of what Peto said" and
+  the `/resume` session file only holds the latest conversation per project. Logs stay on the user's machine, the same
+  privacy class as that session file. Image data and attached file contents are still never logged.
+- **`.gitignore` at the project root** hides entries from `list_files`, `search_files` and the `@` menu
+  (`workspace.parse_gitignore` / `gitignored`: names at any depth, `/` anchoring, trailing `/` for directories, `!`
+  negation, last match wins). It never blocks a path given explicitly (`read_file`, `@path`), since "ignored by git" is
+  not "secret"; secrets stay on `BLOCKED_FILE_PATTERNS`. Nested `.gitignore` files and global git excludes are not read.
+  The rules are re-read when the file's mtime changes.
 - **The CLI enforces permissions locally** (`workspace.py`, `tools.py`, `runner.py`):
   - Resolved paths, following symlinks and junctions, must stay under the folder it was opened in, which cannot be a
     drive root or the home directory.
@@ -659,6 +668,11 @@ results in the next step. The server stores no conversation (`store=False`), and
   deliberately not used. Anything else renders as plain text under an uppercased tag, so a
   new language needs a grammar import **and** a label. Each grammar costs bundle size; add
   ones Peto actually answers with.
+- Every finished assistant message has a "Sao chép" button under it (`MessageCopy`, layout A picked by the owner from
+  mockups on 2026-09-21: always visible, since phones cannot hover). It copies the **raw Markdown**, not the rendered
+  text, so a render problem can be diagnosed from what the model actually wrote. It is hidden while that message is
+  still streaming. Code blocks keep their own button; both share `useCopy`. Their accessible names differ ("Sao chép"
+  vs "Sao chép câu trả lời"), so tests match the code button's name exactly.
 - Math renders with `remark-math` + `rehype-katex` (`trust: false`, `strict: "ignore"`) after
   `mathMarkdown.normalizeMath` turns `\(…\)` / `\[…\]` into dollar delimiters, skipping code. It also runs
   `tildeNegation`: in LaTeX `~` is a non-breaking space, so a model writing negation as `~p` (common in discrete-math

@@ -576,22 +576,37 @@ describe('Khối code trong chat', () => {
     expect(await screen.findByText('Mã')).toBeTruthy();
   });
 
+  // Nút của khối code tên đúng "Sao chép"; nút chép cả câu trả lời tên "Sao chép câu trả lời", nên phải so khớp trọn.
   it('nút sao chép chép đúng nguyên văn code', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.assign(navigator, { clipboard: { writeText } });
     withCode(PY_CODE);
     await openChat();
-    fireEvent.click(await screen.findByRole('button', { name: /Sao chép/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /^Sao chép$/ }));
     await waitFor(() => expect(writeText).toHaveBeenCalledWith('def chao():\n    return "xin chào"\n'));
-    await screen.findByRole('button', { name: /Đã chép/ });
+    await screen.findByRole('button', { name: /^Đã chép$/ });
   });
 
   it('báo khi trình duyệt chặn clipboard', async () => {
     Object.assign(navigator, { clipboard: { writeText: vi.fn().mockRejectedValue(new Error('bi chan')) } });
     withCode('```python\nx = 1\n```');
     await openChat();
-    fireEvent.click(await screen.findByRole('button', { name: /Sao chép/ }));
-    await screen.findByRole('button', { name: /Chưa chép được/ });
+    fireEvent.click(await screen.findByRole('button', { name: /^Sao chép$/ }));
+    await screen.findByRole('button', { name: /^Chưa chép được$/ });
+  });
+
+  it('nút dưới câu trả lời chép chữ gốc Markdown, giữ nguyên công thức', async () => {
+    // Đúng thứ cần khi web hiển thị sai: chép ra là thấy model viết ~P chứ không phải thiếu dấu phủ định.
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+    const answer = '**Cách gọn nhất:** đổi kéo theo.\n\n$P \\to (Q \\to R) \\equiv ~P \\lor ~Q \\lor R$';
+    vi.mocked(api.getMessages).mockResolvedValue([{ role: 'user', content: 'giải giúp' }, { role: 'assistant', content: answer }]);
+    await openChat();
+    fireEvent.click(await screen.findByRole('button', { name: 'Sao chép câu trả lời' }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(answer));
+    await screen.findByRole('button', { name: 'Đã chép câu trả lời' });
+    // Chỉ câu trả lời của Peto có nút, tin của người dùng thì không.
+    expect(screen.getAllByRole('button', { name: /câu trả lời$/ })).toHaveLength(1);
   });
 });
 

@@ -253,7 +253,9 @@ rằng toàn bộ dự án đã được kiểm thử.
 
 Cuối mỗi yêu cầu có một dòng tổng kết: thời gian, số tệp đã sửa, số lệnh đã chạy, độ dài hội thoại (tính bằng token) và
 số bước còn lại hôm nay. Có thể dùng `/compact` để giảm ngữ cảnh hoặc `/moi` để bắt đầu việc khác.
-Nhật ký từng phiên lưu ở `%LOCALAPPDATA%\PetoAgent\logs\`.
+Nhật ký từng phiên lưu ở `%LOCALAPPDATA%\PetoAgent\logs\`: yêu cầu bạn gõ, từng lời Peto trả lời (mỗi lời giữ tối đa
+4000 ký tự, cả phần đầu lẫn phần cuối), các lệnh gọi công cụ và dòng tổng kết. Nhờ vậy xem lại được cả những lần cũ;
+tệp hội thoại cho `/resume` thì mỗi dự án chỉ giữ lần gần nhất. Nhật ký chỉ nằm trên máy bạn.
 
 ### Giảm nội dung gửi cho model
 
@@ -306,7 +308,9 @@ không bao giờ bị đổi, và hội thoại gửi lại cho Peto vẫn là c
   CLI không chạy ở gốc ổ đĩa hay thư mục người dùng.
 - **Tệp bí mật:** không đọc, không sửa `.env`, `.env.*`, `*.pem`, `*.key`, `*.p12`, `*.pfx`, `id_rsa*` và thư mục `.git`.
 - **Tệp bị bỏ qua:** `node_modules`, `.venv`, `venv`, `dist`, `build` không được liệt kê hay tìm; tệp nhị phân và tệp lớn
-  hơn 1 MB không được đọc.
+  hơn 1 MB không được đọc. Những gì `.gitignore` ở gốc dự án bỏ qua (như `coverage/`, `target/`, `*.log`) cũng không
+  được liệt kê, tìm hay gợi ý sau `@`, nhưng biết đường dẫn thì Peto vẫn đọc được. Chỉ đọc `.gitignore` ở gốc, có tính
+  dòng `!`; `.gitignore` của thư mục con và cấu hình git toàn máy thì không. Sửa `.gitignore` là có tác dụng ngay.
 - **Sửa tệp:** chỉ sửa tệp đã đọc và chưa bị đổi từ lúc đọc; đoạn cần thay phải khớp đúng một chỗ. Kiểu xuống dòng
   (CRLF/LF) và BOM được giữ nguyên.
 - **Xóa và đổi tên:** Peto có công cụ riêng cho hai việc này và luôn hỏi trước; xóa thì hiện nội dung sắp mất, đổi tên
