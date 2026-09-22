@@ -1,0 +1,8 @@
+Peto Beat Sync uses @nekopaw/tempora 0.4.0-alpha.1 by Makito <i@maki.to>.
+Tempora is licensed under Apache License 2.0; see Tempora-LICENSE.txt in this directory.
+The published Tempora runtime is bundled without source modifications.
+Package: https://www.npmjs.com/package/@nekopaw/tempora
+
+The architecture and initial analyser settings were informed by Project AIRI:
+https://github.com/moeru-ai/airi
+The React interface and integration are written for Peto. No AIRI source is bundled here.
