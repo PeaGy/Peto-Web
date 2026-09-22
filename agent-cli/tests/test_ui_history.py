@@ -77,47 +77,75 @@ def _plain(text: str) -> list[str]:
     return [re.sub(r"\033\[[0-9;]*m", "", line) for line in text.splitlines()]
 
 
+TEXT_ONLY = ["", "  Peto Agent 0.9.5", "  Peto · mức thấp", "  ~/Downloads/web_test", ""]
+
+
+def _header(**size) -> str:
+    ui = UI(out=io.StringIO(), colors=True, **size)
+    ui.session_header("0.9.5", "~/Downloads/web_test", model="Peto", effort="thấp")
+    return ui.out.getvalue()
+
+
 def test_session_header_puts_the_mascot_beside_three_short_lines():
     """Đầu phiên gọn như Claude Code: mascot có màu cạnh ba dòng ngắn, không tài khoản, số bước hay gợi ý phím."""
     from peto_agent import mascot
 
-    ui = UI(out=io.StringIO(), colors=True, width=100)
-    ui.session_header("0.9.5", "~/Downloads/web_test", model="Peto", effort="thấp")
-    output = ui.out.getvalue()
+    output = _header(width=100, height=40)
     lines = _plain(output)
-    assert len(lines) == len(mascot.ART) + 2 and lines[0] == lines[-1] == ""
-    art = lines[1:-1]
-    first = (len(mascot.ART) - 3) // 2
-    assert art[first].endswith("   Peto Agent 0.9.5")
-    assert art[first + 1].endswith("   Peto · mức thấp")
-    assert art[first + 2].endswith("   ~/Downloads/web_test")
-    assert "\033[38;2;" in output and ";48;2;" in output, "màu 24-bit cho nét chấm và phần tô"
-    assert all(any("⠀" <= char <= "⣿" for char in line) for line in art[1:-1])
+    art = mascot.ARTS[0]
+    assert len(lines) == len(art) + 2 and lines[0] == lines[-1] == ""
+    rows = lines[1:-1]
+    first = (len(art) - 3) // 2
+    assert rows[first].endswith("   Peto Agent 0.9.5")
+    assert rows[first + 1].endswith("   Peto · mức thấp")
+    assert rows[first + 2].endswith("   ~/Downloads/web_test")
+    assert "\033[38;2;" in output and "48;2;" in output, "màu 24-bit cho ký tự khối và màu nền của ô"
+    assert all("\033[" in line for line in output.splitlines()[1:-1]), "hàng nào của hình cũng có màu"
+
+
+def test_header_picks_the_largest_mascot_that_fits_the_window():
+    """Bảng terminal thấp (VS Code chỉ chừng 17 dòng) dùng hình nhỏ, để lúc mở phần trên của hình không trôi mất."""
+    from peto_agent import mascot
+    from peto_agent.ui import HEADER_SPARE_ROWS, HEADER_TEXT_MIN
+
+    big, small = mascot.ARTS
+
+    def art_rows(width: int, height: int) -> int:
+        lines = _plain(_header(width=width, height=height))
+        return 0 if lines == TEXT_ONLY else len(lines) - 2
+
+    assert art_rows(100, 40) == len(big)
+    assert art_rows(100, len(big) + HEADER_SPARE_ROWS - 1) == len(small)
+    # UI.width chừa một cột, nên cửa sổ phải rộng hơn một cột so với phép tính.
+    assert art_rows(1 + len(small[0]) + 3 + HEADER_TEXT_MIN + 1, 40) == len(small)
+    assert art_rows(100, len(small) + HEADER_SPARE_ROWS - 1) == 0, "thấp quá thì chỉ còn chữ"
 
 
 def test_header_falls_back_when_the_window_is_narrow_or_colorless():
-    narrow = UI(out=io.StringIO(), colors=True, width=40)
-    narrow.session_header("0.9.5", "~/Downloads/web_test", model="Peto", effort="thấp")
-    assert _plain(narrow.out.getvalue()) == ["", "  Peto Agent 0.9.5", "  Peto · mức thấp", "  ~/Downloads/web_test", ""]
+    assert _plain(_header(width=40, height=40)) == TEXT_ONLY
 
-    colorless = UI(out=io.StringIO(), colors=True, width=100)
-    colorless.colors = False  # terminal có NO_COLOR: vẫn vẽ nét chấm, không mã màu
+    colorless = UI(out=io.StringIO(), colors=True, width=100, height=40)
+    colorless.colors = False  # terminal có NO_COLOR: ký tự khối không màu chỉ còn một mảng xám, nên bỏ hình
     colorless.session_header("0.9.5", "~/Downloads/web_test", model="Peto", effort="thấp")
-    assert "\033[" not in colorless.out.getvalue()
-    assert any("⠁" <= char <= "⣿" for char in colorless.out.getvalue())
+    assert colorless.out.getvalue().splitlines() == TEXT_ONLY
 
     piped = UI(out=io.StringIO(), colors=False)
     piped.session_header("0.9.5", "~/Downloads/web_test", model="Peto", effort="thấp")
     assert piped.out.getvalue() == "Peto Agent 0.9.5 · ~/Downloads/web_test · Peto · mức thấp\n"
 
 
-def test_mascot_data_is_a_clean_rectangle():
-    """Dữ liệu sinh bằng tools/make_mascot.py: mọi hàng cùng độ rộng, chỉ có chữ Braille hay dấu cách, màu hợp lệ."""
+def test_mascot_data_is_clean_block_art_from_large_to_small():
+    """Dữ liệu sinh bằng tools/make_mascot.py: hình chữ nhật, chỉ ký tự khối (terminal tự vẽ lấp kín ô) hay dấu cách.
+
+    Không Braille, vì chấm Braille lấy từ font nên nhỏ và thưa; không ░▒▓, vì chúng là hoa văn chấm.
+    """
     from peto_agent import mascot
 
-    widths = {len(row) for row in mascot.ART}
-    assert widths == {18} and len(mascot.ART) == 9
-    for row in mascot.ART:
-        for char, fg, bg in row:
-            assert char == " " or "⠀" <= char <= "⣿"
-            assert all(color is None or 0 <= color <= 0xFFFFFF for color in (fg, bg))
+    assert [(len(art[0]), len(art)) for art in mascot.ARTS] == [(24, 12), (18, 9)]
+    for art in mascot.ARTS:
+        assert {len(row) for row in art} == {len(art[0])}
+        for row in art:
+            for char, fg, bg in row:
+                assert char == " " or ("▀" <= char <= "▟" and char not in "░▒▓")
+                assert all(color is None or 0 <= color <= 0xFFFFFF for color in (fg, bg))
+                assert char == " " or fg is not None, "ký tự khối phải có màu chữ"

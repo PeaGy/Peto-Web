@@ -14,6 +14,9 @@ from . import mascot, texmath
 COLORS = {"dim": "2", "bold": "1", "red": "31", "green": "32", "yellow": "33", "blue": "34", "cyan": "36"}
 # Chừa ít nhất ngần này cột cho ba dòng chữ bên phải mascot; cửa sổ hẹp hơn thì bỏ hình, chỉ in chữ.
 HEADER_TEXT_MIN = 30
+# Số dòng cần ngoài hình: hai dòng trống quanh đầu phiên, năm dòng của ô nhập (trạng thái, hai đường kẻ, dòng nhập,
+# dòng dưới) và dòng lệnh vừa gõ. Cửa sổ thấp hơn thì dùng cỡ hình nhỏ hơn, để lúc mở không trôi mất phần trên.
+HEADER_SPARE_ROWS = 8
 MAX_DIFF_LINES = 120
 MAX_OUTPUT_LINES = 8
 PERMISSION_QUESTION = "    Đồng ý? [y] có  [n] không  [a] có cho mọi bước trong yêu cầu này › "
@@ -104,12 +107,14 @@ def _plain(text: str) -> str:
 
 
 class UI:
-    def __init__(self, *, out=None, reader=input, colors: bool | None = None, width: int | None = None):
+    def __init__(self, *, out=None, reader=input, colors: bool | None = None, width: int | None = None,
+                 height: int | None = None):
         self.out = out or sys.stdout
         self.reader = reader
         self.terminal = enable_vt(self.out) if colors is not True else True
         self.colors = (self.terminal and "NO_COLOR" not in os.environ) if colors is None else colors
         self._width = width
+        self._height = height
         self._status: str | None = None
         self._in_code = False
         self._in_math = False
@@ -126,6 +131,10 @@ class UI:
     def width(self) -> int:
         # Chừa một cột để dòng trạng thái không tự xuống hàng ở mép phải.
         return max(20, (self._width or shutil.get_terminal_size((100, 24)).columns) - 1)
+
+    @property
+    def height(self) -> int:
+        return self._height or shutil.get_terminal_size((100, 24)).lines
 
     def _wrapped(self, prefix: str, text: str, color: str | None = None, *, code: bool = False) -> None:
         continuation = " " * max(0, len(prefix) - 2) + "│ " if code else " " * len(prefix)
@@ -148,15 +157,13 @@ class UI:
         if not self.terminal:
             self.line(f"Peto Agent {version} · {directory} · {model} · mức {effort}")
             return
-        art = mascot.ART
-        art_width = len(art[0]) if art else 0
-        show_art = art and self.width >= 1 + art_width + 3 + HEADER_TEXT_MIN
-        room = self.width - (1 + art_width + 3 if show_art else 2)
+        art = self._mascot_art()
+        room = self.width - (1 + len(art[0]) + 3 if art else 2)
         details = (self.paint("Peto Agent", "bold") + self.paint(f" {version}", "dim"),
                    self.paint(clip_cells(f"{model} · mức {effort}", room), "dim"),
                    self.paint(clip_cells(visible(directory), room), "dim"))
         self.line()
-        if not show_art:
+        if not art:
             for text in details:
                 self.line("  " + text)
         else:
@@ -167,10 +174,21 @@ class UI:
                 self.line(" " + self._mascot_row(row) + ("   " + text if text else ""))
         self.line()
 
-    def _mascot_row(self, row) -> str:
-        """Một hàng mascot: màu 24-bit cho chữ và nền của từng ô; không có màu thì chỉ còn nét chấm."""
+    def _mascot_art(self):
+        """Cỡ mascot lớn nhất vừa cửa sổ cả bề ngang lẫn bề cao; None thì chỉ in chữ.
+
+        Terminal tắt màu (``NO_COLOR``) cũng không có hình: ký tự khối không màu chỉ còn một mảng xám.
+        """
         if not self.colors:
-            return "".join(char for char, _, _ in row)
+            return None
+        for art in mascot.ARTS:
+            if (self.width >= 1 + len(art[0]) + 3 + HEADER_TEXT_MIN
+                    and self.height >= len(art) + HEADER_SPARE_ROWS):
+                return art
+        return None
+
+    def _mascot_row(self, row) -> str:
+        """Một hàng mascot: màu 24-bit cho chữ và nền của từng ô."""
         parts = []
         for char, fg, bg in row:
             if char == " " and bg is None:

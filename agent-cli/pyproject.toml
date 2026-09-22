@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "peto"
-version = "0.9.5"
+version = "0.9.6"
 description = "Peto Agent: nhờ Peto sửa code ngay trong thư mục dự án trên máy bạn."
 readme = "README.md"
 requires-python = ">=3.12"
