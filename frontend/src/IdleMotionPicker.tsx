@@ -55,8 +55,6 @@ export default function IdleMotionPicker({ character }: { character: CharacterMo
           }} />
       </label>)}
     </div>
-    <p>Các công tắc chỉ điều khiển hiệu ứng bổ sung, không thay đổi chuyển động được ghi sẵn trong motion. Chớp mắt và miệng theo giọng nói vẫn hoạt động. Lựa chọn được nhớ riêng cho model trên thiết bị này.</p>
-    <p>Chuyển động vẫn tuân theo cài đặt giảm chuyển động của Companion.</p>
     <MusicVibePicker />
     {!loading && !error && !choices.length && <p>Không có motion được khai báo trong .model3.json.</p>}
   </section>;

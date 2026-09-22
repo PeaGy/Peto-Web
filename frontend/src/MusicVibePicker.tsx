@@ -56,7 +56,7 @@ function BeatSyncPanel({ onClose }: { onClose: () => void }) {
             ['adaptiveThreshold', 'Tự điều chỉnh ngưỡng theo âm thanh'],
             ['spectralFlux', 'Phát hiện thay đổi phổ âm thanh'],
           ] as const).map(([key, title]) => <label className="character-effect-option" key={key}><span>{title}</span>
-            <input type="checkbox" checked={parameters[key]} onChange={event => setBeatParameters({ [key]: event.target.checked })} /></label>)}
+            <input type="checkbox" role="switch" checked={parameters[key]} onChange={event => setBeatParameters({ [key]: event.target.checked })} /></label>)}
         </details>
         <button type="button" className="settings-button" onClick={() => { resetBeatParameters(); setMusicStrength(0.5); }}>Khôi phục mặc định</button>
       </div>
