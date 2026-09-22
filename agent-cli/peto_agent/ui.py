@@ -9,10 +9,11 @@ import shutil
 import sys
 import unicodedata
 
-from . import texmath
+from . import mascot, texmath
 
 COLORS = {"dim": "2", "bold": "1", "red": "31", "green": "32", "yellow": "33", "blue": "34", "cyan": "36"}
-COLORS.update(input="48;5;236;38;5;252", input_hint="48;5;236;38;5;245", input_marker="48;5;236;38;5;117")
+# Chừa ít nhất ngần này cột cho ba dòng chữ bên phải mascot; cửa sổ hẹp hơn thì bỏ hình, chỉ in chữ.
+HEADER_TEXT_MIN = 30
 MAX_DIFF_LINES = 120
 MAX_OUTPUT_LINES = 8
 PERMISSION_QUESTION = "    Đồng ý? [y] có  [n] không  [a] có cho mọi bước trong yêu cầu này › "
@@ -138,21 +139,50 @@ class UI:
     def reply(self) -> ReplyWriter:
         return ReplyWriter(self)
 
-    def session_header(self, version: str, directory: str, account: str, effort: str, quota: str, hint: str, *,
-                       model: str = "Peto") -> None:
+    def session_header(self, version: str, directory: str, *, model: str, effort: str) -> None:
+        """Đầu phiên gọn như Claude Code (chủ web chọn bản phác ngày 2026-09-22): mascot cạnh ba dòng ngắn.
+
+        Tài khoản, số bước và các gợi ý phím không nằm ở đây nữa, để phần giữa màn hình chỉ còn lời Peto: số bước ở dòng
+        dưới ô nhập, tài khoản ở ``peto status``, phím và lệnh ở ``/help``.
+        """
         if not self.terminal:
-            self.line(f"Peto Agent {version} · {os.path.basename(directory)} · {account} · {model} · mức {effort} · "
-                      f"hôm nay còn {quota} bước")
-            self.line(hint, "dim")
+            self.line(f"Peto Agent {version} · {directory} · {model} · mức {effort}")
             return
+        art = mascot.ART
+        art_width = len(art[0]) if art else 0
+        show_art = art and self.width >= 1 + art_width + 3 + HEADER_TEXT_MIN
+        room = self.width - (1 + art_width + 3 if show_art else 2)
+        details = (self.paint("Peto Agent", "bold") + self.paint(f" {version}", "dim"),
+                   self.paint(clip_cells(f"{model} · mức {effort}", room), "dim"),
+                   self.paint(clip_cells(visible(directory), room), "dim"))
         self.line()
-        self.line(self.paint("  Peto Agent", "cyan") + self.paint(f"  {version}", "dim"))
-        self._rule()
-        self._wrapped("  ", visible(directory))
-        self._wrapped("  ", f"{visible(account)} · {model} · mức {effort} · còn {quota} bước", "dim")
-        self._rule()
-        self._wrapped("  ", hint, "dim")
+        if not show_art:
+            for text in details:
+                self.line("  " + text)
+        else:
+            # Ba dòng chữ nằm giữa chiều cao của hình.
+            first = (len(art) - len(details)) // 2
+            for index, row in enumerate(art):
+                text = details[index - first] if 0 <= index - first < len(details) else ""
+                self.line(" " + self._mascot_row(row) + ("   " + text if text else ""))
         self.line()
+
+    def _mascot_row(self, row) -> str:
+        """Một hàng mascot: màu 24-bit cho chữ và nền của từng ô; không có màu thì chỉ còn nét chấm."""
+        if not self.colors:
+            return "".join(char for char, _, _ in row)
+        parts = []
+        for char, fg, bg in row:
+            if char == " " and bg is None:
+                parts.append(" ")
+                continue
+            codes = []
+            if fg is not None:
+                codes.append(f"38;2;{fg >> 16};{fg >> 8 & 255};{fg & 255}")
+            if bg is not None:
+                codes.append(f"48;2;{bg >> 16};{bg >> 8 & 255};{bg & 255}")
+            parts.append(f"\033[{';'.join(codes)}m{char}\033[0m")
+        return "".join(parts)
 
     def paint(self, text: str, color: str | None) -> str:
         if not color or not self.colors:
@@ -408,12 +438,13 @@ class UI:
                 return answer
             self.line("    Gõ y, n, a hoặc s nhé." if allow_session else "    Gõ y, n hoặc a nhé.", "yellow")
 
-    def prompt(self, *, footer: str = "") -> str:
+    def prompt(self, *, footer: str = "", status: str = "") -> str:
+        """Ô nhập: ``status`` canh phải phía trên đường kẻ, ``footer`` mờ phía dưới. Không có ô nhập thì dùng reader."""
         self.clear_status()
         self.attached = []
         if self.editor is not None:
             try:
-                text = self.editor.read("› ", self.paint, boxed=True, footer=footer)
+                text = self.editor.read("› ", self.paint, boxed=True, footer=footer, status=status)
                 self.attached = list(self.editor.last_images)
                 return text
             except OSError:

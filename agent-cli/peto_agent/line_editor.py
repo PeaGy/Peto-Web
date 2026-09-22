@@ -1,4 +1,4 @@
-"""Khung nhập có nền riêng và bảng gợi ý lệnh khi gõ "/", đọc từng phím trong console Windows.
+"""Khung nhập kẻ trên dưới và bảng gợi ý lệnh khi gõ "/", đọc từng phím trong console Windows.
 
 input() chỉ trả chữ về khi người dùng bấm Enter, nên muốn hiện gợi ý ngay lúc gõ thì phải tự đọc phím. Mô-đun chỉ dùng
 thư viện chuẩn và chia ba phần:
@@ -316,8 +316,12 @@ def _no_paint(text: str, color: str | None) -> str:
 
 
 def layout(state: EditorState, *, prompt: str, width: int, height: int, paint=_no_paint,
-           boxed: bool = False, footer: str = "", placeholder: str = INPUT_PLACEHOLDER) -> Frame:
-    """Các hàng cần vẽ và chỗ đặt con trỏ. Hàng nối tiếp thụt vào bằng độ rộng dấu nhắc."""
+           boxed: bool = False, footer: str = "", status: str = "", placeholder: str = INPUT_PLACEHOLDER) -> Frame:
+    """Các hàng cần vẽ và chỗ đặt con trỏ. Hàng nối tiếp thụt vào bằng độ rộng dấu nhắc.
+
+    Khung (chủ web chọn theo Claude Code ngày 2026-09-22): dòng trạng thái canh phải, đường kẻ, các dòng nhập, đường
+    kẻ, rồi bảng gợi ý và dòng phụ ở dưới. Không tô nền, để phần giữa màn hình chỉ còn lời Peto.
+    """
     # Không bao giờ viết vào cột cuối, để khỏi phụ thuộc cách từng terminal tự xuống dòng.
     usable = max(width, 8) - 1
     # Khi gửi/hủy, khung và các dòng phụ biến mất; chỉ tin đã nhập nằm trong lịch sử cuộn.
@@ -325,21 +329,14 @@ def layout(state: EditorState, *, prompt: str, width: int, height: int, paint=_n
     prompt = clip(prompt, max(1, usable - 2))
     indent = display_width(prompt)
 
-    def input_paint(text: str, color: str | None = None) -> str:
-        if boxed:
-            return paint(text, "input_marker" if color == "cyan" else "input")
-        return paint(text, color)
-
-    rows: list[list[str]] = [[input_paint(prompt, "yellow")]]
-    row_widths = [indent]
+    rows: list[list[str]] = [[paint(prompt, "yellow")]]
     column = indent
     cursor: tuple[int, int] | None = None
     for index, char in enumerate(state.text):
         if index == state.cursor:
             cursor = (len(rows) - 1, column)
         if char == "\n":
-            rows.append([input_paint(" " * indent)])
-            row_widths.append(indent)
+            rows.append([" " * indent])
             column = indent
             continue
         color = None
@@ -349,20 +346,16 @@ def layout(state: EditorState, *, prompt: str, width: int, height: int, paint=_n
             glyph = "    " if char == "\t" else char
         size = display_width(glyph)
         if column + size > usable and column > indent:
-            rows.append([input_paint(" " * indent)])
-            row_widths.append(indent)
+            rows.append([" " * indent])
             column = indent
             if index == state.cursor:
                 cursor = (len(rows) - 1, column)
-        rows[-1].append(input_paint(glyph, color))
+        rows[-1].append(paint(glyph, color))
         column += size
-        row_widths[-1] = column
     if cursor is None:
         cursor = (len(rows) - 1, column)
     if boxed and not state.text:
-        hint = clip(placeholder, usable - indent)
-        rows[0].append(paint(hint, "input_hint"))
-        row_widths[0] += display_width(hint)
+        rows[0].append(paint(clip(placeholder, usable - indent), "dim"))
 
     popup = []
     if state.notice and not state.finished:
@@ -378,29 +371,27 @@ def layout(state: EditorState, *, prompt: str, width: int, height: int, paint=_n
             description = clip(item.description, usable - display_width(head))
             popup.append(paint(head, "cyan" if chosen else None) + (paint(description, "dim") if description else ""))
 
-    # Dành chỗ cho padding, footer và ít nhất một dòng nhập. Popup không được đẩy con trỏ khỏi màn hình thấp.
+    # Dành chỗ cho hai đường kẻ, dòng trạng thái, footer và ít nhất một dòng nhập. Popup không được đẩy con trỏ khỏi
+    # màn hình thấp; màn hình quá thấp thì bỏ dần phần trang trí trước, dòng nhập luôn còn.
     budget = max(1, height - 1)
-    padding = 2 if boxed and budget >= 4 + bool(popup) else 0
+    rules = 2 if boxed and budget >= 4 + bool(popup) else 0
     footer_lines = ([paint("  " + clip(clean(footer), usable - 2), "dim")]
-                    if boxed and footer and budget >= padding + 2 else [])
-    popup_space = min(MAX_ITEMS + notice_rows, max(0, budget - padding - len(footer_lines) - 1))
+                    if boxed and footer and budget >= rules + 2 else [])
+    status_text = clip(clean(status), usable) if boxed and status and budget >= rules + len(footer_lines) + 3 else ""
+    status_lines = [paint(" " * (usable - display_width(status_text)) + status_text, "dim")] if status_text else []
+    reserved = rules + len(footer_lines) + len(status_lines)
+    popup_space = min(MAX_ITEMS + notice_rows, max(0, budget - reserved - 1))
     selected_row = notice_rows + (state.selected or 0) if items else 0
     popup_top = min(max(0, selected_row - popup_space + 1), max(0, len(popup) - popup_space))
     popup = popup[popup_top:popup_top + popup_space]
-    available = max(1, budget - padding - len(footer_lines) - len(popup))
+    available = max(1, budget - reserved - len(popup))
     top = 0
     if len(rows) > available:
         top = min(max(0, cursor[0] - available + 1), len(rows) - available)
-    lines = []
-    for index in range(top, min(len(rows), top + available)):
-        row = "".join(rows[index])
-        if boxed:
-            row += paint(" " * max(0, usable - row_widths[index]), "input")
-        lines.append(row)
-    if padding:
-        blank = paint(" " * usable, "input")
-        lines = [blank, *lines, blank]
-    return Frame(lines + popup + footer_lines, cursor[0] - top + padding // 2, cursor[1])
+    lines = ["".join(rows[index]) for index in range(top, min(len(rows), top + available))]
+    rule = [paint("─" * usable, "dim")] if rules else []
+    above = status_lines + rule
+    return Frame(above + lines + rule + popup + footer_lines, cursor[0] - top + len(above), cursor[1])
 
 
 def group_paste(keys: list[Key]) -> list[Key]:
@@ -602,14 +593,15 @@ class LineEditor:
         self._pending: list[Key] = []
         self._boxed = False
         self._footer = ""
+        self._status = ""
 
-    def read(self, prompt: str, paint=_no_paint, *, boxed: bool = False, footer: str = "") -> str:
+    def read(self, prompt: str, paint=_no_paint, *, boxed: bool = False, footer: str = "", status: str = "") -> str:
         """Đọc một lượt nhập. Ctrl+C lúc ô trống ném KeyboardInterrupt như input()."""
         state = self.state
         state.clear()
         self.last_images = []
         self._row = 0
-        self._boxed, self._footer = boxed, footer
+        self._boxed, self._footer, self._status = boxed, footer, status
         result = None
         try:
             with self.console.raw():
@@ -665,7 +657,7 @@ class LineEditor:
     def _draw(self, prompt: str, paint) -> None:
         columns, lines = self.size()
         frame = layout(self.state, prompt=prompt, width=columns, height=lines, paint=paint,
-                       boxed=self._boxed, footer=self._footer)
+                       boxed=self._boxed, footer=self._footer, status=self._status)
         parts = [HIDE_CURSOR]
         if self._row:
             parts.append(f"\033[{self._row}A")

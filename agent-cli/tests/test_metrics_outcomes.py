@@ -113,6 +113,9 @@ def test_task_retry_metrics_accumulate_and_new_task_resets(project):
     work.retry_task()
     assert work.metrics.calls["model"] == 2
     assert work.metrics.usage["model"] == {"input_tokens": 100, "output_tokens": 20, "reported": 1}
+    # Cuối yêu cầu không in chi tiết nữa; /usage mới in, đúng như số đo đã cộng dồn.
+    assert "thiếu số liệu" not in work.ui.text
+    work.show_metrics()
     assert "thiếu số liệu 1 lượt" in work.ui.text
     work.run_task("next")
     assert work.metrics.calls["model"] == 1

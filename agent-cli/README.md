@@ -66,6 +66,13 @@ py -m pip install --user -e C:\duong-dan\Peto-Web\agent-cli
 Nếu Windows báo không tìm thấy lệnh `peto`, thêm thư mục `Scripts` của Python vào PATH, hoặc chạy `py -m peto_agent`. Bản
 cài từ mã nguồn không kèm địa chỉ Peto, nên `peto login` sẽ hỏi địa chỉ, hoặc thêm `--server https://dia-chi-peto`.
 
+Đổi mascot ở đầu phiên: thay `tools/mascot.png` (PNG nền trong suốt) rồi chạy công cụ sinh lại `peto_agent/mascot.py`.
+Công cụ cần Pillow, chỉ dùng khi phát triển; thư mục `tools/` không nằm trong gói cài, và đừng sửa tay `mascot.py`.
+
+```powershell
+.venv\Scripts\python.exe agent-cli\tools\make_mascot.py agent-cli\tools\mascot.png 18
+```
+
 ## Đăng nhập
 
 ```powershell
@@ -89,8 +96,29 @@ cd C:\Projects\website-a
 peto
 ```
 
-Gõ yêu cầu trong khung nền xám trải ngang terminal. Khung trống hiện **Nhờ Peto làm gì đó…**; bên dưới là mức suy nghĩ
-và thư mục đang mở. Khi nhập nhiều dòng, khung tự giãn theo nội dung; tin quá dài được cuộn quanh vị trí con trỏ.
+Màn hình gọn như Claude Code, để phần giữa chỉ còn lời Peto. Đầu phiên là mascot của Peto (chữ Braille có màu, 18 cột
+× 9 dòng) đứng cạnh ba dòng ngắn; cửa sổ hẹp thì chỉ còn ba dòng chữ, terminal tắt màu (`NO_COLOR`) thì mascot còn nét
+chấm không màu:
+
+```text
+ [mascot]   Peto Agent 0.9.5
+ [mascot]   Peto · mức vừa
+ [mascot]   ~\Projects\website-a
+
+                                                  ◉ Peto · vừa
+──────────────────────────────────────────────────────────────
+› Nhờ Peto làm gì đó…
+──────────────────────────────────────────────────────────────
+  còn 193/200 bước · /resume mở hội thoại lúc 14:45 hôm qua
+```
+
+Gõ yêu cầu giữa hai đường kẻ. Phía trên, bên phải là model và mức suy nghĩ đang dùng; phía dưới là số bước còn lại hôm
+nay (cập nhật sau mỗi bước) và lời nhắc `/resume` khi thư mục có hội thoại cũ, tự tắt khi bạn bắt đầu hội thoại mới. Tên
+tài khoản xem bằng `peto status`, các phím tắt và lệnh xem bằng `/help`. Khi nhập nhiều dòng, khung tự giãn theo nội
+dung; tin quá dài được cuộn quanh vị trí con trỏ. Mỗi yêu cầu kết thúc bằng đúng một dòng mờ, ví dụ
+`✓ Xong trong 12 giây · sửa 2 tệp · chạy 1 lệnh · hội thoại 15k token`; thời gian từng phần và token chi tiết xem bằng
+`/usage`, và vẫn ghi đủ trong nhật ký.
+
 Gõ `/` thì danh sách lệnh hiện ngay dưới khung nhập và lọc dần theo chữ bạn gõ:
 
 ```text
@@ -270,7 +298,8 @@ Lịch sử cục bộ vẫn tuân theo giới hạn output ban đầu và cơ c
 
 ### Đo thời gian và token
 
-Cuối yêu cầu hiện riêng thời gian AI/kết nối, chạy lệnh, công cụ khác, tóm tắt và chờ bạn trả lời xin quyền.
+`/usage` hiện riêng thời gian AI/kết nối, chạy lệnh, công cụ khác, tóm tắt và chờ bạn trả lời xin quyền của yêu cầu
+gần nhất (cuối mỗi yêu cầu chỉ in một dòng tổng kết).
 Thời gian AI là đo từ CLI, gồm mạng, hàng đợi và nhận phản hồi; không phải thời gian tính toán riêng trên GPU.
 Các nhóm không tính chồng thời gian chờ quyền/chạy lệnh vào công cụ khác. Tổng thời gian yêu cầu còn có xử lý nội bộ.
 

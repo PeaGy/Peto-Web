@@ -20,19 +20,21 @@ def plain(lines):
     return [SGR.sub("", line) for line in lines]
 
 
-def test_empty_composer_has_full_width_background_placeholder_and_footer():
+def test_empty_composer_has_status_rules_placeholder_and_footer():
+    """Bố cục chủ web chọn theo Claude Code: trạng thái canh phải, đường kẻ trên dưới, không tô nền."""
     ui = UI(out=io.StringIO(), colors=True)
+    status = "◉ Peto · thấp"
     frame = layout(EditorState(), prompt="› ", width=80, height=24, paint=ui.paint,
-                   boxed=True, footer="Peto · mức vừa · ~/Projects/Peto")
-    lines = plain(frame.lines)
-    assert len(lines) == 4
-    assert lines[0] == lines[2] == " " * 79
-    assert lines[1].rstrip() == "› Nhờ Peto làm gì đó…"
-    assert (frame.cursor_row, frame.cursor_col) == (1, 2)
-    assert lines[3] == "  Peto · mức vừa · ~/Projects/Peto"
-    assert all(display_width(line) == 79 for line in lines[:3])
-    assert all("48;5;236" in line for line in frame.lines[:3])
-    assert "48;5;236" not in frame.lines[3], "footer nằm ngoài vùng nền của khung"
+                   boxed=True, footer="còn 193/200 bước", status=status)
+    assert plain(frame.lines) == [
+        " " * (79 - display_width(status)) + status,
+        "─" * 79,
+        "› Nhờ Peto làm gì đó…",
+        "─" * 79,
+        "  còn 193/200 bước",
+    ]
+    assert (frame.cursor_row, frame.cursor_col) == (2, 2)
+    assert not any("48;5;" in line for line in frame.lines), "không còn khung nền xám"
 
 
 @pytest.mark.parametrize("width,height", [(80, 24), (30, 12), (20, 5), (12, 3)])
@@ -41,7 +43,8 @@ def test_composer_cursor_and_content_stay_inside_small_terminal(width, height):
     feed(state, typed("Tiếng Việt 日本語\nhai\nba\nbốn\nnăm"))
     for cursor in (0, 5, len(state.text)):
         state.cursor = cursor
-        frame = layout(state, prompt="› ", width=width, height=height, boxed=True, footer="Peto · mức cao · C:/Projects")
+        frame = layout(state, prompt="› ", width=width, height=height, boxed=True, footer="còn 193/200 bước",
+                       status="◉ Peto · cao")
         assert len(frame.lines) < height
         assert all(display_width(line) < width for line in frame.lines)
         assert 0 <= frame.cursor_row < len(frame.lines)
@@ -82,9 +85,9 @@ def test_boxed_editor_keeps_pasted_text_images_and_cleans_up_before_permission()
     ui.editor = editor
     assert ui.prompt(footer="Peto · mức vừa") == "dòng 1\ndòng 2\ndòng 3\ndòng 4[Ảnh 1]  sửa giúp"
     assert ui.attached == [(1, SHOT)]
-    # Sau lần xóa khung cuối cùng chỉ còn nội dung gửi; không có nền hay footer trong vùng câu hỏi quyền.
+    # Sau lần xóa khung cuối cùng chỉ còn nội dung gửi; không có đường kẻ hay footer trong vùng câu hỏi quyền.
     final_draw = out.getvalue().rsplit("\r\033[J", 1)[-1]
-    assert "48;5;236" not in final_draw and "mức vừa" not in final_draw
+    assert "───" not in final_draw and "mức vừa" not in final_draw
     assert "Nhờ Peto" not in final_draw
     assert ui.ask_permission() == "n"
 

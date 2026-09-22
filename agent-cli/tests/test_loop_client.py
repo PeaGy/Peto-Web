@@ -125,9 +125,9 @@ def test_task_reads_edits_runs_and_summarizes(project, peto):
     assert (project / "README.md").read_bytes() == "# Dự án thử (Peto)\r\nnội dung\r\n".encode()
     assert "Peto › Xong rồi nè." in ui.text
     assert "· xong" in ui.text
-    # Máy bận thì vòng này có thể quá nửa giây, nên không đòi đúng "0 giây".
-    assert re.search(r"  Xong trong \d+ giây · sửa 1 tệp · chạy 1 lệnh · hội thoại 18k token · hôm nay còn 196/200 bước",
-                     ui.text)
+    # Máy bận thì vòng này có thể quá nửa giây, nên không đòi đúng "0 giây". Cuối yêu cầu chỉ còn đúng một dòng:
+    # số bước còn lại nằm dưới ô nhập, chi tiết thời gian và token nằm ở /usage.
+    assert re.search(r"  ✓ Xong trong \d+ giây · sửa 1 tệp · chạy 1 lệnh · hội thoại 18k token\n$", ui.text)
     assert "Peto đang nghĩ" not in ui.text, "không có màu thì không vẽ dòng trạng thái tạm"
     assert all(request["body"]["effort"] == "medium" for request in peto.requests)
     assert all(request["auth"] == "Bearer peto_token_thu" for request in peto.requests)
@@ -260,7 +260,11 @@ def test_commands_usage_and_update_notice(project, peto, monkeypatch):
     notice = (f"Có bản peto mới {newer} (máy này đang dùng {__version__}). Thoát peto rồi chạy lệnh cài để cập nhật:\n"
               f"  irm {peto.url}/install.ps1 | iex\n")
     assert notice in ui.text, "so phiên bản theo từng số"
-    assert f"Peto Agent {__version__} · project · Bình" in ui.text and "/help xem các lệnh" in ui.text
+    # Đầu phiên gọn như Claude Code: không còn tên tài khoản, số bước hay dòng gợi ý phím.
+    header = next(line for line in ui.text.splitlines() if line.startswith("Peto Agent "))
+    assert header.startswith(f"Peto Agent {__version__} · ") and header.endswith("project · Peto · mức vừa")
+    assert "Bình" not in header and "/help xem các lệnh" not in ui.text
+    assert ui.text.count("Thời gian yêu cầu") == 1, "chi tiết thời gian và token chỉ hiện khi gõ /usage"
     assert re.search(r"/effort\s+Xem hoặc đổi mức suy nghĩ: thap, vua, cao", ui.text)
     steps = [request["body"] for request in peto.requests if request["path"] == "/api/agent/step"]
     assert [step["input"][0]["content"] for step in steps] == ["/api/users lỗi 500"], "đường dẫn API không phải lệnh"
@@ -325,7 +329,7 @@ def test_model_command_switches_models_and_remembers_the_choice(project, peto, m
     ui = FakeUI(answers=["/model", "/model terra", "/model Luna", "làm việc", "/effort cao", "/model 5.6 sol",
                          "/usage", "/thoat"])
     assert cli.session(ui) == 0
-    assert "Peto Agent" in ui.text and "· Bình · Peto · mức vừa ·" in ui.text
+    assert "Peto Agent" in ui.text and "project · Peto · mức vừa" in ui.text
     assert "  Model: Peto. Đổi bằng /model peto, /model luna, /model sol." in ui.text
     assert "    sol   5.6 Sol · Mạnh nhất, của OpenAI · tính 4 bước" in ui.text
     assert "Tài khoản này không dùng được model đó." in ui.text
@@ -340,7 +344,7 @@ def test_model_command_switches_models_and_remembers_the_choice(project, peto, m
     again = FakeUI(answers=["/thoat"])
     assert cli.session(again) == 0
     assert "Tài khoản này không còn dùng được model sol nên peto dùng Peto." in again.text
-    assert "· Bình · Peto · mức cao ·" in again.text
+    assert "project · Peto · mức cao" in again.text
 
 
 def test_switching_models_drops_what_only_the_old_model_can_read(project, peto):
@@ -584,3 +588,35 @@ def test_file_mentioned_with_at_is_editable_without_spending_a_read_step(project
     assert "[Tệp đính kèm: README.md · 2 dòng]" in sent and "sửa @README.md giúp mình" in sent
     assert all(item.get("name") != "read_file" for item in session.items), "không tốn bước nào để đọc lại"
     assert "Đính kèm README.md (2 dòng)" in ui.text
+
+
+def test_the_input_line_carries_steps_status_and_resume_until_a_conversation_starts(project, peto, monkeypatch):
+    """Thông tin phụ nằm quanh ô nhập, không chiếm giữa màn hình; lời nhắc /resume tự tắt khi đã có hội thoại mới."""
+    me = {"account": "Bình", "device_name": "MAY-THU", "steps_used": 7, "steps_limit": 200, "default_effort": "low"}
+
+    def reply(path, body):
+        if path == "/api/agent/me":
+            return 200, me
+        return 200, [{"type": "meta", "steps_used": 8, "steps_limit": 200},
+                     {"type": "done", "output": [message("Chào bạn.")]}]
+
+    class Recording(FakeUI):
+        def __init__(self, answers):
+            super().__init__(answers)
+            self.seen = []
+
+        def prompt(self, *, footer="", status=""):
+            self.seen.append((footer, status))
+            return super().prompt()
+
+    peto.reply = reply
+    config.save({"server": peto.url, "token": "peto_token_thu"})
+    monkeypatch.chdir(project)
+    history.save(project.resolve(), normalize_server(peto.url), [{"type": "message", "role": "user", "content": "cũ"}])
+
+    ui = Recording(["xin chào", "/thoat"])
+    assert cli.session(ui) == 0
+    (first_footer, first_status), (second_footer, second_status) = ui.seen
+    assert first_footer.startswith("còn 193/200 bước · /resume mở hội thoại lúc ")
+    assert second_footer == "còn 192/200 bước", "số bước theo máy chủ sau mỗi bước, và hết nhắc /resume"
+    assert first_status == second_status == "◉ Peto · thấp"

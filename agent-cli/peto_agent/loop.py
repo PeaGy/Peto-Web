@@ -47,6 +47,7 @@ chạy; các thư mục chính dùng để làm gì; quy ước code và ngôn n
 INIT_EXISTING = ("Dự án đã có AGENTS.md: đọc trước, giữ những phần còn đúng và chỉ sửa chỗ sai hoặc thiếu bằng "
                  "edit_file.")
 OUTCOME_LABELS = {"done": "Xong trong", "stopped": "Đã dừng sau", "error": "Dừng vì lỗi sau", "limit": "Tạm dừng sau"}
+OUTCOME_MARKS = {"done": "✓", "stopped": "■", "error": "✗", "limit": "■"}
 # Nhãn trên tiêu đề cửa sổ, để người dùng làm việc khác vẫn thấy Peto xong chưa.
 TITLE_LABELS = {"done": "xong", "stopped": "đã dừng", "error": "lỗi", "limit": "tạm dừng"}
 # Yêu cầu lâu hơn ngần này giây thì kêu một tiếng khi xong; việc vài giây thì kêu chỉ tổ ồn.
@@ -273,7 +274,6 @@ class Session:
             return self._compact(metrics, propagate_cancel=propagate_cancel)
         finally:
             if not self._running and metrics.calls["compact"]:
-                self._show_metrics(metrics)
                 self._log("compaction_metrics", metrics=metrics.snapshot())
 
     def _compact(self, metrics, *, propagate_cancel=False):
@@ -496,7 +496,9 @@ class Session:
         self.ui.title(f"Peto · {TITLE_LABELS[outcome]} · {self.ws.root.name}")
         if elapsed >= BELL_AFTER_SECONDS:
             self.ui.bell()
-        parts = [f"{OUTCOME_LABELS[outcome]} {format_duration(elapsed)}"]
+        # Một dòng duy nhất, theo bản phác chủ web chọn ngày 2026-09-22: số bước còn lại đã nằm dưới ô nhập, còn thời
+        # gian từng phần và token chi tiết thì ghi vào nhật ký và xem bằng /usage.
+        parts = [f"{OUTCOME_MARKS[outcome]} {OUTCOME_LABELS[outcome]} {format_duration(elapsed)}"]
         if self.tools.changes:
             parts.append(f"sửa {len(self.tools.changes)} tệp")
         if self.tools.commands:
@@ -509,14 +511,13 @@ class Session:
             parts.append(f"còn {left} việc chưa xong")
         if self.context_tokens:
             parts.append(f"hội thoại {format_tokens(self.context_tokens)} token")
-        if self.steps_used is not None and self.steps_limit is not None:
-            parts.append(f"hôm nay còn {max(0, self.steps_limit - self.steps_used)}/{self.steps_limit} bước")
         self.ui.line("  " + " · ".join(parts), "dim")
-        self._show_metrics(self.metrics)
         self._log("summary", outcome=outcome, seconds=round(elapsed, 1), changes=self.tools.changes,
                   commands=self.tools.commands, metrics=self.metrics.snapshot())
 
-    def _show_metrics(self, metrics):
+    def show_metrics(self, metrics: Metrics | None = None) -> None:
+        """Thời gian từng phần và token của yêu cầu gần nhất, cho /usage; cuối mỗi yêu cầu không in những dòng này."""
+        metrics = metrics or self.metrics
         seconds = metrics.seconds
         self.ui.line(f"  Thời gian yêu cầu · AI/kết nối {seconds['model']:.1f}s · chạy lệnh {seconds['commands']:.1f}s"
                      f" · công cụ khác {seconds['tools']:.1f}s · tóm tắt {seconds['compact']:.1f}s"

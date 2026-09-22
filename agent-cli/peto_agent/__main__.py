@@ -17,8 +17,6 @@ from .loop import Session, TaskLog, format_tokens
 from .ui import UI, enable_vt
 from .workspace import Workspace
 
-HINT_WITH_MENU = "Gõ yêu cầu cho Peto · / chọn lệnh · Alt+V dán ảnh · Ctrl+C dừng yêu cầu"
-HINT_PLAIN = "Gõ yêu cầu cho Peto · /help xem các lệnh · Ctrl+C dừng yêu cầu"
 # Lệnh không nhận gì phía sau; gõ thêm chữ thì nhắc chứ không gửi cả câu cho Peto.
 PLAIN_COMMANDS = {"/thoat", "/exit", "/quit", "/moi", "/help", "/resume", "/usage", "/retry", "/diff", "/undo",
                   "/compact", "/init"}
@@ -54,6 +52,12 @@ def _saved_client(ui: UI) -> Client | None:
     except ValueError as err:
         ui.failure(str(err))
         return None
+
+
+def _steps_text(work: Session) -> str:
+    """Số bước còn lại hôm nay, cập nhật sau mỗi bước theo máy chủ: "193/200"."""
+    limit = int(work.steps_limit or 0)
+    return f"{max(0, limit - int(work.steps_used or 0))}/{limit}"
 
 
 def _steps_left(me: dict) -> str:
@@ -192,6 +196,9 @@ def _usage(ui: UI, work: Session) -> None:
     parts.append(f"{model.get('label') or work.model} · mức {EFFORT_LABELS[work.effort]}" + (f", {note}" if note else ""))
     summary = " · ".join(parts)
     ui.line(f"  {summary[:1].upper()}{summary[1:]}.")
+    # Thời gian từng phần và token của yêu cầu gần nhất: cuối mỗi yêu cầu chỉ in một dòng, chi tiết xem ở đây.
+    if work.metrics.calls["model"]:
+        work.show_metrics()
 
 
 def _resume(ui: UI, work: Session) -> None:
@@ -329,28 +336,38 @@ def session(ui: UI) -> int:
     workspace = Workspace(root)
     if ui.editor is None:
         ui.editor = line_editor.create(ui.out, enable_vt, _suggester(workspace))
-    ui.session_header(__version__, str(root), str(me.get("account") or ""), EFFORT_LABELS[effort], _steps_left(me),
-                      HINT_WITH_MENU if ui.editor is not None else HINT_PLAIN, model=model.get("label") or model["key"])
+    try:
+        folder = str(Path("~") / root.relative_to(Path.home()))
+    except ValueError:
+        folder = str(root)
+    ui.session_header(__version__, folder, model=model.get("label") or model["key"], effort=EFFORT_LABELS[effort])
     _update_notice(ui, client, me)
     saved_model = config.load().get("model")
     if isinstance(saved_model, str) and saved_model != model["key"]:
         ui.line(f"Tài khoản này không còn dùng được model {saved_model} nên peto dùng {model.get('label')}.", "yellow")
     work = Session(client, workspace, ui, log=TaskLog(root.name), effort=effort, model=model["key"],
                    model_step_cost=int(model.get("step_cost") or 1))
+    work.steps_used, work.steps_limit = me.get("steps_used"), me.get("steps_limit")
     ui.title(f"Peto · {root.name}")
     saved = history.load(root, client.server)
-    if saved is not None:
+    # Hội thoại cũ mở lại được: nhắc ở dòng dưới ô nhập thay vì một dòng vàng giữa màn hình. Không có ô nhập (ống
+    # dẫn, input()) thì không có dòng đó, nên in ra như cũ.
+    resume_hint = f"/resume mở hội thoại {history.when(saved.saved_at)}" if saved is not None else ""
+    if resume_hint and ui.editor is None:
         ui.line(f"Có hội thoại {history.when(saved.saved_at)} ({saved.message_count} tin) · gõ /resume để mở lại.",
-                "yellow")
+                "dim")
     try:
         while True:
             try:
-                try:
-                    folder = str(Path("~") / root.relative_to(Path.home()))
-                except ValueError:
-                    folder = str(root)
                 label = next((item.get("label") for item in models if item["key"] == work.model), None) or work.model
-                text = ui.prompt(footer=f"{label} · mức {EFFORT_LABELS[work.effort]} · {folder}").strip()
+                if work.items:
+                    # Phiên đã có hội thoại (vừa hỏi, /init hay /resume): tệp lưu đã hoặc sẽ bị ghi đè, lời nhắc hết đúng.
+                    resume_hint = ""
+                footer = [f"còn {_steps_text(work)} bước"] if work.steps_limit else []
+                if resume_hint:
+                    footer.append(resume_hint)
+                text = ui.prompt(footer=" · ".join(footer),
+                                 status=f"◉ {label} · {EFFORT_LABELS[work.effort]}").strip()
             except (EOFError, KeyboardInterrupt):
                 ui.line()
                 break
