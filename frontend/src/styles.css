@@ -2415,3 +2415,19 @@ button.artifact-name { cursor: pointer; }
 @media (max-width: 520px) {
   .pair-options { grid-template-columns: 1fr; }
 }
+.idle-motion-picker { margin: 16px 0; padding: 16px; border: 1px solid var(--line); border-radius: 16px; background: var(--panel); min-width: 0; }
+.idle-motion-picker h3 { margin: 0; font-size: 15px; }
+.idle-motion-picker p { margin: 8px 0 0; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; line-height: 1.5; }
+.idle-motion-picker select { display: block; width: 100%; min-width: 0; margin-top: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); color: var(--text); font: inherit; text-overflow: ellipsis; }
+.idle-motion-picker select:focus-visible { outline: 2px solid #63bdd0; outline-offset: 2px; }
+.character-motion-error { position: absolute; bottom: 30px; left: 5%; right: 5%; padding: 10px; border-radius: 10px; background: #222e; color: #eee; font-size: 12px; text-align: center; }
+.character-effect-options { margin-top: 16px; border-top: 1px solid var(--line); }
+.character-effect-option { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 0; cursor: pointer; }
+.character-effect-option strong { display: block; font-size: 14px; font-weight: 500; }
+.character-effect-option small { display: block; color: var(--muted); font-size: 12px; line-height: 1.5; margin-top: 4px; }
+.character-effect-option input { flex: 0 0 auto; width: 20px; height: 20px; accent-color: #63bdd0; cursor: pointer; }
+.character-effect-option input:disabled { cursor: default; opacity: .4; }
+.music-vibe-picker { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
+.music-vibe-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.music-vibe-strength { display: flex; flex-direction: column; gap: 8px; margin-top: 16px; font-size: 13px; }
+.music-vibe-strength input { width: 100%; accent-color: #63bdd0; }

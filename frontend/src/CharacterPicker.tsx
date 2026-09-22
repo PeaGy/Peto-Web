@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { characterError, type CharacterFormat } from './characterLibrary';
 import type { CharacterLibrary } from './useCharacters';
+import IdleMotionPicker from './IdleMotionPicker';
 
 export default function CharacterPicker({ library, onClose }: { library: CharacterLibrary; onClose: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null);
@@ -52,6 +53,7 @@ export default function CharacterPicker({ library, onClose }: { library: Charact
       {busy && <p className="character-library-notice" role="status">Đang xử lý model…</p>}
       {(error || library.error) && <p className="character-library-error" role="alert">{error || library.error}</p>}
       {notice && <p className="character-library-notice" role="status">{notice}</p>}
+      {library.selected.format === 'live2d' && <IdleMotionPicker key={library.selected.id} character={library.selected} />}
       <div className="character-library-grid" aria-label="Thư viện nhân vật">
         {library.models.map(model => <article key={model.id} className={`character-card${library.selected.id === model.id ? ' selected' : ''}`}>
           <button className="character-card-art" disabled={busy} aria-label={`Chọn ${model.name}`} aria-pressed={library.selected.id === model.id} onClick={() => { library.select(model.id); setNotice('Đã chọn nhân vật. Đóng cửa sổ này để xem trên sân khấu.'); }}>

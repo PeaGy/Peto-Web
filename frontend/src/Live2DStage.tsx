@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { Application } from "pixi.js";
+import type { Cubism4InternalModel } from 'pixi-live2d-display/cubism4';
 import { CHARACTER } from "./characterConfig";
 import { DEFAULT_CHARACTER, getCharacterAssets, characterThumbnail, type CharacterModel } from './characterLibrary';
 import {
@@ -18,6 +19,9 @@ import {
   type StageBox,
 } from "./characterView";
 import { voiceMouth } from "./voiceActivity";
+import { controlIdle, motionChoices, readIdle, watchIdle } from './live2dMotions';
+import { readEffects, watchEffects, withCharacterEffects } from './characterEffects';
+import { musicPose, stopMusicVibe } from './musicVibe';
 
 let coreReady: Promise<void> | undefined;
 function loadCore() {
@@ -62,6 +66,7 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
   previewRef.current = onPreview;
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [attempt, setAttempt] = useState(0);
+  const [idleError, setIdleError] = useState(false);
 
   useEffect(() => {
     motionRef.current = motion;
@@ -73,8 +78,10 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
     let app: Application | undefined;
     let observer: ResizeObserver | undefined;
     let removeEvents = () => {};
+    let disposeIdle = () => {};
     const objectUrls: string[] = [];
     setStatus("loading");
+    setIdleError(false);
 
     async function start() {
       await loadCore();
@@ -224,12 +231,22 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
         if (event.button === 1 && !compact.matches) event.preventDefault();
       };
 
-      const internal = current.internalModel;
+      const internal = current.internalModel as Cubism4InternalModel;
+      let effects = readEffects(character.id);
+      const unwatchEffects = watchEffects(character.id, value => {
+        effects = value;
+        internal.focusController.focus(0, 0, true);
+      });
+      const idle = controlIdle(internal.motionManager, motionChoices(internal.motionManager.definitions), () => setIdleError(true));
+      idle.select(readIdle(character.id));
+      idle.enable(moving());
+      const unwatchIdle = watchIdle(character.id, value => { setIdleError(false); idle.select(value); });
+      disposeIdle = () => { unwatchEffects(); unwatchIdle(); idle.dispose(); };
       let touchId: number | null = null;
       // Nhìn theo con trỏ ở mọi chỗ trên trang như AIRI. Trên điện thoại, ngón tay đang giữ trên màn hình đóng
       // vai con trỏ; trên máy tính thì chạm dùng để kéo nhân vật nên không tính.
       const onLook = (event: PointerEvent) => {
-        if (!moving()) return;
+        if (!moving() || !effects.cursor) return;
         if (event.pointerType === "touch") {
           if (!compact.matches) return;
           if (event.type === "pointerdown") touchId = event.pointerId;
@@ -248,8 +265,19 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
       const onLookAway = () => internal.focusController.focus(0, 0);
 
       const core = internal.coreModel as { setParameterValueById: (id: string, value: number) => void };
+      const liveCore = internal.coreModel;
+      const beatParameters = ['ParamAngleX', 'ParamAngleY', 'ParamAngleZ'].map(id => {
+        const index = liveCore.getParameterIndex?.(id);
+        return { id, supported: index !== undefined && index >= 0 && index < liveCore.getParameterCount() };
+      });
       let mouth = 0;
       internal.on("beforeModelUpdate", () => {
+        if (moving()) {
+          const pose = musicPose(performance.now());
+          [pose.yaw, pose.pitch, pose.roll].forEach((value, i) => {
+            if (beatParameters[i].supported && value) liveCore.addParameterValueById(beatParameters[i].id, value);
+          });
+        }
         const target = voiceMouth();
         mouth += (target - mouth) * (target > mouth ? 0.7 : 0.45);
         // Ép trạng thái miệng sau motion để model không nói khi âm thanh đang im lặng.
@@ -259,17 +287,20 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
       let still = false;
       let captured = false;
       app.ticker.add(() => {
-        if (moving()) {
-          still = false;
-          current.update(Math.min(app!.ticker.deltaMS, 50));
-        } else {
-          if (!still) {
-            internal.focusController.focus(0, 0, true);
-            still = true;
+        idle.enable(moving());
+        withCharacterEffects(internal, effects, () => {
+          if (moving()) {
+            still = false;
+            current.update(Math.min(app!.ticker.deltaMS, 50));
+          } else {
+            if (!still) {
+              internal.focusController.focus(0, 0, true);
+              still = true;
+            }
+            // Vẫn áp dụng pose và miệng theo âm thanh khi thời gian motion đứng yên.
+            internal.update(0, 0);
           }
-          // Vẫn áp dụng pose (ẩn tư thế tay thay thế) và miệng theo âm thanh, nhưng giữ thời gian motion đứng yên.
-          internal.update(0, 0);
-        }
+        });
         if (!captured && previewRef.current) {
           captured = true;
           try { app!.renderer.render(app!.stage); previewRef.current(character.id, characterThumbnail(canvas)); } catch { /* Ảnh xem trước không chặn model. */ }
@@ -330,8 +361,10 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
     });
     return () => {
       disposed = true;
+      stopMusicVibe();
       observer?.disconnect();
       removeEvents();
+      disposeIdle();
       app?.destroy(true, { children: true, texture: true, baseTexture: true });
       objectUrls.forEach(url => URL.revokeObjectURL(url));
     };
@@ -340,6 +373,7 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
   return <div className="character-stage">
     <div className="character-glow" aria-hidden="true" />
     <div ref={host} className="character-canvas" style={{ visibility: status === "ready" ? "visible" : "hidden" }} />
+    {idleError && <p className="character-motion-error" role="status">Chưa tải được chuyển động. Hãy mở Nhân vật và chọn lại chuyển động.</p>}
     {status !== "ready" && <div className="character-fallback">
       {fallbackUrl ? <img src={fallbackUrl} alt={name} /> : <span>{name.charAt(0)}</span>}
       <p role="status">{status === "loading" ? "Đang đưa nhân vật lên sân khấu…" : "Chưa hiển thị được nhân vật. Bạn vẫn có thể nhắn và nghe Peto."}</p>

@@ -2,6 +2,9 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import Live2DStage from '../src/Live2DStage';
 import { CHARACTER } from '../src/characterConfig';
+import { writeIdle } from '../src/live2dMotions';
+import { writeEffects } from '../src/characterEffects';
+import * as music from '../src/musicVibe';
 
 const mocks = vi.hoisted(() => ({
   from: vi.fn(), destroy: vi.fn(), start: vi.fn(), stop: vi.fn(), tick: null as null | (() => void),
@@ -25,7 +28,12 @@ function fakeModel() {
     position: { x: 0, y: 0, set: vi.fn(function (this: Point, x: number, y: number) { this.x = x; this.y = y; }) },
     destroy: vi.fn(), update: vi.fn(),
     internalModel: { on: vi.fn(), update: vi.fn(), focusController: { focus: vi.fn() },
-      coreModel: { setParameterValueById: vi.fn(), update: vi.fn() } } };
+      updateFocus: vi.fn(), updateNaturalMovements: vi.fn(),
+      motionManager: { definitions: {}, groups: { idle: 'Idle' }, startRandomMotion: vi.fn().mockResolvedValue(true),
+        startMotion: vi.fn().mockResolvedValue(true), loadMotion: vi.fn().mockResolvedValue({}), stopAllMotions: vi.fn() },
+      coreModel: { setParameterValueById: vi.fn(), update: vi.fn(),
+        getParameterIndex: (id: string) => ['ParamAngleX', 'ParamAngleY', 'ParamAngleZ'].indexOf(id),
+        getParameterCount: () => 3, addParameterValueById: vi.fn() } } };
 }
 
 async function mount(motion?: 'system' | 'always') {
@@ -65,6 +73,21 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
+it('nhún theo nhạc cộng vào góc đầu, không ghi đè miệng và tôn trọng giảm chuyển động', async () => {
+  const pose = vi.spyOn(music, 'musicPose').mockReturnValue({ yaw: 3, pitch: -2, roll: 1 });
+  try {
+    const { model, view } = await mount('always');
+    const hook = model.internalModel.on.mock.calls.find(([name]) => name === 'beforeModelUpdate')![1];
+    hook();
+    expect(model.internalModel.coreModel.addParameterValueById).toHaveBeenCalledWith('ParamAngleX', 3);
+    expect(model.internalModel.coreModel.setParameterValueById).toHaveBeenCalledWith('ParamMouthOpenY', 0);
+    view.unmount(); mocks.start.mockClear();
+    const reduced = await mount('system');
+    reduced.model.internalModel.on.mock.calls.find(([name]) => name === 'beforeModelUpdate')![1]();
+    expect(reduced.model.internalModel.coreModel.addParameterValueById).not.toHaveBeenCalled();
+  } finally { pose.mockRestore(); }
+});
+
 it('giảm chuyển động vẫn áp dụng pose và giải phóng renderer khi rời trang', async () => {
   const { model, view } = await mount();
   mocks.tick!();
@@ -79,6 +102,29 @@ it('chọn Luôn cử động thì nhân vật cử động dù thiết bị b�
   mocks.tick!();
   expect(model.update).toHaveBeenCalledWith(33);
   expect(model.internalModel.update).not.toHaveBeenCalled();
+});
+
+it('đổi idle trên sân khấu ngay mà không tải lại model', async () => {
+  const { model } = await mount('always');
+  act(() => writeIdle(CHARACTER.id, 'off'));
+  expect(model.internalModel.motionManager.stopAllMotions).toHaveBeenCalled();
+  expect(await model.internalModel.motionManager.startRandomMotion('Idle', 1)).toBe(false);
+  expect(mocks.from).toHaveBeenCalledTimes(1);
+});
+
+it('tắt theo con trỏ dừng nhìn theo ngay và không dừng idle', async () => {
+  const { model } = await mount('always');
+  const focus = model.internalModel.focusController.focus;
+  act(() => writeEffects(CHARACTER.id, { cursor: false, breath: true, physics: true }));
+  expect(focus).toHaveBeenLastCalledWith(0, 0, true);
+  focus.mockClear();
+  fireEvent(window, pointer('pointermove', 700, 100, 'mouse'));
+  expect(focus).not.toHaveBeenCalled();
+  expect(model.internalModel.motionManager.stopAllMotions).not.toHaveBeenCalled();
+  act(() => writeEffects(CHARACTER.id, { cursor: true, breath: true, physics: true }));
+  focus.mockClear();
+  fireEvent(window, pointer('pointermove', 700, 100, 'mouse'));
+  expect(focus).toHaveBeenCalled();
 });
 
 it('cuộn chuột phóng to quanh con trỏ, bấm đúp về cỡ vừa khung và nhớ góc nhìn', async () => {
