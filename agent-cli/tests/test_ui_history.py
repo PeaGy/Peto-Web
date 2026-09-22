@@ -104,21 +104,55 @@ def test_session_header_puts_the_mascot_beside_three_short_lines():
 
 
 def test_header_picks_the_largest_mascot_that_fits_the_window():
-    """Bảng terminal thấp (VS Code chỉ chừng 17 dòng) dùng hình nhỏ, để lúc mở phần trên của hình không trôi mất."""
+    """Terminal thấp dùng hình nhỏ hơn, để lúc mở phần trên của hình không trôi mất.
+
+    Bảng terminal chừng 13 dòng của VS Code có quả lê thay vì chỉ còn chữ (chủ web đề nghị ngày 2026-09-22).
+    """
     from peto_agent import mascot
     from peto_agent.ui import HEADER_SPARE_ROWS, HEADER_TEXT_MIN
 
-    big, small = mascot.ARTS
+    big, small, pear = mascot.ARTS
 
     def art_rows(width: int, height: int) -> int:
         lines = _plain(_header(width=width, height=height))
         return 0 if lines == TEXT_ONLY else len(lines) - 2
 
+    def just_wide_enough(art) -> int:
+        # UI.width chừa một cột, nên cửa sổ phải rộng hơn một cột so với phép tính.
+        return 1 + len(art[0]) + 3 + HEADER_TEXT_MIN + 1
+
     assert art_rows(100, 40) == len(big)
     assert art_rows(100, len(big) + HEADER_SPARE_ROWS - 1) == len(small)
-    # UI.width chừa một cột, nên cửa sổ phải rộng hơn một cột so với phép tính.
-    assert art_rows(1 + len(small[0]) + 3 + HEADER_TEXT_MIN + 1, 40) == len(small)
-    assert art_rows(100, len(small) + HEADER_SPARE_ROWS - 1) == 0, "thấp quá thì chỉ còn chữ"
+    assert art_rows(100, len(small) + HEADER_SPARE_ROWS - 1) == len(pear)
+    assert art_rows(100, 13) == len(pear), "bảng terminal 13 dòng của VS Code vẫn có quả lê"
+    assert art_rows(100, len(pear) + HEADER_SPARE_ROWS - 1) == 0, "thấp quá thì chỉ còn chữ"
+    assert art_rows(just_wide_enough(small), 40) == len(small)
+    assert art_rows(just_wide_enough(pear), 40) == len(pear)
+    assert art_rows(just_wide_enough(pear) - 1, 40) == 0
+
+
+def test_vscode_terminal_keeps_two_more_columns_free(monkeypatch):
+    """VS Code che chừng hai cột sát mép phải: chữ cuối của dòng trạng thái canh phải từng bị mất ở đó (2026-09-22).
+
+    Chừa cả cho ô nhập lẫn phần ngắt dòng câu trả lời; cỡ truyền thẳng vào UI (như trong test) thì giữ nguyên.
+    """
+    import os
+    import shutil
+
+    from peto_agent import line_editor
+    from peto_agent import ui as display
+
+    monkeypatch.setattr(shutil, "get_terminal_size", lambda fallback=(100, 24): os.terminal_size((120, 30)))
+    monkeypatch.delenv("TERM_PROGRAM", raising=False)
+    assert display.terminal_size() == (120, 30)
+    assert UI(out=io.StringIO(), colors=True).width == 119
+
+    monkeypatch.setenv("TERM_PROGRAM", "vscode")
+    covered = display.VSCODE_COVERED_COLUMNS
+    assert covered >= 2 and display.terminal_size() == (120 - covered, 30)
+    assert UI(out=io.StringIO(), colors=True).width == 119 - covered
+    assert UI(out=io.StringIO(), colors=True, width=120).width == 119
+    assert line_editor.LineEditor(None, io.StringIO()).size() == (120 - covered, 30)
 
 
 def test_header_falls_back_when_the_window_is_narrow_or_colorless():
@@ -141,7 +175,7 @@ def test_mascot_data_is_clean_block_art_from_large_to_small():
     """
     from peto_agent import mascot
 
-    assert [(len(art[0]), len(art)) for art in mascot.ARTS] == [(24, 12), (18, 9)]
+    assert [(len(art[0]), len(art)) for art in mascot.ARTS] == [(24, 12), (18, 9), (6, 6)]
     for art in mascot.ARTS:
         assert {len(row) for row in art} == {len(art[0])}
         for row in art:

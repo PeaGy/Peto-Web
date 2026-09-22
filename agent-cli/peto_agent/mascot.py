@@ -1,11 +1,11 @@
 """Mascot của Peto ở đầu phiên: ký tự khối có màu, mỗi ô là (ký tự, màu chữ, màu nền), màu dạng 0xRRGGBB.
 
-Sinh bằng agent-cli/tools/make_mascot.py từ mascot.png; đừng sửa tay, chạy lại công cụ đó khi đổi ảnh.
+Sinh bằng agent-cli/tools/make_mascot.py từ mascot.png, pear.png; đừng sửa tay, chạy lại công cụ đó khi đổi ảnh.
 Các cỡ xếp từ lớn đến nhỏ; đầu phiên dùng cỡ lớn nhất vừa cửa sổ.
 """
 
 ARTS = (
-    (  # 24 cột × 12 dòng
+    (  # mascot.png, 24 cột × 12 dòng
         ((" ", None, None), (" ", None, None), (" ", None, None), (" ", None, None), (" ", None, None), (" ", None, None), (" ", None, None), (" ", None, None), (" ", None, None), (" ", None, None), (" ", None, None), (" ", None, None), ("▕", 0x803234, 0x190809), ("▖", 0xC3484D, 0x1B090A), (" ", None, None), (" ", None, None), (" ", None, None), (" ", None, None), (" ", None, None), (" ", None, None), (" ", None, None), (" ", None, None), (" ", None, None), (" ", None, None)),
         ((" ", None, None), (" ", None, None), (" ", None, None), (" ", None, None), (" ", None, None), (" ", None, None), (" ", None, None), (" ", None, None), ("▁", 0x080202, None), ("▁", 0x341112, None), ("▃", 0x080101, None), ("▃", 0xB24146, None), ("▃", 0xEB575C, 0x140606), ("▁", 0x9F3A3D, 0x1B090A), ("▁", 0x060000, None), ("▁", 0x0A0404, None), (" ", None, None), (" ", None, None), (" ", None, None), (" ", None, None), (" ", None, None), (" ", None, None), (" ", None, None), (" ", None, None)),
         ((" ", None, None), (" ", None, None), (" ", None, None), ("▁", 0x080202, None), ("▁", 0x060000, None), ("▁", 0x060000, None), ("▂", 0x070101, None), ("▗", 0x96363A, 0x090102), ("▆", 0xE8555A, 0x4F1C1E), ("▔", 0xAC4043, 0xF45A60), ("▆", 0xF3595F, 0x4E1C1E), ("▔", 0xF85C62, 0xF85B61), (" ", None, 0xF85B61), ("▔", 0xE7555A, 0xF85B61), ("▝", 0x0C0202, 0xCF4C51), ("▅", 0xE45459, 0x160607), ("▀", 0x260D0E, 0xD75054), ("▁", 0x401718, None), ("▁", 0x090404, None), (" ", None, None), (" ", None, None), (" ", None, None), (" ", None, None), (" ", None, None)),
@@ -19,7 +19,7 @@ ARTS = (
         (("▊", 0x070101, 0xC0AF9F), ("▝", 0xFFFFFF, 0xFBEAD8), ("▁", 0xFEFDFA, 0xFFFFFF), (" ", None, 0xFFFFFF), (" ", None, 0xFFFFFF), (" ", None, 0xFFFFFF), ("▁", 0xFFFEFD, 0xFFFFFF), ("▗", 0xFAE5CE, 0xFDF8F2), ("▕", 0x2E2623, 0xE1CCB7), ("▋", 0x221D1D, 0x9A8D8F), ("▅", 0x763E48, 0x0C0808), ("▗", 0x7B3F4A, 0x0A0506), ("▅", 0x764C58, 0x0E0607), ("▊", 0x150C0D, 0x50343D), ("▃", 0x96424E, 0x1A181B), ("▗", 0x491E23, 0x0C0606), ("▔", 0xA29D9B, 0x070101), ("▔", 0x534F4F, None), (" ", None, None), (" ", None, None), (" ", None, None), (" ", None, None), (" ", None, None), (" ", None, None)),
         (("▝", 0x090303, None), ("▆", 0x221B18, 0xBFAC9B), ("▀", 0xEFE0D0, 0x0C0605), ("▃", 0x070101, 0xE9E0D7), ("▃", 0x060000, 0xF0E5DB), ("▀", 0xFCF1E5, 0x29211F), ("▀", 0xF1DFCD, 0x0B0505), ("▅", 0x150E0D, 0xD3BFAB), ("▔", 0x3E3430, None), ("▘", 0x3D3939, 0x060000), ("▂", 0x090303, 0x060000), ("▔", 0x40161B, None), ("▔", 0xA73D4B, None), ("▔", 0x2F1013, None), ("▔", 0x130506, 0x080202), ("▅", 0x0A0405, 0x060000), ("▘", 0x070101, None), (" ", None, None), (" ", None, None), (" ", None, None), (" ", None, None), (" ", None, None), (" ", None, None), (" ", None, None)),
     ),
-    (  # 18 cột × 9 dòng
+    (  # mascot.png, 18 cột × 9 dòng
         ((" ", None, None), (" ", None, None), (" ", None, None), (" ", None, None), (" ", None, None), (" ", None, None), (" ", None, None), (" ", None, None), (" ", None, None), ("▊", 0x140606, 0x682527), ("▍", 0x100505, None), (" ", None, None), (" ", None, None), (" ", None, None), (" ", None, None), (" ", None, None), (" ", None, None), (" ", None, None)),
         ((" ", None, None), (" ", None, None), (" ", None, None), (" ", None, None), (" ", None, None), ("▃", 0x0A0202, None), ("▃", 0xCB4A4F, None), ("▃", 0xD14D53, 0x1A0808), ("▅", 0xE05258, 0x2D0F10), ("▆", 0xEA565C, 0x150606), ("▄", 0xB64247, None), ("▂", 0x943539, None), ("▁", 0x6E282A, None), (" ", None, None), (" ", None, None), (" ", None, None), (" ", None, None), (" ", None, None)),
         (("▗", 0x712733, None), ("▄", 0xEC5372, None), ("▅", 0xE44F6F, 0x070102), ("▅", 0xC8455F, 0x240C10), ("▁", 0x7B2C2F, 0x160608), ("▘", 0x1B0808, 0xD45F63), ("▁", 0xF9E3E4, 0xF76268), ("▂", 0x5B3B3C, 0xF85B62), ("▁", 0xF2676B, 0xF85B62), ("▁", 0xF17C80, 0xF85B62), ("▁", 0xF85B63, 0xF85B62), ("▁", 0xF85B65, 0xF85B62), ("▝", 0xB24246, 0xF85B62), ("▖", 0xE05358, 0x1C0809), ("▗", 0xAF3D57, 0x130509), ("▄", 0xDB4B70, None), ("▃", 0xD54874, None), ("▂", 0x8F3147, None)),
@@ -29,5 +29,13 @@ ARTS = (
         ((" ", None, None), ("▕", 0x4F4A4A, 0x100A0A), ("▏", 0xC9C8C8, 0xFFFFFF), ("▔", 0xF8F8F8, 0xFFFFFF), ("▃", 0xFBFBFB, 0x2E2929), ("▂", 0xD8D6D4, 0x231B1C), ("▔", 0xB6B4B5, 0x282424), ("▅", 0x100B0B, 0xDFDEDE), ("▅", 0x1D1616, 0xE9E9E9), ("▀", 0xC5C4C4, 0x220F12), ("▀", 0xD9D8D8, 0x070202), ("▅", 0x191619, 0xE7E6E6), ("▔", 0x9F9A96, 0x1E1516), ("▔", 0x361214, 0x100406), ("▆", 0x30111A, 0xA83D41), ("▗", 0x933957, 0x4F1D28), ("▍", 0x070101, None), (" ", None, None)),
         (("▗", 0xB5A494, 0x0D0706), ("▘", 0xABA6A3, 0xFEFEFC), (" ", None, 0xFFFFFF), (" ", None, 0xFFFFFF), (" ", None, 0xFFFFFF), ("▕", 0xFBEEE0, 0xFFFEFD), ("▋", 0xCCB9A6, 0x080202), ("▍", 0x575353, 0x1A0F11), ("▂", 0x1F1C20, 0x110B0C), ("▍", 0x4E363E, 0x100C0E), ("▂", 0x292A30, 0x0C0809), ("▋", 0x070101, 0x2D1518), ("▝", 0x999087, 0x2A201F), ("▏", 0x645C57, None), ("▝", 0x0D0304, None), ("▔", 0x070001, None), ("▏", 0x060000, None), (" ", None, None)),
         (("▝", 0x61554C, None), ("▀", 0xEDE0D2, 0x241C19), ("▃", 0x1B1412, 0xFCF7F2), ("▃", 0x261E1B, 0xFEF8F2), ("▃", 0x0B0404, 0xF7F0E7), ("▀", 0xEBDBCA, 0x181110), ("▘", 0x71655A, 0x0D0707), ("▔", 0x884047, 0x0B0303), ("▆", 0x110505, 0x552228), ("▅", 0x070101, 0x77333D), ("▆", 0x080101, 0x6F3039), ("▆", 0x070101, 0x200B0C), ("▎", 0x070101, None), (" ", None, None), (" ", None, None), (" ", None, None), (" ", None, None), (" ", None, None)),
+    ),
+    (  # pear.png, 6 cột × 6 dòng
+        ((" ", None, None), (" ", None, None), ("▝", 0x43390F, None), ("▄", 0x484213, None), (" ", None, None), (" ", None, None)),
+        ((" ", None, None), (" ", None, None), ("▃", 0xCFCA5A, None), ("▀", 0x5C510F, 0xF7E30A), ("▖", 0x9F9109, None), (" ", None, None)),
+        ((" ", None, None), ("▁", 0x62580B, None), ("▎", 0x8F840E, 0xFFF62B), ("▂", 0xFDE604, 0xFFF210), ("▌", 0xBAA808, None), (" ", None, None)),
+        (("▗", 0xBF4629, None), ("▂", 0xF8DDCE, 0xD8732F), ("▆", 0xE15846, 0xFDE402), ("▅", 0xE16850, 0xFADD05), ("▖", 0xE4592C, 0xD0B102), ("▂", 0x93800A, None)),
+        (("▂", 0xB68363, 0xC6342F), ("▊", 0x8C342B, 0xFDF4E5), ("▅", 0xF0D3C7, 0xEA5048), ("▎", 0xFAEAD7, 0x9D4540), ("▊", 0xAA2A16, 0xB99902), ("▊", 0x938001, 0x665B19)),
+        (("▝", 0xD9BF7A, None), ("▀", 0xEDD1C6, 0x7A6909), ("▀", 0xCAAFA1, 0x7E6C03), ("▅", 0x8D7B12, 0xF8F1D3), ("▘", 0xBAA82E, 0x7F6E04), ("▀", 0x716209, None)),
     ),
 )

@@ -1,28 +1,28 @@
 """Sinh peto_agent/mascot.py từ ảnh mascot: ký tự khối có màu, chủ web chọn từ ảnh xem trước ngày 2026-09-22.
 
 Chỉ dùng lúc phát triển (cần Pillow); CLI khi chạy chỉ đọc dữ liệu đã sinh nên vẫn thuần thư viện chuẩn, và thư mục
-tools/ không nằm trong wheel. Chạy lại khi đổi ảnh hay đổi cỡ (các cỡ tính theo số cột, từ lớn đến nhỏ):
+tools/ không nằm trong wheel. Đổi ảnh hay cỡ trong SIZES rồi chạy lại:
 
-    .venv/Scripts/python.exe agent-cli/tools/make_mascot.py [ảnh.png] [số cột ...]
+    .venv/Scripts/python.exe agent-cli/tools/make_mascot.py
 
 Mỗi ô chọn một ký tự khối (nửa ô, góc tư, khối 1/8) cùng hai màu sao cho gần ảnh nhất. Windows Terminal và VS Code
 tự vẽ nhóm ký tự U+2580–U+259F thành hình chữ nhật lấp kín ô thay vì lấy từ font, nên máy nào cũng ra như ảnh xem
 trước. Chữ Braille thì ngược lại: chấm lấy từ font, nhỏ và thưa, nên bản Braille trước đó trông vỡ hạt trên terminal
-thật. Phần trong suốt để trống cho màu nền của terminal hiện ra. Nét viền tối được làm dày trước khi thu nhỏ, để còn
-thấy mắt và miệng.
+thật. Phần trong suốt để trống cho màu nền của terminal hiện ra. Nét viền tối của ảnh vẽ tay được làm dày trước khi
+thu nhỏ, để còn thấy mắt và miệng.
 """
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 from PIL import Image, ImageChops, ImageEnhance, ImageFilter
 
 HERE = Path(__file__).resolve().parent
-DEFAULT_IMAGE = HERE / "mascot.png"
 TARGET = HERE.parent / "peto_agent" / "mascot.py"
-DEFAULT_COLUMNS = (24, 18)
+# Các cỡ từ lớn đến nhỏ: (ảnh trong tools/, số cột, có làm dày nét viền không). Hai cỡ đầu là ảnh vẽ tay; quả lê là
+# pixel art sẵn nét viền một điểm ảnh nên giữ nguyên, cỡ 6 cột chủ web chọn cho terminal thấp như bảng của VS Code.
+SIZES = (("mascot.png", 24, True), ("mascot.png", 18, True), ("pear.png", 6, False))
 # Ô terminal cao gấp đôi bề ngang (Windows Terminal đúng 1:2, VS Code hơi cao hơn).
 CELL_ASPECT = 2.0
 # Mỗi ô lấy 8×16 mẫu, đủ mịn cho khối 1/8 theo cả hai chiều.
@@ -58,11 +58,11 @@ def luminance(red: int, green: int, blue: int) -> float:
     return 0.2126 * red + 0.7152 * green + 0.0722 * blue
 
 
-def prepare(path: Path, columns: int) -> Image.Image:
+def prepare(path: Path, columns: int, outline: bool) -> Image.Image:
     """Cắt sát hình, làm dày nét viền theo tỉ lệ thu nhỏ, rồi tăng màu một chút cho khỏi đục khi gộp điểm ảnh."""
     image = Image.open(path).convert("RGBA")
     image = image.crop(image.getbbox())
-    thicken = round(image.width / columns / 8)
+    thicken = round(image.width / columns / 8) if outline else 0
     if thicken:
         pixels = image.load()
         outline = Image.new("L", image.size, 0)
@@ -146,8 +146,8 @@ def fit(samples: list[Sample], shapes: dict[str, list[bool]]) -> Cell:
     return char, pack(fg), pack(bg)
 
 
-def convert(path: Path, columns: int) -> list[list[Cell]]:
-    image = prepare(path, columns)
+def convert(path: Path, columns: int, outline: bool = True) -> list[list[Cell]]:
+    image = prepare(path, columns, outline)
     rows = max(1, round(image.height / image.width * columns / CELL_ASPECT))
     small = image.convert("RGBa").resize((columns * SAMPLES_X, rows * SAMPLES_Y), Image.BOX).convert("RGBA")
     pixels = small.load()
@@ -172,21 +172,22 @@ def convert(path: Path, columns: int) -> list[list[Cell]]:
     return art
 
 
-def render(arts: list[list[list[Cell]]], source: str) -> str:
+def render(arts: list[tuple[str, list[list[Cell]]]]) -> str:
     def value(item: int | None) -> str:
         return "None" if item is None else f"0x{item:06X}"
 
+    sources = ", ".join(dict.fromkeys(source for source, _ in arts))
     lines = [
         '"""Mascot của Peto ở đầu phiên: ký tự khối có màu, mỗi ô là (ký tự, màu chữ, màu nền), màu dạng 0xRRGGBB.',
         "",
-        f"Sinh bằng agent-cli/tools/make_mascot.py từ {source}; đừng sửa tay, chạy lại công cụ đó khi đổi ảnh.",
+        f"Sinh bằng agent-cli/tools/make_mascot.py từ {sources}; đừng sửa tay, chạy lại công cụ đó khi đổi ảnh.",
         "Các cỡ xếp từ lớn đến nhỏ; đầu phiên dùng cỡ lớn nhất vừa cửa sổ.",
         '"""',
         "",
         "ARTS = (",
     ]
-    for art in arts:
-        lines.append(f"    (  # {len(art[0])} cột × {len(art)} dòng")
+    for source, art in arts:
+        lines.append(f"    (  # {source}, {len(art[0])} cột × {len(art)} dòng")
         for line in art:
             cells = ", ".join(f'("{char}", {value(fg)}, {value(bg)})' for char, fg, bg in line)
             lines.append(f"        ({cells}),")
@@ -196,11 +197,9 @@ def render(arts: list[list[list[Cell]]], source: str) -> str:
 
 
 def main() -> None:
-    path = Path(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_IMAGE
-    columns = sorted({int(value) for value in sys.argv[2:]} or DEFAULT_COLUMNS, reverse=True)
-    arts = [convert(path, count) for count in columns]
-    TARGET.write_text(render(arts, path.name), encoding="utf-8")
-    sizes = ", ".join(f"{len(art[0])} cột × {len(art)} dòng" for art in arts)
+    arts = [(name, convert(HERE / name, columns, outline)) for name, columns, outline in SIZES]
+    TARGET.write_text(render(arts), encoding="utf-8")
+    sizes = ", ".join(f"{name} {len(art[0])} cột × {len(art)} dòng" for name, art in arts)
     print(f"Đã ghi {TARGET.name}: {sizes}")
 
 

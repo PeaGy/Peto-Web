@@ -14,9 +14,13 @@ from . import mascot, texmath
 COLORS = {"dim": "2", "bold": "1", "red": "31", "green": "32", "yellow": "33", "blue": "34", "cyan": "36"}
 # Chừa ít nhất ngần này cột cho ba dòng chữ bên phải mascot; cửa sổ hẹp hơn thì bỏ hình, chỉ in chữ.
 HEADER_TEXT_MIN = 30
-# Số dòng cần ngoài hình: hai dòng trống quanh đầu phiên, năm dòng của ô nhập (trạng thái, hai đường kẻ, dòng nhập,
-# dòng dưới) và dòng lệnh vừa gõ. Cửa sổ thấp hơn thì dùng cỡ hình nhỏ hơn, để lúc mở không trôi mất phần trên.
-HEADER_SPARE_ROWS = 8
+# Số dòng cần ngoài hình: hai dòng trống quanh đầu phiên và năm dòng của ô nhập (trạng thái, hai đường kẻ, dòng nhập,
+# dòng dưới). Dòng lệnh vừa gõ được phép trôi lên. Cửa sổ thấp hơn thì dùng cỡ hình nhỏ hơn, để lúc mở không trôi mất
+# phần trên của hình: bảng terminal chừng 13 dòng của VS Code vừa đủ cho quả lê 6×6.
+HEADER_SPARE_ROWS = 7
+# Terminal của VS Code che khoảng hai cột sát mép phải (ngày 2026-09-22 chủ web thấy mất chữ cuối của dòng trạng thái
+# canh phải ở VS Code 1.138; đo trên hai cỡ bảng 157 và 168 cột đều hụt chừng 2,2 cột), nên ở đó chừa thêm chừng ấy cột.
+VSCODE_COVERED_COLUMNS = 2
 MAX_DIFF_LINES = 120
 MAX_OUTPUT_LINES = 8
 PERMISSION_QUESTION = "    Đồng ý? [y] có  [n] không  [a] có cho mọi bước trong yêu cầu này › "
@@ -33,6 +37,16 @@ INLINE_CODE = re.compile(r"(`[^`\n]+`)")
 BOLD = re.compile(r"\*\*(?=\S)(.+?)(?<=\S)\*\*")
 LINK = re.compile(r"\[([^\]\n]+)\]\((https?://[^)\s]+)\)")
 ANSI = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\))")
+
+
+def terminal_size() -> tuple[int, int]:
+    """Cỡ terminal (cột, dòng) dùng được để vẽ: đã trừ các cột sát mép phải mà terminal che mất.
+
+    VS Code tự đặt ``TERM_PROGRAM=vscode`` cho terminal tích hợp của nó.
+    """
+    columns, lines = shutil.get_terminal_size((100, 24))
+    covered = VSCODE_COVERED_COLUMNS if os.environ.get("TERM_PROGRAM") == "vscode" else 0
+    return max(1, columns - covered), lines
 
 
 def cell_width(char: str) -> int:
@@ -130,11 +144,11 @@ class UI:
     @property
     def width(self) -> int:
         # Chừa một cột để dòng trạng thái không tự xuống hàng ở mép phải.
-        return max(20, (self._width or shutil.get_terminal_size((100, 24)).columns) - 1)
+        return max(20, (self._width or terminal_size()[0]) - 1)
 
     @property
     def height(self) -> int:
-        return self._height or shutil.get_terminal_size((100, 24)).lines
+        return self._height or terminal_size()[1]
 
     def _wrapped(self, prefix: str, text: str, color: str | None = None, *, code: bool = False) -> None:
         continuation = " " * max(0, len(prefix) - 2) + "│ " if code else " " * len(prefix)

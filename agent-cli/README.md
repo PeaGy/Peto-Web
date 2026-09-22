@@ -66,12 +66,12 @@ py -m pip install --user -e C:\duong-dan\Peto-Web\agent-cli
 Nếu Windows báo không tìm thấy lệnh `peto`, thêm thư mục `Scripts` của Python vào PATH, hoặc chạy `py -m peto_agent`. Bản
 cài từ mã nguồn không kèm địa chỉ Peto, nên `peto login` sẽ hỏi địa chỉ, hoặc thêm `--server https://dia-chi-peto`.
 
-Đổi mascot ở đầu phiên: thay `tools/mascot.png` (PNG nền trong suốt) rồi chạy công cụ sinh lại `peto_agent/mascot.py`,
-kèm các cỡ theo số cột (mặc định 24 và 18). Công cụ cần Pillow, chỉ dùng khi phát triển; thư mục `tools/` không nằm
-trong gói cài, và đừng sửa tay `mascot.py`.
+Đổi mascot ở đầu phiên: thay ảnh trong `tools/` (PNG nền trong suốt: `mascot.png` cho hai cỡ lớn, `pear.png` cho cỡ
+nhỏ), hoặc sửa danh sách `SIZES` trong công cụ, rồi chạy công cụ sinh lại `peto_agent/mascot.py`. Công cụ cần Pillow,
+chỉ dùng khi phát triển; thư mục `tools/` không nằm trong gói cài, và đừng sửa tay `mascot.py`.
 
 ```powershell
-.venv\Scripts\python.exe agent-cli\tools\make_mascot.py agent-cli\tools\mascot.png 24 18
+.venv\Scripts\python.exe agent-cli\tools\make_mascot.py
 ```
 
 ## Đăng nhập
@@ -98,11 +98,12 @@ peto
 ```
 
 Màn hình gọn như Claude Code, để phần giữa chỉ còn lời Peto. Đầu phiên là mascot của Peto (ký tự khối có màu) đứng cạnh
-ba dòng ngắn. Cửa sổ đủ cao thì hình 24 cột × 12 dòng; cửa sổ thấp như bảng terminal của VS Code thì hình 18 × 9; hẹp
-hoặc thấp hơn nữa, hay terminal tắt màu (`NO_COLOR`), thì chỉ còn ba dòng chữ:
+ba dòng ngắn, cỡ theo cửa sổ: từ 19 dòng là hình 24 cột × 12 dòng, từ 16 dòng là 18 × 9, từ 13 dòng (bảng terminal thấp
+của VS Code) là quả lê 6 × 6. Thấp hơn nữa, hẹp dưới 41 cột, hay terminal tắt màu (`NO_COLOR`), thì chỉ còn ba dòng
+chữ. Trong terminal của VS Code, Peto chừa thêm 2 cột bên phải, vì VS Code che khoảng hai cột sát mép:
 
 ```text
- [mascot]   Peto Agent 0.9.6
+ [mascot]   Peto Agent 0.9.7
  [mascot]   Peto · mức vừa
  [mascot]   ~\Projects\website-a
 

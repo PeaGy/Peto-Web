@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import contextlib
 import os
-import shutil
 import sys
 import unicodedata
 from collections.abc import Callable
@@ -24,6 +23,7 @@ from dataclasses import dataclass
 
 from . import images as image_files
 from .commands import Suggestion, suggestions
+from .ui import terminal_size
 
 SUBMIT, INTERRUPT = "submit", "interrupt"
 MAX_ITEMS = 8
@@ -576,7 +576,7 @@ class WindowsConsole:
 
 
 class LineEditor:
-    def __init__(self, console, out, *, size: Callable[[], tuple[int, int]] = shutil.get_terminal_size,
+    def __init__(self, console, out, *, size: Callable[[], tuple[int, int]] = terminal_size,
                  suggest: Callable[[str], list[Suggestion]] = suggestions,
                  clipboard: Callable[[], list[image_files.Image]] | None = None,
                  files: Callable[[list], list[image_files.Image]] | None = None):
