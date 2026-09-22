@@ -5,4 +5,9 @@ Package: https://www.npmjs.com/package/@nekopaw/tempora
 
 The architecture and initial analyser settings were informed by Project AIRI:
 https://github.com/moeru-ai/airi
-The React interface and integration are written for Peto. No AIRI source is bundled here.
+The React interface and integration are written for Peto.
+beatMotion.ts adapts the sway-sine trajectory and spring from AIRI's
+packages/stage-ui-live2d/src/composables/live2d/beat-sync.ts and motion-manager.ts.
+Copyright (c) 2024-PRESENT Neko Ayaka. See AIRI-LICENSE.txt (MIT).
+Changes: framework-independent offsets, fixed integration substeps, bounded catch-up,
+and integration with Peto's independent character effect controls.

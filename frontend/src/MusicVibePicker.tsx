@@ -2,6 +2,19 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { musicSupported, resetBeatParameters, setBeatParameters, setMusicStrength, startMusicVibe, stopMusicVibe, useMusicVibe } from './musicVibe';
 
+export function BeatIndicator({ beats, lastBeat }: { beats: number; lastBeat: number }) {
+  const [lit, setLit] = useState(false);
+  useEffect(() => {
+    const remaining = 160 - (performance.now() - lastBeat);
+    setLit(beats > 0 && remaining > 0);
+    if (remaining <= 0 || !beats) return;
+    const timer = window.setTimeout(() => setLit(false), remaining);
+    return () => window.clearTimeout(timer);
+  }, [beats, lastBeat]);
+  return <div className="beat-sync-pulse" aria-hidden="true"><span key={beats}
+    data-lit={lit} className={beats ? 'beat-sync-ring' : ''} /></div>;
+}
+
 function BeatSyncPanel({ onClose }: { onClose: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const state = useMusicVibe();
@@ -53,7 +66,7 @@ function BeatSyncPanel({ onClose }: { onClose: () => void }) {
           {Array.from({ length: 40 }, (_, i) => <span key={i} style={{ height: `${Math.max(2, (state.spectrum[i] || 0) * 100)}%` }} />)}
         </div>
         <label>Mức âm thanh <meter aria-label="Mức âm thanh đầu vào" min="0" max="1" value={state.level} /></label>
-        <div className="beat-sync-pulse" aria-hidden="true"><span key={state.beats} className={state.beats ? 'beat-sync-ring' : ''} /></div>
+        <BeatIndicator beats={state.beats} lastBeat={state.lastBeat} />
         <p className="beat-sync-count">Đã nhận <strong>{state.beats}</strong> nhịp</p>
         <p>Biểu đồ chuyển động: có âm thanh. Vòng tròn nháy: đã bắt nhịp. Nếu có nhịp nhưng nhân vật đứng yên, kiểm tra cài đặt giảm chuyển động và tham số góc đầu của model.</p>
       </section>

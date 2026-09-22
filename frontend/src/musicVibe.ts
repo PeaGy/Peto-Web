@@ -1,6 +1,8 @@
 import { useSyncExternalStore } from 'react';
 import { startAnalyser, DEFAULT_ANALYSER_WORKLET_PARAMS, type Analyser, type AnalyserWorkletParameters } from '@nekopaw/tempora';
 import workletUrl from '@nekopaw/tempora/worklet?url';
+import { BeatPulse } from './beatMotion';
+export { BeatPulse } from './beatMotion';
 
 // Match AIRI's less restrictive initial settings; advanced modes remain optional.
 export const DEFAULT_BEAT_PARAMETERS: AnalyserWorkletParameters = {
@@ -27,17 +29,6 @@ export function setBeatParameters(patch: Partial<AnalyserWorkletParameters>) {
 }
 export function resetBeatParameters() { setBeatParameters({ ...DEFAULT_BEAT_PARAMETERS }); }
 
-/** Movement only. Actual beat detection runs in Tempora's AudioWorklet. */
-export class BeatPulse {
-  private last = -Infinity;
-  private side = 1;
-  beat(now: number) { this.last = now; this.side *= -1; }
-  pose(now: number, strength: number) {
-    const elapsed = Math.max(0, now - this.last);
-    const pulse = elapsed < 1400 ? Math.exp(-elapsed / 330) * Math.sin(Math.min(elapsed / 110, Math.PI / 2)) : 0;
-    return { yaw: this.side * pulse * strength * 10, roll: this.side * pulse * strength * 7, pitch: -pulse * strength * 4 };
-  }
-}
 let detector = new BeatPulse();
 let generation = 0;
 let release: (() => void) | undefined;

@@ -2451,4 +2451,8 @@ button.artifact-name { cursor: pointer; }
 .beat-sync-footer { padding: 0 24px 24px; }
 .beat-sync-footer a { display: block; color: inherit; margin-top: 8px; }
 @media (max-width: 640px) { .beat-sync-layout { grid-template-columns: 1fr; padding: 16px; } .beat-sync-monitor { grid-row: 1; } .beat-sync-pulse { height: 100px; } }
-@media (prefers-reduced-motion: reduce) { .beat-sync-ring { animation: none; } .beat-sync-spectrum span { transition: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .beat-sync-ring { animation: none; }
+  .beat-sync-pulse span[data-lit="true"] { opacity: .85; background: #8dd7e5; }
+  .beat-sync-spectrum span { transition: none; }
+}

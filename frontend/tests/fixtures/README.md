@@ -6,7 +6,8 @@ Click **Run PCM verification**. The fixture replaces capture only in this test p
 the production service, mono downmix, real browser AudioWorklet, beat events, movement output,
 and resource cleanup without requesting screen permissions or playing audible sound.
 
-Expected: `PASS`, around 16 beats, nonzero peak yaw, capture stopped. The Beat Sync button also
+Expected: `PASS`, around 16 beats, nonzero peak pitch, visible indicator opacity changes,
+and capture stopped. Hiyori is rendered to preview the nodding motion. The Beat Sync button also
 opens the production panel for desktop/mobile layout checks. These fixtures are not included
 in the production Vite build.
 

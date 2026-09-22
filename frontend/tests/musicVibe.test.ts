@@ -37,12 +37,16 @@ afterEach(() => { stopMusicVibe(); vi.useRealTimers(); vi.unstubAllGlobals(); })
 it('moves on worklet beats and returns to rest after silence', () => {
   const pulse = new BeatPulse();
   pulse.beat(1100);
-  const first = pulse.pose(1200, 1);
-  expect(Math.abs(first.yaw)).toBeGreaterThan(1);
-  pulse.beat(1700);
-  expect(Math.sign(pulse.pose(1800, 1).yaw)).toBe(-Math.sign(first.yaw));
-  expect(pulse.pose(4000, 1).yaw).toBe(0);
-  expect(pulse.pose(1800, 0).pitch).toBe(-0);
+  pulse.beat(1600);
+  const first = pulse.pose(1750, 1);
+  expect(first.pitch).toBeLessThan(-1);
+  expect(first.yaw).toBe(0);
+  pulse.beat(2100);
+  for (let t = 2100; t < 2700; t += 16) pulse.pose(t, 1);
+  expect(pulse.pose(2700, 1).pitch).toBeGreaterThan(1);
+  for (let t = 2700; t < 7000; t += 16) pulse.pose(t, 1);
+  expect(Math.abs(pulse.pose(7000, 1).pitch)).toBeLessThan(0.01);
+  expect(pulse.pose(7010, 0).roll).toBe(0);
 });
 it('stops every track and the audio context when disabled', async () => {
   const stream = media(); capture.mockResolvedValue(stream);
