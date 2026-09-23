@@ -2535,7 +2535,8 @@ button.artifact-name { cursor: pointer; }
 .companion .character-fallback { right: auto; width: 100cqw; box-sizing: border-box; pointer-events: none; }
 .companion .character-fallback button { pointer-events: auto; }
 .companion > .scene-backdrop { z-index: -1; }
-.companion-stage { padding: 0; }
+.companion-stage { position: absolute; inset: 0; padding: 0; }
+.companion-panel { grid-column: 2; }
 .character-canvas { inset: 0; }
 .companion-panel { position: relative; z-index: 1; margin: 22px 20px 76px 0; border: 1px solid var(--stage-line); border-radius: 22px; overflow: hidden; background: var(--stage-surface); color: var(--stage-text); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); box-shadow: 0 16px 50px #0003; }
 .companion-head { border-color: var(--stage-line); }
