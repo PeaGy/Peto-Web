@@ -32,7 +32,7 @@ import ai_models
 import auth
 import db
 from agent_install import cli_version
-from agent_tools import TOOL_SCHEMAS
+from agent_tools import FEATURES, tool_schemas
 from ai.agent import agent_step
 from attachments import sniff_image_mime
 from ai.base import ProviderError
@@ -376,6 +376,14 @@ def _parse_step(raw: bytes) -> tuple[list[dict], dict, str]:
     return items, context if isinstance(context, dict) else {}, effort, model
 
 
+def _features(context: dict) -> frozenset[str]:
+    """Khả năng CLI khai báo, ví dụ "cwd". CLI cũ không gửi gì nên nhận schema cũ; tên lạ thì bỏ qua."""
+    value = context.get("features")
+    if not isinstance(value, list) or len(value) > 32:
+        return frozenset()
+    return frozenset(item for item in value if isinstance(item, str) and item in FEATURES)
+
+
 def _instructions(context: dict, web_search: bool) -> str:
     def short(value) -> str:
         return " ".join(str(value or "").split())[:80] or "không rõ"
@@ -443,7 +451,7 @@ async def step(request: Request, device: dict = Depends(device_auth)):
             async with admission.slot(f"agent:{owner}"):
                 async with asyncio.timeout(AGENT_STEP_TIMEOUT_SECONDS):
                     async for event in agent_step(instructions=instructions, input_items=items,
-                                                  tools=[] if compacting else TOOL_SCHEMAS,
+                                                  tools=[] if compacting else tool_schemas(_features(context)),
                                                   effort=effort, model=model.key, web_search=searching):
                         if not produced:
                             first_at = time.monotonic()

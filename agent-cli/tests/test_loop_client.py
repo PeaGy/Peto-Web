@@ -620,3 +620,77 @@ def test_the_input_line_carries_steps_status_and_resume_until_a_conversation_sta
     assert first_footer.startswith("còn 193/200 bước · /resume mở hội thoại lúc ")
     assert second_footer == "còn 192/200 bước", "số bước theo máy chủ sau mỗi bước, và hết nhắc /resume"
     assert first_status == second_status == "◉ Peto · thấp"
+
+
+def test_progress_is_saved_after_every_step_so_closing_the_window_loses_nothing(project, peto):
+    """Đóng cửa sổ giữa yêu cầu thì Windows tắt Python và khối finally không chạy, nên bản lưu phải có sẵn từng bước.
+
+    Lệnh gọi công cụ chưa xong được lưu với kết quả "bị ngắt", để bước sau /resume vẫn hợp lệ với model.
+    """
+    from peto_agent.loop import INTERRUPTED_RESULT
+
+    work, ui = start(project, peto, ["y", "y"])
+    saved_at_question = []
+    answer = ui.reader
+
+    def reader(prompt):
+        saved_at_question.append(history.load(project, peto.url))
+        return answer(prompt)
+
+    ui.reader = reader
+    work.run_task("Sửa README giúp mình")
+    at_edit, at_command = saved_at_question
+    for saved in (at_edit, at_command):
+        assert saved.interrupted
+        assert_every_call_has_output(saved.items)
+        assert json.loads(saved.items[-1]["output"]) == INTERRUPTED_RESULT
+    assert "# Dự án thử" in json.loads(at_edit.items[3]["output"])["content"], "kết quả thật của lượt đọc đã có"
+    assert json.loads(at_command.items[6]["output"])["ok"], "lúc hỏi chạy lệnh thì bản sửa đã được lưu"
+
+    final = history.load(project, peto.url)
+    assert not final.interrupted and final.items == work.items, "xong yêu cầu thì bản lưu cuối không còn cờ bị ngắt"
+
+
+def test_resuming_a_request_cut_by_a_closed_window_says_so_and_shows_the_plan(project, peto):
+    from peto_agent.loop import INTERRUPTED_RESULT
+
+    work, ui = start(project, peto, [])
+    items = [{"type": "message", "role": "user", "content": "Sửa lỗi đăng nhập"},
+             call(0, "update_plan", steps=[{"title": "Đọc code", "status": "done"},
+                                           {"title": "Sửa lỗi", "status": "running"}]),
+             {"type": "function_call_output", "call_id": "call_0", "output": json.dumps({"ok": True})},
+             call(1, "edit_file", path="a.py", old_text="x", new_text="y"),
+             {"type": "function_call_output", "call_id": "call_1", "output": json.dumps(INTERRUPTED_RESULT)}]
+    history.save(project, peto.url, items, interrupted=True)
+    saved = history.load(project, peto.url)
+    assert cli._resume_hint(saved).startswith("/resume làm tiếp yêu cầu bị ngắt lúc ")
+
+    cli._resume(ui, work)
+    assert work.items == items
+    assert "☑ Đọc code" in ui.text and "▶ Sửa lỗi" in ui.text
+    assert "Yêu cầu cuối bị ngắt giữa chừng" in ui.text and '"làm tiếp"' in ui.text
+
+    history.save(project, peto.url, items)
+    assert cli._resume_hint(history.load(project, peto.url)).startswith("/resume mở hội thoại lúc "), \
+        "bản lưu lúc xong yêu cầu thì nhắc như cũ"
+    assert history.last_plan([call(2, "update_plan", steps="hỏng")]) == []
+
+
+def test_each_step_tells_the_server_which_new_tool_parameters_this_cli_understands(project, peto):
+    """Máy chủ chỉ thêm cwd vào schema khi CLI khai báo; CLI cũ không gửi gì nên không nhận tham số lạ."""
+    work, ui = start(project, peto, ["y", "y"])
+    work.run_task("Sửa README giúp mình")
+    steps = [request["body"] for request in peto.requests if request["path"] == "/api/agent/step"]
+    assert steps and all(body["context"]["features"] == ["cwd"] for body in steps)
+
+
+def test_note_command_writes_agents_md_without_calling_the_model(project, peto, monkeypatch):
+    me = {"account": "Bình", "device_name": "MAY-THU", "steps_used": 7, "steps_limit": 200, "default_effort": "low"}
+    peto.reply = lambda path, body: (200, me) if path == "/api/agent/me" else demo_reply(path, body)
+    config.save({"server": peto.url, "token": "peto_token_thu"})
+    monkeypatch.chdir(project)
+    ui = FakeUI(["/nhớ chạy test bằng python -m pytest", "/nho", "/thoat"])
+    assert cli.session(ui) == 0
+    assert (project / "AGENTS.md").read_text(encoding="utf-8") == "## Ghi nhớ\n\n- chạy test bằng python -m pytest\n"
+    assert "Gõ /nho kèm điều Peto cần nhớ" in ui.text
+    assert not any(request["path"] == "/api/agent/step" for request in peto.requests), "/nho không tốn bước nào"

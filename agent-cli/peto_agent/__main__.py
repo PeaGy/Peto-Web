@@ -213,9 +213,22 @@ def _resume(ui: UI, work: Session) -> None:
     ui.success(f"Đã mở lại hội thoại {history.when(saved.saved_at)}:")
     for who, text in history.recap(saved.items):
         ui.line(f"    {who} › {text}", "dim")
+    if saved.interrupted:
+        # Bản lưu giữa yêu cầu: Peto bị đóng khi đang làm. Danh sách việc cho biết đã tới đâu.
+        plan = history.last_plan(saved.items)
+        if any(step["status"] != "done" for step in plan):
+            ui.plan(plan)
+        ui.line('  Yêu cầu cuối bị ngắt giữa chừng (cửa sổ đóng hoặc máy tắt). Gõ "làm tiếp" để Peto làm nốt.', "yellow")
     ui.line("  Peto không chạy lại lệnh nào; muốn sửa tệp thì sẽ đọc lại tệp trước.", "dim")
     if work.can_retry:
         ui.line("  Hội thoại này bị gián đoạn kết nối. Gõ /retry để thử lại bước chưa xong.", "yellow")
+
+
+def _resume_hint(saved: history.Saved) -> str:
+    """Lời nhắc dưới ô nhập khi thư mục có hội thoại mở lại được."""
+    if saved.interrupted:
+        return f"/resume làm tiếp yêu cầu bị ngắt {history.when(saved.saved_at)}"
+    return f"/resume mở hội thoại {history.when(saved.saved_at)}"
 
 
 def login(ui: UI, server_arg: str | None) -> int:
@@ -352,10 +365,13 @@ def session(ui: UI) -> int:
     saved = history.load(root, client.server)
     # Hội thoại cũ mở lại được: nhắc ở dòng dưới ô nhập thay vì một dòng vàng giữa màn hình. Không có ô nhập (ống
     # dẫn, input()) thì không có dòng đó, nên in ra như cũ.
-    resume_hint = f"/resume mở hội thoại {history.when(saved.saved_at)}" if saved is not None else ""
+    resume_hint = _resume_hint(saved) if saved is not None else ""
     if resume_hint and ui.editor is None:
-        ui.line(f"Có hội thoại {history.when(saved.saved_at)} ({saved.message_count} tin) · gõ /resume để mở lại.",
-                "dim")
+        if saved.interrupted:
+            ui.line(f"Yêu cầu {history.when(saved.saved_at)} bị ngắt giữa chừng · gõ /resume để làm tiếp.", "yellow")
+        else:
+            ui.line(f"Có hội thoại {history.when(saved.saved_at)} ({saved.message_count} tin) · gõ /resume để mở lại.",
+                    "dim")
     try:
         while True:
             try:
@@ -399,6 +415,9 @@ def session(ui: UI) -> int:
                      "/init": work.init_guide}[name]()
                 except (KeyboardInterrupt, EOFError):
                     ui.line("Đã dừng.", "dim")
+                continue
+            if name == "/nho":
+                work.note(value)
                 continue
             if name == "/permissions":
                 if value not in {"", "clear"}:

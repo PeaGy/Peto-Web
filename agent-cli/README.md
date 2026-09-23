@@ -103,7 +103,7 @@ của VS Code) là quả lê 6 × 6. Thấp hơn nữa, hẹp dưới 41 cột, 
 chữ. Trong terminal của VS Code, Peto chừa thêm 2 cột bên phải, vì VS Code che khoảng hai cột sát mép:
 
 ```text
- [mascot]   Peto Agent 0.9.7
+ [mascot]   Peto Agent 0.9.8
  [mascot]   Peto · mức vừa
  [mascot]   ~\Projects\website-a
 
@@ -134,7 +134,10 @@ nào được chọn, nên Enter không tự chạy gì. Các lệnh:
 
 - `/moi`: bắt đầu hội thoại mới.
 - `/resume`: mở lại hội thoại gần nhất của thư mục này, kể cả sau khi đã thoát. Không lệnh nào được chạy lại, và muốn
-  sửa tệp thì Peto phải đọc lại tệp trước. Mở `peto` ở thư mục có hội thoại cũ sẽ có dòng nhắc.
+  sửa tệp thì Peto phải đọc lại tệp trước. Mở `peto` ở thư mục có hội thoại cũ sẽ có dòng nhắc. Hội thoại được lưu
+  sau từng bước, nên lỡ đóng cửa sổ hay tắt máy khi Peto đang làm thì lần mở sau dòng nhắc thành
+  `/resume làm tiếp yêu cầu bị ngắt …`. Mở lại sẽ thấy danh sách việc còn dở; gõ "làm tiếp" để Peto làm nốt. Công cụ
+  đang chạy dở lúc đóng được ghi là bị ngắt, nên Peto kiểm tra lại tệp trước khi làm tiếp.
 - `/retry`: thử lại bước bị gián đoạn kết nối, dùng kết quả các bước đã hoàn tất. Không tự phát lại lệnh hay thao tác
   sửa tệp cũ; thao tác mới vẫn hỏi quyền. Nếu đã thoát thì `/resume` trước, rồi `/retry`.
 - `/diff`: xem bản sửa/ghi tệp trực tiếp gần nhất đã lưu cho dự án. Diff dài có thể xem tiếp bằng `v`.
@@ -149,11 +152,15 @@ nào được chọn, nên Enter không tự chạy gì. Các lệnh:
   Xóa và đổi tên do Peto làm bằng công cụ thì thuộc bản hoàn tác; thay đổi do lệnh terminal thì không. Nếu lỗi ổ đĩa
   xảy ra giữa chừng, những tệp chưa khôi phục vẫn được giữ trong bản nhớ để kiểm tra lại; không có giao dịch nguyên
   khối nhiều tệp.
-- `/permissions`: xem lệnh được ghi nhớ trong phiên; `/permissions clear` thu hồi tất cả. Quyền không lưu xuống đĩa
-  và bị xóa khi `/moi` hoặc `/resume`.
+- `/permissions`: xem lệnh đã nhớ trong phiên (`s`) và lệnh luôn cho phép ở dự án này (`l`); `/permissions clear`
+  thu hồi cả hai. Lệnh nhớ trong phiên mất khi `/moi` hoặc `/resume`; lệnh luôn cho phép thì còn tới khi bạn xóa.
 - `/init`: Peto xem qua dự án (cấu trúc thư mục được gửi sẵn trong yêu cầu, khỏi tốn một bước), đọc README cùng các tệp
   cấu hình rồi viết `AGENTS.md` ở gốc dự án. Đây là một yêu cầu bình thường nên tốn vài bước, và bản ghi tệp vẫn hiện
   diff để bạn đồng ý. Dự án đã có `AGENTS.md` thì Peto đọc trước và chỉ sửa chỗ sai hoặc thiếu.
+- `/nho <ghi chú>`: ghi một điều Peto cần nhớ về dự án vào mục `## Ghi nhớ` của `AGENTS.md` ở gốc (chưa có mục hay
+  chưa có tệp thì tạo), ví dụ `/nho chạy test bằng python -m pytest`. Ghi ngay trên máy, không gọi model nên không tốn
+  bước nào; Peto đọc `AGENTS.md` ở mọi bước nên nhớ từ yêu cầu tiếp theo. Dòng này không nằm trong bản `/undo`: muốn bỏ
+  thì sửa `AGENTS.md`.
 - `/compact`: tóm tắt phần hội thoại cũ, giữ các bước gần nhất và yêu cầu gần nhất nằm trong phần được tóm tắt.
   Peto cũng tự tóm tắt giữa các bước khi lịch sử đạt 180 mục hoặc khoảng 200.000 ký tự chữ. Tóm tắt dùng một lượt
   gọi model ở mức suy nghĩ thấp, vẫn tính bước theo model và token như bình thường. Cần cập nhật cả VPS và CLI.
@@ -243,6 +250,10 @@ mới nhất (ở terminal đủ rộng); khi xong hiện tối đa 8 dòng outp
 - `s` (chỉ khi chạy lệnh): đồng ý và ghi nhớ **đúng chuỗi lệnh, thư mục, thời hạn** trong phiên. Không phải quyền theo
   tiền tố: `npm test` không cấp quyền cho `npm test && ...` hay lệnh có tham số khác. Script mà lệnh gọi vẫn có thể
   thay đổi theo nội dung dự án; chỉ ghi nhớ lệnh bạn tin tưởng.
+- `l` (chỉ khi chạy lệnh): luôn cho phép **đúng chuỗi lệnh đó, ở đúng thư mục chạy và shell đó, trong dự án này**, kể cả
+  ở các phiên sau. Lần sau lệnh chạy luôn và CLI in một dòng mờ báo đã được cho phép. Thời hạn không tính vào, vì nó chỉ
+  là mức trần và Ctrl+C vẫn dừng được lệnh. Quyền lưu trong `%APPDATA%\PetoAgent\permissions.json` trên máy bạn, **không
+  bao giờ đọc từ thư mục dự án**, để một repo tải về không thể kèm sẵn tệp cấp quyền. Xem và xóa bằng `/permissions`.
 
 ### Tìm web
 
@@ -348,9 +359,12 @@ không bao giờ bị đổi, và hội thoại gửi lại cho Peto vẫn là c
   thì hiện đường dẫn cũ và mới. Cả hai đi qua bản nhớ hoàn tác nên `/undo` lấy lại được, khác với xóa bằng lệnh
   terminal. Peto chỉ xóa được tệp chữ đọc được (không phải thư mục, tệp nhị phân hay tệp trên 1 MB), vì bản hoàn tác
   phải giữ được nội dung; đích của đổi tên phải là chỗ chưa có tệp.
-- **Chạy lệnh:** chạy trong thư mục dự án bằng `cmd`, hoặc bằng PowerShell khi lệnh cần cmdlet hay biến `$env:` (ô hỏi
-  ghi rõ `PS>`). Mặc định dừng sau 120 giây (tối đa 600). Lệnh test cũng chạy code nằm trong dự án, nên hãy xem kỹ các
-  thay đổi trước khi đồng ý chạy. Lệnh nền không có thời hạn nhưng bị dừng khi bạn đóng peto.
+- **Chạy lệnh:** chạy ở gốc dự án, hoặc trong một thư mục con có thật của dự án khi lệnh thuộc về đó (ví dụ `frontend`
+  có `package.json` riêng; ô hỏi ghi rõ thư mục). Thư mục ngoài dự án hay `.git` bị từ chối. Chạy bằng `cmd`, hoặc bằng
+  PowerShell khi lệnh cần cmdlet hay biến `$env:` (ô hỏi ghi rõ `PS>`). Mặc định dừng sau 120 giây (tối đa 600). Lệnh
+  test cũng chạy code nằm trong dự án, nên hãy xem kỹ các thay đổi trước khi đồng ý chạy. Lệnh nền không có thời hạn
+  nhưng bị dừng khi bạn đóng peto, kể cả khi đóng hẳn cửa sổ terminal. Chạy lệnh trong thư mục con cần VPS và CLI từ
+  bản 0.9.8; CLI cũ hơn vẫn nhận công cụ như trước.
 - **Giới hạn bước:** mỗi yêu cầu tối đa 40 bước; mỗi tài khoản có số bước mỗi ngày do máy chủ đặt (mặc định 200). Ở mức
   suy nghĩ cao, mỗi bước tính 2; với 5.6 Terra nhân thêm 2, với 5.6 Sol nhân thêm 4.
 
@@ -362,8 +376,9 @@ thoại; nó chỉ lưu tên máy, mã băm của token và số bước đã d�
 muốn gửi đi.
 
 Để `/resume` hoạt động, hội thoại gần nhất của mỗi thư mục được lưu trên chính máy bạn ở
-`%LOCALAPPDATA%\PetoAgent\sessions\`, gồm cả nội dung tệp Peto đã đọc, output lệnh và các ảnh còn giữ trong hội thoại. Tệp không dùng quá 30 ngày được tự
-xóa; gỡ Peto Agent cũng xóa thư mục này.
+`%LOCALAPPDATA%\PetoAgent\sessions\` sau từng bước, gồm cả nội dung tệp Peto đã đọc, output lệnh và các ảnh còn giữ
+trong hội thoại. Tệp không dùng quá 30 ngày được tự xóa; gỡ Peto Agent cũng xóa thư mục này. Lệnh "luôn cho phép" nằm
+ở `%APPDATA%\PetoAgent\permissions.json`, cạnh `config.json`.
 
 ## Thử trên máy
 

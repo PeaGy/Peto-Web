@@ -155,6 +155,10 @@ class UI:
         for index, part in enumerate(wrap_cells(text, max(1, self.width - len(prefix)), words=not code)):
             self.line((prefix if index == 0 else continuation) + part, color)
 
+    def item(self, text: str) -> None:
+        """Một mục mờ trong danh sách (như /permissions), ngắt theo bề ngang terminal thay vì để terminal tự bẻ chữ."""
+        self._wrapped("    ", visible(text), "dim")
+
     def _rule(self) -> None:
         if self.terminal:
             self.line("  " + "─" * max(1, self.width - 4), "dim")
@@ -435,23 +439,29 @@ class UI:
         else:
             self.failure(f"{summary} · mã thoát {result['exit_code']}")
 
-    def ask_permission(self, *, allow_session: bool = False) -> str:
-        """Hỏi y/n/a. Hết đầu vào (EOF) thì coi như không đồng ý."""
+    def ask_permission(self, *, allow_session: bool = False, allow_always: bool = False) -> str:
+        """Hỏi y/n/a; lệnh chạy thì thêm [s] (nhớ trong phiên) và [l] (luôn cho phép ở dự án này).
+
+        Hết đầu vào (EOF) thì coi như không đồng ý.
+        """
         self.clear_status()
         waiting = self._title
         self.title("Peto · cần bạn duyệt")
         self.bell()
         try:
-            return self._ask(allow_session)
+            return self._ask(allow_session, allow_always)
         finally:
             self.title(waiting)
 
-    def _ask(self, allow_session: bool) -> str:
+    def _ask(self, allow_session: bool, allow_always: bool = False) -> str:
+        choices = ["y", "n", "a"] + (["s"] if allow_session else []) + (["l"] if allow_always else [])
+        extras = (["[s] nhớ lệnh này trong phiên"] if allow_session else []) + \
+                 (["[l] luôn cho phép ở dự án này"] if allow_always else [])
         while True:
             try:
                 question = PERMISSION_QUESTION
-                if allow_session:
-                    question = "    [s] nhớ đúng lệnh này trong phiên · " + question.strip()
+                if extras:
+                    question = "    " + "  ".join(extras) + " · " + question.strip()
                 if self._diff_position < len(self._diff_rows):
                     question = "    [v] xem thêm diff · " + question.strip()
                 if self.terminal:
@@ -465,10 +475,10 @@ class UI:
             if answer == "v" and self._diff_position < len(self._diff_rows):
                 self._show_diff_page()
                 continue
-            if answer in ({"y", "n", "a", "s"} if allow_session else {"y", "n", "a"}):
+            if answer in choices:
                 self._diff_rows = []
                 return answer
-            self.line("    Gõ y, n, a hoặc s nhé." if allow_session else "    Gõ y, n hoặc a nhé.", "yellow")
+            self.line(f"    Gõ {', '.join(choices[:-1])} hoặc {choices[-1]} nhé.", "yellow")
 
     def prompt(self, *, footer: str = "", status: str = "") -> str:
         """Ô nhập: ``status`` canh phải phía trên đường kẻ, ``footer`` mờ phía dưới. Không có ô nhập thì dùng reader."""

@@ -547,6 +547,16 @@ results in the next step. The server stores no conversation (`store=False`), and
 - **`/init`** builds an ordinary request (`loop.init_guide`) that asks for an `AGENTS.md`, with the local file listing
   already attached so the first step does not spend one on `list_files`. It costs several steps and every write still
   asks the user; an existing `AGENTS.md` is read and amended, not overwritten blindly.
+- **`/nho <ghi chú>`** (`Session.note`, `project_guide.add_note`) adds `- ghi chú` under `## Ghi nhớ` in the root
+  `AGENTS.md`. The heading is created, and so is the file, when missing. The note ends before the next level-1/2
+  heading, and the file keeps its CRLF/BOM. It is the "project memory" idea done with the standard file instead of a
+  private `.peto/` folder.
+  - It writes locally and never calls the model, so it costs no step. The user typed the text, so it asks nothing.
+  - It stays out of the undo checkpoint, so `/undo` still means Peto's last edit.
+  - Afterwards `seen_guides["AGENTS.md"]` is set to the new digest. The next step carries the new root guide, and
+    without this the next edit would stop on a `GuideUpdate` and waste a step.
+  - The read digest of `AGENTS.md` is dropped, so Peto must `read_file` it before editing it itself.
+  - Notes are capped at 500 characters, and the guide at `MAX_GUIDE_CHARS`.
 - **xAI failures are logged, not shown.** `ai/agent.py` logs the reason xAI gives (HTTP errors, `error` /
   `response.failed` / `response.incomplete` stream events), clipped to 500 characters and without conversation content.
   Users still get the Vietnamese `ProviderError`. Authentication errors log only the status, since their message can
@@ -570,6 +580,25 @@ results in the next step. The server stores no conversation (`store=False`), and
   - `.env*`, keys and `.git` are never read or written.
   - An edit needs a prior `read_file`, an exact unique match and an unchanged file, and keeps CRLF/BOM.
   - Every edit, write, delete, rename and command asks `[y/n/a]`, where `a` lasts for the current request only.
+    Commands (`run_command` and `start_command`, through `Tools._approve_command`) also offer `s` (this exact command,
+    folder, timeout and shell, for the session) and `l` (this exact command, folder and shell, always, in this project).
+  - `l` grants live in `approvals.py`, in `permissions.json` next to `config.json` in the user's profile, keyed by the
+    normcased project root. This is the "loosen permissions gradually" item `PETO_AGENT_PLAN.md` left open (added
+    2026-09-23 after the owner asked to weigh ChatGPT's `.peto/permissions.json` idea). **Never read grants from the
+    project folder**: a downloaded repo could ship a file that pre-approves commands. Matching is exact, with no
+    wildcard or prefix matching, so `npm test && …` never rides on `npm test`. The timeout is left out of the key: it
+    is only a cap, Ctrl+C still stops the command, and the model varies it between runs. A command that runs on an `l`
+    grant prints a dim line saying so. `/permissions` lists both kinds, and `/permissions clear` drops both.
+  - Commands take an optional `cwd`: an existing folder inside the project, resolved like any path, so outside
+    folders and `.git` are refused. It was added because on 2026-09-20 Peto ran `npm run dev` at the root of this repo
+    (no `package.json` there), then retried with `cd frontend && …`. Each command opens a fresh shell, so a
+    stand-alone `cd` never carries over; `AGENT_PROMPT` says so. The grant keys include the folder.
+  - **New tool parameters are gated by `context.features`.** Strict schemas make the model send every property, `null`
+    included, and a CLI that does not know a parameter fails `inspect.signature(...).bind`. So `agent_tools.tool_schemas`
+    adds `cwd` only when the step's context lists `"cwd"` (`tools.FEATURES`, sent by `Session._step`). CLIs up to 0.9.7
+    send nothing and keep receiving the old schema byte for byte. From 0.9.8 on, `Tools.call` also drops unknown
+    parameters whose value is `null` (null means default). A future optional parameter therefore cannot break
+    installed CLIs, but add it behind a feature anyway if it matters.
   - Commands run with a timeout; timeout or Ctrl+C kills the whole tree with `taskkill /T`.
   - Tool results are capped at 20k characters. A stopped request still appends an output for every pending call, so the
     next step stays valid for the model.
@@ -615,9 +644,19 @@ results in the next step. The server stores no conversation (`store=False`), and
   state. The conversation sent back to the model keeps the original text. `AGENT_PROMPT` also asks for Unicode math
   instead of LaTeX; the converter is the safety net.
 - **`/resume`.** `history.py` keeps the latest conversation per project folder (keyed by the normalized path, and only
-  for the same server) in `sessions/` next to `logs/`, overwritten after every request and pruned after 30 days. It
-  holds file contents Peto read, so it stays local. Resuming reruns nothing and clears `Workspace.read_digests`, so any
-  edit needs a fresh `read_file`. `/moi` leaves the saved conversation resumable until the new one is saved.
+  for the same server) in `sessions/` next to `logs/`, pruned after 30 days. It holds file contents Peto read, so it
+  stays local. Resuming reruns nothing and clears `Workspace.read_digests`, so any edit needs a fresh `read_file`.
+  `/moi` leaves the saved conversation resumable until the new one is saved.
+  - **It is saved after every step, not only when a request ends** (`Session._save_progress`, after the model's output
+    and after each tool result). Closing the console window makes Windows end Python without running `finally` or
+    `atexit`, which was checked in a ConPTY on 2026-09-23. Saving only in `_run`'s `finally` therefore lost the whole
+    in-flight request: edits stayed on disk (the undo checkpoint is written per edit), but the conversation did not
+    know about them.
+  - Mid-request saves carry `interrupted: true`, and every call still without a result gets `INTERRUPTED_RESULT` in the
+    saved copy, so the next step stays valid.
+  - When a session was cut this way, the footer says `/resume làm tiếp yêu cầu bị ngắt …`. `/resume` then prints a
+    yellow note and the last unfinished `update_plan` (`history.last_plan`). The final save in `finally` clears the flag.
+  - Background jobs share the console and die with it, so nothing is orphaned (also checked).
 - **Input line with a command menu** (`line_editor.py`, the owner's pick over a plain list printed on `/`). In a Windows
   console the `›` prompt reads raw key events with `ReadConsoleInputW`, so typing `/` shows a filtered menu under
   the line. The commands live in `commands.py`, shared with `/help`, and matching ignores case and Vietnamese diacritics.

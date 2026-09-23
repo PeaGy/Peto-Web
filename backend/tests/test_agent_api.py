@@ -419,6 +419,37 @@ def test_tool_schemas_stay_strict_and_cover_the_new_abilities():
         assert parameters["required"] == list(parameters["properties"]), tool["name"]
 
 
+async def test_command_folder_is_only_offered_to_clis_that_understand_it(anon_client, client, monkeypatch):
+    """Schema strict bắt model gửi đủ tham số, kể cả cwd: null. CLI 0.9.7 trở về trước gặp tham số lạ thì báo sai
+    tham số ở mọi lần chạy lệnh, nên chỉ CLI khai báo "cwd" trong context.features mới nhận schema có cwd."""
+    from agent_tools import TOOL_SCHEMAS
+
+    seen = []
+
+    async def record(**kwargs):
+        seen.append(kwargs)
+        from ai.agent import AgentEvent
+        yield AgentEvent("done", output=(), usage={"input_tokens": 1, "output_tokens": 1})
+
+    monkeypatch.setattr(agent_api, "agent_step", record)
+    await login_as(client, "discord")
+    token = await connect(anon_client, client)
+    for context in ({}, {"features": ["cwd"]}, {"features": ["cwd", "máy-bay"]}, {"features": "cwd"},
+                    {"features": ["x"] * 40}):
+        response = await anon_client.post("/api/agent/step", headers=bearer(token),
+                                          json={"input": [DEMO_TASK], "effort": "low", "context": context})
+        assert response.status_code == 200
+    old, new, extra, wrong_type, too_many = ({tool["name"]: tool for tool in call["tools"]} for call in seen)
+    assert seen[0]["tools"] is TOOL_SCHEMAS and wrong_type == old and too_many == old
+    for tools in (new, extra):
+        for name in ("run_command", "start_command"):
+            parameters = tools[name]["parameters"]
+            assert parameters["properties"]["cwd"]["type"] == ["string", "null"]
+            assert parameters["required"] == list(parameters["properties"]) and tools[name]["strict"]
+    assert all("cwd" not in tool["parameters"]["properties"] for tool in old.values())
+    assert list(new) == list(old), "chỉ thêm tham số, không đổi danh sách công cụ"
+
+
 def test_agent_prompt_explains_the_step_budget_and_the_new_tools():
     """Công cụ có mà chỉ dẫn không nói thì Peto không dùng; giữ hai thứ đi cùng nhau."""
     from persona import AGENT_PROMPT
@@ -427,3 +458,5 @@ def test_agent_prompt_explains_the_step_budget_and_the_new_tools():
     assert "update_plan" in AGENT_PROMPT
     assert "start_command" in AGENT_PROMPT and "stop_command" in AGENT_PROMPT
     assert "git status --short" in AGENT_PROMPT
+    # Ngày 2026-09-20 Peto chạy npm run dev ở gốc Peto-Web (không có package.json) rồi mới cd frontend: nói trước.
+    assert "cd ở lệnh trước không giữ sang lệnh sau" in AGENT_PROMPT and "cwd" in AGENT_PROMPT

@@ -1,6 +1,8 @@
 """Hội thoại gần nhất của từng thư mục dự án, lưu trên máy người dùng để /resume mở lại.
 
-- Mỗi thư mục một tệp trong ``sessions/`` (cạnh ``logs/``), ghi đè sau mỗi yêu cầu. Tệp cũ hơn 30 ngày được dọn.
+- Mỗi thư mục một tệp trong ``sessions/`` (cạnh ``logs/``), ghi đè sau mỗi bước của yêu cầu và khi yêu cầu kết thúc.
+  Bản ghi giữa yêu cầu mang cờ ``interrupted``: Peto bị đóng lúc đó thì lần mở sau biết yêu cầu cuối còn dở.
+  Tệp cũ hơn 30 ngày được dọn.
 - Tệp chứa cả nội dung tệp Peto đã đọc và output lệnh, nên chỉ nằm trên máy này. Không bao giờ chứa token.
 - Mở lại không chạy lại gì. CLI quên các tệp đã đọc, nên muốn sửa tệp thì Peto phải đọc lại trước.
 """
@@ -30,6 +32,8 @@ class Saved:
     retryable: bool = False
     # Model đã chạy hội thoại; mở lại bằng model khác thì bỏ phần chỉ model cũ đọc được.
     model: str = "peto"
+    # Bản lưu giữa yêu cầu: yêu cầu cuối chưa xong khi Peto bị đóng (cửa sổ đóng, máy tắt).
+    interrupted: bool = False
 
     @property
     def message_count(self) -> int:
@@ -42,13 +46,14 @@ def _path(root: Path) -> Path:
     return sessions_dir() / f"{key}.json"
 
 
-def save(root: Path, server: str, items: list[dict], *, retryable: bool = False, model: str = "peto") -> None:
+def save(root: Path, server: str, items: list[dict], *, retryable: bool = False, model: str = "peto",
+         interrupted: bool = False) -> None:
     """Ghi đè hội thoại của thư mục. Ghi đĩa lỗi thì bỏ qua: mất bản lưu không được làm hỏng phiên đang chạy."""
     if not items:
         return
     target = _path(root)
     data = {"version": VERSION, "root": str(root), "server": server, "saved_at": time.time(), "items": items,
-            "retryable": retryable, "model": model}
+            "retryable": retryable, "model": model, "interrupted": interrupted}
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
         temporary = target.with_suffix(".tmp")
@@ -77,7 +82,8 @@ def load(root: Path, server: str) -> Saved | None:
     saved_at = data.get("saved_at")
     return Saved(saved_at=float(saved_at) if isinstance(saved_at, (int, float)) else 0.0, items=items,
                  retryable=data.get("retryable") is True,
-                 model=data["model"] if isinstance(data.get("model"), str) and data["model"] else "peto")
+                 model=data["model"] if isinstance(data.get("model"), str) and data["model"] else "peto",
+                 interrupted=data.get("interrupted") is True)
 
 
 def _prune(keep: Path) -> None:
@@ -111,6 +117,23 @@ def _text(item: dict) -> str:
         content = parts[0] if item.get("role") == "user" and parts else " ".join(parts)
     text = " ".join(str(content or "").split())
     return text if len(text) <= RECAP_CHARS else text[: RECAP_CHARS - 1] + "…"
+
+
+def last_plan(items: list[dict]) -> list[dict]:
+    """Danh sách việc Peto ghi gần nhất bằng update_plan, để mở lại yêu cầu bị ngắt thì thấy đang làm tới đâu."""
+    for item in reversed(items):
+        if item.get("type") != "function_call" or item.get("name") != "update_plan":
+            continue
+        try:
+            steps = json.loads(item.get("arguments") or "{}").get("steps")
+        except (ValueError, AttributeError):
+            return []
+        if not isinstance(steps, list):
+            return []
+        return [{"title": str(step["title"]), "status": step["status"]} for step in steps
+                if isinstance(step, dict) and isinstance(step.get("title"), str)
+                and step.get("status") in {"pending", "running", "done"}]
+    return []
 
 
 def recap(items: list[dict]) -> list[tuple[str, str]]:

@@ -11,8 +11,9 @@ import fnmatch
 import inspect
 import json
 import re
+from pathlib import Path
 
-from . import runner
+from . import approvals, runner
 from .background import Jobs
 from .checkpoint import Checkpoint
 from .command_outcome import classify, command_kind
@@ -28,6 +29,8 @@ MAX_PLAN_STEPS = 10
 MAX_PLAN_TITLE = 120
 PLAN_STATUS = ("pending", "running", "done")
 REFUSED = "Người dùng không đồng ý {action}. Đừng lặp lại y nguyên; hỏi họ muốn làm khác thế nào."
+# Khả năng báo cho máy chủ trong context của mỗi bước, để máy chủ chỉ gửi tham số bản CLI này hiểu (agent_tools.py).
+FEATURES = ("cwd",)
 
 
 def changed_lines(before: str, after: str) -> tuple[int, int]:
@@ -107,8 +110,12 @@ class Tools:
             return {"error": "Tham số công cụ không phải JSON hợp lệ."}
         if not isinstance(params, dict):
             return {"error": "Tham số công cụ không hợp lệ."}
+        signature = inspect.signature(handler)
+        # Máy chủ mới hơn có thể thêm tham số tùy chọn bản này chưa biết. Schema strict bắt model gửi null cho tham số
+        # không dùng, mà null nghĩa là mặc định, nên bỏ qua được; giá trị thật thì vẫn báo sai tham số.
+        params = {key: value for key, value in params.items() if key in signature.parameters or value is not None}
         try:
-            inspect.signature(handler).bind(**params)
+            signature.bind(**params)
         except TypeError:
             return {"error": f"Tham số không đúng với công cụ {name}."}
         try:
@@ -354,20 +361,22 @@ class Tools:
         self.ui.success(f"Đã đổi tên {old_rel} → {new_rel}")
         return {"ok": True, "path": new_rel, "moved_from": old_rel}
 
-    def start_command(self, command: str, shell: str | None = None) -> dict:
+    def start_command(self, command: str, shell: str | None = None, cwd: str | None = None) -> dict:
         """Chạy lệnh nền và trả về ngay. Hỏi quyền như run_command, và nói rõ lệnh sống lâu hơn yêu cầu này."""
         command = command.strip()
         if not command:
             raise WorkspaceError("Lệnh đang trống.")
         shell = self._shell(shell)
-        self.ui.command(command, str(self.ws.root), 0, shell=shell, background=True)
-        if not (self.approve_all or self._approve()):
+        directory = self._cwd(cwd)
+        self.ui.command(command, str(directory), 0, shell=shell, background=True)
+        if not self._approve_command(command, directory, 0, shell):
             self.ui.failure("Không chạy lệnh nền")
             return {"error": REFUSED.format(action="chạy lệnh nền này")}
         self.checkpoint.shell_used = True
-        job = self.jobs.start(command, self.ws.root, shell)
-        self.ui.success(f"Đã chạy nền #{job.id}: {command}")
-        return {"ok": True, "id": job.id, "command": command,
+        job = self.jobs.start(command, directory, shell)
+        where = self.ws.relative(directory)
+        self.ui.success(f"Đã chạy nền #{job.id}: {command}" + (f" (trong {where})" if where != "." else ""))
+        return {"ok": True, "id": job.id, "command": command, "cwd": where,
                 "note": "Lệnh chạy tiếp sau khi yêu cầu này xong. Đọc output bằng read_command_output, dừng bằng "
                         "stop_command."}
 
@@ -388,35 +397,62 @@ class Tools:
             raise WorkspaceError(f"shell chỉ nhận {' hoặc '.join(runner.SHELLS)}.")
         return chosen
 
-    def run_command(self, command: str, timeout_seconds: int | None = None, shell: str | None = None) -> dict:
+    def _cwd(self, cwd: str | None) -> Path:
+        """Thư mục chạy lệnh: gốc dự án, hoặc một thư mục con có thật trong dự án (không ra ngoài, không vào .git)."""
+        if cwd is None or str(cwd).strip() in {"", "."}:
+            return self.ws.root
+        directory = self.ws.resolve(str(cwd))
+        if not directory.is_dir():
+            raise WorkspaceError(f"{self.ws.relative(directory)} không phải thư mục nên không chạy lệnh trong đó được.")
+        return directory
+
+    def _approve_command(self, command: str, directory: Path, timeout: int, shell: str) -> bool:
+        """Hỏi quyền chạy lệnh. Nhớ được đúng lệnh đó trong phiên ([s]) hoặc luôn trong dự án này ([l]).
+
+        Quyền [l] nằm trong hồ sơ người dùng (approvals.py), không bao giờ trong thư mục dự án.
+        """
+        grant = (str(directory), command, timeout, shell)
+        if self.approve_all or grant in self.command_grants:
+            return True
+        where = self.ws.relative(directory)
+        if approvals.allowed(self.ws.root, where, command, shell):
+            self.ui.line("  Lệnh này đã được luôn cho phép trong dự án · /permissions để xem hoặc xóa.", "dim")
+            return True
+        with self.metrics.measure("permission"):
+            answer = self.ui.ask_permission(allow_session=True, allow_always=True)
+        if answer == "a":
+            self.approve_all = True
+        elif answer == "s":
+            self.command_grants.add(grant)
+            self.ui.line("  Đã nhớ đúng lệnh, thư mục và thời hạn này trong phiên. /permissions để xem hoặc xóa.", "dim")
+        elif answer == "l":
+            if approvals.add(self.ws.root, where, command, shell):
+                self.ui.line("  Từ giờ đúng lệnh này chạy không cần hỏi trong dự án này. /permissions để xem hoặc xóa.",
+                             "dim")
+            else:
+                self.ui.line("  Không lưu được quyền lên máy; lần này vẫn chạy, lần sau Peto sẽ hỏi lại.", "yellow")
+        return answer in {"y", "a", "s", "l"}
+
+    def run_command(self, command: str, timeout_seconds: int | None = None, shell: str | None = None,
+                    cwd: str | None = None) -> dict:
         command = command.strip()
         if not command:
             raise WorkspaceError("Lệnh đang trống.")
         timeout = max(1, min(600, timeout_seconds or 120))
         shell = self._shell(shell)
+        directory = self._cwd(cwd)
         if self.failed_commands >= 3 and command_kind(command) == "check":
             return {"error": "Đã có 3 lần kiểm tra thất bại. Dừng thử sửa/kiểm tra tiếp và báo kết quả cho người dùng."}
         if self.command_failures.get(command, 0) >= 3:
             return {"error": "Lệnh này đã lỗi 3 lần; không lặp lại y nguyên. Đọc lỗi và báo nguyên nhân hoặc chọn cách khác."}
-        self.ui.command(command, str(self.ws.root), timeout, shell=shell)
-        grant = (str(self.ws.root), command, timeout, shell)
-        allowed = self.approve_all or grant in self.command_grants
-        if not allowed:
-            with self.metrics.measure("permission"):
-                answer = self.ui.ask_permission(allow_session=True)
-            allowed = answer in {"y", "a", "s"}
-            if answer == "a":
-                self.approve_all = True
-            if answer == "s":
-                self.command_grants.add(grant)
-                self.ui.line("  Đã nhớ đúng lệnh, thư mục và thời hạn này trong phiên. /permissions để xem hoặc xóa.", "dim")
-        if not allowed:
+        self.ui.command(command, str(directory), timeout, shell=shell)
+        if not self._approve_command(command, directory, timeout, shell):
             self.ui.failure("Không chạy lệnh")
             return {"error": REFUSED.format(action="chạy lệnh này")}
         try:
             self.checkpoint.shell_used = True
             with self.metrics.measure("commands"):
-                result = runner.run(command, self.ws.root, timeout, shell=shell,
+                result = runner.run(command, directory, timeout, shell=shell,
                                     on_progress=self.ui.command_progress)
         except FileNotFoundError:
             raise WorkspaceError(f"Máy này không chạy được {shell}. Thử lại bằng shell khác nhé.") from None
@@ -424,6 +460,8 @@ class Tools:
             self.ui.clear_status()
         classification = classify(command, result)
         result["classification"] = classification
+        if directory != self.ws.root:
+            result["cwd"] = self.ws.relative(directory)
         self.commands.append({"command": command, "exit_code": result["exit_code"], "error": result.get("error"),
                               "classification": classification})
         if classification in {"passed", "check_failed"}:

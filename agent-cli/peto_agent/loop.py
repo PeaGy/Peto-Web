@@ -8,16 +8,16 @@ import platform
 import time
 from datetime import datetime
 
-from . import history, mentions
+from . import approvals, history, mentions
 from .checkpoint import Checkpoint
 from .context import compact_prefix, context_size, text_of, efficient_input
-from .project_guide import guides
+from .project_guide import MAX_GUIDE_CHARS, MAX_NOTE_CHARS, add_note, guides
 from .metrics import Metrics
 from .client import ApiError, Client
 from .config import log_dir
 from .presentation import AgentUI
 from .runner import cap_text
-from .tools import Tools
+from .tools import FEATURES, Tools
 from .workspace import Workspace, WorkspaceError
 
 MAX_STEPS_PER_TASK = 40
@@ -29,6 +29,10 @@ OLD_IMAGE_NOTE = "(Ảnh này đã gửi ở tin trước; để hội thoại n
 # web_search_call do dịch vụ AI sinh ra khi Peto tra web: giữ lại để hội thoại gửi đi không hụt mục.
 KEPT_ITEM_TYPES = {"message", "function_call", "reasoning", "web_search_call"}
 STOPPED_RESULT = {"error": "Người dùng đã dừng yêu cầu bằng Ctrl+C."}
+# Kết quả ghi thay trong bản lưu giữa yêu cầu cho lệnh gọi công cụ chưa xong. Peto bị đóng lúc đó thì /resume mở lại
+# đúng bản này, nên nói rõ công cụ có thể đã chạy một phần.
+INTERRUPTED_RESULT = {"error": "Peto bị đóng giữa chừng (cửa sổ terminal đóng hoặc máy tắt) trước khi có kết quả này. "
+                               "Công cụ có thể đã chạy một phần: đọc lại tệp hoặc kiểm tra trạng thái trước khi làm tiếp."}
 # Số mục nhiều nhất đưa vào lời nhờ của /init: đủ để thấy bố cục mà không thổi phồng bước đầu tiên.
 MAX_INIT_ENTRIES = 200
 INIT_TASK = """Hãy viết tệp AGENTS.md ở gốc dự án này.
@@ -228,6 +232,43 @@ class Session:
         self.ui.line("  Peto sẽ xem qua dự án rồi đề xuất AGENTS.md; bạn vẫn duyệt như mọi lần ghi tệp.", "dim")
         self.run_task("\n\n".join(lines))
 
+    def note(self, text: str) -> None:
+        """/nho: ghi một điều cần nhớ vào mục "Ghi nhớ" của AGENTS.md ở gốc dự án.
+
+        Ghi ngay trên máy, không gọi model nên không tốn bước; AGENTS.md gốc đi kèm mọi bước nên Peto nhớ từ yêu cầu
+        tới. Chính người dùng gõ nội dung nên không hỏi lại. Không đưa vào bản hoàn tác, để /undo vẫn là lần sửa của
+        Peto.
+        """
+        note = " ".join(text.split())
+        if not note:
+            self.ui.line("  Gõ /nho kèm điều Peto cần nhớ về dự án, ví dụ: /nho chạy test bằng python -m pytest", "dim")
+            return
+        if len(note) > MAX_NOTE_CHARS:
+            self.ui.line(f"  Ghi chú dài quá {MAX_NOTE_CHARS} ký tự; viết gọn lại nhé.", "yellow")
+            return
+        try:
+            path = self.ws.resolve("AGENTS.md", must_exist=False)
+            file = self.ws.read(path) if path.exists() else None
+            updated = add_note(file.text if file else "", note)
+            if len(updated) > MAX_GUIDE_CHARS:
+                raise WorkspaceError("AGENTS.md sẽ vượt 32.000 ký tự; rút gọn tệp trước khi ghi thêm.")
+            self.ws.write(path, updated, newline=file.newline if file else "\n", bom=file.bom if file else False)
+            written = self.ws.read(path).digest
+        except WorkspaceError as err:
+            self.ui.failure(str(err))
+            return
+        except OSError as err:
+            self.ui.failure(f"Không ghi được AGENTS.md: {err.strerror or type(err).__name__}.")
+            return
+        # Tệp đổi ngoài công cụ sửa tệp: Peto phải đọc lại trước khi tự sửa AGENTS.md, như mọi tệp khác.
+        self.ws.read_digests.pop(path, None)
+        # Bước kế tiếp mang theo bản AGENTS.md mới, nên coi như Peto đã thấy nó; không thì lần sửa tệp tới bị chặn vì
+        # "hướng dẫn vừa đổi" và tốn thêm một bước.
+        if "AGENTS.md" in self.tools.seen_guides:
+            self.tools.seen_guides["AGENTS.md"] = written
+        self._log("note", text=note)
+        self.ui.success(f"Đã ghi vào AGENTS.md, mục Ghi nhớ: {note}")
+
     def show_diff(self):
         if not self.tools.checkpoint.files:
             try:
@@ -260,13 +301,25 @@ class Session:
             self.ui.success(f"Đã hoàn tác {len(restored)} tệp.")
 
     def permissions(self, clear=False):
+        """/permissions: lệnh nhớ trong phiên ([s]) và lệnh luôn cho phép ở dự án này ([l], lưu trên máy)."""
         if clear:
             self.tools.command_grants.clear()
-            self.ui.success("Đã xóa quyền chạy lệnh ghi nhớ trong phiên.")
-        elif not self.tools.command_grants:
-            self.ui.line("  Chưa ghi nhớ lệnh nào trong phiên.", "dim")
+            removed = approvals.clear(self.ws.root)
+            self.ui.success("Đã xóa quyền chạy lệnh nhớ trong phiên" +
+                            (f" và {removed} lệnh luôn cho phép ở dự án này." if removed else "."))
+            return
+        saved = approvals.entries(self.ws.root)
+        if not self.tools.command_grants and not saved:
+            self.ui.line("  Chưa nhớ lệnh nào: trong phiên chọn [s], luôn cho phép ở dự án này chọn [l].", "dim")
+        if self.tools.command_grants:
+            self.ui.line("  Nhớ trong phiên:", "dim")
         for directory, command, timeout, shell in sorted(self.tools.command_grants):
-            self.ui.line(f"  {command} · {directory} · {timeout}s" + (f" · {shell}" if shell != "cmd" else ""), "dim")
+            self.ui.item(f"{command} · {directory} · {timeout}s" + (f" · {shell}" if shell != "cmd" else ""))
+        if saved:
+            self.ui.line("  Luôn cho phép ở dự án này (lưu trên máy):", "dim")
+        for item in saved:
+            where = "" if item["directory"] == "." else f" · trong {item['directory']}"
+            self.ui.item(f"{item['command']}{where}" + (f" · {item['shell']}" if item["shell"] != "cmd" else ""))
 
     def compact(self, *, propagate_cancel=False):
         metrics = self.metrics if self._running else Metrics()
@@ -386,6 +439,7 @@ class Session:
                             "không cài thêm công cụ hay mở rộng phạm vi. Báo lệnh nào đã chạy và kết quả thực tế.")})
                         continue
                     break
+                self._save_progress()
                 while pending:
                     call = pending[0]
                     with self.metrics.measure("tools"):
@@ -395,6 +449,7 @@ class Session:
                               result=cap_text(encoded, 4000))
                     self.items.append({"type": "function_call_output", "call_id": call.get("call_id", ""), "output": encoded})
                     pending.pop(0)
+                    self._save_progress()
             else:
                 outcome = "limit"
                 self.ui.line(f'Peto đã làm {MAX_STEPS_PER_TASK} bước trong yêu cầu này nên tạm dừng. Gõ "làm tiếp" nếu '
@@ -418,10 +473,25 @@ class Session:
             self._summary(self.active_seconds, outcome)
             history.save(self.ws.root, self.client.server, self.items, retryable=self.can_retry, model=self.model)
 
+    def _save_progress(self) -> None:
+        """Lưu hội thoại giữa yêu cầu, để đóng cửa sổ giữa chừng thì /resume vẫn còn những gì Peto đã làm.
+
+        Cửa sổ console đóng thì Windows tắt Python ngay, khối finally của _run không chạy (thử trong ConPTY ngày
+        2026-09-23), nên chỉ lưu lúc xong yêu cầu là mất cả yêu cầu đang dở. Lệnh gọi công cụ chưa có kết quả được ghi
+        INTERRUPTED_RESULT trong bản lưu, để bước kế tiếp sau /resume vẫn hợp lệ với model.
+        """
+        answered = {item.get("call_id") for item in self.items if item.get("type") == "function_call_output"}
+        items = list(self.items)
+        for item in self.items:
+            if item.get("type") == "function_call" and item.get("call_id") not in answered:
+                items.append({"type": "function_call_output", "call_id": item.get("call_id", ""),
+                              "output": json.dumps(INTERRUPTED_RESULT, ensure_ascii=False)})
+        history.save(self.ws.root, self.client.server, items, model=self.model, interrupted=True)
+
     def _step(self) -> list[dict] | None:
         body = {"input": efficient_input(self.items), "effort": self.effort, "model": self.model, "context": {
             "project": self.ws.root.name, "os": f"{platform.system()} {platform.release()}".strip(),
-            "project_guidance": guides(self.ws)}}
+            "project_guidance": guides(self.ws), "features": list(FEATURES)}}
         writer = self.ui.reply()
         started = time.monotonic()
         phase = "nghĩ"

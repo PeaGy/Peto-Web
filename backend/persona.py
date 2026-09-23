@@ -517,6 +517,9 @@ AGENT_PROMPT = "\n".join([
     "- Lệnh không tự kết thúc (dev server, watch) thì dùng start_command, đừng dùng run_command vì nó chờ tới khi "
     "lệnh xong. Đọc kết quả bằng read_command_output kèm wait_seconds thay vì hỏi đi hỏi lại, vì mỗi lần đọc là một "
     "bước; xong việc thì stop_command. Lệnh nền vẫn chạy sau khi yêu cầu kết thúc, nên nói cho người dùng biết.",
+    "- Mỗi lệnh mở một shell mới ở gốc dự án, nên cd ở lệnh trước không giữ sang lệnh sau. Lệnh thuộc thư mục con "
+    "(như frontend có package.json riêng) thì đặt tham số cwd nếu công cụ có; không có thì ghép cd thư_mục && lệnh "
+    "trong cmd, hoặc Set-Location thư_mục; lệnh trong PowerShell.",
     "- Thư mục .git không đọc được bằng công cụ tệp, nhưng xin chạy được lệnh git chỉ đọc (git status --short, "
     "git diff, git log --oneline -n 10) khi cần biết người dùng vừa đổi gì hay dự án đang ở nhánh nào. Không commit, "
     "không push, không đổi lịch sử trừ khi người dùng yêu cầu rõ.",
@@ -583,7 +586,9 @@ def build_agent_guide(*, install_command: str, daily_steps: int) -> str:
         "thấy mã trên web giống hệt mã trong cửa sổ dòng lệnh thì bấm Cho phép.",
         "- Dùng: vào thư mục dự án (`cd`), gõ `peto` rồi nhắn yêu cầu. Trong phiên, gõ `/` là hiện danh sách lệnh để "
         "chọn bằng mũi tên, Tab hoặc Enter: `/moi` bắt đầu hội thoại mới, `/resume` mở lại hội thoại gần nhất của thư "
-        "mục đó (không chạy lại lệnh nào), `/effort thap`, `/effort vua` hoặc `/effort cao` đổi mức suy nghĩ và được "
+        "mục đó (lưu sau từng bước nên lỡ đóng cửa sổ giữa chừng vẫn làm tiếp được; không chạy lại lệnh nào), "
+        "`/nho <ghi chú>` ghi một điều Peto cần nhớ về dự án vào AGENTS.md mà không tốn bước nào, "
+        "`/effort thap`, `/effort vua` hoặc `/effort cao` đổi mức suy nghĩ và được "
         "nhớ cho lần sau, `/model` chọn model (Peto mặc định, hoặc 5.6 Luna với tài khoản Discord/Google; model đắt "
         "hơn tính nhiều bước hơn), `/usage` xem số bước còn lại và số token đã dùng hôm nay, `/thoat` để thoát. Ctrl+C dừng yêu "
         "cầu đang chạy. Dán nhiều dòng (ví dụ log lỗi) thì cả đoạn nằm trong một tin, không bị gửi từng dòng. "
@@ -592,8 +597,9 @@ def build_agent_guide(*, install_command: str, daily_steps: int) -> str:
         "`peto status` xem tài khoản, mức suy nghĩ và số bước ngoài phiên. Cuối mỗi yêu cầu có dòng tổng kết ghi độ "
         "dài hội thoại; hội thoại dài làm Peto chậm hay lỗi thì gõ `/moi`.",
         "- An toàn: Peto tự đọc và tìm trong thư mục dự án, nhưng luôn hỏi trước khi sửa tệp hay chạy lệnh (y đồng ý, "
-        "n từ chối, a đồng ý mọi bước còn lại của yêu cầu đó). Không đụng `.env`, khóa bí mật, thư mục `.git` hay tệp "
-        "ngoài thư mục dự án.",
+        "n từ chối, a đồng ý mọi bước còn lại của yêu cầu đó; với lệnh còn có s nhớ đúng lệnh đó trong phiên và l luôn "
+        "cho phép đúng lệnh đó trong dự án đó, lưu trên máy họ, xem và xóa bằng `/permissions`). Không đụng `.env`, "
+        "khóa bí mật, thư mục `.git` hay tệp ngoài thư mục dự án.",
         f"- Giới hạn: mỗi tài khoản có {daily_steps} bước mỗi ngày; mỗi lần Peto gọi mô hình AI là một bước, riêng mức "
         "suy nghĩ cao tính 2 bước. Trên web, Cài đặt → Peto Agent hiện số bước còn lại và các máy đã kết nối, ngắt "
         "được từng máy.",
