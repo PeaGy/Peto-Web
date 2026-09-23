@@ -5,11 +5,14 @@ import { characterThumbnail, getCharacterAssets, type CharacterModel } from './c
 import { COMPACT_QUERY, motionEnabled, type CharacterMotion } from './characterView';
 import { voiceMouth } from './voiceActivity';
 import { relaxVRMArms } from './vrmPose';
+import { CompanionMotion, stageQuality, type CompanionActivity } from './companionMotion';
 
-export default function VRMStage({ character, motion, onPreview }: {
+export default function VRMStage({ character, motion, onPreview, activity = 'idle' }: {
+  activity?: CompanionActivity;
   character: CharacterModel; motion: CharacterMotion; onPreview?: (id: string, image: string) => void;
 }) {
   const host = useRef<HTMLDivElement>(null);
+  const activityRef = useRef(activity); activityRef.current = activity;
   const motionRef = useRef(motion); motionRef.current = motion;
   const previewRef = useRef(onPreview); previewRef.current = onPreview;
   const [status, setStatus] = useState('loading');
@@ -51,8 +54,9 @@ export default function VRMStage({ character, motion, onPreview }: {
       scene.add(loaded.scene);
       scene.add(new THREE.HemisphereLight(0xffffff, 0x9f9bad, 2.2));
       const key = new THREE.DirectionalLight(0xffffff, 2.5); key.position.set(1, 3, 4); scene.add(key);
-      renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+      const compact = window.matchMedia(COMPACT_QUERY), reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
+      renderer = new THREE.WebGLRenderer({ alpha: true, antialias: !compact.matches });
+      renderer.setPixelRatio(stageQuality(compact.matches, window.devicePixelRatio).resolution);
       renderer.outputColorSpace = THREE.SRGBColorSpace;
       renderer.setClearColor(0x000000, 0);
       const canvas = renderer.domElement; canvas.setAttribute('aria-hidden', 'true'); container.append(canvas);
@@ -62,9 +66,9 @@ export default function VRMStage({ character, motion, onPreview }: {
       controls.mouseButtons = { LEFT: null, MIDDLE: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.ROTATE };
       const bounds = new THREE.Box3().setFromObject(loaded.scene), size = bounds.getSize(new THREE.Vector3()), center = bounds.getCenter(new THREE.Vector3());
       const height = Math.max(0.1, size.y);
-      const compact = window.matchMedia(COMPACT_QUERY), reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
       const fit = () => {
         if (!renderer) return;
+        renderer.setPixelRatio(stageQuality(compact.matches, window.devicePixelRatio).resolution);
         const width = Math.max(1, container.clientWidth), h = Math.max(1, container.clientHeight);
         renderer.setSize(width, h); camera.aspect = width / h; camera.updateProjectionMatrix();
         const frameHeight = height * (compact.matches ? 0.62 : 1.1);
@@ -84,12 +88,18 @@ export default function VRMStage({ character, motion, onPreview }: {
       };
       const away = () => look.position.copy(camera.position);
       const reset = () => fit();
-      const lost = (event: Event) => { event.preventDefault(); cancelAnimationFrame(frame); setStatus('error'); setError('Trình duyệt đã tạm dừng hiển thị 3D. Bạn có thể thử tải lại.'); };
-      let last = 0, elapsed = 0, mouth = 0, captured = false;
+      let contextLost = false;
+      const lost = (event: Event) => { event.preventDefault(); contextLost = true; cancelAnimationFrame(frame); setStatus('error'); setError('Trình duyệt đã tạm dừng hiển thị 3D. Bạn có thể thử tải lại.'); };
+      let last = 0, nextFrame = 0, elapsed = 0, mouth = 0, captured = false;
+      const conversationMotion = new CompanionMotion();
+      const head = loaded.humanoid.getNormalizedBoneNode('head');
+      const headRest = head ? { x: head.rotation.x, z: head.rotation.z } : undefined;
       const tick = (now: number) => {
-        if (disposed || document.hidden) return;
+        if (disposed || document.hidden || contextLost) return;
         frame = requestAnimationFrame(tick);
-        if (now - last < 1000 / 30) return;
+        const interval = 1000 / stageQuality(compact.matches, window.devicePixelRatio).fps;
+        if (now < nextFrame) return;
+        nextFrame = now + interval - Math.max(0, now - nextFrame) % interval;
         const dt = Math.min((now - last) / 1000, 0.05); last = now;
         const moving = motionEnabled(motionRef.current, reduced.matches);
         if (moving) elapsed += dt;
@@ -98,6 +108,11 @@ export default function VRMStage({ character, motion, onPreview }: {
         const target = voiceMouth(); mouth += (target - mouth) * (target > mouth ? 0.7 : 0.45);
         loaded.expressionManager?.setValue('aa', mouth < 0.01 ? 0 : mouth);
         loaded.expressionManager?.setValue('blink', blink);
+        const pose = conversationMotion.step(activityRef.current, dt, target);
+        if (head && headRest) {
+          head.rotation.x = headRest.x + (moving ? pose.pitch * Math.PI / 180 : 0);
+          head.rotation.z = headRest.z + (moving ? pose.roll * Math.PI / 180 : 0);
+        }
         const spine = loaded.humanoid.getNormalizedBoneNode('spine');
         if (spine) spine.rotation.z = moving ? Math.sin(elapsed * 1.4) * 0.014 : 0;
         if (!moving) away();
@@ -107,7 +122,7 @@ export default function VRMStage({ character, motion, onPreview }: {
           try { previewRef.current(character.id, characterThumbnail(canvas)); } catch { /* Thumbnail không chặn hiển thị. */ }
         }
       };
-      const visibility = () => { cancelAnimationFrame(frame); if (!document.hidden) { last = performance.now(); frame = requestAnimationFrame(tick); } };
+      const visibility = () => { cancelAnimationFrame(frame); if (!document.hidden && !contextLost) { last = performance.now(); nextFrame = last; frame = requestAnimationFrame(tick); } };
       window.addEventListener('pointermove', pointer); window.addEventListener('blur', away);
       document.addEventListener('visibilitychange', visibility); canvas.addEventListener('webglcontextlost', lost);
       canvas.addEventListener('dblclick', reset); compact.addEventListener?.('change', fit);

@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { BeatPulse, DEFAULT_BEAT_PARAMETERS, getMusicState, musicPose, resetBeatParameters, setBeatParameters, startMusicVibe, stopMusicVibe } from '../src/musicVibe';
+import { act, renderHook } from '@testing-library/react';
+import { useMusicVibe } from '../src/musicVibe';
+import { BeatPulse, DEFAULT_BEAT_PARAMETERS, getMusicState, musicPose, resetBeatParameters, setBeatParameters, setMusicStrength, selectMusicCharacter, startMusicVibe, stopMusicVibe } from '../src/musicVibe';
 const tempora = vi.hoisted(() => ({ start: vi.fn(), stop: vi.fn(), update: vi.fn(), onBeat: null as null | (() => void) }));
 vi.mock('@nekopaw/tempora', async importOriginal => ({ ...await importOriginal<typeof import('@nekopaw/tempora')>(),
   startAnalyser: tempora.start,
@@ -14,8 +16,10 @@ function media(audio = true) {
   return { getAudioTracks: () => audio ? [audioTrack] : [], getTracks: () => tracks, tracks };
 }
 beforeEach(() => {
-  vi.useFakeTimers(); vi.clearAllMocks();
+  vi.clearAllMocks();
+  localStorage.clear(); selectMusicCharacter('test-default');
   resetBeatParameters();
+  vi.useFakeTimers();
   vi.stubGlobal('AudioWorkletNode', class {});
   tempora.start.mockImplementation(async (options) => {
     tempora.onBeat = options.listeners.onBeat;
@@ -32,6 +36,35 @@ beforeEach(() => {
       connect() {}, disconnect() {}, getByteFrequencyData(data: Uint8Array) { data.fill(0); },
       getFloatTimeDomainData(data: Float32Array) { data.fill(0); } });
   });
+});
+it('restores independent character preferences without restarting capture', async () => {
+  selectMusicCharacter('a'); setMusicStrength(0.8); setBeatParameters({ sensitivity: 0.4, warmup: true });
+  capture.mockResolvedValue(media()); await startMusicVibe();
+  selectMusicCharacter('b');
+  expect(getMusicState().status).toBe('off');
+  expect(getMusicState().strength).toBe(0.5);
+  setMusicStrength(0.2);
+  selectMusicCharacter('a');
+  expect(getMusicState().strength).toBe(0.8);
+  expect(getMusicState().parameters.sensitivity).toBe(0.4);
+  expect(getMusicState().parameters.warmup).toBe(true);
+  expect(capture).toHaveBeenCalledTimes(1);
+  resetBeatParameters(); setMusicStrength(0.5);
+  selectMusicCharacter('b'); expect(getMusicState().strength).toBe(0.2);
+  selectMusicCharacter('a'); expect(getMusicState().parameters).toEqual(DEFAULT_BEAT_PARAMETERS);
+});
+it('validates stored parameters and survives corrupt or unavailable storage', () => {
+  localStorage.setItem('peto-beat-sync:bad', JSON.stringify({ strength: 42, parameters: { sensitivity: -5, lowpassFilterFrequency: 50, highpassFilterFrequency: 150, warmup: 'yes' } }));
+  selectMusicCharacter('bad');
+  expect(getMusicState().strength).toBe(1);
+  expect(getMusicState().parameters.sensitivity).toBe(0);
+  expect(getMusicState().parameters.highpassFilterFrequency).toBe(49);
+  expect(getMusicState().parameters.warmup).toBe(false);
+  localStorage.setItem('peto-beat-sync:corrupt', '{'); selectMusicCharacter('corrupt');
+  expect(getMusicState().parameters).toEqual(DEFAULT_BEAT_PARAMETERS);
+  const blocked = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('full'); });
+  expect(() => setMusicStrength(0.3)).not.toThrow();
+  expect(getMusicState().strength).toBe(0.3); blocked.mockRestore();
 });
 afterEach(() => { stopMusicVibe(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 it('moves on worklet beats and returns to rest after silence', () => {
@@ -69,10 +102,25 @@ it('connects Tempora, publishes beats, and forwards live parameter changes', asy
   expect(getMusicState().beats).toBe(0);
 });
 it('silence is visible instead of claiming audio is received', async () => {
+  const view = renderHook(() => useMusicVibe());
   capture.mockResolvedValue(media()); await startMusicVibe();
-  vi.advanceTimersByTime(5000);
+  act(() => vi.advanceTimersByTime(5000));
   expect(getMusicState().level).toBe(0);
   expect(getMusicState().message).toContain('Chưa nhận được');
+  view.unmount();
+});
+it('sleeps the visual monitor while hidden but keeps capture and beat counts', async () => {
+  const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(false);
+  capture.mockResolvedValue(media()); await startMusicVibe();
+  expect(vi.getTimerCount()).toBe(1);
+  hidden.mockReturnValue(true); document.dispatchEvent(new Event('visibilitychange'));
+  expect(vi.getTimerCount()).toBe(0);
+  tempora.onBeat!(); expect(getMusicState().beats).toBe(1);
+  expect(tempora.stop).not.toHaveBeenCalled();
+  hidden.mockReturnValue(false); document.dispatchEvent(new Event('visibilitychange'));
+  expect(vi.getTimerCount()).toBe(1);
+  stopMusicVibe(); document.dispatchEvent(new Event('visibilitychange'));
+  expect(vi.getTimerCount()).toBe(0); hidden.mockRestore();
 });
 it('stops a worklet whose load finishes after cancellation', async () => {
   let finish!: (value: unknown) => void;

@@ -11,6 +11,7 @@ import { SendIcon } from "./Composer";
 import { SpeakButton, SpeakerIcon, SpeakerOffIcon, type LocalVoice } from "./LocalVoice";
 import type { CharacterMotion } from "./characterView";
 import { DEFAULT_CHARACTER, type CharacterModel } from './characterLibrary';
+import type { CompanionActivity } from './companionMotion';
 
 const MUTED_KEY = "peto-companion-muted";
 const Live2DStage = lazy(() => import("./Live2DStage"));
@@ -76,6 +77,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
 }) {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [expressionReply, setExpressionReply] = useState<{ text: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
   const [draft, setDraft] = useState("");
@@ -160,6 +162,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
     if (!text || abortRef.current || loading || loadFailed) return;
     stopVoice();
     setError(null);
+    setExpressionReply(null);
     const previous = messages;
     const replyIndex = previous.length + 1;
     setMessages([...previous, { role: "user", content: text }, { role: "assistant", content: "" }]);
@@ -219,6 +222,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
       abortRef.current = null;
     }
     const now = latest.current;
+    if (completed && reply.trim() && now.active) setExpressionReply({ text: reply });
     if (completed && reply.trim() && now.active && !now.muted && now.voice.status === "ready") {
       now.voice.speak(`${SPEECH_PREFIX}${replyIndex}`, reply).catch(reportSpeechError);
     }
@@ -238,6 +242,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
       loadVersion.current += 1;
       setConversationId(null);
       setMessages([]);
+      setExpressionReply(null);
       setConfirmReset(false);
     } catch (err) {
       if (err instanceof UnauthorizedError) return onUnauthorized();
@@ -250,6 +255,21 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
 
   const name = appInfo?.name ?? "Peto";
   const speech = voice.speaking?.key.startsWith(SPEECH_PREFIX) ? voice.speaking : null;
+  const expressionSpeechKey = useRef<string | null>(null);
+  useEffect(() => {
+    if (!speech) {
+      if (expressionSpeechKey.current) setExpressionReply(null);
+      expressionSpeechKey.current = null;
+      return;
+    }
+    if (speech.phase !== 'playing' || expressionSpeechKey.current === speech.key) return;
+    expressionSpeechKey.current = speech.key;
+    const index = Number(speech.key.slice(SPEECH_PREFIX.length));
+    const message = messages[index];
+    if (message?.role === 'assistant') setExpressionReply({ text: message.content });
+  }, [speech?.key, speech?.phase, messages]);
+  const activity: CompanionActivity = speech?.phase === 'playing' ? 'speaking'
+    : streaming || speech?.phase === 'loading' ? 'thinking' : draft.trim() ? 'listening' : 'idle';
   const stateText = speech?.phase === "playing" ? "Đang nói…"
     : speech?.phase === "loading" ? "Sắp nói…"
       : streaming ? "Đang nhắn…" : "Trả lời ngắn bằng tiếng Anh";
@@ -261,8 +281,8 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
         <button className="companion-character-button" onClick={onOpenCharacters} aria-label="Chọn nhân vật">◇ <span>Nhân vật</span></button>
         {active && <Suspense fallback={<p role="status">Đang tải nhân vật…</p>}>
           {character.format === 'vrm'
-            ? <VRMStage key={character.id} character={character} motion={characterMotion} onPreview={onCharacterPreview} />
-            : <Live2DStage key={character.id} character={character} fallbackUrl={appInfo?.avatar_url ?? undefined} name={name} motion={characterMotion} onPreview={onCharacterPreview} />}
+            ? <VRMStage key={character.id} character={character} motion={characterMotion} onPreview={onCharacterPreview} activity={activity} />
+            : <Live2DStage key={character.id} character={character} fallbackUrl={appInfo?.avatar_url ?? undefined} name={name} motion={characterMotion} onPreview={onCharacterPreview} reply={expressionReply} activity={activity} />}
         </Suspense>}
       </section>
 
@@ -351,7 +371,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
                 {message.content && !live && voice.status === "ready" && (
                   <SpeakButton
                     phase={voice.speaking?.key === key ? voice.speaking.phase : null}
-                    onSpeak={() => voice.speak(key, message.content).catch(reportSpeechError)}
+                    onSpeak={() => { setExpressionReply({ text: message.content }); void voice.speak(key, message.content).catch(reportSpeechError); }}
                     onStop={stopVoice}
                   />
                 )}

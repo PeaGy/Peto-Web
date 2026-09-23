@@ -1,5 +1,6 @@
 import { CHARACTER } from './characterConfig';
 import { getCharacterAssets, type CharacterModel } from './characterLibrary';
+import { expressionChoices, type ExpressionChoice } from './characterExpressions';
 
 export interface IdleMotion { id: string; group: string; index: number; file: string; label: string }
 export const IDLE_CHANGE = 'peto-idle-motion-change';
@@ -23,8 +24,8 @@ export function motionChoices(definitions: unknown): IdleMotion[] {
 export async function loadMotionChoices(character: CharacterModel): Promise<IdleMotion[]> {
   return (await loadMotionInfo(character)).choices;
 }
-export async function loadMotionInfo(character: CharacterModel): Promise<{ choices: IdleMotion[]; physics: boolean }> {
-  if (character.format !== 'live2d') return { choices: [], physics: false };
+export async function loadMotionInfo(character: CharacterModel): Promise<{ choices: IdleMotion[]; physics: boolean; expressions: ExpressionChoice[] }> {
+  if (character.format !== 'live2d') return { choices: [], physics: false, expressions: [] };
   let json;
   if (character.builtin) {
     const response = await fetch(CHARACTER.modelUrl);
@@ -36,7 +37,8 @@ export async function loadMotionInfo(character: CharacterModel): Promise<{ choic
     if (!entry) throw new Error('Không tìm thấy cấu hình model. Hãy nhập lại model.');
     json = JSON.parse(await entry.blob.text());
   }
-  return { choices: motionChoices(json.FileReferences?.Motions), physics: !!json.FileReferences?.Physics };
+  return { choices: motionChoices(json.FileReferences?.Motions), physics: !!json.FileReferences?.Physics,
+    expressions: expressionChoices(json.FileReferences?.Expressions) };
 }
 
 export function readIdle(id: string): string {

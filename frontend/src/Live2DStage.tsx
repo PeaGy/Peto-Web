@@ -21,7 +21,9 @@ import {
 import { voiceMouth } from "./voiceActivity";
 import { controlIdle, motionChoices, readIdle, watchIdle } from './live2dMotions';
 import { readEffects, watchEffects, withCharacterEffects } from './characterEffects';
-import { musicPose, stopMusicVibe } from './musicVibe';
+import { musicPose, selectMusicCharacter, stopMusicVibe } from './musicVibe';
+import { CompanionMotion, stageQuality, type CompanionActivity } from './companionMotion';
+import { controlExpressions, expressionChoices, expressionFor, readExpressions, replyEmotion, watchExpressions } from './characterExpressions';
 
 let coreReady: Promise<void> | undefined;
 function loadCore() {
@@ -53,7 +55,9 @@ function loadCore() {
  * giữ ngón tay trên màn hình thì nhân vật nhìn theo ngón tay. Khi được cử động (`motionEnabled`), nhân vật
  * chạy motion Idle, thở, chớp mắt và nhìn theo con trỏ. Miệng luôn theo âm thanh đang phát.
  */
-export default function Live2DStage({ fallbackUrl, name, motion = "system", character = DEFAULT_CHARACTER, onPreview }: {
+export default function Live2DStage({ fallbackUrl, name, motion = "system", character = DEFAULT_CHARACTER, onPreview, reply, activity = 'idle' }: {
+  activity?: CompanionActivity;
+  reply?: { text: string } | null;
   fallbackUrl?: string;
   name: string;
   motion?: CharacterMotion;
@@ -61,12 +65,18 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
   onPreview?: (id: string, image: string) => void;
 }) {
   const host = useRef<HTMLDivElement>(null);
+  const activityRef = useRef(activity); activityRef.current = activity;
   const motionRef = useRef(motion);
   const previewRef = useRef(onPreview);
   previewRef.current = onPreview;
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [attempt, setAttempt] = useState(0);
   const [idleError, setIdleError] = useState(false);
+  const [expressionError, setExpressionError] = useState(false);
+  const replyRef = useRef(reply);
+  replyRef.current = reply;
+  const expressionReply = useRef<(text: string) => void>(() => {});
+  useEffect(() => { expressionReply.current(reply?.text || ''); }, [reply]);
 
   useEffect(() => {
     motionRef.current = motion;
@@ -79,9 +89,12 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
     let observer: ResizeObserver | undefined;
     let removeEvents = () => {};
     let disposeIdle = () => {};
+    let disposeExpressions = () => {};
+    selectMusicCharacter(character.id);
     const objectUrls: string[] = [];
     setStatus("loading");
     setIdleError(false);
+    setExpressionError(false);
 
     async function start() {
       await loadCore();
@@ -89,8 +102,9 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
         import("pixi.js"), import("pixi-live2d-display/cubism4"),
       ]);
       if (disposed) return;
-      app = new PixiApp({ width: 1, height: 1, backgroundAlpha: 0, antialias: true,
-        resolution: Math.min(window.devicePixelRatio || 1, 1.5), autoDensity: true, autoStart: false });
+      const compact = window.matchMedia(COMPACT_QUERY);
+      app = new PixiApp({ width: 1, height: 1, backgroundAlpha: 0, antialias: !compact.matches,
+        resolution: stageQuality(compact.matches, window.devicePixelRatio).resolution, autoDensity: true, autoStart: false });
       const canvas = app.view as HTMLCanvasElement;
       canvas.setAttribute("aria-hidden", "true");
       container.append(canvas);
@@ -127,7 +141,6 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
       const originalHeight = current.height;
       current.anchor.set(0.5, 1);
 
-      const compact = window.matchMedia(COMPACT_QUERY);
       const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
       const moving = () => motionEnabled(motionRef.current, reducedMotion.matches);
 
@@ -145,6 +158,9 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
       let frameHeight = 0;
       const fit = () => {
         if (!app) return;
+        const quality = stageQuality(compact.matches, window.devicePixelRatio);
+        app.ticker.maxFPS = quality.fps;
+        app.renderer.resolution = quality.resolution;
         const width = Math.max(1, container.clientWidth), height = Math.max(1, container.clientHeight);
         app.renderer.resize(width, height);
         box.width = width;
@@ -232,6 +248,22 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
       };
 
       const internal = current.internalModel as Cubism4InternalModel;
+      const manager = internal.motionManager.expressionManager;
+      if (manager) {
+        let preferences = readExpressions(character.id);
+        const choices = expressionChoices(manager.definitions);
+        const controller = controlExpressions(manager, () => setExpressionError(true));
+        expressionReply.current = text => {
+          setExpressionError(false);
+          const emotion = replyEmotion(text);
+          void controller.show(preferences.enabled && emotion ? expressionFor(emotion, choices, preferences)?.id : undefined);
+        };
+        if (replyRef.current) expressionReply.current(replyRef.current.text);
+        const unwatch = watchExpressions(character.id, value => {
+          preferences = value; controller.reset();
+        }, id => { setExpressionError(false); void controller.show(id); });
+        disposeExpressions = () => { unwatch(); controller.dispose(); expressionReply.current = () => {}; };
+      }
       let effects = readEffects(character.id);
       const unwatchEffects = watchEffects(character.id, value => {
         effects = value;
@@ -271,10 +303,15 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
         return { id, supported: index !== undefined && index >= 0 && index < liveCore.getParameterCount() };
       });
       let mouth = 0;
+      const conversationMotion = new CompanionMotion();
       internal.on("beforeModelUpdate", () => {
+        // Keep expression fades alive when body motion is paused for reduced motion.
+        if (!moving()) manager?.update(liveCore, performance.now());
         if (moving()) {
           const pose = musicPose(performance.now());
-          [pose.yaw, pose.pitch, pose.roll].forEach((value, i) => {
+          const conversation = conversationMotion.step(activityRef.current, app!.ticker.deltaMS / 1000, voiceMouth());
+          [pose.yaw * conversation.musicWeight, pose.pitch * conversation.musicWeight + conversation.pitch,
+            pose.roll * conversation.musicWeight + conversation.roll].forEach((value, i) => {
             if (beatParameters[i].supported && value) liveCore.addParameterValueById(beatParameters[i].id, value);
           });
         }
@@ -283,7 +320,7 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
         // Ép trạng thái miệng sau motion để model không nói khi âm thanh đang im lặng.
         for (const parameter of mouthParameters) core.setParameterValueById(parameter, mouth < 0.01 ? 0 : mouth);
       });
-      app.ticker.maxFPS = 30;
+      app.ticker.maxFPS = stageQuality(compact.matches, window.devicePixelRatio).fps;
       let still = false;
       let captured = false;
       app.ticker.add(() => {
@@ -307,8 +344,9 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
         }
       });
 
-      const visible = () => document.hidden ? app?.stop() : app?.start();
-      const lost = (event: Event) => { event.preventDefault(); app?.stop(); setStatus("error"); };
+      let contextLost = false;
+      const visible = () => document.hidden || contextLost ? app?.stop() : app?.start();
+      const lost = (event: Event) => { event.preventDefault(); contextLost = true; app?.stop(); setStatus("error"); };
       container.addEventListener("wheel", onWheel, { passive: false });
       container.addEventListener("pointerdown", onPointerDown);
       container.addEventListener("pointermove", onPointerMove);
@@ -365,6 +403,7 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
       observer?.disconnect();
       removeEvents();
       disposeIdle();
+      disposeExpressions();
       app?.destroy(true, { children: true, texture: true, baseTexture: true });
       objectUrls.forEach(url => URL.revokeObjectURL(url));
     };
@@ -374,6 +413,7 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
     <div className="character-glow" aria-hidden="true" />
     <div ref={host} className="character-canvas" style={{ visibility: status === "ready" ? "visible" : "hidden" }} />
     {idleError && <p className="character-motion-error" role="status">Chưa tải được chuyển động. Hãy mở Nhân vật và chọn lại chuyển động.</p>}
+    {expressionError && <p className="character-motion-error" role="status">Chưa tải được biểu cảm. Hãy kiểm tra tệp biểu cảm của model.</p>}
     {status !== "ready" && <div className="character-fallback">
       {fallbackUrl ? <img src={fallbackUrl} alt={name} /> : <span>{name.charAt(0)}</span>}
       <p role="status">{status === "loading" ? "Đang đưa nhân vật lên sân khấu…" : "Chưa hiển thị được nhân vật. Bạn vẫn có thể nhắn và nghe Peto."}</p>

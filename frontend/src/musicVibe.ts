@@ -13,19 +13,53 @@ type State = { status: 'off' | 'starting' | 'active'; message: string; strength:
 let state: State = { status: 'off', message: '', strength: 0.5, parameters: { ...DEFAULT_BEAT_PARAMETERS },
   spectrum: [], level: 0, beats: 0, lastBeat: -Infinity };
 const listeners = new Set<() => void>();
-const publish = (patch: Partial<State>) => { state = { ...state, ...patch }; listeners.forEach(fn => fn()); };
+const publish = (patch: Partial<State>, notify = true) => { state = { ...state, ...patch }; if (notify) listeners.forEach(fn => fn()); };
 const subscribe = (fn: () => void) => { listeners.add(fn); return () => { listeners.delete(fn); }; };
 export const getMusicState = () => state;
 export const useMusicVibe = () => useSyncExternalStore(subscribe, getMusicState);
 export const musicSupported = () => !!navigator.mediaDevices?.getDisplayMedia && typeof AudioContext !== 'undefined' && typeof AudioWorkletNode !== 'undefined';
-export function setMusicStrength(value: number) { publish({ strength: Math.max(0, Math.min(1, value)) }); }
+let characterId: string | undefined;
+const preferenceKey = (id: string) => `peto-beat-sync:${id}`;
+const limits = { sensitivity: [0, 1], minBeatInterval: [0.1, 1], lowpassFilterFrequency: [50, 600],
+  highpassFilterFrequency: [10, 150], envelopeFilterFrequency: [1, 40], bufferDuration: [2, 10] } as const;
+function normalizeParameters(value: Partial<AnalyserWorkletParameters>) {
+  const result = { ...DEFAULT_BEAT_PARAMETERS };
+  for (const key of Object.keys(limits) as (keyof typeof limits)[]) {
+    const number = value?.[key];
+    if (typeof number === 'number' && Number.isFinite(number)) result[key] = Math.max(limits[key][0], Math.min(limits[key][1], number));
+  }
+  for (const key of ['warmup', 'adaptiveThreshold', 'spectralFlux'] as const) {
+    if (typeof value?.[key] === 'boolean') result[key] = value[key];
+  }
+  result.highpassFilterFrequency = Math.min(result.highpassFilterFrequency, result.lowpassFilterFrequency - 1);
+  return result;
+}
+function savePreferences() {
+  if (!characterId) return;
+  try { localStorage.setItem(preferenceKey(characterId), JSON.stringify({ strength: state.strength, parameters: state.parameters })); } catch { /* Session still works. */ }
+}
+/** Restore settings only; capture always requires a fresh user gesture. */
+export function selectMusicCharacter(id: string) {
+  if (characterId === id) return;
+  stopMusicVibe();
+  characterId = id;
+  let saved;
+  try { saved = JSON.parse(localStorage.getItem(preferenceKey(id)) || 'null'); } catch { /* Defaults for damaged storage. */ }
+  publish({ strength: typeof saved?.strength === 'number' && Number.isFinite(saved.strength) ? Math.max(0, Math.min(1, saved.strength)) : 0.5,
+    parameters: normalizeParameters(saved?.parameters) });
+}
+export function setMusicStrength(value: number) {
+  if (!Number.isFinite(value)) return;
+  publish({ strength: Math.max(0, Math.min(1, value)) }); savePreferences();
+}
 let activeAnalyser: Analyser | undefined;
 export function setBeatParameters(patch: Partial<AnalyserWorkletParameters>) {
-  const parameters = { ...state.parameters, ...patch };
+  const parameters = normalizeParameters({ ...state.parameters, ...patch });
   // Keep both frequency cutoffs ordered, including when restoring defaults.
   parameters.highpassFilterFrequency = Math.min(parameters.highpassFilterFrequency, parameters.lowpassFilterFrequency - 1);
   activeAnalyser?.updateParameters(parameters, true);
   publish({ parameters });
+  savePreferences();
 }
 export function resetBeatParameters() { setBeatParameters({ ...DEFAULT_BEAT_PARAMETERS }); }
 
@@ -54,8 +88,10 @@ export async function startMusicVibe() {
   let mono: GainNode | undefined;
   let beatAnalyser: Analyser | undefined;
   let timer: ReturnType<typeof setInterval> | undefined;
+  let removeVisibility = () => {};
   const cleanup = () => {
     clearInterval(timer);
+    removeVisibility();
     stream?.getTracks().forEach(track => { track.onended = null; track.stop(); });
     source?.disconnect(); mono?.disconnect(); analyser?.disconnect(); mute?.disconnect();
     beatAnalyser?.stop();
@@ -76,7 +112,7 @@ export async function startMusicVibe() {
         if (token !== generation || state.status !== 'active') return;
         const now = performance.now();
         detector.beat(now);
-        publish({ beats: state.beats + 1, lastBeat: now });
+        publish({ beats: state.beats + 1, lastBeat: now }, !document.hidden);
       } },
     });
     if (token !== generation) { cleanup(); return; }
@@ -97,7 +133,9 @@ export async function startMusicVibe() {
     const bins = new Uint8Array(analyser.frequencyBinCount);
     const samples = new Float32Array(analyser.fftSize);
     let lastSound = performance.now();
-    timer = setInterval(() => {
+    const monitor = () => {
+      // The worklet keeps detecting beats while YouTube is foregrounded. Only UI analysis sleeps.
+      if (document.hidden || listeners.size === 0) return;
       analyser!.getByteFrequencyData(bins);
       analyser!.getFloatTimeDomainData(samples);
       const rms = Math.sqrt(samples.reduce((sum, value) => sum + value * value, 0) / samples.length);
@@ -116,7 +154,17 @@ export async function startMusicVibe() {
         : now - state.lastBeat < 2000 ? 'Đã bắt được nhịp — nhân vật đang nhận chuyển động.'
         : rms > 0.0001 ? 'Đang nhận âm thanh, chưa bắt được nhịp. Thử tăng độ nhạy.' : 'Đang chờ âm thanh từ nguồn chia sẻ…';
       publish({ message, spectrum, level });
-    }, 80);
+    };
+    const visibility = () => {
+      clearInterval(timer); timer = undefined;
+      if (!document.hidden) {
+        lastSound = performance.now();
+        publish({}); monitor(); timer = setInterval(monitor, 80);
+      }
+    };
+    document.addEventListener('visibilitychange', visibility);
+    removeVisibility = () => document.removeEventListener('visibilitychange', visibility);
+    visibility();
     publish({ status: 'active', message: 'Đang nghe, chờ nhịp nhạc…' });
   } catch (error) {
     cleanup();

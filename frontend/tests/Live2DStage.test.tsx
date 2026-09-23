@@ -5,6 +5,7 @@ import { CHARACTER } from '../src/characterConfig';
 import { writeIdle } from '../src/live2dMotions';
 import { writeEffects } from '../src/characterEffects';
 import * as music from '../src/musicVibe';
+import { writeExpressions } from '../src/characterExpressions';
 
 const mocks = vi.hoisted(() => ({
   from: vi.fn(), destroy: vi.fn(), start: vi.fn(), stop: vi.fn(), tick: null as null | (() => void),
@@ -73,6 +74,21 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
+it('pauses when hidden and never restarts a lost WebGL context on visibility changes', async () => {
+  const { view } = await mount();
+  const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
+  act(() => document.dispatchEvent(new Event('visibilitychange')));
+  expect(mocks.stop).toHaveBeenCalled();
+  hidden.mockReturnValue(false); mocks.start.mockClear();
+  act(() => document.dispatchEvent(new Event('visibilitychange')));
+  expect(mocks.start).toHaveBeenCalledOnce();
+  fireEvent(view.container.querySelector('canvas')!, new Event('webglcontextlost', { cancelable: true }));
+  mocks.start.mockClear();
+  act(() => document.dispatchEvent(new Event('visibilitychange')));
+  expect(mocks.start).not.toHaveBeenCalled();
+  hidden.mockRestore();
+});
+
 it('nhún theo nhạc cộng vào góc đầu, không ghi đè miệng và tôn trọng giảm chuyển động', async () => {
   const pose = vi.spyOn(music, 'musicPose').mockReturnValue({ yaw: 3, pitch: -2, roll: 1 });
   try {
@@ -86,6 +102,24 @@ it('nhún theo nhạc cộng vào góc đầu, không ghi đè miệng và tôn 
     reduced.model.internalModel.on.mock.calls.find(([name]) => name === 'beforeModelUpdate')![1]();
     expect(reduced.model.internalModel.coreModel.addParameterValueById).not.toHaveBeenCalled();
   } finally { pose.mockRestore(); }
+});
+
+it('applies completed replies even during model loading and cancels when disabled', async () => {
+  const model = fakeModel();
+  const manager = { definitions: [{ Name: 'Happy', File: 'happy.exp3.json' }], reserveExpressionIndex: -1,
+    currentExpression: {}, defaultExpression: {}, resetExpression: vi.fn(), update: vi.fn(), setExpression: vi.fn().mockResolvedValue(true) };
+  Object.assign(model.internalModel.motionManager, { expressionManager: manager });
+  mocks.from.mockResolvedValue(model);
+  const view = render(<Live2DStage name="Peto" reply={{ text: 'Congratulations!' }} />);
+  await waitFor(() => expect(manager.setExpression).toHaveBeenCalledWith(0));
+  model.internalModel.on.mock.calls.find(([name]) => name === 'beforeModelUpdate')![1]();
+  expect(manager.update).toHaveBeenCalled();
+  act(() => writeExpressions(CHARACTER.id, { enabled: false, mapping: {} }));
+  expect(manager.currentExpression).toBe(manager.defaultExpression);
+  manager.setExpression.mockClear();
+  view.rerender(<Live2DStage name="Peto" reply={{ text: 'Congratulations again!' }} />);
+  expect(manager.setExpression).not.toHaveBeenCalled();
+  view.unmount(); expect(manager.reserveExpressionIndex).toBe(-1);
 });
 
 it('giảm chuyển động vẫn áp dụng pose và giải phóng renderer khi rời trang', async () => {

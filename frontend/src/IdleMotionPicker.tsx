@@ -3,6 +3,9 @@ import type { CharacterModel } from './characterLibrary';
 import { loadMotionInfo, readIdle, watchIdle, writeIdle, type IdleMotion } from './live2dMotions';
 import { readEffects, watchEffects, writeEffects, type CharacterEffects } from './characterEffects';
 import MusicVibePicker from './MusicVibePicker';
+import ExpressionPicker from './ExpressionPicker';
+import type { ExpressionChoice } from './characterExpressions';
+import { selectMusicCharacter } from './musicVibe';
 
 export default function IdleMotionPicker({ character }: { character: CharacterModel }) {
   const label = useId();
@@ -13,12 +16,14 @@ export default function IdleMotionPicker({ character }: { character: CharacterMo
   const [attempt, setAttempt] = useState(0);
   const [effects, setEffects] = useState(() => readEffects(character.id));
   const [hasPhysics, setHasPhysics] = useState(false);
+  const [expressions, setExpressions] = useState<ExpressionChoice[]>([]);
+  useEffect(() => selectMusicCharacter(character.id), [character.id]);
   useEffect(() => watchEffects(character.id, setEffects), [character.id]);
   useEffect(() => watchIdle(character.id, setValue), [character.id]);
   useEffect(() => {
     let alive = true;
     setLoading(true); setError('');
-    void loadMotionInfo(character).then(info => { if (alive) { setChoices(info.choices); setHasPhysics(info.physics); } })
+    void loadMotionInfo(character).then(info => { if (alive) { setChoices(info.choices); setHasPhysics(info.physics); setExpressions(info.expressions); } })
       .catch(() => { if (alive) setError('Chưa đọc được danh sách chuyển động của model.'); })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
@@ -55,6 +60,7 @@ export default function IdleMotionPicker({ character }: { character: CharacterMo
           }} />
       </label>)}
     </div>
+    {!loading && !error && <ExpressionPicker characterId={character.id} choices={expressions} />}
     <MusicVibePicker />
     {!loading && !error && !choices.length && <p>Không có motion được khai báo trong .model3.json.</p>}
   </section>;

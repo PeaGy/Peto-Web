@@ -2472,3 +2472,6 @@ button.artifact-name { cursor: pointer; }
   .beat-sync-pulse span[data-lit="true"] { opacity: .85; background: #8dd7e5; }
   .beat-sync-spectrum span { transition: none; }
 }
+.expression-mapping { display: flex; align-items: end; flex-wrap: wrap; gap: 12px; margin: 14px 0; }
+.expression-mapping label { flex: 1; min-width: 160px; }
+.expression-mapping select { display: block; width: 100%; margin-top: 6px; }
