@@ -2500,3 +2500,31 @@ button.artifact-name { cursor: pointer; }
   .import-review-body { padding: 0 16px 16px; }
   .import-review-actions { padding: 14px 16px; flex-wrap: wrap; }
 }
+.scene-backdrop { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+.scene-backdrop img { width: 100%; height: 100%; object-fit: cover; transform: scale(1.06); }
+.scene-backdrop > div { position: absolute; inset: 0; }
+.companion-with-scene .character-glow { display: none; }
+.companion-with-scene .character-credit { color: white; text-shadow: 0 1px 4px black; }
+.scene-preview { height: 180px; position: relative; overflow: hidden; border-radius: 16px; background: #121212; }
+.scene-preview > span { position: absolute; bottom: 12px; left: 14px; background: #0009; color: white; padding: 5px 10px; border-radius: 8px; font-size: 12px; }
+.scene-toolbar { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin: 20px 0; }
+.scene-toolbar button, .scene-remove { border: 1px solid var(--line); border-radius: 10px; padding: 9px 13px; background: var(--panel); color: var(--text); cursor: pointer; }
+.scene-toolbar small, .scene-credit { color: var(--muted); }
+.scene-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.scene-card { min-width: 0; }
+.scene-card > button:first-child { width: 100%; overflow: hidden; padding: 4px; border: 2px solid transparent; border-radius: 14px; background: var(--panel); color: var(--text); cursor: pointer; text-align: left; }
+.scene-card > button[aria-pressed=true] { border-color: var(--accent); }
+.scene-card > button > div { aspect-ratio: 16 / 10; overflow: hidden; border-radius: 9px; background: #121212; display: grid; place-items: center; color: #aaa; }
+.scene-card img { width: 100%; height: 100%; object-fit: cover; }
+.scene-card strong { display: block; padding: 10px 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 13px; }
+.scene-remove { margin-top: 6px; font-size: 12px; }
+.scene-adjustments { display: grid; gap: 18px; margin: 24px 0; }
+.scene-adjustments label { display: block; font-size: 14px; }
+.scene-adjustments span { float: right; color: var(--muted); }
+.scene-adjustments input { display: block; width: 100%; margin-top: 12px; accent-color: var(--accent); }
+.scene-credit a { color: inherit; }
+@media (max-width: 700px) {
+  .scene-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .scene-preview { height: 140px; }
+  .companion-with-scene .companion-title { background: var(--stage-surface); border-radius: 14px; padding: 4px; }
+}

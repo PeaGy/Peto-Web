@@ -12,6 +12,7 @@ import { SpeakButton, SpeakerIcon, SpeakerOffIcon, type LocalVoice } from "./Loc
 import type { CharacterMotion } from "./characterView";
 import { DEFAULT_CHARACTER, type CharacterModel } from './characterLibrary';
 import type { CompanionActivity } from './companionMotion';
+import { SceneBackdrop, ScenePicker, useCompanionScene } from './CompanionScenes';
 
 const MUTED_KEY = "peto-companion-muted";
 const Live2DStage = lazy(() => import("./Live2DStage"));
@@ -86,6 +87,8 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
   const [error, setError] = useState<string | null>(null);
   const [muted, setMuted] = useState(readMuted);
   const [confirmReset, setConfirmReset] = useState(false);
+  const [scenesOpen, setScenesOpen] = useState(false);
+  const scene = useCompanionScene(character.id);
   const [resetting, setResetting] = useState(false);
   const stopVoice = voice.stop;
   const loadVersion = useRef(0);
@@ -276,8 +279,10 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
   const canSend = draft.trim().length > 0 && !streaming && !loading && !loadFailed;
 
   return (
-    <main className="companion" hidden={!active}>
+    <main className={`companion${scene.selected.url ? ' companion-with-scene' : ''}`} hidden={!active}>
+      {active && scenesOpen && <ScenePicker scene={scene} onClose={() => setScenesOpen(false)} />}
       <section className="companion-stage" aria-label={name}>
+        <SceneBackdrop scene={scene} />
         <button className="companion-character-button" onClick={onOpenCharacters} aria-label="Chọn nhân vật">◇ <span>Nhân vật</span></button>
         {active && <Suspense fallback={<p role="status">Đang tải nhân vật…</p>}>
           {character.format === 'vrm'
@@ -308,6 +313,9 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
             <span aria-live="polite">{stateText}</span>
           </button>
           <div className="companion-tools">
+            <button type="button" className="companion-tool" aria-label="Bối cảnh" title="Bối cảnh" aria-haspopup="dialog" onClick={() => setScenesOpen(true)}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4" stroke="currentColor" strokeWidth="1.7" /><circle cx="9" cy="8" r="2" stroke="currentColor" strokeWidth="1.7" /><path d="m4 18 5-5 3 3 4-6 5 8" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" /></svg>
+            </button>
             {voice.status === "ready" && (
               <button
                 type="button"
