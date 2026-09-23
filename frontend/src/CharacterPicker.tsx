@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { characterError, type CharacterFormat } from './characterLibrary';
 import type { CharacterLibrary } from './useCharacters';
 import IdleMotionPicker from './IdleMotionPicker';
+import CharacterImportReview from './CharacterImportReview';
+import type { Live2DImportReport } from './characterImport';
 
 export default function CharacterPicker({ library, onClose }: { library: CharacterLibrary; onClose: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null);
@@ -15,6 +17,7 @@ export default function CharacterPicker({ library, onClose }: { library: Charact
   const [editing, setEditing] = useState('');
   const [name, setName] = useState('');
   const [deleting, setDeleting] = useState('');
+  const [review, setReview] = useState<Live2DImportReport | null>(null);
   useEffect(() => {
     dialog.current?.showModal();
     folder.current?.setAttribute('webkitdirectory', '');
@@ -27,10 +30,28 @@ export default function CharacterPicker({ library, onClose }: { library: Charact
     finally { setBusy(false); }
   };
   const picked = (files: FileList | null, format: CharacterFormat) => {
-    if (files?.length) void run(() => library.add(Array.from(files), format), 'Đã thêm và chọn nhân vật. Đóng cửa sổ này để xem trên sân khấu.');
+    if (!files?.length) return;
+    const input = Array.from(files);
+    if (format === 'live2d') void run(async () => {
+      setNotice('');
+      const { inspectLive2D } = await import('./characterImport');
+      setReview(await inspectLive2D(input));
+    });
+    else void run(() => library.add(input, format), 'Đã thêm và chọn nhân vật. Đóng cửa sổ này để xem trên sân khấu.');
+  };
+  const confirmImport = async () => {
+    if (!review?.prepared || busy) return;
+    setBusy(true); setError('');
+    try {
+      await library.addPrepared(review.prepared);
+      setReview(null); setNotice('Đã thêm và chọn nhân vật. Đóng cửa sổ này để xem trên sân khấu.');
+    } catch (reason) { setError(characterError(reason)); }
+    finally { setBusy(false); }
   };
   const chooseFile = (ref: { current: HTMLInputElement | null }) => { if (menu.current) menu.current.open = false; ref.current?.click(); };
   return <dialog ref={dialog} className="character-picker" aria-labelledby="character-picker-title" onCancel={event => { event.preventDefault(); if (!busy) onClose(); }}>
+    {review && <CharacterImportReview report={review} busy={busy} error={error}
+      onCancel={() => { setReview(null); setError(''); }} onConfirm={() => void confirmImport()} />}
     <div className="character-picker-head">
       <div><h2 id="character-picker-title">Nhân vật</h2><p>Chọn gương mặt đồng hành cùng bạn.</p></div>
       <button className="dialog-close" aria-label="Đóng chọn nhân vật" disabled={busy} onClick={onClose}>×</button>

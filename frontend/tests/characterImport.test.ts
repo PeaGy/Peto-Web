@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { expect, it } from 'vitest';
 import { zipSync, strToU8 } from 'fflate';
-import { importCharacter, modelPath, validateLive2D, validateVRM } from '../src/characterImport';
+import { importCharacter, inspectLive2D, modelPath, validateLive2D, validateVRM } from '../src/characterImport';
 
 const settings = (file = 'avatar.moc3') => ({ Version: 3, FileReferences: { Moc: file, Textures: ['textures/顔.png'], Motions: { Idle: [{ File: 'idle.motion3.json', Sound: 'https://external.test/sound.wav' }] } } });
 const zip = (json = settings(), extra = {}) => new File([zipSync({
@@ -26,6 +26,33 @@ it('chặn tài nguyên ngoài gói, đường dẫn thoát gói và thiếu t�
 });
 it('không tự đoán model khi một gói có nhiều entry', async () => {
   await expect(importCharacter([zip(settings(), { 'second.model3.json': strToU8('{}') })], 'live2d')).rejects.toThrow('nhiều model');
+});
+it('reviews referenced and unreferenced resources without silently attaching orphan files', async () => {
+  const report = await inspectLive2D([zip(settings(), {
+    'folder/extra.motion3.json': strToU8('{}'), 'folder/smile.exp3.json': strToU8('{}'),
+    '__MACOSX/._avatar.model3.json': strToU8('metadata'),
+  })]);
+  expect(report.entry).toBe('folder/avatar.model3.json');
+  expect(report.files).toBe(6);
+  expect(report.motions.found).toHaveLength(2); expect(report.motions.referenced).toHaveLength(1);
+  expect(report.expressions.found).toHaveLength(1); expect(report.expressions.referenced).toHaveLength(0);
+  expect(report.issues.filter(issue => issue.severity === 'warning')).toHaveLength(2);
+  expect(report.prepared?.assets.files.some(file => file.path.endsWith('smile.exp3.json'))).toBe(false);
+  expect(report.parameters).toBeNull();
+});
+it('collects missing references and blocks preparation even when warnings could be bypassed', async () => {
+  const report = await inspectLive2D([zip({ Version: 3, FileReferences: {
+    Moc: 'absent.moc3', Textures: ['absent.png'], Expressions: [{ File: 'gone.exp3.json' }],
+  } } as ReturnType<typeof settings>)]);
+  expect(report.prepared).toBeUndefined();
+  expect(report.issues.filter(issue => issue.severity === 'error')).toHaveLength(3);
+});
+it('does not guess an entry for multiple models and labels parameter data from DisplayInfo', async () => {
+  const ambiguous = await inspectLive2D([zip(settings(), { 'other.model3.json': strToU8('{}') })]);
+  expect(ambiguous.prepared).toBeUndefined(); expect(ambiguous.issues[0].message).toContain('nhiều model');
+  const json = { ...settings(), FileReferences: { ...settings().FileReferences, DisplayInfo: 'avatar.cdi3.json' } };
+  const report = await inspectLive2D([zip(json, { 'folder/avatar.cdi3.json': strToU8(JSON.stringify({ Parameters: [{ Id: 'A' }, { Id: 'B' }, { Id: 'A' }] })) })]);
+  expect(report.parameters).toBe(2); expect(report.prepared).toBeDefined();
 });
 it('từ chối moc giả và ZIP cụt', async () => {
   await expect(validateLive2D([{ path: 'model.model3.json', blob: new Blob([JSON.stringify(settings())]) }, { path: 'avatar.moc3', blob: new Blob(['fake']) }])).rejects.toThrow('.moc3');

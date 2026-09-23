@@ -133,9 +133,85 @@ export function validateVRM(buffer: ArrayBuffer): { name?: string; author?: stri
   return { name: String(meta.name ?? meta.title ?? '').slice(0, 80) || undefined, author: String(meta.authors?.join(', ') ?? meta.author ?? '').slice(0, 200) || undefined };
 }
 
-export async function importCharacter(input: File[], format: CharacterFormat): Promise<CharacterImport> {
+function checkInput(input: File[]) {
   if (!input.length) throw new Error('Bạn chưa chọn tệp model.');
   if (input.length > MAX_FILES || input.reduce((size, file) => size + file.size, 0) > MAX_IMPORT_BYTES) throw new Error('Model nhập vào tối đa 80 MB và 512 tệp.');
+}
+async function liveFiles(input: File[]) {
+  checkInput(input);
+  const files = input.length === 1 && input[0].name.toLowerCase().endsWith('.zip')
+    ? await readZip(input[0])
+    : input.map(file => ({ path: modelPath(file.webkitRelativePath || file.name), blob: file }));
+  if (files.some(file => file.blob.size > MAX_FILE_BYTES)) throw new Error('Một tệp trong model vượt quá 64 MB.');
+  if (new Set(files.map(file => file.path.toLowerCase())).size !== files.length) throw new Error('Model có tệp trùng đường dẫn.');
+  return files;
+}
+export interface Live2DImportReport {
+  name: string; entry: string; files: number; bytes: number;
+  motions: { found: string[]; referenced: string[] }; expressions: { found: string[]; referenced: string[] };
+  textures: string[]; parameters: number | null; physics: boolean;
+  issues: { severity: 'error' | 'warning'; message: string; paths?: string[] }[];
+  prepared?: CharacterImport;
+}
+/** Inspect bounded archive data without saving it or loading an executable model runtime. */
+export async function inspectLive2D(input: File[]): Promise<Live2DImportReport> {
+  const files = await liveFiles(input);
+  const name = input.length > 1 ? (input[0].webkitRelativePath || input[0].name).split('/')[0] : input[0].name.replace(/\.zip$/i, '');
+  const report: Live2DImportReport = { name, entry: '', files: files.length, bytes: files.reduce((sum, file) => sum + file.blob.size, 0),
+    motions: { found: files.filter(file => /\.motion3\.json$/i.test(file.path)).map(file => file.path), referenced: [] },
+    expressions: { found: files.filter(file => /\.exp3\.json$/i.test(file.path)).map(file => file.path), referenced: [] },
+    textures: [], parameters: null, physics: false, issues: [] };
+  const entries = files.filter(file => /\.model3\.json$/i.test(file.path));
+  const error = (message: string) => { if (!report.issues.some(issue => issue.message === message)) report.issues.push({ severity: 'error', message }); };
+  if (entries.length === 1) {
+    report.entry = entries[0].path;
+    try {
+      const json = await jsonFile(entries[0]);
+      const refs = json.FileReferences ?? {};
+      const base = report.entry.split('/').slice(0, -1).join('/');
+      const map = new Map(files.map(file => [file.path, file]));
+      const reference = (value: unknown) => {
+        if (typeof value !== 'string') return undefined;
+        try {
+          const path = modelPath(value, base);
+          if (!map.has(path)) error(`Thiếu tệp trong model: ${path}`);
+          return path;
+        } catch (reason) { error(reason instanceof Error ? reason.message : 'Đường dẫn không hợp lệ.'); return undefined; }
+      };
+      const paths = (values: unknown[]) => [...new Set(values.map(reference).filter((path): path is string => !!path))];
+      report.textures = paths(Array.isArray(refs.Textures) ? refs.Textures : []);
+      report.expressions.referenced = paths(Array.isArray(refs.Expressions) ? refs.Expressions.map((item: Json) => item?.File) : []);
+      report.motions.referenced = paths(refs.Motions && typeof refs.Motions === 'object'
+        ? Object.values(refs.Motions).flatMap(items => Array.isArray(items) ? items.map(item => item?.File) : []) : []);
+      const moc = reference(refs.Moc);
+      for (const field of ['Physics', 'Pose', 'UserData', 'DisplayInfo']) if (refs[field]) reference(refs[field]);
+      report.physics = typeof refs.Physics === 'string' && map.has(modelPath(refs.Physics, base));
+      if (moc && (map.get(moc)?.blob.size ?? 0) > 10 * 1024 * 1024) report.issues.push({ severity: 'warning', message: 'Tệp MOC lớn hơn 10 MB, có thể tải chậm hoặc giảm độ mượt trên điện thoại.' });
+      if (typeof refs.DisplayInfo === 'string') {
+        const display = map.get(modelPath(refs.DisplayInfo, base));
+        if (display) {
+          const info = await jsonFile(display);
+          if (Array.isArray(info.Parameters)) report.parameters = new Set(info.Parameters.filter((p: Json) => typeof p?.Id === 'string').map((p: Json) => p.Id)).size;
+        }
+      }
+      for (const [resources, label] of [[report.motions, 'chuyển động'], [report.expressions, 'biểu cảm']] as const) {
+        const extra = resources.found.filter(path => !resources.referenced.includes(path));
+        if (extra.length) report.issues.push({ severity: 'warning', message: `${extra.length} tệp ${label} chưa được khai báo trong .model3.json nên sẽ không được nhập. Hãy bổ sung khai báo nếu muốn sử dụng.`, paths: extra });
+      }
+    } catch (reason) { error(reason instanceof Error ? reason.message : 'Không đọc được cấu hình model.'); }
+  }
+  try {
+    const data = await validateLive2D(files);
+    if (!report.issues.some(issue => issue.severity === 'error')) {
+      const id = crypto.randomUUID();
+      report.prepared = { model: { id, name: name.slice(0, 80), format: 'live2d', bytes: data.files.reduce((sum, file) => sum + file.blob.size, 0), createdAt: Date.now() }, assets: { id, ...data } };
+    }
+  } catch (reason) { error(reason instanceof Error ? reason.message : 'Model không hợp lệ.'); }
+  return report;
+}
+
+export async function importCharacter(input: File[], format: CharacterFormat): Promise<CharacterImport> {
+  checkInput(input);
   const id = crypto.randomUUID();
   let name = input[0].name.replace(/\.(zip|vrm)$/i, ''), author: string | undefined;
   let data: { entry: string; files: CharacterFile[] };
@@ -145,11 +221,7 @@ export async function importCharacter(input: File[], format: CharacterFormat): P
     name = meta.name ?? name; author = meta.author;
     data = { entry: 'model.vrm', files: [{ path: 'model.vrm', blob: input[0] }] };
   } else {
-    const files = input.length === 1 && input[0].name.toLowerCase().endsWith('.zip')
-      ? await readZip(input[0])
-      : input.map(file => ({ path: modelPath(file.webkitRelativePath || file.name), blob: file }));
-    if (files.some(file => file.blob.size > MAX_FILE_BYTES)) throw new Error('Một tệp trong model vượt quá 64 MB.');
-    if (new Set(files.map(file => file.path.toLowerCase())).size !== files.length) throw new Error('Model có tệp trùng đường dẫn.');
+    const files = await liveFiles(input);
     if (input.length > 1) name = (input[0].webkitRelativePath || input[0].name).split('/')[0];
     data = await validateLive2D(files);
   }

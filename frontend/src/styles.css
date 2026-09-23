@@ -2475,3 +2475,28 @@ button.artifact-name { cursor: pointer; }
 .expression-mapping { display: flex; align-items: end; flex-wrap: wrap; gap: 12px; margin: 14px 0; }
 .expression-mapping label { flex: 1; min-width: 160px; }
 .expression-mapping select { display: block; width: 100%; margin-top: 6px; }
+.import-review { width: min(800px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); padding: 0; border: 1px solid var(--line); border-radius: 20px; background: var(--panel); color: var(--text); overflow: auto; }
+.import-review::backdrop { background: #0009; }
+.import-review-body { padding: 0 24px 20px; }
+.import-review-model, .import-review-stats > div { background: var(--panel-2); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 8px; min-width: 0; }
+.import-review-model strong { overflow-wrap: anywhere; }
+.import-review-model span, .import-review-model small, .import-review-stats span, .import-review-stats small, .import-review-hint { color: var(--muted); }
+.import-review-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.import-review-stats strong { font-size: 26px; }
+.import-review-stats small { line-height: 1.5; }
+.import-review-issue-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.import-review-issue-head span { color: var(--muted); font-size: 14px; }
+.import-review-issues { list-style: none; padding: 0; display: grid; gap: 10px; }
+.import-review-issues > li { display: flex; gap: 12px; padding: 14px; border-radius: 12px; background: var(--panel-2); overflow-wrap: anywhere; }
+.import-review-issues > li > span { flex-shrink: 0; border-radius: 50%; width: 22px; height: 22px; text-align: center; background: #edbd46; color: #171717; font-weight: 700; }
+.import-review-issues > li[data-severity="error"] > span { background: #f18b8b; }
+.import-review-issues p { margin: 5px 0; line-height: 1.5; }
+.import-review-issues details { margin-top: 8px; font-size: 13px; }
+.import-review-hint, .import-review-ok { font-size: 13px; line-height: 1.6; }
+.import-review-actions { display: flex; justify-content: flex-end; gap: 12px; padding: 18px 24px; border-top: 1px solid var(--line); position: sticky; bottom: 0; background: var(--panel); }
+.import-review-actions .import-confirm { background: var(--panel-2); font-weight: 600; }
+@media (max-width: 600px) {
+  .import-review-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .import-review-body { padding: 0 16px 16px; }
+  .import-review-actions { padding: 14px 16px; flex-wrap: wrap; }
+}

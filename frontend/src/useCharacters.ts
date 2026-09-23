@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   DEFAULT_CHARACTER, SELECTED_CHARACTER_KEY, characterError, listCharacters, readSelectedCharacter,
-  removeCharacter, saveCharacter, updateCharacter, writeSelectedCharacter, type CharacterFormat, type CharacterModel,
+  removeCharacter, saveCharacter, updateCharacter, writeSelectedCharacter, type CharacterFormat, type CharacterModel, type CharacterImport,
 } from './characterLibrary';
 
 export function useCharacters() {
@@ -37,14 +37,16 @@ export function useCharacters() {
   const select = useCallback((id: string) => {
     writeSelectedCharacter(id); setSelectedId(id);
   }, []);
-  const add = async (files: File[], format: CharacterFormat) => {
+  const addPrepared = async (data: CharacterImport) => {
     if (modelsRef.current.length >= 21) throw new Error('Bạn có thể giữ tối đa 20 model riêng. Hãy xóa bớt trước khi thêm.');
-    const { importCharacter } = await import('./characterImport');
-    const data = await importCharacter(files, format);
     await saveCharacter(data); // Chỉ chọn sau khi cả metadata và tài nguyên đã lưu thành công.
     await refresh();
     select(data.model.id);
     setError('');
+  };
+  const add = async (files: File[], format: CharacterFormat) => {
+    const { importCharacter } = await import('./characterImport');
+    await addPrepared(await importCharacter(files, format));
   };
   const rename = async (id: string, name: string) => {
     const model = modelsRef.current.find(item => item.id === id);
@@ -64,6 +66,6 @@ export function useCharacters() {
     setModels(previous => previous.map(item => item.id === id ? { ...item, preview } : item));
     void updateCharacter(id, { preview }).catch(() => {});
   }, []);
-  return { models, selected: models.find(model => model.id === selectedId) ?? DEFAULT_CHARACTER, loading, error, select, add, rename, remove, savePreview };
+  return { models, selected: models.find(model => model.id === selectedId) ?? DEFAULT_CHARACTER, loading, error, select, add, addPrepared, rename, remove, savePreview };
 }
 export type CharacterLibrary = ReturnType<typeof useCharacters>;
