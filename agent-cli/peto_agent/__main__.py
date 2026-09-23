@@ -439,9 +439,10 @@ def session(ui: UI) -> int:
                 continue
             work.run_task(text, ui.attached)
     finally:
-        # Lệnh nền không sống lâu hơn phiên: đóng peto là dừng hết, kể cả khi thoát vì lỗi.
+        # Lệnh nền và trình duyệt ẩn không sống lâu hơn phiên: đóng peto là dừng hết, kể cả khi thoát vì lỗi.
         if stopped := work.tools.jobs.stop_all():
             ui.line(f"Đã dừng {len(stopped)} lệnh nền: " + ", ".join(stopped), "dim")
+        work.tools.close_browser()
     ui.line("Tạm biệt!", "dim")
     return 0
 

@@ -36,6 +36,11 @@ def sessions_dir() -> Path:
     return log_dir().parent / "sessions"
 
 
+def screenshots_dir() -> Path:
+    """Ảnh Peto chụp trang web, cạnh thư mục nhật ký, để người dùng mở xem đúng thứ Peto đã thấy."""
+    return log_dir().parent / "screenshots"
+
+
 def load() -> dict:
     try:
         data = json.loads((home() / "config.json").read_text(encoding="utf-8"))

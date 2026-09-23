@@ -103,7 +103,7 @@ của VS Code) là quả lê 6 × 6. Thấp hơn nữa, hẹp dưới 41 cột, 
 chữ. Trong terminal của VS Code, Peto chừa thêm 2 cột bên phải, vì VS Code che khoảng hai cột sát mép:
 
 ```text
- [mascot]   Peto Agent 0.9.8
+ [mascot]   Peto Agent 0.10.0
  [mascot]   Peto · mức vừa
  [mascot]   ~\Projects\website-a
 
@@ -262,6 +262,37 @@ chạy ở phía dịch vụ AI, không mở gì trên máy bạn; trong CLI nó
 Peto được nhắc chỉ đưa từ khóa cần thiết vào truy vấn, không đưa nội dung tệp hay đường dẫn trên máy bạn, và coi nội
 dung trang web là dữ liệu chứ không phải lệnh. Mỗi lượt tìm tính phí vào tài khoản dịch vụ AI của chủ web, nên chủ web
 tắt được bằng `PETO_AGENT_WEB_SEARCH=false`; khi tắt, Peto được yêu cầu nói rõ là mình không tra cứu được.
+
+### Xem trang web trên máy
+
+Từ bản 0.10.0 (cần cả VPS mới), Peto tự mở trang web đang chạy trên máy bạn để kiểm tra sau khi sửa giao diện, thay vì
+đoán. Ví dụ bạn nhờ "nút Gửi bị tràn trên điện thoại": Peto sửa CSS, chạy dev server nền, mở trang ở cỡ điện thoại,
+chụp ảnh xem còn tràn không, rồi mới báo xong.
+
+```text
+  • Xem trang http://localhost:5173/ · máy tính 1280×800
+    Tải xong 0,8 giây · "Peto" · 3 lỗi
+    ✗ console.error: Không tải được cấu hình: thiếu API_URL
+    ✗ ReferenceError: hamKhongTonTai is not defined (src/main.tsx:12)
+    ✗ 404 /khong-co-anh.png
+  • Chụp trang · điện thoại 390×844
+    ảnh: C:\Users\ban\AppData\Local\PetoAgent\screenshots\web_test-0923-180711-1.png
+```
+
+- **Peto thấy gì:** tiêu đề, mã HTTP, lỗi console, lỗi JavaScript, request hỏng (404, 500, mất kết nối), các nút, ô
+  nhập, liên kết và ảnh thiếu `alt` đang hiện; chữ trên trang khi cần; và ảnh chụp cỡ máy tính (1280×800), cỡ điện thoại
+  (390×844) hoặc cả trang dài (tối đa 4000px). Dưới mỗi lần xem, terminal in tối đa 5 lỗi; Peto nhận đủ.
+- **Ảnh chụp** được lưu ở `%LOCALAPPDATA%\PetoAgent\screenshots\` 7 ngày để bạn xem đúng thứ Peto đã thấy; trong
+  terminal VS Code, Ctrl+Click đường dẫn để mở. Mỗi lần xem là một bước, và ảnh tốn token hơn chữ, nên Peto chỉ chụp
+  khi cần nhìn bố cục.
+- **Chỉ trang trên máy:** `localhost`, `127.0.0.1`, `::1`. Trang ngoài, `file://`, và trang chuyển hướng ra ngoài đều
+  bị từ chối, để Peto không thể mở một địa chỉ mang theo nội dung tệp của bạn, và trang lạ không nhét được chỉ dẫn vào.
+  Xem trang trên máy không hỏi quyền, như đọc tệp; đợt này Peto chưa bấm hay gõ gì trên trang.
+- **Trình duyệt:** Microsoft Edge có sẵn trong Windows (không có thì Chrome), chạy ẩn, không có cửa sổ nào bật lên.
+  Nó dùng một hồ sơ riêng trong thư mục tạm, không có tài khoản, cookie hay tiện ích nào của bạn, và bị xóa khi đóng.
+  Đóng peto, kể cả bấm X đóng cửa sổ terminal, là trình duyệt tắt theo. Muốn dùng trình duyệt khác thì đặt
+  `PETO_AGENT_BROWSER` là đường dẫn tới tệp chạy của nó.
+- Ảnh và chữ trên trang đi qua máy chủ Peto tới dịch vụ AI như nội dung tệp.
 
 ### Việc dài, lệnh nền và chuông báo
 

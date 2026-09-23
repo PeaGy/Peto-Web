@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import re
 import sys
@@ -681,7 +682,7 @@ def test_each_step_tells_the_server_which_new_tool_parameters_this_cli_understan
     work, ui = start(project, peto, ["y", "y"])
     work.run_task("Sửa README giúp mình")
     steps = [request["body"] for request in peto.requests if request["path"] == "/api/agent/step"]
-    assert steps and all(body["context"]["features"] == ["cwd"] for body in steps)
+    assert steps and all(body["context"]["features"] == ["cwd", "browser"] for body in steps)
 
 
 def test_note_command_writes_agents_md_without_calling_the_model(project, peto, monkeypatch):
@@ -694,3 +695,66 @@ def test_note_command_writes_agents_md_without_calling_the_model(project, peto, 
     assert (project / "AGENTS.md").read_text(encoding="utf-8") == "## Ghi nhớ\n\n- chạy test bằng python -m pytest\n"
     assert "Gõ /nho kèm điều Peto cần nhớ" in ui.text
     assert not any(request["path"] == "/api/agent/step" for request in peto.requests), "/nho không tốn bước nào"
+
+
+ONE_PIXEL_PNG = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=")
+
+
+def test_peto_looks_at_a_local_page_and_the_screenshot_reaches_the_next_step(project, peto, monkeypatch):
+    """Đợt 1 của trình duyệt (chủ web chọn 2026-09-23): không hỏi quyền, báo tối đa 5 lỗi, lưu ảnh cho người dùng,
+    và ảnh tới Peto trong tin ngay sau kết quả các công cụ của bước đó."""
+    from peto_agent import browser as browser_module
+    from peto_agent.history import TOOL_IMAGES_NOTE, recap
+
+    class FakeBrowser:
+        closed = []
+
+        def __init__(self):
+            self.url = None
+
+        def open(self, url, viewport=None):
+            self.url = "http://localhost:5173/"
+            return {"url": self.url, "title": "Peto", "status": 200, "viewport": "desktop", "seconds": 0.8,
+                    "loaded": True, "outline": ["nút: Gửi"], "elements": 1, "text_chars": 12,
+                    "problems": [f"console.error: lỗi số {index}" for index in range(1, 8)]}
+
+        def screenshot(self, viewport=None, full_page=False):
+            return browser_module.Shot(ONE_PIXEL_PNG, "image/png", 390, 844, "mobile", False, False)
+
+        def late_problems(self):
+            return []
+
+        def close(self):
+            FakeBrowser.closed.append(self)
+
+    def reply(path, body):
+        results = [item for item in body["input"] if item.get("type") == "function_call_output"]
+        if not results:
+            calls = [call(0, "browser_open", url="http://localhost:5173/", viewport=None),
+                     call(1, "browser_screenshot", viewport="mobile", full_page=None)]
+            return 200, [{"type": "done", "output": [message("Để Peto xem trang."), *calls]}]
+        return 200, [{"type": "done", "output": [message("Nút Gửi đã gọn trên điện thoại.")]}]
+
+    monkeypatch.setattr(browser_module, "Browser", FakeBrowser)
+    peto.reply = reply
+    work, ui = start(project, peto, [])  # không có câu trả lời nào: hỏi quyền là test hỏng
+    work.run_task("Nút Gửi bị tràn trên điện thoại")
+    text = ui.text
+    assert "• Xem trang http://localhost:5173/ · máy tính 1280×800" in text
+    assert 'Tải xong 0,8 giây · "Peto" · 7 lỗi' in text
+    assert text.count("✗ console.error: lỗi số") == 5 and "… còn 2 lỗi" in text
+    assert "• Chụp trang · điện thoại 390×844" in text and "ảnh: " in text
+
+    second = [request["body"]["input"] for request in peto.requests if request["path"] == "/api/agent/step"][1]
+    outputs = [json.loads(item["output"]) for item in second if item.get("type") == "function_call_output"]
+    assert outputs[0]["ok"] and len(outputs[0]["problems"]) == 7, "Peto nhận đủ lỗi, chỉ màn hình mới rút gọn"
+    assert outputs[1]["ok"] and outputs[1]["file"].endswith(".png") and "\\" not in outputs[1]["file"]
+    last = second[-1]
+    assert last["role"] == "user" and last["content"][0]["text"] == TOOL_IMAGES_NOTE
+    assert last["content"][2]["image_url"].startswith("data:image/png;base64,")
+    assert second.index(last) > max(second.index(item) for item in second if item.get("type") == "function_call_output")
+    saved = next((config.home() / "screenshots").glob("project-*.png"))
+    assert saved.read_bytes() == ONE_PIXEL_PNG
+    assert recap(work.items)[0] == ("Bạn", "Nút Gửi bị tràn trên điện thoại"), "tin chở ảnh không phải lời người dùng"
+    work.tools.close_browser()
+    assert FakeBrowser.closed and work.tools.browser is None

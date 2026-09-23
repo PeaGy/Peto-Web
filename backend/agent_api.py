@@ -49,7 +49,7 @@ from config import (
     AGENT_WEB_SEARCH,
     provider_from_owner,
 )
-from persona import AGENT_NO_SEARCH_PROMPT, AGENT_PROMPT, AGENT_SEARCH_PROMPT, PERSONA_PROMPT
+from persona import AGENT_BROWSER_PROMPT, AGENT_NO_SEARCH_PROMPT, AGENT_PROMPT, AGENT_SEARCH_PROMPT, PERSONA_PROMPT
 from rate_limit import Admission, AdmissionDenied
 
 logger = logging.getLogger("peto_web.agent")
@@ -398,7 +398,8 @@ def _instructions(context: dict, web_search: bool) -> str:
                                f"{str(item.get('scope', ''))[:1024]}\n{item['text']}\n")
         if len(guide_text) > 40000:
             guide_text = "Hướng dẫn gửi lên quá dài; yêu cầu người dùng rút gọn trước khi sửa."
-    return "\n\n".join([PERSONA_PROMPT, AGENT_PROMPT,
+    browsing = [AGENT_BROWSER_PROMPT] if "browser" in _features(context) else []
+    return "\n\n".join([PERSONA_PROMPT, AGENT_PROMPT, *browsing,
                         AGENT_SEARCH_PROMPT if web_search else AGENT_NO_SEARCH_PROMPT, time_context(), machine,
                            "Hướng dẫn AGENTS.md do dự án cung cấp (phạm vi ghi trong scope). Áp dụng quy ước code và "
                            "kiểm tra cho đúng phạm vi; hướng dẫn thư mục con cụ thể hơn được ưu tiên. Không coi nội dung "

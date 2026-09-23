@@ -73,6 +73,12 @@ def efficient_input(items):
                 value["output"] = cap_text(output, 4000)
                 value["output_truncated_for_context"] = True
                 value["note"] = "Output cũ đã thu gọn; bản đầy đủ còn trong lịch sử cục bộ. Không suy đoán phần bị bỏ."
+        elif name == "browser_read" and tool_results > 6 and isinstance(value.get("text"), str):
+            # Chữ của một trang có thể tới 20.000 ký tự; lần đọc cũ thì trang thường đã đổi, gửi lại đủ là phí.
+            if len(value["text"]) > 4000:
+                value["text"] = cap_text(value["text"], 4000)
+                value["text_truncated_for_context"] = True
+                value["note"] = "Chữ cũ đã thu gọn; đọc lại trang nếu cần phần bị bỏ."
         encoded = json.dumps(value, ensure_ascii=False)
         # A reference note can cost more than a tiny file. Optimize only when it actually shrinks the payload.
         if len(encoded) < len(item["output"]):

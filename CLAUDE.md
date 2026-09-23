@@ -528,6 +528,41 @@ results in the next step. The server stores no conversation (`store=False`), and
   is shared with `run_command`, output is collected by a reader thread into a 256 KB tail buffer, and `read` waits up to
   30 s for new output so one step is worth spending. At most 3 running jobs. They deliberately outlive a request (a dev
   server is the point) but never the session: `__main__.session` stops all of them in a `finally`.
+- **Browser, phase 1: look only** (`browser.py`, CLI 0.10.0). The owner picked the design from mockups on 2026-09-23:
+  hidden browser with saved screenshots, up to 5 page errors printed under each look, and no permission prompt for
+  viewing local pages (like reading a file). Clicking and typing are phase 2, which will show the window.
+  - **Tools:** `browser_open` (title, HTTP status, console errors, JS exceptions, failed requests, an outline of visible
+    headings, buttons, inputs, links and images without alt), `browser_screenshot` (desktop 1280×800 or mobile 390×844,
+    optional full page up to 4000 px), `browser_read` (`innerText`, optional CSS selector, 20k characters).
+  - **How it works:** stdlib only. It launches Edge, or Chrome as a fallback (`PETO_AGENT_BROWSER` overrides), with
+    `--headless=new --remote-debugging-port=0` and a fresh temp profile. It reads `DevToolsActivePort` and drives the
+    page over the DevTools protocol through a small RFC 6455 client (`browser.WebSocket`, unit-tested against a fake
+    server). "Loaded" means the load event plus 0.5 s of network quiet, capped at 5 s. Errors are reported "since the
+    last report", so late ones (HMR, timers) still reach Peto.
+  - **A screenshot in another viewport reopens the page** at that size. Chrome keeps the old zoom when metrics change
+    on a loaded page, and a reload keeps it too. A page laid out at 1280 px and then switched to mobile came out scaled
+    down to fit, hiding exactly the overflow the phone shot is for (2026-09-23). A fresh load behaves like a phone's
+    first visit: scale 1 with a viewport meta, zoomed out without one. Errors already reported for the page
+    (`Browser.known`) are not repeated after that reopen. An explicit `browser_open` reports them all again, because an
+    error that is still there means it is not fixed.
+  - **Only pages on this machine** (`check_url`): http(s) to localhost, `*.localhost`, 127/8 or ::1. A redirect that
+    ends elsewhere navigates to `about:blank` and fails the call. A free browser is an exfiltration channel (read a
+    file, then open a URL that carries it) and a prompt-injection path, and `file://` would bypass the project folder.
+  - **Screenshots** reach the model as a user message right after the step's tool outputs (`loop.tool_images`, starting
+    with `history.TOOL_IMAGES_NOTE`, which `history.recap` skips). They count toward the 4 kept images, stay under 2 MB
+    (JPEG fallback), and are saved to `%LOCALAPPDATA%\PetoAgent\screenshots` for 7 days. The path is printed unwrapped so
+    the VS Code terminal can Ctrl+click it. Tool results give Peto only the file name, never the full path.
+  - **Edge is a GUI app, so it does not die with the console** the way background commands do. On Windows it is started
+    `CREATE_SUSPENDED`, assigned to a job object with `KILL_ON_JOB_CLOSE`, and only then resumed (`NtResumeProcess`).
+    Whatever kills peto, closing the terminal included, therefore kills every Edge process. A ConPTY test on 2026-09-23
+    closed the console mid-session and confirmed it. `__main__.session` also closes the browser in its `finally`.
+  - **`__COMPAT_LAYER`:** Windows can put a compatibility layer on a whole process tree (`DetectorsAppHealth` was set in
+    this machine's shells). Edge then relaunches itself without the layer and exits the first process with 0. That left
+    orphan browsers until `_launch_env` began dropping the variable. A launched process that exits with 0 is still
+    waited on through `DevToolsActivePort`, and liveness follows the DevTools socket, not the first process.
+  - **Leftover profiles** (from a killed peto) are pruned when the next browser starts. A running Chromium holds
+    `lockfile`, which cannot be deleted, and Windows deletes it when the browser dies. So a profile whose lockfile can be
+    deleted, or has none and is older than 60 s, is unused. Other OSes use a one-day age.
 - **`shell`** on `run_command` and `start_command` picks `cmd` (default) or `powershell`, because this project's own
   commands are PowerShell. PowerShell runs as an argv list (no quoting games) and `command_outcome` reads its
   "not recognized as the name of a cmdlet" as an environment error.
@@ -593,9 +628,10 @@ results in the next step. The server stores no conversation (`store=False`), and
     folders and `.git` are refused. It was added because on 2026-09-20 Peto ran `npm run dev` at the root of this repo
     (no `package.json` there), then retried with `cd frontend && …`. Each command opens a fresh shell, so a
     stand-alone `cd` never carries over; `AGENT_PROMPT` says so. The grant keys include the folder.
-  - **New tool parameters are gated by `context.features`.** Strict schemas make the model send every property, `null`
-    included, and a CLI that does not know a parameter fails `inspect.signature(...).bind`. So `agent_tools.tool_schemas`
-    adds `cwd` only when the step's context lists `"cwd"` (`tools.FEATURES`, sent by `Session._step`). CLIs up to 0.9.7
+  - **New tool parameters and tools are gated by `context.features`.** Strict schemas make the model send every
+    property, `null` included, and a CLI that does not know a parameter fails `inspect.signature(...).bind`. So
+    `agent_tools.tool_schemas` adds `cwd` only when the step's context lists `"cwd"`, and the browser tools (with
+    `persona.AGENT_BROWSER_PROMPT`) only for `"browser"` (`tools.FEATURES`, sent by `Session._step`). CLIs up to 0.9.7
     send nothing and keep receiving the old schema byte for byte. From 0.9.8 on, `Tools.call` also drops unknown
     parameters whose value is `null` (null means default). A future optional parameter therefore cannot break
     installed CLIs, but add it behind a feature anyway if it matters.

@@ -13,10 +13,11 @@ import json
 import re
 from pathlib import Path
 
-from . import approvals, runner
+from . import approvals, browser, runner
 from .background import Jobs
 from .checkpoint import Checkpoint
 from .command_outcome import classify, command_kind
+from .images import Image
 from .metrics import Metrics
 from .project_guide import GuideUpdate, guides
 from .presentation import AgentUI
@@ -29,8 +30,17 @@ MAX_PLAN_STEPS = 10
 MAX_PLAN_TITLE = 120
 PLAN_STATUS = ("pending", "running", "done")
 REFUSED = "Người dùng không đồng ý {action}. Đừng lặp lại y nguyên; hỏi họ muốn làm khác thế nào."
-# Khả năng báo cho máy chủ trong context của mỗi bước, để máy chủ chỉ gửi tham số bản CLI này hiểu (agent_tools.py).
-FEATURES = ("cwd",)
+# Khả năng báo cho máy chủ trong context của mỗi bước, để máy chủ chỉ gửi công cụ và tham số bản CLI này hiểu
+# (agent_tools.py): "cwd" từ 0.9.8, "browser" (xem trang trên máy) từ 0.10.0.
+FEATURES = ("cwd", "browser")
+
+
+def _seconds(value: float) -> str:
+    return f"{value:.1f}".replace(".", ",") + " giây"
+
+
+def _count(value: int) -> str:
+    return f"{value:,}".replace(",", ".")
 
 
 def changed_lines(before: str, after: str) -> tuple[int, int]:
@@ -59,6 +69,10 @@ class Tools:
         self.seen_guides: dict[str, str] = {}
         # Danh sách việc Peto tự ghi cho yêu cầu đang chạy; rỗng nghĩa là yêu cầu ngắn, không cần.
         self.plan: list[dict] = []
+        # Trình duyệt ẩn, mở khi Peto xem trang lần đầu và sống tới hết phiên. Ảnh chụp trong một bước chờ ở
+        # captured để vòng làm việc gửi cho Peto sau kết quả các công cụ của bước đó.
+        self.browser: browser.Browser | None = None
+        self.captured: list[tuple[str, Image]] = []
         self.failed_commands = 0
         self.command_failures: dict[str, int] = {}
         self.metrics = Metrics()
@@ -77,11 +91,15 @@ class Tools:
             "start_command": self.start_command,
             "read_command_output": self.read_command_output,
             "stop_command": self.stop_command,
+            "browser_open": self.browser_open,
+            "browser_screenshot": self.browser_screenshot,
+            "browser_read": self.browser_read,
         }
 
     def reset_task(self) -> None:
         self.approve_all = False
         self.plan = []
+        self.captured = []
         self.changes = {}
         self.commands = []
         self.failed_commands = 0
@@ -389,6 +407,64 @@ class Tools:
     def stop_command(self, job_id: str) -> dict:
         result = self.jobs.stop(str(job_id))
         self.ui.success(f"Đã dừng lệnh nền #{result['id']}: {result['command']}")
+        return result
+
+    def _browser(self) -> browser.Browser:
+        if self.browser is None:
+            self.browser = browser.Browser()
+        return self.browser
+
+    def close_browser(self) -> None:
+        if self.browser is not None:
+            self.browser.close()
+            self.browser = None
+
+    def browser_open(self, url: str, viewport: str | None = None) -> dict:
+        """Mở trang chạy trên máy trong trình duyệt ẩn. Không hỏi quyền, theo lựa chọn của chủ web ngày 2026-09-23:
+        chỉ trang localhost, trong hồ sơ riêng, và đợt này chưa bấm hay gõ gì nên không đổi được gì."""
+        page = self._browser().open(url, viewport)
+        details = [f"Tải xong {_seconds(page['seconds'])}" if page["loaded"]
+                   else f"Chưa tải xong sau {_seconds(page['seconds'])}"]
+        if page["status"] and page["status"] >= 400:
+            details.append(f"HTTP {page['status']}")
+        details.append(f"\"{page['title']}\"" if page["title"] else "không có tiêu đề")
+        details.append(f"{len(page['problems'])} lỗi" if page["problems"] else "không lỗi")
+        self.ui.page(f"Xem trang {page['url']} · {browser.viewport_label(page['viewport'])}", " · ".join(details),
+                     page["problems"])
+        return {"ok": True, **page, "size": browser.viewport_label(page["viewport"]).split()[-1],
+                "note": "Chưa có ảnh: gọi browser_screenshot khi cần nhìn bố cục, màu sắc; browser_read để đọc chữ."}
+
+    def browser_screenshot(self, viewport: str | None = None, full_page: bool | None = None) -> dict:
+        page = self._browser()
+        shot = page.screenshot(viewport, bool(full_page))
+        saved = browser.store(self.ws.root.name, shot)
+        problems = page.late_problems()
+        label = browser.viewport_label(shot.viewport) + (" · cả trang" if shot.full_page else "")
+        if shot.cut:
+            label += f" (cắt ở {shot.height}px)"
+        self.ui.page(f"Chụp trang · {label}", "", problems, path=str(saved) if saved else None)
+        self.captured.append((f"Ảnh chụp {page.url} · {label}", Image(shot.data, shot.mime, shot.width, shot.height)))
+        result = {"ok": True, "url": page.url, "viewport": shot.viewport, "width": shot.width, "height": shot.height,
+                  "full_page": shot.full_page,
+                  "note": "Ảnh nằm trong tin kế tiếp, sau kết quả các công cụ của bước này."}
+        if shot.cut:
+            result["cut"] = f"Trang dài hơn {shot.height}px; ảnh chỉ tới đó."
+        if problems:
+            result["problems"] = problems
+        if saved:
+            # Chỉ tên tệp, không đường dẫn đầy đủ (có tên tài khoản Windows): đủ để Peto nói cho người dùng biết.
+            result["file"] = saved.name
+        return result
+
+    def browser_read(self, selector: str | None = None) -> dict:
+        page = self._browser()
+        read = page.read(selector)
+        problems = page.late_problems()
+        what = f"Đọc chữ trong {selector}" if selector else "Đọc chữ trên trang"
+        self.ui.page(f"{what} ({_count(read['chars'])} ký tự)", "", problems)
+        result = {"ok": True, **read}
+        if problems:
+            result["problems"] = problems
         return result
 
     def _shell(self, shell: str | None) -> str:

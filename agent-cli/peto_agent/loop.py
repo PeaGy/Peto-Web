@@ -88,6 +88,19 @@ def user_message(text: str, images=()) -> dict:
     return {"type": "message", "role": "user", "content": content}
 
 
+def tool_images(captured) -> dict:
+    """Ảnh chụp trình duyệt của một bước, gửi cho Peto sau kết quả các công cụ của bước đó.
+
+    Kết quả công cụ chỉ chở chữ, còn ảnh phải nằm trong tin vai user; đoạn mở đầu nói rõ đây là dữ liệu công cụ, và
+    history.recap bỏ qua tin này. Ảnh chụp tính chung vào 4 ảnh gần nhất được giữ như ảnh người dùng dán.
+    """
+    content: list[dict] = [{"type": "input_text", "text": history.TOOL_IMAGES_NOTE}]
+    for label, image in captured:
+        content.append({"type": "input_text", "text": f"[{label}]"})
+        content.append({"type": "input_image", "image_url": image.data_url(), "detail": "high"})
+    return {"type": "message", "role": "user", "content": content}
+
+
 def drop_old_images(items: list[dict], keep: int = MAX_KEPT_IMAGES) -> None:
     """Thay các ảnh cũ hơn ``keep`` ảnh gần nhất bằng một dòng ghi chú, ngay trong hội thoại."""
     seen = 0
@@ -450,6 +463,10 @@ class Session:
                     self.items.append({"type": "function_call_output", "call_id": call.get("call_id", ""), "output": encoded})
                     pending.pop(0)
                     self._save_progress()
+                if self.tools.captured:
+                    self.items.append(tool_images(self.tools.captured))
+                    self.tools.captured = []
+                    drop_old_images(self.items)
             else:
                 outcome = "limit"
                 self.ui.line(f'Peto đã làm {MAX_STEPS_PER_TASK} bước trong yêu cầu này nên tạm dừng. Gõ "làm tiếp" nếu '

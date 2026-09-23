@@ -22,6 +22,8 @@ HEADER_SPARE_ROWS = 7
 # canh phải ở VS Code 1.138; đo trên hai cỡ bảng 157 và 168 cột đều hụt chừng 2,2 cột), nên ở đó chừa thêm chừng ấy cột.
 VSCODE_COVERED_COLUMNS = 2
 MAX_DIFF_LINES = 120
+# Số lỗi trang in dưới mỗi lần Peto xem trang; Peto vẫn nhận đủ.
+MAX_PAGE_PROBLEMS = 5
 MAX_OUTPUT_LINES = 8
 PERMISSION_QUESTION = "    Đồng ý? [y] có  [n] không  [a] có cho mọi bước trong yêu cầu này › "
 # Về đầu dòng rồi xóa cả dòng: dùng để vẽ lại và xóa dòng trạng thái tạm.
@@ -154,6 +156,21 @@ class UI:
         continuation = " " * max(0, len(prefix) - 2) + "│ " if code else " " * len(prefix)
         for index, part in enumerate(wrap_cells(text, max(1, self.width - len(prefix)), words=not code)):
             self.line((prefix if index == 0 else continuation) + part, color)
+
+    def page(self, title: str, details: str, problems: list[str], *, path: str | None = None) -> None:
+        """Một lần Peto xem trang (chủ web chọn ngày 2026-09-23): dòng chính, dòng chi tiết, tối đa 5 lỗi Peto thấy.
+
+        Đường dẫn ảnh in liền một dòng, không tự ngắt, để terminal VS Code còn nhận ra và cho Ctrl+Click mở ảnh.
+        """
+        self.step(visible(title))
+        if details:
+            self._wrapped("    ", visible(details), "dim")
+        for problem in problems[:MAX_PAGE_PROBLEMS]:
+            self._wrapped("    ✗ ", visible(problem), "red")
+        if len(problems) > MAX_PAGE_PROBLEMS:
+            self.line(f"    … còn {len(problems) - MAX_PAGE_PROBLEMS} lỗi", "dim")
+        if path:
+            self.line(f"    ảnh: {visible(path)}", "dim")
 
     def item(self, text: str) -> None:
         """Một mục mờ trong danh sách (như /permissions), ngắt theo bề ngang terminal thay vì để terminal tự bẻ chữ."""

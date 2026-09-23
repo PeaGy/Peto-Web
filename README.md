@@ -522,6 +522,10 @@ và gọi mô hình AI. Cách cài, đăng nhập và sử dụng nằm trong `a
   `@src/app.py:120-180`, để chỉ gửi đúng đoạn cần.
 - **Việc dài và lệnh nền:** yêu cầu nhiều việc thì Peto hiện danh sách việc và đánh dấu tiến độ ngay trong terminal.
   Lệnh không tự kết thúc (dev server, watch) chạy nền và trả về ngay, tối đa 3 lệnh, và dừng hết khi bạn đóng `peto`.
+- **Xem trang web trên máy:** sau khi sửa giao diện, Peto mở trang đang chạy trên máy (chỉ localhost) bằng Edge chạy
+  ẩn, đọc lỗi console, lỗi JavaScript, request hỏng và chụp ảnh cỡ máy tính hay điện thoại để tự kiểm tra. Ảnh được lưu
+  7 ngày để bạn xem lại. Trình duyệt dùng hồ sơ riêng, không có tài khoản của bạn, và tắt theo `peto`. Đợt này Peto chỉ
+  xem, chưa bấm hay gõ trên trang.
 - **Chuông báo:** terminal kêu khi Peto cần bạn duyệt hoặc vừa xong một yêu cầu chạy lâu, và tiêu đề cửa sổ đổi theo
   trạng thái, nên bạn làm việc khác trong lúc chờ được.
   Dán nhiều dòng không bị gửi từng dòng; đoạn dài hiện gọn thành `[Đã dán N dòng]`.

@@ -450,6 +450,39 @@ async def test_command_folder_is_only_offered_to_clis_that_understand_it(anon_cl
     assert list(new) == list(old), "chỉ thêm tham số, không đổi danh sách công cụ"
 
 
+async def test_browser_tools_and_their_prompt_only_reach_clis_that_have_them(anon_client, client, monkeypatch):
+    """Đợt 1 của trình duyệt (2026-09-23): CLI 0.10.0 khai báo "browser". CLI cũ không nhận công cụ lẫn chỉ dẫn, để model
+    của nó không gọi công cụ mà bản đó không có."""
+    from agent_tools import TOOL_SCHEMAS
+
+    seen = []
+
+    async def record(**kwargs):
+        seen.append(kwargs)
+        from ai.agent import AgentEvent
+        yield AgentEvent("done", output=(), usage={"input_tokens": 1, "output_tokens": 1})
+
+    monkeypatch.setattr(agent_api, "agent_step", record)
+    await login_as(client, "discord")
+    token = await connect(anon_client, client)
+    for features in ([], ["cwd"], ["cwd", "browser"], ["browser"]):
+        await anon_client.post("/api/agent/step", headers=bearer(token),
+                               json={"input": [DEMO_TASK], "effort": "low", "context": {"features": features}})
+    old, cwd_only, both, browser_only = seen
+    names = lambda call: [tool["name"] for tool in call["tools"]]  # noqa: E731
+    browser_tools = ["browser_open", "browser_screenshot", "browser_read"]
+    assert old["tools"] is TOOL_SCHEMAS and not set(browser_tools) & set(names(old) + names(cwd_only))
+    assert names(both)[-3:] == browser_tools and names(browser_only)[-3:] == browser_tools
+    assert "cwd" not in {name for tool in browser_only["tools"] if tool["name"] == "run_command"
+                         for name in tool["parameters"]["properties"]}, "mỗi khả năng bật riêng"
+    for tool in both["tools"]:
+        parameters = tool["parameters"]
+        assert tool["strict"] and parameters["additionalProperties"] is False
+        assert parameters["required"] == list(parameters["properties"]), tool["name"]
+    assert "## Xem trang web trên máy" in both["instructions"] and "localhost" in both["instructions"]
+    assert "## Xem trang web trên máy" not in old["instructions"] + cwd_only["instructions"]
+
+
 def test_agent_prompt_explains_the_step_budget_and_the_new_tools():
     """Công cụ có mà chỉ dẫn không nói thì Peto không dùng; giữ hai thứ đi cùng nhau."""
     from persona import AGENT_PROMPT

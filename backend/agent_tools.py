@@ -4,13 +4,15 @@ Máy chủ định nghĩa schema để CLI không tự khai thêm công cụ; ch
 cụ, kiểm đường dẫn và hỏi người dùng trước khi sửa tệp hay chạy lệnh.
 
 Schema strict bắt model gửi đủ mọi tham số, kể cả tham số tùy chọn (null). CLI cũ nhận tham số lạ thì báo sai tham số,
-nên tham số mới chỉ có trong schema khi CLI khai báo hiểu nó trong ``context.features`` (xem ``tool_schemas``).
+nên tham số và công cụ mới chỉ có trong schema khi CLI khai báo hiểu nó trong ``context.features`` (xem
+``tool_schemas``).
 """
 
 from __future__ import annotations
 
 # Khả năng CLI có thể khai báo. "cwd": run_command và start_command nhận thư mục con để chạy lệnh (CLI 0.9.8).
-FEATURES = frozenset({"cwd"})
+# "browser": ba công cụ xem trang chạy trên máy bằng trình duyệt ẩn (CLI 0.10.0).
+FEATURES = frozenset({"cwd", "browser"})
 
 _PATH = {"type": "string", "description": "Đường dẫn tương đối tính từ gốc dự án, ví dụ src/app.py; '.' là gốc."}
 _SHELL = {
@@ -183,13 +185,55 @@ def _command_tools(cwd: bool) -> list[dict]:
     ]
 
 
-# Schema cho CLI không khai báo khả năng nào (bản 0.9.7 trở về trước).
+_VIEWPORT = {
+    "type": ["string", "null"],
+    "description": "'desktop' (máy tính 1280×800) hoặc 'mobile' (điện thoại 390×844, giả lập màn hình cảm ứng); null "
+                   "là desktop khi mở trang, còn khi chụp là giữ khung đang dùng.",
+}
+
+# Đợt 1 của trình duyệt (chủ web chọn ngày 2026-09-23): chỉ xem, không bấm hay gõ, và chỉ trang chạy trên máy.
+_BROWSER_TOOLS = [
+    _tool(
+        "browser_open",
+        "Mở hoặc tải lại một trang web chạy trên máy người dùng trong trình duyệt ẩn (hồ sơ riêng, không có tài khoản "
+        "của họ). Chỉ nhận localhost, 127.0.0.1, ::1; trang ngoài bị từ chối. Trả về tiêu đề, mã HTTP, lỗi console, "
+        "lỗi JavaScript và request hỏng, cùng các phần tử đang hiện (tiêu đề, nút, ô nhập, liên kết, ảnh thiếu alt). "
+        "Không kèm ảnh: cần nhìn thì gọi browser_screenshot, cùng bước cũng được.",
+        {
+            "url": {"type": "string", "description": "Địa chỉ trang, ví dụ http://localhost:5173/ (lấy đúng địa chỉ "
+                                                     "dev server in ra)."},
+            "viewport": _VIEWPORT,
+        },
+    ),
+    _tool(
+        "browser_screenshot",
+        "Chụp trang đang mở. Ảnh tới ở tin kế tiếp, sau kết quả các công cụ của bước này, và tốn nhiều token hơn chữ: "
+        "chỉ chụp khi cần nhìn bố cục, màu sắc hay chỗ bị tràn.",
+        {
+            "viewport": _VIEWPORT,
+            "full_page": {"type": ["boolean", "null"],
+                          "description": "true chụp cả trang dài (tối đa 4000px); null hoặc false chỉ phần đang hiện."},
+        },
+    ),
+    _tool(
+        "browser_read",
+        "Đọc chữ đang hiện trên trang đang mở (tối đa 20.000 ký tự), kèm lỗi mới xuất hiện từ lần xem trước.",
+        {"selector": {"type": ["string", "null"],
+                      "description": "CSS selector của phần cần đọc, ví dụ main hoặc #loi; null là cả trang."}},
+    ),
+]
+
+# Schema cho CLI không khai báo khả năng nào (bản 0.9.7 trở về trước): giữ nguyên từng chữ.
 TOOL_SCHEMAS = _FILE_TOOLS + _command_tools(cwd=False)
-_TOOL_SCHEMAS_CWD = _FILE_TOOLS + _command_tools(cwd=True)
+_SCHEMAS: dict[frozenset[str], list[dict]] = {frozenset(): TOOL_SCHEMAS}
 
 TOOL_NAMES = frozenset(tool["name"] for tool in TOOL_SCHEMAS)
 
 
 def tool_schemas(features: frozenset[str] = frozenset()) -> list[dict]:
-    """Schema theo khả năng CLI khai báo, để bản CLI đang cài không nhận tham số nó chưa hiểu."""
-    return _TOOL_SCHEMAS_CWD if "cwd" in features else TOOL_SCHEMAS
+    """Schema theo khả năng CLI khai báo, để bản CLI đang cài không nhận công cụ hay tham số nó chưa hiểu."""
+    key = frozenset(features) & FEATURES
+    if key not in _SCHEMAS:
+        _SCHEMAS[key] = (_FILE_TOOLS + _command_tools(cwd="cwd" in key)
+                         + (_BROWSER_TOOLS if "browser" in key else []))
+    return _SCHEMAS[key]
