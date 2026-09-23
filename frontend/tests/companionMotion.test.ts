@@ -26,3 +26,9 @@ it('keeps transitions consistent at mobile and desktop frame rates and bounds lo
   expect(stageQuality(true, 3)).toEqual({ fps: 24, resolution: 1 });
   expect(stageQuality(false, 3)).toEqual({ fps: 30, resolution: 1.5 });
 });
+it('allows independent mobile sharpness and FPS upgrades without changing desktop limits', () => {
+  expect(stageQuality(true, 3, { sharp: true, smooth: false })).toEqual({ fps: 24, resolution: 2 });
+  expect(stageQuality(true, 3, { sharp: false, smooth: true })).toEqual({ fps: 60, resolution: 1 });
+  expect(stageQuality(true, 1, { sharp: true, smooth: true })).toEqual({ fps: 60, resolution: 1 });
+  expect(stageQuality(false, 3, { sharp: true, smooth: true })).toEqual({ fps: 30, resolution: 1.5 });
+});

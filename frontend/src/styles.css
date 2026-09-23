@@ -2530,7 +2530,10 @@ button.artifact-name { cursor: pointer; }
 }
 
 /* A shared scene surrounds the floating conversation, including its right edge. */
-.companion { isolation: isolate; grid-template-columns: minmax(0, 1fr) clamp(330px, 32%, 460px); overflow: hidden; }
+.companion { isolation: isolate; container-type: inline-size; grid-template-columns: minmax(0, 1fr) clamp(330px, 32%, 460px); overflow: hidden; }
+.companion .character-stage:has(> .character-fallback) { overflow: visible; }
+.companion .character-fallback { right: auto; width: 100cqw; box-sizing: border-box; pointer-events: none; }
+.companion .character-fallback button { pointer-events: auto; }
 .companion > .scene-backdrop { z-index: -1; }
 .companion-stage { padding: 0; }
 .character-canvas { inset: 0; }
@@ -2541,7 +2544,7 @@ button.artifact-name { cursor: pointer; }
 .companion-messages .bubble.user { background: var(--stage-bubble-b); color: var(--stage-text); }
 .companion-composer .composer { background: var(--stage-input); border-color: var(--stage-line); }
 .companion-composer textarea { color: var(--stage-text); }
-.companion-scene-tools { position: absolute; right: 22px; bottom: 18px; z-index: 3; }
+.companion-scene-tools { position: absolute; right: 22px; bottom: 18px; z-index: 3; display: grid; gap: 8px; }
 .companion-scene-button { display: flex; align-items: center; gap: 8px; min-height: 42px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); color: var(--text); cursor: pointer; box-shadow: 0 4px 18px #0003; }
 .character-motion-settings { margin-top: 22px; border: 1px solid var(--line); border-radius: 16px; background: var(--panel); }
 .character-motion-settings summary { cursor: pointer; padding: 18px; font-weight: 600; }
@@ -2555,4 +2558,19 @@ button.artifact-name { cursor: pointer; }
   .companion-messages .companion-reply { padding: 8px 12px; }
   .companion-scene-tools { right: 12px; bottom: calc(8px + env(safe-area-inset-bottom)); }
   .companion-scene-button { min-height: 36px; padding: 7px 11px; font-size: 12px; }
+}
+/* Reserve room for both scene and character actions beneath the floating chat. */
+@media (min-width: 721px) { .companion-panel { margin-bottom: 124px; } }
+@media (max-width: 720px) { .companion-panel { bottom: calc(98px + env(safe-area-inset-bottom)); } }
+.mobile-companion-nav, .mobile-render-settings { display: none; }
+@media (max-width: 720px) {
+  .companion-scene-tools { display: none; }
+  .companion-panel { bottom: 0; }
+  .mobile-companion-nav { display: grid; gap: 4px; padding-left: 20px; }
+  .mobile-companion-nav .nav-item { font-size: 14px; }
+  .mobile-render-settings { display: grid; gap: 14px; margin-top: 20px; padding: 18px; border: 1px solid var(--line); border-radius: 16px; }
+  .mobile-render-settings h3, .mobile-render-settings p { margin: 0; }
+  .mobile-render-settings p { color: var(--muted); font-size: 12px; line-height: 1.6; }
+  .mobile-render-settings label { display: grid; gap: 8px; }
+  .mobile-render-settings select { width: 100%; min-height: 42px; padding: 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--text); }
 }

@@ -1,3 +1,4 @@
+import { useRenderQuality } from './renderQuality';
 import { useEffect, useRef, useState } from "react";
 import type { Application } from "pixi.js";
 import type { Cubism4InternalModel } from 'pixi-live2d-display/cubism4';
@@ -65,6 +66,7 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
   character?: CharacterModel;
   onPreview?: (id: string, image: string) => void;
 }) {
+  const qualityPreference = useRenderQuality();
   const host = useRef<HTMLDivElement>(null);
   const activityRef = useRef(activity); activityRef.current = activity;
   const motionRef = useRef(motion);
@@ -104,8 +106,8 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
       ]);
       if (disposed) return;
       const compact = window.matchMedia(COMPACT_QUERY);
-      app = new PixiApp({ width: 1, height: 1, backgroundAlpha: 0, antialias: !compact.matches,
-        resolution: stageQuality(compact.matches, window.devicePixelRatio).resolution, autoDensity: true, autoStart: false });
+      app = new PixiApp({ width: 1, height: 1, backgroundAlpha: 0, antialias: !compact.matches || qualityPreference.sharp,
+        resolution: stageQuality(compact.matches, window.devicePixelRatio, qualityPreference).resolution, autoDensity: true, autoStart: false });
       const canvas = app.view as HTMLCanvasElement;
       canvas.setAttribute("aria-hidden", "true");
       container.append(canvas);
@@ -159,7 +161,7 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
       let frameHeight = 0;
       const fit = () => {
         if (!app) return;
-        const quality = stageQuality(compact.matches, window.devicePixelRatio);
+        const quality = stageQuality(compact.matches, window.devicePixelRatio, qualityPreference);
         app.ticker.maxFPS = quality.fps;
         app.renderer.resolution = quality.resolution;
         const width = Math.max(1, container.clientWidth), height = Math.max(1, container.clientHeight);
@@ -337,7 +339,7 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
         // Ép trạng thái miệng sau motion để model không nói khi âm thanh đang im lặng.
         for (const parameter of mouthParameters) core.setParameterValueById(parameter, mouth < 0.01 ? 0 : mouth);
       });
-      app.ticker.maxFPS = stageQuality(compact.matches, window.devicePixelRatio).fps;
+      app.ticker.maxFPS = stageQuality(compact.matches, window.devicePixelRatio, qualityPreference).fps;
       let still = false;
       let captured = false;
       app.ticker.add(() => {
@@ -424,7 +426,7 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
       app?.destroy(true, { children: true, texture: true, baseTexture: true });
       objectUrls.forEach(url => URL.revokeObjectURL(url));
     };
-  }, [attempt, character.id]);
+  }, [attempt, character.id, qualityPreference.sharp, qualityPreference.smooth]);
 
   return <div className="character-stage">
     <div className="character-glow" aria-hidden="true" />

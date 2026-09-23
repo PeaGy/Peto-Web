@@ -65,8 +65,9 @@ function RestartIcon() {
  * Được giữ mounted như Imagine (prop `active`) để câu trả lời đang về không bị cắt khi đổi tab;
  * rời tab thì Peto thôi đọc và giải phóng renderer nhân vật.
  */
-export default function Companion({ active, appInfo, voice, characterMotion, character = DEFAULT_CHARACTER, onCharacterPreview, onOpenCharacters, onUnauthorized, onOpenSidebar }: {
+export default function Companion({ active, appInfo, voice, characterMotion, character = DEFAULT_CHARACTER, onCharacterPreview, onOpenCharacters, sceneRequest = 0, onUnauthorized, onOpenSidebar }: {
   active: boolean;
+  sceneRequest?: number;
   appInfo: AppInfo | null;
   voice: LocalVoice;
   characterMotion: CharacterMotion;
@@ -89,6 +90,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
   const [confirmReset, setConfirmReset] = useState(false);
   const [scenesOpen, setScenesOpen] = useState(false);
   const scene = useCompanionScene(character.id);
+  useEffect(() => { if (sceneRequest > 0) setScenesOpen(true); }, [sceneRequest]);
   const [resetting, setResetting] = useState(false);
   const stopVoice = voice.stop;
   const loadVersion = useRef(0);
@@ -283,8 +285,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
       {active && scenesOpen && <ScenePicker scene={scene} onClose={() => setScenesOpen(false)} />}
       <SceneBackdrop scene={scene} />
       <section className="companion-stage" aria-label={name}>
-        <button className="companion-character-button" onClick={onOpenCharacters} aria-label="Chọn nhân vật">◇ <span>Nhân vật</span></button>
-        {active && <Suspense fallback={<p role="status">Đang tải nhân vật…</p>}>
+        {active && <Suspense fallback={<div className="character-fallback"><p role="status">Đang tải nhân vật…</p></div>}>
           {character.format === 'vrm'
             ? <VRMStage key={character.id} character={character} motion={characterMotion} onPreview={onCharacterPreview} activity={activity} />
             : <Live2DStage key={character.id} character={character} fallbackUrl={appInfo?.avatar_url ?? undefined} name={name} motion={characterMotion} onPreview={onCharacterPreview} reply={expressionReply} activity={activity} />}
@@ -436,6 +437,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
           <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4" stroke="currentColor" strokeWidth="1.7" /><circle cx="9" cy="8" r="2" stroke="currentColor" strokeWidth="1.7" /><path d="m4 18 5-5 3 3 4-6 5 8" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" /></svg>
           <span>Bối cảnh</span>
         </button>
+        <button type="button" className="companion-scene-button" onClick={onOpenCharacters} aria-label="Chọn nhân vật" aria-haspopup="dialog">◇ <span>Nhân vật</span></button>
       </div>
       <dialog
         ref={resetRef}

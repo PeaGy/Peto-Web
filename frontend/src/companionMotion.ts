@@ -20,6 +20,7 @@ export class CompanionMotion {
     };
   }
 }
-export const stageQuality = (compact: boolean, pixelRatio: number) => ({
-  fps: compact ? 24 : 30, resolution: Math.min(pixelRatio || 1, compact ? 1 : 1.5),
+export const stageQuality = (compact: boolean, pixelRatio: number, quality = { sharp: false, smooth: false }) => ({
+  fps: compact ? (quality.smooth ? 60 : 24) : 30,
+  resolution: Math.min(pixelRatio || 1, compact ? (quality.sharp ? 2 : 1) : 1.5),
 });

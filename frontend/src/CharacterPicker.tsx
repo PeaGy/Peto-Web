@@ -5,8 +5,10 @@ import IdleMotionPicker from './IdleMotionPicker';
 import CharacterImportReview from './CharacterImportReview';
 import type { Live2DImportReport } from './characterImport';
 import { CHARACTER } from './characterConfig';
+import { useRenderQuality, writeRenderQuality } from './renderQuality';
 
 export default function CharacterPicker({ library, onClose }: { library: CharacterLibrary; onClose: () => void }) {
+  const quality = useRenderQuality();
   const dialog = useRef<HTMLDialogElement>(null);
   const menu = useRef<HTMLDetailsElement>(null);
   const zip = useRef<HTMLInputElement>(null);
@@ -95,6 +97,12 @@ export default function CharacterPicker({ library, onClose }: { library: Charact
           </div>
         </article>)}
       </div>
+      <section className="mobile-render-settings" aria-label="Hiển thị trên điện thoại">
+        <h3>Hiển thị trên điện thoại</h3>
+        <label>Chất lượng hình ảnh <select value={quality.sharp ? 'high' : 'normal'} onChange={e => writeRenderQuality({ ...quality, sharp: e.target.value === 'high' })}><option value="normal">Tiết kiệm · 1×</option><option value="high">Cao · tối đa 2×</option></select></label>
+        <label>Độ mượt <select value={quality.smooth ? 'high' : 'normal'} onChange={e => writeRenderQuality({ ...quality, smooth: e.target.value === 'high' })}><option value="normal">Tiết kiệm · 24 FPS</option><option value="high">Cao · tối đa 60 FPS</option></select></label>
+        <p>Áp dụng cho Live2D và VRM trên thiết bị này. Mức cao có thể dùng nhiều pin và làm máy ấm hơn.</p>
+      </section>
       {library.selected.format === 'live2d' && <details className="character-motion-settings" key={library.selected.id}>
         <summary>Cài đặt nhân vật <span>Chuyển động · Biểu cảm · Nhún theo nhạc</span></summary>
         <IdleMotionPicker character={library.selected} />

@@ -1,3 +1,4 @@
+import { useRenderQuality } from './renderQuality';
 import { useEffect, useRef, useState } from 'react';
 import type { WebGLRenderer } from 'three';
 import type { VRM } from '@pixiv/three-vrm';
@@ -11,6 +12,7 @@ export default function VRMStage({ character, motion, onPreview, activity = 'idl
   activity?: CompanionActivity;
   character: CharacterModel; motion: CharacterMotion; onPreview?: (id: string, image: string) => void;
 }) {
+  const qualityPreference = useRenderQuality();
   const host = useRef<HTMLDivElement>(null);
   const activityRef = useRef(activity); activityRef.current = activity;
   const motionRef = useRef(motion); motionRef.current = motion;
@@ -55,8 +57,8 @@ export default function VRMStage({ character, motion, onPreview, activity = 'idl
       scene.add(new THREE.HemisphereLight(0xffffff, 0x9f9bad, 2.2));
       const key = new THREE.DirectionalLight(0xffffff, 2.5); key.position.set(1, 3, 4); scene.add(key);
       const compact = window.matchMedia(COMPACT_QUERY), reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
-      renderer = new THREE.WebGLRenderer({ alpha: true, antialias: !compact.matches });
-      renderer.setPixelRatio(stageQuality(compact.matches, window.devicePixelRatio).resolution);
+      renderer = new THREE.WebGLRenderer({ alpha: true, antialias: !compact.matches || qualityPreference.sharp });
+      renderer.setPixelRatio(stageQuality(compact.matches, window.devicePixelRatio, qualityPreference).resolution);
       renderer.outputColorSpace = THREE.SRGBColorSpace;
       renderer.setClearColor(0x000000, 0);
       const canvas = renderer.domElement; canvas.setAttribute('aria-hidden', 'true'); container.append(canvas);
@@ -68,7 +70,7 @@ export default function VRMStage({ character, motion, onPreview, activity = 'idl
       const height = Math.max(0.1, size.y);
       const fit = () => {
         if (!renderer) return;
-        renderer.setPixelRatio(stageQuality(compact.matches, window.devicePixelRatio).resolution);
+        renderer.setPixelRatio(stageQuality(compact.matches, window.devicePixelRatio, qualityPreference).resolution);
         const width = Math.max(1, container.clientWidth), h = Math.max(1, container.clientHeight);
         renderer.setSize(width, h); camera.aspect = width / h; camera.updateProjectionMatrix();
         const frameHeight = height * (compact.matches ? 0.62 : 1.1);
@@ -97,7 +99,7 @@ export default function VRMStage({ character, motion, onPreview, activity = 'idl
       const tick = (now: number) => {
         if (disposed || document.hidden || contextLost) return;
         frame = requestAnimationFrame(tick);
-        const interval = 1000 / stageQuality(compact.matches, window.devicePixelRatio).fps;
+        const interval = 1000 / stageQuality(compact.matches, window.devicePixelRatio, qualityPreference).fps;
         if (now < nextFrame) return;
         nextFrame = now + interval - Math.max(0, now - nextFrame) % interval;
         const dt = Math.min((now - last) / 1000, 0.05); last = now;
@@ -141,7 +143,7 @@ export default function VRMStage({ character, motion, onPreview, activity = 'idl
       disposed = true; cancelAnimationFrame(frame); cleanup(); disposeModel();
       renderer?.dispose(); renderer?.forceContextLoss(); renderer?.domElement.remove();
     };
-  }, [character.id, attempt]);
+  }, [character.id, attempt, qualityPreference.sharp, qualityPreference.smooth]);
   return <div className="character-stage">
     <div className="character-glow" aria-hidden="true" />
     <div ref={host} className="character-canvas" style={{ visibility: status === 'ready' ? 'visible' : 'hidden' }} />

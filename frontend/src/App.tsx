@@ -526,6 +526,7 @@ export default function App() {
   const [characterMotion, setCharacterMotion] = useState<CharacterMotion>(readCharacterMotion);
   const characters = useCharacters();
   const [characterPickerOpen, setCharacterPickerOpen] = useState(false);
+  const [sceneRequest, setSceneRequest] = useState(0);
   const changeCharacterMotion = useCallback((value: CharacterMotion) => {
     setCharacterMotion(value);
     writeCharacterMotion(value);
@@ -1291,6 +1292,10 @@ export default function App() {
             <CompanionIcon />
             <span className="nav-label">Companion</span>
           </button>
+          {view === "companion" && <div className="mobile-companion-nav">
+            <button type="button" className="nav-item" onClick={() => { setSidebarOpen(false); setSceneRequest(n => n + 1); }}><ImageIcon /><span>Bối cảnh</span></button>
+            <button type="button" className="nav-item" onClick={() => { setSidebarOpen(false); setCharacterPickerOpen(true); }}><span aria-hidden="true">◇</span><span>Nhân vật</span></button>
+          </div>}
         </nav>
         {view === "imagine" && (
           <div className="sidebar-section">
@@ -1410,6 +1415,7 @@ export default function App() {
           active={view === "companion"}
           appInfo={appInfo}
           voice={localVoice}
+          sceneRequest={sceneRequest}
           characterMotion={characterMotion}
           character={characters.selected}
           onCharacterPreview={characters.savePreview}
