@@ -316,15 +316,18 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
       internal.on("beforeModelUpdate", () => {
         // Keep expression fades alive when body motion is paused for reduced motion.
         if (!moving()) manager?.update(liveCore, performance.now());
+        const cursorActive = effects.cursor && (touchId !== null || performance.now() - lastPointer < 3000);
+        // AIRI separates idle gaze from pointer tracking. Blend ownership of the eye
+        // parameters so an authored idle cannot pin them at an extreme value.
+        const eyes = idleEyes.step(app!.ticker.deltaMS / 1000, effects.idleEyes && !cursorActive);
+        [eyes.x, eyes.y].forEach((value, i) => {
+          if (eyeParameters[i].supported && eyes.weight > 0.001) liveCore.setParameterValueById(eyeParameters[i].id, value, eyes.weight);
+        });
         if (moving()) {
-          const cursorActive = effects.cursor && (touchId !== null || performance.now() - lastPointer < 3000);
-          const eyes = idleEyes.step(app!.ticker.deltaMS / 1000, effects.idleEyes && !cursorActive);
-          [eyes.x, eyes.y].forEach((value, i) => {
-            if (eyeParameters[i].supported && value) liveCore.addParameterValueById(eyeParameters[i].id, value);
-          });
           const pose = musicPose(performance.now());
           const conversation = conversationMotion.step(activityRef.current, app!.ticker.deltaMS / 1000, voiceMouth());
-          [pose.yaw * conversation.musicWeight, pose.pitch * conversation.musicWeight + conversation.pitch,
+          [pose.yaw * conversation.musicWeight + eyes.x * eyes.weight * 12,
+            pose.pitch * conversation.musicWeight + conversation.pitch + eyes.y * eyes.weight * 8,
             pose.roll * conversation.musicWeight + conversation.roll].forEach((value, i) => {
             if (beatParameters[i].supported && value) liveCore.addParameterValueById(beatParameters[i].id, value);
           });

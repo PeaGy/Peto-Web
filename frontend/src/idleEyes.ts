@@ -5,16 +5,17 @@ export class IdleEyes {
   private y = 0;
   private targetX = 0;
   private targetY = 0;
+  private weight = 0;
   constructor(private random: () => number = Math.random) {}
   step(seconds: number, enabled: boolean) {
     const dt = Math.max(0, Math.min(seconds, 0.05));
     if (enabled) {
       this.remaining -= dt;
       if (this.remaining <= 0) {
-        this.remaining = 2 + this.random() * 3;
+        this.remaining = 0.8 + this.random() * 3.6;
         const center = this.random() < 0.3;
-        this.targetX = center ? 0 : (this.random() * 2 - 1) * 0.35;
-        this.targetY = center ? 0 : (this.random() * 2 - 1) * 0.18;
+        this.targetX = center ? 0 : (this.random() * 2 - 1) * 0.9;
+        this.targetY = center ? 0 : -0.7 + this.random() * 1.2;
       }
     } else {
       this.remaining = 0;
@@ -23,6 +24,7 @@ export class IdleEyes {
     const blend = 1 - Math.exp(-dt / 0.22);
     this.x += (this.targetX - this.x) * blend;
     this.y += (this.targetY - this.y) * blend;
-    return { x: this.x, y: this.y };
+    this.weight += ((enabled ? 1 : 0) - this.weight) * blend;
+    return { x: this.x, y: this.y, weight: this.weight };
   }
 }

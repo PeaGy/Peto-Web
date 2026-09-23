@@ -74,6 +74,29 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
+it('idle eyes override motion eye values even with pointer tracking off and reduced motion on', async () => {
+  const random = vi.spyOn(Math, 'random').mockReturnValue(0.8);
+  writeEffects(CHARACTER.id, { cursor: false, breath: true, physics: true, idleEyes: true });
+  const model = fakeModel();
+  const core = model.internalModel.coreModel;
+  core.getParameterIndex = id => ['ParamAngleX', 'ParamAngleY', 'ParamAngleZ', 'ParamEyeBallX', 'ParamEyeBallY'].indexOf(id);
+  core.getParameterCount = () => 5;
+  mocks.from.mockResolvedValue(model);
+  const view = render(<Live2DStage name="Peto" motion="system" />);
+  await waitFor(() => expect(mocks.start).toHaveBeenCalled());
+  const hook = model.internalModel.on.mock.calls.find(([name]) => name === 'beforeModelUpdate')![1];
+  for (let i = 0; i < 60; i++) hook();
+  const eyes = core.setParameterValueById.mock.calls.filter(([id]) => id === 'ParamEyeBallX');
+  expect(eyes.length).toBe(60);
+  expect(eyes.at(-1)![1]).toBeGreaterThan(0.5);
+  expect(core.addParameterValueById).not.toHaveBeenCalled();
+  act(() => writeEffects(CHARACTER.id, { cursor: false, breath: true, physics: true, idleEyes: false }));
+  for (let i = 0; i < 90; i++) hook();
+  core.setParameterValueById.mockClear(); hook();
+  expect(core.setParameterValueById.mock.calls.some(([id]) => id === 'ParamEyeBallX')).toBe(false);
+  view.unmount(); random.mockRestore();
+});
+
 it('pauses when hidden and never restarts a lost WebGL context on visibility changes', async () => {
   const { view } = await mount();
   const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
@@ -90,6 +113,7 @@ it('pauses when hidden and never restarts a lost WebGL context on visibility cha
 });
 
 it('nhún theo nhạc cộng vào góc đầu, không ghi đè miệng và tôn trọng giảm chuyển động', async () => {
+  writeEffects(CHARACTER.id, { cursor: true, breath: true, physics: true, idleEyes: false });
   const pose = vi.spyOn(music, 'musicPose').mockReturnValue({ yaw: 3, pitch: -2, roll: 1 });
   try {
     const { model, view } = await mount('always');
