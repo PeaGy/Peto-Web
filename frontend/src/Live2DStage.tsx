@@ -19,6 +19,7 @@ import {
   type StageBox,
 } from "./characterView";
 import { voiceMouth } from "./voiceActivity";
+import { IdleEyes } from './idleEyes';
 import { controlIdle, motionChoices, readIdle, watchIdle } from './live2dMotions';
 import { readEffects, watchEffects, withCharacterEffects } from './characterEffects';
 import { musicPose, selectMusicCharacter, stopMusicVibe } from './musicVibe';
@@ -265,6 +266,7 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
         disposeExpressions = () => { unwatch(); controller.dispose(); expressionReply.current = () => {}; };
       }
       let effects = readEffects(character.id);
+      let lastPointer = -Infinity;
       const unwatchEffects = watchEffects(character.id, value => {
         effects = value;
         internal.focusController.focus(0, 0, true);
@@ -284,6 +286,7 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
           if (event.type === "pointerdown") touchId = event.pointerId;
           if (event.pointerId !== touchId) return;
         }
+        lastPointer = performance.now();
         const point = local(event);
         const headY = current.position.y - originalHeight * current.scale.y * CHARACTER.headHeight;
         const target = lookTarget(point.x, point.y, current.position.x, headY, box.width, box.height);
@@ -292,9 +295,10 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
       const onTouchEnd = (event: PointerEvent) => {
         if (touchId === null || event.pointerId !== touchId) return;
         touchId = null;
+        lastPointer = -Infinity;
         internal.focusController.focus(0, 0);
       };
-      const onLookAway = () => internal.focusController.focus(0, 0);
+      const onLookAway = () => { touchId = null; lastPointer = -Infinity; internal.focusController.focus(0, 0); };
 
       const core = internal.coreModel as { setParameterValueById: (id: string, value: number) => void };
       const liveCore = internal.coreModel;
@@ -303,11 +307,21 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
         return { id, supported: index !== undefined && index >= 0 && index < liveCore.getParameterCount() };
       });
       let mouth = 0;
+      const idleEyes = new IdleEyes();
+      const eyeParameters = ['ParamEyeBallX', 'ParamEyeBallY'].map(id => {
+        const index = liveCore.getParameterIndex?.(id);
+        return { id, supported: index !== undefined && index >= 0 && index < liveCore.getParameterCount() };
+      });
       const conversationMotion = new CompanionMotion();
       internal.on("beforeModelUpdate", () => {
         // Keep expression fades alive when body motion is paused for reduced motion.
         if (!moving()) manager?.update(liveCore, performance.now());
         if (moving()) {
+          const cursorActive = effects.cursor && (touchId !== null || performance.now() - lastPointer < 3000);
+          const eyes = idleEyes.step(app!.ticker.deltaMS / 1000, effects.idleEyes && !cursorActive);
+          [eyes.x, eyes.y].forEach((value, i) => {
+            if (eyeParameters[i].supported && value) liveCore.addParameterValueById(eyeParameters[i].id, value);
+          });
           const pose = musicPose(performance.now());
           const conversation = conversationMotion.step(activityRef.current, app!.ticker.deltaMS / 1000, voiceMouth());
           [pose.yaw * conversation.musicWeight, pose.pitch * conversation.musicWeight + conversation.pitch,

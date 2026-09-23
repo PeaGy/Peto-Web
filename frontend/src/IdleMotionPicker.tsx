@@ -48,6 +48,7 @@ export default function IdleMotionPicker({ character }: { character: CharacterMo
     <div className="character-effect-options">
       {([
         ['cursor', 'Nhìn theo con trỏ', 'Mắt và đầu nhìn theo chuột hoặc điểm chạm.'],
+        ['idleEyes', 'Đảo mắt khi chờ', 'Thỉnh thoảng nhìn quanh khi con trỏ không hoạt động.'],
         ['breath', 'Thở', 'Hiệu ứng thở tự động; mức thể hiện tùy model.'],
         ['physics', 'Vật lý', !loading && !error && !hasPhysics ? 'Model chưa khai báo tệp vật lý.' : 'Chuyển động phụ của tóc, quần áo và phụ kiện.'],
       ] as const).map(([key, title, description]) => <label className="character-effect-option" key={key}>
