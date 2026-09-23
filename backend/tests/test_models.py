@@ -1,6 +1,6 @@
-"""Chọn model: Peto (xAI) và dòng GPT-5.6 của OpenAI, theo quyền chủ web đặt ngày 17/09/2026.
+"""Chọn model: Peto (xAI) và dòng GPT-6 của OpenAI.
 
-5.6 Luna cho tài khoản Discord/Google trên web và trong Peto Agent; 5.6 Terra và 5.6 Sol chỉ cho chủ web trong Agent;
+6 Luna cho tài khoản Discord/Google trên web và trong Peto Agent; 5.6 Terra và 6 Sol chỉ cho chủ web trong Agent;
 bước Agent tính theo giá. Không test nào gọi OpenAI thật: provider giả, hoặc client giả.
 """
 
@@ -48,7 +48,7 @@ async def test_web_offers_luna_to_discord_and_google_accounts_only(client, anon_
     me = (await client.get("/api/auth/me")).json()["user"]
     assert me["models"] == [
         {"key": "peto", "label": "Peto", "description": "Mặc định", "step_cost": 1},
-        {"key": "luna", "label": "5.6 Luna", "description": "Nhanh, của OpenAI", "step_cost": 1},
+        {"key": "luna", "label": "6 Luna", "description": "Nhanh, của OpenAI", "step_cost": 1},
     ]
     seen = spy_models(monkeypatch)
     events = await read_events(await client.post("/api/chat", json={"message": "chào", "model": "luna"}))
@@ -63,7 +63,7 @@ async def test_web_offers_luna_to_discord_and_google_accounts_only(client, anon_
     guest = await anon_client.post("/api/chat", json={"message": "chào", "model": "luna"})
     assert guest.status_code == 403 and "Discord hoặc Google" in guest.json()["detail"]
 
-    for model in ("sol", "terra", "gpt-5.6-luna", ""):
+    for model in ("sol", "terra", "gpt-6-luna", ""):
         assert (await client.post("/api/chat", json={"message": "chào", "model": model})).status_code == 400
     assert (await client.post("/api/chat", json={"message": "chào", "model": "luna", "mode": "companion"})).status_code == 400
 
@@ -80,7 +80,7 @@ async def test_openai_models_disappear_without_a_key(client, monkeypatch):
     monkeypatch.setattr(config, "OPENAI_API_KEY", "")
     assert keys((await client.get("/api/auth/me")).json()["user"]["models"]) == ["peto"]
     response = await client.post("/api/chat", json={"message": "chào", "model": "luna"})
-    assert response.status_code == 503 and "chưa bật 5.6 Luna" in response.json()["detail"]
+    assert response.status_code == 503 and "chưa bật 6 Luna" in response.json()["detail"]
 
 
 async def test_agent_models_and_step_costs(anon_client, client, monkeypatch):
@@ -95,7 +95,7 @@ async def test_agent_models_and_step_costs(anon_client, client, monkeypatch):
                                       json={"input": [task], "model": model, "effort": effort})
 
     refused = await step("sol")
-    assert refused.status_code == 403 and refused.json()["detail"] == "5.6 Sol chỉ dành cho chủ web."
+    assert refused.status_code == 403 and refused.json()["detail"] == "6 Sol chỉ dành cho chủ web."
     assert (await step("gpt")).status_code == 400
     assert (await client.get("/api/agent/devices")).json()["steps_used"] == 0, "model bị từ chối không tốn bước"
 
@@ -111,7 +111,7 @@ async def test_agent_models_and_step_costs(anon_client, client, monkeypatch):
     monkeypatch.setattr(agent_api, "AGENT_DAILY_STEPS", 14)
     short = await step("sol")
     assert short.status_code == 429
-    assert "5.6 Sol" in short.json()["detail"] and "chỉ còn 3 bước" in short.json()["detail"]
+    assert "6 Sol" in short.json()["detail"] and "chỉ còn 3 bước" in short.json()["detail"]
     assert "/model peto" in short.json()["detail"]
 
 
@@ -147,7 +147,7 @@ async def test_luna_calls_openai_with_its_model_and_key(monkeypatch):
     monkeypatch.setattr(ai, "AI_PROVIDER", "xai")
     monkeypatch.setattr(ai, "_instances", {})
     provider = ai.get_provider("luna")
-    assert isinstance(provider, gpt.GPTProvider) and provider.model == "gpt-5.6-luna"
+    assert isinstance(provider, gpt.GPTProvider) and provider.model == "gpt-6-luna"
     assert ai.get_provider("luna") is provider
 
     with pytest.raises(ProviderError, match="chưa có khóa OpenAI"):
@@ -165,7 +165,7 @@ async def test_luna_calls_openai_with_its_model_and_key(monkeypatch):
     parts = [chunk async for chunk in provider.stream(
         system_prompt="chỉ dẫn", messages=[ChatMessage("user", "chào")], effort="medium", web_search="off")]
     assert parts == ["Chào bạn"]
-    assert calls[0]["model"] == "gpt-5.6-luna" and calls[0]["max_output_tokens"] == config.OPENAI_MAX_OUTPUT_TOKENS
+    assert calls[0]["model"] == "gpt-6-luna" and calls[0]["max_output_tokens"] == config.OPENAI_MAX_OUTPUT_TOKENS
     assert calls[0]["reasoning"] == {"effort": "medium"} and calls[0]["store"] is False
 
     request = httpx2.Request("POST", "https://api.openai.com/v1/responses")
@@ -175,7 +175,7 @@ async def test_luna_calls_openai_with_its_model_and_key(monkeypatch):
         raise openai.RateLimitError("quota", response=response, body=None)
 
     provider._client = SimpleNamespace(responses=SimpleNamespace(create=exhausted))
-    with pytest.raises(ProviderError, match="^5.6 Luna đang bị OpenAI giới hạn lượt hoặc đã hết hạn mức. Chọn Peto"):
+    with pytest.raises(ProviderError, match="^6 Luna đang bị OpenAI giới hạn lượt hoặc đã hết hạn mức. Chọn Peto"):
         async for _ in provider.stream(system_prompt="chỉ dẫn", messages=[ChatMessage("user", "chào")],
                                        web_search="off"):
             pass

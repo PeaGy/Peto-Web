@@ -50,9 +50,9 @@ def test_suggestions_filter_commands_and_effort_levels():
 
     assert labels("/model ") == ["peto"], "chưa hỏi máy chủ thì chỉ gợi ý Peto"
     commands.use_models([{"key": "peto", "label": "Peto", "description": "Mặc định", "step_cost": 1},
-                         {"key": "sol", "label": "5.6 Sol", "description": "Mạnh nhất, của OpenAI", "step_cost": 4}])
+                         {"key": "sol", "label": "6 Sol", "description": "Mạnh nhất, của OpenAI", "step_cost": 4}])
     assert [(item.text, item.description) for item in suggestions("/model s")] == [
-        ("/model sol", "5.6 Sol · Mạnh nhất, của OpenAI · tính 4 bước")]
+        ("/model sol", "6 Sol · Mạnh nhất, của OpenAI · tính 4 bước")]
 
 
 def test_enter_runs_the_highlighted_command_only_after_something_was_typed():

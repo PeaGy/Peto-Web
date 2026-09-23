@@ -308,8 +308,8 @@ def test_pasted_images_are_sent_and_only_the_last_four_are_kept(project, peto):
 
 
 PETO = {"key": "peto", "label": "Peto", "description": "Mặc định", "step_cost": 1}
-LUNA = {"key": "luna", "label": "5.6 Luna", "description": "Nhanh, của OpenAI", "step_cost": 1}
-SOL = {"key": "sol", "label": "5.6 Sol", "description": "Mạnh nhất, của OpenAI", "step_cost": 4}
+LUNA = {"key": "luna", "label": "6 Luna", "description": "Nhanh, của OpenAI", "step_cost": 1}
+SOL = {"key": "sol", "label": "6 Sol", "description": "Mạnh nhất, của OpenAI", "step_cost": 4}
 
 
 def test_model_command_switches_models_and_remembers_the_choice(project, peto, monkeypatch):
@@ -327,16 +327,16 @@ def test_model_command_switches_models_and_remembers_the_choice(project, peto, m
     config.save({"server": peto.url, "token": "peto_token_thu"})
     monkeypatch.chdir(project)
 
-    ui = FakeUI(answers=["/model", "/model terra", "/model Luna", "làm việc", "/effort cao", "/model 5.6 sol",
+    ui = FakeUI(answers=["/model", "/model terra", "/model Luna", "làm việc", "/effort cao", "/model 6 sol",
                          "/usage", "/thoat"])
     assert cli.session(ui) == 0
     assert "Peto Agent" in ui.text and "project · Peto · mức vừa" in ui.text
     assert "  Model: Peto. Đổi bằng /model peto, /model luna, /model sol." in ui.text
-    assert "    sol   5.6 Sol · Mạnh nhất, của OpenAI · tính 4 bước" in ui.text
+    assert "    sol   6 Sol · Mạnh nhất, của OpenAI · tính 4 bước" in ui.text
     assert "Tài khoản này không dùng được model đó." in ui.text
-    assert "Đã chuyển sang 5.6 Luna." in ui.text and "Đã chuyển sang mức cao; mỗi bước tính 2 bước." in ui.text
-    assert "Đã chuyển sang 5.6 Sol; mỗi bước tính 8 bước." in ui.text
-    assert "· 5.6 Sol · mức cao, mỗi bước tính 8 bước." in ui.text
+    assert "Đã chuyển sang 6 Luna." in ui.text and "Đã chuyển sang mức cao; mỗi bước tính 2 bước." in ui.text
+    assert "Đã chuyển sang 6 Sol; mỗi bước tính 8 bước." in ui.text
+    assert "· 6 Sol · mức cao, mỗi bước tính 8 bước." in ui.text
     steps = [request["body"] for request in peto.requests if request["path"] == "/api/agent/step"]
     assert [step["model"] for step in steps] == ["luna"]
     assert config.load()["model"] == "sol"

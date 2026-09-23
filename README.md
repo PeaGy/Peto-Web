@@ -140,22 +140,22 @@ phải sửa route, database hay giới hạn tải.
 Đặt `PETO_AI_PROVIDER=mock` bất cứ lúc nào để làm việc trên giao diện mà không
 tốn hạn mức xAI.
 
-### Chọn model: Peto và dòng GPT-5.6
+### Chọn model: Peto và dòng GPT-6
 
-Ngoài Peto (Grok qua tài khoản xAI của web), người dùng chọn được model GPT-5.6 của OpenAI, tính tiền vào billing API
+Ngoài Peto (Grok qua tài khoản xAI của web), người dùng chọn được model GPT-6 của OpenAI, tính tiền vào billing API
 đặt ở `OPENAI_API_KEY`. Thiếu khóa thì chỉ còn Peto. Quyền dùng do chủ web chốt:
 
 | Model | Tên API | Ở đâu | Ai dùng được | Bước Peto Agent |
 |---|---|---|---|---|
 | Peto | `XAI_MODEL` / `PETO_AGENT_MODEL` | Web và CLI | Mọi tài khoản | 1 |
-| 5.6 Luna | `gpt-5.6-luna` | Web và CLI | Tài khoản Discord/Google | 1 |
+| 6 Luna | `gpt-6-luna` | Web và CLI | Tài khoản Discord/Google | 1 |
 | 5.6 Terra | `gpt-5.6-terra` | Chỉ CLI | Tài khoản trong `PETO_OWNER_ACCOUNTS` | 2 |
-| 5.6 Sol | `gpt-5.6-sol` | Chỉ CLI | Tài khoản trong `PETO_OWNER_ACCOUNTS` | 4 |
+| 6 Sol | `gpt-6-sol` | Chỉ CLI | Tài khoản trong `PETO_OWNER_ACCOUNTS` | 4 |
 
 - **Web:** nút chọn model nằm bên trái nút Gửi (tab Trò chuyện); mỗi tin theo model đang chọn, đổi giữa hội thoại được,
   lựa chọn được nhớ trên trình duyệt. Tài khoản chỉ có Peto thì không thấy nút. Companion, Tạo ảnh và chế độ nhập vai
   luôn dùng Peto; nhập vai có thể có nội dung 18+ nên không gửi sang tài khoản OpenAI.
-- **CLI:** lệnh `/model` (xem mục Peto Agent). Số bước của model nhân với mức suy nghĩ: 5.6 Sol ở mức cao tính 8 bước.
+- **CLI:** lệnh `/model` (xem mục Peto Agent). Số bước của model nhân với mức suy nghĩ: 6 Sol ở mức cao tính 8 bước.
 - Máy chủ kiểm quyền ở mọi lượt, không tin giao diện. Khóa OpenAI chỉ nằm ở máy chủ.
 - `PETO_OWNER_ACCOUNTS` nhận `discord:<Discord ID>` hoặc `google:<mã Google>`, ngăn cách bằng dấu phẩy; chỉ ghi số thì
   hiểu là Discord ID.
@@ -509,7 +509,7 @@ và gọi mô hình AI. Cách cài, đăng nhập và sử dụng nằm trong `a
   bấm **Cho phép** khi mã khớp. **Cài đặt → Peto Agent** hiện số bước còn lại hôm nay và các máy đã kết nối, ngắt được
   từng máy.
 - **Giới hạn bước:** mỗi lần gọi mô hình là một bước; mỗi tài khoản có 200 bước mỗi ngày (đổi bằng
-  `PETO_AGENT_DAILY_STEPS`). Mức suy nghĩ cao (`/effort cao`) tính 2 bước mỗi lần; 5.6 Terra tính 2 và 5.6 Sol tính
+  `PETO_AGENT_DAILY_STEPS`). Mức suy nghĩ cao (`/effort cao`) tính 2 bước mỗi lần; 5.6 Terra tính 2 và 6 Sol tính
   4, nhân với mức suy nghĩ. Bước bị lỗi trước khi mô hình kịp phản hồi thì được trả lại.
 - **Trong phiên:** gõ `/` là hiện danh sách lệnh, lọc dần theo chữ gõ; mũi tên chọn, Tab điền, Enter chạy, Esc ẩn.
   `/moi` bắt đầu hội thoại mới, `/resume` mở lại hội thoại gần nhất của thư mục (lưu trên máy người dùng sau từng
@@ -543,7 +543,7 @@ và gọi mô hình AI. Cách cài, đăng nhập và sử dụng nằm trong `a
   dịch vụ AI chứ không mở gì trên máy người dùng. Mỗi lượt tìm tính phí vào tài khoản dịch vụ AI, tắt được bằng
   `PETO_AGENT_WEB_SEARCH=false`.
 - **Dữ liệu:** nội dung tệp Peto đọc và output lệnh đi qua VPS tới dịch vụ AI của model đang chọn (xAI với Peto,
-  OpenAI với dòng 5.6); VPS không lưu hội thoại.
+  OpenAI với dòng 6); VPS không lưu hội thoại.
 
 Bản đầu mới được thử trên máy với phản hồi giả; chưa thử với mô hình thật và chưa triển khai lên VPS. Chưa có công cụ
 trình duyệt, Docker, chạy nền hay nối lại tác vụ khi mất mạng.

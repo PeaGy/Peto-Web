@@ -99,7 +99,7 @@ def _models(me: dict) -> list[dict]:
 
 
 def _find_model(value: str, models: list[dict]) -> dict | None:
-    """Nhận "luna", "Luna" hay "5.6 Luna"."""
+    """Nhận "luna", "Luna" hay "6 Luna"."""
     wanted = fold(value).replace(" ", "")
     for model in models:
         label = fold(str(model.get("label") or "")).split()

@@ -1054,7 +1054,7 @@ describe('Chế độ nhập vai', () => {
 describe('Chọn model', () => {
   const MODELS: api.ModelOption[] = [
     { key: 'peto', label: 'Peto', description: 'Mặc định', step_cost: 1 },
-    { key: 'luna', label: '5.6 Luna', description: 'Nhanh, của OpenAI', step_cost: 1 },
+    { key: 'luna', label: '6 Luna', description: 'Nhanh, của OpenAI', step_cost: 1 },
   ];
   const signIn = (models: api.ModelOption[], extra: Partial<api.AccountUser> = {}) =>
     vi.mocked(api.getAuthState).mockResolvedValue({ authenticated: true, login_configured: true,
@@ -1067,7 +1067,7 @@ describe('Chọn model', () => {
     return vi.mocked(api.sendMessage).mock.calls[0][0];
   };
 
-  it('nút Peto bên trái nút Gửi đổi sang 5.6 Luna, nhớ lựa chọn và gửi kèm tin nhắn', async () => {
+  it('nút Peto bên trái nút Gửi đổi sang 6 Luna, nhớ lựa chọn và gửi kèm tin nhắn', async () => {
     signIn(MODELS);
     vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers) => handlers.onError?.('Giữ bản nháp'));
     await openApp();
@@ -1076,9 +1076,9 @@ describe('Chọn model', () => {
     fireEvent.click(trigger);
     const menu = await screen.findByRole('menu', { name: 'Model' });
     expect(within(menu).getByRole('menuitemradio', { name: /Peto/ }).getAttribute('aria-checked')).toBe('true');
-    fireEvent.click(within(menu).getByRole('menuitemradio', { name: /5\.6 Luna.*Nhanh, của OpenAI/ }));
+    fireEvent.click(within(menu).getByRole('menuitemradio', { name: /6 Luna.*Nhanh, của OpenAI/ }));
     expect(screen.queryByRole('menu', { name: 'Model' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Model: 5.6 Luna' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Model: 6 Luna' })).toBeTruthy();
     expect(localStorage.getItem('peto-model')).toBe('luna');
     expect((await send('chào')).model).toBe('luna');
   });
@@ -1097,7 +1097,7 @@ describe('Chọn model', () => {
     signIn(MODELS, { roleplay_confirmed: true });
     vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers) => handlers.onError?.('Giữ bản nháp'));
     await openApp();
-    expect(screen.getByRole('button', { name: 'Model: 5.6 Luna' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Model: 6 Luna' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Thêm ảnh và tùy chọn' }));
     fireEvent.click(screen.getByRole('button', { name: /Chế độ nhập vai/ }));
     await screen.findByRole('button', { name: 'Tắt chế độ nhập vai' });

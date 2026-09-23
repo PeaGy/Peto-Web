@@ -1,9 +1,9 @@
-"""Các model người dùng chọn được: Peto (Grok qua xAI) và dòng GPT-5.6 của OpenAI.
+"""Các model người dùng chọn được: Peto (Grok qua xAI), GPT-6 Luna/Sol và 5.6 Terra của OpenAI.
 
-Chủ web chốt ngày 17/09/2026:
-- Web có Peto và 5.6 Luna (nút chọn model cạnh nút Gửi); Peto Agent có thêm 5.6 Terra và 5.6 Sol (lệnh /model).
-- 5.6 Luna dùng được với tài khoản Discord/Google, tài khoản khách chỉ dùng Peto. 5.6 Terra và 5.6 Sol chỉ dành cho
-  tài khoản của chủ web, khai trong ``PETO_OWNER_ACCOUNTS``.
+Chủ web chốt:
+- Web có Peto và 6 Luna (nút chọn model cạnh nút Gửi). Peto Agent có thêm 5.6 Terra và 6 Sol (lệnh /model).
+- 6 Luna dùng được với tài khoản Discord/Google, tài khoản khách chỉ dùng Peto. 5.6 Terra và 6 Sol chỉ dành cho
+  tài khoản của chủ web, khai trong ``PETO_OWNER_ACCOUNTS``. Terra giữ slug 5.6 cho đến khi OpenAI có bản GPT-6.
 - Trong Peto Agent, bước tính theo giá: Luna 1, Terra 2, Sol 4, nhân với mức suy nghĩ (mức cao tính gấp đôi).
 
 Các model OpenAI tính tiền vào billing API của chủ web, nên máy chủ kiểm quyền ở đây chứ không tin giao diện. Thiếu
@@ -36,10 +36,10 @@ class Model:
 
 MODELS: dict[str, Model] = {
     "peto": Model("peto", "Peto", "Mặc định", "xai", "", 1, web=True, owner_only=False),
-    "luna": Model("luna", "5.6 Luna", "Nhanh, của OpenAI", "openai", "gpt-5.6-luna", 1, web=True, owner_only=False),
+    "luna": Model("luna", "6 Luna", "Nhanh, của OpenAI", "openai", "gpt-6-luna", 1, web=True, owner_only=False),
     "terra": Model("terra", "5.6 Terra", "Cân bằng, của OpenAI", "openai", "gpt-5.6-terra", 2, web=False,
                    owner_only=True),
-    "sol": Model("sol", "5.6 Sol", "Mạnh nhất, của OpenAI", "openai", "gpt-5.6-sol", 4, web=False, owner_only=True),
+    "sol": Model("sol", "6 Sol", "Mạnh nhất, của OpenAI", "openai", "gpt-6-sol", 4, web=False, owner_only=True),
 }
 
 

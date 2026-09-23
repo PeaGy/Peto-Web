@@ -609,7 +609,7 @@ def build_agent_guide(*, install_command: str, daily_steps: int) -> str:
         "mục đó (lưu sau từng bước nên lỡ đóng cửa sổ giữa chừng vẫn làm tiếp được; không chạy lại lệnh nào), "
         "`/nho <ghi chú>` ghi một điều Peto cần nhớ về dự án vào AGENTS.md mà không tốn bước nào, "
         "`/effort thap`, `/effort vua` hoặc `/effort cao` đổi mức suy nghĩ và được "
-        "nhớ cho lần sau, `/model` chọn model (Peto mặc định, hoặc 5.6 Luna với tài khoản Discord/Google; model đắt "
+        "nhớ cho lần sau, `/model` chọn model (Peto mặc định, hoặc 6 Luna với tài khoản Discord/Google; model đắt "
         "hơn tính nhiều bước hơn), `/usage` xem số bước còn lại và số token đã dùng hôm nay, `/thoat` để thoát. Ctrl+C dừng yêu "
         "cầu đang chạy. Dán nhiều dòng (ví dụ log lỗi) thì cả đoạn nằm trong một tin, không bị gửi từng dòng. "
         "Muốn Peto xem ảnh (ví dụ ảnh chụp lỗi giao diện): bấm Alt+V để dán ảnh vừa chụp màn hình hoặc vừa copy, hoặc "

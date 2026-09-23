@@ -37,7 +37,7 @@ DB_PATH = Path(os.getenv("PETO_WEB_DB", str(BASE_DIR / "data" / "peto_web.db")))
 # "xai"  = Grok qua OAuth, dùng token riêng của Peto Web.
 AI_PROVIDER = os.getenv("PETO_AI_PROVIDER", "mock").strip().lower()
 
-XAI_MODEL = os.getenv("XAI_MODEL", "grok-4.6").strip()
+XAI_MODEL = os.getenv("XAI_MODEL", "grok-4.7").strip()
 XAI_API_BASE = os.getenv("XAI_BASE_URL", "https://api.x.ai/v1").strip()
 # Ngân sách phản hồi dành cho web, không gắn với độ dài tin nhắn Discord.
 XAI_MAX_OUTPUT_TOKENS = _env_int("XAI_MAX_OUTPUT_TOKENS", 8192, 128, 32000)
@@ -49,8 +49,8 @@ XAI_TOKEN_PATH = Path(
     os.getenv("PETO_XAI_TOKEN_PATH", str(BASE_DIR / "data" / "xai_tokens.json"))
 )
 
-# --- OpenAI (dòng GPT-5.6, xem ai_models.py) -----------------------------------
-# Khóa API cho 5.6 Luna, Terra và Sol, tính tiền vào billing OpenAI của chủ web; để trống thì chỉ còn Peto. Khóa chỉ
+# --- OpenAI (dòng GPT-6, xem ai_models.py) -------------------------------------
+# Khóa API cho 6 Luna, 5.6 Terra và 6 Sol, tính tiền vào billing OpenAI của chủ web; để trống thì chỉ còn Peto. Khóa chỉ
 # dùng ở máy chủ, không bao giờ gửi xuống trình duyệt hay CLI.
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
 # Model suy luận tính cả token suy nghĩ vào giới hạn này, nên để rộng hơn của Grok.
@@ -61,7 +61,7 @@ def parse_owner_accounts(raw: str) -> frozenset[str]:
     return frozenset(item if ":" in item else f"discord:{item}" for item in items if item)
 
 
-# Tài khoản của chủ web, được dùng 5.6 Terra và 5.6 Sol trong Peto Agent. Ngăn cách bằng dấu phẩy, dạng
+# Tài khoản của chủ web, được dùng 5.6 Terra và 6 Sol trong Peto Agent. Ngăn cách bằng dấu phẩy, dạng
 # discord:<Discord ID> hoặc google:<mã Google>.
 OWNER_ACCOUNTS = parse_owner_accounts(os.getenv("PETO_OWNER_ACCOUNTS", ""))
 

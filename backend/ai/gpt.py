@@ -1,4 +1,4 @@
-"""5.6 Luna, Terra và Sol: dòng GPT-5.6 của OpenAI qua Responses API, dùng ``OPENAI_API_KEY`` của máy chủ.
+"""6 Luna, 5.6 Terra và 6 Sol qua Responses API của OpenAI, dùng ``OPENAI_API_KEY`` của máy chủ.
 
 Vòng công cụ, tìm web và nguồn tham khảo dùng chung với Peto (``ResponsesProvider`` trong ``ai/xai.py``). Ai được
 chọn model nào thì ``ai_models.py`` kiểm trước khi tới đây.

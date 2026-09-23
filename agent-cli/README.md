@@ -169,8 +169,8 @@ nào được chọn, nên Enter không tự chạy gì. Các lệnh:
 - `/effort thap`, `/effort vua`, `/effort cao`: mức suy nghĩ, được nhớ trên máy này cho lần sau. Mức cao suy nghĩ kỹ
   hơn nhưng mỗi bước tính 2 bước. Gõ `/effort` để xem mức đang dùng; chưa chọn thì theo mặc định của máy chủ. Gõ
   `/effort` kèm dấu cách thì chọn mức trong danh sách.
-- `/model peto`, `/model luna`: đổi model, được nhớ trên máy này cho lần sau. Peto là mặc định; 5.6 Luna (của OpenAI)
-  dùng được với tài khoản Discord/Google. Chủ web còn chọn được `/model terra` và `/model sol`. Gõ `/model` để xem model
+- `/model peto`, `/model luna`: đổi model, được nhớ trên máy này cho lần sau. Peto là mặc định; 6 Luna (của OpenAI)
+  dùng được với tài khoản Discord/Google. Chủ web còn chọn được `/model terra` (5.6 Terra) và `/model sol`. Gõ `/model` để xem model
   đang dùng và các model tài khoản của bạn được chọn; gõ `/model` kèm dấu cách thì chọn trong danh sách. Model đắt hơn
   tính nhiều bước hơn: Terra 2, Sol 4, nhân với mức suy nghĩ. Đổi model giữa hội thoại vẫn làm tiếp được; phần suy nghĩ
   của model cũ được bỏ vì model mới không đọc được.
@@ -397,12 +397,12 @@ không bao giờ bị đổi, và hội thoại gửi lại cho Peto vẫn là c
   nhưng bị dừng khi bạn đóng peto, kể cả khi đóng hẳn cửa sổ terminal. Chạy lệnh trong thư mục con cần VPS và CLI từ
   bản 0.9.8; CLI cũ hơn vẫn nhận công cụ như trước.
 - **Giới hạn bước:** mỗi yêu cầu tối đa 40 bước; mỗi tài khoản có số bước mỗi ngày do máy chủ đặt (mặc định 200). Ở mức
-  suy nghĩ cao, mỗi bước tính 2; với 5.6 Terra nhân thêm 2, với 5.6 Sol nhân thêm 4.
+  suy nghĩ cao, mỗi bước tính 2; với 5.6 Terra nhân thêm 2, với 6 Sol nhân thêm 4.
 
 ## Dữ liệu gửi đi
 
 Nội dung tệp Peto đọc, kết quả tìm trong dự án, diff, output lệnh và ảnh bạn gửi kèm đi qua máy chủ Peto tới dịch vụ AI của
-model đang chọn (xAI với Peto, OpenAI với 5.6 Luna, Terra, Sol) để Peto quyết định bước tiếp theo. Máy chủ không lưu hội
+model đang chọn (xAI với Peto, OpenAI với 6 Luna, 5.6 Terra hoặc 6 Sol) để Peto quyết định bước tiếp theo. Máy chủ không lưu hội
 thoại; nó chỉ lưu tên máy, mã băm của token và số bước đã dùng. Đừng mở Peto Agent trong thư mục có dữ liệu bạn không
 muốn gửi đi.
 

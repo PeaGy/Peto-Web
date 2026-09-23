@@ -1,6 +1,6 @@
 """Responses API: stream văn bản và chạy công cụ được đăng ký của web.
 
-xAI (Peto) và OpenAI (dòng GPT-5.6, ``ai/gpt.py``) dùng cùng dạng Responses API, nên ``ResponsesProvider`` giữ chung
+xAI (Peto) và OpenAI (dòng GPT-6, ``ai/gpt.py``) dùng cùng dạng Responses API, nên ``ResponsesProvider`` giữ chung
 vòng công cụ, tìm web và nguồn tham khảo; mỗi dịch vụ chỉ khác cách lấy khóa, tên model và lời báo lỗi.
 """
 

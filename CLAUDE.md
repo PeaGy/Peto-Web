@@ -17,7 +17,7 @@ roleplay mode (`persona.ROLEPLAY_SYSTEM_PROMPT`, see "Roleplay mode" below). Pet
 use the assistant core (`PERSONA_PROMPT`).
 
 Stack: FastAPI + SQLite (aiosqlite) backend, React 19 + Vite frontend, xAI Grok via the
-Responses API, plus OpenAI's GPT-5.6 models as a user-selectable option (see "Model choice"). Registration is **open**:
+Responses API, plus OpenAI's GPT-6 models as a user-selectable option (see "Model choice"). Registration is **open**:
 Discord, Google, or guest — there is no allowlist.
 
 ## Language convention
@@ -129,13 +129,13 @@ Providers must raise `ProviderError` for anything the user should see; the messa
 verbatim in the UI, so it must be written in Vietnamese and be user-appropriate. Anything
 else propagates and gets logged as an unexpected error behind a generic message.
 
-### Model choice (Peto and GPT-5.6)
+### Model choice (Peto and GPT-6)
 
 On 2026-09-17 the owner added OpenAI API billing and picked this design from mockups. `ai_models.py` holds the catalog
 and the access rules; the server checks them on every chat turn and agent step, never trusting the UI:
 
-- `peto` (Grok through the web's xAI account) for everyone; `luna` (`gpt-5.6-luna`) for Discord and Google accounts,
-  on the web and in the CLI; `terra` and `sol` (`gpt-5.6-terra`, `gpt-5.6-sol`) only in the CLI and only for owners
+- `peto` (Grok through the web's xAI account) for everyone; `luna` (`gpt-6-luna`) for Discord and Google accounts,
+  on the web and in the CLI; `terra` (`gpt-5.6-terra`, until a GPT-6 Terra exists) and `sol` (`gpt-6-sol`) only in the CLI and only for owners
   listed in `PETO_OWNER_ACCOUNTS` (`discord:<id>` or `google:<id>`, bare digits mean Discord). Without `OPENAI_API_KEY`
   only Peto is offered (503 if a turn asks for another model); under `PETO_AI_PROVIDER=mock` every model uses the mock.
 - `get_provider(model)` caches one provider per model. `ai/xai.py` holds `ResponsesProvider`, the tool loop, web search
@@ -820,7 +820,7 @@ results in the next step. The server stores no conversation (`store=False`), and
   owner's API billing; Peto itself stays open to everyone.
 - Guest and Google accounts must never resolve to a Discord ID — that isolation is the
   only thing keeping the bot's memory private now that anyone can sign in.
-- Do not rename model slugs (`grok-4.6`, `grok-imagine-image-2.0`, `gpt-5.6-luna`/`-terra`/`-sol`), the `/api/imagine` path,
+- Do not rename model slugs (`grok-4.7`, `grok-imagine-image-2.0`, `gpt-6-luna`, `gpt-5.6-terra`, `gpt-6-sol`), the `/api/imagine` path,
   or table names into branded equivalents — the API needs the real identifiers. Product
   naming ("Peto tạo ảnh") belongs in display strings only.
 
