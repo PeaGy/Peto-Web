@@ -2528,3 +2528,31 @@ button.artifact-name { cursor: pointer; }
   .scene-preview { height: 140px; }
   .companion-with-scene .companion-title { background: var(--stage-surface); border-radius: 14px; padding: 4px; }
 }
+
+/* A shared scene surrounds the floating conversation, including its right edge. */
+.companion { isolation: isolate; grid-template-columns: minmax(0, 1fr) clamp(330px, 32%, 460px); overflow: hidden; }
+.companion > .scene-backdrop { z-index: -1; }
+.companion-stage { padding: 0; }
+.character-canvas { inset: 0; }
+.companion-panel { position: relative; z-index: 1; margin: 22px 20px 76px 0; border: 1px solid var(--stage-line); border-radius: 22px; overflow: hidden; background: var(--stage-surface); color: var(--stage-text); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); box-shadow: 0 16px 50px #0003; }
+.companion-head { border-color: var(--stage-line); }
+.companion-title span { color: var(--stage-muted); }
+.companion-messages .companion-reply { padding: 12px 14px; border-radius: 16px; background: var(--stage-bubble-a); color: var(--stage-text); }
+.companion-messages .bubble.user { background: var(--stage-bubble-b); color: var(--stage-text); }
+.companion-composer .composer { background: var(--stage-input); border-color: var(--stage-line); }
+.companion-composer textarea { color: var(--stage-text); }
+.companion-scene-tools { position: absolute; right: 22px; bottom: 18px; z-index: 3; }
+.companion-scene-button { display: flex; align-items: center; gap: 8px; min-height: 42px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); color: var(--text); cursor: pointer; box-shadow: 0 4px 18px #0003; }
+.character-motion-settings { margin-top: 22px; border: 1px solid var(--line); border-radius: 16px; background: var(--panel); }
+.character-motion-settings summary { cursor: pointer; padding: 18px; font-weight: 600; }
+.character-motion-settings summary span { display: block; margin: 6px 0 0 18px; font-size: 12px; font-weight: 400; color: var(--muted); }
+.character-motion-settings .idle-motion-picker { margin: 0; border: 0; border-top: 1px solid var(--line); border-radius: 0 0 16px 16px; }
+.character-library-footnote a { color: inherit; }
+@media (max-width: 720px) {
+  .companion > .scene-backdrop { z-index: 0; }
+  .companion-stage { z-index: 1; }
+  .companion-panel { position: absolute; z-index: 2; inset: 0 0 54px; margin: 0; border: 0; border-radius: 0; background: transparent; backdrop-filter: none; -webkit-backdrop-filter: none; box-shadow: none; overflow: visible; }
+  .companion-messages .companion-reply { padding: 8px 12px; }
+  .companion-scene-tools { right: 12px; bottom: calc(8px + env(safe-area-inset-bottom)); }
+  .companion-scene-button { min-height: 36px; padding: 7px 11px; font-size: 12px; }
+}

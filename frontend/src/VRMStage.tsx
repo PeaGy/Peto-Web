@@ -146,6 +146,5 @@ export default function VRMStage({ character, motion, onPreview, activity = 'idl
     <div className="character-glow" aria-hidden="true" />
     <div ref={host} className="character-canvas" style={{ visibility: status === 'ready' ? 'visible' : 'hidden' }} />
     {status !== 'ready' && <div className="character-fallback"><p role="status">{status === 'loading' ? 'Đang đưa nhân vật 3D lên sân khấu…' : error}</p>{status === 'error' && <button className="settings-button" onClick={() => setAttempt(value => value + 1)}>Thử tải lại nhân vật</button>}</div>}
-    <span className="character-credit">{character.name}{character.author ? ` · ${character.author}` : ' · Model của bạn'}</span>
   </div>;
 }

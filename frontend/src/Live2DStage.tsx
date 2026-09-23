@@ -436,8 +436,5 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
       <p role="status">{status === "loading" ? "Đang đưa nhân vật lên sân khấu…" : "Chưa hiển thị được nhân vật. Bạn vẫn có thể nhắn và nghe Peto."}</p>
       {status === "error" && <button className="settings-button" onClick={() => setAttempt((v) => v + 1)}>Thử tải lại nhân vật</button>}
     </div>}
-    {character.builtin
-      ? <a className="character-credit" href={CHARACTER.creditUrl} target="_blank" rel="noopener noreferrer">Model mẫu {CHARACTER.name} · © Live2D Inc.</a>
-      : <span className="character-credit">{character.name} · Model của bạn</span>}
   </div>;
 }
