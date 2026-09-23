@@ -3,6 +3,9 @@ import copy
 import json
 from .runner import cap_text
 
+# Công cụ trình duyệt trả danh sách phần tử của trang (xem context.efficient_input).
+BROWSER_PAGE_TOOLS = {"browser_open", "browser_click", "browser_type", "browser_press", "browser_login"}
+
 
 def text_of(item):
     content = item.get("content", "")
@@ -79,6 +82,13 @@ def efficient_input(items):
                 value["text"] = cap_text(value["text"], 4000)
                 value["text_truncated_for_context"] = True
                 value["note"] = "Chữ cũ đã thu gọn; đọc lại trang nếu cần phần bị bỏ."
+        elif name in BROWSER_PAGE_TOOLS and tool_results > 6:
+            # Danh sách phần tử (tới 80 mục mỗi lần mở trang) của những lần xem, thao tác cũ: trang đã đổi, số trong
+            # ngoặc có thể không còn, nên chỉ giữ phần đầu cho ngữ cảnh.
+            for key, keep in (("outline", 10), ("elements", 10), ("appeared", 5)):
+                if isinstance(value.get(key), list) and len(value[key]) > keep:
+                    value[key] = value[key][:keep] + [f"… (bỏ {len(value[key]) - keep} mục cũ)"]
+                    value["note"] = "Kết quả cũ đã thu gọn; số trong ngoặc có thể đã đổi, xem kết quả mới nhất."
         encoded = json.dumps(value, ensure_ascii=False)
         # A reference note can cost more than a tiny file. Optimize only when it actually shrinks the payload.
         if len(encoded) < len(item["output"]):

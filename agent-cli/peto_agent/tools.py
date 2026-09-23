@@ -12,6 +12,7 @@ import inspect
 import json
 import re
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from . import approvals, browser, runner
 from .background import Jobs
@@ -31,8 +32,11 @@ MAX_PLAN_TITLE = 120
 PLAN_STATUS = ("pending", "running", "done")
 REFUSED = "Người dùng không đồng ý {action}. Đừng lặp lại y nguyên; hỏi họ muốn làm khác thế nào."
 # Khả năng báo cho máy chủ trong context của mỗi bước, để máy chủ chỉ gửi công cụ và tham số bản CLI này hiểu
-# (agent_tools.py): "cwd" từ 0.9.8, "browser" (xem trang trên máy) từ 0.10.0.
-FEATURES = ("cwd", "browser")
+# (agent_tools.py): "cwd" từ 0.9.8, "browser" (xem trang trên máy) từ 0.10.0, "browser_act" (bấm, gõ, nhờ người dùng
+# đăng nhập) từ 0.11.0.
+FEATURES = ("cwd", "browser", "browser_act")
+# Câu hỏi khi Peto thao tác lần đầu trên một trang: [y] là cho trang đó tới hết yêu cầu (chủ web chọn ngày 2026-09-23).
+PAGE_QUESTION = "    Đồng ý cho trang này tới hết yêu cầu? [y] có  [n] không  [a] có cho mọi bước trong yêu cầu này › "
 
 
 def _seconds(value: float) -> str:
@@ -46,6 +50,35 @@ def _count(value: int) -> str:
 def _dialogs(dialogs: list[str]) -> str:
     """Hộp thoại trang đã mở, in ở dòng chi tiết mờ chứ không thành dòng lỗi đỏ: hộp thoại không phải lỗi."""
     return "hộp thoại " + "; ".join(dialogs) if dialogs else ""
+
+
+def _page_notes(result: dict) -> list[str]:
+    """Hộp thoại và việc Peto chặn (trang ngoài, tab mới, tải tệp) cho dòng chi tiết."""
+    return ([_dialogs(result["dialogs"])] if result.get("dialogs") else []) + list(result.get("notes") or [])
+
+
+def _where(url: str) -> str:
+    """localhost:5173/admin: địa chỉ gọn cho dòng tổng kết."""
+    parts = urlsplit(url or "")
+    return f"{parts.netloc}{parts.path if parts.path != '/' else ''}" or url
+
+
+def _action_details(kind: str, result: dict) -> str:
+    """Dòng chi tiết dưới một thao tác (bản phác chủ web chọn ngày 2026-09-23): trang chuyển tới đâu, chữ mới hiện, hộp
+    thoại, việc bị chặn, số lỗi. Gõ mà không có gì mới thì không in dòng này."""
+    parts = []
+    if result.get("new_page") or result.get("moved"):
+        parts.append(f"Chuyển tới {urlsplit(result['url']).path or '/'}"
+                     + (f' · "{result["title"]}"' if result.get("title") else ""))
+    elif result.get("appeared"):
+        more = len(result["appeared"]) - 1
+        parts.append(f'Hiện thêm: "{browser._clip(result["appeared"][0], 80)}"' + (f" (+{more} dòng)" if more else ""))
+    elif kind == "click" and not result.get("elements") and not _page_notes(result):
+        parts.append("Chữ trên trang không đổi")
+    parts += _page_notes(result)
+    if parts or result.get("problems"):
+        parts.append(f"{len(result['problems'])} lỗi" if result.get("problems") else "không lỗi")
+    return " · ".join(parts)
 
 
 def changed_lines(before: str, after: str) -> tuple[int, int]:
@@ -78,6 +111,13 @@ class Tools:
         # captured để vòng làm việc gửi cho Peto sau kết quả các công cụ của bước đó.
         self.browser: browser.Browser | None = None
         self.captured: list[tuple[str, Image]] = []
+        # Trang (origin) được bấm, gõ tới hết yêu cầu ([y]) và cả phiên ([s]); [l] nằm trong approvals.
+        self.page_grants: set[str] = set()
+        self.page_session_grants: set[str] = set()
+        self.page_noted: set[str] = set()
+        # Một thao tác trên trang lỗi thì các thao tác sau trong cùng bước bị bỏ qua: model gửi cả chuỗi (gõ, gõ, bấm
+        # Gửi) trong một bước, và bấm Gửi khi ô trước đó chưa gõ được là làm sai.
+        self.page_failure: str | None = None
         self.failed_commands = 0
         self.command_failures: dict[str, int] = {}
         self.metrics = Metrics()
@@ -99,18 +139,28 @@ class Tools:
             "browser_open": self.browser_open,
             "browser_screenshot": self.browser_screenshot,
             "browser_read": self.browser_read,
+            "browser_click": self.browser_click,
+            "browser_type": self.browser_type,
+            "browser_press": self.browser_press,
+            "browser_login": self.browser_login,
         }
 
     def reset_task(self) -> None:
         self.approve_all = False
         self.plan = []
         self.captured = []
+        self.page_grants = set()
+        self.page_failure = None
         self.changes = {}
         self.commands = []
         self.failed_commands = 0
         self.command_failures = {}
         self.revision = 0
         self.command_revision = -1
+
+    def start_step(self) -> None:
+        """Gọi trước khi chạy các công cụ của một bước."""
+        self.page_failure = None
 
     def _guidance(self, target, *, reading=False):
         current = guides(self.ws, target)
@@ -416,8 +466,27 @@ class Tools:
 
     def _browser(self) -> browser.Browser:
         if self.browser is None:
-            self.browser = browser.Browser()
+            self.browser = browser.Browser(profile=browser.project_profile(self.ws.root))
+        # Có lệnh nền đang chạy (thường là dev server vừa bật) thì browser_open chờ server lên thay vì báo lỗi ngay.
+        self.browser.wait_for_server = bool(self.jobs.running())
         return self.browser
+
+    def _browser_notice(self) -> None:
+        if self.browser is not None and self.browser.notice:
+            self.ui.line(f"  {self.browser.notice}", "yellow")
+            self.browser.notice = None
+
+    def forget_browser(self) -> bool:
+        """/trinhduyet xoa: đóng trình duyệt, xóa hồ sơ của dự án. False khi phiên peto khác đang dùng hồ sơ đó."""
+        self.close_browser()
+        return browser.forget_project(self.ws.root)
+
+    def toggle_browser_window(self) -> bool:
+        """/trinhduyet: hiện hoặc ẩn cửa sổ trình duyệt; trả True khi cửa sổ đang hiện."""
+        page = self._browser()
+        page.set_visible(not page.visible)
+        self._browser_notice()
+        return page.visible
 
     def close_browser(self) -> None:
         if self.browser is not None:
@@ -434,8 +503,8 @@ class Tools:
             details.append(f"HTTP {page['status']}")
         details.append(f"\"{page['title']}\"" if page["title"] else "không có tiêu đề")
         details.append(f"{len(page['problems'])} lỗi" if page["problems"] else "không lỗi")
-        if page.get("dialogs"):
-            details.append(_dialogs(page["dialogs"]))
+        details += _page_notes(page)
+        self._browser_notice()
         self.ui.page(f"Xem trang {page['url']} · {browser.viewport_label(page['viewport'])}", " · ".join(details),
                      page["problems"])
         return {"ok": True, **page, "size": browser.viewport_label(page["viewport"]).split()[-1],
@@ -446,11 +515,12 @@ class Tools:
         shot = page.screenshot(viewport, bool(full_page))
         saved = browser.store(self.ws.root.name, shot)
         problems = page.late_problems()
-        dialogs = page.new_dialogs()
+        dialogs, notes = page.new_dialogs(), page.new_notes()
         label = browser.viewport_label(shot.viewport) + (" · cả trang" if shot.full_page else "")
         if shot.cut:
             label += f" (cắt ở {shot.height}px)"
-        self.ui.page(f"Chụp trang · {label}", _dialogs(dialogs), problems, path=str(saved) if saved else None)
+        self.ui.page(f"Chụp trang · {label}", " · ".join(_page_notes({"dialogs": dialogs, "notes": notes})),
+                     problems, path=str(saved) if saved else None)
         self.captured.append((f"Ảnh chụp {page.url} · {label}", Image(shot.data, shot.mime, shot.width, shot.height)))
         result = {"ok": True, "url": page.url, "viewport": shot.viewport, "width": shot.width, "height": shot.height,
                   "full_page": shot.full_page,
@@ -461,6 +531,8 @@ class Tools:
             result["problems"] = problems
         if dialogs:
             result["dialogs"] = dialogs
+        if notes:
+            result["notes"] = notes
         if saved:
             # Chỉ tên tệp, không đường dẫn đầy đủ (có tên tài khoản Windows): đủ để Peto nói cho người dùng biết.
             result["file"] = saved.name
@@ -470,15 +542,110 @@ class Tools:
         page = self._browser()
         read = page.read(selector)
         problems = page.late_problems()
-        dialogs = page.new_dialogs()
+        dialogs, notes = page.new_dialogs(), page.new_notes()
         what = f"Đọc chữ trong {selector}" if selector else "Đọc chữ trên trang"
-        self.ui.page(f"{what} ({_count(read['chars'])} ký tự)", _dialogs(dialogs), problems)
+        self.ui.page(f"{what} ({_count(read['chars'])} ký tự)", " · ".join(_page_notes({"dialogs": dialogs,
+                                                                                         "notes": notes})), problems)
         result = {"ok": True, **read}
         if problems:
             result["problems"] = problems
         if dialogs:
             result["dialogs"] = dialogs
+        if notes:
+            result["notes"] = notes
         return result
+
+    def browser_click(self, target: str, accept_dialog: bool | None = None) -> dict:
+        return self._page_action("click", target=str(target), accept_dialog=bool(accept_dialog))
+
+    def browser_type(self, target: str, text: str, submit: bool | None = None,
+                     accept_dialog: bool | None = None) -> dict:
+        return self._page_action("type", target=str(target), text=str(text), submit=bool(submit),
+                                 accept_dialog=bool(accept_dialog))
+
+    def browser_press(self, key: str, accept_dialog: bool | None = None) -> dict:
+        return self._page_action("press", key=str(key), accept_dialog=bool(accept_dialog))
+
+    def _page_action(self, kind: str, *, target: str | None = None, text: str | None = None, submit: bool = False,
+                     key: str | None = None, accept_dialog: bool = False) -> dict:
+        """Bấm, gõ, nhấn phím trên trang đang xem (đợt 2). Lần đầu trên mỗi trang thì hỏi quyền."""
+        if self.page_failure:
+            return {"error": f"Bỏ qua: thao tác trước trên trang trong bước này không thành ({self.page_failure}). "
+                             "Xem kết quả đó rồi quyết định lại."}
+        page = self._browser()
+        try:
+            action = page.describe(kind, target, text, submit, key)
+            if not self._approve_page(page.origin, action):
+                self.page_failure = "người dùng không đồng ý"
+                self.ui.failure("Không thao tác trên trang")
+                return {"error": REFUSED.format(action=f"cho Peto bấm, gõ trên {page.origin}")}
+            if kind == "click":
+                result = page.click(target, accept_dialog=accept_dialog)
+            elif kind == "type":
+                result = page.type(target, text or "", submit=submit, accept_dialog=accept_dialog)
+            else:
+                result = page.press(key, accept_dialog=accept_dialog)
+        except browser.BrowserError as err:
+            self.page_failure = str(err)
+            raise
+        title = result["action"][:1].upper() + result["action"][1:]
+        self.ui.page(title, _action_details(kind, result), result.get("problems") or [])
+        output = {"ok": True, **result}
+        if not output.get("problems"):
+            output.pop("problems", None)
+        return output
+
+    def _approve_page(self, origin: str, action: str) -> bool:
+        """Hỏi một lần cho mỗi trang (origin): [y] tới hết yêu cầu, [s] cả phiên, [l] luôn trong dự án này.
+
+        Quyền [l] nằm trong hồ sơ người dùng (approvals.py), không bao giờ trong thư mục dự án.
+        """
+        if self.approve_all or origin in self.page_grants or origin in self.page_session_grants:
+            return True
+        if approvals.page_allowed(self.ws.root, origin):
+            if origin not in self.page_noted:
+                self.page_noted.add(origin)
+                self.ui.line(f"  {origin} đã được luôn cho phép bấm, gõ trong dự án · /permissions để xem hoặc xóa.",
+                             "dim")
+            return True
+        self.ui.page_permission(origin, action)
+        with self.metrics.measure("permission"):
+            answer = self.ui.ask_permission(allow_session=True, allow_always=True, session_label="cả phiên",
+                                            question=PAGE_QUESTION)
+        if answer == "y":
+            self.page_grants.add(origin)
+        elif answer == "a":
+            self.approve_all = True
+        elif answer == "s":
+            self.page_session_grants.add(origin)
+            self.ui.line(f"  Peto được bấm, gõ trên {origin} trong cả phiên. /permissions để xem hoặc xóa.", "dim")
+        elif answer == "l":
+            if approvals.add_page(self.ws.root, origin):
+                self.ui.line(f"  Từ giờ Peto bấm, gõ trên {origin} không cần hỏi trong dự án này. /permissions để xem "
+                             "hoặc xóa.", "dim")
+            else:
+                self.ui.line("  Không lưu được quyền lên máy; lần này vẫn thao tác, lần sau Peto sẽ hỏi lại.", "yellow")
+        return answer in {"y", "a", "s", "l"}
+
+    def browser_login(self, reason: str) -> dict:
+        """Nhờ người dùng tự đăng nhập trong cửa sổ trình duyệt của Peto rồi chờ họ quay lại (chủ web chọn ngày
+        2026-09-23). Mật khẩu họ gõ đi thẳng vào trình duyệt, không qua hội thoại; đăng nhập nằm trong hồ sơ của dự án."""
+        page = self._browser()
+        if page.url is None or not page.running:
+            raise browser.BrowserError("Chưa mở trang nào: gọi browser_open tới trang cần đăng nhập trước.")
+        self.ui.hand_over(browser._clip(reason or "trang cần đăng nhập", 200))
+        with self.metrics.measure("permission"):
+            result = page.hand_over(self.ui.wait_for_user)
+        self._browser_notice()
+        where = (f'"{result["title"]}" · ' if result["title"] else "") + _where(result["url"])
+        if not result["done"]:
+            self.ui.failure(f"Bạn bỏ qua đăng nhập · {where}")
+            return {"error": "Người dùng bỏ qua, chưa đăng nhập. Đừng đoán mật khẩu hay tự tạo tài khoản; báo họ phần "
+                             "nào cần đăng nhập rồi dừng phần đó.", "url": result["url"], "title": result["title"]}
+        self.ui.success(f"Đã đăng nhập · {where}")
+        return {"ok": True, "url": result["url"], "title": result["title"], "outline": result["outline"],
+                "note": "Người dùng báo đã xong. Trang vẫn là trang đăng nhập thì có thể họ chưa đăng nhập được: hỏi "
+                        "họ thay vì thử lại."}
 
     def _shell(self, shell: str | None) -> str:
         chosen = (shell or "cmd").strip().lower()

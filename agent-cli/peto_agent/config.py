@@ -41,6 +41,11 @@ def screenshots_dir() -> Path:
     return log_dir().parent / "screenshots"
 
 
+def browser_profiles_dir() -> Path:
+    """Hồ sơ trình duyệt riêng của từng dự án (giữ đăng nhập người dùng tự làm trong cửa sổ của Peto)."""
+    return log_dir().parent / "browser"
+
+
 def load() -> dict:
     try:
         data = json.loads((home() / "config.json").read_text(encoding="utf-8"))

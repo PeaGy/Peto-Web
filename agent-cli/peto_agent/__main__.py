@@ -425,6 +425,12 @@ def session(ui: UI) -> int:
                 else:
                     work.permissions(clear=value == "clear")
                 continue
+            if name == "/trinhduyet":
+                if fold(value) not in {"", "xoa"}:
+                    ui.line("Dùng /trinhduyet (hiện hoặc ẩn cửa sổ) hoặc /trinhduyet xoa.", "yellow")
+                else:
+                    work.browser_window(fold(value))
+                continue
             if name == "/usage":
                 _usage(ui, work)
                 continue

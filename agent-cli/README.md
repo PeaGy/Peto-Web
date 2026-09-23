@@ -103,7 +103,7 @@ của VS Code) là quả lê 6 × 6. Thấp hơn nữa, hẹp dưới 41 cột, 
 chữ. Trong terminal của VS Code, Peto chừa thêm 2 cột bên phải, vì VS Code che khoảng hai cột sát mép:
 
 ```text
- [mascot]   Peto Agent 0.10.1
+ [mascot]   Peto Agent 0.11.0
  [mascot]   Peto · mức vừa
  [mascot]   ~\Projects\website-a
 
@@ -152,8 +152,11 @@ nào được chọn, nên Enter không tự chạy gì. Các lệnh:
   Xóa và đổi tên do Peto làm bằng công cụ thì thuộc bản hoàn tác; thay đổi do lệnh terminal thì không. Nếu lỗi ổ đĩa
   xảy ra giữa chừng, những tệp chưa khôi phục vẫn được giữ trong bản nhớ để kiểm tra lại; không có giao dịch nguyên
   khối nhiều tệp.
-- `/permissions`: xem lệnh đã nhớ trong phiên (`s`) và lệnh luôn cho phép ở dự án này (`l`); `/permissions clear`
-  thu hồi cả hai. Lệnh nhớ trong phiên mất khi `/moi` hoặc `/resume`; lệnh luôn cho phép thì còn tới khi bạn xóa.
+- `/permissions`: xem lệnh và trang (được bấm, gõ) đã nhớ trong phiên (`s`) và luôn cho phép ở dự án này (`l`);
+  `/permissions clear` thu hồi hết. Lệnh nhớ trong phiên mất khi `/moi` hoặc `/resume`; lệnh luôn cho phép thì còn tới
+  khi bạn xóa.
+- `/trinhduyet`: hiện hoặc ẩn cửa sổ trình duyệt của Peto, để xem Peto bấm, gõ trên trang (xem "Bấm, gõ trên trang"
+  bên dưới). `/trinhduyet xoa`: quên đăng nhập, cookie và dữ liệu trang mà trình duyệt của Peto lưu cho dự án này.
 - `/init`: Peto xem qua dự án (cấu trúc thư mục được gửi sẵn trong yêu cầu, khỏi tốn một bước), đọc README cùng các tệp
   cấu hình rồi viết `AGENTS.md` ở gốc dự án. Đây là một yêu cầu bình thường nên tốn vài bước, và bản ghi tệp vẫn hiện
   diff để bạn đồng ý. Dự án đã có `AGENTS.md` thì Peto đọc trước và chỉ sửa chỗ sai hoặc thiếu.
@@ -287,16 +290,58 @@ chụp ảnh xem còn tràn không, rồi mới báo xong.
   khi cần nhìn bố cục.
 - **Chỉ trang trên máy:** `localhost`, `127.0.0.1`, `::1`. Trang ngoài, `file://`, và trang chuyển hướng ra ngoài đều
   bị từ chối, để Peto không thể mở một địa chỉ mang theo nội dung tệp của bạn, và trang lạ không nhét được chỉ dẫn vào.
-  Xem trang trên máy không hỏi quyền, như đọc tệp; đợt này Peto chưa bấm hay gõ gì trên trang.
+  Xem trang trên máy không hỏi quyền, như đọc tệp.
 - **Hộp thoại của trang** (`alert`, `confirm`, `prompt`) được Peto tự trả lời ngay rồi báo ở dòng chi tiết mờ, không
   tính là lỗi: `alert` thì đóng, `confirm` và `prompt` thì chọn Hủy, để Peto không thay bạn đồng ý một việc có thể đổi
   dữ liệu. Trước 0.10.1, trang gọi `alert()` làm Peto chờ gần một phút rồi báo lỗi, và trình duyệt kẹt tới hết phiên.
   Trang treo hẳn (JavaScript chạy mãi) thì sau 30 giây Peto đóng trình duyệt, lần xem sau mở trình duyệt mới.
-- **Trình duyệt:** Microsoft Edge có sẵn trong Windows (không có thì Chrome), chạy ẩn, không có cửa sổ nào bật lên.
-  Nó dùng một hồ sơ riêng trong thư mục tạm, không có tài khoản, cookie hay tiện ích nào của bạn, và bị xóa khi đóng.
-  Đóng peto, kể cả bấm X đóng cửa sổ terminal, là trình duyệt tắt theo. Muốn dùng trình duyệt khác thì đặt
-  `PETO_AGENT_BROWSER` là đường dẫn tới tệp chạy của nó.
+- **Trình duyệt:** Microsoft Edge có sẵn trong Windows (không có thì Chrome), chạy ẩn, không có cửa sổ nào bật lên trừ
+  khi bạn gõ `/trinhduyet` hay Peto nhờ bạn đăng nhập. Nó dùng một hồ sơ riêng tên "Peto" cho từng dự án, không có tài
+  khoản, cookie hay tiện ích nào của Edge bạn đang dùng. Đóng peto, kể cả bấm X đóng cửa sổ terminal, là trình duyệt
+  tắt theo. Muốn dùng trình duyệt khác thì đặt `PETO_AGENT_BROWSER` là đường dẫn tới tệp chạy của nó.
 - Ảnh và chữ trên trang đi qua máy chủ Peto tới dịch vụ AI như nội dung tệp.
+
+### Bấm, gõ trên trang
+
+Từ bản 0.11.0 (cần cả VPS mới), Peto thử trang như người dùng: bấm nút, mở menu, điền và gửi form, đi hết một luồng rồi
+báo chỗ hỏng. Lần đầu Peto thao tác trên một trang, bạn được hỏi:
+
+```text
+  ▶ Muốn bấm và gõ trên http://localhost:5173
+    Trước tiên: bấm nút "Đặt vé (ảo)"
+    Đây là thao tác thật trên app đang chạy: có thể gửi form, xóa dữ liệu hay gọi dịch vụ thật như bạn bấm.
+    [s] cả phiên  [l] luôn cho phép ở dự án này · Đồng ý cho trang này tới hết yêu cầu? [y] có  [n] không  [a] …
+    Chọn › y
+  • Bấm nút "Đặt vé (ảo)"
+    Hiện thêm: "Chọn số vé" · không lỗi
+  • Gõ "2" vào ô "Số vé"
+  • Bấm nút "Xác nhận"
+    Hiện thêm: "Đã đặt 2 vé! Mã MEO-042" · 1 lỗi
+    ✗ console.error: Không lưu được vé
+```
+
+- **Hỏi một lần cho mỗi trang** (mỗi địa chỉ và cổng, ví dụ `localhost:5173`): `y` cho tới hết yêu cầu này, `s` cả
+  phiên, `l` luôn cho phép trang đó trong dự án này (lưu cùng chỗ với lệnh luôn cho phép, không bao giờ trong thư mục
+  dự án), `a` đồng ý mọi bước còn lại của yêu cầu. Thao tác là thật: nếu app đang nối dịch vụ thật (gọi AI, gửi mail,
+  thanh toán thử), bấm Gửi là gọi thật. Mở, chụp, đọc trang vẫn không hỏi.
+- **Bấm, gõ như người thật:** chuột và bàn phím thật (trang thấy như bạn bấm), gõ tiếng Việt đúng dấu. Nút bị một lớp
+  khác che thì Peto báo "bị … che" thay vì bấm xuyên qua, vì bạn cũng không bấm được. Mỗi thao tác in một dòng, kèm chữ
+  mới hiện, trang chuyển tới đâu và lỗi mới.
+- **Không ra khỏi máy:** link, form, chuyển hướng hay JavaScript đưa trang ra ngoài đều bị chặn trước khi request rời
+  máy; trang giữ nguyên. Liên kết mở tab mới được mở ngay trong tab đang xem; tab, cửa sổ mới khác bị đóng. Peto không
+  tải tệp lên hay tải tệp về.
+- **Mật khẩu:** Peto không bao giờ gõ vào ô mật khẩu và không đọc chữ trong đó. Trang cần đăng nhập thì Peto hiện cửa sổ
+  ở trang đó và nhờ bạn tự đăng nhập, rồi bấm Enter trong terminal (gõ `n` để bỏ qua). Đăng nhập bằng Discord hay Google
+  cũng được, vì lúc đó Peto tạm thôi chặn trang ngoài.
+- **Đăng nhập được nhớ cho dự án:** hồ sơ trình duyệt của Peto nằm ở `%LOCALAPPDATA%\PetoAgent\browser\`, mỗi dự án
+  một thư mục, nên phiên sau không phải đăng nhập lại (trừ trang dùng cookie hết hạn khi đóng trình duyệt).
+  `/trinhduyet xoa` để quên; dự án 30 ngày không dùng thì tự dọn. Hai phiên peto cùng mở một dự án thì phiên sau dùng hồ
+  sơ tạm, không có đăng nhập.
+- **Cửa sổ:** vẫn chạy ẩn. `/trinhduyet` hiện cửa sổ để xem Peto bấm, gõ; gõ lần nữa để ẩn. Hiện hay ẩn là mở lại
+  trình duyệt nên trang tải lại từ đầu, đăng nhập vẫn giữ. Cửa sổ mở lên sẽ giành con trỏ, như mọi cửa sổ mới.
+- **Tiết kiệm bước:** chuỗi thao tác đoán trước được (gõ các ô, bấm Gửi, chụp) Peto gọi chung một bước; một thao tác
+  lỗi thì các thao tác sau trong bước đó bị bỏ qua. Có lệnh nền đang chạy (dev server vừa bật) thì `browser_open` chờ
+  server lên tối đa 15 giây, nên chạy dev server rồi mở trang chỉ tốn một bước.
 
 ### Việc dài, lệnh nền và chuông báo
 

@@ -1,4 +1,5 @@
-"""Trình duyệt ẩn của đợt 1: chỉ trang trên máy, máy khách WebSocket, Edge thật mở trang thử, và Edge tắt theo peto."""
+"""Trình duyệt của Peto: chỉ trang trên máy, máy khách WebSocket, Edge thật xem (đợt 1) và bấm, gõ (đợt 2) trên trang
+thử, hồ sơ theo dự án, và Edge tắt theo peto."""
 
 from __future__ import annotations
 
@@ -16,6 +17,7 @@ import sys
 import threading
 import time
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
@@ -150,12 +152,75 @@ DIALOG_PAGE = """<!doctype html><html lang="vi"><head><meta charset="utf-8"><tit
 </script></body></html>"""
 
 
+# Trang đặt vé cho đợt 2: ô nhập, ô mật khẩu, hộp chọn, ô chọn, hộp hiện ra sau khi bấm, confirm, lớp phủ che nút,
+# nút bị tắt, liên kết ra ngoài, tab mới, cửa sổ mới, chọn tệp và tải tệp.
+TICKET_PAGE = """<!doctype html><html lang="vi"><head><meta charset="utf-8"><title>Đặt vé</title>
+<style>#man{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none}</style></head><body>
+<h1>Đặt vé</h1>
+<form action="/cam-on" method="get">
+  <label>Họ tên <input name="ten"></label>
+  <label>Mật khẩu <input name="mk" type="password"></label>
+  <label>Ghế <select name="ghe"><option value="thuong">Ghế thường</option><option value="vip">Ghế VIP</option></select></label>
+  <label><input type="checkbox" name="dong-y"> Đồng ý điều khoản</label>
+  <button id="gui">Gửi</button>
+</form>
+<p id="dem">Chưa gõ</p>
+<button id="hien" onclick="document.getElementById('hop').hidden = false">Chọn số vé</button>
+<div id="hop" hidden><p>Bạn muốn mấy vé?</p><button onclick="xacNhan()">Xác nhận</button></div>
+<button id="xoa" onclick="document.getElementById('dem').textContent = confirm('Xóa hết?') ? 'Đã xóa' : 'Giữ lại'">Xóa</button>
+<button id="mo-man" onclick="document.getElementById('man').style.display = 'block'">Mở lớp phủ</button>
+<div id="man"></div>
+<button id="tat" disabled>Nút tắt</button>
+<a href="https://example.com/?q=bi-mat" id="ngoai">Trang ngoài</a>
+<a href="/cam-on?ten=tab" target="_blank" id="tab">Mở tab mới</a>
+<button id="popup" onclick="window.open('/cam-on?ten=popup')">Cửa sổ mới</button>
+<input type="file" id="tep">
+<a href="/tai" id="tai">Tải tệp</a>
+<script>
+  document.querySelector('[name=ten]').addEventListener('input', (event) => {
+    document.getElementById('dem').textContent = 'Đã gõ: ' + event.target.value + (event.isTrusted ? ' (thật)' : ' (giả)');
+  });
+  function xacNhan() {
+    console.error('Không lưu được vé');
+    document.getElementById('hop').innerHTML = '<p>Đã đặt 2 vé! Mã MEO-042</p>';
+  }
+</script></body></html>"""
+
+
 class _Site(http.server.BaseHTTPRequestHandler):
     def do_GET(self):  # noqa: N802
+        path, query = urlsplit(self.path).path, parse_qs(urlsplit(self.path).query)
         if self.path == "/":
             self._send("text/html; charset=utf-8", PAGE.encode())
         elif self.path == "/hop-thoai":
             self._send("text/html; charset=utf-8", DIALOG_PAGE.encode())
+        elif path == "/dat-ve":
+            self._send("text/html; charset=utf-8", TICKET_PAGE.encode())
+        elif path == "/cam-on":
+            name = query.get("ten", [""])[0]
+            self._send("text/html; charset=utf-8",
+                       f"<!doctype html><meta charset=utf-8><title>Cảm ơn</title><h1>Cảm ơn {name}</h1>".encode())
+        elif path == "/tai":
+            self.send_response(200)
+            self.send_header("Content-Type", "application/octet-stream")
+            self.send_header("Content-Disposition", "attachment; filename=ve.pdf")
+            self.send_header("Content-Length", "4")
+            self.end_headers()
+            self.wfile.write(b"%PDF")
+        elif path == "/dang-nhap":
+            # Một cookie phiên (không hạn, mất khi trình duyệt tắt) và một cookie có hạn (nằm trong hồ sơ).
+            self.send_response(200)
+            self.send_header("Set-Cookie", "phien=abc; Path=/; HttpOnly")
+            self.send_header("Set-Cookie", "nho=xyz; Path=/; Max-Age=3600")
+            data = "<!doctype html><meta charset=utf-8><title>Đã đăng nhập</title><h1>Xin chào</h1>".encode()
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+        elif path == "/cookie":
+            cookies = "; ".join(sorted(part.strip() for part in self.headers.get("Cookie", "").split(";") if part.strip()))
+            self._send("text/html; charset=utf-8",
+                       f"<!doctype html><meta charset=utf-8><title>Cookie</title><p id=c>{cookies or 'trống'}</p>".encode())
         elif self.path == "/api/cham":
             time.sleep(0.8)  # dữ liệu tới chậm: phải chờ mạng yên rồi mới coi là tải xong
             self._send("application/json", json.dumps({"text": "Đã tải dữ liệu"}).encode())
@@ -210,7 +275,8 @@ def test_real_browser_sees_errors_elements_text_and_screenshots(site, agent_home
         assert "404 /khong-co-anh.png" in problems
         assert any(problem.startswith("ReferenceError: hamKhongTonTai is not defined") for problem in problems)
         assert not any("favicon" in problem for problem in problems), "favicon trình duyệt tự xin không phải lỗi"
-        assert "nút: Gửi" in opened["outline"] and "ô nhập: Email của bạn" in opened["outline"]
+        # Phần tử thao tác được có số trong ngoặc vuông (đợt 2 dùng số đó để bấm, gõ); tiêu đề, ảnh thì không.
+        assert opened["outline"][:3] == ["tiêu đề 1: Đăng ký nhận tin", "[1] ô nhập: Email của bạn", "[2] nút: Gửi"]
         assert "ảnh: (thiếu alt) /khong-co-anh.png" in opened["outline"]
         assert "Đã tải dữ liệu" in page.read()["text"], "chờ request chậm xong rồi mới coi trang đã tải"
         assert page.read("#cuoi")["text"] == "Chân trang"
@@ -347,3 +413,198 @@ def test_leftover_profiles_are_pruned_but_never_one_in_use(tmp_path, monkeypatch
         browser._prune_profiles()
     assert in_use.exists() and fresh.exists(), "hồ sơ đang dùng hay vừa mở thì để yên"
     assert not crashed.exists() and not released.exists()
+
+
+# --- Đợt 2: bấm, gõ ------------------------------------------------------------------------------------------------
+
+
+def _ref(items: list[str], text: str) -> str:
+    """Số trong ngoặc vuông của phần tử đầu tiên có chữ ``text``."""
+    return next(re.match(r"\[(\d+)\]", item).group(1) for item in items if text in item and item.startswith("["))
+
+
+@needs_browser
+def test_clicking_typing_and_choosing_behave_like_a_real_user(site, agent_home):
+    page = Browser()
+    try:
+        outline = page.open(site + "/dat-ve")["outline"]
+        joined = " | ".join(outline)
+        assert "ô mật khẩu: Mật khẩu" in joined and "ô chọn: Đồng ý điều khoản (chưa chọn)" in joined
+        name = _ref(outline, "ô nhập: Họ tên")
+        assert page.describe("type", name, "Nguyễn Văn Á") == 'gõ "Nguyễn Văn Á" vào ô "Họ tên"'
+
+        typed = page.type(name, "Nguyễn Văn Á")
+        assert typed["action"] == 'gõ "Nguyễn Văn Á" vào ô "Họ tên"' and typed["value"] == "Nguyễn Văn Á"
+        assert typed["appeared"] == ["Đã gõ: Nguyễn Văn Á (thật)"], "sự kiện gõ thật (isTrusted), đúng dấu tiếng Việt"
+        assert f'[{name}] ô nhập: Họ tên = "Nguyễn Văn Á"' in typed["elements"], "số của phần tử giữ nguyên"
+        assert page.type(name, "Lan")["value"] == "Lan", "gõ lại là thay chữ cũ"
+
+        with pytest.raises(BrowserError, match="không gõ vào ô mật khẩu"):
+            page.type(_ref(outline, "ô mật khẩu"), "123456")
+        chosen = page.type(_ref(outline, "hộp chọn: Ghế"), "ghế vip")
+        assert chosen["chosen"] == "Ghế VIP" and any('hộp chọn: Ghế = "Ghế VIP"' in item for item in chosen["elements"])
+        with pytest.raises(BrowserError, match='không có lựa chọn "hạng nhất". Có: "Ghế thường", "Ghế VIP"'):
+            page.type(_ref(outline, "hộp chọn: Ghế"), "hạng nhất")
+        checked = page.click(_ref(outline, "ô chọn: Đồng ý"))
+        assert any("Đồng ý điều khoản (đã chọn)" in item for item in checked["elements"])
+
+        shown = page.click("#hien")
+        assert shown["action"] == 'bấm nút "Chọn số vé"' and shown["appeared"] == ["Bạn muốn mấy vé?", "Xác nhận"]
+        confirm = _ref(shown["elements"], "nút: Xác nhận")
+        done = page.click(f"[{confirm}]")
+        assert done["appeared"] == ["Đã đặt 2 vé! Mã MEO-042"]
+        assert done["problems"] == ["console.error: Không lưu được vé"]
+
+        kept = page.click("#xoa")
+        assert kept["dialogs"] == ['confirm "Xóa hết?" (đã chọn Hủy)'] and kept["appeared"] == ["Giữ lại"]
+        removed = page.click("#xoa", accept_dialog=True)
+        assert removed["dialogs"] == ['confirm "Xóa hết?" (đã chọn OK)'] and removed["appeared"] == ["Đã xóa"]
+        nothing = page.click("#hien")
+        assert "appeared" not in nothing and "elements" not in nothing, "bấm mà trang không đổi thì không bịa ra gì"
+
+        with pytest.raises(BrowserError, match="đang bị tắt"):
+            page.click("#tat")
+        with pytest.raises(BrowserError, match=r"khớp \d+ phần tử đang hiện: \[\d+\] nút"):
+            page.click("button")
+        with pytest.raises(BrowserError, match="Không có phần tử nào khớp #khong-co"):
+            page.click("#khong-co")
+        page.click("#mo-man")
+        with pytest.raises(BrowserError, match="đang bị div#man che"):
+            page.click("#gui")
+        page._evaluate("document.getElementById('man').style.display = 'none'")
+
+        sent = page.type(name, "Lan", submit=True)
+        assert sent["action"] == 'gõ "Lan" vào ô "Họ tên" rồi nhấn Enter' and sent["new_page"]
+        assert sent["title"] == "Cảm ơn" and urlsplit(sent["url"]).path == "/cam-on"
+        assert sent["outline"] == ["tiêu đề 1: Cảm ơn Lan"]
+        with pytest.raises(BrowserError, match="không còn trên trang"):
+            page.click(name)
+
+        page.open(site + "/dat-ve")
+        tabbed = page.press("Tab")
+        assert tabbed["action"] == "nhấn Tab" and "focus" in tabbed
+        with pytest.raises(BrowserError, match="Chỉ nhấn được các phím"):
+            page.press("F13")
+    finally:
+        page.close()
+
+
+@needs_browser
+def test_outside_pages_new_tabs_uploads_and_downloads_are_stopped(site, agent_home):
+    page = Browser()
+    try:
+        page.open(site + "/dat-ve")
+        outside = page.click("#ngoai")
+        assert urlsplit(outside["url"]).path == "/dat-ve", "trang giữ nguyên, không có trang lỗi"
+        assert outside["notes"] == ["Peto chặn chuyển sang example.com/ vì trang đó ngoài máy này; trang giữ nguyên."]
+        assert outside["problems"] == []
+
+        tab = page.click("#tab")
+        assert tab["new_page"] and tab["title"] == "Cảm ơn" and "Cảm ơn tab" in tab["appeared"]
+        assert tab["notes"] == ["Liên kết mở tab mới; Peto mở nó ngay trong tab đang xem."]
+        page.open(site + "/dat-ve")
+        popup = page.click("#popup")
+        assert popup["notes"] == ["Trang mở một tab hay cửa sổ mới; Peto đã đóng nó vì Peto chỉ xem một tab."]
+        page._pump(0.5)
+        pages = [target for target in page._call("Target.getTargets")["targetInfos"] if target["type"] == "page"]
+        assert len(pages) == 1, "chỉ còn tab của Peto"
+
+        assert page.click("#tep")["notes"] == ["Trang mở hộp chọn tệp; Peto không tải tệp nào lên."]
+        assert page.click("#tai")["notes"] == ["Trang muốn tải tệp ve.pdf về máy; Peto không tải tệp."]
+    finally:
+        page.close()
+
+
+@needs_browser
+def test_open_waits_for_a_dev_server_that_is_still_starting(agent_home):
+    probe = socket.socket()
+    probe.bind(("127.0.0.1", 0))
+    port = probe.getsockname()[1]
+    probe.close()
+    url = f"http://127.0.0.1:{port}/dat-ve"
+    page = Browser()
+    try:
+        with pytest.raises(BrowserError, match="Dev server đã chạy"):
+            page.open(url)  # không có lệnh nền nào đang chạy: báo ngay, không chờ
+
+        def late_start():
+            time.sleep(1.5)
+            server = http.server.ThreadingHTTPServer(("127.0.0.1", port), _Site)
+            threading.Thread(target=server.serve_forever, daemon=True).start()
+
+        threading.Thread(target=late_start, daemon=True).start()
+        page.wait_for_server = True
+        started = time.monotonic()
+        opened = page.open(url)
+        assert opened["title"] == "Đặt vé" and 1 < time.monotonic() - started < 10
+        assert opened["problems"] == [], "những lần gõ cửa trước khi server lên không phải lỗi của trang"
+    finally:
+        page.close()
+
+
+@needs_browser
+def test_project_profile_keeps_logins_for_the_next_session_but_is_never_shared(site, agent_home, tmp_path):
+    root = tmp_path / "du-an"
+    profile = browser.project_profile(root)
+    assert profile.parent == agent_home / "browser"
+    first, second = Browser(profile=profile), Browser(profile=profile)
+    try:
+        first.open(site + "/dang-nhap")
+        second.open(site + "/cookie")
+        assert second.profile != profile and second.notice and "phiên peto khác" in second.notice
+        assert second.read("#c")["text"] == "trống", "phiên thứ hai không dùng chung hồ sơ đang mở"
+        assert browser.forget_project(root) is False, "không xóa hồ sơ đang có phiên dùng"
+    finally:
+        first.close()
+        second.close()
+    assert profile.exists()
+
+    again = Browser(profile=profile)
+    again.force_headless = True  # "hiện" vẫn chạy ẩn: kiểm việc mở lại mà không bật cửa sổ lên màn hình
+    try:
+        again.open(site + "/cookie")
+        assert again.read("#c")["text"] == "nho=xyz", "cookie có hạn còn trong hồ sơ; cookie phiên thì không"
+        again.open(site + "/dang-nhap")
+        again.open(site + "/cookie")
+        again.set_visible(True)
+        assert again.visible and again.url.endswith("/cookie"), "đổi ẩn/hiện mở lại đúng trang đang xem"
+        assert again.read("#c")["text"] == "nho=xyz; phien=abc", "cookie phiên được chép sang trình duyệt mới"
+        again.set_visible(False)
+        assert again.read("#c")["text"] == "nho=xyz; phien=abc"
+    finally:
+        again.close()
+    assert browser.forget_project(root) is True and not profile.exists()
+
+
+@needs_browser
+def test_user_logs_in_themselves_while_peto_waits(site, agent_home):
+    page = Browser()
+    page.force_headless = True
+    try:
+        page.open(site + "/dat-ve")
+        seen = {}
+
+        def user():
+            # Lúc này người dùng tự làm trong cửa sổ: Peto không chặn, không trả lời hộp thoại thay.
+            seen["handing_over"] = page.handing_over
+            page._call("Page.navigate", {"url": site + "/dang-nhap"})
+            page._pump(1)
+            return True
+
+        result = page.hand_over(user)
+        assert seen == {"handing_over": True} and result["done"] and result["title"] == "Đã đăng nhập"
+        assert page.visible and page.url.endswith("/dang-nhap")
+        page.open(site + "/cookie")
+        assert page.read("#c")["text"] == "nho=xyz; phien=abc"
+
+        def wander():
+            page._call("Page.navigate", {"url": "http://peto-khong-co.invalid/"})
+            page._pump(1)
+            return False
+
+        back = page.hand_over(wander)
+        assert not back["done"] and back["url"].endswith("/cookie"), "trang cuối ở ngoài máy thì quay về trang cũ"
+        page.open(site + "/dat-ve")
+        assert page.click("#ngoai")["notes"], "xong thì lại chặn trang ngoài"
+    finally:
+        page.close()

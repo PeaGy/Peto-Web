@@ -1,4 +1,5 @@
-"""Lệnh được "luôn cho phép" trong từng dự án, lưu trong hồ sơ người dùng (``permissions.json`` cạnh config.json).
+"""Lệnh và trang được "luôn cho phép" trong từng dự án, lưu trong hồ sơ người dùng (``permissions.json`` cạnh
+config.json). Trang là địa chỉ (origin) Peto được bấm, gõ mà không hỏi lại, từ CLI 0.11.0.
 
 Không bao giờ đọc quyền từ thư mục dự án: một repo tải về có thể kèm sẵn tệp cấp quyền để lệnh chạy mà không hỏi, nên
 quyền chỉ nằm trên máy người dùng và chỉ được thêm khi chính họ chọn [l] ở câu hỏi đồng ý. Khớp đúng từng chữ của
@@ -41,14 +42,37 @@ def _projects() -> dict:
     return data["projects"]
 
 
+def _items(root: Path) -> list[dict]:
+    items = _projects().get(_key(root))
+    return [item for item in items[-MAX_PER_PROJECT:] if isinstance(item, dict)] if isinstance(items, list) else []
+
+
 def entries(root: Path) -> list[dict]:
     """Các lệnh luôn được cho phép trong dự án này, theo thứ tự thêm; mục hỏng thì bỏ qua."""
-    items = _projects().get(_key(root))
-    if not isinstance(items, list):
-        return []
-    return [item for item in items[-MAX_PER_PROJECT:]
-            if isinstance(item, dict) and isinstance(item.get("command"), str)
-            and isinstance(item.get("directory"), str) and item.get("shell") in SHELLS]
+    return [item for item in _items(root)
+            if isinstance(item.get("command"), str) and isinstance(item.get("directory"), str)
+            and item.get("shell") in SHELLS]
+
+
+def pages(root: Path) -> list[str]:
+    """Các trang (origin, ví dụ http://localhost:5173) Peto luôn được bấm, gõ trong dự án này."""
+    return [item["origin"] for item in _items(root) if isinstance(item.get("origin"), str)]
+
+
+def page_allowed(root: Path, origin: str) -> bool:
+    return origin in pages(root)
+
+
+def add_page(root: Path, origin: str) -> bool:
+    """Nhớ một trang cho dự án. False khi không ghi được: lần này vẫn thao tác, lần sau Peto hỏi lại."""
+    if not origin or len(origin) > 300:
+        return False
+    items = _items(root)
+    if origin not in pages(root):
+        items.append({"origin": origin, "added_at": round(time.time())})
+    projects = _projects()
+    projects[_key(root)] = items[-MAX_PER_PROJECT:]
+    return _write(projects)
 
 
 def allowed(root: Path, directory: str, command: str, shell: str) -> bool:
@@ -62,7 +86,7 @@ def add(root: Path, directory: str, command: str, shell: str) -> bool:
     if len(command) > MAX_COMMAND_CHARS or shell not in SHELLS:
         return False
     projects = _projects()
-    current = entries(root)
+    current = _items(root)  # giữ cả các trang đã nhớ
     if not allowed(root, directory, command, shell):
         current.append({"directory": directory, "command": command, "shell": shell, "added_at": round(time.time())})
     projects[_key(root)] = current[-MAX_PER_PROJECT:]
@@ -70,8 +94,8 @@ def add(root: Path, directory: str, command: str, shell: str) -> bool:
 
 
 def clear(root: Path) -> int:
-    """Bỏ mọi lệnh đã nhớ của dự án này; trả về số lệnh đã bỏ."""
-    removed = len(entries(root))
+    """Bỏ mọi lệnh và trang đã nhớ của dự án này; trả về số mục đã bỏ."""
+    removed = len(entries(root)) + len(pages(root))
     projects = _projects()
     if projects.pop(_key(root), None) is not None:
         _write(projects)

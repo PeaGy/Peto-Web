@@ -154,7 +154,7 @@ def test_permissions_lists_and_clears_session_and_project_grants(project, execut
     work.reset()
     assert approvals.entries(project), "/moi chỉ quên quyền trong phiên"
     work.permissions(clear=True)
-    assert "1 lệnh luôn cho phép" in ui.text and approvals.entries(project) == [] and not work.tools.command_grants
+    assert "1 quyền luôn cho phép" in ui.text and approvals.entries(project) == [] and not work.tools.command_grants
 
 
 def test_broken_permissions_file_counts_as_empty(project, agent_home):
@@ -164,6 +164,21 @@ def test_broken_permissions_file_counts_as_empty(project, agent_home):
     assert approvals.add(project, ".", "npm test", "cmd")
     assert approvals.allowed(project, ".", "npm test", "cmd")
     assert not approvals.add(project, ".", "x" * (approvals.MAX_COMMAND_CHARS + 1), "cmd")
+
+
+def test_pages_and_commands_share_the_file_without_erasing_each_other(project, tmp_path):
+    """Trang được bấm, gõ (CLI 0.11.0) nằm cùng danh sách với lệnh của dự án; thêm loại này không được xóa loại kia."""
+    other = tmp_path / "du-an-khac"
+    assert approvals.add(project, ".", "npm test", "cmd")
+    assert approvals.add_page(project, "http://localhost:5173")
+    assert approvals.add(project, "frontend", "npm run lint", "cmd")
+    assert approvals.add_page(project, "http://localhost:5173"), "thêm lại không nhân đôi"
+    assert approvals.pages(project) == ["http://localhost:5173"]
+    assert [item["command"] for item in approvals.entries(project)] == ["npm test", "npm run lint"]
+    assert approvals.page_allowed(project, "http://localhost:5173")
+    assert not approvals.page_allowed(project, "http://localhost:8000"), "khác cổng là trang khác"
+    assert not approvals.page_allowed(other, "http://localhost:5173"), "chỉ trong dự án đã cho phép"
+    assert approvals.clear(project) == 3 and approvals.pages(project) == [] and approvals.entries(project) == []
 
 
 def test_permission_question_offers_the_new_choice(project):

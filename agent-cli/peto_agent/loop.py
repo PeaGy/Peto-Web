@@ -314,25 +314,56 @@ class Session:
             self.ui.success(f"Đã hoàn tác {len(restored)} tệp.")
 
     def permissions(self, clear=False):
-        """/permissions: lệnh nhớ trong phiên ([s]) và lệnh luôn cho phép ở dự án này ([l], lưu trên máy)."""
+        """/permissions: lệnh và trang nhớ trong phiên ([s]), luôn cho phép ở dự án này ([l], lưu trên máy)."""
+        tools = self.tools
         if clear:
-            self.tools.command_grants.clear()
+            tools.command_grants.clear()
+            tools.page_session_grants.clear()
+            tools.page_grants.clear()
             removed = approvals.clear(self.ws.root)
-            self.ui.success("Đã xóa quyền chạy lệnh nhớ trong phiên" +
-                            (f" và {removed} lệnh luôn cho phép ở dự án này." if removed else "."))
+            self.ui.success("Đã xóa quyền nhớ trong phiên" +
+                            (f" và {removed} quyền luôn cho phép ở dự án này." if removed else "."))
             return
-        saved = approvals.entries(self.ws.root)
-        if not self.tools.command_grants and not saved:
-            self.ui.line("  Chưa nhớ lệnh nào: trong phiên chọn [s], luôn cho phép ở dự án này chọn [l].", "dim")
-        if self.tools.command_grants:
+        saved, pages = approvals.entries(self.ws.root), approvals.pages(self.ws.root)
+        if not tools.command_grants and not tools.page_session_grants and not saved and not pages:
+            self.ui.line("  Chưa nhớ lệnh hay trang nào: trong phiên chọn [s], luôn cho phép ở dự án này chọn [l].",
+                         "dim")
+        if tools.command_grants or tools.page_session_grants:
             self.ui.line("  Nhớ trong phiên:", "dim")
-        for directory, command, timeout, shell in sorted(self.tools.command_grants):
+        for directory, command, timeout, shell in sorted(tools.command_grants):
             self.ui.item(f"{command} · {directory} · {timeout}s" + (f" · {shell}" if shell != "cmd" else ""))
-        if saved:
+        for origin in sorted(tools.page_session_grants):
+            self.ui.item(f"bấm, gõ trên {origin}")
+        if saved or pages:
             self.ui.line("  Luôn cho phép ở dự án này (lưu trên máy):", "dim")
         for item in saved:
             where = "" if item["directory"] == "." else f" · trong {item['directory']}"
             self.ui.item(f"{item['command']}{where}" + (f" · {item['shell']}" if item["shell"] != "cmd" else ""))
+        for origin in pages:
+            self.ui.item(f"bấm, gõ trên {origin}")
+
+    def browser_window(self, value: str = "") -> None:
+        """/trinhduyet hiện hoặc ẩn cửa sổ trình duyệt của Peto (chủ web chọn ngày 2026-09-23: ẩn, hiện khi cần);
+        /trinhduyet xoa quên đăng nhập và dữ liệu trang đã lưu trong hồ sơ của dự án."""
+        if value == "xoa":
+            if self.tools.forget_browser():
+                self.ui.success("Đã xóa hồ sơ trình duyệt của dự án này: đăng nhập, cookie và dữ liệu trang đã lưu.")
+            else:
+                self.ui.failure("Hồ sơ trình duyệt của dự án này đang được một phiên peto khác dùng; đóng phiên đó rồi "
+                                "thử lại.")
+            return
+        try:
+            visible = self.tools.toggle_browser_window()
+        except WorkspaceError as err:
+            self.ui.failure(str(err))
+            return
+        page = self.tools.browser
+        if not visible:
+            self.ui.success("Đã ẩn cửa sổ. Peto vẫn xem và thao tác được.")
+            return
+        where = f" · {page.origin.split('://', 1)[-1]}" if page.url else ""
+        self.ui.success(f"Đã hiện cửa sổ {page.name} của Peto{where}")
+        self.ui.line("    Peto bấm, gõ ở đâu bạn thấy ở đó. Gõ /trinhduyet lần nữa để ẩn, hoặc đóng cửa sổ.", "dim")
 
     def compact(self, *, propagate_cancel=False):
         metrics = self.metrics if self._running else Metrics()
@@ -453,6 +484,7 @@ class Session:
                         continue
                     break
                 self._save_progress()
+                self.tools.start_step()
                 while pending:
                     call = pending[0]
                     with self.metrics.measure("tools"):

@@ -524,8 +524,11 @@ và gọi mô hình AI. Cách cài, đăng nhập và sử dụng nằm trong `a
   Lệnh không tự kết thúc (dev server, watch) chạy nền và trả về ngay, tối đa 3 lệnh, và dừng hết khi bạn đóng `peto`.
 - **Xem trang web trên máy:** sau khi sửa giao diện, Peto mở trang đang chạy trên máy (chỉ localhost) bằng Edge chạy
   ẩn, đọc lỗi console, lỗi JavaScript, request hỏng và chụp ảnh cỡ máy tính hay điện thoại để tự kiểm tra. Ảnh được lưu
-  7 ngày để bạn xem lại. Trình duyệt dùng hồ sơ riêng, không có tài khoản của bạn, và tắt theo `peto`. Đợt này Peto chỉ
-  xem, chưa bấm hay gõ trên trang.
+  7 ngày để bạn xem lại. Trình duyệt dùng hồ sơ riêng, không có tài khoản của bạn, và tắt theo `peto`.
+- **Bấm, gõ trên trang** (0.11.0): Peto bấm nút, điền và gửi form để thử cả một luồng, hỏi một lần cho mỗi trang (`y`
+  tới hết yêu cầu, `s` cả phiên, `l` luôn cho phép ở dự án). Không ra được trang ngoài, không tải tệp lên hay về.
+  `/trinhduyet` hiện hoặc ẩn cửa sổ để xem Peto làm. Trang cần đăng nhập thì Peto hiện cửa sổ và nhờ bạn tự đăng nhập:
+  Peto không bao giờ gõ mật khẩu. Đăng nhập được nhớ cho dự án đó; `/trinhduyet xoa` để quên.
 - **Chuông báo:** terminal kêu khi Peto cần bạn duyệt hoặc vừa xong một yêu cầu chạy lâu, và tiêu đề cửa sổ đổi theo
   trạng thái, nên bạn làm việc khác trong lúc chờ được.
   Dán nhiều dòng không bị gửi từng dòng; đoạn dài hiện gọn thành `[Đã dán N dòng]`.

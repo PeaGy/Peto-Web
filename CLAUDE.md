@@ -528,14 +528,14 @@ results in the next step. The server stores no conversation (`store=False`), and
   is shared with `run_command`, output is collected by a reader thread into a 256 KB tail buffer, and `read` waits up to
   30 s for new output so one step is worth spending. At most 3 running jobs. They deliberately outlive a request (a dev
   server is the point) but never the session: `__main__.session` stops all of them in a `finally`.
-- **Browser, phase 1: look only** (`browser.py`, CLI 0.10.0). The owner picked the design from mockups on 2026-09-23:
+- **Browser, phase 1: look** (`browser.py`, CLI 0.10.0). The owner picked the design from mockups on 2026-09-23:
   hidden browser with saved screenshots, up to 5 page errors printed under each look, and no permission prompt for
-  viewing local pages (like reading a file). Clicking and typing are phase 2, which will show the window.
+  viewing local pages (like reading a file). Phase 2 (clicking, typing, login) is the next bullet.
   - **Tools:** `browser_open` (title, HTTP status, console errors, JS exceptions, failed requests, an outline of visible
     headings, buttons, inputs, links and images without alt), `browser_screenshot` (desktop 1280×800 or mobile 390×844,
     optional full page up to 4000 px), `browser_read` (`innerText`, optional CSS selector, 20k characters).
   - **How it works:** stdlib only. It launches Edge, or Chrome as a fallback (`PETO_AGENT_BROWSER` overrides), with
-    `--headless=new --remote-debugging-port=0` and a fresh temp profile. It reads `DevToolsActivePort` and drives the
+    `--headless=new --remote-debugging-port=0` and the session's profile. It reads `DevToolsActivePort` and drives the
     page over the DevTools protocol through a small RFC 6455 client (`browser.WebSocket`, unit-tested against a fake
     server). "Loaded" means the load event plus 0.5 s of network quiet, capped at 5 s. Errors are reported "since the
     last report", so late ones (HMR, timers) still reach Peto.
@@ -553,9 +553,13 @@ results in the next step. The server stores no conversation (`store=False`), and
     first visit: scale 1 with a viewport meta, zoomed out without one. Errors already reported for the page
     (`Browser.known`) are not repeated after that reopen. An explicit `browser_open` reports them all again, because an
     error that is still there means it is not fixed.
-  - **Only pages on this machine** (`check_url`): http(s) to localhost, `*.localhost`, 127/8 or ::1. A redirect that
-    ends elsewhere navigates to `about:blank` and fails the call. A free browser is an exfiltration channel (read a
-    file, then open a URL that carries it) and a prompt-injection path, and `file://` would bypass the project folder.
+  - **Only pages on this machine** (`check_url`): http(s) to localhost, `*.localhost`, 127/8 or ::1. A free browser is
+    an exfiltration channel (read a file, then open a URL or submit a form that carries it) and a prompt-injection path,
+    and `file://` would bypass the project folder. Since 0.11.0 every main-frame document request is paused
+    (`Fetch.enable` with a Document pattern, `Browser._paused`): one leaving the machine (link, form, redirect,
+    `location.href`) is answered with a local 204, which cancels the navigation before any request leaves and keeps
+    the page as it was, and a note tells Peto. Frames are let through. A `browser_open` whose redirect was blocked goes
+    to `about:blank` and fails, as in 0.10.0.
   - **Screenshots** reach the model as a user message right after the step's tool outputs (`loop.tool_images`, starting
     with `history.TOOL_IMAGES_NOTE`, which `history.recap` skips). They count toward the 4 kept images, stay under 2 MB
     (JPEG fallback), and are saved to `%LOCALAPPDATA%\PetoAgent\screenshots` for 7 days. The path is printed unwrapped so
@@ -569,8 +573,70 @@ results in the next step. The server stores no conversation (`store=False`), and
     orphan browsers until `_launch_env` began dropping the variable. A launched process that exits with 0 is still
     waited on through `DevToolsActivePort`, and liveness follows the DevTools socket, not the first process.
   - **Leftover profiles** (from a killed peto) are pruned when the next browser starts. A running Chromium holds
-    `lockfile`, which cannot be deleted, and Windows deletes it when the browser dies. So a profile whose lockfile can be
-    deleted, or has none and is older than 60 s, is unused. Other OSes use a one-day age.
+    `lockfile`, which cannot be deleted, and Windows deletes it when the browser dies. Peto itself keeps `peto.lock`
+    open for the whole session (`_hold`), also while the browser is down for a hide/show relaunch. So a profile whose
+    peto.lock is free and whose lockfile can be deleted, or is gone after 60 s, is unused. Other OSes use a one-day age.
+    `_stop` waits up to 5 s for the lockfile to go (`_released`): the first Edge process may be long gone while the job's
+    processes die a moment later, and relaunching on a profile that is not yet free made the new Edge hand over to the
+    dying one, and made `/trinhduyet xoa` report the profile as busy (found in the ConPTY test on 2026-09-23).
+- **Browser, phase 2: click, type, log in** (CLI 0.11.0, feature `browser_act`). The owner picked all three options
+  from mockups on 2026-09-23: ask once per page, keep the window hidden and show it on demand, and let the user log in
+  themselves with the login remembered per project.
+  - **Tools:** `browser_click(target)`, `browser_type(target, text, submit)` (replaces the text; on a `<select>` it picks
+    the option by its visible text, then value, then substring), `browser_press(key)` (a fixed list: Enter, Escape, Tab,
+    Shift+Tab, arrows, Home, End, PageUp/Down, Backspace, Delete, Space), each with `accept_dialog`, and
+    `browser_login(reason)`. A target is a number from the outline (`[3] nút: Gửi`) or a CSS selector that matches one
+    visible element. Numbers live on `window` (`PRELUDE`: a WeakMap and WeakRefs), so they stay the same until the
+    document changes, and a stale one is refused with a clear message.
+  - **Real input:** clicks are `Input.dispatchMouseEvent` at the element's centre after `scrollIntoView`, typing is a
+    real click for focus, select-all and `Input.insertText` (Vietnamese arrives intact, `isTrusted` is true). Before
+    clicking, `elementFromPoint` checks what is actually on top: an unrelated element (an overlay, a modal backdrop)
+    is reported as covering it instead of clicking through, because a user could not click it either. Disabled
+    elements are refused. `target=_blank` links and forms are switched to the same tab; any other new tab is closed at
+    creation (`Target.setDiscoverTargets`); the file chooser is intercepted and downloads are denied, all with a note.
+  - **Passwords never reach Peto.** `browser_type` refuses password fields, and so does the outline: it shows
+    "(đã nhập)" instead of a value. `secret()` also catches "show password" fields that became `type=text` through
+    `autocomplete`, name, id, placeholder or label hints. Typed values are read back (`value` in the result) for every
+    other field, so Peto sees when `maxlength` or a number field ate its input.
+  - **Results are a diff, not a dump:** before and after each action the page text and outline are captured
+    (`SNAPSHOT_SCRIPT`). `appeared` lists lines with new words (`_new_lines` diffs word sequences, because innerText
+    joins inline buttons into one line and a box opening between them split it in two; a line diff reported both
+    halves as new), `elements` lists outline entries that are new or changed state (`= "2"`, `(đã chọn)`), a new
+    document returns the full outline, and `press` returns the focused element. After an action Peto waits 0.3 s for
+    a navigation, then load or network quiet, then 250 ms of DOM quiet (capped at 2 s).
+  - **Permission** (`Tools._approve_page`): the first action on an origin asks once, showing the first action. `y` lasts
+    until the request ends, `a` means everything in the request as elsewhere, `s` the session, and `l` stores the
+    origin in `approvals.py` (`add_page`, next to the command grants in the user profile, never in the repo).
+    `/permissions` lists and clears them. Opening, screenshots and reading still ask nothing.
+  - **A failed or refused action skips the rest of that step's page actions** (`Tools.page_failure`, reset by
+    `start_step`): the model sends a chain like type, type, click Send in one step, and clicking Send after a failed
+    field would do the wrong thing.
+  - **Window:** hidden by default. `/trinhduyet` toggles it (`Browser.set_visible`): Chromium cannot switch modes while
+    running, so it relaunches with the same profile, restores session cookies it snapshots after every action
+    (`Storage.getCookies`, kept in memory only; cookies with an expiry are already in the profile) and reopens the page.
+    A visible window steals focus when it opens (checked 2026-09-23; `SW_SHOWMINNOACTIVE` is ignored). A minimized
+    window stops painting, which made screenshots hang, so a screenshot first restores it, and `_repaint` races
+    `requestAnimationFrame` against a 300 ms timer. `--disable-backgrounding-occluded-windows` and friends keep a window
+    behind the terminal painting. If the user closes the window, the next look starts hidden again.
+  - **Login** (`browser_login`, `Browser.hand_over`): shows the window at the current page, turns off the Fetch guard,
+    the file-chooser interception, automatic dialog answers and popup closing (OAuth needs outside pages and popups),
+    and waits for Enter (`n` or EOF skips) with a bell. Afterwards the guards come back, events queued meanwhile are
+    drained and discarded (the login pages' errors are not the app's), and a final page off the machine is replaced by
+    the page Peto was on.
+  - **Per-project profile** (`project_profile`): `%LOCALAPPDATA%\PetoAgent\browser\<folder>-<hash>`, named "Peto" in
+    `Local State` before the first launch so the window reads "… - Peto - Microsoft Edge" instead of Edge's default
+    "Personal", which could look like the user's own browser. A second peto session in the same project gets a temp
+    profile with a notice. `/trinhduyet xoa` deletes it (refused while another session holds it); profiles unused for
+    30 days are pruned. Session cookies do not survive to the next peto session; persistent ones do.
+  - **The server** offers these tools and `AGENT_BROWSER_ACT_PROMPT` only to CLIs that declare both `browser` and
+    `browser_act`; `persona.browser_prompt(act=…)` drops "Chưa bấm hay gõ được gì" for them. With `browser_act`,
+    `browser_open` also waits up to 15 s for a server that is not listening yet while a background job runs
+    (`Browser.wait_for_server`), so Peto can start the dev server and open the page in one step: on 2026-09-23 the
+    owner's first real use spent 4 of 5 steps on start, wait, open, screenshot.
+  - Tests: `test_browser.py` drives real Edge through all of this (visible mode with `force_headless`), and a ConPTY
+    run on 2026-09-23 passed 30/30 checks with a real visible window: the login window appeared, the password never
+    reached the fake server, closing the terminal while the window was visible killed Edge, the next session was still
+    logged in, and `/trinhduyet xoa` logged it out.
 - **`shell`** on `run_command` and `start_command` picks `cmd` (default) or `powershell`, because this project's own
   commands are PowerShell. PowerShell runs as an argv list (no quoting games) and `command_outcome` reads its
   "not recognized as the name of a cmdlet" as an environment error.
@@ -631,16 +697,18 @@ results in the next step. The server stores no conversation (`store=False`), and
     project folder**: a downloaded repo could ship a file that pre-approves commands. Matching is exact, with no
     wildcard or prefix matching, so `npm test && …` never rides on `npm test`. The timeout is left out of the key: it
     is only a cap, Ctrl+C still stops the command, and the model varies it between runs. A command that runs on an `l`
-    grant prints a dim line saying so. `/permissions` lists both kinds, and `/permissions clear` drops both.
+    grant prints a dim line saying so. `/permissions` lists both kinds, plus pages Peto may click and type on (browser
+    phase 2), and `/permissions clear` drops all of them.
   - Commands take an optional `cwd`: an existing folder inside the project, resolved like any path, so outside
     folders and `.git` are refused. It was added because on 2026-09-20 Peto ran `npm run dev` at the root of this repo
     (no `package.json` there), then retried with `cd frontend && …`. Each command opens a fresh shell, so a
     stand-alone `cd` never carries over; `AGENT_PROMPT` says so. The grant keys include the folder.
   - **New tool parameters and tools are gated by `context.features`.** Strict schemas make the model send every
     property, `null` included, and a CLI that does not know a parameter fails `inspect.signature(...).bind`. So
-    `agent_tools.tool_schemas` adds `cwd` only when the step's context lists `"cwd"`, and the browser tools (with
-    `persona.AGENT_BROWSER_PROMPT`) only for `"browser"` (`tools.FEATURES`, sent by `Session._step`). CLIs up to 0.9.7
-    send nothing and keep receiving the old schema byte for byte. From 0.9.8 on, `Tools.call` also drops unknown
+    `agent_tools.tool_schemas` adds `cwd` only when the step's context lists `"cwd"`, the browser tools (with
+    `persona.browser_prompt`) only for `"browser"`, and the click/type/login tools (with `AGENT_BROWSER_ACT_PROMPT`)
+    only for `"browser"` plus `"browser_act"` (`tools.FEATURES`, sent by `Session._step`). CLIs up to 0.9.7 send
+    nothing and keep receiving the old schema byte for byte, and 0.10.x keeps its three browser tools byte for byte. From 0.9.8 on, `Tools.call` also drops unknown
     parameters whose value is `null` (null means default). A future optional parameter therefore cannot break
     installed CLIs, but add it behind a feature anyway if it matters.
   - Commands run with a timeout; timeout or Ctrl+C kills the whole tree with `taskkill /T`.

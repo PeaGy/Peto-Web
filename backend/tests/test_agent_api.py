@@ -483,6 +483,44 @@ async def test_browser_tools_and_their_prompt_only_reach_clis_that_have_them(ano
     assert "## Xem trang web trên máy" not in old["instructions"] + cwd_only["instructions"]
 
 
+async def test_page_actions_only_reach_clis_that_can_click_and_type(anon_client, client, monkeypatch):
+    """Đợt 2 (2026-09-23): CLI 0.11.0 khai báo thêm "browser_act". CLI 0.10.x chỉ nhận ba công cụ xem, đúng từng chữ, và
+    vẫn được dặn là chưa bấm, gõ được; "browser_act" mà thiếu "browser" thì không có gì."""
+    from agent_tools import tool_schemas
+
+    seen = []
+
+    async def record(**kwargs):
+        seen.append(kwargs)
+        from ai.agent import AgentEvent
+        yield AgentEvent("done", output=(), usage={"input_tokens": 1, "output_tokens": 1})
+
+    monkeypatch.setattr(agent_api, "agent_step", record)
+    await login_as(client, "discord")
+    token = await connect(anon_client, client)
+    for features in (["cwd", "browser"], ["cwd", "browser", "browser_act"], ["browser_act"]):
+        await anon_client.post("/api/agent/step", headers=bearer(token),
+                               json={"input": [DEMO_TASK], "effort": "low", "context": {"features": features}})
+    looking, acting, alone = seen
+    names = lambda call: [tool["name"] for tool in call["tools"]]  # noqa: E731
+    assert looking["tools"] is tool_schemas(frozenset({"cwd", "browser"}))
+    assert names(acting)[-7:] == ["browser_open", "browser_screenshot", "browser_read", "browser_click",
+                                  "browser_type", "browser_press", "browser_login"]
+    assert not any(name.startswith("browser") for name in names(alone))
+    tools = {tool["name"]: tool for tool in acting["tools"]}
+    for tool in tools.values():
+        parameters = tool["parameters"]
+        assert tool["strict"] and parameters["additionalProperties"] is False
+        assert parameters["required"] == list(parameters["properties"]), tool["name"]
+    assert "Enter" in tools["browser_press"]["parameters"]["properties"]["key"]["enum"]
+    assert "[3]" in tools["browser_open"]["description"] and "15 giây" in tools["browser_open"]["description"]
+    assert "[3]" not in {tool["name"]: tool for tool in looking["tools"]}["browser_open"]["description"]
+    assert "Chưa bấm hay gõ được gì" in looking["instructions"] and "## Bấm, gõ trên trang" not in looking["instructions"]
+    assert "Chưa bấm hay gõ được gì" not in acting["instructions"]
+    assert "## Bấm, gõ trên trang" in acting["instructions"] and "browser_login" in acting["instructions"]
+    assert "gõ mật khẩu" in acting["instructions"], "dặn rõ Peto không bao giờ gõ mật khẩu"
+
+
 def test_agent_prompt_explains_the_step_budget_and_the_new_tools():
     """Công cụ có mà chỉ dẫn không nói thì Peto không dùng; giữ hai thứ đi cùng nhau."""
     from persona import AGENT_PROMPT

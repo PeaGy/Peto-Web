@@ -172,6 +172,44 @@ class UI:
         if path:
             self.line(f"    ảnh: {visible(path)}", "dim")
 
+    def page_permission(self, origin: str, action: str) -> None:
+        """Lần đầu Peto bấm, gõ trên một trang (chủ web chọn ngày 2026-09-23: hỏi một lần mỗi trang)."""
+        self._diff_rows = []
+        self.line()
+        self._wrapped("  ▶ ", f"Muốn bấm và gõ trên {visible(origin)}", "blue")
+        self._wrapped("    ", f"Trước tiên: {visible(action)}", "dim")
+        self._wrapped("    ", "Đây là thao tác thật trên app đang chạy: có thể gửi form, xóa dữ liệu hay gọi dịch vụ "
+                              "thật như bạn bấm.", "dim")
+
+    def hand_over(self, reason: str) -> None:
+        """Peto nhờ người dùng tự đăng nhập trong cửa sổ trình duyệt; mật khẩu không đi qua Peto."""
+        self.line()
+        self._wrapped("  ▶ ", f"Peto nhờ bạn: {visible(reason)}", "blue")
+        self._wrapped("    ", "Cửa sổ trình duyệt của Peto đang mở trang này. Đăng nhập xong thì quay lại đây bấm "
+                              "Enter; gõ n để bỏ qua.", "dim")
+        self._wrapped("    ", "Peto không thấy mật khẩu bạn gõ.", "dim")
+
+    def wait_for_user(self) -> bool:
+        """Chờ người dùng làm xong trong cửa sổ trình duyệt: Enter là xong, n là bỏ qua; hết đầu vào là bỏ qua."""
+        self.clear_status()
+        waiting = self._title
+        self.title("Peto · cần bạn")
+        self.bell()
+        try:
+            while True:
+                try:
+                    answer = self.reader("    Xong chưa? › ").strip().lower()
+                except EOFError:
+                    self.line()
+                    return False
+                if answer in {"", "y", "ok", "xong", "rồi", "roi"}:
+                    return True
+                if answer in {"n", "no", "không", "khong", "bỏ", "bo"}:
+                    return False
+                self.line("    Bấm Enter khi xong, hoặc gõ n để bỏ qua.", "yellow")
+        finally:
+            self.title(waiting)
+
     def item(self, text: str) -> None:
         """Một mục mờ trong danh sách (như /permissions), ngắt theo bề ngang terminal thay vì để terminal tự bẻ chữ."""
         self._wrapped("    ", visible(text), "dim")
@@ -456,8 +494,10 @@ class UI:
         else:
             self.failure(f"{summary} · mã thoát {result['exit_code']}")
 
-    def ask_permission(self, *, allow_session: bool = False, allow_always: bool = False) -> str:
-        """Hỏi y/n/a; lệnh chạy thì thêm [s] (nhớ trong phiên) và [l] (luôn cho phép ở dự án này).
+    def ask_permission(self, *, allow_session: bool = False, allow_always: bool = False,
+                       session_label: str = "nhớ lệnh này trong phiên", question: str = PERMISSION_QUESTION) -> str:
+        """Hỏi y/n/a; lệnh chạy và thao tác trên trang thì thêm [s] (nhớ trong phiên) và [l] (luôn cho phép ở dự án
+        này). ``question`` đổi câu hỏi cuối, ví dụ "đồng ý cho trang này tới hết yêu cầu?".
 
         Hết đầu vào (EOF) thì coi như không đồng ý.
         """
@@ -466,17 +506,18 @@ class UI:
         self.title("Peto · cần bạn duyệt")
         self.bell()
         try:
-            return self._ask(allow_session, allow_always)
+            return self._ask(allow_session, allow_always, session_label, question)
         finally:
             self.title(waiting)
 
-    def _ask(self, allow_session: bool, allow_always: bool = False) -> str:
+    def _ask(self, allow_session: bool, allow_always: bool = False, session_label: str = "nhớ lệnh này trong phiên",
+             base_question: str = PERMISSION_QUESTION) -> str:
         choices = ["y", "n", "a"] + (["s"] if allow_session else []) + (["l"] if allow_always else [])
-        extras = (["[s] nhớ lệnh này trong phiên"] if allow_session else []) + \
+        extras = ([f"[s] {session_label}"] if allow_session else []) + \
                  (["[l] luôn cho phép ở dự án này"] if allow_always else [])
         while True:
             try:
-                question = PERMISSION_QUESTION
+                question = base_question
                 if extras:
                     question = "    " + "  ".join(extras) + " · " + question.strip()
                 if self._diff_position < len(self._diff_rows):

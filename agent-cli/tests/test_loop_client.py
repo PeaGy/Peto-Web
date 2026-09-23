@@ -682,7 +682,7 @@ def test_each_step_tells_the_server_which_new_tool_parameters_this_cli_understan
     work, ui = start(project, peto, ["y", "y"])
     work.run_task("Sửa README giúp mình")
     steps = [request["body"] for request in peto.requests if request["path"] == "/api/agent/step"]
-    assert steps and all(body["context"]["features"] == ["cwd", "browser"] for body in steps)
+    assert steps and all(body["context"]["features"] == ["cwd", "browser", "browser_act"] for body in steps)
 
 
 def test_note_command_writes_agents_md_without_calling_the_model(project, peto, monkeypatch):
@@ -709,8 +709,9 @@ def test_peto_looks_at_a_local_page_and_the_screenshot_reaches_the_next_step(pro
     class FakeBrowser:
         closed = []
 
-        def __init__(self):
+        def __init__(self, profile=None):
             self.url = None
+            self.notice = None
             self.pending = ['confirm "Xóa hết?" (đã chọn Hủy)']
 
         def open(self, url, viewport=None):
@@ -729,6 +730,9 @@ def test_peto_looks_at_a_local_page_and_the_screenshot_reaches_the_next_step(pro
         def new_dialogs(self):
             dialogs, self.pending = self.pending, []
             return dialogs
+
+        def new_notes(self):
+            return []
 
         def close(self):
             FakeBrowser.closed.append(self)
@@ -770,3 +774,209 @@ def test_peto_looks_at_a_local_page_and_the_screenshot_reaches_the_next_step(pro
     assert recap(work.items)[0] == ("Bạn", "Nút Gửi bị tràn trên điện thoại"), "tin chở ảnh không phải lời người dùng"
     work.tools.close_browser()
     assert FakeBrowser.closed and work.tools.browser is None
+
+
+# --- Trình duyệt đợt 2: bấm, gõ, nhờ đăng nhập -----------------------------------------------------------------------
+
+
+class PageBrowser:
+    """Trình duyệt giả cho vòng làm việc: ghi lại thao tác, trả kết quả như Browser thật."""
+
+    instances: list = []
+
+    def __init__(self, profile=None):
+        self.profile = profile
+        self.url = None
+        self.notice = None
+        self.visible = False
+        self.running = False
+        self.name = "Edge"
+        self.done: list = []
+        self.wait_for_server = False
+        PageBrowser.instances.append(self)
+
+    @property
+    def origin(self):
+        return "http://localhost:5173"
+
+    def open(self, url, viewport=None):
+        self.url, self.running = url, True
+        return {"url": url, "title": "Đặt vé", "status": 200, "viewport": "desktop", "seconds": 0.4, "loaded": True,
+                "outline": ["[1] ô nhập: Email", "[2] nút: Gửi"], "elements": 2, "text_chars": 30, "problems": []}
+
+    def describe(self, kind, target=None, text=None, submit=False, key=None):
+        from peto_agent.browser import BrowserError
+
+        if target == "[9]":
+            raise BrowserError("Phần tử [9] không còn trên trang (trang đã đổi).")
+        return {"click": 'bấm nút "Gửi"', "type": f'gõ "{text}" vào ô "Email"', "press": f"nhấn {key}"}[kind]
+
+    def click(self, target, accept_dialog=False):
+        self.done.append(("click", target, accept_dialog))
+        return {"action": 'bấm nút "Gửi"', "url": self.url, "title": "Đặt vé", "appeared": ["Đã gửi! Mã MEO-042"],
+                "problems": ["console.error: Không lưu được vé"], "dialogs": ['confirm "Gửi thật?" (đã chọn OK)']}
+
+    def type(self, target, text, submit=False, accept_dialog=False):
+        self.done.append(("type", target, text))
+        return {"action": f'gõ "{text}" vào ô "Email"', "url": self.url, "title": "Đặt vé", "value": text,
+                "problems": []}
+
+    def press(self, key, accept_dialog=False):
+        self.done.append(("press", key))
+        return {"action": f"nhấn {key}", "url": self.url, "title": "Đặt vé", "problems": []}
+
+    def hand_over(self, wait):
+        self.visible = True
+        done = wait()
+        return {"done": done, "url": "http://localhost:5173/admin", "title": "Quản trị",
+                "outline": ["tiêu đề 1: Quản trị"]}
+
+    def set_visible(self, visible):
+        self.visible = visible
+
+    def late_problems(self):
+        return []
+
+    def new_dialogs(self):
+        return []
+
+    def new_notes(self):
+        return []
+
+    def close(self):
+        self.running = False
+
+
+def scripted(requests: dict):
+    """Máy chủ giả: yêu cầu nào có trong ``requests`` thì bước đầu gọi đúng các công cụ đó, bước sau trả lời xong."""
+
+    def reply(path, body):
+        items = body["input"]
+        last = max(index for index, item in enumerate(items)
+                   if item.get("role") == "user" and isinstance(item.get("content"), str))
+        answered = any(item.get("type") == "function_call_output" for item in items[last:])
+        calls = requests.get(items[last]["content"])
+        if answered or not calls:
+            return 200, [{"type": "done", "output": [message("Xong.")]}]
+        return 200, [{"type": "done", "output": [message("Để Peto thử."), *calls]}]
+
+    return reply
+
+
+def page_results(peto, request_index: int) -> list[dict]:
+    """Kết quả công cụ của yêu cầu mới nhất trong lần gọi /step thứ ``request_index`` (bỏ các yêu cầu trước)."""
+    items = [request["body"]["input"] for request in peto.requests if request["path"] == "/api/agent/step"][request_index]
+    last = max(index for index, item in enumerate(items)
+               if item.get("role") == "user" and isinstance(item.get("content"), str))
+    return [json.loads(item["output"]) for item in items[last:] if item.get("type") == "function_call_output"]
+
+
+def test_peto_asks_once_per_page_before_clicking_and_typing(project, peto, monkeypatch):
+    """Đợt 2 (chủ web chọn 2026-09-23): lần đầu bấm, gõ trên một trang thì hỏi; [y] tới hết yêu cầu, [s] cả phiên, [l]
+    luôn ở dự án (lưu trong hồ sơ người dùng). Xem trang vẫn không hỏi."""
+    from peto_agent import approvals, browser as browser_module
+
+    monkeypatch.setattr(browser_module, "Browser", PageBrowser)
+    fill = [call(0, "browser_open", url="http://localhost:5173/", viewport=None),
+            call(1, "browser_type", target="1", text="lan@example.com", submit=None, accept_dialog=None),
+            call(2, "browser_click", target="2", accept_dialog=True)]
+    again = [call(3, "browser_click", target="2", accept_dialog=None)]
+    peto.reply = scripted({"Thử form": fill, "Bấm lại": again, "Bấm nữa": again})
+    work, ui = start(project, peto, ["y", "s"])
+    prompts, read = [], ui.reader
+    ui.reader = lambda prompt: (prompts.append(prompt), read(prompt))[1]
+    work.run_task("Thử form")
+    text = ui.text
+    assert text.count("▶ Muốn bấm và gõ trên http://localhost:5173") == 1, "hỏi một lần cho trang đó"
+    assert 'Trước tiên: gõ "lan@example.com" vào ô "Email"' in text
+    assert prompts == ["    [s] cả phiên  [l] luôn cho phép ở dự án này · Đồng ý cho trang này tới hết yêu cầu? "
+                       "[y] có  [n] không  [a] có cho mọi bước trong yêu cầu này ›"]
+    assert '• Gõ "lan@example.com" vào ô "Email"' in text and '• Bấm nút "Gửi"' in text
+    flat = " ".join(text.split())
+    assert ('Hiện thêm: "Đã gửi! Mã MEO-042" · hộp thoại confirm "Gửi thật?" (đã chọn OK) · 1 lỗi '
+            "✗ console.error: Không lưu được vé") in flat
+    page = work.tools.browser
+    assert page.done == [("type", "1", "lan@example.com"), ("click", "2", True)]
+    outputs = page_results(peto, 1)
+    assert outputs[1] == {"ok": True, "action": 'gõ "lan@example.com" vào ô "Email"', "url": "http://localhost:5173/",
+                          "title": "Đặt vé", "value": "lan@example.com"}, "không có lỗi thì không gửi danh sách rỗng"
+    assert outputs[2]["problems"] == ["console.error: Không lưu được vé"]
+
+    work.run_task("Bấm lại")  # [y] chỉ tới hết yêu cầu trước: hỏi lại, lần này chọn [s]
+    assert ui.text.count("▶ Muốn bấm và gõ") == 2 and "trong cả phiên" in ui.text
+    work.run_task("Bấm nữa")
+    assert ui.text.count("▶ Muốn bấm và gõ") == 2, "[s] nhớ trang đó cả phiên"
+    work.permissions()
+    assert "bấm, gõ trên http://localhost:5173" in ui.text
+
+    later, later_ui = start(project, peto, ["l"])
+    later.run_task("Bấm lại")
+    assert approvals.pages(project) == ["http://localhost:5173"]
+    last, last_ui = start(project, peto, [])  # không còn câu trả lời nào: hỏi nữa là test hỏng
+    last.run_task("Bấm nữa")
+    assert "▶ Muốn bấm và gõ" not in last_ui.text and "đã được luôn cho phép bấm, gõ" in last_ui.text
+    last.permissions(clear=True)
+    assert approvals.pages(project) == []
+
+
+def test_a_refused_or_failed_page_action_skips_the_rest_of_that_step(project, peto, monkeypatch):
+    from peto_agent import browser as browser_module
+
+    monkeypatch.setattr(browser_module, "Browser", PageBrowser)
+    chain = [call(0, "browser_open", url="http://localhost:5173/", viewport=None),
+             call(1, "browser_type", target="1", text="lan@example.com", submit=None, accept_dialog=None),
+             call(2, "browser_click", target="2", accept_dialog=None)]
+    stale = [call(3, "browser_click", target="[9]", accept_dialog=None),
+             call(4, "browser_press", key="Enter", accept_dialog=None)]
+    peto.reply = scripted({"Thử form": chain, "Bấm cái cũ": stale})
+    work, ui = start(project, peto, ["n", "y"])
+    work.run_task("Thử form")
+    outputs = page_results(peto, 1)
+    assert outputs[1]["error"].startswith("Người dùng không đồng ý cho Peto bấm, gõ trên http://localhost:5173")
+    assert outputs[2]["error"].startswith("Bỏ qua: thao tác trước trên trang trong bước này không thành")
+    assert work.tools.browser.done == [], "bị từ chối thì không thao tác gì"
+    work.run_task("Bấm cái cũ")
+    outputs = page_results(peto, 3)
+    assert "không còn trên trang" in outputs[0]["error"]
+    assert "Bỏ qua" in outputs[1]["error"] and work.tools.browser.done == []
+
+
+def test_peto_asks_the_user_to_log_in_and_never_sees_the_password(project, peto, monkeypatch):
+    """Chủ web chọn 2026-09-23: người dùng tự đăng nhập trong cửa sổ của Peto, Enter là xong, n là bỏ qua."""
+    from peto_agent import browser as browser_module
+
+    monkeypatch.setattr(browser_module, "Browser", PageBrowser)
+    login = [call(0, "browser_open", url="http://localhost:5173/admin", viewport=None),
+             call(1, "browser_login", reason="trang /admin cần đăng nhập")]
+    peto.reply = scripted({"Vào trang quản trị": login, "Thử lại": login})
+    work, ui = start(project, peto, ["", "n"])
+    work.run_task("Vào trang quản trị")
+    text = ui.text
+    assert "▶ Peto nhờ bạn: trang /admin cần đăng nhập" in text and "Peto không thấy mật khẩu bạn gõ." in text
+    assert '✓ Đã đăng nhập · "Quản trị" · localhost:5173/admin' in text
+    result = page_results(peto, 1)[1]
+    assert result["ok"] and result["outline"] == ["tiêu đề 1: Quản trị"] and work.tools.browser.visible
+    work.run_task("Thử lại")
+    assert '✗ Bạn bỏ qua đăng nhập · "Quản trị"' in ui.text
+    assert page_results(peto, 3)[1]["error"].startswith("Người dùng bỏ qua, chưa đăng nhập")
+
+
+def test_browser_window_command_shows_hides_and_forgets(project, peto, monkeypatch):
+    from peto_agent import browser as browser_module
+
+    monkeypatch.setattr(browser_module, "Browser", PageBrowser)
+    forgotten = []
+    monkeypatch.setattr(browser_module, "forget_project", lambda root: forgotten.append(root) or True)
+    work, ui = start(project, peto, [])
+    work.browser_window()
+    assert "✓ Đã hiện cửa sổ Edge của Peto" in ui.text and "Gõ /trinhduyet lần nữa để ẩn" in ui.text
+    work.browser_window()
+    assert "✓ Đã ẩn cửa sổ. Peto vẫn xem và thao tác được." in ui.text
+    first = work.tools.browser
+    work.browser_window("xoa")
+    assert forgotten == [project] and work.tools.browser is None and not first.running
+    assert "Đã xóa hồ sơ trình duyệt của dự án này" in ui.text
+    monkeypatch.setattr(browser_module, "forget_project", lambda root: False)
+    work.browser_window("xoa")
+    assert "đang được một phiên peto khác dùng" in ui.text
+    assert PageBrowser.instances[-1].profile == browser_module.project_profile(project), "hồ sơ riêng của dự án"
