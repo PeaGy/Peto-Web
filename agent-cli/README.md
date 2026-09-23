@@ -103,7 +103,7 @@ của VS Code) là quả lê 6 × 6. Thấp hơn nữa, hẹp dưới 41 cột, 
 chữ. Trong terminal của VS Code, Peto chừa thêm 2 cột bên phải, vì VS Code che khoảng hai cột sát mép:
 
 ```text
- [mascot]   Peto Agent 0.10.0
+ [mascot]   Peto Agent 0.10.1
  [mascot]   Peto · mức vừa
  [mascot]   ~\Projects\website-a
 
@@ -288,6 +288,10 @@ chụp ảnh xem còn tràn không, rồi mới báo xong.
 - **Chỉ trang trên máy:** `localhost`, `127.0.0.1`, `::1`. Trang ngoài, `file://`, và trang chuyển hướng ra ngoài đều
   bị từ chối, để Peto không thể mở một địa chỉ mang theo nội dung tệp của bạn, và trang lạ không nhét được chỉ dẫn vào.
   Xem trang trên máy không hỏi quyền, như đọc tệp; đợt này Peto chưa bấm hay gõ gì trên trang.
+- **Hộp thoại của trang** (`alert`, `confirm`, `prompt`) được Peto tự trả lời ngay rồi báo ở dòng chi tiết mờ, không
+  tính là lỗi: `alert` thì đóng, `confirm` và `prompt` thì chọn Hủy, để Peto không thay bạn đồng ý một việc có thể đổi
+  dữ liệu. Trước 0.10.1, trang gọi `alert()` làm Peto chờ gần một phút rồi báo lỗi, và trình duyệt kẹt tới hết phiên.
+  Trang treo hẳn (JavaScript chạy mãi) thì sau 30 giây Peto đóng trình duyệt, lần xem sau mở trình duyệt mới.
 - **Trình duyệt:** Microsoft Edge có sẵn trong Windows (không có thì Chrome), chạy ẩn, không có cửa sổ nào bật lên.
   Nó dùng một hồ sơ riêng trong thư mục tạm, không có tài khoản, cookie hay tiện ích nào của bạn, và bị xóa khi đóng.
   Đóng peto, kể cả bấm X đóng cửa sổ terminal, là trình duyệt tắt theo. Muốn dùng trình duyệt khác thì đặt

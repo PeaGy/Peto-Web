@@ -435,9 +435,10 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
       <div className="companion-scene-tools">
         <button type="button" className="companion-scene-button" aria-label="Bối cảnh" title="Bối cảnh" aria-haspopup="dialog" onClick={() => setScenesOpen(true)}>
           <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4" stroke="currentColor" strokeWidth="1.7" /><circle cx="9" cy="8" r="2" stroke="currentColor" strokeWidth="1.7" /><path d="m4 18 5-5 3 3 4-6 5 8" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" /></svg>
-          <span>Bối cảnh</span>
         </button>
-        <button type="button" className="companion-scene-button" onClick={onOpenCharacters} aria-label="Chọn nhân vật" aria-haspopup="dialog">◇ <span>Nhân vật</span></button>
+        <button type="button" className="companion-scene-button" onClick={onOpenCharacters} aria-label="Chọn nhân vật" title="Nhân vật" aria-haspopup="dialog">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="8" r="4" stroke="currentColor" strokeWidth="1.7" /><path d="M4 21v-2a8 8 0 0 1 16 0v2" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" /></svg>
+        </button>
       </div>
       <dialog
         ref={resetRef}

@@ -43,6 +43,11 @@ def _count(value: int) -> str:
     return f"{value:,}".replace(",", ".")
 
 
+def _dialogs(dialogs: list[str]) -> str:
+    """Hộp thoại trang đã mở, in ở dòng chi tiết mờ chứ không thành dòng lỗi đỏ: hộp thoại không phải lỗi."""
+    return "hộp thoại " + "; ".join(dialogs) if dialogs else ""
+
+
 def changed_lines(before: str, after: str) -> tuple[int, int]:
     added = removed = 0
     for line in list(difflib.unified_diff(before.splitlines(keepends=True), after.splitlines(keepends=True),
@@ -429,6 +434,8 @@ class Tools:
             details.append(f"HTTP {page['status']}")
         details.append(f"\"{page['title']}\"" if page["title"] else "không có tiêu đề")
         details.append(f"{len(page['problems'])} lỗi" if page["problems"] else "không lỗi")
+        if page.get("dialogs"):
+            details.append(_dialogs(page["dialogs"]))
         self.ui.page(f"Xem trang {page['url']} · {browser.viewport_label(page['viewport'])}", " · ".join(details),
                      page["problems"])
         return {"ok": True, **page, "size": browser.viewport_label(page["viewport"]).split()[-1],
@@ -439,10 +446,11 @@ class Tools:
         shot = page.screenshot(viewport, bool(full_page))
         saved = browser.store(self.ws.root.name, shot)
         problems = page.late_problems()
+        dialogs = page.new_dialogs()
         label = browser.viewport_label(shot.viewport) + (" · cả trang" if shot.full_page else "")
         if shot.cut:
             label += f" (cắt ở {shot.height}px)"
-        self.ui.page(f"Chụp trang · {label}", "", problems, path=str(saved) if saved else None)
+        self.ui.page(f"Chụp trang · {label}", _dialogs(dialogs), problems, path=str(saved) if saved else None)
         self.captured.append((f"Ảnh chụp {page.url} · {label}", Image(shot.data, shot.mime, shot.width, shot.height)))
         result = {"ok": True, "url": page.url, "viewport": shot.viewport, "width": shot.width, "height": shot.height,
                   "full_page": shot.full_page,
@@ -451,6 +459,8 @@ class Tools:
             result["cut"] = f"Trang dài hơn {shot.height}px; ảnh chỉ tới đó."
         if problems:
             result["problems"] = problems
+        if dialogs:
+            result["dialogs"] = dialogs
         if saved:
             # Chỉ tên tệp, không đường dẫn đầy đủ (có tên tài khoản Windows): đủ để Peto nói cho người dùng biết.
             result["file"] = saved.name
@@ -460,11 +470,14 @@ class Tools:
         page = self._browser()
         read = page.read(selector)
         problems = page.late_problems()
+        dialogs = page.new_dialogs()
         what = f"Đọc chữ trong {selector}" if selector else "Đọc chữ trên trang"
-        self.ui.page(f"{what} ({_count(read['chars'])} ký tự)", "", problems)
+        self.ui.page(f"{what} ({_count(read['chars'])} ký tự)", _dialogs(dialogs), problems)
         result = {"ok": True, **read}
         if problems:
             result["problems"] = problems
+        if dialogs:
+            result["dialogs"] = dialogs
         return result
 
     def _shell(self, shell: str | None) -> str:

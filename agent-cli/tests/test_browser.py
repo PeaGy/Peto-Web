@@ -142,11 +142,20 @@ PAGE = """<!doctype html><html lang="vi"><head><meta charset="utf-8">
   setTimeout(() => { hamKhongTonTai(); }, 50);
 </script></body></html>"""
 
+DIALOG_PAGE = """<!doctype html><html lang="vi"><head><meta charset="utf-8"><title>Hộp thoại</title></head><body>
+<p id="ket-qua">chưa hỏi</p>
+<script>
+  alert("Chào bạn");
+  setTimeout(() => { document.getElementById("ket-qua").textContent = confirm("Xóa hết?") ? "đồng ý" : "hủy"; }, 300);
+</script></body></html>"""
+
 
 class _Site(http.server.BaseHTTPRequestHandler):
     def do_GET(self):  # noqa: N802
         if self.path == "/":
             self._send("text/html; charset=utf-8", PAGE.encode())
+        elif self.path == "/hop-thoai":
+            self._send("text/html; charset=utf-8", DIALOG_PAGE.encode())
         elif self.path == "/api/cham":
             time.sleep(0.8)  # dữ liệu tới chậm: phải chờ mạng yên rồi mới coi là tải xong
             self._send("application/json", json.dumps({"text": "Đã tải dữ liệu"}).encode())
@@ -237,6 +246,53 @@ def test_real_browser_sees_errors_elements_text_and_screenshots(site, agent_home
     assert not profile.exists(), "hồ sơ tạm được xóa khi đóng"
     assert _edge_count(profile.name) == 0
     page.close()  # gọi lại vẫn yên
+
+
+@needs_browser
+def test_page_dialogs_are_answered_so_the_browser_never_hangs(site, agent_home):
+    """alert() lúc tải từng làm browser_open chờ 50 giây rồi báo lỗi, và trình duyệt kẹt tới hết phiên (2026-09-23)."""
+    page = Browser()
+    try:
+        started = time.monotonic()
+        opened = page.open(site + "/hop-thoai")
+        assert time.monotonic() - started < 10 and opened["loaded"] and opened["title"] == "Hộp thoại"
+        deadline = time.monotonic() + 5
+        while page.read("#ket-qua")["text"] == "chưa hỏi" and time.monotonic() < deadline:
+            page.late_problems()
+        assert page.read("#ket-qua")["text"] == "hủy", "confirm được trả lời Hủy: Peto không thay người dùng đồng ý"
+        assert opened.get("dialogs", []) + page.new_dialogs() == ['alert "Chào bạn" (đã đóng)',
+                                                                   'confirm "Xóa hết?" (đã chọn Hủy)']
+        assert opened["problems"] == [], "hộp thoại không phải lỗi"
+
+        assert page.screenshot("mobile").width == 390, "mở lại ở cỡ điện thoại không treo vì alert"
+        page._pump(0.6)
+        assert page.new_dialogs() == [], "mở lại chỉ để đổi khung chụp thì không báo lại hộp thoại đã báo"
+        assert page.open(site + "/hop-thoai")["dialogs"][0] == 'alert "Chào bạn" (đã đóng)', "Peto tự mở lại thì báo đủ"
+        assert page.open(site + "/")["title"] == "Trang thử của Peto", "trình duyệt vẫn dùng tiếp được"
+    finally:
+        page.close()
+
+
+def test_a_browser_that_stops_answering_is_closed_so_the_next_look_starts_fresh():
+    """Trang treo thì dùng tiếp trình duyệt đó chỉ tốn thêm 30 giây mỗi lần xem."""
+    class Silent:
+        sent = []
+
+        def send(self, text):
+            self.sent.append(json.loads(text)["method"])
+
+        def recv(self, timeout):
+            time.sleep(timeout)
+            raise TimeoutError
+
+        def close(self):
+            pass
+
+    page = Browser()
+    page.ws = Silent()
+    with pytest.raises(BrowserError, match="không trả lời .*trình duyệt mới"):
+        page._call("Runtime.evaluate", {"expression": "1"}, timeout=0.05)
+    assert not page.running and Silent.sent == ["Runtime.evaluate", "Browser.close"]
 
 
 @needs_browser

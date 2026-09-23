@@ -539,6 +539,14 @@ results in the next step. The server stores no conversation (`store=False`), and
     page over the DevTools protocol through a small RFC 6455 client (`browser.WebSocket`, unit-tested against a fake
     server). "Loaded" means the load event plus 0.5 s of network quiet, capped at 5 s. Errors are reported "since the
     last report", so late ones (HMR, timers) still reach Peto.
+  - **Page dialogs are answered at once** (`Browser._dialog`, CLI 0.10.1): `alert` accepted, `confirm` and `prompt`
+    dismissed (Peto must not agree to something that may change data on the user's behalf), `beforeunload` accepted
+    since Peto itself is navigating. A dialog blocks the page until answered: before this, a page calling `alert()` on
+    load made `browser_open` wait ~50 s and fail, and every later call hung until the session ended (found 2026-09-23).
+    The answer is sent raw, never through `_call`, because the event arrives in the middle of another `_call`, and a
+    nested wait would swallow the outer call's response. Dialogs are reported separately from errors (`dialogs` in the
+    tool result, the dim details line on screen), since a dialog is not a bug. A `_call` timeout closes the browser,
+    so a hung page (an endless script) costs one 30 s wait and the next look starts a fresh browser.
   - **A screenshot in another viewport reopens the page** at that size. Chrome keeps the old zoom when metrics change
     on a loaded page, and a reload keeps it too. A page laid out at 1280 px and then switched to mobile came out scaled
     down to fit, hiding exactly the overflow the phone shot is for (2026-09-23). A fresh load behaves like a phone's

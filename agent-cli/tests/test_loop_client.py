@@ -711,18 +711,24 @@ def test_peto_looks_at_a_local_page_and_the_screenshot_reaches_the_next_step(pro
 
         def __init__(self):
             self.url = None
+            self.pending = ['confirm "Xóa hết?" (đã chọn Hủy)']
 
         def open(self, url, viewport=None):
             self.url = "http://localhost:5173/"
             return {"url": self.url, "title": "Peto", "status": 200, "viewport": "desktop", "seconds": 0.8,
                     "loaded": True, "outline": ["nút: Gửi"], "elements": 1, "text_chars": 12,
-                    "problems": [f"console.error: lỗi số {index}" for index in range(1, 8)]}
+                    "problems": [f"console.error: lỗi số {index}" for index in range(1, 8)],
+                    "dialogs": ['alert "Chào bạn" (đã đóng)']}
 
         def screenshot(self, viewport=None, full_page=False):
             return browser_module.Shot(ONE_PIXEL_PNG, "image/png", 390, 844, "mobile", False, False)
 
         def late_problems(self):
             return []
+
+        def new_dialogs(self):
+            dialogs, self.pending = self.pending, []
+            return dialogs
 
         def close(self):
             FakeBrowser.closed.append(self)
@@ -744,10 +750,16 @@ def test_peto_looks_at_a_local_page_and_the_screenshot_reaches_the_next_step(pro
     assert 'Tải xong 0,8 giây · "Peto" · 7 lỗi' in text
     assert text.count("✗ console.error: lỗi số") == 5 and "… còn 2 lỗi" in text
     assert "• Chụp trang · điện thoại 390×844" in text and "ảnh: " in text
+    # Hộp thoại nằm ở dòng chi tiết mờ, không thành dòng lỗi đỏ, và không bị đếm vào số lỗi.
+    flat = " ".join(text.split())
+    assert '7 lỗi · hộp thoại alert "Chào bạn" (đã đóng)' in flat and "✗ alert" not in text
+    assert '• Chụp trang · điện thoại 390×844 hộp thoại confirm "Xóa hết?" (đã chọn Hủy) ảnh: ' in flat
 
     second = [request["body"]["input"] for request in peto.requests if request["path"] == "/api/agent/step"][1]
     outputs = [json.loads(item["output"]) for item in second if item.get("type") == "function_call_output"]
     assert outputs[0]["ok"] and len(outputs[0]["problems"]) == 7, "Peto nhận đủ lỗi, chỉ màn hình mới rút gọn"
+    assert outputs[0]["dialogs"] == ['alert "Chào bạn" (đã đóng)']
+    assert outputs[1]["dialogs"] == ['confirm "Xóa hết?" (đã chọn Hủy)']
     assert outputs[1]["ok"] and outputs[1]["file"].endswith(".png") and "\\" not in outputs[1]["file"]
     last = second[-1]
     assert last["role"] == "user" and last["content"][0]["text"] == TOOL_IMAGES_NOTE

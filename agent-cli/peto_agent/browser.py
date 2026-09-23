@@ -455,7 +455,11 @@ class Browser:
                     return message.get("result", {})
                 self._event(message)
         except TimeoutError:
-            raise BrowserError(f"Trình duyệt không trả lời sau {int(timeout)} giây.") from None
+            # Trang treo (vòng lặp JavaScript chạy mãi, dev server không trả lời) thì dùng tiếp trình duyệt này chỉ
+            # chờ thêm 30 giây mỗi lần: đóng hẳn để lần xem sau mở trình duyệt mới.
+            self.close()
+            raise BrowserError(f"Trình duyệt không trả lời sau {int(timeout)} giây (trang bị treo?); lần xem sau "
+                               "sẽ mở trình duyệt mới.") from None
         except (ConnectionError, OSError, ValueError):
             self.close()
             raise BrowserError("Mất kết nối với trình duyệt; lần xem sau sẽ mở lại.") from None
@@ -475,6 +479,8 @@ class Browser:
     def _reset_page(self) -> None:
         self.problems: list[str] = []
         self.reported = 0
+        self.dialogs: list[str] = []
+        self.dialogs_reported = 0
         self.inflight: set[str] = set()
         self.requests: dict[str, str] = {}
         self.last_network = time.monotonic()
@@ -486,10 +492,32 @@ class Browser:
         if text and text not in self.problems and text not in self.known and len(self.problems) < MAX_PROBLEMS:
             self.problems.append(text)
 
+    def _dialog(self, params: dict) -> None:
+        """Trả lời ngay hộp thoại alert/confirm/prompt của trang.
+
+        Hộp thoại chặn trang tới khi có người trả lời; không ai trả lời thì mọi lệnh sau đều treo (gặp ngày 2026-09-23:
+        trang gọi alert() lúc tải làm browser_open chờ 50 giây rồi báo lỗi, và trình duyệt kẹt tới hết phiên). Peto chỉ
+        xem nên alert thì đóng, confirm và prompt thì chọn Hủy (không thay người dùng đồng ý một việc có thể đổi dữ
+        liệu), còn beforeunload thì cho rời trang vì chính Peto đang mở trang khác.
+        """
+        kind = params.get("type") or "alert"
+        accept = kind in {"alert", "beforeunload"}
+        self.next_id += 1
+        # Gửi thẳng, không qua _call: đang ở giữa một _call khác, chờ lồng nhau sẽ nuốt mất câu trả lời của lệnh ngoài.
+        self.ws.send(json.dumps({"id": self.next_id, "method": "Page.handleJavaScriptDialog",
+                                 "params": {"accept": accept}}))
+        if kind == "beforeunload":
+            return
+        text = f"{kind} \"{_clip(params.get('message', ''), 120)}\" ({'đã đóng' if accept else 'đã chọn Hủy'})"
+        if text not in self.dialogs and text not in self.known:
+            self.dialogs.append(text)
+
     def _event(self, message: dict) -> None:
         method, params = message.get("method"), message.get("params") or {}
         base = self.url or ""
-        if method == "Page.loadEventFired":
+        if method == "Page.javascriptDialogOpening":
+            self._dialog(params)
+        elif method == "Page.loadEventFired":
             self.loaded = True
         elif method == "Network.requestWillBeSent":
             request = params.get("requestId")
@@ -532,6 +560,13 @@ class Browser:
         """Lỗi mới kể từ lần báo trước, để lỗi hiện muộn (sau khi dev server nạp lại code) vẫn tới được Peto."""
         fresh = self.problems[self.reported:]
         self.reported = len(self.problems)
+        self.known.update(fresh)
+        return fresh
+
+    def new_dialogs(self) -> list[str]:
+        """Hộp thoại trang đã mở (và Peto đã trả lời) kể từ lần báo trước; báo riêng vì hộp thoại không phải lỗi."""
+        fresh = self.dialogs[self.dialogs_reported:]
+        self.dialogs_reported = len(self.dialogs)
         self.known.update(fresh)
         return fresh
 
@@ -587,7 +622,10 @@ class Browser:
         Peto chủ động mở lại (thường sau khi sửa code) thì báo lại đủ lỗi: lỗi còn đó nghĩa là chưa sửa được.
         """
         self.known = set()
-        return {**self._load(url, viewport), "problems": self.new_problems()}
+        result = {**self._load(url, viewport), "problems": self.new_problems()}
+        if dialogs := self.new_dialogs():
+            result["dialogs"] = dialogs
+        return result
 
     def _load(self, url: str, viewport: str | None) -> dict:
         target = check_url(url)
