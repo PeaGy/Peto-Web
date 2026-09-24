@@ -1,0 +1,11 @@
+{
+  "updated": "2026-09-20",
+  "items": [
+    { "id": 1, "name": "Bình giữ nhiệt Peto", "price": 189000, "stock": 12 },
+    { "id": 2, "name": "Áo thun Peto", "price": 159000, "stock": 0 },
+    { "id": 3, "name": "Móc khóa quả lê", "price": 39000, "stock": 40 },
+    { "id": 4, "name": "Sổ tay lập trình", "price": 69000, "stock": 7 },
+    { "id": 5, "name": "Miếng lót chuột", "price": 99000, "stock": 15 },
+    { "id": 6, "name": "Sticker Peto (bộ 10)", "price": 29000, "stock": 60 }
+  ]
+}

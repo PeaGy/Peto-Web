@@ -49,8 +49,8 @@ from config import (
     AGENT_WEB_SEARCH,
     provider_from_owner,
 )
-from persona import (AGENT_BROWSER_ACT_PROMPT, AGENT_NO_SEARCH_PROMPT, AGENT_PROMPT, AGENT_SEARCH_PROMPT,
-                     PERSONA_PROMPT, browser_prompt)
+from persona import (AGENT_BROWSER_ACT_PROMPT, AGENT_BROWSER_OUTSIDE_PROMPT, AGENT_NO_SEARCH_PROMPT, AGENT_PROMPT,
+                     AGENT_SEARCH_PROMPT, PERSONA_PROMPT, browser_prompt)
 from rate_limit import Admission, AdmissionDenied
 
 logger = logging.getLogger("peto_web.agent")
@@ -402,8 +402,9 @@ def _instructions(context: dict, web_search: bool) -> str:
     features = _features(context)
     browsing = []
     if "browser" in features:
-        act = "browser_act" in features
-        browsing = [browser_prompt(act=act), *([AGENT_BROWSER_ACT_PROMPT] if act else [])]
+        act, outside = "browser_act" in features, "browser_outside" in features
+        browsing = [browser_prompt(act=act, outside=outside), *([AGENT_BROWSER_ACT_PROMPT] if act else []),
+                    *([AGENT_BROWSER_OUTSIDE_PROMPT] if outside else [])]
     return "\n\n".join([PERSONA_PROMPT, AGENT_PROMPT, *browsing,
                         AGENT_SEARCH_PROMPT if web_search else AGENT_NO_SEARCH_PROMPT, time_context(), machine,
                            "Hướng dẫn AGENTS.md do dự án cung cấp (phạm vi ghi trong scope). Áp dụng quy ước code và "

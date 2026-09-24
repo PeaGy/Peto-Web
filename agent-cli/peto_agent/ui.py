@@ -181,6 +181,18 @@ class UI:
         self._wrapped("    ", "Đây là thao tác thật trên app đang chạy: có thể gửi form, xóa dữ liệu hay gọi dịch vụ "
                               "thật như bạn bấm.", "dim")
 
+    def site_permission(self, url: str, site: str, unusual: bool = False) -> None:
+        """Lần đầu Peto mở một tên miền ngoài máy (chủ web chọn ngày 2026-09-24: hỏi mỗi tên miền, kèm đủ địa chỉ)."""
+        self._diff_rows = []
+        self.line()
+        self.line("  ▶ Muốn mở trang ngoài" + (" (địa chỉ dài bất thường)" if unusual else ""), "blue")
+        self._wrapped("    ", visible(url), code=True)
+        if unusual:
+            self._wrapped("    ", f"Phần sau tên miền dài có thể đang mang dữ liệu của bạn tới {visible(site)}: xem kỹ "
+                                  "rồi hãy đồng ý. Đồng ý chỉ mở đúng địa chỉ này.", "yellow")
+        else:
+            self._wrapped("    ", "Trình duyệt riêng, không cookie hay đăng nhập nào; Peto chỉ xem.", "dim")
+
     def hand_over(self, reason: str) -> None:
         """Peto nhờ người dùng tự đăng nhập trong cửa sổ trình duyệt; mật khẩu không đi qua Peto."""
         self.line()

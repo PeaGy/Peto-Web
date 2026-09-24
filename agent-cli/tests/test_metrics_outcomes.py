@@ -5,7 +5,7 @@ import pytest
 from conftest import FakeUI
 
 from peto_agent.client import ApiError
-from peto_agent.command_outcome import classify, command_kind
+from peto_agent.command_outcome import classify, command_kind, local_probe
 from peto_agent.loop import Session, user_message
 from peto_agent.metrics import Metrics
 from peto_agent.tools import Tools
@@ -33,6 +33,20 @@ def test_classification(command, code, output, expected):
     assert classify(command, {"exit_code": code, "output": output, "error": "timeout"}) == "execution_error"
 
 
+@pytest.mark.parametrize("command,probe", [
+    ("curl -s http://localhost:5080/api/monhoc/99", True),
+    ('curl.exe -s -o NUL -w "%{http_code}" http://127.0.0.1:8000/ && curl.exe http://localhost:8000/x', True),
+    ("Invoke-WebRequest -Uri http://localhost:5080/api -UseBasicParsing", True),
+    ("$r = Invoke-RestMethod -Method Post -Uri http://[::1]:5080/api/monhoc", True),
+    ("curl -s https://example.com/", False),
+    ("python -m http.server 8765", False),
+    ("npm test", False),
+    ("echo http://localhost:5080", False),
+])
+def test_local_probe_means_calling_a_server_on_this_machine(command, probe):
+    assert local_probe(command) is probe
+
+
 def test_search_and_environment_errors_do_not_spend_repair_budget(project, monkeypatch):
     tools = Tools(Workspace(project), FakeUI(["a"]))
     response = {"exit_code": 1, "output": "", "seconds": 0}
@@ -43,7 +57,7 @@ def test_search_and_environment_errors_do_not_spend_repair_budget(project, monke
     for _ in range(3):
         tools.run_command("python -m pytest")
     assert "error" in tools.run_command("python -m pytest")
-    assert tools.failed_commands == 0 and tools.command_revision == -1
+    assert tools.failed_commands == 0 and tools.checked_revision == -1
     assert tools.call("write_file", json.dumps({"path": "a", "content": "fixed"}))["ok"]
     response["output"] = "1 failed"
     for _ in range(3):

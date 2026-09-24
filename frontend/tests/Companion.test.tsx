@@ -171,7 +171,7 @@ it('chọn giọng trong Cài đặt rồi Nghe thử thì đọc câu mẫu b�
   localStorage.setItem('peto-local-voice', '1');
   render(<App />);
   const settings = await openSettings();
-  fireEvent.click(await settings.findByRole('radio', { name: 'Dịu & vui vẻ' }));
+  fireEvent.change(await settings.findByRole('combobox', { name: 'Giọng', exact: true }), { target: { value: 'gentle-2' } });
   fireEvent.click(settings.getByRole('button', { name: 'Nghe thử' }));
 
   await waitFor(() => expect(played).toHaveLength(1));

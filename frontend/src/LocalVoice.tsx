@@ -21,6 +21,7 @@ interface Speaking {
 }
 
 export interface LocalVoice {
+  notice?: string;
   enabled: boolean;
   setEnabled: (value: boolean) => void;
   status: LocalVoiceStatus;
@@ -60,6 +61,12 @@ function readVoiceName(): string {
  * Chỉ dò dịch vụ qua VPS khi người dùng đã bật và `active` đúng (Companion hoặc Cài đặt).
  */
 export function useLocalVoice(active: boolean): LocalVoice {
+  const [notice, setNotice] = useState('');
+  useEffect(() => {
+    const changed = (event: Event) => setNotice(`Đã chuyển sang giọng dự phòng: ${(event as CustomEvent<string>).detail}.`);
+    window.addEventListener('peto-voice-fallback', changed);
+    return () => window.removeEventListener('peto-voice-fallback', changed);
+  }, []);
   const [enabled, setEnabled] = useState(readEnabled);
   const [voiceName, setVoice] = useState(readVoiceName);
   const [voices, setVoices] = useState<string[]>([]);
@@ -69,7 +76,8 @@ export function useLocalVoice(active: boolean): LocalVoice {
   const player = useRef<LocalVoicePlayer | null>(null);
   const speakVersion = useRef(0);
 
-  const voice = voices.includes(voiceName) ? voiceName : (voices[0] ?? "");
+  // Never silently replace a saved voice when its worker goes offline.
+  const voice = voiceName || voices[0] || "";
 
   const stop = useCallback(() => {
     speakVersion.current += 1;
@@ -122,6 +130,7 @@ export function useLocalVoice(active: boolean): LocalVoice {
   }, []);
 
   const speak = useCallback(async (key: string, text: string) => {
+    setNotice('');
     if (!player.current) player.current = new LocalVoicePlayer();
     const version = ++speakVersion.current;
     setSpeaking({ key, phase: "loading" });
@@ -140,7 +149,7 @@ export function useLocalVoice(active: boolean): LocalVoice {
 
   const recheck = useCallback(() => setProbe((count) => count + 1), []);
 
-  return { enabled, setEnabled, status, voices, voice, setVoice, recheck, speaking, speak, stop };
+  return { enabled, setEnabled, status, voices, voice, setVoice, recheck, speaking, speak, stop, notice };
 }
 
 export function SpeakerIcon({ size = 16 }: { size?: number }) {

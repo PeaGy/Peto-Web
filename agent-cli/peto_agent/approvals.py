@@ -63,6 +63,23 @@ def page_allowed(root: Path, origin: str) -> bool:
     return origin in pages(root)
 
 
+def sites(root: Path) -> list[str]:
+    """Tên miền ngoài máy Peto luôn được xem (chỉ xem) trong dự án này, từ CLI 0.12.0; python.org gồm cả docs.python.org."""
+    return [item["site"] for item in _items(root) if isinstance(item.get("site"), str)]
+
+
+def add_site(root: Path, site: str) -> bool:
+    """Nhớ một tên miền cho dự án. False khi không ghi được: lần này vẫn mở, lần sau Peto hỏi lại."""
+    if not site or len(site) > 253:
+        return False
+    items = _items(root)
+    if site not in sites(root):
+        items.append({"site": site, "added_at": round(time.time())})
+    projects = _projects()
+    projects[_key(root)] = items[-MAX_PER_PROJECT:]
+    return _write(projects)
+
+
 def add_page(root: Path, origin: str) -> bool:
     """Nhớ một trang cho dự án. False khi không ghi được: lần này vẫn thao tác, lần sau Peto hỏi lại."""
     if not origin or len(origin) > 300:
@@ -94,8 +111,8 @@ def add(root: Path, directory: str, command: str, shell: str) -> bool:
 
 
 def clear(root: Path) -> int:
-    """Bỏ mọi lệnh và trang đã nhớ của dự án này; trả về số mục đã bỏ."""
-    removed = len(entries(root)) + len(pages(root))
+    """Bỏ mọi lệnh, trang và tên miền đã nhớ của dự án này; trả về số mục đã bỏ."""
+    removed = len(entries(root)) + len(pages(root)) + len(sites(root))
     projects = _projects()
     if projects.pop(_key(root), None) is not None:
         _write(projects)

@@ -61,6 +61,11 @@ cd frontend && npm run build                     # tsc -b && vite build -> front
 # Peto Agent CLI tests (stdlib-only CLI; uses the repo venv's pytest)
 .venv/Scripts/python.exe -m pytest agent-cli/tests
 
+# Peto Agent evals (agent-cli/evals/README.md): selftest costs nothing; run spends real agent steps, so only on the
+# owner's go-ahead
+.venv/Scripts/python.exe agent-cli/evals/run.py selftest
+.venv/Scripts/python.exe agent-cli/evals/run.py run --model peto --effort low
+
 # xAI login (run once on the machine hosting the server; only for PETO_AI_PROVIDER=xai)
 cd backend && ../.venv/Scripts/python.exe -m xai_auth login    # or: status | logout
 ```
@@ -524,6 +529,15 @@ results in the next step. The server stores no conversation (`store=False`), and
   `commands.suggestions` and `mentions.suggest`, and `line_editor.create` takes the combined callable.
 - **`update_plan`** renders the model's own task list (`☑ ▶ ☐`) and needs no permission, since it touches nothing. At
   most 10 items; unfinished ones are named in the request's summary line so "xong" cannot hide a half-done plan.
+- **Checking after edits.** When Peto ends a request after editing files without checking them, `_run` appends one
+  "Kiểm tra sau sửa" reminder and runs another step. `Tools.revision` counts edits, and `Tools._checked` records the
+  revision Peto last checked at. These count as checking:
+  - a test or build run (`classify` gives `passed`/`check_failed`);
+  - opening, screenshotting, reading or acting on a local page;
+  - an HTTP call to a server on this machine (`command_outcome.local_probe`: curl, Invoke-WebRequest… to localhost).
+
+  Before 2026-09-24 only tests counted. The eval run that day spent 5 of 68 steps on reminders after Peto had already
+  looked at the page or called the API, and once Peto ran `dotnet build` just to satisfy it.
 - **Background commands** (`background.py`): `start_command` / `read_command_output` / `stop_command`. `runner.spawn`
   is shared with `run_command`, output is collected by a reader thread into a 256 KB tail buffer, and `read` waits up to
   30 s for new output so one step is worth spending. At most 3 running jobs. They deliberately outlive a request (a dev
@@ -637,6 +651,37 @@ results in the next step. The server stores no conversation (`store=False`), and
     run on 2026-09-23 passed 30/30 checks with a real visible window: the login window appeared, the password never
     reached the fake server, closing the terminal while the window was visible killed Edge, the next session was still
     logged in, and `/trinhduyet xoa` logged it out.
+- **Browser, phase 3: outside pages, read only** (CLI 0.12.0, feature `browser_outside`). The owner picked all three
+  options from mockups on 2026-09-24: ask once per domain, read only, and open outside pages only when the user gives a
+  link or asks to look at the deployed site (general lookups stay on web search).
+  - **A separate browser** (`OutsideBrowser`, a `Browser` subclass): a fresh temp profile per session, never the
+    project profile, because that one can hold the Discord or Google login the user used for the app, and opening an
+    outside page with it would walk into their account. Always headless, no `/trinhduyet`, and click, type, press and
+    login raise `READ_ONLY`; `Tools` refuses them first with "Trang ngoài chỉ xem: mở link bằng địa chỉ của nó."
+    (the mockup line). Its outline carries link targets instead of numbers (`liên kết: Tasks → /3/library/tasks.html`,
+    `SNAPSHOT_SCRIPT`'s `links` flag) so Peto follows a link by opening its address.
+  - **Routing** (`browser.route`): a local host goes to the project browser as before, anything else to
+    `check_outside`, which adds `https://` when the scheme is missing and refuses the home network: loopback, private,
+    link-local, CGNAT and other non-global IPs, single-label names, `.local`/`.lan`/`.internal`/`.home.arpa`…, and
+    public names that resolve to such an address (`_lookup`, patchable in tests; a failed lookup is left to the
+    browser). Inside `OutsideBrowser` the Fetch guard lets a main-frame navigation through only to a granted domain
+    that is not on the home network, and frames never to the home network; `--enable-features` turns on Chromium's
+    Private Network Access checks so outside pages cannot call into the machine either.
+  - **Permission** (`Tools._approve_site`): per domain, `site_key` drops a leading `www.` and a grant covers
+    subdomains (`python.org` covers `docs.python.org`, never `evilpython.org`). `y` lasts until the request ends, `s`
+    the session, `l` goes to `approvals.add_site`, `a` as elsewhere. A URL whose path and query exceed 200 characters,
+    or whose query exceeds 120 (`long_url`), always asks again for that exact URL, even under a grant or `a`, because
+    the address itself can carry the user's data to that server; `y` there does not grant the domain. Redirects to an
+    ungranted domain are blocked and reported so Peto can ask through `browser_open`.
+  - **A failed open skips the step's screenshot and read** (`Tools.open_failed`): otherwise the old page would be
+    captured and taken for the one just refused.
+  - Temp profiles are killed after 0.5 s instead of waiting 3 s for a graceful shutdown (`_stop`); an outside
+    browser that had been on the internet regularly took the full 3 s, which made `/thoat` take 3.3 s. They therefore
+    keep all cookies in the in-memory snapshot, not just session cookies (never an `expires` of -1, which would set an
+    expired cookie).
+  - Tests: `test_browser.py` maps `*.peto-test` to 127.0.0.1 with `--host-resolver-rules` and a fake resolver, so the
+    real-Edge test needs no network. A ConPTY run on 2026-09-24 against example.com and iana.org passed 24/24: the
+    domain prompts, the refused click, the re-asked long URL, the refused router address and a clean `/thoat` in 0.8 s.
 - **`shell`** on `run_command` and `start_command` picks `cmd` (default) or `powershell`, because this project's own
   commands are PowerShell. PowerShell runs as an argv list (no quoting games) and `command_outcome` reads its
   "not recognized as the name of a cmdlet" as an environment error.
@@ -698,7 +743,7 @@ results in the next step. The server stores no conversation (`store=False`), and
     wildcard or prefix matching, so `npm test && …` never rides on `npm test`. The timeout is left out of the key: it
     is only a cap, Ctrl+C still stops the command, and the model varies it between runs. A command that runs on an `l`
     grant prints a dim line saying so. `/permissions` lists both kinds, plus pages Peto may click and type on (browser
-    phase 2), and `/permissions clear` drops all of them.
+    phase 2) and outside domains it may view (phase 3), and `/permissions clear` drops all of them.
   - Commands take an optional `cwd`: an existing folder inside the project, resolved like any path, so outside
     folders and `.git` are refused. It was added because on 2026-09-20 Peto ran `npm run dev` at the root of this repo
     (no `package.json` there), then retried with `cd frontend && …`. Each command opens a fresh shell, so a
@@ -706,9 +751,11 @@ results in the next step. The server stores no conversation (`store=False`), and
   - **New tool parameters and tools are gated by `context.features`.** Strict schemas make the model send every
     property, `null` included, and a CLI that does not know a parameter fails `inspect.signature(...).bind`. So
     `agent_tools.tool_schemas` adds `cwd` only when the step's context lists `"cwd"`, the browser tools (with
-    `persona.browser_prompt`) only for `"browser"`, and the click/type/login tools (with `AGENT_BROWSER_ACT_PROMPT`)
-    only for `"browser"` plus `"browser_act"` (`tools.FEATURES`, sent by `Session._step`). CLIs up to 0.9.7 send
-    nothing and keep receiving the old schema byte for byte, and 0.10.x keeps its three browser tools byte for byte. From 0.9.8 on, `Tools.call` also drops unknown
+    `persona.browser_prompt`) only for `"browser"`, the click/type/login tools (with `AGENT_BROWSER_ACT_PROMPT`) only
+    for `"browser"` plus `"browser_act"`, and the outside-page wording of `browser_open` (with
+    `AGENT_BROWSER_OUTSIDE_PROMPT`) only for `"browser"` plus `"browser_outside"` (`tools.FEATURES`, sent by
+    `Session._step`). CLIs up to 0.9.7 send nothing and keep receiving the old schema byte for byte, and 0.10.x and
+    0.11.x keep theirs byte for byte. From 0.9.8 on, `Tools.call` also drops unknown
     parameters whose value is `null` (null means default). A future optional parameter therefore cannot break
     installed CLIs, but add it behind a feature anyway if it matters.
   - Commands run with a timeout; timeout or Ctrl+C kills the whole tree with `taskkill /T`.
@@ -829,6 +876,45 @@ results in the next step. The server stores no conversation (`store=False`), and
   or usage flow changes, update the guide too.
 - `backend/tests/test_agent_api.py`, `backend/tests/test_agent_install.py` (including a real `pip install` of the wheel)
   and `agent-cli/tests/` cover this; the CLI tests run the loop against a fake SSE server on 127.0.0.1.
+- **Evals** (`agent-cli/evals/`, added 2026-09-24). The owner chose to measure Peto before adding capabilities: after
+  the three browser phases, the next step comes from eval results, not from another tool's feature list (Windows app
+  control is deferred until there is a desktop project to test). `run.py run` drives the real `Session`/`Tools`
+  against the real server. Only permission questions are answered, by `policy.PolicyUI`.
+  - **Tasks** (`tasks/<id>/`) mirror the owner's logged work: a Python save tool, C code questions, an ASP.NET API
+    assignment, static pages, a multi-file rename, a Windows `make`/pytest trap, a prompt injection in project docs,
+    and questions over a `git archive HEAD` copy of this repo.
+  - **Each task** holds `task.py` (prompt, `MAX_STEPS`, `check(ctx)`), `project/`, `hidden/` tests copied in only
+    after the run, and `solution/`.
+  - **`selftest`** requires the untouched project to fail a required check and the solution to pass them all. Run it
+    after changing any task; it costs no steps.
+  - **`--repeat N`** runs each task N times in one run (folders `<task>~2`…), and the report counts passes per task.
+    Model answers vary, so judge a single failure only after repeating it.
+  - **The Peto-Web copy excludes `agent-cli/evals`.** It is made with `git archive HEAD -- . ":(exclude)agent-cli/evals"`,
+    because that folder holds every task's solution, including the answer to the Peto-Web question.
+  - **Safety.** Windows Home has no Sandbox, so `policy.CommandPolicy` is the guard:
+    - Commands are allowed only for view, build, test and run with the tasks' toolchains, plus read-only git and curl
+      to localhost.
+    - Refused: paths outside the copy, non-local URLs, installs, delete/move/kill commands, env and registry reads,
+      and `tasklist`/`netstat`.
+    - PowerShell is judged on its own parser's AST (`policy.powershell_outline`, Windows PowerShell 5.1 like the
+      runner). Variables assigned in the command, try/catch and script blocks are allowed. Env/drive variables, static
+      .NET calls, file redirection and dynamic invocation are refused, and every nested command must be on the list.
+    - In cmd only `%NAME%` counts as a variable, so curl's `%{http_code}` passes. The first real run (2026-09-24) was
+      refused three legitimate API checks before these two rules existed.
+    - Files Peto changed are scanned before any code-running command.
+    - `run.py` strips secret-looking environment variables at start.
+    - It is still not a sandbox: code run by an allowed test command runs as the user.
+  - **Isolation.** Everything lives under `%USERPROFILE%\.peto-eval`: its own device login ("Bài thi Peto",
+    revocable on the web), logs, browser profiles and results. The user's daily `peto` state is never touched.
+  - **Not `%LOCALAPPDATA%`** (found 2026-09-24). The Claude desktop app is an MSIX package. New folders its child
+    processes create under AppData are redirected to `…\AppData\Local\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Local`.
+    - Results written there by Claude never appear where the owner looks.
+    - `Path.resolve()` returns the redirected path. The harness therefore resolves the task root it prepares, so browser
+      profile hashes match the ones `Workspace` computes.
+    - Existing folders such as the owner's real `%LOCALAPPDATA%\PetoAgent`, and Temp, are not redirected.
+  - **Cost.** Steps still count against the account's daily cap, and `run` prints the budget and asks first. Never run
+    it without the owner's go-ahead.
+  - Tests: `agent-cli/tests/test_evals.py` covers the policy and a whole task against a scripted fake model.
 
 ## Frontend conventions
 

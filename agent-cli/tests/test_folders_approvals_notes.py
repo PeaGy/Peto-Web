@@ -178,7 +178,11 @@ def test_pages_and_commands_share_the_file_without_erasing_each_other(project, t
     assert approvals.page_allowed(project, "http://localhost:5173")
     assert not approvals.page_allowed(project, "http://localhost:8000"), "khác cổng là trang khác"
     assert not approvals.page_allowed(other, "http://localhost:5173"), "chỉ trong dự án đã cho phép"
-    assert approvals.clear(project) == 3 and approvals.pages(project) == [] and approvals.entries(project) == []
+    assert approvals.add_site(project, "docs.python.org") and approvals.add_site(project, "docs.python.org")
+    assert approvals.sites(project) == ["docs.python.org"] and approvals.sites(other) == []
+    assert len(approvals.entries(project)) == 2 and approvals.pages(project) == ["http://localhost:5173"]
+    assert approvals.clear(project) == 4 and approvals.pages(project) == [] and approvals.entries(project) == []
+    assert approvals.sites(project) == []
 
 
 def test_permission_question_offers_the_new_choice(project):

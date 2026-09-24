@@ -12,8 +12,9 @@ from __future__ import annotations
 
 # Khả năng CLI có thể khai báo. "cwd": run_command và start_command nhận thư mục con để chạy lệnh (CLI 0.9.8).
 # "browser": ba công cụ xem trang chạy trên máy bằng trình duyệt ẩn (CLI 0.10.0). "browser_act": bấm, gõ, nhấn phím và
-# nhờ người dùng đăng nhập trên trang đang xem (CLI 0.11.0); chỉ có tác dụng cùng "browser".
-FEATURES = frozenset({"cwd", "browser", "browser_act"})
+# nhờ người dùng đăng nhập trên trang đang xem (CLI 0.11.0); "browser_outside": browser_open nhận cả trang ngoài máy,
+# chỉ xem (CLI 0.12.0). Hai khả năng sau chỉ có tác dụng cùng "browser".
+FEATURES = frozenset({"cwd", "browser", "browser_act", "browser_outside"})
 
 _PATH = {"type": "string", "description": "Đường dẫn tương đối tính từ gốc dự án, ví dụ src/app.py; '.' là gốc."}
 _SHELL = {
@@ -206,16 +207,32 @@ _OPEN_DESCRIPTION_ACT = _OPEN_DESCRIPTION + (
 )
 
 
-def _open_tool(act: bool) -> dict:
-    return _tool(
-        "browser_open",
-        _OPEN_DESCRIPTION_ACT if act else _OPEN_DESCRIPTION,
-        {
-            "url": {"type": "string", "description": "Địa chỉ trang, ví dụ http://localhost:5173/ (lấy đúng địa chỉ "
-                                                     "dev server in ra)."},
-            "viewport": _VIEWPORT,
-        },
-    )
+# Với CLI mở được trang ngoài (đợt 3, chủ web chọn ngày 2026-09-24): chỉ xem, trình duyệt riêng không cookie, hỏi mỗi
+# tên miền. Thay câu "trang ngoài bị từ chối" của hai mô tả trên.
+_OPEN_DESCRIPTION_OUTSIDE = (
+    "Mở hoặc tải lại một trang web. Trang trên máy người dùng (localhost, 127.0.0.1, ::1) mở trong trình duyệt của dự "
+    "án. Trang ngoài máy (http, https) mở trong một trình duyệt riêng không cookie, không đăng nhập, chỉ xem: lần đầu "
+    "mỗi tên miền người dùng được hỏi, địa chỉ dài bất thường luôn hỏi lại, địa chỉ trong mạng nhà bị từ chối. Trả về "
+    "tiêu đề, mã HTTP, lỗi console, lỗi JavaScript và request hỏng, cùng các phần tử đang hiện (tiêu đề, nút, ô nhập, "
+    "liên kết, ảnh thiếu alt); trên trang ngoài, link ghi kèm địa chỉ sau dấu → để mở tiếp. Không kèm ảnh: cần nhìn "
+    "thì gọi browser_screenshot, cùng bước cũng được."
+)
+_OPEN_ACT_NOTE = (
+    " Trên trang trên máy, phần tử thao tác được có số trong ngoặc vuông, ví dụ [3], để dùng với browser_click và "
+    "browser_type. Có lệnh nền đang chạy mà server chưa nghe cổng thì chờ tối đa 15 giây, nên gọi ngay sau "
+    "start_command trong cùng bước được."
+)
+
+
+def _open_tool(act: bool, outside: bool = False) -> dict:
+    if outside:
+        description = _OPEN_DESCRIPTION_OUTSIDE + (_OPEN_ACT_NOTE if act else "")
+        url = ("Địa chỉ trang: trang trên máy, ví dụ http://localhost:5173/ (lấy đúng địa chỉ dev server in ra), hoặc "
+               "trang ngoài người dùng đưa, ví dụ https://docs.python.org/3/.")
+    else:
+        description = _OPEN_DESCRIPTION_ACT if act else _OPEN_DESCRIPTION
+        url = "Địa chỉ trang, ví dụ http://localhost:5173/ (lấy đúng địa chỉ dev server in ra)."
+    return _tool("browser_open", description, {"url": {"type": "string", "description": url}, "viewport": _VIEWPORT})
 
 
 # Đợt 1 của trình duyệt (chủ web chọn ngày 2026-09-23): chỉ xem, không bấm hay gõ, và chỉ trang chạy trên máy.
@@ -305,6 +322,7 @@ def tool_schemas(features: frozenset[str] = frozenset()) -> list[dict]:
         browsing = []
         if "browser" in key:
             act = "browser_act" in key
-            browsing = [_open_tool(act), *_BROWSER_TOOLS[1:], *(_BROWSER_ACT_TOOLS if act else [])]
+            browsing = [_open_tool(act, "browser_outside" in key), *_BROWSER_TOOLS[1:],
+                        *(_BROWSER_ACT_TOOLS if act else [])]
         _SCHEMAS[key] = _FILE_TOOLS + _command_tools(cwd="cwd" in key) + browsing
     return _SCHEMAS[key]

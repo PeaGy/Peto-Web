@@ -4,6 +4,7 @@ import { trackVoice } from "./voiceActivity";
 export const LOCAL_VOICE_ORIGIN = "/api/voice";
 export const LOCAL_VOICE_ENABLED_KEY = "peto-local-voice";
 export const LOCAL_VOICE_NAME_KEY = "peto-local-voice-name";
+export const VOICE_FALLBACK_KEY = 'peto-voice-fallback';
 
 // Giọng đọc chỉ nhanh hơn thời gian thực một chút, nên các mẩu phải xấp xỉ bằng nhau: mẩu sau được
 // xin ngay khi mẩu trước về, và chỉ kịp nếu nó không dài hơn mẩu đang phát là bao.
@@ -99,13 +100,15 @@ function splitLong(sentence: string): string[] {
   return pieces;
 }
 
-async function requestSpeech(text: string, voice: string, signal: AbortSignal): Promise<Blob> {
+async function requestSpeech(text: string, voice: string, signal: AbortSignal, selectedVoice?: (voice: string) => void): Promise<Blob> {
   let response: Response;
+  let fallback: string | undefined;
+  try { fallback = localStorage.getItem(VOICE_FALLBACK_KEY) || undefined; } catch {}
   try {
     response = await fetch(`${LOCAL_VOICE_ORIGIN}/speak`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, voice }),
+      body: JSON.stringify({ text, voice, ...(fallback ? { fallback } : {}) }),
       signal,
     });
   } catch (error) {
@@ -116,6 +119,9 @@ async function requestSpeech(text: string, voice: string, signal: AbortSignal): 
     const data = (await response.json().catch(() => null)) as { detail?: unknown } | null;
     throw new Error(typeof data?.detail === "string" ? data.detail : "Máy chủ giọng nói chưa đọc được câu này.");
   }
+  const selected = response.headers.get('X-Peto-Voice');
+  if (!signal.aborted && selected) selectedVoice?.(selected);
+  if (!signal.aborted && selected && selected !== voice) window.dispatchEvent(new CustomEvent('peto-voice-fallback', { detail: selected }));
   return response.blob();
 }
 
@@ -138,13 +144,15 @@ export class LocalVoicePlayer {
     const controller = new AbortController();
     this.controller = controller;
     onPhase("loading");
-    let pending = requestSpeech(chunks[0], voice, controller.signal);
+    let activeVoice = voice;
+    const selectedVoice = (selected: string) => { activeVoice = selected; };
+    let pending = requestSpeech(chunks[0], activeVoice, controller.signal, selectedVoice);
     try {
       for (let index = 0; index < chunks.length; index += 1) {
         const blob = await pending;
         if (controller.signal.aborted) return "stopped";
         if (index + 1 < chunks.length) {
-          pending = requestSpeech(chunks[index + 1], voice, controller.signal);
+          pending = requestSpeech(chunks[index + 1], activeVoice, controller.signal, selectedVoice);
           // Lỗi của mẩu kế tiếp được ném ra khi tới lượt nó, không để trình duyệt báo lỗi chưa bắt.
           pending.catch(() => {});
         }

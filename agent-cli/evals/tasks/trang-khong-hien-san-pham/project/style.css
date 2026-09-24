@@ -1,0 +1,58 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, sans-serif;
+  background: #faf7f2;
+  color: #1f2430;
+}
+
+header {
+  padding: 24px;
+  background: #fff;
+  border-bottom: 1px solid #eee;
+}
+
+header h1 {
+  margin: 0 0 4px;
+}
+
+#status {
+  margin: 0;
+  color: #6b7080;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 16px;
+  padding: 24px;
+  margin: 0;
+  list-style: none;
+}
+
+.product {
+  padding: 16px;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.product h2 {
+  margin: 0 0 8px;
+  font-size: 18px;
+}
+
+.price {
+  margin: 0;
+  font-weight: 600;
+  color: #b4540a;
+}
+
+.sold-out {
+  margin: 8px 0 0;
+  color: #c0392b;
+  font-size: 14px;
+}

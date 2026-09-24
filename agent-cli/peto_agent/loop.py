@@ -317,30 +317,36 @@ class Session:
         """/permissions: lệnh và trang nhớ trong phiên ([s]), luôn cho phép ở dự án này ([l], lưu trên máy)."""
         tools = self.tools
         if clear:
-            tools.command_grants.clear()
-            tools.page_session_grants.clear()
-            tools.page_grants.clear()
+            for grants in (tools.command_grants, tools.page_session_grants, tools.page_grants,
+                           tools.site_session_grants, tools.site_grants):
+                grants.clear()
             removed = approvals.clear(self.ws.root)
             self.ui.success("Đã xóa quyền nhớ trong phiên" +
                             (f" và {removed} quyền luôn cho phép ở dự án này." if removed else "."))
             return
-        saved, pages = approvals.entries(self.ws.root), approvals.pages(self.ws.root)
-        if not tools.command_grants and not tools.page_session_grants and not saved and not pages:
-            self.ui.line("  Chưa nhớ lệnh hay trang nào: trong phiên chọn [s], luôn cho phép ở dự án này chọn [l].",
-                         "dim")
-        if tools.command_grants or tools.page_session_grants:
+        saved, pages, sites = (approvals.entries(self.ws.root), approvals.pages(self.ws.root),
+                               approvals.sites(self.ws.root))
+        in_session = tools.command_grants or tools.page_session_grants or tools.site_session_grants
+        if not in_session and not saved and not pages and not sites:
+            self.ui.line("  Chưa nhớ lệnh, trang hay tên miền nào: trong phiên chọn [s], luôn cho phép ở dự án này chọn "
+                         "[l].", "dim")
+        if in_session:
             self.ui.line("  Nhớ trong phiên:", "dim")
         for directory, command, timeout, shell in sorted(tools.command_grants):
             self.ui.item(f"{command} · {directory} · {timeout}s" + (f" · {shell}" if shell != "cmd" else ""))
         for origin in sorted(tools.page_session_grants):
             self.ui.item(f"bấm, gõ trên {origin}")
-        if saved or pages:
+        for site in sorted(tools.site_session_grants):
+            self.ui.item(f"xem trang ngoài {site}")
+        if saved or pages or sites:
             self.ui.line("  Luôn cho phép ở dự án này (lưu trên máy):", "dim")
         for item in saved:
             where = "" if item["directory"] == "." else f" · trong {item['directory']}"
             self.ui.item(f"{item['command']}{where}" + (f" · {item['shell']}" if item["shell"] != "cmd" else ""))
         for origin in pages:
             self.ui.item(f"bấm, gõ trên {origin}")
+        for site in sites:
+            self.ui.item(f"xem trang ngoài {site}")
 
     def browser_window(self, value: str = "") -> None:
         """/trinhduyet hiện hoặc ẩn cửa sổ trình duyệt của Peto (chủ web chọn ngày 2026-09-23: ẩn, hiện khi cần);
@@ -474,7 +480,7 @@ class Session:
                 self.items.extend(output)
                 pending = [item for item in output if item.get("type") == "function_call"]
                 if not pending:
-                    if self.tools.changes and self.tools.command_revision < self.tools.revision and not verification_reminded:
+                    if self.tools.changes and self.tools.checked_revision < self.tools.revision and not verification_reminded:
                         verification_reminded = True
                         self.items.append({"type": "message", "role": "assistant", "content": (
                             "Kiểm tra sau sửa: xem hướng dẫn AGENTS.md và cấu hình dự án để chọn test/build/lint phù hợp. "

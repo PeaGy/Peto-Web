@@ -189,6 +189,32 @@ def test_verification_followup_is_bounded_and_honors_refusal(project):
     assert "không đồng ý" in client.bodies[3]["input"][-1]["output"]
 
 
+class FakePage:
+    """Trình duyệt giả: mở trang trên máy luôn được, không lỗi."""
+    notice = None
+    wait_for_server = False
+
+    def open(self, url, viewport=None):
+        return {"url": url, "title": "Thử", "status": 200, "viewport": "desktop", "seconds": 0.1, "loaded": True,
+                "outline": [], "elements": 0, "text_chars": 3, "problems": []}
+
+
+@pytest.mark.parametrize("check", [
+    call(2, "browser_open", url="http://localhost:8765/", viewport=None),
+    call(2, "run_command", command='curl -s -o nul -w "%{http_code}" http://localhost:5080/api/a && '
+                                   "curl -s http://127.0.0.1:5080/"),
+])
+def test_looking_at_the_page_or_calling_the_local_api_counts_as_checking(project, monkeypatch, check):
+    # Bài thi ngày 2026-09-24: xem trang hay gọi API sau khi sửa mà vẫn bị nhắc kiểm tra, tốn thêm bước.
+    monkeypatch.setattr("peto_agent.runner.run", lambda *args, **kwargs: {"exit_code": 0, "output": "404", "seconds": 0})
+    client = Client([[call(1, "write_file", path="index.html", content="<h1>mới</h1>")], [check], [message("xong")]])
+    work = Session(client, Workspace(project), FakeUI(["a"]))
+    work.tools.browser = FakePage()
+    work.run_task("sửa trang")
+    assert len(client.bodies) == 3, "đã kiểm lại sau khi sửa thì không nhắc kiểm tra nữa"
+    assert work.tools.checked_revision == work.tools.revision == 1
+
+
 def test_retry_keeps_checkpoint_and_counters_without_replaying_tools(project):
     client = Client([
         [call(1, "write_file", path="a", content="new")], ApiError(0, "lost"),

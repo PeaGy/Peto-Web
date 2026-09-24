@@ -608,3 +608,127 @@ def test_user_logs_in_themselves_while_peto_waits(site, agent_home):
         assert page.click("#ngoai")["notes"], "xong thì lại chặn trang ngoài"
     finally:
         page.close()
+
+
+# --- Đợt 3: trang ngoài, chỉ xem -----------------------------------------------------------------------------------
+
+PUBLIC = [(2, 1, 6, "", ("93.184.215.14", 0))]
+
+
+def test_outside_addresses_are_checked_and_the_home_network_is_refused(monkeypatch):
+    public = lambda host, port: PUBLIC  # noqa: E731
+    assert browser.route("localhost:5173") == "local" and browser.route("http://127.0.0.1/") == "local"
+    assert browser.route("https://docs.python.org/3/") == "outside" and browser.route("docs.python.org") == "outside"
+    assert browser.route("file:///C:/Windows/win.ini") == "local", "địa chỉ hỏng để check_url báo lỗi"
+    assert browser.check_outside("docs.python.org/3/", public) == ("https://docs.python.org/3/", "docs.python.org")
+    assert browser.check_outside("http://93.184.215.14/", public)[1] == "93.184.215.14"
+    for url in ("http://192.168.1.1/", "http://10.0.0.5/", "http://169.254.169.254/latest", "https://[fe80::1]/",
+                "http://100.64.0.1/", "http://router/", "http://nas.local/", "http://may-in.lan/", "ftp://example.com/",
+                "https://ten:matkhau@example.com/", "javascript:alert(1)", "http://example.com:99999/"):
+        with pytest.raises(BrowserError):
+            browser.check_outside(url, public)
+    home = lambda host, port: [(2, 1, 6, "", ("192.168.1.10", 0))]  # noqa: E731
+    with pytest.raises(BrowserError, match="mạng nhà"):
+        browser.check_outside("https://tro-ve-nha.example/", home)  # tên công khai trỏ về IP trong nhà
+
+    def offline(host, port):
+        raise OSError("không có mạng")
+
+    monkeypatch.setattr(browser, "_lookup", offline)
+    assert browser.check_outside("https://chua-phan-giai.example/")[1] == "chua-phan-giai.example", \
+        "DNS lỗi thì để trình duyệt tự báo"
+    assert browser.site_key("www.python.org") == "python.org" and browser.site_key("docs.python.org") == "docs.python.org"
+    assert browser.site_covers("python.org", "docs.python.org") and browser.site_covers("python.org", "python.org")
+    assert not browser.site_covers("python.org", "evilpython.org")
+    assert browser.long_url("https://example.com/?q=" + "a" * 130)
+    assert browser.long_url("https://example.com/" + "b" * 220)
+    assert not browser.long_url("https://docs.python.org/3/library/asyncio-task.html#asyncio.TaskGroup")
+
+
+class _OutsideSite(http.server.BaseHTTPRequestHandler):
+    """Trang "ngoài máy" giả: trình duyệt trỏ *.peto-test về 127.0.0.1 nên không cần mạng thật."""
+
+    def do_GET(self):  # noqa: N802
+        host, port = self.headers.get("Host", "").split(":")[0], self.server.server_address[1]
+        if host == "cdn.tai-lieu.peto-test":
+            self._send("<!doctype html><meta charset=utf-8><title>CDN</title><h1>Tệp tĩnh</h1>")
+        elif self.path == "/":
+            self._send(f"""<!doctype html><html lang="vi"><head><meta charset="utf-8"><title>Tài liệu thử</title>
+</head><body><h1>Tài liệu thử</h1><p>Trang ngoài để thử đợt 3.</p>
+<a href="/trang-sau">Trang sau</a> <a href="http://la.peto-test:{port}/">Trang lạ</a>
+<button onclick="document.body.insertAdjacentHTML('beforeend', '<p>bấm rồi</p>')">Nút</button>
+<input placeholder="Tìm"></body></html>""")
+        elif self.path == "/chuyen-la":
+            self._redirect(f"http://la.peto-test:{port}/")
+        elif self.path == "/chuyen-con":
+            self._redirect(f"http://cdn.tai-lieu.peto-test:{port}/")
+        elif self.path == "/ve-may":
+            self._send(f"<!doctype html><title>Về máy</title><script>location.href = 'http://127.0.0.1:{port}/';</script>")
+        else:
+            self.send_error(404)
+
+    def _send(self, body):
+        data = body.encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def _redirect(self, target):
+        self.send_response(302)
+        self.send_header("Location", target)
+        self.end_headers()
+
+    def handle(self):
+        try:
+            super().handle()
+        except ConnectionError:
+            pass
+
+    def log_message(self, *args):
+        pass
+
+
+@needs_browser
+def test_outside_pages_open_only_allowed_sites_read_only_in_a_clean_profile(agent_home):
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _OutsideSite)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    port = server.server_address[1]
+    allowed = {"tai-lieu.peto-test"}
+    page = browser.OutsideBrowser(lambda host: any(browser.site_covers(key, host) for key in allowed),
+                                  extra_args=["--host-resolver-rules=MAP *.peto-test 127.0.0.1"],
+                                  resolve=lambda host, port: PUBLIC)
+    base = f"http://tai-lieu.peto-test:{port}"
+    try:
+        opened = page.open(base + "/")
+        assert opened["title"] == "Tài liệu thử" and opened["status"] == 200
+        assert "liên kết: Trang sau → /trang-sau" in opened["outline"], "link cùng trang ghi đường dẫn"
+        assert f"liên kết: Trang lạ → http://la.peto-test:{port}/" in opened["outline"]
+        assert not any(item.startswith("[") for item in opened["outline"]), "trang ngoài không có số để bấm"
+        assert page.project_profile is None and page.profile.name.startswith(browser.PROFILE_PREFIX), \
+            "hồ sơ tạm riêng, không bao giờ là hồ sơ của dự án"
+        assert page.screenshot().width == 1280 and "Trang ngoài để thử" in page.read()["text"]
+        for act in (lambda: page.click("Nút"), lambda: page.type("input", "x"), lambda: page.press("Enter"),
+                    lambda: page.hand_over(lambda: True)):
+            with pytest.raises(BrowserError, match="Trang ngoài chỉ xem"):
+                act()
+        with pytest.raises(BrowserError, match="luôn chạy ẩn"):
+            page.set_visible(True)
+
+        with pytest.raises(BrowserError, match="la.peto-test: tên miền này chưa được phép"):
+            page.open(base + "/chuyen-la")
+        moved = page.open(base + "/chuyen-con")
+        assert urlsplit(moved["url"]).hostname == "cdn.tai-lieu.peto-test", "tên miền con của trang được phép thì đi"
+        with pytest.raises(BrowserError, match="địa chỉ trên máy hay trong mạng nhà"):
+            page.open(base + "/ve-may")  # trang ngoài tự chuyển về 127.0.0.1
+        with pytest.raises(BrowserError, match="mạng nhà"):
+            page.open("http://192.168.1.1/")
+        allowed.add("la.peto-test")
+        assert page.open(base + "/chuyen-la")["title"] == "Tài liệu thử", "người dùng cho phép rồi thì chuyển được"
+        profile = page.profile
+    finally:
+        page.close()
+        server.shutdown()
+        server.server_close()
+    assert not profile.exists(), "hồ sơ trang ngoài bị xóa khi đóng"

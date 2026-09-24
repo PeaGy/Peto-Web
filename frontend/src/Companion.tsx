@@ -339,6 +339,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
           </div>
         </header>
 
+        {voice.notice && <div className="companion-notice" role="status">{voice.notice}</div>}
         {voice.status === "missing" && (
           <div className="companion-notice">
             <span>Chưa thấy máy chủ giọng nói, Peto chỉ nhắn chữ.</span>

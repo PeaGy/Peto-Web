@@ -2,6 +2,15 @@
 import re
 import shlex
 
+# Lệnh gọi HTTP tới server trên máy (curl, Invoke-WebRequest…): Peto đang thử app vừa sửa, kể cả khi lệnh được nối
+# bằng && để gọi vài địa chỉ một lượt. Chỉ dùng để biết Peto đã kiểm lại việc mình làm, không bao giờ để cho phép chạy.
+LOCAL_PROBE = re.compile(r"(?i)\b(curl(\.exe)?|wget|invoke-webrequest|iwr|invoke-restmethod|irm)\b.*"
+                         r"\bhttps?://(localhost|127\.0\.0\.1|\[::1\])(:\d+)?\b")
+
+
+def local_probe(command):
+    return bool(LOCAL_PROBE.search(command))
+
 
 def command_kind(command):
     # Shell expressions and wrappers are deliberately left unknown.

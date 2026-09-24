@@ -521,6 +521,40 @@ async def test_page_actions_only_reach_clis_that_can_click_and_type(anon_client,
     assert "gõ mật khẩu" in acting["instructions"], "dặn rõ Peto không bao giờ gõ mật khẩu"
 
 
+async def test_outside_pages_only_reach_clis_that_declare_them(anon_client, client, monkeypatch):
+    """Đợt 3 (2026-09-24): CLI 0.12.0 khai báo "browser_outside". Chỉ CLI đó được dặn là mở được trang ngoài, chỉ xem,
+    hỏi mỗi tên miền; CLI 0.11.x vẫn nhận đúng từng chữ như cũ và vẫn bị dặn là trang ngoài bị từ chối."""
+    from agent_tools import tool_schemas
+
+    seen = []
+
+    async def record(**kwargs):
+        seen.append(kwargs)
+        from ai.agent import AgentEvent
+        yield AgentEvent("done", output=(), usage={"input_tokens": 1, "output_tokens": 1})
+
+    monkeypatch.setattr(agent_api, "agent_step", record)
+    await login_as(client, "discord")
+    token = await connect(anon_client, client)
+    for features in (["cwd", "browser", "browser_act"], ["cwd", "browser", "browser_act", "browser_outside"],
+                     ["browser_outside"]):
+        await anon_client.post("/api/agent/step", headers=bearer(token),
+                               json={"input": [DEMO_TASK], "effort": "low", "context": {"features": features}})
+    acting, outside, alone = seen
+    opener = lambda call: next(tool for tool in call["tools"] if tool["name"] == "browser_open")  # noqa: E731
+    assert acting["tools"] is tool_schemas(frozenset({"cwd", "browser", "browser_act"}))
+    assert "trang ngoài bị từ chối" in opener(acting)["description"]
+    assert "trang ngoài bị từ chối" not in opener(outside)["description"]
+    assert "hỏi" in opener(outside)["description"] and "mạng nhà" in opener(outside)["description"]
+    assert "[3]" in opener(outside)["description"], "trang trên máy vẫn bấm, gõ được"
+    assert [tool["name"] for tool in outside["tools"]] == [tool["name"] for tool in acting["tools"]]
+    assert not any(tool["name"].startswith("browser") for tool in alone["tools"])
+    assert "## Trang ngoài" in outside["instructions"] and "## Trang ngoài" not in acting["instructions"]
+    assert "trang ngoài bị từ chối" in acting["instructions"]
+    assert "trang ngoài bị từ chối" not in outside["instructions"]
+    assert "tìm web" in outside["instructions"] and "đường dẫn hay query" in outside["instructions"]
+
+
 def test_agent_prompt_explains_the_step_budget_and_the_new_tools():
     """Công cụ có mà chỉ dẫn không nói thì Peto không dùng; giữ hai thứ đi cùng nhau."""
     from persona import AGENT_PROMPT

@@ -7,14 +7,17 @@ Chủ web chọn từ bản phác ngày 2026-09-23:
 - Đợt 2 (0.11.0): bấm, gõ, nhấn phím, hỏi quyền một lần cho mỗi trang (tools.py). Cửa sổ vẫn ẩn, hiện khi người dùng gõ
   /trinhduyet hoặc khi Peto nhờ họ đăng nhập. Peto không bao giờ gõ vào ô mật khẩu: người dùng tự đăng nhập trong cửa
   sổ, và hồ sơ trình duyệt riêng của từng dự án (không phải Edge của người dùng) giữ đăng nhập sang phiên sau.
+- Đợt 3 (0.12.0, chủ web chọn ngày 2026-09-24): trang ngoài máy, chỉ xem, hỏi quyền theo tên miền, trong một trình duyệt
+  riêng (OutsideBrowser) không cookie và không đăng nhập nào, xóa khi đóng peto. Không mở địa chỉ trong mạng nhà.
 
 Cách làm và ranh giới:
 
 - Chỉ dùng thư viện chuẩn: điều khiển trình duyệt qua giao thức DevTools (CDP) bằng một máy khách WebSocket nhỏ. Bấm và
   gõ là sự kiện chuột, bàn phím thật (trang thấy isTrusted), không phải gọi hàm JavaScript thay người dùng.
-- Chỉ trang trên máy (localhost, 127.x, ::1, *.localhost). Trang ngoài là đường rò dữ liệu (Peto đọc tệp rồi mở một địa
-  chỉ, hay gửi một form, mang theo nội dung đó) và là chỗ trang lạ nhét chỉ dẫn vào; file:// thì đọc được tệp ngoài dự
-  án. Mọi lần trang chính chuyển ra ngoài máy (link, form, chuyển hướng, JavaScript) bị chặn trước khi request rời máy.
+- Trình duyệt của dự án chỉ mở trang trên máy (localhost, 127.x, ::1, *.localhost). Trang ngoài là đường rò dữ liệu
+  (Peto đọc tệp rồi mở một địa chỉ, hay gửi một form, mang theo nội dung đó) và là chỗ trang lạ nhét chỉ dẫn vào;
+  file:// thì đọc được tệp ngoài dự án. Mọi lần trang chính chuyển ra ngoài máy (link, form, chuyển hướng, JavaScript)
+  bị chặn trước khi request rời máy. Trang ngoài chỉ mở trong OutsideBrowser, tên miền nào cũng phải được cho phép.
 - Edge là ứng dụng có cửa sổ nên không tắt theo console như lệnh nền. Trên Windows, nó được tạo ở trạng thái tạm dừng,
   gắn vào một job object "tắt hết khi đóng" rồi mới chạy: peto chết kiểu gì (kể cả bấm X đóng cửa sổ terminal) thì
   Windows cũng tắt cả cây tiến trình Edge. Đã thử ngày 2026-09-23.
@@ -101,6 +104,17 @@ KEYS = {
 }
 KEY_ALIASES = {"esc": "Escape", "return": "Enter", "spacebar": "Space", " ": "Space", "shift tab": "Shift+Tab",
                "up": "ArrowUp", "down": "ArrowDown", "left": "ArrowLeft", "right": "ArrowRight"}
+# Tên miền của mạng nhà, không phải trang ngoài: không mở, và trang ngoài không được chuyển tới đó.
+HOME_SUFFIXES = (".local", ".lan", ".internal", ".intranet", ".corp", ".home.arpa", ".localdomain")
+# Địa chỉ trang ngoài dài quá mức này thì luôn hỏi lại, kể cả khi tên miền đã được phép: phần đường dẫn và query có thể
+# đang mang dữ liệu của người dùng tới máy chủ của trang đó.
+LONG_URL_CHARS = 200
+LONG_QUERY_CHARS = 120
+# Trang ngoài không được gọi vào máy hay mạng nhà (Private Network Access của Chromium).
+OUTSIDE_FEATURES = ("--enable-features=BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessSendPreflights,"
+                    "PrivateNetworkAccessRespectPreflightResults")
+READ_ONLY = ("Trang ngoài chỉ xem: Peto không bấm, gõ hay đăng nhập trên trang ngoài. Muốn sang trang khác thì gọi "
+             "browser_open với địa chỉ của link (sau dấu → trong danh sách phần tử).")
 # Trường của cookie mà Storage.setCookies nhận lại được.
 COOKIE_FIELDS = ("name", "value", "domain", "path", "secure", "httpOnly", "sameSite", "priority", "sourceScheme",
                  "sourcePort", "partitionKey")
@@ -158,10 +172,101 @@ def check_url(url: str) -> str:
         _ = parts.port  # cổng sai (chữ, quá 65535) thì ném ValueError
     except ValueError:
         raise BrowserError(f"Địa chỉ không hợp lệ: {url}") from None
-    if parts.scheme not in {"http", "https"} or not is_local(host) or parts.username or parts.password:
-        raise BrowserError("Peto chỉ mở trang chạy trên máy (localhost, 127.0.0.1); trang ngoài và địa chỉ file://, "
-                           "javascript:, data: không mở được.")
+    if parts.scheme not in {"http", "https"} or parts.username or parts.password:
+        raise BrowserError("Chỉ mở được trang http hoặc https; địa chỉ file://, javascript:, data: và địa chỉ có tên đăng "
+                           "nhập, mật khẩu thì không.")
+    if not is_local(host):
+        raise BrowserError("Trình duyệt của dự án chỉ mở trang trên máy (localhost, 127.0.0.1).")
     return text
+
+
+def route(url: str) -> str:
+    """"local" cho trang trên máy (và địa chỉ hỏng, để check_url báo lỗi), "outside" cho trang ngoài."""
+    text = (url or "").strip()
+    if text and "://" not in text and not text.lower().startswith(("file:", "javascript:", "data:", "about:")):
+        text = "http://" + text
+    try:
+        host = urlsplit(text).hostname
+    except ValueError:
+        return "local"
+    return "outside" if host and not is_local(host) else "local"
+
+
+def _private_ip(text: str) -> bool:
+    try:
+        address = ipaddress.ip_address(text.strip("[]"))
+    except ValueError:
+        return False
+    return not address.is_global or address.is_multicast
+
+
+def _home_network(host: str, resolve=None) -> bool:
+    """Máy này hay mạng nhà: localhost, IP riêng (192.168.x, 10.x, fe80::…), tên không có dấu chấm, .local, .lan…
+
+    ``resolve`` (như socket.getaddrinfo) thì hỏi thêm DNS: tên công khai mà trỏ về IP riêng cũng tính là mạng nhà.
+    Không phân giải được thì thôi, để trình duyệt tự báo.
+    """
+    host = (host or "").strip(".").lower()
+    if not host or is_local(host) or _private_ip(host):
+        return True
+    try:
+        ipaddress.ip_address(host.strip("[]"))
+        return False  # IP công khai
+    except ValueError:
+        pass
+    if "." not in host or host.endswith(HOME_SUFFIXES):
+        return True
+    if resolve is None:
+        return False
+    try:
+        addresses = {info[4][0] for info in resolve(host, None)}
+    except (OSError, UnicodeError):
+        return False
+    return any(_private_ip(str(address).split("%")[0]) for address in addresses)
+
+
+def _lookup(host: str, port):
+    return socket.getaddrinfo(host, port)
+
+
+def check_outside(url: str, resolve=None) -> tuple[str, str]:
+    """Trang ngoài được phép mở: http(s) tới một tên miền hay IP công khai. Thiếu http:// thì thêm https://.
+
+    Tên miền được hỏi DNS (``resolve``, mặc định _lookup) để tên công khai trỏ về IP trong nhà cũng bị từ chối.
+    """
+    text = (url or "").strip()
+    if text and "://" not in text and not text.lower().startswith(("file:", "javascript:", "data:", "about:")):
+        text = "https://" + text
+    try:
+        parts = urlsplit(text)
+        host = (parts.hostname or "").lower()
+        _ = parts.port
+    except ValueError:
+        raise BrowserError(f"Địa chỉ không hợp lệ: {url}") from None
+    if parts.scheme not in {"http", "https"} or not host or parts.username or parts.password:
+        raise BrowserError("Chỉ mở được trang http hoặc https; địa chỉ file://, javascript:, data: và địa chỉ có tên đăng "
+                           "nhập, mật khẩu thì không.")
+    if _home_network(host, resolve or _lookup):
+        raise BrowserError(f"{host} là địa chỉ trên máy hay trong mạng nhà (router, máy khác trong nhà); Peto không mở "
+                           "nó như trang ngoài.")
+    return text, host
+
+
+def site_key(host: str) -> str:
+    """Tên miền để hỏi quyền: bỏ "www." ở đầu, để cho phép python.org là được cả www.python.org lẫn docs.python.org."""
+    host = (host or "").strip(".").lower()
+    return host[4:] if host.startswith("www.") and host.count(".") >= 2 else host
+
+
+def site_covers(key: str, host: str) -> bool:
+    host = (host or "").strip(".").lower()
+    return bool(key) and (host == key or host.endswith("." + key))
+
+
+def long_url(url: str) -> bool:
+    """Địa chỉ dài bất thường: có thể đang mang dữ liệu đi, nên luôn hỏi lại người dùng."""
+    parts = urlsplit(url)
+    return len(parts.path) + len(parts.query) > LONG_URL_CHARS or len(parts.query) > LONG_QUERY_CHARS
 
 
 def _short(url: str, base: str) -> str:
@@ -413,9 +518,13 @@ class Browser:
     duyệt không đổi được giữa ẩn và hiện khi đang chạy, nên đổi là mở lại với cùng hồ sơ.
     """
 
+    # Trang ngoài chỉ xem nên danh sách phần tử ghi địa chỉ của link thay cho số để bấm (OutsideBrowser).
+    links_in_outline = False
+
     def __init__(self, executable: str | None = None, profile: Path | None = None):
         self.executable = executable
         self.project_profile = profile
+        self.extra_args: list[str] = []
         self.profile: Path | None = None
         self.temporary = True
         self.lock = None
@@ -502,7 +611,7 @@ class Browser:
                 # Cửa sổ hiện mà bị terminal che vẫn phải vẽ tiếp, không thì chờ khung hình và chụp ảnh đều treo.
                 "--disable-backgrounding-occluded-windows", "--disable-renderer-backgrounding",
                 "--disable-background-timer-throttling",
-                "--window-size=1280,800" if headless else "--window-size=1320,940", "about:blank"]
+                "--window-size=1280,800" if headless else "--window-size=1320,940", *self.extra_args, "about:blank"]
         if headless:
             args.insert(1, "--headless=new")
         try:
@@ -583,8 +692,10 @@ class Browser:
                 pass
             ws.close()
         if process is not None:
+            # Hồ sơ của dự án cần tắt êm để cookie đăng nhập kịp ghi xuống đĩa. Hồ sơ tạm sắp bị xóa thì không cần:
+            # trình duyệt trang ngoài đi mạng thật có khi mất trọn 3 giây mới tự tắt, làm /thoat chậm (2026-09-24).
             try:
-                process.wait(3)
+                process.wait(0.5 if self.temporary else 3)
             except subprocess.TimeoutExpired:
                 pass
         if job is not None:
@@ -740,17 +851,36 @@ class Browser:
         answer = "đã đóng" if kind == "alert" else "đã chọn OK" if accept else "đã chọn Hủy"
         self.dialogs.add(f"{kind} \"{_clip(params.get('message', ''), 120)}\" ({answer})")
 
+    def _main_allowed(self, url: str) -> bool:
+        """Trang chính được chuyển tới địa chỉ này không. Trình duyệt của dự án: chỉ trang trên máy."""
+        return _local_url(url)
+
+    def _frame_allowed(self, url: str) -> bool:
+        return True
+
+    def _blocked_note(self, url: str, main: bool) -> str:
+        return f"Peto chặn chuyển sang {_outside(url)} vì trang đó ngoài máy này; trang giữ nguyên."
+
+    def _blocked_message(self, host: str) -> str:
+        return f"Trang chuyển sang {host}, ngoài máy này; Peto chỉ xem trang trên máy."
+
+    def _open_failed(self, target: str, error: str) -> str:
+        return (f"Không mở được {target} ({error}). Dev server đã chạy và đúng cổng chưa? Chạy nó bằng start_command "
+                "rồi đọc output để lấy đúng địa chỉ.")
+
     def _paused(self, params: dict) -> None:
-        """Request tài liệu (trang, khung) bị giữ lại để xét: trang chính ra ngoài máy thì chặn, còn lại cho đi."""
+        """Request tài liệu (trang, khung) bị giữ lại để xét: trang chính tới chỗ không được phép thì chặn."""
         url = (params.get("request") or {}).get("url", "")
-        if params.get("frameId") != self.frame or _local_url(url):
+        main = params.get("frameId") == self.frame
+        if self._main_allowed(url) if main else self._frame_allowed(url):
             self._send("Fetch.continueRequest", {"requestId": params.get("requestId")})
             return
         # Trả 204 thì trình duyệt bỏ lần chuyển trang và giữ nguyên trang đang xem; request không rời khỏi máy.
-        self.blocked = url
+        if main:
+            self.blocked = url
         self._send("Fetch.fulfillRequest", {"requestId": params.get("requestId"), "responseCode": 204,
                                             "responseHeaders": []})
-        self.notes.add(f"Peto chặn chuyển sang {_outside(url)} vì trang đó ngoài máy này; trang giữ nguyên.")
+        self.notes.add(self._blocked_note(url, main))
 
     def _popup(self, info: dict) -> None:
         if info.get("type") != "page" or info.get("openerId") != self.target or self.handing_over:
@@ -851,8 +981,17 @@ class Browser:
             cookies = self._call("Storage.getCookies").get("cookies") or []
         except BrowserError:
             return
-        self.session_cookies = [{field: cookie[field] for field in COOKIE_FIELDS if field in cookie}
-                                for cookie in cookies if cookie.get("session")]
+        # Hồ sơ tạm bị tắt nhanh, không chờ ghi cookie xuống đĩa (_stop), nên nhớ cả cookie có hạn; hồ sơ của dự án tắt
+        # êm nên cookie có hạn đã nằm trong hồ sơ, chép lại bản cũ có khi đè lên bản mới hơn.
+        kept = []
+        for cookie in cookies:
+            if not (self.temporary or cookie.get("session")):
+                continue
+            item = {field: cookie[field] for field in COOKIE_FIELDS if field in cookie}
+            if not cookie.get("session") and (cookie.get("expires") or 0) > 0:
+                item["expires"] = cookie["expires"]  # cookie phiên có expires -1: gửi lại là thành cookie hết hạn
+            kept.append(item)
+        self.session_cookies = kept
 
     # --- xem trang -----------------------------------------------------------------------------------------------
 
@@ -934,8 +1073,11 @@ class Browser:
         self.url = None
         raise BrowserError(message)
 
+    def _check(self, url: str) -> str:
+        return check_url(url)
+
     def _load(self, url: str, viewport: str | None) -> dict:
-        target = check_url(url)
+        target = self._check(url)
         self._start()
         key = self._set_viewport(viewport)
         self._reset_page()
@@ -949,15 +1091,13 @@ class Browser:
             self._pump(0.5)  # dev server chưa nghe cổng: chờ rồi thử lại
             self._reset_page()
         def blocked() -> str:
-            return (f"Trang chuyển sang {urlsplit(self.blocked).hostname or self.blocked}, ngoài máy này; Peto chỉ "
-                    "xem trang trên máy.")
+            return self._blocked_message(urlsplit(self.blocked).hostname or self.blocked)
 
         if self.blocked:
             self._leave(blocked())
         if result.get("errorText"):
             self.url = None
-            raise BrowserError(f"Không mở được {target} ({result['errorText']}). Dev server đã chạy và đúng cổng chưa? "
-                               "Chạy nó bằng start_command rồi đọc output để lấy đúng địa chỉ.")
+            raise BrowserError(self._open_failed(target, result["errorText"]))
         if result.get("loaderId"):
             self._settle(started)
         else:
@@ -965,11 +1105,10 @@ class Browser:
         if self.blocked:
             self._leave(blocked())
         seconds = time.monotonic() - started
-        page = self._script(SNAPSHOT_SCRIPT, MAX_OUTLINE, False) or {}
+        page = self._script(SNAPSHOT_SCRIPT, MAX_OUTLINE, False, self.links_in_outline) or {}
         final = page.get("url") or target
-        if not _local_url(final):
-            self._leave(f"Trang chuyển sang {urlsplit(final).hostname or final}, ngoài máy này; Peto chỉ xem trang "
-                        "trên máy.")
+        if not self._main_allowed(final):
+            self._leave(self._blocked_message(urlsplit(final).hostname or final))
         self.url = final
         return {"url": final, "title": page.get("title") or "", "status": self.status, "viewport": key,
                 "seconds": round(seconds, 1), "loaded": self.loaded, "outline": page.get("outline") or [],
@@ -1077,7 +1216,7 @@ class Browser:
     def _act(self, kind: str, *, target: str | None = None, text: str | None = None, submit: bool = False,
              key: str | None = None, accept_dialog: bool = False) -> dict:
         self._require_page()
-        before = self._script(SNAPSHOT_SCRIPT, MAX_OUTLINE * 2, True) or {}
+        before = self._script(SNAPSHOT_SCRIPT, MAX_OUTLINE * 2, True, False) or {}
         self.loading = self.stopped = self.navigated = False
         self.blocked = None
         self.accept_dialog = accept_dialog
@@ -1096,7 +1235,7 @@ class Browser:
             self._after_action()
         finally:
             self.accept_dialog = False
-        after = self._script(SNAPSHOT_SCRIPT, MAX_OUTLINE * 2, True) or {}
+        after = self._script(SNAPSHOT_SCRIPT, MAX_OUTLINE * 2, True, False) or {}
         final = after.get("url") or self.url
         if not _local_url(final):
             self._leave(f"Trang chuyển sang {urlsplit(final).hostname or final}, ngoài máy này.")
@@ -1214,13 +1353,74 @@ class Browser:
         for feed in (self.problems, self.dialogs, self.notes):
             feed.fresh()
         self.inflight.clear()
-        page = self._script(SNAPSHOT_SCRIPT, MAX_OUTLINE, False) or {}
+        page = self._script(SNAPSHOT_SCRIPT, MAX_OUTLINE, False, False) or {}
         if not _local_url(page.get("url") or ""):
             self._load(back, self.viewport)
-            page = self._script(SNAPSHOT_SCRIPT, MAX_OUTLINE, False) or {}
+            page = self._script(SNAPSHOT_SCRIPT, MAX_OUTLINE, False, False) or {}
         self.url = page.get("url") or back
         self._remember_cookies()
         return {"done": done, "url": self.url, "title": page.get("title") or "", "outline": page.get("outline") or []}
+
+
+class OutsideBrowser(Browser):
+    """Trình duyệt cho trang ngoài máy (đợt 3, chủ web chọn ngày 2026-09-24): chỉ xem.
+
+    - Hồ sơ tạm riêng, không bao giờ là hồ sơ của dự án: hồ sơ đó có thể giữ đăng nhập Discord, Google người dùng đã
+      dùng để đăng nhập app, và mở trang ngoài bằng nó là đi vào tài khoản của họ. Xóa khi đóng peto.
+    - Luôn chạy ẩn, không có /trinhduyet, không nhờ đăng nhập, không bấm, gõ.
+    - Trang chính chỉ được chuyển tới tên miền người dùng đã cho phép (``allow(host)``, do tools.py giữ quyền); không bao
+      giờ tới máy này hay mạng nhà, kể cả khung trang. Private Network Access chặn trang ngoài gọi vào mạng nhà.
+    """
+
+    links_in_outline = True
+
+    def __init__(self, allow: Callable[[str], bool], *, executable: str | None = None, extra_args=(), resolve=None):
+        super().__init__(executable=executable, profile=None)
+        self.allow = allow
+        self.resolve = resolve
+        self.force_headless = True
+        self.extra_args = [OUTSIDE_FEATURES, *extra_args]
+
+    def _check(self, url: str) -> str:
+        return check_outside(url, self.resolve)[0]
+
+    def _main_allowed(self, url: str) -> bool:
+        parts = urlsplit(url or "")
+        host = parts.hostname or ""
+        return parts.scheme in {"http", "https"} and not _home_network(host) and self.allow(host)
+
+    def _frame_allowed(self, url: str) -> bool:
+        parts = urlsplit(url or "")
+        return parts.scheme not in {"http", "https"} or not _home_network(parts.hostname or "")
+
+    def _blocked_note(self, url: str, main: bool) -> str:
+        if _home_network(urlsplit(url).hostname or ""):
+            what = "chuyển sang" if main else "mở khung trang tới"
+            return f"Peto chặn trang ngoài {what} {_outside(url)}: địa chỉ trên máy hay trong mạng nhà."
+        return (f"Peto chặn chuyển sang {_outside(url)} vì tên miền đó chưa được phép; mở nó bằng browser_open để "
+                "người dùng được hỏi.")
+
+    def _blocked_message(self, host: str) -> str:
+        if _home_network(host):
+            return f"Trang chuyển sang {host}, là địa chỉ trên máy hay trong mạng nhà; Peto không mở."
+        return (f"Trang chuyển sang {host}: tên miền này chưa được phép. Cần xem thì gọi browser_open với địa chỉ đó để "
+                "người dùng được hỏi.")
+
+    def _open_failed(self, target: str, error: str) -> str:
+        return f"Không mở được {target} ({error}). Kiểm tra lại địa chỉ, hoặc trang đó đang không truy cập được."
+
+    def _act(self, kind: str, **options) -> dict:
+        raise BrowserError(READ_ONLY)
+
+    def describe(self, kind: str, target: str | None = None, text: str | None = None, submit: bool = False,
+                 key: str | None = None) -> str:
+        raise BrowserError(READ_ONLY)
+
+    def hand_over(self, wait: Callable[[], bool]) -> dict:
+        raise BrowserError(READ_ONLY)
+
+    def set_visible(self, visible: bool) -> None:
+        raise BrowserError("Trình duyệt trang ngoài luôn chạy ẩn.")
 
 
 def _action_text(kind: str, found: dict, text: str | None, submit: bool) -> str:
@@ -1392,8 +1592,21 @@ PRELUDE = r"""
 # Tiêu đề, địa chỉ và các phần tử đang hiện: tiêu đề, liên kết, nút, ô nhập, ảnh (ảnh thiếu alt được ghi rõ; ảnh
 # alt="" là ảnh trang trí nên bỏ qua). Phần tử thao tác được có số trong ngoặc vuông. Kèm các dòng chữ trên trang khi
 # cần so trước và sau một thao tác.
-SNAPSHOT_SCRIPT = r"""(max, withLines) => {
+SNAPSHOT_SCRIPT = r"""(max, withLines, links) => {
   /*PRELUDE*/
+  // Trang ngoài chỉ xem: không có số để bấm; link ghi địa chỉ (cùng trang thì chỉ đường dẫn) để Peto mở tiếp.
+  const line = (el) => {
+    if (!links) return entry(el);
+    if (el.tagName === 'A' && el.getAttribute('href')) {
+      let target = el.href;
+      try {
+        const address = new URL(target);
+        if (address.origin === location.origin) target = address.pathname + address.search + address.hash;
+      } catch (error) {}
+      return describe(el) + ' → ' + clean(target, 100);
+    }
+    return describe(el);
+  };
   const outline = [];
   let total = 0;
   for (const el of document.querySelectorAll('h1,h2,h3,img,' + INTERACTIVE)) {
@@ -1405,7 +1618,7 @@ SNAPSHOT_SCRIPT = r"""(max, withLines) => {
     if (el.tagName === 'IMG' && !interactive && !el.hasAttribute('alt')) {
       outline.push('ảnh: (thiếu alt) ' + (el.getAttribute('src') || '').slice(-60));
     } else {
-      outline.push(entry(el));
+      outline.push(line(el));
     }
   }
   const text = document.body ? document.body.innerText : '';

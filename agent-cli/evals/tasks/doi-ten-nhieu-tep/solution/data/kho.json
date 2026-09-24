@@ -1,0 +1,9 @@
+{
+  "items": [
+    {"product_code": "A-100", "name": "Bút bi xanh", "qty": 120, "price": 5000},
+    {"product_code": "A-101", "name": "Bút chì 2B", "qty": 4, "price": 4000},
+    {"product_code": "B-200", "name": "Vở 200 trang", "qty": 35, "price": 18000},
+    {"product_code": "C-310", "name": "Thước kẻ 30cm", "qty": 2, "price": 9000},
+    {"product_code": "D-450", "name": "Balo học sinh", "qty": 9, "price": 245000}
+  ]
+}

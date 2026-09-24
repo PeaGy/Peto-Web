@@ -682,7 +682,8 @@ def test_each_step_tells_the_server_which_new_tool_parameters_this_cli_understan
     work, ui = start(project, peto, ["y", "y"])
     work.run_task("Sửa README giúp mình")
     steps = [request["body"] for request in peto.requests if request["path"] == "/api/agent/step"]
-    assert steps and all(body["context"]["features"] == ["cwd", "browser", "browser_act"] for body in steps)
+    assert steps and all(body["context"]["features"] == ["cwd", "browser", "browser_act", "browser_outside"]
+                         for body in steps)
 
 
 def test_note_command_writes_agents_md_without_calling_the_model(project, peto, monkeypatch):
@@ -980,3 +981,131 @@ def test_browser_window_command_shows_hides_and_forgets(project, peto, monkeypat
     work.browser_window("xoa")
     assert "đang được một phiên peto khác dùng" in ui.text
     assert PageBrowser.instances[-1].profile == browser_module.project_profile(project), "hồ sơ riêng của dự án"
+
+
+# --- Trình duyệt đợt 3: trang ngoài, chỉ xem -------------------------------------------------------------------------
+
+
+class OutsidePage:
+    """Trình duyệt trang ngoài giả: ghi lại địa chỉ đã mở; quyền tên miền nằm ở ``allow`` do Tools giữ."""
+
+    def __init__(self, allow, **options):
+        self.allow = allow
+        self.opened: list = []
+        self.url = None
+        self.running = False
+
+    def open(self, url, viewport=None):
+        self.opened.append(url)
+        self.url, self.running = url, True
+        return {"url": url, "title": "Trang ngoài", "status": 200, "viewport": "desktop", "seconds": 0.5, "loaded": True,
+                "outline": ["tiêu đề 1: asyncio", "liên kết: Coroutines and Tasks → /3/library/asyncio-task.html"],
+                "elements": 2, "text_chars": 40, "problems": []}
+
+    def read(self, selector=None):
+        return {"url": self.url, "text": "Nội dung trang ngoài", "chars": 20, "truncated": False}
+
+    def late_problems(self):
+        return []
+
+    def new_dialogs(self):
+        return []
+
+    def new_notes(self):
+        return []
+
+    def close(self):
+        self.running = False
+
+
+DOCS = "https://docs.python.org/3/library/asyncio.html"
+TASKS = "https://docs.python.org/3/library/asyncio-task.html"
+
+
+def outside_setup(monkeypatch):
+    from peto_agent import browser as browser_module
+
+    monkeypatch.setattr(browser_module, "_lookup", lambda host, port: [(2, 1, 6, "", ("93.184.215.14", 0))])
+    monkeypatch.setattr(browser_module, "OutsideBrowser", OutsidePage)
+    return browser_module
+
+
+def test_outside_pages_ask_once_per_domain_and_stay_read_only(project, peto, monkeypatch):
+    """Đợt 3 (chủ web chọn 2026-09-24): hỏi mỗi tên miền, kèm đủ địa chỉ; [y] tới hết yêu cầu, [s] cả phiên, [l] luôn ở
+    dự án. Trang ngoài chỉ xem, trong trình duyệt riêng, không động tới trình duyệt của dự án."""
+    from peto_agent import approvals
+
+    browser_module = outside_setup(monkeypatch)
+    first = [call(0, "browser_open", url=DOCS, viewport=None), call(1, "browser_read", selector=None),
+             call(2, "browser_open", url=TASKS, viewport=None),
+             call(3, "browser_click", target="1", accept_dialog=None),
+             call(4, "browser_open", url="https://www.example.com/", viewport=None)]
+    again = [call(5, "browser_open", url=TASKS, viewport=None),
+             call(6, "browser_open", url="https://example.com/khac", viewport=None),
+             call(7, "browser_login", reason="trang cần đăng nhập")]
+    peto.reply = scripted({"Đọc tài liệu asyncio": first, "Xem lại": again})
+    work, ui = start(project, peto, ["y", "s", "l"])
+    prompts, read = [], ui.reader
+    ui.reader = lambda prompt: (prompts.append(prompt), read(prompt))[1]
+    work.run_task("Đọc tài liệu asyncio")
+    text = ui.text
+    assert text.count("▶ Muốn mở trang ngoài") == 2, "docs.python.org hỏi một lần, example.com một lần"
+    assert f"    {DOCS}" in text and "Trình duyệt riêng, không cookie hay đăng nhập nào; Peto chỉ xem." in text
+    assert prompts[0] == ("    [s] docs.python.org cả phiên  [l] luôn cho phép ở dự án này · Đồng ý cho docs.python.org"
+                          " tới hết yêu cầu? [y] có  [n] không  [a] có cho mọi bước trong yêu cầu này ›")
+    assert "[s] example.com cả phiên" in prompts[1], "www. được bỏ: cho example.com là gồm cả www"
+    assert f"• Xem trang {TASKS} · máy tính 1280×800" in text
+    assert "✗ Trang ngoài chỉ xem: mở link bằng địa chỉ của nó." in text
+    outputs = page_results(peto, 1)
+    assert outputs[0]["ok"] and outputs[0]["outside"] and "→ /3/library/asyncio-task.html" in outputs[0]["outline"][1]
+    assert outputs[1]["text"] == "Nội dung trang ngoài", "đọc đúng trang ngoài vừa mở"
+    assert outputs[3]["error"] == browser_module.READ_ONLY
+    assert work.tools.outside.opened == [DOCS, TASKS, "https://www.example.com/"]
+    assert work.tools.browser is None, "trang ngoài không mở trình duyệt của dự án (hồ sơ có đăng nhập)"
+
+    work.run_task("Xem lại")  # [y] chỉ tới hết yêu cầu trước: docs hỏi lại (chọn l); example.com còn [s] cả phiên
+    assert ui.text.count("▶ Muốn mở trang ngoài") == 3 and approvals.sites(project) == ["docs.python.org"]
+    assert "✗ Trang ngoài chỉ xem: Peto không nhờ đăng nhập trên trang ngoài." in ui.text
+    work.permissions()
+    assert "xem trang ngoài example.com" in ui.text and "xem trang ngoài docs.python.org" in ui.text
+
+    later, later_ui = start(project, peto, [])  # phiên mới: docs.python.org đã luôn cho phép, không hỏi
+    peto.reply = scripted({"Mở tài liệu": [call(8, "browser_open", url=DOCS, viewport=None)]})
+    later.run_task("Mở tài liệu")
+    assert "▶ Muốn mở trang ngoài" not in later_ui.text
+    assert "docs.python.org đã được luôn cho phép xem trong dự án" in later_ui.text
+
+
+def test_long_addresses_refusals_and_the_home_network(project, peto, monkeypatch):
+    """Địa chỉ dài bất thường luôn hỏi lại cho đúng địa chỉ đó, kể cả tên miền đã được phép; mạng nhà bị từ chối không
+    cần hỏi; bị từ chối thì chụp, đọc sau đó trong cùng bước bị bỏ qua (trang đang hiện là trang cũ)."""
+    from peto_agent import approvals
+
+    outside_setup(monkeypatch)
+    approvals.add_site(project, "docs.python.org")
+    long = "https://docs.python.org/search.html?q=" + "bi-mat-" * 25
+    script = {
+        "Tìm trong tài liệu": [call(0, "browser_open", url=long, viewport=None),
+                               call(1, "browser_open", url=long + "x", viewport=None)],
+        "Mở trang lạ": [call(2, "browser_open", url="https://la.example/", viewport=None),
+                        call(3, "browser_screenshot", viewport=None, full_page=None),
+                        call(4, "browser_read", selector=None)],
+        "Mở router": [call(5, "browser_open", url="http://192.168.1.1/", viewport=None)],
+    }
+    peto.reply = scripted(script)
+    work, ui = start(project, peto, ["y", "n", "n"])
+    work.run_task("Tìm trong tài liệu")
+    assert ui.text.count("▶ Muốn mở trang ngoài (địa chỉ dài bất thường)") == 2, "hỏi cho từng địa chỉ dài"
+    assert "có thể đang mang dữ liệu của bạn tới docs.python.org" in ui.text
+    outputs = page_results(peto, 1)
+    assert outputs[0]["ok"] and outputs[1]["error"].startswith("Người dùng không đồng ý mở trang ngoài docs.python.org")
+    assert approvals.sites(project) == ["docs.python.org"], "đồng ý địa chỉ dài không cho thêm gì"
+
+    work.run_task("Mở trang lạ")
+    outputs = page_results(peto, 3)
+    assert outputs[0]["error"].startswith("Người dùng không đồng ý mở trang ngoài la.example")
+    assert all(output["error"].startswith("Bỏ qua: lần mở trang trước đó") for output in outputs[1:])
+
+    work.run_task("Mở router")
+    assert "192.168.1.1 là địa chỉ trên máy hay trong mạng nhà" in ui.text
+    assert ui.text.count("▶ Muốn mở trang ngoài") == 3, "mạng nhà bị từ chối ngay, không hỏi"

@@ -8,6 +8,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 from auth import current_owner
+import speech_cloud
 
 router = APIRouter(prefix="/api/voice")
 VOICES = ["playful-1", "gentle-2"]
@@ -15,6 +16,7 @@ TIMEOUT = 120
 MAX_AUDIO = 8 * 1024 * 1024
 jobs: dict = {}
 last_seen = 0.0
+active_speakers: set[str] = set()
 
 
 def worker_auth(request: Request):
@@ -26,16 +28,49 @@ def worker_auth(request: Request):
 class Speech(BaseModel):
     text: str = Field(min_length=1, max_length=300)
     voice: str
+    fallback: str | None = None
 
 
 @router.get("/health")
 async def health(owner: str = Depends(current_owner)):
     ready = time.monotonic() - last_seen < 15
-    return {"ok": ready, "voices": VOICES if ready else []}
+    voices = speech_cloud.catalog() + (VOICES if ready else [])
+    return {"ok": bool(voices), "voices": voices}
 
 
 @router.post("/speak")
 async def speak(body: Speech, request: Request, owner: str = Depends(current_owner)):
+    if not body.text.strip():
+        raise HTTPException(400, 'Nội dung không hợp lệ.')
+    allowed = VOICES + speech_cloud.catalog()
+    if body.voice not in allowed or (body.fallback and body.fallback not in allowed):
+        raise HTTPException(400, 'Giọng không hợp lệ hoặc chưa được cấu hình.')
+    if owner in active_speakers or len(active_speakers) >= 4:
+        raise HTTPException(429, 'Giọng nói đang bận. Thử lại sau giây lát.')
+    active_speakers.add(owner)
+    async def generate(selected):
+        if selected in VOICES:
+            return await local_speak(Speech(text=body.text, voice=selected), request, owner)
+        audio = await speech_cloud.while_connected(request, speech_cloud.synthesize(body.text, selected))
+        return Response(audio, media_type='audio/wav', headers={'Cache-Control': 'no-store'})
+    try:
+        try:
+            response = await generate(body.voice)
+            selected = body.voice
+        except HTTPException as error:
+            if error.status_code not in (502, 503, 504) or not body.fallback or body.fallback == body.voice:
+                raise
+            if await request.is_disconnected():
+                raise HTTPException(499, 'Đã dừng đọc.')
+            selected = body.fallback
+            response = await generate(selected)
+        response.headers['X-Peto-Voice'] = selected
+        return response
+    finally:
+        active_speakers.discard(owner)
+
+
+async def local_speak(body: Speech, request: Request, owner: str):
     if body.voice not in VOICES or not body.text.strip():
         raise HTTPException(400, "Giọng hoặc nội dung không hợp lệ.")
     if time.monotonic() - last_seen >= 15:

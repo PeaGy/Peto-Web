@@ -103,7 +103,7 @@ của VS Code) là quả lê 6 × 6. Thấp hơn nữa, hẹp dưới 41 cột, 
 chữ. Trong terminal của VS Code, Peto chừa thêm 2 cột bên phải, vì VS Code che khoảng hai cột sát mép:
 
 ```text
- [mascot]   Peto Agent 0.11.0
+ [mascot]   Peto Agent 0.12.0
  [mascot]   Peto · mức vừa
  [mascot]   ~\Projects\website-a
 
@@ -152,8 +152,8 @@ nào được chọn, nên Enter không tự chạy gì. Các lệnh:
   Xóa và đổi tên do Peto làm bằng công cụ thì thuộc bản hoàn tác; thay đổi do lệnh terminal thì không. Nếu lỗi ổ đĩa
   xảy ra giữa chừng, những tệp chưa khôi phục vẫn được giữ trong bản nhớ để kiểm tra lại; không có giao dịch nguyên
   khối nhiều tệp.
-- `/permissions`: xem lệnh và trang (được bấm, gõ) đã nhớ trong phiên (`s`) và luôn cho phép ở dự án này (`l`);
-  `/permissions clear` thu hồi hết. Lệnh nhớ trong phiên mất khi `/moi` hoặc `/resume`; lệnh luôn cho phép thì còn tới
+- `/permissions`: xem lệnh, trang (được bấm, gõ) và tên miền ngoài (được xem) đã nhớ trong phiên (`s`) và luôn cho
+  phép ở dự án này (`l`); `/permissions clear` thu hồi hết. Lệnh nhớ trong phiên mất khi `/moi` hoặc `/resume`; lệnh luôn cho phép thì còn tới
   khi bạn xóa.
 - `/trinhduyet`: hiện hoặc ẩn cửa sổ trình duyệt của Peto, để xem Peto bấm, gõ trên trang (xem "Bấm, gõ trên trang"
   bên dưới). `/trinhduyet xoa`: quên đăng nhập, cookie và dữ liệu trang mà trình duyệt của Peto lưu cho dự án này.
@@ -342,6 +342,32 @@ báo chỗ hỏng. Lần đầu Peto thao tác trên một trang, bạn được
 - **Tiết kiệm bước:** chuỗi thao tác đoán trước được (gõ các ô, bấm Gửi, chụp) Peto gọi chung một bước; một thao tác
   lỗi thì các thao tác sau trong bước đó bị bỏ qua. Có lệnh nền đang chạy (dev server vừa bật) thì `browser_open` chờ
   server lên tối đa 15 giây, nên chạy dev server rồi mở trang chỉ tốn một bước.
+
+### Xem trang ngoài
+
+Từ bản 0.12.0 (cần cả VPS mới), Peto xem được cả trang ngoài máy khi bạn đưa địa chỉ, nhờ xem trang đã deploy hay nhờ
+đọc một trang cụ thể. Tra cứu chung vẫn dùng tìm web, rẻ hơn và không mở gì trên máy.
+
+```text
+  ▶ Muốn mở trang ngoài
+    https://docs.python.org/3/library/asyncio.html
+    Trình duyệt riêng, không cookie hay đăng nhập nào; Peto chỉ xem.
+    [s] docs.python.org cả phiên  [l] luôn cho phép ở dự án này · Đồng ý cho docs.python.org tới hết yêu cầu? …
+    Chọn › y
+  • Xem trang https://docs.python.org/3/library/asyncio.html · máy tính 1280×800
+    Tải xong 1,1 giây · "asyncio — Asynchronous I/O" · không lỗi
+```
+
+- **Hỏi mỗi tên miền:** `y` tới hết yêu cầu, `s` cả phiên, `l` luôn trong dự án này. Cho `python.org` là gồm cả
+  `www.python.org` và `docs.python.org`. Địa chỉ dài bất thường (phần sau tên miền quá 200 ký tự) thì luôn hỏi lại
+  đúng địa chỉ đó, vì nó có thể đang mang dữ liệu của bạn tới trang đó.
+- **Chỉ xem:** mở, chụp, đọc chữ. Danh sách phần tử ghi địa chỉ của từng link để Peto mở tiếp trang khác; Peto không
+  bấm, gõ hay đăng nhập trên trang ngoài. Trang cần đăng nhập thì Peto chỉ thấy trang đăng nhập.
+- **Trình duyệt riêng:** trang ngoài mở trong một trình duyệt khác hẳn trình duyệt của dự án, hồ sơ tạm không cookie
+  hay đăng nhập nào, xóa khi đóng peto. Nên dù bạn từng đăng nhập Discord hay Google trong cửa sổ Peto, trang ngoài
+  không thấy những đăng nhập đó.
+- **Không vào mạng nhà:** địa chỉ router, máy khác trong nhà (`192.168.x.x`, `10.x`, tên như `nas.local`) bị từ chối, và
+  trang ngoài không được chuyển về máy bạn.
 
 ### Việc dài, lệnh nền và chuông báo
 

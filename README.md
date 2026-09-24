@@ -529,6 +529,9 @@ và gọi mô hình AI. Cách cài, đăng nhập và sử dụng nằm trong `a
   tới hết yêu cầu, `s` cả phiên, `l` luôn cho phép ở dự án). Không ra được trang ngoài, không tải tệp lên hay về.
   `/trinhduyet` hiện hoặc ẩn cửa sổ để xem Peto làm. Trang cần đăng nhập thì Peto hiện cửa sổ và nhờ bạn tự đăng nhập:
   Peto không bao giờ gõ mật khẩu. Đăng nhập được nhớ cho dự án đó; `/trinhduyet xoa` để quên.
+- **Xem trang ngoài** (0.12.0): khi bạn đưa địa chỉ hay nhờ xem trang đã deploy, Peto mở trang ngoài máy trong một trình
+  duyệt riêng không cookie hay đăng nhập nào, chỉ xem. Lần đầu mỗi tên miền Peto hỏi; địa chỉ dài bất thường luôn hỏi
+  lại; địa chỉ trong mạng nhà bị từ chối.
 - **Chuông báo:** terminal kêu khi Peto cần bạn duyệt hoặc vừa xong một yêu cầu chạy lâu, và tiêu đề cửa sổ đổi theo
   trạng thái, nên bạn làm việc khác trong lúc chờ được.
   Dán nhiều dòng không bị gửi từng dòng; đoạn dài hiện gọn thành `[Đã dán N dòng]`.

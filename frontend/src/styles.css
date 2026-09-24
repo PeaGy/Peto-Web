@@ -2577,3 +2577,6 @@ button.artifact-name { cursor: pointer; }
   .mobile-render-settings label { display: grid; gap: 8px; }
   .mobile-render-settings select { width: 100%; min-height: 42px; padding: 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--text); }
 }
+.voice-provider-options { display: grid; gap: 14px; margin: 16px 0; }
+.voice-provider-options label { display: grid; gap: 8px; font-size: 14px; }
+.voice-provider-options select { width: 100%; min-height: 42px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--text); }
