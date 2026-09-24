@@ -41,7 +41,7 @@ import Companion, { CompanionIcon } from "./Companion";
 import Imagine from "./Imagine";
 import { useLocalVoice } from "./LocalVoice";
 import ProfileSettings from "./ProfileSettings";
-import VoiceSettings from "./VoiceSettings";
+import VoiceSettings, { type VoiceTab } from "./VoiceSettings";
 import AgentConnectDialog, { forgetAgentCode, takeAgentCode } from "./AgentConnectDialog";
 import AgentSettings from "./AgentSettings";
 import CharacterSettings from "./CharacterSettings";
@@ -554,6 +554,14 @@ export default function App() {
   // Giọng nói dùng chung cho Companion và mục Giọng nói trong Cài đặt. Chỉ dò 127.0.0.1 sau khi đã mở
   // Companion hoặc lúc Cài đặt đang mở, để tab Trò chuyện không gọi gì ra máy.
   const localVoice = useLocalVoice(companionVisited || settingsOpen);
+  // Thẻ đang mở của mục Giọng nói (Peto nói / Peto nghe); bảng Micro trong Companion mở thẳng thẻ Peto nghe.
+  const [voiceTab, setVoiceTab] = useState<VoiceTab>("noi");
+  const [voiceFocus, setVoiceFocus] = useState(0);
+  const openHearingSettings = useCallback(() => {
+    setVoiceTab("nghe");
+    setVoiceFocus((count) => count + 1);
+    setSettingsOpen(true);
+  }, []);
   // Bản sao chỉ để vẽ cột trái; Imagine.tsx mới là nơi tạo, xóa và giữ danh sách.
   const [imagineJobs, setImagineJobs] = useState<ImagineJob[]>([]);
   const [focusJobId, setFocusJobId] = useState<string | null>(null);
@@ -1422,6 +1430,7 @@ export default function App() {
           onOpenCharacters={() => setCharacterPickerOpen(true)}
           onUnauthorized={handleUnauthorized}
           onOpenSidebar={() => setSidebarOpen(true)}
+          onOpenHearingSettings={openHearingSettings}
         />
       )}
       <div className={`chat-layout${documentPanelOpen ? ' documents-open' : ''}${documentPanelOpen && documentPanelExpanded ? ' documents-expanded' : ''}`} hidden={view !== 'chat'}>
@@ -1649,7 +1658,7 @@ export default function App() {
             <CharacterSettings value={characterMotion} onChange={changeCharacterMotion} onOpenCharacters={() => setCharacterPickerOpen(true)} selectedName={characters.selected.name} />
           </section>
 
-          <VoiceSettings voice={localVoice} open={settingsOpen} />
+          <VoiceSettings voice={localVoice} open={settingsOpen} tab={voiceTab} onTab={setVoiceTab} focusRequest={voiceFocus} />
 
           <AgentSettings open={settingsOpen} isGuest={auth.user?.provider === "guest"} onUnauthorized={handleUnauthorized} />
 

@@ -1,4 +1,5 @@
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
+import HearingSettings from "./HearingSettings";
 import { VOICE_LABELS, voiceLabel, type FallbackChoice, type LocalVoice, type VoiceSourceId } from "./LocalVoice";
 import {
   KEY_PROVIDERS,
@@ -10,6 +11,7 @@ import {
   type KeyProvider,
   type VoiceOption,
 } from "./voiceProviders";
+import { Field, SourceCard, type Card as SourceCardData } from "./voiceUi";
 
 /** Giọng nào cũng nói tiếng Anh tốt nhất, nên câu nghe thử mặc định bằng tiếng Anh. */
 const SAMPLE_TEXT = "Hi! I'm Peto. Nice to see you again.";
@@ -23,16 +25,10 @@ const RELAY_REASON: Partial<Record<KeyProvider["id"], string>> = {
   qwen: "Qwen Cloud trả âm thanh ở một địa chỉ trình duyệt không tải được",
 };
 
-type Tone = "neutral" | "official" | "free" | "relay";
+type Card = SourceCardData<VoiceSourceId>;
 
-interface Card {
-  id: VoiceSourceId;
-  name: string;
-  desc: string;
-  badges: [string, Tone][];
-  status?: { text: string; on: boolean };
-  locked?: boolean;
-}
+/** Hai thẻ của mục Giọng nói: Peto nói (giọng đọc) và Peto nghe (micro, chép lời). */
+export type VoiceTab = "noi" | "nghe";
 
 /**
  * Mục Giọng nói trong Cài đặt (phương án A chủ web chọn ngày 2026-09-24): bật tắt, rồi chọn nguồn giọng bằng thẻ.
@@ -40,12 +36,32 @@ interface Card {
  * các nhà cung cấp dùng khóa riêng, lưu trên trình duyệt này. Khung chi tiết nằm ngay sau thẻ đang chọn, nên trên
  * điện thoại nó hiện ngay dưới thẻ. Nút tắt tiếng không ở đây mà ở cột chat của Companion.
  */
-export default function VoiceSettings({ voice, open }: { voice: LocalVoice; open: boolean }) {
+export default function VoiceSettings({ voice, open, tab = "noi", onTab, focusRequest = 0 }: {
+  voice: LocalVoice;
+  open: boolean;
+  tab?: VoiceTab;
+  onTab?: (tab: VoiceTab) => void;
+  /** Tăng lên khi Companion mở Cài đặt từ bảng Micro: cuộn tới mục này. */
+  focusRequest?: number;
+}) {
   const [error, setError] = useState<string | null>(null);
   const [sampleText, setSampleText] = useState(SAMPLE_TEXT);
   const { speaking, stop, source, health } = voice;
   const sampling = speaking?.key === SAMPLE_KEY ? speaking.phase : null;
   const fallbackId = useId();
+  const sectionRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    if (open && focusRequest) sectionRef.current?.scrollIntoView({ block: "start" });
+  }, [open, focusRequest]);
+
+  function tabKeys(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    const next = tab === "noi" ? "nghe" : "noi";
+    onTab?.(next);
+    document.getElementById(`voice-tab-${next}`)?.focus();
+  }
 
   // Đóng Cài đặt thì thôi đọc câu mẫu; tin Companion đang đọc thì để yên.
   useEffect(() => {
@@ -130,88 +146,76 @@ export default function VoiceSettings({ voice, open }: { voice: LocalVoice; open
     ? voice.fallback : "";
 
   return (
-    <section className="settings-section" aria-labelledby="voice-settings-title">
+    <section ref={sectionRef} className="settings-section" aria-labelledby="voice-settings-title">
       <div className="voice-head">
         <h3 id="voice-settings-title">Giọng nói</h3>
-        <label className="voice-switch">
-          <span aria-hidden="true">{voice.enabled ? "Đang bật" : "Đang tắt"}</span>
-          <input
-            type="checkbox"
-            role="switch"
-            aria-label="Bật giọng nói"
-            checked={voice.enabled}
-            onChange={(event) => { setError(null); voice.setEnabled(event.target.checked); }}
-          />
-        </label>
+        {tab === "noi" && (
+          <label className="voice-switch">
+            <span aria-hidden="true">{voice.enabled ? "Đang bật" : "Đang tắt"}</span>
+            <input
+              type="checkbox"
+              role="switch"
+              aria-label="Bật giọng nói"
+              checked={voice.enabled}
+              onChange={(event) => { setError(null); voice.setEnabled(event.target.checked); }}
+            />
+          </label>
+        )}
       </div>
-      <p className="settings-hint">
-        {voice.enabled
-          ? "Peto nói thành tiếng trong Companion. Chọn nguồn giọng bên dưới; đổi lúc nào cũng được, chữ vẫn hiện như thường."
-          : "Peto có thể nói thành tiếng trong Companion. Bật lên để chọn nguồn giọng; khi tắt, Peto chỉ nhắn chữ."}
-      </p>
+      <div className="voice-tabs" role="tablist" aria-label="Giọng nói" onKeyDown={tabKeys}>
+        {([["noi", "Peto nói"], ["nghe", "Peto nghe"]] as const).map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            id={`voice-tab-${id}`}
+            aria-selected={tab === id}
+            aria-controls={`voice-panel-${id}`}
+            tabIndex={tab === id ? 0 : -1}
+            onClick={() => onTab?.(id)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
 
-      {voice.enabled && (
-        <>
-          <div className="voice-group"><strong>Không cần khóa</strong></div>
-          <div className="voice-cards">{cards(free)}</div>
+      {tab === "nghe" ? (
+        <div role="tabpanel" id="voice-panel-nghe" aria-labelledby="voice-tab-nghe">
+          <HearingSettings open={open} />
+        </div>
+      ) : (
+        <div role="tabpanel" id="voice-panel-noi" aria-labelledby="voice-tab-noi">
+          <p className="settings-hint">
+            {voice.enabled
+              ? "Peto nói thành tiếng trong Companion. Chọn nguồn giọng bên dưới; đổi lúc nào cũng được, chữ vẫn hiện như thường."
+              : "Peto có thể nói thành tiếng trong Companion. Bật lên để chọn nguồn giọng; khi tắt, Peto chỉ nhắn chữ."}
+          </p>
 
-          <div className="voice-group">
-            <strong>Khóa của bạn</strong>
-            <span>Khóa lưu trên trình duyệt này, tính tiền vào tài khoản của bạn</span>
-          </div>
-          <div className="voice-cards">{cards(byok)}</div>
+          {voice.enabled && (
+            <>
+              <div className="voice-group"><strong>Không cần khóa</strong></div>
+              <div className="voice-cards">{cards(free)}</div>
 
-          <div className="voice-field voice-fallback">
-            <label htmlFor={fallbackId}>Khi nguồn chính không nói được</label>
-            <select id={fallbackId} value={fallback} onChange={(event) => voice.setFallback(event.target.value as FallbackChoice)}>
-              {offerHome && <option value="home">Dùng Máy nhà của Peto nếu đang bật</option>}
-              {offerOfficial && <option value="official">Dùng Giọng Peto nếu còn lượt</option>}
-              <option value="">Chỉ hiện chữ</option>
-            </select>
-            <small>Giọng nói do AI tạo. Giọng dự phòng có thể khác chất giọng; Giọng Peto dự phòng cũng trừ lượt tháng này.</small>
-          </div>
-        </>
+              <div className="voice-group">
+                <strong>Khóa của bạn</strong>
+                <span>Khóa lưu trên trình duyệt này, tính tiền vào tài khoản của bạn</span>
+              </div>
+              <div className="voice-cards">{cards(byok)}</div>
+
+              <div className="voice-field voice-fallback">
+                <label htmlFor={fallbackId}>Khi nguồn chính không nói được</label>
+                <select id={fallbackId} value={fallback} onChange={(event) => voice.setFallback(event.target.value as FallbackChoice)}>
+                  {offerHome && <option value="home">Dùng Máy nhà của Peto nếu đang bật</option>}
+                  {offerOfficial && <option value="official">Dùng Giọng Peto nếu còn lượt</option>}
+                  <option value="">Chỉ hiện chữ</option>
+                </select>
+                <small>Giọng nói do AI tạo. Giọng dự phòng có thể khác chất giọng; Giọng Peto dự phòng cũng trừ lượt tháng này.</small>
+              </div>
+            </>
+          )}
+        </div>
       )}
     </section>
-  );
-}
-
-function SourceCard({ card, selected, onPick }: { card: Card; selected: boolean; onPick: () => void }) {
-  const nameId = useId();
-  const descId = useId();
-  return (
-    <button
-      type="button"
-      className={`voice-card${selected ? " selected" : ""}${card.locked ? " locked" : ""}`}
-      aria-pressed={selected}
-      aria-labelledby={nameId}
-      aria-describedby={descId}
-      onClick={onPick}
-    >
-      <span className="voice-card-top">
-        <strong id={nameId}>{card.name}</strong>
-        {card.status && (
-          <span className="voice-card-status"><i className={card.status.on ? "voice-dot on" : "voice-dot"} />{card.status.text}</span>
-        )}
-      </span>
-      <span id={descId} className="voice-card-desc">
-        {card.desc}
-        <span className="voice-badges">
-          {card.badges.map(([text, tone]) => <span key={text} className={`voice-badge ${tone}`}>{text}</span>)}
-        </span>
-      </span>
-    </button>
-  );
-}
-
-function Field({ id, label, hint, children }: { id: string; label: string; hint?: ReactNode; children: ReactNode }) {
-  // Nhãn đứng riêng, nối bằng htmlFor: iOS Safari có khi không cho sửa ô nhập nằm trong <label> (xem ProfileSettings).
-  return (
-    <div className="voice-field">
-      <label htmlFor={id}>{label}</label>
-      {children}
-      {hint && <small>{hint}</small>}
-    </div>
   );
 }
 

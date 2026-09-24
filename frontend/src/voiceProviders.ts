@@ -7,6 +7,8 @@
  * Âm thanh nào cũng được đổi về WAV PCM16 trước khi phát, để voiceActivity đọc được độ to cho nhân vật nhép miệng.
  */
 
+import { useSyncExternalStore } from "react";
+
 export type KeyProviderId = "openai" | "elevenlabs" | "azure" | "gemini" | "minimax" | "qwen" | "stepfun" | "compat";
 
 export interface KeyConfig {
@@ -15,7 +17,12 @@ export interface KeyConfig {
   model?: string;
   region?: string;
   baseUrl?: string;
+  /** Model chép lời của phần Peto nghe; `model` ở trên là của phần Peto nói. */
+  sttModel?: string;
 }
+
+/** Khóa theo mã nhà cung cấp, dùng chung cho phần Peto nói và Peto nghe (Groq, Deepgram chỉ có ở phần nghe). */
+export type KeyConfigs = Partial<Record<string, KeyConfig>>;
 
 export interface KeyProvider {
   id: KeyProviderId;
@@ -102,19 +109,67 @@ export function keyProvider(id: string): KeyProvider | undefined {
 
 export const VOICE_KEYS_KEY = "peto-voice-keys";
 
-export function readKeyConfigs(): Partial<Record<KeyProviderId, KeyConfig>> {
+function parseKeyConfigs(raw: string | null): KeyConfigs {
   try {
-    const data = JSON.parse(localStorage.getItem(VOICE_KEYS_KEY) ?? "{}") as unknown;
-    return data && typeof data === "object" && !Array.isArray(data) ? data as Partial<Record<KeyProviderId, KeyConfig>> : {};
+    const data = JSON.parse(raw ?? "{}") as unknown;
+    return data && typeof data === "object" && !Array.isArray(data) ? data as KeyConfigs : {};
   } catch {
     return {};
   }
 }
 
-export function writeKeyConfigs(configs: Partial<Record<KeyProviderId, KeyConfig>>): void {
+// Một bản khóa cho cả phần nói lẫn phần nghe: mỗi phần giữ bản sao riêng thì phần này lưu sẽ xóa mất khóa phần kia
+// vừa nhập. Bản nhớ theo đúng chuỗi trong localStorage, nên đổi từ nơi khác (tab khác, test) cũng thấy ngay.
+let cachedRaw: string | null | undefined;
+let cachedConfigs: KeyConfigs = {};
+/** Trình duyệt chặn localStorage thì khóa chỉ sống trong trang này. */
+let memoryConfigs: KeyConfigs | null = null;
+const keyListeners = new Set<() => void>();
+
+export function getKeyConfigs(): KeyConfigs {
+  if (memoryConfigs) return memoryConfigs;
+  let raw: string | null = null;
+  try {
+    raw = localStorage.getItem(VOICE_KEYS_KEY);
+  } catch {}
+  if (raw !== cachedRaw) {
+    cachedRaw = raw;
+    cachedConfigs = parseKeyConfigs(raw);
+  }
+  return cachedConfigs;
+}
+
+export function readKeyConfigs(): KeyConfigs {
+  return getKeyConfigs();
+}
+
+export function writeKeyConfigs(configs: KeyConfigs): void {
   try {
     localStorage.setItem(VOICE_KEYS_KEY, JSON.stringify(configs));
-  } catch {}
+    memoryConfigs = null;
+  } catch {
+    memoryConfigs = configs;
+  }
+  keyListeners.forEach((listener) => listener());
+}
+
+/** Lưu (hay xóa, khi `config` là null) khóa của một nhà cung cấp, giữ nguyên khóa của các nhà cung cấp khác. */
+export function updateKeyConfig(id: string, config: KeyConfig | null): void {
+  const next = { ...getKeyConfigs() };
+  if (config) next[id] = config;
+  else delete next[id];
+  writeKeyConfigs(next);
+}
+
+function subscribeKeyConfigs(listener: () => void) {
+  keyListeners.add(listener);
+  return () => {
+    keyListeners.delete(listener);
+  };
+}
+
+export function useKeyConfigs(): KeyConfigs {
+  return useSyncExternalStore(subscribeKeyConfigs, getKeyConfigs);
 }
 
 /** Đủ thông tin để gọi chưa: có khóa (trừ máy chủ tự dựng), có địa chỉ, có vùng. */
@@ -134,12 +189,12 @@ export function modelOf(provider: KeyProvider, config: KeyConfig | undefined): s
   return config?.model?.trim() || provider.models?.[0] || (provider.id === "compat" ? "tts-1" : "");
 }
 
-function baseUrl(config: KeyConfig): string {
+export function baseUrl(config: KeyConfig): string {
   const value = config.baseUrl?.trim().replace(/\/+$/, "") ?? "";
   return /^https?:\/\/[^\s]+$/i.test(value) ? value : "";
 }
 
-function azureRegion(config: KeyConfig): string {
+export function azureRegion(config: KeyConfig): string {
   const value = config.region?.trim().toLowerCase() ?? "";
   return /^[a-z0-9-]{2,40}$/.test(value) ? value : "";
 }
@@ -194,6 +249,14 @@ export function normalizeWav(buffer: ArrayBuffer): ArrayBuffer {
 function audioBytesToWav(bytes: Uint8Array<ArrayBuffer>, rate = 24000): Blob {
   const riff = bytes.length >= 12 && String.fromCharCode(...bytes.subarray(0, 4)) === "RIFF";
   return riff ? new Blob([bytes], { type: "audio/wav" }) : pcmToWav(bytes, rate);
+}
+
+export function toBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (let index = 0; index < bytes.length; index += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000));
+  }
+  return btoa(binary);
 }
 
 function fromBase64(value: string): Uint8Array<ArrayBuffer> {

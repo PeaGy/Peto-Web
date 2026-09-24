@@ -20,10 +20,11 @@ import {
   KEY_PROVIDERS,
   keyProvider,
   keyReady,
-  readKeyConfigs,
   speakWithKey,
-  writeKeyConfigs,
+  updateKeyConfig,
+  useKeyConfigs,
   type KeyConfig,
+  type KeyConfigs,
   type KeyProviderId,
 } from "./voiceProviders";
 
@@ -83,7 +84,7 @@ export interface LocalVoice {
   setHomeVoice: (value: string) => void;
   fallback: FallbackChoice;
   setFallback: (value: FallbackChoice) => void;
-  keys: Partial<Record<KeyProviderId, KeyConfig>>;
+  keys: KeyConfigs;
   setKeyConfig: (id: KeyProviderId, config: KeyConfig) => void;
   forgetKey: (id: KeyProviderId) => void;
   recheck: () => void;
@@ -143,7 +144,7 @@ function day(resets: string): string {
 export function sourceState(
   source: VoiceSourceId,
   health: VoiceHealth | null,
-  keys: Partial<Record<KeyProviderId, KeyConfig>>,
+  keys: KeyConfigs,
 ): { ready: boolean; problem: string } {
   const provider = keyProvider(source);
   if (provider) {
@@ -187,7 +188,7 @@ export function useLocalVoice(active: boolean): LocalVoice {
     return legacy && !legacy.includes(":") ? legacy : "";
   });
   const [fallback, setFallbackState] = useState<FallbackChoice>(readFallback);
-  const [keys, setKeys] = useState(readKeyConfigs);
+  const keys = useKeyConfigs();
   const [health, setHealth] = useState<VoiceHealth | null>(null);
   const [probing, setProbing] = useState(false);
   const [probe, setProbe] = useState(0);
@@ -274,22 +275,11 @@ export function useLocalVoice(active: boolean): LocalVoice {
     write(VOICE_FALLBACK_KEY, value);
   }, [stop]);
 
-  const setKeyConfig = useCallback((id: KeyProviderId, config: KeyConfig) => {
-    setKeys((current) => {
-      const next = { ...current, [id]: config };
-      writeKeyConfigs(next);
-      return next;
-    });
-  }, []);
+  const setKeyConfig = useCallback((id: KeyProviderId, config: KeyConfig) => updateKeyConfig(id, config), []);
 
   const forgetKey = useCallback((id: KeyProviderId) => {
     stop();
-    setKeys((current) => {
-      const next = { ...current };
-      delete next[id];
-      writeKeyConfigs(next);
-      return next;
-    });
+    updateKeyConfig(id, null);
   }, [stop]);
 
   const synth = useCallback((useBackup: boolean): Synthesize => {

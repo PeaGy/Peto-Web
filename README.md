@@ -484,7 +484,19 @@ Anh như đang trò chuyện, rồi tự nói thành tiếng. Tab Trò chuyện 
   - **Khóa của bạn**: OpenAI, ElevenLabs, Azure Speech, Google Gemini, MiniMax, Qwen Cloud, StepFun hoặc máy chủ tương
     thích OpenAI. Khóa lưu trên trình duyệt đó, tính tiền vào tài khoản của người dùng, và có nút xóa khỏi trình
     duyệt. Trình duyệt gọi thẳng nhà cung cấp; riêng StepFun và Qwen Cloud đi qua máy chủ Peto, nơi khóa chỉ được
-    chuyển tiếp cho đúng lượt đó, không lưu, không ghi lại. Khách cũng dùng được. Chưa thử nguồn nào bằng khóa thật.
+    chuyển tiếp cho đúng lượt đó, không lưu, không ghi lại. Khách cũng dùng được. Azure Speech đã được chủ web thử
+    bằng khóa thật ngày 24/9/2026 (Nghe thử và Companion đều nói được); các nguồn còn lại chưa thử.
+- **Peto nghe**: bấm micro ở góc trái ô nhắn thì Peto nghe bạn nói. Chữ hiện dần trong ô nhắn; bấm Gửi, hoặc bật
+  **Tự gửi** (mặc định tắt) để nói xong là gửi. Trên máy tính, bảng Micro bật lên ngay trên ô nhắn (công tắc, âm lượng,
+  Tự gửi, chọn micro); trên điện thoại là một thanh gọn trên ô nhắn. Rời tab Companion là thôi nghe. Peto đang trả lời
+  hay đang nói thì tạm không nghe, để khỏi tự nghe giọng mình qua loa (tắt được trong Cài đặt khi đeo tai nghe).
+  - Nguồn nghe chọn ở **Cài đặt → Giọng nói → Peto nghe**, cùng kiểu thẻ với phần nói. **Có sẵn trong trình duyệt**
+    miễn phí, chạy trên Chrome, Edge, Safari (Firefox chưa có); Chrome và Edge gửi âm thanh lên máy chủ của Google hay
+    Microsoft để chép lời. **Khóa của bạn**: Groq (có gói miễn phí), Azure Speech, OpenAI, Deepgram, ElevenLabs, Google
+    Gemini hoặc máy chủ Whisper tự dựng; khóa dùng chung với phần nói, nên nhập khóa Azure một lần là dùng được cả hai.
+  - Trình duyệt gọi thẳng nhà cung cấp; máy chủ Peto không nhận âm thanh hay khóa. Nguồn dùng khóa tự cắt câu theo
+    khoảng im lặng (chỉnh độ nhạy và nghe thử trong Cài đặt) rồi gửi từng câu đi chép. Chưa nguồn nào được thử bằng
+    khóa thật.
 - **Khi nguồn chính không nói được** chọn giọng dự phòng: Máy nhà (mặc định), Giọng Peto, hoặc chỉ hiện chữ. Hết lượt
   Giọng Peto, máy nhà trục trặc hay khóa riêng bị từ chối thì Peto đọc bằng giọng dự phòng và cột chat báo kèm lý do.
   **Nghe thử** không chuyển giọng, để thấy đúng lỗi của nguồn đang thử.
@@ -509,7 +521,8 @@ giọng qua VPS có test tự động bằng WAV giả (`backend/tests/test_voic
 `backend/tests/test_voice_worker.py`); nghe thật qua mạng sau khi triển khai cần thử theo mục
 **Kiểm chứng trước khi dùng thật** trong `voice-worker/README.md`. Các nguồn giọng thêm ngày 24/9/2026 (lượt Giọng
 Peto, khóa riêng, giọng dự phòng) có test tự động với nhà cung cấp giả (`backend/tests/test_voice_sources.py`,
-`frontend/tests/voiceProviders.test.ts`, `frontend/tests/Companion.test.tsx`); chưa gọi nhà cung cấp thật nào.
+`frontend/tests/voiceProviders.test.ts`, `frontend/tests/Companion.test.tsx`); ngoài Azure Speech do chủ web thử tay,
+chưa gọi nhà cung cấp thật nào.
 
 ## Peto Agent
 
@@ -573,7 +586,7 @@ trình duyệt, Docker, chạy nền hay nối lại tác vụ khi mất mạng.
 
 ## Chưa có ở bước này
 
-OCR tài liệu scan, nạp thêm lượt Giọng Peto, đọc dần trong lúc Peto
-đang trả lời, nhân vật 3D, ghi hoặc đồng bộ trí nhớ
+OCR tài liệu scan, nạp thêm lượt Giọng Peto, tai nghe chính thức có lượt miễn phí, Peto nghe trong kênh thoại
+Discord, đọc dần trong lúc Peto đang trả lời, nhân vật 3D, ghi hoặc đồng bộ trí nhớ
 hai chiều với Discord. Chưa kiểm chứng chất lượng AI thật và hoạt động VPS trong
 đợt kiểm thử local nêu trên.

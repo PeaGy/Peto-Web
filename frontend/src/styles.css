@@ -1981,6 +1981,11 @@ label,
   --stage-text: #e9f4f6;
   --stage-muted: rgba(233, 244, 246, 0.62);
   --stage-outline: rgba(12, 74, 94, 0.9);
+  /* Phần Peto nghe: vòng sáng quanh micro, viền ô nhắn khi đang nghe, bảng Micro, vạch âm lượng. */
+  --stage-mic-ring: rgba(18, 112, 137, 0.35);
+  --stage-mic-edge: rgba(143, 216, 234, 0.55);
+  --stage-popover: rgba(20, 22, 24, 0.96);
+  --stage-level: #8fd8ea;
 }
 :root[data-theme="light"] .companion {
   --stage-bg: #eef5f7;
@@ -1995,6 +2000,10 @@ label,
   --stage-text: #0d2a31;
   --stage-muted: rgba(13, 42, 49, 0.6);
   --stage-outline: rgba(47, 142, 165, 0.5);
+  --stage-mic-ring: rgba(47, 142, 165, 0.28);
+  --stage-mic-edge: rgba(47, 142, 165, 0.6);
+  --stage-popover: rgba(255, 255, 255, 0.97);
+  --stage-level: #2f8ea5;
 }
 .companion-stage {
   position: relative;
@@ -2195,10 +2204,11 @@ label,
 .message-speak.loading svg { animation: speak-wait 1s ease-in-out infinite; }
 @keyframes speak-wait { 50% { opacity: 0.3; } }
 .companion-panel .error { margin: 0 14px 8px; }
-.companion-composer { padding: 6px 14px 16px; }
+.companion-composer { position: relative; padding: 6px 14px 16px; }
 .companion-composer .composer { gap: 4px; padding: 8px 10px; }
 .companion-composer .composer textarea { min-height: 40px; max-height: 140px; }
-.companion-composer .composer-bar { justify-content: flex-end; }
+.companion-composer .composer-bar { justify-content: space-between; }
+.companion-composer .composer.listening { border-color: var(--stage-mic-edge); }
 
 @media (prefers-reduced-motion: reduce) {
   .companion-portrait.speaking::after { animation: none; opacity: 1; }
@@ -2320,6 +2330,130 @@ label,
   .companion-composer .stop { padding: 7px 12px; font-size: 13px; }
 }
 
+/* ---------- Peto nghe (Ears) trong Companion ----------
+   Phương án A (chủ web chọn ngày 2026-09-24, giống AIRI): nút micro ở góc trái ô nhắn; bảng Micro bật lên ngay trên ô
+   nhắn, trong cột chat chứ không nổi trên sân khấu; điện thoại thay bảng bằng một thanh trạng thái gọn. */
+.hearing-mic {
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--stage-muted);
+  cursor: pointer;
+  transition: transform 160ms var(--ease-out), box-shadow 90ms linear;
+}
+.hearing-mic:hover { color: var(--stage-text); background: var(--stage-surface); }
+.hearing-mic:active { transform: scale(0.95); }
+.hearing-mic:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* Vòng sáng dày lên theo âm lượng (--hearing-level do MicButton đặt, 0..1). */
+.hearing-mic.on {
+  background: var(--stage-accent-strong);
+  color: #ffffff;
+  box-shadow: 0 0 0 calc(3px + var(--hearing-level, 0) * 7px) var(--stage-mic-ring);
+}
+.hearing-mic.on.starting, .hearing-mic.on.transcribing { box-shadow: 0 0 0 3px var(--stage-mic-ring); }
+.hearing-mic.on.paused { border-color: var(--stage-mic-edge); background: var(--stage-mic-ring); color: var(--stage-level); box-shadow: none; }
+.hearing-mic-badge {
+  position: absolute;
+  right: -5px;
+  bottom: -5px;
+  width: 16px;
+  height: 16px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--stage-line);
+  border-radius: 50%;
+  background: var(--stage-popover);
+  color: var(--stage-level);
+}
+.hearing-popover {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: calc(100% + 2px);
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--stage-line);
+  border-radius: 18px;
+  background: var(--stage-popover);
+  color: var(--stage-text);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.4);
+}
+.hearing-popover-head { display: flex; align-items: center; gap: 14px; }
+.hearing-big {
+  flex: none;
+  width: 60px;
+  height: 60px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--stage-line);
+  border-radius: 18px;
+  background: var(--stage-input);
+  color: var(--stage-muted);
+  cursor: pointer;
+  transition: transform 160ms var(--ease-out);
+}
+.hearing-big.on { border-color: transparent; background: var(--stage-accent-strong); color: #ffffff; box-shadow: 0 0 0 6px var(--stage-mic-ring); }
+.hearing-big:active { transform: scale(0.96); }
+.hearing-big:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.hearing-popover-text { display: grid; gap: 2px; min-width: 0; }
+.hearing-popover-text strong { font-size: 15px; }
+.hearing-popover-text span { color: var(--stage-muted); font-size: 12.5px; line-height: 1.45; }
+.hearing-levels { position: relative; display: flex; align-items: flex-end; gap: 3px; }
+.hearing-levels i { flex: 1; min-width: 2px; border-radius: 2px; background: color-mix(in srgb, currentColor 16%, transparent); transition: height 80ms linear; }
+.hearing-levels i.on { background: var(--stage-level, var(--voice-meter)); }
+.hearing-popover-levels { height: 30px; }
+.hearing-toggle { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 12px; border-top: 1px solid var(--stage-line); cursor: pointer; }
+.hearing-toggle > span { display: grid; gap: 2px; }
+.hearing-toggle strong { font-size: 14px; font-weight: 600; }
+.hearing-toggle small { color: var(--stage-muted); font-size: 12px; line-height: 1.45; }
+.hearing-popover .voice-field select { border-color: var(--stage-line); background: var(--stage-input); color: var(--stage-text); }
+.hearing-popover .voice-field small { color: var(--stage-muted); }
+.hearing-source { margin: 0; color: var(--stage-muted); font-size: 12px; line-height: 1.5; }
+.hearing-source .voice-link { color: var(--stage-text); }
+.hearing-bar { display: none; }
+@media (max-width: 720px) {
+  .hearing-popover { display: none; }
+  .companion-composer { flex-direction: column; align-items: center; }
+  .companion-composer .composer { padding-left: 3px; }
+  /* Nút micro vào đầu viên thuốc, nút gửi ở cuối. */
+  .companion-composer .composer-bar { display: contents; }
+  .companion-composer .hearing-mic { order: -1; width: 34px; height: 34px; border-radius: 999px; }
+  .hearing-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: min(74%, 320px);
+    min-height: 38px;
+    margin-bottom: 6px;
+    padding: 0 8px 0 14px;
+    border-radius: 999px;
+    background: var(--stage-surface);
+    color: var(--stage-text);
+    font-size: 13px;
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+  }
+  .hearing-bar-title { font-weight: 600; white-space: nowrap; }
+  .hearing-bar-levels { width: 42px; height: 16px; }
+  .hearing-bar-toggle { display: flex; align-items: center; gap: 8px; margin-left: auto; color: var(--stage-muted); font-size: 12.5px; cursor: pointer; }
+  .hearing-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--voice-online); }
+  .hearing-dot.paused, .hearing-dot.starting { background: var(--stage-muted); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hearing-mic, .hearing-big, .hearing-levels i { transition: none; }
+}
+
 /* ---------- Giọng nói trong Cài đặt ---------- */
 .voice-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; margin-top: 12px; }
 .voice-row .settings-hint { flex: 1 1 220px; margin: 0; }
@@ -2424,9 +2558,31 @@ label,
 .voice-key-hint { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 12px; }
 .voice-link { padding: 0; border: 0; background: none; color: var(--text); font: inherit; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
 .voice-list-error { color: var(--danger); }
+/* Hai thẻ Peto nói / Peto nghe của mục Giọng nói. */
+.voice-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; margin: 14px 0 6px; padding: 4px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); }
+.voice-tabs button { min-height: 38px; border: 0; border-radius: 9px; background: transparent; color: var(--muted); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
+.voice-tabs button:hover { color: var(--text); }
+.voice-tabs button[aria-selected="true"] { background: var(--panel-2); color: var(--text); }
+.voice-tabs button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.hearing-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 14px; }
+.hearing-free .voice-card { grid-column: 1 / -1; }
+.hearing-test { display: flex; flex-direction: column; gap: 12px; margin-top: 18px; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--bg); }
+.hearing-test-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.hearing-test-head strong { font-size: 14px; }
+.hearing-meter { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.hearing-meter-levels { height: 34px; padding: 4px 6px; border-radius: 8px; background: var(--panel-2); }
+.hearing-threshold { position: absolute; top: 3px; bottom: 3px; width: 2px; margin-left: -1px; border-radius: 2px; background: var(--text); }
+.hearing-range-label { display: flex; justify-content: space-between; gap: 12px; }
+.hearing-range-label span { color: var(--muted); }
+.voice-field input[type="range"] { min-height: 0; padding: 0; border: 0; background: none; accent-color: #219db5; }
+.hearing-results { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.hearing-results li { padding: 8px 10px; border-radius: 10px; background: var(--panel-2); font-size: 13.5px; overflow-wrap: anywhere; }
+.hearing-results li.interim { color: var(--muted); font-style: italic; }
+.hearing-options { margin-top: 14px; }
 @media (max-width: 520px) {
   .voice-cards { grid-template-columns: 1fr; }
   .voice-sample { flex-direction: column; align-items: stretch; }
+  .hearing-fields { grid-template-columns: 1fr; }
 }
 @media (prefers-reduced-motion: reduce) {
   .voice-card, .voice-primary { transition: none; }
@@ -2553,23 +2709,24 @@ button.artifact-name { cursor: pointer; }
 .character-effect-option { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 0; cursor: pointer; }
 .character-effect-option strong { display: block; font-size: 14px; font-weight: 500; }
 .character-effect-option small { display: block; color: var(--muted); font-size: 12px; line-height: 1.5; margin-top: 4px; }
-.character-effect-option input, .voice-switch input {
+.character-effect-option input, .voice-switch input, .hearing-toggle input, .hearing-bar-toggle input {
   appearance: none; -webkit-appearance: none; flex: 0 0 auto; position: relative;
   width: 48px; height: 28px; margin: 0; padding: 0; border: 1px solid var(--line);
   border-radius: 999px; background: var(--panel-2); cursor: pointer;
   transition: background-color 160ms ease, border-color 160ms ease;
 }
-.character-effect-option input::before, .voice-switch input::before {
+.character-effect-option input::before, .voice-switch input::before, .hearing-toggle input::before, .hearing-bar-toggle input::before {
   content: ""; position: absolute; top: 2px; left: 2px; width: 22px; height: 22px;
   border-radius: 50%; background: #fff; box-shadow: 0 1px 3px #0003;
   transition: transform 160ms ease;
 }
-.character-effect-option input:checked, .voice-switch input:checked { background: #219db5; border-color: #219db5; }
-.character-effect-option input:checked::before, .voice-switch input:checked::before { transform: translateX(20px); }
-.character-effect-option input:focus-visible, .voice-switch input:focus-visible { outline: 2px solid #63bdd0; outline-offset: 3px; }
+.character-effect-option input:checked, .voice-switch input:checked, .hearing-toggle input:checked, .hearing-bar-toggle input:checked { background: #219db5; border-color: #219db5; }
+.character-effect-option input:checked::before, .voice-switch input:checked::before, .hearing-toggle input:checked::before, .hearing-bar-toggle input:checked::before { transform: translateX(20px); }
+.character-effect-option input:focus-visible, .voice-switch input:focus-visible, .hearing-toggle input:focus-visible, .hearing-bar-toggle input:focus-visible { outline: 2px solid #63bdd0; outline-offset: 3px; }
 .character-effect-option input:disabled { cursor: default; opacity: .4; }
 @media (prefers-reduced-motion: reduce) {
-  .character-effect-option input, .character-effect-option input::before, .voice-switch input, .voice-switch input::before { transition: none; }
+  .character-effect-option input, .character-effect-option input::before, .voice-switch input, .voice-switch input::before,
+  .hearing-toggle input, .hearing-toggle input::before, .hearing-bar-toggle input, .hearing-bar-toggle input::before { transition: none; }
 }
 .music-vibe-picker { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
 .music-vibe-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }

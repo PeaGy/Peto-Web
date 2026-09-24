@@ -395,7 +395,8 @@ tab is left.
 On desktop the layout is a stage on the left and a ~380px chat column on the right. The stage holds
 only the character and the model's credit line: no text, status or controls go there, by the owner's
 explicit call. The chat column carries the speaking status, the mute toggle, "Bắt đầu lại", a notice when
-voice is on but the chosen source cannot speak (`voice.problem`), and the Chat tab's composer styles. Enabling
+voice is on but the chosen source cannot speak (`voice.problem`), the mic button and its panel (see "Hearing" below), and
+the Chat tab's composer styles. Enabling
 voice, choosing a source and a voice, and "Nghe thử" live in Settings, in `VoiceSettings.tsx` (see "Voice sources"
 below).
 
@@ -472,8 +473,8 @@ Companion speaks with:
   /api/voice/relay` with the key in `X-Voice-Key`: used for that one call, never stored, logged or charged to the
   owner, and open to guests. Voice and model ids must match `[\w.\- ]{1,64}`, and the Qwen region must be a key of
   `QWEN_ENDPOINTS`. All audio becomes WAV PCM16 (`audioBytesToWav`, `normalizeWav`), because lip sync only reads WAV.
-  Nobody has tried these providers with real keys yet (2026-09-24); the request shapes follow each provider's docs
-  from that day.
+  On 2026-09-24 the owner tried Azure Speech with a real key: "Nghe thử" and Companion both spoke. The other seven
+  are still untested with real keys; their request shapes follow each provider's docs from that day.
 
 The fallback (`peto-voice-fallback`) is `home`, `official`, or empty for text only. Unset means `home`, and older values
 (a voice id) map to their source. Server sources send it to `/speak` as `fallback`. Key sources fall back in the
@@ -488,6 +489,59 @@ reach it in order. Fields use `htmlFor` labels (the iOS rule under "User profile
 character settings switch. `backend/tests/test_voice_sources.py`, `frontend/tests/voiceProviders.test.ts`,
 `localSpeech.test.ts` and `Companion.test.tsx` cover the allowance, the relay, each provider's request and the fallback
 rules.
+
+**Hearing (Peto nghe, "Ears")**. This is option A, picked by the owner from mockups on 2026-09-24 (AIRI's mic button).
+- **UI.** A mic button sits at the left of the Companion composer. Clicking it starts listening and opens the "Micro"
+  panel above the composer: a big toggle, a level meter, "Tự gửi", the microphone select and a link to Settings → Giọng
+  nói → Peto nghe. The panel sits inside the chat column, never on the stage, and closes when listening stops. On phones
+  (below 720px) a compact status bar above the pill composer replaces it. It all runs in the browser; the backend has no
+  part in it.
+- **Store.** `hearingEngine.ts` is a module store, like `musicVibe.ts`, shared by Companion and Settings. It holds:
+  - the settings, under the `peto-hearing-*` keys;
+  - the phase: `off` / `starting` / `waiting` / `speaking` / `transcribing` / `paused`;
+  - interim text;
+  - a separate level store, so the meter's ~20 updates a second re-render only the meter.
+- **Where text goes.** Companion registers a sink (`setHearingSink`) that appends each final sentence to its draft
+  (`joinSpeech`). "Nghe thử" in Settings uses a test sink and never touches the draft. The mic opens only on a click, and
+  leaving the Companion tab stops listening.
+- **Sources.** The first is "Có sẵn trong trình duyệt": the Web Speech API in `browserSpeech.ts`.
+  - Interim results show live in the composer, which is read-only while they stream.
+  - Chrome ends continuous sessions after silence, so sessions restart. Five sessions in a row that end within a
+    second of starting stop with an error.
+
+  The others are the seven key providers in `hearingProviders.ts`: Groq, Azure, OpenAI, Deepgram, ElevenLabs, Gemini and
+  OpenAI-compatible servers.
+  - The browser calls them directly (CORS checked 2026-09-24).
+  - Keys share the Mouth's `peto-voice-keys` store through `voiceProviders.getKeyConfigs` / `updateKeyConfig` /
+    `useKeyConfigs`. That store is one snapshot keyed by the raw localStorage string, so saving a key in one tab never
+    drops a key entered in the other.
+  - `sttModel` is kept apart from the TTS `model`.
+- **Recording for key sources.** `hearingCapture.ts` calls getUserMedia with echo cancellation and runs the AudioWorklet
+  `hearingWorklet.js`, which batches 2048 frames. The worklet is imported with `?url&no-inline`: Vite otherwise inlines
+  files under 4 KB as `data:` URLs, which not every browser loads as a worklet.
+- **Cutting sentences.** `hearingAudio.Segmenter` works on volume, with no VAD model:
+  - 90 ms of loud audio starts a sentence and 800 ms of quiet ends it;
+  - it keeps 300 ms of audio from before the start, caps a sentence at 30 s, and drops blips under 250 ms of speech;
+  - sensitivity 0..100 maps to a threshold of -20..-60 dBFS.
+
+  Each sentence becomes WAV PCM16, 16 kHz mono, and sentences are transcribed in order.
+- **Errors.** Auth, billing and bad-model errors (`HearingError.fatal`) stop listening. Rate limits and network errors
+  show a notice and listening continues.
+- **Switches.** "Tạm không nghe khi Peto đang nói" is on by default. It pauses listening while a reply streams or Peto
+  speaks, so Peto does not transcribe itself through the speakers, and resumes afterwards. "Tự gửi" is off by default,
+  the owner's call, as in AIRI. It sends 700 ms after a heard sentence, and only text that came from hearing: typing
+  cancels the pending send.
+- **Not done:**
+  - official hearing on the owner's key with an allowance;
+  - Whisper on the home machine;
+  - a model-based VAD;
+  - Discord voice. That would live in the bot repo, and since March 2026 Discord requires DAVE end-to-end encryption for
+    voice.
+- **Tests:** `hearingAudio.test.ts`, `hearingProviders.test.ts` and `Hearing.test.tsx` (a fake SpeechRecognition and a
+  mocked `hearingCapture`). On 2026-09-24 real Edge with Chromium's fake microphone showed the worklet delivering levels.
+  No provider has been tried with a real key yet.
+- **File names.** `hearingEngine.ts` and `HearingControls.tsx` are deliberately not `hearing.ts` / `Hearing.tsx`: those
+  differ only by case, which is the `LocalVoice` problem below.
 
 `localSpeech.ts` holds markdown → speakable text, chunking, the player and the `/api/voice` calls;
 `voiceProviders.ts` holds the key providers; `LocalVoice.tsx` holds `useLocalVoice`, `SpeakButton` and the speaker
@@ -987,7 +1041,8 @@ results in the next step. The server stores no conversation (`store=False`), and
   `\text{…}~x` stay spaces. It scans by hand instead of using lookbehind so older Safari can parse the bundle. The chat
   prompt also asks for `\lnot` or `\overline{…}`.
 - Per-user preferences (effort, theme, imagine quality/resolution/ratio/count, voice on/off, source, voices, fallback
-  and the user's own TTS keys, Companion mute, character motion and view) live in
+  and the user's own TTS/STT keys, hearing source/mic/language/sensitivity/auto-send, Companion mute, character motion
+  and view) live in
   `localStorage` behind try/catch helpers. In-flight Imagine state lives in component state,
   so it survives switching tabs but not a page reload.
 - `App.tsx` owns chat plus the app shell; `Imagine.tsx` and `Companion.tsx` are mounted alongside

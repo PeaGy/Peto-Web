@@ -8,6 +8,17 @@ import {
   type Message,
 } from "./api";
 import { SendIcon } from "./Composer";
+import {
+  clearHearingMessage,
+  getHearingState,
+  joinSpeech,
+  setHearingPaused,
+  setHearingSink,
+  startListening,
+  stopListening,
+  useHearing,
+} from "./hearingEngine";
+import { HearingBar, HearingPopover, hearingPlaceholder, MicButton } from "./HearingControls";
 import { SpeakButton, SpeakerIcon, SpeakerOffIcon, type LocalVoice } from "./LocalVoice";
 import type { CharacterMotion } from "./characterView";
 import { DEFAULT_CHARACTER, type CharacterModel } from './characterLibrary';
@@ -19,6 +30,8 @@ const Live2DStage = lazy(() => import("./Live2DStage"));
 const VRMStage = lazy(() => import('./VRMStage'));
 /** Khóa đọc của Companion có tiền tố riêng, để câu nghe thử trong Cài đặt không làm đổi trạng thái ở đây. */
 const SPEECH_PREFIX = "companion-";
+/** Tự gửi chờ thêm chừng này sau câu vừa nghe, để kịp nói tiếp nếu chưa xong ý. */
+const AUTO_SEND_DELAY = 700;
 
 function readMuted(): boolean {
   try {
@@ -65,7 +78,7 @@ function RestartIcon() {
  * Được giữ mounted như Imagine (prop `active`) để câu trả lời đang về không bị cắt khi đổi tab;
  * rời tab thì Peto thôi đọc và giải phóng renderer nhân vật.
  */
-export default function Companion({ active, appInfo, voice, characterMotion, character = DEFAULT_CHARACTER, onCharacterPreview, onOpenCharacters, sceneRequest = 0, onUnauthorized, onOpenSidebar }: {
+export default function Companion({ active, appInfo, voice, characterMotion, character = DEFAULT_CHARACTER, onCharacterPreview, onOpenCharacters, sceneRequest = 0, onUnauthorized, onOpenSidebar, onOpenHearingSettings }: {
   active: boolean;
   sceneRequest?: number;
   appInfo: AppInfo | null;
@@ -76,6 +89,8 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
   onOpenCharacters?: () => void;
   onUnauthorized: () => void;
   onOpenSidebar: () => void;
+  /** Mở Cài đặt → Giọng nói → Peto nghe (từ bảng Micro). */
+  onOpenHearingSettings?: () => void;
 }) {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -92,6 +107,11 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
   const scene = useCompanionScene(character.id);
   useEffect(() => { if (sceneRequest > 0) setScenesOpen(true); }, [sceneRequest]);
   const [resetting, setResetting] = useState(false);
+  const hearing = useHearing();
+  const [micOpen, setMicOpen] = useState(false);
+  /** Lúc câu nghe được cuối cùng vào ô nhắn; tự gửi chỉ gửi chữ nghe được, không gửi chữ người dùng tự gõ. */
+  const [heardAt, setHeardAt] = useState(0);
+  const micRef = useRef<HTMLButtonElement>(null);
   const stopVoice = voice.stop;
   const loadVersion = useRef(0);
   const loadRef = useRef<AbortController | null>(null);
@@ -165,6 +185,8 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
   async function send() {
     const text = draft.trim();
     if (!text || abortRef.current || loading || loadFailed) return;
+    setHeardAt(0);
+    setMicOpen(false);
     stopVoice();
     setError(null);
     setExpressionReply(null);
@@ -273,8 +295,72 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
     const message = messages[index];
     if (message?.role === 'assistant') setExpressionReply({ text: message.content });
   }, [speech?.key, speech?.phase, messages]);
+  // Chữ nghe được vào ô nhắn, nối sau chữ đang có.
+  useEffect(() => {
+    if (!active) return;
+    setHearingSink({
+      onFinal: (text) => {
+        setDraft((previous) => joinSpeech(previous, text));
+        setHeardAt(Date.now());
+      },
+    });
+    return () => setHearingSink(null);
+  }, [active]);
+
+  // Micro chỉ mở khi đang ở Companion: rời tab hay gỡ tab thì thôi nghe (nghe thử trong Cài đặt thì để yên).
+  useEffect(() => {
+    if (active) return;
+    setMicOpen(false);
+    const current = getHearingState();
+    if (current.listening && !current.testing) stopListening();
+  }, [active]);
+  useEffect(() => () => {
+    const current = getHearingState();
+    if (current.listening && !current.testing) stopListening();
+    setHearingPaused(false);
+  }, []);
+
+  // Peto đang trả lời hay đang nói thì tạm không nghe, để Peto khỏi tự nghe giọng mình qua loa.
+  const replying = streaming || Boolean(speech);
+  useEffect(() => {
+    setHearingPaused(hearing.pauseWhileSpeaking && replying);
+  }, [hearing.pauseWhileSpeaking, replying]);
+
+  // Tự gửi: câu nghe được đã vào ô nhắn, người dùng không nói tiếp một lúc thì gửi.
+  const latestSend = useRef(send);
+  useEffect(() => {
+    latestSend.current = send;
+  });
+  useEffect(() => {
+    if (!heardAt || !hearing.autoSend || !hearing.listening || hearing.testing) return;
+    if (hearing.interim || hearing.phase === "speaking" || hearing.phase === "transcribing" || streaming || !draft.trim()) return;
+    const timer = window.setTimeout(() => void latestSend.current(), AUTO_SEND_DELAY);
+    return () => window.clearTimeout(timer);
+  }, [heardAt, hearing.autoSend, hearing.listening, hearing.testing, hearing.interim, hearing.phase, streaming, draft]);
+
+  const closeMic = useCallback(() => setMicOpen(false), []);
+  // Bảng Micro chỉ hiện trong lúc nghe: tắt bằng nút lớn hay dừng vì lỗi thì đóng luôn, để thấy câu báo lỗi.
+  useEffect(() => {
+    if (!hearing.listening) setMicOpen(false);
+  }, [hearing.listening]);
+
+  function toggleMic() {
+    const current = getHearingState();
+    if (current.listening && !current.testing) {
+      stopListening();
+      setMicOpen(false);
+      return;
+    }
+    clearHearingMessage();
+    setMicOpen(true);
+    void startListening();
+  }
+
+  const hearingOn = hearing.listening && !hearing.testing;
+  const interim = hearingOn ? hearing.interim : "";
   const activity: CompanionActivity = speech?.phase === 'playing' ? 'speaking'
-    : streaming || speech?.phase === 'loading' ? 'thinking' : draft.trim() ? 'listening' : 'idle';
+    : streaming || speech?.phase === 'loading' ? 'thinking'
+      : draft.trim() || (hearingOn && hearing.phase === 'speaking') ? 'listening' : 'idle';
   const stateText = speech?.phase === "playing" ? "Đang nói…"
     : speech?.phase === "loading" ? "Sắp nói…"
       : streaming ? "Đang nhắn…" : "Trả lời ngắn bằng tiếng Anh";
@@ -340,6 +426,12 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
         </header>
 
         {voice.notice && <div className="companion-notice" role="status">{voice.notice}</div>}
+        {hearing.message && !hearing.testing && (
+          <div className="companion-notice" role="alert">
+            <span>{hearing.message}</span>
+            <button type="button" onClick={clearHearingMessage}>Đóng</button>
+          </div>
+        )}
         {voice.status === "missing" && (
           <div className="companion-notice">
             <span>{voice.problem || "Chưa thấy máy chủ giọng nói."} Peto chỉ nhắn chữ.</span>
@@ -406,14 +498,26 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
             void send();
           }}
         >
-          <div className="composer">
+          {micOpen && active && (
+            <HearingPopover
+              anchorRef={micRef}
+              onClose={closeMic}
+              onOpenSettings={onOpenHearingSettings ? () => { setMicOpen(false); onOpenHearingSettings(); } : undefined}
+            />
+          )}
+          <HearingBar />
+          <div className={hearingOn ? "composer listening" : "composer"}>
             <textarea
-              value={draft}
+              value={interim ? joinSpeech(draft, interim) : draft}
               rows={1}
-              placeholder="Nhắn cho Peto…"
+              placeholder={hearingPlaceholder(hearing) ?? "Nhắn cho Peto…"}
               aria-label="Nhắn cho Peto trong Companion"
               disabled={streaming}
-              onChange={(event) => setDraft(event.target.value)}
+              readOnly={Boolean(interim)}
+              onChange={(event) => {
+                setDraft(event.target.value);
+                setHeardAt(0);
+              }}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
                   event.preventDefault();
@@ -422,6 +526,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
               }}
             />
             <div className="composer-bar">
+              <MicButton onClick={toggleMic} buttonRef={micRef} />
               {streaming ? (
                 <button type="button" className="stop" disabled={stopping} onClick={stop}>
                   {stopping ? "Đang dừng…" : "Dừng"}

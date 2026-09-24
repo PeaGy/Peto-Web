@@ -115,8 +115,9 @@ thích OpenAI. StepFun chặn trình duyệt gọi thẳng, còn Qwen Cloud tr�
 âm thanh trình duyệt không tải được, nên hai nguồn này đi qua `POST /api/voice/relay`:
 khóa nằm trong header `X-Voice-Key`, chỉ dùng cho đúng lượt đó, không lưu, không ghi
 nhật ký, không trừ lượt hay ngân sách của chủ web. Khách cũng dùng được. Relay dùng
-chung giới hạn đồng thời với Giọng Peto. Chưa thử các nguồn này bằng khóa thật; cách
-gọi theo tài liệu của từng nhà cung cấp ngày 2026-09-24.
+chung giới hạn đồng thời với Giọng Peto. Azure Speech đã chạy với khóa thật (chủ web
+thử ngày 2026-09-24); các nguồn còn lại chưa thử, cách gọi theo tài liệu của từng nhà
+cung cấp cùng ngày.
 
 ## Dự phòng, ngân sách và giới hạn
 
