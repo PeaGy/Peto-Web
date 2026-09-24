@@ -328,7 +328,8 @@ same way, preserving existing rows. Note that `PRAGMA foreign_keys=ON` is set pe
 where cascade deletes matter (SQLite has it off by default).
 
 Tables: `conversations`, `messages`, `attachments`, `users`, `user_profiles`,
-`imagine_jobs`, `imagine_images`, `agent_devices`, `agent_usage`, `roleplay_consents`. `users` is the only place mapping
+`imagine_jobs`, `imagine_images`, `agent_devices`, `agent_usage`, `roleplay_consents`, `voice_usage`
+(`speech_cloud.py` also creates its own `speech_budget` on first use). `users` is the only place mapping
 a web account to a Discord ID.
 `conversations.mode` (`chat` or `companion`) was added with the same manual migration; older rows
 default to `chat`. `conversations.persona` (`assistant` or `roleplay`) was added the same way; older rows default to
@@ -394,8 +395,9 @@ tab is left.
 On desktop the layout is a stage on the left and a ~380px chat column on the right. The stage holds
 only the character and the model's credit line: no text, status or controls go there, by the owner's
 explicit call. The chat column carries the speaking status, the mute toggle, "Bắt đầu lại", a notice when
-voice is on but the voice machine is offline, and the Chat tab's composer styles. Enabling voice,
-its status, choosing a voice and "Nghe thử" live in Settings, in `VoiceSettings.tsx`.
+voice is on but the chosen source cannot speak (`voice.problem`), and the Chat tab's composer styles. Enabling
+voice, choosing a source and a voice, and "Nghe thử" live in Settings, in `VoiceSettings.tsx` (see "Voice sources"
+below).
 
 The character is Live2D. `Live2DStage.tsx` is lazy-loaded and mounted only while Companion is active,
 and renders the Hiyori sample model from `public/characters` with PixiJS 6 and
@@ -423,8 +425,8 @@ keyboard shrinks the layout instead of panning the page away. The compact frame 
 height seen at the current width, so the shorter stage leaves the character's size and position alone.
 Safari on iOS ignores that viewport setting.
 
-Speech is generated on the owner's Windows PC, never on the VPS, and reaches listeners through the
-VPS in three hops:
+The home source ("Máy nhà của Peto") is generated on the owner's Windows PC, never on the VPS, and reaches
+listeners through the VPS in three hops:
 
 1. `local-tts/speak_server.py` lives in a gitignored experiment folder with its own venvs. It loads
    Qwen3-TTS 0.6B through faster-qwen3-tts and serves `GET /health` and `POST /speak` (up to 300
@@ -437,9 +439,9 @@ VPS in three hops:
    `X-Voice-Error: 1` if speaking failed. It sends `PETO_VOICE_WORKER_TOKEN` (32+ characters, the
    same value as on the VPS) only to the site, requires an HTTPS `PETO_VOICE_SERVER_URL`, and never
    follows redirects. `tests/test_voice_worker.py` checks the token never reaches the local server.
-3. `backend/voice_api.py` serves signed-in users. `GET /api/voice/health` lists the voices only if a
-   heartbeat arrived in the last 15 s. `POST /api/voice/speak` accepts `playful-1` or `gentle-2` and
-   up to 300 characters, queues a job and waits up to 120 s for the audio: 429 when four jobs are
+3. `backend/voice_api.py` serves signed-in users. `GET /api/voice/health` reports `home.online` (a
+   heartbeat in the last 15 s) and lists the home voices in `voices` only then. `POST /api/voice/speak`
+   with `playful-1` or `gentle-2` and up to 300 characters queues a job and waits up to 120 s for the audio: 429 when four jobs are
    already queued or this owner has one, 503 when the worker is offline or reports a failure, 504 on
    timeout. Results must be a RIFF/WAVE body under 8 MB. A listener disconnect removes the job, late
    audio is rejected instead of reaching another listener, and nothing is written to disk.
@@ -451,18 +453,55 @@ waits out the 120 s timeout. Registration is open, so any signed-in account, gue
 use the owner's GPU while the relay runs; stopping the relay stops sharing. Setup and operating
 limits are in `voice-worker/README.md`.
 
-`localSpeech.ts` holds markdown → speakable text, chunking and the player, which calls
-`/api/voice`; `LocalVoice.tsx` holds `useLocalVoice`, `SpeakButton` and the speaker icons. The
-"local" names date from the first design, where the browser called 127.0.0.1 directly. Keep the
-`peto-local-voice*` storage keys so saved choices survive, and keep those file names distinct beyond
-letter case: on Windows `./LocalVoice` resolves to a `localVoice.ts` before the `.tsx`.
+**Voice sources** (option A, picked by the owner from mockups on 2026-09-24, modelled on AIRI's "official provider plus
+your own key"). Settings → Giọng nói shows the sources as cards in two groups, and the card picked is the source
+Companion speaks with:
+
+- **Giọng Peto** (`official`): the voices in `speech_cloud.catalog()` (StepFun, plus OpenAI or Qwen Cloud when
+  enabled), called with the owner's keys. Each Discord or Google account gets `PETO_TTS_FREE_CHARS_MONTHLY` characters
+  (5000) a month, counted in `voice_usage` by `PETO_DEFAULT_TIMEZONE` month. Guests get 403: anyone can mint guest
+  accounts, so a per-guest allowance would have no limit. `db.take_voice_chars` checks and adds in one statement before
+  the call, a failed line gives its characters back, and `X-Peto-Voice-Used` returns the new total. A used-up
+  allowance is a 429 with `X-Peto-Quota: exhausted`, which, like 502/503/504, lets `/speak` switch to the request's
+  `fallback` voice. The shared USD ceiling (`PETO_TTS_MONTHLY_USD`, `speech_budget`) still applies on top.
+- **Máy nhà của Peto** (`home`): the relay above.
+- **Khóa của bạn**: eight providers in `voiceProviders.ts` (OpenAI, ElevenLabs, Azure Speech, Google Gemini, MiniMax,
+  Qwen Cloud, StepFun, any OpenAI-compatible server). Keys stay in that browser's `localStorage` (`peto-voice-keys`)
+  and bill the user's own account. The browser calls the provider directly, except StepFun (it blocks browser calls,
+  checked 2026-09-24) and Qwen (it answers with an audio URL the browser cannot fetch). Those two go through `POST
+  /api/voice/relay` with the key in `X-Voice-Key`: used for that one call, never stored, logged or charged to the
+  owner, and open to guests. Voice and model ids must match `[\w.\- ]{1,64}`, and the Qwen region must be a key of
+  `QWEN_ENDPOINTS`. All audio becomes WAV PCM16 (`audioBytesToWav`, `normalizeWav`), because lip sync only reads WAV.
+  Nobody has tried these providers with real keys yet (2026-09-24); the request shapes follow each provider's docs
+  from that day.
+
+The fallback (`peto-voice-fallback`) is `home`, `official`, or empty for text only. Unset means `home`, and older values
+(a voice id) map to their source. Server sources send it to `/speak` as `fallback`. Key sources fall back in the
+browser (`withFallback`) on any error, and the notice carries the provider's error, so a wrong key is not hidden. A
+source that cannot speak at all (allowance used up, home machine off, key missing) speaks through the fallback directly
+(`fallbackOnly`), and `status` counts a usable fallback as ready. "Nghe thử" never falls back (`speak(…, { fallback:
+false })`): hearing the fallback would hide the very problem being tested.
+
+The detail panel follows the selected card in the DOM with `grid-column: 1 / -1` in a `grid-auto-flow: dense` grid. On
+desktop it opens below the card's row, on phones (one column below 520px) right below the card, and screen readers
+reach it in order. Fields use `htmlFor` labels (the iOS rule under "User profile"), and the on/off switch reuses the
+character settings switch. `backend/tests/test_voice_sources.py`, `frontend/tests/voiceProviders.test.ts`,
+`localSpeech.test.ts` and `Companion.test.tsx` cover the allowance, the relay, each provider's request and the fallback
+rules.
+
+`localSpeech.ts` holds markdown → speakable text, chunking, the player and the `/api/voice` calls;
+`voiceProviders.ts` holds the key providers; `LocalVoice.tsx` holds `useLocalVoice`, `SpeakButton` and the speaker
+icons. The "local" names date from the first design, where the browser called 127.0.0.1 directly. Keep the
+`peto-local-voice*` storage keys so saved choices survive (a saved name containing `:` is read as a Giọng Peto voice),
+and keep those file names distinct beyond letter case: on Windows `./LocalVoice` resolves to a `localVoice.ts` before
+the `.tsx`.
 
 `useLocalVoice` is called once in `App.tsx` and passed to both Companion and `VoiceSettings`, so they
 share one enabled flag, probe result and player. `speak()` returns a promise that rejects with a
 Vietnamese message, and each caller shows its own error. Companion's speech keys start with
 `companion-` so the Settings sample does not change Companion's status line.
 
-- Voice stays off until the user presses "Bật giọng nói" in Settings, and nothing calls
+- Voice stays off until the user turns on the "Bật giọng nói" switch in Settings, and nothing calls
   `/api/voice` before that. Even once enabled, the hook only probes after Companion has been opened
   or while Settings is open, so the Chat tab never calls it. `tests/Companion.test.tsx` asserts both.
 - Chunks stay roughly equal (target 150 characters). Generation is only slightly faster than real
@@ -470,8 +509,8 @@ Vietnamese message, and each caller shows its own error. Companion's speech keys
   it is not much longer than the one playing. One request at a time also fits the backend's
   one-job-per-owner limit. An aborted request frees that slot only once the backend notices the
   disconnect (it checks every 0.25 s), so a request sent right after an abort can get 429.
-- The backend only relays text and WAV bytes. Never add TTS models or their packages to the backend
-  or the frontend: `pip install` and `npm ci` on the VPS would ship them to every deployment.
+- The backend only relays text and audio, or calls TTS APIs over HTTP. Never add TTS models or their packages to the
+  backend or the frontend: `pip install` and `npm ci` on the VPS would ship them to every deployment.
 
 ### Peto Agent (CLI)
 
@@ -947,8 +986,8 @@ results in the next step. The server stores no conversation (`store=False`), and
   (start of the formula, after an opening bracket, a logic operator or another negation) becomes `{\sim}`; `a~b` and
   `\text{…}~x` stay spaces. It scans by hand instead of using lookbehind so older Safari can parse the bundle. The chat
   prompt also asks for `\lnot` or `\overline{…}`.
-- Per-user preferences (effort, theme, imagine quality/resolution/ratio/count, local voice on/off and voice, Companion
-  mute, character motion and view) live in
+- Per-user preferences (effort, theme, imagine quality/resolution/ratio/count, voice on/off, source, voices, fallback
+  and the user's own TTS keys, Companion mute, character motion and view) live in
   `localStorage` behind try/catch helpers. In-flight Imagine state lives in component state,
   so it survives switching tabs but not a page reload.
 - `App.tsx` owns chat plus the app shell; `Imagine.tsx` and `Companion.tsx` are mounted alongside
@@ -973,12 +1012,14 @@ results in the next step. The server stores no conversation (`store=False`), and
   Companion prompts; `tests/test_persona.py` checks both prompts.
 - Nothing writes back to the bot's memory. The gateway is read-only and loopback-only; it
   must never sit behind Cloudflare Tunnel.
-- No AI credential ever reaches the browser or the CLI, including `OPENAI_API_KEY`, and neither does
-  `PETO_VOICE_WORKER_TOKEN`.
+- No AI credential of the server ever reaches the browser or the CLI, including `OPENAI_API_KEY` and the TTS keys,
+  and neither does `PETO_VOICE_WORKER_TOKEN`. Keys users type under "Khóa của bạn" are their own: they stay in their
+  browser, and the voice relay forwards them for one call without storing or logging them.
 - Registration is open by the owner's explicit decision. Do not add an allowlist, invite
-  code, or per-account quota back unless asked for it. The Peto Agent daily step cap is the one per-account
-  quota the owner asked for; keep it scoped to the agent. The OpenAI model gates in `ai_models.py` (Luna for
-  Discord/Google, Terra and Sol for `PETO_OWNER_ACCOUNTS`) are also the owner's call, because those models spend the
+  code, or per-account quota back unless asked for it. The owner asked for two per-account quotas: the Peto Agent
+  daily step cap, kept scoped to the agent, and the monthly Giọng Peto allowance (`PETO_TTS_FREE_CHARS_MONTHLY`),
+  kept scoped to that voice source. The OpenAI model gates in `ai_models.py` (Luna for Discord/Google, Terra and Sol
+  for `PETO_OWNER_ACCOUNTS`) are also the owner's call. These quotas and gates exist because those features spend the
   owner's API billing; Peto itself stays open to everyone.
 - Guest and Google accounts must never resolve to a Discord ID — that isolation is the
   only thing keeping the bot's memory private now that anyone can sign in.

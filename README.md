@@ -14,8 +14,9 @@ vào bot. `PETO_WEB_HANDOFF.md` là bối cảnh ban đầu; README này mô t�
 
 ## Chạy
 
-Giọng nói dùng chung qua VPS: xem [hướng dẫn kết nối máy tạo giọng](voice-worker/README.md).
-Model vẫn chạy trên Windows; người nghe không cần cài model.
+Giọng nói: máy tạo giọng của chủ web nối qua VPS theo [hướng dẫn kết nối](voice-worker/README.md); Giọng Peto
+(giọng cloud có lượt miễn phí) cấu hình theo [deploy/VOICE_CLOUD.md](deploy/VOICE_CLOUD.md). Người nghe không cần cài
+model.
 
 Cần Python 3.12+ và Node 20+.
 
@@ -342,11 +343,13 @@ Giới hạn cố ý của phần này:
 - Prompt trợ lý không chứa phần nhập vai hay nội dung người lớn. Persona nhập vai chỉ bật được ở hội thoại mới, cho
   tài khoản Discord/Google đã xác nhận đủ 18 tuổi (có test).
 - Peto xem ảnh đính kèm và tìm web trong chat, tạo/sửa ảnh trong tab Tạo ảnh;
-  chưa có nhạc. Tab Companion nói thành tiếng khi máy tạo giọng của chủ web đang kết nối (xem bên dưới).
+  chưa có nhạc. Tab Companion nói thành tiếng bằng Giọng Peto, máy tạo giọng của chủ web hoặc khóa riêng của người
+  dùng (xem bên dưới).
 - Database riêng và **file token xAI riêng**; không dùng chung file nào với
   production Discord.
-- Không có credential AI nào xuống trình duyệt, kể cả khóa `PETO_VOICE_WORKER_TOKEN` của máy tạo
-  giọng. Discord access token chỉ dùng một lần để đọc hồ sơ rồi bỏ, không lưu.
+- Không có credential AI nào của máy chủ xuống trình duyệt, kể cả khóa giọng nói cloud và
+  `PETO_VOICE_WORKER_TOKEN` của máy tạo giọng. Khóa giọng nói người dùng tự nhập là của họ và chỉ nằm trên trình
+  duyệt của họ. Discord access token chỉ dùng một lần để đọc hồ sơ rồi bỏ, không lưu.
 - Đăng ký MỞ: Discord, Google, hoặc khách — không có allowlist. Ai có địa chỉ
   cũng dùng được và cũng tiêu quota AI của máy chủ.
 - Mọi truy vấn hội thoại lọc theo `owner` ở backend; biết ID của người khác cũng
@@ -466,18 +469,30 @@ Anh như đang trò chuyện, rồi tự nói thành tiếng. Tab Trò chuyện 
   mấp máy theo giọng đọc đang phát; không có tiếng thì ngậm miệng.
 - Thiết bị bật giảm chuyển động (trên Windows là tắt Animation effects) thì mặc định nhân vật đứng yên.
   Muốn vẫn cử động, chọn **Luôn cử động** ở **Cài đặt → Giao diện → Nhân vật cử động**.
-- Giọng đọc được tạo trên máy Windows của chủ web, không trên VPS. Máy chủ giọng nói
-  `local-tts/speak_server.py` (thư mục `local-tts` không nằm trong git) dùng Qwen3-TTS 0.6B trên GPU
-  của máy đó với hai giọng mẫu `playful-1` và `gentle-2`. Chương trình `voice-worker/relay.py` trên
-  cùng máy tự kết nối ra VPS qua HTTPS để nhận câu cần đọc rồi gửi âm thanh về, nên máy nhà không
-  phải mở cổng nào. Cách cấu hình nằm ở [voice-worker/README.md](voice-worker/README.md).
-- Người nghe chỉ cần đăng nhập, không cài model hay cấp quyền mạng cục bộ. Bật trong **Cài đặt →
-  Giọng nói** bằng nút **Bật giọng nói**; chọn giọng và **Nghe thử** cũng nằm ở mục này. Trang chỉ
-  gọi `/api/voice` sau khi bật.
+- Người nghe chỉ cần đăng nhập, không cài model hay cấp quyền mạng cục bộ. Bật bằng công tắc **Bật giọng nói** trong
+  **Cài đặt → Giọng nói**, rồi chọn nguồn giọng bằng thẻ; chọn giọng và **Nghe thử** nằm trong khung ngay dưới thẻ
+  đang chọn. Trang chỉ gọi `/api/voice` sau khi bật. Có ba loại nguồn:
+  - **Giọng Peto** (chính thức): giọng cloud chạy bằng khóa của chủ web (StepFun, OpenAI hay Qwen Cloud tùy cấu hình,
+    xem [deploy/VOICE_CLOUD.md](deploy/VOICE_CLOUD.md)). Mỗi tài khoản Discord, Google có 5.000 ký tự miễn phí mỗi
+    tháng (khoảng 40 câu ngắn, đổi được bằng `PETO_TTS_FREE_CHARS_MONTHLY`); thanh lượt hiện số còn lại và ngày làm
+    mới. Nghe thử cũng trừ lượt. Khách không có lượt này. Chưa có cách nạp thêm lượt.
+  - **Máy nhà của Peto**: giọng tạo trên máy Windows của chủ web, không trên VPS, và chỉ có khi máy đó bật. Máy chủ
+    giọng nói `local-tts/speak_server.py` (thư mục `local-tts` không nằm trong git) dùng Qwen3-TTS 0.6B trên GPU của
+    máy đó với hai giọng mẫu `playful-1` và `gentle-2`. Chương trình `voice-worker/relay.py` trên cùng máy tự kết nối
+    ra VPS qua HTTPS để nhận câu cần đọc rồi gửi âm thanh về, nên máy nhà không phải mở cổng nào. Cách cấu hình nằm ở
+    [voice-worker/README.md](voice-worker/README.md).
+  - **Khóa của bạn**: OpenAI, ElevenLabs, Azure Speech, Google Gemini, MiniMax, Qwen Cloud, StepFun hoặc máy chủ tương
+    thích OpenAI. Khóa lưu trên trình duyệt đó, tính tiền vào tài khoản của người dùng, và có nút xóa khỏi trình
+    duyệt. Trình duyệt gọi thẳng nhà cung cấp; riêng StepFun và Qwen Cloud đi qua máy chủ Peto, nơi khóa chỉ được
+    chuyển tiếp cho đúng lượt đó, không lưu, không ghi lại. Khách cũng dùng được. Chưa thử nguồn nào bằng khóa thật.
+- **Khi nguồn chính không nói được** chọn giọng dự phòng: Máy nhà (mặc định), Giọng Peto, hoặc chỉ hiện chữ. Hết lượt
+  Giọng Peto, máy nhà trục trặc hay khóa riêng bị từ chối thì Peto đọc bằng giọng dự phòng và cột chat báo kèm lý do.
+  **Nghe thử** không chuyển giọng, để thấy đúng lỗi của nguồn đang thử.
 - Có giọng nói thì Peto đọc ngay khi trả lời xong. **Tắt tiếng** thì thôi tự đọc; bấm biểu tượng loa
-  dưới tin để nghe lại. Rời tab thì Peto thôi đọc. Đã bật giọng nói mà máy tạo giọng đang ngoại tuyến
-  thì cột chat báo và có nút **Kiểm tra lại**; chat chữ vẫn chạy bình thường.
-- Mọi tài khoản đã đăng nhập, kể cả khách, đều nghe được khi relay đang chạy; tắt relay là ngừng chia
+  dưới tin để nghe lại. Rời tab thì Peto thôi đọc. Đã bật giọng nói mà nguồn đang chọn chưa nói được (máy chủ không
+  trả lời, hết lượt, máy nhà tắt, thiếu khóa) và không có giọng dự phòng dùng được, thì cột chat báo lý do (kèm nút
+  **Kiểm tra lại** với nguồn của máy chủ); chat chữ vẫn chạy bình thường.
+- Mọi tài khoản đã đăng nhập, kể cả khách, đều nghe được Máy nhà khi relay đang chạy; tắt relay là ngừng chia
   sẻ. VPS giữ tối đa bốn lượt chờ, mỗi tài khoản một lượt, 300 ký tự mỗi lượt và chờ tối đa 120 giây.
   Khoảng 15 giây không nhận tín hiệu từ relay thì coi là ngoại tuyến.
 - Relay xác thực với VPS bằng khóa `PETO_VOICE_WORKER_TOKEN`, đặt trong môi trường dịch vụ Peto trên
@@ -492,7 +507,9 @@ Anh như đang trò chuyện, rồi tự nói thành tiếng. Tab Trò chuyện 
 bắt đầu lại đều chạy trong trình duyệt; đợt đó chưa thử persona Companion với Grok thật. Đường chuyển
 giọng qua VPS có test tự động bằng WAV giả (`backend/tests/test_voice.py`,
 `backend/tests/test_voice_worker.py`); nghe thật qua mạng sau khi triển khai cần thử theo mục
-**Kiểm chứng trước khi dùng thật** trong `voice-worker/README.md`.
+**Kiểm chứng trước khi dùng thật** trong `voice-worker/README.md`. Các nguồn giọng thêm ngày 24/9/2026 (lượt Giọng
+Peto, khóa riêng, giọng dự phòng) có test tự động với nhà cung cấp giả (`backend/tests/test_voice_sources.py`,
+`frontend/tests/voiceProviders.test.ts`, `frontend/tests/Companion.test.tsx`); chưa gọi nhà cung cấp thật nào.
 
 ## Peto Agent
 
@@ -556,7 +573,7 @@ trình duyệt, Docker, chạy nền hay nối lại tác vụ khi mất mạng.
 
 ## Chưa có ở bước này
 
-OCR tài liệu scan, giọng nói lúc máy tạo giọng của chủ web tắt, đọc dần trong lúc Peto
+OCR tài liệu scan, nạp thêm lượt Giọng Peto, đọc dần trong lúc Peto
 đang trả lời, nhân vật 3D, ghi hoặc đồng bộ trí nhớ
 hai chiều với Discord. Chưa kiểm chứng chất lượng AI thật và hoạt động VPS trong
 đợt kiểm thử local nêu trên.

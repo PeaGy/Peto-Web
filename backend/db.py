@@ -243,6 +243,17 @@ async def init_db() -> None:
             )
             """
         )
+        # Số ký tự Giọng Peto (nguồn giọng chính thức) đã dùng theo tháng (giờ PETO_DEFAULT_TIMEZONE) cho mỗi tài khoản.
+        await db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS voice_usage (
+                owner TEXT NOT NULL,
+                month TEXT NOT NULL,
+                chars INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (owner, month)
+            )
+            """
+        )
         # Tài khoản đã xác nhận đủ 18 tuổi để bật chế độ nhập vai. Tách khỏi `users` (bị ghi đè mỗi lần đăng nhập).
         await db.execute(
             """
@@ -894,6 +905,47 @@ async def take_agent_step(owner: str, day: str, limit: int, cost: int = 1) -> in
         (steps,) = await cursor.fetchone()
         await db.commit()
         return int(steps)
+
+
+async def take_voice_chars(owner: str, month: str, chars: int, limit: int) -> int | None:
+    """Trừ ``chars`` ký tự Giọng Peto của tháng. Trả về số ký tự đã dùng sau khi trừ, hoặc None nếu không còn đủ lượt.
+
+    Như take_agent_step: một câu lệnh vừa kiểm vừa cộng, nên hai câu đọc cùng lúc không vượt được lượt.
+    """
+    if chars > limit:
+        return None
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            """
+            INSERT INTO voice_usage (owner, month, chars) VALUES (?, ?, ?)
+            ON CONFLICT(owner, month) DO UPDATE SET chars = chars + excluded.chars WHERE chars + excluded.chars <= ?
+            """,
+            (owner, month, chars, limit),
+        )
+        if cursor.rowcount == 0:
+            await db.commit()
+            return None
+        cursor = await db.execute("SELECT chars FROM voice_usage WHERE owner = ? AND month = ?", (owner, month))
+        (used,) = await cursor.fetchone()
+        await db.commit()
+        return int(used)
+
+
+async def refund_voice_chars(owner: str, month: str, chars: int) -> None:
+    """Trả lại ký tự khi câu không đọc được, để người dùng không mất lượt oan."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE voice_usage SET chars = MAX(chars - ?, 0) WHERE owner = ? AND month = ?",
+            (chars, owner, month),
+        )
+        await db.commit()
+
+
+async def voice_chars_used(owner: str, month: str) -> int:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute("SELECT chars FROM voice_usage WHERE owner = ? AND month = ?", (owner, month))
+        row = await cursor.fetchone()
+        return int(row[0]) if row else 0
 
 
 async def refund_agent_step(owner: str, day: str, cost: int = 1) -> None:

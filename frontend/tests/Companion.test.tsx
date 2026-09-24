@@ -33,8 +33,8 @@ beforeEach(() => {
   URL.createObjectURL = vi.fn(() => 'blob:voice');
   URL.revokeObjectURL = vi.fn();
   fetchMock.mockImplementation(async (url: string) => {
-    if (url.endsWith('/health')) return new Response(JSON.stringify({ ok: true, voices: ['playful-1', 'gentle-2'] }));
-    if (url.endsWith('/speak')) return new Response('RIFF', { headers: { 'Content-Type': 'audio/wav' } });
+    if (url.endsWith('/health')) return new Response(JSON.stringify(health()));
+    if (url.endsWith('/speak')) return new Response('RIFF', { headers: { 'Content-Type': 'audio/wav', 'X-Peto-Voice-Used': '1436' } });
     throw new Error(`Không mong đợi ${url}`);
   });
   vi.stubGlobal('fetch', fetchMock);
@@ -52,6 +52,16 @@ beforeEach(() => {
 });
 
 afterEach(() => vi.unstubAllGlobals());
+
+/** /api/voice/health như máy chủ bây giờ trả: Giọng Peto (StepFun) còn 3.600 ký tự tháng này, máy nhà đang bật. */
+function health(official: Record<string, unknown> = {}, home: Record<string, unknown> = {}) {
+  const voices = ['stepfun:jilingshaonv', 'stepfun:lively-girl'];
+  return {
+    ok: true, voices: [...voices, 'playful-1', 'gentle-2'],
+    home: { online: true, voices: ['playful-1', 'gentle-2'], ...home },
+    official: { voices, allowed: true, used: 1400, limit: 5000, resets: '2026-10-01', ...official },
+  };
+}
 
 const localCalls = () => fetchMock.mock.calls.filter(([url]) => String(url).startsWith('/api/voice'));
 const speakBodies = () => fetchMock.mock.calls
@@ -83,8 +93,10 @@ it('chỉ gọi giọng nói qua VPS sau khi bật trong Cài đặt', async () 
   const settings = await openSettings();
   expect(localCalls()).toHaveLength(0);
 
-  fireEvent.click(settings.getByRole('button', { name: 'Bật giọng nói' }));
-  expect(await settings.findByText(/Giọng nói đã sẵn sàng/)).toBeTruthy();
+  expect(settings.queryByRole('button', { name: 'Giọng Peto' })).toBeNull();
+  fireEvent.click(settings.getByRole('switch', { name: 'Bật giọng nói' }));
+  expect(await settings.findByText('3.600 / 5.000 ký tự')).toBeTruthy();
+  expect(settings.getByRole('button', { name: 'Giọng Peto' }).getAttribute('aria-pressed')).toBe('true');
   expect(localCalls()).toHaveLength(1);
   expect(await chatColumn().findByRole('button', { name: 'Tắt tiếng' })).toBeTruthy();
 });
@@ -152,31 +164,208 @@ it('chưa thấy máy chủ thì cột chat báo, bấm Kiểm tra lại thì d�
   fetchMock.mockImplementation(async (url: string) => {
     if (url.endsWith('/health')) {
       if (!serverUp) throw new TypeError('Failed to fetch');
-      return new Response(JSON.stringify({ ok: true, voices: ['playful-1', 'gentle-2'] }));
+      return new Response(JSON.stringify(health()));
     }
     throw new Error(`Không mong đợi ${url}`);
   });
   await openCompanion();
   const column = chatColumn();
-  expect(await column.findByText(/Chưa thấy máy chủ giọng nói/)).toBeTruthy();
+  expect(await column.findByText('Chưa kết nối được máy chủ giọng nói. Peto chỉ nhắn chữ.')).toBeTruthy();
   expect(column.queryByRole('button', { name: 'Tắt tiếng' })).toBeNull();
 
   serverUp = true;
   fireEvent.click(column.getByRole('button', { name: 'Kiểm tra lại' }));
   expect(await column.findByRole('button', { name: 'Tắt tiếng' })).toBeTruthy();
-  expect(column.queryByText(/Chưa thấy máy chủ giọng nói/)).toBeNull();
+  expect(column.queryByText(/Chưa kết nối được máy chủ giọng nói/)).toBeNull();
 });
 
-it('chọn giọng trong Cài đặt rồi Nghe thử thì đọc câu mẫu bằng giọng đó', async () => {
+it('Giọng Peto là nguồn mặc định, gửi kèm Máy nhà làm giọng dự phòng', async () => {
+  localStorage.setItem('peto-local-voice', '1');
+  vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers) => {
+    handlers.onMeta?.('C1', 'low');
+    handlers.onDelta?.('Hey!');
+    handlers.onDone?.();
+  });
+  await openCompanion();
+  await chatColumn().findByRole('button', { name: 'Tắt tiếng' });
+  await sendInCompanion('hi');
+  await waitFor(() => expect(played).toHaveLength(1));
+  expect(speakBodies()).toEqual([{ text: 'Hey!', voice: 'stepfun:jilingshaonv', fallback: 'playful-1' }]);
+});
+
+it('chọn Máy nhà trong Cài đặt, đổi giọng rồi Nghe thử thì đọc câu mẫu bằng giọng đó', async () => {
   localStorage.setItem('peto-local-voice', '1');
   render(<App />);
   const settings = await openSettings();
-  fireEvent.change(await settings.findByRole('combobox', { name: 'Giọng', exact: true }), { target: { value: 'gentle-2' } });
-  fireEvent.click(settings.getByRole('button', { name: 'Nghe thử' }));
+  fireEvent.click(await settings.findByRole('button', { name: 'Máy nhà của Peto' }));
+  const detail = within(settings.getByRole('group', { name: 'Máy nhà của Peto' }));
+  expect(detail.getByText(/Máy nhà đang bật/)).toBeTruthy();
+  fireEvent.change(detail.getByRole('combobox', { name: 'Giọng' }), { target: { value: 'gentle-2' } });
+  fireEvent.click(detail.getByRole('button', { name: 'Nghe thử' }));
 
   await waitFor(() => expect(played).toHaveLength(1));
+  // Nghe thử chỉ thử đúng nguồn đang chọn, không kèm giọng dự phòng.
   expect(speakBodies()).toEqual([{ text: expect.stringContaining('Peto'), voice: 'gentle-2' }]);
+  expect(localStorage.getItem('peto-voice-source')).toBe('home');
   expect(localStorage.getItem('peto-local-voice-name')).toBe('gentle-2');
+});
+
+it('chọn giọng StepFun của Giọng Peto, nghe thử thì trừ lượt và cập nhật số còn lại', async () => {
+  localStorage.setItem('peto-local-voice', '1');
+  render(<App />);
+  const settings = await openSettings();
+  const detail = within(await settings.findByRole('group', { name: 'Giọng Peto' }));
+  expect(await detail.findByText('3.600 / 5.000 ký tự')).toBeTruthy();
+  expect(detail.getByText(/làm mới ngày 01\/10/)).toBeTruthy();
+  fireEvent.change(detail.getByRole('combobox', { name: 'Giọng' }), { target: { value: 'stepfun:lively-girl' } });
+  expect(speakBodies()).toHaveLength(0);
+  fireEvent.click(detail.getByRole('button', { name: 'Nghe thử' }));
+
+  await waitFor(() => expect(played).toHaveLength(1));
+  expect(speakBodies()).toEqual([{ text: expect.stringContaining('Peto'), voice: 'stepfun:lively-girl' }]);
+  expect(localStorage.getItem('peto-voice-official')).toBe('stepfun:lively-girl');
+  expect(await detail.findByText('3.564 / 5.000 ký tự')).toBeTruthy();
+});
+
+it('hết lượt Giọng Peto thì không cho nghe thử, còn Companion đọc bằng Máy nhà và báo lý do', async () => {
+  localStorage.setItem('peto-local-voice', '1');
+  fetchMock.mockImplementation(async (url: string) => {
+    if (url.endsWith('/health')) return new Response(JSON.stringify(health({ used: 5000 })));
+    if (url.endsWith('/speak')) return new Response('RIFF', { headers: { 'Content-Type': 'audio/wav' } });
+    throw new Error(`Không mong đợi ${url}`);
+  });
+  vi.mocked(api.getCompanion).mockResolvedValue({ conversation_id: 'C1', messages: [
+    { role: 'user', content: 'hi' },
+    { role: 'assistant', content: 'Hey there.' },
+  ] });
+  await openCompanion();
+  await screen.findByText('Hey there.');
+  fireEvent.click(await screen.findByRole('button', { name: /Nghe Peto/ }));
+  await waitFor(() => expect(played).toHaveLength(1));
+  expect(speakBodies()).toEqual([{ text: 'Hey there.', voice: 'playful-1' }]);
+  expect(await chatColumn().findByText(
+    /Đã hết lượt Giọng Peto tháng này; lượt mới có từ ngày 01\/10\. Đã chuyển sang giọng dự phòng: Máy nhà của Peto/,
+  )).toBeTruthy();
+
+  const settings = await openSettings();
+  const detail = within(settings.getByRole('group', { name: 'Giọng Peto' }));
+  expect(detail.getByText(/Đã hết lượt tháng này/)).toBeTruthy();
+  expect(detail.queryByRole('button', { name: 'Nghe thử' })).toBeNull();
+});
+
+it('khách thấy Giọng Peto dành cho tài khoản Discord và Google, không có số lượt', async () => {
+  localStorage.setItem('peto-local-voice', '1');
+  vi.mocked(api.getAuthState).mockResolvedValue({ authenticated: true, login_configured: true,
+    providers: { discord: true, google: true, guest: true },
+    user: { id: 'g-1', provider: 'guest', username: 'khach', display_name: 'Demo', avatar_url: '' } });
+  fetchMock.mockImplementation(async (url: string) => {
+    if (url.endsWith('/health')) return new Response(JSON.stringify(health({ allowed: false, used: 0 })));
+    throw new Error(`Không mong đợi ${url}`);
+  });
+  render(<App />);
+  const settings = await openSettings();
+  const detail = within(await settings.findByRole('group', { name: 'Giọng Peto' }));
+  expect(await detail.findByText(/Lượt miễn phí dành cho tài khoản Discord và Google/)).toBeTruthy();
+  expect(detail.queryByText(/ký tự/)).toBeNull();
+  expect(detail.queryByRole('button', { name: 'Nghe thử' })).toBeNull();
+
+  fireEvent.click(settings.getByRole('button', { name: 'Máy nhà của Peto' }));
+  const fallback = settings.getByRole('combobox', { name: 'Khi nguồn chính không nói được' });
+  expect(within(fallback).queryByRole('option', { name: 'Dùng Giọng Peto nếu còn lượt' })).toBeNull();
+  expect(within(fallback).getByRole('option', { name: 'Chỉ hiện chữ' })).toBeTruthy();
+});
+
+it('khóa OpenAI riêng: trình duyệt gọi thẳng OpenAI, máy chủ Peto không thấy khóa', async () => {
+  localStorage.setItem('peto-local-voice', '1');
+  const openai = vi.fn(async (_url: string, _init?: RequestInit) => new Response('RIFF', { headers: { 'Content-Type': 'audio/wav' } }));
+  fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+    if (url.endsWith('/health')) return new Response(JSON.stringify(health()));
+    if (url === 'https://api.openai.com/v1/audio/speech') return openai(url, init);
+    throw new Error(`Không mong đợi ${url}`);
+  });
+  render(<App />);
+  const settings = await openSettings();
+  fireEvent.click(await settings.findByRole('button', { name: 'OpenAI' }));
+  const detail = within(settings.getByRole('group', { name: 'OpenAI' }));
+  expect(detail.getByText(/máy chủ Peto không nhận được khóa/)).toBeTruthy();
+  expect(detail.getByRole('button', { name: 'Nghe thử' }).hasAttribute('disabled')).toBe(true);
+  fireEvent.change(detail.getByLabelText('Khóa API OpenAI'), { target: { value: 'sk-user-key' } });
+  fireEvent.click(detail.getByRole('button', { name: 'Nghe thử' }));
+
+  await waitFor(() => expect(played).toHaveLength(1));
+  const init = openai.mock.calls[0][1]!;
+  expect((init.headers as Record<string, string>).Authorization).toBe('Bearer sk-user-key');
+  expect(JSON.parse(String(init.body))).toMatchObject({ model: 'tts-1', voice: 'nova', response_format: 'wav' });
+  expect(JSON.stringify(localCalls())).not.toContain('sk-user-key');
+  expect(localStorage.getItem('peto-voice-keys')).toContain('sk-user-key');
+
+  fireEvent.click(detail.getByRole('button', { name: 'Xóa khóa khỏi trình duyệt' }));
+  expect(localStorage.getItem('peto-voice-keys')).not.toContain('sk-user-key');
+  expect((detail.getByLabelText('Khóa API OpenAI') as HTMLInputElement).value).toBe('');
+});
+
+it('khóa StepFun riêng đi qua máy chủ Peto trong header, không nằm trong thân yêu cầu', async () => {
+  localStorage.setItem('peto-local-voice', '1');
+  localStorage.setItem('peto-voice-source', 'stepfun');
+  localStorage.setItem('peto-voice-keys', JSON.stringify({ stepfun: { key: 'step-user-key' } }));
+  fetchMock.mockImplementation(async (url: string) => {
+    if (url.endsWith('/health')) return new Response(JSON.stringify(health()));
+    if (url.endsWith('/relay')) return new Response('RIFF', { headers: { 'Content-Type': 'audio/wav' } });
+    throw new Error(`Không mong đợi ${url}`);
+  });
+  render(<App />);
+  const settings = await openSettings();
+  const detail = within(await settings.findByRole('group', { name: 'StepFun' }));
+  expect(detail.getByText(/Máy chủ chỉ chuyển tiếp, không lưu và không ghi lại khóa/)).toBeTruthy();
+  fireEvent.click(detail.getByRole('button', { name: 'Nghe thử' }));
+
+  await waitFor(() => expect(played).toHaveLength(1));
+  const [, init] = fetchMock.mock.calls.find(([url]) => String(url).endsWith('/relay'))!;
+  expect((init.headers as Record<string, string>)['X-Voice-Key']).toBe('step-user-key');
+  expect(JSON.parse(String(init.body))).toEqual({
+    provider: 'stepfun', text: expect.stringContaining('Peto'), voice: 'jilingshaonv', model: 'stepaudio-2.5-tts', region: 'intl',
+  });
+  expect(String(init.body)).not.toContain('step-user-key');
+});
+
+it('khóa riêng bị từ chối: Nghe thử báo lỗi, còn Companion chuyển sang giọng dự phòng', async () => {
+  localStorage.setItem('peto-local-voice', '1');
+  localStorage.setItem('peto-voice-source', 'openai');
+  localStorage.setItem('peto-voice-keys', JSON.stringify({ openai: { key: 'sk-wrong' } }));
+  fetchMock.mockImplementation(async (url: string) => {
+    if (url.endsWith('/health')) return new Response(JSON.stringify(health()));
+    if (url.endsWith('/speak')) return new Response('RIFF', { headers: { 'Content-Type': 'audio/wav' } });
+    if (url.startsWith('https://api.openai.com/')) return new Response('{}', { status: 401 });
+    throw new Error(`Không mong đợi ${url}`);
+  });
+  vi.mocked(api.getCompanion).mockResolvedValue({ conversation_id: 'C1', messages: [
+    { role: 'user', content: 'hi' },
+    { role: 'assistant', content: 'Hey there.' },
+  ] });
+  await openCompanion();
+  await screen.findByText('Hey there.');
+  fireEvent.click(await screen.findByRole('button', { name: /Nghe Peto/ }));
+  await waitFor(() => expect(played).toHaveLength(1));
+  expect(speakBodies()).toEqual([{ text: 'Hey there.', voice: 'playful-1' }]);
+  expect(await chatColumn().findByText(/Khóa OpenAI không đúng.*Đã chuyển sang giọng dự phòng: Máy nhà của Peto/)).toBeTruthy();
+
+  const settings = await openSettings();
+  const detail = within(settings.getByRole('group', { name: 'OpenAI' }));
+  fireEvent.click(detail.getByRole('button', { name: 'Nghe thử' }));
+  expect((await detail.findByRole('alert')).textContent).toMatch(/Khóa OpenAI không đúng/);
+  expect(played).toHaveLength(1);
+  expect(speakBodies()).toHaveLength(1);
+});
+
+it('chưa nhập khóa và không có giọng dự phòng thì Companion chỉ nhắn chữ, chỉ đường tới Cài đặt', async () => {
+  localStorage.setItem('peto-local-voice', '1');
+  localStorage.setItem('peto-voice-source', 'elevenlabs');
+  localStorage.setItem('peto-voice-fallback', '');
+  await openCompanion();
+  const column = chatColumn();
+  expect(await column.findByText('Chưa nhập đủ thông tin ElevenLabs trong Cài đặt → Giọng nói. Peto chỉ nhắn chữ.')).toBeTruthy();
+  expect(column.queryByRole('button', { name: 'Kiểm tra lại' })).toBeNull();
+  expect(column.queryByRole('button', { name: 'Tắt tiếng' })).toBeNull();
 });
 
 it('Bắt đầu lại xóa mạch cũ sau khi xác nhận', async () => {

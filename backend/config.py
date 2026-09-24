@@ -185,6 +185,12 @@ MAX_IMAGINE_PROMPT_CHARS = _env_int("PETO_MAX_IMAGINE_PROMPT_CHARS", 2000, 20, 8
 MAX_IMAGINE_N = _env_int("PETO_MAX_IMAGINE_N", 4, 1, 10)
 MAX_IMAGINE_SOURCE_BYTES = _env_int("PETO_MAX_IMAGINE_SOURCE_BYTES", 8 * 1024 * 1024, 1024, 20 * 1024 * 1024)
 
+# --- Giọng nói Companion ---------------------------------------------------
+# Nguồn chính thức ("Giọng Peto") chạy bằng khóa của chủ web, nên mỗi tài khoản Discord, Google có một lượt ký tự miễn
+# phí mỗi tháng (giờ PETO_DEFAULT_TIMEZONE); khách không có lượt này (chủ web chọn ngày 2026-09-24). Trần chi phí chung
+# của mọi nguồn vẫn là PETO_TTS_MONTHLY_USD trong speech_cloud.py.
+VOICE_FREE_CHARS_MONTHLY = _env_int("PETO_TTS_FREE_CHARS_MONTHLY", 5000, 0, 1_000_000)
+
 # --- Peto Agent (CLI trên máy người dùng) --------------------------------
 # CLI giữ vòng lặp và tự chạy công cụ; máy chủ chỉ xác thực, đếm bước và gọi mô hình.
 AGENT_MODEL = os.getenv("PETO_AGENT_MODEL", "").strip() or XAI_MODEL

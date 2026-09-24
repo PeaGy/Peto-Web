@@ -15,8 +15,67 @@ def isolate(monkeypatch, tmp_path):
     monkeypatch.setenv('OPENAI_API_KEY', 'fake')
     monkeypatch.setenv('PETO_TTS_OPENAI_MODEL', 'tts-1')
     monkeypatch.setenv('PETO_TTS_QWEN_ENABLED', 'false')
+    monkeypatch.setenv('PETO_TTS_STEPFUN_ENABLED', 'false')
     monkeypatch.setenv('PETO_TTS_MONTHLY_USD', '10')
     voice.active_speakers.clear()
+
+@pytest.fixture
+def stepfun(monkeypatch):
+    monkeypatch.setenv('PETO_TTS_STEPFUN_ENABLED', 'true')
+    monkeypatch.setenv('STEP_API_KEY', 'fake-step')
+    monkeypatch.setenv('PETO_TTS_STEPFUN_MODEL', 'stepaudio-2.5-tts')
+    monkeypatch.setenv('PETO_TTS_STEPFUN_VOICES', 'jilingshaonv')
+
+def test_stepfun_requires_opt_in_and_key(monkeypatch):
+    monkeypatch.setenv('STEP_API_KEY', 'fake-step')
+    assert not any(v.startswith('stepfun:') for v in cloud.catalog())
+    monkeypatch.setenv('PETO_TTS_STEPFUN_ENABLED', 'true')
+    monkeypatch.setenv('PETO_TTS_STEPFUN_VOICES', 'jilingshaonv, lively-girl')
+    assert 'stepfun:jilingshaonv' in cloud.catalog()
+    assert 'stepfun:lively-girl' in cloud.catalog()
+    monkeypatch.delenv('STEP_API_KEY')
+    assert not any(v.startswith('stepfun:') for v in cloud.catalog())
+
+@pytest.mark.asyncio
+async def test_stepfun_routes_wav_with_server_credentials(client, monkeypatch, stepfun):
+    original = httpx.AsyncClient
+    def handler(request):
+        assert str(request.url) == 'https://api.stepfun.ai/v1/audio/speech'
+        assert request.headers['authorization'] == 'Bearer fake-step'
+        assert json.loads(request.content) == {
+            'model': 'stepaudio-2.5-tts', 'voice': 'jilingshaonv',
+            'input': 'Hello', 'language': 'en', 'response_format': 'wav',
+        }
+        return httpx.Response(200, content=WAV)
+    monkeypatch.setattr(cloud.httpx, 'AsyncClient', lambda **kw: original(transport=httpx.MockTransport(handler), **kw))
+    response = await client.post('/api/voice/speak', json={'text': 'Hello', 'voice': 'stepfun:jilingshaonv'})
+    assert response.status_code == 200
+    assert response.content == WAV
+    assert response.headers['x-peto-voice'] == 'stepfun:jilingshaonv'
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('status', [400, 402, 429])
+async def test_stepfun_config_and_balance_errors_do_not_fallback(client, monkeypatch, stepfun, status):
+    original = httpx.AsyncClient
+    calls = []
+    def handler(request):
+        calls.append(str(request.url))
+        return httpx.Response(status, json={'error': 'private upstream error'})
+    monkeypatch.setattr(cloud.httpx, 'AsyncClient', lambda **kw: original(transport=httpx.MockTransport(handler), **kw))
+    response = await client.post('/api/voice/speak', json={'text': 'Hello', 'voice': 'stepfun:jilingshaonv', 'fallback': 'openai:nova'})
+    assert response.status_code == status
+    assert len(calls) == 1
+    assert 'private upstream error' not in response.text
+
+@pytest.mark.asyncio
+async def test_stepfun_budget_blocks_before_network(monkeypatch, stepfun):
+    monkeypatch.setenv('PETO_TTS_MONTHLY_USD', '0.00001')
+    def forbidden(**kwargs):
+        pytest.fail('Budget must block before opening HTTP client')
+    monkeypatch.setattr(cloud.httpx, 'AsyncClient', forbidden)
+    with pytest.raises(HTTPException) as error:
+        await cloud.synthesize('Hello', 'stepfun:jilingshaonv')
+    assert error.value.status_code == 429
 
 @pytest.mark.asyncio
 async def test_budget_is_atomic_persistent_and_shared(monkeypatch):

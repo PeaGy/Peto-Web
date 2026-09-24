@@ -1,11 +1,31 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  fallbackOnly,
   LOCAL_VOICE_ENABLED_KEY,
   LOCAL_VOICE_NAME_KEY,
   LocalVoicePlayer,
-  probeLocalVoice,
+  OFFICIAL_VOICE_KEY,
+  probeVoiceHealth,
+  serverSynth,
+  VOICE_FALLBACK_EVENT,
+  VOICE_FALLBACK_KEY,
+  VOICE_SOURCE_KEY,
+  withFallback,
   type SpeakPhase,
+  type Synthesize,
+  type VoiceFallbackDetail,
+  type VoiceHealth,
 } from "./localSpeech";
+import {
+  KEY_PROVIDERS,
+  keyProvider,
+  keyReady,
+  readKeyConfigs,
+  speakWithKey,
+  writeKeyConfigs,
+  type KeyConfig,
+  type KeyProviderId,
+} from "./voiceProviders";
 
 /** Tên hiển thị của các giọng mẫu đã chọn ở local-tts; giọng lạ thì hiện nguyên mã. */
 export const VOICE_LABELS: Record<string, string> = {
@@ -13,7 +33,32 @@ export const VOICE_LABELS: Record<string, string> = {
   "gentle-2": "Dịu & vui vẻ",
 };
 
+/** Giọng của Giọng Peto (nguồn chính thức); giọng khác hiện "Nhà cung cấp · mã giọng". */
+const OFFICIAL_LABELS: Record<string, string> = {
+  "stepfun:jilingshaonv": "Jiling, tinh nghịch",
+  "stepfun:lively-girl": "Lively Girl",
+};
+const CLOUD_NAMES: Record<string, string> = { stepfun: "StepFun", openai: "OpenAI", qwen: "Qwen" };
+
+export function voiceLabel(name: string): string {
+  if (VOICE_LABELS[name]) return VOICE_LABELS[name];
+  if (OFFICIAL_LABELS[name]) return OFFICIAL_LABELS[name];
+  const [provider, ...rest] = name.split(":");
+  return rest.length ? `${CLOUD_NAMES[provider] ?? provider} · ${rest.join(":")}` : name;
+}
+
+/** Giọng của máy chủ Peto kèm tên nguồn, cho câu báo chuyển giọng dự phòng. */
+function serverVoiceLabel(name: string): string {
+  return VOICE_LABELS[name] ? `Máy nhà của Peto (${VOICE_LABELS[name]})` : `Giọng Peto (${voiceLabel(name)})`;
+}
+
 export type LocalVoiceStatus = "off" | "checking" | "ready" | "missing";
+
+/** Giọng Peto (chính thức, khóa của chủ web), Máy nhà của Peto, hay một nhà cung cấp dùng khóa riêng. */
+export type VoiceSourceId = "official" | "home" | KeyProviderId;
+
+/** Nguồn dự phòng: chỉ hai nguồn của máy chủ Peto, vì máy chủ đổi được sang chúng ngay trong một lượt đọc. */
+export type FallbackChoice = "" | "home" | "official";
 
 interface Speaking {
   key: string;
@@ -24,60 +69,153 @@ export interface LocalVoice {
   notice?: string;
   enabled: boolean;
   setEnabled: (value: boolean) => void;
+  /** "ready" khi nguồn đang chọn, hoặc nguồn dự phòng của nó, nói được. */
   status: LocalVoiceStatus;
-  voices: string[];
-  voice: string;
-  setVoice: (value: string) => void;
+  /** Vì sao nguồn đang chọn chưa nói được; rỗng khi đã sẵn sàng. */
+  problem: string;
+  health: VoiceHealth | null;
+  checking: boolean;
+  source: VoiceSourceId;
+  setSource: (value: VoiceSourceId) => void;
+  officialVoice: string;
+  setOfficialVoice: (value: string) => void;
+  homeVoice: string;
+  setHomeVoice: (value: string) => void;
+  fallback: FallbackChoice;
+  setFallback: (value: FallbackChoice) => void;
+  keys: Partial<Record<KeyProviderId, KeyConfig>>;
+  setKeyConfig: (id: KeyProviderId, config: KeyConfig) => void;
+  forgetKey: (id: KeyProviderId) => void;
   recheck: () => void;
   speaking: Speaking | null;
   /**
    * Đọc một đoạn. Lỗi thì Promise bị từ chối kèm câu báo tiếng Việt; bị dừng hay bị lượt đọc khác thay
-   * chỗ thì kết thúc êm, không báo lỗi.
+   * chỗ thì kết thúc êm, không báo lỗi. ``fallback: false`` (Nghe thử) chỉ dùng nguồn đang chọn.
    */
-  speak: (key: string, text: string) => Promise<void>;
+  speak: (key: string, text: string, options?: { fallback?: boolean }) => Promise<void>;
   stop: () => void;
 }
 
-function readEnabled(): boolean {
+function read(key: string): string {
   try {
-    return localStorage.getItem(LOCAL_VOICE_ENABLED_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
-
-function readVoiceName(): string {
-  try {
-    return localStorage.getItem(LOCAL_VOICE_NAME_KEY) ?? "";
+    return localStorage.getItem(key) ?? "";
   } catch {
     return "";
   }
 }
 
+function write(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {}
+}
+
+const SOURCES = new Set<string>(["official", "home", ...KEY_PROVIDERS.map((provider) => provider.id)]);
+
+/** Nguồn đã chọn; máy đã lưu giọng theo kiểu cũ (một tên giọng chung) thì suy ra nguồn từ tên đó. */
+function readSource(): VoiceSourceId {
+  const saved = read(VOICE_SOURCE_KEY);
+  if (SOURCES.has(saved)) return saved as VoiceSourceId;
+  const legacy = read(LOCAL_VOICE_NAME_KEY);
+  return legacy && !legacy.includes(":") ? "home" : "official";
+}
+
 /**
- * Trạng thái giọng nói trên máy, dùng chung cho Companion và mục Giọng nói trong Cài đặt: đã bật chưa,
- * máy chủ có đang chạy không, và đoạn nào đang được đọc.
+ * Chưa chọn bao giờ thì dự phòng bằng Máy nhà: Giọng Peto hết lượt hay chưa mở mà máy nhà đang bật thì Peto vẫn nói.
+ * Bản cũ lưu mã giọng dự phòng ("playful-1", "openai:nova"); bản này lưu tên nguồn.
+ */
+function readFallback(): FallbackChoice {
+  let saved: string | null = null;
+  try {
+    saved = localStorage.getItem(VOICE_FALLBACK_KEY);
+  } catch {}
+  if (saved === null) return "home";
+  if (saved === "home" || saved === "official" || !saved) return saved as FallbackChoice;
+  return saved.includes(":") ? "official" : "home";
+}
+
+function day(resets: string): string {
+  const [, month, date] = resets.split("-");
+  return date && month ? `${date}/${month}` : "đầu tháng sau";
+}
+
+/** Nguồn đã nói được chưa, và nếu chưa thì vì sao (câu hiện cho người dùng). */
+export function sourceState(
+  source: VoiceSourceId,
+  health: VoiceHealth | null,
+  keys: Partial<Record<KeyProviderId, KeyConfig>>,
+): { ready: boolean; problem: string } {
+  const provider = keyProvider(source);
+  if (provider) {
+    return keyReady(provider, keys[provider.id])
+      ? { ready: true, problem: "" }
+      : { ready: false, problem: `Chưa nhập đủ thông tin ${provider.name} trong Cài đặt → Giọng nói.` };
+  }
+  if (!health) return { ready: false, problem: "Chưa kết nối được máy chủ giọng nói." };
+  if (source === "home") {
+    return health.home.online ? { ready: true, problem: "" } : { ready: false, problem: "Máy nhà của Peto đang tắt." };
+  }
+  const official = health.official;
+  if (!official.voices.length) return { ready: false, problem: "Giọng Peto chưa mở trên máy chủ này." };
+  if (!official.allowed) return { ready: false, problem: "Giọng Peto dành cho tài khoản Discord và Google." };
+  if (official.limit <= official.used) {
+    return { ready: false, problem: `Đã hết lượt Giọng Peto tháng này; lượt mới có từ ngày ${day(official.resets)}.` };
+  }
+  return { ready: true, problem: "" };
+}
+
+/** Giọng đã lưu nếu máy chủ còn giọng đó, không thì giọng đầu tiên máy chủ có. */
+function pick(saved: string, voices: string[], fallback: string): string {
+  if (voices.includes(saved)) return saved;
+  return voices[0] ?? (saved || fallback);
+}
+
+/**
+ * Giọng nói dùng chung cho Companion và mục Giọng nói trong Cài đặt: đã bật chưa, nguồn nào, nguồn đó có nói được
+ * không, và đoạn nào đang được đọc.
  *
- * Chỉ dò dịch vụ qua VPS khi người dùng đã bật và `active` đúng (Companion hoặc Cài đặt).
+ * Chỉ dò máy chủ khi người dùng đã bật và `active` đúng (Companion hoặc Cài đặt đang mở).
  */
 export function useLocalVoice(active: boolean): LocalVoice {
   const [notice, setNotice] = useState('');
-  useEffect(() => {
-    const changed = (event: Event) => setNotice(`Đã chuyển sang giọng dự phòng: ${(event as CustomEvent<string>).detail}.`);
-    window.addEventListener('peto-voice-fallback', changed);
-    return () => window.removeEventListener('peto-voice-fallback', changed);
-  }, []);
-  const [enabled, setEnabled] = useState(readEnabled);
-  const [voiceName, setVoice] = useState(readVoiceName);
-  const [voices, setVoices] = useState<string[]>([]);
-  const [status, setStatus] = useState<LocalVoiceStatus>(enabled ? "checking" : "off");
+  const [enabled, setEnabled] = useState(() => read(LOCAL_VOICE_ENABLED_KEY) === "1");
+  const [source, setSourceState] = useState<VoiceSourceId>(readSource);
+  const [officialChoice, setOfficialVoice] = useState(() => read(OFFICIAL_VOICE_KEY)
+    || (read(LOCAL_VOICE_NAME_KEY).includes(":") ? read(LOCAL_VOICE_NAME_KEY) : ""));
+  const [homeChoice, setHomeVoice] = useState(() => {
+    const legacy = read(LOCAL_VOICE_NAME_KEY);
+    return legacy && !legacy.includes(":") ? legacy : "";
+  });
+  const [fallback, setFallbackState] = useState<FallbackChoice>(readFallback);
+  const [keys, setKeys] = useState(readKeyConfigs);
+  const [health, setHealth] = useState<VoiceHealth | null>(null);
+  const [probing, setProbing] = useState(false);
   const [probe, setProbe] = useState(0);
   const [speaking, setSpeaking] = useState<Speaking | null>(null);
   const player = useRef<LocalVoicePlayer | null>(null);
   const speakVersion = useRef(0);
 
-  // Never silently replace a saved voice when its worker goes offline.
-  const voice = voiceName || voices[0] || "";
+  const officialVoice = pick(officialChoice, health?.official.voices ?? [], "");
+  const homeVoice = pick(homeChoice, health?.home.voices ?? [], "playful-1");
+  const state = sourceState(source, health, keys);
+  const backupSource: FallbackChoice = fallback !== source ? fallback : "";
+  const backupReady = backupSource !== "" && sourceState(backupSource, health, keys).ready;
+  const backupVoice = !backupReady ? "" : backupSource === "home" ? homeVoice : officialVoice;
+  const status: LocalVoiceStatus = !enabled ? "off"
+    : state.ready || backupVoice ? "ready"
+    : probing && !health ? "checking" : "missing";
+
+  useEffect(() => {
+    const changed = (event: Event) => {
+      const detail = (event as CustomEvent<VoiceFallbackDetail | string>).detail;
+      const { voice, reason } = typeof detail === "string" ? { voice: detail, reason: undefined } : detail;
+      setNotice(`${reason ? `${reason} ` : ""}Đã chuyển sang giọng dự phòng: ${serverVoiceLabel(voice)}.`);
+      // Giọng Peto hết lượt giữa chừng thì máy chủ tự đổi giọng mà không báo số lượt: dò lại cho Cài đặt hiện đúng.
+      setProbe((count) => count + 1);
+    };
+    window.addEventListener(VOICE_FALLBACK_EVENT, changed);
+    return () => window.removeEventListener(VOICE_FALLBACK_EVENT, changed);
+  }, []);
 
   const stop = useCallback(() => {
     speakVersion.current += 1;
@@ -85,57 +223,101 @@ export function useLocalVoice(active: boolean): LocalVoice {
     setSpeaking(null);
   }, []);
 
-  useEffect(() => {
-    try {
-      localStorage.setItem(LOCAL_VOICE_ENABLED_KEY, enabled ? "1" : "0");
-    } catch {}
-  }, [enabled]);
-
-  useEffect(() => {
-    if (!voiceName) return;
-    try {
-      localStorage.setItem(LOCAL_VOICE_NAME_KEY, voiceName);
-    } catch {}
-  }, [voiceName]);
+  useEffect(() => write(LOCAL_VOICE_ENABLED_KEY, enabled ? "1" : "0"), [enabled]);
+  useEffect(() => write(VOICE_SOURCE_KEY, source), [source]);
+  useEffect(() => { if (officialChoice) write(OFFICIAL_VOICE_KEY, officialChoice); }, [officialChoice]);
+  useEffect(() => { if (homeChoice) write(LOCAL_VOICE_NAME_KEY, homeChoice); }, [homeChoice]);
 
   useEffect(() => {
     if (!enabled) {
-      setStatus("off");
-      setVoices([]);
+      setHealth(null);
+      setNotice('');
       stop();
       return;
     }
     if (!active) return;
     const controller = new AbortController();
-    setStatus("checking");
-    void probeLocalVoice(controller.signal).then((found) => {
+    setProbing(true);
+    void probeVoiceHealth(controller.signal).then((found) => {
       if (controller.signal.aborted) return;
-      setVoices(found ?? []);
-      setStatus(found ? "ready" : "missing");
+      setHealth(found);
+      setProbing(false);
     });
-    return () => controller.abort();
+    return () => {
+      controller.abort();
+      setProbing(false);
+    };
   }, [enabled, active, probe, stop]);
 
-  // Người dùng hay bật máy chủ rồi mới quay lại trang: dò lại khi cửa sổ được chọn lại.
+  // Người dùng hay bật máy nhà rồi mới quay lại trang: dò lại khi cửa sổ được chọn lại.
   useEffect(() => {
-    if (status !== "missing" || !active) return;
+    if (status !== "missing" || !active || keyProvider(source)) return;
     const again = () => setProbe((count) => count + 1);
     window.addEventListener("focus", again);
     return () => window.removeEventListener("focus", again);
-  }, [status, active]);
+  }, [status, active, source]);
 
   useEffect(() => () => {
     speakVersion.current += 1;
     player.current?.stop();
   }, []);
 
-  const speak = useCallback(async (key: string, text: string) => {
+  const setSource = useCallback((value: VoiceSourceId) => {
+    stop();
+    setNotice('');
+    setSourceState(value);
+  }, [stop]);
+
+  const setFallback = useCallback((value: FallbackChoice) => {
+    stop();
+    setFallbackState(value);
+    write(VOICE_FALLBACK_KEY, value);
+  }, [stop]);
+
+  const setKeyConfig = useCallback((id: KeyProviderId, config: KeyConfig) => {
+    setKeys((current) => {
+      const next = { ...current, [id]: config };
+      writeKeyConfigs(next);
+      return next;
+    });
+  }, []);
+
+  const forgetKey = useCallback((id: KeyProviderId) => {
+    stop();
+    setKeys((current) => {
+      const next = { ...current };
+      delete next[id];
+      writeKeyConfigs(next);
+      return next;
+    });
+  }, [stop]);
+
+  const synth = useCallback((useBackup: boolean): Synthesize => {
+    const backup = useBackup ? backupVoice : "";
+    if (!state.ready) {
+      if (backup) return fallbackOnly(backup, state.problem);
+      throw new Error(state.problem || "Giọng nói chưa sẵn sàng.");
+    }
+    if (source === "official") {
+      return serverSynth(officialVoice, {
+        fallback: backup || undefined,
+        onUsed: (used) => setHealth((current) => current && { ...current, official: { ...current.official, used } }),
+      });
+    }
+    if (source === "home") return serverSynth(homeVoice, { fallback: backup || undefined });
+    const provider = keyProvider(source)!;
+    const config = keys[provider.id] ?? {};
+    const primary: Synthesize = (text, signal) => speakWithKey(provider, config, text, signal);
+    return backup ? withFallback(primary, backup) : primary;
+  }, [backupVoice, state.ready, state.problem, source, officialVoice, homeVoice, keys]);
+
+  const speak = useCallback(async (key: string, text: string, options: { fallback?: boolean } = {}) => {
     setNotice('');
     if (!player.current) player.current = new LocalVoicePlayer();
     const version = ++speakVersion.current;
     setSpeaking({ key, phase: "loading" });
     try {
-      await player.current.speak(text, voice, (phase) => {
+      await player.current.speak(text, synth(options.fallback !== false), (phase) => {
         if (version === speakVersion.current) setSpeaking({ key, phase });
       });
     } catch (error) {
@@ -145,11 +327,15 @@ export function useLocalVoice(active: boolean): LocalVoice {
     } finally {
       if (version === speakVersion.current) setSpeaking(null);
     }
-  }, [voice]);
+  }, [synth]);
 
   const recheck = useCallback(() => setProbe((count) => count + 1), []);
 
-  return { enabled, setEnabled, status, voices, voice, setVoice, recheck, speaking, speak, stop, notice };
+  return {
+    enabled, setEnabled, status, problem: enabled && !state.ready ? state.problem : "", health, checking: probing,
+    source, setSource, officialVoice, setOfficialVoice, homeVoice, setHomeVoice, fallback, setFallback,
+    keys, setKeyConfig, forgetKey, recheck, speaking, speak, stop, notice,
+  };
 }
 
 export function SpeakerIcon({ size = 16 }: { size?: number }) {

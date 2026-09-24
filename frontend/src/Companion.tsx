@@ -342,8 +342,11 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
         {voice.notice && <div className="companion-notice" role="status">{voice.notice}</div>}
         {voice.status === "missing" && (
           <div className="companion-notice">
-            <span>Chưa thấy máy chủ giọng nói, Peto chỉ nhắn chữ.</span>
-            <button type="button" onClick={voice.recheck}>Kiểm tra lại</button>
+            <span>{voice.problem || "Chưa thấy máy chủ giọng nói."} Peto chỉ nhắn chữ.</span>
+            {/* Thiếu khóa thì dò lại cũng vậy: phải vào Cài đặt → Giọng nói. */}
+            {(voice.source === "official" || voice.source === "home") && (
+              <button type="button" onClick={voice.recheck}>Kiểm tra lại</button>
+            )}
           </div>
         )}
 
