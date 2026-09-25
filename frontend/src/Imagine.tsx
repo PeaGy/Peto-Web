@@ -174,6 +174,19 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
   const activeRef = useRef(active);
   const loadVersion = useRef(0);
 
+  useEffect(() => {
+    const dock = dockRef.current;
+    const stage = dock?.parentElement;
+    if (!dock || !stage || typeof ResizeObserver === "undefined") return;
+    const measure = () => {
+      if (dock.offsetHeight) stage.style.setProperty("--studio-dock-height", `${dock.offsetHeight}px`);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(dock);
+    return () => observer.disconnect();
+  }, []);
+
   const loadJobs = useCallback(async () => {
     const version = ++loadVersion.current;
     setLoading(true);
@@ -382,13 +395,9 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
   const sendLabel = generating ? source ? "Đang sửa…" : "Đang tạo…" : source ? "Sửa ảnh" : "Tạo ảnh";
 
   return <main className="imagine" hidden={!active}>
-    <header className="chat-header">
-      <button type="button" className="menu-btn" aria-label="Mở menu" onClick={onOpenSidebar}>
+      <button type="button" className="menu-btn studio-menu-btn" aria-label="Mở menu" onClick={onOpenSidebar}>
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg>
       </button>
-      <span className="imagine-mark"><SparkleIcon /></span>
-      <div className="header-copy"><strong>Peto tạo ảnh</strong><span className="subtitle">Từ một ý tưởng đến hình ảnh của bạn</span></div>
-    </header>
 
     <div className="imagine-gallery" ref={galleryRef}>
       {loading && <p className="loading-chat" role="status">Đang mở bộ ảnh của bạn…</p>}

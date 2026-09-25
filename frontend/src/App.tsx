@@ -1428,10 +1428,6 @@ export default function App() {
         </nav>
         {view === "imagine" && (
           <div className="sidebar-section">
-            <div className="imagine-sidebar-note">
-              <span className="studio-eyebrow">Peto tạo ảnh</span>
-              <p>Một chút tưởng tượng,<br />một thế giới của riêng bạn.</p>
-            </div>
             <div className="imagine-library">
               <h2 className="imagine-library-title">Thư viện</h2>
               <nav className="imagine-job-list" aria-label="Thư viện">
