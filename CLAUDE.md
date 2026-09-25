@@ -467,12 +467,13 @@ Companion speaks with:
   `fallback` voice. The shared USD ceiling (`PETO_TTS_MONTHLY_USD`, `speech_budget`) still applies on top.
 - **Máy nhà của Peto** (`home`): the relay above.
 - **Khóa của bạn**: eight providers in `voiceProviders.ts` (OpenAI, ElevenLabs, Azure Speech, Google Gemini, MiniMax,
-  Qwen Cloud, StepFun, any OpenAI-compatible server). Keys stay in that browser's `localStorage` (`peto-voice-keys`)
+  Alibaba Cloud, StepFun, any OpenAI-compatible server). Keys stay in that browser's `localStorage` (`peto-voice-keys`)
   and bill the user's own account. The browser calls the provider directly, except StepFun (it blocks browser calls,
-  checked 2026-09-24) and Qwen (it answers with an audio URL the browser cannot fetch). Those two go through `POST
-  /api/voice/relay` with the key in `X-Voice-Key`: used for that one call, never stored, logged or charged to the
-  owner, and open to guests. Voice and model ids must match `[\w.\- ]{1,64}`, and the Qwen region must be a key of
-  `QWEN_ENDPOINTS`. All audio becomes WAV PCM16 (`audioBytesToWav`, `normalizeWav`), because lip sync only reads WAV.
+  checked 2026-09-24) and Alibaba Cloud (Qwen answers with an audio URL the browser cannot fetch, and CosyVoice is a
+  WebSocket that needs the key in a header). Those two go through `POST /api/voice/relay` with the key in
+  `X-Voice-Key`: used for that one call, never stored, logged or charged to the owner, and open to guests. Voice and
+  model ids must match `[\w.\- ]{1,64}`, and the region must be a key of `QWEN_ENDPOINTS`. All audio becomes WAV PCM16
+  (`audioBytesToWav`, `normalizeWav`), because lip sync only reads WAV.
   On 2026-09-24 the owner tried Azure Speech with a real key: "Nghe thử" and Companion both spoke. The other seven
   are still untested with real keys; their request shapes follow each provider's docs from that day.
 
@@ -489,6 +490,46 @@ reach it in order. Fields use `htmlFor` labels (the iOS rule under "User profile
 character settings switch. `backend/tests/test_voice_sources.py`, `frontend/tests/voiceProviders.test.ts`,
 `localSpeech.test.ts` and `Companion.test.tsx` cover the allowance, the relay, each provider's request and the fallback
 rules.
+
+Every picker in Settings → Giọng nói (both tabs) and in the Micro panel is `Dropdown` from `voiceUi.tsx`, never a native
+`<select>` or `<datalist>`. The owner reported on 2026-09-25 that the datalist popup stayed where it was while
+Settings scrolled, since the browser draws it as a separate window, and asked for AIRI's behaviour.
+- **Placement.** The list sits in the page right under the field (`position: absolute`), so it moves with the field. It
+  flips above when there is not enough room below the nearest clipping ancestor, and it re-checks on every scroll
+  (a capture listener on `window`) and on resize.
+- **Variants.** There are two: select-only (a `role="combobox"` button) and `editable` (an input that filters
+  suggestions as you type and still accepts any id).
+- **Keyboard.** Arrow keys, Home and End, Enter, type-ahead, and Esc. Esc stops propagation, so it closes only the list
+  and not the Settings dialog or the Micro panel.
+- **Labels.** `Field` gives its label the id `${id}-label`, which names the listbox.
+- **Tests.** `tests/voiceUi.test.tsx` covers the flip and scroll behaviour with mocked rects.
+
+**Alibaba Cloud card: Qwen-TTS and CosyVoice.** The owner liked AIRI's Alibaba voices (龙婉, 龙硕, Stella…) and on
+2026-09-25 picked option A from mockups: one card, one Alibaba key, a Model dropdown, like AIRI. The provider id stays
+`qwen`, so saved keys survive the rename.
+- **Models.** Each model has its own voice set in `KeyProvider.modelInfo`: `qwen3-tts-flash` (48 voices, Vietnamese notes
+  translated from the Qwen Cloud voice list), `cosyvoice-v2` (default) and `cosyvoice-v3-flash`.
+  - `suggestedVoices`, `defaultVoiceOf` and `voiceNoteOf` pick the set for the current model.
+  - Switching models keeps the voice only if the new model has it. Otherwise it falls back to that model's default.
+- **Why not v1.** AIRI reaches CosyVoice v1 through its own unspeech proxy. Alibaba shuts v1 down on 2026-10-10.
+  - v2 keeps 18 of AIRI's 20 voices as `<id>_v2` (龙彤 and 龙祥 are v1-only) at ¥2 per 10,000 characters.
+  - v3 Flash keeps 14 of them as `<id>_v3` at ¥1.
+  - Prices are from the China account's model pages, checked 2026-09-25.
+- **Voice lists.** `cosyVoices.ts` holds the official China-account voice tables from that day: 100 v2 and 80 v3 Flash
+  voices.
+  - Only voices that speak English are kept, since Companion replies in English.
+  - Voices are grouped by Alibaba's scenes, with Vietnamese notes. Labels are the Chinese name plus a romanisation of
+    the id ("龙婉 · Long Wan").
+  - The editable voice field shows that label while not being edited, and the raw id while being edited.
+- **Relay.** `speech_cloud._cosyvoice` speaks Alibaba's WebSocket protocol:
+  - `run-task` with `format: pcm`, 24 kHz and `language_hints: ["en"]`; then `continue-task` and `finish-task` once
+    `task-started` arrives. Binary frames are collected until `task-finished`, and the PCM is wrapped as WAV.
+  - `task-failed` codes and handshake statuses map to the same Vietnamese messages as the HTTP relays (`relay_error`).
+    Alibaba's error text never reaches the user.
+  - `websockets` is imported lazily and pinned `>=14` in `requirements.txt`, so an old install breaks only CosyVoice.
+    A dedicated logger at WARNING keeps websockets from logging the handshake headers, which include the key.
+  - `tests/test_voice_sources.py` runs it against a fake WebSocket server on 127.0.0.1.
+  - Nothing has been tried with a real key yet.
 
 **Hearing (Peto nghe, "Ears")**. This is option A, picked by the owner from mockups on 2026-09-24 (AIRI's mic button).
 - **UI.** A mic button sits at the left of the Companion composer. Clicking it starts listening and opens the "Micro"

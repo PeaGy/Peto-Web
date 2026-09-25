@@ -135,7 +135,7 @@ async def speak(body: Speech, request: Request, owner: str = Depends(current_own
 
 @router.post("/relay")
 async def relay(body: Relay, request: Request, owner: str = Depends(current_owner)):
-    """Đọc bằng khóa riêng của người dùng cho nguồn trình duyệt không gọi thẳng được (StepFun, Qwen Cloud).
+    """Đọc bằng khóa riêng của người dùng cho nguồn trình duyệt không gọi thẳng được (StepFun, Alibaba Cloud).
 
     Khóa đến trong header X-Voice-Key và chỉ đi qua lượt này: không lưu, không ghi nhật ký, không trừ lượt hay ngân
     sách của chủ web. Khách cũng dùng được, vì tiền là của chính khóa đó.

@@ -1,7 +1,11 @@
 """Cloud speech adapters; credentials and budget stay on the server."""
 import asyncio
+import json
+import logging
 import math
 import os
+import struct
+import uuid
 from datetime import datetime, timezone
 from urllib.parse import urlsplit, urlunsplit
 
@@ -17,10 +21,20 @@ QWEN_ENDPOINTS = {
     'intl': 'https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation',
     'cn': 'https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation',
 }
-# Nguồn đọc bằng khóa của chính người dùng mà phải đi qua máy chủ: StepFun chặn trình duyệt gọi thẳng (CORS), còn
-# Qwen trả địa chỉ tệp âm thanh mà trình duyệt không tải được (kiểm ngày 2026-09-24).
-RELAY_NAMES = {'stepfun': 'StepFun', 'qwen': 'Qwen Cloud'}
+# CosyVoice (cùng khóa Alibaba Cloud với Qwen) chỉ có WebSocket, và khóa phải nằm trong header lúc bắt tay.
+COSYVOICE_ENDPOINTS = {
+    'intl': 'wss://dashscope-intl.aliyuncs.com/api-ws/v1/inference',
+    'cn': 'wss://dashscope.aliyuncs.com/api-ws/v1/inference',
+}
+COSYVOICE_RATE = 24000
+# Nguồn đọc bằng khóa của chính người dùng mà phải đi qua máy chủ: StepFun chặn trình duyệt gọi thẳng (CORS), Qwen
+# trả địa chỉ tệp âm thanh mà trình duyệt không tải được (kiểm ngày 2026-09-24), còn WebSocket của CosyVoice cần
+# header Authorization mà trình duyệt không gắn được.
+RELAY_NAMES = {'stepfun': 'StepFun', 'qwen': 'Alibaba Cloud'}
 RELAY_MODELS = {'stepfun': 'stepaudio-2.5-tts', 'qwen': 'qwen3-tts-flash'}
+# websockets ghi các header bắt tay (có cả khóa) ở mức DEBUG: logger riêng này không bao giờ ghi mức đó.
+_ws_log = logging.getLogger('peto.voice.cosyvoice')
+_ws_log.setLevel(logging.WARNING)
 
 
 def enabled(name):
@@ -122,6 +136,85 @@ async def _qwen(client, key, model, voice, text, endpoint):
         return await read_audio(audio)
 
 
+def pcm_to_wav(pcm, rate):
+    """Bọc PCM16 mono thành WAV, để trang đọc được độ to cho nhân vật nhép miệng."""
+    return (b'RIFF' + struct.pack('<I', 36 + len(pcm)) + b'WAVEfmt '
+            + struct.pack('<IHHIIHH', 16, 1, 1, rate, rate * 2, 2, 16) + b'data' + struct.pack('<I', len(pcm)) + pcm)
+
+
+class CosyVoiceFailed(Exception):
+    """Sự kiện task-failed của CosyVoice; chỉ giữ mã lỗi, câu báo lỗi của Alibaba không tới người dùng."""
+
+    def __init__(self, code):
+        super().__init__(code)
+        self.code = code
+
+
+async def _cosyvoice(key, model, voice, text, endpoint):
+    """Một lượt CosyVoice theo giao thức WebSocket của Alibaba: run-task, chờ task-started, gửi chữ rồi finish-task,
+    gom các khung âm thanh nhị phân tới task-finished."""
+    from websockets.asyncio.client import connect as ws_connect
+
+    task = str(uuid.uuid4())
+
+    def message(action, payload):
+        return json.dumps({'header': {'action': action, 'task_id': task, 'streaming': 'duplex'}, 'payload': payload})
+
+    audio = bytearray()
+    async with ws_connect(endpoint, additional_headers={'Authorization': 'Bearer ' + key}, logger=_ws_log,
+                          open_timeout=15, close_timeout=2) as socket:
+        await socket.send(message('run-task', {
+            'task_group': 'audio', 'task': 'tts', 'function': 'SpeechSynthesizer', 'model': model, 'input': {},
+            # Companion nói tiếng Anh: gợi ý ngôn ngữ để số và ký hiệu được đọc theo tiếng Anh (v1 không có, v2 trở lên có).
+            'parameters': {'text_type': 'PlainText', 'voice': voice, 'format': 'pcm', 'sample_rate': COSYVOICE_RATE,
+                           'language_hints': ['en']},
+        }))
+        async for frame in socket:
+            if isinstance(frame, bytes):
+                audio.extend(frame)
+                if len(audio) > MAX_AUDIO:
+                    raise HTTPException(502, 'Âm thanh trả về quá lớn.')
+                continue
+            header = json.loads(frame).get('header') or {}
+            event = header.get('event')
+            if event == 'task-started':
+                await socket.send(message('continue-task', {'input': {'text': text}}))
+                await socket.send(message('finish-task', {'input': {}}))
+            elif event == 'task-failed':
+                raise CosyVoiceFailed(str(header.get('error_code') or ''))
+            elif event == 'task-finished':
+                break
+    if len(audio) < 2:
+        raise ValueError('CosyVoice không trả âm thanh')
+    return pcm_to_wav(bytes(audio[:len(audio) // 2 * 2]), COSYVOICE_RATE)
+
+
+def relay_error(name, code):
+    """Mã lỗi của nhà cung cấp thành câu tiếng Việt; không bao giờ đưa nguyên văn lỗi của họ (có thể lộ khóa) ra ngoài."""
+    if code in (401, 403):
+        return HTTPException(400, f'Khóa {name} không đúng hoặc chưa có quyền dùng giọng nói.')
+    if code == 402:
+        return HTTPException(402, f'Tài khoản {name} của bạn đã hết số dư.')
+    if code == 429:
+        return HTTPException(429, f'{name} đang giới hạn lượt gọi của khóa này. Thử lại sau.')
+    if code in (400, 404, 422):
+        return HTTPException(400, f'{name} không nhận mã giọng hoặc model này. Kiểm tra lại trong Cài đặt.')
+    return HTTPException(502, f'{name} đang bận hoặc từ chối yêu cầu. Thử lại sau.')
+
+
+def cosyvoice_status(code):
+    """Mã lỗi chữ trong task-failed của CosyVoice, quy về mã HTTP tương ứng để dùng chung relay_error."""
+    if 'Arrearage' in code:
+        return 402
+    if 'Throttling' in code or 'RateQuota' in code:
+        return 429
+    if 'ApiKey' in code or 'AccessDenied' in code or 'Unauthorized' in code:
+        return 401
+    if 'Invalid' in code or 'NotFound' in code or 'BadRequest' in code or 'Unsupported' in code:
+        return 400
+    return 502
+
+
 async def synthesize(text, voice):
     if voice not in catalog():
         raise HTTPException(503, 'Nguồn giọng chưa được cấu hình trên máy chủ.')
@@ -167,23 +260,34 @@ async def relay(provider, key, text, voice, model=None, region='intl'):
     if not name:
         raise HTTPException(400, 'Nguồn giọng này không đi qua máy chủ Peto.')
     model = model or RELAY_MODELS[provider]
+    if provider == 'qwen' and model.startswith('cosyvoice-'):
+        return await _relay_cosyvoice(name, key, model, voice, text, region)
     try:
         async with httpx.AsyncClient(timeout=60, follow_redirects=False) as client:
             if provider == 'stepfun':
                 return await _stepfun(client, key, model, voice, text)
             return await _qwen(client, key, model, voice, text, QWEN_ENDPOINTS.get(region, QWEN_ENDPOINTS['intl']))
     except httpx.HTTPStatusError as error:
-        code = error.response.status_code
-        if code in (401, 403):
-            raise HTTPException(400, f'Khóa {name} không đúng hoặc chưa có quyền dùng giọng nói.') from None
-        if code == 402:
-            raise HTTPException(402, f'Tài khoản {name} của bạn đã hết số dư.') from None
-        if code == 429:
-            raise HTTPException(429, f'{name} đang giới hạn lượt gọi của khóa này. Thử lại sau.') from None
-        if code in (400, 404, 422):
-            raise HTTPException(400, f'{name} không nhận mã giọng hoặc model này. Kiểm tra lại trong Cài đặt.') from None
-        raise HTTPException(502, f'{name} đang bận hoặc từ chối yêu cầu. Thử lại sau.') from None
+        raise relay_error(name, error.response.status_code) from None
     except (httpx.HTTPError, ValueError, KeyError, TypeError):
+        raise HTTPException(502, f'Không nhận được âm thanh từ {name}.') from None
+
+
+async def _relay_cosyvoice(name, key, model, voice, text, region):
+    # Nạp lúc dùng: VPS còn websockets cũ (trước bản 14) thì chỉ CosyVoice báo lỗi, cả máy chủ vẫn chạy.
+    try:
+        import websockets
+        from websockets.asyncio.client import connect  # noqa: F401
+    except ImportError:
+        raise HTTPException(503, 'Máy chủ Peto chưa sẵn sàng cho CosyVoice: chủ web cần cài lại thư viện của backend.') from None
+    try:
+        async with asyncio.timeout(60):
+            return await _cosyvoice(key, model, voice, text, COSYVOICE_ENDPOINTS.get(region, COSYVOICE_ENDPOINTS['intl']))
+    except websockets.exceptions.InvalidStatus as error:
+        raise relay_error(name, error.response.status_code) from None
+    except CosyVoiceFailed as error:
+        raise relay_error(name, cosyvoice_status(error.code)) from None
+    except (TimeoutError, OSError, websockets.exceptions.WebSocketException, ValueError, TypeError, AttributeError):
         raise HTTPException(502, f'Không nhận được âm thanh từ {name}.') from None
 
 

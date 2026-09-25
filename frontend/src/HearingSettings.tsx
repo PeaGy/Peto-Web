@@ -19,7 +19,7 @@ import {
   type HearingProvider,
 } from "./hearingProviders";
 import { updateKeyConfig, useKeyConfigs, type KeyConfig } from "./voiceProviders";
-import { Field, SourceCard, type Card } from "./voiceUi";
+import { Dropdown, Field, SourceCard, type Card } from "./voiceUi";
 
 /** Trình duyệt đang dùng gửi âm thanh đi đâu để chép lời (chỉ để nói rõ với người dùng). */
 function browserNote(): string {
@@ -122,17 +122,17 @@ export default function HearingSettings({ open }: { open: boolean }) {
       </p>
 
       <div className="hearing-fields">
-        <div className="voice-field">
-          <label htmlFor={micId}>Micro</label>
+        <Field id={micId} label="Micro">
           <MicrophoneSelect id={micId} microphones={microphones} />
-        </div>
-        <div className="voice-field">
-          <label htmlFor={languageId}>Bạn nói bằng</label>
-          <select id={languageId} value={hearing.language} onChange={(event) => setHearingSetting("language", event.target.value as HearingLanguage)}>
-            <option value="en">Tiếng Anh</option>
-            <option value="vi">Tiếng Việt</option>
-          </select>
-        </div>
+        </Field>
+        <Field id={languageId} label="Bạn nói bằng">
+          <Dropdown
+            id={languageId}
+            value={hearing.language}
+            onChange={(value) => setHearingSetting("language", value as HearingLanguage)}
+            options={[{ value: "en", label: "Tiếng Anh" }, { value: "vi", label: "Tiếng Việt" }]}
+          />
+        </Field>
       </div>
 
       <div className="voice-group"><strong>Không cần khóa</strong></div>
@@ -268,9 +268,12 @@ function KeyDetail({ provider, config }: { provider: HearingProvider; config: Ke
         </Field>
       ) : (provider.models?.length ?? 0) > 1 && (
         <Field id={ids.model} label="Model">
-          <select id={ids.model} value={model} onChange={(event) => update({ sttModel: event.target.value })}>
-            {provider.models!.map((item) => <option key={item} value={item}>{item}</option>)}
-          </select>
+          <Dropdown
+            id={ids.model}
+            value={model}
+            onChange={(value) => update({ sttModel: value })}
+            options={provider.models!.map((item) => ({ value: item, label: item }))}
+          />
         </Field>
       )}
       <p className="voice-note">

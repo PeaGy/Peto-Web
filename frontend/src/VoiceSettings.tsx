@@ -5,13 +5,16 @@ import {
   KEY_PROVIDERS,
   keyReady,
   listKeyVoices,
+  defaultVoiceOf,
   modelOf,
+  suggestedVoices,
+  voiceNoteOf,
   voiceOf,
   type KeyConfig,
   type KeyProvider,
   type VoiceOption,
 } from "./voiceProviders";
-import { Field, SourceCard, type Card as SourceCardData } from "./voiceUi";
+import { Dropdown, Field, SourceCard, type Card as SourceCardData, type DropdownOption } from "./voiceUi";
 
 /** Giọng nào cũng nói tiếng Anh tốt nhất, nên câu nghe thử mặc định bằng tiếng Anh. */
 const SAMPLE_TEXT = "Hi! I'm Peto. Nice to see you again.";
@@ -22,7 +25,8 @@ const SHORT_REPLY_CHARS = 120;
 const CLOUD_NAMES: Record<string, string> = { stepfun: "StepFun", openai: "OpenAI", qwen: "Qwen" };
 const RELAY_REASON: Partial<Record<KeyProvider["id"], string>> = {
   stepfun: "StepFun không cho trình duyệt gọi thẳng",
-  qwen: "Qwen Cloud trả âm thanh ở một địa chỉ trình duyệt không tải được",
+  qwen: "Alibaba Cloud không cho trình duyệt tự lấy âm thanh (Qwen trả tệp ở địa chỉ trình duyệt không tải được, "
+    + "CosyVoice cần gắn khóa vào kết nối)",
 };
 
 type Card = SourceCardData<VoiceSourceId>;
@@ -202,14 +206,23 @@ export default function VoiceSettings({ voice, open, tab = "noi", onTab, focusRe
               </div>
               <div className="voice-cards">{cards(byok)}</div>
 
-              <div className="voice-field voice-fallback">
-                <label htmlFor={fallbackId}>Khi nguồn chính không nói được</label>
-                <select id={fallbackId} value={fallback} onChange={(event) => voice.setFallback(event.target.value as FallbackChoice)}>
-                  {offerHome && <option value="home">Dùng Máy nhà của Peto nếu đang bật</option>}
-                  {offerOfficial && <option value="official">Dùng Giọng Peto nếu còn lượt</option>}
-                  <option value="">Chỉ hiện chữ</option>
-                </select>
-                <small>Giọng nói do AI tạo. Giọng dự phòng có thể khác chất giọng; Giọng Peto dự phòng cũng trừ lượt tháng này.</small>
+              <div className="voice-fallback">
+                <Field
+                  id={fallbackId}
+                  label="Khi nguồn chính không nói được"
+                  hint="Giọng nói do AI tạo. Giọng dự phòng có thể khác chất giọng; Giọng Peto dự phòng cũng trừ lượt tháng này."
+                >
+                  <Dropdown
+                    id={fallbackId}
+                    value={fallback}
+                    onChange={(value) => voice.setFallback(value as FallbackChoice)}
+                    options={[
+                      ...(offerHome ? [{ value: "home", label: "Dùng Máy nhà của Peto nếu đang bật" }] : []),
+                      ...(offerOfficial ? [{ value: "official", label: "Dùng Giọng Peto nếu còn lượt" }] : []),
+                      { value: "", label: "Chỉ hiện chữ" },
+                    ]}
+                  />
+                </Field>
               </div>
             </>
           )}
@@ -283,9 +296,12 @@ function OfficialDetail({ voice }: { voice: LocalVoice }) {
         </p>
       </div>
       <Field id={id} label="Giọng">
-        <select id={id} value={voice.officialVoice} onChange={(event) => { voice.stop(); voice.setOfficialVoice(event.target.value); }}>
-          {official.voices.map((name) => <option key={name} value={name}>{voiceLabel(name)}</option>)}
-        </select>
+        <Dropdown
+          id={id}
+          value={voice.officialVoice}
+          onChange={(value) => { voice.stop(); voice.setOfficialVoice(value); }}
+          options={official.voices.map((name) => ({ value: name, label: voiceLabel(name) }))}
+        />
       </Field>
     </>
   );
@@ -307,16 +323,19 @@ function HomeDetail({ voice }: { voice: LocalVoice }) {
         )}
       </p>
       <Field id={id} label="Giọng">
-        <select id={id} value={voice.homeVoice} onChange={(event) => { voice.stop(); voice.setHomeVoice(event.target.value); }}>
-          {home.voices.map((name) => <option key={name} value={name}>{VOICE_LABELS[name] ?? name}</option>)}
-        </select>
+        <Dropdown
+          id={id}
+          value={voice.homeVoice}
+          onChange={(value) => { voice.stop(); voice.setHomeVoice(value); }}
+          options={home.voices.map((name) => ({ value: name, label: VOICE_LABELS[name] ?? name }))}
+        />
       </Field>
     </>
   );
 }
 
 function KeyDetail({ voice, provider }: { voice: LocalVoice; provider: KeyProvider }) {
-  const ids = { url: useId(), key: useId(), region: useId(), model: useId(), voice: useId(), list: useId() };
+  const ids = { url: useId(), key: useId(), region: useId(), model: useId(), voice: useId() };
   const config = voice.keys[provider.id] ?? {};
   const update = (patch: KeyConfig) => {
     voice.stop();
@@ -333,7 +352,17 @@ function KeyDetail({ voice, provider }: { voice: LocalVoice; provider: KeyProvid
 
   const currentVoice = voiceOf(provider, config);
   const currentModel = modelOf(provider, config);
+  const suggestions = suggestedVoices(provider, currentModel);
+  const voiceNote = voiceNoteOf(provider, currentModel);
+  const defaultVoice = defaultVoiceOf(provider, currentModel);
+  const defaultLabel = suggestions.find((item) => item.id === defaultVoice)?.label ?? defaultVoice;
   const reason = RELAY_REASON[provider.id];
+
+  // Qwen-TTS và CosyVoice có bộ giọng khác nhau: đổi model thì giữ giọng đang chọn chỉ khi model mới cũng có nó.
+  function pickModel(model: string) {
+    const keep = config.voice && suggestedVoices(provider, model).some((item) => item.id === config.voice);
+    update({ model, voice: keep ? config.voice : undefined });
+  }
   return (
     <>
       {provider.needsBaseUrl && (
@@ -365,9 +394,12 @@ function KeyDetail({ voice, provider }: { voice: LocalVoice; provider: KeyProvid
       </Field>
       {provider.region?.options ? (
         <Field id={ids.region} label={provider.region.label}>
-          <select id={ids.region} value={config.region || provider.region.options[0].value} onChange={(event) => update({ region: event.target.value })}>
-            {provider.region.options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-          </select>
+          <Dropdown
+            id={ids.region}
+            value={config.region || provider.region.options[0].value}
+            onChange={(value) => update({ region: value })}
+            options={provider.region.options}
+          />
         </Field>
       ) : provider.region && (
         <Field id={ids.region} label={provider.region.label} hint="Vùng của tài nguyên Speech trên Azure.">
@@ -396,9 +428,14 @@ function KeyDetail({ voice, provider }: { voice: LocalVoice; provider: KeyProvid
         </Field>
       ) : (provider.models?.length ?? 0) > 1 && (
         <Field id={ids.model} label="Model">
-          <select id={ids.model} value={currentModel} onChange={(event) => update({ model: event.target.value })}>
-            {provider.models!.map((model) => <option key={model} value={model}>{model}</option>)}
-          </select>
+          <Dropdown
+            id={ids.model}
+            value={currentModel}
+            onChange={pickModel}
+            options={provider.models!.map((model) => ({
+              value: model, label: provider.modelInfo?.[model]?.label ?? model, hint: provider.modelInfo?.[model]?.hint,
+            }))}
+          />
         </Field>
       )}
       {provider.listsVoices ? (
@@ -411,41 +448,52 @@ function KeyDetail({ voice, provider }: { voice: LocalVoice; provider: KeyProvid
             </span>
           )}
         >
-          <select
-            id={ids.voice} value={currentVoice} disabled={!listed.voices?.length}
-            onChange={(event) => update({ voice: event.target.value })}
-          >
-            {!listed.voices?.length && (
-              <option value={currentVoice}>
-                {listed.loading ? "Đang tải danh sách giọng…" : keyReady(provider, config) ? currentVoice || "Chưa tải được danh sách giọng" : "Nhập khóa để tải danh sách giọng"}
-              </option>
-            )}
-            {listed.voices && currentVoice && !listed.voices.some((item) => item.id === currentVoice) && (
-              <option value={currentVoice}>{currentVoice}</option>
-            )}
-            {listed.voices?.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
-          </select>
+          <Dropdown
+            id={ids.voice}
+            value={currentVoice}
+            disabled={!listed.voices?.length}
+            onChange={(value) => update({ voice: value })}
+            placeholder={listed.loading ? "Đang tải danh sách giọng…"
+              : keyReady(provider, config) ? currentVoice || "Chưa tải được danh sách giọng"
+              : "Nhập khóa để tải danh sách giọng"}
+            options={listed.voices?.length ? [
+              ...(currentVoice && !listed.voices.some((item) => item.id === currentVoice) ? [{ value: currentVoice, label: currentVoice }] : []),
+              ...listed.voices.map(voiceChoice),
+            ] : []}
+          />
         </Field>
       ) : provider.voiceFree ? (
-        <Field id={ids.voice} label="Giọng" hint="Mã giọng của nhà cung cấp; gõ tay hoặc chọn gợi ý.">
-          <input
-            id={ids.voice} type="text" list={provider.voices?.length ? ids.list : undefined} spellCheck={false} autoComplete="off"
-            placeholder={provider.defaultVoice || "Mã giọng"} value={config.voice ?? ""}
-            onChange={(event) => update({ voice: event.target.value })}
+        <Field
+          id={ids.voice}
+          label="Giọng"
+          hint={voiceNote ? `${voiceNote} Gõ tay nếu bạn có mã giọng khác.` : "Mã giọng của nhà cung cấp; gõ tay hoặc chọn gợi ý."}
+        >
+          <Dropdown
+            id={ids.voice}
+            editable
+            emptyValue={defaultVoice}
+            placeholder={defaultLabel || "Mã giọng"}
+            value={config.voice ?? ""}
+            onChange={(value) => update({ voice: value })}
+            options={suggestions.map(voiceChoice)}
           />
-          {provider.voices?.length ? (
-            <datalist id={ids.list}>{provider.voices.map((name) => <option key={name} value={name} />)}</datalist>
-          ) : null}
         </Field>
       ) : (
         <Field id={ids.voice} label="Giọng">
-          <select id={ids.voice} value={currentVoice} onChange={(event) => update({ voice: event.target.value })}>
-            {provider.voices?.map((name) => <option key={name} value={name}>{name}</option>)}
-          </select>
+          <Dropdown
+            id={ids.voice}
+            value={currentVoice}
+            onChange={(value) => update({ voice: value })}
+            options={suggestions.map(voiceChoice)}
+          />
         </Field>
       )}
     </>
   );
+}
+
+function voiceChoice(option: VoiceOption): DropdownOption {
+  return { value: option.id, label: option.label, hint: option.hint, group: option.group };
 }
 
 /** Danh sách giọng tải bằng khóa của người dùng (ElevenLabs, Azure); chờ gõ xong nửa giây rồi mới gọi. */

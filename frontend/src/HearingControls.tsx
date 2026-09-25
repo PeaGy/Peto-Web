@@ -15,6 +15,7 @@ import {
 } from "./hearingEngine";
 import { listMicrophones, type Microphone } from "./hearingCapture";
 import { hearingProvider } from "./hearingProviders";
+import { Dropdown, Field } from "./voiceUi";
 
 export function MicIcon({ size = 18 }: { size?: number }) {
   return (
@@ -147,11 +148,16 @@ export function MicrophoneSelect({ id, microphones }: { id: string; microphones:
   const hearing = useHearing();
   const known = !hearing.deviceId || microphones.some((microphone) => microphone.id === hearing.deviceId);
   return (
-    <select id={id} value={hearing.deviceId} onChange={(event) => setHearingSetting("deviceId", event.target.value)}>
-      <option value="">Micro mặc định</option>
-      {!known && <option value={hearing.deviceId}>Micro đã chọn (chưa thấy)</option>}
-      {microphones.map((microphone) => <option key={microphone.id} value={microphone.id}>{microphone.label}</option>)}
-    </select>
+    <Dropdown
+      id={id}
+      value={hearing.deviceId}
+      onChange={(value) => setHearingSetting("deviceId", value)}
+      options={[
+        { value: "", label: "Micro mặc định" },
+        ...(known ? [] : [{ value: hearing.deviceId, label: "Micro đã chọn (chưa thấy)" }]),
+        ...microphones.map((microphone) => ({ value: microphone.id, label: microphone.label })),
+      ]}
+    />
   );
 }
 
@@ -215,11 +221,13 @@ export function HearingPopover({ anchorRef, onClose, onOpenSettings }: {
           onChange={(event) => setHearingSetting("autoSend", event.target.checked)}
         />
       </label>
-      <div className="voice-field">
-        <label htmlFor={micId}>Micro</label>
+      <Field
+        id={micId}
+        label="Micro"
+        hint={hearing.source === "browser" ? "Nguồn trong trình duyệt luôn nghe bằng micro mặc định của máy." : undefined}
+      >
         <MicrophoneSelect id={micId} microphones={microphones} />
-        {hearing.source === "browser" && <small>Nguồn trong trình duyệt luôn nghe bằng micro mặc định của máy.</small>}
-      </div>
+      </Field>
       <p className="hearing-source">
         Nguồn nghe: {sourceName(hearing.source)}
         {onOpenSettings && <> · <button type="button" className="voice-link" onClick={onOpenSettings}>đổi trong Cài đặt</button></>}

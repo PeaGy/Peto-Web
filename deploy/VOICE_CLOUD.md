@@ -10,7 +10,7 @@ Trong Cài đặt → Giọng nói, người dùng chọn một trong ba loại 
 - **Máy nhà của Peto**: Qwen3-TTS trên máy Windows của chủ web, qua relay
   (`voice-worker/README.md`). Không tốn tiền API.
 - **Khóa của bạn**: người dùng tự nhập khóa OpenAI, ElevenLabs, Azure, Gemini,
-  MiniMax, Qwen Cloud, StepFun hoặc máy chủ tương thích OpenAI. Tiền tính vào tài
+  MiniMax, Alibaba Cloud (Qwen-TTS, CosyVoice), StepFun hoặc máy chủ tương thích OpenAI. Tiền tính vào tài
   khoản của họ, không đụng khóa hay ngân sách trong file này.
 
 ## OpenAI trên VPS
@@ -109,10 +109,15 @@ vẫn là trần chung của mọi người, chặn trước cả khi còn lư�
 
 ## Khóa riêng của người dùng
 
+CosyVoice cần thư viện `websockets` bản 14 trở lên, đã ghi trong `backend/requirements.txt`.
+VPS cài từ trước thì chạy lại `pip install -r backend/requirements.txt`; thiếu thư viện
+thì chỉ CosyVoice báo lỗi, máy chủ vẫn chạy.
+
 Khóa người dùng nhập nằm trong trình duyệt của họ (localStorage), không lên máy chủ.
 Trình duyệt gọi thẳng OpenAI, ElevenLabs, Azure, Gemini, MiniMax và máy chủ tương
-thích OpenAI. StepFun chặn trình duyệt gọi thẳng, còn Qwen Cloud trả địa chỉ tệp
-âm thanh trình duyệt không tải được, nên hai nguồn này đi qua `POST /api/voice/relay`:
+thích OpenAI. StepFun chặn trình duyệt gọi thẳng, còn ở Alibaba Cloud thì Qwen trả địa chỉ tệp
+âm thanh trình duyệt không tải được và CosyVoice chỉ nhận WebSocket có khóa trong
+header, nên hai nguồn này đi qua `POST /api/voice/relay`:
 khóa nằm trong header `X-Voice-Key`, chỉ dùng cho đúng lượt đó, không lưu, không ghi
 nhật ký, không trừ lượt hay ngân sách của chủ web. Khách cũng dùng được. Relay dùng
 chung giới hạn đồng thời với Giọng Peto. Azure Speech đã chạy với khóa thật (chủ web

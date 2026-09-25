@@ -481,9 +481,9 @@ Anh như đang trò chuyện, rồi tự nói thành tiếng. Tab Trò chuyện 
     máy đó với hai giọng mẫu `playful-1` và `gentle-2`. Chương trình `voice-worker/relay.py` trên cùng máy tự kết nối
     ra VPS qua HTTPS để nhận câu cần đọc rồi gửi âm thanh về, nên máy nhà không phải mở cổng nào. Cách cấu hình nằm ở
     [voice-worker/README.md](voice-worker/README.md).
-  - **Khóa của bạn**: OpenAI, ElevenLabs, Azure Speech, Google Gemini, MiniMax, Qwen Cloud, StepFun hoặc máy chủ tương
+  - **Khóa của bạn**: OpenAI, ElevenLabs, Azure Speech, Google Gemini, MiniMax, Alibaba Cloud (Qwen-TTS, CosyVoice), StepFun hoặc máy chủ tương
     thích OpenAI. Khóa lưu trên trình duyệt đó, tính tiền vào tài khoản của người dùng, và có nút xóa khỏi trình
-    duyệt. Trình duyệt gọi thẳng nhà cung cấp; riêng StepFun và Qwen Cloud đi qua máy chủ Peto, nơi khóa chỉ được
+    duyệt. Trình duyệt gọi thẳng nhà cung cấp; riêng StepFun và Alibaba Cloud đi qua máy chủ Peto, nơi khóa chỉ được
     chuyển tiếp cho đúng lượt đó, không lưu, không ghi lại. Khách cũng dùng được. Azure Speech đã được chủ web thử
     bằng khóa thật ngày 24/9/2026 (Nghe thử và Companion đều nói được); các nguồn còn lại chưa thử.
 - **Peto nghe**: bấm micro ở góc trái ô nhắn thì Peto nghe bạn nói. Chữ hiện dần trong ô nhắn; bấm Gửi, hoặc bật

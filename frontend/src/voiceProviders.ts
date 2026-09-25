@@ -1,13 +1,14 @@
 /**
  * Nguồn giọng dùng khóa riêng của người dùng (chủ web chọn ngày 2026-09-24, giống AIRI): khóa nằm trên trình duyệt
  * này và trình duyệt gọi thẳng nhà cung cấp, máy chủ Peto không nhận được khóa. Riêng StepFun (chặn trình duyệt gọi
- * thẳng) và Qwen (trả địa chỉ tệp âm thanh trình duyệt không tải được) đi qua /api/voice/relay: máy chủ chỉ chuyển
- * tiếp, không lưu, không ghi lại khóa.
+ * thẳng) và Alibaba Cloud (Qwen trả địa chỉ tệp âm thanh trình duyệt không tải được, CosyVoice chỉ có WebSocket cần
+ * khóa trong header) đi qua /api/voice/relay: máy chủ chỉ chuyển tiếp, không lưu, không ghi lại khóa.
  *
  * Âm thanh nào cũng được đổi về WAV PCM16 trước khi phát, để voiceActivity đọc được độ to cho nhân vật nhép miệng.
  */
 
 import { useSyncExternalStore } from "react";
+import { COSYVOICE_V2, COSYVOICE_V3_FLASH } from "./cosyVoices";
 
 export type KeyProviderId = "openai" | "elevenlabs" | "azure" | "gemini" | "minimax" | "qwen" | "stepfun" | "compat";
 
@@ -38,31 +39,114 @@ export interface KeyProvider {
   /** Azure cần vùng (chữ), Qwen chọn tài khoản quốc tế hay Trung Quốc. */
   region?: { label: string; placeholder?: string; options?: { value: string; label: string }[] };
   models?: string[];
+  /** Tên hiện của model, và bộ giọng riêng nếu có (Alibaba: Qwen-TTS và CosyVoice dùng giọng khác nhau). */
+  modelInfo?: Record<string, ModelInfo>;
   modelFree?: boolean;
   /** Danh sách giọng cố định, hay gợi ý khi voiceFree. */
-  voices?: string[];
+  voices?: VoiceOption[];
   voiceFree?: boolean;
+  /** Dòng chú thích dưới ô Giọng, thay câu chung "gõ tay hoặc chọn gợi ý". */
+  voiceNote?: string;
   /** Danh sách giọng tải từ nhà cung cấp sau khi có khóa. */
   listsVoices?: boolean;
   defaultVoice: string;
 }
 
+export interface ModelInfo {
+  label: string;
+  hint?: string;
+  /** Có thì thay cho voices, defaultVoice, voiceNote của nhà cung cấp khi chọn model này. */
+  voices?: VoiceOption[];
+  defaultVoice?: string;
+  voiceNote?: string;
+}
+
 export interface VoiceOption {
   id: string;
   label: string;
+  /** Mô tả ngắn dưới tên trong bảng chọn. */
+  hint?: string;
+  /** Nhóm trong bảng chọn (giọng phương ngữ của Qwen). */
+  group?: string;
 }
 
-const GEMINI_VOICES = [
+const named = (ids: string[]): VoiceOption[] => ids.map((id) => ({ id, label: id }));
+const described = (entries: [string, string][], group?: string): VoiceOption[] =>
+  entries.map(([id, hint]) => (group ? { id, label: id, hint, group } : { id, label: id, hint }));
+
+const GEMINI_VOICES = named([
   "Kore", "Puck", "Zephyr", "Charon", "Fenrir", "Leda", "Orus", "Aoede", "Callirrhoe", "Autonoe", "Enceladus",
   "Iapetus", "Umbriel", "Algieba", "Despina", "Erinome", "Algenib", "Rasalgethi", "Laomedeia", "Achernar", "Alnilam",
   "Schedar", "Gacrux", "Pulcherrima", "Achird", "Zubenelgenubi", "Vindemiatrix", "Sadachbia", "Sadaltager", "Sulafat",
+]);
+
+const QWEN_DIALECTS = "Phương ngữ Trung Quốc";
+
+/**
+ * 48 giọng của qwen3-tts-flash, mô tả dịch từ danh sách giọng của Qwen Cloud (xem ngày 2026-09-25). Giọng nào cũng
+ * nói tiếng Anh, tiếng Trung và 8 thứ tiếng khác, không có tiếng Việt; nhóm phương ngữ nói tiếng địa phương thay cho
+ * tiếng phổ thông. Mã có dấu cách ("Eldric Sage") là mã thật của API.
+ */
+const QWEN_VOICES: VoiceOption[] = [
+  ...described([
+    ["Cherry", "Nữ · trẻ, tươi tắn, thân thiện, tự nhiên"],
+    ["Serena", "Nữ · trẻ, dịu dàng"],
+    ["Ethan", "Nam · tươi sáng, ấm áp, tràn năng lượng"],
+    ["Chelsie", "Nữ · bạn gái ảo kiểu anime"],
+    ["Momo", "Nữ · tinh nghịch, lém lỉnh, làm bạn vui lên"],
+    ["Vivian", "Nữ · tự tin, dễ thương, hơi đanh đá"],
+    ["Moon", "Nam · phóng khoáng, điển trai"],
+    ["Maia", "Nữ · vừa trí thức vừa dịu dàng"],
+    ["Kai", "Nam · êm dịu, thư giãn đôi tai"],
+    ["Nofish", "Nam · nhà thiết kế nói tiếng Trung không uốn lưỡi"],
+    ["Bella", "Nữ · trẻ, sôi nổi, tinh nghịch"],
+    ["Jennifer", "Nữ · tiếng Anh Mỹ, chất lượng như phim"],
+    ["Ryan", "Nam · giàu nhịp điệu và kịch tính"],
+    ["Katerina", "Nữ · trưởng thành, nhịp điệu cuốn hút"],
+    ["Aiden", "Nam · chàng trai Mỹ trẻ, giỏi nấu ăn"],
+    ["Eldric Sage", "Nam · ông lão điềm tĩnh, thông thái"],
+    ["Mia", "Nữ · dịu dàng, ngoan ngoãn"],
+    ["Mochi", "Nam · lanh lợi, nhanh trí, còn nét trẻ thơ"],
+    ["Bellona", "Nữ · mạnh mẽ, rõ chữ, hào hùng"],
+    ["Vincent", "Nam · khàn, trầm, đậm chất anh hùng ca"],
+    ["Bunny", "Nữ · bé gái siêu dễ thương"],
+    ["Neil", "Nam · phát thanh viên thời sự, rõ ràng, đều giọng"],
+    ["Elias", "Nữ · giảng kiến thức khó bằng lối kể chuyện"],
+    ["Arthur", "Nam · mộc mạc, từng trải, kể chuyện làng quê"],
+    ["Nini", "Nữ · mềm mại, nũng nịu, ngọt ngào"],
+    ["Seren", "Nữ · nhẹ nhàng, ru ngủ"],
+    ["Pip", "Nam · cậu bé nghịch ngợm kiểu Shin-chan"],
+    ["Stella", "Nữ · thiếu nữ ngọt ngào, hơi ngơ ngác"],
+    ["Bodega", "Nam · người Tây Ban Nha nhiệt huyết"],
+    ["Sonrisa", "Nữ · người Mỹ Latinh vui vẻ, cởi mở"],
+    ["Alek", "Nam · người Nga, ngoài lạnh trong ấm"],
+    ["Dolce", "Nam · người Ý thong thả"],
+    ["Sohee", "Nữ · chị gái Hàn Quốc ấm áp, giàu cảm xúc"],
+    ["Ono Anna", "Nữ · bạn thời thơ ấu lanh lợi, hoạt bát"],
+    ["Lenn", "Người Đức trẻ: lý trí, nổi loạn ở tiểu tiết"],
+    ["Emilien", "Nam · anh trai người Pháp lãng mạn"],
+    ["Andre", "Nam · trầm ấm, tự nhiên, vững vàng"],
+    ["Radio Gol", "Nam · bình luận viên bóng đá"],
+  ]),
+  ...described([
+    ["Jada", "Nữ · tiếng Thượng Hải, nói nhanh, sôi nổi"],
+    ["Dylan", "Nam · tiếng Bắc Kinh, lớn lên trong ngõ phố cổ"],
+    ["Li", "Nam · tiếng Nam Kinh, thầy dạy yoga kiên nhẫn"],
+    ["Marcus", "Nam · tiếng Thiểm Tây, ít nói, giọng trầm"],
+    ["Roy", "Nam · tiếng Mân Nam, chàng trai Đài Loan hài hước"],
+    ["Peter", "Nam · tiếng Thiên Tân, giọng tấu hài"],
+    ["Sunny", "Nữ · tiếng Tứ Xuyên, ngọt ngào"],
+    ["Eric", "Nam · tiếng Tứ Xuyên, chàng trai Thành Đô"],
+    ["Rocky", "Nam · tiếng Quảng Đông, hài hước, dí dỏm"],
+    ["Kiki", "Nữ · tiếng Quảng Đông, cô bạn thân Hồng Kông"],
+  ], QWEN_DIALECTS),
 ];
 
 export const KEY_PROVIDERS: KeyProvider[] = [
   {
     id: "openai", name: "OpenAI", desc: "tts-1, tts-1-hd", route: "direct", keyHint: "sk-…", site: "platform.openai.com",
     models: ["tts-1", "tts-1-hd", "gpt-4o-mini-tts"],
-    voices: ["nova", "shimmer", "coral", "sage", "alloy", "ash", "echo", "fable", "onyx"], defaultVoice: "nova",
+    voices: named(["nova", "shimmer", "coral", "sage", "alloy", "ash", "echo", "fable", "onyx"]), defaultVoice: "nova",
   },
   {
     id: "elevenlabs", name: "ElevenLabs", desc: "Kho giọng lớn, nhân bản giọng", route: "direct",
@@ -81,17 +165,33 @@ export const KEY_PROVIDERS: KeyProvider[] = [
   {
     id: "minimax", name: "MiniMax", desc: "MiniMax Speech", route: "direct", keyHint: "Khóa API MiniMax", site: "minimax.io",
     models: ["speech-2.8-turbo", "speech-2.8-hd"], voiceFree: true,
-    voices: ["English_radiant_girl", "English_Graceful_Lady", "Japanese_Whisper_Belle"], defaultVoice: "English_radiant_girl",
+    voices: named(["English_radiant_girl", "English_Graceful_Lady", "Japanese_Whisper_Belle"]), defaultVoice: "English_radiant_girl",
   },
   {
-    id: "qwen", name: "Qwen Cloud", desc: "Alibaba Cloud Model Studio", route: "relay", keyHint: "sk-…",
+    // Mã "qwen" giữ nguyên để khóa đã lưu trong peto-voice-keys không mất; thẻ đổi tên khi thêm CosyVoice (phương án A
+    // chủ web chọn ngày 2026-09-25: một khóa Alibaba, chọn model trong cùng thẻ như AIRI).
+    id: "qwen", name: "Alibaba Cloud", desc: "Qwen-TTS, CosyVoice", route: "relay", keyHint: "sk-…",
     site: "Alibaba Cloud Model Studio",
-    region: { label: "Tài khoản", options: [{ value: "intl", label: "Quốc tế (Singapore)" }, { value: "cn", label: "Trung Quốc" }] },
-    models: ["qwen3-tts-flash"], voiceFree: true, voices: ["Cherry", "Serena", "Ethan", "Chelsie"], defaultVoice: "Cherry",
+    region: { label: "Tài khoản", options: [{ value: "intl", label: "Quốc tế (Singapore)" }, { value: "cn", label: "Trung Quốc (Bắc Kinh)" }] },
+    models: ["qwen3-tts-flash", "cosyvoice-v2", "cosyvoice-v3-flash"], voiceFree: true, voices: QWEN_VOICES, defaultVoice: "Cherry",
+    voiceNote: "48 giọng của qwen3-tts-flash: nói tiếng Anh, tiếng Trung và 8 thứ tiếng khác, chưa có tiếng Việt.",
+    modelInfo: {
+      "qwen3-tts-flash": { label: "Qwen3-TTS Flash", hint: "48 giọng, nói nhiều thứ tiếng" },
+      "cosyvoice-v2": {
+        label: "CosyVoice v2", hint: "100 giọng, có các giọng như AIRI", voices: COSYVOICE_V2, defaultVoice: "longxiaochun_v2",
+        voiceNote: "Giọng CosyVoice v2 của tài khoản Trung Quốc (Bắc Kinh), giọng nào cũng nói được tiếng Anh. Có các giọng "
+          + "bạn thấy ở AIRI như 龙婉, 龙硕, Stella.",
+      },
+      "cosyvoice-v3-flash": {
+        label: "CosyVoice v3 Flash", hint: "Bản mới hơn, giá bằng nửa v2", voices: COSYVOICE_V3_FLASH, defaultVoice: "longanhuan",
+        voiceNote: "Giọng CosyVoice v3 Flash của tài khoản Trung Quốc (Bắc Kinh), giọng nào cũng nói được tiếng Anh. Tài "
+          + "khoản quốc tế có thể có danh sách khác.",
+      },
+    },
   },
   {
     id: "stepfun", name: "StepFun", desc: "Cùng giọng với Giọng Peto", route: "relay", keyHint: "Khóa API StepFun",
-    site: "platform.stepfun.ai", models: ["stepaudio-2.5-tts"], voiceFree: true, voices: ["jilingshaonv", "lively-girl"],
+    site: "platform.stepfun.ai", models: ["stepaudio-2.5-tts"], voiceFree: true, voices: named(["jilingshaonv", "lively-girl"]),
     defaultVoice: "jilingshaonv",
   },
   {
@@ -182,11 +282,24 @@ export function keyReady(provider: KeyProvider, config: KeyConfig | undefined): 
 }
 
 export function voiceOf(provider: KeyProvider, config: KeyConfig | undefined): string {
-  return config?.voice?.trim() || provider.defaultVoice;
+  return config?.voice?.trim() || defaultVoiceOf(provider, modelOf(provider, config));
 }
 
 export function modelOf(provider: KeyProvider, config: KeyConfig | undefined): string {
   return config?.model?.trim() || provider.models?.[0] || (provider.id === "compat" ? "tts-1" : "");
+}
+
+/** Giọng gợi ý cho model đang chọn: model có bộ giọng riêng (CosyVoice) thì dùng bộ đó. */
+export function suggestedVoices(provider: KeyProvider, model: string): VoiceOption[] {
+  return provider.modelInfo?.[model]?.voices ?? provider.voices ?? [];
+}
+
+export function defaultVoiceOf(provider: KeyProvider, model: string): string {
+  return provider.modelInfo?.[model]?.defaultVoice ?? provider.defaultVoice;
+}
+
+export function voiceNoteOf(provider: KeyProvider, model: string): string | undefined {
+  return provider.modelInfo?.[model]?.voiceNote ?? provider.voiceNote;
 }
 
 export function baseUrl(config: KeyConfig): string {

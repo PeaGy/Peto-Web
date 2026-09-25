@@ -2417,8 +2417,11 @@ label,
 .hearing-toggle > span { display: grid; gap: 2px; }
 .hearing-toggle strong { font-size: 14px; font-weight: 600; }
 .hearing-toggle small { color: var(--stage-muted); font-size: 12px; line-height: 1.45; }
-.hearing-popover .voice-field select { border-color: var(--stage-line); background: var(--stage-input); color: var(--stage-text); }
 .hearing-popover .voice-field small { color: var(--stage-muted); }
+.hearing-popover .dropdown-trigger { border-color: var(--stage-line); background: var(--stage-input); color: var(--stage-text); }
+.hearing-popover .dropdown-list { border-color: var(--stage-line); background: var(--stage-popover); color: var(--stage-text); }
+.hearing-popover .dropdown-list li.active { background: var(--stage-input); }
+.hearing-popover .dropdown-list small, .hearing-popover .dropdown-group { color: var(--stage-muted); }
 .hearing-source { margin: 0; color: var(--stage-muted); font-size: 12px; line-height: 1.5; }
 .hearing-source .voice-link { color: var(--stage-text); }
 .hearing-bar { display: none; }
@@ -2511,7 +2514,7 @@ label,
 }
 .voice-detail-title { font-size: 14px; font-weight: 600; }
 .voice-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; font-size: 13px; }
-.voice-field input, .voice-field select {
+.voice-field input, .dropdown-trigger {
   width: 100%;
   min-width: 0;
   min-height: 42px;
@@ -2523,7 +2526,77 @@ label,
   font: inherit;
   font-size: 14px;
 }
-.voice-field select:disabled { color: var(--muted); }
+
+/* Ô chọn của mục Giọng nói (Dropdown trong voiceUi.tsx), thay cho <select> và <datalist>. Bảng nằm ngay dưới ô trong
+   trang, hay lật lên trên khi phía dưới hết chỗ, nên cuộn Cài đặt thì bảng đi theo ô như AIRI. */
+.dropdown { position: relative; min-width: 0; }
+.dropdown.open { z-index: 30; }
+.dropdown-trigger { display: flex; align-items: center; gap: 8px; text-align: left; cursor: pointer; }
+.dropdown.editable .dropdown-trigger { padding-right: 40px; cursor: text; }
+.dropdown-trigger:disabled { color: var(--muted); cursor: default; }
+.dropdown-trigger:hover:not(:disabled) { border-color: var(--muted); }
+/* Như ô trong Hồ sơ: mở bảng hay đang gõ thì chỉ đậm viền; bàn phím thì nút còn vòng sáng chung của button. */
+.dropdown.open .dropdown-trigger, input.dropdown-trigger:focus { border-color: color-mix(in srgb, var(--text) 45%, var(--line)); }
+input.dropdown-trigger:focus { outline: none; }
+.dropdown-value { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dropdown-value.placeholder { color: var(--muted); }
+.dropdown-chevron { flex: none; color: var(--muted); transition: transform 160ms var(--ease-out); }
+.dropdown.open .dropdown-chevron { transform: rotate(180deg); }
+.dropdown-toggle {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  bottom: 5px;
+  width: 32px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+.dropdown-toggle:hover:not(:disabled) { background: var(--panel-2); }
+.dropdown-toggle:disabled { cursor: default; }
+.dropdown-list {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  left: 0;
+  margin: 0;
+  padding: 5px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  color: var(--text);
+  list-style: none;
+  box-shadow: var(--dialog-shadow);
+  transform-origin: top center;
+  animation: dropdown-in 150ms var(--ease-out);
+}
+.dropdown-list.above { top: auto; bottom: calc(100% + 6px); transform-origin: bottom center; animation-name: dropdown-in-above; }
+.dropdown-list li[role="option"] {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 38px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+}
+.dropdown-list li.active { background: var(--panel-2); }
+.dropdown-list li[aria-selected="true"] { font-weight: 600; }
+.dropdown-text { display: flex; flex: 1; flex-direction: column; gap: 1px; min-width: 0; overflow-wrap: anywhere; }
+.dropdown-text small { color: var(--muted); font-size: 12px; font-weight: 400; line-height: 1.4; }
+.dropdown-check { flex: none; }
+.dropdown-group { padding: 10px 10px 4px; color: var(--muted); font-size: 11.5px; font-weight: 600; letter-spacing: 0.03em; }
+.dropdown-group:not(:first-child) { margin-top: 5px; border-top: 1px solid var(--line); }
+@keyframes dropdown-in { from { opacity: 0; transform: translateY(-4px) scale(0.98); } }
+@keyframes dropdown-in-above { from { opacity: 0; transform: translateY(4px) scale(0.98); } }
 .voice-field small { color: var(--muted); font-size: 12px; line-height: 1.5; }
 .voice-fallback { margin-top: 18px; }
 .voice-line { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; font-size: 13px; line-height: 1.5; }
@@ -2585,7 +2658,8 @@ label,
   .hearing-fields { grid-template-columns: 1fr; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .voice-card, .voice-primary { transition: none; }
+  .voice-card, .voice-primary, .dropdown-chevron { transition: none; }
+  .dropdown-list { animation: none; }
 }
 
 .settings-button {

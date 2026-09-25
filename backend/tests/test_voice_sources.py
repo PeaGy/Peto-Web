@@ -157,3 +157,100 @@ async def test_guests_can_relay_with_their_own_key(anon_client, monkeypatch):
     response = await anon_client.post('/api/voice/relay', headers={'X-Voice-Key': 'guest-own-key'},
                                       json={'provider': 'stepfun', 'text': 'Hello', 'voice': 'jilingshaonv'})
     assert response.status_code == 200
+
+
+class FakeCosyVoice:
+    """Máy chủ WebSocket giả theo giao thức CosyVoice của Alibaba, chạy trên 127.0.0.1 (không ra mạng)."""
+
+    def __init__(self, reply='audio', reject=None):
+        self.reply, self.reject = reply, reject
+        self.requests, self.messages = [], []
+
+    async def process_request(self, connection, request):
+        self.requests.append(request)
+        if self.reject:
+            from http import HTTPStatus
+            return connection.respond(HTTPStatus(self.reject), 'bị từ chối\n')
+        return None
+
+    async def handler(self, socket):
+        async for raw in socket:
+            message = json.loads(raw)
+            self.messages.append(message)
+            task = message['header']['task_id']
+            action = message['header']['action']
+            if action == 'run-task':
+                if self.reply == 'failed':
+                    await socket.send(json.dumps({'header': {'task_id': task, 'event': 'task-failed',
+                                                             'error_code': self.fail_code,
+                                                             'error_message': 'secret upstream detail'}, 'payload': {}}))
+                    return
+                await socket.send(json.dumps({'header': {'task_id': task, 'event': 'task-started'}, 'payload': {}}))
+            elif action == 'finish-task':
+                await socket.send(b'\x01\x00' * 100)
+                await socket.send(b'\x02\x00' * 50)
+                await socket.send(json.dumps({'header': {'task_id': task, 'event': 'task-finished'},
+                                              'payload': {'usage': {'characters': 5}}}))
+                return
+
+    fail_code = 'InvalidParameter'
+
+
+@pytest.fixture
+async def cosyvoice(monkeypatch):
+    from websockets.asyncio.server import serve
+
+    fake = FakeCosyVoice()
+    async with serve(fake.handler, '127.0.0.1', 0, process_request=fake.process_request) as server:
+        port = server.sockets[0].getsockname()[1]
+        monkeypatch.setattr(cloud, 'COSYVOICE_ENDPOINTS', {
+            'intl': f'ws://127.0.0.1:{port}/intl', 'cn': f'ws://127.0.0.1:{port}/cn'})
+        yield fake
+
+
+COSY_BODY = {'provider': 'qwen', 'text': 'Hello there', 'voice': 'longxiaochun_v2', 'model': 'cosyvoice-v2', 'region': 'cn'}
+
+
+async def test_cosyvoice_relay_speaks_over_websocket_with_the_user_key(client, cosyvoice, monkeypatch):
+    async def forbidden(*args, **kwargs):
+        raise AssertionError('khóa riêng không được trừ ngân sách của chủ web')
+
+    monkeypatch.setattr(cloud, 'reserve', forbidden)
+    response = await client.post('/api/voice/relay', headers={'X-Voice-Key': 'user-ali-key'}, json=COSY_BODY)
+    assert response.status_code == 200 and response.headers['content-type'] == 'audio/wav'
+    audio = response.content
+    # PCM ghép từ các khung nhị phân, bọc thành WAV 24 kHz đúng kích thước để trang nhép miệng đọc được.
+    assert audio[:4] == b'RIFF' and audio[8:16] == b'WAVEfmt '
+    assert int.from_bytes(audio[24:28], 'little') == cloud.COSYVOICE_RATE
+    assert int.from_bytes(audio[40:44], 'little') == 300 and len(audio) == 344
+    request = cosyvoice.requests[0]
+    assert request.path == '/cn' and request.headers['Authorization'] == 'Bearer user-ali-key'
+    run, text, finish = cosyvoice.messages
+    assert [run['header']['action'], text['header']['action'], finish['header']['action']] == \
+        ['run-task', 'continue-task', 'finish-task']
+    assert len({run['header']['task_id'], text['header']['task_id'], finish['header']['task_id']}) == 1
+    assert run['payload']['model'] == 'cosyvoice-v2' and run['payload']['function'] == 'SpeechSynthesizer'
+    assert run['payload']['parameters']['voice'] == 'longxiaochun_v2'
+    assert run['payload']['parameters']['format'] == 'pcm'
+    assert text['payload']['input']['text'] == 'Hello there'
+    assert await used(client) == 0
+
+
+@pytest.mark.parametrize(('code', 'status', 'message'), [
+    ('InvalidParameter', 400, 'không nhận mã giọng'),
+    ('Arrearage', 402, 'hết số dư'),
+    ('Throttling.RateQuota', 429, 'giới hạn lượt gọi'),
+])
+async def test_cosyvoice_task_failures_become_vietnamese_messages(client, cosyvoice, code, status, message):
+    cosyvoice.reply, cosyvoice.fail_code = 'failed', code
+    response = await client.post('/api/voice/relay', headers={'X-Voice-Key': 'user-ali-key'}, json=COSY_BODY)
+    assert response.status_code == status and message in response.json()['detail']
+    assert 'secret upstream' not in response.text
+
+
+async def test_cosyvoice_rejected_key_is_reported_and_the_region_picks_the_endpoint(client, cosyvoice):
+    cosyvoice.reject = 401
+    response = await client.post('/api/voice/relay', headers={'X-Voice-Key': 'wrong-key'},
+                                 json={**COSY_BODY, 'region': 'intl'})
+    assert response.status_code == 400 and 'Khóa Alibaba Cloud không đúng' in response.json()['detail']
+    assert cosyvoice.requests[0].path == '/intl'

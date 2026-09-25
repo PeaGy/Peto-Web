@@ -1,11 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  defaultVoiceOf,
   keyProvider,
   keyReady,
   listKeyVoices,
   normalizeWav,
   pcmToWav,
   speakWithKey,
+  suggestedVoices,
+  voiceOf,
   type KeyConfig,
   type KeyProvider,
 } from '../src/voiceProviders';
@@ -161,7 +164,7 @@ describe('gọi thẳng nhà cung cấp bằng khóa của người dùng', () =
     await expect(speakWithKey(provider('minimax'), { key: 'bad' }, 'Hi', signal())).rejects.toThrow(/Khóa MiniMax không đúng/);
   });
 
-  it('Qwen Cloud đi qua máy chủ Peto: khóa trong header, vùng Trung Quốc được giữ', async () => {
+  it('Alibaba Cloud (Qwen) đi qua máy chủ Peto: khóa trong header, vùng Trung Quốc được giữ', async () => {
     const { url, headers, init } = await sent('qwen', { key: 'sk-qwen', region: 'cn' }, new Response(riff()));
     expect(url).toBe('/api/voice/relay');
     expect(headers['X-Voice-Key']).toBe('sk-qwen');
@@ -189,6 +192,50 @@ describe('gọi thẳng nhà cung cấp bằng khóa của người dùng', () =
   it('không gọi được từ trình duyệt (mạng, CORS) thì nói rõ', async () => {
     fetchMock.mockRejectedValueOnce(new TypeError('Failed to fetch'));
     await expect(speakWithKey(provider('openai'), { key: 'k' }, 'Hi', signal())).rejects.toThrow(/Không gọi được OpenAI từ trình duyệt/);
+  });
+});
+
+describe('giọng gợi ý có sẵn', () => {
+  const ids = (model: string) => suggestedVoices(provider('qwen'), model).map((voice) => voice.id);
+  const AIRI = ['longwan', 'longcheng', 'longhua', 'longxiaochun', 'longxiaoxia', 'longxiaocheng', 'longxiaobai',
+    'longlaotie', 'longshu', 'longshuo', 'longjing', 'longmiao', 'longyue', 'longyuan', 'longfei', 'longjielidou',
+    'longtong', 'longxiang', 'loongstella', 'loongbella'];
+
+  it('CosyVoice v2 giữ 18 trên 20 giọng AIRI (v1 ngừng ngày 10/10/2026), v3 Flash giữ 14', () => {
+    expect(AIRI.filter((voice) => ids('cosyvoice-v2').includes(`${voice}_v2`))).toHaveLength(18);
+    expect(AIRI.filter((voice) => ids('cosyvoice-v3-flash').includes(`${voice}_v3`))).toHaveLength(14);
+  });
+
+  it.each(['cosyvoice-v2', 'cosyvoice-v3-flash'])('%s: mã không trùng, có tên, mô tả, nhóm, qua được máy chủ chuyển tiếp', (model) => {
+    const voices = suggestedVoices(provider('qwen'), model);
+    expect(new Set(voices.map((voice) => voice.id)).size).toBe(voices.length);
+    expect(voices.every((voice) => voice.label && voice.hint && voice.group)).toBe(true);
+    expect(voices.every((voice) => /^[\w.\- ]{1,64}$/.test(voice.id))).toBe(true);
+    expect(voices.map((voice) => voice.id)).toContain(defaultVoiceOf(provider('qwen'), model));
+    // Companion trả lời bằng tiếng Anh: giọng chỉ nói tiếng Nhật, Hàn không có trong danh sách.
+    expect(voices.some((voice) => /yuuna|tomoka|jihun|kyong/.test(voice.id))).toBe(false);
+  });
+
+  it('tên hiện của giọng CosyVoice: tên tiếng Trung kèm phiên âm, hay tên Latin', () => {
+    const label = (id: string) => suggestedVoices(provider('qwen'), 'cosyvoice-v2').find((voice) => voice.id === id)?.label;
+    expect(label('longwan_v2')).toBe('龙婉 · Long Wan');
+    expect(label('loongstella_v2')).toBe('Stella');
+    expect(label('libai_v2')).toBe('李白 · Li Bai');
+    expect(voiceOf(provider('qwen'), { model: 'cosyvoice-v3-flash' })).toBe('longanhuan');
+    expect(voiceOf(provider('qwen'), {})).toBe('Cherry');
+  });
+
+  it('Qwen: đủ 48 giọng của qwen3-tts-flash, có mô tả, 10 giọng phương ngữ, mã qua được máy chủ chuyển tiếp', () => {
+    const voices = provider('qwen').voices ?? [];
+    expect(voices).toHaveLength(48);
+    expect(new Set(voices.map((voice) => voice.id)).size).toBe(48);
+    expect(voices.every((voice) => voice.hint?.trim())).toBe(true);
+    expect(voices.filter((voice) => voice.group === 'Phương ngữ Trung Quốc').map((voice) => voice.id)).toEqual(
+      ['Jada', 'Dylan', 'Li', 'Marcus', 'Roy', 'Peter', 'Sunny', 'Eric', 'Rocky', 'Kiki'],
+    );
+    // Cùng luật với RELAY_TEXT trong backend/voice_api.py: mã có dấu cách như "Eldric Sage" vẫn phải qua được.
+    expect(voices.every((voice) => /^[\w.\- ]{1,64}$/.test(voice.id))).toBe(true);
+    expect(voices.map((voice) => voice.id)).toContain(provider('qwen').defaultVoice);
   });
 });
 
