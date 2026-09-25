@@ -63,6 +63,18 @@ def use_models(models: list[dict]) -> None:
                      for command in COMMANDS)
 
 
+def use_efforts(efforts: list[str]) -> None:
+    """Chỉ gợi ý mức máy chủ hỗ trợ cho model đang chọn."""
+    global COMMANDS
+    choices = {"none": ("none", "Không suy luận"), "low": ("thap", "Nhanh, suy nghĩ ít"),
+               "medium": ("vua", "Cân bằng giữa nhanh và kỹ"), "high": ("cao", "Cao · nhân đôi số bước"),
+               "xhigh": ("xhigh", "Rất cao · nhân đôi số bước"), "max": ("max", "Tối đa · nhân đôi số bước")}
+    options = tuple(choices[value] for value in efforts if value in choices)
+    COMMANDS = tuple(replace(command, options=options,
+                             description="Xem hoặc đổi mức suy nghĩ: " + ", ".join(value for value, _ in options))
+                     if command.name == "/effort" else command for command in COMMANDS)
+
+
 def fold(text: str) -> str:
     """Chữ thường không dấu, để gõ "/thoát" bằng bộ gõ tiếng Việt vẫn khớp "/thoat"."""
     decomposed = unicodedata.normalize("NFD", text.casefold()).replace("đ", "d")

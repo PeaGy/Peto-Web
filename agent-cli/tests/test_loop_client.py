@@ -348,6 +348,37 @@ def test_model_command_switches_models_and_remembers_the_choice(project, peto, m
     assert "project · Peto · mức cao" in again.text
 
 
+def test_full_efforts_persist_forward_and_restrict_after_model_switch(project, peto, monkeypatch):
+    efforts = ["none", "low", "medium", "high", "xhigh", "max"]
+    me = {"models": [PETO, {**LUNA, "efforts": efforts}], "default_effort": "low"}
+
+    def reply(path, body):
+        if path == "/api/agent/me":
+            return 200, me
+        return 200, [{"type": "done", "output": [message("Xong")], "usage": {}}]
+
+    peto.reply = reply
+    monkeypatch.chdir(project)
+    config.save({"server": peto.url, "token": "test", "model": "luna"})
+    answers = []
+    for effort in efforts:
+        answers.extend([f"/effort {effort}", "chào"])
+    assert cli.session(FakeUI(answers=[*answers, "/thoat"])) == 0
+    steps = [r["body"] for r in peto.requests if r["path"] == "/api/agent/step"]
+    assert [step["effort"] for step in steps] == efforts
+    assert config.load()["effort"] == "max"
+    assert cli._effort(me) == "max"
+    assert [item.label for item in cli.commands.suggestions("/effort ")] == ["none", "thap", "vua", "cao", "xhigh", "max"]
+    ui = FakeUI(answers=["/model peto", "/effort max", "chào", "/thoat"])
+    assert cli.session(ui) == 0
+    assert "chuyển sang mức vừa" in ui.text
+    assert "Model hiện tại chỉ nhận" in ui.text
+    assert peto.requests[-1]["body"]["effort"] == "medium"
+    assert cli._effort(me) == "low"
+    assert cli._supported_efforts(LUNA) == ["low", "medium", "high"]
+    assert cli._supported_efforts({"efforts": ["unknown"]}) == ["low", "medium", "high"]
+
+
 def test_switching_models_drops_what_only_the_old_model_can_read(project, peto):
     session = Session(Client(peto.url, "peto_token_thu"), Workspace(project), FakeUI())
     session.items = [

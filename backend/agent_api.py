@@ -70,7 +70,7 @@ MAX_STEP_IMAGE_BYTES = 3 * 1024 * 1024
 STEP_IMAGE_MIMES = {"image/png", "image/jpeg", "image/gif", "image/webp"}
 BAD_IMAGE = "Ảnh gửi kèm không hợp lệ. Peto nhận ảnh PNG, JPEG, GIF hoặc WebP."
 # Mức suy nghĩ CLI chọn bằng /effort. Mức cao tốn nhiều token hơn nên tính 2 bước, theo quyết định của chủ web.
-STEP_COST = {"low": 1, "medium": 1, "high": 2}
+STEP_COST = {"none": 1, "low": 1, "medium": 1, "high": 2, "xhigh": 2, "max": 2}
 # Bỏ các ký tự dễ đọc nhầm như O/0 và I/1.
 CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
@@ -370,7 +370,7 @@ def _parse_step(raw: bytes) -> tuple[list[dict], dict, str]:
     # CLI cũ không gửi mức suy nghĩ thì dùng mức mặc định của máy chủ.
     effort = payload.get("effort") or AGENT_REASONING
     if not isinstance(effort, str) or effort not in STEP_COST:
-        raise HTTPException(status_code=400, detail="Mức suy nghĩ chỉ nhận low, medium hoặc high.")
+        raise HTTPException(status_code=400, detail="Mức suy nghĩ không hợp lệ.")
     context = payload.get("context")
     # CLI cũ không gửi model thì dùng Peto.
     model = payload.get("model") or ai_models.DEFAULT_MODEL
@@ -431,6 +431,8 @@ async def step(request: Request, device: dict = Depends(device_auth)):
         model = ai_models.resolve(owner, model_key, "agent")
     except ai_models.ModelUnavailable as err:
         raise HTTPException(status_code=err.status, detail=err.message) from None
+    if effort not in ai_models.supported_efforts(model.key):
+        raise HTTPException(status_code=400, detail="Model này không hỗ trợ mức suy nghĩ đã chọn.")
     day = _today()
     # Chủ web chọn tính bước theo giá: model đắt tính nhiều bước hơn, nhân với mức suy nghĩ.
     cost = STEP_COST[effort] * model.step_cost

@@ -252,6 +252,30 @@ async def test_effort_reaches_the_model_and_high_costs_two_steps(anon_client, cl
     assert (await client.get("/api/agent/devices")).json()["steps_used"] == 0, "bước lỗi ở mức cao trả lại đủ 2 bước"
 
 
+@pytest.mark.parametrize("effort,cost", [("none", 1), ("low", 1), ("medium", 1), ("high", 2), ("xhigh", 2), ("max", 2)])
+async def test_openai_efforts_forwarded_and_charged(anon_client, client, monkeypatch, effort, cost):
+    seen = []
+    original = agent_api.agent_step
+
+    async def spy(**kwargs):
+        seen.append(kwargs["effort"])
+        async for event in original(**kwargs):
+            yield event
+
+    monkeypatch.setattr(agent_api, "agent_step", spy)
+    await login_as(client, "google")
+    token = await connect(anon_client, client)
+    body = {"input": [DEMO_TASK], "effort": effort, "model": "luna"}
+    if effort in ("none", "xhigh", "max"):
+        rejected = await anon_client.post("/api/agent/step", headers=bearer(token), json={**body, "model": "peto"})
+        assert rejected.status_code == 400
+        assert not seen
+    response = await anon_client.post("/api/agent/step", headers=bearer(token), json=body)
+    assert response.status_code == 200
+    assert seen == [effort]
+    assert events_of(response)[0]["steps_used"] == cost
+
+
 async def test_me_reports_steps_tokens_effort_and_cli_version(anon_client, client):
     owner = await login_as(client, "google")
     token = await connect(anon_client, client)

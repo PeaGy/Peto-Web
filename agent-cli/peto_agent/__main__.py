@@ -20,14 +20,16 @@ from .workspace import Workspace
 # Lệnh không nhận gì phía sau; gõ thêm chữ thì nhắc chứ không gửi cả câu cho Peto.
 PLAIN_COMMANDS = {"/thoat", "/exit", "/quit", "/moi", "/help", "/resume", "/usage", "/retry", "/diff", "/undo",
                   "/compact", "/init"}
-EFFORT_LABELS = {"low": "thấp", "medium": "vừa", "high": "cao"}
+EFFORT_LABELS = {"none": "không suy luận", "low": "thấp", "medium": "vừa", "high": "cao",
+                 "xhigh": "rất cao", "max": "tối đa"}
 # Giống STEP_COST của máy chủ: mức cao tính gấp đôi, nhân với số bước của model.
-EFFORT_COST = {"low": 1, "medium": 1, "high": 2}
+EFFORT_COST = {"none": 1, "low": 1, "medium": 1, "high": 2, "xhigh": 2, "max": 2}
 # Máy chủ cũ chưa có /model thì chỉ có Peto.
 DEFAULT_MODELS = [{"key": "peto", "label": "Peto", "description": "Mặc định", "step_cost": 1}]
 # Gõ không dấu cho dễ, như /moi và /thoat; có dấu hay tên tiếng Anh cũng nhận.
 EFFORT_ALIASES = {"thap": "low", "thấp": "low", "low": "low", "vua": "medium", "vừa": "medium", "tb": "medium",
-                  "medium": "medium", "cao": "high", "high": "high"}
+                  "medium": "medium", "cao": "high", "high": "high", "none": "none", "khong": "none",
+                  "xhigh": "xhigh", "ratcao": "xhigh", "max": "max", "toida": "max"}
 
 
 def split_command(text: str) -> tuple[str, str]:
@@ -123,22 +125,31 @@ def _cost_note(work: Session) -> str:
     return f"mỗi bước tính {cost} bước" if cost > 1 else ""
 
 
+def _supported_efforts(model: dict) -> list[str]:
+    values = model.get("efforts")
+    known = [value for value in EFFORT_LABELS if value in values] if isinstance(values, list) else []
+    return known or ["low", "medium", "high"]
+
+
 def _effort(me: dict) -> str:
     """Mức người dùng đã chọn bằng /effort trên máy này; chưa chọn thì theo mặc định của máy chủ."""
-    for value in (config.load().get("effort"), me.get("default_effort")):
-        if value in EFFORT_LABELS:
+    supported = _supported_efforts(_model(_models(me)))
+    for value in (config.load().get("effort"), me.get("default_effort"), "medium"):
+        if value in supported:
             return value
-    return "medium"
+    return supported[0]
 
 
 def _change_effort(ui: UI, work: Session, value: str) -> None:
+    supported = getattr(work, "supported_efforts", ["low", "medium", "high"])
+    choices = ", ".join(f"/effort {effort}" for effort in supported)
     if not value:
-        ui.line(f"  Mức suy nghĩ: {EFFORT_LABELS[work.effort]}. Đổi bằng /effort thap, /effort vua hoặc /effort cao.")
-        ui.line("  Mức cao suy nghĩ kỹ hơn nhưng mỗi bước tính 2 bước.", "dim")
+        ui.line(f"  Mức suy nghĩ: {EFFORT_LABELS[work.effort]}. Đổi bằng {choices}.")
+        ui.line("  Cao, rất cao và tối đa nhân đôi số bước của model; có thể chờ lâu và dùng nhiều token hơn.", "dim")
         return
-    effort = EFFORT_ALIASES.get(value.lower())
-    if effort is None:
-        ui.line("  Chỉ có /effort thap, /effort vua hoặc /effort cao.", "yellow")
+    effort = EFFORT_ALIASES.get(fold(value).replace(" ", ""))
+    if effort not in supported:
+        ui.line(f"  Model hiện tại chỉ nhận {choices}.", "yellow")
         return
     work.effort = effort
     settings = config.load()
@@ -166,6 +177,11 @@ def _change_model(ui: UI, work: Session, value: str, models: list[dict]) -> None
         ui.line(f"  Đang dùng {label} rồi.", "dim")
         return
     work.set_model(model["key"], int(model.get("step_cost") or 1))
+    work.supported_efforts = _supported_efforts(model)
+    commands.use_efforts(work.supported_efforts)
+    if work.effort not in work.supported_efforts:
+        work.effort = "medium" if "medium" in work.supported_efforts else work.supported_efforts[0]
+        ui.line(f"  Model này không hỗ trợ mức trước đó; chuyển sang mức {EFFORT_LABELS[work.effort]}.", "dim")
     settings = config.load()
     settings["model"] = model["key"]
     config.save(settings)
@@ -346,6 +362,7 @@ def session(ui: UI) -> int:
     models = _models(me)
     model = _model(models)
     commands.use_models(models)
+    commands.use_efforts(_supported_efforts(model))
     workspace = Workspace(root)
     if ui.editor is None:
         ui.editor = line_editor.create(ui.out, enable_vt, _suggester(workspace))
@@ -361,6 +378,7 @@ def session(ui: UI) -> int:
     work = Session(client, workspace, ui, log=TaskLog(root.name), effort=effort, model=model["key"],
                    model_step_cost=int(model.get("step_cost") or 1))
     work.steps_used, work.steps_limit = me.get("steps_used"), me.get("steps_limit")
+    work.supported_efforts = _supported_efforts(model)
     ui.title(f"Peto · {root.name}")
     saved = history.load(root, client.server)
     # Hội thoại cũ mở lại được: nhắc ở dòng dưới ô nhập thay vì một dòng vàng giữa màn hình. Không có ô nhập (ống

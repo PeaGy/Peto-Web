@@ -172,6 +172,10 @@ nào được chọn, nên Enter không tự chạy gì. Các lệnh:
 - `/effort thap`, `/effort vua`, `/effort cao`: mức suy nghĩ, được nhớ trên máy này cho lần sau. Mức cao suy nghĩ kỹ
   hơn nhưng mỗi bước tính 2 bước. Gõ `/effort` để xem mức đang dùng; chưa chọn thì theo mặc định của máy chủ. Gõ
   `/effort` kèm dấu cách thì chọn mức trong danh sách.
+  Từ bản 0.12.1 (cần cập nhật cả VPS), model OpenAI còn nhận `/effort none`, `/effort xhigh`, `/effort max`;
+  tên tiếng Anh `low`, `medium`, `high` cũng dùng được. `none` không suy luận, `xhigh` rất cao, `max` tối đa.
+  Các mức high/xhigh/max nhân đôi số bước của model; mức cao hơn có thể chờ lâu và dùng nhiều token hơn.
+  Danh sách chỉ hiện mức model hỗ trợ. Khi đổi model không hỗ trợ mức đang dùng, CLI chuyển về vừa và thông báo.
 - `/model peto`, `/model luna`: đổi model, được nhớ trên máy này cho lần sau. Peto là mặc định; 6 Luna (của OpenAI)
   dùng được với tài khoản Discord/Google. Chủ web còn chọn được `/model terra` (5.6 Terra) và `/model sol`. Gõ `/model` để xem model
   đang dùng và các model tài khoản của bạn được chọn; gõ `/model` kèm dấu cách thì chọn trong danh sách. Model đắt hơn
