@@ -73,8 +73,7 @@
   .document-panel-pages .document-paper { padding: 24px; }
 }
 
-/* Reading fills the mobile viewport; only the controls float above it. */
-@media (max-width: 720px) {
+/* Reading fills the chat pane on every screen; only the controls float above it. */
   .chat > .chat-tools {
     position: absolute;
     inset: 0 0 auto;
@@ -137,4 +136,30 @@
     margin: 0;
     z-index: 5;
   }
+
+@media (min-width: 721px) {
+  .chat > .chat-tools { padding: 8px 18px; }
+  .chat > .messages {
+    padding-inline: max(20px, calc((100% - 900px) / 2));
+  }
+  .chat-dock > .composer-wrap { padding: 12px 20px 20px; }
+  .chat-dock > .error {
+    width: min(900px, calc(100% - 40px));
+    align-self: center;
+    margin: 6px 20px;
+  }
+
+  /* Keep the greeting and composer together before the first message. */
+  .chat.empty-state > .messages {
+    padding-block: 68px 24px;
+    scroll-padding-bottom: 24px;
+  }
+  .chat.empty-state > .chat-dock {
+    position: relative;
+    inset: auto;
+    margin-bottom: auto;
+    max-height: none;
+    flex-shrink: 0;
+  }
+  .chat.empty-state .chat-dock > .composer-wrap { margin-bottom: 0; }
 }

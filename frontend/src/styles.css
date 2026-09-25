@@ -1149,9 +1149,13 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   border: 1px solid var(--line); border-radius: 10px; cursor: pointer; font: inherit;
 }
 .jump-latest {
-  align-self: center; margin-top: -40px; z-index: 2; padding: 6px 14px;
-  border: 1px solid var(--accent); border-radius: 999px; background: var(--panel); color: var(--text); cursor: pointer;
+  align-self: center; margin-top: -40px; z-index: 2; padding: 0;
+  display: grid; place-items: center; width: 36px; height: 36px; flex-shrink: 0;
+  border: 1px solid var(--line); border-radius: 50%; background: var(--panel); color: var(--text); cursor: pointer;
+  box-shadow: 0 2px 8px #0002;
 }
+.jump-latest:hover { background: var(--panel-2); }
+.jump-latest:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .error { display: flex; align-items: center; gap: 8px; }
 .notice { color: var(--muted); border-color: var(--line); background: var(--panel); }
 .dismiss-error { margin-left: auto; border: 0; background: none; color: inherit; cursor: pointer; font-size: 22px; }

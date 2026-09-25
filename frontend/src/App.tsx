@@ -1552,11 +1552,11 @@ export default function App() {
           <div ref={bottomRef} />
         </div>
 
-        {showJump && <button className="jump-latest" onClick={() => {
+        {showJump && <button type="button" className="jump-latest" aria-label="Tin mới nhất" title="Tin mới nhất" onClick={() => {
           nearBottom.current = true;
           setShowJump(false);
           bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-        }}>↓ Tin mới nhất</button>}
+        }}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 4v16m-7-7 7 7 7-7" /></svg></button>}
 
         <div className="chat-dock" ref={chatDockRef}>
         {error && (
