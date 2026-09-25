@@ -2184,7 +2184,6 @@ label,
   gap: 16px;
   padding: 18px 18px 8px;
 }
-.companion-empty { margin: auto 6px; color: var(--muted); font-size: 14px; line-height: 1.6; text-align: center; text-wrap: balance; }
 .companion-messages .bubble p { margin: 0; white-space: pre-wrap; }
 .companion-messages .bubble.user { max-width: 85%; }
 .companion-reply { display: grid; justify-items: start; gap: 2px; }
@@ -2286,7 +2285,6 @@ label,
     mask-image: linear-gradient(to bottom, transparent, #000 56px);
   }
   .companion-messages .bubble,
-  .companion-empty,
   .companion-messages .loading-chat {
     margin: 0;
     padding: 8px 12px;
@@ -2304,7 +2302,6 @@ label,
   .companion-messages .companion-reply { display: flex; flex-wrap: wrap; align-items: flex-end; column-gap: 4px; }
   .companion-messages .companion-reply > p { flex: 1 1 0; min-width: 0; }
   .companion-messages .companion-reply .message-status { flex-basis: 100%; }
-  .companion-empty,
   .companion-messages .loading-chat { background: var(--stage-surface); }
   .companion-messages .message-speak { width: 24px; height: 24px; margin: 0 -6px -3px 0; color: var(--stage-muted); }
   .companion-typing { color: var(--stage-muted); }

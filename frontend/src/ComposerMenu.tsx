@@ -65,7 +65,7 @@ export default function ComposerMenu({ disabled, webDisabled, onToggleWeb, onAtt
       {roleplay && <button type="button" aria-pressed={roleplay.active} disabled={roleplay.unavailable !== null}
         onClick={() => { close(); roleplay.onToggle(); }}>
         <MaskIcon /><span><strong>{roleplay.active ? 'Tắt chế độ nhập vai' : 'Chế độ nhập vai'}</strong>
-          <small>{roleplay.unavailable ?? (roleplay.active ? 'Đang bật cho hội thoại mới này' : 'Peto nhập vai như bot Discord')}</small></span>
+          <small>{roleplay.unavailable ?? (roleplay.active ? 'Đang bật cho hội thoại mới này' : 'Peto Role Play')}</small></span>
       </button>}
     </div>}
   </div>;

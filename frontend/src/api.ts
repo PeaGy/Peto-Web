@@ -3,7 +3,7 @@ export type Effort = "auto" | "low" | "medium" | "high";
 export type WebSearchMode = "auto" | "on" | "off";
 /** Tab gửi tin: Companion có persona trả lời ngắn bằng tiếng Anh và mạch trò chuyện riêng. */
 export type ConversationMode = "chat" | "companion";
-export interface WebSource { url: string; title: string }
+export interface WebSource { url: string; title: string; kind?: 'citation' | 'result' }
 export interface DocumentArtifact {
   id: string; title: string; filename: string; version: number;
   format: 'docx' | 'pdf'; style: 'report' | 'essay'; pages: number;
@@ -58,6 +58,8 @@ export interface WorkStep {
 export type Persona = "assistant" | "roleplay";
 
 export interface Conversation {
+  title_state?: 'temporary' | 'pending' | 'generated' | 'locked';
+  title_attempts?: number;
   id: string;
   title: string;
   created_at: number;

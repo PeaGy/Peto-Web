@@ -52,9 +52,9 @@ def _item_sources(item: dict) -> list[dict]:
     if item.get("type") == "message":
         for part in item.get("content") or []:
             if part.get("type") == "output_text":
-                candidates.extend(annotation for annotation in part.get("annotations") or [] if annotation.get("type") == "url_citation")
+                candidates.extend({**annotation, "kind": "citation"} for annotation in part.get("annotations") or [] if annotation.get("type") == "url_citation")
     elif item.get("type") == "web_search_call":
-        candidates.extend((item.get("action") or {}).get("sources") or [])
+        candidates.extend({**source, "kind": "result"} for source in (item.get("action") or {}).get("sources") or [] if isinstance(source, dict))
     return normalize_sources(candidates)
 
 
@@ -135,13 +135,14 @@ class ResponsesProvider(ChatProvider):
         effort: str = "low",
         timezone: str | None = None,
         web_search: str = "auto",
+        tools_enabled: bool = True,
     ) -> AsyncIterator[str | StreamChunk]:
         if web_search == "on" and not WEB_SEARCH_ENABLED:
             raise ProviderError("Tìm kiếm web đang tắt trên máy chủ. Chọn Tự động hoặc Tắt để tiếp tục chat.")
         await self._prepare()
 
         payload_input = build_input_payload(messages)
-        search_enabled = WEB_SEARCH_ENABLED and web_search != "off"
+        search_enabled = tools_enabled and WEB_SEARCH_ENABLED and web_search != "off"
         instructions = f"{system_prompt}\n\n{search_context(web_search, search_enabled)}"
         sources: list[dict] = []
         search_finished = False
@@ -165,12 +166,12 @@ class ResponsesProvider(ChatProvider):
                 "model": self.model,
                 "instructions": instructions,
                 "input": payload_input,
-                "max_output_tokens": self.max_output_tokens,
+                "max_output_tokens": self.max_output_tokens if tools_enabled else min(self.max_output_tokens, 1024),
                 "reasoning": {
                     "effort": effort if effort in {"low", "medium", "high"} else "low"
                 },
                 "stream": True,
-                "tools": [*TOOL_SCHEMAS, *([DOCUMENT_SCHEMA] if document_session else []), *([{"type": "web_search"}] if search_enabled else [])],
+                "tools": [*TOOL_SCHEMAS, *([DOCUMENT_SCHEMA] if document_session else []), *([{"type": "web_search"}] if search_enabled else [])] if tools_enabled else [],
                 "include": ["reasoning.encrypted_content"],
                 # Tự giữ các item trong lượt này, không cần lưu hội thoại ở dịch vụ AI.
                 "store": False,
@@ -217,7 +218,7 @@ class ResponsesProvider(ChatProvider):
                     elif event_type == "response.output_text.annotation.added":
                         annotation = _dump(event.annotation)
                         if annotation.get("type") == "url_citation":
-                            merged = normalize_sources([*sources, annotation])
+                            merged = normalize_sources([*sources, {**annotation, "kind": "citation"}])
                             if merged != sources:
                                 sources = merged
                                 yield StreamChunk("sources", sources=tuple(sources))
@@ -269,6 +270,8 @@ class ResponsesProvider(ChatProvider):
             if not completed:
                 raise ProviderError("Kết nối tới AI bị ngắt trước khi trả lời xong.", retryable=True)
             tool_calls = [item for item in output_items if item.get("type") == "function_call"]
+            if tool_calls and not tools_enabled:
+                raise ProviderError("Tác vụ đặt tên không được gọi công cụ.")
             if not tool_calls:
                 if web_search == "on" and not search_finished and not sources:
                     raise ProviderError("Dịch vụ chưa xác nhận đã tra web. Peto chưa thể xem câu trả lời này là đã kiểm chứng; bạn thử lại nhé.")

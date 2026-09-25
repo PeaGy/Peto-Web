@@ -450,11 +450,6 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
               <button type="button" className="load-more" onClick={() => void load()}>Thử lại</button>
             </div>
           )}
-          {!loading && !loadFailed && messages.length === 0 && (
-            <p className="companion-empty">
-              Chào Peto một câu đi. Ở đây Peto trả lời ngắn bằng tiếng Anh, như bạn bè nhắn tin.
-            </p>
-          )}
           {messages.map((message, index) => {
             if (message.role === "user") {
               return (

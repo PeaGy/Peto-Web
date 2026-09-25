@@ -178,9 +178,9 @@ export const KEY_PROVIDERS: KeyProvider[] = [
     modelInfo: {
       "qwen3-tts-flash": { label: "Qwen3-TTS Flash", hint: "48 giọng, nói nhiều thứ tiếng" },
       "cosyvoice-v2": {
-        label: "CosyVoice v2", hint: "100 giọng, có các giọng như AIRI", voices: COSYVOICE_V2, defaultVoice: "longxiaochun_v2",
+        label: "CosyVoice v2", hint: "100 giọng", voices: COSYVOICE_V2, defaultVoice: "longxiaochun_v2",
         voiceNote: "Giọng CosyVoice v2 của tài khoản Trung Quốc (Bắc Kinh), giọng nào cũng nói được tiếng Anh. Có các giọng "
-          + "bạn thấy ở AIRI như 龙婉, 龙硕, Stella.",
+          + "龙婉, 龙硕, Stella.",
       },
       "cosyvoice-v3-flash": {
         label: "CosyVoice v3 Flash", hint: "Bản mới hơn, giá bằng nửa v2", voices: COSYVOICE_V3_FLASH, defaultVoice: "longanhuan",
@@ -190,12 +190,12 @@ export const KEY_PROVIDERS: KeyProvider[] = [
     },
   },
   {
-    id: "stepfun", name: "StepFun", desc: "Cùng giọng với Giọng Peto", route: "relay", keyHint: "Khóa API StepFun",
+    id: "stepfun", name: "StepFun", desc: "StepFun Speech", route: "relay", keyHint: "Khóa API StepFun",
     site: "platform.stepfun.ai", models: ["stepaudio-2.5-tts"], voiceFree: true, voices: named(["jilingshaonv", "lively-girl"]),
     defaultVoice: "jilingshaonv",
   },
   {
-    id: "compat", name: "Tương thích OpenAI", desc: "Máy chủ tự dựng, địa chỉ riêng", route: "direct",
+    id: "compat", name: "OpenAI", desc: "Máy chủ tự dựng, địa chỉ riêng", route: "direct",
     keyHint: "Nếu máy chủ cần", site: "máy chủ của bạn", keyOptional: true, needsBaseUrl: true, modelFree: true,
     voiceFree: true, defaultVoice: "",
   },

@@ -21,6 +21,15 @@ from web_search import normalize_sources
 SOURCE = {"url": "https://docs.python.org/3/", "title": "Tài liệu Python"}
 
 
+def test_citation_promotes_result_and_survives_result_limit():
+    results = [{"url": f"https://example.com/{i}", "kind": "result"} for i in range(40)]
+    sources = normalize_sources([*results, {**results[-1], "kind": "citation"}])
+    assert len(sources) == 30
+    assert sources[0]["url"] == results[-1]["url"]
+    assert sources[0]["kind"] == "citation"
+    assert normalize_sources([*sources, results[-1]])[0]["kind"] == "citation"
+
+
 def search_call(status="completed"):
     return Item(type="web_search_call", id="web-1", status=status, action={"type": "search", "query": "Python", "sources": [SOURCE]})
 
@@ -44,7 +53,9 @@ async def test_native_search_sources_and_clock_share_one_turn(monkeypatch):
     assert "không đáng tin" in requests[0]["instructions"]
     assert any(item.get("type") == "web_search_call" for item in requests[1]["input"])
     assert requests[1]["input"][-1]["call_id"] == "call_1"
-    assert [chunk.sources for chunk in chunks if isinstance(chunk, StreamChunk) and chunk.kind == "sources"] == [(SOURCE,)]
+    assert [chunk.sources for chunk in chunks if isinstance(chunk, StreamChunk) and chunk.kind == "sources"] == [
+        ({**SOURCE, "kind": "result"},), ({**SOURCE, "kind": "citation"},),
+    ]
     assert any(isinstance(chunk, StreamChunk) and chunk.kind == "search" for chunk in chunks)
     assert first.closed and second.closed
 
@@ -247,5 +258,5 @@ async def test_real_sdk_parses_search_events_and_annotations(monkeypatch):
     finally:
         await provider._client.close()
     assert requests[0]["tool_choice"] == "required"
-    assert any(isinstance(chunk, StreamChunk) and SOURCE in chunk.sources for chunk in chunks)
+    assert any(isinstance(chunk, StreamChunk) and {**SOURCE, "kind": "citation"} in chunk.sources for chunk in chunks)
     assert "Có nguồn." in chunks

@@ -41,6 +41,11 @@ async def init_db() -> None:
             "ON conversations(owner, updated_at DESC)"
         )
         conversation_columns = await (await db.execute("PRAGMA table_info(conversations)")).fetchall()
+        if "title_state" not in {column[1] for column in conversation_columns}:
+            # Existing names have unknown provenance: do not overwrite them.
+            await db.execute("ALTER TABLE conversations ADD COLUMN title_state TEXT NOT NULL DEFAULT 'locked'")
+            await db.execute("ALTER TABLE conversations ADD COLUMN title_attempts INTEGER NOT NULL DEFAULT 0")
+        await db.execute("UPDATE conversations SET title_state='temporary' WHERE title_state='pending'")
         if "mode" not in {column[1] for column in conversation_columns}:
             # Tab Companion có mạch trò chuyện riêng; hội thoại có từ trước đều thuộc tab Trò chuyện.
             await db.execute("ALTER TABLE conversations ADD COLUMN mode TEXT NOT NULL DEFAULT 'chat'")
@@ -351,8 +356,8 @@ async def create_conversation(owner: str, title: str = "", mode: str = "chat", p
     now = time.time()
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
-            "INSERT INTO conversations (id, owner, title, created_at, updated_at, mode, persona) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO conversations (id, owner, title, created_at, updated_at, mode, persona, title_state) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, 'temporary')",
             (conversation_id, owner, title[:120], now, now, mode, persona),
         )
         await db.commit()
@@ -414,7 +419,7 @@ async def list_conversations(owner: str, limit: int = 50, offset: int = 0) -> li
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
             """
-            SELECT c.id, c.title, c.created_at, c.updated_at, c.persona,
+            SELECT c.id, c.title, c.created_at, c.updated_at, c.persona, c.title_state, c.title_attempts,
                    (SELECT COUNT(*) FROM messages m
                      WHERE m.conversation_id = c.id) AS message_count
               FROM conversations c
@@ -610,13 +615,13 @@ async def set_title_if_empty(conversation_id: str, title: str) -> None:
 
 
 async def set_title(owner: str, conversation_id: str, title: str) -> None:
-    """Ghi đè tiêu đề bằng tên tóm tắt do AI đặt ở cuối lượt đầu tiên."""
+    """Đặt tên riêng và khóa lại để tác vụ nền không ghi đè."""
     cleaned = " ".join(title.split())[:60]
     if not cleaned:
         return
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
-            "UPDATE conversations SET title = ? WHERE id = ? AND owner = ?",
+            "UPDATE conversations SET title = ?, title_state = 'locked' WHERE id = ? AND owner = ?",
             (cleaned, conversation_id, owner),
         )
         await db.commit()

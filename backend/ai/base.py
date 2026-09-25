@@ -71,6 +71,7 @@ class ChatProvider(ABC):
         effort: str = "low",
         timezone: str | None = None,
         web_search: str = "auto",
+        tools_enabled: bool = True,
     ) -> AsyncIterator[str | StreamChunk]:
         """Sinh ra các mảnh text nối tiếp nhau tạo thành câu trả lời.
 

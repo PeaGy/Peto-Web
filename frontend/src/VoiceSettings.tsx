@@ -99,8 +99,8 @@ export default function VoiceSettings({ voice, open, tab = "noi", onTab, focusRe
     },
     {
       id: "home",
-      name: "Máy nhà của Peto",
-      desc: "Qwen3-TTS chạy trên máy của chủ Peto",
+      name: "Local Voice của Peto",
+      desc: "Qwen3-TTS chạy local",
       badges: [["Miễn phí", "free"], ["Khi máy bật", "neutral"]],
       status: health ? { text: health.home.online ? "Đang bật" : "Đang tắt", on: health.home.online } : undefined,
     },
@@ -268,12 +268,12 @@ function OfficialDetail({ voice }: { voice: LocalVoice }) {
   const official = voice.health?.official;
   if (!official) return <ServerPending voice={voice} />;
   if (!official.voices.length) {
-    return <p className="voice-line">Giọng Peto chưa mở trên máy chủ này. Bạn vẫn dùng được Máy nhà của Peto hoặc khóa của mình.</p>;
+    return <p className="voice-line">Giọng Peto chưa mở trên máy chủ này. Bạn vẫn dùng được Local Voice của Peto hoặc khóa của mình.</p>;
   }
   if (!official.allowed) {
     return (
       <p className="voice-line">
-        Lượt miễn phí dành cho tài khoản Discord và Google. Khách vẫn dùng được Máy nhà của Peto hoặc khóa của mình.
+        Lượt miễn phí dành cho tài khoản Discord và Google. Khách vẫn dùng được Local Voice của Peto hoặc khóa của mình.
       </p>
     );
   }
@@ -316,8 +316,8 @@ function HomeDetail({ voice }: { voice: LocalVoice }) {
       <p className="voice-line">
         <i className={home.online ? "voice-dot on" : "voice-dot"} />
         {home.online
-          ? "Máy nhà đang bật. Máy nhà dùng chung cho mọi người nên có lúc phải chờ."
-          : "Máy nhà đang tắt. Khi máy bật, Peto nói được ngay, không cần làm gì."}
+          ? "Local Voice đang bật. Local Voice dùng chung cho mọi người nên có lúc phải chờ."
+          : "Local Voice đang tắt. Khi bật, Peto nói được ngay, không cần làm gì."}
         {!home.online && (
           <button type="button" className="settings-button" onClick={voice.recheck} disabled={voice.checking}>Kiểm tra lại</button>
         )}

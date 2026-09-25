@@ -85,7 +85,7 @@ it('bấm ra ngoài thì đóng bảng; không có lựa chọn nào khớp thì
   expect(screen.queryByRole('listbox')).toBeNull();
 });
 
-it('bảng lật lên khi phía dưới hết chỗ, cuộn xuống thì mở lại phía dưới như AIRI', () => {
+it('bảng lật lên khi phía dưới hết chỗ, cuộn xuống thì mở lại phía dưới', () => {
   const rects = { area: { top: 0, bottom: 400 }, field: { top: 340, bottom: 382 } };
   vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
     const rect = this.classList.contains('scroll-area') ? rects.area

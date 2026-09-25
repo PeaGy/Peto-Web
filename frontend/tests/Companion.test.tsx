@@ -87,7 +87,7 @@ async function sendInCompanion(text: string) {
 
 it('chỉ gọi giọng nói qua VPS sau khi bật trong Cài đặt', async () => {
   await openCompanion();
-  expect(await screen.findByText(/Chào Peto một câu đi/)).toBeTruthy();
+  expect(await screen.findByRole('textbox', { name: 'Nhắn cho Peto trong Companion' })).toBeTruthy();
   expect(window.location.hash).toBe('#companion');
 
   const settings = await openSettings();
@@ -420,14 +420,13 @@ it('Bắt đầu lại xóa mạch cũ sau khi xác nhận', async () => {
   fireEvent.click(screen.getByRole('button', { name: 'Bắt đầu lại' }));
   fireEvent.click(await screen.findByRole('button', { name: 'Xóa và bắt đầu lại' }));
   await waitFor(() => expect(api.deleteConversation).toHaveBeenCalledWith('C1'));
-  expect(await screen.findByText(/Chào Peto một câu đi/)).toBeTruthy();
-  expect(screen.queryByText('Hey there.')).toBeNull();
+  await waitFor(() => expect(screen.queryByText('Hey there.')).toBeNull());
 });
 
 it('chuyển qua lại giữa Companion và Tạo ảnh không nhân đôi tab nào', async () => {
   const consoleError = vi.spyOn(console, 'error');
   await openCompanion();
-  expect(await screen.findByText(/Chào Peto một câu đi/)).toBeTruthy();
+  expect(await screen.findByRole('textbox', { name: 'Nhắn cho Peto trong Companion' })).toBeTruthy();
 
   fireEvent.click(screen.getByRole('button', { name: 'Tạo ảnh', exact: true }));
   await waitFor(() => expect(api.listImagineJobs).toHaveBeenCalled());

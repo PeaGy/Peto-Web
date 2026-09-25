@@ -55,6 +55,21 @@ async function openApp() {
   await screen.findByRole('button', { name: 'A', exact: true }, { timeout: 5000 });
 }
 
+it('cập nhật tiêu đề nền ở lần thử cuối mà không tải lại tin nhắn', async () => {
+  vi.mocked(api.listConversations).mockResolvedValue({ conversations: [
+    { ...conversation('A'), title_state: 'pending', title_attempts: 3 },
+  ], has_more: false });
+  await openApp();
+  fireEvent.click(screen.getByRole('button', { name: 'A', exact: true }));
+  await waitFor(() => expect(api.getMessages).toHaveBeenCalled());
+  const reads = vi.mocked(api.getMessages).mock.calls.length;
+  vi.mocked(api.listConversations).mockResolvedValue({ conversations: [
+    { ...conversation('A'), title: 'Giải thích registry .shop', title_state: 'generated', title_attempts: 3 },
+  ], has_more: false });
+  expect(await screen.findByRole('button', { name: 'Giải thích registry .shop', exact: true }, { timeout: 4000 })).toBeTruthy();
+  expect(vi.mocked(api.getMessages).mock.calls.length).toBe(reads);
+});
+
 it('không xử lý lại Markdown của lịch sử khi gõ bản nháp', async () => {
   const content = 'Lịch sử dài với công thức $x^2$ và code:\n\n```js\nconst answer = 42;\n```';
   vi.mocked(api.getMessages).mockResolvedValue(Array.from({ length: 40 }, () => ({ role: 'assistant', content })));

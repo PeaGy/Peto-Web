@@ -86,7 +86,7 @@ afterEach(() => {
 async function openCompanion() {
   render(<App />);
   fireEvent.click(await screen.findByRole('button', { name: 'Companion' }));
-  await screen.findByText(/Chào Peto một câu đi/);
+  await screen.findByRole('textbox', { name: 'Nhắn cho Peto trong Companion' });
 }
 
 const composer = () => screen.getByRole('textbox', { name: 'Nhắn cho Peto trong Companion' }) as HTMLTextAreaElement;

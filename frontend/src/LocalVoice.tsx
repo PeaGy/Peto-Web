@@ -50,12 +50,12 @@ export function voiceLabel(name: string): string {
 
 /** Giọng của máy chủ Peto kèm tên nguồn, cho câu báo chuyển giọng dự phòng. */
 function serverVoiceLabel(name: string): string {
-  return VOICE_LABELS[name] ? `Máy nhà của Peto (${VOICE_LABELS[name]})` : `Giọng Peto (${voiceLabel(name)})`;
+  return VOICE_LABELS[name] ? `Local Voice của Peto (${VOICE_LABELS[name]})` : `Giọng Peto (${voiceLabel(name)})`;
 }
 
 export type LocalVoiceStatus = "off" | "checking" | "ready" | "missing";
 
-/** Giọng Peto (chính thức, khóa của chủ web), Máy nhà của Peto, hay một nhà cung cấp dùng khóa riêng. */
+/** Giọng Peto (chính thức, khóa của chủ web), Local Voice của Peto, hay một nhà cung cấp dùng khóa riêng. */
 export type VoiceSourceId = "official" | "home" | KeyProviderId;
 
 /** Nguồn dự phòng: chỉ hai nguồn của máy chủ Peto, vì máy chủ đổi được sang chúng ngay trong một lượt đọc. */

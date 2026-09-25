@@ -55,7 +55,7 @@ async def test_dat_ten_cham_thi_khong_giu_luot_chat(client, monkeypatch):
         return "Không bao giờ tới đây"
 
     monkeypatch.setattr(titles, "suggest_title", cham)
-    monkeypatch.setattr(titles, "WAIT_SECONDS", 0.1)
+    monkeypatch.setattr(titles, "GENERATE_TIMEOUT", 0.1)
     conversation_id, events = await _send(client, "hỏi nhanh thôi")
     assert events[-1]["type"] == "done"
     assert await _title(client, conversation_id) == "hỏi nhanh thôi"
@@ -76,3 +76,55 @@ def test_ten_dai_bi_cat_gon():
     title = titles.clean_title("Cách dùng " + "package manager " * 10)
     assert len(title) <= titles.MAX_TITLE_CHARS
     assert title.endswith("…")
+
+
+async def test_retry_uses_first_exchange_then_locks(client, monkeypatch):
+    contexts = []
+    async def suggest(*args, **kwargs):
+        contexts.append(kwargs['context'])
+        return '' if len(contexts) == 1 else 'Giải thích registry .shop'
+    monkeypatch.setattr(titles, 'suggest_title', suggest)
+    cid, _ = await _send(client, 'registry shop là gì')
+    assert [m.role for m in contexts[0]] == ['user', 'assistant']
+    await _send(client, 'ý tôi là tên miền .shop', cid)
+    assert len(contexts[1]) == 4
+    assert contexts[1][0].content == 'registry shop là gì'
+    await _send(client, 'giờ nói chuyện khác', cid)
+    assert len(contexts) == 2
+    assert await _title(client, cid) == 'Giải thích registry .shop'
+
+
+async def test_title_failure_retries_at_most_three_times(client, monkeypatch):
+    calls = []
+    async def suggest(*args, **kwargs):
+        calls.append(1)
+        return ''
+    monkeypatch.setattr(titles, 'suggest_title', suggest)
+    cid, _ = await _send(client, 'hỏi một việc')
+    for _ in range(4):
+        await _send(client, 'hỏi thêm', cid)
+    assert len(calls) == 3
+
+
+async def test_title_provider_has_no_tools(monkeypatch):
+    from ai import ChatMessage
+    from test_clock_tools import FakeStream, done, fake_provider
+    provider, requests = fake_provider(monkeypatch, [FakeStream([done()])])
+    _ = [chunk async for chunk in provider.stream(
+        system_prompt='Title', messages=[ChatMessage('user', 'Title please')],
+        web_search='off', tools_enabled=False,
+    )]
+    assert requests[0]['tools'] == []
+    assert requests[0]['max_output_tokens'] <= 1024
+
+
+async def test_manual_title_wins_over_pending_generation(client, monkeypatch):
+    import db
+    async def manual(*args, **kwargs):
+        async with titles.aiosqlite.connect(db.DB_PATH) as connection:
+            owner, cid = await (await connection.execute("SELECT owner, id FROM conversations WHERE title_state='pending' LIMIT 1")).fetchone()
+        await db.set_title(owner, cid, 'Tên tôi chọn')
+        return 'Tên tự sinh'
+    monkeypatch.setattr(titles, 'suggest_title', manual)
+    cid, _ = await _send(client, 'đặt tên')
+    assert await _title(client, cid) == 'Tên tôi chọn'

@@ -821,6 +821,29 @@ export default function App() {
     }
   }, [handleUnauthorized]);
 
+  const waitingForTitle = conversations.some(item =>
+    item.id === conversationId && (item.title_state === 'pending' ||
+      (item.title_state === 'temporary' && (item.title_attempts || 0) < 3)));
+  useEffect(() => {
+    if (!auth?.authenticated || view !== 'chat' || streaming || !waitingForTitle) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    let attempts = 0;
+    const poll = async () => {
+      try {
+        const page = await listConversations();
+        if (cancelled) return;
+        setConversations(current => current.map(item => {
+          const fresh = page.conversations.find(row => row.id === item.id);
+          return fresh ? { ...item, title: fresh.title, title_state: fresh.title_state, title_attempts: fresh.title_attempts } : item;
+        }));
+      } catch { /* A later refresh can recover; do not interrupt typing. */ }
+      if (!cancelled && ++attempts < 12) timer = setTimeout(poll, 2500);
+    };
+    timer = setTimeout(poll, 1500);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [auth?.user?.id, auth?.authenticated, view, conversationId, streaming, waitingForTitle]);
+
   useEffect(() => {
     if (auth?.authenticated) void refreshConversations();
   }, [auth?.authenticated, refreshConversations]);
@@ -1004,8 +1027,7 @@ export default function App() {
           )}
 
           <p className="login-note">
-            Peto chỉ đọc tên và ảnh đại diện của bạn. Vào với tư cách khách thì
-            hội thoại gắn với trình duyệt này — xóa cookie là mất.
+            Peto chỉ đọc tên và ảnh đại diện của bạn.
           </p>
         </div>
       </div>
@@ -1659,7 +1681,7 @@ export default function App() {
 
           <section className="settings-section">
             <h3>Giao diện</h3>
-            <p className="settings-hint">Chọn nền sáng, nền tối, hoặc để Peto theo cài đặt của máy.</p>
+            <p className="settings-hint">Chọn nền sáng, nền tối, hoặc theo cài đặt của máy.</p>
             <div className="theme-options">
               {THEMES.map((item) => (
                 <label
@@ -1733,8 +1755,8 @@ export default function App() {
         event.preventDefault();
         if (!consentBusy) setConsentOpen(false);
       }}>
-        <h2 id="roleplay-consent-title">Bật chế độ nhập vai?</h2>
-        <p>Ở chế độ này Peto nhập vai như bot Discord và có thể có nội dung người lớn (18+). Chế độ gắn với hội thoại mới này; muốn quay lại trợ lý thì mở hội thoại mới.</p>
+        <h2 id="roleplay-consent-title">Bật chế độ roleplay?</h2>
+        <p>Ở chế độ này có thể có nội dung người lớn (18+). Chế độ gắn với hội thoại mới này; muốn quay lại thì mở hội thoại mới.</p>
         {consentError && <p className="consent-error" role="alert">{consentError}</p>}
         <div className="dialog-actions">
           <button autoFocus disabled={consentBusy} onClick={() => setConsentOpen(false)}>Để sau</button>

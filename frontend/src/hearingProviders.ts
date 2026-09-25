@@ -55,7 +55,7 @@ export const HEARING_PROVIDERS: HearingProvider[] = [
     modelFree: true, sharedWithMouth: true,
   },
   {
-    id: "compat", name: "Tương thích OpenAI", desc: "Máy chủ Whisper tự dựng", keyHint: "Nếu máy chủ cần",
+    id: "compat", name: "OpenAI", desc: "Máy chủ Whisper tự dựng", keyHint: "Nếu máy chủ cần",
     site: "máy chủ của bạn", keyOptional: true, needsBaseUrl: true, modelFree: true, sharedWithMouth: true,
   },
 ];

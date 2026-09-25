@@ -114,6 +114,7 @@ class MockProvider(ChatProvider):
         effort: str = "low",
         timezone: str | None = None,
         web_search: str = "auto",
+        tools_enabled: bool = True,
     ) -> AsyncIterator[str | StreamChunk]:
         last = next((m for m in reversed(messages) if m.role == "user"), None)
         last_user = last.content if last else ""
