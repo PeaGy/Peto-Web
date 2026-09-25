@@ -372,7 +372,7 @@ describe('Conversation navigation', () => {
     vi.mocked(api.getMessages).mockImplementation((id) => id === 'A' ? a.promise : Promise.resolve([row('Nội dung B')]));
     await openApp();
     fireEvent.click(screen.getByRole('button', { name: 'A', exact: true }));
-    expect(screen.getByText('Đang mở hội thoại…')).toBeTruthy();
+    expect(screen.getByRole('status', { name: 'Đang mở hội thoại' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'B', exact: true }));
     await screen.findByText('Nội dung B');
     await act(async () => a.resolve([row('Nội dung A')]));

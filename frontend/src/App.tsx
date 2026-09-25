@@ -582,6 +582,17 @@ export default function App() {
   const consentDialogRef = useRef<HTMLDialogElement>(null);
   const settingsDialogRef = useRef<HTMLDialogElement>(null);
   const composerRef = useRef<HTMLFormElement>(null);
+  const chatDockRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const dock = chatDockRef.current;
+    const chat = dock?.parentElement;
+    if (!dock || !chat || typeof ResizeObserver === 'undefined') return;
+    const measure = () => chat.style.setProperty('--chat-dock-height', `${dock.getBoundingClientRect().height}px`);
+    const observer = new ResizeObserver(measure);
+    observer.observe(dock);
+    measure();
+    return () => observer.disconnect();
+  }, [auth?.authenticated, view]);
   const composerBoxRef = useRef<HTMLDivElement>(null);
   // Chỗ ô nhắn đứng lúc còn ở giữa màn hình, đo ngay trước khi gửi tin đầu.
   const composerFrom = useRef<number | null>(null);
@@ -850,7 +861,7 @@ export default function App() {
   }, [emptyChat]);
 
   if (auth === null) {
-    return <div className="boot">Đang tải…</div>;
+    return <div className="boot" role="status" aria-label="Đang tải Peto"><span className="loading-spinner" aria-hidden="true" /></div>;
   }
 
   if (!auth.authenticated) {
@@ -1453,7 +1464,7 @@ export default function App() {
           nearBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 80;
           setShowJump(!nearBottom.current);
         }}>
-          {loadingConversation && <p className="loading-chat" role="status">Đang mở hội thoại…</p>}
+          {loadingConversation && <div className="loading-chat" role="status" aria-label="Đang mở hội thoại"><span className="loading-spinner" aria-hidden="true" /></div>}
           {loadFailed && <div className="loading-chat">
             <p>Chưa tải được nội dung hội thoại.</p>
             <button className="load-more" onClick={() => conversationId && void openConversation(conversationId)}>Thử mở lại</button>
@@ -1547,6 +1558,7 @@ export default function App() {
           bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
         }}>↓ Tin mới nhất</button>}
 
+        <div className="chat-dock" ref={chatDockRef}>
         {error && (
           <div className="error" role="alert">
             {error}
@@ -1590,6 +1602,7 @@ export default function App() {
           textareaRef={textareaRef}
           fileRef={fileRef}
         />
+        </div>
       </main>
       <DocumentPanel key={`${auth.user?.id}-${conversationId}`} conversationId={conversationId} open={documentPanelOpen && view === 'chat'} expanded={documentPanelExpanded} selection={documentPreview} refreshKey={documentRefresh} onClose={closeDocumentPanel} onExpand={() => setDocumentPanelExpanded(value => !value)} onEdit={item => setDocumentSelection({ ...item, key: Date.now() })} onUnauthorized={handleUnauthorized} />
       </div>

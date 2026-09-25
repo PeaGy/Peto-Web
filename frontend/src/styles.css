@@ -438,7 +438,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 @media (min-width: 721px) {
   .chat.empty-state { padding-bottom: 10vh; }
   .chat.empty-state > .messages { flex: none; overflow: visible; margin-top: auto; }
-  .chat.empty-state > .composer-wrap { margin-bottom: auto; }
+  .chat.empty-state .chat-dock > .composer-wrap { margin-bottom: auto; }
   .chat.empty-state .welcome { flex-direction: row; gap: 14px; max-width: 100%; text-align: left; }
   .chat.empty-state .welcome .avatar { width: 44px; height: 44px; }
   .chat.empty-state .welcome h1 { margin: 0; font-size: 30px; font-weight: 600; letter-spacing: -0.01em; }
@@ -2936,3 +2936,14 @@ button.artifact-name { cursor: pointer; }
   .mobile-render-settings label { display: grid; gap: 8px; }
   .mobile-render-settings select { width: 100%; min-height: 42px; padding: 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--text); }
 }
+
+.loading-spinner {
+  display: inline-block;
+  width: 28px;
+  height: 28px;
+  border: 3px solid color-mix(in srgb, var(--muted) 25%, transparent);
+  border-top-color: var(--text);
+  border-radius: 50%;
+  animation: loading-spin 0.85s linear infinite;
+}
+@keyframes loading-spin { to { transform: rotate(360deg); } }

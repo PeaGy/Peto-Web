@@ -1,5 +1,6 @@
 .chat-layout { display: flex; flex: 1; min-width: 0; min-height: 0; }
 .chat-layout[hidden] { display: none; }
+.chat-dock { display: contents; }
 .chat-tools { display: flex; align-items: center; gap: 8px; min-height: 52px; padding: 8px 18px 4px; flex-shrink: 0; }
 .chat-tools .chat-menu { margin: 0; }
 .document-panel-toggle { margin-left: auto; }
@@ -70,4 +71,70 @@
   .document-file-row small { font-size: 11px; }
   .document-panel-pages { padding: 10px; }
   .document-panel-pages .document-paper { padding: 24px; }
+}
+
+/* Reading fills the mobile viewport; only the controls float above it. */
+@media (max-width: 720px) {
+  .chat > .chat-tools {
+    position: absolute;
+    inset: 0 0 auto;
+    z-index: 5;
+    padding: 8px 12px;
+    pointer-events: none;
+    background: transparent;
+  }
+  .chat > .chat-tools > button {
+    pointer-events: auto;
+    width: 40px;
+    height: 40px;
+    border: 0;
+    border-radius: 14px;
+    background: color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter: blur(12px);
+    box-shadow: 0 2px 12px #0002;
+  }
+  .chat > .messages {
+    padding: 68px 16px calc(var(--chat-dock-height, 150px) + 24px);
+    scroll-padding-top: 68px;
+    scroll-padding-bottom: calc(var(--chat-dock-height, 150px) + 24px);
+  }
+  .chat > .chat-dock {
+    display: flex;
+    flex-direction: column;
+    position: absolute;
+    inset: auto 0 0;
+    z-index: 4;
+    pointer-events: none;
+    padding-bottom: env(safe-area-inset-bottom);
+    max-height: 65%;
+  }
+  .chat-dock > .composer-wrap {
+    padding: 8px 12px 12px;
+    pointer-events: auto;
+    min-height: 0;
+    overflow: visible;
+  }
+  .chat-dock .composer {
+    border-radius: 26px;
+    box-shadow: 0 6px 24px #0003;
+    max-height: 45dvh;
+  }
+  .chat-dock .attach-list { max-height: 15dvh; overflow-y: auto; flex-shrink: 0; }
+  .chat-dock > .error {
+    pointer-events: auto;
+    background: var(--panel);
+    margin: 6px 12px;
+    max-height: 18dvh;
+    overflow-y: auto;
+    flex-shrink: 0;
+  }
+  .chat-dock .composer-note { background: var(--bg); border-radius: 8px; padding: 4px 8px; }
+  .chat > .jump-latest {
+    position: absolute;
+    bottom: calc(var(--chat-dock-height, 150px) + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    margin: 0;
+    z-index: 5;
+  }
 }

@@ -195,11 +195,8 @@ export default function Composer({
           </div>
         </div>
       </div>
-      <p className="composer-note">
-        {files.some((item) => /\.pdf$/i.test(item.file.name) || item.file.type === "application/pdf")
-          ? "Peto đọc lớp chữ trong PDF và dẫn số trang. PDF ảnh scan chưa có chữ cần OCR trước nhé."
-          : "Tệp chữ/code tối đa 16 · ảnh, PDF, Word tối đa 4 · 8 MB/tệp, tổng 16 MB."}
-      </p>
+      {files.some((item) => /\.pdf$/i.test(item.file.name) || item.file.type === "application/pdf") &&
+        <p className="composer-note">Peto đọc lớp chữ trong PDF và dẫn số trang. PDF ảnh scan chưa có chữ cần OCR trước nhé.</p>}
     </form>
   );
 }
