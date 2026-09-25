@@ -1761,7 +1761,7 @@ label,
 
 :where(button, .discord-button, .alt-login):active:not(
   :disabled, .nav-item, .conv-open, .account, .thinking-toggle, .sidebar-backdrop,
-  .composer-options > button, .effort-option
+  .composer-options > button, .effort-option, .jump-latest
 ) { transform: scale(0.97); }
 
 /* Giảm chuyển động: vẫn co để báo đã bấm, chỉ bỏ phần chạy chuyển tiếp. */

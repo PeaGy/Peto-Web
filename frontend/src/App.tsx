@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { memo, lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
@@ -476,6 +476,85 @@ function Greeting({ name }: { name: string }) {
   return <h1>{fillName(greeting.text, name)}</h1>;
 }
 
+// Old messages keep their rendered Markdown while the draft or current reply changes.
+const ChatMessage = memo(function ChatMessage({ message, live, writing, onPreview, onEdit }: {
+  message: Message; live: boolean; writing: boolean;
+  onPreview: (item: { id: string; version: number }) => void;
+  onEdit: (item: { id: string; version: number }) => void;
+}) {
+  return (<article className={`bubble ${message.role}`}>
+              {message.attachments && message.attachments.length > 0 && (
+                <div className="bubble-files">
+                  {message.attachments.map((file) =>
+                    file.kind === "image" && file.url ? (
+                      <a
+                        key={file.id}
+                        href={file.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="bubble-image-link"
+                      >
+                        <img src={file.url} alt={file.name} className="bubble-image" />
+                      </a>
+                    ) : (
+                      <div className="document-card" key={file.id}>
+                        <a href={file.url || undefined} className="file-chip" download={file.name}>
+                          <FileGlyph name={file.name} kind="file" />
+                          <span>
+                            <strong>{file.name}</strong>
+                            <em>{formatSize(file.size)}</em>
+                          </span>
+                        </a>
+                        {file.document && (
+                          <details className={`document-details ${file.document.status === "ready" ? "ready" : "limited"}`}>
+                            <summary>
+                              {file.document.status === "ready" ? "Đã đọc chữ" : file.document.status === "partial" ? "Đọc được một phần" : "Chưa đọc được"}
+                              {file.document.pages != null && ` · ${file.document.pages} trang`}
+                            </summary>
+                            <p>{file.document.notice}</p>
+                          </details>
+                        )}
+                      </div>
+                    ),
+                  )}
+                </div>
+              )}
+              {message.role === "assistant" && (
+                (live) ||
+                message.workSteps?.length ||
+                message.workedMs != null
+              ) ? (
+                <WorkLog
+                  live={live}
+                  steps={message.workSteps}
+                  ms={message.workedMs}
+                />
+              ) : null}
+              {message.content ? (
+                <Markdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[[rehypeKatex, { trust: false, strict: "ignore" }], [rehypeHighlight, {
+                  languages: HIGHLIGHT_LANGUAGES, aliases: HIGHLIGHT_ALIASES, ignoreMissing: true,
+                }]]} components={{
+                  table: ({children}) => <div className="table-scroll" tabIndex={0} role="region" aria-label="Bảng nội dung"><table>{children}</table></div>,
+                  a: ({children, href}) => <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>,
+                  pre: ({node, children}) => {
+                    const code = node?.children?.[0];
+                    const names = code?.type === "element" && Array.isArray(code.properties?.className)
+                      ? code.properties.className.map(String) : [];
+                    const tag = names.find((name) => name.startsWith("language-"));
+                    return <CodeBlock language={tag ? tag.slice("language-".length) : ""}>{children}</CodeBlock>;
+                  },
+                }}>{normalizeMath(message.content)}</Markdown>
+              ) : null}
+              {message.role === "assistant" && <WebSources sources={message.sources} />}
+              {message.artifacts?.map(artifact => <DocumentArtifactCard key={`${artifact.id}-${artifact.version}`} artifact={artifact} onOpen={onPreview} onEdit={onEdit} />)}
+              {message.status === "incomplete" && <p className="message-status">Câu trả lời chưa hoàn tất</p>}
+              {/* Tin đang được viết thì chưa có gì trọn vẹn để chép. */}
+              {message.role === "assistant" && message.content && !(writing) && (
+                <MessageCopy text={message.content} />
+              )}
+            </article>);
+});
+
 export default function App() {
   const [auth, setAuth] = useState<AuthState | null>(null);
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
@@ -495,10 +574,13 @@ export default function App() {
   const [documentPanelExpanded, setDocumentPanelExpanded] = useState(false);
   const [documentPreview, setDocumentPreview] = useState<DocumentPanelSelection | null>(null);
   const closeDocumentPanel = useCallback(() => { setDocumentPanelOpen(false); setDocumentPanelExpanded(false); }, []);
-  function previewDocument(item: { id: string; version: number }) {
+  const previewDocument = useCallback((item: { id: string; version: number }) => {
     setDocumentPreview({ id: item.id, version: item.version, key: Date.now() });
     setDocumentPanelOpen(true);
-  }
+  }, []);
+  const editDocument = useCallback((item: { id: string; version: number }) => {
+    setDocumentSelection({ id: item.id, version: item.version, key: Date.now() });
+  }, []);
   const [draftFiles, setDraftFiles] = useState<DraftFile[]>([]);
   const [effort, setEffort] = useState<Effort>(readStoredEffort);
   const [model, setModel] = useState<string>(readStoredModel);
@@ -1477,77 +1559,10 @@ export default function App() {
           )}
 
           {messages.map((message, index) => (
-            <article key={index} className={`bubble ${message.role}`}>
-              {message.attachments && message.attachments.length > 0 && (
-                <div className="bubble-files">
-                  {message.attachments.map((file) =>
-                    file.kind === "image" && file.url ? (
-                      <a
-                        key={file.id}
-                        href={file.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="bubble-image-link"
-                      >
-                        <img src={file.url} alt={file.name} className="bubble-image" />
-                      </a>
-                    ) : (
-                      <div className="document-card" key={file.id}>
-                        <a href={file.url || undefined} className="file-chip" download={file.name}>
-                          <FileGlyph name={file.name} kind="file" />
-                          <span>
-                            <strong>{file.name}</strong>
-                            <em>{formatSize(file.size)}</em>
-                          </span>
-                        </a>
-                        {file.document && (
-                          <details className={`document-details ${file.document.status === "ready" ? "ready" : "limited"}`}>
-                            <summary>
-                              {file.document.status === "ready" ? "Đã đọc chữ" : file.document.status === "partial" ? "Đọc được một phần" : "Chưa đọc được"}
-                              {file.document.pages != null && ` · ${file.document.pages} trang`}
-                            </summary>
-                            <p>{file.document.notice}</p>
-                          </details>
-                        )}
-                      </div>
-                    ),
-                  )}
-                </div>
-              )}
-              {message.role === "assistant" && (
-                (streaming && !stopping && index === messages.length - 1) ||
-                message.workSteps?.length ||
-                message.workedMs != null
-              ) ? (
-                <WorkLog
-                  live={streaming && !stopping && index === messages.length - 1}
-                  steps={message.workSteps}
-                  ms={message.workedMs}
-                />
-              ) : null}
-              {message.content ? (
-                <Markdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[[rehypeKatex, { trust: false, strict: "ignore" }], [rehypeHighlight, {
-                  languages: HIGHLIGHT_LANGUAGES, aliases: HIGHLIGHT_ALIASES, ignoreMissing: true,
-                }]]} components={{
-                  table: ({children}) => <div className="table-scroll" tabIndex={0} role="region" aria-label="Bảng nội dung"><table>{children}</table></div>,
-                  a: ({children, href}) => <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>,
-                  pre: ({node, children}) => {
-                    const code = node?.children?.[0];
-                    const names = code?.type === "element" && Array.isArray(code.properties?.className)
-                      ? code.properties.className.map(String) : [];
-                    const tag = names.find((name) => name.startsWith("language-"));
-                    return <CodeBlock language={tag ? tag.slice("language-".length) : ""}>{children}</CodeBlock>;
-                  },
-                }}>{normalizeMath(message.content)}</Markdown>
-              ) : null}
-              {message.role === "assistant" && <WebSources sources={message.sources} />}
-              {message.artifacts?.map(artifact => <DocumentArtifactCard key={`${artifact.id}-${artifact.version}`} artifact={artifact} onOpen={previewDocument} onEdit={item => setDocumentSelection({ id: item.id, version: item.version, key: Date.now() })} />)}
-              {message.status === "incomplete" && <p className="message-status">Câu trả lời chưa hoàn tất</p>}
-              {/* Tin đang được viết thì chưa có gì trọn vẹn để chép. */}
-              {message.role === "assistant" && message.content && !(streaming && index === messages.length - 1) && (
-                <MessageCopy text={message.content} />
-              )}
-            </article>
+            <ChatMessage key={index} message={message}
+              live={streaming && !stopping && index === messages.length - 1}
+              writing={streaming && index === messages.length - 1}
+              onPreview={previewDocument} onEdit={editDocument} />
           ))}
           <div ref={bottomRef} />
         </div>

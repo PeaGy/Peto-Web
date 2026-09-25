@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from '../src/App';
 import * as api from '../src/api';
+import * as mathMarkdown from '../src/mathMarkdown';
 import * as documentApi from '../src/documentApi';
 vi.mock('../src/documentApi', async original => ({ ...await original<typeof import('../src/documentApi')>(), listDocuments: vi.fn(), getDocument: vi.fn() }));
 
@@ -53,6 +54,19 @@ async function openApp() {
   // Lần dựng đầu tiên trong tệp mất hơn 1 giây khi chạy cả bộ test song song.
   await screen.findByRole('button', { name: 'A', exact: true }, { timeout: 5000 });
 }
+
+it('không xử lý lại Markdown của lịch sử khi gõ bản nháp', async () => {
+  const content = 'Lịch sử dài với công thức $x^2$ và code:\n\n```js\nconst answer = 42;\n```';
+  vi.mocked(api.getMessages).mockResolvedValue(Array.from({ length: 40 }, () => ({ role: 'assistant', content })));
+  const normalize = vi.spyOn(mathMarkdown, 'normalizeMath');
+  await openApp();
+  fireEvent.click(screen.getByRole('button', { name: 'A', exact: true }));
+  await waitFor(() => expect(document.querySelectorAll('.bubble')).toHaveLength(40));
+  normalize.mockClear();
+  await userEvent.type(screen.getByRole('textbox', { name: 'Nhắn cho Peto' }), 'Tin nhắn mới');
+  expect(normalize).not.toHaveBeenCalled();
+  expect((screen.getByRole('textbox', { name: 'Nhắn cho Peto' }) as HTMLTextAreaElement).value).toBe('Tin nhắn mới');
+});
 
 it('liên kết của peto login mở hộp cho phép kết nối sau khi vào app', async () => {
   window.history.replaceState(null, '', '/?agent_code=kxmt-4p2q');
