@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import struct
+
 import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
@@ -184,3 +186,56 @@ async def test_without_usable_avatar_index_is_unchanged(site_client, identity, a
 def test_page_without_head_is_left_alone():
     page = "<h1>Peto</h1>"
     assert static_files._with_preview_image(page, AVATAR, "Peto") == page
+
+
+def _png(width: int, height: int) -> bytes:
+    """Header PNG đủ để đọc kích thước, không cần là ảnh vẽ được."""
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + struct.pack(">I", 13)
+        + b"IHDR"
+        + struct.pack(">II", width, height)
+    )
+
+
+async def test_banner_is_the_link_preview(tmp_path, identity):
+    """Ảnh ngang og.png phải thành khung lớn, không dùng avatar vuông.
+
+    Discord chỉ hiện thumbnail khi og:image là icon vuông nhỏ. URL phải tuyệt
+    đối theo đúng host người dùng gọi, không ghi cứng domain.
+    """
+    identity["avatar_url"] = AVATAR
+    (tmp_path / "index.html").write_text(SITE_INDEX, encoding="utf-8")
+    (tmp_path / "og.png").write_bytes(_png(1731, 909))
+    app = FastAPI()
+    assert static_files.mount(app, tmp_path)
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="https://peto.example"
+    ) as client:
+        page = (await client.get("/")).text
+        image = await client.get("/og.png")
+    assert '<meta property="og:image" content="https://peto.example/og.png" />' in page
+    assert page.index("og:image") < page.index("</head>")
+    assert '<meta property="og:image:width" content="1731" />' in page
+    assert '<meta property="og:image:height" content="909" />' in page
+    assert '<meta property="og:image:type" content="image/png" />' in page
+    assert '<meta name="twitter:image" content="https://peto.example/og.png" />' in page
+    assert 'content="Peto, trợ lý AI"' in page
+    assert AVATAR not in page
+    assert image.status_code == 200
+    assert image.headers["content-type"].startswith("image/png")
+
+
+async def test_banner_is_not_published_on_a_private_origin(tmp_path, identity):
+    """Không biết địa chỉ https công khai thì đừng đưa Discord một URL vô dụng."""
+    identity["avatar_url"] = AVATAR
+    (tmp_path / "index.html").write_text(SITE_INDEX, encoding="utf-8")
+    (tmp_path / "og.png").write_bytes(_png(1200, 630))
+    app = FastAPI()
+    assert static_files.mount(app, tmp_path)
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        page = (await client.get("/")).text
+    assert f'<meta property="og:image" content="{AVATAR}" />' in page
+    assert "/og.png" not in page

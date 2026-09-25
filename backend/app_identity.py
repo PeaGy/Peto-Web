@@ -25,8 +25,8 @@ from config import DISCORD_CLIENT_ID
 logger = logging.getLogger("peto_web.app_identity")
 
 RPC_URL = "https://discord.com/api/v10/applications/{app_id}/rpc"
-# 256 chứ không phải 128: URL này còn làm ảnh thu nhỏ khi dán link vào Discord,
-# và ô 80px ở đó trên màn hình 2–3x cần hơn 128px mới nét.
+# 256 chứ không phải 128: ô avatar trên màn hình 2–3x cần hơn 128px mới nét.
+# Ảnh xem trước khi dán link là banner og.png, không dùng URL này.
 CDN_ICON = "https://cdn.discordapp.com/app-icons/{app_id}/{icon}.png?size=256"
 
 # Icon bot hầu như không đổi, nên cache lâu. Đổi icon thì restart là xong.
