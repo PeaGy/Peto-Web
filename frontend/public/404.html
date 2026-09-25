@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="robots" content="noindex" />
-    <title>Không tìm thấy trang · Peto</title>
+    <title>Không thấy trang · Peto</title>
     <script>
       // Giống hệt đoạn trong index.html: gắn giao diện đã lưu trước khi trang vẽ
       // để không nháy sáng. Trang này đứng một mình nên phải tự lo.
@@ -20,7 +20,8 @@
     </script>
     <style>
       /* Cố ý không dùng styles.css: tên file bundle có hash đổi theo mỗi lần
-         build, mà trang lỗi thì phải hiện được cả khi bundle hỏng. */
+         build, mà trang lỗi thì phải hiện được cả khi bundle hỏng.
+         Màu chép từ :root của styles.css, không lấy tông poster. */
       :root {
         --bg: #141414;
         --panel: #1a1a1a;
@@ -60,14 +61,12 @@
         margin: 0;
         display: flex;
         justify-content: center;
-        padding: 24px;
+        padding: 32px 20px;
         background: var(--bg);
         color: var(--text);
         font: 15px/1.6 "Segoe UI", system-ui, -apple-system, sans-serif;
       }
 
-      /* Giữ giống styles.css. Chromium bỏ qua ::-webkit-scrollbar ngay khi thấy
-         scrollbar-width, nên thuộc tính chuẩn phải nằm trong @supports bên dưới. */
       ::-webkit-scrollbar { width: 10px; height: 10px; }
       ::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
 
@@ -92,58 +91,52 @@
       }
 
       main {
-        width: 100%;
-        max-width: 420px;
+        width: min(420px, 100%);
         margin: auto;
-        padding: 40px 32px;
-        border: 1px solid var(--line);
-        border-radius: 18px;
-        background: var(--panel);
         text-align: center;
       }
 
-      .mark { display: block; margin: 0 auto 18px; color: var(--muted); }
-
       .code {
-        color: var(--accent);
+        margin: 0;
+        color: var(--muted);
         font-size: 13px;
-        font-weight: 600;
-        letter-spacing: 0.16em;
-        text-transform: uppercase;
+        font-weight: 650;
+        letter-spacing: 0.14em;
       }
 
-      h1 { margin: 10px 0 0; font-size: 25px; line-height: 1.35; }
+      h1 {
+        margin: 8px 0 0;
+        font-size: 28px;
+        font-weight: 650;
+        letter-spacing: -0.02em;
+        line-height: 1.3;
+        text-wrap: balance;
+      }
 
-      p { margin: 12px 0 0; color: var(--muted); }
+      p { margin: 10px auto 0; max-width: 34em; color: var(--muted); }
 
       a {
         display: inline-block;
-        margin-top: 26px;
-        padding: 11px 22px;
+        margin-top: 22px;
+        padding: 10px 18px;
         border-radius: 10px;
         background: var(--accent);
         color: var(--on-accent);
         font-size: 14px;
-        font-weight: 600;
+        font-weight: 650;
         text-decoration: none;
       }
 
-      a:hover { opacity: 0.9; }
+      a:hover { opacity: 0.88; }
 
       a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
     </style>
   </head>
   <body>
     <main>
-      <!-- Kính lúp soi vào chỗ trống. Ngôi sao lấp lánh là dấu hiệu "tạo ảnh"
-           của app, dùng ở trang lỗi sẽ đọc nhầm thành có gì đó vui. -->
-      <svg class="mark" width="40" height="40" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-        <circle cx="10.5" cy="10.5" r="6.75" stroke="currentColor" stroke-width="1.5" />
-        <path d="m15.5 15.5 5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
-      </svg>
-      <span class="code">Lỗi 404</span>
-      <h1>Ở đây không có gì cả.</h1>
-      <p>Peto tìm quanh rồi mà không thấy trang bạn cần. Có thể đường dẫn bị gõ nhầm, hoặc nó chưa từng tồn tại.</p>
+      <p class="code">404</p>
+      <h1>Không thấy trang này.</h1>
+      <p>Đường dẫn có thể gõ nhầm, hoặc trang này chưa từng có ở đây.</p>
       <a href="/">Về trang chủ</a>
     </main>
   </body>
