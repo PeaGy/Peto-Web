@@ -879,11 +879,17 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .persona-chip button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .web-search-status { display: flex; align-items: center; gap: 8px; color: var(--accent); font-size: 13px; padding: 7px 0; }
 .web-search-status svg { flex-shrink: 0; }
-.web-sources { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line); font-size: 13px; }
-.web-sources summary { display: flex; align-items: center; gap: 8px; width: fit-content; cursor: pointer; color: var(--accent); font-weight: 600; }
+.web-sources { margin-top: 12px; font-size: 13px; }
+.web-sources summary { display: flex; align-items: center; gap: 8px; width: fit-content; cursor: pointer; color: var(--muted); font-weight: 500; list-style: none; }
+.web-sources summary::-webkit-details-marker { display: none; }
+.web-sources > summary { padding: 7px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); }
+.web-sources summary:hover { color: var(--text); }
+.web-sources summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .web-sources summary::after { content: '+'; margin-left: 3px; }
-.web-sources[open] summary::after { content: '−'; }
-.web-sources > p { color: var(--muted); font-size: 11px; margin: 10px 0; }
+.web-sources[open] > summary::after, .web-source-results[open] > summary::after { content: '−'; }
+.web-sources-panel { margin-top: 10px; padding: 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); display: grid; gap: 16px; max-height: min(480px, 55dvh); overflow-y: auto; overscroll-behavior: contain; }
+.web-sources-panel h3 { margin: 0 0 10px; font-size: 13px; font-weight: 600; }
+.web-sources-panel p { color: var(--muted); font-size: 12px; margin: 8px 0 10px; }
 .web-source-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: 8px; }
 .web-source-card { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-2); color: var(--text); text-decoration: none; min-width: 0; }
 .web-source-card:hover { border-color: var(--accent); }

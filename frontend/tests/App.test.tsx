@@ -226,7 +226,7 @@ it('tự động tìm web, hiển thị tiến trình và nguồn cùng câu tr�
   await act(async () => result.resolve());
   await screen.findByText('Có tài liệu chính thức.');
   expect(screen.queryByText('Đang tìm trên web…')).toBeNull();
-  fireEvent.click(screen.getByText('1 nguồn tham khảo'));
+  fireEvent.click(screen.getByText('Nguồn tham khảo · 1'));
   expect(screen.getByRole('link', { name: /Tài liệu Python/ }).getAttribute('href')).toBe('https://docs.python.org/3/');
 });
 
@@ -238,7 +238,7 @@ it('nguồn xuất hiện khi mở lịch sử và loại bỏ liên kết khôn
   ] }]);
   await openApp();
   fireEvent.click(screen.getByRole('button', { name: 'A', exact: true }));
-  fireEvent.click(await screen.findByText('1 nguồn tham khảo'));
+  fireEvent.click(await screen.findByText('Nguồn tham khảo · 1'));
   expect(screen.getByRole('link', { name: /Tài liệu Python/ }).getAttribute('rel')).toContain('noreferrer');
   expect(screen.queryByText('Nguồn nguy hiểm')).toBeNull();
 });
@@ -259,7 +259,7 @@ it('dừng lúc đang tìm web không để tiến trình treo hoặc nhận ngu
   fireEvent.click(screen.getByRole('button', { name: 'Dừng', exact: true }));
   await screen.findByText('Đã dừng. Phần đã trả lời được giữ lại.');
   expect(screen.queryByText('Đang tìm trên web…')).toBeNull();
-  expect(screen.queryByText('1 nguồn tham khảo')).toBeNull();
+  expect(screen.queryByText('Nguồn tham khảo · 1')).toBeNull();
 });
 
 it('giữ chế độ tìm và bản nháp khi máy chủ từ chối, gửi đúng chế độ tắt', async () => {
