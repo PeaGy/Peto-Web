@@ -17,6 +17,12 @@ from dataclasses import dataclass
 import config
 
 DEFAULT_MODEL = "peto"
+OPENAI_EFFORTS = ("none", "low", "medium", "high", "xhigh", "max")
+PETO_EFFORTS = ("low", "medium", "high")
+
+
+def supported_efforts(key: str) -> tuple[str, ...]:
+    return OPENAI_EFFORTS if MODELS[key].service == 'openai' else PETO_EFFORTS
 
 
 @dataclass(frozen=True)
@@ -85,5 +91,6 @@ def resolve(owner: str, key: object, surface: str) -> Model:
 
 
 def public(models: list[Model]) -> list[dict]:
-    return [{"key": model.key, "label": model.label, "description": model.description, "step_cost": model.step_cost}
+    return [{"key": model.key, "label": model.label, "description": model.description, "step_cost": model.step_cost,
+             "efforts": list(supported_efforts(model.key))}
             for model in models]

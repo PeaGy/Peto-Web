@@ -149,6 +149,9 @@ COOLDOWN_SECONDS = _env_float("PETO_COOLDOWN_SECONDS", 3.0, 0.0, 300.0)
 
 # --- Thời gian cho phép để suy nghĩ và stream câu trả lời dài trên web ---
 RESPONSE_TIMEOUTS = {
+    "none": _env_float("PETO_TIMEOUT_NONE_SECONDS", 180.0, 5.0, 600.0),
+    "xhigh": _env_float("PETO_TIMEOUT_XHIGH_SECONDS", 600.0, 5.0, 1200.0),
+    "max": _env_float("PETO_TIMEOUT_MAX_SECONDS", 600.0, 5.0, 1200.0),
     "low": _env_float("PETO_TIMEOUT_LOW_SECONDS", 180.0, 5.0, 600.0),
     "medium": _env_float("PETO_TIMEOUT_MEDIUM_SECONDS", 300.0, 5.0, 600.0),
     "high": _env_float("PETO_TIMEOUT_HIGH_SECONDS", 480.0, 5.0, 600.0),

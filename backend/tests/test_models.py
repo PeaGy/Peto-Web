@@ -47,8 +47,8 @@ def keys(models: list[dict]) -> list[str]:
 async def test_web_offers_luna_to_discord_and_google_accounts_only(client, anon_client, monkeypatch):
     me = (await client.get("/api/auth/me")).json()["user"]
     assert me["models"] == [
-        {"key": "peto", "label": "Peto", "description": "Mặc định", "step_cost": 1},
-        {"key": "luna", "label": "6 Luna", "description": "Nhanh, của OpenAI", "step_cost": 1},
+        {"key": "peto", "label": "Peto", "description": "Mặc định", "step_cost": 1, "efforts": ['low', 'medium', 'high']},
+        {"key": "luna", "label": "6 Luna", "description": "Nhanh, của OpenAI", "step_cost": 1, "efforts": ['none', 'low', 'medium', 'high', 'xhigh', 'max']},
     ]
     seen = spy_models(monkeypatch)
     events = await read_events(await client.post("/api/chat", json={"message": "chào", "model": "luna"}))
@@ -141,7 +141,8 @@ def completed(text: str):
                             response=SimpleNamespace(status="completed", output=output, usage=None))]
 
 
-async def test_luna_calls_openai_with_its_model_and_key(monkeypatch):
+@pytest.mark.parametrize('effort', ['none', 'low', 'medium', 'high', 'xhigh', 'max'])
+async def test_luna_calls_openai_with_its_model_and_key(monkeypatch, effort):
     from ai import gpt
 
     monkeypatch.setattr(ai, "AI_PROVIDER", "xai")
@@ -163,10 +164,10 @@ async def test_luna_calls_openai_with_its_model_and_key(monkeypatch):
     monkeypatch.setattr(gpt, "OPENAI_API_KEY", "khoa-thu")
     provider._client = SimpleNamespace(responses=SimpleNamespace(create=create))
     parts = [chunk async for chunk in provider.stream(
-        system_prompt="chỉ dẫn", messages=[ChatMessage("user", "chào")], effort="medium", web_search="off")]
+        system_prompt="chỉ dẫn", messages=[ChatMessage("user", "chào")], effort=effort, web_search="off")]
     assert parts == ["Chào bạn"]
     assert calls[0]["model"] == "gpt-6-luna" and calls[0]["max_output_tokens"] == config.OPENAI_MAX_OUTPUT_TOKENS
-    assert calls[0]["reasoning"] == {"effort": "medium"} and calls[0]["store"] is False
+    assert calls[0]["reasoning"] == {"effort": effort} and calls[0]["store"] is False
 
     request = httpx2.Request("POST", "https://api.openai.com/v1/responses")
     response = httpx2.Response(429, request=request, json={"error": {"message": "quota"}})
@@ -202,3 +203,11 @@ async def test_agent_steps_on_terra_go_to_openai(monkeypatch):
     with pytest.raises(ProviderError, match="/model peto"):
         async for _ in agent.agent_step(instructions="", input_items=[], tools=[], model="luna"):
             pass
+
+@pytest.mark.parametrize('effort', ['none', 'xhigh', 'max'])
+async def test_web_extended_effort_only_for_openai(client, effort):
+    events = await read_events(await client.post('/api/chat', json={'message': 'chào', 'model': 'luna', 'effort': effort}))
+    assert events[0]['effort'] == effort
+    assert events[-1]['type'] == 'done'
+    rejected = await client.post('/api/chat', json={'message': 'chào', 'model': 'peto', 'effort': effort})
+    assert rejected.status_code == 400

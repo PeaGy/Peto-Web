@@ -23,7 +23,7 @@ const ICONS: Record<string, ReactNode> = {
 
 function ModeIcon({ value }: { value: string }) {
   return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
-    {ICONS[value]}
+    {ICONS[value] ?? (value === 'none' ? ICONS.low : ICONS.high)}
   </svg>;
 }
 

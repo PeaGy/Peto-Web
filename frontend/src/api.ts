@@ -1,5 +1,5 @@
 export type Role = "user" | "assistant";
-export type Effort = "auto" | "low" | "medium" | "high";
+export type Effort = "auto" | "none" | "low" | "medium" | "high" | "xhigh" | "max";
 export type WebSearchMode = "auto" | "on" | "off";
 /** Tab gửi tin: Companion có persona trả lời ngắn bằng tiếng Anh và mạch trò chuyện riêng. */
 export type ConversationMode = "chat" | "companion";
@@ -114,6 +114,7 @@ export interface AccountUser {
 }
 
 export interface ModelOption {
+  efforts?: Exclude<Effort, 'auto'>[];
   key: string;
   label: string;
   description: string;

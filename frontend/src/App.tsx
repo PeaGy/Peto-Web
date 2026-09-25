@@ -133,9 +133,12 @@ const MAX_TOTAL_BYTES = 16 * 1024 * 1024;
 
 const EFFORTS: { value: Effort; label: string; hint: string }[] = [
   { value: "auto", label: "Tự động", hint: "Peto tự chọn mức phù hợp" },
+  { value: "none", label: "Không suy luận", hint: "Ưu tiên phản hồi nhanh" },
   { value: "low", label: "Thấp", hint: "Trả lời nhanh, chat thường" },
   { value: "medium", label: "Trung bình", hint: "Cân bằng tốc độ và độ sâu" },
   { value: "high", label: "Cao", hint: "Suy nghĩ kỹ cho bài khó" },
+  { value: "xhigh", label: "Rất cao", hint: "Đào sâu hơn, có thể chờ lâu hơn" },
+  { value: "max", label: "Tối đa", hint: "Mức suy luận cao nhất, dùng nhiều token hơn" },
 ];
 
 type ThemeChoice = "light" | "dark" | "system";
@@ -936,6 +939,9 @@ export default function App() {
   // Chế độ nhập vai chỉ dùng Peto (máy chủ cũng chặn), nên không hiện nút chọn model.
   const models = persona === "roleplay" ? [] : auth?.user?.models ?? [];
   const chosenModel = models.some((item) => item.key === model) ? model : "peto";
+  const supportedEfforts = models.find(item => item.key === chosenModel)?.efforts ?? ['low', 'medium', 'high'];
+  const effortOptions = EFFORTS.filter(item => item.value === 'auto' || supportedEfforts.includes(item.value));
+  const effectiveEffort = effortOptions.some(item => item.value === effort) ? effort : 'auto';
 
   // Chỉ lần gửi tin đầu mới trượt ô nhắn xuống (FLIP): mắt người dùng đang ở đúng
   // ô đó, để nó nhảy cóc là mất dấu. Mở hội thoại hay tạo cuộc mới là điều hướng,
@@ -1215,7 +1221,7 @@ export default function App() {
         {
           message: text,
           conversationId,
-          effort,
+          effort: effectiveEffort,
           webSearch,
           attachments,
           persona,
@@ -1619,8 +1625,8 @@ export default function App() {
           canSend={canSend}
           onSubmit={submit}
           onStop={stop}
-          effort={effort}
-          efforts={EFFORTS}
+          effort={effectiveEffort}
+          efforts={effortOptions}
           onEffortChange={setEffort}
           webSearch={webSearch}
           onToggleWeb={() => setWebSearch((mode) => (mode === "off" ? "auto" : "off"))}

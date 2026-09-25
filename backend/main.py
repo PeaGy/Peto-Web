@@ -148,7 +148,7 @@ class ChatRequest(BaseModel):
     model: str = Field(default=ai_models.DEFAULT_MODEL, max_length=16)
 
 
-ALLOWED_EFFORTS = {"auto", "low", "medium", "high"}
+ALLOWED_EFFORTS = {"auto", *ai_models.OPENAI_EFFORTS}
 CONVERSATION_MODES = {"chat", "companion"}
 CONVERSATION_PERSONAS = {"assistant", "roleplay"}
 
@@ -183,7 +183,7 @@ def _resolve_effort(requested: str | None, text: str) -> str:
     if value not in ALLOWED_EFFORTS:
         raise HTTPException(
             status_code=400,
-            detail="Mức suy nghĩ phải là auto, low, medium hoặc high",
+            detail="Mức suy nghĩ không hợp lệ.",
         )
     return choose_effort(text) if value == "auto" else value
 
@@ -519,6 +519,9 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
         model = ai_models.resolve(owner, request.model, "web").key
     except ai_models.ModelUnavailable as err:
         raise HTTPException(status_code=err.status, detail=err.message) from None
+
+    if effort not in ai_models.supported_efforts(model):
+        raise HTTPException(status_code=400, detail="Model này không hỗ trợ mức suy nghĩ đã chọn.")
 
     conversation_id = request.conversation_id
 

@@ -113,6 +113,7 @@ def _recent_image_keys(messages: list[ChatMessage], limit: int) -> set[tuple[int
 
 
 class ResponsesProvider(ChatProvider):
+    supported_efforts = ("low", "medium", "high")
     """Phần chung của các dịch vụ dùng Responses API. Lớp con đặt ``_client``, ``model`` và ``max_output_tokens``."""
 
     name = "responses"
@@ -168,7 +169,7 @@ class ResponsesProvider(ChatProvider):
                 "input": payload_input,
                 "max_output_tokens": self.max_output_tokens if tools_enabled else min(self.max_output_tokens, 1024),
                 "reasoning": {
-                    "effort": effort if effort in {"low", "medium", "high"} else "low"
+                    "effort": effort if effort in self.supported_efforts else "low"
                 },
                 "stream": True,
                 "tools": [*TOOL_SCHEMAS, *([DOCUMENT_SCHEMA] if document_session else []), *([{"type": "web_search"}] if search_enabled else [])] if tools_enabled else [],

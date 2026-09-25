@@ -12,9 +12,11 @@ from config import OPENAI_API_KEY, OPENAI_MAX_OUTPUT_TOKENS
 
 from .base import ProviderError
 from .xai import ResponsesProvider
+from ai_models import OPENAI_EFFORTS
 
 
 class GPTProvider(ResponsesProvider):
+    supported_efforts = OPENAI_EFFORTS
     name = "openai"
     service = "OpenAI"
     auth_error_message = "Khóa OpenAI của máy chủ Peto không dùng được. Chọn Peto để chat tiếp nhé."

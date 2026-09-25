@@ -1081,6 +1081,25 @@ describe('Chế độ nhập vai', () => {
 });
 
 describe('Chọn model', () => {
+  it('Luna có đầy đủ effort, đổi về Peto không gửi mức không hỗ trợ', async () => {
+    localStorage.setItem('peto-model', 'luna');
+    signIn([
+      { ...MODELS[0], efforts: ['low', 'medium', 'high'] },
+      { ...MODELS[1], efforts: ['none', 'low', 'medium', 'high', 'xhigh', 'max'] },
+    ]);
+    vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers) => handlers.onError?.('Giữ bản nháp'));
+    await openApp();
+    fireEvent.click(screen.getByRole('button', { name: 'Mức suy nghĩ: Tự động' }));
+    const menu = screen.getByRole('menu', { name: 'Mức suy nghĩ' });
+    expect(within(menu).getAllByRole('menuitemradio')).toHaveLength(7);
+    fireEvent.click(within(menu).getByRole('menuitemradio', { name: 'Tối đa' }));
+    expect((await send('chào')).effort).toBe('max');
+    fireEvent.click(screen.getByRole('button', { name: 'Model: 6 Luna' }));
+    fireEvent.click(within(screen.getByRole('menu', { name: 'Model' })).getByRole('menuitemradio', { name: /Peto.*Mặc định/ }));
+    expect(screen.getByRole('button', { name: 'Mức suy nghĩ: Tự động' })).toBeTruthy();
+    vi.mocked(api.sendMessage).mockClear();
+    expect((await send('tiếp')).effort).toBe('auto');
+  });
   const MODELS: api.ModelOption[] = [
     { key: 'peto', label: 'Peto', description: 'Mặc định', step_cost: 1 },
     { key: 'luna', label: '6 Luna', description: 'Nhanh, của OpenAI', step_cost: 1 },
