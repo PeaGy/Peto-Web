@@ -60,6 +60,22 @@ async def test_native_search_sources_and_clock_share_one_turn(monkeypatch):
     assert first.closed and second.closed
 
 
+async def test_usage_logs_count_search_once_and_do_not_log_content(monkeypatch, caplog):
+    completed = done(search_call(), cited_message())
+    completed.response.usage = {'input_tokens': 120, 'output_tokens': 30,
+        'input_tokens_details': {'cached_tokens': 80}, 'output_tokens_details': {'reasoning_tokens': 10}}
+    stream = FakeStream([SimpleNamespace(type='response.output_item.done', item=search_call()), completed])
+    provider, _ = fake_provider(monkeypatch, [stream])
+    with caplog.at_level('INFO', logger='peto_web.xai'):
+        _ = [chunk async for chunk in provider.stream(system_prompt='private instructions', messages=[ChatMessage('user', 'private input')])]
+    logs = [r.message for r in caplog.records if r.message.startswith('model_usage')]
+    assert len(logs) == 1
+    assert 'input_tokens=120' in logs[0] and 'cached_tokens=80' in logs[0]
+    assert 'output_tokens=30' in logs[0] and 'reasoning_tokens=10' in logs[0]
+    assert 'search_calls_seen=1' in logs[0]
+    assert 'private' not in logs[0] and SOURCE['url'] not in logs[0]
+
+
 @pytest.mark.parametrize("mode", ["off", "on", "auto"])
 async def test_search_modes_change_available_tools(monkeypatch, mode):
     stream = FakeStream([done(search_call() if mode == "on" else cited_message())])

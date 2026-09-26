@@ -67,7 +67,7 @@ export default function EffortMenu<T extends string>({ value, options, disabled,
   }
 
   return <div ref={root} className="effort-menu" onBlur={(event) => {
-    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setOpen(false);
+    if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget as Node)) setOpen(false);
   }}>
     <button ref={trigger} type="button" className="effort-trigger" disabled={disabled}
       aria-haspopup="menu" aria-expanded={open} aria-controls="effort-options"

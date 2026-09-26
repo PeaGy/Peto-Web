@@ -71,6 +71,27 @@ async def test_cancelled_stream_saves_partial_text(client, monkeypatch):
     assert stored[-1]['status'] == 'incomplete'
 
 
+async def test_empty_timeout_does_not_repeat_paid_turn(client, monkeypatch, caplog):
+    calls = 0
+
+    class TimedOutProvider:
+        async def stream(self, **kwargs):
+            nonlocal calls
+            calls += 1
+            raise TimeoutError()
+            yield ''
+
+    monkeypatch.setattr(main, 'get_provider', lambda model='peto': TimedOutProvider())
+    with caplog.at_level('INFO', logger='peto_web'):
+        events = await read_events(await client.post('/api/chat', json={'message': 'private test input', 'effort': 'low'}))
+    assert calls == 1
+    assert events[-1]['type'] == 'error'
+    logs = [r.message for r in caplog.records if r.message.startswith('chat_timing')]
+    assert len(logs) == 1
+    assert 'first_text_ms=None' in logs[0] and 'complete=False' in logs[0]
+    assert 'private test input' not in logs[0]
+
+
 async def test_cooldown_does_not_save_rejected_message(client, monkeypatch):
     gate = Admission(cooldown=300)
     async with gate.slot(TEST_OWNER):

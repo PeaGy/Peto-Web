@@ -443,9 +443,9 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
         )}
 
         <div className="companion-messages">
-          {loading && <p className="loading-chat" role="status">Đang mở Companion…</p>}
+          {loading && <div className="loading-chat" role="status" aria-label="Đang mở Companion"><span className="loading-spinner" aria-hidden="true" /></div>}
           {loadFailed && (
-            <div className="loading-chat">
+            <div className="loading-chat" role="alert">
               <p>Chưa tải được cuộc trò chuyện.</p>
               <button type="button" className="load-more" onClick={() => void load()}>Thử lại</button>
             </div>

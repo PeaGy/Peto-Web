@@ -195,7 +195,7 @@ export const KEY_PROVIDERS: KeyProvider[] = [
     defaultVoice: "jilingshaonv",
   },
   {
-    id: "compat", name: "OpenAI", desc: "Máy chủ tự dựng, địa chỉ riêng", route: "direct",
+    id: "compat", name: "Máy chủ riêng", desc: "Tương thích OpenAI, địa chỉ riêng", route: "direct",
     keyHint: "Nếu máy chủ cần", site: "máy chủ của bạn", keyOptional: true, needsBaseUrl: true, modelFree: true,
     voiceFree: true, defaultVoice: "",
   },

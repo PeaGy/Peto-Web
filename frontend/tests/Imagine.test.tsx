@@ -41,7 +41,7 @@ function stubPhone() {
 }
 async function open() {
   const view = render(<Imagine {...props} />);
-  await waitFor(() => expect(screen.queryByText('Đang mở bộ ảnh của bạn…')).toBeNull());
+  await waitFor(() => expect(screen.queryByRole('status', { name: 'Đang mở bộ ảnh của bạn' })).toBeNull());
   return view;
 }
 
@@ -261,7 +261,7 @@ it('menu tỉ lệ mở ở mục đang chọn, đi bằng phím, Escape trả v
 it('điện thoại: thanh thu gọn mở khi bấm vào ô nhập hoặc nút tùy chọn, chạm ra ngoài thì thu lại', async () => {
   stubPhone();
   render(<Imagine {...props} />);
-  await waitFor(() => expect(screen.queryByText('Đang mở bộ ảnh của bạn…')).toBeNull());
+  await waitFor(() => expect(screen.queryByRole('status', { name: 'Đang mở bộ ảnh của bạn' })).toBeNull());
   const dock = document.querySelector('.studio-dock')!;
   const input = screen.getByLabelText('Bức ảnh bạn muốn tạo') as HTMLTextAreaElement;
   expect(dock.classList.contains('expanded')).toBe(false);

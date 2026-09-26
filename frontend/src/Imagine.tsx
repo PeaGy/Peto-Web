@@ -400,7 +400,7 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
       </button>
 
     <div className="imagine-gallery" ref={galleryRef}>
-      {loading && <p className="loading-chat" role="status">Đang mở bộ ảnh của bạn…</p>}
+      {loading && <div className="loading-chat" role="status" aria-label="Đang mở bộ ảnh của bạn"><span className="loading-spinner" aria-hidden="true" /></div>}
       {loadFailed && <div className="studio-load-error" role="alert"><p>Chưa tải được ảnh đã tạo.</p><button type="button" onClick={() => void loadJobs()}>Thử tải lại</button></div>}
       {!loading && !loadFailed && jobs.length === 0 && !generating && <section className="studio-welcome">
         <span className="studio-eyebrow"><SparkleIcon /> Góc sáng tạo của bạn</span>

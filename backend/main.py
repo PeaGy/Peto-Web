@@ -15,6 +15,7 @@ from starlette.background import BackgroundTask
 import asyncio
 import json
 import logging
+from time import perf_counter
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -527,13 +528,15 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
 
     async def event_stream() -> AsyncIterator[str]:
         nonlocal conversation_id
+        started = perf_counter()
+        admitted_at = prepared_at = first_text_at = None
         collected: list[str] = []
         sources: list[dict] = []
         search_started = False
         document_session = None
 
         def chunk_event(chunk: StreamChunk) -> str:
-            nonlocal sources, search_started
+            nonlocal sources, search_started, first_text_at
             if chunk.kind == 'artifact': return sse({'type': 'artifact', 'artifact': chunk.artifact})
             if chunk.kind == 'document_status': return sse({'type': 'document_status', 'text': chunk.text})
             if chunk.kind == "search":
@@ -548,6 +551,8 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
             if chunk.kind == "replace":
                 collected.clear()
                 return sse({"type": "replace"})
+            if chunk.text and first_text_at is None:
+                first_text_at = perf_counter()
             collected.append(chunk.text)
             return sse({"type": "delta", "text": chunk.text})
 
@@ -555,6 +560,7 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
         failure: str | None = None
         try:
             async with admission.slot(owner):
+                admitted_at = perf_counter()
                 # Từ chối cooldown/hàng chờ trước khi ghi bất kỳ tin nhắn nào.
                 if conversation_id and not await db.owns_conversation(owner, conversation_id):
                     raise ProviderError("Hội thoại đã bị xóa. Mở cuộc trò chuyện mới nhé.")
@@ -601,25 +607,18 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                     yield sse({"type": "reading", "text": "Peto đang đọc tài liệu đã gửi trước đó…"})
                     await _read_legacy_documents(owner, rows, MAX_ATTACHMENTS - document_count)
                     yield sse({"type": "reading", "text": ""})
-                history = await anyio.to_thread.run_sync(_to_chat_messages, rows)
-                system_prompt = await _build_system_prompt(owner, mode, install_command, persona)
+                history, system_prompt = await asyncio.gather(
+                    anyio.to_thread.run_sync(_to_chat_messages, rows),
+                    _build_system_prompt(owner, mode, install_command, persona),
+                )
                 document_session = DocumentSession(owner, conversation_id) if mode == 'chat' else None
                 if request.document_mode and mode == 'chat':
                     system_prompt += '\n\n[PETO_DOCUMENT_CREATE]\nNgười dùng chọn tạo tài liệu: hãy gọi create_document để tạo tệp theo yêu cầu, mặc định DOCX nếu chưa chọn định dạng. Trả lời ngắn sau khi có kết quả; nội dung dài đặt trong công cụ.'
-                try:
-                    async for chunk in _stream_reply(system_prompt, history, effort, timezone, web_search, document_session,
-                                                     model):
-                        yield chunk_event(chunk)
-                except TimeoutError:
-                    # Chat thường được thử lại đúng 1 lần, và chỉ khi chưa kịp
-                    # phát ra chữ nào — giống cách bot Discord giới hạn retry.
-                    if collected or search_started or (document_session and document_session.created) or web_search == "on" or effort != "low":
-                        raise
-                    logger.warning("Timeout effort=low — thử lại 1 lần")
-                    async for chunk in _stream_reply(
-                        system_prompt, history, effort, timezone, web_search, document_session, model
-                    ):
-                        yield chunk_event(chunk)
+                prepared_at = perf_counter()
+                # A timeout may already have consumed provider tokens. Do not repeat the whole turn invisibly.
+                async for chunk in _stream_reply(system_prompt, history, effort, timezone, web_search, document_session,
+                                                 model):
+                    yield chunk_event(chunk)
                 if document_session and document_session.created and not ''.join(collected).strip():
                     yield chunk_event(StreamChunk('text', 'Đã tạo xong tài liệu. Bạn xem trước hoặc tải tệp bên dưới nhé.'))
                 complete = bool("".join(collected).strip())
@@ -637,6 +636,15 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
             logger.exception("Lỗi không mong đợi khi gọi AI")
             failure = "Có lỗi ở phía máy chủ. Thử lại sau nha."
         finally:
+            ended_at = perf_counter()
+            logger.info(
+                "chat_timing model=%s effort=%s mode=%s queue_ms=%s prepare_ms=%s first_text_ms=%s total_ms=%d search=%s complete=%s",
+                model, effort, mode,
+                round((admitted_at - started) * 1000) if admitted_at is not None else None,
+                round((prepared_at - admitted_at) * 1000) if prepared_at is not None and admitted_at is not None else None,
+                round((first_text_at - started) * 1000) if first_text_at is not None else None,
+                round((ended_at - started) * 1000), search_started, complete,
+            )
             # Cả timeout/lỗi lẫn đóng tab đều giữ phần đã phát. Shield tránh
             # cancel scope của StreamingResponse hủy luôn thao tác lưu SQLite.
             reply = "".join(collected).strip()

@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+from time import perf_counter
 import aiosqlite
 import db
 
@@ -65,6 +66,7 @@ async def suggest_title(first_message: str, attachment_names: list[str] | None =
         return ""
 
     parts: list[str] = []
+    started = perf_counter()
     try:
         async with asyncio.timeout(GENERATE_TIMEOUT):
             async for chunk in get_provider(model).stream(
@@ -83,6 +85,8 @@ async def suggest_title(first_message: str, attachment_names: list[str] | None =
         # Tên hội thoại là thứ có cũng được: hỏng thì ghi log rồi thôi.
         logger.warning("Không đặt được tên hội thoại: %s", type(err).__name__)
         return ""
+    finally:
+        logger.info("title_timing model=%s total_ms=%d", model, round((perf_counter() - started) * 1000))
     return clean_title("".join(parts))
 
 
@@ -99,7 +103,7 @@ async def maybe_generate(owner: str, conversation_id: str, model: str = 'peto') 
         if not cursor.rowcount:
             return
         rows = await (await connection.execute(
-            "SELECT role, content FROM messages WHERE conversation_id=? AND role IN ('user','assistant') ORDER BY id LIMIT 4",
+            "SELECT role, substr(content, 1, 2000) FROM messages WHERE conversation_id=? AND role IN ('user','assistant') ORDER BY id LIMIT 4",
             (conversation_id,),
         )).fetchall()
         persona = (await (await connection.execute(

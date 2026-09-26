@@ -197,9 +197,9 @@ it('chọn Máy nhà trong Cài đặt, đổi giọng rồi Nghe thử thì đ�
   localStorage.setItem('peto-local-voice', '1');
   render(<App />);
   const settings = await openSettings();
-  fireEvent.click(await settings.findByRole('button', { name: 'Máy nhà của Peto' }));
-  const detail = within(settings.getByRole('group', { name: 'Máy nhà của Peto' }));
-  expect(detail.getByText(/Máy nhà đang bật/)).toBeTruthy();
+  fireEvent.click(await settings.findByRole('button', { name: 'Local Voice của Peto' }));
+  const detail = within(settings.getByRole('group', { name: 'Local Voice của Peto' }));
+  expect(detail.getByText(/Local Voice đang bật/)).toBeTruthy();
   fireEvent.click(detail.getByRole('combobox', { name: 'Giọng' }));
   fireEvent.click(detail.getByRole('option', { name: 'Dịu & vui vẻ' }));
   fireEvent.click(detail.getByRole('button', { name: 'Nghe thử' }));
@@ -246,7 +246,7 @@ it('hết lượt Giọng Peto thì không cho nghe thử, còn Companion đọc
   await waitFor(() => expect(played).toHaveLength(1));
   expect(speakBodies()).toEqual([{ text: 'Hey there.', voice: 'playful-1' }]);
   expect(await chatColumn().findByText(
-    /Đã hết lượt Giọng Peto tháng này; lượt mới có từ ngày 01\/10\. Đã chuyển sang giọng dự phòng: Máy nhà của Peto/,
+    /Đã hết lượt Giọng Peto tháng này; lượt mới có từ ngày 01\/10\. Đã chuyển sang giọng dự phòng: Local Voice của Peto/,
   )).toBeTruthy();
 
   const settings = await openSettings();
@@ -271,7 +271,7 @@ it('khách thấy Giọng Peto dành cho tài khoản Discord và Google, không
   expect(detail.queryByText(/ký tự/)).toBeNull();
   expect(detail.queryByRole('button', { name: 'Nghe thử' })).toBeNull();
 
-  fireEvent.click(settings.getByRole('button', { name: 'Máy nhà của Peto' }));
+  fireEvent.click(settings.getByRole('button', { name: 'Local Voice của Peto' }));
   fireEvent.click(settings.getByRole('combobox', { name: 'Khi nguồn chính không nói được' }));
   const fallback = within(settings.getByRole('listbox', { name: 'Khi nguồn chính không nói được' }));
   expect(fallback.queryByRole('option', { name: 'Dùng Giọng Peto nếu còn lượt' })).toBeNull();
@@ -288,7 +288,7 @@ it('khóa OpenAI riêng: trình duyệt gọi thẳng OpenAI, máy chủ Peto kh
   });
   render(<App />);
   const settings = await openSettings();
-  fireEvent.click(await settings.findByRole('button', { name: 'OpenAI' }));
+  fireEvent.click(await within(settings.getByRole('tabpanel', { name: 'Peto nói' })).findByRole('button', { name: 'OpenAI' }));
   const detail = within(settings.getByRole('group', { name: 'OpenAI' }));
   expect(detail.getByText(/máy chủ Peto không nhận được khóa/)).toBeTruthy();
   expect(detail.getByRole('button', { name: 'Nghe thử' }).hasAttribute('disabled')).toBe(true);
@@ -388,7 +388,7 @@ it('khóa riêng bị từ chối: Nghe thử báo lỗi, còn Companion chuyể
   fireEvent.click(await screen.findByRole('button', { name: /Nghe Peto/ }));
   await waitFor(() => expect(played).toHaveLength(1));
   expect(speakBodies()).toEqual([{ text: 'Hey there.', voice: 'playful-1' }]);
-  expect(await chatColumn().findByText(/Khóa OpenAI không đúng.*Đã chuyển sang giọng dự phòng: Máy nhà của Peto/)).toBeTruthy();
+  expect(await chatColumn().findByText(/Khóa OpenAI không đúng.*Đã chuyển sang giọng dự phòng: Local Voice của Peto/)).toBeTruthy();
 
   const settings = await openSettings();
   const detail = within(settings.getByRole('group', { name: 'OpenAI' }));

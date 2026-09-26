@@ -46,7 +46,8 @@ export default function ComposerMenu({ disabled, webDisabled, onToggleWeb, onAtt
   function close() { setOpen(false); trigger.current?.focus(); }
 
   return <div ref={root} className="composer-menu" onBlur={(event) => {
-    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setOpen(false);
+    // Safari can blur without focusing the tapped button; pointerdown handles outside taps.
+    if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget as Node)) setOpen(false);
   }}>
     <button ref={trigger} type="button" className="icon-btn composer-plus" disabled={disabled}
       aria-label="Thêm ảnh và tùy chọn" aria-expanded={open} aria-controls="composer-options"

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import json
+from time import perf_counter
 import anyio
 from collections.abc import AsyncIterator
 
@@ -147,10 +148,13 @@ class ResponsesProvider(ChatProvider):
         instructions = f"{system_prompt}\n\n{search_context(web_search, search_enabled)}"
         sources: list[dict] = []
         search_finished = False
+        search_ids: set[str] = set()
 
         def observe_item(item: dict):
             nonlocal sources, search_finished
             if item.get("type") == "web_search_call":
+                if item.get("id"):
+                    search_ids.add(str(item["id"]))
                 if item.get("status") == "failed":
                     raise ProviderError("Peto chưa tra cứu web được lượt này. Bạn thử lại nhé.")
                 search_finished = search_finished or item.get("status") == "completed"
@@ -163,6 +167,8 @@ class ResponsesProvider(ChatProvider):
         calls_used = 0
         document_session = current_session.get()
         for round_index in range(MAX_TOOL_ROUNDS + 1):
+            round_started = perf_counter()
+            usage: dict = {}
             create_kwargs: dict = {
                 "model": self.model,
                 "instructions": instructions,
@@ -238,6 +244,8 @@ class ResponsesProvider(ChatProvider):
                         for chunk in observe_item(item):
                             yield chunk
                     elif event_type == "response.completed":
+                        raw_usage = getattr(event.response, "usage", None)
+                        usage = _dump(raw_usage) if raw_usage is not None else {}
                         if getattr(event.response, "status", "completed") != "completed":
                             raise ProviderError("Peto chưa trả lời xong. Phần đã viết được giữ lại; bạn có thể yêu cầu tiếp tục.")
                         completed = True
@@ -264,6 +272,14 @@ class ResponsesProvider(ChatProvider):
                     raise ProviderError("Peto chưa dùng được tìm web với kết nối AI hiện tại. Mở menu + rồi chọn Tắt tìm kiếm web để chat tiếp, hoặc nhờ người quản trị kiểm tra quyền tìm kiếm của dịch vụ.") from err
                 raise ProviderError("Peto gặp lỗi kết nối với dịch vụ AI. Thử lại sau nha.", retryable=err.status_code >= 500) from err
             finally:
+                logger.info(
+                    "model_usage service=%s model=%s purpose=%s round=%d elapsed_ms=%d complete=%s input_tokens=%s output_tokens=%s cached_tokens=%s reasoning_tokens=%s search_calls_seen=%d",
+                    self.service, self.model, "chat" if tools_enabled else "title", round_index + 1,
+                    round((perf_counter() - round_started) * 1000), completed,
+                    usage.get("input_tokens"), usage.get("output_tokens"),
+                    (usage.get("input_tokens_details") or {}).get("cached_tokens"),
+                    (usage.get("output_tokens_details") or {}).get("reasoning_tokens"), len(search_ids),
+                )
                 if stream is not None:
                     with anyio.CancelScope(shield=True):
                         await stream.close()

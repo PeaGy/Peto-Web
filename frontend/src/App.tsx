@@ -1571,7 +1571,7 @@ export default function App() {
           setShowJump(!nearBottom.current);
         }}>
           {loadingConversation && <div className="loading-chat" role="status" aria-label="Đang mở hội thoại"><span className="loading-spinner" aria-hidden="true" /></div>}
-          {loadFailed && <div className="loading-chat">
+          {loadFailed && <div className="loading-chat" role="alert">
             <p>Chưa tải được nội dung hội thoại.</p>
             <button className="load-more" onClick={() => conversationId && void openConversation(conversationId)}>Thử mở lại</button>
           </div>}
@@ -1757,7 +1757,7 @@ export default function App() {
         event.preventDefault();
         if (!consentBusy) setConsentOpen(false);
       }}>
-        <h2 id="roleplay-consent-title">Bật chế độ roleplay?</h2>
+        <h2 id="roleplay-consent-title">Bật chế độ nhập vai?</h2>
         <p>Ở chế độ này có thể có nội dung người lớn (18+). Chế độ gắn với hội thoại mới này; muốn quay lại thì mở hội thoại mới.</p>
         {consentError && <p className="consent-error" role="alert">{consentError}</p>}
         <div className="dialog-actions">

@@ -237,8 +237,30 @@ không tải favicon hay truy cập URL nguồn từ máy chủ Peto.
 Nguồn được lưu cùng tin nhắn, kể cả phần trả lời dở khi mất kết nối; mở lại
 hội thoại vẫn xem được và Peto có thể hiểu câu hỏi tiếp về nguồn đó. Cột
 `messages.sources` tự được bổ sung khi khởi động, giữ nguyên tin cũ. Mọi lượt
-đọc lịch sử vẫn lọc theo tài khoản. **Dừng** ngắt luồng; sau khi đã nhận tiến
-trình tra cứu, backend không tự thử lại khi timeout.
+đọc lịch sử vẫn lọc theo tài khoản. **Dừng** ngắt luồng. Khi hết thời gian chờ,
+backend không tự gọi lại cả lượt chat, kể cả chưa có chữ: lượt cũ có thể đã tiêu
+tốn token. Người dùng nhận thông báo lỗi và tự quyết định có gửi tiếp hay không.
+Chính sách retry lỗi kết nối/HTTP bên SDK vẫn giữ nguyên.
+
+### Theo dõi tốc độ và lượng sử dụng
+
+Nhật ký INFO của backend có ba nhóm số đo, không kèm nội dung chat hay khóa:
+
+- `chat_timing`: model, effort, thời gian hàng chờ (`queue_ms`), chuẩn bị
+  (`prepare_ms`), tới chữ đầu tiên tính từ lúc bắt đầu luồng (`first_text_ms`),
+  tổng thời gian tới khi kết thúc gọi model (`total_ms`), có tìm web hay không.
+  Tổng này chưa bao gồm lưu câu trả lời và đặt tiêu đề nền.
+- `model_usage`: từng vòng Responses API, thời gian vòng đó, token đầu vào/đầu
+  ra, token cache/suy luận nếu dịch vụ trả về. `search_calls_seen` là số ID
+  gọi web khác nhau đã thấy trong toàn lượt, cộng dồn qua các vòng: không cộng
+  các giá trị này với nhau. Đây không phải số URL kết quả tìm kiếm.
+- `title_timing`: thời gian gọi đặt tiêu đề, tách riêng khỏi chat. Có thể dùng
+  `PETO_TITLE_MODEL` để cấu hình model đặt tên; mặc định vẫn theo model của lượt chat.
+
+Token thiếu được ghi `None`, không coi là miễn phí; lượt bị ngắt có thể chưa
+nhận được usage. Các số này không thay thế hóa đơn dịch vụ và chưa quy đổi ra USD.
+Sau khi cập nhật VPS, so sánh các lượt cùng model/effort và có/không tìm web;
+không dùng thời gian kiểm thử model giả để kết luận tốc độ thực tế.
 
 Backend dùng `web_search` của xAI Responses với kết nối hiện có, theo
 [tài liệu tìm web](https://docs.x.ai/developers/tools/web-search) và

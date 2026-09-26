@@ -1160,9 +1160,11 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 }
 .jump-latest:hover { background: var(--panel-2); }
 .jump-latest:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
-.error { display: flex; align-items: center; gap: 8px; }
+.error { display: flex; align-items: flex-start; gap: 8px; overflow-wrap: anywhere; background: var(--panel); }
 .notice { color: var(--muted); border-color: var(--line); background: var(--panel); }
-.dismiss-error { margin-left: auto; border: 0; background: none; color: inherit; cursor: pointer; font-size: 22px; }
+.dismiss-error { margin-left: auto; flex-shrink: 0; display: grid; place-items: center; min-width: 36px; min-height: 36px; padding: 0; border: 0; border-radius: 8px; background: none; color: inherit; cursor: pointer; font-size: 22px; }
+.dismiss-error:hover { background: var(--panel-2); }
+.dismiss-error:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
 .confirm-dialog {
   width: min(420px, calc(100% - 32px)); padding: 24px; color: var(--text);
   background: var(--panel); border: 1px solid var(--line); border-radius: 18px;
@@ -2959,3 +2961,11 @@ button.artifact-name { cursor: pointer; }
   animation: loading-spin 0.85s linear infinite;
 }
 @keyframes loading-spin { to { transform: rotate(360deg); } }
+
+/* Floating menus stay scrollable on short screens and do not scroll the chat behind them. */
+.composer-options { max-height: min(360px, 50dvh); overflow-y: auto; }
+.composer-options, .effort-options { overscroll-behavior: contain; }
+@media (pointer: coarse) {
+  .dismiss-error, .composer-plus, .effort-trigger, .studio-chip, .studio-options-toggle { min-height: 44px; min-width: 44px; }
+  .effort-option { min-height: 44px; }
+}

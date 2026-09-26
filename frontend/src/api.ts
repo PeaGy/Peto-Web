@@ -405,13 +405,16 @@ export async function sendMessage(
   let ended = false;
   try {
     while (!ended) {
+      signal?.throwIfAborted();
       const { done, value } = await reader.read();
+      signal?.throwIfAborted();
       if (done) throw new Error("Kết nối bị ngắt trước khi Peto trả lời xong.");
       buffer += decoder.decode(value, { stream: true });
 
       // Mỗi sự kiện SSE kết thúc bằng một dòng trống.
       let boundary = buffer.indexOf("\n\n");
       while (boundary !== -1) {
+        signal?.throwIfAborted();
         const raw = buffer.slice(0, boundary);
         buffer = buffer.slice(boundary + 2);
         boundary = buffer.indexOf("\n\n");

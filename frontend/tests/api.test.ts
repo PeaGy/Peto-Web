@@ -64,6 +64,19 @@ it('reports a truncated stream instead of treating it as complete', async () => 
   expect(onDone).not.toHaveBeenCalled();
 });
 
+it('stopping discards remaining events already buffered in the same chunk', async () => {
+  const controller = new AbortController();
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(
+    event({type:'delta',text:'Giữ phần này'}) + event({type:'delta',text:'Đến muộn'}) + event({type:'done'}),
+  )));
+  const onDelta = vi.fn(() => controller.abort());
+  const onDone = vi.fn();
+  await expect(sendMessage({message:'hi',conversationId:null,effort:'auto'}, {onDelta,onDone}, controller.signal))
+    .rejects.toMatchObject({name:'AbortError'});
+  expect(onDelta).toHaveBeenCalledExactlyOnceWith('Giữ phần này');
+  expect(onDone).not.toHaveBeenCalled();
+});
+
 it('sends only the browser timezone, never the browser clock', async () => {
   const fetchMock = vi.fn(async () => new Response(event({type:'done'})));
   vi.stubGlobal('fetch', fetchMock);
