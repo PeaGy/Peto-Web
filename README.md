@@ -475,6 +475,14 @@ Anh như đang trò chuyện, rồi tự nói thành tiếng. Tab Trò chuyện 
   xóa mạch đó sau khi xác nhận.
 - Lượt Companion luôn suy nghĩ ở mức thấp, không tìm web, không nhận ảnh hay tệp và không đặt tên
   hội thoại, để trả lời nhanh nhất có thể.
+- **Nhân vật đổi nét mặt theo cảm xúc Peto chọn**: mỗi câu trả lời Peto tự chọn một trong chín cảm xúc như AIRI (vui,
+  buồn, giận kiểu dỗi, suy nghĩ, ngạc nhiên, ngại, thắc mắc, tò mò, bình thường). Nét mặt đổi ngay khi Peto bắt đầu trả
+  lời, giữ trong lúc nói rồi dịu về. Hiyori không có tệp biểu cảm nên dùng mặt dựng sẵn (mắt, miệng, má, góc đầu); model
+  Live2D có tệp biểu cảm thì dùng tệp đó, VRM dùng biểu cảm có sẵn của chuẩn VRM.
+  - Bấm nút nhân vật → **Cài đặt nhân vật** → **Biểu cảm theo trò chuyện**: bật/tắt, chín thẻ cảm xúc bấm để xem thử
+    (ảnh mặt hiện ngay trong bảng), và chọn nguồn cho từng cảm xúc với model có tệp biểu cảm.
+  - Mới thử bằng phản hồi giả và ảnh chụp mặt dựng sẵn; chưa biết Grok thật có gắn thẻ cảm xúc đều không (quên thì
+    trang đoán theo từ khóa như trước).
 - **Trò chơi giữ bí mật**: model không nhớ gì giữa các lượt ngoài chữ của cuộc trò chuyện, nên trước đây bảo Peto
   "chọn một số rồi nhớ" là Peto bịa. Giờ Peto viết điều cần giữ kín (số đã chọn, từ để đoán…) vào một ghi chú ẩn: máy
   chủ lọc nó khỏi chữ gửi về trang và khỏi giọng đọc, nhưng lượt sau Peto đọc lại được, nên đoán số, đố chữ chơi thật

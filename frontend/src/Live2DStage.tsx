@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Application } from "pixi.js";
 import type { Cubism4InternalModel } from 'pixi-live2d-display/cubism4';
 import { CHARACTER } from "./characterConfig";
-import { DEFAULT_CHARACTER, getCharacterAssets, characterThumbnail, type CharacterModel } from './characterLibrary';
+import { DEFAULT_CHARACTER, getCharacterAssets, characterThumbnail, faceThumbnail, type CharacterModel } from './characterLibrary';
 import {
   COMPACT_QUERY,
   DEFAULT_VIEW,
@@ -25,7 +25,8 @@ import { controlIdle, motionChoices, readIdle, watchIdle } from './live2dMotions
 import { readEffects, watchEffects, withCharacterEffects } from './characterEffects';
 import { musicPose, selectMusicCharacter, stopMusicVibe } from './musicVibe';
 import { CompanionMotion, stageQuality, type CompanionActivity } from './companionMotion';
-import { controlExpressions, expressionChoices, expressionFor, readExpressions, replyEmotion, watchExpressions } from './characterExpressions';
+import { controlExpressions, faceSource, publishSnapshot, readExpressions, watchExpressions, type StageCue, type StageEmotion } from './characterExpressions';
+import { FaceBlend, faceApplier, type CubismCore } from './builtinFaces';
 
 let coreReady: Promise<void> | undefined;
 function loadCore() {
@@ -57,9 +58,10 @@ function loadCore() {
  * giữ ngón tay trên màn hình thì nhân vật nhìn theo ngón tay. Khi được cử động (`motionEnabled`), nhân vật
  * chạy motion Idle, thở, chớp mắt và nhìn theo con trỏ. Miệng luôn theo âm thanh đang phát.
  */
-export default function Live2DStage({ fallbackUrl, name, motion = "system", character = DEFAULT_CHARACTER, onPreview, reply, activity = 'idle' }: {
+export default function Live2DStage({ fallbackUrl, name, motion = "system", character = DEFAULT_CHARACTER, onPreview, emotion, activity = 'idle' }: {
   activity?: CompanionActivity;
-  reply?: { text: string } | null;
+  /** Cảm xúc đang hiện (Companion quyết lúc nào đổi, lúc nào về bình thường bằng null). */
+  emotion?: StageCue | null;
   fallbackUrl?: string;
   name: string;
   motion?: CharacterMotion;
@@ -76,10 +78,10 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
   const [attempt, setAttempt] = useState(0);
   const [idleError, setIdleError] = useState(false);
   const [expressionError, setExpressionError] = useState(false);
-  const replyRef = useRef(reply);
-  replyRef.current = reply;
-  const expressionReply = useRef<(text: string) => void>(() => {});
-  useEffect(() => { expressionReply.current(reply?.text || ''); }, [reply]);
+  const emotionRef = useRef(emotion);
+  emotionRef.current = emotion;
+  const showEmotion = useRef<(emotion: StageEmotion | null) => void>(() => {});
+  useEffect(() => { showEmotion.current(emotion?.emotion ?? null); }, [emotion]);
 
   useEffect(() => {
     motionRef.current = motion;
@@ -252,21 +254,52 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
 
       const internal = current.internalModel as Cubism4InternalModel;
       const manager = internal.motionManager.expressionManager;
-      if (manager) {
-        let preferences = readExpressions(character.id);
-        const choices = expressionChoices(manager.definitions);
-        const controller = controlExpressions(manager, () => setExpressionError(true));
-        expressionReply.current = text => {
-          setExpressionError(false);
-          const emotion = replyEmotion(text);
-          void controller.show(preferences.enabled && emotion ? expressionFor(emotion, choices, preferences)?.id : undefined);
-        };
-        if (replyRef.current) expressionReply.current(replyRef.current.text);
-        const unwatch = watchExpressions(character.id, value => {
-          preferences = value; controller.reset();
-        }, id => { setExpressionError(false); void controller.show(id); });
-        disposeExpressions = () => { unwatch(); controller.dispose(); expressionReply.current = () => {}; };
-      }
+      // Cảm xúc Peto chọn, hay thẻ bấm thử trong bảng Nhân vật: tệp biểu cảm của model nếu có, không thì mặt dựng sẵn.
+      const face = faceApplier(internal.coreModel as unknown as CubismCore);
+      const faceBlend = new FaceBlend();
+      const builtin = face.supported();
+      const controller = manager ? controlExpressions(manager, () => setExpressionError(true)) : undefined;
+      const choices = controller?.choices ?? [];
+      let preferences = readExpressions(character.id);
+      let previewTimer: ReturnType<typeof setTimeout> | undefined;
+      let snapshotTimer: ReturnType<typeof setTimeout> | undefined;
+      // Bảng Nhân vật che sân khấu: chụp vùng quanh đầu khi mặt đã hiện hẳn để thẻ cảm xúc hiện ảnh thay.
+      const snapshot = (emotion: StageEmotion) => {
+        try {
+          app!.renderer.render(app!.stage);
+          const resolution = app!.renderer.resolution;
+          const height = originalHeight * current.scale.y;
+          const headY = current.position.y - height * CHARACTER.headHeight;
+          publishSnapshot(character.id, emotion,
+            faceThumbnail(canvas, current.position.x * resolution, (headY + height * 0.015) * resolution, height * 0.19 * resolution));
+        } catch { /* Ảnh xem thử không chặn model. */ }
+      };
+      const show = (emotion: StageEmotion | null, preview = false) => {
+        clearTimeout(previewTimer);
+        clearTimeout(snapshotTimer);
+        setExpressionError(false);
+        const source = emotion && emotion !== 'neutral' && (preview || preferences.enabled)
+          ? faceSource(emotion, choices, preferences, builtin) : { kind: 'none' as const };
+        faceBlend.show(source.kind === 'builtin' ? emotion : null);
+        if (source.kind === 'file') void controller?.show(source.choice.id);
+        else controller?.reset();
+        // Xem thử xong thì về lại cảm xúc của cuộc trò chuyện (hoặc mặt bình thường).
+        if (preview && emotion) snapshotTimer = setTimeout(() => snapshot(emotion), 1200);
+        if (preview) previewTimer = setTimeout(() => show(emotionRef.current?.emotion ?? null), 6000);
+      };
+      showEmotion.current = emotion => show(emotion);
+      if (emotionRef.current) show(emotionRef.current.emotion);
+      const unwatchExpressions = watchExpressions(character.id, value => {
+        preferences = value;
+        show(emotionRef.current?.emotion ?? null);
+      }, emotion => show(emotion, true));
+      disposeExpressions = () => {
+        clearTimeout(previewTimer);
+        clearTimeout(snapshotTimer);
+        unwatchExpressions();
+        controller?.dispose();
+        showEmotion.current = () => {};
+      };
       let effects = readEffects(character.id);
       let lastPointer = -Infinity;
       const unwatchEffects = watchEffects(character.id, value => {
@@ -325,6 +358,8 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
         [eyes.x, eyes.y].forEach((value, i) => {
           if (eyeParameters[i].supported && eyes.weight > 0.001) liveCore.setParameterValueById(eyeParameters[i].id, value, eyes.weight);
         });
+        // Mặt dựng sẵn đè lên mắt khi chờ (mặt nhìn đi chỗ khác mới thấy được), rồi mới cộng nhịp đầu bên dưới.
+        const faceMouth = face.apply(faceBlend.step(app!.ticker.deltaMS / 1000));
         if (moving()) {
           const pose = musicPose(performance.now());
           const conversation = conversationMotion.step(activityRef.current, app!.ticker.deltaMS / 1000, voiceMouth());
@@ -337,7 +372,8 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
         const target = voiceMouth();
         mouth += (target - mouth) * (target > mouth ? 0.7 : 0.45);
         // Ép trạng thái miệng sau motion để model không nói khi âm thanh đang im lặng.
-        for (const parameter of mouthParameters) core.setParameterValueById(parameter, mouth < 0.01 ? 0 : mouth);
+        const open = Math.max(mouth < 0.01 ? 0 : mouth, faceMouth);
+        for (const parameter of mouthParameters) core.setParameterValueById(parameter, open);
       });
       app.ticker.maxFPS = stageQuality(compact.matches, window.devicePixelRatio, qualityPreference).fps;
       let still = false;

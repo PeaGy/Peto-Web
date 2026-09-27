@@ -2,14 +2,18 @@ import { useRenderQuality } from './renderQuality';
 import { useEffect, useRef, useState } from 'react';
 import type { WebGLRenderer } from 'three';
 import type { VRM } from '@pixiv/three-vrm';
-import { characterThumbnail, getCharacterAssets, type CharacterModel } from './characterLibrary';
+import { characterThumbnail, faceThumbnail, getCharacterAssets, type CharacterModel } from './characterLibrary';
 import { COMPACT_QUERY, motionEnabled, type CharacterMotion } from './characterView';
 import { voiceMouth } from './voiceActivity';
 import { relaxVRMArms } from './vrmPose';
 import { CompanionMotion, stageQuality, type CompanionActivity } from './companionMotion';
+import { publishSnapshot, readExpressions, watchExpressions, type StageCue, type StageEmotion } from './characterExpressions';
+import { FaceBlend, vrmFace } from './builtinFaces';
 
-export default function VRMStage({ character, motion, onPreview, activity = 'idle' }: {
+export default function VRMStage({ character, motion, onPreview, activity = 'idle', emotion }: {
   activity?: CompanionActivity;
+  /** Cảm xúc đang hiện (Companion quyết lúc nào đổi, lúc nào về bình thường bằng null). */
+  emotion?: StageCue | null;
   character: CharacterModel; motion: CharacterMotion; onPreview?: (id: string, image: string) => void;
 }) {
   const qualityPreference = useRenderQuality();
@@ -17,6 +21,27 @@ export default function VRMStage({ character, motion, onPreview, activity = 'idl
   const activityRef = useRef(activity); activityRef.current = activity;
   const motionRef = useRef(motion); motionRef.current = motion;
   const previewRef = useRef(onPreview); previewRef.current = onPreview;
+  const emotionRef = useRef(emotion); emotionRef.current = emotion;
+  const faceBlend = useRef(new FaceBlend());
+  const preferences = useRef(readExpressions(character.id));
+  const previewTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  /** Mặt vừa bấm thử và lúc chụp: vòng vẽ chụp quanh đầu khi mặt đã hiện hẳn (bảng Nhân vật che sân khấu). */
+  const snapshotDue = useRef<{ emotion: StageEmotion; at: number } | null>(null);
+  const showEmotion = (value: StageEmotion | null, preview = false) => {
+    clearTimeout(previewTimer.current);
+    snapshotDue.current = preview && value ? { emotion: value, at: performance.now() + 1200 } : null;
+    faceBlend.current.show(value && (preview || preferences.current.enabled) ? value : null);
+    if (preview) previewTimer.current = setTimeout(() => showEmotion(emotionRef.current?.emotion ?? null), 6000);
+  };
+  useEffect(() => { showEmotion(emotion?.emotion ?? null); }, [emotion]);
+  useEffect(() => {
+    preferences.current = readExpressions(character.id);
+    const unwatch = watchExpressions(character.id, value => {
+      preferences.current = value;
+      showEmotion(emotionRef.current?.emotion ?? null);
+    }, value => showEmotion(value, true));
+    return () => { unwatch(); clearTimeout(previewTimer.current); };
+  }, [character.id]);
   const [status, setStatus] = useState('loading');
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
@@ -96,6 +121,10 @@ export default function VRMStage({ character, motion, onPreview, activity = 'idl
       const conversationMotion = new CompanionMotion();
       const head = loaded.humanoid.getNormalizedBoneNode('head');
       const headRest = head ? { x: head.rotation.x, z: head.rotation.z } : undefined;
+      let faceNames = new Set<string>();
+      const headPoint = new THREE.Vector3(), neckPoint = new THREE.Vector3();
+      const headBone = loaded.humanoid.getRawBoneNode('head'), neckBone = loaded.humanoid.getRawBoneNode('neck');
+      const hasExpression = (name: string) => !!loaded.expressionManager?.getExpression(name);
       const tick = (now: number) => {
         if (disposed || document.hidden || contextLost) return;
         frame = requestAnimationFrame(tick);
@@ -108,17 +137,33 @@ export default function VRMStage({ character, motion, onPreview, activity = 'idl
         const blinkPhase = elapsed % 4.3;
         const blink = moving && blinkPhase > 4.05 ? Math.sin((blinkPhase - 4.05) / 0.25 * Math.PI) : 0;
         const target = voiceMouth(); mouth += (target - mouth) * (target > mouth ? 0.7 : 0.45);
-        loaded.expressionManager?.setValue('aa', mouth < 0.01 ? 0 : mouth);
+        // Cảm xúc: biểu cảm có sẵn của VRM pha theo lớp mặt, biểu cảm vừa tan hết thì trả về 0.
+        const face = vrmFace(faceBlend.current.step(dt), hasExpression);
+        loaded.expressionManager?.setValue('aa', Math.max(mouth < 0.01 ? 0 : mouth, face.mouth));
         loaded.expressionManager?.setValue('blink', blink);
+        for (const name of faceNames) if (!face.values.has(name)) loaded.expressionManager?.setValue(name, 0);
+        for (const [name, value] of face.values) loaded.expressionManager?.setValue(name, value);
+        faceNames = new Set(face.values.keys());
         const pose = conversationMotion.step(activityRef.current, dt, target);
         if (head && headRest) {
           head.rotation.x = headRest.x + (moving ? pose.pitch * Math.PI / 180 : 0);
-          head.rotation.z = headRest.z + (moving ? pose.roll * Math.PI / 180 : 0);
+          head.rotation.z = headRest.z + ((moving ? pose.roll : 0) + face.roll) * Math.PI / 180;
         }
         const spine = loaded.humanoid.getNormalizedBoneNode('spine');
         if (spine) spine.rotation.z = moving ? Math.sin(elapsed * 1.4) * 0.014 : 0;
         if (!moving) away();
         loaded.update(moving ? dt : 0); controls.update(); renderer!.render(scene, camera);
+        const due = snapshotDue.current;
+        if (due && now >= due.at && headBone) {
+          snapshotDue.current = null;
+          try {
+            headBone.getWorldPosition(headPoint).project(camera);
+            const x = (headPoint.x + 1) / 2 * canvas.width, y = (1 - headPoint.y) / 2 * canvas.height;
+            const neck = neckBone ? neckBone.getWorldPosition(neckPoint).project(camera) : null;
+            const reach = neck ? Math.hypot((neck.x - headPoint.x) * canvas.width, (neck.y - headPoint.y) * canvas.height) / 2 : 0;
+            publishSnapshot(character.id, due.emotion, faceThumbnail(canvas, x, y, Math.max(reach * 5, canvas.height * 0.12)));
+          } catch { /* Ảnh xem thử không chặn hiển thị. */ }
+        }
         if (!captured && previewRef.current) {
           captured = true;
           try { previewRef.current(character.id, characterThumbnail(canvas)); } catch { /* Thumbnail không chặn hiển thị. */ }

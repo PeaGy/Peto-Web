@@ -65,13 +65,13 @@ class NoteFilter:
             start = lower.find(OPEN)
             if start < 0:
                 keep = _partial(lower, OPEN)
-                out.append(self._buffer[: len(self._buffer) - keep])
+                out.append(self._emit(self._buffer[: len(self._buffer) - keep]))
                 self._buffer = self._buffer[len(self._buffer) - keep:]
                 break
-            out.append(self._buffer[:start])
+            out.append(self._emit(self._buffer[:start]))
             self._buffer = self._buffer[start + len(OPEN):]
             self._hidden = True
-        return self._emit("".join(out))
+        return "".join(out)
 
     def flush(self) -> str:
         """Hết câu trả lời: đoạn giữ lại mà không thành thẻ là chữ thường; ghi chú chưa đóng thì bỏ."""

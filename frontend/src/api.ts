@@ -46,6 +46,8 @@ export interface Message {
   document_status?: string;
   workSteps?: WorkStep[];
   workedMs?: number;
+  /** Cảm xúc Peto tự chọn cho câu trả lời Companion (emotion_tags.py), để nghe lại tin cũ thì nhân vật làm đúng mặt. */
+  emotion?: string | null;
 }
 
 export interface WorkStep {
@@ -72,6 +74,7 @@ export interface Conversation {
 type ChatEvent =
   | { type: "meta"; conversation_id: string; effort: string; message?: Message }
   | { type: "delta"; text: string }
+  | { type: "emotion"; emotion: string }
   | { type: "replace" }
   | { type: "thinking"; text: string }
   | { type: "reading"; text: string }
@@ -85,6 +88,8 @@ type ChatEvent =
 interface ChatHandlers {
   onMeta?: (conversationId: string, effort: string, message?: Message) => void;
   onDelta?: (text: string) => void;
+  /** Chỉ lượt Companion: cảm xúc Peto chọn, tới trước chữ để nhân vật đổi nét mặt ngay khi bắt đầu trả lời. */
+  onEmotion?: (emotion: string) => void;
   onReplace?: () => void;
   onThinking?: (text: string) => void;
   onReading?: (text: string) => void;
@@ -465,6 +470,8 @@ export async function sendMessage(
           handlers.onMeta?.(event.conversation_id, event.effort, event.message);
         } else if (event.type === "delta") {
           handlers.onDelta?.(event.text);
+        } else if (event.type === "emotion") {
+          handlers.onEmotion?.(event.emotion);
         } else if (event.type === "replace") {
           handlers.onReplace?.();
         } else if (event.type === "thinking") {

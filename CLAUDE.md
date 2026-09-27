@@ -697,6 +697,68 @@ Peto to be honest and swap roles.
 - **Tests.** `tests/test_private_notes.py` feeds the filter at every chunk size and every split point. The mock answers
   `__bimat__:x`, a reply hiding x, and `__doan__`, which reads back the latest note from the history it was sent.
 
+### Companion emotions (Brain)
+
+The second Brain feature. The owner picked from mockups on 2026-09-27: the card layout (B), AIRI's nine emotions, and
+one emotion per reply. Before this, Hiyori never changed expression: the sample model ships no expression files, and the
+keyword guess (`replyEmotion`) almost never matched once the Companion prompt banned emoji.
+
+- **The model picks.**
+  - The EMOTION section of `COMPANION_SYSTEM_PROMPT` asks for one AIRI-style marker at the start of every reply:
+    `<|EMOTE_HAPPY|>`, `SAD`, `ANGRY`, `THINK`, `SURPRISED`, `AWKWARD`, `QUESTION`, `CURIOUS` or `NEUTRAL`.
+  - ANGRY is meant as mild sulking, never hostility.
+  - Private notes and the marker are the two exceptions to "plain spoken text".
+- **Stream.** `emotion_tags.MarkerFilter` runs after `NoteFilter` on Companion replies:
+  - It removes every `<|...|>` marker from `delta` events, and holds back a marker cut between chunks (up to
+    `MAX_MARKER_CHARS`).
+  - It sends one SSE `emotion` event for the first recognised marker, before the words, so the face changes as Peto
+    starts replying.
+  - Both filters trim spaces per appended piece, so a note or marker inside a single chunk leaves no double space.
+  - The reply is stored raw, marker included, so the model keeps seeing its own habit.
+- **History and helpers.**
+  - `_public_message(companion=True)` strips markers and returns `emotion`, so a replayed message makes the same face.
+  - `_visible` strips notes and markers.
+  - Memory and summary input (`companion_memory._talk`) never contain markers.
+  - Chat replies are left untouched.
+- **Timing (`Companion.tsx`).**
+  - `cue()` sets `stageEmotion` (`{emotion, key}`; the key makes two equal emotions in a row count as new).
+  - The face holds while Peto speaks. It is released 1.5 s after speech ends, or 6 s after the reply when nothing is
+    read aloud.
+  - A reply without a marker falls back to `replyEmotion`.
+- **Faces.** `characterExpressions.faceSource` decides per emotion:
+  - **Auto** (no mapping): an expression file whose name matches, otherwise the built-in face.
+  - **Mapping values:** a file id, `@builtin` (`BUILTIN_FACE`), or `''` for none. A mapped file the model no longer
+    has falls back to the built-in face.
+- **Built-in faces** (`builtinFaces.ts`) are Cubism standard parameters in three kinds:
+  - `set` blends toward a value, `scale` multiplies eye openness so blinking survives, and `add` adds head angles so
+    pointer tracking survives.
+  - `mouthOpen` holds the mouth slightly open when silent; lip sync takes the larger value.
+  - `FaceBlend` cross-fades (in ~0.15 s, out ~0.5 s). `Live2DStage` applies the face in `beforeModelUpdate`, after the
+    idle-eye blend and before the additive head sway.
+  - The values were tuned on real renders of Hiyori. Her ranges: mouth form -2..1 with a default of 1 (she already
+    smiles), eye open 0..1.2, cheek -1..1.
+  - Her brows sit under the bangs, so the faces differ through eyes, mouth, cheeks and head angle. Angles under ~15°
+    barely show on her.
+- **VRM.** `VRM_EMOTIONS` maps onto the VRM presets (happy, sad, angry, surprised, relaxed) plus a head roll, and uses a
+  model's own expression when it defines one with the emotion's name. `vrmFace` returns the weights, the roll and the
+  mouth baseline.
+- **Picker** (`ExpressionPicker.tsx`, layout B).
+  - Nine cards in a 3×3 grid, the on/off switch, and the selected card's source: the shared `Dropdown` for Live2D,
+    plain text for VRM.
+  - A card sends `previewExpression(id, emotion)`. The stage holds the face for 6 s even when the switch is off.
+  - The character panel is a dialog that covers the stage, so the stage photographs the head 1.2 s after a preview
+    (`publishSnapshot` → `faceThumbnail`) and the picker shows that image beside the source.
+  - `CharacterPicker` now also has a settings panel for VRM characters, holding only the picker.
+- **Checking faces.** A hidden browser pane draws no frames, so the face never moves there. Real renders were captured
+  with headless Edge over the DevTools protocol, with a temporary profile and a debug build that exposes `show` on
+  `window`. That hook must never reach the source.
+- **Tests.**
+  - `backend/tests/test_emotion_tags.py`: the filter at every cut point, event order, notes plus a marker, the Chat
+    tab. The mock prefixes `<|EMOTE_X|>` for `__camxuc__:x`.
+  - Frontend: `builtinFaces.test.ts`, `characterExpressions.test.ts`, `ExpressionPicker.test.tsx`,
+    `Live2DStage.test.tsx` (built-in face and snapshot), `VRMStage.test.tsx`, `api.test.ts`, and `Companion.test.tsx`
+    (stubbed stage reading the `emotion` prop).
+
 ### Peto Agent (CLI)
 
 `agent-cli/` is a stdlib-only Python CLI (`peto`) that runs on the user's machine. **The CLI owns the loop**: it

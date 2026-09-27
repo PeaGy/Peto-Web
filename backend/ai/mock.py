@@ -173,6 +173,10 @@ class MockProvider(ChatProvider):
             notes = [note for message in messages if message.role == "assistant"
                      for note in re.findall(r"<private>(.*?)</private>", message.content, re.S)]
             reply = f"Ghi chú riêng của mình: {notes[-1].strip()}" if notes else "Mình không có ghi chú riêng nào."
+        # Thẻ cảm xúc Companion (emotion_tags.py): "__camxuc__:happy" mở đầu câu trả lời bằng <|EMOTE_HAPPY|>.
+        emotion = re.search(r"__camxuc__:([a-zA-Z]+)", last_user)
+        if emotion:
+            reply = f"<|EMOTE_{emotion.group(1).upper()}|> {reply}"
         session = current_session.get()
         lowered = last_user.casefold()
         # Only the offline mock uses keyword routing. The real provider chooses its tool.

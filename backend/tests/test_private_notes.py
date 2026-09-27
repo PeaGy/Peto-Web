@@ -125,3 +125,6 @@ def test_no_double_space_where_a_note_was():
     notes = NoteFilter()
     out = "".join(notes.feed(part) for part in ["one. <priv", "ate>7</pri", "vate> Go"]) + notes.flush()
     assert out == "one. Go"
+    # Cả ghi chú nằm gọn trong một mảnh (Grok hay gửi vậy) cũng không để lại hai dấu cách.
+    notes = NoteFilter()
+    assert notes.feed("one. <private>7</private> Go") + notes.flush() == "one. Go"

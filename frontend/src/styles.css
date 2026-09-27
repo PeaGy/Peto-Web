@@ -2865,9 +2865,20 @@ button.artifact-name { cursor: pointer; }
   .beat-sync-pulse span[data-lit="true"] { opacity: .85; background: #8dd7e5; }
   .beat-sync-spectrum span { transition: none; }
 }
-.expression-mapping { display: flex; align-items: end; flex-wrap: wrap; gap: 12px; margin: 14px 0; }
-.expression-mapping label { flex: 1; min-width: 160px; }
-.expression-mapping select { display: block; width: 100%; margin-top: 6px; }
+/* Mục biểu cảm (phương án B): chín thẻ cảm xúc 3 × 3, bấm thẻ để nhân vật làm mặt đó; nguồn của thẻ đang chọn ở dưới. */
+.expression-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 4px; }
+.expression-card { min-height: 42px; padding: 8px 6px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); color: var(--text); font: inherit; font-size: 13px; cursor: pointer; overflow-wrap: anywhere; }
+.expression-card:hover { border-color: var(--muted); }
+.expression-card[aria-pressed="true"] { border-color: #219db5; box-shadow: inset 0 0 0 1px #219db5; color: #63bdd0; }
+.expression-card:focus-visible { outline: 2px solid #63bdd0; outline-offset: 2px; }
+.expression-source { display: grid; grid-template-columns: 96px minmax(0, 1fr); align-items: center; gap: 12px; margin-top: 12px; padding: 12px; border-radius: 12px; background: var(--panel-2); }
+.expression-source-empty { grid-column: 1 / -1; }
+.expression-source-body { display: grid; gap: 8px; min-width: 0; }
+.expression-snapshot { display: grid; place-items: center; width: 96px; aspect-ratio: 1; overflow: hidden; border-radius: 10px; background: var(--bg); }
+.expression-snapshot img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.idle-motion-picker .expression-source p { margin: 0; }
+.expression-source .voice-field { margin: 0; }
+.idle-motion-picker > .expression-picker:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
 .import-review { width: min(800px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); padding: 0; border: 1px solid var(--line); border-radius: 20px; background: var(--panel); color: var(--text); overflow: auto; }
 .import-review::backdrop { background: #0009; }
 .import-review-body { padding: 0 24px 20px; }

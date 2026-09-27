@@ -93,6 +93,16 @@ export function characterError(error: unknown): string {
 }
 
 /** Chụp ngay sau khi render, trước khi WebGL xóa drawing buffer. */
+/** Ảnh vuông quanh mặt nhân vật (tọa độ theo điểm ảnh của canvas), cho thẻ cảm xúc trong bảng Nhân vật xem thử. */
+export function faceThumbnail(canvas: HTMLCanvasElement, centerX: number, centerY: number, size: number): string {
+  const output = document.createElement('canvas');
+  output.width = output.height = 192;
+  const ctx = output.getContext('2d');
+  if (!ctx || size <= 0) throw new Error('Nhân vật chưa sẵn sàng chụp ảnh.');
+  ctx.drawImage(canvas, centerX - size / 2, centerY - size / 2, size, size, 0, 0, output.width, output.height);
+  return output.toDataURL('image/png');
+}
+
 export function characterThumbnail(canvas: HTMLCanvasElement): string {
   const sample = document.createElement('canvas');
   const ratio = Math.min(1, 512 / Math.max(canvas.width, canvas.height));

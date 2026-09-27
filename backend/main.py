@@ -37,6 +37,7 @@ import companion_memory
 import db
 import document_reader
 import document_api
+import emotion_tags
 from document_tools import DocumentSession, current_session as document_session_context
 import imagine_api
 import memory_api
@@ -171,11 +172,10 @@ def _public_attachment(row: dict) -> dict:
 
 
 def _public_message(row: dict, companion: bool = False) -> dict:
-    """Tin nhắn gửi về trình duyệt. Câu trả lời Companion bỏ ghi chú riêng của Peto (private_notes.py)."""
+    """Tin nhắn gửi về trình duyệt. Câu trả lời Companion bỏ ghi chú riêng và thẻ cảm xúc của Peto, kèm cảm xúc đó
+    riêng ở ``emotion`` để nghe lại tin cũ thì nhân vật làm đúng mặt."""
     content = row["content"]
-    if companion and row["role"] == "assistant":
-        content = private_notes.strip(content)
-    return {
+    message = {
         "id": row["id"],
         "role": row["role"],
         "content": content,
@@ -185,11 +185,15 @@ def _public_message(row: dict, companion: bool = False) -> dict:
         "sources": normalize_sources(row.get("sources")),
         "artifacts": row.get('artifacts', []),
     }
+    if companion and row["role"] == "assistant":
+        message["content"] = _visible(content, "companion")
+        message["emotion"] = emotion_tags.first(private_notes.strip(content))
+    return message
 
 
 def _visible(text: str, mode: str) -> str:
-    """Phần câu trả lời người dùng thấy: Companion bỏ ghi chú riêng, tab Trò chuyện giữ nguyên."""
-    return private_notes.strip(text) if mode == "companion" else text
+    """Phần câu trả lời người dùng thấy: Companion bỏ ghi chú riêng và thẻ cảm xúc, tab Trò chuyện giữ nguyên."""
+    return emotion_tags.strip(private_notes.strip(text)) if mode == "companion" else text
 
 
 def _resolve_effort(requested: str | None, text: str) -> str:
@@ -556,11 +560,24 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
         sources: list[dict] = []
         search_started = False
         document_session = None
-        # Câu trả lời Companion lưu nguyên, nhưng stream về trình duyệt thì bỏ ghi chú riêng của Peto.
+        # Câu trả lời Companion lưu nguyên, nhưng stream về trình duyệt thì bỏ ghi chú riêng và thẻ cảm xúc của Peto;
+        # cảm xúc đi riêng bằng sự kiện "emotion" ngay khi thẻ tới, để nhân vật đổi nét mặt lúc Peto bắt đầu trả lời.
         notes = private_notes.NoteFilter() if mode == "companion" else None
+        markers = emotion_tags.MarkerFilter() if mode == "companion" else None
+
+        def visible_events(text: str, final: bool = False) -> str | None:
+            if notes and markers:
+                text = markers.feed(notes.feed(text) + (notes.flush() if final else ""))
+                if final:
+                    text += markers.flush()
+                emotion = markers.take_emotion()
+                events = (sse({"type": "emotion", "emotion": emotion}) if emotion else "") + (
+                    sse({"type": "delta", "text": text}) if text else "")
+                return events or None
+            return sse({"type": "delta", "text": text}) if text else None
 
         def chunk_event(chunk: StreamChunk) -> str | None:
-            nonlocal sources, search_started, first_text_at, notes
+            nonlocal sources, search_started, first_text_at, notes, markers
             if chunk.kind == 'artifact': return sse({'type': 'artifact', 'artifact': chunk.artifact})
             if chunk.kind == 'document_status': return sse({'type': 'document_status', 'text': chunk.text})
             if chunk.kind == "search":
@@ -576,12 +593,12 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                 collected.clear()
                 if notes:
                     notes = private_notes.NoteFilter()
+                    markers = emotion_tags.MarkerFilter()
                 return sse({"type": "replace"})
             if chunk.text and first_text_at is None:
                 first_text_at = perf_counter()
             collected.append(chunk.text)
-            text = notes.feed(chunk.text) if notes else chunk.text
-            return sse({"type": "delta", "text": text}) if text else None
+            return visible_events(chunk.text)
 
         nonlocal turn_complete
         complete = False
@@ -650,9 +667,9 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                     if event:
                         yield event
                 if notes:
-                    tail = notes.flush()
+                    tail = visible_events("", final=True)
                     if tail:
-                        yield sse({"type": "delta", "text": tail})
+                        yield tail
                 if document_session and document_session.created and not ''.join(collected).strip():
                     yield chunk_event(StreamChunk('text', 'Đã tạo xong tài liệu. Bạn xem trước hoặc tải tệp bên dưới nhé.'))
                 # Một câu trả lời Companion chỉ có ghi chú riêng thì người dùng không thấy gì: coi như chưa trả lời.

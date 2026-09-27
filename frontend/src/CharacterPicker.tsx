@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { characterError, type CharacterFormat } from './characterLibrary';
 import type { CharacterLibrary } from './useCharacters';
 import IdleMotionPicker from './IdleMotionPicker';
+import ExpressionPicker from './ExpressionPicker';
 import CharacterImportReview from './CharacterImportReview';
 import type { Live2DImportReport } from './characterImport';
 import { CHARACTER } from './characterConfig';
@@ -106,6 +107,12 @@ export default function CharacterPicker({ library, onClose }: { library: Charact
       {library.selected.format === 'live2d' && <details className="character-motion-settings" key={library.selected.id}>
         <summary>Cài đặt nhân vật <span>Chuyển động · Biểu cảm · Nhún theo nhạc</span></summary>
         <IdleMotionPicker character={library.selected} />
+      </details>}
+      {library.selected.format === 'vrm' && <details className="character-motion-settings" key={library.selected.id}>
+        <summary>Cài đặt nhân vật <span>Biểu cảm</span></summary>
+        <section className="idle-motion-picker" aria-label="Biểu cảm của nhân vật VRM">
+          <ExpressionPicker characterId={library.selected.id} choices={[]} format="vrm" />
+        </section>
       </details>}
       <p className="character-library-footnote"><a href={CHARACTER.creditUrl} target="_blank" rel="noopener noreferrer">Hiyori Momose · © Live2D Inc.</a></p>
       <p className="character-library-footnote">Tối đa 80 MB mỗi lần nhập. Model lưu trong trình duyệt này, chưa đồng bộ sang máy khác. Xóa dữ liệu trang web sẽ xóa thư viện. Chỉ nhập model bạn có quyền sử dụng.</p>

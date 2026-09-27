@@ -14,6 +14,15 @@ it('thẻ tài liệu và tiến trình tạo tệp tách khỏi lời trả l�
   expect(onDelta).toHaveBeenCalledExactlyOnceWith('Đã tạo.');
 });
 
+it('cảm xúc Peto chọn đi riêng, tới trước chữ và không trộn vào câu trả lời', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(event({ type: 'emotion', emotion: 'curious' }) + event({ type: 'delta', text: 'Oh?' }) + event({ type: 'done' }))));
+  const order: string[] = [];
+  await sendMessage({ message: 'Đoán xem', conversationId: null, effort: 'low', mode: 'companion' }, {
+    onEmotion: (emotion) => order.push(`emotion:${emotion}`), onDelta: (text) => order.push(`delta:${text}`),
+  });
+  expect(order).toEqual(['emotion:curious', 'delta:Oh?']);
+});
+
 it('tiến trình đọc tệp không trộn vào câu trả lời', async () => {
   vi.stubGlobal('fetch', vi.fn(async () => new Response(event({ type: 'reading', text: 'Peto đang đọc 1 tài liệu…' }) + event({ type: 'delta', text: 'Nội dung' }) + event({ type: 'done' }))));
   const onReading = vi.fn(), onDelta = vi.fn();

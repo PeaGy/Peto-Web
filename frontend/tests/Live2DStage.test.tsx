@@ -5,7 +5,7 @@ import { CHARACTER } from '../src/characterConfig';
 import { writeIdle } from '../src/live2dMotions';
 import { writeEffects } from '../src/characterEffects';
 import * as music from '../src/musicVibe';
-import { writeExpressions } from '../src/characterExpressions';
+import { previewExpression, watchSnapshots, writeExpressions } from '../src/characterExpressions';
 
 const mocks = vi.hoisted(() => ({
   from: vi.fn(), destroy: vi.fn(), start: vi.fn(), stop: vi.fn(), tick: null as null | (() => void),
@@ -14,13 +14,17 @@ const mocks = vi.hoisted(() => ({
 vi.mock('pixi.js', () => ({ Application: class {
   view = document.createElement('canvas');
   stage = { addChild: vi.fn() };
-  renderer = { resize: vi.fn() };
+  renderer = { resize: vi.fn(), render: vi.fn(), resolution: 1 };
   ticker = { maxFPS: 0, deltaMS: 33, add: (callback: () => void) => { mocks.tick = callback; } };
   start = mocks.start; stop = mocks.stop;
   destroy = () => { this.view.remove(); mocks.destroy(); };
 } }));
 vi.mock('pixi-live2d-display/cubism4', () => ({ Live2DModel: { from: mocks.from }, MotionPreloadStrategy: { IDLE: 'IDLE' }, Cubism4ModelSettings: class {} }));
 vi.mock('../src/voiceActivity', () => ({ voiceMouth: () => mocks.mouth }));
+// jsdom không vẽ canvas: ảnh chụp mặt giả để kiểm luồng chụp.
+vi.mock('../src/characterLibrary', async (original) => ({
+  ...await original<typeof import('../src/characterLibrary')>(), faceThumbnail: vi.fn(() => 'data:image/png;base64,FACE'),
+}));
 
 type Point = { x: number; y: number };
 function fakeModel() {
@@ -128,22 +132,50 @@ it('nhún theo nhạc cộng vào góc đầu, không ghi đè miệng và tôn 
   } finally { pose.mockRestore(); }
 });
 
-it('applies completed replies even during model loading and cancels when disabled', async () => {
+it('shows the emotion Peto chose with the model’s own file, even during loading, and stops when disabled', async () => {
   const model = fakeModel();
   const manager = { definitions: [{ Name: 'Happy', File: 'happy.exp3.json' }], reserveExpressionIndex: -1,
     currentExpression: {}, defaultExpression: {}, resetExpression: vi.fn(), update: vi.fn(), setExpression: vi.fn().mockResolvedValue(true) };
   Object.assign(model.internalModel.motionManager, { expressionManager: manager });
   mocks.from.mockResolvedValue(model);
-  const view = render(<Live2DStage name="Peto" reply={{ text: 'Congratulations!' }} />);
+  const view = render(<Live2DStage name="Peto" emotion={{ emotion: 'happy', key: 1 }} />);
   await waitFor(() => expect(manager.setExpression).toHaveBeenCalledWith(0));
   model.internalModel.on.mock.calls.find(([name]) => name === 'beforeModelUpdate')![1]();
   expect(manager.update).toHaveBeenCalled();
   act(() => writeExpressions(CHARACTER.id, { enabled: false, mapping: {} }));
   expect(manager.currentExpression).toBe(manager.defaultExpression);
   manager.setExpression.mockClear();
-  view.rerender(<Live2DStage name="Peto" reply={{ text: 'Congratulations again!' }} />);
+  view.rerender(<Live2DStage name="Peto" emotion={{ emotion: 'happy', key: 2 }} />);
   expect(manager.setExpression).not.toHaveBeenCalled();
+  // Bấm thẻ trong bảng Nhân vật vẫn xem thử được khi đã tắt.
+  act(() => previewExpression(CHARACTER.id, 'happy'));
+  await waitFor(() => expect(manager.setExpression).toHaveBeenCalledWith(0));
   view.unmount(); expect(manager.reserveExpressionIndex).toBe(-1);
+});
+
+it('a model without expression files gets the built-in face after its motion, then fades back to normal', async () => {
+  const model = fakeModel();
+  const ids = ['ParamAngleX', 'ParamAngleY', 'ParamAngleZ', 'ParamEyeLSmile', 'ParamEyeRSmile', 'ParamMouthForm', 'ParamCheek',
+    'ParamBrowLY', 'ParamBrowRY', 'ParamEyeLOpen', 'ParamEyeROpen'];
+  Object.assign(model.internalModel.coreModel, {
+    getParameterIndex: (id: string) => ids.indexOf(id), getParameterCount: () => ids.length,
+    getParameterMinimumValue: () => -1, getParameterMaximumValue: () => 1, multiplyParameterValueById: vi.fn(),
+  });
+  mocks.from.mockResolvedValue(model);
+  const view = render(<Live2DStage name="Peto" emotion={{ emotion: 'happy', key: 1 }} />);
+  await waitFor(() => expect(model.internalModel.on).toHaveBeenCalledWith('beforeModelUpdate', expect.any(Function)));
+  const update = model.internalModel.on.mock.calls.find(([name]) => name === 'beforeModelUpdate')![1];
+  const set = model.internalModel.coreModel.setParameterValueById;
+  const mouthForm = () => set.mock.calls.filter(([id]) => id === 'ParamMouthForm');
+  for (let i = 0; i < 20; i++) update();
+  expect(mouthForm().at(-1)).toEqual(['ParamMouthForm', 1, expect.closeTo(1, 1)]);
+
+  view.rerender(<Live2DStage name="Peto" emotion={null} />);
+  for (let i = 0; i < 120; i++) update();
+  set.mockClear();
+  update();
+  expect(mouthForm()).toEqual([]);
+  view.unmount();
 });
 
 it('giảm chuyển động vẫn áp dụng pose và giải phóng renderer khi rời trang', async () => {
@@ -319,3 +351,17 @@ it('rời trang khi đang tải không để model về muộn chiếm tài nguy
   expect(model.destroy).toHaveBeenCalled();
   expect(mocks.start).not.toHaveBeenCalled();
 });
+
+it('bảng Nhân vật che sân khấu, nên thẻ bấm thử được chụp lại khi mặt đã hiện hẳn', async () => {
+  const model = fakeModel();
+  mocks.from.mockResolvedValue(model);
+  const shots: [string, string][] = [];
+  const off = watchSnapshots(CHARACTER.id, (emotion, image) => shots.push([emotion, image]));
+  const view = render(<Live2DStage name="Peto" />);
+  await waitFor(() => expect(model.internalModel.on).toHaveBeenCalledWith('beforeModelUpdate', expect.any(Function)));
+  act(() => previewExpression(CHARACTER.id, 'surprised'));
+  expect(shots).toEqual([]);
+  await waitFor(() => expect(shots).toEqual([['surprised', 'data:image/png;base64,FACE']]), { timeout: 3000 });
+  off(); view.unmount();
+});
+

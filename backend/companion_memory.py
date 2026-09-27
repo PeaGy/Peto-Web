@@ -23,6 +23,7 @@ import time
 from time import perf_counter
 
 import db
+import emotion_tags
 import private_notes
 from ai import ChatMessage, StreamChunk, get_provider
 from config import COMPANION_MEMORY_ENABLED, MAX_HISTORY_MESSAGES
@@ -174,7 +175,8 @@ def clean_summary(raw: str) -> str:
 
 
 def _talk(rows: list[dict], keep_notes: bool = False) -> str:
-    """Đoạn hội thoại cho model phụ. Ghi chú riêng của Peto chỉ giữ khi tóm tắt: ghi nhớ không cần tới bí mật trò chơi."""
+    """Đoạn hội thoại cho model phụ, không có thẻ cảm xúc. Ghi chú riêng của Peto chỉ giữ khi tóm tắt: ghi nhớ không cần
+    tới bí mật trò chơi."""
     lines = []
     for row in rows:
         content = row["content"]
@@ -182,8 +184,7 @@ def _talk(rows: list[dict], keep_notes: bool = False) -> str:
             speaker = "Người dùng"
         else:
             speaker = "Peto"
-            if not keep_notes:
-                content = private_notes.strip(content)
+            content = emotion_tags.strip(content if keep_notes else private_notes.strip(content))
         lines.append(f"{speaker}: {' '.join(content.split())[:1500]}")
     return "\n".join(lines)
 

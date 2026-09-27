@@ -26,6 +26,7 @@ import { SpeakButton, SpeakerIcon, SpeakerOffIcon, type LocalVoice } from "./Loc
 import type { CharacterMotion } from "./characterView";
 import { DEFAULT_CHARACTER, type CharacterModel } from './characterLibrary';
 import type { CompanionActivity } from './companionMotion';
+import { asStageEmotion, replyEmotion, type StageCue, type StageEmotion } from './characterExpressions';
 import { SceneBackdrop, ScenePicker, useCompanionScene } from './CompanionScenes';
 
 const MUTED_KEY = "peto-companion-muted";
@@ -42,6 +43,11 @@ function readMuted(): boolean {
   } catch {
     return false;
   }
+}
+
+/** Cảm xúc của một câu trả lời: Peto tự chọn, tin cũ không có thì đoán theo từ khóa. */
+function messageEmotion(message: Message): StageEmotion | null {
+  return asStageEmotion(message.emotion) ?? replyEmotion(message.content) ?? null;
 }
 
 function PencilIcon() {
@@ -99,7 +105,19 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
 }) {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
-  const [expressionReply, setExpressionReply] = useState<{ text: string } | null>(null);
+  /** Cảm xúc nhân vật đang làm. Peto chọn ở đầu mỗi câu trả lời (sự kiện "emotion"), giữ trong lúc nói rồi về null. */
+  const [stageEmotion, setStageEmotion] = useState<StageCue | null>(null);
+  const cueKey = useRef(0);
+  const releaseTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const cue = useCallback((emotion: StageEmotion | null | undefined) => {
+    clearTimeout(releaseTimer.current);
+    setStageEmotion(emotion ? { emotion, key: ++cueKey.current } : null);
+  }, []);
+  const releaseLater = useCallback((delay: number) => {
+    clearTimeout(releaseTimer.current);
+    releaseTimer.current = setTimeout(() => setStageEmotion(null), delay);
+  }, []);
+  useEffect(() => () => clearTimeout(releaseTimer.current), []);
   /** Dòng "Peto vừa ghi nhớ" dưới câu trả lời thứ `after`; chỉ sống trong phiên này, không lưu. */
   const [memoryNotes, setMemoryNotes] = useState<{ after: number; items: CompanionMemory[] }[]>([]);
   /** Ghi nhớ đã biết (id → lúc sửa cuối) để nhận ra dòng mới; null khi chưa tải được lần nào. */
@@ -268,7 +286,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
     setMicOpen(false);
     stopVoice();
     setError(null);
-    setExpressionReply(null);
+    cue(null);
     const previous = messages;
     const replyIndex = previous.length + 1;
     setMessages([...previous, { role: "user", content: text }, { role: "assistant", content: "" }]);
@@ -279,6 +297,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
     let accepted = false;
     let completed = false;
     let reply = "";
+    let turnEmotion: StageEmotion | undefined;
     try {
       await sendMessage(
         { message: text, conversationId, effort: "low", webSearch: "off", mode: "companion" },
@@ -296,6 +315,17 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
               if (last?.role !== "assistant") return prev;
               return [...prev.slice(0, -1), { ...last, content: last.content + chunk }];
             });
+          },
+          // Cảm xúc tới trước chữ: nhân vật đổi nét mặt ngay khi Peto bắt đầu trả lời.
+          onEmotion: (value) => {
+            const emotion = asStageEmotion(value);
+            if (!emotion) return;
+            turnEmotion = emotion;
+            setMessages((prev) => {
+              const last = prev[prev.length - 1];
+              return last?.role === "assistant" ? [...prev.slice(0, -1), { ...last, emotion }] : prev;
+            });
+            if (latest.current.active) cue(emotion);
           },
           onError: setError,
           onDone: () => {
@@ -329,8 +359,15 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
     }
     const now = latest.current;
     if (completed && reply.trim()) void watchMemory(replyIndex);
-    if (completed && reply.trim() && now.active) setExpressionReply({ text: reply });
-    if (completed && reply.trim() && now.active && !now.muted && now.voice.status === "ready") {
+    const speaking = completed && reply.trim() && now.active && !now.muted && now.voice.status === "ready";
+    if (completed && reply.trim() && now.active) {
+      // Peto quên gắn thẻ thì đoán theo từ khóa như trước. Không đọc thành tiếng thì giữ mặt vài giây để kịp thấy.
+      cue(turnEmotion ?? replyEmotion(reply));
+      if (!speaking) releaseLater(6000);
+    } else if (!speaking) {
+      releaseLater(1500);
+    }
+    if (speaking) {
       now.voice.speak(`${SPEECH_PREFIX}${replyIndex}`, reply).catch(reportSpeechError);
     }
   }
@@ -349,7 +386,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
       loadVersion.current += 1;
       setConversationId(null);
       setMessages([]);
-      setExpressionReply(null);
+      cue(null);
       setMemoryNotes([]);
       memoryWatch.current += 1;
       setConfirmReset(false);
@@ -365,9 +402,10 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
   const name = appInfo?.name ?? "Peto";
   const speech = voice.speaking?.key.startsWith(SPEECH_PREFIX) ? voice.speaking : null;
   const expressionSpeechKey = useRef<string | null>(null);
+  // Giữ nét mặt của câu đang đọc suốt lúc Peto nói, nói xong thì về bình thường sau một chút.
   useEffect(() => {
     if (!speech) {
-      if (expressionSpeechKey.current) setExpressionReply(null);
+      if (expressionSpeechKey.current) releaseLater(1500);
       expressionSpeechKey.current = null;
       return;
     }
@@ -375,8 +413,8 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
     expressionSpeechKey.current = speech.key;
     const index = Number(speech.key.slice(SPEECH_PREFIX.length));
     const message = messages[index];
-    if (message?.role === 'assistant') setExpressionReply({ text: message.content });
-  }, [speech?.key, speech?.phase, messages]);
+    if (message?.role === 'assistant') cue(messageEmotion(message));
+  }, [speech?.key, speech?.phase, messages, cue, releaseLater]);
   // Chữ nghe được vào ô nhắn, nối sau chữ đang có.
   useEffect(() => {
     if (!active) return;
@@ -455,8 +493,8 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
       <section className="companion-stage" aria-label={name}>
         {active && <Suspense fallback={<div className="character-fallback"><p role="status">Đang tải nhân vật…</p></div>}>
           {character.format === 'vrm'
-            ? <VRMStage key={character.id} character={character} motion={characterMotion} onPreview={onCharacterPreview} activity={activity} />
-            : <Live2DStage key={character.id} character={character} fallbackUrl={appInfo?.avatar_url ?? undefined} name={name} motion={characterMotion} onPreview={onCharacterPreview} reply={expressionReply} activity={activity} />}
+            ? <VRMStage key={character.id} character={character} motion={characterMotion} onPreview={onCharacterPreview} activity={activity} emotion={stageEmotion} />
+            : <Live2DStage key={character.id} character={character} fallbackUrl={appInfo?.avatar_url ?? undefined} name={name} motion={characterMotion} onPreview={onCharacterPreview} emotion={stageEmotion} activity={activity} />}
         </Suspense>}
       </section>
 
@@ -550,7 +588,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
                 {message.content && !live && voice.status === "ready" && (
                   <SpeakButton
                     phase={voice.speaking?.key === key ? voice.speaking.phase : null}
-                    onSpeak={() => { setExpressionReply({ text: message.content }); void voice.speak(key, message.content).catch(reportSpeechError); }}
+                    onSpeak={() => { cue(messageEmotion(message)); void voice.speak(key, message.content).catch(reportSpeechError); }}
                     onStop={stopVoice}
                   />
                 )}

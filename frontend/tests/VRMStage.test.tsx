@@ -18,7 +18,9 @@ vi.mock('../src/voiceActivity', () => ({ voiceMouth: () => mocks.mouth }));
 const character = { id: 'vrm-test', name: 'VRM', format: 'vrm' as const, bytes: 1, createdAt: 0 };
 function avatar() {
   const scene = new Group(); scene.add(new Mesh(new BoxGeometry(1, 2, 1), new MeshBasicMaterial()));
-  return { scene, humanoid: { setNormalizedPose: vi.fn(), getNormalizedBoneNode: () => new Object3D() }, expressionManager: { setValue: vi.fn() }, update: vi.fn() };
+  const presets = ['aa', 'blink', 'happy', 'sad', 'angry', 'surprised', 'relaxed'];
+  return { scene, humanoid: { setNormalizedPose: vi.fn(), getNormalizedBoneNode: () => new Object3D(), getRawBoneNode: () => new Object3D() },
+    expressionManager: { setValue: vi.fn(), getExpression: (name: string) => presets.includes(name) ? {} : null }, update: vi.fn() };
 }
 beforeEach(() => {
   vi.clearAllMocks(); mocks.mouth = 0;
@@ -53,3 +55,20 @@ it('model VRM tải về sau khi rời trang vẫn được giải phóng', asyn
   await act(async () => resolve({ userData: { vrm }, scene: vrm.scene }));
   expect(mocks.dispose).toHaveBeenCalledWith(vrm.scene);
 });
+
+it('VRM làm mặt theo cảm xúc Peto chọn bằng biểu cảm có sẵn, về bình thường thì trả biểu cảm về 0', async () => {
+  const vrm = avatar(); mocks.parse.mockResolvedValue({ userData: { vrm }, scene: vrm.scene });
+  const view = render(<VRMStage character={character} motion="system" emotion={{ emotion: 'surprised', key: 1 }} />);
+  await waitFor(() => expect(mocks.frame).toBeTypeOf('function'));
+  act(() => { for (let i = 1; i < 30; i++) mocks.frame!(40 * i); });
+  const surprised = vrm.expressionManager.setValue.mock.calls.filter(([name]) => name === 'surprised');
+  expect(surprised.at(-1)![1]).toBeGreaterThan(0.9);
+  // Ngạc nhiên hé miệng sẵn khi Peto im lặng.
+  expect(vrm.expressionManager.setValue).toHaveBeenCalledWith('aa', expect.closeTo(0.4, 1));
+
+  view.rerender(<VRMStage character={character} motion="system" emotion={null} />);
+  act(() => { for (let i = 30; i < 200; i++) mocks.frame!(40 * i); });
+  expect(vrm.expressionManager.setValue.mock.calls.filter(([name]) => name === 'surprised').at(-1)).toEqual(['surprised', 0]);
+  view.unmount();
+});
+

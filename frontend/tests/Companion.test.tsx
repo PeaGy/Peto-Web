@@ -11,6 +11,10 @@ vi.mock('../src/api', async (original) => ({
   deleteConversation: vi.fn(),
   getCompanionMemory: vi.fn(),
 }));
+// Sân khấu giả: chỉ để đọc cảm xúc Companion truyền xuống (Live2D thật cần WebGL).
+vi.mock('../src/Live2DStage', () => ({
+  default: ({ emotion }: { emotion?: { emotion: string } | null }) => <div data-testid="stage" data-emotion={emotion?.emotion ?? ''} />,
+}));
 // Dòng "Peto vừa ghi nhớ" hỏi lại máy chủ sau vài giây; trong test hỏi ngay.
 vi.mock('../src/memoryNotice', async (original) => ({
   ...await original<typeof import('../src/memoryNotice')>(),
@@ -605,4 +609,50 @@ it('hộp Bắt đầu lại nói rõ ghi nhớ vẫn giữ khi đang có ghi nh
   fireEvent.click(within(dialog).getByRole('button', { name: 'Xóa và bắt đầu lại' }));
   await waitFor(() => expect(api.deleteConversation).toHaveBeenCalledWith('C1'));
   expect(fetchMock.mock.calls.some(([url]) => String(url).startsWith('/api/companion/memory'))).toBe(false);
+});
+
+it('Peto chọn cảm xúc: nhân vật đổi mặt ngay khi bắt đầu trả lời; câu không có thẻ thì đoán theo từ khóa', async () => {
+  let resume!: () => void;
+  vi.mocked(api.sendMessage)
+    .mockImplementationOnce(async (_payload, handlers) => {
+      handlers.onMeta?.('C1', 'low');
+      handlers.onEmotion?.('think');
+      await new Promise<void>((resolve) => { resume = resolve; });
+      handlers.onDelta?.('Hmm, let me think.');
+      handlers.onDone?.();
+    })
+    .mockImplementationOnce(async (_payload, handlers) => {
+      handlers.onMeta?.('C1', 'low');
+      handlers.onEmotion?.('banana');
+      handlers.onDelta?.('Congratulations!');
+      handlers.onDone?.();
+    });
+  await openCompanion();
+  await screen.findByTestId('stage');
+
+  await sendInCompanion('Câu này khó nè');
+  await waitFor(() => expect(screen.getByTestId('stage').dataset.emotion).toBe('think'));
+  expect(screen.queryByText('Hmm, let me think.')).toBeNull();
+  resume();
+  await screen.findByText('Hmm, let me think.');
+  expect(screen.getByTestId('stage').dataset.emotion).toBe('think');
+
+  fireEvent.change(screen.getByRole('textbox', { name: 'Nhắn cho Peto trong Companion' }), { target: { value: 'Mình thi đậu rồi' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Gửi' }));
+  await screen.findByText('Congratulations!');
+  await waitFor(() => expect(screen.getByTestId('stage').dataset.emotion).toBe('happy'));
+});
+
+it('nghe lại tin cũ thì nhân vật làm lại đúng mặt đã chọn cho tin đó', async () => {
+  localStorage.setItem('peto-local-voice', '1');
+  localStorage.setItem('peto-companion-muted', '1');
+  vi.mocked(api.getCompanion).mockResolvedValue({ conversation_id: 'C1', messages: [
+    { role: 'user', content: 'My cat is sick' },
+    { role: 'assistant', content: 'Oh no, I hope she gets better soon.', emotion: 'sad' },
+  ] });
+  await openCompanion();
+  await screen.findByText('Oh no, I hope she gets better soon.');
+  expect(screen.getByTestId('stage').dataset.emotion).toBe('');
+  fireEvent.click(await screen.findByRole('button', { name: /Nghe Peto/ }));
+  await waitFor(() => expect(screen.getByTestId('stage').dataset.emotion).toBe('sad'));
 });
