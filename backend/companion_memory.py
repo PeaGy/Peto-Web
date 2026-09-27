@@ -23,6 +23,7 @@ import time
 from time import perf_counter
 
 import db
+import private_notes
 from ai import ChatMessage, StreamChunk, get_provider
 from config import COMPANION_MEMORY_ENABLED, MAX_HISTORY_MESSAGES
 
@@ -76,6 +77,8 @@ liền mạch.
 Giữ lại:
 - chủ đề hai bên đã nói; chuyện người dùng đang làm, đang lo hay đang mong;
 - điều Peto đã hứa, đã gợi ý hay đã hỏi mà còn dở dang;
+- ghi chú riêng <private>…</private> của Peto cho trò chơi hay bất ngờ còn dở: chép nguyên cả thẻ, vì đó là chỗ duy
+  nhất Peto nhớ điều mình giữ kín;
 - không khí chung của cuộc trò chuyện.
 
 Không ghi:
@@ -170,11 +173,19 @@ def clean_summary(raw: str) -> str:
     return text
 
 
-def _talk(rows: list[dict]) -> str:
-    return "\n".join(
-        f"{'Người dùng' if row['role'] == 'user' else 'Peto'}: {' '.join(row['content'].split())[:1500]}"
-        for row in rows
-    )
+def _talk(rows: list[dict], keep_notes: bool = False) -> str:
+    """Đoạn hội thoại cho model phụ. Ghi chú riêng của Peto chỉ giữ khi tóm tắt: ghi nhớ không cần tới bí mật trò chơi."""
+    lines = []
+    for row in rows:
+        content = row["content"]
+        if row["role"] == "user":
+            speaker = "Người dùng"
+        else:
+            speaker = "Peto"
+            if not keep_notes:
+                content = private_notes.strip(content)
+        lines.append(f"{speaker}: {' '.join(content.split())[:1500]}")
+    return "\n".join(lines)
 
 
 def _prompt(existing: list[dict], rows: list[dict]) -> str:
@@ -183,7 +194,10 @@ def _prompt(existing: list[dict], rows: list[dict]) -> str:
 
 
 def _summary_prompt(summary: str, rows: list[dict]) -> str:
-    return f"Bản tóm tắt hiện có:\n{summary or '(chưa có)'}\n\nĐoạn hội thoại vừa trôi khỏi lịch sử:\n{_talk(rows)}"
+    return (
+        f"Bản tóm tắt hiện có:\n{summary or '(chưa có)'}\n\n"
+        f"Đoạn hội thoại vừa trôi khỏi lịch sử:\n{_talk(rows, keep_notes=True)}"
+    )
 
 
 async def _ask(prompt: str, system_prompt: str = SYSTEM_PROMPT) -> str:

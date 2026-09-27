@@ -423,7 +423,10 @@ breakpoint as the CSS) the character fills the screen in a fixed frame (`compact
 translucent `--stage-*` colours defined on `.companion`. Zoom, drag and double-click are ignored
 there. Instead, a finger held on the screen acts as the pointer, and the character looks at it until
 the finger lifts. `index.html` sets `interactive-widget=resizes-content`, so on Chrome for Android the
-keyboard shrinks the layout instead of panning the page away. The compact frame keeps the tallest stage
+keyboard shrinks the layout instead of panning the page away. That shrink keeps the message list's scroll position,
+which used to hide the newest reply behind the keyboard (the owner saw the middle of the thread on 2026-09-27). A
+ResizeObserver in `Companion.tsx` now pins the list to its bottom on every resize, unless the user has scrolled up.
+Check it in a pane that is really drawing: a hidden browser skips ResizeObserver callbacks and scroll events. The compact frame keeps the tallest stage
 height seen at the current width, so the shorter stage leaves the character's size and position alone.
 Safari on iOS ignores that viewport setting.
 
@@ -668,6 +671,31 @@ feature is on by default.
   - Provider spies must filter out `MEMORY_MARKER` and `SUMMARY_MARKER` as well as `TITLE_MARKER`.
   - Frontend: `MemorySettings.test.tsx`, and the notice and scroll tests in `Companion.test.tsx` and `Hearing.test.tsx`,
     with `MEMORY_POLL_DELAYS` mocked to 0.
+
+### Companion private notes
+
+On 2026-09-27 the owner tried "pick a number from 1-9 and remember it". Peto said it had picked one and judged
+guesses ("No, that wasn't it"), then admitted it never had a number. The model keeps nothing between turns except the
+conversation text. The owner picked option A from two: a hidden note (`private_notes.py`), rather than only telling
+Peto to be honest and swap roles.
+
+- **Prompt.** The PRIVATE NOTES section of `COMPANION_SYSTEM_PROMPT` tells Peto to write a game secret once in
+  `<private>...</private>`. That is the one exception to "plain spoken text". Peto must never claim a secret choice
+  that is not in an earlier note, and answers guesses only from the note.
+- **Storage.** The reply is stored raw, note included, and `_to_chat_messages` sends it back to the model as it is.
+- **Stream.** `NoteFilter` removes notes from Companion `delta` events and keeps back a tail that may be the start of a
+  tag cut between chunks. `flush` releases that tail at the end of the reply. An unclosed note hides the rest of the
+  reply.
+- **History.** `_public_message(row, companion=True)` strips notes for `GET /api/companion`. `GET
+  /api/conversations/{id}/messages` does the same for Companion threads. The browser, the voice and the copy of the
+  reply therefore never see a note.
+- **Edge cases.** A reply that is only a note counts as no answer and is not saved (`_visible`), so no empty bubble
+  appears. Memory extraction strips notes. The summary keeps them, so a game that outlives the history window keeps
+  its secret.
+- **Scope.** Only Companion threads are filtered. A Chat reply can contain a literal `<private>` in XML code, and
+  must not lose it.
+- **Tests.** `tests/test_private_notes.py` feeds the filter at every chunk size and every split point. The mock answers
+  `__bimat__:x`, a reply hiding x, and `__doan__`, which reads back the latest note from the history it was sent.
 
 ### Peto Agent (CLI)
 

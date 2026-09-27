@@ -475,6 +475,10 @@ Anh như đang trò chuyện, rồi tự nói thành tiếng. Tab Trò chuyện 
   xóa mạch đó sau khi xác nhận.
 - Lượt Companion luôn suy nghĩ ở mức thấp, không tìm web, không nhận ảnh hay tệp và không đặt tên
   hội thoại, để trả lời nhanh nhất có thể.
+- **Trò chơi giữ bí mật**: model không nhớ gì giữa các lượt ngoài chữ của cuộc trò chuyện, nên trước đây bảo Peto
+  "chọn một số rồi nhớ" là Peto bịa. Giờ Peto viết điều cần giữ kín (số đã chọn, từ để đoán…) vào một ghi chú ẩn: máy
+  chủ lọc nó khỏi chữ gửi về trang và khỏi giọng đọc, nhưng lượt sau Peto đọc lại được, nên đoán số, đố chữ chơi thật
+  được. Chỉ có ở Companion. Mới thử bằng phản hồi giả; chưa biết Grok thật có dùng ghi chú đều không.
 - **Trí nhớ Companion** (mặc định bật): Peto tự ghi lại vài điều bạn kể về mình trong Companion (việc học, thú nuôi,
   sở thích…) và nhớ ở những lượt sau, kể cả sau khi **Bắt đầu lại**. Việc ghi nhớ chạy sau khi Peto trả lời xong, nên
   không làm chậm câu trả lời hay giọng nói; ghi được điều gì thì dưới câu trả lời hiện dòng **Peto vừa ghi nhớ: … ·

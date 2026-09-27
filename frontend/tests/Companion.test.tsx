@@ -436,6 +436,46 @@ it('Bắt đầu lại xóa mạch cũ sau khi xác nhận', async () => {
   await waitFor(() => expect(screen.queryByText('Hey there.')).toBeNull());
 });
 
+it('bàn phím điện thoại làm khung tin thấp lại thì vẫn thấy tin mới nhất, trừ khi đã cuộn lên đọc tin cũ', async () => {
+  const observers: { callback: ResizeObserverCallback; target?: Element }[] = [];
+  vi.stubGlobal('ResizeObserver', class {
+    target?: Element;
+    constructor(public callback: ResizeObserverCallback) { observers.push(this); }
+    observe(target: Element) { this.target = target; }
+    unobserve() {}
+    disconnect() {}
+  });
+  vi.mocked(api.getCompanion).mockResolvedValue({ conversation_id: 'C1', messages: [
+    { role: 'user', content: 'hi' },
+    { role: 'assistant', content: 'Hey there.' },
+  ] });
+  await openCompanion();
+  await screen.findByText('Hey there.');
+  const list = document.querySelector('.companion-messages') as HTMLElement;
+  const resized = () => {
+    const observer = observers.find((item) => item.target === list)!;
+    observer.callback([], observer as unknown as ResizeObserver);
+  };
+  let scrollTop = 600;
+  let clientHeight = 400;
+  Object.defineProperty(list, 'scrollHeight', { configurable: true, get: () => 1000 });
+  Object.defineProperty(list, 'clientHeight', { configurable: true, get: () => clientHeight });
+  Object.defineProperty(list, 'scrollTop', { configurable: true, get: () => scrollTop, set: (value: number) => { scrollTop = value; } });
+
+  // Đang ở cuối; bàn phím mở làm khung thấp còn 250 mà vị trí cuộn giữ nguyên: phải bám lại cuối.
+  fireEvent.scroll(list);
+  clientHeight = 250;
+  resized();
+  expect(scrollTop).toBe(1000);
+
+  // Đã cuộn lên đọc tin cũ thì khung đổi cỡ cũng không kéo xuống.
+  scrollTop = 100;
+  fireEvent.scroll(list);
+  clientHeight = 400;
+  resized();
+  expect(scrollTop).toBe(100);
+});
+
 it('chuyển qua lại giữa Companion và Tạo ảnh không nhân đôi tab nào', async () => {
   const consoleError = vi.spyOn(console, 'error');
   await openCompanion();

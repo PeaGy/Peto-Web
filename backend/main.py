@@ -40,6 +40,7 @@ import document_api
 from document_tools import DocumentSession, current_session as document_session_context
 import imagine_api
 import memory_api
+import private_notes
 import profile_api
 import voice_api
 import static_files
@@ -169,17 +170,26 @@ def _public_attachment(row: dict) -> dict:
     }
 
 
-def _public_message(row: dict) -> dict:
+def _public_message(row: dict, companion: bool = False) -> dict:
+    """Tin nhắn gửi về trình duyệt. Câu trả lời Companion bỏ ghi chú riêng của Peto (private_notes.py)."""
+    content = row["content"]
+    if companion and row["role"] == "assistant":
+        content = private_notes.strip(content)
     return {
         "id": row["id"],
         "role": row["role"],
-        "content": row["content"],
+        "content": content,
         "status": row.get("status", "complete"),
         "created_at": row["created_at"],
         "attachments": [_public_attachment(item) for item in row.get("attachments") or []],
         "sources": normalize_sources(row.get("sources")),
         "artifacts": row.get('artifacts', []),
     }
+
+
+def _visible(text: str, mode: str) -> str:
+    """Phần câu trả lời người dùng thấy: Companion bỏ ghi chú riêng, tab Trò chuyện giữ nguyên."""
+    return private_notes.strip(text) if mode == "companion" else text
 
 
 def _resolve_effort(requested: str | None, text: str) -> str:
@@ -349,10 +359,12 @@ async def list_conversations(
 async def get_messages(
     conversation_id: str, owner: str = Depends(current_owner)
 ) -> dict:
-    if not await db.owns_conversation(owner, conversation_id):
+    settings = await db.conversation_settings(owner, conversation_id)
+    if not settings:
         raise HTTPException(status_code=404, detail="Không tìm thấy hội thoại")
     rows = await db.get_messages(owner, conversation_id)
-    return {"messages": [_public_message(row) for row in rows]}
+    companion = settings["mode"] == "companion"
+    return {"messages": [_public_message(row, companion) for row in rows]}
 
 
 @app.get("/api/attachments/{attachment_id}")
@@ -389,7 +401,7 @@ async def get_companion(owner: str = Depends(current_owner)) -> dict:
     if not conversation_id:
         return {"conversation_id": None, "messages": []}
     rows = await db.get_messages(owner, conversation_id, limit=MAX_HISTORY_MESSAGES)
-    return {"conversation_id": conversation_id, "messages": [_public_message(row) for row in rows]}
+    return {"conversation_id": conversation_id, "messages": [_public_message(row, True) for row in rows]}
 
 
 async def _build_system_prompt(
@@ -544,9 +556,11 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
         sources: list[dict] = []
         search_started = False
         document_session = None
+        # Câu trả lời Companion lưu nguyên, nhưng stream về trình duyệt thì bỏ ghi chú riêng của Peto.
+        notes = private_notes.NoteFilter() if mode == "companion" else None
 
-        def chunk_event(chunk: StreamChunk) -> str:
-            nonlocal sources, search_started, first_text_at
+        def chunk_event(chunk: StreamChunk) -> str | None:
+            nonlocal sources, search_started, first_text_at, notes
             if chunk.kind == 'artifact': return sse({'type': 'artifact', 'artifact': chunk.artifact})
             if chunk.kind == 'document_status': return sse({'type': 'document_status', 'text': chunk.text})
             if chunk.kind == "search":
@@ -560,11 +574,14 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                 return sse({"type": "thinking", "text": chunk.text})
             if chunk.kind == "replace":
                 collected.clear()
+                if notes:
+                    notes = private_notes.NoteFilter()
                 return sse({"type": "replace"})
             if chunk.text and first_text_at is None:
                 first_text_at = perf_counter()
             collected.append(chunk.text)
-            return sse({"type": "delta", "text": chunk.text})
+            text = notes.feed(chunk.text) if notes else chunk.text
+            return sse({"type": "delta", "text": text}) if text else None
 
         nonlocal turn_complete
         complete = False
@@ -629,10 +646,17 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                 # A timeout may already have consumed provider tokens. Do not repeat the whole turn invisibly.
                 async for chunk in _stream_reply(system_prompt, history, effort, timezone, web_search, document_session,
                                                  model):
-                    yield chunk_event(chunk)
+                    event = chunk_event(chunk)
+                    if event:
+                        yield event
+                if notes:
+                    tail = notes.flush()
+                    if tail:
+                        yield sse({"type": "delta", "text": tail})
                 if document_session and document_session.created and not ''.join(collected).strip():
                     yield chunk_event(StreamChunk('text', 'Đã tạo xong tài liệu. Bạn xem trước hoặc tải tệp bên dưới nhé.'))
-                complete = bool("".join(collected).strip())
+                # Một câu trả lời Companion chỉ có ghi chú riêng thì người dùng không thấy gì: coi như chưa trả lời.
+                complete = bool(_visible("".join(collected), mode).strip())
                 if not complete:
                     failure = "Peto chưa trả lời được lượt này. Nhắn lại giúp nha."
         except AdmissionDenied as denied:
@@ -661,7 +685,7 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
             reply = "".join(collected).strip()
             artifacts = document_session.created if document_session else []
             if artifacts and not reply: reply = 'Tệp đã được tạo. Phản hồi bị ngắt; bạn vẫn có thể tải tài liệu bên dưới.'
-            if reply and conversation_id:
+            if reply and conversation_id and _visible(reply, mode):
                 with anyio.CancelScope(shield=True):
                     if await db.owns_conversation(owner, conversation_id):
                         await db.add_message(

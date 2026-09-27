@@ -164,6 +164,15 @@ class MockProvider(ChatProvider):
             last_user = f"[đính kèm {', '.join(names)}]"
 
         reply = _pick_reply(last_user, timezone)
+        # Ghi chú riêng của Companion (private_notes.py): "__bimat__:x" giấu x giữa câu trả lời; "__doan__" đọc lại ghi
+        # chú mới nhất trong lịch sử, để test thấy model nhận lại ghi chú ở lượt sau.
+        secret = re.search(r"__bimat__:([^_\n]+)", last_user)
+        if secret:
+            reply = f"Mình chọn xong rồi. <private>{secret.group(1).strip()}</private> Đoán đi!"
+        if "__doan__" in last_user:
+            notes = [note for message in messages if message.role == "assistant"
+                     for note in re.findall(r"<private>(.*?)</private>", message.content, re.S)]
+            reply = f"Ghi chú riêng của mình: {notes[-1].strip()}" if notes else "Mình không có ghi chú riêng nào."
         session = current_session.get()
         lowered = last_user.casefold()
         # Only the offline mock uses keyword routing. The real provider chooses its tool.

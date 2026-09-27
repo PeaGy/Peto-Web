@@ -129,6 +129,8 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
   const loadRef = useRef<AbortController | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  /** Khung tin có đang ở cuối không, cập nhật mỗi lần cuộn. */
+  const atBottom = useRef(true);
   const resetRef = useRef<HTMLDialogElement>(null);
   // Câu trả lời về xong mới quyết định có đọc không, nên đọc trạng thái mới nhất qua ref.
   const latest = useRef({ active, muted, voice });
@@ -235,11 +237,24 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
     bottomRef.current?.scrollIntoView({ block: "end" });
   }, [messages]);
 
-  // Dòng báo ghi nhớ đến vài giây sau câu trả lời: cuộn cho thấy nó, trừ khi người dùng đã cuộn lên đọc tin cũ.
+  // Bàn phím điện thoại mở ra làm khung tin thấp lại mà vị trí cuộn giữ nguyên, nên tin mới nhất bị che và người dùng
+  // thấy đoạn giữa hội thoại. Khung đang ở cuối thì bám lại cuối mỗi khi đổi cỡ; đã cuộn lên đọc tin cũ thì để yên.
   useEffect(() => {
     const list = bottomRef.current?.parentElement;
-    if (!list || !memoryNotes.length) return;
-    if (list.scrollHeight - list.scrollTop - list.clientHeight < 160) bottomRef.current?.scrollIntoView({ block: "end" });
+    if (!list || typeof ResizeObserver === "undefined") return;
+    const track = () => { atBottom.current = list.scrollHeight - list.scrollTop - list.clientHeight < 48; };
+    const observer = new ResizeObserver(() => { if (atBottom.current) list.scrollTop = list.scrollHeight; });
+    list.addEventListener("scroll", track, { passive: true });
+    observer.observe(list);
+    return () => {
+      list.removeEventListener("scroll", track);
+      observer.disconnect();
+    };
+  }, []);
+
+  // Dòng báo ghi nhớ đến vài giây sau câu trả lời: cuộn cho thấy nó, trừ khi người dùng đã cuộn lên đọc tin cũ.
+  useEffect(() => {
+    if (memoryNotes.length && atBottom.current) bottomRef.current?.scrollIntoView({ block: "end" });
   }, [memoryNotes]);
 
   function reportSpeechError(err: unknown) {
