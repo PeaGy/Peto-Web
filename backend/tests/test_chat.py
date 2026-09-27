@@ -188,7 +188,11 @@ async def test_companion_mode_uses_short_english_persona(client, monkeypatch):
     assert len(calls) == 1, "mạch Companion không hiện ở thanh bên nên không có lượt đặt tên"
     assert calls[0]["effort"] == "low"
     assert calls[0]["web_search"] == "off"
-    assert "## Chế độ Companion" in calls[0]["system_prompt"]
+    prompt = calls[0]["system_prompt"]
+    assert prompt.startswith("## Chế độ Companion")
+    assert "Bạn là Peto, trợ lý AI của Peto Web" not in prompt
+    assert "không giả vờ là bạn bè ngoài đời" not in prompt
+    assert "Not human emotions" in prompt or "không phải cảm xúc sinh học" in prompt
 
     calls.clear()
     await _send(client, "chào")

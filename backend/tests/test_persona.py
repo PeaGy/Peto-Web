@@ -100,7 +100,7 @@ def test_prompts_never_name_the_model_behind_peto():
     assert "không trả lời các câu hỏi về Peto thuộc model nào" in persona.PERSONA_PROMPT
     guide = persona.build_agent_guide(install_command="irm https://peto.example/install.ps1 | iex", daily_steps=200)
     for text in (persona.SYSTEM_PROMPT, persona.ROLEPLAY_SYSTEM_PROMPT, persona.AGENT_PROMPT,
-                 persona.COMPANION_PROMPT, guide):
+                 persona.COMPANION_SYSTEM_PROMPT, guide):
         lowered = text.casefold()
         assert "grok" not in lowered and "xai" not in lowered
 

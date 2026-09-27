@@ -67,7 +67,7 @@ from config import (
 )
 from discord_memory import discord_memory
 from persona import (
-    COMPANION_PROMPT,
+    COMPANION_SYSTEM_PROMPT,
     ROLEPLAY_SYSTEM_PROMPT,
     SYSTEM_PROMPT,
     build_agent_guide,
@@ -392,22 +392,25 @@ async def get_companion(owner: str = Depends(current_owner)) -> dict:
 async def _build_system_prompt(
     owner: str, mode: str = "chat", install_command: str = "", persona: str = "assistant"
 ) -> str:
-    """Prompt gốc (trợ lý, hoặc persona nhập vai khi hội thoại bật chế độ đó), ghép
-    thêm hướng dẫn Peto Agent, trí nhớ từ Discord (nếu lấy được), hồ sơ người dùng
-    tự điền trong Cài đặt, và persona riêng khi nhắn từ tab Companion.
+    """Prompt gốc: trợ lý, nhập vai, hoặc Companion. Companion là persona riêng, không
+    vá lên trợ lý. Sau đó ghép hướng dẫn Peto Agent, trí nhớ Discord và hồ sơ người dùng.
 
     Trí nhớ chỉ được tra bằng Discord ID lấy từ phiên đã xác minh — không bao
     giờ từ dữ liệu do trình duyệt gửi lên. Lấy không được thì bỏ qua, chat vẫn
     chạy bình thường.
     """
-    base = ROLEPLAY_SYSTEM_PROMPT if persona == "roleplay" else SYSTEM_PROMPT
-    mode_block = COMPANION_PROMPT if mode == "companion" else ""
+    if mode == "companion":
+        base = COMPANION_SYSTEM_PROMPT
+    elif persona == "roleplay":
+        base = ROLEPLAY_SYSTEM_PROMPT
+    else:
+        base = SYSTEM_PROMPT
     # Hướng dẫn Peto Agent giống nhau với mọi người trên cùng trang, nên đứng ngay sau prompt gốc, trước phần riêng
     # của từng người. Lệnh cài lấy từ địa chỉ trang đang mở (agent_install.install_command).
     agent_guide = build_agent_guide(install_command=install_command, daily_steps=AGENT_DAILY_STEPS)
     user = await db.get_user(owner)
     if not user:
-        return "\n\n".join(part for part in (base, agent_guide, mode_block) if part)
+        return "\n\n".join(part for part in (base, agent_guide) if part)
 
     discord_id = discord_id_from_owner(owner)
     snapshot = await discord_memory.fetch(discord_id) if discord_id else None
@@ -426,8 +429,7 @@ async def _build_system_prompt(
         occupation=profile_api.occupation_label(profile["occupation"]),
         instructions=profile["instructions"],
     )
-    # Persona Companion đứng sau trí nhớ và hồ sơ để thắng thói quen trả lời dài bằng tiếng Việt ở trên.
-    return "\n\n".join(part for part in (base, agent_guide, context, profile_block, mode_block) if part)
+    return "\n\n".join(part for part in (base, agent_guide, context, profile_block) if part)
 
 
 def _as_chunk(item: str | StreamChunk) -> StreamChunk:
