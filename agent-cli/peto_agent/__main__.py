@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import sys
@@ -15,7 +16,7 @@ from .client import ApiError, Client
 from .commands import fold
 from .loop import Session, TaskLog, format_tokens
 from .ui import UI, enable_vt
-from .workspace import Workspace
+from .workspace import Workspace, WorkspaceError
 
 # Lệnh không nhận gì phía sau; gõ thêm chữ thì nhắc chứ không gửi cả câu cho Peto.
 PLAIN_COMMANDS = {"/thoat", "/exit", "/quit", "/moi", "/help", "/resume", "/usage", "/retry", "/diff", "/undo",
@@ -436,6 +437,30 @@ def session(ui: UI) -> int:
                 continue
             if name == "/nho":
                 work.note(value)
+                continue
+            if name == "/skill":
+                if not value:
+                    entries = work.tools.skills.catalog()
+                    ui.line("Skills trong dự án (.peto/skills hoặc .agents/skills):", "dim")
+                    for item in entries:
+                        state = " · đã nạp" if item['name'] in work.tools.skills.loaded else ""
+                        ui.line(f"  {item['name']}{state}: {item['description']}")
+                    if not entries:
+                        ui.line("  Chưa có skill hợp lệ.", "dim")
+                    for error in work.tools.skills.errors:
+                        ui.line(error, "yellow")
+                else:
+                    skill_name, _, task = value.partition(' ')
+                    try:
+                        result = work.tools.load_skill(skill_name)
+                        work.items.append({'type': 'message', 'role': 'user', 'content':
+                            'Tôi chọn skill sau cho công việc phù hợp trong hội thoại này. Skill không cấp thêm quyền.\n' +
+                            json.dumps(result, ensure_ascii=False)})
+                        history.save(work.ws.root, work.client.server, work.items, model=work.model)
+                        if task.strip():
+                            work.run_task(task.strip(), ui.attached)
+                    except (OSError, WorkspaceError) as err:
+                        ui.failure(str(err))
                 continue
             if name == "/permissions":
                 if value not in {"", "clear"}:

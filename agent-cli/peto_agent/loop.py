@@ -65,8 +65,8 @@ def cap_result(value):
     if isinstance(value, list):
         return [cap_result(item) for item in value[:400]]
     if isinstance(value, dict):
-        # Guidance is already bounded to 32k by the workspace reader; never truncate rules in the middle.
-        return {key: item if key == "project_guidance" else cap_result(item) for key, item in value.items()}
+        # Guidance is already bounded by its reader; never truncate rules in the middle.
+        return {key: item if key in {"project_guidance", "skill_guidance"} else cap_result(item) for key, item in value.items()}
     return value
 
 
@@ -180,6 +180,7 @@ class Session:
         self.active_seconds = 0.0
 
     def reset(self) -> None:
+        self.tools.skills.loaded.clear()
         self.tools.reset_task()
         self.metrics = self.tools.metrics = Metrics()
         self.active_seconds = 0.0
@@ -198,6 +199,7 @@ class Session:
 
     def resume(self, items: list[dict], *, retryable: bool = False, model: str = "peto") -> None:
         """Mở lại hội thoại đã lưu. Quên các tệp đã đọc, để Peto phải đọc lại trước khi sửa."""
+        self.tools.skills.loaded.clear()
         self.tools.reset_task()
         self.metrics = self.tools.metrics = Metrics()
         self.active_seconds = 0.0
@@ -546,7 +548,8 @@ class Session:
     def _step(self) -> list[dict] | None:
         body = {"input": efficient_input(self.items), "effort": self.effort, "model": self.model, "context": {
             "project": self.ws.root.name, "os": f"{platform.system()} {platform.release()}".strip(),
-            "project_guidance": guides(self.ws), "features": list(FEATURES)}}
+            "project_guidance": guides(self.ws), "features": list(FEATURES),
+            "skills": self.tools.skills.catalog()}}
         writer = self.ui.reply()
         started = time.monotonic()
         phase = "nghĩ"

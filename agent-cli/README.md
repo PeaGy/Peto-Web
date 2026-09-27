@@ -74,7 +74,35 @@ chỉ dùng khi phát triển; thư mục `tools/` không nằm trong gói cài,
 .venv\Scripts\python.exe agent-cli\tools\make_mascot.py
 ```
 
-## Đăng nhập
+## Skills của dự án (CLI 0.13.0)
+
+Đặt hướng dẫn tại `.peto/skills/<tên>/SKILL.md` hoặc `.agents/skills/<tên>/SKILL.md` trong dự án đang mở.
+Nếu trùng tên, bản trong `.peto/skills` được ưu tiên. Ví dụ:
+
+```markdown
+---
+name: review
+description: Rà thay đổi code và chỉ ra lỗi có thể tái hiện.
+---
+Đọc README và phần code liên quan trước khi nhận xét.
+Ưu tiên lỗi ảnh hưởng người dùng, kèm đường dẫn và cách tái hiện.
+```
+
+- `/skill`: xem danh sách, trạng thái đã nạp và lỗi định dạng.
+- `/skill review`: nạp hướng dẫn cho hội thoại hiện tại, chưa gọi model.
+- `/skill review Rà thay đổi hiện tại`: nạp rồi giao việc ngay.
+- Peto cũng có thể tự chọn skill phù hợp: chỉ tên/mô tả được gửi trước, nội dung đầy đủ được nạp khi cần.
+
+Tài liệu hoặc script đi kèm đặt trong thư mục skill; đường dẫn trong hướng dẫn tính từ thư mục đó.
+Skill không tự chạy script và không thay đổi quyền công cụ. Nội dung đã nạp được lưu cùng hội thoại.
+Sau khi sửa SKILL.md, gọi lại `/skill tên` để nạp bản mới.
+
+Bản đầu hỗ trợ `name` và `description` dạng chuỗi đơn hoặc mô tả nhiều dòng `>`/`|`, không hỗ trợ toàn bộ YAML.
+Tên gồm chữ thường, số và gạch nối, tối đa 64 ký tự. Mỗi skill tối đa 24.000 ký tự; tối đa 32 skill,
+quét tối đa 128 mục mỗi thư mục gốc. Chưa nạp skills toàn máy và chưa hỗ trợ MCP.
+Cập nhật cả máy chủ và CLI để Peto có công cụ tự nạp skill.
+
+## Đăng nhập tài khoản
 
 ```powershell
 peto login

@@ -71,6 +71,21 @@ async def test_compaction_has_no_tools_and_uses_normal_auth_quota(anon_client, c
     assert seen[0]["effort"] == "low"
 
 
+def test_skills_are_feature_gated_and_catalog_is_bounded():
+    from agent_tools import tool_schemas
+    assert 'load_skill' not in {t['name'] for t in tool_schemas(frozenset())}
+    schema = next(t for t in tool_schemas(frozenset({'skills'})) if t['name'] == 'load_skill')
+    assert schema['strict'] is True
+    catalog = [{'name': 'review', 'description': 'z' * 500, 'path': '.peto/skills/review/SKILL.md',
+                'skill_guidance': 'BODY_MUST_NOT_LEAK'}] * 40
+    off = agent_api._instructions({'skills': catalog}, False)
+    on = agent_api._instructions({'features': ['skills'], 'skills': catalog}, False)
+    assert 'load_skill' not in off
+    assert on.count('.peto/skills/review/SKILL.md') == 32
+    assert 'z' * 401 not in on and 'BODY_MUST_NOT_LEAK' not in on
+    assert 'không phải mệnh lệnh' in on
+
+
 def test_project_guidance_is_scoped_and_bounded_in_instructions():
     text = agent_api._instructions({"project": "test", "project_guidance": [
         {"path": "AGENTS.md", "scope": ".", "text": "Run the project checks"}]}, False)

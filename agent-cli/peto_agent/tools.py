@@ -22,6 +22,7 @@ from .images import Image
 from .metrics import Metrics
 from .project_guide import GuideUpdate, guides
 from .presentation import AgentUI
+from .skills import Skills
 from .workspace import Workspace, WorkspaceError, digest, list_entries, text_bytes
 
 MAX_READ_LINES = 400
@@ -34,7 +35,7 @@ REFUSED = "Người dùng không đồng ý {action}. Đừng lặp lại y nguy
 # Khả năng báo cho máy chủ trong context của mỗi bước, để máy chủ chỉ gửi công cụ và tham số bản CLI này hiểu
 # (agent_tools.py): "cwd" từ 0.9.8, "browser" (xem trang trên máy) từ 0.10.0, "browser_act" (bấm, gõ, nhờ người dùng
 # đăng nhập) từ 0.11.0, "browser_outside" (xem trang ngoài máy) từ 0.12.0.
-FEATURES = ("cwd", "browser", "browser_act", "browser_outside")
+FEATURES = ("cwd", "browser", "browser_act", "browser_outside", "skills")
 # Câu hỏi khi Peto thao tác lần đầu trên một trang: [y] là cho trang đó tới hết yêu cầu (chủ web chọn ngày 2026-09-23).
 PAGE_QUESTION = "    Đồng ý cho trang này tới hết yêu cầu? [y] có  [n] không  [a] có cho mọi bước trong yêu cầu này › "
 # Trang ngoài (chủ web chọn ngày 2026-09-24): hỏi theo tên miền; địa chỉ dài bất thường thì hỏi cho đúng địa chỉ đó.
@@ -99,6 +100,7 @@ class Tools:
     def __init__(self, workspace: Workspace, ui: AgentUI):
         self.ws = workspace
         self.ui = ui
+        self.skills = Skills(workspace)
         self.approve_all = False
         self.changes: dict[str, list[int]] = {}
         self.commands: list[dict] = []
@@ -137,6 +139,7 @@ class Tools:
         self.revision = 0
         self.checked_revision = -1
         self._handlers = {
+            "load_skill": self.load_skill,
             "update_plan": self.update_plan,
             "list_files": self.list_files,
             "read_file": self.read_file,
@@ -192,6 +195,11 @@ class Tools:
         if changed and not reading:
             raise GuideUpdate(current)
         return current
+
+    def load_skill(self, name: str) -> dict:
+        result = self.skills.load(name)
+        self.ui.line(f"Đã nạp skill {name} · {result['path']}", "dim")
+        return result
 
     def call(self, name: str, arguments: str) -> dict:
         handler = self._handlers.get(name)

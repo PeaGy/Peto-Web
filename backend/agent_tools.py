@@ -14,7 +14,7 @@ from __future__ import annotations
 # "browser": ba công cụ xem trang chạy trên máy bằng trình duyệt ẩn (CLI 0.10.0). "browser_act": bấm, gõ, nhấn phím và
 # nhờ người dùng đăng nhập trên trang đang xem (CLI 0.11.0); "browser_outside": browser_open nhận cả trang ngoài máy,
 # chỉ xem (CLI 0.12.0). Hai khả năng sau chỉ có tác dụng cùng "browser".
-FEATURES = frozenset({"cwd", "browser", "browser_act", "browser_outside"})
+FEATURES = frozenset({"cwd", "browser", "browser_act", "browser_outside", "skills"})
 
 _PATH = {"type": "string", "description": "Đường dẫn tương đối tính từ gốc dự án, ví dụ src/app.py; '.' là gốc."}
 _SHELL = {
@@ -324,5 +324,7 @@ def tool_schemas(features: frozenset[str] = frozenset()) -> list[dict]:
             act = "browser_act" in key
             browsing = [_open_tool(act, "browser_outside" in key), *_BROWSER_TOOLS[1:],
                         *(_BROWSER_ACT_TOOLS if act else [])]
-        _SCHEMAS[key] = _FILE_TOOLS + _command_tools(cwd="cwd" in key) + browsing
+        skills = [_tool('load_skill', 'Đọc toàn bộ SKILL.md theo tên trong danh sách skills của dự án. Nạp trước khi áp dụng; không tự chạy script.',
+                        {'name': {'type': 'string', 'description': 'Tên skill trong danh sách.'}})] if 'skills' in key else []
+        _SCHEMAS[key] = _FILE_TOOLS + _command_tools(cwd="cwd" in key) + browsing + skills
     return _SCHEMAS[key]

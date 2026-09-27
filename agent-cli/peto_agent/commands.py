@@ -34,6 +34,7 @@ COMMANDS = (
              ("cao", "Suy nghĩ kỹ hơn, mỗi bước tính 2 bước"))),
     Command("/usage", "Số bước và token đã dùng hôm nay"),
     Command("/help", "Xem các lệnh"),
+    Command("/skill", "Xem skills đã nạp, hoặc /skill tên [yêu cầu]"),
     Command("/thoat", "Thoát peto"),
 )
 
