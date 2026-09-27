@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { preloadLazyParts } from './lazyParts';
 import App from '../src/App';
 import * as api from '../src/api';
 import * as mathMarkdown from '../src/mathMarkdown';
@@ -25,6 +26,8 @@ const deferred = <T,>() => {
   const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; });
   return { promise, resolve, reject };
 };
+
+beforeAll(preloadLazyParts);
 
 beforeEach(() => {
   vi.resetAllMocks();
@@ -77,6 +80,9 @@ it('không xử lý lại Markdown của lịch sử khi gõ bản nháp', async
   await openApp();
   fireEvent.click(screen.getByRole('button', { name: 'A', exact: true }));
   await waitFor(() => expect(document.querySelectorAll('.bubble')).toHaveLength(40));
+  // Công thức và tô màu code tải riêng rồi vẽ lại các tin cần chúng một lần; chờ xong lượt đó rồi mới đếm.
+  await waitFor(() => expect(document.querySelectorAll('.katex')).toHaveLength(40));
+  await waitFor(() => expect(document.querySelectorAll('code.hljs')).toHaveLength(40));
   normalize.mockClear();
   await userEvent.type(screen.getByRole('textbox', { name: 'Nhắn cho Peto' }), 'Tin nhắn mới');
   expect(normalize).not.toHaveBeenCalled();
@@ -552,7 +558,7 @@ it('lưu lựa chọn Luôn cử động cho nhân vật Companion', async () =>
   await openApp();
   fireEvent.click(screen.getByRole('button', {name: /Cài đặt · Demo/}));
   const dialog = screen.getByRole('dialog');
-  const group = within(dialog).getByRole('radiogroup', {name: 'Nhân vật cử động'});
+  const group = await within(dialog).findByRole('radiogroup', {name: 'Nhân vật cử động'});
   expect((within(group).getByRole('radio', {name: /Theo máy/}) as HTMLInputElement).checked).toBe(true);
   fireEvent.click(within(group).getByRole('radio', {name: /Luôn cử động/}));
   expect(localStorage.getItem('peto-character-motion')).toBe('always');

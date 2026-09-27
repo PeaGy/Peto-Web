@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest';
+import { preloadLazyParts } from './lazyParts';
 import App from '../src/App';
 import * as api from '../src/api';
 import { loadHearingSettings, stopListening } from '../src/hearingEngine';
@@ -53,6 +54,8 @@ class FakeRecognition {
 const lastRecognition = () => FakeRecognition.instances[FakeRecognition.instances.length - 1];
 
 const fetchMock = vi.fn();
+
+beforeAll(preloadLazyParts);
 
 beforeEach(() => {
   vi.resetAllMocks();
@@ -213,7 +216,7 @@ it('Cài đặt → Peto nghe: khóa Azure dùng chung với phần Peto nói, n
   render(<App />);
   fireEvent.click(await screen.findByRole('button', { name: /Cài đặt · Demo/ }));
   const settings = within(screen.getByRole('dialog', { name: 'Cài đặt' }));
-  fireEvent.click(settings.getByRole('tab', { name: 'Peto nghe' }));
+  fireEvent.click(await settings.findByRole('tab', { name: 'Peto nghe' }));
   expect(settings.getByRole('tab', { name: 'Peto nghe' }).getAttribute('aria-selected')).toBe('true');
   expect(settings.queryByRole('switch', { name: 'Bật giọng nói' })).toBeNull();
 
@@ -235,7 +238,7 @@ it('Nghe thử trong Cài đặt: chữ nghe được hiện trong khung, không
   fireEvent.click(await screen.findByRole('button', { name: /Cài đặt · Demo/ }));
   const dialog = screen.getByRole('dialog', { name: 'Cài đặt' });
   const settings = within(dialog);
-  fireEvent.click(settings.getByRole('tab', { name: 'Peto nghe' }));
+  fireEvent.click(await settings.findByRole('tab', { name: 'Peto nghe' }));
   fireEvent.click(settings.getByRole('button', { name: 'Bắt đầu nghe thử' }));
   await waitFor(() => expect(lastRecognition()?.started).toBe(true));
   act(() => lastRecognition().say('Testing one two', true));
@@ -250,6 +253,6 @@ it('bảng Micro mở thẳng Cài đặt ở thẻ Peto nghe', async () => {
   fireEvent.click(screen.getByRole('button', { name: 'Bật nghe' }));
   fireEvent.click(await micPanel().findByRole('button', { name: 'đổi trong Cài đặt' }));
   const settings = within(screen.getByRole('dialog', { name: 'Cài đặt' }));
-  expect(settings.getByRole('tab', { name: 'Peto nghe' }).getAttribute('aria-selected')).toBe('true');
+  expect((await settings.findByRole('tab', { name: 'Peto nghe' })).getAttribute('aria-selected')).toBe('true');
   expect(settings.getByRole('button', { name: 'Có sẵn trong trình duyệt' }).getAttribute('aria-pressed')).toBe('true');
 });

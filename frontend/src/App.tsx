@@ -1,50 +1,12 @@
 import { memo, lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import Markdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import remarkMath from "remark-math";
-import rehypeKatex from "rehype-katex";
-import "katex/dist/katex.min.css";
 import { normalizeMath } from "./mathMarkdown";
-import rehypeHighlight from "rehype-highlight";
-// Nạp từng grammar một thay vì bộ `common` của lowlight: rehype-highlight chỉ
-// đụng tới `common` khi không được truyền `languages`, nên cách này cho phép
-// tree-shaking bỏ hơn ba trăm ngôn ngữ Peto gần như không bao giờ trả về. Thêm
-// ngôn ngữ mới thì thêm cả nhãn vào CODE_LABELS, không thì đầu khối code hiện
-// tên thô viết hoa như "CSHARP".
-import bash from "highlight.js/lib/languages/bash";
-import c from "highlight.js/lib/languages/c";
-import cpp from "highlight.js/lib/languages/cpp";
-import csharp from "highlight.js/lib/languages/csharp";
-import css from "highlight.js/lib/languages/css";
-import dart from "highlight.js/lib/languages/dart";
-import diff from "highlight.js/lib/languages/diff";
-import dockerfile from "highlight.js/lib/languages/dockerfile";
-import go from "highlight.js/lib/languages/go";
-import ini from "highlight.js/lib/languages/ini";
-import java from "highlight.js/lib/languages/java";
-import javascript from "highlight.js/lib/languages/javascript";
-import json from "highlight.js/lib/languages/json";
-import kotlin from "highlight.js/lib/languages/kotlin";
-import lua from "highlight.js/lib/languages/lua";
-import markdown from "highlight.js/lib/languages/markdown";
-import php from "highlight.js/lib/languages/php";
-import plaintext from "highlight.js/lib/languages/plaintext";
-import powershell from "highlight.js/lib/languages/powershell";
-import python from "highlight.js/lib/languages/python";
-import ruby from "highlight.js/lib/languages/ruby";
-import rust from "highlight.js/lib/languages/rust";
-import sql from "highlight.js/lib/languages/sql";
-import typescript from "highlight.js/lib/languages/typescript";
-import xml from "highlight.js/lib/languages/xml";
-import yaml from "highlight.js/lib/languages/yaml";
-import Companion, { CompanionIcon } from "./Companion";
-import Imagine from "./Imagine";
+import { useMarkdownPlugins } from "./markdownExtras";
+import LazyBoundary from "./LazyBoundary";
+import { preloadable } from "./preloadable";
 import { useLocalVoice } from "./LocalVoice";
-import ProfileSettings from "./ProfileSettings";
-import VoiceSettings, { type VoiceTab } from "./VoiceSettings";
+import type { VoiceTab } from "./VoiceSettings";
 import AgentConnectDialog, { forgetAgentCode, takeAgentCode } from "./AgentConnectDialog";
-import AgentSettings from "./AgentSettings";
-import CharacterSettings from "./CharacterSettings";
 import { useCharacters } from './useCharacters';
 const CharacterPicker = lazy(() => import('./CharacterPicker'));
 import { readCharacterMotion, writeCharacterMotion, type CharacterMotion } from "./characterView";
@@ -82,33 +44,29 @@ import {
   type WebSearchMode,
 } from "./api";
 
-const HIGHLIGHT_LANGUAGES = {
-  bash, c, cpp, csharp, css, dart, diff, dockerfile, go, ini, java, javascript, json,
-  kotlin, lua, markdown, php, plaintext, powershell, python, ruby, rust, sql, typescript,
-  xml, yaml,
-};
+// Tạo ảnh, Companion và nội dung Cài đặt tải riêng lúc mở lần đầu: phần lớn lượt vào chỉ để chat, và tệp JS chính càng
+// nhỏ thì điện thoại càng sớm thấy ô chat (đo ngày 2026-09-27). preload* gọi lúc rê chuột hay chạm vào nút mở.
+const imagine = preloadable(() => import("./Imagine"));
+const companion = preloadable(() => import("./Companion"));
+const profileSettings = preloadable(() => import("./ProfileSettings"));
+const voiceSettings = preloadable(() => import("./VoiceSettings"));
+const agentSettings = preloadable(() => import("./AgentSettings"));
+const characterSettings = preloadable(() => import("./CharacterSettings"));
+const loadImagine = imagine.preload;
+const loadCompanion = companion.preload;
+const loadSettings = () => Promise.all([
+  profileSettings.preload(), voiceSettings.preload(), agentSettings.preload(), characterSettings.preload(),
+]);
+// Tải trước: lỗi ở đây bỏ qua, lần mở thật sẽ tải lại và LazyBoundary lo phần báo lỗi.
+const preload = (load: () => Promise<unknown>) => () => void load().catch(() => {});
+const Imagine = imagine.View;
+const Companion = companion.View;
+const ProfileSettings = profileSettings.View;
+const VoiceSettings = voiceSettings.View;
+const AgentSettings = agentSettings.View;
+const CharacterSettings = characterSettings.View;
 
-// Grammar tự khai báo alias riêng, nhưng khai thêm ở đây cho chắc: đây là những
-// tên Peto hay viết sau dấu ``` nhất.
-const HIGHLIGHT_ALIASES = {
-  bash: ["sh", "shell", "console", "zsh"],
-  cpp: ["c++", "cc"],
-  csharp: ["cs", "c#"],
-  dockerfile: ["docker"],
-  go: ["golang"],
-  ini: ["toml"],
-  javascript: ["js", "jsx"],
-  kotlin: ["kt"],
-  markdown: ["md"],
-  plaintext: ["text", "txt"],
-  powershell: ["ps1", "pwsh"],
-  ruby: ["rb"],
-  rust: ["rs"],
-  typescript: ["ts", "tsx"],
-  xml: ["html"],
-  yaml: ["yml"],
-};
-
+// Nhãn đầu khối code. Ngôn ngữ được tô màu nằm ở markdownCode.ts: thêm ngôn ngữ ở đó thì thêm nhãn ở đây.
 const CODE_LABELS: Record<string, string> = {
   bash: "Bash", c: "C", "c#": "C#", "c++": "C++", cc: "C++", console: "Bash", cpp: "C++",
   cs: "C#", csharp: "C#", css: "CSS", dart: "Dart", diff: "Diff", docker: "Dockerfile",
@@ -250,6 +208,24 @@ function ImageIcon() {
       <circle cx="9" cy="9" r="1.6" fill="currentColor" />
       <path d="m4 17 4.5-4.5 3.5 3.5 3-3.5 5 5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
+  );
+}
+
+function CompanionIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M12 4a3 3 0 0 1 3 3v5a3 3 0 0 1-6 0V7a3 3 0 0 1 3-3z" stroke="currentColor" strokeWidth="2" />
+      <path d="M6 11a6 6 0 0 0 12 0M12 17v3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/** Vòng chờ lúc tệp của Tạo ảnh hay Companion đang tải lần đầu. */
+function ViewLoading({ label }: { label: string }) {
+  return (
+    <div className="view-loading" role="status" aria-label={label}>
+      <span className="loading-spinner" aria-hidden="true" />
+    </div>
   );
 }
 
@@ -485,6 +461,8 @@ const ChatMessage = memo(function ChatMessage({ message, live, writing, onPrevie
   onPreview: (item: { id: string; version: number }) => void;
   onEdit: (item: { id: string; version: number }) => void;
 }) {
+  const text = message.content ? normalizeMath(message.content) : "";
+  const { remarkPlugins, rehypePlugins } = useMarkdownPlugins(text);
   return (<article className={`bubble ${message.role}`}>
               {message.attachments && message.attachments.length > 0 && (
                 <div className="bubble-files">
@@ -534,9 +512,7 @@ const ChatMessage = memo(function ChatMessage({ message, live, writing, onPrevie
                 />
               ) : null}
               {message.content ? (
-                <Markdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[[rehypeKatex, { trust: false, strict: "ignore" }], [rehypeHighlight, {
-                  languages: HIGHLIGHT_LANGUAGES, aliases: HIGHLIGHT_ALIASES, ignoreMissing: true,
-                }]]} components={{
+                <Markdown remarkPlugins={remarkPlugins} rehypePlugins={rehypePlugins} components={{
                   table: ({children}) => <div className="table-scroll" tabIndex={0} role="region" aria-label="Bảng nội dung"><table>{children}</table></div>,
                   a: ({children, href}) => <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>,
                   pre: ({node, children}) => {
@@ -546,7 +522,7 @@ const ChatMessage = memo(function ChatMessage({ message, live, writing, onPrevie
                     const tag = names.find((name) => name.startsWith("language-"));
                     return <CodeBlock language={tag ? tag.slice("language-".length) : ""}>{children}</CodeBlock>;
                   },
-                }}>{normalizeMath(message.content)}</Markdown>
+                }}>{text}</Markdown>
               ) : null}
               {message.role === "assistant" && <WebSources sources={message.sources} />}
               {message.artifacts?.map(artifact => <DocumentArtifactCard key={`${artifact.id}-${artifact.version}`} artifact={artifact} onOpen={onPreview} onEdit={onEdit} />)}
@@ -617,6 +593,9 @@ export default function App() {
     writeCharacterMotion(value);
   }, []);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // Nội dung Cài đặt chỉ dựng (và tải tệp) từ lần mở đầu, rồi giữ luôn như trước.
+  const [settingsVisited, setSettingsVisited] = useState(false);
+  if (settingsOpen && !settingsVisited) setSettingsVisited(true);
   const [view, setView] = useState<AppView>(() => {
     const hash = typeof window !== "undefined" ? window.location.hash : "";
     return hash === "#imagine" ? "imagine" : hash === "#companion" ? "companion" : "chat";
@@ -850,6 +829,28 @@ export default function App() {
   useEffect(() => {
     if (auth?.authenticated) void refreshConversations();
   }, [auth?.authenticated, refreshConversations]);
+
+  // Ô chat đã hiện thì lúc rảnh tải sẵn Tạo ảnh, Companion và Cài đặt: lần mở đầu khỏi chờ tệp (khoảng 0,3 giây trên 4G
+  // chậm, đo ngày 2026-09-27). Bỏ qua khi người dùng bật tiết kiệm dữ liệu hay mạng chỉ 2G.
+  useEffect(() => {
+    if (!auth?.authenticated) return;
+    const connection = (navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string } }).connection;
+    if (connection?.saveData || /2g/.test(connection?.effectiveType ?? "")) return;
+    let idle = 0;
+    const warm = () => {
+      preload(loadSettings)();
+      preload(loadImagine)();
+      preload(loadCompanion)();
+    };
+    const timer = window.setTimeout(() => {
+      idle = window.requestIdleCallback ? window.requestIdleCallback(warm, { timeout: 5000 }) : window.setTimeout(warm, 0);
+    }, 4000);
+    return () => {
+      window.clearTimeout(timer);
+      if (window.cancelIdleCallback) window.cancelIdleCallback(idle);
+      else window.clearTimeout(idle);
+    };
+  }, [auth?.authenticated]);
 
   useEffect(() => {
     if (nearBottom.current) bottomRef.current?.scrollIntoView({ behavior: "instant", block: "end" });
@@ -1407,6 +1408,8 @@ export default function App() {
             aria-current={view === "imagine" ? "page" : undefined}
             title={collapsed ? "Tạo ảnh" : undefined}
             onClick={() => go("imagine")}
+            onPointerEnter={preload(loadImagine)}
+            onFocus={preload(loadImagine)}
           >
             <ImageIcon />
             <span className="nav-label">Tạo ảnh</span>
@@ -1417,6 +1420,8 @@ export default function App() {
             aria-current={view === "companion" ? "page" : undefined}
             title={collapsed ? "Companion" : undefined}
             onClick={() => go("companion")}
+            onPointerEnter={preload(loadCompanion)}
+            onFocus={preload(loadCompanion)}
           >
             <CompanionIcon />
             <span className="nav-label">Companion</span>
@@ -1508,6 +1513,8 @@ export default function App() {
             aria-label={`Cài đặt · ${auth.user?.display_name}`}
             title="Mở cài đặt"
             onClick={() => setSettingsOpen(true)}
+            onPointerEnter={preload(loadSettings)}
+            onFocus={preload(loadSettings)}
           >
             <AccountAvatar user={auth.user} size={32} />
             <div className="account-name">
@@ -1524,6 +1531,8 @@ export default function App() {
       {/* Imagine và Companion nằm cạnh nhau trong cùng một danh sách con, nên key phải khác nhau. Trùng
           key thì React nhân đôi tab, và mỗi bản Imagine mới lại tải danh sách ảnh, lặp mãi không dừng. */}
       {imageVisited && (
+        <LazyBoundary>
+        <Suspense fallback={view === "imagine" ? <ViewLoading label="Đang mở Tạo ảnh" /> : null}>
         <Imagine
           key={`imagine-${auth.user?.id}`}
           active={view === "imagine"}
@@ -1533,8 +1542,12 @@ export default function App() {
           focusJobId={focusJobId}
           onFocusHandled={clearFocusJob}
         />
+        </Suspense>
+        </LazyBoundary>
       )}
       {companionVisited && (
+        <LazyBoundary>
+        <Suspense fallback={view === "companion" ? <ViewLoading label="Đang mở Companion" /> : null}>
         <Companion
           key={`companion-${auth.user?.id}`}
           active={view === "companion"}
@@ -1549,6 +1562,8 @@ export default function App() {
           onOpenSidebar={() => setSidebarOpen(true)}
           onOpenHearingSettings={openHearingSettings}
         />
+        </Suspense>
+        </LazyBoundary>
       )}
       <div className={`chat-layout${documentPanelOpen ? ' documents-open' : ''}${documentPanelOpen && documentPanelExpanded ? ' documents-expanded' : ''}`} hidden={view !== 'chat'}>
       <main className={emptyChat ? "chat empty-state" : "chat"}>
@@ -1672,14 +1687,19 @@ export default function App() {
 
         {/* Chỉ phần dưới đường ngăn được cuộn; tiêu đề "Cài đặt" đứng yên. */}
         <div className="settings-body">
-          <ProfileSettings
+          {/* Mỗi phần tải riêng có lớp chờ riêng: mục Giao diện không phải đợi tệp của mục Giọng nói. */}
+          <LazyBoundary>
+          <Suspense fallback={<div className="settings-loading" role="status" aria-label="Đang tải cài đặt"><span className="loading-spinner" aria-hidden="true" /></div>}>
+          {settingsVisited && <ProfileSettings
             open={settingsOpen}
             avatar={<AccountAvatar user={auth.user} size={40} />}
             onUnauthorized={handleUnauthorized}
             onSaved={(profile) => setAuth((prev) => (prev?.user
               ? { ...prev, user: { ...prev.user, nickname: profile.nickname } }
               : prev))}
-          />
+          />}
+          </Suspense>
+          </LazyBoundary>
 
           <section className="settings-section">
             <h3>Giao diện</h3>
@@ -1707,12 +1727,18 @@ export default function App() {
                 </label>
               ))}
             </div>
-            <CharacterSettings value={characterMotion} onChange={changeCharacterMotion} onOpenCharacters={() => setCharacterPickerOpen(true)} selectedName={characters.selected.name} />
+            <LazyBoundary><Suspense fallback={null}>
+              {settingsVisited && <CharacterSettings value={characterMotion} onChange={changeCharacterMotion} onOpenCharacters={() => setCharacterPickerOpen(true)} selectedName={characters.selected.name} />}
+            </Suspense></LazyBoundary>
           </section>
 
-          <VoiceSettings voice={localVoice} open={settingsOpen} tab={voiceTab} onTab={setVoiceTab} focusRequest={voiceFocus} />
+          <LazyBoundary><Suspense fallback={<div className="settings-loading" role="status" aria-label="Đang tải cài đặt"><span className="loading-spinner" aria-hidden="true" /></div>}>
+            {settingsVisited && <VoiceSettings voice={localVoice} open={settingsOpen} tab={voiceTab} onTab={setVoiceTab} focusRequest={voiceFocus} />}
+          </Suspense></LazyBoundary>
 
-          <AgentSettings open={settingsOpen} isGuest={auth.user?.provider === "guest"} onUnauthorized={handleUnauthorized} />
+          <LazyBoundary><Suspense fallback={null}>
+            {settingsVisited && <AgentSettings open={settingsOpen} isGuest={auth.user?.provider === "guest"} onUnauthorized={handleUnauthorized} />}
+          </Suspense></LazyBoundary>
 
           <section className="settings-section">
             <h3>Tài khoản</h3>
@@ -1739,7 +1765,7 @@ export default function App() {
           </section>
         </div>
       </dialog>
-      {characterPickerOpen && <Suspense fallback={null}><CharacterPicker library={characters} onClose={() => setCharacterPickerOpen(false)} /></Suspense>}
+      {characterPickerOpen && <LazyBoundary><Suspense fallback={null}><CharacterPicker library={characters} onClose={() => setCharacterPickerOpen(false)} /></Suspense></LazyBoundary>}
       {agentCode && <AgentConnectDialog code={agentCode} isGuest={auth.user?.provider === "guest"}
         onClose={() => { forgetAgentCode(); setAgentCode(null); }} onUnauthorized={handleUnauthorized} />}
       <dialog ref={deleteDialogRef} className="confirm-dialog" aria-labelledby="delete-title" onCancel={(event) => {

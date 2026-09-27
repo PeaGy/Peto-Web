@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest';
+import { preloadLazyParts } from './lazyParts';
 import App from '../src/App';
 import * as api from '../src/api';
 
@@ -12,6 +13,8 @@ vi.mock('../src/api', async (original) => ({
 
 const fetchMock = vi.fn();
 const played: string[] = [];
+
+beforeAll(preloadLazyParts);
 
 beforeEach(() => {
   vi.resetAllMocks();
@@ -76,7 +79,10 @@ async function openCompanion() {
 
 async function openSettings() {
   fireEvent.click(await screen.findByRole('button', { name: /Cài đặt · Demo/ }));
-  return within(screen.getByRole('dialog', { name: 'Cài đặt' }));
+  const settings = within(screen.getByRole('dialog', { name: 'Cài đặt' }));
+  // Mục Giọng nói tải riêng lúc mở Cài đặt lần đầu.
+  await settings.findByRole('heading', { name: 'Giọng nói' });
+  return settings;
 }
 
 async function sendInCompanion(text: string) {

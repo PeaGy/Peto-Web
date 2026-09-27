@@ -1064,17 +1064,18 @@ results in the next step. The server stores no conversation (`store=False`), and
   (`.chat.empty-state`); phones keep the composer docked. Only the **first send** slides
   the composer down (FLIP via `element.animate` in `App.tsx`); opening a conversation or
   starting a new one switches instantly on purpose — those are frequent navigation.
-- Code blocks only colour the grammars registered in `App.tsx` (`HIGHLIGHT_LANGUAGES`,
-  `HIGHLIGHT_ALIASES`, display names in `CODE_LABELS`) — the `common` bundle is
-  deliberately not used. Anything else renders as plain text under an uppercased tag, so a
-  new language needs a grammar import **and** a label. Each grammar costs bundle size; add
-  ones Peto actually answers with.
+- Code blocks only colour the grammars registered in `markdownCode.ts` (with their aliases), and `CODE_LABELS` in
+  `App.tsx` holds the display names. Anything else renders as plain text under an uppercased tag, so a new language
+  needs a grammar import **and** a label. Each grammar costs bundle size; add ones Peto actually answers with.
+  `markdownCode.ts` walks the tree with lowlight's core itself instead of using `rehype-highlight`, because that
+  package always imports lowlight's `common` set, even when given `languages`. The build carried 63 grammars instead
+  of 26 until 2026-09-27.
 - Every finished assistant message has a "Sao chép" button under it (`MessageCopy`, layout A picked by the owner from
   mockups on 2026-09-21: always visible, since phones cannot hover). It copies the **raw Markdown**, not the rendered
   text, so a render problem can be diagnosed from what the model actually wrote. It is hidden while that message is
   still streaming. Code blocks keep their own button; both share `useCopy`. Their accessible names differ ("Sao chép"
   vs "Sao chép câu trả lời"), so tests match the code button's name exactly.
-- Math renders with `remark-math` + `rehype-katex` (`trust: false`, `strict: "ignore"`) after
+- Math renders with `remark-math` + `rehype-katex` (`trust: false`, `strict: "ignore"`, in `markdownMath.ts`) after
   `mathMarkdown.normalizeMath` turns `\(…\)` / `\[…\]` into dollar delimiters, skipping code. It also runs
   `tildeNegation`: in LaTeX `~` is a non-breaking space, so a model writing negation as `~p` (common in discrete-math
   textbooks) rendered as " p" and a correct answer looked wrong (reported 2026-09-21). Only a `~` in operand position
@@ -1089,6 +1090,42 @@ results in the next step. The server stores no conversation (`store=False`), and
 - `App.tsx` owns chat plus the app shell; `Imagine.tsx` and `Companion.tsx` are mounted alongside
   it and receive an `active` prop rather than being unmounted — that is what keeps a running generation
   alive when the user switches back to Chat.
+- **What the first load carries.** On 2026-09-27 the owner picked "make the page load faster, especially on phones".
+  The entry chunk (then 1.1 MB, 340 KB gzipped) was cut to what the chat screen needs:
+  - **Separate chunks.** The chat entry is about 290 KB, plus React at about 190 KB. Everything else loads in its own
+    chunk:
+    - Imagine, Companion, and the Settings sections (Profile, character motion, Giọng nói, Peto Agent) load on first
+      open, through `preloadable.tsx`.
+    - Math (`markdownMath.ts`, KaTeX with its CSS) and code colouring (`markdownCode.ts`) load only once a message has
+      `$` or a ```/~~~ fence (`markdownExtras.useMarkdownPlugins`). Until then that message shows plain text, and only
+      messages that need the chunk re-render when it arrives.
+    - Keep every `import()` in its own arrow function (`loaders` in `markdownExtras.ts`). With both imports in one
+      conditional expression, the build preloaded only one branch's dependencies, and KaTeX's CSS never loaded. The
+      hidden MathML then showed as duplicated text (caught in a real-browser check on 2026-09-27; jsdom applies no CSS,
+      so the tests cannot see it).
+  - **Warming.** Hovering or focusing a nav button warms its chunk. Four seconds after sign-in, while idle, all three
+    views are warmed, except with Save-Data or 2G. `preloadable` renders a warmed component directly, because
+    `React.lazy` suspends on first render even for a loaded module, and React then holds the fallback for about 300 ms.
+    Each instance keeps whichever way it first rendered, so the element type never switches mid-life and state
+    survives.
+  - **LazyBoundary.** It wraps every lazy part, so a chunk that fails to load shows "Tải lại trang" in that spot
+    instead of blanking the whole app. This happens when a deploy has removed the old hashed files, since the build
+    empties `dist`.
+  - **Where these live.** Settings sections render only after the first open (`settingsVisited`), each in its own
+    `Suspense`, so "Giao diện" never waits for the voice chunk. Keep the icons the sidebar needs in `App.tsx`
+    (`CompanionIcon` moved there for this reason).
+  - **React chunk.** `vite.config.ts` puts React in its own chunk (`codeSplitting.groups`), so a deploy changes only
+    the app chunk's hash and returning visitors keep React cached. Never widen that group to all of `node_modules`,
+    or KaTeX, highlight.js and three.js would be pulled into the first load.
+  - **Auth preload.** `index.html` preloads `/api/auth/me` (`as="fetch" crossorigin`), and `getAuthState`'s plain
+    `fetch` reuses it. This was checked in Chromium: one request, initiator `link`, no console warning.
+  - **Measured.** Cold load on an emulated mid-range phone (Lighthouse's slow 4G, 4× CPU, five runs) went from
+    2.63 s to 1.36 s until the composer appears. A first open of Imagine, Companion or Settings takes about 45 ms once
+    warmed, and about 0.33 s before that.
+  - **Tests.** `tests/lazyParts.ts` preloads the lazy modules in `beforeAll`, so their first transform does not land
+    inside a test's timeout. Tests look for lazily rendered content with `findBy…`. `vitest.config.ts` raises
+    `testTimeout` to 15 s, and `tests/setup.ts` raises testing-library's `asyncUtilTimeout` to 3 s: under a fully
+    parallel run, a few heavy tests passed 5 s without being wrong.
 - The composer is `Composer.tsx`, presentational only: draft text, the file list and the send
   flow stay in `App.tsx` because they hang off the draft-preservation rule; just the drag
   state is local to it. `files.tsx` holds what the composer and the message bubbles share

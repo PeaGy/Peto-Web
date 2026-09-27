@@ -2962,6 +2962,11 @@ button.artifact-name { cursor: pointer; }
 }
 @keyframes loading-spin { to { transform: rotate(360deg); } }
 
+/* Chỗ của Tạo ảnh, Companion hay nội dung Cài đặt trong lúc tệp của nó tải lần đầu (hay tải hỏng, xem LazyBoundary). */
+.view-loading { flex: 1; min-width: 0; display: grid; place-content: center; justify-items: center; gap: 12px; padding: 24px; color: var(--muted); text-align: center; }
+.view-loading p { margin: 0; max-width: 36ch; line-height: 1.5; }
+.settings-loading { display: grid; place-items: center; min-height: 160px; }
+
 /* Floating menus stay scrollable on short screens and do not scroll the chat behind them. */
 .composer-options { max-height: min(360px, 50dvh); overflow-y: auto; }
 .composer-options, .effort-options { overscroll-behavior: contain; }
