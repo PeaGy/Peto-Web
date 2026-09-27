@@ -14,6 +14,7 @@ import {
   type KeyProvider,
   type VoiceOption,
 } from "./voiceProviders";
+import { useSettingsFocus } from "./settingsFocus";
 import { Dropdown, Field, SourceCard, type Card as SourceCardData, type DropdownOption } from "./voiceUi";
 
 /** Giọng nào cũng nói tiếng Anh tốt nhất, nên câu nghe thử mặc định bằng tiếng Anh. */
@@ -55,9 +56,7 @@ export default function VoiceSettings({ voice, open, tab = "noi", onTab, focusRe
   const fallbackId = useId();
   const sectionRef = useRef<HTMLElement>(null);
 
-  useEffect(() => {
-    if (open && focusRequest) sectionRef.current?.scrollIntoView({ block: "start" });
-  }, [open, focusRequest]);
+  useSettingsFocus(sectionRef, open, focusRequest);
 
   function tabKeys(event: KeyboardEvent<HTMLDivElement>) {
     if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;

@@ -33,11 +33,13 @@ import agent_install
 import ai_models
 import attachments as attachment_lib
 import auth
+import companion_memory
 import db
 import document_reader
 import document_api
 from document_tools import DocumentSession, current_session as document_session_context
 import imagine_api
+import memory_api
 import profile_api
 import voice_api
 import static_files
@@ -120,6 +122,7 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(imagine_api.router)
 app.include_router(profile_api.router)
+app.include_router(memory_api.router)
 app.include_router(voice_api.router)
 app.include_router(document_api.router)
 app.include_router(agent_api.router)
@@ -390,7 +393,8 @@ async def get_companion(owner: str = Depends(current_owner)) -> dict:
 
 
 async def _build_system_prompt(
-    owner: str, mode: str = "chat", install_command: str = "", persona: str = "assistant"
+    owner: str, mode: str = "chat", install_command: str = "", persona: str = "assistant",
+    conversation_id: str | None = None,
 ) -> str:
     """Prompt gốc: trợ lý, nhập vai, hoặc Companion. Companion là persona riêng, không
     vá lên trợ lý. Sau đó ghép hướng dẫn Peto Agent, trí nhớ Discord và hồ sơ người dùng.
@@ -429,7 +433,10 @@ async def _build_system_prompt(
         occupation=profile_api.occupation_label(profile["occupation"]),
         instructions=profile["instructions"],
     )
-    return "\n\n".join(part for part in (base, agent_guide, context, profile_block) if part)
+    # Trí nhớ Companion (và bản tóm tắt của mạch này) chỉ vào lượt Companion, đọc lại mỗi lượt: xóa một dòng trong Cài
+    # đặt là lượt sau Peto quên.
+    companion_block = await companion_memory.memory_block(owner, conversation_id) if mode == "companion" else ""
+    return "\n\n".join(part for part in (base, agent_guide, context, profile_block, companion_block) if part)
 
 
 def _as_chunk(item: str | StreamChunk) -> StreamChunk:
@@ -527,6 +534,7 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
         raise HTTPException(status_code=400, detail="Model này không hỗ trợ mức suy nghĩ đã chọn.")
 
     conversation_id = request.conversation_id
+    turn_complete = False
 
     async def event_stream() -> AsyncIterator[str]:
         nonlocal conversation_id
@@ -558,6 +566,7 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
             collected.append(chunk.text)
             return sse({"type": "delta", "text": chunk.text})
 
+        nonlocal turn_complete
         complete = False
         failure: str | None = None
         try:
@@ -611,7 +620,7 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                     yield sse({"type": "reading", "text": ""})
                 history, system_prompt = await asyncio.gather(
                     anyio.to_thread.run_sync(_to_chat_messages, rows),
-                    _build_system_prompt(owner, mode, install_command, persona),
+                    _build_system_prompt(owner, mode, install_command, persona, conversation_id),
                 )
                 document_session = DocumentSession(owner, conversation_id) if mode == 'chat' else None
                 if request.document_mode and mode == 'chat':
@@ -664,11 +673,18 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
         if failure:
             yield sse({"type": "error", "message": failure})
         else:
+            turn_complete = complete
+            # Trang hỏi lại vài giây sau "done" để hiện dòng "Peto vừa ghi nhớ"; đánh dấu trước cho khỏi hỏi hụt.
+            if complete and mode == "companion" and await companion_memory.enabled_for(owner):
+                companion_memory.mark_pending(owner)
             yield sse({"type": "done"})
 
     async def name_after_response():
         if conversation_id and mode == "chat":
             await titles.maybe_generate(owner, conversation_id, model)
+        # Ghi nhớ chạy sau khi trả lời xong, như đặt tiêu đề: câu trả lời và giọng đọc không phải chờ.
+        if conversation_id and mode == "companion" and turn_complete:
+            await companion_memory.remember(owner, history_limit)
 
     return StreamingResponse(
         event_stream(),

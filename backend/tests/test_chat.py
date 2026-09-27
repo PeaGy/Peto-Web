@@ -192,7 +192,10 @@ async def test_companion_mode_uses_short_english_persona(client, monkeypatch):
     assert prompt.startswith("## Chế độ Companion")
     assert "Bạn là Peto, trợ lý AI của Peto Web" not in prompt
     assert "không giả vờ là bạn bè ngoài đời" not in prompt
-    assert "Not human emotions" in prompt or "không phải cảm xúc sinh học" in prompt
+    # Trung thực về bản chất của Peto: prompt viết lại bằng tiếng Anh ngày 27/9/2026 nói bằng hai câu này, thay cho câu
+    # cũ "không tuyên bố có cảm xúc sinh học, cơ thể hay trải nghiệm ngoài cuộc trò chuyện".
+    assert "answer truthfully" in prompt
+    assert "Do not invent real-world personal experiences" in prompt
 
     calls.clear()
     await _send(client, "chào")

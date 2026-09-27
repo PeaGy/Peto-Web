@@ -475,6 +475,22 @@ Anh như đang trò chuyện, rồi tự nói thành tiếng. Tab Trò chuyện 
   xóa mạch đó sau khi xác nhận.
 - Lượt Companion luôn suy nghĩ ở mức thấp, không tìm web, không nhận ảnh hay tệp và không đặt tên
   hội thoại, để trả lời nhanh nhất có thể.
+- **Trí nhớ Companion** (mặc định bật): Peto tự ghi lại vài điều bạn kể về mình trong Companion (việc học, thú nuôi,
+  sở thích…) và nhớ ở những lượt sau, kể cả sau khi **Bắt đầu lại**. Việc ghi nhớ chạy sau khi Peto trả lời xong, nên
+  không làm chậm câu trả lời hay giọng nói; ghi được điều gì thì dưới câu trả lời hiện dòng **Peto vừa ghi nhớ: … ·
+  Xem**.
+  - Mỗi lượt Companion chỉ gửi kèm 20 tin gần nhất, nên Peto còn giữ một bản tóm tắt ngắn phần trò chuyện đã trôi ra
+    khỏi đó (cứ khoảng năm lượt gộp một lần). Bản tóm tắt không hiện trong Cài đặt; xóa một ghi nhớ hay **Xóa hết** thì
+    nó cũng bị xóa trắng, để điều vừa xóa không nằm lại trong đó, và **Bắt đầu lại** xóa nó cùng mạch trò chuyện.
+  - Xem, xóa từng dòng, xóa hết hoặc tắt ở **Cài đặt → Trí nhớ Companion**. Tắt thì Peto không ghi thêm, không tóm tắt
+    và không dùng những gì đã nhớ; bật lại cũng không đọc những gì đã nói lúc tắt.
+  - Peto chỉ đọc tin nhắn Companion của chính tài khoản đó, tính từ lúc có tính năng này (không đào lại lịch sử cũ).
+    Tab Trò chuyện không dùng trí nhớ này, và nó không liên quan tới trí nhớ của bot Discord. Khách cũng có trí nhớ
+    riêng.
+  - Tối đa 50 điều, mỗi điều một câu ngắn. Mỗi lượt Companion tốn thêm tối đa một lần gọi model nhỏ để ghi nhớ (tin
+    quá ngắn thì bỏ qua), và khoảng năm lượt một lần gọi nhỏ nữa để tóm tắt. Chủ web tắt cho mọi người bằng
+    `PETO_COMPANION_MEMORY=false`.
+  - Mới thử bằng phản hồi giả (ngày 27/9/2026); chưa thử xem Grok thật ghi nhớ có đúng và đủ ý không.
 - Trên máy tính, màn hình chia hai: bên trái là sân khấu chỉ có nhân vật Live2D (model mẫu Hiyori Momose của Live2D
   Inc.), bên phải là cột chat với trạng thái Peto đang nhắn hay đang nói, nút **Tắt tiếng** và nút
   **Bắt đầu lại**.
@@ -610,5 +626,5 @@ trình duyệt, Docker, chạy nền hay nối lại tác vụ khi mất mạng.
 
 OCR tài liệu scan, nạp thêm lượt Giọng Peto, tai nghe chính thức có lượt miễn phí, Peto nghe trong kênh thoại
 Discord, đọc dần trong lúc Peto đang trả lời, nhân vật 3D, ghi hoặc đồng bộ trí nhớ
-hai chiều với Discord. Chưa kiểm chứng chất lượng AI thật và hoạt động VPS trong
+hai chiều với Discord, sửa tay một ghi nhớ Companion (hiện chỉ xóa được). Chưa kiểm chứng chất lượng AI thật và hoạt động VPS trong
 đợt kiểm thử local nêu trên.

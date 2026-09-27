@@ -16,6 +16,7 @@ vi.mock('../src/api', async (original) => ({
   getProfile: vi.fn(), saveProfile: vi.fn(),
   getAgentDevice: vi.fn(), answerAgentDevice: vi.fn(), listAgentDevices: vi.fn(), revokeAgentDevice: vi.fn(),
   confirmRoleplayAge: vi.fn(),
+  getCompanionMemory: vi.fn(),
 }));
 
 const conversation = (id: string): api.Conversation => ({ id, title: id, created_at: 0, updated_at: 0, message_count: 2 });
@@ -31,6 +32,7 @@ beforeAll(preloadLazyParts);
 
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.mocked(api.getCompanionMemory).mockResolvedValue({ available: true, enabled: true, pending: false, limit: 50, memories: [] });
   localStorage.clear();
   // Mã Peto Agent còn sót từ test trước sẽ mở hộp kết nối trong mọi test sau.
   sessionStorage.clear();

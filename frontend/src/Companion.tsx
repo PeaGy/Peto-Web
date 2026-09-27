@@ -3,6 +3,8 @@ import {
   UnauthorizedError,
   deleteConversation,
   getCompanion,
+  getCompanionMemory,
+  type CompanionMemory,
   sendMessage,
   type AppInfo,
   type Message,
@@ -18,6 +20,7 @@ import {
   stopListening,
   useHearing,
 } from "./hearingEngine";
+import { MEMORY_POLL_DELAYS, noticeText } from "./memoryNotice";
 import { HearingBar, HearingPopover, hearingPlaceholder, MicButton } from "./HearingControls";
 import { SpeakButton, SpeakerIcon, SpeakerOffIcon, type LocalVoice } from "./LocalVoice";
 import type { CharacterMotion } from "./characterView";
@@ -39,6 +42,15 @@ function readMuted(): boolean {
   } catch {
     return false;
   }
+}
+
+function PencilIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M4 20h4L19 9l-4-4L4 16v4z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+      <path d="M13.5 6.5l4 4" stroke="currentColor" strokeWidth="2" />
+    </svg>
+  );
 }
 
 function MenuIcon() {
@@ -69,7 +81,7 @@ function RestartIcon() {
  * Được giữ mounted như Imagine (prop `active`) để câu trả lời đang về không bị cắt khi đổi tab;
  * rời tab thì Peto thôi đọc và giải phóng renderer nhân vật.
  */
-export default function Companion({ active, appInfo, voice, characterMotion, character = DEFAULT_CHARACTER, onCharacterPreview, onOpenCharacters, sceneRequest = 0, onUnauthorized, onOpenSidebar, onOpenHearingSettings }: {
+export default function Companion({ active, appInfo, voice, characterMotion, character = DEFAULT_CHARACTER, onCharacterPreview, onOpenCharacters, sceneRequest = 0, onUnauthorized, onOpenSidebar, onOpenHearingSettings, onOpenMemorySettings }: {
   active: boolean;
   sceneRequest?: number;
   appInfo: AppInfo | null;
@@ -82,10 +94,19 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
   onOpenSidebar: () => void;
   /** Mở Cài đặt → Giọng nói → Peto nghe (từ bảng Micro). */
   onOpenHearingSettings?: () => void;
+  /** Nút "Xem" ở dòng "Peto vừa ghi nhớ": mở Cài đặt tới mục Trí nhớ Companion. */
+  onOpenMemorySettings?: () => void;
 }) {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [expressionReply, setExpressionReply] = useState<{ text: string } | null>(null);
+  /** Dòng "Peto vừa ghi nhớ" dưới câu trả lời thứ `after`; chỉ sống trong phiên này, không lưu. */
+  const [memoryNotes, setMemoryNotes] = useState<{ after: number; items: CompanionMemory[] }[]>([]);
+  /** Ghi nhớ đã biết (id → lúc sửa cuối) để nhận ra dòng mới; null khi chưa tải được lần nào. */
+  const knownMemory = useRef<Map<number, number> | null>(null);
+  const memoryWatch = useRef(0);
+  /** Số ghi nhớ đang có, hỏi lại lúc mở hộp "Bắt đầu lại": xóa mạch không xóa ghi nhớ, nên hộp nói rõ điều đó. */
+  const [keptMemories, setKeptMemories] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
   const [draft, setDraft] = useState("");
@@ -150,6 +171,44 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
     if (!active) stopVoice();
   }, [active, stopVoice]);
 
+  // Danh sách ghi nhớ lúc mở tab, để sau mỗi lượt biết dòng nào là mới. Lỗi thì thôi: lượt sau lấy làm mốc.
+  useEffect(() => {
+    const controller = new AbortController();
+    getCompanionMemory(controller.signal).then(
+      (state) => { knownMemory.current = new Map(state.memories.map((item) => [item.id, item.updated_at])); },
+      () => {},
+    );
+    return () => {
+      controller.abort();
+      memoryWatch.current += 1;
+    };
+  }, []);
+
+  /** Sau một lượt xong: hỏi máy chủ vài lần xem tác vụ nền vừa ghi nhớ gì, có thì hiện dòng báo dưới câu trả lời. */
+  async function watchMemory(after: number) {
+    const version = ++memoryWatch.current;
+    for (const delay of MEMORY_POLL_DELAYS) {
+      await new Promise((resolve) => window.setTimeout(resolve, delay));
+      if (version !== memoryWatch.current) return;
+      let state;
+      try {
+        state = await getCompanionMemory();
+      } catch {
+        return;
+      }
+      if (version !== memoryWatch.current) return;
+      const known = knownMemory.current;
+      knownMemory.current = new Map(state.memories.map((item) => [item.id, item.updated_at]));
+      if (!known || !state.enabled) return;
+      const fresh = state.memories.filter((item) => known.get(item.id) !== item.updated_at);
+      if (fresh.length) {
+        setMemoryNotes((prev) => [...prev, { after, items: fresh }]);
+        return;
+      }
+      if (!state.pending) return;
+    }
+  }
+
   // Giọng nói sống ở App, lâu hơn tab này (đăng xuất thì tab bị gỡ), nên gỡ tab thì cũng thôi đọc.
   useEffect(() => () => stopVoice(), [stopVoice]);
 
@@ -166,8 +225,22 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
   }, [active, confirmReset]);
 
   useEffect(() => {
+    if (!confirmReset) return;
+    const controller = new AbortController();
+    getCompanionMemory(controller.signal).then((state) => setKeptMemories(state.memories.length), () => setKeptMemories(0));
+    return () => controller.abort();
+  }, [confirmReset]);
+
+  useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: "end" });
   }, [messages]);
+
+  // Dòng báo ghi nhớ đến vài giây sau câu trả lời: cuộn cho thấy nó, trừ khi người dùng đã cuộn lên đọc tin cũ.
+  useEffect(() => {
+    const list = bottomRef.current?.parentElement;
+    if (!list || !memoryNotes.length) return;
+    if (list.scrollHeight - list.scrollTop - list.clientHeight < 160) bottomRef.current?.scrollIntoView({ block: "end" });
+  }, [memoryNotes]);
 
   function reportSpeechError(err: unknown) {
     setError(err instanceof Error ? err.message : "Chưa đọc được tin này.");
@@ -240,6 +313,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
       abortRef.current = null;
     }
     const now = latest.current;
+    if (completed && reply.trim()) void watchMemory(replyIndex);
     if (completed && reply.trim() && now.active) setExpressionReply({ text: reply });
     if (completed && reply.trim() && now.active && !now.muted && now.voice.status === "ready") {
       now.voice.speak(`${SPEECH_PREFIX}${replyIndex}`, reply).catch(reportSpeechError);
@@ -261,6 +335,8 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
       setConversationId(null);
       setMessages([]);
       setExpressionReply(null);
+      setMemoryNotes([]);
+      memoryWatch.current += 1;
       setConfirmReset(false);
     } catch (err) {
       if (err instanceof UnauthorizedError) return onUnauthorized();
@@ -464,6 +540,18 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
                   />
                 )}
                 {message.status === "incomplete" && <span className="message-status">Chưa trả lời xong</span>}
+                {memoryNotes.filter((note) => note.after === index).map((note) => (
+                  <p key={note.items.map((item) => item.id).join("-")} className="memory-notice" role="status">
+                    <PencilIcon />
+                    <span>Peto vừa ghi nhớ: {noticeText(note.items)}</span>
+                    {onOpenMemorySettings && (
+                      <>
+                        <span className="memory-notice-dot" aria-hidden="true">·</span>
+                        <button type="button" className="voice-link" onClick={onOpenMemorySettings}>Xem</button>
+                      </>
+                    )}
+                  </p>
+                ))}
               </article>
             );
           })}
@@ -546,6 +634,9 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
       >
         <h2 id="companion-reset-title">Bắt đầu lại với Peto?</h2>
         <p>Toàn bộ mạch trò chuyện trong Companion sẽ bị xóa. Không thể hoàn tác.</p>
+        {keptMemories > 0 && (
+          <p>Những điều Peto ghi nhớ về bạn vẫn được giữ; muốn xóa thì vào Cài đặt → Trí nhớ Companion.</p>
+        )}
         <div className="dialog-actions">
           <button type="button" disabled={resetting} onClick={() => setConfirmReset(false)}>Giữ lại</button>
           <button type="button" className="danger-button" disabled={resetting} onClick={() => void reset()}>

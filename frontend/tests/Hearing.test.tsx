@@ -10,6 +10,7 @@ vi.mock('../src/api', async (original) => ({
   getAuthState: vi.fn(), listConversations: vi.fn(), getMessages: vi.fn(), sendMessage: vi.fn(),
   listImagineJobs: vi.fn(), getProfile: vi.fn(), getAppInfo: vi.fn(), getCompanion: vi.fn(),
   deleteConversation: vi.fn(),
+  getCompanionMemory: vi.fn(),
 }));
 
 // Micro giả: jsdom không có Web Audio. Test tự đẩy âm thanh vào qua `microphone.feed`.
@@ -59,6 +60,7 @@ beforeAll(preloadLazyParts);
 
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.mocked(api.getCompanionMemory).mockResolvedValue({ available: true, enabled: true, pending: false, limit: 50, memories: [] });
   localStorage.clear();
   loadHearingSettings();
   FakeRecognition.instances = [];
@@ -250,9 +252,21 @@ it('Nghe thử trong Cài đặt: chữ nghe được hiện trong khung, không
 
 it('bảng Micro mở thẳng Cài đặt ở thẻ Peto nghe', async () => {
   await openCompanion();
+  // Cài đặt đã mở một lần: mục Giọng nói đã có sẵn, nên nó chỉ cuộn được nếu hộp thoại mở trước effect của nó.
+  fireEvent.click(await screen.findByRole('button', { name: /Cài đặt · Demo/ }));
+  const dialog = screen.getByRole('dialog', { name: 'Cài đặt' });
+  await within(dialog).findByRole('heading', { name: 'Giọng nói' });
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Đóng cài đặt' }));
   fireEvent.click(screen.getByRole('button', { name: 'Bật nghe' }));
+  const scrolled: Element[] = [];
+  vi.mocked(Element.prototype.scrollIntoView).mockImplementation(function (this: Element) {
+    if (this.closest('dialog')?.hasAttribute('open')) scrolled.push(this);
+  });
   fireEvent.click(await micPanel().findByRole('button', { name: 'đổi trong Cài đặt' }));
   const settings = within(screen.getByRole('dialog', { name: 'Cài đặt' }));
   expect((await settings.findByRole('tab', { name: 'Peto nghe' })).getAttribute('aria-selected')).toBe('true');
+  // Cuộn tới mục Giọng nói lúc hộp thoại đã hiện (trước đây cuộn lúc hộp thoại còn ẩn nên không đi đâu cả).
+  const voiceSection = settings.getByRole('heading', { name: 'Giọng nói' }).closest('section');
+  await waitFor(() => expect(scrolled).toContain(voiceSection));
   expect(settings.getByRole('button', { name: 'Có sẵn trong trình duyệt' }).getAttribute('aria-pressed')).toBe('true');
 });

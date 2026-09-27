@@ -50,12 +50,14 @@ const imagine = preloadable(() => import("./Imagine"));
 const companion = preloadable(() => import("./Companion"));
 const profileSettings = preloadable(() => import("./ProfileSettings"));
 const voiceSettings = preloadable(() => import("./VoiceSettings"));
+const memorySettings = preloadable(() => import("./MemorySettings"));
 const agentSettings = preloadable(() => import("./AgentSettings"));
 const characterSettings = preloadable(() => import("./CharacterSettings"));
 const loadImagine = imagine.preload;
 const loadCompanion = companion.preload;
 const loadSettings = () => Promise.all([
-  profileSettings.preload(), voiceSettings.preload(), agentSettings.preload(), characterSettings.preload(),
+  profileSettings.preload(), voiceSettings.preload(), memorySettings.preload(), agentSettings.preload(),
+  characterSettings.preload(),
 ]);
 // Tải trước: lỗi ở đây bỏ qua, lần mở thật sẽ tải lại và LazyBoundary lo phần báo lỗi.
 const preload = (load: () => Promise<unknown>) => () => void load().catch(() => {});
@@ -63,6 +65,7 @@ const Imagine = imagine.View;
 const Companion = companion.View;
 const ProfileSettings = profileSettings.View;
 const VoiceSettings = voiceSettings.View;
+const MemorySettings = memorySettings.View;
 const AgentSettings = agentSettings.View;
 const CharacterSettings = characterSettings.View;
 
@@ -621,6 +624,11 @@ export default function App() {
   // Thẻ đang mở của mục Giọng nói (Peto nói / Peto nghe); bảng Micro trong Companion mở thẳng thẻ Peto nghe.
   const [voiceTab, setVoiceTab] = useState<VoiceTab>("noi");
   const [voiceFocus, setVoiceFocus] = useState(0);
+  const [memoryFocus, setMemoryFocus] = useState(0);
+  const openMemorySettings = useCallback(() => {
+    setMemoryFocus((count) => count + 1);
+    setSettingsOpen(true);
+  }, []);
   const openHearingSettings = useCallback(() => {
     setVoiceTab("nghe");
     setVoiceFocus((count) => count + 1);
@@ -867,7 +875,9 @@ export default function App() {
     else consentDialogRef.current?.close();
   }, [consentOpen]);
 
-  useEffect(() => {
+  // useLayoutEffect: hộp thoại phải mở trước effect của các mục bên trong, để mục được xin cuộn tới (settingsFocus.ts)
+  // cuộn được ngay; effect của con chạy trước effect của cha, lúc đó hộp thoại còn ẩn.
+  useLayoutEffect(() => {
     if (settingsOpen) settingsDialogRef.current?.showModal();
     else settingsDialogRef.current?.close();
   }, [settingsOpen]);
@@ -1561,6 +1571,7 @@ export default function App() {
           onUnauthorized={handleUnauthorized}
           onOpenSidebar={() => setSidebarOpen(true)}
           onOpenHearingSettings={openHearingSettings}
+          onOpenMemorySettings={openMemorySettings}
         />
         </Suspense>
         </LazyBoundary>
@@ -1734,6 +1745,10 @@ export default function App() {
 
           <LazyBoundary><Suspense fallback={<div className="settings-loading" role="status" aria-label="Đang tải cài đặt"><span className="loading-spinner" aria-hidden="true" /></div>}>
             {settingsVisited && <VoiceSettings voice={localVoice} open={settingsOpen} tab={voiceTab} onTab={setVoiceTab} focusRequest={voiceFocus} />}
+          </Suspense></LazyBoundary>
+
+          <LazyBoundary><Suspense fallback={null}>
+            {settingsVisited && <MemorySettings open={settingsOpen} focusRequest={memoryFocus} onUnauthorized={handleUnauthorized} />}
           </Suspense></LazyBoundary>
 
           <LazyBoundary><Suspense fallback={null}>

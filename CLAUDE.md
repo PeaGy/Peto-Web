@@ -328,7 +328,8 @@ same way, preserving existing rows. Note that `PRAGMA foreign_keys=ON` is set pe
 where cascade deletes matter (SQLite has it off by default).
 
 Tables: `conversations`, `messages`, `attachments`, `users`, `user_profiles`,
-`imagine_jobs`, `imagine_images`, `agent_devices`, `agent_usage`, `roleplay_consents`, `voice_usage`
+`imagine_jobs`, `imagine_images`, `agent_devices`, `agent_usage`, `roleplay_consents`, `voice_usage`,
+`companion_memories`, `companion_memory_state`
 (`speech_cloud.py` also creates its own `speech_budget` on first use). `users` is the only place mapping
 a web account to a Discord ID.
 `conversations.mode` (`chat` or `companion`) was added with the same manual migration; older rows
@@ -606,6 +607,67 @@ Vietnamese message, and each caller shows its own error. Companion's speech keys
   disconnect (it checks every 0.25 s), so a request sent right after an abort can get 429.
 - The backend only relays text and audio, or calls TTS APIs over HTTP. Never add TTS models or their packages to the
   backend or the frontend: `pip install` and `npm ci` on the VPS would ship them to every deployment.
+
+### Companion memory (Brain)
+
+The first Brain feature, picked by the owner from mockups on 2026-09-27. It has its own "Trí nhớ Companion" section in
+Settings, right after Giọng nói (layout A). The Companion chat column shows a "Peto vừa ghi nhớ: … · Xem" line, and the
+feature is on by default.
+
+- **When it runs.** After a complete Companion turn, `main.py` marks the owner pending before `done`. It then runs
+  `companion_memory.remember(owner)` in the response's background task, so the reply and voice are never delayed. Runs
+  for the same owner are coalesced (`_running` / `_again`). Each run is one extra small `peto` call: `MEMORY_MARKER` in
+  its system prompt, JSON `{add, update, remove}` out. It is skipped when the new user text is under `MIN_NEW_CHARS`.
+- **What it reads.** A message-id cursor in `companion_memory_state` decides this:
+  - On first use the cursor starts at the latest user message, so history from before memory existed is never mined.
+  - Turning memory back on moves it to the latest message, so what was said while it was off is never read.
+  - Only the owner's own Companion messages are read, filtered in SQL. The Chat tab never reads or writes this memory,
+    and it has nothing to do with the Discord bot's memory.
+- **Summary of older talk.** The other half of the proposal the owner agreed to: each Companion thread keeps a short
+  summary of what has scrolled out of the `PETO_MAX_HISTORY` window (`companion_summaries`, one row per conversation).
+  - Once `SUMMARY_BATCH` (10) messages have left the window unsummarized, the same background task makes one more
+    small call (`SUMMARY_MARKER`) that folds up to 40 of the oldest into the summary. `_build_system_prompt` appends
+    `persona.build_companion_summary` after the notes, fenced by `COMPANION_SUMMARY_START/END`.
+  - It follows the list's rules. It is written and used only while memory is on. It never covers messages at or below
+    `companion_memory_state.since`: that is where memory started, or was last switched back on
+    (`ensure_memory_state`, `set_memory_enabled`).
+  - Deleting any memory, or "Xóa hết", blanks every summary and moves its `upto` past all current messages
+    (`_forget_summaries`). A single fact cannot be cut out of a summary, and Settings promises that a deleted line is
+    forgotten. The cost is lost context, never a deleted fact coming back.
+  - `save_companion_summary` saves only if `upto` is unchanged since it was read, so a delete that lands while the model
+    is writing drops the result. `delete_conversation` removes the row, so "Bắt đầu lại" deletes it too.
+- **Validation.**
+  - `parse_changes` accepts lists only, cuts texts at 150 characters, and drops case-insensitive duplicates and unknown
+    ids.
+  - At most 5 adds per run and 50 memories in total. `apply_memory_changes` applies everything in one transaction.
+- **Prompt.** On Companion turns only, `_build_system_prompt` appends `persona.build_companion_memory` after the profile
+  block. It is fenced by `COMPANION_MEMORY_START/END` (copies are stripped from notes) and labelled as possibly
+  outdated data, not instructions.
+- **API.** `memory_api.py`:
+  - `GET /api/companion/memory` returns `available`, `enabled`, `pending`, `limit` and `memories`.
+  - `PUT /settings` turns memory on or off.
+  - `DELETE /{id}` deletes one memory; another owner's id gives 404.
+  - `DELETE` clears all memories.
+  - `PETO_COMPANION_MEMORY=false` turns the feature off for everyone (`PUT` then returns 503). Guests get their own
+    memory.
+- **UI.**
+  - `MemorySettings.tsx` has the switch, the list, delete-one, and "Xóa hết" with an inline confirmation. Changes are
+    optimistic and roll back on error.
+  - After a turn, `Companion.tsx` polls at `memoryNotice.MEMORY_POLL_DELAYS`. When an item is new or its `updated_at`
+    changed, it shows the notice under that reply, and scrolls to it only if the reader is still at the bottom.
+  - "Xem" opens Settings at this section through `settingsFocus.useSettingsFocus`. It scrolls once per request, never
+    again on later normal opens, plus once more when the list loads, because sections above may have grown.
+  - App opens the Settings dialog in `useLayoutEffect`. Child effects run before the parent's, so with `useEffect` the
+    scroll happened while the dialog was still hidden. The "Peto nghe" link had the same bug and uses the same hook.
+  - "Bắt đầu lại" deletes the thread, never the memories. Its dialog re-fetches the list when it opens and, when
+    memories exist, says they are kept and where to delete them.
+- **Tests.**
+  - `backend/tests/test_companion_memory.py`. The mock answers `__nho__:text`, `__sua__:id:text` and `__quen__:id`,
+    and turns a summary call into the old summary plus the user lines it was given. The summary tests shrink the
+    window with `main.MAX_HISTORY_MESSAGES` and `companion_memory.SUMMARY_BATCH` (both 4).
+  - Provider spies must filter out `MEMORY_MARKER` and `SUMMARY_MARKER` as well as `TITLE_MARKER`.
+  - Frontend: `MemorySettings.test.tsx`, and the notice and scroll tests in `Companion.test.tsx` and `Hearing.test.tsx`,
+    with `MEMORY_POLL_DELAYS` mocked to 0.
 
 ### Peto Agent (CLI)
 

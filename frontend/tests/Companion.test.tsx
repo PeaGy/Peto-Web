@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest';
 import { preloadLazyParts } from './lazyParts';
 import App from '../src/App';
@@ -9,6 +9,12 @@ vi.mock('../src/api', async (original) => ({
   getAuthState: vi.fn(), listConversations: vi.fn(), getMessages: vi.fn(), sendMessage: vi.fn(),
   listImagineJobs: vi.fn(), getProfile: vi.fn(), getAppInfo: vi.fn(), getCompanion: vi.fn(),
   deleteConversation: vi.fn(),
+  getCompanionMemory: vi.fn(),
+}));
+// Dòng "Peto vừa ghi nhớ" hỏi lại máy chủ sau vài giây; trong test hỏi ngay.
+vi.mock('../src/memoryNotice', async (original) => ({
+  ...await original<typeof import('../src/memoryNotice')>(),
+  MEMORY_POLL_DELAYS: [0, 0, 0],
 }));
 
 const fetchMock = vi.fn();
@@ -18,6 +24,7 @@ beforeAll(preloadLazyParts);
 
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.mocked(api.getCompanionMemory).mockResolvedValue({ available: true, enabled: true, pending: false, limit: 50, memories: [] });
   localStorage.clear();
   played.length = 0;
   window.history.replaceState(null, '', '/');
@@ -443,4 +450,119 @@ it('chuyển qua lại giữa Companion và Tạo ảnh không nhân đôi tab n
   expect(document.querySelectorAll('main.companion')).toHaveLength(1);
   expect(api.listImagineJobs).toHaveBeenCalledTimes(1);
   expect(consoleError.mock.calls.some((args) => args.some((arg) => String(arg).includes('same key')))).toBe(false);
+});
+
+const MEMORY: api.CompanionMemoryState = { available: true, enabled: true, pending: false, limit: 50, memories: [] };
+
+/** Mỗi lượt Companion trả lời xong ngay bằng câu kế tiếp trong `replies`. */
+function replyWith(...replies: string[]) {
+  vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers) => {
+    handlers.onMeta?.('C1', 'low');
+    handlers.onDelta?.(replies.shift() ?? 'Okay.');
+    handlers.onDone?.();
+  });
+}
+
+it('ghi nhớ xong thì cột chat báo ngay dưới câu trả lời, bấm Xem mở Cài đặt tới mục Trí nhớ Companion', async () => {
+  const note = { id: 7, text: 'Đang học năm hai ngành điện', created_at: 100, updated_at: 100 };
+  vi.mocked(api.getCompanionMemory)
+    .mockResolvedValueOnce(MEMORY) // lúc mở tab: mốc để so
+    .mockResolvedValueOnce(MEMORY) // mở Cài đặt lần đầu
+    .mockResolvedValueOnce({ ...MEMORY, pending: true }) // lần hỏi đầu sau lượt chat: máy chủ còn đang ghi
+    .mockResolvedValue({ ...MEMORY, memories: [note] });
+  replyWith('Electrical engineering, nice!');
+  await openCompanion();
+  await waitFor(() => expect(api.getCompanionMemory).toHaveBeenCalledTimes(1));
+  // Cài đặt đã mở một lần: mục Trí nhớ đã có sẵn, nên nó chỉ cuộn được nếu hộp thoại mở trước effect của nó.
+  fireEvent.click((await openSettings()).getByRole('button', { name: 'Đóng cài đặt' }));
+  await waitFor(() => expect(api.getCompanionMemory).toHaveBeenCalledTimes(2));
+
+  await sendInCompanion('mình đang học năm hai ngành điện');
+  const notice = await chatColumn().findByText('Peto vừa ghi nhớ: Đang học năm hai ngành điện');
+  expect(notice.closest('article')?.textContent).toContain('Electrical engineering, nice!');
+  expect(api.getCompanionMemory).toHaveBeenCalledTimes(4);
+
+  const scrolls: { target: Element; dialogOpen: boolean }[] = [];
+  vi.mocked(Element.prototype.scrollIntoView).mockImplementation(function (this: Element) {
+    scrolls.push({ target: this, dialogOpen: Boolean(this.closest('dialog')?.hasAttribute('open')) });
+  });
+  const memoryScrolls = () => scrolls.filter((item) => item.target === section);
+  fireEvent.click(within(notice.closest('p')!).getByRole('button', { name: 'Xem' }));
+  const settings = within(screen.getByRole('dialog', { name: 'Cài đặt' }));
+  const section = (await settings.findByRole('heading', { name: 'Trí nhớ Companion' })).closest('section');
+  expect(await settings.findByText('Đang học năm hai ngành điện')).toBeTruthy();
+  // Cuộn lúc hộp thoại đã hiện, rồi cuộn lại một lần khi danh sách tải xong (mục bên trên có thể vừa cao thêm).
+  await waitFor(() => expect(memoryScrolls()).toHaveLength(2));
+  expect(memoryScrolls().every((item) => item.dialogOpen)).toBe(true);
+
+  // Mở Cài đặt bình thường sau đó thì không bị kéo về mục Trí nhớ nữa.
+  fireEvent.click(settings.getByRole('button', { name: 'Đóng cài đặt' }));
+  const calls = vi.mocked(api.getCompanionMemory).mock.calls.length;
+  await openSettings();
+  await waitFor(() => expect(api.getCompanionMemory).toHaveBeenCalledTimes(calls + 1));
+  await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+  expect(memoryScrolls()).toHaveLength(2);
+});
+
+it('sửa một dòng cũ và thêm một dòng mới trong cùng lượt thì dòng báo nêu dòng đầu kèm số còn lại', async () => {
+  const old = { id: 3, text: 'Nuôi một con mèo', created_at: 100, updated_at: 100 };
+  vi.mocked(api.getCompanionMemory)
+    .mockResolvedValueOnce({ ...MEMORY, memories: [old] })
+    .mockResolvedValue({ ...MEMORY, memories: [
+      { ...old, text: 'Nuôi một con mèo tên Mướp', updated_at: 300 },
+      { id: 9, text: 'Thích nghe mưa', created_at: 300, updated_at: 300 },
+    ] });
+  replyWith('Mướp is a cute name.');
+  await openCompanion();
+  await waitFor(() => expect(api.getCompanionMemory).toHaveBeenCalledTimes(1));
+
+  await sendInCompanion('con mèo nhà mình tên Mướp, mình cũng thích nghe mưa');
+  expect(await chatColumn().findByText('Peto vừa ghi nhớ: Nuôi một con mèo tên Mướp (và 1 điều khác)')).toBeTruthy();
+});
+
+it('lượt không có gì mới, hay trí nhớ đang tắt, thì không có dòng báo', async () => {
+  const note = { id: 7, text: 'Nuôi một con mèo tên Mướp', created_at: 100, updated_at: 100 };
+  vi.mocked(api.getCompanionMemory).mockResolvedValue({ ...MEMORY, memories: [note] });
+  replyWith('Cool.', 'Rain is cozy.');
+  await openCompanion();
+  await waitFor(() => expect(api.getCompanionMemory).toHaveBeenCalledTimes(1));
+
+  await sendInCompanion('ok');
+  await screen.findByText('Cool.');
+  await waitFor(() => expect(api.getCompanionMemory).toHaveBeenCalledTimes(2));
+
+  vi.mocked(api.getCompanionMemory).mockResolvedValue({ ...MEMORY, enabled: false, memories: [
+    note, { id: 8, text: 'Thích nghe mưa', created_at: 200, updated_at: 200 },
+  ] });
+  await sendInCompanion('trời đang mưa');
+  await screen.findByText('Rain is cozy.');
+  await waitFor(() => expect(api.getCompanionMemory).toHaveBeenCalledTimes(3));
+  expect(screen.queryByText(/Peto vừa ghi nhớ/)).toBeNull();
+});
+
+it('hộp Bắt đầu lại nói rõ ghi nhớ vẫn giữ khi đang có ghi nhớ, và chỉ xóa mạch trò chuyện', async () => {
+  vi.mocked(api.getCompanion).mockResolvedValue({ conversation_id: 'C1', messages: [
+    { role: 'user', content: 'hi' },
+    { role: 'assistant', content: 'Hey there.' },
+  ] });
+  await openCompanion();
+  await screen.findByText('Hey there.');
+  const kept = /Những điều Peto ghi nhớ về bạn vẫn được giữ/;
+
+  // Chưa có ghi nhớ nào: hộp không nhắc tới.
+  fireEvent.click(screen.getByRole('button', { name: 'Bắt đầu lại' }));
+  const dialog = await screen.findByRole('dialog', { name: 'Bắt đầu lại với Peto?' });
+  await waitFor(() => expect(api.getCompanionMemory).toHaveBeenCalledTimes(2));
+  expect(within(dialog).queryByText(kept)).toBeNull();
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Giữ lại' }));
+
+  // Có ghi nhớ (vd. vừa ghi ở lượt trước): mở lại hộp thì hỏi lại máy chủ và nhắc.
+  vi.mocked(api.getCompanionMemory).mockResolvedValue({ ...MEMORY, memories: [
+    { id: 7, text: 'Nuôi một con mèo tên Mướp', created_at: 100, updated_at: 100 },
+  ] });
+  fireEvent.click(screen.getByRole('button', { name: 'Bắt đầu lại' }));
+  expect(await within(dialog).findByText(kept)).toBeTruthy();
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Xóa và bắt đầu lại' }));
+  await waitFor(() => expect(api.deleteConversation).toHaveBeenCalledWith('C1'));
+  expect(fetchMock.mock.calls.some(([url]) => String(url).startsWith('/api/companion/memory'))).toBe(false);
 });

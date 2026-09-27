@@ -9,6 +9,7 @@ export async function preloadLazyParts(): Promise<void> {
     import('../src/Companion'),
     import('../src/ProfileSettings'),
     import('../src/VoiceSettings'),
+    import('../src/MemorySettings'),
     import('../src/AgentSettings'),
     import('../src/CharacterSettings'),
     import('../src/markdownMath'),

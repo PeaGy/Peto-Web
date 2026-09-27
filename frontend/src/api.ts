@@ -235,6 +235,44 @@ export async function deleteConversation(conversationId: string): Promise<void> 
   await json<{ deleted: boolean }>(response);
 }
 
+/** Một điều Peto tự ghi nhớ từ lời người dùng kể trong Companion (Cài đặt → Trí nhớ Companion). */
+export interface CompanionMemory {
+  id: number;
+  text: string;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface CompanionMemoryState {
+  /** false khi chủ web tắt trí nhớ trên cả máy chủ. */
+  available: boolean;
+  enabled: boolean;
+  /** Còn đang ghi nhớ lượt vừa xong: hỏi lại sau vài giây. */
+  pending: boolean;
+  limit: number;
+  memories: CompanionMemory[];
+}
+
+export async function getCompanionMemory(signal?: AbortSignal): Promise<CompanionMemoryState> {
+  return json(await fetch("/api/companion/memory", { signal }));
+}
+
+export async function setCompanionMemoryEnabled(enabled: boolean): Promise<void> {
+  await json(await fetch("/api/companion/memory/settings", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ enabled }),
+  }));
+}
+
+export async function deleteCompanionMemory(id: number): Promise<void> {
+  await json(await fetch(`/api/companion/memory/${id}`, { method: "DELETE" }));
+}
+
+export async function clearCompanionMemory(): Promise<void> {
+  await json(await fetch("/api/companion/memory", { method: "DELETE" }));
+}
+
 /** Mạch trò chuyện của tab Companion; chưa nhắn lần nào thì conversation_id là null. */
 export async function getCompanion(signal?: AbortSignal): Promise<{
   conversation_id: string | null; messages: Message[];

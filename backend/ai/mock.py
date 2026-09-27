@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import random
 import json
+import re
 from collections.abc import AsyncIterator
 
 from .base import ChatMessage, ChatProvider, ProviderError, StreamChunk
@@ -127,6 +128,28 @@ class MockProvider(ChatProvider):
         if TITLE_MARKER in system_prompt:
             title = " ".join(last_user.split()[:6]) or "Trò chuyện mới"
             yield title[:1].upper() + title[1:]
+            return
+
+        # Lượt ghi nhớ Companion: chỉ đổi khi lời người dùng có từ khóa thử, để test và bản chạy thử đoán trước được.
+        # __nho__:<câu> thêm, __sua__:<id>:<câu> sửa, __quen__:<id> xóa một ghi nhớ.
+        from companion_memory import MEMORY_MARKER, SUMMARY_MARKER
+
+        if SUMMARY_MARKER in system_prompt:
+            # Tóm tắt giả: giữ bản cũ rồi nối lời người dùng trong đoạn vừa trôi ra, để test lần ra được từng tin.
+            old, _, talk = last_user.partition("Đoạn hội thoại vừa trôi khỏi lịch sử:")
+            old = old.replace("Bản tóm tắt hiện có:", "").strip()
+            said = [line.split(":", 1)[1].strip() for line in talk.splitlines() if line.startswith("Người dùng:")]
+            yield " ".join(part for part in ("" if old == "(chưa có)" else old, "Người dùng kể: " + "; ".join(said)) if part)
+            return
+
+        if MEMORY_MARKER in system_prompt:
+            talk = last_user.split("Đoạn hội thoại mới:", 1)[-1]
+            said = "\n".join(line for line in talk.splitlines() if line.startswith("Người dùng:"))
+            yield json.dumps({
+                "add": [text.strip() for text in re.findall(r"__nho__:([^_\n]+)", said)],
+                "update": [{"id": int(key), "text": text.strip()} for key, text in re.findall(r"__sua__:(\d+):([^_\n]+)", said)],
+                "remove": [int(key) for key in re.findall(r"__quen__:(\d+)", said)],
+            }, ensure_ascii=False)
             return
 
         if "__error__" in last_user:
