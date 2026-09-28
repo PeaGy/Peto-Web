@@ -1,5 +1,6 @@
 import { memo, lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import Markdown from "react-markdown";
+import './styles.css';
 import { normalizeMath } from "./mathMarkdown";
 import { useMarkdownPlugins } from "./markdownExtras";
 import LazyBoundary from "./LazyBoundary";
@@ -1765,6 +1766,7 @@ export default function App() {
               </div>
             </div>
             <div className="settings-actions">
+              <a href="/docs/" target="_blank" rel="noreferrer">Hướng dẫn Peto ↗</a>
               <button
                 type="button"
                 className="logout"

@@ -69,6 +69,15 @@ async def test_serves_index(site_client):
     assert "Peto" in response.text
 
 
+async def test_docs_deep_links(site_client):
+    for path in ['/docs/', '/docs/bat-dau/', '/docs/mcp/']:
+        response = await site_client.get(path)
+        assert response.status_code == 200
+        assert 'Peto Docs' in response.text
+        assert response.headers['cache-control'] == 'no-cache'
+    assert (await site_client.get('/docs/nonexistent/')).status_code == 404
+
+
 async def test_serves_hashed_asset_with_long_cache(site_client):
     response = await site_client.get("/assets/index-abc123.js")
     assert response.status_code == 200

@@ -130,6 +130,8 @@ app.include_router(document_api.router)
 app.include_router(agent_api.router)
 # /install.ps1 nằm ngoài /api: phải đăng ký trước static_files.mount ở cuối tệp.
 app.include_router(agent_install.router)
+import docs_api
+app.include_router(docs_api.router)
 
 
 class AttachmentIn(BaseModel):
@@ -429,6 +431,7 @@ async def _build_system_prompt(
     # Danh mục từ bản CLI đang phục vụ; chỉ chọn hướng dẫn chi tiết theo tin nhắn gần đây.
     # Lệnh cài lấy từ địa chỉ trang đang mở (agent_install.install_command).
     agent_guide = build_agent_guide(install_command=install_command, daily_steps=AGENT_DAILY_STEPS, question=agent_question)
+    agent_guide += docs_api.context(agent_question)
     user = await db.get_user(owner)
     if not user:
         return "\n\n".join(part for part in (base, agent_guide) if part)

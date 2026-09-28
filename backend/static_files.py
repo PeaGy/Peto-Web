@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import html
 import logging
+import re
 import struct
 from pathlib import Path
 
@@ -155,6 +156,23 @@ def mount(app: FastAPI, static_dir: Path) -> bool:
 
         if full_path in ("", "index.html"):
             return await index_page(request)
+
+        if full_path == 'docs' or full_path.startswith('docs/'):
+            import html
+            import docs_api
+            slug = full_path.removeprefix('docs').strip('/')
+            article = next((p for p in docs_api.pages()[1] if p['slug'] == slug), None)
+            if slug and article is None:
+                raise HTTPException(404, 'Không tìm thấy bài hướng dẫn.')
+            title = article['title'] + ' · Peto Docs' if article else 'Peto Docs · Cùng Peto, bắt đầu điều mới'
+            description = article['description'] if article else 'Hướng dẫn tiếng Việt cho Peto Web, Companion và Agent CLI.'
+            page = await anyio.Path(index).read_text(encoding='utf-8')
+            page = re.sub(r'<title>.*?</title>', '<title>' + html.escape(title) + '</title>', page)
+            for name in ('description', 'og:description'):
+                page = re.sub(r'(<meta (?:name|property)="' + name + r'" content=")[^"]*', lambda m: m[1] + html.escape(description, quote=True), page)
+            page = re.sub(r'(<meta property="og:title" content=")[^"]*', lambda m: m[1] + html.escape(title, quote=True), page)
+            page = page.replace('<link rel="preload" href="/api/auth/me" as="fetch" crossorigin />', '')
+            return HTMLResponse(page, headers={'Cache-Control': 'no-cache'})
 
         target = _safe_path(static_dir, full_path)
         if target is not None:
