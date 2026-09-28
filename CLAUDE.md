@@ -713,7 +713,14 @@ keyword guess (`replyEmotion`) almost never matched once the Companion prompt ba
     `MAX_MARKER_CHARS`).
   - It sends one SSE `emotion` event for the first recognised marker, before the words, so the face changes as Peto
     starts replying.
-  - Both filters trim spaces per appended piece, so a note or marker inside a single chunk leaves no double space.
+  - Both filters share `reply_spacing.Spacing`. A reply never starts or ends with whitespace, and the whitespace on
+    both sides of a removed note or marker merges into one gap: the side with more line breaks, otherwise one space.
+    Whitespace away from a removed part stays as the model wrote it. The bubble is `pre-wrap`, and before 2026-09-28
+    only spaces merged, so a reply opening with a note and a blank line streamed as a bubble with two empty lines at the
+    top (history trimmed them, so a reload hid it).
+  - Each module's `strip` runs its filter over the whole text, so history equals the stream character for character.
+    The tests compare them exactly at every cut point, never after collapsing whitespace, which is how the blank lines
+    slipped through before.
   - The reply is stored raw, marker included, so the model keeps seeing its own habit.
 - **History and helpers.**
   - `_public_message(companion=True)` strips markers and returns `emotion`, so a replayed message makes the same face.
@@ -739,6 +746,8 @@ keyword guess (`replyEmotion`) almost never matched once the Companion prompt ba
     smiles), eye open 0..1.2, cheek -1..1.
   - Her brows sit under the bangs, so the faces differ through eyes, mouth, cheeks and head angle. Angles under ~15°
     barely show on her.
+  - Happy closes the eyes fully (eye open 0 plus eye smile gives "^ ^"). At 30% open the owner read it as squinting
+    (2026-09-28).
 - **VRM.** `VRM_EMOTIONS` maps onto the VRM presets (happy, sad, angry, surprised, relaxed) plus a head roll, and uses a
   model's own expression when it defines one with the emotion's name. `vrmFace` returns the weights, the roll and the
   mouth baseline.

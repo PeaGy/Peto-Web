@@ -11,22 +11,17 @@ Chỉ dùng cho hội thoại Companion: câu trả lời ở tab Trò chuyện 
 
 from __future__ import annotations
 
-import re
+from reply_spacing import Spacing
 
 OPEN = "<private>"
 CLOSE = "</private>"
-# Ghi chú chưa đóng thì ẩn tới hết câu trả lời: thà mất chữ còn hơn lộ bí mật.
-_NOTE = re.compile(r"[ \t]*<private>.*?(?:</private>|$)[ \t]*", re.IGNORECASE | re.DOTALL)
 
 
 def strip(text: str) -> str:
-    """Câu trả lời như người dùng thấy: bỏ mọi ghi chú riêng, khoảng trắng chỗ ghi chú gộp lại."""
-    if "<" not in text:
-        return text
-    cleaned, count = _NOTE.subn(" ", text)
-    if not count:
-        return text
-    return re.sub(r" ?\n ?", "\n", re.sub(r" {2,}", " ", cleaned)).strip()
+    """Câu trả lời như người dùng thấy: đúng chữ bộ lọc stream phát ra, nên tải lại trang thấy y như lúc Peto đang nói.
+    Ghi chú chưa đóng thì ẩn tới hết câu: thà mất chữ còn hơn lộ bí mật."""
+    notes = NoteFilter()
+    return notes.feed(text) + notes.flush()
 
 
 def _partial(text: str, tag: str) -> int:
@@ -44,8 +39,7 @@ class NoteFilter:
     def __init__(self) -> None:
         self._buffer = ""
         self._hidden = False
-        self._last = ""
-        self._after_note = False
+        self._spacing = Spacing()
 
     def feed(self, text: str) -> str:
         self._buffer += text
@@ -60,15 +54,15 @@ class NoteFilter:
                     break
                 self._buffer = self._buffer[end + len(CLOSE):]
                 self._hidden = False
-                self._after_note = True
                 continue
             start = lower.find(OPEN)
             if start < 0:
                 keep = _partial(lower, OPEN)
-                out.append(self._emit(self._buffer[: len(self._buffer) - keep]))
+                out.append(self._spacing.text(self._buffer[: len(self._buffer) - keep]))
                 self._buffer = self._buffer[len(self._buffer) - keep:]
                 break
-            out.append(self._emit(self._buffer[:start]))
+            out.append(self._spacing.text(self._buffer[:start]))
+            self._spacing.cut()
             self._buffer = self._buffer[start + len(OPEN):]
             self._hidden = True
         return "".join(out)
@@ -77,15 +71,4 @@ class NoteFilter:
         """Hết câu trả lời: đoạn giữ lại mà không thành thẻ là chữ thường; ghi chú chưa đóng thì bỏ."""
         rest = "" if self._hidden else self._buffer
         self._buffer = ""
-        return self._emit(rest)
-
-    def _emit(self, text: str) -> str:
-        # "one. <private>7</private> Go" thành "one. Go", không còn hai dấu cách liền nhau.
-        if self._after_note and text:
-            if not self._last or self._last[-1].isspace():
-                text = text.lstrip(" \t")
-            if text:
-                self._after_note = False
-        if text:
-            self._last = text
-        return text
+        return self._spacing.text(rest)

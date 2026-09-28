@@ -3,8 +3,12 @@ import pytest
 
 import companion_memory
 import db
+import main
+from ai import StreamChunk
+from ai.mock import MockProvider
 from emotion_tags import EMOTIONS, MarkerFilter, emotion_of, first, strip
 from persona import COMPANION_SYSTEM_PROMPT
+from private_notes import NoteFilter
 from tests.conftest import TEST_OWNER, read_events
 
 
@@ -39,6 +43,27 @@ async def test_emotion_and_private_note_in_one_reply(client):
     events = await turn(client, "Chọn một số đi __camxuc__:think __bimat__:số 7")
     assert [event["emotion"] for event in events if event["type"] == "emotion"] == ["think"]
     assert shown(events) == "Mình chọn xong rồi. Đoán đi!"
+
+
+async def test_a_reply_that_opens_with_a_marker_and_a_note_starts_with_its_words(client, monkeypatch):
+    # Ảnh chụp của chủ web ngày 2026-09-28: bong bóng "Okay, there's a photo on your forehead now" trống hai dòng đầu,
+    # vì ghi chú bị gỡ còn để lại dấu xuống dòng; tải lại trang thì hết. Stream và lịch sử phải giống hệt nhau.
+    original = MockProvider.stream
+
+    async def celebrity(self, *, system_prompt, messages, **kwargs):
+        if "Chế độ Companion" not in system_prompt:
+            async for chunk in original(self, system_prompt=system_prompt, messages=messages, **kwargs):
+                yield chunk
+            return
+        for part in ["<|EMOTE_HAPPY|>\n", "<private>Taylor", " Swift</private>\n", "\nOkay, there's a photo", " on your forehead now.\n"]:
+            yield StreamChunk("text", part)
+
+    monkeypatch.setattr(MockProvider, "stream", celebrity)
+    events = await turn(client, "Chơi đoán người nổi tiếng nha")
+    assert shown(events) == "Okay, there's a photo on your forehead now."
+    assert [event["emotion"] for event in events if event["type"] == "emotion"] == ["happy"]
+    reply = [item for item in (await client.get("/api/companion")).json()["messages"] if item["role"] == "assistant"][-1]
+    assert reply["content"] == shown(events)
 
 
 async def test_unknown_or_missing_markers_send_no_emotion(client):
@@ -83,11 +108,9 @@ CASES = [
     "Thẻ rỗng <||> và <|a|b|> không tính.",
     "Chưa khép <|EMOTE_HAP",
     "Không có thẻ nào.",
+    "<|EMOTE_HAPPY|>\nThẻ nằm riêng một dòng.",
+    "Oh!\n\n<|EMOTE_SURPRISED|>\n\nReally?",
 ]
-
-
-def same(left: str, right: str) -> bool:
-    return " ".join(left.split()) == " ".join(right.split())
 
 
 @pytest.mark.parametrize("text", CASES)
@@ -96,11 +119,26 @@ def test_the_stream_filter_matches_strip_however_the_text_is_cut(text):
     for size in range(1, len(text) + 1):
         markers = MarkerFilter()
         out = "".join(markers.feed(text[i:i + size]) for i in range(0, len(text), size)) + markers.flush()
-        assert same(out, expected) and markers.emotion == emotion, (size, out)
+        assert out == expected and markers.emotion == emotion, (size, out)
     for cut in range(len(text) + 1):
         markers = MarkerFilter()
         out = markers.feed(text[:cut]) + markers.feed(text[cut:]) + markers.flush()
-        assert same(out, expected) and markers.emotion == emotion, (cut, out)
+        assert out == expected and markers.emotion == emotion, (cut, out)
+
+
+@pytest.mark.parametrize("text", [
+    "<|EMOTE_HAPPY|> <private>Taylor Swift</private>\n\nOkay, there's a photo on your forehead now.",
+    "<|EMOTE_THINK|>\n<private>7</private>\nHmm.\n\n<private>8</private> Wait. <|DELAY:1|>\n",
+])
+def test_both_filters_together_stream_exactly_what_history_shows(text):
+    # Thứ tự như main.event_stream: ghi chú trước, thẻ sau; lịch sử dùng main._visible.
+    expected = main._visible(text, "companion")
+    assert not expected.startswith(("\n", " ")) and "\n\n\n" not in expected
+    for size in range(1, len(text) + 1):
+        notes, markers = NoteFilter(), MarkerFilter()
+        out = "".join(markers.feed(notes.feed(text[i:i + size])) for i in range(0, len(text), size))
+        out += markers.feed(notes.flush()) + markers.flush()
+        assert out == expected, (size, out)
 
 
 def test_the_emotion_is_announced_once_and_spacing_stays_clean():
@@ -110,3 +148,5 @@ def test_the_emotion_is_announced_once_and_spacing_stays_clean():
     assert markers.feed(" <|EMOTE_SAD|> ok") == " ok" and markers.take_emotion() is None
     assert strip("<|EMOTE_HAPPY|> Congrats!") == "Congrats!"
     assert strip("Oh! <|EMOTE_SURPRISED|> Really?") == "Oh! Really?"
+    assert strip("<|EMOTE_HAPPY|>\n\nCongrats!") == "Congrats!"
+    assert strip("Oh!\n<|EMOTE_SURPRISED|>\nReally?") == "Oh!\nReally?"

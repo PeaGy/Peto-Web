@@ -16,12 +16,13 @@ export interface FacePreset {
 }
 
 // Giá trị chỉnh theo ảnh chụp Hiyori thật (2026-09-27). Hiyori: khóe miệng -2..1, mặc định 1 (vốn đã cười nhẹ); độ mở
-// mắt 0..1,2, mặc định 1; má -1..1. Mắt cười kiểu "^ ^" là mắt khép bớt cộng mắt cười, không chỉ mắt cười. Chân mày
-// Hiyori nằm dưới tóc mái nên gần như không thấy: mặt phải khác nhau nhờ mắt, miệng, má và góc đầu.
+// mắt 0..1,2, mặc định 1; má -1..1. Chân mày Hiyori nằm dưới tóc mái nên gần như không thấy: mặt phải khác nhau nhờ mắt,
+// miệng, má và góc đầu.
 export const FACE_PRESETS: Record<Emotion, FacePreset> = {
+  // Mắt cười "^ ^": nhắm hẳn cộng mắt cười. Chủ web thấy bản mắt khép còn 30% trông như nheo mắt (2026-09-28).
   happy: {
-    set: { ParamEyeLSmile: 1, ParamEyeRSmile: 1, ParamMouthForm: 1, ParamCheek: 0.8, ParamBrowLY: 0.4, ParamBrowRY: 0.4 },
-    scale: { ParamEyeLOpen: 0.3, ParamEyeROpen: 0.3 },
+    set: { ParamEyeLOpen: 0, ParamEyeROpen: 0, ParamEyeLSmile: 1, ParamEyeRSmile: 1, ParamMouthForm: 1, ParamCheek: 0.8,
+      ParamBrowLY: 0.4, ParamBrowRY: 0.4 },
     add: { ParamAngleZ: 9 },
     mouthOpen: 0.3,
   },

@@ -97,24 +97,24 @@ CASES = [
     "Chưa đóng <private>bí mật mà hết câu",
     "Tim <3 và a < b vẫn là chữ thường, cả <priv nữa",
     "Không có ghi chú nào.",
+    "<private>Taylor Swift</private>\n\nOkay, there's a photo on your forehead now.",
+    "Nice.\n\n<private>7</private>\n\nYour turn.",
+    "Dòng một.\nDòng hai.  Hai dấu cách của model giữ nguyên.",
 ]
-
-
-def same(left: str, right: str) -> bool:
-    return " ".join(left.split()) == " ".join(right.split())
 
 
 @pytest.mark.parametrize("text", CASES)
 def test_the_stream_filter_matches_strip_however_the_text_is_cut(text):
+    # strip chạy chính bộ lọc trên cả câu: stream cắt ở đâu cũng phải ra đúng từng ký tự, kể cả dấu xuống dòng.
     expected = strip(text)
     for size in range(1, len(text) + 1):
         notes = NoteFilter()
         out = "".join(notes.feed(text[i:i + size]) for i in range(0, len(text), size)) + notes.flush()
-        assert same(out, expected), (size, out)
+        assert out == expected, (size, out)
     for cut in range(len(text) + 1):
         notes = NoteFilter()
         out = notes.feed(text[:cut]) + notes.feed(text[cut:]) + notes.flush()
-        assert same(out, expected), (cut, out)
+        assert out == expected, (cut, out)
 
 
 def test_no_double_space_where_a_note_was():
@@ -128,3 +128,14 @@ def test_no_double_space_where_a_note_was():
     # Cả ghi chú nằm gọn trong một mảnh (Grok hay gửi vậy) cũng không để lại hai dấu cách.
     notes = NoteFilter()
     assert notes.feed("one. <private>7</private> Go") + notes.flush() == "one. Go"
+
+
+def test_no_blank_lines_where_a_note_was():
+    # Chủ web gặp ngày 2026-09-28: câu mở đầu bằng ghi chú rồi xuống dòng làm bong bóng trống hai dòng đầu.
+    assert strip("<private>Taylor Swift</private>\n\nOkay, go.") == "Okay, go."
+    assert strip("Nice.\n\n<private>7</private>\n\nYour turn.") == "Nice.\n\nYour turn."
+    assert strip("Nice.\n<private>7</private>\nYour turn.") == "Nice.\nYour turn."
+    # Hai bên chỗ gỡ gộp lại, giữ bên nhiều dòng hơn: đoạn văn vẫn là đoạn văn.
+    assert strip("Nice. <private>7</private>\n\nYour turn.") == "Nice.\n\nYour turn."
+    assert strip("Go ahead.\n<private>7</private>\n") == "Go ahead."
+    assert strip("\n\nHello ") == "Hello"

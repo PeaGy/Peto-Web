@@ -12,12 +12,14 @@ from __future__ import annotations
 
 import re
 
+from reply_spacing import Spacing
+
 EMOTIONS = ("happy", "sad", "angry", "think", "surprised", "awkward", "question", "curious", "neutral")
 _ALIASES = {"surprise": "surprised", "thinking": "think", "thoughtful": "think", "confused": "question",
             "embarrassed": "awkward", "shy": "awkward", "idle": "neutral", "calm": "neutral"}
 # Một thẻ ngắn trên một dòng: dài hơn thì không phải thẻ, trả lại thành chữ thường.
 MAX_MARKER_CHARS = 40
-_MARKER = re.compile(r"[ \t]*<\|([^|<>\n]{1,%d})\|>[ \t]*" % MAX_MARKER_CHARS)
+_MARKER = re.compile(r"<\|([^|<>\n]{1,%d})\|>" % MAX_MARKER_CHARS)
 
 
 def _body_ok(body: str, complete: bool) -> bool:
@@ -48,13 +50,9 @@ def first(text: str) -> str | None:
 
 
 def strip(text: str) -> str:
-    """Câu như người dùng thấy: bỏ mọi thẻ <|...|>, khoảng trắng chỗ thẻ gộp lại."""
-    if "<|" not in text:
-        return text
-    cleaned, count = _MARKER.subn(" ", text)
-    if not count:
-        return text
-    return re.sub(r" ?\n ?", "\n", re.sub(r" {2,}", " ", cleaned)).strip()
+    """Câu như người dùng thấy: đúng chữ bộ lọc stream phát ra (bỏ mọi thẻ <|...|>, khoảng trắng chỗ thẻ gộp lại)."""
+    markers = MarkerFilter()
+    return markers.feed(text) + markers.flush()
 
 
 class MarkerFilter:
@@ -63,8 +61,7 @@ class MarkerFilter:
 
     def __init__(self) -> None:
         self._buffer = ""
-        self._last = ""
-        self._after_marker = False
+        self._spacing = Spacing()
         self.emotion: str | None = None
         self._announced = False
 
@@ -81,23 +78,23 @@ class MarkerFilter:
         while self._buffer:
             start = self._buffer.find("<")
             if start < 0:
-                out.append(self._emit(self._buffer))
+                out.append(self._spacing.text(self._buffer))
                 self._buffer = ""
                 break
-            out.append(self._emit(self._buffer[:start]))
+            out.append(self._spacing.text(self._buffer[:start]))
             rest = self._buffer[start:]
             if len(rest) == 1:
                 self._buffer = rest  # chỉ có "<": chờ xem sau đó có phải "|" không
                 break
             if rest[1] != "|":
-                out.append(self._emit("<"))
+                out.append(self._spacing.text("<"))
                 self._buffer = rest[1:]
                 continue
             end = rest.find("|>", 2)
             body = rest[2:end] if end >= 0 else rest[2:]
             # Thẻ bị cắt ngay trước ">" thì phần thân tạm có "|" ở cuối.
             if not _body_ok(body if end >= 0 or not body.endswith("|") else body[:-1], complete=end >= 0):
-                out.append(self._emit("<|"))
+                out.append(self._spacing.text("<|"))
                 self._buffer = rest[2:]
                 continue
             if end < 0:
@@ -107,20 +104,10 @@ class MarkerFilter:
             if emotion and self.emotion is None:
                 self.emotion = emotion
             self._buffer = rest[end + 2:]
-            self._after_marker = True
+            self._spacing.cut()
         return "".join(out)
 
     def flush(self) -> str:
         """Hết câu: phần còn giữ mà không thành thẻ là chữ thường."""
         rest, self._buffer = self._buffer, ""
-        return self._emit(rest)
-
-    def _emit(self, text: str) -> str:
-        if self._after_marker and text:
-            if not self._last or self._last[-1].isspace():
-                text = text.lstrip(" \t")
-            if text:
-                self._after_marker = False
-        if text:
-            self._last = text
-        return text
+        return self._spacing.text(rest)
