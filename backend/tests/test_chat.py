@@ -235,6 +235,15 @@ async def test_prompt_teaches_peto_agent_with_this_sites_install_command(client,
     await _send(client, "chào")
     assert "`irm https://<địa chỉ Peto>/install.ps1 | iex`" in prompts[0], "không có HTTPS thì không đưa tên miền"
     assert "http://test" not in prompts[0]
+    assert 'docs-mcp.json' not in prompts[0]
+    for mode in ('chat', 'companion'):
+        events = await _send(client, 'Peto Agent thêm MCP như thế nào?', mode=mode)
+        assert '/mcp add docs docs-mcp.json' in prompts[-1]
+        conversation = next(e['conversation_id'] for e in events if e['type'] == 'meta')
+        await _send(client, 'Bước tiếp theo làm gì?', conversation, mode=mode)
+        assert '/mcp enable docs' in prompts[-1]
+    await _send(client, 'chào')
+    assert 'docs-mcp.json' not in prompts[-1]
 
 
 async def test_unknown_mode_is_rejected(client):

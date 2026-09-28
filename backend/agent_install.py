@@ -108,6 +108,8 @@ def build_wheel(server: str) -> Wheel:
             if "__pycache__" not in path.parts:
                 files.append((path.relative_to(CLI_DIR).as_posix(), path.read_bytes()))
     files.append((DEFAULT_SERVER_FILE, f"{server}\n".encode("utf-8")))
+    catalog = CLI_DIR / 'peto_agent' / 'command_catalog.json'
+    files.append(('peto_agent/command_catalog.json', catalog.read_bytes()))
 
     metadata = ["Metadata-Version: 2.1", f"Name: {meta['name']}", f"Version: {version}"]
     if meta.get("description"):

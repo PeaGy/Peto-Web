@@ -57,6 +57,13 @@ bỏ thì mở **Edit environment variables for your account** trên Windows.
 
 ### Cài từ mã nguồn
 
+Từ 0.14.1, danh mục lệnh dùng chung nằm ở `peto_agent/command_catalog.json`: CLI dùng tên, mô tả và
+options cho `/help`/gợi ý; web dùng cùng dữ liệu và thêm `usage`, `details`, `since` để hướng dẫn.
+Thêm hoặc đổi lệnh cần cập nhật danh mục cùng code thực thi. Kiểm thử đối chiếu bộ xử lý lệnh với tài liệu
+và kiểm tra danh mục có trong wheel tải về. Các lựa chọn model/effort thực tế vẫn lấy từ máy chủ theo tài khoản.
+Web đọc phiên bản từ bộ cài đang phục vụ, không biết phiên bản đang cài trên máy người dùng.
+Hướng dẫn chi tiết được chọn theo ba tin nhắn người dùng gần nhất trong hội thoại, không đọc cấu hình MCP hay skills riêng.
+
 Khi sửa chính CLI này:
 
 ```powershell

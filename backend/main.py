@@ -411,6 +411,7 @@ async def get_companion(owner: str = Depends(current_owner)) -> dict:
 async def _build_system_prompt(
     owner: str, mode: str = "chat", install_command: str = "", persona: str = "assistant",
     conversation_id: str | None = None,
+    agent_question: str = '',
 ) -> str:
     """Prompt gốc: trợ lý, nhập vai, hoặc Companion. Companion là persona riêng, không
     vá lên trợ lý. Sau đó ghép hướng dẫn Peto Agent, trí nhớ Discord và hồ sơ người dùng.
@@ -425,9 +426,9 @@ async def _build_system_prompt(
         base = ROLEPLAY_SYSTEM_PROMPT
     else:
         base = SYSTEM_PROMPT
-    # Hướng dẫn Peto Agent giống nhau với mọi người trên cùng trang, nên đứng ngay sau prompt gốc, trước phần riêng
-    # của từng người. Lệnh cài lấy từ địa chỉ trang đang mở (agent_install.install_command).
-    agent_guide = build_agent_guide(install_command=install_command, daily_steps=AGENT_DAILY_STEPS)
+    # Danh mục từ bản CLI đang phục vụ; chỉ chọn hướng dẫn chi tiết theo tin nhắn gần đây.
+    # Lệnh cài lấy từ địa chỉ trang đang mở (agent_install.install_command).
+    agent_guide = build_agent_guide(install_command=install_command, daily_steps=AGENT_DAILY_STEPS, question=agent_question)
     user = await db.get_user(owner)
     if not user:
         return "\n\n".join(part for part in (base, agent_guide) if part)
@@ -662,7 +663,9 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                     yield sse({"type": "reading", "text": ""})
                 history, system_prompt = await asyncio.gather(
                     anyio.to_thread.run_sync(_to_chat_messages, rows),
-                    _build_system_prompt(owner, mode, install_command, persona, conversation_id),
+                    _build_system_prompt(owner, mode, install_command, persona, conversation_id,
+                        agent_question='\n'.join(str(row.get('content', ''))[:4000]
+                            for row in [r for r in rows if r.get('role') == 'user'][-3:])),
                 )
                 document_session = DocumentSession(owner, conversation_id) if mode == 'chat' else None
                 if request.document_mode and mode == 'chat':

@@ -74,6 +74,7 @@ def test_wheel_is_reproducible_and_matches_its_record():
     dist_info = f"peto-{version}.dist-info"
     assert names[-1] == f"{dist_info}/RECORD"
     assert "peto_agent/__main__.py" in files
+    assert files['peto_agent/command_catalog.json'] == (agent_install.CLI_DIR / 'peto_agent/command_catalog.json').read_bytes()
     assert not any("__pycache__" in name or name.startswith("tests/") for name in names)
     assert files["peto_agent/default_server.txt"].decode() == f"{ORIGIN}\n"
     assert "peto = peto_agent.__main__:main" in files[f"{dist_info}/entry_points.txt"].decode()

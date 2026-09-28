@@ -14,32 +14,11 @@ class Command:
     options: tuple[tuple[str, str], ...] = ()
 
 
-COMMANDS = (
-    Command("/moi", "Bắt đầu hội thoại mới"),
-    Command("/resume", "Mở lại hội thoại gần nhất của thư mục này"),
-    Command("/retry", "Thử lại bước bị gián đoạn kết nối"),
-    Command("/diff", "Xem bản sửa tệp trực tiếp gần nhất đã lưu của dự án"),
-    Command("/undo", "Hoàn tác bản sửa tệp trực tiếp gần nhất, kể cả sau khi đóng CLI"),
-    Command("/compact", "Tóm tắt hội thoại dài (dùng một lượt gọi model)"),
-    Command("/init", "Khảo sát dự án rồi viết AGENTS.md (dùng vài bước)"),
-    Command("/nho", "Ghi một điều Peto cần nhớ về dự án vào AGENTS.md (không tốn bước)"),
-    Command("/permissions", "Xem lệnh, trang đã nhớ trong phiên và luôn cho phép ở dự án này",
-            (("clear", "Xóa quyền đã nhớ trong phiên và của dự án này"),)),
-    Command("/trinhduyet", "Hiện hoặc ẩn cửa sổ trình duyệt của Peto",
-            (("xoa", "Quên đăng nhập và dữ liệu trang của dự án này"),)),
-    # Lựa chọn thật theo quyền của tài khoản được đặt lại bằng use_models() sau khi hỏi máy chủ.
-    Command("/model", "Xem hoặc đổi model", (("peto", "Peto · Mặc định"),)),
-    Command("/effort", "Xem hoặc đổi mức suy nghĩ: thap, vua, cao",
-            (("thap", "Nhanh, suy nghĩ ít"), ("vua", "Cân bằng giữa nhanh và kỹ"),
-             ("cao", "Suy nghĩ kỹ hơn, mỗi bước tính 2 bước"))),
-    Command("/usage", "Số bước và token đã dùng hôm nay"),
-    Command("/help", "Xem các lệnh"),
-    Command("/skill", "Xem skills đã nạp, hoặc /skill tên [yêu cầu]"),
-    Command("/mcp", "Quản lý công cụ MCP", (("add", "Thêm cấu hình: tên tệp.json"),
-            ("enable", "Bật kết nối trong phiên"), ("disable", "Tắt kết nối"), ("tools", "Xem công cụ"))),
-    Command("/thoat", "Thoát peto"),
-)
+# Shared with the web guide; runtime model/effort options are still supplied by the server.
+from .catalog import commands as catalog_commands
 
+COMMANDS = tuple(Command(item['name'], item['description'], tuple(tuple(option) for option in item['options']))
+                 for item in catalog_commands())
 
 @dataclass(frozen=True)
 class Suggestion:

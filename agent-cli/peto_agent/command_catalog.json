@@ -1,0 +1,186 @@
+{
+  "schema_version": 1,
+  "commands": [
+    {
+      "name": "/moi",
+      "description": "Bắt đầu hội thoại mới",
+      "options": [],
+      "usage": "/moi",
+      "since": "0.0.0",
+      "details": "Bắt đầu hội thoại mới."
+    },
+    {
+      "name": "/resume",
+      "description": "Mở lại hội thoại gần nhất của thư mục này",
+      "options": [],
+      "usage": "/resume",
+      "since": "0.0.0",
+      "details": "Mở lại hội thoại đã lưu cho thư mục hiện tại, không tự chạy lại lệnh; nếu cần tiếp tục hãy giao việc tiếp."
+    },
+    {
+      "name": "/retry",
+      "description": "Thử lại bước bị gián đoạn kết nối",
+      "options": [],
+      "usage": "/retry",
+      "since": "0.0.0",
+      "details": "Thử lại bước bị gián đoạn kết nối."
+    },
+    {
+      "name": "/diff",
+      "description": "Xem bản sửa tệp trực tiếp gần nhất đã lưu của dự án",
+      "options": [],
+      "usage": "/diff",
+      "since": "0.0.0",
+      "details": "Xem bản sửa tệp trực tiếp gần nhất đã lưu của dự án."
+    },
+    {
+      "name": "/undo",
+      "description": "Hoàn tác bản sửa tệp trực tiếp gần nhất, kể cả sau khi đóng CLI",
+      "options": [],
+      "usage": "/undo",
+      "since": "0.0.0",
+      "details": "Hoàn tác bản sửa tệp trực tiếp gần nhất, kể cả sau khi đóng CLI."
+    },
+    {
+      "name": "/compact",
+      "description": "Tóm tắt hội thoại dài (dùng một lượt gọi model)",
+      "options": [],
+      "usage": "/compact",
+      "since": "0.0.0",
+      "details": "Tóm tắt hội thoại dài để giảm ngữ cảnh; tốn một lượt gọi model. Muốn giữ công việc đang làm thì cân nhắc /compact thay vì /moi."
+    },
+    {
+      "name": "/init",
+      "description": "Khảo sát dự án rồi viết AGENTS.md (dùng vài bước)",
+      "options": [],
+      "usage": "/init",
+      "since": "0.0.0",
+      "details": "Khảo sát dự án rồi viết AGENTS.md (dùng vài bước)."
+    },
+    {
+      "name": "/nho",
+      "description": "Ghi một điều Peto cần nhớ về dự án vào AGENTS.md (không tốn bước)",
+      "options": [],
+      "usage": "/nho <ghi chú>",
+      "since": "0.0.0",
+      "details": "Ghi quy ước dự án vào AGENTS.md, không gọi model. Khác với skills chỉ nạp khi cần."
+    },
+    {
+      "name": "/permissions",
+      "description": "Xem lệnh, trang đã nhớ trong phiên và luôn cho phép ở dự án này",
+      "options": [
+        [
+          "clear",
+          "Xóa quyền đã nhớ trong phiên và của dự án này"
+        ]
+      ],
+      "usage": "/permissions [clear]",
+      "since": "0.0.0",
+      "details": "Xem hoặc xóa quyền lệnh/trang đã nhớ trong phiên và trong dự án. Công cụ thông thường hỏi trước khi sửa/chạy; quyền đã nhớ có thể bỏ qua lần hỏi tương ứng. MCP vẫn hỏi mỗi lần gọi riêng."
+    },
+    {
+      "name": "/trinhduyet",
+      "description": "Hiện hoặc ẩn cửa sổ trình duyệt của Peto",
+      "options": [
+        [
+          "xoa",
+          "Quên đăng nhập và dữ liệu trang của dự án này"
+        ]
+      ],
+      "usage": "/trinhduyet [xoa]",
+      "since": "0.0.0",
+      "details": "Edge/Chrome dùng hồ sơ riêng. Có thể xem và thao tác localhost; trang ngoài chỉ xem, hỏi quyền theo tên miền. /trinhduyet hiện/ẩn cửa sổ; /trinhduyet xoa quên dữ liệu đăng nhập. Người dùng tự nhập mật khẩu. Ảnh kiểm tra lưu 7 ngày ở %LOCALAPPDATA%\\PetoAgent\\screenshots."
+    },
+    {
+      "name": "/model",
+      "description": "Xem hoặc đổi model",
+      "options": [
+        [
+          "peto",
+          "Peto · Mặc định"
+        ]
+      ],
+      "usage": "/model [tên]",
+      "since": "0.0.0",
+      "details": "/model hiển thị các model tài khoản được dùng. Danh sách và effort lấy từ máy chủ, không suy đoán quyền model của người đang hỏi. /usage hoặc peto status xem sử dụng thực tế."
+    },
+    {
+      "name": "/effort",
+      "description": "Xem hoặc đổi mức suy nghĩ: thap, vua, cao",
+      "options": [
+        [
+          "thap",
+          "Nhanh, suy nghĩ ít"
+        ],
+        [
+          "vua",
+          "Cân bằng giữa nhanh và kỹ"
+        ],
+        [
+          "cao",
+          "Suy nghĩ kỹ hơn, mỗi bước tính 2 bước"
+        ]
+      ],
+      "usage": "/effort [mức]",
+      "since": "0.0.0",
+      "details": "Lựa chọn phụ thuộc model đang chọn; /effort hiển thị các mức thực tế từ máy chủ. thap=low, vua=medium, cao=high. Với model OpenAI được hỗ trợ còn có none, xhigh, max; không khẳng định mọi model nhận mọi mức. /effort none, /effort xhigh, /effort max. Mức high/xhigh/max nhân đôi chi phí bước cơ sở của model; không phải mọi model đều tốn đúng 1 hoặc 2 bước."
+    },
+    {
+      "name": "/usage",
+      "description": "Số bước và token đã dùng hôm nay",
+      "options": [],
+      "usage": "/usage",
+      "since": "0.0.0",
+      "details": "Số bước và token đã dùng hôm nay."
+    },
+    {
+      "name": "/help",
+      "description": "Xem các lệnh",
+      "options": [],
+      "usage": "/help",
+      "since": "0.0.0",
+      "details": "Xem các lệnh."
+    },
+    {
+      "name": "/skill",
+      "description": "Xem skills đã nạp, hoặc /skill tên [yêu cầu]",
+      "options": [],
+      "usage": "/skill [tên] [yêu cầu]",
+      "since": "0.13.0",
+      "details": "Skills là hướng dẫn, không cấp thêm quyền. Đặt .peto/skills/<tên>/SKILL.md hoặc .agents/skills/<tên>/SKILL.md trong dự án. Frontmatter cần name (chữ thường/số/gạch nối) và description. /skill xem danh sách; /skill review nạp không gọi model; /skill review Rà code nạp và giao việc. Peto cũng tự nạp skill phù hợp. Tài liệu phụ tính từ thư mục SKILL.md. Tối đa 32 skills, 24.000 ký tự mỗi skill. Chưa có skills toàn máy. Sau khi sửa hướng dẫn, gọi lại /skill tên."
+    },
+    {
+      "name": "/mcp",
+      "description": "Quản lý công cụ MCP",
+      "options": [
+        [
+          "add",
+          "Thêm cấu hình: tên tệp.json"
+        ],
+        [
+          "enable",
+          "Bật kết nối trong phiên"
+        ],
+        [
+          "disable",
+          "Tắt kết nối"
+        ],
+        [
+          "tools",
+          "Xem công cụ"
+        ]
+      ],
+      "usage": "/mcp [add tên tệp.json | enable tên | disable tên | tools tên]",
+      "since": "0.14.0",
+      "details": "MCP cung cấp công cụ bên ngoài. /mcp add docs docs-mcp.json nhập một cấu hình JSON từ tệp trong dự án, lưu trong hồ sơ CLI, chưa kết nối. /mcp enable docs hỏi quyền rồi bật trong phiên; /mcp tools docs xem công cụ; /mcp disable docs tắt. Mỗi lần gọi công cụ hỏi quyền riêng, không tự thử lại khi lỗi. HTTP dùng {\"url\":\"https://<endpoint-thực>/mcp\",\"headers\":{\"Authorization\":\"Bearer ${DOCS_API_KEY}\"}}; bỏ headers nếu không cần. Stdio dùng {\"command\":\"node\",\"args\":[\"C:/tools/server.js\"],\"env\":{\"SERVICE_API_KEY\":\"${SERVICE_API_KEY}\"}}. Chương trình cần cài sẵn. Khóa đặt ở biến môi trường trước khi mở CLI, không gửi khóa vào chat. MCP cục bộ chạy với quyền tài khoản máy, không nằm trong sandbox công cụ tệp Peto. Hỗ trợ stdio và Streamable HTTP; chưa hỗ trợ OAuth, SSE cũ, prompts/resources/sampling/elicitation. Mỗi phiên bắt đầu tắt hết MCP; /resume không tự bật lại. Tối đa 16 máy chủ, 128 công cụ và 64 KB schema/máy chủ, 30 giây/yêu cầu."
+    },
+    {
+      "name": "/thoat",
+      "description": "Thoát peto",
+      "options": [],
+      "usage": "/thoat",
+      "since": "0.0.0",
+      "details": "Thoát peto."
+    }
+  ]
+}
