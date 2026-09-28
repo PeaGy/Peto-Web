@@ -29,6 +29,10 @@ Work is later scope.
 It distinguishes agreed direction from open implementation choices and does not
 authorize deployment. Consult it when continuing Agent/CLI discussions or work.
 
+Minecraft planning context (Peto joining the owner's LAN world, from AIRI's Minecraft integration, 2026-09-28) is
+recorded in [PETO_MINECRAFT_PLAN.md](PETO_MINECRAFT_PLAN.md) in the same way. Nothing of it is built yet; consult it
+before any Minecraft work.
+
 **Every comment, docstring, log message, error message, and user-facing string in this
 codebase is written in Vietnamese.** Keep it that way when adding code — an English error
 string would be visibly out of place in the UI. Identifiers, type names and this file stay
@@ -785,10 +789,18 @@ keyword guess (`replyEmotion`) almost never matched once the Companion prompt ba
 On 2026-09-28 the owner decided Companion should only gain features AIRI has, and picked AIRI's web-search module from
 the list, with option C from mockups: the page shows no sources.
 
-- **Server.** A Companion turn uses `web_search="auto"`, so Peto decides when to search.
-  - A page sending `on` gets `auto`; there is no forced search in Companion.
-  - A page sending `off` (one from before this change) keeps search off.
+- **Switch, off by default.** Later on 2026-09-28 a Companion reply on the owner's phone was slow. The owner then picked
+  a switch in Settings → "Tra web" (option A, right after Trí nhớ Companion, like AIRI's Modules → Web Search), off by
+  default as in AIRI.
+  - `companionSearch.ts` keeps it per browser (`peto-companion-web-search`); `SearchSettings.tsx` renders it.
+  - Companion sends `off` unless the switch is on.
+- **Server.** With the switch on, a Companion turn uses `web_search="auto"`, so Peto decides when to search.
+  - A page sending `on` gets `auto`; there is no forced search in Companion. `off` keeps search off.
   - `PETO_WEB_SEARCH_ENABLED=false` still turns search off for everyone.
+- **Telling a search from a slow model.** `journalctl -u peto-web` has one `chat_timing` line per turn (`first_text_ms`,
+  `total_ms`, `search`). Each model call also logs a `model_usage` line (`elapsed_ms`, `reasoning_tokens`,
+  `search_calls_seen`). `search_calls_seen` counts the search calls in xAI's own output, so it catches a search even if
+  the page never showed "Đang tra web…".
 - **Spoken instructions.**
   - `_stream_reply(spoken=True)` sets `web_search.spoken_reply`, a ContextVar like `document_tools.current_session`,
     and `search_context` then returns `SPOKEN_SEARCH_CONTEXT`. No provider signature changed.
@@ -803,7 +815,8 @@ the list, with option C from mockups: the page shows no sources.
   `onSearch`). Sources still stream and are stored with the message, but Companion never renders them.
 - **Tests.**
   - `test_web_search.py` checks the instructions through the real provider with a fake client, and the replace path.
-  - `Companion.test.tsx` checks the status and bubble, the cleared draft, and that no source is shown.
+  - `Companion.test.tsx` checks the status and bubble, the cleared draft, that no source is shown, and the switch (off
+    by default, `auto` once on).
   - The mock provider never fakes a search (`test_mock_does_not_fabricate_search_results`). The real-render check on
     2026-09-28 therefore used a scratch server that patched the mock.
   - Not yet tried with real Grok.
@@ -1284,8 +1297,8 @@ results in the next step. The server stores no conversation (`store=False`), and
   `\text{…}~x` stay spaces. It scans by hand instead of using lookbehind so older Safari can parse the bundle. The chat
   prompt also asks for `\lnot` or `\overline{…}`.
 - Per-user preferences (effort, theme, imagine quality/resolution/ratio/count, voice on/off, source, voices, fallback
-  and the user's own TTS/STT keys, hearing source/mic/language/sensitivity/auto-send, Companion mute, character motion
-  and view) live in
+  and the user's own TTS/STT keys, hearing source/mic/language/sensitivity/auto-send, Companion mute and web search,
+  character motion and view) live in
   `localStorage` behind try/catch helpers. In-flight Imagine state lives in component state,
   so it survives switching tabs but not a page reload.
 - `App.tsx` owns chat plus the app shell; `Imagine.tsx` and `Companion.tsx` are mounted alongside

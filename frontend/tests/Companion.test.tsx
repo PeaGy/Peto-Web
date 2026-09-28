@@ -142,7 +142,7 @@ it('gửi ở chế độ Companion và Peto tự nói khi trả lời xong', as
 
   await sendInCompanion('hi');
   expect(vi.mocked(api.sendMessage).mock.calls[0][0]).toMatchObject({
-    message: 'hi', conversationId: null, mode: 'companion', effort: 'low', webSearch: 'auto',
+    message: 'hi', conversationId: null, mode: 'companion', effort: 'low', webSearch: 'off',
   });
   await waitFor(() => expect(played).toHaveLength(1));
   expect(speakBodies()).toEqual([{ text: 'Hey! Good to see you.', voice: 'gentle-2' }]);
@@ -658,6 +658,7 @@ it('nghe lại tin cũ thì nhân vật làm lại đúng mặt đã chọn cho 
 });
 
 it('Peto tự tra web khi cần: báo Đang tra web, bỏ chữ viết trước lúc tra, và không hiện nguồn (phương án C)', async () => {
+  localStorage.setItem('peto-companion-web-search', '1');
   let resume!: () => void;
   vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers) => {
     handlers.onMeta?.('C1', 'low');
@@ -686,4 +687,29 @@ it('Peto tự tra web khi cần: báo Đang tra web, bỏ chữ viết trước 
   expect(screen.queryByText('Weather today')).toBeNull();
   expect(document.querySelector('a[href="https://example.com/weather"]')).toBeNull();
   expect(screen.getByTestId('stage').dataset.emotion).toBe('think');
+});
+
+it('tra web trong Companion mặc định tắt như AIRI; bật ở Cài đặt → Tra web thì lượt sau Peto được tra', async () => {
+  vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers) => {
+    handlers.onMeta?.('C1', 'low');
+    handlers.onDelta?.('Sure.');
+    handlers.onDone?.();
+  });
+  await openCompanion();
+  await sendInCompanion('hi');
+  expect(vi.mocked(api.sendMessage).mock.calls[0][0]).toMatchObject({ mode: 'companion', webSearch: 'off' });
+  await chatColumn().findByText('Sure.');
+
+  const settings = await openSettings();
+  const toggle = await settings.findByRole('switch', { name: 'Cho Peto tra web trong Companion' });
+  expect((toggle as HTMLInputElement).checked).toBe(false);
+  expect(settings.getByText(/Đang tắt: trong Companion, Peto trả lời bằng những gì đã biết/)).toBeTruthy();
+  fireEvent.click(toggle);
+  expect((toggle as HTMLInputElement).checked).toBe(true);
+  expect(localStorage.getItem('peto-companion-web-search')).toBe('1');
+  fireEvent.click(settings.getByRole('button', { name: 'Đóng cài đặt' }));
+
+  await sendInCompanion('What is the weather today?');
+  await waitFor(() => expect(api.sendMessage).toHaveBeenCalledTimes(2));
+  expect(vi.mocked(api.sendMessage).mock.calls[1][0]).toMatchObject({ mode: 'companion', webSearch: 'auto' });
 });

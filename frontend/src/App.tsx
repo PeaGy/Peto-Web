@@ -52,13 +52,14 @@ const companion = preloadable(() => import("./Companion"));
 const profileSettings = preloadable(() => import("./ProfileSettings"));
 const voiceSettings = preloadable(() => import("./VoiceSettings"));
 const memorySettings = preloadable(() => import("./MemorySettings"));
+const searchSettings = preloadable(() => import("./SearchSettings"));
 const agentSettings = preloadable(() => import("./AgentSettings"));
 const characterSettings = preloadable(() => import("./CharacterSettings"));
 const loadImagine = imagine.preload;
 const loadCompanion = companion.preload;
 const loadSettings = () => Promise.all([
-  profileSettings.preload(), voiceSettings.preload(), memorySettings.preload(), agentSettings.preload(),
-  characterSettings.preload(),
+  profileSettings.preload(), voiceSettings.preload(), memorySettings.preload(), searchSettings.preload(),
+  agentSettings.preload(), characterSettings.preload(),
 ]);
 // Tải trước: lỗi ở đây bỏ qua, lần mở thật sẽ tải lại và LazyBoundary lo phần báo lỗi.
 const preload = (load: () => Promise<unknown>) => () => void load().catch(() => {});
@@ -67,6 +68,7 @@ const Companion = companion.View;
 const ProfileSettings = profileSettings.View;
 const VoiceSettings = voiceSettings.View;
 const MemorySettings = memorySettings.View;
+const SearchSettings = searchSettings.View;
 const AgentSettings = agentSettings.View;
 const CharacterSettings = characterSettings.View;
 
@@ -1750,6 +1752,10 @@ export default function App() {
 
           <LazyBoundary><Suspense fallback={null}>
             {settingsVisited && <MemorySettings open={settingsOpen} focusRequest={memoryFocus} onUnauthorized={handleUnauthorized} />}
+          </Suspense></LazyBoundary>
+
+          <LazyBoundary><Suspense fallback={null}>
+            {settingsVisited && <SearchSettings />}
           </Suspense></LazyBoundary>
 
           <LazyBoundary><Suspense fallback={null}>

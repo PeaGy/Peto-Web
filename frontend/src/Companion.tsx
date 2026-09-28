@@ -29,6 +29,7 @@ import type { CompanionActivity } from './companionMotion';
 import { asStageEmotion, replyEmotion, type StageCue, type StageEmotion } from './characterExpressions';
 import { SceneBackdrop, ScenePicker, useCompanionScene } from './CompanionScenes';
 import { GlobeIcon } from './WebSources';
+import { readCompanionSearch } from './companionSearch';
 
 const MUTED_KEY = "peto-companion-muted";
 const Live2DStage = lazy(() => import("./Live2DStage"));
@@ -303,7 +304,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
     let turnEmotion: StageEmotion | undefined;
     try {
       await sendMessage(
-        { message: text, conversationId, effort: "low", webSearch: "auto", mode: "companion" },
+        { message: text, conversationId, effort: "low", webSearch: readCompanionSearch() ? "auto" : "off", mode: "companion" },
         {
           onMeta: (id, _effort, stored) => {
             accepted = true;

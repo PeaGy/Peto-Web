@@ -10,6 +10,7 @@ export async function preloadLazyParts(): Promise<void> {
     import('../src/ProfileSettings'),
     import('../src/VoiceSettings'),
     import('../src/MemorySettings'),
+    import('../src/SearchSettings'),
     import('../src/AgentSettings'),
     import('../src/CharacterSettings'),
     import('../src/markdownMath'),
