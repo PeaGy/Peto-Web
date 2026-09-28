@@ -23,6 +23,7 @@ from .metrics import Metrics
 from .project_guide import GuideUpdate, guides
 from .presentation import AgentUI
 from .skills import Skills
+from .mcp import MCP
 from .workspace import Workspace, WorkspaceError, digest, list_entries, text_bytes
 
 MAX_READ_LINES = 400
@@ -35,7 +36,7 @@ REFUSED = "Người dùng không đồng ý {action}. Đừng lặp lại y nguy
 # Khả năng báo cho máy chủ trong context của mỗi bước, để máy chủ chỉ gửi công cụ và tham số bản CLI này hiểu
 # (agent_tools.py): "cwd" từ 0.9.8, "browser" (xem trang trên máy) từ 0.10.0, "browser_act" (bấm, gõ, nhờ người dùng
 # đăng nhập) từ 0.11.0, "browser_outside" (xem trang ngoài máy) từ 0.12.0.
-FEATURES = ("cwd", "browser", "browser_act", "browser_outside", "skills")
+FEATURES = ("cwd", "browser", "browser_act", "browser_outside", "skills", "mcp")
 # Câu hỏi khi Peto thao tác lần đầu trên một trang: [y] là cho trang đó tới hết yêu cầu (chủ web chọn ngày 2026-09-23).
 PAGE_QUESTION = "    Đồng ý cho trang này tới hết yêu cầu? [y] có  [n] không  [a] có cho mọi bước trong yêu cầu này › "
 # Trang ngoài (chủ web chọn ngày 2026-09-24): hỏi theo tên miền; địa chỉ dài bất thường thì hỏi cho đúng địa chỉ đó.
@@ -101,6 +102,7 @@ class Tools:
         self.ws = workspace
         self.ui = ui
         self.skills = Skills(workspace)
+        self.mcp = MCP(workspace, ui)
         self.approve_all = False
         self.changes: dict[str, list[int]] = {}
         self.commands: list[dict] = []
@@ -140,6 +142,8 @@ class Tools:
         self.checked_revision = -1
         self._handlers = {
             "load_skill": self.load_skill,
+            "mcp_list_tools": self.mcp.list_tools,
+            "mcp_call_tool": self.mcp.call,
             "update_plan": self.update_plan,
             "list_files": self.list_files,
             "read_file": self.read_file,

@@ -37,7 +37,7 @@ def labels(text: str) -> list[str]:
 
 def test_suggestions_filter_commands_and_effort_levels():
     assert labels("/") == ["/moi", "/resume", "/retry", "/diff", "/undo", "/compact", "/init", "/nho", "/permissions",
-                           "/trinhduyet", "/model", "/effort", "/usage", "/help", "/skill", "/thoat"]
+                           "/trinhduyet", "/model", "/effort", "/usage", "/help", "/skill", "/mcp", "/thoat"]
     assert labels("/trinhduyet ") == ["xoa"]
     assert labels("/nhớ") == ["/nho"], "gõ có dấu vẫn ra /nho"
     assert labels("/re") == ["/resume", "/retry"]

@@ -438,6 +438,14 @@ def session(ui: UI) -> int:
             if name == "/nho":
                 work.note(value)
                 continue
+            if name == "/mcp":
+                try:
+                    work.tools.mcp.command(value)
+                except (WorkspaceError, OSError) as err:
+                    ui.failure(str(err))
+                except (KeyboardInterrupt, EOFError):
+                    ui.line("Đã dừng MCP.", "dim")
+                continue
             if name == "/skill":
                 if not value:
                     entries = work.tools.skills.catalog()
@@ -492,6 +500,7 @@ def session(ui: UI) -> int:
         if stopped := work.tools.jobs.stop_all():
             ui.line(f"Đã dừng {len(stopped)} lệnh nền: " + ", ".join(stopped), "dim")
         work.tools.close_browser()
+        work.tools.mcp.close()
     ui.line("Tạm biệt!", "dim")
     return 0
 

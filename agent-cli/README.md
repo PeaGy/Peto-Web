@@ -102,6 +102,60 @@ Tên gồm chữ thường, số và gạch nối, tối đa 64 ký tự. Mỗi 
 quét tối đa 128 mục mỗi thư mục gốc. Chưa nạp skills toàn máy và chưa hỗ trợ MCP.
 Cập nhật cả máy chủ và CLI để Peto có công cụ tự nạp skill.
 
+## MCP (CLI 0.14.0)
+
+Cập nhật cả backend và CLI. MCP dùng công cụ bên ngoài; cấu hình lưu trong `mcp.json` cạnh cấu hình
+đăng nhập của CLI, không tự đọc hay bật MCP từ repo. Mỗi phiên bắt đầu với tất cả kết nối tắt.
+
+Tạo một tệp JSON trong dự án, ví dụ `docs-mcp.json` cho máy chủ từ xa:
+
+```json
+{
+  "url": "https://dia-chi-nha-cung-cap/mcp",
+  "headers": {"Authorization": "Bearer ${DOCS_API_KEY}"}
+}
+```
+
+URL là ví dụ: thay bằng endpoint MCP thực tế của nhà cung cấp. Bỏ `headers` nếu máy chủ không cần khóa.
+Đặt biến môi trường trong terminal trước khi mở Peto; không ghi khóa vào JSON hoặc chat.
+Hỗ trợ header `Authorization`, `X-API-Key`, `Api-Key`, giá trị lấy qua `${TEN_BIEN}`.
+
+Máy chủ chạy cục bộ dùng cấu hình riêng:
+
+```json
+{
+  "command": "node",
+  "args": ["C:/tools/my-mcp/server.js"],
+  "env": {"SERVICE_API_KEY": "${SERVICE_API_KEY}"}
+}
+```
+
+Chương trình phải được cài sẵn. CLI chạy trực tiếp command/args ở thư mục dự án, không tự mở shell hay tự cài gói.
+Trên Windows ưu tiên chương trình `.exe` hoặc `node` với đường dẫn script. MCP chỉ nhận các biến hệ thống cơ bản
+và biến được khai báo trong `env`; không tự thừa hưởng toàn bộ khóa của terminal.
+
+```text
+/mcp add docs docs-mcp.json
+/mcp enable docs
+/mcp tools docs
+/mcp
+/mcp disable docs
+```
+
+`add` lưu cấu hình, chưa chạy. `enable` hiển thị cấu hình và hỏi xác nhận trước khi kết nối;
+MCP cục bộ chạy với quyền tài khoản máy, không phải sandbox của công cụ đọc/sửa tệp Peto.
+Sau đó giao việc bằng ngôn ngữ bình thường. Peto đọc schema công cụ khi cần rồi gọi MCP.
+Mỗi lần gọi hiện tham số và hỏi quyền riêng (chọn `a` cũng chỉ đồng ý lần gọi này).
+Mô tả `readOnly` do máy chủ khai báo không được dùng để tự bỏ bước hỏi quyền.
+
+Hỗ trợ tools qua stdio và Streamable HTTP (JSON hoặc SSE), khởi tạo phiên, phân trang danh sách công cụ.
+Không theo chuyển hướng HTTP, không tự thử lại lời gọi bị lỗi. Hết thời gian hoặc Ctrl+C đóng kết nối;
+thao tác từ xa có thể vẫn đã diễn ra nên cần kiểm tra trước khi gọi lại. Dùng `enable` lại để làm mới danh sách công cụ.
+Giới hạn: 16 máy chủ, 128 công cụ và 64 KB schema/máy chủ, 1 MB/phản hồi, 30 giây/yêu cầu.
+Bản này chưa hỗ trợ OAuth, SSE cũ, tự nối lại stream, MCP prompts/resources/sampling/elicitation.
+Các kết nối dừng khi thoát CLI bình thường; chưa tự phục hồi MCP khi `/resume`.
+Tham chiếu giao thức: [MCP transports](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports).
+
 ## Đăng nhập tài khoản
 
 ```powershell

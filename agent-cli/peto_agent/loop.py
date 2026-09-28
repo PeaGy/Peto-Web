@@ -549,7 +549,7 @@ class Session:
         body = {"input": efficient_input(self.items), "effort": self.effort, "model": self.model, "context": {
             "project": self.ws.root.name, "os": f"{platform.system()} {platform.release()}".strip(),
             "project_guidance": guides(self.ws), "features": list(FEATURES),
-            "skills": self.tools.skills.catalog()}}
+            "skills": self.tools.skills.catalog(), "mcp_servers": self.tools.mcp.catalog()}}
         writer = self.ui.reply()
         started = time.monotonic()
         phase = "nghĩ"

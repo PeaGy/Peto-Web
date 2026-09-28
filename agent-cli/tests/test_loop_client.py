@@ -713,7 +713,7 @@ def test_each_step_tells_the_server_which_new_tool_parameters_this_cli_understan
     work, ui = start(project, peto, ["y", "y"])
     work.run_task("Sửa README giúp mình")
     steps = [request["body"] for request in peto.requests if request["path"] == "/api/agent/step"]
-    assert steps and all(body["context"]["features"] == ["cwd", "browser", "browser_act", "browser_outside", "skills"]
+    assert steps and all(body["context"]["features"] == ["cwd", "browser", "browser_act", "browser_outside", "skills", "mcp"]
                          for body in steps)
 
 

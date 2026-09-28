@@ -35,6 +35,8 @@ COMMANDS = (
     Command("/usage", "Số bước và token đã dùng hôm nay"),
     Command("/help", "Xem các lệnh"),
     Command("/skill", "Xem skills đã nạp, hoặc /skill tên [yêu cầu]"),
+    Command("/mcp", "Quản lý công cụ MCP", (("add", "Thêm cấu hình: tên tệp.json"),
+            ("enable", "Bật kết nối trong phiên"), ("disable", "Tắt kết nối"), ("tools", "Xem công cụ"))),
     Command("/thoat", "Thoát peto"),
 )
 

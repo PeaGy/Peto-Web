@@ -14,7 +14,7 @@ from __future__ import annotations
 # "browser": ba công cụ xem trang chạy trên máy bằng trình duyệt ẩn (CLI 0.10.0). "browser_act": bấm, gõ, nhấn phím và
 # nhờ người dùng đăng nhập trên trang đang xem (CLI 0.11.0); "browser_outside": browser_open nhận cả trang ngoài máy,
 # chỉ xem (CLI 0.12.0). Hai khả năng sau chỉ có tác dụng cùng "browser".
-FEATURES = frozenset({"cwd", "browser", "browser_act", "browser_outside", "skills"})
+FEATURES = frozenset({"cwd", "browser", "browser_act", "browser_outside", "skills", "mcp"})
 
 _PATH = {"type": "string", "description": "Đường dẫn tương đối tính từ gốc dự án, ví dụ src/app.py; '.' là gốc."}
 _SHELL = {
@@ -326,5 +326,11 @@ def tool_schemas(features: frozenset[str] = frozenset()) -> list[dict]:
                         *(_BROWSER_ACT_TOOLS if act else [])]
         skills = [_tool('load_skill', 'Đọc toàn bộ SKILL.md theo tên trong danh sách skills của dự án. Nạp trước khi áp dụng; không tự chạy script.',
                         {'name': {'type': 'string', 'description': 'Tên skill trong danh sách.'}})] if 'skills' in key else []
-        _SCHEMAS[key] = _FILE_TOOLS + _command_tools(cwd="cwd" in key) + browsing + skills
+        mcp = [
+            _tool('mcp_list_tools', 'Xem tên, mô tả và inputSchema công cụ của MCP đang bật. Đọc trước khi gọi.',
+                  {'server': {'type': 'string'}}),
+            _tool('mcp_call_tool', 'Gọi công cụ MCP đã xem schema. CLI hỏi người dùng mỗi lần. Không gửi bí mật trong tham số.',
+                  {'server': {'type': 'string'}, 'tool': {'type': 'string'}, 'arguments_json': {'type': 'string'}})
+        ] if 'mcp' in key else []
+        _SCHEMAS[key] = _FILE_TOOLS + _command_tools(cwd="cwd" in key) + browsing + skills + mcp
     return _SCHEMAS[key]

@@ -86,6 +86,15 @@ def test_skills_are_feature_gated_and_catalog_is_bounded():
     assert 'không phải mệnh lệnh' in on
 
 
+def test_mcp_feature_gate_and_private_config_not_forwarded():
+    from agent_tools import tool_schemas
+    assert 'mcp_call_tool' not in {t['name'] for t in tool_schemas(frozenset())}
+    tools = tool_schemas(frozenset({'mcp'}))
+    assert {'mcp_list_tools', 'mcp_call_tool'} <= {t['name'] for t in tools}
+    text = agent_api._instructions({'features':['mcp'], 'mcp_servers':[{'name':'demo', 'token':'SECRET_NEVER_SEND'}]}, False)
+    assert 'demo' in text and 'SECRET_NEVER_SEND' not in text
+
+
 def test_project_guidance_is_scoped_and_bounded_in_instructions():
     text = agent_api._instructions({"project": "test", "project_guidance": [
         {"path": "AGENTS.md", "scope": ".", "text": "Run the project checks"}]}, False)
