@@ -142,7 +142,7 @@ it('gửi ở chế độ Companion và Peto tự nói khi trả lời xong', as
 
   await sendInCompanion('hi');
   expect(vi.mocked(api.sendMessage).mock.calls[0][0]).toMatchObject({
-    message: 'hi', conversationId: null, mode: 'companion', effort: 'low', webSearch: 'off',
+    message: 'hi', conversationId: null, mode: 'companion', effort: 'low', webSearch: 'auto',
   });
   await waitFor(() => expect(played).toHaveLength(1));
   expect(speakBodies()).toEqual([{ text: 'Hey! Good to see you.', voice: 'gentle-2' }]);
@@ -655,4 +655,35 @@ it('nghe lại tin cũ thì nhân vật làm lại đúng mặt đã chọn cho 
   expect(screen.getByTestId('stage').dataset.emotion).toBe('');
   fireEvent.click(await screen.findByRole('button', { name: /Nghe Peto/ }));
   await waitFor(() => expect(screen.getByTestId('stage').dataset.emotion).toBe('sad'));
+});
+
+it('Peto tự tra web khi cần: báo Đang tra web, bỏ chữ viết trước lúc tra, và không hiện nguồn (phương án C)', async () => {
+  let resume!: () => void;
+  vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers) => {
+    handlers.onMeta?.('C1', 'low');
+    handlers.onEmotion?.('think');
+    handlers.onDelta?.('Let me check.');
+    handlers.onReplace?.();
+    handlers.onSearch?.('searching');
+    await new Promise<void>((resolve) => { resume = resolve; });
+    handlers.onSearch?.('completed');
+    handlers.onSources?.([{ url: 'https://example.com/weather', title: 'Weather today' }]);
+    handlers.onDelta?.("It's sunny in Saigon.");
+    handlers.onDone?.();
+  });
+  await openCompanion();
+  await screen.findByTestId('stage');
+  await sendInCompanion('Weather in Saigon today?');
+  expect(vi.mocked(api.sendMessage).mock.calls[0][0]).toMatchObject({ mode: 'companion', webSearch: 'auto' });
+  // Dòng trạng thái (đọc cho trình đọc màn hình) và bong bóng đang chờ cùng báo.
+  await waitFor(() => expect(chatColumn().getAllByText('Đang tra web…')).toHaveLength(2));
+  expect(chatColumn().queryByText('Let me check.')).toBeNull();
+  expect(screen.getByTestId('stage').dataset.emotion).toBe('think');
+
+  resume();
+  expect(await chatColumn().findByText("It's sunny in Saigon.")).toBeTruthy();
+  expect(chatColumn().queryByText('Đang tra web…')).toBeNull();
+  expect(screen.queryByText('Weather today')).toBeNull();
+  expect(document.querySelector('a[href="https://example.com/weather"]')).toBeNull();
+  expect(screen.getByTestId('stage').dataset.emotion).toBe('think');
 });

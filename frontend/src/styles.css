@@ -2202,6 +2202,7 @@ label,
 .companion-reply { display: grid; justify-items: start; gap: 2px; }
 .companion-reply .message-status { margin-top: 2px; padding-top: 0; border-top: 0; }
 .companion-typing { color: var(--muted); letter-spacing: 0.1em; }
+.companion-typing.companion-searching { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; letter-spacing: 0; }
 .message-speak {
   display: grid;
   place-items: center;

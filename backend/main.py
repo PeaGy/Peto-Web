@@ -79,7 +79,7 @@ from persona import (
     build_profile_context,
 )
 from rate_limit import AdmissionDenied, admission
-from web_search import normalize_sources
+from web_search import normalize_sources, spoken_reply
 
 logger = logging.getLogger("peto_web")
 
@@ -463,12 +463,14 @@ def _as_chunk(item: str | StreamChunk) -> StreamChunk:
 
 async def _stream_reply(
     system_prompt: str, history: list[ChatMessage], effort: str, timezone: str | None = None, web_search: str = "auto",
-    document_session=None, model: str = ai_models.DEFAULT_MODEL,
+    document_session=None, model: str = ai_models.DEFAULT_MODEL, spoken: bool = False,
 ) -> AsyncIterator[StreamChunk]:
-    """Gọi provider của model đã chọn một lần, có timeout theo effort. Trả về từng mảnh stream."""
+    """Gọi provider của model đã chọn một lần, có timeout theo effort. Trả về từng mảnh stream. ``spoken`` là lượt
+    Companion: câu trả lời được đọc thành tiếng, nên chỉ dẫn tra web dặn không chèn đường dẫn hay dấu trích dẫn."""
     provider = get_provider(model)
     timeout = RESPONSE_TIMEOUTS.get(effort, RESPONSE_TIMEOUTS["low"])
     token = document_session_context.set(document_session)
+    spoken_token = spoken_reply.set(spoken)
     try:
         async with asyncio.timeout(timeout):
             async for chunk in provider.stream(
@@ -478,6 +480,7 @@ async def _stream_reply(
             ):
                 yield _as_chunk(chunk)
     finally:
+        spoken_reply.reset(spoken_token)
         document_session_context.reset(token)
 
 
@@ -517,9 +520,10 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
     if mode == "companion":
         if files:
             raise HTTPException(status_code=400, detail="Companion chưa nhận ảnh hay tệp đính kèm")
-        # Companion phải trả lời thật nhanh để kịp đọc thành tiếng: suy nghĩ ít, không tìm web.
+        # Companion phải trả lời thật nhanh để kịp đọc thành tiếng: suy nghĩ ít. Tra web thì Peto tự quyết khi cần (chủ web
+        # chọn ngày 2026-09-28, như mô-đun tra web của AIRI), không có kiểu "luôn tìm"; trang cũ còn gửi "off" thì vẫn tắt.
         effort = "low"
-        web_search = "off"
+        web_search = "off" if web_search == "off" else "auto"
 
     if request.persona not in CONVERSATION_PERSONAS:
         raise HTTPException(status_code=400, detail="Chế độ trả lời không hợp lệ")
@@ -564,13 +568,17 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
         # cảm xúc đi riêng bằng sự kiện "emotion" ngay khi thẻ tới, để nhân vật đổi nét mặt lúc Peto bắt đầu trả lời.
         notes = private_notes.NoteFilter() if mode == "companion" else None
         markers = emotion_tags.MarkerFilter() if mode == "companion" else None
+        # Cảm xúc đầu tiên của lượt. Tra web thì phần viết trước lúc tra bị bỏ ("replace"), có khi mất luôn thẻ cảm xúc.
+        turn_emotion: str | None = None
 
         def visible_events(text: str, final: bool = False) -> str | None:
+            nonlocal turn_emotion
             if notes and markers:
                 text = markers.feed(notes.feed(text) + (notes.flush() if final else ""))
                 if final:
                     text += markers.flush()
                 emotion = markers.take_emotion()
+                turn_emotion = turn_emotion or emotion
                 events = (sse({"type": "emotion", "emotion": emotion}) if emotion else "") + (
                     sse({"type": "delta", "text": text}) if text else "")
                 return events or None
@@ -662,7 +670,7 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                 prepared_at = perf_counter()
                 # A timeout may already have consumed provider tokens. Do not repeat the whole turn invisibly.
                 async for chunk in _stream_reply(system_prompt, history, effort, timezone, web_search, document_session,
-                                                 model):
+                                                 model, spoken=mode == "companion"):
                     event = chunk_event(chunk)
                     if event:
                         yield event
@@ -700,6 +708,9 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
             # Cả timeout/lỗi lẫn đóng tab đều giữ phần đã phát. Shield tránh
             # cancel scope của StreamingResponse hủy luôn thao tác lưu SQLite.
             reply = "".join(collected).strip()
+            # Câu sau lúc tra web không gắn lại thẻ thì giữ thẻ đã gửi tới nhân vật, để nghe lại tin cũ vẫn đúng mặt.
+            if turn_emotion and reply and not emotion_tags.first(reply):
+                reply = f"<|EMOTE_{turn_emotion.upper()}|> {reply}"
             artifacts = document_session.created if document_session else []
             if artifacts and not reply: reply = 'Tệp đã được tạo. Phản hồi bị ngắt; bạn vẫn có thể tải tài liệu bên dưới.'
             if reply and conversation_id and _visible(reply, mode):

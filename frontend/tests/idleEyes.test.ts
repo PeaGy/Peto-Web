@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { IdleEyes } from '../src/idleEyes';
+import { Blinker, IdleEyes } from '../src/idleEyes';
 it('moves gently, stays within eye limits, and fades out on cursor activity', () => {
   const eyes = new IdleEyes(() => 0.8);
   const first = eyes.step(1 / 30, true);
@@ -20,4 +20,26 @@ it('does not generate new targets every frame or catch up after a hidden tab', (
   for (let i = 0; i < 30; i++) eyes.step(0.03, true);
   eyes.step(100, true);
   expect(calls).toBe(initial);
+});
+it('VRM blinks at random gaps, closes fully, and sometimes blinks twice in a row', () => {
+  // 0,5 → chờ 3,75 s; 0,1 → chớp lại ngay; 0,9 → chờ 5,55 s.
+  const draws = [0.5, 0.1, 0.9];
+  const blinker = new Blinker(() => draws.shift() ?? 0.9);
+  const starts: number[] = [];
+  let previous = 0, closed = false;
+  for (let t = 0.02; t < 10.5; t += 0.02) {
+    const value = blinker.step(0.02);
+    expect(value).toBeGreaterThanOrEqual(0); expect(value).toBeLessThanOrEqual(1);
+    if (value === 1) closed = true;
+    if (previous === 0 && value > 0) starts.push(t);
+    previous = value;
+  }
+  expect(closed).toBe(true);
+  expect(starts).toHaveLength(3);
+  expect(starts[0]).toBeCloseTo(3.75, 1);
+  expect(starts[1] - starts[0]).toBeLessThan(0.5);
+  expect(starts[2] - starts[1]).toBeGreaterThan(5);
+  // Tab ẩn lâu rồi quay lại: không chớp bù.
+  const late = new Blinker(() => 0.9);
+  expect(late.step(100)).toBe(0);
 });

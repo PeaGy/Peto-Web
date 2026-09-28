@@ -473,8 +473,14 @@ Anh như đang trò chuyện, rồi tự nói thành tiếng. Tab Trò chuyện 
 
 - Companion có một mạch trò chuyện riêng, không hiện trong danh sách Trò chuyện. Nút **Bắt đầu lại**
   xóa mạch đó sau khi xác nhận.
-- Lượt Companion luôn suy nghĩ ở mức thấp, không tìm web, không nhận ảnh hay tệp và không đặt tên
-  hội thoại, để trả lời nhanh nhất có thể.
+- Lượt Companion luôn suy nghĩ ở mức thấp, không nhận ảnh hay tệp và không đặt tên hội thoại, để trả lời nhanh nhất
+  có thể.
+- **Peto tra web khi cần**, như mô-đun tra web của AIRI: hỏi thời tiết, tin tức, giá cả… thì Peto tự tra rồi trả lời
+  bằng lời nói, những câu khác thì không tra. Lúc đang tra, dòng trạng thái và bong bóng báo **Đang tra web…**; trang
+  không hiện nguồn, khi cần Peto nói tin lấy từ đâu. Câu có tra chậm hơn vài giây. Chưa thử với Grok thật.
+- **Nhân vật VRM liếc mắt khi chờ và chớp mắt tự nhiên**, như Live2D: con trỏ đứng yên 3 giây thì mắt tự liếc quanh,
+  đầu nghiêng theo một chút; chớp mắt cách nhau ngẫu nhiên, thỉnh thoảng chớp hai lần liền. Máy bật giảm chuyển động
+  thì đầu đứng yên và không chớp, mắt vẫn liếc như Live2D.
 - **Nhân vật đổi nét mặt theo cảm xúc Peto chọn**: mỗi câu trả lời Peto tự chọn một trong chín cảm xúc như AIRI (vui,
   buồn, giận kiểu dỗi, suy nghĩ, ngạc nhiên, ngại, thắc mắc, tò mò, bình thường). Nét mặt đổi ngay khi Peto bắt đầu trả
   lời, giữ trong lúc nói rồi dịu về. Hiyori không có tệp biểu cảm nên dùng mặt dựng sẵn (mắt, miệng, má, góc đầu); model

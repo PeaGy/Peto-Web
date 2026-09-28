@@ -28,3 +28,33 @@ export class IdleEyes {
     return { x: this.x, y: this.y, weight: this.weight };
   }
 }
+
+const CLOSE = 0.08, SHUT = 0.05, OPEN = 0.15;
+
+/** Chớp mắt cho VRM (Live2D đã có chớp mắt của model): cách nhau 1,5–6 giây ngẫu nhiên, thỉnh thoảng chớp hai lần liền. */
+export class Blinker {
+  private wait: number;
+  private time = -1;
+  private again = false;
+  constructor(private random: () => number = Math.random) { this.wait = this.pause(); }
+  private pause() { return 1.5 + this.random() * 4.5; }
+  /** Độ nhắm mắt 0..1 của khung hình này. */
+  step(seconds: number) {
+    const dt = Math.max(0, Math.min(seconds, 0.05));
+    if (this.time < 0) {
+      this.wait -= dt;
+      if (this.wait > 0) return 0;
+      this.time = 0;
+    } else {
+      this.time += dt;
+    }
+    if (this.time >= CLOSE + SHUT + OPEN) {
+      this.time = -1;
+      this.again = !this.again && this.random() < 0.2;
+      this.wait = this.again ? 0.1 : this.pause();
+      return 0;
+    }
+    if (this.time < CLOSE) return this.time / CLOSE;
+    return this.time < CLOSE + SHUT ? 1 : 1 - (this.time - CLOSE - SHUT) / OPEN;
+  }
+}

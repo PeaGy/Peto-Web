@@ -195,8 +195,8 @@ user text (math/technical markers give `medium`, multi-step reasoning markers gi
 Each level has its own timeout in `config.RESPONSE_TIMEOUTS` (180/300/480s).
 
 `mode` is `chat` by default; `companion` comes only from the Companion tab. `_resolve_mode`
-rejects anything else with a Vietnamese 400. A companion turn is forced to `effort="low"` and
-`web_search="off"`, refuses attachments, skips the title call, and `_build_system_prompt` appends
+rejects anything else with a Vietnamese 400. A companion turn is forced to `effort="low"`, searches the web only
+when Peto decides to (see "Companion web search"), refuses attachments, skips the title call, and `_build_system_prompt` appends
 `persona.COMPANION_PROMPT` last (one or two short English sentences). Conversations store their
 `mode` and a turn must match the conversation's mode; `list_conversations` only returns `chat`
 ones, and `GET /api/companion` returns the latest `companion` thread with its recent messages.
@@ -416,6 +416,18 @@ picks `system` (the default, which follows `prefers-reduced-motion`) or `always`
 Animation effects off reports reduced motion, which is why the owner asked for the override. The
 mouth always follows the audio that is playing (`voiceActivity.ts` reads the WAV's 20 ms loudness
 envelope against `currentTime`) and stays closed when nothing plays.
+
+VRM characters (`VRMStage.tsx`) got the missing items of AIRI's Body list on 2026-09-28, at the owner's pick:
+- **Idle eyes.** After 3 s without pointer movement the eyes glance around (`IdleEyes`, as in Live2D).
+  - The glance is an angle around the head (`IDLE_YAW`, `IDLE_PITCH`). VRM bone look-at turns the eyes only about 10°
+    for a 90° gaze, so small offsets would not show.
+  - The head follows a little only when motion is allowed. The eyes still glance under reduced motion, as the Live2D
+    test (`idle eyes override motion eye values even with … reduced motion on`) has pinned since 2026-09-23.
+- **Blinks.** `Blinker` blinks at random gaps of 1.5–6 s, sometimes twice in a row, and only when motion is allowed.
+  Before, VRM blinked every 4.3 s exactly.
+- **Checking it.** On 2026-09-28 the owner's VRoid model was checked in headless Edge. This machine's Windows has
+  animation effects off, so headless Edge reports reduced motion too. Emulate `prefers-reduced-motion: no-preference`
+  (`Emulation.setEmulatedMedia`) to see blinks.
 
 Phones get AIRI's mobile look instead, at the owner's request. Below `COMPACT_QUERY` (the same 720px
 breakpoint as the CSS) the character fills the screen in a fixed frame (`compactHeight` and
@@ -767,6 +779,34 @@ keyword guess (`replyEmotion`) almost never matched once the Companion prompt ba
   - Frontend: `builtinFaces.test.ts`, `characterExpressions.test.ts`, `ExpressionPicker.test.tsx`,
     `Live2DStage.test.tsx` (built-in face and snapshot), `VRMStage.test.tsx`, `api.test.ts`, and `Companion.test.tsx`
     (stubbed stage reading the `emotion` prop).
+
+### Companion web search
+
+On 2026-09-28 the owner decided Companion should only gain features AIRI has, and picked AIRI's web-search module from
+the list, with option C from mockups: the page shows no sources.
+
+- **Server.** A Companion turn uses `web_search="auto"`, so Peto decides when to search.
+  - A page sending `on` gets `auto`; there is no forced search in Companion.
+  - A page sending `off` (one from before this change) keeps search off.
+  - `PETO_WEB_SEARCH_ENABLED=false` still turns search off for everyone.
+- **Spoken instructions.**
+  - `_stream_reply(spoken=True)` sets `web_search.spoken_reply`, a ContextVar like `document_tools.current_session`,
+    and `search_context` then returns `SPOKEN_SEARCH_CONTEXT`. No provider signature changed.
+  - The chat text asks for Vietnamese answers with source links. The spoken one keeps English speech with no links or
+    citation marks, asks for one quick query, and says where facts came from in plain words.
+- **Replace.** When Peto writes before deciding to search, the provider drops that draft (`replace`), and Companion
+  clears the bubble in `onReplace`.
+  - That draft often held only the emotion marker. `event_stream` therefore remembers the turn's first emotion.
+  - If the text after the search has no marker, the stored reply gets that marker back, so a replayed message makes the
+    same face.
+- **Page.** While searching, the header status and the pending bubble say "Đang tra web…" (`searching`, from
+  `onSearch`). Sources still stream and are stored with the message, but Companion never renders them.
+- **Tests.**
+  - `test_web_search.py` checks the instructions through the real provider with a fake client, and the replace path.
+  - `Companion.test.tsx` checks the status and bubble, the cleared draft, and that no source is shown.
+  - The mock provider never fakes a search (`test_mock_does_not_fabricate_search_results`). The real-render check on
+    2026-09-28 therefore used a scratch server that patched the mock.
+  - Not yet tried with real Grok.
 
 ### Peto Agent (CLI)
 

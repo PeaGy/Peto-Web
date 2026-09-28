@@ -28,6 +28,7 @@ import { DEFAULT_CHARACTER, type CharacterModel } from './characterLibrary';
 import type { CompanionActivity } from './companionMotion';
 import { asStageEmotion, replyEmotion, type StageCue, type StageEmotion } from './characterExpressions';
 import { SceneBackdrop, ScenePicker, useCompanionScene } from './CompanionScenes';
+import { GlobeIcon } from './WebSources';
 
 const MUTED_KEY = "peto-companion-muted";
 const Live2DStage = lazy(() => import("./Live2DStage"));
@@ -129,6 +130,8 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
   const [loadFailed, setLoadFailed] = useState(false);
   const [draft, setDraft] = useState("");
   const [streaming, setStreaming] = useState(false);
+  /** Peto đang tra web cho câu trả lời này (Peto tự quyết; trang không hiện nguồn, theo phương án C chủ web chọn). */
+  const [searching, setSearching] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [muted, setMuted] = useState(readMuted);
@@ -300,7 +303,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
     let turnEmotion: StageEmotion | undefined;
     try {
       await sendMessage(
-        { message: text, conversationId, effort: "low", webSearch: "off", mode: "companion" },
+        { message: text, conversationId, effort: "low", webSearch: "auto", mode: "companion" },
         {
           onMeta: (id, _effort, stored) => {
             accepted = true;
@@ -326,6 +329,15 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
               return last?.role === "assistant" ? [...prev.slice(0, -1), { ...last, emotion }] : prev;
             });
             if (latest.current.active) cue(emotion);
+          },
+          onSearch: (status) => setSearching(status === "searching"),
+          // Peto viết vài chữ rồi mới quyết định tra web: máy chủ bỏ phần đó, trang cũng xóa để khỏi ghép hai câu.
+          onReplace: () => {
+            reply = "";
+            setMessages((prev) => {
+              const last = prev[prev.length - 1];
+              return last?.role === "assistant" ? [...prev.slice(0, -1), { ...last, content: "" }] : prev;
+            });
           },
           onError: setError,
           onDone: () => {
@@ -354,6 +366,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
         });
       }
       setStreaming(false);
+      setSearching(false);
       setStopping(false);
       abortRef.current = null;
     }
@@ -483,7 +496,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
       : draft.trim() || (hearingOn && hearing.phase === 'speaking') ? 'listening' : 'idle';
   const stateText = speech?.phase === "playing" ? "Đang nói…"
     : speech?.phase === "loading" ? "Sắp nói…"
-      : streaming ? "Đang nhắn…" : "Trả lời ngắn bằng tiếng Anh";
+      : searching ? "Đang tra web…" : streaming ? "Đang nhắn…" : "Trả lời ngắn bằng tiếng Anh";
   const canSend = draft.trim().length > 0 && !streaming && !loading && !loadFailed;
 
   return (
@@ -584,7 +597,9 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
               <article key={index} className="bubble assistant companion-reply">
                 {message.content
                   ? <p>{message.content}</p>
-                  : live && <p className="companion-typing" aria-hidden="true">…</p>}
+                  : live && (searching
+                    ? <p className="companion-typing companion-searching" aria-hidden="true"><GlobeIcon /> Đang tra web…</p>
+                    : <p className="companion-typing" aria-hidden="true">…</p>)}
                 {message.content && !live && voice.status === "ready" && (
                   <SpeakButton
                     phase={voice.speaking?.key === key ? voice.speaking.phase : null}

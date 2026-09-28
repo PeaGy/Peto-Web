@@ -72,3 +72,42 @@ it('VRM làm mặt theo cảm xúc Peto chọn bằng biểu cảm có sẵn, v�
   view.unmount();
 });
 
+it('VRM liếc mắt khi con trỏ đứng yên 3 giây, đầu nghiêng theo, và chớp mắt', async () => {
+  const random = vi.spyOn(Math, 'random').mockReturnValue(0.8);
+  const vrm = { ...avatar(), lookAt: { target: null as Object3D | null } };
+  const head = new Object3D();
+  vrm.humanoid.getNormalizedBoneNode = (name?: string) => name === 'head' ? head : new Object3D();
+  mocks.parse.mockResolvedValue({ userData: { vrm }, scene: vrm.scene });
+  const view = render(<VRMStage character={character} motion="always" />);
+  await waitFor(() => expect(mocks.frame).toBeTypeOf('function'));
+  const target = vrm.lookAt.target!;
+  act(() => window.dispatchEvent(new MouseEvent('pointermove', { clientX: 0, clientY: 0 })));
+  act(() => { for (let i = 1; i <= 50; i++) mocks.frame!(40 * i); });
+  // Con trỏ vừa đưa: nhìn đúng chỗ con trỏ, chưa liếc.
+  const pointed = target.position.clone();
+  expect(head.rotation.y).toBeCloseTo(0, 3);
+  act(() => { for (let i = 51; i <= 200; i++) mocks.frame!(40 * i); });
+  expect(target.position.distanceTo(pointed)).toBeGreaterThan(0.1);
+  expect(head.rotation.y).toBeGreaterThan(0.03);
+  const blinks = vrm.expressionManager.setValue.mock.calls.filter(([name]) => name === 'blink').map(([, value]) => value as number);
+  expect(Math.max(...blinks)).toBe(1);
+  view.unmount(); random.mockRestore();
+});
+
+it('giảm chuyển động: VRM không chớp, đầu đứng yên, nhưng mắt vẫn liếc như Live2D, kể cả khi con trỏ đang di chuyển', async () => {
+  const random = vi.spyOn(Math, 'random').mockReturnValue(0.8);
+  const vrm = { ...avatar(), lookAt: { target: null as Object3D | null } };
+  const head = new Object3D();
+  vrm.humanoid.getNormalizedBoneNode = (name?: string) => name === 'head' ? head : new Object3D();
+  mocks.parse.mockResolvedValue({ userData: { vrm }, scene: vrm.scene });
+  const view = render(<VRMStage character={character} motion="system" />);
+  await waitFor(() => expect(mocks.frame).toBeTypeOf('function'));
+  const target = vrm.lookAt.target!;
+  const viewer = target.position.clone();
+  act(() => window.dispatchEvent(new MouseEvent('pointermove', { clientX: 0, clientY: 0 })));
+  act(() => { for (let i = 1; i <= 200; i++) mocks.frame!(40 * i); });
+  expect(target.position.distanceTo(viewer)).toBeGreaterThan(0.1);
+  expect(head.rotation.y).toBe(0);
+  expect(vrm.expressionManager.setValue.mock.calls.filter(([name]) => name === 'blink').every(([, value]) => value === 0)).toBe(true);
+  view.unmount(); random.mockRestore();
+});

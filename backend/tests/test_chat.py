@@ -169,7 +169,7 @@ async def test_invalid_effort_is_rejected(client):
 
 
 async def test_companion_mode_uses_short_english_persona(client, monkeypatch):
-    """Tab Companion dặn Peto trả lời ngắn bằng tiếng Anh, suy nghĩ ít và không tìm web."""
+    """Tab Companion dặn Peto trả lời ngắn bằng tiếng Anh, suy nghĩ ít, và tự quyết khi nào tra web."""
     calls: list[dict] = []
     from ai.mock import MockProvider
 
@@ -187,7 +187,7 @@ async def test_companion_mode_uses_short_english_persona(client, monkeypatch):
     assert events[0]["effort"] == "low"
     assert len(calls) == 1, "mạch Companion không hiện ở thanh bên nên không có lượt đặt tên"
     assert calls[0]["effort"] == "low"
-    assert calls[0]["web_search"] == "off"
+    assert calls[0]["web_search"] == "auto"
     prompt = calls[0]["system_prompt"]
     assert prompt.startswith("## Chế độ Companion")
     assert "Bạn là Peto, trợ lý AI của Peto Web" not in prompt

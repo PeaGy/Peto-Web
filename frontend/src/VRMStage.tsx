@@ -1,6 +1,6 @@
 import { useRenderQuality } from './renderQuality';
 import { useEffect, useRef, useState } from 'react';
-import type { WebGLRenderer } from 'three';
+import type { Vector3, WebGLRenderer } from 'three';
 import type { VRM } from '@pixiv/three-vrm';
 import { characterThumbnail, faceThumbnail, getCharacterAssets, type CharacterModel } from './characterLibrary';
 import { COMPACT_QUERY, motionEnabled, type CharacterMotion } from './characterView';
@@ -9,6 +9,10 @@ import { relaxVRMArms } from './vrmPose';
 import { CompanionMotion, stageQuality, type CompanionActivity } from './companionMotion';
 import { publishSnapshot, readExpressions, watchExpressions, type StageCue, type StageEmotion } from './characterExpressions';
 import { FaceBlend, vrmFace } from './builtinFaces';
+import { Blinker, IdleEyes } from './idleEyes';
+
+// Góc liếc lớn nhất khi chờ. VRM chỉ quay mắt một phần góc nhìn (thường 10° mắt cho 90° nhìn), nên góc nhỏ thì không thấy.
+const IDLE_YAW = Math.PI / 3, IDLE_PITCH = Math.PI * 2 / 9;
 
 export default function VRMStage({ character, motion, onPreview, activity = 'idle', emotion }: {
   activity?: CompanionActivity;
@@ -108,22 +112,38 @@ export default function VRMStage({ character, motion, onPreview, activity = 'idl
       const observer = new ResizeObserver(fit); observer.observe(container); fit();
       const look = new THREE.Object3D(); scene.add(look); look.position.copy(camera.position);
       if (loaded.lookAt) loaded.lookAt.target = look;
+      // Chỗ con trỏ trên sân khấu. Chưa có, hay con trỏ đã rời trang, thì nhìn thẳng người xem (camera).
+      const pointed = new THREE.Vector3();
+      let pointing = false, lastPointer = -Infinity;
       const pointer = (event: PointerEvent) => {
         if (event.pointerType === 'touch' && !compact.matches) return;
         const rect = container.getBoundingClientRect();
-        look.position.set(center.x + ((event.clientX - rect.left) / Math.max(1, rect.width) - 0.5) * height, controls.target.y - ((event.clientY - rect.top) / Math.max(1, rect.height) - 0.5) * height, camera.position.z);
+        pointed.set(center.x + ((event.clientX - rect.left) / Math.max(1, rect.width) - 0.5) * height, controls.target.y - ((event.clientY - rect.top) / Math.max(1, rect.height) - 0.5) * height, camera.position.z);
+        pointing = true; lastPointer = performance.now();
       };
-      const away = () => look.position.copy(camera.position);
+      const away = () => { pointing = false; lastPointer = -Infinity; };
+      const headPoint = new THREE.Vector3(), neckPoint = new THREE.Vector3(), gazeDirection = new THREE.Vector3();
+      const headBone = loaded.humanoid.getRawBoneNode('head'), neckBone = loaded.humanoid.getRawBoneNode('neck');
+      /** Nhìn về điểm gốc, lệch thêm theo góc liếc khi chờ (tính quanh đầu để góc không phụ thuộc khoảng cách). */
+      const gaze = (base: Vector3, eyes: { x: number; y: number; weight: number }) => {
+        if (!headBone || eyes.weight < 0.001) { look.position.copy(base); return; }
+        headBone.getWorldPosition(headPoint);
+        gazeDirection.subVectors(base, headPoint);
+        const reach = Math.max(0.5, gazeDirection.length());
+        const yaw = Math.atan2(gazeDirection.x, gazeDirection.z) + eyes.x * eyes.weight * IDLE_YAW;
+        const pitch = Math.atan2(gazeDirection.y, Math.hypot(gazeDirection.x, gazeDirection.z)) + eyes.y * eyes.weight * IDLE_PITCH;
+        look.position.set(headPoint.x + reach * Math.sin(yaw) * Math.cos(pitch), headPoint.y + reach * Math.sin(pitch),
+          headPoint.z + reach * Math.cos(yaw) * Math.cos(pitch));
+      };
       const reset = () => fit();
       let contextLost = false;
       const lost = (event: Event) => { event.preventDefault(); contextLost = true; cancelAnimationFrame(frame); setStatus('error'); setError('Trình duyệt đã tạm dừng hiển thị 3D. Bạn có thể thử tải lại.'); };
       let last = 0, nextFrame = 0, elapsed = 0, mouth = 0, captured = false;
       const conversationMotion = new CompanionMotion();
+      const idleEyes = new IdleEyes(), blinker = new Blinker();
       const head = loaded.humanoid.getNormalizedBoneNode('head');
-      const headRest = head ? { x: head.rotation.x, z: head.rotation.z } : undefined;
+      const headRest = head ? { x: head.rotation.x, y: head.rotation.y, z: head.rotation.z } : undefined;
       let faceNames = new Set<string>();
-      const headPoint = new THREE.Vector3(), neckPoint = new THREE.Vector3();
-      const headBone = loaded.humanoid.getRawBoneNode('head'), neckBone = loaded.humanoid.getRawBoneNode('neck');
       const hasExpression = (name: string) => !!loaded.expressionManager?.getExpression(name);
       const tick = (now: number) => {
         if (disposed || document.hidden || contextLost) return;
@@ -134,8 +154,7 @@ export default function VRMStage({ character, motion, onPreview, activity = 'idl
         const dt = Math.min((now - last) / 1000, 0.05); last = now;
         const moving = motionEnabled(motionRef.current, reduced.matches);
         if (moving) elapsed += dt;
-        const blinkPhase = elapsed % 4.3;
-        const blink = moving && blinkPhase > 4.05 ? Math.sin((blinkPhase - 4.05) / 0.25 * Math.PI) : 0;
+        const blink = moving ? blinker.step(dt) : 0;
         const target = voiceMouth(); mouth += (target - mouth) * (target > mouth ? 0.7 : 0.45);
         // Cảm xúc: biểu cảm có sẵn của VRM pha theo lớp mặt, biểu cảm vừa tan hết thì trả về 0.
         const face = vrmFace(faceBlend.current.step(dt), hasExpression);
@@ -145,13 +164,18 @@ export default function VRMStage({ character, motion, onPreview, activity = 'idl
         for (const [name, value] of face.values) loaded.expressionManager?.setValue(name, value);
         faceNames = new Set(face.values.keys());
         const pose = conversationMotion.step(activityRef.current, dt, target);
+        // Như Live2D (AIRI: idle eye movement): con trỏ đứng yên 3 giây thì mắt tự liếc quanh, đầu nghiêng theo một chút.
+        // Giảm chuyển động thì không nhìn theo con trỏ, đầu đứng yên, nhưng mắt vẫn liếc như bên Live2D.
+        const eyes = idleEyes.step(dt, !(moving && now - lastPointer < 3000));
+        gaze(moving && pointing ? pointed : camera.position, eyes);
+        const glance = moving ? eyes.weight : 0;
         if (head && headRest) {
-          head.rotation.x = headRest.x + (moving ? pose.pitch * Math.PI / 180 : 0);
+          head.rotation.x = headRest.x + ((moving ? pose.pitch : 0) - eyes.y * glance * 5) * Math.PI / 180;
+          head.rotation.y = headRest.y + eyes.x * glance * 8 * Math.PI / 180;
           head.rotation.z = headRest.z + ((moving ? pose.roll : 0) + face.roll) * Math.PI / 180;
         }
         const spine = loaded.humanoid.getNormalizedBoneNode('spine');
         if (spine) spine.rotation.z = moving ? Math.sin(elapsed * 1.4) * 0.014 : 0;
-        if (!moving) away();
         loaded.update(moving ? dt : 0); controls.update(); renderer!.render(scene, camera);
         const due = snapshotDue.current;
         if (due && now >= due.at && headBone) {

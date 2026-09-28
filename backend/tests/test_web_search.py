@@ -14,9 +14,9 @@ from ai import ChatMessage, StreamChunk
 from ai.base import ProviderError
 from ai import xai
 from config import SESSION_COOKIE
-from conftest import read_events
+from conftest import TEST_OWNER, read_events
 from test_clock_tools import FakeStream, Item, call, done, fake_provider
-from web_search import normalize_sources
+from web_search import SPOKEN_SEARCH_CONTEXT, normalize_sources, spoken_reply
 
 SOURCE = {"url": "https://docs.python.org/3/", "title": "Tài liệu Python"}
 
@@ -276,3 +276,53 @@ async def test_real_sdk_parses_search_events_and_annotations(monkeypatch):
     assert requests[0]["tool_choice"] == "required"
     assert any(isinstance(chunk, StreamChunk) and {**SOURCE, "kind": "citation"} in chunk.sources for chunk in chunks)
     assert "Có nguồn." in chunks
+
+
+async def test_companion_searches_when_needed_with_spoken_instructions(client, monkeypatch):
+    """Chủ web chọn ngày 2026-09-28: Companion tra web khi cần, như mô-đun tra web của AIRI. Chỉ dẫn tra web của lượt
+    Companion dặn nói tiếng Anh, không chèn đường dẫn hay dấu trích dẫn; tab Trò chuyện giữ chỉ dẫn cũ."""
+    streams = [FakeStream([SimpleNamespace(type="response.output_text.delta", delta=text), done()])
+               for text in ("<|EMOTE_HAPPY|> Sunny.", "<|EMOTE_HAPPY|> Sunny.", "<|EMOTE_HAPPY|> Sunny.", "Nắng.")]
+    provider, requests = fake_provider(monkeypatch, streams)
+    monkeypatch.setattr(main, "get_provider", lambda model="peto": provider)
+    for web_search in ("auto", "on", "off"):
+        events = await read_events(await client.post("/api/chat", json={
+            "message": "What's the weather in Saigon today?", "mode": "companion", "web_search": web_search}))
+        assert events[-1]["type"] == "done"
+    auto, forced, off = requests[:3]
+    for request in (auto, forced):
+        # Companion không có kiểu "luôn tìm": trang gửi "on" cũng chỉ là tự quyết.
+        assert {"type": "web_search"} in request["tools"] and "tool_choice" not in request
+        assert SPOKEN_SEARCH_CONTEXT in request["instructions"]
+        assert "dẫn liên kết nguồn" not in request["instructions"]
+    # Trang cũ còn gửi "off" thì vẫn tắt.
+    assert all(tool["type"] == "function" for tool in off["tools"]) and "đang tắt" in off["instructions"]
+
+    await read_events(await client.post("/api/chat", json={"message": "Thời tiết Sài Gòn hôm nay?"}))
+    assert "dẫn liên kết nguồn" in requests[3]["instructions"]
+    assert SPOKEN_SEARCH_CONTEXT not in requests[3]["instructions"]
+    assert spoken_reply.get() is False
+
+
+async def test_companion_keeps_its_emotion_when_the_draft_before_a_search_is_dropped(client, monkeypatch):
+    """Tra web thì phần Peto viết trước lúc tra bị bỏ (replace), thường chỉ có thẻ cảm xúc. Câu sau lúc tra không gắn lại
+    thẻ thì tin lưu vẫn giữ cảm xúc đã gửi tới nhân vật, để nghe lại tin cũ nhân vật làm đúng mặt."""
+    class Searching:
+        async def stream(self, **kwargs):
+            yield "<|EMOTE_THINK|> Let me check."
+            yield StreamChunk("replace")
+            yield StreamChunk("search", "searching")
+            yield StreamChunk("search", "completed")
+            yield "It's sunny in Saigon."
+
+    monkeypatch.setattr(main, "get_provider", lambda model="peto": Searching())
+    events = await read_events(await client.post("/api/chat", json={"message": "Weather in Saigon?", "mode": "companion"}))
+    kinds = [event["type"] for event in events]
+    assert kinds[-1] == "done" and kinds.index("replace") < kinds.index("search")
+    assert [event["emotion"] for event in events if event["type"] == "emotion"] == ["think"]
+    after = "".join(event["text"] for event in events[kinds.index("replace"):] if event["type"] == "delta")
+    assert after == "It's sunny in Saigon."
+    stored = await db.get_messages(TEST_OWNER, events[0]["conversation_id"])
+    assert stored[-1]["content"] == "<|EMOTE_THINK|> It's sunny in Saigon."
+    reply = [item for item in (await client.get("/api/companion")).json()["messages"] if item["role"] == "assistant"][-1]
+    assert reply["content"] == "It's sunny in Saigon." and reply["emotion"] == "think"
