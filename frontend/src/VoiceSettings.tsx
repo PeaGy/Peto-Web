@@ -14,7 +14,7 @@ import {
   type KeyProvider,
   type VoiceOption,
 } from "./voiceProviders";
-import { useSettingsFocus } from "./settingsFocus";
+import { SettingsGroup, SettingsRow, SettingsSwitch } from "./settingsUi";
 import { Dropdown, Field, SourceCard, type Card as SourceCardData, type DropdownOption } from "./voiceUi";
 
 /** Giọng nào cũng nói tiếng Anh tốt nhất, nên câu nghe thử mặc định bằng tiếng Anh. */
@@ -41,22 +41,19 @@ export type VoiceTab = "noi" | "nghe";
  * các nhà cung cấp dùng khóa riêng, lưu trên trình duyệt này. Khung chi tiết nằm ngay sau thẻ đang chọn, nên trên
  * điện thoại nó hiện ngay dưới thẻ. Nút tắt tiếng không ở đây mà ở cột chat của Companion.
  */
-export default function VoiceSettings({ voice, open, tab = "noi", onTab, focusRequest = 0 }: {
+export default function VoiceSettings({ voice, open, tab = "noi", onTab }: {
   voice: LocalVoice;
+  /** Mục Giọng nói đang được xem; rời mục hay đóng Cài đặt thì thôi đọc câu mẫu và thôi nghe thử. */
   open: boolean;
   tab?: VoiceTab;
   onTab?: (tab: VoiceTab) => void;
-  /** Tăng lên khi Companion mở Cài đặt từ bảng Micro: cuộn tới mục này. */
-  focusRequest?: number;
 }) {
   const [error, setError] = useState<string | null>(null);
   const [sampleText, setSampleText] = useState(SAMPLE_TEXT);
   const { speaking, stop, source, health } = voice;
   const sampling = speaking?.key === SAMPLE_KEY ? speaking.phase : null;
   const fallbackId = useId();
-  const sectionRef = useRef<HTMLElement>(null);
-
-  useSettingsFocus(sectionRef, open, focusRequest);
+  const switchId = useId();
 
   function tabKeys(event: KeyboardEvent<HTMLDivElement>) {
     if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
@@ -66,7 +63,7 @@ export default function VoiceSettings({ voice, open, tab = "noi", onTab, focusRe
     document.getElementById(`voice-tab-${next}`)?.focus();
   }
 
-  // Đóng Cài đặt thì thôi đọc câu mẫu; tin Companion đang đọc thì để yên.
+  // Rời mục hay đóng Cài đặt thì thôi đọc câu mẫu; tin Companion đang đọc thì để yên.
   useEffect(() => {
     if (!open && sampling) stop();
   }, [open, sampling, stop]);
@@ -149,22 +146,7 @@ export default function VoiceSettings({ voice, open, tab = "noi", onTab, focusRe
     ? voice.fallback : "";
 
   return (
-    <section ref={sectionRef} className="settings-section" aria-labelledby="voice-settings-title">
-      <div className="voice-head">
-        <h3 id="voice-settings-title">Giọng nói</h3>
-        {tab === "noi" && (
-          <label className="voice-switch">
-            <span aria-hidden="true">{voice.enabled ? "Đang bật" : "Đang tắt"}</span>
-            <input
-              type="checkbox"
-              role="switch"
-              aria-label="Bật giọng nói"
-              checked={voice.enabled}
-              onChange={(event) => { setError(null); voice.setEnabled(event.target.checked); }}
-            />
-          </label>
-        )}
-      </div>
+    <>
       <div className="voice-tabs" role="tablist" aria-label="Giọng nói" onKeyDown={tabKeys}>
         {([["noi", "Peto nói"], ["nghe", "Peto nghe"]] as const).map(([id, label]) => (
           <button
@@ -188,46 +170,64 @@ export default function VoiceSettings({ voice, open, tab = "noi", onTab, focusRe
         </div>
       ) : (
         <div role="tabpanel" id="voice-panel-noi" aria-labelledby="voice-tab-noi">
-          <p className="settings-hint">
-            {voice.enabled
-              ? "Peto nói thành tiếng trong Companion. Chọn nguồn giọng bên dưới; đổi lúc nào cũng được, chữ vẫn hiện như thường."
-              : "Peto có thể nói thành tiếng trong Companion. Bật lên để chọn nguồn giọng; khi tắt, Peto chỉ nhắn chữ."}
-          </p>
+          <SettingsGroup>
+            <SettingsRow
+              label="Bật giọng nói"
+              htmlFor={switchId}
+              desc={voice.enabled
+                ? "Peto nói thành tiếng trong Companion. Chọn nguồn giọng bên dưới; đổi lúc nào cũng được, chữ vẫn hiện như thường."
+                : "Peto có thể nói thành tiếng trong Companion. Bật lên để chọn nguồn giọng; khi tắt, Peto chỉ nhắn chữ."}
+            >
+              <SettingsSwitch
+                id={switchId}
+                label="Bật giọng nói"
+                checked={voice.enabled}
+                onChange={(value) => { setError(null); voice.setEnabled(value); }}
+              />
+            </SettingsRow>
+          </SettingsGroup>
 
           {voice.enabled && (
             <>
-              <div className="voice-group"><strong>Không cần khóa</strong></div>
-              <div className="voice-cards">{cards(free)}</div>
+              <SettingsGroup title="Nguồn giọng">
+                <div className="voice-sources">
+                  <div className="voice-group"><strong>Không cần khóa</strong></div>
+                  <div className="voice-cards">{cards(free)}</div>
 
-              <div className="voice-group">
-                <strong>Khóa của bạn</strong>
-                <span>Khóa lưu trên trình duyệt này, tính tiền vào tài khoản của bạn</span>
-              </div>
-              <div className="voice-cards">{cards(byok)}</div>
+                  <div className="voice-group">
+                    <strong>Khóa của bạn</strong>
+                    <span>Khóa lưu trên trình duyệt này, tính tiền vào tài khoản của bạn</span>
+                  </div>
+                  <div className="voice-cards">{cards(byok)}</div>
+                </div>
+              </SettingsGroup>
 
-              <div className="voice-fallback">
-                <Field
-                  id={fallbackId}
+              <SettingsGroup>
+                <SettingsRow
                   label="Khi nguồn chính không nói được"
-                  hint="Giọng nói do AI tạo. Giọng dự phòng có thể khác chất giọng; Giọng Peto dự phòng cũng trừ lượt tháng này."
+                  htmlFor={fallbackId}
+                  labelId={`${fallbackId}-label`}
+                  desc="Giọng nói do AI tạo. Giọng dự phòng có thể khác chất giọng; Giọng Peto dự phòng cũng trừ lượt tháng này."
                 >
-                  <Dropdown
-                    id={fallbackId}
-                    value={fallback}
-                    onChange={(value) => voice.setFallback(value as FallbackChoice)}
-                    options={[
-                      ...(offerHome ? [{ value: "home", label: "Dùng Máy nhà của Peto nếu đang bật" }] : []),
-                      ...(offerOfficial ? [{ value: "official", label: "Dùng Giọng Peto nếu còn lượt" }] : []),
-                      { value: "", label: "Chỉ hiện chữ" },
-                    ]}
-                  />
-                </Field>
-              </div>
+                  <div className="settings-dropdown">
+                    <Dropdown
+                      id={fallbackId}
+                      value={fallback}
+                      onChange={(value) => voice.setFallback(value as FallbackChoice)}
+                      options={[
+                        ...(offerHome ? [{ value: "home", label: "Dùng Máy nhà của Peto nếu đang bật" }] : []),
+                        ...(offerOfficial ? [{ value: "official", label: "Dùng Giọng Peto nếu còn lượt" }] : []),
+                        { value: "", label: "Chỉ hiện chữ" },
+                      ]}
+                    />
+                  </div>
+                </SettingsRow>
+              </SettingsGroup>
             </>
           )}
         </div>
       )}
-    </section>
+    </>
   );
 }
 

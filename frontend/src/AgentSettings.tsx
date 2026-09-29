@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { UnauthorizedError, listAgentDevices, revokeAgentDevice, type AgentDevices } from "./api";
+import { SettingsGroup, SettingsRow } from "./settingsUi";
 
 const INTRO = "Peto sửa code ngay trên máy bạn qua chương trình dòng lệnh peto.";
 
@@ -63,35 +64,41 @@ export default function AgentSettings({ open, isGuest, onUnauthorized }: {
     }
   }
 
-  if (isGuest) {
-    return <section className="settings-section" aria-labelledby="agent-settings-title">
-      <h3 id="agent-settings-title">Peto Agent</h3>
-      <p className="settings-hint">{INTRO} Tính năng này cần đăng nhập bằng Discord hoặc Google.</p>
-    </section>;
-  }
+  if (isGuest) return <p className="settings-intro">{INTRO} Tính năng này cần đăng nhập bằng Discord hoặc Google.</p>;
 
-  const left = data ? Math.max(0, data.steps_limit - data.steps_used) : null;
-  return <section className="settings-section" aria-labelledby="agent-settings-title">
-    <h3 id="agent-settings-title">Peto Agent</h3>
-    <p className="settings-hint">{INTRO}{data && ` Hôm nay còn ${left}/${data.steps_limit} bước.`}</p>
-    {failed ? <div className="voice-row">
-      <p className="settings-hint" role="alert">Chưa tải được danh sách máy.</p>
-      <button type="button" className="settings-button" onClick={() => void load()}>Thử lại</button>
-    </div> : !data ? <p className="settings-hint" role="status">Đang tải danh sách máy…</p>
-      : data.devices.length === 0 ? <p className="settings-hint agent-empty">
-        Chưa có máy nào kết nối. Mở cửa sổ dòng lệnh trên máy của bạn và chạy <code>peto login</code>.
-      </p> : <ul className="agent-devices" aria-label="Máy đã kết nối">
-        {data.devices.map((device) => <li key={device.id}>
-          <div>
-            <strong>{device.name}</strong>
-            <span>{lastUsedLabel(device.last_used_at)}</span>
-          </div>
-          <button type="button" className="settings-button" disabled={revoking === device.id}
-            aria-label={`Ngắt kết nối ${device.name}`} onClick={() => void revoke(device.id)}>
-            {revoking === device.id ? "Đang ngắt…" : "Ngắt kết nối"}
-          </button>
-        </li>)}
-      </ul>}
+  const left = data ? Math.max(0, data.steps_limit - data.steps_used) : 0;
+  return <>
+    <p className="settings-intro">{INTRO}</p>
+    {data && <SettingsGroup>
+      <SettingsRow label="Bước hôm nay" desc="Mỗi lần Peto gọi model là một bước; mức Cao và các model lớn tính nhiều bước hơn.">
+        <span className="settings-meter">
+          <span>Còn {left}/{data.steps_limit}</span>
+          <span className="settings-meter-bar" aria-hidden="true">
+            <i style={{ width: `${data.steps_limit ? (left / data.steps_limit) * 100 : 0}%` }} />
+          </span>
+        </span>
+      </SettingsRow>
+    </SettingsGroup>}
+    <SettingsGroup title="Máy đã kết nối">
+      {failed ? <div className="voice-row">
+        <p className="settings-hint" role="alert">Chưa tải được danh sách máy.</p>
+        <button type="button" className="settings-button" onClick={() => void load()}>Thử lại</button>
+      </div> : !data ? <p className="settings-note" role="status">Đang tải danh sách máy…</p>
+        : data.devices.length === 0 ? <p className="settings-note agent-empty">
+          Chưa có máy nào kết nối. Mở cửa sổ dòng lệnh trên máy của bạn và chạy <code>peto login</code>.
+        </p> : <ul className="agent-devices" aria-label="Máy đã kết nối">
+          {data.devices.map((device) => <li key={device.id}>
+            <div>
+              <strong>{device.name}</strong>
+              <span>{lastUsedLabel(device.last_used_at)}</span>
+            </div>
+            <button type="button" className="settings-button" disabled={revoking === device.id}
+              aria-label={`Ngắt kết nối ${device.name}`} onClick={() => void revoke(device.id)}>
+              {revoking === device.id ? "Đang ngắt…" : "Ngắt kết nối"}
+            </button>
+          </li>)}
+        </ul>}
+    </SettingsGroup>
     {error && <p className="voice-error" role="alert">{error}</p>}
-  </section>;
+  </>;
 }

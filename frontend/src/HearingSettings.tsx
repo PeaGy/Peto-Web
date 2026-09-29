@@ -20,6 +20,7 @@ import {
 } from "./hearingProviders";
 import { updateKeyConfig, useKeyConfigs, type KeyConfig } from "./voiceProviders";
 import { Dropdown, Field, SourceCard, type Card } from "./voiceUi";
+import { SettingsGroup, SettingsRow, SettingsSwitch } from "./settingsUi";
 
 /** Trình duyệt đang dùng gửi âm thanh đi đâu để chép lời (chỉ để nói rõ với người dùng). */
 function browserNote(): string {
@@ -42,6 +43,8 @@ export default function HearingSettings({ open }: { open: boolean }) {
   const micId = useId();
   const languageId = useId();
   const sensitivityId = useId();
+  const autoSendId = useId();
+  const pauseId = useId();
   const supported = browserSpeechSupported();
 
   useEffect(() => {
@@ -52,7 +55,7 @@ export default function HearingSettings({ open }: { open: boolean }) {
     };
   }, []);
 
-  // Đóng Cài đặt thì thôi nghe thử.
+  // Rời mục Giọng nói hay đóng Cài đặt thì thôi nghe thử.
   useEffect(() => {
     if (!open && getHearingState().testing) stopListening();
   }, [open]);
@@ -117,100 +120,100 @@ export default function HearingSettings({ open }: { open: boolean }) {
 
   return (
     <>
-      <p className="settings-hint">
+      <p className="settings-intro">
         Peto nghe bạn nói trong Companion. Âm thanh chỉ đi tới nguồn bạn chọn bên dưới; máy chủ Peto không nhận và không lưu.
       </p>
 
-      <div className="hearing-fields">
-        <Field id={micId} label="Micro">
-          <MicrophoneSelect id={micId} microphones={microphones} />
-        </Field>
-        <Field id={languageId} label="Bạn nói bằng">
-          <Dropdown
-            id={languageId}
-            value={hearing.language}
-            onChange={(value) => setHearingSetting("language", value as HearingLanguage)}
-            options={[{ value: "en", label: "Tiếng Anh" }, { value: "vi", label: "Tiếng Việt" }]}
-          />
-        </Field>
-      </div>
-
-      <div className="voice-group"><strong>Không cần khóa</strong></div>
-      <div className="voice-cards hearing-free">{cards([browserCard])}</div>
-
-      <div className="voice-group">
-        <strong>Khóa của bạn</strong>
-        <span>Dùng chung khóa đã nhập ở phần Peto nói</span>
-      </div>
-      <div className="voice-cards">{cards(keyCards)}</div>
-
-      <section className="hearing-test" aria-labelledby="hearing-test-title">
-        <div className="hearing-test-head">
-          <strong id="hearing-test-title">Nghe thử</strong>
-          <button type="button" className="voice-primary" onClick={toggleTest} disabled={!ready && !testing}>
-            {testing ? "Dừng nghe thử" : "Bắt đầu nghe thử"}
-          </button>
-        </div>
-        <p className="voice-note">Nói vài câu để xem Peto nghe ra chữ gì. Nghe thử không gửi gì cho Peto.</p>
-        {testing && <p className="voice-line" role="status">{phaseTitle(hearing)}</p>}
-        {hearing.message && !hearing.listening && <p className="voice-error" role="alert">{hearing.message}</p>}
-        <div className="hearing-meter">
-          <span>Âm lượng</span>
-          <LevelBars count={36} className="hearing-meter-levels" threshold={provider ? thresholdLevel(hearing.sensitivity) : undefined} />
-        </div>
-        {provider ? (
-          <div className="voice-field">
-            <div className="hearing-range-label">
-              <label htmlFor={sensitivityId}>Độ nhạy</label>
-              <span>{hearing.sensitivity < 35 ? "Ít nhạy" : hearing.sensitivity > 65 ? "Rất nhạy" : "Vừa"}</span>
-            </div>
-            <input
-              id={sensitivityId}
-              type="range"
-              min="0"
-              max="100"
-              value={hearing.sensitivity}
-              onChange={(event) => setHearingSetting("sensitivity", Number(event.target.value))}
+      <SettingsGroup>
+        <SettingsRow label="Micro" htmlFor={micId} labelId={`${micId}-label`}>
+          <div className="settings-dropdown"><MicrophoneSelect id={micId} microphones={microphones} /></div>
+        </SettingsRow>
+        <SettingsRow label="Bạn nói bằng" htmlFor={languageId} labelId={`${languageId}-label`}>
+          <div className="settings-dropdown">
+            <Dropdown
+              id={languageId}
+              value={hearing.language}
+              onChange={(value) => setHearingSetting("language", value as HearingLanguage)}
+              options={[{ value: "en", label: "Tiếng Anh" }, { value: "vi", label: "Tiếng Việt" }]}
             />
-            <small>Vạch trắng là ngưỡng coi như im lặng. Phòng ồn thì giảm, nói nhỏ mà Peto không nghe thì tăng.</small>
           </div>
-        ) : (
-          <p className="voice-note">Nguồn trong trình duyệt tự nhận ra lúc bạn nói xong nên không cần chỉnh độ nhạy.</p>
-        )}
-        {(results.length > 0 || (testing && hearing.interim)) && (
-          <ul className="hearing-results">
-            {testing && hearing.interim && <li className="interim">{hearing.interim}</li>}
-            {results.map((text, index) => <li key={`${index}-${text}`}>“{text}”</li>)}
-          </ul>
-        )}
-      </section>
+        </SettingsRow>
+      </SettingsGroup>
 
-      <div className="character-effect-options hearing-options">
-        <label className="character-effect-option">
-          <span>
-            <strong>Tự gửi khi nói xong</strong>
-            <small>Im lặng khoảng một giây thì gửi luôn. Tắt thì chữ nằm trong ô nhắn để bạn sửa trước.</small>
-          </span>
-          <input
-            type="checkbox"
-            role="switch"
-            checked={hearing.autoSend}
-            onChange={(event) => setHearingSetting("autoSend", event.target.checked)}
-          />
-        </label>
-        <label className="character-effect-option">
-          <span>
-            <strong>Tạm không nghe khi Peto đang nói</strong>
-            <small>Để Peto khỏi tự nghe giọng mình qua loa. Đeo tai nghe thì có thể tắt để nói chen ngang.</small>
-          </span>
-          <input
-            type="checkbox"
-            role="switch"
-            checked={hearing.pauseWhileSpeaking}
-            onChange={(event) => setHearingSetting("pauseWhileSpeaking", event.target.checked)}
-          />
-        </label>
-      </div>
+      <SettingsGroup title="Nguồn nghe">
+        <div className="voice-sources">
+          <div className="voice-group"><strong>Không cần khóa</strong></div>
+          <div className="voice-cards hearing-free">{cards([browserCard])}</div>
+
+          <div className="voice-group">
+            <strong>Khóa của bạn</strong>
+            <span>Dùng chung khóa đã nhập ở phần Peto nói</span>
+          </div>
+          <div className="voice-cards">{cards(keyCards)}</div>
+        </div>
+      </SettingsGroup>
+
+      <SettingsGroup>
+        <section className="hearing-test" aria-labelledby="hearing-test-title">
+          <div className="hearing-test-head">
+            <strong id="hearing-test-title">Nghe thử</strong>
+            <button type="button" className="voice-primary" onClick={toggleTest} disabled={!ready && !testing}>
+              {testing ? "Dừng nghe thử" : "Bắt đầu nghe thử"}
+            </button>
+          </div>
+          <p className="voice-note">Nói vài câu để xem Peto nghe ra chữ gì. Nghe thử không gửi gì cho Peto.</p>
+          {testing && <p className="voice-line" role="status">{phaseTitle(hearing)}</p>}
+          {hearing.message && !hearing.listening && <p className="voice-error" role="alert">{hearing.message}</p>}
+          <div className="hearing-meter">
+            <span>Âm lượng</span>
+            <LevelBars count={36} className="hearing-meter-levels" threshold={provider ? thresholdLevel(hearing.sensitivity) : undefined} />
+          </div>
+          {provider ? (
+            <div className="voice-field">
+              <div className="hearing-range-label">
+                <label htmlFor={sensitivityId}>Độ nhạy</label>
+                <span>{hearing.sensitivity < 35 ? "Ít nhạy" : hearing.sensitivity > 65 ? "Rất nhạy" : "Vừa"}</span>
+              </div>
+              <input
+                id={sensitivityId}
+                type="range"
+                min="0"
+                max="100"
+                value={hearing.sensitivity}
+                onChange={(event) => setHearingSetting("sensitivity", Number(event.target.value))}
+              />
+              <small>Vạch trắng là ngưỡng coi như im lặng. Phòng ồn thì giảm, nói nhỏ mà Peto không nghe thì tăng.</small>
+            </div>
+          ) : (
+            <p className="voice-note">Nguồn trong trình duyệt tự nhận ra lúc bạn nói xong nên không cần chỉnh độ nhạy.</p>
+          )}
+          {(results.length > 0 || (testing && hearing.interim)) && (
+            <ul className="hearing-results">
+              {testing && hearing.interim && <li className="interim">{hearing.interim}</li>}
+              {results.map((text, index) => <li key={`${index}-${text}`}>“{text}”</li>)}
+            </ul>
+          )}
+        </section>
+      </SettingsGroup>
+
+      <SettingsGroup>
+        <SettingsRow
+          label="Tự gửi khi nói xong"
+          htmlFor={autoSendId}
+          desc="Im lặng khoảng một giây thì gửi luôn. Tắt thì chữ nằm trong ô nhắn để bạn sửa trước."
+        >
+          <SettingsSwitch id={autoSendId} label="Tự gửi khi nói xong" checked={hearing.autoSend}
+            onChange={(value) => setHearingSetting("autoSend", value)} />
+        </SettingsRow>
+        <SettingsRow
+          label="Tạm không nghe khi Peto đang nói"
+          htmlFor={pauseId}
+          desc="Để Peto khỏi tự nghe giọng mình qua loa. Đeo tai nghe thì có thể tắt để nói chen ngang."
+        >
+          <SettingsSwitch id={pauseId} label="Tạm không nghe khi Peto đang nói" checked={hearing.pauseWhileSpeaking}
+            onChange={(value) => setHearingSetting("pauseWhileSpeaking", value)} />
+        </SettingsRow>
+      </SettingsGroup>
     </>
   );
 }

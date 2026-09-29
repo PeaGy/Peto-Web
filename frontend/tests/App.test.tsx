@@ -60,6 +60,12 @@ async function openApp() {
   await screen.findByRole('button', { name: 'A', exact: true }, { timeout: 5000 });
 }
 
+/** Bấm ô tài khoản ở đáy thanh bên rồi chọn một mục trong menu tài khoản. */
+async function fromAccountMenu(item: string) {
+  fireEvent.click(screen.getByRole('button', { name: /^Tài khoản · / }));
+  fireEvent.click(await screen.findByRole('menuitem', { name: item }));
+}
+
 it('cập nhật tiêu đề nền ở lần thử cuối mà không tải lại tin nhắn', async () => {
   vi.mocked(api.listConversations).mockResolvedValue({ conversations: [
     { ...conversation('A'), title_state: 'pending', title_attempts: 3 },
@@ -564,12 +570,13 @@ it('asks before deleting and keeps the conversation when cancelled', async () =>
   expect(screen.queryByRole('dialog')).toBeNull();
 });
 
-it('opens settings from the account box and switches to the light theme', async () => {
+it('opens settings from the account menu and switches to the light theme', async () => {
   await openApp();
   expect(document.documentElement.dataset.theme).toBe('dark');
-  fireEvent.click(screen.getByRole('button', {name: /Cài đặt · Demo/}));
-  const dialog = screen.getByRole('dialog');
-  fireEvent.click(within(dialog).getByRole('radio', {name: /Sáng/}));
+  await fromAccountMenu('Cài đặt');
+  const dialog = screen.getByRole('dialog', {name: 'Cài đặt'});
+  expect(within(dialog).getByRole('heading', {name: 'Giao diện'})).toBeTruthy();
+  fireEvent.click(within(dialog).getByRole('radio', {name: 'Sáng'}));
   expect(document.documentElement.dataset.theme).toBe('light');
   expect(localStorage.getItem('peto-theme')).toBe('light');
   fireEvent.click(within(dialog).getByRole('button', {name: 'Đóng cài đặt'}));
@@ -578,7 +585,7 @@ it('opens settings from the account box and switches to the light theme', async 
 
 it('lưu lựa chọn Luôn cử động cho nhân vật Companion', async () => {
   await openApp();
-  fireEvent.click(screen.getByRole('button', {name: /Cài đặt · Demo/}));
+  await fromAccountMenu('Cài đặt');
   const dialog = screen.getByRole('dialog');
   const group = await within(dialog).findByRole('radiogroup', {name: 'Nhân vật cử động'});
   expect((within(group).getByRole('radio', {name: /Theo máy/}) as HTMLInputElement).checked).toBe(true);
@@ -696,8 +703,7 @@ describe('Màn hình đăng nhập', () => {
     // nên nút Google biến mất tới khi F5. Đăng xuất không đổi gì ở máy chủ.
     vi.mocked(api.logout).mockResolvedValue(undefined);
     await openApp();
-    fireEvent.click(screen.getByRole('button', { name: /Cài đặt/ }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Đăng xuất' }));
+    await fromAccountMenu('Đăng xuất');
 
     expect(await screen.findByRole('link', { name: /Đăng nhập bằng Discord/ })).toBeTruthy();
     expect(screen.getByRole('link', { name: /Google/ })).toBeTruthy();
@@ -732,8 +738,11 @@ describe('Màn hình đăng nhập', () => {
     await waitFor(() => expect(api.guestLogin).toHaveBeenCalled());
     await screen.findByRole('button', { name: 'A', exact: true });
     // Không có ảnh đại diện thì rơi về chữ cái đầu, không phải <img src="">.
-    // Hiện ở cả khối tài khoản lẫn hộp cài đặt.
+    // Hiện ở cả ô tài khoản lẫn menu tài khoản.
+    fireEvent.click(screen.getByRole('button', { name: 'Tài khoản · Khách' }));
+    await screen.findByRole('menu', { name: 'Tài khoản' });
     expect(screen.getAllByText('K')).toHaveLength(2);
+    expect(screen.getAllByText('Tài khoản khách')).toHaveLength(2);
     expect(document.querySelector('img.account-avatar')).toBeNull();
   });
 
@@ -753,8 +762,7 @@ describe('Màn hình đăng nhập', () => {
     fireEvent.click(await screen.findByRole('button', { name: /Khách/ }));
     await screen.findByRole('button', { name: 'A', exact: true });
 
-    fireEvent.click(screen.getByRole('button', { name: /Cài đặt/ }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Đăng xuất' }));
+    await fromAccountMenu('Đăng xuất');
     await screen.findByRole('link', { name: /Đăng nhập bằng Discord/ });
 
     const nut = document.querySelector('.login-alts button') as HTMLButtonElement;
@@ -864,13 +872,121 @@ describe('Chọn mức suy nghĩ', () => {
   });
 });
 
+describe('Menu tài khoản và hộp Cài đặt', () => {
+  const account = () => screen.getByRole('button', { name: 'Tài khoản · Demo' });
+
+  it('ô tài khoản gọn: tên và @tên người dùng, bấm vào mở menu chứ không mở thẳng Cài đặt', async () => {
+    await openApp();
+    expect(account().textContent).toContain('@demo');
+    expect(account().getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(account());
+    const menu = within(await screen.findByRole('menu', { name: 'Tài khoản' }));
+    expect(account().getAttribute('aria-expanded')).toBe('true');
+    expect(screen.queryByRole('dialog', { name: 'Cài đặt' })).toBeNull();
+    const items = menu.getAllByRole('menuitem');
+    expect(items[0].textContent).toContain('Demo @demo');
+    expect(items.slice(1).map((item) => item.textContent?.trim())).toEqual(['Hồ sơ', 'Cài đặt', 'Hướng dẫn', 'Đăng xuất']);
+    expect(menu.getByRole('menuitem', { name: 'Hướng dẫn' }).getAttribute('href')).toBe('/docs/');
+  });
+
+  it('menu đi bằng mũi tên; Esc đóng menu và trả tiêu điểm về ô tài khoản', async () => {
+    await openApp();
+    fireEvent.click(account());
+    await screen.findByRole('menu', { name: 'Tài khoản' });
+    expect(document.activeElement?.textContent).toContain('Demo');
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowDown' });
+    expect(document.activeElement?.textContent).toBe('Hồ sơ');
+    fireEvent.keyDown(document.activeElement!, { key: 'End' });
+    expect(document.activeElement?.textContent).toBe('Đăng xuất');
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowDown' });
+    expect(document.activeElement?.textContent).toContain('Demo');
+    fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
+    expect(document.activeElement).toBe(account());
+    // Menu mờ đi rồi mới gỡ; jsdom không chạy hiệu ứng nên đợi lượt gỡ dự phòng.
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+  });
+
+  it('bấm ra ngoài thì đóng menu', async () => {
+    await openApp();
+    fireEvent.click(account());
+    await screen.findByRole('menu', { name: 'Tài khoản' });
+    fireEvent.pointerDown(document.body);
+    expect(account().getAttribute('aria-expanded')).toBe('false');
+    // Menu mờ đi rồi mới gỡ; jsdom không chạy hiệu ứng nên đợi lượt gỡ dự phòng.
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+  });
+
+  it('tài khoản Google ghi "Google" thay cho tên người dùng trùng tên hiển thị', async () => {
+    vi.mocked(api.getAuthState).mockResolvedValue({ authenticated: true, login_configured: true,
+      providers: { discord: true, google: true, guest: true },
+      user: { id: 'acc-222', provider: 'google', username: 'Demo', display_name: 'Demo', avatar_url: '' } });
+    await openApp();
+    expect(account().textContent).toContain('Google');
+    expect(account().textContent).not.toContain('@Demo');
+  });
+
+  it('mỗi lần một mục: đổi mục thì đổi tiêu đề, chữ đang gõ ở Hồ sơ vẫn còn khi quay lại', async () => {
+    await openApp();
+    await fromAccountMenu('Cài đặt');
+    const dialog = within(screen.getByRole('dialog', { name: 'Cài đặt' }));
+    expect(dialog.getByRole('button', { name: 'Giao diện' }).getAttribute('aria-current')).toBe('page');
+
+    fireEvent.click(dialog.getByRole('button', { name: 'Hồ sơ' }));
+    expect(dialog.getByRole('heading', { name: 'Hồ sơ' })).toBeTruthy();
+    expect(dialog.getByRole('button', { name: 'Hồ sơ' }).getAttribute('aria-current')).toBe('page');
+    expect(dialog.getByRole('button', { name: 'Giao diện' }).getAttribute('aria-current')).toBeNull();
+    fireEvent.change(await dialog.findByLabelText('Peto nên gọi bạn là gì?'), { target: { value: 'Bé Na' } });
+
+    fireEvent.click(dialog.getByRole('button', { name: 'Tài khoản' }));
+    expect(dialog.getByRole('heading', { name: 'Tài khoản' })).toBeTruthy();
+    expect(dialog.getByText('@demo · Đăng nhập bằng Discord')).toBeTruthy();
+    expect(dialog.queryByRole('textbox', { name: 'Peto nên gọi bạn là gì?' })).toBeNull();
+    expect(dialog.getByRole('link', { name: /Mở hướng dẫn/ }).getAttribute('href')).toBe('/docs/');
+
+    fireEvent.click(dialog.getByRole('button', { name: 'Hồ sơ' }));
+    expect((dialog.getByLabelText('Peto nên gọi bạn là gì?') as HTMLInputElement).value).toBe('Bé Na');
+    // Chữ chưa lưu còn nguyên nên không tải lại đè lên.
+    expect(api.getProfile).toHaveBeenCalledTimes(1);
+  });
+
+  it('mở Hồ sơ từ menu thì vào thẳng trang Hồ sơ; nút quay lại về danh sách mục; đóng thì tiêu điểm về ô tài khoản', async () => {
+    await openApp();
+    await fromAccountMenu('Hồ sơ');
+    const element = screen.getByRole('dialog', { name: 'Cài đặt' });
+    const dialog = within(element);
+    expect(dialog.getByRole('heading', { name: 'Hồ sơ' })).toBeTruthy();
+    expect(element.dataset.page).toBe('section');
+    fireEvent.click(dialog.getByRole('button', { name: 'Quay lại danh sách cài đặt' }));
+    expect(element.dataset.page).toBe('list');
+    fireEvent.click(dialog.getByRole('button', { name: 'Peto Agent' }));
+    expect(element.dataset.page).toBe('section');
+    expect(dialog.getByRole('heading', { name: 'Peto Agent' })).toBeTruthy();
+    fireEvent.click(dialog.getByRole('button', { name: 'Đóng cài đặt' }));
+    expect(screen.queryByRole('dialog', { name: 'Cài đặt' })).toBeNull();
+    await waitFor(() => expect(document.activeElement).toBe(account()));
+  });
+
+  it('khách được báo trước là đăng xuất rồi không vào lại được', async () => {
+    vi.mocked(api.getAuthState).mockResolvedValue({ authenticated: true, login_configured: true,
+      providers: { discord: true, google: true, guest: true },
+      user: { id: 'acc-khach', provider: 'guest', username: 'khach', display_name: 'Khách', avatar_url: '' } });
+    render(<App />);
+    await screen.findByRole('button', { name: 'A', exact: true });
+    fireEvent.click(screen.getByRole('button', { name: 'Tài khoản · Khách' }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: /Khách/ }));
+    const dialog = within(screen.getByRole('dialog', { name: 'Cài đặt' }));
+    expect(dialog.getByRole('heading', { name: 'Tài khoản' })).toBeTruthy();
+    expect(dialog.getByText(/Khách không đăng nhập lại được/)).toBeTruthy();
+  });
+});
+
 describe('Hồ sơ trong Cài đặt', () => {
   const PROFILE = { full_name: 'Nguyễn An', nickname: 'An', occupation: 'student', instructions: 'Trả lời ngắn.' };
   const data = () => ({ profile: PROFILE, limits: { full_name: 80, nickname: 40, instructions: 1500 },
     occupations: [{ value: 'student', label: 'Học sinh, sinh viên' }, { value: 'other', label: 'Khác' }] });
   const openSettings = async () => {
     await openApp();
-    fireEvent.click(screen.getByRole('button', { name: /Cài đặt/ }));
+    await fromAccountMenu('Hồ sơ');
   };
 
   it('tải hồ sơ vào các ô và chỉ cho lưu khi có thay đổi', async () => {
@@ -945,7 +1061,7 @@ describe('Lời chào theo giờ', () => {
   it('lưu tên mới trong Hồ sơ là lời chào đổi theo ngay', async () => {
     vi.mocked(api.saveProfile).mockResolvedValue({ full_name: '', nickname: 'Bé An', occupation: '', instructions: '' });
     await openApp();
-    fireEvent.click(screen.getByRole('button', { name: /Cài đặt/ }));
+    await fromAccountMenu('Hồ sơ');
     fireEvent.change(await screen.findByLabelText('Peto nên gọi bạn là gì?'), { target: { value: 'Bé An' } });
     fireEvent.click(screen.getByRole('button', { name: 'Lưu thay đổi' }));
     await screen.findByText('Đã lưu');

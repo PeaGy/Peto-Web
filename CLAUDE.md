@@ -387,6 +387,48 @@ comes from `frontend/src/timeGreeting.ts`: a few lines per time-of-day slot on t
 **browser** clock (unlike chat, which trusts the server clock), re-picked when the tab
 becomes visible again in a new slot or day.
 
+### Settings and the account menu
+
+On 2026-09-29 the owner asked for a compact account row and menu like ChatGPT's and a settings panel like Claude's, then
+picked "Từng mục" from three live variants (the repo's `prototype` skill). The other two were one scrolling page with a
+scrollspy list, and grouped cards with coloured icons.
+
+- **Account row** (`.account`, bottom of the sidebar): a 24px avatar, the display name and one line under it
+  (`accountSubtitle`). That line is `@username` for Discord, "Google" for Google accounts (their username is the display
+  name) and "Tài khoản khách" for guests. There is no gear: the row opens the menu, not Settings.
+- **Account menu** (`AccountMenu.tsx`): the account (opens Tài khoản), Hồ sơ, Cài đặt, Hướng dẫn (`/docs/` in a new
+  tab) and Đăng xuất (disabled while a reply streams).
+  - It is fixed-positioned above the row and rendered outside the sidebar, because the sidebar clips overflow. With the
+    sidebar collapsed to 64px it widens to 248px, to the right.
+  - Focus goes to the first item. Arrows, Home and End move; Esc closes and refocuses the row; a pointerdown outside,
+    Tab or a resize closes.
+  - It fades out for 110 ms before unmounting, with a timer fallback: jsdom and hidden windows fire no animationend.
+- **Dialog** (`SettingsDialog.tsx`, still a `<dialog>` opened with `showModal` in a layout effect). A 216px list of
+  sections sits on the left and one section shows on the right. The sections are Giao diện, Hồ sơ, Tài khoản and Peto
+  Agent, then a "Companion" group with Giọng nói, Trí nhớ and Tra web. App keeps a `SettingsView` of `{open, section,
+  page}`.
+  - **Opening.** "Cài đặt" in the menu opens Giao diện, "Hồ sơ" opens Hồ sơ and the account item opens Tài khoản.
+    Companion's "Xem" opens Trí nhớ, and the Micro panel link opens Giọng nói on the Peto nghe tab.
+  - **Focus.** On open, focus goes to the current section's item (on a phone page, to the back button). After opening
+    from the menu, closing refocuses the account row (`settingsReturn`), since the menu item is gone.
+  - **Mounting.** Visited sections stay mounted and are only hidden, so an unsaved Hồ sơ edit survives switching
+    sections. `render(section, active)` passes `active` (dialog open, section shown) as each component's `open` prop.
+    Sections therefore load their data when shown, and Giọng nói stops a sample or a test listen when you leave it.
+  - **Phones.** Below 720px the dialog fills the screen. The list of sections comes first; picking one slides its page
+    in from the right, iOS style, with a back button. This uses `data-motion` push/pop and is skipped under reduced
+    motion. `data-page` on the dialog says which screen shows.
+- **Rows** (`settingsUi.tsx`):
+  - `SettingsRow` puts the label and description on the left and the control on the right, with hairlines between rows.
+    `SettingsGroup` groups rows under an optional small title.
+  - `Segmented` is made of real radio inputs, so arrow keys and `.checked` work; the theme choice uses icons.
+    `SettingsSwitch` and `SettingsIcon` complete the set.
+  - Section components render straight into these rows, without their own heading: the dialog shows the section title.
+    On phones, inputs and dropdowns drop under their label, while switches stay on the right.
+- **Tests:**
+  - `App.test.tsx` has a "Menu tài khoản và hộp Cài đặt" group.
+  - The settings helpers in `Companion.test.tsx` and `Hearing.test.tsx` open Settings the way a user does: account row,
+    then the menu, then the section.
+
 ### Roleplay mode
 
 A conversation's `persona` is `assistant` (default) or `roleplay`, chosen before its first message and stored on the
@@ -655,9 +697,9 @@ Vietnamese message, and each caller shows its own error. Companion's speech keys
 
 ### Companion memory (Brain)
 
-The first Brain feature, picked by the owner from mockups on 2026-09-27. It has its own "Trí nhớ Companion" section in
-Settings, right after Giọng nói (layout A). The Companion chat column shows a "Peto vừa ghi nhớ: … · Xem" line, and the
-feature is on by default.
+The first Brain feature, picked by the owner from mockups on 2026-09-27. It has its own section in Settings, "Trí nhớ"
+in the Companion group (layout A). The Companion chat column shows a "Peto vừa ghi nhớ: … · Xem" line, and the feature
+is on by default.
 
 - **When it runs.** After a complete Companion turn, `main.py` marks the owner pending before `done`. It then runs
   `companion_memory.remember(owner)` in the response's background task, so the reply and voice are never delayed. Runs
@@ -700,10 +742,8 @@ feature is on by default.
     optimistic and roll back on error.
   - After a turn, `Companion.tsx` polls at `memoryNotice.MEMORY_POLL_DELAYS`. When an item is new or its `updated_at`
     changed, it shows the notice under that reply, and scrolls to it only if the reader is still at the bottom.
-  - "Xem" opens Settings at this section through `settingsFocus.useSettingsFocus`. It scrolls once per request, never
-    again on later normal opens, plus once more when the list loads, because sections above may have grown.
-  - App opens the Settings dialog in `useLayoutEffect`. Child effects run before the parent's, so with `useEffect` the
-    scroll happened while the dialog was still hidden. The "Peto nghe" link had the same bug and uses the same hook.
+  - "Xem" opens Settings at Trí nhớ (`openMemorySettings`). The section reloads its list whenever it becomes the one
+    shown, so a list mounted by an earlier visit never shows stale lines.
   - "Bắt đầu lại" deletes the thread, never the memories. Its dialog re-fetches the list when it opens and, when
     memories exist, says they are kept and where to delete them.
 - **Tests.**
@@ -711,7 +751,7 @@ feature is on by default.
     and turns a summary call into the old summary plus the user lines it was given. The summary tests shrink the
     window with `main.MAX_HISTORY_MESSAGES` and `companion_memory.SUMMARY_BATCH` (both 4).
   - Provider spies must filter out `MEMORY_MARKER` and `SUMMARY_MARKER` as well as `TITLE_MARKER`.
-  - Frontend: `MemorySettings.test.tsx`, and the notice and scroll tests in `Companion.test.tsx` and `Hearing.test.tsx`,
+  - Frontend: `MemorySettings.test.tsx`, and the notice and "Xem" tests in `Companion.test.tsx` and `Hearing.test.tsx`,
     with `MEMORY_POLL_DELAYS` mocked to 0.
 
 ### Companion private notes
@@ -816,8 +856,8 @@ On 2026-09-28 the owner decided Companion should only gain features AIRI has, an
 the list, with option C from mockups: the page shows no sources.
 
 - **Switch, off by default.** Later on 2026-09-28 a Companion reply on the owner's phone was slow. The owner then picked
-  a switch in Settings → "Tra web" (option A, right after Trí nhớ Companion, like AIRI's Modules → Web Search), off by
-  default as in AIRI.
+  a switch in Settings → "Tra web" (option A, in the Companion group after Trí nhớ, like AIRI's Modules → Web Search),
+  off by default as in AIRI.
   - `companionSearch.ts` keeps it per browser (`peto-companion-web-search`); `SearchSettings.tsx` renders it.
   - Companion sends `off` unless the switch is on.
 - **Server.** With the switch on, a Companion turn uses `web_search="auto"`, so Peto decides when to search.
@@ -1416,8 +1456,8 @@ Chat, Companion and roleplay turn (not the Agent CLI).
   - **LazyBoundary.** It wraps every lazy part, so a chunk that fails to load shows "Tải lại trang" in that spot
     instead of blanking the whole app. This happens when a deploy has removed the old hashed files, since the build
     empties `dist`.
-  - **Where these live.** Settings sections render only after the first open (`settingsVisited`), each in its own
-    `Suspense`, so "Giao diện" never waits for the voice chunk. Keep the icons the sidebar needs in `App.tsx`
+  - **Where these live.** Settings sections render on their first visit (`SettingsDialog` keeps the visited set), each
+    in its own `Suspense`, so "Giao diện" never waits for the voice chunk. Keep the icons the sidebar needs in `App.tsx`
     (`CompanionIcon` moved there for this reason).
   - **React chunk.** `vite.config.ts` puts React in its own chunk (`codeSplitting.groups`), so a deploy changes only
     the app chunk's hash and returning visitors keep React cached. Never widen that group to all of `node_modules`,

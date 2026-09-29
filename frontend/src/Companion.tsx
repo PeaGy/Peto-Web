@@ -102,7 +102,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
   onOpenSidebar: () => void;
   /** Mở Cài đặt → Giọng nói → Peto nghe (từ bảng Micro). */
   onOpenHearingSettings?: () => void;
-  /** Nút "Xem" ở dòng "Peto vừa ghi nhớ": mở Cài đặt tới mục Trí nhớ Companion. */
+  /** Nút "Xem" ở dòng "Peto vừa ghi nhớ": mở Cài đặt ở mục Trí nhớ. */
   onOpenMemorySettings?: () => void;
 }) {
   const [conversationId, setConversationId] = useState<string | null>(null);
@@ -704,7 +704,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
         <h2 id="companion-reset-title">Bắt đầu lại với Peto?</h2>
         <p>Toàn bộ mạch trò chuyện trong Companion sẽ bị xóa. Không thể hoàn tác.</p>
         {keptMemories > 0 && (
-          <p>Những điều Peto ghi nhớ về bạn vẫn được giữ; muốn xóa thì vào Cài đặt → Trí nhớ Companion.</p>
+          <p>Những điều Peto ghi nhớ về bạn vẫn được giữ; muốn xóa thì vào Cài đặt → Trí nhớ.</p>
         )}
         <div className="dialog-actions">
           <button type="button" disabled={resetting} onClick={() => setConfirmReset(false)}>Giữ lại</button>

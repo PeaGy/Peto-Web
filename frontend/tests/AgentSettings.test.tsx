@@ -27,7 +27,7 @@ it('liệt kê máy, số bước còn lại và ngắt kết nối từng máy'
   vi.mocked(api.revokeAgentDevice).mockResolvedValue();
   render(<AgentSettings open isGuest={false} onUnauthorized={vi.fn()} />);
   expect(await screen.findByText('DESKTOP-BINH')).toBeTruthy();
-  expect(screen.getByText(/Hôm nay còn 184\/200 bước/)).toBeTruthy();
+  expect(screen.getByText('Còn 184/200')).toBeTruthy();
   expect(screen.getByText('Dùng 5 phút trước')).toBeTruthy();
   expect(screen.getByText('Dùng 3 ngày trước')).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: 'Ngắt kết nối DESKTOP-BINH' }));

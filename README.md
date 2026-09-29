@@ -396,6 +396,10 @@ Giới hạn cố ý của phần này:
 - Bảng Markdown và khối mã cuộn ngang; đọc tin cũ không bị kéo xuống mỗi đoạn
   trả lời mới. Giao diện chạy theo cài đặt sáng/tối của máy, đổi tay được trong
   Cài đặt; cột chat thu gọn trên màn hình rộng và thanh bên thu lại được.
+- Ô tài khoản ở đáy thanh bên gọn như ChatGPT: bấm vào mở menu gồm tài khoản, **Hồ sơ**, **Cài đặt**, **Hướng dẫn** và
+  **Đăng xuất**. **Cài đặt** chia mục như Cài đặt của Claude: danh sách mục bên trái (Giao diện, Hồ sơ, Tài khoản, Peto
+  Agent, rồi nhóm Companion với Giọng nói, Trí nhớ, Tra web), mỗi lần một mục bên phải. Trên điện thoại là danh sách
+  mục, chạm vào thì trang của mục trượt vào, có nút quay lại.
 - Tối đa 16 tệp/tin, trong đó ảnh, PDF và Word tối đa 4; 8 MB/tệp, tổng 16 MB
   theo cấu hình mặc định. Ảnh, lớp chữ PDF, phần thân và bảng Word (.docx),
   tệp chữ/code được chuyển vào ngữ cảnh AI. Tệp được kiểm tra và chỉ chủ sở hữu đọc được.
@@ -441,9 +445,9 @@ trên giao diện máy tính và điện thoại bằng máy chủ riêng với 
 
 ## Hồ sơ cá nhân
 
-Trong **Cài đặt → Hồ sơ**, mỗi người tự điền họ tên, tên muốn Peto gọi, công việc
-(chọn trong danh sách) và **Hướng dẫn cho Peto** — tối đa 1.500 ký tự, ví dụ "giải
-thích ngắn gọn, đi thẳng vào vấn đề".
+Trong **Cài đặt → Hồ sơ** (hay bấm ô tài khoản rồi chọn **Hồ sơ**), mỗi người tự điền
+họ tên, tên muốn Peto gọi, công việc (chọn trong danh sách) và **Hướng dẫn cho Peto** —
+tối đa 1.500 ký tự, ví dụ "giải thích ngắn gọn, đi thẳng vào vấn đề".
 
 - Lưu theo tài khoản trong bảng `user_profiles`, tách khỏi thông tin Discord/Google
   vốn bị ghi đè mỗi lần đăng nhập.
@@ -507,7 +511,7 @@ Anh như đang trò chuyện, rồi tự nói thành tiếng. Tab Trò chuyện 
   - Mỗi lượt Companion chỉ gửi kèm 20 tin gần nhất, nên Peto còn giữ một bản tóm tắt ngắn phần trò chuyện đã trôi ra
     khỏi đó (cứ khoảng năm lượt gộp một lần). Bản tóm tắt không hiện trong Cài đặt; xóa một ghi nhớ hay **Xóa hết** thì
     nó cũng bị xóa trắng, để điều vừa xóa không nằm lại trong đó, và **Bắt đầu lại** xóa nó cùng mạch trò chuyện.
-  - Xem, xóa từng dòng, xóa hết hoặc tắt ở **Cài đặt → Trí nhớ Companion**. Tắt thì Peto không ghi thêm, không tóm tắt
+  - Xem, xóa từng dòng, xóa hết hoặc tắt ở **Cài đặt → Trí nhớ**. Tắt thì Peto không ghi thêm, không tóm tắt
     và không dùng những gì đã nhớ; bật lại cũng không đọc những gì đã nói lúc tắt.
   - Peto chỉ đọc tin nhắn Companion của chính tài khoản đó, tính từ lúc có tính năng này (không đào lại lịch sử cũ).
     Tab Trò chuyện không dùng trí nhớ này, và nó không liên quan tới trí nhớ của bot Discord. Khách cũng có trí nhớ

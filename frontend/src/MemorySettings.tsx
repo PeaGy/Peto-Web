@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import {
   UnauthorizedError,
   clearCompanionMemory,
@@ -7,17 +7,16 @@ import {
   setCompanionMemoryEnabled,
   type CompanionMemoryState,
 } from "./api";
-import { useSettingsFocus } from "./settingsFocus";
+import { SettingsGroup, SettingsRow, SettingsSwitch } from "./settingsUi";
 
 /**
  * Mục Trí nhớ Companion trong Cài đặt (phương án A chủ web chọn ngày 2026-09-27): công tắc bật/tắt, danh sách những
  * điều Peto tự ghi nhớ từ lời người dùng kể trong Companion, xóa từng dòng hay xóa hết. Máy chủ đọc lại danh sách ở mỗi
  * lượt Companion, nên xóa dòng nào là lượt sau Peto quên dòng đó.
  */
-export default function MemorySettings({ open, focusRequest = 0, onUnauthorized }: {
+export default function MemorySettings({ open, onUnauthorized }: {
+  /** Mục Trí nhớ đang được xem: lúc đó mới tải danh sách. */
   open: boolean;
-  /** Tăng lên khi bấm "Xem" ở dòng "Peto vừa ghi nhớ" trong Companion: cuộn tới mục này. */
-  focusRequest?: number;
   onUnauthorized: () => void;
 }) {
   const [state, setState] = useState<CompanionMemoryState | null>(null);
@@ -26,7 +25,7 @@ export default function MemorySettings({ open, focusRequest = 0, onUnauthorized 
   const [busy, setBusy] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
   const loadVersion = useRef(0);
-  const sectionRef = useRef<HTMLElement>(null);
+  const switchId = useId();
 
   const load = useCallback((signal?: AbortSignal) => {
     const version = ++loadVersion.current;
@@ -41,7 +40,7 @@ export default function MemorySettings({ open, focusRequest = 0, onUnauthorized 
     );
   }, [onUnauthorized]);
 
-  // Mở Cài đặt là tải lại: lượt Companion vừa xong có thể vừa ghi thêm.
+  // Mở mục là tải lại: lượt Companion vừa xong có thể vừa ghi thêm.
   useEffect(() => {
     if (!open) return;
     const controller = new AbortController();
@@ -52,8 +51,6 @@ export default function MemorySettings({ open, focusRequest = 0, onUnauthorized 
       controller.abort();
     };
   }, [open, load]);
-
-  useSettingsFocus(sectionRef, open, focusRequest, state);
 
   async function run(action: () => Promise<void>, rollback: CompanionMemoryState | null, failure: string) {
     setError(null);
@@ -100,24 +97,14 @@ export default function MemorySettings({ open, focusRequest = 0, onUnauthorized 
     : "Đang tắt: Peto không ghi thêm và không dùng các ghi nhớ bên dưới.";
 
   return (
-    <section ref={sectionRef} className="settings-section" aria-labelledby="memory-settings-title">
-      <div className="voice-head">
-        <h3 id="memory-settings-title">Trí nhớ Companion</h3>
-        {state?.available && (
-          <label className="voice-switch">
-            <span aria-hidden="true">{state.enabled ? "Đang bật" : "Đang tắt"}</span>
-            <input
-              type="checkbox"
-              role="switch"
-              aria-label="Cho Peto ghi nhớ"
-              checked={state.enabled}
-              disabled={busy}
-              onChange={(event) => toggle(event.target.checked)}
-            />
-          </label>
-        )}
-      </div>
-      <p className="settings-hint">{hint}</p>
+    <>
+      <SettingsGroup>
+        <SettingsRow label="Cho Peto ghi nhớ" htmlFor={state?.available ? switchId : undefined} desc={hint}>
+          {state?.available && (
+            <SettingsSwitch id={switchId} label="Cho Peto ghi nhớ" checked={state.enabled} disabled={busy} onChange={toggle} />
+          )}
+        </SettingsRow>
+      </SettingsGroup>
 
       {loadFailed ? (
         <div className="voice-row">
@@ -126,27 +113,31 @@ export default function MemorySettings({ open, focusRequest = 0, onUnauthorized 
         </div>
       ) : !state && <p className="memory-empty" role="status">Đang tải…</p>}
 
-      {!loadFailed && state && state.available && (memories.length ? (
-        <ul className={state.enabled ? "memory-list" : "memory-list off"} aria-label="Những điều Peto nhớ về bạn">
-          {memories.map((item) => (
-            <li key={item.id}>
-              <span>{item.text}</span>
-              <button
-                type="button"
-                className="memory-delete"
-                aria-label={`Xóa ghi nhớ: ${item.text}`}
-                title="Xóa ghi nhớ này"
-                disabled={busy}
-                onClick={() => forget(item.id)}
-              >
-                ×
-              </button>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="memory-empty">Chưa có ghi nhớ nào. Cứ trò chuyện trong Companion, Peto sẽ tự ghi lại những điều đáng nhớ.</p>
-      ))}
+      {!loadFailed && state && state.available && (
+        <SettingsGroup title="Những điều Peto nhớ về bạn">
+          {memories.length ? (
+            <ul className={state.enabled ? "memory-list" : "memory-list off"} aria-label="Những điều Peto nhớ về bạn">
+              {memories.map((item) => (
+                <li key={item.id}>
+                  <span>{item.text}</span>
+                  <button
+                    type="button"
+                    className="memory-delete"
+                    aria-label={`Xóa ghi nhớ: ${item.text}`}
+                    title="Xóa ghi nhớ này"
+                    disabled={busy}
+                    onClick={() => forget(item.id)}
+                  >
+                    ×
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="memory-empty">Chưa có ghi nhớ nào. Cứ trò chuyện trong Companion, Peto sẽ tự ghi lại những điều đáng nhớ.</p>
+          )}
+        </SettingsGroup>
+      )}
 
       {!loadFailed && state && state.available && memories.length > 0 && (
         <div className="memory-foot">
@@ -158,11 +149,11 @@ export default function MemorySettings({ open, focusRequest = 0, onUnauthorized 
               <button type="button" className="settings-button danger" disabled={busy} onClick={forgetAll}>Xóa hết</button>
             </span>
           ) : (
-            <button type="button" className="voice-link" disabled={busy} onClick={() => setConfirmClear(true)}>Xóa hết</button>
+            <button type="button" className="settings-button danger" disabled={busy} onClick={() => setConfirmClear(true)}>Xóa hết</button>
           )}
         </div>
       )}
       {error && <p className="voice-error" role="alert">{error}</p>}
-    </section>
+    </>
   );
 }

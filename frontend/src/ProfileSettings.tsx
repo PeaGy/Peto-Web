@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from 'react';
 import { UnauthorizedError, getProfile, saveProfile, type Profile, type ProfileData } from './api';
+import { SettingsGroup, SettingsRow } from './settingsUi';
 
 const EMPTY: Profile = { full_name: '', nickname: '', occupation: '', instructions: '' };
 const FIELDS = Object.keys(EMPTY) as (keyof Profile)[];
@@ -13,9 +14,12 @@ const FIELDS = Object.keys(EMPTY) as (keyof Profile)[];
  * đang user-select: none, và iOS Safari có lỗi khiến ô nhập nằm trong phần tử
  * như vậy không gõ hay bôi chọn được chữ.
  */
-export default function ProfileSettings({ open, avatar, onUnauthorized, onSaved }: {
+export default function ProfileSettings({ open, avatar, avatarNote, onUnauthorized, onSaved }: {
+  /** Mục Hồ sơ đang được xem: lúc đó mới tải hồ sơ. */
   open: boolean;
   avatar: ReactNode;
+  /** Ảnh lấy từ đâu ("Theo tài khoản Discord"); khách không có ảnh thì bỏ trống. */
+  avatarNote?: string;
   onUnauthorized: () => void;
   /** Báo bản vừa lưu lên App, để lời chào ở màn hình trống đổi tên ngay. */
   onSaved?: (profile: Profile) => void;
@@ -36,8 +40,8 @@ export default function ProfileSettings({ open, avatar, onUnauthorized, onSaved 
   useEffect(() => { dirtyRef.current = dirty; }, [dirty]);
   useEffect(() => () => window.clearTimeout(savedTimer.current), []);
 
-  // Mở Cài đặt là tải lại, vì hồ sơ có thể vừa được sửa ở máy khác. Riêng khi
-  // còn thay đổi chưa lưu thì giữ nguyên, để đóng rồi mở lại không mất chữ.
+  // Mở mục Hồ sơ là tải lại, vì hồ sơ có thể vừa được sửa ở máy khác. Riêng khi
+  // còn thay đổi chưa lưu thì giữ nguyên, để sang mục khác hay đóng rồi mở lại không mất chữ.
   useEffect(() => {
     if (!open || dirtyRef.current) return;
     const version = ++loadVersion.current;
@@ -91,9 +95,8 @@ export default function ProfileSettings({ open, avatar, onUnauthorized, onSaved 
 
   const limits = data?.limits ?? { full_name: 80, nickname: 40, instructions: 1500 };
 
-  return <section className="settings-section profile-section" aria-labelledby="profile-title">
-    <h3 id="profile-title">Hồ sơ</h3>
-    <p className="settings-hint">
+  return <>
+    <p className="settings-intro">
       Peto dựa vào đây để hiểu và xưng hô với bạn trong mọi cuộc trò chuyện. Chỉ dùng cho Peto trên web này.
     </p>
     {loadFailed ? (
@@ -105,38 +108,37 @@ export default function ProfileSettings({ open, avatar, onUnauthorized, onSaved 
       <p className="settings-hint" role="status">Đang tải hồ sơ…</p>
     ) : (
       <form className="profile-form" onSubmit={(event) => void save(event)}>
-        <div className="profile-row">
-          <span className="profile-label">Ảnh đại diện</span>
-          {avatar}
-        </div>
-        <div className="profile-row">
-          <label className="profile-label" htmlFor="profile-full-name">Họ và tên</label>
-          <input id="profile-full-name" value={form.full_name} maxLength={limits.full_name}
-            autoComplete="name" onChange={update('full_name')} />
-        </div>
-        <div className="profile-row">
-          <label className="profile-label" htmlFor="profile-nickname">Peto nên gọi bạn là gì?</label>
-          <input id="profile-nickname" value={form.nickname} maxLength={limits.nickname}
-            autoComplete="nickname" onChange={update('nickname')} />
-        </div>
-        <div className="profile-row">
-          <label className="profile-label" htmlFor="profile-occupation">Công việc của bạn</label>
-          <select id="profile-occupation" value={form.occupation} onChange={update('occupation')}>
-            <option value="">Chọn</option>
-            {data.occupations.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
-          </select>
-        </div>
-        <div className="profile-notes">
-          <label className="profile-label" htmlFor="profile-instructions">Hướng dẫn cho Peto</label>
-          <p className="settings-hint" id="profile-instructions-hint">
-            Peto sẽ nhớ những điều này trong mọi cuộc trò chuyện của bạn, nhưng không vì thế mà bỏ các quy tắc an toàn của mình.
-          </p>
-          <textarea id="profile-instructions" rows={4} value={form.instructions}
-            maxLength={limits.instructions} aria-describedby="profile-instructions-hint"
-            placeholder="Ví dụ: giải thích ngắn gọn, đi thẳng vào vấn đề" onChange={update('instructions')} />
-          <span className="profile-count">{form.instructions.length}/{limits.instructions}</span>
-        </div>
-        <div className="profile-actions">
+        <SettingsGroup>
+          <SettingsRow label="Ảnh đại diện" desc={avatarNote}>{avatar}</SettingsRow>
+          <SettingsRow label="Họ và tên" htmlFor="profile-full-name">
+            <input id="profile-full-name" className="settings-input" value={form.full_name} maxLength={limits.full_name}
+              autoComplete="name" onChange={update('full_name')} />
+          </SettingsRow>
+          <SettingsRow label="Peto nên gọi bạn là gì?" htmlFor="profile-nickname">
+            <input id="profile-nickname" className="settings-input" value={form.nickname} maxLength={limits.nickname}
+              autoComplete="nickname" onChange={update('nickname')} />
+          </SettingsRow>
+          <SettingsRow label="Công việc của bạn" htmlFor="profile-occupation">
+            <select id="profile-occupation" className="settings-input settings-select" value={form.occupation}
+              onChange={update('occupation')}>
+              <option value="">Chọn</option>
+              {data.occupations.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+            </select>
+          </SettingsRow>
+          <SettingsRow
+            stack
+            label="Hướng dẫn cho Peto"
+            htmlFor="profile-instructions"
+            descId="profile-instructions-hint"
+            desc="Peto sẽ nhớ những điều này trong mọi cuộc trò chuyện của bạn, nhưng không vì thế mà bỏ các quy tắc an toàn của mình."
+          >
+            <textarea id="profile-instructions" className="settings-input settings-textarea" rows={4} value={form.instructions}
+              maxLength={limits.instructions} aria-describedby="profile-instructions-hint"
+              placeholder="Ví dụ: giải thích ngắn gọn, đi thẳng vào vấn đề" onChange={update('instructions')} />
+            <span className="profile-count">{form.instructions.length}/{limits.instructions}</span>
+          </SettingsRow>
+        </SettingsGroup>
+        <div className="settings-actions">
           <span className={error ? 'profile-status error' : 'profile-status'} role={error ? 'alert' : 'status'}>
             {error ?? (justSaved ? 'Đã lưu' : '')}
           </span>
@@ -146,5 +148,5 @@ export default function ProfileSettings({ open, avatar, onUnauthorized, onSaved 
         </div>
       </form>
     )}
-  </section>;
+  </>;
 }

@@ -8,6 +8,9 @@ import { preloadable } from "./preloadable";
 import { useLocalVoice } from "./LocalVoice";
 import type { VoiceTab } from "./VoiceSettings";
 import AgentConnectDialog, { forgetAgentCode, takeAgentCode } from "./AgentConnectDialog";
+import AccountMenu, { placeAccountMenu, type AccountMenuPlace } from "./AccountMenu";
+import SettingsDialog, { CLOSED_SETTINGS, type SettingsSection, type SettingsView } from "./SettingsDialog";
+import { Segmented, SettingsGroup, SettingsIcon, SettingsRow, type SegmentOption } from "./settingsUi";
 import { useCharacters } from './useCharacters';
 const CharacterPicker = lazy(() => import('./CharacterPicker'));
 import { readCharacterMotion, writeCharacterMotion, type CharacterMotion } from "./characterView";
@@ -108,10 +111,10 @@ const EFFORTS: { value: Effort; label: string; hint: string }[] = [
 type ThemeChoice = "light" | "dark" | "system";
 type AppView = "chat" | "imagine" | "companion";
 
-const THEMES: { value: ThemeChoice; label: string; hint: string }[] = [
-  { value: "light", label: "Sáng", hint: "Nền trắng, hợp ban ngày" },
-  { value: "dark", label: "Tối", hint: "Nền tối, dịu mắt buổi đêm" },
-  { value: "system", label: "Theo máy", hint: "Đổi theo cài đặt của thiết bị" },
+const THEMES: SegmentOption<ThemeChoice>[] = [
+  { value: "system", label: "Theo máy", hint: "Theo máy: đổi theo cài đặt của thiết bị", icon: <SettingsIcon name="monitor" size={17} /> },
+  { value: "light", label: "Sáng", hint: "Sáng: nền trắng, hợp ban ngày", icon: <SettingsIcon name="sun" size={17} /> },
+  { value: "dark", label: "Tối", hint: "Tối: nền tối, dịu mắt buổi đêm", icon: <SettingsIcon name="moon" size={17} /> },
 ];
 
 /** Model đã chọn lần trước; tài khoản không còn được dùng model đó thì lúc gửi tự về Peto. */
@@ -240,21 +243,6 @@ function SidebarIcon() {
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <rect x="3.5" y="4.5" width="17" height="15" rx="3" stroke="currentColor" strokeWidth="1.7" />
       <path d="M9.5 4.5v15" stroke="currentColor" strokeWidth="1.7" />
-    </svg>
-  );
-}
-
-function GearIcon() {
-  return (
-    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <circle cx="12" cy="12" r="3.1" stroke="currentColor" strokeWidth="1.7" />
-      <path
-        d="M19.4 14.2a1.6 1.6 0 0 0 .32 1.77l.06.06a1.9 1.9 0 1 1-2.7 2.7l-.05-.06a1.6 1.6 0 0 0-1.78-.32 1.6 1.6 0 0 0-.96 1.46v.17a1.9 1.9 0 1 1-3.8 0v-.09a1.6 1.6 0 0 0-1.05-1.46 1.6 1.6 0 0 0-1.77.32l-.06.06a1.9 1.9 0 1 1-2.7-2.7l.06-.06a1.6 1.6 0 0 0 .32-1.77 1.6 1.6 0 0 0-1.46-.96h-.17a1.9 1.9 0 0 1 0-3.8h.09a1.6 1.6 0 0 0 1.46-1.05 1.6 1.6 0 0 0-.32-1.78l-.06-.05a1.9 1.9 0 1 1 2.7-2.7l.06.06a1.6 1.6 0 0 0 1.77.32h.08a1.6 1.6 0 0 0 .96-1.46v-.17a1.9 1.9 0 1 1 3.8 0v.09a1.6 1.6 0 0 0 .96 1.46 1.6 1.6 0 0 0 1.78-.32l.05-.06a1.9 1.9 0 1 1 2.7 2.7l-.06.06a1.6 1.6 0 0 0-.32 1.77v.08a1.6 1.6 0 0 0 1.46.96h.17a1.9 1.9 0 0 1 0 3.8h-.09a1.6 1.6 0 0 0-1.46.96Z"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
     </svg>
   );
 }
@@ -415,9 +403,26 @@ function AccountAvatar({ user, size }: { user?: AccountUser; size: number }) {
     return <img className="account-avatar avatar-image" src={user.avatar_url}
       alt="" width={size} height={size} />;
   }
-  return <span className="account-avatar account-initial" style={{ width: size, height: size }}>
+  return <span className="account-avatar account-initial" style={{ width: size, height: size }} aria-hidden="true">
     {(user?.display_name || "?").charAt(0).toUpperCase()}
   </span>;
+}
+
+/**
+ * Dòng phụ dưới tên ở ô tài khoản, như chữ "Plus" của ChatGPT. Tài khoản Google có tên người dùng trùng tên hiển thị,
+ * nên ghi nơi đăng nhập thay vào.
+ */
+function accountSubtitle(user?: AccountUser): string {
+  if (user?.provider === "guest") return "Tài khoản khách";
+  if (user?.provider === "google") return "Google";
+  return user?.username ? `@${user.username}` : "Discord";
+}
+
+/** Dòng dưới tên trong mục Tài khoản của Cài đặt. */
+function accountLine(user?: AccountUser): string {
+  if (user?.provider === "guest") return "Tài khoản khách, chỉ có trên trình duyệt này";
+  if (user?.provider === "google") return "Đăng nhập bằng Google";
+  return `${user?.username ? `@${user.username} · ` : ""}Đăng nhập bằng Discord`;
 }
 
 function PetoAvatar({ info, big }: { info: AppInfo | null; big?: boolean }) {
@@ -598,10 +603,20 @@ export default function App() {
     setCharacterMotion(value);
     writeCharacterMotion(value);
   }, []);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  // Nội dung Cài đặt chỉ dựng (và tải tệp) từ lần mở đầu, rồi giữ luôn như trước.
-  const [settingsVisited, setSettingsVisited] = useState(false);
-  if (settingsOpen && !settingsVisited) setSettingsVisited(true);
+  // Hộp Cài đặt: mở hay đóng, mục đang xem, và trên điện thoại đang ở danh sách mục hay trang của mục.
+  const [settings, setSettings] = useState<SettingsView>(CLOSED_SETTINGS);
+  const settingsOpen = settings.open;
+  const closeSettings = useCallback(() => setSettings((current) => ({ ...current, open: false })), []);
+  // Menu của ô tài khoản (như ChatGPT). Nó nằm ngoài thanh bên, vì thanh bên cắt phần tràn khi thu gọn còn 64px.
+  const [accountMenu, setAccountMenu] = useState<AccountMenuPlace | null>(null);
+  const accountRef = useRef<HTMLButtonElement>(null);
+  // Mở Cài đặt từ menu thì đóng xong trả tiêu điểm về ô tài khoản: mục trong menu đã gỡ nên hộp thoại không tự trả được.
+  const settingsReturn = useRef<HTMLElement | null>(null);
+  const closeAccountMenu = useCallback((focusBack: boolean) => {
+    setAccountMenu((current) => current && { ...current, closing: true });
+    if (focusBack) accountRef.current?.focus();
+  }, []);
+  const dropAccountMenu = useCallback(() => setAccountMenu(null), []);
   const [view, setView] = useState<AppView>(() => {
     const hash = typeof window !== "undefined" ? window.location.hash : "";
     return hash === "#imagine" ? "imagine" : hash === "#companion" ? "companion" : "chat";
@@ -626,17 +641,17 @@ export default function App() {
   const localVoice = useLocalVoice(companionVisited || settingsOpen);
   // Thẻ đang mở của mục Giọng nói (Peto nói / Peto nghe); bảng Micro trong Companion mở thẳng thẻ Peto nghe.
   const [voiceTab, setVoiceTab] = useState<VoiceTab>("noi");
-  const [voiceFocus, setVoiceFocus] = useState(0);
-  const [memoryFocus, setMemoryFocus] = useState(0);
-  const openMemorySettings = useCallback(() => {
-    setMemoryFocus((count) => count + 1);
-    setSettingsOpen(true);
-  }, []);
+  // Nút "Xem" ở dòng "Peto vừa ghi nhớ" và đường dẫn trong bảng Micro mở thẳng mục của chúng, cả trên điện thoại.
+  const openMemorySettings = useCallback(() => setSettings({ open: true, section: "tri-nho", page: true }), []);
   const openHearingSettings = useCallback(() => {
     setVoiceTab("nghe");
-    setVoiceFocus((count) => count + 1);
-    setSettingsOpen(true);
+    setSettings({ open: true, section: "giong-noi", page: true });
   }, []);
+  useEffect(() => {
+    if (settingsOpen || !settingsReturn.current) return;
+    settingsReturn.current.focus({ preventScroll: true });
+    settingsReturn.current = null;
+  }, [settingsOpen]);
   // Bản sao chỉ để vẽ cột trái; Imagine.tsx mới là nơi tạo, xóa và giữ danh sách.
   const [imagineJobs, setImagineJobs] = useState<ImagineJob[]>([]);
   const [focusJobId, setFocusJobId] = useState<string | null>(null);
@@ -655,7 +670,6 @@ export default function App() {
   const messagesRef = useRef<HTMLDivElement>(null);
   const deleteDialogRef = useRef<HTMLDialogElement>(null);
   const consentDialogRef = useRef<HTMLDialogElement>(null);
-  const settingsDialogRef = useRef<HTMLDialogElement>(null);
   const composerRef = useRef<HTMLFormElement>(null);
   const chatDockRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -784,7 +798,8 @@ export default function App() {
     setLoadFailed(false);
     setError(null);
     setDeleteTarget(null);
-    setSettingsOpen(false);
+    setSettings(CLOSED_SETTINGS);
+    setAccountMenu(null);
     setHasMore(false);
     listCount.current = 50;
     setAuthError("Phiên đăng nhập đã hết hạn hoặc tài khoản không còn được cho phép.");
@@ -877,13 +892,6 @@ export default function App() {
     if (consentOpen) consentDialogRef.current?.showModal();
     else consentDialogRef.current?.close();
   }, [consentOpen]);
-
-  // useLayoutEffect: hộp thoại phải mở trước effect của các mục bên trong, để mục được xin cuộn tới (settingsFocus.ts)
-  // cuộn được ngay; effect của con chạy trước effect của cha, lúc đó hộp thoại còn ẩn.
-  useLayoutEffect(() => {
-    if (settingsOpen) settingsDialogRef.current?.showModal();
-    else settingsDialogRef.current?.close();
-  }, [settingsOpen]);
 
   const addFiles = useCallback((list: FileList | File[]) => {
     if (abortRef.current) return;
@@ -1383,6 +1391,114 @@ export default function App() {
     window.history.replaceState(null, "", url);
   }
 
+  function toggleAccountMenu() {
+    if (accountMenu && !accountMenu.closing) closeAccountMenu(false);
+    else if (accountRef.current) setAccountMenu(placeAccountMenu(accountRef.current));
+  }
+
+  function openFromAccountMenu(section: SettingsSection, page: boolean) {
+    settingsReturn.current = accountRef.current;
+    closeAccountMenu(false);
+    setSidebarOpen(false);
+    setSettings({ open: true, section, page });
+  }
+
+  const guestAccount = auth.user?.provider === "guest";
+  const settingsLoading = (
+    <div className="settings-loading" role="status" aria-label="Đang tải cài đặt"><span className="loading-spinner" aria-hidden="true" /></div>
+  );
+  // Mỗi mục tải tệp riêng và có lớp chờ riêng: mục Giao diện không phải đợi tệp của mục Giọng nói.
+  // `active`: mục đang được xem trong hộp đang mở; các mục chỉ tải dữ liệu lúc đó.
+  const renderSettings = (section: SettingsSection, active: boolean): ReactNode => {
+    switch (section) {
+      case "giao-dien":
+        return (
+          <SettingsGroup>
+            <SettingsRow label="Chủ đề" desc="Nền sáng, nền tối, hoặc theo cài đặt của máy.">
+              <Segmented label="Chủ đề" value={theme} options={THEMES} onChange={setTheme} />
+            </SettingsRow>
+            <LazyBoundary><Suspense fallback={null}>
+              <CharacterSettings value={characterMotion} onChange={changeCharacterMotion}
+                onOpenCharacters={() => setCharacterPickerOpen(true)} selectedName={characters.selected.name} />
+            </Suspense></LazyBoundary>
+          </SettingsGroup>
+        );
+      case "ho-so":
+        return (
+          <LazyBoundary><Suspense fallback={settingsLoading}>
+            <ProfileSettings
+              open={active}
+              avatar={<AccountAvatar user={auth.user} size={36} />}
+              avatarNote={guestAccount ? undefined : `Theo tài khoản ${auth.user?.provider === "google" ? "Google" : "Discord"}`}
+              onUnauthorized={handleUnauthorized}
+              onSaved={(profile) => setAuth((prev) => (prev?.user
+                ? { ...prev, user: { ...prev.user, nickname: profile.nickname } }
+                : prev))}
+            />
+          </Suspense></LazyBoundary>
+        );
+      case "tai-khoan":
+        return (
+          <SettingsGroup>
+            <div className="settings-row settings-account">
+              <AccountAvatar user={auth.user} size={40} />
+              <div className="account-name">
+                <strong>{auth.user?.display_name}</strong>{" "}
+                <span>{accountLine(auth.user)}</span>
+              </div>
+            </div>
+            <SettingsRow label="Hướng dẫn Peto" desc="Cách dùng Trò chuyện, Companion và Peto Agent.">
+              <a className="settings-button settings-link" href="/docs/" target="_blank" rel="noreferrer">
+                Mở hướng dẫn <SettingsIcon name="external" size={14} />
+              </a>
+            </SettingsRow>
+            <SettingsRow
+              label="Đăng xuất"
+              desc={guestAccount
+                ? "Khách không đăng nhập lại được: đăng xuất rồi thì không mở lại được các hội thoại này."
+                : "Thoát tài khoản trên trình duyệt này. Hội thoại vẫn còn khi bạn đăng nhập lại."}
+            >
+              <button
+                type="button"
+                className="settings-button danger"
+                disabled={streaming}
+                onClick={() => {
+                  closeSettings();
+                  void signOut();
+                }}
+              >
+                Đăng xuất
+              </button>
+            </SettingsRow>
+          </SettingsGroup>
+        );
+      case "agent":
+        return (
+          <LazyBoundary><Suspense fallback={settingsLoading}>
+            <AgentSettings open={active} isGuest={guestAccount} onUnauthorized={handleUnauthorized} />
+          </Suspense></LazyBoundary>
+        );
+      case "giong-noi":
+        return (
+          <LazyBoundary><Suspense fallback={settingsLoading}>
+            <VoiceSettings voice={localVoice} open={active} tab={voiceTab} onTab={setVoiceTab} />
+          </Suspense></LazyBoundary>
+        );
+      case "tri-nho":
+        return (
+          <LazyBoundary><Suspense fallback={settingsLoading}>
+            <MemorySettings open={active} onUnauthorized={handleUnauthorized} />
+          </Suspense></LazyBoundary>
+        );
+      case "tra-web":
+        return (
+          <LazyBoundary><Suspense fallback={settingsLoading}>
+            <SearchSettings />
+          </Suspense></LazyBoundary>
+        );
+    }
+  };
+
   return (
     <div className="app">
       {sidebarOpen && (
@@ -1524,24 +1640,24 @@ export default function App() {
         </div>
         )}
 
+        {/* Ô tài khoản gọn như ChatGPT (chủ web chọn ngày 2026-09-29): bấm vào mở menu tài khoản. */}
         <div className="sidebar-foot">
           <button
+            ref={accountRef}
             type="button"
             className="account"
-            aria-haspopup="dialog"
-            aria-label={`Cài đặt · ${auth.user?.display_name}`}
-            title="Mở cài đặt"
-            onClick={() => setSettingsOpen(true)}
+            aria-haspopup="menu"
+            aria-expanded={Boolean(accountMenu && !accountMenu.closing)}
+            aria-label={`Tài khoản · ${auth.user?.display_name}`}
+            title={collapsed ? auth.user?.display_name : undefined}
+            onClick={toggleAccountMenu}
             onPointerEnter={preload(loadSettings)}
             onFocus={preload(loadSettings)}
           >
-            <AccountAvatar user={auth.user} size={32} />
-            <div className="account-name">
-              <strong>{auth.user?.display_name}</strong>
-              <span>@{auth.user?.username}</span>
-            </div>
-            <span className="account-gear">
-              <GearIcon />
+            <AccountAvatar user={auth.user} size={24} />
+            <span className="account-name">
+              <strong>{auth.user?.display_name}</strong>{" "}
+              <span>{accountSubtitle(auth.user)}</span>
             </span>
           </button>
         </div>
@@ -1684,116 +1800,24 @@ export default function App() {
         setDocumentRefresh(value => value + 1);
         if (item?.conversation_id === conversationId) setDocumentPreview({ id: item.id, version: item.version, key: Date.now() });
       }} />
-      <dialog
-        ref={settingsDialogRef}
-        className="settings-dialog"
-        aria-labelledby="settings-title"
-        onCancel={(event) => {
-          event.preventDefault();
-          setSettingsOpen(false);
-        }}
-      >
-        <div className="settings-head">
-          <h2 id="settings-title">Cài đặt</h2>
-          <button
-            type="button"
-            className="dialog-close"
-            aria-label="Đóng cài đặt"
-            onClick={() => setSettingsOpen(false)}
-          >
-            ×
-          </button>
-        </div>
-
-        {/* Chỉ phần dưới đường ngăn được cuộn; tiêu đề "Cài đặt" đứng yên. */}
-        <div className="settings-body">
-          {/* Mỗi phần tải riêng có lớp chờ riêng: mục Giao diện không phải đợi tệp của mục Giọng nói. */}
-          <LazyBoundary>
-          <Suspense fallback={<div className="settings-loading" role="status" aria-label="Đang tải cài đặt"><span className="loading-spinner" aria-hidden="true" /></div>}>
-          {settingsVisited && <ProfileSettings
-            open={settingsOpen}
-            avatar={<AccountAvatar user={auth.user} size={40} />}
-            onUnauthorized={handleUnauthorized}
-            onSaved={(profile) => setAuth((prev) => (prev?.user
-              ? { ...prev, user: { ...prev.user, nickname: profile.nickname } }
-              : prev))}
-          />}
-          </Suspense>
-          </LazyBoundary>
-
-          <section className="settings-section">
-            <h3>Giao diện</h3>
-            <p className="settings-hint">Chọn nền sáng, nền tối, hoặc theo cài đặt của máy.</p>
-            <div className="theme-options">
-              {THEMES.map((item) => (
-                <label
-                  key={item.value}
-                  className={theme === item.value ? "theme-option selected" : "theme-option"}
-                >
-                  <input
-                    type="radio"
-                    name="theme"
-                    value={item.value}
-                    checked={theme === item.value}
-                    onChange={() => setTheme(item.value)}
-                  />
-                  <span className={`theme-preview ${item.value}`} aria-hidden="true">
-                    <i />
-                    <i />
-                    <i />
-                  </span>
-                  <strong>{item.label}</strong>
-                  <em>{item.hint}</em>
-                </label>
-              ))}
-            </div>
-            <LazyBoundary><Suspense fallback={null}>
-              {settingsVisited && <CharacterSettings value={characterMotion} onChange={changeCharacterMotion} onOpenCharacters={() => setCharacterPickerOpen(true)} selectedName={characters.selected.name} />}
-            </Suspense></LazyBoundary>
-          </section>
-
-          <LazyBoundary><Suspense fallback={<div className="settings-loading" role="status" aria-label="Đang tải cài đặt"><span className="loading-spinner" aria-hidden="true" /></div>}>
-            {settingsVisited && <VoiceSettings voice={localVoice} open={settingsOpen} tab={voiceTab} onTab={setVoiceTab} focusRequest={voiceFocus} />}
-          </Suspense></LazyBoundary>
-
-          <LazyBoundary><Suspense fallback={null}>
-            {settingsVisited && <MemorySettings open={settingsOpen} focusRequest={memoryFocus} onUnauthorized={handleUnauthorized} />}
-          </Suspense></LazyBoundary>
-
-          <LazyBoundary><Suspense fallback={null}>
-            {settingsVisited && <SearchSettings />}
-          </Suspense></LazyBoundary>
-
-          <LazyBoundary><Suspense fallback={null}>
-            {settingsVisited && <AgentSettings open={settingsOpen} isGuest={auth.user?.provider === "guest"} onUnauthorized={handleUnauthorized} />}
-          </Suspense></LazyBoundary>
-
-          <section className="settings-section">
-            <h3>Tài khoản</h3>
-            <div className="settings-account">
-              <AccountAvatar user={auth.user} size={38} />
-              <div className="account-name">
-                <strong>{auth.user?.display_name}</strong>
-                <span>@{auth.user?.username}</span>
-              </div>
-            </div>
-            <div className="settings-actions">
-              <a href="/docs/" target="_blank" rel="noreferrer">Hướng dẫn Peto ↗</a>
-              <button
-                type="button"
-                className="logout"
-                disabled={streaming}
-                onClick={() => {
-                  setSettingsOpen(false);
-                  void signOut();
-                }}
-              >
-                Đăng xuất
-              </button>
-            </div>
-          </section>
-        </div>
-      </dialog>
+      {accountMenu && (
+        <AccountMenu
+          place={accountMenu}
+          avatar={<AccountAvatar user={auth.user} size={24} />}
+          name={auth.user?.display_name ?? ""}
+          subtitle={accountSubtitle(auth.user)}
+          signOutDisabled={streaming}
+          onClose={closeAccountMenu}
+          onExited={dropAccountMenu}
+          onOpenSettings={openFromAccountMenu}
+          onSignOut={() => {
+            closeAccountMenu(false);
+            setSidebarOpen(false);
+            void signOut();
+          }}
+        />
+      )}
+      <SettingsDialog view={settings} onView={setSettings} onClose={closeSettings} render={renderSettings} />
       {characterPickerOpen && <LazyBoundary><Suspense fallback={null}><CharacterPicker library={characters} onClose={() => setCharacterPickerOpen(false)} /></Suspense></LazyBoundary>}
       {agentCode && <AgentConnectDialog code={agentCode} isGuest={auth.user?.provider === "guest"}
         onClose={() => { forgetAgentCode(); setAgentCode(null); }} onUnauthorized={handleUnauthorized} />}

@@ -88,11 +88,15 @@ async function openCompanion() {
   fireEvent.click(await screen.findByRole('button', { name: 'Companion' }));
 }
 
-async function openSettings() {
-  fireEvent.click(await screen.findByRole('button', { name: /Cài đặt · Demo/ }));
+/** Mở Cài đặt như người dùng: ô tài khoản → Cài đặt trong menu → mục cần xem (mặc định Giọng nói). */
+async function openSettings(section = 'Giọng nói') {
+  fireEvent.click(await screen.findByRole('button', { name: /Tài khoản · Demo/ }));
+  fireEvent.click(await screen.findByRole('menuitem', { name: 'Cài đặt' }));
   const settings = within(screen.getByRole('dialog', { name: 'Cài đặt' }));
-  // Mục Giọng nói tải riêng lúc mở Cài đặt lần đầu.
-  await settings.findByRole('heading', { name: 'Giọng nói' });
+  fireEvent.click(settings.getByRole('button', { name: section }));
+  expect(settings.getByRole('heading', { name: section })).toBeTruthy();
+  // Mục Giọng nói tải riêng lúc mở lần đầu.
+  if (section === 'Giọng nói') await settings.findByRole('tab', { name: 'Peto nói' });
   return settings;
 }
 
@@ -507,18 +511,20 @@ function replyWith(...replies: string[]) {
   });
 }
 
-it('ghi nhớ xong thì cột chat báo ngay dưới câu trả lời, bấm Xem mở Cài đặt tới mục Trí nhớ Companion', async () => {
+it('ghi nhớ xong thì cột chat báo ngay dưới câu trả lời, bấm Xem mở Cài đặt ở mục Trí nhớ với danh sách mới', async () => {
   const note = { id: 7, text: 'Đang học năm hai ngành điện', created_at: 100, updated_at: 100 };
   vi.mocked(api.getCompanionMemory)
     .mockResolvedValueOnce(MEMORY) // lúc mở tab: mốc để so
-    .mockResolvedValueOnce(MEMORY) // mở Cài đặt lần đầu
+    .mockResolvedValueOnce(MEMORY) // mở mục Trí nhớ lần đầu
     .mockResolvedValueOnce({ ...MEMORY, pending: true }) // lần hỏi đầu sau lượt chat: máy chủ còn đang ghi
     .mockResolvedValue({ ...MEMORY, memories: [note] });
   replyWith('Electrical engineering, nice!');
   await openCompanion();
   await waitFor(() => expect(api.getCompanionMemory).toHaveBeenCalledTimes(1));
-  // Cài đặt đã mở một lần: mục Trí nhớ đã có sẵn, nên nó chỉ cuộn được nếu hộp thoại mở trước effect của nó.
-  fireEvent.click((await openSettings()).getByRole('button', { name: 'Đóng cài đặt' }));
+  // Mục Trí nhớ đã mở một lần nên vẫn còn trong hộp (chỉ ẩn đi): bấm Xem thì nó phải tải lại, không hiện danh sách cũ.
+  const first = await openSettings('Trí nhớ');
+  expect(await first.findByText(/Chưa có ghi nhớ nào/)).toBeTruthy();
+  fireEvent.click(first.getByRole('button', { name: 'Đóng cài đặt' }));
   await waitFor(() => expect(api.getCompanionMemory).toHaveBeenCalledTimes(2));
 
   await sendInCompanion('mình đang học năm hai ngành điện');
@@ -526,26 +532,18 @@ it('ghi nhớ xong thì cột chat báo ngay dưới câu trả lời, bấm Xem
   expect(notice.closest('article')?.textContent).toContain('Electrical engineering, nice!');
   expect(api.getCompanionMemory).toHaveBeenCalledTimes(4);
 
-  const scrolls: { target: Element; dialogOpen: boolean }[] = [];
-  vi.mocked(Element.prototype.scrollIntoView).mockImplementation(function (this: Element) {
-    scrolls.push({ target: this, dialogOpen: Boolean(this.closest('dialog')?.hasAttribute('open')) });
-  });
-  const memoryScrolls = () => scrolls.filter((item) => item.target === section);
   fireEvent.click(within(notice.closest('p')!).getByRole('button', { name: 'Xem' }));
   const settings = within(screen.getByRole('dialog', { name: 'Cài đặt' }));
-  const section = (await settings.findByRole('heading', { name: 'Trí nhớ Companion' })).closest('section');
+  expect(settings.getByRole('heading', { name: 'Trí nhớ' })).toBeTruthy();
+  expect(settings.getByRole('button', { name: 'Trí nhớ' }).getAttribute('aria-current')).toBe('page');
   expect(await settings.findByText('Đang học năm hai ngành điện')).toBeTruthy();
-  // Cuộn lúc hộp thoại đã hiện, rồi cuộn lại một lần khi danh sách tải xong (mục bên trên có thể vừa cao thêm).
-  await waitFor(() => expect(memoryScrolls()).toHaveLength(2));
-  expect(memoryScrolls().every((item) => item.dialogOpen)).toBe(true);
+  expect(api.getCompanionMemory).toHaveBeenCalledTimes(5);
 
-  // Mở Cài đặt bình thường sau đó thì không bị kéo về mục Trí nhớ nữa.
+  // Mở Cài đặt bình thường sau đó thì về mục đầu, không còn đứng ở Trí nhớ.
   fireEvent.click(settings.getByRole('button', { name: 'Đóng cài đặt' }));
-  const calls = vi.mocked(api.getCompanionMemory).mock.calls.length;
-  await openSettings();
-  await waitFor(() => expect(api.getCompanionMemory).toHaveBeenCalledTimes(calls + 1));
-  await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
-  expect(memoryScrolls()).toHaveLength(2);
+  fireEvent.click(await screen.findByRole('button', { name: /Tài khoản · Demo/ }));
+  fireEvent.click(await screen.findByRole('menuitem', { name: 'Cài đặt' }));
+  expect(within(screen.getByRole('dialog', { name: 'Cài đặt' })).getByRole('heading', { name: 'Giao diện' })).toBeTruthy();
 });
 
 it('sửa một dòng cũ và thêm một dòng mới trong cùng lượt thì dòng báo nêu dòng đầu kèm số còn lại', async () => {
@@ -700,7 +698,7 @@ it('tra web trong Companion mặc định tắt như AIRI; bật ở Cài đặt
   expect(vi.mocked(api.sendMessage).mock.calls[0][0]).toMatchObject({ mode: 'companion', webSearch: 'off' });
   await chatColumn().findByText('Sure.');
 
-  const settings = await openSettings();
+  const settings = await openSettings('Tra web');
   const toggle = await settings.findByRole('switch', { name: 'Cho Peto tra web trong Companion' });
   expect((toggle as HTMLInputElement).checked).toBe(false);
   expect(settings.getByText(/Đang tắt: trong Companion, Peto trả lời bằng những gì đã biết/)).toBeTruthy();
