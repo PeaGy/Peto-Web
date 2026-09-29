@@ -641,6 +641,21 @@ và gọi mô hình AI. Cách cài, đăng nhập và sử dụng nằm trong `a
 Bản đầu mới được thử trên máy với phản hồi giả; chưa thử với mô hình thật và chưa triển khai lên VPS. Chưa có công cụ
 trình duyệt, Docker, chạy nền hay nối lại tác vụ khi mất mạng.
 
+## Peto Docs
+
+Trang hướng dẫn tiếng Việt tại `/docs/`, không cần đăng nhập. Nội dung bài nằm trong
+`backend/docs_content/articles.json` (cách sửa xem `backend/docs_content/README.md`); các trang lệnh Agent, skills và
+MCP lấy từ danh mục của CLI.
+
+- **Trang đầu:** nhân vật Peto cùng hai lớp bóng hồng, tím lệch theo con trỏ, nền họa tiết tim và nốt nhạc trôi chậm, ba
+  nút Mở Peto, Cài Agent CLI và Bắt đầu.
+- **Trang bài:** tab theo nhóm, danh sách bài bên trái, mục lục theo chỗ đang đọc và liên kết cộng đồng bên phải, chép
+  cả bài dạng Markdown hay từng khối lệnh. Header trong suốt ở đầu trang, cuộn xuống thì phủ nền mờ. Điện thoại dùng
+  ngăn "Danh mục".
+- **Tìm kiếm:** ô tìm trên header (Ctrl K), gõ không dấu cũng được, mở thẳng tới mục khớp.
+- **Công tắc:** nền tối hoặc sáng, và hiệu ứng chuyển động. Khi chưa bấm, hiệu ứng theo "Nhân vật cử động" trong Cài đặt
+  của Peto, mặc định theo cài đặt giảm chuyển động của máy.
+
 ## Chưa có ở bước này
 
 OCR tài liệu scan, nạp thêm lượt Giọng Peto, tai nghe chính thức có lượt miễn phí, Peto nghe trong kênh thoại

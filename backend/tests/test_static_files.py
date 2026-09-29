@@ -45,7 +45,8 @@ def site(tmp_path):
     # File bí mật NGOÀI thư mục build, dùng để thử path traversal.
     (tmp_path.parent / "bi-mat.txt").write_text("TOKEN_THAT", encoding="utf-8")
 
-    app = FastAPI()
+    # Như app thật: không có trang tài liệu API tự sinh, nên /docs là trang hướng dẫn.
+    app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 
     @app.get("/api/health")
     async def health() -> dict:
@@ -70,7 +71,7 @@ async def test_serves_index(site_client):
 
 
 async def test_docs_deep_links(site_client):
-    for path in ['/docs/', '/docs/bat-dau/', '/docs/mcp/']:
+    for path in ['/docs', '/docs/', '/docs/bat-dau/', '/docs/mcp/']:
         response = await site_client.get(path)
         assert response.status_code == 200
         assert 'Peto Docs' in response.text
@@ -248,3 +249,14 @@ async def test_banner_is_not_published_on_a_private_origin(tmp_path, identity):
         page = (await client.get("/")).text
     assert f'<meta property="og:image" content="{AVATAR}" />' in page
     assert "/og.png" not in page
+
+
+async def test_real_app_leaves_docs_to_the_guide():
+    """/docs không có dấu "/" cuối từng ra trang Swagger tự sinh của FastAPI, còn /docs/ mới ra trang hướng dẫn."""
+    import main
+
+    assert main.app.docs_url is None and main.app.redoc_url is None and main.app.openapi_url is None
+    async with AsyncClient(transport=ASGITransport(app=main.app), base_url="http://test") as client:
+        for path in ("/docs", "/redoc", "/openapi.json"):
+            response = await client.get(path)
+            assert "swagger" not in response.text.lower() and '"openapi"' not in response.text, path

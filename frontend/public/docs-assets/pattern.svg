@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Họa tiết nền trang chủ Peto Docs, dùng làm mask: chỉ độ đục có nghĩa, màu do CSS tô. Tim, nốt nhạc, lấp lánh và
+       tim điểm ảnh lấy từ tranh nhân vật (tim vẽ tay, nốt nhạc, cửa sổ "Machine Love"). -->
+  <g fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round">
+    <g transform="translate(128 132) rotate(-12) scale(0.92)" stroke-width="16">
+      <path d="M0 -28C-18 -62 -78 -60 -80 -14C-82 26 -40 52 0 82C40 52 82 26 80 -14C78 -60 18 -62 0 -28Z"/>
+      <path d="M-52 -18C-50 -34 -40 -42 -28 -43" stroke-width="10"/>
+    </g>
+    <g transform="translate(384 388) rotate(8)" stroke-width="15">
+      <path d="M-12 36V-50L52 -62V24"/>
+      <path d="M-12 -50L52 -62" stroke-width="22"/>
+    </g>
+  </g>
+  <g fill="#fff">
+    <g transform="translate(384 388) rotate(8)">
+      <ellipse cx="-34" cy="40" rx="25" ry="18" transform="rotate(-22 -34 40)"/>
+      <ellipse cx="30" cy="28" rx="25" ry="18" transform="rotate(-22 30 28)"/>
+    </g>
+    <path transform="translate(372 134)" d="M0 -38C5 -11 11 -5 38 0C11 5 5 11 0 38C-5 11 -11 5 -38 0C-11 -5 -5 -11 0 -38Z"/>
+    <path transform="translate(428 78)" d="M0 -16C2 -5 5 -2 16 0C5 2 2 5 0 16C-2 5 -5 2 -16 0C-5 -2 -2 -5 0 -16Z"/>
+    <path transform="translate(78 341) scale(1.2)" d="M12 0h24v12h12V0h24v12h12v24h-12v12h-12v12h-12v12h-12v-12h-12v-12h-12v-12H0V12h12Z"/>
+  </g>
+</svg>

@@ -1,153 +1,245 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
-import Markdown from 'react-markdown';
+import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
+import { motionEnabled, readCharacterMotion } from './characterView';
+import DocsHome from './DocsHome';
+import DocsReader from './DocsReader';
+import { DISCORD, GITHUB, GROUP_ICONS, Icon, SUGGESTED, pageHref, searchPages, type DocsData, type Hit, type Page } from './docsShared';
 import './docs.css';
 
-type Page = { slug: string; title: string; group: string; description: string; body: string; keywords: string[] };
-type Data = { version: string; pages: Page[] };
-const groups = ['Bắt đầu', 'Peto Web', 'Companion', 'Agent CLI', 'Trợ giúp'];
-const discord = 'https://discord.gg/776G5z2pm9';
-const github = 'https://github.com/PeaGy';
-export const fold = (text: string) => text.toLowerCase().replaceAll('đ', 'd').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-export const anchor = (text: string) => fold(text).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-const headings = (body: string) => [...body.matchAll(/^## (.+)$/gm)].map(m => ({ title: m[1], id: anchor(m[1]) }));
-const href = (page: Page) => `/docs/${page.slug}/`;
+/**
+ * Peto Docs tại /docs/: trang đầu (nhân vật và họa tiết theo chuột) và trang bài ba cột, theo hướng "Bàn làm việc" mà
+ * chủ dự án chọn, pha giao diện docs của AIRI. Đây là khung chung: tải dữ liệu, đường dẫn, header, tìm kiếm và hai công tắc.
+ */
+const THEME_KEY = 'peto-docs-theme';
+const MOTION_KEY = 'peto-docs-motion';
+const REDUCED_MOTION = '(prefers-reduced-motion: reduce)';
+const HOME_TITLE = 'Peto Docs · Cùng Peto, bắt đầu điều mới';
 
-function Icon({ name }: { name: string }) {
-  const paths: Record<string, ReactNode> = {
-    search: <><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/></>,
-    arrow: <path d="M5 12h14m-6-6 6 6-6 6"/>,
-    book: <><path d="M12 5v15M3 4c4-1 6 0 9 2 3-2 5-3 9-2v15c-4-1-6 0-9 2-3-2-5-3-9-2Z"/></>,
-    terminal: <><rect x="3" y="4" width="18" height="16" rx="3"/><path d="m7 9 3 3-3 3m6 0h4"/></>,
-    spark: <path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5Z"/>,
-    menu: <path d="M4 7h16M4 12h16M4 17h16"/>,
-    close: <path d="m6 6 12 12M6 18 18 6"/>,
-    sun: <><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1 1m12 12 1 1M5 19l1-1M18 6l1-1"/></>,
-  };
-  return <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name] || paths.book}</svg>;
+function readLight() {
+  try { return localStorage.getItem(THEME_KEY) === 'light'; } catch { return false; }
 }
 
-function Code({ children }: { children?: ReactNode }) {
-  const ref = useRef<HTMLPreElement>(null);
-  const [copied, setCopied] = useState('Sao chép');
-  return <div className="docs-code"><button onClick={async () => {
-    try { await navigator.clipboard.writeText(ref.current?.textContent || ''); setCopied('Đã sao chép'); }
-    catch { setCopied('Hãy chọn và sao chép'); }
-  }}>{copied}</button><pre ref={ref}>{children}</pre></div>;
+function readMotionChoice(): 'on' | 'off' | null {
+  try {
+    const value = localStorage.getItem(MOTION_KEY);
+    return value === 'on' || value === 'off' ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function systemReducesMotion() {
+  return typeof matchMedia === 'function' && matchMedia(REDUCED_MOTION).matches;
+}
+
+/**
+ * Hiệu ứng động (nhân vật theo chuột, họa tiết trôi). Đã bấm công tắc trên header thì theo công tắc. Chưa bấm thì theo
+ * "Nhân vật cử động" của Peto (cùng localStorage vì cùng tên miền): mặc định nhường cài đặt giảm chuyển động của máy.
+ */
+function useMotion() {
+  const [choice, setChoice] = useState(readMotionChoice);
+  const [systemReduces, setSystemReduces] = useState(systemReducesMotion);
+  useEffect(() => {
+    if (typeof matchMedia !== 'function') return;
+    const query = matchMedia(REDUCED_MOTION);
+    const change = () => setSystemReduces(query.matches);
+    query.addEventListener('change', change);
+    return () => query.removeEventListener('change', change);
+  }, []);
+  const enabled = choice ? choice === 'on' : motionEnabled(readCharacterMotion(), systemReduces);
+  const toggle = () => {
+    const next = enabled ? 'off' : 'on';
+    setChoice(next);
+    try { localStorage.setItem(MOTION_KEY, next); } catch { /* chỉ là lựa chọn hiển thị */ }
+  };
+  return [enabled, toggle] as const;
+}
+
+/** Như header của AIRI: ở đầu trang thì trong suốt để thấy nền, cuộn xuống thì phủ nền mờ. */
+function useScrolled() {
+  const [scrolled, setScrolled] = useState(() => window.scrollY > 0);
+  useEffect(() => {
+    const update = () => setScrolled(window.scrollY > 0);
+    update();
+    window.addEventListener('scroll', update, { passive: true });
+    return () => window.removeEventListener('scroll', update);
+  }, []);
+  return scrolled;
+}
+
+function scrollToHash(hash: string) {
+  if (!hash) return;
+  requestAnimationFrame(() => document.getElementById(decodeURIComponent(hash.slice(1)))?.scrollIntoView());
+}
+
+function Switch({ label, on, icon, onToggle, className = '' }: {
+  label: string; on: boolean; icon: string; onToggle: () => void; className?: string;
+}) {
+  return <button type="button" role="switch" aria-checked={on} aria-label={label} title={label}
+    className={`docs-switch ${className}`} onClick={onToggle}>
+    <span className="docs-switch-knob"><Icon name={icon} size={13} /></span>
+  </button>;
+}
+
+/** Ô tìm ngay trên header (combobox): gõ không dấu cũng được, ↑↓ để chọn, Enter để mở, Esc để thoát, Ctrl K để tới ô. */
+function Search({ pages, onOpen }: { pages?: Page[]; onOpen: (url: string) => void }) {
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(0);
+  const input = useRef<HTMLInputElement>(null);
+  const text = query.trim();
+  const hits: Hit[] = !pages ? [] : text ? searchPages(pages, text)
+    : SUGGESTED.flatMap(slug => pages.filter(page => page.slug === slug)).map(page => ({ page }));
+  const url = (hit: Hit) => pageHref(hit.page) + (hit.section ? `#${hit.section.id}` : '');
+
+  useEffect(() => {
+    const key = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        input.current?.focus();
+        input.current?.select();
+      }
+    };
+    window.addEventListener('keydown', key);
+    return () => window.removeEventListener('keydown', key);
+  }, []);
+
+  function choose(hit: Hit) {
+    setQuery('');
+    setOpen(false);
+    input.current?.blur();
+    onOpen(url(hit));
+  }
+
+  return <div className="docs-search">
+    <Icon name="search" size={16} />
+    <input ref={input} value={query} placeholder="Tìm hướng dẫn, lệnh, lỗi…" aria-label="Tìm trong Peto Docs"
+      role="combobox" aria-expanded={open} aria-controls="docs-search-list" aria-autocomplete="list"
+      aria-activedescendant={open && hits[active] ? `docs-search-${active}` : undefined}
+      onChange={event => { setQuery(event.target.value); setActive(0); setOpen(true); }}
+      onFocus={() => setOpen(true)}
+      onBlur={() => setOpen(false)}
+      onKeyDown={event => {
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+          event.preventDefault();
+          setOpen(true);
+          const step = event.key === 'ArrowDown' ? 1 : -1;
+          setActive(index => hits.length ? (index + step + hits.length) % hits.length : 0);
+        } else if (event.key === 'Enter' && open && hits[active]) {
+          event.preventDefault();
+          choose(hits[active]);
+        } else if (event.key === 'Escape') {
+          if (query) setQuery('');
+          else { setOpen(false); input.current?.blur(); }
+        }
+      }} />
+    <kbd aria-hidden="true">Ctrl K</kbd>
+    {open && <div className="docs-search-panel" onMouseDown={event => event.preventDefault()}>
+      <p id="docs-search-caption" className="docs-search-caption">
+        {!pages ? 'Đang tải hướng dẫn…' : text ? (hits.length ? 'Kết quả' : `Không có kết quả cho “${text}”`) : 'Bài hay đọc'}
+      </p>
+      <div id="docs-search-list" role="listbox" aria-labelledby="docs-search-caption">
+        {hits.map((hit, index) => (
+          <a key={url(hit)} id={`docs-search-${index}`} role="option" tabIndex={-1} aria-selected={index === active}
+            href={url(hit)} onMouseMove={() => setActive(index)} onClick={() => { setQuery(''); setOpen(false); input.current?.blur(); }}>
+            <Icon name={GROUP_ICONS[hit.page.group]} size={16} />
+            <span><strong>{hit.page.title}</strong><small>{hit.page.group}{hit.section ? ` › ${hit.section.title}` : ` · ${hit.page.description}`}</small></span>
+            <Icon name="arrow" size={15} />
+          </a>
+        ))}
+      </div>
+      {text && !hits.length && pages && <p className="docs-search-empty">Thử từ ngắn hơn, không dấu cũng được.</p>}
+    </div>}
+  </div>;
 }
 
 export default function Docs() {
-  const [data, setData] = useState<Data>();
+  const [data, setData] = useState<DocsData>();
   const [error, setError] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [path, setPath] = useState(location.pathname);
-  const [menu, setMenu] = useState(false);
-  const [light, setLight] = useState(() => { try { return localStorage.getItem('peto-docs-theme') === 'light'; } catch { return false; } });
-  const [query, setQuery] = useState('');
-  const dialog = useRef<HTMLDialogElement>(null);
-  const searchInput = useRef<HTMLInputElement>(null);
-  const searchTrigger = useRef<HTMLButtonElement>(null);
+  const [light, setLight] = useState(readLight);
+  const [motion, toggleMotion] = useMotion();
+  const scrolled = useScrolled();
   const slug = path.replace(/^\/docs\/?/, '').replace(/\/$/, '');
-  const page = data?.pages.find(p => p.slug === slug);
-  const outline = page ? headings(page.body) : [];
-  const ordered = groups.flatMap(group => data?.pages.filter(p => p.group === group) || []);
-  const index = page ? ordered.indexOf(page) : -1;
+  const page = data?.pages.find(item => item.slug === slug);
 
   useEffect(() => {
-    const abort = new AbortController(); setError(false);
-    fetch('/api/docs', { signal: abort.signal }).then(r => { if (!r.ok) throw Error(); return r.json(); })
-      .then(setData).catch(e => { if (e.name !== 'AbortError') setError(true); });
+    const abort = new AbortController();
+    setError(false);
+    fetch('/api/docs', { signal: abort.signal })
+      .then(response => { if (!response.ok) throw new Error(String(response.status)); return response.json(); })
+      .then(setData)
+      .catch(reason => { if (reason.name !== 'AbortError') setError(true); });
     return () => abort.abort();
   }, [attempt]);
+
   useEffect(() => {
-    const pop = () => { setPath(location.pathname); setMenu(false); };
-    const key = (e: KeyboardEvent) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); openSearch(); } };
-    window.addEventListener('popstate', pop); window.addEventListener('keydown', key);
-    return () => { window.removeEventListener('popstate', pop); window.removeEventListener('keydown', key); };
+    const pop = () => setPath(location.pathname);
+    window.addEventListener('popstate', pop);
+    return () => window.removeEventListener('popstate', pop);
   }, []);
+
   useEffect(() => {
-    document.title = page ? `${page.title} · Peto Docs` : 'Peto Docs · Cùng Peto, bắt đầu điều mới';
-    if (location.hash) requestAnimationFrame(() => document.getElementById(location.hash.slice(1))?.scrollIntoView());
-  }, [page]);
+    if (!slug) document.title = HOME_TITLE;
+    else if (data) document.title = `${page ? page.title : 'Không tìm thấy bài'} · Peto Docs`;
+    scrollToHash(location.hash);
+  }, [slug, page, data]);
 
-  function openSearch() { setQuery(''); dialog.current?.showModal(); searchInput.current?.focus(); }
-  function go(url: string) {
-    history.pushState({}, '', url); setPath(location.pathname); setMenu(false); dialog.current?.close();
+  // Liên kết nội bộ (/docs/...) đổi bài tại chỗ, không tải lại trang. Ctrl/⌘/Shift-click vẫn mở tab mới như thường.
+  const go = useCallback((url: string) => {
+    const target = new URL(url, location.origin);
+    const samePage = target.pathname === location.pathname;
+    history.pushState({}, '', target.pathname + target.hash);
+    if (samePage) { scrollToHash(target.hash); return; }
     window.scrollTo(0, 0);
-    requestAnimationFrame(() => { if (location.hash) document.getElementById(location.hash.slice(1))?.scrollIntoView(); });
+    setPath(target.pathname);
+  }, []);
+
+  function follow(event: MouseEvent) {
+    if (event.defaultPrevented || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+    const link = (event.target as Element).closest('a');
+    const url = link?.getAttribute('href');
+    if (!link || !url?.startsWith('/docs') || link.target) return;
+    event.preventDefault();
+    go(url);
   }
-  const words = fold(query).trim().split(/\s+/).filter(Boolean);
-  const results = data?.pages.flatMap(p => {
-    const haystack = fold(`${p.title} ${p.description} ${p.keywords.join(' ')} ${p.body}`);
-    if (!words.length || !words.every(word => haystack.includes(word))) return [];
-    const section = headings(p.body).find(h => words.some(word => fold(h.title).includes(word)));
-    return [{ p, section, score: words.filter(word => fold(p.title + ' ' + p.keywords.join(' ')).includes(word)).length }];
-  }).sort((a, b) => b.score - a.score).slice(0, 8) || [];
 
-  const nav = <>{groups.map(group => <div className="docs-nav-group" key={group}><h3>{group}</h3>
-    {data?.pages.filter(p => p.group === group).map(p => <a key={p.slug} href={href(p)} aria-current={p === page ? 'page' : undefined}>{p.title}</a>)}
-  </div>)}</>;
+  function toggleTheme() {
+    setLight(!light);
+    try { localStorage.setItem(THEME_KEY, light ? 'dark' : 'light'); } catch { /* chỉ là lựa chọn hiển thị */ }
+  }
 
-  return <div className={`docs-shell${light ? ' docs-light' : ''}`} onClick={e => {
-    const a = (e.target as Element).closest('a');
-    if (a && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && a.getAttribute('href')?.startsWith('/docs/')) {
-      e.preventDefault(); go(a.getAttribute('href')!);
-    }
-  }}>
+  // Trang đầu luôn phủ nền cho header như AIRI; trang bài để header trong suốt khi còn ở đầu trang.
+  const glass = !slug || scrolled;
+  return <div className={`docs${light ? ' docs-light' : ''}${motion ? ' docs-motion' : ''}`} onClick={follow}>
     <a href="#docs-main" className="docs-skip">Đến nội dung chính</a>
-    <header className="docs-header">
-      <a href="/docs/" className="docs-brand"><img src="/docs-assets/logo.png" alt=""/><span>Peto<span className="docs-brand-sub"> / docs</span></span></a>
-      <button className="docs-search-trigger" aria-label="Tìm trong hướng dẫn" ref={searchTrigger} onClick={openSearch}><Icon name="search"/><span>Tìm trong hướng dẫn…</span><kbd>Ctrl K</kbd></button>
-      <nav aria-label="Liên kết chính" className="docs-top-links"><a href="/docs/bat-dau/">Hướng dẫn</a><a href={discord} target="_blank" rel="noreferrer">Discord ↗</a><a href={github} target="_blank" rel="noreferrer">GitHub ↗</a></nav>
-      <button className="docs-icon-button" aria-label={light ? 'Bật giao diện tối' : 'Bật giao diện sáng'} onClick={() => { setLight(!light); try { localStorage.setItem('peto-docs-theme', light ? 'dark' : 'light'); } catch { /* optional preference */ } }}><Icon name="sun"/></button>
-      <a className="docs-open-app" href="/">Mở Peto <Icon name="arrow"/></a>
+    {slug && <div className="docs-glow" aria-hidden="true" />}
+    <header className="docs-top" data-glass={glass ? '' : undefined}>
+      <div className="docs-top-inner">
+        <a className="docs-brand" href="/docs/">
+          <img src="/docs-assets/logo.webp" alt="" width="144" height="100" />
+          <span>Peto</span><em>Docs</em>
+        </a>
+        <Search pages={data?.pages} onOpen={go} />
+        <nav className="docs-top-links" aria-label="Liên kết chính">
+          <a href="/docs/bat-dau/" aria-current={slug ? 'page' : undefined}>Hướng dẫn</a>
+          <a href={DISCORD} target="_blank" rel="noreferrer">Discord<Icon name="external" size={14} /></a>
+          <a href={GITHUB} target="_blank" rel="noreferrer">GitHub<Icon name="external" size={14} /></a>
+        </nav>
+        <div className="docs-top-tools">
+          <Switch label="Hiệu ứng chuyển động" on={motion} icon={motion ? 'motion' : 'still'} onToggle={toggleMotion}
+            className="docs-motion-switch" />
+          <Switch label="Nền tối" on={!light} icon={light ? 'sun' : 'moon'} onToggle={toggleTheme} />
+          {slug && <a className="docs-open" href="/">Mở Peto<Icon name="arrow" size={15} /></a>}
+        </div>
+      </div>
     </header>
 
-    {!slug ? <main id="docs-main">
-      <section className="docs-hero">
-        <div className="docs-hero-grid" aria-hidden="true"/>
-        <div className="docs-hero-copy"><div className="docs-eyebrow"><span/> KHÁM PHÁ KHÔNG GIAN CỦA BẠN</div>
-          <h1>Một chút tò mò.<br/>Cả một thế giới<br/><em>cùng Peto.</em></h1>
-          <p>Trò chuyện, sáng tạo, hay bắt tay vào một ý tưởng mới.<br className="docs-desktop-break"/> Mọi hành trình đều có một điểm bắt đầu.</p>
-          <div className="docs-hero-actions"><a className="docs-primary" href="/docs/bat-dau/">Bắt đầu khám phá <Icon name="arrow"/></a><a className="docs-secondary" href="/docs/cai-agent/"><Icon name="terminal"/> Cài Agent CLI</a></div>
-          <div className="docs-hero-note"><span>TIẾNG VIỆT</span><i/> Web · Companion · Agent</div>
-        </div>
-        <div className="docs-hero-art"><div className="docs-orbit"/><img src="/docs-assets/background.png" alt="Nhân vật minh họa rực rỡ của Peto" fetchPriority="high"/><div className="docs-art-label"><span>✦</span> Ý tưởng nhỏ. Khả năng lớn.</div></div>
-        <div className="docs-hero-bottom"><span>HƯỚNG DẪN CHÍNH THỨC</span><a href="#kham-pha">Tìm không gian của bạn ↓</a></div>
-      </section>
-      <section className="docs-discover" id="kham-pha"><div className="docs-section-title"><div><div className="docs-eyebrow">BẠN MUỐN BẮT ĐẦU TỪ ĐÂU?</div><h2>Có một Peto dành cho việc đó.</h2></div><p>Từ lời chào đầu tiên đến dòng code tiếp theo.</p></div>
-        <div className="docs-cards">{[
-          ['01', 'book', 'Trò chuyện & sáng tạo', 'Hỏi điều bạn tò mò. Viết, học và biến ý tưởng thành hình ảnh.', 'tro-chuyen'],
-          ['02', 'spark', 'Một người bạn đồng hành', 'Gặp nhân vật của bạn. Chọn bối cảnh, chuyển động và giọng nói.', 'companion'],
-          ['03', 'terminal', 'Cùng bạn làm việc', 'Đưa Peto vào dự án với Agent CLI, skills và các công cụ MCP.', 'cai-agent'],
-        ].map(([n, icon, title, desc, target]) => <a className="docs-card" key={n} href={`/docs/${target}/`}><div className="docs-card-top"><Icon name={icon}/><span>{n}</span></div><h3>{title}</h3><p>{desc}</p><span className="docs-card-link">Khám phá <Icon name="arrow"/></span></a>)}</div>
-      </section>
-      <section className="docs-community"><div><span className="docs-eyebrow">KHÔNG CẦN TỰ MÒ MỘT MÌNH</span><h2>Có câu hỏi? Cùng nói chuyện nhé.</h2><p>Chia sẻ ý tưởng, góp ý hoặc nhờ cộng đồng giúp một tay.</p></div><a className="docs-secondary" href={discord} target="_blank" rel="noreferrer">Tham gia Discord ↗</a></section>
-    </main> : <>
-      <div className="docs-mobile-bar"><button onClick={() => setMenu(!menu)} aria-expanded={menu} aria-controls="docs-sidebar"><Icon name="menu"/> Danh mục</button><span>{page?.group || 'Hướng dẫn'}</span></div>
-      <div className="docs-reader">
-        <aside id="docs-sidebar" className={`docs-sidebar${menu ? ' is-open' : ''}`} aria-label="Danh mục tài liệu">{nav}<a href={discord} className="docs-sidebar-help" target="_blank" rel="noreferrer">Cần trợ giúp? ↗</a></aside>
-        <main id="docs-main" className="docs-article">
-          {!data && !error ? <p role="status">Đang tải hướng dẫn…</p> : page ? <>
-            <div className="docs-breadcrumb"><a href="/docs/">Tài liệu</a><span>/</span>{page.group}</div>
-            <h1>{page.title}</h1><p className="docs-lead">{page.description}</p>
-            <div className="docs-article-meta"><span>Hướng dẫn tiếng Việt</span>{page.group === 'Agent CLI' && <span>CLI {data?.version || '—'}</span>}</div>
-            <details className="docs-mobile-outline"><summary>Trong bài này</summary>{outline.map(h => <a key={h.id} href={`#${h.id}`}>{h.title}</a>)}</details>
-            <div className="docs-prose"><Markdown components={{
-              h2: ({ children }) => <h2 id={anchor(String(children))}>{children}<a className="docs-heading-anchor" href={`#${anchor(String(children))}`} aria-label={`Liên kết đến ${children}`}>#</a></h2>,
-              pre: ({ children }) => <Code>{children}</Code>,
-              a: ({ href: url, children }) => <a href={url} {...(url?.startsWith('https://') ? { target: '_blank', rel: 'noreferrer' } : {})}>{children}</a>,
-            }}>{page.body}</Markdown></div>
-            <div className="docs-article-feedback"><span>Vướng ở bước nào đó?</span><a href={discord} target="_blank" rel="noreferrer">Hỏi cộng đồng trên Discord ↗</a><a href={`/api/docs/${page.slug}.md`}>Đọc bản Markdown ↗</a></div>
-            <nav className="docs-pager" aria-label="Bài trước và tiếp theo">{index > 0 ? <a href={href(ordered[index - 1])}><small>← Bài trước</small>{ordered[index - 1].title}</a> : <span/>}{index < ordered.length - 1 && <a href={href(ordered[index + 1])}><small>Tiếp theo →</small>{ordered[index + 1].title}</a>}</nav>
-          </> : !error && <><h1>Không tìm thấy bài viết</h1><p>Bài có thể đã được chuyển hoặc đường dẫn chưa đúng.</p><a href="/docs/">Về Peto Docs →</a></>}
-        </main>
-        <aside className="docs-outline" aria-label="Trong bài này"><h3>TRONG BÀI NÀY</h3>{outline.map(h => <a key={h.id} href={`#${h.id}`}>{h.title}</a>)}<div><span>Cùng xây dựng Peto</span><a href={github} target="_blank" rel="noreferrer">GitHub của PeaGy ↗</a><a href={discord} target="_blank" rel="noreferrer">Góp ý trên Discord ↗</a></div></aside>
-      </div>
-    </>}
-    {error && <div className="docs-error" role="alert">Chưa tải được tài liệu. <button onClick={() => setAttempt(attempt + 1)}>Thử lại</button></div>}
-    <dialog ref={dialog} className="docs-search-dialog" onClose={() => searchTrigger.current?.focus()} onClick={e => { if (e.target === dialog.current) dialog.current.close(); }} aria-labelledby="docs-search-title">
-      <div className="docs-search-panel"><h2 id="docs-search-title">Tìm trong Peto Docs</h2><div className="docs-search-input"><Icon name="search"/><input ref={searchInput} value={query} onChange={e => setQuery(e.target.value)} placeholder="Thử “MCP”, “giọng nói”, “cài Agent”…" aria-label="Từ khóa tìm kiếm"/><button className="docs-icon-button" onClick={() => dialog.current?.close()} aria-label="Đóng tìm kiếm"><Icon name="close"/></button></div>
-        <div className="docs-search-results" aria-live="polite">{!data ? <p>{error ? 'Chưa tải được tài liệu. Đóng tìm kiếm và thử tải lại.' : 'Đang tải tài liệu…'}</p> : !words.length ? <><p>Đi đến hướng dẫn thường dùng</p>{data.pages.filter(p => ['bat-dau', 'cai-agent', 'mcp', 'skills'].includes(p.slug)).map(p => <a key={p.slug} href={href(p)}><span>{p.title}</span><Icon name="arrow"/></a>)}</> : results.length ? results.map(({ p, section }) => <a key={p.slug} href={href(p) + (section ? '#' + section.id : '')}><div><small>{p.group}{section ? ' / ' + section.title : ''}</small><strong>{p.title}</strong><p>{p.description}</p></div><Icon name="arrow"/></a>) : <p>Không tìm thấy kết quả. Thử từ khóa ngắn hơn hoặc không dấu.</p>}</div><div className="docs-search-foot">Tab để chọn · Enter để mở · Esc để đóng</div></div>
-    </dialog>
+    {slug ? <DocsReader data={data} page={page} error={error} glass={glass} /> : <DocsHome motion={motion} />}
+
+    {error && <div className="docs-error" role="alert">
+      Chưa tải được tài liệu.
+      <button type="button" onClick={() => setAttempt(value => value + 1)}>Thử lại</button>
+    </div>}
   </div>;
 }

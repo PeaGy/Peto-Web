@@ -1264,6 +1264,42 @@ results in the next step. The server stores no conversation (`store=False`), and
     it without the owner's go-ahead.
   - Tests: `agent-cli/tests/test_evals.py` covers the policy and a whole task against a scripted fake model.
 
+### Peto Docs (`/docs/`)
+
+Public Vietnamese guides, no sign-in. `main.tsx` mounts `Docs.tsx` instead of the app for `/docs` and `/docs/*`. The
+backend serves the same `index.html` there with the article's title and description (`static_files.py`), and
+`/api/docs` returns the articles (`docs_api.py`; content in `backend/docs_content/articles.json`, see its README).
+
+- **FastAPI's own API docs are off** (`docs_url`, `redoc_url` and `openapi_url` are `None` in `main.py`). Its Swagger page
+  answered `/docs` without the trailing slash, so only `/docs/` reached the guide (reported 2026-09-28).
+  `test_static_files.py` checks both spellings on the real app.
+- **Design.** On 2026-09-28 the owner picked "Bàn làm việc" from three live variants (the repo's `prototype` skill), and
+  asked for the look of AIRI's docs on top (airi.moeru.ai/docs; source in `moeru-ai/airi`, `docs/.vitepress`).
+  - **Header.** Transparent at the top of an article; once scrolled, the background at 90% plus an 8 px blur, over
+    500 ms, as in AIRI's `Layout.vue`. The home page keeps it frosted. The group tab bar below does the same at 80%.
+  - **Home** (`DocsHome.tsx`). Peto's art with a pink and a violet silhouette behind it (the same image as a CSS mask),
+    plus a pattern tile (`docs-assets/pattern.svg`, a mask tinted by CSS) that drifts diagonally. The text and the three
+    layers follow the mouse with the offsets of AIRI's `ParallaxCover.vue`. CSS transitions (1.2 s, outSine) stand in
+    for anime.js: each move starts from where the layer is.
+  - **Reader** (`DocsReader.tsx`). Group tabs, the group's articles, the article, then the outline (scrollspy) and
+    community links. A violet-pink glow sits at the top (`.docs-glow`, gradients, no image). Phones get a "Danh mục"
+    drawer (`<dialog>`).
+  - **Search** is a combobox in the header (Ctrl K). It ignores diacritics and opens the matching `##` section.
+- **Motion.** Once pressed, the header switch decides (`peto-docs-motion`). Until then the docs follow Peto's "Nhân vật
+  cử động" (`peto-character-motion`; same origin, so the app setting carries over), whose default respects
+  `prefers-reduced-motion`. The owner's Windows reports reduced motion, so there the character stays still until the
+  switch or "Luôn cử động" is on. Everything that moves sits under `.docs-motion`; without it only opacity fades remain.
+- **Assets.** `peto-hero.webp` (263 KB) and `logo.webp` (7 KB) replaced 2.2 MB of PNGs on 2026-09-28. They were made
+  with Pillow from the originals, which stay in git history (commit 2ffde96).
+- **Names.** Never add a `docs.ts`: Windows resolves `./Docs` to it before `Docs.tsx` (the `LocalVoice` problem above).
+  Shared code lives in `docsShared.tsx`.
+- **CSS resets sit inside `:where(.docs)`**, so any component class beats them. A plain `.docs a` reset once hid the
+  "Mở Peto" label and the track of a switch that is off.
+- **Checking it.** A hidden browser pane draws nothing. Use headless Edge with a temporary profile, and emulate
+  `prefers-reduced-motion: no-preference`. A capture right after opening something can catch the first frame of its
+  fade: a see-through search panel on 2026-09-28 was only that.
+- **Tests:** `frontend/tests/Docs.test.tsx`, `backend/tests/test_docs_api.py`, `test_static_files.py`.
+
 ## Frontend conventions
 
 - **Stale-response guarding.** Async loads use a monotonically increasing `useRef` counter

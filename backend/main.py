@@ -113,7 +113,10 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="Peto Web", lifespan=lifespan)
+# Tắt trang tài liệu API tự sinh của FastAPI (/docs, /redoc, /openapi.json): /docs là trang hướng dẫn cho người dùng
+# (docs_api, static_files), mà trang Swagger mặc định lại giành mất /docs không có dấu "/" cuối. Sơ đồ API cũng không
+# cần công khai.
+app = FastAPI(title="Peto Web", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,

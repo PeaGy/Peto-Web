@@ -6,7 +6,9 @@ Trang công khai tại `/docs/`, tiếng Việt trước tiên. Không cần đ�
 - Các trang lệnh Agent, skills và MCP lấy cú pháp/chi tiết từ danh mục CLI mà backend đang phục vụ. Cập nhật danh mục CLI khi đổi hành vi lệnh.
 - `/api/docs` cung cấp dữ liệu cho giao diện; `/api/docs/search?q=...` tìm kiếm không dấu; `/api/docs/<slug>.md` cung cấp bản văn bản.
 - Backend dùng cùng nội dung để bổ sung hướng dẫn cho câu hỏi liên quan đến Peto. Đây là tra cứu từ khóa, không phải công cụ chạy lệnh trên máy người dùng.
-- Ảnh thương hiệu nằm trong `frontend/public/docs-assets/`; giao diện trong `frontend/src/Docs.tsx` và `docs.css`.
+- Ảnh thương hiệu nằm trong `frontend/public/docs-assets/` (WebP giữ nền trong suốt; `pattern.svg` là mặt nạ họa tiết
+  của trang đầu). Giao diện: khung chung, header và tìm kiếm trong `frontend/src/Docs.tsx`, trang đầu trong
+  `DocsHome.tsx`, trang bài trong `DocsReader.tsx`, phần dùng chung trong `docsShared.tsx`, kiểu trong `docs.css`.
 
 ## Phát hành
 
