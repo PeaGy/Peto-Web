@@ -396,6 +396,10 @@ scrollspy list, and grouped cards with coloured icons.
 - **Account row** (`.account`, bottom of the sidebar): a 24px avatar, the display name and one line under it
   (`accountSubtitle`). That line is `@username` for Discord, "Google" for Google accounts (their username is the display
   name) and "Tài khoản khách" for guests. There is no gear: the row opens the menu, not Settings.
+  - The first version left 26px above the name and 18px below it, and the owner found the bottom "taller". It is now
+    tight like ChatGPT's: 6px between the list and the row (`.sidebar-section + .sidebar-foot`) and 6px under it.
+  - The conversation list and the image library fade over their last 20px (with as much bottom padding), so a
+    half-cut row never sits on the account row.
 - **Account menu** (`AccountMenu.tsx`): the account (opens Tài khoản), Hồ sơ, Cài đặt, Hướng dẫn (`/docs/` in a new
   tab) and Đăng xuất (disabled while a reply streams).
   - It is fixed-positioned above the row and rendered outside the sidebar, because the sidebar clips overflow. With the
@@ -414,6 +418,9 @@ scrollspy list, and grouped cards with coloured icons.
   - **Mounting.** Visited sections stay mounted and are only hidden, so an unsaved Hồ sơ edit survives switching
     sections. `render(section, active)` passes `active` (dialog open, section shown) as each component's `open` prop.
     Sections therefore load their data when shown, and Giọng nói stops a sample or a test listen when you leave it.
+  - **Close button.** It has its own `.settings-close`. The shared `.dialog-close` × still belongs to the other
+    dialogs (Nhân vật, Bối cảnh, model check, Beat Sync, documents, the Imagine lightbox). Commit 33d52a4 deleted it
+    together with the old settings CSS, and those buttons fell back to the browser's grey box until it was restored.
   - **Phones.** Below 720px the dialog fills the screen. The list of sections comes first; picking one slides its page
     in from the right, iOS style, with a back button. This uses `data-motion` push/pop and is skipped under reduced
     motion. `data-page` on the dialog says which screen shows.

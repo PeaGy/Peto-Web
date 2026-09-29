@@ -152,7 +152,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  padding: 12px 10px;
+  padding: 12px 10px 6px;
   overflow: hidden;
   background: var(--panel);
   border-right: 1px solid var(--line);
@@ -288,6 +288,9 @@ body {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  padding-bottom: 20px;
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 20px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 20px), transparent);
   display: grid;
   grid-template-columns: 1fr 1fr;
   align-content: start;
@@ -319,6 +322,9 @@ body {
 .conversation-list {
   flex: 1;
   overflow-y: auto;
+  padding-bottom: 20px;
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 20px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 20px), transparent);
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -1084,7 +1090,10 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* ---------- Tài khoản trong thanh bên ---------- */
 /* margin-top: auto giữ ô tài khoản ở đáy cả khi giữa thanh bên không có mục nào giãn ra, như ở Companion. */
-.sidebar-foot { margin-top: auto; padding-top: 6px; }
+.sidebar-foot { margin-top: auto; }
+/* Chỉ 6px giữa danh sách và ô tài khoản thay cho khoảng 14px chung của thanh bên (chủ web thấy khối đáy cao quá,
+   2026-09-29). Ở Companion không có danh sách nên margin-top: auto vẫn đẩy ô xuống đáy. */
+.sidebar-section + .sidebar-foot { margin-top: -8px; }
 
 /* Ô tài khoản gọn như ChatGPT (chủ web chọn ngày 2026-09-29): avatar 24px, tên và một dòng phụ, bấm vào mở menu.
    Avatar nằm đúng trục 32px của thanh bên, nên thu gọn còn 64px thì chỉ còn avatar, đứng yên tại chỗ. */
@@ -1213,6 +1222,23 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .confirm-dialog h2 { margin: 0; font-size: 20px; }
 .confirm-dialog p { color: var(--muted); overflow-wrap: anywhere; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+/* Nút × đóng dùng chung của các hộp: Nhân vật, Bối cảnh, Kiểm tra model, Beat Sync, Tài liệu, xem ảnh ở Tạo ảnh.
+   Hộp Cài đặt có nút riêng (.settings-close); đừng xóa lớp này cùng khối của Cài đặt (lỡ xóa trong 33d52a4, 2026-09-29). */
+.dialog-close {
+  margin-left: auto;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: none;
+  color: var(--muted);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+.dialog-close:hover { color: var(--text); border-color: var(--line); background: var(--panel-2); }
 .dialog-actions .danger-button { color: var(--danger); border-color: var(--danger); }
 .dialog-actions .primary-button { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
 .confirm-dialog .consent-error { color: var(--danger); }
