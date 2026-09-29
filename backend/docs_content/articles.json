@@ -6,8 +6,12 @@
     "description": "Một nơi để trò chuyện, sáng tạo và làm việc cùng Peto.",
     "keywords": [
       "peto",
-      "bat dau",
-      "gioi thieu"
+      "peto la gi",
+      "peto lam duoc gi",
+      "gioi thieu peto",
+      "cach dung peto",
+      "huong dan dung peto",
+      "bat dau dung peto"
     ],
     "body": "## Chọn cách bạn muốn bắt đầu\nPeto có bốn không gian: **Trò chuyện**, **Tạo ảnh**, **Companion** và **Agent CLI**. Bạn có thể bắt đầu trên web, rồi cài Agent khi muốn làm việc với một dự án trên máy.\n\n## Trò chuyện trên web\n[Mở Peto](/), đăng nhập nếu cần, chọn **Trò chuyện** và gửi lời nhắn đầu tiên. Bạn có thể hỏi bài, nhờ giải thích code hoặc làm rõ một ý tưởng.\n\nMuốn Peto dựa vào tài liệu của bạn? Đính kèm tệp cùng câu hỏi cụ thể. Xem [trò chuyện và tệp đính kèm](/docs/tro-chuyen/).\n\n## Một người bạn trên sân khấu\nVào **Companion** để trò chuyện cùng nhân vật. Chọn nhân vật và bối cảnh; cấu hình giọng nói nếu bạn muốn nghe Peto trả lời. [Khám phá Companion](/docs/companion/).\n\n## Làm việc với dự án\nAgent CLI chạy trong thư mục bạn chọn trên máy Windows. Nó có thể đọc code, đề xuất sửa và chạy kiểm tra sau khi được cấp quyền. [Cài Peto Agent](/docs/cai-agent/).\n\n> Docs mô tả tính năng của bản đang được máy chủ phục vụ. Nếu giao diện hoặc lệnh khác hướng dẫn, hãy kiểm tra phiên bản trước."
   },
@@ -18,8 +22,16 @@
     "description": "Đăng nhập, kết nối thiết bị và hiểu dữ liệu đi đâu.",
     "keywords": [
       "dang nhap",
-      "tai khoan",
-      "du lieu"
+      "dang xuat",
+      "tai khoan peto",
+      "tai khoan khach",
+      "tai khoan cua toi",
+      "tao tai khoan",
+      "xoa tai khoan",
+      "ket noi thiet bi",
+      "ngat ket noi thiet bi",
+      "peto login",
+      "quyen rieng tu"
     ],
     "body": "## Đăng nhập\nPeto hỗ trợ đăng nhập bằng Discord hoặc Google. Các lựa chọn thực tế hiển thị trên trang đăng nhập. Tài khoản khách không dùng được Agent CLI.\n\n## Kết nối Agent\nChạy `peto login` trong terminal. Mở liên kết được cung cấp, đối chiếu mã giữa terminal và web rồi mới chọn **Cho phép**.\n\nTrong **Cài đặt → Peto Agent**, bạn có thể xem các thiết bị đã kết nối và ngắt kết nối thiết bị không còn dùng.\n\n## Dữ liệu khi dùng AI\nNội dung bạn gửi, tệp được đọc và kết quả công cụ có thể đi qua máy chủ Peto tới dịch vụ AI để xử lý. Không dán khóa API, mật khẩu hoặc thông tin không muốn chia sẻ vào cuộc trò chuyện.\n\nLịch sử Agent được lưu trên máy. Skills trong dự án và cấu hình MCP cá nhân không phải tài liệu công khai của trang docs.\n\n## Cần trợ giúp?\nMô tả lỗi, thiết bị và thao tác gây lỗi trong [Discord](https://discord.gg/776G5z2pm9). Che thông tin cá nhân trước khi gửi ảnh chụp hoặc log."
   },
@@ -29,10 +41,17 @@
     "group": "Peto Web",
     "description": "Đặt câu hỏi, chọn mức suy nghĩ và làm việc với tài liệu.",
     "keywords": [
-      "tro chuyen",
+      "chat",
       "tep",
       "dinh kem",
-      "chat"
+      "tep dinh kem",
+      "gui tep",
+      "tai tep len",
+      "muc suy nghi",
+      "chon model",
+      "doi model",
+      "nguon tham khao",
+      "cuoc tro chuyen moi"
     ],
     "body": "## Một câu hỏi rõ ràng\nGửi mục tiêu và thông tin liên quan trong cùng lời nhắn. Với lỗi code, kèm thông báo lỗi và phần code cần kiểm tra; với bài viết, nói rõ đối tượng đọc và độ dài mong muốn.\n\n## Chọn model và mức suy nghĩ\nCác lựa chọn phụ thuộc tài khoản và model. Mức thấp phù hợp câu hỏi nhanh; mức cao dành cho việc cần phân tích kỹ, có thể tốn thêm thời gian và hạn mức.\n\n## Đính kèm tệp\nDùng nút **+** trong ô nhập để thêm tệp được hỗ trợ. Hệ thống sẽ báo khi vượt giới hạn số tệp hoặc dung lượng. Nói rõ bạn muốn tóm tắt, so sánh hay tìm thông tin gì trong tệp.\n\n## Cuộc trò chuyện dài\nMở cuộc mới khi đổi chủ đề lớn. Nút mũi tên tròn phía trên ô nhập giúp trở lại tin mới nhất khi đang đọc lịch sử.\n\n## Nguồn tham khảo\nKhi Peto tra web, nguồn được trích dẫn và các kết quả tìm kiếm có thể xuất hiện dưới câu trả lời. Kết quả tìm được không đồng nghĩa tất cả đều được dùng để chứng minh câu trả lời."
   },
@@ -43,8 +62,14 @@
     "description": "Biến ý tưởng thành hình ảnh và tìm lại kết quả trong thư viện.",
     "keywords": [
       "tao anh",
-      "hinh anh",
-      "thu vien"
+      "tao hinh",
+      "ve anh",
+      "ve tranh",
+      "ve hinh",
+      "sinh anh",
+      "sua anh",
+      "anh tham chieu",
+      "thu vien anh"
     ],
     "body": "## Viết mô tả\nMở **Tạo ảnh**. Mô tả chủ thể, bối cảnh, phong cách và bố cục. Ví dụ:\n\n> Một căn phòng nhỏ cạnh cửa sổ vào buổi tối, ánh đèn vàng ấm, tranh minh họa dịu nhẹ, khung hình ngang.\n\n## Chọn cách tạo\nXem các tùy chọn tốc độ, độ chi tiết, số ảnh, kích thước và tỷ lệ đang có trong ô nhập. Lựa chọn khả dụng có thể thay đổi theo cấu hình dịch vụ.\n\n## Dùng ảnh tham chiếu\nNếu muốn tạo dựa trên một hình có sẵn, dùng nút thêm ảnh và nói rõ yếu tố nào cần giữ hoặc thay đổi.\n\n## Thư viện\nMở hình trong thư viện để xem lại. Dùng lại mô tả để thử một phiên bản khác; kiểm tra kỹ trước khi xóa kết quả bạn muốn giữ."
   },
@@ -55,7 +80,8 @@
     "description": "Một sân khấu riêng cho nhân vật, trò chuyện và giọng nói.",
     "keywords": [
       "companion",
-      "san khau"
+      "san khau companion",
+      "khung chat noi"
     ],
     "body": "## Mở sân khấu\nChọn **Companion** trên thanh điều hướng. Nhân vật xuất hiện trên sân khấu cùng khung chat nổi.\n\n## Cá nhân hóa\nDùng **Nhân vật** để đổi model hoặc mở cài đặt chuyển động. Dùng **Bối cảnh** để chọn nền phía sau.\n\nTrên điện thoại, các thao tác này nằm trong menu điều hướng dưới mục Companion để dành thêm chỗ cho nhân vật.\n\n## Trò chuyện\nGửi lời nhắn trong khung chat. Companion ưu tiên câu trả lời ngắn, thuận tiện để nghe. Bạn vẫn có thể nhắn chữ nếu dịch vụ giọng nói chưa sẵn sàng.\n\n## Khám phá tiếp\n- [Nhân vật và bối cảnh](/docs/nhan-vat/)\n- [Giọng nói](/docs/giong-noi/)\n- [Xử lý lỗi thường gặp](/docs/khac-phuc/)"
   },
@@ -65,10 +91,22 @@
     "group": "Companion",
     "description": "Nhập Live2D, chỉnh chuyển động và lựa chọn chất lượng.",
     "keywords": [
-      "nhan vat",
       "live2d",
-      "boi canh",
-      "fps"
+      "vrm",
+      "vroid",
+      "fps",
+      "nhan vat live2d",
+      "nhan vat 3d",
+      "doi nhan vat",
+      "chon nhan vat",
+      "nhap nhan vat",
+      "them nhan vat",
+      "nhan vat khong",
+      "model nhan vat",
+      "nhap model",
+      "cu dong",
+      "doi boi canh",
+      "chon boi canh"
     ],
     "body": "## Chọn hoặc nhập nhân vật\nMở **Nhân vật**, chọn một thẻ model có sẵn hoặc nhập model Live2D dạng ZIP. Trước khi nhập, đọc bảng tổng quan tài nguyên và các lỗi/cảnh báo mà Peto phát hiện.\n\nChỉ nhập model bạn có quyền sử dụng. Credit của model mẫu nằm trong tab Nhân vật.\n\n## Chuyển động\nTrong cài đặt nhân vật, bạn có thể điều chỉnh chuyển động khi chờ, nhìn theo con trỏ và nhún theo nhạc. Các chuyển động thực tế còn phụ thuộc tham số mà model hỗ trợ.\n\n## Chất lượng trên điện thoại\nNếu thiết bị đủ mạnh, bạn có thể chọn chất lượng và FPS cao hơn trong cài đặt nhân vật. Nếu thấy máy nóng hoặc hao pin, giảm lại các lựa chọn này.\n\n## Bối cảnh\nMở **Bối cảnh** để đổi nền. Nền trải ra phía sau khung chat nổi để sân khấu có thêm không gian.\n\n## Lưu trên trình duyệt\nModel nhập được lưu trên trình duyệt đó, chưa tự đồng bộ sang máy khác. Xóa dữ liệu trang có thể xóa thư viện model, nên giữ bản ZIP gốc."
   },
@@ -82,7 +120,12 @@
       "tts",
       "qwen",
       "stepfun",
-      "openai"
+      "openai",
+      "doc thanh tieng",
+      "nghe thu",
+      "khong nghe thay",
+      "tat tieng",
+      "giong doc"
     ],
     "body": "## Chọn dịch vụ\nMở cài đặt giọng nói và xem các nguồn được máy chủ cung cấp. Peto có phần hỗ trợ Local Voice, OpenAI, Qwen Cloud và StepFun; nguồn khả dụng phụ thuộc cấu hình thực tế.\n\n## Nghe thử trước\nChọn model, giọng và dùng chức năng nghe thử trước khi bắt đầu cuộc trò chuyện. Cùng một tên nhân vật không đảm bảo giọng giống nhau khi đổi dịch vụ TTS.\n\n## Dịch vụ chưa sẵn sàng\nNếu có thông báo không thấy máy chủ giọng nói, bạn vẫn nhắn chữ được. Thử kiểm tra lại kết nối; với Local Voice, máy chạy dịch vụ cần đang bật.\n\n## Khóa và chi phí\nKhóa của dịch vụ do người quản trị cấu hình trên máy chủ. Không gửi khóa vào chat hoặc Discord. Giá và hạn mức thuộc nhà cung cấp; kiểm tra trang billing của họ trước khi nạp tiền.\n\n## Khi không nghe thấy âm thanh\nKiểm tra âm lượng, trạng thái tắt tiếng của tab và thử chạm vào trang trước khi phát lại. Nếu nghe thử lỗi, ghi lại tên nguồn và thông báo lỗi để báo hỗ trợ."
   },
@@ -95,7 +138,15 @@
       "cai",
       "agent",
       "cli",
-      "terminal"
+      "terminal",
+      "peto agent",
+      "agent cli",
+      "cai agent",
+      "cai peto",
+      "cai dat peto",
+      "cap nhat peto",
+      "peto login",
+      "peto status"
     ],
     "body": "## Chuẩn bị\nCần Windows, Python 3.12 trở lên và tài khoản Peto đăng nhập Discord hoặc Google.\n\nNếu chưa có Python, mở PowerShell:\n\n```powershell\nwinget install -e --id Python.Python.3.14\n```\n\n## Cài hoặc cập nhật\nMở PowerShell và chạy:\n\n```powershell\nirm https://peto.pearto.shop/install.ps1 | iex\n```\n\nBộ cài dùng chung cho tài khoản Windows, không cần cài lại ở từng thư mục dự án. Chạy lại lệnh trên để cập nhật.\n\n## Đăng nhập\n```powershell\npeto login\n```\n\nMở liên kết trên terminal, đối chiếu mã rồi cho phép kết nối trên web.\n\n## Bắt đầu làm việc\nĐi tới thư mục dự án bằng `cd`, chạy `peto`, rồi mô tả việc bạn muốn làm. Agent sẽ hỏi khi cần quyền sửa tệp hoặc chạy lệnh.\n\n## Kiểm tra phiên bản\n```powershell\npeto --version\npeto status\n```\n\nPhiên bản trong docs là bản máy chủ cung cấp, không phải phiên bản chắc chắn đã cài trên máy bạn.\n\n## Terminal không nhận lệnh?\nĐóng hẳn terminal rồi mở lại để nhận PATH mới. Xem [khắc phục lỗi](/docs/khac-phuc/)."
   },
@@ -107,7 +158,12 @@
     "keywords": [
       "quyen",
       "permissions",
-      "bao mat"
+      "/permissions",
+      "quyen truy cap",
+      "cap quyen",
+      "hoi quyen",
+      "xin quyen",
+      "bao mat agent"
     ],
     "body": "## Công cụ tệp\nAgent giới hạn các công cụ đọc/sửa tệp trong thư mục dự án và chặn các đường dẫn bí mật như `.env`, `.git`.\n\n## Khi Agent hỏi\nĐọc tên công cụ, lệnh và đường dẫn trước khi đồng ý. Với các công cụ có hỗ trợ, bạn có thể cấp quyền cho lần này hoặc nhớ quyền theo phạm vi được hiển thị.\n\n`/permissions` xem quyền đã nhớ; `/permissions clear` xóa chúng.\n\n## Shell và MCP\nLệnh shell và MCP cục bộ chạy với quyền tài khoản trên máy. Giới hạn của công cụ đọc tệp không biến chúng thành môi trường cách ly.\n\nMCP hỏi riêng trước khi kết nối và trước mỗi lần gọi công cụ. Không cấp quyền chỉ vì tên công cụ có vẻ an toàn.\n\n## Dừng công việc\nCtrl+C dừng yêu cầu hiện tại. Với thao tác từ xa, việc ngắt kết nối không bảo đảm thao tác chưa diễn ra. Kiểm tra kết quả trước khi yêu cầu chạy lại."
   },
@@ -119,8 +175,16 @@
     "keywords": [
       "loi",
       "khong",
-      "khac phuc",
-      "troubleshoot"
+      "troubleshoot",
+      "peto khong",
+      "peto bi loi",
+      "loi peto",
+      "bao loi peto",
+      "khac phuc loi peto",
+      "khong nhan lenh peto",
+      "mcp khong ket noi",
+      "skill khong xuat hien",
+      "nhan vat khong xuat hien"
     ],
     "body": "## Không nhận ra lệnh peto\nĐóng hẳn ứng dụng terminal rồi mở lại. Tab mới của một terminal cũ có thể vẫn giữ PATH cũ. Nếu còn lỗi, kiểm tra Python và chạy lại bộ cài.\n\n## CLI thiếu một lệnh trong docs\nChạy `peto --version`, so với phiên bản docs và cập nhật bằng bộ cài. MCP và skills cần cả CLI lẫn backend hỗ trợ.\n\n## MCP không kết nối được\nKiểm tra endpoint, chương trình đã cài và biến môi trường được tham chiếu trong JSON. Bản MCP hiện tại chưa hỗ trợ đăng nhập OAuth. Dùng `/mcp enable tên` để kết nối lại; không tự lặp thao tác có thể đã thực hiện.\n\n## Skill không xuất hiện\nKiểm tra vị trí `SKILL.md`, trường `name` và `description`. Dùng `/skill` để xem lỗi. Tên trùng sẽ ưu tiên bản trong `.peto/skills`.\n\n## Nhân vật không xuất hiện\nĐợi tải xong model, kiểm tra cảnh báo nhập ZIP và thử model mẫu. Nếu model nhập chỉ có ở một máy, đó có thể là do thư viện lưu cục bộ trên trình duyệt.\n\n## Báo lỗi sao cho dễ xử lý?\nGửi thao tác tái hiện, điều bạn mong đợi, thông báo lỗi, phiên bản CLI (nếu có) và ảnh đã che thông tin riêng tư vào [Discord hỗ trợ](https://discord.gg/776G5z2pm9)."
   }

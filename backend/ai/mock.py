@@ -18,6 +18,7 @@ from collections.abc import AsyncIterator
 
 from .base import ChatMessage, ChatProvider, ProviderError, StreamChunk
 from chat_tools import execute_tool
+from attachment_tools import current_files
 from document_tools import current_session
 
 DOCUMENT_SAMPLE = '''# Giữ sự tử tế trong xã hội số
@@ -195,6 +196,19 @@ class MockProvider(ChatProvider):
             else:
                 yield StreamChunk('document_status', '')
                 yield 'Chưa tạo được tệp: ' + result['error']
+            return
+        # Tìm trong tệp đã gửi (attachment_tools): "__timtep__:ERROR | Exception" tìm trong tệp gửi sau cùng, để bản chạy thử
+        # và test thấy được bước "Đang tìm … trong tệp" mà không cần model thật tự gọi công cụ.
+        files = current_files.get()
+        lookup = re.search(r"__timtep__:([^\n]+)", last_user)
+        if files and files.files and lookup:
+            arguments = json.dumps({"file": files.files[-1]["filename"], "query": lookup.group(1).strip(),
+                                    "context_lines": 1}, ensure_ascii=False)
+            yield StreamChunk("file_lookup", files.label("search_attachment", arguments))
+            result = await files.run("search_attachment", arguments)
+            yield StreamChunk("file_lookup_done", files.label("search_attachment", arguments, result))
+            yield (f"Tìm thấy {result['matches']} dòng khớp trong {result['file']}:\n\n```text\n{result['text']}\n```"
+                   if "error" not in result else f"Chưa tìm được: {result['error']}")
             return
         search_requested = web_search == "on" or any(word in last_user.casefold() for word in ("tìm kiếm", "tìm web", "tra web", "tra cứu", "mới nhất", "search"))
         if search_requested:

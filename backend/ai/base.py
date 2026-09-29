@@ -41,9 +41,12 @@ class StreamChunk:
     ``text`` là câu trả lời sẽ lưu. ``thinking`` là tóm tắt suy nghĩ của Grok,
     chỉ hiện lúc đang trả lời, không trộn vào tin nhắn.
     ``search`` là tiến trình tra web; ``sources`` là nguồn tham khảo để lưu và hiển thị riêng.
+    ``file_lookup`` / ``file_lookup_done`` là lúc Peto bắt đầu và xong một lần tìm/đọc trong tệp đã gửi.
     """
 
-    kind: str  # "text" | "thinking" | "search" | "sources" | "document_status" | "artifact" | "replace"
+    # "text" | "thinking" | "search" | "sources" | "document_status" | "artifact" | "replace" | "file_lookup"
+    # | "file_lookup_done"
+    kind: str
     text: str = ""
     sources: tuple[dict, ...] = field(default_factory=tuple)
     artifact: dict | None = None

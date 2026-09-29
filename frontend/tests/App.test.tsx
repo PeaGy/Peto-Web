@@ -505,6 +505,26 @@ describe('Sending and stopping', () => {
     expect(screen.getByText('Đã suy nghĩ')).toBeTruthy();
   });
 
+  it('lists each lookup in an attached file as its own step', async () => {
+    vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers) => {
+      handlers.onMeta?.('C', 'medium', row('Log này lỗi gì?'));
+      handlers.onFileLookup?.('Đang tìm “ERROR” trong app.log…', true);
+      handlers.onFileLookup?.('Đã tìm “ERROR” trong app.log: 2 dòng khớp', false);
+      handlers.onFileLookup?.('Đang đọc app.log…', true);
+      handlers.onFileLookup?.('Đã đọc app.log, dòng 19.990–20.000', false);
+      handlers.onDelta?.('Lỗi ở dòng 19.996.');
+      handlers.onDone?.();
+    });
+    await openApp();
+    fireEvent.change(screen.getByPlaceholderText('Nhắn cho Peto…'), {target: {value: 'Log này lỗi gì?'}});
+    fireEvent.click(screen.getByRole('button', {name:'Gửi', exact:true}));
+    await screen.findByText('Lỗi ở dòng 19.996.');
+    fireEvent.click(screen.getByRole('button', {name: /Đã làm trong \d+ giây/}));
+    expect(screen.getByText('Đã tìm “ERROR” trong app.log: 2 dòng khớp')).toBeTruthy();
+    expect(screen.getByText('Đã đọc app.log, dòng 19.990–20.000')).toBeTruthy();
+    expect(screen.queryByText('Đang tìm “ERROR” trong app.log…')).toBeNull();
+  });
+
   it('stops an empty reply without leaving a typing indicator', async () => {
     vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers, signal) => {
       handlers.onMeta?.('C', 'low', row('Xin chào'));

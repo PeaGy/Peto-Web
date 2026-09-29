@@ -14,6 +14,20 @@ it('thẻ tài liệu và tiến trình tạo tệp tách khỏi lời trả l�
   expect(onDelta).toHaveBeenCalledExactlyOnceWith('Đã tạo.');
 });
 
+it('tìm và đọc thêm trong tệp đi riêng, không trộn vào câu trả lời', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(
+    event({ type: 'file_lookup', text: 'Đang tìm “ERROR” trong app.log…', live: true })
+    + event({ type: 'file_lookup', text: 'Đã tìm “ERROR” trong app.log: 2 dòng khớp', live: false })
+    + event({ type: 'delta', text: 'Có hai lỗi.' }) + event({ type: 'done' }))));
+  const onFileLookup = vi.fn(), onDelta = vi.fn();
+  await sendMessage({ message: 'Lỗi gì?', conversationId: 'C', effort: 'auto' }, { onFileLookup, onDelta });
+  expect(onFileLookup.mock.calls).toEqual([
+    ['Đang tìm “ERROR” trong app.log…', true],
+    ['Đã tìm “ERROR” trong app.log: 2 dòng khớp', false],
+  ]);
+  expect(onDelta).toHaveBeenCalledExactlyOnceWith('Có hai lỗi.');
+});
+
 it('cảm xúc Peto chọn đi riêng, tới trước chữ và không trộn vào câu trả lời', async () => {
   vi.stubGlobal('fetch', vi.fn(async () => new Response(event({ type: 'emotion', emotion: 'curious' }) + event({ type: 'delta', text: 'Oh?' }) + event({ type: 'done' }))));
   const order: string[] = [];

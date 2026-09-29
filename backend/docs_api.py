@@ -23,11 +23,15 @@ def pages():
     version, commands = catalog()
     result = list(_articles(CONTENT.stat().st_mtime_ns))
     result.append(dict(slug='lenh-agent', title='Các lệnh Agent', group='Agent CLI',
-        description='Cú pháp và cách dùng từ chính danh mục của CLI.', keywords=['lenh', 'command', 'help', 'effort'],
+        description='Cú pháp và cách dùng từ chính danh mục của CLI.',
+        keywords=['lenh', 'command', 'help', 'effort', 'lenh agent', 'cac lenh', 'lenh cli', 'lenh peto'] + [c['name'] for c in commands],
         body='## Danh mục lệnh\nGõ `/` trong CLI để mở gợi ý, hoặc `/help` để xem các lệnh. Các lệnh này không chạy trong ô chat web.\n\n' +
         '\n\n'.join(f"## {c['name']}\n`{c['usage']}`\n\n{c['details']}" for c in commands)))
-    for command, slug, title, description in [('/skill', 'skills', 'Skills cho Agent', 'Nạp hướng dẫn phù hợp với công việc.'),
-                                             ('/mcp', 'mcp', 'Kết nối MCP', 'Thêm công cụ bên ngoài cho Peto Agent.')]:
+    for command, slug, title, description, keywords in [
+            ('/skill', 'skills', 'Skills cho Agent', 'Nạp hướng dẫn phù hợp với công việc.',
+             ['skills', '/skill', 'skill.md', 'tao skill', 'viet skill', 'skill cho agent']),
+            ('/mcp', 'mcp', 'Kết nối MCP', 'Thêm công cụ bên ngoài cho Peto Agent.',
+             ['mcp', '/mcp', 'ket noi mcp', 'may chu mcp'])]:
         entry = next((c for c in commands if c['name'] == command), None)
         if entry:
             body = f"## Cách sử dụng\n`{entry['usage']}`\n\n{entry['details']}"
@@ -36,7 +40,7 @@ def pages():
             else:
                 body += '\n\n## Ví dụ cấu hình HTTP\nTạo tệp `docs-mcp.json` trong dự án; thay endpoint bằng địa chỉ thật của nhà cung cấp:\n\n```json\n{\n  "url": "https://nha-cung-cap.example/mcp",\n  "headers": {"Authorization": "Bearer ${DOCS_API_KEY}"}\n}\n```\n\nBỏ `headers` nếu dịch vụ không cần khóa. Đặt biến môi trường trước khi mở CLI.\n\n```text\n/mcp add docs docs-mcp.json\n/mcp enable docs\n/mcp tools docs\n/mcp disable docs\n```'
             result.append(dict(slug=slug, title=title, group='Agent CLI', description=description,
-                keywords=[slug, command], body=body))
+                keywords=keywords, body=body))
     return version, result
 
 
@@ -57,11 +61,36 @@ def search(query, limit=6):
     return [page for _, page in sorted(scored, key=lambda x: -x[0])[:limit]]
 
 
+# Một tiếng lẻ (tep, loi, cai, khong…) quá chung để biết người dùng đang hỏi về Peto, nên từ khóa một chữ chỉ giúp ô tìm của
+# trang docs. Để gắn bài vào câu trả lời của Peto, từ khóa phải có từ hai chữ, là lệnh CLI ("/mcp"), hoặc là tên riêng dưới đây.
+DISTINCT_WORDS = {'companion', 'agent', 'cli', 'mcp', 'skills', 'tts', 'live2d', 'vrm', 'vroid', 'permissions', 'troubleshoot'}
+
+
+def _phrases(page):
+    """Cụm từ nhận ra một bài trong tin nhắn: cả tiêu đề, và các từ khóa đủ riêng (không dấu, viết thường)."""
+    title = re.sub(r'[^a-z0-9/]+', ' ', fold(page['title'])).strip()
+    keywords = (fold(keyword).strip() for keyword in page['keywords'])
+    return {title} | {k for k in keywords if ' ' in k or k.startswith('/') or k in DISTINCT_WORDS}
+
+
+def _score(text, page):
+    """Tổng số chữ của các cụm khớp nguyên vẹn và trọn từ, nên cụm dài khớp được tính nặng hơn."""
+    return sum(len(phrase.split()) for phrase in _phrases(page)
+               if re.search(r'(?<![a-z0-9])' + r'\s+'.join(map(re.escape, phrase.split())) + r'(?![a-z0-9])', text))
+
+
 def context(question):
-    # Restrict to product questions; never embed user-provided text in system instructions.
-    if not re.search(r'\b(peto|agent|cli|companion|mcp|skills?)\b|/(?:skill|mcp|effort|model)|tao anh', fold(question)):
-        return ''
-    selected = search(question[-4000:], limit=2)
+    """Tối đa hai bài docs hợp với vài tin nhắn gần nhất của người dùng, để Peto trả lời đúng câu hỏi về chính Peto.
+
+    Chỉ gắn bài khi tin nhắn có nguyên cụm tiêu đề hoặc một từ khóa đủ riêng của bài. Nhờ vậy "làm sao bật giọng nói?"
+    không cần nhắc tên Peto vẫn có bài Giọng nói, còn chữ "nói" lẻ trong câu khác không kéo nhầm bài đó (sửa ngày
+    29/9/2026; trước đó phải có chữ Peto, Agent… mới gắn, và bài được chọn theo cả từng tiếng trong nội dung). Chỉ chèn
+    nội dung docs, không bao giờ chép chữ của người dùng vào lời dặn hệ thống.
+    """
+    text = fold(question)
+    ranked = sorted(((score, index, page) for index, page in enumerate(pages()[1]) if (score := _score(text, page))),
+                    key=lambda item: (-item[0], item[1]))
+    selected = [page for _, _, page in ranked[:2]]
     if not selected:
         return ''
     return '\n\nTài liệu Peto liên quan. Khi dùng để hướng dẫn, dẫn liên kết bài tương ứng; không gọi nội dung này là thông tin về tài khoản riêng:\n' + '\n\n'.join(

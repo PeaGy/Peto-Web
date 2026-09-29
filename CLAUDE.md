@@ -277,6 +277,32 @@ between files in that message. Always tell the model when text is missing/trunca
 PDF parsing has page/decompression/time limits; DOCX ZIP/XML has size limits and rejects
 DTD/external entities. Dependencies: pinned pypdf and defusedxml in requirements.txt.
 
+**Long files** (2026-09-29, both levels picked by the owner after "a long log, and Peto read only a little of it").
+Before this, a text file kept only its first 80,000 characters, so the errors at the end of a log never reached Peto.
+- **Condensed excerpt.** `document_reader.condense_text` keeps a text file over `MAX_TEXT_EXCERPT_CHARS` in three
+  parts: the start (15%), error/warning blocks from the middle (`SIGNAL`, 2 lines of context each, one block per line
+  shape, up to 35%), and the end (the rest). It cuts only at line boundaries.
+  - Runs of 5+ lines of the same shape (digits and hex ignored) collapse into first, "[… N dòng cùng dạng …]", last.
+  - Each block opens with "[Dòng a–b]" in real line numbers. Files of 20 lines or fewer keep a head and tail by
+    characters instead.
+  - `VERSION` went to 2, so old cached excerpts are re-read lazily.
+  - The notice is shown to users under "Đọc được một phần", so it names no tools.
+- **Tools** (`attachment_tools.py`): `search_attachment` (plain case- and diacritic-insensitive text, alternatives
+  split by " | ", never regex) and `read_attachment_lines` (at most 400 lines).
+  - They work on the whole file, re-read from disk. Text is decoded as is; PDF and Word go through
+    `read_full_document`, still bounded by the page cap and the timeout.
+  - Only files in the owner-filtered rows of this turn (`AttachmentFiles(rows)`, chat mode) can be opened, by the stored
+    path. Results are capped (40 matches, 16,000 characters) and carry `DATA_NOTE`.
+  - `ai/xai.py` offers them only when the conversation has files, and emits `file_lookup` / `file_lookup_done` chunks.
+    SSE `file_lookup {text, live}` becomes one work step per lookup (`file-N`, document icon).
+  - `_to_chat_messages` tells the model the tool names and the file name whenever an excerpt is partial.
+  - The mock answers `__timtep__:<query>` by searching the newest file.
+- **anyio re-runs the parent's `__main__` file** in the reader's worker process. A dev launcher script without an
+  `if __name__ == "__main__":` guard around `uvicorn.run` starts a second server there, and every read then fails as
+  "Bộ đọc tài liệu đang gặp lỗi" (hit on 2026-09-29 with a scratch launcher; `uvicorn main:app` is safe).
+- **Tests:** `tests/test_attachment_tools.py` (excerpt, tools, provider loop with a fake client, chat API);
+  `frontend/tests/api.test.ts` and `App.test.tsx` for the event and the work steps.
+
 Only the `MAX_HISTORY_IMAGES` (default 4) most recent images are re-sent to the model;
 older ones degrade to a text placeholder. This is computed twice — in
 `main._to_chat_messages` (which decides what to read off disk) and in
@@ -1271,6 +1297,18 @@ backend serves the same `index.html` there with the article's title and descript
 `/api/docs` returns the articles (`docs_api.py`; content in `backend/docs_content/articles.json`, see its README).
 Since 2026-09-29 every `/docs` page also carries the `og.png` link preview, through the same `with_preview` as the home
 page (the bot avatar when no public https origin is known).
+
+**Peto answers from the docs.** `_build_system_prompt` appends `docs_api.context(...)` of the last 3 user messages on every
+Chat, Companion and roleplay turn (not the Agent CLI).
+- It attaches at most 2 articles, whole, with their `/docs/<slug>/` links. It never copies the user's text.
+- An article counts only when the text contains its whole title, or one of its keywords as a whole phrase (unaccented,
+  whole words). A one-word keyword counts only if it starts with `/` or is in `DISTINCT_WORDS`; other single words only
+  serve the docs site's search box. Longer matches rank higher.
+- Before 2026-09-29 a message needed "Peto", "Agent"… to get any article, and single syllables of the body picked it
+  ("nói" pulled "Giọng nói"). The owner approved the change.
+- Keywords live in `articles.json` (the generated pages set theirs in `pages()`); `docs_content/README.md` says how to
+  write them. `tests/test_docs_api.py` pins questions that must find their article and everyday questions (literature,
+  physics, code) that must find none.
 
 - **FastAPI's own API docs are off** (`docs_url`, `redoc_url` and `openapi_url` are `None` in `main.py`). Its Swagger page
   answered `/docs` without the trailing slash, so only `/docs/` reached the guide (reported 2026-09-28).

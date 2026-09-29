@@ -371,7 +371,7 @@ function WorkLog({
             <li key={step.id} className={step.live ? "live" : undefined}>
               {step.id === "search" ? (
                 <GlobeIcon />
-              ) : step.id === "document" ? (
+              ) : step.id === "document" || step.id.startsWith("file-") ? (
                 <DocumentIcon />
               ) : (
                 <span className="work-dot" aria-hidden="true" />
@@ -1186,6 +1186,8 @@ export default function App() {
     let activeId = conversationId;
     let accepted = false;
     let completed = false;
+    // Mỗi lần Peto tìm/đọc trong tệp là một dòng riêng trong danh sách "Đang làm…".
+    let fileLookups = 0;
     const session = authVersion.current;
     const startedAt = performance.now();
 
@@ -1278,6 +1280,10 @@ export default function App() {
           onDocumentStatus: (text) => {
             updateSearch({ document_status: text || undefined });
             if (text) addWorkStep("document", text, true);
+          },
+          onFileLookup: (text, live) => {
+            if (live) fileLookups += 1;
+            addWorkStep(`file-${fileLookups}`, text, live);
           },
           onArtifact: (artifact) => {
             if (session !== authVersion.current || controller.signal.aborted) return;

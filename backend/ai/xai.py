@@ -22,6 +22,7 @@ from openai import (
 
 from config import MAX_HISTORY_IMAGES, XAI_API_BASE, XAI_MAX_OUTPUT_TOKENS, XAI_MODEL, WEB_SEARCH_ENABLED
 from xai_auth import XaiAuth, XaiAuthError
+from attachment_tools import NAMES as FILE_TOOLS, current_files
 from chat_tools import TOOL_SCHEMAS, execute_tool
 from document_tools import current_session, SCHEMA as DOCUMENT_SCHEMA
 from web_search import normalize_sources, search_context
@@ -166,6 +167,9 @@ class ResponsesProvider(ChatProvider):
 
         calls_used = 0
         document_session = current_session.get()
+        # Tệp đã gửi trong hội thoại: công cụ tìm/đọc chỉ có khi hội thoại có tệp chữ, PDF hoặc Word.
+        files = current_files.get()
+        file_schemas = files.schemas() if files else []
         for round_index in range(MAX_TOOL_ROUNDS + 1):
             round_started = perf_counter()
             usage: dict = {}
@@ -178,7 +182,8 @@ class ResponsesProvider(ChatProvider):
                     "effort": effort if effort in self.supported_efforts else "low"
                 },
                 "stream": True,
-                "tools": [*TOOL_SCHEMAS, *([DOCUMENT_SCHEMA] if document_session else []), *([{"type": "web_search"}] if search_enabled else [])] if tools_enabled else [],
+                "tools": [*TOOL_SCHEMAS, *([DOCUMENT_SCHEMA] if document_session else []), *file_schemas,
+                          *([{"type": "web_search"}] if search_enabled else [])] if tools_enabled else [],
                 "include": ["reasoning.encrypted_content"],
                 # Tự giữ các item trong lượt này, không cần lưu hội thoại ở dịch vụ AI.
                 "store": False,
@@ -306,6 +311,11 @@ class ResponsesProvider(ChatProvider):
                     if result.get('ok'):
                         yield StreamChunk('artifact', artifact=result['artifact'])
                     yield StreamChunk('document_status', '')
+                elif call.get("name") in FILE_TOOLS and file_schemas:
+                    arguments = call.get("arguments", "")
+                    yield StreamChunk("file_lookup", files.label(call["name"], arguments))
+                    result = await files.run(call["name"], arguments)
+                    yield StreamChunk("file_lookup_done", files.label(call["name"], arguments, result))
                 else:
                     result = execute_tool(call.get("name", ""), call.get("arguments", ""), timezone=timezone)
                 payload_input.append({

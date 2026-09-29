@@ -413,9 +413,15 @@ hoặc **Chưa đọc được**. Bấm trạng thái để xem chi tiết, bấ
   phạm vi lịch sử gần nhất (mặc định 20 tin). Tệp gửi từ bản cũ được đọc dần khi
   hỏi tiếp, tối đa 16 tệp mỗi lượt tính cả tệp mới (ảnh, PDF, Word vẫn tối đa 4).
   Xóa hội thoại xóa cả bản trích.
-- Mặc định đọc tối đa 100 trang PDF, 80.000 ký tự/tệp, 160.000 ký tự tài liệu
+- Mặc định đọc sẵn tối đa 100 trang PDF, 80.000 ký tự/tệp, 160.000 ký tự tài liệu
   cho cả lượt. Ưu tiên tệp mới, chia phần còn lại giữa các tệp cùng tin nhắn;
-  Peto nhận thông báo khi nội dung bị cắt. Tài liệu dài nên chia riêng phần cần hỏi.
+  Peto nhận thông báo khi nội dung bị cắt.
+- **Tệp dài (log, code, txt):** phần đọc sẵn gồm phần đầu, phần cuối và các đoạn
+  có lỗi hoặc cảnh báo ở giữa, cắt đúng ranh giới dòng; các dòng lặp chỉ khác giờ
+  hay mã được gộp lại. Khi câu hỏi cần phần khác, Peto tự **tìm trong cả tệp**
+  (không phân biệt hoa thường và dấu) hoặc **đọc nguyên văn một khoảng dòng**, kể
+  cả PDF và Word; mỗi lần tra hiện thành một dòng trong danh sách “Đang làm…”.
+  Mỗi lần tra là thêm một lượt gọi model, nên câu trả lời có thể chậm hơn vài giây.
 - Bộ đọc chạy trong tiến trình riêng, có thể dừng và có thời hạn 15 giây/tệp.
   Word được kiểm tra kích thước nén/XML và chặn thực thể ngoài; PDF giới hạn
   stream giải nén. Không chạy macro, tệp nhúng hoặc lệnh chứa trong tài liệu.

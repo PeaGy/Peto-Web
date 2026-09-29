@@ -82,6 +82,7 @@ type ChatEvent =
   | { type: "sources"; sources: WebSource[] }
   | { type: 'artifact'; artifact: DocumentArtifact }
   | { type: 'document_status'; text: string }
+  | { type: "file_lookup"; text: string; live: boolean }
   | { type: "error"; message: string }
   | { type: "done" };
 
@@ -97,6 +98,8 @@ interface ChatHandlers {
   onSources?: (sources: WebSource[]) => void;
   onArtifact?: (artifact: DocumentArtifact) => void;
   onDocumentStatus?: (text: string) => void;
+  /** Peto tìm hoặc đọc thêm trong tệp đã gửi: live khi đang làm, rồi một lần nữa với kết quả. */
+  onFileLookup?: (text: string, live: boolean) => void;
   onError?: (message: string) => void;
   onDone?: () => void;
 }
@@ -486,6 +489,8 @@ export async function sendMessage(
           handlers.onArtifact?.(event.artifact);
         } else if (event.type === 'document_status') {
           handlers.onDocumentStatus?.(event.text);
+        } else if (event.type === "file_lookup") {
+          handlers.onFileLookup?.(event.text, event.live);
         } else if (event.type === "error") {
           handlers.onError?.(event.message);
           ended = true;

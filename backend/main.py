@@ -31,6 +31,7 @@ from pydantic import BaseModel, Field
 import agent_api
 import agent_install
 import ai_models
+import attachment_tools
 import attachments as attachment_lib
 import auth
 import companion_memory
@@ -271,6 +272,10 @@ def _to_chat_messages(rows: list[dict]) -> list[ChatMessage]:
             notice = document["notice"]
             if len(excerpt) < len(text):
                 notice += " Chỉ một phần hoặc không có nội dung tệp trong ngữ cảnh lượt này do tổng tài liệu quá dài. Nói rõ nếu thiếu phần cần hỏi."
+            if item.get("path") and (document.get("status") == "partial" or len(excerpt) < len(text)):
+                # Tệp đã lưu trên máy chủ: Peto tra được phần còn lại (attachment_tools). Tệp Peto tự tạo thì không.
+                notice += (f' Phần không có ở đây: tìm bằng search_attachment, đọc nguyên văn bằng read_attachment_lines '
+                           f'(file="{item["filename"]}"). "[Dòng a–b]" là số dòng thật của tệp.')
             excerpts[item["id"]] = f"[Trạng thái đọc: {notice}]\n{excerpt}"
     image_ids: list[str] = []
     for row in reversed(rows):
@@ -471,12 +476,15 @@ def _as_chunk(item: str | StreamChunk) -> StreamChunk:
 async def _stream_reply(
     system_prompt: str, history: list[ChatMessage], effort: str, timezone: str | None = None, web_search: str = "auto",
     document_session=None, model: str = ai_models.DEFAULT_MODEL, spoken: bool = False,
+    files: attachment_tools.AttachmentFiles | None = None,
 ) -> AsyncIterator[StreamChunk]:
     """Gọi provider của model đã chọn một lần, có timeout theo effort. Trả về từng mảnh stream. ``spoken`` là lượt
-    Companion: câu trả lời được đọc thành tiếng, nên chỉ dẫn tra web dặn không chèn đường dẫn hay dấu trích dẫn."""
+    Companion: câu trả lời được đọc thành tiếng, nên chỉ dẫn tra web dặn không chèn đường dẫn hay dấu trích dẫn.
+    ``files`` là các tệp của hội thoại mà Peto được tìm/đọc thêm trong lượt này."""
     provider = get_provider(model)
     timeout = RESPONSE_TIMEOUTS.get(effort, RESPONSE_TIMEOUTS["low"])
     token = document_session_context.set(document_session)
+    files_token = attachment_tools.current_files.set(files)
     spoken_token = spoken_reply.set(spoken)
     try:
         async with asyncio.timeout(timeout):
@@ -488,6 +496,7 @@ async def _stream_reply(
                 yield _as_chunk(chunk)
     finally:
         spoken_reply.reset(spoken_token)
+        attachment_tools.current_files.reset(files_token)
         document_session_context.reset(token)
 
 
@@ -596,6 +605,8 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
             nonlocal sources, search_started, first_text_at, notes, markers
             if chunk.kind == 'artifact': return sse({'type': 'artifact', 'artifact': chunk.artifact})
             if chunk.kind == 'document_status': return sse({'type': 'document_status', 'text': chunk.text})
+            if chunk.kind in ("file_lookup", "file_lookup_done"):
+                return sse({"type": "file_lookup", "text": chunk.text, "live": chunk.kind == "file_lookup"})
             if chunk.kind == "search":
                 search_started = True
                 return sse({"type": "search", "status": chunk.text})
@@ -631,6 +642,9 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                     yield sse({"type": "reading", "text": f"Peto đang đọc {document_count} tài liệu…"})
                 for item in files:
                     documents.append(await document_reader.read_document(item.data, item.mime) if item.kind == "file" else None)
+                if document_count:
+                    # Thiếu dòng này thì bước "Peto đang đọc…" trong danh sách "Đang làm…" giữ nguyên chữ "đang" tới hết lượt.
+                    yield sse({"type": "reading", "text": ""})
                 # Hội thoại có thể bị xóa trong lúc bộ đọc đang xử lý tệp.
                 if conversation_id and not await db.owns_conversation(owner, conversation_id):
                     raise ProviderError("Hội thoại đã bị xóa. Mở cuộc trò chuyện mới nhé.")
@@ -675,12 +689,14 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                             for row in [r for r in rows if r.get('role') == 'user'][-3:])),
                 )
                 document_session = DocumentSession(owner, conversation_id) if mode == 'chat' else None
+                # Tệp trong lịch sử vừa đọc (đã lọc theo chủ tài khoản trong SQL): Peto tìm/đọc thêm được khi cần.
+                files_session = attachment_tools.AttachmentFiles(rows) if mode == 'chat' else None
                 if request.document_mode and mode == 'chat':
                     system_prompt += '\n\n[PETO_DOCUMENT_CREATE]\nNgười dùng chọn tạo tài liệu: hãy gọi create_document để tạo tệp theo yêu cầu, mặc định DOCX nếu chưa chọn định dạng. Trả lời ngắn sau khi có kết quả; nội dung dài đặt trong công cụ.'
                 prepared_at = perf_counter()
                 # A timeout may already have consumed provider tokens. Do not repeat the whole turn invisibly.
                 async for chunk in _stream_reply(system_prompt, history, effort, timezone, web_search, document_session,
-                                                 model, spoken=mode == "companion"):
+                                                 model, spoken=mode == "companion", files=files_session):
                     event = chunk_event(chunk)
                     if event:
                         yield event
