@@ -1284,11 +1284,20 @@ page (the bot avatar when no public https origin is known).
     layers follow the mouse with the offsets of AIRI's `ParallaxCover.vue`. CSS transitions (1.2 s, outSine) stand in
     for anime.js: each move starts from where the layer is.
   - **Character size** (2026-09-29, the owner asked for it "bigger and wider, like AIRI"). AIRI's cover is landscape;
-    Peto's is portrait, so growing it only pushes the face down. The art sits in `.docs-stage`, the space left under
-    the buttons, which is a size container. Its top 9% (hair) tucks behind the glass buttons, as in AIRI. Its width
-    follows the screen (58vw, at most 1000 px) but shrinks to keep the chin 40 px above the bottom (`338cqh - 135px`).
-    Desktop screens under 780 px high get a tighter title block. The glass buttons dim the art behind them
-    (`--docs-glass-filter`, `brightness(0.72)`) and the slogan has a halo, so text over the hair stays readable.
+    Peto's is portrait, so growing it only pushes the face down.
+    - The art sits in `.docs-stage`, the space left under the buttons, which is a size container. Its top (hair) tucks
+      behind the glass buttons as in AIRI: 9% of its width, at most 80 px.
+    - Its width follows the screen (58vw) but shrinks to keep the chin 40 px above the bottom (`338cqh - 135px` and
+      `259cqh + 104px`). There is **no px cap**, so like AIRI the character keeps its on-screen size at any browser zoom.
+      A 1000 px cap made it shrink at 25% zoom (the owner caught it).
+    - `.docs-cover` must keep the image's aspect ratio (`aspect-ratio`, `align-self: flex-start`). The silhouettes are
+      `contain` masks sized to that box. A box stretched to the stage's height drew them off the character, again seen
+      at 25% zoom.
+    - Desktop screens under 780 px high get a tighter title block.
+    - The glass buttons dim the art behind them (`--docs-glass-filter`, `brightness(0.72)`), and the slogan has a halo,
+      so text over the hair stays readable.
+    - Check zoom levels with headless Edge: CSS viewport = physical size / (Windows scale × zoom), and the device scale
+      factor = Windows scale × zoom.
   - **Reader** (`DocsReader.tsx`). Group tabs, the group's articles, the article, then the outline (scrollspy) and
     community links. A violet-pink glow sits at the top (`.docs-glow`, gradients, no image). Phones get a "Danh mục"
     drawer (`<dialog>`).

@@ -399,17 +399,22 @@ body:has(.docs) { margin: 0; }
 .docs-fade { position: absolute; inset: 0 0 auto; height: 78%; background: linear-gradient(to top, transparent, var(--docs-bg)); }
 /*
  * Nhân vật chiếm phần còn lại dưới hàng nút (.docs-stage là container để đo bằng cqh). Tranh dọc 1069×1472: cằm cách
- * mép trên khoảng 0,385 bề ngang ảnh, và 0,09 bề ngang trên cùng (tóc) lùi ra sau hàng nút như AIRI, chưa chạm dòng
- * giới thiệu. Ảnh rộng theo màn hình, nhưng không quá mức để cằm còn cách đáy 40 px: 0,295 × bề ngang ≤ cao − 40, tức
- * 338cqh − 135px.
+ * mép trên khoảng 0,385 bề ngang ảnh. Phần trên cùng (tóc) lùi ra sau hàng nút như AIRI: 0,09 bề ngang, tối đa 80 px để
+ * khi thu nhỏ trình duyệt tóc không lên tới tiêu đề.
+ * - Bề ngang chỉ tính theo khung màn hình (vw, cqh), không có trần px. Như AIRI, phóng to hay thu nhỏ trình duyệt thì
+ *   nhân vật vẫn giữ cỡ trên màn hình; trước 29/9 trần 1000 px làm nhân vật bé lại khi thu nhỏ 25%.
+ * - Không lớn quá mức để cằm còn cách đáy 40 px: 338cqh − 135px khi tóc lùi 0,09 bề ngang, 259cqh + 104px khi lùi 80 px.
+ * - Khung ảnh phải đúng tỉ lệ tranh (aspect-ratio, không bị kéo giãn theo chiều cao chỗ trống): hai lớp bóng là mask
+ *   "contain" trong chính khung này, khung sai tỉ lệ thì bóng lệch khỏi nhân vật.
  */
 .docs-stage {
-  position: relative; z-index: 1; flex: 1 1 0; align-self: stretch; display: flex; justify-content: center;
-  container-type: size; pointer-events: none;
+  position: relative; z-index: 1; flex: 1 1 0; align-self: stretch; display: flex; align-items: flex-start;
+  justify-content: center; container-type: size; pointer-events: none;
 }
 .docs-cover {
-  --cover-w: clamp(340px, min(58vw, 338cqh - 135px), 1000px);
-  position: relative; flex: none; width: var(--cover-w); margin-top: calc(var(--cover-w) * -0.09);
+  --cover-w: max(340px, min(58vw, 338cqh - 135px, 259cqh + 104px));
+  position: relative; flex: none; align-self: flex-start; width: var(--cover-w); aspect-ratio: 1069 / 1472;
+  margin-top: calc(-1 * min(var(--cover-w) * 0.09, 80px));
   translate: 6% 0; rotate: -8deg;
 }
 .docs-cover img { display: block; width: 100%; height: auto; }
@@ -502,5 +507,5 @@ body:has(.docs) { margin: 0; }
   .docs-home { padding-top: 56px; }
   .docs-home-copy { gap: 14px; }
   .docs-glass { padding: 10px 16px; font-size: 14px; }
-  .docs-cover { --cover-w: clamp(300px, min(118vw, 338cqh - 135px), 560px); translate: 9% 0; rotate: -10deg; }
+  .docs-cover { --cover-w: max(300px, min(118vw, 338cqh - 135px, 259cqh + 104px)); translate: 9% 0; rotate: -10deg; }
 }
