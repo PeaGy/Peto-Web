@@ -34,6 +34,8 @@ body:has(.docs) { margin: 0; }
   --docs-glass-primary: rgba(238, 156, 173, 0.3);
   --docs-glass-primary-hover: rgba(238, 156, 173, 0.42);
   --docs-pill: rgba(12, 11, 16, 0.62);
+  --docs-glass-filter: blur(12px) brightness(0.72);
+  --docs-halo: rgba(12, 11, 16, 0.9);
   --docs-glow-violet: rgba(116, 86, 255, 0.24);
   --docs-glow-pink: rgba(238, 156, 173, 0.13);
   --docs-glow-blue: rgba(86, 120, 255, 0.09);
@@ -75,6 +77,8 @@ body:has(.docs) { margin: 0; }
   --docs-glass-primary: rgba(238, 156, 173, 0.36);
   --docs-glass-primary-hover: rgba(238, 156, 173, 0.5);
   --docs-pill: rgba(251, 250, 253, 0.74);
+  --docs-glass-filter: blur(12px) brightness(1.18);
+  --docs-halo: rgba(251, 250, 253, 0.95);
   --docs-glow-violet: rgba(116, 86, 255, 0.13);
   --docs-glow-pink: rgba(238, 156, 173, 0.22);
   --docs-glow-blue: rgba(86, 120, 255, 0.06);
@@ -361,26 +365,29 @@ body:has(.docs) { margin: 0; }
 
 .docs-home {
   position: relative; isolation: isolate; display: flex; flex-direction: column; align-items: center;
-  min-height: calc(100svh - var(--docs-top-h)); padding: clamp(48px, 11vh, 120px) 24px 0; overflow: hidden;
+  height: calc(100svh - var(--docs-top-h)); min-height: 560px; padding: clamp(48px, 11vh, 120px) 24px 0; overflow: hidden;
 }
-.docs-home-copy { position: relative; z-index: 2; display: flex; flex-direction: column; align-items: center; gap: 16px; max-width: 44rem; text-align: center; }
+.docs-home-copy { position: relative; z-index: 2; flex: none; display: flex; flex-direction: column; align-items: center; gap: 16px; max-width: 44rem; text-align: center; }
 .docs-chip {
   padding: 5px 14px; border: 1px solid var(--docs-line-strong); border-radius: 999px; background: var(--docs-glass);
   -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); font-size: 13px; font-weight: 500; color: var(--docs-soft);
 }
 .docs-home h1 { font: 700 clamp(56px, 7vw, 84px)/1.05 var(--docs-round); letter-spacing: -0.02em; }
-.docs-slogan { max-width: 34rem; font-size: clamp(16px, 1.45vw, 19px); font-weight: 500; line-height: 1.6; text-wrap: balance; }
+.docs-slogan {
+  max-width: 34rem; font-size: clamp(16px, 1.45vw, 19px); font-weight: 500; line-height: 1.6; text-wrap: balance;
+  text-shadow: 0 1px 12px var(--docs-halo);
+}
 .docs-home-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; margin-top: 8px; }
 .docs-glass {
   padding: 12px 22px; border-radius: 14px; background: var(--docs-glass);
-  -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: var(--docs-glass-filter); backdrop-filter: var(--docs-glass-filter);
   font: 700 16px/1.2 var(--docs-round); white-space: nowrap;
   transition: background-color 200ms ease, transform 160ms var(--docs-ease);
 }
 .docs-glass-primary { background: var(--docs-glass-primary); }
 .docs-glass:active { transform: scale(0.95); }
 
-/* Nền trang đầu: họa tiết (mask trắng, tô bằng màu chữ) trôi chéo, mờ dần lên trên; nhân vật và hai lớp bóng phía sau. */
+/* Nền trang đầu: họa tiết (mask trắng, tô bằng màu chữ) trôi chéo, mờ dần lên trên. */
 .docs-scene { position: absolute; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
 .docs-pattern {
   position: absolute; top: -512px; right: 0; bottom: 0; left: -512px; background: var(--docs-pattern-ink); opacity: 0.06;
@@ -390,7 +397,21 @@ body:has(.docs) { margin: 0; }
 .docs-motion .docs-pattern { animation: docs-drift 16s linear infinite; }
 @keyframes docs-drift { to { transform: translate3d(512px, 512px, 0); } }
 .docs-fade { position: absolute; inset: 0 0 auto; height: 78%; background: linear-gradient(to top, transparent, var(--docs-bg)); }
-.docs-cover { position: absolute; top: clamp(290px, 44vh, 440px); left: 50%; width: clamp(360px, 44vw, 660px); translate: -50% 0; rotate: -8deg; }
+/*
+ * Nhân vật chiếm phần còn lại dưới hàng nút (.docs-stage là container để đo bằng cqh). Tranh dọc 1069×1472: cằm cách
+ * mép trên khoảng 0,385 bề ngang ảnh, và 0,09 bề ngang trên cùng (tóc) lùi ra sau hàng nút như AIRI, chưa chạm dòng
+ * giới thiệu. Ảnh rộng theo màn hình, nhưng không quá mức để cằm còn cách đáy 40 px: 0,295 × bề ngang ≤ cao − 40, tức
+ * 338cqh − 135px.
+ */
+.docs-stage {
+  position: relative; z-index: 1; flex: 1 1 0; align-self: stretch; display: flex; justify-content: center;
+  container-type: size; pointer-events: none;
+}
+.docs-cover {
+  --cover-w: clamp(340px, min(58vw, 338cqh - 135px), 1000px);
+  position: relative; flex: none; width: var(--cover-w); margin-top: calc(var(--cover-w) * -0.09);
+  translate: 6% 0; rotate: -8deg;
+}
 .docs-cover img { display: block; width: 100%; height: auto; }
 .docs-silhouette {
   position: absolute; inset: 0;
@@ -438,6 +459,11 @@ body:has(.docs) { margin: 0; }
 
 /* ---------- Màn hẹp ---------- */
 
+@media (min-width: 768px) and (max-height: 780px) {
+  .docs-home { padding-top: clamp(28px, 5vh, 48px); }
+  .docs-home h1 { font-size: clamp(52px, 6vw, 68px); }
+}
+
 @media (max-width: 1279px) {
   .docs-reader { grid-template-columns: 16rem minmax(0, 1fr); }
   .docs-aside { display: none; }
@@ -476,5 +502,5 @@ body:has(.docs) { margin: 0; }
   .docs-home { padding-top: 56px; }
   .docs-home-copy { gap: 14px; }
   .docs-glass { padding: 10px 16px; font-size: 14px; }
-  .docs-cover { top: 360px; left: 58%; width: 104vw; rotate: -10deg; }
+  .docs-cover { --cover-w: clamp(300px, min(118vw, 338cqh - 135px), 560px); translate: 9% 0; rotate: -10deg; }
 }

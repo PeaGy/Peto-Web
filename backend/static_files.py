@@ -119,18 +119,20 @@ def mount(app: FastAPI, static_dir: Path) -> bool:
         )
         return False
 
-    async def index_page(request: Request) -> HTMLResponse:
-        # Đọc lại file mỗi lượt như FileResponse trước đây, để build lại là có
-        # ngay. get_app_identity có cache và không bao giờ raise, nên Discord
-        # trục trặc thì trang chủ chỉ thiếu ảnh xem trước chứ không sập.
+    async def with_preview(page: str, request: Request) -> str:
+        """Chèn ảnh xem trước link: banner og.png khi biết địa chỉ công khai, không thì avatar Discord của bot.
+
+        Dùng cho trang chủ và mọi trang /docs. get_app_identity có cache và không
+        bao giờ raise, nên Discord trục trặc thì trang chỉ thiếu ảnh xem trước chứ
+        không sập.
+        """
         identity = await get_app_identity()
         name = identity["name"] or "Peto"
-        page = await anyio.Path(index).read_text(encoding="utf-8")
         banner = static_dir / _BANNER_NAME
         origin = public_origin(request) if banner.is_file() else None
         if origin:
             size = _png_size(banner)
-            page = _with_preview_image(
+            return _with_preview_image(
                 page,
                 f"{origin}/{_BANNER_NAME}",
                 name,
@@ -139,8 +141,13 @@ def mount(app: FastAPI, static_dir: Path) -> bool:
                 image_type="image/png",
                 alt=f"{name}, trợ lý AI",
             )
-        else:
-            page = _with_preview_image(page, identity["avatar_url"], name)
+        return _with_preview_image(page, identity["avatar_url"], name)
+
+    async def index_page(request: Request) -> HTMLResponse:
+        # Đọc lại file mỗi lượt như FileResponse trước đây, để build lại là có
+        # ngay.
+        page = await anyio.Path(index).read_text(encoding="utf-8")
+        page = await with_preview(page, request)
         return HTMLResponse(page, headers={"Cache-Control": "no-cache"})
 
     # Nhận cả HEAD: công cụ giám sát uptime và `curl -I` dùng HEAD, và FastAPI
@@ -172,6 +179,8 @@ def mount(app: FastAPI, static_dir: Path) -> bool:
                 page = re.sub(r'(<meta (?:name|property)="' + name + r'" content=")[^"]*', lambda m: m[1] + html.escape(description, quote=True), page)
             page = re.sub(r'(<meta property="og:title" content=")[^"]*', lambda m: m[1] + html.escape(title, quote=True), page)
             page = page.replace('<link rel="preload" href="/api/auth/me" as="fetch" crossorigin />', '')
+            # Link /docs dán vào Discord hay Messenger cũng hiện banner og.png như trang chủ.
+            page = await with_preview(page, request)
             return HTMLResponse(page, headers={'Cache-Control': 'no-cache'})
 
         target = _safe_path(static_dir, full_path)

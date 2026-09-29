@@ -251,6 +251,33 @@ async def test_banner_is_not_published_on_a_private_origin(tmp_path, identity):
     assert "/og.png" not in page
 
 
+@pytest.mark.parametrize("path", ["/docs", "/docs/", "/docs/bat-dau/"])
+async def test_docs_pages_share_the_banner(tmp_path, identity, path):
+    """Link Peto Docs dán vào Discord cũng phải ra khung ảnh lớn og.png như trang chủ."""
+    identity["avatar_url"] = AVATAR
+    (tmp_path / "index.html").write_text(SITE_INDEX, encoding="utf-8")
+    (tmp_path / "og.png").write_bytes(_png(1731, 909))
+    app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+    assert static_files.mount(app, tmp_path)
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="https://peto.example"
+    ) as client:
+        page = (await client.get(path)).text
+    assert '<meta property="og:image" content="https://peto.example/og.png" />' in page
+    assert '<meta property="og:image:width" content="1731" />' in page
+    assert page.index("og:image") < page.index("</head>")
+    assert "Peto Docs" in page
+    assert AVATAR not in page
+
+
+async def test_docs_pages_fall_back_to_the_avatar(site_client, identity):
+    """Không có địa chỉ https công khai thì trang docs dùng avatar như trang chủ."""
+    identity["avatar_url"] = AVATAR
+    page = (await site_client.get("/docs/")).text
+    assert f'<meta property="og:image" content="{AVATAR}" />' in page
+    assert "/og.png" not in page
+
+
 async def test_real_app_leaves_docs_to_the_guide():
     """/docs không có dấu "/" cuối từng ra trang Swagger tự sinh của FastAPI, còn /docs/ mới ra trang hướng dẫn."""
     import main

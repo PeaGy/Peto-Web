@@ -1269,6 +1269,8 @@ results in the next step. The server stores no conversation (`store=False`), and
 Public Vietnamese guides, no sign-in. `main.tsx` mounts `Docs.tsx` instead of the app for `/docs` and `/docs/*`. The
 backend serves the same `index.html` there with the article's title and description (`static_files.py`), and
 `/api/docs` returns the articles (`docs_api.py`; content in `backend/docs_content/articles.json`, see its README).
+Since 2026-09-29 every `/docs` page also carries the `og.png` link preview, through the same `with_preview` as the home
+page (the bot avatar when no public https origin is known).
 
 - **FastAPI's own API docs are off** (`docs_url`, `redoc_url` and `openapi_url` are `None` in `main.py`). Its Swagger page
   answered `/docs` without the trailing slash, so only `/docs/` reached the guide (reported 2026-09-28).
@@ -1281,6 +1283,12 @@ backend serves the same `index.html` there with the article's title and descript
     plus a pattern tile (`docs-assets/pattern.svg`, a mask tinted by CSS) that drifts diagonally. The text and the three
     layers follow the mouse with the offsets of AIRI's `ParallaxCover.vue`. CSS transitions (1.2 s, outSine) stand in
     for anime.js: each move starts from where the layer is.
+  - **Character size** (2026-09-29, the owner asked for it "bigger and wider, like AIRI"). AIRI's cover is landscape;
+    Peto's is portrait, so growing it only pushes the face down. The art sits in `.docs-stage`, the space left under
+    the buttons, which is a size container. Its top 9% (hair) tucks behind the glass buttons, as in AIRI. Its width
+    follows the screen (58vw, at most 1000 px) but shrinks to keep the chin 40 px above the bottom (`338cqh - 135px`).
+    Desktop screens under 780 px high get a tighter title block. The glass buttons dim the art behind them
+    (`--docs-glass-filter`, `brightness(0.72)`) and the slogan has a halo, so text over the hair stays readable.
   - **Reader** (`DocsReader.tsx`). Group tabs, the group's articles, the article, then the outline (scrollspy) and
     community links. A violet-pink glow sits at the top (`.docs-glow`, gradients, no image). Phones get a "Danh mục"
     drawer (`<dialog>`).

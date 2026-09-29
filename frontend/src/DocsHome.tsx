@@ -67,15 +67,18 @@ export default function DocsHome({ motion }: { motion: boolean }) {
         <a className="docs-glass" href="/docs/bat-dau/">Bắt đầu</a>
       </div>
     </div>
-    <div className="docs-scene" aria-hidden="true">
-      <div className="docs-pattern" />
-      <div className="docs-fade" />
+    {/* Nhân vật nằm ngay dưới hàng nút (tóc lùi ra sau nút như AIRI) và lớn theo chỗ trống còn lại, để mặt luôn trong màn hình. */}
+    <div className="docs-stage" aria-hidden="true">
       <div className="docs-cover">
         <img ref={art} className="docs-parallax" src="/docs-assets/peto-hero.webp" alt="" width="1069" height="1472"
           fetchPriority="high" />
         <div ref={pink} className="docs-silhouette docs-silhouette-pink docs-parallax" />
         <div ref={violet} className="docs-silhouette docs-silhouette-violet docs-parallax" />
       </div>
+    </div>
+    <div className="docs-scene" aria-hidden="true">
+      <div className="docs-pattern" />
+      <div className="docs-fade" />
     </div>
     <footer className="docs-home-foot">
       Peto × PeaGy · <a href={DISCORD} target="_blank" rel="noreferrer">Discord</a> · <a href={GITHUB} target="_blank" rel="noreferrer">GitHub</a>
