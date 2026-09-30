@@ -473,7 +473,7 @@ function Greeting({ name }: { name: string }) {
 
 // Old messages keep their rendered Markdown while the draft or current reply changes.
 function EditIcon() { return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="m15 5 4 4M4 20l4-1L20 7a2.8 2.8 0 0 0-4-4L4 15z"/></svg>; }
-function PinIcon() { return <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="m14 3 7 7-4 1-4 5-2-2-7 7 7-7-3-3 5-4z"/></svg>; }
+function PinIcon() { return <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" aria-hidden="true"><path className="pin-head" d="m14 3 7 7-4 1-4 5-5-5 5-4z"/><path d="m10.5 13.5-7 7"/></svg>; }
 function SearchIcon() { return <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg>; }
 
 const ChatMessage = memo(function ChatMessage({ message, live, writing, onPreview, onEdit, actionsDisabled, editor }: {
@@ -1704,7 +1704,7 @@ export default function App() {
                 {conversation.persona === "roleplay" && <span className="conv-persona">· Nhập vai</span>}
               </button>
               <div className="conv-hover-actions">
-                <button type="button" aria-label={`Tùy chọn ${conversation.title}`} title="Tùy chọn hội thoại" disabled={streaming || deleting} onClick={e => { const r=e.currentTarget.getBoundingClientRect(); setConversationMenu({item:conversation,left:Math.max(8,Math.min(r.left,window.innerWidth-216)),top:Math.max(8,Math.min(r.bottom+6,window.innerHeight-174))}); }}>⋯</button>
+                <button type="button" aria-label={`Tùy chọn ${conversation.title}`} title="Tùy chọn hội thoại" disabled={streaming || deleting} onClick={e => { const r=e.currentTarget.getBoundingClientRect(); setConversationMenu({item:conversation,left:Math.max(8,Math.min(r.left,window.innerWidth-192)),top:Math.max(8,Math.min(r.bottom+6,window.innerHeight-158))}); }}>⋯</button>
                 <button type="button" aria-label={conversation.pinned ? 'Bỏ ghim' : 'Ghim'} title={conversation.pinned ? 'Bỏ ghim' : 'Ghim'} aria-pressed={Boolean(conversation.pinned)} disabled={metadataBusy} onClick={() => void changeConversation(conversation,{pinned:!conversation.pinned})}><PinIcon /></button>
               </div>
             </div>

@@ -3129,13 +3129,17 @@ button.artifact-name { cursor: pointer; }
 @media (min-width:721px) { .sidebar.collapsed .sidebar-search-button { display:none; } }
 @media (max-width:720px) { .sidebar-search-button { margin-right:4px; } }
 .conv { position:relative; }
-.conv-hover-actions { position:absolute; right:4px; display:flex; opacity:0; pointer-events:none; border-radius:8px; background:var(--panel); }
+.conv-hover-actions { position:absolute; right:4px; display:flex; opacity:0; pointer-events:none; border-radius:8px; background:inherit; }
+.conv-hover-actions button:hover { background:transparent; }
 .conv:hover .conv-hover-actions,.conv:focus-within .conv-hover-actions { opacity:1; pointer-events:auto; }
 .conv:hover .conv-open,.conv:focus-within .conv-open { padding-right:70px; }
 .conv-hover-actions [aria-pressed=true] { color:var(--text); }
-.conversation-menu-popup { position:fixed; margin:0; width:208px; padding:7px; box-sizing:border-box; border:1px solid var(--line); border-radius:16px; background:var(--panel-2); color:var(--text); box-shadow:0 12px 40px #0005; }
+.conv-hover-actions [aria-pressed=true] .pin-head { fill:currentColor; }
+.conversation-menu-popup { position:fixed; margin:0; width:184px; padding:5px; box-sizing:border-box; border:1px solid var(--line); border-radius:12px; background:var(--panel-2); color:var(--text); box-shadow:0 8px 28px #0005; }
 .conversation-menu-popup::backdrop { background:transparent; }
-.conversation-menu-popup button { display:flex; align-items:center; gap:12px; width:100%; border:0; border-radius:9px; background:transparent; color:inherit; padding:12px; font:inherit; text-align:left; cursor:pointer; }
+.conversation-menu-popup button { display:flex; align-items:center; gap:9px; width:100%; min-height:34px; border:0; border-radius:7px; background:transparent; color:inherit; padding:8px 10px; font:inherit; font-size:13px; line-height:18px; text-align:left; cursor:pointer; }
+.conversation-menu-popup button svg { width:15px; height:15px; flex-shrink:0; }
+@media (pointer:coarse) { .conversation-menu-popup button { min-height:44px; } }
 .conversation-menu-popup button:hover { background:var(--panel); }
 .conversation-menu-popup .danger-button { color:#ef7777; border-top:1px solid var(--line); border-radius:0 0 9px 9px; }
 .history-dialog { width:min(700px,calc(100vw - 24px)); max-height:80dvh; padding:0; border:1px solid var(--line); border-radius:20px; background:var(--panel); color:var(--text); box-shadow:0 16px 70px #0005; }
