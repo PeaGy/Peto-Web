@@ -1534,10 +1534,11 @@ regressions, not flaky tests.
 
 ## Related documents
 
-- `README.md` — user-facing description of current behavior, Discord OAuth setup, and an
-  explicit list of what each feature does *not* do yet.
+- `README.md` — deliberately short (rewritten 2026-09-30 at the owner's request, from 674 lines): what the project is,
+  how to run, configure, test and deploy it, and links. Do not grow it back into a manual: behaviour belongs in this
+  file and in `/docs/`.
 - `DEPLOY.md` — VPS deployment, systemd unit in `deploy/`, Cloudflare Tunnel, troubleshooting.
 - `voice-worker/README.md` — connecting the Windows voice machine to the VPS, and the relay's
   operating limits.
 - `PETO_WEB_HANDOFF.md` — original project brief. Historical context, **not** a description
-  of the current code; prefer `README.md` and the source when they disagree.
+  of the current code; prefer this file and the source when they disagree.
