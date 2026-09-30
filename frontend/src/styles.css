@@ -3114,7 +3114,7 @@ button.artifact-name { cursor: pointer; }
 }
 
 /* Conversation history and revision controls share the existing theme. */
-.bubble.user { position:relative; margin-bottom:32px; }
+.chat .bubble.user { position:relative; margin-bottom:32px; }
 .user-message-actions { position:absolute; top:100%; right:0; display:flex; padding-top:3px; margin:0; opacity:0; pointer-events:none; }
 .user-message-actions button,.conv-hover-actions button,.sidebar-search-button { display:grid; place-items:center; width:32px; height:32px; padding:0; border:0; border-radius:8px; background:transparent; color:var(--muted); cursor:pointer; flex-shrink:0; }
 .user-message-actions button:hover,.conv-hover-actions button:hover,.sidebar-search-button:hover { background:var(--panel-2); color:var(--text); }

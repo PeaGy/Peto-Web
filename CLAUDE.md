@@ -308,6 +308,45 @@ older ones degrade to a text placeholder. This is computed twice — in
 `main._to_chat_messages` (which decides what to read off disk) and in
 `ai/xai._recent_image_keys` (which decides what to send). Keep them consistent.
 
+### Documents in chat (`create_document`)
+
+`document_tools.py` gives the Chat tab (not Companion or the agent) a `create_document` tool. The model sends a title and
+Markdown; `document_jobs.build_files` renders a PDF (ReportLab, `document_export.render_pdf`) and a DOCX (python-docx,
+`render_docx`), `document_store.py` keeps them per owner, and the card shows page 1 of the PDF (pypdfium2). The DOCX
+preview is that PDF, so a feature must exist in both renderers or the preview misleads. Two layouts: `essay` (A4, Times
+New Roman / Noto Serif) and `report` (Letter, Arial / Noto Sans).
+
+On 2026-09-30 the owner picked a Word/PDF upgrade as the first step of the document roadmap; Mermaid diagrams in chat,
+PowerPoint templates and Excel may follow.
+- **Real lists.** Every Markdown list gets its own Word numbering definition (`_numbering_level`), so numbers restart per
+  list, honour `start`, and Word renumbers when the user edits. Nested ordered lists go 1. → a. → i., bullets • → –.
+  The PDF draws the same labels (`list_label`) at the same hanging indents (`list_indent`). Later paragraphs of an item
+  carry no number.
+- **Images.** A line `![caption](anh-N)` inserts the Nth image the user sent in this conversation (`document_images.py`),
+  with the caption below it.
+  - Only that owner's images of that conversation, filtered in SQL and read from the stored path. Any other image URL
+    stays text (`[Ảnh: …]`) and is never fetched.
+  - Images are shrunk to 1600 px: PNG for transparency, screenshots and GIFs, JPEG for photos. At most 12 per document;
+    images over 40 megapixels are refused before decoding.
+  - "Ảnh N" counts the conversation's images by `created_at, rowid`. `db._attach_files` puts the same `number` on each
+    image, `ai/xai.build_input_payload` labels it `[Ảnh N: name]` for the model, and `conversation_actions.fork` copies
+    images in that order, so a new version keeps the numbers.
+  - The tool refuses a number that does not exist, so the model can fix it. A hand-edited draft shows text instead.
+- **Contents.** A line `[TOC]` (or `[Mục lục]`) outside lists and quotes becomes "Mục lục" with headings of levels 1–3,
+  followed by a page break.
+  - PDF: ReportLab's `TableOfContents` with real page numbers (`multiBuild`). Every heading also becomes a PDF bookmark.
+  - DOCX: a TOC field marked dirty. Word asks to update fields on open, then fills in page numbers; other viewers show
+    the heading list written into the field. The tool result tells Peto to mention that prompt.
+- **Word styles.** python-docx's template gives Title and Heading styles theme fonts (`asciiTheme`), which beat the font
+  name set on them: Word showed Calibri instead of Times New Roman or Arial, and a blue rule under the title. `render_docx`
+  strips the theme attributes and the rule, and matches heading sizes and spacing to the PDF.
+- **Render queue.** `document_jobs.RenderQueue` still renders one document at a time per process (small VPS). Later
+  requests wait in a short line instead of failing at once as the old lock did: 4 waiting at most, 30 s for the tool,
+  15 s for exports, 10 s for preview pages.
+- **Not done:** LaTeX math, editing an uploaded Word file in place, charts, and images from Imagine (the user attaches
+  them).
+- **Tests:** `tests/test_document_features.py`, `test_document_export.py`, `test_document_artifacts.py`.
+
 ### Imagine (image generation)
 
 Fully separated from chat: its own router (`imagine_api.py`), its own REST call to

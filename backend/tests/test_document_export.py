@@ -7,6 +7,7 @@ from docx import Document
 from conftest import TEST_OWNER, read_events
 import db
 import document_api
+import document_jobs
 from document_export import parse_blocks, render_docx, render_pdf
 
 CONTENT = '''# Kế hoạch học tập
@@ -75,14 +76,16 @@ async def test_other_owner_cannot_read_revise_export_or_delete(client):
     assert (await client.delete(path)).status_code == 404
 
 
-async def test_input_limits_and_busy_export(client):
+async def test_input_limits_and_busy_export(client, monkeypatch):
     conversation, document = await create(client)
     assert (await client.post('/api/documents', json={'conversation_id': conversation, 'title': ' ', 'content': 'abc'})).status_code == 400
     assert (await client.post('/api/documents', json={'conversation_id': conversation, 'title': 'X', 'content': 'a' * 60001})).status_code == 422
-    await document_api._render_lock.acquire()
-    try:
-        assert (await client.get(f"/api/documents/{document['id']}/export/pdf?version=1")).status_code == 429
-    finally: document_api._render_lock.release()
+    # Đang dựng tài liệu khác: chờ trong hàng, quá lâu thì báo bận chứ không treo.
+    monkeypatch.setattr(document_api, 'EXPORT_WAIT', .05)
+    export = f"/api/documents/{document['id']}/export/pdf?version=1"
+    async with document_jobs.render_queue.slot(1):
+        assert (await client.get(export)).status_code == 429
+    assert (await client.get(export)).status_code == 200
 
 
 def test_real_files_preserve_accents_structure_and_escape_markup():

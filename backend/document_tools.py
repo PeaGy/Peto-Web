@@ -7,8 +7,9 @@ import unicodedata
 import anyio
 from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
-from document_export import clean_text, MAX_CONTENT, parse_blocks
-from document_jobs import build_files, document_filename, render_lock
+from document_export import TOC_LEVELS, clean_text, image_numbers, MAX_CONTENT, parse_blocks
+from document_jobs import TOOL_WAIT, RenderBusy, build_files, document_filename, render_queue
+import document_images
 import document_store
 
 logger = logging.getLogger('peto_web.documents')
@@ -33,6 +34,12 @@ def _looks_like_unaccented_vietnamese(title: str, content: str) -> bool:
     folded = unicodedata.normalize('NFD', text).encode('ascii', 'ignore').decode('ascii').casefold()
     return sum(marker in folded for marker in _VIETNAMESE_MARKERS) >= 2
 
+def _has_contents(blocks) -> bool:
+    """Tài liệu có mục lục thật: có dòng [TOC] và có đề mục để đưa vào."""
+    return any(block.kind == 'toc' for block in blocks) and any(
+        block.kind == 'heading' and block.level <= TOC_LEVELS for block in blocks)
+
+
 SCHEMA = {
     'type': 'function', 'name': 'create_document', 'strict': True,
     'description': 'Tạo tệp Word DOCX hoặc PDF thật, lưu riêng theo tài khoản và hiện thẻ xem trước/tải ngay trong chat. Gọi khi người dùng yêu cầu tạo/xuất/gửi file; không chỉ dán nội dung vào lời nhắn. Không dùng chỉ để đọc, tóm tắt hay giải thích cách tạo file. Giữ đúng ngôn ngữ người dùng; nếu là tiếng Việt, title và content bắt buộc dùng Unicode tiếng Việt đầy đủ dấu, tuyệt đối không viết tiếng Việt không dấu.',
@@ -40,7 +47,7 @@ SCHEMA = {
         'type': 'object', 'additionalProperties': False,
         'properties': {
             'title': {'type': 'string', 'description': 'Tên tài liệu ngắn, không có phần mở rộng. Giữ nguyên ngôn ngữ yêu cầu; tiếng Việt phải có đầy đủ dấu (ă â ê ô ơ ư đ và dấu thanh), không phiên âm ASCII.'},
-            'content': {'type': 'string', 'description': 'Toàn bộ nội dung tài liệu dạng Markdown, bắt đầu bằng tiêu đề. Giữ đúng ngôn ngữ người dùng; nếu viết tiếng Việt phải dùng đầy đủ dấu Unicode trong toàn bộ title, heading và đoạn văn, không viết không dấu. Không chứa lời chào, hướng dẫn bấm nút, thông báo tạo xong hay code fence bọc toàn bài. Có thể dùng bảng tối đa 8 cột. Chưa hỗ trợ ảnh, LaTeX, emoji.'},
+            'content': {'type': 'string', 'description': 'Toàn bộ nội dung tài liệu dạng Markdown, bắt đầu bằng tiêu đề. Giữ đúng ngôn ngữ người dùng; nếu viết tiếng Việt phải dùng đầy đủ dấu Unicode trong toàn bộ title, heading và đoạn văn, không viết không dấu. Không chứa lời chào, hướng dẫn bấm nút, thông báo tạo xong hay code fence bọc toàn bài. Có thể dùng bảng tối đa 8 cột. Chèn ảnh người dùng đã gửi trong hội thoại bằng một dòng riêng ![chú thích](anh-N), N là số trong nhãn [Ảnh N: …]; chú thích hiện dưới ảnh; tối đa 12 ảnh; không dùng ảnh từ web. Muốn có mục lục thì đặt một dòng [TOC] ngay sau đoạn mở đầu (mục lục gồm đề mục ##, ###). Chưa hỗ trợ LaTeX, emoji.'},
             'format': {'type': 'string', 'enum': ['docx', 'pdf']},
             'style': {'type': 'string', 'enum': ['report', 'essay'], 'description': 'essay cho bài nghị luận: A4, Times New Roman trong DOCX, căn đều, đầu/chân trang và số trang. report cho báo cáo, kế hoạch, bảng biểu.'},
         }, 'required': ['title', 'content', 'format', 'style'],
@@ -72,23 +79,29 @@ class DocumentSession:
             if not title: raise ValueError('Tên tài liệu trống.')
             if _looks_like_unaccented_vietnamese(title, content):
                 raise ValueError('Nội dung tiếng Việt đang bị gửi không dấu. Hãy gọi lại create_document với title và content dùng Unicode tiếng Việt đầy đủ dấu; không tự đoán hoặc bỏ qua lỗi này.')
-            parse_blocks(content)
+            blocks = parse_blocks(content)
             key = (title, content, spec.format, spec.style)
             if key in self._completed: return self._completed[key]
             if len(self.created) >= 2: raise ValueError('Mỗi lượt chỉ tạo tối đa hai tài liệu.')
-            if render_lock.locked(): raise ValueError('Peto đang xuất tài liệu khác. Hãy báo người dùng thử lại sau vài giây.')
-            async with render_lock:
-                files = await anyio.to_thread.run_sync(build_files, title, content, spec.style, spec.format)
-                # Once rendering succeeds, commit the draft and all bytes atomically.
-                # A disconnect can recover this document from its conversation shelf.
-                with anyio.CancelScope(shield=True):
-                    draft = await document_store.save_document(self.owner, self.conversation_id, title, content, style=spec.style, assets=files)
-                    artifact = {k: draft[k] for k in ('id', 'title', 'version', 'style')}
-                    artifact.update(format=spec.format, filename=document_filename(title, spec.format), pages=files['pages'])
-                    self.created.append(artifact)
-                    result = {'ok': True, 'artifact': artifact, 'instruction': 'Tệp đã tạo và thẻ tài liệu tự hiển thị. Trả lời ngắn về nội dung/định dạng. Không chép lại toàn bộ bài, không yêu cầu bấm Tạo tài liệu, không tự viết đường dẫn.'}
-                    self._completed[key] = result
-                    return result
+            raw_images = await document_images.load(self.owner, self.conversation_id, image_numbers(blocks), strict=True)
+            try:
+                async with render_queue.slot(TOOL_WAIT):
+                    files = await anyio.to_thread.run_sync(build_files, title, content, spec.style, spec.format, raw_images)
+                    # Once rendering succeeds, commit the draft and all bytes atomically.
+                    # A disconnect can recover this document from its conversation shelf.
+                    with anyio.CancelScope(shield=True):
+                        draft = await document_store.save_document(self.owner, self.conversation_id, title, content, style=spec.style, assets=files)
+                        artifact = {k: draft[k] for k in ('id', 'title', 'version', 'style')}
+                        artifact.update(format=spec.format, filename=document_filename(title, spec.format), pages=files['pages'])
+                        self.created.append(artifact)
+                        instruction = 'Tệp đã tạo và thẻ tài liệu tự hiển thị. Trả lời ngắn về nội dung/định dạng. Không chép lại toàn bộ bài, không yêu cầu bấm Tạo tài liệu, không tự viết đường dẫn.'
+                        if spec.format == 'docx' and _has_contents(blocks):
+                            instruction += ' Tài liệu có mục lục: dặn ngắn rằng khi mở bằng Word, chọn Có (Yes) lúc Word hỏi cập nhật các trường thì mục lục mới có số trang.'
+                        result = {'ok': True, 'artifact': artifact, 'instruction': instruction}
+                        self._completed[key] = result
+                        return result
+            except RenderBusy:
+                raise ValueError('Peto đang xuất tài liệu khác. Hãy báo người dùng thử lại sau vài giây.') from None
         except ValidationError:
             return {'error': 'Đầu vào cần title, content (tối đa 60.000 ký tự), format docx/pdf, style report/essay. Sửa tham số rồi gọi lại.'}
         except (ValueError, HTTPException) as error:

@@ -7,8 +7,9 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from auth import current_owner
 import document_store as store
-from document_export import MAX_CONTENT, clean_text, parse_blocks, render_docx, render_pdf
-from document_jobs import render_lock as _render_lock, render_page
+from document_export import MAX_CONTENT, clean_text, image_numbers, parse_blocks
+from document_jobs import EXPORT_WAIT, PREVIEW_WAIT, RenderBusy, export_file, render_page, render_queue
+import document_images
 
 router = APIRouter(prefix='/api/documents', tags=['documents'])
 
@@ -71,15 +72,18 @@ async def export(document_id: str, format: Literal['docx', 'pdf'], version: int 
     if assets:
         data = assets[format]
         return file_response(draft, version, format, data)
-    # One export per process: avoid a queue of CPU-heavy jobs on the small VPS.
-    if _render_lock.locked(): raise HTTPException(429, 'Peto đang xuất tài liệu khác. Bạn thử lại sau vài giây nhé.')
-    async with _render_lock:
-        try:
-            data = await anyio.to_thread.run_sync(render_pdf if format == 'pdf' else render_docx, draft['title'], draft['content'], draft['style'])
-        except ValueError as error:
-            raise HTTPException(400, str(error)) from error
-        except Exception as error:
-            raise HTTPException(422, 'Chưa xuất được bố cục này. Hãy chia bảng hoặc đoạn quá dài rồi thử lại.') from error
+    # One render per process on the small VPS; later requests wait briefly in a short queue (document_jobs.RenderQueue).
+    try:
+        numbers = image_numbers(parse_blocks(draft['content']))
+        raw_images = await document_images.load(owner, draft['conversation_id'], numbers, strict=False)
+        async with render_queue.slot(EXPORT_WAIT):
+            data = await anyio.to_thread.run_sync(export_file, format, draft['title'], draft['content'], draft['style'], raw_images)
+    except RenderBusy:
+        raise HTTPException(429, 'Peto đang xuất tài liệu khác. Bạn thử lại sau vài giây nhé.') from None
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
+    except Exception as error:
+        raise HTTPException(422, 'Chưa xuất được bố cục này. Hãy chia bảng hoặc đoạn quá dài rồi thử lại.') from error
     return file_response(draft, version, format, data)
 
 
@@ -100,7 +104,9 @@ async def preview(document_id: str, version: int = Query(ge=1), page: int = Quer
     if page == 1:
         data = assets['preview']
     else:
-        if _render_lock.locked(): raise HTTPException(429, 'Đang xử lý tài liệu khác. Thử lại sau vài giây nhé.')
-        async with _render_lock:
-            data = await anyio.to_thread.run_sync(render_page, assets['pdf'], page)
+        try:
+            async with render_queue.slot(PREVIEW_WAIT):
+                data = await anyio.to_thread.run_sync(render_page, assets['pdf'], page)
+        except RenderBusy:
+            raise HTTPException(429, 'Đang xử lý tài liệu khác. Thử lại sau vài giây nhé.') from None
     return Response(data, media_type='image/png', headers={'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff'})

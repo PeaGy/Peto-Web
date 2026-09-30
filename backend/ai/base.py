@@ -24,6 +24,8 @@ class ChatAttachment:
     mime: str
     data_url: str = ""
     text_excerpt: str = ""
+    # Ảnh: số "Ảnh N" trong hội thoại (0 khi không rõ), để model chèn đúng ảnh vào tài liệu.
+    number: int = 0
 
 
 @dataclass(frozen=True)

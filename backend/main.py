@@ -311,6 +311,7 @@ def _to_chat_messages(rows: list[dict]) -> list[ChatMessage]:
                     mime=item["mime"],
                     data_url=data_url,
                     text_excerpt=excerpt,
+                    number=item.get("number") or 0,
                 )
             )
         out.append(

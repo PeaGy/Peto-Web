@@ -560,11 +560,42 @@ async def _attach_files(db: aiosqlite.Connection, rows: list[dict]) -> list[dict
         ids,
     )
     grouped: dict[int, list[dict]] = {}
-    for item in await cursor.fetchall():
-        grouped.setdefault(int(item["message_id"]), []).append(dict(item))
+    items = [dict(item) for item in await cursor.fetchall()]
+    # "Ảnh N": thứ tự của ảnh trong cả hội thoại, không chỉ trong đoạn lịch sử đang tải. Model thấy số này cạnh ảnh và
+    # dùng nó để chèn ảnh vào tài liệu (document_images.py đếm theo đúng thứ tự này).
+    cursor = await db.execute(
+        f"""
+        SELECT id, conversation_id FROM attachments
+         WHERE kind = 'image' AND conversation_id IN (
+               SELECT conversation_id FROM attachments WHERE message_id IN ({placeholders}))
+         ORDER BY created_at, rowid
+        """,
+        ids,
+    )
+    numbers: dict[str, int] = {}
+    counts: dict[str, int] = {}
+    for image_id, conversation_id in await cursor.fetchall():
+        counts[conversation_id] = counts.get(conversation_id, 0) + 1
+        numbers[image_id] = counts[conversation_id]
+    for item in items:
+        if item["kind"] == "image":
+            item["number"] = numbers.get(item["id"], 0)
+        grouped.setdefault(int(item["message_id"]), []).append(item)
     for row in rows:
         row["attachments"] = grouped.get(int(row["id"]), [])
     return rows
+
+
+async def conversation_images(owner: str, conversation_id: str) -> list[dict]:
+    """Ảnh đã gửi trong hội thoại theo thứ tự gửi: phần tử thứ n là "Ảnh n" (cùng thứ tự với _attach_files)."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            "SELECT id, filename, mime, path FROM attachments "
+            "WHERE owner = ? AND conversation_id = ? AND kind = 'image' ORDER BY created_at, rowid",
+            (owner, conversation_id),
+        )
+        return [dict(row) for row in await cursor.fetchall()]
 
 
 async def add_attachment(

@@ -62,7 +62,8 @@ async def fork(owner, conversation_id, message_id, text):
             rows = await (await connection.execute('SELECT * FROM messages WHERE conversation_id=? AND id<=? ORDER BY id', (conversation_id, message_id))).fetchall() if source else []
             if not rows or rows[-1]['id'] != message_id or rows[-1]['role'] != 'user':
                 raise HTTPException(404, 'Không tìm thấy tin nhắn cần tạo phiên bản')
-            attachments = await (await connection.execute('SELECT * FROM attachments WHERE owner=? AND conversation_id=? AND message_id<=?', (owner, conversation_id, message_id))).fetchall()
+            # Chép theo thứ tự gửi để "Ảnh N" trong bản mới trỏ đúng ảnh cũ (tài liệu chép sang dùng số này).
+            attachments = await (await connection.execute('SELECT * FROM attachments WHERE owner=? AND conversation_id=? AND message_id<=? ORDER BY created_at, rowid', (owner, conversation_id, message_id))).fetchall()
             if not text.strip() and not any(a['message_id'] == message_id for a in attachments):
                 raise HTTPException(400, 'Tin nhắn trống')
             group = source['branch_group'] or conversation_id

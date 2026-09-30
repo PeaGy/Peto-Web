@@ -14,6 +14,8 @@ python-docx==1.2.0
 reportlab==5.0.1
 markdown-it-py==4.2.0
 pypdfium2==5.13.0
+# ảnh chèn vào tài liệu (document_images.py); reportlab cũng cần
+pillow
 
 # chỉ dùng khi chạy test
 pytest
