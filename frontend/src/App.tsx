@@ -15,6 +15,9 @@ import { useCharacters } from './useCharacters';
 const CharacterPicker = lazy(() => import('./CharacterPicker'));
 import { readCharacterMotion, writeCharacterMotion, type CharacterMotion } from "./characterView";
 import Composer from "./Composer";
+import TextEditDialog from './TextEditDialog';
+import HistorySearch from './HistorySearch';
+import ConversationMenu from './ConversationMenu';
 import DocumentWorkspace, { DocumentIcon } from './DocumentWorkspace';
 import DocumentArtifactCard from './DocumentArtifactCard';
 import DocumentPanel, { RightPanelIcon, type DocumentPanelSelection } from './DocumentPanel';
@@ -33,6 +36,8 @@ import {
   guestLogin,
   getMessages,
   listConversations,
+  updateConversation,
+  conversationVersions,
   logout,
   sendMessage,
   type AppInfo,
@@ -354,7 +359,7 @@ function WorkLog({
         <span className={live ? "thinking-pulse" : undefined}>{label}</span>
       </button>
       {open && list.length > 0 ? (
-        <ul className="work-steps">
+        <ul className="work-steps" aria-live="polite">
           {list.map((step) => (
             <li key={step.id} className={step.live ? "live" : undefined}>
               {step.id === "search" ? (
@@ -467,14 +472,19 @@ function Greeting({ name }: { name: string }) {
 }
 
 // Old messages keep their rendered Markdown while the draft or current reply changes.
-const ChatMessage = memo(function ChatMessage({ message, live, writing, onPreview, onEdit }: {
+function EditIcon() { return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="m15 5 4 4M4 20l4-1L20 7a2.8 2.8 0 0 0-4-4L4 15z"/></svg>; }
+function PinIcon() { return <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="m14 3 7 7-4 1-4 5-2-2-7 7 7-7-3-3 5-4z"/></svg>; }
+function SearchIcon() { return <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg>; }
+
+const ChatMessage = memo(function ChatMessage({ message, live, writing, onPreview, onEdit, actionsDisabled, editor }: {
   message: Message; live: boolean; writing: boolean;
+  actionsDisabled?: boolean; editor?: ReactNode;
   onPreview: (item: { id: string; version: number }) => void;
   onEdit: (item: { id: string; version: number }) => void;
 }) {
   const text = message.content ? normalizeMath(message.content) : "";
   const { remarkPlugins, rehypePlugins } = useMarkdownPlugins(text);
-  return (<article className={`bubble ${message.role}`}>
+  return (<article className={`bubble ${message.role}${editor ? ' editing' : ''}`}>
               {message.attachments && message.attachments.length > 0 && (
                 <div className="bubble-files">
                   {message.attachments.map((file) =>
@@ -522,7 +532,7 @@ const ChatMessage = memo(function ChatMessage({ message, live, writing, onPrevie
                   ms={message.workedMs}
                 />
               ) : null}
-              {message.content ? (
+              {editor || (message.content ? (
                 <Markdown remarkPlugins={remarkPlugins} rehypePlugins={rehypePlugins} components={{
                   table: ({children}) => <div className="table-scroll" tabIndex={0} role="region" aria-label="Bảng nội dung"><table>{children}</table></div>,
                   a: ({children, href}) => <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>,
@@ -534,7 +544,7 @@ const ChatMessage = memo(function ChatMessage({ message, live, writing, onPrevie
                     return <CodeBlock language={tag ? tag.slice("language-".length) : ""}>{children}</CodeBlock>;
                   },
                 }}>{text}</Markdown>
-              ) : null}
+              ) : null)}
               {message.role === "assistant" && <WebSources sources={message.sources} />}
               {message.artifacts?.map(artifact => <DocumentArtifactCard key={`${artifact.id}-${artifact.version}`} artifact={artifact} onOpen={onPreview} onEdit={onEdit} />)}
               {message.status === "incomplete" && <p className="message-status">Câu trả lời chưa hoàn tất</p>}
@@ -542,6 +552,9 @@ const ChatMessage = memo(function ChatMessage({ message, live, writing, onPrevie
               {message.role === "assistant" && message.content && !(writing) && (
                 <MessageCopy text={message.content} />
               )}
+              {!writing && !editor && message.role === 'user' && <span className="user-message-actions">
+                {message.id && <button type="button" aria-label="Sửa tin nhắn" title="Sửa tin nhắn" disabled={actionsDisabled} data-revise={message.id}><EditIcon /></button>}
+              </span>}
             </article>);
 });
 
@@ -554,6 +567,16 @@ export default function App() {
   const [agentCode, setAgentCode] = useState<string | null>(takeAgentCode);
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [conversationMenu, setConversationMenu] = useState<{item:Conversation; left:number; top:number} | null>(null);
+  const [versions, setVersions] = useState<Conversation[]>([]);
+  const [renameTarget, setRenameTarget] = useState<Conversation | null>(null);
+  const [renameText, setRenameText] = useState('');
+  const [editTarget, setEditTarget] = useState<Message | null>(null);
+  const [editText, setEditText] = useState('');
+  const [retryAvailable, setRetryAvailable] = useState(false);
+  const retryRevision = useRef<{ target: Message; text: string } | undefined>(undefined);
+  const [metadataBusy, setMetadataBusy] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [draft, setDraft] = useState("");
@@ -780,6 +803,15 @@ export default function App() {
     }));
     setMessages([]);
     setConversations([]);
+    setSearchOpen(false);
+    setConversationMenu(null);
+    setVersions([]);
+    setRenameTarget(null);
+    setRenameText("");
+    setEditTarget(null);
+    setEditText("");
+    setRetryAvailable(false);
+    retryRevision.current = undefined;
     setConversationId(null);
     setDraft("");
     setNotice(null);
@@ -812,7 +844,7 @@ export default function App() {
       const all: Conversation[] = [];
       let more = true;
       while (more && all.length < listCount.current) {
-        const page = await listConversations(all.length);
+        const page = await listConversations(all.length, 50, '');
         if (version !== listVersion.current) return;
         all.push(...page.conversations);
         more = page.has_more;
@@ -828,6 +860,12 @@ export default function App() {
       if (version === listVersion.current) setLoadingList(false);
     }
   }, [handleUnauthorized]);
+  useEffect(() => {
+    let active = true;
+    setVersions([]);
+    if (conversationId && !streaming) void conversationVersions(conversationId).then(rows => { if (active) setVersions(rows); }).catch(() => {});
+    return () => { active = false; };
+  }, [conversationId, streaming]);
 
   const waitingForTitle = conversations.some(item =>
     item.id === conversationId && (item.title_state === 'pending' ||
@@ -1069,8 +1107,11 @@ export default function App() {
     loadRef.current = controller;
     const version = ++loadVersion.current;
     setError(null);
+    setRetryAvailable(false);
+    retryRevision.current = undefined;
     setNotice(null);
     setConversationId(id);
+    setEditTarget(null);
     setPersona(conversations.find((item) => item.id === id)?.persona ?? "assistant");
     setMessages([]);
     setLoadingConversation(true);
@@ -1097,6 +1138,9 @@ export default function App() {
 
   function newConversation() {
     if (abortRef.current) return;
+    setEditTarget(null);
+    setRetryAvailable(false);
+    retryRevision.current = undefined;
     loadRef.current?.abort();
     loadVersion.current += 1;
     setLoadingConversation(false);
@@ -1158,12 +1202,23 @@ export default function App() {
     }
   }
 
-  async function submit() {
-    const text = draft.trim();
-    if ((!text && draftFiles.length === 0) || abortRef.current || loadingConversation || loadFailed) return;
+  async function submit(revision?: { target: Message; text: string }) {
+    const text = revision ? revision.text.trim() : draft.trim();
+    const hasAttachments = revision ? Boolean(revision.target.attachments?.length) : draftFiles.length > 0;
+    if ((!text && !hasAttachments) || abortRef.current || loadingConversation || loadFailed) return;
 
-    const pending = draftFiles;
+    const pending = revision ? [] : draftFiles;
     const previousMessages = messages;
+    const revisionIndex = revision ? messages.findIndex(m => m.id === revision.target.id) : -1;
+    if (revision && revisionIndex < 0) {
+      setRetryAvailable(false);
+      setError("Hãy mở lại cuộc trò chuyện trước khi sửa hoặc tạo lại câu trả lời này.");
+      return;
+    }
+    const prefix = revision ? messages.slice(0, revisionIndex) : messages;
+    setRetryAvailable(false);
+    retryRevision.current = revision;
+    setEditTarget(null);
     setError(null);
     setNotice(null);
     // Tin đầu của cuộc mới: nhớ chỗ ô nhắn đang đứng để trượt nó xuống đáy.
@@ -1183,10 +1238,10 @@ export default function App() {
       url: item.previewUrl || "",
     }));
 
-    setMessages((prev) => [
-      ...prev,
-      { role: "user", content: text, attachments: optimistic },
-      { role: "assistant", content: "" },
+    setMessages([
+      ...prefix,
+      { role: "user", content: text, attachments: revision?.target.attachments || optimistic },
+      { role: "assistant", content: "", workSteps: [{id:'connection',label:'Đang gửi và chờ máy chủ…',live:true}] },
     ]);
 
     const controller = new AbortController();
@@ -1196,6 +1251,7 @@ export default function App() {
     let completed = false;
     // Mỗi lần Peto tìm/đọc trong tệp là một dòng riêng trong danh sách "Đang làm…".
     let fileLookups = 0;
+    let writingPhase = false;
     const session = authVersion.current;
     const startedAt = performance.now();
 
@@ -1212,10 +1268,11 @@ export default function App() {
 
     const addWorkStep = (id: string, label: string, live = false) => {
       if (session !== authVersion.current) return;
+      if (live && id !== 'prepare') writingPhase = false;
       setMessages((prev) => {
         const last = prev[prev.length - 1];
         if (last?.role !== "assistant") return prev;
-        const steps = [...(last.workSteps ?? [])];
+        const steps = (last.workSteps ?? []).map(step => live ? { ...step, live:false, label:step.id === 'think' ? 'Đã suy nghĩ' : step.label } : step);
         const index = steps.findIndex((step) => step.id === id);
         const step = { id, label, live };
         if (index >= 0) steps[index] = step;
@@ -1245,6 +1302,7 @@ export default function App() {
         {
           message: text,
           conversationId,
+          branchMessageId: revision?.target.id,
           effort: effectiveEffort,
           webSearch,
           attachments,
@@ -1257,12 +1315,14 @@ export default function App() {
             accepted = true;
             activeId = id;
             setConversationId(id);
-            setDraft("");
-            setDraftFiles([]);
+            if (!revision) { setDraft(""); setDraftFiles([]); }
+            if (storedMessage) retryRevision.current = {target:storedMessage, text:storedMessage.content};
+            addWorkStep('connection', 'Đã kết nối', false);
+            addWorkStep('prepare', 'Đang chuẩn bị câu trả lời…', true);
             updateSearch({ reading: undefined });
             if (storedMessage) setMessages((prev) => [...prev.slice(0, -2), storedMessage, prev[prev.length - 1]]);
           },
-          onDelta: appendToReply,
+          onDelta: (chunk) => { if (!writingPhase) { addWorkStep('prepare', 'Đang trả lời…', true); writingPhase = true; } appendToReply(chunk); },
           onReplace: () => {
             if (session !== authVersion.current) return;
             setMessages((prev) => {
@@ -1312,6 +1372,7 @@ export default function App() {
           onError: (message) => {
             if (session !== authVersion.current) return;
             setError(message);
+            setRetryAvailable(true);
           },
           onDone: () => {
             completed = true;
@@ -1325,6 +1386,7 @@ export default function App() {
       } else if (!controller.signal.aborted) {
         const message = err instanceof Error ? err.message : "Mất kết nối tới máy chủ";
         setError(accepted ? message : `${message} Bản nháp được giữ lại; kiểm tra lịch sử trước khi gửi lại nếu kết nối bị ngắt.`);
+        setRetryAvailable(true);
       }
     } finally {
       if (session === authVersion.current) {
@@ -1339,13 +1401,20 @@ export default function App() {
                   document_status: undefined,
                   status: completed ? "complete" : "incomplete",
                   workedMs: Math.round(performance.now() - startedAt),
-                  workSteps: (last.workSteps ?? []).map((step) => ({ ...step, live: false, label: step.id === "think" && step.live ? "Đã suy nghĩ" : step.label })),
+                  workSteps: (last.workSteps ?? []).map((step) => ({ ...step, live: false, label: step.label.startsWith('Đang ') ? (completed ? step.label.replace('Đang ', 'Đã ') : 'Đã dừng: ' + step.label.slice(5)) : step.label })),
                 }]
               : prev.slice(0, -1);
           });
         }
         if (controller.signal.aborted) setNotice(accepted ? "Đã dừng. Phần đã trả lời được giữ lại." : "Đã dừng gửi. Bản nháp vẫn được giữ lại.");
         if (activeId || !accepted) void refreshConversations();
+        if (revision && accepted && activeId) {
+          // Fetch stable IDs for edit/regenerate; preserve the local progress log.
+          try {
+            const stored = await getMessages(activeId);
+            if (session === authVersion.current) setMessages(current => current.map((row, i) => ({...row, id:stored[i]?.id})));
+          } catch { setMessages(current => current.map(row => ({...row,id:undefined}))); }
+        }
       }
       if (accepted) for (const item of pending) if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
       setStreaming(false);
@@ -1358,6 +1427,19 @@ export default function App() {
   function stop() {
     setStopping(true);
     abortRef.current?.abort();
+  }
+
+  async function changeConversation(item: Conversation, change: {title?: string; pinned?: boolean}) {
+    if (metadataBusy) return;
+    setMetadataBusy(true);
+    try {
+      await updateConversation(item.id, change);
+      setRenameTarget(null);
+      await refreshConversations();
+    } catch (err) {
+      if (err instanceof UnauthorizedError) handleUnauthorized();
+      else setError(err instanceof Error ? err.message : 'Chưa lưu được thay đổi');
+    } finally { setMetadataBusy(false); }
   }
 
   async function signOut() {
@@ -1515,6 +1597,7 @@ export default function App() {
             <PetoAvatar info={appInfo} />
             <strong>{appInfo?.name ?? "Peto"}</strong>
           </div>
+          <button type="button" className="sidebar-search-button" aria-label="Tìm kiếm hội thoại" title="Tìm kiếm hội thoại" disabled={streaming} onClick={() => setSearchOpen(true)}><SearchIcon /></button>
           <button
             type="button"
             className="sidebar-toggle"
@@ -1620,15 +1703,10 @@ export default function App() {
                 <span className="conv-title">{conversation.title || "Chưa có tiêu đề"}</span>
                 {conversation.persona === "roleplay" && <span className="conv-persona">· Nhập vai</span>}
               </button>
-              <button
-                className="conv-delete"
-                title="Xóa hội thoại"
-                aria-label="Xóa hội thoại"
-                onClick={() => setDeleteTarget(conversation)}
-                disabled={streaming || deleting}
-              >
-                ×
-              </button>
+              <div className="conv-hover-actions">
+                <button type="button" aria-label={`Tùy chọn ${conversation.title}`} title="Tùy chọn hội thoại" disabled={streaming || deleting} onClick={e => { const r=e.currentTarget.getBoundingClientRect(); setConversationMenu({item:conversation,left:Math.max(8,Math.min(r.left,window.innerWidth-216)),top:Math.max(8,Math.min(r.bottom+6,window.innerHeight-174))}); }}>⋯</button>
+                <button type="button" aria-label={conversation.pinned ? 'Bỏ ghim' : 'Ghim'} title={conversation.pinned ? 'Bỏ ghim' : 'Ghim'} aria-pressed={Boolean(conversation.pinned)} disabled={metadataBusy} onClick={() => void changeConversation(conversation,{pinned:!conversation.pinned})}><PinIcon /></button>
+              </div>
             </div>
           ))}
           {loadingList && <p className="empty-hint" role="status">Đang tải danh sách…</p>}
@@ -1715,7 +1793,14 @@ export default function App() {
         <button type="button" className="artifact-icon document-panel-toggle" aria-label={documentPanelOpen ? 'Đóng bảng tài liệu' : 'Mở bảng tài liệu'} aria-expanded={documentPanelOpen} aria-controls="document-panel" title="Tài liệu · Ctrl+Alt+B" onClick={() => { setDocumentPanelOpen(value => !value); setDocumentPanelExpanded(false); }}><RightPanelIcon /></button>
         </div>
 
-        <div className="messages" ref={messagesRef} onScroll={() => {
+        <div className="messages" ref={messagesRef} onClick={e => {
+          const button = (e.target as Element).closest<HTMLButtonElement>('button[data-revise]');
+          if (!button || streaming || loadingConversation) return;
+          const id = Number(button.dataset.revise);
+          const target = messages.find(m => m.id === id && m.role === 'user');
+          if (!target) return;
+          setEditTarget(target); setEditText(target.content);
+        }} onScroll={() => {
           const element = messagesRef.current;
           if (!element) return;
           nearBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 80;
@@ -1733,8 +1818,16 @@ export default function App() {
             </div>
           )}
 
+          {versions.length > 1 && <label className="conversation-versions">Phiên bản hội thoại <select aria-label="Phiên bản hội thoại" value={conversationId || ''} disabled={streaming || loadingConversation} onChange={e => void openConversation(e.target.value)}>
+            {versions.map((item, i) => <option value={item.id} key={item.id}>Bản {i + 1} · {new Date(item.created_at * 1000).toLocaleString('vi-VN')}</option>)}
+          </select></label>}
           {messages.map((message, index) => (
             <ChatMessage key={index} message={message}
+              actionsDisabled={streaming || loadingConversation || loadFailed}
+              editor={editTarget?.id === message.id && editTarget ? <form className="inline-message-editor" onSubmit={e => {e.preventDefault(); void submit({target:editTarget,text:editText});}}>
+                <textarea autoFocus aria-label="Sửa tin nhắn" value={editText} onChange={e => setEditText(e.target.value)} rows={Math.min(12,Math.max(3,editText.split('\n').length))} onKeyDown={e => {if(e.key==='Escape') setEditTarget(null);}}/>
+                <div><button type="button" onClick={() => setEditTarget(null)}>Hủy</button><button type="submit" disabled={streaming || (!editText.trim() && !editTarget.attachments?.length)}>Gửi</button></div>
+              </form> : undefined}
               live={streaming && !stopping && index === messages.length - 1}
               writing={streaming && index === messages.length - 1}
               onPreview={previewDocument} onEdit={editDocument} />
@@ -1752,7 +1845,8 @@ export default function App() {
         {error && (
           <div className="error" role="alert">
             {error}
-            <button type="button" className="dismiss-error" aria-label="Đóng thông báo" onClick={() => setError(null)}>×</button>
+            {retryAvailable && <button type="button" disabled={streaming || loadingConversation} onClick={() => void submit(retryRevision.current)}>Thử lại</button>}
+            <button type="button" className="dismiss-error" aria-label="Đóng thông báo" onClick={() => { setError(null); setRetryAvailable(false); }}>×</button>
           </div>
         )}
 
@@ -1821,6 +1915,13 @@ export default function App() {
       {characterPickerOpen && <LazyBoundary><Suspense fallback={null}><CharacterPicker library={characters} onClose={() => setCharacterPickerOpen(false)} /></Suspense></LazyBoundary>}
       {agentCode && <AgentConnectDialog code={agentCode} isGuest={auth.user?.provider === "guest"}
         onClose={() => { forgetAgentCode(); setAgentCode(null); }} onUnauthorized={handleUnauthorized} />}
+      {renameTarget && <TextEditDialog title="Đổi tên hội thoại" value={renameText} onChange={setRenameText} busy={metadataBusy} onClose={() => setRenameTarget(null)} onSave={() => void changeConversation(renameTarget, {title:renameText})}/>}
+      {searchOpen && <HistorySearch onClose={() => setSearchOpen(false)} onUnauthorized={handleUnauthorized} onSelect={id => {setSearchOpen(false); go('chat'); void openConversation(id);}}/>}
+      {conversationMenu && <ConversationMenu left={conversationMenu.left} top={conversationMenu.top} onClose={() => setConversationMenu(null)}>
+        <button onClick={() => {setRenameTarget(conversationMenu.item);setRenameText(conversationMenu.item.title);setConversationMenu(null);}}><EditIcon />Đổi tên</button>
+        <button disabled={metadataBusy} onClick={() => {void changeConversation(conversationMenu.item,{pinned:!conversationMenu.item.pinned});setConversationMenu(null);}}><PinIcon />{conversationMenu.item.pinned ? 'Bỏ ghim' : 'Ghim'}</button>
+        <button className="danger-button" onClick={() => {setDeleteTarget(conversationMenu.item);setConversationMenu(null);}}>Xóa hội thoại</button>
+      </ConversationMenu>}
       <dialog ref={deleteDialogRef} className="confirm-dialog" aria-labelledby="delete-title" onCancel={(event) => {
         event.preventDefault();
         if (!deleting) setDeleteTarget(null);

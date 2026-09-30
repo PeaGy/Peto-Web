@@ -135,6 +135,7 @@ app.include_router(agent_api.router)
 # /install.ps1 nằm ngoài /api: phải đăng ký trước static_files.mount ở cuối tệp.
 app.include_router(agent_install.router)
 import docs_api
+import conversation_actions
 app.include_router(docs_api.router)
 
 
@@ -145,6 +146,7 @@ class AttachmentIn(BaseModel):
 
 
 class ChatRequest(BaseModel):
+    branch_message_id: int | None = Field(default=None, gt=0)
     message: str = ""
     conversation_id: str | None = None
     effort: str | None = None
@@ -364,9 +366,26 @@ async def list_conversations(
     owner: str = Depends(current_owner),
     limit: int = Query(default=50, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
+    q: str = Query(default='', max_length=200),
 ) -> dict:
-    rows = await db.list_conversations(owner, limit=limit + 1, offset=offset)
+    rows = await db.list_conversations(owner, limit=limit + 1, offset=offset, query=q.strip())
     return {"conversations": rows[:limit], "has_more": len(rows) > limit}
+
+
+class ConversationUpdate(BaseModel):
+    title: str | None = Field(default=None, max_length=120)
+    pinned: bool | None = None
+
+
+@app.patch('/api/conversations/{conversation_id}')
+async def update_conversation(conversation_id: str, body: ConversationUpdate, owner: str = Depends(current_owner)):
+    await conversation_actions.update(owner, conversation_id, body.title, body.pinned)
+    return {'updated': True}
+
+
+@app.get('/api/conversations/{conversation_id}/versions')
+async def conversation_versions(conversation_id: str, owner: str = Depends(current_owner)):
+    return {'versions': await conversation_actions.versions(owner, conversation_id)}
 
 
 @app.get("/api/conversations/{conversation_id}/messages")
@@ -527,7 +546,16 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
     except AttachmentError as err:
         raise HTTPException(status_code=400, detail=str(err)) from err
 
-    if not text and not files:
+    if request.branch_message_id:
+        if not request.conversation_id or request.mode != 'chat' or files:
+            raise HTTPException(400, 'Phiên bản cần một hội thoại và tin nhắn đã lưu')
+        original = await db.get_messages(owner, request.conversation_id)
+        target = next((row for row in original if row['id'] == request.branch_message_id and row['role'] == 'user'), None)
+        if target is None:
+            raise HTTPException(404, 'Không tìm thấy tin nhắn')
+        if not text and not target.get('attachments'):
+            raise HTTPException(400, 'Tin nhắn trống')
+    if not text and not files and not request.branch_message_id:
         raise HTTPException(status_code=400, detail="Tin nhắn trống")
 
     effort = _resolve_effort(request.effort, text)
@@ -654,7 +682,10 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                         conversation_id = await db.create_conversation(owner, mode=mode, persona=persona)
                     saved_paths: list[Path] = []
                     try:
-                        message_id = await db.add_message(conversation_id, "user", text)
+                        if request.branch_message_id:
+                            conversation_id, message_id = await conversation_actions.fork(owner, conversation_id, request.branch_message_id, text)
+                        else:
+                            message_id = await db.add_message(conversation_id, "user", text)
                         for item, document in zip(files, documents):
                             attachment_id, path = attachment_lib.write_file(conversation_id, item)
                             saved_paths.append(path)

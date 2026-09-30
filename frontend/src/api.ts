@@ -60,6 +60,7 @@ export interface WorkStep {
 export type Persona = "assistant" | "roleplay";
 
 export interface Conversation {
+  pinned?: boolean;
   title_state?: 'temporary' | 'pending' | 'generated' | 'locked';
   title_attempts?: number;
   id: string;
@@ -223,11 +224,20 @@ export async function getAppInfo(): Promise<AppInfo> {
   return (await response.json()) as AppInfo;
 }
 
-export async function listConversations(offset = 0, limit = 50): Promise<{
+export async function listConversations(offset = 0, limit = 50, query = ''): Promise<{
   conversations: Conversation[]; has_more: boolean;
 }> {
-  const response = await fetch(`/api/conversations?offset=${offset}&limit=${limit}`);
+  const response = await fetch(`/api/conversations?offset=${offset}&limit=${limit}&q=${encodeURIComponent(query)}`);
   return json(response);
+}
+
+export async function updateConversation(id: string, change: { title?: string; pinned?: boolean }): Promise<void> {
+  await json(await fetch(`/api/conversations/${id}`, {method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(change)}));
+}
+
+export async function conversationVersions(id: string): Promise<Conversation[]> {
+  const data = await json<{versions:Conversation[]}>(await fetch(`/api/conversations/${id}/versions`));
+  return data.versions;
 }
 
 export async function getMessages(conversationId: string, signal?: AbortSignal): Promise<Message[]> {
@@ -403,6 +413,7 @@ export async function revokeAgentDevice(deviceId: string): Promise<void> {
  */
 export async function sendMessage(
   payload: {
+    branchMessageId?: number;
     message: string;
     conversationId: string | null;
     effort: Effort;
@@ -420,6 +431,7 @@ export async function sendMessage(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
+      branch_message_id: payload.branchMessageId,
       message: payload.message,
       conversation_id: payload.conversationId,
       effort: payload.effort,

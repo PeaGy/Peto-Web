@@ -11,6 +11,7 @@ vi.mock('../src/documentApi', async original => ({ ...await original<typeof impo
 vi.mock('../src/api', async (original) => ({
   ...await original<typeof import('../src/api')>(),
   getAuthState: vi.fn(), listConversations: vi.fn(), getMessages: vi.fn(),
+  conversationVersions: vi.fn(), updateConversation: vi.fn(),
   sendMessage: vi.fn(), deleteConversation: vi.fn(), logout: vi.fn(),
   listImagineJobs: vi.fn(), createImagineJob: vi.fn(), guestLogin: vi.fn(),
   getProfile: vi.fn(), saveProfile: vi.fn(),
@@ -32,6 +33,8 @@ beforeAll(preloadLazyParts);
 
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.mocked(api.conversationVersions).mockResolvedValue([]);
+  vi.mocked(api.updateConversation).mockResolvedValue();
   vi.mocked(api.getCompanionMemory).mockResolvedValue({ available: true, enabled: true, pending: false, limit: 50, memories: [] });
   localStorage.clear();
   // Mã Peto Agent còn sót từ test trước sẽ mở hộp kết nối trong mọi test sau.
@@ -562,7 +565,8 @@ describe('Sending and stopping', () => {
 
 it('asks before deleting and keeps the conversation when cancelled', async () => {
   await openApp();
-  fireEvent.click(screen.getAllByRole('button', {name:'Xóa hội thoại'})[0]);
+  fireEvent.click(screen.getByLabelText('Tùy chọn A'));
+  fireEvent.click(screen.getByRole('button', {name:'Xóa hội thoại'}));
   const dialog = screen.getByRole('dialog');
   expect(api.deleteConversation).not.toHaveBeenCalled();
   fireEvent.click(within(dialog).getByRole('button', {name:'Giữ lại'}));
@@ -1157,7 +1161,7 @@ it('loads conversations beyond the first 50', async () => {
   await openApp();
   fireEvent.click(screen.getByRole('button', {name:'Xem hội thoại cũ hơn'}));
   await screen.findByRole('button', {name:'Hội thoại cũ', exact:true});
-  expect(api.listConversations).toHaveBeenCalledWith(50);
+  expect(api.listConversations).toHaveBeenCalledWith(50, 50, '');
 });
 
 describe('Chế độ nhập vai', () => {
@@ -1296,4 +1300,45 @@ describe('Chọn model', () => {
     expect(screen.queryByRole('button', { name: /^Model:/ })).toBeNull();
     expect(await send('kể chuyện đi')).toMatchObject({ persona: 'roleplay', model: 'peto' });
   });
+});
+
+it('tìm nội dung lịch sử qua máy chủ, đổi tên và ghim', async () => {
+  await openApp();
+  fireEvent.click(screen.getByRole('button',{name:'Tìm kiếm hội thoại'}));
+  fireEvent.change(screen.getByRole('searchbox', {name:'Tìm trong lịch sử chat'}), {target:{value:'nội dung cũ'}});
+  await waitFor(() => expect(api.listConversations).toHaveBeenCalledWith(0,50,'nội dung cũ'));
+  fireEvent.click(screen.getByRole('button',{name:'Đóng tìm kiếm'}));
+  fireEvent.click(screen.getByLabelText('Tùy chọn A'));
+  fireEvent.click(screen.getAllByRole('button',{name:'Đổi tên'})[0]);
+  fireEvent.change(screen.getByRole('textbox',{name:'Đổi tên hội thoại'}),{target:{value:'Tên mới'}});
+  fireEvent.click(screen.getByRole('button',{name:'Lưu',exact:true}));
+  await waitFor(() => expect(api.updateConversation).toHaveBeenCalledWith('A',{title:'Tên mới'}));
+  fireEvent.click(screen.getAllByRole('button',{name:'Ghim',exact:true})[0]);
+  await waitFor(() => expect(api.updateConversation).toHaveBeenCalledWith('A',{pinned:true}));
+});
+
+it('sửa trực tiếp gửi ID lượt gốc, không xóa lịch sử và không có nút tạo lại', async () => {
+  vi.mocked(api.getMessages).mockResolvedValue([{id:12,role:'user',content:'Câu cũ'}, {id:13,role:'assistant',content:'Đáp cũ'}]);
+  await openApp();
+  fireEvent.click(screen.getByRole('button',{name:'A',exact:true}));
+  fireEvent.click(await screen.findByRole('button',{name:'Sửa tin nhắn',exact:true}));
+  fireEvent.change(screen.getByRole('textbox',{name:'Sửa tin nhắn'}),{target:{value:'Câu mới'}});
+  fireEvent.submit(screen.getByRole('textbox',{name:'Sửa tin nhắn'}).closest('form')!);
+  await waitFor(() => expect(api.sendMessage).toHaveBeenCalledWith(expect.objectContaining({message:'Câu mới',branchMessageId:12,conversationId:'A'}),expect.anything(),expect.anything()));
+  expect(screen.queryByRole('button',{name:'Tạo lại',exact:true})).toBeNull();
+  expect(api.deleteConversation).not.toHaveBeenCalled();
+});
+
+it('lỗi sau khi nhận tin có thể thử lại từ tin đã lưu', async () => {
+  await openApp();
+  vi.mocked(api.sendMessage).mockImplementationOnce(async (_payload, handlers) => {
+    handlers.onMeta?.('A','low',{id:50,role:'user',content:'Chào'});
+    handlers.onError?.('Dịch vụ tạm lỗi');
+  });
+  fireEvent.change(screen.getByRole('textbox',{name:'Nhắn cho Peto'}),{target:{value:'Chào'}});
+  fireEvent.click(screen.getByRole('button',{name:'Gửi',exact:true}));
+  const retry = await screen.findByRole('button',{name:'Thử lại',exact:true});
+  await waitFor(() => expect((retry as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(retry);
+  await waitFor(() => expect(api.sendMessage).toHaveBeenLastCalledWith(expect.objectContaining({branchMessageId:50,message:'Chào',conversationId:'A'}),expect.anything(),expect.anything()));
 });

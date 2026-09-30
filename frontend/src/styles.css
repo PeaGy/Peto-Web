@@ -3112,3 +3112,50 @@ button.artifact-name { cursor: pointer; }
   .dismiss-error, .composer-plus, .effort-trigger, .studio-chip, .studio-options-toggle { min-height: 44px; min-width: 44px; }
   .effort-option { min-height: 44px; }
 }
+
+/* Conversation history and revision controls share the existing theme. */
+.bubble.user { position:relative; margin-bottom:32px; }
+.user-message-actions { position:absolute; top:100%; right:0; display:flex; padding-top:3px; margin:0; opacity:0; pointer-events:none; }
+.user-message-actions button,.conv-hover-actions button,.sidebar-search-button { display:grid; place-items:center; width:32px; height:32px; padding:0; border:0; border-radius:8px; background:transparent; color:var(--muted); cursor:pointer; flex-shrink:0; }
+.user-message-actions button:hover,.conv-hover-actions button:hover,.sidebar-search-button:hover { background:var(--panel-2); color:var(--text); }
+.bubble.user:hover .user-message-actions,.bubble.user:focus-within .user-message-actions { opacity:1; pointer-events:auto; }
+.bubble.user.editing { width:100%; max-width:100%; box-sizing:border-box; padding:16px; }
+.inline-message-editor textarea { display:block; width:100%; resize:vertical; box-sizing:border-box; border:0; outline:none; background:transparent; color:var(--text); font:inherit; line-height:1.6; min-height:80px; max-height:45dvh; }
+.inline-message-editor>div { display:flex; justify-content:flex-end; gap:8px; margin-top:12px; }
+.inline-message-editor button { border:1px solid var(--line); border-radius:24px; padding:8px 18px; background:transparent; color:var(--text); cursor:pointer; font:inherit; }
+.inline-message-editor button[type=submit] { background:var(--accent); color:var(--on-accent); }
+.sidebar-brand { margin-right:auto; }
+.sidebar-search-button { width:30px; margin-right:44px; }
+@media (min-width:721px) { .sidebar.collapsed .sidebar-search-button { display:none; } }
+@media (max-width:720px) { .sidebar-search-button { margin-right:4px; } }
+.conv { position:relative; }
+.conv-hover-actions { position:absolute; right:4px; display:flex; opacity:0; pointer-events:none; border-radius:8px; background:var(--panel); }
+.conv:hover .conv-hover-actions,.conv:focus-within .conv-hover-actions { opacity:1; pointer-events:auto; }
+.conv:hover .conv-open,.conv:focus-within .conv-open { padding-right:70px; }
+.conv-hover-actions [aria-pressed=true] { color:var(--text); }
+.conversation-menu-popup { position:fixed; margin:0; width:208px; padding:7px; box-sizing:border-box; border:1px solid var(--line); border-radius:16px; background:var(--panel-2); color:var(--text); box-shadow:0 12px 40px #0005; }
+.conversation-menu-popup::backdrop { background:transparent; }
+.conversation-menu-popup button { display:flex; align-items:center; gap:12px; width:100%; border:0; border-radius:9px; background:transparent; color:inherit; padding:12px; font:inherit; text-align:left; cursor:pointer; }
+.conversation-menu-popup button:hover { background:var(--panel); }
+.conversation-menu-popup .danger-button { color:#ef7777; border-top:1px solid var(--line); border-radius:0 0 9px 9px; }
+.history-dialog { width:min(700px,calc(100vw - 24px)); max-height:80dvh; padding:0; border:1px solid var(--line); border-radius:20px; background:var(--panel); color:var(--text); box-shadow:0 16px 70px #0005; }
+.history-dialog::backdrop { background:#0006; }
+.history-dialog-head { display:flex; align-items:center; padding:16px; gap:12px; border-bottom:1px solid var(--line); }
+.history-dialog-head input { flex:1; min-width:0; border:0; background:transparent; color:var(--text); padding:8px; font:inherit; font-size:16px; outline:none; }
+.history-dialog-head button { border:0; background:transparent; color:var(--muted); font-size:24px; width:32px; height:32px; cursor:pointer; }
+.history-results { padding:12px; max-height:60dvh; overflow:auto; }
+.history-result { display:flex; align-items:center; gap:14px; width:100%; padding:14px; background:transparent; color:var(--text); border:0; border-radius:12px; font:inherit; text-align:left; cursor:pointer; }
+.history-result:hover,.history-result:focus-visible { background:var(--panel-2); }
+.history-result span:last-child { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+@media (hover:none), (pointer:coarse) { .user-message-actions,.conv-hover-actions { opacity:1; pointer-events:auto; } .conv-open { padding-right:76px; } .user-message-actions button,.conv-hover-actions button { width:36px; height:36px; } }
+.conversation-versions { display:flex; align-items:center; flex-wrap:wrap; gap:8px; max-width:var(--chat-width, 900px); margin:0 auto 20px; color:var(--muted); font-size:12px; }
+.conversation-versions select { max-width:100%; border:1px solid var(--line); border-radius:8px; padding:8px; background:var(--panel); color:var(--text); }
+.text-edit-dialog { width:min(600px,calc(100vw - 32px)); max-height:calc(100dvh - 40px); overflow:auto; padding:24px; border:1px solid var(--line); border-radius:20px; background:var(--panel); color:var(--text); box-shadow:var(--dialog-shadow); }
+.text-edit-dialog::backdrop { background:#0008; }
+.text-edit-dialog h2 { font-size:20px; margin:0 0 14px; }
+.text-edit-dialog p { color:var(--muted); line-height:1.6; font-size:14px; }
+.text-edit-dialog input,.text-edit-dialog textarea { width:100%; box-sizing:border-box; padding:12px; font:inherit; font-size:16px; color:var(--text); background:var(--bg); border:1px solid var(--line); border-radius:10px; resize:vertical; }
+.text-edit-dialog form>div { display:flex; justify-content:flex-end; gap:10px; margin-top:18px; }
+.text-edit-dialog button { padding:10px 16px; font:inherit; color:var(--text); background:var(--panel-2); border:1px solid var(--line); border-radius:10px; cursor:pointer; }
+.text-edit-dialog button[type=submit] { background:var(--accent); color:var(--on-accent); }
+.sidebar.collapsed .history-search { display:none; }

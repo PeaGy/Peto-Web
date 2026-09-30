@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import time
 import uuid
+import unicodedata
 
 import aiosqlite
 from document_store import init_tables as init_document_tables
@@ -41,6 +42,9 @@ async def init_db() -> None:
             "ON conversations(owner, updated_at DESC)"
         )
         conversation_columns = await (await db.execute("PRAGMA table_info(conversations)")).fetchall()
+        for name, definition in [('pinned', 'INTEGER NOT NULL DEFAULT 0'), ('branch_group', "TEXT NOT NULL DEFAULT ''")]:
+            if name not in {column[1] for column in conversation_columns}:
+                await db.execute(f'ALTER TABLE conversations ADD COLUMN {name} {definition}')
         if "title_state" not in {column[1] for column in conversation_columns}:
             # Existing names have unknown provenance: do not overwrite them.
             await db.execute("ALTER TABLE conversations ADD COLUMN title_state TEXT NOT NULL DEFAULT 'locked'")
@@ -461,21 +465,26 @@ async def latest_conversation(owner: str, mode: str) -> str | None:
         return row[0] if row else None
 
 
-async def list_conversations(owner: str, limit: int = 50, offset: int = 0) -> list[dict]:
+async def list_conversations(owner: str, limit: int = 50, offset: int = 0, query: str = '') -> list[dict]:
     """Hội thoại của tab Trò chuyện; mạch Companion không hiện ở thanh bên."""
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
+        def fold(value):
+            return ''.join(c for c in unicodedata.normalize('NFD', value.casefold().replace('đ', 'd')) if unicodedata.category(c) != 'Mn')
+        await db.create_function('search_fold', 1, fold, deterministic=True)
         cursor = await db.execute(
             """
-            SELECT c.id, c.title, c.created_at, c.updated_at, c.persona, c.title_state, c.title_attempts,
+            SELECT c.id, c.title, c.created_at, c.updated_at, c.persona, c.title_state, c.title_attempts, c.pinned,
                    (SELECT COUNT(*) FROM messages m
                      WHERE m.conversation_id = c.id) AS message_count
               FROM conversations c
              WHERE c.owner = ? AND c.mode = 'chat'
-             ORDER BY c.updated_at DESC, c.id DESC
+               AND (? = '' OR instr(search_fold(c.title), search_fold(?)) > 0 OR EXISTS (
+                 SELECT 1 FROM messages s WHERE s.conversation_id=c.id AND instr(search_fold(s.content), search_fold(?)) > 0))
+             ORDER BY c.pinned DESC, c.updated_at DESC, c.id DESC
              LIMIT ? OFFSET ?
             """,
-            (owner, limit, offset),
+            (owner, query, query, query, limit, offset),
         )
         return [dict(row) for row in await cursor.fetchall()]
 
