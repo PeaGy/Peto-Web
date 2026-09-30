@@ -52,6 +52,13 @@ MCP_USAGE = """MCP cung cấp công cụ bên ngoài cho Peto Agent.
 - Tối đa 16 máy chủ, 128 công cụ, 64 KB schema mỗi máy chủ, 30 giây mỗi yêu cầu."""
 
 
+# Mô tả của hai lệnh này dài cả đoạn, nên trang danh mục chỉ tóm tắt và dẫn sang bài riêng.
+LONG_COMMANDS = {
+    '/skill': 'Xem hoặc nạp skill: hướng dẫn riêng cho từng loại việc. Cách viết và giới hạn nằm ở [Skills cho Agent](/docs/skills/).',
+    '/mcp': 'Thêm, bật, tắt và xem công cụ MCP bên ngoài. Cấu hình, quyền và giới hạn nằm ở [Kết nối MCP](/docs/mcp/).',
+}
+
+
 def pages():
     version, commands = catalog()
     result = list(_articles(CONTENT.stat().st_mtime_ns))
@@ -59,7 +66,7 @@ def pages():
         description='Cú pháp và cách dùng từ chính danh mục của CLI.',
         keywords=['lenh', 'command', 'help', 'effort', 'lenh agent', 'cac lenh', 'lenh cli', 'lenh peto'] + [c['name'] for c in commands],
         body='## Danh mục lệnh\nGõ `/` trong CLI để mở gợi ý, hoặc `/help` để xem các lệnh. Các lệnh này không chạy trong ô chat web.\n\n' +
-        '\n\n'.join(f"## {c['name']}\n`{c['usage']}`\n\n{c['details']}" for c in commands)))
+        '\n\n'.join(f"## {c['name']}\n`{c['usage']}`\n\n" + LONG_COMMANDS.get(c['name'], c['details']) for c in commands)))
     for command, slug, title, description, keywords in [
             ('/skill', 'skills', 'Skills cho Agent', 'Nạp hướng dẫn phù hợp với công việc.',
              ['skills', '/skill', 'skill.md', 'tao skill', 'viet skill', 'skill cho agent']),
