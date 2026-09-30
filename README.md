@@ -1,7 +1,7 @@
 # Peto Web
 
 Giao diện chat riêng cho Peto, trợ lý AI trả lời trung thực và đi thẳng vào việc. Tên Peto lấy từ bot Discord
-`Tracen Jukebox`; web này độc lập với bot, có database riêng.
+`Peto bot`; web này độc lập với bot, có database riêng.
 
 ## Có gì
 
@@ -9,7 +9,6 @@ Giao diện chat riêng cho Peto, trợ lý AI trả lời trung thực và đi 
 - **Tạo ảnh:** tạo và sửa ảnh, thư viện ảnh.
 - **Companion:** nhân vật Live2D/VRM, giọng nói, nghe bằng micro, trí nhớ.
 - **Peto Agent:** CLI chạy trên máy bạn, làm việc với thư mục dự án.
-- **Nhập vai:** chế độ tùy chọn, chỉ cho tài khoản đã xác nhận 18+.
 - **Đăng nhập:** Discord, Google hoặc khách. Đăng ký mở cho mọi người.
 
 Hướng dẫn dùng nằm ở `/docs/` trên site.
@@ -59,14 +58,9 @@ cd frontend && npm test && npm run build
 
 Test dùng nhà cung cấp giả và database tạm, không chạm dữ liệu thật.
 
-## Triển khai
-
-Production chạy một tiến trình: backend phục vụ luôn `frontend/dist`. Xem [DEPLOY.md](DEPLOY.md).
-
 ## Tài liệu khác
 
 - [CLAUDE.md](CLAUDE.md): kiến trúc và các quy ước của code.
 - [DEPLOY.md](DEPLOY.md): đưa lên VPS.
 - [agent-cli/README.md](agent-cli/README.md): cài và dùng Peto Agent.
 - [voice-worker/README.md](voice-worker/README.md): nối máy tạo giọng.
-- [DOCUMENTS.md](DOCUMENTS.md): tạo và xem tài liệu trong chat.
