@@ -37,7 +37,6 @@ import {
   getMessages,
   listConversations,
   updateConversation,
-  conversationVersions,
   logout,
   sendMessage,
   type AppInfo,
@@ -569,7 +568,6 @@ export default function App() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [searchOpen, setSearchOpen] = useState(false);
   const [conversationMenu, setConversationMenu] = useState<{item:Conversation; left:number; top:number} | null>(null);
-  const [versions, setVersions] = useState<Conversation[]>([]);
   const [renameTarget, setRenameTarget] = useState<Conversation | null>(null);
   const [renameText, setRenameText] = useState('');
   const [editTarget, setEditTarget] = useState<Message | null>(null);
@@ -805,7 +803,6 @@ export default function App() {
     setConversations([]);
     setSearchOpen(false);
     setConversationMenu(null);
-    setVersions([]);
     setRenameTarget(null);
     setRenameText("");
     setEditTarget(null);
@@ -860,12 +857,6 @@ export default function App() {
       if (version === listVersion.current) setLoadingList(false);
     }
   }, [handleUnauthorized]);
-  useEffect(() => {
-    let active = true;
-    setVersions([]);
-    if (conversationId && !streaming) void conversationVersions(conversationId).then(rows => { if (active) setVersions(rows); }).catch(() => {});
-    return () => { active = false; };
-  }, [conversationId, streaming]);
 
   const waitingForTitle = conversations.some(item =>
     item.id === conversationId && (item.title_state === 'pending' ||
@@ -1818,9 +1809,6 @@ export default function App() {
             </div>
           )}
 
-          {versions.length > 1 && <label className="conversation-versions">Phiên bản hội thoại <select aria-label="Phiên bản hội thoại" value={conversationId || ''} disabled={streaming || loadingConversation} onChange={e => void openConversation(e.target.value)}>
-            {versions.map((item, i) => <option value={item.id} key={item.id}>Bản {i + 1} · {new Date(item.created_at * 1000).toLocaleString('vi-VN')}</option>)}
-          </select></label>}
           {messages.map((message, index) => (
             <ChatMessage key={index} message={message}
               actionsDisabled={streaming || loadingConversation || loadFailed}

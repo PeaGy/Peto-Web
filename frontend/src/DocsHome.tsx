@@ -70,7 +70,7 @@ export default function DocsHome({ motion }: { motion: boolean }) {
     {/* Nhân vật nằm ngay dưới hàng nút (tóc lùi ra sau nút như AIRI) và lớn theo chỗ trống còn lại, để mặt luôn trong màn hình. */}
     <div className="docs-stage" aria-hidden="true">
       <div className="docs-cover">
-        <img ref={art} className="docs-parallax" src="/docs-assets/peto-hero.webp" alt="" width="1069" height="1472"
+        <img ref={art} className="docs-parallax" src="/docs-assets/peto-hero.webp" alt="" width="1069" height="1472" draggable={false}
           fetchPriority="high" />
         <div ref={pink} className="docs-silhouette docs-silhouette-pink docs-parallax" />
         <div ref={violet} className="docs-silhouette docs-silhouette-violet docs-parallax" />

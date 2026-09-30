@@ -389,6 +389,8 @@ body:has(.docs) { margin: 0; }
 
 /* Nền trang đầu: họa tiết (mask trắng, tô bằng màu chữ) trôi chéo, mờ dần lên trên. */
 .docs-scene { position: absolute; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
+.docs-scene, .docs-stage, .docs-stage * { -webkit-user-select: none; user-select: none; }
+.docs-cover img { -webkit-user-drag: none; }
 .docs-pattern {
   position: absolute; top: -512px; right: 0; bottom: 0; left: -512px; background: var(--docs-pattern-ink); opacity: 0.06;
   -webkit-mask: url(/docs-assets/pattern.svg) 0 0 / 512px 512px repeat;
