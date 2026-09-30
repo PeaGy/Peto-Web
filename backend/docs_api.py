@@ -19,6 +19,39 @@ def _articles(stamp):
     return json.loads(CONTENT.read_text(encoding='utf-8'))
 
 
+SKILL_USAGE = """Skills là hướng dẫn, không cấp thêm quyền.
+
+- Đặt `.peto/skills/<tên>/SKILL.md` hoặc `.agents/skills/<tên>/SKILL.md` trong dự án.
+- Phần đầu tệp (frontmatter) cần `name` (chữ thường, số, gạch nối) và `description`.
+- `/skill` xem danh sách; `/skill review` nạp skill mà không gọi model; `/skill review Rà code` nạp rồi giao việc.
+- Peto cũng tự nạp skill phù hợp. Tài liệu phụ được tính từ thư mục chứa `SKILL.md`.
+- Tối đa 32 skills, 24.000 ký tự mỗi skill. Chưa có skills toàn máy.
+- Sau khi sửa hướng dẫn, gọi lại `/skill tên`."""
+
+MCP_USAGE = """MCP cung cấp công cụ bên ngoài cho Peto Agent.
+
+- `/mcp add docs docs-mcp.json` nhập một cấu hình JSON từ tệp trong dự án, lưu trong hồ sơ CLI, chưa kết nối.
+- `/mcp enable docs` hỏi quyền rồi bật trong phiên.
+- `/mcp tools docs` xem công cụ; `/mcp disable docs` tắt.
+- Mỗi lần gọi công cụ hỏi quyền riêng, không tự thử lại khi lỗi.
+
+## Hai kiểu kết nối
+
+- **HTTP:** `{"url": "https://<endpoint-thực>/mcp", "headers": {"Authorization": "Bearer ${DOCS_API_KEY}"}}`. Bỏ `headers` nếu không cần khóa.
+- **Stdio:** `{"command": "node", "args": ["C:/tools/server.js"], "env": {"SERVICE_API_KEY": "${SERVICE_API_KEY}"}}`. Chương trình cần cài sẵn.
+
+## Khóa và quyền
+
+- Đặt khóa ở biến môi trường trước khi mở CLI, không gửi khóa vào chat.
+- MCP cục bộ chạy với quyền tài khoản máy, không nằm trong sandbox công cụ tệp của Peto.
+
+## Giới hạn
+
+- Hỗ trợ stdio và Streamable HTTP; chưa hỗ trợ OAuth, SSE cũ, prompts, resources, sampling, elicitation.
+- Mỗi phiên bắt đầu với MCP tắt hết; `/resume` không tự bật lại.
+- Tối đa 16 máy chủ, 128 công cụ, 64 KB schema mỗi máy chủ, 30 giây mỗi yêu cầu."""
+
+
 def pages():
     version, commands = catalog()
     result = list(_articles(CONTENT.stat().st_mtime_ns))
@@ -34,7 +67,7 @@ def pages():
              ['mcp', '/mcp', 'ket noi mcp', 'may chu mcp'])]:
         entry = next((c for c in commands if c['name'] == command), None)
         if entry:
-            body = f"## Cách sử dụng\n`{entry['usage']}`\n\n{entry['details']}"
+            body = f"## Cách sử dụng\n`{entry['usage']}`\n\n" + (SKILL_USAGE if command == '/skill' else MCP_USAGE)
             if command == '/skill':
                 body += '\n\n## Một skill đầu tiên\nTạo `.peto/skills/review/SKILL.md` trong dự án:\n\n```markdown\n---\nname: review\ndescription: Rà thay đổi code và tìm lỗi có thể tái hiện.\n---\nĐọc README và code liên quan trước khi nhận xét.\nƯu tiên lỗi ảnh hưởng người dùng, kèm cách tái hiện.\n```\n\nSau đó gõ `/skill review Rà thay đổi hiện tại` trong CLI.'
             else:
