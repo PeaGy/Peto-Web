@@ -57,9 +57,9 @@ export function hasCode(text: string): boolean {
   return /(^|\n) {0,3}(```|~~~)/.test(text);
 }
 
-/** Có thể có công thức. normalizeMath đã đổi \(…\) và \[…\] thành $…$; "$5" cũng tính, chỉ tốn một lần tải thừa. */
+/** normalizeMath đã chuẩn hóa công thức và escape dấu tiền tệ; chỉ tải KaTeX khi còn dấu toán chưa escape. */
 export function hasMath(text: string): boolean {
-  return text.includes("$");
+  return /(^|[^\\])(?:\\\\)*\$/.test(text);
 }
 
 /** Plugin cho react-markdown của một tin nhắn: GFM luôn có, toán và tô màu code khi tin cần và tệp đã về. */
