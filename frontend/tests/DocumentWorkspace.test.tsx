@@ -1,9 +1,9 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
-import DocumentWorkspace from '../src/DocumentWorkspace';
-import * as api from '../src/documentApi';
+import DocumentWorkspace from '../src/features/documents/DocumentWorkspace';
+import * as api from '../src/features/documents/documentApi';
 
-vi.mock('../src/documentApi', async original => ({ ...await original<typeof import('../src/documentApi')>(), listDocuments: vi.fn(), getDocument: vi.fn(), saveDocument: vi.fn(), downloadDocument: vi.fn(), deleteDocument: vi.fn() }));
+vi.mock('../src/features/documents/documentApi', async original => ({ ...await original<typeof import('../src/features/documents/documentApi')>(), listDocuments: vi.fn(), getDocument: vi.fn(), saveDocument: vi.fn(), downloadDocument: vi.fn(), deleteDocument: vi.fn() }));
 const draft = { key: 1, conversationId: 'C1', content: '# Kế hoạch\n\nNội dung **quan trọng**.' };
 const saved: api.SavedDocument = { id: 'D1', conversation_id: 'C1', title: 'Kế hoạch', content: draft.content, version: 1, created_at: 1, versions: [{ version: 1, title: 'Kế hoạch', created_at: 1 }] };
 const unauthorized = vi.fn();

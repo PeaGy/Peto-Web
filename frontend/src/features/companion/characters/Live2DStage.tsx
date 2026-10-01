@@ -1,0 +1,478 @@
+import { useRenderQuality } from './renderQuality';
+import { useEffect, useRef, useState } from "react";
+import type { Application } from "pixi.js";
+import type { Cubism4InternalModel } from 'pixi-live2d-display/cubism4';
+import { CHARACTER } from "./characterConfig";
+import { DEFAULT_CHARACTER, getCharacterAssets, characterThumbnail, faceThumbnail, type CharacterModel } from './characterLibrary';
+import {
+  COMPACT_QUERY,
+  DEFAULT_VIEW,
+  lookTarget,
+  motionEnabled,
+  panBy,
+  placement,
+  readCharacterView,
+  wheelZoomFactor,
+  writeCharacterView,
+  zoomAt,
+  type CharacterMotion,
+  type CharacterView,
+  type StageBox,
+} from "./characterView";
+import { voiceMouth } from "../speech/voiceActivity";
+import { IdleEyes } from './idleEyes';
+import { controlIdle, motionChoices, readIdle, watchIdle } from './live2dMotions';
+import { readEffects, watchEffects, withCharacterEffects } from './characterEffects';
+import { musicPose, selectMusicCharacter, stopMusicVibe } from './musicVibe';
+import { CompanionMotion, stageQuality, type CompanionActivity } from './companionMotion';
+import { controlExpressions, faceSource, publishSnapshot, readExpressions, watchExpressions, type StageCue, type StageEmotion } from './characterExpressions';
+import { FaceBlend, faceApplier, type CubismCore } from './builtinFaces';
+
+let coreReady: Promise<void> | undefined;
+function loadCore() {
+  if ("Live2DCubismCore" in window) return Promise.resolve();
+  if (!coreReady) {
+    coreReady = new Promise<void>((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = CHARACTER.coreUrl;
+      const timer = window.setTimeout(() => fail(), 20000);
+      const fail = () => {
+        clearTimeout(timer);
+        script.remove();
+        coreReady = undefined;
+        reject(new Error("Chưa tải được bộ hiển thị nhân vật."));
+      };
+      script.onload = () => { clearTimeout(timer); resolve(); };
+      script.onerror = fail;
+      document.head.append(script);
+    });
+  }
+  return coreReady;
+}
+
+/**
+ * Sân khấu Live2D của Companion.
+ *
+ * Máy tính: cuộn chuột hoặc chụm hai ngón để phóng to/thu nhỏ quanh chỗ đang chỉ, giữ chuột giữa kéo để dời, bấm đúp để về
+ * cỡ vừa khung; góc nhìn được nhớ trong trình duyệt. Điện thoại (`COMPACT_QUERY`): khung khóa cứng như AIRI,
+ * giữ ngón tay trên màn hình thì nhân vật nhìn theo ngón tay. Khi được cử động (`motionEnabled`), nhân vật
+ * chạy motion Idle, thở, chớp mắt và nhìn theo con trỏ. Miệng luôn theo âm thanh đang phát.
+ */
+export default function Live2DStage({ fallbackUrl, name, motion = "system", character = DEFAULT_CHARACTER, onPreview, emotion, activity = 'idle' }: {
+  activity?: CompanionActivity;
+  /** Cảm xúc đang hiện (Companion quyết lúc nào đổi, lúc nào về bình thường bằng null). */
+  emotion?: StageCue | null;
+  fallbackUrl?: string;
+  name: string;
+  motion?: CharacterMotion;
+  character?: CharacterModel;
+  onPreview?: (id: string, image: string) => void;
+}) {
+  const qualityPreference = useRenderQuality();
+  const host = useRef<HTMLDivElement>(null);
+  const activityRef = useRef(activity); activityRef.current = activity;
+  const motionRef = useRef(motion);
+  const previewRef = useRef(onPreview);
+  previewRef.current = onPreview;
+  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [attempt, setAttempt] = useState(0);
+  const [idleError, setIdleError] = useState(false);
+  const [expressionError, setExpressionError] = useState(false);
+  const emotionRef = useRef(emotion);
+  emotionRef.current = emotion;
+  const showEmotion = useRef<(emotion: StageEmotion | null) => void>(() => {});
+  useEffect(() => { showEmotion.current(emotion?.emotion ?? null); }, [emotion]);
+
+  useEffect(() => {
+    motionRef.current = motion;
+  }, [motion]);
+
+  useEffect(() => {
+    const container = host.current!;
+    let disposed = false;
+    let app: Application | undefined;
+    let observer: ResizeObserver | undefined;
+    let removeEvents = () => {};
+    let disposeIdle = () => {};
+    let disposeExpressions = () => {};
+    selectMusicCharacter(character.id);
+    const objectUrls: string[] = [];
+    setStatus("loading");
+    setIdleError(false);
+    setExpressionError(false);
+
+    async function start() {
+      await loadCore();
+      const [{ Application: PixiApp }, { Live2DModel: Model, MotionPreloadStrategy, Cubism4ModelSettings }] = await Promise.all([
+        import("pixi.js"), import("pixi-live2d-display/cubism4"),
+      ]);
+      if (disposed) return;
+      const compact = window.matchMedia(COMPACT_QUERY);
+      app = new PixiApp({ width: 1, height: 1, backgroundAlpha: 0, antialias: !compact.matches || qualityPreference.sharp,
+        resolution: stageQuality(compact.matches, window.devicePixelRatio, qualityPreference).resolution, autoDensity: true, autoStart: false });
+      const canvas = app.view as HTMLCanvasElement;
+      canvas.setAttribute("aria-hidden", "true");
+      container.append(canvas);
+      let source: string | InstanceType<typeof Cubism4ModelSettings> = CHARACTER.modelUrl;
+      let mouthParameters = [CHARACTER.mouthParameter];
+      if (!character.builtin) {
+        const assets = await getCharacterAssets(character.id);
+        if (disposed) return;
+        const entry = assets?.files.find(file => file.path === assets.entry);
+        if (!assets || !entry) throw new Error('Không còn tìm thấy tệp của model này. Hãy nhập lại model.');
+        const json = JSON.parse(await entry.blob.text());
+        if (disposed) return;
+        json.url = '/imported/model.model3.json';
+        const settings = new Cubism4ModelSettings(json);
+        const lipSync = json.Groups?.find((group: { Name: string }) => group.Name === 'LipSync')?.Ids;
+        if (Array.isArray(lipSync) && lipSync.length) mouthParameters = lipSync;
+        const urls = new Map(assets.files.map(file => {
+          const mime = /\.png$/i.test(file.path) ? 'image/png' : /\.jpe?g$/i.test(file.path) ? 'image/jpeg' : /\.webp$/i.test(file.path) ? 'image/webp' : 'application/octet-stream';
+          const url = URL.createObjectURL(new Blob([file.blob], { type: mime }));
+          objectUrls.push(url);
+          return [file.path, url];
+        }));
+        settings.resolveURL = path => {
+          const url = urls.get(path);
+          if (!url) throw new Error(`Thiếu tài nguyên model: ${path}`);
+          return url;
+        };
+        source = settings;
+      }
+      const current = await Model.from(source, { autoUpdate: false, autoInteract: false, motionPreload: MotionPreloadStrategy.IDLE });
+      if (disposed) { current.destroy({ children: true, texture: true, baseTexture: true }); return; }
+      app.stage.addChild(current);
+      const originalWidth = current.width;
+      const originalHeight = current.height;
+      current.anchor.set(0.5, 1);
+
+      const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+      const moving = () => motionEnabled(motionRef.current, reducedMotion.matches);
+
+      // Máy tính: phóng và dời chỉ nhân thêm lên cỡ vừa khung, nên đổi cỡ cửa sổ vẫn giữ đúng góc nhìn đã chọn.
+      let view = readCharacterView(character.id);
+      const box: StageBox = { width: 1, height: 1, baseX: 0, baseY: 0, baseScale: 1 };
+      const place = () => {
+        const { scale, x, y } = placement(compact.matches ? DEFAULT_VIEW : view, box);
+        current.scale.set(scale);
+        current.position.set(x, y);
+      };
+      // Bàn phím điện thoại làm sân khấu thấp đi nhưng bề ngang giữ nguyên. Khung điện thoại tính theo chiều cao
+      // lớn nhất đã thấy ở bề ngang hiện tại, để mở bàn phím không làm nhân vật nhỏ lại hay trôi mặt đi.
+      let frameWidth = 0;
+      let frameHeight = 0;
+      const fit = () => {
+        if (!app) return;
+        const quality = stageQuality(compact.matches, window.devicePixelRatio, qualityPreference);
+        app.ticker.maxFPS = quality.fps;
+        app.renderer.resolution = quality.resolution;
+        const width = Math.max(1, container.clientWidth), height = Math.max(1, container.clientHeight);
+        app.renderer.resize(width, height);
+        box.width = width;
+        box.height = height;
+        box.baseX = width / 2;
+        if (compact.matches) {
+          if (width !== frameWidth) {
+            frameWidth = width;
+            frameHeight = height;
+          } else {
+            frameHeight = Math.max(frameHeight, height);
+          }
+          // Điện thoại: nửa trên nhân vật phủ màn hình, đỉnh đầu nằm ngay dưới hàng nút.
+          box.baseScale = frameHeight * CHARACTER.compactHeight / originalHeight;
+          box.baseY = frameHeight * CHARACTER.compactTop + originalHeight * box.baseScale;
+        } else {
+          box.baseScale = Math.min(width * 0.94 / originalWidth, height * 0.96 / originalHeight);
+          box.baseY = height * 0.99;
+        }
+        place();
+      };
+      observer = new ResizeObserver(fit);
+      observer.observe(container);
+      fit();
+
+      let saveTimer: number | undefined;
+      const changeView = (next: CharacterView) => {
+        view = next;
+        place();
+        window.clearTimeout(saveTimer);
+        saveTimer = window.setTimeout(() => {
+          saveTimer = undefined;
+          writeCharacterView(view, character.id);
+        }, 300);
+      };
+      const local = (event: MouseEvent) => {
+        const rect = container.getBoundingClientRect();
+        return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+      };
+
+      const onWheel = (event: WheelEvent) => {
+        if (compact.matches) return;
+        event.preventDefault();
+        const point = local(event);
+        changeView(zoomAt(view, wheelZoomFactor(event.deltaY, event.deltaMode), point.x, point.y, box));
+      };
+      const pointers = new Map<number, { x: number; y: number }>();
+      // Chuột dời nhân vật bằng nút giữa theo lựa chọn của chủ web, để chuột trái rảnh; chạm vẫn kéo bằng một ngón.
+      const onPointerDown = (event: PointerEvent) => {
+        if (compact.matches || (event.pointerType === "mouse" && event.button !== 1)) return;
+        pointers.set(event.pointerId, local(event));
+        container.setPointerCapture?.(event.pointerId);
+        container.classList.add("dragging");
+      };
+      const onPointerMove = (event: PointerEvent) => {
+        const previous = pointers.get(event.pointerId);
+        if (!previous) return;
+        // Nhả nút giữa trong lúc vẫn giữ nút khác thì trình duyệt không bắn pointerup, nên tự dừng kéo.
+        if (event.pointerType === "mouse" && (event.buttons & 4) === 0) return onPointerEnd(event);
+        const point = local(event);
+        const other = [...pointers].find(([id]) => id !== event.pointerId)?.[1];
+        pointers.set(event.pointerId, point);
+        if (pointers.size === 1) {
+          changeView(panBy(view, point.x - previous.x, point.y - previous.y, box));
+        } else if (pointers.size === 2 && other) {
+          // Hai ngón: phóng theo khoảng cách giữa hai ngón, dời theo điểm giữa của chúng.
+          const before = Math.hypot(previous.x - other.x, previous.y - other.y);
+          const after = Math.hypot(point.x - other.x, point.y - other.y);
+          const zoomed = before > 0
+            ? zoomAt(view, after / before, (point.x + other.x) / 2, (point.y + other.y) / 2, box)
+            : view;
+          changeView(panBy(zoomed, (point.x - previous.x) / 2, (point.y - previous.y) / 2, box));
+        }
+      };
+      const onPointerEnd = (event: PointerEvent) => {
+        pointers.delete(event.pointerId);
+        if (!pointers.size) container.classList.remove("dragging");
+      };
+      const onDoubleClick = () => {
+        if (!compact.matches) changeView(DEFAULT_VIEW);
+      };
+      // Nhấn nút giữa: Chrome trên Windows bật cuộn tự động, Linux dán chữ. Chặn trên sân khấu để kéo được nhân vật.
+      const onMiddleButton = (event: MouseEvent) => {
+        if (event.button === 1 && !compact.matches) event.preventDefault();
+      };
+
+      const internal = current.internalModel as Cubism4InternalModel;
+      const manager = internal.motionManager.expressionManager;
+      // Cảm xúc Peto chọn, hay thẻ bấm thử trong bảng Nhân vật: tệp biểu cảm của model nếu có, không thì mặt dựng sẵn.
+      const face = faceApplier(internal.coreModel as unknown as CubismCore);
+      const faceBlend = new FaceBlend();
+      const builtin = face.supported();
+      const controller = manager ? controlExpressions(manager, () => setExpressionError(true)) : undefined;
+      const choices = controller?.choices ?? [];
+      let preferences = readExpressions(character.id);
+      let previewTimer: ReturnType<typeof setTimeout> | undefined;
+      let snapshotTimer: ReturnType<typeof setTimeout> | undefined;
+      // Bảng Nhân vật che sân khấu: chụp vùng quanh đầu khi mặt đã hiện hẳn để thẻ cảm xúc hiện ảnh thay.
+      const snapshot = (emotion: StageEmotion) => {
+        try {
+          app!.renderer.render(app!.stage);
+          const resolution = app!.renderer.resolution;
+          const height = originalHeight * current.scale.y;
+          const headY = current.position.y - height * CHARACTER.headHeight;
+          publishSnapshot(character.id, emotion,
+            faceThumbnail(canvas, current.position.x * resolution, (headY + height * 0.015) * resolution, height * 0.19 * resolution));
+        } catch { /* Ảnh xem thử không chặn model. */ }
+      };
+      const show = (emotion: StageEmotion | null, preview = false) => {
+        clearTimeout(previewTimer);
+        clearTimeout(snapshotTimer);
+        setExpressionError(false);
+        const source = emotion && emotion !== 'neutral' && (preview || preferences.enabled)
+          ? faceSource(emotion, choices, preferences, builtin) : { kind: 'none' as const };
+        faceBlend.show(source.kind === 'builtin' ? emotion : null);
+        if (source.kind === 'file') void controller?.show(source.choice.id);
+        else controller?.reset();
+        // Xem thử xong thì về lại cảm xúc của cuộc trò chuyện (hoặc mặt bình thường).
+        if (preview && emotion) snapshotTimer = setTimeout(() => snapshot(emotion), 1200);
+        if (preview) previewTimer = setTimeout(() => show(emotionRef.current?.emotion ?? null), 6000);
+      };
+      showEmotion.current = emotion => show(emotion);
+      if (emotionRef.current) show(emotionRef.current.emotion);
+      const unwatchExpressions = watchExpressions(character.id, value => {
+        preferences = value;
+        show(emotionRef.current?.emotion ?? null);
+      }, emotion => show(emotion, true));
+      disposeExpressions = () => {
+        clearTimeout(previewTimer);
+        clearTimeout(snapshotTimer);
+        unwatchExpressions();
+        controller?.dispose();
+        showEmotion.current = () => {};
+      };
+      let effects = readEffects(character.id);
+      let lastPointer = -Infinity;
+      const unwatchEffects = watchEffects(character.id, value => {
+        effects = value;
+        internal.focusController.focus(0, 0, true);
+      });
+      const idle = controlIdle(internal.motionManager, motionChoices(internal.motionManager.definitions), () => setIdleError(true));
+      idle.select(readIdle(character.id));
+      idle.enable(moving());
+      const unwatchIdle = watchIdle(character.id, value => { setIdleError(false); idle.select(value); });
+      disposeIdle = () => { unwatchEffects(); unwatchIdle(); idle.dispose(); };
+      let touchId: number | null = null;
+      // Nhìn theo con trỏ ở mọi chỗ trên trang như AIRI. Trên điện thoại, ngón tay đang giữ trên màn hình đóng
+      // vai con trỏ; trên máy tính thì chạm dùng để kéo nhân vật nên không tính.
+      const onLook = (event: PointerEvent) => {
+        if (!moving() || !effects.cursor) return;
+        if (event.pointerType === "touch") {
+          if (!compact.matches) return;
+          if (event.type === "pointerdown") touchId = event.pointerId;
+          if (event.pointerId !== touchId) return;
+        }
+        lastPointer = performance.now();
+        const point = local(event);
+        const headY = current.position.y - originalHeight * current.scale.y * CHARACTER.headHeight;
+        const target = lookTarget(point.x, point.y, current.position.x, headY, box.width, box.height);
+        internal.focusController.focus(target.x, target.y);
+      };
+      const onTouchEnd = (event: PointerEvent) => {
+        if (touchId === null || event.pointerId !== touchId) return;
+        touchId = null;
+        lastPointer = -Infinity;
+        internal.focusController.focus(0, 0);
+      };
+      const onLookAway = () => { touchId = null; lastPointer = -Infinity; internal.focusController.focus(0, 0); };
+
+      const core = internal.coreModel as { setParameterValueById: (id: string, value: number) => void };
+      const liveCore = internal.coreModel;
+      const beatParameters = ['ParamAngleX', 'ParamAngleY', 'ParamAngleZ'].map(id => {
+        const index = liveCore.getParameterIndex?.(id);
+        return { id, supported: index !== undefined && index >= 0 && index < liveCore.getParameterCount() };
+      });
+      let mouth = 0;
+      const idleEyes = new IdleEyes();
+      const eyeParameters = ['ParamEyeBallX', 'ParamEyeBallY'].map(id => {
+        const index = liveCore.getParameterIndex?.(id);
+        return { id, supported: index !== undefined && index >= 0 && index < liveCore.getParameterCount() };
+      });
+      const conversationMotion = new CompanionMotion();
+      internal.on("beforeModelUpdate", () => {
+        // Keep expression fades alive when body motion is paused for reduced motion.
+        if (!moving()) manager?.update(liveCore, performance.now());
+        const cursorActive = effects.cursor && (touchId !== null || performance.now() - lastPointer < 3000);
+        // AIRI separates idle gaze from pointer tracking. Blend ownership of the eye
+        // parameters so an authored idle cannot pin them at an extreme value.
+        const eyes = idleEyes.step(app!.ticker.deltaMS / 1000, effects.idleEyes && !cursorActive);
+        [eyes.x, eyes.y].forEach((value, i) => {
+          if (eyeParameters[i].supported && eyes.weight > 0.001) liveCore.setParameterValueById(eyeParameters[i].id, value, eyes.weight);
+        });
+        // Mặt dựng sẵn đè lên mắt khi chờ (mặt nhìn đi chỗ khác mới thấy được), rồi mới cộng nhịp đầu bên dưới.
+        const faceMouth = face.apply(faceBlend.step(app!.ticker.deltaMS / 1000));
+        if (moving()) {
+          const pose = musicPose(performance.now());
+          const conversation = conversationMotion.step(activityRef.current, app!.ticker.deltaMS / 1000, voiceMouth());
+          [pose.yaw * conversation.musicWeight + eyes.x * eyes.weight * 12,
+            pose.pitch * conversation.musicWeight + conversation.pitch + eyes.y * eyes.weight * 8,
+            pose.roll * conversation.musicWeight + conversation.roll].forEach((value, i) => {
+            if (beatParameters[i].supported && value) liveCore.addParameterValueById(beatParameters[i].id, value);
+          });
+        }
+        const target = voiceMouth();
+        mouth += (target - mouth) * (target > mouth ? 0.7 : 0.45);
+        // Ép trạng thái miệng sau motion để model không nói khi âm thanh đang im lặng.
+        const open = Math.max(mouth < 0.01 ? 0 : mouth, faceMouth);
+        for (const parameter of mouthParameters) core.setParameterValueById(parameter, open);
+      });
+      app.ticker.maxFPS = stageQuality(compact.matches, window.devicePixelRatio, qualityPreference).fps;
+      let still = false;
+      let captured = false;
+      app.ticker.add(() => {
+        idle.enable(moving());
+        withCharacterEffects(internal, effects, () => {
+          if (moving()) {
+            still = false;
+            current.update(Math.min(app!.ticker.deltaMS, 50));
+          } else {
+            if (!still) {
+              internal.focusController.focus(0, 0, true);
+              still = true;
+            }
+            // Vẫn áp dụng pose và miệng theo âm thanh khi thời gian motion đứng yên.
+            internal.update(0, 0);
+          }
+        });
+        if (!captured && previewRef.current) {
+          captured = true;
+          try { app!.renderer.render(app!.stage); previewRef.current(character.id, characterThumbnail(canvas)); } catch { /* Ảnh xem trước không chặn model. */ }
+        }
+      });
+
+      let contextLost = false;
+      const visible = () => document.hidden || contextLost ? app?.stop() : app?.start();
+      const lost = (event: Event) => { event.preventDefault(); contextLost = true; app?.stop(); setStatus("error"); };
+      container.addEventListener("wheel", onWheel, { passive: false });
+      container.addEventListener("pointerdown", onPointerDown);
+      container.addEventListener("pointermove", onPointerMove);
+      container.addEventListener("pointerup", onPointerEnd);
+      container.addEventListener("pointercancel", onPointerEnd);
+      container.addEventListener("dblclick", onDoubleClick);
+      container.addEventListener("mousedown", onMiddleButton);
+      container.addEventListener("auxclick", onMiddleButton);
+      window.addEventListener("pointerdown", onLook);
+      window.addEventListener("pointermove", onLook);
+      window.addEventListener("pointerup", onTouchEnd);
+      window.addEventListener("pointercancel", onTouchEnd);
+      window.addEventListener("blur", onLookAway);
+      document.documentElement.addEventListener("pointerleave", onLookAway);
+      document.addEventListener("visibilitychange", visible);
+      canvas.addEventListener("webglcontextlost", lost);
+      compact.addEventListener?.("change", fit);
+      removeEvents = () => {
+        container.removeEventListener("wheel", onWheel);
+        container.removeEventListener("pointerdown", onPointerDown);
+        container.removeEventListener("pointermove", onPointerMove);
+        container.removeEventListener("pointerup", onPointerEnd);
+        container.removeEventListener("pointercancel", onPointerEnd);
+        container.removeEventListener("dblclick", onDoubleClick);
+        container.removeEventListener("mousedown", onMiddleButton);
+        container.removeEventListener("auxclick", onMiddleButton);
+        container.classList.remove("dragging");
+        window.removeEventListener("pointerdown", onLook);
+        window.removeEventListener("pointermove", onLook);
+        window.removeEventListener("pointerup", onTouchEnd);
+        window.removeEventListener("pointercancel", onTouchEnd);
+        window.removeEventListener("blur", onLookAway);
+        document.documentElement.removeEventListener("pointerleave", onLookAway);
+        document.removeEventListener("visibilitychange", visible);
+        canvas.removeEventListener("webglcontextlost", lost);
+        compact.removeEventListener?.("change", fit);
+        if (saveTimer !== undefined) {
+          window.clearTimeout(saveTimer);
+          writeCharacterView(view, character.id);
+        }
+      };
+      visible();
+      setStatus("ready");
+    }
+    void start().catch(() => {
+      if (!disposed) {
+        app?.stop();
+        setStatus("error");
+      }
+    });
+    return () => {
+      disposed = true;
+      stopMusicVibe();
+      observer?.disconnect();
+      removeEvents();
+      disposeIdle();
+      disposeExpressions();
+      app?.destroy(true, { children: true, texture: true, baseTexture: true });
+      objectUrls.forEach(url => URL.revokeObjectURL(url));
+    };
+  }, [attempt, character.id, qualityPreference.sharp, qualityPreference.smooth]);
+
+  return <div className="character-stage">
+    <div className="character-glow" aria-hidden="true" />
+    <div ref={host} className="character-canvas" style={{ visibility: status === "ready" ? "visible" : "hidden" }} />
+    {idleError && <p className="character-motion-error" role="status">Chưa tải được chuyển động. Hãy mở Nhân vật và chọn lại chuyển động.</p>}
+    {expressionError && <p className="character-motion-error" role="status">Chưa tải được biểu cảm. Hãy kiểm tra tệp biểu cảm của model.</p>}
+    {status !== "ready" && <div className="character-fallback">
+      {fallbackUrl ? <img src={fallbackUrl} alt={name} /> : <span>{name.charAt(0)}</span>}
+      <p role="status">{status === "loading" ? "Đang đưa nhân vật lên sân khấu…" : "Chưa hiển thị được nhân vật. Bạn vẫn có thể nhắn và nghe Peto."}</p>
+      {status === "error" && <button className="settings-button" onClick={() => setAttempt((v) => v + 1)}>Thử tải lại nhân vật</button>}
+    </div>}
+  </div>;
+}

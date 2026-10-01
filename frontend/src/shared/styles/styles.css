@@ -1,0 +1,28 @@
+/* Application stylesheet entry: keep import order for the existing cascade.
+   Feature styles live beside their components; Docs has its own entry. */
+@import './base.css';
+@import '../../app/sidebar.css';
+@import '../../features/chat/chat.css';
+@import '../../features/diagrams/diagramCard.css';
+@import '../../features/chat/messageContent.css';
+@import '../../features/chat/composer.css';
+@import '../../app/mobileShell.css';
+@import '../../app/account.css';
+@import '../../features/chat/tables.css';
+@import '../ui/dialog.css';
+@import '../../features/settings/settings.css';
+@import '../../features/imagine/imagine.css';
+@import './interactions.css';
+@import '../../features/chat/effortMenu.css';
+@import '../../features/settings/profile.css';
+@import '../../features/companion/companion.css';
+@import '../../features/companion/speech/hearing.css';
+@import '../../features/companion/speech/voice.css';
+@import '../../features/settings/memory.css';
+@import '../../features/settings/agent.css';
+@import '../../features/documents/documents.css';
+@import '../../features/companion/characters/controls.css';
+@import '../../features/companion/scenes.css';
+@import '../ui/loading.css';
+@import './touchTargets.css';
+@import '../../app/conversationControls.css';

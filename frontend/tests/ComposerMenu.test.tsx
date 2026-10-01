@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { expect, it, vi } from 'vitest';
-import ComposerMenu from '../src/ComposerMenu';
+import ComposerMenu from '../src/features/chat/ComposerMenu';
 
 it('keeps options usable when a touch browser blurs without a new focus target', () => {
   const onAttach = vi.fn();

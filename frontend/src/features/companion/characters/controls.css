@@ -1,0 +1,97 @@
+.idle-motion-picker { margin: 16px 0; padding: 16px; border: 1px solid var(--line); border-radius: 16px; background: var(--panel); min-width: 0; }
+.idle-motion-picker h3 { margin: 0; font-size: 15px; }
+.idle-motion-picker p { margin: 8px 0 0; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; line-height: 1.5; }
+.idle-motion-picker select { display: block; width: 100%; min-width: 0; margin-top: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); color: var(--text); font: inherit; text-overflow: ellipsis; }
+.idle-motion-picker select:focus-visible { outline: 2px solid #63bdd0; outline-offset: 2px; }
+.character-motion-error { position: absolute; bottom: 30px; left: 5%; right: 5%; padding: 10px; border-radius: 10px; background: #222e; color: #eee; font-size: 12px; text-align: center; }
+.character-effect-options { margin-top: 16px; border-top: 1px solid var(--line); }
+.character-effect-option { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 0; cursor: pointer; }
+.character-effect-option strong { display: block; font-size: 14px; font-weight: 500; }
+.character-effect-option small { display: block; color: var(--muted); font-size: 12px; line-height: 1.5; margin-top: 4px; }
+.character-effect-option input, .settings-switch input, .hearing-toggle input, .hearing-bar-toggle input {
+  appearance: none; -webkit-appearance: none; flex: 0 0 auto; position: relative;
+  width: 48px; height: 28px; margin: 0; padding: 0; border: 1px solid var(--line);
+  border-radius: 999px; background: var(--panel-2); cursor: pointer;
+  transition: background-color 160ms ease, border-color 160ms ease;
+}
+.character-effect-option input::before, .settings-switch input::before, .hearing-toggle input::before, .hearing-bar-toggle input::before {
+  content: ""; position: absolute; top: 2px; left: 2px; width: 22px; height: 22px;
+  border-radius: 50%; background: #fff; box-shadow: 0 1px 3px #0003;
+  transition: transform 160ms ease;
+}
+.character-effect-option input:checked, .settings-switch input:checked, .hearing-toggle input:checked, .hearing-bar-toggle input:checked { background: #219db5; border-color: #219db5; }
+.character-effect-option input:checked::before, .settings-switch input:checked::before, .hearing-toggle input:checked::before, .hearing-bar-toggle input:checked::before { transform: translateX(20px); }
+.character-effect-option input:focus-visible, .settings-switch input:focus-visible, .hearing-toggle input:focus-visible, .hearing-bar-toggle input:focus-visible { outline: 2px solid #63bdd0; outline-offset: 3px; }
+.character-effect-option input:disabled { cursor: default; opacity: .4; }
+@media (prefers-reduced-motion: reduce) {
+  .character-effect-option input, .character-effect-option input::before, .settings-switch input, .settings-switch input::before,
+  .hearing-toggle input, .hearing-toggle input::before, .hearing-bar-toggle input, .hearing-bar-toggle input::before { transition: none; }
+}
+.music-vibe-picker { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
+.music-vibe-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.music-vibe-strength { display: flex; flex-direction: column; gap: 8px; margin-top: 16px; font-size: 13px; }
+.music-vibe-strength input { width: 100%; accent-color: #63bdd0; }
+.beat-sync-dialog { width: min(980px, calc(100vw - 24px)); max-height: 90dvh; padding: 0; border: 1px solid var(--line); border-radius: 20px; background: var(--bg); color: var(--text); overflow: auto; }
+.beat-sync-dialog::backdrop { background: rgba(0,0,0,.65); }
+.beat-sync-layout { display: grid; grid-template-columns: 1.2fr 1fr; gap: 24px; padding: 24px; }
+.beat-sync-dialog h3 { font-size: 17px; margin: 0 0 12px; }
+.beat-sync-dialog p, .beat-sync-footer { color: var(--muted); font-size: 13px; line-height: 1.6; }
+.beat-sync-controls, .beat-sync-monitor { min-width: 0; }
+.beat-sync-advanced { margin: 20px 0; border-block: 1px solid var(--line); padding: 14px 0; }
+.beat-sync-advanced summary { cursor: pointer; }
+.beat-sync-spectrum { display: flex; align-items: flex-end; gap: 3px; height: 110px; padding: 12px; border-radius: 12px; background: var(--panel); }
+.beat-sync-spectrum span { flex: 1; min-width: 0; background: #63bdd0; border-radius: 3px; transition: height 75ms linear; }
+.beat-sync-monitor meter { display: block; width: 100%; height: 20px; margin-top: 6px; }
+.beat-sync-monitor label { display: block; font-size: 13px; margin: 16px 0; }
+.beat-sync-pulse { height: 180px; display: grid; place-items: center; overflow: hidden; background: var(--panel); border-radius: 16px; }
+.beat-sync-pulse span { width: 34px; height: 34px; border-radius: 50%; background: #63bdd0; opacity: .25; }
+.beat-sync-ring { animation: beat-sync-ring 550ms ease-out; }
+@keyframes beat-sync-ring { from { transform: scale(1); opacity: 1; box-shadow: 0 0 0 0 #63bdd080; } to { transform: scale(1.1); opacity: .25; box-shadow: 0 0 0 65px #63bdd000; } }
+.beat-sync-count { text-align: center; }
+.beat-sync-footer { padding: 0 24px 24px; }
+.beat-sync-footer a { display: block; color: inherit; margin-top: 8px; }
+@media (max-width: 640px) { .beat-sync-layout { grid-template-columns: 1fr; padding: 16px; } .beat-sync-monitor { grid-row: 1; } .beat-sync-pulse { height: 100px; } }
+@media (prefers-reduced-motion: reduce) {
+  .beat-sync-ring { animation: none; }
+  .beat-sync-pulse span[data-lit="true"] { opacity: .85; background: #8dd7e5; }
+  .beat-sync-spectrum span { transition: none; }
+}
+/* Mục biểu cảm (phương án B): chín thẻ cảm xúc 3 × 3, bấm thẻ để nhân vật làm mặt đó; nguồn của thẻ đang chọn ở dưới. */
+.expression-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 4px; }
+.expression-card { min-height: 42px; padding: 8px 6px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); color: var(--text); font: inherit; font-size: 13px; cursor: pointer; overflow-wrap: anywhere; }
+.expression-card:hover { border-color: var(--muted); }
+.expression-card[aria-pressed="true"] { border-color: #219db5; box-shadow: inset 0 0 0 1px #219db5; color: #63bdd0; }
+.expression-card:focus-visible { outline: 2px solid #63bdd0; outline-offset: 2px; }
+.expression-source { display: grid; grid-template-columns: 96px minmax(0, 1fr); align-items: center; gap: 12px; margin-top: 12px; padding: 12px; border-radius: 12px; background: var(--panel-2); }
+.expression-source-empty { grid-column: 1 / -1; }
+.expression-source-body { display: grid; gap: 8px; min-width: 0; }
+.expression-snapshot { display: grid; place-items: center; width: 96px; aspect-ratio: 1; overflow: hidden; border-radius: 10px; background: var(--bg); }
+.expression-snapshot img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.idle-motion-picker .expression-source p { margin: 0; }
+.expression-source .voice-field { margin: 0; }
+.idle-motion-picker > .expression-picker:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
+.import-review { width: min(800px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); padding: 0; border: 1px solid var(--line); border-radius: 20px; background: var(--panel); color: var(--text); overflow: auto; }
+.import-review::backdrop { background: #0009; }
+.import-review-body { padding: 0 24px 20px; }
+.import-review-model, .import-review-stats > div { background: var(--panel-2); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 8px; min-width: 0; }
+.import-review-model strong { overflow-wrap: anywhere; }
+.import-review-model span, .import-review-model small, .import-review-stats span, .import-review-stats small, .import-review-hint { color: var(--muted); }
+.import-review-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.import-review-stats strong { font-size: 26px; }
+.import-review-stats small { line-height: 1.5; }
+.import-review-issue-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.import-review-issue-head span { color: var(--muted); font-size: 14px; }
+.import-review-issues { list-style: none; padding: 0; display: grid; gap: 10px; }
+.import-review-issues > li { display: flex; gap: 12px; padding: 14px; border-radius: 12px; background: var(--panel-2); overflow-wrap: anywhere; }
+.import-review-issues > li > span { flex-shrink: 0; border-radius: 50%; width: 22px; height: 22px; text-align: center; background: #edbd46; color: #171717; font-weight: 700; }
+.import-review-issues > li[data-severity="error"] > span { background: #f18b8b; }
+.import-review-issues p { margin: 5px 0; line-height: 1.5; }
+.import-review-issues details { margin-top: 8px; font-size: 13px; }
+.import-review-hint, .import-review-ok { font-size: 13px; line-height: 1.6; }
+.import-review-actions { display: flex; justify-content: flex-end; gap: 12px; padding: 18px 24px; border-top: 1px solid var(--line); position: sticky; bottom: 0; background: var(--panel); }
+.import-review-actions .import-confirm { background: var(--panel-2); font-weight: 600; }
+@media (max-width: 600px) {
+  .import-review-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .import-review-body { padding: 0 16px 16px; }
+  .import-review-actions { padding: 14px 16px; flex-wrap: wrap; }
+}

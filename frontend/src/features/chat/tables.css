@@ -1,0 +1,48 @@
+/* Trạng thái và nội dung dài */
+.bubble a { color: var(--accent); text-underline-offset: 3px; }
+.bubble .file-chip { color: var(--text); }
+/* Bảng như của Claude: khung bo góc cuộn ngang, chỉ kẻ ngang giữa các hàng. Ô không cắt giữa chữ: .bubble để
+   overflow-wrap: anywhere, và thừa kế nó thì trên điện thoại mọi cột co tới một ký tự, chữ bẻ thành "In / p / ut". */
+.table-scroll { overflow-x: auto; max-width: 100%; margin: 12px 0; border: 1px solid var(--line); border-radius: 12px; }
+.table-scroll table { border-collapse: collapse; font-size: 14px; line-height: 1.5; min-width: 100%; }
+.table-scroll th, .table-scroll td {
+  min-width: 7.5em;
+  max-width: 22em;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+  overflow-wrap: normal;
+  text-align: left;
+  vertical-align: top;
+}
+.table-scroll td.wide { min-width: 14em; }
+.table-scroll th { background: var(--panel); font-weight: 600; white-space: nowrap; }
+.table-scroll tr:last-child td { border-bottom: 0; }
+.message-status, .composer-note { color: var(--muted); font-size: 12px; }
+.message-status { border-top: 1px solid var(--line); padding-top: 8px; margin-top: 10px; }
+.composer-note { margin: 8px 4px 0; line-height: 1.5; }
+.loading-chat { color: var(--muted); text-align: center; margin: auto; }
+.load-more, .dialog-actions button {
+  padding: 9px 12px; background: var(--panel-2); color: var(--text);
+  border: 1px solid var(--line); border-radius: 10px; cursor: pointer; font: inherit;
+}
+.jump-latest {
+  align-self: center; margin-top: -40px; z-index: 2; padding: 0;
+  display: grid; place-items: center; width: 36px; height: 36px; flex-shrink: 0;
+  border: 1px solid var(--line); border-radius: 50%; background: var(--panel); color: var(--text); cursor: pointer;
+  box-shadow: 0 2px 8px #0002;
+}
+.jump-latest:hover { background: var(--panel-2); }
+.jump-latest:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.error { display: flex; align-items: flex-start; gap: 8px; overflow-wrap: anywhere; background: var(--panel); }
+.notice { color: var(--muted); border-color: var(--line); background: var(--panel); }
+.dismiss-error { margin-left: auto; flex-shrink: 0; display: grid; place-items: center; min-width: 36px; min-height: 36px; padding: 0; border: 0; border-radius: 8px; background: none; color: inherit; cursor: pointer; font-size: 22px; }
+.dismiss-error:hover { background: var(--panel-2); }
+.dismiss-error:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+.confirm-dialog {
+  width: min(420px, calc(100% - 32px)); padding: 24px; color: var(--text);
+  background: var(--panel); border: 1px solid var(--line); border-radius: 18px;
+}
+.confirm-dialog::backdrop { background: rgba(0, 0, 0, 0.65); }
+.confirm-dialog h2 { margin: 0; font-size: 20px; }
+.confirm-dialog p { color: var(--muted); overflow-wrap: anywhere; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }

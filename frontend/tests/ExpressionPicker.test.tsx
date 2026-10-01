@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
-import ExpressionPicker from '../src/ExpressionPicker';
-import { BUILTIN_FACE, publishSnapshot, readExpressions, watchExpressions } from '../src/characterExpressions';
+import ExpressionPicker from '../src/features/companion/characters/ExpressionPicker';
+import { BUILTIN_FACE, publishSnapshot, readExpressions, watchExpressions } from '../src/features/companion/characters/characterExpressions';
 afterEach(() => localStorage.clear());
 
 it('nine emotion cards preview on the stage, and the selected card’s source can be changed', () => {

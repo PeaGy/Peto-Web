@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import Docs from '../src/Docs';
+import Docs from '../src/features/docs/Docs';
 
 const pages = [
   { slug: 'bat-dau', title: 'Bắt đầu cùng Peto', group: 'Bắt đầu', description: 'Một nơi để trò chuyện.', keywords: [], body: '## Mở Peto\nNội dung.' },
@@ -138,7 +138,8 @@ describe('trang bài', () => {
     history.replaceState({}, '', '/docs/khong-co/');
     render(<Docs />);
     expect(await screen.findByRole('heading', { level: 1, name: 'Không tìm thấy bài viết' })).toBeTruthy();
-    expect(document.title).toBe('Không tìm thấy bài · Peto Docs');
+    // Tiêu đề tab cập nhật trong effect sau khi render; chờ nó khi cả bộ test chạy song song.
+    await waitFor(() => expect(document.title).toBe('Không tìm thấy bài · Peto Docs'));
   });
 });
 

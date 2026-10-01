@@ -1,10 +1,10 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest';
 import { preloadLazyParts } from './lazyParts';
-import App from '../src/App';
-import * as api from '../src/api';
-import * as documentApi from '../src/documentApi';
-import { DiagramCard, DiagramContext } from '../src/DiagramCard';
+import App from '../src/app/App';
+import * as api from '../src/shared/api/api';
+import * as documentApi from '../src/features/documents/documentApi';
+import { DiagramCard, DiagramContext } from '../src/features/diagrams/DiagramCard';
 
 // Mermaid thật cần trình duyệt đo chữ; ở đây thay bằng bản giả trả SVG có viewBox, đủ để kiểm tra thẻ và bảng.
 const mermaid = vi.hoisted(() => ({
@@ -15,9 +15,9 @@ const mermaid = vi.hoisted(() => ({
   }),
 }));
 vi.mock('mermaid', () => ({ default: mermaid }));
-vi.mock('../src/documentApi', async original => ({ ...await original<typeof import('../src/documentApi')>(), listDocuments: vi.fn(), getDocument: vi.fn() }));
-vi.mock('../src/api', async (original) => ({
-  ...await original<typeof import('../src/api')>(),
+vi.mock('../src/features/documents/documentApi', async original => ({ ...await original<typeof import('../src/features/documents/documentApi')>(), listDocuments: vi.fn(), getDocument: vi.fn() }));
+vi.mock('../src/shared/api/api', async (original) => ({
+  ...await original<typeof import('../src/shared/api/api')>(),
   getAuthState: vi.fn(), listConversations: vi.fn(), getMessages: vi.fn(), conversationVersions: vi.fn(),
   listImagineJobs: vi.fn(), listAgentDevices: vi.fn(), getCompanionMemory: vi.fn(),
 }));

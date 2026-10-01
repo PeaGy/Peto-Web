@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { expect, it, vi } from 'vitest';
-import DocumentArtifactCard from '../src/DocumentArtifactCard';
-import type { DocumentArtifact } from '../src/api';
+import DocumentArtifactCard from '../src/features/documents/DocumentArtifactCard';
+import type { DocumentArtifact } from '../src/shared/api/api';
 
 const artifact: DocumentArtifact = { id: 'D1', title: 'Bài nghị luận', filename: 'Bài nghị luận.docx', format: 'docx', style: 'essay', pages: 3, version: 1 };
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { downsample, levelOf, Segmenter, thresholdFor, thresholdLevel, wavFromSamples } from '../src/hearingAudio';
+import { downsample, levelOf, Segmenter, thresholdFor, thresholdLevel, wavFromSamples } from '../src/features/companion/speech/hearingAudio';
 
 const RATE = 16000;
 

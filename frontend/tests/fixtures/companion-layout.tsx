@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import CharacterPicker from '../../src/CharacterPicker';
+import CharacterPicker from '../../src/features/companion/characters/CharacterPicker';
 import { createRoot } from 'react-dom/client';
-import Companion from '../../src/Companion';
-import { DEFAULT_CHARACTER } from '../../src/characterLibrary';
-import { saveScenePreference } from '../../src/sceneLibrary';
-import '../../src/styles.css';
+import Companion from '../../src/features/companion/Companion';
+import { DEFAULT_CHARACTER } from '../../src/features/companion/characters/characterLibrary';
+import { saveScenePreference } from '../../src/features/companion/sceneLibrary';
+import '../../src/shared/styles/styles.css';
 const character = { ...DEFAULT_CHARACTER, id: 'test-companion-layout' };
 saveScenePreference(character.id, { id: 'room', dim: 10, blur: 0 });
 const originalFetch = window.fetch.bind(window);

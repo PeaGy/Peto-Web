@@ -1,0 +1,16 @@
+.loading-spinner {
+  display: inline-block;
+  width: 28px;
+  height: 28px;
+  border: 3px solid color-mix(in srgb, var(--muted) 25%, transparent);
+  border-top-color: var(--text);
+  border-radius: 50%;
+  animation: loading-spin 0.85s linear infinite;
+}
+@keyframes loading-spin { to { transform: rotate(360deg); } }
+
+/* Chỗ của Tạo ảnh, Companion hay nội dung Cài đặt trong lúc tệp của nó tải lần đầu (hay tải hỏng, xem LazyBoundary). */
+.view-loading { flex: 1; min-width: 0; display: grid; place-content: center; justify-items: center; gap: 12px; padding: 24px; color: var(--muted); text-align: center; }
+.view-loading p { margin: 0; max-width: 36ch; line-height: 1.5; }
+.settings-loading { display: grid; place-items: center; min-height: 160px; }
+

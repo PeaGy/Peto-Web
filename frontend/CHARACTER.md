@@ -29,7 +29,7 @@ không chạy script hoặc tải tài nguyên mạng do model cung cấp. Bỏ 
 VRM phải là GLB có phần mở rộng VRM và tài nguyên nhúng. Thư viện không tải model của người dùng lên VPS.
 
 VRM có tư thế nghỉ, chớp mắt, nhìn theo con trỏ và biểu cảm miệng `aa` theo WAV đang phát. Model cần có
-các biểu cảm tương ứng. Tư thế tay được tính theo hướng xương thực trong `src/vrmPose.ts`, tránh xoay
+các biểu cảm tương ứng. Tư thế tay được tính theo hướng xương thực trong `src/features/companion/characters/vrmPose.ts`, tránh xoay
 ngược thành chữ V trên VRM 0 khi áp dụng góc dành cho VRM 1. Không cần nhập lại model sau bản sửa.
 Trên máy tính: cuộn để phóng, chuột giữa để dời, chuột phải để xoay, bấm đúp để
 về khung ban đầu. Bản đầu chưa nhập animation VRMA hay lưu góc nhìn VRM. Live2D giữ góc nhìn riêng theo
@@ -40,7 +40,7 @@ https://github.com/moeru-ai/airi/blob/main/packages/stage-ui/src/stores/display-
 và https://github.com/moeru-ai/airi/tree/main/packages/stage-ui/src/components/scenarios/dialogs/model-selector .
 API VRM: https://github.com/pixiv/three-vrm/tree/dev/packages/three-vrm .
 
-`src/characterConfig.ts` giữ cấu hình model mặc định. Model riêng nhập qua thư viện được đọc từ
+`src/features/companion/characters/characterConfig.ts` giữ cấu hình model mặc định. Model riêng nhập qua thư viện được đọc từ
 bộ nhớ trình duyệt mà không thay hệ thống chat/TTS. Tài nguyên đi kèm được phục vụ từ chính Peto,
 không gọi CDN hoặc AIRI khi người dùng mở trang.
 
@@ -69,7 +69,7 @@ vừa khung; góc nhìn lưu ở `peto-character-view`. Khi được cử độn
 thở, chớp mắt và nhìn theo con trỏ trên cả trang. Trên máy tính, chạm màn hình dùng để kéo nên không
 tính. Trên điện thoại (dưới 720px) khung khóa cứng, không phóng hay kéo, và ngón tay đang giữ trên màn
 hình đóng vai con trỏ.
-Phần tính toán nằm ở `src/characterView.ts`. `headHeight` trong `characterConfig.ts` là vị trí đầu
+Phần tính toán nằm ở `src/features/companion/characters/characterView.ts`. `headHeight` trong `characterConfig.ts` là vị trí đầu
 tính từ chân lên theo chiều cao model; thay model có tỉ lệ khác thì chỉnh lại số này.
 
 Không hỗ trợ WebGL hoặc tải model lỗi: dùng ảnh đại diện dự phòng, chat và giọng vẫn hoạt động.

@@ -1,10 +1,10 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
-import AgentSettings, { lastUsedLabel } from '../src/AgentSettings';
-import * as api from '../src/api';
+import AgentSettings, { lastUsedLabel } from '../src/features/settings/AgentSettings';
+import * as api from '../src/shared/api/api';
 
-vi.mock('../src/api', async (original) => ({
-  ...await original<typeof import('../src/api')>(),
+vi.mock('../src/shared/api/api', async (original) => ({
+  ...await original<typeof import('../src/shared/api/api')>(),
   listAgentDevices: vi.fn(), revokeAgentDevice: vi.fn(),
 }));
 

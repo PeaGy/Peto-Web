@@ -1,0 +1,34 @@
+/* Nút × đóng dùng chung của các hộp: Nhân vật, Bối cảnh, Kiểm tra model, Beat Sync, Tài liệu, xem ảnh ở Tạo ảnh.
+   Hộp Cài đặt có nút riêng (.settings-close); đừng xóa lớp này cùng khối của Cài đặt (lỡ xóa trong 33d52a4, 2026-09-29). */
+.dialog-close {
+  margin-left: auto;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: none;
+  color: var(--muted);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+.dialog-close:hover { color: var(--text); border-color: var(--line); background: var(--panel-2); }
+.dialog-actions .danger-button { color: var(--danger); border-color: var(--danger); }
+.dialog-actions .primary-button { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.confirm-dialog .consent-error { color: var(--danger); }
+button:focus-visible, a:focus-visible, .table-scroll:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 3px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .thinking-pulse { animation: none; color: var(--muted); background: none; }
+  * { scroll-behavior: auto !important; }
+}
+
+/* Avatar that cua Peto lay tu Discord application */
+.avatar-image {
+  object-fit: cover;
+  background: var(--panel-2);
+}
+

@@ -1,10 +1,10 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
-import AgentConnectDialog, { forgetAgentCode, takeAgentCode } from '../src/AgentConnectDialog';
-import * as api from '../src/api';
+import AgentConnectDialog, { forgetAgentCode, takeAgentCode } from '../src/features/settings/AgentConnectDialog';
+import * as api from '../src/shared/api/api';
 
-vi.mock('../src/api', async (original) => ({
-  ...await original<typeof import('../src/api')>(),
+vi.mock('../src/shared/api/api', async (original) => ({
+  ...await original<typeof import('../src/shared/api/api')>(),
   getAgentDevice: vi.fn(), answerAgentDevice: vi.fn(),
 }));
 

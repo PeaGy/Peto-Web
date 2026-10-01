@@ -6,8 +6,8 @@ import {
   sttModelOf,
   transcribeWithKey,
   type HearingProvider,
-} from '../src/hearingProviders';
-import type { KeyConfig } from '../src/voiceProviders';
+} from '../src/features/companion/speech/hearingProviders';
+import type { KeyConfig } from '../src/features/companion/speech/voiceProviders';
 
 const fetchMock = vi.fn();
 const provider = (id: string) => hearingProvider(id) as HearingProvider;

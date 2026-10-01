@@ -1,9 +1,9 @@
 // Development-only visual fixture; contains no user model or saved assets.
 import { createRoot } from 'react-dom/client';
 import { useState } from 'react';
-import CharacterImportReview from '../../src/CharacterImportReview';
-import type { Live2DImportReport } from '../../src/characterImport';
-import '../../src/styles.css';
+import CharacterImportReview from '../../src/features/companion/characters/CharacterImportReview';
+import type { Live2DImportReport } from '../../src/features/companion/characters/characterImport';
+import '../../src/shared/styles/styles.css';
 const report: Live2DImportReport = {
   name: 'Model mẫu', entry: 'Nhân vật/model.model3.json', bytes: 55 * 1024 * 1024, files: 25,
   motions: { found: ['motions/idle.motion3.json'], referenced: [] },

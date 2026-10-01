@@ -1,0 +1,8 @@
+/* Floating menus stay scrollable on short screens and do not scroll the chat behind them. */
+.composer-options { max-height: min(360px, 50dvh); overflow-y: auto; }
+.composer-options, .effort-options { overscroll-behavior: contain; }
+@media (pointer: coarse) {
+  .dismiss-error, .composer-plus, .effort-trigger, .studio-chip, .studio-options-toggle { min-height: 44px; min-width: 44px; }
+  .effort-option { min-height: 44px; }
+}
+

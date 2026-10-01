@@ -1,12 +1,12 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest';
 import { preloadLazyParts } from './lazyParts';
-import App from '../src/App';
-import * as api from '../src/api';
-import { loadHearingSettings, stopListening } from '../src/hearingEngine';
+import App from '../src/app/App';
+import * as api from '../src/shared/api/api';
+import { loadHearingSettings, stopListening } from '../src/features/companion/speech/hearingEngine';
 
-vi.mock('../src/api', async (original) => ({
-  ...await original<typeof import('../src/api')>(),
+vi.mock('../src/shared/api/api', async (original) => ({
+  ...await original<typeof import('../src/shared/api/api')>(),
   getAuthState: vi.fn(), listConversations: vi.fn(), getMessages: vi.fn(), sendMessage: vi.fn(),
   listImagineJobs: vi.fn(), getProfile: vi.fn(), getAppInfo: vi.fn(), getCompanion: vi.fn(),
   deleteConversation: vi.fn(),
@@ -21,7 +21,7 @@ const microphone = vi.hoisted(() => ({
     for (let index = 0; index < count; index += 1) this.onChunk?.(new Float32Array(1024).fill(amplitude));
   },
 }));
-vi.mock('../src/hearingCapture', () => ({
+vi.mock('../src/features/companion/speech/hearingCapture', () => ({
   captureSupported: () => true,
   openMicrophone: vi.fn(async (_deviceId: string, onChunk: (samples: Float32Array) => void) => {
     microphone.onChunk = onChunk;

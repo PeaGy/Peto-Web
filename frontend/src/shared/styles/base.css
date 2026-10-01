@@ -1,0 +1,143 @@
+/* Nền tối là mặc định. Nền sáng nằm ở [data-theme="light"]; index.html gắn
+   thuộc tính này trước khi React chạy để không bị nháy sáng lúc mở trang. */
+:root {
+  --bg: #141414;
+  --panel: #1a1a1a;
+  --panel-2: #262626;
+  --line: #2b2b2b;
+  --text: #ececec;
+  --muted: #9b9b9b;
+  --accent: #ffffff;
+  --on-accent: #141414;
+  --user: #262626;
+  --danger: #ff8a8a;
+  --code-bg: #1b1b1b;
+  --drop-active: #1f1f1f;
+  --overlay-soft: rgba(20, 20, 20, 0.72);
+  --shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
+  --shadow-strong: 12px 0 40px rgba(0, 0, 0, 0.35);
+  --scroll-thumb: #3a3a3a;
+  --scroll-thumb-hover: #525252;
+  --hl-keyword: #569cd6;
+  --hl-string: #ce9178;
+  --hl-number: #b5cea8;
+  --hl-comment: #6a9955;
+  --hl-function: #dcdcaa;
+  --hl-attr: #9cdcfe;
+  --inline-code: #f29b7b;
+  --dialog-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+  /* Nhãn trên thẻ nguồn giọng (Cài đặt → Giọng nói). */
+  --badge-bg: #262626;
+  --badge-fg: #d0d0d0;
+  --badge-official-bg: #0f3a45;
+  --badge-official-fg: #8fd8ea;
+  --badge-free-bg: #183324;
+  --badge-free-fg: #9ad9ad;
+  --badge-relay-bg: #3a2f16;
+  --badge-relay-fg: #f0d59a;
+  --voice-card-selected: #212121;
+  --voice-meter: #8fd8ea;
+  --voice-online: #5cc98a;
+  /* Menu tài khoản và nút chọn liền khối trong Cài đặt. */
+  --menu-bg: #242424;
+  --menu-line: #313131;
+  --menu-hover: rgba(255, 255, 255, 0.07);
+  --menu-shadow: 0 18px 44px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.25);
+  --seg-bg: #121212;
+  --seg-on: #2c2c2c;
+  /* Đường cong mạnh cho UI, lấy nguyên từ bộ chuẩn — đừng tự chế thêm. */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  --bg: #ffffff;
+  --panel: #f9f9f9;
+  --panel-2: #efefef;
+  --line: #e3e3e3;
+  --text: #0d0d0d;
+  --muted: #6b6b6b;
+  --accent: #0d0d0d;
+  --on-accent: #ffffff;
+  --user: #f0f0f0;
+  --danger: #c22f45;
+  --code-bg: #f6f6f6;
+  --drop-active: #f0f0f0;
+  --overlay-soft: rgba(255, 255, 255, 0.78);
+  --shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+  --shadow-strong: 12px 0 40px rgba(0, 0, 0, 0.12);
+  --scroll-thumb: #d4d4d4;
+  --scroll-thumb-hover: #b0b0b0;
+  --hl-keyword: #0000ff;
+  --hl-string: #a31515;
+  --hl-number: #098658;
+  --hl-comment: #008000;
+  --hl-function: #795e26;
+  --hl-attr: #001080;
+  --inline-code: #b43d1b;
+  --dialog-shadow: 0 24px 60px rgba(0, 0, 0, 0.16);
+  --badge-bg: #efefef;
+  --badge-fg: #3a3a3a;
+  --badge-official-bg: #dff3f8;
+  --badge-official-fg: #0b5566;
+  --badge-free-bg: #e2f4e8;
+  --badge-free-fg: #1d6b3a;
+  --badge-relay-bg: #fbf0d9;
+  --badge-relay-fg: #7a5410;
+  --voice-card-selected: #f1f1f1;
+  --voice-meter: #219db5;
+  --voice-online: #1d8a4a;
+  --menu-bg: #ffffff;
+  --menu-line: #e3e3e3;
+  --menu-hover: rgba(0, 0, 0, 0.05);
+  --menu-shadow: 0 18px 44px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.06);
+  --seg-bg: #ececec;
+  --seg-on: #ffffff;
+  color-scheme: light;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root { height: 100%; margin: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.6 "Segoe UI", system-ui, -apple-system, sans-serif;
+}
+
+/* Thanh cuộn mặc định của Windows quá dày và còn cả nút mũi tên.
+   Chromium bỏ qua ::-webkit-scrollbar ngay khi thấy scrollbar-width, nên phải để
+   nhánh webkit đứng một mình ở đây và đẩy thuộc tính chuẩn xuống @supports bên
+   dưới — đổi thứ tự là mất quyền chỉnh bề rộng lẫn bo góc.
+   Viền trong suốt cộng background-clip tạo khoảng đệm, cho thanh cuộn bo tròn
+   mảnh nằm giữa rãnh thay vì dán sát mép. */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+
+::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: var(--scroll-thumb);
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  border-width: 2px;
+  background: var(--scroll-thumb-hover);
+  background-clip: content-box;
+}
+
+/* Firefox không có ::-webkit-scrollbar nên chỉ nó chạy vào đây. Hai thuộc tính
+   này tự kế thừa xuống mọi vùng cuộn, khai báo một lần là đủ. */
+@supports not selector(::-webkit-scrollbar) {
+  html {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scroll-thumb) transparent;
+  }
+}
+
+.app { display: flex; height: 100dvh; }
+

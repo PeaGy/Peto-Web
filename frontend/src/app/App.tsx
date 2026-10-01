@@ -1,0 +1,1257 @@
+import { usePreferencesPersistence } from './usePreferencesPersistence';
+import LoginScreen from './LoginScreen';
+import { EditIcon } from '../shared/ui/EditIcon';
+import Sidebar from './Sidebar';
+import { ChatMessage } from '../features/chat/ChatMessage';
+import { Greeting } from '../features/chat/Greeting';
+import { ViewLoading } from '../shared/ui/ViewLoading';
+import { MenuIcon, PinIcon } from './navigationIcons';
+import { PetoAvatar, AccountAvatar, accountLine, accountSubtitle } from './accountUi';
+import { EFFORTS, THEMES, readStoredModel, readStoredEffort, readStoredTheme, readStoredCollapsed, type ThemeChoice, type AppView } from './preferences';
+import { MAX_FILES, MAX_MEDIA_FILES, MAX_FILE_BYTES, MAX_TOTAL_BYTES, isImageFile, isMediaFile, fileToBase64 } from '../features/chat/attachments';
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import '../shared/styles/styles.css';
+import { DiagramContext } from "../features/diagrams/DiagramCard";
+import { diagramBlocks } from "../features/diagrams/diagrams";
+import { diagramPanel } from "../features/diagrams/diagramPanelLazy";
+import LazyBoundary from "../shared/ui/LazyBoundary";
+import { preloadable } from "../shared/ui/preloadable";
+import { useLocalVoice } from "../features/companion/speech/LocalVoice";
+import type { VoiceTab } from "../features/companion/speech/VoiceSettings";
+import AgentConnectDialog, { forgetAgentCode, takeAgentCode } from "../features/settings/AgentConnectDialog";
+import AccountMenu, { placeAccountMenu, type AccountMenuPlace } from "./AccountMenu";
+import SettingsDialog, { CLOSED_SETTINGS, type SettingsSection, type SettingsView } from "../features/settings/SettingsDialog";
+import { Segmented, SettingsGroup, SettingsIcon, SettingsRow } from "../features/settings/settingsUi";
+import { useCharacters } from '../features/companion/characters/useCharacters';
+const CharacterPicker = lazy(() => import('../features/companion/characters/CharacterPicker'));
+import { readCharacterMotion, writeCharacterMotion, type CharacterMotion } from "../features/companion/characters/characterView";
+import Composer from "../features/chat/Composer";
+import TextEditDialog from '../shared/ui/TextEditDialog';
+import HistorySearch from './HistorySearch';
+import ConversationMenu from './ConversationMenu';
+import DocumentWorkspace from '../features/documents/DocumentWorkspace';
+import DocumentPanel, { RightPanelIcon, type DocumentPanelSelection } from '../features/documents/DocumentPanel';
+import type { DocumentDraftRequest } from '../features/documents/documentApi';
+import { type DraftFile } from "../features/chat/files";
+import { safeSources } from "../features/chat/WebSources";
+import {
+  UnauthorizedError,
+  confirmRoleplayAge,
+  deleteConversation,
+  getAppInfo,
+  getAuthState,
+  guestLogin,
+  getMessages,
+  listConversations,
+  updateConversation,
+  logout,
+  sendMessage,
+  type AppInfo,
+  type AuthState,
+  type ChatAttachment,
+  type Conversation,
+  type Effort,
+  type ImagineJob,
+  type Message,
+  type OutgoingAttachment,
+  type Persona,
+  type WebSearchMode,
+} from "../shared/api/api";
+
+// Tạo ảnh, Companion và nội dung Cài đặt tải riêng lúc mở lần đầu: phần lớn lượt vào chỉ để chat, và tệp JS chính càng
+// nhỏ thì điện thoại càng sớm thấy ô chat (đo ngày 2026-09-27). preload* gọi lúc rê chuột hay chạm vào nút mở.
+const imagine = preloadable(() => import("../features/imagine/Imagine"));
+const companion = preloadable(() => import("../features/companion/Companion"));
+const profileSettings = preloadable(() => import("../features/settings/ProfileSettings"));
+const voiceSettings = preloadable(() => import("../features/companion/speech/VoiceSettings"));
+const memorySettings = preloadable(() => import("../features/settings/MemorySettings"));
+const searchSettings = preloadable(() => import("../features/settings/SearchSettings"));
+const agentSettings = preloadable(() => import("../features/settings/AgentSettings"));
+const characterSettings = preloadable(() => import("../features/companion/characters/CharacterSettings"));
+const loadImagine = imagine.preload;
+const loadCompanion = companion.preload;
+const loadSettings = () => Promise.all([
+  profileSettings.preload(), voiceSettings.preload(), memorySettings.preload(), searchSettings.preload(),
+  agentSettings.preload(), characterSettings.preload(),
+]);
+// Tải trước: lỗi ở đây bỏ qua, lần mở thật sẽ tải lại và LazyBoundary lo phần báo lỗi.
+const preload = (load: () => Promise<unknown>) => () => void load().catch(() => {});
+const Imagine = imagine.View;
+const Companion = companion.View;
+const ProfileSettings = profileSettings.View;
+const VoiceSettings = voiceSettings.View;
+const MemorySettings = memorySettings.View;
+const SearchSettings = searchSettings.View;
+const AgentSettings = agentSettings.View;
+const CharacterSettings = characterSettings.View;
+
+// Old messages keep their rendered Markdown while the draft or current reply changes.
+export default function App() {
+  const [auth, setAuth] = useState<AuthState | null>(null);
+  const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [guestBusy, setGuestBusy] = useState(false);
+  // Liên kết do peto login in ra mang ?agent_code=; mã được giữ qua lúc đăng nhập chuyển hướng.
+  const [agentCode, setAgentCode] = useState<string | null>(takeAgentCode);
+
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [conversationMenu, setConversationMenu] = useState<{item:Conversation; left:number; top:number} | null>(null);
+  const [renameTarget, setRenameTarget] = useState<Conversation | null>(null);
+  const [renameText, setRenameText] = useState('');
+  const [editTarget, setEditTarget] = useState<Message | null>(null);
+  const [editText, setEditText] = useState('');
+  const [retryAvailable, setRetryAvailable] = useState(false);
+  const retryRevision = useRef<{ target: Message; text: string } | undefined>(undefined);
+  const [metadataBusy, setMetadataBusy] = useState(false);
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [draft, setDraft] = useState("");
+  const [documentRequest, setDocumentRequest] = useState<DocumentDraftRequest | null>(null);
+  const [documentSelection, setDocumentSelection] = useState<{ id: string; version: number; key: number } | null>(null);
+  const [documentRefresh, setDocumentRefresh] = useState(0);
+  const [documentPanelOpen, setDocumentPanelOpen] = useState(false);
+  const [documentPanelExpanded, setDocumentPanelExpanded] = useState(false);
+  const [documentPreview, setDocumentPreview] = useState<DocumentPanelSelection | null>(null);
+  const closeDocumentPanel = useCallback(() => { setDocumentPanelOpen(false); setDocumentPanelExpanded(false); }, []);
+  // Sơ đồ đang mở ở bảng bên phải (mã Mermaid đã chuẩn hóa). Bảng sơ đồ và bảng tài liệu dùng chung chỗ bên phải, nên mở
+  // bảng này thì đóng bảng kia.
+  const [diagram, setDiagram] = useState<string | null>(null);
+  const closeDiagram = useCallback(() => setDiagram(null), []);
+  const diagramApi = useMemo(() => ({
+    current: diagram,
+    open: (code: string) => { setDocumentPanelOpen(false); setDocumentPanelExpanded(false); setDiagram(code); },
+  }), [diagram]);
+  const previewDocument = useCallback((item: { id: string; version: number }) => {
+    setDocumentPreview({ id: item.id, version: item.version, key: Date.now() });
+    setDiagram(null);
+    setDocumentPanelOpen(true);
+  }, []);
+  const editDocument = useCallback((item: { id: string; version: number }) => {
+    setDocumentSelection({ id: item.id, version: item.version, key: Date.now() });
+  }, []);
+  const [draftFiles, setDraftFiles] = useState<DraftFile[]>([]);
+  const [effort, setEffort] = useState<Effort>(readStoredEffort);
+  const [model, setModel] = useState<string>(readStoredModel);
+  const [webSearch, setWebSearch] = useState<WebSearchMode>("auto");
+
+  const [streaming, setStreaming] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(readStoredCollapsed);
+  const [loadingConversation, setLoadingConversation] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingList, setLoadingList] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Conversation | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  // Chế độ của hội thoại đang mở; hội thoại mới thì là lựa chọn trong menu dấu cộng, gửi tin đầu là chốt.
+  const [persona, setPersona] = useState<Persona>("assistant");
+  const [consentOpen, setConsentOpen] = useState(false);
+  const [consentBusy, setConsentBusy] = useState(false);
+  const [consentError, setConsentError] = useState<string | null>(null);
+  const [showJump, setShowJump] = useState(false);
+  const [stopping, setStopping] = useState(false);
+  const [theme, setTheme] = useState<ThemeChoice>(readStoredTheme);
+  const [characterMotion, setCharacterMotion] = useState<CharacterMotion>(readCharacterMotion);
+  const characters = useCharacters();
+  const [characterPickerOpen, setCharacterPickerOpen] = useState(false);
+  const [sceneRequest, setSceneRequest] = useState(0);
+  const changeCharacterMotion = useCallback((value: CharacterMotion) => {
+    setCharacterMotion(value);
+    writeCharacterMotion(value);
+  }, []);
+  // Hộp Cài đặt: mở hay đóng, mục đang xem, và trên điện thoại đang ở danh sách mục hay trang của mục.
+  const [settings, setSettings] = useState<SettingsView>(CLOSED_SETTINGS);
+  const settingsOpen = settings.open;
+  const closeSettings = useCallback(() => setSettings((current) => ({ ...current, open: false })), []);
+  // Menu của ô tài khoản (như ChatGPT). Nó nằm ngoài thanh bên, vì thanh bên cắt phần tràn khi thu gọn còn 64px.
+  const [accountMenu, setAccountMenu] = useState<AccountMenuPlace | null>(null);
+  const accountRef = useRef<HTMLButtonElement>(null);
+  // Mở Cài đặt từ menu thì đóng xong trả tiêu điểm về ô tài khoản: mục trong menu đã gỡ nên hộp thoại không tự trả được.
+  const settingsReturn = useRef<HTMLElement | null>(null);
+  const closeAccountMenu = useCallback((focusBack: boolean) => {
+    setAccountMenu((current) => current && { ...current, closing: true });
+    if (focusBack) accountRef.current?.focus();
+  }, []);
+  const dropAccountMenu = useCallback(() => setAccountMenu(null), []);
+  const [view, setView] = useState<AppView>(() => {
+    const hash = typeof window !== "undefined" ? window.location.hash : "";
+    return hash === "#imagine" ? "imagine" : hash === "#companion" ? "companion" : "chat";
+  });
+  const [imageVisited, setImageVisited] = useState(view === "imagine");
+  useEffect(() => {
+    setDocumentPanelOpen(false); setDocumentPanelExpanded(false); setDocumentPreview(null); setDocumentSelection(null);
+    setDiagram(null);
+  }, [conversationId]);
+  useEffect(() => {
+    if (view !== 'chat') return;
+    const shortcut = (event: KeyboardEvent) => {
+      if (event.ctrlKey && event.altKey && event.code === 'KeyB' && !document.querySelector('.document-workspace[open], .settings-dialog[open]')) {
+        event.preventDefault(); setDocumentPanelOpen(value => !value); setDocumentPanelExpanded(false); setDiagram(null);
+      }
+    };
+    window.addEventListener('keydown', shortcut);
+    return () => window.removeEventListener('keydown', shortcut);
+  }, [view]);
+  const [companionVisited, setCompanionVisited] = useState(view === "companion");
+  // Giọng nói dùng chung cho Companion và mục Giọng nói trong Cài đặt. Chỉ dò 127.0.0.1 sau khi đã mở
+  // Companion hoặc lúc Cài đặt đang mở, để tab Trò chuyện không gọi gì ra máy.
+  const localVoice = useLocalVoice(companionVisited || settingsOpen);
+  // Thẻ đang mở của mục Giọng nói (Peto nói / Peto nghe); bảng Micro trong Companion mở thẳng thẻ Peto nghe.
+  const [voiceTab, setVoiceTab] = useState<VoiceTab>("noi");
+  // Nút "Xem" ở dòng "Peto vừa ghi nhớ" và đường dẫn trong bảng Micro mở thẳng mục của chúng, cả trên điện thoại.
+  const openMemorySettings = useCallback(() => setSettings({ open: true, section: "tri-nho", page: true }), []);
+  const openHearingSettings = useCallback(() => {
+    setVoiceTab("nghe");
+    setSettings({ open: true, section: "giong-noi", page: true });
+  }, []);
+  useEffect(() => {
+    if (settingsOpen || !settingsReturn.current) return;
+    settingsReturn.current.focus({ preventScroll: true });
+    settingsReturn.current = null;
+  }, [settingsOpen]);
+  // Bản sao chỉ để vẽ cột trái; Imagine.tsx mới là nơi tạo, xóa và giữ danh sách.
+  const [imagineJobs, setImagineJobs] = useState<ImagineJob[]>([]);
+  const [focusJobId, setFocusJobId] = useState<string | null>(null);
+  const clearFocusJob = useCallback(() => setFocusJobId(null), []);
+
+  const abortRef = useRef<AbortController | null>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const draftFilesRef = useRef<DraftFile[]>([]);
+  const loadRef = useRef<AbortController | null>(null);
+  const loadVersion = useRef(0);
+  const listVersion = useRef(0);
+  const listCount = useRef(50);
+  const nearBottom = useRef(true);
+  const messagesRef = useRef<HTMLDivElement>(null);
+  const deleteDialogRef = useRef<HTMLDialogElement>(null);
+  const consentDialogRef = useRef<HTMLDialogElement>(null);
+  const composerRef = useRef<HTMLFormElement>(null);
+  const chatDockRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const dock = chatDockRef.current;
+    const chat = dock?.parentElement;
+    if (!dock || !chat || typeof ResizeObserver === 'undefined') return;
+    const measure = () => chat.style.setProperty('--chat-dock-height', `${dock.getBoundingClientRect().height}px`);
+    const observer = new ResizeObserver(measure);
+    observer.observe(dock);
+    measure();
+    return () => observer.disconnect();
+  }, [auth?.authenticated, view]);
+  const composerBoxRef = useRef<HTMLDivElement>(null);
+  // Chỗ ô nhắn đứng lúc còn ở giữa màn hình, đo ngay trước khi gửi tin đầu.
+  const composerFrom = useRef<number | null>(null);
+  const composerMove = useRef<Animation | null>(null);
+  const authVersion = useRef(0);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const message = params.get("auth_error");
+    if (message) {
+      setAuthError(message);
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  }, []);
+
+  useEffect(() => {
+    void getAuthState()
+      .then(setAuth)
+      .catch(() => setAuth({ authenticated: false, login_configured: false }));
+  }, []);
+
+  // Avatar và tên lấy từ Discord application. Hỏng thì giữ chữ cái đầu, không
+  // để ảnh hưởng tới việc đăng nhập hay chat.
+  useEffect(() => {
+    void getAppInfo()
+      .then(setAppInfo)
+      .catch(() => setAppInfo(null));
+  }, []);
+
+  usePreferencesPersistence({ effort, model, collapsed, theme });
+
+  useEffect(() => {
+    draftFilesRef.current = draftFiles;
+  }, [draftFiles]);
+
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+      loadRef.current?.abort();
+      for (const item of draftFilesRef.current) {
+        if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+      }
+    };
+  }, []);
+
+  /** Phiên hết hạn giữa chừng: quay về màn hình đăng nhập thay vì báo lỗi lạ. */
+  const handleUnauthorized = useCallback(() => {
+    setDocumentRequest(null);
+    setDocumentSelection(null);
+    closeDocumentPanel(); setDocumentPreview(null); setDiagram(null);
+    authVersion.current += 1;
+    loadVersion.current += 1;
+    listVersion.current += 1;
+    loadRef.current?.abort();
+    abortRef.current?.abort();
+    // Giữ lại danh sách cách đăng nhập đã biết. Dựng state mới toanh ở đây làm
+    // `providers` thành undefined, nên đăng xuất xong là nút Google biến mất
+    // tới khi F5 gọi lại /api/auth/me. Đăng xuất không đổi gì ở phía máy chủ.
+    setAuth((prev) => ({
+      authenticated: false,
+      login_configured: true,
+      providers: prev?.providers,
+    }));
+    setMessages([]);
+    setConversations([]);
+    setSearchOpen(false);
+    setConversationMenu(null);
+    setRenameTarget(null);
+    setRenameText("");
+    setEditTarget(null);
+    setEditText("");
+    setRetryAvailable(false);
+    retryRevision.current = undefined;
+    setConversationId(null);
+    setDraft("");
+    setNotice(null);
+    setWebSearch("auto");
+    setPersona("assistant");
+    setConsentOpen(false);
+    for (const item of draftFilesRef.current) if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+    setDraftFiles([]);
+    setLoadingConversation(false);
+    setLoadingList(false);
+    // Rác của tài khoản trước. Máy chủ vẫn lọc theo owner nên không lộ nội dung
+    // của ai, nhưng người kế tiếp không có lý do gì phải thấy danh sách ảnh cũ
+    // nhấp nháy, hay ô soạn bị khóa vì một lần tải hỏng của người trước.
+    setImagineJobs([]);
+    setFocusJobId(null);
+    setLoadFailed(false);
+    setError(null);
+    setDeleteTarget(null);
+    setSettings(CLOSED_SETTINGS);
+    setAccountMenu(null);
+    setHasMore(false);
+    listCount.current = 50;
+    setAuthError("Phiên đăng nhập đã hết hạn hoặc tài khoản không còn được cho phép.");
+  }, []);
+
+  const refreshConversations = useCallback(async () => {
+    const version = ++listVersion.current;
+    setLoadingList(true);
+    try {
+      const all: Conversation[] = [];
+      let more = true;
+      while (more && all.length < listCount.current) {
+        const page = await listConversations(all.length, 50, '');
+        if (version !== listVersion.current) return;
+        all.push(...page.conversations);
+        more = page.has_more;
+        if (!page.conversations.length) break;
+      }
+      setConversations(all);
+      setHasMore(more);
+    } catch (err) {
+      if (version !== listVersion.current) return;
+      if (err instanceof UnauthorizedError) handleUnauthorized();
+      else setError("Không tải được danh sách hội thoại. Thử tải lại nhé.");
+    } finally {
+      if (version === listVersion.current) setLoadingList(false);
+    }
+  }, [handleUnauthorized]);
+
+  const waitingForTitle = conversations.some(item =>
+    item.id === conversationId && (item.title_state === 'pending' ||
+      (item.title_state === 'temporary' && (item.title_attempts || 0) < 3)));
+  useEffect(() => {
+    if (!auth?.authenticated || view !== 'chat' || streaming || !waitingForTitle) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    let attempts = 0;
+    const poll = async () => {
+      try {
+        const page = await listConversations();
+        if (cancelled) return;
+        setConversations(current => current.map(item => {
+          const fresh = page.conversations.find(row => row.id === item.id);
+          return fresh ? { ...item, title: fresh.title, title_state: fresh.title_state, title_attempts: fresh.title_attempts } : item;
+        }));
+      } catch { /* A later refresh can recover; do not interrupt typing. */ }
+      if (!cancelled && ++attempts < 12) timer = setTimeout(poll, 2500);
+    };
+    timer = setTimeout(poll, 1500);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [auth?.user?.id, auth?.authenticated, view, conversationId, streaming, waitingForTitle]);
+
+  useEffect(() => {
+    if (auth?.authenticated) void refreshConversations();
+  }, [auth?.authenticated, refreshConversations]);
+
+  // Ô chat đã hiện thì lúc rảnh tải sẵn Tạo ảnh, Companion và Cài đặt: lần mở đầu khỏi chờ tệp (khoảng 0,3 giây trên 4G
+  // chậm, đo ngày 2026-09-27). Bỏ qua khi người dùng bật tiết kiệm dữ liệu hay mạng chỉ 2G.
+  useEffect(() => {
+    if (!auth?.authenticated) return;
+    const connection = (navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string } }).connection;
+    if (connection?.saveData || /2g/.test(connection?.effectiveType ?? "")) return;
+    let idle = 0;
+    const warm = () => {
+      preload(loadSettings)();
+      preload(loadImagine)();
+      preload(loadCompanion)();
+    };
+    const timer = window.setTimeout(() => {
+      idle = window.requestIdleCallback ? window.requestIdleCallback(warm, { timeout: 5000 }) : window.setTimeout(warm, 0);
+    }, 4000);
+    return () => {
+      window.clearTimeout(timer);
+      if (window.cancelIdleCallback) window.cancelIdleCallback(idle);
+      else window.clearTimeout(idle);
+    };
+  }, [auth?.authenticated]);
+
+  useEffect(() => {
+    if (nearBottom.current) bottomRef.current?.scrollIntoView({ behavior: "instant", block: "end" });
+    else setShowJump(true);
+  }, [messages, streaming]);
+
+  useEffect(() => {
+    if (deleteTarget) deleteDialogRef.current?.showModal();
+    else deleteDialogRef.current?.close();
+  }, [deleteTarget]);
+
+  useEffect(() => {
+    if (consentOpen) consentDialogRef.current?.showModal();
+    else consentDialogRef.current?.close();
+  }, [consentOpen]);
+
+  const addFiles = useCallback((list: FileList | File[]) => {
+    if (abortRef.current) return;
+    const incoming = Array.from(list);
+    setError(null);
+    setDraftFiles((prev) => {
+      const next = [...prev];
+      for (const file of incoming) {
+        if (next.length >= MAX_FILES) {
+          setError(`Mỗi tin chỉ gửi tối đa ${MAX_FILES} tệp`);
+          break;
+        }
+        if (isMediaFile(file) && next.filter((item) => isMediaFile(item.file)).length >= MAX_MEDIA_FILES) {
+          setError(`Mỗi tin chỉ gửi tối đa ${MAX_MEDIA_FILES} ảnh, PDF hoặc Word`);
+          continue;
+        }
+        if (file.size > MAX_FILE_BYTES) {
+          setError(`«${file.name}» quá nặng (tối đa 8 MB)`);
+          continue;
+        }
+        const duplicate = next.some(
+          (item) => item.file.name === file.name && item.file.size === file.size,
+        );
+        if (duplicate) continue;
+        if (next.reduce((total, item) => total + item.file.size, 0) + file.size > MAX_TOTAL_BYTES) {
+          setError("Tổng tệp đính kèm tối đa 16 MB mỗi tin.");
+          continue;
+        }
+        next.push({
+          id: crypto.randomUUID(),
+          file,
+          previewUrl: isImageFile(file) ? URL.createObjectURL(file) : null,
+        });
+      }
+      return next;
+    });
+  }, []);
+
+  function removeDraftFile(id: string) {
+    setDraftFiles((prev) => {
+      const target = prev.find((item) => item.id === id);
+      if (target?.previewUrl) URL.revokeObjectURL(target.previewUrl);
+      return prev.filter((item) => item.id !== id);
+    });
+  }
+
+  async function enterAsGuest() {
+    if (guestBusy) return;
+    setGuestBusy(true);
+    setAuthError(null);
+    try {
+      await guestLogin();
+      setAuth(await getAuthState());
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : "Chưa vào được. Thử lại nhé.");
+    } finally {
+      // Phải dọn cả khi thành công. App không unmount lúc đăng nhập xong, nên
+      // đăng xuất là thẻ này quay lại — bỏ sót ở đây thì nút kẹt "Đang vào…"
+      // vĩnh viễn và không ai bấm được nữa.
+      setGuestBusy(false);
+    }
+  }
+
+  // Cuộc trò chuyện còn trống thì lời chào và ô nhắn đứng chung giữa màn hình như
+  // Claude; có tin nhắn là ô nhắn về đáy (CSS .chat.empty-state).
+  const emptyChat = messages.length === 0 && !streaming && !loadingConversation && !loadFailed;
+  // Các sơ đồ của hội thoại theo thứ tự, để bảng sơ đồ chuyển qua lại; tin đang viết dở chưa tính.
+  const diagramCodes = useMemo(() => messages.flatMap((message, index) =>
+    message.role === 'assistant' && !(streaming && index === messages.length - 1) ? diagramBlocks(message.content) : []),
+  [messages, streaming]);
+  // Chế độ nhập vai chỉ dùng Peto (máy chủ cũng chặn), nên không hiện nút chọn model.
+  const models = persona === "roleplay" ? [] : auth?.user?.models ?? [];
+  const chosenModel = models.some((item) => item.key === model) ? model : "peto";
+  const supportedEfforts = models.find(item => item.key === chosenModel)?.efforts ?? ['low', 'medium', 'high'];
+  const effortOptions = EFFORTS.filter(item => item.value === 'auto' || supportedEfforts.includes(item.value));
+  const effectiveEffort = effortOptions.some(item => item.value === effort) ? effort : 'auto';
+
+  // Chỉ lần gửi tin đầu mới trượt ô nhắn xuống (FLIP): mắt người dùng đang ở đúng
+  // ô đó, để nó nhảy cóc là mất dấu. Mở hội thoại hay tạo cuộc mới là điều hướng,
+  // làm nhiều lần trong ngày, nên đổi ngay không hiệu ứng.
+  useLayoutEffect(() => {
+    const from = composerFrom.current;
+    composerFrom.current = null;
+    if (emptyChat) {
+      composerMove.current?.cancel();
+      return;
+    }
+    const form = composerRef.current;
+    const box = composerBoxRef.current;
+    if (from === null || !form || !box || typeof form.animate !== "function") return;
+    const distance = from - box.getBoundingClientRect().top;
+    // Điện thoại giữ ô nhắn ở đáy cả hai lúc, nên không có gì để trượt.
+    if (Math.abs(distance) < 1) return;
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches) {
+      // Giảm chuyển động: bỏ quãng trượt, chỉ để ô nhắn hiện dần ở chỗ mới.
+      composerMove.current = form.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 200, easing: "ease" });
+      return;
+    }
+    const easing = getComputedStyle(document.documentElement).getPropertyValue("--ease-in-out").trim();
+    composerMove.current = form.animate(
+      [{ transform: `translateY(${distance}px)` }, { transform: "none" }],
+      { duration: 300, easing: easing || "ease-in-out" },
+    );
+  }, [emptyChat]);
+
+  if (auth === null) {
+    return <div className="boot" role="status" aria-label="Đang tải Peto"><span className="loading-spinner" aria-hidden="true" /></div>;
+  }
+
+  if (!auth.authenticated) {
+    return <LoginScreen auth={auth} appInfo={appInfo} authError={authError} guestBusy={guestBusy} enterAsGuest={enterAsGuest} />;
+  }
+
+  async function openConversation(id: string) {
+    if (abortRef.current || deleting) return;
+    loadRef.current?.abort();
+    const controller = new AbortController();
+    loadRef.current = controller;
+    const version = ++loadVersion.current;
+    setError(null);
+    setRetryAvailable(false);
+    retryRevision.current = undefined;
+    setNotice(null);
+    setConversationId(id);
+    setEditTarget(null);
+    setPersona(conversations.find((item) => item.id === id)?.persona ?? "assistant");
+    setMessages([]);
+    setLoadingConversation(true);
+    setLoadFailed(false);
+    nearBottom.current = true;
+    setShowJump(false);
+    setSidebarOpen(false);
+    try {
+      const loaded = await getMessages(id, controller.signal);
+      if (version !== loadVersion.current) return;
+      setMessages(loaded);
+    } catch (err) {
+      if (version !== loadVersion.current || controller.signal.aborted) return;
+      if (err instanceof UnauthorizedError) return handleUnauthorized();
+      setLoadFailed(true);
+      setError(err instanceof Error ? err.message : "Không mở được hội thoại");
+    } finally {
+      if (version === loadVersion.current) {
+        setLoadingConversation(false);
+        loadRef.current = null;
+      }
+    }
+  }
+
+  function newConversation() {
+    if (abortRef.current) return;
+    setEditTarget(null);
+    setRetryAvailable(false);
+    retryRevision.current = undefined;
+    loadRef.current?.abort();
+    loadVersion.current += 1;
+    setLoadingConversation(false);
+    setLoadFailed(false);
+    nearBottom.current = true;
+    setShowJump(false);
+    setConversationId(null);
+    setPersona("assistant");
+    setMessages([]);
+    setError(null);
+    setNotice(null);
+    setSidebarOpen(false);
+    textareaRef.current?.focus();
+  }
+
+  /** Bật/tắt chế độ nhập vai cho hội thoại chưa bắt đầu. Lần đầu bật thì hỏi xác nhận đủ 18 tuổi. */
+  function toggleRoleplay() {
+    if (conversationId || abortRef.current) return;
+    if (persona === "roleplay") {
+      setPersona("assistant");
+    } else if (auth?.user?.roleplay_confirmed) {
+      setPersona("roleplay");
+    } else {
+      setConsentError(null);
+      setConsentOpen(true);
+    }
+  }
+
+  async function confirmRoleplay() {
+    setConsentBusy(true);
+    setConsentError(null);
+    try {
+      await confirmRoleplayAge();
+      setAuth((prev) => (prev?.user ? { ...prev, user: { ...prev.user, roleplay_confirmed: true } } : prev));
+      setPersona("roleplay");
+      setConsentOpen(false);
+    } catch (err) {
+      if (err instanceof UnauthorizedError) return handleUnauthorized();
+      setConsentError(err instanceof Error ? err.message : "Chưa lưu được xác nhận. Thử lại nhé.");
+    } finally {
+      setConsentBusy(false);
+    }
+  }
+
+  async function removeConversation(id: string) {
+    if (abortRef.current || deleting) return;
+    setDeleting(true);
+    try {
+      await deleteConversation(id);
+      if (id === conversationId) newConversation();
+      setDeleteTarget(null);
+      await refreshConversations();
+    } catch (err) {
+      if (err instanceof UnauthorizedError) return handleUnauthorized();
+      setError(err instanceof Error ? err.message : "Không xóa được");
+      setDeleteTarget(null);
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  async function submit(revision?: { target: Message; text: string }) {
+    const text = revision ? revision.text.trim() : draft.trim();
+    const hasAttachments = revision ? Boolean(revision.target.attachments?.length) : draftFiles.length > 0;
+    if ((!text && !hasAttachments) || abortRef.current || loadingConversation || loadFailed) return;
+
+    const pending = revision ? [] : draftFiles;
+    const previousMessages = messages;
+    const revisionIndex = revision ? messages.findIndex(m => m.id === revision.target.id) : -1;
+    if (revision && revisionIndex < 0) {
+      setRetryAvailable(false);
+      setError("Hãy mở lại cuộc trò chuyện trước khi sửa hoặc tạo lại câu trả lời này.");
+      return;
+    }
+    const prefix = revision ? messages.slice(0, revisionIndex) : messages;
+    setRetryAvailable(false);
+    retryRevision.current = revision;
+    setEditTarget(null);
+    setError(null);
+    setNotice(null);
+    // Tin đầu của cuộc mới: nhớ chỗ ô nhắn đang đứng để trượt nó xuống đáy.
+    if (emptyChat) composerFrom.current = composerBoxRef.current?.getBoundingClientRect().top ?? null;
+    setStreaming(true);
+    setStopping(false);
+    nearBottom.current = true;
+    setShowJump(false);
+
+
+    const optimistic: ChatAttachment[] = pending.map((item) => ({
+      id: item.id,
+      name: item.file.name,
+      mime: item.file.type || "application/octet-stream",
+      kind: isImageFile(item.file) ? "image" : "file",
+      size: item.file.size,
+      url: item.previewUrl || "",
+    }));
+
+    setMessages([
+      ...prefix,
+      { role: "user", content: text, attachments: revision?.target.attachments || optimistic },
+      { role: "assistant", content: "", workSteps: [{id:'connection',label:'Đang gửi và chờ máy chủ…',live:true}] },
+    ]);
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+    let activeId = conversationId;
+    let accepted = false;
+    let completed = false;
+    // Mỗi lần Peto tìm/đọc trong tệp là một dòng riêng trong danh sách "Đang làm…".
+    let fileLookups = 0;
+    let writingPhase = false;
+    const session = authVersion.current;
+    const startedAt = performance.now();
+
+    const appendToReply = (chunk: string) => {
+      if (session !== authVersion.current) return;
+      setMessages((prev) => {
+        const next = [...prev];
+        const last = next[next.length - 1];
+        if (last?.role !== "assistant") return prev;
+        next[next.length - 1] = { ...last, content: last.content + chunk };
+        return next;
+      });
+    };
+
+    const addWorkStep = (id: string, label: string, live = false) => {
+      if (session !== authVersion.current) return;
+      if (live && id !== 'prepare') writingPhase = false;
+      setMessages((prev) => {
+        const last = prev[prev.length - 1];
+        if (last?.role !== "assistant") return prev;
+        const steps = (last.workSteps ?? []).map(step => live ? { ...step, live:false, label:step.id === 'think' ? 'Đã suy nghĩ' : step.label } : step);
+        const index = steps.findIndex((step) => step.id === id);
+        const step = { id, label, live };
+        if (index >= 0) steps[index] = step;
+        else steps.push(step);
+        return [...prev.slice(0, -1), { ...last, workSteps: steps }];
+      });
+    };
+
+    const updateSearch = (update: Partial<Message>) => {
+      if (session !== authVersion.current || controller.signal.aborted) return;
+      setMessages((prev) => {
+        const last = prev[prev.length - 1];
+        return last?.role === "assistant" ? [...prev.slice(0, -1), { ...last, ...update }] : prev;
+      });
+    };
+
+    try {
+      const attachments: OutgoingAttachment[] = await Promise.all(
+        pending.map(async (item) => ({
+          name: item.file.name,
+          mime: item.file.type,
+          data: await fileToBase64(item.file),
+        })),
+      );
+
+      await sendMessage(
+        {
+          message: text,
+          conversationId,
+          branchMessageId: revision?.target.id,
+          effort: effectiveEffort,
+          webSearch,
+          attachments,
+          persona,
+          model: chosenModel,
+        },
+        {
+          onMeta: (id, _usedEffort, storedMessage) => {
+            if (session !== authVersion.current) return;
+            accepted = true;
+            activeId = id;
+            setConversationId(id);
+            if (!revision) { setDraft(""); setDraftFiles([]); }
+            if (storedMessage) retryRevision.current = {target:storedMessage, text:storedMessage.content};
+            addWorkStep('connection', 'Đã kết nối', false);
+            addWorkStep('prepare', 'Đang chuẩn bị câu trả lời…', true);
+            updateSearch({ reading: undefined });
+            if (storedMessage) setMessages((prev) => [...prev.slice(0, -2), storedMessage, prev[prev.length - 1]]);
+          },
+          onDelta: (chunk) => { if (!writingPhase) { addWorkStep('prepare', 'Đang trả lời…', true); writingPhase = true; } appendToReply(chunk); },
+          onReplace: () => {
+            if (session !== authVersion.current) return;
+            setMessages((prev) => {
+              const last = prev[prev.length - 1];
+              if (last?.role !== "assistant") return prev;
+              return [...prev.slice(0, -1), { ...last, content: "" }];
+            });
+          },
+          onThinking: () => addWorkStep("think", "Đang suy nghĩ…", true),
+          onReading: (text) => {
+            updateSearch({ reading: text || undefined });
+            addWorkStep("reading", text || "Đã đọc tài liệu", Boolean(text));
+          },
+          onSearch: (status) => {
+            updateSearch({ search_status: status });
+            addWorkStep(
+              "search",
+              status === "searching" ? "Đang tìm trên web…" : "Đã tìm trên web",
+              status === "searching",
+            );
+          },
+          onSources: (sources) => updateSearch({ sources: safeSources(sources) }),
+          onDocumentStatus: (text) => {
+            updateSearch({ document_status: text || undefined });
+            if (text) addWorkStep("document", text, true);
+          },
+          onFileLookup: (text, live) => {
+            if (live) fileLookups += 1;
+            addWorkStep(`file-${fileLookups}`, text, live);
+          },
+          onArtifact: (artifact) => {
+            if (session !== authVersion.current || controller.signal.aborted) return;
+            setMessages(previous => {
+              const last = previous[previous.length - 1];
+              if (last?.role !== 'assistant') return previous;
+              const artifacts = [...(last.artifacts || []).filter(item => item.id !== artifact.id || item.version !== artifact.version), artifact];
+              const steps = [...(last.workSteps ?? [])];
+              const index = steps.findIndex((step) => step.id === "document");
+              const label = artifact.filename ? `Đã tạo ${artifact.filename}` : "Đã tạo tệp";
+              const step = { id: "document", label, live: false };
+              if (index >= 0) steps[index] = step;
+              else steps.push(step);
+              return [...previous.slice(0, -1), { ...last, artifacts, document_status: undefined, workSteps: steps }];
+            });
+            setDocumentRefresh(value => value + 1);
+          },
+          onError: (message) => {
+            if (session !== authVersion.current) return;
+            setError(message);
+            setRetryAvailable(true);
+          },
+          onDone: () => {
+            completed = true;
+          },
+        },
+        controller.signal,
+      );
+    } catch (err) {
+      if (err instanceof UnauthorizedError) {
+        handleUnauthorized();
+      } else if (!controller.signal.aborted) {
+        const message = err instanceof Error ? err.message : "Mất kết nối tới máy chủ";
+        setError(accepted ? message : `${message} Bản nháp được giữ lại; kiểm tra lịch sử trước khi gửi lại nếu kết nối bị ngắt.`);
+        setRetryAvailable(true);
+      }
+    } finally {
+      if (session === authVersion.current) {
+        if (!accepted) setMessages(previousMessages);
+        else {
+          setMessages((prev) => {
+            const last = prev[prev.length - 1];
+            if (last?.role !== "assistant") return prev;
+            return last.content || last.artifacts?.length
+              ? [...prev.slice(0, -1), {
+                  ...last,
+                  document_status: undefined,
+                  status: completed ? "complete" : "incomplete",
+                  workedMs: Math.round(performance.now() - startedAt),
+                  workSteps: (last.workSteps ?? []).map((step) => ({ ...step, live: false, label: step.label.startsWith('Đang ') ? (completed ? step.label.replace('Đang ', 'Đã ') : 'Đã dừng: ' + step.label.slice(5)) : step.label })),
+                }]
+              : prev.slice(0, -1);
+          });
+        }
+        if (controller.signal.aborted) setNotice(accepted ? "Đã dừng. Phần đã trả lời được giữ lại." : "Đã dừng gửi. Bản nháp vẫn được giữ lại.");
+        if (activeId || !accepted) void refreshConversations();
+        if (revision && accepted && activeId) {
+          // Fetch stable IDs for edit/regenerate; preserve the local progress log.
+          try {
+            const stored = await getMessages(activeId);
+            if (session === authVersion.current) setMessages(current => current.map((row, i) => ({...row, id:stored[i]?.id})));
+          } catch { setMessages(current => current.map(row => ({...row,id:undefined}))); }
+        }
+      }
+      if (accepted) for (const item of pending) if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+      setStreaming(false);
+      setStopping(false);
+      abortRef.current = null;
+      textareaRef.current?.focus();
+    }
+  }
+
+  function stop() {
+    setStopping(true);
+    abortRef.current?.abort();
+  }
+
+  async function changeConversation(item: Conversation, change: {title?: string; pinned?: boolean}) {
+    if (metadataBusy) return;
+    setMetadataBusy(true);
+    try {
+      await updateConversation(item.id, change);
+      setRenameTarget(null);
+      await refreshConversations();
+    } catch (err) {
+      if (err instanceof UnauthorizedError) handleUnauthorized();
+      else setError(err instanceof Error ? err.message : 'Chưa lưu được thay đổi');
+    } finally { setMetadataBusy(false); }
+  }
+
+  async function signOut() {
+    try {
+      await logout();
+      handleUnauthorized();
+      setAuthError(null);
+    } catch {
+      setError("Chưa đăng xuất được. Thử lại nhé.");
+    }
+  }
+
+  const canSend = (draft.trim().length > 0 || draftFiles.length > 0) && !streaming && !loadingConversation && !loadFailed;
+
+  // Như Grok: đang ở Trò chuyện mà bấm lại thì mở cuộc mới. Từ Tạo ảnh quay về
+  // thì giữ nguyên cuộc đang dở, vì người ta hay qua lại giữa hai tab.
+  function goChat() {
+    if (view !== "chat") {
+      go("chat");
+    } else if (!deleting) {
+      newConversation();
+    }
+  }
+
+  function go(next: AppView) {
+    if (next === "imagine") setImageVisited(true);
+    if (next === "companion") setCompanionVisited(true);
+    setView(next);
+    setSidebarOpen(false);
+    const url = next === "chat" ? `${window.location.pathname}${window.location.search}` : `#${next}`;
+    window.history.replaceState(null, "", url);
+  }
+
+  function toggleAccountMenu() {
+    if (accountMenu && !accountMenu.closing) closeAccountMenu(false);
+    else if (accountRef.current) setAccountMenu(placeAccountMenu(accountRef.current));
+  }
+
+  function openFromAccountMenu(section: SettingsSection, page: boolean) {
+    settingsReturn.current = accountRef.current;
+    closeAccountMenu(false);
+    setSidebarOpen(false);
+    setSettings({ open: true, section, page });
+  }
+
+  const guestAccount = auth.user?.provider === "guest";
+  const settingsLoading = (
+    <div className="settings-loading" role="status" aria-label="Đang tải cài đặt"><span className="loading-spinner" aria-hidden="true" /></div>
+  );
+  // Mỗi mục tải tệp riêng và có lớp chờ riêng: mục Giao diện không phải đợi tệp của mục Giọng nói.
+  // `active`: mục đang được xem trong hộp đang mở; các mục chỉ tải dữ liệu lúc đó.
+  const renderSettings = (section: SettingsSection, active: boolean): ReactNode => {
+    switch (section) {
+      case "giao-dien":
+        return (
+          <SettingsGroup>
+            <SettingsRow label="Chủ đề" desc="Nền sáng, nền tối, hoặc theo cài đặt của máy.">
+              <Segmented label="Chủ đề" value={theme} options={THEMES} onChange={setTheme} />
+            </SettingsRow>
+            <LazyBoundary><Suspense fallback={null}>
+              <CharacterSettings value={characterMotion} onChange={changeCharacterMotion}
+                onOpenCharacters={() => setCharacterPickerOpen(true)} selectedName={characters.selected.name} />
+            </Suspense></LazyBoundary>
+          </SettingsGroup>
+        );
+      case "ho-so":
+        return (
+          <LazyBoundary><Suspense fallback={settingsLoading}>
+            <ProfileSettings
+              open={active}
+              avatar={<AccountAvatar user={auth.user} size={36} />}
+              avatarNote={guestAccount ? undefined : `Theo tài khoản ${auth.user?.provider === "google" ? "Google" : "Discord"}`}
+              onUnauthorized={handleUnauthorized}
+              onSaved={(profile) => setAuth((prev) => (prev?.user
+                ? { ...prev, user: { ...prev.user, nickname: profile.nickname } }
+                : prev))}
+            />
+          </Suspense></LazyBoundary>
+        );
+      case "tai-khoan":
+        return (
+          <SettingsGroup>
+            <div className="settings-row settings-account">
+              <AccountAvatar user={auth.user} size={40} />
+              <div className="account-name">
+                <strong>{auth.user?.display_name}</strong>{" "}
+                <span>{accountLine(auth.user)}</span>
+              </div>
+            </div>
+            <SettingsRow label="Hướng dẫn Peto" desc="Cách dùng Trò chuyện, Companion và Peto Agent.">
+              <a className="settings-button settings-link" href="/docs/" target="_blank" rel="noreferrer">
+                Mở hướng dẫn <SettingsIcon name="external" size={14} />
+              </a>
+            </SettingsRow>
+            <SettingsRow
+              label="Đăng xuất"
+              desc={guestAccount
+                ? "Khách không đăng nhập lại được: đăng xuất rồi thì không mở lại được các hội thoại này."
+                : "Thoát tài khoản trên trình duyệt này. Hội thoại vẫn còn khi bạn đăng nhập lại."}
+            >
+              <button
+                type="button"
+                className="settings-button danger"
+                disabled={streaming}
+                onClick={() => {
+                  closeSettings();
+                  void signOut();
+                }}
+              >
+                Đăng xuất
+              </button>
+            </SettingsRow>
+          </SettingsGroup>
+        );
+      case "agent":
+        return (
+          <LazyBoundary><Suspense fallback={settingsLoading}>
+            <AgentSettings open={active} isGuest={guestAccount} onUnauthorized={handleUnauthorized} />
+          </Suspense></LazyBoundary>
+        );
+      case "giong-noi":
+        return (
+          <LazyBoundary><Suspense fallback={settingsLoading}>
+            <VoiceSettings voice={localVoice} open={active} tab={voiceTab} onTab={setVoiceTab} />
+          </Suspense></LazyBoundary>
+        );
+      case "tri-nho":
+        return (
+          <LazyBoundary><Suspense fallback={settingsLoading}>
+            <MemorySettings open={active} onUnauthorized={handleUnauthorized} />
+          </Suspense></LazyBoundary>
+        );
+      case "tra-web":
+        return (
+          <LazyBoundary><Suspense fallback={settingsLoading}>
+            <SearchSettings />
+          </Suspense></LazyBoundary>
+        );
+    }
+  };
+
+  return (
+    <div className="app">
+      {sidebarOpen && (
+        <button
+          className="sidebar-backdrop"
+          aria-label="Đóng danh sách hội thoại"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
+      <Sidebar
+        sidebarOpen={sidebarOpen} collapsed={collapsed} streaming={streaming} deleting={deleting}
+        appInfo={appInfo} auth={auth} view={view} imagineJobs={imagineJobs}
+        conversations={conversations} conversationId={conversationId} loadingList={loadingList} hasMore={hasMore}
+        accountRef={accountRef} accountMenu={accountMenu} setSearchOpen={setSearchOpen}
+        onToggleCollapsed={() => setCollapsed(value => !value)} goChat={goChat} go={go}
+        preloadImagine={preload(loadImagine)} preloadCompanion={preload(loadCompanion)} preloadSettings={preload(loadSettings)}
+        setSidebarOpen={setSidebarOpen} setSceneRequest={setSceneRequest} setCharacterPickerOpen={setCharacterPickerOpen}
+        setFocusJobId={setFocusJobId} openConversation={openConversation} setConversationMenu={setConversationMenu}
+        onLoadMore={() => { listCount.current = conversations.length + 50; void refreshConversations(); }}
+        toggleAccountMenu={toggleAccountMenu}
+      />
+
+      {/* Imagine và Companion nằm cạnh nhau trong cùng một danh sách con, nên key phải khác nhau. Trùng
+          key thì React nhân đôi tab, và mỗi bản Imagine mới lại tải danh sách ảnh, lặp mãi không dừng. */}
+      {imageVisited && (
+        <LazyBoundary>
+        <Suspense fallback={view === "imagine" ? <ViewLoading label="Đang mở Tạo ảnh" /> : null}>
+        <Imagine
+          key={`imagine-${auth.user?.id}`}
+          active={view === "imagine"}
+          onUnauthorized={handleUnauthorized}
+          onOpenSidebar={() => setSidebarOpen(true)}
+          onJobsChange={setImagineJobs}
+          focusJobId={focusJobId}
+          onFocusHandled={clearFocusJob}
+        />
+        </Suspense>
+        </LazyBoundary>
+      )}
+      {companionVisited && (
+        <LazyBoundary>
+        <Suspense fallback={view === "companion" ? <ViewLoading label="Đang mở Companion" /> : null}>
+        <Companion
+          key={`companion-${auth.user?.id}`}
+          active={view === "companion"}
+          appInfo={appInfo}
+          voice={localVoice}
+          sceneRequest={sceneRequest}
+          characterMotion={characterMotion}
+          character={characters.selected}
+          onCharacterPreview={characters.savePreview}
+          onOpenCharacters={() => setCharacterPickerOpen(true)}
+          onUnauthorized={handleUnauthorized}
+          onOpenSidebar={() => setSidebarOpen(true)}
+          onOpenHearingSettings={openHearingSettings}
+          onOpenMemorySettings={openMemorySettings}
+        />
+        </Suspense>
+        </LazyBoundary>
+      )}
+      <DiagramContext.Provider value={diagramApi}>
+      <div className={`chat-layout${documentPanelOpen || diagram ? ' documents-open' : ''}${documentPanelOpen && documentPanelExpanded ? ' documents-expanded' : ''}`} hidden={view !== 'chat'}>
+      <main className={emptyChat ? "chat empty-state" : "chat"}>
+        <div className="chat-tools">
+        <button
+          type="button"
+          className="menu-btn chat-menu"
+          aria-label="Mở danh sách hội thoại"
+          onClick={() => setSidebarOpen(true)}
+        >
+          <MenuIcon />
+        </button>
+        <button type="button" className="artifact-icon document-panel-toggle" aria-label={documentPanelOpen ? 'Đóng bảng tài liệu' : 'Mở bảng tài liệu'} aria-expanded={documentPanelOpen} aria-controls="document-panel" title="Tài liệu · Ctrl+Alt+B" onClick={() => { setDocumentPanelOpen(value => !value); setDocumentPanelExpanded(false); setDiagram(null); }}><RightPanelIcon /></button>
+        </div>
+
+        <div className="messages" ref={messagesRef} onClick={e => {
+          const button = (e.target as Element).closest<HTMLButtonElement>('button[data-revise]');
+          if (!button || streaming || loadingConversation) return;
+          const id = Number(button.dataset.revise);
+          const target = messages.find(m => m.id === id && m.role === 'user');
+          if (!target) return;
+          setEditTarget(target); setEditText(target.content);
+        }} onScroll={() => {
+          const element = messagesRef.current;
+          if (!element) return;
+          nearBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 80;
+          setShowJump(!nearBottom.current);
+        }}>
+          {loadingConversation && <div className="loading-chat" role="status" aria-label="Đang mở hội thoại"><span className="loading-spinner" aria-hidden="true" /></div>}
+          {loadFailed && <div className="loading-chat" role="alert">
+            <p>Chưa tải được nội dung hội thoại.</p>
+            <button className="load-more" onClick={() => conversationId && void openConversation(conversationId)}>Thử mở lại</button>
+          </div>}
+          {emptyChat && (
+            <div className="welcome">
+              <PetoAvatar info={appInfo} big />
+              <Greeting name={auth.user?.nickname?.trim() || auth.user?.display_name || "bạn"} />
+            </div>
+          )}
+
+          {messages.map((message, index) => (
+            <ChatMessage key={index} message={message}
+              actionsDisabled={streaming || loadingConversation || loadFailed}
+              editor={editTarget?.id === message.id && editTarget ? <form className="inline-message-editor" onSubmit={e => {e.preventDefault(); void submit({target:editTarget,text:editText});}}>
+                <textarea autoFocus aria-label="Sửa tin nhắn" value={editText} onChange={e => setEditText(e.target.value)} rows={Math.min(12,Math.max(3,editText.split('\n').length))} onKeyDown={e => {if(e.key==='Escape') setEditTarget(null);}}/>
+                <div><button type="button" onClick={() => setEditTarget(null)}>Hủy</button><button type="submit" disabled={streaming || (!editText.trim() && !editTarget.attachments?.length)}>Gửi</button></div>
+              </form> : undefined}
+              live={streaming && !stopping && index === messages.length - 1}
+              writing={streaming && index === messages.length - 1}
+              onPreview={previewDocument} onEdit={editDocument} />
+          ))}
+          <div ref={bottomRef} />
+        </div>
+
+        {showJump && <button type="button" className="jump-latest" aria-label="Tin mới nhất" title="Tin mới nhất" onClick={() => {
+          nearBottom.current = true;
+          setShowJump(false);
+          bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+        }}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 4v16m-7-7 7 7 7-7" /></svg></button>}
+
+        <div className="chat-dock" ref={chatDockRef}>
+        {error && (
+          <div className="error" role="alert">
+            {error}
+            {retryAvailable && <button type="button" disabled={streaming || loadingConversation} onClick={() => void submit(retryRevision.current)}>Thử lại</button>}
+            <button type="button" className="dismiss-error" aria-label="Đóng thông báo" onClick={() => { setError(null); setRetryAvailable(false); }}>×</button>
+          </div>
+        )}
+
+        {notice && <div className="error notice" role="status">
+          {notice}
+          <button type="button" className="dismiss-error" aria-label="Đóng thông báo trạng thái" onClick={() => setNotice(null)}>×</button>
+        </div>}
+
+        <Composer
+          draft={draft}
+          onDraftChange={setDraft}
+          files={draftFiles}
+          onAddFiles={addFiles}
+          onRemoveFile={removeDraftFile}
+          streaming={streaming}
+          stopping={stopping}
+          canSend={canSend}
+          onSubmit={submit}
+          onStop={stop}
+          effort={effectiveEffort}
+          efforts={effortOptions}
+          onEffortChange={setEffort}
+          webSearch={webSearch}
+          onToggleWeb={() => setWebSearch((mode) => (mode === "off" ? "auto" : "off"))}
+          persona={persona}
+          roleplay={view === "chat" && !conversationId ? {
+            active: persona === "roleplay",
+            unavailable: auth?.user?.provider === "guest" ? "Cần tài khoản Discord hoặc Google" : null,
+            onToggle: toggleRoleplay,
+          } : undefined}
+          menuDisabled={streaming || view !== "chat"}
+          model={chosenModel}
+          models={models}
+          onModelChange={setModel}
+          formRef={composerRef}
+          boxRef={composerBoxRef}
+          textareaRef={textareaRef}
+          fileRef={fileRef}
+        />
+        </div>
+      </main>
+      <DocumentPanel key={`${auth.user?.id}-${conversationId}`} conversationId={conversationId} open={documentPanelOpen && view === 'chat'} expanded={documentPanelExpanded} selection={documentPreview} refreshKey={documentRefresh} onClose={closeDocumentPanel} onExpand={() => setDocumentPanelExpanded(value => !value)} onEdit={item => setDocumentSelection({ ...item, key: Date.now() })} onUnauthorized={handleUnauthorized} />
+      {diagram && view === 'chat' && (
+        <LazyBoundary><Suspense fallback={null}>
+          <diagramPanel.View codes={diagramCodes} current={diagram} onPick={setDiagram} onClose={closeDiagram} />
+        </Suspense></LazyBoundary>
+      )}
+      </div>
+      </DiagramContext.Provider>
+      <DocumentWorkspace key={auth.user?.id || 'session'} request={documentRequest} selection={documentSelection} onUnauthorized={handleUnauthorized} onChanged={item => {
+        setDocumentRefresh(value => value + 1);
+        if (item?.conversation_id === conversationId) setDocumentPreview({ id: item.id, version: item.version, key: Date.now() });
+      }} />
+      {accountMenu && (
+        <AccountMenu
+          place={accountMenu}
+          avatar={<AccountAvatar user={auth.user} size={24} />}
+          name={auth.user?.display_name ?? ""}
+          subtitle={accountSubtitle(auth.user)}
+          signOutDisabled={streaming}
+          onClose={closeAccountMenu}
+          onExited={dropAccountMenu}
+          onOpenSettings={openFromAccountMenu}
+          onSignOut={() => {
+            closeAccountMenu(false);
+            setSidebarOpen(false);
+            void signOut();
+          }}
+        />
+      )}
+      <SettingsDialog view={settings} onView={setSettings} onClose={closeSettings} render={renderSettings} />
+      {characterPickerOpen && <LazyBoundary><Suspense fallback={null}><CharacterPicker library={characters} onClose={() => setCharacterPickerOpen(false)} /></Suspense></LazyBoundary>}
+      {agentCode && <AgentConnectDialog code={agentCode} isGuest={auth.user?.provider === "guest"}
+        onClose={() => { forgetAgentCode(); setAgentCode(null); }} onUnauthorized={handleUnauthorized} />}
+      {renameTarget && <TextEditDialog title="Đổi tên hội thoại" value={renameText} onChange={setRenameText} busy={metadataBusy} onClose={() => setRenameTarget(null)} onSave={() => void changeConversation(renameTarget, {title:renameText})}/>}
+      {searchOpen && <HistorySearch onClose={() => setSearchOpen(false)} onUnauthorized={handleUnauthorized} onSelect={id => {setSearchOpen(false); go('chat'); void openConversation(id);}}/>}
+      {conversationMenu && <ConversationMenu left={conversationMenu.left} top={conversationMenu.top} onClose={() => setConversationMenu(null)}>
+        <button onClick={() => {setRenameTarget(conversationMenu.item);setRenameText(conversationMenu.item.title);setConversationMenu(null);}}><EditIcon />Đổi tên</button>
+        <button disabled={metadataBusy} onClick={() => {void changeConversation(conversationMenu.item,{pinned:!conversationMenu.item.pinned});setConversationMenu(null);}}><PinIcon />{conversationMenu.item.pinned ? 'Bỏ ghim' : 'Ghim'}</button>
+        <button className="danger-button" onClick={() => {setDeleteTarget(conversationMenu.item);setConversationMenu(null);}}>Xóa hội thoại</button>
+      </ConversationMenu>}
+      <dialog ref={deleteDialogRef} className="confirm-dialog" aria-labelledby="delete-title" onCancel={(event) => {
+        event.preventDefault();
+        if (!deleting) setDeleteTarget(null);
+      }}>
+        <h2 id="delete-title">Xóa hội thoại này?</h2>
+        <p>“{deleteTarget?.title || "Chưa có tiêu đề"}” và các tệp đính kèm sẽ bị xóa. Không thể hoàn tác.</p>
+        <div className="dialog-actions">
+          <button autoFocus disabled={deleting} onClick={() => setDeleteTarget(null)}>Giữ lại</button>
+          <button className="danger-button" disabled={deleting} onClick={() => deleteTarget && void removeConversation(deleteTarget.id)}>{deleting ? "Đang xóa…" : "Xóa hội thoại"}</button>
+        </div>
+      </dialog>
+      <dialog ref={consentDialogRef} className="confirm-dialog" aria-labelledby="roleplay-consent-title" onCancel={(event) => {
+        event.preventDefault();
+        if (!consentBusy) setConsentOpen(false);
+      }}>
+        <h2 id="roleplay-consent-title">Bật chế độ nhập vai?</h2>
+        <p>Ở chế độ này có thể có nội dung người lớn (18+). Chế độ gắn với hội thoại mới này; muốn quay lại thì mở hội thoại mới.</p>
+        {consentError && <p className="consent-error" role="alert">{consentError}</p>}
+        <div className="dialog-actions">
+          <button autoFocus disabled={consentBusy} onClick={() => setConsentOpen(false)}>Để sau</button>
+          <button className="primary-button" disabled={consentBusy} onClick={() => void confirmRoleplay()}>{consentBusy ? "Đang lưu…" : "Tôi đủ 18 tuổi"}</button>
+        </div>
+      </dialog>
+    </div>
+  );
+}

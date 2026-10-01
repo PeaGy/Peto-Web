@@ -2,7 +2,7 @@ import { beforeEach, expect, it } from 'vitest';
 import {
   CHARACTER_VIEW_KEY, DEFAULT_VIEW, MAX_ZOOM, MIN_ZOOM, clampView, lookTarget, motionEnabled, panBy, placement,
   readCharacterMotion, readCharacterView, wheelZoomFactor, writeCharacterMotion, zoomAt,
-} from '../src/characterView';
+} from '../src/features/companion/characters/characterView';
 
 const box = { width: 800, height: 600, baseX: 400, baseY: 594, baseScale: 0.3 };
 

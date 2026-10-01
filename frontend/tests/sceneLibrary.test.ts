@@ -1,6 +1,6 @@
 import 'fake-indexeddb/auto';
 import { expect, it } from 'vitest';
-import { importScene, readScenePreference, saveScenePreference, sceneStorage } from '../src/sceneLibrary';
+import { importScene, readScenePreference, saveScenePreference, sceneStorage } from '../src/features/companion/sceneLibrary';
 
 it('keeps scene settings per character and clamps corrupt settings', () => {
   saveScenePreference('scene-test-a', { id: 'tea', dim: 40, blur: 8 });

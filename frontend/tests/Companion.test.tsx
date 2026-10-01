@@ -1,23 +1,23 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest';
 import { preloadLazyParts } from './lazyParts';
-import App from '../src/App';
-import * as api from '../src/api';
+import App from '../src/app/App';
+import * as api from '../src/shared/api/api';
 
-vi.mock('../src/api', async (original) => ({
-  ...await original<typeof import('../src/api')>(),
+vi.mock('../src/shared/api/api', async (original) => ({
+  ...await original<typeof import('../src/shared/api/api')>(),
   getAuthState: vi.fn(), listConversations: vi.fn(), getMessages: vi.fn(), sendMessage: vi.fn(),
   listImagineJobs: vi.fn(), getProfile: vi.fn(), getAppInfo: vi.fn(), getCompanion: vi.fn(),
   deleteConversation: vi.fn(),
   getCompanionMemory: vi.fn(),
 }));
 // Sân khấu giả: chỉ để đọc cảm xúc Companion truyền xuống (Live2D thật cần WebGL).
-vi.mock('../src/Live2DStage', () => ({
+vi.mock('../src/features/companion/characters/Live2DStage', () => ({
   default: ({ emotion }: { emotion?: { emotion: string } | null }) => <div data-testid="stage" data-emotion={emotion?.emotion ?? ''} />,
 }));
 // Dòng "Peto vừa ghi nhớ" hỏi lại máy chủ sau vài giây; trong test hỏi ngay.
-vi.mock('../src/memoryNotice', async (original) => ({
-  ...await original<typeof import('../src/memoryNotice')>(),
+vi.mock('../src/features/companion/memoryNotice', async (original) => ({
+  ...await original<typeof import('../src/features/companion/memoryNotice')>(),
   MEMORY_POLL_DELAYS: [0, 0, 0],
 }));
 

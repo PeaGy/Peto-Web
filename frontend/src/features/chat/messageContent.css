@@ -1,0 +1,151 @@
+/* Nút chép cả câu trả lời: luôn hiện (điện thoại không rê chuột được), nhỏ và mờ để không át nội dung. */
+.message-actions { display: flex; gap: 6px; margin-top: 10px; }
+.message-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 9px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.message-copy:hover, .message-copy.done { color: var(--text); }
+.message-copy svg { flex: none; }
+
+/* Cỡ chữ và chiều cao dòng phải đặt ngay trên pre: dòng của pre cao theo cỡ chữ
+   của chính pre. Để pre kế thừa cỡ chữ văn bản còn code bên trong ép 13px thì
+   mỗi dòng cao ~24px cho chữ 13px — code trông giãn như cách dòng đôi. */
+.bubble .code-block pre {
+  margin: 0;
+  padding: 14px 16px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  overflow-x: auto;
+  font-family: Consolas, "Cascadia Code", monospace;
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+
+.bubble code { font-family: Consolas, "Cascadia Code", monospace; font-size: 0.875em; }
+.bubble pre code { font-size: inherit; }
+
+/* Code lẻ giữa câu văn: chữ có màu trên nền nhạt như Grok, thay cho khối trắng
+   có viền trông nặng. Cỡ theo em nên code nằm trong tiêu đề sẽ to theo tiêu đề,
+   không còn là một mẩu 13px trơ trọi. Loại trừ code trong pre, kẻo khối code
+   có thêm một lớp nền lồng bên trong. */
+.bubble :not(pre) > code {
+  padding: 0.12em 0.38em;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  color: var(--inline-code);
+}
+
+/* Tô màu cú pháp. Tên lớp do highlight.js sinh; gom về sáu vai trò màu để bảng
+   màu còn đọc được, thay vì bê nguyên theme của thư viện vốn chỉ hợp một nền. */
+.hljs-keyword, .hljs-selector-tag, .hljs-literal, .hljs-type,
+.hljs-doctag, .hljs-name, .hljs-tag { color: var(--hl-keyword); }
+
+.hljs-string, .hljs-regexp, .hljs-addition,
+.hljs-template-variable, .hljs-quote { color: var(--hl-string); }
+
+.hljs-number, .hljs-bullet, .hljs-symbol, .hljs-link { color: var(--hl-number); }
+
+.hljs-comment, .hljs-meta, .hljs-deletion { color: var(--hl-comment); }
+.hljs-comment { font-style: italic; }
+
+.hljs-title, .hljs-title.function_, .hljs-built_in,
+.hljs-section, .hljs-class { color: var(--hl-function); }
+
+.hljs-attr, .hljs-attribute, .hljs-property,
+.hljs-variable, .hljs-params, .hljs-selector-attr { color: var(--hl-attr); }
+
+.hljs-emphasis { font-style: italic; }
+.hljs-strong { font-weight: 600; }
+
+.thinking-panel { margin-bottom: 8px; }
+
+.thinking-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.thinking-chevron {
+  display: inline-block;
+  font-size: 11px;
+  transition: transform 0.15s ease;
+}
+
+.thinking-chevron.open { transform: rotate(90deg); }
+
+.thinking-pulse {
+  background: linear-gradient(90deg, var(--muted) 0%, var(--text) 45%, var(--muted) 100%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: thinking-shimmer 1.6s ease-in-out infinite;
+}
+
+.work-steps {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.work-steps li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.work-steps li.live { color: var(--text); }
+
+.work-steps svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.work-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--muted);
+  flex-shrink: 0;
+}
+
+.work-steps li.live .work-dot { background: var(--accent); }
+
+@keyframes thinking-shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
+.error {
+  margin: 0 20px 10px;
+  padding: 10px 14px;
+  border: 1px solid var(--danger);
+  border-radius: 10px;
+  color: var(--danger);
+  font-size: 14px;
+}
+

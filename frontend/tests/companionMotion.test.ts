@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { CompanionMotion, stageQuality } from '../src/companionMotion';
+import { CompanionMotion, stageQuality } from '../src/features/companion/characters/companionMotion';
 
 it('blends states gradually and returns to neutral without reducing lip sync input', () => {
   const motion = new CompanionMotion();

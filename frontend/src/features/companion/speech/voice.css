@@ -1,0 +1,201 @@
+/* ---------- Giọng nói trong Cài đặt ---------- */
+.voice-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; margin-top: 12px; }
+.voice-row .settings-hint { flex: 1 1 220px; margin: 0; }
+.voice-error { margin: 12px 0 0; color: var(--danger); font-size: 12.5px; }
+
+/* Nguồn giọng là thẻ (phương án A): hai nhóm "Không cần khóa" và "Khóa của bạn". Khung chi tiết nằm ngay sau thẻ đang
+   chọn trong DOM và chiếm cả hàng; dense kéo thẻ kế tiếp lên lấp ô trống cạnh thẻ đó, nên trên máy tính khung hiện dưới
+   hàng của thẻ, trên điện thoại (một cột) ngay dưới thẻ, và thứ tự đọc của trình đọc màn hình vẫn đúng. */
+.voice-sources { padding: 0 0 14px; }
+.voice-sources > .voice-group:first-child { margin-top: 8px; }
+.voice-group { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 12px; margin: 18px 0 8px; color: var(--muted); font-size: 12px; }
+.voice-group strong { font-weight: 600; letter-spacing: 0.02em; }
+.voice-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-flow: row dense; gap: 10px; }
+.voice-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 160ms var(--ease-out), transform 160ms var(--ease-out);
+}
+.voice-card:hover { border-color: var(--muted); }
+.voice-card:active { transform: scale(0.98); }
+.voice-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.voice-card.selected { border-color: var(--text); background: var(--voice-card-selected); }
+.voice-card.locked { opacity: 0.6; }
+.voice-card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.voice-card strong { font-size: 14px; font-weight: 600; }
+.voice-card-status { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; white-space: nowrap; }
+.voice-card-desc { display: flex; flex-direction: column; gap: 6px; color: var(--muted); font-size: 12.5px; line-height: 1.45; }
+.voice-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); opacity: 0.7; }
+.voice-dot.on { background: var(--voice-online); opacity: 1; }
+.voice-badges { display: flex; flex-wrap: wrap; gap: 6px; }
+.voice-badge { padding: 1px 8px; border-radius: 999px; background: var(--badge-bg); color: var(--badge-fg); font-size: 11.5px; font-weight: 600; }
+.voice-badge.official { background: var(--badge-official-bg); color: var(--badge-official-fg); }
+.voice-badge.free { background: var(--badge-free-bg); color: var(--badge-free-fg); }
+.voice-badge.relay { background: var(--badge-relay-bg); color: var(--badge-relay-fg); }
+.voice-detail {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--bg);
+}
+.voice-detail-title { font-size: 14px; font-weight: 600; }
+.voice-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; font-size: 13px; }
+.voice-field input, .dropdown-trigger {
+  width: 100%;
+  min-width: 0;
+  min-height: 42px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+}
+
+/* Ô chọn của mục Giọng nói (Dropdown trong voiceUi.tsx), thay cho <select> và <datalist>. Bảng nằm ngay dưới ô trong
+   trang, hay lật lên trên khi phía dưới hết chỗ, nên cuộn Cài đặt thì bảng đi theo ô như AIRI. */
+.dropdown { position: relative; min-width: 0; }
+.dropdown.open { z-index: 30; }
+.dropdown-trigger { display: flex; align-items: center; gap: 8px; text-align: left; cursor: pointer; }
+.dropdown.editable .dropdown-trigger { padding-right: 40px; cursor: text; }
+.dropdown-trigger:disabled { color: var(--muted); cursor: default; }
+.dropdown-trigger:hover:not(:disabled) { border-color: var(--muted); }
+/* Như ô trong Hồ sơ: mở bảng hay đang gõ thì chỉ đậm viền; bàn phím thì nút còn vòng sáng chung của button. */
+.dropdown.open .dropdown-trigger, input.dropdown-trigger:focus { border-color: color-mix(in srgb, var(--text) 45%, var(--line)); }
+input.dropdown-trigger:focus { outline: none; }
+.dropdown-value { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dropdown-value.placeholder { color: var(--muted); }
+.dropdown-chevron { flex: none; color: var(--muted); transition: transform 160ms var(--ease-out); }
+.dropdown.open .dropdown-chevron { transform: rotate(180deg); }
+.dropdown-toggle {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  bottom: 5px;
+  width: 32px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+.dropdown-toggle:hover:not(:disabled) { background: var(--panel-2); }
+.dropdown-toggle:disabled { cursor: default; }
+.dropdown-list {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  left: 0;
+  margin: 0;
+  padding: 5px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  color: var(--text);
+  list-style: none;
+  box-shadow: var(--dialog-shadow);
+  transform-origin: top center;
+  animation: dropdown-in 150ms var(--ease-out);
+}
+.dropdown-list.above { top: auto; bottom: calc(100% + 6px); transform-origin: bottom center; animation-name: dropdown-in-above; }
+.dropdown-list li[role="option"] {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 38px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+}
+.dropdown-list li.active { background: var(--panel-2); }
+.dropdown-list li[aria-selected="true"] { font-weight: 600; }
+.dropdown-text { display: flex; flex: 1; flex-direction: column; gap: 1px; min-width: 0; overflow-wrap: anywhere; }
+.dropdown-text small { color: var(--muted); font-size: 12px; font-weight: 400; line-height: 1.4; }
+.dropdown-check { flex: none; }
+.dropdown-group { padding: 10px 10px 4px; color: var(--muted); font-size: 11.5px; font-weight: 600; letter-spacing: 0.03em; }
+.dropdown-group:not(:first-child) { margin-top: 5px; border-top: 1px solid var(--line); }
+@keyframes dropdown-in { from { opacity: 0; transform: translateY(-4px) scale(0.98); } }
+@keyframes dropdown-in-above { from { opacity: 0; transform: translateY(4px) scale(0.98); } }
+.voice-field small { color: var(--muted); font-size: 12px; line-height: 1.5; }
+.voice-line { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; font-size: 13px; line-height: 1.5; }
+.voice-line .settings-button { margin-left: auto; }
+.voice-note { margin: 0; color: var(--muted); font-size: 12.5px; line-height: 1.5; }
+.voice-note.relay { padding: 10px 12px; border-radius: 10px; background: var(--badge-relay-bg); color: var(--badge-relay-fg); }
+.voice-detail .voice-error { margin: 0; }
+.voice-quota { display: flex; flex-direction: column; gap: 6px; }
+.voice-quota-row { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; }
+.voice-quota-row span:last-child { font-variant-numeric: tabular-nums; }
+.voice-quota-bar { height: 6px; overflow: hidden; border-radius: 999px; background: var(--panel-2); }
+.voice-quota-bar span { display: block; height: 100%; border-radius: inherit; background: var(--voice-meter); }
+.voice-quota p { margin: 0; color: var(--muted); font-size: 12px; }
+.voice-sample { display: flex; align-items: flex-end; gap: 8px; }
+.voice-sample .voice-field { flex: 1; }
+.voice-primary {
+  min-height: 42px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: transform 160ms var(--ease-out);
+}
+.voice-primary:active:not(:disabled) { transform: scale(0.97); }
+.voice-primary:disabled { opacity: 0.45; cursor: default; }
+.voice-key-hint { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 12px; }
+.voice-link { padding: 0; border: 0; background: none; color: var(--text); font: inherit; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.voice-list-error { color: var(--danger); }
+/* Hai thẻ Peto nói / Peto nghe của mục Giọng nói. */
+.voice-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; margin: 2px 0 20px; padding: 4px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); }
+.voice-tabs button { min-height: 38px; border: 0; border-radius: 9px; background: transparent; color: var(--muted); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
+.voice-tabs button:hover { color: var(--text); }
+.voice-tabs button[aria-selected="true"] { background: var(--panel-2); color: var(--text); }
+.voice-tabs button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.hearing-free .voice-card { grid-column: 1 / -1; }
+.hearing-test { display: flex; flex-direction: column; gap: 12px; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--bg); }
+.hearing-test-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.hearing-test-head strong { font-size: 14px; }
+.hearing-meter { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.hearing-meter-levels { height: 34px; padding: 4px 6px; border-radius: 8px; background: var(--panel-2); }
+.hearing-threshold { position: absolute; top: 3px; bottom: 3px; width: 2px; margin-left: -1px; border-radius: 2px; background: var(--text); }
+.hearing-range-label { display: flex; justify-content: space-between; gap: 12px; }
+.hearing-range-label span { color: var(--muted); }
+.voice-field input[type="range"] { min-height: 0; padding: 0; border: 0; background: none; accent-color: #219db5; }
+.hearing-results { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.hearing-results li { padding: 8px 10px; border-radius: 10px; background: var(--panel-2); font-size: 13.5px; overflow-wrap: anywhere; }
+.hearing-results li.interim { color: var(--muted); font-style: italic; }
+@media (max-width: 520px) {
+  .voice-cards { grid-template-columns: 1fr; }
+  .voice-sample { flex-direction: column; align-items: stretch; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .voice-card, .voice-primary, .dropdown-chevron { transition: none; }
+  .dropdown-list { animation: none; }
+}
+

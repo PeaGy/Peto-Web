@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { expect, it } from 'vitest';
 import { zipSync, strToU8 } from 'fflate';
-import { importCharacter, inspectLive2D, modelPath, validateLive2D, validateVRM } from '../src/characterImport';
+import { importCharacter, inspectLive2D, modelPath, validateLive2D, validateVRM } from '../src/features/companion/characters/characterImport';
 
 const settings = (file = 'avatar.moc3') => ({ Version: 3, FileReferences: { Moc: file, Textures: ['textures/顔.png'], Motions: { Idle: [{ File: 'idle.motion3.json', Sound: 'https://external.test/sound.wav' }] } } });
 const zip = (json = settings(), extra = {}) => new File([zipSync({

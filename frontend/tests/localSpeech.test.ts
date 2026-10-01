@@ -7,7 +7,7 @@ import {
   VOICE_FALLBACK_EVENT,
   withFallback,
   type VoiceFallbackDetail,
-} from '../src/localSpeech';
+} from '../src/features/companion/speech/localSpeech';
 
 afterEach(() => vi.unstubAllGlobals());
 

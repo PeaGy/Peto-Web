@@ -1,7 +1,7 @@
 import { StrictMode, lazy, Suspense } from "react";
 import { createRoot } from "react-dom/client";
 const Root = location.pathname === '/docs' || location.pathname.startsWith('/docs/')
-  ? lazy(() => import('./Docs')) : lazy(() => import('./App'));
+  ? lazy(() => import('./features/docs/Docs')) : lazy(() => import('./app/App'));
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

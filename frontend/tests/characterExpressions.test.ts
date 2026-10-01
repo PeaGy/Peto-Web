@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import {
   BUILTIN_FACE, asStageEmotion, controlExpressions, expressionChoices, faceSource, previewExpression, readExpressions, replyEmotion,
   watchExpressions, writeExpressions,
-} from '../src/characterExpressions';
+} from '../src/features/companion/characters/characterExpressions';
 afterEach(() => { localStorage.clear(); vi.useRealTimers(); });
 const choices = expressionChoices([{ Name: 'Happy', File: 'happy.exp3.json' }, { Name: 'f02', File: '02.exp3.json' }]);
 it('picks each emotion’s face: a file named after it, an explicit file, the built-in face or nothing', () => {

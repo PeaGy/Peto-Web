@@ -1,10 +1,10 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
-import MemorySettings from '../src/MemorySettings';
-import * as api from '../src/api';
+import MemorySettings from '../src/features/settings/MemorySettings';
+import * as api from '../src/shared/api/api';
 
-vi.mock('../src/api', async (original) => ({
-  ...await original<typeof import('../src/api')>(),
+vi.mock('../src/shared/api/api', async (original) => ({
+  ...await original<typeof import('../src/shared/api/api')>(),
   getCompanionMemory: vi.fn(), setCompanionMemoryEnabled: vi.fn(), deleteCompanionMemory: vi.fn(),
   clearCompanionMemory: vi.fn(),
 }));

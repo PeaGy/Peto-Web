@@ -1,0 +1,127 @@
+/* ---------- Peto nghe (Ears) trong Companion ----------
+   Phương án A (chủ web chọn ngày 2026-09-24, giống AIRI): nút micro ở góc trái ô nhắn; bảng Micro bật lên ngay trên ô
+   nhắn, trong cột chat chứ không nổi trên sân khấu; điện thoại thay bảng bằng một thanh trạng thái gọn. */
+.hearing-mic {
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--stage-muted);
+  cursor: pointer;
+  transition: transform 160ms var(--ease-out), box-shadow 90ms linear;
+}
+.hearing-mic:hover { color: var(--stage-text); background: var(--stage-surface); }
+.hearing-mic:active { transform: scale(0.95); }
+.hearing-mic:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* Vòng sáng dày lên theo âm lượng (--hearing-level do MicButton đặt, 0..1). */
+.hearing-mic.on {
+  background: var(--stage-accent-strong);
+  color: #ffffff;
+  box-shadow: 0 0 0 calc(3px + var(--hearing-level, 0) * 7px) var(--stage-mic-ring);
+}
+.hearing-mic.on.starting, .hearing-mic.on.transcribing { box-shadow: 0 0 0 3px var(--stage-mic-ring); }
+.hearing-mic.on.paused { border-color: var(--stage-mic-edge); background: var(--stage-mic-ring); color: var(--stage-level); box-shadow: none; }
+.hearing-mic-badge {
+  position: absolute;
+  right: -5px;
+  bottom: -5px;
+  width: 16px;
+  height: 16px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--stage-line);
+  border-radius: 50%;
+  background: var(--stage-popover);
+  color: var(--stage-level);
+}
+.hearing-popover {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: calc(100% + 2px);
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--stage-line);
+  border-radius: 18px;
+  background: var(--stage-popover);
+  color: var(--stage-text);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.4);
+}
+.hearing-popover-head { display: flex; align-items: center; gap: 14px; }
+.hearing-big {
+  flex: none;
+  width: 60px;
+  height: 60px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--stage-line);
+  border-radius: 18px;
+  background: var(--stage-input);
+  color: var(--stage-muted);
+  cursor: pointer;
+  transition: transform 160ms var(--ease-out);
+}
+.hearing-big.on { border-color: transparent; background: var(--stage-accent-strong); color: #ffffff; box-shadow: 0 0 0 6px var(--stage-mic-ring); }
+.hearing-big:active { transform: scale(0.96); }
+.hearing-big:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.hearing-popover-text { display: grid; gap: 2px; min-width: 0; }
+.hearing-popover-text strong { font-size: 15px; }
+.hearing-popover-text span { color: var(--stage-muted); font-size: 12.5px; line-height: 1.45; }
+.hearing-levels { position: relative; display: flex; align-items: flex-end; gap: 3px; }
+.hearing-levels i { flex: 1; min-width: 2px; border-radius: 2px; background: color-mix(in srgb, currentColor 16%, transparent); transition: height 80ms linear; }
+.hearing-levels i.on { background: var(--stage-level, var(--voice-meter)); }
+.hearing-popover-levels { height: 30px; }
+.hearing-toggle { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 12px; border-top: 1px solid var(--stage-line); cursor: pointer; }
+.hearing-toggle > span { display: grid; gap: 2px; }
+.hearing-toggle strong { font-size: 14px; font-weight: 600; }
+.hearing-toggle small { color: var(--stage-muted); font-size: 12px; line-height: 1.45; }
+.hearing-popover .voice-field small { color: var(--stage-muted); }
+.hearing-popover .dropdown-trigger { border-color: var(--stage-line); background: var(--stage-input); color: var(--stage-text); }
+.hearing-popover .dropdown-list { border-color: var(--stage-line); background: var(--stage-popover); color: var(--stage-text); }
+.hearing-popover .dropdown-list li.active { background: var(--stage-input); }
+.hearing-popover .dropdown-list small, .hearing-popover .dropdown-group { color: var(--stage-muted); }
+.hearing-source { margin: 0; color: var(--stage-muted); font-size: 12px; line-height: 1.5; }
+.hearing-source .voice-link { color: var(--stage-text); }
+.hearing-bar { display: none; }
+@media (max-width: 720px) {
+  .hearing-popover { display: none; }
+  .companion-composer { flex-direction: column; align-items: center; }
+  .companion-composer .composer { padding-left: 3px; }
+  /* Nút micro vào đầu viên thuốc, nút gửi ở cuối. */
+  .companion-composer .composer-bar { display: contents; }
+  .companion-composer .hearing-mic { order: -1; width: 34px; height: 34px; border-radius: 999px; }
+  .hearing-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: min(74%, 320px);
+    min-height: 38px;
+    margin-bottom: 6px;
+    padding: 0 8px 0 14px;
+    border-radius: 999px;
+    background: var(--stage-surface);
+    color: var(--stage-text);
+    font-size: 13px;
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+  }
+  .hearing-bar-title { font-weight: 600; white-space: nowrap; }
+  .hearing-bar-levels { width: 42px; height: 16px; }
+  .hearing-bar-toggle { display: flex; align-items: center; gap: 8px; margin-left: auto; color: var(--stage-muted); font-size: 12.5px; cursor: pointer; }
+  .hearing-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--voice-online); }
+  .hearing-dot.paused, .hearing-dot.starting { background: var(--stage-muted); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hearing-mic, .hearing-big, .hearing-levels i { transition: none; }
+}
+

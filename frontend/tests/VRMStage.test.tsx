@@ -1,7 +1,7 @@
 import { act, render, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { BoxGeometry, Group, Mesh, MeshBasicMaterial, Object3D, Vector3 } from 'three';
-import VRMStage from '../src/VRMStage';
+import VRMStage from '../src/features/companion/characters/VRMStage';
 
 const mocks = vi.hoisted(() => ({ parse: vi.fn(), dispose: vi.fn(), rendererDispose: vi.fn(), frame: null as null | ((time: number) => void), mouth: 0 }));
 vi.mock('three', async original => ({ ...await original<typeof import('three')>(), WebGLRenderer: class {
@@ -12,9 +12,9 @@ vi.mock('three', async original => ({ ...await original<typeof import('three')>(
 vi.mock('three/addons/loaders/GLTFLoader.js', () => ({ GLTFLoader: class { register() {} parseAsync = mocks.parse; } }));
 vi.mock('three/addons/controls/OrbitControls.js', () => ({ OrbitControls: class { target = new Vector3(); update() {} dispose() {} } }));
 vi.mock('@pixiv/three-vrm', () => ({ VRMLoaderPlugin: class {}, VRMUtils: { rotateVRM0() {}, deepDispose: mocks.dispose } }));
-vi.mock('../src/characterLibrary', () => ({ getCharacterAssets: async () => ({ entry: 'test.vrm', files: [{ path: 'test.vrm', blob: { arrayBuffer: async () => new ArrayBuffer(0) } }] }) }));
-vi.mock('../src/characterImport', () => ({ validateVRM() {} }));
-vi.mock('../src/voiceActivity', () => ({ voiceMouth: () => mocks.mouth }));
+vi.mock('../src/features/companion/characters/characterLibrary', () => ({ getCharacterAssets: async () => ({ entry: 'test.vrm', files: [{ path: 'test.vrm', blob: { arrayBuffer: async () => new ArrayBuffer(0) } }] }) }));
+vi.mock('../src/features/companion/characters/characterImport', () => ({ validateVRM() {} }));
+vi.mock('../src/features/companion/speech/voiceActivity', () => ({ voiceMouth: () => mocks.mouth }));
 const character = { id: 'vrm-test', name: 'VRM', format: 'vrm' as const, bytes: 1, createdAt: 0 };
 function avatar() {
   const scene = new Group(); scene.add(new Mesh(new BoxGeometry(1, 2, 1), new MeshBasicMaterial()));

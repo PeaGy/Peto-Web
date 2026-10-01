@@ -1,6 +1,6 @@
 import { describe as group, expect, it } from 'vitest';
-import { describe, diagramBlocks, hasDiagram, hastText, kindNote, normalizeDiagram, sized, svgSize } from '../src/diagrams';
-import { drawioUrl, pdfFromJpeg } from '../src/diagramExport';
+import { describe, diagramBlocks, hasDiagram, hastText, kindNote, normalizeDiagram, sized, svgSize } from '../src/features/diagrams/diagrams';
+import { drawioUrl, pdfFromJpeg } from '../src/features/diagrams/diagramExport';
 
 group('nhận diện sơ đồ', () => {
   it('lấy tên ở phần đầu và loại theo từ khóa', () => {

@@ -1,6 +1,6 @@
 import { expect, it, vi } from 'vitest';
-import { FACE_PRESETS, FaceBlend, faceApplier, vrmFace, type CubismCore } from '../src/builtinFaces';
-import { EMOTIONS } from '../src/characterExpressions';
+import { FACE_PRESETS, FaceBlend, faceApplier, vrmFace, type CubismCore } from '../src/features/companion/characters/builtinFaces';
+import { EMOTIONS } from '../src/features/companion/characters/characterExpressions';
 
 function core(ids: string[], range: [number, number] = [-1, 1]): CubismCore & Record<string, ReturnType<typeof vi.fn>> {
   return {

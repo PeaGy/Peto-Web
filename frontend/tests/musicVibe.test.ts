@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
-import { useMusicVibe } from '../src/musicVibe';
-import { BeatPulse, DEFAULT_BEAT_PARAMETERS, getMusicState, musicPose, resetBeatParameters, setBeatParameters, setMusicStrength, selectMusicCharacter, startMusicVibe, stopMusicVibe } from '../src/musicVibe';
+import { useMusicVibe } from '../src/features/companion/characters/musicVibe';
+import { BeatPulse, DEFAULT_BEAT_PARAMETERS, getMusicState, musicPose, resetBeatParameters, setBeatParameters, setMusicStrength, selectMusicCharacter, startMusicVibe, stopMusicVibe } from '../src/features/companion/characters/musicVibe';
 const tempora = vi.hoisted(() => ({ start: vi.fn(), stop: vi.fn(), update: vi.fn(), onBeat: null as null | (() => void) }));
 vi.mock('@nekopaw/tempora', async importOriginal => ({ ...await importOriginal<typeof import('@nekopaw/tempora')>(),
   startAnalyser: tempora.start,

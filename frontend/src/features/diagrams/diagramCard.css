@@ -1,0 +1,57 @@
+/* ---------- Thẻ sơ đồ Mermaid trong câu trả lời (DiagramCard) ----------
+   Bấm thì sơ đồ mở lớn ở bảng bên phải (DiagramPanel, kiểu trong diagramPanel.css). */
+.diagram-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: min(440px, 100%);
+  margin: 1em 0;
+  padding: 10px 12px 10px 10px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 150ms ease, background-color 150ms ease, transform 100ms ease-out;
+}
+.diagram-card:hover { border-color: color-mix(in srgb, var(--text) 22%, var(--line)); }
+.diagram-card:active { transform: scale(0.99); }
+.diagram-card.active { border-color: color-mix(in srgb, var(--text) 35%, var(--line)); background: var(--panel-2); }
+.diagram-card.pending { cursor: default; }
+.diagram-card.pending:active { transform: none; }
+.diagram-thumb {
+  display: grid;
+  flex: 0 0 104px;
+  place-items: center;
+  height: 72px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--code-bg);
+  color: var(--muted);
+}
+.diagram-thumb-svg { display: grid; place-items: center; animation: diagram-appear 200ms var(--ease-out) both; }
+.diagram-thumb-svg svg { display: block; }
+.diagram-card.pending .diagram-thumb { animation: diagram-wait 1.4s ease-in-out infinite alternate; }
+.diagram-card-text { display: grid; flex: 1; gap: 3px; min-width: 0; line-height: 1.35; }
+.diagram-card-text strong { overflow: hidden; font-size: 14px; font-weight: 600; white-space: nowrap; text-overflow: ellipsis; }
+.diagram-card-text small { color: var(--muted); font-size: 12.5px; }
+.diagram-card-go { display: grid; color: var(--muted); }
+.diagram-error { margin: 1em 0; }
+.diagram-error > p {
+  margin: 0 0 4px;
+  padding: 10px 14px;
+  border: 1px solid color-mix(in srgb, var(--danger) 40%, var(--line));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--danger) 7%, transparent);
+  font-size: 14px;
+  line-height: 1.6;
+}
+@keyframes diagram-appear { from { opacity: 0; transform: translateY(3px); } }
+@keyframes diagram-wait { from { opacity: 1; } to { opacity: 0.55; } }
+@media (prefers-reduced-motion: reduce) {
+  .diagram-thumb-svg, .diagram-card.pending .diagram-thumb { animation: none; }
+}
+

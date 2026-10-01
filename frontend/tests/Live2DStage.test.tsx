@@ -1,11 +1,11 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import Live2DStage from '../src/Live2DStage';
-import { CHARACTER } from '../src/characterConfig';
-import { writeIdle } from '../src/live2dMotions';
-import { writeEffects } from '../src/characterEffects';
-import * as music from '../src/musicVibe';
-import { previewExpression, watchSnapshots, writeExpressions } from '../src/characterExpressions';
+import Live2DStage from '../src/features/companion/characters/Live2DStage';
+import { CHARACTER } from '../src/features/companion/characters/characterConfig';
+import { writeIdle } from '../src/features/companion/characters/live2dMotions';
+import { writeEffects } from '../src/features/companion/characters/characterEffects';
+import * as music from '../src/features/companion/characters/musicVibe';
+import { previewExpression, watchSnapshots, writeExpressions } from '../src/features/companion/characters/characterExpressions';
 
 const mocks = vi.hoisted(() => ({
   from: vi.fn(), destroy: vi.fn(), start: vi.fn(), stop: vi.fn(), tick: null as null | (() => void),
@@ -20,10 +20,10 @@ vi.mock('pixi.js', () => ({ Application: class {
   destroy = () => { this.view.remove(); mocks.destroy(); };
 } }));
 vi.mock('pixi-live2d-display/cubism4', () => ({ Live2DModel: { from: mocks.from }, MotionPreloadStrategy: { IDLE: 'IDLE' }, Cubism4ModelSettings: class {} }));
-vi.mock('../src/voiceActivity', () => ({ voiceMouth: () => mocks.mouth }));
+vi.mock('../src/features/companion/speech/voiceActivity', () => ({ voiceMouth: () => mocks.mouth }));
 // jsdom không vẽ canvas: ảnh chụp mặt giả để kiểm luồng chụp.
-vi.mock('../src/characterLibrary', async (original) => ({
-  ...await original<typeof import('../src/characterLibrary')>(), faceThumbnail: vi.fn(() => 'data:image/png;base64,FACE'),
+vi.mock('../src/features/companion/characters/characterLibrary', async (original) => ({
+  ...await original<typeof import('../src/features/companion/characters/characterLibrary')>(), faceThumbnail: vi.fn(() => 'data:image/png;base64,FACE'),
 }));
 
 type Point = { x: number; y: number };

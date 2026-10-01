@@ -1,9 +1,9 @@
 // Manual browser integration fixture. Synthetic capture only; never shipped by the production build.
 import { createRoot } from 'react-dom/client';
-import MusicVibePicker, { BeatIndicator } from '../../src/MusicVibePicker';
-import Live2DStage from '../../src/Live2DStage';
-import { getMusicState, musicPose, startMusicVibe, stopMusicVibe, useMusicVibe } from '../../src/musicVibe';
-import '../../src/styles.css';
+import MusicVibePicker, { BeatIndicator } from '../../src/features/companion/characters/MusicVibePicker';
+import Live2DStage from '../../src/features/companion/characters/Live2DStage';
+import { getMusicState, musicPose, startMusicVibe, stopMusicVibe, useMusicVibe } from '../../src/features/companion/characters/musicVibe';
+import '../../src/shared/styles/styles.css';
 
 async function run() {
   const status = document.getElementById('result')!;

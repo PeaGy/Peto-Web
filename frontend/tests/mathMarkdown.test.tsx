@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import Markdown from 'react-markdown';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
-import { normalizeMath } from '../src/mathMarkdown';
+import { normalizeMath } from '../src/shared/markdown/mathMarkdown';
 
 function draw(text: string) {
   return render(<Markdown remarkPlugins={[remarkMath]} rehypePlugins={[[rehypeKatex, { trust: false, strict: 'ignore' }]]}>{normalizeMath(text)}</Markdown>).container;

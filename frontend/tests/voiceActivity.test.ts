@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { trackVoice, voiceMouth, wavEnvelope } from '../src/voiceActivity';
+import { trackVoice, voiceMouth, wavEnvelope } from '../src/features/companion/speech/voiceActivity';
 
 function wav() {
   const buffer = new ArrayBuffer(44 + 320 * 2);

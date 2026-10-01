@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { daySlot, fillName, greetingKey, greetingOptions, pickGreeting } from '../src/timeGreeting';
+import { daySlot, fillName, greetingKey, greetingOptions, pickGreeting } from '../src/features/chat/timeGreeting';
 
 // 11/9/2026 là thứ Sáu; 6/9 là Chủ nhật, 8/9 là thứ Ba, 12/9 là thứ Bảy.
 const at = (hour: number, minute = 0, day = 11) => new Date(2026, 8, day, hour, minute);

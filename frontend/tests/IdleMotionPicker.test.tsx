@@ -1,9 +1,9 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
-import IdleMotionPicker from '../src/IdleMotionPicker';
-import { DEFAULT_CHARACTER } from '../src/characterLibrary';
-import { readIdle } from '../src/live2dMotions';
-import { readEffects } from '../src/characterEffects';
+import IdleMotionPicker from '../src/features/companion/characters/IdleMotionPicker';
+import { DEFAULT_CHARACTER } from '../src/features/companion/characters/characterLibrary';
+import { readIdle } from '../src/features/companion/characters/live2dMotions';
+import { readEffects } from '../src/features/companion/characters/characterEffects';
 afterEach(() => { vi.unstubAllGlobals(); localStorage.clear(); });
 it('offers named motions, saves selection and supports disabling', async () => {
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({ FileReferences: {

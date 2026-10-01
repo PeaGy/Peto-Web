@@ -1,11 +1,11 @@
 import { createRoot } from 'react-dom/client';
 import { useState } from 'react';
-import Live2DStage from '../../src/Live2DStage';
-import { DEFAULT_CHARACTER } from '../../src/characterLibrary';
-import { writeEffects } from '../../src/characterEffects';
-import { writeIdle } from '../../src/live2dMotions';
-import { CHARACTER } from '../../src/characterConfig';
-import '../../src/styles.css';
+import Live2DStage from '../../src/features/companion/characters/Live2DStage';
+import { DEFAULT_CHARACTER } from '../../src/features/companion/characters/characterLibrary';
+import { writeEffects } from '../../src/features/companion/characters/characterEffects';
+import { writeIdle } from '../../src/features/companion/characters/live2dMotions';
+import { CHARACTER } from '../../src/features/companion/characters/characterConfig';
+import '../../src/shared/styles/styles.css';
 // Dedicated preference ID: never changes the user's Hiyori settings.
 const character = { ...DEFAULT_CHARACTER, id: 'test-idle-eyes' };
 writeEffects(character.id, { cursor: false, idleEyes: true, breath: false, physics: false });

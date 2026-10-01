@@ -11,7 +11,7 @@ import {
   voiceOf,
   type KeyConfig,
   type KeyProvider,
-} from '../src/voiceProviders';
+} from '../src/features/companion/speech/voiceProviders';
 
 const fetchMock = vi.fn();
 const provider = (id: string) => keyProvider(id) as KeyProvider;

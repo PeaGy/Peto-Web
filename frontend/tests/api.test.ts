@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { createImagineJob, sendMessage } from '../src/api';
+import { createImagineJob, sendMessage } from '../src/shared/api/api';
 
 afterEach(() => vi.unstubAllGlobals());
 const event = (value: object) => `data: ${JSON.stringify(value)}\n\n`;

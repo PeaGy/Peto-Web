@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { expect, it, vi } from 'vitest';
-import { keyProvider } from '../src/voiceProviders';
-import { Dropdown, Field, type DropdownOption } from '../src/voiceUi';
+import { keyProvider } from '../src/features/companion/speech/voiceProviders';
+import { Dropdown, Field, type DropdownOption } from '../src/features/companion/speech/voiceUi';
 
 const OPENAI: DropdownOption[] = [
   { value: 'alloy', label: 'Alloy' },

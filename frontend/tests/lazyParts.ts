@@ -5,16 +5,16 @@
  */
 export async function preloadLazyParts(): Promise<void> {
   await Promise.all([
-    import('../src/Imagine'),
-    import('../src/Companion'),
-    import('../src/ProfileSettings'),
-    import('../src/VoiceSettings'),
-    import('../src/MemorySettings'),
-    import('../src/SearchSettings'),
-    import('../src/AgentSettings'),
-    import('../src/CharacterSettings'),
-    import('../src/markdownMath'),
-    import('../src/markdownCode'),
-    import('../src/DiagramPanel'),
+    import('../src/features/imagine/Imagine'),
+    import('../src/features/companion/Companion'),
+    import('../src/features/settings/ProfileSettings'),
+    import('../src/features/companion/speech/VoiceSettings'),
+    import('../src/features/settings/MemorySettings'),
+    import('../src/features/settings/SearchSettings'),
+    import('../src/features/settings/AgentSettings'),
+    import('../src/features/companion/characters/CharacterSettings'),
+    import('../src/shared/markdown/markdownMath'),
+    import('../src/shared/markdown/markdownCode'),
+    import('../src/features/diagrams/DiagramPanel'),
   ]);
 }

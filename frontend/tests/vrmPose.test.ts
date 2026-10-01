@@ -2,7 +2,7 @@
 import { expect, it } from 'vitest';
 import { Object3D, Vector3 } from 'three';
 import { VRMHumanoid, type VRMHumanBones, type VRMHumanBoneName } from '@pixiv/three-vrm';
-import { relaxVRMArms } from '../src/vrmPose';
+import { relaxVRMArms } from '../src/features/companion/characters/vrmPose';
 
 // Use the real humanoid normalization and raw-bone update, including rotated
 // local bone axes. VRM 0 faces -Z at import; the stage turns its root around.

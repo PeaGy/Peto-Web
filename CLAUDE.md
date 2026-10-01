@@ -207,7 +207,7 @@ ones, and `GET /api/companion` returns the latest `companion` thread with its re
 
 ### Frontend SSE reader
 
-The endpoint is POST, so `EventSource` cannot be used. `src/api.ts` does the framing by
+The endpoint is POST, so `EventSource` cannot be used. `frontend/src/shared/api/api.ts` does the framing by
 hand: `fetch`, then `response.body.getReader()`, split on a blank line, parse the `data: `
 line. If you add an SSE event type, update `ChatEvent` and `ChatHandlers` in `api.ts` as
 well as the emitter in `main.py`.
@@ -496,7 +496,7 @@ edit inputs nested inside such an element.
 
 `/api/auth/me` also returns the profile's `nickname`, so the empty-state greeting can use
 it on first paint without a second request or a visible name swap. The greeting line
-comes from `frontend/src/timeGreeting.ts`: a few lines per time-of-day slot on the
+comes from `frontend/src/features/chat/timeGreeting.ts`: a few lines per time-of-day slot on the
 **browser** clock (unlike chat, which trusts the server clock), re-picked when the tab
 becomes visible again in a new slot or day.
 
@@ -1530,7 +1530,7 @@ Chat, Companion and roleplay turn (not the Agent CLI).
   the composer down (FLIP via `element.animate` in `App.tsx`); opening a conversation or
   starting a new one switches instantly on purpose — those are frequent navigation.
 - Code blocks only colour the grammars registered in `markdownCode.ts` (with their aliases), and `CODE_LABELS` in
-  `App.tsx` holds the display names. Anything else renders as plain text under an uppercased tag, so a new language
+  `features/chat/ChatMessage.tsx` holds the display names. Anything else renders as plain text under an uppercased tag, so a new language
   needs a grammar import **and** a label. Each grammar costs bundle size; add ones Peto actually answers with.
   `markdownCode.ts` walks the tree with lowlight's core itself instead of using `rehype-highlight`, because that
   package always imports lowlight's `common` set, even when given `languages`. The build carried 63 grammars instead
@@ -1553,7 +1553,9 @@ Chat, Companion and roleplay turn (not the Agent CLI).
   character motion and view) live in
   `localStorage` behind try/catch helpers. In-flight Imagine state lives in component state,
   so it survives switching tabs but not a page reload.
-- `App.tsx` owns chat plus the app shell; `Imagine.tsx` and `Companion.tsx` are mounted alongside
+- Frontend code is grouped under `src/app`, `src/features` and `src/shared`; see `frontend/README.md` for ownership,
+  CSS order and import rules. `app/App.tsx` owns chat state and the app shell; `app/Sidebar.tsx`, `app/LoginScreen.tsx`
+  and `features/chat/ChatMessage.tsx` own their presentation. `Imagine.tsx` and `Companion.tsx` are mounted alongside
   it and receive an `active` prop rather than being unmounted — that is what keeps a running generation
   alive when the user switches back to Chat.
 - **What the first load carries.** On 2026-09-27 the owner picked "make the page load faster, especially on phones".
@@ -1579,8 +1581,8 @@ Chat, Companion and roleplay turn (not the Agent CLI).
     instead of blanking the whole app. This happens when a deploy has removed the old hashed files, since the build
     empties `dist`.
   - **Where these live.** Settings sections render on their first visit (`SettingsDialog` keeps the visited set), each
-    in its own `Suspense`, so "Giao diện" never waits for the voice chunk. Keep the icons the sidebar needs in `App.tsx`
-    (`CompanionIcon` moved there for this reason).
+    in its own `Suspense`, so "Giao diện" never waits for the voice chunk. Keep the icons the sidebar needs in
+    `app/navigationIcons.tsx`, independent of lazy feature modules.
   - **React chunk.** `vite.config.ts` puts React in its own chunk (`codeSplitting.groups`), so a deploy changes only
     the app chunk's hash and returning visitors keep React cached. Never widen that group to all of `node_modules`,
     or KaTeX, highlight.js and three.js would be pulled into the first load.

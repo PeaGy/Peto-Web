@@ -1,5 +1,5 @@
 import { beforeEach, expect, it, vi } from 'vitest';
-import { controlIdle, motionChoices, readIdle, watchIdle, writeIdle } from '../src/live2dMotions';
+import { controlIdle, motionChoices, readIdle, watchIdle, writeIdle } from '../src/features/companion/characters/live2dMotions';
 import hiyori from '../public/characters/hiyori/Hiyori.model3.json';
 
 const choices = motionChoices({ Idle: [{ File: 'motions/idle.motion3.json' }], Dance: [{ File: 'dance.motion3.json' }] });

@@ -1,0 +1,232 @@
+/* ---------- Sidebar ---------- */
+/* Mọi icon và avatar trong thanh bên nằm trên cùng một trục dọc cách mép trái
+   32px — đúng tâm của rail 64px. Nhờ vậy khi thu gọn chỉ cần co bề ngang: chữ
+   bị cắt đi, còn icon đứng yên tại chỗ, không phải dựng lại bố cục. */
+.sidebar {
+  position: relative;
+  width: 260px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 12px 10px 6px;
+  overflow: hidden;
+  background: var(--panel);
+  border-right: 1px solid var(--line);
+}
+
+.sidebar-head {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: 40px;
+}
+
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-left: 5px;
+  white-space: nowrap;
+}
+
+.sidebar-brand strong { font-size: 15px; }
+
+/* Bám mép phải: thanh bên co tới đâu nút trượt theo tới đó, dừng đúng giữa rail. */
+.sidebar-toggle {
+  position: absolute;
+  top: 2px;
+  right: 4px;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  transition: transform 160ms var(--ease-out);
+}
+
+.sidebar-toggle:hover { background: var(--panel-2); color: var(--text); }
+.sidebar-toggle:active { transform: scale(0.97); }
+
+.app-nav { display: flex; flex-direction: column; gap: 2px; }
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  height: 42px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 12px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 14.5px;
+  font-weight: 500;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.nav-item svg { flex-shrink: 0; }
+.nav-item:hover, .nav-item.on { background: var(--panel-2); }
+
+.sidebar-section {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Thu gọn chỉ có trên desktop; dưới 720px thanh bên là ngăn kéo, luôn đủ chữ. */
+@media (min-width: 721px) {
+  .sidebar { transition: width 240ms var(--ease-drawer); }
+  .sidebar.collapsed { width: 64px; }
+
+  /* Rộng cố định bằng lúc mở, nên khi co lại khối này chỉ bị cắt và mờ đi chứ
+     không bị bóp méo, không phải xuống dòng lại qua từng khung hình. */
+  .sidebar-section { width: 240px; }
+
+  /* Mở ra thì chữ hiện sau khi khung kịp giãn; thu lại thì chữ tắt ngay. */
+  .sidebar .sidebar-brand,
+  .sidebar .nav-label,
+  .sidebar .account-name { transition: opacity 160ms ease 60ms; }
+
+  .sidebar.collapsed .sidebar-brand,
+  .sidebar.collapsed .nav-label,
+  .sidebar.collapsed .account-name { opacity: 0; transition: opacity 100ms ease; }
+
+  .sidebar .sidebar-section { transition: opacity 160ms ease 60ms, visibility 0s; }
+
+  .sidebar.collapsed .sidebar-section {
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 100ms ease, visibility 0s linear 100ms;
+  }
+}
+
+/* Giữ phần mờ dần, bỏ phần chuyển động. */
+@media (prefers-reduced-motion: reduce) {
+  .sidebar, .sidebar-toggle { transition: none; }
+}
+
+
+/* Thư viện: lưới hai ảnh mỗi hàng, vừa đúng bề ngang cột. */
+.imagine-library {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Nhãn mục trong thanh bên ("Gần đây", "Thư viện"): chữ thường, xám nhạt như Grok. */
+.sidebar-label,
+.imagine-library-title {
+  margin: 0;
+  padding: 0 10px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* Thư viện là lưới ảnh sát mép, nên nhãn cũng sát mép theo. */
+.imagine-library-title { padding: 0 2px; }
+
+.imagine-job-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: 20px;
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 20px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 20px), transparent);
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-content: start;
+  gap: 6px;
+}
+
+.imagine-job-list .empty-hint { grid-column: 1 / -1; }
+
+.job-link {
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--panel-2);
+  aspect-ratio: 1;
+  cursor: pointer;
+}
+
+.job-link:hover, .job-link:focus-visible { border-color: var(--accent); }
+
+.job-link img, .job-link-blank {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: var(--panel-2);
+}
+
+.conversation-list {
+  flex: 1;
+  overflow-y: auto;
+  padding-bottom: 20px;
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 20px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 20px), transparent);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.empty-hint { color: var(--muted); font-size: 13px; padding: 4px 8px; }
+
+.conv { display: flex; align-items: center; border-radius: 8px; }
+.conv:hover, .conv.active { background: var(--panel-2); }
+
+.conv-open {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font-size: 14px;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+/* Tiêu đề dài thì cắt bớt, nhãn chế độ nhập vai vẫn luôn hiện. */
+.conv-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.conv-persona { flex-shrink: 0; color: var(--muted); font-size: 12px; }
+
+.conv-delete {
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 18px;
+  padding: 0 10px;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.conv:hover .conv-delete, .conv:focus-within .conv-delete { opacity: 1; }
+.conv-delete:hover { color: var(--danger); }
+
+.sidebar-footer { color: var(--muted); font-size: 12px; padding: 0 8px; }
+
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+

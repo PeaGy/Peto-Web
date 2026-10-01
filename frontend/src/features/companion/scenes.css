@@ -1,0 +1,78 @@
+.scene-backdrop { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+.scene-backdrop img { width: 100%; height: 100%; object-fit: cover; transform: scale(1.06); }
+.scene-backdrop > div { position: absolute; inset: 0; }
+.companion-with-scene .character-glow { display: none; }
+.companion-with-scene .character-credit { color: white; text-shadow: 0 1px 4px black; }
+.scene-preview { height: 180px; position: relative; overflow: hidden; border-radius: 16px; background: #121212; }
+.scene-preview > span { position: absolute; bottom: 12px; left: 14px; background: #0009; color: white; padding: 5px 10px; border-radius: 8px; font-size: 12px; }
+.scene-toolbar { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin: 20px 0; }
+.scene-toolbar button, .scene-remove { border: 1px solid var(--line); border-radius: 10px; padding: 9px 13px; background: var(--panel); color: var(--text); cursor: pointer; }
+.scene-toolbar small, .scene-credit { color: var(--muted); }
+.scene-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.scene-card { min-width: 0; }
+.scene-card > button:first-child { width: 100%; overflow: hidden; padding: 4px; border: 2px solid transparent; border-radius: 14px; background: var(--panel); color: var(--text); cursor: pointer; text-align: left; }
+.scene-card > button[aria-pressed=true] { border-color: var(--accent); }
+.scene-card > button > div { aspect-ratio: 16 / 10; overflow: hidden; border-radius: 9px; background: #121212; display: grid; place-items: center; color: #aaa; }
+.scene-card img { width: 100%; height: 100%; object-fit: cover; }
+.scene-card strong { display: block; padding: 10px 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 13px; }
+.scene-remove { margin-top: 6px; font-size: 12px; }
+.scene-adjustments { display: grid; gap: 18px; margin: 24px 0; }
+.scene-adjustments label { display: block; font-size: 14px; }
+.scene-adjustments span { float: right; color: var(--muted); }
+.scene-adjustments input { display: block; width: 100%; margin-top: 12px; accent-color: var(--accent); }
+.scene-credit a { color: inherit; }
+@media (max-width: 700px) {
+  .scene-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .scene-preview { height: 140px; }
+  .companion-with-scene .companion-title { background: var(--stage-surface); border-radius: 14px; padding: 4px; }
+}
+
+/* A shared scene surrounds the floating conversation, including its right edge. */
+.companion { isolation: isolate; container-type: inline-size; grid-template-columns: minmax(0, 1fr) clamp(330px, 32%, 460px); overflow: hidden; }
+.companion .character-stage:has(> .character-fallback) { overflow: visible; }
+.companion .character-fallback { right: auto; width: 100cqw; box-sizing: border-box; pointer-events: none; }
+.companion .character-fallback button { pointer-events: auto; }
+.companion > .scene-backdrop { z-index: -1; }
+.companion-stage { position: absolute; inset: 0; padding: 0; }
+.companion-panel { grid-column: 2; }
+.character-canvas { inset: 0; }
+.companion-panel { position: relative; z-index: 1; margin: 22px 20px 76px 0; border: 1px solid var(--stage-line); border-radius: 22px; overflow: hidden; background: var(--stage-surface); color: var(--stage-text); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); box-shadow: 0 16px 50px #0003; }
+.companion-head { border-color: var(--stage-line); }
+.companion-title span { color: var(--stage-muted); }
+.companion-messages .companion-reply { padding: 12px 14px; border-radius: 16px; background: var(--stage-bubble-a); color: var(--stage-text); }
+.companion-messages .bubble.user { background: var(--stage-bubble-b); color: var(--stage-text); }
+.companion-composer .composer { background: var(--stage-input); border-color: var(--stage-line); }
+.companion-composer textarea { color: var(--stage-text); }
+.companion-scene-tools { position: absolute; right: 22px; bottom: 18px; z-index: 3; display: flex; align-items: center; gap: 8px; }
+.companion-scene-button { display: flex; align-items: center; justify-content: center; width: 42px; height: 42px; padding: 0; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); color: var(--text); cursor: pointer; box-shadow: 0 4px 18px #0003; }
+.companion-scene-button:hover { background: var(--panel-2); }
+.companion-scene-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.character-motion-settings { margin-top: 22px; border: 1px solid var(--line); border-radius: 16px; background: var(--panel); }
+.character-motion-settings summary { cursor: pointer; padding: 18px; font-weight: 600; }
+.character-motion-settings summary span { display: block; margin: 6px 0 0 18px; font-size: 12px; font-weight: 400; color: var(--muted); }
+.character-motion-settings .idle-motion-picker { margin: 0; border: 0; border-top: 1px solid var(--line); border-radius: 0 0 16px 16px; }
+.character-library-footnote a { color: inherit; }
+@media (max-width: 720px) {
+  .companion > .scene-backdrop { z-index: 0; }
+  .companion-stage { z-index: 1; }
+  .companion-panel { position: absolute; z-index: 2; inset: 0 0 54px; margin: 0; border: 0; border-radius: 0; background: transparent; backdrop-filter: none; -webkit-backdrop-filter: none; box-shadow: none; overflow: visible; }
+  .companion-messages .companion-reply { padding: 8px 12px; }
+  .companion-scene-tools { right: 12px; bottom: calc(8px + env(safe-area-inset-bottom)); }
+  .companion-scene-button { min-height: 36px; padding: 7px 11px; font-size: 12px; }
+}
+/* Reserve a single toolbar row beneath the floating chat. */
+@media (min-width: 721px) { .companion-panel { margin-bottom: 76px; } }
+@media (max-width: 720px) { .companion-panel { bottom: calc(98px + env(safe-area-inset-bottom)); } }
+.mobile-companion-nav, .mobile-render-settings { display: none; }
+@media (max-width: 720px) {
+  .companion-scene-tools { display: none; }
+  .companion-panel { bottom: 0; }
+  .mobile-companion-nav { display: grid; gap: 4px; padding-left: 20px; }
+  .mobile-companion-nav .nav-item { font-size: 14px; }
+  .mobile-render-settings { display: grid; gap: 14px; margin-top: 20px; padding: 18px; border: 1px solid var(--line); border-radius: 16px; }
+  .mobile-render-settings h3, .mobile-render-settings p { margin: 0; }
+  .mobile-render-settings p { color: var(--muted); font-size: 12px; line-height: 1.6; }
+  .mobile-render-settings label { display: grid; gap: 8px; }
+  .mobile-render-settings select { width: 100%; min-height: 42px; padding: 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--text); }
+}
+

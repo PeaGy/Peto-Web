@@ -2,14 +2,14 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { preloadLazyParts } from './lazyParts';
-import App from '../src/App';
-import * as api from '../src/api';
-import * as mathMarkdown from '../src/mathMarkdown';
-import * as documentApi from '../src/documentApi';
-vi.mock('../src/documentApi', async original => ({ ...await original<typeof import('../src/documentApi')>(), listDocuments: vi.fn(), getDocument: vi.fn() }));
+import App from '../src/app/App';
+import * as api from '../src/shared/api/api';
+import * as mathMarkdown from '../src/shared/markdown/mathMarkdown';
+import * as documentApi from '../src/features/documents/documentApi';
+vi.mock('../src/features/documents/documentApi', async original => ({ ...await original<typeof import('../src/features/documents/documentApi')>(), listDocuments: vi.fn(), getDocument: vi.fn() }));
 
-vi.mock('../src/api', async (original) => ({
-  ...await original<typeof import('../src/api')>(),
+vi.mock('../src/shared/api/api', async (original) => ({
+  ...await original<typeof import('../src/shared/api/api')>(),
   getAuthState: vi.fn(), listConversations: vi.fn(), getMessages: vi.fn(),
   conversationVersions: vi.fn(), updateConversation: vi.fn(),
   sendMessage: vi.fn(), deleteConversation: vi.fn(), logout: vi.fn(),

@@ -1,5 +1,5 @@
 import { beforeEach, expect, it, vi } from 'vitest';
-import { readEffects, watchEffects, withCharacterEffects, writeEffects } from '../src/characterEffects';
+import { readEffects, watchEffects, withCharacterEffects, writeEffects } from '../src/features/companion/characters/characterEffects';
 beforeEach(() => localStorage.clear());
 it('keeps preferences separate by model and restores safe defaults for invalid storage', () => {
   const listener = vi.fn(); const unwatch = watchEffects('one', listener);

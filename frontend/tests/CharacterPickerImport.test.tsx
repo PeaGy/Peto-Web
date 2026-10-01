@@ -1,10 +1,10 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { expect, it, vi } from 'vitest';
-import CharacterPicker from '../src/CharacterPicker';
-import { DEFAULT_CHARACTER } from '../src/characterLibrary';
-import { inspectLive2D } from '../src/characterImport';
-vi.mock('../src/IdleMotionPicker', () => ({ default: () => null }));
-vi.mock('../src/characterImport', () => ({ inspectLive2D: vi.fn() }));
+import CharacterPicker from '../src/features/companion/characters/CharacterPicker';
+import { DEFAULT_CHARACTER } from '../src/features/companion/characters/characterLibrary';
+import { inspectLive2D } from '../src/features/companion/characters/characterImport';
+vi.mock('../src/features/companion/characters/IdleMotionPicker', () => ({ default: () => null }));
+vi.mock('../src/features/companion/characters/characterImport', () => ({ inspectLive2D: vi.fn() }));
 
 it('waits for review confirmation before saving and discards a cancelled review', async () => {
   const prepared = { model: { ...DEFAULT_CHARACTER, id: 'new' }, assets: { id: 'new', entry: 'model.model3.json', files: [] } };

@@ -1,8 +1,8 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
-import DocumentPanel from '../src/DocumentPanel';
-import * as api from '../src/documentApi';
-vi.mock('../src/documentApi', async original => ({ ...await original<typeof import('../src/documentApi')>(), listDocuments: vi.fn(), getDocument: vi.fn() }));
+import DocumentPanel from '../src/features/documents/DocumentPanel';
+import * as api from '../src/features/documents/documentApi';
+vi.mock('../src/features/documents/documentApi', async original => ({ ...await original<typeof import('../src/features/documents/documentApi')>(), listDocuments: vi.fn(), getDocument: vi.fn() }));
 const one: api.SavedDocument = { id: 'D1', conversation_id: 'C1', title: 'Bài văn', version: 1, created_at: 1, content: '# Bài văn\nNội dung', format: 'docx', pages: 3, versions: [{ version: 2, title: 'Bản mới', created_at: 2 }, { version: 1, title: 'Bài văn', created_at: 1 }] };
 const two: api.SavedDocument = { ...one, id: 'D2', title: 'Kế hoạch', format: 'pdf', pages: 1 };
 const props = { conversationId: 'C1', open: true, expanded: false, selection: null, refreshKey: 0, onClose: vi.fn(), onExpand: vi.fn(), onEdit: vi.fn(), onUnauthorized: vi.fn() };

@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { Blinker, IdleEyes } from '../src/idleEyes';
+import { Blinker, IdleEyes } from '../src/features/companion/characters/idleEyes';
 it('moves gently, stays within eye limits, and fades out on cursor activity', () => {
   const eyes = new IdleEyes(() => 0.8);
   const first = eyes.step(1 / 30, true);

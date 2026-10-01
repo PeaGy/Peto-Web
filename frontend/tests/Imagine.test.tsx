@@ -1,10 +1,10 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import Imagine from '../src/Imagine';
-import * as api from '../src/api';
+import Imagine from '../src/features/imagine/Imagine';
+import * as api from '../src/shared/api/api';
 
-vi.mock('../src/api', async (original) => ({
-  ...await original<typeof import('../src/api')>(),
+vi.mock('../src/shared/api/api', async (original) => ({
+  ...await original<typeof import('../src/shared/api/api')>(),
   listImagineJobs: vi.fn(), createImagineJob: vi.fn(), deleteImagineJob: vi.fn(),
   deleteImagineImage: vi.fn(), setImagineImageLiked: vi.fn(),
 }));

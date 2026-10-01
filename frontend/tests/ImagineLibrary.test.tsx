@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import ImagineLibrary from '../src/ImagineLibrary';
-import type { ImagineJob } from '../src/api';
+import ImagineLibrary from '../src/features/imagine/ImagineLibrary';
+import type { ImagineJob } from '../src/shared/api/api';
 
 const cat: ImagineJob = {
   id: 'job-cat', prompt: 'Mèo trắng đội mũ', quality: 'low', resolution: '1k', aspect_ratio: 'auto', created_at: 2,

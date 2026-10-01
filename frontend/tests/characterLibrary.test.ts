@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { beforeEach, expect, it, vi } from 'vitest';
 import { IDBFactory } from 'fake-indexeddb';
-import { DEFAULT_CHARACTER, getCharacterAssets, listCharacters, removeCharacter, saveCharacter, updateCharacter } from '../src/characterLibrary';
+import { DEFAULT_CHARACTER, getCharacterAssets, listCharacters, removeCharacter, saveCharacter, updateCharacter } from '../src/features/companion/characters/characterLibrary';
 beforeEach(() => vi.stubGlobal('indexedDB', new IDBFactory()));
 const data = () => ({ model: { id: 'custom', name: 'My avatar', format: 'vrm' as const, bytes: 4, createdAt: 1 }, assets: { id: 'custom', entry: 'model.vrm', files: [{ path: 'model.vrm', blob: new Blob(['test']) }] } });
 

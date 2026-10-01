@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { BeatPulse } from '../src/beatMotion';
+import { BeatPulse } from '../src/features/companion/characters/beatMotion';
 
 it('keeps position continuous at incoming beats instead of flipping the head', () => {
   const motion = new BeatPulse(); motion.beat(0); motion.beat(500);

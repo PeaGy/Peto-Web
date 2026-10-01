@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { expect, it, vi } from 'vitest';
-import CharacterImportReview from '../src/CharacterImportReview';
-import type { Live2DImportReport } from '../src/characterImport';
+import CharacterImportReview from '../src/features/companion/characters/CharacterImportReview';
+import type { Live2DImportReport } from '../src/features/companion/characters/characterImport';
 
 const report: Live2DImportReport = { name: 'Avatar', entry: '模型/model.model3.json', bytes: 1024, files: 4,
   motions: { found: ['idle.motion3.json'], referenced: [] }, expressions: { found: [], referenced: [] }, textures: ['texture.png'], parameters: null, physics: false,

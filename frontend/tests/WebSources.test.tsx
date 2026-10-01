@@ -1,6 +1,6 @@
 import { render, screen, within } from '@testing-library/react';
 import { expect, it } from 'vitest';
-import WebSources from '../src/WebSources';
+import WebSources from '../src/features/chat/WebSources';
 
 it('phân biệt trích dẫn, kết quả tìm kiếm và dữ liệu cũ', () => {
   render(<WebSources sources={[

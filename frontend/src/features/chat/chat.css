@@ -1,0 +1,262 @@
+/* ---------- Chat ---------- */
+.chat { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; position: relative; }
+
+.chat-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--line);
+}
+
+.header-copy { min-width: 0; }
+
+.menu-btn,
+.icon-btn {
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel-2);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.menu-btn { display: none; }
+.icon-btn { display: grid; }
+
+/* Khung chat không còn thanh tiêu đề, nhưng dưới 720px sidebar là ngăn kéo nên
+   vẫn phải chừa một lối mở. Luật .menu-btn ở trên giữ nó ẩn trên desktop. */
+.chat-menu { align-self: flex-start; margin: 10px 0 0 14px; }
+
+.menu-btn:hover,
+.icon-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 700;
+}
+
+.chat-header strong { display: block; }
+.subtitle { color: var(--muted); font-size: 12px; }
+
+.messages {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 24px max(20px, calc((100% - 900px) / 2));
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.welcome {
+  margin: auto;
+  text-align: center;
+  color: var(--muted);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  max-width: 440px;
+}
+.welcome h1 { color: var(--text); font-size: 22px; margin: 8px 0 0; text-wrap: balance; }
+
+/* Cuộc trò chuyện còn trống: lời chào và ô nhắn đứng chung một khối giữa màn
+   hình như Claude, hơi lệch lên trên cho cân mắt. Canh
+   giữa bằng margin auto chứ không justify-content: center, để cửa sổ thấp thì
+   khối này tràn xuống dưới chứ không bị cắt mất phần đầu.
+   Điện thoại giữ ô nhắn ở đáy cho dễ với tay và không bị bàn phím che. */
+@media (min-width: 721px) {
+  .chat.empty-state { padding-bottom: 10vh; }
+  .chat.empty-state > .messages { flex: none; overflow: visible; margin-top: auto; }
+  .chat.empty-state .chat-dock > .composer-wrap { margin-bottom: auto; }
+  .chat.empty-state .welcome { flex-direction: row; gap: 14px; max-width: 100%; text-align: left; }
+  .chat.empty-state .welcome .avatar { width: 44px; height: 44px; }
+  .chat.empty-state .welcome h1 { margin: 0; font-size: 30px; font-weight: 600; letter-spacing: -0.01em; }
+  .chat.empty-state .composer-note { text-align: center; }
+}
+
+.bubble { overflow-wrap: anywhere; }
+
+.bubble.user {
+  align-self: flex-end;
+  max-width: min(680px, 82%);
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: var(--user);
+}
+
+/* Lời Peto không có khung: chữ chạy hết bề ngang cột như một trang tài liệu,
+   nên câu trả lời dài và khối code đều rộng hơn hẳn. Bong bóng giờ chỉ còn ở
+   lời người dùng — vẫn đủ để nhìn là biết ai đang nói. */
+.bubble.assistant {
+  align-self: stretch;
+  padding: 2px 0;
+  background: none;
+}
+
+.bubble :first-child { margin-top: 0; }
+.bubble :last-child { margin-bottom: 0; }
+
+/* ---------- Chữ trong câu trả lời ---------- */
+/* Trước đây không có quy tắc nào cho tiêu đề, đoạn, danh sách: tất cả rơi về
+   mặc định của trình duyệt. Nhịp dưới đây bám theo Grok — chữ 16px, dòng thưa,
+   tiêu đề rõ bậc, khoảng cách giữa các khối đều nhau. */
+.bubble { font-size: 16px; line-height: 1.7; }
+
+.bubble p { margin: 0.8em 0; }
+
+/* Công thức dài cuộn riêng, không đẩy rộng khung trò chuyện. */
+.bubble .katex-display { overflow-x: auto; overflow-y: hidden; padding: 0.3em 0; max-width: 100%; }
+.bubble .katex { font-size: 1.1em; }
+
+.bubble h1, .bubble h2, .bubble h3, .bubble h4 { margin: 1.3em 0 0.5em; line-height: 1.35; font-weight: 650; }
+.bubble h1 { font-size: 1.5em; }
+.bubble h2 { font-size: 1.32em; }
+.bubble h3 { font-size: 1.15em; }
+.bubble h4 { font-size: 1em; }
+
+.bubble ul, .bubble ol { margin: 0.8em 0; padding-left: 1.5em; }
+.bubble li { margin: 0.35em 0; }
+.bubble li > p { margin: 0.35em 0; }
+.bubble li::marker { color: var(--muted); }
+
+.bubble strong { font-weight: 650; }
+
+.bubble blockquote { margin: 1em 0; padding: 0.1em 0 0.1em 1em; border-left: 3px solid var(--line); color: var(--muted); }
+
+.bubble hr { margin: 1.6em 0; border: 0; border-top: 1px solid var(--line); }
+
+.bubble-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.bubble-image-link { display: block; }
+.bubble-image {
+  display: block;
+  max-width: min(280px, 100%);
+  max-height: 220px;
+  border-radius: 10px;
+  object-fit: cover;
+}
+
+.file-chip,
+.attach-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 220px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  color: inherit;
+  text-decoration: none;
+}
+
+.file-chip span,
+.attach-chip span {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+
+.file-chip strong,
+.attach-chip strong {
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.file-chip em,
+.attach-chip em {
+  font-style: normal;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.file-ext {
+  flex-shrink: 0;
+  min-width: 36px;
+  padding: 4px 5px;
+  border-radius: 6px;
+  background: var(--user);
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.document-card { max-width: min(280px, 100%); min-width: 0; }
+.document-card .file-chip { max-width: 100%; }
+.document-details { margin: 5px 3px 0; font-size: 11.5px; color: var(--muted); }
+.document-details summary { cursor: pointer; line-height: 1.5; }
+.document-details.ready summary { color: var(--accent); }
+.document-details.limited summary { font-weight: 600; }
+.document-details p { margin: 5px 0 0; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.document-reading { display: flex; align-items: center; gap: 9px; color: var(--muted); font-size: 13px; padding: 6px 0; }
+.document-reading-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
+
+.attach-chip img {
+  width: 36px;
+  height: 36px;
+  border-radius: 6px;
+  object-fit: cover;
+}
+
+/* ---------- Khối code trong chat ---------- */
+
+.code-block {
+  margin: 1em 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--code-bg);
+}
+
+.code-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 8px 8px 16px;
+  border-bottom: 1px solid var(--line);
+  background: none;
+}
+
+.code-lang { color: var(--muted); font-size: 12.5px; font-weight: 500; }
+
+.code-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 9px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.code-copy:hover { border-color: var(--line); color: var(--text); }
+.code-copy svg { flex: none; }
+

@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { expect, it, vi } from 'vitest';
-import MusicVibePicker, { BeatIndicator } from '../src/MusicVibePicker';
-import { getMusicState } from '../src/musicVibe';
+import MusicVibePicker, { BeatIndicator } from '../src/features/companion/characters/MusicVibePicker';
+import { getMusicState } from '../src/features/companion/characters/musicVibe';
 
 it('lights each beat without depending on CSS animations and clears its timer', () => {
   vi.useFakeTimers();
