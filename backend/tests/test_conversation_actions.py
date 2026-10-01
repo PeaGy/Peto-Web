@@ -1,7 +1,8 @@
 import sqlite3
 
-import db
-import conversation_actions
+import storage as db
+from storage import connection as db_connection
+from features.chat import conversations as conversation_actions
 from conftest import TEST_OWNER, read_events
 
 
@@ -48,7 +49,7 @@ async def test_edit_stream_keeps_original_and_excludes_future(client):
 async def test_branch_copies_files_and_documents_independently(client, tmp_path):
     cid = await db.create_conversation(TEST_OWNER, 'Có tệp')
     first = await db.add_message(cid, 'user', 'tạo tài liệu')
-    with sqlite3.connect(db.DB_PATH) as c:
+    with sqlite3.connect(db_connection.DB_PATH) as c:
         c.execute('INSERT INTO chat_documents VALUES(?,?,?,?)', ('doc-branch-test',TEST_OWNER,cid,1))
         c.execute('INSERT INTO chat_document_versions(document_id,version,title,content,created_at,style) VALUES(?,?,?,?,?,?)', ('doc-branch-test',1,'Doc','hello',1,'report'))
     await db.add_message(cid, 'assistant', 'Đã tạo', artifacts=[{'id':'doc-branch-test','version':1,'filename':'a.docx'}])

@@ -1,4 +1,7 @@
 """Tài liệu giả kiểm tra đọc chữ, giới hạn và cách ly hội thoại; không gọi AI thật."""
+from features.chat import history as chat_history
+from features.chat import schemas
+
 
 import base64
 import io
@@ -10,10 +13,11 @@ import pytest
 from pypdf import PdfWriter
 from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 
-import attachments
-import db
-import document_reader as reader
-import main
+from shared import attachments
+import storage as db
+from storage import connection as db_connection
+from features.documents import reader
+from features.chat import service as chat_service
 from ai.xai import build_input_payload
 from conftest import OTHER_DISCORD_ID, TEST_OWNER, read_events
 
@@ -151,7 +155,7 @@ async def test_process_reader_really_extracts():
 
 
 async def test_timeout_and_cancellation(monkeypatch):
-    import config
+    from core import config
     monkeypatch.setattr(config, "DOCUMENT_TIMEOUT", .02)
     cancelled = []
 
@@ -175,8 +179,8 @@ async def test_timeout_and_cancellation(monkeypatch):
     ("ke-hoach.docx", reader.DOCX_MIME, docx_bytes(), "Máy chủ | 350.000 đồng"),
 ], ids=["pdf", "docx"])
 async def test_upload_provider_followup_cache_and_privacy(client, monkeypatch, name, mime, data, expected):
-    import auth
-    from config import SESSION_COOKIE, owner_key
+    from features.accounts import auth
+    from core.config import SESSION_COOKIE, owner_key
     histories = []
 
     async def spy(self, **kwargs):
@@ -186,7 +190,7 @@ async def test_upload_provider_followup_cache_and_privacy(client, monkeypatch, n
     class SpyProvider:
         stream = spy
 
-    monkeypatch.setattr(main, "get_provider", lambda model="peto": SpyProvider())
+    monkeypatch.setattr(chat_service, "get_provider", lambda model="peto": SpyProvider())
     events = await read_events(await client.post("/api/chat", json={"message": "Tóm tắt tài liệu", "attachments": [outgoing(data, name, mime)]}))
     assert events[0]["type"] == "reading"
     assert events[-1]["type"] == "done", events
@@ -222,15 +226,15 @@ async def test_legacy_pdf_read_once_and_owner_checked(client, tmp_path):
                             message_id=mid, filename="cu.pdf", mime=reader.PDF_MIME,
                             kind="file", size=path.stat().st_size, path=str(path))
     rows = await db.get_messages(TEST_OWNER, cid)
-    await main._read_legacy_documents(TEST_OWNER, rows, 4)
-    assert "7300" in main._to_chat_messages(rows)[0].attachments[0].text_excerpt
+    await chat_history._read_legacy_documents(TEST_OWNER, rows, 4)
+    assert "7300" in chat_history._to_chat_messages(rows)[0].attachments[0].text_excerpt
     await db.save_document("guest:someone-else", "legacy-pdf", reader.result("unreadable", "ghi đè"))
     saved = (await db.get_messages(TEST_OWNER, cid))[0]["attachments"][0]
     assert reader.cached_document(saved["document"])["status"] == "ready"
 
 
 def test_context_cap_shares_current_files_before_old_history(monkeypatch):
-    monkeypatch.setattr(main, "MAX_DOCUMENT_CONTEXT_CHARS", 100)
+    monkeypatch.setattr(chat_history, "MAX_DOCUMENT_CONTEXT_CHARS", 100)
 
     def file(key, text):
         return {"id": key, "filename": key + ".txt", "mime": "text/plain", "kind": "file",
@@ -238,7 +242,7 @@ def test_context_cap_shares_current_files_before_old_history(monkeypatch):
 
     rows = [{"role": "user", "content": "cũ", "attachments": [file("cu", "z" * 100)]},
             {"role": "user", "content": "mới", "attachments": [file("a", "a" * 100), file("b", "b" * 100)]}]
-    history = main._to_chat_messages(rows)
+    history = chat_history._to_chat_messages(rows)
     assert "a" * 50 in history[1].attachments[0].text_excerpt
     assert "a" * 51 not in history[1].attachments[0].text_excerpt
     assert "b" * 50 in history[1].attachments[1].text_excerpt
@@ -247,11 +251,11 @@ def test_context_cap_shares_current_files_before_old_history(monkeypatch):
 
 
 def test_small_files_leave_context_for_long_files(monkeypatch):
-    monkeypatch.setattr(main, "MAX_DOCUMENT_CONTEXT_CHARS", 100)
+    monkeypatch.setattr(chat_history, "MAX_DOCUMENT_CONTEXT_CHARS", 100)
     files = [{"id": str(index), "filename": f"{index}.txt", "mime": "text/plain", "kind": "file",
               "document": reader.result("ready", "Đã đọc", text)}
              for index, text in enumerate(["a" * 80, "b" * 15, "c" * 5])]
-    history = main._to_chat_messages([{"role": "user", "content": "Đọc cả ba", "attachments": files}])
+    history = chat_history._to_chat_messages([{"role": "user", "content": "Đọc cả ba", "attachments": files}])
     assert "a" * 80 in history[0].attachments[0].text_excerpt
     assert "b" * 15 in history[0].attachments[1].text_excerpt
     assert "c" * 5 in history[0].attachments[2].text_excerpt
@@ -261,7 +265,7 @@ def test_small_files_leave_context_for_long_files(monkeypatch):
 async def test_cancel_before_read_does_not_create_conversation(client):
     import asyncio
     before = await db.list_conversations(TEST_OWNER, limit=1000)
-    response = await main.chat(main.ChatRequest(message="Đọc giúp", attachments=[main.AttachmentIn(**outgoing(pdf_bytes()))]), owner=TEST_OWNER)
+    response = await chat_service.chat(schemas.ChatRequest(message="Đọc giúp", attachments=[schemas.AttachmentIn(**outgoing(pdf_bytes()))]), owner=TEST_OWNER)
     stream = response.body_iterator
     assert '"type": "reading"' in await anext(stream)
     with pytest.raises(asyncio.CancelledError):
@@ -289,7 +293,7 @@ async def test_document_migration_preserves_old_attachment(tmp_path, monkeypatch
     with sqlite3.connect(path) as connection:
         connection.execute('CREATE TABLE attachments (id TEXT PRIMARY KEY, owner TEXT, conversation_id TEXT, message_id INTEGER, filename TEXT, mime TEXT, kind TEXT, size INTEGER, path TEXT, created_at REAL)')
         connection.execute("INSERT INTO attachments VALUES ('cu', 'guest:cu', 'hoi-thoai', 1, 'giu.pdf', 'application/pdf', 'file', 12, 'giu.pdf', 0)")
-    monkeypatch.setattr(db, "DB_PATH", path)
+    monkeypatch.setattr(db_connection, "DB_PATH", path)
     await db.init_db()
     await db.init_db()
     with sqlite3.connect(path) as connection:

@@ -20,12 +20,12 @@ from openai import (
     RateLimitError,
 )
 
-from config import MAX_HISTORY_IMAGES, XAI_API_BASE, XAI_MAX_OUTPUT_TOKENS, XAI_MODEL, WEB_SEARCH_ENABLED
-from xai_auth import XaiAuth, XaiAuthError
-from attachment_tools import NAMES as FILE_TOOLS, current_files
-from chat_tools import TOOL_SCHEMAS, execute_tool
-from document_tools import current_session, SCHEMA as DOCUMENT_SCHEMA
-from web_search import normalize_sources, search_context
+from core.config import MAX_HISTORY_IMAGES, XAI_API_BASE, XAI_MAX_OUTPUT_TOKENS, XAI_MODEL, WEB_SEARCH_ENABLED
+from ai.xai_auth import XaiAuth, XaiAuthError
+from shared.attachment_tools import NAMES as FILE_TOOLS, current_files
+from shared.time_tools import TOOL_SCHEMAS, execute_tool
+from features.documents.tools import current_session, SCHEMA as DOCUMENT_SCHEMA
+from shared.web_search import normalize_sources, search_context
 
 from .base import ChatMessage, ChatProvider, ProviderError, StreamChunk
 

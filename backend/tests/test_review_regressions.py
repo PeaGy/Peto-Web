@@ -1,18 +1,21 @@
 """Kiểm thử hồi quy: quyền bị thu hồi, lưu dở dang, phân trang và ẩn danh."""
+from features.chat import schemas
+
 import asyncio
 import sqlite3
 
 import httpx
 import pytest
 
-import auth
-import db
-import main
+from features.accounts import auth
+import storage as db
+from storage import connection as db_connection
+from features.chat import service as chat_service
 from ai.base import ProviderError
-from config import SESSION_COOKIE
+from core.config import SESSION_COOKIE
 from conftest import TEST_DISCORD_ID, TEST_OWNER, read_events
-from discord_memory import DiscordMemory
-from rate_limit import Admission
+from features.accounts.discord_memory import DiscordMemory
+from core.rate_limit import Admission
 
 
 async def test_cookie_hong_khong_dung_duoc_endpoint_rieng_tu_nao(client):
@@ -42,7 +45,7 @@ async def test_partial_reply_survives_errors(client, monkeypatch, failure):
         async def stream(self, **kwargs):
             yield 'Phần đã nhìn thấy'
             raise failure
-    monkeypatch.setattr(main, 'get_provider', lambda model="peto": BrokenProvider())
+    monkeypatch.setattr(chat_service, 'get_provider', lambda model="peto": BrokenProvider())
     response = await client.post('/api/chat', json={'message': 'hello'})
     events = await read_events(response)
     assert events[-1]['type'] == 'error'
@@ -58,8 +61,8 @@ async def test_cancelled_stream_saves_partial_text(client, monkeypatch):
         async def stream(self, **kwargs):
             yield 'Đã nhận một phần'
             await asyncio.sleep(3600)
-    monkeypatch.setattr(main, 'get_provider', lambda model="peto": SlowProvider())
-    response = await main.chat(main.ChatRequest(message='cancel test'), owner=TEST_OWNER)
+    monkeypatch.setattr(chat_service, 'get_provider', lambda model="peto": SlowProvider())
+    response = await chat_service.chat(schemas.ChatRequest(message='cancel test'), owner=TEST_OWNER)
     stream = response.body_iterator
     import json
     meta = json.loads((await anext(stream)).split('data: ')[1])
@@ -81,7 +84,7 @@ async def test_empty_timeout_does_not_repeat_paid_turn(client, monkeypatch, capl
             raise TimeoutError()
             yield ''
 
-    monkeypatch.setattr(main, 'get_provider', lambda model='peto': TimedOutProvider())
+    monkeypatch.setattr(chat_service, 'get_provider', lambda model='peto': TimedOutProvider())
     with caplog.at_level('INFO', logger='peto_web'):
         events = await read_events(await client.post('/api/chat', json={'message': 'private test input', 'effort': 'low'}))
     assert calls == 1
@@ -96,7 +99,7 @@ async def test_cooldown_does_not_save_rejected_message(client, monkeypatch):
     gate = Admission(cooldown=300)
     async with gate.slot(TEST_OWNER):
         pass
-    monkeypatch.setattr(main, 'admission', gate)
+    monkeypatch.setattr(chat_service, 'admission', gate)
     before = await db.list_conversations(TEST_OWNER, limit=1000)
     response = await client.post('/api/chat', json={'message': 'not accepted'})
     events = await read_events(response)
@@ -121,7 +124,7 @@ async def test_schema_upgrade_preserves_existing_messages(tmp_path, monkeypatch)
     with sqlite3.connect(path) as connection:
         connection.execute('CREATE TABLE messages (id INTEGER PRIMARY KEY, conversation_id TEXT, role TEXT, content TEXT, created_at REAL)')
         connection.execute("INSERT INTO messages VALUES (1, 'legacy', 'user', 'Giữ nguyên', 0)")
-    monkeypatch.setattr(db, 'DB_PATH', path)
+    monkeypatch.setattr(db_connection, 'DB_PATH', path)
     await db.init_db()
     await db.init_db()
     with sqlite3.connect(path) as connection:
@@ -137,7 +140,7 @@ async def test_memory_never_reuses_permission_or_deleted_data(monkeypatch, secon
     responses = iter([{'available': True, 'summary': 'Trí nhớ cũ'}, second])
     transport = httpx.MockTransport(lambda request: httpx.Response(200, json=next(responses)))
     original = httpx.AsyncClient
-    monkeypatch.setattr('discord_memory.httpx.AsyncClient', lambda **kwargs: original(transport=transport, **kwargs))
+    monkeypatch.setattr('features.accounts.discord_memory.httpx.AsyncClient', lambda **kwargs: original(transport=transport, **kwargs))
     memory = DiscordMemory(base_url='http://gateway.test', token='fake', ttl=300)
     assert (await memory.fetch(TEST_DISCORD_ID)).summary == 'Trí nhớ cũ'
     assert (await memory.fetch(TEST_DISCORD_ID)).is_empty

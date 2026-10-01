@@ -80,6 +80,19 @@ provider error, `__slow__` streams very slowly to exercise timeout/cancel paths.
 
 ## Architecture
 
+### Backend layout (2026-10-01)
+
+See `backend/README.md` for the current directory map. `main.py` is the stable `uvicorn main:app` entry point;
+`core/lifespan.py` owns startup. Feature routers and services live under `features/`, shared attachment/time/search
+tools under `shared/`, SQLite schema and domain queries under `storage/`, and persona blocks under `prompts/`.
+The old flat module names used in historical notes below refer to these feature modules; do not reintroduce flat shims
+or import the bootstrap from a feature. `xai_auth.py` remains only as the existing `python -m xai_auth` CLI entry.
+
+Chat is split into `features/chat/api.py`, `schemas.py`, `service.py`, `history.py`, and `prompt_context.py`.
+Provider spies patch `features.chat.service.get_provider`; history budget spies patch `features.chat.history`;
+migration tests patch `storage.connection.DB_PATH`. Prompt text, API paths, schema/SQL, resource locations and launch
+commands were preserved during the move. Tests keep setting fake environment variables before the first config import.
+
 ### Two run modes
 
 - **Dev = two processes.** uvicorn serves the API; Vite serves the UI and proxies `/api`.
@@ -102,15 +115,15 @@ awaits `get_app_identity`, that function must never raise.
 ### Identity and data isolation
 
 `owner` is the single tenancy key, formatted `discord:<id>` (`config.owner_key`). Every
-query in `db.py` takes `owner` and filters on it **in SQL** — there is no "load then check"
+query in `storage/` takes `owner` and filters on it **in SQL** — there is no "load then check"
 path. Knowing someone else's conversation id gets you a 404.
 
-The server never accepts a Discord ID from the browser. `auth.py` exchanges the OAuth code
+The server never accepts a Discord ID from the browser. `features/accounts/auth.py` exchanges the OAuth code
 server-side, calls `/users/@me` itself, and discards the Discord access token immediately
 (nothing stored, nothing sent to the client). The session is an `itsdangerous` signed
 cookie holding only the owner key.
 
-There are three ways in, all in `auth.py`: Discord OAuth, Google OAuth, and `POST
+There are three ways in, all in `features/accounts/auth.py`: Discord OAuth, Google OAuth, and `POST
 /api/auth/guest`, which mints a `guest:<uuid>` owner with no external account behind it.
 `owner_key(provider, external_id)` builds every owner; `provider_from_owner` is what
 `session_owner` uses to reject a signed cookie carrying a malformed key.
@@ -121,7 +134,7 @@ the cost; do not reintroduce a gate unless asked. `tests/test_auth.py` asserts
 `config.ALLOWED_DISCORD_IDS` no longer exists so a well-meaning revert gets caught.
 
 Only `discord:` owners carry a Discord ID, so `discord_id_from_owner` returns `""` for
-Google and guest accounts and `main.py` skips the memory gateway entirely for them. That
+Google and guest accounts and `features/chat/prompt_context.py` skips the memory gateway entirely for them. That
 is what keeps open registration from exposing members' long-term memory.
 
 ### AI provider abstraction
@@ -140,7 +153,7 @@ else propagates and gets logged as an unexpected error behind a generic message.
 
 ### Model choice (Peto and GPT-6)
 
-On 2026-09-17 the owner added OpenAI API billing and picked this design from mockups. `ai_models.py` holds the catalog
+On 2026-09-17 the owner added OpenAI API billing and picked this design from mockups. `ai/models.py` holds the catalog
 and the access rules; the server checks them on every chat turn and agent step, never trusting the UI:
 
 - `peto` (Grok through the web's xAI account) for everyone; `luna` (`gpt-6-luna`) for Discord and Google accounts,
@@ -158,7 +171,7 @@ and the access rules; the server checks them on every chat turn and agent step, 
   the choice in `localStorage` (`peto-model`), and phones show the send button as an arrow only to keep the bar on
   one row.
 - The persona rule still holds: whatever model runs, Peto does not name the model behind it.
-- Tests patch `main.get_provider` with a callable that accepts the model (`lambda model="peto": ...`).
+- Tests patch `features.chat.service.get_provider` with a callable that accepts the model (`lambda model="peto": ...`).
   `tests/test_models.py` covers the access rules, step costs and the OpenAI call shape with fake clients.
 
 ### Chat request lifecycle (`POST /api/chat`)
@@ -210,7 +223,7 @@ ones, and `GET /api/companion` returns the latest `companion` thread with its re
 The endpoint is POST, so `EventSource` cannot be used. `frontend/src/shared/api/api.ts` does the framing by
 hand: `fetch`, then `response.body.getReader()`, split on a blank line, parse the `data: `
 line. If you add an SSE event type, update `ChatEvent` and `ChatHandlers` in `api.ts` as
-well as the emitter in `main.py`.
+well as the emitter in `features/chat/service.py`.
 
 ### Tool calling
 
@@ -233,7 +246,7 @@ default bounds and the existing chat timeout; do not confuse the local clock-too
 round limit with native search calls. Do not automatically retry a timed-out turn once
 search activity has been observed, or a forced search turn.
 
-`web_search.py` validates HTTP(S) source URLs, removes duplicates and bounds the list.
+`shared/web_search.py` validates HTTP(S) source URLs, removes duplicates and bounds the list.
 Extract sources from tool outputs or URL annotations, never by scraping model prose
 for links. Persist them in `messages.sources`, return them in history, and include them
 as clearly marked old references in the next model input. Frontend `WebSources.tsx`
@@ -260,9 +273,9 @@ identically on Windows and Linux.
 
 ### Attachments
 
-`attachments.py` validates by **magic bytes first**, then declared MIME / extension. A file
+`shared/attachments.py` validates by **magic bytes first**, then declared MIME / extension. A file
 claiming to be an image but failing `sniff_image_mime` is rejected outright. Images become
-data URLs for the model. `document_reader.py` reads PDF text with page labels, DOCX body
+data URLs for the model. `features/documents/reader.py` reads PDF text with page labels, DOCX body
 paragraphs/tables, and UTF-8/UTF-16 text in a cancellable AnyIO worker process. PDF scans
 are NOT OCRed; encrypted/broken/oversized documents retain honest reading status.
 Do not promise image/chart/layout understanding for PDF/DOCX or legacy .doc support.
@@ -287,7 +300,7 @@ Before this, a text file kept only its first 80,000 characters, so the errors at
     characters instead.
   - `VERSION` went to 2, so old cached excerpts are re-read lazily.
   - The notice is shown to users under "Đọc được một phần", so it names no tools.
-- **Tools** (`attachment_tools.py`): `search_attachment` (plain case- and diacritic-insensitive text, alternatives
+- **Tools** (`shared/attachment_tools.py`): `search_attachment` (plain case- and diacritic-insensitive text, alternatives
   split by " | ", never regex) and `read_attachment_lines` (at most 400 lines).
   - They work on the whole file, re-read from disk. Text is decoded as is; PDF and Word go through
     `read_full_document`, still bounded by the page cap and the timeout.
@@ -305,14 +318,14 @@ Before this, a text file kept only its first 80,000 characters, so the errors at
 
 Only the `MAX_HISTORY_IMAGES` (default 4) most recent images are re-sent to the model;
 older ones degrade to a text placeholder. This is computed twice — in
-`main._to_chat_messages` (which decides what to read off disk) and in
+`features.chat.history._to_chat_messages` (which decides what to read off disk) and in
 `ai/xai._recent_image_keys` (which decides what to send). Keep them consistent.
 
 ### Documents in chat (`create_document`)
 
-`document_tools.py` gives the Chat tab (not Companion or the agent) a `create_document` tool. The model sends a title and
+`features/documents/tools.py` gives the Chat tab (not Companion or the agent) a `create_document` tool. The model sends a title and
 Markdown; `document_jobs.build_files` renders a PDF (ReportLab, `document_export.render_pdf`) and a DOCX (python-docx,
-`render_docx`), `document_store.py` keeps them per owner, and the card shows page 1 of the PDF (pypdfium2). The DOCX
+`render_docx`), `storage/documents.py` keeps them per owner, and the card shows page 1 of the PDF (pypdfium2). The DOCX
 preview is that PDF, so a feature must exist in both renderers or the preview misleads. Two layouts: `essay` (A4, Times
 New Roman / Noto Serif) and `report` (Letter, Arial / Noto Sans).
 
@@ -322,7 +335,7 @@ came second (next section); PowerPoint templates and Excel may follow.
   list, honour `start`, and Word renumbers when the user edits. Nested ordered lists go 1. → a. → i., bullets • → –.
   The PDF draws the same labels (`list_label`) at the same hanging indents (`list_indent`). Later paragraphs of an item
   carry no number.
-- **Images.** A line `![caption](anh-N)` inserts the Nth image the user sent in this conversation (`document_images.py`),
+- **Images.** A line `![caption](anh-N)` inserts the Nth image the user sent in this conversation (`features/documents/images.py`),
   with the caption below it.
   - Only that owner's images of that conversation, filtered in SQL and read from the stored path. Any other image URL
     stays text (`[Ảnh: …]`) and is never fetched.
@@ -423,7 +436,7 @@ diagram large in a panel on the right (`DiagramPanel.tsx`), where the document p
 
 ### Imagine (image generation)
 
-Fully separated from chat: its own router (`imagine_api.py`), its own REST call to
+Fully separated from chat: its own router (`features/imagine/api.py`), its own REST call to
 `/v1/images/generations` (`ai/imagine.py`), its own `imagine_jobs` / `imagine_images`
 tables. Chat **intentionally has no image-generation tool**, so Peto never draws when the
 user was just talking.
@@ -453,11 +466,11 @@ in the lightbox, which opens on top of the library.
 
 ### Configuration
 
-`config.py` is where environment variables are read. Every numeric knob goes through
+`core/config.py` is where environment variables are read. Every numeric knob goes through
 `_env_int` / `_env_float`, which clamp to a min/max so a bad value degrades instead of
-crashing. When adding a setting: declare it in `config.py` **and** document it in
-`.env.example`. Two exceptions exist: `XAI_API_KEY` is read directly in `xai_auth.py`, and
-`PETO_VOICE_WORKER_TOKEN` is read on every worker request in `voice_api.py` (see the voice relay below).
+crashing. When adding a setting: declare it in `core/config.py` **and** document it in
+`.env.example`. Two exceptions exist: `XAI_API_KEY` is read directly in `ai/xai_auth.py`, and
+`PETO_VOICE_WORKER_TOKEN` is read on every worker request in `features/voice/api.py` (see the voice relay below).
 
 `XaiAuth` prefers OAuth tokens (`backend/data/xai_tokens.json`), refreshes them on expiry,
 and falls back to `XAI_API_KEY` if refresh fails or no token file exists.
@@ -473,7 +486,7 @@ where cascade deletes matter (SQLite has it off by default).
 Tables: `conversations`, `messages`, `attachments`, `users`, `user_profiles`,
 `imagine_jobs`, `imagine_images`, `agent_devices`, `agent_usage`, `roleplay_consents`, `voice_usage`,
 `companion_memories`, `companion_memory_state`
-(`speech_cloud.py` also creates its own `speech_budget` on first use). `users` is the only place mapping
+(`features/voice/cloud.py` also creates its own `speech_budget` on first use). `users` is the only place mapping
 a web account to a Discord ID.
 `conversations.mode` (`chat` or `companion`) was added with the same manual migration; older rows
 default to `chat`. `conversations.persona` (`assistant` or `roleplay`) was added the same way; older rows default to
@@ -481,10 +494,10 @@ default to `chat`. `conversations.persona` (`assistant` or `roleplay`) was added
 
 ### User profile (Settings → Hồ sơ)
 
-`profile_api.py` stores a self-written profile per owner in `user_profiles` — kept apart
+`features/accounts/profile.py` stores a self-written profile per owner in `user_profiles` — kept apart
 from `users`, which is overwritten from Discord/Google on every login: full name, what
 Peto should call them, an occupation code from a fixed server-side list, and free-form
-instructions (1500 chars). `main._build_system_prompt` re-reads it on **every** turn and
+instructions (1500 chars). `features.chat.prompt_context._build_system_prompt` re-reads it on **every** turn and
 appends `persona.build_profile_context` after the memory block, so an edit applies to the
 very next message. Instructions are fenced with `USER_INSTRUCTIONS_START/END`, copies of
 those markers are stripped from user text, and the block states it cannot override the
@@ -569,7 +582,7 @@ opening a conversation takes it from the list.
 
 ### Discord memory gateway
 
-`discord_memory.py` calls the bot's gateway over loopback. It is **one-way, read-only, and
+`features/accounts/discord_memory.py` calls the bot's gateway over loopback. It is **one-way, read-only, and
 fails soft** — any error, bad JSON, wrong token or unreachable host returns `EMPTY` and chat
 continues normally. It re-queries every turn and never caches, because the gateway also
 reports the user's anonymity status; a cached snapshot could surface memory a user just
@@ -648,7 +661,7 @@ listeners through the VPS in three hops:
    `X-Voice-Error: 1` if speaking failed. It sends `PETO_VOICE_WORKER_TOKEN` (32+ characters, the
    same value as on the VPS) only to the site, requires an HTTPS `PETO_VOICE_SERVER_URL`, and never
    follows redirects. `tests/test_voice_worker.py` checks the token never reaches the local server.
-3. `backend/voice_api.py` serves signed-in users. `GET /api/voice/health` reports `home.online` (a
+3. `backend/features/voice/api.py` serves signed-in users. `GET /api/voice/health` reports `home.online` (a
    heartbeat in the last 15 s) and lists the home voices in `voices` only then. `POST /api/voice/speak`
    with `playful-1` or `gentle-2` and up to 300 characters queues a job and waits up to 120 s for the audio: 429 when four jobs are
    already queued or this owner has one, 503 when the worker is offline or reports a failure, 504 on
@@ -821,7 +834,7 @@ The first Brain feature, picked by the owner from mockups on 2026-09-27. It has 
 in the Companion group (layout A). The Companion chat column shows a "Peto vừa ghi nhớ: … · Xem" line, and the feature
 is on by default.
 
-- **When it runs.** After a complete Companion turn, `main.py` marks the owner pending before `done`. It then runs
+- **When it runs.** After a complete Companion turn, `features/chat/service.py` marks the owner pending before `done`. It then runs
   `companion_memory.remember(owner)` in the response's background task, so the reply and voice are never delayed. Runs
   for the same owner are coalesced (`_running` / `_again`). Each run is one extra small `peto` call: `MEMORY_MARKER` in
   its system prompt, JSON `{add, update, remove}` out. It is skipped when the new user text is under `MIN_NEW_CHARS`.
@@ -850,7 +863,7 @@ is on by default.
 - **Prompt.** On Companion turns only, `_build_system_prompt` appends `persona.build_companion_memory` after the profile
   block. It is fenced by `COMPANION_MEMORY_START/END` (copies are stripped from notes) and labelled as possibly
   outdated data, not instructions.
-- **API.** `memory_api.py`:
+- **API.** `features/companion/memory_api.py`:
   - `GET /api/companion/memory` returns `available`, `enabled`, `pending`, `limit` and `memories`.
   - `PUT /settings` turns memory on or off.
   - `DELETE /{id}` deletes one memory; another owner's id gives 404.
@@ -869,7 +882,7 @@ is on by default.
 - **Tests.**
   - `backend/tests/test_companion_memory.py`. The mock answers `__nho__:text`, `__sua__:id:text` and `__quen__:id`,
     and turns a summary call into the old summary plus the user lines it was given. The summary tests shrink the
-    window with `main.MAX_HISTORY_MESSAGES` and `companion_memory.SUMMARY_BATCH` (both 4).
+    window with `features.chat.service.MAX_HISTORY_MESSAGES` and `companion_memory.SUMMARY_BATCH` (both 4).
   - Provider spies must filter out `MEMORY_MARKER` and `SUMMARY_MARKER` as well as `TITLE_MARKER`.
   - Frontend: `MemorySettings.test.tsx`, and the notice and "Xem" tests in `Companion.test.tsx` and `Hearing.test.tsx`,
     with `MEMORY_POLL_DELAYS` mocked to 0.
@@ -878,7 +891,7 @@ is on by default.
 
 On 2026-09-27 the owner tried "pick a number from 1-9 and remember it". Peto said it had picked one and judged
 guesses ("No, that wasn't it"), then admitted it never had a number. The model keeps nothing between turns except the
-conversation text. The owner picked option A from two: a hidden note (`private_notes.py`), rather than only telling
+conversation text. The owner picked option A from two: a hidden note (`features/companion/private_notes.py`), rather than only telling
 Peto to be honest and swap roles.
 
 - **Prompt.** The PRIVATE NOTES section of `COMPANION_SYSTEM_PROMPT` tells Peto to write a game secret once in
@@ -1014,7 +1027,7 @@ sends the whole conversation to `POST /api/agent/step`, the backend makes exactl
 `thinking` / `delta` / `done{output, usage}` / `error`, and the CLI runs the requested tools locally and sends their
 results in the next step. The server stores no conversation (`store=False`), and the xAI credential never leaves it.
 
-- **Login** is a device-code flow in `agent_api.py`. `device/start` returns a `XXXX-XXXX` code; the user opens
+- **Login** is a device-code flow in `features/agent/api.py`. `device/start` returns a `XXXX-XXXX` code; the user opens
   `/?agent_code=…`, where `AgentConnectDialog.tsx` keeps the code in `sessionStorage` across OAuth redirects; `POST
   device/{code}` allows or denies; `device/token` hands the CLI a `peto_…` token exactly once. The fixed routes must stay
   declared before `/device/{user_code}`. Pending codes live in RAM for 10 minutes, so this needs the single-process
@@ -1043,7 +1056,7 @@ results in the next step. The server stores no conversation (`store=False`), and
   a web URL, so the AI service fetches nothing on the CLI's behalf), at most `MAX_STEP_IMAGES` (8) per step and
   `MAX_STEP_IMAGE_BYTES` (3 MB) each. Rejected images cost no step. The instructions
   are always the server's: `PERSONA_PROMPT` + `persona.AGENT_PROMPT` + the search prompt for the current setting + time
-  context + project/OS line. Tool schemas are server-owned (`agent_tools.py`). `ai/agent.py` holds the xAI call and a mock that runs a scripted `__demo__` task (read
+  context + project/OS line. Tool schemas are server-owned (`features/agent/tools.py`). `ai/agent.py` holds the xAI call and a mock that runs a scripted `__demo__` task (read
   `README.md` → edit its first line → run a command → summarize) based on the tool results the CLI sends back. The mock
   estimates usage at about 4 characters per token so the CLI's token display has numbers.
 - **Deleting and renaming are tools, not shell commands** (`delete_file`, `move_file`). They go through the CLI's
@@ -1389,7 +1402,7 @@ results in the next step. The server stores no conversation (`store=False`), and
   `peto status`. Bump `version` and `peto_agent.__version__` together whenever the CLI changes (`test_agent_install.py`
   checks they match), or installed copies are never told to update. `/usage` shows today's steps and tokens, the open
   conversation's size and the effort.
-- **One-line install** (`irm https://<site>/install.ps1 | iex`). `agent_install.py` serves `GET /install.ps1`, which is
+- **One-line install** (`irm https://<site>/install.ps1 | iex`). `features/agent/install.py` serves `GET /install.ps1`, which is
   outside `/api`, so its router must stay included before the static catch-all, plus `GET /api/agent/download/<wheel>`.
   The backend builds a pure-Python wheel of `agent-cli` itself with `zipfile` from `pyproject.toml` (no setuptools) and
   adds `peto_agent/default_server.txt`, the last fallback `config.default_server()` gives `peto login`. Builds are
@@ -1405,7 +1418,7 @@ results in the next step. The server stores no conversation (`store=False`), and
 - **Peto in the web chat explains the agent**, because the install command is published nowhere else.
   `persona.build_agent_guide` goes right after `SYSTEM_PROMPT` on every chat and Companion turn, before the per-user
   blocks. Its install command comes from `agent_install.install_command(request)`, and it falls back to a
-  `<địa chỉ Peto>` placeholder when the origin is not https. Never hardcode the site's domain in `persona.py`: it would
+  `<địa chỉ Peto>` placeholder when the origin is not https. Never hardcode the site's domain in `prompts/`: it would
   go stale across deployments, and `tests/test_persona.py` forbids member names a domain can contain. When the install
   or usage flow changes, update the guide too.
 - `backend/tests/test_agent_api.py`, `backend/tests/test_agent_install.py` (including a real `pip install` of the wheel)
@@ -1453,8 +1466,8 @@ results in the next step. The server stores no conversation (`store=False`), and
 ### Peto Docs (`/docs/`)
 
 Public Vietnamese guides, no sign-in. `main.tsx` mounts `Docs.tsx` instead of the app for `/docs` and `/docs/*`. The
-backend serves the same `index.html` there with the article's title and description (`static_files.py`), and
-`/api/docs` returns the articles (`docs_api.py`; content in `backend/docs_content/articles.json`, see its README).
+backend serves the same `index.html` there with the article's title and description (`core/static_files.py`), and
+`/api/docs` returns the articles (`features/docs/api.py`; content in `backend/docs_content/articles.json`, see its README).
 Since 2026-09-29 every `/docs` page also carries the `og.png` link preview, through the same `with_preview` as the home
 page (the bot avatar when no public https origin is known).
 
@@ -1606,7 +1619,7 @@ Chat, Companion and roleplay turn (not the Agent CLI).
 - **Never** point `PETO_WEB_DB` or `PETO_XAI_TOKEN_PATH` at the Discord bot's files
   (`bot_memory.db`, `.xai_tokens.json`). Separate database, separate tokens, no shared files
   with the bot's production data.
-- `persona.py` must not contain real names or Discord IDs of members — `tests/test_persona.py`
+- `prompts/` must not contain real names or Discord IDs of members — `tests/test_persona.py`
   asserts this. Personal context is loaded per account at runtime, not baked into the prompt.
 - Peto on the web is an AI assistant by default, by the owner's decision. The Discord bot's roleplay persona
   (age/identity, "don't always comply", insult-back, NSFW or pet roleplay, `*action*` narration) lives only in
@@ -1620,7 +1633,7 @@ Chat, Companion and roleplay turn (not the Agent CLI).
 - Registration is open by the owner's explicit decision. Do not add an allowlist, invite
   code, or per-account quota back unless asked for it. The owner asked for two per-account quotas: the Peto Agent
   daily step cap, kept scoped to the agent, and the monthly Giọng Peto allowance (`PETO_TTS_FREE_CHARS_MONTHLY`),
-  kept scoped to that voice source. The OpenAI model gates in `ai_models.py` (Luna for Discord/Google, Terra and Sol
+  kept scoped to that voice source. The OpenAI model gates in `ai/models.py` (Luna for Discord/Google, Terra and Sol
   for `PETO_OWNER_ACCOUNTS`) are also the owner's call. These quotas and gates exist because those features spend the
   owner's API billing; Peto itself stays open to everyone.
 - Guest and Google accounts must never resolve to a Discord ID — that isolation is the

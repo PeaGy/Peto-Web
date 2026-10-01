@@ -5,15 +5,17 @@ Không gọi ra mạng thật: mọi lượt gọi Memory Gateway đều đượ
 
 from __future__ import annotations
 
+from core.lifespan import lifespan
+
 import httpx
 import pytest
-import titles
+from features.chat import titles
 from conftest import TEST_DISCORD_ID, TEST_OWNER, read_events
 
-import main
-from config import discord_id_from_owner
-from discord_memory import DiscordMemory
-from persona import build_memory_context
+from features.chat import service as chat_service
+from core.config import discord_id_from_owner
+from features.accounts.discord_memory import DiscordMemory, discord_memory
+from prompts import build_memory_context
 
 
 @pytest.fixture
@@ -26,7 +28,7 @@ def patch_httpx(monkeypatch):
             kwargs["transport"] = transport
             return original(*args, **kwargs)
 
-        monkeypatch.setattr("discord_memory.httpx.AsyncClient", factory)
+        monkeypatch.setattr("features.accounts.discord_memory.httpx.AsyncClient", factory)
 
     return apply
 
@@ -127,7 +129,7 @@ def test_khach_va_google_khong_cham_toi_tri_nho_cua_ai():
     """Chỉ owner Discord mới có ID để hỏi cổng trí nhớ.
 
     Đây là thứ giữ cho việc mở đăng ký không làm lộ trí nhớ dài hạn của thành
-    viên: không có Discord ID thì main.py không gọi cổng, chấm hết.
+    viên: không có Discord ID thì prompt_context.py không gọi cổng, chấm hết.
     """
     assert discord_id_from_owner("guest:" + "a" * 32) == ""
     assert discord_id_from_owner("google:111111111111111111") == ""
@@ -158,10 +160,10 @@ async def test_chat_still_works_when_gateway_is_down(client, patch_httpx, monkey
 
     patch_httpx(handler)
     monkeypatch.setattr(
-        main.discord_memory, "base_url", "http://gateway.test", raising=False
+        discord_memory, "base_url", "http://gateway.test", raising=False
     )
-    monkeypatch.setattr(main.discord_memory, "token", "token-test", raising=False)
-    main.discord_memory.forget(TEST_DISCORD_ID)
+    monkeypatch.setattr(discord_memory, "token", "token-test", raising=False)
+    discord_memory.forget(TEST_DISCORD_ID)
 
     async with client.stream("POST", "/api/chat", json={"message": "chào"}) as response:
         events = await read_events(response)
@@ -180,10 +182,10 @@ async def test_prompt_only_asks_for_the_logged_in_user(client, patch_httpx, monk
 
     patch_httpx(handler)
     monkeypatch.setattr(
-        main.discord_memory, "base_url", "http://gateway.test", raising=False
+        discord_memory, "base_url", "http://gateway.test", raising=False
     )
-    monkeypatch.setattr(main.discord_memory, "token", "token-test", raising=False)
-    main.discord_memory.forget(TEST_DISCORD_ID)
+    monkeypatch.setattr(discord_memory, "token", "token-test", raising=False)
+    discord_memory.forget(TEST_DISCORD_ID)
 
     async with client.stream("POST", "/api/chat", json={"message": "chào"}) as response:
         await read_events(response)
@@ -202,12 +204,12 @@ async def test_memory_reaches_the_provider(client, patch_httpx, monkeypatch):
         )
     )
     monkeypatch.setattr(
-        main.discord_memory, "base_url", "http://gateway.test", raising=False
+        discord_memory, "base_url", "http://gateway.test", raising=False
     )
-    monkeypatch.setattr(main.discord_memory, "token", "token-test", raising=False)
-    main.discord_memory.forget(TEST_DISCORD_ID)
+    monkeypatch.setattr(discord_memory, "token", "token-test", raising=False)
+    discord_memory.forget(TEST_DISCORD_ID)
 
-    provider_class = type(main.get_provider())
+    provider_class = type(chat_service.get_provider())
     original = provider_class.stream
 
     def spy(self, *, system_prompt, messages, effort, timezone=None, web_search="auto"):
@@ -244,6 +246,6 @@ def test_startup_warns_about_half_configuration():
     """
     import inspect
 
-    source = inspect.getsource(main.lifespan)
+    source = inspect.getsource(lifespan)
     assert "PETO_MEMORY_GATEWAY_TOKEN" in source
     assert "Trí nhớ từ Discord" in source

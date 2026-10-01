@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import auth
+from features.accounts import auth
 import asyncio
 import base64
 import json
@@ -12,8 +12,8 @@ import httpx
 import pytest
 from ai import imagine
 from ai.base import ProviderError
-import imagine_api
-from config import SESSION_COOKIE, UPLOAD_DIR, owner_key
+from features.imagine import api as imagine_api
+from core.config import SESSION_COOKIE, UPLOAD_DIR, owner_key
 
 
 async def test_imagine_creates_and_serves_image(client):

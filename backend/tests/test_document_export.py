@@ -5,10 +5,10 @@ import pytest
 from pypdf import PdfReader
 from docx import Document
 from conftest import TEST_OWNER, read_events
-import db
-import document_api
-import document_jobs
-from document_export import parse_blocks, render_docx, render_pdf
+import storage as db
+from features.documents import api as document_api
+from features.documents import jobs as document_jobs
+from features.documents.export import parse_blocks, render_docx, render_pdf
 
 CONTENT = '''# Kế hoạch học tập
 
@@ -66,7 +66,7 @@ async def test_versions_export_exact_revision_and_conflict(client):
 
 
 async def test_other_owner_cannot_read_revise_export_or_delete(client):
-    from document_store import save_document
+    from storage.documents import save_document
     conversation = await db.create_conversation('other-owner', 'Private')
     document = await save_document('other-owner', conversation, 'Private', 'Secret')
     path = f"/api/documents/{document['id']}"

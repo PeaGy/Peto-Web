@@ -13,8 +13,8 @@ import pytest
 
 from ai.base import ProviderError
 from ai.xai import XAIProvider
-from config import XAI_TOKEN_PATH
-from xai_auth import TokenBundle, XaiAuth, XaiAuthError, load_tokens, save_tokens
+from core.config import XAI_TOKEN_PATH
+from ai.xai_auth import TokenBundle, XaiAuth, XaiAuthError, load_tokens, save_tokens
 
 
 def test_provider_registry_exposes_xai():
@@ -70,7 +70,7 @@ async def test_expired_token_without_refresh_endpoint_raises():
 
 
 def test_token_endpoint_host_is_validated():
-    from xai_auth import _validate_xai_url
+    from ai.xai_auth import _validate_xai_url
 
     assert _validate_xai_url("https://auth.x.ai/oauth2/token")
     with pytest.raises(XaiAuthError):

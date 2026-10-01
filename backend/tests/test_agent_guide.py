@@ -1,7 +1,7 @@
 import json
 
-import agent_guide
-import agent_install
+from features.agent import guide as agent_guide
+from features.agent import install as agent_install
 
 
 def guide(question=''):

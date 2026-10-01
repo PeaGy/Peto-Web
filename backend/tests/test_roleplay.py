@@ -3,8 +3,8 @@ bot và gửi nhiều tin cũ hơn chat thường."""
 
 from __future__ import annotations
 
-import main
-import titles
+from features.chat import service as chat_service
+from features.chat import titles
 from conftest import read_events
 
 ASSISTANT_MARKER = "## Trung thực và an toàn"
@@ -62,8 +62,8 @@ async def test_roleplay_needs_a_real_account_and_an_adult_confirmation(client, a
 
 async def test_roleplay_conversation_keeps_its_persona_and_a_longer_history(client, monkeypatch):
     calls = spy_on_provider(monkeypatch)
-    monkeypatch.setattr(main, "MAX_HISTORY_MESSAGES", 2)
-    monkeypatch.setattr(main, "ROLEPLAY_MAX_HISTORY", 4)
+    monkeypatch.setattr(chat_service, "MAX_HISTORY_MESSAGES", 2)
+    monkeypatch.setattr(chat_service, "ROLEPLAY_MAX_HISTORY", 4)
     await client.post("/api/profile/roleplay-consent")
 
     events = await read_events(await send(client, "*ngồi xuống cạnh Peto* hôm nay mệt ghê", persona="roleplay"))

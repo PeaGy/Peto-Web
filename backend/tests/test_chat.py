@@ -6,8 +6,10 @@ import sqlite3
 
 import pytest
 
-import db
-import titles
+import storage as db
+from storage import connection as db_connection
+from features.chat import titles
+from prompts import COMPANION_SYSTEM_PROMPT
 from conftest import read_events
 
 
@@ -103,7 +105,7 @@ async def test_provider_error_becomes_error_event(client):
 
 
 async def test_empty_and_oversized_messages_rejected(client):
-    from config import MAX_INPUT_CHARS
+    from core.config import MAX_INPUT_CHARS
     assert (await client.post("/api/chat", json={"message": "   "})).status_code == 400
     assert (
         await client.post("/api/chat", json={"message": "a" * (MAX_INPUT_CHARS + 1)})
@@ -189,19 +191,19 @@ async def test_companion_mode_uses_short_english_persona(client, monkeypatch):
     assert calls[0]["effort"] == "low"
     assert calls[0]["web_search"] == "auto"
     prompt = calls[0]["system_prompt"]
-    assert prompt.startswith("## Chế độ Companion")
+    assert prompt.startswith(COMPANION_SYSTEM_PROMPT)
     assert "Bạn là Peto, trợ lý AI của Peto Web" not in prompt
     assert "không giả vờ là bạn bè ngoài đời" not in prompt
-    # Trung thực về bản chất của Peto: prompt viết lại bằng tiếng Anh ngày 27/9/2026 nói bằng hai câu này, thay cho câu
-    # cũ "không tuyên bố có cảm xúc sinh học, cơ thể hay trải nghiệm ngoài cuộc trò chuyện".
+    # Kiểm tra quy tắc hiện tại, không phụ thuộc tiêu đề hay câu chữ của prompt cũ.
     assert "answer truthfully" in prompt
-    assert "Do not invent real-world personal experiences" in prompt
+    assert "Do not invent real-world personal history or physical events" in prompt
+    assert "Always respond in English" in prompt
 
     calls.clear()
     await _send(client, "chào")
     chat_prompts = [call["system_prompt"] for call in calls if titles.TITLE_MARKER not in call["system_prompt"]]
     assert chat_prompts
-    assert "## Chế độ Companion" not in chat_prompts[0]
+    assert not chat_prompts[0].startswith(COMPANION_SYSTEM_PROMPT)
 
 
 async def test_prompt_teaches_peto_agent_with_this_sites_install_command(client, monkeypatch):
@@ -288,7 +290,7 @@ async def test_schema_upgrade_marks_existing_conversations_as_chat(tmp_path, mon
             "title TEXT NOT NULL DEFAULT '', created_at REAL NOT NULL, updated_at REAL NOT NULL)"
         )
         connection.execute("INSERT INTO conversations VALUES ('cu', 'discord:1', 'Cũ', 0, 0)")
-    monkeypatch.setattr(db, "DB_PATH", path)
+    monkeypatch.setattr(db_connection, "DB_PATH", path)
     await db.init_db()
     await db.init_db()
     with sqlite3.connect(path) as connection:
@@ -419,8 +421,8 @@ async def test_attachment_is_not_visible_to_another_user(client, monkeypatch):
     stored = await client.get(f"/api/conversations/{conversation_id}/messages")
     url = stored.json()["messages"][0]["attachments"][0]["url"]
 
-    import auth
-    from config import SESSION_COOKIE, owner_key
+    from features.accounts import auth
+    from core.config import SESSION_COOKIE, owner_key
 
     client.cookies.set(SESSION_COOKIE, auth._sign(owner_key("discord", "222222222222222222")))
     assert (await client.get(url)).status_code == 404
@@ -429,7 +431,7 @@ async def test_attachment_is_not_visible_to_another_user(client, monkeypatch):
 async def test_delete_conversation_removes_files(client):
     from pathlib import Path
 
-    from config import UPLOAD_DIR
+    from core.config import UPLOAD_DIR
 
     events = await _send(
         client,

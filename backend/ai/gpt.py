@@ -8,11 +8,11 @@ from __future__ import annotations
 
 from openai import AsyncOpenAI
 
-from config import OPENAI_API_KEY, OPENAI_MAX_OUTPUT_TOKENS
+from core.config import OPENAI_API_KEY, OPENAI_MAX_OUTPUT_TOKENS
 
 from .base import ProviderError
 from .xai import ResponsesProvider
-from ai_models import OPENAI_EFFORTS
+from ai.models import OPENAI_EFFORTS
 
 
 class GPTProvider(ResponsesProvider):

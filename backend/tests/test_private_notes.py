@@ -1,13 +1,13 @@
 """Ghi chú riêng của Peto trong Companion: model nhớ được bí mật trò chơi, người dùng không thấy và không nghe."""
 import pytest
 
-import companion_memory
-import db
+from features.companion import memory as companion_memory
+import storage as db
 from ai import StreamChunk
 from ai.mock import MockProvider
-from companion_memory import MEMORY_MARKER
-from persona import COMPANION_SYSTEM_PROMPT
-from private_notes import NoteFilter, strip
+from features.companion.memory import MEMORY_MARKER
+from prompts import COMPANION_SYSTEM_PROMPT
+from features.companion.private_notes import NoteFilter, strip
 from tests.conftest import TEST_OWNER, read_events
 
 
@@ -48,7 +48,7 @@ async def test_a_reply_that_is_only_a_note_is_not_saved_as_an_empty_bubble(clien
     original = MockProvider.stream
 
     async def only_a_note(self, *, system_prompt, messages, **kwargs):
-        if "Chế độ Companion" not in system_prompt:
+        if not system_prompt.startswith(COMPANION_SYSTEM_PROMPT):
             async for chunk in original(self, system_prompt=system_prompt, messages=messages, **kwargs):
                 yield chunk
             return
@@ -85,8 +85,8 @@ def test_summaries_keep_the_note_so_a_long_game_survives_the_history_window():
 
 def test_the_companion_prompt_tells_peto_how_to_keep_a_secret():
     assert "<private>...</private>" in COMPANION_SYSTEM_PROMPT
-    assert "no memory between turns" in COMPANION_SYSTEM_PROMPT
-    assert "Never say you picked" in COMPANION_SYSTEM_PROMPT
+    assert "no hidden memory between turns" in COMPANION_SYSTEM_PROMPT
+    assert "Never claim that you secretly chose or remembered something" in COMPANION_SYSTEM_PROMPT
 
 
 CASES = [

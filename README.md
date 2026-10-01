@@ -61,6 +61,7 @@ Test dùng nhà cung cấp giả và database tạm, không chạm dữ liệu t
 ## Tài liệu khác
 
 - [CLAUDE.md](CLAUDE.md): kiến trúc và các quy ước của code.
+- [backend/README.md](backend/README.md): cấu trúc backend và nơi thêm tính năng.
 - [DEPLOY.md](DEPLOY.md): đưa lên VPS.
 - [agent-cli/README.md](agent-cli/README.md): cài và dùng Peto Agent.
 - [voice-worker/README.md](voice-worker/README.md): nối máy tạo giọng.

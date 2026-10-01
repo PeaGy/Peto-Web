@@ -10,11 +10,11 @@ import uuid
 
 import pytest
 
-import agent_api
-import agent_install
-import auth
-import db
-from config import AGENT_DAILY_STEPS, SESSION_COOKIE, owner_key
+from features.agent import api as agent_api
+from features.agent import install as agent_install
+from features.accounts import auth
+import storage as db
+from core.config import AGENT_DAILY_STEPS, SESSION_COOKIE, owner_key
 
 DEMO_TASK = {"type": "message", "role": "user", "content": "Sửa README giúp mình __demo__"}
 
@@ -72,7 +72,7 @@ async def test_compaction_has_no_tools_and_uses_normal_auth_quota(anon_client, c
 
 
 def test_skills_are_feature_gated_and_catalog_is_bounded():
-    from agent_tools import tool_schemas
+    from features.agent.tools import tool_schemas
     assert 'load_skill' not in {t['name'] for t in tool_schemas(frozenset())}
     schema = next(t for t in tool_schemas(frozenset({'skills'})) if t['name'] == 'load_skill')
     assert schema['strict'] is True
@@ -87,7 +87,7 @@ def test_skills_are_feature_gated_and_catalog_is_bounded():
 
 
 def test_mcp_feature_gate_and_private_config_not_forwarded():
-    from agent_tools import tool_schemas
+    from features.agent.tools import tool_schemas
     assert 'mcp_call_tool' not in {t['name'] for t in tool_schemas(frozenset())}
     tools = tool_schemas(frozenset({'mcp'}))
     assert {'mcp_list_tools', 'mcp_call_tool'} <= {t['name'] for t in tools}
@@ -442,7 +442,7 @@ async def test_step_accepts_the_search_item_the_service_produced(anon_client, cl
 
 def test_delete_and_move_are_offered_as_tools_with_undo_wording():
     """Hai công cụ này tồn tại để bản xóa/đổi tên đi qua checkpoint của CLI, khác hẳn lệnh xóa của hệ điều hành."""
-    from agent_tools import TOOL_SCHEMAS
+    from features.agent.tools import TOOL_SCHEMAS
 
     tools = {tool["name"]: tool for tool in TOOL_SCHEMAS}
     assert set(tools["move_file"]["parameters"]["properties"]) == {"path", "new_path"}
@@ -452,7 +452,7 @@ def test_delete_and_move_are_offered_as_tools_with_undo_wording():
 
 def test_tool_schemas_stay_strict_and_cover_the_new_abilities():
     """Công cụ mới phải giữ đúng dạng strict, không thì dịch vụ AI từ chối cả bước."""
-    from agent_tools import TOOL_SCHEMAS
+    from features.agent.tools import TOOL_SCHEMAS
 
     tools = {tool["name"]: tool for tool in TOOL_SCHEMAS}
     assert {"update_plan", "start_command", "read_command_output", "stop_command"} <= set(tools)
@@ -470,7 +470,7 @@ def test_tool_schemas_stay_strict_and_cover_the_new_abilities():
 async def test_command_folder_is_only_offered_to_clis_that_understand_it(anon_client, client, monkeypatch):
     """Schema strict bắt model gửi đủ tham số, kể cả cwd: null. CLI 0.9.7 trở về trước gặp tham số lạ thì báo sai
     tham số ở mọi lần chạy lệnh, nên chỉ CLI khai báo "cwd" trong context.features mới nhận schema có cwd."""
-    from agent_tools import TOOL_SCHEMAS
+    from features.agent.tools import TOOL_SCHEMAS
 
     seen = []
 
@@ -501,7 +501,7 @@ async def test_command_folder_is_only_offered_to_clis_that_understand_it(anon_cl
 async def test_browser_tools_and_their_prompt_only_reach_clis_that_have_them(anon_client, client, monkeypatch):
     """Đợt 1 của trình duyệt (2026-09-23): CLI 0.10.0 khai báo "browser". CLI cũ không nhận công cụ lẫn chỉ dẫn, để model
     của nó không gọi công cụ mà bản đó không có."""
-    from agent_tools import TOOL_SCHEMAS
+    from features.agent.tools import TOOL_SCHEMAS
 
     seen = []
 
@@ -534,7 +534,7 @@ async def test_browser_tools_and_their_prompt_only_reach_clis_that_have_them(ano
 async def test_page_actions_only_reach_clis_that_can_click_and_type(anon_client, client, monkeypatch):
     """Đợt 2 (2026-09-23): CLI 0.11.0 khai báo thêm "browser_act". CLI 0.10.x chỉ nhận ba công cụ xem, đúng từng chữ, và
     vẫn được dặn là chưa bấm, gõ được; "browser_act" mà thiếu "browser" thì không có gì."""
-    from agent_tools import tool_schemas
+    from features.agent.tools import tool_schemas
 
     seen = []
 
@@ -572,7 +572,7 @@ async def test_page_actions_only_reach_clis_that_can_click_and_type(anon_client,
 async def test_outside_pages_only_reach_clis_that_declare_them(anon_client, client, monkeypatch):
     """Đợt 3 (2026-09-24): CLI 0.12.0 khai báo "browser_outside". Chỉ CLI đó được dặn là mở được trang ngoài, chỉ xem,
     hỏi mỗi tên miền; CLI 0.11.x vẫn nhận đúng từng chữ như cũ và vẫn bị dặn là trang ngoài bị từ chối."""
-    from agent_tools import tool_schemas
+    from features.agent.tools import tool_schemas
 
     seen = []
 
@@ -605,7 +605,7 @@ async def test_outside_pages_only_reach_clis_that_declare_them(anon_client, clie
 
 def test_agent_prompt_explains_the_step_budget_and_the_new_tools():
     """Công cụ có mà chỉ dẫn không nói thì Peto không dùng; giữ hai thứ đi cùng nhau."""
-    from persona import AGENT_PROMPT
+    from prompts import AGENT_PROMPT
 
     assert "gọi cùng một lúc trong một bước" in AGENT_PROMPT
     assert "update_plan" in AGENT_PROMPT

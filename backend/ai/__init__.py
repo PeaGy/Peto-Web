@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from inspect import isclass
 
-from config import AI_PROVIDER
+from core.config import AI_PROVIDER
 
 from .base import ChatAttachment, ChatMessage, ChatProvider, ProviderError, StreamChunk
 from .mock import MockProvider
@@ -56,7 +56,7 @@ def get_provider(model: str = "peto") -> ChatProvider:
         provider_cls = entry if isclass(entry) else entry()
         provider = provider_cls()
     else:
-        from ai_models import MODELS
+        from ai.models import MODELS
 
         from .gpt import GPTProvider
 

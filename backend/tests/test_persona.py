@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import re
 
-import persona
+import prompts as persona
 
 # Tên và ID thật nằm trong KNOWN_PEOPLE_PROMPT / SPECIAL_USERS của bot Discord.
 FORBIDDEN_NAMES = ("Ducky", "Duck", "Val", "Peargy", "Pearto")

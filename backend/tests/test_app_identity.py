@@ -8,8 +8,8 @@ from __future__ import annotations
 import httpx
 import pytest
 
-import app_identity
-from app_identity import get_app_identity
+from core import identity as app_identity
+from core.identity import get_app_identity
 
 
 @pytest.fixture(autouse=True)
@@ -29,7 +29,7 @@ def patch_discord(monkeypatch):
             kwargs["transport"] = transport
             return original(*args, **kwargs)
 
-        monkeypatch.setattr("app_identity.httpx.AsyncClient", factory)
+        monkeypatch.setattr("core.identity.httpx.AsyncClient", factory)
 
     return apply
 

@@ -1,4 +1,6 @@
 """Tệp dài đã gửi: phần đọc sẵn (document_reader.condense_text) và công cụ tìm/đọc thêm (attachment_tools)."""
+from features.chat import history as chat_history
+
 
 import base64
 import json
@@ -7,10 +9,10 @@ from types import SimpleNamespace
 
 import pytest
 
-import attachment_tools
-import db
-import document_reader as reader
-import main
+from shared import attachment_tools
+import storage as db
+from features.documents import reader
+from features.chat import service as chat_service
 from ai.base import ChatMessage, StreamChunk
 from conftest import TEST_OWNER, read_events
 from test_clock_tools import FakeStream, call, done, fake_provider
@@ -95,10 +97,10 @@ def test_a_few_huge_lines_keep_the_start_and_the_end():
 def test_partial_files_tell_peto_how_to_reach_the_rest():
     item = {"id": "tep-1", "filename": "app.log", "mime": "text/plain", "kind": "file", "path": "app.log",
             "document": reader.extract_document(LOG.encode(), "text/plain", 80_000, 100)}
-    excerpt = main._to_chat_messages([{"role": "user", "content": "Lỗi gì?", "attachments": [item]}])[0].attachments[0].text_excerpt
+    excerpt = chat_history._to_chat_messages([{"role": "user", "content": "Lỗi gì?", "attachments": [item]}])[0].attachments[0].text_excerpt
     assert "search_attachment" in excerpt and 'file="app.log"' in excerpt
     item["document"] = reader.result("ready", "Đã đọc tệp chữ.", "ngắn")
-    excerpt = main._to_chat_messages([{"role": "user", "content": "Lỗi gì?", "attachments": [item]}])[0].attachments[0].text_excerpt
+    excerpt = chat_history._to_chat_messages([{"role": "user", "content": "Lỗi gì?", "attachments": [item]}])[0].attachments[0].text_excerpt
     assert "search_attachment" not in excerpt
 
 

@@ -6,12 +6,12 @@ import pytest
 from docx import Document
 from pypdf import PdfReader
 from PIL import Image
-import db
-import main
-import document_store
+import storage as db
+from features.chat import service as chat_service
+from storage import documents as document_store
 from ai.base import StreamChunk, ProviderError, ChatMessage
 from ai.mock import DOCUMENT_SAMPLE
-from document_tools import DocumentSession, current_session
+from features.documents.tools import DocumentSession, current_session
 from conftest import TEST_OWNER, read_events
 
 ARGS = json.dumps({'title': 'Giữ sự tử tế trong xã hội số', 'content': DOCUMENT_SAMPLE, 'format': 'docx', 'style': 'essay'}, ensure_ascii=False)
@@ -59,7 +59,7 @@ async def test_natural_request_creates_real_files_inline_and_persists(client, an
         async def stream(self, **kwargs):
             seen.extend(kwargs['messages'])
             yield 'Đã đọc bản trước.'
-    monkeypatch.setattr(main, 'get_provider', lambda model="peto": FollowUp())
+    monkeypatch.setattr(chat_service, 'get_provider', lambda model="peto": FollowUp())
     await client.post('/api/chat', json={'message': 'Tóm tắt file vừa tạo', 'conversation_id': conversation})
     assert any('Trong một thế giới' in a.text_excerpt for m in seen for a in m.attachments)
     await client.delete(base)
@@ -113,7 +113,7 @@ async def test_file_survives_failure_after_tool_completed(client, monkeypatch):
             result = await session.create(ARGS)
             yield StreamChunk('artifact', artifact=result['artifact'])
             raise ProviderError('Lỗi kết nối sau khi tạo tệp')
-    monkeypatch.setattr(main, 'get_provider', lambda model="peto": FailsAfterCreate())
+    monkeypatch.setattr(chat_service, 'get_provider', lambda model="peto": FailsAfterCreate())
     events = await read_events(await client.post('/api/chat', json={'message': 'Tạo file Word'}))
     assert events[-1]['type'] == 'error'
     artifact = next(e['artifact'] for e in events if e['type'] == 'artifact')

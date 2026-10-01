@@ -10,11 +10,11 @@ from types import SimpleNamespace
 
 import pytest
 
-import agent_api
+from features.agent import api as agent_api
 import ai
-import config
-import db
-import titles
+from core import config
+import storage as db
+from features.chat import titles
 from ai.base import ChatMessage, ProviderError
 from ai.mock import MockProvider
 from conftest import TEST_OWNER, read_events

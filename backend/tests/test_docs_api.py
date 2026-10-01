@@ -2,7 +2,7 @@ import re
 
 import pytest
 
-import docs_api
+from features.docs import api as docs_api
 
 
 async def test_docs_are_public_and_commands_match_catalog(anon_client):

@@ -6,12 +6,12 @@ bằng cách thay lớp HTTP client, còn phần chống CSRF kiểm tra trực 
 
 from __future__ import annotations
 
-import auth
+from features.accounts import auth
 import pytest
 from conftest import OTHER_DISCORD_ID, TEST_DISCORD_ID, TEST_OWNER
 
-import db
-from config import SESSION_COOKIE, owner_key
+import storage as db
+from core.config import SESSION_COOKIE, owner_key
 
 ENDPOINTS = [
     ("GET", "/api/conversations"),
@@ -174,7 +174,7 @@ def test_dang_ky_mo_khong_con_allowlist():
     được. Giờ mọi khóa owner hợp lệ đều là một phiên dùng được, và biến môi
     trường đó không còn ý nghĩa gì.
     """
-    import config
+    from core import config
 
     assert not hasattr(config, "ALLOWED_DISCORD_IDS")
     for owner in (

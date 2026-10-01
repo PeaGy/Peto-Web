@@ -1,11 +1,13 @@
 """Sơ đồ Mermaid trong Trò chuyện: Peto tự viết khối ```mermaid thay vì đẩy sang tab Tạo ảnh, và chỉ nhận hướng dẫn chi
 tiết khi tin nhắn nói tới sơ đồ."""
+from features.chat import prompt_context
+
 import pytest
 
-import main
+from features.chat import service as chat_service
 from ai.mock import DIAGRAM_SAMPLE
 from conftest import TEST_OWNER, read_events
-from persona import COMPANION_SYSTEM_PROMPT, DIAGRAM_PROMPT, SYSTEM_PROMPT, build_diagram_guide
+from prompts import COMPANION_SYSTEM_PROMPT, DIAGRAM_PROMPT, SYSTEM_PROMPT, build_diagram_guide
 
 
 @pytest.mark.parametrize("question", [
@@ -44,11 +46,11 @@ def test_prompts_send_diagrams_to_mermaid_not_to_the_image_tab():
 
 async def test_guide_is_added_only_to_assistant_chat_turns(client):
     question = "vẽ sơ đồ lớp cho thư viện"
-    chat = await main._build_system_prompt(TEST_OWNER, "chat", agent_question=question)
+    chat = await prompt_context._build_system_prompt(TEST_OWNER, "chat", agent_question=question)
     assert DIAGRAM_PROMPT in chat
-    assert DIAGRAM_PROMPT not in await main._build_system_prompt(TEST_OWNER, "chat", agent_question="chào bạn")
-    assert DIAGRAM_PROMPT not in await main._build_system_prompt(TEST_OWNER, "companion", agent_question=question)
-    assert DIAGRAM_PROMPT not in await main._build_system_prompt(TEST_OWNER, "chat", persona="roleplay", agent_question=question)
+    assert DIAGRAM_PROMPT not in await prompt_context._build_system_prompt(TEST_OWNER, "chat", agent_question="chào bạn")
+    assert DIAGRAM_PROMPT not in await prompt_context._build_system_prompt(TEST_OWNER, "companion", agent_question=question)
+    assert DIAGRAM_PROMPT not in await prompt_context._build_system_prompt(TEST_OWNER, "chat", persona="roleplay", agent_question=question)
 
 
 async def test_mock_diagram_reply_streams_four_mermaid_blocks(client):

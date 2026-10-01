@@ -13,12 +13,7 @@ from threading import Thread
 
 import pytest
 
-from xai_auth import (
-    REDIRECT_HOST,
-    _CallbackHandler,
-    _CallbackServer,
-    _parse_manual_redirect,
-)
+from ai.xai_auth import REDIRECT_HOST, _CallbackHandler, _CallbackServer, _parse_manual_redirect
 
 
 @pytest.fixture
@@ -88,7 +83,7 @@ def test_manual_redirect_paste_accepts_common_shapes(pasted):
 
 def test_pasting_the_authorize_link_is_caught():
     """Lỗi rất dễ mắc: dán lại chính link đăng nhập thay vì URL trả về."""
-    from xai_auth import XaiAuthError
+    from ai.xai_auth import XaiAuthError
 
     authorize = (
         "https://auth.x.ai/oauth2/authorize?response_type=code"
@@ -100,7 +95,7 @@ def test_pasting_the_authorize_link_is_caught():
 
 
 def test_missing_code_is_reported_clearly():
-    from xai_auth import XaiAuthError
+    from ai.xai_auth import XaiAuthError
 
     with pytest.raises(XaiAuthError) as excinfo:
         _parse_manual_redirect("http://127.0.0.1:56122/callback?state=CeH")
@@ -108,7 +103,7 @@ def test_missing_code_is_reported_clearly():
 
 
 def test_empty_paste_is_reported():
-    from xai_auth import XaiAuthError
+    from ai.xai_auth import XaiAuthError
 
     with pytest.raises(XaiAuthError):
         _parse_manual_redirect("   ")
@@ -124,7 +119,7 @@ def test_user_cancellation_is_passed_through():
 
 def test_pasting_the_consent_page_is_caught():
     """Trang consent vẫn ở trên x.ai và chưa có code — phải nói rõ."""
-    from xai_auth import XaiAuthError
+    from ai.xai_auth import XaiAuthError
 
     consent = (
         "https://accounts.x.ai/oauth2/consent?response_type=code"
@@ -154,7 +149,7 @@ def test_state_is_optional_for_bare_code():
     """Dán mã trần thì không có state; luồng vẫn phải đi tiếp được."""
     import inspect
 
-    import xai_auth
+    from ai import xai_auth
 
     source = inspect.getsource(xai_auth._finish_login)
     assert "returned_state is not None" in source
@@ -163,7 +158,7 @@ def test_state_is_optional_for_bare_code():
 def test_state_still_enforced_when_present():
     import asyncio
 
-    import xai_auth
+    from ai import xai_auth
 
     with pytest.raises(xai_auth.XaiAuthError, match="State"):
         asyncio.run(

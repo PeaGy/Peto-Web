@@ -14,7 +14,7 @@ import zipfile
 
 import pytest
 
-import agent_install
+from features.agent import install as agent_install
 
 ORIGIN = "https://peto.example"
 

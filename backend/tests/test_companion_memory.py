@@ -1,20 +1,14 @@
 """Trí nhớ Companion: ghi nhớ sau lượt Companion, dùng ở lượt sau, xem/xóa/tắt trong Cài đặt, cô lập theo tài khoản."""
 import pytest
 
-import companion_memory
-import db
-import main
-import titles
+from features.companion import memory as companion_memory
+import storage as db
+from storage import connection as db_connection
+from features.chat import service as chat_service
+from features.chat import titles
 from ai.mock import MockProvider
-from companion_memory import MEMORY_MARKER, SUMMARY_MARKER, clean_memory, clean_summary, parse_changes
-from persona import (
-    COMPANION_MEMORY_END,
-    COMPANION_MEMORY_START,
-    COMPANION_SUMMARY_END,
-    COMPANION_SUMMARY_START,
-    build_companion_memory,
-    build_companion_summary,
-)
+from features.companion.memory import MEMORY_MARKER, SUMMARY_MARKER, clean_memory, clean_summary, parse_changes
+from prompts import COMPANION_MEMORY_END, COMPANION_MEMORY_START, COMPANION_SUMMARY_END, COMPANION_SUMMARY_START, build_companion_memory, build_companion_summary
 from tests.conftest import TEST_OWNER, read_events
 
 OTHER = "discord:888888888888888888"
@@ -127,7 +121,7 @@ async def test_history_from_before_memory_existed_is_not_mined(client):
     conversation = await db.create_conversation(TEST_OWNER, mode="companion")
     await db.add_message(conversation, "user", "Long ago I said __nho__:Chuyện cũ")
     await db.add_message(conversation, "assistant", "Nice.")
-    async with db.aiosqlite.connect(db.DB_PATH) as connection:
+    async with db_connection.aiosqlite.connect(db_connection.DB_PATH) as connection:
         await connection.execute("DELETE FROM companion_memory_state WHERE owner = ?", (TEST_OWNER,))
         await connection.commit()
 
@@ -200,7 +194,7 @@ def test_the_prompt_block_fences_notes_and_strips_fake_fences():
 @pytest.fixture
 def small_window(monkeypatch):
     """Lịch sử gửi kèm 4 tin, gộp tóm tắt khi đủ 4 tin trôi ra: thử được mà không phải gửi hàng chục lượt."""
-    monkeypatch.setattr(main, "MAX_HISTORY_MESSAGES", 4)
+    monkeypatch.setattr(chat_service, "MAX_HISTORY_MESSAGES", 4)
     monkeypatch.setattr(companion_memory, "SUMMARY_BATCH", 4)
 
 
@@ -289,7 +283,7 @@ async def test_history_from_before_memory_existed_is_never_summarized(client, sm
     for n in range(1, 5):
         await db.add_message(conversation, "user", f"Chuyện cũ số {n}")
         await db.add_message(conversation, "assistant", "Nice.")
-    async with db.aiosqlite.connect(db.DB_PATH) as connection:
+    async with db_connection.aiosqlite.connect(db_connection.DB_PATH) as connection:
         await connection.execute("DELETE FROM companion_memory_state WHERE owner = ?", (TEST_OWNER,))
         await connection.commit()
 

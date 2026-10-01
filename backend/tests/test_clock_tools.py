@@ -7,11 +7,11 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-import chat_tools
-import main
+from shared import time_tools as chat_tools
+from features.chat import service as chat_service
 from ai.base import ChatMessage, ProviderError, StreamChunk
 from ai.xai import MAX_TOOL_ROUNDS, XAIProvider
-from config import XAI_MAX_OUTPUT_TOKENS
+from core.config import XAI_MAX_OUTPUT_TOKENS
 from conftest import read_events
 
 FIXED = datetime(2026, 9, 9, 18, 5, 6, tzinfo=UTC)
@@ -96,7 +96,7 @@ async def test_each_request_gets_own_timezone_and_fresh_clock(client, monkeypatc
             seen.append(kwargs)
             await asyncio.sleep(0)
             yield 'OK'
-    monkeypatch.setattr(main, 'get_provider', lambda model="peto": Spy())
+    monkeypatch.setattr(chat_service, 'get_provider', lambda model="peto": Spy())
     await asyncio.gather(*[
         client.post('/api/chat', json={'message':'hi', 'timezone':zone})
         for zone in ['UTC', 'Asia/Barnaul']
@@ -120,7 +120,7 @@ async def test_long_web_messages_and_replies_are_not_cut(client, monkeypatch):
         async def stream(self, **kwargs):
             assert kwargs['messages'][-1].content == long_input.strip()
             yield long_reply
-    monkeypatch.setattr(main, 'get_provider', lambda model="peto": LongProvider())
+    monkeypatch.setattr(chat_service, 'get_provider', lambda model="peto": LongProvider())
     events = await read_events(await client.post('/api/chat', json={'message':long_input}))
     assert events[-1]['type'] == 'done'
     assert ''.join(e['text'] for e in events if e['type'] == 'delta') == long_reply

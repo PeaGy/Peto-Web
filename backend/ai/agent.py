@@ -15,8 +15,7 @@ from dataclasses import dataclass, field
 
 import anyio
 
-from config import (AGENT_MODEL, AGENT_REASONING, AGENT_STEP_TIMEOUT_SECONDS, AI_PROVIDER, OPENAI_API_KEY,
-                    OPENAI_MAX_OUTPUT_TOKENS, XAI_API_BASE, XAI_MAX_OUTPUT_TOKENS)
+from core.config import AGENT_MODEL, AGENT_REASONING, AGENT_STEP_TIMEOUT_SECONDS, AI_PROVIDER, OPENAI_API_KEY, OPENAI_MAX_OUTPUT_TOKENS, XAI_API_BASE, XAI_MAX_OUTPUT_TOKENS
 
 from .base import ProviderError
 
@@ -92,7 +91,7 @@ async def _xai_step(instructions: str, items: list[dict], tools: list[dict], eff
     # Import trễ như ai/__init__.py: chạy mock không cần SDK openai.
     from openai import AsyncOpenAI
 
-    from xai_auth import XaiAuth, XaiAuthError
+    from ai.xai_auth import XaiAuth, XaiAuthError
 
     global _client, _auth
     if _client is None:
@@ -115,7 +114,7 @@ async def _openai_step(instructions: str, items: list[dict], tools: list[dict], 
                        model: str, web_search: bool = False) -> AsyncIterator[AgentEvent]:
     from openai import AsyncOpenAI
 
-    from ai_models import MODELS
+    from ai.models import MODELS
 
     global _openai_client
     if not OPENAI_API_KEY:

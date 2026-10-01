@@ -8,7 +8,7 @@ import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
-import static_files
+from core import static_files
 
 SITE_INDEX = (
     "<!doctype html><html><head><title>Peto</title></head>"

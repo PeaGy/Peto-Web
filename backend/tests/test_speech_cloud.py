@@ -3,8 +3,8 @@ import json
 import pytest
 import httpx
 from fastapi import HTTPException
-import speech_cloud as cloud
-import voice_api as voice
+from features.voice import cloud
+from features.voice import api as voice
 
 WAV = b'RIFF' + b'\x00' * 4 + b'WAVE' + b'\x00' * 40
 

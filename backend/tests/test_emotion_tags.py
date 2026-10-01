@@ -1,14 +1,16 @@
 """Cảm xúc Peto tự chọn cho câu trả lời Companion: thẻ kiểu AIRI bị gỡ khỏi chữ, cảm xúc đi riêng tới nhân vật."""
+from features.chat import history as chat_history
+
 import pytest
 
-import companion_memory
-import db
-import main
+from features.companion import memory as companion_memory
+import storage as db
+from features.chat import service as chat_service
 from ai import StreamChunk
 from ai.mock import MockProvider
-from emotion_tags import EMOTIONS, MarkerFilter, emotion_of, first, strip
-from persona import COMPANION_SYSTEM_PROMPT
-from private_notes import NoteFilter
+from features.companion.emotion_tags import EMOTIONS, MarkerFilter, emotion_of, first, strip
+from prompts import COMPANION_SYSTEM_PROMPT
+from features.companion.private_notes import NoteFilter
 from tests.conftest import TEST_OWNER, read_events
 
 
@@ -51,7 +53,7 @@ async def test_a_reply_that_opens_with_a_marker_and_a_note_starts_with_its_words
     original = MockProvider.stream
 
     async def celebrity(self, *, system_prompt, messages, **kwargs):
-        if "Chế độ Companion" not in system_prompt:
+        if not system_prompt.startswith(COMPANION_SYSTEM_PROMPT):
             async for chunk in original(self, system_prompt=system_prompt, messages=messages, **kwargs):
                 yield chunk
             return
@@ -131,8 +133,8 @@ def test_the_stream_filter_matches_strip_however_the_text_is_cut(text):
     "<|EMOTE_THINK|>\n<private>7</private>\nHmm.\n\n<private>8</private> Wait. <|DELAY:1|>\n",
 ])
 def test_both_filters_together_stream_exactly_what_history_shows(text):
-    # Thứ tự như main.event_stream: ghi chú trước, thẻ sau; lịch sử dùng main._visible.
-    expected = main._visible(text, "companion")
+    # Thứ tự như chat_service.event_stream: ghi chú trước, thẻ sau; lịch sử dùng chat_history._visible.
+    expected = chat_history._visible(text, "companion")
     assert not expected.startswith(("\n", " ")) and "\n\n\n" not in expected
     for size in range(1, len(text) + 1):
         notes, markers = NoteFilter(), MarkerFilter()

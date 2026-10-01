@@ -12,14 +12,9 @@ from dataclasses import dataclass
 
 import httpx
 
-from attachments import sniff_image_mime
-from config import (
-    AI_PROVIDER,
-    IMAGINE_MODEL,
-    IMAGINE_TIMEOUT_SECONDS,
-    XAI_API_BASE,
-)
-from xai_auth import XaiAuth, XaiAuthError
+from shared.attachments import sniff_image_mime
+from core.config import AI_PROVIDER, IMAGINE_MODEL, IMAGINE_TIMEOUT_SECONDS, XAI_API_BASE
+from ai.xai_auth import XaiAuth, XaiAuthError
 
 from .base import ProviderError
 

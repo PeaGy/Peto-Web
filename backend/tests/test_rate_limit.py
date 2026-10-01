@@ -6,7 +6,7 @@ import asyncio
 
 import pytest
 
-from rate_limit import Admission, AdmissionDenied
+from core.rate_limit import Admission, AdmissionDenied
 
 
 async def test_cooldown_blocks_second_request():

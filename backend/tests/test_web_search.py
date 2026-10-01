@@ -1,4 +1,6 @@
 """Tìm web: giao thức dịch vụ, nguồn riêng tư, ngắt kết nối và chế độ bật/tắt."""
+from features.chat import history as chat_history
+
 import asyncio
 import json
 from types import SimpleNamespace
@@ -7,16 +9,17 @@ import aiosqlite
 import httpx
 import pytest
 
-import auth
-import db
-import main
+from features.accounts import auth
+import storage as db
+from storage import connection as db_connection
+from features.chat import service as chat_service
 from ai import ChatMessage, StreamChunk
 from ai.base import ProviderError
 from ai import xai
-from config import SESSION_COOKIE
+from core.config import SESSION_COOKIE
 from conftest import TEST_OWNER, read_events
 from test_clock_tools import FakeStream, Item, call, done, fake_provider
-from web_search import SPOKEN_SEARCH_CONTEXT, normalize_sources, spoken_reply
+from shared.web_search import SPOKEN_SEARCH_CONTEXT, normalize_sources, spoken_reply
 
 SOURCE = {"url": "https://docs.python.org/3/", "title": "Tài liệu Python"}
 
@@ -157,7 +160,7 @@ async def test_replaced_draft_is_not_saved(client, monkeypatch):
             yield StreamChunk("search", "searching")
             yield StreamChunk("search", "completed")
             yield "Không giống đâu ad. Có nguồn."
-    monkeypatch.setattr(main, "get_provider", lambda model="peto": RestartProvider())
+    monkeypatch.setattr(chat_service, "get_provider", lambda model="peto": RestartProvider())
     events = await read_events(await client.post("/api/chat", json={"message": "So sánh", "web_search": "on"}))
     assert any(event["type"] == "replace" for event in events)
     text = "".join(event["text"] for event in events if event["type"] == "delta")
@@ -175,7 +178,7 @@ async def test_sources_stream_save_reload_and_stay_private(client, monkeypatch):
             yield StreamChunk("search", "searching")
             yield StreamChunk("sources", sources=(SOURCE, SOURCE, {"url": "javascript:alert(1)"}))
             yield "Theo tài liệu Python."
-    monkeypatch.setattr(main, "get_provider", lambda model="peto": SearchProvider())
+    monkeypatch.setattr(chat_service, "get_provider", lambda model="peto": SearchProvider())
     events = await read_events(await client.post("/api/chat", json={"message": "Tìm tài liệu Python", "web_search": "on"}))
     assert events[-1]["type"] == "done"
     assert next(event for event in events if event["type"] == "sources")["sources"] == [SOURCE]
@@ -193,7 +196,7 @@ async def test_partial_answer_keeps_sources_after_failure(client, monkeypatch):
             yield "Phần đã tra được."
             yield StreamChunk("sources", sources=(SOURCE,))
             raise ProviderError("Mất kết nối khi tìm tiếp")
-    monkeypatch.setattr(main, "get_provider", lambda model="peto": Broken())
+    monkeypatch.setattr(chat_service, "get_provider", lambda model="peto": Broken())
     events = await read_events(await client.post("/api/chat", json={"message": "Tra cứu"}))
     assert events[-1]["type"] == "error"
     saved = (await client.get(f"/api/conversations/{events[0]['conversation_id']}/messages")).json()["messages"][-1]
@@ -207,14 +210,14 @@ async def test_no_automatic_retry_after_search_has_started(client, monkeypatch):
             calls.append(1)
             yield StreamChunk("search", "searching")
             raise TimeoutError()
-    monkeypatch.setattr(main, "get_provider", lambda model="peto": Timeout())
+    monkeypatch.setattr(chat_service, "get_provider", lambda model="peto": Timeout())
     events = await read_events(await client.post("/api/chat", json={"message": "Tìm", "effort": "low"}))
     assert events[-1]["type"] == "error"
     assert len(calls) == 1
 
 
 async def test_disabled_search_rejected_before_saving(client, monkeypatch):
-    monkeypatch.setattr(main, "WEB_SEARCH_ENABLED", False)
+    monkeypatch.setattr(chat_service, "WEB_SEARCH_ENABLED", False)
     response = await client.post("/api/chat", json={"message": "Tìm", "web_search": "on"})
     assert response.status_code == 400 and "đang tắt" in response.json()["detail"]
     assert (await client.post("/api/chat", json={"message": "chào", "web_search": "invalid"})).status_code == 422
@@ -234,7 +237,7 @@ def test_source_links_are_safe_bounded_and_deduplicated():
 
 
 def test_saved_sources_are_available_for_followup_questions():
-    messages = main._to_chat_messages([{"role": "assistant", "content": "Câu cũ", "sources": [SOURCE]}])
+    messages = chat_history._to_chat_messages([{"role": "assistant", "content": "Câu cũ", "sources": [SOURCE]}])
     payload = xai.build_input_payload(messages)
     assert SOURCE["url"] in payload[0]["content"][-1]["text"]
     assert "không phải kết quả tra mới" in payload[0]["content"][-1]["text"]
@@ -242,7 +245,7 @@ def test_saved_sources_are_available_for_followup_questions():
 
 async def test_old_messages_migrate_without_losing_text(tmp_path, monkeypatch):
     path = tmp_path / "old.db"
-    monkeypatch.setattr(db, "DB_PATH", path)
+    monkeypatch.setattr(db_connection, "DB_PATH", path)
     async with aiosqlite.connect(path) as connection:
         await connection.execute("CREATE TABLE messages (id INTEGER PRIMARY KEY, conversation_id TEXT, role TEXT, content TEXT, created_at REAL)")
         await connection.execute("INSERT INTO messages VALUES (1, 'cu', 'assistant', 'Tin cũ', 1)")
@@ -284,7 +287,7 @@ async def test_companion_searches_when_needed_with_spoken_instructions(client, m
     streams = [FakeStream([SimpleNamespace(type="response.output_text.delta", delta=text), done()])
                for text in ("<|EMOTE_HAPPY|> Sunny.", "<|EMOTE_HAPPY|> Sunny.", "<|EMOTE_HAPPY|> Sunny.", "Nắng.")]
     provider, requests = fake_provider(monkeypatch, streams)
-    monkeypatch.setattr(main, "get_provider", lambda model="peto": provider)
+    monkeypatch.setattr(chat_service, "get_provider", lambda model="peto": provider)
     for web_search in ("auto", "on", "off"):
         events = await read_events(await client.post("/api/chat", json={
             "message": "What's the weather in Saigon today?", "mode": "companion", "web_search": web_search}))
@@ -315,7 +318,7 @@ async def test_companion_keeps_its_emotion_when_the_draft_before_a_search_is_dro
             yield StreamChunk("search", "completed")
             yield "It's sunny in Saigon."
 
-    monkeypatch.setattr(main, "get_provider", lambda model="peto": Searching())
+    monkeypatch.setattr(chat_service, "get_provider", lambda model="peto": Searching())
     events = await read_events(await client.post("/api/chat", json={"message": "Weather in Saigon?", "mode": "companion"}))
     kinds = [event["type"] for event in events]
     assert kinds[-1] == "done" and kinds.index("replace") < kinds.index("search")

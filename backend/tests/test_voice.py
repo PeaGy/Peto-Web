@@ -3,9 +3,9 @@ import asyncio
 import time
 
 import pytest
-import voice_api as voice
-import auth
-from config import SESSION_COOKIE, owner_key
+from features.voice import api as voice
+from features.accounts import auth
+from core.config import SESSION_COOKIE, owner_key
 
 HEADERS = {"Authorization": "Bearer " + "t" * 40}
 WAV = b"RIFF" + b"\x00" * 4 + b"WAVE" + b"\x00" * 40

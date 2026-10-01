@@ -6,12 +6,12 @@ from __future__ import annotations
 import aiosqlite
 import pytest
 
-import auth
-import db
-import main
-from config import DB_PATH, SESSION_COOKIE, owner_key
+from features.accounts import auth
+import storage as db
+from features.chat import service as chat_service
+from core.config import DB_PATH, SESSION_COOKIE, owner_key
 from conftest import read_events
-from persona import USER_INSTRUCTIONS_END
+from prompts import USER_INSTRUCTIONS_END
 
 
 @pytest.fixture(autouse=True)
@@ -88,7 +88,7 @@ def _spy(monkeypatch) -> list[dict]:
             seen.append(kwargs)
             yield "OK"
 
-    monkeypatch.setattr(main, "get_provider", lambda model="peto": Spy())
+    monkeypatch.setattr(chat_service, "get_provider", lambda model="peto": Spy())
     return seen
 
 

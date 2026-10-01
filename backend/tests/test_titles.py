@@ -6,7 +6,7 @@ import asyncio
 
 import pytest
 
-import titles
+from features.chat import titles
 from conftest import read_events
 
 
@@ -119,9 +119,10 @@ async def test_title_provider_has_no_tools(monkeypatch):
 
 
 async def test_manual_title_wins_over_pending_generation(client, monkeypatch):
-    import db
+    import storage as db
+    from storage import connection as db_connection
     async def manual(*args, **kwargs):
-        async with titles.aiosqlite.connect(db.DB_PATH) as connection:
+        async with db_connection.connect() as connection:
             owner, cid = await (await connection.execute("SELECT owner, id FROM conversations WHERE title_state='pending' LIMIT 1")).fetchone()
         await db.set_title(owner, cid, 'Tên tôi chọn')
         return 'Tên tự sinh'

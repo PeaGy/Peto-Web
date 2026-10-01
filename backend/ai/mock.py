@@ -17,9 +17,9 @@ import re
 from collections.abc import AsyncIterator
 
 from .base import ChatMessage, ChatProvider, ProviderError, StreamChunk
-from chat_tools import execute_tool
-from attachment_tools import current_files
-from document_tools import current_session
+from shared.time_tools import execute_tool
+from shared.attachment_tools import current_files
+from features.documents.tools import current_session
 
 DOCUMENT_SAMPLE = '''# Giữ sự tử tế trong xã hội số
 
@@ -233,7 +233,7 @@ class MockProvider(ChatProvider):
 
         # Lượt đặt tên hội thoại: trả về tên gọn lấy từ chính tin nhắn, để bản
         # chạy thử vẫn thấy đúng kiểu web thật đặt tên.
-        from titles import TITLE_MARKER  # import muộn cho khỏi vòng import
+        from features.chat.titles import TITLE_MARKER  # import muộn cho khỏi vòng import
 
         if TITLE_MARKER in system_prompt:
             title = " ".join(last_user.split()[:6]) or "Trò chuyện mới"
@@ -242,7 +242,7 @@ class MockProvider(ChatProvider):
 
         # Lượt ghi nhớ Companion: chỉ đổi khi lời người dùng có từ khóa thử, để test và bản chạy thử đoán trước được.
         # __nho__:<câu> thêm, __sua__:<id>:<câu> sửa, __quen__:<id> xóa một ghi nhớ.
-        from companion_memory import MEMORY_MARKER, SUMMARY_MARKER
+        from features.companion.memory import MEMORY_MARKER, SUMMARY_MARKER
 
         if SUMMARY_MARKER in system_prompt:
             # Tóm tắt giả: giữ bản cũ rồi nối lời người dùng trong đoạn vừa trôi ra, để test lần ra được từng tin.

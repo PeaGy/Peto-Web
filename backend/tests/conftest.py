@@ -39,9 +39,9 @@ OTHER_DISCORD_ID = "999999999999999999"
 import pytest  # noqa: E402
 from httpx import ASGITransport, AsyncClient  # noqa: E402
 
-import auth  # noqa: E402
-import db  # noqa: E402
-from config import SESSION_COOKIE, owner_key  # noqa: E402
+from features.accounts import auth  # noqa: E402
+import storage as db  # noqa: E402
+from core.config import SESSION_COOKIE, owner_key  # noqa: E402
 from main import app  # noqa: E402
 
 TEST_OWNER = owner_key("discord", TEST_DISCORD_ID)

@@ -12,15 +12,15 @@ from docx import Document
 from PIL import Image
 from pypdf import PdfReader
 
-import db
-import main
-import titles
+import storage as db
+from features.chat import service as chat_service
+from features.chat import titles
 from ai.xai import build_input_payload
 from conftest import TEST_OWNER, read_events
-from document_export import parse_blocks, render_docx, render_pdf
-from document_images import prepare
-from document_jobs import RenderBusy, RenderQueue
-from document_tools import DocumentSession
+from features.documents.export import parse_blocks, render_docx, render_pdf
+from features.documents.images import prepare
+from features.documents.jobs import RenderBusy, RenderQueue
+from features.documents.tools import DocumentSession
 
 W = '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}'
 
@@ -236,7 +236,7 @@ async def test_model_sees_each_image_with_its_number(client, monkeypatch):
             seen.append(kwargs['messages'])
             yield 'Đã xem.'
 
-    monkeypatch.setattr(main, 'get_provider', lambda model='peto': Spy())
+    monkeypatch.setattr(chat_service, 'get_provider', lambda model='peto': Spy())
     conversation = await chat(client, 'Hai ảnh', images=[attachment('a.png', png()), attachment('b.png', png(color=(9, 9, 9)))])
     await chat(client, 'Thêm một ảnh', conversation, [attachment('c.png', png(color=(200, 0, 0)))])
     assert sorted((item.name, item.number) for message in seen[-1] for item in message.attachments) == [

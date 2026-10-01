@@ -8,11 +8,12 @@ import aiosqlite
 import httpx
 import pytest
 
-import auth
-import db
-import imagine_api
+from features.accounts import auth
+import storage as db
+from storage import connection as db_connection
+from features.imagine import api as imagine_api
 from ai import imagine
-from config import SESSION_COOKIE, UPLOAD_DIR, owner_key
+from core.config import SESSION_COOKIE, UPLOAD_DIR, owner_key
 
 PNG = imagine._MOCK_PNG
 UPLOAD = {"data": base64.b64encode(PNG).decode("ascii")}
@@ -119,7 +120,7 @@ async def test_edit_provider_uses_json_edit_endpoint_with_real_image(monkeypatch
 
 async def test_migration_keeps_old_images_as_outputs(tmp_path, monkeypatch):
     path = tmp_path / "old.db"
-    monkeypatch.setattr(db, "DB_PATH", path)
+    monkeypatch.setattr(db_connection, "DB_PATH", path)
     async with aiosqlite.connect(path) as connection:
         await connection.execute("CREATE TABLE imagine_images (id TEXT PRIMARY KEY, job_id TEXT, owner TEXT, mime TEXT, path TEXT, created_at REAL)")
         await connection.execute("INSERT INTO imagine_images VALUES ('cu', 'luot-cu', 'nguoi-cu', 'image/png', 'anh-cu.png', 1)")
