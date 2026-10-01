@@ -2,13 +2,13 @@ import { test, expect, type Page } from '@playwright/test';
 import { mockPeto, openSidebar, noPageOverflow, title } from './fixtures';
 
 async function projectsFixture(page:Page) {
-  await mockPeto(page);
-  const state={projects:[{id:'P',name:'Báo cáo phần mềm',created_at:1,updated_at:2,instructions:'Trả lời bằng tiếng Việt',files:[{id:'F',name:'yeu-cau.md',mime:'text/markdown',size:25,url:'/api/projects/P/files/F',document:{version:1,status:'ready',notice:'Đã đọc tài liệu',characters:25}}]}],assigned:null as string|null,sent:null as Record<string,unknown>|null,creates:0,moveFailures:0};
+  const chat=await mockPeto(page);
+  const state={projects:[{id:'P',name:'Báo cáo phần mềm',created_at:1,updated_at:2}],assigned:null as string|null,sent:null as Record<string,unknown>|null,creates:0,moveFailures:0};
   await page.route('**/api/**',async route=>{
     const request=route.request(),url=new URL(request.url()),path=url.pathname,method=request.method();
     const json=(value:unknown)=>route.fulfill({json:value});
     if(path==='/api/projects') {
-      if(method==='POST') {state.creates++;const project={...state.projects[0],created_at:1,updated_at:2,id:'NEW',name:request.postDataJSON().name,files:[],instructions:''};state.projects.push(project);return json(project);}
+      if(method==='POST') {state.creates++;const project={created_at:1,updated_at:2,id:'NEW',name:request.postDataJSON().name};state.projects.push(project);return json(project);}
       return json({projects:state.projects});
     }
     const projectPath=path.match(/^\/api\/projects\/([^/]+)$/);
@@ -20,15 +20,21 @@ async function projectsFixture(page:Page) {
     }
     if(path==='/api/conversations') {
       const project=url.searchParams.get('project_id');
-      const conversations=[{id:'A',title,created_at:1,updated_at:2,message_count:2,title_state:'generated',project_id:state.assigned}];
+      const conversations=[{id:'A',title,created_at:1,updated_at:2,message_count:chat.messages.length,title_state:'generated',project_id:state.assigned}];
       return json({has_more:false,conversations:conversations.filter(c=>project ? c.project_id===project : !url.searchParams.has('unassigned') || !c.project_id)});
     }
     if(path==='/api/conversations/A' && method==='PATCH') {if(state.moveFailures>0){state.moveFailures--;return route.fulfill({status:500,json:{detail:'Chưa chuyển được hội thoại. Thử lại nhé.'}});}state.assigned=request.postDataJSON().project_id;return json({updated:true});}
-    if(path==='/api/conversations/A/messages') return json({messages:[],project_id:state.assigned,persona:'assistant'});
+    if(path==='/api/conversations/A/messages') return json({messages:chat.messages,project_id:state.assigned,persona:'assistant'});
     if(path==='/api/chat') state.sent=request.postDataJSON();
     return route.fallback();
   });
   return state;
+}
+
+async function expandFolder(page:Page,name:string) {
+  const folder=page.getByRole('button',{name,exact:true});
+  if(await folder.getAttribute('aria-expanded')==='false') await folder.click();
+  return folder;
 }
 
 test('chuyển chat khi chưa có dự án: tạo ngay và thử lại không tạo trùng',async({page})=>{
@@ -49,57 +55,84 @@ test('chuyển chat khi chưa có dự án: tạo ngay và thử lại không t�
   await expect(dialog).toHaveCount(0);await expect.poll(()=>state.assigned).toBe('NEW');
   expect(state.creates).toBe(1);
   await expect(page.locator('.conversation-list .conv')).toHaveCount(0);
-  await page.getByRole('button',{name:'Mở rộng dự án Dự án đầu tiên'}).click();
+  await expandFolder(page,'Dự án đầu tiên');
   await expect(page.locator('.project-chats').getByRole('button',{name:title,exact:true})).toBeVisible();
-  await expect(page.getByRole('textbox',{name:'Nhắn cho Peto',exact:true})).toBeVisible();
 });
 
-test('dự án có trang riêng và chỉ gửi tài liệu được chọn',async({page},info)=>{
-  const state=await projectsFixture(page);
+test('folder chỉ đóng mở chat, tên dự án ở góc phải và tệp gửi bằng đính kèm',async({page},info)=>{
+  const state=await projectsFixture(page);state.assigned='P';
   await page.goto('/');await expect(page.getByLabel('Nhắn cho Peto',{exact:true})).toBeVisible();await openSidebar(page);
-  await page.getByRole('button',{name:'Báo cáo phần mềm',exact:true}).click();
-  await expect(page.getByRole('heading',{name:'Báo cáo phần mềm'})).toBeVisible();
-  await expect(page.getByLabel('Peto nên trả lời và làm việc thế nào trong dự án này?')).toHaveValue('Trả lời bằng tiếng Việt');
+  const folder=await expandFolder(page,'Báo cáo phần mềm');
+  await expect(page.locator('.project-chat-name')).toHaveCount(0);
+  await expect(page.getByText('Tài liệu cho lượt này')).toHaveCount(0);
+  await expect(page.getByLabel('Peto nên trả lời và làm việc thế nào trong dự án này?')).toHaveCount(0);
+  await page.locator('.project-chats').getByRole('button',{name:title,exact:true}).click();
+  await expect(page.locator('.project-chat-name')).toHaveText('Báo cáo phần mềm');
+  await expect(page.locator('.table-scroll')).toBeVisible();
+  const bounds=await page.locator('.project-chat-name').boundingBox();
+  expect(bounds!.y).toBeLessThan(70);
+  expect(bounds!.x+bounds!.width).toBeGreaterThan(page.viewportSize()!.width*.7);
   await noPageOverflow(page);
-  await expect(page).toHaveScreenshot('project-overview.png');
-  await page.getByRole('button',{name:'+ Chat mới trong dự án',exact:true}).click();
-  await page.getByText('Tài liệu cho lượt này',{exact:true}).click();
-  const selection=page.getByRole('checkbox',{name:/yeu-cau.md/});
-  await expect(selection).not.toBeChecked();await selection.check();
-  await page.getByText('Tài liệu cho lượt này · 1',{exact:true}).click();
+  await expect(page).toHaveScreenshot('project-chat.png');
+  await openSidebar(page);
+  await page.locator('.project-row').hover();
+  await expect(page.getByRole('button',{name:'Chat mới trong dự án Báo cáo phần mềm'})).toBeVisible();
+  await expect(page).toHaveScreenshot('project-sidebar.png');
+  await folder.click();
+  await expect(folder).toHaveAttribute('aria-expanded','false');
+  await expect(page.locator('.project-chats')).toHaveCount(0);
+  // Gập thư mục không mở màn hình khác hoặc xóa hội thoại đang xem.
+  await expect(page.locator('.project-chat-name')).toHaveText('Báo cáo phần mềm');
+  await folder.click();
+  await page.locator('.project-chats').getByRole('button',{name:title,exact:true}).click();
+  await page.locator('.composer input[type=file]').setInputFiles('browser-tests/yeu-cau.txt');
+  await expect(page.getByRole('button',{name:'Gỡ yeu-cau.txt'})).toBeVisible();
   await page.getByLabel('Nhắn cho Peto',{exact:true}).fill('Tóm tắt yêu cầu');
   await page.getByRole('button',{name:'Gửi',exact:true}).click();
   await expect.poll(()=>state.sent?.project_id).toBe('P');
-  expect(state.sent?.project_file_ids).toEqual(['F']);
+  expect(state.sent?.project_file_ids).toBeUndefined();
+  expect(state.sent?.attachments).toEqual([expect.objectContaining({name:'yeu-cau.txt'})]);
+  await expect(page.getByText('Câu trả lời đã được lưu đầy đủ.')).toBeVisible();
   await openSidebar(page);
-  const toggle=page.getByRole('button',{name:'Mở rộng dự án Báo cáo phần mềm'});
-  await expect(toggle).toHaveAttribute('aria-expanded','false');
-  if(info.project.name==='mobile') await expect(page.locator('.project-row .conv-hover-actions button')).toBeVisible();
+  if(info.project.name==='mobile') await expect(page.locator('.project-row .conv-hover-actions button')).toHaveCount(2);
 });
 
-test('tạo dự án, chuyển chat và xóa dự án vẫn giữ hội thoại',async({page})=>{
+test('tạo chat trong folder, đổi tên và xóa dự án vẫn giữ hội thoại đang xem',async({page})=>{
   const state=await projectsFixture(page);
   await page.goto('/');await expect(page.getByLabel('Nhắn cho Peto',{exact:true})).toBeVisible();await openSidebar(page);
   await page.getByRole('button',{name:'Tạo dự án',exact:true}).click();
   const create=page.getByRole('dialog',{name:'Tạo dự án'});
   await create.getByRole('textbox').fill('Bài tập mới');await create.getByRole('button',{name:'Lưu',exact:true}).click();
-  await expect(page.getByRole('heading',{name:'Bài tập mới'})).toBeVisible();
+  await expect(page.locator('.project-chat-name')).toHaveText('Bài tập mới');
   await openSidebar(page);
   await page.locator('.conversation-list .conv').first().hover();
   await page.getByRole('button',{name:`Tùy chọn ${title}`,exact:true}).click();
   await page.getByRole('button',{name:'Chuyển vào dự án',exact:true}).click();
   const move=page.getByRole('dialog',{name:'Chuyển hội thoại vào dự án'});
   await move.getByLabel('Nơi lưu hội thoại').selectOption('NEW');await move.getByRole('button',{name:'Chuyển',exact:true}).click();
-  await expect.poll(()=>state.assigned).toBe('NEW');
-  await expect(page.locator('.conversation-list .conv')).toHaveCount(0);
-  await page.getByRole('button',{name:'Mở rộng dự án Bài tập mới'}).click();
-  await expect(page.locator('.project-chats').getByRole('button',{name:title,exact:true})).toBeVisible();
-  await page.getByRole('button',{name:'Bài tập mới',exact:true}).click();
-  await page.locator('.project-title-row').getByRole('button',{name:'Tùy chọn dự án Bài tập mới'}).click();
+  await expect(move).toHaveCount(0);await expect.poll(()=>state.assigned).toBe('NEW');
+  await expandFolder(page,'Bài tập mới');
+  await page.locator('.project-chats').getByRole('button',{name:title,exact:true}).click();
+  await expect(page.locator('.table-scroll')).toBeVisible();
+  await openSidebar(page);
+  await page.getByRole('button',{name:'Bài tập mới',exact:true}).hover();
+  await page.getByRole('button',{name:'Tùy chọn dự án Bài tập mới'}).click();
+  await page.getByRole('button',{name:'Đổi tên dự án',exact:true}).click();
+  const rename=page.getByRole('dialog',{name:'Đổi tên dự án'});
+  await rename.getByRole('textbox').fill('Bài tập đã đổi');await rename.getByRole('button',{name:'Lưu',exact:true}).click();
+  await expect(rename).toHaveCount(0);await expect(page.locator('.project-chat-name')).toHaveText('Bài tập đã đổi');
+  await page.getByRole('button',{name:'Bài tập đã đổi',exact:true}).hover();
+  await page.getByRole('button',{name:'Tùy chọn dự án Bài tập đã đổi'}).click();
   await page.getByRole('button',{name:'Xóa dự án',exact:true}).click();
   await page.getByRole('dialog',{name:'Xóa dự án này?'}).getByRole('button',{name:'Xóa',exact:true}).click();
   await expect.poll(()=>state.assigned).toBeNull();
-  await openSidebar(page);
+  await expect(page.locator('.project-chat-name')).toHaveCount(0);
+  await expect(page.locator('.table-scroll')).toBeAttached();
   await expect(page.locator('.conversation-list').getByRole('button',{name:title,exact:true})).toBeVisible();
-  await expect(page.getByRole('button',{name:'Bài tập mới',exact:true})).toHaveCount(0);
+  await expect(page.getByRole('button',{name:'Bài tập đã đổi',exact:true})).toHaveCount(0);
+  await page.getByRole('button',{name:'Báo cáo phần mềm',exact:true}).hover();
+  await page.getByRole('button',{name:'Chat mới trong dự án Báo cáo phần mềm'}).click();
+  await expect(page.locator('.project-chat-name')).toHaveText('Báo cáo phần mềm');
+  await expect(page.locator('.table-scroll')).toHaveCount(0);
+  await expect(page.getByLabel('Nhắn cho Peto',{exact:true})).toBeVisible();
 });

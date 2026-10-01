@@ -11,7 +11,7 @@ src/
       characters/              Live2D, VRM, nhập model, biểu cảm, chuyển động
       speech/                  Giọng nói, micro, nhận diện tiếng nói, worklet
     imagine/                   Tạo ảnh và thư viện
-    projects/                  Thư mục dự án, hướng dẫn, tài liệu chung, chuyển chat
+    projects/                  Thư mục dự án, tên dự án trên chat, chuyển chat
     documents/                 Tài liệu, bản xem trước, chỉnh sửa, xuất tệp
     diagrams/                  Sơ đồ Mermaid và bảng sơ đồ
     docs/                      Trang hướng dẫn công khai

@@ -417,7 +417,6 @@ export async function revokeAgentDevice(deviceId: string): Promise<void> {
 export async function sendMessage(
   payload: {
     projectId?: string | null;
-    projectFileIds?: string[];
     branchMessageId?: number;
     message: string;
     conversationId: string | null;
@@ -439,7 +438,6 @@ export async function sendMessage(
       branch_message_id: payload.branchMessageId,
       message: payload.message,
       project_id: payload.projectId,
-      project_file_ids: payload.projectFileIds ?? [],
       conversation_id: payload.conversationId,
       effort: payload.effort,
       web_search: payload.webSearch ?? "auto",

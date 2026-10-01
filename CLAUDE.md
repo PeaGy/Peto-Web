@@ -103,8 +103,10 @@ Project instructions apply each turn; only explicitly selected files (up to 4, t
 the system context. No automatic history sharing across project chats. PDFs/DOCX/text are cached after upload; project
 files are SQLite BLOBs included in normal database backups. Limits: 50 projects per account, 20 files/64 MB per project,
 8 MB per file. Deleting a project preserves conversations and their existing attachments, returning chats to recents.
-Frontend `features/projects/` owns sidebar folders, overview, context selection and move dialog; recents fetch unassigned
-conversations, global search still covers all chats. Projects currently apply to web chat only, not Companion/CLI.
+Frontend `features/projects/` owns sidebar folder toggles, the top-right chat project name and move dialog. Recents
+fetch unassigned conversations; global search still covers all chats. There is no project overview or shared-file
+picker; files are attached directly in chat. Legacy project instructions/files APIs and stored data are preserved.
+Projects currently apply to web chat only, not Companion/CLI.
 Provider spies patch `features.chat.service.get_provider`; history budget spies patch `features.chat.history`;
 migration tests patch `storage.connection.DB_PATH`. Prompt text, API paths, schema/SQL, resource locations and launch
 commands were preserved during the move. Tests keep setting fake environment variables before the first config import.

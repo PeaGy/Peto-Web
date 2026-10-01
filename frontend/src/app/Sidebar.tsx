@@ -119,7 +119,7 @@ export default function Sidebar({
             </div>
           </div>
         )}
-        {(view === "chat" || view === "projects") && (
+        {view === "chat" && (
         <div className="sidebar-section sidebar-history">
         {projects}
         <h2 className="sidebar-label" id="sidebar-recent">Gần đây</h2>

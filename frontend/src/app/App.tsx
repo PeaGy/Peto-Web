@@ -5,9 +5,9 @@ import Sidebar from './Sidebar';
 import { useProjects } from '../features/projects/useProjects';
 import ProjectSidebar, { FolderIcon } from '../features/projects/ProjectSidebar';
 import { createProject, deleteProject, updateProject, type Project } from '../features/projects/projectApi';
-import { ProjectConfirm, ProjectContext } from '../features/projects/ProjectControls';
+import { ProjectConfirm } from '../features/projects/ProjectControls';
 import MoveConversationDialog from '../features/projects/MoveConversationDialog';
-const ProjectWorkspace = lazy(() => import('../features/projects/ProjectWorkspace'));
+import ProjectChatHeader from '../features/projects/ProjectChatHeader';
 import { ChatMessage } from '../features/chat/ChatMessage';
 import { disconnectStream, networkInterrupted, useReplyRecovery } from '../features/chat/useReplyRecovery';
 import { ReplyRecoveryNotice } from '../features/chat/ReplyRecoveryNotice';
@@ -104,7 +104,6 @@ export default function App() {
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeProjectId, setActiveProjectId] = useState<string|null>(null);
-  const [projectFiles, setProjectFiles] = useState<string[]>([]);
   const [projectEdit, setProjectEdit] = useState<Project|'create'|null>(null);
   const [projectName, setProjectName] = useState('');
   const [projectBusy, setProjectBusy] = useState(false);
@@ -324,7 +323,7 @@ export default function App() {
     }));
     setMessages([]);
     setConversations([]);
-    setActiveProjectId(null); setProjectFiles([]); setProjectEdit(null); setProjectDelete(null); setProjectMenu(null); setMoveTarget(null);setProjectError('');setProjectBusy(false);setMetadataBusy(false);
+    setActiveProjectId(null); setProjectEdit(null); setProjectDelete(null); setProjectMenu(null); setMoveTarget(null);setProjectError('');setProjectBusy(false);setMetadataBusy(false);
     setSearchOpen(false);
     setConversationMenu(null);
     setRenameTarget(null);
@@ -591,7 +590,7 @@ export default function App() {
     retryRevision.current = undefined;
     setNotice(null);
     setConversationId(id);
-    setProjectFiles([]);
+
     setActiveProjectId(allConversations.find(item => item.id === id)?.project_id ?? null);
     go('chat');
     setEditTarget(null);
@@ -636,7 +635,7 @@ export default function App() {
     nearBottom.current = true;
     setShowJump(false);
     setConversationId(null);
-    setActiveProjectId(null);setProjectFiles([]);
+    setActiveProjectId(null);
     setPersona("assistant");
     setMessages([]);
     setError(null);
@@ -794,7 +793,6 @@ export default function App() {
         {
           message: text,
           projectId:activeProjectId,
-          projectFileIds:projectFiles,
           conversationId,
           branchMessageId: revision?.target.id,
           effort: effectiveEffort,
@@ -954,14 +952,10 @@ export default function App() {
   const canSend = (draft.trim().length > 0 || draftFiles.length > 0) && !streaming && !loadingConversation && !loadFailed && recovery.online && !recovery.pending;
 
   function menuPosition(rect:DOMRect) {return {left:Math.max(8,Math.min(rect.left,window.innerWidth-192)),top:Math.max(8,Math.min(rect.bottom+6,window.innerHeight-208))};}
-  function openProject(id:string) {
+  function newProjectChat(id:string) {
     if (abortRef.current || deleting) return;
-    newConversation();setActiveProjectId(id);go('projects');void refreshProjectChats(id);
-  }
-  function newProjectChat() {
-    const id=activeProjectId;
-    if (!id || abortRef.current) return;
-    newConversation();setActiveProjectId(id);go('chat');
+    newConversation();setActiveProjectId(id);go('chat');setSidebarOpen(false);
+    void refreshProjectChats(id);
   }
   async function saveProject() {
     if (!projectEdit || projectBusy) return;
@@ -969,7 +963,7 @@ export default function App() {
     setProjectBusy(true);setProjectError('');
     try {
       if (projectName.trim().length>100) throw new Error('Tên dự án tối đa 100 ký tự.');
-      if(projectEdit==='create') {const created=await createProject(projectName);if(session!==authVersion.current)return;openProject(created.id);}
+      if(projectEdit==='create') {const created=await createProject(projectName);if(session!==authVersion.current)return;newProjectChat(created.id);}
       else {await updateProject(projectEdit.id,{name:projectName});if(session!==authVersion.current)return;}
       setProjectEdit(null);await refreshProjects();
     } catch(err) {if(session===authVersion.current) {if(err instanceof UnauthorizedError)handleUnauthorized();else setProjectError(err instanceof Error ? err.message : 'Chưa lưu được dự án.');}}
@@ -979,7 +973,7 @@ export default function App() {
     if(!projectDelete || projectBusy)return;
     const session=authVersion.current, id=projectDelete.id;
     setProjectBusy(true);setProjectError('');
-    try {await deleteProject(id);if(session!==authVersion.current)return;if(activeProjectId===id){newConversation();go('chat');}setProjectDelete(null);await refreshConversations();}
+    try {await deleteProject(id);if(session!==authVersion.current)return;if(activeProjectId===id)setActiveProjectId(null);setProjectDelete(null);await refreshConversations();}
     catch(err){if(session===authVersion.current){if(err instanceof UnauthorizedError)handleUnauthorized();else setProjectError(err instanceof Error ? err.message : 'Chưa xóa được dự án.');}}
     finally{if(session===authVersion.current)setProjectBusy(false);}
   }
@@ -1004,7 +998,7 @@ export default function App() {
     if(!moveTarget || metadataBusy)return;
     const session=authVersion.current;
     setMetadataBusy(true);setProjectError('');
-    try {await updateConversation(moveTarget.id,{project_id:id});if(session!==authVersion.current)return;if(conversationId===moveTarget.id){setActiveProjectId(id);setProjectFiles([]);}const old=moveTarget.project_id;setMoveTarget(null);await refreshConversations();if(old)void refreshProjectChats(old);if(id)void refreshProjectChats(id);}
+    try {await updateConversation(moveTarget.id,{project_id:id});if(session!==authVersion.current)return;if(conversationId===moveTarget.id){setActiveProjectId(id);}const old=moveTarget.project_id;setMoveTarget(null);await refreshConversations();if(old)void refreshProjectChats(old);if(id)void refreshProjectChats(id);}
     catch(err){if(session===authVersion.current){if(err instanceof UnauthorizedError)handleUnauthorized();else setProjectError(err instanceof Error ? err.message : 'Chưa chuyển được hội thoại.');}}
     finally{if(session===authVersion.current)setMetadataBusy(false);}
   }
@@ -1012,7 +1006,6 @@ export default function App() {
   // Như Grok: đang ở Trò chuyện mà bấm lại thì mở cuộc mới. Từ Tạo ảnh quay về
   // thì giữ nguyên cuộc đang dở, vì người ta hay qua lại giữa hai tab.
   function goChat() {
-    if (view === 'projects') {newConversation();go('chat');return;}
     if (view !== "chat") {
       go("chat");
     } else if (!deleting) {
@@ -1149,7 +1142,7 @@ export default function App() {
 
       <Sidebar
         projects={<ProjectSidebar key={auth.user?.id} state={projectState} activeId={activeProjectId} conversationId={conversationId} disabled={streaming || deleting || projectBusy}
-          onCreate={() => {setProjectEdit('create');setProjectName('');setProjectError('');}} onOpen={openProject} onChat={id => void openConversation(id)}
+          onCreate={() => {setProjectEdit('create');setProjectName('');setProjectError('');}} onNewChat={newProjectChat} onChat={id => void openConversation(id)}
           onMenu={(item,rect) => setProjectMenu({item,...menuPosition(rect)})} onConversationMenu={(item,rect) => setConversationMenu({item,...menuPosition(rect)})}/>}
         sidebarOpen={sidebarOpen} collapsed={collapsed} streaming={streaming} deleting={deleting}
         appInfo={appInfo} auth={auth} view={view} imagineJobs={imagineJobs}
@@ -1202,10 +1195,6 @@ export default function App() {
         </LazyBoundary>
       )}
       <DiagramContext.Provider value={diagramApi}>
-      {view==='projects' && activeProjectId && <LazyBoundary><Suspense fallback={<ViewLoading label="Đang mở dự án"/>}><ProjectWorkspace key={`${auth.user?.id}-${activeProjectId}`} id={activeProjectId} name={projectState.projects.find(p=>p.id===activeProjectId)?.name}
-        chats={projectState.chats[activeProjectId]?.items ?? []} chatsLoading={projectState.chats[activeProjectId]?.loading ?? false} more={projectState.chats[activeProjectId]?.more ?? false}
-        onMore={()=>void refreshProjectChats(activeProjectId,true)} onChat={id=>void openConversation(id)} onNewChat={newProjectChat} onUpdated={()=>void refreshProjects()} onUnauthorized={handleUnauthorized}
-        onSidebar={()=>setSidebarOpen(true)} onOptions={rect=>{const item=projectState.projects.find(p=>p.id===activeProjectId);if(item)setProjectMenu({item,...menuPosition(rect)});}} disabled={streaming || projectBusy}/></Suspense></LazyBoundary>}
       <div className={`chat-layout${documentPanelOpen || diagram ? ' documents-open' : ''}${documentPanelOpen && documentPanelExpanded ? ' documents-expanded' : ''}`} hidden={view !== 'chat'}>
       <main className={emptyChat ? "chat empty-state" : "chat"}>
         <div className="chat-tools">
@@ -1217,6 +1206,7 @@ export default function App() {
         >
           <MenuIcon />
         </button>
+        {activeProjectId && <ProjectChatHeader name={projectState.projects.find(project=>project.id===activeProjectId)?.name}/>}
         <button type="button" className="artifact-icon document-panel-toggle" aria-label={documentPanelOpen ? 'Đóng bảng tài liệu' : 'Mở bảng tài liệu'} aria-expanded={documentPanelOpen} aria-controls="document-panel" title="Tài liệu · Ctrl+Alt+B" onClick={() => { setDocumentPanelOpen(value => !value); setDocumentPanelExpanded(false); setDiagram(null); }}><RightPanelIcon /></button>
         </div>
 
@@ -1266,7 +1256,6 @@ export default function App() {
         }}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 4v16m-7-7 7 7 7-7" /></svg></button>}
 
         <div className="chat-dock" ref={chatDockRef}>
-        {activeProjectId && view==='chat' && <ProjectContext key={`${auth.user?.id}-${activeProjectId}-${conversationId}`} id={activeProjectId} selected={projectFiles} onSelect={setProjectFiles} onOpen={()=>openProject(activeProjectId)} onUnauthorized={handleUnauthorized} disabled={streaming || loadingConversation}/>}
         <ReplyRecoveryNotice recovery={recovery} />
         {error && !recovery.pending && recovery.status !== 'failed' && (
           <div className="error" role="alert">
@@ -1359,7 +1348,7 @@ export default function App() {
         <button onClick={()=>{setProjectEdit(projectMenu.item);setProjectName(projectMenu.item.name);setProjectError('');setProjectMenu(null);}}><EditIcon/>Đổi tên dự án</button>
         <button className="danger-button" onClick={()=>{setProjectDelete(projectMenu.item);setProjectError('');setProjectMenu(null);}}>Xóa dự án</button>
       </ConversationMenu>}
-      {projectEdit && <><TextEditDialog title={projectEdit==='create' ? 'Tạo dự án' : 'Đổi tên dự án'} description={projectError || 'Gom hội thoại và tài liệu cùng một công việc.'} value={projectName} onChange={setProjectName} busy={projectBusy} onClose={()=>setProjectEdit(null)} onSave={()=>void saveProject()}/></>}
+      {projectEdit && <><TextEditDialog title={projectEdit==='create' ? 'Tạo dự án' : 'Đổi tên dự án'} description={projectError || 'Gom hội thoại cùng một công việc.'} value={projectName} onChange={setProjectName} busy={projectBusy} onClose={()=>setProjectEdit(null)} onSave={()=>void saveProject()}/></>}
       {projectDelete && <ProjectConfirm title="Xóa dự án này?" busy={projectBusy} onClose={()=>setProjectDelete(null)} onConfirm={()=>void removeProject()}><p>“{projectDelete.name}” cùng hướng dẫn và tài liệu chung sẽ bị xóa. Các hội thoại được giữ và trở về Gần đây.</p>{projectError && <p role="alert">{projectError}</p>}</ProjectConfirm>}
       {moveTarget && <MoveConversationDialog item={moveTarget} projects={projectState.projects} busy={metadataBusy} error={projectError} loading={projectState.loading} loadError={projectState.error} onRetry={()=>void refreshProjects()} onCreate={createProjectForMove} onClose={()=>setMoveTarget(null)} onSave={id=>void moveConversation(id)}/>}
       <dialog ref={deleteDialogRef} className="confirm-dialog" aria-labelledby="delete-title" onCancel={(event) => {
