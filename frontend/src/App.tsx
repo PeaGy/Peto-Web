@@ -1720,7 +1720,6 @@ export default function App() {
               </button>
               <div className="conv-hover-actions">
                 <button type="button" aria-label={`Tùy chọn ${conversation.title}`} title="Tùy chọn hội thoại" disabled={streaming || deleting} onClick={e => { const r=e.currentTarget.getBoundingClientRect(); setConversationMenu({item:conversation,left:Math.max(8,Math.min(r.left,window.innerWidth-192)),top:Math.max(8,Math.min(r.bottom+6,window.innerHeight-158))}); }}>⋯</button>
-                <button type="button" aria-label={conversation.pinned ? 'Bỏ ghim' : 'Ghim'} title={conversation.pinned ? 'Bỏ ghim' : 'Ghim'} aria-pressed={Boolean(conversation.pinned)} disabled={metadataBusy} onClick={() => void changeConversation(conversation,{pinned:!conversation.pinned})}><PinIcon /></button>
               </div>
             </div>
           ))}

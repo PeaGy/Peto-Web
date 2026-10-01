@@ -1313,6 +1313,8 @@ it('tìm nội dung lịch sử qua máy chủ, đổi tên và ghim', async () 
   fireEvent.change(screen.getByRole('textbox',{name:'Đổi tên hội thoại'}),{target:{value:'Tên mới'}});
   fireEvent.click(screen.getByRole('button',{name:'Lưu',exact:true}));
   await waitFor(() => expect(api.updateConversation).toHaveBeenCalledWith('A',{title:'Tên mới'}));
+  await waitFor(() => expect(screen.queryByRole('dialog',{name:'Đổi tên hội thoại'})).toBeNull());
+  fireEvent.click(screen.getByLabelText('Tùy chọn A'));
   fireEvent.click(screen.getAllByRole('button',{name:'Ghim',exact:true})[0]);
   await waitFor(() => expect(api.updateConversation).toHaveBeenCalledWith('A',{pinned:true}));
 });
