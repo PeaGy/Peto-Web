@@ -3,6 +3,8 @@ import LoginScreen from './LoginScreen';
 import { EditIcon } from '../shared/ui/EditIcon';
 import Sidebar from './Sidebar';
 import { ChatMessage } from '../features/chat/ChatMessage';
+import { disconnectStream, networkInterrupted, useReplyRecovery } from '../features/chat/useReplyRecovery';
+import { ReplyRecoveryNotice } from '../features/chat/ReplyRecoveryNotice';
 import { Greeting } from '../features/chat/Greeting';
 import { ViewLoading } from '../shared/ui/ViewLoading';
 import { MenuIcon, PinIcon } from './navigationIcons';
@@ -364,6 +366,20 @@ export default function App() {
     }
   }, [handleUnauthorized]);
 
+  const recovery = useReplyRecovery({
+    scope: auth?.authenticated ? auth.user?.id ?? 'authenticated' : null,
+    conversationId, enabled: Boolean(auth?.authenticated) && view === 'chat',
+    busy: streaming || loadingConversation,
+    onDisconnect: () => disconnectStream(abortRef.current),
+    onUnauthorized: handleUnauthorized,
+    onRecovered: (stored, complete) => {
+      setMessages(stored);
+      setError(null);
+      setRetryAvailable(!complete);
+      void refreshConversations();
+    },
+  });
+
   const waitingForTitle = conversations.some(item =>
     item.id === conversationId && (item.title_state === 'pending' ||
       (item.title_state === 'temporary' && (item.title_attempts || 0) < 3)));
@@ -542,6 +558,7 @@ export default function App() {
 
   async function openConversation(id: string) {
     if (abortRef.current || deleting) return;
+    recovery.cancel();
     loadRef.current?.abort();
     const controller = new AbortController();
     loadRef.current = controller;
@@ -578,6 +595,7 @@ export default function App() {
 
   function newConversation() {
     if (abortRef.current) return;
+    recovery.cancel();
     setEditTarget(null);
     setRetryAvailable(false);
     retryRevision.current = undefined;
@@ -645,7 +663,7 @@ export default function App() {
   async function submit(revision?: { target: Message; text: string }) {
     const text = revision ? revision.text.trim() : draft.trim();
     const hasAttachments = revision ? Boolean(revision.target.attachments?.length) : draftFiles.length > 0;
-    if ((!text && !hasAttachments) || abortRef.current || loadingConversation || loadFailed) return;
+    if ((!text && !hasAttachments) || abortRef.current || loadingConversation || loadFailed || !recovery.online || recovery.pending) return;
 
     const pending = revision ? [] : draftFiles;
     const previousMessages = messages;
@@ -656,6 +674,7 @@ export default function App() {
       return;
     }
     const prefix = revision ? messages.slice(0, revisionIndex) : messages;
+    recovery.cancel();
     setRetryAvailable(false);
     retryRevision.current = revision;
     setEditTarget(null);
@@ -689,6 +708,8 @@ export default function App() {
     let activeId = conversationId;
     let accepted = false;
     let completed = false;
+    let interrupted = false;
+    let storedUserId: number | undefined;
     // Mỗi lần Peto tìm/đọc trong tệp là một dòng riêng trong danh sách "Đang làm…".
     let fileLookups = 0;
     let writingPhase = false;
@@ -753,6 +774,7 @@ export default function App() {
           onMeta: (id, _usedEffort, storedMessage) => {
             if (session !== authVersion.current) return;
             accepted = true;
+            storedUserId = storedMessage?.id;
             activeId = id;
             setConversationId(id);
             if (!revision) { setDraft(""); setDraftFiles([]); }
@@ -824,6 +846,7 @@ export default function App() {
       if (err instanceof UnauthorizedError) {
         handleUnauthorized();
       } else if (!controller.signal.aborted) {
+        interrupted = true;
         const message = err instanceof Error ? err.message : "Mất kết nối tới máy chủ";
         setError(accepted ? message : `${message} Bản nháp được giữ lại; kiểm tra lịch sử trước khi gửi lại nếu kết nối bị ngắt.`);
         setRetryAvailable(true);
@@ -846,7 +869,7 @@ export default function App() {
               : prev.slice(0, -1);
           });
         }
-        if (controller.signal.aborted) setNotice(accepted ? "Đã dừng. Phần đã trả lời được giữ lại." : "Đã dừng gửi. Bản nháp vẫn được giữ lại.");
+        if (controller.signal.aborted && !networkInterrupted(controller)) setNotice(accepted ? "Đã dừng. Phần đã trả lời được giữ lại." : "Đã dừng gửi. Bản nháp vẫn được giữ lại.");
         if (activeId || !accepted) void refreshConversations();
         if (revision && accepted && activeId) {
           // Fetch stable IDs for edit/regenerate; preserve the local progress log.
@@ -854,6 +877,9 @@ export default function App() {
             const stored = await getMessages(activeId);
             if (session === authVersion.current) setMessages(current => current.map((row, i) => ({...row, id:stored[i]?.id})));
           } catch { setMessages(current => current.map(row => ({...row,id:undefined}))); }
+        }
+        if ((interrupted || networkInterrupted(controller)) && accepted && activeId && storedUserId !== undefined) {
+          recovery.interrupt({ conversationId: activeId, userMessageId: storedUserId });
         }
       }
       if (accepted) for (const item of pending) if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
@@ -892,7 +918,7 @@ export default function App() {
     }
   }
 
-  const canSend = (draft.trim().length > 0 || draftFiles.length > 0) && !streaming && !loadingConversation && !loadFailed;
+  const canSend = (draft.trim().length > 0 || draftFiles.length > 0) && !streaming && !loadingConversation && !loadFailed && recovery.online && !recovery.pending;
 
   // Như Grok: đang ở Trò chuyện mà bấm lại thì mở cuộc mới. Từ Tạo ảnh quay về
   // thì giữ nguyên cuộc đang dở, vì người ta hay qua lại giữa hai tab.
@@ -1143,7 +1169,8 @@ export default function App() {
         }}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 4v16m-7-7 7 7 7-7" /></svg></button>}
 
         <div className="chat-dock" ref={chatDockRef}>
-        {error && (
+        <ReplyRecoveryNotice recovery={recovery} />
+        {error && !recovery.pending && recovery.status !== 'failed' && (
           <div className="error" role="alert">
             {error}
             {retryAvailable && <button type="button" disabled={streaming || loadingConversation} onClick={() => void submit(retryRevision.current)}>Thử lại</button>}

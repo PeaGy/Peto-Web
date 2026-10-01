@@ -10,6 +10,8 @@ import {
   type Message,
 } from "../../shared/api/api";
 import { SendIcon } from "../chat/Composer";
+import { disconnectStream, networkInterrupted, useReplyRecovery } from '../chat/useReplyRecovery';
+import { ReplyRecoveryNotice } from '../chat/ReplyRecoveryNotice';
 import {
   clearHearingMessage,
   getHearingState,
@@ -156,6 +158,12 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
   const resetRef = useRef<HTMLDialogElement>(null);
   // Câu trả lời về xong mới quyết định có đọc không, nên đọc trạng thái mới nhất qua ref.
   const latest = useRef({ active, muted, voice });
+  const recovery = useReplyRecovery({
+    scope: 'companion', conversationId, enabled: active, busy: streaming || loading || resetting,
+    onDisconnect: () => disconnectStream(abortRef.current),
+    onUnauthorized,
+    onRecovered: (stored) => { setMessages(stored); setError(null); },
+  });
 
   useEffect(() => {
     latest.current = { active, muted, voice };
@@ -285,7 +293,8 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
 
   async function send() {
     const text = draft.trim();
-    if (!text || abortRef.current || loading || loadFailed) return;
+    if (!text || abortRef.current || loading || loadFailed || !recovery.online || recovery.pending) return;
+    recovery.cancel();
     setHeardAt(0);
     setMicOpen(false);
     stopVoice();
@@ -300,6 +309,9 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
     abortRef.current = controller;
     let accepted = false;
     let completed = false;
+    let interrupted = false;
+    let activeId = conversationId;
+    let storedUserId: number | undefined;
     let reply = "";
     let turnEmotion: StageEmotion | undefined;
     try {
@@ -308,6 +320,8 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
         {
           onMeta: (id, _effort, stored) => {
             accepted = true;
+            activeId = id;
+            storedUserId = stored?.id;
             setConversationId(id);
             setDraft("");
             if (stored) setMessages((prev) => [...prev.slice(0, -2), stored, prev[prev.length - 1]]);
@@ -351,6 +365,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
       if (err instanceof UnauthorizedError) {
         onUnauthorized();
       } else if (!controller.signal.aborted) {
+        interrupted = true;
         setError(err instanceof Error ? err.message : "Mất kết nối tới máy chủ");
       }
     } finally {
@@ -370,6 +385,9 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
       setSearching(false);
       setStopping(false);
       abortRef.current = null;
+      if ((interrupted || networkInterrupted(controller)) && accepted && activeId && storedUserId !== undefined) {
+        recovery.interrupt({ conversationId: activeId, userMessageId: storedUserId });
+      }
     }
     const now = latest.current;
     if (completed && reply.trim()) void watchMemory(replyIndex);
@@ -393,6 +411,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
 
   async function reset() {
     if (!conversationId || resetting) return;
+    recovery.cancel();
     setResetting(true);
     try {
       await deleteConversation(conversationId);
@@ -498,7 +517,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
   const stateText = speech?.phase === "playing" ? "Đang nói…"
     : speech?.phase === "loading" ? "Sắp nói…"
       : searching ? "Đang tra web…" : streaming ? "Đang nhắn…" : "Trả lời ngắn bằng tiếng Anh";
-  const canSend = draft.trim().length > 0 && !streaming && !loading && !loadFailed;
+  const canSend = draft.trim().length > 0 && !streaming && !loading && !loadFailed && recovery.online && !recovery.pending;
 
   return (
     <main className={`companion${scene.selected.url ? ' companion-with-scene' : ''}`} hidden={!active}>
@@ -627,7 +646,8 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
           <div ref={bottomRef} />
         </div>
 
-        {error && (
+        <ReplyRecoveryNotice recovery={recovery} />
+        {error && !recovery.pending && recovery.status !== 'failed' && (
           <div className="error" role="alert">
             {error}
             <button type="button" className="dismiss-error" aria-label="Đóng thông báo" onClick={() => setError(null)}>×</button>

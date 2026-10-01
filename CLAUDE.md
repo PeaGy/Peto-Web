@@ -61,6 +61,7 @@ cd frontend && npm test                          # vitest run
 cd frontend && npx vitest run tests/App.test.tsx
 cd frontend && npx vitest run tests/App.test.tsx -t "partial test name"
 cd frontend && npm run build                     # tsc -b && vite build -> frontend/dist
+cd frontend && npm run test:browser              # Chromium PC/mobile, mocked API and checked-in Windows screenshots
 
 # Peto Agent CLI tests (stdlib-only CLI; uses the repo venv's pytest)
 .venv/Scripts/python.exe -m pytest agent-cli/tests

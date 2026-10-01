@@ -1,0 +1,28 @@
+.reply-recovery {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  margin: 0 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+.reply-recovery span { flex: 1; min-width: 0; }
+.reply-recovery button {
+  flex: none;
+  border: 0;
+  border-radius: 8px;
+  padding: 6px 8px;
+  background: var(--panel-2);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.companion-panel .reply-recovery { margin: 0 14px 8px; }
+@media (max-width: 720px) {
+  .companion-panel .reply-recovery { background: var(--stage-surface); color: var(--stage-text); }
+}

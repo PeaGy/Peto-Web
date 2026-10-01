@@ -17,6 +17,8 @@ frontend/dist/
 
 # Build artifacts
 frontend/tsconfig.tsbuildinfo
+frontend/test-results/
+frontend/playwright-report/
 .runtime/
 
 # Token xAI rieng cua web

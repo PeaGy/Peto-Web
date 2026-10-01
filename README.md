@@ -58,6 +58,11 @@ cd frontend && npm test && npm run build
 
 Test dùng nhà cung cấp giả và database tạm, không chạm dữ liệu thật.
 
+Kiểm tra giao diện PC/mobile bằng trình duyệt: từ `frontend`, chạy `npx playwright install chromium` một lần,
+rồi `npm run test:browser`. Bộ kiểm tra so sánh ảnh chuẩn và thử phục hồi sau mất mạng, không dùng lượt AI.
+Xem [hướng dẫn và giới hạn](frontend/browser-tests/README.md). Workflow frontend chạy các kiểm tra khi push/PR,
+không tự triển khai web.
+
 ## Tài liệu khác
 
 - [CLAUDE.md](CLAUDE.md): kiến trúc và các quy ước của code.

@@ -63,6 +63,41 @@ async function openApp() {
   await screen.findByRole('button', { name: 'A', exact: true }, { timeout: 5000 });
 }
 
+it('mất luồng sau khi máy chủ nhận tin thì đồng bộ mà không gửi lại và giữ bản nháp mới', async () => {
+  const user: api.Message = { id: 10, role: 'user', content: 'Tin cần phục hồi' };
+  vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers) => {
+    handlers.onMeta?.('C', 'low', user);
+    handlers.onDelta?.('Một phần');
+    throw new TypeError('Mất kết nối');
+  });
+  vi.mocked(api.getMessages).mockResolvedValue([user, { id: 11, role: 'assistant', content: 'Câu trả lời đã lưu đầy đủ', status: 'complete' }]);
+  await openApp();
+  fireEvent.change(screen.getByLabelText('Nhắn cho Peto'), { target: { value: user.content } });
+  fireEvent.click(screen.getByRole('button', { name: 'Gửi', exact: true }));
+  await screen.findByText('Đang kiểm tra phần trả lời đã lưu…');
+  fireEvent.change(screen.getByLabelText('Nhắn cho Peto'), { target: { value: 'Bản nháp tiếp theo' } });
+  await screen.findByText('Câu trả lời đã lưu đầy đủ');
+  expect(api.sendMessage).toHaveBeenCalledOnce();
+  expect((screen.getByLabelText('Nhắn cho Peto') as HTMLTextAreaElement).value).toBe('Bản nháp tiếp theo');
+  expect(screen.queryByRole('button', { name: 'Thử lại', exact: true })).toBeNull();
+});
+it('chủ động dừng câu đang trả lời không tự đồng bộ hoặc gửi lại', async () => {
+  vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers, signal) => {
+    handlers.onMeta?.('C', 'low', { id: 10, role: 'user', content: 'Tin cần dừng' });
+    handlers.onDelta?.('Phần cần giữ');
+    await new Promise<void>((_resolve, reject) => signal?.addEventListener('abort', () => reject(signal.reason)));
+  });
+  await openApp();
+  fireEvent.change(screen.getByLabelText('Nhắn cho Peto'), { target: { value: 'Tin cần dừng' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Gửi', exact: true }));
+  await screen.findByText('Phần cần giữ');
+  fireEvent.click(screen.getByRole('button', { name: 'Dừng', exact: true }));
+  await screen.findByText('Đã dừng. Phần đã trả lời được giữ lại.');
+  expect(api.getMessages).not.toHaveBeenCalled();
+  expect(screen.queryByText('Đang kiểm tra phần trả lời đã lưu…')).toBeNull();
+  expect(api.sendMessage).toHaveBeenCalledOnce();
+});
+
 /** Bấm ô tài khoản ở đáy thanh bên rồi chọn một mục trong menu tài khoản. */
 async function fromAccountMenu(item: string) {
   fireEvent.click(screen.getByRole('button', { name: /^Tài khoản · / }));
