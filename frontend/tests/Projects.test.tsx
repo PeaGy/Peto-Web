@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { useState } from 'react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import ProjectWorkspace from '../src/features/projects/ProjectWorkspace';
+import MoveConversationDialog from '../src/features/projects/MoveConversationDialog';
 import { ProjectContext } from '../src/features/projects/ProjectControls';
 import { useProjects } from '../src/features/projects/useProjects';
 import * as projects from '../src/features/projects/projectApi';
@@ -21,6 +22,37 @@ beforeEach(() => {
   vi.mocked(projects.getProject).mockResolvedValue(detail());
   vi.mocked(projects.listProjects).mockResolvedValue([detail()]);
   vi.mocked(api.listConversations).mockResolvedValue({conversations:[],has_more:false});
+});
+
+it('chưa có dự án thì tạo và chuyển ngay, lỗi chuyển không tạo trùng khi thử lại', async () => {
+  const onCreate=vi.fn().mockResolvedValue(detail()),onSave=vi.fn();
+  const props={item:{id:'A',title:'Chat cần chuyển',created_at:1,updated_at:1,message_count:2},projects:[],busy:false,loading:false,onRetry:vi.fn(),onCreate,onSave,onClose:vi.fn()};
+  const view=render(<MoveConversationDialog {...props}/>);
+  expect((screen.getByRole('button',{name:'Tạo và chuyển'}) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.change(screen.getByLabelText('Tên dự án mới'),{target:{value:' Báo cáo '}});
+  fireEvent.click(screen.getByRole('button',{name:'Tạo và chuyển'}));
+  await waitFor(()=>expect(onSave).toHaveBeenCalledWith('P'));
+  expect(onCreate).toHaveBeenCalledWith('Báo cáo');
+  view.rerender(<MoveConversationDialog {...props} error="Chưa chuyển được hội thoại"/>);
+  expect((screen.getByLabelText('Nơi lưu hội thoại') as HTMLSelectElement).value).toBe('P');
+  fireEvent.click(screen.getByRole('button',{name:'Chuyển',exact:true}));
+  expect(onSave).toHaveBeenCalledTimes(2);
+  expect(onCreate).toHaveBeenCalledTimes(1);
+});
+
+it('không cho chuyển về đích cũ, báo tải lỗi và cho thử tải lại danh sách', () => {
+  const props={item:{id:'A',title:'Chat',project_id:'P',created_at:1,updated_at:1,message_count:2},projects:[detail()],busy:false,loading:false,onRetry:vi.fn(),onCreate:vi.fn(),onSave:vi.fn(),onClose:vi.fn()};
+  const view=render(<MoveConversationDialog {...props}/>);
+  const button=screen.getByRole('button',{name:'Chuyển',exact:true}) as HTMLButtonElement;
+  expect(button.disabled).toBe(true);
+  fireEvent.change(screen.getByLabelText('Nơi lưu hội thoại'),{target:{value:''}});
+  expect(button.disabled).toBe(false);
+  fireEvent.click(button);
+  expect(props.onSave).toHaveBeenCalledWith(null);
+  view.rerender(<MoveConversationDialog {...props} projects={[]} loadError="Chưa tải được dự án."/>);
+  expect(screen.getByRole('alert').textContent).toContain('Chưa tải được dự án');
+  fireEvent.click(screen.getByRole('button',{name:'Thử tải lại'}));
+  expect(props.onRetry).toHaveBeenCalledOnce();
 });
 
 it('thêm tài liệu và đổi tên không làm mất hướng dẫn đang soạn', async () => {

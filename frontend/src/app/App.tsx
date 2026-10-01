@@ -983,6 +983,23 @@ export default function App() {
     catch(err){if(session===authVersion.current){if(err instanceof UnauthorizedError)handleUnauthorized();else setProjectError(err instanceof Error ? err.message : 'Chưa xóa được dự án.');}}
     finally{if(session===authVersion.current)setProjectBusy(false);}
   }
+  async function createProjectForMove(name:string):Promise<Project|null> {
+    if (!moveTarget || metadataBusy) return null;
+    const session=authVersion.current;
+    setMetadataBusy(true);setProjectError('');
+    try {
+      const project=await createProject(name);
+      if (session!==authVersion.current) return null;
+      void refreshProjects();
+      return project;
+    } catch(err) {
+      if(session===authVersion.current) {
+        if(err instanceof UnauthorizedError)handleUnauthorized();
+        else setProjectError(err instanceof Error ? err.message : 'Chưa tạo được dự án.');
+      }
+      return null;
+    } finally {if(session===authVersion.current)setMetadataBusy(false);}
+  }
   async function moveConversation(id:string|null) {
     if(!moveTarget || metadataBusy)return;
     const session=authVersion.current;
@@ -1335,7 +1352,7 @@ export default function App() {
       {conversationMenu && <ConversationMenu left={conversationMenu.left} top={conversationMenu.top} onClose={() => setConversationMenu(null)}>
         <button onClick={() => {setRenameTarget(conversationMenu.item);setRenameText(conversationMenu.item.title);setConversationMenu(null);}}><EditIcon />Đổi tên</button>
         <button disabled={metadataBusy} onClick={() => {void changeConversation(conversationMenu.item,{pinned:!conversationMenu.item.pinned});setConversationMenu(null);}}><PinIcon />{conversationMenu.item.pinned ? 'Bỏ ghim' : 'Ghim'}</button>
-        <button disabled={metadataBusy} onClick={()=>{setMoveTarget(conversationMenu.item);setProjectError('');setConversationMenu(null);}}><FolderIcon/>Chuyển vào dự án</button>
+        <button disabled={metadataBusy} onClick={()=>{setMoveTarget(conversationMenu.item);setProjectError('');setConversationMenu(null);void refreshProjects();}}><FolderIcon/>Chuyển vào dự án</button>
         <button className="danger-button" onClick={() => {setDeleteTarget(conversationMenu.item);setConversationMenu(null);}}>Xóa hội thoại</button>
       </ConversationMenu>}
       {projectMenu && <ConversationMenu label="Tùy chọn dự án" left={projectMenu.left} top={projectMenu.top} onClose={()=>setProjectMenu(null)}>
@@ -1344,7 +1361,7 @@ export default function App() {
       </ConversationMenu>}
       {projectEdit && <><TextEditDialog title={projectEdit==='create' ? 'Tạo dự án' : 'Đổi tên dự án'} description={projectError || 'Gom hội thoại và tài liệu cùng một công việc.'} value={projectName} onChange={setProjectName} busy={projectBusy} onClose={()=>setProjectEdit(null)} onSave={()=>void saveProject()}/></>}
       {projectDelete && <ProjectConfirm title="Xóa dự án này?" busy={projectBusy} onClose={()=>setProjectDelete(null)} onConfirm={()=>void removeProject()}><p>“{projectDelete.name}” cùng hướng dẫn và tài liệu chung sẽ bị xóa. Các hội thoại được giữ và trở về Gần đây.</p>{projectError && <p role="alert">{projectError}</p>}</ProjectConfirm>}
-      {moveTarget && <MoveConversationDialog item={moveTarget} projects={projectState.projects} busy={metadataBusy} error={projectError} onClose={()=>setMoveTarget(null)} onSave={id=>void moveConversation(id)}/>}
+      {moveTarget && <MoveConversationDialog item={moveTarget} projects={projectState.projects} busy={metadataBusy} error={projectError} loading={projectState.loading} loadError={projectState.error} onRetry={()=>void refreshProjects()} onCreate={createProjectForMove} onClose={()=>setMoveTarget(null)} onSave={id=>void moveConversation(id)}/>}
       <dialog ref={deleteDialogRef} className="confirm-dialog" aria-labelledby="delete-title" onCancel={(event) => {
         event.preventDefault();
         if (!deleting) setDeleteTarget(null);
