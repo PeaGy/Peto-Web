@@ -12,6 +12,7 @@ export async function preloadLazyParts(): Promise<void> {
     import('../src/features/settings/MemorySettings'),
     import('../src/features/settings/SearchSettings'),
     import('../src/features/settings/AgentSettings'),
+    import('../src/features/settings/ArchivedConversations'),
     import('../src/features/companion/characters/CharacterSettings'),
     import('../src/shared/markdown/markdownMath'),
     import('../src/shared/markdown/markdownCode'),

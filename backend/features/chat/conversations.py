@@ -13,7 +13,7 @@ from storage import connection as db_connection
 from core.config import UPLOAD_DIR
 
 
-async def update(owner, conversation_id, title=None, pinned=None):
+async def update(owner, conversation_id, title=None, pinned=None, archived=None):
     async with db_connection.connect() as connection:
         fields, values = [], []
         if title is not None:
@@ -25,6 +25,9 @@ async def update(owner, conversation_id, title=None, pinned=None):
         if pinned is not None:
             fields.append('pinned=?')
             values.append(int(pinned))
+        if archived is not None:
+            fields.append('archived=?')
+            values.append(int(archived))
         if not fields:
             raise HTTPException(400, 'Chưa có thay đổi')
         result = await connection.execute(f"UPDATE conversations SET {', '.join(fields)} WHERE id=? AND owner=? AND mode='chat'",
@@ -41,7 +44,7 @@ async def versions(owner, conversation_id):
         if row is None:
             raise HTTPException(404, 'Không tìm thấy hội thoại')
         result = await (await connection.execute("""SELECT id, title, created_at FROM conversations
-            WHERE owner=? AND mode='chat' AND (id=? OR (branch_group<>'' AND branch_group=?))
+            WHERE owner=? AND mode='chat' AND archived=0 AND (id=? OR (branch_group<>'' AND branch_group=?))
             ORDER BY created_at, id""", (owner, conversation_id, row['branch_group']))).fetchall()
         return [dict(item) for item in result]
 
@@ -59,6 +62,8 @@ async def fork(owner, conversation_id, message_id, text):
             await connection.execute('PRAGMA foreign_keys=ON')
             await connection.execute('BEGIN IMMEDIATE')
             source = await (await connection.execute("SELECT * FROM conversations WHERE id=? AND owner=? AND mode='chat'", (conversation_id, owner))).fetchone()
+            if source and source['archived']:
+                raise HTTPException(409, 'Hãy khôi phục hội thoại đã lưu trữ trước khi sửa tin nhắn.')
             rows = await (await connection.execute('SELECT * FROM messages WHERE conversation_id=? AND id<=? ORDER BY id', (conversation_id, message_id))).fetchall() if source else []
             if not rows or rows[-1]['id'] != message_id or rows[-1]['role'] != 'user':
                 raise HTTPException(404, 'Không tìm thấy tin nhắn cần tạo phiên bản')

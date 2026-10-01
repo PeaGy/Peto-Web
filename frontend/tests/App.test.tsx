@@ -66,6 +66,43 @@ async function openApp() {
   await screen.findByRole('button', { name: 'A', exact: true }, { timeout: 5000 });
 }
 
+it('lưu trữ chat đang mở, đọc lại trong Cài đặt và khôi phục để tiếp tục', async () => {
+  let archived=false;
+  vi.mocked(api.listConversations).mockImplementation(async (_offset,_limit,_query,filter) => ({conversations:filter?.archived ? archived ? [{...conversation('A'),archived:true}] : [] : archived ? [conversation('B')] : [conversation('A'),conversation('B')],has_more:false}));
+  vi.mocked(api.updateConversation).mockImplementation(async (_id,change) => {if(change.archived!==undefined)archived=change.archived;});
+  vi.mocked(api.getMessages).mockImplementation(async (_id,_signal,onSettings) => {onSettings?.({archived});return [{id:1,role:'user',content:'Lịch sử được giữ'}];});
+  await openApp();
+  fireEvent.click(screen.getByRole('button',{name:'A',exact:true}));
+  await screen.findByText('Lịch sử được giữ');
+  fireEvent.click(screen.getByRole('button',{name:'Tùy chọn A',exact:true}));
+  fireEvent.click(screen.getByRole('button',{name:'Lưu trữ',exact:true}));
+  await waitFor(() => expect(screen.queryByRole('button',{name:'A',exact:true})).toBeNull());
+  expect(screen.queryByText('Lịch sử được giữ')).toBeNull();
+  await fromAccountMenu('Cài đặt');
+  fireEvent.click(screen.getByRole('button',{name:'Hội thoại đã lưu trữ',exact:true}));
+  fireEvent.click(await screen.findByRole('button',{name:'A',exact:true}));
+  await screen.findByText('Lịch sử được giữ');
+  expect(screen.queryByLabelText('Nhắn cho Peto')).toBeNull();
+  fireEvent.click(screen.getByRole('button',{name:'Khôi phục để tiếp tục'}));
+  await screen.findByLabelText('Nhắn cho Peto');
+  await screen.findByRole('button',{name:'A',exact:true});
+  expect(api.updateConversation).toHaveBeenLastCalledWith('A',{archived:false});
+  expect(api.deleteConversation).not.toHaveBeenCalled();
+});
+
+it('lưu trữ mất mạng giữ nguyên chat đang mở và báo lỗi tiếng Việt', async () => {
+  vi.mocked(api.getMessages).mockResolvedValue([{id:1,role:'user',content:'Nội dung chưa lưu trữ'}]);
+  vi.mocked(api.updateConversation).mockRejectedValueOnce(new TypeError('Failed to fetch'));
+  await openApp();
+  fireEvent.click(screen.getByRole('button',{name:'A',exact:true}));
+  await screen.findByText('Nội dung chưa lưu trữ');
+  fireEvent.click(screen.getByRole('button',{name:'Tùy chọn A',exact:true}));
+  fireEvent.click(screen.getByRole('button',{name:'Lưu trữ',exact:true}));
+  await screen.findByText('Chưa lưu được thay đổi. Hãy thử lại.');
+  expect(screen.getByText('Nội dung chưa lưu trữ')).toBeTruthy();
+  expect(screen.getByRole('button',{name:'A',exact:true})).toBeTruthy();
+});
+
 it('mất luồng sau khi máy chủ nhận tin thì đồng bộ mà không gửi lại và giữ bản nháp mới', async () => {
   const user: api.Message = { id: 10, role: 'user', content: 'Tin cần phục hồi' };
   vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers) => {

@@ -40,7 +40,7 @@ async def list_projects(owner):
     async with connection.connect() as db:
         db.row_factory = aiosqlite.Row
         rows = await (await db.execute("""SELECT p.id, p.name, p.created_at, p.updated_at,
-            (SELECT COUNT(*) FROM conversations c WHERE c.owner=p.owner AND c.project_id=p.id AND c.mode='chat') AS conversation_count,
+            (SELECT COUNT(*) FROM conversations c WHERE c.owner=p.owner AND c.project_id=p.id AND c.mode='chat' AND c.archived=0) AS conversation_count,
             (SELECT COUNT(*) FROM project_files f WHERE f.owner=p.owner AND f.project_id=p.id) AS file_count
             FROM projects p WHERE p.owner=? ORDER BY p.updated_at DESC, p.id DESC""", (owner,))).fetchall()
         return [dict(row) for row in rows]

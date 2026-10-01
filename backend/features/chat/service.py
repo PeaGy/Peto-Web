@@ -176,6 +176,8 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
         settings = await db.conversation_settings(owner, request.conversation_id)
         if settings is None:
             raise HTTPException(status_code=404, detail="Không tìm thấy hội thoại")
+        if settings['archived']:
+            raise HTTPException(409, 'Hãy khôi phục hội thoại đã lưu trữ trước khi gửi tin nhắn.')
         if settings["mode"] != mode:
             raise HTTPException(status_code=400, detail="Hội thoại này thuộc tab khác")
         # Chế độ chọn lúc bắt đầu và giữ cả hội thoại, để lịch sử không trộn giọng trợ lý với giọng nhập vai.
@@ -270,6 +272,8 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                 admitted_at = perf_counter()
                 if conversation_id:
                     current_settings = await db.conversation_settings(owner, conversation_id)
+                    if current_settings and current_settings['archived']:
+                        raise ProviderError('Hội thoại đã được lưu trữ. Hãy khôi phục trước khi gửi tin nhắn.')
                     if not current_settings or current_settings.get('project_id') != project_id:
                         raise ProviderError('Hội thoại đã chuyển dự án hoặc bị xóa. Mở lại trước khi gửi nhé.')
                 project_prompt = await project_context(owner, project_id, request.project_file_ids)
@@ -288,6 +292,8 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                 # Hội thoại có thể bị xóa hoặc chuyển dự án trong lúc đang đọc tệp.
                 if conversation_id:
                     current_settings = await db.conversation_settings(owner, conversation_id)
+                    if current_settings and current_settings['archived']:
+                        raise ProviderError('Hội thoại đã được lưu trữ. Hãy khôi phục trước khi gửi tin nhắn.')
                     if not current_settings or current_settings.get('project_id') != project_id:
                         raise ProviderError('Hội thoại đã chuyển dự án hoặc bị xóa. Mở lại trước khi gửi nhé.')
                 is_new_conversation = not conversation_id

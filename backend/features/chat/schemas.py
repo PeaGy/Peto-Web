@@ -35,6 +35,7 @@ class ConversationUpdate(BaseModel):
     project_id: str | None = Field(default=None, max_length=64)
     title: str | None = Field(default=None, max_length=120)
     pinned: bool | None = None
+    archived: bool | None = None
 
 
 ALLOWED_EFFORTS = {"auto", *ai_models.OPENAI_EFFORTS}

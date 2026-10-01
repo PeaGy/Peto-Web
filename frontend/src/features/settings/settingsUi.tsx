@@ -7,6 +7,7 @@ import { useId, type ReactNode } from "react";
 
 /** Biểu tượng nét 1.7px cùng họ với thanh bên, cho danh sách mục của Cài đặt và menu tài khoản. */
 const ICONS = {
+  archive: <><rect x="3.5" y="4" width="17" height="4" rx="1" /><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8M10 12h4" /></>,
   palette: <>
     <path d="M12 3.5a8.5 8.5 0 0 0 0 17c1 0 1.7-.7 1.7-1.6 0-.5-.2-.9-.5-1.2a1.7 1.7 0 0 1 1.2-2.9h2A4.6 4.6 0 0 0 21 10.2C21 6.5 17 3.5 12 3.5Z" />
     <circle cx="7.7" cy="11.2" r="1.05" fill="currentColor" stroke="none" />

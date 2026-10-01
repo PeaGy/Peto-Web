@@ -75,12 +75,13 @@ const voiceSettings = preloadable(() => import("../features/companion/speech/Voi
 const memorySettings = preloadable(() => import("../features/settings/MemorySettings"));
 const searchSettings = preloadable(() => import("../features/settings/SearchSettings"));
 const agentSettings = preloadable(() => import("../features/settings/AgentSettings"));
+const archiveSettings = preloadable(() => import("../features/settings/ArchivedConversations"));
 const characterSettings = preloadable(() => import("../features/companion/characters/CharacterSettings"));
 const loadImagine = imagine.preload;
 const loadCompanion = companion.preload;
 const loadSettings = () => Promise.all([
   profileSettings.preload(), voiceSettings.preload(), memorySettings.preload(), searchSettings.preload(),
-  agentSettings.preload(), characterSettings.preload(),
+  agentSettings.preload(), characterSettings.preload(), archiveSettings.preload(),
 ]);
 // Tải trước: lỗi ở đây bỏ qua, lần mở thật sẽ tải lại và LazyBoundary lo phần báo lỗi.
 const preload = (load: () => Promise<unknown>) => () => void load().catch(() => {});
@@ -91,6 +92,7 @@ const VoiceSettings = voiceSettings.View;
 const MemorySettings = memorySettings.View;
 const SearchSettings = searchSettings.View;
 const AgentSettings = agentSettings.View;
+const ArchivedConversations = archiveSettings.View;
 const CharacterSettings = characterSettings.View;
 
 // Old messages keep their rendered Markdown while the draft or current reply changes.
@@ -123,6 +125,9 @@ export default function App() {
   const retryRevision = useRef<{ target: Message; text: string } | undefined>(undefined);
   const [metadataBusy, setMetadataBusy] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
+  const conversationIdRef = useRef(conversationId);
+  conversationIdRef.current = conversationId;
+  const [archived, setArchived] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [draft, setDraft] = useState("");
   const [documentRequest, setDocumentRequest] = useState<DocumentDraftRequest | null>(null);
@@ -335,6 +340,7 @@ export default function App() {
     setRetryAvailable(false);
     retryRevision.current = undefined;
     setConversationId(null);
+    setArchived(false);
     setDraft("");
     setNotice(null);
     setWebSearch("auto");
@@ -592,6 +598,7 @@ export default function App() {
     retryRevision.current = undefined;
     setNotice(null);
     setConversationId(id);
+    setArchived(Boolean(allConversations.find(item => item.id === id)?.archived));
 
     setActiveProjectId(allConversations.find(item => item.id === id)?.project_id ?? null);
     go('chat');
@@ -608,6 +615,7 @@ export default function App() {
         if (version !== loadVersion.current) return;
         setActiveProjectId(settings.project_id ?? null);
         setPersona(settings.persona ?? 'assistant');
+        setArchived(Boolean(settings.archived));
       });
       if (version !== loadVersion.current) return;
       setMessages(loaded);
@@ -637,6 +645,7 @@ export default function App() {
     nearBottom.current = true;
     setShowJump(false);
     setConversationId(null);
+    setArchived(false);
     setActiveProjectId(null);
     setPersona("assistant");
     setMessages([]);
@@ -697,7 +706,7 @@ export default function App() {
   async function submit(revision?: { target: Message; text: string }) {
     const text = revision ? revision.text.trim() : draft.trim();
     const hasAttachments = revision ? Boolean(revision.target.attachments?.length) : draftFiles.length > 0;
-    if ((!text && !hasAttachments) || abortRef.current || loadingConversation || loadFailed || !recovery.online || recovery.pending) return;
+    if ((!text && !hasAttachments) || archived || abortRef.current || loadingConversation || loadFailed || !recovery.online || recovery.pending) return;
 
     const pending = revision ? [] : draftFiles;
     const previousMessages = messages;
@@ -930,18 +939,25 @@ export default function App() {
     abortRef.current?.abort();
   }
 
-  async function changeConversation(item: Conversation, change: {title?: string; pinned?: boolean}) {
-    if (metadataBusy) return;
+  async function changeConversation(item: Pick<Conversation, 'id' | 'project_id'>, change: {title?: string; pinned?: boolean; archived?: boolean}) {
+    if (metadataBusy || (change.archived !== undefined && abortRef.current)) return;
+    const session = authVersion.current;
     setMetadataBusy(true);
     try {
       await updateConversation(item.id, change);
+      if (session !== authVersion.current) return;
+      if (item.id === conversationIdRef.current && change.archived !== undefined) {
+        if (change.archived) newConversation();
+        else setArchived(false);
+      }
       setRenameTarget(null);
       await refreshConversations();
       if (item.project_id && item.project_id !== activeProjectRef.current) void refreshProjectChats(item.project_id);
     } catch (err) {
+      if (session !== authVersion.current) return;
       if (err instanceof UnauthorizedError) handleUnauthorized();
-      else setError(err instanceof Error ? err.message : 'Chưa lưu được thay đổi');
-    } finally { setMetadataBusy(false); }
+      else setError(err instanceof Error && !(err instanceof TypeError) ? err.message : 'Chưa lưu được thay đổi. Hãy thử lại.');
+    } finally { if (session === authVersion.current) setMetadataBusy(false); }
   }
 
   async function signOut() {
@@ -956,7 +972,7 @@ export default function App() {
 
   const canSend = (draft.trim().length > 0 || draftFiles.length > 0) && !streaming && !loadingConversation && !loadFailed && recovery.online && !recovery.pending;
 
-  function menuPosition(rect:DOMRect) {return {left:Math.max(8,Math.min(rect.left,window.innerWidth-192)),top:Math.max(8,Math.min(rect.bottom+6,window.innerHeight-208))};}
+  function menuPosition(rect:DOMRect) {return {left:Math.max(8,Math.min(rect.left,window.innerWidth-192)),top:Math.max(8,Math.min(rect.bottom+6,window.innerHeight-242))};}
   function newProjectChat(id:string) {
     if (abortRef.current || deleting) return;
     newConversation();setActiveProjectId(id);go('chat');setSidebarOpen(false);
@@ -1047,6 +1063,19 @@ export default function App() {
   // `active`: mục đang được xem trong hộp đang mở; các mục chỉ tải dữ liệu lúc đó.
   const renderSettings = (section: SettingsSection, active: boolean): ReactNode => {
     switch (section) {
+      case 'luu-tru':
+        return <LazyBoundary><Suspense fallback={settingsLoading}>
+          <ArchivedConversations key={auth.user?.id} open={active} disabled={streaming || deleting || metadataBusy}
+            onUnauthorized={handleUnauthorized} onOpen={id => {closeSettings(); void openConversation(id);}}
+            onChanged={(item, deleted) => {
+              if (item.id === conversationIdRef.current) {
+                if (deleted) newConversation();
+                else setArchived(false);
+              }
+              void refreshConversations();
+              if (item.project_id && item.project_id !== activeProjectRef.current) void refreshProjectChats(item.project_id);
+            }}/>
+        </Suspense></LazyBoundary>;
       case "giao-dien":
         return (
           <SettingsGroup>
@@ -1217,7 +1246,7 @@ export default function App() {
 
         <div className="messages" ref={messagesRef} onClick={e => {
           const button = (e.target as Element).closest<HTMLButtonElement>('button[data-revise]');
-          if (!button || streaming || loadingConversation) return;
+          if (!button || archived || streaming || loadingConversation) return;
           const id = Number(button.dataset.revise);
           const target = messages.find(m => m.id === id && m.role === 'user');
           if (!target) return;
@@ -1242,7 +1271,7 @@ export default function App() {
 
           {messages.map((message, index) => (
             <ChatMessage key={index} message={message}
-              actionsDisabled={streaming || loadingConversation || loadFailed}
+              actionsDisabled={archived || streaming || loadingConversation || loadFailed}
               editor={editTarget?.id === message.id && editTarget ? <form className="inline-message-editor" onSubmit={e => {e.preventDefault(); void submit({target:editTarget,text:editText});}}>
                 <textarea autoFocus aria-label="Sửa tin nhắn" value={editText} onChange={e => setEditText(e.target.value)} rows={Math.min(12,Math.max(3,editText.split('\n').length))} onKeyDown={e => {if(e.key==='Escape') setEditTarget(null);}}/>
                 <div><button type="button" onClick={() => setEditTarget(null)}>Hủy</button><button type="submit" disabled={streaming || (!editText.trim() && !editTarget.attachments?.length)}>Gửi</button></div>
@@ -1275,7 +1304,10 @@ export default function App() {
           <button type="button" className="dismiss-error" aria-label="Đóng thông báo trạng thái" onClick={() => setNotice(null)}>×</button>
         </div>}
 
-        <Composer
+        {archived ? <div className="archived-chat-notice" role="status">
+          <span>Hội thoại đã lưu trữ</span>
+          <button type="button" disabled={metadataBusy || loadingConversation || loadFailed} onClick={() => conversationId && void changeConversation({id:conversationId, project_id:activeProjectId}, {archived:false})}>Khôi phục để tiếp tục</button>
+        </div> : <Composer
           draft={draft}
           onDraftChange={setDraft}
           files={draftFiles}
@@ -1305,7 +1337,7 @@ export default function App() {
           boxRef={composerBoxRef}
           textareaRef={textareaRef}
           fileRef={fileRef}
-        />
+        />}
         </div>
       </main>
       <DocumentPanel key={`${auth.user?.id}-${conversationId}`} conversationId={conversationId} open={documentPanelOpen && view === 'chat'} expanded={documentPanelExpanded} selection={documentPreview} refreshKey={documentRefresh} onClose={closeDocumentPanel} onExpand={() => setDocumentPanelExpanded(value => !value)} onEdit={item => setDocumentSelection({ ...item, key: Date.now() })} onUnauthorized={handleUnauthorized} />
@@ -1347,6 +1379,7 @@ export default function App() {
         <button onClick={() => {setRenameTarget(conversationMenu.item);setRenameText(conversationMenu.item.title);setConversationMenu(null);}}><EditIcon />Đổi tên</button>
         <button disabled={metadataBusy} onClick={() => {void changeConversation(conversationMenu.item,{pinned:!conversationMenu.item.pinned});setConversationMenu(null);}}><PinIcon />{conversationMenu.item.pinned ? 'Bỏ ghim' : 'Ghim'}</button>
         <button disabled={metadataBusy} onClick={()=>{setMoveTarget(conversationMenu.item);setProjectError('');setConversationMenu(null);void refreshProjects();}}><FolderIcon/>Chuyển vào dự án</button>
+        <button disabled={metadataBusy || streaming || deleting} onClick={() => {void changeConversation(conversationMenu.item, {archived:true}); setConversationMenu(null);}}><SettingsIcon name="archive"/>Lưu trữ</button>
         <button className="danger-button" onClick={() => {setDeleteTarget(conversationMenu.item);setConversationMenu(null);}}>Xóa hội thoại</button>
       </ConversationMenu>}
       {projectMenu && <ConversationMenu label="Tùy chọn dự án" left={projectMenu.left} top={projectMenu.top} onClose={()=>setProjectMenu(null)}>

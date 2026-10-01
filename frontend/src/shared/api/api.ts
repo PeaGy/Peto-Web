@@ -60,6 +60,7 @@ export interface WorkStep {
 export type Persona = "assistant" | "roleplay";
 
 export interface Conversation {
+  archived?: boolean;
   project_id?: string | null;
   pinned?: boolean;
   title_state?: 'temporary' | 'pending' | 'generated' | 'locked';
@@ -225,15 +226,15 @@ export async function getAppInfo(): Promise<AppInfo> {
   return (await response.json()) as AppInfo;
 }
 
-export async function listConversations(offset = 0, limit = 50, query = '', filter?: {projectId?: string; unassigned?: boolean}): Promise<{
+export async function listConversations(offset = 0, limit = 50, query = '', filter?: {projectId?: string; unassigned?: boolean; archived?: boolean}, signal?: AbortSignal): Promise<{
   conversations: Conversation[]; has_more: boolean;
 }> {
   const scope = filter?.projectId ? `&project_id=${encodeURIComponent(filter.projectId)}` : filter?.unassigned ? '&unassigned=true' : '';
-  const response = await fetch(`/api/conversations?offset=${offset}&limit=${limit}&q=${encodeURIComponent(query)}${scope}`);
+  const response = await fetch(`/api/conversations?offset=${offset}&limit=${limit}&q=${encodeURIComponent(query)}${scope}${filter?.archived ? '&archived=true' : ''}`, {signal});
   return json(response);
 }
 
-export async function updateConversation(id: string, change: { title?: string; pinned?: boolean; project_id?: string | null }): Promise<void> {
+export async function updateConversation(id: string, change: { title?: string; pinned?: boolean; project_id?: string | null; archived?: boolean }): Promise<void> {
   await json(await fetch(`/api/conversations/${id}`, {method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(change)}));
 }
 
@@ -242,9 +243,9 @@ export async function conversationVersions(id: string): Promise<Conversation[]> 
   return data.versions;
 }
 
-export async function getMessages(conversationId: string, signal?: AbortSignal, onSettings?: (settings: {project_id?: string | null; persona?: Persona}) => void): Promise<Message[]> {
+export async function getMessages(conversationId: string, signal?: AbortSignal, onSettings?: (settings: {project_id?: string | null; persona?: Persona; archived?: boolean}) => void): Promise<Message[]> {
   const response = await fetch(`/api/conversations/${conversationId}/messages`, { signal });
-  const data = await json<{ messages: Message[]; project_id?: string | null; persona?: Persona }>(response);
+  const data = await json<{ messages: Message[]; project_id?: string | null; persona?: Persona; archived?: boolean }>(response);
   onSettings?.(data);
   return data.messages;
 }

@@ -107,6 +107,12 @@ Frontend `features/projects/` owns sidebar folder toggles, the top-left chat pro
 fetch unassigned conversations; global search still covers all chats. There is no project overview or shared-file
 picker; files are attached directly in chat. Legacy project instructions/files APIs and stored data are preserved.
 Projects currently apply to web chat only, not Companion/CLI.
+Chat archival uses `conversations.archived` (migrated to 0 for existing rows). Default lists/search/project counts
+exclude archived chats; `GET /api/conversations?archived=true` lists only the current owner's archived web chats.
+PATCH `archived` retains titles, pin state, project membership, messages, attachments and generated documents.
+Settings -> archived conversations supports search, paging, read-only opening, restoration and confirmed permanent
+deletion. Restoring returns to the old project, or recents after project deletion. Chat sends/branches reject archived
+conversations before admission and recheck after waiting/reading files. Companion is never archived by this API.
 Sidebar preloads the first chat page per folder with three concurrent requests. Opening a folder reuses cached or
 pending data; background refreshes retain existing rows. Writes refresh affected folders explicitly, including
 renaming/deleting chats in inactive projects. Cache and request guards reset at authentication scope changes.

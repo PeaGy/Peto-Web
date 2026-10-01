@@ -27,7 +27,7 @@ async def init_db() -> None:
             "ON conversations(owner, updated_at DESC)"
         )
         conversation_columns = await (await db.execute("PRAGMA table_info(conversations)")).fetchall()
-        for name, definition in [('pinned', 'INTEGER NOT NULL DEFAULT 0'), ('branch_group', "TEXT NOT NULL DEFAULT ''")]:
+        for name, definition in [('pinned', 'INTEGER NOT NULL DEFAULT 0'), ('archived', 'INTEGER NOT NULL DEFAULT 0'), ('branch_group', "TEXT NOT NULL DEFAULT ''")]:
             if name not in {column[1] for column in conversation_columns}:
                 await db.execute(f'ALTER TABLE conversations ADD COLUMN {name} {definition}')
         if "title_state" not in {column[1] for column in conversation_columns}:
@@ -41,6 +41,7 @@ async def init_db() -> None:
         if "persona" not in {column[1] for column in conversation_columns}:
             # "assistant" hoặc "roleplay", chọn lúc bắt đầu hội thoại; hội thoại cũ đều là trợ lý.
             await db.execute("ALTER TABLE conversations ADD COLUMN persona TEXT NOT NULL DEFAULT 'assistant'")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_conversations_archive ON conversations(owner, mode, archived, pinned DESC, updated_at DESC, id DESC)")
         await db.execute(
             """
             CREATE TABLE IF NOT EXISTS messages (

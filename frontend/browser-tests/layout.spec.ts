@@ -11,8 +11,9 @@ test('sidebar và menu hội thoại gọn, chỉ hiện nút tùy chọn', asyn
   await expect(page.locator('.conv-hover-actions button')).toHaveCount(2);
   await page.getByRole('button', { name: `Tùy chọn ${title}`, exact: true }).click();
   await expect(page.getByRole('button', { name: 'Đổi tên', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Lưu trữ', exact: true })).toBeVisible();
   await noPageOverflow(page);
-  await expect(page).toHaveScreenshot('sidebar-menu.png');
+  await expect(page).toHaveScreenshot('sidebar-menu.png', {maxDiffPixelRatio:0});
 });
 
 test('giá tiền, bảng, công thức và sửa tin nhắn không phá bố cục', async ({ page }) => {

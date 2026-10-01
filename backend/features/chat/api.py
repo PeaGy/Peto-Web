@@ -23,21 +23,22 @@ async def list_conversations(
     q: str = Query(default='', max_length=200),
     project_id: str | None = Query(default=None, max_length=64),
     unassigned: bool = False,
+    archived: bool = False,
 ) -> dict:
     if project_id:
         await projects.get_project(owner, project_id)
-    rows = await db.list_conversations(owner, limit=limit + 1, offset=offset, query=q.strip(), project_id=project_id, unassigned=unassigned)
+    rows = await db.list_conversations(owner, limit=limit + 1, offset=offset, query=q.strip(), project_id=project_id, unassigned=unassigned, archived=archived)
     return {"conversations": rows[:limit], "has_more": len(rows) > limit}
 
 
 @router.patch('/api/conversations/{conversation_id}')
 async def update_conversation(conversation_id: str, body: ConversationUpdate, owner: str = Depends(current_owner)):
     if 'project_id' in body.model_fields_set:
-        if body.title is not None or body.pinned is not None:
-            raise HTTPException(400, 'Chuyển dự án riêng với thay đổi tên hoặc ghim')
+        if body.title is not None or body.pinned is not None or body.archived is not None:
+            raise HTTPException(400, 'Chuyển dự án riêng với thay đổi tên, ghim hoặc lưu trữ')
         await projects.move_conversation(owner, conversation_id, body.project_id)
     else:
-        await conversation_actions.update(owner, conversation_id, body.title, body.pinned)
+        await conversation_actions.update(owner, conversation_id, body.title, body.pinned, body.archived)
     return {'updated': True}
 
 
@@ -55,7 +56,7 @@ async def get_messages(
         raise HTTPException(status_code=404, detail="Không tìm thấy hội thoại")
     rows = await db.get_messages(owner, conversation_id)
     companion = settings["mode"] == "companion"
-    return {"messages": [_public_message(row, companion) for row in rows], 'project_id': settings.get('project_id'), 'persona': settings['persona']}
+    return {"messages": [_public_message(row, companion) for row in rows], 'project_id': settings.get('project_id'), 'persona': settings['persona'], 'archived': settings['archived']}
 
 
 @router.get("/api/attachments/{attachment_id}")
