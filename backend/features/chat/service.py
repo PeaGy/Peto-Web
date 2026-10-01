@@ -183,6 +183,13 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
     elif persona == "roleplay":
         await _check_roleplay_start(owner, mode)
     history_limit = ROLEPLAY_MAX_HISTORY if persona == "roleplay" else MAX_HISTORY_MESSAGES
+    from features.projects.context import context as project_context
+    project_id = settings.get('project_id') if request.conversation_id else request.project_id
+    if mode != 'chat' and (project_id or request.project_file_ids):
+        raise HTTPException(400, 'Dự án chỉ dùng trong tab Trò chuyện')
+    if request.conversation_id and request.project_id is not None and request.project_id != project_id:
+        raise HTTPException(400, 'Hội thoại thuộc dự án khác; chuyển bằng menu hội thoại trước')
+    await project_context(owner, project_id, request.project_file_ids)
     if request.model != ai_models.DEFAULT_MODEL:
         if mode == "companion":
             raise HTTPException(status_code=400, detail="Tab Companion chỉ dùng Peto.")
@@ -261,6 +268,11 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
         try:
             async with admission.slot(owner):
                 admitted_at = perf_counter()
+                if conversation_id:
+                    current_settings = await db.conversation_settings(owner, conversation_id)
+                    if not current_settings or current_settings.get('project_id') != project_id:
+                        raise ProviderError('Hội thoại đã chuyển dự án hoặc bị xóa. Mở lại trước khi gửi nhé.')
+                project_prompt = await project_context(owner, project_id, request.project_file_ids)
                 # Từ chối cooldown/hàng chờ trước khi ghi bất kỳ tin nhắn nào.
                 if conversation_id and not await db.owns_conversation(owner, conversation_id):
                     raise ProviderError("Hội thoại đã bị xóa. Mở cuộc trò chuyện mới nhé.")
@@ -273,13 +285,15 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                 if document_count:
                     # Thiếu dòng này thì bước "Peto đang đọc…" trong danh sách "Đang làm…" giữ nguyên chữ "đang" tới hết lượt.
                     yield sse({"type": "reading", "text": ""})
-                # Hội thoại có thể bị xóa trong lúc bộ đọc đang xử lý tệp.
-                if conversation_id and not await db.owns_conversation(owner, conversation_id):
-                    raise ProviderError("Hội thoại đã bị xóa. Mở cuộc trò chuyện mới nhé.")
+                # Hội thoại có thể bị xóa hoặc chuyển dự án trong lúc đang đọc tệp.
+                if conversation_id:
+                    current_settings = await db.conversation_settings(owner, conversation_id)
+                    if not current_settings or current_settings.get('project_id') != project_id:
+                        raise ProviderError('Hội thoại đã chuyển dự án hoặc bị xóa. Mở lại trước khi gửi nhé.')
                 is_new_conversation = not conversation_id
                 with anyio.CancelScope(shield=True):
                     if not conversation_id:
-                        conversation_id = await db.create_conversation(owner, mode=mode, persona=persona)
+                        conversation_id = await db.create_conversation(owner, mode=mode, persona=persona, project_id=project_id)
                     saved_paths: list[Path] = []
                     try:
                         if request.branch_message_id:
@@ -320,6 +334,8 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                             for row in [r for r in rows if r.get('role') == 'user'][-3:])),
                 )
                 document_session = DocumentSession(owner, conversation_id) if mode == 'chat' else None
+                if project_prompt:
+                    system_prompt += '\n\n' + project_prompt
                 # Tệp trong lịch sử vừa đọc (đã lọc theo chủ tài khoản trong SQL): Peto tìm/đọc thêm được khi cần.
                 files_session = attachment_tools.AttachmentFiles(rows) if mode == 'chat' else None
                 if request.document_mode and mode == 'chat':

@@ -69,8 +69,8 @@ async def fork(owner, conversation_id, message_id, text):
             group = source['branch_group'] or conversation_id
             now = time.time()
             await connection.execute('UPDATE conversations SET branch_group=? WHERE id=?', (group, conversation_id))
-            await connection.execute("""INSERT INTO conversations(id,owner,title,created_at,updated_at,mode,persona,title_state,branch_group)
-                VALUES(?,?,?,?,?,'chat',?,'locked',?)""", (new_id,owner,source['title'],now,now,source['persona'],group))
+            await connection.execute("""INSERT INTO conversations(id,owner,title,created_at,updated_at,mode,persona,title_state,branch_group,project_id)
+                VALUES(?,?,?,?,?,'chat',?,'locked',?,?)""", (new_id,owner,source['title'],now,now,source['persona'],group,source['project_id']))
             document_ids, message_ids = {}, {}
             for row in rows:
                 artifacts = json.loads(row['artifacts'] or '[]')

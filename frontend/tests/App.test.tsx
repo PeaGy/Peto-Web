@@ -6,6 +6,8 @@ import App from '../src/app/App';
 import * as api from '../src/shared/api/api';
 import * as mathMarkdown from '../src/shared/markdown/mathMarkdown';
 import * as documentApi from '../src/features/documents/documentApi';
+import * as projectApi from '../src/features/projects/projectApi';
+vi.mock('../src/features/projects/projectApi', async original => ({ ...await original<typeof import('../src/features/projects/projectApi')>(), listProjects: vi.fn() }));
 vi.mock('../src/features/documents/documentApi', async original => ({ ...await original<typeof import('../src/features/documents/documentApi')>(), listDocuments: vi.fn(), getDocument: vi.fn() }));
 
 vi.mock('../src/shared/api/api', async (original) => ({
@@ -33,6 +35,7 @@ beforeAll(preloadLazyParts);
 
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.mocked(projectApi.listProjects).mockResolvedValue([]);
   vi.mocked(api.conversationVersions).mockResolvedValue([]);
   vi.mocked(api.updateConversation).mockResolvedValue();
   vi.mocked(api.getCompanionMemory).mockResolvedValue({ available: true, enabled: true, pending: false, limit: 50, memories: [] });
@@ -1196,7 +1199,7 @@ it('loads conversations beyond the first 50', async () => {
   await openApp();
   fireEvent.click(screen.getByRole('button', {name:'Xem hội thoại cũ hơn'}));
   await screen.findByRole('button', {name:'Hội thoại cũ', exact:true});
-  expect(api.listConversations).toHaveBeenCalledWith(50, 50, '');
+  expect(api.listConversations).toHaveBeenCalledWith(50, 50, '', {unassigned:true});
 });
 
 describe('Chế độ nhập vai', () => {

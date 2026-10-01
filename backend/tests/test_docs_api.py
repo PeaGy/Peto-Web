@@ -54,6 +54,7 @@ def _attached(question):
     ('Cài Peto Agent thế nào?', 'cai-agent'),
     ('dùng lệnh /mcp sao vậy', 'mcp'),
     ('Peto không trả lời', 'khac-phuc'),
+    ('tạo dự án Peto như thế nào?', 'du-an'),
 ])
 def test_context_finds_the_article_by_title_or_keyword(question, slug):
     assert _attached(question)[0] == slug

@@ -40,6 +40,7 @@ export async function mockPeto(page: Page, options: { long?: boolean; broken?: b
     if (url.pathname === '/api/auth/me') return json({ authenticated: true, login_configured: true,
       user: { id: 'test-account', provider: 'discord', username: 'demo', display_name: 'Người kiểm thử', avatar_url: '' } });
     if (url.pathname === '/api/app-info') return json({ name: 'Peto', avatar_url: null });
+    if (url.pathname === '/api/projects') return json({ projects: [] });
     if (url.pathname === '/api/conversations') return json({ has_more: false, conversations: [
       { id: 'A', title, created_at: 1, updated_at: 2, message_count: state.messages.length, title_state: 'generated' },
       { id: 'B', title: 'Một hội thoại khác', created_at: 1, updated_at: 1, message_count: 2, title_state: 'generated' },

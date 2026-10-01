@@ -60,6 +60,7 @@ export interface WorkStep {
 export type Persona = "assistant" | "roleplay";
 
 export interface Conversation {
+  project_id?: string | null;
   pinned?: boolean;
   title_state?: 'temporary' | 'pending' | 'generated' | 'locked';
   title_attempts?: number;
@@ -224,14 +225,15 @@ export async function getAppInfo(): Promise<AppInfo> {
   return (await response.json()) as AppInfo;
 }
 
-export async function listConversations(offset = 0, limit = 50, query = ''): Promise<{
+export async function listConversations(offset = 0, limit = 50, query = '', filter?: {projectId?: string; unassigned?: boolean}): Promise<{
   conversations: Conversation[]; has_more: boolean;
 }> {
-  const response = await fetch(`/api/conversations?offset=${offset}&limit=${limit}&q=${encodeURIComponent(query)}`);
+  const scope = filter?.projectId ? `&project_id=${encodeURIComponent(filter.projectId)}` : filter?.unassigned ? '&unassigned=true' : '';
+  const response = await fetch(`/api/conversations?offset=${offset}&limit=${limit}&q=${encodeURIComponent(query)}${scope}`);
   return json(response);
 }
 
-export async function updateConversation(id: string, change: { title?: string; pinned?: boolean }): Promise<void> {
+export async function updateConversation(id: string, change: { title?: string; pinned?: boolean; project_id?: string | null }): Promise<void> {
   await json(await fetch(`/api/conversations/${id}`, {method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(change)}));
 }
 
@@ -240,9 +242,10 @@ export async function conversationVersions(id: string): Promise<Conversation[]> 
   return data.versions;
 }
 
-export async function getMessages(conversationId: string, signal?: AbortSignal): Promise<Message[]> {
+export async function getMessages(conversationId: string, signal?: AbortSignal, onSettings?: (settings: {project_id?: string | null; persona?: Persona}) => void): Promise<Message[]> {
   const response = await fetch(`/api/conversations/${conversationId}/messages`, { signal });
-  const data = await json<{ messages: Message[] }>(response);
+  const data = await json<{ messages: Message[]; project_id?: string | null; persona?: Persona }>(response);
+  onSettings?.(data);
   return data.messages;
 }
 
@@ -413,6 +416,8 @@ export async function revokeAgentDevice(deviceId: string): Promise<void> {
  */
 export async function sendMessage(
   payload: {
+    projectId?: string | null;
+    projectFileIds?: string[];
     branchMessageId?: number;
     message: string;
     conversationId: string | null;
@@ -433,6 +438,8 @@ export async function sendMessage(
     body: JSON.stringify({
       branch_message_id: payload.branchMessageId,
       message: payload.message,
+      project_id: payload.projectId,
+      project_file_ids: payload.projectFileIds ?? [],
       conversation_id: payload.conversationId,
       effort: payload.effort,
       web_search: payload.webSearch ?? "auto",

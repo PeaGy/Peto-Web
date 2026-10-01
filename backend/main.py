@@ -18,6 +18,7 @@ from features.docs import api as docs_api
 from core.lifespan import lifespan
 from features.chat import api as chat_api
 from features.companion import api as companion_api
+from features.projects import api as project_api
 
 # Tắt trang tài liệu API tự sinh của FastAPI (/docs, /redoc, /openapi.json): /docs là trang hướng dẫn cho người dùng
 # (docs_api, static_files), mà trang Swagger mặc định lại giành mất /docs không có dấu "/" cuối. Sơ đồ API cũng không
@@ -27,7 +28,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "DELETE"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE"],
     allow_headers=["Content-Type"],
 )
 app.include_router(auth.router)
@@ -42,6 +43,7 @@ app.include_router(agent_install.router)
 app.include_router(docs_api.router)
 
 app.include_router(chat_api.router)
+app.include_router(project_api.router)
 app.include_router(companion_api.router)
 
 @app.api_route("/api/health", methods=["GET", "HEAD"])

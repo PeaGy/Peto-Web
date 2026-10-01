@@ -6,18 +6,22 @@ import time
 import uuid
 import unicodedata
 import aiosqlite
+from fastapi import HTTPException
 from storage import connection as db_connection
 from shared.web_search import normalize_sources
 from storage.attachments import _attach_files, list_attachment_paths
 
-async def create_conversation(owner: str, title: str = "", mode: str = "chat", persona: str = "assistant") -> str:
+async def create_conversation(owner: str, title: str = "", mode: str = "chat", persona: str = "assistant", project_id: str | None = None) -> str:
     conversation_id = uuid.uuid4().hex
     now = time.time()
     async with db_connection.connect() as db:
+        await db.execute('BEGIN IMMEDIATE')
+        if project_id and (mode != 'chat' or not await (await db.execute('SELECT 1 FROM projects WHERE id=? AND owner=?', (project_id, owner))).fetchone()):
+            raise HTTPException(404, 'Không tìm thấy dự án')
         await db.execute(
-            "INSERT INTO conversations (id, owner, title, created_at, updated_at, mode, persona, title_state) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, 'temporary')",
-            (conversation_id, owner, title[:120], now, now, mode, persona),
+            "INSERT INTO conversations (id, owner, title, created_at, updated_at, mode, persona, title_state, project_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, 'temporary', ?)",
+            (conversation_id, owner, title[:120], now, now, mode, persona, project_id),
         )
         await db.commit()
     return conversation_id
@@ -38,11 +42,11 @@ async def conversation_settings(owner: str, conversation_id: str) -> dict | None
     của owner."""
     async with db_connection.connect() as db:
         cursor = await db.execute(
-            "SELECT mode, persona FROM conversations WHERE id = ? AND owner = ?",
+            "SELECT mode, persona, project_id FROM conversations WHERE id = ? AND owner = ?",
             (conversation_id, owner),
         )
         row = await cursor.fetchone()
-        return {"mode": row[0], "persona": row[1]} if row else None
+        return {"mode": row[0], "persona": row[1], "project_id": row[2]} if row else None
 
 
 async def latest_conversation(owner: str, mode: str) -> str | None:
@@ -57,7 +61,7 @@ async def latest_conversation(owner: str, mode: str) -> str | None:
         return row[0] if row else None
 
 
-async def list_conversations(owner: str, limit: int = 50, offset: int = 0, query: str = '') -> list[dict]:
+async def list_conversations(owner: str, limit: int = 50, offset: int = 0, query: str = '', project_id: str | None = None, unassigned: bool = False) -> list[dict]:
     """Hội thoại của tab Trò chuyện; mạch Companion không hiện ở thanh bên."""
     async with db_connection.connect() as db:
         db.row_factory = aiosqlite.Row
@@ -66,17 +70,18 @@ async def list_conversations(owner: str, limit: int = 50, offset: int = 0, query
         await db.create_function('search_fold', 1, fold, deterministic=True)
         cursor = await db.execute(
             """
-            SELECT c.id, c.title, c.created_at, c.updated_at, c.persona, c.title_state, c.title_attempts, c.pinned,
+            SELECT c.id, c.title, c.created_at, c.updated_at, c.persona, c.title_state, c.title_attempts, c.pinned, c.project_id,
                    (SELECT COUNT(*) FROM messages m
                      WHERE m.conversation_id = c.id) AS message_count
               FROM conversations c
              WHERE c.owner = ? AND c.mode = 'chat'
+               AND (? IS NULL OR c.project_id=?) AND (?=0 OR c.project_id IS NULL)
                AND (? = '' OR instr(search_fold(c.title), search_fold(?)) > 0 OR EXISTS (
                  SELECT 1 FROM messages s WHERE s.conversation_id=c.id AND instr(search_fold(s.content), search_fold(?)) > 0))
              ORDER BY c.pinned DESC, c.updated_at DESC, c.id DESC
              LIMIT ? OFFSET ?
             """,
-            (owner, query, query, query, limit, offset),
+            (owner, project_id, project_id, int(unassigned), query, query, query, limit, offset),
         )
         return [dict(row) for row in await cursor.fetchall()]
 

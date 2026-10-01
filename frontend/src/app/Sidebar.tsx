@@ -1,4 +1,4 @@
-import type { Dispatch, Ref, SetStateAction } from 'react';
+import type { Dispatch, Ref, SetStateAction, ReactNode } from 'react';
 import type { AppInfo, AuthState, Conversation, ImagineJob } from '../shared/api/api';
 import type { AccountMenuPlace } from './AccountMenu';
 import type { AppView } from './preferences';
@@ -6,6 +6,7 @@ import { PetoAvatar, AccountAvatar, accountSubtitle } from './accountUi';
 import { SearchIcon, SidebarIcon, ComposeIcon, ImageIcon, CompanionIcon } from './navigationIcons';
 
 type SidebarProps = {
+  projects: ReactNode;
   sidebarOpen: boolean; collapsed: boolean; streaming: boolean; deleting: boolean;
   appInfo: AppInfo | null; auth: AuthState; view: AppView;
   imagineJobs: ImagineJob[]; conversations: Conversation[]; conversationId: string | null;
@@ -22,6 +23,7 @@ type SidebarProps = {
 };
 
 export default function Sidebar({
+  projects,
   sidebarOpen, collapsed, streaming, deleting, appInfo, auth, view, imagineJobs,
   conversations, conversationId, loadingList, hasMore, accountRef, accountMenu,
   setSearchOpen, onToggleCollapsed, goChat, go, preloadImagine, preloadCompanion,
@@ -117,8 +119,9 @@ export default function Sidebar({
             </div>
           </div>
         )}
-        {view === "chat" && (
-        <div className="sidebar-section">
+        {(view === "chat" || view === "projects") && (
+        <div className="sidebar-section sidebar-history">
+        {projects}
         <h2 className="sidebar-label" id="sidebar-recent">Gần đây</h2>
         <nav className="conversation-list" aria-labelledby="sidebar-recent">
           {conversations.length === 0 && !loadingList && (
@@ -142,7 +145,7 @@ export default function Sidebar({
                 {conversation.persona === "roleplay" && <span className="conv-persona">· Nhập vai</span>}
               </button>
               <div className="conv-hover-actions">
-                <button type="button" aria-label={`Tùy chọn ${conversation.title}`} title="Tùy chọn hội thoại" disabled={streaming || deleting} onClick={e => { const r=e.currentTarget.getBoundingClientRect(); setConversationMenu({item:conversation,left:Math.max(8,Math.min(r.left,window.innerWidth-192)),top:Math.max(8,Math.min(r.bottom+6,window.innerHeight-158))}); }}>⋯</button>
+                <button type="button" aria-label={`Tùy chọn ${conversation.title}`} title="Tùy chọn hội thoại" disabled={streaming || deleting} onClick={e => { const r=e.currentTarget.getBoundingClientRect(); setConversationMenu({item:conversation,left:Math.max(8,Math.min(r.left,window.innerWidth-192)),top:Math.max(8,Math.min(r.bottom+6,window.innerHeight-208))}); }}>⋯</button>
               </div>
             </div>
           ))}

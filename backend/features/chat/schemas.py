@@ -1,7 +1,7 @@
 """Dữ liệu yêu cầu chat và các lựa chọn được chấp nhận."""
 
 from __future__ import annotations
-from typing import Literal
+from typing import Literal, Annotated
 from pydantic import BaseModel, Field
 from ai import models as ai_models
 
@@ -13,6 +13,8 @@ class AttachmentIn(BaseModel):
 
 
 class ChatRequest(BaseModel):
+    project_id: str | None = Field(default=None, max_length=64)
+    project_file_ids: list[Annotated[str, Field(max_length=64)]] = Field(default_factory=list, max_length=4)
     branch_message_id: int | None = Field(default=None, gt=0)
     message: str = ""
     conversation_id: str | None = None
@@ -30,6 +32,7 @@ class ChatRequest(BaseModel):
 
 
 class ConversationUpdate(BaseModel):
+    project_id: str | None = Field(default=None, max_length=64)
     title: str | None = Field(default=None, max_length=120)
     pinned: bool | None = None
 

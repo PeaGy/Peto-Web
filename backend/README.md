@@ -11,6 +11,7 @@ backend/
   features/
     accounts/            # Đăng nhập, hồ sơ, đọc trí nhớ Discord
     chat/                # Chat, lịch sử, phiên bản hội thoại, đặt tiêu đề
+    projects/            # Dự án, hướng dẫn riêng, tài liệu chung và ngữ cảnh được chọn
     companion/           # API, ghi nhớ, cảm xúc, ghi chú riêng
     imagine/             # Tạo/sửa ảnh và thư viện
     documents/           # Đọc, tạo, xuất và xem tài liệu

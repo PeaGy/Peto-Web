@@ -97,6 +97,14 @@ The old flat module names used in historical notes below refer to these feature 
 or import the bootstrap from a feature. `xai_auth.py` remains only as the existing `python -m xai_auth` CLI entry.
 
 Chat is split into `features/chat/api.py`, `schemas.py`, `service.py`, `history.py`, and `prompt_context.py`.
+Projects live in `features/projects/` and `storage/projects.py`, with `conversations.project_id` migrated at startup.
+Project IDs and selected file IDs are owner-checked before chat writes and inside admission; branches retain the project.
+Project instructions apply each turn; only explicitly selected files (up to 4, total 32,000 extracted characters) enter
+the system context. No automatic history sharing across project chats. PDFs/DOCX/text are cached after upload; project
+files are SQLite BLOBs included in normal database backups. Limits: 50 projects per account, 20 files/64 MB per project,
+8 MB per file. Deleting a project preserves conversations and their existing attachments, returning chats to recents.
+Frontend `features/projects/` owns sidebar folders, overview, context selection and move dialog; recents fetch unassigned
+conversations, global search still covers all chats. Projects currently apply to web chat only, not Companion/CLI.
 Provider spies patch `features.chat.service.get_provider`; history budget spies patch `features.chat.history`;
 migration tests patch `storage.connection.DB_PATH`. Prompt text, API paths, schema/SQL, resource locations and launch
 commands were preserved during the move. Tests keep setting fake environment variables before the first config import.

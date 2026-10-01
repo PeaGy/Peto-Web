@@ -3,6 +3,8 @@ import { afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest';
 import { preloadLazyParts } from './lazyParts';
 import App from '../src/app/App';
 import * as api from '../src/shared/api/api';
+import * as projectApi from '../src/features/projects/projectApi';
+vi.mock('../src/features/projects/projectApi', async original => ({ ...await original<typeof import('../src/features/projects/projectApi')>(), listProjects: vi.fn() }));
 import { loadHearingSettings, stopListening } from '../src/features/companion/speech/hearingEngine';
 
 vi.mock('../src/shared/api/api', async (original) => ({
@@ -60,6 +62,7 @@ beforeAll(preloadLazyParts);
 
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.mocked(projectApi.listProjects).mockResolvedValue([]);
   vi.mocked(api.getCompanionMemory).mockResolvedValue({ available: true, enabled: true, pending: false, limit: 50, memories: [] });
   localStorage.clear();
   loadHearingSettings();

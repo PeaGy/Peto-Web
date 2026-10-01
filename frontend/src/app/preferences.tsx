@@ -16,7 +16,7 @@ export const EFFORTS: { value: Effort; label: string; hint: string }[] = [
 ];
 
 export type ThemeChoice = "light" | "dark" | "system";
-export type AppView = "chat" | "imagine" | "companion";
+export type AppView = "chat" | "imagine" | "companion" | "projects";
 
 export const THEMES: SegmentOption<ThemeChoice>[] = [
   { value: "system", label: "Theo máy", hint: "Theo máy: đổi theo cài đặt của thiết bị", icon: <SettingsIcon name="monitor" size={17} /> },
