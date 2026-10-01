@@ -4,6 +4,8 @@ import type { Conversation } from '../../shared/api/api';
 import type { Project } from './projectApi';
 import type { useProjects } from './useProjects';
 
+const SECTION_COLLAPSED_KEY = 'peto-projects-section-collapsed';
+
 function ProjectLoading({label}:{label:string}) {
   return <div className="project-loading" role="status" aria-label={label}><span/><span/></div>;
 }
@@ -15,15 +17,26 @@ export default function ProjectSidebar({state, activeId, conversationId, disable
   onCreate:()=>void; onNewChat:(id:string)=>void; onChat:(id:string)=>void;
   onMenu:(item:Project, rect:DOMRect)=>void; onConversationMenu:(item:Conversation, rect:DOMRect)=>void;
 }) {
+  const [sectionOpen, setSectionOpen] = useState(() => {
+    try {return localStorage.getItem(SECTION_COLLAPSED_KEY) !== '1';} catch {return true;}
+  });
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   useEffect(() => {if (activeId) setExpanded(old=>new Set(old).add(activeId));}, [activeId]);
+  function changeSection(open:boolean) {
+    setSectionOpen(open);
+    try {localStorage.setItem(SECTION_COLLAPSED_KEY,open ? '0' : '1');} catch { /* Vẫn đóng/mở được khi trình duyệt chặn lưu tùy chọn. */ }
+  }
   function toggle(id:string) {
     const open=expanded.has(id);
     setExpanded(old=>{const next=new Set(old);if(open)next.delete(id);else next.add(id);return next;});
     if (!open) void state.ensureChats(id);
   }
   return <section className="project-sidebar" aria-label="Dự án">
-    <div className="project-sidebar-label"><h2 className="sidebar-label">Dự án</h2><button type="button" aria-label="Tạo dự án" title="Tạo dự án" disabled={disabled} onClick={onCreate}>+</button></div>
+    <div className="project-sidebar-label">
+      <h2 className="sidebar-label"><button type="button" className="project-section-toggle" aria-expanded={sectionOpen} aria-controls="project-sidebar-content" title={sectionOpen ? 'Thu gọn mục Dự án' : 'Mở rộng mục Dự án'} onClick={()=>changeSection(!sectionOpen)}>Dự án<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true"><path d="m4 2 4 4-4 4"/></svg></button></h2>
+      <button type="button" className="project-create" aria-label="Tạo dự án" title="Tạo dự án" disabled={disabled} onClick={()=>{changeSection(true);onCreate();}}>+</button>
+    </div>
+    <div id="project-sidebar-content" hidden={!sectionOpen}>
     {state.loading && !state.projects.length && <ProjectLoading label="Đang tải dự án"/>}
     {state.error && <button className="project-retry" onClick={() => void state.refresh()}>{state.error} Thử lại</button>}
     {!state.loading && !state.error && !state.projects.length && <p className="empty-hint">Chưa có dự án.</p>}
@@ -44,5 +57,6 @@ export default function ProjectSidebar({state, activeId, conversationId, disable
         </div>}
       </div>;
     })}
+    </div>
   </section>;
 }

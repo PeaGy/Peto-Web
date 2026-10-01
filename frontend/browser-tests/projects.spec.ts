@@ -46,6 +46,29 @@ async function expandFolder(page:Page,name:string) {
   return folder;
 }
 
+test('thu gọn mục Dự án trống kéo Gần đây lên và vẫn cho tạo dự án',async({page})=>{
+  const state=await projectsFixture(page);state.projects=[];
+  await page.goto('/');await expect(page.getByLabel('Nhắn cho Peto',{exact:true})).toBeVisible();await openSidebar(page);
+  await expect(page.getByText('Chưa có dự án.',{exact:true})).toBeVisible();
+  const recent=page.getByRole('heading',{name:'Gần đây',exact:true});
+  const before=await recent.boundingBox();
+  const section=page.getByRole('button',{name:'Dự án',exact:true});
+  await section.click();
+  await expect(section).toHaveAttribute('aria-expanded','false');
+  await expect(page.getByText('Chưa có dự án.',{exact:true})).toBeHidden();
+  const after=await recent.boundingBox();
+  expect(after!.y).toBeLessThan(before!.y-20);
+  await expect(page.getByRole('button',{name:title,exact:true})).toBeVisible();
+  await noPageOverflow(page);
+  await expect(page.locator('.sidebar')).toHaveScreenshot('projects-collapsed.png');
+  await section.click();
+  await expect(page.getByText('Chưa có dự án.',{exact:true})).toBeVisible();
+  await section.click();
+  await page.getByRole('button',{name:'Tạo dự án',exact:true}).click();
+  await expect(page.getByRole('dialog',{name:'Tạo dự án'})).toBeVisible();
+  await expect(section).toHaveAttribute('aria-expanded','true');
+});
+
 test('chuyển chat khi chưa có dự án: tạo ngay và thử lại không tạo trùng',async({page})=>{
   const state=await projectsFixture(page);state.projects=[];state.moveFailures=1;
   await page.goto('/');await expect(page.getByLabel('Nhắn cho Peto',{exact:true})).toBeVisible();await openSidebar(page);

@@ -15,6 +15,7 @@ vi.mock('../src/shared/api/api', async original => ({...await original<typeof im
 const detail = (): projects.Project => ({id:'P',name:'Báo cáo',created_at:1,updated_at:1});
 beforeEach(() => {
   vi.resetAllMocks();
+  localStorage.clear();
   vi.mocked(projects.listProjects).mockResolvedValue([detail()]);
   vi.mocked(api.listConversations).mockResolvedValue({conversations:[],has_more:false});
 });
@@ -76,6 +77,28 @@ it('bấm folder chỉ đóng mở chat, nút chat mới và hội thoại có t
   expect(screen.getByRole('button',{name:'Hội thoại báo cáo',exact:true})).toBeTruthy();
   view.rerender(<ProjectSidebar {...props} activeId="P" state={{...state,loading:true,chats:{P:{items:[chat],more:false,loading:true}}}}/>);
   expect(screen.queryByRole('status')).toBeNull();
+  fireEvent.click(screen.getByRole('button',{name:'Dự án',exact:true}));
+  expect(screen.queryByRole('button',{name:'Báo cáo',exact:true})).toBeNull();
+  fireEvent.click(screen.getByRole('button',{name:'Dự án',exact:true}));
+  expect(screen.getByRole('button',{name:'Hội thoại báo cáo',exact:true})).toBeTruthy();
+});
+
+it('thu gọn mục dự án trống, nhớ lựa chọn khi mở lại và vẫn tạo được dự án', () => {
+  const state={projects:[],chats:{},loading:false,error:'',refresh:vi.fn(),refreshChats:vi.fn(),ensureChats:vi.fn()};
+  const props={state,activeId:null,conversationId:null,disabled:false,onCreate:vi.fn(),onNewChat:vi.fn(),onChat:vi.fn(),onMenu:vi.fn(),onConversationMenu:vi.fn()};
+  const view=render(<ProjectSidebar {...props}/>);
+  const heading=screen.getByRole('button',{name:'Dự án',exact:true});
+  expect(heading.getAttribute('aria-expanded')).toBe('true');
+  fireEvent.click(heading);
+  expect(heading.getAttribute('aria-expanded')).toBe('false');
+  expect(screen.getByText('Chưa có dự án.').closest('[hidden]')).toBeTruthy();
+  view.unmount();
+  render(<ProjectSidebar {...props}/>);
+  expect(screen.getByRole('button',{name:'Dự án',exact:true}).getAttribute('aria-expanded')).toBe('false');
+  fireEvent.click(screen.getByRole('button',{name:'Tạo dự án'}));
+  expect(props.onCreate).toHaveBeenCalledOnce();
+  expect(screen.getByRole('button',{name:'Dự án',exact:true}).getAttribute('aria-expanded')).toBe('true');
+  expect(screen.getByText('Chưa có dự án.').closest('[hidden]')).toBeNull();
 });
 
 it('tải sẵn chat của mọi folder với tối đa ba yêu cầu, mở folder dùng lại dữ liệu đã tải', async () => {
