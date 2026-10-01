@@ -1,8 +1,11 @@
-import { memo, lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import Markdown from "react-markdown";
+import { memo, lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import Markdown, { type Components } from "react-markdown";
 import './styles.css';
 import { normalizeMath } from "./mathMarkdown";
 import { useMarkdownPlugins } from "./markdownExtras";
+import { DiagramCard, DiagramContext } from "./DiagramCard";
+import { diagramBlocks, hastText } from "./diagrams";
+import { diagramPanel } from "./diagramPanelLazy";
 import LazyBoundary from "./LazyBoundary";
 import { preloadable } from "./preloadable";
 import { useLocalVoice } from "./LocalVoice";
@@ -483,6 +486,23 @@ const ChatMessage = memo(function ChatMessage({ message, live, writing, onPrevie
 }) {
   const text = message.content ? normalizeMath(message.content) : "";
   const { remarkPlugins, rehypePlugins } = useMarkdownPlugins(text);
+  // Giữ nguyên các hàm dựng thẻ giữa các lần vẽ lại. Hàm mới mỗi lần thì React coi là loại thẻ mới, gỡ ra dựng lại cả khối:
+  // thẻ sơ đồ phải vẽ lại từ đầu, nút Sao chép của khối code mất trạng thái.
+  const components = useMemo<Components>(() => ({
+    table: ({children}) => <div className="table-scroll" tabIndex={0} role="region" aria-label="Bảng nội dung"><table>{children}</table></div>,
+    // Ô chữ dài (ghi chú, mô tả) rộng hơn hẳn các ô số, như bảng của Claude; không thì cột ghi chú hẹp làm hàng rất cao.
+    td: ({node, children}) => <td className={hastText(node).length > 30 ? "wide" : undefined}>{children}</td>,
+    a: ({children, href}) => <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>,
+    pre: ({node, children}) => {
+      const code = node?.children?.[0];
+      const names = code?.type === "element" && Array.isArray(code.properties?.className)
+        ? code.properties.className.map(String) : [];
+      const tag = names.find((name) => name.startsWith("language-"));
+      // Khối ```mermaid thành thẻ sơ đồ; tin còn đang viết thì thẻ chỉ báo đang vẽ (mã có thể dở dang).
+      if (tag === "language-mermaid") return <DiagramCard source={hastText(code)} pending={writing} />;
+      return <CodeBlock language={tag ? tag.slice("language-".length) : ""}>{children}</CodeBlock>;
+    },
+  }), [writing]);
   return (<article className={`bubble ${message.role}${editor ? ' editing' : ''}`}>
               {message.attachments && message.attachments.length > 0 && (
                 <div className="bubble-files">
@@ -532,17 +552,7 @@ const ChatMessage = memo(function ChatMessage({ message, live, writing, onPrevie
                 />
               ) : null}
               {editor || (message.content ? (
-                <Markdown remarkPlugins={remarkPlugins} rehypePlugins={rehypePlugins} components={{
-                  table: ({children}) => <div className="table-scroll" tabIndex={0} role="region" aria-label="Bảng nội dung"><table>{children}</table></div>,
-                  a: ({children, href}) => <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>,
-                  pre: ({node, children}) => {
-                    const code = node?.children?.[0];
-                    const names = code?.type === "element" && Array.isArray(code.properties?.className)
-                      ? code.properties.className.map(String) : [];
-                    const tag = names.find((name) => name.startsWith("language-"));
-                    return <CodeBlock language={tag ? tag.slice("language-".length) : ""}>{children}</CodeBlock>;
-                  },
-                }}>{text}</Markdown>
+                <Markdown remarkPlugins={remarkPlugins} rehypePlugins={rehypePlugins} components={components}>{text}</Markdown>
               ) : null)}
               {message.role === "assistant" && <WebSources sources={message.sources} />}
               {message.artifacts?.map(artifact => <DocumentArtifactCard key={`${artifact.id}-${artifact.version}`} artifact={artifact} onOpen={onPreview} onEdit={onEdit} />)}
@@ -585,8 +595,17 @@ export default function App() {
   const [documentPanelExpanded, setDocumentPanelExpanded] = useState(false);
   const [documentPreview, setDocumentPreview] = useState<DocumentPanelSelection | null>(null);
   const closeDocumentPanel = useCallback(() => { setDocumentPanelOpen(false); setDocumentPanelExpanded(false); }, []);
+  // Sơ đồ đang mở ở bảng bên phải (mã Mermaid đã chuẩn hóa). Bảng sơ đồ và bảng tài liệu dùng chung chỗ bên phải, nên mở
+  // bảng này thì đóng bảng kia.
+  const [diagram, setDiagram] = useState<string | null>(null);
+  const closeDiagram = useCallback(() => setDiagram(null), []);
+  const diagramApi = useMemo(() => ({
+    current: diagram,
+    open: (code: string) => { setDocumentPanelOpen(false); setDocumentPanelExpanded(false); setDiagram(code); },
+  }), [diagram]);
   const previewDocument = useCallback((item: { id: string; version: number }) => {
     setDocumentPreview({ id: item.id, version: item.version, key: Date.now() });
+    setDiagram(null);
     setDocumentPanelOpen(true);
   }, []);
   const editDocument = useCallback((item: { id: string; version: number }) => {
@@ -645,12 +664,13 @@ export default function App() {
   const [imageVisited, setImageVisited] = useState(view === "imagine");
   useEffect(() => {
     setDocumentPanelOpen(false); setDocumentPanelExpanded(false); setDocumentPreview(null); setDocumentSelection(null);
+    setDiagram(null);
   }, [conversationId]);
   useEffect(() => {
     if (view !== 'chat') return;
     const shortcut = (event: KeyboardEvent) => {
       if (event.ctrlKey && event.altKey && event.code === 'KeyB' && !document.querySelector('.document-workspace[open], .settings-dialog[open]')) {
-        event.preventDefault(); setDocumentPanelOpen(value => !value); setDocumentPanelExpanded(false);
+        event.preventDefault(); setDocumentPanelOpen(value => !value); setDocumentPanelExpanded(false); setDiagram(null);
       }
     };
     window.addEventListener('keydown', shortcut);
@@ -785,7 +805,7 @@ export default function App() {
   const handleUnauthorized = useCallback(() => {
     setDocumentRequest(null);
     setDocumentSelection(null);
-    closeDocumentPanel(); setDocumentPreview(null);
+    closeDocumentPanel(); setDocumentPreview(null); setDiagram(null);
     authVersion.current += 1;
     loadVersion.current += 1;
     listVersion.current += 1;
@@ -987,6 +1007,10 @@ export default function App() {
   // Cuộc trò chuyện còn trống thì lời chào và ô nhắn đứng chung giữa màn hình như
   // Claude; có tin nhắn là ô nhắn về đáy (CSS .chat.empty-state).
   const emptyChat = messages.length === 0 && !streaming && !loadingConversation && !loadFailed;
+  // Các sơ đồ của hội thoại theo thứ tự, để bảng sơ đồ chuyển qua lại; tin đang viết dở chưa tính.
+  const diagramCodes = useMemo(() => messages.flatMap((message, index) =>
+    message.role === 'assistant' && !(streaming && index === messages.length - 1) ? diagramBlocks(message.content) : []),
+  [messages, streaming]);
   // Chế độ nhập vai chỉ dùng Peto (máy chủ cũng chặn), nên không hiện nút chọn model.
   const models = persona === "roleplay" ? [] : auth?.user?.models ?? [];
   const chosenModel = models.some((item) => item.key === model) ? model : "peto";
@@ -1770,7 +1794,8 @@ export default function App() {
         </Suspense>
         </LazyBoundary>
       )}
-      <div className={`chat-layout${documentPanelOpen ? ' documents-open' : ''}${documentPanelOpen && documentPanelExpanded ? ' documents-expanded' : ''}`} hidden={view !== 'chat'}>
+      <DiagramContext.Provider value={diagramApi}>
+      <div className={`chat-layout${documentPanelOpen || diagram ? ' documents-open' : ''}${documentPanelOpen && documentPanelExpanded ? ' documents-expanded' : ''}`} hidden={view !== 'chat'}>
       <main className={emptyChat ? "chat empty-state" : "chat"}>
         <div className="chat-tools">
         <button
@@ -1781,7 +1806,7 @@ export default function App() {
         >
           <MenuIcon />
         </button>
-        <button type="button" className="artifact-icon document-panel-toggle" aria-label={documentPanelOpen ? 'Đóng bảng tài liệu' : 'Mở bảng tài liệu'} aria-expanded={documentPanelOpen} aria-controls="document-panel" title="Tài liệu · Ctrl+Alt+B" onClick={() => { setDocumentPanelOpen(value => !value); setDocumentPanelExpanded(false); }}><RightPanelIcon /></button>
+        <button type="button" className="artifact-icon document-panel-toggle" aria-label={documentPanelOpen ? 'Đóng bảng tài liệu' : 'Mở bảng tài liệu'} aria-expanded={documentPanelOpen} aria-controls="document-panel" title="Tài liệu · Ctrl+Alt+B" onClick={() => { setDocumentPanelOpen(value => !value); setDocumentPanelExpanded(false); setDiagram(null); }}><RightPanelIcon /></button>
         </div>
 
         <div className="messages" ref={messagesRef} onClick={e => {
@@ -1877,7 +1902,13 @@ export default function App() {
         </div>
       </main>
       <DocumentPanel key={`${auth.user?.id}-${conversationId}`} conversationId={conversationId} open={documentPanelOpen && view === 'chat'} expanded={documentPanelExpanded} selection={documentPreview} refreshKey={documentRefresh} onClose={closeDocumentPanel} onExpand={() => setDocumentPanelExpanded(value => !value)} onEdit={item => setDocumentSelection({ ...item, key: Date.now() })} onUnauthorized={handleUnauthorized} />
+      {diagram && view === 'chat' && (
+        <LazyBoundary><Suspense fallback={null}>
+          <diagramPanel.View codes={diagramCodes} current={diagram} onPick={setDiagram} onClose={closeDiagram} />
+        </Suspense></LazyBoundary>
+      )}
       </div>
+      </DiagramContext.Provider>
       <DocumentWorkspace key={auth.user?.id || 'session'} request={documentRequest} selection={documentSelection} onUnauthorized={handleUnauthorized} onChanged={item => {
         setDocumentRefresh(value => value + 1);
         if (item?.conversation_id === conversationId) setDocumentPreview({ id: item.id, version: item.version, key: Date.now() });

@@ -76,6 +76,7 @@ from persona import (
     ROLEPLAY_SYSTEM_PROMPT,
     SYSTEM_PROMPT,
     build_agent_guide,
+    build_diagram_guide,
     build_memory_context,
     build_profile_context,
 )
@@ -460,6 +461,8 @@ async def _build_system_prompt(
     # Lệnh cài lấy từ địa chỉ trang đang mở (agent_install.install_command).
     agent_guide = build_agent_guide(install_command=install_command, daily_steps=AGENT_DAILY_STEPS, question=agent_question)
     agent_guide += docs_api.context(agent_question)
+    if mode == "chat" and persona != "roleplay":
+        agent_guide += build_diagram_guide(agent_question)
     user = await db.get_user(owner)
     if not user:
         return "\n\n".join(part for part in (base, agent_guide) if part)

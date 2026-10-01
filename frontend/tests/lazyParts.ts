@@ -15,5 +15,6 @@ export async function preloadLazyParts(): Promise<void> {
     import('../src/CharacterSettings'),
     import('../src/markdownMath'),
     import('../src/markdownCode'),
+    import('../src/DiagramPanel'),
   ]);
 }

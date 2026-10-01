@@ -5,7 +5,7 @@ Giao diện chat riêng cho Peto, trợ lý AI trả lời trung thực và đi 
 
 ## Có gì
 
-- **Chat:** chữ, ảnh, đọc PDF/Word/tệp chữ, tạo tệp DOCX/PDF, tìm web, chọn model (Peto, GPT-6).
+- **Chat:** chữ, ảnh, đọc PDF/Word/tệp chữ, tạo tệp DOCX/PDF, vẽ sơ đồ, tìm web, chọn model (Peto, GPT-6).
 - **Tạo ảnh:** tạo và sửa ảnh, thư viện ảnh.
 - **Companion:** nhân vật Live2D/VRM, giọng nói, nghe bằng micro, trí nhớ.
 - **Peto Agent:** CLI chạy trên máy bạn, làm việc với thư mục dự án.

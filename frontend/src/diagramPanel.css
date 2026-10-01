@@ -1,0 +1,166 @@
+/* Bảng sơ đồ bên phải (DiagramPanel). Khung, đầu bảng và thanh công cụ dùng lại lớp của bảng tài liệu
+   (documentPanel.css), nên hai bảng cùng cỡ, cùng chỗ và cùng cách phủ màn hình trên điện thoại. */
+.diagram-panel[open] { animation: diagram-panel-in 240ms var(--ease-out); }
+@keyframes diagram-panel-in { from { opacity: 0; transform: translateX(16px); } }
+.diagram-panel .document-panel-head > svg { flex-shrink: 0; color: var(--muted); }
+.diagram-step { font-size: 20px; }
+.diagram-step:disabled { opacity: 0.35; cursor: default; }
+.diagram-step:disabled:hover { background: none; color: var(--muted); }
+
+.diagram-toolbar { gap: 8px; }
+.diagram-title { flex: 1; min-width: 0; overflow: hidden; font-size: 13px; white-space: nowrap; text-overflow: ellipsis; }
+.diagram-title small { color: var(--muted); font-size: 12.5px; font-weight: 400; }
+
+.diagram-seg { display: inline-flex; flex-shrink: 0; padding: 2px; border: 1px solid var(--line); border-radius: 8px; background: var(--seg-bg); }
+.diagram-seg button {
+  height: 26px;
+  padding: 0 11px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: color 150ms ease;
+}
+.diagram-seg button:hover { color: var(--text); }
+.diagram-seg button[aria-selected="true"] { background: var(--seg-on); color: var(--text); }
+
+.diagram-button {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  white-space: nowrap;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color 150ms ease, transform 100ms ease-out;
+}
+.diagram-button:hover { background: var(--panel-2); }
+.diagram-button:active { transform: scale(0.97); }
+.diagram-button[aria-disabled="true"] { opacity: 0.5; pointer-events: none; }
+
+.diagram-download { position: relative; display: inline-flex; }
+.diagram-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  display: grid;
+  min-width: 240px;
+  padding: 6px;
+  border: 1px solid var(--menu-line);
+  border-radius: 12px;
+  background: var(--menu-bg);
+  box-shadow: var(--menu-shadow);
+  transform-origin: top right;
+  animation: diagram-menu-in 150ms var(--ease-out);
+}
+@keyframes diagram-menu-in { from { opacity: 0; transform: scale(0.97) translateY(-2px); } }
+.diagram-menu button {
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.diagram-menu button:hover, .diagram-menu button:focus-visible { background: var(--menu-hover); outline: none; }
+.diagram-menu strong { font-size: 13px; font-weight: 600; line-height: 1.4; }
+.diagram-menu small { color: var(--muted); font-size: 12px; line-height: 1.4; }
+.diagram-download-error { position: absolute; top: calc(100% + 6px); right: 0; color: var(--danger); font-size: 12px; white-space: nowrap; }
+
+.diagram-panel-body { position: relative; display: flex; flex: 1; min-width: 0; min-height: 0; }
+.diagram-panel-scroll { flex: 1; min-width: 0; padding: 4px 16px 16px; overflow: auto; }
+.diagram-panel-loading { margin: auto; color: var(--muted); font-size: 13px; }
+.diagram-panel-error {
+  margin: 12px 0 8px;
+  padding: 10px 14px;
+  border: 1px solid color-mix(in srgb, var(--danger) 40%, var(--line));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--danger) 7%, transparent);
+  font-size: 14px;
+  line-height: 1.6;
+}
+.diagram-code { margin: 12px 0 0; }
+.diagram-code pre { margin: 0; padding: 14px 16px; overflow: auto; font: 13px/1.55 Consolas, "Cascadia Code", monospace; }
+
+/* Khung kéo và phóng. */
+.diagram-pz { position: relative; display: flex; flex: 1; min-width: 0; min-height: 0; }
+.diagram-pz-frame {
+  position: relative;
+  flex: 1;
+  overflow: hidden;
+  outline: none;
+  cursor: grab;
+  touch-action: none;
+  background-image: radial-gradient(color-mix(in srgb, var(--text) 10%, transparent) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+.diagram-pz-frame:active { cursor: grabbing; }
+.diagram-pz-frame:focus-visible { box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--text) 30%, transparent); }
+.diagram-pz-content { position: absolute; top: 0; left: 0; transform-origin: 0 0; will-change: transform; }
+.diagram-pz-content.smooth { transition: transform 180ms var(--ease-out); }
+.diagram-pz-content svg { display: block; }
+.diagram-pz-controls {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+.diagram-pz-controls button {
+  display: inline-grid;
+  place-items: center;
+  min-width: 32px;
+  height: 32px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.diagram-pz-controls button:hover { background: var(--panel-2); }
+.diagram-pz-scale { min-width: 46px; color: var(--muted); font-size: 12.5px; text-align: center; font-variant-numeric: tabular-nums; }
+
+@media (max-width: 1100px) {
+  .diagram-panel[open] { animation-name: diagram-panel-up; }
+  @keyframes diagram-panel-up { from { opacity: 0; transform: translateY(24px); } }
+  .diagram-pz-controls { bottom: calc(16px + env(safe-area-inset-bottom)); }
+}
+
+@media (max-width: 600px) {
+  .diagram-toolbar { flex-wrap: wrap; }
+  /* Tên sơ đồ một dòng riêng. Cần hai lớp: ".document-panel-toolbar > strong { flex: 1 }" của bảng tài liệu mạnh hơn một
+     lớp, và trước đây nó giữ tên chung dòng với các nút, cắt còn "Đăng nhập · S…". */
+  .diagram-toolbar > .diagram-title { flex-basis: 100%; }
+  .diagram-seg { margin-right: auto; }
+}
+
+@keyframes diagram-fade { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .diagram-panel[open], .diagram-menu { animation-name: diagram-fade; }
+  .diagram-pz-content.smooth { transition: none; }
+}

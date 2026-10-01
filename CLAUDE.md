@@ -316,8 +316,8 @@ Markdown; `document_jobs.build_files` renders a PDF (ReportLab, `document_export
 preview is that PDF, so a feature must exist in both renderers or the preview misleads. Two layouts: `essay` (A4, Times
 New Roman / Noto Serif) and `report` (Letter, Arial / Noto Sans).
 
-On 2026-09-30 the owner picked a Word/PDF upgrade as the first step of the document roadmap; Mermaid diagrams in chat,
-PowerPoint templates and Excel may follow.
+On 2026-09-30 the owner picked a Word/PDF upgrade as the first step of the document roadmap. Mermaid diagrams in chat
+came second (next section); PowerPoint templates and Excel may follow.
 - **Real lists.** Every Markdown list gets its own Word numbering definition (`_numbering_level`), so numbers restart per
   list, honour `start`, and Word renumbers when the user edits. Nested ordered lists go 1. → a. → i., bullets • → –.
   The PDF draws the same labels (`list_label`) at the same hanging indents (`list_indent`). Later paragraphs of an item
@@ -346,6 +346,80 @@ PowerPoint templates and Excel may follow.
 - **Not done:** LaTeX math, editing an uploaded Word file in place, charts, and images from Imagine (the user attaches
   them).
 - **Tests:** `tests/test_document_features.py`, `test_document_export.py`, `test_document_artifacts.py`.
+
+### Diagrams in chat (Mermaid)
+
+The second step of the document roadmap. On 2026-09-30 the owner picked "Thẻ bên phải" from mockups: a ```mermaid block
+in a Chat reply becomes a card in the bubble (`DiagramCard.tsx`: thumbnail, title, kind), and clicking it opens the
+diagram large in a panel on the right (`DiagramPanel.tsx`), where the document panel sits.
+- **Mermaid 11, not 12.** 12 (released 2026-09-10) needs Safari 17.4+ and bundles the heavier ELK layout by default.
+  `diagrams.renderDiagram` imports it dynamically, so it loads only once a reply has a diagram. The panel is its own
+  `preloadable` chunk (`diagramPanelLazy.ts`), warmed when the pointer enters a card.
+- **Rendering.** `mermaid.initialize` is global, so renders queue one at a time: a light-theme export must not leak into
+  a dark card.
+  - `securityLevel: "strict"`: the code is written by the model, which a web page can steer, so no HTML, links or click
+    handlers.
+  - `htmlLabels: false`: labels are SVG text, not `foreignObject` HTML, which taints the canvas and breaks PNG and PDF.
+  - Colours come from the app's tokens (`PALETTE`), including `rowOdd`/`rowEven`. Left unset, Mermaid 11 derives ERD rows
+    from the primary colour, which gave pale rows with unreadable text on the dark theme.
+  - `useDiagramTheme` follows `data-theme`. A theme change re-renders and keeps the old picture until the new one is
+    ready.
+- **While a reply streams** the card only says "Đang vẽ sơ đồ…" (`pending`), because half-written code would flash
+  syntax errors. Code Mermaid rejects shows a Vietnamese note and the code.
+- **`components` in `ChatMessage` must stay memoized** (`useMemo` on `writing`). An inline object gave react-markdown new
+  component types on every render, which remounted every card (re-running Mermaid) and reset code-block copy buttons.
+- **Title and kind.** The title is `title:` in the block's `---` front matter; the kind comes from the first keyword.
+  Mermaid has no activity or use case diagram, so Peto draws them with `stateDiagram-v2`, `swimlane-beta` and
+  `flowchart` and starts the title with "Sơ đồ hoạt động: " or "Sơ đồ use case: ". `NAMED_KINDS` reads the kind from that
+  prefix, and `kindNote` avoids "Sơ đồ tuần tự · Sơ đồ tuần tự".
+- **Swimlanes.** Mermaid 11.17 ships `swimlane-beta`: flowchart syntax, each `subgraph` a lane, laid out as real lanes.
+  draw.io's import turns it into its own lane shapes (both checked on 2026-09-30).
+  - Vertical lanes only: `LR` routed arrows in long loops around the whole diagram.
+  - A node declared outside every lane gets an extra lane with no name, so the prompt puts every node, start and end
+    included, inside its lane. Cross-lane arrows go after the last `end`: a node lands in the first lane that mentions
+    it, so an arrow written inside one lane pulls the node it points to into that lane.
+  - The lane header row sits where Mermaid puts the title, so `renderDiagram` raises `flowchart.titleTopMargin` to
+    `LANE_TITLE_MARGIN` for these diagrams.
+  - UML symbols come from Mermaid 11's shapes: `sm-circ` start, `fr-circ` end, `fork` bars, `{}` decisions. `themeCSS`
+    fills the start dot and the end's inner dot with the line colour; by default they took the node fill and the pale
+    border colour. The second rule skips nodes with text, so a labelled double circle `((( )))` keeps its fill.
+  - It is a beta: recheck it (and the prompt) after any Mermaid update. The lock file pins 11.17.2.
+- **Panel.**
+  - Drag to pan; zoom with the wheel (a non-passive listener, since React's is passive), a pinch, or + − 0 and arrows.
+    "Vừa khung" fits the diagram above the zoom controls. A "Mã" tab shows the code with a copy button.
+  - ‹ › and "N / M" walk the conversation's diagrams. `diagramCodes` in `App.tsx` collects them with `diagramBlocks`,
+    which reads fences as Markdown does (`~~~`, longer fences, blocks in lists, an unclosed last block) and skips the
+    reply still streaming. `normalizeDiagram` makes a card's code (from the hast tree) equal the list's (from raw text).
+  - It reuses the document panel's `<dialog>` and classes: `show()` beside the chat, `showModal()` over the screen at
+    1100px and below. Opening a diagram closes the document panel. Switching conversations, Ctrl+Alt+B and the document
+    panel's button close the diagram.
+- **Downloads** ("Tải", `diagramExport.ts`) always render the light theme, so a PNG pasted into Word is not a black
+  block. PNG at 2×, SVG as rendered, and PDF: a 3× JPEG on one A4 page (portrait or landscape by shape, 36 pt margin),
+  written by `pdfFromJpeg` without a library. Canvases stay under 16 M pixels, since iPhone Safari draws a blank image
+  above about 16.7 M.
+- **draw.io.** The "draw.io" link is `https://app.diagrams.net/#create=` plus the JSON that draw.io's own tool
+  (@drawio/mcp) builds: `{type: "mermaid", compressed, data}`, with `data` the base64 of deflate-raw of
+  `encodeURIComponent(code)`, or the raw code when `CompressionStream` is missing. draw.io turns it into editable shapes,
+  which is the way to manual layout and a vector PDF.
+  - **Keep the URL free of query parameters.** With any of them (that tool adds `grid`, `pv`, `border`, `edit`), draw.io
+    asked "Tất cả mọi thay đổi sẽ mất!" right after opening, and "Loại bỏ" threw the diagram away. Checked in headless
+    Edge on 2026-09-30.
+- **Prompt.** A `WEB_PLATFORM_PROMPT` line tells Peto that diagrams, unlike pictures, are drawn right in the reply, never
+  in Tạo ảnh. The detailed `persona.DIAGRAM_PROMPT` (front-matter titles, IDs and quoting, class, sequence, activity, use
+  case, ERD) is appended only on Chat turns outside roleplay whose recent user messages mention diagrams
+  (`build_diagram_guide`, unaccented keywords), so other turns pay nothing for it. Its rules come from real Mermaid 11
+  errors: `<<choice>>`, `<<fork>>` and `<<join>>` states declared after their first use render as plain boxes, and
+  parentheses in an unquoted `[ ]` label are a syntax error.
+- **Not done:** use case diagrams (Mermaid has none; Peto approximates them with a flowchart), and diagrams inside
+  `create_document` files (the user can download the PNG and attach it).
+- **Tests.**
+  - `frontend/tests/diagrams.test.ts`: kinds and titles, fences, the PDF's structure and xref offsets, the draw.io
+    payload round trip.
+  - `DiagramPanel.test.tsx` mocks `mermaid`: cards, the panel, the download menu, the draw.io link, sharing the space
+    with the document panel, pending and error cards, re-rendering on a theme change.
+  - `backend/tests/test_diagrams.py`: the guide's keywords and where it is appended. The mock answers `__sodo__` with a
+    class, a sequence, an activity and a swimlane diagram (`DIAGRAM_SAMPLE`). Its chunker now streams whitespace
+    exactly; it used to drop the spaces after each chunk, which broke code indentation.
 
 ### Imagine (image generation)
 
@@ -1460,7 +1534,8 @@ Chat, Companion and roleplay turn (not the Agent CLI).
   needs a grammar import **and** a label. Each grammar costs bundle size; add ones Peto actually answers with.
   `markdownCode.ts` walks the tree with lowlight's core itself instead of using `rehype-highlight`, because that
   package always imports lowlight's `common` set, even when given `languages`. The build carried 63 grammars instead
-  of 26 until 2026-09-27.
+  of 26 until 2026-09-27. A ```mermaid block never reaches `CodeBlock`: `ChatMessage`'s `pre` turns it into a
+  `DiagramCard` (see "Diagrams in chat").
 - Every finished assistant message has a "Sao chép" button under it (`MessageCopy`, layout A picked by the owner from
   mockups on 2026-09-21: always visible, since phones cannot hover). It copies the **raw Markdown**, not the rendered
   text, so a render problem can be diagnosed from what the model actually wrote. It is hidden while that message is
@@ -1490,6 +1565,7 @@ Chat, Companion and roleplay turn (not the Agent CLI).
     - Math (`markdownMath.ts`, KaTeX with its CSS) and code colouring (`markdownCode.ts`) load only once a message has
       `$` or a ```/~~~ fence (`markdownExtras.useMarkdownPlugins`). Until then that message shows plain text, and only
       messages that need the chunk re-render when it arrives.
+    - Mermaid loads only when a reply has a ```mermaid block, and the diagram panel on its first open.
     - Keep every `import()` in its own arrow function (`loaders` in `markdownExtras.ts`). With both imports in one
       conditional expression, the build preloaded only one branch's dependencies, and KaTeX's CSS never loaded. The
       hidden MathML then showed as duplicated text (caught in a real-browser check on 2026-09-27; jsdom applies no CSS,

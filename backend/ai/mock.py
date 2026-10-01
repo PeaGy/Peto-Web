@@ -36,6 +36,115 @@ Nguyên nhân không chỉ đến từ tính ẩn danh. Nhịp thông tin quá n
 Xã hội số trở nên đáng sống hơn khi mỗi người nhìn thấy con người phía sau tài khoản. Một hành động nhỏ không thể giải quyết mọi vấn đề, nhưng nhiều lựa chọn có trách nhiệm sẽ tạo nên thói quen chung. Giữ sự tử tế vì thế là việc có thể bắt đầu ngay hôm nay, từ chính lời nói tiếp theo mà chúng ta gửi đi.
 '''
 
+# "__sodo__": câu trả lời có sơ đồ lớp, tuần tự, hoạt động và hoạt động có làn, để bản chạy thử xem được thẻ sơ đồ và
+# bảng bên phải.
+DIAGRAM_SAMPLE = """Đây là bốn sơ đồ cho hệ thống thư viện:
+
+```mermaid
+---
+title: Sơ đồ lớp hệ thống thư viện
+---
+classDiagram
+    direction LR
+    class NguoiDung {
+        <<abstract>>
+        -int id
+        -String hoTen
+        +dangNhap(email, matKhau) bool
+    }
+    class DocGia {
+        -String maThe
+        +muonSach(sach) PhieuMuon
+    }
+    class ThuThu {
+        +duyetPhieu(phieu) void
+    }
+    class PhieuMuon {
+        -Date ngayMuon
+        -Date hanTra
+    }
+    class Sach {
+        -String isbn
+        -String tenSach
+    }
+    NguoiDung <|-- DocGia
+    NguoiDung <|-- ThuThu
+    DocGia "1" --> "0..*" PhieuMuon : lập
+    PhieuMuon "*" o-- "1..*" Sach : gồm
+    ThuThu ..> PhieuMuon : duyệt
+```
+
+```mermaid
+---
+title: Đăng nhập
+---
+sequenceDiagram
+    autonumber
+    actor U as Người dùng
+    participant W as Trang web
+    participant S as Máy chủ
+    U->>W: Nhập email, mật khẩu
+    W->>S: POST /login
+    alt Mật khẩu đúng
+        S-->>W: 200 và token
+    else Sai mật khẩu
+        S-->>W: 401
+    end
+```
+
+```mermaid
+---
+title: "Sơ đồ hoạt động: Mượn sách"
+---
+stateDiagram-v2
+    state KiemTra <<choice>>
+    [*] --> ChonSach
+    ChonSach: Chọn sách
+    ChonSach --> KiemTra
+    KiemTra --> TaoPhieu: Còn sách
+    KiemTra --> [*]: Hết sách
+    TaoPhieu: Tạo phiếu mượn
+    TaoPhieu --> [*]
+```
+
+```mermaid
+---
+title: "Sơ đồ hoạt động: Mượn sách theo làn"
+---
+swimlane-beta
+    subgraph DG["Độc giả"]
+        S@{ shape: sm-circ } --> A(Chọn sách)
+        A --> B(Gửi yêu cầu mượn)
+        G(Nhận sách) --> X@{ shape: fr-circ }
+    end
+    subgraph TT["Thủ thư"]
+        C{"Còn sách?"}
+        D(Tạo phiếu mượn)
+        E(Báo hết sách) --> Y@{ shape: fr-circ }
+    end
+    subgraph HT["Hệ thống"]
+        F(Cập nhật số lượng)
+    end
+    B --> C
+    C -->|Còn| D
+    C -->|Hết| E
+    D --> F
+    F --> G
+```
+
+Bấm vào từng thẻ để xem lớn, tải PNG, SVG, PDF hoặc mở bằng draw.io."""
+
+# "__bang__": bảng nhiều cột có ghi chú dài, để xem bảng trên điện thoại (cuộn ngang, không bẻ chữ giữa từ).
+TABLE_SAMPLE = """Giá tham khảo, đơn vị USD cho 1 triệu token:
+
+| Model | Nhà cung cấp | Input | Output | Cache hit | Ghi chú |
+|---|---|---|---|---|---|
+| Qwen3.7 Flash | Alibaba | $0.03 | $0.13 | — | Rẻ nhất trong bảng xếp hạng ngày 28/9/2026 |
+| Llama 3.1 8B Instant | Groq | $0.05 | $0.08 | — | Model nhỏ, rất nhanh, yếu ở việc khó |
+| DeepSeek V4.1 Flash | DeepSeek | $0.15 | $0.60 | $0.003 | Giờ cao điểm gấp đôi. Context 1M |
+
+Bảng trên điện thoại cuộn ngang được."""
+
 _CHUNK_DELAY = 0.035
 
 _GREETING = (
@@ -165,6 +274,10 @@ class MockProvider(ChatProvider):
             last_user = f"[đính kèm {', '.join(names)}]"
 
         reply = _pick_reply(last_user, timezone)
+        if "__sodo__" in last_user:
+            reply = DIAGRAM_SAMPLE
+        if "__bang__" in last_user:
+            reply = TABLE_SAMPLE
         # Ghi chú riêng của Companion (private_notes.py): "__bimat__:x" giấu x giữa câu trả lời; "__doan__" đọc lại ghi
         # chú mới nhất trong lịch sử, để test thấy model nhận lại ghi chú ở lượt sau.
         secret = re.search(r"__bimat__:([^_\n]+)", last_user)
@@ -227,13 +340,14 @@ class MockProvider(ChatProvider):
         await asyncio.sleep(_CHUNK_DELAY)
         yield StreamChunk("thinking", "Đọc tin nhắn rồi nghĩ cách trả lời…")
 
-        # Cắt theo từ để giống nhịp stream thật, giữ nguyên dấu cách.
+        # Cắt theo từ để giống nhịp stream thật. Mỗi mảnh mang theo khoảng trắng đứng trước nó, nên ghép lại đúng nguyên
+        # văn, kể cả thụt lề trong khối code (trước đây dấu cách liền nhau sau mỗi lần xả bị mất).
         buffer = ""
-        for word in reply.split(" "):
-            buffer = word if not buffer else buffer + " " + word
+        for piece in re.findall(r"\s*\S+|\s+$", reply):
+            buffer += piece
             if len(buffer) >= 12:
                 await asyncio.sleep(_CHUNK_DELAY)
-                yield buffer + " "
+                yield buffer
                 buffer = ""
         if buffer:
             await asyncio.sleep(_CHUNK_DELAY)

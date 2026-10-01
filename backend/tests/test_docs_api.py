@@ -44,8 +44,12 @@ def _attached(question):
     # Không nhắc tên Peto vẫn phải ra bài: người dùng Peto web vốn đang hỏi Peto.
     ('làm sao bật giọng nói?', 'giong-noi'),
     ('tôi không đăng nhập được', 'tai-khoan'),
+    ('làm sao đăng nhập bằng Google', 'tai-khoan'),
+    ('nút đăng xuất ở đâu vậy', 'tai-khoan'),
     ('đổi nhân vật ở đâu vậy', 'nhan-vat'),
     ('đính kèm file pdf được không', 'tro-chuyen'),
+    ('làm sao tải sơ đồ về máy', 'tro-chuyen'),
+    ('xuất sơ đồ ra PDF được không', 'tro-chuyen'),
     ('vẽ tranh con mèo giúp mình', 'tao-anh'),
     ('Cài Peto Agent thế nào?', 'cai-agent'),
     ('dùng lệnh /mcp sao vậy', 'mcp'),
@@ -67,6 +71,13 @@ def test_context_finds_the_article_by_title_or_keyword(question, slug):
     'Dữ liệu của tôi có 3 cột, vẽ biểu đồ giúp mình',
     'Kỹ năng skill giao tiếp khi phỏng vấn',
     'Game bị tụt fps thì làm sao',
+    # Nhờ vẽ sơ đồ là dùng tính năng, không phải hỏi cách dùng: lời dặn vẽ sơ đồ (persona.DIAGRAM_PROMPT) đã đủ.
+    'Vẽ sơ đồ lớp cho hệ thống quản lý thư viện',
+    # "Đăng nhập" là ví dụ kinh điển của bài tập UML và lập trình, không phải câu hỏi về tài khoản Peto.
+    'vẽ sơ đồ tuần tự đăng nhập',
+    'vẽ use case đăng nhập và đăng ký',
+    'viết API đăng nhập bằng FastAPI',
+    'thêm chức năng đăng xuất cho web của mình',
 ])
 def test_context_ignores_everyday_questions(question):
     assert _attached(question) == []
