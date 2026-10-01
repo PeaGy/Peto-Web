@@ -104,6 +104,8 @@ export default function App() {
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeProjectId, setActiveProjectId] = useState<string|null>(null);
+  const activeProjectRef = useRef(activeProjectId);
+  activeProjectRef.current = activeProjectId;
   const [projectEdit, setProjectEdit] = useState<Project|'create'|null>(null);
   const [projectName, setProjectName] = useState('');
   const [projectBusy, setProjectBusy] = useState(false);
@@ -376,7 +378,7 @@ export default function App() {
       setConversations(all);
       setHasMore(more);
       void refreshProjects();
-      if (activeProjectId) void refreshProjectChats(activeProjectId);
+      if (activeProjectRef.current) void refreshProjectChats(activeProjectRef.current);
     } catch (err) {
       if (version !== listVersion.current) return;
       if (err instanceof UnauthorizedError) handleUnauthorized();
@@ -384,7 +386,7 @@ export default function App() {
     } finally {
       if (version === listVersion.current) setLoadingList(false);
     }
-  }, [handleUnauthorized,refreshProjects,refreshProjectChats,activeProjectId]);
+  }, [handleUnauthorized,refreshProjects,refreshProjectChats]);
 
   const recovery = useReplyRecovery({
     scope: auth?.authenticated ? auth.user?.id ?? 'authenticated' : null,
@@ -400,7 +402,7 @@ export default function App() {
     },
   });
 
-  const allConversations = [...conversations,...Object.values(projectState.chats).flatMap(page => page.items)];
+  const allConversations = [...conversations,...projectState.projects.flatMap(project => projectState.chats[project.id]?.items ?? [])];
   const waitingForTitle = allConversations.some(item =>
     item.id === conversationId && (item.title_state === 'pending' ||
       (item.title_state === 'temporary' && (item.title_attempts || 0) < 3)));
@@ -675,12 +677,14 @@ export default function App() {
 
   async function removeConversation(id: string) {
     if (abortRef.current || deleting) return;
+    const projectId = allConversations.find(item => item.id === id)?.project_id;
     setDeleting(true);
     try {
       await deleteConversation(id);
       if (id === conversationId) newConversation();
       setDeleteTarget(null);
       await refreshConversations();
+      if (projectId && projectId !== activeProjectRef.current) void refreshProjectChats(projectId);
     } catch (err) {
       if (err instanceof UnauthorizedError) return handleUnauthorized();
       setError(err instanceof Error ? err.message : "Không xóa được");
@@ -933,6 +937,7 @@ export default function App() {
       await updateConversation(item.id, change);
       setRenameTarget(null);
       await refreshConversations();
+      if (item.project_id && item.project_id !== activeProjectRef.current) void refreshProjectChats(item.project_id);
     } catch (err) {
       if (err instanceof UnauthorizedError) handleUnauthorized();
       else setError(err instanceof Error ? err.message : 'Chưa lưu được thay đổi');

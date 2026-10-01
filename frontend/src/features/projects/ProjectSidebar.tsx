@@ -4,6 +4,10 @@ import type { Conversation } from '../../shared/api/api';
 import type { Project } from './projectApi';
 import type { useProjects } from './useProjects';
 
+function ProjectLoading({label}:{label:string}) {
+  return <div className="project-loading" role="status" aria-label={label}><span/><span/></div>;
+}
+
 export function FolderIcon({open=false}:{open?:boolean}) { return <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" aria-hidden="true"><path d={open ? 'M3 17V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v2M3 20h16l3-10H6L3 20Z' : 'M3 7V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z'}/>{!open && <path d="M3 9h18"/>}</svg>; }
 
 export default function ProjectSidebar({state, activeId, conversationId, disabled, onCreate, onNewChat, onChat, onMenu, onConversationMenu}: {
@@ -16,11 +20,11 @@ export default function ProjectSidebar({state, activeId, conversationId, disable
   function toggle(id:string) {
     const open=expanded.has(id);
     setExpanded(old=>{const next=new Set(old);if(open)next.delete(id);else next.add(id);return next;});
-    if (!open) void state.refreshChats(id);
+    if (!open) void state.ensureChats(id);
   }
   return <section className="project-sidebar" aria-label="Dự án">
     <div className="project-sidebar-label"><h2 className="sidebar-label">Dự án</h2><button type="button" aria-label="Tạo dự án" title="Tạo dự án" disabled={disabled} onClick={onCreate}>+</button></div>
-    {state.loading && <p className="empty-hint" role="status">Đang tải dự án…</p>}
+    {state.loading && !state.projects.length && <ProjectLoading label="Đang tải dự án"/>}
     {state.error && <button className="project-retry" onClick={() => void state.refresh()}>{state.error} Thử lại</button>}
     {!state.loading && !state.error && !state.projects.length && <p className="empty-hint">Chưa có dự án.</p>}
     {state.projects.map(item => {
@@ -35,7 +39,7 @@ export default function ProjectSidebar({state, activeId, conversationId, disable
         </div>
         {open && <div className="project-chats" id={`project-chats-${item.id}`}>
           {page?.items.map(chat => <div className={`conv${conversationId === chat.id ? ' active' : ''}`} key={chat.id}><button className="conv-open" disabled={disabled} title={chat.title} onClick={() => onChat(chat.id)}><span className="conv-title">{chat.title || 'Chưa có tiêu đề'}</span></button><div className="conv-hover-actions"><button aria-label={`Tùy chọn ${chat.title}`} disabled={disabled} onClick={e => onConversationMenu(chat,e.currentTarget.getBoundingClientRect())}>⋯</button></div></div>)}
-          {page?.loading ? <p className="empty-hint" role="status">Đang tải…</p> : page?.error ? <button className="project-retry" onClick={() => void state.refreshChats(item.id)}>{page.error} Thử lại</button> : !page?.items.length && <p className="empty-hint">Chưa có hội thoại.</p>}
+          {page?.error ? <button className="project-retry" onClick={() => void state.refreshChats(item.id)}>{page.error} Thử lại</button> : !page?.items.length && (page?.loading && !page.loaded || !page ? <ProjectLoading label="Đang tải hội thoại dự án"/> : <p className="empty-hint">Chưa có hội thoại.</p>)}
           {page?.more && <button className="project-retry" disabled={disabled || page.loading} onClick={() => void state.refreshChats(item.id,true)}>Xem thêm hội thoại</button>}
         </div>}
       </div>;
