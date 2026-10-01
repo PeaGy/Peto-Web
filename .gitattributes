@@ -1,0 +1,2 @@
+# Script VPS phải giữ LF cả khi checkout trên Windows.
+deploy/*.sh text eol=lf

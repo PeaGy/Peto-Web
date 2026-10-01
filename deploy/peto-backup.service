@@ -1,0 +1,12 @@
+# Chỉ bật sau khi kiểm tra đường dẫn, tài khoản và chạy sao lưu thử theo OPERATIONS.md.
+[Unit]
+Description=Sao luu du lieu Peto Web
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/bash /home/ubuntu/peto-web/deploy/backup-peto.sh
+ExecStopPost=/usr/bin/bash /home/ubuntu/peto-web/deploy/backup-peto.sh --resume
+UMask=0077
+# Dự phòng nếu script bị dừng bất thường: marker ghi lại web đã chạy trước khi sao lưu.
+# Trap trong script xử lý lỗi thông thường. Không đặt timeout để tránh cắt ngang bản sao lớn.
+TimeoutStartSec=infinity

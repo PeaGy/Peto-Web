@@ -256,6 +256,7 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
 
         nonlocal turn_complete
         complete = False
+        outcome = "cancelled"
         failure: str | None = None
         try:
             async with admission.slot(owner):
@@ -339,27 +340,34 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                 # Một câu trả lời Companion chỉ có ghi chú riêng thì người dùng không thấy gì: coi như chưa trả lời.
                 complete = bool(_visible("".join(collected), mode).strip())
                 if not complete:
+                    outcome = "empty"
                     failure = "Peto chưa trả lời được lượt này. Nhắn lại giúp nha."
+                else:
+                    outcome = "complete"
         except AdmissionDenied as denied:
+            outcome = denied.reason
             failure = denied.message
         except ProviderError as err:
+            outcome = "provider_error"
             logger.warning("Provider lỗi: %s", err)
             failure = str(err)
         except TimeoutError:
+            outcome = "timeout"
             logger.warning("Timeout sau %ss (effort=%s)", RESPONSE_TIMEOUTS[effort], effort)
             failure = "Peto nghĩ lâu quá nên dừng lượt này. Phần đã trả lời được giữ lại."
         except Exception:
+            outcome = "internal_error"
             logger.exception("Lỗi không mong đợi khi gọi AI")
             failure = "Có lỗi ở phía máy chủ. Thử lại sau nha."
         finally:
             ended_at = perf_counter()
             logger.info(
-                "chat_timing model=%s effort=%s mode=%s queue_ms=%s prepare_ms=%s first_text_ms=%s total_ms=%d search=%s complete=%s",
+                "chat_timing model=%s effort=%s mode=%s queue_ms=%s prepare_ms=%s first_text_ms=%s total_ms=%d search=%s complete=%s outcome=%s",
                 model, effort, mode,
                 round((admitted_at - started) * 1000) if admitted_at is not None else None,
                 round((prepared_at - admitted_at) * 1000) if prepared_at is not None and admitted_at is not None else None,
                 round((first_text_at - started) * 1000) if first_text_at is not None else None,
-                round((ended_at - started) * 1000), search_started, complete,
+                round((ended_at - started) * 1000), search_started, complete, outcome,
             )
             # Cả timeout/lỗi lẫn đóng tab đều giữ phần đã phát. Shield tránh
             # cancel scope của StreamingResponse hủy luôn thao tác lưu SQLite.

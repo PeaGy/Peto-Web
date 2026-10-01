@@ -83,6 +83,13 @@ provider error, `__slow__` streams very slowly to exercise timeout/cancel paths.
 
 ### Backend layout (2026-10-01)
 
+Operational tools live in `backend/ops/`; see `deploy/OPERATIONS.md`. `ops.backup` requires all writers stopped
+(`--offline`), verifies archives and only restores into a new directory. Archives cover SQLite/uploads, not credentials.
+`ops.report` aggregates existing timing/provider usage logs; optional rates are operator-supplied, missing usage is
+not zero cost. Optional read-only DB aggregates cover Agent/TTS quota, not invoices. Startup configures the `peto_web`
+INFO logger once; new timing fields carry only categorical outcomes, never user text/owner identifiers.
+The checked-in systemd backup timer is a template and must not be described as already enabled on the VPS.
+
 See `backend/README.md` for the current directory map. `main.py` is the stable `uvicorn main:app` entry point;
 `core/lifespan.py` owns startup. Feature routers and services live under `features/`, shared attachment/time/search
 tools under `shared/`, SQLite schema and domain queries under `storage/`, and persona blocks under `prompts/`.

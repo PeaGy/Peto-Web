@@ -9,12 +9,14 @@ from ai import get_provider
 from shared.time_tools import resolve_timezone
 from core.config import MEMORY_GATEWAY_TOKEN, MEMORY_GATEWAY_URL
 from features.accounts.discord_memory import discord_memory
+from core.operational_logging import configure_operational_logging
 import logging
 
 logger = logging.getLogger("peto_web")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    configure_operational_logging()
     resolve_timezone()  # Báo lỗi cấu hình sớm nếu thiếu dữ liệu múi giờ.
     await db.init_db()
     logger.info("Peto Web sẵn sàng — provider=%s", get_provider().name)

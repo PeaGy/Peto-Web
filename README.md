@@ -67,6 +67,7 @@ không tự triển khai web.
 
 - [CLAUDE.md](CLAUDE.md): kiến trúc và các quy ước của code.
 - [backend/README.md](backend/README.md): cấu trúc backend và nơi thêm tính năng.
+- [deploy/OPERATIONS.md](deploy/OPERATIONS.md): sao lưu, diễn tập khôi phục và báo cáo vận hành.
 - [DEPLOY.md](DEPLOY.md): đưa lên VPS.
 - [agent-cli/README.md](agent-cli/README.md): cài và dùng Peto Agent.
 - [voice-worker/README.md](voice-worker/README.md): nối máy tạo giọng.

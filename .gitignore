@@ -1,6 +1,11 @@
 # Bi mat va du lieu — khong bao gio commit
 .env
 backend/data/
+backups/
+restore-drill/
+operations-output/
+peto-data-*.zip
+peto-data-*.partial
 *.db
 *.db-wal
 *.db-shm

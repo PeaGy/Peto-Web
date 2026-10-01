@@ -1,0 +1,12 @@
+[Unit]
+Description=Sao luu Peto hang ngay
+
+[Timer]
+# 03:30 theo múi giờ máy chủ; không tự chạy bù ngay lúc khởi động.
+OnCalendar=*-*-* 03:30:00
+RandomizedDelaySec=10m
+Persistent=false
+Unit=peto-backup.service
+
+[Install]
+WantedBy=timers.target

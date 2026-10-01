@@ -63,3 +63,9 @@ cd backend
 Giữ nguyên `.env` tại gốc dự án, đường dẫn database/upload/token hiện có và lệnh systemd `uvicorn main:app`.
 Tách thư mục không yêu cầu chuyển dữ liệu hay đổi API. Test đặt cấu hình giả trước khi import ứng dụng và không
 gọi AI thật. Quy tắc chi tiết nằm trong `../CLAUDE.md`.
+
+## Vận hành
+
+`ops/` chứa công cụ sao lưu, kiểm tra/khôi phục vào thư mục riêng và tổng hợp log tốc độ/token/chi phí ước tính.
+Hướng dẫn cùng cấu hình timer VPS nằm ở [deploy/OPERATIONS.md](../deploy/OPERATIONS.md). Chưa tự bật lịch hoặc
+thay dữ liệu đang dùng. Sao lưu gồm database và uploads; `.env`/credential lưu riêng.

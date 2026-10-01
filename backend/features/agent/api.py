@@ -462,6 +462,8 @@ async def step(request: Request, device: dict = Depends(device_auth)):
     async def event_stream() -> AsyncIterator[str]:
         failure: str | None = None
         produced = False
+        completed = False
+        outcome = "cancelled"
         started = time.monotonic()
         first_at: float | None = None
         try:
@@ -479,19 +481,27 @@ async def step(request: Request, device: dict = Depends(device_auth)):
                                 await db.add_agent_tokens(
                                     owner, day, event.usage.get("input_tokens", 0), event.usage.get("output_tokens", 0)
                                 )
+                            completed = True
+                            outcome = "complete"
                             yield _sse({"type": "done", "output": list(event.output), "usage": event.usage,
                                         **({"purpose": "compact"} if compacting else {})})
                         else:
                             yield _sse({"type": event.kind, "text": event.text})
+                    if not completed:
+                        outcome = "empty"
         except AdmissionDenied as denied:
+            outcome = denied.reason
             failure = ("Peto Agent đang bận với nhiều người, thử lại sau chút nhé." if denied.reason == "queue_full"
                        else "Đợi lâu quá nên Peto bỏ bước này. Thử lại nhé.")
         except ProviderError as err:
+            outcome = "provider_error"
             logger.warning("Bước agent lỗi từ nhà cung cấp: %s", err)
             failure = str(err)
         except TimeoutError:
+            outcome = "timeout"
             failure = "Bước này chạy quá lâu nên Peto dừng lại. Thử lại nhé."
         except Exception:
+            outcome = "internal_error"
             logger.exception("Lỗi không mong đợi ở bước agent")
             failure = "Có lỗi ở phía máy chủ. Thử lại sau nhé."
         finally:
@@ -502,6 +512,9 @@ async def step(request: Request, device: dict = Depends(device_auth)):
             # Một bước chậm có thể do dịch vụ AI lâu mới trả lời, hoặc do SDK lặng lẽ gửi lại sau lỗi (móc HTTP trong
             # ai/agent.py ghi riêng mã lỗi đó). Tách thời gian chờ chữ đầu ra khỏi tổng thời gian để phân biệt.
             elapsed = time.monotonic() - started
+            logger.info("agent_timing model=%s effort=%s mode=agent first_text_ms=%s total_ms=%d complete=%s outcome=%s",
+                        model.key, effort, round((first_at - started) * 1000) if first_at is not None else None,
+                        round(elapsed * 1000), completed, outcome)
             if elapsed >= AGENT_SLOW_STEP_SECONDS:
                 logger.warning("Bước agent chậm: model %s · mức %s · %d mục vào · chờ phản hồi đầu %.1fs · tổng "
                                "%.1fs%s", model.key, effort, len(items),
