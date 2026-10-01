@@ -203,8 +203,9 @@ export const ChatMessage = memo(function ChatMessage({ message, live, writing, o
                         {file.document && (
                           <details className={`document-details ${file.document.status === "ready" ? "ready" : "limited"}`}>
                             <summary>
-                              {file.document.status === "ready" ? "Đã đọc chữ" : file.document.status === "partial" ? "Đọc được một phần" : "Chưa đọc được"}
-                              {file.document.pages != null && ` · ${file.document.pages} trang`}
+                              {file.document.status === "ready" ? (file.document.ocr_pages ? "Đã đọc bằng OCR" : "Đã đọc chữ") : file.document.status === "partial" ? "Đọc được một phần" : "Chưa đọc được"}
+                              {file.document.pages != null && ` · ${file.document.pages_read != null ? `${file.document.pages_read}/` : ""}${file.document.pages} trang`}
+                              {file.document.status === "partial" && !!file.document.ocr_pages && " · có OCR"}
                             </summary>
                             <p>{file.document.notice}</p>
                           </details>

@@ -115,13 +115,13 @@ class AttachmentFiles:
                 data = await anyio.to_thread.run_sync(Path(item["path"]).read_bytes)
             except OSError:
                 raise ToolError("Không mở được tệp đã lưu. Nhờ người dùng gửi lại tệp.") from None
-            document = await document_reader.read_full_document(data, item["mime"])
+            document = await document_reader.read_full_document(
+                data, item["mime"], cached=document_reader.cached_document(item.get("document")))
             if document["status"] not in ("ready", "partial"):
                 raise ToolError(f"Chưa đọc được tệp này: {document['notice']}")
             note = ""
-            if document.get("pages_processed", 0) < document.get("pages", 0):
-                note = (f" PDF có {number(document['pages'])} trang, công cụ chỉ đọc được "
-                        f"{number(document['pages_processed'])} trang đầu.")
+            if document["status"] == "partial" or document.get("ocr_pages"):
+                note = " " + document["notice"]
             self._lines[item["id"]] = (document["text"].splitlines(), note)
         return self._lines[item["id"]]
 

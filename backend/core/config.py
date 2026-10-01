@@ -182,6 +182,13 @@ MAX_HISTORY_IMAGES = _env_int("PETO_MAX_HISTORY_IMAGES", 4, 1, 8)
 MAX_TEXT_EXCERPT_CHARS = _env_int("PETO_MAX_TEXT_EXCERPT_CHARS", 80_000, 1000, 200_000)
 MAX_DOCUMENT_PAGES = _env_int("PETO_MAX_DOCUMENT_PAGES", 100, 1, 300)
 DOCUMENT_TIMEOUT = _env_float("PETO_DOCUMENT_TIMEOUT", 15, 1, 60)
+# OCR chạy trên máy chủ; chỉ nhận dạng những trang PDF không có lớp chữ.
+DOCUMENT_OCR_ENABLED = os.getenv("PETO_DOCUMENT_OCR", "1").strip().lower() not in {"0", "false", "off"}
+DOCUMENT_OCR_COMMAND = os.getenv("PETO_DOCUMENT_OCR_COMMAND", "tesseract").strip() or "tesseract"
+DOCUMENT_OCR_LANGUAGES = os.getenv("PETO_DOCUMENT_OCR_LANGUAGES", "vie+eng").strip() or "vie+eng"
+MAX_DOCUMENT_OCR_PAGES = _env_int("PETO_MAX_DOCUMENT_OCR_PAGES", 8, 1, 20)
+DOCUMENT_OCR_TIMEOUT = _env_float("PETO_DOCUMENT_OCR_TIMEOUT", 30, 1, 60)
+DOCUMENT_OCR_PAGE_TIMEOUT = _env_float("PETO_DOCUMENT_OCR_PAGE_TIMEOUT", 8, 1, 20)
 MAX_DOCUMENT_CONTEXT_CHARS = _env_int("PETO_MAX_DOCUMENT_CONTEXT_CHARS", 160_000, 1000, 400_000)
 
 # --- Imagine (tạo ảnh, tách khỏi chat) -----------------------------------

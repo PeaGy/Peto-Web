@@ -146,9 +146,10 @@ def _to_chat_messages(rows: list[dict]) -> list[ChatMessage]:
 
 async def _read_legacy_documents(owner: str, rows: list[dict], budget: int) -> None:
     """Bổ sung chữ cho tệp cũ khi hỏi tiếp, giới hạn việc đọc lại mỗi lượt."""
+    from features.documents.ocr import needs_read
     for row in reversed(rows):
         for item in row.get("attachments") or []:
-            if item.get("kind") != "file" or document_reader.cached_document(item.get("document")):
+            if item.get("kind") != "file" or not needs_read(document_reader.cached_document(item.get("document"))):
                 continue
             if budget <= 0:
                 return

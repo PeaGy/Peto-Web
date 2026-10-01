@@ -22,6 +22,9 @@ export interface ChatAttachment {
     characters: number;
     pages?: number;
     pages_processed?: number;
+      pages_read?: number;
+      ocr_pages?: number;
+      reading_method?: "text" | "ocr" | "mixed";
   } | null;
 }
 

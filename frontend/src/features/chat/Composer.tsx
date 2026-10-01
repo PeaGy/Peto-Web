@@ -196,7 +196,7 @@ export default function Composer({
         </div>
       </div>
       {files.some((item) => /\.pdf$/i.test(item.file.name) || item.file.type === "application/pdf") &&
-        <p className="composer-note">Peto đọc lớp chữ trong PDF và dẫn số trang. PDF ảnh scan chưa có chữ cần OCR trước nhé.</p>}
+        <p className="composer-note">Peto đọc chữ và dẫn số trang trong PDF, nhận dạng cả trang scan khi máy chủ có OCR. Chữ từ ảnh có thể nhận sai; kết quả đọc sẽ hiện dưới tệp.</p>}
     </form>
   );
 }

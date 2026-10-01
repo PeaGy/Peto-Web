@@ -17,7 +17,8 @@ DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.docu
 PDF_MIME = "application/pdf"
 # 2 (29/9/2026): tệp chữ dài giữ phần đầu, phần cuối và các đoạn có lỗi thay vì chỉ phần đầu. Đổi số này thì tệp cũ
 # được đọc lại ở lượt sau (features.chat.history._read_legacy_documents).
-VERSION = 2
+# 3 (1/10/2026): thêm chữ OCR theo trang và số trang đã đọc.
+VERSION = 3
 MAX_XML_BYTES = 8 * 1024 * 1024
 MAX_ZIP_BYTES = 32 * 1024 * 1024
 MAX_PAGE_BYTES = 2 * 1024 * 1024
@@ -178,6 +179,8 @@ def _pdf(data: bytes, max_chars: int, max_pages: int) -> dict:
     empty = 0
     skipped = 0
     shortened = False
+    page_text = {}
+    scan_pages = []
     for index in range(min(total, max_pages)):
         processed += 1
         try:
@@ -192,10 +195,12 @@ def _pdf(data: bytes, max_chars: int, max_pages: int) -> dict:
             continue
         if not text:
             empty += 1
+            scan_pages.append(index + 1)
             continue
         block = f"[Trang {index + 1}]\n{text}\n\n"
         room = max_chars - used
         parts.append(block[:room])
+        page_text[str(index + 1)] = block[:room]
         used += min(room, len(block))
         if len(block) > room or (used >= max_chars and processed < total):
             shortened = True
@@ -208,14 +213,17 @@ def _pdf(data: bytes, max_chars: int, max_pages: int) -> dict:
     else:
         notices.append("Chưa lấy được chữ từ PDF.")
     if empty:
-        notices.append(f"{empty} trang không có lớp chữ đọc được; có thể là ảnh scan. Chưa hỗ trợ OCR.")
+        notices.append(f"{empty} trang không có lớp chữ đọc được; cần nhận dạng chữ (OCR) nếu là ảnh scan.")
     if skipped:
         notices.append(f"{skipped} trang bị lỗi hoặc quá phức tạp nên được bỏ qua.")
     if shortened or processed < total:
         notices.append("Tài liệu dài: Peto đọc sẵn phần đầu, khi cần sẽ tìm thêm trong tệp."
                        + (f" Riêng các trang sau trang {processed} thì chưa đọc được." if processed < total else ""))
     return result("partial" if text and partial else "ready" if text else "unreadable" if skipped else "no_text",
-                  " ".join(notices), text, pages=total, pages_processed=processed)
+                  " ".join(notices), text, pages=total, pages_processed=processed,
+                  pages_read=len(page_text), ocr_pages=0, reading_method="text",
+                  _page_text=page_text, _scan_pages=scan_pages, _skipped_pages=skipped,
+                  truncated=shortened or processed < total)
 
 
 def _tag(element) -> str:
@@ -330,16 +338,20 @@ async def read_document(data: bytes, mime: str) -> dict:
 
     try:
         with anyio.fail_after(DOCUMENT_TIMEOUT):
-            return await to_process.run_sync(extract_document, data, mime,
+            document = await to_process.run_sync(extract_document, data, mime,
                                             MAX_TEXT_EXCERPT_CHARS, MAX_DOCUMENT_PAGES,
                                             cancellable=True)
     except TimeoutError:
         return result("timeout", "Tệp mất quá lâu để đọc. Hãy chia nhỏ hoặc xuất lại tài liệu rồi gửi lại nhé.")
     except Exception:
         return result("unreadable", "Bộ đọc tài liệu đang gặp lỗi. Thử gửi lại tệp sau nhé.")
+    if mime == PDF_MIME:
+        from features.documents.ocr import complete_pdf
+        return await complete_pdf(data, document, MAX_TEXT_EXCERPT_CHARS)
+    return document
 
 
-async def read_full_document(data: bytes, mime: str) -> dict:
+async def read_full_document(data: bytes, mime: str, cached: dict | None = None) -> dict:
     """Toàn bộ chữ của tệp cho công cụ tìm/đọc: tệp chữ giữ nguyên từng dòng; PDF và Word đọc lại trong tiến trình
     riêng với giới hạn chữ nới rộng, giới hạn trang và thời gian như bộ đọc thường."""
     from core.config import DOCUMENT_TIMEOUT, MAX_DOCUMENT_PAGES
@@ -354,12 +366,16 @@ async def read_full_document(data: bytes, mime: str) -> dict:
         return result("ready", "Đã đọc tệp chữ.", text)
     try:
         with anyio.fail_after(DOCUMENT_TIMEOUT):
-            return await to_process.run_sync(extract_document, data, mime, FULL_TEXT_CHARS, MAX_DOCUMENT_PAGES,
+            document = await to_process.run_sync(extract_document, data, mime, FULL_TEXT_CHARS, MAX_DOCUMENT_PAGES,
                                             cancellable=True)
     except TimeoutError:
         return result("timeout", "Tệp mất quá lâu để đọc lại.")
     except Exception:
         return result("unreadable", "Bộ đọc tài liệu đang gặp lỗi.")
+    if mime == PDF_MIME:
+        from features.documents.ocr import complete_pdf
+        return await complete_pdf(data, document, FULL_TEXT_CHARS, cached=cached)
+    return document
 
 
 def cached_document(raw) -> dict | None:
@@ -376,4 +392,5 @@ def public_document(raw) -> dict | None:
     cached = cached_document(raw)
     if cached is None:
         return None
-    return {key: cached[key] for key in ("status", "notice", "characters", "pages", "pages_processed") if key in cached}
+    return {key: cached[key] for key in ("status", "notice", "characters", "pages", "pages_processed",
+                                        "pages_read", "ocr_pages", "reading_method") if key in cached}

@@ -303,12 +303,23 @@ identically on Windows and Linux.
 `shared/attachments.py` validates by **magic bytes first**, then declared MIME / extension. A file
 claiming to be an image but failing `sniff_image_mime` is rejected outright. Images become
 data URLs for the model. `features/documents/reader.py` reads PDF text with page labels, DOCX body
-paragraphs/tables, and UTF-8/UTF-16 text in a cancellable AnyIO worker process. PDF scans
-are NOT OCRed; encrypted/broken/oversized documents retain honest reading status.
+paragraphs/tables, and UTF-8/UTF-16 text in a cancellable AnyIO worker process. `features/documents/ocr.py`
+renders pages without native text with PDFium in cancellable workers (4 MP/4096 px output; checks source images
+before rendering, 20 MP/image, 40 MP/page, 2000 objects and 8 form nesting levels) and feeds PNG through
+stdin to local Tesseract (`vie+eng`, installed separately; see backend/README.md). Required languages are checked
+before new OCR; do not silently accept Tesseract's fallback when only one language loads. OCR has a global two-page limiter,
+one CPU thread per engine, 8 scanned pages/file, 30s total including queue/render time and 8s/page; subprocess
+output is capped and cancellation closes/kills the engine. Native text survives OCR errors/timeouts. Labels keep
+original page numbers and identify OCR; notices expose read/total counts and accuracy limitations.
+Missing/disabled OCR and encrypted/broken/oversized documents retain honest reading status.
 Do not promise image/chart/layout understanding for PDF/DOCX or legacy .doc support.
 
 The `attachments.document` JSON cache stores text plus version/status/notice and counts.
-`_public_attachment` exposes only the status metadata, never text or disk paths. Read new
+Version 3 caches OCR text per page privately; tools reuse it when the engine signature matches. Old cache versions
+are lazily reread; a changed engine path/mtime, enabled flag, languages or page limit triggers rereading scanned
+files on follow-up. Disabling/uninstalling OCR preserves already cached OCR text; fully cached scans require no engine
+process even for tools. Adding language data or retrying transient failures without a settings change requires reupload.
+`_public_attachment` exposes only the status metadata, never native/OCR text, engine settings or disk paths. Read new
 documents inside admission, before shielded writes; emit `reading` SSE without treating it
 as acceptance. `meta` acknowledges persistence. Legacy files are lazily cached with an
 owner-filtered UPDATE, at most MAX_ATTACHMENTS total reads per turn including new files.
