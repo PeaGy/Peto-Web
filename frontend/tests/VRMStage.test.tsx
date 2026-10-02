@@ -54,8 +54,12 @@ it('VRM quay đầu và mắt về ô nhập, tắt công tắc thì trả hư�
   expect(head.rotation.y).toBeGreaterThan(0.1);
   expect(head.rotation.x).toBeGreaterThan(0.1);
   expect(vrm.lookAt.target!.position.x).toBeGreaterThan(0.5);
+  const before = head.rotation.y;
   act(() => writeEffects(character.id, { ...readEffects(character.id), composerGaze: false }));
-  act(() => { for (let i = 11; i <= 60; i++) mocks.frame!(40 * i); });
+  act(() => mocks.frame!(440));
+  expect(head.rotation.y).toBeGreaterThan(before * 0.9);
+  expect(head.rotation.y).toBeLessThan(before);
+  act(() => { for (let i = 12; i <= 100; i++) mocks.frame!(40 * i); });
   expect(head.rotation.x).toBeCloseTo(0, 3); expect(head.rotation.y).toBeCloseTo(0, 3);
   view.unmount();
   writeEffects(character.id, { ...readEffects(character.id), composerGaze: true });

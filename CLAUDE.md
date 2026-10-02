@@ -674,20 +674,24 @@ and VRM the same time-based attack/release at 24/30/60 FPS; pause, waiting and s
 speech-driven mouth. Authored emotion mouth baselines remain independent.
 
 Companion presence (2026-10-02) adapts AIRI's `packages/stage-ui-live2d/src/components/scenes/live2d/presence-bubble.vue`
-and `packages/stage-shared/src/presence-bubble/placement.ts`: the renderer updates a shared DOM bubble each frame,
+and `packages/stage-shared/src/presence-bubble/{placement,follow}.ts`: the renderer updates a shared DOM bubble each frame,
 anchored to the head, preferring above and switching sides with hysteresis when space runs out. Live2D uses a
-Head/Face hit area where available, otherwise the existing face-height convention; VRM projects its head bone.
+Head/Face hit areas where available, otherwise adapts AIRI's `head-anchor.ts` to identify drawables moved by head
+angles once before showing the model. Probing restores parameters; subsequent frames read only selected bounds.
+Models without a head rig retain a face-height fallback; VRM projects its head bone. A damped spring follows
+the animated head with slight lag/overshoot, substepped at 120 Hz, with stabilized placement decisions.
 It follows pan/zoom, never receives input, hides with unavailable/offscreen characters and on stop/end/tab exit,
 and uses static dots under system reduced motion unless the owner selects "Luôn cử động". Generation controls it independently of speech playback.
 Character settings include per-model `composerGaze` (default true, including old saved preferences). Only actual
-typing in a focused desktop composer attracts eyes/head for 1.2 s; blur, send and inactivity release attention.
-Both renderers smoothly restore the previous pointer/idle behavior. The switch is independent of cursor tracking
+typing in a focused desktop composer attracts eyes/head for 3 s after the latest keystroke; blur, send and inactivity release attention.
+Both renderers restore the previous pointer/idle behavior with a 0.45 s release time constant, retaining gaze
+ownership until settled so idle/pointer cannot snap the head back. The switch is independent of cursor tracking
 and respects the existing system/always motion preference. Recognized speech and old drafts never trigger it.
 Typing the next draft during generation/playback still attracts gaze without changing the body phase or lip sync.
 
 Companion phase 2 (2026-10-02) coordinates Body with Ears and Mouth:
 - `useCompanionActivity` prioritizes actual playback, generation/waiting, then hearing/typing attention.
-  A manual keystroke holds listening attention for 1.2 s; an unsent or recognized draft alone never holds it.
+  A manual keystroke holds listening attention for 3 s; an unsent or recognized draft alone never holds it.
   Hearing `speaking` and `transcribing` both hold attention, but opening a silent microphone does not.
 - `LocalVoicePlayer` publishes `playing` only after media `playing` or a fulfilled `play()` promise.
   `buffering` covers gaps between chunks and media waiting. The body holds its speaking pose for 350 ms,

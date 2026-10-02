@@ -9,7 +9,7 @@ export function useCompanionActivity(active: boolean, streaming: boolean, speech
   const noteTyping = useCallback((hasText: boolean) => setTypingAt(hasText ? Date.now() : 0), []);
   useEffect(() => {
     if (!typingAt) return;
-    const timer = window.setTimeout(() => setTypingAt(0), 1200);
+    const timer = window.setTimeout(() => setTypingAt(0), 3000);
     return () => window.clearTimeout(timer);
   }, [typingAt]);
   useEffect(() => {

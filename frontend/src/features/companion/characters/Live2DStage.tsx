@@ -29,6 +29,8 @@ import { controlExpressions, faceSource, publishSnapshot, readExpressions, watch
 import { FaceBlend, faceApplier, type CubismCore } from './builtinFaces';
 import ThinkingBubble, { useThinkingBubble } from './ThinkingBubble';
 import { composerPoint, type ComposerAttention } from './stageInteraction';
+import { trackLive2DHead } from './live2dHead';
+import { ComposerGaze } from './presenceMotion';
 
 let coreReady: Promise<void> | undefined;
 function loadCore() {
@@ -261,6 +263,7 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
       };
 
       const internal = current.internalModel as Cubism4InternalModel;
+      const readHead = trackLive2DHead(internal);
       const manager = internal.motionManager.expressionManager;
       // Cảm xúc Peto chọn, hay thẻ bấm thử trong bảng Nhân vật: tệp biểu cảm của model nếu có, không thì mặt dựng sẵn.
       const face = faceApplier(internal.coreModel as unknown as CubismCore);
@@ -310,11 +313,11 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
       };
       let effects = readEffects(character.id);
       let lastPointer = -Infinity;
-      let composerActive = false, composerUntil = -Infinity;
+      const composerGaze = new ComposerGaze();
       let pointerTarget = { x: 0, y: 0 };
       const unwatchEffects = watchEffects(character.id, value => {
         effects = value;
-        internal.focusController.focus(0, 0, true);
+        if (!composerGaze.owned) internal.focusController.focus(0, 0, true);
       });
       const idle = controlIdle(internal.motionManager, motionChoices(internal.motionManager.definitions), () => setIdleError(true));
       idle.select(readIdle(character.id));
@@ -336,7 +339,7 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
         const headY = current.position.y - originalHeight * current.scale.y * CHARACTER.headHeight;
         const target = lookTarget(point.x, point.y, current.position.x, headY, box.width, box.height);
         pointerTarget = target;
-        if (!composerActive) internal.focusController.focus(target.x, target.y);
+        if (!composerGaze.owned) internal.focusController.focus(target.x, target.y);
       };
       const onTouchEnd = (event: PointerEvent) => {
         if (touchId === null || event.pointerId !== touchId) return;
@@ -344,7 +347,10 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
         lastPointer = -Infinity;
         internal.focusController.focus(0, 0);
       };
-      const onLookAway = () => { touchId = null; lastPointer = -Infinity; pointerTarget = { x: 0, y: 0 }; internal.focusController.focus(0, 0); };
+      const onLookAway = () => {
+        touchId = null; lastPointer = -Infinity; pointerTarget = { x: 0, y: 0 };
+        if (!composerGaze.owned) internal.focusController.focus(0, 0);
+      };
 
       const core = internal.coreModel as { setParameterValueById: (id: string, value: number) => void };
       const liveCore = internal.coreModel;
@@ -362,7 +368,7 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
       internal.on("beforeModelUpdate", () => {
         // Keep expression fades alive when body motion is paused for reduced motion.
         if (!moving()) manager?.update(liveCore, performance.now());
-        const cursorActive = composerActive || (effects.cursor && (touchId !== null || performance.now() - lastPointer < 3000));
+        const cursorActive = composerGaze.owned || (effects.cursor && (touchId !== null || performance.now() - lastPointer < 3000));
         // AIRI separates idle gaze from pointer tracking. Blend ownership of the eye
         // parameters so an authored idle cannot pin them at an extreme value.
         const eyes = idleEyes.step(app!.ticker.deltaMS / 1000, effects.idleEyes && !cursorActive);
@@ -389,27 +395,26 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
       app.ticker.maxFPS = stageQuality(compact.matches, window.devicePixelRatio, qualityPreference).fps;
       let still = false;
       let captured = false;
-      const headArea = Object.entries(internal.hitAreas ?? {}).find(([name]) => /head|face/i.test(name))?.[1];
       app.ticker.add(() => {
         const now = performance.now();
         const point = composerPoint(attentionRef.current, effects.composerGaze, compact.matches, moving());
+        let target = null;
         if (point) {
           const rect = container.getBoundingClientRect();
           const headY = current.position.y - originalHeight * current.scale.y * CHARACTER.headHeight;
-          const target = lookTarget(point.x - rect.left, point.y - rect.top, current.position.x, headY, box.width, box.height);
-          internal.focusController.focus(target.x, target.y);
-          composerUntil = now + 400;
-        } else if (composerActive) {
-          const target = effects.cursor && now - lastPointer < 3000 ? pointerTarget : { x: 0, y: 0 };
-          internal.focusController.focus(target.x, target.y);
+          target = lookTarget(point.x - rect.left, point.y - rect.top, current.position.x, headY, box.width, box.height);
         }
-        composerActive = Boolean(point);
+        const owned = composerGaze.owned;
+        const normal = effects.cursor && now - lastPointer < 3000 ? pointerTarget : { x: 0, y: 0 };
+        const gaze = composerGaze.step(target, normal, app!.ticker.deltaMS / 1000);
+        if (owned || composerGaze.owned) internal.focusController.focus(gaze.x, gaze.y);
         idle.enable(moving());
-        withCharacterEffects(internal, { ...effects, cursor: effects.cursor || now < composerUntil }, () => {
+        withCharacterEffects(internal, { ...effects, cursor: effects.cursor || owned || composerGaze.owned }, () => {
           if (moving()) {
             still = false;
             current.update(Math.min(app!.ticker.deltaMS, 50));
           } else {
+            composerGaze.reset();
             if (!still) {
               internal.focusController.focus(0, 0, true);
               still = true;
@@ -420,19 +425,17 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
         });
         if (thinkingRef.current) {
           const height = originalHeight * current.scale.y;
-          // Model không khai báo vùng Head (Hiyori chỉ có Body): dùng tỉ lệ đầu như vùng chụp mặt.
+          // Model không có góc đầu/vùng Head: giữ điểm dự phòng. Hiyori bám drawable đang chuyển động như AIRI.
           let head = { x: current.position.x - height * 0.1, y: current.position.y - height * (CHARACTER.headHeight + 0.07),
             width: height * 0.2, height: height * 0.22 };
-          if (headArea) {
-            const bounds = internal.getDrawableBounds(headArea.index);
-            if (bounds.width > 0 && bounds.height > 0) {
+          const bounds = readHead();
+          if (bounds) {
               // Vùng va chạm nằm trong canvas gốc; áp dụng Layout của model trước khi phóng/dời trên sân khấu.
               const start = internal.localTransform.apply({ x: bounds.x, y: bounds.y });
               const end = internal.localTransform.apply({ x: bounds.x + bounds.width, y: bounds.y + bounds.height });
               head = { x: current.position.x + (Math.min(start.x, end.x) - originalWidth / 2) * current.scale.x,
                 y: current.position.y + (Math.min(start.y, end.y) - originalHeight) * current.scale.y,
                 width: Math.abs(end.x - start.x) * current.scale.x, height: Math.abs(end.y - start.y) * current.scale.y };
-            }
           }
           updateBubble(head, box.width, box.height, app!.ticker.deltaMS / 1000, moving());
         } else updateBubble(null, box.width, box.height, 0, false);

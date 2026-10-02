@@ -5,10 +5,10 @@ export interface HeadBox { x: number; y: number; width: number; height: number }
 export type BubbleSide = 'above' | 'left' | 'right';
 
 /** Theo cách AIRI đặt bong bóng: ưu tiên trên đầu, giữ phía đã chọn để tránh rung ở mép khung. */
-export function bubblePlacement(head: HeadBox, width: number, height: number, previous?: BubbleSide) {
+export function bubblePlacement(head: HeadBox, width: number, height: number, previous?: BubbleSide, decision = head) {
   const w = 72, h = 42, gap = 14, margin = 8;
-  const room = { above: head.y - gap - margin, left: head.x - gap - margin,
-    right: width - margin - head.x - head.width - gap };
+  const room = { above: decision.y - gap - margin, left: decision.x - gap - margin,
+    right: width - margin - decision.x - decision.width - gap };
   const side: BubbleSide = room.above >= h + 6 ? 'above'
     : previous && room[previous] >= (previous === 'above' ? h : w) - 6 ? previous
       : room.right >= room.left ? 'right' : 'left';

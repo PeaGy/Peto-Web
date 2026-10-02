@@ -27,6 +27,19 @@ test('nhân vật thật hiện bong bóng khi đợi trả lời và ẩn khi v
     await expect(bubble).toBeInViewport();
     await expect(bubble).toHaveAttribute('data-animated', 'true');
     expect(await bubble.locator('i').first().evaluate(node => getComputedStyle(node).animationName)).toBe('character-thinking-dot');
+    // Vị trí thay đổi theo đầu model thật kể cả khi không kéo/phóng sân khấu.
+    const travel = await bubble.evaluate(async node => {
+      const positions: number[][] = [];
+      const until = performance.now() + 1200;
+      while (performance.now() < until) {
+        await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+        const matrix = new DOMMatrixReadOnly(getComputedStyle(node).transform);
+        positions.push([matrix.m41, matrix.m42]);
+      }
+      return Math.max(...positions.map(point => point[0])) - Math.min(...positions.map(point => point[0]))
+        + Math.max(...positions.map(point => point[1])) - Math.min(...positions.map(point => point[1]));
+    });
+    expect(travel).toBeGreaterThan(0.1);
     await page.screenshot({ path: test.info().outputPath('thinking.png') });
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await expect(bubble).toHaveAttribute('data-animated', 'false');

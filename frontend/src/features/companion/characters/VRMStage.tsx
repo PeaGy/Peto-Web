@@ -187,9 +187,9 @@ export default function VRMStage({ character, motion, onPreview, activity = 'idl
           composerTarget.set(center.x + ((point.x - rect.left) / Math.max(1, rect.width) - 0.5) * height,
             controls.target.y - ((point.y - rect.top) / Math.max(1, rect.height) - 0.5) * height, camera.position.z);
         }
-        composerWeight += ((point ? 1 : 0) - composerWeight) * (1 - Math.exp(-dt * 10));
-        if (!moving) composerWeight = 0;
-        const eyes = idleEyes.step(dt, composerWeight < 0.01 && !(moving && now - lastPointer < 3000));
+        composerWeight += ((point ? 1 : 0) - composerWeight) * (1 - Math.exp(-dt * (point ? 10 : 1 / 0.45)));
+        if (!moving || (!point && composerWeight < 0.004)) composerWeight = 0;
+        const eyes = idleEyes.step(dt, composerWeight === 0 && !(moving && now - lastPointer < 3000));
         gazeBase.copy(moving && pointing ? pointed : camera.position).lerp(composerTarget, composerWeight);
         gaze(gazeBase, eyes);
         const glance = moving ? eyes.weight : 0;

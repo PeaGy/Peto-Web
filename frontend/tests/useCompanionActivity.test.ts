@@ -15,7 +15,9 @@ it('chú ý khi gõ rồi trở về nghỉ dù người dùng chưa gửi chữ
   act(() => result.current.noteTyping(true));
   act(() => vi.advanceTimersByTime(300));
   expect(result.current.activity).toBe('listening');
-  act(() => vi.advanceTimersByTime(900));
+  act(() => vi.advanceTimersByTime(2699));
+  expect(result.current.typing).toBe(true);
+  act(() => vi.advanceTimersByTime(1));
   expect(result.current.activity).toBe('idle');
   expect(result.current.typing).toBe(false);
 });
@@ -50,7 +52,7 @@ it('gõ lượt tiếp theo vẫn thu hút hướng nhìn khi Peto đang nói ho
   expect(result.current.activity).toBe('speaking');
   rerender({ speech: 'buffering', streaming: true });
   expect(result.current.typing).toBe(true);
-  act(() => vi.advanceTimersByTime(1200));
+  act(() => vi.advanceTimersByTime(3000));
   expect(result.current.typing).toBe(false);
   act(() => result.current.noteTyping(true));
   rerender({ speech: null, streaming: true });

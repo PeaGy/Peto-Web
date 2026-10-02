@@ -395,7 +395,9 @@ it('chữ nháp còn trong ô nhắn không giữ nhân vật nghe mãi', async 
   vi.useFakeTimers();
   fireEvent.change(composer, { target: { value: 'Still writing' } });
   expect(screen.getByTestId('stage').dataset.activity).toBe('listening');
-  act(() => vi.advanceTimersByTime(1300));
+  act(() => vi.advanceTimersByTime(2999));
+  expect(screen.getByTestId('stage').dataset.activity).toBe('listening');
+  act(() => vi.advanceTimersByTime(1));
   expect(screen.getByTestId('stage').dataset.activity).toBe('idle');
   expect((composer as HTMLTextAreaElement).value).toBe('Still writing');
 });
