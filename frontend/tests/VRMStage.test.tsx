@@ -2,6 +2,7 @@ import { act, render, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { BoxGeometry, Group, Mesh, MeshBasicMaterial, Object3D, Vector3 } from 'three';
 import VRMStage from '../src/features/companion/characters/VRMStage';
+import { readEffects, writeEffects } from '../src/features/companion/characters/characterEffects';
 
 const mocks = vi.hoisted(() => ({ parse: vi.fn(), dispose: vi.fn(), rendererDispose: vi.fn(), frame: null as null | ((time: number) => void), mouth: 0 }));
 vi.mock('three', async original => ({ ...await original<typeof import('three')>(), WebGLRenderer: class {
@@ -24,6 +25,7 @@ function avatar() {
 }
 beforeEach(() => {
   vi.clearAllMocks(); mocks.mouth = 0;
+  localStorage.clear();
   vi.spyOn(performance, 'now').mockReturnValue(0);
   vi.stubGlobal('requestAnimationFrame', (callback: (time: number) => void) => { mocks.frame = callback; return 1; });
   vi.stubGlobal('cancelAnimationFrame', vi.fn());
@@ -32,6 +34,39 @@ beforeEach(() => {
   vi.spyOn(document, 'hidden', 'get').mockReturnValue(false);
 });
 afterEach(() => vi.unstubAllGlobals());
+
+it('VRM quay đầu và mắt về ô nhập, tắt công tắc thì trả hướng nhìn; mobile không nhìn ô nhập', async () => {
+  vi.spyOn(Math, 'random').mockReturnValue(0.1);
+  vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+  vi.spyOn(Element.prototype, 'clientWidth', 'get').mockReturnValue(800);
+  vi.spyOn(Element.prototype, 'clientHeight', 'get').mockReturnValue(600);
+  const input = document.createElement('textarea'); document.body.append(input); input.focus();
+  vi.spyOn(input, 'getBoundingClientRect').mockReturnValue({ left: 900, top: 500, width: 200, height: 50 } as DOMRect);
+  const head = new Object3D(); head.position.y = 0.7;
+  const vrm = { ...avatar(), lookAt: { target: null as Object3D | null } };
+  vrm.humanoid.getNormalizedBoneNode = (name?: string) => name === 'head' ? head : new Object3D();
+  vrm.humanoid.getRawBoneNode = () => head;
+  mocks.parse.mockResolvedValue({ userData: { vrm }, scene: vrm.scene });
+  const attention = { typing: true, input: { current: input } };
+  const view = render(<VRMStage character={character} motion="always" attention={attention} />);
+  await waitFor(() => expect(mocks.frame).toBeTypeOf('function'));
+  act(() => { for (let i = 1; i <= 10; i++) mocks.frame!(40 * i); });
+  expect(head.rotation.y).toBeGreaterThan(0.1);
+  expect(head.rotation.x).toBeGreaterThan(0.1);
+  expect(vrm.lookAt.target!.position.x).toBeGreaterThan(0.5);
+  act(() => writeEffects(character.id, { ...readEffects(character.id), composerGaze: false }));
+  act(() => { for (let i = 11; i <= 60; i++) mocks.frame!(40 * i); });
+  expect(head.rotation.x).toBeCloseTo(0, 3); expect(head.rotation.y).toBeCloseTo(0, 3);
+  view.unmount();
+  writeEffects(character.id, { ...readEffects(character.id), composerGaze: true });
+  vi.stubGlobal('matchMedia', (query: string) => ({ matches: query.includes('max-width') }));
+  mocks.frame = null;
+  const mobile = render(<VRMStage character={character} motion="always" attention={attention} />);
+  await waitFor(() => expect(mocks.frame).toBeTypeOf('function'));
+  act(() => { for (let i = 1; i <= 10; i++) mocks.frame!(40 * i); });
+  expect(head.rotation.x).toBeCloseTo(0, 3); expect(head.rotation.y).toBeCloseTo(0, 3);
+  mobile.unmount(); input.remove();
+});
 it('VRM đứng yên vẫn mở miệng theo âm thanh, dừng đọc thì khép miệng; rời trang giải phóng model', async () => {
   const vrm = avatar(); mocks.parse.mockResolvedValue({ userData: { vrm }, scene: vrm.scene });
   const view = render(<VRMStage character={character} motion="system" />);

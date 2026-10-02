@@ -145,6 +145,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
   const [error, setError] = useState<string | null>(null);
   const images = useCompanionImages(setError);
   const imageInput = useRef<HTMLInputElement>(null);
+  const composerInput = useRef<HTMLTextAreaElement>(null);
   const [muted, setMuted] = useState(readMuted);
   const [confirmReset, setConfirmReset] = useState(false);
   const [scenesOpen, setScenesOpen] = useState(false);
@@ -658,7 +659,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
 
   const hearingOn = hearing.listening && !hearing.testing;
   const interim = hearingOn ? hearing.interim : "";
-  const { activity, noteTyping } = useCompanionActivity(active, streaming, speech?.phase ?? null,
+  const { activity, noteTyping, typing } = useCompanionActivity(active, streaming, speech?.phase ?? null,
     hearingOn && (hearing.phase === 'speaking' || hearing.phase === 'transcribing'));
   const stateText = speech?.phase === "playing" ? "Đang nói…"
     : speech?.phase === "buffering" ? "Đang chờ tiếng…"
@@ -679,8 +680,8 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
       <section className="companion-stage" aria-label={name}>
         {active && <Suspense fallback={<div className="character-fallback"><p role="status">Đang tải nhân vật…</p></div>}>
           {character.format === 'vrm'
-            ? <VRMStage key={character.id} character={character} motion={characterMotion} onPreview={onCharacterPreview} activity={activity} emotion={stageEmotion} />
-            : <Live2DStage key={character.id} character={character} fallbackUrl={appInfo?.avatar_url ?? undefined} name={name} motion={characterMotion} onPreview={onCharacterPreview} emotion={stageEmotion} activity={activity} />}
+            ? <VRMStage key={character.id} character={character} motion={characterMotion} onPreview={onCharacterPreview} activity={activity} emotion={stageEmotion} thinking={streaming && !stopping} attention={{ typing, input: composerInput }} />
+            : <Live2DStage key={character.id} character={character} fallbackUrl={appInfo?.avatar_url ?? undefined} name={name} motion={characterMotion} onPreview={onCharacterPreview} emotion={stageEmotion} activity={activity} thinking={streaming && !stopping} attention={{ typing, input: composerInput }} />}
         </Suspense>}
       </section>
 
@@ -844,12 +845,14 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
                 event.target.value = '';
               }} />
             <textarea
+              ref={composerInput}
               value={interim ? joinSpeech(draft, interim) : draft}
               rows={1}
               placeholder={hearingPlaceholder(hearing) ?? "Nhắn cho Peto…"}
               aria-label="Nhắn cho Peto trong Companion"
               disabled={loading || resetting}
               readOnly={Boolean(interim)}
+              onBlur={() => noteTyping(false)}
               onPaste={event => {
                 if (event.clipboardData.files.length) { event.preventDefault(); addImages(event.clipboardData.files); }
               }}

@@ -10,12 +10,14 @@ it('chú ý khi gõ rồi trở về nghỉ dù người dùng chưa gửi chữ
   const { result } = renderHook(() => useCompanionActivity(true, false, null, false));
   act(() => result.current.noteTyping(true));
   expect(result.current.activity).toBe('listening');
+  expect(result.current.typing).toBe(true);
   act(() => vi.advanceTimersByTime(1000));
   act(() => result.current.noteTyping(true));
   act(() => vi.advanceTimersByTime(300));
   expect(result.current.activity).toBe('listening');
   act(() => vi.advanceTimersByTime(900));
   expect(result.current.activity).toBe('idle');
+  expect(result.current.typing).toBe(false);
 });
 
 it('chờ tiếng thì nghĩ, phát thật thì nói; nối tiếng ngắn không giật về nghỉ', () => {
@@ -36,6 +38,24 @@ it('chờ tiếng thì nghĩ, phát thật thì nói; nối tiếng ngắn khôn
   expect(result.current.activity).toBe('idle');
   act(() => vi.advanceTimersByTime(2000));
   expect(result.current.activity).toBe('idle');
+});
+
+it('gõ lượt tiếp theo vẫn thu hút hướng nhìn khi Peto đang nói hoặc viết, không đổi tư thế nói', () => {
+  vi.useFakeTimers();
+  const { result, rerender } = renderHook(({ speech, streaming }: { speech: SpeakPhase | null; streaming: boolean }) =>
+    useCompanionActivity(true, streaming, speech, false),
+  { initialProps: { speech: 'playing' as SpeakPhase | null, streaming: true } });
+  act(() => result.current.noteTyping(true));
+  expect(result.current.typing).toBe(true);
+  expect(result.current.activity).toBe('speaking');
+  rerender({ speech: 'buffering', streaming: true });
+  expect(result.current.typing).toBe(true);
+  act(() => vi.advanceTimersByTime(1200));
+  expect(result.current.typing).toBe(false);
+  act(() => result.current.noteTyping(true));
+  rerender({ speech: null, streaming: true });
+  expect(result.current.activity).toBe('thinking');
+  expect(result.current.typing).toBe(true);
 });
 
 it('chú ý khi nghe/chép lời, ưu tiên trả lời và không giữ trạng thái khi rời tab', () => {

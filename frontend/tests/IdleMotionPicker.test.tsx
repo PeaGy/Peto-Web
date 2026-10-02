@@ -19,10 +19,15 @@ it('offers named motions, saves selection and supports disabling', async () => {
   const physics = screen.getByRole('switch', { name: 'Vật lý' }) as HTMLInputElement;
   expect(physics.disabled).toBe(true);
   fireEvent.click(screen.getByRole('switch', { name: 'Nhìn theo con trỏ' }));
-  expect(readEffects(DEFAULT_CHARACTER.id)).toEqual({ cursor: false, breath: true, physics: true, idleEyes: true });
+  expect(readEffects(DEFAULT_CHARACTER.id)).toEqual({ cursor: false, breath: true, physics: true, idleEyes: true, composerGaze: true });
+  const composer = screen.getByRole('switch', { name: 'Nhìn vào ô chat khi bạn gõ' }) as HTMLInputElement;
+  expect(composer.checked).toBe(true);
+  fireEvent.click(composer);
+  expect(readEffects(DEFAULT_CHARACTER.id).composerGaze).toBe(false);
   const idleEyes = screen.getByRole('switch', { name: 'Đảo mắt khi chờ' }) as HTMLInputElement;
   expect(idleEyes.checked).toBe(true);
   fireEvent.click(idleEyes);
   expect(readEffects(DEFAULT_CHARACTER.id).idleEyes).toBe(false);
+  expect(readEffects(DEFAULT_CHARACTER.id).composerGaze).toBe(false);
   expect(readIdle(DEFAULT_CHARACTER.id)).toBe('off');
 });

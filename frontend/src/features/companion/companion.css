@@ -59,6 +59,18 @@
 .character-canvas { position: absolute; inset: 0 0 30px; touch-action: none; }
 .character-canvas.dragging { cursor: grabbing; }
 .character-canvas canvas { display: block; }
+/* Bong bóng nằm trong tọa độ sân khấu, không nhận thao tác và không đẩy bố cục chat. */
+.character-thinking-bubble { position: absolute; top: 0; left: 0; z-index: 2; box-sizing: border-box; width: 72px; height: 42px; border: 1px solid var(--stage-line); border-radius: 18px; background: var(--stage-popover); color: var(--stage-level); box-shadow: 0 5px 18px #0003; pointer-events: none; backdrop-filter: blur(12px); will-change: transform; }
+.character-thinking-bubble[hidden] { display: none; }
+.character-thinking-bubble > span { display: flex; align-items: center; justify-content: center; gap: 7px; height: 100%; }
+.character-thinking-bubble i { display: block; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.character-thinking-bubble[data-animated=true] i { animation: character-thinking-dot 1.25s ease-in-out infinite; }
+.character-thinking-bubble i:nth-child(2) { animation-delay: .14s; }
+.character-thinking-bubble i:nth-child(3) { animation-delay: .28s; }
+.character-thinking-bubble::after { content: ''; position: absolute; width: 8px; height: 8px; border-radius: 50%; background: var(--stage-popover); border: 1px solid var(--stage-line); bottom: -11px; left: 26px; }
+.character-thinking-bubble[data-side=right]::after { left: -11px; bottom: 3px; }
+.character-thinking-bubble[data-side=left]::after { left: auto; right: -11px; bottom: 3px; }
+@keyframes character-thinking-dot { 0%, 65%, 100% { transform: translateY(1px) scale(.85); opacity: .5; } 30% { transform: translateY(-4px) scale(1.05); opacity: 1; } }
 .character-glow { position: absolute; inset: 15% 8% 8%; background: radial-gradient(ellipse, color-mix(in srgb, var(--accent) 10%, transparent), transparent 68%); pointer-events: none; }
 .character-credit { position: absolute; bottom: 10px; left: 0; right: 0; text-align: center; font-size: 10px; color: var(--muted); text-decoration: none; }
 .character-credit:hover { text-decoration: underline; }

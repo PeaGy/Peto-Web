@@ -27,6 +27,8 @@ import { musicPose, selectMusicCharacter, stopMusicVibe } from './musicVibe';
 import { CompanionMotion, VoiceMouthBlend, stageQuality, type CompanionActivity } from './companionMotion';
 import { controlExpressions, faceSource, publishSnapshot, readExpressions, watchExpressions, type StageCue, type StageEmotion } from './characterExpressions';
 import { FaceBlend, faceApplier, type CubismCore } from './builtinFaces';
+import ThinkingBubble, { useThinkingBubble } from './ThinkingBubble';
+import { composerPoint, type ComposerAttention } from './stageInteraction';
 
 let coreReady: Promise<void> | undefined;
 function loadCore() {
@@ -58,7 +60,9 @@ function loadCore() {
  * giữ ngón tay trên màn hình thì nhân vật nhìn theo ngón tay. Khi được cử động (`motionEnabled`), nhân vật
  * chạy motion Idle, thở, chớp mắt và nhìn theo con trỏ. Miệng luôn theo âm thanh đang phát.
  */
-export default function Live2DStage({ fallbackUrl, name, motion = "system", character = DEFAULT_CHARACTER, onPreview, emotion, activity = 'idle' }: {
+export default function Live2DStage({ fallbackUrl, name, motion = "system", character = DEFAULT_CHARACTER, onPreview, emotion, activity = 'idle', thinking = false, attention }: {
+  thinking?: boolean;
+  attention?: ComposerAttention;
   activity?: CompanionActivity;
   /** Cảm xúc đang hiện (Companion quyết lúc nào đổi, lúc nào về bình thường bằng null). */
   emotion?: StageCue | null;
@@ -75,6 +79,10 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
   const previewRef = useRef(onPreview);
   previewRef.current = onPreview;
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+  const bubble = useThinkingBubble(thinking && status === 'ready');
+  const updateBubble = bubble.update;
+  const thinkingRef = useRef(thinking); thinkingRef.current = thinking;
+  const attentionRef = useRef(attention); attentionRef.current = attention;
   const [attempt, setAttempt] = useState(0);
   const [idleError, setIdleError] = useState(false);
   const [expressionError, setExpressionError] = useState(false);
@@ -302,6 +310,8 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
       };
       let effects = readEffects(character.id);
       let lastPointer = -Infinity;
+      let composerActive = false, composerUntil = -Infinity;
+      let pointerTarget = { x: 0, y: 0 };
       const unwatchEffects = watchEffects(character.id, value => {
         effects = value;
         internal.focusController.focus(0, 0, true);
@@ -325,7 +335,8 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
         const point = local(event);
         const headY = current.position.y - originalHeight * current.scale.y * CHARACTER.headHeight;
         const target = lookTarget(point.x, point.y, current.position.x, headY, box.width, box.height);
-        internal.focusController.focus(target.x, target.y);
+        pointerTarget = target;
+        if (!composerActive) internal.focusController.focus(target.x, target.y);
       };
       const onTouchEnd = (event: PointerEvent) => {
         if (touchId === null || event.pointerId !== touchId) return;
@@ -333,7 +344,7 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
         lastPointer = -Infinity;
         internal.focusController.focus(0, 0);
       };
-      const onLookAway = () => { touchId = null; lastPointer = -Infinity; internal.focusController.focus(0, 0); };
+      const onLookAway = () => { touchId = null; lastPointer = -Infinity; pointerTarget = { x: 0, y: 0 }; internal.focusController.focus(0, 0); };
 
       const core = internal.coreModel as { setParameterValueById: (id: string, value: number) => void };
       const liveCore = internal.coreModel;
@@ -351,7 +362,7 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
       internal.on("beforeModelUpdate", () => {
         // Keep expression fades alive when body motion is paused for reduced motion.
         if (!moving()) manager?.update(liveCore, performance.now());
-        const cursorActive = effects.cursor && (touchId !== null || performance.now() - lastPointer < 3000);
+        const cursorActive = composerActive || (effects.cursor && (touchId !== null || performance.now() - lastPointer < 3000));
         // AIRI separates idle gaze from pointer tracking. Blend ownership of the eye
         // parameters so an authored idle cannot pin them at an extreme value.
         const eyes = idleEyes.step(app!.ticker.deltaMS / 1000, effects.idleEyes && !cursorActive);
@@ -378,9 +389,23 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
       app.ticker.maxFPS = stageQuality(compact.matches, window.devicePixelRatio, qualityPreference).fps;
       let still = false;
       let captured = false;
+      const headArea = Object.entries(internal.hitAreas ?? {}).find(([name]) => /head|face/i.test(name))?.[1];
       app.ticker.add(() => {
+        const now = performance.now();
+        const point = composerPoint(attentionRef.current, effects.composerGaze, compact.matches, moving());
+        if (point) {
+          const rect = container.getBoundingClientRect();
+          const headY = current.position.y - originalHeight * current.scale.y * CHARACTER.headHeight;
+          const target = lookTarget(point.x - rect.left, point.y - rect.top, current.position.x, headY, box.width, box.height);
+          internal.focusController.focus(target.x, target.y);
+          composerUntil = now + 400;
+        } else if (composerActive) {
+          const target = effects.cursor && now - lastPointer < 3000 ? pointerTarget : { x: 0, y: 0 };
+          internal.focusController.focus(target.x, target.y);
+        }
+        composerActive = Boolean(point);
         idle.enable(moving());
-        withCharacterEffects(internal, effects, () => {
+        withCharacterEffects(internal, { ...effects, cursor: effects.cursor || now < composerUntil }, () => {
           if (moving()) {
             still = false;
             current.update(Math.min(app!.ticker.deltaMS, 50));
@@ -393,6 +418,24 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
             internal.update(0, 0);
           }
         });
+        if (thinkingRef.current) {
+          const height = originalHeight * current.scale.y;
+          // Model không khai báo vùng Head (Hiyori chỉ có Body): dùng tỉ lệ đầu như vùng chụp mặt.
+          let head = { x: current.position.x - height * 0.1, y: current.position.y - height * (CHARACTER.headHeight + 0.07),
+            width: height * 0.2, height: height * 0.22 };
+          if (headArea) {
+            const bounds = internal.getDrawableBounds(headArea.index);
+            if (bounds.width > 0 && bounds.height > 0) {
+              // Vùng va chạm nằm trong canvas gốc; áp dụng Layout của model trước khi phóng/dời trên sân khấu.
+              const start = internal.localTransform.apply({ x: bounds.x, y: bounds.y });
+              const end = internal.localTransform.apply({ x: bounds.x + bounds.width, y: bounds.y + bounds.height });
+              head = { x: current.position.x + (Math.min(start.x, end.x) - originalWidth / 2) * current.scale.x,
+                y: current.position.y + (Math.min(start.y, end.y) - originalHeight) * current.scale.y,
+                width: Math.abs(end.x - start.x) * current.scale.x, height: Math.abs(end.y - start.y) * current.scale.y };
+            }
+          }
+          updateBubble(head, box.width, box.height, app!.ticker.deltaMS / 1000, moving());
+        } else updateBubble(null, box.width, box.height, 0, false);
         if (!captured && previewRef.current) {
           captured = true;
           try { app!.renderer.render(app!.stage); previewRef.current(character.id, characterThumbnail(canvas)); } catch { /* Ảnh xem trước không chặn model. */ }
@@ -462,11 +505,12 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
       app?.destroy(true, { children: true, texture: true, baseTexture: true });
       objectUrls.forEach(url => URL.revokeObjectURL(url));
     };
-  }, [attempt, character.id, qualityPreference.sharp, qualityPreference.smooth]);
+  }, [attempt, character.id, qualityPreference.sharp, qualityPreference.smooth, updateBubble]);
 
   return <div className="character-stage">
     <div className="character-glow" aria-hidden="true" />
     <div ref={host} className="character-canvas" style={{ visibility: status === "ready" ? "visible" : "hidden" }} />
+    <ThinkingBubble bubble={bubble} visible={thinking && status === 'ready'} />
     {idleError && <p className="character-motion-error" role="status">Chưa tải được chuyển động. Hãy mở Nhân vật và chọn lại chuyển động.</p>}
     {expressionError && <p className="character-motion-error" role="status">Chưa tải được biểu cảm. Hãy kiểm tra tệp biểu cảm của model.</p>}
     {status !== "ready" && <div className="character-fallback">

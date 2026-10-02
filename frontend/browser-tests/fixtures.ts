@@ -16,18 +16,21 @@ export const companionMessages = [
 ];
 
 /** API giả chỉ nằm trong bộ kiểm thử; mọi yêu cầu ra ngoài đều bị chặn. */
-export async function mockPeto(page: Page, options: { long?: boolean; broken?: boolean } = {}) {
+export async function mockPeto(page: Page, options: { long?: boolean; broken?: boolean; preservePreferences?: boolean } = {}) {
   const state = {
     posts: 0,
     recoveryReady: !options.broken,
     messages: options.long ? Array.from({ length: 40 }, (_, i) => ({ id: i + 1, role: i % 2 ? 'assistant' : 'user', content: `Tin nhắn lịch sử ${i + 1}: Nội dung đủ dài để kiểm tra cuộn và nhập liệu.` })) : [...chatMessages],
     companion: [...companionMessages],
   };
-  await page.addInitScript(() => {
+  await page.addInitScript(preserve => {
+    // Bài kiểm tra lưu cài đặt cần giữ dữ liệu khi F5; lần vào đầu tiên vẫn luôn sạch.
+    if (preserve && sessionStorage.getItem('test-peto-initialized') === '1') return;
     localStorage.clear(); sessionStorage.clear();
     localStorage.setItem('peto-theme', 'dark');
     localStorage.setItem('peto-companion-muted', '1');
-  });
+    sessionStorage.setItem('test-peto-initialized', '1');
+  }, options.preservePreferences ?? false);
   await page.route('**/*', async route => {
     const url = new URL(route.request().url());
     if (url.origin !== 'http://127.0.0.1:5179') return route.abort();

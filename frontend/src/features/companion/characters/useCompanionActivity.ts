@@ -13,8 +13,8 @@ export function useCompanionActivity(active: boolean, streaming: boolean, speech
     return () => window.clearTimeout(timer);
   }, [typingAt]);
   useEffect(() => {
-    if (!active || streaming || speech) setTypingAt(0);
-  }, [active, streaming, speech]);
+    if (!active || streaming) setTypingAt(0);
+  }, [active, streaming]);
   useEffect(() => {
     setWaiting(false);
     if (speech !== 'buffering') return;
@@ -26,5 +26,5 @@ export function useCompanionActivity(active: boolean, streaming: boolean, speech
     : speech === 'playing' || (speech === 'buffering' && !waiting) ? 'speaking'
       : streaming || speech ? 'thinking'
         : hearing || typingAt ? 'listening' : 'idle';
-  return { activity, noteTyping };
+  return { activity, noteTyping, typing: active && Boolean(typingAt) };
 }

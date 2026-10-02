@@ -3,6 +3,7 @@ import type { CharacterModel } from './characterLibrary';
 import { loadMotionInfo, readIdle, watchIdle, writeIdle, type IdleMotion } from './live2dMotions';
 import { readEffects, watchEffects, writeEffects, type CharacterEffects } from './characterEffects';
 import MusicVibePicker from './MusicVibePicker';
+import ComposerGazeSetting from './ComposerGazeSetting';
 import ExpressionPicker from './ExpressionPicker';
 import type { ExpressionChoice } from './characterExpressions';
 import { selectMusicCharacter } from './musicVibe';
@@ -46,6 +47,7 @@ export default function IdleMotionPicker({ character }: { character: CharacterMo
         ? 'Tự chọn chuyển động trong nhóm Idle của model.' : 'Model không khai báo nhóm Idle. Bạn có thể chọn một chuyển động bên trên.')}</p>}
     <p>Chọn một tệp để phát lặp lại. Tắt idle chỉ dừng motion khi chờ.</p>
     <div className="character-effect-options">
+      <ComposerGazeSetting characterId={character.id} />
       {([
         ['cursor', 'Nhìn theo con trỏ', 'Mắt và đầu nhìn theo chuột hoặc điểm chạm.'],
         ['idleEyes', 'Đảo mắt khi chờ', 'Thỉnh thoảng nhìn quanh khi con trỏ không hoạt động.'],

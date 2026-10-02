@@ -3,7 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import Live2DStage from '../src/features/companion/characters/Live2DStage';
 import { CHARACTER } from '../src/features/companion/characters/characterConfig';
 import { writeIdle } from '../src/features/companion/characters/live2dMotions';
-import { writeEffects } from '../src/features/companion/characters/characterEffects';
+import { readEffects, writeEffects } from '../src/features/companion/characters/characterEffects';
 import * as music from '../src/features/companion/characters/musicVibe';
 import { previewExpression, watchSnapshots, writeExpressions } from '../src/features/companion/characters/characterExpressions';
 
@@ -353,6 +353,69 @@ it('rời trang khi đang tải không để model về muộn chiếm tài nguy
   await act(async () => resolve(model));
   expect(model.destroy).toHaveBeenCalled();
   expect(mocks.start).not.toHaveBeenCalled();
+});
+
+it('bong bóng đi theo đầu khi phóng/dời và ẩn khi dừng trả lời hoặc mất WebGL', async () => {
+  const model = fakeModel(); mocks.from.mockResolvedValue(model);
+  const view = render(<Live2DStage name="Peto" thinking />);
+  await waitFor(() => expect(mocks.start).toHaveBeenCalled());
+  act(() => mocks.tick!());
+  const bubble = screen.getByRole('status', { name: 'Peto đang nghĩ và trả lời' });
+  expect(bubble.style.visibility).toBe('visible');
+  const start = bubble.style.transform;
+  fireEvent.wheel(view.container.querySelector('.character-canvas')!, { deltaY: -200, clientX: 100, clientY: 200 });
+  act(() => mocks.tick!());
+  expect(bubble.style.transform).not.toBe(start);
+  view.rerender(<Live2DStage name="Peto" thinking={false} />);
+  expect(screen.queryByRole('status', { name: 'Peto đang nghĩ và trả lời' })).toBeNull();
+  view.rerender(<Live2DStage name="Peto" thinking />);
+  fireEvent(view.container.querySelector('canvas')!, new Event('webglcontextlost', { cancelable: true }));
+  expect(screen.queryByRole('status', { name: 'Peto đang nghĩ và trả lời' })).toBeNull();
+});
+
+it('model có vùng Head và Layout riêng đặt bong bóng đúng tọa độ đã biến đổi', async () => {
+  const model = fakeModel();
+  Object.assign(model.internalModel, { hitAreas: { Head: { index: 2 } },
+    getDrawableBounds: () => ({ x: 200, y: 40, width: 200, height: 200 }),
+    localTransform: { apply: (point: Point) => ({ x: point.x + 100, y: point.y + 200 }) } });
+  mocks.from.mockResolvedValue(model);
+  render(<Live2DStage name="Peto" thinking />);
+  await waitFor(() => expect(mocks.start).toHaveBeenCalled());
+  act(() => mocks.tick!());
+  const transform = screen.getByRole('status', { name: 'Peto đang nghĩ và trả lời' }).style.transform;
+  const [, x, y] = transform.match(/translate3d\(([^p]+)px, ([^p]+)px, 0\)/)!;
+  expect(Number(x)).toBeCloseTo(335.2);
+  expect(Number(y)).toBeCloseTo(31.12);
+});
+
+it('gõ trên máy tính ưu tiên ô chat dù tắt theo chuột; tắt toggle, blur, mobile và giảm chuyển động đều dừng nhìn', async () => {
+  const model = fakeModel(); mocks.from.mockResolvedValue(model);
+  const input = document.createElement('textarea'); document.body.append(input); input.focus();
+  vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+  vi.spyOn(input, 'getBoundingClientRect').mockReturnValue({ x: 900, y: 500, left: 900, top: 500, width: 200, height: 50 } as DOMRect);
+  writeEffects(CHARACTER.id, { cursor: false, breath: true, physics: true });
+  const attention = { typing: true, input: { current: input } };
+  const view = render(<Live2DStage name="Peto" motion="always" attention={attention} />);
+  await waitFor(() => expect(mocks.start).toHaveBeenCalled());
+  const focus = model.internalModel.focusController.focus;
+  act(() => mocks.tick!());
+  expect(focus).toHaveBeenLastCalledWith(1, expect.any(Number));
+  const [, y] = focus.mock.calls.at(-1)!; expect(y).toBeLessThan(0);
+  act(() => writeEffects(CHARACTER.id, { ...readEffects(CHARACTER.id), composerGaze: false }));
+  act(() => mocks.tick!()); expect(focus).toHaveBeenLastCalledWith(0, 0);
+  act(() => writeEffects(CHARACTER.id, { ...readEffects(CHARACTER.id), composerGaze: true }));
+  input.blur(); act(() => mocks.tick!()); expect(focus).toHaveBeenLastCalledWith(0, 0, true);
+  input.focus(); act(() => mocks.tick!()); expect(focus).toHaveBeenLastCalledWith(1, expect.any(Number));
+  mocks.compact = true;
+  view.unmount(); mocks.start.mockClear(); focus.mockClear();
+  const mobile = render(<Live2DStage name="Peto" motion="always" attention={attention} />);
+  await waitFor(() => expect(mocks.start).toHaveBeenCalled());
+  act(() => mocks.tick!()); expect(focus).not.toHaveBeenCalled();
+  mobile.unmount(); mocks.compact = false; mocks.start.mockClear();
+  const reduced = render(<Live2DStage name="Peto" motion="system" attention={attention} />);
+  await waitFor(() => expect(mocks.start).toHaveBeenCalled());
+  act(() => mocks.tick!()); expect(focus).toHaveBeenLastCalledWith(0, 0, true);
+  reduced.unmount(); input.remove();
 });
 
 it('bảng Nhân vật che sân khấu, nên thẻ bấm thử được chụp lại khi mặt đã hiện hẳn', async () => {

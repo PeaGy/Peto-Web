@@ -10,11 +10,16 @@ import { CompanionMotion, VoiceMouthBlend, stageQuality, type CompanionActivity 
 import { publishSnapshot, readExpressions, watchExpressions, type StageCue, type StageEmotion } from './characterExpressions';
 import { FaceBlend, vrmFace } from './builtinFaces';
 import { Blinker, IdleEyes } from './idleEyes';
+import { readEffects, watchEffects } from './characterEffects';
+import ThinkingBubble, { useThinkingBubble } from './ThinkingBubble';
+import { composerPoint, type ComposerAttention } from './stageInteraction';
 
 // Góc liếc lớn nhất khi chờ. VRM chỉ quay mắt một phần góc nhìn (thường 10° mắt cho 90° nhìn), nên góc nhỏ thì không thấy.
 const IDLE_YAW = Math.PI / 3, IDLE_PITCH = Math.PI * 2 / 9;
 
-export default function VRMStage({ character, motion, onPreview, activity = 'idle', emotion }: {
+export default function VRMStage({ character, motion, onPreview, activity = 'idle', emotion, thinking = false, attention }: {
+  thinking?: boolean;
+  attention?: ComposerAttention;
   activity?: CompanionActivity;
   /** Cảm xúc đang hiện (Companion quyết lúc nào đổi, lúc nào về bình thường bằng null). */
   emotion?: StageCue | null;
@@ -47,6 +52,10 @@ export default function VRMStage({ character, motion, onPreview, activity = 'idl
     return () => { unwatch(); clearTimeout(previewTimer.current); };
   }, [character.id]);
   const [status, setStatus] = useState('loading');
+  const bubble = useThinkingBubble(thinking && status === 'ready');
+  const updateBubble = bubble.update;
+  const thinkingRef = useRef(thinking); thinkingRef.current = thinking;
+  const attentionRef = useRef(attention); attentionRef.current = attention;
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
@@ -111,6 +120,8 @@ export default function VRMStage({ character, motion, onPreview, activity = 'idl
       };
       const observer = new ResizeObserver(fit); observer.observe(container); fit();
       const look = new THREE.Object3D(); scene.add(look); look.position.copy(camera.position);
+      let effects = readEffects(character.id);
+      const unwatchEffects = watchEffects(character.id, value => { effects = value; });
       if (loaded.lookAt) loaded.lookAt.target = look;
       // Chỗ con trỏ trên sân khấu. Chưa có, hay con trỏ đã rời trang, thì nhìn thẳng người xem (camera).
       const pointed = new THREE.Vector3();
@@ -123,6 +134,8 @@ export default function VRMStage({ character, motion, onPreview, activity = 'idl
       };
       const away = () => { pointing = false; lastPointer = -Infinity; };
       const headPoint = new THREE.Vector3(), neckPoint = new THREE.Vector3(), gazeDirection = new THREE.Vector3();
+      const composerTarget = new THREE.Vector3(), gazeBase = new THREE.Vector3();
+      let composerWeight = 0;
       const headBone = loaded.humanoid.getRawBoneNode('head'), neckBone = loaded.humanoid.getRawBoneNode('neck');
       /** Nhìn về điểm gốc, lệch thêm theo góc liếc khi chờ (tính quanh đầu để góc không phụ thuộc khoảng cách). */
       const gaze = (base: Vector3, eyes: { x: number; y: number; weight: number }) => {
@@ -168,17 +181,43 @@ export default function VRMStage({ character, motion, onPreview, activity = 'idl
         const pose = conversationMotion.step(activityRef.current, dt, target);
         // Như Live2D (AIRI: idle eye movement): con trỏ đứng yên 3 giây thì mắt tự liếc quanh, đầu nghiêng theo một chút.
         // Giảm chuyển động thì không nhìn theo con trỏ, đầu đứng yên, nhưng mắt vẫn liếc như bên Live2D.
-        const eyes = idleEyes.step(dt, !(moving && now - lastPointer < 3000));
-        gaze(moving && pointing ? pointed : camera.position, eyes);
+        const point = composerPoint(attentionRef.current, effects.composerGaze, compact.matches, moving);
+        if (point) {
+          const rect = container.getBoundingClientRect();
+          composerTarget.set(center.x + ((point.x - rect.left) / Math.max(1, rect.width) - 0.5) * height,
+            controls.target.y - ((point.y - rect.top) / Math.max(1, rect.height) - 0.5) * height, camera.position.z);
+        }
+        composerWeight += ((point ? 1 : 0) - composerWeight) * (1 - Math.exp(-dt * 10));
+        if (!moving) composerWeight = 0;
+        const eyes = idleEyes.step(dt, composerWeight < 0.01 && !(moving && now - lastPointer < 3000));
+        gazeBase.copy(moving && pointing ? pointed : camera.position).lerp(composerTarget, composerWeight);
+        gaze(gazeBase, eyes);
         const glance = moving ? eyes.weight : 0;
+        let typingYaw = 0, typingPitch = 0;
+        if (headBone && composerWeight > 0.001) {
+          headBone.getWorldPosition(headPoint);
+          gazeDirection.subVectors(composerTarget, headPoint);
+          typingYaw = Math.max(-0.22, Math.min(0.22, Math.atan2(gazeDirection.x, gazeDirection.z))) * composerWeight;
+          typingPitch = -Math.max(-0.18, Math.min(0.18, Math.atan2(gazeDirection.y, Math.hypot(gazeDirection.x, gazeDirection.z)))) * composerWeight;
+        }
         if (head && headRest) {
-          head.rotation.x = headRest.x + ((moving ? pose.pitch : 0) - eyes.y * glance * 5) * Math.PI / 180;
-          head.rotation.y = headRest.y + eyes.x * glance * 8 * Math.PI / 180;
+          head.rotation.x = headRest.x + ((moving ? pose.pitch : 0) - eyes.y * glance * 5) * Math.PI / 180 + typingPitch;
+          head.rotation.y = headRest.y + eyes.x * glance * 8 * Math.PI / 180 + typingYaw;
           head.rotation.z = headRest.z + ((moving ? pose.roll : 0) + face.roll) * Math.PI / 180;
         }
         const spine = loaded.humanoid.getNormalizedBoneNode('spine');
         if (spine) spine.rotation.z = moving ? Math.sin(elapsed * 1.4) * 0.014 : 0;
         loaded.update(moving ? dt : 0); controls.update(); renderer!.render(scene, camera);
+        if (thinkingRef.current && headBone) {
+          headBone.getWorldPosition(headPoint);
+          const radius = height * 0.085;
+          neckPoint.copy(headPoint); neckPoint.y += radius * 1.6; neckPoint.project(camera);
+          headPoint.project(camera);
+          const w = container.clientWidth, h = container.clientHeight;
+          const reach = Math.max(16, Math.abs(neckPoint.y - headPoint.y) * h / 2);
+          const x = (headPoint.x + 1) * w / 2, y = (1 - headPoint.y) * h / 2;
+          updateBubble(headPoint.z < -1 || headPoint.z > 1 ? null : { x: x - reach, y: y - reach, width: reach * 2, height: reach * 2 }, w, h, dt, moving);
+        } else updateBubble(null, container.clientWidth, container.clientHeight, 0, false);
         const due = snapshotDue.current;
         if (due && now >= due.at && headBone) {
           snapshotDue.current = null;
@@ -200,6 +239,7 @@ export default function VRMStage({ character, motion, onPreview, activity = 'idl
       document.addEventListener('visibilitychange', visibility); canvas.addEventListener('webglcontextlost', lost);
       canvas.addEventListener('dblclick', reset); compact.addEventListener?.('change', fit);
       cleanup = () => {
+        unwatchEffects();
         observer.disconnect(); controls.dispose();
         window.removeEventListener('pointermove', pointer); window.removeEventListener('blur', away);
         document.removeEventListener('visibilitychange', visibility); canvas.removeEventListener('webglcontextlost', lost);
@@ -214,10 +254,11 @@ export default function VRMStage({ character, motion, onPreview, activity = 'idl
       disposed = true; cancelAnimationFrame(frame); cleanup(); disposeModel();
       renderer?.dispose(); renderer?.forceContextLoss(); renderer?.domElement.remove();
     };
-  }, [character.id, attempt, qualityPreference.sharp, qualityPreference.smooth]);
+  }, [character.id, attempt, qualityPreference.sharp, qualityPreference.smooth, updateBubble]);
   return <div className="character-stage">
     <div className="character-glow" aria-hidden="true" />
     <div ref={host} className="character-canvas" style={{ visibility: status === 'ready' ? 'visible' : 'hidden' }} />
+    <ThinkingBubble bubble={bubble} visible={thinking && status === 'ready'} />
     {status !== 'ready' && <div className="character-fallback"><p role="status">{status === 'loading' ? 'Đang đưa nhân vật 3D lên sân khấu…' : error}</p>{status === 'error' && <button className="settings-button" onClick={() => setAttempt(value => value + 1)}>Thử tải lại nhân vật</button>}</div>}
   </div>;
 }

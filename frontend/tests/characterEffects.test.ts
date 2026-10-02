@@ -5,7 +5,7 @@ it('keeps preferences separate by model and restores safe defaults for invalid s
   const listener = vi.fn(); const unwatch = watchEffects('one', listener);
   writeEffects('two', { cursor: false, breath: false, physics: false });
   expect(listener).not.toHaveBeenCalled();
-  expect(readEffects('one')).toEqual({ cursor: true, breath: true, physics: true, idleEyes: true });
+  expect(readEffects('one')).toEqual({ cursor: true, breath: true, physics: true, idleEyes: true, composerGaze: true });
   writeEffects('one', { cursor: false, breath: true, physics: true });
   expect(listener).toHaveBeenCalledOnce();
   unwatch(); writeEffects('one', { cursor: true, breath: true, physics: true });
@@ -16,6 +16,10 @@ it('keeps preferences separate by model and restores safe defaults for invalid s
 it('defaults old saved preferences to idle eyes on and remembers disabling per model', () => {
   localStorage.setItem('peto-character-effects:old', JSON.stringify({ cursor: false, breath: false, physics: true }));
   expect(readEffects('old').idleEyes).toBe(true);
+  expect(readEffects('old').composerGaze).toBe(true);
+  writeEffects('old', { ...readEffects('old'), composerGaze: false });
+  expect(readEffects('old').composerGaze).toBe(false);
+  expect(readEffects('other').composerGaze).toBe(true);
   writeEffects('old', { ...readEffects('old'), idleEyes: false });
   expect(readEffects('old').idleEyes).toBe(false);
   expect(readEffects('other').idleEyes).toBe(true);

@@ -3,6 +3,7 @@ import { characterError, type CharacterFormat } from './characterLibrary';
 import type { CharacterLibrary } from './useCharacters';
 import IdleMotionPicker from './IdleMotionPicker';
 import ExpressionPicker from './ExpressionPicker';
+import ComposerGazeSetting from './ComposerGazeSetting';
 import CharacterImportReview from './CharacterImportReview';
 import type { Live2DImportReport } from './characterImport';
 import { CHARACTER } from './characterConfig';
@@ -111,6 +112,7 @@ export default function CharacterPicker({ library, onClose }: { library: Charact
       {library.selected.format === 'vrm' && <details className="character-motion-settings" key={library.selected.id}>
         <summary>Cài đặt nhân vật <span>Biểu cảm</span></summary>
         <section className="idle-motion-picker" aria-label="Biểu cảm của nhân vật VRM">
+          <div className="character-effect-options"><ComposerGazeSetting characterId={library.selected.id} /></div>
           <ExpressionPicker characterId={library.selected.id} choices={[]} format="vrm" />
         </section>
       </details>}

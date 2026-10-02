@@ -1,19 +1,21 @@
-export interface CharacterEffects { cursor: boolean; breath: boolean; physics: boolean; idleEyes: boolean }
-const defaults: CharacterEffects = { cursor: true, breath: true, physics: true, idleEyes: true };
+export interface CharacterEffects { cursor: boolean; breath: boolean; physics: boolean; idleEyes: boolean; composerGaze: boolean }
+type RuntimeEffects = Pick<CharacterEffects, 'cursor' | 'breath' | 'physics'>;
+const defaults: CharacterEffects = { cursor: true, breath: true, physics: true, idleEyes: true, composerGaze: true };
 const eventName = 'peto-character-effects-change';
 const key = (id: string) => `peto-character-effects:${id}`;
 function normalize(value: Partial<CharacterEffects> | null): CharacterEffects {
   return { cursor: typeof value?.cursor === 'boolean' ? value.cursor : true,
     breath: typeof value?.breath === 'boolean' ? value.breath : true,
     physics: typeof value?.physics === 'boolean' ? value.physics : true,
-    idleEyes: typeof value?.idleEyes === 'boolean' ? value.idleEyes : true };
+    idleEyes: typeof value?.idleEyes === 'boolean' ? value.idleEyes : true,
+    composerGaze: typeof value?.composerGaze === 'boolean' ? value.composerGaze : true };
 }
 export function readEffects(id: string): CharacterEffects {
   try { return normalize(JSON.parse(localStorage.getItem(key(id)) || 'null')); } catch { return { ...defaults }; }
 }
-export function writeEffects(id: string, value: Omit<CharacterEffects, 'idleEyes'> & { idleEyes?: boolean }) {
+export function writeEffects(id: string, value: RuntimeEffects & Partial<Pick<CharacterEffects, 'idleEyes' | 'composerGaze'>>) {
   const effects = normalize(value);
-  try { localStorage.setItem(key(id), JSON.stringify(effects)); } catch { /* Apply for this session. */ }
+  try { localStorage.setItem(key(id), JSON.stringify(effects)); } catch { /* Vẫn áp dụng trong phiên này. */ }
   window.dispatchEvent(new CustomEvent(eventName, { detail: { id, effects } }));
 }
 export function watchEffects(id: string, update: (value: CharacterEffects) => void) {
@@ -29,7 +31,7 @@ export function watchEffects(id: string, update: (value: CharacterEffects) => vo
 /** Skip only additive runtime effects for this frame; leave motions, blink, pose and lip sync untouched. */
 export function withCharacterEffects<T extends {
   physics?: unknown; updateFocus(): void; updateNaturalMovements(dt: number, now: number): void;
-}>(model: T, effects: Omit<CharacterEffects, 'idleEyes'>, update: () => void) {
+}>(model: T, effects: RuntimeEffects, update: () => void) {
   const { physics, updateFocus, updateNaturalMovements } = model;
   try {
     if (!effects.physics) model.physics = undefined;

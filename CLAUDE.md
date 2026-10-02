@@ -645,8 +645,8 @@ sends `mode: "companion"`, speaks stable sentences as they arrive unless muted, 
 tab is left.
 
 On desktop the layout is a stage on the left and a ~380px chat column on the right. The stage holds
-only the character and the model's credit line: no text, status or controls go there, by the owner's
-explicit call. The chat column carries the speaking status, the mute toggle, "Bắt đầu lại", a notice when
+the character and the model's credit line. The owner added an animated three-dot thinking bubble on
+2026-10-02; other text and controls remain in the chat column. The chat column carries the speaking status, the mute toggle, "Bắt đầu lại", a notice when
 voice is on but the chosen source cannot speak (`voice.problem`), the mic button and its panel (see "Hearing" below), and
 the Chat tab's composer styles. Enabling
 voice, choosing a source and a voice, and "Nghe thử" live in Settings, in `VoiceSettings.tsx` (see "Voice sources"
@@ -672,6 +672,18 @@ bounded to 8 MB encoded / 120 s decoded / 8 channels, and stale results are igno
 or unsupported codec leaves speech playback intact and lip sync at zero. `VoiceMouthBlend` gives Live2D
 and VRM the same time-based attack/release at 24/30/60 FPS; pause, waiting and stop immediately close the
 speech-driven mouth. Authored emotion mouth baselines remain independent.
+
+Companion presence (2026-10-02) adapts AIRI's `packages/stage-ui-live2d/src/components/scenes/live2d/presence-bubble.vue`
+and `packages/stage-shared/src/presence-bubble/placement.ts`: the renderer updates a shared DOM bubble each frame,
+anchored to the head, preferring above and switching sides with hysteresis when space runs out. Live2D uses a
+Head/Face hit area where available, otherwise the existing face-height convention; VRM projects its head bone.
+It follows pan/zoom, never receives input, hides with unavailable/offscreen characters and on stop/end/tab exit,
+and uses static dots under system reduced motion unless the owner selects "Luôn cử động". Generation controls it independently of speech playback.
+Character settings include per-model `composerGaze` (default true, including old saved preferences). Only actual
+typing in a focused desktop composer attracts eyes/head for 1.2 s; blur, send and inactivity release attention.
+Both renderers smoothly restore the previous pointer/idle behavior. The switch is independent of cursor tracking
+and respects the existing system/always motion preference. Recognized speech and old drafts never trigger it.
+Typing the next draft during generation/playback still attracts gaze without changing the body phase or lip sync.
 
 Companion phase 2 (2026-10-02) coordinates Body with Ears and Mouth:
 - `useCompanionActivity` prioritizes actual playback, generation/waiting, then hearing/typing attention.
