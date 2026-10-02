@@ -20,7 +20,7 @@ vi.mock('pixi.js', () => ({ Application: class {
   destroy = () => { this.view.remove(); mocks.destroy(); };
 } }));
 vi.mock('pixi-live2d-display/cubism4', () => ({ Live2DModel: { from: mocks.from }, MotionPreloadStrategy: { IDLE: 'IDLE' }, Cubism4ModelSettings: class {} }));
-vi.mock('../src/features/companion/speech/voiceActivity', () => ({ voiceMouth: () => mocks.mouth }));
+vi.mock('../src/features/companion/speech/voiceActivity', () => ({ voiceMouth: () => mocks.mouth, voicePlaying: () => mocks.mouth > 0 }));
 // jsdom không vẽ canvas: ảnh chụp mặt giả để kiểm luồng chụp.
 vi.mock('../src/features/companion/characters/characterLibrary', async (original) => ({
   ...await original<typeof import('../src/features/companion/characters/characterLibrary')>(), faceThumbnail: vi.fn(() => 'data:image/png;base64,FACE'),
@@ -328,7 +328,10 @@ it('miệng mở theo âm thanh đang phát và khép lại khi im lặng', asyn
   const [, beforeModelUpdate] = model.internalModel.on.mock.calls.find(([name]) => name === 'beforeModelUpdate')!;
   mocks.mouth = 1;
   beforeModelUpdate();
-  expect(model.internalModel.coreModel.setParameterValueById).toHaveBeenLastCalledWith('ParamMouthOpenY', 0.7);
+  const opened = model.internalModel.coreModel.setParameterValueById.mock.calls.at(-1)!;
+  expect(opened[0]).toBe('ParamMouthOpenY');
+  expect(opened[1]).toBeGreaterThan(0.6);
+  expect(opened[1]).toBeLessThan(1);
   mocks.mouth = 0;
   for (let i = 0; i < 12; i++) beforeModelUpdate();
   expect(model.internalModel.coreModel.setParameterValueById).toHaveBeenLastCalledWith('ParamMouthOpenY', 0);

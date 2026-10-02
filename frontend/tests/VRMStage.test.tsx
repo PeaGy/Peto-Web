@@ -14,7 +14,7 @@ vi.mock('three/addons/controls/OrbitControls.js', () => ({ OrbitControls: class 
 vi.mock('@pixiv/three-vrm', () => ({ VRMLoaderPlugin: class {}, VRMUtils: { rotateVRM0() {}, deepDispose: mocks.dispose } }));
 vi.mock('../src/features/companion/characters/characterLibrary', () => ({ getCharacterAssets: async () => ({ entry: 'test.vrm', files: [{ path: 'test.vrm', blob: { arrayBuffer: async () => new ArrayBuffer(0) } }] }) }));
 vi.mock('../src/features/companion/characters/characterImport', () => ({ validateVRM() {} }));
-vi.mock('../src/features/companion/speech/voiceActivity', () => ({ voiceMouth: () => mocks.mouth }));
+vi.mock('../src/features/companion/speech/voiceActivity', () => ({ voiceMouth: () => mocks.mouth, voicePlaying: () => mocks.mouth > 0 }));
 const character = { id: 'vrm-test', name: 'VRM', format: 'vrm' as const, bytes: 1, createdAt: 0 };
 function avatar() {
   const scene = new Group(); scene.add(new Mesh(new BoxGeometry(1, 2, 1), new MeshBasicMaterial()));
@@ -37,7 +37,9 @@ it('VRM đứng yên vẫn mở miệng theo âm thanh, dừng đọc thì khép
   const view = render(<VRMStage character={character} motion="system" />);
   await waitFor(() => expect(mocks.frame).toBeTypeOf('function'));
   mocks.mouth = 1; act(() => mocks.frame!(40));
-  expect(vrm.expressionManager.setValue).toHaveBeenCalledWith('aa', 0.7);
+  const opened = vrm.expressionManager.setValue.mock.calls.find(([name]) => name === 'aa')!;
+  expect(opened[1]).toBeGreaterThan(0.6);
+  expect(opened[1]).toBeLessThan(1);
   mocks.mouth = 0;
   act(() => { for (let i = 2; i < 14; i++) mocks.frame!(40 * i); });
   expect(vrm.expressionManager.setValue).toHaveBeenCalledWith('aa', 0);

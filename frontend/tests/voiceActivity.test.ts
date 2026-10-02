@@ -1,5 +1,12 @@
-import { describe, expect, it } from 'vitest';
-import { trackVoice, voiceMouth, wavEnvelope } from '../src/features/companion/speech/voiceActivity';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { trackVoice, voiceMouth, voicePlaying, wavEnvelope } from '../src/features/companion/speech/voiceActivity';
+
+afterEach(() => vi.unstubAllGlobals());
+const decoded = () => ({
+  sampleRate: 8000, numberOfChannels: 2, length: 320,
+  getChannelData: (channel: number) => Float32Array.from({ length: 320 }, (_, i) => i < 160 ? 0 : channel ? -0.25 : 0.25),
+}) as AudioBuffer;
+const compressed = { arrayBuffer: async () => new ArrayBuffer(80) } as Blob;
 
 function wav() {
   const buffer = new ArrayBuffer(44 + 320 * 2);
@@ -45,5 +52,59 @@ describe('miệng theo tiếng đang phát', () => {
     Object.assign(audio, { paused: false });
     stopNew();
     expect(voiceMouth()).toBe(0);
+  });
+
+  it('giải mã tiếng nén, stereo ngược pha vẫn mở miệng, chờ dữ liệu thì đóng', async () => {
+    const decode = vi.fn(async () => decoded());
+    vi.stubGlobal('OfflineAudioContext', class { decodeAudioData = decode; });
+    const audio = Object.assign(new EventTarget(), { currentTime: 0.025, paused: false, ended: false }) as HTMLAudioElement;
+    const stop = trackVoice(audio, compressed);
+    await vi.waitFor(() => expect(voiceMouth()).toBe(1));
+    expect(decode).toHaveBeenCalledOnce();
+    audio.dispatchEvent(new Event('waiting'));
+    expect(voicePlaying()).toBe(false);
+    expect(voiceMouth()).toBe(0);
+    audio.dispatchEvent(new Event('playing'));
+    expect(voiceMouth()).toBe(1);
+    audio.currentTime = 0;
+    expect(voiceMouth()).toBe(0);
+    audio.ended = true;
+    expect(voicePlaying()).toBe(false);
+    stop();
+  });
+
+  it('bỏ kết quả giải mã muộn khi đã dừng hoặc chuyển sang đoạn khác', async () => {
+    let finish!: (value: AudioBuffer) => void;
+    const decode = vi.fn(() => new Promise<AudioBuffer>(resolve => { finish = resolve; }));
+    vi.stubGlobal('OfflineAudioContext', class { decodeAudioData = decode; });
+    const audio = { currentTime: 0.025, paused: false, ended: false } as HTMLAudioElement;
+    const old = trackVoice(audio, compressed);
+    await vi.waitFor(() => expect(decode).toHaveBeenCalledOnce());
+    const next = trackVoice(audio, { arrayBuffer: async () => wav() } as Blob);
+    await Promise.resolve();
+    old();
+    finish(decoded());
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(voiceMouth()).toBe(1);
+    next();
+    expect(voiceMouth()).toBe(0);
+  });
+
+  it('bộ giải mã lỗi hoặc không có vẫn không ảnh hưởng tiếng đang phát', async () => {
+    const decode = vi.fn(async () => { throw new Error('Định dạng không hỗ trợ'); });
+    vi.stubGlobal('OfflineAudioContext', class { decodeAudioData = decode; });
+    const audio = { currentTime: 0.025, paused: false, ended: false } as HTMLAudioElement;
+    let stop = trackVoice(audio, compressed);
+    await vi.waitFor(() => expect(decode).toHaveBeenCalledOnce());
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(voiceMouth()).toBe(0);
+    expect(voicePlaying()).toBe(true);
+    stop();
+    vi.stubGlobal('OfflineAudioContext', undefined);
+    stop = trackVoice(audio, compressed);
+    await Promise.resolve();
+    expect(voiceMouth()).toBe(0);
+    expect(voicePlaying()).toBe(true);
+    stop();
   });
 });

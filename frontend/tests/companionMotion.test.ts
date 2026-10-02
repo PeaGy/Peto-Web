@@ -1,5 +1,22 @@
 import { expect, it } from 'vitest';
-import { CompanionMotion, stageQuality } from '../src/features/companion/characters/companionMotion';
+import { CompanionMotion, VoiceMouthBlend, stageQuality } from '../src/features/companion/characters/companionMotion';
+
+it('nhép miệng đều ở 24/30/60 FPS, không vượt giới hạn và đóng ngay khi dừng tiếng', () => {
+  const sample = (fps: number) => {
+    const blend = new VoiceMouthBlend();
+    let mouth = 0;
+    for (let i = 0; i < fps / 2; i++) mouth = blend.step(1, 1 / fps, true);
+    for (let i = 0; i < fps / 2; i++) mouth = blend.step(0.2, 1 / fps, true);
+    return mouth;
+  };
+  expect(sample(24)).toBeCloseTo(sample(30), 5);
+  expect(sample(30)).toBeCloseTo(sample(60), 5);
+  const blend = new VoiceMouthBlend();
+  expect(blend.step(50, 1 / 24, true)).toBeGreaterThan(0);
+  expect(blend.step(50, 1 / 24, true)).toBeLessThanOrEqual(1);
+  expect(blend.step(1, 1 / 24, false)).toBe(0);
+  expect(blend.step(NaN, Infinity, true)).toBe(0);
+});
 
 it('blends states gradually and returns to neutral without reducing lip sync input', () => {
   const motion = new CompanionMotion();

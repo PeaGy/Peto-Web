@@ -665,8 +665,31 @@ When motion is allowed the model plays its `Idle` motions, breathes, blinks and 
 pointer anywhere on the page; otherwise it holds its pose. "Nhân vật cử động" in Settings → Giao diện
 picks `system` (the default, which follows `prefers-reduced-motion`) or `always`. Windows with
 Animation effects off reports reduced motion, which is why the owner asked for the override. The
-mouth always follows the audio that is playing (`voiceActivity.ts` reads the WAV's 20 ms loudness
-envelope against `currentTime`) and stays closed when nothing plays.
+mouth follows the audio that is actually playing (`voiceActivity.ts` reads a 20 ms loudness
+envelope against `currentTime`). PCM16 WAV takes the direct path; other browser-supported formats
+use `OfflineAudioContext.decodeAudioData` without rerouting or delaying playback. Decoding is serialized,
+bounded to 8 MB encoded / 120 s decoded / 8 channels, and stale results are ignored. An unavailable decoder
+or unsupported codec leaves speech playback intact and lip sync at zero. `VoiceMouthBlend` gives Live2D
+and VRM the same time-based attack/release at 24/30/60 FPS; pause, waiting and stop immediately close the
+speech-driven mouth. Authored emotion mouth baselines remain independent.
+
+Companion phase 2 (2026-10-02) coordinates Body with Ears and Mouth:
+- `useCompanionActivity` prioritizes actual playback, generation/waiting, then hearing/typing attention.
+  A manual keystroke holds listening attention for 1.2 s; an unsent or recognized draft alone never holds it.
+  Hearing `speaking` and `transcribing` both hold attention, but opening a silent microphone does not.
+- `LocalVoicePlayer` publishes `playing` only after media `playing` or a fulfilled `play()` promise.
+  `buffering` covers gaps between chunks and media waiting. The body holds its speaking pose for 350 ms,
+  then thinks until playback resumes; the mouth follows media independently and stays closed during gaps.
+- Completion, failures and stop dispose media callbacks, envelope tracking and object URLs, and abort any
+  prefetched synthesis request. Late play/decode callbacks cannot change a newer speech session.
+- Switching character stops the old speech and clears its expression. Leaving the tab keeps the existing
+  reply request behavior but stops playback and unmounts the renderer. Mobile stage layout, opt-in microphone,
+  auto-send, motion preferences and frame-rate limits are preserved.
+- Regression coverage: activity, audio envelopes, speech lifecycle, both renderers and Companion unit tests;
+  browser tests record/decode a local Opus sample with real media playback and exercise UI lifecycle at
+  desktop/mobile sizes. External providers and speech recognition are mocked, with no paid calls.
+  The hearing browser test uses a synthetic looping PCM16 fixture instead of Chromium's intermittent
+  fake microphone beep, so its AudioWorklet meter check is deterministic on Windows.
 
 VRM characters (`VRMStage.tsx`) got the missing items of AIRI's Body list on 2026-09-28, at the owner's pick:
 - **Idle eyes.** After 3 s without pointer movement the eyes glance around (`IdleEyes`, as in Live2D).
@@ -740,7 +763,8 @@ Companion speaks with:
   WebSocket that needs the key in a header). Those two go through `POST /api/voice/relay` with the key in
   `X-Voice-Key`: used for that one call, never stored, logged or charged to the owner, and open to guests. Voice and
   model ids must match `[\w.\- ]{1,64}`, and the region must be a key of `QWEN_ENDPOINTS`. All audio becomes WAV PCM16
-  (`audioBytesToWav`, `normalizeWav`), because lip sync only reads WAV.
+  (`audioBytesToWav`, `normalizeWav`) along the existing provider paths; lip sync also accepts other
+  browser-decodable audio now, without changing those provider request formats.
   On 2026-09-24 the owner tried Azure Speech with a real key: "Nghe thử" and Companion both spoke. The other seven
   are still untested with real keys; their request shapes follow each provider's docs from that day.
 
@@ -1008,6 +1032,9 @@ keyword guess (`replyEmotion`) almost never matched once the Companion prompt ba
   - `cue()` sets `stageEmotion` (`{emotion, key}`; the key makes two equal emotions in a row count as new).
   - The face holds while Peto speaks. It is released 1.5 s after speech ends, or 6 s after the reply when nothing is
     read aloud.
+  - Tracking begins during voice loading, so a failure before playback still releases the face. Buffering
+    keeps the same reply's expression. An ending old speech session cannot schedule a release over a new
+    streamed reply's cue; a new cue always cancels the previous release timer.
   - A reply without a marker falls back to `replyEmotion`.
 - **Faces.** `characterExpressions.faceSource` decides per emotion:
   - **Auto** (no mapping): an expression file whose name matches, otherwise the built-in face.

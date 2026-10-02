@@ -27,7 +27,7 @@ import { HearingBar, HearingPopover, hearingPlaceholder, MicButton } from "./spe
 import { SpeakButton, SpeakerIcon, SpeakerOffIcon, type LocalVoice } from "./speech/LocalVoice";
 import type { CharacterMotion } from "./characters/characterView";
 import { DEFAULT_CHARACTER, type CharacterModel } from './characters/characterLibrary';
-import type { CompanionActivity } from './characters/companionMotion';
+import { useCompanionActivity } from './characters/useCompanionActivity';
 import { asStageEmotion, replyEmotion, type StageCue, type StageEmotion } from './characters/characterExpressions';
 import { SceneBackdrop, ScenePicker, useCompanionScene } from './CompanionScenes';
 import { GlobeIcon } from '../chat/WebSources';
@@ -203,6 +203,14 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
   useEffect(() => {
     if (!active) stopVoice();
   }, [active, stopVoice]);
+
+  const previousCharacter = useRef(character.id);
+  useEffect(() => {
+    if (previousCharacter.current === character.id) return;
+    previousCharacter.current = character.id;
+    stopVoice();
+    cue(null);
+  }, [character.id, stopVoice, cue]);
 
   // Danh sách ghi nhớ lúc mở tab, để sau mỗi lượt biết dòng nào là mới. Lỗi thì thôi: lượt sau lấy làm mốc.
   useEffect(() => {
@@ -440,16 +448,16 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
   // Giữ nét mặt của câu đang đọc suốt lúc Peto nói, nói xong thì về bình thường sau một chút.
   useEffect(() => {
     if (!speech) {
-      if (expressionSpeechKey.current) releaseLater(1500);
+      if (expressionSpeechKey.current && !streaming) releaseLater(1500);
       expressionSpeechKey.current = null;
       return;
     }
-    if (speech.phase !== 'playing' || expressionSpeechKey.current === speech.key) return;
+    if (expressionSpeechKey.current === speech.key) return;
     expressionSpeechKey.current = speech.key;
     const index = Number(speech.key.slice(SPEECH_PREFIX.length));
     const message = messages[index];
     if (message?.role === 'assistant') cue(messageEmotion(message));
-  }, [speech?.key, speech?.phase, messages, cue, releaseLater]);
+  }, [speech?.key, messages, streaming, cue, releaseLater]);
   // Chữ nghe được vào ô nhắn, nối sau chữ đang có.
   useEffect(() => {
     if (!active) return;
@@ -514,12 +522,12 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
 
   const hearingOn = hearing.listening && !hearing.testing;
   const interim = hearingOn ? hearing.interim : "";
-  const activity: CompanionActivity = speech?.phase === 'playing' ? 'speaking'
-    : streaming || speech?.phase === 'loading' ? 'thinking'
-      : draft.trim() || (hearingOn && hearing.phase === 'speaking') ? 'listening' : 'idle';
+  const { activity, noteTyping } = useCompanionActivity(active, streaming, speech?.phase ?? null,
+    hearingOn && (hearing.phase === 'speaking' || hearing.phase === 'transcribing'));
   const stateText = speech?.phase === "playing" ? "Đang nói…"
-    : speech?.phase === "loading" ? "Sắp nói…"
-      : searching ? "Đang tra web…" : streaming ? "Đang nhắn…" : "Trả lời ngắn bằng tiếng Anh";
+    : speech?.phase === "buffering" ? "Đang chờ tiếng…"
+      : speech?.phase === "loading" ? "Sắp nói…"
+        : searching ? "Đang tra web…" : streaming ? "Đang nhắn…" : "Trả lời ngắn bằng tiếng Anh";
   const canSend = draft.trim().length > 0 && !interim && !streaming && !loading && !loadFailed && recovery.online && !recovery.pending;
 
   return (
@@ -682,6 +690,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
               readOnly={Boolean(interim)}
               onChange={(event) => {
                 setDraft(event.target.value);
+                noteTyping(Boolean(event.target.value.trim()));
                 setHeardAt(0);
                 setHearingNeedsReview(false);
               }}

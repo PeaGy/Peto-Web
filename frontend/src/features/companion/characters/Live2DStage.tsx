@@ -19,12 +19,12 @@ import {
   type CharacterView,
   type StageBox,
 } from "./characterView";
-import { voiceMouth } from "../speech/voiceActivity";
+import { voiceMouth, voicePlaying } from "../speech/voiceActivity";
 import { IdleEyes } from './idleEyes';
 import { controlIdle, motionChoices, readIdle, watchIdle } from './live2dMotions';
 import { readEffects, watchEffects, withCharacterEffects } from './characterEffects';
 import { musicPose, selectMusicCharacter, stopMusicVibe } from './musicVibe';
-import { CompanionMotion, stageQuality, type CompanionActivity } from './companionMotion';
+import { CompanionMotion, VoiceMouthBlend, stageQuality, type CompanionActivity } from './companionMotion';
 import { controlExpressions, faceSource, publishSnapshot, readExpressions, watchExpressions, type StageCue, type StageEmotion } from './characterExpressions';
 import { FaceBlend, faceApplier, type CubismCore } from './builtinFaces';
 
@@ -341,7 +341,7 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
         const index = liveCore.getParameterIndex?.(id);
         return { id, supported: index !== undefined && index >= 0 && index < liveCore.getParameterCount() };
       });
-      let mouth = 0;
+      const mouthBlend = new VoiceMouthBlend();
       const idleEyes = new IdleEyes();
       const eyeParameters = ['ParamEyeBallX', 'ParamEyeBallY'].map(id => {
         const index = liveCore.getParameterIndex?.(id);
@@ -370,7 +370,7 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
           });
         }
         const target = voiceMouth();
-        mouth += (target - mouth) * (target > mouth ? 0.7 : 0.45);
+        const mouth = mouthBlend.step(target, app!.ticker.deltaMS / 1000, voicePlaying());
         // Ép trạng thái miệng sau motion để model không nói khi âm thanh đang im lặng.
         const open = Math.max(mouth < 0.01 ? 0 : mouth, faceMouth);
         for (const parameter of mouthParameters) core.setParameterValueById(parameter, open);

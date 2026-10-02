@@ -4,9 +4,9 @@ import type { Vector3, WebGLRenderer } from 'three';
 import type { VRM } from '@pixiv/three-vrm';
 import { characterThumbnail, faceThumbnail, getCharacterAssets, type CharacterModel } from './characterLibrary';
 import { COMPACT_QUERY, motionEnabled, type CharacterMotion } from './characterView';
-import { voiceMouth } from '../speech/voiceActivity';
+import { voiceMouth, voicePlaying } from '../speech/voiceActivity';
 import { relaxVRMArms } from './vrmPose';
-import { CompanionMotion, stageQuality, type CompanionActivity } from './companionMotion';
+import { CompanionMotion, VoiceMouthBlend, stageQuality, type CompanionActivity } from './companionMotion';
 import { publishSnapshot, readExpressions, watchExpressions, type StageCue, type StageEmotion } from './characterExpressions';
 import { FaceBlend, vrmFace } from './builtinFaces';
 import { Blinker, IdleEyes } from './idleEyes';
@@ -138,8 +138,9 @@ export default function VRMStage({ character, motion, onPreview, activity = 'idl
       const reset = () => fit();
       let contextLost = false;
       const lost = (event: Event) => { event.preventDefault(); contextLost = true; cancelAnimationFrame(frame); setStatus('error'); setError('Trình duyệt đã tạm dừng hiển thị 3D. Bạn có thể thử tải lại.'); };
-      let last = 0, nextFrame = 0, elapsed = 0, mouth = 0, captured = false;
+      let last = 0, nextFrame = 0, elapsed = 0, captured = false;
       const conversationMotion = new CompanionMotion();
+      const mouthBlend = new VoiceMouthBlend();
       const idleEyes = new IdleEyes(), blinker = new Blinker();
       const head = loaded.humanoid.getNormalizedBoneNode('head');
       const headRest = head ? { x: head.rotation.x, y: head.rotation.y, z: head.rotation.z } : undefined;
@@ -155,7 +156,8 @@ export default function VRMStage({ character, motion, onPreview, activity = 'idl
         const moving = motionEnabled(motionRef.current, reduced.matches);
         if (moving) elapsed += dt;
         const blink = moving ? blinker.step(dt) : 0;
-        const target = voiceMouth(); mouth += (target - mouth) * (target > mouth ? 0.7 : 0.45);
+        const target = voiceMouth();
+        const mouth = mouthBlend.step(target, dt, voicePlaying());
         // Cảm xúc: biểu cảm có sẵn của VRM pha theo lớp mặt, biểu cảm vừa tan hết thì trả về 0.
         const face = vrmFace(faceBlend.current.step(dt), hasExpression);
         loaded.expressionManager?.setValue('aa', Math.max(mouth < 0.01 ? 0 : mouth, face.mouth));

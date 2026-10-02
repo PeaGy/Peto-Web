@@ -25,7 +25,7 @@ const CHUNK_TARGET = 150;
 const CHUNK_MAX = 220;
 const TAIL_MERGE = 40;
 
-export type SpeakPhase = "loading" | "playing";
+export type SpeakPhase = "loading" | "playing" | "buffering";
 
 const strings = (value: unknown): string[] =>
   Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
@@ -232,9 +232,10 @@ export class LocalVoicePlayer {
     const controller = new AbortController();
     this.controller = controller;
     onPhase("loading");
-    let pending = synth(chunks[0], controller.signal);
     try {
+      let pending = synth(chunks[0], controller.signal);
       for (let index = 0; index < chunks.length; index += 1) {
+        if (index) onPhase('buffering');
         const blob = await pending;
         if (controller.signal.aborted) return "stopped";
         if (index + 1 < chunks.length) {
@@ -242,8 +243,7 @@ export class LocalVoicePlayer {
           // Lỗi của mẩu kế tiếp được ném ra khi tới lượt nó, không để trình duyệt báo lỗi chưa bắt.
           pending.catch(() => {});
         }
-        onPhase("playing");
-        await this.play(blob, controller.signal);
+        await this.play(blob, controller.signal, onPhase, index > 0);
         if (controller.signal.aborted) return "stopped";
       }
       return "done";
@@ -251,6 +251,7 @@ export class LocalVoicePlayer {
       if (controller.signal.aborted) return "stopped";
       throw error;
     } finally {
+      controller.abort();
       if (this.controller === controller) {
         this.controller = null;
         this.audio = null;
@@ -258,22 +259,37 @@ export class LocalVoicePlayer {
     }
   }
 
-  private async play(source: Blob, signal: AbortSignal): Promise<void> {
+  private async play(source: Blob, signal: AbortSignal, onPhase: (phase: SpeakPhase) => void, started: boolean): Promise<void> {
     // Sửa header WAV phát trực tuyến để bộ đo độ to (nhép miệng) đọc được; tệp khác giữ nguyên.
-    const blob = typeof source.arrayBuffer === "function"
-      ? new Blob([normalizeWav(await source.arrayBuffer())], { type: source.type || "audio/wav" })
+    const bytes = typeof source.arrayBuffer === 'function' ? normalizeWav(await source.arrayBuffer()) : undefined;
+    const blob = bytes
+      ? new Blob([bytes], { type: source.type || "audio/wav" })
       : source;
     if (signal.aborted) return;
     return new Promise((resolve, reject) => {
       const url = URL.createObjectURL(blob);
       const audio = new Audio(url);
-      const stopTracking = trackVoice(audio, blob);
+      const stopTracking = trackVoice(audio, blob, bytes);
       this.audio = audio;
+      let finished = false;
+      let lastPhase: SpeakPhase | null = null;
+      const phase = (value: SpeakPhase) => {
+        if (finished || signal.aborted || lastPhase === value) return;
+        lastPhase = value;
+        onPhase(value);
+      };
       const finish = (error?: Error) => {
+        if (finished) return;
+        finished = true;
         stopTracking();
         signal.removeEventListener("abort", onAbort);
         audio.onended = null;
         audio.onerror = null;
+        audio.onplaying = null;
+        audio.onwaiting = null;
+        audio.onpause = null;
+        if (error) audio.pause();
+        if (this.audio === audio) this.audio = null;
         URL.revokeObjectURL(url);
         if (error) reject(error);
         else resolve();
@@ -285,7 +301,13 @@ export class LocalVoicePlayer {
       signal.addEventListener("abort", onAbort, { once: true });
       audio.onended = () => finish();
       audio.onerror = () => finish(new Error("Trình duyệt không phát được tiếng Peto."));
-      audio.play().catch(() => finish(new Error("Trình duyệt chưa cho phát tiếng. Bấm Nghe lần nữa nhé.")));
+      const playing = () => { started = true; phase('playing'); };
+      const waiting = () => phase(started ? 'buffering' : 'loading');
+      audio.onplaying = playing;
+      audio.onwaiting = waiting;
+      audio.onpause = waiting;
+      // Sự kiện playing và lời hứa play đều chỉ xác nhận khi tiếng thật sự bắt đầu.
+      audio.play().then(playing).catch(() => finish(new Error("Trình duyệt chưa cho phát tiếng. Bấm Nghe lần nữa nhé.")));
     });
   }
 }

@@ -2,7 +2,10 @@ import { expect, test } from '@playwright/test';
 import { mockPeto, noPageOverflow, openSidebar } from './fixtures';
 
 // Micro và dịch vụ chép lời giả; AudioWorklet, bộ nghe, ô nhắn và bố cục là mã sản phẩm thật.
-test.use({ permissions: ['microphone'], launchOptions: { args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] } });
+// WAV tự tạo có âm liên tục: tránh phụ thuộc khoảng im lặng của micro beep mặc định Chromium.
+const fakeAudioPath = decodeURIComponent(new URL('./fixtures/hearing.wav', import.meta.url).pathname).replace(/^\/([A-Za-z]:\/)/, '$1');
+test.use({ permissions: ['microphone'], launchOptions: { args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream',
+  `--use-file-for-fake-audio-capture=${fakeAudioPath}`] } });
 
 test('Companion nhận chữ, giữ câu dở khi tắt, chặn phiên cũ và tiếp tục nghe', async ({ page }) => {
   const state = await mockPeto(page);

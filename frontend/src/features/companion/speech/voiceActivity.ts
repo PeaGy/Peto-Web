@@ -16,7 +16,7 @@ export function wavEnvelope(buffer: ArrayBuffer): { levels: Float32Array; step: 
     if (tag(pos) === "data") { data = pos + 8; size = length; }
     pos += 8 + length + (length % 2);
   }
-  if (!data || !rate || rate > 192000 || !channels || channels > 8 || stride !== channels * 2) return null;
+  if (!data || !rate || rate > 192000 || !channels || channels > 8 || stride !== channels * 2 || size / stride / rate > 120) return null;
   const frames = Math.floor(size / stride);
   const windowSize = Math.max(1, Math.floor(rate * 0.02));
   const levels = new Float32Array(Math.ceil(frames / windowSize));
@@ -34,20 +34,60 @@ export function wavEnvelope(buffer: ArrayBuffer): { levels: Float32Array; step: 
   return { levels, step: windowSize / rate };
 }
 
-let current: { audio: HTMLAudioElement; envelope: ReturnType<typeof wavEnvelope> } | null = null;
+let current: { audio: HTMLAudioElement; envelope: ReturnType<typeof wavEnvelope>; waiting: boolean } | null = null;
+let decoding: Promise<void> = Promise.resolve();
+
+/** Đo năng lượng từng kênh riêng để tiếng stereo ngược pha không bị tính thành im lặng. */
+function decodedEnvelope(audio: AudioBuffer): ReturnType<typeof wavEnvelope> {
+  const { sampleRate: rate, numberOfChannels: channels, length: frames } = audio;
+  if (!rate || rate > 192000 || !channels || channels > 8 || frames / rate > 120) return null;
+  const samples = Array.from({ length: channels }, (_, index) => audio.getChannelData(index));
+  const windowSize = Math.max(1, Math.floor(rate * 0.02));
+  const levels = new Float32Array(Math.ceil(frames / windowSize));
+  for (let i = 0; i < levels.length; i++) {
+    let energy = 0, count = 0;
+    for (let frame = i * windowSize; frame < Math.min(frames, (i + 1) * windowSize); frame++) {
+      for (const channel of samples) { energy += channel[frame] ** 2; count++; }
+    }
+    levels[i] = Math.min(1, Math.max(0, (Math.sqrt(energy / Math.max(1, count)) - 0.008) * 9));
+  }
+  return { levels, step: windowSize / rate };
+}
 
 /** Gắn từng đoạn tiếng với thời gian phát thật; đoạn cũ không được xóa trạng thái đoạn mới. */
-export function trackVoice(audio: HTMLAudioElement, blob: Blob): () => void {
-  const track = { audio, envelope: null as ReturnType<typeof wavEnvelope> };
+export function trackVoice(audio: HTMLAudioElement, blob: Blob, bytes?: ArrayBuffer): () => void {
+  const track = { audio, envelope: null as ReturnType<typeof wavEnvelope>, waiting: false };
   current = track;
-  if (typeof blob.arrayBuffer === "function") void blob.arrayBuffer().then((buffer) => {
-    if (current === track) track.envelope = wavEnvelope(buffer);
+  const wait = () => { track.waiting = true; };
+  const play = () => { track.waiting = false; };
+  audio.addEventListener?.('waiting', wait);
+  audio.addEventListener?.('playing', play);
+  const read = bytes ? Promise.resolve(bytes) : typeof blob.arrayBuffer === 'function' ? blob.arrayBuffer() : null;
+  if (read) void read.then((buffer) => {
+    if (current !== track || buffer.byteLength > 8 * 1024 * 1024) return;
+    track.envelope = wavEnvelope(buffer);
+    if (track.envelope || typeof OfflineAudioContext === 'undefined') return;
+    // Giải mã ngoài đường phát tiếng, từng việc một để tránh tăng tải trên điện thoại.
+    decoding = decoding.then(async () => {
+      if (current !== track) return;
+      const decoder = new OfflineAudioContext(1, 1, 48000);
+      const decoded = await decoder.decodeAudioData(buffer.slice(0));
+      if (current === track) track.envelope = decodedEnvelope(decoded);
+    }).catch(() => {});
   }).catch(() => {});
-  return () => { if (current === track) current = null; };
+  return () => {
+    audio.removeEventListener?.('waiting', wait);
+    audio.removeEventListener?.('playing', play);
+    if (current === track) current = null;
+  };
+}
+
+export function voicePlaying(): boolean {
+  return Boolean(current && !current.waiting && !current.audio.paused && !current.audio.ended);
 }
 
 export function voiceMouth(): number {
-  if (!current || current.audio.paused || current.audio.ended || !current.envelope) return 0;
+  if (!voicePlaying() || !current?.envelope) return 0;
   const { levels, step } = current.envelope;
   return levels[Math.floor(current.audio.currentTime / step)] ?? 0;
 }

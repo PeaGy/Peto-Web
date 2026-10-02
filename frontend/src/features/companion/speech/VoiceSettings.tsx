@@ -16,6 +16,7 @@ import {
 } from "./voiceProviders";
 import { SettingsGroup, SettingsRow, SettingsSwitch } from "../../settings/settingsUi";
 import { Dropdown, Field, SourceCard, type Card as SourceCardData, type DropdownOption } from "./voiceUi";
+import type { SpeakPhase } from './localSpeech';
 
 /** Giọng nào cũng nói tiếng Anh tốt nhất, nên câu nghe thử mặc định bằng tiếng Anh. */
 const SAMPLE_TEXT = "Hi! I'm Peto. Nice to see you again.";
@@ -235,7 +236,7 @@ function SampleRow({ text, onText, ready, sampling, onSample }: {
   text: string;
   onText: (value: string) => void;
   ready: boolean;
-  sampling: "loading" | "playing" | null;
+  sampling: SpeakPhase | null;
   onSample: () => void;
 }) {
   const id = useId();
@@ -245,7 +246,7 @@ function SampleRow({ text, onText, ready, sampling, onSample }: {
         <input id={id} type="text" value={text} maxLength={300} onChange={(event) => onText(event.target.value)} />
       </Field>
       <button type="button" className="voice-primary" onClick={onSample} disabled={!ready && !sampling}>
-        {sampling === "loading" ? "Đang chuẩn bị…" : sampling === "playing" ? "Dừng nghe thử" : "Nghe thử"}
+        {sampling === "loading" ? "Đang chuẩn bị…" : sampling ? "Dừng nghe thử" : "Nghe thử"}
       </button>
     </div>
   );

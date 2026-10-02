@@ -1,5 +1,17 @@
 export type CompanionActivity = 'idle' | 'listening' | 'thinking' | 'speaking';
 
+/** Nhép miệng có cùng tốc độ ở 24/30/60 FPS; dừng tiếng thì đóng phần miệng do giọng đọc điều khiển. */
+export class VoiceMouthBlend {
+  private value = 0;
+  step(target: number, deltaSeconds: number, playing: boolean) {
+    if (!playing) return this.value = 0;
+    const next = Number.isFinite(target) ? Math.max(0, Math.min(1, target)) : 0;
+    const dt = Number.isFinite(deltaSeconds) ? Math.max(0, Math.min(0.05, deltaSeconds)) : 0;
+    this.value += (next - this.value) * (1 - Math.exp(-dt / (next > this.value ? 0.025 : 0.06)));
+    return this.value < 0.01 ? 0 : this.value;
+  }
+}
+
 /** Blend small additive poses; authored idle motions and lip sync remain independent. */
 export class CompanionMotion {
   private thinking = 0;

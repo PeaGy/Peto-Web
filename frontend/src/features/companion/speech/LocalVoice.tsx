@@ -361,7 +361,8 @@ export function SpeakButton({ phase, onSpeak, onStop }: {
   onStop: () => void;
 }) {
   const label = phase === "loading" ? "Đang chuẩn bị giọng đọc, bấm để dừng"
-    : phase === "playing" ? "Dừng đọc" : "Nghe Peto đọc tin này";
+    : phase === "buffering" ? "Đang chờ đoạn tiếng tiếp theo, bấm để dừng"
+      : phase === "playing" ? "Dừng đọc" : "Nghe Peto đọc tin này";
   return (
     <button
       type="button"
@@ -370,7 +371,7 @@ export function SpeakButton({ phase, onSpeak, onStop }: {
       title={label}
       onClick={phase ? onStop : onSpeak}
     >
-      {phase === "playing" ? <StopIcon /> : <SpeakerIcon size={15} />}
+      {phase === "playing" || phase === "buffering" ? <StopIcon /> : <SpeakerIcon size={15} />}
     </button>
   );
 }

@@ -3,6 +3,9 @@ import { afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest';
 import { preloadLazyParts } from './lazyParts';
 import App from '../src/app/App';
 import * as api from '../src/shared/api/api';
+import Companion from '../src/features/companion/Companion';
+import { useLocalVoice } from '../src/features/companion/speech/LocalVoice';
+import { DEFAULT_CHARACTER, type CharacterModel } from '../src/features/companion/characters/characterLibrary';
 
 vi.mock('../src/shared/api/api', async (original) => ({
   ...await original<typeof import('../src/shared/api/api')>(),
@@ -13,7 +16,7 @@ vi.mock('../src/shared/api/api', async (original) => ({
 }));
 // Sân khấu giả: chỉ để đọc cảm xúc Companion truyền xuống (Live2D thật cần WebGL).
 vi.mock('../src/features/companion/characters/Live2DStage', () => ({
-  default: ({ emotion }: { emotion?: { emotion: string } | null }) => <div data-testid="stage" data-emotion={emotion?.emotion ?? ''} />,
+  default: ({ emotion, activity }: { emotion?: { emotion: string } | null; activity?: string }) => <div data-testid="stage" data-activity={activity} data-emotion={emotion?.emotion ?? ''} />,
 }));
 // Dòng "Peto vừa ghi nhớ" hỏi lại máy chủ sau vài giây; trong test hỏi ngay.
 vi.mock('../src/features/companion/memoryNotice', async (original) => ({
@@ -65,7 +68,76 @@ beforeEach(() => {
   });
 });
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
+
+it('chữ nháp còn trong ô nhắn không giữ nhân vật nghe mãi', async () => {
+  await openCompanion();
+  await screen.findByTestId('stage');
+  const composer = await screen.findByRole('textbox', { name: 'Nhắn cho Peto trong Companion' });
+  vi.useFakeTimers();
+  fireEvent.change(composer, { target: { value: 'Still writing' } });
+  expect(screen.getByTestId('stage').dataset.activity).toBe('listening');
+  act(() => vi.advanceTimersByTime(1300));
+  expect(screen.getByTestId('stage').dataset.activity).toBe('idle');
+  expect((composer as HTMLTextAreaElement).value).toBe('Still writing');
+});
+
+it('chuẩn bị tiếng giữ mặt nhưng chưa nói; lỗi trước khi phát vẫn trả mặt về nghỉ', async () => {
+  localStorage.setItem('peto-local-voice', '1');
+  let fail!: (error: Error) => void;
+  vi.stubGlobal('Audio', class {
+    onended = null; onerror = null;
+    play() { return new Promise<void>((_resolve, reject) => { fail = reject; }); }
+    pause() {}
+  });
+  vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers) => {
+    handlers.onMeta?.('C1', 'low'); handlers.onEmotion?.('sad');
+    handlers.onDelta?.('Oh no.'); handlers.onDone?.();
+  });
+  await openCompanion();
+  await chatColumn().findByRole('button', { name: 'Tắt tiếng' });
+  await sendInCompanion('Hello');
+  await waitFor(() => expect(fail).toBeTypeOf('function'));
+  expect(screen.getByTestId('stage').dataset.activity).toBe('thinking');
+  expect(screen.getByTestId('stage').dataset.emotion).toBe('sad');
+  vi.useFakeTimers();
+  await act(async () => { fail(new Error('Blocked')); });
+  expect(screen.getByTestId('stage').dataset.activity).toBe('idle');
+  act(() => vi.advanceTimersByTime(1600));
+  expect(screen.getByTestId('stage').dataset.emotion).toBe('');
+});
+
+it('đổi nhân vật dừng tiếng và nét mặt cũ; tín hiệu phát muộn không làm nhân vật mới nói', async () => {
+  localStorage.setItem('peto-local-voice', '1');
+  let ready!: () => void;
+  let audio!: { onplaying: (() => void) | null; pause: ReturnType<typeof vi.fn> };
+  vi.stubGlobal('Audio', class {
+    onended = null; onerror = null; onplaying: (() => void) | null = null;
+    pause = vi.fn();
+    constructor() { audio = this; }
+    play() { return new Promise<void>(resolve => { ready = resolve; }); }
+  });
+  vi.mocked(api.getCompanion).mockResolvedValue({ conversation_id: 'C1', messages: [
+    { role: 'assistant', content: 'I hope you feel better soon.', emotion: 'sad' },
+  ] });
+  const callback = () => {};
+  function Harness({ character }: { character: CharacterModel }) {
+    const voice = useLocalVoice(true);
+    return <Companion active appInfo={null} voice={voice} character={character} characterMotion="system"
+      onUnauthorized={callback} onOpenSidebar={callback} />;
+  }
+  const view = render(<Harness character={DEFAULT_CHARACTER} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Nghe Peto đọc tin này' }));
+  await waitFor(() => expect(ready).toBeTypeOf('function'));
+  expect(screen.getByTestId('stage').dataset.emotion).toBe('sad');
+  const latePlaying = audio.onplaying;
+  view.rerender(<Harness character={{ ...DEFAULT_CHARACTER, id: 'new-character' }} />);
+  expect(audio.pause).toHaveBeenCalled();
+  await act(async () => { latePlaying?.(); ready(); });
+  expect(screen.getByTestId('stage').dataset.activity).toBe('idle');
+  expect(screen.getByTestId('stage').dataset.emotion).toBe('');
+  view.unmount();
+});
 
 /** /api/voice/health như máy chủ bây giờ trả: Giọng Peto (StepFun) còn 3.600 ký tự tháng này, máy nhà đang bật. */
 function health(official: Record<string, unknown> = {}, home: Record<string, unknown> = {}) {
