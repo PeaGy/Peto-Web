@@ -8,6 +8,10 @@ vi.mock('../src/features/projects/projectApi', async original => ({ ...await ori
 import { loadHearingSettings, stopListening, setHearingPaused, getHearingState, setHearingSetting } from '../src/features/companion/speech/hearingEngine';
 import { openMicrophone } from '../src/features/companion/speech/hearingCapture';
 import { clearCompanionTimings, getCompanionTimings } from '../src/features/companion/speech/companionTiming';
+vi.mock('../src/features/companion/prepareCompanionImage', async original => ({
+  ...await original<typeof import('../src/features/companion/prepareCompanionImage')>(),
+  prepareCompanionImage: (file: File) => Promise.resolve(file),
+}));
 
 vi.mock('../src/shared/api/api', async (original) => ({
   ...await original<typeof import('../src/shared/api/api')>(),
@@ -434,6 +438,26 @@ it('tự gõ thì không tự gửi, kể cả đang bật Tự gửi', async ()
   fireEvent.change(composer(), { target: { value: 'typed by hand' } });
   await new Promise((resolve) => setTimeout(resolve, 900));
   expect(api.sendMessage).not.toHaveBeenCalled();
+});
+
+it('ảnh chờ gửi đi cùng câu hỏi bằng micro; chọn ảnh không tự gửi, chưa chốt chữ cũng không gửi', async () => {
+  setHearingSetting('autoSend', true);
+  URL.createObjectURL = vi.fn(() => 'blob:image'); URL.revokeObjectURL = vi.fn();
+  vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers) => {
+    handlers.onMeta?.('C1', 'low'); handlers.onDelta?.('That looks lovely.'); handlers.onDone?.();
+  });
+  await openCompanion();
+  fireEvent.change(screen.getByLabelText('Chọn ảnh cho Companion'), { target: { files: [new File(['PNG'], 'image.png', { type: 'image/png' })] } });
+  await screen.findByAltText('Ảnh chờ gửi: image.png');
+  expect(api.sendMessage).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Bật nghe' }));
+  act(() => lastRecognition().say('What is', false));
+  fireEvent.keyDown(composer(), { key: 'Enter' });
+  expect(api.sendMessage).not.toHaveBeenCalled();
+  act(() => lastRecognition().say('What is in this image?', true));
+  await waitFor(() => expect(api.sendMessage).toHaveBeenCalledOnce(), { timeout: 2000 });
+  expect(vi.mocked(api.sendMessage).mock.calls[0][0]).toMatchObject({ message: 'What is in this image?', attachments: [{ name: 'image.png', data: btoa('PNG') }] });
+  expect(screen.queryByAltText('Ảnh chờ gửi: image.png')).toBeNull();
 });
 
 it('trình duyệt không có tính năng nghe (Firefox) thì báo và chỉ cách khác', async () => {

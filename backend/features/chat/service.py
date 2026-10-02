@@ -161,8 +161,8 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
     mode = _resolve_mode(request.mode)
     web_search = request.web_search
     if mode == "companion":
-        if files:
-            raise HTTPException(status_code=400, detail="Companion chưa nhận ảnh hay tệp đính kèm")
+        if any(item.kind != 'image' for item in files):
+            raise HTTPException(status_code=400, detail="Companion chỉ nhận ảnh JPEG, PNG, WebP hoặc GIF. Tài liệu gửi trong tab Trò chuyện nhé.")
         # Companion phải trả lời thật nhanh để kịp đọc thành tiếng: suy nghĩ ít. Tra web thì Peto tự quyết khi cần (chủ web
         # chọn ngày 2026-09-28, như mô-đun tra web của AIRI), không có kiểu "luôn tìm". Trang gửi "off" khi công tắc Cài
         # đặt → Tra web đang tắt, mà mặc định là tắt.

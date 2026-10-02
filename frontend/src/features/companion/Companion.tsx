@@ -11,6 +11,9 @@ import {
   type EmotionCue,
 } from "../../shared/api/api";
 import { SendIcon } from "../chat/Composer";
+import { fileToBase64 } from '../chat/attachments';
+import { useCompanionImages } from './useCompanionImages';
+import { CompanionImageDrafts, CompanionImageIcon, CompanionMessageImages } from './CompanionImages';
 import { disconnectStream, networkInterrupted, useReplyRecovery } from '../chat/useReplyRecovery';
 import { ReplyRecoveryNotice } from '../chat/ReplyRecoveryNotice';
 import {
@@ -140,6 +143,8 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
   const [searching, setSearching] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const images = useCompanionImages(setError);
+  const imageInput = useRef<HTMLInputElement>(null);
   const [muted, setMuted] = useState(readMuted);
   const [confirmReset, setConfirmReset] = useState(false);
   const [scenesOpen, setScenesOpen] = useState(false);
@@ -315,7 +320,8 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
 
   async function send() {
     const text = draft.trim();
-    if (!text || abortRef.current || loading || loadFailed || !recovery.online || recovery.pending) return;
+    const pendingImages = images.images;
+    if ((!text && !pendingImages.length) || images.isPreparing() || getHearingState().interim || abortRef.current || loading || loadFailed || resetting || !recovery.online || recovery.pending) return;
     recovery.cancel();
     setHeardAt(0);
     setHearingNeedsReview(false);
@@ -325,7 +331,9 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
     cue(null);
     const previous = messages;
     const replyIndex = previous.length + 1;
-    setMessages([...previous, { role: "user", content: text }, { role: "assistant", content: "" }]);
+    const optimisticImages = pendingImages.map(image => ({ id: image.id, name: image.file.name,
+      mime: image.file.type, kind: 'image' as const, size: image.file.size, url: image.previewUrl ?? '' }));
+    setMessages([...previous, { role: "user", content: text, attachments: optimisticImages }, { role: "assistant", content: "" }]);
     setStreaming(true);
     setStopping(false);
     const controller = new AbortController();
@@ -363,8 +371,16 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
     let reply = "";
     let turnEmotion: StageEmotion | undefined;
     try {
+      const attachments = pendingImages.length ? await Promise.all(pendingImages.map(async image => ({
+        name: image.file.name, mime: image.file.type, data: await fileToBase64(image.file),
+      }))) : [];
+      if (!current()) return;
+      // Ảnh của tin đã gửi dùng dữ liệu riêng; gỡ ảnh nháp hoặc máy chủ nhận tin không làm hỏng bóng chat.
+      if (attachments.length) setMessages(prev => prev.map((message, index) => index === replyIndex - 1
+        ? { ...message, attachments: optimisticImages.map((image, i) => ({ ...image, url: `data:${attachments[i].mime || 'image/png'};base64,${attachments[i].data}` })) }
+        : message));
       await sendMessage(
-        { message: text, conversationId, effort: "low", webSearch: search ? "auto" : "off", mode: "companion" },
+        { message: text, conversationId, attachments, effort: "low", webSearch: search ? "auto" : "off", mode: "companion" },
         {
           onMeta: (id, _effort, stored, voiceStream) => {
             if (!current()) return;
@@ -374,6 +390,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
             storedUserId = stored?.id;
             setConversationId(id);
             if (draftVersion.current === sentDraftVersion) setDraft("");
+            images.remove(pendingImages.map(image => image.id));
             if (stored) setMessages((prev) => [...prev.slice(0, -2), stored, prev[prev.length - 1]]);
           },
           onDelta: (chunk) => {
@@ -534,6 +551,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
       setMessages([]);
       cue(null);
       setMemoryNotes([]);
+      images.clear();
       memoryWatch.current += 1;
       setConfirmReset(false);
     } catch (err) {
@@ -615,10 +633,10 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
   });
   useEffect(() => {
     if (!heardAt || hearingNeedsReview || !hearing.autoSend || !hearing.listening || hearing.testing) return;
-    if (hearing.interim || hearing.phase !== 'waiting' || replying || !draft.trim()) return;
+    if (hearing.interim || hearing.phase !== 'waiting' || replying || images.pending || !draft.trim()) return;
     const timer = window.setTimeout(() => void latestSend.current(), AUTO_SEND_DELAY);
     return () => window.clearTimeout(timer);
-  }, [heardAt, hearingNeedsReview, hearing.autoSend, hearing.listening, hearing.testing, hearing.interim, hearing.phase, replying, draft]);
+  }, [heardAt, hearingNeedsReview, hearing.autoSend, hearing.listening, hearing.testing, hearing.interim, hearing.phase, replying, draft, images.pending]);
 
   const closeMic = useCallback(() => setMicOpen(false), []);
   // Bảng Micro chỉ hiện trong lúc nghe: tắt bằng nút lớn hay dừng vì lỗi thì đóng luôn, để thấy câu báo lỗi.
@@ -646,7 +664,13 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
     : speech?.phase === "buffering" ? "Đang chờ tiếng…"
       : speech?.phase === "loading" ? "Sắp nói…"
         : searching ? "Đang tra web…" : streaming ? "Đang nhắn…" : "Trả lời ngắn bằng tiếng Anh";
-  const canSend = draft.trim().length > 0 && !interim && !streaming && !loading && !loadFailed && recovery.online && !recovery.pending;
+  const canSend = (draft.trim().length > 0 || images.images.length > 0) && !images.pending && !interim && !streaming && !loading && !resetting && !loadFailed && recovery.online && !recovery.pending;
+
+  function addImages(files: FileList | File[]) {
+    if (loading || resetting) return;
+    setHeardAt(0);
+    void images.add(files);
+  }
 
   return (
     <main className={`companion${scene.selected.url ? ' companion-with-scene' : ''}`} hidden={!active}>
@@ -736,7 +760,8 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
             if (message.role === "user") {
               return (
                 <article key={index} className="bubble user">
-                  <p>{message.content}</p>
+                  <CompanionMessageImages attachments={message.attachments} />
+                  {message.content && <p>{message.content}</p>}
                 </article>
               );
             }
@@ -793,6 +818,10 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
 
         <form
           className="companion-composer"
+          onDragOver={event => { if (event.dataTransfer.types.includes('Files')) event.preventDefault(); }}
+          onDrop={event => {
+            if (event.dataTransfer.files.length) { event.preventDefault(); addImages(event.dataTransfer.files); }
+          }}
           onSubmit={(event) => {
             event.preventDefault();
             void send();
@@ -806,7 +835,14 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
             />
           )}
           <HearingBar />
-          <div className={hearingOn ? "composer listening" : "composer"}>
+          {images.pending > 0 && <p className="companion-image-status" role="status">Đang chuẩn bị ảnh…</p>}
+          <div className={`composer${hearingOn ? ' listening' : ''}${images.images.length ? ' has-images' : ''}`}>
+            <CompanionImageDrafts images={images.images} onRemove={id => { setHeardAt(0); images.remove([id]); }} />
+            <input ref={imageInput} type="file" hidden multiple accept="image/jpeg,image/png,image/webp,image/gif"
+              aria-label="Chọn ảnh cho Companion" onChange={event => {
+                if (event.target.files) addImages(event.target.files);
+                event.target.value = '';
+              }} />
             <textarea
               value={interim ? joinSpeech(draft, interim) : draft}
               rows={1}
@@ -814,6 +850,9 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
               aria-label="Nhắn cho Peto trong Companion"
               disabled={loading || resetting}
               readOnly={Boolean(interim)}
+              onPaste={event => {
+                if (event.clipboardData.files.length) { event.preventDefault(); addImages(event.clipboardData.files); }
+              }}
               onChange={(event) => {
                 setDraft(event.target.value);
                 draftVersion.current++;
@@ -830,7 +869,13 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
               }}
             />
             <div className="composer-bar">
-              <MicButton onClick={toggleMic} buttonRef={micRef} />
+              <div className="companion-compose-tools">
+                <button type="button" className="companion-image-button" aria-label="Đính kèm ảnh" title="Đính kèm ảnh"
+                  disabled={loading || resetting} onClick={() => imageInput.current?.click()}>
+                  <CompanionImageIcon />
+                </button>
+                <MicButton onClick={toggleMic} buttonRef={micRef} />
+              </div>
               {replying && (
                 <button type="button" className="stop" disabled={stopping} onClick={stop}>
                   {stopping ? "Đang dừng…" : "Dừng"}

@@ -288,13 +288,47 @@ async def test_companion_thread_stays_out_of_chat_list(client):
     assert response.status_code == 400
 
 
-async def test_companion_rejects_attachments(client):
+@pytest.mark.parametrize('text', ['What is in this picture?', ''])
+async def test_companion_image_reaches_provider_and_survives_reload(client, monkeypatch, text):
+    from ai.mock import MockProvider
+    seen = []
+    original = MockProvider.stream
+
+    async def spy(self, *, system_prompt, messages, **kwargs):
+        if COMPANION_SYSTEM_PROMPT in system_prompt:
+            seen.append(messages)
+        async for chunk in original(self, system_prompt=system_prompt, messages=messages, **kwargs):
+            yield chunk
+
+    monkeypatch.setattr(MockProvider, 'stream', spy)
+    events = await _send(client, text, mode='companion', attachments=[
+        {'name': 'cham.png', 'mime': 'image/png', 'data': PNG_1x1_B64},
+    ])
+    assert events[-1]['type'] == 'done'
+    assert seen[0][-1].attachments[0].data_url.startswith('data:image/png;base64,')
+    saved = (await client.get('/api/companion')).json()
+    assert saved['conversation_id'] == events[0]['conversation_id']
+    assert saved['messages'][0]['content'] == text
+    image = saved['messages'][0]['attachments'][0]
+    assert image['name'] == 'cham.png' and image['kind'] == 'image'
+    assert events[0]['message']['attachments'][0]['url'] == image['url']
+    assert (await client.get(image['url'])).content.startswith(b'\x89PNG')
+    await _send(client, 'And what color is it?', saved['conversation_id'], mode='companion')
+    assert any(a.data_url.startswith('data:image/png;base64,') for m in seen[-1] for a in m.attachments)
+    assert saved['conversation_id'] not in {c['id'] for c in (await client.get('/api/conversations')).json()['conversations']}
+
+
+async def test_companion_rejects_documents_without_creating_thread(client):
+    import base64
+    previous = (await client.get('/api/companion')).json()
     response = await client.post("/api/chat", json={
-        "message": "xem ảnh này",
+        "message": "xem tài liệu này",
         "mode": "companion",
-        "attachments": [{"name": "cham.png", "mime": "image/png", "data": PNG_1x1_B64}],
+        "attachments": [{"name": "note.txt", "mime": "text/plain", "data": base64.b64encode(b'Hello').decode()}],
     })
     assert response.status_code == 400
+    assert 'chỉ nhận ảnh' in response.json()['detail']
+    assert (await client.get('/api/companion')).json() == previous
 
 
 async def test_schema_upgrade_marks_existing_conversations_as_chat(tmp_path, monkeypatch):
@@ -424,10 +458,12 @@ async def test_bad_attachment_is_rejected(client):
     assert response.status_code == 400
 
 
-async def test_attachment_is_not_visible_to_another_user(client, monkeypatch):
+@pytest.mark.parametrize('mode', ['chat', 'companion'])
+async def test_attachment_is_not_visible_to_another_user(client, monkeypatch, mode):
     events = await _send(
         client,
         "bí mật",
+        mode=mode,
         attachments=[
             {"name": "cham.png", "mime": "image/png", "data": PNG_1x1_B64},
         ],
@@ -443,7 +479,8 @@ async def test_attachment_is_not_visible_to_another_user(client, monkeypatch):
     assert (await client.get(url)).status_code == 404
 
 
-async def test_delete_conversation_removes_files(client):
+@pytest.mark.parametrize('mode', ['chat', 'companion'])
+async def test_delete_conversation_removes_files(client, mode):
     from pathlib import Path
 
     from core.config import UPLOAD_DIR
@@ -451,6 +488,7 @@ async def test_delete_conversation_removes_files(client):
     events = await _send(
         client,
         "xóa kèm ảnh",
+        mode=mode,
         attachments=[
             {"name": "cham.png", "mime": "image/png", "data": PNG_1x1_B64},
         ],

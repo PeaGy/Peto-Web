@@ -240,7 +240,7 @@ Each level has its own timeout in `config.RESPONSE_TIMEOUTS` (180/300/480s).
 
 `mode` is `chat` by default; `companion` comes only from the Companion tab. `_resolve_mode`
 rejects anything else with a Vietnamese 400. A companion turn is forced to `effort="low"`, searches the web only
-when Peto decides to (see "Companion web search"), refuses attachments, skips the title call, and `_build_system_prompt` appends
+when Peto decides to (see "Companion web search"), accepts image attachments only, skips the title call, and `_build_system_prompt` appends
 `persona.COMPANION_PROMPT` last (one or two short English sentences). Conversations store their
 `mode` and a turn must match the conversation's mode; `list_conversations` only returns `chat`
 ones, and `GET /api/companion` returns the latest `companion` thread with its recent messages.
@@ -938,6 +938,28 @@ Optional spoken barge-in (2026-10-02) is under Settings → Giọng nói → Pet
   new speech and cause false interruption. Do not claim reliable full duplex or verified automatic barge-in in AIRI.
   Unit tests and `browser-tests/companion-barge-in.spec.ts` cover cancellation, draft retention, noise guards,
   default settings and PC/mobile flows with simulated speech/services; physical microphones/providers need real trials.
+
+Companion images (2026-10-02), following the owner's AIRI desktop/mobile references:
+- The image button sits immediately left of the mic on desktop, and as a small separate round button left of the pill
+  composer on mobile. Thumbnail previews with remove buttons stay inside the composer; no stage panels or camera/screen
+  capture are added. The file picker, clipboard paste and drop accept JPEG/PNG/WebP/GIF, up to 4 images. Following
+  AIRI's `packages/stage-ui/src/components/scenarios/chat/composables/use-chat-images.ts`, source files may be up to
+  20 MB; `prepareCompanionImage.ts` reduces non-GIF images to at most 1920 px on the longest edge, preserving aspect
+  ratio and PNG/WebP transparency. JPEG uses quality 0.85; if the encoded file still exceeds 3 MB the edge decreases
+  by 20% per attempt. Small images and GIF animation are retained. Prepared images total at most 3 MB per turn.
+  Local originals are never modified; previews and provider uploads use the prepared file. Unreadable images fail
+  locally. `useCompanionImages.ts` reserves pending slots, prevents sending before preparation completes, discards
+  late batches after reset/unmount, and owns/revokes the draft object URLs on remove/accept/reset/unmount.
+- Sending accepts images with or without text. A finalized microphone question sends the selected images with it;
+  selecting/removing an image cancels any pending auto-send, and interim speech cannot be sent prematurely.
+- The server keeps the existing magic-byte validation, account ownership, attachment persistence and recent-image
+  context limits. Non-image files remain rejected in Companion. Image input reaches the existing provider vision
+  payload, not OCR or a new image service. Reopening Companion shows the saved images; clicking opens the image.
+- Encoding and delayed acknowledgments preserve newer draft text/images. Only image IDs included in the acknowledged
+  turn are cleared. Failed/unaccepted sends retain their draft, and cancellation before encoding completes cannot
+  dispatch a late request. Optimistic message images use separate data URLs before draft URLs are revoked.
+- `Companion.test.tsx`, `Hearing.test.tsx`, chat API tests and `browser-tests/companion-images.spec.ts` cover lifecycle,
+  microphone questions, provider payload/history, ownership/deletion and desktop/mobile layout with fake services.
 
 Companion timing diagnostics (2026-10-02) live in the collapsed "Kiểm tra tốc độ Companion" section under Settings →
 Giọng nói, below either voice tab. `companionTiming.ts` keeps at most five in-memory records containing source IDs,

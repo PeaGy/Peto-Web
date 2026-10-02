@@ -7,6 +7,12 @@ import Companion from '../src/features/companion/Companion';
 import { useLocalVoice } from '../src/features/companion/speech/LocalVoice';
 import { DEFAULT_CHARACTER, type CharacterModel } from '../src/features/companion/characters/characterLibrary';
 import { clearCompanionTimings, getCompanionTimings } from '../src/features/companion/speech/companionTiming';
+import { prepareCompanionImage } from '../src/features/companion/prepareCompanionImage';
+// Kiểm thử thu nhỏ ảnh thật nằm trong prepareCompanionImage và bài kiểm tra trình duyệt.
+vi.mock('../src/features/companion/prepareCompanionImage', async original => ({
+  ...await original<typeof import('../src/features/companion/prepareCompanionImage')>(),
+  prepareCompanionImage: vi.fn(),
+}));
 
 vi.mock('../src/shared/api/api', async (original) => ({
   ...await original<typeof import('../src/shared/api/api')>(),
@@ -33,6 +39,7 @@ beforeAll(preloadLazyParts);
 beforeEach(() => {
   clearCompanionTimings();
   vi.resetAllMocks();
+  vi.mocked(prepareCompanionImage).mockImplementation(async file => file);
   vi.mocked(api.getCompanionMemory).mockResolvedValue({ available: true, enabled: true, pending: false, limit: 50, memories: [] });
   localStorage.clear();
   played.length = 0;
@@ -71,6 +78,114 @@ beforeEach(() => {
 });
 
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
+
+const sampleImage = (name = 'nhan-vat.png') => new File([new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])], name, { type: 'image/png' });
+const chooseImages = async (files: File[]) => {
+  fireEvent.change(screen.getByLabelText('Chọn ảnh cho Companion'), { target: { files } });
+  await waitFor(() => expect(screen.queryByText('Đang chuẩn bị ảnh…')).toBeNull());
+};
+
+it('không gửi riêng câu hỏi trong lúc ảnh đang thu nhỏ; xử lý xong gửi đúng bản ảnh mới', async () => {
+  await openCompanion();
+  let finish!: (file: File) => void;
+  vi.mocked(prepareCompanionImage).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  const input = screen.getByRole('textbox', { name: 'Nhắn cho Peto trong Companion' });
+  fireEvent.change(input, { target: { value: 'What is this?' } });
+  fireEvent.change(screen.getByLabelText('Chọn ảnh cho Companion'), { target: { files: [sampleImage()] } });
+  expect(chatColumn().getByRole('button', { name: 'Gửi', exact: true })).toHaveProperty('disabled', true);
+  fireEvent.keyDown(input, { key: 'Enter' });
+  expect(api.sendMessage).not.toHaveBeenCalled();
+  await act(async () => finish(new File(['resized'], 'nhan-vat.png', { type: 'image/png' })));
+  await screen.findByAltText('Ảnh chờ gửi: nhan-vat.png');
+  fireEvent.click(chatColumn().getByRole('button', { name: 'Gửi', exact: true }));
+  await waitFor(() => expect(api.sendMessage).toHaveBeenCalledOnce());
+  expect(vi.mocked(api.sendMessage).mock.calls[0][0]).toMatchObject({ message: 'What is this?', attachments: [{ data: btoa('resized') }] });
+});
+
+it('chọn ảnh có xem trước, bỏ ảnh và giới hạn loại/kích thước/số ảnh trong Companion', async () => {
+  await openCompanion();
+  await chooseImages([sampleImage(), sampleImage('thu-hai.png')]);
+  expect(screen.getAllByAltText(/^Ảnh chờ gửi:/)).toHaveLength(2);
+  fireEvent.click(screen.getByRole('button', { name: 'Gỡ nhan-vat.png' }));
+  expect(screen.queryByAltText('Ảnh chờ gửi: nhan-vat.png')).toBeNull();
+  expect(URL.revokeObjectURL).toHaveBeenCalled();
+  await chooseImages([new File(['Hello'], 'doc.txt', { type: 'text/plain' })]);
+  expect(screen.getByRole('alert').textContent).toContain('không phải ảnh');
+  const large = sampleImage('qua-lon.png'); Object.defineProperty(large, 'size', { value: 20 * 1024 * 1024 + 1 });
+  await chooseImages([large]);
+  expect(screen.getByRole('alert').textContent).toContain('tối đa 20 MB');
+  await chooseImages(Array.from({ length: 4 }, (_, i) => sampleImage(`anh-${i}.png`)));
+  expect(screen.getAllByAltText(/^Ảnh chờ gửi:/)).toHaveLength(1);
+  expect(screen.getByRole('alert').textContent).toContain('tối đa 4 ảnh');
+  await chooseImages(Array.from({ length: 3 }, (_, i) => sampleImage(`anh-${i}.png`)));
+  expect(screen.getAllByAltText(/^Ảnh chờ gửi:/)).toHaveLength(4);
+  expect(api.sendMessage).not.toHaveBeenCalled();
+});
+
+it('gửi ảnh không cần chữ, xóa nháp khi được nhận và vẫn hiện ảnh trong bóng chat', async () => {
+  vi.mocked(api.sendMessage).mockImplementation(async (payload, handlers) => {
+    expect(payload).toMatchObject({ message: '', mode: 'companion', attachments: [{ name: 'nhan-vat.png', mime: 'image/png' }] });
+    expect(payload.attachments![0].data).toBe(btoa(String.fromCharCode(137, 80, 78, 71, 13, 10, 26, 10)));
+    handlers.onMeta?.('C1', 'low', { id: 1, role: 'user', content: '', attachments: [{
+      id: 'img1', name: 'nhan-vat.png', mime: 'image/png', kind: 'image', size: 8, url: '/api/attachments/img1',
+    }] });
+    handlers.onDelta?.('That is a character.'); handlers.onDone?.();
+  });
+  await openCompanion(); await chooseImages([sampleImage()]);
+  fireEvent.click(chatColumn().getByRole('button', { name: 'Gửi', exact: true }));
+  await waitFor(() => expect(api.sendMessage).toHaveBeenCalledOnce());
+  await waitFor(() => expect(screen.queryByAltText('Ảnh chờ gửi: nhan-vat.png')).toBeNull());
+  expect(screen.getByAltText('nhan-vat.png').getAttribute('src')).toBe('/api/attachments/img1');
+  expect(await screen.findByText('That is a character.')).toBeTruthy();
+});
+
+it('máy chủ chưa nhận thì giữ ảnh để gửi lại; nhận chậm không xóa ảnh và chữ của lời nhắn tiếp theo', async () => {
+  vi.mocked(api.sendMessage).mockRejectedValueOnce(new Error('Chưa gửi được ảnh'));
+  await openCompanion(); await chooseImages([sampleImage()]);
+  await sendInCompanion('What is this?');
+  await screen.findByText('Chưa gửi được ảnh');
+  expect(screen.getByAltText('Ảnh chờ gửi: nhan-vat.png')).toBeTruthy();
+  let old!: Parameters<typeof api.sendMessage>[1], finish!: () => void;
+  vi.mocked(api.sendMessage).mockImplementationOnce((_payload, handlers) => new Promise(resolve => {
+    old = handlers; finish = resolve;
+  }));
+  fireEvent.click(chatColumn().getByRole('button', { name: 'Gửi', exact: true }));
+  await waitFor(() => expect(api.sendMessage).toHaveBeenCalledTimes(2));
+  await chooseImages([sampleImage('anh-moi.png')]);
+  fireEvent.change(screen.getByRole('textbox', { name: 'Nhắn cho Peto trong Companion' }), { target: { value: 'Next question' } });
+  act(() => old.onMeta?.('C1', 'low'));
+  expect(screen.queryByAltText('Ảnh chờ gửi: nhan-vat.png')).toBeNull();
+  expect(screen.getByAltText('Ảnh chờ gửi: anh-moi.png')).toBeTruthy();
+  expect((screen.getByRole('textbox', { name: 'Nhắn cho Peto trong Companion' }) as HTMLTextAreaElement).value).toBe('Next question');
+  expect(screen.getByAltText('nhan-vat.png').getAttribute('src')).toMatch(/^data:image\/png;base64,/);
+  await act(async () => { old.onDelta?.('That is a character.'); old.onDone?.(); finish(); });
+});
+
+it('tải lại Companion hiện ảnh đã lưu; dán ảnh từ clipboard vào ô nhắn', async () => {
+  vi.mocked(api.getCompanion).mockResolvedValue({ conversation_id: 'C1', messages: [{ role: 'user', content: 'Look!', attachments: [{
+    id: 'img1', name: 'cu.png', mime: 'image/png', kind: 'image', size: 8, url: '/api/attachments/img1',
+  }] }] });
+  await openCompanion();
+  expect(await screen.findByAltText('cu.png')).toBeTruthy();
+  fireEvent.paste(screen.getByRole('textbox', { name: 'Nhắn cho Peto trong Companion' }), { clipboardData: { files: [sampleImage()] } });
+  expect(await screen.findByAltText('Ảnh chờ gửi: nhan-vat.png')).toBeTruthy();
+});
+
+it('Dừng trong khi đang đọc ảnh không gửi yêu cầu muộn và vẫn giữ ảnh nháp', async () => {
+  await openCompanion();
+  let finish!: () => void;
+  vi.stubGlobal('FileReader', class {
+    result = ''; onload: (() => void) | null = null; onerror = null;
+    readAsDataURL() { finish = () => { this.result = 'data:image/png;base64,UE5H'; this.onload?.(); }; }
+  });
+  await chooseImages([sampleImage()]);
+  fireEvent.click(chatColumn().getByRole('button', { name: 'Gửi', exact: true }));
+  fireEvent.click(chatColumn().getByRole('button', { name: 'Dừng', exact: true }));
+  await act(async () => finish());
+  expect(api.sendMessage).not.toHaveBeenCalled();
+  expect(screen.getByAltText('Ảnh chờ gửi: nhan-vat.png')).toBeTruthy();
+  expect(chatColumn().getByRole('button', { name: 'Gửi', exact: true })).toHaveProperty('disabled', false);
+});
 
 it('hai nét mặt theo đúng tiếng đang phát, không nhảy sang câu sau khi chữ đã tải xong', async () => {
   localStorage.setItem('peto-local-voice', '1');
@@ -362,6 +477,7 @@ async function openCompanion() {
   render(<App />);
   fireEvent.click(await screen.findByRole('button', { name: 'Companion' }));
   await screen.findByRole('textbox', { name: 'Nhắn cho Peto trong Companion' });
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Đính kèm ảnh' })).toHaveProperty('disabled', false));
 }
 
 /** Mở Cài đặt như người dùng: ô tài khoản → Cài đặt trong menu → mục cần xem (mặc định Giọng nói). */
