@@ -1,6 +1,11 @@
 import { expect, test } from '@playwright/test';
 import { mockPeto, noPageOverflow } from './fixtures';
 
+// Model thật tải lõi, moc3 và texture lớn; máy CI chạy song song có thể cần hơn 8 giây.
+// Chỉ bước đợi sân khấu được chờ lâu hơn, các kiểm tra tương tác vẫn dùng thời gian mặc định.
+test.describe.configure({ timeout: 60000 });
+const expectStage = expect.configure({ timeout: 30000 });
+
 test('loading chờ model thật và lịch sử, rồi hiện nhân vật cùng chat khi F5', async ({ page }) => {
   await mockPeto(page);
   await page.route('**/characters/Live2DStage.tsx*', route => route.continue());
@@ -23,10 +28,10 @@ test('loading chờ model thật và lịch sử, rồi hiện nhân vật cùng
     await expect(page.getByRole('textbox', { name: 'Nhắn cho Peto trong Companion' })).toHaveCount(0);
     releaseModel();
     await expect(page.locator('.character-fallback')).toHaveCount(0);
-    await expect(page.locator('.character-canvas')).toHaveCSS('visibility', 'visible');
+    await expectStage(page.locator('.character-canvas')).toHaveCSS('visibility', 'visible');
     await expect(page.getByRole('status', { name: 'Loading', exact: true })).toBeVisible();
     releaseHistory();
-    await expect(page.getByRole('textbox', { name: 'Nhắn cho Peto trong Companion' })).toBeVisible();
+    await expectStage(page.getByRole('textbox', { name: 'Nhắn cho Peto trong Companion' })).toBeVisible();
     await expect(page.locator('.companion-stage')).toHaveCSS('opacity', '1');
     await expect(page.locator('.companion-panel')).toHaveCSS('opacity', '1');
     await expect(page.getByRole('status', { name: 'Loading', exact: true })).toHaveCount(0);
@@ -34,7 +39,7 @@ test('loading chờ model thật và lịch sử, rồi hiện nhân vật cùng
     expect(size.width).toBeGreaterThan(100); expect(size.height).toBeGreaterThan(100);
     await noPageOverflow(page);
     await page.reload();
-    await expect(page.getByRole('textbox', { name: 'Nhắn cho Peto trong Companion' })).toBeVisible();
+    await expectStage(page.getByRole('textbox', { name: 'Nhắn cho Peto trong Companion' })).toBeVisible();
     await expect(page.locator('.character-fallback')).toHaveCount(0);
     await expect(page.locator('.character-canvas')).toBeVisible();
   } finally { releaseModel(); releaseHistory(); }
@@ -55,7 +60,7 @@ test('nhân vật thật hiện bong bóng khi đợi trả lời và ẩn khi v
       + event({ type: 'delta', text: 'Hello!' }) + event({ type: 'done' }) });
   });
   await page.goto('/#companion');
-  await expect(page.locator('.character-canvas')).toBeVisible();
+  await expectStage(page.locator('.character-canvas')).toBeVisible();
   await expect(page.locator('.character-fallback')).toHaveCount(0);
   const input = page.getByRole('textbox', { name: 'Nhắn cho Peto trong Companion' });
   await input.fill('Hello again!');

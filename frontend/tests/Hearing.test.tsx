@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { useEffect } from 'react';
 import { afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest';
 import { preloadLazyParts } from './lazyParts';
 import App from '../src/app/App';
@@ -19,6 +20,15 @@ vi.mock('../src/shared/api/api', async (original) => ({
   listImagineJobs: vi.fn(), getProfile: vi.fn(), getAppInfo: vi.fn(), getCompanion: vi.fn(),
   deleteConversation: vi.fn(),
   getCompanionMemory: vi.fn(),
+}));
+
+// jsdom không dựng được Live2D thật; bộ kiểm tra micro vẫn phải chờ sân khấu sẵn sàng.
+// Việc vẽ nhân vật trước khi mở ô nhắn được kiểm tra riêng trong Live2DStage và trên trình duyệt.
+vi.mock('../src/features/companion/characters/Live2DStage', () => ({
+  default: ({ onStatusChange }: { onStatusChange?: (status: 'loading' | 'ready' | 'error') => void }) => {
+    useEffect(() => { onStatusChange?.('ready'); }, [onStatusChange]);
+    return null;
+  },
 }));
 
 // Micro giả: jsdom không có Web Audio. Test tự đẩy âm thanh vào qua `microphone.feed`.
