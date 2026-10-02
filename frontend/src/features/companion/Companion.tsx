@@ -11,6 +11,7 @@ import {
   type EmotionCue,
 } from "../../shared/api/api";
 import { SendIcon } from "../chat/Composer";
+import { LoadingIndicator } from '../../shared/ui/LoadingIndicator';
 import { fileToBase64 } from '../chat/attachments';
 import { useCompanionImages } from './useCompanionImages';
 import { CompanionImageDrafts, CompanionImageIcon, CompanionMessageImages } from './CompanionImages';
@@ -97,13 +98,14 @@ function RestartIcon() {
  * Được giữ mounted như Imagine (prop `active`) để câu trả lời đang về không bị cắt khi đổi tab;
  * rời tab thì Peto thôi đọc và giải phóng renderer nhân vật.
  */
-export default function Companion({ active, appInfo, voice, characterMotion, character = DEFAULT_CHARACTER, onCharacterPreview, onOpenCharacters, sceneRequest = 0, onUnauthorized, onOpenSidebar, onOpenHearingSettings, onOpenMemorySettings }: {
+export default function Companion({ active, appInfo, voice, characterMotion, character = DEFAULT_CHARACTER, characterLoading = false, onCharacterPreview, onOpenCharacters, sceneRequest = 0, onUnauthorized, onOpenSidebar, onOpenHearingSettings, onOpenMemorySettings }: {
   active: boolean;
   sceneRequest?: number;
   appInfo: AppInfo | null;
   voice: LocalVoice;
   characterMotion: CharacterMotion;
   character?: CharacterModel;
+  characterLoading?: boolean;
   onCharacterPreview?: (id: string, image: string) => void;
   onOpenCharacters?: () => void;
   onUnauthorized: () => void;
@@ -136,6 +138,13 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
   /** Số ghi nhớ đang có, hỏi lại lúc mở hộp "Bắt đầu lại": xóa mạch không xóa ghi nhớ, nên hộp nói rõ điều đó. */
   const [keptMemories, setKeptMemories] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [stageState, setStageState] = useState<{ id: string; status: 'loading' | 'ready' | 'error' } | null>(null);
+  const onStageStatus = useCallback((status: 'loading' | 'ready' | 'error') => {
+    setStageState({ id: character.id, status });
+  }, [character.id]);
+  useEffect(() => { if (!active) setStageState(null); }, [active]);
+  // Giữ nguyên kích thước sân khấu khi chờ; chỉ mở giao diện sau khi model đã vẽ và lịch sử đã tải xong.
+  const opening = active && (loading || characterLoading || stageState?.id !== character.id || stageState.status === 'loading');
   const [loadFailed, setLoadFailed] = useState(false);
   const [draft, setDraft] = useState("");
   const [streaming, setStreaming] = useState(false);
@@ -698,18 +707,19 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
   }
 
   return (
-    <main className={`companion${scene.selected.url ? ' companion-with-scene' : ''}`} hidden={!active}>
+    <main className={`companion${scene.selected.url ? ' companion-with-scene' : ''}${opening ? ' companion-loading' : ''}`} hidden={!active}>
+      {opening && <div className="companion-loading-screen"><LoadingIndicator variant="screen" label="Loading" /></div>}
       {active && scenesOpen && <ScenePicker scene={scene} onClose={() => setScenesOpen(false)} />}
       <SceneBackdrop scene={scene} />
-      <section className="companion-stage" aria-label={name}>
-        {active && <Suspense fallback={<div className="character-fallback"><p role="status">Đang tải nhân vật…</p></div>}>
+      <section className="companion-stage" aria-label={name} inert={opening} aria-hidden={opening}>
+        {active && !characterLoading && <Suspense fallback={null}>
           {character.format === 'vrm'
-            ? <VRMStage key={character.id} character={character} motion={characterMotion} onPreview={onCharacterPreview} activity={activity} emotion={stageEmotion} thinking={streaming && !stopping} attention={{ typing, input: composerInput }} />
-            : <Live2DStage key={character.id} character={character} fallbackUrl={appInfo?.avatar_url ?? undefined} name={name} motion={characterMotion} onPreview={onCharacterPreview} emotion={stageEmotion} activity={activity} thinking={streaming && !stopping} attention={{ typing, input: composerInput }} />}
+            ? <VRMStage key={character.id} character={character} motion={characterMotion} onPreview={onCharacterPreview} onStatusChange={onStageStatus} activity={activity} emotion={stageEmotion} thinking={streaming && !stopping} attention={{ typing, input: composerInput }} />
+            : <Live2DStage key={character.id} character={character} fallbackUrl={appInfo?.avatar_url ?? undefined} name={name} motion={characterMotion} onPreview={onCharacterPreview} onStatusChange={onStageStatus} emotion={stageEmotion} activity={activity} thinking={streaming && !stopping} attention={{ typing, input: composerInput }} />}
         </Suspense>}
       </section>
 
-      <section className="companion-panel" aria-label="Trò chuyện trong Companion">
+      <section className="companion-panel" aria-label="Trò chuyện trong Companion" inert={opening} aria-hidden={opening}>
         <header className="companion-head">
           <button type="button" className="menu-btn companion-menu" aria-label="Mở menu" onClick={onOpenSidebar}>
             <MenuIcon />
@@ -774,7 +784,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
         )}
 
         <div className="companion-messages">
-          {loading && <div className="loading-chat" role="status" aria-label="Đang mở Companion"><span className="loading-spinner" aria-hidden="true" /></div>}
+          {loading && <div className="loading-chat"><LoadingIndicator label="Đang mở Companion" /></div>}
           {loadFailed && (
             <div className="loading-chat" role="alert">
               <p>Chưa tải được cuộc trò chuyện.</p>
@@ -918,7 +928,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
         </form>
       </section>
 
-      <div className="companion-scene-tools">
+      <div className="companion-scene-tools" inert={opening} aria-hidden={opening}>
         <button type="button" className="companion-scene-button" aria-label="Bối cảnh" title="Bối cảnh" aria-haspopup="dialog" onClick={() => setScenesOpen(true)}>
           <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4" stroke="currentColor" strokeWidth="1.7" /><circle cx="9" cy="8" r="2" stroke="currentColor" strokeWidth="1.7" /><path d="m4 18 5-5 3 3 4-6 5 8" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" /></svg>
         </button>

@@ -13,6 +13,7 @@ import { disconnectStream, networkInterrupted, useReplyRecovery } from '../featu
 import { ReplyRecoveryNotice } from '../features/chat/ReplyRecoveryNotice';
 import { Greeting } from '../features/chat/Greeting';
 import { ViewLoading } from '../shared/ui/ViewLoading';
+import { LoadingIndicator } from '../shared/ui/LoadingIndicator';
 import { MenuIcon, PinIcon } from './navigationIcons';
 import { PetoAvatar, AccountAvatar, accountLine, accountSubtitle } from './accountUi';
 import { EFFORTS, THEMES, readStoredModel, readStoredEffort, readStoredTheme, readStoredCollapsed, type ThemeChoice, type AppView } from './preferences';
@@ -579,7 +580,7 @@ export default function App() {
   }, [emptyChat]);
 
   if (auth === null) {
-    return <div className="boot" role="status" aria-label="Đang tải Peto"><span className="loading-spinner" aria-hidden="true" /></div>;
+    return <LoadingIndicator variant="screen" label="Loading" />;
   }
 
   if (!auth.authenticated) {
@@ -1057,7 +1058,7 @@ export default function App() {
 
   const guestAccount = auth.user?.provider === "guest";
   const settingsLoading = (
-    <div className="settings-loading" role="status" aria-label="Đang tải cài đặt"><span className="loading-spinner" aria-hidden="true" /></div>
+    <div className="settings-loading"><LoadingIndicator label="Đang tải cài đặt" /></div>
   );
   // Mỗi mục tải tệp riêng và có lớp chờ riêng: mục Giao diện không phải đợi tệp của mục Giọng nói.
   // `active`: mục đang được xem trong hộp đang mở; các mục chỉ tải dữ liệu lúc đó.
@@ -1209,7 +1210,7 @@ export default function App() {
       )}
       {companionVisited && (
         <LazyBoundary>
-        <Suspense fallback={view === "companion" ? <ViewLoading label="Đang mở Companion" /> : null}>
+        <Suspense fallback={view === "companion" ? <LoadingIndicator variant="screen" label="Loading" /> : null}>
         <Companion
           key={`companion-${auth.user?.id}`}
           active={view === "companion"}
@@ -1218,6 +1219,7 @@ export default function App() {
           sceneRequest={sceneRequest}
           characterMotion={characterMotion}
           character={characters.selected}
+          characterLoading={characters.loading}
           onCharacterPreview={characters.savePreview}
           onOpenCharacters={() => setCharacterPickerOpen(true)}
           onUnauthorized={handleUnauthorized}
@@ -1257,7 +1259,7 @@ export default function App() {
           nearBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 80;
           setShowJump(!nearBottom.current);
         }}>
-          {loadingConversation && <div className="loading-chat" role="status" aria-label="Đang mở hội thoại"><span className="loading-spinner" aria-hidden="true" /></div>}
+          {loadingConversation && <div className="loading-chat"><LoadingIndicator label="Đang mở hội thoại" /></div>}
           {loadFailed && <div className="loading-chat" role="alert">
             <p>Chưa tải được nội dung hội thoại.</p>
             <button className="load-more" onClick={() => conversationId && void openConversation(conversationId)}>Thử mở lại</button>

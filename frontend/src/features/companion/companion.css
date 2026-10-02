@@ -45,6 +45,10 @@
   --stage-popover: rgba(255, 255, 255, 0.97);
   --stage-level: #2f8ea5;
 }
+.companion-loading-screen { position: absolute; inset: 0; z-index: 10; }
+.companion-loading-screen .brand-loading--screen { position: absolute; min-height: 0; }
+/* Dùng độ trong suốt thay vì display:none để renderer đo đúng khung trước lần vẽ đầu tiên. */
+.companion-loading .companion-stage, .companion-loading .companion-panel { opacity: 0; pointer-events: none; }
 .companion-stage {
   position: relative;
   display: grid;

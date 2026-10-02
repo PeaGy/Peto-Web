@@ -23,7 +23,6 @@
 @import '../../features/documents/documents.css';
 @import '../../features/companion/characters/controls.css';
 @import '../../features/companion/scenes.css';
-@import '../ui/loading.css';
 @import './touchTargets.css';
 @import '../../app/conversationControls.css';
 @import '../../features/projects/projects.css';

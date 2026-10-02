@@ -1804,6 +1804,15 @@ Chat, Companion and roleplay turn (not the Agent CLI).
   - **React chunk.** `vite.config.ts` puts React in its own chunk (`codeSplitting.groups`), so a deploy changes only
     the app chunk's hash and returning visitors keep React cached. Never widen that group to all of `node_modules`,
     or KaTeX, highlight.js and three.js would be pulled into the first load.
+  - **Branded loading.** `shared/ui/LoadingIndicator.tsx` uses the existing `/docs-assets/logo.webp`, gentle logo motion
+    and an indeterminate rose bar. Its stylesheet loads with the main entry so the first lazy fallback and auth wait
+    share the same full-screen treatment; the logo is preloaded in `index.html`. Panel/icon variants cover conversation,
+    view, settings and image waits. Saved light/dark themes and reduced-motion preferences are respected, without
+    delaying readiness or fabricating percentage progress.
+    The screen caption is "Loading". Companion keeps this screen until its saved character selection and history
+    finish loading and the Live2D/VRM renderer has drawn the first frame. The stage remains measurable underneath;
+    the stage/chat reveal together, including re-entry and character changes. Model errors release the loading screen
+    to the existing retry UI; a retry reports loading again. Renderer callbacks are ignored after disposal.
   - **Auth preload.** `index.html` preloads `/api/auth/me` (`as="fetch" crossorigin`), and `getAuthState`'s plain
     `fetch` reuses it. This was checked in Chromium: one request, initiator `link`, no console warning.
   - **Measured.** Cold load on an emulated mid-range phone (Lighthouse's slow 4G, 4× CPU, five runs) went from

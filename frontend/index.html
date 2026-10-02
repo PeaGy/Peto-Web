@@ -16,6 +16,7 @@
     <!-- Hỏi trạng thái đăng nhập song song với lúc tải JS: ô chat chỉ hiện sau câu trả lời này. fetch("/api/auth/me") mặc
          định trong api.ts dùng lại đúng câu trả lời này (cùng chế độ cors, cookie cùng nguồn), không gọi lần hai. -->
     <link rel="preload" href="/api/auth/me" as="fetch" crossorigin />
+    <link rel="preload" href="/docs-assets/logo.webp" as="image" type="image/webp" />
     <script>
       // Gắn giao diện đã lưu trước khi React chạy để không nháy sáng khi mở trang.
       (function () {

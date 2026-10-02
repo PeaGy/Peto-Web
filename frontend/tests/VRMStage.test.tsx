@@ -4,10 +4,10 @@ import { BoxGeometry, Group, Mesh, MeshBasicMaterial, Object3D, Vector3 } from '
 import VRMStage from '../src/features/companion/characters/VRMStage';
 import { readEffects, writeEffects } from '../src/features/companion/characters/characterEffects';
 
-const mocks = vi.hoisted(() => ({ parse: vi.fn(), dispose: vi.fn(), rendererDispose: vi.fn(), frame: null as null | ((time: number) => void), mouth: 0 }));
+const mocks = vi.hoisted(() => ({ parse: vi.fn(), dispose: vi.fn(), rendererDispose: vi.fn(), render: vi.fn(), frame: null as null | ((time: number) => void), mouth: 0 }));
 vi.mock('three', async original => ({ ...await original<typeof import('three')>(), WebGLRenderer: class {
   domElement = document.createElement('canvas');
-  setPixelRatio() {} setClearColor() {} setSize() {} render() {} forceContextLoss() {}
+  setPixelRatio() {} setClearColor() {} setSize() {} render = mocks.render; forceContextLoss() {}
   dispose = mocks.rendererDispose;
 } }));
 vi.mock('three/addons/loaders/GLTFLoader.js', () => ({ GLTFLoader: class { register() {} parseAsync = mocks.parse; } }));
@@ -34,6 +34,24 @@ beforeEach(() => {
   vi.spyOn(document, 'hidden', 'get').mockReturnValue(false);
 });
 afterEach(() => vi.unstubAllGlobals());
+
+it('VRM chờ tài nguyên và khung hình đầu tiên trước khi báo ready, lỗi vẽ báo error', async () => {
+  const vrm = avatar();
+  let finish!: (value: object) => void;
+  mocks.parse.mockReturnValue(new Promise(resolve => { finish = resolve; }));
+  const status = vi.fn((value: string) => { if (value === 'ready') expect(mocks.render).toHaveBeenCalled(); });
+  const view = render(<VRMStage character={character} motion="system" onStatusChange={status} />);
+  await waitFor(() => expect(mocks.parse).toHaveBeenCalled());
+  expect(status.mock.calls.map(([value]) => value)).toEqual(['loading']);
+  await act(async () => finish({ userData: { vrm }, scene: vrm.scene }));
+  expect(status.mock.calls.map(([value]) => value)).toEqual(['loading', 'ready']);
+  view.unmount(); status.mockClear();
+  mocks.parse.mockResolvedValue({ userData: { vrm: avatar() }, scene: vrm.scene });
+  mocks.render.mockImplementationOnce(() => { throw new Error('Lỗi vẽ thử'); });
+  render(<VRMStage character={character} motion="system" onStatusChange={status} />);
+  await waitFor(() => expect(status).toHaveBeenLastCalledWith('error'));
+  expect(status.mock.calls.map(([value]) => value)).toEqual(['loading', 'error']);
+});
 
 it('VRM quay đầu và mắt về ô nhập, tắt công tắc thì trả hướng nhìn; mobile không nhìn ô nhập', async () => {
   vi.spyOn(Math, 'random').mockReturnValue(0.1);

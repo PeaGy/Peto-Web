@@ -1,16 +1,92 @@
-.loading-spinner {
-  display: inline-block;
-  width: 28px;
-  height: 28px;
-  border: 3px solid color-mix(in srgb, var(--muted) 25%, transparent);
-  border-top-color: var(--text);
-  border-radius: 50%;
-  animation: loading-spin 0.85s linear infinite;
+.brand-loading {
+  --loading-pink: #ee9dad;
+  --loading-rose: #d97591;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 22px;
+  color: var(--text, #ececec);
+  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  text-align: center;
 }
-@keyframes loading-spin { to { transform: rotate(360deg); } }
+.brand-loading-identity { display: flex; flex-direction: column; align-items: center; gap: 20px; }
+.brand-loading-mark { position: relative; isolation: isolate; display: grid; place-items: center; }
+.brand-loading .brand-loading-mark img {
+  display: block;
+  width: 72px;
+  height: auto;
+  user-select: none;
+  -webkit-user-drag: none;
+  animation: peto-loading-breathe 3s ease-in-out infinite;
+}
+.brand-loading-mark::before {
+  content: "";
+  position: absolute;
+  inset: -30px;
+  z-index: -1;
+  border-radius: 50%;
+  background: radial-gradient(ellipse, #e992aa16, transparent 68%);
+}
+.brand-loading-wait { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.brand-loading-label { color: var(--muted, #9b9b9b); font-size: 12px; line-height: 1.5; }
+.brand-loading-dots { display: inline-block; animation: peto-loading-dots 1.8s ease-in-out infinite; }
+.brand-loading-track { display: block; width: 92px; height: 3px; overflow: hidden; border-radius: 99px; background: #d975911c; }
+.brand-loading-track > span {
+  display: block;
+  width: 48%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--loading-rose), var(--loading-pink));
+  animation: peto-loading-travel 2s ease-in-out infinite;
+}
+.brand-loading--screen {
+  box-sizing: border-box;
+  position: fixed;
+  inset: 0;
+  min-height: 100dvh;
+  padding: 32px 24px;
+  background: var(--bg, #141414);
+}
+.brand-loading--screen .brand-loading-identity { transform: translateY(-24px); }
+.brand-loading--screen .brand-loading-mark img { width: 144px; }
+.brand-loading--screen .brand-loading-mark::before { inset: -65px; background: radial-gradient(ellipse, #e992aa1c, transparent 68%); }
+.brand-loading-name { font-size: 34px; font-weight: 600; line-height: 1.2; letter-spacing: 0.01em; }
+.brand-loading--screen .brand-loading-wait {
+  position: absolute;
+  bottom: max(48px, 10dvh);
+  left: 50%;
+  transform: translateX(-50%);
+}
+.brand-loading--screen .brand-loading-label { font-size: 13px; letter-spacing: 0.025em; }
+.brand-loading--screen .brand-loading-track { width: 144px; height: 4px; }
+.brand-loading--icon { display: inline-flex; gap: 0; vertical-align: middle; }
+.brand-loading--icon .brand-loading-mark img { width: 28px; }
+.brand-loading--icon .brand-loading-mark::before { display: none; }
+:root[data-theme="light"] .brand-loading--screen { background: var(--bg, #fff); color: var(--text, #0d0d0d); }
+:root[data-theme="light"] .brand-loading-label { color: var(--muted, #6b6b6b); }
 
-/* Chỗ của Tạo ảnh, Companion hay nội dung Cài đặt trong lúc tệp của nó tải lần đầu (hay tải hỏng, xem LazyBoundary). */
-.view-loading { flex: 1; min-width: 0; display: grid; place-content: center; justify-items: center; gap: 12px; padding: 24px; color: var(--muted); text-align: center; }
-.view-loading p { margin: 0; max-width: 36ch; line-height: 1.5; }
+@keyframes peto-loading-breathe {
+  0%, 100% { transform: translateY(0) rotate(-1deg); }
+  50% { transform: translateY(-5px) rotate(1deg); }
+}
+@keyframes peto-loading-travel {
+  0% { transform: translateX(-105%); }
+  100% { transform: translateX(215%); }
+}
+@keyframes peto-loading-dots { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .brand-loading .brand-loading-mark img, .brand-loading-dots, .brand-loading-track > span { animation: none; }
+  .brand-loading-track > span { margin-inline: auto; }
+}
+@media (max-height: 420px) {
+  .brand-loading--screen .brand-loading-identity { transform: translateY(-12px); gap: 12px; }
+  .brand-loading--screen .brand-loading-mark img { width: 96px; }
+  .brand-loading--screen .brand-loading-name { font-size: 26px; }
+  .brand-loading--screen .brand-loading-wait { bottom: 20px; gap: 8px; }
+}
+
+/* Các vùng chờ tải phần giao diện giữ vị trí cũ; logo bên trong dùng bản thu gọn. */
+.view-loading { flex: 1; min-width: 0; display: grid; place-content: center; padding: 24px; }
 .settings-loading { display: grid; place-items: center; min-height: 160px; }
 

@@ -62,7 +62,7 @@ function loadCore() {
  * giữ ngón tay trên màn hình thì nhân vật nhìn theo ngón tay. Khi được cử động (`motionEnabled`), nhân vật
  * chạy motion Idle, thở, chớp mắt và nhìn theo con trỏ. Miệng luôn theo âm thanh đang phát.
  */
-export default function Live2DStage({ fallbackUrl, name, motion = "system", character = DEFAULT_CHARACTER, onPreview, emotion, activity = 'idle', thinking = false, attention }: {
+export default function Live2DStage({ fallbackUrl, name, motion = "system", character = DEFAULT_CHARACTER, onPreview, onStatusChange, emotion, activity = 'idle', thinking = false, attention }: {
   thinking?: boolean;
   attention?: ComposerAttention;
   activity?: CompanionActivity;
@@ -73,6 +73,7 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
   motion?: CharacterMotion;
   character?: CharacterModel;
   onPreview?: (id: string, image: string) => void;
+  onStatusChange?: (status: 'loading' | 'ready' | 'error') => void;
 }) {
   const qualityPreference = useRenderQuality();
   const host = useRef<HTMLDivElement>(null);
@@ -80,6 +81,7 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
   const motionRef = useRef(motion);
   const previewRef = useRef(onPreview);
   previewRef.current = onPreview;
+  const statusRef = useRef(onStatusChange); statusRef.current = onStatusChange;
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const bubble = useThinkingBubble(thinking && status === 'ready');
   const updateBubble = bubble.update;
@@ -100,6 +102,11 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
   useEffect(() => {
     const container = host.current!;
     let disposed = false;
+    const changeStatus = (next: 'loading' | 'ready' | 'error') => {
+      if (disposed) return;
+      setStatus(next);
+      statusRef.current?.(next);
+    };
     let app: Application | undefined;
     let observer: ResizeObserver | undefined;
     let removeEvents = () => {};
@@ -107,7 +114,7 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
     let disposeExpressions = () => {};
     selectMusicCharacter(character.id);
     const objectUrls: string[] = [];
-    setStatus("loading");
+    changeStatus("loading");
     setIdleError(false);
     setExpressionError(false);
 
@@ -447,7 +454,7 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
 
       let contextLost = false;
       const visible = () => document.hidden || contextLost ? app?.stop() : app?.start();
-      const lost = (event: Event) => { event.preventDefault(); contextLost = true; app?.stop(); setStatus("error"); };
+      const lost = (event: Event) => { event.preventDefault(); contextLost = true; app?.stop(); changeStatus("error"); };
       container.addEventListener("wheel", onWheel, { passive: false });
       container.addEventListener("pointerdown", onPointerDown);
       container.addEventListener("pointermove", onPointerMove);
@@ -489,13 +496,16 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
           writeCharacterView(view, character.id);
         }
       };
+      // Vẽ vào canvas đang ẩn trước khi báo sẵn sàng, để loading và nhân vật đổi trong cùng lượt cập nhật.
+      current.update(0);
+      app.renderer.render(app.stage);
       visible();
-      setStatus("ready");
+      changeStatus("ready");
     }
     void start().catch(() => {
       if (!disposed) {
         app?.stop();
-        setStatus("error");
+        changeStatus("error");
       }
     });
     return () => {

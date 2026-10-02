@@ -82,8 +82,13 @@ test('Companion gõ/nghĩ/nói/chờ/dừng và rời tab giữ giao diện gọ
     } });
   });
   // Chỉ thay lớp vẽ WebGL để đọc trạng thái; bộ chat, âm thanh và CSS dùng mã thật.
-  await page.route('**/characters/Live2DStage.tsx*', route => route.fulfill({ contentType: 'text/javascript', body:
-    `import React from '/node_modules/.vite/deps/react.js'; export default function Stage({activity, emotion}) { return React.createElement('div', {'data-testid':'stage-state', 'data-activity':activity, 'data-emotion':emotion?.emotion ?? ''}); }` }));
+  await page.route('**/characters/Live2DStage.tsx*', async route => {
+    const source = await (await route.fetch()).text();
+    const reactUrl = source.match(/["'](\/node_modules\/\.vite\/deps\/react\.js[^"']*)["']/)?.[1];
+    if (!reactUrl) throw new Error('Chưa tìm thấy module React dùng chung cho sân khấu giả.');
+    await route.fulfill({ contentType: 'text/javascript', body:
+      `import React from ${JSON.stringify(reactUrl)}; export default function Stage({activity, emotion, onStatusChange}) { React.useEffect(() => { onStatusChange?.('ready'); }, [onStatusChange]); return React.createElement('div', {'data-testid':'stage-state', 'data-activity':activity, 'data-emotion':emotion?.emotion ?? ''}); }` });
+  });
   await page.route('**/api/voice/health', route => route.fulfill({ json: {
     ok: true, voices: ['stepfun:jilingshaonv'], home: { online: false, voices: [] },
     official: { allowed: true, voices: ['stepfun:jilingshaonv'], used: 0, limit: 5000 },

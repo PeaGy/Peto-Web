@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { useEffect } from 'react';
 import { afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest';
 import { preloadLazyParts } from './lazyParts';
 import App from '../src/app/App';
@@ -22,8 +23,12 @@ vi.mock('../src/shared/api/api', async (original) => ({
   getCompanionMemory: vi.fn(),
 }));
 // Sân khấu giả: chỉ để đọc cảm xúc Companion truyền xuống (Live2D thật cần WebGL).
+const stageMock = vi.hoisted(() => ({ hold: false, notify: undefined as undefined | ((status: 'loading' | 'ready' | 'error') => void) }));
 vi.mock('../src/features/companion/characters/Live2DStage', () => ({
-  default: ({ emotion, activity }: { emotion?: { emotion: string } | null; activity?: string }) => <div data-testid="stage" data-activity={activity} data-emotion={emotion?.emotion ?? ''} />,
+  default: ({ emotion, activity, onStatusChange }: { emotion?: { emotion: string } | null; activity?: string; onStatusChange?: (status: 'loading' | 'ready' | 'error') => void }) => {
+    useEffect(() => { stageMock.notify = onStatusChange; onStatusChange?.(stageMock.hold ? 'loading' : 'ready'); }, [onStatusChange]);
+    return <div data-testid="stage" data-activity={activity} data-emotion={emotion?.emotion ?? ''} />;
+  },
 }));
 // Dòng "Peto vừa ghi nhớ" hỏi lại máy chủ sau vài giây; trong test hỏi ngay.
 vi.mock('../src/features/companion/memoryNotice', async (original) => ({
@@ -37,6 +42,7 @@ const played: string[] = [];
 beforeAll(preloadLazyParts);
 
 beforeEach(() => {
+  stageMock.hold = false; stageMock.notify = undefined;
   clearCompanionTimings();
   vi.resetAllMocks();
   vi.mocked(prepareCompanionImage).mockImplementation(async file => file);
@@ -539,6 +545,43 @@ async function openCompanion() {
   await waitFor(() => expect(screen.getByRole('button', { name: 'Đính kèm ảnh' })).toHaveProperty('disabled', false));
 }
 
+it('Companion chờ cả nhân vật và lịch sử; quay lại tab phải chờ renderer mới', async () => {
+  stageMock.hold = true;
+  let finish!: (value: { conversation_id: null; messages: [] }) => void;
+  vi.mocked(api.getCompanion).mockReturnValue(new Promise(resolve => { finish = resolve; }));
+  render(<App />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Companion' }));
+  await waitFor(() => expect(stageMock.notify).toBeTypeOf('function'));
+  expect(screen.getByRole('status', { name: 'Loading' })).toBeTruthy();
+  expect(screen.queryByRole('textbox', { name: 'Nhắn cho Peto trong Companion' })).toBeNull();
+  act(() => stageMock.notify?.('ready'));
+  expect(screen.getByRole('status', { name: 'Loading' })).toBeTruthy();
+  await act(async () => finish({ conversation_id: null, messages: [] }));
+  await screen.findByRole('textbox', { name: 'Nhắn cho Peto trong Companion' });
+  expect(screen.queryByRole('status', { name: 'Loading' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Trò chuyện' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Companion' }));
+  await screen.findByRole('status', { name: 'Loading' });
+  expect(screen.queryByRole('textbox', { name: 'Nhắn cho Peto trong Companion' })).toBeNull();
+  act(() => stageMock.notify?.('ready'));
+  await screen.findByRole('textbox', { name: 'Nhắn cho Peto trong Companion' });
+});
+
+it('lỗi tải model mở lại giao diện và thử tải lại tiếp tục dùng loading', async () => {
+  stageMock.hold = true;
+  render(<App />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Companion' }));
+  await waitFor(() => expect(stageMock.notify).toBeTypeOf('function'));
+  await waitFor(() => expect(api.getCompanion).toHaveBeenCalled());
+  act(() => stageMock.notify?.('error'));
+  await screen.findByRole('textbox', { name: 'Nhắn cho Peto trong Companion' });
+  expect(screen.queryByRole('status', { name: 'Loading' })).toBeNull();
+  act(() => stageMock.notify?.('loading'));
+  expect(screen.getByRole('status', { name: 'Loading' })).toBeTruthy();
+  act(() => stageMock.notify?.('ready'));
+  await screen.findByRole('textbox', { name: 'Nhắn cho Peto trong Companion' });
+});
+
 /** Mở Cài đặt như người dùng: ô tài khoản → Cài đặt trong menu → mục cần xem (mặc định Giọng nói). */
 async function openSettings(section = 'Giọng nói') {
   fireEvent.click(await screen.findByRole('button', { name: /Tài khoản · Demo/ }));
@@ -580,6 +623,7 @@ it('đã bật từ trước thì tab Trò chuyện chưa dò, mở Companion m�
   expect(localCalls()).toHaveLength(0);
 
   fireEvent.click(companionTab);
+  await screen.findByRole('region', { name: 'Trò chuyện trong Companion' });
   expect(await chatColumn().findByRole('button', { name: 'Tắt tiếng' })).toBeTruthy();
   expect(localCalls()).toHaveLength(1);
 });

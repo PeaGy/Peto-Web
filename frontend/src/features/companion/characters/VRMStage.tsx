@@ -17,19 +17,21 @@ import { composerPoint, type ComposerAttention } from './stageInteraction';
 // Góc liếc lớn nhất khi chờ. VRM chỉ quay mắt một phần góc nhìn (thường 10° mắt cho 90° nhìn), nên góc nhỏ thì không thấy.
 const IDLE_YAW = Math.PI / 3, IDLE_PITCH = Math.PI * 2 / 9;
 
-export default function VRMStage({ character, motion, onPreview, activity = 'idle', emotion, thinking = false, attention }: {
+export default function VRMStage({ character, motion, onPreview, onStatusChange, activity = 'idle', emotion, thinking = false, attention }: {
   thinking?: boolean;
   attention?: ComposerAttention;
   activity?: CompanionActivity;
   /** Cảm xúc đang hiện (Companion quyết lúc nào đổi, lúc nào về bình thường bằng null). */
   emotion?: StageCue | null;
   character: CharacterModel; motion: CharacterMotion; onPreview?: (id: string, image: string) => void;
+  onStatusChange?: (status: 'loading' | 'ready' | 'error') => void;
 }) {
   const qualityPreference = useRenderQuality();
   const host = useRef<HTMLDivElement>(null);
   const activityRef = useRef(activity); activityRef.current = activity;
   const motionRef = useRef(motion); motionRef.current = motion;
   const previewRef = useRef(onPreview); previewRef.current = onPreview;
+  const statusRef = useRef(onStatusChange); statusRef.current = onStatusChange;
   const emotionRef = useRef(emotion); emotionRef.current = emotion;
   const faceBlend = useRef(new FaceBlend());
   const preferences = useRef(readExpressions(character.id));
@@ -61,10 +63,15 @@ export default function VRMStage({ character, motion, onPreview, activity = 'idl
   useEffect(() => {
     const container = host.current!;
     let disposed = false, frame = 0;
+    const changeStatus = (next: 'loading' | 'ready' | 'error') => {
+      if (disposed) return;
+      setStatus(next);
+      statusRef.current?.(next);
+    };
     let renderer: WebGLRenderer | undefined;
     let cleanup = () => {};
     let disposeModel = () => {};
-    setStatus('loading'); setError('');
+    changeStatus('loading'); setError('');
     async function start() {
       const [THREE, { GLTFLoader }, { VRMLoaderPlugin, VRMUtils }, { OrbitControls }, { validateVRM }, assets] = await Promise.all([
         import('three'), import('three/addons/loaders/GLTFLoader.js'), import('@pixiv/three-vrm'),
@@ -150,7 +157,7 @@ export default function VRMStage({ character, motion, onPreview, activity = 'idl
       };
       const reset = () => fit();
       let contextLost = false;
-      const lost = (event: Event) => { event.preventDefault(); contextLost = true; cancelAnimationFrame(frame); setStatus('error'); setError('Trình duyệt đã tạm dừng hiển thị 3D. Bạn có thể thử tải lại.'); };
+      const lost = (event: Event) => { event.preventDefault(); contextLost = true; cancelAnimationFrame(frame); changeStatus('error'); setError('Trình duyệt đã tạm dừng hiển thị 3D. Bạn có thể thử tải lại.'); };
       let last = 0, nextFrame = 0, elapsed = 0, captured = false;
       const conversationMotion = new CompanionMotion();
       const mouthBlend = new VoiceMouthBlend();
@@ -245,10 +252,12 @@ export default function VRMStage({ character, motion, onPreview, activity = 'idl
         document.removeEventListener('visibilitychange', visibility); canvas.removeEventListener('webglcontextlost', lost);
         canvas.removeEventListener('dblclick', reset); compact.removeEventListener?.('change', fit);
       };
-      visibility(); setStatus('ready');
+      // Chỉ mở giao diện sau khi canvas đã có khung hình đầu tiên, kể cả khi đang giảm chuyển động.
+      renderer.render(scene, camera);
+      visibility(); changeStatus('ready');
     }
     void start().catch(reason => {
-      if (!disposed) { setError(reason instanceof Error ? reason.message : 'Chưa tải được model VRM.'); setStatus('error'); }
+      if (!disposed) { setError(reason instanceof Error ? reason.message : 'Chưa tải được model VRM.'); changeStatus('error'); }
     });
     return () => {
       disposed = true; cancelAnimationFrame(frame); cleanup(); disposeModel();

@@ -1,11 +1,4 @@
 /* ---------- Dang nhap ---------- */
-.boot {
-  display: grid;
-  place-items: center;
-  height: 100%;
-  color: var(--muted);
-}
-
 .login {
   display: grid;
   place-items: center;

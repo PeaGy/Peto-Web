@@ -8,13 +8,13 @@ import * as music from '../src/features/companion/characters/musicVibe';
 import { previewExpression, watchSnapshots, writeExpressions } from '../src/features/companion/characters/characterExpressions';
 
 const mocks = vi.hoisted(() => ({
-  from: vi.fn(), destroy: vi.fn(), start: vi.fn(), stop: vi.fn(), tick: null as null | (() => void),
+  from: vi.fn(), destroy: vi.fn(), start: vi.fn(), stop: vi.fn(), render: vi.fn(), tick: null as null | (() => void),
   mouth: 0, reduced: true, compact: false, resize: null as null | (() => void),
 }));
 vi.mock('pixi.js', () => ({ Application: class {
   view = document.createElement('canvas');
   stage = { addChild: vi.fn() };
-  renderer = { resize: vi.fn(), render: vi.fn(), resolution: 1 };
+  renderer = { resize: vi.fn(), render: mocks.render, resolution: 1 };
   ticker = { maxFPS: 0, deltaMS: 33, add: (callback: () => void) => { mocks.tick = callback; } };
   start = mocks.start; stop = mocks.stop;
   destroy = () => { this.view.remove(); mocks.destroy(); };
@@ -77,6 +77,23 @@ beforeEach(() => {
   vi.spyOn(Element.prototype, 'clientHeight', 'get').mockReturnValue(600);
 });
 afterEach(() => vi.unstubAllGlobals());
+
+it('Live2D chỉ báo ready sau lần vẽ đầu tiên, lỗi vẽ vẫn cho phép thử lại', async () => {
+  let finish!: (value: ReturnType<typeof fakeModel>) => void;
+  mocks.from.mockReturnValue(new Promise(resolve => { finish = resolve; }));
+  const status = vi.fn((value: string) => { if (value === 'ready') expect(mocks.render).toHaveBeenCalled(); });
+  const view = render(<Live2DStage name="Peto" onStatusChange={status} />);
+  await waitFor(() => expect(mocks.from).toHaveBeenCalled());
+  expect(status.mock.calls.map(([value]) => value)).toEqual(['loading']);
+  await act(async () => finish(fakeModel()));
+  expect(status.mock.calls.map(([value]) => value)).toEqual(['loading', 'ready']);
+  fireEvent(view.container.querySelector('canvas')!, new Event('webglcontextlost', { cancelable: true }));
+  expect(status).toHaveBeenLastCalledWith('error');
+  mocks.render.mockImplementationOnce(() => { throw new Error('Lỗi vẽ thử'); });
+  mocks.from.mockResolvedValue(fakeModel());
+  fireEvent.click(screen.getByRole('button', { name: 'Thử tải lại nhân vật' }));
+  await waitFor(() => expect(status.mock.calls.map(([value]) => value)).toEqual(['loading', 'ready', 'error', 'loading', 'error']));
+});
 
 it('idle eyes override motion eye values even with pointer tracking off and reduced motion on', async () => {
   const random = vi.spyOn(Math, 'random').mockReturnValue(0.8);
@@ -180,6 +197,8 @@ it('a model without expression files gets the built-in face after its motion, th
 
 it('giảm chuyển động vẫn áp dụng pose và giải phóng renderer khi rời trang', async () => {
   const { model, view } = await mount();
+  expect(model.update).toHaveBeenCalledWith(0);
+  model.update.mockClear();
   mocks.tick!();
   expect(model.internalModel.update).toHaveBeenCalledWith(0, 0);
   expect(model.update).not.toHaveBeenCalled();

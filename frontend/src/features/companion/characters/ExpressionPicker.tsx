@@ -5,6 +5,8 @@ import {
 } from './characterExpressions';
 import { Dropdown, Field, type DropdownOption } from '../speech/voiceUi';
 
+import { LoadingIndicator } from '../../../shared/ui/LoadingIndicator';
+
 const AUTO = 'auto';
 const CARDS: StageEmotion[] = [...EMOTIONS, 'neutral'];
 const label = (emotion: StageEmotion) => emotion === 'neutral' ? NEUTRAL_LABEL : emotionLabels[emotion];
@@ -67,7 +69,7 @@ export default function ExpressionPicker({ characterId, choices, format = 'live2
       {selected === null ? <p className="expression-source-empty">Bấm một thẻ để xem nhân vật làm mặt đó.</p> : <>
         <div className="expression-snapshot">
           {shot ? <img src={shot} alt={`Nhân vật làm mặt ${label(selected).toLowerCase()}`} />
-            : <span className="loading-spinner" role="status" aria-label="Đang chụp mặt nhân vật" />}
+            : <LoadingIndicator variant="icon" label="Đang chụp mặt nhân vật" />}
         </div>
         <div className="expression-source-body">
           {selected === 'neutral' ? <p>Nhân vật đang về mặt bình thường.</p> : <>

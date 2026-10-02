@@ -6,6 +6,7 @@ import {
 } from "../../shared/api/api";
 import ImagineLibrary, { HeartIcon } from "./ImagineLibrary";
 import StudioMenu from "./StudioMenu";
+import { LoadingIndicator } from '../../shared/ui/LoadingIndicator';
 import { COMPACT_QUERY } from "../companion/characters/characterView";
 
 const QUALITY_KEY = "peto-imagine-quality";
@@ -400,7 +401,7 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
       </button>
 
     <div className="imagine-gallery" ref={galleryRef}>
-      {loading && <div className="loading-chat" role="status" aria-label="Đang mở bộ ảnh của bạn"><span className="loading-spinner" aria-hidden="true" /></div>}
+      {loading && <div className="loading-chat"><LoadingIndicator label="Đang mở bộ ảnh của bạn" /></div>}
       {loadFailed && <div className="studio-load-error" role="alert"><p>Chưa tải được ảnh đã tạo.</p><button type="button" onClick={() => void loadJobs()}>Thử tải lại</button></div>}
       {!loading && !loadFailed && jobs.length === 0 && !generating && <section className="studio-welcome">
         <span className="studio-eyebrow"><SparkleIcon /> Góc sáng tạo của bạn</span>
@@ -476,7 +477,7 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
               {(["1k", "2k"] as const).map((value) => <button type="button" key={value} className={resolution === value ? "on" : ""} aria-pressed={resolution === value} disabled={controlsDisabled} onClick={() => setResolution(value)}>{value.toUpperCase()}</button>)}
             </div>
             <button type="submit" className="studio-send" aria-label={sendLabel} title={sendLabel} disabled={!prompt.trim() || controlsDisabled}>
-              {generating ? <span className="studio-spinner" aria-hidden="true" /> : <ArrowUpIcon />}
+              {generating ? <span aria-hidden="true"><LoadingIndicator variant="icon" label="Đang tạo ảnh" /></span> : <ArrowUpIcon />}
             </button>
           </div>
         </div>
