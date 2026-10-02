@@ -1813,6 +1813,10 @@ Chat, Companion and roleplay turn (not the Agent CLI).
     finish loading and the Live2D/VRM renderer has drawn the first frame. The stage remains measurable underneath;
     the stage/chat reveal together, including re-entry and character changes. Model errors release the loading screen
     to the existing retry UI; a retry reports loading again. Renderer callbacks are ignored after disposal.
+    Imagine likewise keeps the full-screen loading through its module and initial library request, without an
+    intermediate gallery loader/composer frame. Library failure reveals the existing retry UI; retries retain drafts.
+    Its dock is measured in a layout effect after loading and when the view becomes active. Docs article/search
+    loading text remains unchanged; only the initial Docs module uses the shared splash screen.
   - **Auth preload.** `index.html` preloads `/api/auth/me` (`as="fetch" crossorigin`), and `getAuthState`'s plain
     `fetch` reuses it. This was checked in Chromium: one request, initiator `link`, no console warning.
   - **Measured.** Cold load on an emulated mid-range phone (Lighthouse's slow 4G, 4× CPU, five runs) went from

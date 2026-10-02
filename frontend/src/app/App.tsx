@@ -12,7 +12,6 @@ import { ChatMessage } from '../features/chat/ChatMessage';
 import { disconnectStream, networkInterrupted, useReplyRecovery } from '../features/chat/useReplyRecovery';
 import { ReplyRecoveryNotice } from '../features/chat/ReplyRecoveryNotice';
 import { Greeting } from '../features/chat/Greeting';
-import { ViewLoading } from '../shared/ui/ViewLoading';
 import { LoadingIndicator } from '../shared/ui/LoadingIndicator';
 import { MenuIcon, PinIcon } from './navigationIcons';
 import { PetoAvatar, AccountAvatar, accountLine, accountSubtitle } from './accountUi';
@@ -1195,7 +1194,7 @@ export default function App() {
           key thì React nhân đôi tab, và mỗi bản Imagine mới lại tải danh sách ảnh, lặp mãi không dừng. */}
       {imageVisited && (
         <LazyBoundary>
-        <Suspense fallback={view === "imagine" ? <ViewLoading label="Đang mở Tạo ảnh" /> : null}>
+        <Suspense fallback={view === "imagine" ? <LoadingIndicator variant="screen" label="Loading" /> : null}>
         <Imagine
           key={`imagine-${auth.user?.id}`}
           active={view === "imagine"}

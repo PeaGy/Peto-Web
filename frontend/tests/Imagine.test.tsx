@@ -41,9 +41,26 @@ function stubPhone() {
 }
 async function open() {
   const view = render(<Imagine {...props} />);
-  await waitFor(() => expect(screen.queryByRole('status', { name: 'Đang mở bộ ảnh của bạn' })).toBeNull());
+  await waitFor(() => expect(screen.queryByRole('status', { name: 'Loading' })).toBeNull());
   return view;
 }
+
+it('chỉ hiện Loading chính cho tới khi tải xong thư viện, đổi tab không tải lại', async () => {
+  const request = deferred<api.ImagineJob[]>();
+  vi.mocked(api.listImagineJobs).mockReturnValue(request.promise);
+  const view = render(<Imagine {...props} />);
+  expect(screen.getByRole('status', { name: 'Loading' }).classList.contains('brand-loading--screen')).toBe(true);
+  expect(screen.queryByLabelText('Bức ảnh bạn muốn tạo')).toBeNull();
+  expect(screen.queryByText('Đang mở bộ ảnh của bạn')).toBeNull();
+  view.rerender(<Imagine {...props} active={false} />);
+  expect(screen.queryByRole('status', { name: 'Loading' })).toBeNull();
+  await act(async () => request.resolve([job]));
+  view.rerender(<Imagine {...props} />);
+  expect(screen.queryByRole('status', { name: 'Loading' })).toBeNull();
+  expect(screen.getByLabelText('Bức ảnh bạn muốn tạo')).toBeTruthy();
+  expect(screen.getByRole('button', { name: /Xem ảnh 1:/ })).toBeTruthy();
+  expect(api.listImagineJobs).toHaveBeenCalledOnce();
+});
 
 it('fills an idea without generating, then sends the chosen options', async () => {
   await open();
@@ -85,8 +102,8 @@ it('waits for gallery loading before accepting a generation request', async () =
   const loading = deferred<api.ImagineJob[]>();
   vi.mocked(api.listImagineJobs).mockReturnValueOnce(loading.promise);
   render(<Imagine {...props} />);
-  fireEvent.change(screen.getByLabelText('Bức ảnh bạn muốn tạo'), { target: { value: 'Ý tưởng mới' } });
-  fireEvent.submit(screen.getByLabelText('Bức ảnh bạn muốn tạo').closest('form')!);
+  expect(screen.getByRole('status', { name: 'Loading' })).toBeTruthy();
+  expect(screen.queryByLabelText('Bức ảnh bạn muốn tạo')).toBeNull();
   expect(api.createImagineJob).not.toHaveBeenCalled();
   await act(async () => loading.resolve([job]));
   expect(screen.getByRole('button', { name: /Xem ảnh 1:/ })).toBeTruthy();

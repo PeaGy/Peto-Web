@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import {
   UnauthorizedError, createImagineJob, deleteImagineImage, deleteImagineJob, listImagineJobs, setImagineImageLiked,
@@ -175,7 +175,7 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
   const activeRef = useRef(active);
   const loadVersion = useRef(0);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const dock = dockRef.current;
     const stage = dock?.parentElement;
     if (!dock || !stage || typeof ResizeObserver === "undefined") return;
@@ -186,7 +186,7 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
     const observer = new ResizeObserver(measure);
     observer.observe(dock);
     return () => observer.disconnect();
-  }, []);
+  }, [active, loading]);
 
   const loadJobs = useCallback(async () => {
     const version = ++loadVersion.current;
@@ -232,12 +232,12 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
   }, [expanded]);
   // Cột trái ở App.tsx liệt kê danh sách này, nhưng Imagine vẫn giữ trạng thái gốc
   // để lượt tạo ảnh đang chạy không mất khi người dùng sang tab trò chuyện.
-  useEffect(() => { onJobsChange?.(jobs); }, [jobs, onJobsChange]);
+  useLayoutEffect(() => { onJobsChange?.(jobs); }, [jobs, onJobsChange]);
   useEffect(() => {
-    if (!active || !focusJobId) return;
+    if (!active || loading || !focusJobId) return;
     galleryRef.current?.querySelector(`[data-job-id="${focusJobId}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" });
     onFocusHandled?.();
-  }, [active, focusJobId, onFocusHandled]);
+  }, [active, loading, focusJobId, onFocusHandled]);
   useEffect(() => writeStored(QUALITY_KEY, quality), [quality]);
   useEffect(() => writeStored(RES_KEY, resolution), [resolution]);
   useEffect(() => writeStored(RATIO_KEY, aspect), [aspect]);
@@ -395,13 +395,15 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
     : showFull ? "Nhập để tạo hình ảnh" : "Gõ để tưởng tượng";
   const sendLabel = generating ? source ? "Đang sửa…" : "Đang tạo…" : source ? "Sửa ảnh" : "Tạo ảnh";
 
+  // Màn hình chờ chung kéo dài tới khi có thư viện; không hiện thêm một khung chờ bên trong studio.
+  if (loading) return active ? <LoadingIndicator variant="screen" label="Loading" /> : null;
+
   return <main className="imagine" hidden={!active}>
       <button type="button" className="menu-btn studio-menu-btn" aria-label="Mở menu" onClick={onOpenSidebar}>
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg>
       </button>
 
     <div className="imagine-gallery" ref={galleryRef}>
-      {loading && <div className="loading-chat"><LoadingIndicator label="Đang mở bộ ảnh của bạn" /></div>}
       {loadFailed && <div className="studio-load-error" role="alert"><p>Chưa tải được ảnh đã tạo.</p><button type="button" onClick={() => void loadJobs()}>Thử tải lại</button></div>}
       {!loading && !loadFailed && jobs.length === 0 && !generating && <section className="studio-welcome">
         <span className="studio-eyebrow"><SparkleIcon /> Góc sáng tạo của bạn</span>
