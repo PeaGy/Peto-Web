@@ -80,4 +80,19 @@ test('đọc sớm qua luồng SSE thật, giữ nháp mới và Dừng hủy ti
   await expect(composer).toHaveValue('Draft after stopping');
   expect(spoken).toEqual(['Hi there.', 'How are you?', 'A fresh reply.']);
   await noPageOverflow(page);
+  // Bảng đo nằm trong Cài đặt, không thêm chữ hoặc bảng vào sân khấu.
+  if (!await page.locator('.sidebar').isVisible()) await page.getByRole('button', { name: 'Mở menu', exact: true }).click();
+  await page.getByRole('button', { name: 'Tài khoản · Người kiểm thử' }).click();
+  await page.getByRole('menuitem', { name: 'Cài đặt', exact: true }).click();
+  const settings = page.getByRole('dialog', { name: 'Cài đặt', exact: true });
+  await settings.getByRole('button', { name: 'Giọng nói', exact: true }).click();
+  await settings.getByText('Kiểm tra tốc độ Companion', { exact: true }).click();
+  await expect(settings.getByRole('combobox', { name: 'Lượt đo' })).toHaveValue(/\d+/);
+  await expect(settings.getByRole('combobox', { name: 'Lượt đo' }).locator('option').first()).toHaveText('Gần nhất · Đã dừng');
+  await expect(settings.locator('.companion-timing dt', { hasText: 'Tạo tiếng → bắt đầu phát' }).locator('..').locator('dd')).toHaveText(/\d+\.\d{2} giây/);
+  const bounds = await settings.locator('.companion-timing').boundingBox();
+  expect(bounds!.x).toBeGreaterThanOrEqual(0);
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(page.viewportSize()!.width);
+  await settings.getByRole('button', { name: 'Xóa kết quả đo' }).click();
+  await expect(settings.getByText(/Chưa có lượt đo/)).toBeVisible();
 });

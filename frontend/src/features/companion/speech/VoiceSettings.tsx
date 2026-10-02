@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import HearingSettings from "./HearingSettings";
+import CompanionTimingPanel from './CompanionTimingPanel';
 import { VOICE_LABELS, voiceLabel, type FallbackChoice, type LocalVoice, type VoiceSourceId } from "./LocalVoice";
 import {
   KEY_PROVIDERS,
@@ -228,6 +229,7 @@ export default function VoiceSettings({ voice, open, tab = "noi", onTab }: {
           )}
         </div>
       )}
+      <CompanionTimingPanel />
     </>
   );
 }

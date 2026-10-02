@@ -921,6 +921,22 @@ Companion phase 3 (2026-10-02) reduces the wait before speech and coordinates tu
 - Automatic spoken barge-in/full duplex is deferred. Regression tests cover sentence boundaries, player cancellation,
   Companion draft/turn isolation, hearing resume/auto-send and PC/mobile streaming browser flows using fake services.
 
+Companion timing diagnostics (2026-10-02) live in the collapsed "Kiểm tra tốc độ Companion" section under Settings →
+Giọng nói, below either voice tab. `companionTiming.ts` keeps at most five in-memory records containing source IDs,
+input kind, search flag and monotonic `performance.now()` milestones only; it stores no message, audio or key and
+does not add requests. Reload/unmount or Xóa kết quả đo clears them and invalidates pending updates.
+- Hearing supplies provider-confirmed end/finalization timestamps. Browser end can arrive after final text, or never
+  arrive; key-based hearing marks end when the existing silence segmenter closes a segment. These are detector events,
+  not a precise physical end-of-speech measurement. The last finalized sentence supplies the voice draft timestamps;
+  manual edits discard them. Missing/reversed intervals are unavailable rather than guessed.
+- Turns mark send, first visible text, first speakable sentence, synthesis request, actual playback and reply completion.
+  Search replacement discards draft milestones. Stop/error freezes a record; late callbacks cannot alter it or a new
+  turn. Player cancellation from settings also marks stopped. A completed text-only turn never claims audio playback.
+- UI separates recognition, user/auto-send wait, first text, sentence/search wait, synthesis-to-playback and total wait.
+  It shows the voice source selected at send, not a claim about the fallback voice ultimately used. No model/network
+  latency claim is made from these client-observed combined intervals. AIRI-style stage layout and microphone defaults
+  remain unchanged. Coverage includes store guards, real hooks with fake services and PC/mobile Settings/browser flows.
+
 - Voice stays off until the user turns on the "Bật giọng nói" switch in Settings, and nothing calls
   `/api/voice` before that. Even once enabled, the hook only probes after Companion has been opened
   or while Settings is open, so the Chat tab never calls it. `tests/Companion.test.tsx` asserts both.

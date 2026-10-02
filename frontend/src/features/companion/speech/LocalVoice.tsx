@@ -9,11 +9,13 @@ import {
   OFFICIAL_VOICE_KEY,
   probeVoiceHealth,
   serverSynth,
+  speakableText,
   VOICE_FALLBACK_EVENT,
   VOICE_FALLBACK_KEY,
   VOICE_SOURCE_KEY,
   withFallback,
   type SpeakPhase,
+  type SpeechTimingHooks,
   type Synthesize,
   type VoiceFallbackDetail,
   type VoiceHealth,
@@ -95,8 +97,8 @@ export interface LocalVoice {
    * Đọc một đoạn. Lỗi thì Promise bị từ chối kèm câu báo tiếng Việt; bị dừng hay bị lượt đọc khác thay
    * chỗ thì kết thúc êm, không báo lỗi. ``fallback: false`` (Nghe thử) chỉ dùng nguồn đang chọn.
    */
-  speak: (key: string, text: string, options?: { fallback?: boolean }) => Promise<void>;
-  stream: (key: string) => VoiceStream;
+  speak: (key: string, text: string, options?: { fallback?: boolean; timing?: SpeechTimingHooks }) => Promise<void>;
+  stream: (key: string, timing?: SpeechTimingHooks) => VoiceStream;
   stop: () => void;
 }
 
@@ -304,15 +306,24 @@ export function useLocalVoice(active: boolean): LocalVoice {
     return backup ? withFallback(primary, backup) : primary;
   }, [backupVoice, state.ready, state.problem, source, officialVoice, homeVoice, keys]);
 
-  const speak = useCallback(async (key: string, text: string, options: { fallback?: boolean } = {}) => {
+  const speak = useCallback(async (key: string, text: string, options: { fallback?: boolean; timing?: SpeechTimingHooks } = {}) => {
     setNotice('');
     if (!player.current) player.current = new LocalVoicePlayer();
     const version = ++speakVersion.current;
     setSpeaking({ key, phase: "loading" });
     try {
-      await player.current.speak(text, synth(options.fallback !== false), (phase) => {
-        if (version === speakVersion.current) setSpeaking({ key, phase });
+      const generate = synth(options.fallback !== false);
+      if (speakableText(text)) options.timing?.onTextReady?.();
+      const result = await player.current.speak(text, (chunk, signal) => {
+        if (version === speakVersion.current) options.timing?.onSynthesisStart?.();
+        return generate(chunk, signal);
+      }, (phase) => {
+        if (version === speakVersion.current) {
+          if (phase === 'playing') options.timing?.onPlaying?.();
+          setSpeaking({ key, phase });
+        }
       });
+      if (result === 'stopped') options.timing?.onStopped?.();
     } catch (error) {
       if (version === speakVersion.current) {
         throw error instanceof Error ? error : new Error("Chưa đọc được đoạn này.");
@@ -322,15 +333,23 @@ export function useLocalVoice(active: boolean): LocalVoice {
     }
   }, [synth]);
 
-  const readQueue = useCallback(async (key: string, queue: SpeechQueue) => {
+  const readQueue = useCallback(async (key: string, queue: SpeechQueue, timing?: SpeechTimingHooks) => {
     setNotice('');
     if (!player.current) player.current = new LocalVoicePlayer();
     const version = ++speakVersion.current;
     setSpeaking({ key, phase: 'loading' });
     try {
-      await player.current.speakQueue(queue, synth(true), phase => {
-        if (version === speakVersion.current) setSpeaking({ key, phase });
+      const generate = synth(true);
+      const result = await player.current.speakQueue(queue, (chunk, signal) => {
+        if (version === speakVersion.current) timing?.onSynthesisStart?.();
+        return generate(chunk, signal);
+      }, phase => {
+        if (version === speakVersion.current) {
+          if (phase === 'playing') timing?.onPlaying?.();
+          setSpeaking({ key, phase });
+        }
       });
+      if (result === 'stopped') timing?.onStopped?.();
     } catch (error) {
       if (version === speakVersion.current) throw error instanceof Error ? error : new Error('Chưa đọc được đoạn này.');
     } finally {
@@ -339,9 +358,9 @@ export function useLocalVoice(active: boolean): LocalVoice {
     }
   }, [synth]);
 
-  const stream = useCallback((key: string): VoiceStream => {
-    const text = new StreamSpeechText();
-    return { push: delta => text.push(delta), finish: () => text.finish(), done: readQueue(key, text.queue) };
+  const stream = useCallback((key: string, timing?: SpeechTimingHooks): VoiceStream => {
+    const text = new StreamSpeechText(timing?.onTextReady);
+    return { push: delta => text.push(delta), finish: () => text.finish(), done: readQueue(key, text.queue, timing) };
   }, [readQueue]);
 
   const recheck = useCallback(() => setProbe((count) => count + 1), []);

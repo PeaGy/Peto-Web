@@ -28,6 +28,14 @@ const TAIL_MERGE = 40;
 
 export type SpeakPhase = "loading" | "playing" | "buffering";
 
+/** Mốc của lượt đọc thật, dùng để kiểm tra độ trễ; không chứa chữ hay âm thanh. */
+export interface SpeechTimingHooks {
+  onTextReady?(): void;
+  onSynthesisStart?(): void;
+  onPlaying?(): void;
+  onStopped?(): void;
+}
+
 const strings = (value: unknown): string[] =>
   Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 

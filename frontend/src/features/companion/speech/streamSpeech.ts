@@ -8,6 +8,7 @@ export class StreamSpeechText {
   readonly queue = new SpeechQueue();
   private buffer = '';
   private closed = false;
+  constructor(private readonly onTextReady?: () => void) {}
   push(delta: string) {
     if (this.closed) return;
     this.buffer += delta;
@@ -23,7 +24,10 @@ export class StreamSpeechText {
     this.buffer = this.buffer.slice(consumed);
   }
   private enqueue(text: string) {
-    for (const chunk of speechChunks(speakableText(text))) this.queue.push(chunk);
+    for (const chunk of speechChunks(speakableText(text))) {
+      this.onTextReady?.();
+      this.queue.push(chunk);
+    }
   }
   finish() {
     if (this.closed) return;

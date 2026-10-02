@@ -22,6 +22,7 @@ import {
   type HearingProviderId,
 } from "./hearingProviders";
 import { getKeyConfigs } from "./voiceProviders";
+import type { HearingTiming } from './companionTiming';
 
 export type HearingSource = "browser" | HearingProviderId;
 export type HearingPhase = "off" | "starting" | "waiting" | "speaking" | "transcribing" | "paused";
@@ -131,7 +132,7 @@ export function useHearingLevel(): number {
 }
 
 export interface HearingSink {
-  onFinal(text: string, finalized?: boolean): void;
+  onFinal(text: string, finalized?: boolean, timing?: HearingTiming): void;
 }
 
 let companionSink: HearingSink | null = null;
@@ -153,8 +154,8 @@ export function joinSpeech(base: string, text: string): string {
   return /\s$/.test(base) ? `${base}${text}` : `${base} ${text}`;
 }
 
-function deliver(text: string, finalized = true) {
-  (state.testing ? testSink : companionSink)?.onFinal(text, finalized);
+function deliver(text: string, finalized = true, timing?: HearingTiming) {
+  (state.testing ? testSink : companionSink)?.onFinal(text, finalized, timing);
   publish({ interim: "" });
 }
 
@@ -212,6 +213,8 @@ async function browserEngine(token: number): Promise<Engine> {
     });
   };
   const begin = () => {
+    let endedAt: number | undefined;
+    let lastFinal: HearingTiming | undefined;
     recognition = startBrowserSpeech(state.language, {
       onConnecting: () => {
         if (current() && !paused) publish({ phase: "starting" });
@@ -222,10 +225,17 @@ async function browserEngine(token: number): Promise<Engine> {
         startMeter();
       },
       onSpeechStart: () => {
-        if (current() && !paused) publish({ phase: "speaking" });
+        if (current() && !paused) {
+          endedAt = undefined; lastFinal = undefined;
+          publish({ phase: "speaking" });
+        }
       },
       // Chỉ nghe thấy tiếng ồn thì trình duyệt không trả chữ nào: về lại "đang nghe" thay vì kẹt ở "bạn đang nói".
       onSpeechEnd: () => {
+        if (!current() || paused) return;
+        endedAt = performance.now();
+        // Một số trình duyệt chốt chữ trước khi báo hết tiếng; chỉ giữ mốc thật, không đảo thứ tự.
+        if (lastFinal) lastFinal.endedAt = endedAt;
         if (current() && !paused && state.phase === "speaking") {
           publish({ phase: state.interim ? "transcribing" : "waiting" });
         }
@@ -235,7 +245,9 @@ async function browserEngine(token: number): Promise<Engine> {
       },
       onFinal: (text) => {
         if (!current() || paused) return;
-        deliver(text);
+        lastFinal = { endedAt, finalizedAt: performance.now() };
+        deliver(text, true, lastFinal);
+        endedAt = undefined;
         publish({ phase: "waiting" });
       },
       onDraft: (text) => {
@@ -287,6 +299,7 @@ async function keyEngine(token: number, source: HearingProviderId): Promise<Engi
 
   // Chép lần lượt từng câu, để chữ vào ô nhắn đúng thứ tự đã nói.
   const transcribe = (samples: Float32Array) => {
+    const endedAt = performance.now();
     const version = segmentVersion;
     const signal = controller.signal;
     const valid = () => token === generation && version === segmentVersion && !signal.aborted;
@@ -298,7 +311,7 @@ async function keyEngine(token: number, source: HearingProviderId): Promise<Engi
       try {
         if (!valid()) return;
         const words = await transcribeWithKey(provider, getKeyConfigs()[provider.id] ?? {}, audio, language, signal);
-        if (valid() && !paused && words) deliver(words);
+        if (valid() && !paused && words) deliver(words, true, { endedAt, finalizedAt: performance.now() });
       } catch (error) {
         if (!valid()) return;
         // Khóa sai, hết số dư: nói tiếp cũng hỏng nên thôi nghe. Lỗi mạng, giới hạn lượt: báo rồi nghe tiếp.

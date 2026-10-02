@@ -7,6 +7,7 @@ import * as projectApi from '../src/features/projects/projectApi';
 vi.mock('../src/features/projects/projectApi', async original => ({ ...await original<typeof import('../src/features/projects/projectApi')>(), listProjects: vi.fn() }));
 import { loadHearingSettings, stopListening, setHearingPaused } from '../src/features/companion/speech/hearingEngine';
 import { openMicrophone } from '../src/features/companion/speech/hearingCapture';
+import { clearCompanionTimings, getCompanionTimings } from '../src/features/companion/speech/companionTiming';
 
 vi.mock('../src/shared/api/api', async (original) => ({
   ...await original<typeof import('../src/shared/api/api')>(),
@@ -64,6 +65,7 @@ const fetchMock = vi.fn();
 beforeAll(preloadLazyParts);
 
 beforeEach(() => {
+  clearCompanionTimings();
   vi.resetAllMocks();
   vi.mocked(projectApi.listProjects).mockResolvedValue([]);
   vi.mocked(api.getCompanionMemory).mockResolvedValue({ available: true, enabled: true, pending: false, limit: 50, memories: [] });
@@ -185,6 +187,31 @@ async function openCompanion() {
 
 const composer = () => screen.getByRole('textbox', { name: 'Nhắn cho Peto trong Companion' }) as HTMLTextAreaElement;
 const micPanel = () => within(screen.getByRole('dialog', { name: 'Micro' }));
+
+it('lượt đo dùng mốc bộ nghe thật; gõ sửa không gán thời gian micro cũ cho lời nhắn mới', async () => {
+  vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers) => {
+    handlers.onMeta?.('C1', 'low'); handlers.onDelta?.('Hello.'); handlers.onDone?.();
+  });
+  await openCompanion(); fireEvent.click(screen.getByRole('button', { name: 'Bật nghe' }));
+  await waitFor(() => expect(lastRecognition()?.started).toBe(true));
+  act(() => {
+    lastRecognition().onspeechstart?.(); lastRecognition().onspeechend?.();
+    lastRecognition().onresult?.({ resultIndex: 0, results: [{ isFinal: true, 0: { transcript: 'Hello Peto' } }] });
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Gửi', exact: true }));
+  await waitFor(() => expect(api.sendMessage).toHaveBeenCalledOnce());
+  const record = getCompanionTimings()[0];
+  expect(record).toMatchObject({ input: 'voice', hearingSource: 'browser', status: 'text-only' });
+  expect(record.hearing!.endedAt).toBeLessThanOrEqual(record.hearing!.finalizedAt);
+  expect(record.hearing!.finalizedAt).toBeLessThanOrEqual(record.sentAt);
+  await waitFor(() => expect(lastRecognition()?.aborted).toBe(false));
+  act(() => lastRecognition().say('Second message', true));
+  fireEvent.change(composer(), { target: { value: 'Edited message' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Gửi', exact: true }));
+  await waitFor(() => expect(api.sendMessage).toHaveBeenCalledTimes(2));
+  expect(getCompanionTimings()[0]).toMatchObject({ input: 'text' });
+  expect(getCompanionTimings()[0].hearing).toBeUndefined();
+});
 
 /** Ô tài khoản → Cài đặt trong menu → mục Giọng nói. */
 async function openVoiceSettings() {

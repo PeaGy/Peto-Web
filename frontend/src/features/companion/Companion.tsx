@@ -33,6 +33,7 @@ import { SceneBackdrop, ScenePicker, useCompanionScene } from './CompanionScenes
 import { GlobeIcon } from '../chat/WebSources';
 import { readCompanionSearch } from './companionSearch';
 import type { VoiceStream } from './speech/streamSpeech';
+import { beginCompanionTiming, clearCompanionTimings, type HearingTiming, type TurnTiming } from './speech/companionTiming';
 
 const MUTED_KEY = "peto-companion-muted";
 const Live2DStage = lazy(() => import("./characters/Live2DStage"));
@@ -150,11 +151,15 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
   const [heardAt, setHeardAt] = useState(0);
   const [hearingNeedsReview, setHearingNeedsReview] = useState(false);
   const draftVersion = useRef(0);
-  const spokenTurn = useRef<{ cancelled: boolean; stream: VoiceStream | null } | null>(null);
+  const draftTiming = useRef<{ hearing: HearingTiming; source: string } | null>(null);
+  const spokenTurn = useRef<{ cancelled: boolean; stream: VoiceStream | null; timing: TurnTiming } | null>(null);
   const micRef = useRef<HTMLButtonElement>(null);
   const stopVoice = voice.stop;
   const haltSpeech = useCallback(() => {
-    if (spokenTurn.current) spokenTurn.current.cancelled = true;
+    if (spokenTurn.current) {
+      spokenTurn.current.cancelled = true;
+      spokenTurn.current.timing.finish('stopped');
+    }
     stopVoice();
   }, [stopVoice]);
   const loadVersion = useRef(0);
@@ -258,7 +263,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
   }
 
   // Giọng nói sống ở App, lâu hơn tab này (đăng xuất thì tab bị gỡ), nên gỡ tab thì cũng thôi đọc.
-  useEffect(() => () => haltSpeech(), [haltSpeech]);
+  useEffect(() => () => { haltSpeech(); clearCompanionTimings(); }, [haltSpeech]);
 
   useEffect(() => {
     try {
@@ -325,7 +330,15 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
     const controller = new AbortController();
     abortRef.current = controller;
     const sentDraftVersion = draftVersion.current;
-    const spoken = { cancelled: false, stream: null as VoiceStream | null };
+    const search = readCompanionSearch();
+    const heard = draftTiming.current;
+    draftTiming.current = null;
+    const timing = beginCompanionTiming({ input: heard ? 'voice' : 'text', hearing: heard?.hearing,
+      hearingSource: heard?.source, voiceSource: voice.source, search });
+    const speechTiming = { onTextReady: () => timing.mark('textReady'),
+      onSynthesisStart: () => timing.mark('synthesis'), onPlaying: () => timing.mark('playing'),
+      onStopped: () => timing.finish('stopped') };
+    const spoken = { cancelled: false, stream: null as VoiceStream | null, timing };
     spokenTurn.current = spoken;
     const current = () => abortRef.current === controller && !controller.signal.aborted;
     let earlyVoice = false;
@@ -338,7 +351,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
     let turnEmotion: StageEmotion | undefined;
     try {
       await sendMessage(
-        { message: text, conversationId, effort: "low", webSearch: readCompanionSearch() ? "auto" : "off", mode: "companion" },
+        { message: text, conversationId, effort: "low", webSearch: search ? "auto" : "off", mode: "companion" },
         {
           onMeta: (id, _effort, stored, voiceStream) => {
             if (!current()) return;
@@ -352,6 +365,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
           },
           onDelta: (chunk) => {
             if (!current()) return;
+            if (chunk.trim()) timing.mark('firstText');
             reply += chunk;
             setMessages((prev) => {
               const last = prev[prev.length - 1];
@@ -361,10 +375,11 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
             const now = latest.current;
             if (earlyVoice && !spoken.cancelled && now.active && !now.muted && now.voice.status === 'ready') {
               if (!spoken.stream) {
-                spoken.stream = now.voice.stream(`${SPEECH_PREFIX}${replyIndex}`);
-                spoken.stream.done.catch(err => {
+                spoken.stream = now.voice.stream(`${SPEECH_PREFIX}${replyIndex}`, speechTiming);
+                spoken.stream.done.then(() => timing.finish(spoken.cancelled ? 'stopped' : 'complete')).catch(err => {
                   if (spokenTurn.current === spoken && !spoken.cancelled) {
                     spoken.cancelled = true;
+                    timing.finish('error');
                     reportSpeechError(err);
                   }
                 });
@@ -391,6 +406,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
           // Peto viết vài chữ rồi mới quyết định tra web: máy chủ bỏ phần đó, trang cũng xóa để khỏi ghép hai câu.
           onReplace: () => {
             if (!current()) return;
+            timing.replace();
             // Máy chủ thay bản nháp: bỏ hàng chờ cũ và chỉ đọc bản chốt sau khi lượt xong.
             earlyVoice = false;
             if (spoken.stream) {
@@ -402,10 +418,11 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
               return last?.role === "assistant" ? [...prev.slice(0, -1), { ...last, content: "" }] : prev;
             });
           },
-          onError: (message) => { if (current()) setError(message); },
+          onError: (message) => { if (current()) { timing.finish('error'); setError(message); } },
           onDone: () => {
             if (!current()) return;
             completed = true;
+            timing.mark('replyDone');
           },
         },
         controller.signal,
@@ -420,6 +437,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
         setError(err instanceof Error ? err.message : "Mất kết nối tới máy chủ");
       }
     } finally {
+      if (!completed) timing.finish(controller.signal.aborted ? 'stopped' : 'error');
       if (!completed) haltSpeech();
       // Giữ bản nháp tới khi máy chủ nhận tin, như tab Trò chuyện.
       if (!accepted) {
@@ -453,11 +471,15 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
     }
     if (speaking) {
       if (spoken.stream) spoken.stream.finish();
-      else now.voice.speak(`${SPEECH_PREFIX}${replyIndex}`, reply).catch(err => {
+      else now.voice.speak(`${SPEECH_PREFIX}${replyIndex}`, reply, { timing: speechTiming })
+        .then(() => timing.finish(spoken.cancelled ? 'stopped' : 'complete')).catch(err => {
+        timing.finish('error');
         if (spokenTurn.current === spoken && !spoken.cancelled) reportSpeechError(err);
       });
     } else if (spoken.stream) {
       haltSpeech();
+    } else {
+      timing.finish('text-only');
     }
   }
 
@@ -511,7 +533,8 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
   useEffect(() => {
     if (!active) return;
     setHearingSink({
-      onFinal: (text, finalized = true) => {
+      onFinal: (text, finalized = true, timing) => {
+        draftTiming.current = finalized && timing ? { hearing: timing, source: getHearingState().source } : null;
         draftVersion.current++;
         setDraft((previous) => joinSpeech(previous, text));
         setHeardAt(finalized ? Date.now() : 0);
@@ -741,6 +764,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
               onChange={(event) => {
                 setDraft(event.target.value);
                 draftVersion.current++;
+                draftTiming.current = null;
                 noteTyping(Boolean(event.target.value.trim()));
                 setHeardAt(0);
                 setHearingNeedsReview(false);

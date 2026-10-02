@@ -6,6 +6,7 @@ import * as api from '../src/shared/api/api';
 import Companion from '../src/features/companion/Companion';
 import { useLocalVoice } from '../src/features/companion/speech/LocalVoice';
 import { DEFAULT_CHARACTER, type CharacterModel } from '../src/features/companion/characters/characterLibrary';
+import { clearCompanionTimings, getCompanionTimings } from '../src/features/companion/speech/companionTiming';
 
 vi.mock('../src/shared/api/api', async (original) => ({
   ...await original<typeof import('../src/shared/api/api')>(),
@@ -30,6 +31,7 @@ const played: string[] = [];
 beforeAll(preloadLazyParts);
 
 beforeEach(() => {
+  clearCompanionTimings();
   vi.resetAllMocks();
   vi.mocked(api.getCompanionMemory).mockResolvedValue({ available: true, enabled: true, pending: false, limit: 50, memories: [] });
   localStorage.clear();
@@ -69,6 +71,31 @@ beforeEach(() => {
 });
 
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
+
+it('đo câu đầu và tạo tiếng riêng; chỉ ghi bắt đầu nói khi âm thanh phát thật', async () => {
+  localStorage.setItem('peto-local-voice', '1');
+  let ready!: () => void;
+  vi.stubGlobal('Audio', class {
+    onended = null; onerror = null;
+    play() { return new Promise<void>(resolve => { ready = resolve; }); } pause() {}
+  });
+  let handlers!: Parameters<typeof api.sendMessage>[1];
+  vi.mocked(api.sendMessage).mockImplementation((_payload, callbacks, signal) => new Promise(resolve => {
+    handlers = callbacks; signal?.addEventListener('abort', () => resolve(), { once: true });
+    callbacks.onMeta?.('C1', 'low', undefined, true); callbacks.onDelta?.('Hi there. ');
+  }));
+  await openCompanion(); await chatColumn().findByRole('button', { name: 'Tắt tiếng' });
+  await sendInCompanion('Hello'); await waitFor(() => expect(ready).toBeTypeOf('function'));
+  expect(getCompanionTimings()[0].marks).toMatchObject({ firstText: expect.any(Number), textReady: expect.any(Number), synthesis: expect.any(Number) });
+  expect(getCompanionTimings()[0].marks.playing).toBeUndefined();
+  await act(async () => ready());
+  expect(getCompanionTimings()[0].marks.playing).toEqual(expect.any(Number));
+  fireEvent.click(chatColumn().getByRole('button', { name: 'Dừng', exact: true }));
+  await chatColumn().findByRole('button', { name: 'Gửi', exact: true });
+  const saved = getCompanionTimings()[0];
+  act(() => { handlers.onDelta?.('Late words. '); handlers.onDone?.(); });
+  expect(saved.status).toBe('stopped'); expect(getCompanionTimings()[0]).toBe(saved);
+});
 
 it('đọc câu đầu trước khi trả lời xong, giữ chữ gõ mới và không đọc lặp bản đầy đủ', async () => {
   localStorage.setItem('peto-local-voice', '1');
