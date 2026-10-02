@@ -10,7 +10,9 @@ test('Companion chèn ảnh cạnh micro, mobile tách ở góc trái; gửi và
   const posts: { message: string; attachments: { name: string; mime: string; data: string }[] }[] = [];
   await page.route('**/api/companion', route => route.fulfill({ json: { conversation_id: 'A', messages } }));
   await page.route('**/api/attachments/test-image', route => route.fulfill({ contentType: 'image/png', body: png }));
-  await page.route('**/api/chat', route => {
+  await page.route('**/api/chat', async route => {
+    // Mạng chậm: bóng chat có thể hiện trước khi máy chủ nhận và trả xác nhận.
+    await new Promise(resolve => setTimeout(resolve, 150));
     const payload = route.request().postDataJSON(); posts.push(payload);
     const user = { id: 101, role: 'user', content: payload.message, attachments: [{
       id: 'test-image', name: payload.attachments[0].name, mime: 'image/png', kind: 'image', size: png.length, url: '/api/attachments/test-image',
@@ -57,6 +59,8 @@ test('Companion chèn ảnh cạnh micro, mobile tách ở góc trái; gửi và
   await upload.setInputFiles({ name: 'anh-moi.png', mimeType: 'image/png', buffer: png });
   await expect(panel.getByRole('button', { name: 'Gửi', exact: true })).toBeEnabled();
   await panel.getByRole('button', { name: 'Gửi', exact: true }).click();
+  await expect.poll(() => posts.length).toBe(2);
+  await expect(panel.getByRole('img', { name: /^Ảnh chờ gửi:/ })).toHaveCount(0);
   await expect(panel.getByRole('img', { name: 'anh-moi.png', exact: true })).toBeVisible();
   expect(posts[1].message).toBe('');
   await noPageOverflow(page);
