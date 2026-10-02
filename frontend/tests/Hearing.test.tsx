@@ -570,7 +570,7 @@ it('nguồn trình duyệt khởi động trước thanh đo, dùng micro mặc 
   expect(openMicrophone).not.toHaveBeenCalled();
   act(() => lastRecognition().onstart?.());
   expect(micPanel().getByText('Đang nghe')).toBeTruthy();
-  expect(openMicrophone).toHaveBeenCalledWith('', expect.any(Function));
+  expect(openMicrophone).toHaveBeenCalledWith('', expect.any(Function), expect.any(Function));
   expect(micPanel().getByRole('combobox', { name: 'Micro' })).toHaveProperty('disabled', true);
   act(() => lastRecognition().say('Hello Peto', true));
   expect(composer().value).toBe('Hello Peto');

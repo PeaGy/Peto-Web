@@ -1,6 +1,7 @@
 import { trackVoice } from "./voiceActivity";
 import { SpeechQueue, type SpeechChunk } from './speechQueue';
 import { normalizeWav } from "./voiceProviders";
+import { audioRequest } from './audioRequest';
 /** Đọc tin của Peto: tiếng từ máy chủ Peto (Giọng Peto, Máy nhà) hoặc từ khóa riêng của người dùng (voiceProviders). */
 
 export const LOCAL_VOICE_ORIGIN = "/api/voice";
@@ -254,7 +255,8 @@ export class LocalVoicePlayer {
         const chunk = await queue.nextChunk(controller.signal);
         noMore = chunk === null;
         if (chunk === null || controller.signal.aborted) return null;
-        return { blob: await synth(chunk.text, controller.signal), chunk };
+        return { blob: await audioRequest(signal => synth(chunk.text, signal), controller.signal, 45000,
+          new Error('Giọng Peto phản hồi quá lâu. Bấm Nghe để thử lại.')), chunk };
       };
       let pending = request();
       let started = false;
@@ -300,6 +302,13 @@ export class LocalVoicePlayer {
       let finished = false;
       let lastPhase: SpeakPhase | null = null;
       let announced = false;
+      let progressAt = performance.now();
+      let lastTime = audio.currentTime;
+      // Tiếng đã tải mà play/waiting không bao giờ kết thúc thì thoát, không giữ micro tạm dừng mãi.
+      const watchdog = setInterval(() => {
+        if (audio.currentTime > lastTime) { lastTime = audio.currentTime; progressAt = performance.now(); }
+        else if (performance.now() - progressAt >= 20000) finish(new Error('Tiếng Peto bị ngắt quá lâu. Bấm Nghe để thử lại.'));
+      }, 1000);
       const phase = (value: SpeakPhase) => {
         if (finished || signal.aborted || lastPhase === value) return;
         lastPhase = value;
@@ -308,6 +317,7 @@ export class LocalVoicePlayer {
       const finish = (error?: Error) => {
         if (finished) return;
         finished = true;
+        clearInterval(watchdog);
         stopTracking();
         signal.removeEventListener("abort", onAbort);
         audio.onended = null;

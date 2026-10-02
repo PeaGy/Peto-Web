@@ -23,6 +23,7 @@ import {
 } from "./hearingProviders";
 import { getKeyConfigs } from "./voiceProviders";
 import type { HearingTiming } from './companionTiming';
+import { audioRequest } from './audioRequest';
 
 export type HearingSource = "browser" | HearingProviderId;
 export type HearingPhase = "off" | "starting" | "waiting" | "speaking" | "transcribing" | "paused";
@@ -176,8 +177,11 @@ interface Engine {
 let engine: Engine | null = null;
 let generation = 0;
 let pauseWanted = false;
+let removeLifecycle: (() => void) | null = null;
 
 function stopEngine() {
+  removeLifecycle?.();
+  removeLifecycle = null;
   engine?.stop();
   engine = null;
 }
@@ -214,6 +218,8 @@ async function browserEngine(token: number): Promise<Engine> {
       publishLevel(levelOf(rms));
       soundMs = rms >= 0.01 ? soundMs + chunk.length / capture.sampleRate * 1000 : 0;
       if (soundMs >= 300) recognition?.noteSound();
+    }, () => {
+      if (current()) publishLevel(0);
     }).then((opened) => {
       if (!current()) opened.stop();
       else capture = opened;
@@ -322,6 +328,11 @@ async function keyEngine(token: number, source: HearingProviderId): Promise<Engi
 
   // Chép lần lượt từng câu, để chữ vào ô nhắn đúng thứ tự đã nói.
   const transcribe = (samples: Float32Array) => {
+    // Không giữ âm thanh vô hạn khi nguồn chép lời bị chậm: tối đa một câu đang chép và hai câu chờ.
+    if (pending >= 3) {
+      publish({ phase: 'transcribing', message: 'Nguồn nghe đang chép chậm. Một câu mới chưa được nhận; chờ chữ hiện rồi nói lại nhé.' });
+      return;
+    }
     const endedAt = performance.now();
     const version = segmentVersion;
     const signal = controller.signal;
@@ -333,7 +344,8 @@ async function keyEngine(token: number, source: HearingProviderId): Promise<Engi
     queue = queue.then(async () => {
       try {
         if (!valid()) return;
-        const words = await transcribeWithKey(provider, getKeyConfigs()[provider.id] ?? {}, audio, language, signal);
+        const words = await audioRequest(abort => transcribeWithKey(provider, getKeyConfigs()[provider.id] ?? {}, audio, language, abort),
+          signal, 30000, new HearingError('Nguồn nghe chép lời quá lâu. Bạn có thể nói lại hoặc đổi nguồn nghe.', false));
         if (valid() && !paused && words) deliver(words, true, { endedAt, finalizedAt: performance.now() });
       } catch (error) {
         if (!valid()) return;
@@ -364,7 +376,7 @@ async function keyEngine(token: number, source: HearingProviderId): Promise<Engi
     }
     else if (event.type === "end") transcribe(event.samples);
     else publish({ phase: pending ? "transcribing" : "waiting" });
-  });
+  }, error => { if (token === generation) fail(error); });
   sampleRate = capture.sampleRate;
   return {
     stop() {
@@ -390,10 +402,33 @@ async function keyEngine(token: number, source: HearingProviderId): Promise<Engi
 
 /** Bật nghe. `test`: nghe thử trong Cài đặt, chữ về khung Nghe thử và không bị tạm dừng khi Peto nói. */
 export async function startListening(mode: "companion" | "test" = "companion"): Promise<void> {
-  stopEngine();
   const token = ++generation;
+  stopEngine();
+  if (document.visibilityState === 'hidden' || !navigator.onLine) {
+    publish({ listening: false, testing: false, phase: 'off', interim: '', message: 'Mở lại trang và kiểm tra mạng rồi bấm micro để nghe nhé.' });
+    publishLevel(0);
+    return;
+  }
   const testing = mode === "test";
   publish({ listening: true, testing, phase: "starting", interim: "", message: "" });
+  const suspend = (message: string) => {
+    if (token !== generation) return;
+    stopListening({ keepInterim: true });
+    publish({ message });
+  };
+  const hidden = () => {
+    if (document.visibilityState === 'hidden') suspend('Micro đã dừng khi trang xuống nền. Chữ đã nhận được giữ lại; bấm micro để nghe tiếp.');
+  };
+  const leaving = () => suspend('Micro đã dừng khi rời trang. Bấm micro để nghe tiếp.');
+  const offline = () => suspend('Micro đã dừng do mất mạng. Chữ đã nhận được giữ lại; có mạng rồi bấm micro để nghe tiếp.');
+  document.addEventListener('visibilitychange', hidden);
+  window.addEventListener('pagehide', leaving);
+  window.addEventListener('offline', offline);
+  removeLifecycle = () => {
+    document.removeEventListener('visibilitychange', hidden);
+    window.removeEventListener('pagehide', leaving);
+    window.removeEventListener('offline', offline);
+  };
   try {
     const next = state.source === "browser" ? await browserEngine(token) : await keyEngine(token, state.source);
     if (token !== generation) {

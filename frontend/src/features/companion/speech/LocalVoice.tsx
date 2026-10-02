@@ -229,6 +229,19 @@ export function useLocalVoice(active: boolean): LocalVoice {
     setSpeaking(null);
   }, []);
 
+  // Khóa màn hình/đổi tab có thể treo tiếng và các lời hứa phát; dừng cả đoạn đang xin, không tự phát lại.
+  useEffect(() => {
+    const hidden = () => { if (document.visibilityState === 'hidden') stop(); };
+    document.addEventListener('visibilitychange', hidden);
+    window.addEventListener('pagehide', stop);
+    window.addEventListener('offline', stop);
+    return () => {
+      document.removeEventListener('visibilitychange', hidden);
+      window.removeEventListener('pagehide', stop);
+      window.removeEventListener('offline', stop);
+    };
+  }, [stop]);
+
   useEffect(() => write(LOCAL_VOICE_ENABLED_KEY, enabled ? "1" : "0"), [enabled]);
   useEffect(() => write(VOICE_SOURCE_KEY, source), [source]);
   useEffect(() => { if (officialChoice) write(OFFICIAL_VOICE_KEY, officialChoice); }, [officialChoice]);

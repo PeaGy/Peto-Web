@@ -177,17 +177,41 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
   const atBottom = useRef(true);
   const resetRef = useRef<HTMLDialogElement>(null);
   // Luồng chữ và tiếng đều đọc lựa chọn mới nhất, không dùng trạng thái cũ của lúc gửi.
-  const latest = useRef({ active, muted, voice });
+  const foreground = useRef(document.visibilityState !== 'hidden');
+  const latest = useRef({ active, muted, voice, foreground: foreground.current });
   const recovery = useReplyRecovery({
     scope: 'companion', conversationId, enabled: active, busy: streaming || loading || resetting,
-    onDisconnect: () => disconnectStream(abortRef.current),
+    onDisconnect: () => { haltSpeech(); disconnectStream(abortRef.current); },
     onUnauthorized,
     onRecovered: (stored) => { setMessages(stored); setError(null); },
   });
 
   useEffect(() => {
-    latest.current = { active, muted, voice };
+    latest.current = { active, muted, voice, foreground: foreground.current };
   });
+
+  useEffect(() => {
+    const suspend = () => {
+      foreground.current = false;
+      latest.current.foreground = false;
+      setHeardAt(0);
+      haltSpeech();
+      cue(null);
+    };
+    const visibility = () => {
+      if (document.visibilityState === 'hidden') suspend();
+      else { foreground.current = true; latest.current.foreground = true; }
+    };
+    const shown = () => visibility();
+    document.addEventListener('visibilitychange', visibility);
+    window.addEventListener('pagehide', suspend);
+    window.addEventListener('pageshow', shown);
+    return () => {
+      document.removeEventListener('visibilitychange', visibility);
+      window.removeEventListener('pagehide', suspend);
+      window.removeEventListener('pageshow', shown);
+    };
+  }, [haltSpeech, cue]);
 
   const load = useCallback(async () => {
     loadRef.current?.abort();
@@ -357,7 +381,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
     spokenTurn.current = spoken;
     let emotionCues: EmotionCue[] = [];
     const expressions = { onEmotion: (value: string) => {
-      if (spokenTurn.current === spoken && !spoken.cancelled && latest.current.active && !latest.current.muted) {
+      if (spokenTurn.current === spoken && !spoken.cancelled && latest.current.active && latest.current.foreground && !latest.current.muted) {
         const emotion = asStageEmotion(value);
         if (emotion) cue(emotion);
       }
@@ -404,7 +428,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
               return [...prev.slice(0, -1), { ...last, content: last.content + chunk }];
             });
             const now = latest.current;
-            if (earlyVoice && !spoken.cancelled && now.active && !now.muted && now.voice.status === 'ready') {
+            if (earlyVoice && !spoken.cancelled && now.active && now.foreground && !now.muted && now.voice.status === 'ready') {
               if (!spoken.stream) {
                 const stream = now.voice.stream(`${SPEECH_PREFIX}${replyIndex}`, speechTiming(), { ...expressions, cues: emotionCues });
                 spoken.stream = stream;
@@ -441,7 +465,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
               }] : prev;
             });
             const now = latest.current;
-            if (now.active && (offset === undefined || now.muted || now.voice.status !== 'ready' || spoken.cancelled)) cue(emotion);
+            if (now.active && now.foreground && (offset === undefined || now.muted || now.voice.status !== 'ready' || spoken.cancelled)) cue(emotion);
           },
           onSearch: (status) => { if (current()) setSearching(status === 'searching'); },
           // Peto viết vài chữ rồi mới quyết định tra web: máy chủ bỏ phần đó, trang cũng xóa để khỏi ghép hai câu.
@@ -508,8 +532,8 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
     }
     const now = latest.current;
     if (completed && reply.trim()) void watchMemory(replyIndex);
-    const speaking = completed && reply.trim() && !spoken.cancelled && now.active && !now.muted && now.voice.status === "ready";
-    if (completed && reply.trim() && now.active) {
+    const speaking = completed && reply.trim() && !spoken.cancelled && now.active && now.foreground && !now.muted && now.voice.status === "ready";
+    if (completed && reply.trim() && now.active && now.foreground) {
       // Peto quên gắn thẻ thì đoán theo từ khóa như trước. Không đọc thành tiếng thì giữ mặt vài giây để kịp thấy.
       if (!speaking) cue(turnEmotion ?? replyEmotion(reply));
       else if (!emotionCues.length) cue(replyEmotion(reply));

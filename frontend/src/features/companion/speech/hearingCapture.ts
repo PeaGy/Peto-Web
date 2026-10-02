@@ -43,7 +43,8 @@ async function openStream(deviceId: string): Promise<MediaStream> {
 }
 
 /** Mở micro và gửi từng khúc âm thanh (Float32, tần số `sampleRate`) cho `onChunk` tới khi gọi `stop()`. */
-export async function openMicrophone(deviceId: string, onChunk: (samples: Float32Array) => void): Promise<MicCapture> {
+export async function openMicrophone(deviceId: string, onChunk: (samples: Float32Array) => void,
+  onInterrupted?: (error: Error) => void): Promise<MicCapture> {
   if (!captureSupported()) throw new Error("Trình duyệt này chưa cho ghi âm từ micro.");
   let stream: MediaStream | undefined;
   let context: AudioContext | undefined;
@@ -62,16 +63,33 @@ export async function openMicrophone(deviceId: string, onChunk: (samples: Float3
     silent.connect(context.destination);
     await context.resume();
     const opened = { stream, context };
+    let stopped = false;
+    const tracks = stream.getAudioTracks();
+    const stop = () => {
+      if (stopped) return;
+      stopped = true;
+      tracks.forEach(track => track.removeEventListener('ended', ended));
+      opened.context.removeEventListener('statechange', changed);
+      node.port.onmessage = null;
+      source.disconnect();
+      node.disconnect();
+      silent.disconnect();
+      opened.stream.getTracks().forEach(track => track.stop());
+      void opened.context.close().catch(() => {});
+    };
+    const interrupted = () => {
+      if (stopped) return;
+      stop();
+      onInterrupted?.(new Error('Micro đã bị ngắt hoặc trình duyệt tạm dừng ghi âm. Bấm micro để nghe lại.'));
+    };
+    const ended = () => interrupted();
+    const changed = () => { if (opened.context.state !== 'running') interrupted(); };
+    tracks.forEach(track => track.addEventListener('ended', ended));
+    context.addEventListener('statechange', changed);
+    if (tracks.some(track => track.readyState === 'ended') || context.state !== 'running') interrupted();
     return {
       sampleRate: context.sampleRate,
-      stop() {
-        node.port.onmessage = null;
-        source.disconnect();
-        node.disconnect();
-        silent.disconnect();
-        opened.stream.getTracks().forEach((track) => track.stop());
-        void opened.context.close().catch(() => {});
-      },
+      stop,
     };
   } catch (error) {
     stream?.getTracks().forEach((track) => track.stop());

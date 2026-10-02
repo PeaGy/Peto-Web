@@ -937,6 +937,22 @@ Companion phase 3 (2026-10-02) reduces the wait before speech and coordinates tu
 - Regression tests cover sentence boundaries, player cancellation, Companion draft/turn isolation, hearing
   resume/auto-send and PC/mobile streaming browser flows using fake services.
 
+Companion long-session recovery (2026-10-02):
+- Hidden pages, `pagehide` and offline events stop hearing, including Settings tests. Interim text is retained as
+  an editable, non-final draft in its original sink; returning/going online never reopens the microphone or auto-sends it.
+  Late permission/capture/transcription callbacks are rejected by the session generation. Starts require a visible,
+  online page. Leaving the in-app Companion tab retains its existing cleanup behavior.
+- Track end or suspended/interrupted AudioContext disposes key-source capture and reports a restart notice; a failed
+  optional browser meter does not stop native recognition. Capture shutdown is idempotent and removes event listeners.
+- Key transcription retains at most three segments, including the active request, and each request times out at 30 s.
+  Overflow is reported without allocating another WAV; timeout is recoverable. Synthesis times out at 45 s, and media
+  playback aborts after 20 s without progress. Cancellation resolves waits even when a provider ignores its signal.
+- Background/offline speech stops immediately, discards prefetched audio and suppresses automatic speech for that turn.
+  Background text generation is retained; reconnect uses the existing history recovery and never resends a chat.
+- Coverage: lifecycle/capture/player/Companion unit regressions, 40 mocked capture cycles and 30 actual Chromium
+  capture cycles per PC/mobile project. Hidden-page/lock behavior is simulated; physical Android/iOS lock and live
+  browser recognition/provider services still require device trials.
+
 Optional spoken barge-in (2026-10-02) is under Settings → Giọng nói → Peto nghe → "Cho phép nói chen":
 - Off by default. Enabling it neither starts the microphone nor enables auto-send. While enabled, the existing
   pause-while-speaking preference is preserved but temporarily overridden; its switch is disabled with an explanation.

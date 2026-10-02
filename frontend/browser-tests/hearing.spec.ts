@@ -70,4 +70,59 @@ test('Companion nhận chữ, giữ câu dở khi tắt, chặn phiên cũ và t
   expect(state.posts).toBe(0);
   await page.locator('.hearing-mic').click();
   await noPageOverflow(page);
+
+  // Bật/tắt nhiều phiên rồi xuống nền: micro thật phải được đóng, chữ dở vẫn sửa được.
+  for (let cycle = 0; cycle < 8; cycle++) {
+    await page.getByRole('button', { name: 'Bật nghe', exact: true }).click();
+    await expect(page.locator('.hearing-mic')).toHaveClass(/waiting/);
+    await page.locator('.hearing-mic').click();
+  }
+  await page.getByRole('button', { name: 'Bật nghe', exact: true }).click();
+  await expect(page.locator('.hearing-mic')).toHaveClass(/waiting/);
+  await say('Keep this unfinished draft', false);
+  await page.evaluate(() => {
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await expect(page.getByRole('button', { name: 'Bật nghe', exact: true })).toBeVisible();
+  await expect(composer).toHaveValue('Hello Peto, can you hear me? Keep this unfinished draft');
+  await expect(composer).toHaveJSProperty('readOnly', false);
+  await page.evaluate(() => {
+    delete (document as unknown as { visibilityState?: string }).visibilityState;
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await expect(page.getByRole('button', { name: 'Bật nghe', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Bật nghe', exact: true }).click();
+  await expect(page.locator('.hearing-mic')).toHaveClass(/waiting/);
+  await say('New speech', true);
+  await expect(composer).toHaveValue('Hello Peto, can you hear me? Keep this unfinished draft New speech');
+  await page.locator('.hearing-mic').click();
+  expect(state.posts).toBe(0);
+});
+
+test('30 lần mở/đóng capture thật giải phóng track và AudioContext', async ({ page }) => {
+  await mockPeto(page); await page.goto('/');
+  const result = await page.evaluate(async () => {
+    const path = '/src/features/companion/speech/hearingCapture.ts';
+    const { openMicrophone } = await import(/* @vite-ignore */ path);
+    const Context = window.AudioContext;
+    const contexts: AudioContext[] = [];
+    window.AudioContext = class extends Context { constructor() { super(); contexts.push(this); } };
+    const getUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+    const tracks: MediaStreamTrack[] = [];
+    navigator.mediaDevices.getUserMedia = async constraints => {
+      const stream = await getUserMedia(constraints); tracks.push(...stream.getTracks()); return stream;
+    };
+    let errors = 0;
+    try {
+      for (let i = 0; i < 30; i++) {
+        const capture = await openMicrophone('', () => {}, () => errors++);
+        capture.stop(); capture.stop();
+      }
+      await new Promise(resolve => setTimeout(resolve, 100));
+      return { contexts: contexts.length, closed: contexts.every(item => item.state === 'closed'),
+        tracks: tracks.length, ended: tracks.every(item => item.readyState === 'ended'), errors };
+    } finally { window.AudioContext = Context; navigator.mediaDevices.getUserMedia = getUserMedia; }
+  });
+  expect(result).toEqual({ contexts: 30, closed: true, tracks: 30, ended: true, errors: 0 });
 });

@@ -28,12 +28,47 @@ beforeEach(() => {
   URL.createObjectURL = vi.fn(() => 'blob:test');
   URL.revokeObjectURL = vi.fn();
 });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 const blob = {} as Blob;
 const nextAudio = async (count: number) => {
   await vi.waitFor(() => expect(FakeAudio.all).toHaveLength(count));
   return FakeAudio.all[count - 1];
 };
+
+it('dừng yêu cầu tạo tiếng bị treo kết thúc ngay cả khi nguồn bỏ qua tín hiệu hủy', async () => {
+  const player = new LocalVoicePlayer();
+  const synth = vi.fn(async () => new Promise<Blob>(() => {}));
+  const done = player.speak('Hello.', synth, () => {});
+  await vi.waitFor(() => expect(synth).toHaveBeenCalledOnce());
+  player.stop(); expect(await done).toBe('stopped'); expect(FakeAudio.all).toHaveLength(0);
+});
+
+it('hết thời gian tạo giọng hủy nguồn, không phát tiếng về muộn và lượt sau vẫn đọc được', async () => {
+  vi.useFakeTimers(); const player = new LocalVoicePlayer();
+  let signal!: AbortSignal, complete!: (blob: Blob) => void;
+  const done = player.speak('Hello.', async (_text, abort) => {
+    signal = abort; return new Promise(resolve => { complete = resolve; });
+  }, () => {});
+  const failed = expect(done).rejects.toThrow('phản hồi quá lâu');
+  await vi.advanceTimersByTimeAsync(45000); await failed;
+  expect(signal.aborted).toBe(true); complete(blob); await vi.advanceTimersByTimeAsync(0);
+  expect(FakeAudio.all).toHaveLength(0);
+  const next = player.speak('Try again.', async () => blob, () => {});
+  await vi.advanceTimersByTimeAsync(0); FakeAudio.all[0].start(); FakeAudio.all[0].end();
+  expect(await next).toBe('done');
+});
+
+it('play bị treo quá lâu thoát và giải phóng tiếng; tiếng dài vẫn chạy nếu có tiến độ', async () => {
+  vi.useFakeTimers(); const player = new LocalVoicePlayer();
+  const done = player.speak('Hello.', async () => blob, () => {});
+  const failed = expect(done).rejects.toThrow('bị ngắt quá lâu');
+  await vi.advanceTimersByTimeAsync(20000); await failed;
+  expect(URL.revokeObjectURL).toHaveBeenCalledOnce();
+  const next = player.speak('A longer reply.', async () => blob, () => {});
+  await vi.advanceTimersByTimeAsync(0); const audio = FakeAudio.all[1]; audio.start();
+  for (let i = 1; i <= 6; i++) { audio.currentTime = i * 10; await vi.advanceTimersByTimeAsync(10000); }
+  audio.end(); expect(await next).toBe('done');
+});
 
 it('đổi nét mặt lúc đoạn tiếng bắt đầu, không đổi khi xin trước và không lặp lúc hết đệm', async () => {
   const player = new LocalVoicePlayer(), expressions: string[] = [];

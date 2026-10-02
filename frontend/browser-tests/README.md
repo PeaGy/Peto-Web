@@ -27,6 +27,9 @@ không dùng ảnh của hệ điều hành khác để kết luận giao diện
   Cần kiểm tra thêm trên Android/iOS thật để xác nhận hành vi bàn phím và thanh địa chỉ của từng trình duyệt.
 - Luồng trả lời bị ngắt, chuyển ngoại tuyến rồi có mạng lại: chỉ đọc lịch sử đúng lượt đã xác nhận, giữ bản nháp mới,
   không gửi lại tin và không gọi AI thêm. Đồng bộ không tự phát giọng nói.
+- Companion bật/tắt nghe nhiều phiên, xuống nền giữ chữ chưa chốt và không tự mở micro khi quay về. Mỗi cấu hình
+  PC/mobile còn mở/đóng capture thật 30 lần để kiểm tra mọi track kết thúc và mọi AudioContext đóng. Dịch vụ nhận
+  giọng dùng bản giả; sự kiện xuống nền được mô phỏng, chưa thay cho khóa màn hình trên Android/iOS thật.
 - Vitest kiểm tra thêm kết quả đến muộn, đổi hội thoại/tài khoản, tab ẩn, lưu chậm, hết phiên, giới hạn thời gian đọc
   và phân biệt thao tác Dừng với mất mạng.
 

@@ -475,6 +475,63 @@ const speakBodies = () => fetchMock.mock.calls
   .map(([, init]) => JSON.parse(String(init?.body)));
 const chatColumn = () => within(screen.getByRole('region', { name: 'Trò chuyện trong Companion' }));
 
+it.each(['hidden', 'pagehide', 'offline'])('trang %s dừng tiếng ngay, giữ bản nháp và không tự đọc phần chữ tới sau', async event => {
+  localStorage.setItem('peto-local-voice', '1');
+  let audio!: { onplaying: (() => void) | null; pause: ReturnType<typeof vi.fn> };
+  let ready!: () => void;
+  vi.stubGlobal('Audio', class {
+    onended = null; onerror = null; onplaying: (() => void) | null = null; pause = vi.fn();
+    constructor() { audio = this; }
+    play() { return new Promise<void>(resolve => { ready = resolve; }); }
+  });
+  let handlers!: Parameters<typeof api.sendMessage>[1], finish!: () => void;
+  vi.mocked(api.sendMessage).mockImplementationOnce((_payload, received) => new Promise(resolve => {
+    handlers = received; handlers.onMeta?.('C1', 'low', undefined, true); finish = resolve;
+  }));
+  await openCompanion(); await screen.findByRole('button', { name: 'Tắt tiếng', exact: true });
+  await sendInCompanion('First question');
+  await act(async () => handlers.onDelta?.('A sentence to read. '));
+  await waitFor(() => expect(ready).toBeTypeOf('function'));
+  const latePlaying = audio.onplaying;
+  fireEvent.change(screen.getByRole('textbox', { name: 'Nhắn cho Peto trong Companion' }), { target: { value: 'Next draft' } });
+  act(() => {
+    if (event === 'hidden') {
+      vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+      document.dispatchEvent(new Event('visibilitychange'));
+    } else window.dispatchEvent(new Event(event));
+  });
+  expect(audio.pause).toHaveBeenCalled();
+  await act(async () => {
+    latePlaying?.(); ready();
+    handlers.onDelta?.('Text still arrives.'); handlers.onDone?.(); finish();
+  });
+  act(() => {
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    document.dispatchEvent(new Event('visibilitychange')); window.dispatchEvent(new Event('pageshow'));
+    window.dispatchEvent(new Event('online'));
+  });
+  expect(screen.getByTestId('stage').dataset.activity).not.toBe('speaking');
+  expect((screen.getByRole('textbox', { name: 'Nhắn cho Peto trong Companion' }) as HTMLTextAreaElement).value).toBe('Next draft');
+  expect(speakBodies()).toHaveLength(1);
+});
+
+it('xuống nền trước câu đầu vẫn nhận đủ chữ và không tạo giọng khi quay về', async () => {
+  localStorage.setItem('peto-local-voice', '1');
+  let handlers!: Parameters<typeof api.sendMessage>[1], finish!: () => void;
+  vi.mocked(api.sendMessage).mockImplementationOnce((_payload, received) => new Promise(resolve => {
+    handlers = received; handlers.onMeta?.('C1', 'low', undefined, true); finish = resolve;
+  }));
+  await openCompanion(); await screen.findByRole('button', { name: 'Tắt tiếng', exact: true });
+  await sendInCompanion('Question');
+  act(() => window.dispatchEvent(new Event('pagehide')));
+  await act(async () => {
+    handlers.onDelta?.('A complete reply.'); handlers.onDone?.(); finish();
+    window.dispatchEvent(new Event('pageshow'));
+  });
+  expect(await screen.findByText('A complete reply.')).toBeTruthy();
+  expect(speakBodies()).toHaveLength(0);
+});
+
 async function openCompanion() {
   render(<App />);
   fireEvent.click(await screen.findByRole('button', { name: 'Companion' }));
