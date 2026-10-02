@@ -33,7 +33,7 @@ function browserNote(): string {
 
 /**
  * Thẻ "Peto nghe" trong Cài đặt → Giọng nói (phương án A chủ web chọn ngày 2026-09-24): micro, ngôn ngữ, nguồn chép
- * lời bằng thẻ như phần Peto nói, khung Nghe thử và hai công tắc. Khóa dùng chung với phần Peto nói.
+ * lời bằng thẻ như phần Peto nói, khung Nghe thử và ba công tắc. Khóa dùng chung với phần Peto nói.
  */
 export default function HearingSettings({ open }: { open: boolean }) {
   const hearing = useHearing();
@@ -45,6 +45,7 @@ export default function HearingSettings({ open }: { open: boolean }) {
   const sensitivityId = useId();
   const autoSendId = useId();
   const pauseId = useId();
+  const bargeInId = useId();
   const supported = browserSpeechSupported();
 
   useEffect(() => {
@@ -211,10 +212,18 @@ export default function HearingSettings({ open }: { open: boolean }) {
         <SettingsRow
           label="Tạm không nghe khi Peto đang nói"
           htmlFor={pauseId}
-          desc="Để Peto khỏi tự nghe giọng mình qua loa. Đeo tai nghe thì có thể tắt để nói chen ngang."
+          desc={hearing.bargeIn ? "Đang bật nói chen nên micro vẫn nghe. Tắt nói chen để dùng lại lựa chọn này."
+            : "Để Peto khỏi tự nghe giọng mình qua loa. Tắt thì micro tiếp tục nghe, nhưng không tự dừng lời Peto."}
         >
           <SettingsSwitch id={pauseId} label="Tạm không nghe khi Peto đang nói" checked={hearing.pauseWhileSpeaking}
+            disabled={hearing.bargeIn}
             onChange={(value) => setHearingSetting("pauseWhileSpeaking", value)} />
+        </SettingsRow>
+        <SettingsRow label="Cho phép nói chen" htmlFor={bargeInId}
+          desc="Khi micro đang bật, bạn nói thì Peto dừng tiếng và câu trả lời để nghe lời mới. Nên dùng tai nghe; loa ngoài có thể làm Peto tự ngắt nhầm. Không tự bật micro hoặc Tự gửi."
+        >
+          <SettingsSwitch id={bargeInId} label="Cho phép nói chen" checked={hearing.bargeIn}
+            onChange={value => setHearingSetting("bargeIn", value)} />
         </SettingsRow>
       </SettingsGroup>
     </>

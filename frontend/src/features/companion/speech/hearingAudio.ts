@@ -112,6 +112,11 @@ export class Segmenter {
     this.options.threshold = threshold;
   }
 
+  /** Nói chen cần tiếng dài hơn tiếng cộp; đổi ngưỡng không làm mất câu đang ghi. */
+  setStartMs(startMs: number) {
+    this.options.startMs = startMs;
+  }
+
   push(samples: Float32Array): SegmentEvent | null {
     const ms = (samples.length / this.sampleRate) * 1000;
     const loud = rmsOf(samples) >= this.options.threshold;

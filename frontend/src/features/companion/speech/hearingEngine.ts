@@ -35,6 +35,8 @@ export interface HearingSettings {
   sensitivity: number;
   autoSend: boolean;
   pauseWhileSpeaking: boolean;
+  /** Cho phép lời nói mới dừng câu trả lời và giọng đang phát; mặc định tắt. */
+  bargeIn: boolean;
 }
 
 export interface HearingState extends HearingSettings {
@@ -54,6 +56,7 @@ const SETTING_KEYS: Record<keyof HearingSettings, string> = {
   sensitivity: "peto-hearing-sensitivity",
   autoSend: "peto-hearing-autosend",
   pauseWhileSpeaking: "peto-hearing-pause",
+  bargeIn: "peto-hearing-barge-in",
 };
 
 const SOURCES = new Set<string>(["browser", "groq", "azure", "openai", "deepgram", "elevenlabs", "gemini", "compat"]);
@@ -84,6 +87,7 @@ function readSettings(): HearingSettings {
     // Tự gửi mặc định tắt (chủ web chọn ngày 2026-09-24, giống AIRI): chữ chép sai thì người dùng còn sửa được.
     autoSend: read(SETTING_KEYS.autoSend) === "1",
     pauseWhileSpeaking: read(SETTING_KEYS.pauseWhileSpeaking) !== "0",
+    bargeIn: read(SETTING_KEYS.bargeIn) === "1",
   };
 }
 
@@ -133,6 +137,7 @@ export function useHearingLevel(): number {
 
 export interface HearingSink {
   onFinal(text: string, finalized?: boolean, timing?: HearingTiming): void;
+  onSpeechStart?(): void;
 }
 
 let companionSink: HearingSink | null = null;
@@ -157,6 +162,10 @@ export function joinSpeech(base: string, text: string): string {
 function deliver(text: string, finalized = true, timing?: HearingTiming) {
   (state.testing ? testSink : companionSink)?.onFinal(text, finalized, timing);
   publish({ interim: "" });
+}
+
+function notifySpeechStart() {
+  if (state.listening && !state.testing && state.bargeIn) companionSink?.onSpeechStart?.();
 }
 
 interface Engine {
@@ -215,8 +224,20 @@ async function browserEngine(token: number): Promise<Engine> {
   const begin = () => {
     let endedAt: number | undefined;
     let lastFinal: HearingTiming | undefined;
+    let speechReported = false;
+    const speechStart = (resetTiming = true) => {
+      if (!current() || paused || speechReported) return;
+      speechReported = true;
+      if (resetTiming) { endedAt = undefined; lastFinal = undefined; }
+      publish({ phase: "speaking" });
+      notifySpeechStart();
+    };
     recognition = startBrowserSpeech(state.language, {
       onConnecting: () => {
+        // Phiên trình duyệt tự mở lại có câu mới; không giữ cờ nói chen của câu dở ở phiên trước.
+        speechReported = false;
+        endedAt = undefined;
+        lastFinal = undefined;
         if (current() && !paused) publish({ phase: "starting" });
       },
       onReady: () => {
@@ -225,10 +246,8 @@ async function browserEngine(token: number): Promise<Engine> {
         startMeter();
       },
       onSpeechStart: () => {
-        if (current() && !paused) {
-          endedAt = undefined; lastFinal = undefined;
-          publish({ phase: "speaking" });
-        }
+        if (endedAt !== undefined) speechReported = false;
+        speechStart();
       },
       // Chỉ nghe thấy tiếng ồn thì trình duyệt không trả chữ nào: về lại "đang nghe" thay vì kẹt ở "bạn đang nói".
       onSpeechEnd: () => {
@@ -241,13 +260,17 @@ async function browserEngine(token: number): Promise<Engine> {
         }
       },
       onInterim: (text) => {
+        // Một số trình duyệt trả chữ mà không báo speechstart; chữ cũng xác nhận có lời nói.
+        if (text.trim()) speechStart(false);
         if (current() && !paused) publish(text ? { interim: text, phase: "speaking" } : { interim: "" });
       },
       onFinal: (text) => {
         if (!current() || paused) return;
+        if (text.trim()) speechStart(false);
         lastFinal = { endedAt, finalizedAt: performance.now() };
         deliver(text, true, lastFinal);
         endedAt = undefined;
+        speechReported = false;
         publish({ phase: "waiting" });
       },
       onDraft: (text) => {
@@ -332,9 +355,13 @@ async function keyEngine(token: number, source: HearingProviderId): Promise<Engi
     publishLevel(levelOf(rmsOf(chunk)));
     segmenter ??= new Segmenter(sampleRate, { threshold: thresholdFor(state.sensitivity) });
     segmenter.setThreshold(thresholdFor(state.sensitivity));
+    segmenter.setStartMs(state.bargeIn ? 250 : 90);
     const event = segmenter.push(chunk);
     if (!event) return;
-    if (event.type === "start") publish({ phase: "speaking", message: "" });
+    if (event.type === "start") {
+      publish({ phase: "speaking", message: "" });
+      notifySpeechStart();
+    }
     else if (event.type === "end") transcribe(event.samples);
     else publish({ phase: pending ? "transcribing" : "waiting" });
   });

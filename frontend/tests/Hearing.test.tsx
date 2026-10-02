@@ -5,7 +5,7 @@ import App from '../src/app/App';
 import * as api from '../src/shared/api/api';
 import * as projectApi from '../src/features/projects/projectApi';
 vi.mock('../src/features/projects/projectApi', async original => ({ ...await original<typeof import('../src/features/projects/projectApi')>(), listProjects: vi.fn() }));
-import { loadHearingSettings, stopListening, setHearingPaused } from '../src/features/companion/speech/hearingEngine';
+import { loadHearingSettings, stopListening, setHearingPaused, getHearingState, setHearingSetting } from '../src/features/companion/speech/hearingEngine';
 import { openMicrophone } from '../src/features/companion/speech/hearingCapture';
 import { clearCompanionTimings, getCompanionTimings } from '../src/features/companion/speech/companionTiming';
 
@@ -97,6 +97,155 @@ afterEach(() => {
   setHearingPaused(false);
   vi.useRealTimers();
   vi.unstubAllGlobals();
+});
+
+it.each(['playing', 'loading', 'finished'])('nói chen khi tiếng đang %s dừng tiếng và lượt nhưng giữ bộ nghe cùng bản nháp', async phase => {
+  localStorage.setItem('peto-local-voice', '1');
+  setHearingSetting('bargeIn', true);
+  const audios: { pause: ReturnType<typeof vi.fn>; ready(): void }[] = [];
+  URL.createObjectURL = vi.fn(() => 'blob:voice'); URL.revokeObjectURL = vi.fn();
+  vi.stubGlobal('Audio', class {
+    onended = null; onerror = null; pause = vi.fn(); ready!: () => void;
+    constructor() { audios.push(this); }
+    play() { return phase !== 'loading' ? Promise.resolve() : new Promise<void>(resolve => { this.ready = resolve; }); }
+  });
+  fetchMock.mockImplementation(async (url: string) => {
+    if (url.endsWith('/health')) return new Response(JSON.stringify({ ok: true, voices: ['stepfun:jilingshaonv'],
+      official: { allowed: true, voices: ['stepfun:jilingshaonv'], used: 0, limit: 5000 }, home: { online: false, voices: [] } }));
+    if (url.endsWith('/speak')) return new Response('RIFF');
+    throw new Error(`Không mong đợi ${url}`);
+  });
+  let signal!: AbortSignal, old!: Parameters<typeof api.sendMessage>[1];
+  vi.mocked(api.sendMessage).mockImplementation((_payload, handlers, abort) => new Promise(resolve => {
+    signal = abort!; old = handlers;
+    handlers.onMeta?.('C1', 'low', undefined, true); handlers.onDelta?.('Hello there. ');
+    if (phase === 'finished') { handlers.onDone?.(); resolve(); }
+    signal.addEventListener('abort', () => resolve(), { once: true });
+  }));
+  await openCompanion(); await screen.findByRole('button', { name: 'Tắt tiếng' });
+  fireEvent.click(screen.getByRole('button', { name: 'Bật nghe' }));
+  act(() => lastRecognition().say('Hello', true));
+  fireEvent.click(screen.getByRole('button', { name: 'Gửi', exact: true }));
+  await waitFor(() => expect(audios).toHaveLength(1));
+  const recognition = lastRecognition();
+  expect(recognition.aborted).toBe(false);
+  fireEvent.change(composer(), { target: { value: 'Actually,' } });
+  // Thanh âm lượng không tự ngắt giọng; nguồn trình duyệt cần sự kiện lời nói hoặc chữ.
+  act(() => microphone.feed(0.2, 8));
+  expect(signal.aborted).toBe(false);
+  await act(async () => recognition.say('wait a moment', false));
+  // Đã nhận hết chữ thì chỉ còn tiếng cần dừng, không còn yêu cầu chat để hủy.
+  expect(signal.aborted).toBe(phase !== 'finished'); expect(audios[0].pause).toHaveBeenCalled();
+  expect(recognition.aborted).toBe(false); expect(FakeRecognition.instances).toHaveLength(1);
+  expect(composer().value).toBe('Actually, wait a moment');
+  if (phase === 'loading') await act(async () => audios[0].ready());
+  act(() => { old.onDelta?.('Late reply.'); old.onEmotion?.('angry', 0); old.onDone?.(); old.onError?.('Lỗi cũ'); });
+  expect(screen.queryByText(/Late reply/)).toBeNull(); expect(screen.queryByText('Lỗi cũ')).toBeNull();
+  act(() => recognition.say('wait a moment please', true));
+  expect(composer().value).toBe('Actually, wait a moment please');
+  expect(api.sendMessage).toHaveBeenCalledOnce();
+  expect(getHearingState()).toMatchObject({ listening: true, testing: false, phase: 'waiting', autoSend: false });
+});
+
+it('nói chen khi chỉ đang viết nhận chữ cả khi trình duyệt không báo speechstart; Tự gửi chỉ chờ câu chốt', async () => {
+  setHearingSetting('bargeIn', true); setHearingSetting('autoSend', true);
+  let signal!: AbortSignal;
+  vi.mocked(api.sendMessage).mockImplementationOnce((_payload, handlers, abort) => new Promise(resolve => {
+    signal = abort!; handlers.onMeta?.('C1', 'low'); handlers.onDelta?.('Thinking.');
+    signal.addEventListener('abort', () => resolve(), { once: true });
+  })).mockImplementationOnce(async (_payload, handlers) => {
+    handlers.onMeta?.('C1', 'low'); handlers.onDelta?.('New reply.'); handlers.onDone?.();
+  });
+  await openCompanion(); fireEvent.click(screen.getByRole('button', { name: 'Bật nghe' }));
+  fireEvent.change(composer(), { target: { value: 'Hi' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Gửi', exact: true }));
+  vi.useFakeTimers();
+  const recognition = lastRecognition();
+  await act(async () => recognition.onresult?.({ resultIndex: 0, results: [{ isFinal: false, 0: { transcript: 'Wait please' } }] }));
+  expect(signal.aborted).toBe(true);
+  await act(async () => { vi.advanceTimersByTime(1200); });
+  expect(api.sendMessage).toHaveBeenCalledOnce();
+  act(() => recognition.onresult?.({ resultIndex: 0, results: [{ isFinal: true, 0: { transcript: 'Wait please' } }] }));
+  await act(async () => { vi.advanceTimersByTime(1000); });
+  expect(api.sendMessage).toHaveBeenCalledTimes(2);
+  expect(vi.mocked(api.sendMessage).mock.calls[1][0].message).toBe('Wait please');
+  expect(FakeRecognition.instances).toHaveLength(1);
+});
+
+it('phiên trình duyệt tự mở lại sau câu dở vẫn nhận được lần nói chen tiếp theo', async () => {
+  setHearingSetting('bargeIn', true);
+  let signal!: AbortSignal;
+  vi.mocked(api.sendMessage).mockImplementation((_payload, handlers, abort) => new Promise(resolve => {
+    signal = abort!; handlers.onMeta?.('C1', 'low'); handlers.onDelta?.('Let me explain.');
+    signal.addEventListener('abort', () => resolve(), { once: true });
+  }));
+  await openCompanion(); fireEvent.click(screen.getByRole('button', { name: 'Bật nghe' }));
+  act(() => { lastRecognition().say('Hello', false); lastRecognition().onend?.(); });
+  await waitFor(() => expect(FakeRecognition.instances).toHaveLength(2));
+  expect(composer().value).toBe('Hello');
+  fireEvent.click(screen.getByRole('button', { name: 'Gửi', exact: true }));
+  expect(signal.aborted).toBe(false);
+  await act(async () => lastRecognition().say('Actually, wait', false));
+  expect(signal.aborted).toBe(true);
+  expect(composer().value).toBe('Actually, wait');
+  expect(lastRecognition().aborted).toBe(false);
+});
+
+it('nguồn dùng khóa bỏ tiếng cộp ngắn, lời đủ dài ngắt lượt và vẫn chép được âm đầu', async () => {
+  setHearingSetting('bargeIn', true); setHearingSetting('source', 'groq');
+  localStorage.setItem('peto-voice-keys', JSON.stringify({ groq: { key: 'gsk_user' } }));
+  fetchMock.mockResolvedValue(new Response(JSON.stringify({ text: 'Wait, I meant something else.' })));
+  let signal!: AbortSignal;
+  vi.mocked(api.sendMessage).mockImplementation((_payload, handlers, abort) => new Promise(resolve => {
+    signal = abort!; handlers.onMeta?.('C1', 'low'); handlers.onDelta?.('Let me explain.');
+    signal.addEventListener('abort', () => resolve(), { once: true });
+  }));
+  await openCompanion(); fireEvent.click(screen.getByRole('button', { name: 'Bật nghe' }));
+  await waitFor(() => expect(microphone.onChunk).not.toBeNull());
+  fireEvent.change(composer(), { target: { value: 'Explain' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Gửi', exact: true }));
+  act(() => { microphone.feed(0.2, 3); microphone.feed(0, 16); });
+  expect(signal.aborted).toBe(false); expect(fetchMock).not.toHaveBeenCalled();
+  await act(async () => microphone.feed(0.2, 5));
+  expect(signal.aborted).toBe(true); expect(microphone.stops).toBe(0);
+  await act(async () => microphone.feed(0, 14));
+  await waitFor(() => expect(composer().value).toBe('Wait, I meant something else.'));
+  expect(fetchMock).toHaveBeenCalledOnce();
+  expect(getHearingState()).toMatchObject({ listening: true, phase: 'waiting', autoSend: false });
+});
+
+it('nói chen mặc định tắt; bật/tắt trong Cài đặt giữ lựa chọn tạm không nghe và không mở micro', async () => {
+  await openCompanion();
+  const settings = within(await openVoiceSettings());
+  fireEvent.click(settings.getByRole('tab', { name: 'Peto nghe' }));
+  const bargeIn = await settings.findByRole('switch', { name: 'Cho phép nói chen' });
+  const pause = settings.getByRole('switch', { name: 'Tạm không nghe khi Peto đang nói' });
+  expect(bargeIn).toHaveProperty('checked', false); expect(pause).toHaveProperty('checked', true);
+  fireEvent.click(bargeIn);
+  expect(pause).toHaveProperty('disabled', true); expect(localStorage.getItem('peto-hearing-barge-in')).toBe('1');
+  expect(getHearingState()).toMatchObject({ listening: false, autoSend: false, pauseWhileSpeaking: true });
+  fireEvent.click(bargeIn);
+  expect(pause).toHaveProperty('disabled', false); expect(pause).toHaveProperty('checked', true);
+  expect(FakeRecognition.instances).toHaveLength(0);
+});
+
+it('Nghe thử và lời tới muộn từ phiên micro cũ không ngắt câu trả lời', async () => {
+  setHearingSetting('bargeIn', true);
+  let signal!: AbortSignal;
+  vi.mocked(api.sendMessage).mockImplementation((_payload, handlers, abort) => new Promise(resolve => {
+    signal = abort!; handlers.onMeta?.('C1', 'low'); handlers.onDelta?.('Let me explain.');
+    signal.addEventListener('abort', () => resolve(), { once: true });
+  }));
+  await openCompanion(); fireEvent.click(screen.getByRole('button', { name: 'Bật nghe' }));
+  const old = lastRecognition();
+  fireEvent.change(composer(), { target: { value: 'Hi' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Gửi', exact: true }));
+  const settings = within(await openVoiceSettings());
+  fireEvent.click(settings.getByRole('tab', { name: 'Peto nghe' }));
+  fireEvent.click(await settings.findByRole('button', { name: 'Bắt đầu nghe thử' }));
+  act(() => { old.say('Old words', true); lastRecognition().say('Testing microphone', true); });
+  expect(signal.aborted).toBe(false); expect(composer().value).toBe('');
+  expect(settings.getByText('“Testing microphone”')).toBeTruthy();
 });
 
 it('câu mới đang nói hoãn tự gửi; chốt thêm câu rồi chỉ gửi một lượt', async () => {

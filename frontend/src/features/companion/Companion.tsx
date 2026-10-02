@@ -565,6 +565,19 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
   useEffect(() => {
     if (!active) return;
     setHearingSink({
+      onSpeechStart: () => {
+        const hearing = getHearingState(), now = latest.current;
+        if (!now.active || !hearing.bargeIn || !hearing.listening || hearing.testing) return;
+        // Giọng nghe thử trong Cài đặt không phải lời Peto trong hội thoại.
+        if (!abortRef.current && !now.voice.speaking?.key.startsWith(SPEECH_PREFIX)) return;
+        setHeardAt(0);
+        setMicOpen(false);
+        setStopping(Boolean(abortRef.current));
+        haltSpeech();
+        abortRef.current?.abort();
+        cue(null);
+        // Giữ nguyên bộ nghe và bản nháp để không mất âm đầu hay chữ người dùng đã gõ.
+      },
       onFinal: (text, finalized = true, timing) => {
         draftTiming.current = finalized && timing ? { hearing: timing, source: getHearingState().source } : null;
         draftVersion.current++;
@@ -574,7 +587,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
       },
     });
     return () => setHearingSink(null);
-  }, [active]);
+  }, [active, haltSpeech, cue]);
 
   // Micro chỉ mở khi đang ở Companion: rời tab hay gỡ tab thì thôi nghe (nghe thử trong Cài đặt thì để yên).
   useEffect(() => {
@@ -592,8 +605,8 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
   // Peto đang trả lời hay đang nói thì tạm không nghe, để Peto khỏi tự nghe giọng mình qua loa.
   const replying = streaming || Boolean(speech);
   useEffect(() => {
-    setHearingPaused(hearing.pauseWhileSpeaking && replying);
-  }, [hearing.pauseWhileSpeaking, replying]);
+    setHearingPaused(!hearing.bargeIn && hearing.pauseWhileSpeaking && replying);
+  }, [hearing.bargeIn, hearing.pauseWhileSpeaking, replying]);
 
   // Tự gửi: câu nghe được đã vào ô nhắn, người dùng không nói tiếp một lúc thì gửi.
   const latestSend = useRef(send);

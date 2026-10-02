@@ -918,8 +918,26 @@ Companion phase 3 (2026-10-02) reduces the wait before speech and coordinates tu
 - Hearing resumes only if it was enabled and still wanted. Auto-send requires a finalized draft, the waiting hearing
   phase and no reply/speech; speaking again or editing postpones/cancels it. Pausing key-based hearing aborts queued
   and in-flight transcriptions and discards their late results after resume.
-- Automatic spoken barge-in/full duplex is deferred. Regression tests cover sentence boundaries, player cancellation,
-  Companion draft/turn isolation, hearing resume/auto-send and PC/mobile streaming browser flows using fake services.
+- Regression tests cover sentence boundaries, player cancellation, Companion draft/turn isolation, hearing
+  resume/auto-send and PC/mobile streaming browser flows using fake services.
+
+Optional spoken barge-in (2026-10-02) is under Settings → Giọng nói → Peto nghe → "Cho phép nói chen":
+- Off by default. Enabling it neither starts the microphone nor enables auto-send. While enabled, the existing
+  pause-while-speaking preference is preserved but temporarily overridden; its switch is disabled with an explanation.
+  Turning barge-in off restores that choice. No extra controls or panels are added to the stage.
+- Browser hearing uses native speech-start events, with non-empty recognition text as a fallback. The volume meter
+  never triggers browser barge-in. Key-based hearing uses the existing RMS segmenter with a 250 ms onset instead of
+  90 ms to reject short clicks; it retains pre-roll and the current recording/transcription rather than restarting it.
+  This is an amplitude detector, not a model-based VAD or speaker classifier.
+- Only active Companion hearing can interrupt. Settings' Nghe thử and stale microphone sessions cannot interrupt
+  chat, and voice samples from Settings are excluded. New speech cancels Companion generation, current audio and
+  queued synthesis and clears the spoken expression, while preserving typed/interim words and the same listener.
+  Already received reply text remains; late SSE/audio callbacks cannot overwrite the new turn. Speech remaining after
+  generation completes is interruptible too. Final words enter the draft and auto-send follows its existing setting.
+- Recommend headphones: capture requests browser echo cancellation, but speaker playback may still be detected as
+  new speech and cause false interruption. Do not claim reliable full duplex or verified automatic barge-in in AIRI.
+  Unit tests and `browser-tests/companion-barge-in.spec.ts` cover cancellation, draft retention, noise guards,
+  default settings and PC/mobile flows with simulated speech/services; physical microphones/providers need real trials.
 
 Companion timing diagnostics (2026-10-02) live in the collapsed "Kiểm tra tốc độ Companion" section under Settings →
 Giọng nói, below either voice tab. `companionTiming.ts` keeps at most five in-memory records containing source IDs,
