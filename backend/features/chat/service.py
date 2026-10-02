@@ -218,7 +218,7 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
         search_started = False
         document_session = None
         # Câu trả lời Companion lưu nguyên, nhưng stream về trình duyệt thì bỏ ghi chú riêng và thẻ cảm xúc của Peto;
-        # cảm xúc đi riêng bằng sự kiện "emotion" ngay khi thẻ tới, để nhân vật đổi nét mặt lúc Peto bắt đầu trả lời.
+        # cảm xúc đi riêng bằng sự kiện "emotion" kèm vị trí chữ, để nhân vật đổi mặt theo đoạn tiếng đang phát.
         notes = private_notes.NoteFilter() if mode == "companion" else None
         markers = emotion_tags.MarkerFilter() if mode == "companion" else None
         # Cảm xúc đầu tiên của lượt. Tra web thì phần viết trước lúc tra bị bỏ ("replace"), có khi mất luôn thẻ cảm xúc.
@@ -227,13 +227,11 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
         def visible_events(text: str, final: bool = False) -> str | None:
             nonlocal turn_emotion
             if notes and markers:
-                text = markers.feed(notes.feed(text) + (notes.flush() if final else ""))
+                markers.feed(notes.feed(text) + (notes.flush() if final else ""))
                 if final:
-                    text += markers.flush()
-                emotion = markers.take_emotion()
-                turn_emotion = turn_emotion or emotion
-                events = (sse({"type": "emotion", "emotion": emotion}) if emotion else "") + (
-                    sse({"type": "delta", "text": text}) if text else "")
+                    markers.flush()
+                turn_emotion = turn_emotion or markers.emotion
+                events = "".join(sse(event) for event in markers.take_events())
                 return events or None
             return sse({"type": "delta", "text": text}) if text else None
 
@@ -397,8 +395,10 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
             # cancel scope của StreamingResponse hủy luôn thao tác lưu SQLite.
             reply = "".join(collected).strip()
             # Câu sau lúc tra web không gắn lại thẻ thì giữ thẻ đã gửi tới nhân vật, để nghe lại tin cũ vẫn đúng mặt.
-            if turn_emotion and reply and not emotion_tags.first(reply):
-                reply = f"<|EMOTE_{turn_emotion.upper()}|> {reply}"
+            if turn_emotion and reply:
+                _, final_cues = emotion_tags.timeline(private_notes.strip(reply))
+                if not final_cues or final_cues[0]['offset'] > 0:
+                    reply = f"<|EMOTE_{turn_emotion.upper()}|> {reply}"
             artifacts = document_session.created if document_session else []
             if artifacts and not reply: reply = 'Tệp đã được tạo. Phản hồi bị ngắt; bạn vẫn có thể tải tài liệu bên dưới.'
             if reply and conversation_id and _visible(reply, mode):

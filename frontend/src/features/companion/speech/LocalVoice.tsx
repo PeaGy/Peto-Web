@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { StreamSpeechText, type VoiceStream } from './streamSpeech';
+import { StreamSpeechText, type VoiceStream, type SpeechExpressions } from './streamSpeech';
 import type { SpeechQueue } from './speechQueue';
 import {
   fallbackOnly,
@@ -97,8 +97,8 @@ export interface LocalVoice {
    * Đọc một đoạn. Lỗi thì Promise bị từ chối kèm câu báo tiếng Việt; bị dừng hay bị lượt đọc khác thay
    * chỗ thì kết thúc êm, không báo lỗi. ``fallback: false`` (Nghe thử) chỉ dùng nguồn đang chọn.
    */
-  speak: (key: string, text: string, options?: { fallback?: boolean; timing?: SpeechTimingHooks }) => Promise<void>;
-  stream: (key: string, timing?: SpeechTimingHooks) => VoiceStream;
+  speak: (key: string, text: string, options?: { fallback?: boolean; timing?: SpeechTimingHooks; expressions?: SpeechExpressions }) => Promise<void>;
+  stream: (key: string, timing?: SpeechTimingHooks, expressions?: SpeechExpressions) => VoiceStream;
   stop: () => void;
 }
 
@@ -306,7 +306,7 @@ export function useLocalVoice(active: boolean): LocalVoice {
     return backup ? withFallback(primary, backup) : primary;
   }, [backupVoice, state.ready, state.problem, source, officialVoice, homeVoice, keys]);
 
-  const speak = useCallback(async (key: string, text: string, options: { fallback?: boolean; timing?: SpeechTimingHooks } = {}) => {
+  const speak = useCallback(async (key: string, text: string, options: { fallback?: boolean; timing?: SpeechTimingHooks; expressions?: SpeechExpressions } = {}) => {
     setNotice('');
     if (!player.current) player.current = new LocalVoicePlayer();
     const version = ++speakVersion.current;
@@ -314,15 +314,30 @@ export function useLocalVoice(active: boolean): LocalVoice {
     try {
       const generate = synth(options.fallback !== false);
       if (speakableText(text)) options.timing?.onTextReady?.();
-      const result = await player.current.speak(text, (chunk, signal) => {
+      const generateChunk: Synthesize = (chunk, signal) => {
         if (version === speakVersion.current) options.timing?.onSynthesisStart?.();
         return generate(chunk, signal);
-      }, (phase) => {
+      };
+      const onPhase = (phase: SpeakPhase) => {
         if (version === speakVersion.current) {
           if (phase === 'playing') options.timing?.onPlaying?.();
           setSpeaking({ key, phase });
         }
-      });
+      };
+      let result: 'done' | 'stopped';
+      if (options.expressions?.cues?.length) {
+        let lastEmotion: string | undefined;
+        const speech = new StreamSpeechText(undefined, false);
+        for (const cue of options.expressions.cues) speech.markEmotion(cue.emotion, cue.offset);
+        speech.push(text); speech.finish();
+        result = await player.current.speakQueue(speech.queue, generateChunk, onPhase, chunk => {
+          if (version === speakVersion.current && chunk.emotion && chunk.emotion !== lastEmotion) {
+            lastEmotion = chunk.emotion; options.expressions?.onEmotion(chunk.emotion);
+          }
+        });
+      } else {
+        result = await player.current.speak(text, generateChunk, onPhase);
+      }
       if (result === 'stopped') options.timing?.onStopped?.();
     } catch (error) {
       if (version === speakVersion.current) {
@@ -333,13 +348,14 @@ export function useLocalVoice(active: boolean): LocalVoice {
     }
   }, [synth]);
 
-  const readQueue = useCallback(async (key: string, queue: SpeechQueue, timing?: SpeechTimingHooks) => {
+  const readQueue = useCallback(async (key: string, queue: SpeechQueue, timing?: SpeechTimingHooks, expressions?: SpeechExpressions) => {
     setNotice('');
     if (!player.current) player.current = new LocalVoicePlayer();
     const version = ++speakVersion.current;
     setSpeaking({ key, phase: 'loading' });
     try {
       const generate = synth(true);
+      let lastEmotion: string | undefined;
       const result = await player.current.speakQueue(queue, (chunk, signal) => {
         if (version === speakVersion.current) timing?.onSynthesisStart?.();
         return generate(chunk, signal);
@@ -347,6 +363,10 @@ export function useLocalVoice(active: boolean): LocalVoice {
         if (version === speakVersion.current) {
           if (phase === 'playing') timing?.onPlaying?.();
           setSpeaking({ key, phase });
+        }
+      }, chunk => {
+        if (version === speakVersion.current && chunk.emotion && chunk.emotion !== lastEmotion) {
+          lastEmotion = chunk.emotion; expressions?.onEmotion(chunk.emotion);
         }
       });
       if (result === 'stopped') timing?.onStopped?.();
@@ -358,9 +378,11 @@ export function useLocalVoice(active: boolean): LocalVoice {
     }
   }, [synth]);
 
-  const stream = useCallback((key: string, timing?: SpeechTimingHooks): VoiceStream => {
+  const stream = useCallback((key: string, timing?: SpeechTimingHooks, expressions?: SpeechExpressions): VoiceStream => {
     const text = new StreamSpeechText(timing?.onTextReady);
-    return { push: delta => text.push(delta), finish: () => text.finish(), done: readQueue(key, text.queue, timing) };
+    for (const cue of expressions?.cues ?? []) text.markEmotion(cue.emotion, cue.offset);
+    return { push: delta => text.push(delta), markEmotion: (emotion, offset) => text.markEmotion(emotion, offset),
+      finish: () => text.finish(), done: readQueue(key, text.queue, timing, expressions) };
   }, [readQueue]);
 
   const recheck = useCallback(() => setProbe((count) => count + 1), []);

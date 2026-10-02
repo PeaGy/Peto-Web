@@ -54,3 +54,34 @@ it('hủy lúc đợi chữ kết thúc ngay và không giữ tín hiệu hủy 
   queue.cancel();
   expect(await queue.next(new AbortController().signal)).toBeNull();
 });
+
+it('mốc nét mặt giữ với đúng đoạn chữ, kể cả emoji và thẻ tới trước dấu cách', async () => {
+  const speech = new StreamSpeechText(), signal = new AbortController().signal;
+  speech.markEmotion('surprised', 0);
+  speech.push('Oh 😮!');
+  speech.markEmotion('happy', 6);
+  speech.push(' That is great.'); speech.finish();
+  expect(await speech.queue.nextChunk(signal)).toEqual({ text: 'Oh 😮!', emotion: 'surprised' });
+  expect(await speech.queue.nextChunk(signal)).toEqual({ text: 'That is great.', emotion: 'happy' });
+  expect(await speech.queue.nextChunk(signal)).toBeNull();
+});
+
+it('nghe lại dùng mốc trước khi đưa chữ vào, giữ biểu cảm qua đoạn dài và bỏ mốc cuối không có lời', async () => {
+  const text = `Oh! ${'Good news '.repeat(35)}Done.`;
+  const speech = new StreamSpeechText(), signal = new AbortController().signal;
+  speech.markEmotion('surprised', 0); speech.markEmotion('happy', 3);
+  speech.markEmotion('neutral', text.length);
+  speech.push(text); speech.finish();
+  const chunks = [];
+  for (let chunk = await speech.queue.nextChunk(signal); chunk; chunk = await speech.queue.nextChunk(signal)) chunks.push(chunk);
+  expect(chunks[0]).toEqual({ text: 'Oh!', emotion: 'surprised' });
+  expect(chunks.slice(1).every(chunk => chunk.emotion === 'happy' && chunk.text.length <= 220)).toBe(true);
+  expect(chunks.map(chunk => chunk.text).join(' ')).toBe(text);
+});
+
+it('bản đầy đủ không tách thêm yêu cầu tạo tiếng khi các câu giữ cùng biểu cảm', async () => {
+  const speech = new StreamSpeechText(undefined, false), signal = new AbortController().signal;
+  speech.markEmotion('happy', 0); speech.push('Good news! I passed.'); speech.finish();
+  expect(await speech.queue.nextChunk(signal)).toEqual({ text: 'Good news! I passed.', emotion: 'happy' });
+  expect(await speech.queue.nextChunk(signal)).toBeNull();
+});

@@ -35,6 +35,36 @@ const nextAudio = async (count: number) => {
   return FakeAudio.all[count - 1];
 };
 
+it('đổi nét mặt lúc đoạn tiếng bắt đầu, không đổi khi xin trước và không lặp lúc hết đệm', async () => {
+  const player = new LocalVoicePlayer(), expressions: string[] = [];
+  const speech = new StreamSpeechText();
+  speech.markEmotion('surprised', 0); speech.push('Oh!');
+  speech.markEmotion('happy', 3); speech.push(' Great news!'); speech.finish();
+  const done = player.speakQueue(speech.queue, async () => blob, () => {}, chunk => expressions.push(chunk.emotion!));
+  const first = await nextAudio(1);
+  expect(expressions).toEqual([]);
+  first.start(); await Promise.resolve();
+  expect(expressions).toEqual(['surprised']);
+  first.onwaiting?.(); first.onplaying?.();
+  expect(expressions).toEqual(['surprised']);
+  first.end();
+  const second = await nextAudio(2);
+  expect(expressions).toEqual(['surprised']);
+  second.start(); await Promise.resolve();
+  expect(expressions).toEqual(['surprised', 'happy']);
+  second.end(); expect(await done).toBe('done');
+});
+
+it('dừng trước khi phát không cho callback biểu cảm tới muộn chạy', async () => {
+  const player = new LocalVoicePlayer(), expression = vi.fn();
+  const speech = new StreamSpeechText();
+  speech.markEmotion('sad', 0); speech.push('Wait.'); speech.finish();
+  const done = player.speakQueue(speech.queue, async () => blob, () => {}, expression);
+  const audio = await nextAudio(1);
+  player.stop(); audio.ready();
+  expect(await done).toBe('stopped'); expect(expression).not.toHaveBeenCalled();
+});
+
 it('chỉ báo đang nói khi tiếng phát thật và giữ chờ qua khoảng đệm', async () => {
   const player = new LocalVoicePlayer();
   const phases: SpeakPhase[] = [];

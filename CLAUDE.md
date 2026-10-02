@@ -1035,19 +1035,20 @@ Peto to be honest and swap roles.
 ### Companion emotions (Brain)
 
 The second Brain feature. The owner picked from mockups on 2026-09-27: the card layout (B), AIRI's nine emotions, and
-one emotion per reply. Before this, Hiyori never changed expression: the sample model ships no expression files, and the
+initially one emotion per reply, expanded to spoken-segment expressions on 2026-10-02. Before this, Hiyori never changed expression: the sample model ships no expression files, and the
 keyword guess (`replyEmotion`) almost never matched once the Companion prompt banned emoji.
 
 - **The model picks.**
-  - The EMOTION section of `COMPANION_SYSTEM_PROMPT` asks for one AIRI-style marker at the start of every reply:
+  - The EMOTION section of `COMPANION_SYSTEM_PROMPT` asks for one AIRI-style marker at the start of every reply and
+    another only when a later sentence naturally changes feeling (at most three markers requested):
     `<|EMOTE_HAPPY|>`, `SAD`, `ANGRY`, `THINK`, `SURPRISED`, `AWKWARD`, `QUESTION`, `CURIOUS` or `NEUTRAL`.
   - ANGRY is meant as mild sulking, never hostility.
   - Private notes and the marker are the two exceptions to "plain spoken text".
 - **Stream.** `emotion_tags.MarkerFilter` runs after `NoteFilter` on Companion replies:
   - It removes every `<|...|>` marker from `delta` events, and holds back a marker cut between chunks (up to
     `MAX_MARKER_CHARS`).
-  - It sends one SSE `emotion` event for the first recognised marker, before the words, so the face changes as Peto
-    starts replying.
+  - Every recognized marker emits an SSE `emotion` with its UTF-16 offset in public text, interleaved with `delta`
+    in source order. Unknown markers are stripped without an expression. Split markers and emoji preserve positions.
   - Both filters share `reply_spacing.Spacing`. A reply never starts or ends with whitespace, and the whitespace on
     both sides of a removed note or marker merges into one gap: the side with more line breaks, otherwise one space.
     Whitespace away from a removed part stays as the model wrote it. The bubble is `pre-wrap`, and before 2026-09-28
@@ -1058,12 +1059,21 @@ keyword guess (`replyEmotion`) almost never matched once the Companion prompt ba
     slipped through before.
   - The reply is stored raw, marker included, so the model keeps seeing its own habit.
 - **History and helpers.**
-  - `_public_message(companion=True)` strips markers and returns `emotion`, so a replayed message makes the same face.
+  - `_public_message(companion=True)` strips markers and returns legacy first `emotion` plus `emotion_cues` from the
+    same filter, so replay after reload preserves every expression without a schema migration.
   - `_visible` strips notes and markers.
   - Memory and summary input (`companion_memory._talk`) never contain markers.
   - Chat replies are left untouched.
 - **Timing (`Companion.tsx`).**
   - `cue()` sets `stageEmotion` (`{emotion, key}`; the key makes two equal emotions in a row count as new).
+  - With a ready, unmuted voice, new offset-based cues wait for actual playback of the matching segment. Prefetch,
+    final text completion and buffering cannot advance the face. `StreamSpeechText` stores the emotion with each
+    queued chunk; long segments retain it without restarting the expression on each chunk. Completed-reply/replay
+    playback splits only at expression changes or normal chunk limits, preserving grouping for a single expression.
+    Muted/unavailable voice
+    uses text-time cues; old servers without offsets retain immediate cues. Replay uses the same segment metadata.
+    Replace clears draft offsets and retains only the original first emotion as fallback, matching server persistence.
+    Stopped/replaced speech cannot update the next turn's expression or finalize its timing diagnostic.
   - The face holds while Peto speaks. It is released 1.5 s after speech ends, or 6 s after the reply when nothing is
     read aloud.
   - Tracking begins during voice loading, so a failure before playback still releases the face. Buffering

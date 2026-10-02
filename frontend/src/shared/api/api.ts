@@ -34,6 +34,8 @@ export interface OutgoingAttachment {
   data: string;
 }
 
+export interface EmotionCue { emotion: string; offset: number }
+
 export interface Message {
   id?: number;
   role: Role;
@@ -51,6 +53,8 @@ export interface Message {
   workedMs?: number;
   /** Cảm xúc Peto tự chọn cho câu trả lời Companion (emotion_tags.py), để nghe lại tin cũ thì nhân vật làm đúng mặt. */
   emotion?: string | null;
+  /** Vị trí đổi nét mặt trong chữ công khai, tính theo UTF-16. */
+  emotion_cues?: EmotionCue[];
 }
 
 export interface WorkStep {
@@ -80,7 +84,7 @@ export interface Conversation {
 type ChatEvent =
   | { type: "meta"; conversation_id: string; effort: string; message?: Message; voice_stream?: boolean }
   | { type: "delta"; text: string }
-  | { type: "emotion"; emotion: string }
+  | { type: "emotion"; emotion: string; offset?: number }
   | { type: "replace" }
   | { type: "thinking"; text: string }
   | { type: "reading"; text: string }
@@ -96,7 +100,7 @@ interface ChatHandlers {
   onMeta?: (conversationId: string, effort: string, message?: Message, voiceStream?: boolean) => void;
   onDelta?: (text: string) => void;
   /** Chỉ lượt Companion: cảm xúc Peto chọn, tới trước chữ để nhân vật đổi nét mặt ngay khi bắt đầu trả lời. */
-  onEmotion?: (emotion: string) => void;
+  onEmotion?: (emotion: string, offset?: number) => void;
   onReplace?: () => void;
   onThinking?: (text: string) => void;
   onReading?: (text: string) => void;
@@ -495,7 +499,7 @@ export async function sendMessage(
         } else if (event.type === "delta") {
           handlers.onDelta?.(event.text);
         } else if (event.type === "emotion") {
-          handlers.onEmotion?.(event.emotion);
+          handlers.onEmotion?.(event.emotion, event.offset);
         } else if (event.type === "replace") {
           handlers.onReplace?.();
         } else if (event.type === "thinking") {

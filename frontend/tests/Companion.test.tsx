@@ -72,6 +72,81 @@ beforeEach(() => {
 
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 
+it('hai nét mặt theo đúng tiếng đang phát, không nhảy sang câu sau khi chữ đã tải xong', async () => {
+  localStorage.setItem('peto-local-voice', '1');
+  class HeldAudio {
+    static all: HeldAudio[] = [];
+    onended: (() => void) | null = null; onerror = null;
+    ready!: () => void;
+    constructor() { HeldAudio.all.push(this); }
+    play() { return new Promise<void>(resolve => { this.ready = resolve; }); }
+    pause() {}
+  }
+  vi.stubGlobal('Audio', HeldAudio);
+  vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers) => {
+    handlers.onMeta?.('C1', 'low', undefined, true);
+    handlers.onEmotion?.('surprised', 0); handlers.onDelta?.('Oh!');
+    handlers.onEmotion?.('happy', 3); handlers.onDelta?.(' Great news!'); handlers.onDone?.();
+  });
+  await openCompanion(); await chatColumn().findByRole('button', { name: 'Tắt tiếng' });
+  await sendInCompanion('I passed');
+  await waitFor(() => expect(HeldAudio.all).toHaveLength(1));
+  expect(screen.getByTestId('stage').dataset.emotion).toBe('');
+  await act(async () => HeldAudio.all[0].ready());
+  expect(screen.getByTestId('stage').dataset.emotion).toBe('surprised');
+  expect(chatColumn().getByText('Oh! Great news!')).toBeTruthy();
+  act(() => HeldAudio.all[0].onended?.());
+  await waitFor(() => expect(HeldAudio.all).toHaveLength(2));
+  expect(screen.getByTestId('stage').dataset.emotion).toBe('surprised');
+  await act(async () => HeldAudio.all[1].ready());
+  expect(screen.getByTestId('stage').dataset.emotion).toBe('happy');
+  fireEvent.click(chatColumn().getByRole('button', { name: 'Dừng', exact: true }));
+  expect(screen.getByTestId('stage').dataset.emotion).toBe('');
+});
+
+it('nghe lại tin có nhiều mốc mặt dùng đúng mốc cũ sau khi tải lại hội thoại', async () => {
+  localStorage.setItem('peto-local-voice', '1'); localStorage.setItem('peto-companion-muted', '1');
+  vi.mocked(api.getCompanion).mockResolvedValue({ conversation_id: 'C1', messages: [{
+    role: 'assistant', content: 'Oh! Great news!', emotion: 'surprised',
+    emotion_cues: [{ emotion: 'surprised', offset: 0 }, { emotion: 'happy', offset: 3 }],
+  }] });
+  const audios: { ready(): void; onended: (() => void) | null }[] = [];
+  vi.stubGlobal('Audio', class {
+    onended: (() => void) | null = null; onerror = null; ready!: () => void;
+    constructor() { audios.push(this); }
+    play() { return new Promise<void>(resolve => { this.ready = resolve; }); } pause() {}
+  });
+  await openCompanion();
+  fireEvent.click(await screen.findByRole('button', { name: /Nghe Peto/ }));
+  await waitFor(() => expect(audios).toHaveLength(1));
+  expect(screen.getByTestId('stage').dataset.emotion).toBe('');
+  await act(async () => audios[0].ready());
+  expect(screen.getByTestId('stage').dataset.emotion).toBe('surprised');
+  act(() => audios[0].onended?.()); await waitFor(() => expect(audios).toHaveLength(2));
+  await act(async () => audios[1].ready());
+  expect(screen.getByTestId('stage').dataset.emotion).toBe('happy');
+});
+
+it('tắt tiếng đổi biểu cảm theo chữ và replace bỏ các vị trí của bản nháp', async () => {
+  localStorage.setItem('peto-companion-muted', '1');
+  let callbacks!: Parameters<typeof api.sendMessage>[1], done!: () => void;
+  vi.mocked(api.sendMessage).mockImplementation((_payload, handlers) => new Promise(resolve => {
+    callbacks = handlers; done = () => { handlers.onDone?.(); resolve(); };
+  }));
+  await openCompanion(); await sendInCompanion('Hello');
+  act(() => {
+    callbacks.onMeta?.('C1', 'low'); callbacks.onEmotion?.('surprised', 0); callbacks.onDelta?.('Oh!');
+  });
+  expect(screen.getByTestId('stage').dataset.emotion).toBe('surprised');
+  act(() => { callbacks.onEmotion?.('happy', 3); callbacks.onDelta?.(' Great news!'); });
+  expect(screen.getByTestId('stage').dataset.emotion).toBe('happy');
+  act(() => { callbacks.onReplace?.(); callbacks.onEmotion?.('neutral', 0); callbacks.onDelta?.('Updated.'); });
+  await act(async () => done());
+  expect(screen.getByTestId('stage').dataset.emotion).toBe('neutral');
+  expect(chatColumn().queryByText('Oh! Great news!')).toBeNull();
+  expect(speakBodies()).toEqual([]);
+});
+
 it('đo câu đầu và tạo tiếng riêng; chỉ ghi bắt đầu nói khi âm thanh phát thật', async () => {
   localStorage.setItem('peto-local-voice', '1');
   let ready!: () => void;

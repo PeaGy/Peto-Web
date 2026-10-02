@@ -55,11 +55,13 @@ test('đọc sớm qua luồng SSE thật, giữ nháp mới và Dừng hủy ti
   await composer.fill('Hello Peto'); await panel.getByRole('button', { name: 'Gửi', exact: true }).click();
   await expect.poll(() => page.evaluate(() => (window as unknown as { testTurns: unknown[] }).testTurns.length)).toBe(1);
   await emit(0, { type: 'meta', conversation_id: 'A', effort: 'low', voice_stream: true });
+  await emit(0, { type: 'emotion', emotion: 'surprised', offset: 0 });
   await emit(0, { type: 'delta', text: 'Hi there. ' });
   await expect(panel.getByText('Đang nói…', { exact: true })).toBeVisible();
   expect(spoken).toEqual(['Hi there.']);
   await expect(panel.getByRole('button', { name: 'Dừng', exact: true })).toBeVisible();
   await composer.fill('My next message');
+  await emit(0, { type: 'emotion', emotion: 'happy', offset: 9 });
   await emit(0, { type: 'delta', text: 'How are you?' }); await emit(0, { type: 'done' });
   await expect(panel.getByRole('button', { name: 'Gửi', exact: true })).toBeVisible();
   await expect(composer).toHaveValue('My next message');
@@ -76,6 +78,7 @@ test('đọc sớm qua luồng SSE thật, giữ nháp mới và Dừng hủy ti
   await expect(panel.getByRole('button', { name: 'Gửi', exact: true })).toBeEnabled();
   await expect.poll(() => page.evaluate(() => (window as unknown as { testTurns: { aborted: boolean }[] }).testTurns[1].aborted)).toBe(true);
   await emit(1, { type: 'delta', text: 'Late old words. ' });
+  await emit(1, { type: 'emotion', emotion: 'angry', offset: 0 });
   await expect(panel.getByText(/Late old words/)).toHaveCount(0);
   await expect(composer).toHaveValue('Draft after stopping');
   expect(spoken).toEqual(['Hi there.', 'How are you?', 'A fresh reply.']);

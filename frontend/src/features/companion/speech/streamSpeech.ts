@@ -1,5 +1,11 @@
 import { speakableText, speechChunks } from './localSpeech';
 import { SpeechQueue } from './speechQueue';
+import type { EmotionCue } from '../../../shared/api/api';
+
+export interface SpeechExpressions {
+  cues?: EmotionCue[];
+  onEmotion: (emotion: string) => void;
+}
 
 const ABBREVIATIONS = /(?:\b(?:Mr|Mrs|Ms|Dr|Prof|Sr|Jr|St|vs|etc|e\.g|i\.e)|\b[A-Z])\.$/i;
 
@@ -8,10 +14,33 @@ export class StreamSpeechText {
   readonly queue = new SpeechQueue();
   private buffer = '';
   private closed = false;
-  constructor(private readonly onTextReady?: () => void) {}
+  private offset = 0;
+  private emotion: string | undefined;
+  private cues: EmotionCue[] = [];
+  constructor(private readonly onTextReady?: () => void, private readonly splitSentences = true) {}
+  markEmotion(emotion: string, offset: number) {
+    if (this.closed || !Number.isSafeInteger(offset) || offset < this.offset) return;
+    this.cues.push({ emotion, offset });
+    this.cues.sort((a, b) => a.offset - b.offset);
+    this.drainCues();
+  }
+  private drainCues() {
+    while (this.cues.length && this.cues[0].offset <= this.offset + this.buffer.length) {
+      const cue = this.cues.shift()!;
+      const length = cue.offset - this.offset;
+      // Chốt đoạn trước bằng nét mặt cũ, kể cả khi dấu cách sau câu chưa tới.
+      this.enqueue(this.buffer.slice(0, length));
+      this.buffer = this.buffer.slice(length);
+      this.offset = cue.offset;
+      this.emotion = cue.emotion;
+    }
+  }
   push(delta: string) {
     if (this.closed) return;
     this.buffer += delta;
+    this.drainCues();
+    // Nghe lại đã có toàn bộ chữ: chỉ tách khi đổi mặt hoặc vượt giới hạn mẩu tiếng.
+    if (!this.splitSentences) return;
     let consumed = 0;
     for (const match of this.buffer.matchAll(/[.!?…]+["'”’)\]]*(?=\s)/g)) {
       const end = match.index + match[0].length;
@@ -22,11 +51,12 @@ export class StreamSpeechText {
       consumed = end;
     }
     this.buffer = this.buffer.slice(consumed);
+    this.offset += consumed;
   }
   private enqueue(text: string) {
     for (const chunk of speechChunks(speakableText(text))) {
       this.onTextReady?.();
-      this.queue.push(chunk);
+      this.queue.push(chunk, this.emotion);
     }
   }
   finish() {
@@ -41,6 +71,7 @@ export class StreamSpeechText {
 
 export interface VoiceStream {
   push(text: string): void;
+  markEmotion(emotion: string, offset: number): void;
   finish(): void;
   done: Promise<void>;
 }

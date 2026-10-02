@@ -8,6 +8,7 @@ import {
   sendMessage,
   type AppInfo,
   type Message,
+  type EmotionCue,
 } from "../../shared/api/api";
 import { SendIcon } from "../chat/Composer";
 import { disconnectStream, networkInterrupted, useReplyRecovery } from '../chat/useReplyRecovery';
@@ -111,7 +112,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
 }) {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
-  /** Cảm xúc nhân vật đang làm. Peto chọn ở đầu mỗi câu trả lời (sự kiện "emotion"), giữ trong lúc nói rồi về null. */
+  /** Cảm xúc nhân vật đang làm, đổi theo đoạn âm thanh đang phát rồi về null. */
   const [stageEmotion, setStageEmotion] = useState<StageCue | null>(null);
   const cueKey = useRef(0);
   const releaseTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -335,11 +336,23 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
     draftTiming.current = null;
     const timing = beginCompanionTiming({ input: heard ? 'voice' : 'text', hearing: heard?.hearing,
       hearingSource: heard?.source, voiceSource: voice.source, search });
-    const speechTiming = { onTextReady: () => timing.mark('textReady'),
-      onSynthesisStart: () => timing.mark('synthesis'), onPlaying: () => timing.mark('playing'),
-      onStopped: () => timing.finish('stopped') };
+    let speechEpoch = 0;
+    const speechTiming = () => {
+      const epoch = speechEpoch;
+      return { onTextReady: () => { if (epoch === speechEpoch) timing.mark('textReady'); },
+        onSynthesisStart: () => { if (epoch === speechEpoch) timing.mark('synthesis'); },
+        onPlaying: () => { if (epoch === speechEpoch) timing.mark('playing'); },
+        onStopped: () => { if (epoch === speechEpoch) timing.finish('stopped'); } };
+    };
     const spoken = { cancelled: false, stream: null as VoiceStream | null, timing };
     spokenTurn.current = spoken;
+    let emotionCues: EmotionCue[] = [];
+    const expressions = { onEmotion: (value: string) => {
+      if (spokenTurn.current === spoken && !spoken.cancelled && latest.current.active && !latest.current.muted) {
+        const emotion = asStageEmotion(value);
+        if (emotion) cue(emotion);
+      }
+    } };
     const current = () => abortRef.current === controller && !controller.signal.aborted;
     let earlyVoice = false;
     let accepted = false;
@@ -375,9 +388,12 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
             const now = latest.current;
             if (earlyVoice && !spoken.cancelled && now.active && !now.muted && now.voice.status === 'ready') {
               if (!spoken.stream) {
-                spoken.stream = now.voice.stream(`${SPEECH_PREFIX}${replyIndex}`, speechTiming);
-                spoken.stream.done.then(() => timing.finish(spoken.cancelled ? 'stopped' : 'complete')).catch(err => {
-                  if (spokenTurn.current === spoken && !spoken.cancelled) {
+                const stream = now.voice.stream(`${SPEECH_PREFIX}${replyIndex}`, speechTiming(), { ...expressions, cues: emotionCues });
+                spoken.stream = stream;
+                stream.done.then(() => {
+                  if (spoken.stream === stream) timing.finish(spoken.cancelled ? 'stopped' : 'complete');
+                }).catch(err => {
+                  if (spokenTurn.current === spoken && spoken.stream === stream && !spoken.cancelled) {
                     spoken.cancelled = true;
                     timing.finish('error');
                     reportSpeechError(err);
@@ -390,32 +406,45 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
               }
             }
           },
-          // Cảm xúc tới trước chữ: nhân vật đổi nét mặt ngay khi Peto bắt đầu trả lời.
-          onEmotion: (value) => {
+          // Có giọng đọc thì nét mặt chờ đúng đoạn tiếng; tắt tiếng thì phản ứng theo chữ.
+          onEmotion: (value, offset) => {
             if (!current()) return;
             const emotion = asStageEmotion(value);
             if (!emotion) return;
+            const position = offset ?? reply.length;
+            if (!Number.isSafeInteger(position) || position < 0 || position > reply.length) return;
             turnEmotion = emotion;
+            emotionCues.push({ emotion, offset: position });
+            spoken.stream?.markEmotion(emotion, position);
             setMessages((prev) => {
               const last = prev[prev.length - 1];
-              return last?.role === "assistant" ? [...prev.slice(0, -1), { ...last, emotion }] : prev;
+              return last?.role === "assistant" ? [...prev.slice(0, -1), {
+                ...last, emotion: last.emotion ?? emotion, emotion_cues: [...emotionCues],
+              }] : prev;
             });
-            if (latest.current.active) cue(emotion);
+            const now = latest.current;
+            if (now.active && (offset === undefined || now.muted || now.voice.status !== 'ready' || spoken.cancelled)) cue(emotion);
           },
           onSearch: (status) => { if (current()) setSearching(status === 'searching'); },
           // Peto viết vài chữ rồi mới quyết định tra web: máy chủ bỏ phần đó, trang cũng xóa để khỏi ghép hai câu.
           onReplace: () => {
             if (!current()) return;
+            speechEpoch++;
             timing.replace();
             // Máy chủ thay bản nháp: bỏ hàng chờ cũ và chỉ đọc bản chốt sau khi lượt xong.
             earlyVoice = false;
             if (spoken.stream) {
-              haltSpeech(); spoken.stream = null; spoken.cancelled = false;
+              spoken.stream = null; latest.current.voice.stop();
             }
             reply = "";
+            // Bản nháp bị bỏ: các mốc chữ cũ không được áp vào lời nói sau tìm kiếm.
+            turnEmotion = asStageEmotion(emotionCues[0]?.emotion) ?? turnEmotion;
+            emotionCues = turnEmotion ? [{ emotion: turnEmotion, offset: 0 }] : [];
             setMessages((prev) => {
               const last = prev[prev.length - 1];
-              return last?.role === "assistant" ? [...prev.slice(0, -1), { ...last, content: "" }] : prev;
+              return last?.role === "assistant" ? [...prev.slice(0, -1), {
+                ...last, content: "", emotion_cues: [...emotionCues], emotion: turnEmotion,
+              }] : prev;
             });
           },
           onError: (message) => { if (current()) { timing.finish('error'); setError(message); } },
@@ -464,14 +493,17 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
     const speaking = completed && reply.trim() && !spoken.cancelled && now.active && !now.muted && now.voice.status === "ready";
     if (completed && reply.trim() && now.active) {
       // Peto quên gắn thẻ thì đoán theo từ khóa như trước. Không đọc thành tiếng thì giữ mặt vài giây để kịp thấy.
-      cue(turnEmotion ?? replyEmotion(reply));
+      if (!speaking) cue(turnEmotion ?? replyEmotion(reply));
+      else if (!emotionCues.length) cue(replyEmotion(reply));
       if (!speaking) releaseLater(6000);
     } else if (!speaking) {
       releaseLater(1500);
     }
     if (speaking) {
       if (spoken.stream) spoken.stream.finish();
-      else now.voice.speak(`${SPEECH_PREFIX}${replyIndex}`, reply, { timing: speechTiming })
+      else now.voice.speak(`${SPEECH_PREFIX}${replyIndex}`, reply, {
+        timing: speechTiming(), expressions: { ...expressions, cues: emotionCues },
+      })
         .then(() => timing.finish(spoken.cancelled ? 'stopped' : 'complete')).catch(err => {
         timing.finish('error');
         if (spokenTurn.current === spoken && !spoken.cancelled) reportSpeechError(err);
@@ -527,7 +559,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
     expressionSpeechKey.current = speech.key;
     const index = Number(speech.key.slice(SPEECH_PREFIX.length));
     const message = messages[index];
-    if (message?.role === 'assistant') cue(messageEmotion(message));
+    if (message?.role === 'assistant' && !message.emotion_cues?.length) cue(messageEmotion(message));
   }, [speech?.key, messages, streaming, cue, releaseLater]);
   // Chữ nghe được vào ô nhắn, nối sau chữ đang có.
   useEffect(() => {
@@ -707,7 +739,15 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
                 {message.content && !live && voice.status === "ready" && (
                   <SpeakButton
                     phase={voice.speaking?.key === key ? voice.speaking.phase : null}
-                    onSpeak={() => { haltSpeech(); cue(messageEmotion(message)); void voice.speak(key, message.content).catch(reportSpeechError); }}
+                    onSpeak={() => {
+                      haltSpeech();
+                      const cues = message.emotion_cues?.filter(item => asStageEmotion(item.emotion)
+                        && Number.isSafeInteger(item.offset) && item.offset >= 0 && item.offset <= message.content.length);
+                      cue(cues?.length ? null : messageEmotion(message));
+                      void voice.speak(key, message.content, { expressions: cues?.length ? {
+                        cues, onEmotion: value => { if (latest.current.active) cue(asStageEmotion(value)); },
+                      } : undefined }).catch(reportSpeechError);
+                    }}
                     onStop={stop}
                   />
                 )}

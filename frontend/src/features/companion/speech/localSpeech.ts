@@ -1,5 +1,5 @@
 import { trackVoice } from "./voiceActivity";
-import { SpeechQueue } from './speechQueue';
+import { SpeechQueue, type SpeechChunk } from './speechQueue';
 import { normalizeWav } from "./voiceProviders";
 /** Đọc tin của Peto: tiếng từ máy chủ Peto (Giọng Peto, Máy nhà) hoặc từ khóa riêng của người dùng (voiceProviders). */
 
@@ -242,7 +242,8 @@ export class LocalVoicePlayer {
     return this.speakQueue(queue, synth, onPhase);
   }
 
-  async speakQueue(queue: SpeechQueue, synth: Synthesize, onPhase: (phase: SpeakPhase) => void): Promise<'done' | 'stopped'> {
+  async speakQueue(queue: SpeechQueue, synth: Synthesize, onPhase: (phase: SpeakPhase) => void,
+    onChunkPlaying?: (chunk: SpeechChunk) => void): Promise<'done' | 'stopped'> {
     this.stop();
     const controller = new AbortController();
     this.controller = controller;
@@ -250,21 +251,22 @@ export class LocalVoicePlayer {
     try {
       let noMore = false;
       const request = async () => {
-        const text = await queue.next(controller.signal);
-        noMore = text === null;
-        return text === null || controller.signal.aborted ? null : synth(text, controller.signal);
+        const chunk = await queue.nextChunk(controller.signal);
+        noMore = chunk === null;
+        if (chunk === null || controller.signal.aborted) return null;
+        return { blob: await synth(chunk.text, controller.signal), chunk };
       };
       let pending = request();
       let started = false;
       while (!controller.signal.aborted) {
         if (started && !noMore) onPhase('buffering');
-        const blob = await pending;
+        const result = await pending;
         if (controller.signal.aborted) return "stopped";
-        if (!blob) return 'done';
+        if (!result) return 'done';
         // Chỉ xin trước một mẩu; hàng chờ có thể đang đợi câu tiếp theo từ luồng chữ.
         pending = request();
         pending.catch(() => {});
-        await this.play(blob, controller.signal, onPhase, started);
+        await this.play(result.blob, controller.signal, onPhase, started, () => onChunkPlaying?.(result.chunk));
         started = true;
         if (controller.signal.aborted) return "stopped";
       }
@@ -282,7 +284,8 @@ export class LocalVoicePlayer {
     }
   }
 
-  private async play(source: Blob, signal: AbortSignal, onPhase: (phase: SpeakPhase) => void, started: boolean): Promise<void> {
+  private async play(source: Blob, signal: AbortSignal, onPhase: (phase: SpeakPhase) => void, started: boolean,
+    onStart?: () => void): Promise<void> {
     // Sửa header WAV phát trực tuyến để bộ đo độ to (nhép miệng) đọc được; tệp khác giữ nguyên.
     const bytes = typeof source.arrayBuffer === 'function' ? normalizeWav(await source.arrayBuffer()) : undefined;
     const blob = bytes
@@ -296,6 +299,7 @@ export class LocalVoicePlayer {
       this.audio = audio;
       let finished = false;
       let lastPhase: SpeakPhase | null = null;
+      let announced = false;
       const phase = (value: SpeakPhase) => {
         if (finished || signal.aborted || lastPhase === value) return;
         lastPhase = value;
@@ -324,7 +328,11 @@ export class LocalVoicePlayer {
       signal.addEventListener("abort", onAbort, { once: true });
       audio.onended = () => finish();
       audio.onerror = () => finish(new Error("Trình duyệt không phát được tiếng Peto."));
-      const playing = () => { started = true; phase('playing'); };
+      const playing = () => {
+        if (finished || signal.aborted) return;
+        if (!announced) { announced = true; onStart?.(); }
+        started = true; phase('playing');
+      };
       const waiting = () => phase(started ? 'buffering' : 'loading');
       audio.onplaying = playing;
       audio.onwaiting = waiting;

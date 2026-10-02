@@ -8,7 +8,7 @@ import storage as db
 from features.chat import service as chat_service
 from ai import StreamChunk
 from ai.mock import MockProvider
-from features.companion.emotion_tags import EMOTIONS, MarkerFilter, emotion_of, first, strip
+from features.companion.emotion_tags import EMOTIONS, MarkerFilter, emotion_of, first, strip, timeline
 from prompts import COMPANION_SYSTEM_PROMPT
 from features.companion.private_notes import NoteFilter
 from tests.conftest import TEST_OWNER, read_events
@@ -152,3 +152,55 @@ def test_the_emotion_is_announced_once_and_spacing_stays_clean():
     assert strip("Oh! <|EMOTE_SURPRISED|> Really?") == "Oh! Really?"
     assert strip("<|EMOTE_HAPPY|>\n\nCongrats!") == "Congrats!"
     assert strip("Oh!\n<|EMOTE_SURPRISED|>\nReally?") == "Oh!\nReally?"
+
+
+def test_expression_offsets_and_event_order_survive_every_chunk_boundary():
+    raw = '<|EMOTE_SURPRISED|> Oh 😮! <|EMOTE_HAPPY|> That is great. <|EMOTE_NEUTRAL|>'
+    visible, expected = timeline(raw)
+    assert visible == 'Oh 😮! That is great.'
+    assert expected == [{'emotion': 'surprised', 'offset': 0}, {'emotion': 'happy', 'offset': 6},
+                        {'emotion': 'neutral', 'offset': 21}]
+    for size in range(1, len(raw) + 1):
+        markers, events = MarkerFilter(), []
+        for start in range(0, len(raw), size):
+            markers.feed(raw[start:start + size])
+            events += markers.take_events()
+        markers.flush()
+        events += markers.take_events()
+        assert shown(events) == visible
+        assert [{'emotion': e['emotion'], 'offset': e['offset']} for e in events if e['type'] == 'emotion'] == expected
+        emitted = ''
+        for event in events:
+            if event['type'] == 'delta': emitted += event['text']
+            else: assert event['offset'] == len(emitted.encode('utf-16-le')) // 2
+
+
+async def test_multiple_expressions_are_public_metadata_and_replay_matches_stream(client, monkeypatch):
+    async def stream(self, **kwargs):
+        for part in ['<|EMOTE_SUR', 'PRISED|>Oh 😮!', '<private>không đưa lên sân khấu</private>',
+                     ' <|EMOTE_HA', 'PPY|>That is great.']:
+            yield StreamChunk('text', part)
+    monkeypatch.setattr(MockProvider, 'stream', stream)
+    events = await turn(client, 'Tin vui nè')
+    cues = [{'emotion': e['emotion'], 'offset': e['offset']} for e in events if e['type'] == 'emotion']
+    assert cues == [{'emotion': 'surprised', 'offset': 0}, {'emotion': 'happy', 'offset': 6}]
+    assert shown(events) == 'Oh 😮! That is great.'
+    for url in ('/api/companion', f"/api/conversations/{events[0]['conversation_id']}/messages"):
+        reply = (await client.get(url)).json()['messages'][-1]
+        assert reply['content'] == shown(events)
+        assert reply['emotion'] == 'surprised' and reply['emotion_cues'] == cues
+
+
+async def test_replaced_draft_expression_offsets_are_not_kept_in_history(client, monkeypatch):
+    async def stream(self, **kwargs):
+        yield StreamChunk('text', '<|EMOTE_THINK|>Checking. <|EMOTE_SAD|>Old draft.')
+        yield StreamChunk('replace')
+        yield StreamChunk('text', 'Oh! <|EMOTE_HAPPY|>Great news.')
+    monkeypatch.setattr(MockProvider, 'stream', stream)
+    events = await turn(client, 'Xem lại tin mới đi')
+    reply = (await client.get('/api/companion')).json()['messages'][-1]
+    assert reply['content'] == 'Oh! Great news.'
+    # Giữ cảm xúc mở đầu làm dự phòng tới khi bản chốt đổi sang nét mặt mới.
+    assert reply['emotion_cues'] == [{'emotion': 'think', 'offset': 0}, {'emotion': 'happy', 'offset': 3}]
+    after = events[next(i for i, e in enumerate(events) if e['type'] == 'replace') + 1:]
+    assert [{'emotion': e['emotion'], 'offset': e['offset']} for e in after if e['type'] == 'emotion'] == reply['emotion_cues'][1:]

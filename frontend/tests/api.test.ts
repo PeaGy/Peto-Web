@@ -4,6 +4,15 @@ import { createImagineJob, sendMessage } from '../src/shared/api/api';
 afterEach(() => vi.unstubAllGlobals());
 const event = (value: object) => `data: ${JSON.stringify(value)}\n\n`;
 
+it('giữ vị trí và thứ tự nhiều cảm xúc khi đọc SSE', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(
+    event({ type: 'emotion', emotion: 'surprised', offset: 0 }) + event({ type: 'delta', text: 'Oh!' })
+    + event({ type: 'emotion', emotion: 'happy', offset: 3 }) + event({ type: 'delta', text: ' Great!' }) + event({ type: 'done' }))));
+  const onEmotion = vi.fn();
+  await sendMessage({ message: 'Tin vui', conversationId: null, effort: 'low', mode: 'companion' }, { onEmotion });
+  expect(onEmotion.mock.calls).toEqual([['surprised', 0], ['happy', 3]]);
+});
+
 it('thẻ tài liệu và tiến trình tạo tệp tách khỏi lời trả lời', async () => {
   const artifact = { id: 'D1', filename: 'Bài văn.docx', title: 'Bài văn', version: 1, pages: 2, format: 'docx', style: 'essay' };
   vi.stubGlobal('fetch', vi.fn(async () => new Response(event({ type: 'document_status', text: 'Đang tạo tệp' }) + event({ type: 'artifact', artifact }) + event({ type: 'delta', text: 'Đã tạo.' }) + event({ type: 'done' }))));

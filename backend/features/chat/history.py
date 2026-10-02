@@ -30,7 +30,7 @@ def _public_attachment(row: dict) -> dict:
 
 def _public_message(row: dict, companion: bool = False) -> dict:
     """Tin nhắn gửi về trình duyệt. Câu trả lời Companion bỏ ghi chú riêng và thẻ cảm xúc của Peto, kèm cảm xúc đó
-    riêng ở ``emotion`` để nghe lại tin cũ thì nhân vật làm đúng mặt."""
+    riêng ở ``emotion`` và ``emotion_cues`` để nghe lại tin cũ thì nhân vật làm đúng mặt theo từng đoạn."""
     content = row["content"]
     message = {
         "id": row["id"],
@@ -43,7 +43,7 @@ def _public_message(row: dict, companion: bool = False) -> dict:
         "artifacts": row.get('artifacts', []),
     }
     if companion and row["role"] == "assistant":
-        message["content"] = _visible(content, "companion")
+        message["content"], message["emotion_cues"] = emotion_tags.timeline(private_notes.strip(content))
         message["emotion"] = emotion_tags.first(private_notes.strip(content))
     return message
 
