@@ -641,7 +641,7 @@ the owner's existing choices for the stage, short English replies, microphone de
 
 `Companion.tsx` is mounted alongside Chat like `Imagine.tsx` (an `active` prop, kept alive once
 visited) and owns one continuous thread from `GET /api/companion`; "Bắt đầu lại" deletes it. It
-sends `mode: "companion"`, speaks each completed reply unless muted, and stops speaking when the
+sends `mode: "companion"`, speaks stable sentences as they arrive unless muted, and stops speaking when the
 tab is left.
 
 On desktop the layout is a stage on the left and a ~380px chat column on the right. The stage holds
@@ -902,6 +902,24 @@ the `.tsx`.
 share one enabled flag, probe result and player. `speak()` returns a promise that rejects with a
 Vietnamese message, and each caller shows its own error. Companion's speech keys start with
 `companion-` so the Settings sample does not change Companion's status line.
+
+Companion phase 3 (2026-10-02) reduces the wait before speech and coordinates turn cancellation:
+- Chat `meta.voice_stream` explicitly allows early speech only for Companion with web search off. Missing/false
+  capability uses completed-reply playback, so older servers and search drafts remain safe.
+- `StreamSpeechText` buffers incomplete sentences, decimal numbers, common abbreviations and open fenced code;
+  `SpeechQueue` feeds the same player used for replay. Final completion flushes the tail without replaying the whole
+  response. Speech still needs a ready, enabled voice and an unmuted, active Companion.
+- One audio segment plays at a time, with only one synthesis request prefetched. Stop aborts generation, playback,
+  pending synthesis and queue waits. Version/controller guards discard late callbacks. Leaving the tab, muting or
+  changing character suppresses automatic speech for the rest of that turn.
+- The composer accepts drafts during generation. Delayed server acceptance clears only the draft that was sent;
+  newer edits survive. During generation, use Dừng before sending the next turn. While only speech remains,
+  Gửi can start the next turn and cancels the previous speech.
+- Hearing resumes only if it was enabled and still wanted. Auto-send requires a finalized draft, the waiting hearing
+  phase and no reply/speech; speaking again or editing postpones/cancels it. Pausing key-based hearing aborts queued
+  and in-flight transcriptions and discards their late results after resume.
+- Automatic spoken barge-in/full duplex is deferred. Regression tests cover sentence boundaries, player cancellation,
+  Companion draft/turn isolation, hearing resume/auto-send and PC/mobile streaming browser flows using fake services.
 
 - Voice stays off until the user turns on the "Bật giọng nói" switch in Settings, and nothing calls
   `/api/voice` before that. Even once enabled, the hook only probes after Companion has been opened

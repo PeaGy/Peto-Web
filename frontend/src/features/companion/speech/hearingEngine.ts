@@ -277,7 +277,8 @@ async function keyEngine(token: number, source: HearingProviderId): Promise<Engi
     throw new Error(`Chưa nhập đủ khóa ${provider.name} trong Cài đặt → Giọng nói → Peto nghe.`);
   }
   if (!captureSupported()) throw new Error("Trình duyệt này chưa cho ghi âm từ micro.");
-  const controller = new AbortController();
+  let controller = new AbortController();
+  let segmentVersion = 0;
   let paused = false;
   let segmenter: Segmenter | null = null;
   let sampleRate = 0;
@@ -286,20 +287,25 @@ async function keyEngine(token: number, source: HearingProviderId): Promise<Engi
 
   // Chép lần lượt từng câu, để chữ vào ô nhắn đúng thứ tự đã nói.
   const transcribe = (samples: Float32Array) => {
+    const version = segmentVersion;
+    const signal = controller.signal;
+    const valid = () => token === generation && version === segmentVersion && !signal.aborted;
     pending += 1;
     const audio = wavFromSamples(samples, sampleRate);
     const language = state.language;
     publish({ phase: "transcribing" });
     queue = queue.then(async () => {
       try {
-        const words = await transcribeWithKey(provider, getKeyConfigs()[provider.id] ?? {}, audio, language, controller.signal);
-        if (token === generation && words) deliver(words);
+        if (!valid()) return;
+        const words = await transcribeWithKey(provider, getKeyConfigs()[provider.id] ?? {}, audio, language, signal);
+        if (valid() && !paused && words) deliver(words);
       } catch (error) {
-        if (token !== generation || controller.signal.aborted) return;
+        if (!valid()) return;
         // Khóa sai, hết số dư: nói tiếp cũng hỏng nên thôi nghe. Lỗi mạng, giới hạn lượt: báo rồi nghe tiếp.
         if (error instanceof HearingError && !error.fatal) publish({ message: error.message });
         else fail(error);
       } finally {
+        if (!valid()) return;
         pending -= 1;
         if (token === generation && pending === 0 && state.phase === "transcribing") {
           publish({ phase: paused ? "paused" : "waiting" });
@@ -328,6 +334,14 @@ async function keyEngine(token: number, source: HearingProviderId): Promise<Engi
     pause(next) {
       if (next === paused) return;
       paused = next;
+      if (next) {
+        // Câu đang chép trước lúc Peto trả lời không được về muộn rồi thành tin nhắn của lượt tiếp theo.
+        segmentVersion++;
+        controller.abort();
+        controller = new AbortController();
+        pending = 0;
+        queue = Promise.resolve();
+      }
       // Câu đang nói dở lúc Peto bắt đầu trả lời thì bỏ: phần đó đã nằm trong tin vừa gửi hoặc là tiếng loa.
       segmenter?.reset();
     },

@@ -1,4 +1,5 @@
 import { trackVoice } from "./voiceActivity";
+import { SpeechQueue } from './speechQueue';
 import { normalizeWav } from "./voiceProviders";
 /** Đọc tin của Peto: tiếng từ máy chủ Peto (Giọng Peto, Máy nhà) hoặc từ khóa riêng của người dùng (voiceProviders). */
 
@@ -226,24 +227,37 @@ export class LocalVoicePlayer {
   }
 
   async speak(text: string, synth: Synthesize, onPhase: (phase: SpeakPhase) => void): Promise<"done" | "stopped"> {
-    this.stop();
     const chunks = speechChunks(speakableText(text));
     if (!chunks.length) throw new Error("Tin này không có chữ nào để đọc.");
+    const queue = new SpeechQueue(chunks);
+    queue.finish();
+    return this.speakQueue(queue, synth, onPhase);
+  }
+
+  async speakQueue(queue: SpeechQueue, synth: Synthesize, onPhase: (phase: SpeakPhase) => void): Promise<'done' | 'stopped'> {
+    this.stop();
     const controller = new AbortController();
     this.controller = controller;
     onPhase("loading");
     try {
-      let pending = synth(chunks[0], controller.signal);
-      for (let index = 0; index < chunks.length; index += 1) {
-        if (index) onPhase('buffering');
+      let noMore = false;
+      const request = async () => {
+        const text = await queue.next(controller.signal);
+        noMore = text === null;
+        return text === null || controller.signal.aborted ? null : synth(text, controller.signal);
+      };
+      let pending = request();
+      let started = false;
+      while (!controller.signal.aborted) {
+        if (started && !noMore) onPhase('buffering');
         const blob = await pending;
         if (controller.signal.aborted) return "stopped";
-        if (index + 1 < chunks.length) {
-          pending = synth(chunks[index + 1], controller.signal);
-          // Lỗi của mẩu kế tiếp được ném ra khi tới lượt nó, không để trình duyệt báo lỗi chưa bắt.
-          pending.catch(() => {});
-        }
-        await this.play(blob, controller.signal, onPhase, index > 0);
+        if (!blob) return 'done';
+        // Chỉ xin trước một mẩu; hàng chờ có thể đang đợi câu tiếp theo từ luồng chữ.
+        pending = request();
+        pending.catch(() => {});
+        await this.play(blob, controller.signal, onPhase, started);
+        started = true;
         if (controller.signal.aborted) return "stopped";
       }
       return "done";
@@ -251,6 +265,7 @@ export class LocalVoicePlayer {
       if (controller.signal.aborted) return "stopped";
       throw error;
     } finally {
+      queue.cancel();
       controller.abort();
       if (this.controller === controller) {
         this.controller = null;

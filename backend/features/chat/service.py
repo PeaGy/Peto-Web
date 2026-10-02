@@ -325,6 +325,8 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                 yield sse({
                     "type": "meta", "conversation_id": conversation_id, "effort": effort,
                     "message": _public_message(stored_user),
+                    # Không có tra web thì chữ Companion không bị thay bằng bản nháp sau tìm kiếm.
+                    "voice_stream": mode == "companion" and web_search == "off",
                 })
                 if MAX_ATTACHMENTS > document_count and any(
                     item.get("kind") == "file" and not document_reader.cached_document(item.get("document"))

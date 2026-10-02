@@ -78,7 +78,7 @@ export interface Conversation {
 }
 
 type ChatEvent =
-  | { type: "meta"; conversation_id: string; effort: string; message?: Message }
+  | { type: "meta"; conversation_id: string; effort: string; message?: Message; voice_stream?: boolean }
   | { type: "delta"; text: string }
   | { type: "emotion"; emotion: string }
   | { type: "replace" }
@@ -93,7 +93,7 @@ type ChatEvent =
   | { type: "done" };
 
 interface ChatHandlers {
-  onMeta?: (conversationId: string, effort: string, message?: Message) => void;
+  onMeta?: (conversationId: string, effort: string, message?: Message, voiceStream?: boolean) => void;
   onDelta?: (text: string) => void;
   /** Chỉ lượt Companion: cảm xúc Peto chọn, tới trước chữ để nhân vật đổi nét mặt ngay khi bắt đầu trả lời. */
   onEmotion?: (emotion: string) => void;
@@ -491,7 +491,7 @@ export async function sendMessage(
 
         const event = JSON.parse(line.slice(6)) as ChatEvent;
         if (event.type === "meta") {
-          handlers.onMeta?.(event.conversation_id, event.effort, event.message);
+          handlers.onMeta?.(event.conversation_id, event.effort, event.message, event.voice_stream === true);
         } else if (event.type === "delta") {
           handlers.onDelta?.(event.text);
         } else if (event.type === "emotion") {

@@ -42,6 +42,21 @@ async def test_health(client):
     assert response.json() == {"ok": True, "provider": "mock"}
 
 
+@pytest.mark.parametrize("mode,search,expected", [
+    ("companion", "off", True), ("companion", "auto", False), ("chat", "off", False),
+])
+async def test_voice_stream_only_for_stable_companion_reply(client, mode, search, expected):
+    """Chỉ cho đọc sớm khi lượt Companion không có bản nháp bị thay bởi tra web."""
+    async with client.stream("POST", "/api/chat", json={
+        "message": "Hello", "mode": mode, "web_search": search,
+    }) as response:
+        assert response.status_code == 200
+        events = await read_events(response)
+    assert events[0]["type"] == "meta"
+    assert events[0]["voice_stream"] is expected
+    assert events[-1]["type"] == "done"
+
+
 async def test_chat_streams_and_persists(client):
     events = await _send(client, "chào")
 

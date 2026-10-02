@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { LocalVoicePlayer, type SpeakPhase } from '../src/features/companion/speech/localSpeech';
+import { StreamSpeechText } from '../src/features/companion/speech/streamSpeech';
 
 class FakeAudio {
   static all: FakeAudio[] = [];
@@ -114,4 +115,44 @@ it('dừng trước khi play hoàn tất không để tín hiệu phát muộn �
   expect(await done).toBe('stopped');
   expect(phases).toEqual(['loading']);
   expect(URL.revokeObjectURL).toHaveBeenCalledOnce();
+});
+
+it('phát câu đầu khi luồng chữ vẫn mở và chỉ xin trước tối đa một đoạn', async () => {
+  const player = new LocalVoicePlayer(), stream = new StreamSpeechText();
+  const phases: SpeakPhase[] = [];
+  const synth = vi.fn(async (_text: string, _signal: AbortSignal) => blob);
+  const done = player.speakQueue(stream.queue, synth, phase => phases.push(phase));
+  stream.push('Good to see you. ');
+  const first = await nextAudio(1);
+  first.start();
+  stream.push('How was your day? I hope it was nice. ');
+  await vi.waitFor(() => expect(synth).toHaveBeenCalledTimes(2));
+  expect(FakeAudio.all).toHaveLength(1);
+  first.end();
+  const second = await nextAudio(2);
+  second.start(); second.end();
+  const third = await nextAudio(3);
+  third.start(); third.end();
+  await vi.waitFor(() => expect(phases.at(-1)).toBe('buffering'));
+  stream.finish();
+  expect(await done).toBe('done');
+  expect(synth.mock.calls.map(call => call[0])).toEqual(['Good to see you.', 'How was your day?', 'I hope it was nice.']);
+});
+
+it('dừng khi đợi câu kế tiếp rồi phát lượt mới; chữ và tín hiệu cũ không chen vào', async () => {
+  const player = new LocalVoicePlayer(), stream = new StreamSpeechText();
+  const phases: SpeakPhase[] = [];
+  const old = player.speakQueue(stream.queue, async () => blob, phase => phases.push(phase));
+  stream.push('This is the first sentence. ');
+  const first = await nextAudio(1);
+  first.start(); first.end();
+  await vi.waitFor(() => expect(phases.at(-1)).toBe('buffering'));
+  player.stop();
+  expect(await old).toBe('stopped');
+  stream.push('A late sentence from the old reply. '); stream.finish();
+  const newer = player.speak('New reply.', async () => blob, () => {});
+  const second = await nextAudio(2);
+  second.start(); second.end();
+  expect(await newer).toBe('done');
+  expect(FakeAudio.all).toHaveLength(2);
 });

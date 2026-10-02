@@ -32,6 +32,7 @@ import { asStageEmotion, replyEmotion, type StageCue, type StageEmotion } from '
 import { SceneBackdrop, ScenePicker, useCompanionScene } from './CompanionScenes';
 import { GlobeIcon } from '../chat/WebSources';
 import { readCompanionSearch } from './companionSearch';
+import type { VoiceStream } from './speech/streamSpeech';
 
 const MUTED_KEY = "peto-companion-muted";
 const Live2DStage = lazy(() => import("./characters/Live2DStage"));
@@ -148,8 +149,14 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
   /** Lúc câu nghe được cuối cùng vào ô nhắn; tự gửi chỉ gửi chữ nghe được, không gửi chữ người dùng tự gõ. */
   const [heardAt, setHeardAt] = useState(0);
   const [hearingNeedsReview, setHearingNeedsReview] = useState(false);
+  const draftVersion = useRef(0);
+  const spokenTurn = useRef<{ cancelled: boolean; stream: VoiceStream | null } | null>(null);
   const micRef = useRef<HTMLButtonElement>(null);
   const stopVoice = voice.stop;
+  const haltSpeech = useCallback(() => {
+    if (spokenTurn.current) spokenTurn.current.cancelled = true;
+    stopVoice();
+  }, [stopVoice]);
   const loadVersion = useRef(0);
   const loadRef = useRef<AbortController | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -157,7 +164,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
   /** Khung tin có đang ở cuối không, cập nhật mỗi lần cuộn. */
   const atBottom = useRef(true);
   const resetRef = useRef<HTMLDialogElement>(null);
-  // Câu trả lời về xong mới quyết định có đọc không, nên đọc trạng thái mới nhất qua ref.
+  // Luồng chữ và tiếng đều đọc lựa chọn mới nhất, không dùng trạng thái cũ của lúc gửi.
   const latest = useRef({ active, muted, voice });
   const recovery = useReplyRecovery({
     scope: 'companion', conversationId, enabled: active, busy: streaming || loading || resetting,
@@ -201,16 +208,16 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
   }, [load]);
 
   useEffect(() => {
-    if (!active) stopVoice();
-  }, [active, stopVoice]);
+    if (!active) haltSpeech();
+  }, [active, haltSpeech]);
 
   const previousCharacter = useRef(character.id);
   useEffect(() => {
     if (previousCharacter.current === character.id) return;
     previousCharacter.current = character.id;
-    stopVoice();
+    haltSpeech();
     cue(null);
-  }, [character.id, stopVoice, cue]);
+  }, [character.id, haltSpeech, cue]);
 
   // Danh sách ghi nhớ lúc mở tab, để sau mỗi lượt biết dòng nào là mới. Lỗi thì thôi: lượt sau lấy làm mốc.
   useEffect(() => {
@@ -251,14 +258,14 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
   }
 
   // Giọng nói sống ở App, lâu hơn tab này (đăng xuất thì tab bị gỡ), nên gỡ tab thì cũng thôi đọc.
-  useEffect(() => () => stopVoice(), [stopVoice]);
+  useEffect(() => () => haltSpeech(), [haltSpeech]);
 
   useEffect(() => {
     try {
       localStorage.setItem(MUTED_KEY, muted ? "1" : "0");
     } catch {}
-    if (muted) stopVoice();
-  }, [muted, stopVoice]);
+    if (muted) haltSpeech();
+  }, [muted, haltSpeech]);
 
   useEffect(() => {
     if (active && confirmReset) resetRef.current?.showModal();
@@ -307,7 +314,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
     setHeardAt(0);
     setHearingNeedsReview(false);
     setMicOpen(false);
-    stopVoice();
+    haltSpeech();
     setError(null);
     cue(null);
     const previous = messages;
@@ -317,6 +324,11 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
     setStopping(false);
     const controller = new AbortController();
     abortRef.current = controller;
+    const sentDraftVersion = draftVersion.current;
+    const spoken = { cancelled: false, stream: null as VoiceStream | null };
+    spokenTurn.current = spoken;
+    const current = () => abortRef.current === controller && !controller.signal.aborted;
+    let earlyVoice = false;
     let accepted = false;
     let completed = false;
     let interrupted = false;
@@ -328,24 +340,44 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
       await sendMessage(
         { message: text, conversationId, effort: "low", webSearch: readCompanionSearch() ? "auto" : "off", mode: "companion" },
         {
-          onMeta: (id, _effort, stored) => {
+          onMeta: (id, _effort, stored, voiceStream) => {
+            if (!current()) return;
+            earlyVoice = voiceStream === true;
             accepted = true;
             activeId = id;
             storedUserId = stored?.id;
             setConversationId(id);
-            setDraft("");
+            if (draftVersion.current === sentDraftVersion) setDraft("");
             if (stored) setMessages((prev) => [...prev.slice(0, -2), stored, prev[prev.length - 1]]);
           },
           onDelta: (chunk) => {
+            if (!current()) return;
             reply += chunk;
             setMessages((prev) => {
               const last = prev[prev.length - 1];
               if (last?.role !== "assistant") return prev;
               return [...prev.slice(0, -1), { ...last, content: last.content + chunk }];
             });
+            const now = latest.current;
+            if (earlyVoice && !spoken.cancelled && now.active && !now.muted && now.voice.status === 'ready') {
+              if (!spoken.stream) {
+                spoken.stream = now.voice.stream(`${SPEECH_PREFIX}${replyIndex}`);
+                spoken.stream.done.catch(err => {
+                  if (spokenTurn.current === spoken && !spoken.cancelled) {
+                    spoken.cancelled = true;
+                    reportSpeechError(err);
+                  }
+                });
+                // Giọng vừa sẵn sàng giữa lượt: giữ cả phần chữ đã về trước đó.
+                spoken.stream.push(reply);
+              } else {
+                spoken.stream.push(chunk);
+              }
+            }
           },
           // Cảm xúc tới trước chữ: nhân vật đổi nét mặt ngay khi Peto bắt đầu trả lời.
           onEmotion: (value) => {
+            if (!current()) return;
             const emotion = asStageEmotion(value);
             if (!emotion) return;
             turnEmotion = emotion;
@@ -355,30 +387,40 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
             });
             if (latest.current.active) cue(emotion);
           },
-          onSearch: (status) => setSearching(status === "searching"),
+          onSearch: (status) => { if (current()) setSearching(status === 'searching'); },
           // Peto viết vài chữ rồi mới quyết định tra web: máy chủ bỏ phần đó, trang cũng xóa để khỏi ghép hai câu.
           onReplace: () => {
+            if (!current()) return;
+            // Máy chủ thay bản nháp: bỏ hàng chờ cũ và chỉ đọc bản chốt sau khi lượt xong.
+            earlyVoice = false;
+            if (spoken.stream) {
+              haltSpeech(); spoken.stream = null; spoken.cancelled = false;
+            }
             reply = "";
             setMessages((prev) => {
               const last = prev[prev.length - 1];
               return last?.role === "assistant" ? [...prev.slice(0, -1), { ...last, content: "" }] : prev;
             });
           },
-          onError: setError,
+          onError: (message) => { if (current()) setError(message); },
           onDone: () => {
+            if (!current()) return;
             completed = true;
           },
         },
         controller.signal,
       );
     } catch (err) {
-      if (err instanceof UnauthorizedError) {
+      if (controller.signal.aborted) {
+        // Người dùng dừng: kết quả và lỗi đến muộn của lượt này không được chen vào lượt tiếp theo.
+      } else if (err instanceof UnauthorizedError) {
         onUnauthorized();
       } else if (!controller.signal.aborted) {
         interrupted = true;
         setError(err instanceof Error ? err.message : "Mất kết nối tới máy chủ");
       }
     } finally {
+      if (!completed) haltSpeech();
       // Giữ bản nháp tới khi máy chủ nhận tin, như tab Trò chuyện.
       if (!accepted) {
         setMessages(previous);
@@ -401,7 +443,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
     }
     const now = latest.current;
     if (completed && reply.trim()) void watchMemory(replyIndex);
-    const speaking = completed && reply.trim() && now.active && !now.muted && now.voice.status === "ready";
+    const speaking = completed && reply.trim() && !spoken.cancelled && now.active && !now.muted && now.voice.status === "ready";
     if (completed && reply.trim() && now.active) {
       // Peto quên gắn thẻ thì đoán theo từ khóa như trước. Không đọc thành tiếng thì giữ mặt vài giây để kịp thấy.
       cue(turnEmotion ?? replyEmotion(reply));
@@ -410,13 +452,20 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
       releaseLater(1500);
     }
     if (speaking) {
-      now.voice.speak(`${SPEECH_PREFIX}${replyIndex}`, reply).catch(reportSpeechError);
+      if (spoken.stream) spoken.stream.finish();
+      else now.voice.speak(`${SPEECH_PREFIX}${replyIndex}`, reply).catch(err => {
+        if (spokenTurn.current === spoken && !spoken.cancelled) reportSpeechError(err);
+      });
+    } else if (spoken.stream) {
+      haltSpeech();
     }
   }
 
   function stop() {
-    setStopping(true);
+    setStopping(Boolean(abortRef.current));
+    haltSpeech();
     abortRef.current?.abort();
+    cue(null);
   }
 
   async function reset() {
@@ -425,7 +474,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
     setResetting(true);
     try {
       await deleteConversation(conversationId);
-      stopVoice();
+      haltSpeech();
       loadVersion.current += 1;
       setConversationId(null);
       setMessages([]);
@@ -463,6 +512,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
     if (!active) return;
     setHearingSink({
       onFinal: (text, finalized = true) => {
+        draftVersion.current++;
         setDraft((previous) => joinSpeech(previous, text));
         setHeardAt(finalized ? Date.now() : 0);
         if (!finalized) setHearingNeedsReview(true);
@@ -497,10 +547,10 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
   });
   useEffect(() => {
     if (!heardAt || hearingNeedsReview || !hearing.autoSend || !hearing.listening || hearing.testing) return;
-    if (hearing.interim || hearing.phase === "speaking" || hearing.phase === "transcribing" || streaming || !draft.trim()) return;
+    if (hearing.interim || hearing.phase !== 'waiting' || replying || !draft.trim()) return;
     const timer = window.setTimeout(() => void latestSend.current(), AUTO_SEND_DELAY);
     return () => window.clearTimeout(timer);
-  }, [heardAt, hearingNeedsReview, hearing.autoSend, hearing.listening, hearing.testing, hearing.interim, hearing.phase, streaming, draft]);
+  }, [heardAt, hearingNeedsReview, hearing.autoSend, hearing.listening, hearing.testing, hearing.interim, hearing.phase, replying, draft]);
 
   const closeMic = useCallback(() => setMicOpen(false), []);
   // Bảng Micro chỉ hiện trong lúc nghe: tắt bằng nút lớn hay dừng vì lỗi thì đóng luôn, để thấy câu báo lỗi.
@@ -634,8 +684,8 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
                 {message.content && !live && voice.status === "ready" && (
                   <SpeakButton
                     phase={voice.speaking?.key === key ? voice.speaking.phase : null}
-                    onSpeak={() => { cue(messageEmotion(message)); void voice.speak(key, message.content).catch(reportSpeechError); }}
-                    onStop={stopVoice}
+                    onSpeak={() => { haltSpeech(); cue(messageEmotion(message)); void voice.speak(key, message.content).catch(reportSpeechError); }}
+                    onStop={stop}
                   />
                 )}
                 {message.status === "incomplete" && <span className="message-status">Chưa trả lời xong</span>}
@@ -686,10 +736,11 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
               rows={1}
               placeholder={hearingPlaceholder(hearing) ?? "Nhắn cho Peto…"}
               aria-label="Nhắn cho Peto trong Companion"
-              disabled={streaming}
+              disabled={loading || resetting}
               readOnly={Boolean(interim)}
               onChange={(event) => {
                 setDraft(event.target.value);
+                draftVersion.current++;
                 noteTyping(Boolean(event.target.value.trim()));
                 setHeardAt(0);
                 setHearingNeedsReview(false);
@@ -703,11 +754,12 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
             />
             <div className="composer-bar">
               <MicButton onClick={toggleMic} buttonRef={micRef} />
-              {streaming ? (
+              {replying && (
                 <button type="button" className="stop" disabled={stopping} onClick={stop}>
                   {stopping ? "Đang dừng…" : "Dừng"}
                 </button>
-              ) : (
+              )}
+              {!streaming && (
                 <button type="submit" className="send" disabled={!canSend} aria-label="Gửi">
                   <span className="send-text">Gửi</span> <SendIcon />
                 </button>

@@ -70,6 +70,107 @@ beforeEach(() => {
 
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 
+it('đọc câu đầu trước khi trả lời xong, giữ chữ gõ mới và không đọc lặp bản đầy đủ', async () => {
+  localStorage.setItem('peto-local-voice', '1');
+  let handlers!: Parameters<typeof api.sendMessage>[1], finish!: () => void;
+  vi.mocked(api.sendMessage).mockImplementation((_payload, callbacks) => new Promise(resolve => {
+    handlers = callbacks; finish = () => { callbacks.onDone?.(); resolve(); };
+  }));
+  await openCompanion();
+  await chatColumn().findByRole('button', { name: 'Tắt tiếng' });
+  await sendInCompanion('Hello');
+  const composer = screen.getByRole('textbox', { name: 'Nhắn cho Peto trong Companion' });
+  expect(composer).toHaveProperty('disabled', false);
+  fireEvent.change(composer, { target: { value: 'Next message' } });
+  act(() => { handlers.onMeta?.('C1', 'low', undefined, true); handlers.onDelta?.('Good to see you. '); });
+  await waitFor(() => expect(played).toHaveLength(1));
+  expect(composer).toHaveProperty('value', 'Next message');
+  expect(chatColumn().getByRole('button', { name: 'Dừng', exact: true })).toBeTruthy();
+  act(() => handlers.onDelta?.('How was your day?'));
+  await act(async () => finish());
+  await waitFor(() => expect(played).toHaveLength(2));
+  const texts = fetchMock.mock.calls.filter(([url]) => url.endsWith('/speak')).map(([, init]) => JSON.parse(init.body).text);
+  expect(texts).toEqual(['Good to see you.', 'How was your day?']);
+  expect(composer).toHaveProperty('value', 'Next message');
+});
+
+it('Dừng hủy cả chữ và tiếng; kết quả cũ không chen vào lượt mới', async () => {
+  localStorage.setItem('peto-local-voice', '1');
+  const audios: { pause: ReturnType<typeof vi.fn> }[] = [];
+  vi.stubGlobal('Audio', class {
+    onended = null; onerror = null; pause = vi.fn();
+    constructor() { audios.push(this); }
+    play() { return Promise.resolve(); }
+  });
+  let old!: Parameters<typeof api.sendMessage>[1], signal!: AbortSignal;
+  vi.mocked(api.sendMessage).mockImplementationOnce((_payload, handlers, requestSignal) => new Promise(resolve => {
+    old = handlers; signal = requestSignal!;
+    handlers.onMeta?.('C1', 'low', undefined, true); handlers.onDelta?.('First sentence. ');
+    signal.addEventListener('abort', () => resolve(), { once: true });
+  })).mockImplementationOnce(async (_payload, handlers) => {
+    handlers.onMeta?.('C1', 'low', undefined, true);
+    handlers.onDelta?.('Fresh reply.'); handlers.onDone?.();
+  });
+  await openCompanion();
+  await chatColumn().findByRole('button', { name: 'Tắt tiếng' });
+  await sendInCompanion('Hello');
+  await waitFor(() => expect(audios).toHaveLength(1));
+  fireEvent.change(screen.getByRole('textbox', { name: 'Nhắn cho Peto trong Companion' }), { target: { value: 'Next message' } });
+  fireEvent.click(chatColumn().getByRole('button', { name: 'Dừng', exact: true }));
+  expect(signal.aborted).toBe(true);
+  expect(audios[0].pause).toHaveBeenCalled();
+  fireEvent.click(await chatColumn().findByRole('button', { name: 'Gửi', exact: true }));
+  await waitFor(() => expect(audios).toHaveLength(2));
+  act(() => { old.onDelta?.('Late old reply. '); old.onError?.('Old error'); old.onDone?.(); });
+  expect(chatColumn().queryByText(/Late old reply/)).toBeNull();
+  expect(chatColumn().queryByText('Old error')).toBeNull();
+  expect(audios[1].pause).not.toHaveBeenCalled();
+  expect(vi.mocked(api.sendMessage).mock.calls[1][0].message).toBe('Next message');
+});
+
+it('lượt có thể tra web không đọc nháp; chỉ đọc câu chốt sau thay thế', async () => {
+  localStorage.setItem('peto-local-voice', '1');
+  let handlers!: Parameters<typeof api.sendMessage>[1], finish!: () => void;
+  vi.mocked(api.sendMessage).mockImplementation((_payload, callbacks) => new Promise(resolve => {
+    handlers = callbacks; finish = () => { callbacks.onDone?.(); resolve(); };
+    callbacks.onMeta?.('C1', 'low', undefined, false); callbacks.onDelta?.('A provisional answer. ');
+  }));
+  await openCompanion();
+  await chatColumn().findByRole('button', { name: 'Tắt tiếng' });
+  await sendInCompanion('What happened today?');
+  expect(fetchMock.mock.calls.some(([url]) => url.endsWith('/speak'))).toBe(false);
+  act(() => { handlers.onReplace?.(); handlers.onDelta?.('The checked answer.'); });
+  await act(async () => finish());
+  await waitFor(() => expect(played).toHaveLength(1));
+  const texts = fetchMock.mock.calls.filter(([url]) => url.endsWith('/speak')).map(([, init]) => JSON.parse(init.body).text);
+  expect(texts).toEqual(['The checked answer.']);
+});
+
+it('giọng đọc lỗi giữa luồng không đọc lại khi hoàn tất và không giữ nét mặt mãi', async () => {
+  localStorage.setItem('peto-local-voice', '1');
+  localStorage.setItem('peto-voice-fallback', '');
+  const originalFetch = fetchMock.getMockImplementation()!;
+  fetchMock.mockImplementation((url, init) => url.endsWith('/speak')
+    ? Promise.resolve(new Response(JSON.stringify({ detail: 'Giọng đang lỗi' }), { status: 503 }))
+    : originalFetch(url, init));
+  let handlers!: Parameters<typeof api.sendMessage>[1], finish!: () => void;
+  vi.mocked(api.sendMessage).mockImplementation((_payload, callbacks) => new Promise(resolve => {
+    handlers = callbacks; finish = () => { callbacks.onDone?.(); resolve(); };
+    callbacks.onMeta?.('C1', 'low', undefined, true); callbacks.onEmotion?.('sad'); callbacks.onDelta?.('Oh no. ');
+  }));
+  await openCompanion();
+  await chatColumn().findByRole('button', { name: 'Tắt tiếng' });
+  await sendInCompanion('Hello');
+  await chatColumn().findByText('Giọng đang lỗi');
+  vi.useFakeTimers();
+  act(() => handlers.onDelta?.('I am sorry.'));
+  await act(async () => finish());
+  expect(speakBodies()).toHaveLength(1);
+  expect(screen.getByTestId('stage').dataset.activity).toBe('idle');
+  act(() => vi.advanceTimersByTime(6500));
+  expect(screen.getByTestId('stage').dataset.emotion).toBe('');
+});
+
 it('chữ nháp còn trong ô nhắn không giữ nhân vật nghe mãi', async () => {
   await openCompanion();
   await screen.findByTestId('stage');
@@ -158,6 +259,7 @@ const chatColumn = () => within(screen.getByRole('region', { name: 'Trò chuyệ
 async function openCompanion() {
   render(<App />);
   fireEvent.click(await screen.findByRole('button', { name: 'Companion' }));
+  await screen.findByRole('textbox', { name: 'Nhắn cho Peto trong Companion' });
 }
 
 /** Mở Cài đặt như người dùng: ô tài khoản → Cài đặt trong menu → mục cần xem (mặc định Giọng nói). */

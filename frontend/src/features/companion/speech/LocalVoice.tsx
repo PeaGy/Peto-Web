@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { StreamSpeechText, type VoiceStream } from './streamSpeech';
+import type { SpeechQueue } from './speechQueue';
 import {
   fallbackOnly,
   LOCAL_VOICE_ENABLED_KEY,
@@ -94,6 +96,7 @@ export interface LocalVoice {
    * chỗ thì kết thúc êm, không báo lỗi. ``fallback: false`` (Nghe thử) chỉ dùng nguồn đang chọn.
    */
   speak: (key: string, text: string, options?: { fallback?: boolean }) => Promise<void>;
+  stream: (key: string) => VoiceStream;
   stop: () => void;
 }
 
@@ -319,12 +322,34 @@ export function useLocalVoice(active: boolean): LocalVoice {
     }
   }, [synth]);
 
+  const readQueue = useCallback(async (key: string, queue: SpeechQueue) => {
+    setNotice('');
+    if (!player.current) player.current = new LocalVoicePlayer();
+    const version = ++speakVersion.current;
+    setSpeaking({ key, phase: 'loading' });
+    try {
+      await player.current.speakQueue(queue, synth(true), phase => {
+        if (version === speakVersion.current) setSpeaking({ key, phase });
+      });
+    } catch (error) {
+      if (version === speakVersion.current) throw error instanceof Error ? error : new Error('Chưa đọc được đoạn này.');
+    } finally {
+      queue.cancel();
+      if (version === speakVersion.current) setSpeaking(null);
+    }
+  }, [synth]);
+
+  const stream = useCallback((key: string): VoiceStream => {
+    const text = new StreamSpeechText();
+    return { push: delta => text.push(delta), finish: () => text.finish(), done: readQueue(key, text.queue) };
+  }, [readQueue]);
+
   const recheck = useCallback(() => setProbe((count) => count + 1), []);
 
   return {
     enabled, setEnabled, status, problem: enabled && !state.ready ? state.problem : "", health, checking: probing,
     source, setSource, officialVoice, setOfficialVoice, homeVoice, setHomeVoice, fallback, setFallback,
-    keys, setKeyConfig, forgetKey, recheck, speaking, speak, stop, notice,
+    keys, setKeyConfig, forgetKey, recheck, speaking, speak, stream, stop, notice,
   };
 }
 

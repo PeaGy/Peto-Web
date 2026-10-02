@@ -87,6 +87,15 @@ it('reports a truncated stream instead of treating it as complete', async () => 
   expect(onDone).not.toHaveBeenCalled();
 });
 
+it('chỉ cho đọc sớm khi máy chủ gửi xác nhận rõ ràng; máy chủ cũ giữ cách chờ cả tin', async () => {
+  const onMeta = vi.fn();
+  for (const voice_stream of [undefined, false, true]) {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(event({ type: 'meta', conversation_id: 'C', effort: 'low', voice_stream }) + event({ type: 'done' }))));
+    await sendMessage({ message: 'Hi', conversationId: null, effort: 'low', mode: 'companion' }, { onMeta });
+    expect(onMeta).toHaveBeenLastCalledWith('C', 'low', undefined, voice_stream === true);
+  }
+});
+
 it('stopping discards remaining events already buffered in the same chunk', async () => {
   const controller = new AbortController();
   vi.stubGlobal('fetch', vi.fn(async () => new Response(
