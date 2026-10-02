@@ -631,6 +631,14 @@ half-configured setups log a warning at startup rather than failing silently.
 
 ### Companion tab and voice relay
 
+**Product direction (owner reaffirmed 2026-10-01):** Companion strongly follows Project AIRI. Use
+[AIRI overview](https://airi.moeru.ai/docs/en/docs/overview/) and [upstream repository](https://github.com/moeru-ai/airi)
+as the primary references when proposing or implementing Companion work. Ground feature comparisons in the relevant
+upstream documentation/code and distinguish implemented features from roadmap/WIP items. Prioritize AIRI-style
+Ears/Mouth/Body/Brain interaction and the web/mobile stage experience. History navigation is a supporting improvement;
+voice interaction and character presence should drive the Companion roadmap. Adapt to Peto's current stack and retain
+the owner's existing choices for the stage, short English replies, microphone defaults and optional web search.
+
 `Companion.tsx` is mounted alongside Chat like `Imagine.tsx` (an `active` prop, kept alive once
 visited) and owns one continuous thread from `GET /api/companion`; "Bắt đầu lại" deletes it. It
 sends `mode: "companion"`, speaks each completed reply unless muted, and stops speaking when the
@@ -806,8 +814,21 @@ Settings scrolled, since the browser draws it as a separate window, and asked fo
   leaving the Companion tab stops listening.
 - **Sources.** The first is "Có sẵn trong trình duyệt": the Web Speech API in `browserSpeech.ts`.
   - Interim results show live in the composer, which is read-only while they stream.
+  - Browser hearing starts synchronously on the mic click, before opening the optional volume meter, preserving user
+    activation. The phase stays `starting` until recognition `onstart`; an unacknowledged start fails after 10 seconds.
+    Meter capture failures leave recognition running. Both use the default microphone; the mic selector is disabled
+    for this source without erasing the selected device saved for key sources. Two separate captures still exist:
+    volume alone is not proof of successful recognition.
+  - Speech events or at least 300 ms of audio above 0.01 RMS arm an 8-second no-text notice. This is a diagnostic
+    heuristic, not model VAD. Silence alone does not arm it; new words clear it. No-speech notices remain visible in
+    Settings while listening. Source availability only claims API support, not a proven working service.
+  - All callbacks reject stopped/replaced recognition instances. Intentional mic toggles retain interim words as
+    editable draft text; automatic tab cleanup and reply pauses discard them. Unexpected session end/network errors
+    retain partial text without auto-send; later finalized speech cannot auto-send that draft until it is manually
+    edited or sent. While interim text is displayed, Enter/send cannot drop it by sending only
+    the previous draft. Default auto-send and pause choices are unchanged.
   - Chrome ends continuous sessions after silence, so sessions restart. Five sessions in a row that end within a
-    second of starting stop with an error.
+    second of starting stop with an error; restarts wait 300 ms and stop clears every pending timer.
 
   The others are the seven key providers in `hearingProviders.ts`: Groq, Azure, OpenAI, Deepgram, ElevenLabs, Gemini and
   OpenAI-compatible servers.
@@ -837,8 +858,11 @@ Settings scrolled, since the browser draws it as a separate window, and asked fo
   - a model-based VAD;
   - Discord voice. That would live in the bot repo, and since March 2026 Discord requires DAVE end-to-end encryption for
     voice.
-- **Tests:** `hearingAudio.test.ts`, `hearingProviders.test.ts` and `Hearing.test.tsx` (a fake SpeechRecognition and a
-  mocked `hearingCapture`). On 2026-09-24 real Edge with Chromium's fake microphone showed the worklet delivering levels.
+- **Tests:** `hearingAudio.test.ts`, `hearingProviders.test.ts`, `browserSpeech.test.ts` and `Hearing.test.tsx` (a fake
+  SpeechRecognition and a mocked `hearingCapture`). `browser-tests/hearing.spec.ts` exercises real Chromium microphone
+  capture/AudioWorklet with a fake audio device, mocked recognition and blocked external requests on PC/mobile.
+  This validates text delivery/lifecycle, not a real browser recognition service or the owner's physical microphone.
+  On 2026-09-24 real Edge with Chromium's fake microphone showed the worklet delivering levels.
   No provider has been tried with a real key yet.
 - **File names.** `hearingEngine.ts` and `HearingControls.tsx` are deliberately not `hearing.ts` / `Hearing.tsx`: those
   differ only by case, which is the `LocalVoice` problem below.

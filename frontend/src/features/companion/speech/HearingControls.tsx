@@ -49,7 +49,7 @@ export function sourceName(source: HearingSource): string {
 
 export function phaseTitle(state: HearingState): string {
   switch (state.phase) {
-    case "starting": return "Đang mở micro…";
+    case "starting": return "Đang kết nối nguồn nghe…";
     case "waiting": return "Đang nghe";
     case "speaking": return "Bạn đang nói";
     case "transcribing": return "Đang chép lời…";
@@ -60,7 +60,7 @@ export function phaseTitle(state: HearingState): string {
 
 function phaseHint(state: HearingState): string {
   switch (state.phase) {
-    case "starting": return "Trình duyệt có thể hỏi quyền dùng micro.";
+    case "starting": return "Đang chờ nguồn nghe sẵn sàng. Trình duyệt có thể hỏi quyền dùng micro.";
     case "waiting":
     case "speaking":
       return state.source === "browser"
@@ -77,7 +77,7 @@ export function hearingPlaceholder(state: HearingState): string | null {
   if (!state.listening || state.testing) return null;
   if (state.phase === "paused") return "Peto đang trả lời, tạm không nghe…";
   if (state.phase === "transcribing") return "Đang chép lời…";
-  if (state.phase === "starting") return "Đang mở micro…";
+  if (state.phase === "starting") return "Đang kết nối nguồn nghe…";
   return "Peto đang nghe…";
 }
 
@@ -146,11 +146,13 @@ export function useMicrophones(enabled: boolean): Microphone[] {
 
 export function MicrophoneSelect({ id, microphones }: { id: string; microphones: Microphone[] }) {
   const hearing = useHearing();
+  const browser = hearing.source === "browser";
   const known = !hearing.deviceId || microphones.some((microphone) => microphone.id === hearing.deviceId);
   return (
     <Dropdown
       id={id}
-      value={hearing.deviceId}
+      value={browser ? "" : hearing.deviceId}
+      disabled={browser}
       onChange={(value) => setHearingSetting("deviceId", value)}
       options={[
         { value: "", label: "Micro mặc định" },
@@ -198,7 +200,7 @@ export function HearingPopover({ anchorRef, onClose, onOpenSettings }: {
           className={on ? "hearing-big on" : "hearing-big"}
           aria-pressed={on}
           aria-label={on ? "Tắt nghe" : "Bật nghe"}
-          onClick={() => (on ? stopListening() : void startListening())}
+          onClick={() => (on ? stopListening({ keepInterim: true }) : void startListening())}
         >
           {on ? <MicIcon size={26} /> : <MicOffIcon size={26} />}
         </button>

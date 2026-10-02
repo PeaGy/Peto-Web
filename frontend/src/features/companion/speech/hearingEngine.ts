@@ -10,9 +10,9 @@
  * Micro chỉ mở khi người dùng bấm nút micro hay "Bắt đầu nghe thử"; không có gì tự bật.
  */
 import { useSyncExternalStore } from "react";
-import { browserSpeechSupported, startBrowserSpeech } from "./browserSpeech";
+import { browserSpeechSupported, startBrowserSpeech, type BrowserSpeechSession } from "./browserSpeech";
 import { levelOf, rmsOf, Segmenter, thresholdFor, wavFromSamples } from "./hearingAudio";
-import { captureSupported, openMicrophone } from "./hearingCapture";
+import { captureSupported, openMicrophone, type MicCapture } from "./hearingCapture";
 import {
   HearingError,
   hearingKeyReady,
@@ -131,7 +131,7 @@ export function useHearingLevel(): number {
 }
 
 export interface HearingSink {
-  onFinal(text: string): void;
+  onFinal(text: string, finalized?: boolean): void;
 }
 
 let companionSink: HearingSink | null = null;
@@ -153,8 +153,8 @@ export function joinSpeech(base: string, text: string): string {
   return /\s$/.test(base) ? `${base}${text}` : `${base} ${text}`;
 }
 
-function deliver(text: string) {
-  (state.testing ? testSink : companionSink)?.onFinal(text);
+function deliver(text: string, finalized = true) {
+  (state.testing ? testSink : companionSink)?.onFinal(text, finalized);
   publish({ interim: "" });
 }
 
@@ -188,43 +188,71 @@ const UNSUPPORTED = "Trình duyệt này chưa có tính năng nghe (Firefox ch�
 async function browserEngine(token: number): Promise<Engine> {
   if (!browserSpeechSupported()) throw new Error(UNSUPPORTED);
   let paused = false;
-  // Micro riêng chỉ để vẽ âm lượng: trình duyệt tự mở micro mặc định cho việc nhận giọng. Mở trước để lỗi quyền
-  // micro hiện ra rõ ràng.
-  const capture = captureSupported()
-    ? await openMicrophone(state.deviceId, (chunk) => {
-      if (token === generation && !paused) publishLevel(levelOf(rmsOf(chunk)));
-    })
-    : null;
-  if (token !== generation) {
-    capture?.stop();
-    return { stop() {}, pause() {} };
-  }
-  let recognition: { stop(): void } | null = null;
+  let stopped = false;
+  let capture: MicCapture | null = null;
+  let meterStarted = false;
+  let soundMs = 0;
+  let recognition: BrowserSpeechSession | null = null;
+  const current = () => token === generation && !stopped;
+  const startMeter = () => {
+    if (meterStarted || !captureSupported()) return;
+    meterStarted = true;
+    // Web Speech tự dùng micro mặc định. Thanh đo dùng cùng lựa chọn, không dùng micro USB riêng rồi gây hiểu nhầm.
+    void openMicrophone("", (chunk) => {
+      if (!current() || paused || !capture) return;
+      const rms = rmsOf(chunk);
+      publishLevel(levelOf(rms));
+      soundMs = rms >= 0.01 ? soundMs + chunk.length / capture.sampleRate * 1000 : 0;
+      if (soundMs >= 300) recognition?.noteSound();
+    }).then((opened) => {
+      if (!current()) opened.stop();
+      else capture = opened;
+    }).catch(() => {
+      if (current()) publish({ message: "Chưa mở được thanh đo âm lượng. Bộ nhận giọng vẫn nghe bằng micro mặc định; bạn thử nói để kiểm tra chữ." });
+    });
+  };
   const begin = () => {
     recognition = startBrowserSpeech(state.language, {
+      onConnecting: () => {
+        if (current() && !paused) publish({ phase: "starting" });
+      },
+      onReady: () => {
+        if (!current() || paused) return;
+        publish({ phase: "waiting" });
+        startMeter();
+      },
       onSpeechStart: () => {
-        if (token === generation && !paused) publish({ phase: "speaking" });
+        if (current() && !paused) publish({ phase: "speaking" });
       },
       // Chỉ nghe thấy tiếng ồn thì trình duyệt không trả chữ nào: về lại "đang nghe" thay vì kẹt ở "bạn đang nói".
       onSpeechEnd: () => {
-        if (token === generation && !paused && state.phase === "speaking" && !state.interim) publish({ phase: "waiting" });
+        if (current() && !paused && state.phase === "speaking") {
+          publish({ phase: state.interim ? "transcribing" : "waiting" });
+        }
       },
       onInterim: (text) => {
-        if (token === generation && !paused) publish(text ? { interim: text, phase: "speaking" } : { interim: "" });
+        if (current() && !paused) publish(text ? { interim: text, phase: "speaking" } : { interim: "" });
       },
       onFinal: (text) => {
-        if (token !== generation || paused) return;
+        if (!current() || paused) return;
         deliver(text);
         publish({ phase: "waiting" });
       },
+      onDraft: (text) => {
+        if (current() && !paused) deliver(text, false);
+      },
+      onNotice: (message) => {
+        if (current() && !paused) publish({ message });
+      },
       onError: (message) => {
-        if (token === generation) fail(new Error(message));
+        if (current()) fail(new Error(message));
       },
     });
   };
   begin();
   return {
     stop() {
+      stopped = true;
       recognition?.stop();
       recognition = null;
       capture?.stop();
@@ -232,6 +260,7 @@ async function browserEngine(token: number): Promise<Engine> {
     pause(next) {
       if (next === paused) return;
       paused = next;
+      soundMs = 0;
       if (next) {
         recognition?.stop();
         recognition = null;
@@ -320,13 +349,16 @@ export async function startListening(mode: "companion" | "test" = "companion"): 
     engine = next;
     const paused = pauseWanted && !testing;
     if (paused) next.pause(true);
-    publish({ phase: paused ? "paused" : "waiting" });
+    if (paused) publish({ phase: "paused" });
+    else if (state.source !== "browser") publish({ phase: "waiting" });
   } catch (error) {
     if (token === generation) fail(error);
   }
 }
 
-export function stopListening() {
+export function stopListening(options: { keepInterim?: boolean } = {}) {
+  // Chỉ giữ chữ khi người dùng chủ động tắt: rời tab, đổi nguồn hay Peto đang nói thì bỏ chữ dở.
+  if (options.keepInterim && state.interim.trim()) deliver(state.interim.trim(), false);
   generation += 1;
   stopEngine();
   publish({ listening: false, testing: false, phase: "off", interim: "" });
@@ -339,8 +371,12 @@ export function setHearingPaused(paused: boolean) {
   pauseWanted = paused;
   if (!engine || state.testing || !state.listening) return;
   engine.pause(paused);
+  if (!state.listening) return;
   if (state.phase === "transcribing" && !paused) return;
-  publish({ phase: paused ? "paused" : "waiting", interim: "" });
+  // Nguồn trình duyệt tự báo đang kết nối/sẵn sàng qua các sự kiện, không ghi đè kết quả ở đây.
+  if (paused) publish({ phase: "paused", interim: "" });
+  else if (state.source !== "browser") publish({ phase: "waiting", interim: "" });
+  else publish({ interim: "" });
   if (paused) publishLevel(0);
 }
 

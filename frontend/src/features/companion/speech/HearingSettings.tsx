@@ -72,7 +72,7 @@ export default function HearingSettings({ open }: { open: boolean }) {
 
   function toggleTest() {
     if (testing) {
-      stopListening();
+      stopListening({ keepInterim: true });
       return;
     }
     setResults([]);
@@ -84,7 +84,7 @@ export default function HearingSettings({ open }: { open: boolean }) {
     name: "Có sẵn trong trình duyệt",
     desc: "Chrome, Edge, Safari · chưa có trên Firefox",
     badges: [["Miễn phí", "free"], ["Chữ hiện ngay lúc nói", "neutral"]],
-    status: supported ? { text: "Dùng được ở đây", on: true } : { text: "Trình duyệt này chưa có", on: false },
+    status: supported ? { text: "Có hỗ trợ · hãy nghe thử", on: true } : { text: "Trình duyệt này chưa có", on: false },
     locked: !supported,
   };
   const keyCards: Card[] = HEARING_PROVIDERS.map((item) => ({
@@ -107,7 +107,7 @@ export default function HearingSettings({ open }: { open: boolean }) {
             <p className="voice-line">
               <i className={supported ? "voice-dot on" : "voice-dot"} />
               {supported
-                ? "Trình duyệt này nghe được."
+                ? "Trình duyệt có tính năng nhận giọng. Dùng Nghe thử để kiểm tra dịch vụ có trả chữ hay không."
                 : "Trình duyệt này chưa có tính năng nghe. Dùng Chrome, Edge hoặc Safari, hoặc chọn một nguồn dùng khóa."}
             </p>
             {supported && <p className="voice-note">{browserNote()}</p>}
@@ -126,7 +126,10 @@ export default function HearingSettings({ open }: { open: boolean }) {
 
       <SettingsGroup>
         <SettingsRow label="Micro" htmlFor={micId} labelId={`${micId}-label`}>
-          <div className="settings-dropdown"><MicrophoneSelect id={micId} microphones={microphones} /></div>
+          <div className="settings-dropdown">
+            <MicrophoneSelect id={micId} microphones={microphones} />
+            {hearing.source === "browser" && <p className="voice-note">Dùng micro mặc định của trình duyệt hoặc hệ điều hành. Chọn micro khác ở đó; thanh âm lượng chỉ cho biết có âm thanh, chưa xác nhận đã nhận ra lời.</p>}
+          </div>
         </SettingsRow>
         <SettingsRow label="Bạn nói bằng" htmlFor={languageId} labelId={`${languageId}-label`}>
           <div className="settings-dropdown">
@@ -163,7 +166,7 @@ export default function HearingSettings({ open }: { open: boolean }) {
           </div>
           <p className="voice-note">Nói vài câu để xem Peto nghe ra chữ gì. Nghe thử không gửi gì cho Peto.</p>
           {testing && <p className="voice-line" role="status">{phaseTitle(hearing)}</p>}
-          {hearing.message && !hearing.listening && <p className="voice-error" role="alert">{hearing.message}</p>}
+          {hearing.message && <p className="voice-error" role="alert">{hearing.message}</p>}
           <div className="hearing-meter">
             <span>Âm lượng</span>
             <LevelBars count={36} className="hearing-meter-levels" threshold={provider ? thresholdLevel(hearing.sensitivity) : undefined} />

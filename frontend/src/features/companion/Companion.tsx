@@ -147,6 +147,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
   const [micOpen, setMicOpen] = useState(false);
   /** Lúc câu nghe được cuối cùng vào ô nhắn; tự gửi chỉ gửi chữ nghe được, không gửi chữ người dùng tự gõ. */
   const [heardAt, setHeardAt] = useState(0);
+  const [hearingNeedsReview, setHearingNeedsReview] = useState(false);
   const micRef = useRef<HTMLButtonElement>(null);
   const stopVoice = voice.stop;
   const loadVersion = useRef(0);
@@ -296,6 +297,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
     if (!text || abortRef.current || loading || loadFailed || !recovery.online || recovery.pending) return;
     recovery.cancel();
     setHeardAt(0);
+    setHearingNeedsReview(false);
     setMicOpen(false);
     stopVoice();
     setError(null);
@@ -452,9 +454,10 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
   useEffect(() => {
     if (!active) return;
     setHearingSink({
-      onFinal: (text) => {
+      onFinal: (text, finalized = true) => {
         setDraft((previous) => joinSpeech(previous, text));
-        setHeardAt(Date.now());
+        setHeardAt(finalized ? Date.now() : 0);
+        if (!finalized) setHearingNeedsReview(true);
       },
     });
     return () => setHearingSink(null);
@@ -485,11 +488,11 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
     latestSend.current = send;
   });
   useEffect(() => {
-    if (!heardAt || !hearing.autoSend || !hearing.listening || hearing.testing) return;
+    if (!heardAt || hearingNeedsReview || !hearing.autoSend || !hearing.listening || hearing.testing) return;
     if (hearing.interim || hearing.phase === "speaking" || hearing.phase === "transcribing" || streaming || !draft.trim()) return;
     const timer = window.setTimeout(() => void latestSend.current(), AUTO_SEND_DELAY);
     return () => window.clearTimeout(timer);
-  }, [heardAt, hearing.autoSend, hearing.listening, hearing.testing, hearing.interim, hearing.phase, streaming, draft]);
+  }, [heardAt, hearingNeedsReview, hearing.autoSend, hearing.listening, hearing.testing, hearing.interim, hearing.phase, streaming, draft]);
 
   const closeMic = useCallback(() => setMicOpen(false), []);
   // Bảng Micro chỉ hiện trong lúc nghe: tắt bằng nút lớn hay dừng vì lỗi thì đóng luôn, để thấy câu báo lỗi.
@@ -500,7 +503,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
   function toggleMic() {
     const current = getHearingState();
     if (current.listening && !current.testing) {
-      stopListening();
+      stopListening({ keepInterim: true });
       setMicOpen(false);
       return;
     }
@@ -517,7 +520,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
   const stateText = speech?.phase === "playing" ? "Đang nói…"
     : speech?.phase === "loading" ? "Sắp nói…"
       : searching ? "Đang tra web…" : streaming ? "Đang nhắn…" : "Trả lời ngắn bằng tiếng Anh";
-  const canSend = draft.trim().length > 0 && !streaming && !loading && !loadFailed && recovery.online && !recovery.pending;
+  const canSend = draft.trim().length > 0 && !interim && !streaming && !loading && !loadFailed && recovery.online && !recovery.pending;
 
   return (
     <main className={`companion${scene.selected.url ? ' companion-with-scene' : ''}`} hidden={!active}>
@@ -680,11 +683,12 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
               onChange={(event) => {
                 setDraft(event.target.value);
                 setHeardAt(0);
+                setHearingNeedsReview(false);
               }}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
                   event.preventDefault();
-                  void send();
+                  if (!interim) void send();
                 }
               }}
             />

@@ -6,6 +6,7 @@ import * as api from '../src/shared/api/api';
 import * as projectApi from '../src/features/projects/projectApi';
 vi.mock('../src/features/projects/projectApi', async original => ({ ...await original<typeof import('../src/features/projects/projectApi')>(), listProjects: vi.fn() }));
 import { loadHearingSettings, stopListening } from '../src/features/companion/speech/hearingEngine';
+import { openMicrophone } from '../src/features/companion/speech/hearingCapture';
 
 vi.mock('../src/shared/api/api', async (original) => ({
   ...await original<typeof import('../src/shared/api/api')>(),
@@ -35,10 +36,12 @@ vi.mock('../src/features/companion/speech/hearingCapture', () => ({
 /** Nhận giọng giả của trình duyệt: test tự "nói" qua `say`. */
 class FakeRecognition {
   static instances: FakeRecognition[] = [];
+  static autoReady = true;
   lang = '';
   continuous = false;
   interimResults = false;
   started = false;
+  onstart: (() => void) | null = null;
   aborted = false;
   onresult: ((event: unknown) => void) | null = null;
   onerror: ((event: { error: string }) => void) | null = null;
@@ -46,7 +49,7 @@ class FakeRecognition {
   onspeechstart: (() => void) | null = null;
   onspeechend: (() => void) | null = null;
   constructor() { FakeRecognition.instances.push(this); }
-  start() { this.started = true; }
+  start() { this.started = true; if (FakeRecognition.autoReady) this.onstart?.(); }
   stop() { this.aborted = true; }
   abort() { this.aborted = true; }
   say(text: string, isFinal: boolean) {
@@ -67,6 +70,7 @@ beforeEach(() => {
   localStorage.clear();
   loadHearingSettings();
   FakeRecognition.instances = [];
+  FakeRecognition.autoReady = true;
   microphone.onChunk = null;
   microphone.stops = 0;
   window.history.replaceState(null, '', '/');
@@ -88,6 +92,7 @@ beforeEach(() => {
 
 afterEach(() => {
   stopListening();
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
@@ -271,4 +276,86 @@ it('bảng Micro mở thẳng Cài đặt ở mục Giọng nói, thẻ Peto ngh
   expect(settings.getByRole('button', { name: 'Giọng nói' }).getAttribute('aria-current')).toBe('page');
   expect((await settings.findByRole('tab', { name: 'Peto nghe' })).getAttribute('aria-selected')).toBe('true');
   expect(settings.getByRole('button', { name: 'Có sẵn trong trình duyệt' }).getAttribute('aria-pressed')).toBe('true');
+});
+
+it('nguồn trình duyệt khởi động trước thanh đo, dùng micro mặc định dù còn lưu micro USB', async () => {
+  localStorage.setItem('peto-hearing-device', 'mic-usb');
+  loadHearingSettings();
+  FakeRecognition.autoReady = false;
+  await openCompanion();
+  fireEvent.click(screen.getByRole('button', { name: 'Bật nghe' }));
+  await waitFor(() => expect(lastRecognition()?.started).toBe(true));
+  expect(micPanel().getByText('Đang kết nối nguồn nghe…')).toBeTruthy();
+  expect(openMicrophone).not.toHaveBeenCalled();
+  act(() => lastRecognition().onstart?.());
+  expect(micPanel().getByText('Đang nghe')).toBeTruthy();
+  expect(openMicrophone).toHaveBeenCalledWith('', expect.any(Function));
+  expect(micPanel().getByRole('combobox', { name: 'Micro' })).toHaveProperty('disabled', true);
+  act(() => lastRecognition().say('Hello Peto', true));
+  expect(composer().value).toBe('Hello Peto');
+  expect(localStorage.getItem('peto-hearing-device')).toBe('mic-usb');
+});
+
+it('tắt micro chủ động giữ chữ dở để sửa và không tự gửi; kết quả đến muộn bị bỏ', async () => {
+  localStorage.setItem('peto-hearing-autosend', '1');
+  loadHearingSettings();
+  await openCompanion();
+  fireEvent.change(composer(), { target: { value: 'Existing draft.' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Bật nghe' }));
+  await waitFor(() => expect(lastRecognition()?.started).toBe(true));
+  const first = lastRecognition();
+  act(() => first.say('Can you hear', false));
+  fireEvent.keyDown(composer(), { key: 'Enter' });
+  expect(api.sendMessage).not.toHaveBeenCalled();
+  fireEvent.click(screen.getAllByRole('button', { name: 'Tắt nghe' })[0]);
+  expect(composer().value).toBe('Existing draft. Can you hear');
+  expect(composer().readOnly).toBe(false);
+  act(() => first.say('Can you hear me?', true));
+  await new Promise(resolve => setTimeout(resolve, 900));
+  expect(composer().value).toBe('Existing draft. Can you hear');
+  expect(api.sendMessage).not.toHaveBeenCalled();
+});
+
+it('có âm lượng nhưng không có chữ thì báo rõ, dịch vụ hồi phục vẫn chép vào ô nhắn', async () => {
+  await openCompanion();
+  fireEvent.click(screen.getByRole('button', { name: 'Bật nghe' }));
+  await waitFor(() => expect(microphone.onChunk).not.toBeNull());
+  vi.useFakeTimers();
+  act(() => {
+    microphone.feed(0.2, 8);
+    vi.advanceTimersByTime(8000);
+  });
+  expect(screen.getByRole('alert').textContent).toMatch(/có âm thanh.*chưa trả chữ/);
+  expect(screen.getAllByRole('button', { name: 'Tắt nghe' }).length).toBeGreaterThan(0);
+  act(() => lastRecognition().say('It works now', true));
+  expect(composer().value).toBe('It works now');
+  expect(screen.queryByRole('alert')).toBeNull();
+});
+
+it('mất phiên giữa câu giữ chữ chưa chốt nhưng không tự gửi', async () => {
+  localStorage.setItem('peto-hearing-autosend', '1');
+  loadHearingSettings();
+  await openCompanion();
+  fireEvent.click(screen.getByRole('button', { name: 'Bật nghe' }));
+  await waitFor(() => expect(lastRecognition()?.started).toBe(true));
+  act(() => lastRecognition().say('Can you hear', false));
+  act(() => lastRecognition().onend?.());
+  expect(composer().value).toBe('Can you hear');
+  expect(composer().readOnly).toBe(false);
+  expect(screen.getByRole('alert').textContent).toMatch(/câu chưa được chốt/);
+  await waitFor(() => expect(FakeRecognition.instances.length).toBeGreaterThan(1));
+  act(() => lastRecognition().say('me now?', true));
+  await new Promise(resolve => setTimeout(resolve, 900));
+  expect(composer().value).toBe('Can you hear me now?');
+  expect(api.sendMessage).not.toHaveBeenCalled();
+});
+
+it('thanh đo không mở được vẫn giữ bộ nhận giọng và nhận chữ', async () => {
+  vi.mocked(openMicrophone).mockRejectedValueOnce(new Error('Không mở được thanh đo'));
+  await openCompanion();
+  fireEvent.click(screen.getByRole('button', { name: 'Bật nghe' }));
+  expect((await screen.findByRole('alert')).textContent).toMatch(/Bộ nhận giọng vẫn nghe/);
+  act(() => lastRecognition().say('Hello from the default microphone', true));
+  expect(composer().value).toBe('Hello from the default microphone');
+  expect(screen.queryByRole('alert')).toBeNull();
 });
