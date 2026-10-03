@@ -31,7 +31,8 @@ jobs:
       - name: Kiểm tra PC và mobile
         run: npm run test:browser
       - uses: actions/upload-artifact@v4
-        if: failure()
+        # Giữ cả báo cáo flaky khi lần thử lại đã qua, để lỗi tạm thời vẫn có dấu vết.
+        if: always()
         with:
           name: ket-qua-frontend
           path: |

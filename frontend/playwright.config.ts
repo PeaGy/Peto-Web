@@ -5,7 +5,10 @@ export default defineConfig({
   fullyParallel: true,
   // Máy CI không có GPU riêng: tránh hai sân khấu Live2D tranh tài nguyên cùng lúc.
   workers: process.env.CI ? 1 : 2,
-  reporter: [['list'], ['html', { open: 'never' }]],
+  // Lỗi tài nguyên trình duyệt tạm thời trên CI được thử lại một lần với worker/browser mới.
+  // Playwright vẫn báo flaky khi lần đầu lỗi; lỗi lặp lại tiếp tục làm workflow thất bại.
+  retries: process.env.CI ? 1 : 0,
+  reporter: [['list'], ['html', { open: 'never' }], ['json', { outputFile: 'playwright-report/results.json' }]],
   timeout: 30000,
   expect: { timeout: 8000, toHaveScreenshot: { animations: 'disabled', maxDiffPixelRatio: 0.005 } },
   use: {

@@ -1,8 +1,9 @@
 # Kiểm tra giao diện và phục hồi kết nối
 
 Bộ kiểm tra dùng Chromium thật, component/CSS của sản phẩm và API giả. Không cần backend, tài khoản hay khóa AI;
-không gọi AI và không đọc dữ liệu chạy. Renderer Live2D/VRM được thay bằng component rỗng để chuyển động và WebGL
-không làm ảnh đối chiếu thay đổi. Đây là kiểm tra bố cục chat, không kiểm tra hình ảnh hay chuyển động nhân vật.
+không gọi AI và không đọc dữ liệu chạy. Các bài kiểm tra bố cục thay renderer Live2D/VRM bằng component rỗng để
+chuyển động và WebGL không làm ảnh đối chiếu thay đổi. Riêng `companion-presence.spec.ts` dùng renderer Live2D
+thật để kiểm tra loading chờ nhân vật và bong bóng đang nghĩ bám theo đầu nhân vật.
 
 ## Chạy tại máy
 
@@ -50,6 +51,17 @@ npm run test:browser:update
 có sửa frontend. Workflow không triển khai web. Lần chạy trên GitHub cần xem thêm báo cáo nếu font của runner khác
 máy tạo ảnh chuẩn; kết quả chạy local không xác nhận lần chạy GitHub đã đạt.
 Cấu hình dựa trên [hướng dẫn CI của Playwright](https://playwright.dev/docs/ci-intro).
+
+CI chạy một worker và dùng SwiftShader để vẽ WebGL bằng phần mềm; các bài kiểm tra sân khấu trong
+`companion-presence.spec.ts` vẫn tải model Live2D thật. Khi một bài thất bại, CI thử lại đúng một lần;
+Playwright khởi động worker và trình duyệt mới, rồi chạy lại toàn bộ bài. Chạy local mặc định không thử lại.
+Lần đầu lỗi nhưng lần sau qua được ghi là `flaky`, không phải đạt ngay lần đầu. Lỗi lặp lại vẫn làm workflow
+thất bại. Cơ chế này xử lý lỗi tài nguyên tạm thời như `net::ERR_NO_BUFFER_SPACE`; không bỏ bước kiểm tra
+hay tự cập nhật ảnh chuẩn. Không dùng kết quả flaky để kết luận lỗi ứng dụng đã được sửa.
+
+Mỗi lượt CI giữ gói `ket-qua-frontend` trong bảy ngày, kể cả khi qua sau lần thử lại. Xem báo cáo HTML và
+`playwright-report/results.json` để phân biệt đạt, flaky và thất bại; các trace lỗi nằm trong `test-results/`.
+Cách chạy lại dựa trên [cơ chế retry của Playwright](https://playwright.dev/docs/test-retries).
 
 ## Giới hạn phục hồi
 
