@@ -1082,7 +1082,12 @@ export default function App() {
             <SettingsRow label="Chủ đề" desc="Nền sáng, nền tối, hoặc theo cài đặt của máy.">
               <Segmented label="Chủ đề" value={theme} options={THEMES} onChange={setTheme} />
             </SettingsRow>
-            <LazyBoundary><Suspense fallback={null}>
+          </SettingsGroup>
+        );
+      case "nhan-vat":
+        return (
+          <SettingsGroup>
+            <LazyBoundary><Suspense fallback={settingsLoading}>
               <CharacterSettings value={characterMotion} onChange={changeCharacterMotion}
                 onOpenCharacters={() => setCharacterPickerOpen(true)} selectedName={characters.selected.name} />
             </Suspense></LazyBoundary>

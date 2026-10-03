@@ -1776,6 +1776,9 @@ Chat, Companion and roleplay turn (not the Agent CLI).
   and `features/chat/ChatMessage.tsx` own their presentation. `Imagine.tsx` and `Companion.tsx` are mounted alongside
   it and receive an `active` prop rather than being unmounted — that is what keeps a running generation
   alive when the user switches back to Chat.
+- Settings → "Giao diện" contains the theme selector. "Nhân vật", the first section under the Companion group,
+  contains the character picker entry and character motion preference; the existing saved selection and motion values
+  are preserved.
 - **What the first load carries.** On 2026-09-27 the owner picked "make the page load faster, especially on phones".
   The entry chunk (then 1.1 MB, 340 KB gzipped) was cut to what the chat screen needs:
   - **Separate chunks.** The chat entry is about 290 KB, plus React at about 190 KB. Everything else loads in its own

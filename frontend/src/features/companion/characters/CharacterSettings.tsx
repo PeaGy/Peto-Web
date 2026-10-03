@@ -6,7 +6,7 @@ const OPTIONS: SegmentOption<CharacterMotion>[] = [
   { value: "always", label: "Luôn cử động", hint: "Kể cả khi thiết bị bật giảm chuyển động" },
 ];
 
-/** Nhân vật Companion và cách nó cử động: hai hàng trong mục Giao diện của Cài đặt. */
+/** Nhân vật Companion và cách nó cử động: hai hàng trong mục Nhân vật của Cài đặt. */
 export default function CharacterSettings({ value, onChange, onOpenCharacters, selectedName }: {
   value: CharacterMotion;
   onChange: (value: CharacterMotion) => void;

@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type AnimationEvent, type ReactNode } from "react";
 import { SettingsIcon, type SettingsIconName } from "./settingsUi";
 
-export type SettingsSection = "giao-dien" | "ho-so" | "tai-khoan" | "luu-tru" | "agent" | "giong-noi" | "tri-nho" | "tra-web";
+export type SettingsSection = "giao-dien" | "ho-so" | "tai-khoan" | "luu-tru" | "agent" | "nhan-vat" | "giong-noi" | "tri-nho" | "tra-web";
 
 export interface SettingsView {
   open: boolean;
@@ -19,6 +19,7 @@ export const SETTINGS_SECTIONS: { id: SettingsSection; title: string; icon: Sett
   { id: "tai-khoan", title: "Tài khoản", icon: "idcard" },
   { id: "luu-tru", title: "Hội thoại đã lưu trữ", icon: "archive" },
   { id: "agent", title: "Peto Agent", icon: "terminal" },
+  { id: "nhan-vat", title: "Nhân vật", icon: "character", group: "Companion" },
   { id: "giong-noi", title: "Giọng nói", icon: "wave", group: "Companion" },
   { id: "tri-nho", title: "Trí nhớ", icon: "bookmark", group: "Companion" },
   { id: "tra-web", title: "Tra web", icon: "globe", group: "Companion" },

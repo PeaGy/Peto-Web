@@ -15,6 +15,7 @@ const ICONS = {
     <circle cx="15" cy="7.9" r="1.05" fill="currentColor" stroke="none" />
   </>,
   user: <><circle cx="12" cy="8.4" r="3.7" /><path d="M4.8 20a7.2 7.2 0 0 1 14.4 0" /></>,
+  character: <><circle cx="12" cy="12" r="8.5" /><path d="M8 14.5a4.5 4.5 0 0 0 8 0M8.5 9.5v1M15.5 9.5v1" /></>,
   idcard: <>
     <rect x="3.5" y="5.5" width="17" height="13" rx="3" />
     <circle cx="9" cy="10.8" r="2" />

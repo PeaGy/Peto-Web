@@ -666,7 +666,13 @@ it('lưu lựa chọn Luôn cử động cho nhân vật Companion', async () =>
   await openApp();
   await fromAccountMenu('Cài đặt');
   const dialog = screen.getByRole('dialog');
+  expect(within(dialog).queryByRole('button', {name: 'Chọn nhân vật'})).toBeNull();
+  expect(within(dialog).queryByRole('radiogroup', {name: 'Nhân vật cử động'})).toBeNull();
+  fireEvent.click(within(dialog).getByRole('button', {name: 'Nhân vật', exact: true}));
+  expect(within(dialog).getByRole('heading', {name: 'Nhân vật', exact: true})).toBeTruthy();
   const group = await within(dialog).findByRole('radiogroup', {name: 'Nhân vật cử động'});
+  expect(within(dialog).getByRole('button', {name: 'Chọn nhân vật'})).toBeTruthy();
+  expect(within(dialog).queryByRole('radiogroup', {name: 'Chủ đề'})).toBeNull();
   expect((within(group).getByRole('radio', {name: /Theo máy/}) as HTMLInputElement).checked).toBe(true);
   fireEvent.click(within(group).getByRole('radio', {name: /Luôn cử động/}));
   expect(localStorage.getItem('peto-character-motion')).toBe('always');
