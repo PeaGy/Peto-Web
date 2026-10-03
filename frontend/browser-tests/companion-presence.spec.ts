@@ -27,8 +27,8 @@ test('loading chờ model thật và lịch sử, rồi hiện nhân vật cùng
     await expect(page.getByRole('status', { name: 'Loading', exact: true })).toBeVisible();
     await expect(page.getByRole('textbox', { name: 'Nhắn cho Peto trong Companion' })).toHaveCount(0);
     releaseModel();
-    await expect(page.locator('.character-fallback')).toHaveCount(0);
     await expectStage(page.locator('.character-canvas')).toHaveCSS('visibility', 'visible');
+    await expect(page.locator('.character-fallback')).toHaveCount(0);
     await expect(page.getByRole('status', { name: 'Loading', exact: true })).toBeVisible();
     releaseHistory();
     await expectStage(page.getByRole('textbox', { name: 'Nhắn cho Peto trong Companion' })).toBeVisible();

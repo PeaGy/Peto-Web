@@ -18,6 +18,14 @@ for (const companion of [false, true]) {
     await draft.fill('Bản nháp tiếp theo');
     await expect(pane.getByRole('button', { name: 'Gửi', exact: true })).toBeDisabled();
     await noPageOverflow(page);
+    if (!companion) {
+      // Thông báo ngoại tuyến làm đổi chiều cao dock. Đợi phép đo rồi chụp cùng vị trí cuối chat.
+      await expect.poll(() => pane.evaluate(node => {
+        const dock = node.querySelector('.chat-dock')!;
+        return Math.abs(parseFloat(getComputedStyle(node).getPropertyValue('--chat-dock-height')) - dock.getBoundingClientRect().height);
+      })).toBeLessThan(1);
+      await pane.locator('.messages').evaluate(node => { node.scrollTop = node.scrollHeight; });
+    }
     await expect(page).toHaveScreenshot(`${companion ? 'companion' : 'chat'}-offline.png`);
     state.recoveryReady = true;
     await context.setOffline(false);
