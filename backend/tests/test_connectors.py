@@ -77,6 +77,8 @@ def github_http(monkeypatch):
             return httpx.Response(302, headers={'location': 'https://logs.blob.core.windows.net/job.txt?sig=private-signature'})
         if request.url.host == 'logs.blob.core.windows.net':
             return httpx.Response(200, text=f'##[error] Assertion failed\n{TOKEN}\nCuối log')
+        if path.endswith('/contents'):
+            return httpx.Response(200, json=[{'name': 'README.md', 'path': 'README.md', 'type': 'file'}])
         if '/contents/' in path:
             return httpx.Response(200, json={'type': 'file', 'encoding': 'base64', 'size': 20,
                                            'content': base64.b64encode('Xin chào repo'.encode()).decode()})
@@ -174,6 +176,9 @@ async def test_repository_reads_actions_logs_and_sources(client, configured, git
     tools = GitHubSession(TEST_OWNER)
     listing = await tools.run('github_list_repositories', '{}')
     assert listing['repositories'][0]['name'] == 'nguoi-test/Peto' and not listing['has_more_installations']
+    root = await tools.run('github_read_repository', json.dumps({'repository': 'nguoi-test/Peto'}))
+    assert root['ok'] and root['entries'][0]['path'] == 'README.md'
+    assert github_http[-1].url.path == '/repos/nguoi-test/Peto/contents'
     file = await tools.run('github_read_repository', json.dumps({'repository': 'nguoi-test/Peto', 'path': 'README.md'}))
     assert file['text'] == 'Xin chào repo' and file['sources'][0]['url'].endswith('/blob/HEAD/README.md')
     logs = await tools.run('github_actions', json.dumps({'repository': 'nguoi-test/Peto', 'action': 'job_log', 'job_id': 34}))
@@ -222,6 +227,53 @@ async def test_response_limit_and_auth_errors_are_safe(configured, monkeypatch):
     response = httpx.Response(200, content=b'a' * 20)
     with pytest.raises(github.GitHubError):
         await github.read_response(response, 8)
+
+
+@pytest.mark.parametrize('status,headers,message,path,expected', [
+    (404, {}, TOKEN, '/repos/a/b/contents/missing.ts', 'chưa xác nhận thiếu quyền'),
+    (403, {'x-ratelimit-remaining': '0'}, TOKEN, '/repos/a/b/contents/a.ts', 'giới hạn lượt'),
+    (403, {'retry-after': '60'}, TOKEN, '/repos/a/b/actions/runs', 'giới hạn lượt'),
+    (403, {}, 'API rate limit exceeded', '/repos/a/b/contents/a.ts', 'giới hạn lượt'),
+    (429, {}, TOKEN, '/repos/a/b/contents/a.ts', 'giới hạn lượt'),
+    (403, {}, 'Resource not accessible by integration', '/repos/a/b/contents/a.ts', 'Contents: Read-only'),
+    (403, {}, 'Resource not accessible by integration', '/repos/a/b/contents', 'Contents: Read-only'),
+    (403, {}, 'Resource not accessible by integration', '/repos/a/b/actions/runs', 'Actions: Read-only'),
+    (403, {}, TOKEN, '/repos/a/b/contents/a.ts', 'Chưa xác định được'),
+])
+async def test_api_errors_distinguish_permissions_limits_and_missing_data(monkeypatch, status, headers, message, path, expected):
+    real = httpx.AsyncClient
+    monkeypatch.setattr(github.httpx, 'AsyncClient', lambda **kw: real(transport=httpx.MockTransport(
+        lambda _: httpx.Response(status, headers=headers, json={'message': message})), **kw))
+    with pytest.raises(github.GitHubError) as error:
+        await github.api_get(TOKEN, path)
+    assert expected in str(error.value) and TOKEN not in str(error.value)
+    assert error.value.status_code == status
+
+
+@pytest.mark.parametrize('root_status', [200, 404, 401])
+async def test_missing_path_checks_root_before_suggesting_permissions(configured, monkeypatch, root_status):
+    await saved()
+    requests = []
+    def handle(request):
+        requests.append(request)
+        if request.url.path.endswith('/contents'):
+            return httpx.Response(root_status, json=[{'name': 'src', 'path': 'src', 'type': 'dir'}] if root_status == 200 else {})
+        return httpx.Response(404, json={})
+    real = httpx.AsyncClient
+    monkeypatch.setattr(github.httpx, 'AsyncClient', lambda **kw: real(transport=httpx.MockTransport(handle), **kw))
+    result = await GitHubSession(TEST_OWNER).run('github_read_repository', json.dumps(
+        {'repository': 'nguoi-test/Peto', 'path': 'invented.ts', 'ref': 'develop'}))
+    assert not result['ok'] and len(requests) == 2
+    assert all(request.url.params['ref'] == 'develop' for request in requests)
+    assert TOKEN not in json.dumps(result)
+    if root_status == 200:
+        assert result['code'] == 'path_not_found' and 'Thư mục gốc vẫn đọc được' in result['error']
+        assert 'invented.ts' in result['error'] and 'develop' in result['error']
+        assert 'không đoán tên tệp' in result['hint']
+    elif root_status == 404:
+        assert 'Chưa xác định được' in result['error'] and 'invented.ts' in result['error']
+    else:
+        assert 'hết hạn' in result['error']
 
 
 async def test_real_provider_connector_roundtrip_and_title_exclusion(client, configured, github_http, monkeypatch):

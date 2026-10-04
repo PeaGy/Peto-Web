@@ -61,6 +61,7 @@ export interface WorkStep {
   id: string;
   label: string;
   live?: boolean;
+  details?: string[];
 }
 
 /** Cách Peto trả lời trong một hội thoại: trợ lý AI (mặc định) hoặc nhập vai. Chọn lúc bắt đầu, giữ cả hội thoại. */

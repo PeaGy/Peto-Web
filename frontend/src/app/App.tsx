@@ -762,7 +762,9 @@ export default function App() {
     let storedUserId: number | undefined;
     // Mỗi lần Peto tìm/đọc trong tệp là một dòng riêng trong danh sách "Đang làm…".
     let fileLookups = 0;
-    let connectorLookups = 0;
+    let connectorReads = 0;
+    let connectorFailures = 0;
+    const connectorIssues: string[] = [];
     let writingPhase = false;
     const session = authVersion.current;
     const startedAt = performance.now();
@@ -778,7 +780,7 @@ export default function App() {
       });
     };
 
-    const addWorkStep = (id: string, label: string, live = false) => {
+    const addWorkStep = (id: string, label: string, live = false, details?: string[]) => {
       if (session !== authVersion.current) return;
       if (live && id !== 'prepare') writingPhase = false;
       setMessages((prev) => {
@@ -786,7 +788,7 @@ export default function App() {
         if (last?.role !== "assistant") return prev;
         const steps = (last.workSteps ?? []).map(step => live ? { ...step, live:false, label:step.id === 'think' ? 'Đã suy nghĩ' : step.label } : step);
         const index = steps.findIndex((step) => step.id === id);
-        const step = { id, label, live };
+        const step = { id, label, live, details };
         if (index >= 0) steps[index] = step;
         else steps.push(step);
         return [...prev.slice(0, -1), { ...last, workSteps: steps }];
@@ -868,8 +870,15 @@ export default function App() {
             addWorkStep(`file-${fileLookups}`, text, live);
           },
           onConnectorLookup: (text, live) => {
-            if (live) connectorLookups += 1;
-            addWorkStep(`connector-${connectorLookups}`, text, live);
+            if (!live) {
+              if (text.startsWith('Đã đọc GitHub')) connectorReads += 1;
+              else {
+                connectorFailures += 1;
+                if (!connectorIssues.includes(text)) connectorIssues.push(text);
+              }
+            }
+            const summary = `${connectorReads} mục đã đọc${connectorFailures ? ` · ${connectorFailures} mục chưa đọc được` : ''}`;
+            addWorkStep('connector-github', `${live ? 'Đang đọc GitHub…' : 'GitHub'} · ${summary}`, live, [...connectorIssues]);
           },
           onArtifact: (artifact) => {
             if (session !== authVersion.current || controller.signal.aborted) return;

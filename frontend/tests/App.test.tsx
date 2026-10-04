@@ -609,6 +609,37 @@ describe('Sending and stopping', () => {
     expect(screen.queryByText('Đang tìm “ERROR” trong app.log…')).toBeNull();
   });
 
+  it('gom tra cứu GitHub thành một dòng và giữ lỗi trong phần mở rộng', async () => {
+    const reply = deferred<void>();
+    const issue = 'Không tìm thấy missing.ts; thư mục gốc vẫn đọc được.';
+    vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers) => {
+      handlers.onMeta?.('C', 'medium', row('Đọc repo'));
+      for (let i = 0; i < 12; i++) {
+        handlers.onConnectorLookup?.('Đang đọc GitHub…', true);
+        handlers.onConnectorLookup?.(i === 3 || i === 7 ? issue : 'Đã đọc GitHub', false);
+      }
+      handlers.onConnectorLookup?.('Đang đọc GitHub…', true);
+      await reply.promise;
+      handlers.onConnectorLookup?.('Đã đọc GitHub', false);
+      handlers.onDelta?.('Đã khảo sát các tệp đọc được.');
+      handlers.onDone?.();
+    });
+    await openApp();
+    fireEvent.change(screen.getByLabelText('Nhắn cho Peto'), {target: {value: 'Đọc repo'}});
+    fireEvent.click(screen.getByRole('button', {name: 'Gửi', exact: true}));
+    await screen.findByText('Đang đọc GitHub… · 10 mục đã đọc · 2 mục chưa đọc được');
+    expect(document.querySelectorAll('.work-step-details').length).toBe(1);
+    expect(document.querySelector('.work-step-details')?.hasAttribute('open')).toBe(false);
+    expect(document.querySelectorAll('.work-step-details li').length).toBe(1);
+    expect(document.querySelectorAll('.work-steps > li').length).toBeLessThanOrEqual(3);
+    await act(async () => reply.resolve());
+    await screen.findByText('Đã khảo sát các tệp đọc được.');
+    fireEvent.click(screen.getByRole('button', {name: /Đã làm trong \d+ giây/}));
+    expect(screen.getByText('GitHub · 11 mục đã đọc · 2 mục chưa đọc được')).toBeTruthy();
+    expect(screen.getByText(issue)).toBeTruthy();
+    expect(screen.queryByText('Đã đọc GitHub')).toBeNull();
+  });
+
   it('stops an empty reply without leaving a typing indicator', async () => {
     vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers, signal) => {
       handlers.onMeta?.('C', 'low', row('Xin chào'));

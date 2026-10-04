@@ -42,7 +42,7 @@ def schema(name, description, model):
 
 SCHEMAS = [
     schema('github_list_repositories', 'Liệt kê repo được GitHub App cấp quyền của tài khoản đang chat. Lần đầu không cần installation_id; đọc trang tiếp theo với installation_id được trả về.', RepositoryList),
-    schema('github_read_repository', 'Đọc repo hoặc tệp theo tên owner/repo. path trống xem thư mục gốc; path là thư mục xem danh sách, path là tệp đọc nội dung chữ. ref trống dùng nhánh mặc định. Không chạy mã trong tệp.', RepositoryRead),
+    schema('github_read_repository', 'Đọc repo hoặc tệp theo tên owner/repo. path trống xem thư mục gốc; path là thư mục xem danh sách, path là tệp đọc nội dung chữ. ref trống dùng nhánh mặc định. Khi khảo sát repo, đọc danh sách thư mục trước rồi dùng đúng đường dẫn trả về; không đoán tên tệp hoặc lặp lại đường dẫn đã lỗi. Không chạy mã trong tệp.', RepositoryRead),
     schema('github_actions', 'Kiểm tra GitHub Actions theo owner/repo: action=runs xem các lần chạy mới nhất; action=jobs cần run_id; action=job_log cần job_id. Dùng conclusion và bước thất bại để chọn job cần đọc log. Không chạy lại hay sửa workflow.', ActionsRead),
 ]
 
@@ -114,7 +114,26 @@ class GitHubSession:
         path = args.path.strip('/')
         if any(part in {'.', '..'} for part in path.split('/')) or '\\' in path or '\x00' in path:
             raise github.GitHubError('Đường dẫn tệp trong repo không hợp lệ.')
-        data = await github.api_get(token, base + '/contents/' + quote(path, safe='/'), {'ref': args.ref} if args.ref else None)
+        params = {'ref': args.ref} if args.ref else None
+        try:
+            data = await github.api_get(token, base + '/contents' + ('/' + quote(path, safe='/') if path else ''), params)
+        except github.GitHubError as err:
+            if err.status_code != 404:
+                raise
+            # Cùng khóa và nhánh: đọc được gốc thì lỗi thuộc đường dẫn đang hỏi, không kết luận thiếu quyền.
+            if path:
+                try:
+                    root = await github.api_get(token, base + '/contents', params)
+                except github.GitHubError as root_error:
+                    if root_error.status_code != 404:
+                        raise root_error
+                else:
+                    if isinstance(root, list):
+                        return {'ok': False, 'error': f'Không tìm thấy “{path}” trong {args.repository} ở nhánh {args.ref or "mặc định"}. Thư mục gốc vẫn đọc được.',
+                                'hint': 'Đọc danh sách thư mục để tìm đúng đường dẫn; không đoán tên tệp hoặc yêu cầu cấp thêm quyền vì đường dẫn này.',
+                                'code': 'path_not_found'}
+            raise github.GitHubError(f'Chưa tìm thấy “{path or "/"}” trong {args.repository} ở nhánh {args.ref or "mặc định"} (404). '
+                                    'Chưa xác định được đường dẫn/nhánh không tồn tại hay repo chưa được cấp quyền; hãy kiểm tra tên repo, nhánh và repo đã chọn.', status_code=404) from None
         url = 'https://github.com/' + args.repository
         if isinstance(data, list):
             return {'repository': args.repository, 'path': path,

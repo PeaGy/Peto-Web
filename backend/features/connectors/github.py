@@ -27,6 +27,10 @@ _locks = [asyncio.Lock() for _ in range(32)]
 class GitHubError(Exception):
     """Lỗi kết nối đã được diễn đạt cho người dùng, không chứa khóa hoặc phản hồi thô."""
 
+    def __init__(self, message, *, status_code=None):
+        super().__init__(message)
+        self.status_code = status_code
+
 
 def lock(owner):
     return _locks[int(hashlib.sha256(owner.encode()).hexdigest()[:8], 16) % len(_locks)]
@@ -90,15 +94,22 @@ async def exchange(fields):
         raise GitHubError('Chưa kết nối được với GitHub. Hãy thử lại.') from None
 
 
-def check_status(status):
+def check_status(status, *, headers=None, message='', path=''):
+    headers = headers or {}
     if status == 401:
-        raise GitHubError('GitHub đã hết hạn hoặc bị thu hồi quyền. Mở Cài đặt → Kết nối để kết nối lại.')
-    if status == 403 or status == 429:
-        raise GitHubError('GitHub đang giới hạn lượt hoặc chưa cấp đủ quyền đọc repo này. Kiểm tra quyền kết nối rồi thử lại.')
+        raise GitHubError('GitHub đã hết hạn hoặc bị thu hồi quyền. Mở Cài đặt → Kết nối để kết nối lại.', status_code=status)
+    if status == 429 or (status == 403 and (headers.get('x-ratelimit-remaining') == '0'
+                                          or headers.get('retry-after') or 'rate limit' in message.lower())):
+        raise GitHubError('GitHub đang giới hạn lượt truy cập. Hãy chờ trước khi tra cứu tiếp; đây không phải thông báo thiếu quyền repo.', status_code=status)
+    if status == 403:
+        if message in {'Resource not accessible by integration', 'Resource not accessible by personal access token'}:
+            permission = 'Actions: Read-only' if '/actions/' in path else 'Contents: Read-only' if re.search(r'/contents(?:/|$)', path) else 'quyền đọc cho tác vụ này'
+            raise GitHubError(f'GitHub từ chối quyền đọc. Kiểm tra {permission}, repo đã chọn và việc chấp thuận quyền mới của GitHub App.', status_code=status)
+        raise GitHubError('GitHub từ chối yêu cầu truy cập. Chưa xác định được là quyền repo hay chính sách tài khoản/tổ chức.', status_code=status)
     if status == 404:
-        raise GitHubError('Không tìm thấy dữ liệu, hoặc GitHub App chưa được cấp quyền vào repo này.')
+        raise GitHubError('GitHub không tìm thấy dữ liệu được yêu cầu (404). Có thể sai repo, đường dẫn hoặc nhánh; mã này chưa xác nhận thiếu quyền.', status_code=status)
     if status >= 400 or status < 200:
-        raise GitHubError('GitHub chưa trả được dữ liệu. Hãy thử lại sau.')
+        raise GitHubError('GitHub chưa trả được dữ liệu. Hãy thử lại sau.', status_code=status)
 
 
 async def api_get(token, path, params=None, *, log=False):
@@ -119,11 +130,21 @@ async def api_get(token, path, params=None, *, log=False):
                         raise GitHubError('GitHub trả về địa chỉ tải log không được hỗ trợ.')
                     # Không dùng lại headers có khóa GitHub và không đi theo chuyển hướng tiếp theo.
                     async with client.stream('GET', location) as downloaded:
-                        check_status(downloaded.status_code)
+                        check_status(downloaded.status_code, headers=downloaded.headers)
                         if downloaded.status_code != 200:
                             raise GitHubError('Chưa tải được log GitHub.')
                         return (await read_response(downloaded)).decode('utf-8', errors='replace')
-                check_status(response.status_code)
+                message = ''
+                if response.status_code == 403:
+                    # Chỉ dùng loại lỗi đã biết để phân biệt quyền và hạn mức; không đưa phản hồi thô ra chat.
+                    try:
+                        error_data = json.loads(await read_response(response, 32_000))
+                        message = error_data.get('message', '') if isinstance(error_data, dict) else ''
+                        if not isinstance(message, str):
+                            message = ''
+                    except (ValueError, GitHubError):
+                        pass
+                check_status(response.status_code, headers=response.headers, message=message, path=path)
                 if response.status_code != 200:
                     raise GitHubError('GitHub trả về chuyển hướng ngoài luồng được hỗ trợ.')
                 data = await read_response(response)

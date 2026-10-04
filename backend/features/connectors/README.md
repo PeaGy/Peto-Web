@@ -35,4 +35,6 @@ Lượt chat có kết nối GitHub được tra cứu tối đa 12 vòng và th
 
 Trạng thái **Đã kết nối** là thông tin lần cấp quyền đã lưu, không phải kiểm tra online liên tục. Quyền bị thu hồi được báo khi bấm Kiểm tra hoặc khi Peto đọc dữ liệu. Nếu thiếu cấu hình, mục GitHub vẫn có mô tả nhưng nút Kết nối bị khóa và nói rõ máy chủ chưa bật.
 
+Tiến trình GitHub trong chat được gom thành một dòng đếm mục đã đọc/chưa đọc; lỗi chi tiết có thể mở riêng. Lỗi 404 không tự xác nhận thiếu quyền: khi một đường dẫn tệp không tìm thấy, Peto kiểm tra thư mục gốc trên cùng nhánh để phân biệt đường dẫn sai với trường hợp chưa xác minh được truy cập. Hạn mức GitHub và phản hồi từ chối quyền được diễn đạt riêng; chỉ lỗi quyền đã xác nhận mới hướng dẫn kiểm tra Contents hoặc Actions. Khi khảo sát repo, công cụ hướng dẫn đọc danh sách thư mục trước và dùng đường dẫn thật.
+
 Tài liệu chính thức: [Token người dùng của GitHub App](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-a-user-access-token-for-a-github-app), [làm mới token](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/refreshing-user-access-tokens), [API job và log](https://docs.github.com/en/rest/actions/workflow-jobs).

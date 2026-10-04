@@ -9,7 +9,7 @@ import { DocumentIcon } from '../documents/DocumentWorkspace';
 import DocumentArtifactCard from '../documents/DocumentArtifactCard';
 import { FileGlyph, formatSize } from './files';
 import WebSources, { GlobeIcon } from './WebSources';
-import type { Message } from '../../shared/api/api';
+import type { Message, WorkStep } from '../../shared/api/api';
 
 // Nhãn đầu khối code. Ngôn ngữ được tô màu nằm ở markdownCode.ts: thêm ngôn ngữ ở đó thì thêm nhãn ở đây.
 const CODE_LABELS: Record<string, string> = {
@@ -110,7 +110,7 @@ function WorkLog({
   ms,
 }: {
   live: boolean;
-  steps?: { id: string; label: string; live?: boolean }[];
+  steps?: WorkStep[];
   ms?: number;
 }) {
   const [choice, setChoice] = useState<boolean | null>(null);
@@ -142,7 +142,13 @@ function WorkLog({
               ) : (
                 <span className="work-dot" aria-hidden="true" />
               )}
-              {step.label}
+              <div className="work-step-content">
+                <span>{step.label}</span>
+                {step.details?.length ? <details className="work-step-details">
+                  <summary>Xem mục chưa đọc được</summary>
+                  <ul>{step.details.map(detail => <li key={detail}>{detail}</li>)}</ul>
+                </details> : null}
+              </div>
             </li>
           ))}
         </ul>

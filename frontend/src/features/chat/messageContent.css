@@ -119,6 +119,15 @@
 
 .work-steps li.live { color: var(--text); }
 
+.work-step-content { min-width: 0; overflow-wrap: anywhere; line-height: 1.6; }
+.work-step-details { margin-top: 4px; color: var(--muted); }
+.work-step-details summary { cursor: pointer; font-size: 12px; }
+.work-step-details summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 3px; }
+.work-step-details ul { margin: 6px 0 0; padding-left: 16px; }
+.work-step-details li { display: list-item; margin-top: 4px; }
+.work-steps > li:has(.work-step-details) { align-items: flex-start; }
+.work-steps > li:has(.work-step-details) > svg { margin-top: 3px; }
+
 .work-steps svg {
   width: 14px;
   height: 14px;
