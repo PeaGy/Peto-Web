@@ -23,7 +23,8 @@ MAX_PIXELS = 40_000_000
 MAX_PNG_BYTES = 600_000
 
 
-async def load(owner: str, conversation_id: str, numbers: set[int], *, strict: bool) -> dict[int, bytes]:
+async def load(owner: str, conversation_id: str, numbers: set[int], *, strict: bool,
+               tool: str = 'create_document') -> dict[int, bytes]:
     """Đọc các ảnh số ``numbers`` của hội thoại.
 
     ``strict`` dùng cho công cụ của model: số không có thì báo lỗi để model sửa rồi gọi lại. Bản người dùng tự sửa thì bỏ
@@ -35,12 +36,13 @@ async def load(owner: str, conversation_id: str, numbers: set[int], *, strict: b
     missing = sorted(number for number in numbers if not 1 <= number <= len(rows))
     if missing and strict:
         if not rows:
-            raise ValueError('Hội thoại này chưa có ảnh nào người dùng gửi nên chưa chèn được ảnh. Bỏ phần ![…](anh-N) '
-                             'rồi gọi lại create_document, hoặc nhờ người dùng gửi ảnh trước.')
+            raise ValueError('Hội thoại này chưa có ảnh nào người dùng gửi nên chưa chèn được ảnh. '
+                             f'Bỏ {"phần ![…](anh-N)" if tool == "create_document" else "slide image_text"} '
+                             f'rồi gọi lại {tool}, hoặc nhờ người dùng gửi ảnh trước.')
         have = ', '.join(f'Ảnh {number}' for number in range(1, len(rows) + 1))
         wanted = ', '.join(f'Ảnh {number}' for number in missing)
         raise ValueError(f'Hội thoại này không có {wanted}. Ảnh người dùng đã gửi: {have}. '
-                         'Sửa số ảnh trong content rồi gọi lại create_document.')
+                         f'Sửa số ảnh rồi gọi lại {tool}.')
     root = UPLOAD_DIR.resolve()
     result: dict[int, bytes] = {}
     for number in sorted(set(numbers) - set(missing)):

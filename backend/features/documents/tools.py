@@ -8,8 +8,9 @@ import anyio
 from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from features.documents.export import TOC_LEVELS, clean_text, image_numbers, MAX_CONTENT, parse_blocks
-from features.documents.jobs import TOOL_WAIT, RenderBusy, build_files, document_filename, render_queue
+from features.documents.jobs import TOOL_WAIT, RenderBusy, build_files, build_presentation, document_filename, render_queue
 from features.documents import images as document_images
+from features.documents.slides.spec import SCHEMA as PRESENTATION_SCHEMA, DeckInput, image_numbers as slide_images, normalize, plain_text
 from storage import documents as document_store
 
 logger = logging.getLogger('peto_web.documents')
@@ -108,4 +109,45 @@ class DocumentSession:
             return {'error': str(error.detail) if isinstance(error, HTTPException) else str(error)}
         except Exception:
             logger.exception('Không tạo được tài liệu')
+            return {'error': 'Chưa tạo được tệp. Không nói đã tạo xong; báo người dùng thử lại.'}
+
+    async def present(self, arguments: str):
+        """Công cụ create_presentation: kiểm tra, dàn trang, lưu PPTX cùng bản PDF xem trước như một tài liệu của hội thoại."""
+        try:
+            if not isinstance(arguments, str) or len(arguments) > 250_000:
+                raise ValueError('Tham số tạo bài thuyết trình quá lớn.')
+            deck = normalize(DeckInput.model_validate_json(arguments))
+            if _looks_like_unaccented_vietnamese(deck.title, plain_text(deck)):
+                raise ValueError('Nội dung tiếng Việt đang bị gửi không dấu. Hãy gọi lại create_presentation với chữ tiếng Việt '
+                                 'đầy đủ dấu; không tự đoán hoặc bỏ qua lỗi này.')
+            content = deck.to_json()
+            key = ('pptx', content)
+            if key in self._completed: return self._completed[key]
+            if len(self.created) >= 2: raise ValueError('Mỗi lượt chỉ tạo tối đa hai tài liệu.')
+            raw_images = await document_images.load(self.owner, self.conversation_id, slide_images(deck), strict=True,
+                                                    tool='create_presentation')
+            try:
+                async with render_queue.slot(TOOL_WAIT):
+                    files = await anyio.to_thread.run_sync(build_presentation, content, raw_images)
+                    with anyio.CancelScope(shield=True):
+                        draft = await document_store.save_document(self.owner, self.conversation_id, deck.title, content,
+                                                                   style=deck.theme, assets=files)
+                        artifact = {k: draft[k] for k in ('id', 'title', 'version', 'style')}
+                        artifact.update(format='pptx', filename=document_filename(deck.title, 'pptx'), pages=files['pages'])
+                        self.created.append(artifact)
+                        result = {'ok': True, 'artifact': artifact, 'instruction': (
+                            'Bài thuyết trình đã tạo và thẻ xem trước tự hiển thị. Trả lời ngắn: số slide, phong cách, ý chính; '
+                            'nói rằng mỗi slide có ghi chú cho người thuyết trình và tải được PPTX hoặc PDF. Không chép lại '
+                            'toàn bộ slide, không tự viết đường dẫn.')}
+                        self._completed[key] = result
+                        return result
+            except RenderBusy:
+                raise ValueError('Peto đang xuất tài liệu khác. Hãy báo người dùng thử lại sau vài giây.') from None
+        except ValidationError as error:
+            details = '; '.join(f"{'.'.join(str(part) for part in item['loc'])}: {item['msg']}" for item in error.errors()[:4])
+            return {'error': f'Tham số chưa đúng lược đồ ({details}). Sửa rồi gọi lại create_presentation.'}
+        except (ValueError, HTTPException) as error:
+            return {'error': str(error.detail) if isinstance(error, HTTPException) else str(error)}
+        except Exception:
+            logger.exception('Không tạo được bài thuyết trình')
             return {'error': 'Chưa tạo được tệp. Không nói đã tạo xong; báo người dùng thử lại.'}

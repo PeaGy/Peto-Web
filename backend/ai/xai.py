@@ -24,7 +24,7 @@ from core.config import MAX_HISTORY_IMAGES, XAI_API_BASE, XAI_MAX_OUTPUT_TOKENS,
 from ai.xai_auth import XaiAuth, XaiAuthError
 from shared.attachment_tools import NAMES as FILE_TOOLS, current_files
 from shared.time_tools import TOOL_SCHEMAS, execute_tool
-from features.documents.tools import current_session, SCHEMA as DOCUMENT_SCHEMA
+from features.documents.tools import current_session, SCHEMA as DOCUMENT_SCHEMA, PRESENTATION_SCHEMA
 from features.connectors.tools import current_session as github_session_context, NAMES as GITHUB_TOOLS, NOTE as GITHUB_NOTE
 from shared.web_search import normalize_sources, search_context
 
@@ -199,7 +199,7 @@ class ResponsesProvider(ChatProvider):
                     "effort": effort if effort in self.supported_efforts else "low"
                 },
                 "stream": True,
-                "tools": [*TOOL_SCHEMAS, *([DOCUMENT_SCHEMA] if document_session else []), *file_schemas, *github_schemas,
+                "tools": [*TOOL_SCHEMAS, *([DOCUMENT_SCHEMA, PRESENTATION_SCHEMA] if document_session else []), *file_schemas, *github_schemas,
                           *([{"type": "web_search"}] if search_enabled else [])] if tools_enabled and not finalizing else [],
                 "include": ["reasoning.encrypted_content"],
                 # Tự giữ các item trong lượt này, không cần lưu hội thoại ở dịch vụ AI.
@@ -331,9 +331,11 @@ class ResponsesProvider(ChatProvider):
                                           'output': json.dumps(result, ensure_ascii=False)})
                     continue
                 calls_used += 1
-                if call.get('name') == 'create_document' and document_session:
-                    yield StreamChunk('document_status', 'Đang dàn trang và tạo tệp…')
-                    result = await document_session.create(call.get('arguments', ''))
+                if call.get('name') in ('create_document', 'create_presentation') and document_session:
+                    presentation = call['name'] == 'create_presentation'
+                    yield StreamChunk('document_status', 'Đang dàn trang slide…' if presentation else 'Đang dàn trang và tạo tệp…')
+                    run = document_session.present if presentation else document_session.create
+                    result = await run(call.get('arguments', ''))
                     if result.get('ok'):
                         yield StreamChunk('artifact', artifact=result['artifact'])
                     yield StreamChunk('document_status', '')

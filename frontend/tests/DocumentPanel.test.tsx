@@ -66,3 +66,22 @@ it('giao diện điện thoại dùng hộp thoại, chọn tệp xong nhường
     expect(screen.getByRole('navigation', { name: 'Danh sách tài liệu' })).toBeTruthy();
   } finally { vi.unstubAllGlobals(); }
 });
+
+it('bài thuyết trình lật theo slide và hiện ghi chú cho người thuyết trình của đúng slide', async () => {
+  const deck: api.SavedDocument = { ...one, id: 'P1', title: 'Thư viện số', format: 'pptx', pages: 2, style: 'clean',
+    content: JSON.stringify({ title: 'Thư viện số', theme: 'clean', slides: [{ layout: 'cover', title: 'Bìa', notes: 'Chào thầy cô.' }, { layout: 'bullets', title: 'Bài toán', bullets: ['a'] }] }) };
+  vi.mocked(api.listDocuments).mockResolvedValue({ documents: [deck] });
+  vi.mocked(api.getDocument).mockResolvedValue(deck);
+  render(<DocumentPanel {...props} />);
+  const panel = within(screen.getByRole('complementary', { name: 'Tài liệu trong hội thoại' }));
+  const notes = await panel.findByRole('region', { name: 'Ghi chú cho người thuyết trình' });
+  expect(notes.textContent).toContain('Chào thầy cô.');
+  expect(panel.getByText('Slide 1 / 2')).toBeTruthy();
+  fireEvent.click(panel.getByRole('button', { name: 'Slide sau' }));
+  expect(panel.getByRole('img').getAttribute('src')).toContain('page=2');
+  expect(panel.getByRole('region', { name: 'Ghi chú cho người thuyết trình' }).textContent).toContain('Slide này không có ghi chú.');
+  expect(panel.getByRole('link', { name: 'Tải PDF' }).getAttribute('href')).toContain('/P1/export/pdf?version=1');
+  expect(panel.getByRole('link', { name: 'Tải Thư viện số.pptx', exact: true }).getAttribute('href')).toContain('/P1/export/pptx?version=1');
+  expect(panel.queryByRole('button', { name: 'Sửa nội dung' })).toBeNull();
+  expect(panel.getByRole('button', { name: 'Mở Thư viện số.pptx' }).textContent).toContain('2 slide');
+});

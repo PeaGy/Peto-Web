@@ -47,6 +47,10 @@
 .document-panel-empty p { max-width: 270px; margin: 8px 0; }
 .document-panel-empty button, .document-file-list [role="alert"] button { border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; color: var(--text); background: var(--bg); cursor: pointer; }
 .document-panel-note { margin: 0; padding: 10px 16px; border-top: 1px solid var(--line); color: var(--muted); font-size: 10px; line-height: 1.5; }
+.slide-notes { max-width: 850px; margin: 14px auto 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--text); }
+.slide-notes h3 { margin: 0 0 4px; color: var(--muted); font-size: 11px; font-weight: 600; }
+.slide-notes p { margin: 0; font-size: 13px; line-height: 1.55; white-space: pre-wrap; }
+a.document-panel-edit { text-decoration: none; }
 @media (max-width: 1400px) and (min-width: 1101px) {
   .document-panel { flex-basis: 57%; width: 57%; }
   .document-file-list { flex-basis: 160px; width: 160px; }

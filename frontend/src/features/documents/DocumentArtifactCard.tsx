@@ -9,6 +9,10 @@ export function ExpandIcon() {
   return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M14 4h6v6M20 4l-7 7M10 20H4v-6M4 20l7-7" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>;
 }
 
+export function SlidesIcon() {
+  return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2" stroke="currentColor" strokeWidth="1.6" /><path d="M12 16v4M8.5 20h7M7.5 9h6M7.5 12h4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>;
+}
+
 export function PageImage({ src, page, title }: { src: string; page: number; title: string }) {
   const [failed, setFailed] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -24,15 +28,20 @@ export default function DocumentArtifactCard({ artifact, onEdit, onOpen }: { art
   const base = `/api/documents/${encodeURIComponent(artifact.id)}`;
   const download = `${base}/export/${artifact.format}?version=${artifact.version}`;
   const preview = (number: number) => `${base}/preview?version=${artifact.version}&page=${number}`;
-  return <section className="document-artifact" aria-label={`Tài liệu ${artifact.filename}`}>
+  // Bài thuyết trình: hiện trọn slide đầu, tải PPTX hoặc PDF, chưa sửa tay được (nhờ Peto sửa trong chat).
+  const slides = artifact.format === 'pptx';
+  const pdfName = artifact.filename.replace(/\.pptx$/i, '.pdf');
+  return <section className={`document-artifact${slides ? ' slides' : ''}`} aria-label={`${slides ? 'Bài thuyết trình' : 'Tài liệu'} ${artifact.filename}`}>
     <header className="artifact-heading">
-      <DocumentIcon /><button type="button" className="artifact-name" onClick={() => onOpen(artifact)} title={artifact.filename}>{artifact.filename}</button>
+      {slides ? <SlidesIcon /> : <DocumentIcon />}<button type="button" className="artifact-name" onClick={() => onOpen(artifact)} title={artifact.filename}>{artifact.filename}</button>
       <a className="artifact-icon" href={download} download={artifact.filename} aria-label={`Tải ${artifact.filename}`} title="Tải xuống"><DownloadIcon /></a>
       <button type="button" className="artifact-icon" aria-label={`Mở rộng ${artifact.filename}`} title="Mở trong bảng tài liệu" onClick={() => onOpen(artifact)}><ExpandIcon /></button>
     </header>
     <div className="artifact-preview-crop"><PageImage key={preview(1)} src={preview(1)} page={1} title={artifact.title} />
-      <button type="button" className="artifact-open-overlay" onClick={() => onOpen(artifact)}>Xem tài liệu <span>· {artifact.pages} trang</span><ExpandIcon /></button>
+      <button type="button" className="artifact-open-overlay" onClick={() => onOpen(artifact)}>{slides ? 'Xem slide' : 'Xem tài liệu'} <span>· {artifact.pages} {slides ? 'slide' : 'trang'}</span><ExpandIcon /></button>
     </div>
-    <footer className="artifact-caption"><span>{artifact.format.toUpperCase()} · {artifact.pages} trang xem trước</span><button type="button" onClick={() => onEdit(artifact)}>Sửa nội dung</button></footer>
+    <footer className="artifact-caption">{slides
+      ? <><span>PPTX · {artifact.pages} slide · có ghi chú thuyết trình</span><a href={`${base}/export/pdf?version=${artifact.version}`} download={pdfName}>Tải PDF</a></>
+      : <><span>{artifact.format.toUpperCase()} · {artifact.pages} trang xem trước</span><button type="button" onClick={() => onEdit(artifact)}>Sửa nội dung</button></>}</footer>
   </section>;
 }

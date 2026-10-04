@@ -8,7 +8,8 @@ from pydantic import BaseModel, Field
 from features.accounts.auth import current_owner
 from storage import documents as store
 from features.documents.export import MAX_CONTENT, clean_text, image_numbers, parse_blocks
-from features.documents.jobs import EXPORT_WAIT, PREVIEW_WAIT, RenderBusy, export_file, render_page, render_queue
+from features.documents.jobs import EXPORT_WAIT, PREVIEW_WAIT, RenderBusy, build_presentation, export_file, render_page, render_queue
+from features.documents.slides.spec import image_numbers as slide_images, load as load_deck
 from features.documents import images as document_images
 
 router = APIRouter(prefix='/api/documents', tags=['documents'])
@@ -55,6 +56,9 @@ async def read(document_id: str, version: int | None = Query(None, ge=1), owner:
 
 @router.post('/{document_id}/versions')
 async def revise(document_id: str, draft: Revision, owner: str = Depends(current_owner)):
+    current = await store.get_document(owner, document_id)
+    if current.get('format') == 'pptx':
+        raise HTTPException(400, 'Bài thuyết trình chưa sửa tay được. Nhờ Peto sửa trong chat, Peto sẽ tạo phiên bản mới.')
     title, content = validate(draft)
     return await store.save_document(owner, None, title, content, document_id, draft.base_version, style=draft.style)
 
@@ -66,9 +70,13 @@ async def delete(document_id: str, owner: str = Depends(current_owner)):
 
 
 @router.get('/{document_id}/export/{format}')
-async def export(document_id: str, format: Literal['docx', 'pdf'], version: int = Query(ge=1), owner: str = Depends(current_owner)):
+async def export(document_id: str, format: Literal['docx', 'pdf', 'pptx'], version: int = Query(ge=1), owner: str = Depends(current_owner)):
     draft = await store.get_document(owner, document_id, version)
     assets = await store.get_assets(owner, document_id, version)
+    if draft.get('format') == 'pptx':
+        return await export_presentation(owner, draft, assets, version, format)
+    if format == 'pptx':
+        raise HTTPException(400, 'Tài liệu này không có bản PowerPoint.')
     if assets:
         data = assets[format]
         return file_response(draft, version, format, data)
@@ -87,9 +95,33 @@ async def export(document_id: str, format: Literal['docx', 'pdf'], version: int 
     return file_response(draft, version, format, data)
 
 
+async def export_presentation(owner, draft, assets, version, format):
+    """Bài thuyết trình tải PPTX hoặc bản PDF cùng bố cục; không có bản Word."""
+    if format == 'docx':
+        raise HTTPException(400, 'Bài thuyết trình chỉ tải được PPTX hoặc PDF.')
+    if assets and assets.get(format):
+        return file_response(draft, version, format, assets[format])
+    try:
+        raw_images = await document_images.load(owner, draft['conversation_id'], slide_images(load_deck(draft['content'])), strict=False)
+        async with render_queue.slot(EXPORT_WAIT):
+            files = await anyio.to_thread.run_sync(build_presentation, draft['content'], raw_images)
+    except RenderBusy:
+        raise HTTPException(429, 'Peto đang xuất tài liệu khác. Bạn thử lại sau vài giây nhé.') from None
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
+    return file_response(draft, version, format, files[format])
+
+
+MIME = {
+    'pdf': 'application/pdf',
+    'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+}
+
+
 def file_response(draft, version, format, data):
     filename = ''.join(c for c in draft['title'] if c.isalnum() or c in ' -_').strip()[:90] or 'Tai lieu Peto'
-    mime = 'application/pdf' if format == 'pdf' else 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    mime = MIME[format]
     return Response(data, media_type=mime, headers={
         'Content-Disposition': f"attachment; filename*=UTF-8''{quote(filename)}-v{version}.{format}",
         'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff',

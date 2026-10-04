@@ -3,8 +3,8 @@ import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { UnauthorizedError } from '../../shared/api/api';
 import { DocumentIcon } from './DocumentWorkspace';
-import { DownloadIcon, ExpandIcon, PageImage } from './DocumentArtifactCard';
-import { getDocument, listDocuments, type DocumentSummary, type SavedDocument } from './documentApi';
+import { DownloadIcon, ExpandIcon, PageImage, SlidesIcon } from './DocumentArtifactCard';
+import { getDocument, listDocuments, slideNotes, type DocumentSummary, type SavedDocument } from './documentApi';
 import './documentPanel.css';
 
 export type DocumentPanelSelection = { id: string; version: number; key: number };
@@ -15,7 +15,8 @@ function FileListIcon() {
   return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 6h12M9 12h12M9 18h12M3 6h1M3 12h1M3 18h1" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" /></svg>;
 }
 const filename = (item: DocumentSummary) => `${item.title}.${item.format || 'docx'}`;
-const downloadUrl = (item: DocumentSummary) => `/api/documents/${encodeURIComponent(item.id)}/export/${item.format || 'docx'}?version=${item.version}`;
+const downloadUrl = (item: DocumentSummary, format = item.format || 'docx') => `/api/documents/${encodeURIComponent(item.id)}/export/${format}?version=${item.version}`;
+const FileIcon = ({ item }: { item: DocumentSummary }) => item.format === 'pptx' ? <SlidesIcon /> : <DocumentIcon />;
 
 export default function DocumentPanel({ conversationId, open, expanded, selection, refreshKey, onClose, onExpand, onEdit, onUnauthorized }: {
   conversationId: string | null; open: boolean; expanded: boolean; selection: DocumentPanelSelection | null; refreshKey: number;
@@ -89,6 +90,9 @@ export default function DocumentPanel({ conversationId, open, expanded, selectio
 
   const filtered = files.filter(item => item.title.toLocaleLowerCase('vi').includes(query.trim().toLocaleLowerCase('vi')));
   const preview = current?.pages && current.format ? `/api/documents/${encodeURIComponent(current.id)}/preview?version=${current.version}&page=${page}` : null;
+  const slides = current?.format === 'pptx';
+  const notes = current ? slideNotes(current) : [];
+  const unit = slides ? 'Slide' : 'Trang';
   return <dialog ref={panel} id="document-panel" className={`document-panel${filesOpen ? ' files-open' : ''}`} role={mobile ? 'dialog' : 'complementary'} aria-label="Tài liệu trong hội thoại" aria-modal={mobile && open ? true : undefined}
     onCancel={event => { event.preventDefault(); onClose(); }} onKeyDown={event => { if (!mobile && event.key === 'Escape') { event.preventDefault(); onClose(); } }}>
     <header className="document-panel-head">
@@ -99,7 +103,9 @@ export default function DocumentPanel({ conversationId, open, expanded, selectio
     <div className="document-panel-toolbar">
       <button type="button" className="artifact-icon" aria-label={filesOpen ? 'Ẩn danh sách tệp' : 'Hiện danh sách tệp'} aria-expanded={filesOpen} aria-controls="document-file-list" title="Danh sách tệp" onClick={() => setFilesOpen(value => !value)}><FileListIcon /></button>
       <strong title={current ? filename(current) : undefined}>{current ? filename(current) : 'Tài liệu của hội thoại'}</strong>
-      {current && <><button type="button" className="document-panel-edit" onClick={() => onEdit(current)}>Sửa nội dung</button><a className="artifact-icon" href={downloadUrl(current)} download={filename(current)} aria-label={`Tải ${filename(current)}`} title="Tải xuống"><DownloadIcon /></a></>}
+      {current && (slides
+        ? <><a className="document-panel-edit" href={downloadUrl(current, 'pdf')} download={`${current.title}.pdf`}>Tải PDF</a><a className="artifact-icon" href={downloadUrl(current)} download={filename(current)} aria-label={`Tải ${filename(current)}`} title="Tải PPTX"><DownloadIcon /></a></>
+        : <><button type="button" className="document-panel-edit" onClick={() => onEdit(current)}>Sửa nội dung</button><a className="artifact-icon" href={downloadUrl(current)} download={filename(current)} aria-label={`Tải ${filename(current)}`} title="Tải xuống"><DownloadIcon /></a></>)}
     </div>
     <div className="document-panel-body">
       <nav id="document-file-list" className="document-file-list" aria-label="Danh sách tài liệu" hidden={!filesOpen}>
@@ -107,23 +113,30 @@ export default function DocumentPanel({ conversationId, open, expanded, selectio
         {listBusy && !files.length && <p role="status">Đang tải danh sách…</p>}
         {listError && <div role="alert"><p>{listError}</p><button type="button" onClick={() => setRetry(value => value + 1)}>Thử lại</button></div>}
         {filtered.map(item => <div key={item.id} className={`document-file-row${selected?.id === item.id ? ' selected' : ''}`}>
-          <button type="button" aria-label={`Mở ${filename(item)}`} aria-current={selected?.id === item.id ? 'true' : undefined} title={filename(item)} onClick={() => { setSelected({ id: item.id }); if (mobile) setFilesOpen(false); }}><DocumentIcon /><span><strong>{filename(item)}</strong><small>Phiên bản {item.version}{item.pages ? ` · ${item.pages} trang` : ''}</small></span></button>
+          <button type="button" aria-label={`Mở ${filename(item)}`} aria-current={selected?.id === item.id ? 'true' : undefined} title={filename(item)} onClick={() => { setSelected({ id: item.id }); if (mobile) setFilesOpen(false); }}><FileIcon item={item} /><span><strong>{filename(item)}</strong><small>Phiên bản {item.version}{item.pages ? ` · ${item.pages} ${item.format === 'pptx' ? 'slide' : 'trang'}` : ''}</small></span></button>
           <a className="artifact-icon" href={downloadUrl(item)} download={filename(item)} aria-label={`Tải ${filename(item)} từ danh sách`} title="Tải xuống"><DownloadIcon /></a>
         </div>)}
         {!listBusy && !listError && !filtered.length && <p>{query ? 'Không có tài liệu phù hợp.' : 'Chưa có tài liệu nào.'}</p>}
       </nav>
       <div className="document-panel-preview" inert={mobile && filesOpen}>
         {current && <div className="document-panel-pagination">
-          {preview && <><button type="button" aria-label="Trang trước" disabled={page <= 1} onClick={() => setPage(value => value - 1)}>‹</button><span aria-live="polite">Trang {page} / {current.pages}</span><button type="button" aria-label="Trang sau" disabled={page >= (current.pages || 1)} onClick={() => setPage(value => value + 1)}>›</button></>}
+          {preview && <><button type="button" aria-label={`${unit} trước`} disabled={page <= 1} onClick={() => setPage(value => value - 1)}>‹</button><span aria-live="polite">{unit} {page} / {current.pages}</span><button type="button" aria-label={`${unit} sau`} disabled={page >= (current.pages || 1)} onClick={() => setPage(value => value + 1)}>›</button></>}
           <select aria-label="Phiên bản xem trước" value={current.version} onChange={event => setSelected({ id: current.id, version: Number(event.target.value) })}>{current.versions.map(version => <option key={version.version} value={version.version}>Phiên bản {version.version}</option>)}</select>
         </div>}
         <div className="document-panel-pages" ref={scroll}>
           {busy && <div className="document-panel-empty" role="status">Đang mở tài liệu…</div>}
           {error && <div className="document-panel-empty" role="alert"><p>{error}</p><button type="button" onClick={() => setRetry(value => value + 1)}>Thử lại</button></div>}
-          {!busy && !error && !current && <div className="document-panel-empty"><DocumentIcon /><h3>Tài liệu ở ngay đây</h3><p>{listError ? 'Mở danh sách tệp để thử tải lại.' : 'Nhờ Peto tạo một tệp Word hoặc PDF. Các tài liệu của cuộc trò chuyện sẽ được lưu tại đây.'}</p></div>}
-          {current && (preview ? <PageImage key={preview} src={preview} page={page} title={current.title} /> : <article className="document-paper" aria-label="Nội dung tài liệu"><Markdown remarkPlugins={[remarkGfm]} components={{ img: ({ alt }) => <span>[Ảnh: {alt || 'không có mô tả'}]</span>, a: ({ children, href }) => <a href={href} target="_blank" rel="noopener noreferrer">{children}</a> }}>{current.content}</Markdown></article>)}
+          {!busy && !error && !current && <div className="document-panel-empty"><DocumentIcon /><h3>Tài liệu ở ngay đây</h3><p>{listError ? 'Mở danh sách tệp để thử tải lại.' : 'Nhờ Peto tạo tệp Word, PDF hoặc slide PowerPoint. Các tài liệu của cuộc trò chuyện sẽ được lưu tại đây.'}</p></div>}
+          {current && preview && slides && <>
+            <PageImage key={preview} src={preview} page={page} title={current.title} />
+            <section className="slide-notes" aria-label="Ghi chú cho người thuyết trình">
+              <h3>Ghi chú cho người thuyết trình</h3>
+              <p>{notes[page - 1] || 'Slide này không có ghi chú.'}</p>
+            </section>
+          </>}
+          {current && !slides && (preview ? <PageImage key={preview} src={preview} page={page} title={current.title} /> : <article className="document-paper" aria-label="Nội dung tài liệu"><Markdown remarkPlugins={[remarkGfm]} components={{ img: ({ alt }) => <span>[Ảnh: {alt || 'không có mô tả'}]</span>, a: ({ children, href }) => <a href={href} target="_blank" rel="noopener noreferrer">{children}</a> }}>{current.content}</Markdown></article>)}
         </div>
-        {current && <p className="document-panel-note">{preview ? current.format === 'docx' ? 'Bản xem PDF cùng nội dung. Font và ngắt trang có thể khác khi mở bằng Word.' : 'Bản xem từ tệp PDF đã lưu.' : 'Bản xem nội dung đã sửa. Tệp tải xuống có thể ngắt trang khác.'}</p>}
+        {current && <p className="document-panel-note">{slides ? 'Bản xem vẽ lại cùng bố cục với tệp PPTX. Biểu đồ trong PowerPoint do PowerPoint tự vẽ nên có thể khác chút. Muốn sửa slide, nhắn Peto.' : preview ? current.format === 'docx' ? 'Bản xem PDF cùng nội dung. Font và ngắt trang có thể khác khi mở bằng Word.' : 'Bản xem từ tệp PDF đã lưu.' : 'Bản xem nội dung đã sửa. Tệp tải xuống có thể ngắt trang khác.'}</p>}
       </div>
     </div>
   </dialog>;

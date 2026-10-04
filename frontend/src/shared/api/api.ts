@@ -6,7 +6,7 @@ export type ConversationMode = "chat" | "companion";
 export interface WebSource { url: string; title: string; kind?: 'citation' | 'result' }
 export interface DocumentArtifact {
   id: string; title: string; filename: string; version: number;
-  format: 'docx' | 'pdf'; style: 'report' | 'essay'; pages: number;
+  format: 'docx' | 'pdf' | 'pptx'; style: 'report' | 'essay' | 'clean' | 'academic' | 'bold'; pages: number;
 }
 
 export interface ChatAttachment {

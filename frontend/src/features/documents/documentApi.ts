@@ -1,8 +1,8 @@
 import { UnauthorizedError } from '../../shared/api/api';
 
-export interface DocumentSummary { id: string; conversation_id: string; title: string; version: number; created_at: number; format?: 'docx' | 'pdf' | null; pages?: number | null }
+export interface DocumentSummary { id: string; conversation_id: string; title: string; version: number; created_at: number; format?: 'docx' | 'pdf' | 'pptx' | null; pages?: number | null }
 export interface SavedDocument extends DocumentSummary {
-  style?: 'report' | 'essay';
+  style?: 'report' | 'essay' | 'clean' | 'academic' | 'bold';
   content: string;
   versions: { version: number; title: string; created_at: number }[];
 }
@@ -29,6 +29,17 @@ export const deleteDocument = (id: string) => json(`/api/documents/${encodeURICo
 export async function downloadDocument(document: SavedDocument, format: 'docx' | 'pdf') {
   const response = await checked(await fetch(`/api/documents/${encodeURIComponent(document.id)}/export/${format}?version=${document.version}`));
   return response.blob();
+}
+
+/** Ghi chú cho người thuyết trình của từng slide, đọc từ bài thuyết trình đã lưu (JSON của create_presentation). */
+export function slideNotes(document: SavedDocument): string[] {
+  if (document.format !== 'pptx') return [];
+  try {
+    const deck = JSON.parse(document.content) as { slides?: { notes?: unknown }[] };
+    return (deck.slides ?? []).map(slide => typeof slide.notes === 'string' ? slide.notes : '');
+  } catch {
+    return [];
+  }
 }
 
 export function draftTitle(content: string) {

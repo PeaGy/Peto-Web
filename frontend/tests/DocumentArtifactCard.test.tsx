@@ -25,3 +25,14 @@ it('lỗi ảnh xem trước không làm mất nút tải tài liệu', () => {
   fireEvent.click(screen.getByRole('button', { name: 'Thử lại' }));
   expect(screen.getByRole('img').getAttribute('src')).toContain('retry=1');
 });
+
+it('bài thuyết trình hiện số slide, tải PPTX hoặc PDF, không có nút sửa tay', () => {
+  const edit = vi.fn();
+  const slides: DocumentArtifact = { id: 'P1', title: 'Thư viện số', filename: 'Thư viện số.pptx', format: 'pptx', style: 'academic', pages: 6, version: 2 };
+  render(<DocumentArtifactCard artifact={slides} onEdit={edit} onOpen={() => {}} />);
+  expect(screen.getByRole('region', { name: 'Bài thuyết trình Thư viện số.pptx' })).toBeTruthy();
+  expect(screen.getByRole('link', { name: 'Tải Thư viện số.pptx' }).getAttribute('href')).toBe('/api/documents/P1/export/pptx?version=2');
+  expect(screen.getByRole('link', { name: 'Tải PDF' }).getAttribute('href')).toBe('/api/documents/P1/export/pdf?version=2');
+  expect(screen.getByRole('button', { name: /Xem slide/ }).textContent).toContain('6 slide');
+  expect(screen.queryByRole('button', { name: 'Sửa nội dung' })).toBeNull();
+});

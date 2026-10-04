@@ -145,6 +145,37 @@ TABLE_SAMPLE = """Giá tham khảo, đơn vị USD cho 1 triệu token:
 
 Bảng trên điện thoại cuộn ngang được."""
 
+
+
+def slide_sample(theme: str) -> dict:
+    """Bài thuyết trình mẫu cho "__slide__": đủ các khuôn không cần ảnh."""
+    empty = dict.fromkeys(('subtitle', 'meta', 'section', 'bullets', 'left_title', 'left_bullets', 'right_title',
+                           'right_bullets', 'image', 'caption', 'table_columns', 'table_rows', 'chart_type',
+                           'chart_categories', 'chart_series', 'chart_unit'))
+
+    def slide(layout, title, notes, **fields):
+        return {**empty, 'layout': layout, 'title': title, 'notes': notes, **fields}
+
+    return {'title': 'Hệ thống quản lý thư viện số', 'theme': theme, 'slides': [
+        slide('cover', 'Hệ thống quản lý thư viện số', 'Chào thầy cô và các bạn, giới thiệu tên nhóm.',
+              subtitle='Đồ án môn Công nghệ phần mềm', meta='Nhóm 5 · Lớp KTPM2024\nTháng 10/2026'),
+        slide('agenda', 'Nội dung', 'Đi nhanh qua mục lục.', bullets=['Bài toán và mục tiêu', 'Phân tích yêu cầu',
+                                                                     'Kết quả thử nghiệm', 'Kết luận']),
+        slide('bullets', 'Bài toán đặt ra', 'Mở đầu bằng con số 5–7 phút.', section='1 · Bài toán và mục tiêu',
+              bullets=['Mượn trả ghi sổ tay, mỗi lượt mất 5–7 phút', 'Không biết sách còn trên kệ hay đã có người mượn',
+                       'Độc giả quên hạn trả, phí phạt khó đối chiếu']),
+        slide('two_columns', 'Trước và sau khi có hệ thống', 'Cột phải là phần nhóm đã làm xong.',
+              left_title='Hiện tại', left_bullets=['Ghi sổ, tra cứu bằng tủ phiếu', 'Báo cáo tháng làm thủ công'],
+              right_title='Hệ thống mới', right_bullets=['Quét mã vạch, cập nhật ngay', 'Báo cáo tự động mỗi tuần']),
+        slide('table', 'Kết quả thử nghiệm', 'Báo cáo tháng giảm nhiều nhất.', caption='Đo trên 120 lượt, tháng 9/2026',
+              table_columns=['Thao tác', 'Trước', 'Sau'],
+              table_rows=[['Mượn sách', '6,5 phút', '1,2 phút'], ['Trả sách', '4,0 phút', '0,8 phút']]),
+        slide('chart', 'Lượt mượn theo tháng', 'Tháng 9 tăng vì đầu năm học.', chart_type='column', chart_unit='lượt',
+              chart_categories=['T7', 'T8', 'T9'], chart_series=[{'name': 'Năm 2025', 'values': [190, 240, 410]},
+                                                                 {'name': 'Năm 2026', 'values': [210, 260, 640]}]),
+    ]}
+
+
 _CHUNK_DELAY = 0.035
 
 _GREETING = (
@@ -292,6 +323,18 @@ class MockProvider(ChatProvider):
         if emotion:
             reply = f"<|EMOTE_{emotion.group(1).upper()}|> {reply}"
         session = current_session.get()
+        # "__slide__" hay "__slide__:academic": tạo bài thuyết trình mẫu bằng create_presentation, để chạy thử thẻ slide.
+        slide = re.search(r'__slide__(?::(clean|academic|bold))?', last_user)
+        if session and slide:
+            yield StreamChunk('document_status', 'Đang dàn trang slide…')
+            result = await session.present(json.dumps(slide_sample(slide.group(1) or 'clean'), ensure_ascii=False))
+            yield StreamChunk('document_status', '')
+            if result.get('ok'):
+                yield StreamChunk('artifact', artifact=result['artifact'])
+                yield 'Đã tạo bài thuyết trình mẫu **Hệ thống quản lý thư viện số**, mỗi slide có ghi chú cho người thuyết trình.'
+            else:
+                yield 'Chưa tạo được bài thuyết trình: ' + result['error']
+            return
         lowered = last_user.casefold()
         # Only the offline mock uses keyword routing. The real provider chooses its tool.
         create_requested = '[PETO_DOCUMENT_CREATE]' in system_prompt or (

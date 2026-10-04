@@ -372,7 +372,7 @@ preview is that PDF, so a feature must exist in both renderers or the preview mi
 New Roman / Noto Serif) and `report` (Letter, Arial / Noto Sans).
 
 On 2026-09-30 the owner picked a Word/PDF upgrade as the first step of the document roadmap. Mermaid diagrams in chat
-came second (next section); PowerPoint templates and Excel may follow.
+came second and PowerPoint third (sections below); Excel is next.
 - **Real lists.** Every Markdown list gets its own Word numbering definition (`_numbering_level`), so numbers restart per
   list, honour `start`, and Word renumbers when the user edits. Nested ordered lists go 1. → a. → i., bullets • → –.
   The PDF draws the same labels (`list_label`) at the same hanging indents (`list_indent`). Later paragraphs of an item
@@ -475,6 +475,62 @@ diagram large in a panel on the right (`DiagramPanel.tsx`), where the document p
   - `backend/tests/test_diagrams.py`: the guide's keywords and where it is appended. The mock answers `__sodo__` with a
     class, a sequence, an activity and a swimlane diagram (`DIAGRAM_SAMPLE`). Its chunker now streams whitespace
     exactly; it used to drop the spaces after each chunk, which broke code indentation.
+
+### Presentations in chat (`create_presentation`)
+
+The third step of the document roadmap, built on 2026-10-04. The owner liked all three styles from live mockups
+(`frontend/prototypes/slides`, deleted after the pick) and chose to keep them all: Gọn sáng (`clean`, default), Học thuật
+(`academic`) and Đậm nét (`bold`). Peto picks one by context and follows the user when they name one. There is no manual
+slide editor in v1, also the owner's call: changes go through chat and create a new version.
+- **Tool.** `features/documents/slides/spec.py` holds the strict schema. A deck has a title, a theme and up to 25
+  slides in seven layouts: cover, agenda, bullets, two_columns, image_text, table, chart.
+  - Every field of every layout is present and null when unused.
+  - Tables and charts are flat `table_*` / `chart_*` fields, not nullable nested objects, because not every provider
+    accepts `anyOf` in strict mode.
+  - `normalize` cleans the text and checks limits per layout. Its errors name the slide ("Slide 3 (bullets): …"), so
+    the model can fix the call and try again.
+  - `DocumentSession.present` mirrors `create`: at most two artifacts per turn, idempotent, rejects unaccented
+    Vietnamese, and takes images only from this conversation's `[Ảnh N]`.
+- **One layout, two renderers.** `layout.py` turns each slide into positioned shapes (`scene.py`, points on a 960×540
+  slide). `pptx_out.py` (python-pptx) and `pdf_out.py` (ReportLab) only draw those shapes, so the preview matches the
+  download.
+  - **Metrics.** Text is wrapped with real font metrics. The PPTX names Arial and Times New Roman; measuring and the
+    PDF use the bundled Liberation Sans and Serif. Their widths match exactly (checked 2026-10-04), so line breaks
+    match PowerPoint.
+  - **No Georgia.** It lacks precomposed glyphs such as "ố" and broke Vietnamese accents in the first mockup.
+  - **Shrink, then refuse.** Text shrinks within a size range. If it still doesn't fit, `SlideOverflow` asks the
+    model to shorten the slide or split it.
+- **PPTX details.**
+  - Titles sit in the slide's real title placeholder (outline view, screen readers), raised above shapes drawn
+    before it.
+  - Bullets are real PowerPoint bullets (`a:buChar`). Text boxes have zero insets and exact line spacing, slide
+    numbers are `slidenum` fields, and runs carry `lang="vi-VN"`.
+  - Tables use the "No Style, No Grid" table style with explicit borders.
+  - Charts are native (column, bar, line, pie). Their value axis is fixed by `nice_axis` and shared with the preview.
+    Bar charts reverse their data so the first category is on top.
+  - The file's theme gets the style's fonts and accent colours, and the layouts of python-pptx's 4:3 template are
+    widened, so slides the user adds still fit.
+  - Speaker notes go to each slide's notes page.
+- **Storage and API.**
+  - The content is the normalized deck as compact JSON. History hands it back to the model, which is how "sửa slide
+    3" works.
+  - Decks store their file in `document_assets.pptx`, a new nullable column added by manual migration; `docx` is
+    empty for decks.
+  - Export serves `pptx` and `pdf`. A `docx` export of a deck returns 400, and so does a manual `versions` edit.
+  - The conversation fork copies assets with an explicit column list. Its old positional insert would have broken
+    with the new column.
+- **UI.**
+  - The card shows the whole first slide with a "Xem slide · N slide" chip, and "Tải PDF" replaces "Sửa nội dung".
+  - The panel pages by "Slide N / M" and shows that slide's notes below it (`slideNotes`).
+- **Mock.** `__slide__` or `__slide__:academic` creates a six-slide sample (`slide_sample`).
+- **Not done:**
+  - manual slide editing;
+  - notes pages in the PDF;
+  - transitions;
+  - images from Imagine or the web;
+  - a check in real PowerPoint: none is installed on this PC, so the custom XML was only checked against the
+    schema's element order.
+- **Tests:** `backend/tests/test_presentations.py`, frontend `DocumentArtifactCard.test.tsx` and `DocumentPanel.test.tsx`.
 
 ### Imagine (image generation)
 

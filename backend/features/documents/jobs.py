@@ -95,6 +95,22 @@ def build_files(title, content, style, format, raw_images=None):
     return {'docx': docx, 'pdf': pdf, 'preview': preview, 'pages': pages, 'format': format}
 
 
+def build_presentation(content: str, raw_images=None):
+    """Dựng bài thuyết trình (JSON của slides.spec.Deck) thành PPTX, PDF cùng bố cục và ảnh slide đầu."""
+    from features.documents.slides import layout, pdf_out, pptx_out
+    from features.documents.slides.spec import load
+    from features.documents.slides.themes import THEMES
+    deck = load(content)
+    images = prepare_all(raw_images or {}, strict=True)
+    scenes = layout.build(deck, images)
+    pptx = pptx_out.render(scenes, deck.title, THEMES[deck.theme])
+    pdf = pdf_out.render(scenes, deck.title)
+    preview = render_page(pdf)
+    if sum(map(len, [pptx, pdf, preview])) > 12 * 1024 * 1024:
+        raise ValueError('Tệp xuất quá lớn. Hãy bớt ảnh hoặc chia nhỏ bài thuyết trình.')
+    return {'docx': b'', 'pptx': pptx, 'pdf': pdf, 'preview': preview, 'pages': len(scenes), 'format': 'pptx'}
+
+
 def export_file(format, title, content, style, raw_images=None):
     """Dựng một định dạng cho bản người dùng tự sửa. Ảnh không dùng được thì chỗ đó hiện thành chữ thay vì báo lỗi."""
     images = prepare_all(raw_images or {}, strict=False)

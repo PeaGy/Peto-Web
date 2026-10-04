@@ -12,6 +12,8 @@ openai
 pypdf==6.18.0
 defusedxml==0.7.1
 python-docx==1.2.0
+# slide PowerPoint (features/documents/slides); kéo theo XlsxWriter
+python-pptx==1.0.2
 reportlab==5.0.1
 markdown-it-py==4.2.0
 pypdfium2==5.13.0
