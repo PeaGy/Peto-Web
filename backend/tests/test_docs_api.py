@@ -51,6 +51,9 @@ def _attached(question):
     ('làm sao tải sơ đồ về máy', 'tro-chuyen'),
     ('tải slide về máy thế nào', 'lam-slide'),
     ('ghi chú thuyết trình xem ở đâu', 'lam-slide'),
+    ('tải file excel về máy thế nào', 'lam-bang-tinh'),
+    ('sửa bảng tính Peto đã tạo được không', 'lam-bang-tinh'),
+    ('Peto đọc file Excel được không', 'lam-bang-tinh'),
     ('xuất sơ đồ ra PDF được không', 'tro-chuyen'),
     ('vẽ tranh con mèo giúp mình', 'tao-anh'),
     ('Cài Peto Agent thế nào?', 'cai-agent'),
@@ -77,6 +80,7 @@ def test_context_finds_the_article_by_title_or_keyword(question, slug):
     # Nhờ vẽ sơ đồ là dùng tính năng, không phải hỏi cách dùng: lời dặn vẽ sơ đồ (persona.DIAGRAM_PROMPT) đã đủ.
     'Vẽ sơ đồ lớp cho hệ thống quản lý thư viện',
     'Kỹ năng thuyết trình trước đám đông',
+    'Hàm VLOOKUP trong Excel dùng thế nào',
     # "Đăng nhập" là ví dụ kinh điển của bài tập UML và lập trình, không phải câu hỏi về tài khoản Peto.
     'vẽ sơ đồ tuần tự đăng nhập',
     'vẽ use case đăng nhập và đăng ký',

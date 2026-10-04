@@ -12,6 +12,7 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from features.documents.reader import DOCX_MIME, decode_text
+from features.documents.workbook_reader import CFB_MAGIC, SPREADSHEET_MIMES, XLSM_MIME, XLSX_MIME
 
 from core.config import MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS, MAX_MEDIA_ATTACHMENTS, MAX_TOTAL_ATTACHMENT_BYTES, UPLOAD_DIR
 
@@ -50,6 +51,8 @@ EXT_MIME = {
     ".json": "application/json",
     ".pdf": "application/pdf",
     ".docx": DOCX_MIME,
+    ".xlsx": XLSX_MIME,
+    ".xlsm": XLSM_MIME,
     ".py": "text/x-python",
     ".js": "text/javascript",
     ".ts": "text/plain",
@@ -144,7 +147,7 @@ def classify(name: str, declared_mime: str, data: bytes) -> tuple[str, str]:
             f"«{filename}» không phải ảnh hợp lệ (chỉ nhận JPEG, PNG, WebP, GIF)"
         )
 
-    mime = declared if declared in TEXT_MIMES or declared in {"application/pdf", DOCX_MIME} else ""
+    mime = declared if declared in TEXT_MIMES or declared in {"application/pdf", DOCX_MIME, *SPREADSHEET_MIMES} else ""
     if not mime:
         mime = EXT_MIME.get(ext, "")
 
@@ -158,6 +161,17 @@ def classify(name: str, declared_mime: str, data: bytes) -> tuple[str, str]:
             raise AttachmentError(f"«{filename}» không phải Word DOCX hợp lệ; hãy xuất lại thành .docx")
         return "file", DOCX_MIME
 
+    if mime in SPREADSHEET_MIMES or ext in {".xlsx", ".xlsm"}:
+        if data.startswith(CFB_MAGIC):
+            raise AttachmentError(f"«{filename}» đang đặt mật khẩu hoặc là định dạng Excel cũ (.xls). Mở khóa, hoặc mở bằng "
+                                  "Excel rồi lưu thành .xlsx, rồi gửi lại nhé.")
+        if not data.startswith(b"PK\x03\x04"):
+            raise AttachmentError(f"«{filename}» không phải tệp Excel .xlsx hợp lệ; hãy mở bằng Excel rồi lưu lại thành .xlsx")
+        return "file", XLSM_MIME if ext == ".xlsm" or mime == XLSM_MIME else XLSX_MIME
+
+    if ext == ".xls" or declared == "application/vnd.ms-excel":
+        raise AttachmentError(f"«{filename}» là định dạng Excel cũ (.xls). Mở bằng Excel rồi lưu thành .xlsx để Peto đọc nhé.")
+
     if mime in TEXT_MIMES or ext in EXT_MIME:
         if not _is_probably_text(data):
             raise AttachmentError(f"«{filename}» không phải tệp chữ đọc được")
@@ -165,13 +179,13 @@ def classify(name: str, declared_mime: str, data: bytes) -> tuple[str, str]:
 
     raise AttachmentError(
         f"Không nhận loại tệp «{filename}». "
-        "Gửi ảnh (JPEG/PNG/WebP/GIF), PDF, Word (.docx) hoặc tệp chữ nhé."
+        "Gửi ảnh (JPEG/PNG/WebP/GIF), PDF, Word (.docx), Excel (.xlsx) hoặc tệp chữ nhé."
     )
 
 
 def is_media_attachment(kind: str, mime: str) -> bool:
-    """Ảnh, PDF, Word chiếm chỗ nặng hơn tệp chữ/code."""
-    return kind == "image" or mime in {"application/pdf", DOCX_MIME}
+    """Ảnh, PDF, Word, Excel chiếm chỗ nặng hơn tệp chữ/code."""
+    return kind == "image" or mime in {"application/pdf", DOCX_MIME, *SPREADSHEET_MIMES}
 
 
 def validate_batch(items: list[dict]) -> list[ValidatedAttachment]:
@@ -198,7 +212,7 @@ def validate_batch(items: list[dict]) -> list[ValidatedAttachment]:
             media += 1
             if media > MAX_MEDIA_ATTACHMENTS:
                 raise AttachmentError(
-                    f"Mỗi tin chỉ gửi tối đa {MAX_MEDIA_ATTACHMENTS} ảnh, PDF hoặc Word"
+                    f"Mỗi tin chỉ gửi tối đa {MAX_MEDIA_ATTACHMENTS} ảnh, PDF, Word hoặc Excel"
                 )
         out.append(ValidatedAttachment(name=name, mime=mime, kind=kind, data=data))
     return out

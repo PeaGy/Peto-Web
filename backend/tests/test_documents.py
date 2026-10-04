@@ -328,7 +328,7 @@ def test_fifth_image_is_rejected():
         {"name": f"anh{i}.png", "mime": "image/png", "data": PNG_1x1_B64}
         for i in range(5)
     ]
-    with pytest.raises(attachments.AttachmentError, match="ảnh, PDF hoặc Word"):
+    with pytest.raises(attachments.AttachmentError, match="ảnh, PDF, Word hoặc Excel"):
         attachments.validate_batch(items)
 
 

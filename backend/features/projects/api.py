@@ -53,7 +53,7 @@ async def upload(project_id: str, body: AttachmentIn, owner=Depends(current_owne
     except AttachmentError as error:
         raise HTTPException(400, str(error)) from None
     if file.kind == 'image':
-        raise HTTPException(400, 'Tài liệu dự án nhận PDF, DOCX và tệp chữ/code; ảnh có thể gửi trong hội thoại')
+        raise HTTPException(400, 'Tài liệu dự án nhận PDF, DOCX, Excel (.xlsx) và tệp chữ/code; ảnh có thể gửi trong hội thoại')
     await projects.check_file_capacity(owner, project_id, len(file.data))
     document = await read_document(file.data, file.mime)
     file_id = await projects.add_file(owner, project_id, file, document)

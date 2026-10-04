@@ -493,7 +493,7 @@ export default function App() {
           break;
         }
         if (isMediaFile(file) && next.filter((item) => isMediaFile(item.file)).length >= MAX_MEDIA_FILES) {
-          setError(`Mỗi tin chỉ gửi tối đa ${MAX_MEDIA_FILES} ảnh, PDF hoặc Word`);
+          setError(`Mỗi tin chỉ gửi tối đa ${MAX_MEDIA_FILES} ảnh, PDF, Word hoặc Excel`);
           continue;
         }
         if (file.size > MAX_FILE_BYTES) {

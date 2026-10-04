@@ -1,5 +1,6 @@
-import { fireEvent, render, screen } from '@testing-library/react';
-import { expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, expect, it, vi } from 'vitest';
+import { sheetGrid } from './sheetFixture';
 import DocumentArtifactCard from '../src/features/documents/DocumentArtifactCard';
 import type { DocumentArtifact } from '../src/shared/api/api';
 
@@ -35,4 +36,38 @@ it('bài thuyết trình hiện số slide, tải PPTX hoặc PDF, không có n�
   expect(screen.getByRole('link', { name: 'Tải PDF' }).getAttribute('href')).toBe('/api/documents/P1/export/pdf?version=2');
   expect(screen.getByRole('button', { name: /Xem slide/ }).textContent).toContain('6 slide');
   expect(screen.queryByRole('button', { name: 'Sửa nội dung' })).toBeNull();
+});
+
+afterEach(() => { vi.unstubAllGlobals(); });
+
+it('bảng tính hiện lưới thu nhỏ từ số liệu máy chủ, tải XLSX, đếm công thức và biểu đồ', async () => {
+  const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => sheetGrid });
+  vi.stubGlobal('fetch', fetchMock);
+  const open = vi.fn();
+  const sheet: DocumentArtifact = { id: 'S1', title: 'Bảng điểm', filename: 'Bảng điểm.xlsx', format: 'xlsx', style: 'sheet', pages: 2, version: 3 };
+  render(<DocumentArtifactCard artifact={sheet} onEdit={() => {}} onOpen={open} />);
+  expect(screen.getByRole('region', { name: 'Bảng tính Bảng điểm.xlsx' })).toBeTruthy();
+  expect(screen.getByRole('status').textContent).toContain('Đang mở bảng tính');
+  expect(await screen.findByText('Nguyễn Minh Anh')).toBeTruthy();
+  expect(fetchMock).toHaveBeenCalledWith('/api/documents/S1/sheet?version=3', expect.objectContaining({ signal: expect.any(AbortSignal) }));
+  expect(screen.getByText('7,8').className).toBe('n');
+  expect(screen.getByText('Điểm TB')).toBeTruthy();
+  expect(screen.getByText(/XLSX · 2 trang tính · 5 công thức · 2 biểu đồ/)).toBeTruthy();
+  expect(screen.getByRole('link', { name: 'Tải Bảng điểm.xlsx' }).getAttribute('href')).toBe('/api/documents/S1/export/xlsx?version=3');
+  fireEvent.click(screen.getByRole('button', { name: /Xem bảng tính/ }));
+  expect(open).toHaveBeenCalledWith(sheet);
+  expect(screen.queryByRole('button', { name: 'Sửa nội dung' })).toBeNull();
+});
+
+it('bảng tính lỗi tải số liệu vẫn giữ nút tải và thử lại được', async () => {
+  const fetchMock = vi.fn().mockResolvedValueOnce({ ok: false, status: 500, json: async () => ({ detail: 'Lỗi máy chủ' }) })
+    .mockResolvedValue({ ok: true, status: 200, json: async () => sheetGrid });
+  vi.stubGlobal('fetch', fetchMock);
+  const sheet: DocumentArtifact = { id: 'S2', title: 'Chi tiêu', filename: 'Chi tiêu.xlsx', format: 'xlsx', style: 'sheet', pages: 1, version: 1 };
+  render(<DocumentArtifactCard artifact={sheet} onEdit={() => {}} onOpen={() => {}} />);
+  expect((await screen.findByRole('alert')).textContent).toContain('Chưa mở được');
+  expect(screen.getByRole('link', { name: 'Tải Chi tiêu.xlsx' })).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Thử lại' }));
+  await waitFor(() => expect(screen.getByText('Trần Gia Bảo')).toBeTruthy());
+  expect(fetchMock).toHaveBeenCalledTimes(2);
 });

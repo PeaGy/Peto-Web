@@ -15,6 +15,8 @@ from pypdf import PdfReader, apply_configuration
 
 DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 PDF_MIME = "application/pdf"
+# Bảng tính Excel đọc ở workbook_reader (cùng tiến trình con, cùng giới hạn thời gian).
+from features.documents.workbook_reader import SPREADSHEET_MIMES, XLSM_MIME, XLSX_MIME, read_workbook  # noqa: E402
 # 2 (29/9/2026): tệp chữ dài giữ phần đầu, phần cuối và các đoạn có lỗi thay vì chỉ phần đầu. Đổi số này thì tệp cũ
 # được đọc lại ở lượt sau (features.chat.history._read_legacy_documents).
 # 3 (1/10/2026): thêm chữ OCR theo trang và số trang đã đọc.
@@ -27,8 +29,8 @@ FULL_TEXT_CHARS = 8_000_000
 
 # Tệp chữ dài (thường là log): lỗi mới nhất nằm ở cuối, nên phần đọc sẵn gồm phần đầu, các đoạn có dấu hiệu dưới đây ở
 # giữa, và phần cuối. Tỉ lệ là phần của giới hạn chữ; phần cuối nhận phần còn lại.
-SIGNAL = re.compile(r"error|exception|traceback|fatal|critical|panic|warn|fail|denied|refused|timed? ?out|lỗi|cảnh báo",
-                    re.IGNORECASE)
+SIGNAL = re.compile(r"error|exception|traceback|fatal|critical|panic|warn|fail|denied|refused|timed? ?out|lỗi|cảnh báo"
+                    r"|#(?:DIV/0!|N/A|VALUE!|REF!|NAME\?|NUM!|NULL!)", re.IGNORECASE)
 HEAD_SHARE = 0.15
 SIGNAL_SHARE = 0.35
 # Số dòng lấy thêm trước và sau mỗi dòng có lỗi.
@@ -323,6 +325,8 @@ def extract_document(data: bytes, mime: str, max_chars: int, max_pages: int) -> 
                 return _pdf(data, max_chars, max_pages)
         if mime == DOCX_MIME:
             return _docx(data, max_chars)
+        if mime in SPREADSHEET_MIMES:
+            return read_workbook(data, max_chars)
         text = decode_text(data)
         if len(text.strip()) <= max_chars:
             text = text.strip()
@@ -352,11 +356,11 @@ async def read_document(data: bytes, mime: str) -> dict:
 
 
 async def read_full_document(data: bytes, mime: str, cached: dict | None = None) -> dict:
-    """Toàn bộ chữ của tệp cho công cụ tìm/đọc: tệp chữ giữ nguyên từng dòng; PDF và Word đọc lại trong tiến trình
-    riêng với giới hạn chữ nới rộng, giới hạn trang và thời gian như bộ đọc thường."""
+    """Toàn bộ chữ của tệp cho công cụ tìm/đọc: tệp chữ giữ nguyên từng dòng; PDF, Word và Excel đọc lại trong tiến
+    trình riêng với giới hạn chữ nới rộng, giới hạn trang và thời gian như bộ đọc thường."""
     from core.config import DOCUMENT_TIMEOUT, MAX_DOCUMENT_PAGES
 
-    if mime not in (PDF_MIME, DOCX_MIME):
+    if mime not in (PDF_MIME, DOCX_MIME, *SPREADSHEET_MIMES):
         try:
             text = await anyio.to_thread.run_sync(decode_text, data)
         except ValueError:
@@ -393,4 +397,5 @@ def public_document(raw) -> dict | None:
     if cached is None:
         return None
     return {key: cached[key] for key in ("status", "notice", "characters", "pages", "pages_processed",
-                                        "pages_read", "ocr_pages", "reading_method") if key in cached}
+                                        "pages_read", "ocr_pages", "reading_method", "sheets", "sheets_read",
+                                        "rows") if key in cached}

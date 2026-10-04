@@ -8,8 +8,12 @@ import anyio
 from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from features.documents.export import TOC_LEVELS, clean_text, image_numbers, MAX_CONTENT, parse_blocks
-from features.documents.jobs import TOOL_WAIT, RenderBusy, build_files, build_presentation, document_filename, render_queue
+from features.documents.jobs import (TOOL_WAIT, RenderBusy, build_files, build_presentation, build_spreadsheet,
+                                     document_filename, render_queue, sheet_today)
 from features.documents import images as document_images
+from features.documents.sheets import spec as sheet_spec
+from features.documents.sheets.spec import SCHEMA as SPREADSHEET_SCHEMA
+from features.documents.sheets.view import summary as sheet_summary
 from features.documents.slides.spec import SCHEMA as PRESENTATION_SCHEMA, DeckInput, image_numbers as slide_images, normalize, plain_text
 from storage import documents as document_store
 
@@ -150,4 +154,50 @@ class DocumentSession:
             return {'error': str(error.detail) if isinstance(error, HTTPException) else str(error)}
         except Exception:
             logger.exception('Không tạo được bài thuyết trình')
+            return {'error': 'Chưa tạo được tệp. Không nói đã tạo xong; báo người dùng thử lại.'}
+
+    async def tabulate(self, arguments: str):
+        """Công cụ create_spreadsheet: kiểm tra từng ô, tính công thức, ghi XLSX và lưu như một tài liệu của hội thoại."""
+        try:
+            if not isinstance(arguments, str) or len(arguments) > 300_000:
+                raise ValueError('Tham số tạo bảng tính quá lớn.')
+            book = sheet_spec.normalize(sheet_spec.WorkbookInput.model_validate_json(arguments))
+            if _looks_like_unaccented_vietnamese(book.title, sheet_spec.plain_text(book)):
+                raise ValueError('Nội dung tiếng Việt đang bị gửi không dấu. Hãy gọi lại create_spreadsheet với chữ tiếng Việt '
+                                 'đầy đủ dấu; không tự đoán hoặc bỏ qua lỗi này.')
+            content = book.to_json()
+            key = ('xlsx', content)
+            if key in self._completed: return self._completed[key]
+            if len(self.created) >= 2: raise ValueError('Mỗi lượt chỉ tạo tối đa hai tài liệu.')
+
+            def build():
+                prepared = sheet_spec.prepare(book, sheet_today())
+                return build_spreadsheet(content, prepared), sheet_summary(prepared)
+
+            try:
+                async with render_queue.slot(TOOL_WAIT):
+                    files, results = await anyio.to_thread.run_sync(build)
+                    with anyio.CancelScope(shield=True):
+                        draft = await document_store.save_document(self.owner, self.conversation_id, book.title, content,
+                                                                   style='sheet', assets=files)
+                        artifact = {k: draft[k] for k in ('id', 'title', 'version', 'style')}
+                        artifact.update(format='xlsx', filename=document_filename(book.title, 'xlsx'), pages=files['pages'])
+                        self.created.append(artifact)
+                        result = {'ok': True, 'artifact': artifact, 'instruction': (
+                            'Bảng tính đã tạo và lưới xem tự hiển thị trong chat. Trả lời ngắn: các trang tính, cột nào tính bằng '
+                            'công thức gì, biểu đồ gì; số liệu nêu ra lấy từ results. Không chép lại cả bảng, không tự viết '
+                            'đường dẫn.')}
+                        if results:
+                            result['results'] = results
+                        self._completed[key] = result
+                        return result
+            except RenderBusy:
+                raise ValueError('Peto đang xuất tài liệu khác. Hãy báo người dùng thử lại sau vài giây.') from None
+        except ValidationError as error:
+            details = '; '.join(f"{'.'.join(str(part) for part in item['loc'])}: {item['msg']}" for item in error.errors()[:4])
+            return {'error': f'Tham số chưa đúng lược đồ ({details}). Sửa rồi gọi lại create_spreadsheet.'}
+        except (ValueError, HTTPException) as error:
+            return {'error': str(error.detail) if isinstance(error, HTTPException) else str(error)}
+        except Exception:
+            logger.exception('Không tạo được bảng tính')
             return {'error': 'Chưa tạo được tệp. Không nói đã tạo xong; báo người dùng thử lại.'}

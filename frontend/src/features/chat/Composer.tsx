@@ -1,12 +1,13 @@
 import { useRef, useState, type RefObject } from "react";
 import ComposerMenu, { type RoleplayOption } from "./ComposerMenu";
 import EffortMenu from "./EffortMenu";
+import { isSpreadsheetFile } from "./attachments";
 import { FileGlyph, formatSize, type DraftFile } from "./files";
 import ModelMenu from "./ModelMenu";
 import type { Effort, ModelOption, Persona, WebSearchMode } from "../../shared/api/api";
 
 const ACCEPT =
-  "image/jpeg,image/png,image/webp,image/gif,.txt,.md,.csv,.json,.pdf,.docx,.py,.js,.ts,.tsx,.jsx,.css,.html,.xml,.yml,.yaml,.rs,.go,.java,.c,.cpp,.h,.sql,.log";
+  "image/jpeg,image/png,image/webp,image/gif,.txt,.md,.csv,.json,.pdf,.docx,.xlsx,.xlsm,.py,.js,.ts,.tsx,.jsx,.css,.html,.xml,.yml,.yaml,.rs,.go,.java,.c,.cpp,.h,.sql,.log";
 
 export function SendIcon() {
   return (
@@ -197,6 +198,8 @@ export default function Composer({
       </div>
       {files.some((item) => /\.pdf$/i.test(item.file.name) || item.file.type === "application/pdf") &&
         <p className="composer-note">Peto đọc chữ và dẫn số trang trong PDF, nhận dạng cả trang scan khi máy chủ có OCR. Chữ từ ảnh có thể nhận sai; kết quả đọc sẽ hiện dưới tệp.</p>}
+      {files.some((item) => isSpreadsheetFile(item.file)) &&
+        <p className="composer-note">Peto đọc dữ liệu, công thức và kết quả đã lưu trong tệp Excel; chưa xem được biểu đồ, hình ảnh và màu ô.</p>}
     </form>
   );
 }

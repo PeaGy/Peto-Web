@@ -51,6 +51,8 @@
 .slide-notes h3 { margin: 0 0 4px; color: var(--muted); font-size: 11px; font-weight: 600; }
 .slide-notes p { margin: 0; font-size: 13px; line-height: 1.55; white-space: pre-wrap; }
 a.document-panel-edit { text-decoration: none; }
+/* Bảng tính không có hàng lật trang: chọn phiên bản nằm ngay trên thanh công cụ. */
+.document-panel-version { flex-shrink: 0; min-width: 0; max-width: 130px; border: 1px solid var(--line); border-radius: 7px; padding: 6px; font: inherit; font-size: 11px; color: var(--muted); background: var(--bg); }
 @media (max-width: 1400px) and (min-width: 1101px) {
   .document-panel { flex-basis: 57%; width: 57%; }
   .document-file-list { flex-basis: 160px; width: 160px; }

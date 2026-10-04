@@ -29,4 +29,12 @@ describe('trạng thái đọc tài liệu', () => {
     draw({status: 'ready', notice: 'Đã đọc lớp chữ.', characters: 50, pages: 2});
     expect(screen.getByText('Đã đọc chữ · 2 trang')).toBeTruthy();
   });
+  it('bảng tính Excel đếm trang tính, nêu số trang tính chưa đọc', () => {
+    draw({status: 'ready', notice: 'Đã đọc 2 trang tính, 14 hàng có dữ liệu.', characters: 900, sheets: 2, sheets_read: 2, rows: 14});
+    expect(screen.getByText('Đã đọc chữ · 2 trang tính')).toBeTruthy();
+  });
+  it('bảng tính quá lớn chỉ đọc một phần thì ghi rõ', () => {
+    draw({status: 'partial', notice: 'Bảng tính quá lớn: 3 trang tính sau chưa đọc.', characters: 9000, sheets: 33, sheets_read: 30, rows: 900});
+    expect(screen.getByText('Đọc được một phần · 30/33 trang tính')).toBeTruthy();
+  });
 });

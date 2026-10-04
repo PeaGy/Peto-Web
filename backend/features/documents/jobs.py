@@ -111,6 +111,30 @@ def build_presentation(content: str, raw_images=None):
     return {'docx': b'', 'pptx': pptx, 'pdf': pdf, 'preview': preview, 'pages': len(scenes), 'format': 'pptx'}
 
 
+def sheet_today():
+    """Ngày hôm nay cho hàm TODAY() của bảng tính, theo múi giờ mặc định của máy chủ."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    from core.config import DEFAULT_TIMEZONE
+    return datetime.now(ZoneInfo(DEFAULT_TIMEZONE)).date()
+
+
+def prepare_spreadsheet(content: str):
+    """Đọc lại và tính bảng tính đã lưu (JSON của sheets.spec.Workbook)."""
+    from features.documents.sheets.spec import load, prepare
+    return prepare(load(content), sheet_today())
+
+
+def build_spreadsheet(content: str, prepared=None):
+    """Dựng tệp XLSX của bảng tính; không có PDF hay ảnh xem trước vì lưới xem dựng từ số liệu (/sheet)."""
+    from features.documents.sheets import xlsx_out
+    prepared = prepared or prepare_spreadsheet(content)
+    xlsx = xlsx_out.render(prepared)
+    if len(xlsx) > 8 * 1024 * 1024:
+        raise ValueError('Tệp xuất quá lớn. Hãy chia nhỏ bảng tính.')
+    return {'docx': b'', 'pdf': b'', 'preview': b'', 'xlsx': xlsx, 'pages': len(prepared.book.sheets), 'format': 'xlsx'}
+
+
 def export_file(format, title, content, style, raw_images=None):
     """Dựng một định dạng cho bản người dùng tự sửa. Ảnh không dùng được thì chỗ đó hiện thành chữ thay vì báo lỗi."""
     images = prepare_all(raw_images or {}, strict=False)

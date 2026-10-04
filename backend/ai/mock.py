@@ -176,6 +176,59 @@ def slide_sample(theme: str) -> dict:
     ]}
 
 
+def sheet_sample(kind: str = 'diem') -> dict:
+    """Bảng tính mẫu cho "__excel__" (bảng điểm có thống kê) và "__excel__:chitieu" (chi tiêu: tiền, ngày, phần trăm)."""
+    if kind == 'chitieu':
+        spend = "'Chi tiêu tháng 10'"
+        items = [('2026-10-01', 'Tiền nhà tháng 10', 'Nhà ở', '3500000'), ('2026-10-02', 'Đi chợ', 'Ăn uống', '420000'),
+                 ('2026-10-03', 'Xăng xe', 'Đi lại', '150000'), ('2026-10-05', 'Cà phê với bạn', 'Ăn uống', '90000'),
+                 ('2026-10-07', 'Điện nước', 'Nhà ở', '620000'), ('2026-10-08', 'Sách tham khảo', 'Học tập', '280000'),
+                 ('2026-10-10', 'Đi chợ', 'Ăn uống', '510000'), ('2026-10-12', 'Vé xe buýt tháng', 'Đi lại', '200000')]
+        groups = ['Nhà ở', 'Ăn uống', 'Đi lại', 'Học tập']
+        return {'title': 'Chi tiêu tháng 10', 'sheets': [
+            {'name': 'Chi tiêu tháng 10', 'title': 'Chi tiêu cá nhân tháng 10/2026',
+             'columns': [{'header': 'Ngày', 'format': 'date', 'decimals': None},
+                         {'header': 'Khoản chi', 'format': 'text', 'decimals': None},
+                         {'header': 'Nhóm', 'format': 'text', 'decimals': None},
+                         {'header': 'Số tiền', 'format': 'vnd', 'decimals': None}],
+             'rows': [list(item) for item in items], 'total_row': ['', 'Tổng cộng', '', '=SUM(D2:D9)'], 'charts': []},
+            {'name': 'Theo nhóm', 'title': None,
+             'columns': [{'header': 'Nhóm', 'format': 'text', 'decimals': None},
+                         {'header': 'Số tiền', 'format': 'vnd', 'decimals': None},
+                         {'header': 'Tỉ lệ', 'format': 'percent', 'decimals': 1}],
+             'rows': [[group, f'=SUMIF({spend}!C$2:C$9,A{row},{spend}!D$2:D$9)', f'=B{row}/B$6']
+                      for row, group in enumerate(groups, start=2)],
+             'total_row': ['Tổng', '=SUM(B2:B5)', '=SUM(C2:C5)'],
+             'charts': [{'type': 'pie', 'title': 'Chi tiêu theo nhóm', 'category_column': 'A', 'value_columns': ['B']}]},
+        ]}
+    students = [('Nguyễn Minh Anh', '8', '7.5', '8'), ('Trần Gia Bảo', '9', '8.5', '9'), ('Lê Thu Hà', '6.5', '7', '6'),
+                ('Phạm Quốc Huy', '7', '6', '5.5'), ('Hoàng Ngọc Lan', '10', '9', '9.5'), ('Vũ Đức Minh', '5', '4.5', '4'),
+                ('Đặng Bảo Ngọc', '8.5', '8', '7.5'), ('Bùi Thanh Phong', '7.5', '7', '7'), ('Đỗ Khánh Linh', '9', '9', '8.5'),
+                ('Ngô Hải Nam', '6', '5.5', '6.5')]
+    score = {'format': 'number', 'decimals': 1}
+    rows = [[str(index), name, a, b, c, f'=ROUND((C{row}+D{row}*2+E{row}*3)/6,1)',
+             f'=IF(F{row}>=8,"Giỏi",IF(F{row}>=6.5,"Khá",IF(F{row}>=5,"Trung bình","Yếu")))']
+            for index, (row, (name, a, b, c)) in enumerate(enumerate(students, start=2), start=1)]
+    return {'title': 'Bảng điểm lớp 10A1 - Học kỳ I', 'sheets': [
+        {'name': 'Bảng điểm', 'title': 'Bảng điểm lớp 10A1 - Học kỳ I',
+         'columns': [{'header': 'STT', 'format': 'number', 'decimals': 0}, {'header': 'Họ và tên', 'format': 'text', 'decimals': None},
+                     {'header': 'Điểm 15 phút', **score}, {'header': 'Điểm 1 tiết', **score},
+                     {'header': 'Điểm thi HK', **score}, {'header': 'Điểm TB', **score},
+                     {'header': 'Xếp loại', 'format': 'text', 'decimals': None}],
+         'rows': rows, 'total_row': ['', 'Trung bình lớp', '=AVERAGE(C2:C11)', '=AVERAGE(D2:D11)', '=AVERAGE(E2:E11)',
+                                     '=AVERAGE(F2:F11)', ''], 'charts': []},
+        {'name': 'Thống kê', 'title': 'Thống kê xếp loại lớp 10A1',
+         'columns': [{'header': 'Xếp loại', 'format': 'text', 'decimals': None},
+                     {'header': 'Số học sinh', 'format': 'number', 'decimals': 0},
+                     {'header': 'Tỉ lệ', 'format': 'percent', 'decimals': 0}],
+         'rows': [[level, f"=COUNTIF('Bảng điểm'!G$2:G$11,A{row})", f'=B{row}/B$6']
+                  for row, level in enumerate(['Giỏi', 'Khá', 'Trung bình', 'Yếu'], start=2)],
+         'total_row': ['Tổng', '=SUM(B2:B5)', '=SUM(C2:C5)'],
+         'charts': [{'type': 'column', 'title': 'Số học sinh theo xếp loại', 'category_column': 'A', 'value_columns': ['B']},
+                    {'type': 'pie', 'title': 'Tỉ lệ xếp loại', 'category_column': 'A', 'value_columns': ['B']}]},
+    ]}
+
+
 _CHUNK_DELAY = 0.035
 
 _GREETING = (
@@ -334,6 +387,19 @@ class MockProvider(ChatProvider):
                 yield 'Đã tạo bài thuyết trình mẫu **Hệ thống quản lý thư viện số**, mỗi slide có ghi chú cho người thuyết trình.'
             else:
                 yield 'Chưa tạo được bài thuyết trình: ' + result['error']
+            return
+        # "__excel__" hay "__excel__:chitieu": tạo bảng tính mẫu bằng create_spreadsheet, để chạy thử lưới xem.
+        workbook = re.search(r'__excel__(?::(diem|chitieu))?', last_user)
+        if session and workbook:
+            sample = sheet_sample(workbook.group(1) or 'diem')
+            yield StreamChunk('document_status', 'Đang tính bảng tính…')
+            result = await session.tabulate(json.dumps(sample, ensure_ascii=False))
+            yield StreamChunk('document_status', '')
+            if result.get('ok'):
+                yield StreamChunk('artifact', artifact=result['artifact'])
+                yield f'Đã tạo bảng tính mẫu **{sample["title"]}** với công thức thật và biểu đồ.'
+            else:
+                yield 'Chưa tạo được bảng tính: ' + result['error']
             return
         lowered = last_user.casefold()
         # Only the offline mock uses keyword routing. The real provider chooses its tool.

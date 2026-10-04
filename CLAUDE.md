@@ -318,6 +318,32 @@ original page numbers and identify OCR; notices expose read/total counts and acc
 Missing/disabled OCR and encrypted/broken/oversized documents retain honest reading status.
 Do not promise image/chart/layout understanding for PDF/DOCX or legacy .doc support.
 
+**Excel uploads** (`features/documents/workbook_reader.py`, 2026-10-04, the owner's next step after `create_spreadsheet`).
+`.xlsx` and `.xlsm` are accepted as attachments (magic bytes `PK`, counted as media like PDF/Word). An OLE container
+(`CFB_MAGIC`: legacy `.xls` or a password-protected workbook) and `.xls` are refused at upload with a Vietnamese hint
+to save as `.xlsx`.
+- **No new dependency.** Parsing uses `zipfile` and defusedxml `iterparse` (DTD forbidden), streaming each part through
+  `_Limited` (48 MB per part, 8 MB for workbook/styles/rels; declared total 192 MB, 5000 entries). Reading stops at
+  50,000 rows per sheet, 256 columns, 400,000 cells, 30 sheets and 200,000 shared strings, and the notice says what was
+  skipped. It runs in the document reader's worker process under the same timeout. Macros never run, formulas are
+  never recalculated: values are the results Excel stored.
+- **Text for the model**, one row per line so the attachment tools work: a workbook line (sheet list, chart sheets,
+  visible defined names), then per sheet a header (area, row count, hidden), merged ranges, formulas grouped into
+  copied-down/copied-right runs by relative pattern (`relative_pattern`), then `Hàng N | A: … | B: …`.
+  - Values use the `create_spreadsheet` cell syntax: machine numbers, percents rounded to the format's decimals, ISO
+    dates (1900 and 1904 systems), `TRUE`/`FALSE`, error codes. So Peto can rebuild an uploaded workbook with the tool;
+    the prompt says colours, custom formats and charts of the original are lost.
+  - Shared formulas are expanded by shifting relative references (`shift_formula`); formulas without a stored result
+    show `(chưa có kết quả)` and are counted in the notice.
+- **Long workbooks** use `workbook_reader.condense`, not the log condenser: shape-collapsing would erase data rows,
+  which all look alike. It keeps every header and formula line and, per sheet, head and tail rows (totals live at the
+  end), with `[… bỏ qua dòng a–b của tệp (hàng Excel x–y) …]` markers that cite the full text's line numbers for
+  `read_attachment_lines`.
+- `public_document` exposes `sheets`, `sheets_read` and `rows`; the chat shows "· N trang tính" (or `k/N`). The composer
+  shows a note about what Excel reading covers. Excel error codes count as signal lines for the log condenser too.
+- **Tests:** `tests/test_workbook_reader.py` (XlsxWriter-built workbooks plus hand-built packages for shared formulas,
+  missing addresses, DTDs and oversized parts), frontend `DocumentReading.test.tsx` and an Excel case in `App.test.tsx`.
+
 The `attachments.document` JSON cache stores text plus version/status/notice and counts.
 Version 3 caches OCR text per page privately; tools reuse it when the engine signature matches. Old cache versions
 are lazily reread; a changed engine path/mtime, enabled flag, languages or page limit triggers rereading scanned
@@ -372,7 +398,7 @@ preview is that PDF, so a feature must exist in both renderers or the preview mi
 New Roman / Noto Serif) and `report` (Letter, Arial / Noto Sans).
 
 On 2026-09-30 the owner picked a Word/PDF upgrade as the first step of the document roadmap. Mermaid diagrams in chat
-came second and PowerPoint third (sections below); Excel is next.
+came second, PowerPoint third and Excel fourth (sections below).
 - **Real lists.** Every Markdown list gets its own Word numbering definition (`_numbering_level`), so numbers restart per
   list, honour `start`, and Word renumbers when the user edits. Nested ordered lists go 1. → a. → i., bullets • → –.
   The PDF draws the same labels (`list_label`) at the same hanging indents (`list_indent`). Later paragraphs of an item
@@ -531,6 +557,72 @@ slide editor in v1, also the owner's call: changes go through chat and create a 
   - a check in real PowerPoint: none is installed on this PC, so the custom XML was only checked against the
     schema's element order.
 - **Tests:** `backend/tests/test_presentations.py`, frontend `DocumentArtifactCard.test.tsx` and `DocumentPanel.test.tsx`.
+
+### Spreadsheets in chat (`create_spreadsheet`)
+
+The fourth step of the document roadmap, built on 2026-10-04. The owner picked "Lưới Excel" from three live variants
+(`frontend/prototypes/sheets`, deleted after the pick; the others were print pages like Word/PDF and a reading table
+with formulas per column). The card shows a light mini grid of the first sheet; the panel shows an Excel-like grid.
+- **Tool.** `features/documents/sheets/spec.py` holds the strict schema. A workbook has a title and 1–5 sheets, and each
+  sheet is one table at A1: row 1 holds the headers, `rows[0]` is row 2, and the optional total row follows the last
+  data row. This fixed addressing is what lets the model write correct formulas.
+  - Columns have a format (text, number, percent, vnd, usd, date) and optional decimals. Cells are strings: text,
+    machine numbers, `8%`, ISO dates or formulas.
+  - `parse_cell` refuses malformed numbers (`1.500.000`, `7,5`), percents without `%` and non-ISO dates, naming the
+    cell. Words in number columns (`Vắng`) stay text.
+  - Limits: 20 columns, 300 data rows, 4000 cells, 4 charts per sheet and 8 per workbook; pies at most 10 rows.
+  - `DocumentSession.tabulate` mirrors `present`: two artifacts per turn, idempotent, rejects unaccented Vietnamese.
+    Its result carries `results` (total-row values, `view.summary`), so Peto quotes computed numbers instead of
+    redoing the arithmetic.
+- **Formulas** (`formula.py`, `engine.py`). Formulas are tokenized and parsed into a tree, never evaluated as code.
+  - Only the functions in `FUNCTIONS` are accepted: Excel 2007-era names, so no `_xlfn.` prefix is needed. `;`
+    separators become `,` when no `,` is present, smart quotes are normalized, and the canonical text (uppercase names
+    and references, quoted sheet names) is what the file and the stored JSON hold.
+  - XlsxWriter stores 0 as each formula's cached result, so phone previewers and LibreOffice (which by default does
+    not recalculate Excel files) would show 0. `engine.compute` evaluates every formula by Excel's rules (coercion,
+    15-significant-digit rounding and comparison, COUNTIF criteria with wildcards, 1900 date serials from 01/03/1900)
+    in topological order, so long chains never recurse. The writer stores the results, and XlsxWriter's
+    `fullCalcOnLoad` makes Excel recalculate on open.
+  - Any error result, a cycle, a reference outside the table or to an unknown sheet is refused with the cell, the
+    formula and a hint, so the model fixes it (IFERROR when an error is intended).
+  - Approximate VLOOKUP/HLOOKUP/MATCH on unsorted or mixed data is refused (`#UNSORTED`, never written to a file):
+    Excel's binary search gives unpredictable results there. Range arithmetic (`A2:A9*B2:B9`) is refused too;
+    SUMPRODUCT and SUMIFS cover it.
+  - Whole-column references are lazy: functions walk only the used area and count blank cells arithmetically, so
+    COUNTBLANK(A:A) matches Excel.
+- **File** (`xlsx_out.py`, `view.py`).
+  - The header row is tinted with a teal rule, frozen, with autofilter. Data rows are banded by conditional formatting,
+    which survives sorting. The total row is bold.
+  - Number formats such as `#,##0 "₫"` follow the user's locale in Excel; the grid always shows Vietnamese style
+    (`view.display`). Column widths come from display lengths, with room for the filter button, capped at 50 with wrap.
+  - Print setup: A4, fit to width, repeated header row, the sheet title in the page header, page numbers in the footer.
+  - Charts are native (column, bar, line, pie), anchored right of the table (8 columns or fewer) or below it. Their
+    value axes are fixed by `view.nice_axis`, shared with the grid's SVG charts.
+- **Storage and API.**
+  - The content is the normalized workbook as compact JSON with canonical formulas. History hands it back to the
+    model for revisions.
+  - Files live in `document_assets.xlsx`, a new nullable column added by manual migration. `docx`, `pdf` and `preview`
+    are empty, and `pages` is the sheet count.
+  - `GET /api/documents/{id}/sheet?version=` recomputes the grid from the stored content (display strings, formulas,
+    widths, charts). Export serves only `xlsx`, preview returns 404, a manual `versions` edit returns 400, and the
+    conversation fork copies `xlsx`.
+- **UI.**
+  - `SheetPreview.tsx` (main chunk): `useSheet` fetches `/sheet` per card, with no cache shared across accounts. The
+    card shows the first rows as a light mini grid and counts formulas and charts.
+  - `SheetView.tsx` (lazy, `sheetViewLazy.ts`): formula bar (name box, formula, value chip, "Công thức" toggle or
+    Ctrl+`), sticky letters, row numbers and header row, arrow keys and Enter to move, sheet tabs. It opens on the first
+    formula cell; only keyboard moves scroll, so opening never hides column A. `SheetChart.tsx` draws the charts as SVG
+    at their anchor cells, measured after layout.
+  - Opening a workbook from its card collapses the panel's file list once, to give the grid room.
+- **Mock.** `__excel__` (grade book with statistics and two charts) and `__excel__:chitieu` (dates, VND, SUMIF,
+  percent, pie).
+- **Not done:**
+  - editing an uploaded .xlsx in place (uploads are read, see "Excel uploads"; Peto rebuilds them with this tool);
+  - conditional formatting rules, merged title rows, PDF export, manual cell editing;
+  - array formulas and newer functions (XLOOKUP, IFS, TEXT…);
+  - a check in real Excel or LibreOffice: neither is installed on this PC, so the XML was inspected instead.
+- **Tests:** `backend/tests/test_spreadsheets.py`, frontend `DocumentArtifactCard.test.tsx` and `DocumentPanel.test.tsx`
+  (`tests/sheetFixture.ts`).
 
 ### Imagine (image generation)
 

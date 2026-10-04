@@ -3,12 +3,14 @@ from typing import Literal
 from urllib.parse import quote
 import anyio
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
 from features.accounts.auth import current_owner
 from storage import documents as store
 from features.documents.export import MAX_CONTENT, clean_text, image_numbers, parse_blocks
-from features.documents.jobs import EXPORT_WAIT, PREVIEW_WAIT, RenderBusy, build_presentation, export_file, render_page, render_queue
+from features.documents.jobs import (EXPORT_WAIT, PREVIEW_WAIT, RenderBusy, build_presentation, build_spreadsheet, export_file,
+                                     prepare_spreadsheet, render_page, render_queue)
+from features.documents.sheets.view import grid as sheet_grid
 from features.documents.slides.spec import image_numbers as slide_images, load as load_deck
 from features.documents import images as document_images
 
@@ -59,6 +61,8 @@ async def revise(document_id: str, draft: Revision, owner: str = Depends(current
     current = await store.get_document(owner, document_id)
     if current.get('format') == 'pptx':
         raise HTTPException(400, 'Bài thuyết trình chưa sửa tay được. Nhờ Peto sửa trong chat, Peto sẽ tạo phiên bản mới.')
+    if current.get('format') == 'xlsx':
+        raise HTTPException(400, 'Bảng tính chưa sửa tay được. Nhờ Peto sửa trong chat, Peto sẽ tạo phiên bản mới.')
     title, content = validate(draft)
     return await store.save_document(owner, None, title, content, document_id, draft.base_version, style=draft.style)
 
@@ -70,13 +74,15 @@ async def delete(document_id: str, owner: str = Depends(current_owner)):
 
 
 @router.get('/{document_id}/export/{format}')
-async def export(document_id: str, format: Literal['docx', 'pdf', 'pptx'], version: int = Query(ge=1), owner: str = Depends(current_owner)):
+async def export(document_id: str, format: Literal['docx', 'pdf', 'pptx', 'xlsx'], version: int = Query(ge=1), owner: str = Depends(current_owner)):
     draft = await store.get_document(owner, document_id, version)
     assets = await store.get_assets(owner, document_id, version)
     if draft.get('format') == 'pptx':
         return await export_presentation(owner, draft, assets, version, format)
-    if format == 'pptx':
-        raise HTTPException(400, 'Tài liệu này không có bản PowerPoint.')
+    if draft.get('format') == 'xlsx':
+        return await export_spreadsheet(draft, assets, version, format)
+    if format in ('pptx', 'xlsx'):
+        raise HTTPException(400, 'Tài liệu này không có bản PowerPoint.' if format == 'pptx' else 'Tài liệu này không có bản Excel.')
     if assets:
         data = assets[format]
         return file_response(draft, version, format, data)
@@ -112,10 +118,40 @@ async def export_presentation(owner, draft, assets, version, format):
     return file_response(draft, version, format, files[format])
 
 
+async def export_spreadsheet(draft, assets, version, format):
+    """Bảng tính chỉ tải được XLSX; dựng lại khi tệp đã lưu bị thiếu."""
+    if format != 'xlsx':
+        raise HTTPException(400, 'Bảng tính chỉ tải được tệp XLSX.')
+    if assets and assets.get('xlsx'):
+        return file_response(draft, version, format, assets['xlsx'])
+    try:
+        async with render_queue.slot(EXPORT_WAIT):
+            files = await anyio.to_thread.run_sync(build_spreadsheet, draft['content'])
+    except RenderBusy:
+        raise HTTPException(429, 'Peto đang xuất tài liệu khác. Bạn thử lại sau vài giây nhé.') from None
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
+    return file_response(draft, version, format, files['xlsx'])
+
+
+@router.get('/{document_id}/sheet')
+async def sheet(document_id: str, version: int = Query(ge=1), owner: str = Depends(current_owner)):
+    """Số liệu cho lưới xem bảng tính: chữ đã định dạng, công thức từng ô, biểu đồ. Tính lại từ nội dung đã lưu."""
+    draft = await store.get_document(owner, document_id, version)
+    if draft.get('format') != 'xlsx':
+        raise HTTPException(404, 'Tài liệu này không phải bảng tính.')
+    try:
+        data = await anyio.to_thread.run_sync(lambda: sheet_grid(prepare_spreadsheet(draft['content'])))
+    except ValueError as error:
+        raise HTTPException(422, f'Chưa đọc lại được bảng tính: {error}') from error
+    return JSONResponse(data, headers={'Cache-Control': 'private, no-store'})
+
+
 MIME = {
     'pdf': 'application/pdf',
     'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
 }
 
 
@@ -131,7 +167,7 @@ def file_response(draft, version, format, data):
 @router.get('/{document_id}/preview')
 async def preview(document_id: str, version: int = Query(ge=1), page: int = Query(1, ge=1, le=40), owner: str = Depends(current_owner)):
     assets = await store.get_assets(owner, document_id, version)
-    if not assets or page > assets['pages']:
+    if not assets or page > assets['pages'] or assets['format'] == 'xlsx':
         raise HTTPException(404, 'Không tìm thấy bản xem trước này.')
     if page == 1:
         data = assets['preview']

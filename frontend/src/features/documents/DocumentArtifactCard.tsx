@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { DocumentArtifact } from '../../shared/api/api';
 import { DocumentIcon } from './DocumentWorkspace';
+import { SheetIcon, SheetPreview, useSheet } from './SheetPreview';
 
 export function DownloadIcon() {
   return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3v12m-4-4 4 4 4-4M4 16v4h16v-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>;
@@ -24,7 +25,29 @@ export function PageImage({ src, page, title }: { src: string; page: number; tit
   </div>;
 }
 
+/** Bảng tính: lưới thu nhỏ dựng từ số liệu máy chủ tính sẵn (không có ảnh xem trước), tải XLSX. */
+function SheetArtifactCard({ artifact, onOpen }: { artifact: DocumentArtifact; onOpen: (artifact: DocumentArtifact) => void }) {
+  const { grid, error, retry } = useSheet(artifact.id, artifact.version);
+  const download = `/api/documents/${encodeURIComponent(artifact.id)}/export/xlsx?version=${artifact.version}`;
+  const formulas = grid?.sheets.reduce((sum, sheet) => sum + sheet.formulas, 0) ?? 0;
+  const charts = grid?.sheets.reduce((sum, sheet) => sum + sheet.charts.length, 0) ?? 0;
+  return <section className="document-artifact sheet" aria-label={`Bảng tính ${artifact.filename}`}>
+    <header className="artifact-heading">
+      <SheetIcon /><button type="button" className="artifact-name" onClick={() => onOpen(artifact)} title={artifact.filename}>{artifact.filename}</button>
+      <a className="artifact-icon" href={download} download={artifact.filename} aria-label={`Tải ${artifact.filename}`} title="Tải XLSX"><DownloadIcon /></a>
+      <button type="button" className="artifact-icon" aria-label={`Mở rộng ${artifact.filename}`} title="Mở trong bảng tài liệu" onClick={() => onOpen(artifact)}><ExpandIcon /></button>
+    </header>
+    <div className="artifact-preview-crop">
+      {error ? <div className="artifact-page-error" role="alert"><p>Chưa mở được bản xem trước. Tệp có thể đã bị xóa hoặc phiên đăng nhập đã hết hạn.</p><button type="button" onClick={retry}>Thử lại</button></div>
+        : grid?.sheets[0] ? <SheetPreview sheet={grid.sheets[0]} /> : <div className="artifact-page-loading" role="status">Đang mở bảng tính…</div>}
+      <button type="button" className="artifact-open-overlay" onClick={() => onOpen(artifact)}>Xem bảng tính <span>· {artifact.pages} trang tính</span><ExpandIcon /></button>
+    </div>
+    <footer className="artifact-caption"><span>XLSX · {artifact.pages} trang tính{grid ? ` · ${formulas} công thức${charts ? ` · ${charts} biểu đồ` : ''}` : ''}</span></footer>
+  </section>;
+}
+
 export default function DocumentArtifactCard({ artifact, onEdit, onOpen }: { artifact: DocumentArtifact; onEdit: (artifact: DocumentArtifact) => void; onOpen: (artifact: DocumentArtifact) => void }) {
+  if (artifact.format === 'xlsx') return <SheetArtifactCard artifact={artifact} onOpen={onOpen} />;
   const base = `/api/documents/${encodeURIComponent(artifact.id)}`;
   const download = `${base}/export/${artifact.format}?version=${artifact.version}`;
   const preview = (number: number) => `${base}/preview?version=${artifact.version}&page=${number}`;

@@ -18,5 +18,6 @@ export async function preloadLazyParts(): Promise<void> {
     import('../src/shared/markdown/markdownMath'),
     import('../src/shared/markdown/markdownCode'),
     import('../src/features/diagrams/DiagramPanel'),
+    import('../src/features/documents/SheetView'),
   ]);
 }

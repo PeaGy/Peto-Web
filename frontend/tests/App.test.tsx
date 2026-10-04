@@ -250,6 +250,27 @@ it('gửi Word qua dấu cộng, giữ bản nháp khi đọc và hiện trạng
   expect(screen.getByRole('link', { name: /ke-hoach.docx/ }).getAttribute('href')).toBe('/api/attachments/word-1');
 });
 
+it('gửi tệp Excel: có ghi chú phần đọc được, sau khi nhận hiện số trang tính', async () => {
+  vi.mocked(api.sendMessage).mockImplementation(async (payload, handlers) => {
+    expect(payload.attachments?.[0].name).toBe('bang-diem.xlsx');
+    handlers.onMeta?.('C', 'low', { role: 'user', content: 'Ai điểm cao nhất?', attachments: [{
+      id: 'excel-1', name: 'bang-diem.xlsx', mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', kind: 'file', size: 9000,
+      url: '/api/attachments/excel-1', document: { status: 'ready', notice: 'Đã đọc 2 trang tính, 14 hàng có dữ liệu.', characters: 900, sheets: 2, sheets_read: 2, rows: 14 },
+    }] });
+    handlers.onDelta?.('Trần Gia Bảo cao nhất.');
+    handlers.onDone?.();
+  });
+  await openApp();
+  const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+  expect(input.accept).toContain('.xlsx');
+  await userEvent.upload(input, new File(['bang tinh gia'], 'bang-diem.xlsx', { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+  expect(screen.getByText(/Peto đọc dữ liệu, công thức và kết quả đã lưu trong tệp Excel/)).toBeTruthy();
+  fireEvent.change(screen.getByLabelText('Nhắn cho Peto'), { target: { value: 'Ai điểm cao nhất?' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Gửi', exact: true }));
+  expect(await screen.findByText('Đã đọc chữ · 2 trang tính')).toBeTruthy();
+  expect(screen.queryByText(/kết quả đã lưu trong tệp Excel/)).toBeNull();
+});
+
 it('lịch sử PDF báo rõ phần không đọc được và vẫn tải lại được', async () => {
   vi.mocked(api.getMessages).mockResolvedValue([{ role: 'user', content: 'Xem PDF', attachments: [{
     id: 'pdf-1', name: 'ban-scan.pdf', mime: 'application/pdf', kind: 'file', size: 1200, url: '/api/attachments/pdf-1',
@@ -404,10 +425,10 @@ it('allows many code files but keeps the image, PDF and Word cap', async () => {
   const code = Array.from({ length: 5 }, (_, i) => new File(['x'], `mod${i}.py`, { type: 'text/x-python' }));
   await userEvent.upload(input, code);
   expect(screen.getByRole('button', { name: 'Gỡ mod4.py' })).toBeTruthy();
-  expect(screen.queryByText(/tối đa 4 ảnh, PDF hoặc Word/)).toBeNull();
+  expect(screen.queryByText(/tối đa 4 ảnh, PDF, Word hoặc Excel/)).toBeNull();
   const images = Array.from({ length: 5 }, (_, i) => new File(['x'], `anh${i}.png`, { type: 'image/png' }));
   await userEvent.upload(input, images);
-  expect(screen.getByText(/Mỗi tin chỉ gửi tối đa 4 ảnh, PDF hoặc Word/)).toBeTruthy();
+  expect(screen.getByText(/Mỗi tin chỉ gửi tối đa 4 ảnh, PDF, Word hoặc Excel/)).toBeTruthy();
   expect(screen.getByRole('button', { name: 'Gỡ anh3.png' })).toBeTruthy();
   expect(screen.queryByRole('button', { name: 'Gỡ anh4.png' })).toBeNull();
 });

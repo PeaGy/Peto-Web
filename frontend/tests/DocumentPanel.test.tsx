@@ -1,8 +1,11 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { beforeEach, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, expect, it, vi } from 'vitest';
 import DocumentPanel from '../src/features/documents/DocumentPanel';
 import * as api from '../src/features/documents/documentApi';
-vi.mock('../src/features/documents/documentApi', async original => ({ ...await original<typeof import('../src/features/documents/documentApi')>(), listDocuments: vi.fn(), getDocument: vi.fn() }));
+vi.mock('../src/features/documents/documentApi', async original => ({ ...await original<typeof import('../src/features/documents/documentApi')>(), listDocuments: vi.fn(), getDocument: vi.fn(), getSheet: vi.fn() }));
+import { sheetGrid } from './sheetFixture';
+import { preloadLazyParts } from './lazyParts';
+beforeAll(preloadLazyParts);
 const one: api.SavedDocument = { id: 'D1', conversation_id: 'C1', title: 'Bài văn', version: 1, created_at: 1, content: '# Bài văn\nNội dung', format: 'docx', pages: 3, versions: [{ version: 2, title: 'Bản mới', created_at: 2 }, { version: 1, title: 'Bài văn', created_at: 1 }] };
 const two: api.SavedDocument = { ...one, id: 'D2', title: 'Kế hoạch', format: 'pdf', pages: 1 };
 const props = { conversationId: 'C1', open: true, expanded: false, selection: null, refreshKey: 0, onClose: vi.fn(), onExpand: vi.fn(), onEdit: vi.fn(), onUnauthorized: vi.fn() };
@@ -84,4 +87,49 @@ it('bài thuyết trình lật theo slide và hiện ghi chú cho người thuy�
   expect(panel.getByRole('link', { name: 'Tải Thư viện số.pptx', exact: true }).getAttribute('href')).toContain('/P1/export/pptx?version=1');
   expect(panel.queryByRole('button', { name: 'Sửa nội dung' })).toBeNull();
   expect(panel.getByRole('button', { name: 'Mở Thư viện số.pptx' }).textContent).toContain('2 slide');
+});
+
+it('bảng tính mở lưới kiểu Excel: thanh công thức theo ô chọn, phím mũi tên, hiện công thức, tab trang tính và biểu đồ', async () => {
+  const book: api.SavedDocument = { ...one, id: 'X1', title: 'Bảng điểm', format: 'xlsx', pages: 2, style: 'sheet', content: '{}',
+    versions: [{ version: 1, title: 'Bảng điểm', created_at: 1 }] };
+  vi.mocked(api.listDocuments).mockResolvedValue({ documents: [book] });
+  vi.mocked(api.getDocument).mockResolvedValue(book);
+  vi.mocked(api.getSheet).mockResolvedValue(sheetGrid);
+  render(<DocumentPanel {...props} />);
+  const panel = within(screen.getByRole('complementary', { name: 'Tài liệu trong hội thoại' }));
+  const grid = await panel.findByRole('region', { name: 'Lưới trang tính Bảng điểm' });
+  expect(api.getSheet).toHaveBeenCalledWith('X1', 1, expect.any(AbortSignal));
+  // Mở ra là chọn ô công thức đầu tiên, để thấy ngay công thức.
+  expect(panel.getByLabelText('Ô đang chọn').textContent).toBe('C2');
+  expect(panel.getByLabelText('Nội dung ô').textContent).toBe('=ROUND((B2*2+8)/3,1)= 7,8');
+  fireEvent.keyDown(grid, { key: 'ArrowDown' });
+  expect(panel.getByLabelText('Ô đang chọn').textContent).toBe('C3');
+  fireEvent.click(panel.getByText('Trung bình lớp'));
+  expect(panel.getByLabelText('Ô đang chọn').textContent).toBe('A4');
+  expect(panel.getByLabelText('Nội dung ô').textContent).toBe('Trung bình lớp');
+  fireEvent.keyDown(grid, { key: '`', ctrlKey: true });
+  expect(panel.getByRole('button', { name: 'Công thức' }).getAttribute('aria-pressed')).toBe('true');
+  expect(panel.getByText('=AVERAGE(C2:C3)')).toBeTruthy();
+  expect(panel.queryByRole('combobox', { name: 'Phiên bản xem trước' })).toBeNull();
+  expect(panel.getByRole('link', { name: 'Tải Bảng điểm.xlsx', exact: true }).getAttribute('href')).toContain('/X1/export/xlsx?version=1');
+  expect(panel.queryByRole('link', { name: 'Tải PDF' })).toBeNull();
+  fireEvent.click(panel.getByRole('tab', { name: /Thống kê/ }));
+  expect(await panel.findByRole('region', { name: 'Lưới trang tính Thống kê' })).toBeTruthy();
+  expect(panel.getByRole('img', { name: 'Biểu đồ: Số học sinh theo xếp loại' })).toBeTruthy();
+  expect(panel.getByRole('img', { name: 'Biểu đồ: Tỉ lệ xếp loại' }).textContent).toContain('50%');
+  expect(panel.getByLabelText('Nội dung ô').textContent).toContain("=COUNTIF('Bảng điểm'!C2:C3");
+  expect(panel.getByText(/Bấm một ô để xem công thức/)).toBeTruthy();
+});
+
+it('mở bảng tính từ thẻ trong chat thì thu danh sách tệp để lưới đủ chỗ', async () => {
+  const book: api.SavedDocument = { ...one, id: 'X1', title: 'Bảng điểm', format: 'xlsx', pages: 2, style: 'sheet', content: '{}',
+    versions: [{ version: 1, title: 'Bảng điểm', created_at: 1 }] };
+  vi.mocked(api.listDocuments).mockResolvedValue({ documents: [book, one] });
+  vi.mocked(api.getDocument).mockImplementation(async id => id === 'X1' ? book : one);
+  vi.mocked(api.getSheet).mockResolvedValue(sheetGrid);
+  render(<DocumentPanel {...props} selection={{ id: 'X1', version: 1, key: 7 }} />);
+  await screen.findByRole('region', { name: 'Lưới trang tính Bảng điểm' });
+  expect(screen.queryByRole('navigation', { name: 'Danh sách tài liệu' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Hiện danh sách tệp' }));
+  expect(screen.getByRole('navigation', { name: 'Danh sách tài liệu' })).toBeTruthy();
 });

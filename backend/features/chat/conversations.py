@@ -92,8 +92,8 @@ async def fork(owner, conversation_id, message_id, text):
                         # Never bring later, unselected document versions into the new branch.
                         await connection.execute('''INSERT OR IGNORE INTO chat_document_versions(document_id,version,title,content,created_at,style)
                             SELECT ?,version,title,content,created_at,style FROM chat_document_versions WHERE document_id=? AND version<=?''', (new_doc,old_id,artifact['version']))
-                        await connection.execute('''INSERT OR IGNORE INTO document_assets(document_id,version,format,pages,docx,pdf,preview,pptx)
-                            SELECT ?,version,format,pages,docx,pdf,preview,pptx
+                        await connection.execute('''INSERT OR IGNORE INTO document_assets(document_id,version,format,pages,docx,pdf,preview,pptx,xlsx)
+                            SELECT ?,version,format,pages,docx,pdf,preview,pptx,xlsx
                             FROM document_assets WHERE document_id=? AND version<=?''', (new_doc,old_id,artifact['version']))
                         artifact['id'] = new_doc
                 cursor = await connection.execute('''INSERT INTO messages(conversation_id,role,content,created_at,status,sources,artifacts)

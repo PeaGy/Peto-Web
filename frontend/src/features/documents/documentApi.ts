@@ -1,8 +1,8 @@
 import { UnauthorizedError } from '../../shared/api/api';
 
-export interface DocumentSummary { id: string; conversation_id: string; title: string; version: number; created_at: number; format?: 'docx' | 'pdf' | 'pptx' | null; pages?: number | null }
+export interface DocumentSummary { id: string; conversation_id: string; title: string; version: number; created_at: number; format?: 'docx' | 'pdf' | 'pptx' | 'xlsx' | null; pages?: number | null }
 export interface SavedDocument extends DocumentSummary {
-  style?: 'report' | 'essay' | 'clean' | 'academic' | 'bold';
+  style?: 'report' | 'essay' | 'clean' | 'academic' | 'bold' | 'sheet';
   content: string;
   versions: { version: number; title: string; created_at: number }[];
 }
@@ -25,6 +25,20 @@ export const saveDocument = (draft: { title: string; content: string }, conversa
   previous ? `/api/documents/${encodeURIComponent(previous.id)}/versions` : '/api/documents',
   { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...draft, style: previous?.style || 'report', ...(previous ? { base_version: previous.versions[0].version } : { conversation_id: conversationId }) }) },
 );
+/** Một ô của lưới xem: chữ đã định dạng kiểu Việt Nam, kiểu giá trị (số, chữ, đúng/sai) và công thức nếu có. */
+export interface SheetCell { d: string; t: 'n' | 's' | 'b'; f?: string }
+export interface SheetChartData {
+  type: 'column' | 'bar' | 'line' | 'pie'; title: string; row: number; col: number; width: number; height: number;
+  categories: string[]; series: { name: string; values: (number | null)[]; labels: string[] }[];
+  axis?: { min: number; max: number; step: number; labels: string[] };
+}
+export interface SheetData {
+  name: string; title: string; columns: { header: string; width: number; wrap: boolean }[];
+  rows: (SheetCell | null)[][]; total: (SheetCell | null)[] | null; formulas: number; charts: SheetChartData[];
+}
+export interface SheetGrid { title: string; sheets: SheetData[] }
+/** Số liệu của bảng tính (create_spreadsheet), do máy chủ tính lại từ bảng đã lưu. Không lưu đệm giữa các tài khoản. */
+export const getSheet = (id: string, version: number, signal?: AbortSignal) => json<SheetGrid>(`/api/documents/${encodeURIComponent(id)}/sheet?version=${version}`, { signal });
 export const deleteDocument = (id: string) => json(`/api/documents/${encodeURIComponent(id)}`, { method: 'DELETE' });
 export async function downloadDocument(document: SavedDocument, format: 'docx' | 'pdf') {
   const response = await checked(await fetch(`/api/documents/${encodeURIComponent(document.id)}/export/${format}?version=${document.version}`));

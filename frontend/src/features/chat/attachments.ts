@@ -9,9 +9,17 @@ export function isImageFile(file: File): boolean {
   return file.type.startsWith("image/") || /\.(png|jpe?g|gif|webp)$/i.test(file.name);
 }
 
+/** Bảng tính Excel đọc được: .xlsx và .xlsm (macro không bao giờ chạy). Định dạng .xls cũ máy chủ từ chối. */
+export function isSpreadsheetFile(file: File): boolean {
+  return /\.xls[xm]$/i.test(file.name) ||
+    file.type === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
+    file.type === "application/vnd.ms-excel.sheet.macroEnabled.12";
+}
+
 export function isMediaFile(file: File): boolean {
   return (
     isImageFile(file) ||
+    isSpreadsheetFile(file) ||
     file.type === "application/pdf" ||
     /\.pdf$/i.test(file.name) ||
     file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||

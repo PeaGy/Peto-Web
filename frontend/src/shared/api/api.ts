@@ -6,7 +6,7 @@ export type ConversationMode = "chat" | "companion";
 export interface WebSource { url: string; title: string; kind?: 'citation' | 'result' }
 export interface DocumentArtifact {
   id: string; title: string; filename: string; version: number;
-  format: 'docx' | 'pdf' | 'pptx'; style: 'report' | 'essay' | 'clean' | 'academic' | 'bold'; pages: number;
+  format: 'docx' | 'pdf' | 'pptx' | 'xlsx'; style: 'report' | 'essay' | 'clean' | 'academic' | 'bold' | 'sheet'; pages: number;
 }
 
 export interface ChatAttachment {
@@ -25,6 +25,10 @@ export interface ChatAttachment {
       pages_read?: number;
       ocr_pages?: number;
       reading_method?: "text" | "ocr" | "mixed";
+      /** Bảng tính Excel: số trang tính, số trang tính đã đọc, số hàng có dữ liệu. */
+      sheets?: number;
+      sheets_read?: number;
+      rows?: number;
   } | null;
 }
 

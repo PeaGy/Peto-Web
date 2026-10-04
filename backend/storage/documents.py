@@ -41,6 +41,9 @@ async def init_tables(connection):
     columns = await (await connection.execute('PRAGMA table_info(document_assets)')).fetchall()
     if 'pptx' not in {column[1] for column in columns}:
         await connection.execute("ALTER TABLE document_assets ADD COLUMN pptx BLOB")
+    # Bảng tính (create_spreadsheet) lưu tệp XLSX ở cột riêng; lưới xem dựng lại từ nội dung nên không có PDF hay ảnh.
+    if 'xlsx' not in {column[1] for column in columns}:
+        await connection.execute("ALTER TABLE document_assets ADD COLUMN xlsx BLOB")
 
 
 async def list_documents(owner, conversation_id):
@@ -116,15 +119,15 @@ async def save_document(owner, conversation_id, title, content, document_id=None
                                  (document_id, version, title, content, time.time(), style))
         if assets:
             used = await (await connection.execute('''SELECT COALESCE(SUM(length(a.docx)+length(a.pdf)+length(a.preview)
-                +COALESCE(length(a.pptx),0)),0)
+                +COALESCE(length(a.pptx),0)+COALESCE(length(a.xlsx),0)),0)
                 FROM document_assets a JOIN chat_documents d ON d.id=a.document_id WHERE d.owner=?''', (owner,))).fetchone()
-            size = sum(len(assets.get(k) or b'') for k in ('docx', 'pdf', 'preview', 'pptx'))
+            size = sum(len(assets.get(k) or b'') for k in ('docx', 'pdf', 'preview', 'pptx', 'xlsx'))
             if used[0] + size > MAX_ASSET_BYTES:
                 raise HTTPException(400, 'Kho tệp tài liệu đã đầy (32 MB). Hãy xóa tài liệu không còn cần.')
-            await connection.execute('INSERT INTO document_assets (document_id, version, format, pages, docx, pdf, preview, pptx) '
-                                     'VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            await connection.execute('INSERT INTO document_assets (document_id, version, format, pages, docx, pdf, preview, pptx, '
+                                     'xlsx) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
                 (document_id, version, assets['format'], assets['pages'], assets['docx'], assets['pdf'], assets['preview'],
-                 assets.get('pptx')))
+                 assets.get('pptx'), assets.get('xlsx')))
         await connection.commit()
     return await get_document(owner, document_id, version)
 
