@@ -118,6 +118,15 @@ it('stopping discards remaining events already buffered in the same chunk', asyn
   expect(onDone).not.toHaveBeenCalled();
 });
 
+it('chuyển tiến trình đọc kết nối tới giao diện chat', async () => {
+  const onConnectorLookup = vi.fn();
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(
+    event({type: 'connector_lookup', text: 'Đang đọc GitHub…', live: true})
+    + event({type: 'connector_lookup', text: 'Đã đọc GitHub', live: false}) + event({type: 'done'}))));
+  await sendMessage({message: 'Kiểm tra repo', conversationId: null, effort: 'low'}, {onConnectorLookup});
+  expect(onConnectorLookup.mock.calls).toEqual([['Đang đọc GitHub…', true], ['Đã đọc GitHub', false]]);
+});
+
 it('sends only the browser timezone, never the browser clock', async () => {
   const fetchMock = vi.fn(async () => new Response(event({type:'done'})));
   vi.stubGlobal('fetch', fetchMock);

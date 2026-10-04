@@ -44,6 +44,7 @@ class StreamChunk:
     chỉ hiện lúc đang trả lời, không trộn vào tin nhắn.
     ``search`` là tiến trình tra web; ``sources`` là nguồn tham khảo để lưu và hiển thị riêng.
     ``file_lookup`` / ``file_lookup_done`` là lúc Peto bắt đầu và xong một lần tìm/đọc trong tệp đã gửi.
+    ``connector_lookup`` / ``connector_lookup_done`` là tiến trình đọc dịch vụ đã kết nối.
     """
 
     # "text" | "thinking" | "search" | "sources" | "document_status" | "artifact" | "replace" | "file_lookup"

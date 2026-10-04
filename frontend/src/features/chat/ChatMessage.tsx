@@ -135,7 +135,7 @@ function WorkLog({
         <ul className="work-steps" aria-live="polite">
           {list.map((step) => (
             <li key={step.id} className={step.live ? "live" : undefined}>
-              {step.id === "search" ? (
+              {step.id === "search" || step.id.startsWith('connector-') ? (
                 <GlobeIcon />
               ) : step.id === "document" || step.id.startsWith("file-") ? (
                 <DocumentIcon />

@@ -1779,6 +1779,16 @@ Chat, Companion and roleplay turn (not the Agent CLI).
 - Settings → "Giao diện" contains the theme selector. "Nhân vật", the first section under the Companion group,
   contains the character picker entry and character motion preference; the existing saved selection and motion values
   are preserved.
+- Settings → "Kết nối" manages per-owner GitHub App connections (`features/connectors/`, `storage/connectors.py`).
+  Configure the five `PETO_GITHUB_*` / `PETO_CONNECTOR_SECRET` variables described in
+  `backend/features/connectors/README.md`; no live connection exists until that setup and user consent are complete.
+  Tokens/refresh tokens and PKCE verifiers are encrypted with a separate persistent secret; OAuth state is single-use,
+  expires in ten minutes, and is bound to both owner and Peto session. Disconnect removes local credentials and pending
+  consent, not the remote app installation or existing chat excerpts. Never pass tokens to the frontend/model or log them.
+  Only chat receives request-scoped, read-only GitHub tools (repo listing/files and Actions runs/jobs/logs); title and
+  Companion calls do not. Progress uses `connector_lookup` SSE, and sources use the existing source cards. Remote content
+  is untrusted data, result sizes are bounded, and log download redirects never receive the GitHub Authorization header.
+  The initial catalog contains GitHub only; Google Drive and custom MCP are not implemented.
 - **What the first load carries.** On 2026-09-27 the owner picked "make the page load faster, especially on phones".
   The entry chunk (then 1.1 MB, 340 KB gzipped) was cut to what the chat screen needs:
   - **Separate chunks.** The chat entry is about 290 KB, plus React at about 190 KB. Everything else loads in its own

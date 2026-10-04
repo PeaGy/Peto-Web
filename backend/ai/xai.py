@@ -25,6 +25,7 @@ from ai.xai_auth import XaiAuth, XaiAuthError
 from shared.attachment_tools import NAMES as FILE_TOOLS, current_files
 from shared.time_tools import TOOL_SCHEMAS, execute_tool
 from features.documents.tools import current_session, SCHEMA as DOCUMENT_SCHEMA
+from features.connectors.tools import current_session as github_session_context, NAMES as GITHUB_TOOLS, NOTE as GITHUB_NOTE
 from shared.web_search import normalize_sources, search_context
 
 from .base import ChatMessage, ChatProvider, ProviderError, StreamChunk
@@ -173,6 +174,12 @@ class ResponsesProvider(ChatProvider):
         # Tệp đã gửi trong hội thoại: công cụ tìm/đọc chỉ có khi hội thoại có tệp chữ, PDF hoặc Word.
         files = current_files.get()
         file_schemas = files.schemas() if files else []
+        github_session = github_session_context.get()
+        github_schemas = github_session.schemas() if github_session else []
+        if tools_enabled:
+            instructions += ('\n\nGitHub của người dùng đã kết nối. Dùng công cụ github_* khi cần dữ liệu repo hoặc GitHub Actions. '
+                             'Các công cụ chỉ đọc; không được nói đã sửa, chạy lại hay ghi lên GitHub. ' + GITHUB_NOTE) if github_schemas else (
+                '\n\nGitHub của người dùng chưa kết nối trong lượt này. Nếu cần đọc repo riêng hoặc log Actions, hướng dẫn mở Cài đặt → Kết nối. Không giả vờ đã truy cập tài khoản GitHub.')
         for round_index in range(MAX_TOOL_ROUNDS + 1):
             round_started = perf_counter()
             usage: dict = {}
@@ -185,7 +192,7 @@ class ResponsesProvider(ChatProvider):
                     "effort": effort if effort in self.supported_efforts else "low"
                 },
                 "stream": True,
-                "tools": [*TOOL_SCHEMAS, *([DOCUMENT_SCHEMA] if document_session else []), *file_schemas,
+                "tools": [*TOOL_SCHEMAS, *([DOCUMENT_SCHEMA] if document_session else []), *file_schemas, *github_schemas,
                           *([{"type": "web_search"}] if search_enabled else [])] if tools_enabled else [],
                 "include": ["reasoning.encrypted_content"],
                 # Tự giữ các item trong lượt này, không cần lưu hội thoại ở dịch vụ AI.
@@ -314,6 +321,13 @@ class ResponsesProvider(ChatProvider):
                     if result.get('ok'):
                         yield StreamChunk('artifact', artifact=result['artifact'])
                     yield StreamChunk('document_status', '')
+                elif call.get('name') in GITHUB_TOOLS and github_schemas:
+                    yield StreamChunk('connector_lookup', 'Đang đọc GitHub…')
+                    result = await github_session.run(call['name'], call.get('arguments', ''))
+                    yield StreamChunk('connector_lookup_done', 'Đã đọc GitHub' if result.get('ok') else result.get('error', 'Chưa đọc được GitHub'))
+                    if result.get('sources'):
+                        sources = normalize_sources([*sources, *result['sources']])
+                        yield StreamChunk('sources', sources=tuple(sources))
                 elif call.get("name") in FILE_TOOLS and file_schemas:
                     arguments = call.get("arguments", "")
                     yield StreamChunk("file_lookup", files.label(call["name"], arguments))

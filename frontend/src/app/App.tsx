@@ -40,6 +40,7 @@ import ConversationMenu from './ConversationMenu';
 import DocumentWorkspace from '../features/documents/DocumentWorkspace';
 import DocumentPanel, { RightPanelIcon, type DocumentPanelSelection } from '../features/documents/DocumentPanel';
 import type { DocumentDraftRequest } from '../features/documents/documentApi';
+import { takeConnectorResult } from '../features/connectors/connectorApi';
 import { type DraftFile } from "../features/chat/files";
 import { safeSources } from "../features/chat/WebSources";
 import {
@@ -77,11 +78,12 @@ const searchSettings = preloadable(() => import("../features/settings/SearchSett
 const agentSettings = preloadable(() => import("../features/settings/AgentSettings"));
 const archiveSettings = preloadable(() => import("../features/settings/ArchivedConversations"));
 const characterSettings = preloadable(() => import("../features/companion/characters/CharacterSettings"));
+const connectorSettings = preloadable(() => import('../features/connectors/ConnectorSettings'));
 const loadImagine = imagine.preload;
 const loadCompanion = companion.preload;
 const loadSettings = () => Promise.all([
   profileSettings.preload(), voiceSettings.preload(), memorySettings.preload(), searchSettings.preload(),
-  agentSettings.preload(), characterSettings.preload(), archiveSettings.preload(),
+  agentSettings.preload(), characterSettings.preload(), archiveSettings.preload(), connectorSettings.preload(),
 ]);
 // Tải trước: lỗi ở đây bỏ qua, lần mở thật sẽ tải lại và LazyBoundary lo phần báo lỗi.
 const preload = (load: () => Promise<unknown>) => () => void load().catch(() => {});
@@ -94,6 +96,7 @@ const SearchSettings = searchSettings.View;
 const AgentSettings = agentSettings.View;
 const ArchivedConversations = archiveSettings.View;
 const CharacterSettings = characterSettings.View;
+const ConnectorSettings = connectorSettings.View;
 
 // Old messages keep their rendered Markdown while the draft or current reply changes.
 export default function App() {
@@ -103,6 +106,7 @@ export default function App() {
   const [guestBusy, setGuestBusy] = useState(false);
   // Liên kết do peto login in ra mang ?agent_code=; mã được giữ qua lúc đăng nhập chuyển hướng.
   const [agentCode, setAgentCode] = useState<string | null>(takeAgentCode);
+  const [connectorResult] = useState<string | null>(takeConnectorResult);
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeProjectId, setActiveProjectId] = useState<string|null>(null);
@@ -188,6 +192,9 @@ export default function App() {
   // Hộp Cài đặt: mở hay đóng, mục đang xem, và trên điện thoại đang ở danh sách mục hay trang của mục.
   const [settings, setSettings] = useState<SettingsView>(CLOSED_SETTINGS);
   const settingsOpen = settings.open;
+  useEffect(() => {
+    if (auth?.authenticated && connectorResult) setSettings({ open: true, section: 'ket-noi', page: true });
+  }, [auth?.authenticated, connectorResult]);
   const closeSettings = useCallback(() => setSettings((current) => ({ ...current, open: false })), []);
   // Menu của ô tài khoản (như ChatGPT). Nó nằm ngoài thanh bên, vì thanh bên cắt phần tràn khi thu gọn còn 64px.
   const [accountMenu, setAccountMenu] = useState<AccountMenuPlace | null>(null);
@@ -755,6 +762,7 @@ export default function App() {
     let storedUserId: number | undefined;
     // Mỗi lần Peto tìm/đọc trong tệp là một dòng riêng trong danh sách "Đang làm…".
     let fileLookups = 0;
+    let connectorLookups = 0;
     let writingPhase = false;
     const session = authVersion.current;
     const startedAt = performance.now();
@@ -858,6 +866,10 @@ export default function App() {
           onFileLookup: (text, live) => {
             if (live) fileLookups += 1;
             addWorkStep(`file-${fileLookups}`, text, live);
+          },
+          onConnectorLookup: (text, live) => {
+            if (live) connectorLookups += 1;
+            addWorkStep(`connector-${connectorLookups}`, text, live);
           },
           onArtifact: (artifact) => {
             if (session !== authVersion.current || controller.signal.aborted) return;
@@ -1063,6 +1075,10 @@ export default function App() {
   // `active`: mục đang được xem trong hộp đang mở; các mục chỉ tải dữ liệu lúc đó.
   const renderSettings = (section: SettingsSection, active: boolean): ReactNode => {
     switch (section) {
+      case 'ket-noi':
+        return <LazyBoundary><Suspense fallback={settingsLoading}>
+          <ConnectorSettings key={auth.user?.id} open={active} result={connectorResult} onUnauthorized={handleUnauthorized} />
+        </Suspense></LazyBoundary>;
       case 'luu-tru':
         return <LazyBoundary><Suspense fallback={settingsLoading}>
           <ArchivedConversations key={auth.user?.id} open={active} disabled={streaming || deleting || metadataBusy}

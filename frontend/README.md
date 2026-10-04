@@ -13,6 +13,7 @@ src/
     imagine/                   Tạo ảnh và thư viện
     projects/                  Thư mục dự án, tên dự án trên chat, chuyển chat
     documents/                 Tài liệu, bản xem trước, chỉnh sửa, xuất tệp
+    connectors/                Cài đặt kết nối GitHub, cấp quyền và quản lý repo
     diagrams/                  Sơ đồ Mermaid và bảng sơ đồ
     docs/                      Trang hướng dẫn công khai
     settings/                  Hộp cài đặt và các mục tài khoản, Agent, trí nhớ

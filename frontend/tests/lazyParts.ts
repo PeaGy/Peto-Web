@@ -14,6 +14,7 @@ export async function preloadLazyParts(): Promise<void> {
     import('../src/features/settings/AgentSettings'),
     import('../src/features/settings/ArchivedConversations'),
     import('../src/features/companion/characters/CharacterSettings'),
+    import('../src/features/connectors/ConnectorSettings'),
     import('../src/shared/markdown/markdownMath'),
     import('../src/shared/markdown/markdownCode'),
     import('../src/features/diagrams/DiagramPanel'),

@@ -15,6 +15,7 @@ backend/
     companion/           # API, ghi nhớ, cảm xúc, ghi chú riêng
     imagine/             # Tạo/sửa ảnh và thư viện
     documents/           # Đọc, tạo, xuất và xem tài liệu
+    connectors/          # Cấp quyền GitHub theo tài khoản và công cụ chỉ đọc
     agent/               # API Agent, công cụ, bộ cài, hướng dẫn CLI
     docs/                # API hướng dẫn, tìm kiếm và ngữ cảnh cho Peto
     voice/               # API giọng nói và gọi dịch vụ tạo giọng
@@ -42,7 +43,7 @@ backend/
 nằm trong `ai/`. Không import `main.py` từ tính năng. Gắn router mới trước `static_files.mount()` trong `main.py`.
 
 `storage/__init__.py` là giao diện truy vấn chung. SQL chia thành `users`, `conversations`, `attachments`, `documents`,
-`imagine`, `agent`, `usage`, `memory`; khởi tạo và nâng cấp bảng nằm trong `schema.py`. Kết nối dùng chung ở
+`imagine`, `agent`, `usage`, `memory`, `connectors`; khởi tạo và nâng cấp bảng nằm trong `schema.py`. Kết nối dùng chung ở
 `storage/connection.py`. Mọi thao tác trên dữ liệu tài khoản phải giữ kiểm tra `owner`.
 
 Prompt chia theo ngữ cảnh trong `prompts/`. Phần nhập vai chỉ nằm trong `roleplay.py`; không đưa vào prompt trợ lý,
@@ -66,6 +67,9 @@ Tách thư mục không yêu cầu chuyển dữ liệu hay đổi API. Test đ�
 gọi AI thật. Quy tắc chi tiết nằm trong `../CLAUDE.md`.
 
 ## Vận hành
+
+Kết nối GitHub cần cấu hình GitHub App và khóa mã hóa riêng trên máy chủ. Hướng dẫn cấp quyền repo,
+callback và sử dụng nằm trong [features/connectors/README.md](features/connectors/README.md).
 
 PDF scan được nhận dạng bằng Tesseract tại máy chủ. Cần cài chương trình và dữ liệu `vie`/`eng` ngoài các gói Python;
 cấu hình cùng giới hạn OCR nằm trong `.env.example`.

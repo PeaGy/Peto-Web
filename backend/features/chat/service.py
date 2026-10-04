@@ -18,6 +18,8 @@ import storage as db
 from features.documents import reader as document_reader
 from features.companion import emotion_tags
 from features.documents.tools import DocumentSession, current_session as document_session_context
+from features.connectors.tools import GitHubSession, current_session as github_session_context
+from storage import connectors as connector_store
 from features.companion import private_notes
 from features.chat import titles
 from ai import ChatMessage, ProviderError, StreamChunk, get_provider
@@ -95,7 +97,7 @@ def _as_chunk(item: str | StreamChunk) -> StreamChunk:
 async def _stream_reply(
     system_prompt: str, history: list[ChatMessage], effort: str, timezone: str | None = None, web_search: str = "auto",
     document_session=None, model: str = ai_models.DEFAULT_MODEL, spoken: bool = False,
-    files: attachment_tools.AttachmentFiles | None = None,
+    files: attachment_tools.AttachmentFiles | None = None, github_session=None,
 ) -> AsyncIterator[StreamChunk]:
     """Gọi provider của model đã chọn một lần, có timeout theo effort. Trả về từng mảnh stream. ``spoken`` là lượt
     Companion: câu trả lời được đọc thành tiếng, nên chỉ dẫn tra web dặn không chèn đường dẫn hay dấu trích dẫn.
@@ -105,6 +107,7 @@ async def _stream_reply(
     token = document_session_context.set(document_session)
     files_token = attachment_tools.current_files.set(files)
     spoken_token = spoken_reply.set(spoken)
+    github_token = github_session_context.set(github_session)
     try:
         async with asyncio.timeout(timeout):
             async for chunk in provider.stream(
@@ -114,6 +117,7 @@ async def _stream_reply(
             ):
                 yield _as_chunk(chunk)
     finally:
+        github_session_context.reset(github_token)
         spoken_reply.reset(spoken_token)
         attachment_tools.current_files.reset(files_token)
         document_session_context.reset(token)
@@ -241,6 +245,8 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
             if chunk.kind == 'document_status': return sse({'type': 'document_status', 'text': chunk.text})
             if chunk.kind in ("file_lookup", "file_lookup_done"):
                 return sse({"type": "file_lookup", "text": chunk.text, "live": chunk.kind == "file_lookup"})
+            if chunk.kind in ("connector_lookup", "connector_lookup_done"):
+                return sse({"type": "connector_lookup", "text": chunk.text, "live": chunk.kind == "connector_lookup"})
             if chunk.kind == "search":
                 search_started = True
                 return sse({"type": "search", "status": chunk.text})
@@ -347,9 +353,10 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                 if request.document_mode and mode == 'chat':
                     system_prompt += '\n\n[PETO_DOCUMENT_CREATE]\nNgười dùng chọn tạo tài liệu: hãy gọi create_document để tạo tệp theo yêu cầu, mặc định DOCX nếu chưa chọn định dạng. Trả lời ngắn sau khi có kết quả; nội dung dài đặt trong công cụ.'
                 prepared_at = perf_counter()
+                github_session = GitHubSession(owner) if mode == 'chat' and await connector_store.get_github(owner) else None
                 # A timeout may already have consumed provider tokens. Do not repeat the whole turn invisibly.
                 async for chunk in _stream_reply(system_prompt, history, effort, timezone, web_search, document_session,
-                                                 model, spoken=mode == "companion", files=files_session):
+                                                 model, spoken=mode == "companion", files=files_session, github_session=github_session):
                     event = chunk_event(chunk)
                     if event:
                         yield event
