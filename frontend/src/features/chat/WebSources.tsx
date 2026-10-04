@@ -1,4 +1,5 @@
 import type { WebSource } from '../../shared/api/api';
+import { GitHubIcon } from '../../shared/ui/GitHubIcon';
 
 export function safeSources(sources: WebSource[] | undefined): WebSource[] {
   const seen = new Set<string>();
@@ -26,13 +27,14 @@ function SourceList({ items }: { items: WebSource[] }) {
 export default function WebSources({ sources }: { sources?: WebSource[] }) {
   const items = safeSources(sources);
   if (!items.length) return null;
+  const githubOnly = items.every(item => ['github.com', 'www.github.com'].includes(new URL(item.url).hostname));
   const cited = items.filter(item => item.kind === 'citation');
   const results = items.filter(item => item.kind === 'result');
   const legacy = items.filter(item => !item.kind);
   const label = cited.length ? `Nguồn · ${cited.length}`
     : results.length ? `Kết quả tìm kiếm · ${results.length}` : `Nguồn tham khảo · ${legacy.length}`;
   return <details className="web-sources">
-    <summary><GlobeIcon /><span>{label}</span></summary>
+    <summary>{githubOnly ? <GitHubIcon /> : <GlobeIcon />}<span>{label}</span></summary>
     <div className="web-sources-panel">
       {cited.length > 0 && <section><h3>Nguồn trích dẫn</h3><SourceList items={cited} /></section>}
       {results.length > 0 && (cited.length > 0

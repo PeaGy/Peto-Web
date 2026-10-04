@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { UnauthorizedError } from '../../shared/api/api';
 import { LoadingIndicator } from '../../shared/ui/LoadingIndicator';
+import { GitHubIcon } from '../../shared/ui/GitHubIcon';
 import { SettingsIcon } from '../settings/settingsUi';
 import { checkGitHub, connectGitHub, disconnectGitHub, listConnectors, type Connector } from './connectorApi';
 import './connectors.css';
@@ -105,7 +106,7 @@ export default function ConnectorSettings({ open, result, onUnauthorized }: {
       {loading ? <div className="settings-loading"><LoadingIndicator label="Đang tải kết nối" /></div> : <>
         {visible.map(item => <div className="connector-card" key={item.id}>
           <button type="button" className="connector-details-button" onClick={() => { setSelected(true); setConfirm(false); }} aria-label="Chi tiết kết nối GitHub">
-            <span className="connector-logo"><SettingsIcon name="connectors" size={24} /></span>
+            <span className="connector-logo"><GitHubIcon size={24} /></span>
             <span className="connector-description"><strong>GitHub</strong><span>Đọc repo, tệp và log GitHub Actions.</span>{item.login && <small>@{item.login}</small>}</span>
           </button>
           <span className={`connector-status ${item.status}`}>

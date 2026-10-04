@@ -1,4 +1,5 @@
 import { EditIcon } from '../../shared/ui/EditIcon';
+import { GitHubIcon } from '../../shared/ui/GitHubIcon';
 import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import Markdown, { type Components } from 'react-markdown';
 import { normalizeMath } from '../../shared/markdown/mathMarkdown';
@@ -135,7 +136,9 @@ function WorkLog({
         <ul className="work-steps" aria-live="polite">
           {list.map((step) => (
             <li key={step.id} className={step.live ? "live" : undefined}>
-              {step.id === "search" || step.id.startsWith('connector-') ? (
+              {step.id === 'connector-github' ? (
+                <GitHubIcon size={14} />
+              ) : step.id === "search" || step.id.startsWith('connector-') ? (
                 <GlobeIcon />
               ) : step.id === "document" || step.id.startsWith("file-") ? (
                 <DocumentIcon />
