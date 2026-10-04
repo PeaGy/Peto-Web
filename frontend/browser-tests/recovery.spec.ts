@@ -70,3 +70,42 @@ for (const companion of [false, true]) {
     await expect(page.locator('.bubble').filter({ hasText: 'Tin kiểm tra phục hồi' })).toHaveCount(1);
   });
 }
+
+for (const action of ['retry', 'dismiss'] as const) {
+  test(`${action === 'retry' ? 'kiểm tra lại' : 'đóng'} thông báo đồng bộ thất bại bằng chuột/chạm, không gửi trùng`, async ({ page }) => {
+    const state = await mockPeto(page, { broken: true });
+    let reads = 0;
+    page.on('request', request => { if (new URL(request.url()).pathname === '/api/conversations/A/messages') reads++; });
+    await openChat(page);
+    const draft = page.getByLabel('Nhắn cho Peto', { exact: true });
+    await draft.fill('Tin kiểm tra nút đồng bộ');
+    await page.getByRole('button', { name: 'Gửi', exact: true }).click();
+    await expect(page.getByText('Phần đang nhận', { exact: true })).toBeVisible();
+    await draft.fill('Bản nháp cần giữ');
+    const notice = page.locator('.chat-dock > .reply-recovery');
+    await expect(notice.getByText('Chưa lấy được câu trả lời đã lưu.', { exact: false })).toBeVisible();
+    const retry = notice.getByRole('button', { name: 'Kiểm tra lại', exact: true });
+    const close = notice.getByRole('button', { name: 'Đóng thông báo đồng bộ', exact: true });
+    // Kiểm tra vùng nhận cú bấm thật, không dùng force hoặc gọi trực tiếp trình xử lý.
+    await retry.click({ trial: true, timeout: 1500 });
+    await close.click({ trial: true, timeout: 1500 });
+    const previousReads = reads;
+    if (action === 'retry') {
+      state.recoveryReady = true;
+      await retry.click();
+      await expect(page.getByText('Câu trả lời đã được lưu đầy đủ.', { exact: true })).toBeVisible();
+      await expect(notice.getByText('Đã đồng bộ câu trả lời từ máy chủ.', { exact: true })).toBeVisible();
+      expect(reads).toBe(previousReads + 1);
+      await close.click();
+    } else {
+      await close.click();
+      await expect(page.getByText('Phần đang nhận', { exact: true })).toBeVisible();
+      expect(reads).toBe(previousReads);
+    }
+    await expect(notice).toHaveCount(0);
+    await expect(draft).toHaveValue('Bản nháp cần giữ');
+    expect(state.posts).toBe(1);
+    await expect(page.locator('.bubble.user').filter({ hasText: 'Tin kiểm tra nút đồng bộ' })).toHaveCount(1);
+    await noPageOverflow(page);
+  });
+}

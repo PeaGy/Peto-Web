@@ -1,4 +1,6 @@
 .reply-recovery {
+  /* Dock để chuột đi xuyên qua nền; thông báo phải tự nhận lại cú bấm. */
+  pointer-events: auto;
   display: flex;
   align-items: center;
   gap: 8px;
