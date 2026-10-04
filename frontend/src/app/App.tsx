@@ -1314,9 +1314,12 @@ export default function App() {
         <div className="chat-dock" ref={chatDockRef}>
         <ReplyRecoveryNotice recovery={recovery} />
         {error && !recovery.pending && recovery.status !== 'failed' && (
-          <div className="error" role="alert">
-            {error}
-            {retryAvailable && <button type="button" disabled={streaming || loadingConversation} onClick={() => void submit(retryRevision.current)}>Thử lại</button>}
+          <div className="error chat-error" role="alert">
+            <span className="chat-error-message">{error}</span>
+            {retryAvailable && <button type="button" className="chat-error-retry" disabled={streaming || loadingConversation} onClick={() => void submit(retryRevision.current)}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M6.1 7a7 7 0 0 1 11.7-1.1L20 9M4 15l2.2 3.1A7 7 0 0 0 17.9 17"/></svg>
+              Thử lại
+            </button>}
             <button type="button" className="dismiss-error" aria-label="Đóng thông báo" onClick={() => { setError(null); setRetryAvailable(false); }}>×</button>
           </div>
         )}

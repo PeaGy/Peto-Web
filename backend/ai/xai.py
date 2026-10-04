@@ -39,7 +39,9 @@ logger = logging.getLogger("peto_web.xai")
 
 _TEXT_TYPE = {"user": "input_text", "assistant": "output_text"}
 MAX_TOOL_ROUNDS = 3
+MAX_GITHUB_TOOL_ROUNDS = 12
 MAX_TOOL_CALLS = 8
+MAX_GITHUB_TOOL_CALLS = 30
 
 
 def _dump(item) -> dict:
@@ -180,12 +182,17 @@ class ResponsesProvider(ChatProvider):
             instructions += ('\n\nGitHub của người dùng đã kết nối. Dùng công cụ github_* khi cần dữ liệu repo hoặc GitHub Actions. '
                              'Các công cụ chỉ đọc; không được nói đã sửa, chạy lại hay ghi lên GitHub. ' + GITHUB_NOTE) if github_schemas else (
                 '\n\nGitHub của người dùng chưa kết nối trong lượt này. Nếu cần đọc repo riêng hoặc log Actions, hướng dẫn mở Cài đặt → Kết nối. Không giả vờ đã truy cập tài khoản GitHub.')
-        for round_index in range(MAX_TOOL_ROUNDS + 1):
+        max_rounds = MAX_GITHUB_TOOL_ROUNDS if github_schemas else MAX_TOOL_ROUNDS
+        max_calls = MAX_GITHUB_TOOL_CALLS if github_schemas else MAX_TOOL_CALLS
+        for round_index in range(max_rounds + 1):
+            # Dành lần gọi cuối để tổng hợp kết quả đã đọc, không mở thêm tra cứu khi hết ngân sách.
+            finalizing = tools_enabled and (round_index == max_rounds or calls_used >= max_calls)
             round_started = perf_counter()
             usage: dict = {}
             create_kwargs: dict = {
                 "model": self.model,
-                "instructions": instructions,
+                "instructions": instructions + ('\n\nLượt này đã chạm giới hạn tra cứu. Hãy trả lời bằng những kết quả đã nhận, không gọi thêm công cụ. '
+                    'Nếu dữ liệu chưa đủ, nêu rõ phần chưa đọc hoặc chưa xác minh; không bịa kết quả và không hứa tiếp tục tra cứu trong lượt này.' if finalizing else ''),
                 "input": payload_input,
                 "max_output_tokens": self.max_output_tokens if tools_enabled else min(self.max_output_tokens, 1024),
                 "reasoning": {
@@ -193,14 +200,17 @@ class ResponsesProvider(ChatProvider):
                 },
                 "stream": True,
                 "tools": [*TOOL_SCHEMAS, *([DOCUMENT_SCHEMA] if document_session else []), *file_schemas, *github_schemas,
-                          *([{"type": "web_search"}] if search_enabled else [])] if tools_enabled else [],
+                          *([{"type": "web_search"}] if search_enabled else [])] if tools_enabled and not finalizing else [],
                 "include": ["reasoning.encrypted_content"],
                 # Tự giữ các item trong lượt này, không cần lưu hội thoại ở dịch vụ AI.
                 "store": False,
             }
+            if finalizing:
+                create_kwargs["tool_choice"] = "none"
+                logger.info("Kết thúc tra cứu: vòng=%d công_cụ_đã_gọi=%d github=%s", round_index, calls_used, bool(github_schemas))
             if search_enabled:
                 create_kwargs["include"].append("web_search_call.action.sources")
-                if web_search == "on" and round_index == 0:
+                if web_search == "on" and round_index == 0 and not finalizing:
                     # Chỉ đưa công cụ tìm web ở lần đầu để 'required' không bị thỏa bởi đồng hồ.
                     create_kwargs["tools"] = [{"type": "web_search"}]
                     create_kwargs["tool_choice"] = "required"
@@ -308,13 +318,19 @@ class ResponsesProvider(ChatProvider):
                 if web_search == "on" and not search_finished and not sources:
                     raise ProviderError("Dịch vụ chưa xác nhận đã tra web. Peto chưa thể xem câu trả lời này là đã kiểm chứng; bạn thử lại nhé.")
                 return
-            calls_used += len(tool_calls)
-            if round_index >= MAX_TOOL_ROUNDS or calls_used > MAX_TOOL_CALLS:
-                raise ProviderError("Peto chưa hoàn tất việc tra cứu trong lượt này. Bạn thử hỏi lại cụ thể hơn nhé.")
+            if finalizing:
+                raise ProviderError("Dịch vụ AI vẫn yêu cầu tra cứu sau khi được yêu cầu kết thúc. Phần đã trả lời được giữ lại; bạn có thể hỏi tiếp về một tệp cụ thể.")
             payload_input.extend(output_items)
             for call in tool_calls:
                 if not call.get("call_id"):
                     raise ProviderError("AI trả về yêu cầu công cụ không hợp lệ. Thử lại nhé.")
+                if calls_used >= max_calls:
+                    # Mỗi lời gọi vẫn có kết quả tương ứng; lời gọi vượt giới hạn không được thực thi.
+                    result = {'ok': False, 'error': 'Đã chạm giới hạn tra cứu của lượt này. Công cụ này chưa được chạy; hãy tổng hợp dữ liệu đã có và nêu rõ phần còn thiếu.'}
+                    payload_input.append({'type': 'function_call_output', 'call_id': call['call_id'],
+                                          'output': json.dumps(result, ensure_ascii=False)})
+                    continue
+                calls_used += 1
                 if call.get('name') == 'create_document' and document_session:
                     yield StreamChunk('document_status', 'Đang dàn trang và tạo tệp…')
                     result = await document_session.create(call.get('arguments', ''))

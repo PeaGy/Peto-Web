@@ -1,6 +1,40 @@
 import { test, expect } from '@playwright/test';
 import { mockPeto, openChat, noPageOverflow } from './fixtures';
 
+test('thông báo lỗi có nút thử lại gọn và gửi lại đúng tin đã lưu', async ({ page }) => {
+  await mockPeto(page);
+  let posts = 0;
+  await page.route('**/api/chat', async route => {
+    posts++;
+    const request = route.request().postDataJSON();
+    const event = (value: object) => `data: ${JSON.stringify(value)}\n\n`;
+    if (posts === 2) expect(request.branch_message_id).toBe(103);
+    await route.fulfill({ contentType: 'text/event-stream', body:
+      event({ type: 'meta', conversation_id: 'A', effort: 'low', message: { id: 103, role: 'user', content: request.message } })
+      + (posts === 1 ? event({ type: 'error', message: 'Chưa kết nối được với dịch vụ AI. Bạn thử lại nhé.' })
+        : event({ type: 'delta', text: 'Đã thử lại thành công.' }) + event({ type: 'done' })) });
+  });
+  await openChat(page);
+  await page.getByLabel('Nhắn cho Peto', { exact: true }).fill('Đọc repo và đề xuất cải thiện');
+  await page.getByRole('button', { name: 'Gửi', exact: true }).click();
+  const alert = page.locator('.chat-error');
+  const retry = alert.getByRole('button', { name: 'Thử lại', exact: true });
+  await expect(retry).toBeEnabled();
+  const style = await retry.evaluate(node => {
+    const css = getComputedStyle(node);
+    return { radius: parseFloat(css.borderRadius), height: node.getBoundingClientRect().height };
+  });
+  expect(style.radius).toBeGreaterThanOrEqual(10);
+  expect(style.height).toBeGreaterThanOrEqual(36);
+  await noPageOverflow(page);
+  await expect(alert).toHaveScreenshot('chat-retry.png');
+  await retry.click();
+  await expect(page.getByText('Đã thử lại thành công.', { exact: true })).toBeVisible();
+  await expect(alert).toHaveCount(0);
+  expect(posts).toBe(2);
+  await expect(page.locator('.bubble.user').filter({ hasText: 'Đọc repo và đề xuất cải thiện' })).toHaveCount(1);
+});
+
 for (const companion of [false, true]) {
   test(`đồng bộ ${companion ? 'Companion' : 'Trò chuyện'} sau khi luồng ngắt, không gửi trùng`, async ({ page, context }) => {
     const state = await mockPeto(page, { broken: true });

@@ -3,14 +3,15 @@ import json
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
 from shared import time_tools as chat_tools
 from features.chat import service as chat_service
 from ai.base import ChatMessage, ProviderError, StreamChunk
-from ai.xai import MAX_TOOL_ROUNDS, XAIProvider
+from ai.xai import MAX_TOOL_ROUNDS, MAX_TOOL_CALLS, XAIProvider
+from ai import xai
 from core.config import XAI_MAX_OUTPUT_TOKENS
 from conftest import read_events
 
@@ -217,7 +218,37 @@ async def test_endless_tool_requests_are_bounded(monkeypatch):
     with pytest.raises(ProviderError, match='tra cứu'):
         _ = [chunk async for chunk in provider.stream(system_prompt='Peto', messages=[])]
     assert len(requests) == MAX_TOOL_ROUNDS + 1
+    assert requests[-1]['tools'] == [] and requests[-1]['tool_choice'] == 'none'
     assert all(stream.closed for stream in streams)
+
+
+async def test_round_limit_finishes_with_available_results(monkeypatch):
+    streams = [FakeStream([done(call())]) for _ in range(MAX_TOOL_ROUNDS)]
+    streams.append(FakeStream([SimpleNamespace(type='response.output_text.delta', delta='Đây là kết quả đã đọc; phần còn lại chưa xác minh.'), done()]))
+    provider, requests = fake_provider(monkeypatch, streams)
+    chunks = [chunk async for chunk in provider.stream(system_prompt='Peto', messages=[], web_search='off')]
+    assert ''.join(chunks).startswith('Đây là kết quả đã đọc')
+    assert requests[-1]['tools'] == [] and requests[-1]['tool_choice'] == 'none'
+    assert 'chưa xác minh' in requests[-1]['instructions']
+    assert sum(item.get('type') == 'function_call_output' for item in requests[-1]['input']) == MAX_TOOL_ROUNDS
+
+
+async def test_call_budget_runs_only_allowed_calls_and_reports_unexecuted_ones(monkeypatch):
+    calls = [call() for _ in range(MAX_TOOL_CALLS + 2)]
+    for index, item in enumerate(calls):
+        item.call_id = f'call_{index}'
+        item.id = f'fc_{index}'
+    execute = Mock(return_value={'ok': True})
+    monkeypatch.setattr(xai, 'execute_tool', execute)
+    streams = [FakeStream([done(*calls[:5])]), FakeStream([done(*calls[5:])]),
+               FakeStream([SimpleNamespace(type='response.output_text.delta', delta='Đã đọc phần được phép; hai yêu cầu cuối chưa chạy.'), done()])]
+    provider, requests = fake_provider(monkeypatch, streams)
+    _ = [chunk async for chunk in provider.stream(system_prompt='Peto', messages=[], web_search='off')]
+    assert execute.call_count == MAX_TOOL_CALLS
+    outputs = [item for item in requests[-1]['input'] if item.get('type') == 'function_call_output']
+    assert len(outputs) == len(calls) and len({item['call_id'] for item in outputs}) == len(calls)
+    assert all('chưa được chạy' in json.loads(item['output'])['error'] for item in outputs[MAX_TOOL_CALLS:])
+    assert requests[-1]['tools'] == [] and requests[-1]['tool_choice'] == 'none'
 
 
 async def test_model_receives_tool_validation_error_instead_of_crashing(monkeypatch):

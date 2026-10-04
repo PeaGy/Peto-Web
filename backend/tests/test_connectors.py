@@ -20,6 +20,7 @@ from storage import connectors as store
 from storage import connection
 from core.config import SESSION_COOKIE
 from ai.base import ChatMessage, StreamChunk
+from ai.xai import MAX_GITHUB_TOOL_ROUNDS, MAX_GITHUB_TOOL_CALLS
 from conftest import TEST_OWNER, read_events
 from test_clock_tools import FakeStream, call, done, fake_provider
 
@@ -231,6 +232,7 @@ async def test_real_provider_connector_roundtrip_and_title_exclusion(client, con
     monkeypatch.setattr(chat_service, 'get_provider', lambda model='peto': provider)
     events = await read_events(await client.post('/api/chat', json={'message': 'Kiểm tra Actions nguoi-test/Peto', 'web_search': 'off'}))
     assert events[-1]['type'] == 'done'
+    assert len(requests) == 2
     assert [event['live'] for event in events if event['type'] == 'connector_lookup'] == [True, False]
     assert any(event['type'] == 'sources' for event in events)
     assert set(tool.get('name') for tool in requests[0]['tools']) >= NAMES
@@ -256,3 +258,56 @@ async def test_companion_and_other_accounts_receive_no_connector_tools(client, c
     assert (await read_events(await client.post('/api/chat', json={'message': 'Chào'})))[-1]['type'] == 'done'
     await saved()
     assert (await read_events(await client.post('/api/chat', json={'message': 'Chào', 'mode': 'companion'})))[-1]['type'] == 'done'
+
+
+async def test_github_multi_step_read_finishes_and_persists_at_round_limit(client, configured, github_http, monkeypatch):
+    await saved()
+    steps = [('github_list_repositories', {}),
+             ('github_read_repository', {'repository': 'nguoi-test/Peto', 'path': 'README.md'}),
+             ('github_actions', {'repository': 'nguoi-test/Peto', 'action': 'runs'}),
+             ('github_actions', {'repository': 'nguoi-test/Peto', 'action': 'jobs', 'run_id': 12}),
+             ('github_actions', {'repository': 'nguoi-test/Peto', 'action': 'job_log', 'job_id': 34}),
+             ('github_read_repository', {'repository': 'nguoi-test/Peto', 'path': 'frontend/package.json'})]
+    steps.extend(('github_read_repository', {'repository': 'nguoi-test/Peto', 'path': path}) for path in
+                 ('frontend/src/app/App.tsx', 'frontend/src/shared/api/api.ts', 'frontend/playwright.config.ts',
+                  'frontend/browser-tests/recovery.spec.ts', 'backend/ai/xai.py', 'backend/features/chat/service.py'))
+    assert len(steps) == MAX_GITHUB_TOOL_ROUNDS
+    streams = []
+    for index, (name, arguments) in enumerate(steps):
+        item = call(name, json.dumps(arguments))
+        item.call_id, item.id = f'call_{index}', f'fc_{index}'
+        streams.append(FakeStream([done(item)]))
+    streams.append(FakeStream([SimpleNamespace(type='response.output_text.delta', delta='Đã đọc repo và log: bài test bị lỗi. Chưa kiểm tra hết mã nguồn.'), done()]))
+    provider, requests = fake_provider(monkeypatch, streams)
+    monkeypatch.setattr(chat_service, 'get_provider', lambda model='peto': provider)
+    events = await read_events(await client.post('/api/chat', json={'message': 'Đọc repo và đề xuất cải thiện', 'web_search': 'off'}))
+    assert events[-1]['type'] == 'done' and not any(event['type'] == 'error' for event in events)
+    assert len([event for event in events if event['type'] == 'connector_lookup' and event['live']]) == len(steps)
+    assert requests[3]['tools'] and requests[-1]['tools'] == [] and requests[-1]['tool_choice'] == 'none'
+    assert TOKEN not in json.dumps(requests)
+    saved_messages = (await client.get(f"/api/conversations/{events[0]['conversation_id']}/messages")).json()['messages']
+    assert saved_messages[-1]['status'] == 'complete' and 'Chưa kiểm tra hết' in saved_messages[-1]['content']
+    assert saved_messages[-1]['sources']
+
+
+async def test_github_call_budget_allows_more_reads_and_skips_excess(client, configured, github_http, monkeypatch):
+    await saved()
+    calls = []
+    for index in range(MAX_GITHUB_TOOL_CALLS + 2):
+        item = call('github_read_repository', json.dumps({'repository': 'nguoi-test/Peto', 'path': f'src/file_{index}.ts'}))
+        item.call_id, item.id = f'call_{index}', f'fc_{index}'
+        calls.append(item)
+    streams = [FakeStream([done(*calls[start:start + 8])]) for start in range(0, len(calls), 8)]
+    streams.append(FakeStream([SimpleNamespace(type='response.output_text.delta', delta='Đã đọc các tệp trong giới hạn; hai tệp cuối chưa đọc.'), done()]))
+    provider, requests = fake_provider(monkeypatch, streams)
+    monkeypatch.setattr(chat_service, 'get_provider', lambda model='peto': provider)
+    events = await read_events(await client.post('/api/chat', json={'message': 'Khảo sát mã nguồn repo', 'web_search': 'off'}))
+    assert events[-1]['type'] == 'done' and not any(event['type'] == 'error' for event in events)
+    reads = [request.url.path for request in github_http if '/contents/' in request.url.path]
+    assert reads == [f'/repos/nguoi-test/Peto/contents/src/file_{index}.ts' for index in range(MAX_GITHUB_TOOL_CALLS)]
+    assert all(request['tools'] for request in requests[:-1])
+    assert requests[-1]['tools'] == [] and requests[-1]['tool_choice'] == 'none'
+    outputs = [item for item in requests[-1]['input'] if item.get('type') == 'function_call_output']
+    assert len(outputs) == len(calls) and len({item['call_id'] for item in outputs}) == len(calls)
+    assert all(json.loads(item['output'])['ok'] for item in outputs[:MAX_GITHUB_TOOL_CALLS])
+    assert all('chưa được chạy' in json.loads(item['output'])['error'] for item in outputs[MAX_GITHUB_TOOL_CALLS:])

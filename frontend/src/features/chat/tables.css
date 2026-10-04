@@ -38,6 +38,22 @@
 .dismiss-error { margin-left: auto; flex-shrink: 0; display: grid; place-items: center; min-width: 36px; min-height: 36px; padding: 0; border: 0; border-radius: 8px; background: none; color: inherit; cursor: pointer; font-size: 22px; }
 .dismiss-error:hover { background: var(--panel-2); }
 .dismiss-error:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+.chat-dock .chat-error { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 12px; }
+.chat-error-message { min-width: 0; line-height: 1.6; }
+.chat-error-retry {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 36px;
+  padding: 7px 12px; border: 1px solid var(--line); border-radius: 10px;
+  background: var(--panel-2); color: var(--text); font: inherit; font-weight: 500; white-space: nowrap; cursor: pointer;
+}
+.chat-error-retry svg { flex-shrink: 0; }
+.chat-error-retry:hover:not(:disabled) { border-color: var(--muted); }
+.chat-error-retry:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.chat-error-retry:disabled { opacity: .5; cursor: default; }
+@media (max-width: 600px) {
+  .chat-dock .chat-error { grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; }
+  .chat-error .dismiss-error { grid-column: 2; grid-row: 1; align-self: start; }
+  .chat-error-retry { grid-column: 1; justify-self: start; min-height: 40px; }
+}
 .confirm-dialog {
   width: min(420px, calc(100% - 32px)); padding: 24px; color: var(--text);
   background: var(--panel); border: 1px solid var(--line); border-radius: 18px;

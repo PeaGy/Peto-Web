@@ -257,8 +257,12 @@ well as the emitter in `features/chat/service.py`.
 The tool loop lives **inside the provider** (`ai/xai.py`), not in the route. The provider
 sends `TOOL_SCHEMAS`, runs the loop itself with `store=false` (conversation state is kept
 in the `input` array rather than on xAI servers), and yields only assistant text upward.
-Limits: `MAX_TOOL_ROUNDS = 3`, `MAX_TOOL_CALLS = 8`; exceeding either ends the turn with a
-clear message instead of looping.
+Limits: `MAX_TOOL_ROUNDS = 3`, `MAX_TOOL_CALLS = 8`; when GitHub tools are available,
+`MAX_GITHUB_TOOL_ROUNDS = 12` and `MAX_GITHUB_TOOL_CALLS = 30` apply across the turn's tools.
+These are ceilings, not a target or a guarantee of reading an entire repository; the model can finish earlier.
+The final model request disables all tools and asks it to summarize available results and disclose missing data.
+Calls beyond the count limit receive a not-executed result; they never run. A provider that still calls tools on
+the final request raises a clear error instead of looping. The existing per-turn timeout still applies.
 
 `chat_tools.execute_tool` is a hard-coded allowlist keyed by tool name. It never evals a
 name or arguments produced by the model, caps the argument string length, and rejects
