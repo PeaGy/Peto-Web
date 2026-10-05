@@ -176,6 +176,28 @@ def slide_sample(theme: str) -> dict:
     ]}
 
 
+async def edit_sample(session, name: str) -> list[dict]:
+    """Thay đổi mẫu cho "__suaexcel__": thêm cột "Ghi chú Peto" ngay sau vùng dữ liệu của trang đầu, theo định dạng cột
+    bên trái, rồi tô hàng đầu."""
+    from features.documents.workbook_edit.book import Book
+    from features.documents.workbook_edit.sheetxml import address, column_letter
+    source = await session._workbook(name)
+    book = Book(source['data'])
+    info = book.data_sheets()[0]
+    top, left, bottom, right = book.worksheet(info).bounds() or (0, 0, 0, 0)
+    blank = dict(range=None, values=None, value=None, format_from=None, bold=None, italic=None, font_color=None,
+                 fill_color=None, number_format=None, decimals=None, align=None, new_name=None)
+    col = column_letter(right + 1)
+    changes = [{**blank, 'action': 'set', 'sheet': info.name, 'range': address(top, right + 1), 'values': [['Ghi chú Peto']],
+                'format_from': address(top, right)}]
+    if bottom > top:
+        changes.append({**blank, 'action': 'fill', 'sheet': info.name, 'range': f'{col}{top + 2}:{col}{bottom + 1}',
+                        'value': 'Đã kiểm tra', 'format_from': f'{column_letter(right)}{top + 2}'})
+    changes.append({**blank, 'action': 'format', 'sheet': info.name, 'range': f'{address(top, left)}:{address(top, right + 1)}',
+                    'bold': True, 'fill_color': '#FFF2CC'})
+    return changes
+
+
 def sheet_sample(kind: str = 'diem') -> dict:
     """Bảng tính mẫu cho "__excel__" (bảng điểm có thống kê) và "__excel__:chitieu" (chi tiêu: tiền, ngày, phần trăm)."""
     if kind == 'chitieu':
@@ -400,6 +422,22 @@ class MockProvider(ChatProvider):
                 yield f'Đã tạo bảng tính mẫu **{sample["title"]}** với công thức thật và biểu đồ.'
             else:
                 yield 'Chưa tạo được bảng tính: ' + result['error']
+            return
+        # "__suaexcel__": sửa tệp Excel mới nhất của hội thoại bằng edit_spreadsheet, để chạy thử thẻ và lưới xem tệp đã sửa.
+        if session and '__suaexcel__' in last_user:
+            if not session.workbooks:
+                yield 'Hội thoại chưa có tệp Excel nào để sửa.'
+                return
+            name = session.workbooks[-1]['name']
+            yield StreamChunk('document_status', 'Đang sửa tệp Excel…')
+            changes = await edit_sample(session, name)
+            result = await session.edit(json.dumps({'file': name, 'changes': changes}, ensure_ascii=False))
+            yield StreamChunk('document_status', '')
+            if result.get('ok'):
+                yield StreamChunk('artifact', artifact=result['artifact'])
+                yield f'Đã sửa tệp **{name}**: ' + '; '.join(line.strip() for line in result['changes']) + '.'
+            else:
+                yield 'Chưa sửa được tệp: ' + result['error']
             return
         lowered = last_user.casefold()
         # Only the offline mock uses keyword routing. The real provider chooses its tool.

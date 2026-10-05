@@ -1,4 +1,6 @@
 """Create/version documents and export user-reviewed drafts."""
+import io
+import zipfile
 from typing import Literal
 from urllib.parse import quote
 import anyio
@@ -11,6 +13,9 @@ from features.documents.export import MAX_CONTENT, clean_text, image_numbers, pa
 from features.documents.jobs import (EXPORT_WAIT, PREVIEW_WAIT, RenderBusy, build_presentation, build_spreadsheet, export_file,
                                      prepare_spreadsheet, render_page, render_queue)
 from features.documents.sheets.view import grid as sheet_grid
+from features.documents.tools import CHANGED_PREFIX, parse_changes
+from features.documents.workbook_edit.package import EditError
+from features.documents.workbook_grid import grid as workbook_grid
 from features.documents.slides.spec import image_numbers as slide_images, load as load_deck
 from features.documents import images as document_images
 
@@ -119,11 +124,16 @@ async def export_presentation(owner, draft, assets, version, format):
 
 
 async def export_spreadsheet(draft, assets, version, format):
-    """Bảng tính chỉ tải được XLSX; dựng lại khi tệp đã lưu bị thiếu."""
+    """Bảng tính chỉ tải được XLSX; dựng lại khi tệp đã lưu bị thiếu. Tệp Excel có macro (.xlsm) Peto đã sửa tải về
+    đúng đuôi .xlsm, vì Excel không mở tệp có macro mang đuôi .xlsx."""
     if format != 'xlsx':
         raise HTTPException(400, 'Bảng tính chỉ tải được tệp XLSX.')
     if assets and assets.get('xlsx'):
+        if macro_enabled(assets['xlsx']):
+            return file_response(draft, version, 'xlsm', assets['xlsx'])
         return file_response(draft, version, format, assets['xlsx'])
+    if draft.get('style') == 'workbook':
+        raise HTTPException(404, 'Không còn tệp của bản sửa này.')
     try:
         async with render_queue.slot(EXPORT_WAIT):
             files = await anyio.to_thread.run_sync(build_spreadsheet, draft['content'])
@@ -141,10 +151,28 @@ async def sheet(document_id: str, version: int = Query(ge=1), owner: str = Depen
     if draft.get('format') != 'xlsx':
         raise HTTPException(404, 'Tài liệu này không phải bảng tính.')
     try:
-        data = await anyio.to_thread.run_sync(lambda: sheet_grid(prepare_spreadsheet(draft['content'])))
-    except ValueError as error:
+        if draft.get('style') == 'workbook':
+            # Tệp người dùng Peto đã sửa: lưới đọc thẳng từ tệp đã lưu, kèm ô đã sửa ghi trong nội dung.
+            assets = await store.get_assets(owner, document_id, version)
+            if not assets or not assets.get('xlsx'):
+                raise HTTPException(404, 'Không còn tệp của bản sửa này.')
+            changed = next((line[len(CHANGED_PREFIX):] for line in draft['content'].splitlines()
+                            if line.startswith(CHANGED_PREFIX)), '')
+            data = await anyio.to_thread.run_sync(workbook_grid, assets['xlsx'], draft['title'], changed)
+            data['changes'] = parse_changes(draft['content'])
+        else:
+            data = await anyio.to_thread.run_sync(lambda: sheet_grid(prepare_spreadsheet(draft['content'])))
+    except (ValueError, EditError) as error:
         raise HTTPException(422, f'Chưa đọc lại được bảng tính: {error}') from error
     return JSONResponse(data, headers={'Cache-Control': 'private, no-store'})
+
+
+def macro_enabled(data: bytes) -> bool:
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            return b'macroEnabled.main+xml' in archive.read('[Content_Types].xml')
+    except (zipfile.BadZipFile, KeyError, OSError):
+        return False
 
 
 MIME = {
@@ -152,6 +180,7 @@ MIME = {
     'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
     'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'xlsm': 'application/vnd.ms-excel.sheet.macroEnabled.12',
 }
 
 

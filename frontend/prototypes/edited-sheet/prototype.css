@@ -1,0 +1,190 @@
+/* ---------- khung trang mẫu ---------- */
+body { margin: 0; background: var(--bg); color: var(--text); font-family: "Segoe UI", system-ui, sans-serif; }
+#root { height: 100dvh; }
+.proto-shell { display: flex; height: 100dvh; min-height: 0; }
+.proto-chat { display: flex; flex: 1; min-width: 300px; justify-content: center; overflow: auto; }
+.proto-messages { display: flex; flex-direction: column; gap: 22px; width: min(720px, 100%); padding: 28px 24px 96px; }
+.proto-attachment { display: inline-flex; align-items: center; gap: 8px; margin-top: 10px; padding: 7px 11px; border: 1px solid var(--line); border-radius: 10px; font-size: 13px; color: var(--text); }
+.proto-attachment small { color: var(--muted); font-size: 11px; }
+.proto-panel { display: flex; flex-direction: column; }
+.proto-panel .document-panel-preview { min-height: 0; }
+.proto-close { display: none; margin-left: auto; }
+@media (max-width: 1100px) {
+  /* Điện thoại: bảng tài liệu phủ cả màn hình như bản thật (dialog showModal), mở từ thẻ trong chat. */
+  .proto-chat { min-width: 0; }
+  .proto-messages { padding: 18px 16px 24px; }
+  .proto-panel { z-index: 100; }
+  .proto-panel:not(.open) { display: none; }
+  .proto-close { display: inline-flex; }
+}
+
+/* ---------- lưới tệp người dùng ---------- */
+.wb-view { --wb-strong-line: #9aa0a6; }
+:root[data-theme="light"] .wb-view { --wb-strong-line: #5f6368; }
+.wb-canvas { position: relative; width: max-content; color: var(--text);
+  --wb-bg: var(--bg); --wb-line: var(--sheet-line, #2a2a2a); --wb-gutter: var(--sheet-gutter, #1c1c1c); --wb-gutter-text: var(--sheet-gutter-text, #8f8f8f);
+  --wb-gutter-on: var(--sheet-gutter-on, #24302e); --wb-sel: var(--sheet-sel, #3fb3a3); }
+.wb-canvas.paper { color: #202124; --wb-bg: #fff; --wb-line: #e2e5e8; --wb-gutter: #f5f6f7; --wb-gutter-text: #5f6368; --wb-gutter-on: #dcebe8;
+  --wb-sel: #0f766e; --wb-strong-line: #5f6368; --sheet-accent: #0f766e; --sheet-chart-text: #4a4a4a; --sheet-chart-title: #333; --sheet-chart-grid: #e4e7e9;
+  background: #fff; }
+.wb-grid { table-layout: fixed; width: max-content; border-collapse: separate; border-spacing: 0; font: 13px/1.2 Calibri, "Segoe UI", system-ui, sans-serif; background: var(--wb-bg); }
+.wb-grid th, .wb-grid td { padding: 0 6px; overflow: hidden; white-space: nowrap; text-overflow: clip; border-right: 1px solid var(--wb-line); border-bottom: 1px solid var(--wb-line); vertical-align: bottom; }
+.wb-grid td { cursor: cell; background-clip: padding-box; }
+.wb-grid thead th { position: sticky; top: 0; z-index: 4; background: var(--wb-gutter); color: var(--wb-gutter-text); font: 11.5px "Segoe UI", system-ui, sans-serif; text-align: center; vertical-align: middle; }
+.wb-grid thead th.wb-corner { left: 0; z-index: 5; }
+.wb-grid tbody th { position: sticky; left: 0; z-index: 3; padding: 0; background: var(--wb-gutter); color: var(--wb-gutter-text); font: 11.5px "Segoe UI", system-ui, sans-serif; font-weight: 400; text-align: center; vertical-align: middle; }
+.wb-grid thead th.on, .wb-grid tbody th.on { background: var(--wb-gutter-on); color: inherit; }
+.wb-grid td:not([style*="background"]) { background-color: var(--wb-bg); }
+.wb-grid tr.frozen td { box-shadow: 0 1px 0 var(--wb-strong-line); }
+.wb-grid td.formula { color: var(--muted); font: 12px ui-monospace, Consolas, monospace; text-align: left; }
+.wb-grid td.sel { outline: 2px solid var(--wb-sel); outline-offset: -2px; }
+.wb-grid td.area { outline: 2px dashed var(--wb-sel); outline-offset: -2px; }
+.wb-grid td.pending::after { content: "Excel tính khi mở"; color: var(--muted); font-size: 11px; font-style: italic; }
+.wb-chart { position: absolute; margin: 0; border: 1px solid var(--wb-line); background: var(--wb-bg); box-shadow: 0 2px 10px #0000001a; }
+.wb-chart svg { display: block; width: 100%; height: 100%; font-family: "Segoe UI", system-ui, sans-serif; }
+.wb-canvas.compact .wb-grid { font-size: 12px; }
+.wb-canvas.compact .wb-grid thead th, .wb-canvas.compact .wb-grid tbody th { position: static; font-size: 11px; }
+.wb-canvas.compact .wb-grid td { cursor: default; }
+.wb-wrap { background: var(--wb-bg, var(--bg)); }
+.paper-view .wb-wrap { background: #fff; }
+
+/* 1. Như Excel: khung và góc xanh trên ô đã sửa. */
+.wb-canvas[data-changes="mark"] td.changed { position: relative; box-shadow: inset 0 0 0 1.5px #0f766e; }
+.wb-canvas[data-changes="mark"] td.changed::before { content: ""; position: absolute; top: 0; right: 0; border-style: solid; border-width: 0 7px 7px 0; border-color: transparent #0f766e transparent transparent; }
+.wb-fx-changed { margin-left: 10px; padding: 3px 8px; border-radius: 999px; background: #0f766e1f; color: #2a9d8f; font: 600 11.5px/1.2 "Segoe UI", system-ui, sans-serif; }
+:root[data-theme="light"] .wb-fx-changed { color: #0f766e; }
+.wb-stepper { display: flex; align-items: center; gap: 2px; margin: 5px 0; padding: 0 2px; border: 1px solid var(--line); border-radius: 8px; font-size: 12px; color: var(--text); }
+.wb-stepper span { padding: 0 6px; white-space: nowrap; }
+.wb-stepper button { width: 26px; height: 26px; border: 0; border-radius: 6px; background: none; color: var(--muted); font-size: 17px; line-height: 1; cursor: pointer; }
+.wb-stepper button:hover { background: var(--panel-2); color: var(--text); }
+.wb-badge { flex-shrink: 0; padding: 3px 8px; border-radius: 999px; background: #0f766e1f; color: #2a9d8f; font-size: 11px; font-weight: 600; }
+:root[data-theme="light"] .wb-badge { color: #0f766e; }
+
+/* 2. Nhật ký thay đổi: tô xanh rất nhạt chồng lên màu của ô. */
+.wb-canvas[data-changes="soft"] td.changed { background-image: linear-gradient(#2a9d8f2e, #2a9d8f2e); }
+.wb-log-panel { border-bottom: 1px solid var(--line); }
+.wb-log-head { display: flex; align-items: center; gap: 8px; width: 100%; padding: 10px 14px; border: 0; background: none; color: var(--text); font: 600 13px "Segoe UI", system-ui, sans-serif; text-align: left; cursor: pointer; }
+.wb-log-head small { color: var(--muted); font-weight: 400; }
+.wb-chevron { margin-left: auto; color: var(--muted); transition: transform 200ms var(--ease-out); }
+.wb-log-panel:not(.open) .wb-chevron { transform: rotate(-90deg); }
+.wb-log { margin: 0; padding: 0 8px 10px; list-style: none; font-size: 13px; }
+.wb-log li > button { display: flex; gap: 12px; width: 100%; padding: 7px 8px; border: 0; border-radius: 8px; background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.wb-log li > button:hover, .wb-log li > button[aria-pressed="true"] { background: var(--panel-2); }
+.wb-log-where { flex: 0 0 74px; color: #2a9d8f; font: 12.5px ui-monospace, Consolas, monospace; }
+:root[data-theme="light"] .wb-log-where { color: #0f766e; }
+.wb-log.compact { padding: 10px 16px 4px; }
+.wb-swatch { display: inline-block; width: 12px; height: 12px; margin: 0 2px -1px; border-radius: 3px; box-shadow: inset 0 0 0 1px #0003; }
+.wb-log.compact li { display: flex; gap: 12px; padding: 5px 0; line-height: 1.45; }
+.wb-log-more { margin: 0; padding: 0 16px 10px 102px; color: var(--muted); font-size: 12px; }
+
+/* 3. Tô nhẹ: lớp vàng mỏng chồng lên màu của ô, chú thích ở thanh trang tính. */
+.wb-canvas[data-changes="tint"] td.changed { background-image: linear-gradient(#f2c14e4d, #f2c14e4d); }
+.wb-legend { display: flex; align-items: center; gap: 7px; margin-left: auto; padding: 0 6px; color: var(--muted); font-size: 12px; white-space: nowrap; }
+.wb-legend i { width: 12px; height: 12px; border-radius: 3px; background: #f2c14e80; box-shadow: inset 0 0 0 1px #f2c14e; }
+
+/* thẻ trong chat */
+.document-artifact.edited .wb-mini-crop { max-height: 236px; overflow: hidden; background: #fff; }
+.document-artifact.log .artifact-caption button { color: var(--text); }
+
+@media (max-width: 600px) {
+  .wb-stepper span { display: none; }
+  .wb-log-where { flex-basis: 64px; }
+  .wb-log-more { padding-left: 92px; }
+  .wb-legend { display: none; }
+}
+
+/* ---------- picker (PICKER.md, nguyên văn) ---------- */
+.proto-picker {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2147483647;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgba(10, 10, 10, 0.82);
+  -webkit-backdrop-filter: blur(12px) saturate(1.4);
+  backdrop-filter: blur(12px) saturate(1.4);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.08) inset,
+    0 8px 24px rgba(0, 0, 0, 0.24),
+    0 2px 6px rgba(0, 0, 0, 0.12);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 13px;
+  line-height: 1;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.proto-picker-highlight {
+  position: absolute;
+  top: 4px;
+  left: 0;
+  height: 28px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  will-change: transform;
+}
+
+.proto-picker[data-ready] .proto-picker-highlight {
+  transition:
+    transform 250ms cubic-bezier(0.23, 1, 0.32, 1),
+    width 250ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .proto-picker[data-ready] .proto-picker-highlight { transition: none; }
+}
+
+.proto-picker-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.55);
+  font: inherit;
+  cursor: pointer;
+  transition: color 150ms ease-out;
+}
+
+.proto-picker-item:hover {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.proto-picker-item:active {
+  transform: scale(0.97);
+}
+
+.proto-picker-item:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.4);
+  outline-offset: 2px;
+}
+
+.proto-picker-item[data-active] {
+  color: #fff;
+}
+
+.proto-picker-divider {
+  width: 1px;
+  height: 16px;
+  margin: 0 4px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.proto-picker-replay {
+  padding: 0 10px;
+  font-size: 14px;
+}
+
+.proto-picker[data-position="top"] {
+  bottom: auto;
+  top: 24px;
+}

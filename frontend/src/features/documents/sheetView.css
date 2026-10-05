@@ -61,3 +61,42 @@
   .sheet-grid th, .sheet-grid td { font-size: 12.5px; }
   .sheet-tabs { min-height: 46px; padding-bottom: env(safe-area-inset-bottom); }
 }
+
+/* Tệp người dùng Peto đã sửa (WorkbookView, mẫu "Nhật ký thay đổi"): danh sách thay đổi ở trên, lưới theo đúng định dạng
+   của tệp (màu nền, viền, chữ đậm, ô gộp, hàng cột cố định) trên nền của app; ô Peto vừa sửa tô xanh rất nhạt, chồng lên
+   màu sẵn có của ô để vẫn thấy màu người dùng tô. */
+.wb-view { --wb-strong-line: #9aa0a6; }
+:root[data-theme="light"] .wb-view { --wb-strong-line: #5f6368; }
+.wb-log-panel { flex-shrink: 0; max-height: 38%; overflow: auto; border-bottom: 1px solid var(--line); }
+.wb-log-head { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 8px; width: 100%; padding: 10px 14px; border: 0; background: var(--bg); color: var(--text); font: 600 13px "Segoe UI", system-ui, sans-serif; text-align: left; cursor: pointer; }
+.wb-log-head small { color: var(--muted); font-weight: 400; }
+.wb-chevron { margin-left: auto; color: var(--muted); transition: transform 200ms var(--ease-out); }
+.wb-log-panel:not(.open) .wb-chevron { transform: rotate(-90deg); }
+@media (prefers-reduced-motion: reduce) { .wb-chevron { transition: none; } }
+.wb-log { margin: 0; padding: 0 8px 10px; list-style: none; font-size: 13px; }
+.wb-log li > button { display: flex; gap: 12px; width: 100%; padding: 7px 8px; border: 0; border-radius: 8px; background: none; color: var(--text); font: inherit; line-height: 1.45; text-align: left; cursor: pointer; }
+.wb-log li > button:hover, .wb-log li > button[aria-pressed="true"] { background: var(--panel-2); }
+.wb-log .wb-log-where small { display: block; margin-top: 2px; color: var(--muted); font: 11px "Segoe UI", system-ui, sans-serif; }
+.wb-fx-changed { flex-shrink: 0; margin-left: 10px; padding: 3px 8px; border-radius: 999px; background: color-mix(in srgb, var(--sheet-accent) 16%, transparent); color: var(--sheet-sel); font: 600 11.5px/1.2 "Segoe UI", system-ui, sans-serif; }
+.wb-canvas { position: relative; width: max-content; }
+.wb-grid { table-layout: fixed; width: max-content; border-collapse: separate; border-spacing: 0; color: var(--text); font: 13px/1.2 Calibri, Carlito, "Segoe UI", system-ui, sans-serif; background: var(--sheet-bg); }
+.wb-grid th, .wb-grid td { padding: 0 6px; overflow: hidden; white-space: nowrap; text-overflow: clip; border-right: 1px solid var(--sheet-line); border-bottom: 1px solid var(--sheet-line); vertical-align: bottom; }
+.wb-grid td { cursor: cell; background-color: var(--sheet-bg); background-clip: padding-box; }
+.wb-grid thead th { position: sticky; top: 0; z-index: 4; background: var(--sheet-gutter); color: var(--sheet-gutter-text); font: 11.5px "Segoe UI", system-ui, sans-serif; text-align: center; vertical-align: middle; }
+.wb-grid thead th.wb-corner { left: 0; z-index: 5; }
+.wb-grid tbody th { position: sticky; left: 0; z-index: 3; padding: 0; background: var(--sheet-gutter); color: var(--sheet-gutter-text); font: 11.5px "Segoe UI", system-ui, sans-serif; text-align: center; vertical-align: middle; }
+.wb-grid thead th.on, .wb-grid tbody th.on { background: var(--sheet-gutter-on); color: var(--text); }
+.wb-grid tr.frozen td { box-shadow: 0 1px 0 var(--wb-strong-line); }
+.wb-grid td.formula { color: var(--muted); font: 12px ui-monospace, Consolas, monospace; text-align: left; }
+.wb-grid td.changed { background-image: linear-gradient(color-mix(in srgb, var(--sheet-accent) 20%, transparent), color-mix(in srgb, var(--sheet-accent) 20%, transparent)); }
+.wb-grid td.sel { outline: 2px solid var(--sheet-sel); outline-offset: -2px; }
+.wb-grid td.area { outline: 2px dashed var(--sheet-sel); outline-offset: -2px; }
+.wb-grid td.sel.area { outline-style: solid; }
+.wb-grid td.pending { color: var(--muted); }
+.wb-chart { position: absolute; margin: 0; border: 1px solid var(--sheet-line); background: var(--sheet-bg); box-shadow: 0 2px 10px #0000001a; }
+.wb-chart svg { display: block; width: 100%; height: 100%; font-family: "Segoe UI", system-ui, sans-serif; }
+.wb-truncated { margin: 0; padding: 6px 14px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11.5px; }
+@media (max-width: 600px) {
+  .wb-log-panel { max-height: 34%; }
+  .wb-grid th, .wb-grid td { font-size: 12.5px; }
+}

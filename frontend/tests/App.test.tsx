@@ -264,11 +264,11 @@ it('gửi tệp Excel: có ghi chú phần đọc được, sau khi nhận hiệ
   const input = document.querySelector('input[type="file"]') as HTMLInputElement;
   expect(input.accept).toContain('.xlsx');
   await userEvent.upload(input, new File(['bang tinh gia'], 'bang-diem.xlsx', { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
-  expect(screen.getByText(/Peto đọc dữ liệu, công thức và kết quả đã lưu trong tệp Excel/)).toBeTruthy();
+  expect(screen.getByText(/Peto đọc dữ liệu, công thức, ghi chú, biểu đồ và bảng tổng hợp trong tệp Excel, và sửa thẳng được/)).toBeTruthy();
   fireEvent.change(screen.getByLabelText('Nhắn cho Peto'), { target: { value: 'Ai điểm cao nhất?' } });
   fireEvent.click(screen.getByRole('button', { name: 'Gửi', exact: true }));
   expect(await screen.findByText('Đã đọc chữ · 2 trang tính')).toBeTruthy();
-  expect(screen.queryByText(/kết quả đã lưu trong tệp Excel/)).toBeNull();
+  expect(screen.queryByText(/bảng tổng hợp trong tệp Excel/)).toBeNull();
 });
 
 it('lịch sử PDF báo rõ phần không đọc được và vẫn tải lại được', async () => {

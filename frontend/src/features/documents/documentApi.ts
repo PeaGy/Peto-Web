@@ -2,7 +2,7 @@ import { UnauthorizedError } from '../../shared/api/api';
 
 export interface DocumentSummary { id: string; conversation_id: string; title: string; version: number; created_at: number; format?: 'docx' | 'pdf' | 'pptx' | 'xlsx' | null; pages?: number | null }
 export interface SavedDocument extends DocumentSummary {
-  style?: 'report' | 'essay' | 'clean' | 'academic' | 'bold' | 'sheet';
+  style?: 'report' | 'essay' | 'clean' | 'academic' | 'bold' | 'sheet' | 'workbook';
   content: string;
   versions: { version: number; title: string; created_at: number }[];
 }
@@ -36,8 +36,28 @@ export interface SheetData {
   name: string; title: string; columns: { header: string; width: number; wrap: boolean }[];
   rows: (SheetCell | null)[][]; total: (SheetCell | null)[] | null; formulas: number; charts: SheetChartData[];
 }
-export interface SheetGrid { title: string; sheets: SheetData[] }
-/** Số liệu của bảng tính (create_spreadsheet), do máy chủ tính lại từ bảng đã lưu. Không lưu đệm giữa các tài khoản. */
+export interface TableGrid { kind?: undefined; title: string; sheets: SheetData[] }
+
+/** Một ô của tệp người dùng Peto đã sửa: chữ đã định dạng, kiểu (số, chữ, đúng/sai, lỗi), công thức, số thứ tự kiểu ô;
+ * p là công thức chưa có kết quả (Excel tính khi mở tệp). */
+export interface WorkbookCell { d?: string; t?: 'n' | 's' | 'b' | 'e'; f?: string; s?: number; p?: 1 }
+/** Kiểu ô rút gọn: đậm, nghiêng, gạch chân, gạch ngang, màu chữ, màu nền, cỡ chữ (pt), căn ngang/dọc, xuống dòng, thụt
+ * lề, viền từng cạnh (như "1px solid #000000"). */
+export interface WorkbookStyle {
+  b?: 1; i?: 1; u?: 1; x?: 1; c?: string; f?: string; z?: number; h?: string; v?: string; w?: 1; in?: number;
+  bd?: Partial<Record<'l' | 'r' | 't' | 'b', string>>;
+}
+export interface WorkbookSheet {
+  name: string; kind: 'workbook'; hidden: boolean; cols: { width: number; hidden?: boolean }[]; heights: Record<string, number>;
+  hiddenRows: number[]; rowHeight: number; cells: [number, number, WorkbookCell][]; merges: number[][]; freeze: [number, number];
+  changed: number[][]; charts: SheetChartData[]; formulas: number; used: [number, number]; truncated: boolean;
+}
+/** Một dòng thay đổi: trang, vùng (A9:F9, 9:10 là cả hàng, G:H là cả cột, rỗng là cả trang) và chữ. */
+export interface WorkbookChange { sheet: string; where: string; text: string }
+export interface WorkbookGrid { kind: 'workbook'; title: string; styles: WorkbookStyle[]; sheets: WorkbookSheet[]; changes: WorkbookChange[] }
+export type SheetGrid = TableGrid | WorkbookGrid;
+/** Lưới bảng tính: bảng Peto tạo (tính lại từ bảng đã lưu) hoặc tệp người dùng Peto đã sửa (đọc từ tệp). Không lưu đệm
+ * giữa các tài khoản. */
 export const getSheet = (id: string, version: number, signal?: AbortSignal) => json<SheetGrid>(`/api/documents/${encodeURIComponent(id)}/sheet?version=${version}`, { signal });
 export const deleteDocument = (id: string) => json(`/api/documents/${encodeURIComponent(id)}`, { method: 'DELETE' });
 export async function downloadDocument(document: SavedDocument, format: 'docx' | 'pdf') {

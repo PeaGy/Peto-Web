@@ -16,7 +16,8 @@ from pypdf import PdfReader, apply_configuration
 DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 PDF_MIME = "application/pdf"
 # Bảng tính Excel đọc ở workbook_reader (cùng tiến trình con, cùng giới hạn thời gian).
-from features.documents.workbook_reader import SPREADSHEET_MIMES, XLSM_MIME, XLSX_MIME, read_workbook  # noqa: E402
+from features.documents.workbook_reader import (SHEET_FORMAT, SPREADSHEET_MIMES, XLSM_MIME, XLSX_MIME,  # noqa: E402
+                                                read_workbook)
 # 2 (29/9/2026): tệp chữ dài giữ phần đầu, phần cuối và các đoạn có lỗi thay vì chỉ phần đầu. Đổi số này thì tệp cũ
 # được đọc lại ở lượt sau (features.chat.history._read_legacy_documents).
 # 3 (1/10/2026): thêm chữ OCR theo trang và số trang đã đọc.
@@ -386,6 +387,9 @@ def cached_document(raw) -> dict | None:
     try:
         value = json.loads(raw) if isinstance(raw, str) else raw
         if isinstance(value, dict) and value.get("version") == VERSION:
+            # Bảng tính đọc theo cách viết cũ (chưa có biểu đồ, ghi chú…) coi như chưa đọc, để lượt sau đọc lại.
+            if value.get("sheets") is not None and value.get("sheet_format", 1) != SHEET_FORMAT:
+                return None
             return value
     except (ValueError, TypeError):
         pass

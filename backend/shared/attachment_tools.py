@@ -16,6 +16,7 @@ import anyio
 
 from features.documents import reader as document_reader
 from features.documents.reader import number
+from features.documents.workbook_reader import XLSX_MIME
 
 current_files: ContextVar[AttachmentFiles | None] = ContextVar("attachment_files", default=None)
 
@@ -87,12 +88,22 @@ def _window(line: str, at: int) -> str:
 
 
 class AttachmentFiles:
-    """Tệp chữ, PDF và Word của hội thoại cho một lượt chat. Nội dung đầy đủ được đọc lại từ đĩa khi Peto cần, nhớ tới
-    hết lượt."""
+    """Tệp chữ, PDF, Word và Excel của hội thoại cho một lượt chat, kể cả bản Excel Peto đã sửa (đọc từ kho tài liệu
+    của chủ tài khoản). Nội dung đầy đủ được đọc lại khi Peto cần, nhớ tới hết lượt."""
 
-    def __init__(self, rows: list[dict]):
-        self.files = [item for row in rows for item in row.get("attachments") or []
-                      if item.get("kind") == "file" and item.get("path")]
+    def __init__(self, rows: list[dict], owner: str | None = None):
+        self.owner = owner
+        self.files = []
+        for row in rows:
+            self.files.extend(item for item in row.get("attachments") or []
+                              if item.get("kind") == "file" and item.get("path"))
+            if owner is None:
+                continue
+            for item in row.get("generated_documents") or []:
+                if item.get("style") == "workbook" and item.get("version"):
+                    self.files.append({"id": f"generated-{item['id']}-{item['version']}", "filename": item["filename"],
+                                       "kind": "file", "mime": XLSX_MIME, "document_id": item["id"],
+                                       "version": item["version"]})
         self._lines: dict[str, tuple[list[str], str]] = {}
         self._folded: dict[str, list[str]] = {}
 
@@ -111,10 +122,17 @@ class AttachmentFiles:
 
     async def _content(self, item: dict) -> tuple[list[str], str]:
         if item["id"] not in self._lines:
-            try:
-                data = await anyio.to_thread.run_sync(Path(item["path"]).read_bytes)
-            except OSError:
-                raise ToolError("Không mở được tệp đã lưu. Nhờ người dùng gửi lại tệp.") from None
+            if item.get("document_id"):
+                from storage import documents as document_store
+                assets = await document_store.get_assets(self.owner, item["document_id"], item["version"])
+                if not assets or not assets.get("xlsx"):
+                    raise ToolError("Bản Excel Peto đã sửa không còn tệp.")
+                data = assets["xlsx"]
+            else:
+                try:
+                    data = await anyio.to_thread.run_sync(Path(item["path"]).read_bytes)
+                except OSError:
+                    raise ToolError("Không mở được tệp đã lưu. Nhờ người dùng gửi lại tệp.") from None
             document = await document_reader.read_full_document(
                 data, item["mime"], cached=document_reader.cached_document(item.get("document")))
             if document["status"] not in ("ready", "partial"):

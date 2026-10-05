@@ -136,7 +136,8 @@ async def get_messages(
                     (owner, conversation_id, artifact.get('id'), artifact.get('version')))).fetchone()
                 if document:
                     existing.append(artifact)
-                    generated.append({'id': artifact['id'], 'filename': artifact['filename'], 'content': document['content']})
+                    generated.append({'id': artifact['id'], 'filename': artifact['filename'], 'content': document['content'],
+                                      'style': artifact.get('style'), 'version': artifact.get('version')})
             row['artifacts'], row['generated_documents'] = existing, generated
         return await _attach_files(db, rows)
 

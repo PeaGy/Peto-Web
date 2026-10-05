@@ -345,11 +345,11 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                         agent_question='\n'.join(str(row.get('content', ''))[:4000]
                             for row in [r for r in rows if r.get('role') == 'user'][-3:])),
                 )
-                document_session = DocumentSession(owner, conversation_id) if mode == 'chat' else None
+                document_session = DocumentSession(owner, conversation_id, rows) if mode == 'chat' else None
                 if project_prompt:
                     system_prompt += '\n\n' + project_prompt
                 # Tệp trong lịch sử vừa đọc (đã lọc theo chủ tài khoản trong SQL): Peto tìm/đọc thêm được khi cần.
-                files_session = attachment_tools.AttachmentFiles(rows) if mode == 'chat' else None
+                files_session = attachment_tools.AttachmentFiles(rows, owner) if mode == 'chat' else None
                 if request.document_mode and mode == 'chat':
                     system_prompt += '\n\n[PETO_DOCUMENT_CREATE]\nNgười dùng chọn tạo tài liệu: hãy gọi create_document để tạo tệp theo yêu cầu, mặc định DOCX nếu chưa chọn định dạng. Trả lời ngắn sau khi có kết quả; nội dung dài đặt trong công cụ.'
                 prepared_at = perf_counter()

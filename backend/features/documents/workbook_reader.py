@@ -38,6 +38,12 @@ MAX_FORMULA_LINES = 300     # mỗi trang tính
 CELL_CHARS = 1_000
 MAX_MERGES_SHOWN = 10
 MAX_NAMES_SHOWN = 20
+MAX_CHARTS = 30             # cả tệp
+MAX_TEXT_BOXES = 40
+MAX_NOTES = 200
+# Đổi cách viết chữ của bảng tính thì tăng số này: tệp Excel đã đọc theo cách cũ được đọc lại ở lượt sau
+# (reader.cached_document). 2 (5/10/2026): thêm biểu đồ, hộp chữ, hình, Bảng (Table), bảng tổng hợp, ghi chú trong ô.
+SHEET_FORMAT = 2
 
 _RELATIONSHIP_NAMESPACES = ("http://schemas.openxmlformats.org/officeDocument/2006/relationships",
                             "http://purl.oclc.org/ooxml/officeDocument/relationships")
@@ -291,6 +297,8 @@ class _Sheet:
         self.rows: list[str] = []
         self.formulas: dict[tuple[int, int], str] = {}
         self.merges: list[str] = []
+        # Bảng (Table), biểu đồ, hộp chữ, hình, bảng tổng hợp, ghi chú: các dòng đứng trước công thức (workbook_parts).
+        self.extras: list[str] = []
         self.bounds = [None, None, None, None]      # hàng đầu, cột đầu, hàng cuối, cột cuối
         self.more_rows = False
         self.more_columns = False
@@ -343,6 +351,7 @@ class _Sheet:
             shown = ", ".join(self.merges[:MAX_MERGES_SHOWN])
             more = f" và {_number(len(self.merges) - MAX_MERGES_SHOWN)} vùng khác" if len(self.merges) > MAX_MERGES_SHOWN else ""
             head.append(f"Ô gộp: {shown}{more}")
+        head.extend(self.extras)
         if not self.rows:
             head.append("(Trang tính trống.)")
         return [*((line, False) for line in [*head, *self.formula_lines()]), *((row, True) for row in self.rows)]
@@ -506,6 +515,77 @@ def _read_sheet(package: _Package, path: str, sheet: _Sheet, strings: list[str],
             element.clear()
 
 
+def _extras(package: _Package, part: str, people: dict[str, str], date1904: bool, counts: dict) -> list[str]:
+    """Dòng mô tả Bảng (Table), bảng tổng hợp, biểu đồ, hộp chữ, hình và ghi chú của một trang tính. Giới hạn đếm trên cả
+    tệp (counts) và không phụ thuộc max_chars, để số dòng của chữ đầy đủ khớp với phần đọc sẵn."""
+    from features.documents import workbook_parts as parts
+
+    relations = [(target, kind) for target, kind in package.relationships(part).values() if target in package.names]
+    lines: list[str] = []
+
+    def guarded(read, *args):
+        try:
+            return read(*args)
+        except Exception:
+            counts["failed"] += 1
+            return None
+
+    for target, kind in relations:
+        if kind.endswith("/table") and (table := guarded(parts.read_table, package, target)):
+            counts["tables"] += 1
+            lines.append(parts.describe_table(table))
+    for target, kind in relations:
+        if kind.endswith("/pivotTable") and (pivot := guarded(parts.read_pivot, package, target)):
+            counts["pivots"] += 1
+            lines.append(parts.describe_pivot(pivot))
+    images = []
+    for target, kind in relations:
+        if not kind.endswith("/drawing") or not (drawing := guarded(parts.read_drawing, package, target, date1904)):
+            continue
+        for chart in drawing.charts:
+            counts["charts"] += 1
+            if counts["charts"] <= MAX_CHARTS:
+                lines.extend(parts.describe_chart(chart, f" ở {parts.area(*chart.anchor)}" if chart.anchor else ""))
+        for where, text in drawing.texts:
+            counts["texts"] += 1
+            if counts["texts"] <= MAX_TEXT_BOXES:
+                lines.append(f"Hộp chữ{where}: {text}")
+        images.extend(drawing.images)
+    if images:
+        counts["images"] += len(images)
+        described = [f"{where} ({text})" if text else where for where, text in images if text][:10]
+        lines.append(f"Hình ảnh: {len(images)} hình, Peto chưa xem được nội dung hình"
+                     + (": " + "; ".join(item.strip() for item in described) if described else "") + ".")
+    notes = guarded(parts.read_notes, package, part, people) or []
+    for note in notes:
+        counts["notes"] += 1
+        if counts["notes"] <= MAX_NOTES:
+            lines.append(parts.describe_note(note))
+    if counts["notes"] > MAX_NOTES and notes:
+        lines.append(f"[… còn ghi chú khác chưa hiện, quá {MAX_NOTES} ghi chú …]")
+    return lines
+
+
+def _chart_sheet(package: _Package, part: str, date1904: bool, counts: dict) -> list[str]:
+    """Biểu đồ của một trang biểu đồ (chartsheet)."""
+    from features.documents import workbook_parts as parts
+
+    lines: list[str] = []
+    for target, kind in package.relationships(part).values():
+        if not kind.endswith("/drawing") or target not in package.names:
+            continue
+        try:
+            drawing = parts.read_drawing(package, target, date1904)
+        except Exception:
+            counts["failed"] += 1
+            continue
+        for chart in drawing.charts:
+            counts["charts"] += 1
+            if counts["charts"] <= MAX_CHARTS:
+                lines.extend(parts.describe_chart(chart))
+    return lines
+
+
 def read_workbook(data: bytes, max_chars: int) -> dict:
     """Đọc cả bảng tính thành chữ; dài quá ``max_chars`` thì phần đọc sẵn gồm đầu, công thức và cuối mỗi trang tính."""
     from features.documents.reader import result
@@ -561,7 +641,16 @@ def _read(package: _Package, max_chars: int) -> dict:
     kinds = _styles(package, find("/styles"))
     worksheets = [(label, state, relations.get(rid, ("", ""))) for label, state, rid in declared]
     data_sheets = [(label, state, target) for label, state, (target, kind) in worksheets if kind.endswith("/worksheet")]
-    other = [label for label, _, (_, kind) in worksheets if not kind.endswith("/worksheet")]
+    chart_sheets = [(label, target) for label, _, (target, kind) in worksheets
+                    if kind.endswith("/chartsheet") and target in package.names]
+    other = [label for label, _, (_, kind) in worksheets if not kind.endswith(("/worksheet", "/chartsheet"))]
+    counts = dict.fromkeys(("tables", "pivots", "charts", "texts", "images", "notes", "failed"), 0)
+    try:
+        from features.documents.workbook_parts import read_people
+        people = read_people(package, office)
+    except Exception:
+        people = {}
+        counts["failed"] += 1
     budget = {"cells": MAX_CELLS}
     sheets: list[_Sheet] = []
     skipped_sheets = 0
@@ -572,11 +661,13 @@ def _read(package: _Package, max_chars: int) -> dict:
         sheet = _Sheet(label, position, len(data_sheets), state != "visible")
         if target in package.names:
             _read_sheet(package, target, sheet, strings, kinds, date1904, budget, flags)
+            sheet.extras = _extras(package, target, people, date1904, counts)
         sheets.append(sheet)
     listing = ", ".join(f'"{sheet.name}"' for sheet in sheets)
-    head = [f"[Bảng tính Excel · {len(data_sheets)} trang tính: {listing}]"]
+    charts_listing = f" · {len(chart_sheets)} trang biểu đồ" if chart_sheets else ""
+    head = [f"[Bảng tính Excel · {len(data_sheets)} trang tính: {listing}{charts_listing}]"]
     if other:
-        head.append("Trang biểu đồ hoặc trang khác chưa xem được: " + ", ".join(f'"{label}"' for label in other))
+        head.append("Trang khác chưa xem được (hộp thoại, macro cũ): " + ", ".join(f'"{label}"' for label in other))
     if names:
         head.extend(names[:MAX_NAMES_SHOWN])
         if len(names) > MAX_NAMES_SHOWN:
@@ -587,6 +678,10 @@ def _read(package: _Package, max_chars: int) -> dict:
     for index, sheet in enumerate(sheets):
         lines.append(("", None))
         lines.extend((line, index if is_row else None) for line, is_row in sheet.lines())
+    for label, target in chart_sheets:
+        lines.append(("", None))
+        lines.append((f'[Trang biểu đồ "{label}"]', None))
+        lines.extend((line, None) for line in _chart_sheet(package, target, date1904, counts) or ["(Không đọc được biểu đồ.)"])
     text = "\n".join(line for line, _ in lines)
     rows = sum(len(sheet.rows) for sheet in sheets)
     formulas = sum(len(sheet.formulas) for sheet in sheets)
@@ -616,12 +711,23 @@ def _read(package: _Package, max_chars: int) -> dict:
     if flags.get("uncached"):
         notices.append(f"{_number(flags['uncached'])} ô công thức chưa có kết quả lưu sẵn (tệp do phần mềm khác tạo); Peto "
                        "chỉ thấy công thức của các ô này.")
-    if any(name.startswith(("xl/charts/", "xl/drawings/", "xl/media/")) for name in package.names):
-        notices.append("Chưa xem được biểu đồ và hình ảnh trong tệp.")
-    if not rows:
+    found = [f"{_number(counts[key])} {label}" for key, label in (("charts", "biểu đồ"), ("pivots", "bảng tổng hợp"),
+                                                                  ("tables", "Bảng (Table)"), ("notes", "ghi chú trong ô"))
+             if counts[key]]
+    if found:
+        notices.append("Có " + ", ".join(found) + ": Peto đọc chữ và số liệu của chúng, không thấy hình vẽ.")
+    if counts["charts"] > MAX_CHARTS or counts["texts"] > MAX_TEXT_BOXES:
+        notices.append("Tệp có quá nhiều biểu đồ hoặc hộp chữ: phần sau chưa hiện.")
+    if counts["images"]:
+        notices.append(f"Chưa xem được {_number(counts['images'])} hình ảnh trong tệp.")
+    if counts["failed"]:
+        partial = True
+        notices.append("Một vài biểu đồ, ghi chú hoặc bảng trong tệp chưa đọc được.")
+    if not rows and not counts["charts"]:
         return result("no_text", "Bảng tính không có ô nào có dữ liệu.", text, sheets=len(data_sheets),
-                      sheets_read=len(sheets), rows=0)
-    details = {"sheets": len(data_sheets), "sheets_read": len(sheets), "rows": rows, "formulas": formulas}
+                      sheets_read=len(sheets), rows=0, sheet_format=SHEET_FORMAT)
+    details = {"sheets": len(data_sheets), "sheets_read": len(sheets), "rows": rows, "formulas": formulas,
+               "sheet_format": SHEET_FORMAT}
     if len(text) > max_chars:
         notices.append("Bảng dài: Peto đọc sẵn phần đầu và phần cuối mỗi trang tính, khi cần sẽ tìm thêm trong tệp.")
         return result("partial", " ".join(notices), condense(lines, max_chars), total_characters=len(text),

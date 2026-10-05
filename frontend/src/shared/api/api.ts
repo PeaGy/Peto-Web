@@ -6,7 +6,9 @@ export type ConversationMode = "chat" | "companion";
 export interface WebSource { url: string; title: string; kind?: 'citation' | 'result' }
 export interface DocumentArtifact {
   id: string; title: string; filename: string; version: number;
-  format: 'docx' | 'pdf' | 'pptx' | 'xlsx'; style: 'report' | 'essay' | 'clean' | 'academic' | 'bold' | 'sheet'; pages: number;
+  format: 'docx' | 'pdf' | 'pptx' | 'xlsx'; style: 'report' | 'essay' | 'clean' | 'academic' | 'bold' | 'sheet' | 'workbook'; pages: number;
+  /** Tệp Excel người dùng gửi mà Peto đã sửa (style 'workbook'): các dòng thay đổi, như 'Lương'!A9:F9: ghi 6 ô. */
+  changes?: string[];
 }
 
 export interface ChatAttachment {

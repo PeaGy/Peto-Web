@@ -1,6 +1,7 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { sheetGrid } from './sheetFixture';
+import { workbookArtifact } from './workbookFixture';
 import DocumentArtifactCard from '../src/features/documents/DocumentArtifactCard';
 import type { DocumentArtifact } from '../src/shared/api/api';
 
@@ -70,4 +71,21 @@ it('bảng tính lỗi tải số liệu vẫn giữ nút tải và thử lại 
   fireEvent.click(screen.getByRole('button', { name: 'Thử lại' }));
   await waitFor(() => expect(screen.getByText('Trần Gia Bảo')).toBeTruthy());
   expect(fetchMock).toHaveBeenCalledTimes(2);
+});
+
+it('tệp Excel Peto đã sửa: thẻ hiện danh sách thay đổi, không tải lưới, mở được bảng tài liệu', () => {
+  const fetchMock = vi.fn();
+  vi.stubGlobal('fetch', fetchMock);
+  const open = vi.fn();
+  render(<DocumentArtifactCard artifact={workbookArtifact} onEdit={() => {}} onOpen={open} />);
+  const card = within(screen.getByRole('region', { name: 'Bảng tính Bảng lương.xlsx' }));
+  const items = card.getAllByRole('listitem');
+  expect(items.map(item => item.textContent)).toEqual(['Hàng 4chèn 1 hàng trống (theo định dạng hàng 3)',
+    'Hàng 52 công thức tổng nới ra để tính cả hàng mới', 'A4:C4ghi 3 ô, 1 công thức', 'D2(trống) → "Thưởng"']);
+  expect(card.getByText('và 2 thay đổi khác')).toBeTruthy();
+  expect(card.getByText(/XLSX · giữ nguyên định dạng gốc · phiên bản 2/)).toBeTruthy();
+  expect(card.getByRole('link', { name: 'Tải Bảng lương.xlsx' }).getAttribute('href')).toBe('/api/documents/W1/export/xlsx?version=2');
+  fireEvent.click(card.getByRole('button', { name: 'Xem bảng tính' }));
+  expect(open).toHaveBeenCalledWith(workbookArtifact);
+  expect(fetchMock).not.toHaveBeenCalled();
 });

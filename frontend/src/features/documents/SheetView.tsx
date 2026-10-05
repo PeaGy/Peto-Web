@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
 import SheetChart from './SheetChart';
 import { columnLetter, useSheet } from './SheetPreview';
-import type { SheetCell, SheetData } from './documentApi';
+import WorkbookView from './WorkbookView';
+import type { SheetCell, SheetData, TableGrid } from './documentApi';
 import './sheetView.css';
 
 type Position = { r: number; c: number };      // r = 0 là hàng 1 của Excel (tên cột)
@@ -23,9 +24,17 @@ function firstFormula(sheet: SheetData): Position {
   return { r: sheet.rows.length ? 1 : 0, c: 0 };
 }
 
-/** Lưới xem bảng tính kiểu Excel: thanh công thức, chữ cột, số hàng, hàng tên cột cố định, tab trang tính, biểu đồ. */
+/** Lưới xem bảng tính: bảng Peto tạo (TableView) hoặc tệp người dùng Peto đã sửa (WorkbookView). */
 export default function SheetView({ id, version, onUnauthorized }: { id: string; version: number; onUnauthorized?: () => void }) {
   const { grid, error, retry } = useSheet(id, version, onUnauthorized);
+  if (error) return <div className="document-panel-empty" role="alert"><p>{error}</p><button type="button" onClick={retry}>Thử lại</button></div>;
+  if (!grid) return <div className="document-panel-empty" role="status">Đang mở bảng tính…</div>;
+  if (!grid.sheets.length) return <div className="document-panel-empty"><p>Tệp không có trang tính nào có ô để xem.</p></div>;
+  return grid.kind === 'workbook' ? <WorkbookView grid={grid} /> : <TableView grid={grid} />;
+}
+
+/** Lưới bảng Peto tạo kiểu Excel: thanh công thức, chữ cột, số hàng, hàng tên cột cố định, tab trang tính, biểu đồ. */
+function TableView({ grid }: { grid: TableGrid }) {
   const [index, setIndex] = useState(0);
   const [selected, setSelected] = useState<Position>({ r: 1, c: 0 });
   const [formulas, setFormulas] = useState(false);
@@ -36,7 +45,6 @@ export default function SheetView({ id, version, onUnauthorized }: { id: string;
   const byKeyboard = useRef(false);
   const sheet = grid?.sheets[Math.min(index, grid.sheets.length - 1)];
 
-  useEffect(() => { setIndex(0); }, [id, version]);
   useEffect(() => {
     if (!sheet) return;
     setSelected(firstFormula(sheet));
@@ -69,8 +77,7 @@ export default function SheetView({ id, version, onUnauthorized }: { id: string;
     wrap.current?.querySelector(`[data-cell="${selected.r}:${selected.c}"]`)?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
   }, [selected]);
 
-  if (error) return <div className="document-panel-empty" role="alert"><p>{error}</p><button type="button" onClick={retry}>Thử lại</button></div>;
-  if (!grid || !sheet) return <div className="document-panel-empty" role="status">Đang mở bảng tính…</div>;
+  if (!sheet) return <div className="document-panel-empty" role="status">Đang mở bảng tính…</div>;
 
   const current = cellAt(sheet, selected.r, selected.c);
   const move = (event: KeyboardEvent<HTMLDivElement>) => {

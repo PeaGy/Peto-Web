@@ -199,7 +199,7 @@ export default function Composer({
       {files.some((item) => /\.pdf$/i.test(item.file.name) || item.file.type === "application/pdf") &&
         <p className="composer-note">Peto đọc chữ và dẫn số trang trong PDF, nhận dạng cả trang scan khi máy chủ có OCR. Chữ từ ảnh có thể nhận sai; kết quả đọc sẽ hiện dưới tệp.</p>}
       {files.some((item) => isSpreadsheetFile(item.file)) &&
-        <p className="composer-note">Peto đọc dữ liệu, công thức và kết quả đã lưu trong tệp Excel; chưa xem được biểu đồ, hình ảnh và màu ô.</p>}
+        <p className="composer-note">Peto đọc dữ liệu, công thức, ghi chú, biểu đồ và bảng tổng hợp trong tệp Excel, và sửa thẳng được trên tệp mà giữ định dạng; chưa xem được hình ảnh và màu ô.</p>}
     </form>
   );
 }
