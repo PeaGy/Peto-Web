@@ -36,14 +36,19 @@ MAX_CELLS = 400_000         # cả tệp
 MAX_STRINGS = 200_000
 MAX_FORMULA_LINES = 300     # mỗi trang tính
 CELL_CHARS = 1_000
-MAX_MERGES_SHOWN = 10
+# Ô gộp đè lên ô dữ liệu là lỗi hay gặp, nên liệt kê gần hết: trong bài thử ngày 5/10/2026, E10:F10 là vùng thứ 11, nằm
+# sau "và 2 vùng khác", và Peto không thấy nó.
+MAX_MERGES_SHOWN = 100
+MAX_PADDED_SHOWN = 30
 MAX_NAMES_SHOWN = 20
 MAX_CHARTS = 30             # cả tệp
 MAX_TEXT_BOXES = 40
 MAX_NOTES = 200
 # Đổi cách viết chữ của bảng tính thì tăng số này: tệp Excel đã đọc theo cách cũ được đọc lại ở lượt sau
 # (reader.cached_document). 2 (5/10/2026): thêm biểu đồ, hộp chữ, hình, Bảng (Table), bảng tổng hợp, ghi chú trong ô.
-SHEET_FORMAT = 2
+# 3 (5/10/2026): chữ rỗng và chữ có khoảng trắng ở đầu/cuối ghi trong ngoặc kép, công thức trả về "" không còn bị coi là
+# chưa tính, liệt kê tới 100 ô gộp.
+SHEET_FORMAT = 3
 
 _RELATIONSHIP_NAMESPACES = ("http://schemas.openxmlformats.org/officeDocument/2006/relationships",
                             "http://purl.oclc.org/ooxml/officeDocument/relationships")
@@ -287,8 +292,16 @@ def _styles(package: _Package, path: str | None) -> list[tuple[str, int]]:
 
 
 def _cell_text(text: str) -> str:
-    text = text.replace("\r\n", "\n").replace("\r", "\n").replace("\n", " ⏎ ").strip()
-    return text if len(text) <= CELL_CHARS else text[:CELL_CHARS] + f" …[cắt {_number(len(text) - CELL_CHARS)} ký tự]"
+    """Chữ của một ô trong dòng hàng. Chữ rỗng (công thức trả về ""), chữ có khoảng trắng ở đầu hoặc cuối và chữ bắt đầu
+    bằng dấu nháy kép được ghi trong ngoặc kép, nháy bên trong viết đôi như chuỗi trong công thức Excel. Không có ngoặc
+    thì dấu phân cách " | " nuốt mất khoảng trắng đó, mà tên "Lan " hay " Lan" là lỗi dữ liệu Peto cần thấy."""
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    quoted = text == "" or text != text.strip() or text.startswith('"')
+    text = text.replace("\n", " ⏎ ")
+    cut = ""
+    if len(text) > CELL_CHARS:
+        text, cut = text[:CELL_CHARS], f" …[cắt {_number(len(text) - CELL_CHARS)} ký tự]"
+    return ('"' + text.replace('"', '""') + '"' if quoted else text) + cut
 
 
 class _Sheet:
@@ -297,6 +310,7 @@ class _Sheet:
         self.rows: list[str] = []
         self.formulas: dict[tuple[int, int], str] = {}
         self.merges: list[str] = []
+        self.padded: list[str] = []                 # ô chữ có khoảng trắng ở đầu hoặc cuối
         # Bảng (Table), biểu đồ, hộp chữ, hình, bảng tổng hợp, ghi chú: các dòng đứng trước công thức (workbook_parts).
         self.extras: list[str] = []
         self.bounds = [None, None, None, None]      # hàng đầu, cột đầu, hàng cuối, cột cuối
@@ -351,6 +365,10 @@ class _Sheet:
             shown = ", ".join(self.merges[:MAX_MERGES_SHOWN])
             more = f" và {_number(len(self.merges) - MAX_MERGES_SHOWN)} vùng khác" if len(self.merges) > MAX_MERGES_SHOWN else ""
             head.append(f"Ô gộp: {shown}{more}")
+        if self.padded:
+            shown = ", ".join(self.padded[:MAX_PADDED_SHOWN])
+            more = f" và {_number(len(self.padded) - MAX_PADDED_SHOWN)} ô khác" if len(self.padded) > MAX_PADDED_SHOWN else ""
+            head.append(f"Ô chữ có khoảng trắng ở đầu hoặc cuối: {shown}{more}")
         head.extend(self.extras)
         if not self.rows:
             head.append("(Trang tính trống.)")
@@ -441,6 +459,8 @@ def _read_sheet(package: _Package, path: str, sheet: _Sheet, strings: list[str],
                 elif child_name == "is":
                     inline = child
             raw = value_element.text if value_element is not None and value_element.text is not None else None
+            # Công thức trả về chữ rỗng: Excel ghi t="str" với <v></v>. Đó là kết quả đã lưu, không phải ô chưa tính.
+            empty_text = kind == "str" and value_element is not None and raw is None
             if kind == "s" and raw is not None:
                 try:
                     index = int(raw)
@@ -482,11 +502,16 @@ def _read_sheet(package: _Package, path: str, sheet: _Sheet, strings: list[str],
                     formula = shift_formula(master, cell_row - master_row, col - master_col)
                 if formula and kind_of_formula == "array":
                     formula = "{" + formula + "}"
-                if formula and raw is None and kind != "inlineStr":
+                if formula and raw is None and kind != "inlineStr" and not empty_text:
                     flags["uncached"] = flags.get("uncached", 0) + 1
                     value = "(chưa có kết quả)"
             if value != "" or formula:
-                cells.append((col, _cell_text(value)))
+                text = _cell_text(value)
+                if value != value.strip():
+                    sheet.padded.append(_address(cell_row, col))
+                if text.startswith('"'):
+                    flags["quoted"] = True
+                cells.append((col, text))
                 if formula:
                     sheet.formulas[(cell_row, col)] = formula
             element.clear()
@@ -672,6 +697,9 @@ def _read(package: _Package, max_chars: int) -> dict:
         head.extend(names[:MAX_NAMES_SHOWN])
         if len(names) > MAX_NAMES_SHOWN:
             head.append(f"[… và {_number(len(names) - MAX_NAMES_SHOWN)} tên vùng khác …]")
+    if flags.get("quoted"):
+        head.append('Chữ trong ngoặc kép được ghi đúng từng ký tự, ngoặc kép không thuộc giá trị: "" là chữ rỗng (công thức '
+                    'trả về ""), " Lan" có khoảng trắng ở đầu, "Lan " ở cuối; dấu nháy kép bên trong viết đôi.')
     # Mỗi dòng kèm số trang tính nếu là hàng dữ liệu; một dòng trống giữa các khối. Dòng của chữ đầy đủ là dòng mà công cụ
     # read_attachment_lines đánh số, nên phần đọc sẵn rút gọn (condense) ghi đúng số dòng bỏ qua.
     lines: list[tuple[str, int | None]] = [(line, None) for line in head]
@@ -709,8 +737,8 @@ def _read(package: _Package, max_chars: int) -> dict:
         partial = True
         notices.append("Tệp có quá nhiều chữ khác nhau: một số ô chưa đọc được chữ.")
     if flags.get("uncached"):
-        notices.append(f"{_number(flags['uncached'])} ô công thức chưa có kết quả lưu sẵn (tệp do phần mềm khác tạo); Peto "
-                       "chỉ thấy công thức của các ô này.")
+        notices.append(f"{_number(flags['uncached'])} ô công thức chưa có kết quả lưu trong tệp (Excel tính khi mở tệp); "
+                       "Peto chỉ thấy công thức của các ô này.")
     found = [f"{_number(counts[key])} {label}" for key, label in (("charts", "biểu đồ"), ("pivots", "bảng tổng hợp"),
                                                                   ("tables", "Bảng (Table)"), ("notes", "ghi chú trong ô"))
              if counts[key]]

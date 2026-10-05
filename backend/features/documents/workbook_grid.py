@@ -514,8 +514,10 @@ def grid(data: bytes, title: str, changed_text: str = '') -> dict:
                     formulas += 1
                     if formula[0]:
                         item['f'] = '=' + formula[0]
-                    if cell.value() is None:
-                        item['p'] = 1       # chưa có kết quả: Excel tính khi mở
+                    # Chưa có kết quả (Excel tính khi mở), theo đúng luật của bộ đọc: không có v hoặc v rỗng, trừ t="str"
+                    # có thẻ v, tức công thức trả về "".
+                    if not cell.value() and cell.kind != 'inlineStr' and not (cell.kind == 'str' and cell.has_value()):
+                        item['p'] = 1
                 if value is not None and value != '':
                     item['d'] = display(value, code, book.date1904)
                     item['t'] = 'n' if isinstance(value, float) else 'b' if isinstance(value, bool) else \

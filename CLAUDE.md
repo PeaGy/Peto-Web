@@ -402,6 +402,16 @@ to save as `.xlsx`.
     the prompt says colours, custom formats and charts of the original are lost.
   - Shared formulas are expanded by shifting relative references (`shift_formula`); formulas without a stored result
     show `(chưa có kết quả)` and are counted in the notice.
+  - **What the owner's planted-error test exposed** (2026-10-05, `bang_test_loi_luong_diem.xlsx` against Claude.ai's
+    answer key). Peto missed three planted errors only because the text hid them; all three were fixed that day:
+    - Only 10 merges were listed, and the bad `E10:F10` was the 11th. `MAX_MERGES_SHOWN` is now 100.
+    - `_cell_text` stripped spaces, so "Võ Thị Em " and " Bùi Lan" looked clean. Now an empty text, text with spaces
+      at either end, and text starting with `"` are written in double quotes (inner quotes doubled, as in formula
+      strings). One workbook line explains the quotes, and each sheet head lists the padded cells (up to 30).
+    - Excel stores a formula returning "" as `t="str"` with an empty `<v>`, which ElementTree reads as no value. Every
+      `IF(…,"",…)` therefore showed `(chưa có kết quả)` and counted as "made by other software". It now shows `""`.
+      An empty `<v>` on a number cell (XlsxWriter's way to force a recalc) still counts as uncached, and
+      `workbook_grid` marks pending cells by the same rule (`Cell.has_value`).
 - **Long workbooks** use `workbook_reader.condense`, not the log condenser: shape-collapsing would erase data rows,
   which all look alike. It keeps every header and formula line and, per sheet, head and tail rows (totals live at the
   end), with `[… bỏ qua dòng a–b của tệp (hàng Excel x–y) …]` markers that cite the full text's line numbers for
@@ -409,7 +419,8 @@ to save as `.xlsx`.
 - **Charts, tables, pivot tables and cell notes** (2026-10-05) are read by `workbook_parts.py`: classic and `chartEx`
   charts with their series ranges and cached values, drawings' text boxes, Excel Tables, pivot table layouts, legacy
   notes and threaded comments with their authors (at most 30 charts, 40 text boxes and 200 notes). Chart sheets get a
-  `[Trang biểu đồ "X"]` block. `SHEET_FORMAT` (2) is stored in the cache, so older cached workbooks are re-read lazily.
+  `[Trang biểu đồ "X"]` block. `SHEET_FORMAT` (3 since the fixes above) is stored in the cache, so older cached
+  workbooks are re-read lazily.
 - `public_document` exposes `sheets`, `sheets_read` and `rows`; the chat shows "· N trang tính" (or `k/N`). The composer
   shows a note about what Excel reading covers. Excel error codes count as signal lines for the log condenser too.
 - **Tests:** `tests/test_workbook_reader.py` (XlsxWriter-built workbooks plus hand-built packages for shared formulas,
@@ -723,6 +734,12 @@ does not touch. The upload never changes; each edit is a new version.
   and are evaluated with `sheets/engine`. New formulas that evaluate to an error or form a cycle are refused, as in
   `create_spreadsheet`. Existing formulas Peto cannot compute lose their cached value rather than keep a stale one.
   `fullCalcOnLoad` is set and `calcChain.xml` dropped, so Excel recalculates on open.
+- **Chart caches** (`chart_cache.py`, 2026-10-05). Excel redraws charts from cells on open, but phone viewers and the
+  reader use the numbers cached in the chart. The owner's edited grade book still read "Giỏi 1, Khá 0" from its chart
+  after the count cells became 2 and 2. Series (`numRef`/`strRef`, single-level chartEx `lvl`) whose range touches a
+  cell written or recalculated in this edit (`Report.cells`), or a sheet that had rows or columns inserted or deleted,
+  are re-read from the cells. Other charts stay byte-identical. Defined names, multi-area and whole-column ranges keep
+  their old cache.
 - **Storage and API.**
   - Edits run in a worker process (`to_process`, 45 s, behind the render queue).
   - Each success is a `style='workbook'` document version holding the xlsx; an upload becomes a new document. At most

@@ -95,6 +95,10 @@ class Cell:
             return None, {}
         return unescape(match.group(3) or '') if match.group(2) != '/>' else '', attributes(match.group(1))
 
+    def has_value(self) -> bool:
+        """Ô có thẻ v, kể cả <v/> rỗng."""
+        return _V.search(self.inner) is not None
+
     def value(self) -> str | None:
         match = _V.search(self.inner)
         if not match or match.group(1) == '/>':

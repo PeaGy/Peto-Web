@@ -40,6 +40,7 @@ class Report:
     results: dict[tuple[str, int, int], object] = field(default_factory=dict)   # kết quả công thức mới
     errors: list[tuple[str, int, int, str, str]] = field(default_factory=list)  # công thức mới ra lỗi
     cycles: list[tuple[str, int, int]] = field(default_factory=list)
+    cells: set[tuple[str, int, int]] = field(default_factory=set)  # mọi ô công thức đã tính lại hay bỏ kết quả
 
 
 class _Index:
@@ -181,6 +182,7 @@ def recalculate(book, changed: dict[str, set[tuple[int, int]]], structural: set[
             break
     else:
         marked.update(pending)
+    report.cells = {(infos[sheet].name, row, col) for sheet, row, col in marked}
     if not marked:
         return report
 

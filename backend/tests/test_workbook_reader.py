@@ -11,7 +11,7 @@ import xlsxwriter
 
 import storage as db
 from features.chat import service as chat_service
-from features.documents import reader, workbook_reader
+from features.documents import reader, workbook_grid, workbook_reader
 from shared import attachments
 from shared.attachment_tools import AttachmentFiles
 from conftest import TEST_OWNER, read_events
@@ -115,8 +115,36 @@ def test_shared_formulas_are_expanded_and_missing_addresses_follow_order():
     assert 'Công thức B1:B4 (chép xuống, 4 ô): =A1*2' in text
     assert 'Hàng 5 | A: 9 | B: không địa chỉ' in text
     assert 'Hàng 7 | C: (chưa có kết quả)' in text and 'Công thức C7: =SUM(B1:B4)' in text
-    assert '1 ô công thức chưa có kết quả lưu sẵn' in document['notice']
+    assert '1 ô công thức chưa có kết quả lưu trong tệp' in document['notice']
     assert workbook_reader.shift_formula("=SUM($A1:B$2)&\"A1\"+'Trang 2'!C3", 2, 1) == "=SUM($A3:C$2)&\"A1\"+'Trang 2'!D5"
+
+
+def test_padded_text_empty_results_and_every_merge_are_visible():
+    """Bài thử ngày 5/10/2026: Peto không thấy khoảng trắng thừa trong "Võ Thị Em ", không thấy ô gộp E10:F10 (vùng thứ
+    11, nằm sau "và 2 vùng khác") và nghe báo 12 công thức trả về "" là chưa có kết quả."""
+    main = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
+
+    def text(ref, value):
+        return f'<c r="{ref}" t="inlineStr"><is><t xml:space="preserve">{value}</t></is></c>'
+
+    rows = (f'<row r="1">{text("A1", "Võ Thị Em ")}{text("B1", " Bùi Lan")}{text("C1", "&quot;Lan&quot; nói")}'
+            f'{text("D1", " ")}{text("E1", "Lan")}</row>'
+            '<row r="2"><c r="A2" t="str"><f>IF(1&gt;2,"x","")</f><v></v></c><c r="B2" t="str"><f>LEFT("a",0)</f><v/></c>'
+            '<c r="C2"><f>1+1</f></c><c r="D2"><f>2+2</f><v></v></c></row>')
+    merges = ''.join(f'<mergeCell ref="A{row}:B{row}"/>' for row in range(10, 21)) + '<mergeCell ref="E10:F10"/>'
+    sheet = f'<worksheet xmlns="{main}"><sheetData>{rows}</sheetData><mergeCells>{merges}</mergeCells></worksheet>'
+    data = package('', extra={'xl/worksheets/sheet1.xml': sheet})
+    document = extract(data)
+    text_ = document['text']
+    assert 'Hàng 1 | A: "Võ Thị Em " | B: " Bùi Lan" | C: """Lan"" nói" | D: " " | E: Lan' in text_
+    assert 'Ô chữ có khoảng trắng ở đầu hoặc cuối: A1, B1, D1\n' in text_
+    assert 'Chữ trong ngoặc kép được ghi đúng từng ký tự' in text_
+    # <v></v> với t="str" là kết quả "" đã lưu; không có v, hay v rỗng ở ô số (XlsxWriter ép tính lại), là chưa tính.
+    assert 'Hàng 2 | A: "" | B: "" | C: (chưa có kết quả) | D: (chưa có kết quả)' in text_
+    assert '2 ô công thức chưa có kết quả lưu trong tệp' in document['notice']
+    assert 'A20:B20, E10:F10' in text_ and 'vùng khác' not in text_
+    pending = {(cell[0], cell[1]) for cell in workbook_grid.grid(data, 'Thử')['sheets'][0]['cells'] if cell[2].get('p')}
+    assert pending == {(1, 2), (1, 3)}
 
 
 def test_number_formats_are_classified():

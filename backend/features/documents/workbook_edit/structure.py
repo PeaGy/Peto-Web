@@ -610,7 +610,7 @@ def _update_pivots(book: Book, info: SheetInfo, sheet: Worksheet, axis: str, at:
             book.package.write_xml(path, book.package.xml(path))
 
 
-def _chart_parts(book: Book) -> list[str]:
+def chart_parts(book: Book) -> list[str]:
     return [name for name in book.package.parts()
             if name.startswith('xl/charts/') and name.endswith('.xml') and '/_rels/' not in name
             and posixpath.basename(name).startswith(('chart', 'chartEx'))]
@@ -618,7 +618,7 @@ def _chart_parts(book: Book) -> list[str]:
 
 def _update_charts(book: Book, change, counter: _Counter | None = None) -> None:
     wrapped = counter.wrap(change) if counter else change
-    for path in _chart_parts(book):
+    for path in chart_parts(book):
         root = book.package.xml(path)
         changed = False
         for element in root.iter():
@@ -721,7 +721,7 @@ def rename_sheet(book: Book, info: SheetInfo, name: str) -> None:
     for element in book.defined_names():
         if element.text:
             element.text = refs.rename_sheet(element.text, old, name)
-    for path in _chart_parts(book):
+    for path in chart_parts(book):
         root = book.package.xml(path)
         changed = False
         for element in root.iter():

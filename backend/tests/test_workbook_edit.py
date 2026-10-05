@@ -331,6 +331,8 @@ def test_insert_rows_moves_cells_and_everything_that_points_at_them():
     assert "'Lương'!B7+'Lương'!B5" in xml(result.data, 'xl/worksheets/sheet2.xml')
     chart = xml(result.data, 'xl/charts/chart1.xml')
     assert "'Lương'!$B$2:$B$6" in chart and "'Lương'!$A$2:$A$6" in chart
+    assert '<c:ptCount val="5"/><c:pt idx="0"><c:v>120</c:v></c:pt><c:pt idx="3"><c:v>135</c:v></c:pt>' in chart, \
+        'số lưu sẵn của biểu đồ theo vùng đã nới'
     assert 'ref="B5"' in xml(result.data, 'xl/comments1.xml')
     vml = xml(result.data, 'xl/drawings/vmlDrawing1.vml')
     assert '<x:Row>4</x:Row>' in vml
@@ -365,6 +367,35 @@ def test_insert_and_delete_columns_shift_columns_widths_and_formats():
     sheet = xml(removed.data, 'xl/worksheets/sheet1.xml')
     assert '<f>SUM(B2:B4)</f>' in sheet and '<c r="C5"' not in sheet and 'ref="A7:B7"' in sheet
     assert "'Lương'!#REF!" in xml(removed.data, 'xl/charts/chart1.xml')
+
+
+def test_chart_numbers_follow_edited_cells_and_untouched_charts_stay_byte_identical():
+    """Trình xem trên điện thoại và bộ đọc của Peto lấy số lưu sẵn trong biểu đồ. Bản sửa bảng điểm ngày 5/10/2026 vẫn
+    đọc ra biểu đồ xếp loại cũ, dù ô đếm đã đổi."""
+    def build(book):
+        layout(book)
+        chart = book.add_chart({'type': 'line'})
+        chart.add_series({'categories': "='Lương'!$A$2:$A$4", 'values': "='Lương'!$C$2:$C$4"})
+        book.get_worksheet_by_name('Lương').insert_chart('E20', chart)
+
+    original = workbook(build)
+    result = edit(original, change(range='B3', values=[['200']]))
+    assert '<c:pt idx="1"><c:v>200</c:v></c:pt>' in xml(result.data, 'xl/charts/chart1.xml')
+    assert parts(result.data)['xl/charts/chart2.xml'] == parts(original)['xl/charts/chart2.xml']
+    assert 'T1 120; T2 200; T3 150' in read(result.data)
+    # Nhãn (strCache) cũng vậy, ở cả hai biểu đồ dùng chung cột tháng.
+    renamed = edit(original, change(range='A4', values=[['Tháng 3']]))
+    for name in ('xl/charts/chart1.xml', 'xl/charts/chart2.xml'):
+        assert '<c:pt idx="2"><c:v>Tháng 3</c:v></c:pt>' in xml(renamed.data, name)
+    # Công thức tính lại cũng là ô đổi giá trị: biểu đồ trỏ vào hàng tổng đổi theo.
+    def totals(book):
+        layout(book)
+        chart = book.add_chart({'type': 'column'})
+        chart.add_series({'categories': "='Lương'!$B$1:$C$1", 'values': "='Lương'!$B$5:$C$5"})
+        book.get_worksheet_by_name('Lương').insert_chart('E2', chart)
+
+    summed = edit(workbook(totals), change(range='C2', values=[['100']]))
+    assert '<c:pt idx="1"><c:v>305</c:v></c:pt>' in xml(summed.data, 'xl/charts/chart2.xml')
 
 
 def test_threaded_comments_pivot_tables_and_their_sources_follow_shifts():

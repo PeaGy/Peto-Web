@@ -17,7 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from features.documents.sheets import engine
 from features.documents.sheets.formula import FUNCTIONS, FormulaError, parse, quote_sheet
-from features.documents.workbook_edit import meta, refs
+from features.documents.workbook_edit import chart_cache, meta, refs
 from features.documents.workbook_edit.book import Book, SheetInfo, excel_serial
 from features.documents.workbook_edit.formulas import array_ranges, expand_shared, formula_map, shared_groups
 from features.documents.workbook_edit.package import EditError, local
@@ -1053,8 +1053,12 @@ def apply(data: bytes, changes: list[ChangeInput], today: date, carried: dict | 
         raise EditError('\n'.join(problems[:MAX_PROBLEMS]) + more)
     results: list[str] = []
     computed = 0
+    # Ô đổi giá trị theo tên trang: ô ghi mới, rồi thêm các công thức tính lại; số lưu sẵn của biểu đồ trỏ vào đó đổi theo.
+    touched = {info.name: set(session.changed.get(info.part, ())) for info in book.data_sheets()}
     if session.formulas_touched or session.changed:
         report = recalculate(book, session.changed, session.structural, session.new, today)
+        for sheet, row, col in report.cells:
+            touched.setdefault(sheet, set()).add((row, col))
         cycles = {(sheet, row, col) for sheet, row, col in report.cycles}
         new_cells = {(info.name, row, col) for info in book.data_sheets() for row, col in session.new.get(info.part, ())}
         looped = sorted(new_cells & cycles)
@@ -1084,6 +1088,7 @@ def apply(data: bytes, changes: list[ChangeInput], today: date, carried: dict | 
                                  + '; trình xem khác có thể hiện trống ở đó.')
         book.calc_on_load()
         book.drop_calc_chain()
+    chart_cache.refresh(book, touched, session.structural)
     changed: dict[str, list[tuple[int, int, int, int]]] = {}
     for info in book.data_sheets():
         cells = session.changed.get(info.part, set()) | session.formatted.get(info.part, set())
