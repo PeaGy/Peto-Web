@@ -193,7 +193,7 @@ it('Dừng trong khi đang đọc ảnh không gửi yêu cầu muộn và vẫn
   expect(chatColumn().getByRole('button', { name: 'Gửi', exact: true })).toHaveProperty('disabled', false);
 });
 
-it('hai nét mặt theo đúng tiếng đang phát, không nhảy sang câu sau khi chữ đã tải xong', async () => {
+it('giữ mặt đầu tiên qua nhiều đoạn tiếng dù máy chủ gửi thêm cảm xúc', async () => {
   localStorage.setItem('peto-local-voice', '1');
   class HeldAudio {
     static all: HeldAudio[] = [];
@@ -220,15 +220,15 @@ it('hai nét mặt theo đúng tiếng đang phát, không nhảy sang câu sau 
   await waitFor(() => expect(HeldAudio.all).toHaveLength(2));
   expect(screen.getByTestId('stage').dataset.emotion).toBe('surprised');
   await act(async () => HeldAudio.all[1].ready());
-  expect(screen.getByTestId('stage').dataset.emotion).toBe('happy');
+  expect(screen.getByTestId('stage').dataset.emotion).toBe('surprised');
   fireEvent.click(chatColumn().getByRole('button', { name: 'Dừng', exact: true }));
   expect(screen.getByTestId('stage').dataset.emotion).toBe('');
 });
 
-it('nghe lại tin có nhiều mốc mặt dùng đúng mốc cũ sau khi tải lại hội thoại', async () => {
+it('nghe lại tin cũ có nhiều mốc giữ một mặt qua nhiều đoạn tiếng', async () => {
   localStorage.setItem('peto-local-voice', '1'); localStorage.setItem('peto-companion-muted', '1');
   vi.mocked(api.getCompanion).mockResolvedValue({ conversation_id: 'C1', messages: [{
-    role: 'assistant', content: 'Oh! Great news!', emotion: 'surprised',
+    role: 'assistant', content: `Oh! ${'Great news! '.repeat(25).trim()}`, emotion: 'surprised',
     emotion_cues: [{ emotion: 'surprised', offset: 0 }, { emotion: 'happy', offset: 3 }],
   }] });
   const audios: { ready(): void; onended: (() => void) | null }[] = [];
@@ -245,10 +245,10 @@ it('nghe lại tin có nhiều mốc mặt dùng đúng mốc cũ sau khi tải 
   expect(screen.getByTestId('stage').dataset.emotion).toBe('surprised');
   act(() => audios[0].onended?.()); await waitFor(() => expect(audios).toHaveLength(2));
   await act(async () => audios[1].ready());
-  expect(screen.getByTestId('stage').dataset.emotion).toBe('happy');
+  expect(screen.getByTestId('stage').dataset.emotion).toBe('surprised');
 });
 
-it('tắt tiếng đổi biểu cảm theo chữ và replace bỏ các vị trí của bản nháp', async () => {
+it('tắt tiếng vẫn giữ mặt đầu tiên khi có thêm thẻ và khi thay bản nháp', async () => {
   localStorage.setItem('peto-companion-muted', '1');
   let callbacks!: Parameters<typeof api.sendMessage>[1], done!: () => void;
   vi.mocked(api.sendMessage).mockImplementation((_payload, handlers) => new Promise(resolve => {
@@ -260,10 +260,10 @@ it('tắt tiếng đổi biểu cảm theo chữ và replace bỏ các vị trí
   });
   expect(screen.getByTestId('stage').dataset.emotion).toBe('surprised');
   act(() => { callbacks.onEmotion?.('happy', 3); callbacks.onDelta?.(' Great news!'); });
-  expect(screen.getByTestId('stage').dataset.emotion).toBe('happy');
+  expect(screen.getByTestId('stage').dataset.emotion).toBe('surprised');
   act(() => { callbacks.onReplace?.(); callbacks.onEmotion?.('neutral', 0); callbacks.onDelta?.('Updated.'); });
   await act(async () => done());
-  expect(screen.getByTestId('stage').dataset.emotion).toBe('neutral');
+  expect(screen.getByTestId('stage').dataset.emotion).toBe('surprised');
   expect(chatColumn().queryByText('Oh! Great news!')).toBeNull();
   expect(speakBodies()).toEqual([]);
 });

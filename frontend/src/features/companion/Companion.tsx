@@ -58,7 +58,9 @@ function readMuted(): boolean {
 
 /** Cảm xúc của một câu trả lời: Peto tự chọn, tin cũ không có thì đoán theo từ khóa. */
 function messageEmotion(message: Message): StageEmotion | null {
-  return asStageEmotion(message.emotion) ?? replyEmotion(message.content) ?? null;
+  return asStageEmotion(message.emotion)
+    ?? asStageEmotion(message.emotion_cues?.find(item => asStageEmotion(item.emotion))?.emotion)
+    ?? replyEmotion(message.content) ?? null;
 }
 
 function PencilIcon() {
@@ -117,7 +119,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
 }) {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
-  /** Cảm xúc nhân vật đang làm, đổi theo đoạn âm thanh đang phát rồi về null. */
+  /** Cảm xúc nhân vật giữ suốt câu trả lời, nói xong một lúc thì về null. */
   const [stageEmotion, setStageEmotion] = useState<StageCue | null>(null);
   const cueKey = useRef(0);
   const releaseTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -389,10 +391,14 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
     const spoken = { cancelled: false, stream: null as VoiceStream | null, timing };
     spokenTurn.current = spoken;
     let emotionCues: EmotionCue[] = [];
+    let expressionApplied = false;
+    const showEmotion = (emotion: StageEmotion | null | undefined) => {
+      if (!expressionApplied && emotion) { expressionApplied = true; cue(emotion); }
+    };
     const expressions = { onEmotion: (value: string) => {
       if (spokenTurn.current === spoken && !spoken.cancelled && latest.current.active && latest.current.foreground && !latest.current.muted) {
         const emotion = asStageEmotion(value);
-        if (emotion) cue(emotion);
+        showEmotion(emotion);
       }
     } };
     const current = () => abortRef.current === controller && !controller.signal.aborted;
@@ -457,11 +463,11 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
               }
             }
           },
-          // Có giọng đọc thì nét mặt chờ đúng đoạn tiếng; tắt tiếng thì phản ứng theo chữ.
+          // Chỉ chọn một mặt cho cả lượt; có giọng đọc thì chờ tiếng, tắt tiếng thì phản ứng theo chữ.
           onEmotion: (value, offset) => {
             if (!current()) return;
             const emotion = asStageEmotion(value);
-            if (!emotion) return;
+            if (!emotion || turnEmotion) return;
             const position = offset ?? reply.length;
             if (!Number.isSafeInteger(position) || position < 0 || position > reply.length) return;
             turnEmotion = emotion;
@@ -474,7 +480,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
               }] : prev;
             });
             const now = latest.current;
-            if (now.active && now.foreground && (offset === undefined || now.muted || now.voice.status !== 'ready' || spoken.cancelled)) cue(emotion);
+            if (now.active && now.foreground && (offset === undefined || now.muted || now.voice.status !== 'ready' || spoken.cancelled)) showEmotion(emotion);
           },
           onSearch: (status) => { if (current()) setSearching(status === 'searching'); },
           // Peto viết vài chữ rồi mới quyết định tra web: máy chủ bỏ phần đó, trang cũng xóa để khỏi ghép hai câu.
@@ -488,7 +494,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
               spoken.stream = null; latest.current.voice.stop();
             }
             reply = "";
-            // Bản nháp bị bỏ: các mốc chữ cũ không được áp vào lời nói sau tìm kiếm.
+            // Bản nháp bị bỏ nhưng cả lượt vẫn giữ mặt đầu tiên, không đổi sang mặt của câu chốt.
             turnEmotion = asStageEmotion(emotionCues[0]?.emotion) ?? turnEmotion;
             emotionCues = turnEmotion ? [{ emotion: turnEmotion, offset: 0 }] : [];
             setMessages((prev) => {
@@ -544,8 +550,8 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
     const speaking = completed && reply.trim() && !spoken.cancelled && now.active && now.foreground && !now.muted && now.voice.status === "ready";
     if (completed && reply.trim() && now.active && now.foreground) {
       // Peto quên gắn thẻ thì đoán theo từ khóa như trước. Không đọc thành tiếng thì giữ mặt vài giây để kịp thấy.
-      if (!speaking) cue(turnEmotion ?? replyEmotion(reply));
-      else if (!emotionCues.length) cue(replyEmotion(reply));
+      if (!speaking) showEmotion(turnEmotion ?? replyEmotion(reply));
+      else if (!emotionCues.length) showEmotion(replyEmotion(reply));
       if (!speaking) releaseLater(6000);
     } else if (!speaking) {
       releaseLater(1500);
@@ -814,8 +820,9 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
                     phase={voice.speaking?.key === key ? voice.speaking.phase : null}
                     onSpeak={() => {
                       haltSpeech();
-                      const cues = message.emotion_cues?.filter(item => asStageEmotion(item.emotion)
-                        && Number.isSafeInteger(item.offset) && item.offset >= 0 && item.offset <= message.content.length);
+                      // Tin cũ có nhiều mốc vẫn chỉ dùng mặt đầu tiên cho toàn bộ lời đọc.
+                      const emotion = messageEmotion(message);
+                      const cues = message.emotion_cues?.length && emotion ? [{ emotion, offset: 0 }] : undefined;
                       cue(cues?.length ? null : messageEmotion(message));
                       void voice.speak(key, message.content, { expressions: cues?.length ? {
                         cues, onEmotion: value => { if (latest.current.active) cue(asStageEmotion(value)); },

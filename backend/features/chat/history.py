@@ -30,7 +30,7 @@ def _public_attachment(row: dict) -> dict:
 
 def _public_message(row: dict, companion: bool = False) -> dict:
     """Tin nhắn gửi về trình duyệt. Câu trả lời Companion bỏ ghi chú riêng và thẻ cảm xúc của Peto, kèm cảm xúc đó
-    riêng ở ``emotion`` và ``emotion_cues`` để nghe lại tin cũ thì nhân vật làm đúng mặt theo từng đoạn."""
+    riêng ở ``emotion`` và ``emotion_cues`` để nghe lại tin cũ thì nhân vật giữ một mặt cho cả câu."""
     content = row["content"]
     message = {
         "id": row["id"],

@@ -2,9 +2,9 @@
 
 Như AIRI, model mở đầu câu trả lời bằng một thẻ, ví dụ <|EMOTE_HAPPY|>, với chín cảm xúc của AIRI. Máy chủ gỡ thẻ khỏi
 chữ gửi về trình duyệt và khỏi lịch sử hiển thị, rồi báo cảm xúc bằng sự kiện SSE ``emotion`` kèm vị trí trong chữ.
-Nhân vật đổi nét mặt khi đoạn tiếng tương ứng phát. Câu lưu giữ nguyên thẻ để các lượt sau model thấy cách gắn thẻ.
+Nhân vật giữ cảm xúc đầu tiên suốt câu trả lời. Câu lưu giữ nguyên thẻ để các lượt sau model thấy cách gắn thẻ.
 
-Mỗi thẻ cảm xúc đánh dấu đoạn lời nói kế tiếp; thẻ khác kiểu <|...|> cũng bị gỡ khỏi chữ.
+Thẻ cảm xúc thêm trong câu cũ vẫn bị gỡ, nhưng không làm nhân vật đổi mặt; thẻ khác kiểu <|...|> cũng bị gỡ khỏi chữ.
 """
 
 from __future__ import annotations
@@ -58,10 +58,11 @@ class MarkerFilter:
     """Gỡ thẻ khỏi chữ đang stream. Thẻ có thể bị cắt giữa hai mảnh ("<|EMO" rồi "TE_HAPPY|>"), nên từ "<" hay "<|"
     chưa khép thì giữ lại chờ mảnh sau; quá MAX_MARKER_CHARS hay gặp xuống dòng thì trả lại thành chữ thường."""
 
-    def __init__(self) -> None:
+    def __init__(self, emotion: str | None = None) -> None:
         self._buffer = ""
         self._spacing = Spacing()
-        self.emotion: str | None = None
+        # Khi thay bản nháp sau tra web, giữ cảm xúc đã chọn cho cùng lượt trả lời.
+        self.emotion = emotion
         self._announced = False
         self._events: list[dict] = []
         self._offset = 0
@@ -116,7 +117,6 @@ class MarkerFilter:
             emotion = emotion_of(body)
             if emotion and self.emotion is None:
                 self.emotion = emotion
-            if emotion:
                 self._events.append({"type": "emotion", "emotion": emotion, "offset": self._offset})
             self._buffer = rest[end + 2:]
             self._spacing.cut()
@@ -129,9 +129,9 @@ class MarkerFilter:
 
 
 def timeline(text: str) -> tuple[str, list[dict]]:
-    """Chữ công khai và các mốc nét mặt, dùng cùng bộ lọc với luồng trả lời."""
+    """Chữ công khai và một cảm xúc cho cả câu, kể cả tin cũ có nhiều thẻ."""
     markers = MarkerFilter()
     visible = markers.feed(text) + markers.flush()
-    cues = [{"emotion": event["emotion"], "offset": event["offset"]}
+    cues = [{"emotion": event["emotion"], "offset": 0}
             for event in markers.take_events() if event["type"] == "emotion"]
     return visible, cues

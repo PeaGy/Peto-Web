@@ -1415,20 +1415,22 @@ Peto to be honest and swap roles.
 ### Companion emotions (Brain)
 
 The second Brain feature. The owner picked from mockups on 2026-09-27: the card layout (B), AIRI's nine emotions, and
-initially one emotion per reply, expanded to spoken-segment expressions on 2026-10-02. Before this, Hiyori never changed expression: the sample model ships no expression files, and the
+initially one emotion per reply, expanded to spoken-segment expressions on 2026-10-02, then restored to one per reply
+on 2026-10-05 because rapid face changes looked unnatural in short replies. Before this, Hiyori never changed expression: the sample model ships no expression files, and the
 keyword guess (`replyEmotion`) almost never matched once the Companion prompt banned emoji.
 
 - **The model picks.**
-  - The EMOTION section of `COMPANION_SYSTEM_PROMPT` asks for one AIRI-style marker at the start of every reply and
-    another only when a later sentence naturally changes feeling (at most three markers requested):
+  - The EMOTION section of `COMPANION_SYSTEM_PROMPT` asks for exactly one AIRI-style marker at the start of every reply,
+    choosing the emotion for the whole reply and keeping it throughout:
     `<|EMOTE_HAPPY|>`, `SAD`, `ANGRY`, `THINK`, `SURPRISED`, `AWKWARD`, `QUESTION`, `CURIOUS` or `NEUTRAL`.
   - ANGRY is meant as mild sulking, never hostility.
   - Private notes and the marker are the two exceptions to "plain spoken text".
 - **Stream.** `emotion_tags.MarkerFilter` runs after `NoteFilter` on Companion replies:
   - It removes every `<|...|>` marker from `delta` events, and holds back a marker cut between chunks (up to
     `MAX_MARKER_CHARS`).
-  - Every recognized marker emits an SSE `emotion` with its UTF-16 offset in public text, interleaved with `delta`
-    in source order. Unknown markers are stripped without an expression. Split markers and emoji preserve positions.
+  - Only the first recognized marker emits an SSE `emotion` with its UTF-16 offset in public text, interleaved with
+    `delta` in source order. Extra and unknown markers are stripped without changing expression. Split markers and
+    emoji preserve positions. Replacement filters inherit the turn's first emotion, preventing a second event.
   - Both filters share `reply_spacing.Spacing`. A reply never starts or ends with whitespace, and the whitespace on
     both sides of a removed note or marker merges into one gap: the side with more line breaks, otherwise one space.
     Whitespace away from a removed part stays as the model wrote it. The bubble is `pre-wrap`, and before 2026-09-28
@@ -1439,20 +1441,20 @@ keyword guess (`replyEmotion`) almost never matched once the Companion prompt ba
     slipped through before.
   - The reply is stored raw, marker included, so the model keeps seeing its own habit.
 - **History and helpers.**
-  - `_public_message(companion=True)` strips markers and returns legacy first `emotion` plus `emotion_cues` from the
-    same filter, so replay after reload preserves every expression without a schema migration.
+  - `_public_message(companion=True)` strips markers and returns first `emotion` plus a single `emotion_cues` entry at
+    offset zero for the whole reply, including old stored replies with multiple markers, without a schema migration.
+    After replacement the saved reply is prefixed with the turn's first marker if needed to keep replay consistent.
   - `_visible` strips notes and markers.
   - Memory and summary input (`companion_memory._talk`) never contain markers.
   - Chat replies are left untouched.
 - **Timing (`Companion.tsx`).**
   - `cue()` sets `stageEmotion` (`{emotion, key}`; the key makes two equal emotions in a row count as new).
-  - With a ready, unmuted voice, new offset-based cues wait for actual playback of the matching segment. Prefetch,
-    final text completion and buffering cannot advance the face. `StreamSpeechText` stores the emotion with each
-    queued chunk; long segments retain it without restarting the expression on each chunk. Completed-reply/replay
-    playback splits only at expression changes or normal chunk limits, preserving grouping for a single expression.
-    Muted/unavailable voice
-    uses text-time cues; old servers without offsets retain immediate cues. Replay uses the same segment metadata.
-    Replace clears draft offsets and retains only the original first emotion as fallback, matching server persistence.
+  - With a ready, unmuted voice, the first offset-based cue waits for actual playback. Prefetch, final text completion
+    and buffering cannot change the face. Companion ignores additional emotion events, including those from older
+    servers. `StreamSpeechText` carries the same emotion through all queued chunks without restarting the face.
+    Completed-reply/replay playback keeps normal chunk limits; replay normalizes old multiple cues to one at zero.
+    Muted/unavailable voice uses the first text-time cue; old servers without offsets retain immediate cues.
+    Replace clears draft offsets and retains the original first emotion for the whole turn, matching persistence.
     Stopped/replaced speech cannot update the next turn's expression or finalize its timing diagnostic.
   - The face holds while Peto speaks. It is released 1.5 s after speech ends, or 6 s after the reply when nothing is
     read aloud.
@@ -1521,8 +1523,8 @@ the list, with option C from mockups: the page shows no sources.
 - **Replace.** When Peto writes before deciding to search, the provider drops that draft (`replace`), and Companion
   clears the bubble in `onReplace`.
   - That draft often held only the emotion marker. `event_stream` therefore remembers the turn's first emotion.
-  - If the text after the search has no marker, the stored reply gets that marker back, so a replayed message makes the
-    same face.
+  - If the text after the search has no marker or starts with a different emotion, the stored reply gets the first
+    marker back, so a replayed message keeps the same face for the whole reply.
 - **Page.** While searching, the header status and the pending bubble say "Đang tra web…" (`searching`, from
   `onSearch`). Sources still stream and are stored with the message, but Companion never renders them.
 - **Tests.**

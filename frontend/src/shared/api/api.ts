@@ -61,7 +61,7 @@ export interface Message {
   local?: boolean;
   /** Cảm xúc Peto tự chọn cho câu trả lời Companion (emotion_tags.py), để nghe lại tin cũ thì nhân vật làm đúng mặt. */
   emotion?: string | null;
-  /** Vị trí đổi nét mặt trong chữ công khai, tính theo UTF-16. */
+  /** Cảm xúc của câu ở vị trí 0; tin cũ có thể còn nhiều mốc UTF-16, Companion chỉ dùng mặt đầu tiên. */
   emotion_cues?: EmotionCue[];
 }
 

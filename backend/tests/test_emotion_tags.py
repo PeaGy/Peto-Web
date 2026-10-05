@@ -154,12 +154,11 @@ def test_the_emotion_is_announced_once_and_spacing_stays_clean():
     assert strip("Oh!\n<|EMOTE_SURPRISED|>\nReally?") == "Oh!\nReally?"
 
 
-def test_expression_offsets_and_event_order_survive_every_chunk_boundary():
+def test_only_the_first_expression_survives_every_chunk_boundary():
     raw = '<|EMOTE_SURPRISED|> Oh 😮! <|EMOTE_HAPPY|> That is great. <|EMOTE_NEUTRAL|>'
     visible, expected = timeline(raw)
     assert visible == 'Oh 😮! That is great.'
-    assert expected == [{'emotion': 'surprised', 'offset': 0}, {'emotion': 'happy', 'offset': 6},
-                        {'emotion': 'neutral', 'offset': 21}]
+    assert expected == [{'emotion': 'surprised', 'offset': 0}]
     for size in range(1, len(raw) + 1):
         markers, events = MarkerFilter(), []
         for start in range(0, len(raw), size):
@@ -175,7 +174,7 @@ def test_expression_offsets_and_event_order_survive_every_chunk_boundary():
             else: assert event['offset'] == len(emitted.encode('utf-16-le')) // 2
 
 
-async def test_multiple_expressions_are_public_metadata_and_replay_matches_stream(client, monkeypatch):
+async def test_extra_markers_are_hidden_without_changing_the_face_in_stream_or_history(client, monkeypatch):
     async def stream(self, **kwargs):
         for part in ['<|EMOTE_SUR', 'PRISED|>Oh 😮!', '<private>không đưa lên sân khấu</private>',
                      ' <|EMOTE_HA', 'PPY|>That is great.']:
@@ -183,7 +182,7 @@ async def test_multiple_expressions_are_public_metadata_and_replay_matches_strea
     monkeypatch.setattr(MockProvider, 'stream', stream)
     events = await turn(client, 'Tin vui nè')
     cues = [{'emotion': e['emotion'], 'offset': e['offset']} for e in events if e['type'] == 'emotion']
-    assert cues == [{'emotion': 'surprised', 'offset': 0}, {'emotion': 'happy', 'offset': 6}]
+    assert cues == [{'emotion': 'surprised', 'offset': 0}]
     assert shown(events) == 'Oh 😮! That is great.'
     for url in ('/api/companion', f"/api/conversations/{events[0]['conversation_id']}/messages"):
         reply = (await client.get(url)).json()['messages'][-1]
@@ -191,16 +190,29 @@ async def test_multiple_expressions_are_public_metadata_and_replay_matches_strea
         assert reply['emotion'] == 'surprised' and reply['emotion_cues'] == cues
 
 
-async def test_replaced_draft_expression_offsets_are_not_kept_in_history(client, monkeypatch):
+@pytest.mark.parametrize('final', ['Oh! <|EMOTE_HAPPY|>Great news.', '<|EMOTE_HAPPY|>Oh! Great news.', 'Oh! Great news.'])
+async def test_replacing_the_draft_keeps_one_expression_in_stream_and_history(client, monkeypatch, final):
     async def stream(self, **kwargs):
         yield StreamChunk('text', '<|EMOTE_THINK|>Checking. <|EMOTE_SAD|>Old draft.')
         yield StreamChunk('replace')
-        yield StreamChunk('text', 'Oh! <|EMOTE_HAPPY|>Great news.')
+        yield StreamChunk('text', final)
     monkeypatch.setattr(MockProvider, 'stream', stream)
     events = await turn(client, 'Xem lại tin mới đi')
     reply = (await client.get('/api/companion')).json()['messages'][-1]
     assert reply['content'] == 'Oh! Great news.'
-    # Giữ cảm xúc mở đầu làm dự phòng tới khi bản chốt đổi sang nét mặt mới.
-    assert reply['emotion_cues'] == [{'emotion': 'think', 'offset': 0}, {'emotion': 'happy', 'offset': 3}]
+    # Câu chốt có thẻ khác hay không có thẻ đều giữ mặt của cùng lượt trả lời.
+    assert reply['emotion'] == 'think'
+    assert reply['emotion_cues'] == [{'emotion': 'think', 'offset': 0}]
     after = events[next(i for i, e in enumerate(events) if e['type'] == 'replace') + 1:]
-    assert [{'emotion': e['emotion'], 'offset': e['offset']} for e in after if e['type'] == 'emotion'] == reply['emotion_cues'][1:]
+    assert not [e for e in after if e['type'] == 'emotion']
+    assert [e['emotion'] for e in events if e['type'] == 'emotion'] == ['think']
+
+
+def test_old_history_with_several_markers_uses_one_expression_from_the_start():
+    reply = chat_history._public_message({
+        'id': 1, 'role': 'assistant', 'created_at': 0,
+        'content': 'Oh! <|EMOTE_SURPRISED|>Great news. <|EMOTE_HAPPY|>I passed!',
+    }, companion=True)
+    assert reply['content'] == 'Oh! Great news. I passed!'
+    assert reply['emotion'] == 'surprised'
+    assert reply['emotion_cues'] == [{'emotion': 'surprised', 'offset': 0}]

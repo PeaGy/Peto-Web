@@ -347,7 +347,7 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                 if notes:
                     collected.clear()
                     notes = private_notes.NoteFilter()
-                    markers = emotion_tags.MarkerFilter()
+                    markers = emotion_tags.MarkerFilter(turn_emotion)
                     return sse({"type": "replace"})
                 # Chỉ bỏ bản nháp của lần gọi hiện tại; chữ các lần gọi trước vẫn là câu trả lời.
                 del collected[round_start:]
@@ -505,10 +505,9 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
             # Cả timeout/lỗi lẫn đóng tab đều giữ phần đã phát. Shield tránh
             # cancel scope của StreamingResponse hủy luôn thao tác lưu SQLite.
             reply = "".join(collected).strip()
-            # Câu sau lúc tra web không gắn lại thẻ thì giữ thẻ đã gửi tới nhân vật, để nghe lại tin cũ vẫn đúng mặt.
+            # Câu chốt giữ cảm xúc đầu tiên của lượt, để nghe lại vẫn đúng mặt dù bản nháp đã bị thay sau tra web.
             if turn_emotion and reply:
-                _, final_cues = emotion_tags.timeline(private_notes.strip(reply))
-                if not final_cues or final_cues[0]['offset'] > 0:
+                if emotion_tags.first(private_notes.strip(reply)) != turn_emotion:
                     reply = f"<|EMOTE_{turn_emotion.upper()}|> {reply}"
             artifacts = document_session.created if document_session else []
             if artifacts and not reply: reply = 'Tệp đã được tạo. Phản hồi bị ngắt; bạn vẫn có thể tải tài liệu bên dưới.'
