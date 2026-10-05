@@ -56,6 +56,7 @@ const SHOWN_CHANGES = 4;
 function WorkbookArtifactCard({ artifact, onOpen }: { artifact: DocumentArtifact; onOpen: (artifact: DocumentArtifact) => void }) {
   const download = `/api/documents/${encodeURIComponent(artifact.id)}/export/xlsx?version=${artifact.version}`;
   const changes = (artifact.changes ?? []).map(parseChange);
+  const total = Math.max(artifact.change_count ?? 0, changes.length);
   return <section className="document-artifact sheet workbook" aria-label={`Bảng tính ${artifact.filename}`}>
     <header className="artifact-heading">
       <SheetIcon /><button type="button" className="artifact-name" onClick={() => onOpen(artifact)} title={artifact.filename}>{artifact.filename}</button>
@@ -65,7 +66,7 @@ function WorkbookArtifactCard({ artifact, onOpen }: { artifact: DocumentArtifact
     {changes.length > 0 ? <ol className="wb-card-log" aria-label="Peto đã sửa">
       {changes.slice(0, SHOWN_CHANGES).map((change, index) => <li key={index}><span className="wb-log-where">{changeLabel(change.where)}</span><ChangeText text={change.text} /></li>)}
     </ol> : <p className="wb-card-empty">Bản Peto đã sửa của tệp bạn gửi.</p>}
-    {changes.length > SHOWN_CHANGES && <p className="wb-card-more">và {changes.length - SHOWN_CHANGES} thay đổi khác</p>}
+    {total > SHOWN_CHANGES && <p className="wb-card-more">và {total - SHOWN_CHANGES} thay đổi khác</p>}
     <footer className="artifact-caption"><span>{artifact.filename.toLowerCase().endsWith('.xlsm') ? 'XLSM' : 'XLSX'} · giữ nguyên định dạng gốc{artifact.version > 1 ? ` · phiên bản ${artifact.version}` : ''}</span>
       <button type="button" onClick={() => onOpen(artifact)}>Xem bảng tính</button></footer>
   </section>;

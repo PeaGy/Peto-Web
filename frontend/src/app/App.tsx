@@ -841,8 +841,14 @@ export default function App() {
           },
           onArtifact: (artifact) => {
             if (controller.signal.aborted) return;
-            updateReply(last => ({ ...last,
-              artifacts: [...(last.artifacts || []).filter(item => item.id !== artifact.id || item.version !== artifact.version), artifact] }));
+            // Peto sửa cùng một tệp vài lần trong một lượt: bản mới thay thẻ của bản trước ngay tại chỗ, như máy chủ lưu.
+            updateReply(last => {
+              const artifacts = [...(last.artifacts || [])];
+              const index = artifacts.findIndex(item => item.id === artifact.id);
+              if (index >= 0) artifacts[index] = artifact;
+              else artifacts.push(artifact);
+              return { ...last, artifacts };
+            });
             setDocumentRefresh(value => value + 1);
           },
           onError: (message) => {

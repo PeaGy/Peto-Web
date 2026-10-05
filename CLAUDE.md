@@ -299,16 +299,23 @@ summary ticker, and a phase bar sized by time spent.
 - **UI** (`WorkTimeline.tsx`; never a `workLog.ts` beside a `WorkLog.tsx`: the `LocalVoice` problem below).
   - **While running:** the header reads "Đang làm m:ss" on the client clock (`workStartedAt`), and every step has its own
     time.
-  - **Think steps:** titled by the summary's last `**heading**`, and expand to the summary (Grok's own words, usually
-    English).
-  - **Notes and refusals:** notes are plain text; refusals are listed in red.
-  - **Open or closed:** the block collapses when answer text appears. A turn that stopped before any text stays open.
+  - **Think steps are one line** (the owner's call after the first real run on 2026-10-05: Grok's summary came as dozens
+    of Vietnamese paragraphs, "Đang kiểm tra từng dòng nhân viên…", and the open step filled the screen). While running,
+    the line is the latest thought (`latestThought`: the last `**heading**`, else the last paragraph), cut with an
+    ellipsis by CSS. Once done it reads "Đã suy nghĩ". A click opens the whole summary in a 240 px scroll box, and a step
+    closes again when it finishes. `ThinkStep` toggles from its own state on the summary click, because jsdom does not
+    open `<details>` on a click.
+  - **Notes and refusals:** notes are plain text; refusals are listed in red. The tool's hint line to the model ("Sửa
+    công thức, hoặc bọc IFERROR…") is not shown as a refusal.
+  - **Open or closed:** the block collapses when answer text appears, and again when the turn ends, even if the user
+    opened it meanwhile. A turn that stopped before any text stays open.
   - **Finished:** "Đã làm trong 3 phút 18 giây". A stopped turn reads "Đã dừng sau …", with "Đã dừng khi …" on the
     unfinished step.
   - **No final `work` event** (Stop, lost connection): `closeWork` closes the steps on the client clock.
   - **Failed turn with no text:** the bubble is kept as `local` (not stored), and App skips it when matching stored ids
     by position.
-- **Mock:** `__suaexcel__` shows the whole flow (note, compose, edit result), and `__slow__` shows the running clock.
+- **Mock:** `__suaexcel__` shows the whole flow (note, compose, edit result), `__suynghi__` streams a long
+  multi-paragraph summary like the real one, and `__slow__` shows the running clock.
 - **Tests:** `backend/tests/test_work_log.py`, frontend `WorkTimeline.test.tsx`, `App.test.tsx` and `api.test.ts`.
 
 ### Tool calling
@@ -720,6 +727,14 @@ does not touch. The upload never changes; each edit is a new version.
   - Edits run in a worker process (`to_process`, 45 s, behind the render queue).
   - Each success is a `style='workbook'` document version holding the xlsx; an upload becomes a new document. At most
     `MAX_EDITS_PER_TURN` (4) saved edits per turn.
+  - **One card per file per turn** (the owner's first real run on 2026-10-05 left three cards for one file). Editing
+    the same file again in a turn passes the earlier edit's lines and changed cells to the worker (`carried`).
+    - `Session.carry` keeps them, and later inserts, deletes and renames in the new edit move them. A line whose area
+      was deleted says so.
+    - The new version's change list and tinted cells therefore cover the whole turn.
+    - `DocumentSession._turn_edits` puts the new card in place of the earlier one, and the page replaces a card with
+      the same id.
+    - The model still gets only that call's lines (`new_lines`), and `change_count` gives the card its full total.
   - The content holds the change lines ("Thay đổi:"), "Ô đã sửa: …" and a 40,000-character readout, so follow-ups and
     the attachment tools see the new file.
   - `/sheet` returns `workbook_grid.grid`: 500 rows × 60 columns per sheet, Vietnamese number formats, theme colours,
@@ -731,7 +746,6 @@ does not touch. The upload never changes; each edit is a new version.
 - **Mock:** `__suaexcel__` edits the newest workbook of the conversation.
 - **Not done:**
   - new charts, conditional formatting, sorting and filters, images;
-  - one card per saved version when a turn edits several times;
   - a check in real Excel (none on this PC).
 - **Tests:** `backend/tests/test_workbook_edit.py` and `test_turn_limits.py`, frontend `DocumentArtifactCard.test.tsx`
   (`tests/workbookFixture.ts`).

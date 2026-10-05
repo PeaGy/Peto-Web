@@ -43,6 +43,9 @@ _LOCAL_NUMBER = re.compile(r'[+-]?\d{1,3}(?:\.\d{3})+(?:,\d+)?|[+-]?\d+,\d+')
 _AREA = re.compile(r'\$?([A-Za-z]{1,3})\$?(\d{1,7})(?::\$?([A-Za-z]{1,3})\$?(\d{1,7}))?')
 _COLUMNS = re.compile(r'\$?([A-Za-z]{1,3})(?::\$?([A-Za-z]{1,3}))?')
 _ROWS = re.compile(r'\$?(\d{1,7})(?::\$?(\d{1,7}))?')
+# Dòng thay đổi: 'Trang'!vùng: chữ. Vùng là ô hay vùng ô, cả hàng (9:10), cả cột (G:H), hoặc không có (cả trang).
+_CHANGE_LINE = re.compile(r"^'((?:[^']|'')+)'(?:!([A-Z]{1,3}\d+(?::[A-Z]{1,3}\d+)?|\d+:\d+|[A-Z]{1,3}:[A-Z]{1,3}))?: (.+)$",
+                          re.S)
 _BAD_NAME = re.compile(r'[\\/?*\[\]:]')
 
 _NULLABLE_STRING = {'type': ['string', 'null']}
@@ -312,6 +315,7 @@ class Outcome:
     macro: bool
     sheets: list[str] = field(default_factory=list)
     computed: int = 0          # công thức sẵn có được tính lại vì trỏ tới ô vừa đổi
+    new_lines: list[str] = field(default_factory=list)   # chỉ dòng của lần sửa này (``lines`` gồm cả lần trước)
 
 
 class Session:
@@ -325,6 +329,62 @@ class Session:
         self.structural: set[str] = set()
         self.cells = 0
         self.formulas_touched = False
+        # Dòng thay đổi của các lần sửa trước trong cùng lượt chat: [trang, loại vùng, vùng, chữ], dời theo chèn/xóa.
+        self.carried: list[list] = []
+
+    def carry(self, lines: list[str], changed: dict[str, list]) -> None:
+        """Lần sửa trước trong cùng lượt chat (một lượt chỉ để lại một bản và một thẻ): giữ dòng thay đổi và ô đã sửa
+        của nó, để bản cuối kể đủ mọi thay đổi của lượt. Ô cũ vào ``formatted`` nên không bị tính lại, mà vẫn dời theo
+        các lần chèn/xóa hàng cột của lần này như ô vừa sửa."""
+        for name, areas in (changed or {}).items():
+            try:
+                info = self.book.info(name)
+            except EditError:
+                continue
+            bucket = self.formatted.setdefault(info.part, set())
+            for r1, c1, r2, c2 in areas:
+                bucket.update((r, c) for r in range(r1, r2 + 1) for c in range(c1, c2 + 1))
+        for line in lines or []:
+            match = _CHANGE_LINE.match(line.strip())
+            if not match:
+                continue
+            sheet, where, text = match.group(1).replace("''", "'"), match.group(2), match.group(3)
+            if not where:
+                self.carried.append([sheet, None, None, text])
+            elif _ROWS.fullmatch(where):
+                low, high = (int(part) - 1 for part in where.split(':'))
+                self.carried.append([sheet, 'row', (low, high), text])
+            elif _COLUMNS.fullmatch(where) and ':' in where:
+                low, high = (column_index(part) for part in where.split(':'))
+                self.carried.append([sheet, 'col', (low, high), text])
+            else:
+                area = meta.area_of(where)
+                self.carried.append([sheet, 'area', area, text] if area else [sheet, None, None, text])
+
+    def _move_carried(self, sheet: str, axis: str, low: int, count: int, delete: bool) -> None:
+        from features.documents.workbook_edit import structure
+        for item in self.carried:
+            if item[1] is None or item[2] is None or not refs.same_sheet(item[0], sheet):
+                continue
+            if item[1] == 'area':
+                item[2] = structure._map_area(item[2], axis, low, count, delete)
+            elif item[1] == axis:
+                item[2] = refs.map_span(*item[2], low, count, delete, refs.MAX_ROWS if axis == 'row' else refs.MAX_COLS)
+
+    def carried_lines(self) -> list[str]:
+        out = []
+        for sheet, kind, span, text in self.carried:
+            if kind is None:
+                out.append(f'{sheet_label(sheet)}: {text}')
+            elif span is None:
+                out.append(f'{sheet_label(sheet)}: {text} (vùng này đã bị xóa ở lần sửa sau)')
+            elif kind == 'area':
+                out.append(f'{area_label(sheet, *span)}: {text}')
+            elif kind == 'row':
+                out.append(f'{sheet_label(sheet)}!{span[0] + 1}:{span[1] + 1}: {text}')
+            else:
+                out.append(f'{sheet_label(sheet)}!{column_letter(span[0])}:{column_letter(span[1])}: {text}')
+        return out
 
     # ---------- dùng chung ----------
 
@@ -690,6 +750,7 @@ class Session:
         for bucket in (self.changed, self.new, self.formatted):
             if info.part in bucket:
                 bucket[info.part] = structure.remap(bucket[info.part], axis, low, count, delete)
+        self._move_carried(info.name, axis, low, count, delete)
         self.structural.add(info.name)
         self.formulas_touched = True
         # Dòng thay đổi ghi vùng là cả hàng (9:10) hay cả cột (G:H), như tham chiếu Excel.
@@ -802,6 +863,9 @@ class Session:
             raise EditError('cấu trúc tệp đang khóa (Protect Workbook) nên không đổi tên trang được')
         old = info.name
         structure.rename_sheet(self.book, info, name)
+        for item in self.carried:
+            if refs.same_sheet(item[0], old):
+                item[0] = name
         self.formulas_touched = True
         self.lines.append(f'{sheet_label(name)}: đổi tên từ "{old}"; công thức, biểu đồ, tên vùng trỏ tới trang này đổi theo')
 
@@ -962,10 +1026,13 @@ def describe_change(change: ChangeInput) -> str:
     return f'{change.action} {sheet_label(change.sheet)}{where}'
 
 
-def apply(data: bytes, changes: list[ChangeInput], today: date) -> Outcome:
-    """Áp các thay đổi lên tệp; lỗi là EditError đã ghi rõ thay đổi thứ mấy."""
+def apply(data: bytes, changes: list[ChangeInput], today: date, carried: dict | None = None) -> Outcome:
+    """Áp các thay đổi lên tệp; lỗi là EditError đã ghi rõ thay đổi thứ mấy. ``carried`` ({'lines', 'changed'}) là kết
+    quả các lần sửa trước trong cùng lượt chat, để dòng thay đổi và ô đã sửa của bản này kể đủ cả lượt."""
     book = Book(data)
     session = Session(book, today)
+    if carried:
+        session.carry(carried.get('lines') or [], carried.get('changed') or {})
     problems: list[str] = []
     for number, change in enumerate(changes, start=1):
         # Thay đổi lỗi thì bỏ qua và kiểm tiếp các thay đổi sau, để model biết hết lỗi trong một lần.
@@ -1023,15 +1090,15 @@ def apply(data: bytes, changes: list[ChangeInput], today: date) -> Outcome:
         if cells:
             changed[info.name] = compress(cells)
     output = book.finish()
-    return Outcome(output, session.lines, changed, results, session.notes, book.macro,
-                   [info.name for info in book.data_sheets()], computed)
+    return Outcome(output, session.carried_lines() + session.lines, changed, results, session.notes, book.macro,
+                   [info.name for info in book.data_sheets()], computed, session.lines)
 
 
-def run(data: bytes, changes: list[dict], today: str, excerpt_chars: int) -> dict:
+def run(data: bytes, changes: list[dict], today: str, excerpt_chars: int, carried: dict | None = None) -> dict:
     """Hàm thuần cho tiến trình con (anyio.to_process): sửa tệp rồi đọc lại tệp mới cho Peto. Không ném lỗi: lỗi của tệp
     hay của thay đổi trả về {'error': lời giải thích}; lỗi lạ kèm 'internal' để máy chủ ghi log."""
     try:
-        outcome = apply(data, [ChangeInput.model_validate(item) for item in changes], date.fromisoformat(today))
+        outcome = apply(data, [ChangeInput.model_validate(item) for item in changes], date.fromisoformat(today), carried)
     except EditError as error:
         return {'error': str(error)}
     except Exception as error:   # lỗi lập trình: không để hỏng cả lượt chat
@@ -1041,7 +1108,8 @@ def run(data: bytes, changes: list[dict], today: str, excerpt_chars: int) -> dic
     readout = read_workbook(outcome.data, excerpt_chars)
     return {'data': outcome.data, 'lines': outcome.lines, 'changed': outcome.changed, 'results': outcome.results,
             'notes': outcome.notes, 'macro': outcome.macro, 'sheets': outcome.sheets, 'readout': readout.get('text', ''),
-            'readout_partial': readout.get('status') == 'partial', 'computed': outcome.computed}
+            'readout_partial': readout.get('status') == 'partial', 'computed': outcome.computed,
+            'new_lines': outcome.new_lines}
 
 
 def changed_line(changed: dict[str, list[tuple[int, int, int, int]]], limit: int = 3_000) -> str:

@@ -29,8 +29,10 @@ it('đã xong: thu lại, mở ra thấy từng bước với thời gian, tóm 
   expect(head.getAttribute('aria-expanded')).toBe('false');
   fireEvent.click(head);
   expect(screen.getByText('5 trang tính · 152 công thức')).toBeTruthy();
-  // Tiêu đề bước suy nghĩ là đề mục cuối trong tóm tắt của Grok; mở ra thấy cả tóm tắt.
-  expect(screen.getAllByText('Planning the grade sheet').length).toBeGreaterThan(0);
+  // Bước suy nghĩ đã xong chỉ một dòng "Đã suy nghĩ"; bấm mới thấy cả tóm tắt của Grok.
+  expect(screen.queryByText('Quy_dinh lists L1–L9.')).toBeNull();
+  fireEvent.click(screen.getByText('Đã suy nghĩ'));
+  expect(screen.getByText('Planning the grade sheet')).toBeTruthy();
   expect(screen.getByText('Quy_dinh lists L1–L9.')).toBeTruthy();
   expect(screen.getByText('1 phút 9 giây')).toBeTruthy();
   expect(screen.getByText('Mình sửa Bang_luong và Bang_diem trước.').className).toBe('work-note');
@@ -70,4 +72,35 @@ it('tự đóng khi xong mà thiếu bản chốt: "Đang …" thành "Đã …"
   render(<WorkTimeline work={{ ms: 3000, steps: [], complete: true }} live={false} answering />);
   expect(screen.queryByRole('button')).toBeNull();
   expect(screen.getByText('Đã làm trong 3 giây')).toBeTruthy();
+});
+
+it('đang suy nghĩ: chỉ một dòng là ý mới nhất; bấm mới mở, bước xong thì tự đóng', () => {
+  const summary = 'Đang phân tích tệp Excel để xác định lỗi.\n\nĐang kiểm tra từng dòng nhân viên trên trang tính Bang_luong.\n\n'
+    + 'Đã quyết định sửa mã nhân viên ở dòng 7 NV003';
+  const live: WorkStep = { id: 'think-1', kind: 'think', label: 'Đang suy nghĩ…', state: 'live', start: 0, summary };
+  const startedAt = performance.now();
+  const { rerender } = render(<WorkTimeline work={{ ms: 0, steps: [live] }} live startedAt={startedAt} answering={false} />);
+  const line = screen.getByText('Đã quyết định sửa mã nhân viên ở dòng 7 NV003');
+  expect(line.className).toContain('work-shimmer');
+  expect(screen.queryByText('Đang phân tích tệp Excel để xác định lỗi.')).toBeNull();
+  fireEvent.click(line);
+  expect(screen.getByText('Đang phân tích tệp Excel để xác định lỗi.')).toBeTruthy();
+  const done = { ...live, state: 'done' as const, label: 'Đã suy nghĩ', end: 9000 };
+  rerender(<WorkTimeline work={{ ms: 0, steps: [done] }} live startedAt={startedAt} answering={false} />);
+  expect(screen.queryByText('Đang phân tích tệp Excel để xác định lỗi.')).toBeNull();
+  expect(screen.getByText('Đã suy nghĩ')).toBeTruthy();
+});
+
+it('xong lượt thì cả khối tự thu lại, kể cả khi đã mở lúc đang chạy', () => {
+  const step: WorkStep = { id: 'search-1', kind: 'search', label: 'Đang tìm trên web…', state: 'live', start: 0 };
+  const startedAt = performance.now();
+  const { rerender } = render(<WorkTimeline work={{ ms: 0, steps: [step] }} live startedAt={startedAt} answering />);
+  const head = screen.getByRole('button', { name: /Đang làm/ });
+  expect(head.getAttribute('aria-expanded')).toBe('false');
+  fireEvent.click(head);
+  expect(screen.getByText('Đang tìm trên web…')).toBeTruthy();
+  rerender(<WorkTimeline work={{ ms: 5000, complete: true, steps: [{ ...step, state: 'done', label: 'Đã tìm trên web', end: 4000 }] }}
+    live={false} answering />);
+  expect(screen.getByRole('button', { name: 'Đã làm trong 5 giây' }).getAttribute('aria-expanded')).toBe('false');
+  expect(document.querySelector('.work-timeline')).toBeNull();
 });

@@ -612,15 +612,17 @@ describe('Sending and stopping', () => {
     await openApp();
     fireEvent.change(screen.getByPlaceholderText('Nhắn cho Peto…'), {target: {value: 'Giải giúp'}});
     fireEvent.click(screen.getByRole('button', {name:'Gửi', exact:true}));
-    // Đang chạy: khối mở, đồng hồ chạy cạnh chữ, tóm tắt mới nhất làm tiêu đề bước.
-    await screen.findByText('Checking the math…');
+    // Đang chạy: khối mở, đồng hồ chạy cạnh chữ, ý mới nhất của tóm tắt làm tiêu đề bước (một dòng).
+    await screen.findByText('Checking the math');
     expect(screen.getByRole('button', {name: /Đang làm/}).getAttribute('aria-expanded')).toBe('true');
     expect(document.querySelector('.work-clock')?.textContent).toMatch(/^\d+:\d\d$/);
     await act(async () => reply.resolve());
     await screen.findByText('Kết quả là 4.');
     expect(document.querySelector('.work-timeline')).toBeNull();
     fireEvent.click(screen.getByRole('button', {name: 'Đã làm trong 8 giây'}));
-    expect(screen.getAllByText('Checking the math').length).toBeGreaterThan(0);
+    expect(screen.queryByText('The user wants 2 + 2.')).toBeNull();
+    fireEvent.click(screen.getByText('Đã suy nghĩ'));
+    expect(screen.getByText('Checking the math')).toBeTruthy();
     expect(screen.getByText('The user wants 2 + 2.')).toBeTruthy();
     expect(screen.getByText('Đã tìm trên web')).toBeTruthy();
     expect(screen.getByText('3 nguồn')).toBeTruthy();
@@ -670,6 +672,28 @@ describe('Sending and stopping', () => {
     fireEvent.click(screen.getByRole('button', {name: /Đã làm trong \d+ giây/}));
     expect(screen.getByText('Đọc GitHub · 11 mục đã đọc · 2 mục chưa đọc được')).toBeTruthy();
     expect(screen.getByText(issue)).toBeTruthy();
+  });
+
+  it('sửa cùng một tệp Excel nhiều lần trong một lượt chỉ để lại một thẻ, là bản cuối', async () => {
+    const card = (version: number, changes: string[], count: number): api.DocumentArtifact => ({
+      id: 'W1', title: 'bang', filename: 'bang.xlsx', version, format: 'xlsx', style: 'workbook', pages: 5, changes, change_count: count,
+    });
+    const first = ["'Bang_luong'!A8: \"NV003\" → \"NV004\""];
+    const all = [...first, ...Array.from({ length: 9 }, (_, index) => `'Tong_hop'!B${5 + index}: điền công thức =A${5 + index}`)];
+    vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers) => {
+      handlers.onMeta?.('C', 'medium', row('Sửa bảng'));
+      handlers.onArtifact?.(card(1, first, 1));
+      handlers.onArtifact?.(card(2, all, 10));
+      handlers.onDelta?.('Đã sửa xong.');
+      handlers.onDone?.();
+    });
+    await openApp();
+    fireEvent.change(screen.getByPlaceholderText('Nhắn cho Peto…'), {target: {value: 'Sửa bảng'}});
+    fireEvent.click(screen.getByRole('button', {name:'Gửi', exact:true}));
+    await screen.findByText('Đã sửa xong.');
+    expect(screen.getAllByRole('region', {name: 'Bảng tính bang.xlsx'})).toHaveLength(1);
+    expect(screen.getByText(/phiên bản 2/)).toBeTruthy();
+    expect(screen.getByText('và 6 thay đổi khác')).toBeTruthy();
   });
 
   it('lượt hỏng trước khi có chữ vẫn giữ nhật ký để thấy Peto đã thử gì', async () => {

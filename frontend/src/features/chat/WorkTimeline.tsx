@@ -64,12 +64,20 @@ function icon(step: WorkStep) {
   return ICONS[step.kind as keyof typeof ICONS] ?? ICONS.wait;
 }
 
-/** Tiêu đề bước suy nghĩ: đề mục cuối cùng trong tóm tắt của Grok ("**Checking codes**"), không có thì chữ chung. */
+/** Ý mới nhất trong tóm tắt của Grok: đề mục cuối ("**Checking codes**") nếu có, không thì đoạn cuối. Tóm tắt thật
+ * (5/10/2026) là hàng chục đoạn tiếng Việt kiểu "Đang kiểm tra từng dòng nhân viên…", nên chỉ hiện một dòng này. */
+export function latestThought(summary: string) {
+  const headings = [...summary.matchAll(/\*\*([^*\n]+)\*\*/g)];
+  const heading = headings[headings.length - 1]?.[1]?.trim();
+  if (heading) return heading;
+  const lines = summary.split('\n').map(line => line.replace(/\*\*/g, '').trim()).filter(Boolean);
+  return lines[lines.length - 1] ?? '';
+}
+
+/** Đang chạy: ý mới nhất, một dòng, cắt bằng "…" nếu dài. Xong: "Đã suy nghĩ"; bấm mới mở cả tóm tắt. */
 function thinkTitle(step: WorkStep) {
-  const headings = [...(step.summary ?? '').matchAll(/\*\*([^*\n]+)\*\*/g)];
-  const last = headings[headings.length - 1]?.[1]?.trim();
-  if (!last) return step.state === 'live' ? 'Đang suy nghĩ…' : step.label;
-  return step.state === 'live' ? `${last}…` : last;
+  if (step.state !== 'live') return step.label;
+  return latestThought(step.summary ?? '') || 'Đang suy nghĩ…';
 }
 
 const stoppedLabel = (label: string) => `Đã dừng khi ${label.replace(/^Đang /, 'đang ').replace(/…$/, '')}`;
@@ -83,6 +91,20 @@ function Thought({ text }: { text: string }) {
   })}</div>;
 }
 
+/** Bước suy nghĩ có tóm tắt: một dòng, bấm để mở cả tóm tắt (khung có thanh cuộn). Bước xong thì tự đóng lại. */
+function ThinkStep({ step, head }: { step: WorkStep; head: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const live = step.state === 'live';
+  useEffect(() => { if (!live) setOpen(false); }, [live]);
+  // Tự bật/tắt bằng trạng thái thay vì để trình duyệt tự mở: đóng được khi bước xong, và chạy như nhau ở mọi nơi.
+  return <li className={`work-item think ${step.state}`}>
+    <details open={open}>
+      <summary onClick={event => { event.preventDefault(); setOpen(value => !value); }}>{head}</summary>
+      {open && <Thought text={step.summary ?? ''} />}
+    </details>
+  </li>;
+}
+
 function Step({ step, elapsed }: { step: WorkStep; elapsed: number }) {
   if (step.kind === 'note') return <li className="work-note">{step.label}</li>;
   const live = step.state === 'live';
@@ -94,14 +116,7 @@ function Step({ step, elapsed }: { step: WorkStep; elapsed: number }) {
     <span className={live ? 'work-label work-shimmer' : 'work-label'}>{label}</span>
     {time && <span className="work-time">{time}</span>}
   </>;
-  if (step.kind === 'think' && step.summary) {
-    return <li className={`work-item ${step.state}`}>
-      <details open={live}>
-        <summary>{head}</summary>
-        <Thought text={step.summary} />
-      </details>
-    </li>;
-  }
+  if (step.kind === 'think' && step.summary) return <ThinkStep step={step} head={head} />;
   return <li className={`work-item ${step.state}`}>
     <div className="work-row">{head}</div>
     {step.detail && <p className="work-sub">{step.detail}</p>}
@@ -122,6 +137,8 @@ export default function WorkTimeline({ work, live, startedAt, answering }: {
   const elapsed = useElapsed(live, startedAt);
   const stopped = !live && work.complete === false;
   const [choice, setChoice] = useState<boolean | null>(null);
+  // Xong lượt thì thu lại như mặc định, kể cả khi người dùng đã mở khối lúc đang chạy.
+  useEffect(() => { if (!live) setChoice(null); }, [live]);
   const open = choice ?? (live ? !answering : stopped && !answering);
   const steps = work.steps;
   const title = live

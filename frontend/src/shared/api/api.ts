@@ -7,8 +7,10 @@ export interface WebSource { url: string; title: string; kind?: 'citation' | 're
 export interface DocumentArtifact {
   id: string; title: string; filename: string; version: number;
   format: 'docx' | 'pdf' | 'pptx' | 'xlsx'; style: 'report' | 'essay' | 'clean' | 'academic' | 'bold' | 'sheet' | 'workbook'; pages: number;
-  /** Tệp Excel người dùng gửi mà Peto đã sửa (style 'workbook'): các dòng thay đổi, như 'Lương'!A9:F9: ghi 6 ô. */
+  /** Tệp Excel người dùng gửi mà Peto đã sửa (style 'workbook'): các dòng thay đổi, như 'Lương'!A9:F9: ghi 6 ô. Máy chủ
+   * chỉ gửi 20 dòng đầu; ``change_count`` là tổng số dòng, gồm cả các lần sửa trước của tệp này trong cùng lượt. */
   changes?: string[];
+  change_count?: number;
 }
 
 export interface ChatAttachment {

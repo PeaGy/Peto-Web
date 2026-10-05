@@ -99,6 +99,10 @@ class DocumentSession:
         self.created = []
         self._completed = {}
         self.workbooks = conversation_workbooks(rows)
+        # Tệp Excel đã sửa trong lượt này, theo mã tài liệu: dòng thay đổi, ô đã sửa và chỗ thẻ của nó trong ``created``.
+        # Sửa tiếp cùng tệp thì bản mới kể cả các thay đổi trước và thay thẻ cũ: một lượt chỉ để lại một thẻ cho mỗi tệp.
+        self._turn_edits: dict[str, dict] = {}
+        self.edits = 0
 
     async def create(self, arguments: str):
         try:
@@ -266,16 +270,19 @@ class DocumentSession:
             key = ('edit', arguments)
             if key in self._completed: return self._completed[key]
             # Sửa một bảng nhiều lỗi có thể cần vài lần gọi (40 thay đổi mỗi lần), mỗi lần thành một bản mới.
-            if len(self.created) >= MAX_EDITS_PER_TURN:
+            if self.edits >= MAX_EDITS_PER_TURN:
                 raise ValueError(f'Mỗi lượt chỉ lưu tối đa {MAX_EDITS_PER_TURN} bản sửa. Báo người dùng phần đã sửa; '
                                  'phần còn lại làm ở lượt sau.')
             source = await self._workbook(spec.file)
             changes = [change.model_dump() for change in spec.changes]
+            # Tệp này đã sửa ở lần gọi trước trong lượt: bản mới mang theo thay đổi của lần đó.
+            earlier = self._turn_edits.get(source['document_id']) if source['document_id'] else None
+            carried = {'lines': earlier['lines'], 'changed': earlier['changed']} if earlier else None
             try:
                 async with render_queue.slot(TOOL_WAIT):
                     with anyio.fail_after(EDIT_TIMEOUT):
                         outcome = await to_process.run_sync(run_edit, source['data'], changes, sheet_today().isoformat(),
-                                                            EDIT_EXCERPT_CHARS, cancellable=True)
+                                                            EDIT_EXCERPT_CHARS, carried, cancellable=True)
             except RenderBusy:
                 raise ValueError('Peto đang xuất tài liệu khác. Hãy báo người dùng thử lại sau vài giây.') from None
             except TimeoutError:
@@ -283,7 +290,9 @@ class DocumentSession:
             if 'error' in outcome:
                 if outcome.get('internal'):
                     logger.warning('Bộ sửa Excel lỗi: %s', outcome['internal'])
-                problems = [line for line in outcome['error'].splitlines() if line.strip()]
+                # Nhật ký chỉ kể lỗi; dòng dặn mô hình cách sửa ("Sửa công thức, hoặc bọc IFERROR…") không phải lỗi.
+                problems = [line for line in outcome['error'].splitlines()
+                            if line.startswith(('Thay đổi ', 'Công thức mới ', '(và '))] or [outcome['error']]
                 return {'error': outcome['error'] + '\nChưa ghi gì vào tệp, kể cả các thay đổi không lỗi. Sửa hết các lỗi '
                         'trên rồi gọi lại edit_spreadsheet với đủ danh sách thay đổi.',
                         '_ui': {'label': 'Sửa tệp bị từ chối, chưa ghi gì', 'problems': problems}}
@@ -300,11 +309,22 @@ class DocumentSession:
                     draft = await document_store.save_document(self.owner, self.conversation_id, title, content,
                                                                style='workbook', assets=files)
                 artifact = {k: draft[k] for k in ('id', 'title', 'version', 'style')}
-                # Thẻ trong chat hiện danh sách thay đổi ngay, không phải tải cả lưới.
-                artifact.update(format='xlsx', filename=filename, pages=files['pages'], changes=outcome['lines'][:20])
-                self.created.append(artifact)
+                # Thẻ trong chat hiện danh sách thay đổi ngay, không phải tải cả lưới; ``lines`` gồm cả các lần sửa trước
+                # của tệp này trong lượt, ``change_count`` là tổng số dòng (thẻ chỉ mang 20 dòng đầu).
+                artifact.update(format='xlsx', filename=filename, pages=files['pages'], changes=outcome['lines'][:20],
+                                change_count=len(outcome['lines']))
+                if earlier is not None:
+                    # Cùng một lượt: thẻ của bản trước nhường chỗ cho bản mới, nên trả lời chỉ có một thẻ cho tệp này.
+                    index = earlier['index']
+                    self.created[index] = artifact
+                    self._turn_edits.pop(source['document_id'], None)
+                else:
+                    index = len(self.created)
+                    self.created.append(artifact)
+                self._turn_edits[draft['id']] = {'lines': outcome['lines'], 'changed': outcome['changed'], 'index': index}
+                self.edits += 1
                 self.workbooks.append({'name': filename, 'kind': 'document', 'id': draft['id']})
-                result = {'ok': True, 'artifact': artifact, 'changes': outcome['lines'], 'instruction': (
+                result = {'ok': True, 'artifact': artifact, 'changes': outcome.get('new_lines', outcome['lines']), 'instruction': (
                     'Tệp đã sửa, giữ nguyên định dạng và các phần khác; thẻ xem tự hiển thị trong chat (ô đã sửa được tô '
                     'nổi). Trả lời ngắn: đã sửa gì, ở đâu; số liệu nêu ra lấy từ results. Nếu có notes thì nói ngắn phần '
                     'cần biết. Không chép lại cả bảng, không tự viết đường dẫn.')}

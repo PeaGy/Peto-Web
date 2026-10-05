@@ -176,6 +176,20 @@ def slide_sample(theme: str) -> dict:
     ]}
 
 
+# "__suynghi__": tóm tắt suy nghĩ nhiều đoạn, đúng kiểu Grok thật gửi về khi sửa tệp Excel thử ngày 5/10/2026 (mỗi đoạn
+# một hai câu tiếng Việt), để xem khối "Đang làm" chỉ hiện một dòng mà không cần gọi AI thật.
+THINKING_SAMPLE = [
+    'Đang phân tích tệp Excel để xác định lỗi. Sẽ sửa các vấn đề và trả lại file đã chỉnh sửa.',
+    'Đang liệt kê các quy tắc kiểm tra trên trang tính Bang_luong để xác định lỗi. Các điều kiện cần đối chiếu với trang '
+    'Nhan_su và kiểm tra công thức tính ngày công, phụ cấp, tổng thu nhập và BHXH.',
+    'Đang kiểm tra từng dòng nhân viên trên trang tính Bang_luong. Các công thức ở cột H đến M đều đúng theo quy tắc, trừ '
+    'dòng 6 và dòng 11.',
+    'Dòng 7 NV003 đang ghi mã NV003 trong khi trang Nhan_su chỉ có NV-003. Cần đối chiếu với trang Nhan_su để chọn cách sửa.',
+    'Đã quyết định sửa mã nhân viên ở dòng 8 thành NV004 vì Phạm Minh Dũng đang dùng trùng mã NV003.',
+    'Đang soạn danh sách thay đổi: sửa mã, sửa công thức BHXH và thuế, nới dòng tổng cộng cho đủ 8 nhân viên.',
+]
+
+
 def _tool_result(tool: str, result: dict) -> StreamChunk:
     """Kết quả gọn cho nhật ký "Đang làm", như provider thật (bỏ "_ui" khỏi kết quả, phần đó không dành cho mô hình)."""
     ui = result.pop('_ui', None) or {}
@@ -455,6 +469,21 @@ class MockProvider(ChatProvider):
                 yield StreamChunk('artifact', artifact=result['artifact'])
             yield _tool_result('edit_spreadsheet', result)
             yield StreamChunk('document_status', '')
+            # "__suaexcel__:2": sửa tiếp cùng tệp trong lượt này (chèn một hàng ở đầu) như Grok sửa nhiều đợt: trả lời
+            # chỉ còn một thẻ, là bản cuối kể đủ cả hai lần.
+            if result.get('ok') and '__suaexcel__:2' in last_user:
+                sheet = changes[0]['sheet']
+                yield StreamChunk('round')
+                yield StreamChunk('tool', 'edit_spreadsheet')
+                yield StreamChunk('document_status', 'Đang sửa tệp Excel…')
+                more = await session.edit(json.dumps({'file': name, 'changes': [
+                    {'action': 'insert_rows', 'sheet': sheet, 'range': '1'},
+                    {'action': 'set', 'sheet': sheet, 'range': 'A1', 'values': [['Bản đã rà soát']], 'bold': True}]},
+                    ensure_ascii=False))
+                if more.get('ok'):
+                    yield StreamChunk('artifact', artifact=more['artifact'])
+                yield _tool_result('edit_spreadsheet', more)
+                yield StreamChunk('document_status', '')
             yield StreamChunk('round')
             if result.get('ok'):
                 yield f'Đã sửa tệp **{name}**: ' + '; '.join(line.strip() for line in result['changes']) + '.'
@@ -509,8 +538,14 @@ class MockProvider(ChatProvider):
                 "Bộ đọc xử lý tệp riêng; đang chạy phản hồi giả nên mình chưa phân tích nội dung bằng AI thật. "
             ) + reply
 
-        await asyncio.sleep(_CHUNK_DELAY)
-        yield StreamChunk("thinking", "Đọc tin nhắn rồi nghĩ cách trả lời…")
+        if "__suynghi__" in last_user:
+            for paragraph in THINKING_SAMPLE:
+                await asyncio.sleep(0.8)
+                yield StreamChunk("thinking", paragraph + "\n\n")
+            reply = "Mình đã nghĩ xong. Đây là câu trả lời mẫu sau một lượt suy nghĩ dài, chưa dùng AI thật."
+        else:
+            await asyncio.sleep(_CHUNK_DELAY)
+            yield StreamChunk("thinking", "Đọc tin nhắn rồi nghĩ cách trả lời…")
 
         # Cắt theo từ để giống nhịp stream thật. Mỗi mảnh mang theo khoảng trắng đứng trước nó, nên ghép lại đúng nguyên
         # văn, kể cả thụt lề trong khối code (trước đây dấu cách liền nhau sau mỗi lần xả bị mất).

@@ -146,12 +146,18 @@
 .work-more ul { margin: 6px 0 0; padding-left: 16px; }
 .work-more li + li { margin-top: 4px; }
 
+/* Ý mới nhất của bước suy nghĩ: luôn một dòng, cắt bằng "…" (tóm tắt thật của Grok rất dài). */
+.work-item.think .work-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
 .work-thought {
+  max-height: 240px;
+  overflow-y: auto;
   margin: 6px 0 2px;
   padding-left: 12px;
   border-left: 2px solid var(--line);
   font-size: 12.5px;
   line-height: 1.6;
+  overscroll-behavior: contain;
 }
 .work-thought p { margin: 0 0 8px; }
 .work-thought p:last-child { margin-bottom: 0; }

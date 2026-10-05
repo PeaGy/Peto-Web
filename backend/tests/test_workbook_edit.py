@@ -673,3 +673,66 @@ async def test_provider_offers_the_edit_tool_only_with_a_workbook(client, monkey
         finally:
             current_session.reset(token)
         assert any(tool.get('name') == 'edit_spreadsheet' for tool in requests[-1]['tools']) is expected
+
+
+# ---------- nhiều lần sửa trong một lượt ----------
+
+def cells_of(areas) -> set[tuple[int, int]]:
+    return {(r, c) for r1, c1, r2, c2 in areas for r in range(r1, r2 + 1) for c in range(c1, c2 + 1)}
+
+
+def test_later_edit_in_a_turn_carries_earlier_changes_and_moves_them():
+    """Một lượt chỉ để lại một bản: bản cuối kể cả các thay đổi trước, ô cũ dời theo hàng chèn, trang đổi tên theo."""
+    first = edit(workbook(salary), change(range='B3', values=[['13000000']]), change('format', range='A2:D2', bold=True),
+                 change(range='A5', values=[['Tổng']]))
+    carried = {'lines': first.lines, 'changed': first.changed}
+    second = apply(first.data, [change('insert_rows', range='2'), change('delete_rows', range='6'),
+                                change(range='E1', values=[['Ghi chú']]),
+                                change('rename_sheet', new_name='Lương T10')], TODAY, carried)
+    lines = second.lines
+    assert lines[:3] == ["'Lương T10'!B4: 12000000 → 13000000", "'Lương T10'!A3:D3: in đậm",
+                         '\'Lương T10\': "Cộng" → "Tổng" (vùng này đã bị xóa ở lần sửa sau)']
+    assert second.new_lines == lines[3:] and second.new_lines[0].startswith("'Lương'!2:2: chèn 1 hàng")
+    # Ô của lần trước (đã dời: B3 → B4, A2:D2 → A3:D3; A5 → A6 rồi bị xóa) và ô mới E1 đều được tô.
+    assert cells_of(second.changed['Lương T10']) == {(0, 4), (2, 0), (2, 1), (2, 2), (2, 3), (3, 1)}
+
+
+async def test_one_turn_editing_a_file_twice_leaves_one_card_with_every_change(client, monkeypatch):
+    from conftest import read_events
+    from ai.base import StreamChunk
+    from features.chat import service as chat_service
+    from features.documents.tools import current_session
+
+    events = await read_events(await client.post('/api/chat', json={
+        'message': 'Bảng lương đây', 'attachments': [upload('Bảng lương.xlsx', workbook(salary))]}))
+    conversation = next(event['conversation_id'] for event in events if event['type'] == 'meta')
+    batches = [[change(range='B3', values=[['13000000']]).model_dump()],
+               [change('insert_rows', range='2').model_dump(), change(range='E1', values=[['Ghi chú']]).model_dump()],
+               [change(range='F2', values=[['=1/0']]).model_dump()]]
+    results = []
+
+    class TwoEdits:
+        async def stream(self, **kwargs):
+            session = current_session.get()
+            for batch in batches:
+                result = await session.edit(json.dumps({'file': 'Bảng lương.xlsx', 'changes': batch}, ensure_ascii=False))
+                results.append(result)
+                if result.get('ok'):
+                    yield StreamChunk('artifact', artifact=result['artifact'])
+            yield 'Đã sửa xong.'
+
+    monkeypatch.setattr(chat_service, 'get_provider', lambda model='peto': TwoEdits())
+    events = await read_events(await client.post('/api/chat', json={'message': 'Sửa hai lần', 'conversation_id': conversation}))
+    cards = [event['artifact'] for event in events if event['type'] == 'artifact']
+    assert [card['version'] for card in cards] == [1, 2] and cards[0]['id'] == cards[1]['id']
+    # Mô hình chỉ nhận dòng của đúng lần sửa đó; thẻ và bản lưu kể cả lượt.
+    assert len(results[1]['changes']) == 2 and cards[1]['change_count'] == 3
+    # Lỗi công thức: nhật ký chỉ kể lỗi, không kể dòng dặn mô hình cách sửa.
+    assert results[2]['_ui']['problems'] and all(item.startswith('Công thức mới') for item in results[2]['_ui']['problems'])
+    stored = (await client.get(f'/api/conversations/{conversation}/messages')).json()['messages'][-1]
+    assert [(item['id'], item['version']) for item in stored['artifacts']] == [(cards[1]['id'], 2)]
+    grid = (await client.get(f"/api/documents/{cards[1]['id']}/sheet?version=2")).json()
+    # Thay đổi của lần trước dời theo hàng vừa chèn (B3 → B4); lưới tô cả ô cũ lẫn ô mới.
+    assert [(item['where'], item['text']) for item in grid['changes']] == [
+        ('B4', '12000000 → 13000000'), ('2:2', 'chèn 1 hàng trống (theo định dạng hàng 1)'), ('E1', '(trống) → "Ghi chú"')]
+    assert cells_of(grid['sheets'][0]['changed']) == {(3, 1), (0, 4)}
