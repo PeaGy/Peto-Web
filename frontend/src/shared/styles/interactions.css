@@ -28,7 +28,7 @@ label,
 :where(button, .discord-button, .alt-login) { transition: transform 160ms var(--ease-out); }
 
 :where(button, .discord-button, .alt-login):active:not(
-  :disabled, .nav-item, .conv-open, .account, .account-menu [role="menuitem"], .settings-nav-item, .thinking-toggle, .sidebar-backdrop,
+  :disabled, .nav-item, .conv-open, .account, .account-menu [role="menuitem"], .settings-nav-item, .work-head, .sidebar-backdrop,
   .composer-options > button, .effort-option, .jump-latest
 ) { transform: scale(0.97); }
 

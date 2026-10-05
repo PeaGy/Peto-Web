@@ -25,6 +25,7 @@ from storage import documents as document_store
 # Sửa tệp Excel: chờ tối đa (giây) trong tiến trình riêng; phần chữ của tệp mới lưu kèm để Peto đọc ở lượt sau.
 EDIT_TIMEOUT = 45
 EDIT_EXCERPT_CHARS = 40_000
+MAX_EDITS_PER_TURN = 4
 CHANGED_PREFIX = 'Ô đã sửa: '
 
 logger = logging.getLogger('peto_web.documents')
@@ -264,7 +265,10 @@ class DocumentSession:
                                  'đủ dấu; không tự đoán hoặc bỏ qua lỗi này.')
             key = ('edit', arguments)
             if key in self._completed: return self._completed[key]
-            if len(self.created) >= 2: raise ValueError('Mỗi lượt chỉ tạo tối đa hai tài liệu.')
+            # Sửa một bảng nhiều lỗi có thể cần vài lần gọi (40 thay đổi mỗi lần), mỗi lần thành một bản mới.
+            if len(self.created) >= MAX_EDITS_PER_TURN:
+                raise ValueError(f'Mỗi lượt chỉ lưu tối đa {MAX_EDITS_PER_TURN} bản sửa. Báo người dùng phần đã sửa; '
+                                 'phần còn lại làm ở lượt sau.')
             source = await self._workbook(spec.file)
             changes = [change.model_dump() for change in spec.changes]
             try:
@@ -279,7 +283,10 @@ class DocumentSession:
             if 'error' in outcome:
                 if outcome.get('internal'):
                     logger.warning('Bộ sửa Excel lỗi: %s', outcome['internal'])
-                return {'error': outcome['error'] + ' Sửa các thay đổi rồi gọi lại edit_spreadsheet; chưa có gì được ghi.'}
+                problems = [line for line in outcome['error'].splitlines() if line.strip()]
+                return {'error': outcome['error'] + '\nChưa ghi gì vào tệp, kể cả các thay đổi không lỗi. Sửa hết các lỗi '
+                        'trên rồi gọi lại edit_spreadsheet với đủ danh sách thay đổi.',
+                        '_ui': {'label': 'Sửa tệp bị từ chối, chưa ghi gì', 'problems': problems}}
             filename = source['filename']
             title = filename.rsplit('.', 1)[0].strip() or 'Bảng tính'
             content = workbook_content(filename, outcome)
@@ -305,6 +312,10 @@ class DocumentSession:
                     result['results'] = outcome['results']
                 if outcome['notes']:
                     result['notes'] = outcome['notes']
+                summary = f'{len(spec.changes)} thay đổi'
+                if outcome.get('computed'):
+                    summary += f' · tính lại {outcome["computed"]} công thức'
+                result['_ui'] = {'label': f'Đã sửa {filename}', 'detail': summary}
                 self._completed[key] = result
                 return result
         except ValidationError as error:

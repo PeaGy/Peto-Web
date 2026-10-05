@@ -221,9 +221,8 @@ Order of operations inside `event_stream()`, and why:
 5. Streaming failures of any kind (timeout, provider error, disconnect) still persist the
    text collected so far, marked `status="incomplete"`. The UI renders that marker. Never
    change this to drop partial output.
-6. Retry is deliberately limited to **exactly one** attempt, and only when
-   `effort == "low"` *and* no text has been emitted yet — mirroring how the Discord bot
-   caps retries.
+6. There is no automatic retry: a turn that timed out or failed may already have spent provider tokens, so it is
+   never repeated invisibly (`test_empty_timeout_does_not_repeat_paid_turn`). The UI offers "Thử lại".
 
 A new conversation is also named here. The cut-from-first-message title is only a
 fallback: the first turn starts a second, tiny provider call (`titles.suggest_title`)
@@ -236,7 +235,18 @@ must filter it out or they capture the title call instead of the chat call.
 
 `effort` is `auto` by default and resolved by `ai/routing.py`, which keyword-matches the
 user text (math/technical markers give `medium`, multi-step reasoning markers give `high`).
-Each level has its own timeout in `config.RESPONSE_TIMEOUTS` (180/300/480s).
+
+**Time limits stop a stuck turn, not a busy one** (2026-10-05). Before, `RESPONSE_TIMEOUTS` (180/300/480 s by effort)
+capped the whole turn, and an Excel edit was cut at 5 minutes while Peto was still working.
+- `RESPONSE_TIMEOUTS` is now the longest silence: time without any chunk from the provider. `TURN_TIMEOUT_SECONDS`
+  (`PETO_TURN_TIMEOUT_SECONDS`, 900) caps everything after the uploads are read: every model call and every tool.
+- `_stream_reply` reschedules an `asyncio.timeout_at` on every chunk and raises `TurnTimeout(kind="idle" | "turn")`. The
+  error message says which limit was hit and for how long. The `chat_timing` outcome stays `timeout`.
+- `ResponsesProvider` yields a `pulse` chunk at most every `PULSE_SECONDS` (10) while the service streams events with
+  nothing to show (a long tool call being written, raw reasoning). The service forwards it as an SSE comment
+  (`: ping`): the browser parser skips blocks without `data:`, and Cloudflare does not close a silent stream. Title
+  and memory calls ignore pulses.
+- `tests/test_turn_limits.py` covers steady work outliving the silence limit, silence, the turn cap and pulses.
 
 `mode` is `chat` by default; `companion` comes only from the Companion tab. `_resolve_mode`
 rejects anything else with a Vietnamese 400. A companion turn is forced to `effort="low"`, searches the web only
@@ -250,7 +260,56 @@ ones, and `GET /api/companion` returns the latest `companion` thread with its re
 The endpoint is POST, so `EventSource` cannot be used. `frontend/src/shared/api/api.ts` does the framing by
 hand: `fetch`, then `response.body.getReader()`, split on a blank line, parse the `data: `
 line. If you add an SSE event type, update `ChatEvent` and `ChatHandlers` in `api.ts` as
-well as the emitter in `features/chat/service.py`.
+well as the emitter in `features/chat/service.py`. Blocks without a `data:` line are skipped, which is what lets the
+server send `: ping` comments.
+
+### Work log ("Đang làm")
+
+On 2026-10-05 the owner asked for a timer beside "thinking" and a more useful thinking block, pointing at Claude.ai's
+"Worked for 5m 12s". They picked "Dòng thời gian" from three live variants; the others were one status line with a
+summary ticker, and a phase bar sized by time spent.
+- **Why it moved to the server.** The client used to build the list from events. It showed only "Đã làm trong N giây",
+  lost the list on reload, and dropped the whole bubble when a turn failed before any text. A timed-out Excel edit left
+  nothing to show what Peto had tried.
+- **Server-built steps.** `features/chat/work_log.py` (`WorkLog`, chat mode only) turns provider chunks into steps whose
+  `start`/`end` are milliseconds from the turn's start:
+  - `read`: uploads, with `read_detail` ("5 trang tính · 152 công thức");
+  - `think`: from `round` until the first text or tool call, carrying Grok's reasoning summary;
+  - `note`: Peto's lead-in sentence before tools;
+  - `compose`: Grok writing a long document-tool call;
+  - `tool`: its result from the tool's private `_ui` hint ("Đã sửa X · 38 thay đổi", or each refusal);
+  - `lookup`, `github` (consecutive reads become one step) and `search`.
+- **Events and storage.**
+  - SSE `step` upserts a step by id, and `thinking` carries its `step`.
+  - The final `work` event comes right before `done`/`error` and equals what is stored in `messages.work` (JSON, manual
+    migration, copied when a conversation is branched). Think steps under 1.5 s with no summary are left out of it.
+  - The old events (`reading`, `search`, `file_lookup`…) still go out, for pages loaded before an update and for
+    Companion.
+- **Provider milestones** (`StreamChunk`):
+  - `round`: a model call started;
+  - `tool`: a function-call item started. It is preceded by `note` when the call already streamed text; `note` also
+    comes at the round's end as a fallback;
+  - `tool_result`: built from the tool's `_ui` hint, which is popped before the result goes to the model.
+- **Lead-in notes.**
+  - Text written before a tool call (up to `NOTE_LIMIT`, 600 characters) moves from the answer into the log. The service
+    drops it from `collected` and sends `replace {text}` with what remains of the answer.
+  - Longer text is real content: it stays in the answer with a paragraph break.
+  - The prompt asks Peto for one short sentence before multi-step tool work.
+  - `replace` now drops only the current call's draft, so text from earlier calls is never lost.
+- **UI** (`WorkTimeline.tsx`; never a `workLog.ts` beside a `WorkLog.tsx`: the `LocalVoice` problem below).
+  - **While running:** the header reads "Đang làm m:ss" on the client clock (`workStartedAt`), and every step has its own
+    time.
+  - **Think steps:** titled by the summary's last `**heading**`, and expand to the summary (Grok's own words, usually
+    English).
+  - **Notes and refusals:** notes are plain text; refusals are listed in red.
+  - **Open or closed:** the block collapses when answer text appears. A turn that stopped before any text stays open.
+  - **Finished:** "Đã làm trong 3 phút 18 giây". A stopped turn reads "Đã dừng sau …", with "Đã dừng khi …" on the
+    unfinished step.
+  - **No final `work` event** (Stop, lost connection): `closeWork` closes the steps on the client clock.
+  - **Failed turn with no text:** the bubble is kept as `local` (not stored), and App skips it when matching stored ids
+    by position.
+- **Mock:** `__suaexcel__` shows the whole flow (note, compose, edit result), and `__slow__` shows the running clock.
+- **Tests:** `backend/tests/test_work_log.py`, frontend `WorkTimeline.test.tsx`, `App.test.tsx` and `api.test.ts`.
 
 ### Tool calling
 
@@ -258,7 +317,8 @@ The tool loop lives **inside the provider** (`ai/xai.py`), not in the route. The
 sends `TOOL_SCHEMAS`, runs the loop itself with `store=false` (conversation state is kept
 in the `input` array rather than on xAI servers), and yields only assistant text upward.
 Limits: `MAX_TOOL_ROUNDS = 3`, `MAX_TOOL_CALLS = 8`; when GitHub tools are available,
-`MAX_GITHUB_TOOL_ROUNDS = 12` and `MAX_GITHUB_TOOL_CALLS = 30` apply across the turn's tools.
+`MAX_GITHUB_TOOL_ROUNDS = 12` and `MAX_GITHUB_TOOL_CALLS = 30` apply across the turn's tools, and a conversation with an
+editable workbook gets `MAX_WORKBOOK_TOOL_ROUNDS = 8` and `MAX_WORKBOOK_TOOL_CALLS = 16` (the larger limits win).
 These are ceilings, not a target or a guarantee of reading an entire repository; the model can finish earlier.
 The final model request disables all tools and asks it to summarize available results and disclose missing data.
 Calls beyond the count limit receive a not-executed result; they never run. A provider that still calls tools on
@@ -339,6 +399,10 @@ to save as `.xlsx`.
   which all look alike. It keeps every header and formula line and, per sheet, head and tail rows (totals live at the
   end), with `[… bỏ qua dòng a–b của tệp (hàng Excel x–y) …]` markers that cite the full text's line numbers for
   `read_attachment_lines`.
+- **Charts, tables, pivot tables and cell notes** (2026-10-05) are read by `workbook_parts.py`: classic and `chartEx`
+  charts with their series ranges and cached values, drawings' text boxes, Excel Tables, pivot table layouts, legacy
+  notes and threaded comments with their authors (at most 30 charts, 40 text boxes and 200 notes). Chart sheets get a
+  `[Trang biểu đồ "X"]` block. `SHEET_FORMAT` (2) is stored in the cache, so older cached workbooks are re-read lazily.
 - `public_document` exposes `sheets`, `sheets_read` and `rows`; the chat shows "· N trang tính" (or `k/N`). The composer
   shows a note about what Excel reading covers. Excel error codes count as signal lines for the log condenser too.
 - **Tests:** `tests/test_workbook_reader.py` (XlsxWriter-built workbooks plus hand-built packages for shared formulas,
@@ -375,14 +439,14 @@ Before this, a text file kept only its first 80,000 characters, so the errors at
   - Only files in the owner-filtered rows of this turn (`AttachmentFiles(rows)`, chat mode) can be opened, by the stored
     path. Results are capped (40 matches, 16,000 characters) and carry `DATA_NOTE`.
   - `ai/xai.py` offers them only when the conversation has files, and emits `file_lookup` / `file_lookup_done` chunks.
-    SSE `file_lookup {text, live}` becomes one work step per lookup (`file-N`, document icon).
+    Each lookup becomes a `lookup` step of the work log (see "Work log").
   - `_to_chat_messages` tells the model the tool names and the file name whenever an excerpt is partial.
   - The mock answers `__timtep__:<query>` by searching the newest file.
 - **anyio re-runs the parent's `__main__` file** in the reader's worker process. A dev launcher script without an
   `if __name__ == "__main__":` guard around `uvicorn.run` starts a second server there, and every read then fails as
   "Bộ đọc tài liệu đang gặp lỗi" (hit on 2026-09-29 with a scratch launcher; `uvicorn main:app` is safe).
 - **Tests:** `tests/test_attachment_tools.py` (excerpt, tools, provider loop with a fake client, chat API);
-  `frontend/tests/api.test.ts` and `App.test.tsx` for the event and the work steps.
+  `frontend/tests/api.test.ts` and `App.test.tsx` for the event and the work log.
 
 Only the `MAX_HISTORY_IMAGES` (default 4) most recent images are re-sent to the model;
 older ones degrade to a text placeholder. This is computed twice — in
@@ -617,12 +681,60 @@ with formulas per column). The card shows a light mini grid of the first sheet; 
 - **Mock.** `__excel__` (grade book with statistics and two charts) and `__excel__:chitieu` (dates, VND, SUMIF,
   percent, pie).
 - **Not done:**
-  - editing an uploaded .xlsx in place (uploads are read, see "Excel uploads"; Peto rebuilds them with this tool);
   - conditional formatting rules, merged title rows, PDF export, manual cell editing;
   - array formulas and newer functions (XLOOKUP, IFS, TEXT…);
   - a check in real Excel or LibreOffice: neither is installed on this PC, so the XML was inspected instead.
 - **Tests:** `backend/tests/test_spreadsheets.py`, frontend `DocumentArtifactCard.test.tsx` and `DocumentPanel.test.tsx`
   (`tests/sheetFixture.ts`).
+
+### Editing uploaded Excel files (`edit_spreadsheet`)
+
+Built on 2026-10-05, after Excel uploads could only be read. Peto edits the user's own file and keeps everything it
+does not touch. The upload never changes; each edit is a new version.
+- **No openpyxl.** It drops cached formula results, sparklines and other `x14` extensions, and drawings it does not
+  understand. `features/documents/workbook_edit/` patches the package surgically instead.
+  - lxml for small parts, so namespace declarations such as `mc:Ignorable` survive.
+  - A regex row/cell parser for `sheetData` keeps untouched rows byte-identical.
+  - The rest of a sheet is a skeleton (`before` + `<sheetData peto-sheet-data="1"/>` + `after`), parsed only when
+    something outside the cells changes.
+- **Operations** (`ops.py`, strict `SCHEMA`): set, fill (formulas copied like drag-fill), clear, format, insert/delete
+  rows and columns, merge/unmerge, add/rename sheet. At most 40 changes per call; each uses the coordinates the previous
+  one left. New formulas may only use `sheets.formula.FUNCTIONS`.
+  - Guards refuse what Excel refuses: writing inside a merged range, a pivot table, part of an array formula, a Table's
+    totals row, a protected sheet. `merge` refuses to discard data (Excel keeps only the top-left value) and partial
+    overlaps; `unmerge` drops every merge touching the range.
+  - Inserting or deleting rewrites references with Excel's rules (`refs.py`: quoted and Unicode sheet names, 3D,
+    external and structured references, defined names). Merges, CF/DV ranges, charts, drawing anchors, notes, Tables,
+    pivot caches and print areas move too. Inserting right above a total row also widens its SUMs, and charts over the
+    same block, which Excel itself does not.
+  - Writing next to a Table grows it; calculated columns fill; renaming a header updates the Table and structured
+    references.
+- **A batch is atomic, but every refusal comes back at once** (up to `MAX_PROBLEMS`, 8). Until 2026-10-05 only the
+  first error was reported, so a workbook with several errors cost one 1–2 minute round per error. The tool result
+  says nothing was written and asks for the whole list again.
+- **Recalculation** (`recalc.py`): changes propagate through dependents (whole columns, other sheets, defined names)
+  and are evaluated with `sheets/engine`. New formulas that evaluate to an error or form a cycle are refused, as in
+  `create_spreadsheet`. Existing formulas Peto cannot compute lose their cached value rather than keep a stale one.
+  `fullCalcOnLoad` is set and `calcChain.xml` dropped, so Excel recalculates on open.
+- **Storage and API.**
+  - Edits run in a worker process (`to_process`, 45 s, behind the render queue).
+  - Each success is a `style='workbook'` document version holding the xlsx; an upload becomes a new document. At most
+    `MAX_EDITS_PER_TURN` (4) saved edits per turn.
+  - The content holds the change lines ("Thay đổi:"), "Ô đã sửa: …" and a 40,000-character readout, so follow-ups and
+    the attachment tools see the new file.
+  - `/sheet` returns `workbook_grid.grid`: 500 rows × 60 columns per sheet, Vietnamese number formats, theme colours,
+    charts drawn from the live ranges. `.xlsm` downloads keep the macro MIME type and `vbaProject.bin` byte for byte.
+- **UI** ("Nhật ký thay đổi", picked by the owner from live variants on 2026-10-05).
+  - The card lists the first changes.
+  - The panel puts the change list on top; clicking one selects its area. Below are a formula bar ("Peto vừa sửa",
+    "Excel tính khi mở tệp") and a grid in the app's theme with changed cells tinted.
+- **Mock:** `__suaexcel__` edits the newest workbook of the conversation.
+- **Not done:**
+  - new charts, conditional formatting, sorting and filters, images;
+  - one card per saved version when a turn edits several times;
+  - a check in real Excel (none on this PC).
+- **Tests:** `backend/tests/test_workbook_edit.py` and `test_turn_limits.py`, frontend `DocumentArtifactCard.test.tsx`
+  (`tests/workbookFixture.ts`).
 
 ### Imagine (image generation)
 

@@ -22,7 +22,9 @@ button:focus-visible, a:focus-visible, .table-scroll:focus-visible {
   outline: 2px solid var(--accent); outline-offset: 3px;
 }
 @media (prefers-reduced-motion: reduce) {
-  .thinking-pulse { animation: none; color: var(--muted); background: none; }
+  .work-shimmer { animation: none; color: var(--text); background: none; }
+  .work-timeline > li { animation: none; }
+  .work-chevron { transition: none; }
   * { scroll-behavior: auto !important; }
 }
 

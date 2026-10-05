@@ -67,86 +67,107 @@
 .hljs-emphasis { font-style: italic; }
 .hljs-strong { font-weight: 600; }
 
-.thinking-panel { margin-bottom: 8px; }
+/* Khối "Đang làm" kiểu Dòng thời gian (WorkTimeline.tsx). */
+.work-log { margin-bottom: 10px; font-size: 13.5px; color: var(--muted); }
 
-.thinking-toggle {
+.work-head {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 0;
+  gap: 7px;
+  padding: 2px 0;
   border: 0;
   background: none;
   color: var(--muted);
   font: inherit;
-  font-size: 13px;
   font-weight: 600;
   cursor: pointer;
 }
 
-.thinking-chevron {
-  display: inline-block;
-  font-size: 11px;
-  transition: transform 0.15s ease;
+.work-head:hover { color: var(--text); }
+.work-head.static { cursor: default; }
+.work-head.static:hover { color: var(--muted); }
+.work-head:focus-visible, .work-item summary:focus-visible, .work-more summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 4px;
 }
 
-.thinking-chevron.open { transform: rotate(90deg); }
+.work-chevron { flex-shrink: 0; transition: transform 160ms var(--ease-out); }
+.work-chevron.open { transform: rotate(90deg); }
+.work-clock { font-variant-numeric: tabular-nums; font-weight: 500; }
+.work-stopped { color: var(--text); }
 
-.thinking-pulse {
+.work-shimmer {
   background: linear-gradient(90deg, var(--muted) 0%, var(--text) 45%, var(--muted) 100%);
   background-size: 200% 100%;
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  animation: thinking-shimmer 1.6s ease-in-out infinite;
+  animation: work-shimmer 1.6s ease-in-out infinite;
 }
 
-.work-steps {
+.work-timeline {
   list-style: none;
-  margin: 8px 0 0;
-  padding: 0;
+  margin: 10px 0 0;
+  padding: 0 0 0 2px;
   display: flex;
   flex-direction: column;
-  gap: 7px;
-  color: var(--muted);
-  font-size: 13px;
+  gap: 10px;
 }
 
-.work-steps li {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.work-timeline > li { position: relative; animation: work-enter 200ms var(--ease-out); }
+.work-item { padding-left: 24px; }
+/* Đường dọc nối các bước. */
+.work-item::before {
+  content: "";
+  position: absolute;
+  left: 6px;
+  top: 20px;
+  bottom: -12px;
+  width: 1px;
+  background: var(--line);
 }
+.work-timeline > li:last-child::before { display: none; }
 
-.work-steps li.live { color: var(--text); }
+.work-row, .work-item summary { display: flex; align-items: center; gap: 8px; min-height: 22px; }
+.work-item summary { list-style: none; cursor: pointer; }
+.work-item summary::-webkit-details-marker { display: none; }
+.work-icon { position: absolute; left: 0; top: 4px; display: grid; place-items: center; width: 14px; height: 14px; color: var(--muted); }
+.work-icon svg { width: 14px; height: 14px; }
+.work-label { min-width: 0; overflow-wrap: anywhere; line-height: 1.5; }
+.work-time { margin-left: auto; padding-left: 12px; font-variant-numeric: tabular-nums; font-size: 12.5px; white-space: nowrap; }
+.work-item.live .work-icon, .work-item.stopped .work-label { color: var(--text); }
+.work-item.failed .work-icon, .work-item.failed .work-label { color: var(--danger); }
+.work-sub { margin: 2px 0 0; font-size: 12.5px; }
+.work-problems { margin: 6px 0 0; padding: 0 0 0 16px; color: var(--danger); font-size: 12.5px; line-height: 1.55; }
+.work-problems li + li { margin-top: 3px; }
+.work-more { margin-top: 4px; font-size: 12.5px; }
+.work-more summary { cursor: pointer; }
+.work-more ul { margin: 6px 0 0; padding-left: 16px; }
+.work-more li + li { margin-top: 4px; }
 
-.work-step-content { min-width: 0; overflow-wrap: anywhere; line-height: 1.6; }
-.work-step-details { margin-top: 4px; color: var(--muted); }
-.work-step-details summary { cursor: pointer; font-size: 12px; }
-.work-step-details summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 3px; }
-.work-step-details ul { margin: 6px 0 0; padding-left: 16px; }
-.work-step-details li { display: list-item; margin-top: 4px; }
-.work-steps > li:has(.work-step-details) { align-items: flex-start; }
-.work-steps > li:has(.work-step-details) > svg { margin-top: 3px; }
-
-.work-steps svg {
-  width: 14px;
-  height: 14px;
-  flex-shrink: 0;
+.work-thought {
+  margin: 6px 0 2px;
+  padding-left: 12px;
+  border-left: 2px solid var(--line);
+  font-size: 12.5px;
+  line-height: 1.6;
 }
+.work-thought p { margin: 0 0 8px; }
+.work-thought p:last-child { margin-bottom: 0; }
+.work-thought strong { display: block; color: var(--text); font-weight: 600; }
 
-.work-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--muted);
-  flex-shrink: 0;
-}
+/* Câu dẫn Peto nói giữa các bước: chữ thường, không biểu tượng. */
+.work-note { padding: 2px 0 2px 24px; color: var(--text); font-size: 14px; line-height: 1.65; }
 
-.work-steps li.live .work-dot { background: var(--accent); }
-
-@keyframes thinking-shimmer {
+@keyframes work-shimmer {
   0% { background-position: 100% 0; }
   100% { background-position: -100% 0; }
+}
+
+@keyframes work-enter {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
 }
 
 .error {

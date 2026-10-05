@@ -1,16 +1,15 @@
 import { EditIcon } from '../../shared/ui/EditIcon';
-import { GitHubIcon } from '../../shared/ui/GitHubIcon';
 import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import Markdown, { type Components } from 'react-markdown';
 import { normalizeMath } from '../../shared/markdown/mathMarkdown';
 import { useMarkdownPlugins } from '../../shared/markdown/markdownExtras';
 import { DiagramCard } from '../diagrams/DiagramCard';
 import { hastText } from '../diagrams/diagrams';
-import { DocumentIcon } from '../documents/DocumentWorkspace';
 import DocumentArtifactCard from '../documents/DocumentArtifactCard';
 import { FileGlyph, formatSize } from './files';
-import WebSources, { GlobeIcon } from './WebSources';
-import type { Message, WorkStep } from '../../shared/api/api';
+import WebSources from './WebSources';
+import WorkTimeline from './WorkTimeline';
+import type { Message } from '../../shared/api/api';
 
 // Nhãn đầu khối code. Ngôn ngữ được tô màu nằm ở markdownCode.ts: thêm ngôn ngữ ở đó thì thêm nhãn ở đây.
 const CODE_LABELS: Record<string, string> = {
@@ -100,66 +99,6 @@ function MessageCopy({ text }: { text: string }) {
   );
 }
 
-function formatWorked(ms: number): string {
-  const seconds = Math.max(1, Math.round(ms / 1000));
-  return `Đã làm trong ${seconds} giây`;
-}
-
-function WorkLog({
-  live,
-  steps,
-  ms,
-}: {
-  live: boolean;
-  steps?: WorkStep[];
-  ms?: number;
-}) {
-  const [choice, setChoice] = useState<boolean | null>(null);
-  const open = choice ?? live;
-  const list = steps ?? [];
-  if (!live && list.length === 0 && ms == null) return null;
-  const label = live ? "Đang làm…" : formatWorked(ms ?? 0);
-  return (
-    <div className="thinking-panel work-log">
-      <button
-        type="button"
-        className="thinking-toggle"
-        aria-expanded={open}
-        onClick={() => setChoice(!open)}
-      >
-        <span className={open ? "thinking-chevron open" : "thinking-chevron"} aria-hidden="true">
-          ▸
-        </span>
-        <span className={live ? "thinking-pulse" : undefined}>{label}</span>
-      </button>
-      {open && list.length > 0 ? (
-        <ul className="work-steps" aria-live="polite">
-          {list.map((step) => (
-            <li key={step.id} className={step.live ? "live" : undefined}>
-              {step.id === 'connector-github' ? (
-                <GitHubIcon size={14} />
-              ) : step.id === "search" || step.id.startsWith('connector-') ? (
-                <GlobeIcon />
-              ) : step.id === "document" || step.id.startsWith("file-") ? (
-                <DocumentIcon />
-              ) : (
-                <span className="work-dot" aria-hidden="true" />
-              )}
-              <div className="work-step-content">
-                <span>{step.label}</span>
-                {step.details?.length ? <details className="work-step-details">
-                  <summary>Xem mục chưa đọc được</summary>
-                  <ul>{step.details.map(detail => <li key={detail}>{detail}</li>)}</ul>
-                </details> : null}
-              </div>
-            </li>
-          ))}
-        </ul>
-      ) : null}
-    </div>
-  );
-}
-
 
 export const ChatMessage = memo(function ChatMessage({ message, live, writing, onPreview, onEdit, actionsDisabled, editor }: {
   message: Message; live: boolean; writing: boolean;
@@ -225,16 +164,8 @@ export const ChatMessage = memo(function ChatMessage({ message, live, writing, o
                   )}
                 </div>
               )}
-              {message.role === "assistant" && (
-                (live) ||
-                message.workSteps?.length ||
-                message.workedMs != null
-              ) ? (
-                <WorkLog
-                  live={live}
-                  steps={message.workSteps}
-                  ms={message.workedMs}
-                />
+              {message.role === "assistant" && message.work ? (
+                <WorkTimeline work={message.work} live={live} startedAt={message.workStartedAt} answering={Boolean(message.content)} />
               ) : null}
               {editor || (message.content ? (
                 <Markdown remarkPlugins={remarkPlugins} rehypePlugins={rehypePlugins} components={components}>{text}</Markdown>

@@ -45,14 +45,20 @@ class StreamChunk:
     ``search`` là tiến trình tra web; ``sources`` là nguồn tham khảo để lưu và hiển thị riêng.
     ``file_lookup`` / ``file_lookup_done`` là lúc Peto bắt đầu và xong một lần tìm/đọc trong tệp đã gửi.
     ``connector_lookup`` / ``connector_lookup_done`` là tiến trình đọc dịch vụ đã kết nối.
+    ``pulse`` không mang gì: dịch vụ AI vẫn đang gửi (soạn lệnh công cụ dài, suy nghĩ) dù chưa có gì để hiện.
+    Các mốc cho nhật ký "Đang làm" (``features/chat/work_log.py``): ``round`` là một lần gọi mô hình bắt đầu; ``tool``
+    là mô hình bắt đầu viết lệnh gọi công cụ (``text`` là tên công cụ); ``note`` là lượt gọi vừa xong có chữ rồi mới gọi
+    công cụ (chữ đó là câu dẫn); ``tool_result`` là kết quả gọn của một công cụ tạo/sửa tệp trong ``info``.
     """
 
     # "text" | "thinking" | "search" | "sources" | "document_status" | "artifact" | "replace" | "file_lookup"
-    # | "file_lookup_done"
+    # | "file_lookup_done" | "connector_lookup" | "connector_lookup_done" | "pulse" | "round" | "tool" | "note"
+    # | "tool_result"
     kind: str
     text: str = ""
     sources: tuple[dict, ...] = field(default_factory=tuple)
     artifact: dict | None = None
+    info: dict | None = None
 
 
 class ProviderError(RuntimeError):

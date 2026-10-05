@@ -96,8 +96,8 @@ async def fork(owner, conversation_id, message_id, text):
                             SELECT ?,version,format,pages,docx,pdf,preview,pptx,xlsx
                             FROM document_assets WHERE document_id=? AND version<=?''', (new_doc,old_id,artifact['version']))
                         artifact['id'] = new_doc
-                cursor = await connection.execute('''INSERT INTO messages(conversation_id,role,content,created_at,status,sources,artifacts)
-                    VALUES(?,?,?,?,?,?,?)''', (new_id,row['role'],text if row['id']==message_id else row['content'],row['created_at'],row['status'],row['sources'],json.dumps(artifacts)))
+                cursor = await connection.execute('''INSERT INTO messages(conversation_id,role,content,created_at,status,sources,artifacts,work)
+                    VALUES(?,?,?,?,?,?,?,?)''', (new_id,row['role'],text if row['id']==message_id else row['content'],row['created_at'],row['status'],row['sources'],json.dumps(artifacts),row['work']))
                 message_ids[row['id']] = cursor.lastrowid
             for item in attachments:
                 aid = uuid.uuid4().hex

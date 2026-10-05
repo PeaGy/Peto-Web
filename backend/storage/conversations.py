@@ -95,7 +95,7 @@ async def get_messages(
         if limit is None:
             cursor = await db.execute(
                 """
-                SELECT m.id, m.role, m.content, m.created_at, m.status, m.sources, m.artifacts
+                SELECT m.id, m.role, m.content, m.created_at, m.status, m.sources, m.artifacts, m.work
                   FROM messages m
                   JOIN conversations c ON c.id = m.conversation_id
                  WHERE m.conversation_id = ? AND c.owner = ?
@@ -108,7 +108,7 @@ async def get_messages(
             # Lấy N tin gần nhất rồi đảo lại, tránh đọc toàn bộ hội thoại dài.
             cursor = await db.execute(
                 """
-                SELECT m.id, m.role, m.content, m.created_at, m.status, m.sources, m.artifacts
+                SELECT m.id, m.role, m.content, m.created_at, m.status, m.sources, m.artifacts, m.work
                   FROM messages m
                   JOIN conversations c ON c.id = m.conversation_id
                  WHERE m.conversation_id = ? AND c.owner = ?
@@ -126,6 +126,8 @@ async def get_messages(
                 row["sources"] = []
             try: row['artifacts'] = json.loads(row['artifacts'])
             except (ValueError, TypeError): row['artifacts'] = []
+            try: row['work'] = json.loads(row['work']) if row.get('work') else None
+            except (ValueError, TypeError): row['work'] = None
             # Verify that every artifact still belongs to this account and chat.
             existing, generated = [], []
             for artifact in row['artifacts'] if isinstance(row['artifacts'], list) else []:
@@ -143,15 +145,18 @@ async def get_messages(
 
 
 async def add_message(
-    conversation_id: str, role: str, content: str, status: str = "complete", sources: list[dict] | None = None, artifacts: list[dict] | None = None
+    conversation_id: str, role: str, content: str, status: str = "complete", sources: list[dict] | None = None, artifacts: list[dict] | None = None,
+    work: dict | None = None,
 ) -> int:
+    """``work`` là nhật ký "Đang làm" của câu trả lời (features/chat/work_log.py)."""
     now = time.time()
     async with db_connection.connect() as db:
         await db.execute("PRAGMA foreign_keys=ON")
         cursor = await db.execute(
-            "INSERT INTO messages (conversation_id, role, content, created_at, status, sources, artifacts) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (conversation_id, role, content, now, status, json.dumps(normalize_sources(sources), ensure_ascii=False), json.dumps(artifacts or [], ensure_ascii=False)),
+            "INSERT INTO messages (conversation_id, role, content, created_at, status, sources, artifacts, work) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (conversation_id, role, content, now, status, json.dumps(normalize_sources(sources), ensure_ascii=False),
+             json.dumps(artifacts or [], ensure_ascii=False), json.dumps(work, ensure_ascii=False) if work else ''),
         )
         await db.execute(
             "UPDATE conversations SET updated_at = ? WHERE id = ?",

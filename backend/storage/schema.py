@@ -70,6 +70,9 @@ async def init_db() -> None:
             await db.execute("ALTER TABLE messages ADD COLUMN sources TEXT NOT NULL DEFAULT '[]'")
         if 'artifacts' not in {column[1] for column in columns}:
             await db.execute("ALTER TABLE messages ADD COLUMN artifacts TEXT NOT NULL DEFAULT '[]'")
+        if 'work' not in {column[1] for column in columns}:
+            # Nhật ký "Đang làm" của câu trả lời (JSON từ features/chat/work_log.py); tin cũ để trống.
+            await db.execute("ALTER TABLE messages ADD COLUMN work TEXT NOT NULL DEFAULT ''")
         await db.execute(
             """
             CREATE TABLE IF NOT EXISTS attachments (

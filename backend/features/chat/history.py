@@ -42,6 +42,9 @@ def _public_message(row: dict, companion: bool = False) -> dict:
         "sources": normalize_sources(row.get("sources")),
         "artifacts": row.get('artifacts', []),
     }
+    if row.get("work"):
+        # Nhật ký "Đang làm" lưu cùng câu trả lời: tải lại trang vẫn thấy Peto đã làm gì, mất bao lâu.
+        message["work"] = row["work"]
     if companion and row["role"] == "assistant":
         message["content"], message["emotion_cues"] = emotion_tags.timeline(private_notes.strip(content))
         message["emotion"] = emotion_tags.first(private_notes.strip(content))

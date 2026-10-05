@@ -172,7 +172,7 @@ async def test_xai_tool_roundtrip_preserves_context_and_hides_tool_data(monkeypa
     second = FakeStream([SimpleNamespace(type='response.output_text.delta', delta='Bây giờ là 01:05.'), done()])
     provider, requests = fake_provider(monkeypatch, [first, second])
     chunks = [part async for part in provider.stream(system_prompt='Peto', messages=[ChatMessage('user', 'Mấy giờ?')], timezone='Asia/Barnaul')]
-    assert ''.join(chunks) == 'Bây giờ là 01:05.'
+    assert ''.join(chunk for chunk in chunks if isinstance(chunk, str)) == 'Bây giờ là 01:05.'
     assert len(requests) == 2 and first.closed and second.closed
     assert requests[0]['tools'][0]['name'] == 'get_current_datetime'
     assert requests[0]['max_output_tokens'] == XAI_MAX_OUTPUT_TOKENS
@@ -209,7 +209,7 @@ async def test_incomplete_xai_reply_is_reported_and_stream_closed(monkeypatch):
     with pytest.raises(ProviderError, match='giới hạn'):
         async for chunk in provider.stream(system_prompt='Peto', messages=[]):
             chunks.append(chunk)
-    assert chunks == ['Chưa xong'] and stream.closed
+    assert [chunk for chunk in chunks if isinstance(chunk, str)] == ['Chưa xong'] and stream.closed
 
 
 async def test_endless_tool_requests_are_bounded(monkeypatch):
@@ -227,7 +227,7 @@ async def test_round_limit_finishes_with_available_results(monkeypatch):
     streams.append(FakeStream([SimpleNamespace(type='response.output_text.delta', delta='Đây là kết quả đã đọc; phần còn lại chưa xác minh.'), done()]))
     provider, requests = fake_provider(monkeypatch, streams)
     chunks = [chunk async for chunk in provider.stream(system_prompt='Peto', messages=[], web_search='off')]
-    assert ''.join(chunks).startswith('Đây là kết quả đã đọc')
+    assert ''.join(chunk for chunk in chunks if isinstance(chunk, str)).startswith('Đây là kết quả đã đọc')
     assert requests[-1]['tools'] == [] and requests[-1]['tool_choice'] == 'none'
     assert 'chưa xác minh' in requests[-1]['instructions']
     assert sum(item.get('type') == 'function_call_output' for item in requests[-1]['input']) == MAX_TOOL_ROUNDS

@@ -43,6 +43,7 @@ import type { DocumentDraftRequest } from '../features/documents/documentApi';
 import { takeConnectorResult } from '../features/connectors/connectorApi';
 import { type DraftFile } from "../features/chat/files";
 import { safeSources } from "../features/chat/WebSources";
+import { closeWork } from "../features/chat/WorkTimeline";
 import {
   UnauthorizedError,
   confirmRoleplayAge,
@@ -65,6 +66,7 @@ import {
   type OutgoingAttachment,
   type Persona,
   type WebSearchMode,
+  type WorkStep,
 } from "../shared/api/api";
 
 // Tạo ảnh, Companion và nội dung Cài đặt tải riêng lúc mở lần đầu: phần lớn lượt vào chỉ để chat, và tệp JS chính càng
@@ -747,10 +749,13 @@ export default function App() {
       url: item.previewUrl || "",
     }));
 
+    const startedAt = performance.now();
     setMessages([
       ...prefix,
       { role: "user", content: text, attachments: revision?.target.attachments || optimistic },
-      { role: "assistant", content: "", workSteps: [{id:'connection',label:'Đang gửi và chờ máy chủ…',live:true}] },
+      // Bước "chờ" chỉ có ở trình duyệt: bước đầu tiên máy chủ gửi thay nó.
+      { role: "assistant", content: "", workStartedAt: startedAt,
+        work: { ms: 0, steps: [{ id: 'wait', kind: 'wait', label: 'Đang gửi và chờ máy chủ…', state: 'live', start: 0 }] } },
     ]);
 
     const controller = new AbortController();
@@ -759,48 +764,25 @@ export default function App() {
     let accepted = false;
     let completed = false;
     let interrupted = false;
+    // Máy chủ đã gửi bản chốt của nhật ký "Đang làm" (sự kiện "work").
+    let finalWork = false;
     let storedUserId: number | undefined;
-    // Mỗi lần Peto tìm/đọc trong tệp là một dòng riêng trong danh sách "Đang làm…".
-    let fileLookups = 0;
-    let connectorReads = 0;
-    let connectorFailures = 0;
-    const connectorIssues: string[] = [];
-    let writingPhase = false;
     const session = authVersion.current;
-    const startedAt = performance.now();
 
-    const appendToReply = (chunk: string) => {
+    // Câu trả lời đang viết luôn là tin cuối.
+    const updateReply = (change: (last: Message) => Message) => {
       if (session !== authVersion.current) return;
       setMessages((prev) => {
-        const next = [...prev];
-        const last = next[next.length - 1];
-        if (last?.role !== "assistant") return prev;
-        next[next.length - 1] = { ...last, content: last.content + chunk };
-        return next;
+        const last = prev[prev.length - 1];
+        return last?.role === "assistant" ? [...prev.slice(0, -1), change(last)] : prev;
       });
     };
-
-    const addWorkStep = (id: string, label: string, live = false, details?: string[]) => {
-      if (session !== authVersion.current) return;
-      if (live && id !== 'prepare') writingPhase = false;
-      setMessages((prev) => {
-        const last = prev[prev.length - 1];
-        if (last?.role !== "assistant") return prev;
-        const steps = (last.workSteps ?? []).map(step => live ? { ...step, live:false, label:step.id === 'think' ? 'Đã suy nghĩ' : step.label } : step);
-        const index = steps.findIndex((step) => step.id === id);
-        const step = { id, label, live, details };
-        if (index >= 0) steps[index] = step;
-        else steps.push(step);
-        return [...prev.slice(0, -1), { ...last, workSteps: steps }];
-      });
-    };
-
-    const updateSearch = (update: Partial<Message>) => {
-      if (session !== authVersion.current || controller.signal.aborted) return;
-      setMessages((prev) => {
-        const last = prev[prev.length - 1];
-        return last?.role === "assistant" ? [...prev.slice(0, -1), { ...last, ...update }] : prev;
-      });
+    // Bước tới sau khi bấm Dừng thì bỏ: nhật ký đã chốt ở lúc dừng.
+    const updateSteps = (change: (steps: WorkStep[]) => WorkStep[]) => {
+      if (controller.signal.aborted) return;
+      updateReply(last => ({
+        ...last, work: { ms: 0, ...last.work, steps: change((last.work?.steps ?? []).filter(step => step.kind !== 'wait')) },
+      }));
     };
 
     try {
@@ -833,67 +815,34 @@ export default function App() {
             setConversationId(id);
             if (!revision) { setDraft(""); setDraftFiles([]); }
             if (storedMessage) retryRevision.current = {target:storedMessage, text:storedMessage.content};
-            addWorkStep('connection', 'Đã kết nối', false);
-            addWorkStep('prepare', 'Đang chuẩn bị câu trả lời…', true);
-            updateSearch({ reading: undefined });
             if (storedMessage) setMessages((prev) => [...prev.slice(0, -2), storedMessage, prev[prev.length - 1]]);
+            // Máy chủ đã nhận tin: bước chờ (nếu chưa có bước nào thay) đổi chữ cho đúng.
+            updateReply(last => last.work ? { ...last, work: { ...last.work, steps: last.work.steps.map(step =>
+              step.kind === 'wait' ? { ...step, label: 'Đang chuẩn bị câu trả lời…' } : step) } } : last);
           },
-          onDelta: (chunk) => { if (!writingPhase) { addWorkStep('prepare', 'Đang trả lời…', true); writingPhase = true; } appendToReply(chunk); },
-          onReplace: () => {
-            if (session !== authVersion.current) return;
-            setMessages((prev) => {
-              const last = prev[prev.length - 1];
-              if (last?.role !== "assistant") return prev;
-              return [...prev.slice(0, -1), { ...last, content: "" }];
-            });
+          onDelta: (chunk) => updateReply(last => ({ ...last, content: last.content + chunk })),
+          onReplace: (rest) => updateReply(last => ({ ...last, content: rest })),
+          // Nhật ký "Đang làm" do máy chủ dựng (features/chat/work_log.py): mỗi bước tới là thêm hoặc thay theo id.
+          onStep: (step) => updateSteps(steps => {
+            const index = steps.findIndex(item => item.id === step.id);
+            if (index < 0) return [...steps, step];
+            const next = [...steps];
+            next[index] = { ...step, summary: step.summary ?? steps[index].summary };
+            return next;
+          }),
+          onThinking: (piece, id) => updateSteps(steps => steps.map(step => step.id === id ? { ...step, summary: (step.summary ?? '') + piece } : step)),
+          onWork: (work) => {
+            if (controller.signal.aborted) return;
+            finalWork = true;
+            updateReply(last => ({ ...last, work }));
           },
-          onThinking: () => addWorkStep("think", "Đang suy nghĩ…", true),
-          onReading: (text) => {
-            updateSearch({ reading: text || undefined });
-            addWorkStep("reading", text || "Đã đọc tài liệu", Boolean(text));
-          },
-          onSearch: (status) => {
-            updateSearch({ search_status: status });
-            addWorkStep(
-              "search",
-              status === "searching" ? "Đang tìm trên web…" : "Đã tìm trên web",
-              status === "searching",
-            );
-          },
-          onSources: (sources) => updateSearch({ sources: safeSources(sources) }),
-          onDocumentStatus: (text) => {
-            updateSearch({ document_status: text || undefined });
-            if (text) addWorkStep("document", text, true);
-          },
-          onFileLookup: (text, live) => {
-            if (live) fileLookups += 1;
-            addWorkStep(`file-${fileLookups}`, text, live);
-          },
-          onConnectorLookup: (text, live) => {
-            if (!live) {
-              if (text.startsWith('Đã đọc GitHub')) connectorReads += 1;
-              else {
-                connectorFailures += 1;
-                if (!connectorIssues.includes(text)) connectorIssues.push(text);
-              }
-            }
-            const summary = `${connectorReads} mục đã đọc${connectorFailures ? ` · ${connectorFailures} mục chưa đọc được` : ''}`;
-            addWorkStep('connector-github', `${live ? 'Đang đọc GitHub…' : 'GitHub'} · ${summary}`, live, [...connectorIssues]);
+          onSources: (sources) => {
+            if (!controller.signal.aborted) updateReply(last => ({ ...last, sources: safeSources(sources) }));
           },
           onArtifact: (artifact) => {
-            if (session !== authVersion.current || controller.signal.aborted) return;
-            setMessages(previous => {
-              const last = previous[previous.length - 1];
-              if (last?.role !== 'assistant') return previous;
-              const artifacts = [...(last.artifacts || []).filter(item => item.id !== artifact.id || item.version !== artifact.version), artifact];
-              const steps = [...(last.workSteps ?? [])];
-              const index = steps.findIndex((step) => step.id === "document");
-              const label = artifact.filename ? `Đã tạo ${artifact.filename}` : "Đã tạo tệp";
-              const step = { id: "document", label, live: false };
-              if (index >= 0) steps[index] = step;
-              else steps.push(step);
-              return [...previous.slice(0, -1), { ...last, artifacts, document_status: undefined, workSteps: steps }];
-            });
+            if (controller.signal.aborted) return;
+            updateReply(last => ({ ...last,
+              artifacts: [...(last.artifacts || []).filter(item => item.id !== artifact.id || item.version !== artifact.version), artifact] }));
             setDocumentRefresh(value => value + 1);
           },
           onError: (message) => {
@@ -920,18 +869,17 @@ export default function App() {
       if (session === authVersion.current) {
         if (!accepted) setMessages(previousMessages);
         else {
+          const elapsed = Math.round(performance.now() - startedAt);
           setMessages((prev) => {
             const last = prev[prev.length - 1];
             if (last?.role !== "assistant") return prev;
-            return last.content || last.artifacts?.length
-              ? [...prev.slice(0, -1), {
-                  ...last,
-                  document_status: undefined,
-                  status: completed ? "complete" : "incomplete",
-                  workedMs: Math.round(performance.now() - startedAt),
-                  workSteps: (last.workSteps ?? []).map((step) => ({ ...step, live: false, label: step.label.startsWith('Đang ') ? (completed ? step.label.replace('Đang ', 'Đã ') : 'Đã dừng: ' + step.label.slice(5)) : step.label })),
-                }]
-              : prev.slice(0, -1);
+            const work = finalWork ? last.work : closeWork(last.work, completed, elapsed);
+            // Máy chủ chỉ lưu câu trả lời có chữ hay có tệp. Lượt hỏng trước khi có chữ vẫn giữ bong bóng với nhật ký
+            // ở trình duyệt, để thấy Peto đã thử gì (trước đây bong bóng biến mất, chỉ còn dòng báo lỗi).
+            const stored = Boolean(last.content || last.artifacts?.length);
+            if (!stored && !work?.steps.length) return prev.slice(0, -1);
+            return [...prev.slice(0, -1), { ...last, work, workStartedAt: undefined, local: stored ? undefined : true,
+              status: completed ? "complete" : "incomplete" }];
           });
         }
         if (controller.signal.aborted && !networkInterrupted(controller)) setNotice(accepted ? "Đã dừng. Phần đã trả lời được giữ lại." : "Đã dừng gửi. Bản nháp vẫn được giữ lại.");
@@ -940,7 +888,11 @@ export default function App() {
           // Fetch stable IDs for edit/regenerate; preserve the local progress log.
           try {
             const stored = await getMessages(activeId);
-            if (session === authVersion.current) setMessages(current => current.map((row, i) => ({...row, id:stored[i]?.id})));
+            // Bong bóng chỉ có ở trình duyệt (lượt hỏng) không có trong danh sách đã lưu: bỏ qua khi khớp thứ tự.
+            if (session === authVersion.current) setMessages(current => {
+              let index = 0;
+              return current.map(row => row.local ? row : { ...row, id: stored[index++]?.id });
+            });
           } catch { setMessages(current => current.map(row => ({...row,id:undefined}))); }
         }
         if ((interrupted || networkInterrupted(controller)) && accepted && activeId && storedUserId !== undefined) {

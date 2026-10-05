@@ -22,6 +22,7 @@ from features.connectors.tools import GitHubSession, current_session as github_s
 from storage import connectors as connector_store
 from features.companion import private_notes
 from features.chat import titles
+from features.chat.work_log import NOTE_LIMIT, WorkLog, read_detail
 from ai import ChatMessage, ProviderError, StreamChunk, get_provider
 from ai.routing import choose_effort
 from shared.attachments import AttachmentError
@@ -33,6 +34,7 @@ from core.config import (
     MAX_INPUT_CHARS,
     RESPONSE_TIMEOUTS,
     ROLEPLAY_MAX_HISTORY,
+    TURN_TIMEOUT_SECONDS,
     WEB_SEARCH_ENABLED,
     provider_from_owner,
 )
@@ -94,28 +96,66 @@ def _as_chunk(item: str | StreamChunk) -> StreamChunk:
     return StreamChunk("text", item)
 
 
+class TurnTimeout(TimeoutError):
+    """Lượt bị dừng: ``idle`` là quá lâu không nhận được gì mới từ provider, ``turn`` là cả lượt chạy quá giới hạn."""
+
+    def __init__(self, kind: str, seconds: float):
+        super().__init__(kind)
+        self.kind = kind
+        self.seconds = seconds
+
+
+def _duration(seconds: float) -> str:
+    minutes, rest = divmod(round(seconds), 60)
+    if not minutes:
+        return f"{rest} giây"
+    return f"{minutes} phút {rest} giây" if rest else f"{minutes} phút"
+
+
+def _timeout_message(error: TimeoutError, effort: str) -> str:
+    if isinstance(error, TurnTimeout) and error.kind == "turn":
+        return (f"Lượt này đã chạy {_duration(error.seconds)}, mức tối đa của một lượt, nên Peto dừng. "
+                "Phần đã làm được giữ lại; nhắn “tiếp tục” nếu cần Peto làm nốt.")
+    seconds = error.seconds if isinstance(error, TurnTimeout) else RESPONSE_TIMEOUTS.get(effort, RESPONSE_TIMEOUTS["low"])
+    return (f"Peto chờ {_duration(seconds)} mà không nhận được gì thêm từ dịch vụ AI nên dừng lượt này. "
+            "Phần đã làm được giữ lại.")
+
+
 async def _stream_reply(
     system_prompt: str, history: list[ChatMessage], effort: str, timezone: str | None = None, web_search: str = "auto",
     document_session=None, model: str = ai_models.DEFAULT_MODEL, spoken: bool = False,
     files: attachment_tools.AttachmentFiles | None = None, github_session=None,
 ) -> AsyncIterator[StreamChunk]:
-    """Gọi provider của model đã chọn một lần, có timeout theo effort. Trả về từng mảnh stream. ``spoken`` là lượt
+    """Gọi provider của model đã chọn một lần. Trả về từng mảnh stream. ``spoken`` là lượt
     Companion: câu trả lời được đọc thành tiếng, nên chỉ dẫn tra web dặn không chèn đường dẫn hay dấu trích dẫn.
-    ``files`` là các tệp của hội thoại mà Peto được tìm/đọc thêm trong lượt này."""
+    ``files`` là các tệp của hội thoại mà Peto được tìm/đọc thêm trong lượt này.
+
+    Chỉ dừng khi bị kẹt hoặc quá dài: mỗi mảnh nhận được (kể cả nhịp ``pulse`` lúc Grok soạn lệnh dài) dời mốc im lặng
+    thêm RESPONSE_TIMEOUTS[effort], nhưng không quá TURN_TIMEOUT_SECONDS tính từ đầu. Việc sửa Excel nhiều vòng có
+    thể mất vài phút; trước đây cả lượt chỉ được 3/5/8 phút nên bị cắt giữa chừng dù Peto vẫn đang làm."""
     provider = get_provider(model)
-    timeout = RESPONSE_TIMEOUTS.get(effort, RESPONSE_TIMEOUTS["low"])
+    idle = RESPONSE_TIMEOUTS.get(effort, RESPONSE_TIMEOUTS["low"])
+    loop = asyncio.get_running_loop()
+    hard = loop.time() + TURN_TIMEOUT_SECONDS
     token = document_session_context.set(document_session)
     files_token = attachment_tools.current_files.set(files)
     spoken_token = spoken_reply.set(spoken)
     github_token = github_session_context.set(github_session)
+    limit = None
     try:
-        async with asyncio.timeout(timeout):
+        async with asyncio.timeout_at(min(loop.time() + idle, hard)) as limit:
             async for chunk in provider.stream(
                 system_prompt=f"{system_prompt}\n\n{time_context(timezone)}",
                 messages=history, effort=effort, timezone=timezone,
                 web_search=web_search,
             ):
+                limit.reschedule(min(loop.time() + idle, hard))
                 yield _as_chunk(chunk)
+    except TimeoutError as error:
+        if limit is not None and limit.expired():
+            whole = limit.when() >= hard
+            raise TurnTimeout("turn" if whole else "idle", TURN_TIMEOUT_SECONDS if whole else idle) from error
+        raise
     finally:
         github_session_context.reset(github_token)
         spoken_reply.reset(spoken_token)
@@ -227,6 +267,13 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
         markers = emotion_tags.MarkerFilter() if mode == "companion" else None
         # Cảm xúc đầu tiên của lượt. Tra web thì phần viết trước lúc tra bị bỏ ("replace"), có khi mất luôn thẻ cảm xúc.
         turn_emotion: str | None = None
+        # Nhật ký "Đang làm" của tab Trò chuyện (Companion có dòng trạng thái riêng): gửi từng bước, lưu cùng tin nhắn.
+        log = WorkLog(started) if mode == "chat" else None
+        work: dict | None = None
+        # Chữ của lần gọi mô hình hiện tại bắt đầu từ đâu trong ``collected``: lượt gọi kết thúc bằng lệnh công cụ thì
+        # phần chữ đó là câu dẫn, chuyển sang nhật ký.
+        round_start = 0
+        last_artifact: dict | None = None
 
         def visible_events(text: str, final: bool = False) -> str | None:
             nonlocal turn_emotion
@@ -240,32 +287,79 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
             return sse({"type": "delta", "text": text}) if text else None
 
         def chunk_event(chunk: StreamChunk) -> str | None:
-            nonlocal sources, search_started, first_text_at, notes, markers
-            if chunk.kind == 'artifact': return sse({'type': 'artifact', 'artifact': chunk.artifact})
-            if chunk.kind == 'document_status': return sse({'type': 'document_status', 'text': chunk.text})
+            nonlocal sources, search_started, first_text_at, notes, markers, round_start, last_artifact
+            # Dòng chú thích SSE: trình duyệt bỏ qua, nhưng giữ kết nối qua Cloudflare khi Grok soạn lệnh dài mà chưa
+            # có chữ nào để gửi (luồng im quá 100 giây có thể bị cắt).
+            if chunk.kind == 'pulse': return ': ping\n\n'
+            # Các sự kiện cũ (document_status, file_lookup, search…) vẫn gửi cho trang mở từ trước khi cập nhật và cho
+            # Companion; trang mới vẽ nhật ký từ sự kiện "step".
+            steps = ''
+            if chunk.kind == 'round':
+                round_start = len(collected)
+                return (log.round() if log else '') or None
+            if chunk.kind == 'tool':
+                return (log.tool(chunk.text) if log else '') or None
+            if chunk.kind == 'note':
+                text = ''.join(collected[round_start:]).strip()
+                if log and text and len(text) <= NOTE_LIMIT:
+                    del collected[round_start:]
+                    return log.note(text) + sse({'type': 'replace', 'text': ''.join(collected)})
+                if not text:
+                    return None
+                # Chữ dài trước lệnh công cụ là nội dung thật: giữ trong câu trả lời, ngắt đoạn như trước.
+                collected.append('\n\n')
+                return visible_events('\n\n')
+            if chunk.kind == 'tool_result':
+                steps = log.tool_result(chunk.info or {}, last_artifact) if log else ''
+                last_artifact = None
+                return steps or None
+            if chunk.kind == 'artifact':
+                last_artifact = chunk.artifact
+                return sse({'type': 'artifact', 'artifact': chunk.artifact})
+            if chunk.kind == 'document_status':
+                if log:
+                    steps = log.tool_start(chunk.text) if chunk.text else log.tool_end()
+                return steps + sse({'type': 'document_status', 'text': chunk.text})
             if chunk.kind in ("file_lookup", "file_lookup_done"):
-                return sse({"type": "file_lookup", "text": chunk.text, "live": chunk.kind == "file_lookup"})
+                if log:
+                    steps = log.lookup(chunk.text, chunk.kind == "file_lookup")
+                return steps + sse({"type": "file_lookup", "text": chunk.text, "live": chunk.kind == "file_lookup"})
             if chunk.kind in ("connector_lookup", "connector_lookup_done"):
-                return sse({"type": "connector_lookup", "text": chunk.text, "live": chunk.kind == "connector_lookup"})
+                if log:
+                    steps = log.github(chunk.text, chunk.kind == "connector_lookup")
+                return steps + sse({"type": "connector_lookup", "text": chunk.text, "live": chunk.kind == "connector_lookup"})
             if chunk.kind == "search":
                 search_started = True
-                return sse({"type": "search", "status": chunk.text})
+                if log:
+                    steps = log.search(chunk.text)
+                return steps + sse({"type": "search", "status": chunk.text})
             if chunk.kind == "sources":
                 sources = normalize_sources([*sources, *chunk.sources])
                 search_started = True
-                return sse({"type": "sources", "sources": sources})
+                if log:
+                    steps = log.sources(len(sources))
+                return steps + sse({"type": "sources", "sources": sources})
             if chunk.kind == "thinking":
+                if log:
+                    return log.thinking(chunk.text) or None
                 return sse({"type": "thinking", "text": chunk.text})
             if chunk.kind == "replace":
-                collected.clear()
                 if notes:
+                    collected.clear()
                     notes = private_notes.NoteFilter()
                     markers = emotion_tags.MarkerFilter()
-                return sse({"type": "replace"})
+                    return sse({"type": "replace"})
+                # Chỉ bỏ bản nháp của lần gọi hiện tại; chữ các lần gọi trước vẫn là câu trả lời.
+                del collected[round_start:]
+                if log:
+                    log.replace()
+                return sse({"type": "replace", "text": ''.join(collected)})
             if chunk.text and first_text_at is None:
                 first_text_at = perf_counter()
+            if log and chunk.text:
+                steps = log.text()
             collected.append(chunk.text)
-            return visible_events(chunk.text)
+            return (steps + (visible_events(chunk.text) or '')) or None
 
         nonlocal turn_complete
         complete = False
@@ -286,13 +380,18 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                     raise ProviderError("Hội thoại đã bị xóa. Mở cuộc trò chuyện mới nhé.")
                 documents: list[dict | None] = []
                 document_count = sum(item.kind == "file" for item in files)
+                names = [item.name for item in files if item.kind == "file"]
                 if document_count:
-                    yield sse({"type": "reading", "text": f"Peto đang đọc {document_count} tài liệu…"})
+                    step = log.read_start(f"Đang đọc {names[0]}…" if document_count == 1 else f"Đang đọc {document_count} tệp…") if log else ""
+                    yield sse({"type": "reading", "text": f"Peto đang đọc {document_count} tài liệu…"}) + step
                 for item in files:
                     documents.append(await document_reader.read_document(item.data, item.mime) if item.kind == "file" else None)
                 if document_count:
+                    read = [document for item, document in zip(files, documents) if item.kind == "file"]
+                    step = log.read_done(f"Đã đọc {names[0]}" if document_count == 1 else f"Đã đọc {document_count} tệp",
+                                         read_detail(read[0]) if document_count == 1 else "") if log else ""
                     # Thiếu dòng này thì bước "Peto đang đọc…" trong danh sách "Đang làm…" giữ nguyên chữ "đang" tới hết lượt.
-                    yield sse({"type": "reading", "text": ""})
+                    yield sse({"type": "reading", "text": ""}) + step
                 # Hội thoại có thể bị xóa hoặc chuyển dự án trong lúc đang đọc tệp.
                 if conversation_id:
                     current_settings = await db.conversation_settings(owner, conversation_id)
@@ -336,9 +435,11 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                     item.get("kind") == "file" and not document_reader.cached_document(item.get("document"))
                     for row in rows for item in row.get("attachments") or []
                 ):
-                    yield sse({"type": "reading", "text": "Peto đang đọc tài liệu đã gửi trước đó…"})
+                    step = log.read_start("Đang đọc lại tài liệu đã gửi trước đó…") if log else ""
+                    yield sse({"type": "reading", "text": "Peto đang đọc tài liệu đã gửi trước đó…"}) + step
                     await _read_legacy_documents(owner, rows, MAX_ATTACHMENTS - document_count)
-                    yield sse({"type": "reading", "text": ""})
+                    step = log.read_done("Đã đọc lại tài liệu đã gửi trước đó") if log else ""
+                    yield sse({"type": "reading", "text": ""}) + step
                 history, system_prompt = await asyncio.gather(
                     anyio.to_thread.run_sync(_to_chat_messages, rows),
                     _build_system_prompt(owner, mode, install_command, persona, conversation_id,
@@ -380,10 +481,11 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
             outcome = "provider_error"
             logger.warning("Provider lỗi: %s", err)
             failure = str(err)
-        except TimeoutError:
+        except TimeoutError as error:
             outcome = "timeout"
-            logger.warning("Timeout sau %ss (effort=%s)", RESPONSE_TIMEOUTS[effort], effort)
-            failure = "Peto nghĩ lâu quá nên dừng lượt này. Phần đã trả lời được giữ lại."
+            logger.warning("Dừng lượt: %s (effort=%s, im lặng tối đa %ss, cả lượt tối đa %ss)",
+                           getattr(error, "kind", "provider"), effort, RESPONSE_TIMEOUTS.get(effort), TURN_TIMEOUT_SECONDS)
+            failure = _timeout_message(error, effort)
         except Exception:
             outcome = "internal_error"
             logger.exception("Lỗi không mong đợi khi gọi AI")
@@ -408,6 +510,7 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                     reply = f"<|EMOTE_{turn_emotion.upper()}|> {reply}"
             artifacts = document_session.created if document_session else []
             if artifacts and not reply: reply = 'Tệp đã được tạo. Phản hồi bị ngắt; bạn vẫn có thể tải tài liệu bên dưới.'
+            work = log.close(complete) if log else None
             if reply and conversation_id and _visible(reply, mode):
                 with anyio.CancelScope(shield=True):
                     if await db.owns_conversation(owner, conversation_id):
@@ -416,7 +519,11 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                             status="complete" if complete else "incomplete",
                             sources=sources,
                             artifacts=artifacts,
+                            work=work,
                         )
+        if work is not None and admitted_at is not None:
+            # Bản chốt của nhật ký (bước suy nghĩ quá ngắn đã bỏ, bước dở đã đóng), đúng như bản lưu cùng tin nhắn.
+            yield sse({"type": "work", "work": work})
         if failure:
             yield sse({"type": "error", "message": failure})
         else:

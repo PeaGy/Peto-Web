@@ -49,6 +49,13 @@ MAX_TOOL_ROUNDS = 3
 MAX_GITHUB_TOOL_ROUNDS = 12
 MAX_TOOL_CALLS = 8
 MAX_GITHUB_TOOL_CALLS = 30
+# Hội thoại có tệp Excel sửa được: sửa một bảng nhiều lỗi cần vài lần edit_spreadsheet (40 thay đổi mỗi lần), cộng lần
+# làm lại khi bị từ chối và vài lần tra trong tệp.
+MAX_WORKBOOK_TOOL_ROUNDS = 8
+MAX_WORKBOOK_TOOL_CALLS = 16
+# Grok soạn lệnh công cụ dài hay suy nghĩ mà chưa có gì để hiện: cứ chừng này giây báo một nhịp "vẫn đang làm", để lượt
+# chat không bị coi là kẹt và kết nối không bị cắt vì im lặng.
+PULSE_SECONDS = 10.0
 
 
 def _dump(item) -> dict:
@@ -189,12 +196,16 @@ class ResponsesProvider(ChatProvider):
             instructions += ('\n\nGitHub của người dùng đã kết nối. Dùng công cụ github_* khi cần dữ liệu repo hoặc GitHub Actions. '
                              'Các công cụ chỉ đọc; không được nói đã sửa, chạy lại hay ghi lên GitHub. ' + GITHUB_NOTE) if github_schemas else (
                 '\n\nGitHub của người dùng chưa kết nối trong lượt này. Nếu cần đọc repo riêng hoặc log Actions, hướng dẫn mở Cài đặt → Kết nối. Không giả vờ đã truy cập tài khoản GitHub.')
-        max_rounds = MAX_GITHUB_TOOL_ROUNDS if github_schemas else MAX_TOOL_ROUNDS
-        max_calls = MAX_GITHUB_TOOL_CALLS if github_schemas else MAX_TOOL_CALLS
+        workbooks = bool(document_session and document_session.workbooks)
+        max_rounds = max(MAX_TOOL_ROUNDS, MAX_GITHUB_TOOL_ROUNDS if github_schemas else 0, MAX_WORKBOOK_TOOL_ROUNDS if workbooks else 0)
+        max_calls = max(MAX_TOOL_CALLS, MAX_GITHUB_TOOL_CALLS if github_schemas else 0, MAX_WORKBOOK_TOOL_CALLS if workbooks else 0)
         for round_index in range(max_rounds + 1):
             # Dành lần gọi cuối để tổng hợp kết quả đã đọc, không mở thêm tra cứu khi hết ngân sách.
             finalizing = tools_enabled and (round_index == max_rounds or calls_used >= max_calls)
             round_started = perf_counter()
+            if tools_enabled:
+                # Mốc cho nhật ký "Đang làm": từ đây tới chữ hay lệnh đầu tiên là lúc mô hình suy nghĩ.
+                yield StreamChunk("round")
             usage: dict = {}
             create_kwargs: dict = {
                 "model": self.model,
@@ -227,6 +238,7 @@ class ResponsesProvider(ChatProvider):
             completed = False
             emitted_text = False
             dropped_draft = False
+            noted = False
 
             def drop_pre_search_draft() -> StreamChunk | None:
                 """Grok hay viết móc câu rồi search rồi viết lại từ đầu — bỏ bản nháp trước search."""
@@ -239,8 +251,12 @@ class ResponsesProvider(ChatProvider):
 
             try:
                 stream = await self._client.responses.create(**create_kwargs)
+                pulse_at = perf_counter() + PULSE_SECONDS
                 async for event in stream:
                     event_type = getattr(event, "type", "")
+                    if perf_counter() >= pulse_at:
+                        pulse_at = perf_counter() + PULSE_SECONDS
+                        yield StreamChunk("pulse")
                     if event_type in {"response.web_search_call.in_progress", "response.web_search_call.searching"}:
                         draft = drop_pre_search_draft()
                         if draft is not None:
@@ -250,11 +266,20 @@ class ResponsesProvider(ChatProvider):
                         search_finished = True
                         yield StreamChunk("search", "completed")
                     elif event_type == "response.output_item.added":
-                        if getattr(event.item, "type", "") == "web_search_call":
+                        item_type = getattr(event.item, "type", "")
+                        if item_type == "web_search_call":
                             draft = drop_pre_search_draft()
                             if draft is not None:
                                 yield draft
                             yield StreamChunk("search", "searching")
+                        elif item_type == "function_call":
+                            # Chữ viết trước lệnh gọi công cụ thường là câu dẫn: phía chat đưa nó vào nhật ký "Đang làm"
+                            # (hoặc giữ trong câu trả lời nếu dài). Báo ngay lúc này để các bước tới đúng thứ tự.
+                            if emitted_text and not noted:
+                                noted = True
+                                yield StreamChunk("note")
+                            # Bắt đầu viết lệnh gọi công cụ: lệnh sửa Excel dài có thể mất cả phút.
+                            yield StreamChunk("tool", str(getattr(event.item, "name", "") or ""))
                     elif event_type == "response.output_text.annotation.added":
                         annotation = _dump(event.annotation)
                         if annotation.get("type") == "url_citation":
@@ -329,6 +354,9 @@ class ResponsesProvider(ChatProvider):
             if finalizing:
                 raise ProviderError("Dịch vụ AI vẫn yêu cầu tra cứu sau khi được yêu cầu kết thúc. Phần đã trả lời được giữ lại; bạn có thể hỏi tiếp về một tệp cụ thể.")
             payload_input.extend(output_items)
+            if emitted_text and not noted:
+                # Dịch vụ không báo lúc bắt đầu viết lệnh: chữ trước đó vẫn là câu dẫn.
+                yield StreamChunk("note")
             for call in tool_calls:
                 if not call.get("call_id"):
                     raise ProviderError("AI trả về yêu cầu công cụ không hợp lệ. Thử lại nhé.")
@@ -343,8 +371,12 @@ class ResponsesProvider(ChatProvider):
                     status, run = DOCUMENT_TOOLS[call['name']]
                     yield StreamChunk('document_status', status)
                     result = await getattr(document_session, run)(call.get('arguments', ''))
+                    # "_ui" là chữ cho nhật ký "Đang làm" (kết quả gọn, các lỗi từng dòng), không gửi cho mô hình.
+                    ui = result.pop('_ui', None) or {}
                     if result.get('ok'):
                         yield StreamChunk('artifact', artifact=result['artifact'])
+                    yield StreamChunk('tool_result', info={'tool': call['name'], 'ok': bool(result.get('ok')),
+                                                           'error': result.get('error'), **ui})
                     yield StreamChunk('document_status', '')
                 elif call.get('name') in GITHUB_TOOLS and github_schemas:
                     yield StreamChunk('connector_lookup', 'Đang đọc GitHub…')
@@ -364,8 +396,6 @@ class ResponsesProvider(ChatProvider):
                     "type": "function_call_output", "call_id": call["call_id"],
                     "output": json.dumps(result, ensure_ascii=False),
                 })
-            if emitted_text:
-                yield "\n\n"
 
 
 class XAIProvider(ResponsesProvider):

@@ -507,6 +507,67 @@ def test_change_errors_name_the_change_and_write_nothing():
         edit(data, change('insert_rows', range='2', values=[['1']]))
 
 
+def test_every_refused_change_is_listed_at_once():
+    """Trước đây mỗi lần gọi chỉ biết lỗi đầu tiên: bảng nhiều lỗi tốn một vòng cho mỗi lỗi rồi hết giờ."""
+    def build(book):
+        sheet = book.add_worksheet('Lương')
+        sheet.merge_range('A1:C1', 'Tiêu đề')
+    data = workbook(build)
+    with pytest.raises(EditError) as refused:
+        edit(data, change(range='B1', values=[['x']]), change(range='D2', values=[['5']]),
+             change(range='E2', values=[['2.000.000']]), change('unmerge', range='Z1'))
+    lines = str(refused.value).splitlines()
+    assert lines[0].startswith("Thay đổi 1 (set 'Lương' B1): ô B1 nằm trong vùng gộp A1:C1")
+    assert 'bỏ gộp (unmerge)' in lines[0]
+    assert lines[1].startswith("Thay đổi 3 (set 'Lương' E2)") and len(lines) == 2
+    with pytest.raises(EditError) as broken:
+        edit(workbook(salary), change('fill', range='E2:E3', value='=B2/0'), change(range='F2', values=[['=1/0']]))
+    text = str(broken.value)
+    assert "'Lương'!E2 (=B2/0) ra #DIV/0!" in text and "'Lương'!E3 (=B3/0)" in text and "'Lương'!F2 (=1/0)" in text
+
+
+def test_merge_and_unmerge_cells():
+    def build(book):
+        sheet = book.add_worksheet('Lương')
+        sheet.merge_range('A1:C1', 'Tiêu đề')
+        sheet.merge_range('E1:F1', 'Gộp nhầm')
+        sheet.write('A3', 'Tên')
+        sheet.write('B3', 'Ghi chú')
+    data = workbook(build)
+    result = edit(data, change('unmerge', range='E1:F1'), change(range='F1', values=[['6']]),
+                  change('merge', range='A5:D5'), change('merge', range='A1:D1'))
+    sheet = xml(result.data, 'xl/worksheets/sheet1.xml')
+    merges = re.findall(r'<mergeCell ref="([^"]+)"/>', sheet)
+    assert merges == ['A5:D5', 'A1:D1'] and '<mergeCells count="2">' in sheet
+    assert result.lines[0] == "'Lương'!E1:F1: bỏ gộp ô, các ô tách riêng (giá trị ở E1)"
+    assert "'Lương'!A1:D1: gộp thành một ô (thay cho vùng gộp A1:C1)" in result.lines
+    assert [0, 0, 0, 5] == list(result.changed['Lương'][0])
+    assert 'F: 6' in read(result.data)
+    # Excel chỉ giữ ô đầu khi gộp: không lặng lẽ xóa chữ của người dùng; chạm một phần vùng gộp thì phải bỏ gộp trước.
+    with pytest.raises(EditError, match='B3 đang có dữ liệu'):
+        edit(data, change('merge', range='A3:B3'))
+    with pytest.raises(EditError, match='chạm một phần vùng gộp A1:C1'):
+        edit(data, change('merge', range='B1:D1'))
+    with pytest.raises(EditError, match='từ hai ô trở lên'):
+        edit(data, change('merge', range='A7'))
+    with pytest.raises(EditError, match='merge không dùng values'):
+        edit(data, change('merge', range='A7:B7', values=[['x']]))
+    # Bỏ hết vùng gộp thì bỏ luôn thẻ mergeCells (rỗng là sai lược đồ, Excel báo hỏng tệp).
+    plain = edit(data, change('unmerge', range='A1:F1'))
+    assert '<mergeCells' not in xml(plain.data, 'xl/worksheets/sheet1.xml') and len(plain.lines) == 2
+    assert edit(data, change('unmerge', range='A9')).notes == ["'Lương'!A9 không có ô gộp nào nên unmerge không đổi gì."]
+
+
+def test_first_merge_goes_where_the_schema_wants_it():
+    data = minimal('<row r="1"><c r="A1"><v>1</v></c></row>',
+                   sheet_extra='<autoFilter ref="A1:B1"/><pageMargins left="0.7" right="0.7" top="0.75" bottom="0.75" '
+                               'header="0.3" footer="0.3"/>')
+    sheet = xml(edit(data, change('merge', sheet='Dữ liệu', range='A3:B3')).data, 'xl/worksheets/sheet1.xml')
+    assert '<autoFilter ref="A1:B1"/><mergeCells count="1"><mergeCell ref="A3:B3"/></mergeCells><pageMargins' in sheet
+    assert 'ns0' not in sheet
+    etree.fromstring(sheet.encode())
+
+
 def test_reference_scanner_handles_quoted_sheets_structured_names_and_strings():
     found = refs.scan("SUM('Bảng 1'!$B$2:B9)+Bang1[[#This Row],[Q1]]+\"C3\"+[1]Ngoài!A1+Tên_vùng+LOG10(A1)")
     texts = [(ref.sheet, ref.kind, ref.external) for ref in found.refs]

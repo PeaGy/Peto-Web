@@ -151,6 +151,11 @@ QUEUE_TIMEOUT_SECONDS = _env_float("PETO_QUEUE_TIMEOUT_SECONDS", 60.0, 5.0, 300.
 COOLDOWN_SECONDS = _env_float("PETO_COOLDOWN_SECONDS", 3.0, 0.0, 300.0)
 
 # --- Thời gian cho phép để suy nghĩ và stream câu trả lời dài trên web ---
+# Lượt chat chỉ dừng khi bị kẹt: quá RESPONSE_TIMEOUTS (theo mức suy nghĩ) mà không nhận được gì mới từ dịch vụ AI
+# (chữ, tóm tắt suy nghĩ, công cụ, hay nhịp "vẫn đang làm" lúc Grok soạn lệnh dài). Đang làm thì cho tới
+# TURN_TIMEOUT_SECONDS, tính từ lúc bắt đầu gọi AI (sau khi đọc xong tệp gửi lên): mọi lần gọi AI, mọi lần tra, sửa
+# hay tạo tệp.
+TURN_TIMEOUT_SECONDS = _env_float("PETO_TURN_TIMEOUT_SECONDS", 900.0, 60.0, 3600.0)
 RESPONSE_TIMEOUTS = {
     "none": _env_float("PETO_TIMEOUT_NONE_SECONDS", 180.0, 5.0, 600.0),
     "xhigh": _env_float("PETO_TIMEOUT_XHIGH_SECONDS", 600.0, 5.0, 1200.0),

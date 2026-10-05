@@ -49,25 +49,40 @@ export interface Message {
   status?: "complete" | "incomplete";
   created_at?: number;
   attachments?: ChatAttachment[];
-  thinking?: string;
-  reading?: string;
   sources?: WebSource[];
-  search_status?: "searching" | "completed";
   artifacts?: DocumentArtifact[];
-  document_status?: string;
-  workSteps?: WorkStep[];
-  workedMs?: number;
+  /** Nhật ký "Đang làm" (features/chat/work_log.py): máy chủ gửi từng bước khi đang trả lời, lưu cùng câu trả lời. */
+  work?: WorkLog;
+  /** Mốc performance.now() lúc gửi, cho đồng hồ chạy khi câu trả lời còn đang viết. */
+  workStartedAt?: number;
+  /** Bong bóng chỉ có ở trình duyệt (lượt hỏng trước khi có chữ, máy chủ không lưu): giữ lại để thấy Peto đã thử gì. */
+  local?: boolean;
   /** Cảm xúc Peto tự chọn cho câu trả lời Companion (emotion_tags.py), để nghe lại tin cũ thì nhân vật làm đúng mặt. */
   emotion?: string | null;
   /** Vị trí đổi nét mặt trong chữ công khai, tính theo UTF-16. */
   emotion_cues?: EmotionCue[];
 }
 
+/** Một bước trong nhật ký "Đang làm". ``start``/``end`` là mili giây tính từ đầu lượt, theo đồng hồ máy chủ. */
 export interface WorkStep {
   id: string;
+  kind: 'wait' | 'read' | 'think' | 'note' | 'compose' | 'tool' | 'lookup' | 'github' | 'search';
   label: string;
-  live?: boolean;
-  details?: string[];
+  state: 'live' | 'done' | 'failed' | 'stopped';
+  start: number;
+  end?: number;
+  detail?: string;
+  /** Tóm tắt suy nghĩ Grok gửi về (bước think). */
+  summary?: string;
+  /** Lỗi từng dòng (sửa tệp bị từ chối) hoặc mục chưa đọc được (GitHub). */
+  problems?: string[];
+}
+
+export interface WorkLog {
+  ms: number;
+  steps: WorkStep[];
+  /** false khi lượt dừng giữa chừng (lỗi, hết giờ, bấm Dừng). */
+  complete?: boolean;
 }
 
 /** Cách Peto trả lời trong một hội thoại: trợ lý AI (mặc định) hoặc nhập vai. Chọn lúc bắt đầu, giữ cả hội thoại. */
@@ -92,8 +107,10 @@ type ChatEvent =
   | { type: "meta"; conversation_id: string; effort: string; message?: Message; voice_stream?: boolean }
   | { type: "delta"; text: string }
   | { type: "emotion"; emotion: string; offset?: number }
-  | { type: "replace" }
-  | { type: "thinking"; text: string }
+  | { type: "replace"; text?: string }
+  | { type: "thinking"; text: string; step?: string }
+  | { type: "step"; step: WorkStep }
+  | { type: "work"; work: WorkLog }
   | { type: "reading"; text: string }
   | { type: "search"; status: "searching" | "completed" }
   | { type: "sources"; sources: WebSource[] }
@@ -109,8 +126,14 @@ interface ChatHandlers {
   onDelta?: (text: string) => void;
   /** Chỉ lượt Companion: cảm xúc Peto chọn, tới trước chữ để nhân vật đổi nét mặt ngay khi bắt đầu trả lời. */
   onEmotion?: (emotion: string, offset?: number) => void;
-  onReplace?: () => void;
-  onThinking?: (text: string) => void;
+  /** Thay cả chữ đang hiện: ``text`` là phần còn lại (bỏ bản nháp trước khi tra web, hay câu dẫn đã vào nhật ký). */
+  onReplace?: (text: string) => void;
+  /** Tóm tắt suy nghĩ của Grok, nối vào bước ``step`` của nhật ký. */
+  onThinking?: (text: string, step?: string) => void;
+  /** Một bước của nhật ký "Đang làm" mới bắt đầu hoặc vừa đổi (thay theo id). */
+  onStep?: (step: WorkStep) => void;
+  /** Bản chốt của nhật ký lúc hết lượt, đúng như bản lưu cùng tin nhắn. */
+  onWork?: (work: WorkLog) => void;
   onReading?: (text: string) => void;
   onSearch?: (status: "searching" | "completed") => void;
   onSources?: (sources: WebSource[]) => void;
@@ -510,9 +533,13 @@ export async function sendMessage(
         } else if (event.type === "emotion") {
           handlers.onEmotion?.(event.emotion, event.offset);
         } else if (event.type === "replace") {
-          handlers.onReplace?.();
+          handlers.onReplace?.(event.text ?? "");
         } else if (event.type === "thinking") {
-          handlers.onThinking?.(event.text);
+          handlers.onThinking?.(event.text, event.step);
+        } else if (event.type === "step") {
+          handlers.onStep?.(event.step);
+        } else if (event.type === "work") {
+          handlers.onWork?.(event.work);
         } else if (event.type === "reading") {
           handlers.onReading?.(event.text);
         } else if (event.type === "search") {

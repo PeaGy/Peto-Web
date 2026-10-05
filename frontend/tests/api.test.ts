@@ -89,6 +89,32 @@ it('decodes UTF-8 and SSE boundaries split across network chunks', async () => {
   expect(onDone).toHaveBeenCalledOnce();
 });
 
+it('đọc các bước của nhật ký "Đang làm", tóm tắt suy nghĩ theo bước và bản chốt', async () => {
+  const step = { id: 'think-1', kind: 'think', label: 'Đang suy nghĩ…', state: 'live', start: 0 };
+  const work = { ms: 4200, steps: [{ ...step, state: 'done', label: 'Đã suy nghĩ', end: 4200 }], complete: true };
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(
+    event({ type: 'step', step }) + event({ type: 'thinking', step: 'think-1', text: '**Plan**' })
+    + event({ type: 'delta', text: 'Câu dẫn.' }) + event({ type: 'replace', text: '' }) + event({ type: 'replace' })
+    + event({ type: 'work', work }) + event({ type: 'done' }))));
+  const onStep = vi.fn(), onThinking = vi.fn(), onReplace = vi.fn(), onWork = vi.fn();
+  await sendMessage({ message: 'Sửa bảng', conversationId: null, effort: 'auto' }, { onStep, onThinking, onReplace, onWork });
+  expect(onStep).toHaveBeenCalledExactlyOnceWith(step);
+  expect(onThinking).toHaveBeenCalledExactlyOnceWith('**Plan**', 'think-1');
+  // Máy chủ cũ gửi "replace" không kèm chữ: coi như xóa hết.
+  expect(onReplace.mock.calls).toEqual([[''], ['']]);
+  expect(onWork).toHaveBeenCalledExactlyOnceWith(work);
+});
+
+it('bỏ qua nhịp ": ping" máy chủ gửi để giữ kết nối khi Peto làm lâu', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(
+    ': ping\n\n' + event({ type: 'delta', text: 'Xong' }) + ': ping\n\n' + event({ type: 'done' }))));
+  const onDelta = vi.fn();
+  const onDone = vi.fn();
+  await sendMessage({ message: 'Sửa bảng', conversationId: null, effort: 'auto' }, { onDelta, onDone });
+  expect(onDelta).toHaveBeenCalledExactlyOnceWith('Xong');
+  expect(onDone).toHaveBeenCalledOnce();
+});
+
 it('reports a truncated stream instead of treating it as complete', async () => {
   vi.stubGlobal('fetch', vi.fn(async () => new Response(event({type:'delta',text:'Nửa câu'}))));
   const onDone = vi.fn();

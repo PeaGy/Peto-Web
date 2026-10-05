@@ -165,7 +165,7 @@ async def test_luna_calls_openai_with_its_model_and_key(monkeypatch, effort):
     provider._client = SimpleNamespace(responses=SimpleNamespace(create=create))
     parts = [chunk async for chunk in provider.stream(
         system_prompt="chỉ dẫn", messages=[ChatMessage("user", "chào")], effort=effort, web_search="off")]
-    assert parts == ["Chào bạn"]
+    assert [part for part in parts if isinstance(part, str)] == ["Chào bạn"]
     assert calls[0]["model"] == "gpt-6-luna" and calls[0]["max_output_tokens"] == config.OPENAI_MAX_OUTPUT_TOKENS
     assert calls[0]["reasoning"] == {"effort": effort} and calls[0]["store"] is False
 

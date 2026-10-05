@@ -1,8 +1,9 @@
 """Công cụ edit_spreadsheet: lược đồ cho model, đọc từng thay đổi, áp lên tệp theo thứ tự rồi tính lại công thức.
 
 Mỗi thay đổi dùng tọa độ của tệp ngay trước nó (chèn 2 hàng ở hàng 12 rồi ghi A12 là ghi vào hàng mới chèn), như khi
-người dùng làm lần lượt trong Excel. Một thay đổi sai thì cả lượt không ghi gì, lỗi nói rõ thay đổi thứ mấy và sai ở
-đâu để model sửa rồi gọi lại.
+người dùng làm lần lượt trong Excel. Một thay đổi sai thì cả lượt không ghi gì. Lỗi kể ra mọi thay đổi bị từ chối
+(tối đa MAX_PROBLEMS), mỗi lỗi nói rõ thay đổi thứ mấy và sai ở đâu, để model sửa hết trong một lần gọi lại: trước đây
+mỗi vòng chỉ biết một lỗi, một bảng nhiều lỗi tốn vài phút mỗi vòng rồi hết giờ.
 """
 from __future__ import annotations
 
@@ -11,6 +12,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Literal
 
+from lxml import etree
 from pydantic import BaseModel, ConfigDict, Field
 
 from features.documents.sheets import engine
@@ -18,16 +20,18 @@ from features.documents.sheets.formula import FUNCTIONS, FormulaError, parse, qu
 from features.documents.workbook_edit import meta, refs
 from features.documents.workbook_edit.book import Book, SheetInfo, excel_serial
 from features.documents.workbook_edit.formulas import array_ranges, expand_shared, formula_map, shared_groups
-from features.documents.workbook_edit.package import EditError
+from features.documents.workbook_edit.package import EditError, local
 from features.documents.workbook_edit.recalc import recalculate
 from features.documents.workbook_edit.sheetxml import Cell, Worksheet, address, cell_inner, column_index, column_letter
 from features.documents.workbook_edit.styles import DATE_ID, DATETIME_ID
 from features.documents.workbook_reader import general, show_number
 
 ACTIONS = ('set', 'fill', 'clear', 'format', 'insert_rows', 'delete_rows', 'insert_columns', 'delete_columns',
-           'add_sheet', 'rename_sheet')
+           'merge', 'unmerge', 'add_sheet', 'rename_sheet')
 NUMBER_FORMATS = ('general', 'text', 'number', 'percent', 'vnd', 'usd', 'date')
 MAX_CHANGES = 40
+# Số lỗi kể ra trong một lần từ chối: đủ để model sửa hết trong một lần gọi lại, thay vì mỗi vòng chỉ biết một lỗi.
+MAX_PROBLEMS = 8
 MAX_CELLS = 20_000          # ô ghi hoặc định dạng trong một lượt
 MAX_SHIFT = 1_000           # số hàng/cột chèn hoặc xóa một lần
 MAX_VALUE = 4_000
@@ -50,9 +54,10 @@ CHANGE_SCHEMA = {
             'vùng range, công thức chép như kéo điền trong Excel (viết cho ô đầu vùng, tham chiếu tương đối tự dời). '
             'clear: xóa nội dung, giữ định dạng. format: đổi định dạng của range. insert_rows/delete_rows: range là '
             'hàng ("12" hoặc "12:14"), chèn hàng trống vào đúng vị trí đó (hàng cũ dời xuống, theo định dạng hàng '
-            'trên) hoặc xóa. insert_columns/delete_columns: range là cột ("D" hoặc "D:E"). add_sheet: thêm trang tính '
-            'tên sheet vào cuối. rename_sheet: đổi tên trang sheet thành new_name. Công thức, vùng gộp, biểu đồ, '
-            'Bảng… tự dời theo khi chèn/xóa.')},
+            'trên) hoặc xóa. insert_columns/delete_columns: range là cột ("D" hoặc "D:E"). merge: gộp range thành một '
+            'ô (Excel chỉ giữ giá trị ô đầu, nên các ô còn lại phải trống). unmerge: bỏ mọi vùng gộp chạm range, các ô '
+            'tách riêng ra và giá trị nằm ở ô đầu. add_sheet: thêm trang tính tên sheet vào cuối. rename_sheet: đổi tên '
+            'trang sheet thành new_name. Công thức, vùng gộp, biểu đồ, Bảng… tự dời theo khi chèn/xóa.')},
         'sheet': {'type': 'string', 'description': 'Tên trang tính đúng như trong [Trang tính … "tên"].'},
         'range': {**_NULLABLE_STRING, 'description': 'Ô hoặc vùng như B5, A12:F14; hàng hoặc cột khi chèn/xóa; null với add_sheet, rename_sheet.'},
         'values': {'type': ['array', 'null'], 'items': {'type': 'array', 'items': _NULLABLE_STRING}, 'description': (
@@ -103,7 +108,7 @@ SCHEMA = {
 class ChangeInput(BaseModel):
     model_config = ConfigDict(extra='forbid')
     action: Literal['set', 'fill', 'clear', 'format', 'insert_rows', 'delete_rows', 'insert_columns', 'delete_columns',
-                    'add_sheet', 'rename_sheet']
+                    'merge', 'unmerge', 'add_sheet', 'rename_sheet']
     sheet: str = Field(max_length=200)
     range: str | None = Field(None, max_length=60)
     values: list[list[str | None]] | None = Field(None, max_length=5_000)
@@ -306,6 +311,7 @@ class Outcome:
     notes: list[str]
     macro: bool
     sheets: list[str] = field(default_factory=list)
+    computed: int = 0          # công thức sẵn có được tính lại vì trỏ tới ô vừa đổi
 
 
 class Session:
@@ -347,7 +353,8 @@ class Session:
                         for col in range(max(c1, merge[1]), min(c2, merge[3]) + 1):
                             if (row, col) != (merge[0], merge[1]):
                                 raise EditError(f'ô {address(row, col)} nằm trong vùng gộp '
-                                                f'{meta.area_text(*merge)}; ghi vào ô đầu {address(merge[0], merge[1])}')
+                                                f'{meta.area_text(*merge)}; ghi vào ô đầu {address(merge[0], merge[1])}, '
+                                                'hoặc bỏ gộp (unmerge) trước nếu vùng gộp này sai')
             for name, place, _ in meta.pivots(self.book, sheet):
                 if meta.overlaps(area, place):
                     raise EditError(f'vùng {meta.area_text(*area)} chạm bảng tổng hợp "{name}" '
@@ -702,6 +709,83 @@ class Session:
         if broken:
             self.notes.append(f'{broken} công thức hoặc tên vùng trỏ vào {unit} vừa xóa nên thành #REF!.')
 
+    # ---------- gộp ô ----------
+
+    def _merge(self, change: ChangeInput) -> None:
+        info, sheet = self.worksheet(change.sheet)
+        area = parse_area(change.range, info.name)
+        if area[:2] == area[2:]:
+            raise EditError('merge cần vùng từ hai ô trở lên (như A1:D1)')
+        self.count((area[2] - area[0] + 1) * (area[3] - area[1] + 1))
+        existing = meta.merges(sheet)
+        if area in existing:
+            self.notes.append(f'{area_label(info.name, *area)} đã gộp sẵn nên không đổi gì.')
+            return
+        inside = [merge for merge in existing
+                  if area[0] <= merge[0] and area[1] <= merge[1] and merge[2] <= area[2] and merge[3] <= area[3]]
+        for merge in existing:
+            if meta.overlaps(area, merge) and merge not in inside:
+                raise EditError(f'vùng {meta.area_text(*area)} chạm một phần vùng gộp {meta.area_text(*merge)}; bỏ gộp '
+                                '(unmerge) vùng đó trước hoặc gộp cả vùng bao trọn nó')
+        for table in meta.tables(self.book, sheet):
+            if meta.overlaps(area, (table.r1, table.c1, table.r2, table.c2)):
+                raise EditError(f'vùng {meta.area_text(*area)} chạm Bảng "{table.name}"; Excel không gộp ô trong Bảng')
+        for name, place, _ in meta.pivots(self.book, sheet):
+            if meta.overlaps(area, place):
+                raise EditError(f'vùng {meta.area_text(*area)} chạm bảng tổng hợp "{name}"; Excel không gộp ô ở đó')
+        for low_row, low_col, high_row, high_col, _ in array_ranges(sheet):
+            if meta.overlaps(area, (low_row, low_col, high_row, high_col)):
+                raise EditError(f'vùng {meta.area_text(*area)} chạm công thức mảng '
+                                f'{meta.area_text(low_row, low_col, high_row, high_col)}; Excel không gộp ô ở đó')
+        # Excel chỉ giữ giá trị ô đầu khi gộp: không lặng lẽ xóa dữ liệu của người dùng.
+        lost = []
+        for r in range(area[0], area[2] + 1):
+            row = sheet.rows.get(r)
+            if row is None:
+                continue
+            lost.extend(address(r, c) for c, cell in sorted(row.cells.items())
+                        if area[1] <= c <= area[3] and (r, c) != area[:2] and not cell.empty)
+        if lost:
+            shown = ', '.join(lost[:5]) + (f' và {len(lost) - 5} ô khác' if len(lost) > 5 else '')
+            raise EditError(f'gộp {meta.area_text(*area)} thì Excel chỉ giữ ô đầu {address(*area[:2])}, nhưng {shown} '
+                            'đang có dữ liệu; xóa (clear) hay chuyển dữ liệu đó trước')
+        holder = _merge_holder(sheet.skeleton(), create=True)
+        for element in _merge_elements(holder):
+            if meta.area_of(element.get('ref', '')) in inside:
+                holder.remove(element)
+        etree.SubElement(holder, holder.tag[:-1], ref=meta.area_text(*area))
+        holder.set('count', str(len(_merge_elements(holder))))
+        self._mark_area(info, area)
+        replaced = f' (thay cho vùng gộp {", ".join(meta.area_text(*merge) for merge in inside)})' if inside else ''
+        self.lines.append(f'{area_label(info.name, *area)}: gộp thành một ô{replaced}')
+
+    def _unmerge(self, change: ChangeInput) -> None:
+        info, sheet = self.worksheet(change.sheet)
+        area = parse_area(change.range, info.name, sheet.bounds() or (0, 0, 0, 0))
+        found = [merge for merge in meta.merges(sheet) if meta.overlaps(area, merge)]
+        if not found:
+            self.notes.append(f'{area_label(info.name, *area)} không có ô gộp nào nên unmerge không đổi gì.')
+            return
+        holder = _merge_holder(sheet.skeleton(), create=False)
+        for element in _merge_elements(holder):
+            if meta.area_of(element.get('ref', '')) in found:
+                holder.remove(element)
+        remaining = len(_merge_elements(holder))
+        if remaining:
+            holder.set('count', str(remaining))
+        else:
+            # mergeCells rỗng là sai lược đồ: Excel báo tệp hỏng.
+            holder.getparent().remove(holder)
+        for merge in found:
+            self._mark_area(info, merge)
+            self.lines.append(f'{area_label(info.name, *merge)}: bỏ gộp ô, các ô tách riêng (giá trị ở '
+                              f'{address(merge[0], merge[1])})')
+
+    def _mark_area(self, info: SheetInfo, area) -> None:
+        """Tô ô trong lưới xem mà không tính lại công thức: gộp hay bỏ gộp không đổi giá trị nào."""
+        self.formatted.setdefault(info.part, set()).update(
+            (r, c) for r in range(area[0], area[2] + 1) for c in range(area[1], area[3] + 1))
+
     def _add_sheet(self, change: ChangeInput) -> None:
         from features.documents.workbook_edit import structure
         name = check_sheet_name(change.sheet, self.book)
@@ -804,6 +888,33 @@ class Session:
             self.formulas_touched = True
 
 
+# Thẻ con của worksheet đứng trước mergeCells theo lược đồ (CT_Worksheet): mergeCells mới chèn ngay sau thẻ cuối có mặt.
+_BEFORE_MERGES = ('sheetPr', 'dimension', 'sheetViews', 'sheetFormatPr', 'cols', 'sheetData', 'sheetCalcPr',
+                  'sheetProtection', 'protectedRanges', 'scenarios', 'autoFilter', 'sortState', 'dataConsolidate',
+                  'customSheetViews')
+
+
+def _merge_holder(root, create: bool):
+    holder = next((child for child in root if isinstance(child.tag, str) and local(child.tag) == 'mergeCells'), None)
+    if holder is not None or not create:
+        return holder
+    index = 0
+    for position, child in enumerate(root):
+        if isinstance(child.tag, str) and local(child.tag) in _BEFORE_MERGES:
+            index = position + 1
+    namespace = root.tag[:root.tag.index('}') + 1] if root.tag.startswith('{') else ''
+    # Tạo bằng SubElement để thẻ mới dùng lại khai báo namespace của trang (không thành ns0:), rồi dời về đúng chỗ.
+    holder = etree.SubElement(root, f'{namespace}mergeCells')
+    root.insert(index, holder)
+    return holder
+
+
+def _merge_elements(holder) -> list:
+    if holder is None:
+        return []
+    return [child for child in holder if isinstance(child.tag, str) and local(child.tag) == 'mergeCell']
+
+
 def number_code(kind: str, decimals: int | None) -> int | str:
     fraction = ('.' + '0' * min(decimals, 4)) if decimals else ''
     return {
@@ -855,15 +966,26 @@ def apply(data: bytes, changes: list[ChangeInput], today: date) -> Outcome:
     """Áp các thay đổi lên tệp; lỗi là EditError đã ghi rõ thay đổi thứ mấy."""
     book = Book(data)
     session = Session(book, today)
+    problems: list[str] = []
     for number, change in enumerate(changes, start=1):
+        # Thay đổi lỗi thì bỏ qua và kiểm tiếp các thay đổi sau, để model biết hết lỗi trong một lần.
         try:
             session.apply(change)
         except EditError as error:
-            raise EditError(f'Thay đổi {number} ({describe_change(change)}): {error}') from None
+            problems.append(f'Thay đổi {number} ({describe_change(change)}): {error}')
         except refs.Unsupported as error:
-            raise EditError(f'Thay đổi {number} ({describe_change(change)}): tệp có {error}, Peto chưa chèn/xóa được '
-                            'an toàn ở trang này') from None
+            problems.append(f'Thay đổi {number} ({describe_change(change)}): tệp có {error}, Peto chưa chèn/xóa được '
+                            'an toàn ở trang này')
+        except Exception:
+            if not problems:
+                raise
+            # Tệp đang dở dang vì thay đổi lỗi phía trước: lỗi lạ phía sau có thể chỉ là hệ quả, nên dừng kiểm.
+            break
+    if problems:
+        more = f'\n(và {len(problems) - MAX_PROBLEMS} thay đổi khác cũng lỗi)' if len(problems) > MAX_PROBLEMS else ''
+        raise EditError('\n'.join(problems[:MAX_PROBLEMS]) + more)
     results: list[str] = []
+    computed = 0
     if session.formulas_touched or session.changed:
         report = recalculate(book, session.changed, session.structural, session.new, today)
         cycles = {(sheet, row, col) for sheet, row, col in report.cycles}
@@ -874,12 +996,15 @@ def apply(data: bytes, changes: list[ChangeInput], today: date) -> Outcome:
             raise EditError(f'Công thức mới ở {area_label(sheet, row, col, row, col)} tạo vòng tham chiếu (ô tự trỏ lại '
                             'chính nó qua các ô khác). Sửa công thức rồi gọi lại.')
         if report.errors:
-            sheet, row, col, text, code = report.errors[0]
-            hint = engine.ERROR_HELP.get(code, 'kiểm tra lại dữ liệu ô được trỏ tới')
-            more = f' (và {len(report.errors) - 1} ô khác)' if len(report.errors) > 1 else ''
-            raise EditError(f'Công thức mới ở {area_label(sheet, row, col, row, col)} (={text}) ra {code}{more}: {hint}. '
-                            'Sửa công thức, hoặc bọc IFERROR nếu lỗi là cố ý, rồi gọi lại.')
+            listed = []
+            for sheet, row, col, text, code in report.errors[:MAX_PROBLEMS]:
+                hint = engine.ERROR_HELP.get(code, 'kiểm tra lại dữ liệu ô được trỏ tới')
+                listed.append(f'Công thức mới ở {area_label(sheet, row, col, row, col)} (={text}) ra {code}: {hint}.')
+            if len(report.errors) > MAX_PROBLEMS:
+                listed.append(f'(và {len(report.errors) - MAX_PROBLEMS} ô khác)')
+            raise EditError('\n'.join(listed) + '\nSửa công thức, hoặc bọc IFERROR nếu lỗi là cố ý, rồi gọi lại.')
         results = summarize_results(book, report.results)
+        computed = report.computed
         if report.computed:
             session.notes.append(f'Đã tính lại {report.computed} công thức sẵn có trỏ tới ô vừa đổi.')
         if report.left:
@@ -899,7 +1024,7 @@ def apply(data: bytes, changes: list[ChangeInput], today: date) -> Outcome:
             changed[info.name] = compress(cells)
     output = book.finish()
     return Outcome(output, session.lines, changed, results, session.notes, book.macro,
-                   [info.name for info in book.data_sheets()])
+                   [info.name for info in book.data_sheets()], computed)
 
 
 def run(data: bytes, changes: list[dict], today: str, excerpt_chars: int) -> dict:
@@ -916,7 +1041,7 @@ def run(data: bytes, changes: list[dict], today: str, excerpt_chars: int) -> dic
     readout = read_workbook(outcome.data, excerpt_chars)
     return {'data': outcome.data, 'lines': outcome.lines, 'changed': outcome.changed, 'results': outcome.results,
             'notes': outcome.notes, 'macro': outcome.macro, 'sheets': outcome.sheets, 'readout': readout.get('text', ''),
-            'readout_partial': readout.get('status') == 'partial'}
+            'readout_partial': readout.get('status') == 'partial', 'computed': outcome.computed}
 
 
 def changed_line(changed: dict[str, list[tuple[int, int, int, int]]], limit: int = 3_000) -> str:

@@ -226,8 +226,9 @@ it('gửi Word qua dấu cộng, giữ bản nháp khi đọc và hiện trạng
   const result = deferred<void>();
   vi.mocked(api.sendMessage).mockImplementation(async (payload, handlers) => {
     expect(payload.attachments?.[0].name).toBe('ke-hoach.docx');
-    handlers.onReading?.('Peto đang đọc 1 tài liệu…');
+    handlers.onStep?.({ id: 'read-1', kind: 'read', label: 'Đang đọc ke-hoach.docx…', state: 'live', start: 0 });
     await result.promise;
+    handlers.onStep?.({ id: 'read-1', kind: 'read', label: 'Đã đọc ke-hoach.docx', state: 'done', start: 0, end: 800 });
     handlers.onMeta?.('C', 'low', { role: 'user', content: 'Tóm tắt', attachments: [{
       id: 'word-1', name: 'ke-hoach.docx', mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', kind: 'file', size: 1200,
       url: '/api/attachments/word-1', document: { status: 'ready', notice: 'Đã đọc phần thân văn bản và bảng biểu trong Word.', characters: 500 },
@@ -241,11 +242,11 @@ it('gửi Word qua dấu cộng, giữ bản nháp khi đọc và hiện trạng
   await userEvent.upload(input, new File(['tai lieu gia'], 'ke-hoach.docx', { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }));
   fireEvent.change(screen.getByLabelText('Nhắn cho Peto'), { target: { value: 'Tóm tắt' } });
   fireEvent.click(screen.getByRole('button', { name: 'Gửi', exact: true }));
-  await screen.findByText('Peto đang đọc 1 tài liệu…');
+  await screen.findByText('Đang đọc ke-hoach.docx…');
   expect((screen.getByLabelText('Nhắn cho Peto') as HTMLTextAreaElement).value).toBe('Tóm tắt');
   await act(async () => result.resolve());
   await screen.findByText('Đã đọc chữ');
-  expect(screen.queryByText('Peto đang đọc 1 tài liệu…')).toBeNull();
+  expect(screen.queryByText('Đang đọc ke-hoach.docx…')).toBeNull();
   expect((screen.getByLabelText('Nhắn cho Peto') as HTMLTextAreaElement).value).toBe('');
   expect(screen.getByRole('link', { name: /ke-hoach.docx/ }).getAttribute('href')).toBe('/api/attachments/word-1');
 });
@@ -285,20 +286,20 @@ it('lịch sử PDF báo rõ phần không đọc được và vẫn tải lại
 
 it('dừng khi đang đọc tệp giữ bản nháp và bỏ trạng thái đang đọc', async () => {
   vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers, signal) => {
-    handlers.onReading?.('Peto đang đọc 1 tài liệu…');
+    handlers.onStep?.({ id: 'read-1', kind: 'read', label: 'Đang đọc 1 tệp…', state: 'live', start: 0 });
     await new Promise<void>((_resolve, reject) => signal?.addEventListener('abort', () => {
-      handlers.onReading?.('Trạng thái đến muộn');
+      handlers.onStep?.({ id: 'read-1', kind: 'read', label: 'Trạng thái đến muộn', state: 'done', start: 0, end: 900 });
       reject(new DOMException('Đã dừng', 'AbortError'));
     }));
   });
   await openApp();
   fireEvent.change(screen.getByLabelText('Nhắn cho Peto'), { target: { value: 'Đọc tài liệu' } });
   fireEvent.click(screen.getByRole('button', { name: 'Gửi', exact: true }));
-  await screen.findByText('Peto đang đọc 1 tài liệu…');
+  await screen.findByText('Đang đọc 1 tệp…');
   fireEvent.click(screen.getByRole('button', { name: 'Dừng', exact: true }));
   await screen.findByText('Đã dừng gửi. Bản nháp vẫn được giữ lại.');
   expect((screen.getByLabelText('Nhắn cho Peto') as HTMLTextAreaElement).value).toBe('Đọc tài liệu');
-  expect(screen.queryByText('Peto đang đọc 1 tài liệu…')).toBeNull();
+  expect(screen.queryByText('Đang đọc 1 tệp…')).toBeNull();
   expect(screen.queryByText('Trạng thái đến muộn')).toBeNull();
 });
 
@@ -306,9 +307,7 @@ it('bỏ bản nháp khi Grok viết lại câu trả lời sau khi tìm web', a
   vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers) => {
     handlers.onMeta?.('C', 'low', row('So sánh'));
     handlers.onDelta?.('Không giống đâu ad. Bản nháp.');
-    handlers.onReplace?.();
-    handlers.onSearch?.('searching');
-    handlers.onSearch?.('completed');
+    handlers.onReplace?.('');
     handlers.onDelta?.('Không giống đâu ad. Có nguồn.');
     handlers.onDone?.();
   });
@@ -324,8 +323,9 @@ it('tự động tìm web, hiển thị tiến trình và nguồn cùng câu tr�
   vi.mocked(api.sendMessage).mockImplementation(async (payload, handlers) => {
     expect(payload.webSearch).toBe('auto');
     handlers.onMeta?.('C', 'low', row('Tìm Python'));
-    handlers.onSearch?.('searching');
+    handlers.onStep?.({ id: 'search-1', kind: 'search', label: 'Đang tìm trên web…', state: 'live', start: 0 });
     await result.promise;
+    handlers.onStep?.({ id: 'search-1', kind: 'search', label: 'Đã tìm trên web', state: 'done', start: 0, end: 2000 });
     handlers.onSources?.([{ url: 'https://docs.python.org/3/', title: 'Tài liệu Python' }]);
     handlers.onDelta?.('Có tài liệu chính thức.');
     handlers.onDone?.();
@@ -359,9 +359,10 @@ it('nguồn xuất hiện khi mở lịch sử và loại bỏ liên kết khôn
 it('dừng lúc đang tìm web không để tiến trình treo hoặc nhận nguồn đến muộn', async () => {
   vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers, signal) => {
     handlers.onMeta?.('C', 'low', row('Tìm Python'));
-    handlers.onSearch?.('searching');
+    handlers.onStep?.({ id: 'search-1', kind: 'search', label: 'Đang tìm trên web…', state: 'live', start: 0 });
     await new Promise<void>((_resolve, reject) => signal?.addEventListener('abort', () => {
       handlers.onSources?.([{ url: 'https://example.com', title: 'Nguồn đến muộn' }]);
+      handlers.onStep?.({ id: 'search-1', kind: 'search', label: 'Đã tìm trên web', state: 'done', start: 0, end: 3000 });
       reject(new DOMException('Đã dừng', 'AbortError'));
     }));
   });
@@ -372,6 +373,7 @@ it('dừng lúc đang tìm web không để tiến trình treo hoặc nhận ngu
   fireEvent.click(screen.getByRole('button', { name: 'Dừng', exact: true }));
   await screen.findByText('Đã dừng. Phần đã trả lời được giữ lại.');
   expect(screen.queryByText('Đang tìm trên web…')).toBeNull();
+  expect(screen.getByText('Đã dừng khi đang tìm trên web')).toBeTruthy();
   expect(screen.queryByText('Nguồn tham khảo · 1')).toBeNull();
 });
 
@@ -591,32 +593,46 @@ describe('Sending and stopping', () => {
     expect(api.sendMessage).toHaveBeenCalledTimes(2);
   });
 
-  it('shows a work log with steps instead of raw thinking', async () => {
+  it('dòng thời gian "Đang làm": bước từ máy chủ, tóm tắt suy nghĩ của Grok, thu lại khi đã trả lời', async () => {
+    const reply = deferred<void>();
+    const thought = '**Checking the math**\n\nThe user wants 2 + 2.';
+    const think = { id: 'think-1', kind: 'think', label: 'Đã suy nghĩ', state: 'done', start: 0, end: 4200, summary: thought } as const;
+    const search = { id: 'search-2', kind: 'search', label: 'Đã tìm trên web', state: 'done', start: 4200, end: 6400, detail: '3 nguồn' } as const;
     vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers) => {
       handlers.onMeta?.('C', 'medium', row('Giải giúp'));
-      handlers.onThinking?.('The user wants me to create a DOCX file according to the instructions');
-      handlers.onSearch?.('searching');
-      handlers.onSearch?.('completed');
+      handlers.onStep?.({ id: 'think-1', kind: 'think', label: 'Đang suy nghĩ…', state: 'live', start: 0 });
+      handlers.onThinking?.(thought, 'think-1');
+      await reply.promise;
+      handlers.onStep?.(think);
+      handlers.onStep?.(search);
       handlers.onDelta?.('Kết quả là 4.');
+      handlers.onWork?.({ ms: 8000, complete: true, steps: [think, search] });
       handlers.onDone?.();
     });
     await openApp();
     fireEvent.change(screen.getByPlaceholderText('Nhắn cho Peto…'), {target: {value: 'Giải giúp'}});
     fireEvent.click(screen.getByRole('button', {name:'Gửi', exact:true}));
+    // Đang chạy: khối mở, đồng hồ chạy cạnh chữ, tóm tắt mới nhất làm tiêu đề bước.
+    await screen.findByText('Checking the math…');
+    expect(screen.getByRole('button', {name: /Đang làm/}).getAttribute('aria-expanded')).toBe('true');
+    expect(document.querySelector('.work-clock')?.textContent).toMatch(/^\d+:\d\d$/);
+    await act(async () => reply.resolve());
     await screen.findByText('Kết quả là 4.');
-    expect(screen.queryByText(/The user wants me/)).toBeNull();
-    fireEvent.click(screen.getByRole('button', {name: /Đã làm trong \d+ giây/}));
+    expect(document.querySelector('.work-timeline')).toBeNull();
+    fireEvent.click(screen.getByRole('button', {name: 'Đã làm trong 8 giây'}));
+    expect(screen.getAllByText('Checking the math').length).toBeGreaterThan(0);
+    expect(screen.getByText('The user wants 2 + 2.')).toBeTruthy();
     expect(screen.getByText('Đã tìm trên web')).toBeTruthy();
-    expect(screen.getByText('Đã suy nghĩ')).toBeTruthy();
+    expect(screen.getByText('3 nguồn')).toBeTruthy();
+    expect(screen.getByText('4 giây')).toBeTruthy();
   });
 
-  it('lists each lookup in an attached file as its own step', async () => {
+  it('mỗi lần tìm/đọc trong tệp là một bước riêng; không có bản chốt thì trình duyệt tự đóng nhật ký', async () => {
     vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers) => {
       handlers.onMeta?.('C', 'medium', row('Log này lỗi gì?'));
-      handlers.onFileLookup?.('Đang tìm “ERROR” trong app.log…', true);
-      handlers.onFileLookup?.('Đã tìm “ERROR” trong app.log: 2 dòng khớp', false);
-      handlers.onFileLookup?.('Đang đọc app.log…', true);
-      handlers.onFileLookup?.('Đã đọc app.log, dòng 19.990–20.000', false);
+      handlers.onStep?.({ id: 'lookup-1', kind: 'lookup', label: 'Đang tìm “ERROR” trong app.log…', state: 'live', start: 100 });
+      handlers.onStep?.({ id: 'lookup-1', kind: 'lookup', label: 'Đã tìm “ERROR” trong app.log: 2 dòng khớp', state: 'done', start: 100, end: 300 });
+      handlers.onStep?.({ id: 'lookup-2', kind: 'lookup', label: 'Đã đọc app.log, dòng 19.990–20.000', state: 'done', start: 400, end: 600 });
       handlers.onDelta?.('Lỗi ở dòng 19.996.');
       handlers.onDone?.();
     });
@@ -628,6 +644,7 @@ describe('Sending and stopping', () => {
     expect(screen.getByText('Đã tìm “ERROR” trong app.log: 2 dòng khớp')).toBeTruthy();
     expect(screen.getByText('Đã đọc app.log, dòng 19.990–20.000')).toBeTruthy();
     expect(screen.queryByText('Đang tìm “ERROR” trong app.log…')).toBeNull();
+    expect(screen.queryByText('Đang gửi và chờ máy chủ…')).toBeNull();
   });
 
   it('gom tra cứu GitHub thành một dòng và giữ lỗi trong phần mở rộng', async () => {
@@ -635,30 +652,42 @@ describe('Sending and stopping', () => {
     const issue = 'Không tìm thấy missing.ts; thư mục gốc vẫn đọc được.';
     vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers) => {
       handlers.onMeta?.('C', 'medium', row('Đọc repo'));
-      for (let i = 0; i < 12; i++) {
-        handlers.onConnectorLookup?.('Đang đọc GitHub…', true);
-        handlers.onConnectorLookup?.(i === 3 || i === 7 ? issue : 'Đã đọc GitHub', false);
-      }
-      handlers.onConnectorLookup?.('Đang đọc GitHub…', true);
+      handlers.onStep?.({ id: 'github-1', kind: 'github', label: 'Đang đọc GitHub · 10 mục đã đọc · 2 mục chưa đọc được', state: 'live', start: 0, problems: [issue] });
       await reply.promise;
-      handlers.onConnectorLookup?.('Đã đọc GitHub', false);
+      handlers.onStep?.({ id: 'github-1', kind: 'github', label: 'Đọc GitHub · 11 mục đã đọc · 2 mục chưa đọc được', state: 'done', start: 0, end: 5000, problems: [issue] });
       handlers.onDelta?.('Đã khảo sát các tệp đọc được.');
       handlers.onDone?.();
     });
     await openApp();
     fireEvent.change(screen.getByLabelText('Nhắn cho Peto'), {target: {value: 'Đọc repo'}});
     fireEvent.click(screen.getByRole('button', {name: 'Gửi', exact: true}));
-    await screen.findByText('Đang đọc GitHub… · 10 mục đã đọc · 2 mục chưa đọc được');
-    expect(document.querySelectorAll('.work-step-details').length).toBe(1);
-    expect(document.querySelector('.work-step-details')?.hasAttribute('open')).toBe(false);
-    expect(document.querySelectorAll('.work-step-details li').length).toBe(1);
-    expect(document.querySelectorAll('.work-steps > li').length).toBeLessThanOrEqual(3);
+    await screen.findByText('Đang đọc GitHub · 10 mục đã đọc · 2 mục chưa đọc được');
+    expect(document.querySelectorAll('.work-more').length).toBe(1);
+    expect(document.querySelector('.work-more')?.hasAttribute('open')).toBe(false);
+    expect(document.querySelectorAll('.work-more li').length).toBe(1);
     await act(async () => reply.resolve());
     await screen.findByText('Đã khảo sát các tệp đọc được.');
     fireEvent.click(screen.getByRole('button', {name: /Đã làm trong \d+ giây/}));
-    expect(screen.getByText('GitHub · 11 mục đã đọc · 2 mục chưa đọc được')).toBeTruthy();
+    expect(screen.getByText('Đọc GitHub · 11 mục đã đọc · 2 mục chưa đọc được')).toBeTruthy();
     expect(screen.getByText(issue)).toBeTruthy();
-    expect(screen.queryByText('Đã đọc GitHub')).toBeNull();
+  });
+
+  it('lượt hỏng trước khi có chữ vẫn giữ nhật ký để thấy Peto đã thử gì', async () => {
+    const failed = { id: 'tool-1', kind: 'tool', label: 'Sửa tệp bị từ chối, chưa ghi gì', state: 'failed', start: 1000, end: 4000,
+      problems: ['Thay đổi 9: ô F10 nằm trong vùng gộp E10:F10'] } as const;
+    vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers) => {
+      handlers.onMeta?.('C', 'medium', row('Sửa bảng'));
+      handlers.onStep?.(failed);
+      handlers.onWork?.({ ms: 300_000, complete: false, steps: [failed] });
+      handlers.onError?.('Peto chờ 5 phút mà không nhận được gì thêm từ dịch vụ AI nên dừng lượt này. Phần đã làm được giữ lại.');
+    });
+    await openApp();
+    fireEvent.change(screen.getByPlaceholderText('Nhắn cho Peto…'), {target: {value: 'Sửa bảng'}});
+    fireEvent.click(screen.getByRole('button', {name:'Gửi', exact:true}));
+    await screen.findByText(/Peto chờ 5 phút/);
+    expect(screen.getByRole('button', {name: 'Đã dừng sau 5 phút'}).getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getByText('Thay đổi 9: ô F10 nằm trong vùng gộp E10:F10')).toBeTruthy();
+    expect(document.querySelectorAll('.bubble.assistant').length).toBe(1);
   });
 
   it('stops an empty reply without leaving a typing indicator', async () => {
@@ -672,7 +701,7 @@ describe('Sending and stopping', () => {
     await screen.findByRole('button', {name:'Dừng', exact:true});
     fireEvent.click(screen.getByRole('button', {name:'Dừng', exact:true}));
     await screen.findByText('Đã dừng. Phần đã trả lời được giữ lại.');
-    expect(document.querySelector('.thinking-panel')).toBeNull();
+    expect(document.querySelector('.work-log')).toBeNull();
     expect(document.querySelectorAll('.bubble.assistant').length).toBe(0);
   });
 

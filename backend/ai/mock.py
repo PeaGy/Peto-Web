@@ -176,6 +176,12 @@ def slide_sample(theme: str) -> dict:
     ]}
 
 
+def _tool_result(tool: str, result: dict) -> StreamChunk:
+    """Kết quả gọn cho nhật ký "Đang làm", như provider thật (bỏ "_ui" khỏi kết quả, phần đó không dành cho mô hình)."""
+    ui = result.pop('_ui', None) or {}
+    return StreamChunk('tool_result', info={'tool': tool, 'ok': bool(result.get('ok')), 'error': result.get('error'), **ui})
+
+
 async def edit_sample(session, name: str) -> list[dict]:
     """Thay đổi mẫu cho "__suaexcel__": thêm cột "Ghi chú Peto" ngay sau vùng dữ liệu của trang đầu, theo định dạng cột
     bên trái, rồi tô hàng đầu."""
@@ -378,6 +384,9 @@ class MockProvider(ChatProvider):
 
         if not last_user.strip() and names:
             last_user = f"[đính kèm {', '.join(names)}]"
+        if tools_enabled:
+            # Như provider thật: mỗi lần gọi mô hình mở một bước "Đang suy nghĩ…" trong nhật ký.
+            yield StreamChunk("round")
 
         reply = _pick_reply(last_user, timezone)
         if "__sodo__" in last_user:
@@ -401,11 +410,14 @@ class MockProvider(ChatProvider):
         # "__slide__" hay "__slide__:academic": tạo bài thuyết trình mẫu bằng create_presentation, để chạy thử thẻ slide.
         slide = re.search(r'__slide__(?::(clean|academic|bold))?', last_user)
         if session and slide:
+            yield StreamChunk('tool', 'create_presentation')
             yield StreamChunk('document_status', 'Đang dàn trang slide…')
             result = await session.present(json.dumps(slide_sample(slide.group(1) or 'clean'), ensure_ascii=False))
-            yield StreamChunk('document_status', '')
             if result.get('ok'):
                 yield StreamChunk('artifact', artifact=result['artifact'])
+            yield _tool_result('create_presentation', result)
+            yield StreamChunk('document_status', '')
+            if result.get('ok'):
                 yield 'Đã tạo bài thuyết trình mẫu **Hệ thống quản lý thư viện số**, mỗi slide có ghi chú cho người thuyết trình.'
             else:
                 yield 'Chưa tạo được bài thuyết trình: ' + result['error']
@@ -414,11 +426,14 @@ class MockProvider(ChatProvider):
         workbook = re.search(r'__excel__(?::(diem|chitieu))?', last_user)
         if session and workbook:
             sample = sheet_sample(workbook.group(1) or 'diem')
+            yield StreamChunk('tool', 'create_spreadsheet')
             yield StreamChunk('document_status', 'Đang tính bảng tính…')
             result = await session.tabulate(json.dumps(sample, ensure_ascii=False))
-            yield StreamChunk('document_status', '')
             if result.get('ok'):
                 yield StreamChunk('artifact', artifact=result['artifact'])
+            yield _tool_result('create_spreadsheet', result)
+            yield StreamChunk('document_status', '')
+            if result.get('ok'):
                 yield f'Đã tạo bảng tính mẫu **{sample["title"]}** với công thức thật và biểu đồ.'
             else:
                 yield 'Chưa tạo được bảng tính: ' + result['error']
@@ -429,12 +444,19 @@ class MockProvider(ChatProvider):
                 yield 'Hội thoại chưa có tệp Excel nào để sửa.'
                 return
             name = session.workbooks[-1]['name']
+            # Như Grok thật: một câu dẫn rồi mới viết lệnh sửa; câu dẫn vào nhật ký "Đang làm", không vào câu trả lời.
+            yield 'Mình thêm cột "Ghi chú Peto" ngay sau vùng dữ liệu của trang đầu.'
+            yield StreamChunk('note')
+            yield StreamChunk('tool', 'edit_spreadsheet')
             yield StreamChunk('document_status', 'Đang sửa tệp Excel…')
             changes = await edit_sample(session, name)
             result = await session.edit(json.dumps({'file': name, 'changes': changes}, ensure_ascii=False))
-            yield StreamChunk('document_status', '')
             if result.get('ok'):
                 yield StreamChunk('artifact', artifact=result['artifact'])
+            yield _tool_result('edit_spreadsheet', result)
+            yield StreamChunk('document_status', '')
+            yield StreamChunk('round')
+            if result.get('ok'):
                 yield f'Đã sửa tệp **{name}**: ' + '; '.join(line.strip() for line in result['changes']) + '.'
             else:
                 yield 'Chưa sửa được tệp: ' + result['error']
@@ -446,14 +468,17 @@ class MockProvider(ChatProvider):
             any(word in lowered for word in ('docx', 'pdf', 'word', 'tài liệu', 'file')))
         if session and create_requested:
             format = 'pdf' if 'pdf' in lowered and 'docx' not in lowered else 'docx'
+            yield StreamChunk('tool', 'create_document')
             yield StreamChunk('document_status', 'Đang soạn và dàn trang tài liệu…')
             result = await session.create(json.dumps({'title': 'Giữ sự tử tế trong xã hội số', 'content': DOCUMENT_SAMPLE,
                 'format': format, 'style': 'essay'}, ensure_ascii=False))
             if result.get('ok'):
                 yield StreamChunk('artifact', artifact=result['artifact'])
+                yield _tool_result('create_document', result)
                 yield StreamChunk('document_status', '')
                 yield 'Đã tạo tệp mẫu chứa bài nghị luận **Giữ sự tử tế trong xã hội số**.\n\nBạn có thể xem từng trang và tải tệp bên dưới. Đây là nội dung mẫu của chế độ kiểm thử, chưa dùng AI thật.'
             else:
+                yield _tool_result('create_document', result)
                 yield StreamChunk('document_status', '')
                 yield 'Chưa tạo được tệp: ' + result['error']
             return
