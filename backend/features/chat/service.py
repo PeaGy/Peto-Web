@@ -17,7 +17,7 @@ from features.companion import memory as companion_memory
 import storage as db
 from features.documents import reader as document_reader
 from features.companion import emotion_tags
-from features.documents.tools import DocumentSession, current_session as document_session_context
+from features.documents.tools import DocumentSession, asks_edit, current_session as document_session_context
 from features.connectors.tools import GitHubSession, current_session as github_session_context
 from storage import connectors as connector_store
 from features.companion import private_notes
@@ -447,6 +447,8 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                             for row in [r for r in rows if r.get('role') == 'user'][-3:])),
                 )
                 document_session = DocumentSession(owner, conversation_id, rows) if mode == 'chat' else None
+                if document_session:
+                    document_session.edit_request = asks_edit(text)
                 if project_prompt:
                     system_prompt += '\n\n' + project_prompt
                 # Tệp trong lịch sử vừa đọc (đã lọc theo chủ tài khoản trong SQL): Peto tìm/đọc thêm được khi cần.

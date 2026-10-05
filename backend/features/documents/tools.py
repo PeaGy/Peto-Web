@@ -27,6 +27,14 @@ EDIT_TIMEOUT = 45
 EDIT_EXCERPT_CHARS = 40_000
 MAX_EDITS_PER_TURN = 4
 CHANGED_PREFIX = 'Ô đã sửa: '
+# Lời nhờ sửa trong tin nhắn (có dấu, không phân biệt hoa thường). Chỉ để nhà cung cấp AI biết có nên nhắc Grok làm tiếp
+# khi nó báo sắp sửa rồi dừng (ai/xai.py, FOLLOW_UP); không quyết định công cụ nào được dùng.
+_EDIT_WORDS = re.compile(r'(?<!\w)(sửa|chỉnh|điền|thêm|xóa|xoá|đổi|gộp|tô màu|định dạng|cập nhật|làm lại|fix|edit)(?!\w)',
+                         re.IGNORECASE)
+
+
+def asks_edit(text: str) -> bool:
+    return bool(_EDIT_WORDS.search(unicodedata.normalize('NFC', text or '')))
 
 logger = logging.getLogger('peto_web.documents')
 current_session = ContextVar('document_session', default=None)
@@ -99,6 +107,8 @@ class DocumentSession:
         self.created = []
         self._completed = {}
         self.workbooks = conversation_workbooks(rows)
+        # Tin nhắn của lượt này nhờ sửa (asks_edit): phía chat đặt sau khi tạo phiên.
+        self.edit_request = False
         # Tệp Excel đã sửa trong lượt này, theo mã tài liệu: dòng thay đổi, ô đã sửa và chỗ thẻ của nó trong ``created``.
         # Sửa tiếp cùng tệp thì bản mới kể cả các thay đổi trước và thay thẻ cũ: một lượt chỉ để lại một thẻ cho mỗi tệp.
         self._turn_edits: dict[str, dict] = {}

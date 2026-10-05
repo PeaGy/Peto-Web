@@ -294,8 +294,21 @@ summary ticker, and a phase bar sized by time spent.
   - Text written before a tool call (up to `NOTE_LIMIT`, 600 characters) moves from the answer into the log. The service
     drops it from `collected` and sends `replace {text}` with what remains of the answer.
   - Longer text is real content: it stays in the answer with a paragraph break.
-  - The prompt asks Peto for one short sentence before multi-step tool work.
+  - The prompt asks Peto for one short sentence before multi-step tool work, followed by the call in the same response.
   - `replace` now drops only the current call's draft, so text from earlier calls is never lost.
+- **Announce, then stop** (2026-10-05, the owner's re-run of the Excel test at effort "Thấp"). Grok thought for 46 s,
+  wrote "Peto sửa lại từ file gốc, không đụng sheet Quy_dinh." and ended the turn without a tool call, so no file came
+  back and no error showed. It was not a truncation: xAI's `max_output_tokens` counts visible text only, and a cut
+  response arrives as `response.incomplete`, which raises.
+  - The prompt now ties the lead-in to the call and forbids ending a turn with only the announcement.
+  - Safety net in `ResponsesProvider`: one nudge per turn (`FOLLOW_UP`). It needs an editable workbook in the chat, a
+    message that asks for an edit (`documents.tools.asks_edit`, accented words such as "sửa", "điền", "gộp"), and a
+    round that ends with at most `FOLLOW_UP_CHARS` (300) characters, no tool call and no document tool yet this turn.
+  - The follow-up round sends no `round` chunk, so the chat side still treats the announcement as the current draft.
+    If Grok then calls a tool, the announcement and the follow-up's own text become the note.
+  - The follow-up's own text is held. Without a tool call it is dropped when short ("XONG") and kept when long (an
+    error list the user asked to approve first), and the original answer stands.
+  - Tests: `tests/test_follow_up.py`, with a fake Responses client and an end-to-end chat edit.
 - **UI** (`WorkTimeline.tsx`; never a `workLog.ts` beside a `WorkLog.tsx`: the `LocalVoice` problem below).
   - **While running:** the header reads "Đang làm m:ss" on the client clock (`workStartedAt`), and every step has its own
     time.

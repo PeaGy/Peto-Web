@@ -56,6 +56,15 @@ MAX_WORKBOOK_TOOL_CALLS = 16
 # Grok soạn lệnh công cụ dài hay suy nghĩ mà chưa có gì để hiện: cứ chừng này giây báo một nhịp "vẫn đang làm", để lượt
 # chat không bị coi là kẹt và kết nối không bị cắt vì im lặng.
 PULSE_SECONDS = 10.0
+# Lượt nhờ sửa tệp Excel mà một lần gọi chỉ viết câu ngắn chừng này rồi dừng, chưa gọi công cụ nào: nhắc Grok làm tiếp một
+# lần. Ngày 5/10/2026, ở mức Thấp, Grok suy nghĩ 46 giây, viết "Peto sửa lại từ file gốc, không đụng sheet Quy_dinh." rồi
+# kết thúc lượt, nên người dùng không nhận được tệp nào.
+FOLLOW_UP_CHARS = 300
+FOLLOW_UP = ('[Nhắc tự động của Peto, không phải lời người dùng] Câu trả lời vừa rồi chỉ báo sắp làm mà chưa gọi công cụ '
+             'nào, nên chưa có gì được sửa và người dùng chưa nhận được tệp. Làm tiếp ngay trong câu trả lời này: gọi '
+             'edit_spreadsheet (hay công cụ yêu cầu cần). Được nhờ liệt kê lỗi trước thì viết danh sách rồi gọi công cụ '
+             'luôn trong cùng câu trả lời, trừ khi người dùng dặn chờ họ đồng ý. Không lặp lại câu báo. Nếu yêu cầu thật sự '
+             'không cần công cụ nào, chỉ trả lời đúng một chữ: XONG.')
 
 
 def _dump(item) -> dict:
@@ -199,12 +208,18 @@ class ResponsesProvider(ChatProvider):
         workbooks = bool(document_session and document_session.workbooks)
         max_rounds = max(MAX_TOOL_ROUNDS, MAX_GITHUB_TOOL_ROUNDS if github_schemas else 0, MAX_WORKBOOK_TOOL_ROUNDS if workbooks else 0)
         max_calls = max(MAX_TOOL_CALLS, MAX_GITHUB_TOOL_CALLS if github_schemas else 0, MAX_WORKBOOK_TOOL_CALLS if workbooks else 0)
+        # Lượt nhờ sửa tệp Excel còn có thể nhắc làm tiếp: chưa sửa hay tạo tệp nào, và chưa nhắc lần nào.
+        watching = bool(tools_enabled and workbooks and getattr(document_session, "edit_request", False))
+        follow_up_next = False
         for round_index in range(max_rounds + 1):
+            follow_up, follow_up_next = follow_up_next, False
             # Dành lần gọi cuối để tổng hợp kết quả đã đọc, không mở thêm tra cứu khi hết ngân sách.
             finalizing = tools_enabled and (round_index == max_rounds or calls_used >= max_calls)
             round_started = perf_counter()
-            if tools_enabled:
-                # Mốc cho nhật ký "Đang làm": từ đây tới chữ hay lệnh đầu tiên là lúc mô hình suy nghĩ.
+            if tools_enabled and not follow_up:
+                # Mốc cho nhật ký "Đang làm": từ đây tới chữ hay lệnh đầu tiên là lúc mô hình suy nghĩ. Lần gọi nhắc làm
+                # tiếp không có mốc riêng: phía chat coi câu báo lần trước vẫn là bản nháp của lần gọi này, để khi Grok gọi
+                # công cụ thì câu báo thành câu dẫn trong nhật ký.
                 yield StreamChunk("round")
             usage: dict = {}
             create_kwargs: dict = {
@@ -236,13 +251,19 @@ class ResponsesProvider(ChatProvider):
             stream = None
             output_items: list[dict] = []
             completed = False
-            emitted_text = False
+            emitted_text = follow_up       # lần gọi nhắc: câu báo lần trước vẫn đang hiện
             dropped_draft = False
             noted = False
+            written: list[str] = []     # chữ lần gọi này đã phát
+            # Chữ của lần gọi nhắc được giữ lại: Grok gọi công cụ thì phát (thành câu dẫn cùng câu báo), không gọi thì đó
+            # chỉ là "XONG" hay lời đệm, bỏ đi.
+            held: list[str] = []
 
             def drop_pre_search_draft() -> StreamChunk | None:
                 """Grok hay viết móc câu rồi search rồi viết lại từ đầu — bỏ bản nháp trước search."""
                 nonlocal dropped_draft, emitted_text
+                written.clear()
+                held.clear()
                 if emitted_text and not dropped_draft:
                     dropped_draft = True
                     emitted_text = False
@@ -273,6 +294,9 @@ class ResponsesProvider(ChatProvider):
                                 yield draft
                             yield StreamChunk("search", "searching")
                         elif item_type == "function_call":
+                            if held:
+                                yield "\n\n" + "".join(held)
+                                held.clear()
                             # Chữ viết trước lệnh gọi công cụ thường là câu dẫn: phía chat đưa nó vào nhật ký "Đang làm"
                             # (hoặc giữ trong câu trả lời nếu dài). Báo ngay lúc này để các bước tới đúng thứ tự.
                             if emitted_text and not noted:
@@ -295,7 +319,11 @@ class ResponsesProvider(ChatProvider):
                         delta = getattr(event, "delta", "")
                         if delta:
                             emitted_text = True
-                            yield delta
+                            if follow_up:
+                                held.append(delta)
+                            else:
+                                written.append(delta)
+                                yield delta
                     elif event_type == "response.output_item.done":
                         item = _dump(event.item)
                         output_items.append(item)
@@ -350,10 +378,31 @@ class ResponsesProvider(ChatProvider):
             if not tool_calls:
                 if web_search == "on" and not search_finished and not sources:
                     raise ProviderError("Dịch vụ chưa xác nhận đã tra web. Peto chưa thể xem câu trả lời này là đã kiểm chứng; bạn thử lại nhé.")
+                if follow_up:
+                    # Nhắc rồi vẫn không gọi công cụ: câu báo giữ nguyên làm câu trả lời. Chữ ngắn thêm vào (như "XONG")
+                    # bỏ đi; chữ dài là nội dung thật (danh sách lỗi khi người dùng dặn chờ đồng ý) thì giữ.
+                    extra = "".join(held).strip()
+                    logger.info("Nhắc làm tiếp: vẫn không gọi công cụ, chữ thêm %d ký tự", len(extra))
+                    if len(extra) > FOLLOW_UP_CHARS:
+                        yield "\n\n" + extra
+                    return
+                written_text = "".join(written).strip()
+                if watching and not finalizing and round_index + 1 < max_rounds and calls_used < max_calls \
+                        and 0 < len(written_text) <= FOLLOW_UP_CHARS:
+                    watching = False
+                    follow_up_next = True
+                    payload_input.extend(output_items)
+                    payload_input.append({"role": "user", "content": [{"type": "input_text", "text": FOLLOW_UP}]})
+                    logger.info("Nhắc làm tiếp: lần gọi %d chỉ viết %d ký tự, chưa gọi công cụ", round_index + 1,
+                                len(written_text))
+                    continue
                 return
             if finalizing:
                 raise ProviderError("Dịch vụ AI vẫn yêu cầu tra cứu sau khi được yêu cầu kết thúc. Phần đã trả lời được giữ lại; bạn có thể hỏi tiếp về một tệp cụ thể.")
             payload_input.extend(output_items)
+            if held:
+                yield "\n\n" + "".join(held)
+                held.clear()
             if emitted_text and not noted:
                 # Dịch vụ không báo lúc bắt đầu viết lệnh: chữ trước đó vẫn là câu dẫn.
                 yield StreamChunk("note")
@@ -368,6 +417,7 @@ class ResponsesProvider(ChatProvider):
                     continue
                 calls_used += 1
                 if call.get('name') in DOCUMENT_TOOLS and document_session:
+                    watching = False        # Grok đã bắt tay sửa/tạo tệp: không cần nhắc nữa
                     status, run = DOCUMENT_TOOLS[call['name']]
                     yield StreamChunk('document_status', status)
                     result = await getattr(document_session, run)(call.get('arguments', ''))
