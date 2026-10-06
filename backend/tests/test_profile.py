@@ -71,7 +71,7 @@ async def test_tu_choi_dau_vao_sai_bang_tieng_viet(client):
 
 async def test_ho_so_rieng_tung_nguoi(client, anon_client):
     await client.put("/api/profile", json={"nickname": "An"})
-    anon_client.cookies.set(SESSION_COOKIE, auth._sign(owner_key("guest", "b" * 32)))
+    anon_client.cookies.set(SESSION_COOKIE, auth._sign(owner_key("github", "b" * 32)))
     assert (await anon_client.get("/api/profile")).json()["profile"]["nickname"] == ""
 
 

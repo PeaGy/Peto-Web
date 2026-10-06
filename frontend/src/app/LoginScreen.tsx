@@ -1,13 +1,10 @@
 import type { AppInfo, AuthState } from '../shared/api/api';
-import { DISCORD_LOGIN_URL, GOOGLE_LOGIN_URL } from '../shared/api/api';
-import { PetoAvatar, DiscordIcon, GoogleIcon, GuestIcon } from './accountUi';
+import { DISCORD_LOGIN_URL, GITHUB_LOGIN_URL, GOOGLE_LOGIN_URL } from '../shared/api/api';
+import { PetoAvatar, DiscordIcon, GitHubIcon, GoogleIcon } from './accountUi';
 
-type LoginScreenProps = {
-  auth: AuthState; appInfo: AppInfo | null; authError: string | null;
-  guestBusy: boolean; enterAsGuest: () => Promise<void>;
-};
+type LoginScreenProps = { auth: AuthState; appInfo: AppInfo | null; authError: string | null };
 
-export default function LoginScreen({ auth, appInfo, authError, guestBusy, enterAsGuest }: LoginScreenProps) {
+export default function LoginScreen({ auth, appInfo, authError }: LoginScreenProps) {
     return (
       <div className="login">
         <div className="login-card">
@@ -35,6 +32,7 @@ export default function LoginScreen({ auth, appInfo, authError, guestBusy, enter
                 </a>
               )}
 
+              {(auth.providers?.google || auth.providers?.github) && <>
               <div className="login-divider">
                 <span>Đăng nhập bằng cách khác</span>
               </div>
@@ -46,16 +44,14 @@ export default function LoginScreen({ auth, appInfo, authError, guestBusy, enter
                     Google
                   </a>
                 )}
-                <button
-                  type="button"
-                  className="alt-login"
-                  disabled={guestBusy}
-                  onClick={() => void enterAsGuest()}
-                >
-                  <GuestIcon />
-                  {guestBusy ? "Đang vào…" : "Khách"}
-                </button>
+                {auth.providers?.github && (
+                  <a className="alt-login" href={GITHUB_LOGIN_URL}>
+                    <GitHubIcon />
+                    GitHub
+                  </a>
+                )}
               </div>
+              </>}
             </>
           ) : (
             <div className="error">

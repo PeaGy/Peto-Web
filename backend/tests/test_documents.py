@@ -228,7 +228,7 @@ async def test_legacy_pdf_read_once_and_owner_checked(client, tmp_path):
     rows = await db.get_messages(TEST_OWNER, cid)
     await chat_history._read_legacy_documents(TEST_OWNER, rows, 4)
     assert "7300" in chat_history._to_chat_messages(rows)[0].attachments[0].text_excerpt
-    await db.save_document("guest:someone-else", "legacy-pdf", reader.result("unreadable", "ghi đè"))
+    await db.save_document("github:someone-else", "legacy-pdf", reader.result("unreadable", "ghi đè"))
     saved = (await db.get_messages(TEST_OWNER, cid))[0]["attachments"][0]
     assert reader.cached_document(saved["document"])["status"] == "ready"
 
@@ -292,7 +292,7 @@ async def test_document_migration_preserves_old_attachment(tmp_path, monkeypatch
     path = tmp_path / "tai-lieu-cu.db"
     with sqlite3.connect(path) as connection:
         connection.execute('CREATE TABLE attachments (id TEXT PRIMARY KEY, owner TEXT, conversation_id TEXT, message_id INTEGER, filename TEXT, mime TEXT, kind TEXT, size INTEGER, path TEXT, created_at REAL)')
-        connection.execute("INSERT INTO attachments VALUES ('cu', 'guest:cu', 'hoi-thoai', 1, 'giu.pdf', 'application/pdf', 'file', 12, 'giu.pdf', 0)")
+        connection.execute("INSERT INTO attachments VALUES ('cu', 'github:cu', 'hoi-thoai', 1, 'giu.pdf', 'application/pdf', 'file', 12, 'giu.pdf', 0)")
     monkeypatch.setattr(db_connection, "DB_PATH", path)
     await db.init_db()
     await db.init_db()

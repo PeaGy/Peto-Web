@@ -7,6 +7,7 @@ bằng cách thay lớp HTTP client, còn phần chống CSRF kiểm tra trực 
 from __future__ import annotations
 
 from features.accounts import auth
+import httpx
 import pytest
 from conftest import OTHER_DISCORD_ID, TEST_DISCORD_ID, TEST_OWNER
 
@@ -89,7 +90,7 @@ async def test_google_login_bao_loi_khi_chua_cau_hinh(anon_client, monkeypatch):
     monkeypatch.setattr(auth, "GOOGLE_CLIENT_ID", "")
     assert (await anon_client.get("/api/auth/google/login")).status_code == 503
     assert auth.available_providers() == {
-        "discord": True, "google": False, "guest": True,
+        "discord": True, "google": False, "github": True,
     }
 
 
@@ -103,36 +104,80 @@ async def test_google_callback_tu_choi_state_lech(anon_client):
     assert "auth_error" in response.headers["location"]
 
 
-async def test_khach_vao_thang_va_co_du_lieu_rieng(anon_client):
-    """Khách là owner thật: có hội thoại riêng, không thấy của người khác."""
-    assert (await anon_client.get("/api/auth/me")).json()["authenticated"] is False
+async def test_login_redirects_to_github(anon_client):
+    response = await anon_client.get("/api/auth/github/login", follow_redirects=False)
+    assert response.status_code == 307
+    location = response.headers["location"]
+    assert location.startswith("https://github.com/login/oauth/authorize")
+    # Không xin scope nào: chỉ hồ sơ công khai, không email, không repo.
+    assert "scope=&" in location or location.endswith("scope=")
+    assert "test-github-client-secret" not in location
+    assert response.cookies.get(auth.GITHUB_STATE_COOKIE)
 
-    assert (await anon_client.post("/api/auth/guest")).json() == {"ok": True}
+
+def fake_github(monkeypatch, *, token_body=None, user=None):
+    """Thay mạng thật bằng GitHub giả; trả về danh sách yêu cầu đã gửi đi."""
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append((request.method, str(request.url)))
+        if request.url.path == "/login/oauth/access_token":
+            return httpx.Response(200, json=token_body if token_body is not None else {"access_token": "gho_test"})
+        if request.url.path == "/user":
+            return httpx.Response(200, json=user if user is not None else
+                                  {"id": 4242, "login": "pear-dev", "name": "Pear Dev", "avatar_url": "https://a.test/p.png"})
+        return httpx.Response(204)
+
+    real = httpx.AsyncClient
+    monkeypatch.setattr(auth.httpx, "AsyncClient", lambda **kwargs: real(transport=httpx.MockTransport(handler), **kwargs))
+    return seen
+
+
+async def github_callback(anon_client, state="state-1"):
+    anon_client.cookies.set(auth.GITHUB_STATE_COOKIE, "state-1", path="/api/auth")
+    return await anon_client.get("/api/auth/github/callback", params={"code": "abc", "state": state},
+                                 follow_redirects=False)
+
+
+async def test_github_callback_signs_in_and_drops_the_token(anon_client, monkeypatch):
+    seen = fake_github(monkeypatch)
+    response = await github_callback(anon_client)
+    assert response.status_code == 307 and "auth_error" not in response.headers["location"]
     body = (await anon_client.get("/api/auth/me")).json()
     assert body["authenticated"] is True
-    assert body["user"]["provider"] == "guest"
-    assert body["user"]["display_name"] == "Khách"
+    user = body["user"]
+    assert (user["provider"], user["username"], user["display_name"]) == ("github", "pear-dev", "Pear Dev")
+    assert "gho_test" not in str(body)
+    # Token chỉ dùng để đọc hồ sơ một lần rồi được thu hồi.
+    assert ("DELETE", "https://api.github.com/applications/test-github-client-id/token") in seen
+    assert await db.get_user(owner_key("github", "4242"))
+    # GitHub đủ quyền như Google: dùng được 6 Luna (chạy giả nên không cần khóa OpenAI).
+    assert "luna" in [model["key"] for model in user["models"]]
 
-    # Hội thoại của người khác vẫn vô hình với khách.
-    nguoi_khac = await db.create_conversation(TEST_OWNER)
-    assert (
-        await anon_client.get(f"/api/conversations/{nguoi_khac}/messages")
-    ).status_code == 404
-    assert (await anon_client.get("/api/conversations")).json()["conversations"] == []
+
+@pytest.mark.parametrize("token_body, user, state", [
+    ({"error": "bad_verification_code"}, None, "state-1"),   # GitHub báo lỗi bằng HTTP 200
+    (None, {"login": "khong-co-id"}, "state-1"),
+    (None, None, "gia-mao"),
+])
+async def test_github_callback_refuses_bad_answers(anon_client, monkeypatch, token_body, user, state):
+    fake_github(monkeypatch, token_body=token_body, user=user)
+    response = await github_callback(anon_client, state)
+    assert "auth_error" in response.headers["location"]
+    assert (await anon_client.get("/api/auth/me")).json()["authenticated"] is False
 
 
-async def test_moi_lan_vao_khach_la_mot_tai_khoan_moi(anon_client):
-    """Khách không chứng minh được mình là khách cũ, nên không gộp phiên."""
-    await anon_client.post("/api/auth/guest")
-    mot = (await anon_client.get("/api/auth/me")).json()["user"]["id"]
-    await anon_client.post("/api/auth/guest")
-    hai = (await anon_client.get("/api/auth/me")).json()["user"]["id"]
-    assert mot != hai
+async def test_guest_login_is_gone_and_old_guest_cookies_sign_out(anon_client):
+    """Đăng nhập khách bỏ ngày 6/10/2026: không còn lối vào, cookie khách cũ thành chưa đăng nhập."""
+    assert (await anon_client.post("/api/auth/guest")).status_code in (404, 405)
+    anon_client.cookies.set(SESSION_COOKIE, auth._sign("guest:" + "a" * 32))
+    assert (await anon_client.get("/api/auth/me")).json()["authenticated"] is False
+    assert (await anon_client.get("/api/conversations")).status_code == 401
 
 
 async def test_me_liet_ke_cac_cach_dang_nhap(anon_client):
     body = (await anon_client.get("/api/auth/me")).json()
-    assert body["providers"] == {"discord": True, "google": True, "guest": True}
+    assert body["providers"] == {"discord": True, "google": True, "github": True}
     assert body["login_configured"] is True
 
 
@@ -180,7 +225,7 @@ def test_dang_ky_mo_khong_con_allowlist():
     for owner in (
         owner_key("discord", OTHER_DISCORD_ID),
         owner_key("google", "sub-la-hoac"),
-        owner_key("guest", "a" * 32),
+        owner_key("github", "4242"),
     ):
         assert auth.session_owner(auth._sign(owner)) == owner
 

@@ -124,7 +124,7 @@ async def test_oauth_state_pkce_encryption_and_no_token_to_frontend(client, conf
 async def test_state_is_bound_to_account_and_session(client, configured, github_http):
     params = await authorize(client)
     previous = client.cookies.get(SESSION_COOKIE)
-    client.cookies.set(SESSION_COOKIE, auth._sign('guest:other'))
+    client.cookies.set(SESSION_COOKIE, auth._sign('github:other'))
     query = {'state': params['state'][0], 'code': 'test-code'}
     assert (await client.get('/api/connectors/github/callback', params=query)).headers['location'].endswith('invalid')
     assert not github_http
@@ -145,11 +145,11 @@ async def test_expired_state_and_cancelled_callback(client, configured, github_h
 
 async def test_disconnection_is_isolated_and_cancels_pending_consent(client, configured, github_http):
     await saved()
-    await saved('guest:other')
+    await saved('github:other')
     params = await authorize(client)
     assert (await client.delete('/api/connectors/github')).status_code == 200
     assert await store.get_github(TEST_OWNER) is None
-    assert await store.get_github('guest:other') is not None
+    assert await store.get_github('github:other') is not None
     assert (await client.get('/api/connectors/github/callback', params={'state': params['state'][0], 'code': 'x'})).headers['location'].endswith('invalid')
     result = await GitHubSession(TEST_OWNER).run('github_actions', json.dumps({'repository': 'nguoi-test/Peto', 'action': 'runs'}))
     assert not result['ok'] and not github_http
@@ -301,7 +301,7 @@ async def test_real_provider_connector_roundtrip_and_title_exclusion(client, con
 
 
 async def test_companion_and_other_accounts_receive_no_connector_tools(client, configured, monkeypatch):
-    await saved('guest:other')
+    await saved('github:other')
     class Provider:
         async def stream(self, **kwargs):
             assert current_session.get() is None

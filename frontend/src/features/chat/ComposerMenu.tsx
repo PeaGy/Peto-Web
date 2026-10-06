@@ -4,7 +4,7 @@ import { GlobeIcon } from './WebSources';
 /** Mục "Chế độ nhập vai": chỉ có khi hội thoại chưa bắt đầu, vì chế độ được giữ suốt hội thoại. */
 export interface RoleplayOption {
   active: boolean;
-  /** Lý do không bật được (tài khoản khách); null thì bật được. */
+  /** Lý do không bật được; null thì bật được. */
   unavailable: string | null;
   onToggle: () => void;
 }

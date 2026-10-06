@@ -1,4 +1,4 @@
-"""Đăng nhập bằng Discord, Google, hoặc vào thẳng với tư cách khách.
+"""Đăng nhập bằng Discord, Google hoặc GitHub. Đăng nhập khách đã bỏ ngày 6/10/2026.
 
 Nguyên tắc lấy từ mục 8 của PETO_WEB_HANDOFF.md:
 - Chỉ ánh xạ danh tính SAU KHI máy chủ tự đổi code lấy token và tự hỏi Discord
@@ -6,7 +6,7 @@ Nguyên tắc lấy từ mục 8 của PETO_WEB_HANDOFF.md:
 - KHÔNG có allowlist: ai đăng nhập được thì dùng được. Đây là lựa chọn có chủ
   đích của chủ máy chủ, đổi lại bất kỳ ai có địa chỉ đều tiêu quota AI — đừng
   "sửa lại cho an toàn" nếu không được yêu cầu.
-- Access token của Discord/Google chỉ dùng một lần để đọc hồ sơ rồi bỏ. Không
+- Access token của Discord/Google/GitHub chỉ dùng một lần để đọc hồ sơ rồi bỏ. Không
   lưu token, không lưu email, không xuống trình duyệt.
 
 Đăng nhập ở đây mới chỉ xác định "ai đang chat". Việc dùng chung trí nhớ với
@@ -19,7 +19,6 @@ from __future__ import annotations
 import hashlib
 import logging
 import secrets
-import uuid
 from urllib.parse import urlencode
 
 import httpx
@@ -29,7 +28,7 @@ from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
 from ai import models as ai_models
 import storage as db
-from core.config import DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET, DISCORD_REDIRECT_URI, FRONTEND_URL, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI, SESSION_COOKIE, SESSION_COOKIE_SECURE, SESSION_MAX_AGE, SESSION_SECRET, owner_key, provider_from_owner
+from core.config import DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET, DISCORD_REDIRECT_URI, FRONTEND_URL, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI, GITHUB_LOGIN_CLIENT_ID, GITHUB_LOGIN_CLIENT_SECRET, GITHUB_LOGIN_REDIRECT_URI, SESSION_COOKIE, SESSION_COOKIE_SECURE, SESSION_MAX_AGE, SESSION_SECRET, owner_key, provider_from_owner
 
 logger = logging.getLogger("peto_web.auth")
 
@@ -45,7 +44,12 @@ GOOGLE_USER_URL = "https://openidconnect.googleapis.com/v1/userinfo"
 # diện, xin thêm quyền là lời hứa đó thành sai.
 GOOGLE_SCOPE = "openid profile"
 
+GITHUB_AUTHORIZE_URL = "https://github.com/login/oauth/authorize"
+GITHUB_TOKEN_URL = "https://github.com/login/oauth/access_token"
+GITHUB_USER_URL = "https://api.github.com/user"
+
 STATE_COOKIE = "peto_oauth_state"
+GITHUB_STATE_COOKIE = "peto_oauth_state_github"
 GOOGLE_STATE_COOKIE = "peto_oauth_state_google"
 STATE_MAX_AGE = 600
 
@@ -74,15 +78,18 @@ def google_configured() -> bool:
     return bool(GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET)
 
 
+def github_configured() -> bool:
+    return bool(GITHUB_LOGIN_CLIENT_ID and GITHUB_LOGIN_CLIENT_SECRET)
+
+
 def available_providers() -> dict[str, bool]:
-    """Cách nào đang dùng được. Khách luôn bật vì không cần cấu hình gì."""
-    return {"discord": is_configured(), "google": google_configured(), "guest": True}
+    """Cách nào đang dùng được (đã cấu hình khóa)."""
+    return {"discord": is_configured(), "google": google_configured(), "github": github_configured()}
 
 
 def account_id(owner: str) -> str:
     """Mã tài khoản để frontend làm React key, không lộ khóa owner.
 
-    Khóa của khách là uuid ngẫu nhiên nên càng không nên gửi nguyên xuống.
     """
     return hashlib.sha256(owner.encode("utf-8")).hexdigest()[:16]
 
@@ -356,30 +363,104 @@ async def google_callback(
     return response
 
 
-@router.post("/guest")
-async def guest_login(response: Response) -> dict:
-    """Vào thẳng, không qua nhà cung cấp nào.
+@router.get("/github/login")
+async def github_login() -> RedirectResponse:
+    if not github_configured():
+        raise HTTPException(
+            status_code=503,
+            detail="Chưa cấu hình GITHUB_LOGIN_CLIENT_ID / GITHUB_LOGIN_CLIENT_SECRET",
+        )
+    state = secrets.token_urlsafe(24)
+    params = {
+        "client_id": GITHUB_LOGIN_CLIENT_ID,
+        "redirect_uri": GITHUB_LOGIN_REDIRECT_URI,
+        # Không xin scope nào: chỉ đọc hồ sơ công khai (mã số, tên, ảnh), không email, không repo.
+        "scope": "",
+        "state": state,
+        "allow_signup": "true",
+    }
+    response = RedirectResponse(
+        str(httpx.URL(GITHUB_AUTHORIZE_URL, params=params)), status_code=307
+    )
+    _set_state(response, GITHUB_STATE_COOKIE, state)
+    return response
 
-    Mỗi lần bấm là một owner mới: khách không có cách nào chứng minh mình là
-    khách cũ, nên mất cookie là mất luôn hội thoại. Nói rõ điều đó ở giao diện.
-    """
-    owner = owner_key("guest", uuid.uuid4().hex)
+
+@router.get("/github/callback")
+async def github_callback(
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+    peto_oauth_state_github: str | None = Cookie(default=None, alias=GITHUB_STATE_COOKIE),
+) -> RedirectResponse:
+    if error:
+        return _fail("Bạn đã hủy đăng nhập GitHub.")
+    if not code or not state:
+        return _fail("Thiếu thông tin trả về từ GitHub.")
+    if not peto_oauth_state_github or not secrets.compare_digest(state, peto_oauth_state_github):
+        return _fail("Phiên đăng nhập không khớp. Thử lại nhé.")
+
+    headers = {"Accept": "application/json", "User-Agent": "Peto-Web"}
+    async with httpx.AsyncClient(timeout=20) as client:
+        token_response = await client.post(
+            GITHUB_TOKEN_URL,
+            data={
+                "client_id": GITHUB_LOGIN_CLIENT_ID,
+                "client_secret": GITHUB_LOGIN_CLIENT_SECRET,
+                "code": code,
+                "redirect_uri": GITHUB_LOGIN_REDIRECT_URI,
+            },
+            headers=headers,
+        )
+        # GitHub báo lỗi đổi code bằng HTTP 200 kèm trường "error", nên phải xem cả nội dung.
+        payload = token_response.json() if token_response.status_code < 400 else {}
+        access_token = payload.get("access_token") if isinstance(payload, dict) else None
+        if not access_token:
+            logger.warning("GitHub đổi code thất bại: HTTP %s %s", token_response.status_code,
+                           str(payload.get("error") if isinstance(payload, dict) else "")[:60])
+            return _fail("GitHub từ chối đăng nhập. Thử lại nhé.")
+
+        user_response = await client.get(
+            GITHUB_USER_URL,
+            headers={**headers, "Accept": "application/vnd.github+json", "Authorization": f"Bearer {access_token}"},
+        )
+        user = user_response.json() if user_response.status_code < 400 else None
+        # Token chỉ để đọc hồ sơ một lần: thu hồi ngay (cố gắng hết sức, lỗi cũng không sao vì không lưu ở đâu).
+        try:
+            await client.request(
+                "DELETE", f"https://api.github.com/applications/{GITHUB_LOGIN_CLIENT_ID}/token",
+                auth=(GITHUB_LOGIN_CLIENT_ID, GITHUB_LOGIN_CLIENT_SECRET),
+                json={"access_token": access_token},
+                headers={**headers, "Accept": "application/vnd.github+json"},
+            )
+        except httpx.HTTPError:
+            pass
+    if not isinstance(user, dict):
+        return _fail("Không đọc được hồ sơ GitHub.")
+
+    # `id` là mã số ổn định; tên đăng nhập (login) đổi được nên không bao giờ dùng làm khóa.
+    user_id = user.get("id")
+    if not isinstance(user_id, int) or isinstance(user_id, bool):
+        return _fail("Hồ sơ GitHub thiếu mã tài khoản.")
+    login = str(user.get("login") or "")
+    owner = owner_key("github", str(user_id))
     await db.upsert_user(
         owner=owner,
-        provider="guest",
-        username="khach",
-        display_name="Khách",
-        avatar_url="",
+        provider="github",
+        username=login,
+        display_name=str(user.get("name") or login or "Bạn"),
+        avatar_url=str(user.get("avatar_url") or ""),
     )
+
+    response = RedirectResponse(_frontend_url(), status_code=307)
     _set_session(response, owner)
-    return {"ok": True}
+    response.delete_cookie(GITHUB_STATE_COOKIE, path="/api/auth")
+    return response
 
 
 @router.get("/me")
 async def me(request: Request) -> dict:
     providers = available_providers()
-    # Khách luôn bật nên trường này giờ luôn đúng; giữ lại vì frontend cũ và
-    # test đều đang đọc nó.
     anonymous = {
         "authenticated": False,
         "login_configured": any(providers.values()),

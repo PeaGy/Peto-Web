@@ -51,7 +51,7 @@ beforeEach(() => {
   played.length = 0;
   window.history.replaceState(null, '', '/');
   vi.mocked(api.getAuthState).mockResolvedValue({ authenticated: true, login_configured: true,
-    providers: { discord: true, google: true, guest: true },
+    providers: { discord: true, google: true, github: true },
     user: { id: 'acc-111', provider: 'discord', username: 'demo', display_name: 'Demo', avatar_url: '' } });
   vi.mocked(api.listConversations).mockResolvedValue({ conversations: [], has_more: false });
   vi.mocked(api.getMessages).mockResolvedValue([]);
@@ -771,11 +771,11 @@ it('hết lượt Giọng Peto thì không cho nghe thử, còn Companion đọc
   expect(detail.queryByRole('button', { name: 'Nghe thử' })).toBeNull();
 });
 
-it('khách thấy Giọng Peto dành cho tài khoản Discord và Google, không có số lượt', async () => {
+it('tài khoản chưa có lượt Giọng Peto chỉ thấy lời giải thích, không có số lượt', async () => {
   localStorage.setItem('peto-local-voice', '1');
   vi.mocked(api.getAuthState).mockResolvedValue({ authenticated: true, login_configured: true,
-    providers: { discord: true, google: true, guest: true },
-    user: { id: 'g-1', provider: 'guest', username: 'khach', display_name: 'Demo', avatar_url: '' } });
+    providers: { discord: true, google: true, github: true },
+    user: { id: 'g-1', provider: 'github', username: 'demo', display_name: 'Demo', avatar_url: '' } });
   fetchMock.mockImplementation(async (url: string) => {
     if (url.endsWith('/health')) return new Response(JSON.stringify(health({ allowed: false, used: 0 })));
     throw new Error(`Không mong đợi ${url}`);
@@ -783,7 +783,7 @@ it('khách thấy Giọng Peto dành cho tài khoản Discord và Google, không
   render(<App />);
   const settings = await openSettings();
   const detail = within(await settings.findByRole('group', { name: 'Giọng Peto' }));
-  expect(await detail.findByText(/Lượt miễn phí dành cho tài khoản Discord và Google/)).toBeTruthy();
+  expect(await detail.findByText(/Lượt miễn phí chưa mở cho tài khoản này/)).toBeTruthy();
   expect(detail.queryByText(/ký tự/)).toBeNull();
   expect(detail.queryByRole('button', { name: 'Nghe thử' })).toBeNull();
 

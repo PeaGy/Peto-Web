@@ -44,7 +44,7 @@ def keys(models: list[dict]) -> list[str]:
     return [model["key"] for model in models]
 
 
-async def test_web_offers_luna_to_discord_and_google_accounts_only(client, anon_client, monkeypatch):
+async def test_web_offers_luna_to_signed_in_accounts(client, anon_client, monkeypatch):
     me = (await client.get("/api/auth/me")).json()["user"]
     assert me["models"] == [
         {"key": "peto", "label": "Peto", "description": "Mặc định", "step_cost": 1, "efforts": ['low', 'medium', 'high']},
@@ -58,10 +58,10 @@ async def test_web_offers_luna_to_discord_and_google_accounts_only(client, anon_
     assert events[-1]["type"] == "done"
     assert seen == ["luna", "peto"], "mỗi tin theo model chọn lúc gửi, đổi giữa chừng được"
 
-    await anon_client.post("/api/auth/guest")
-    assert keys((await anon_client.get("/api/auth/me")).json()["user"]["models"]) == ["peto"]
-    guest = await anon_client.post("/api/chat", json={"message": "chào", "model": "luna"})
-    assert guest.status_code == 403 and "Discord hoặc Google" in guest.json()["detail"]
+    # Tài khoản GitHub đủ quyền như Google (chủ web chốt ngày 6/10/2026, khi bỏ đăng nhập khách).
+    from conftest import sign_in
+    await sign_in(anon_client)
+    assert keys((await anon_client.get("/api/auth/me")).json()["user"]["models"]) == ["peto", "luna"]
 
     for model in ("sol", "terra", "gpt-6-luna", ""):
         assert (await client.post("/api/chat", json={"message": "chào", "model": model})).status_code == 400

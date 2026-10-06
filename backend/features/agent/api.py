@@ -5,7 +5,7 @@ CLI giữ vòng lặp và chạy công cụ ngay trên máy người dùng. Máy
 - đếm số bước mỗi ngày cho mỗi tài khoản, giới hạn riêng của agent theo yêu cầu chủ web;
 - gọi mô hình bằng token xAI của máy chủ, không bao giờ gửi token đó xuống CLI.
 
-Tài khoản khách không dùng được agent. Mã thiết bị đang chờ nằm trong RAM như hàng chờ giọng nói, nên backend chạy
+Mã thiết bị đang chờ nằm trong RAM như hàng chờ giọng nói, nên backend chạy
 một tiến trình; khởi động lại giữa lúc đăng nhập thì CLI phải chạy lại lệnh login.
 """
 
@@ -44,7 +44,6 @@ from core.rate_limit import Admission, AdmissionDenied
 logger = logging.getLogger("peto_web.agent")
 router = APIRouter(prefix="/api/agent", tags=["agent"])
 
-GUEST_MESSAGE = "Peto Agent chỉ dùng được với tài khoản Discord hoặc Google."
 CODE_NOT_FOUND = "Mã kết nối không đúng hoặc đã hết hạn. Chạy lại peto login để lấy mã mới."
 CODE_TTL_SECONDS = 600
 POLL_INTERVAL_SECONDS = 3
@@ -118,14 +117,12 @@ def _account_name(user: dict | None) -> str:
 
 
 async def web_owner(owner: str = Depends(auth.current_owner)) -> str:
-    """Dependency cho các thao tác trên web: đã đăng nhập và không phải tài khoản khách."""
-    if provider_from_owner(owner) == "guest":
-        raise HTTPException(status_code=403, detail=GUEST_MESSAGE)
+    """Dependency cho các thao tác trên web: đã đăng nhập."""
     return owner
 
 
 async def device_auth(request: Request) -> dict:
-    """Dependency cho CLI: token Bearer còn hiệu lực, thuộc tài khoản Discord hoặc Google."""
+    """Dependency cho CLI: token Bearer còn hiệu lực."""
     scheme, _, token = request.headers.get("authorization", "").partition(" ")
     token = token.strip()
     if scheme.lower() != "bearer" or not token:
@@ -136,8 +133,9 @@ async def device_auth(request: Request) -> dict:
             status_code=401,
             detail="Phiên Peto Agent đã hết hạn hoặc máy đã bị ngắt kết nối. Chạy peto login để đăng nhập lại.",
         )
-    if provider_from_owner(device["owner"]) == "guest":
-        raise HTTPException(status_code=403, detail=GUEST_MESSAGE)
+    # Token của khóa không còn hợp lệ (tài khoản khách cũ, đã bỏ) coi như đã thu hồi.
+    if not provider_from_owner(device["owner"]):
+        raise HTTPException(status_code=401, detail="Phiên Peto Agent đã hết hạn. Chạy peto login để đăng nhập lại.")
     # Chỉ ghi lần dùng cuối khi đã cách hơn một phút, đỡ ghi SQLite ở mỗi bước.
     if time.time() - device["last_used_at"] > 60:
         await db.touch_agent_device(device["owner"], device["id"])
@@ -197,8 +195,6 @@ async def device_token(body: DeviceToken) -> dict:
     owner = entry["owner"]
     if entry["status"] != "approved" or not owner:
         raise HTTPException(status_code=403, detail="Kết nối đã bị từ chối trên web.")
-    if provider_from_owner(owner) == "guest":
-        raise HTTPException(status_code=403, detail=GUEST_MESSAGE)
     token = "peto_" + secrets.token_urlsafe(32)
     device = await db.create_agent_device(owner=owner, name=entry["name"], token_hash=_hash(token))
     return {

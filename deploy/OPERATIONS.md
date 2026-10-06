@@ -26,6 +26,14 @@ Từ thư mục `backend`, sau khi dừng backend đang dùng dữ liệu cần 
 ../.venv/Scripts/python.exe -m ops.backup restore ../backups/<ten-ban-sao>.zip --destination ../restore-drill
 ```
 
+Dọn dữ liệu tài khoản khách cũ (đăng nhập khách bỏ ngày 6/10/2026). Lệnh mặc định chỉ đếm, thêm `--yes` mới xóa;
+nên sao lưu trước:
+
+```bash
+../.venv/bin/python -m ops.purge_guests
+../.venv/bin/python -m ops.purge_guests --yes
+```
+
 Có thể chỉ định `--db` và `--uploads` khi thử với bộ dữ liệu riêng. Chạy từ `backend` giống server để các đường dẫn
 tương đối trong cấu hình có cùng nghĩa. Verify/restore không cần nạp `.env`.
 

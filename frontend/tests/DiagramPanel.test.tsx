@@ -38,7 +38,7 @@ beforeEach(() => {
   sessionStorage.clear();
   window.history.replaceState(null, '', '/');
   vi.mocked(api.getAuthState).mockResolvedValue({ authenticated: true, login_configured: true,
-    providers: { discord: true, google: true, guest: true },
+    providers: { discord: true, google: true, github: true },
     user: { id: 'acc-111', provider: 'discord', username: 'demo', display_name: 'Demo', avatar_url: '' } });
   vi.mocked(api.listConversations).mockResolvedValue({ conversations: [
     { id: 'A', title: 'A', created_at: 0, updated_at: 0, message_count: 2 },

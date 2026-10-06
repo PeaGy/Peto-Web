@@ -32,6 +32,8 @@ os.environ["DISCORD_CLIENT_ID"] = "test-client-id"
 os.environ["DISCORD_CLIENT_SECRET"] = "test-client-secret"
 os.environ["GOOGLE_CLIENT_ID"] = "test-google-client-id"
 os.environ["GOOGLE_CLIENT_SECRET"] = "test-google-client-secret"
+os.environ["GITHUB_LOGIN_CLIENT_ID"] = "test-github-client-id"
+os.environ["GITHUB_LOGIN_CLIENT_SECRET"] = "test-github-client-secret"
 os.environ["PETO_SESSION_SECRET"] = "test-session-secret"
 TEST_DISCORD_ID = "111111111111111111"
 # Người dùng thứ hai, dùng cho các bài kiểm tra cách ly dữ liệu. Không còn
@@ -89,3 +91,12 @@ async def read_events(response) -> list[dict]:
         if line.startswith("data: "):
             events.append(json.loads(line[6:]))
     return events
+
+
+async def sign_in(client, provider: str = "github") -> str:
+    """Đăng nhập ``client`` bằng một tài khoản mới tinh (mặc định GitHub), thay cho tài khoản khách đã bỏ."""
+    import uuid
+    owner = owner_key(provider, uuid.uuid4().hex)
+    await db.upsert_user(owner=owner, provider=provider, username="nguoi_moi", display_name="Người Mới", avatar_url="")
+    client.cookies.set(SESSION_COOKIE, auth._sign(owner))
+    return owner

@@ -24,10 +24,10 @@ MAX_AUDIO = 8 * 1024 * 1024
 jobs: dict = {}
 last_seen = 0.0
 active_speakers: set[str] = set()
-# Lượt miễn phí của Giọng Peto chỉ dành cho tài khoản Discord, Google (chủ web chọn ngày 2026-09-24): khách tạo mới
-# được vô hạn, nên chia lượt theo tài khoản khách thì một người rút cạn được cả tháng.
-MEMBERS = {"discord", "google"}
-GUEST_OFFICIAL = "Lượt Giọng Peto dành cho tài khoản Discord và Google. Bạn vẫn dùng được Máy nhà hoặc khóa của mình."
+# Lượt miễn phí của Giọng Peto dành cho tài khoản Discord, Google, GitHub (chủ web chọn ngày 2026-09-24, khi còn tài
+# khoản khách tạo mới vô hạn; đăng nhập khách bỏ ngày 2026-10-06).
+MEMBERS = {"discord", "google", "github"}
+GUEST_OFFICIAL = "Lượt Giọng Peto dành cho tài khoản đã đăng nhập. Bạn vẫn dùng được Máy nhà hoặc khóa của mình."
 RELAY_TEXT = re.compile(r"^[\w.\- ]{1,64}$")
 
 

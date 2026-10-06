@@ -168,7 +168,7 @@ async def test_other_accounts_get_no_files(tmp_path):
     cid, rows = await attach(tmp_path, "app.log", LOG.encode(), "text/plain")
     assert attachment_tools.AttachmentFiles(rows).schemas()
     # Lịch sử lọc theo chủ tài khoản ngay trong SQL: tài khoản khác không có dòng nào, nên không có tệp nào để tra.
-    assert attachment_tools.AttachmentFiles(await db.get_messages("guest:nguoi-khac", cid)).schemas() == []
+    assert attachment_tools.AttachmentFiles(await db.get_messages("github:nguoi-khac", cid)).schemas() == []
 
 
 async def test_real_provider_offers_the_tools_and_returns_results(monkeypatch, log_rows):

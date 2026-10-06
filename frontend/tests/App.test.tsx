@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { preloadLazyParts } from './lazyParts';
@@ -15,7 +15,7 @@ vi.mock('../src/shared/api/api', async (original) => ({
   getAuthState: vi.fn(), listConversations: vi.fn(), getMessages: vi.fn(),
   conversationVersions: vi.fn(), updateConversation: vi.fn(),
   sendMessage: vi.fn(), deleteConversation: vi.fn(), logout: vi.fn(),
-  listImagineJobs: vi.fn(), createImagineJob: vi.fn(), guestLogin: vi.fn(),
+  listImagineJobs: vi.fn(), createImagineJob: vi.fn(),
   getProfile: vi.fn(), saveProfile: vi.fn(),
   getAgentDevice: vi.fn(), answerAgentDevice: vi.fn(), listAgentDevices: vi.fn(), revokeAgentDevice: vi.fn(),
   confirmRoleplayAge: vi.fn(),
@@ -44,7 +44,7 @@ beforeEach(() => {
   sessionStorage.clear();
   window.history.replaceState(null, '', '/');
   vi.mocked(api.getAuthState).mockResolvedValue({ authenticated: true, login_configured: true,
-    providers: { discord: true, google: true, guest: true },
+    providers: { discord: true, google: true, github: true },
     user: { id: 'acc-111', provider: 'discord', username: 'demo', display_name: 'Demo', avatar_url: '' } });
   vi.mocked(api.listConversations).mockResolvedValue({ conversations: [conversation('A'), conversation('B')], has_more: false });
   vi.mocked(api.getMessages).mockResolvedValue([]);
@@ -870,22 +870,28 @@ describe('Màn hình đăng nhập', () => {
       login_configured: true, providers: providers as never });
   };
 
-  it('bày đủ ba cách đăng nhập', async () => {
-    chuaDangNhap({ discord: true, google: true, guest: true });
+  it('bày đủ ba cách đăng nhập, không còn lối vào khách', async () => {
+    chuaDangNhap({ discord: true, google: true, github: true });
     render(<App />);
     expect(await screen.findByRole('link', { name: /Đăng nhập bằng Discord/ })).toBeTruthy();
     expect(screen.getByText('Đăng nhập bằng cách khác')).toBeTruthy();
-    expect(screen.getByRole('link', { name: /Google/ })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /Khách/ })).toBeTruthy();
+    expect(screen.getByRole('link', { name: /Google/ }).getAttribute('href')).toBe('/api/auth/google/login');
+    expect(screen.getByRole('link', { name: /GitHub/ }).getAttribute('href')).toBe('/api/auth/github/login');
+    expect(screen.queryByRole('button', { name: /Khách/ })).toBeNull();
   });
 
-  it('ẩn nút Google khi chưa khai credential', async () => {
-    chuaDangNhap({ discord: true, google: false, guest: true });
+  it('ẩn nút Google, GitHub khi chưa khai credential', async () => {
+    chuaDangNhap({ discord: true, google: false, github: true });
     render(<App />);
     await screen.findByRole('link', { name: /Đăng nhập bằng Discord/ });
     expect(screen.queryByRole('link', { name: /Google/ })).toBeNull();
-    // Khách không cần cấu hình gì nên luôn còn.
-    expect(screen.getByRole('button', { name: /Khách/ })).toBeTruthy();
+    expect(screen.getByRole('link', { name: /GitHub/ })).toBeTruthy();
+    cleanup();
+    chuaDangNhap({ discord: true, google: false, github: false });
+    render(<App />);
+    await screen.findByRole('link', { name: /Đăng nhập bằng Discord/ });
+    // Không còn cách nào khác thì bỏ cả dòng "Đăng nhập bằng cách khác".
+    expect(screen.queryByText('Đăng nhập bằng cách khác')).toBeNull();
   });
 
   it('đăng xuất xong vẫn còn đủ các cách đăng nhập', async () => {
@@ -897,7 +903,7 @@ describe('Màn hình đăng nhập', () => {
 
     expect(await screen.findByRole('link', { name: /Đăng nhập bằng Discord/ })).toBeTruthy();
     expect(screen.getByRole('link', { name: /Google/ })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /Khách/ })).toBeTruthy();
+    expect(screen.getByRole('link', { name: /GitHub/ })).toBeTruthy();
     // Không gọi lại /api/auth/me: thông tin đã biết thì giữ lấy.
     expect(api.getAuthState).toHaveBeenCalledTimes(1);
   });
@@ -910,63 +916,22 @@ describe('Màn hình đăng nhập', () => {
     render(<App />);
     expect(await screen.findByText(/Chưa kết nối được dịch vụ đăng nhập/)).toBeTruthy();
     expect(screen.queryByRole('link', { name: /Đăng nhập bằng Discord/ })).toBeNull();
-    expect(screen.queryByRole('button', { name: /Khách/ })).toBeNull();
+    expect(screen.queryByRole('link', { name: /GitHub/ })).toBeNull();
   });
 
-  it('vào được với tư cách khách', async () => {
-    // Lần hỏi đầu là lúc mở trang (chưa đăng nhập); lần sau là ngay sau khi
-    // bấm Khách, nên phải trả trạng thái đã vào được.
-    vi.mocked(api.getAuthState)
-      .mockResolvedValueOnce({ authenticated: false, login_configured: true,
-        providers: { discord: true, google: true, guest: true } })
-      .mockResolvedValue({ authenticated: true, login_configured: true,
-        providers: { discord: true, google: true, guest: true },
-        user: { id: 'acc-khach', provider: 'guest', username: 'khach', display_name: 'Khách', avatar_url: '' } });
-    vi.mocked(api.guestLogin).mockResolvedValue(undefined);
+  it('tài khoản GitHub hiện tên đăng nhập và nơi đăng nhập', async () => {
+    vi.mocked(api.getAuthState).mockResolvedValue({ authenticated: true, login_configured: true,
+      providers: { discord: true, google: true, github: true },
+      user: { id: 'acc-gh', provider: 'github', username: 'pear-dev', display_name: 'Pear Dev', avatar_url: '' } });
     render(<App />);
-    fireEvent.click(await screen.findByRole('button', { name: /Khách/ }));
-    await waitFor(() => expect(api.guestLogin).toHaveBeenCalled());
     await screen.findByRole('button', { name: 'A', exact: true });
     // Không có ảnh đại diện thì rơi về chữ cái đầu, không phải <img src="">.
-    // Hiện ở cả ô tài khoản lẫn menu tài khoản.
-    fireEvent.click(screen.getByRole('button', { name: 'Tài khoản · Khách' }));
-    await screen.findByRole('menu', { name: 'Tài khoản' });
-    expect(screen.getAllByText('K')).toHaveLength(2);
-    expect(screen.getAllByText('Tài khoản khách')).toHaveLength(2);
+    expect(screen.getByText('@pear-dev · GitHub')).toBeTruthy();
     expect(document.querySelector('img.account-avatar')).toBeNull();
-  });
-
-  it('vào bằng khách rồi đăng xuất thì nút Khách dùng lại được', async () => {
-    // guestBusy từng chỉ được dọn trong nhánh catch. Vào được thì cờ ở nguyên
-    // true, và vì App không unmount, đăng xuất là nút kẹt "Đang vào…" mãi mãi.
-    vi.mocked(api.getAuthState)
-      .mockResolvedValueOnce({ authenticated: false, login_configured: true,
-        providers: { discord: true, google: true, guest: true } })
-      .mockResolvedValue({ authenticated: true, login_configured: true,
-        providers: { discord: true, google: true, guest: true },
-        user: { id: 'acc-khach', provider: 'guest', username: 'khach', display_name: 'Khách', avatar_url: '' } });
-    vi.mocked(api.guestLogin).mockResolvedValue(undefined);
-    vi.mocked(api.logout).mockResolvedValue(undefined);
-
-    render(<App />);
-    fireEvent.click(await screen.findByRole('button', { name: /Khách/ }));
-    await screen.findByRole('button', { name: 'A', exact: true });
-
-    await fromAccountMenu('Đăng xuất');
-    await screen.findByRole('link', { name: /Đăng nhập bằng Discord/ });
-
-    const nut = document.querySelector('.login-alts button') as HTMLButtonElement;
-    expect(nut.disabled).toBe(false);
-    expect(nut.textContent).toContain('Khách');
-    expect(screen.queryByText(/Đang vào/)).toBeNull();
-  });
-
-  it('báo lỗi khi không vào được bằng khách', async () => {
-    chuaDangNhap({ discord: true, google: true, guest: true });
-    vi.mocked(api.guestLogin).mockRejectedValue(new Error('Máy chủ đang bận'));
-    render(<App />);
-    fireEvent.click(await screen.findByRole('button', { name: /Khách/ }));
-    expect(await screen.findByRole('alert')).toHaveProperty('textContent', 'Máy chủ đang bận');
+    fireEvent.click(screen.getByRole('button', { name: 'Tài khoản · Pear Dev' }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: /Pear Dev/ }));
+    const dialog = within(screen.getByRole('dialog', { name: 'Cài đặt' }));
+    expect(dialog.getByText('@pear-dev · Đăng nhập bằng GitHub')).toBeTruthy();
   });
 });
 
@@ -1108,7 +1073,7 @@ describe('Menu tài khoản và hộp Cài đặt', () => {
 
   it('tài khoản Google ghi "Google" thay cho tên người dùng trùng tên hiển thị', async () => {
     vi.mocked(api.getAuthState).mockResolvedValue({ authenticated: true, login_configured: true,
-      providers: { discord: true, google: true, guest: true },
+      providers: { discord: true, google: true, github: true },
       user: { id: 'acc-222', provider: 'google', username: 'Demo', display_name: 'Demo', avatar_url: '' } });
     await openApp();
     expect(account().textContent).toContain('Google');
@@ -1154,19 +1119,6 @@ describe('Menu tài khoản và hộp Cài đặt', () => {
     fireEvent.click(dialog.getByRole('button', { name: 'Đóng cài đặt' }));
     expect(screen.queryByRole('dialog', { name: 'Cài đặt' })).toBeNull();
     await waitFor(() => expect(document.activeElement).toBe(account()));
-  });
-
-  it('khách được báo trước là đăng xuất rồi không vào lại được', async () => {
-    vi.mocked(api.getAuthState).mockResolvedValue({ authenticated: true, login_configured: true,
-      providers: { discord: true, google: true, guest: true },
-      user: { id: 'acc-khach', provider: 'guest', username: 'khach', display_name: 'Khách', avatar_url: '' } });
-    render(<App />);
-    await screen.findByRole('button', { name: 'A', exact: true });
-    fireEvent.click(screen.getByRole('button', { name: 'Tài khoản · Khách' }));
-    fireEvent.click(await screen.findByRole('menuitem', { name: /Khách/ }));
-    const dialog = within(screen.getByRole('dialog', { name: 'Cài đặt' }));
-    expect(dialog.getByRole('heading', { name: 'Tài khoản' })).toBeTruthy();
-    expect(dialog.getByText(/Khách không đăng nhập lại được/)).toBeTruthy();
   });
 });
 
@@ -1242,7 +1194,7 @@ describe('Lời chào theo giờ', () => {
 
   it('gọi bằng tên đặt trong Hồ sơ nếu có', async () => {
     vi.mocked(api.getAuthState).mockResolvedValue({ authenticated: true, login_configured: true,
-      providers: { discord: true, google: true, guest: true },
+      providers: { discord: true, google: true, github: true },
       user: { id: 'acc-111', provider: 'discord', username: 'demo', display_name: 'Demo', avatar_url: '', nickname: 'Bé Na' } });
     await openApp();
     expect(screen.getByRole('heading', { level: 1, name: 'Chào buổi tối, Bé Na' })).toBeTruthy();
@@ -1401,17 +1353,6 @@ describe('Chế độ nhập vai', () => {
     fireEvent.click(screen.getByRole('button', { name: 'B', exact: true }));
     await waitFor(() => expect(document.querySelector('.persona-chip')).toBeNull());
   });
-
-  it('tài khoản khách thấy mục nhập vai bị khóa', async () => {
-    vi.mocked(api.getAuthState).mockResolvedValue({ authenticated: true, login_configured: true,
-      providers: { discord: true, google: true, guest: true },
-      user: { id: 'guest-1', provider: 'guest', username: 'khach', display_name: 'Khách', avatar_url: '' } });
-    await openApp();
-    openPlusMenu();
-    const item = screen.getByRole('button', { name: /Chế độ nhập vai/ }) as HTMLButtonElement;
-    expect(item.disabled).toBe(true);
-    expect(item.textContent).toContain('Cần tài khoản Discord hoặc Google');
-  });
 });
 
 describe('Chọn model', () => {
@@ -1440,7 +1381,7 @@ describe('Chọn model', () => {
   ];
   const signIn = (models: api.ModelOption[], extra: Partial<api.AccountUser> = {}) =>
     vi.mocked(api.getAuthState).mockResolvedValue({ authenticated: true, login_configured: true,
-      providers: { discord: true, google: true, guest: true },
+      providers: { discord: true, google: true, github: true },
       user: { id: 'acc-111', provider: 'discord', username: 'demo', display_name: 'Demo', avatar_url: '', models, ...extra } });
   const send = async (text: string) => {
     fireEvent.change(screen.getByLabelText('Nhắn cho Peto'), { target: { value: text } });

@@ -152,8 +152,9 @@ async def test_the_owner_can_switch_memory_off_for_the_whole_site(client, monkey
     assert not [prompt for prompt in prompts if MEMORY_MARKER in prompt]
 
 
-async def test_guests_have_their_own_memory(anon_client):
-    await anon_client.post("/api/auth/guest")
+async def test_every_account_has_its_own_memory(anon_client):
+    from conftest import sign_in
+    await sign_in(anon_client)
     await send(anon_client, "I play the guitar every evening __nho__:Chơi guitar mỗi tối")
     assert [item["text"] for item in (await anon_client.get("/api/companion/memory")).json()["memories"]] == [
         "Chơi guitar mỗi tối"]

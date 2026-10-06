@@ -18,7 +18,7 @@ use the assistant core (`PERSONA_PROMPT`).
 
 Stack: FastAPI + SQLite (aiosqlite) backend, React 19 + Vite frontend, xAI Grok via the
 Responses API, plus OpenAI's GPT-6 models as a user-selectable option (see "Model choice"). Registration is **open**:
-Discord, Google, or guest — there is no allowlist.
+Discord, Google or GitHub — there is no allowlist.
 
 ## Language convention
 
@@ -150,10 +150,23 @@ server-side, calls `/users/@me` itself, and discards the Discord access token im
 (nothing stored, nothing sent to the client). The session is an `itsdangerous` signed
 cookie holding only the owner key.
 
-There are three ways in, all in `features/accounts/auth.py`: Discord OAuth, Google OAuth, and `POST
-/api/auth/guest`, which mints a `guest:<uuid>` owner with no external account behind it.
+There are three ways in, all in `features/accounts/auth.py`: Discord, Google and GitHub OAuth.
 `owner_key(provider, external_id)` builds every owner; `provider_from_owner` is what
 `session_owner` uses to reject a signed cookie carrying a malformed key.
+
+**Guest login was removed on 2026-10-06** (the owner's call): anyone could mint unlimited guest accounts and spend the
+web's AI quota, and a per-guest counter could be dodged by clearing cookies. GitHub login replaced the "Khách" button.
+- `guest` left `config.PROVIDERS`, so an old `guest:` cookie fails `session_owner` and the visitor is signed out. Agent
+  tokens of an owner that no longer parses are refused as expired (`device_auth`).
+- GitHub uses its own OAuth App (`GITHUB_LOGIN_CLIENT_ID/SECRET/REDIRECT_URI`), separate from the Kết nối GitHub App
+  (`PETO_GITHUB_*`). No scope is requested (public profile only). The owner is `github:<numeric id>`; `login` can change,
+  so it is only the username. GitHub reports a bad code with HTTP 200 and an `error` field, so the callback checks the
+  body. The token is revoked right after reading `/user` (best effort), and nothing is stored.
+- GitHub accounts have the same rights as Google: Luna, Agent CLI, roleplay after the 18+ confirmation, the Giọng Peto
+  allowance. Only the Discord gateway check differs, since only `discord:` owners have a Discord ID.
+- `ops/purge_guests.py` deletes old guest data: a dry run by default, `--yes` to delete. Every table with an `owner`
+  column, child rows through `ON DELETE CASCADE`, then upload and Imagine files inside `PETO_UPLOAD_DIR` (never outside).
+  Tests sign a second account in with `conftest.sign_in` (a fresh `github:` owner) instead of the old guest endpoint.
 
 The allowlist was **deliberately removed** — anyone who can reach the deployment can use
 it and spend the server's AI quota. That was the owner's explicit call after being shown
@@ -161,7 +174,7 @@ the cost; do not reintroduce a gate unless asked. `tests/test_auth.py` asserts
 `config.ALLOWED_DISCORD_IDS` no longer exists so a well-meaning revert gets caught.
 
 Only `discord:` owners carry a Discord ID, so `discord_id_from_owner` returns `""` for
-Google and guest accounts and `features/chat/prompt_context.py` skips the memory gateway entirely for them. That
+Google and GitHub accounts and `features/chat/prompt_context.py` skips the memory gateway entirely for them. That
 is what keeps open registration from exposing members' long-term memory.
 
 ### AI provider abstraction
@@ -183,7 +196,7 @@ else propagates and gets logged as an unexpected error behind a generic message.
 On 2026-09-17 the owner added OpenAI API billing and picked this design from mockups. `ai/models.py` holds the catalog
 and the access rules; the server checks them on every chat turn and agent step, never trusting the UI:
 
-- `peto` (Grok through the web's xAI account) for everyone; `luna` (`gpt-6-luna`) for Discord and Google accounts,
+- `peto` (Grok through the web's xAI account) for everyone; `luna` (`gpt-6-luna`) for every signed-in account,
   on the web and in the CLI; `terra` (`gpt-5.6-terra`, until a GPT-6 Terra exists) and `sol` (`gpt-6-sol`) only in the CLI and only for owners
   listed in `PETO_OWNER_ACCOUNTS` (`discord:<id>` or `google:<id>`, bare digits mean Discord). Without `OPENAI_API_KEY`
   only Peto is offered (503 if a turn asks for another model); under `PETO_AI_PROVIDER=mock` every model uses the mock.
@@ -843,7 +856,7 @@ default to `chat`. `conversations.persona` (`assistant` or `roleplay`) was added
 ### User profile (Settings → Hồ sơ)
 
 `features/accounts/profile.py` stores a self-written profile per owner in `user_profiles` — kept apart
-from `users`, which is overwritten from Discord/Google on every login: full name, what
+from `users`, which is overwritten from Discord/Google/GitHub on every login: full name, what
 Peto should call them, an occupation code from a fixed server-side list, and free-form
 instructions (1500 chars). `features.chat.prompt_context._build_system_prompt` re-reads it on **every** turn and
 appends `persona.build_profile_context` after the memory block, so an edit applies to the
@@ -869,7 +882,7 @@ scrollspy list, and grouped cards with coloured icons.
 
 - **Account row** (`.account`, bottom of the sidebar): a 24px avatar, the display name and one line under it
   (`accountSubtitle`). That line is `@username` for Discord, "Google" for Google accounts (their username is the display
-  name) and "Tài khoản khách" for guests. There is no gear: the row opens the menu, not Settings.
+  name) and `@login · GitHub` for GitHub. There is no gear: the row opens the menu, not Settings.
   - The first version left 26px above the name and 18px below it, and the owner found the bottom "taller". It is now
     tight like ChatGPT's: 6px between the list and the row (`.sidebar-section + .sidebar-foot`) and 6px under it.
   - The conversation list and the image library fade over their last 20px (with as much bottom padding), so a
@@ -915,16 +928,15 @@ scrollspy list, and grouped cards with coloured icons.
 A conversation's `persona` is `assistant` (default) or `roleplay`, chosen before its first message and stored on the
 row; the owner picked this design from mockups. `POST /api/chat` only honours `persona` when it creates the
 conversation. Later turns always use the stored value, so a history never mixes the two voices.
-`_check_roleplay_start` rejects roleplay for Companion (400), guest accounts (403) and accounts with no row in
-`roleplay_consents` (403). `POST /api/profile/roleplay-consent` records the self-declared 18+ confirmation (guests get
-403), and `/api/auth/me` returns `roleplay_confirmed` so the dialog only shows once.
+`_check_roleplay_start` rejects roleplay for Companion (400) and accounts with no row in
+`roleplay_consents` (403). `POST /api/profile/roleplay-consent` records the self-declared 18+ confirmation, and
+`/api/auth/me` returns `roleplay_confirmed` so the dialog only shows once.
 
 Roleplay turns use `persona.ROLEPLAY_SYSTEM_PROMPT`: the bot's persona blocks verbatim, plus the continuity and web
 platform rules shared with the assistant. They send `PETO_ROLEPLAY_MAX_HISTORY` (default 100) past messages instead of
 `PETO_MAX_HISTORY` (20), for long stories. Memory, profile and the agent guide are appended as usual.
 
-In the UI, `ComposerMenu.tsx` shows "Chế độ nhập vai" only while the conversation has not started (disabled for
-guests). `Composer.tsx` shows a "Nhập vai" chip whose × only exists before the first message, and the sidebar marks
+In the UI, `ComposerMenu.tsx` shows "Chế độ nhập vai" only while the conversation has not started. `Composer.tsx` shows a "Nhập vai" chip whose × only exists before the first message, and the sidebar marks
 roleplay conversations with "· Nhập vai". `App.tsx` holds `persona`: a new conversation or sign-out resets it, and
 opening a conversation takes it from the list.
 
@@ -1066,7 +1078,7 @@ listeners through the VPS in three hops:
 
 The queue and heartbeat live in process memory, so the backend must run as a **single** uvicorn
 process with a single relay. A restart drops waiting jobs, and a job claimed by a relay that dies
-waits out the 120 s timeout. Registration is open, so any signed-in account, guests included, can
+waits out the 120 s timeout. Registration is open, so any signed-in account can
 use the owner's GPU while the relay runs; stopping the relay stops sharing. Setup and operating
 limits are in `voice-worker/README.md`.
 
@@ -1075,9 +1087,9 @@ your own key"). Settings → Giọng nói shows the sources as cards in two grou
 Companion speaks with:
 
 - **Giọng Peto** (`official`): the voices in `speech_cloud.catalog()` (StepFun, plus OpenAI or Qwen Cloud when
-  enabled), called with the owner's keys. Each Discord or Google account gets `PETO_TTS_FREE_CHARS_MONTHLY` characters
-  (5000) a month, counted in `voice_usage` by `PETO_DEFAULT_TIMEZONE` month. Guests get 403: anyone can mint guest
-  accounts, so a per-guest allowance would have no limit. `db.take_voice_chars` checks and adds in one statement before
+  enabled), called with the owner's keys. Each Discord, Google or GitHub account gets `PETO_TTS_FREE_CHARS_MONTHLY`
+  characters (5000) a month, counted in `voice_usage` by `PETO_DEFAULT_TIMEZONE` month (`voice.MEMBERS`; guests got 403
+  until guest login was removed). `db.take_voice_chars` checks and adds in one statement before
   the call, a failed line gives its characters back, and `X-Peto-Voice-Used` returns the new total. A used-up
   allowance is a 429 with `X-Peto-Quota: exhausted`, which, like 502/503/504, lets `/speak` switch to the request's
   `fallback` voice. The shared USD ceiling (`PETO_TTS_MONTHLY_USD`, `speech_budget`) still applies on top.
@@ -1087,7 +1099,7 @@ Companion speaks with:
   and bill the user's own account. The browser calls the provider directly, except StepFun (it blocks browser calls,
   checked 2026-09-24) and Alibaba Cloud (Qwen answers with an audio URL the browser cannot fetch, and CosyVoice is a
   WebSocket that needs the key in a header). Those two go through `POST /api/voice/relay` with the key in
-  `X-Voice-Key`: used for that one call, never stored, logged or charged to the owner, and open to guests. Voice and
+  `X-Voice-Key`: used for that one call, never stored, logged or charged to the owner. Voice and
   model ids must match `[\w.\- ]{1,64}`, and the region must be a key of `QWEN_ENDPOINTS`. All audio becomes WAV PCM16
   (`audioBytesToWav`, `normalizeWav`) along the existing provider paths; lip sync also accepts other
   browser-decodable audio now, without changing those provider request formats.
@@ -1370,8 +1382,7 @@ is on by default.
   - `PUT /settings` turns memory on or off.
   - `DELETE /{id}` deletes one memory; another owner's id gives 404.
   - `DELETE` clears all memories.
-  - `PETO_COMPANION_MEMORY=false` turns the feature off for everyone (`PUT` then returns 503). Guests get their own
-    memory.
+  - `PETO_COMPANION_MEMORY=false` turns the feature off for everyone (`PUT` then returns 503).
 - **UI.**
   - `MemorySettings.tsx` has the switch, the list, delete-one, and "Xóa hết" with an inline confirmation. Changes are
     optimistic and roll back on error.
@@ -1550,7 +1561,8 @@ results in the next step. The server stores no conversation (`store=False`), and
   declared before `/device/{user_code}`. Pending codes live in RAM for 10 minutes, so this needs the single-process
   backend, like the voice relay. Only the token's SHA-256 is stored (`agent_devices`), and tokens unused for
   `PETO_AGENT_TOKEN_IDLE_DAYS` stop working. Settings → Peto Agent (`AgentSettings.tsx`) lists and revokes devices.
-- **Guest accounts cannot use the agent**, by the owner's call: `web_owner` and `device_auth` reject `guest:` owners.
+- **Every signed-in account can use the agent** (Discord, Google, GitHub). Guests could not until guest login was
+  removed; `device_auth` still refuses a token whose owner no longer parses.
 - **Daily step cap.** `PETO_AGENT_DAILY_STEPS`, counted in `agent_usage` by `DEFAULT_TIMEZONE` day, is a per-account
   quota the owner explicitly asked for, and only for the agent; chat stays unlimited. `take_agent_step` checks and
   increments in one statement, and a step that fails before the model produces anything is refunded. Agent steps use
@@ -2185,10 +2197,10 @@ Chat, Companion and roleplay turn (not the Agent CLI).
 - Registration is open by the owner's explicit decision. Do not add an allowlist, invite
   code, or per-account quota back unless asked for it. The owner asked for two per-account quotas: the Peto Agent
   daily step cap, kept scoped to the agent, and the monthly Giọng Peto allowance (`PETO_TTS_FREE_CHARS_MONTHLY`),
-  kept scoped to that voice source. The OpenAI model gates in `ai/models.py` (Luna for Discord/Google, Terra and Sol
+  kept scoped to that voice source. The OpenAI model gates in `ai/models.py` (Luna for signed-in accounts, Terra and Sol
   for `PETO_OWNER_ACCOUNTS`) are also the owner's call. These quotas and gates exist because those features spend the
   owner's API billing; Peto itself stays open to everyone.
-- Guest and Google accounts must never resolve to a Discord ID — that isolation is the
+- Google and GitHub accounts must never resolve to a Discord ID — that isolation is the
   only thing keeping the bot's memory private now that anyone can sign in.
 - Do not rename model slugs (`grok-4.7`, `grok-imagine-image-2.0`, `gpt-6-luna`, `gpt-5.6-terra`, `gpt-6-sol`), the `/api/imagine` path,
   or table names into branded equivalents — the API needs the real identifiers. Product

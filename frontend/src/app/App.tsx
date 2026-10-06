@@ -50,7 +50,6 @@ import {
   deleteConversation,
   getAppInfo,
   getAuthState,
-  guestLogin,
   getMessages,
   listConversations,
   updateConversation,
@@ -105,7 +104,6 @@ export default function App() {
   const [auth, setAuth] = useState<AuthState | null>(null);
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
-  const [guestBusy, setGuestBusy] = useState(false);
   // Liên kết do peto login in ra mang ?agent_code=; mã được giữ qua lúc đăng nhập chuyển hướng.
   const [agentCode, setAgentCode] = useState<string | null>(takeAgentCode);
   const [connectorResult] = useState<string | null>(takeConnectorResult);
@@ -528,23 +526,6 @@ export default function App() {
     });
   }
 
-  async function enterAsGuest() {
-    if (guestBusy) return;
-    setGuestBusy(true);
-    setAuthError(null);
-    try {
-      await guestLogin();
-      setAuth(await getAuthState());
-    } catch (error) {
-      setAuthError(error instanceof Error ? error.message : "Chưa vào được. Thử lại nhé.");
-    } finally {
-      // Phải dọn cả khi thành công. App không unmount lúc đăng nhập xong, nên
-      // đăng xuất là thẻ này quay lại — bỏ sót ở đây thì nút kẹt "Đang vào…"
-      // vĩnh viễn và không ai bấm được nữa.
-      setGuestBusy(false);
-    }
-  }
-
   // Cuộc trò chuyện còn trống thì lời chào và ô nhắn đứng chung giữa màn hình như
   // Claude; có tin nhắn là ô nhắn về đáy (CSS .chat.empty-state).
   const emptyChat = messages.length === 0 && !streaming && !loadingConversation && !loadFailed;
@@ -592,7 +573,7 @@ export default function App() {
   }
 
   if (!auth.authenticated) {
-    return <LoginScreen auth={auth} appInfo={appInfo} authError={authError} guestBusy={guestBusy} enterAsGuest={enterAsGuest} />;
+    return <LoginScreen auth={auth} appInfo={appInfo} authError={authError} />;
   }
 
   async function openConversation(id: string) {
@@ -1034,7 +1015,6 @@ export default function App() {
     setSettings({ open: true, section, page });
   }
 
-  const guestAccount = auth.user?.provider === "guest";
   const settingsLoading = (
     <div className="settings-loading"><LoadingIndicator label="Đang tải cài đặt" /></div>
   );
@@ -1082,7 +1062,7 @@ export default function App() {
             <ProfileSettings
               open={active}
               avatar={<AccountAvatar user={auth.user} size={36} />}
-              avatarNote={guestAccount ? undefined : `Theo tài khoản ${auth.user?.provider === "google" ? "Google" : "Discord"}`}
+              avatarNote={`Theo tài khoản ${{ google: "Google", github: "GitHub", discord: "Discord" }[auth.user?.provider ?? "discord"]}`}
               onUnauthorized={handleUnauthorized}
               onSaved={(profile) => setAuth((prev) => (prev?.user
                 ? { ...prev, user: { ...prev.user, nickname: profile.nickname } }
@@ -1107,9 +1087,7 @@ export default function App() {
             </SettingsRow>
             <SettingsRow
               label="Đăng xuất"
-              desc={guestAccount
-                ? "Khách không đăng nhập lại được: đăng xuất rồi thì không mở lại được các hội thoại này."
-                : "Thoát tài khoản trên trình duyệt này. Hội thoại vẫn còn khi bạn đăng nhập lại."}
+              desc="Thoát tài khoản trên trình duyệt này. Hội thoại vẫn còn khi bạn đăng nhập lại."
             >
               <button
                 type="button"
@@ -1128,7 +1106,7 @@ export default function App() {
       case "agent":
         return (
           <LazyBoundary><Suspense fallback={settingsLoading}>
-            <AgentSettings open={active} isGuest={guestAccount} onUnauthorized={handleUnauthorized} />
+            <AgentSettings open={active} onUnauthorized={handleUnauthorized} />
           </Suspense></LazyBoundary>
         );
       case "giong-noi":
@@ -1318,7 +1296,7 @@ export default function App() {
           persona={persona}
           roleplay={view === "chat" && !conversationId ? {
             active: persona === "roleplay",
-            unavailable: auth?.user?.provider === "guest" ? "Cần tài khoản Discord hoặc Google" : null,
+            unavailable: null,
             onToggle: toggleRoleplay,
           } : undefined}
           menuDisabled={streaming || view !== "chat"}
@@ -1363,7 +1341,7 @@ export default function App() {
       )}
       <SettingsDialog view={settings} onView={setSettings} onClose={closeSettings} render={renderSettings} />
       {characterPickerOpen && <LazyBoundary><Suspense fallback={null}><CharacterPicker library={characters} onClose={() => setCharacterPickerOpen(false)} /></Suspense></LazyBoundary>}
-      {agentCode && <AgentConnectDialog code={agentCode} isGuest={auth.user?.provider === "guest"}
+      {agentCode && <AgentConnectDialog code={agentCode}
         onClose={() => { forgetAgentCode(); setAgentCode(null); }} onUnauthorized={handleUnauthorized} />}
       {renameTarget && <TextEditDialog title="Đổi tên hội thoại" value={renameText} onChange={setRenameText} busy={metadataBusy} onClose={() => setRenameTarget(null)} onSave={() => void changeConversation(renameTarget, {title:renameText})}/>}
       {searchOpen && <HistorySearch onClose={() => setSearchOpen(false)} onUnauthorized={handleUnauthorized} onSelect={id => {setSearchOpen(false); go('chat'); void openConversation(id);}}/>}

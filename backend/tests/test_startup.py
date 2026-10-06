@@ -48,7 +48,9 @@ def test_server_starts_and_serves_chat_docs_and_installer(tmp_path):
                 assert health.json() == {'ok': True, 'provider': 'mock'}
                 assert client.get('/api/docs').status_code == 200
                 assert client.get('/install.ps1').status_code == 200
-                assert client.post('/api/auth/guest').status_code == 200
+                from features.accounts import auth
+                from core.config import SESSION_COOKIE
+                client.cookies.set(SESSION_COOKIE, auth._sign('github:khoi-dong'))
                 response = client.post('/api/chat', json={'message': 'Kiểm tra luồng chat'})
                 assert response.status_code == 200
                 assert response.headers['content-type'].startswith('text/event-stream')

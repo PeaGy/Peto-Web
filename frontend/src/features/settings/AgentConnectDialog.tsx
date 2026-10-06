@@ -33,7 +33,6 @@ export function forgetAgentCode(): void {
 }
 
 type State =
-  | { kind: "guest" }
   | { kind: "loading" }
   | { kind: "ready"; device: AgentDevicePending; sending: boolean }
   | { kind: "allowed"; name: string }
@@ -41,14 +40,13 @@ type State =
   | { kind: "error"; message: string };
 
 /** Hộp "Kết nối Peto Agent?" mở từ liên kết mà lệnh peto login in ra. */
-export default function AgentConnectDialog({ code, isGuest, onClose, onUnauthorized }: {
+export default function AgentConnectDialog({ code, onClose, onUnauthorized }: {
   code: string;
-  isGuest: boolean;
   onClose: () => void;
   onUnauthorized: () => void;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
-  const [state, setState] = useState<State>(isGuest ? { kind: "guest" } : { kind: "loading" });
+  const [state, setState] = useState<State>({ kind: "loading" });
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -57,10 +55,6 @@ export default function AgentConnectDialog({ code, isGuest, onClose, onUnauthori
   }, []);
 
   useEffect(() => {
-    if (isGuest) {
-      setState({ kind: "guest" });
-      return;
-    }
     const controller = new AbortController();
     setState({ kind: "loading" });
     getAgentDevice(code, controller.signal)
@@ -71,7 +65,7 @@ export default function AgentConnectDialog({ code, isGuest, onClose, onUnauthori
         setState({ kind: "error", message: err instanceof Error ? err.message : "Chưa kiểm tra được mã kết nối." });
       });
     return () => controller.abort();
-  }, [code, isGuest, onUnauthorized]);
+  }, [code, onUnauthorized]);
 
   async function answer(allow: boolean) {
     if (state.kind !== "ready" || state.sending) return;
@@ -93,10 +87,6 @@ export default function AgentConnectDialog({ code, isGuest, onClose, onUnauthori
   return <dialog ref={dialogRef} className="confirm-dialog agent-connect" aria-labelledby="agent-connect-title"
     onCancel={(event) => { event.preventDefault(); if (!sending) onClose(); }}>
     <h2 id="agent-connect-title">{title}</h2>
-    {state.kind === "guest" && <p>
-      Peto Agent chỉ dùng được với tài khoản Discord hoặc Google. Đăng xuất tài khoản khách rồi đăng nhập bằng Discord
-      hoặc Google để kết nối máy này.
-    </p>}
     {state.kind === "loading" && <p role="status">Đang kiểm tra mã kết nối…</p>}
     {state.kind === "ready" && <>
       <p>

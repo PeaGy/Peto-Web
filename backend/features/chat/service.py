@@ -36,7 +36,6 @@ from core.config import (
     ROLEPLAY_MAX_HISTORY,
     TURN_TIMEOUT_SECONDS,
     WEB_SEARCH_ENABLED,
-    provider_from_owner,
 )
 from core.rate_limit import AdmissionDenied, admission
 from shared.web_search import normalize_sources, spoken_reply
@@ -78,14 +77,10 @@ def _resolve_mode(requested: str) -> str:
 
 
 async def _check_roleplay_start(owner: str, mode: str) -> None:
-    """Chỉ mở hội thoại nhập vai (có thể có nội dung 18+) cho tài khoản Discord/Google đã xác nhận đủ 18 tuổi.
-
-    Kiểm ở máy chủ, không tin giao diện: tài khoản khách ai cũng tạo được nên không được bật.
-    """
+    """Chỉ mở hội thoại nhập vai (có thể có nội dung 18+) cho tài khoản đã xác nhận đủ 18 tuổi. Kiểm ở máy chủ, không
+    tin giao diện."""
     if mode != "chat":
         raise HTTPException(status_code=400, detail="Tab Companion không dùng chế độ nhập vai.")
-    if provider_from_owner(owner) == "guest":
-        raise HTTPException(status_code=403, detail="Chế độ nhập vai chỉ dùng được với tài khoản Discord hoặc Google.")
     if not await db.has_roleplay_consent(owner):
         raise HTTPException(status_code=403, detail="Bạn cần xác nhận đủ 18 tuổi trước khi bật chế độ nhập vai.")
 

@@ -15,11 +15,9 @@ export function lastUsedLabel(seconds: number, now = Date.now() / 1000): string 
 
 /**
  * Mục Peto Agent trong Cài đặt: số bước còn lại hôm nay và các máy đã kết nối, ngắt được từng máy.
- * Tài khoản khách không dùng được agent nên chỉ thấy lời giải thích và không gọi API.
  */
-export default function AgentSettings({ open, isGuest, onUnauthorized }: {
+export default function AgentSettings({ open, onUnauthorized }: {
   open: boolean;
-  isGuest: boolean;
   onUnauthorized: () => void;
 }) {
   const [data, setData] = useState<AgentDevices | null>(null);
@@ -42,13 +40,13 @@ export default function AgentSettings({ open, isGuest, onUnauthorized }: {
   }, [onUnauthorized]);
 
   useEffect(() => {
-    if (!open || isGuest) return;
+    if (!open) return;
     setError(null);
     void load();
     return () => {
       loadVersion.current += 1;
     };
-  }, [open, isGuest, load]);
+  }, [open, load]);
 
   async function revoke(deviceId: string) {
     setRevoking(deviceId);
@@ -63,8 +61,6 @@ export default function AgentSettings({ open, isGuest, onUnauthorized }: {
       setRevoking(null);
     }
   }
-
-  if (isGuest) return <p className="settings-intro">{INTRO} Tính năng này cần đăng nhập bằng Discord hoặc Google.</p>;
 
   const left = data ? Math.max(0, data.steps_limit - data.steps_used) : 0;
   return <>

@@ -25,7 +25,7 @@ beforeEach(() => {
 it('liệt kê máy, số bước còn lại và ngắt kết nối từng máy', async () => {
   vi.mocked(api.listAgentDevices).mockResolvedValue(devices);
   vi.mocked(api.revokeAgentDevice).mockResolvedValue();
-  render(<AgentSettings open isGuest={false} onUnauthorized={vi.fn()} />);
+  render(<AgentSettings open onUnauthorized={vi.fn()} />);
   expect(await screen.findByText('DESKTOP-BINH')).toBeTruthy();
   expect(screen.getByText('Còn 184/200')).toBeTruthy();
   expect(screen.getByText('Dùng 5 phút trước')).toBeTruthy();
@@ -38,22 +38,16 @@ it('liệt kê máy, số bước còn lại và ngắt kết nối từng máy'
 
 it('chưa có máy thì hướng dẫn chạy peto login; lỗi tải thì cho thử lại', async () => {
   vi.mocked(api.listAgentDevices).mockRejectedValueOnce(new Error('offline')).mockResolvedValue({ ...devices, devices: [] });
-  render(<AgentSettings open isGuest={false} onUnauthorized={vi.fn()} />);
+  render(<AgentSettings open onUnauthorized={vi.fn()} />);
   expect((await screen.findByRole('alert')).textContent).toContain('Chưa tải được danh sách máy');
   fireEvent.click(screen.getByRole('button', { name: 'Thử lại' }));
   expect((await screen.findByText(/Chưa có máy nào kết nối/)).textContent).toContain('chạy peto login.');
 });
 
-it('tài khoản khách chỉ thấy lời giải thích, không gọi API', () => {
-  render(<AgentSettings open isGuest onUnauthorized={vi.fn()} />);
-  expect(screen.getByText(/cần đăng nhập bằng Discord hoặc Google/)).toBeTruthy();
-  expect(api.listAgentDevices).not.toHaveBeenCalled();
-});
-
 it('phiên hết hạn thì về màn đăng nhập', async () => {
   vi.mocked(api.listAgentDevices).mockRejectedValue(new api.UnauthorizedError());
   const onUnauthorized = vi.fn();
-  render(<AgentSettings open isGuest={false} onUnauthorized={onUnauthorized} />);
+  render(<AgentSettings open onUnauthorized={onUnauthorized} />);
   await waitFor(() => expect(onUnauthorized).toHaveBeenCalledTimes(1));
 });
 

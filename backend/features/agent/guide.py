@@ -47,7 +47,7 @@ def build_agent_guide(*, install_command: str, daily_steps: int, question: str =
         'Web chỉ hướng dẫn, không chạy lệnh hoặc truy cập máy người dùng. Peto Agent là CLI chạy trong thư mục dự án. '
         'Chỉ nhắc khi liên quan. Không bịa lệnh hay tính năng không có trong tài liệu; hỏi phiên bản khi khác biệt. '
         'Lệnh / bên dưới dành cho Agent CLI, gõ ở khung chat web không thực thi chúng.',
-        'Cần Windows và Python 3.12 trở lên, tài khoản Discord/Google. Tài khoản khách không dùng được. '
+        'Cần Windows, Python 3.12 trở lên và tài khoản Peto (Discord, Google hoặc GitHub). '
         'Chưa có Python: `winget install -e --id Python.Python.3.14`.',
         f'Cài/cập nhật: mở PowerShell, chạy `{install}`; không cần quyền quản trị. '
         'Nếu là địa chỉ mẫu thì thay bằng HTTPS của trang đang dùng, đừng tự đoán tên miền. '

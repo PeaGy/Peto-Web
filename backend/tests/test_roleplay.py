@@ -53,11 +53,12 @@ async def test_roleplay_needs_a_real_account_and_an_adult_confirmation(client, a
     assert (await send(client, "chào", persona="roleplay", mode="companion")).status_code == 400
     assert (await send(client, "chào", persona="phan-dien")).status_code == 400
 
-    await anon_client.post("/api/auth/guest")
-    guest_consent = await anon_client.post("/api/profile/roleplay-consent")
-    assert guest_consent.status_code == 403 and "Discord hoặc Google" in guest_consent.json()["detail"]
-    guest_chat = await send(anon_client, "chào", persona="roleplay")
-    assert guest_chat.status_code == 403 and "Discord hoặc Google" in guest_chat.json()["detail"]
+    # Tài khoản GitHub cũng phải tự xác nhận đủ 18 tuổi trước, như Discord và Google.
+    from conftest import sign_in
+    await sign_in(anon_client)
+    assert (await send(anon_client, "chào", persona="roleplay")).status_code == 403
+    assert (await anon_client.post("/api/profile/roleplay-consent")).status_code == 200
+    assert (await send(anon_client, "chào", persona="roleplay")).status_code == 200
 
 
 async def test_roleplay_conversation_keeps_its_persona_and_a_longer_history(client, monkeypatch):

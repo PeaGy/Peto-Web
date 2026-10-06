@@ -91,7 +91,7 @@ beforeEach(() => {
   microphone.stops = 0;
   window.history.replaceState(null, '', '/');
   vi.mocked(api.getAuthState).mockResolvedValue({ authenticated: true, login_configured: true,
-    providers: { discord: true, google: true, guest: true },
+    providers: { discord: true, google: true, github: true },
     user: { id: 'acc-111', provider: 'discord', username: 'demo', display_name: 'Demo', avatar_url: '' } });
   vi.mocked(api.listConversations).mockResolvedValue({ conversations: [], has_more: false });
   vi.mocked(api.getMessages).mockResolvedValue([]);

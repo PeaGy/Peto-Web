@@ -39,14 +39,14 @@ async def used(client) -> int:
     return (await client.get('/api/voice/health')).json()['official']['used']
 
 
-async def test_health_reports_the_official_allowance_to_members_only(client, anon_client):
+async def test_health_reports_the_official_allowance(client, anon_client):
     data = (await client.get('/api/voice/health')).json()
     assert data['official'] == {'voices': [f'openai:{name}' for name in cloud.OPENAI_VOICES], 'allowed': True,
                                 'used': 0, 'limit': voice.VOICE_FREE_CHARS_MONTHLY, 'resets': '2026-10-01'}
     assert data['home'] == {'online': False, 'voices': voice.VOICES}
-    await anon_client.post('/api/auth/guest')
-    guest = (await anon_client.get('/api/voice/health')).json()['official']
-    assert guest['allowed'] is False and guest['used'] == 0
+    from conftest import sign_in
+    await sign_in(anon_client)
+    assert (await anon_client.get('/api/voice/health')).json()['official']['allowed'] is True
 
 
 async def test_official_voice_spends_the_monthly_allowance_then_stops(client, monkeypatch):
@@ -82,14 +82,13 @@ async def test_an_exhausted_allowance_falls_back_to_the_home_voice(client, monke
     assert await used(client) == 0
 
 
-async def test_guests_cannot_spend_the_owner_voice(anon_client, monkeypatch):
+async def test_signed_out_visitors_cannot_spend_the_owner_voice(anon_client, monkeypatch):
     def forbidden(request):
-        raise AssertionError('khách không được gọi tới nhà cung cấp bằng khóa của chủ web')
+        raise AssertionError('chưa đăng nhập thì không được gọi tới nhà cung cấp bằng khóa của chủ web')
 
     upstream(monkeypatch, forbidden)
-    await anon_client.post('/api/auth/guest')
     response = await anon_client.post('/api/voice/speak', json={'text': 'Hello', 'voice': 'openai:nova'})
-    assert response.status_code == 403 and 'Discord và Google' in response.json()['detail']
+    assert response.status_code == 401
 
 
 async def test_relay_forwards_the_user_key_and_spends_nothing_of_the_owner(client, monkeypatch):
@@ -151,10 +150,11 @@ async def test_qwen_relay_fetches_the_audio_file_on_the_server(client, monkeypat
     assert response.status_code == 200 and response.content == WAV
 
 
-async def test_guests_can_relay_with_their_own_key(anon_client, monkeypatch):
+async def test_github_accounts_relay_with_their_own_key(anon_client, monkeypatch):
+    from conftest import sign_in
     upstream(monkeypatch, lambda request: httpx.Response(200, content=WAV))
-    await anon_client.post('/api/auth/guest')
-    response = await anon_client.post('/api/voice/relay', headers={'X-Voice-Key': 'guest-own-key'},
+    await sign_in(anon_client)
+    response = await anon_client.post('/api/voice/relay', headers={'X-Voice-Key': 'user-own-key'},
                                       json={'provider': 'stepfun', 'text': 'Hello', 'voice': 'jilingshaonv'})
     assert response.status_code == 200
 

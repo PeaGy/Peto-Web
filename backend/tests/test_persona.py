@@ -30,7 +30,7 @@ def test_agent_guide_teaches_the_given_install_command():
     command = "irm https://peto.example/install.ps1 | iex"
     guide = persona.build_agent_guide(install_command=command, daily_steps=150)
     assert f"`{command}`" in guide
-    for marker in ("150 bước mỗi ngày", "peto login", "Python 3.12", "Tài khoản khách không dùng được",
+    for marker in ("150 bước mỗi ngày", "peto login", "Python 3.12", "Discord, Google hoặc GitHub",
                    "hỏi trước khi sửa tệp", "peto logout", "/resume", "/effort", "nhân đôi",
                    "is not recognized", "/usage", "gõ `/` là hiện danh sách lệnh", "tự nhắc khi máy chủ có bản mới",
                    "Alt+V", "kéo tệp ảnh thả vào", "`/model`"):

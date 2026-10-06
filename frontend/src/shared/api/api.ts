@@ -148,7 +148,7 @@ interface ChatHandlers {
   onDone?: () => void;
 }
 
-export type AuthProvider = "discord" | "google" | "guest";
+export type AuthProvider = "discord" | "google" | "github";
 
 export interface AccountUser {
   /** Mã băm ổn định do server sinh. KHÔNG phải khóa owner. */
@@ -208,11 +208,7 @@ export async function logout(): Promise<void> {
 
 export const DISCORD_LOGIN_URL = "/api/auth/discord/login";
 export const GOOGLE_LOGIN_URL = "/api/auth/google/login";
-
-/** Vào thẳng, không qua nhà cung cấp nào. Server tự tạo owner mới mỗi lần. */
-export async function guestLogin(): Promise<void> {
-  await json(await fetch("/api/auth/guest", { method: "POST" }));
-}
+export const GITHUB_LOGIN_URL = "/api/auth/github/login";
 
 /** Hồ sơ người dùng tự điền trong Cài đặt. Máy chủ ghép nó vào mọi lượt chat. */
 export interface Profile {
@@ -242,7 +238,7 @@ export async function saveProfile(profile: Profile): Promise<Profile> {
   return (await json<{ profile: Profile }>(response)).profile;
 }
 
-/** Lưu xác nhận đủ 18 tuổi cho tài khoản, để bật được chế độ nhập vai. Tài khoản khách bị từ chối. */
+/** Lưu xác nhận đủ 18 tuổi cho tài khoản, để bật được chế độ nhập vai. */
 export async function confirmRoleplayAge(): Promise<void> {
   await json(await fetch("/api/profile/roleplay-consent", { method: "POST" }));
 }

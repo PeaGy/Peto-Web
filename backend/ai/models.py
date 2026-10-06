@@ -2,7 +2,7 @@
 
 Chủ web chốt:
 - Web có Peto và 6 Luna (nút chọn model cạnh nút Gửi). Peto Agent có thêm 5.6 Terra và 6 Sol (lệnh /model).
-- 6 Luna dùng được với tài khoản Discord/Google, tài khoản khách chỉ dùng Peto. 5.6 Terra và 6 Sol chỉ dành cho
+- 6 Luna dùng được với mọi tài khoản đã đăng nhập (Discord, Google, GitHub). 5.6 Terra và 6 Sol chỉ dành cho
   tài khoản của chủ web, khai trong ``PETO_OWNER_ACCOUNTS``. Terra giữ slug 5.6 cho đến khi OpenAI có bản GPT-6.
 - Trong Peto Agent, bước tính theo giá: Luna 1, Terra 2, Sol 4, nhân với mức suy nghĩ (mức cao tính gấp đôi).
 
@@ -66,8 +66,8 @@ def _refusal(owner: str, model: Model) -> ModelUnavailable | None:
         return None
     if not openai_ready():
         return ModelUnavailable(503, f"Máy chủ Peto chưa bật {model.label}. Chọn Peto để tiếp tục nhé.")
-    if config.provider_from_owner(owner) not in {"discord", "google"}:
-        return ModelUnavailable(403, f"{model.label} chỉ dùng được với tài khoản Discord hoặc Google.")
+    if not config.provider_from_owner(owner):
+        return ModelUnavailable(403, f"{model.label} chỉ dùng được với tài khoản đã đăng nhập.")
     if model.owner_only and owner not in config.OWNER_ACCOUNTS:
         return ModelUnavailable(403, f"{model.label} chỉ dành cho chủ web.")
     return None

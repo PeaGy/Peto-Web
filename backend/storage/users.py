@@ -15,7 +15,7 @@ async def upsert_user(
     avatar_url: str,
     discord_id: str | None = None,
 ) -> None:
-    """Ghi hồ sơ đăng nhập. ``discord_id`` để None với Google và khách."""
+    """Ghi hồ sơ đăng nhập. ``discord_id`` để None với Google và GitHub."""
     now = time.time()
     async with db_connection.connect() as db:
         await db.execute(

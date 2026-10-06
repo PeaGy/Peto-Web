@@ -186,7 +186,7 @@ async def test_sources_stream_save_reload_and_stay_private(client, monkeypatch):
     saved = (await client.get(path)).json()["messages"][-1]
     assert saved["sources"] == [SOURCE] and saved["content"] == "Theo tài liệu Python."
     assert "searching" not in saved["content"]
-    client.cookies.set(SESSION_COOKIE, auth._sign("guest:nguoi-khac"))
+    client.cookies.set(SESSION_COOKIE, auth._sign("github:nguoi-khac"))
     assert (await client.get(path)).status_code == 404
 
 

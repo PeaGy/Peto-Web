@@ -161,22 +161,13 @@ async def test_denied_expired_unknown_and_crowded_codes(client, anon_client, mon
     assert (await anon_client.post("/api/agent/device/start", json={"name": "D"})).status_code == 429
 
 
-async def test_guest_accounts_cannot_use_agent(anon_client, client):
-    guest = await login_as(anon_client, "guest")
-    started = (await client.post("/api/agent/device/start", json={"name": "Máy khách"})).json()
-    for response in (
-        await anon_client.get(f"/api/agent/device/{started['user_code']}"),
-        await anon_client.post(f"/api/agent/device/{started['user_code']}", json={"allow": True}),
-        await anon_client.get("/api/agent/devices"),
-    ):
-        assert response.status_code == 403
-        assert response.json()["detail"] == agent_api.GUEST_MESSAGE
-
-    # Phòng hờ: mã được duyệt cho khách hay token cũ của khách đều không dùng được.
-    agent_api.pending_codes[started["device_code"]].update(status="approved", owner=guest)
-    assert (await client.post("/api/agent/device/token", json={"device_code": started["device_code"]})).status_code == 403
-    await db.create_agent_device(owner=guest, name="cũ", token_hash=agent_api._hash("peto_token_cua_khach"))
-    assert (await client.get("/api/agent/me", headers=bearer("peto_token_cua_khach"))).status_code == 403
+async def test_github_accounts_use_the_agent_and_old_guest_tokens_do_not(anon_client, client):
+    await login_as(anon_client, "github")
+    token = await connect(client, anon_client, "Máy GitHub")
+    assert (await client.get("/api/agent/me", headers=bearer(token))).status_code == 200
+    # Đăng nhập khách đã bỏ: token cũ còn sót trong database cũng không dùng được.
+    await db.create_agent_device(owner="guest:" + "a" * 32, name="cũ", token_hash=agent_api._hash("peto_token_cua_khach"))
+    assert (await client.get("/api/agent/me", headers=bearer("peto_token_cua_khach"))).status_code == 401
 
 
 async def test_bearer_token_rejections(client, anon_client, monkeypatch):

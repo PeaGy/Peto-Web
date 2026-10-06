@@ -9,7 +9,7 @@ Giao diện chat riêng cho Peto, trợ lý AI trả lời trung thực và đi 
 - **Tạo ảnh:** tạo và sửa ảnh, thư viện ảnh.
 - **Companion:** nhân vật Live2D/VRM, giọng nói, nghe bằng micro, trí nhớ.
 - **Peto Agent:** CLI chạy trên máy bạn, làm việc với thư mục dự án.
-- **Đăng nhập:** Discord, Google hoặc khách. Đăng ký mở cho mọi người.
+- **Đăng nhập:** Discord, Google hoặc GitHub. Đăng ký mở cho mọi người (đăng nhập khách đã bỏ ngày 6/10/2026).
 
 Hướng dẫn dùng nằm ở `/docs/` trên site.
 
@@ -46,6 +46,8 @@ Mọi biến môi trường được khai báo và giải thích trong [.env.exa
 - **Discord:** tạo application ở https://discord.com/developers/applications, lấy Client ID và Secret, thêm redirect
   `http://localhost:5173/api/auth/discord/callback`.
 - **Google (tùy chọn):** OAuth client loại Web application; thiếu khóa thì nút Google tự ẩn.
+- **GitHub (tùy chọn):** một OAuth App riêng (GitHub → Settings → Developer settings → OAuth Apps), callback
+  `http://localhost:5173/api/auth/github/callback`; khai `GITHUB_LOGIN_CLIENT_ID` và `GITHUB_LOGIN_CLIENT_SECRET`.
 - **Session:** `python -c "import secrets; print(secrets.token_urlsafe(32))"` cho `PETO_SESSION_SECRET`.
 
 ## Kiểm thử

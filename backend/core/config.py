@@ -65,7 +65,7 @@ def parse_owner_accounts(raw: str) -> frozenset[str]:
 
 
 # Tài khoản của chủ web, được dùng 5.6 Terra và 6 Sol trong Peto Agent. Ngăn cách bằng dấu phẩy, dạng
-# discord:<Discord ID> hoặc google:<mã Google>.
+# discord:<Discord ID>, google:<mã Google> hoặc github:<mã số GitHub>.
 OWNER_ACCOUNTS = parse_owner_accounts(os.getenv("PETO_OWNER_ACCOUNTS", ""))
 
 # --- Đăng nhập Discord ---------------------------------------------------
@@ -82,6 +82,16 @@ GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "").strip()
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "").strip()
 GOOGLE_REDIRECT_URI = os.getenv(
     "GOOGLE_REDIRECT_URI", "http://localhost:5173/api/auth/google/callback"
+).strip()
+
+# --- Đăng nhập GitHub ----------------------------------------------------
+# Một GitHub OAuth App riêng cho đăng nhập (GitHub → Settings → Developer settings → OAuth Apps), tách khỏi GitHub
+# App của mục Kết nối (PETO_GITHUB_*): đăng nhập chỉ đọc hồ sơ công khai, không đụng quyền đọc repo. Thiếu một trong
+# hai giá trị thì nút GitHub tự ẩn.
+GITHUB_LOGIN_CLIENT_ID = os.getenv("GITHUB_LOGIN_CLIENT_ID", "").strip()
+GITHUB_LOGIN_CLIENT_SECRET = os.getenv("GITHUB_LOGIN_CLIENT_SECRET", "").strip()
+GITHUB_LOGIN_REDIRECT_URI = os.getenv(
+    "GITHUB_LOGIN_REDIRECT_URI", "http://localhost:5173/api/auth/github/callback"
 ).strip()
 
 # Nơi đưa người dùng về sau khi đăng nhập xong.
@@ -101,8 +111,10 @@ SESSION_COOKIE_SECURE = os.getenv("PETO_COOKIE_SECURE", "").strip().lower() in {
     "1", "true", "yes",
 }
 
-# Ba cách đăng nhập. KHÔNG còn allowlist — đăng ký mở, ai vào cũng được.
-PROVIDERS = ("discord", "google", "guest")
+# Ba cách đăng nhập. KHÔNG còn allowlist — đăng ký mở, ai vào cũng được. Đăng nhập khách bỏ ngày 6/10/2026 (ai cũng
+# tạo vô hạn tài khoản khách và tiêu hạn mức AI của web): khóa "guest:…" cũ không còn hợp lệ, cookie khách bị đăng xuất,
+# và dữ liệu của chúng được dọn bằng ops.purge_guests.
+PROVIDERS = ("discord", "google", "github")
 
 
 def owner_key(provider: str, external_id: str) -> str:
@@ -125,7 +137,7 @@ def provider_from_owner(owner: str) -> str:
 def discord_id_from_owner(owner: str) -> str:
     """Lấy lại Discord ID từ khóa owner. Trả về "" nếu không phải owner Discord.
 
-    Cổng trí nhớ của bot dựa vào đây, nên khách và người dùng Google không bao
+    Cổng trí nhớ của bot dựa vào đây, nên người dùng Google và GitHub không bao
     giờ chạm được tới trí nhớ của ai.
     """
     prefix = "discord:"
@@ -204,8 +216,8 @@ MAX_IMAGINE_N = _env_int("PETO_MAX_IMAGINE_N", 4, 1, 10)
 MAX_IMAGINE_SOURCE_BYTES = _env_int("PETO_MAX_IMAGINE_SOURCE_BYTES", 8 * 1024 * 1024, 1024, 20 * 1024 * 1024)
 
 # --- Giọng nói Companion ---------------------------------------------------
-# Nguồn chính thức ("Giọng Peto") chạy bằng khóa của chủ web, nên mỗi tài khoản Discord, Google có một lượt ký tự miễn
-# phí mỗi tháng (giờ PETO_DEFAULT_TIMEZONE); khách không có lượt này (chủ web chọn ngày 2026-09-24). Trần chi phí chung
+# Nguồn chính thức ("Giọng Peto") chạy bằng khóa của chủ web, nên mỗi tài khoản Discord, Google, GitHub có một lượt ký tự
+# miễn phí mỗi tháng (giờ PETO_DEFAULT_TIMEZONE; chủ web chọn ngày 2026-09-24). Trần chi phí chung
 # của mọi nguồn vẫn là PETO_TTS_MONTHLY_USD trong speech_cloud.py.
 VOICE_FREE_CHARS_MONTHLY = _env_int("PETO_TTS_FREE_CHARS_MONTHLY", 5000, 0, 1_000_000)
 

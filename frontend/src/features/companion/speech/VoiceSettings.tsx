@@ -275,7 +275,7 @@ function OfficialDetail({ voice }: { voice: LocalVoice }) {
   if (!official.allowed) {
     return (
       <p className="voice-line">
-        Lượt miễn phí dành cho tài khoản Discord và Google. Khách vẫn dùng được Local Voice của Peto hoặc khóa của mình.
+        Lượt miễn phí chưa mở cho tài khoản này. Bạn vẫn dùng được Local Voice của Peto hoặc khóa của mình.
       </p>
     );
   }
