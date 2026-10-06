@@ -72,13 +72,22 @@ test('khám phá GitHub và quay về đúng trang sau cấp quyền', async ({ 
 test('tiến trình GitHub gọn và mở được chi tiết tệp chưa đọc trên PC/mobile', async ({ page }, testInfo) => {
   await setup(page);
   const issue = 'Không tìm thấy “src/old-module/very-long-file-name.ts” trong nguoi-test/Peto ở nhánh mặc định. Thư mục gốc vẫn đọc được.';
+  // Nhật ký "Đang làm" do máy chủ dựng (work_log.py): các lần đọc GitHub liền nhau gộp thành một bước.
   await page.route('**/api/chat', route => {
-    const events: object[] = [{type: 'meta', conversation_id: 'github-test', effort: 'low'}];
+    const think = {id: 's1', kind: 'think', label: 'Đã suy nghĩ', state: 'done', start: 0, end: 1800};
+    const github = (read: number, failed: number, live: boolean) => ({
+      id: 's2', kind: 'github', state: live ? 'live' : 'done', start: 1800, ...(live ? {} : {end: 9200}),
+      label: `${live ? 'Đang đọc' : 'Đọc'} GitHub · ${read} mục đã đọc${failed ? ` · ${failed} mục chưa đọc được` : ''}`,
+      ...(failed ? {problems: [issue]} : {}),
+    });
+    const events: object[] = [{type: 'meta', conversation_id: 'github-test', effort: 'low'}, {type: 'step', step: think}];
     for (let i = 0; i < 12; i++) {
       events.push({type: 'connector_lookup', text: 'Đang đọc GitHub…', live: true},
-        {type: 'connector_lookup', text: i === 4 ? issue : 'Đã đọc GitHub', live: false});
+        {type: 'connector_lookup', text: i === 4 ? issue : 'Đã đọc GitHub', live: false},
+        {type: 'step', step: github(i < 4 ? i + 1 : i, i < 4 ? 0 : 1, i < 11)});
     }
-    events.push({type: 'delta', text: 'Đã khảo sát các tệp đọc được.'}, {type: 'done'});
+    events.push({type: 'delta', text: 'Đã khảo sát các tệp đọc được.'},
+      {type: 'work', work: {ms: 9800, complete: true, steps: [think, github(11, 1, false)]}}, {type: 'done'});
     return route.fulfill({contentType: 'text/event-stream', body: events.map(event => `data: ${JSON.stringify(event)}\n\n`).join('')});
   });
   await page.goto('/');
@@ -86,8 +95,8 @@ test('tiến trình GitHub gọn và mở được chi tiết tệp chưa đọc
   await page.getByRole('button', {name: 'Gửi', exact: true}).click();
   await expect(page.getByText('Đã khảo sát các tệp đọc được.')).toBeVisible();
   await page.getByRole('button', {name: /Đã làm trong \d+ giây/}).click();
-  await expect(page.getByText('GitHub · 11 mục đã đọc · 1 mục chưa đọc được')).toBeVisible();
-  await expect(page.locator('.work-steps > li')).toHaveCount(3);
+  await expect(page.getByText('Đọc GitHub · 11 mục đã đọc · 1 mục chưa đọc được')).toBeVisible();
+  await expect(page.locator('.work-timeline > li')).toHaveCount(2);
   await expect(page.getByText(issue)).not.toBeVisible();
   await page.getByText('Xem mục chưa đọc được', {exact: true}).click();
   await expect(page.getByText(issue)).toBeVisible();
