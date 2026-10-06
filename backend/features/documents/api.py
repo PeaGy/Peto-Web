@@ -25,7 +25,7 @@ router = APIRouter(prefix='/api/documents', tags=['documents'])
 class Draft(BaseModel):
     title: str = Field(min_length=1, max_length=120)
     content: str = Field(min_length=1, max_length=MAX_CONTENT)
-    style: Literal['report', 'essay'] = 'report'
+    style: Literal['classic', 'band', 'minimal', 'essay', 'report'] = 'classic'
 
 
 class NewDocument(Draft):

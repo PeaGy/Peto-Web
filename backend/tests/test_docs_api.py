@@ -55,6 +55,8 @@ def _attached(question):
     ('sửa bảng tính Peto đã tạo được không', 'lam-bang-tinh'),
     ('Peto đọc file Excel được không', 'lam-bang-tinh'),
     ('xuất sơ đồ ra PDF được không', 'tro-chuyen'),
+    ('file Word Peto tạo có trang bìa không', 'tro-chuyen'),
+    ('đổi kiểu trình bày báo cáo sang Dải màu', 'tro-chuyen'),
     ('vẽ tranh con mèo giúp mình', 'tao-anh'),
     ('Cài Peto Agent thế nào?', 'cai-agent'),
     ('dùng lệnh /mcp sao vậy', 'mcp'),
@@ -81,6 +83,8 @@ def test_context_finds_the_article_by_title_or_keyword(question, slug):
     'Vẽ sơ đồ lớp cho hệ thống quản lý thư viện',
     'Kỹ năng thuyết trình trước đám đông',
     'Hàm VLOOKUP trong Excel dùng thế nào',
+    # Nhờ viết báo cáo là dùng tính năng; lời dặn tạo tài liệu đã có trong prompt.
+    'Viết báo cáo thực tập tại công ty du lịch',
     # "Đăng nhập" là ví dụ kinh điển của bài tập UML và lập trình, không phải câu hỏi về tài khoản Peto.
     'vẽ sơ đồ tuần tự đăng nhập',
     'vẽ use case đăng nhập và đăng ký',

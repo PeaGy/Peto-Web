@@ -33,6 +33,14 @@ describe('trạng thái đọc tài liệu', () => {
     draw({status: 'ready', notice: 'Đã đọc 2 trang tính, 14 hàng có dữ liệu.', characters: 900, sheets: 2, sheets_read: 2, rows: 14});
     expect(screen.getByText('Đã đọc chữ · 2 trang tính')).toBeTruthy();
   });
+  it('Word đếm công thức đã đọc và công thức MathType chưa đọc', () => {
+    draw({status: 'ready', notice: 'Đã đọc phần thân văn bản, bảng biểu và 12 công thức trong Word.', characters: 900, formulas: 12});
+    expect(screen.getByText('Đã đọc chữ · 12 công thức')).toBeTruthy();
+  });
+  it('Word có công thức MathType thì ghi đọc được một phần', () => {
+    draw({status: 'partial', notice: 'Có 3 công thức MathType Peto không đọc được.', characters: 900, formulas: 2, formulas_unread: 3});
+    expect(screen.getByText('Đọc được một phần · 2 công thức · 3 công thức MathType chưa đọc')).toBeTruthy();
+  });
   it('bảng tính quá lớn chỉ đọc một phần thì ghi rõ', () => {
     draw({status: 'partial', notice: 'Bảng tính quá lớn: 3 trang tính sau chưa đọc.', characters: 9000, sheets: 33, sheets_read: 30, rows: 900});
     expect(screen.getByText('Đọc được một phần · 30/33 trang tính')).toBeTruthy();

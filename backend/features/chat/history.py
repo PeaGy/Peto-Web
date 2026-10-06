@@ -109,8 +109,10 @@ def _to_chat_messages(rows: list[dict]) -> list[ChatMessage]:
             notice = document["notice"]
             if len(excerpt) < len(text):
                 notice += " Chỉ một phần hoặc không có nội dung tệp trong ngữ cảnh lượt này do tổng tài liệu quá dài. Nói rõ nếu thiếu phần cần hỏi."
-            if (item.get("path") or item.get("searchable")) and (document.get("status") == "partial"
-                                                               or len(excerpt) < len(text)):
+            # Word "đọc được một phần" chỉ vì có công thức MathType không bị cắt chữ (truncated False): tìm trong tệp
+            # cũng không ra thêm gì, nên không nhắc công cụ tìm.
+            cut = document.get("status") == "partial" and document.get("truncated", True)
+            if (item.get("path") or item.get("searchable")) and (cut or len(excerpt) < len(text)):
                 # Tệp đã lưu trên máy chủ: Peto tra được phần còn lại (attachment_tools). Tệp Peto tự tạo thì không.
                 notice += (f' Phần không có ở đây: tìm bằng search_attachment, đọc nguyên văn bằng read_attachment_lines '
                            f'(file="{item["filename"]}"). "[Dòng a–b]" là số dòng thật của tệp.')

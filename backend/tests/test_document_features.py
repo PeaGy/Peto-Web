@@ -139,10 +139,11 @@ def test_contents_marker_builds_word_field_and_pdf_page_numbers():
     pdf = PdfReader(BytesIO(data))
     # pdfium đọc chữ theo đúng thứ tự trên trang; pypdf đọc dòng chấm dẫn trước tên mục.
     first = pdfium.PdfDocument(data)[0].get_textpage().get_text_range()
-    assert 'Mở đầu ngắn.' in first and 'Mục lục' in first
+    # Kiểu Khung đôi in hoa "MỤC LỤC" và đề mục cấp 1 trong bản PDF.
+    assert 'Mở đầu ngắn.' in first and 'mục lục' in first.casefold()
     for entry in ['Phần một', 'Chi tiết', 'Phần hai']:
-        assert re.search(entry + r'[ .]*2\b', first), first
-        assert entry in pdf.pages[1].extract_text()
+        assert re.search(entry.casefold() + r'[ .]*2\b', first.casefold()), first
+        assert entry.casefold() in pdf.pages[1].extract_text().casefold()
 
     def titles_of(outline):
         return [titles_of(item) if isinstance(item, list) else item.title for item in outline]
@@ -159,10 +160,11 @@ def test_contents_marker_needs_headings_and_is_literal_elsewhere():
 
 
 def test_word_styles_use_the_chosen_fonts_instead_of_theme_fonts():
-    for layout, font in [('essay', 'Times New Roman'), ('report', 'Arial')]:
+    # Mọi kiểu (và "report" cũ, dựng như Khung đôi) đều Times New Roman như các trường yêu cầu.
+    for layout, font in [(name, 'Times New Roman') for name in ('classic', 'band', 'minimal', 'essay', 'report')]:
         with ZipFile(BytesIO(render_docx('Bài', '# Bài\n\n## Mở bài\n\nĐoạn.', layout))) as package:
             styles = package.read('word/styles.xml').decode()
-        for style_id in ['Title', 'Heading1', 'Heading2', 'TOCHeading', 'Caption']:
+        for style_id in ['Title', 'Heading1', 'Heading2', 'Caption']:
             block = re.search(r'<w:style [^>]*w:styleId="%s".*?</w:style>' % style_id, styles, re.S).group(0)
             assert 'Theme=' not in re.search(r'<w:rFonts[^>]*/>', block).group(0), (layout, style_id)
             assert f'w:ascii="{font}"' in block
@@ -188,14 +190,15 @@ async def test_conversation_images_go_into_both_files_with_captions(client):
     await chat(client, 'Ảnh thứ hai', conversation, [attachment('logo.png', png(400, 300, mode='RGBA'))])
     session = DocumentSession(TEST_OWNER, conversation)
     content = '# Báo cáo ảnh\n\nMở đầu.\n\n![Biểu đồ doanh thu](anh-1)\n\nGiữa hai ảnh. ![](anh-2) Sau ảnh.\n'
-    result = await session.create(json.dumps({'title': 'Báo cáo ảnh', 'content': content, 'format': 'docx', 'style': 'report'}))
+    result = await session.create(json.dumps({'title': 'Báo cáo ảnh', 'content': content, 'format': 'docx', 'style': 'classic'}))
     assert result['ok'], result
     base = f"/api/documents/{result['artifact']['id']}"
     word = (await client.get(base + '/export/docx?version=1')).content
     with ZipFile(BytesIO(word)) as package:
         assert len([name for name in package.namelist() if name.startswith('word/media/')]) == 2
     texts = [paragraph.text for paragraph in Document(BytesIO(word)).paragraphs]
-    assert 'Biểu đồ doanh thu' in texts and 'Giữa hai ảnh.' in texts and 'Sau ảnh.' in texts
+    # Hình có chú thích được đánh số tự động; hình không chú thích thì không.
+    assert 'Hình 1. Biểu đồ doanh thu' in texts and 'Giữa hai ảnh.' in texts and 'Sau ảnh.' in texts
     assert not any('anh-' in text or '[Ảnh' in text for text in texts)
     pdf = PdfReader(BytesIO((await client.get(base + '/export/pdf?version=1')).content))
     assert sum(len(page.images) for page in pdf.pages) == 2

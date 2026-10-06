@@ -59,7 +59,8 @@ async def test_versions_export_exact_revision_and_conflict(client):
         assert 'attachment;' in response.headers['content-disposition']
         assert response.headers['cache-control'] == 'private, no-store'
         if format == 'docx': assert Document(BytesIO(response.content)).paragraphs[0].text == 'Kế hoạch học tập'
-        else: assert 'Kế hoạch học tập' in PdfReader(BytesIO(response.content)).pages[0].extract_text()
+        # Kiểu Khung đôi in hoa tên tài liệu trong PDF (bản Word in hoa bằng định dạng nên chữ vẫn giữ nguyên).
+        else: assert 'kế hoạch học tập' in PdfReader(BytesIO(response.content)).pages[0].extract_text().casefold()
     assert (await client.get('/api/documents', params={'conversation_id': conversation})).json()['documents'][0]['version'] == 2
     assert (await client.delete(path)).status_code == 200
     assert (await client.get(path + '/export/pdf', params={'version': 1})).status_code == 404

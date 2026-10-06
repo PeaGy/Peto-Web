@@ -413,6 +413,27 @@ original page numbers and identify OCR; notices expose read/total counts and acc
 Missing/disabled OCR and encrypted/broken/oversized documents retain honest reading status.
 Do not promise image/chart/layout understanding for PDF/DOCX or legacy .doc support.
 
+**Word uploads** (`features/documents/word_reader.py`, 2026-10-06). The owner's Word uses are solving math exercises sent
+as .docx and writing school reports. The old reader took only `w:t`, so every Word equation (Alt+=, OMML) vanished:
+"Rút gọn A = (x+1)/(x²−1)" reached Peto as "Rút gọn biểu thức sau:". The owner's own exercise survived only because its
+formulas were typed as Unicode math italics with combining overlines.
+- **Equations** become LaTeX (`math/omml_in.py`): `$…$` inline, `$$…$$` for `m:oMathPara`. Fractions, roots, scripts,
+  n-ary operators, functions and limits, accents, bars, delimiters (cases, matrices, binomials), equation arrays, group
+  characters, boxes and phantoms are mapped; math alphanumerics such as 𝑥 go back to `x`, ℝ to `\mathbb{R}`.
+- **Numbering labels.** Word's automatic labels (a), b), 1.1., •) are not text, so Peto never saw which sub-question was
+  c). `Numbering` follows numbering.xml and paragraph styles like Word: counters per abstractNum, deeper levels restart,
+  `startOverride` restarts a list on its first use, `numStyleLink` is followed once, bullets in Symbol/Wingdings read as •.
+- **Symbol font.** Old worksheets typed Greek and operators in the Symbol font ("x Î A" for x ∈ A); runs in that font and
+  `w:sym` are mapped through the Adobe Symbol table (`math/symbols.SYMBOL_FONT`).
+- **Marked, not read:** pictures and charts (`[Hình N trong tệp]`, `[Biểu đồ N trong tệp]`) and MathType/Equation 3.0
+  OLE objects (`[Công thức MathType N: Peto không đọc được]`). MathType makes the status `partial`, with `truncated`
+  false so `history` does not suggest the attachment tools; the notice asks for a screenshot. Text boxes are read once
+  (only the `mc:Choice` of an AlternateContent); tracked deletions are skipped.
+- **Cache.** Word results carry `word_format` (`WORD_FORMAT` 2). `cached_document` treats older Word reads (no key, a
+  notice mentioning "Word") as unread, so they are re-read lazily; `public_document` still shows their old status.
+  `formulas` and `formulas_unread` are public, and the chat chip reads "· 12 công thức".
+- **Tests:** `tests/test_word_reader.py`.
+
 **Excel uploads** (`features/documents/workbook_reader.py`, 2026-10-04, the owner's next step after `create_spreadsheet`).
 `.xlsx` and `.xlsm` are accepted as attachments (magic bytes `PK`, counted as media like PDF/Word). An OLE container
 (`CFB_MAGIC`: legacy `.xls` or a password-protected workbook) and `.xls` are refused at upload with a Vietnamese hint
@@ -502,10 +523,11 @@ older ones degrade to a text placeholder. This is computed twice — in
 ### Documents in chat (`create_document`)
 
 `features/documents/tools.py` gives the Chat tab (not Companion or the agent) a `create_document` tool. The model sends a title and
-Markdown; `document_jobs.build_files` renders a PDF (ReportLab, `document_export.render_pdf`) and a DOCX (python-docx,
-`render_docx`), `storage/documents.py` keeps them per owner, and the card shows page 1 of the PDF (pypdfium2). The DOCX
-preview is that PDF, so a feature must exist in both renderers or the preview misleads. Two layouts: `essay` (A4, Times
-New Roman / Noto Serif) and `report` (Letter, Arial / Noto Sans).
+Markdown; `document_jobs.build_files` renders a PDF (ReportLab, `pdf_out.py` behind `document_export.render_pdf`) and a DOCX
+(python-docx, `docx_out.py` behind `render_docx`), `storage/documents.py` keeps them per owner, and the card shows page 1
+of the PDF (pypdfium2). The DOCX preview is that PDF, so a feature must exist in both renderers or the preview misleads.
+`export.py` keeps what both share: Markdown → blocks, the math glue, column widths and font registration. The four styles
+and the cover page are under "Styles and cover" below.
 
 On 2026-09-30 the owner picked a Word/PDF upgrade as the first step of the document roadmap. Mermaid diagrams in chat
 came second, PowerPoint third and Excel fourth (sections below).
@@ -534,9 +556,103 @@ came second, PowerPoint third and Excel fourth (sections below).
 - **Render queue.** `document_jobs.RenderQueue` still renders one document at a time per process (small VPS). Later
   requests wait in a short line instead of failing at once as the old lock did: 4 waiting at most, 30 s for the tool,
   15 s for exports, 10 s for preview pages.
-- **Not done:** LaTeX math, editing an uploaded Word file in place, charts, and images from Imagine (the user attaches
-  them).
-- **Tests:** `tests/test_document_features.py`, `test_document_export.py`, `test_document_artifacts.py`.
+- **Formulas** (2026-10-06, step 2 of the owner's Word plan). Before, the tool said "Chưa hỗ trợ LaTeX" and a math
+  solution printed `$\bar{x}$` raw, so the owner copied answers from the chat, which turned overlines into "xˉ".
+  - **Extraction first.** `math/markdown.extract` swaps `$…$`, `$$…$$`, `\(…\)` and `\[…\]` for private-use placeholders
+    before markdown-it runs: a display formula continued on a line starting with "+ " would otherwise become a bullet,
+    and Markdown eats the backslash of `\(`. Code spans and fences are skipped. Dollar rules follow Pandoc ("giá $5 và $10"
+    is not math); `~p` in operand position is negation, as in the chat's `tildeNegation`.
+  - **One tree, two renderers.** `math/latex.py` parses a fixed command set (tables in `math/symbols.py`) into nodes and
+    refuses anything else with a Vietnamese message naming the formula, so Peto rewrites it and calls again.
+    `math/omml_out.py` writes native Word equations: Cambria Math runs, `\text` in the document font, child order per the
+    OMML schema. `aligned` and `cases` are `m:m` matrices with justified columns, since alignment marks inside `m:eqArr`
+    are unverified; primes stay plain characters as in Word.
+  - **PDF** (`math/layout.py`): a TeX-style layout with the bundled STIX Two Math (OFL; the MATH table constants are
+    copied into `C`). Italic letters use the Unicode math alphanumerics; tall delimiters, radicals, braces and wide
+    accents are vector paths, because ReportLab cannot reach the font's size variants.
+    - Inline formulas sit in an `<img>` slot of the formula's size (`assets/math-slot.png`, `valign` = −depth).
+      `attach_math` tags each slot's ImageReader with its box, and `MathCanvas.drawImage` (`math_canvas`) draws vector
+      math there.
+    - Body styles use `autoLeading="max"`, so tall inline fractions push lines apart. Display formulas are a flowable,
+      shrunk to fit, with `\tag` at the right.
+    - Plain-text symbols Tinos lacks (≤, ∈, →) are drawn in STIX via `<font>` instead of failing the PDF.
+  - Limits: 600 formulas, 4,000 characters and 3,000 nodes per formula. Tables now allow 12 columns (a 4-variable
+    truth table has 9).
+  - Neither Word nor LibreOffice is installed here, so the OMML was checked by round trips (`omml_out` → `omml_in`) and
+    schema order. The owner then opened a sample DOCX in Word: the equations display and can be edited.
+- **Styles and cover** (step 3 of the owner's Word plan). The owner found Peto's reports "non, chưa chỉnh chu": US Letter,
+  Arial, no cover page, a title printed twice. They have no school-specific rules. On 2026-10-06 they saw three live
+  mockups (https://claude.ai/artifact/R79UV3ASRLWUd49j79ZvzR) and kept all three:
+  - **Khung đôi** (`classic`, the default) for đồ án tốt nghiệp and khóa luận.
+  - **Dải màu** (`band`) for báo cáo môn học and đồ án nhóm.
+  - **Tối giản** (`minimal`) for tiểu luận, lời giải and simple documents.
+
+  `essay` stays for nghị luận. The prompt picks a style by document type and follows the user when they name one.
+  - **Shared standard** (`themes.py`). Every style uses the usual Vietnamese school layout: A4, Times New Roman 13, 1.5
+    line spacing, justified, 1 cm first-line indent, margins top 2, bottom 2, left 3, right 2 cm. A frozen `Theme` holds
+    only what differs:
+    - heading sizes, caps, italics and colour;
+    - the title block when there is no cover;
+    - tables (`grid`, `band`, `booktabs`) and code boxes (`box`, `bar`, `rules`);
+    - captions, header (none, `split`, `title`), footer and cover.
+  - **Old `report` documents** keep their stored files; anything rendered now (a revision, or exporting a hand-edited
+    version) uses `classic` (`ALIASES`). The API still accepts `report`; the tool offers only the four, and new manual
+    drafts send `classic`.
+  - **PDF fonts.** Tinos and Cousine are bundled (OFL, metric-compatible with Times New Roman and Courier New), so line
+    breaks and page numbers almost match Word. Documents no longer use Noto; the files stay in `assets/fonts`.
+  - **Cover data** (`cover.py`). It is a `--- … ---` block of `khóa: giá trị` lines at the very start of the Markdown, so
+    the user can fix a school name or MSSV in "Sửa nội dung" without asking Peto.
+    - Keys are matched unaccented, with English aliases. The cover keys are: `trường`, `khoa`, `cơ quan`, `loại`, `môn`,
+      `đề tài`, `phụ đề`, `giảng viên` (or `GVHD`), `nhóm`, `lớp`, `nơi`, `ngày` and `logo: anh-N`.
+    - `thành viên` is a list of `- Tên | MSSV | ghi chú` lines, 15 at most.
+    - An unknown key is refused with the allowed list, so the model fixes the call. A block that is not at the start, or
+      never closes, is ordinary content.
+    - Missing fields print dotted blanks (`DOTS`) for the user to fill. A missing date is the current month in
+      `DEFAULT_TIMEZONE`. The prompt forbids inventing a school, instructor, members or MSSV.
+  - **Word cover** (`docx_out.py`).
+    - Word cannot push text to the page foot, so the cover is a borderless three-row layout table with exact row heights:
+      the school block at the top, the title mid-page, the people at the bottom.
+    - Each style draws its own frame:
+      - `classic`: a double frame as a page border on the first page only (`w:pgBorders display="firstPage"`);
+      - `band`: a navy rectangle anchored to the page (`wps` inside `mc:AlternateContent` with a VML fallback, behind the
+        text);
+      - `minimal`: rules made of paragraph borders.
+    - The cover page has no header or footer. Elements python-docx lacks are inserted in schema order (`_insert`),
+      because Word calls a file damaged when children are out of order.
+  - **PDF cover** (`pdf_out.py`). It is painted straight onto page 1 (`onFirstPage`), and the text flow starts on page 2.
+  - **Title.** An opening heading equal to the title, or the only heading at its level (`# Lời giải bài tập 5` followed
+    by `## Bài 1`), becomes the title block instead of printing twice (`body_blocks`). The remaining headings are
+    renumbered from level 1. Without a cover, page 1 has no running header.
+  - **Captions and slots.**
+    - A paragraph "Bảng: tên" right above a table becomes "Bảng N. tên" ("Bảng N: tên" in `band`), kept with the table.
+    - Captioned images become "Hình N. …".
+    - `![chú thích](khung-anh)` leaves a dashed 5.4 cm frame reading "Chỗ dán ảnh chụp màn hình", with its Hình number,
+      where the user pastes a screenshot in Word (30 per document).
+  - **Tables.** Column widths come from the visible text (`column_widths`): never narrower than the longest word, and
+    math counted by the symbols it shows. Header rows repeat on every page.
+  - **Page breaks.** Both renderers now break pages the same way.
+    - Tables of up to `SHORT_TABLE_ROWS` (12) rows never split. Word gets this from rows that keep with the next one and
+      `cantSplit`; the PDF from a KeepTogether. Longer tables split between rows.
+    - In the PDF, headings and long-table captions stay with the start of the next block, as Word's "keep with next"
+      does. This is `_KeepStart`, plugged in through the template's `handle_keepWithNext`.
+    - ReportLab's own grouping caused two problems. It moved a heading together with a whole long paragraph or table to
+      the next page, which left up to half a page blank. It also never grouped a heading with a following KeepTogether,
+      so a heading before a short table or an image could end up alone at the bottom of a page.
+    - The group now moves only when the space left cannot hold the heading plus the next block's own first split: two
+      lines of a paragraph, or the header and first row of a table.
+  - **Word contents.** The TOC field is still marked dirty, so Word offers to update it. `build_files` (and `export_file`
+    for hand-edited versions that have a `[TOC]` line) now renders the PDF first and passes its heading pages
+    (`toc_pages`) to the DOCX. Viewers that never update fields (phones, Google Docs) therefore show real page numbers
+    with dot leaders.
+  - **Mock.** `__baocao__` (or `__baocao__:band`, `:minimal`) creates a sample report with placeholder names.
+  - **Not yet checked in real Word:** the band rectangle, the first-page border, the cover heights and the pre-filled
+    contents.
+  - **Tests:** `tests/test_document_themes.py`.
+- **Small fixes that day.** The essay header said "Nghị luận xã hội" on every essay (now the title). Table cells and
+  code lines took the essay's first-line indent and justification.
+- **Not done:** editing an uploaded Word file in place, charts, and images from Imagine (the user attaches them).
+- **Tests:** `tests/test_document_features.py`, `test_document_export.py`, `test_document_artifacts.py`,
+  `test_document_math.py`.
 
 ### Diagrams in chat (Mermaid)
 

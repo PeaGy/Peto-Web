@@ -6,7 +6,7 @@ export type ConversationMode = "chat" | "companion";
 export interface WebSource { url: string; title: string; kind?: 'citation' | 'result' }
 export interface DocumentArtifact {
   id: string; title: string; filename: string; version: number;
-  format: 'docx' | 'pdf' | 'pptx' | 'xlsx'; style: 'report' | 'essay' | 'clean' | 'academic' | 'bold' | 'sheet' | 'workbook'; pages: number;
+  format: 'docx' | 'pdf' | 'pptx' | 'xlsx'; style: 'report' | 'essay' | 'classic' | 'band' | 'minimal' | 'clean' | 'academic' | 'bold' | 'sheet' | 'workbook'; pages: number;
   /** Tệp Excel người dùng gửi mà Peto đã sửa (style 'workbook'): các dòng thay đổi, như 'Lương'!A9:F9: ghi 6 ô. Máy chủ
    * chỉ gửi 20 dòng đầu; ``change_count`` là tổng số dòng, gồm cả các lần sửa trước của tệp này trong cùng lượt. */
   changes?: string[];
@@ -33,6 +33,9 @@ export interface ChatAttachment {
       sheets?: number;
       sheets_read?: number;
       rows?: number;
+      /** Word: số công thức Word đã đọc, số công thức MathType (đối tượng cũ) chưa đọc được. */
+      formulas?: number;
+      formulas_unread?: number;
   } | null;
 }
 

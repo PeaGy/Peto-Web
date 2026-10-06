@@ -5,7 +5,7 @@ from io import BytesIO
 
 import pypdfium2 as pdfium
 from pypdf import PdfReader
-from features.documents.export import render_docx, render_pdf
+from features.documents.export import TOC_MARKERS, render_docx, render_pdf
 from features.documents.images import prepare_all
 
 # Thời gian chờ tối đa (giây) trong hàng dựng tài liệu. Lượt tạo tệp trong chat chờ lâu nhất vì model đang đợi kết quả.
@@ -84,11 +84,14 @@ def render_page(data: bytes, page_number: int = 1) -> bytes:
 def build_files(title, content, style, format, raw_images=None):
     """Dựng PDF (xem trước, đếm trang) và DOCX. ``raw_images``: ảnh của hội thoại theo số (document_images.load)."""
     images = prepare_all(raw_images or {}, strict=True)
-    pdf = render_pdf(title, content, style, images)
+    # Số trang đề mục trong bản PDF điền sẵn vào mục lục bản Word, để điện thoại và Google Docs (không cập nhật trường)
+    # vẫn thấy số trang; Word tự đánh lại khi mở.
+    toc_pages: list = []
+    pdf = render_pdf(title, content, style, images, toc_pages)
     pages = len(PdfReader(BytesIO(pdf)).pages)
     if pages > 40:
         raise ValueError('Tài liệu dài quá 40 trang. Hãy chia thành các phần nhỏ hơn.')
-    docx = render_docx(title, content, style, images)
+    docx = render_docx(title, content, style, images, toc_pages)
     preview = render_page(pdf)
     if sum(map(len, [docx, pdf, preview])) > 8 * 1024 * 1024:
         raise ValueError('Tệp xuất quá lớn. Hãy bớt ảnh hoặc chia nhỏ tài liệu.' if images else 'Tệp xuất quá lớn. Hãy chia nhỏ tài liệu.')
@@ -138,7 +141,13 @@ def build_spreadsheet(content: str, prepared=None):
 def export_file(format, title, content, style, raw_images=None):
     """Dựng một định dạng cho bản người dùng tự sửa. Ảnh không dùng được thì chỗ đó hiện thành chữ thay vì báo lỗi."""
     images = prepare_all(raw_images or {}, strict=False)
-    return (render_pdf if format == 'pdf' else render_docx)(title, content, style, images)
+    if format == 'pdf':
+        return render_pdf(title, content, style, images)
+    # Như build_files: mục lục Word ghi sẵn số trang lấy từ bản PDF, cho trình xem không cập nhật trường.
+    toc_pages: list = []
+    if any(line.strip().casefold() in TOC_MARKERS for line in content.splitlines()):
+        render_pdf(title, content, style, images, toc_pages)
+    return render_docx(title, content, style, images, toc_pages)
 
 
 def document_filename(title, format):

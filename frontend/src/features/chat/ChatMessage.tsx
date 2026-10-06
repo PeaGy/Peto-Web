@@ -155,6 +155,8 @@ export const ChatMessage = memo(function ChatMessage({ message, live, writing, o
                               {file.document.pages != null && ` · ${file.document.pages_read != null ? `${file.document.pages_read}/` : ""}${file.document.pages} trang`}
                               {file.document.sheets != null && ` · ${file.document.sheets_read != null && file.document.sheets_read !== file.document.sheets ? `${file.document.sheets_read}/` : ""}${file.document.sheets} trang tính`}
                               {file.document.status === "partial" && !!file.document.ocr_pages && " · có OCR"}
+                              {!!file.document.formulas && ` · ${file.document.formulas} công thức`}
+                              {!!file.document.formulas_unread && ` · ${file.document.formulas_unread} công thức MathType chưa đọc`}
                             </summary>
                             <p>{file.document.notice}</p>
                           </details>

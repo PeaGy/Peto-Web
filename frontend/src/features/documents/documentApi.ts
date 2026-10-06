@@ -2,7 +2,7 @@ import { UnauthorizedError } from '../../shared/api/api';
 
 export interface DocumentSummary { id: string; conversation_id: string; title: string; version: number; created_at: number; format?: 'docx' | 'pdf' | 'pptx' | 'xlsx' | null; pages?: number | null }
 export interface SavedDocument extends DocumentSummary {
-  style?: 'report' | 'essay' | 'clean' | 'academic' | 'bold' | 'sheet' | 'workbook';
+  style?: 'report' | 'essay' | 'classic' | 'band' | 'minimal' | 'clean' | 'academic' | 'bold' | 'sheet' | 'workbook';
   content: string;
   versions: { version: number; title: string; created_at: number }[];
 }
@@ -23,7 +23,7 @@ export const listDocuments = (id: string, signal?: AbortSignal) => json<{ docume
 export const getDocument = (id: string, version?: number, signal?: AbortSignal) => json<SavedDocument>(`/api/documents/${encodeURIComponent(id)}${version ? `?version=${version}` : ''}`, { signal });
 export const saveDocument = (draft: { title: string; content: string }, conversationId: string, previous: SavedDocument | null) => json<SavedDocument>(
   previous ? `/api/documents/${encodeURIComponent(previous.id)}/versions` : '/api/documents',
-  { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...draft, style: previous?.style || 'report', ...(previous ? { base_version: previous.versions[0].version } : { conversation_id: conversationId }) }) },
+  { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...draft, style: previous?.style || 'classic', ...(previous ? { base_version: previous.versions[0].version } : { conversation_id: conversationId }) }) },
 );
 /** Một ô của lưới xem: chữ đã định dạng kiểu Việt Nam, kiểu giá trị (số, chữ, đúng/sai) và công thức nếu có. */
 export interface SheetCell { d: string; t: 'n' | 's' | 'b'; f?: string }

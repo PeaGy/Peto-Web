@@ -71,9 +71,9 @@ SCHEMA = {
         'type': 'object', 'additionalProperties': False,
         'properties': {
             'title': {'type': 'string', 'description': 'Tên tài liệu ngắn, không có phần mở rộng. Giữ nguyên ngôn ngữ yêu cầu; tiếng Việt phải có đầy đủ dấu (ă â ê ô ơ ư đ và dấu thanh), không phiên âm ASCII.'},
-            'content': {'type': 'string', 'description': 'Toàn bộ nội dung tài liệu dạng Markdown, bắt đầu bằng tiêu đề. Giữ đúng ngôn ngữ người dùng; nếu viết tiếng Việt phải dùng đầy đủ dấu Unicode trong toàn bộ title, heading và đoạn văn, không viết không dấu. Không chứa lời chào, hướng dẫn bấm nút, thông báo tạo xong hay code fence bọc toàn bài. Có thể dùng bảng tối đa 8 cột. Chèn ảnh người dùng đã gửi trong hội thoại bằng một dòng riêng ![chú thích](anh-N), N là số trong nhãn [Ảnh N: …]; chú thích hiện dưới ảnh; tối đa 12 ảnh; không dùng ảnh từ web. Muốn có mục lục thì đặt một dòng [TOC] ngay sau đoạn mở đầu (mục lục gồm đề mục ##, ###). Chưa hỗ trợ LaTeX, emoji.'},
+            'content': {'type': 'string', 'description': 'Toàn bộ nội dung tài liệu dạng Markdown, bắt đầu bằng tiêu đề. Giữ đúng ngôn ngữ người dùng; nếu viết tiếng Việt phải dùng đầy đủ dấu Unicode trong toàn bộ title, heading và đoạn văn, không viết không dấu. Không chứa lời chào, hướng dẫn bấm nút, thông báo tạo xong hay code fence bọc toàn bài. Có thể dùng bảng tối đa 12 cột. Công thức toán viết LaTeX như trong chat: $...$ trong dòng, $$...$$ một dòng riêng (hệ: \begin{cases}, ma trận: \begin{pmatrix}, nhiều dòng thẳng hàng: \begin{aligned}); tệp Word nhận công thức Word thật, sửa được; không viết công thức bằng chữ thường hay mã thô. Chèn ảnh người dùng đã gửi trong hội thoại bằng một dòng riêng ![chú thích](anh-N), N là số trong nhãn [Ảnh N: …]; chú thích hiện dưới ảnh; tối đa 12 ảnh; không dùng ảnh từ web. Muốn có mục lục thì đặt một dòng [TOC] ngay sau đoạn mở đầu (mục lục gồm đề mục ##, ###). Trang bìa (báo cáo, đồ án, tiểu luận nộp trường): mở đầu content bằng khối --- … --- , mỗi dòng "khóa: giá trị" với khóa trường, khoa, loại (Báo cáo thực hành giữa kỳ, Đồ án tốt nghiệp…), môn, đề tài, phụ đề, giảng viên, nhóm, lớp, nơi, logo (anh-N), thành viên (mỗi người một dòng "- Họ tên | MSSV | ghi chú"); chỉ ghi điều người dùng đã cho, thiếu thì bỏ dòng đó (bìa để dòng chấm cho họ điền), ngày tự lấy tháng năm hiện tại. Lời giải bài tập, ghi chú, bài ngắn không cần bìa. Đề mục tự viết số theo kiểu: classic I., II. rồi 1., 2.; band và minimal 1, 1.1. Chú thích bảng: một dòng "Bảng: tên bảng" ngay trên bảng. Hình người dùng chưa gửi (ảnh chụp màn hình bài thực hành): một dòng riêng ![chú thích](khung-anh) để chừa khung dán ảnh; hình tự đánh số Hình N. Chưa hỗ trợ emoji.'},
             'format': {'type': 'string', 'enum': ['docx', 'pdf']},
-            'style': {'type': 'string', 'enum': ['report', 'essay'], 'description': 'essay cho bài nghị luận: A4, Times New Roman trong DOCX, căn đều, đầu/chân trang và số trang. report cho báo cáo, kế hoạch, bảng biểu.'},
+            'style': {'type': 'string', 'enum': ['classic', 'band', 'minimal', 'essay'], 'description': 'Kiểu trình bày, đều A4, Times New Roman 13, giãn dòng 1,5, căn đều: classic (Khung đôi: bìa khung đôi căn giữa, chữ in hoa; đồ án tốt nghiệp, khóa luận, báo cáo nộp giảng viên), band (Dải màu: bìa dải xanh căn trái, đề mục tô màu; báo cáo môn học, đồ án nhóm, dự án, kế hoạch), minimal (Tối giản: không khung, kẻ mảnh, bảng ba đường; tiểu luận, lời giải bài tập, tài liệu đơn giản), essay (bài văn nghị luận, không bìa). Người dùng nói kiểu nào thì theo kiểu đó.'},
         }, 'required': ['title', 'content', 'format', 'style'],
     },
 }
@@ -84,7 +84,8 @@ class DocumentInput(BaseModel):
     title: str = Field(min_length=1, max_length=120)
     content: str = Field(min_length=1, max_length=MAX_CONTENT)
     format: Literal['docx', 'pdf']
-    style: Literal['report', 'essay']
+    # "report" là kiểu của tài liệu tạo trước 6/10/2026, dựng như classic (themes.ALIASES).
+    style: Literal['classic', 'band', 'minimal', 'essay', 'report']
 
 
 def conversation_workbooks(rows) -> list[dict]:
@@ -148,7 +149,7 @@ class DocumentSession:
             except RenderBusy:
                 raise ValueError('Peto đang xuất tài liệu khác. Hãy báo người dùng thử lại sau vài giây.') from None
         except ValidationError:
-            return {'error': 'Đầu vào cần title, content (tối đa 60.000 ký tự), format docx/pdf, style report/essay. Sửa tham số rồi gọi lại.'}
+            return {'error': 'Đầu vào cần title, content (tối đa 60.000 ký tự), format docx/pdf, style classic/band/minimal/essay. Sửa tham số rồi gọi lại.'}
         except (ValueError, HTTPException) as error:
             return {'error': str(error.detail) if isinstance(error, HTTPException) else str(error)}
         except Exception:

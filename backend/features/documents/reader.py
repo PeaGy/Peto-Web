@@ -10,7 +10,6 @@ import zipfile
 
 import anyio
 from anyio import to_process
-from defusedxml.ElementTree import fromstring
 from pypdf import PdfReader, apply_configuration
 
 DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -18,10 +17,14 @@ PDF_MIME = "application/pdf"
 # Bảng tính Excel đọc ở workbook_reader (cùng tiến trình con, cùng giới hạn thời gian).
 from features.documents.workbook_reader import (SHEET_FORMAT, SPREADSHEET_MIMES, XLSM_MIME, XLSX_MIME,  # noqa: E402
                                                 read_workbook)
+from features.documents import word_reader  # noqa: E402
 # 2 (29/9/2026): tệp chữ dài giữ phần đầu, phần cuối và các đoạn có lỗi thay vì chỉ phần đầu. Đổi số này thì tệp cũ
 # được đọc lại ở lượt sau (features.chat.history._read_legacy_documents).
 # 3 (1/10/2026): thêm chữ OCR theo trang và số trang đã đọc.
 VERSION = 3
+# Cách đọc Word (word_reader). 2 (6/10/2026): công thức Word thành LaTeX, số thứ tự a), b)… Word tự đánh, chữ phông Symbol,
+# đánh dấu hình và công thức MathType. Tệp Word đọc theo cách cũ được đọc lại ở lượt sau (cached_document).
+WORD_FORMAT = 2
 MAX_XML_BYTES = 8 * 1024 * 1024
 MAX_ZIP_BYTES = 32 * 1024 * 1024
 MAX_PAGE_BYTES = 2 * 1024 * 1024
@@ -229,24 +232,6 @@ def _pdf(data: bytes, max_chars: int, max_pages: int) -> dict:
                   truncated=shortened or processed < total)
 
 
-def _tag(element) -> str:
-    namespace, _, local = element.tag[1:].partition("}") if element.tag.startswith("{") else ("", "", element.tag)
-    return local if namespace in WORD_NAMESPACES else ""
-
-
-def _paragraph(element) -> str:
-    parts = []
-    for child in element.iter():
-        tag = _tag(child)
-        if tag == "t":
-            parts.append(child.text or "")
-        elif tag == "tab":
-            parts.append("\t")
-        elif tag in {"br", "cr"}:
-            parts.append("\n")
-    return "".join(parts).strip()
-
-
 def _docx(data: bytes, max_chars: int) -> dict:
     # Đọc đúng thành phần cần dùng trong bộ nhớ; không giải nén ra ổ đĩa.
     with zipfile.ZipFile(io.BytesIO(data)) as archive:
@@ -261,57 +246,43 @@ def _docx(data: bytes, max_chars: int) -> dict:
             xml = member.read(MAX_XML_BYTES + 1)
         if len(xml) > MAX_XML_BYTES:
             return result("unreadable", "Nội dung Word vượt giới hạn đọc. Hãy chia nhỏ tài liệu.")
-    root = fromstring(xml, forbid_dtd=True)
-    if _tag(root) != "document":
+        # Số thứ tự tự động (a), b), 1.1…) nằm ở numbering.xml và kiểu đoạn ở styles.xml; thiếu hay hỏng thì bỏ qua.
+        extra = {}
+        for name in ("word/numbering.xml", "word/styles.xml"):
+            try:
+                part = archive.getinfo(name)
+            except KeyError:
+                continue
+            if part.file_size <= MAX_XML_BYTES and not part.flag_bits & 1:
+                with archive.open(part) as member:
+                    content = member.read(MAX_XML_BYTES + 1)
+                if len(content) <= MAX_XML_BYTES:
+                    extra[name] = content
+    root = word_reader.parse(xml)
+    if word_reader.local(root)[1] != "document" or word_reader.local(root)[0] not in WORD_NAMESPACES:
         raise ValueError("Không phải cấu trúc Word")
-    body = next((child for child in root if _tag(child) == "body"), None)
-    if body is None:
-        raise ValueError("Word thiếu phần nội dung")
-    parts: list[str] = []
-    used = 0
-    paragraphs = 0
-    tables = 0
-    shortened = False
-
-    def blocks(parent):
-        for child in parent:
-            tag = _tag(child)
-            if tag in {"p", "tbl"}:
-                yield child
-            elif tag in {"sdt", "sdtContent", "ins", "customXml"}:
-                yield from blocks(child)
-
-    for block in blocks(body):
-        if _tag(block) == "p":
-            value = _paragraph(block)
-            if not value:
-                continue
-            paragraphs += 1
-            value = f"[Đoạn {paragraphs}]\n{value}\n\n"
-        else:
-            tables += 1
-            rows = []
-            has_text = False
-            for row in block:
-                if _tag(row) == "tr":
-                    cells = [" / ".join(_paragraph(p) for p in cell.iter() if _tag(p) == "p")
-                             for cell in row if _tag(cell) == "tc"]
-                    has_text = has_text or any(cell.strip(" /\t\n") for cell in cells)
-                    rows.append(" | ".join(cells))
-            if not has_text:
-                continue
-            value = f"[Bảng {tables}]\n" + "\n".join(rows) + "\n\n"
-        room = max_chars - used
-        parts.append(value[:room])
-        used += min(room, len(value))
-        if len(value) > room:
-            shortened = True
-            break
-    text = "".join(parts).strip()
-    notice = "Đã đọc phần thân văn bản và bảng biểu trong Word." if text else "Word chưa có chữ đọc được trong phần thân tài liệu."
+    try:
+        numbering = word_reader.parse(extra.get("word/numbering.xml"))
+        styles = word_reader.parse(extra.get("word/styles.xml"))
+    except Exception:
+        numbering = styles = None
+    body = word_reader.read_body(root, numbering, styles, max_chars)
+    text, shortened = body["text"], body["shortened"]
+    counted = "và bảng biểu" if not body["formulas"] else f", bảng biểu và {number(body['formulas'])} công thức"
+    notice = f"Đã đọc phần thân văn bản {counted} trong Word." if text else "Word chưa có chữ đọc được trong phần thân tài liệu."
+    if body["mathtype"]:
+        notice += (f" Có {number(body['mathtype'])} công thức MathType (kiểu đối tượng cũ) Peto không đọc được, ghi là"
+                   " [Công thức MathType N] tại chỗ; câu nào cần thì gửi kèm ảnh chụp câu đó.")
+    unseen = [f"{number(body['images'])} hình" if body["images"] else "",
+              f"{number(body['charts'])} biểu đồ" if body["charts"] else ""]
+    unseen = " và ".join(item for item in unseen if item)
+    if unseen:
+        notice += f" Tệp có {unseen} Peto chưa xem được (ghi [Hình N trong tệp] tại chỗ); cần thì gửi kèm ảnh chụp."
     if shortened:
         notice += " Tài liệu dài: Peto đọc sẵn phần đầu, khi cần sẽ tìm thêm trong tệp."
-    return result("partial" if shortened else "ready" if text else "no_text", notice, text)
+    status = "partial" if shortened or (text and body["mathtype"]) else "ready" if text else "no_text"
+    return result(status, notice, text, word_format=WORD_FORMAT, formulas=body["formulas"],
+                  formulas_unread=body["mathtype"], images=body["images"] + body["charts"], truncated=shortened)
 
 
 def extract_document(data: bytes, mime: str, max_chars: int, max_pages: int) -> dict:
@@ -383,23 +354,38 @@ async def read_full_document(data: bytes, mime: str, cached: dict | None = None)
     return document
 
 
-def cached_document(raw) -> dict | None:
+def _parsed(raw) -> dict | None:
     try:
         value = json.loads(raw) if isinstance(raw, str) else raw
-        if isinstance(value, dict) and value.get("version") == VERSION:
-            # Bảng tính đọc theo cách viết cũ (chưa có biểu đồ, ghi chú…) coi như chưa đọc, để lượt sau đọc lại.
-            if value.get("sheets") is not None and value.get("sheet_format", 1) != SHEET_FORMAT:
-                return None
-            return value
     except (ValueError, TypeError):
-        pass
-    return None
+        return None
+    return value if isinstance(value, dict) and value.get("version") == VERSION else None
+
+
+def _old_word(value: dict) -> bool:
+    """Kết quả Word đọc trước khi có WORD_FORMAT: không có khóa riêng nào, chỉ nhận ra qua lời báo luôn nhắc "Word"."""
+    if "word_format" in value:
+        return value["word_format"] != WORD_FORMAT
+    return "pages" not in value and "sheets" not in value and "Word" in value.get("notice", "")
+
+
+def cached_document(raw) -> dict | None:
+    value = _parsed(raw)
+    if value is None:
+        return None
+    # Bảng tính và Word đọc theo cách cũ coi như chưa đọc, để lượt sau đọc lại (Word cũ thiếu công thức, số thứ tự).
+    if value.get("sheets") is not None and value.get("sheet_format", 1) != SHEET_FORMAT:
+        return None
+    if _old_word(value):
+        return None
+    return value
 
 
 def public_document(raw) -> dict | None:
-    cached = cached_document(raw)
+    # Trạng thái hiện cho người dùng vẫn lấy từ lần đọc cũ cho tới khi tệp được đọc lại.
+    cached = _parsed(raw)
     if cached is None:
         return None
     return {key: cached[key] for key in ("status", "notice", "characters", "pages", "pages_processed",
                                         "pages_read", "ocr_pages", "reading_method", "sheets", "sheets_read",
-                                        "rows") if key in cached}
+                                        "rows", "formulas", "formulas_unread") if key in cached}

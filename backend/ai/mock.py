@@ -36,6 +36,52 @@ Nguyên nhân không chỉ đến từ tính ẩn danh. Nhịp thông tin quá n
 Xã hội số trở nên đáng sống hơn khi mỗi người nhìn thấy con người phía sau tài khoản. Một hành động nhỏ không thể giải quyết mọi vấn đề, nhưng nhiều lựa chọn có trách nhiệm sẽ tạo nên thói quen chung. Giữ sự tử tế vì thế là việc có thể bắt đầu ngay hôm nay, từ chính lời nói tiếp theo mà chúng ta gửi đi.
 '''
 
+# "__baocao__" hoặc "__baocao__:band" / ":minimal": báo cáo có trang bìa theo kiểu trình bày (themes.py), để bản chạy
+# thử xem bìa, mục lục, bảng có chú thích, khung mã và khung chừa ảnh. Tên trường, người là chữ mẫu.
+REPORT_SAMPLE = r"""---
+trường: Trường Đại học ……
+khoa: Khoa Công nghệ Thông tin
+loại: Báo cáo thực hành giữa kỳ
+môn: Dịch vụ mạng
+đề tài: Windows Defender Application Control
+phụ đề: Kiểm soát ứng dụng được phép hoặc bị chặn trên Windows
+giảng viên: ThS. Nguyễn Văn X
+nhóm: Nhóm 7
+thành viên:
+- Nguyễn Văn A | 1240000xx | Nhóm trưởng
+- Trần Thị B | 1240000xx
+nơi: TP. Hồ Chí Minh
+---
+
+# Báo cáo thực hành giữa kỳ môn Dịch vụ mạng
+
+[TOC]
+
+## I. Giới thiệu đề tài
+
+Kiểm soát phần mềm được phép chạy trên máy trạm là một biện pháp giảm bề mặt tấn công.
+
+## II. Cơ sở lý thuyết
+
+Bảng: So sánh ba công cụ kiểm soát ứng dụng
+
+| Công cụ | Có từ phiên bản | Lab XP/2003 |
+|---|---|---|
+| WDAC | Windows 10, Server 2016 | Không |
+| AppLocker | Windows 7, Server 2008 R2 | Không |
+| SRP | Windows XP, Server 2003 | Có |
+
+## III. Các bước thực hiện
+
+Trên Windows XP, mở hộp thoại Run và nhập:
+
+```
+\\172.16.64.1\DungChung
+```
+
+![Cửa sổ Local Security Settings](khung-anh)
+"""
+
 # "__sodo__": câu trả lời có sơ đồ lớp, tuần tự, hoạt động và hoạt động có làn, để bản chạy thử xem được thẻ sơ đồ và
 # bảng bên phải.
 DIAGRAM_SAMPLE = """Đây là bốn sơ đồ cho hệ thống thư viện:
@@ -492,20 +538,23 @@ class MockProvider(ChatProvider):
             return
         lowered = last_user.casefold()
         # Only the offline mock uses keyword routing. The real provider chooses its tool.
-        create_requested = '[PETO_DOCUMENT_CREATE]' in system_prompt or (
+        create_requested = '[PETO_DOCUMENT_CREATE]' in system_prompt or '__baocao__' in last_user or (
             any(word in lowered for word in ('tạo', 'xuất', 'create', 'generate')) and
             any(word in lowered for word in ('docx', 'pdf', 'word', 'tài liệu', 'file')))
         if session and create_requested:
             format = 'pdf' if 'pdf' in lowered and 'docx' not in lowered else 'docx'
             yield StreamChunk('tool', 'create_document')
             yield StreamChunk('document_status', 'Đang soạn và dàn trang tài liệu…')
-            result = await session.create(json.dumps({'title': 'Giữ sự tử tế trong xã hội số', 'content': DOCUMENT_SAMPLE,
-                'format': format, 'style': 'essay'}, ensure_ascii=False))
+            report = re.search(r"__baocao__(?::(classic|band|minimal))?", last_user)
+            sample = ({'title': 'Báo cáo thực hành giữa kỳ môn Dịch vụ mạng', 'content': REPORT_SAMPLE,
+                       'style': report.group(1) or 'classic'} if report else
+                      {'title': 'Giữ sự tử tế trong xã hội số', 'content': DOCUMENT_SAMPLE, 'style': 'essay'})
+            result = await session.create(json.dumps({**sample, 'format': format}, ensure_ascii=False))
             if result.get('ok'):
                 yield StreamChunk('artifact', artifact=result['artifact'])
                 yield _tool_result('create_document', result)
                 yield StreamChunk('document_status', '')
-                yield 'Đã tạo tệp mẫu chứa bài nghị luận **Giữ sự tử tế trong xã hội số**.\n\nBạn có thể xem từng trang và tải tệp bên dưới. Đây là nội dung mẫu của chế độ kiểm thử, chưa dùng AI thật.'
+                yield f'Đã tạo tệp mẫu **{sample["title"]}**.\n\nBạn có thể xem từng trang và tải tệp bên dưới. Đây là nội dung mẫu của chế độ kiểm thử, chưa dùng AI thật.'
             else:
                 yield _tool_result('create_document', result)
                 yield StreamChunk('document_status', '')

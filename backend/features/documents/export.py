@@ -1,24 +1,41 @@
-"""Render bounded Markdown to DOCX/PDF without executing HTML or fetching assets."""
+"""Đọc Markdown giới hạn của create_document thành các khối, rồi dựng DOCX/PDF theo kiểu trình bày; không chạy HTML,
+không tải gì từ ngoài. Bản Word ở docx_out.py, bản PDF ở pdf_out.py; phần chung (khối, công thức, ô ảnh) ở đây."""
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from html import escape
-from io import BytesIO
-from core.config import BASE_DIR
 import re
 import threading
 import unicodedata
+from dataclasses import dataclass, field
+from html import escape
 from urllib.parse import unquote
 
 from markdown_it import MarkdownIt
 
+from core.config import BASE_DIR
+from features.documents.cover import Cover, split_cover
+from features.documents.math import latex as math_latex
+from features.documents.math import markdown as math_markdown
+
 MAX_CONTENT = 60000
+# Công thức trong một tài liệu ($…$, $$…$$); mỗi công thức dựng thành công thức Word thật và hình vẽ trong PDF.
+MAX_FORMULAS = 600
+MATH_SLOT = BASE_DIR / "assets" / "math-slot.png"
+# Bảng chân trị 4 biến có 9 cột (x, y, z, w, bốn hạng tử, F), nên giới hạn cũ 8 cột không đủ (6/10/2026).
+MAX_TABLE_COLUMNS = 12
+# Bảng tối đa chừng này hàng (gồm hàng tiêu đề) không tách sang hai trang, ở cả bản Word lẫn PDF.
+SHORT_TABLE_ROWS = 12
 # Ảnh trong một tài liệu: chỉ ảnh người dùng đã gửi trong hội thoại (document_images.py), không bao giờ ảnh từ web.
 MAX_IMAGES = 12
+MAX_SLOTS = 30
 FONT_DIR = BASE_DIR / "assets" / "fonts"
 _font_lock = threading.Lock()
 # ![chú thích](anh-2) là Ảnh 2 của hội thoại, đúng số trong nhãn "[Ảnh 2: …]" model thấy cạnh ảnh.
 IMAGE_REF = re.compile(r"#?(?:anh|ảnh)[-_: ]?(\d{1,3})", re.IGNORECASE)
+# ![chú thích](khung-anh) là khung chừa chỗ cho người dùng dán ảnh chụp màn hình sau.
+SLOT_REF = re.compile(r"#?(?:khung[-_ ]?(?:anh|ảnh)|slot|placeholder|cho[-_ ]?anh|chỗ[-_ ]?ảnh)", re.IGNORECASE)
+# Một đoạn ngay trên bảng bắt đầu bằng "Bảng:" (hay "Bảng 2.") là chú thích của bảng, đánh số tự động.
+TABLE_CAPTION = re.compile(r"^(?:Bảng|Table)\s*(?:\d+(?:\.\d+)*)?\s*[.:–—-]?\s+(.+)$", re.IGNORECASE)
+FIGURE_LABEL = re.compile(r"^(?:Hình|Figure|Ảnh)\s*\d", re.IGNORECASE)
 # Một dòng riêng "[TOC]" hoặc "[Mục lục]" là chỗ đặt mục lục, gồm các đề mục cấp 1–3.
 TOC_MARKERS = {"[toc]", "[mục lục]"}
 TOC_LEVELS = 3
@@ -34,6 +51,8 @@ class Run:
     italic: bool = False
     strike: bool = False
     code: bool = False
+    # Công thức trong dòng: text là mã LaTeX.
+    math: bool = False
 
 
 @dataclass
@@ -58,6 +77,8 @@ class Block:
     number: int | None = None
     image: int = 0
     caption: str = ""
+    # Công thức dòng riêng (kind "math"): mã LaTeX.
+    math: str = ""
 
 
 @dataclass
@@ -73,21 +94,36 @@ def clean_text(value: str) -> str:
     return re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f\ud800-\udfff￾￿]", "", value).strip()
 
 
+def _source(token) -> str:
+    return unicodedata.normalize("NFC", unquote(token.attrGet("src") or "")).strip()
+
+
 def _image_number(token) -> int:
     """Số ảnh của hội thoại khi ``src`` là anh-N, ngược lại 0: ảnh ở địa chỉ khác chỉ hiện thành chữ, không được tải."""
-    source = unicodedata.normalize("NFC", unquote(token.attrGet("src") or "")).strip()
-    match = IMAGE_REF.fullmatch(source)
+    match = IMAGE_REF.fullmatch(_source(token))
     return int(match.group(1)) if match and int(match.group(1)) > 0 else 0
+
+
+def _is_slot(token) -> bool:
+    return token.type == "image" and bool(SLOT_REF.fullmatch(_source(token)))
 
 
 def _alt(token) -> str:
     return " ".join((token.content or "").split())
 
 
-def inline_runs(tokens) -> list[Run]:
+def inline_runs(tokens, formulas: list | None = None) -> list[Run]:
     runs, bold, italic, strike = [], 0, 0, 0
     links = []
     for token in tokens or []:
+        if token.type == "text" and formulas and math_markdown.PLACEHOLDER.search(token.content):
+            # Công thức (kể cả dòng riêng nằm trong đề mục hay ô bảng) thành công thức trong dòng.
+            for part in math_markdown.split(token.content, formulas):
+                if isinstance(part, tuple):
+                    runs.append(Run(part[0], math=True))
+                elif part:
+                    runs.append(Run(part, bool(bold), bool(italic), bool(strike)))
+            continue
         if token.type == "strong_open": bold += 1
         elif token.type == "strong_close": bold -= 1
         elif token.type == "em_open": italic += 1
@@ -115,35 +151,72 @@ def inline_runs(tokens) -> list[Run]:
 
 def _trim(runs: list[Run]) -> list[Run]:
     """Bỏ phần chỉ có khoảng trắng hoặc xuống dòng ở hai đầu, còn lại khi một ảnh tách đoạn văn làm đôi."""
-    while runs and not runs[0].text.strip(): runs.pop(0)
-    while runs and not runs[-1].text.strip(): runs.pop()
+    while runs and not runs[0].text.strip() and not runs[0].math: runs.pop(0)
+    while runs and not runs[-1].text.strip() and not runs[-1].math: runs.pop()
     if runs:
-        runs[0].text = runs[0].text.lstrip()
-        runs[-1].text = runs[-1].text.rstrip()
+        if not runs[0].math: runs[0].text = runs[0].text.lstrip()
+        if not runs[-1].math: runs[-1].text = runs[-1].text.rstrip()
     return runs
 
 
-def inline_parts(tokens) -> list[list[Run] | tuple[int, str]]:
-    """Như inline_runs, nhưng ảnh của hội thoại (anh-N) thành phần riêng ``(số, chú thích)`` để dựng thành khối ảnh."""
+def inline_parts(tokens, formulas: list | None = None) -> list:
+    """Như inline_runs, nhưng ảnh của hội thoại (anh-N) thành phần riêng ``(số, chú thích)``, khung chừa ảnh thành
+    ``("slot", chú thích)`` và công thức dòng riêng thành ``("math", LaTeX)``, để dựng thành khối riêng."""
     parts, segment = [], []
     for token in tokens or []:
         number = _image_number(token) if token.type == "image" else 0
         if number:
-            parts.extend([_trim(inline_runs(segment)), (number, _alt(token))])
+            parts.extend([_trim(inline_runs(segment, formulas)), (number, _alt(token))])
             segment = []
+        elif _is_slot(token):
+            parts.extend([_trim(inline_runs(segment, formulas)), ("slot", _alt(token))])
+            segment = []
+        elif token.type == "text" and formulas and math_markdown.DISPLAY_OPEN in token.content:
+            pieces = math_markdown.PLACEHOLDER.split(token.content)
+            # split với nhóm bắt: [chữ, dấu mở, số, chữ, dấu mở, số, …]
+            for position in range(0, len(pieces), 3):
+                if pieces[position]:
+                    segment.append(token.copy(content=pieces[position]))
+                if position + 2 < len(pieces):
+                    opener, number = pieces[position + 1], int(pieces[position + 2])
+                    latex, display = formulas[number]
+                    if opener == math_markdown.DISPLAY_OPEN:
+                        parts.extend([_trim(inline_runs(segment, formulas)), ("math", latex)])
+                        segment = []
+                    else:
+                        segment.append(token.copy(content=f"{math_markdown.INLINE_OPEN}{number}{math_markdown.INLINE_CLOSE}"))
         else:
             segment.append(token)
-    parts.append(_trim(inline_runs(segment)))
+    parts.append(_trim(inline_runs(segment, formulas)))
     return parts
 
 
-def parse_blocks(content: str) -> list[Block]:
+def _formula_error(latex: str, error: Exception) -> ValueError:
+    short = " ".join(latex.split())
+    short = short if len(short) <= 60 else short[:57] + "…"
+    return ValueError(f'Công thức "{short}" chưa dựng được: {error} Sửa công thức rồi gọi lại công cụ.')
+
+
+def parse_document(content: str) -> tuple[Cover | None, list[Block]]:
+    """(Trang bìa nếu nội dung mở đầu bằng khối --- … ---, các khối của phần thân)."""
     if not content.strip() or len(content) > MAX_CONTENT:
         raise ValueError("Nội dung cần có từ 1 đến 60.000 ký tự.")
+    cover, content = split_cover(content)
+    content, formulas = math_markdown.extract(content)
+    if len(formulas) > MAX_FORMULAS:
+        raise ValueError(f"Mỗi tài liệu có tối đa {MAX_FORMULAS} công thức. Hãy chia thành nhiều tài liệu.")
+    for latex, display in formulas:
+        try:
+            math_latex.parse(latex, display)
+        except math_latex.MathError as error:
+            raise _formula_error(latex, error) from None
     tokens = MarkdownIt("commonmark", {"html": False, "maxNesting": 20}).enable(["table", "strikethrough"]).parse(content)
     if len(tokens) > 12000:
         raise ValueError("Tài liệu có quá nhiều mục. Hãy chia thành các tài liệu nhỏ hơn.")
     blocks: list[Block] = []
+    if cover is not None and cover.logo:
+        # Logo trên bìa là một ảnh của hội thoại: khối "logo" để image_numbers tải nó, phần thân bỏ qua khối này.
+        blocks.append(Block("logo", image=cover.logo))
     lists: list[ListInfo] = []
     counters: list[int] = []
     items: list[list] = []  # [danh sách, số của mục, đã gắn số vào đoạn nào chưa]
@@ -167,16 +240,20 @@ def parse_blocks(content: str) -> list[Block]:
         elif token.type == "blockquote_open": quote_depth += 1
         elif token.type == "blockquote_close": quote_depth -= 1
         elif token.type == "heading_open":
-            blocks.append(Block("heading", inline_runs(tokens[index + 1].children), int(token.tag[1:])))
+            blocks.append(Block("heading", inline_runs(tokens[index + 1].children, formulas), int(token.tag[1:])))
         elif token.type == "paragraph_open":
-            parts = inline_parts(tokens[index + 1].children)
+            parts = inline_parts(tokens[index + 1].children, formulas)
             marker = len(parts) == 1 and "".join(run.text for run in parts[0]).strip().casefold() in TOC_MARKERS
             if marker and not items and not quote_depth:
                 if not has_toc: blocks.append(Block("toc"))
                 has_toc = True
             else:
                 for part in parts:
-                    if isinstance(part, tuple):
+                    if isinstance(part, tuple) and part[0] == "math":
+                        blocks.append(Block("math", math=part[1]))
+                    elif isinstance(part, tuple) and part[0] == "slot":
+                        blocks.append(Block("slot", caption=part[1]))
+                    elif isinstance(part, tuple):
                         blocks.append(Block("image", image=part[0], caption=part[1]))
                     elif part:
                         block = Block("quote" if quote_depth else "paragraph", part, min(len(lists), 6))
@@ -186,7 +263,7 @@ def parse_blocks(content: str) -> list[Block]:
                             if not item[2]: block.number, item[2] = item[1], True
                         blocks.append(block)
         elif token.type in {"fence", "code_block"}:
-            for line in token.content.rstrip("\n").split("\n"):
+            for line in math_markdown.restore(token.content, formulas).rstrip("\n").split("\n"):
                 blocks.append(Block("code", [Run(line or " ", code=True)]))
         elif token.type == "hr": blocks.append(Block("rule"))
         elif token.type == "table_open":
@@ -195,23 +272,29 @@ def parse_blocks(content: str) -> list[Block]:
             while index < len(tokens) and tokens[index].type != "table_close":
                 cell = tokens[index]
                 if cell.type == "tr_open": row = []
-                elif cell.type == "inline": row.append(inline_runs(cell.children))
+                elif cell.type == "inline": row.append(inline_runs(cell.children, formulas))
                 elif cell.type == "tr_close": rows.append(row)
                 index += 1
-            if len(rows) > 100 or any(len(row) > 8 for row in rows):
-                raise ValueError("Mỗi bảng hỗ trợ tối đa 100 dòng và 8 cột. Hãy chia bảng lớn trước khi xuất.")
+            if len(rows) > 100 or any(len(row) > MAX_TABLE_COLUMNS for row in rows):
+                raise ValueError(f"Mỗi bảng hỗ trợ tối đa 100 dòng và {MAX_TABLE_COLUMNS} cột. Hãy chia bảng lớn trước khi xuất.")
             blocks.append(Block("table", rows=rows))
         index += 1
     if sum(block.kind == "image" for block in blocks) > MAX_IMAGES:
         raise ValueError(f"Mỗi tài liệu chèn tối đa {MAX_IMAGES} ảnh. Hãy bớt ảnh hoặc chia thành nhiều tài liệu.")
+    if sum(block.kind == "slot" for block in blocks) > MAX_SLOTS:
+        raise ValueError(f"Mỗi tài liệu chừa tối đa {MAX_SLOTS} khung ảnh.")
     if len(blocks) > 1200:
         raise ValueError("Tài liệu có quá nhiều đoạn. Hãy chia nhỏ trước khi xuất.")
-    return blocks
+    return cover, blocks
+
+
+def parse_blocks(content: str) -> list[Block]:
+    return parse_document(content)[1]
 
 
 def image_numbers(blocks: list[Block]) -> set[int]:
-    """Các số ảnh (Ảnh N của hội thoại) tài liệu chèn."""
-    return {block.image for block in blocks if block.kind == "image"}
+    """Các số ảnh (Ảnh N của hội thoại) tài liệu chèn, kể cả logo trên bìa."""
+    return {block.image for block in blocks if block.kind in {"image", "logo"} and block.image}
 
 
 def list_indent(depth: int) -> tuple[int, int]:
@@ -220,7 +303,7 @@ def list_indent(depth: int) -> tuple[int, int]:
 
 
 def list_label(info: ListInfo, number: int) -> str:
-    """Nhãn của một mục trong bản PDF, cùng kiểu Word dựng từ định nghĩa đánh số (_numbering_level)."""
+    """Nhãn của một mục trong bản PDF, cùng kiểu Word dựng từ định nghĩa đánh số (numbering_level)."""
     if not info.ordered:
         return info.marker
     if info.style == "lowerLetter":  # như Word: y, z, aa, bb
@@ -239,7 +322,7 @@ def _roman(number: int) -> str:
     return result
 
 
-def _numbering_level(level: int, info: ListInfo) -> str:
+def numbering_level(level: int, info: ListInfo) -> str:
     """Một cấp trong định nghĩa đánh số của Word (numbering.xml), cùng nhãn và vị trí với bản PDF."""
     number_x, text_x = list_indent(level)
     kind, text = (info.style, f"%{level + 1}.") if info.ordered else ("bullet", info.marker)
@@ -248,328 +331,260 @@ def _numbering_level(level: int, info: ListInfo) -> str:
             f'<w:pPr><w:ind w:left="{text_x * 20}" w:hanging="{(text_x - number_x) * 20}"/></w:pPr></w:lvl>')
 
 
-def _fit(image: DocImage, width: float, height: float) -> tuple[float, float]:
+def fit(image: DocImage, width: float, height: float) -> tuple[float, float]:
     """Kích thước (point) để ảnh vừa khổ chữ: ảnh tính 96 dpi, không phóng to ảnh nhỏ, không cao quá ``height``."""
     natural_width, natural_height = image.width * .75, image.height * .75
     scale = min(1, width / natural_width, height / natural_height)
     return natural_width * scale, natural_height * scale
 
 
-def _placeholder(block: Block) -> str:
+def placeholder(block: Block) -> str:
     return f"[Ảnh {block.image}: {block.caption}]" if block.caption else f"[Ảnh {block.image}]"
 
 
-def _plain(runs: list[Run]) -> str:
+def plain(runs: list[Run]) -> str:
     return " ".join("".join(run.text for run in runs).split())
 
 
-def _contents(blocks: list[Block]) -> tuple[list[Block], int]:
-    """Đề mục vào mục lục (cấp 1–3) và cấp cao nhất trong số đó, để thụt các cấp dưới so với nó."""
-    entries = [block for block in blocks if block.kind == "heading" and block.level <= TOC_LEVELS]
-    return entries, min((block.level for block in entries), default=1)
+def body_blocks(title: str, blocks: list[Block]) -> tuple[str, list[Block]]:
+    """(Tên in ở đầu tài liệu, phần thân để dựng).
 
-
-def _body(title, content):
-    blocks = parse_blocks(content)
-    if blocks and blocks[0].kind == "heading" and "".join(run.text for run in blocks[0].runs).strip() == title.strip():
-        blocks.pop(0)
-    return blocks
-
-
-def render_docx(title: str, content: str, layout: str = 'report', images: dict[int, DocImage] | None = None) -> bytes:
-    from docx import Document
-    from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK
-    from docx.oxml import OxmlElement, parse_xml
-    from docx.oxml.ns import nsdecls, qn
-    from docx.shared import Cm, Inches, Pt, RGBColor
-
-    document = Document()
-    section = document.sections[0]
-    essay = layout == 'essay'
-    font = 'Times New Roman' if essay else 'Arial'
-    section.page_width, section.page_height = (Cm(21), Cm(29.7)) if essay else (Inches(8.5), Inches(11))
-    section.top_margin = section.bottom_margin = Inches(.75)
-    section.left_margin = section.right_margin = Inches(.75)
-    text_width, text_height = section.page_width.pt - 108, section.page_height.pt - 108
-    for name in ['Normal', 'Title', 'Caption', 'TOC Heading', *[f'Heading {n}' for n in range(1, 7)]]:
-        style = document.styles[name]
-        style.font.name = font
-        style.font.color.rgb = RGBColor(0, 0, 0)
-        # Mẫu của python-docx đặt font theo theme cho tiêu đề và đề mục, và font theme thắng tên font vừa đặt: Word hiện
-        # Calibri thay cho Times New Roman/Arial như bản PDF xem trước.
-        for attribute in ('w:asciiTheme', 'w:hAnsiTheme', 'w:eastAsiaTheme', 'w:cstheme'):
-            style.element.rPr.rFonts.attrib.pop(qn(attribute), None)
-    normal = document.styles['Normal']
-    normal.font.size = Pt(13 if essay else 11)
-    normal.paragraph_format.line_spacing = 1.5 if essay else 1.25
-    if essay:
-        normal.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-        normal.paragraph_format.first_line_indent = Cm(.75)
-        header = section.header.paragraphs[0]
-        header.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-        header.add_run('Nghị luận xã hội').italic = True
-    normal.paragraph_format.space_after = Pt(7)
-    # Cỡ chữ và khoảng cách theo bản PDF xem trước. Mẫu gốc còn kẻ một đường xanh dưới tiêu đề mà bản PDF không có.
-    title_style = document.styles['Title']
-    title_style.font.size, title_style.font.bold = Pt(21 if essay else 24), True
-    title_style.paragraph_format.space_after = Pt(26 if essay else 18)
-    border = title_style.element.pPr.find(qn('w:pBdr'))
-    if border is not None: title_style.element.pPr.remove(border)
-    for level in range(1, 7):
-        heading = document.styles[f'Heading {level}']
-        heading.font.size, heading.font.bold, heading.font.italic = Pt(max(11, 20 - 2 * level)), True, False
-        heading.paragraph_format.space_before, heading.paragraph_format.space_after = Pt(12), Pt(6)
-    caption = document.styles['Caption']
-    caption.font.size, caption.font.bold, caption.font.italic = Pt(11 if essay else 10), False, True
-    caption.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    caption.paragraph_format.first_line_indent = 0
-    caption.paragraph_format.space_after = Pt(12)
-    document.core_properties.title, document.core_properties.author = title, 'Peto'
-    title_paragraph = document.add_paragraph(title, 'Title')
-    title_paragraph.paragraph_format.first_line_indent = 0
-    if essay: title_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-
-    def write(paragraph, runs):
-        for item in runs:
-            run = paragraph.add_run(item.text)
-            run.bold = item.bold or None
-            run.italic, run.font.strike = item.italic or None, item.strike or None
-            if item.code: run.font.name, run.font.size = 'Consolas', Pt(10)
-
-    def field(paragraph, kind, dirty=False):
-        char = OxmlElement('w:fldChar')
-        char.set(qn('w:fldCharType'), kind)
-        if dirty: char.set(qn('w:dirty'), 'true')
-        paragraph.add_run()._r.append(char)
-
-    # Mỗi danh sách một định nghĩa đánh số riêng: số tự bắt đầu lại, và Word đánh lại số khi người dùng thêm bớt mục.
-    numbering = document.part.numbering_part.element
-    next_abstract = max((int(item.get(qn('w:abstractNumId'))) for item in numbering.findall(qn('w:abstractNum'))), default=0) + 1
-    num_ids: dict[int, int] = {}
-
-    def num_id(info):
-        nonlocal next_abstract
-        if info.id not in num_ids:
-            levels = ''.join(_numbering_level(level, info) for level in range(9))
-            abstract = parse_xml(f'<w:abstractNum {nsdecls("w")} w:abstractNumId="{next_abstract}">'
-                                 f'<w:multiLevelType w:val="hybridMultilevel"/>{levels}</w:abstractNum>')
-            first = numbering.find(qn('w:num'))
-            if first is None: numbering.append(abstract)
-            else: first.addprevious(abstract)
-            num_ids[info.id] = numbering.add_num(next_abstract).numId
-            next_abstract += 1
-        return num_ids[info.id]
-
-    blocks = _body(title, content)
-    entries, top = _contents(blocks)
+    Đề mục mở đầu là tên bài (trùng tên tài liệu, hoặc không đề mục nào khác cùng cấp hay cao hơn, như "# Lời giải bài
+    tập 5: Đại số Bool" rồi các "## Bài 1") thì thành phần tên ở đầu trang thay vì in hai lần. Đề mục cao nhất còn lại về
+    cấp 1 ("##" là đề mục cấp 1 của kiểu trình bày), tối đa cấp 4. Khối logo chỉ dùng cho bìa."""
+    blocks = [block for block in blocks if block.kind != "logo"]
+    shown = " ".join(title.split())
+    if blocks and blocks[0].kind == "heading":
+        first = blocks[0]
+        same = plain(first.runs).casefold() == shown.casefold()
+        alone = not any(block.kind == "heading" and block.level <= first.level for block in blocks[1:])
+        if same or alone:
+            shown = shown if same or any(run.math for run in first.runs) else plain(first.runs)
+            blocks = blocks[1:]
+    levels = [block.level for block in blocks if block.kind == "heading"]
+    top = min(levels, default=1)
     for block in blocks:
-        if block.kind == 'table' and block.rows:
-            table = document.add_table(rows=0, cols=len(block.rows[0]))
-            table.style = 'Table Grid'
-            for row_index, row in enumerate(block.rows):
-                cells = table.add_row().cells
-                for cell, runs in zip(cells, row):
-                    write(cell.paragraphs[0], runs)
-                    if row_index == 0:
-                        for run in cell.paragraphs[0].runs: run.bold = True
-                        shade = OxmlElement('w:shd'); shade.set(qn('w:fill'), 'EDF0F4'); cell._tc.get_or_add_tcPr().append(shade)
-                if row_index == 0:
-                    repeat = OxmlElement('w:tblHeader'); table.rows[0]._tr.get_or_add_trPr().append(repeat)
-            document.add_paragraph().paragraph_format.space_after = Pt(3)
-        elif block.kind == 'rule': document.add_paragraph()
-        elif block.kind == 'image':
-            image = (images or {}).get(block.image)
-            if image is None:
-                write(document.add_paragraph(), [Run(_placeholder(block))])
-                continue
-            width, _ = _fit(image, text_width, text_height * .55)
-            picture = document.add_paragraph()
-            picture.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            picture.paragraph_format.first_line_indent = 0
-            picture.paragraph_format.line_spacing = 1
-            picture.paragraph_format.keep_with_next = bool(block.caption)
-            picture.add_run().add_picture(BytesIO(image.data), width=Pt(width))
-            if block.caption: document.add_paragraph(block.caption, style='Caption')
-        elif block.kind == 'toc':
-            if not entries: continue
-            document.add_paragraph('Mục lục', style='TOC Heading').alignment = WD_ALIGN_PARAGRAPH.CENTER
-            for position, entry in enumerate(entries):
-                paragraph = document.add_paragraph()
-                paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
-                paragraph.paragraph_format.left_indent = Pt(18 * (entry.level - top))
-                paragraph.paragraph_format.first_line_indent = 0
-                paragraph.paragraph_format.space_after = Pt(2)
-                if position == 0:
-                    # Trường mục lục đánh dấu cần cập nhật: Word hỏi cập nhật khi mở rồi dựng lại có số trang. Trình xem
-                    # khác (điện thoại, Google Docs) hiện danh sách đề mục viết sẵn bên dưới.
-                    field(paragraph, 'begin', dirty=True)
-                    instruction = OxmlElement('w:instrText')
-                    instruction.set(qn('xml:space'), 'preserve')
-                    instruction.text = f' TOC \\o "1-{TOC_LEVELS}" \\h \\z \\u '
-                    paragraph.add_run()._r.append(instruction)
-                    field(paragraph, 'separate')
-                paragraph.add_run(_plain(entry.runs))
-            field(paragraph, 'end')
-            document.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
-        else:
-            style = f'Heading {block.level}' if block.kind == 'heading' else 'Normal'
-            paragraph = document.add_paragraph(style=style)
-            layout_format = paragraph.paragraph_format
-            if block.kind == 'heading':
-                layout_format.alignment = WD_ALIGN_PARAGRAPH.LEFT
-                layout_format.first_line_indent = 0
-            elif block.list_info:
-                number_x, text_x = list_indent(block.list_info.depth)
-                layout_format.left_indent = Pt(text_x)
-                layout_format.first_line_indent = Pt(number_x - text_x) if block.number is not None else 0
-                if block.number is not None:
-                    properties = paragraph._p.get_or_add_pPr().get_or_add_numPr()
-                    properties.get_or_add_ilvl().val = block.list_info.depth
-                    properties.get_or_add_numId().val = num_id(block.list_info)
-            if block.kind == 'quote': layout_format.left_indent = Inches(.25)
-            if block.kind == 'code': layout_format.space_after = Pt(0)
-            write(paragraph, block.runs)
-    footer = section.footer.paragraphs[0]
-    footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    footer.add_run('Trang ').font.size = Pt(9)
-    page = OxmlElement('w:fldSimple'); page.set(qn('w:instr'), 'PAGE'); footer._p.append(page)
-    output = BytesIO(); document.save(output)
-    return output.getvalue()
+        if block.kind == "heading":
+            block.level = min(block.level - top + 1, 4)
+    return shown, blocks
 
 
-def _register_fonts():
+def contents(blocks: list[Block]) -> list[Block]:
+    """Đề mục vào mục lục (cấp 1–3)."""
+    return [block for block in blocks if block.kind == "heading" and block.level <= TOC_LEVELS]
+
+
+def table_caption(block: Block, following: Block | None) -> str | None:
+    """Chữ chú thích nếu ``block`` là đoạn "Bảng: …" đứng ngay trên một bảng."""
+    if block.kind != "paragraph" or block.list_info or following is None or following.kind != "table":
+        return None
+    match = TABLE_CAPTION.match(plain(block.runs))
+    return match.group(1).strip() if match else None
+
+
+def figure_caption(text: str) -> str:
+    """Chú thích hình không kèm số: "Hình 2. …" đã có số thì giữ nguyên chữ sau số."""
+    return re.sub(r"^(?:Hình|Figure|Ảnh)\s*\d+(?:\.\d+)*\s*[.:–—-]?\s*", "", text, flags=re.IGNORECASE).strip()
+
+
+def running_title(title: str) -> str:
+    title = " ".join(title.split())
+    return title if len(title) <= 70 else title[:67] + "…"
+
+
+def visible(runs: list[Run]) -> str:
+    """Chữ hiện ra của một ô: công thức tính theo ký hiệu nhìn thấy (\\bar{x} là một chữ), không theo mã LaTeX."""
+    text = "".join(re.sub(r"\\[A-Za-z]+|[{}^_\\$]", "", run.text) if run.math else run.text for run in runs)
+    return " ".join(text.split())
+
+
+def column_widths(rows: list[list[list[Run]]], total: float) -> list[float]:
+    """Bề rộng cột (point), tổng bằng ``total``: cột nào cũng đủ rộng cho từ dài nhất của nó (không bẻ "AppLocker"
+    thành hai dòng), phần còn lại chia theo độ dài chữ, nên cột số ngắn hẹp, cột chữ dài rộng."""
+    columns = max((len(row) for row in rows), default=1)
+    character = 6.3  # bề rộng trung bình một chữ Times New Roman 12 pt, có tính chữ đậm ở hàng đầu
+    minimum, desired = [], []
+    for column in range(columns):
+        texts = [visible(row[column]) for row in rows if column < len(row)]
+        word = max((len(piece) for text in texts for piece in text.split()), default=1)
+        longest = max((len(text) for text in texts), default=1)
+        minimum.append(word * character + 12)
+        desired.append(max(min(longest, 45), word) * character + 12)
+    if sum(desired) <= total:
+        return [width * total / sum(desired) for width in desired]
+    if sum(minimum) >= total:
+        return [width * total / sum(minimum) for width in minimum]
+    extra = total - sum(minimum)
+    slack = [want - least for want, least in zip(desired, minimum)]
+    return [least + extra * room / (sum(slack) or 1) for least, room in zip(minimum, slack)]
+
+
+def centered_columns(rows: list[list[list[Run]]]) -> set[int]:
+    """Cột chỉ toàn ô ngắn (số, 0/1 của bảng chân trị, ký hiệu) thì căn giữa."""
+    columns = max((len(row) for row in rows), default=0)
+    out = set()
+    for column in range(columns):
+        cells = [plain(row[column]) for row in rows[1:] if column < len(row)]
+        if cells and all(len(cell) <= 6 for cell in cells):
+            out.add(column)
+    return out
+
+
+# ---------- Công thức trong DOCX/PDF ----------
+def omml(latex: str, display: bool, text_font: str):
+    """Phần tử công thức Word (m:oMath hoặc m:oMathPara) dựng từ mã LaTeX đã kiểm ở parse_document."""
+    from docx.oxml import parse_xml
+    from docx.oxml.ns import nsdecls
+
+    from features.documents.math.omml_out import to_omml
+    xml = to_omml(math_latex.parse(latex, display), text_font)
+    tag = 'm:oMathPara' if display else 'm:oMath'
+    return parse_xml(xml.replace(f'<{tag}>', f'<{tag} {nsdecls("m", "w")}>', 1))
+
+
+def register_fonts() -> None:
+    """Phông cho bản PDF: Tinos (cùng bề rộng chữ với Times New Roman của bản Word), Cousine cho mã, STIX Two Math cho
+    công thức và ký hiệu toán gõ thẳng trong chữ thường mà Tinos không có."""
     from reportlab.pdfbase import pdfmetrics
     from reportlab.pdfbase.ttfonts import TTFont
+
+    from features.documents.math.layout import MATH_FONT, glyphs
     with _font_lock:
-        if 'PetoSans' not in pdfmetrics.getRegisteredFontNames():
+        if 'PetoTimes' not in pdfmetrics.getRegisteredFontNames():
             for suffix, style in [('', 'Regular'), ('-Bold', 'Bold'), ('-Italic', 'Italic'), ('-BoldItalic', 'BoldItalic')]:
-                pdfmetrics.registerFont(TTFont('PetoSans' + suffix, str(FONT_DIR / f'NotoSans-{style}.ttf')))
-            pdfmetrics.registerFontFamily('PetoSans', normal='PetoSans', bold='PetoSans-Bold', italic='PetoSans-Italic', boldItalic='PetoSans-BoldItalic')
-        if 'PetoSerif' not in pdfmetrics.getRegisteredFontNames():
-            for suffix, style in [('', 'Regular'), ('-Bold', 'Bold'), ('-Italic', 'Italic'), ('-BoldItalic', 'BoldItalic')]:
-                pdfmetrics.registerFont(TTFont('PetoSerif' + suffix, str(FONT_DIR / f'NotoSerif-{style}.ttf')))
-            pdfmetrics.registerFontFamily('PetoSerif', normal='PetoSerif', bold='PetoSerif-Bold', italic='PetoSerif-Italic', boldItalic='PetoSerif-BoldItalic')
+                pdfmetrics.registerFont(TTFont('PetoTimes' + suffix, str(FONT_DIR / f'Tinos-{style}.ttf')))
+            pdfmetrics.registerFontFamily('PetoTimes', normal='PetoTimes', bold='PetoTimes-Bold',
+                                          italic='PetoTimes-Italic', boldItalic='PetoTimes-BoldItalic')
+        if 'PetoMono' not in pdfmetrics.getRegisteredFontNames():
+            pdfmetrics.registerFont(TTFont('PetoMono', str(FONT_DIR / 'Cousine-Regular.ttf')))
+            pdfmetrics.registerFontFamily('PetoMono', normal='PetoMono', bold='PetoMono', italic='PetoMono',
+                                          boldItalic='PetoMono')
+    glyphs()
+    with _font_lock:
+        # Phông toán chỉ có một kiểu; <b>, <i> quanh nó vẫn dùng chính nó thay vì báo lỗi thiếu kiểu đậm/nghiêng.
+        pdfmetrics.registerFontFamily(MATH_FONT, normal=MATH_FONT, bold=MATH_FONT, italic=MATH_FONT, boldItalic=MATH_FONT)
 
 
-def render_pdf(title: str, content: str, layout: str = 'report', images: dict[int, DocImage] | None = None) -> bytes:
-    from reportlab.lib import colors
-    from reportlab.lib.pagesizes import letter, A4
-    from reportlab.lib.styles import ParagraphStyle
-    from reportlab.platypus import (HRFlowable, Image, KeepTogether, LongTable, PageBreak, Paragraph, SimpleDocTemplate,
-                                    Spacer, TableStyle)
-    from reportlab.platypus.tableofcontents import TableOfContents
-    from reportlab.pdfbase import pdfmetrics
+def fallback(text: str, body: dict, math: dict, math_font: str) -> str:
+    """Bọc các ký tự phông chữ thiếu mà phông toán có (≤, ∈, →…) trong <font> của phông toán."""
+    out, run = [], []
+    for char in text:
+        missing = ord(char) not in body and ord(char) in math
+        if missing:
+            run.append(char)
+            continue
+        if run:
+            out.append(f'<font face="{math_font}">{"".join(run)}</font>')
+            run = []
+        out.append(char)
+    if run:
+        out.append(f'<font face="{math_font}">{"".join(run)}</font>')
+    return ''.join(out)
 
-    _register_fonts()
-    essay = layout == 'essay'
-    font = 'PetoSerif' if essay else 'PetoSans'
-    page_size = A4 if essay else letter
-    if any(not char.isspace() and ord(char) not in pdfmetrics.getFont(font).face.charToGlyph for char in title + content):
-        raise ValueError('PDF chưa hỗ trợ một số ký tự trong bản nháp (chẳng hạn emoji hoặc chữ tượng hình). Hãy bỏ các ký tự đó hoặc tải DOCX.')
-    body = ParagraphStyle('Body', fontName='PetoSans', fontSize=11, leading=16, spaceAfter=8, splitLongWords=True)
-    heading = {n: ParagraphStyle(f'Heading{n}', parent=body, fontName='PetoSans-Bold', fontSize=max(11, 20-2*n), leading=max(16, 25-2*n), spaceBefore=12, keepWithNext=True) for n in range(1, 7)}
-    title_style = ParagraphStyle('Title', parent=body, fontName='PetoSans-Bold', fontSize=24, leading=31, spaceAfter=18)
-    if essay:
-        body.fontName, body.fontSize, body.leading = font, 13, 20
-        body.alignment, body.firstLineIndent = 4, 21
-        for style in heading.values(): style.fontName = font + '-Bold'
-        title_style.fontName, title_style.fontSize, title_style.leading = font + '-Bold', 21, 29
-        title_style.alignment, title_style.spaceAfter = 1, 26
-    caption_style = ParagraphStyle('Caption', parent=body, fontName=font + '-Italic', fontSize=11 if essay else 10,
-                                   leading=15 if essay else 14, alignment=1, firstLineIndent=0, spaceBefore=4, spaceAfter=12)
-    contents_title = ParagraphStyle('ContentsTitle', parent=heading[1], alignment=1, spaceBefore=6, spaceAfter=12, keepWithNext=False)
-    top_margin = 62 if essay else 54
-    frame_width, frame_height = page_size[0] - 108, page_size[1] - top_margin - 54
 
-    def markup(runs):
-        chunks = []
-        for run in runs:
-            text = escape(run.text).replace('\n', '<br/>')
-            if run.code: text = text.replace(' ', '&#160;')
-            if run.bold: text = f'<b>{text}</b>'
-            if run.italic: text = f'<i>{text}</i>'
-            if run.strike: text = f'<strike>{text}</strike>'
-            chunks.append(text)
-        return ''.join(chunks) or '&#160;'
+def math_slot(latex: str, size: float, text_fonts, slots: list) -> str:
+    """Ô ảnh rỗng đúng cỡ công thức trong dòng; attach_math gắn hình công thức vào ô, MathCanvas vẽ nó."""
+    from features.documents.math.layout import layout
+    box = layout(math_latex.parse(latex, False), size, text_fonts)
+    slots.append(box)
+    height = max(box.height + box.depth, 0.1)
+    return (f'<img src="{escape(str(MATH_SLOT))}" width="{box.width:.2f}" height="{height:.2f}" '
+            f'valign="{-box.depth:.2f}"/>')
 
-    blocks = _body(title, content)
-    entries, top = _contents(blocks)
-    outline_top = min((block.level for block in blocks if block.kind == 'heading'), default=1)
-    outline_level, has_contents = -1, False
-    story = [Paragraph(escape(title), title_style)]
-    for position, block in enumerate(blocks):
-        if block.kind == 'table' and block.rows:
-            cell_style = ParagraphStyle('Cell', parent=body, fontSize=10, leading=14, spaceAfter=0)
-            head_style = ParagraphStyle('CellHead', parent=cell_style, fontName=font + '-Bold')
-            rows = [[Paragraph(markup(cell), head_style if i == 0 else cell_style) for cell in row] for i, row in enumerate(block.rows)]
-            table = LongTable(rows, colWidths=[(page_size[0] - 108) / len(rows[0])] * len(rows[0]), repeatRows=1, splitByRow=1, splitInRow=1)
-            table.setStyle(TableStyle([
-                ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#EDF0F4')),
-                ('GRID', (0,0), (-1,-1), .5, colors.HexColor('#BDC5CE')),
-                ('VALIGN', (0,0), (-1,-1), 'TOP'),
-                ('LEFTPADDING', (0,0), (-1,-1), 8), ('RIGHTPADDING', (0,0), (-1,-1), 8),
-                ('TOPPADDING', (0,0), (-1,-1), 7), ('BOTTOMPADDING', (0,0), (-1,-1), 7),
-            ]))
-            story.extend([table, Spacer(1, 10)])
-        elif block.kind == 'rule': story.append(HRFlowable(width='100%', thickness=.5, color=colors.HexColor('#BDC5CE'), spaceAfter=10))
-        elif block.kind == 'image':
-            image = (images or {}).get(block.image)
-            if image is None:
-                story.append(Paragraph(escape(_placeholder(block)), body))
-                continue
-            width, height = _fit(image, frame_width, frame_height * .55)
-            picture = Image(BytesIO(image.data), width=width, height=height)
-            picture.hAlign = 'CENTER'
-            ending = Paragraph(escape(block.caption), caption_style) if block.caption else Spacer(1, 12)
-            story.append(KeepTogether([Spacer(1, 4), picture, ending]))
-        elif block.kind == 'toc':
-            if not entries or has_contents: continue
-            has_contents = True
-            contents = TableOfContents(dotsMinLevel=0)
-            contents.levelStyles = [ParagraphStyle(f'Contents{level}', fontName=font, fontSize=12 if essay else 11,
-                                                   leading=18 if essay else 16, leftIndent=18 * level, firstLineIndent=0)
-                                    for level in range(TOC_LEVELS)]
-            story.extend([Paragraph('Mục lục', contents_title), contents, PageBreak()])
-        elif block.kind == 'heading':
-            paragraph = Paragraph(markup(block.runs), heading[block.level])
-            # Mục trong khung dấu trang của trình xem PDF không được sâu hơn mục đứng trước quá một cấp.
-            outline_level = min(block.level - outline_top, outline_level + 1)
-            paragraph.peto_heading = (block.level, outline_level, _plain(block.runs), f'h{position}')
-            story.append(paragraph)
-        elif block.list_info:
-            number_x, text_x = list_indent(block.list_info.depth)
-            style = ParagraphStyle('Item', parent=body, leftIndent=text_x, firstLineIndent=0, bulletIndent=number_x,
-                                   bulletFontName=body.fontName, bulletFontSize=body.fontSize)
-            label = list_label(block.list_info, block.number) if block.number is not None else None
-            story.append(Paragraph(markup(block.runs), style, bulletText=label))
-        else:
-            style = ParagraphStyle('Item', parent=body, leftIndent=14 * block.level)
-            if block.kind == 'quote': style.leftIndent = 18
-            if block.kind == 'code': style.fontSize, style.leading, style.spaceAfter = 10, 14, 0
-            story.append(Paragraph(markup(block.runs), style))
 
-    def page_footer(canvas, document):
-        canvas.saveState(); canvas.setFont(font, 9)
-        canvas.drawCentredString(page_size[0] / 2, 30, f'Trang {document.page}')
-        if essay:
-            canvas.setFont(font + '-Italic', 9)
-            canvas.setFillColor(colors.HexColor('#506279'))
-            canvas.drawRightString(page_size[0] - 54, page_size[1] - 34, 'Nghị luận xã hội')
-        canvas.restoreState()
+def attach_math(paragraph, boxes: list) -> None:
+    if not boxes:
+        return
+    remaining = iter(boxes)
+    for fragment in getattr(paragraph, 'frags', []):
+        definition = getattr(fragment, 'cbDefn', None)
+        if definition is not None and getattr(definition, 'kind', None) == 'img':
+            box = next(remaining, None)
+            if box is None:
+                break
+            definition.image.peto_math = box
 
-    class Template(SimpleDocTemplate):
-        def afterFlowable(self, flowable):
-            # Đề mục thành dấu trang trong trình xem PDF và, khi có mục lục, thành một dòng mục lục có số trang thật.
-            entry = getattr(flowable, 'peto_heading', None)
-            if entry is None: return
-            level, outline, text, key = entry
-            self.canv.bookmarkPage(key)
-            self.canv.addOutlineEntry(text, key, level=outline, closed=False)
-            if has_contents and level <= TOC_LEVELS:
-                self.notify('TOCEntry', (level - top, escape(text), self.page, key))
 
-    output = BytesIO()
-    document = Template(output, pagesize=page_size, topMargin=top_margin, bottomMargin=54, leftMargin=54, rightMargin=54, title=title, author='Peto')
-    # Mục lục cần số trang của đề mục nên phải dàn trang vài lượt.
-    (document.multiBuild if has_contents else document.build)(story, onFirstPage=page_footer, onLaterPages=page_footer)
-    return output.getvalue()
+_canvas_cache: list = []
+
+
+def _canvas_class():
+    if _canvas_cache:
+        return _canvas_cache[0]
+    from reportlab.pdfgen.canvas import Canvas
+
+    from features.documents.math.layout import draw
+
+    class MathCanvas(Canvas):
+        """Canvas vẽ công thức vào ô ảnh giữ chỗ thay cho ảnh rỗng (nét vector, chữ chọn được)."""
+
+        def drawImage(self, image, x, y, width=None, height=None, mask=None, *args, **kwargs):
+            box = getattr(image, 'peto_math', None)
+            if box is None:
+                return super().drawImage(image, x, y, width, height, mask, *args, **kwargs)
+            self.saveState()
+            self.setFillColorRGB(0, 0, 0)
+            self.setStrokeColorRGB(0, 0, 0)
+            draw(self, box, x, y + box.depth)
+            self.restoreState()
+            return (width, height)
+
+    _canvas_cache.append(MathCanvas)
+    return MathCanvas
+
+
+def math_canvas(*args, **kwargs):
+    return _canvas_class()(*args, **kwargs)
+
+
+def math_block(latex: str, size: float, text_fonts):
+    """Công thức dòng riêng trong PDF: căn giữa, thu nhỏ nếu rộng hơn khổ chữ; số hiệu \\tag ở lề phải."""
+    from reportlab.platypus import Flowable
+
+    from features.documents.math.layout import draw, layout
+
+    formula = math_latex.parse(latex, True)
+    box = layout(formula, size, text_fonts)
+    tag = layout(math_latex.Formula([math_latex.Text(f'({formula.tag})')]), size, text_fonts) if formula.tag else None
+
+    class MathBlock(Flowable):
+        def wrap(self, available_width, available_height):
+            self.available = available_width
+            reserved = (tag.width + size * 1.5) * 2 if tag else 0
+            self.scale = min(1.0, (available_width - reserved) / box.width) if box.width else 1.0
+            self.height = (box.height + box.depth) * self.scale + size * 0.9
+            return available_width, self.height
+
+        def draw(self):
+            canvas = self.canv
+            canvas.saveState()
+            canvas.setFillColorRGB(0, 0, 0)
+            canvas.setStrokeColorRGB(0, 0, 0)
+            baseline = size * 0.45 + box.depth * self.scale
+            left = (self.available - box.width * self.scale) / 2
+            canvas.translate(left, baseline)
+            canvas.scale(self.scale, self.scale)
+            draw(canvas, box, 0, 0)
+            canvas.restoreState()
+            if tag:
+                canvas.saveState()
+                canvas.setFillColorRGB(0, 0, 0)
+                draw(canvas, tag, self.available - tag.width, baseline)
+                canvas.restoreState()
+
+    block = MathBlock()
+    block.spaceBefore, block.spaceAfter = 2, 6
+    return block
+
+
+# ---------- Dựng tệp ----------
+def render_docx(title: str, content: str, layout: str = 'classic', images: dict[int, DocImage] | None = None,
+                toc_pages: list | None = None) -> bytes:
+    from features.documents.docx_out import render
+    return render(title, content, layout, images, toc_pages)
+
+
+def render_pdf(title: str, content: str, layout: str = 'classic', images: dict[int, DocImage] | None = None,
+               toc_out: list | None = None) -> bytes:
+    from features.documents.pdf_out import render
+    return render(title, content, layout, images, toc_out)
