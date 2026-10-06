@@ -278,7 +278,9 @@ summary ticker, and a phase bar sized by time spent.
   - `note`: Peto's lead-in sentence before tools;
   - `compose`: Grok writing a long document-tool call;
   - `tool`: its result from the tool's private `_ui` hint ("Đã sửa X · 38 thay đổi", or each refusal);
-  - `lookup`, `github` (consecutive reads become one step) and `search`.
+  - `lookup`, `github` (consecutive reads become one step) and `search`. Consecutive searches, with only think steps
+    between them, also become one step ("Đã tìm trên web · 3 lần", sources counted for the turn): on 2026-10-06 the
+    owner saw 5–6 identical "Đã tìm trên web" lines.
 - **Events and storage.**
   - SSE `step` upserts a step by id, and `thinking` carries its `step`.
   - The final `work` event comes right before `done`/`error` and equals what is stored in `messages.work` (JSON, manual
@@ -2049,6 +2051,10 @@ Chat, Companion and roleplay turn (not the Agent CLI).
   (`loadVersion`, `listVersion`, `authVersion`) plus an `AbortController`; results are
   discarded unless the version still matches. Follow this pattern for any new fetch — fast
   conversation switching is a tested scenario.
+- **Offline notice.** `useReplyRecovery` shows "Bạn đang ngoại tuyến" from `navigator.onLine`, which Chrome on Android
+  can leave false while the network works (the owner's phone, 2026-10-06, even after F5). While it says offline, the
+  hook fetches `/api/auth/me` at once and every 10 s, and any response clears the notice. Playwright still answers
+  mocked routes under `setOffline`, so `recovery.spec.ts` aborts that route while offline.
 - **Draft preservation.** The composer keeps text and files until the server acknowledges
   the message (the `meta` event). Stop, error and disconnect all keep the draft.
 - Modals are native `<dialog>` with `showModal()`; `tests/setup.ts` polyfills those methods

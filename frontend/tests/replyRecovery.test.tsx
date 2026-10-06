@@ -32,16 +32,31 @@ it('đọc lại đúng lượt đã xác nhận, chờ máy chủ lưu xong tr�
   expect(hook.onRecovered).toHaveBeenCalledExactlyOnceWith(saved, true);
   expect(hook.result.current.status).toBe('recovered');
 });
+it('trình duyệt báo sai "ngoại tuyến" mà máy chủ vẫn trả lời thì bỏ thông báo', async () => {
+  vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+  const probe = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{}', { status: 401 }));
+  const hook = setup();
+  expect(hook.result.current.online).toBe(false);
+  await advance(0);
+  expect(probe).toHaveBeenCalledWith('/api/auth/me', expect.objectContaining({ cache: 'no-store' }));
+  expect(hook.result.current.online).toBe(true);
+  vi.restoreAllMocks();
+});
 it('ngoại tuyến thì chờ, khi có mạng lại chỉ đọc lịch sử', async () => {
+  const probe = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('Failed to fetch'));
   const hook = setup();
   act(() => window.dispatchEvent(new Event('offline')));
   interrupt(hook);
   await advance(10000);
   expect(getMessages).not.toHaveBeenCalled();
   expect(hook.onDisconnect).toHaveBeenCalledOnce();
+  // Mất mạng thật: lần hỏi máy chủ đầu và lần sau 10 giây đều hỏng, thông báo vẫn giữ.
+  expect(probe).toHaveBeenCalledTimes(2);
+  expect(hook.result.current.online).toBe(false);
   act(() => window.dispatchEvent(new Event('online')));
   await advance(250);
   expect(hook.onRecovered).toHaveBeenCalledOnce();
+  probe.mockRestore();
 });
 it('chờ người dùng trở lại tab và không ghi đè câu đang nhận', async () => {
   vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');

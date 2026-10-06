@@ -107,6 +107,7 @@ class WorkLog:
         self.summary_chars = 0
         self.text_at: int | None = None
         self.github_read = self.github_failed = 0
+        self.searches = 0
 
     def now(self) -> int:
         return max(0, round((self.clock() - self.started) * 1000))
@@ -255,10 +256,22 @@ class WorkLog:
         return events + self._event(step)
 
     def search(self, status: str) -> str:
+        """Các lần tra web liền nhau (chỉ cách nhau lúc suy nghĩ) gom một dòng, như đọc GitHub: Grok hay tra 5–6 lần
+        liền, và mỗi lần một dòng "Đã tìm trên web" thì danh sách dài mà không nói thêm gì (6/10/2026)."""
         step = self._live('search')
         if status == 'completed':
-            return self._finish(step, 'Đã tìm trên web') if step else ''
-        return '' if step else self._begin('search', 'Đang tìm trên web…')[1]
+            if step is None:
+                return ''
+            return self._finish(step, 'Đã tìm trên web' + (f' · {self.searches} lần' if self.searches > 1 else ''))
+        if step:
+            return ''
+        last = next((item for item in reversed(self.steps) if item.kind != 'think'), None)
+        if last is not None and last.kind == 'search':
+            self.searches += 1
+            last.state, last.end, last.label = 'live', None, f'Đang tìm trên web · lần {self.searches}…'
+            return self._event(last)
+        self.searches = 1
+        return self._begin('search', 'Đang tìm trên web…')[1]
 
     def sources(self, count: int) -> str:
         step = next((item for item in reversed(self.steps) if item.kind == 'search'), None)
@@ -278,7 +291,9 @@ class WorkLog:
                 step.state = 'done' if complete else 'stopped'
                 step.end = end
                 if step.state == 'done':
-                    step.label = 'Đã suy nghĩ' if step.kind == 'think' else _done_label(step.label)
+                    step.label = 'Đã suy nghĩ' if step.kind == 'think' else \
+                        'Đã tìm trên web' + (f' · {self.searches} lần' if self.searches > 1 else '') \
+                        if step.kind == 'search' else _done_label(step.label)
         # Giữ thứ tự tới (provider báo câu dẫn trước lệnh công cụ), đúng như trình duyệt đã vẽ trong lúc chạy.
         kept = [step for step in self.steps if not (
             step.kind == 'think' and not step.summary and step.state == 'done'

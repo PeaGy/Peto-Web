@@ -86,6 +86,26 @@ def test_results_lookups_github_and_search_read_naturally():
     other.sources(3)
     searched = other.close(True)['steps'][0]
     assert searched['label'] == 'Đã tìm trên web' and searched['detail'] == '3 nguồn'
+    # Grok tra liền nhiều lần (chỉ suy nghĩ ở giữa): một dòng đếm số lần, nguồn cộng dồn của lượt.
+    many = WorkLog(clock=Clock())
+    for index, count in enumerate((4, 8, 11)):
+        many.round()
+        many.thinking('Đang xem kết quả.')
+        many.search('searching')
+        many.search('completed')
+        many.sources(count)
+    steps = many.close(True)['steps']
+    assert [step['kind'] for step in steps].count('search') == 1
+    merged = next(step for step in steps if step['kind'] == 'search')
+    assert merged['label'] == 'Đã tìm trên web · 3 lần' and merged['detail'] == '11 nguồn'
+    # Có bước khác chen giữa thì là lần tra mới, dòng mới.
+    apart = WorkLog(clock=Clock())
+    apart.search('searching')
+    apart.search('completed')
+    apart.lookup('Đang tìm “x” trong a.log…', True)
+    apart.lookup('Đã tìm “x” trong a.log: 1 dòng khớp', False)
+    apart.search('searching')
+    assert [step['kind'] for step in apart.close(True)['steps']].count('search') == 2
 
 
 def test_unfinished_steps_stop_when_the_turn_fails():

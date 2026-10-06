@@ -52,6 +52,26 @@ export function useReplyRecovery(options: Options) {
     };
   }, []);
 
+  // navigator.onLine có lúc báo sai: Chrome Android giữ "ngoại tuyến" cả khi trang vừa tải từ mạng (F5 cũng không hết,
+  // 6/10/2026). Báo ngoại tuyến thì hỏi máy chủ ngay rồi cứ 10 giây một lần; có phản hồi bất kỳ là có mạng.
+  useEffect(() => {
+    if (online) return;
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const probe = async () => {
+      try {
+        await fetch('/api/auth/me', { cache: 'no-store', credentials: 'same-origin' });
+        if (!stopped) setOnline(true);
+        return;
+      } catch {
+        // Thật sự mất mạng: thử lại sau.
+      }
+      if (!stopped) timer = setTimeout(probe, 10_000);
+    };
+    void probe();
+    return () => { stopped = true; clearTimeout(timer); };
+  }, [online]);
+
   useEffect(() => {
     if (!ticket) return;
     if (ticket.scope !== options.scope || ticket.conversationId !== options.conversationId) {

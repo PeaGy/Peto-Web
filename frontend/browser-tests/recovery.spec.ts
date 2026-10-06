@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Route } from '@playwright/test';
 import { mockPeto, openChat, noPageOverflow } from './fixtures';
 
 test('thông báo lỗi có nút thử lại gọn và gửi lại đúng tin đã lưu', async ({ page }) => {
@@ -47,6 +47,9 @@ for (const companion of [false, true]) {
     await draft.fill('Tin kiểm tra phục hồi');
     await page.getByRole('button', { name: 'Gửi', exact: true }).click();
     await expect(page.getByText('Phần đang nhận', { exact: true })).toBeVisible();
+    // Yêu cầu đã giả lập vẫn được trả lời khi setOffline, nên lần hỏi máy chủ "có mạng chưa" phải hỏng như mạng thật.
+    const probe = (route: Route) => route.abort('internetdisconnected');
+    await page.route('**/api/auth/me', probe);
     await context.setOffline(true);
     await expect(pane.getByText('Bạn đang ngoại tuyến.', { exact: false })).toBeVisible();
     await draft.fill('Bản nháp tiếp theo');
@@ -62,6 +65,7 @@ for (const companion of [false, true]) {
     }
     await expect(page).toHaveScreenshot(`${companion ? 'companion' : 'chat'}-offline.png`);
     state.recoveryReady = true;
+    await page.unroute('**/api/auth/me', probe);
     await context.setOffline(false);
     await expect(page.getByText('Câu trả lời đã được lưu đầy đủ.', { exact: true })).toBeVisible();
     await expect(pane.getByText('Đã đồng bộ câu trả lời từ máy chủ.', { exact: true })).toBeVisible();
