@@ -2000,6 +2000,11 @@ Chat, Companion and roleplay turn (not the Agent CLI).
   write them. `tests/test_docs_api.py` pins questions that must find their article and everyday questions (literature,
   physics, code) that must find none.
 
+- **Text for readers without JavaScript** (2026-10-06). Peto's own web search found the docs pages empty, since React
+  draws the article. `core/static_files.py` now adds `features/docs/snapshot.noscript` before `</body>`: the article
+  as escaped HTML (a small Markdown subset; links only to `/…` or https) plus the list of all articles, inside
+  `<noscript>`, so browsers ignore it. Article pages also link their Markdown (`/api/docs/<slug>.md`). There is no
+  `robots.txt` or sitemap on purpose: the owner does not want the site promoted to search engines yet.
 - **FastAPI's own API docs are off** (`docs_url`, `redoc_url` and `openapi_url` are `None` in `main.py`). Its Swagger page
   answered `/docs` without the trailing slash, so only `/docs/` reached the guide (reported 2026-09-28).
   `test_static_files.py` checks both spellings on the real app.

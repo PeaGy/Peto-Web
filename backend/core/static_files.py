@@ -179,6 +179,12 @@ def mount(app: FastAPI, static_dir: Path) -> bool:
                 page = re.sub(r'(<meta (?:name|property)="' + name + r'" content=")[^"]*', lambda m: m[1] + html.escape(description, quote=True), page)
             page = re.sub(r'(<meta property="og:title" content=")[^"]*', lambda m: m[1] + html.escape(title, quote=True), page)
             page = page.replace('<link rel="preload" href="/api/auth/me" as="fetch" crossorigin />', '')
+            # Máy đọc không chạy JavaScript (tra web, Google) thấy chữ của bài; trình duyệt bỏ qua <noscript>.
+            from features.docs import snapshot
+            page = page.replace('</body>', snapshot.noscript(article, docs_api.pages()[1]) + '</body>', 1)
+            if article:
+                page = page.replace('</head>', f'<link rel="alternate" type="text/markdown" '
+                                    f'href="/api/docs/{html.escape(article["slug"], quote=True)}.md" />\n</head>', 1)
             # Link /docs dán vào Discord hay Messenger cũng hiện banner og.png như trang chủ.
             page = await with_preview(page, request)
             return HTMLResponse(page, headers={'Cache-Control': 'no-cache'})

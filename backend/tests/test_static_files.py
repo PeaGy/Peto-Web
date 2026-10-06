@@ -79,6 +79,28 @@ async def test_docs_deep_links(site_client):
     assert (await site_client.get('/docs/nonexistent/')).status_code == 404
 
 
+async def test_docs_pages_carry_their_text_for_readers_without_javascript(site_client):
+    """Ngày 6/10/2026 Peto tra web về docs của chính nó và chỉ thấy trang trống: bài được vẽ bằng JavaScript."""
+    from features.docs import api as docs_api
+    article = next(page for page in docs_api.pages()[1] if page['slug'] == 'bat-dau')
+    page = (await site_client.get('/docs/bat-dau/')).text
+    snapshot = page[page.index('<noscript>'):page.index('</noscript>')]
+    assert f'<h1>{article["title"]}</h1>' in snapshot and '<h2>Chọn cách bạn muốn bắt đầu</h2>' in snapshot
+    assert '<strong>Trò chuyện</strong>' in snapshot and '<a href="/docs/khac-phuc/">' in snapshot
+    assert '<link rel="alternate" type="text/markdown" href="/api/docs/bat-dau.md" />' in page
+    home = (await site_client.get('/docs/')).text
+    assert home.count('<a href="/docs/') == len(docs_api.pages()[1]) and 'text/markdown' not in home
+
+
+def test_snapshot_escapes_text_and_drops_unsafe_links():
+    from features.docs.snapshot import markdown_html
+    out = markdown_html('## Tiêu <b>đề</b>\n- [x](javascript:alert(1)) và [y](//evil.test) và [z](/docs/a/)\n'
+                        '| A | B |\n|---|---|\n| 1 | `<s>` |\n```\n<script>\n```')
+    assert '<h2>Tiêu &lt;b&gt;đề&lt;/b&gt;</h2>' in out and 'javascript' not in out and 'evil' not in out
+    assert '<a href="/docs/a/">z</a>' in out and '<p>1 · <code>&lt;s&gt;</code></p>' in out and '---' not in out
+    assert '<pre><code>&lt;script&gt;</code></pre>' in out
+
+
 async def test_serves_hashed_asset_with_long_cache(site_client):
     response = await site_client.get("/assets/index-abc123.js")
     assert response.status_code == 200
