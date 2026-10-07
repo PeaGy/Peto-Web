@@ -252,7 +252,6 @@ class ResponsesProvider(ChatProvider):
             output_items: list[dict] = []
             completed = False
             emitted_text = follow_up       # lần gọi nhắc: câu báo lần trước vẫn đang hiện
-            dropped_draft = False
             noted = False
             written: list[str] = []     # chữ lần gọi này đã phát
             # Chữ của lần gọi nhắc được giữ lại: Grok gọi công cụ thì phát (thành câu dẫn cùng câu báo), không gọi thì đó
@@ -260,12 +259,13 @@ class ResponsesProvider(ChatProvider):
             held: list[str] = []
 
             def drop_pre_search_draft() -> StreamChunk | None:
-                """Grok hay viết móc câu rồi search rồi viết lại từ đầu — bỏ bản nháp trước search."""
-                nonlocal dropped_draft, emitted_text
+                """Grok hay viết móc câu hay câu dẫn rồi search rồi viết tiếp. Mỗi lần tra, chữ viết từ lần tra trước tới giờ
+                là bản nháp: tab Trò chuyện đưa câu ngắn vào nhật ký "Đang làm", Companion bỏ đi. Trước đây chỉ lần tra đầu
+                được xử lý, nên câu dẫn trước lần tra thứ hai ở lại và dính liền vào câu trả lời ("phân tích.Ad gửi…")."""
+                nonlocal emitted_text
                 written.clear()
                 held.clear()
-                if emitted_text and not dropped_draft:
-                    dropped_draft = True
+                if emitted_text:
                     emitted_text = False
                     return StreamChunk("replace")
                 return None

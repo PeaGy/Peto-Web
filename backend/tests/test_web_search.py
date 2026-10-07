@@ -129,6 +129,48 @@ async def test_draft_written_before_search_is_dropped(monkeypatch):
     assert stream.closed
 
 
+async def test_lead_in_before_a_second_search_is_also_a_draft(monkeypatch):
+    """Ảnh chủ dự án 7/10: câu dẫn viết giữa hai lần tra ở lại và dính vào câu trả lời ("phân tích.Ad gửi link")."""
+    stream = FakeStream([
+        SimpleNamespace(type="response.output_item.added", item=search_call("in_progress")),
+        SimpleNamespace(type="response.web_search_call.completed"),
+        SimpleNamespace(type="response.output_text.delta", delta="Đúng bài rồi. Peto lấy lời rồi phân tích."),
+        SimpleNamespace(type="response.output_item.added", item=search_call("in_progress")),
+        SimpleNamespace(type="response.web_search_call.completed"),
+        SimpleNamespace(type="response.output_text.delta", delta="Ad gửi link trang tìm kiếm."),
+        done(search_call(), cited_message()),
+    ])
+    provider, _ = fake_provider(monkeypatch, [stream])
+    chunks = [chunk async for chunk in provider.stream(system_prompt="Peto", messages=[])]
+    kept: list[str] = []
+    for chunk in chunks:
+        if isinstance(chunk, StreamChunk) and chunk.kind == "replace":
+            kept = []
+        elif isinstance(chunk, str):
+            kept.append(chunk)
+    assert "".join(kept) == "Ad gửi link trang tìm kiếm."
+
+
+async def test_short_draft_before_search_moves_to_the_work_log(client, monkeypatch):
+    class TwoSearches:
+        async def stream(self, **kwargs):
+            yield StreamChunk("round")
+            yield StreamChunk("search", "searching")
+            yield StreamChunk("search", "completed")
+            yield "Đúng bài rồi. Peto lấy lời rồi phân tích."
+            yield StreamChunk("replace")
+            yield StreamChunk("search", "searching")
+            yield StreamChunk("search", "completed")
+            yield "Ad gửi link trang tìm kiếm."
+    monkeypatch.setattr(chat_service, "get_provider", lambda model="peto": TwoSearches())
+    events = await read_events(await client.post("/api/chat", json={"message": "Phân tích bài này"}))
+    assert events[-1]["type"] == "done"
+    work = next(event["work"] for event in events if event["type"] == "work")
+    assert [step["label"] for step in work["steps"] if step["kind"] == "note"] == ["Đúng bài rồi. Peto lấy lời rồi phân tích."]
+    saved = (await client.get(f"/api/conversations/{events[0]['conversation_id']}/messages")).json()["messages"][-1]
+    assert saved["content"] == "Ad gửi link trang tìm kiếm."
+
+
 async def test_search_after_answer_does_not_erase_the_final_text(monkeypatch):
     """Sự kiện search completed lúc cuối không được xóa câu đã viết sau khi tra xong."""
     stream = FakeStream([

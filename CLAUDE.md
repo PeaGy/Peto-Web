@@ -311,6 +311,10 @@ summary ticker, and a phase bar sized by time spent.
   - Longer text is real content: it stays in the answer with a paragraph break.
   - The prompt asks Peto for one short sentence before multi-step tool work, followed by the call in the same response.
   - `replace` now drops only the current call's draft, so text from earlier calls is never lost.
+  - **Drafts before a web search** (2026-10-07). On every search start, `ResponsesProvider` sends `replace` for the text
+    written since the previous search. Before this, only the first search in a call did, so a lead-in written between
+    two searches stayed in the answer, glued to what followed ("phân tích.Ad gửi link"). In Chat, a draft of up to
+    `NOTE_LIMIT` becomes a `note` step; a longer one is dropped as before. Companion still drops its draft.
 - **Announce, then stop** (2026-10-05, the owner's re-run of the Excel test at effort "Thấp"). Grok thought for 46 s,
   wrote "Peto sửa lại từ file gốc, không đụng sheet Quy_dinh." and ended the turn without a tool call, so no file came
   back and no error showed. It was not a truncation: xAI's `max_output_tokens` counts visible text only, and a cut

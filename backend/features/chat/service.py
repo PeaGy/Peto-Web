@@ -344,11 +344,17 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                     notes = private_notes.NoteFilter()
                     markers = emotion_tags.MarkerFilter(turn_emotion)
                     return sse({"type": "replace"})
-                # Chỉ bỏ bản nháp của lần gọi hiện tại; chữ các lần gọi trước vẫn là câu trả lời.
+                # Chỉ bỏ bản nháp của lần gọi hiện tại; chữ các lần gọi trước vẫn là câu trả lời. Bản nháp ngắn trước lúc
+                # tra web là câu dẫn ("Peto lấy lời và vài nguồn…"): giữ trong nhật ký "Đang làm" như câu trước công cụ.
+                draft = ''.join(collected[round_start:]).strip()
                 del collected[round_start:]
+                steps = ''
                 if log:
-                    log.replace()
-                return sse({"type": "replace", "text": ''.join(collected)})
+                    if draft and len(draft) <= NOTE_LIMIT:
+                        steps = log.note(draft)
+                    else:
+                        log.replace()
+                return steps + sse({"type": "replace", "text": ''.join(collected)})
             if chunk.text and first_text_at is None:
                 first_text_at = perf_counter()
             if log and chunk.text:
