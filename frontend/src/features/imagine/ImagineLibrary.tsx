@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import type { ImagineImage, ImagineJob } from "../../shared/api/api";
 import MeasuredImage from "./MeasuredImage";
 import StudioIcon from "./studioIcons";
@@ -43,7 +43,7 @@ function canShareFiles() {
 /**
  * Thư viện ảnh mở từ thanh bên hoặc nút thư viện trên điện thoại.
  *
- * Mỗi ô là một ảnh kết quả. Chạm để xem, "Chọn" để chọn nhiều, giữ lâu (hoặc chuột phải) để mở menu
+ * Mỗi ô là một ảnh kết quả. Bấm để xem, giữ lâu hoặc bấm "Chọn" để chọn nhiều; chuột phải mở menu
  * của riêng ảnh đó. Việc gọi API xóa và cập nhật danh sách nằm ở Imagine, vì bộ ảnh và cột trái dùng chung.
  */
 export default function ImagineLibrary({ open, jobs, onClose, onOpenImage, onDeleteImages, onUseSources, sourceLimit = 5, hasMore, loadingMore, onLoadMore, composer }: {
@@ -65,7 +65,7 @@ export default function ImagineLibrary({ open, jobs, onClose, onOpenImage, onDel
   const menuRef = useRef<HTMLDivElement>(null);
   const filterRef = useRef<HTMLDivElement>(null);
   const press = useRef<{ timer: number; x: number; y: number } | null>(null);
-  const longPressed = useRef(false);
+  const suppressedClick = useRef<{ imageId: string; until: number } | null>(null);
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [columns, setColumns] = useState(readColumns);
@@ -88,7 +88,7 @@ export default function ImagineLibrary({ open, jobs, onClose, onOpenImage, onDel
   useEffect(() => {
     if (open) { dialogRef.current?.showModal(); return; }
     dialogRef.current?.close();
-    cancelPress();
+    cancelPress(); suppressedClick.current = null;
     setSelecting(false); setSelected(new Set()); setMenu(null); setFilterOpen(false);
     setConfirmIds(null); setNotice(null); setQuery(""); setSearchOpen(false); setLikedOnly(false); setKind("all");
   }, [open]);
@@ -122,6 +122,7 @@ export default function ImagineLibrary({ open, jobs, onClose, onOpenImage, onDel
     press.current = null;
   }
   function exitSelecting() {
+    cancelPress(); suppressedClick.current = null;
     setSelecting(false);
     setSelected(new Set());
     setMenu(null);
@@ -133,12 +134,10 @@ export default function ImagineLibrary({ open, jobs, onClose, onOpenImage, onDel
       return next;
     });
   }
-  // Như Grok: giữ lâu thì ảnh được chọn luôn, menu hiện ngay dưới ảnh (hết chỗ thì lên trên).
+  // Chuột phải mở menu riêng, không chuyển cú bấm tiếp theo sang chế độ chọn.
   function openMenu(tile: Tile, element: HTMLElement) {
     const rect = element.getBoundingClientRect();
     const below = rect.bottom + 8 + MENU_HEIGHT <= window.innerHeight;
-    setSelecting(true);
-    setSelected((prev) => new Set(prev).add(tile.image.id));
     setMenu({
       tile,
       left: Math.max(8, Math.min(rect.left, window.innerWidth - MENU_WIDTH - 8)),
@@ -146,14 +145,13 @@ export default function ImagineLibrary({ open, jobs, onClose, onOpenImage, onDel
     });
   }
   function onTilePointerDown(event: ReactPointerEvent<HTMLButtonElement>, tile: Tile) {
-    if (event.button !== 0) return;
-    cancelPress();
-    longPressed.current = false;
-    const element = event.currentTarget;
+    if (event.button !== 0 || event.isPrimary === false) return;
+    cancelPress(); suppressedClick.current = null;
     const timer = window.setTimeout(() => {
       press.current = null;
-      longPressed.current = true;
-      openMenu(tile, element);
+      suppressedClick.current = { imageId: tile.image.id, until: Date.now() + 1500 };
+      setMenu(null); setSelecting(true);
+      setSelected(previous => new Set(previous).add(tile.image.id));
     }, LONG_PRESS_MS);
     press.current = { timer, x: event.clientX, y: event.clientY };
   }
@@ -161,8 +159,11 @@ export default function ImagineLibrary({ open, jobs, onClose, onOpenImage, onDel
     // Ngón tay trượt để cuộn thì không tính là giữ lâu.
     if (press.current && Math.hypot(event.clientX - press.current.x, event.clientY - press.current.y) > 10) cancelPress();
   }
-  function onTileClick(tile: Tile) {
-    if (longPressed.current) { longPressed.current = false; return; }
+  function onTileClick(event: ReactMouseEvent<HTMLButtonElement>, tile: Tile) {
+    cancelPress();
+    const suppressed = suppressedClick.current; suppressedClick.current = null;
+    // Chỉ bỏ cú click phát sinh khi nhấc tay sau nhấn giữ, không bỏ thao tác bàn phím.
+    if (event.detail > 0 && suppressed?.imageId === tile.image.id && Date.now() < suppressed.until) return;
     if (selecting) toggle(tile.image.id);
     else onOpenImage(tile.job, tile.index);
   }
@@ -220,7 +221,6 @@ export default function ImagineLibrary({ open, jobs, onClose, onOpenImage, onDel
     else onClose();
   }}>
     {open && <>
-      <div className="image-nav-rail"><button type="button" aria-label="Đóng thư viện" onClick={onClose}><StudioIcon name="panel" /></button><span><StudioIcon name="grid" /></span></div>
       <div className="library-top">
         <div className="library-top-left">
           <button type="button" className="library-round" aria-label="Quay lại Tạo ảnh" onClick={onClose}><StudioIcon name="back" /></button>
@@ -253,7 +253,6 @@ export default function ImagineLibrary({ open, jobs, onClose, onOpenImage, onDel
         </div>
       </div>
       {searchOpen && !selecting && <div className="library-search"><StudioIcon name="search" /><input autoFocus type="search" value={query} placeholder="Tìm ảnh theo mô tả" aria-label="Tìm ảnh theo mô tả" onChange={event => setQuery(event.target.value)} /></div>}
-      {selecting && onUseSources && <p className="library-reference-hint" role="status">Chọn theo thứ tự mong muốn · còn {sourceLimit} chỗ{picked.length > sourceLimit ? " · Bạn đã chọn quá số ảnh còn trống" : ""}</p>}
       <p className="sr-only" aria-live="polite">{selecting ? `Đã chọn ${picked.length} ảnh` : ""}</p>
 
       <div className={"library-grid" + (composer && !selecting ? " with-composer" : "")} style={{ "--library-columns": columns, "--library-tile-size": columns === 2 ? "clamp(240px, 19vw, 360px)" : "clamp(180px, 14vw, 240px)" } as CSSProperties}>
@@ -266,10 +265,10 @@ export default function ImagineLibrary({ open, jobs, onClose, onOpenImage, onDel
               aria-label={(selecting ? "Chọn ảnh: " : "Xem ảnh: ") + tile.job.prompt} aria-pressed={selecting ? on : undefined}
               onPointerDown={(event) => onTilePointerDown(event, tile)} onPointerMove={onTilePointerMove}
               onPointerUp={cancelPress} onPointerCancel={cancelPress} onPointerLeave={cancelPress}
-              onContextMenu={(event) => { event.preventDefault(); cancelPress(); openMenu(tile, event.currentTarget); }}
-              onClick={() => onTileClick(tile)}>
+              onContextMenu={(event) => { event.preventDefault(); cancelPress(); if (suppressedClick.current?.imageId === tile.image.id && Date.now() < suppressedClick.current.until) return; openMenu(tile, event.currentTarget); }}
+              onClick={event => onTileClick(event, tile)}>
               <MeasuredImage src={tile.image.url} alt="" loading="lazy" decoding="async" draggable={false} />
-              {selecting && <span className="library-check" aria-hidden="true">{on && (onUseSources ? Array.from(selected).indexOf(tile.image.id) + 1 : <CheckIcon />)}</span>}
+              {selecting && <span className="library-check" aria-hidden="true">{on && <CheckIcon />}</span>}
             </button>;
           })}
         {hasMore && <button type="button" className="load-more library-load-more" disabled={loadingMore} onClick={onLoadMore}>{loadingMore ? "Đang tải…" : "Xem ảnh cũ hơn"}</button>}

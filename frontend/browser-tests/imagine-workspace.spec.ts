@@ -39,6 +39,8 @@ test('thư viện có ô ảnh nhỏ và khung xem vừa màn hình trên PC/mob
   const library = page.getByRole('dialog', { name: 'Thư viện ảnh' });
   const tile = library.getByRole('button', { name: 'Xem ảnh: Ngôi nhà giữa núi xanh', exact: true }).first();
   await expect(tile.locator('img')).toHaveJSProperty('naturalWidth', 960);
+  await expect(page.locator('.image-nav-rail')).toHaveCount(0);
+  await expect(library.getByText(/Chọn theo thứ tự mong muốn/)).toHaveCount(0);
   const bounds = (await tile.boundingBox())!;
   expect(bounds.width).toBeLessThanOrEqual(360);
   expect(Math.abs(bounds.width - bounds.height)).toBeLessThan(1);
@@ -53,6 +55,7 @@ test('thư viện có ô ảnh nhỏ và khung xem vừa màn hình trên PC/mob
   await tile.click();
   const viewer = page.getByRole('dialog', { name: 'Xem ảnh đã tạo' });
   await expect(viewer.getByLabel('Kích thước ảnh thực tế')).toHaveText('960 × 1440');
+  await expect(viewer.locator('.image-nav-rail')).toHaveCount(0);
   const stage = (await viewer.locator('.workspace-canvas').boundingBox())!;
   const shown = (await viewer.locator('.workspace-picture img').boundingBox())!;
   expect(shown.width).toBeLessThanOrEqual(stage.width);
@@ -124,4 +127,34 @@ test('cắt/vẽ tạo nguồn PNG mới, hoàn tác giữ ảnh gốc, chỉ g�
   expect(posts).toHaveLength(1);
   expect(posts[0]).toMatchObject({ n: 1, background: true, source_image: { data: data!.split(',')[1] }, prompt: 'Đổi thành tranh màu nước' });
   await expect(page.getByRole('button', { name: 'Xem ảnh 1: Ngôi nhà giữa núi xanh', exact: true }).locator('img')).toHaveAttribute('src', '/api/imagine/images/portrait');
+});
+
+
+test('bấm ảnh để xem, nhấn giữ để chọn và hủy chọn trả về xem ảnh', async ({ page }) => {
+  await setup(page);
+  await page.goto('/#imagine');
+  await page.getByRole('button', { name: 'Thư viện', exact: true }).last().click();
+  const library = page.getByRole('dialog', { name: 'Thư viện ảnh' });
+  const tile = library.locator('[data-image-id="portrait"]');
+  await tile.click();
+  const viewer = page.getByRole('dialog', { name: 'Xem ảnh đã tạo' });
+  await expect(viewer).toBeVisible();
+  await viewer.getByRole('button', { name: 'Quay lại', exact: true }).click();
+  await expect(library.getByRole('button', { name: 'Chọn', exact: true })).toBeVisible();
+  const box = (await tile.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  // Chờ trạng thái do cử chỉ giữ thực sự, không bấm nút Chọn để giả lập.
+  await expect(library.getByRole('button', { name: 'Hủy', exact: true })).toHaveText('1 đã chọn');
+  await page.mouse.up();
+  await expect(tile).toHaveAttribute('aria-pressed', 'true');
+  await expect(viewer).not.toBeVisible();
+  await expect(library.getByRole('menu')).toHaveCount(0);
+  await expect(library.getByText(/Chọn theo thứ tự mong muốn/)).toHaveCount(0);
+  await library.locator('[data-image-id="portrait-two"]').click();
+  await expect(library.getByRole('button', { name: 'Hủy', exact: true })).toHaveText('2 đã chọn');
+  await library.getByRole('button', { name: 'Hủy', exact: true }).click();
+  await tile.click();
+  await expect(viewer).toBeVisible();
+  await noPageOverflow(page);
 });

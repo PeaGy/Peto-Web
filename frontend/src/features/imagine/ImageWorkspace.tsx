@@ -140,7 +140,6 @@ export default function ImageWorkspace({ job, image, index, original, liked, dis
   }
 
   return <div className={'image-workspace' + (!panelOpen ? ' panel-hidden' : '')} onKeyDown={event => { if (event.key === 'Escape' && tool === 'crop') { event.preventDefault(); event.stopPropagation(); if (!blocked) setTool('info'); } }}>
-    <div className="image-nav-rail"><button type="button" aria-label="Đóng ảnh" onClick={onClose}><StudioIcon name="back" /></button><span><StudioIcon name="grid" /></span></div>
     <section className="workspace-main">
       <div className="workspace-topbar">
         <button type="button" className="workspace-round" aria-label="Quay lại" onClick={onClose}><StudioIcon name="back" /></button>

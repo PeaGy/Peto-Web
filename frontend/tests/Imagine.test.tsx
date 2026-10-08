@@ -110,7 +110,7 @@ it('so sánh với từng ảnh tham chiếu và mở lại nguồn sau tải l�
   fireEvent.click(within(dialog).getByRole('button', { name: 'So sánh trước / sau' }));
   fireEvent.change(within(dialog).getByLabelText('Chọn ảnh gốc để so sánh'), { target: { value: '1' } });
   expect(within(dialog).getByRole('img', { name: 'Ảnh gốc 2' }).getAttribute('src')).toBe(sources[1].url);
-  fireEvent.click(within(dialog).getByRole('button', { name: 'Đóng ảnh' }));
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Quay lại' }));
   fireEvent.click(screen.getByRole('button', { name: 'Dùng lại mô tả' }));
   expect(screen.getByRole('img', { name: 'Ảnh tham chiếu 2' }).getAttribute('src')).toBe(sources[1].url);
 });
@@ -380,7 +380,7 @@ it('xem và dùng lại đúng ảnh gốc của lượt sửa', async () => {
   const dialog = screen.getByRole('dialog');
   expect(within(dialog).getByRole('img').getAttribute('src')).toBe(editedJob.source_image!.url);
   expect(within(dialog).queryByRole('button', { name: 'Sau →' })).toBeNull();
-  fireEvent.click(within(dialog).getByRole('button', { name: 'Đóng ảnh' }));
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Quay lại' }));
   fireEvent.click(screen.getByRole('button', { name: 'Dùng lại mô tả' }));
   expect((screen.getByLabelText('Bạn muốn sửa gì trong ảnh?') as HTMLTextAreaElement).value).toBe(job.prompt);
   fireEvent.click(screen.getByRole('button', { name: 'Sửa ảnh', exact: true }));
@@ -542,7 +542,7 @@ it('chỉnh sửa chưa xác nhận chuyển sang kiểm tra lượt cũ và kh�
   fireEvent.change(screen.getByLabelText('Mô tả chỉnh sửa ảnh'), { target: { value: 'Đổi màu mũ' } });
   fireEvent.click(screen.getByRole('button', { name: 'Gửi chỉnh sửa ảnh' }));
   await screen.findByRole('button', { name: 'Kiểm tra lượt vừa gửi' });
-  expect(screen.queryByRole('dialog', { name: 'Xem ảnh đã tạo' })).toBeNull();
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Xem ảnh đã tạo' })).toBeNull());
   expect(api.createImagineJob).toHaveBeenCalledTimes(1);
   expect((screen.getByRole('button', { name: 'Tạo ảnh', exact: true }) as HTMLButtonElement).disabled).toBe(true);
 });

@@ -206,11 +206,7 @@
 .imagine-library-view[open] { display: flex; flex-direction: column; }
 .imagine-library-view::backdrop { background: var(--bg); }
 /* Thư viện dùng ô cố định: ít ảnh không làm mỗi ô giãn thành nửa màn hình. */
-.image-nav-rail { position: absolute; inset: 0 auto 0 0; width: 72px; border-right: 1px solid var(--line); background: var(--panel); display: flex; flex-direction: column; align-items: center; gap: 26px; padding: 20px 10px; }
-.image-nav-rail button, .image-nav-rail > span { display: grid; place-items: center; width: 44px; height: 44px; border: 0; border-radius: 14px; background: none; color: var(--muted); }
-.image-nav-rail button { cursor: pointer; }
-.image-nav-rail > span { background: var(--panel-2); color: var(--text); }
-.library-top { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; padding: 16px 24px 16px 88px; z-index: 3; flex-shrink: 0; }
+.library-top { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; padding: 16px 20px; z-index: 3; flex-shrink: 0; }
 .library-top-left, .library-top-right, .library-actions { display: flex; align-items: center; gap: 10px; }
 .library-round, .library-pill, .library-actions button { border: 0; background: var(--panel-2); color: var(--text); font: inherit; font-size: 14px; font-weight: 550; cursor: pointer; }
 .library-round { display: grid; place-items: center; flex-shrink: 0; width: 48px; height: 48px; padding: 0; border-radius: 50%; }
@@ -219,22 +215,22 @@
 .library-actions button:disabled { opacity: .4; cursor: not-allowed; }
 .library-actions .danger { background: #b52332; color: #fff; }
 .effort-option.danger { color: var(--danger); }
-.library-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(auto-fill, var(--library-tile-size, 300px)); align-content: start; gap: 3px; overflow-y: auto; padding: 0 16px 24px 76px; }
+.library-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(auto-fill, var(--library-tile-size, 300px)); align-content: start; gap: 3px; overflow-y: auto; padding: 0 4px 24px; }
 .library-grid.with-composer { padding-bottom: calc(var(--studio-dock-height, 220px) + 24px); }
 .library-empty { grid-column: 1 / -1; margin: 40px 16px; color: var(--muted); font-size: 14px; text-align: center; }
-.library-tile { position: relative; aspect-ratio: 1; padding: 0; border: 0; border-radius: 3px; overflow: hidden; background: var(--panel-2); cursor: pointer; -webkit-touch-callout: none; }
+.library-tile { position: relative; aspect-ratio: 1; padding: 0; border: 0; border-radius: 3px; overflow: hidden; background: var(--panel-2); cursor: pointer; -webkit-touch-callout: none; user-select: none; touch-action: pan-y; }
 .library-tile img { display: block; width: 100%; height: 100%; object-fit: cover; transition: opacity 160ms var(--ease-out); }
 .library-tile.selected img { opacity: .45; }
 .library-check { position: absolute; top: 12px; left: 12px; display: grid; place-items: center; width: 30px; height: 30px; border: 2px solid #fff; border-radius: 50%; background: rgba(0,0,0,.2); color: #141414; }
 .library-tile.selected .library-check { background: #fff; }
-.library-search { display: flex; align-items: center; gap: 10px; flex-shrink: 0; margin: 0 24px 16px 88px; max-width: 520px; padding: 12px 16px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); background: var(--panel); }
+.library-search { display: flex; align-items: center; gap: 10px; flex-shrink: 0; margin: 0 20px 16px; max-width: 520px; padding: 12px 16px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); background: var(--panel); }
 .library-search input { width: 100%; min-width: 0; border: 0; outline: none; color: var(--text); background: none; font: inherit; }
 .library-search:focus-within { border-color: var(--accent); }
 .library-filter { position: relative; }
 .effort-options.library-filter-panel { left: auto; right: 0; top: calc(100% + 10px); bottom: auto; width: 240px; transform-origin: top right; }
 .library-filter-panel .seg { display: flex; margin: 0 6px 6px; }
 .library-filter-panel .seg button { flex: 1; }
-.library-composer { position: absolute; bottom: 0; left: 72px; right: 0; z-index: 2; pointer-events: none; }
+.library-composer { position: absolute; bottom: 0; left: 0; right: 0; z-index: 2; pointer-events: none; }
 .library-composer .studio-dock { position: relative; max-width: 980px; margin: auto; padding: 12px 20px 24px; }
 .library-composer .studio-library { display: none !important; }
 .effort-options.library-menu { position: fixed; bottom: auto; z-index: 3; width: 200px; transform-origin: top left; }
@@ -355,7 +351,6 @@
 .comparison-panes figcaption { color: var(--muted); font-size: 12px; margin-bottom: 6px; }
 .imagine-lightbox-card .comparison-panes img { height: 42dvh; object-fit: contain; }
 .library-load-more { grid-column: 1 / -1; }
-.library-reference-hint { position: relative; flex-shrink: 0; margin-left: 88px !important; margin: 0; padding: 8px; background: var(--panel); color: var(--muted); border-radius: 8px; font-size: 12px; text-align: center; pointer-events: none; }
 .library-kind { display: grid; gap: 6px; padding: 6px; }
 @media (max-width: 720px) {
   .source-strip .source-preview { flex-basis: 190px; }
@@ -370,7 +365,7 @@
 /* Không gian ảnh toàn màn hình, bố cục theo mẫu Grok; bảng công cụ chỉ chứa thao tác hoạt động. */
 .imagine-lightbox { width: 100%; max-width: none; height: 100dvh; max-height: none; margin: 0; padding: 0; border: 0; border-radius: 0; background: var(--bg); color: var(--text); overflow: hidden; }
 .imagine-lightbox::backdrop { background: var(--bg); }
-.image-workspace { height: 100%; display: grid; grid-template-columns: minmax(0, 1fr) clamp(300px, 24vw, 420px); padding-left: 72px; position: relative; font-size: 14px; }
+.image-workspace { height: 100%; display: grid; grid-template-columns: minmax(0, 1fr) clamp(300px, 24vw, 420px); padding-left: 0; position: relative; font-size: 14px; }
 .image-workspace.panel-hidden { grid-template-columns: minmax(0, 1fr); }
 .panel-hidden .workspace-panel { display: none; }
 .image-workspace button, .image-workspace select { font: inherit; color: var(--text); cursor: pointer; }
@@ -446,7 +441,6 @@
 .library-tile:hover .image-dimensions, .library-tile:focus-visible .image-dimensions { opacity: 1; }
 @media (max-width: 1000px) and (min-width: 721px) { .image-workspace { grid-template-columns: minmax(0,1fr) 300px; } .workspace-panel { padding: 12px; } }
 @media (max-width: 720px) {
-  .image-nav-rail { display: none; }
   .library-top { padding: 12px; gap: 10px; }
   .library-top-left, .library-top-right { gap: 6px; }
   .library-top-right { margin-left: auto; }
@@ -457,7 +451,6 @@
   .library-grid { grid-template-columns: repeat(var(--library-columns,2),minmax(0,1fr)); padding: 0 4px 20px; }
   .library-grid.with-composer { padding-bottom: calc(var(--studio-dock-height,200px) + 20px); }
   .library-search { margin: 0 12px 12px; }
-  .library-reference-hint { margin-left: 4px !important; }
   .library-composer { left: 0; }
   .library-composer .studio-dock { padding: 10px 10px calc(10px + env(safe-area-inset-bottom)); }
   .image-workspace { padding-left: 0; grid-template-columns: minmax(0,1fr); grid-template-rows: minmax(280px,1fr) minmax(0, auto); overflow-y: auto; }
