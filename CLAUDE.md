@@ -56,6 +56,10 @@ OpenAI/Claude. Reviews use meaningful headings, real short blockquotes, code exc
 Depth follows the task, not the question's length; simple questions and requested summaries stay concise. Numerical
 ratings require criteria, and quotations must be real. Agent work summaries, roleplay and spoken Companion are not
 forced into this Web presentation policy. The frontend already supports blockquotes and highlighted code blocks.
+After the owner's follow-up sample, reviews additionally require exact passages for consequential file-specific
+claims and short usable replacements when proposing edits. Overlapping findings are grouped. A prompt file alone
+does not establish missing application authorization, unseen prompt assembly or production readiness; distinguish
+observed file facts from checks that require other code or runtime evidence. Do not pad a review with deployment advice.
 
 ## Commands
 
