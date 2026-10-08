@@ -127,6 +127,48 @@ it('phục hồi lượt đang chạy rồi hiện kết quả mà không POST l
   expect(api.createImagineJob).not.toHaveBeenCalled();
 });
 
+it.each(['kẹt', 'lỗi'])('hiện ảnh sửa đã xong dù lượt khác bị %s, không cần F5', async mode => {
+  const pending: api.ImagineJob = { ...job, id: 'editing', root_image_id: 'img-1',
+    edit_parent_image_id: 'img-1', status: 'running', images: [] };
+  const complete: api.ImagineJob = { ...pending, status: 'complete',
+    images: [{ id: 'edited-image', mime: 'image/png', url: '/api/imagine/images/edited-image' }] };
+  const other: api.ImagineJob = { ...pending, id: 'other-edit', root_image_id: 'img-2' };
+  vi.mocked(api.listImagineJobs).mockResolvedValue([job, pending, other]);
+  vi.mocked(api.getImagineWorkspace).mockResolvedValue({ root_image_id: 'img-1', root_job: job, jobs: [pending] });
+  vi.mocked(api.getImagineJob).mockImplementation(id => id === pending.id ? Promise.resolve(complete)
+    : mode === 'kẹt' ? new Promise(() => {}) : Promise.reject(new Error('Mất kết nối')));
+  await open();
+  fireEvent.click(screen.getByRole('button', { name: 'Xem ảnh 1: Mèo trên mặt trăng' }));
+  await waitFor(() => expect(window.location.hash).toBe('#imagine/img-1/edited-image'), { timeout: 2500 });
+  const dialog = screen.getByRole('dialog', { name: 'Xem ảnh đã tạo' });
+  expect(dialog.querySelector('.workspace-picture img')?.getAttribute('src')).toBe(complete.images[0].url);
+  expect(within(dialog).getByRole('button', { name: 'Phiên bản 1' }).getAttribute('aria-current')).toBe('true');
+  expect(within(dialog).queryByText('Peto đang chỉnh sửa ảnh…')).toBeNull();
+  expect(api.createImagineJob).not.toHaveBeenCalled();
+});
+
+it.each(['đóng', 'mở ảnh khác'])('kết quả sửa về muộn không kéo người dùng lại sau khi %s', async action => {
+  const pending: api.ImagineJob = { ...job, id: 'editing', root_image_id: 'img-1', status: 'running', images: [] };
+  const request = deferred<api.ImagineJob>();
+  vi.mocked(api.listImagineJobs).mockResolvedValue([job, pending]);
+  vi.mocked(api.getImagineJob).mockReturnValue(request.promise);
+  vi.mocked(api.getImagineWorkspace).mockImplementation(async imageId => ({
+    root_image_id: imageId, root_job: job, jobs: imageId === 'img-1' ? [pending] : [],
+  }));
+  await open();
+  fireEvent.click(screen.getByRole('button', { name: 'Xem ảnh 1: Mèo trên mặt trăng' }));
+  await waitFor(() => expect(api.getImagineJob).toHaveBeenCalled());
+  fireEvent.click(screen.getByRole('button', { name: 'Quay lại', exact: true }));
+  if (action === 'mở ảnh khác') fireEvent.click(screen.getByRole('button', { name: 'Xem ảnh 2: Mèo trên mặt trăng' }));
+  await act(async () => request.resolve({ ...pending, status: 'complete', images: [
+    { id: 'edited-image', mime: 'image/png', url: '/api/imagine/images/edited-image' },
+  ] }));
+  expect(window.location.hash).toBe(action === 'đóng' ? '#imagine' : '#imagine/img-2/img-2');
+  if (action === 'đóng') expect(screen.queryByRole('dialog', { name: 'Xem ảnh đã tạo' })).toBeNull();
+  else expect(screen.getByRole('dialog', { name: 'Xem ảnh đã tạo' }).querySelector('.workspace-picture img')?.getAttribute('src')).toBe(job.images[1].url);
+  expect(api.createImagineJob).not.toHaveBeenCalled();
+});
+
 it('mất phản hồi POST thì kiểm tra mã cũ trước khi cho tạo tiếp', async () => {
   vi.mocked(api.createImagineJob).mockRejectedValue(new api.ImagineRequestUncertainError('request-1234567890'));
   vi.mocked(api.checkImagineRequest).mockResolvedValue(job);

@@ -943,6 +943,13 @@ user was just talking.
 The current frontend submits `background: true` with a unique `request_id`. The API persists a queued job and
 its sources before returning 202, then generates and saves the result independently of the HTTP connection.
 `GET /api/imagine/{id}` tracks queued/running/complete/failed/unknown; the frontend resumes polling after reload.
+Status reads, workspace history and library reads bypass cache and have a 10-second abortable deadline,
+including reading the JSON body. This only cancels the read, never the background AI job. Polling accepts each
+job as soon as its response arrives, independently of other stalled/failed reads, then retries transient read
+failures without another POST. A completed edit updates history and selects its image only if that root is still
+open; closing the viewer must not reopen it on a late result. Sort pending IDs so reordering history does not
+restart polling. The library, workspace, status and receipt GET APIs send `Cache-Control: private, no-store`;
+image files retain their existing cache policy. Clear the connection notice when no jobs are pending.
 `GET /api/imagine/requests/{request_id}` recovers a lost POST response without submitting again. The owner-scoped
 `imagine_requests` ledger keeps a fingerprint and job ID even after deletion, so duplicate requests cannot generate
 a second billed batch. Conflicting reuse is 409; a deleted original request is 410. An uncertain POST receipt lives

@@ -13,7 +13,7 @@ import uuid
 from pathlib import Path
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.routing import APIRoute
 from fastapi.responses import FileResponse, JSONResponse
 from PIL import Image, UnidentifiedImageError
@@ -189,7 +189,8 @@ def _validate(request: ImagineRequest) -> tuple[str, str, str, str, int]:
 
 
 @router.get("/api/imagine")
-async def list_jobs(owner: str = Depends(current_owner), before: str | None = Query(default=None, max_length=64)) -> dict:
+async def list_jobs(response: Response, owner: str = Depends(current_owner), before: str | None = Query(default=None, max_length=64)) -> dict:
+    response.headers['Cache-Control'] = 'private, no-store'
     rows = await db.list_imagine_jobs(owner, before=before)
     active = await db.list_imagine_jobs(owner, active_edits=True) if not before else []
     return {"jobs": [_public_job(row) for row in rows], "active_edits": [_public_job(row) for row in active]}
@@ -333,7 +334,8 @@ async def _revision_context(request: ImagineRequest, owner: str, sources: list, 
 
 
 @router.get("/api/imagine/images/{image_id}/workspace")
-async def get_workspace(image_id: str, owner: str = Depends(current_owner)):
+async def get_workspace(image_id: str, response: Response, owner: str = Depends(current_owner)):
+    response.headers['Cache-Control'] = 'private, no-store'
     workspace = await db.get_imagine_workspace(owner, image_id)
     if not workspace:
         raise HTTPException(404, "Không tìm thấy ảnh hoặc lịch sử chỉnh sửa.")
@@ -385,7 +387,8 @@ async def save_revision(image_id: str, request: RevisionRequest, owner: str = De
 
 
 @router.get("/api/imagine/requests/{request_id}")
-async def get_request(request_id: str, owner: str = Depends(current_owner)):
+async def get_request(request_id: str, response: Response, owner: str = Depends(current_owner)):
+    response.headers['Cache-Control'] = 'private, no-store'
     # Đợi lượt POST đang lưu ảnh tham chiếu, tránh báo chưa nhận khi lưu chưa xong.
     async with _accept_lock:
         previous = await db.get_imagine_request(owner, request_id)
@@ -398,7 +401,8 @@ async def get_request(request_id: str, owner: str = Depends(current_owner)):
 
 
 @router.get("/api/imagine/{job_id}")
-async def get_job(job_id: str, owner: str = Depends(current_owner)):
+async def get_job(job_id: str, response: Response, owner: str = Depends(current_owner)):
+    response.headers['Cache-Control'] = 'private, no-store'
     row = await db.get_imagine_job(owner, job_id)
     if not row:
         raise HTTPException(404, "Không tìm thấy lượt ảnh.")

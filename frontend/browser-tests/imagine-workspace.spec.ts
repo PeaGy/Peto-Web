@@ -96,6 +96,46 @@ async function setup(page: Page, prompt = 'Ngôi nhà giữa núi xanh', shape: 
   return { posts, saves, revisions, job, finish: (value: boolean) => { finishEdits = value; } };
 }
 
+for (const failure of ['timeout', 'network']) {
+  test(`Apply tự nhận ảnh mới sau lần đọc trạng thái bị ${failure}, không tải lại hoặc POST thêm`, async ({ page }) => {
+    const { posts, saves } = await setup(page);
+    // Giả lập một lần fetch không trả lời hoặc mất mạng, rồi kết nối hoạt động lại.
+    await page.addInitScript(mode => {
+      const original = window.fetch.bind(window);
+      let interrupted = false;
+      window.fetch = (input, options) => {
+        const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        if (url === '/api/imagine/edited-1' && !interrupted) {
+          interrupted = true;
+          if (mode === 'network') return Promise.reject(new TypeError('Mất kết nối kiểm thử'));
+          return new Promise<Response>((_resolve, reject) => {
+            options?.signal?.addEventListener('abort', () => reject(options.signal!.reason), { once: true });
+          });
+        }
+        return original(input, options);
+      };
+    }, failure);
+    let navigations = 0;
+    page.on('framenavigated', frame => { if (frame === page.mainFrame() && !frame.url().includes('/result-1')) navigations++; });
+    await page.goto('/#imagine/portrait/portrait');
+    const viewer = page.getByRole('dialog', { name: 'Xem ảnh đã tạo', exact: true });
+    await clickTool(viewer, 'Bút vẽ');
+    await drawDesktop(page, viewer);
+    await viewer.getByLabel('Mô tả chỉnh sửa ảnh').fill('Đổi mái nhà sang màu đỏ');
+    await viewer.getByRole('button', { name: /^(Áp dụng|Gửi chỉnh sửa ảnh)$/ }).click();
+    await expect.poll(() => posts.length).toBe(1);
+    await expect(viewer.getByRole('status', { name: 'Phiên bản đang tạo' })).toBeVisible();
+    const navigationCount = navigations;
+    await expect(page).toHaveURL(/#imagine\/portrait\/result-1$/, { timeout: 16_000 });
+    await expect(viewer.locator('.image-workspace')).toHaveAttribute('aria-busy', 'false');
+    await expect(viewer.getByRole('status', { name: 'Phiên bản đang tạo' })).toHaveCount(0);
+    await expect(viewer.locator('.workspace-picture img')).toHaveAttribute('src', '/api/imagine/images/result-1');
+    await expect(viewer.getByRole('button', { name: 'Phiên bản 1', exact: true })).toHaveAttribute('aria-current', 'true');
+    expect(navigations).toBe(navigationCount);
+    expect(posts).toHaveLength(1); expect(saves).toHaveLength(0);
+  });
+}
+
 test('mobile: menu trượt lên, kéo xuống đóng và bàn phím chuyển trạng thái ngay', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'mobile', 'Khung xem dành cho điện thoại');
   await page.emulateMedia({ reducedMotion: 'no-preference' });

@@ -438,26 +438,31 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
       setError("Chưa kiểm tra được lượt vừa gửi. Kiểm tra kết nối rồi thử lại nhé.");
     } finally { setCheckingRequest(false); }
   }
-  const pendingIds = jobs.filter(imaginePending).map(job => job.id).join(",");
+  const pendingIds = jobs.filter(imaginePending).map(job => job.id).sort().join(",");
   useEffect(() => {
-    if (!pendingIds) return;
+    if (!pendingIds) { setPollError(false); return; }
     const controller = new AbortController();
     let timer: number;
     const poll = async () => {
-      try {
-        const rows = await Promise.all(pendingIds.split(",").map(id => getImagineJob(id, controller.signal)));
-        if (controller.signal.aborted) return;
-        setJobs(prev => prev.map(job => rows.find(row => row.id === job.id) ?? job));
-        const current = lightboxValue.current;
-        const currentRoot = current && !current.original ? current.job.root_image_id || current.job.images[current.index].id : null;
-        for (const row of rows) if (row.root_image_id === currentRoot) acceptRevision(row);
-        setPollError(false);
-      } catch (err) {
-        if (controller.signal.aborted) return;
-        if (err instanceof UnauthorizedError) { onUnauthorized(); return; }
-        setPollError(true);
+      // Nhận từng kết quả ngay, không để một lượt lỗi/kẹt giữ ảnh đã tạo xong.
+      const errors = await Promise.all(pendingIds.split(",").map(async id => {
+        try {
+          const row = await getImagineJob(id, controller.signal);
+          if (controller.signal.aborted) return false;
+          if (row.root_image_id) acceptRevision(row);
+          else setJobs(prev => prev.map(job => job.id === row.id ? row : job));
+          return false;
+        } catch (err) {
+          if (controller.signal.aborted) return false;
+          if (err instanceof UnauthorizedError) { controller.abort(); onUnauthorized(); return false; }
+          setPollError(true);
+          return true;
+        }
+      }));
+      if (!controller.signal.aborted) {
+        setPollError(errors.some(Boolean));
+        timer = window.setTimeout(poll, 2000);
       }
-      if (!controller.signal.aborted) timer = window.setTimeout(poll, 2000);
     };
     timer = window.setTimeout(poll, 1000);
     return () => { controller.abort(); window.clearTimeout(timer); };

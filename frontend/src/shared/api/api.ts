@@ -383,8 +383,24 @@ export interface ImagineWorkspace {
   jobs: ImagineJob[];
 }
 
+/** Chỉ giới hạn lần đọc trạng thái; lượt AI vẫn tiếp tục chạy trên máy chủ. */
+async function readImagine<T>(url: string, signal?: AbortSignal): Promise<T> {
+  signal?.throwIfAborted();
+  const controller = new AbortController();
+  const abort = () => controller.abort(signal?.reason);
+  signal?.addEventListener('abort', abort, { once: true });
+  const timer = window.setTimeout(() => controller.abort(new DOMException('Chưa nhận được trạng thái ảnh. Peto sẽ kiểm tra lại.', 'TimeoutError')), 10_000);
+  try {
+    // Trạng thái và lịch sử thay đổi khi AI hoàn tất, không đọc lại bản đang chạy từ cache.
+    return await json<T>(await fetch(url, { signal: controller.signal, cache: 'no-store' }));
+  } finally {
+    window.clearTimeout(timer);
+    signal?.removeEventListener('abort', abort);
+  }
+}
+
 export async function getImagineWorkspace(imageId: string, signal?: AbortSignal): Promise<ImagineWorkspace> {
-  return json(await fetch(`/api/imagine/images/${encodeURIComponent(imageId)}/workspace`, { signal }));
+  return readImagine(`/api/imagine/images/${encodeURIComponent(imageId)}/workspace`, signal);
 }
 
 export async function saveImagineRevision(imageId: string, data: string, operation: "crop" | "brush", requestId: string): Promise<ImagineJob> {
@@ -405,8 +421,7 @@ export function imaginePending(job: ImagineJob): boolean {
   return job.status === "queued" || job.status === "running";
 }
 export async function listImagineJobs(before?: string): Promise<ImagineJob[]> {
-  const response = await fetch("/api/imagine" + (before ? `?before=${encodeURIComponent(before)}` : ""));
-  const data = await json<{ jobs: ImagineJob[]; active_edits?: ImagineJob[] }>(response);
+  const data = await readImagine<{ jobs: ImagineJob[]; active_edits?: ImagineJob[] }>("/api/imagine" + (before ? `?before=${encodeURIComponent(before)}` : ""));
   return [...data.jobs, ...(data.active_edits ?? [])];
 }
 
@@ -457,7 +472,7 @@ function clearImagineReceipt(requestId: string) {
   } catch {}
 }
 export async function checkImagineRequest(requestId: string): Promise<ImagineJob | null> {
-  const response = await fetch(`/api/imagine/requests/${encodeURIComponent(requestId)}`);
+  const response = await fetch(`/api/imagine/requests/${encodeURIComponent(requestId)}`, { cache: 'no-store' });
   if (response.status === 404 || response.status === 410) {
     clearImagineReceipt(requestId);
     return null;
@@ -467,7 +482,7 @@ export async function checkImagineRequest(requestId: string): Promise<ImagineJob
   return data.job;
 }
 export async function getImagineJob(jobId: string, signal?: AbortSignal): Promise<ImagineJob> {
-  return (await json<{ job: ImagineJob }>(await fetch(`/api/imagine/${encodeURIComponent(jobId)}`, { signal }))).job;
+  return (await readImagine<{ job: ImagineJob }>(`/api/imagine/${encodeURIComponent(jobId)}`, signal)).job;
 }
 
 export async function deleteImagineJob(jobId: string): Promise<void> {

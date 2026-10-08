@@ -124,13 +124,23 @@ async def test_background_survives_response_and_deduplicates(client, monkeypatch
         assert (await client.post("/api/imagine", json={**request, "prompt": "khác"})).status_code == 409
         assert (await client.post("/api/imagine", json={**request, "request_id": uuid.uuid4().hex})).status_code == 429
         assert (await client.delete(f"/api/imagine/{job['id']}")).status_code == 409
-        restored = (await client.get(f"/api/imagine/requests/{request['request_id']}")).json()["job"]
+        receipt = await client.get(f"/api/imagine/requests/{request['request_id']}")
+        assert receipt.headers['cache-control'] == 'private, no-store'
+        restored = receipt.json()["job"]
         assert restored["id"] == job["id"] and restored["status"] in {"queued", "running"}
+        status = await client.get(f"/api/imagine/{job['id']}")
+        assert status.headers['cache-control'] == 'private, no-store'
+        assert status.json()['job']['status'] in {'queued', 'running'}
+        assert (await client.get('/api/imagine')).headers['cache-control'] == 'private, no-store'
     finally:
         release.set()
         await wait_tasks()
-    complete = (await client.get(f"/api/imagine/{job['id']}")).json()["job"]
+    status = await client.get(f"/api/imagine/{job['id']}")
+    assert status.headers['cache-control'] == 'private, no-store'
+    complete = status.json()["job"]
     assert complete["status"] == "complete" and len(complete["images"]) == 1
+    workspace = await client.get(f"/api/imagine/images/{complete['images'][0]['id']}/workspace")
+    assert workspace.headers['cache-control'] == 'private, no-store'
     provider.assert_awaited_once()
 
 
