@@ -15,6 +15,11 @@
 }
 .message-copy:hover, .message-copy.done { color: var(--text); }
 .message-copy svg { flex: none; }
+.message-copy:disabled { opacity: 0.5; cursor: default; }
+/* Lượt bị dừng, như Grok: một dòng nghiêng nhạt ngay chỗ câu trả lời, nhãn "Đã dừng" cuối hàng nút. */
+.message-stopped { margin: 6px 0 0; color: var(--muted); font-style: italic; }
+.message-actions { align-items: center; }
+.message-stopped-tag { margin-left: 4px; color: var(--muted); font-size: 12px; }
 
 /* Cỡ chữ và chiều cao dòng phải đặt ngay trên pre: dòng của pre cao theo cỡ chữ
    của chính pre. Để pre kế thừa cỡ chữ văn bản còn code bên trong ép 13px thì

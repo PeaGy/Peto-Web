@@ -853,6 +853,7 @@ export default function App() {
         setRetryAvailable(true);
       }
     } finally {
+      const stoppedByUser = controller.signal.aborted && !networkInterrupted(controller) && !completed;
       if (session === authVersion.current) {
         if (!accepted) setMessages(previousMessages);
         else {
@@ -862,14 +863,16 @@ export default function App() {
             if (last?.role !== "assistant") return prev;
             const work = finalWork ? last.work : closeWork(last.work, completed, elapsed);
             // Máy chủ chỉ lưu câu trả lời có chữ hay có tệp. Lượt hỏng trước khi có chữ vẫn giữ bong bóng với nhật ký
-            // ở trình duyệt, để thấy Peto đã thử gì (trước đây bong bóng biến mất, chỉ còn dòng báo lỗi).
+            // ở trình duyệt, để thấy Peto đã thử gì (trước đây bong bóng biến mất, chỉ còn dòng báo lỗi). Lượt bị dừng
+            // luôn giữ bong bóng, kể cả chưa có gì, để ghi "Đã dừng" ngay chỗ câu trả lời thay vì dòng báo trên ô nhắn.
             const stored = Boolean(last.content || last.artifacts?.length);
-            if (!stored && !work?.steps.length) return prev.slice(0, -1);
+            if (!stored && !work?.steps.length && !stoppedByUser) return prev.slice(0, -1);
             return [...prev.slice(0, -1), { ...last, work, workStartedAt: undefined, local: stored ? undefined : true,
-              status: completed ? "complete" : "incomplete" }];
+              status: completed ? "complete" : "incomplete", stopped: stoppedByUser || undefined }];
           });
         }
-        if (controller.signal.aborted && !networkInterrupted(controller)) setNotice(accepted ? "Đã dừng. Phần đã trả lời được giữ lại." : "Đã dừng gửi. Bản nháp vẫn được giữ lại.");
+        // Dừng sau khi máy chủ đã nhận tin thì bong bóng tự ghi "Đã dừng"; chỉ lượt chưa kịp gửi mới cần dòng báo.
+        if (stoppedByUser && !accepted) setNotice("Đã dừng gửi. Bản nháp vẫn được giữ lại.");
         if (activeId || !accepted) void refreshConversations();
         if (revision && accepted && activeId) {
           // Fetch stable IDs for edit/regenerate; preserve the local progress log.
@@ -1245,6 +1248,9 @@ export default function App() {
               </form> : undefined}
               live={streaming && !stopping && index === messages.length - 1}
               writing={streaming && index === messages.length - 1}
+              // Lượt cuối bị dừng: "Thử lại" gửi lại câu hỏi ngay trong hội thoại này (máy chủ thay câu trả lời dở).
+              onRetry={message.stopped && index === messages.length - 1 && messages[index - 1]?.role === 'user' && messages[index - 1]?.id
+                ? () => void submit({ target: messages[index - 1], text: messages[index - 1].content }) : undefined}
               onPreview={previewDocument} onEdit={editDocument} />
           ))}
           <div ref={bottomRef} />

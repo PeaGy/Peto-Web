@@ -33,6 +33,7 @@ ASPECT_RATIOS = {
     "2:3",
     "2:1",
     "1:2",
+    "19.5:9", "9:19.5", "20:9", "9:20", "21:9", "5:2",
 }
 
 # PNG 1×1 — chỉ dùng khi PETO_AI_PROVIDER=mock, không gọi mạng.
@@ -45,6 +46,10 @@ _MOCK_PNG = base64.b64decode(
 class GeneratedImage:
     data: bytes
     mime: str
+
+
+class ImagineResultUncertain(ProviderError):
+    """Yêu cầu có thể đã được xử lý, nhưng chưa nhận đủ kết quả."""
 
 
 def _friendly_http_error(status: int, body: str) -> str:
@@ -97,8 +102,12 @@ async def generate_images(
     aspect_ratio: str,
     n: int,
     source_image: GeneratedImage | None = None,
+    source_images: list[GeneratedImage] | None = None,
 ) -> list[GeneratedImage]:
     """Gọi xAI (hoặc mock) và trả về bytes ảnh đã sẵn sàng để lưu."""
+    sources = source_images if source_images is not None else ([source_image] if source_image else [])
+    if len(sources) > 5 or (source_images is not None and source_image is not None):
+        raise ProviderError("Mỗi lượt sửa nhận tối đa 5 ảnh tham chiếu.")
     if AI_PROVIDER == "mock":
         if "__error__" in prompt:
             raise ProviderError("Nhà cung cấp ảnh đang lỗi (giả lập). Thử lại sau nhé.")
@@ -121,10 +130,12 @@ async def generate_images(
         "resolution": resolution,
         "aspect_ratio": aspect_ratio,
     }
-    endpoint = "edits" if source_image is not None else "generations"
-    if source_image is not None:
-        encoded = base64.b64encode(source_image.data).decode("ascii")
-        payload["image"] = {"url": f"data:{source_image.mime};base64,{encoded}", "type": "image_url"}
+    endpoint = "edits" if sources else "generations"
+    encoded_sources = [{"url": f"data:{image.mime};base64,{base64.b64encode(image.data).decode('ascii')}", "type": "image_url"} for image in sources]
+    if len(sources) == 1:
+        payload["image"] = encoded_sources[0]
+    elif sources:
+        payload["images"] = encoded_sources
     url = f"{XAI_API_BASE.rstrip('/')}/images/{endpoint}"
 
     try:
@@ -138,13 +149,14 @@ async def generate_images(
                 json=payload,
             )
             if response.status_code >= 400:
-                raise ProviderError(
+                error_type = ImagineResultUncertain if response.status_code >= 500 else ProviderError
+                raise error_type(
                     _friendly_http_error(response.status_code, response.text),
                     retryable=response.status_code >= 500 or response.status_code == 429,
                 )
             body = response.json()
             if not isinstance(body, dict) or not isinstance(body.get("data"), list):
-                raise ProviderError("Peto nhận được dữ liệu ảnh không hợp lệ. Thử lại nhé.", retryable=True)
+                raise ImagineResultUncertain("Peto chưa xác nhận được dữ liệu ảnh từ dịch vụ.", retryable=True)
             images: list[GeneratedImage] = []
             for item in body["data"][:n]:
                 if not isinstance(item, dict):
@@ -157,11 +169,11 @@ async def generate_images(
     except ProviderError:
         raise
     except httpx.TimeoutException as err:
-        raise ProviderError("Tạo ảnh lâu quá nên bỏ lượt này. Thử lại nha.", retryable=True) from err
+        raise ImagineResultUncertain("Chưa nhận được kết quả trong thời gian chờ.", retryable=True) from err
     except httpx.HTTPError as err:
-        raise ProviderError("Peto chưa kết nối được với dịch vụ tạo ảnh. Thử lại sau chút nhé.", retryable=True) from err
+        raise ImagineResultUncertain("Mất kết nối với dịch vụ tạo ảnh khi chờ kết quả.", retryable=True) from err
     except ValueError as err:
-        raise ProviderError("Peto nhận được dữ liệu ảnh không hợp lệ. Thử lại nha.", retryable=True) from err
+        raise ImagineResultUncertain("Peto chưa xác nhận được dữ liệu ảnh từ dịch vụ.", retryable=True) from err
 
     if not images:
         raise ProviderError("Peto chưa tạo được ảnh nào. Đổi mô tả rồi thử lại nhé.")

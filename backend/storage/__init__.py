@@ -31,6 +31,11 @@ from .attachments import (
     list_attachment_paths,
 )
 from .imagine import (
+    get_imagine_job,
+    get_imagine_request,
+    update_imagine_job,
+    interrupt_imagine_jobs,
+    discard_imagine_outputs,
     create_imagine_job,
     add_imagine_image,
     list_imagine_jobs,

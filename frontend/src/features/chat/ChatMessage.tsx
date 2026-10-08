@@ -86,23 +86,34 @@ function CodeBlock({ language, children }: { language: string; children: ReactNo
  * Nút chép cả câu trả lời. Chép chữ gốc Markdown chứ không phải chữ đã hiển thị, nên công thức LaTeX, bảng hay khối
  * code còn nguyên; đó cũng là cách xem model thật sự viết gì khi web hiển thị sai (như vụ dấu ~ bị KaTeX nuốt).
  */
-function MessageCopy({ text }: { text: string }) {
+function MessageCopy({ text, stopped, onRetry, disabled }: {
+  text: string; stopped?: boolean; onRetry?: () => void; disabled?: boolean;
+}) {
   const { state, label, copy } = useCopy();
   return (
     <div className="message-actions">
-      <button type="button" className={state === "done" ? "message-copy done" : "message-copy"}
+      {text && <button type="button" className={state === "done" ? "message-copy done" : "message-copy"}
         aria-label={`${label} câu trả lời`} onClick={() => void copy(text)}>
         {state === "done" ? <CheckIcon /> : <CopyIcon />}
         {label}
-      </button>
+      </button>}
+      {onRetry && <button type="button" className="message-copy" onClick={onRetry} disabled={disabled}>
+        <RetryIcon />Thử lại
+      </button>}
+      {stopped && <span className="message-stopped-tag">Đã dừng</span>}
     </div>
   );
 }
 
+function RetryIcon() {
+  return <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2"
+    strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7" /><path d="M3 4v5h5" /></svg>;
+}
 
-export const ChatMessage = memo(function ChatMessage({ message, live, writing, onPreview, onEdit, actionsDisabled, editor }: {
+
+export const ChatMessage = memo(function ChatMessage({ message, live, writing, onPreview, onEdit, onRetry, actionsDisabled, editor }: {
   message: Message; live: boolean; writing: boolean;
-  actionsDisabled?: boolean; editor?: ReactNode;
+  actionsDisabled?: boolean; editor?: ReactNode; onRetry?: () => void;
   onPreview: (item: { id: string; version: number }) => void;
   onEdit: (item: { id: string; version: number }) => void;
 }) {
@@ -174,10 +185,11 @@ export const ChatMessage = memo(function ChatMessage({ message, live, writing, o
               ) : null)}
               {message.role === "assistant" && <WebSources sources={message.sources} />}
               {message.artifacts?.map(artifact => <DocumentArtifactCard key={`${artifact.id}-${artifact.version}`} artifact={artifact} onOpen={onPreview} onEdit={onEdit} />)}
-              {message.status === "incomplete" && <p className="message-status">Câu trả lời chưa hoàn tất</p>}
+              {message.stopped ? <p className="message-stopped">Đã dừng theo yêu cầu của bạn.</p>
+                : message.status === "incomplete" && <p className="message-status">Câu trả lời chưa hoàn tất</p>}
               {/* Tin đang được viết thì chưa có gì trọn vẹn để chép. */}
-              {message.role === "assistant" && message.content && !(writing) && (
-                <MessageCopy text={message.content} />
+              {message.role === "assistant" && (message.content || message.stopped) && !(writing) && (
+                <MessageCopy text={message.content} stopped={message.stopped} onRetry={onRetry} disabled={actionsDisabled} />
               )}
               {!writing && !editor && message.role === 'user' && <span className="user-message-actions">
                 {message.id && <button type="button" aria-label="Sửa tin nhắn" title="Sửa tin nhắn" disabled={actionsDisabled} data-revise={message.id}><EditIcon /></button>}

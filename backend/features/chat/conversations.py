@@ -49,6 +49,44 @@ async def versions(owner, conversation_id):
         return [dict(item) for item in result]
 
 
+async def retry_in_place(owner, conversation_id, message_id, text):
+    """Gửi lại câu hỏi cuối ngay trong hội thoại khi câu trả lời của nó bị dừng hay hỏng giữa chừng.
+
+    Trước đây mọi lần sửa hay "Thử lại" đều tạo phiên bản mới, nên bấm Dừng rồi gửi lại câu hỏi để lại hai hội thoại
+    trùng tên (chủ dự án báo 8/10/2026). Chỉ áp dụng khi ``message_id`` là tin người dùng cuối và sau nó chỉ có câu trả lời
+    chưa hoàn tất, không kèm tệp đã tạo: câu trả lời dở bị xóa, câu hỏi được thay chữ, ảnh và tệp đính kèm giữ nguyên.
+    Trả về ``message_id`` khi làm được, ``None`` thì nơi gọi tạo phiên bản như cũ.
+    """
+    async with db_connection.connect() as connection:
+        connection.row_factory = aiosqlite.Row
+        await connection.execute('BEGIN IMMEDIATE')
+        source = await (await connection.execute("SELECT archived FROM conversations WHERE id=? AND owner=? AND mode='chat'",
+                                                  (conversation_id, owner))).fetchone()
+        if source is None or source['archived']:
+            await connection.rollback()
+            return None
+        rows = await (await connection.execute('SELECT id, role, status, artifacts FROM messages WHERE conversation_id=? AND id>=? ORDER BY id',
+                                               (conversation_id, message_id))).fetchall()
+        if not rows or rows[0]['id'] != message_id or rows[0]['role'] != 'user':
+            await connection.rollback()
+            return None
+        later = rows[1:]
+        if any(row['role'] != 'assistant' or row['status'] == 'complete' or json.loads(row['artifacts'] or '[]') for row in later):
+            await connection.rollback()
+            return None
+        if not text.strip():
+            has_files = await (await connection.execute('SELECT 1 FROM attachments WHERE owner=? AND message_id=? LIMIT 1',
+                                                        (owner, message_id))).fetchone()
+            if not has_files:
+                await connection.rollback()
+                raise HTTPException(400, 'Tin nhắn trống')
+        for row in later:
+            await connection.execute('DELETE FROM messages WHERE id=? AND conversation_id=?', (row['id'], conversation_id))
+        await connection.execute('UPDATE messages SET content=? WHERE id=? AND conversation_id=?', (text, message_id, conversation_id))
+        await connection.commit()
+        return message_id
+
+
 async def fork(owner, conversation_id, message_id, text):
     """Copy only the selected prefix, including independent attachments and document versions.
 

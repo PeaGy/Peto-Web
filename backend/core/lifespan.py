@@ -19,6 +19,7 @@ async def lifespan(app: FastAPI):
     configure_operational_logging()
     resolve_timezone()  # Báo lỗi cấu hình sớm nếu thiếu dữ liệu múi giờ.
     await db.init_db()
+    await db.interrupt_imagine_jobs()
     logger.info("Peto Web sẵn sàng — provider=%s", get_provider().name)
     mo = [name for name, ready in auth.available_providers().items() if ready]
     logger.info("Cách đăng nhập đang bật: %s", ", ".join(mo))
@@ -41,5 +42,9 @@ async def lifespan(app: FastAPI):
         )
     else:
         logger.info("Trí nhớ từ Discord: tắt (chưa cấu hình).")
-    yield
+    try:
+        yield
+    finally:
+        from features.imagine.api import shutdown_jobs
+        await shutdown_jobs()
 

@@ -197,6 +197,15 @@ async def init_db() -> None:
         # Ảnh đã thích trong thư viện. Lưu ở máy chủ để mọi thiết bị của tài khoản đều thấy.
         if "liked" not in image_column_names:
             await db.execute("ALTER TABLE imagine_images ADD COLUMN liked INTEGER NOT NULL DEFAULT 0")
+        for name, definition in {"position": "INTEGER NOT NULL DEFAULT 0", "parent_image_id": "TEXT", "parent_job_id": "TEXT"}.items():
+            if name not in image_column_names:
+                await db.execute(f"ALTER TABLE imagine_images ADD COLUMN {name} {definition}")
+        job_columns = {row[1] for row in await (await db.execute("PRAGMA table_info(imagine_jobs)")).fetchall()}
+        for name, definition in {"status": "TEXT NOT NULL DEFAULT 'complete'", "error": "TEXT", "n": "INTEGER NOT NULL DEFAULT 1", "updated_at": "REAL", "request_id": "TEXT"}.items():
+            if name not in job_columns:
+                await db.execute(f"ALTER TABLE imagine_jobs ADD COLUMN {name} {definition}")
+        # Giữ dấu nhận yêu cầu kể cả khi ảnh bị xóa, tránh phát sinh lượt tính phí lặp.
+        await db.execute("CREATE TABLE IF NOT EXISTS imagine_requests (owner TEXT NOT NULL, request_id TEXT NOT NULL, fingerprint TEXT NOT NULL, job_id TEXT NOT NULL, PRIMARY KEY(owner, request_id))")
         # Hồ sơ người dùng tự điền trong Cài đặt. Tách khỏi `users` vì bảng đó bị
         # ghi đè bằng dữ liệu Discord/Google mỗi lần đăng nhập, còn hồ sơ là của họ.
         await db.execute(

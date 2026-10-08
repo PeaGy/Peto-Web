@@ -46,6 +46,27 @@ async def test_edit_stream_keeps_original_and_excludes_future(client):
     assert (await client.post('/api/chat', json={'conversation_id':cid,'branch_message_id':original[1]['id'],'message':'bad'})).status_code == 404
 
 
+async def test_resending_a_stopped_last_question_stays_in_the_same_conversation(client):
+    """Chủ dự án 8/10/2026: bấm Dừng rồi gửi lại câu hỏi để lại hai hội thoại trùng tên."""
+    cid = await db.create_conversation(TEST_OWNER, 'Mod nhạc radio', mode='chat')
+    await db.add_message(cid, 'user', 'câu đầu')
+    await db.add_message(cid, 'assistant', 'trả lời đầy đủ')
+    stopped = await db.add_message(cid, 'user', 'sao không có save?')
+    await db.add_message(cid, 'assistant', 'phần đang viết dở', status='incomplete')
+    events = await read_events(await client.post('/api/chat', json={'conversation_id': cid, 'branch_message_id': stopped,
+                                                                    'message': 'sao không có save?'}))
+    meta = next(e for e in events if e['type'] == 'meta')
+    assert meta['conversation_id'] == cid and meta['message']['id'] == stopped
+    rows = await db.get_messages(TEST_OWNER, cid)
+    assert [(r['role'], r['status']) for r in rows][:3] == [('user', 'complete'), ('assistant', 'complete'), ('user', 'complete')]
+    assert len(rows) == 4 and 'phần đang viết dở' not in [r['content'] for r in rows]
+    assert len((await client.get(f'/api/conversations/{cid}/versions')).json()['versions']) == 1
+    # Câu đã trả lời xong thì sửa vẫn tạo phiên bản mới, giữ nguyên bản cũ.
+    events = await read_events(await client.post('/api/chat', json={'conversation_id': cid, 'branch_message_id': stopped,
+                                                                    'message': 'hỏi khác'}))
+    assert next(e for e in events if e['type'] == 'meta')['conversation_id'] != cid
+
+
 async def test_branch_copies_files_and_documents_independently(client, tmp_path):
     cid = await db.create_conversation(TEST_OWNER, 'Có tệp')
     first = await db.add_message(cid, 'user', 'tạo tài liệu')

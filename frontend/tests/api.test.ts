@@ -74,7 +74,7 @@ it.each([{ source_image: { data: 'anh-base64' } }, { source_image_id: 'anh-da-lu
   expect(await createImagineJob(payload)).toEqual({ id: 'ket-qua' });
   const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
   expect(url).toBe('/api/imagine');
-  expect(JSON.parse(init.body as string)).toEqual(payload);
+  expect(JSON.parse(init.body as string)).toEqual({ ...payload, background: true, request_id: expect.any(String) });
 });
 
 it('decodes UTF-8 and SSE boundaries split across network chunks', async () => {

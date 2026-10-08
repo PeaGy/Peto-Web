@@ -132,7 +132,10 @@ it('chủ động dừng câu đang trả lời không tự đồng bộ hoặc 
   fireEvent.click(screen.getByRole('button', { name: 'Gửi', exact: true }));
   await screen.findByText('Phần cần giữ');
   fireEvent.click(screen.getByRole('button', { name: 'Dừng', exact: true }));
-  await screen.findByText('Đã dừng. Phần đã trả lời được giữ lại.');
+  // Như Grok: ghi ngay trong bong bóng trả lời, không còn dòng báo trên ô nhắn.
+  await screen.findByText('Đã dừng theo yêu cầu của bạn.');
+  expect(screen.getByText('Phần cần giữ')).toBeTruthy();
+  expect(screen.queryByText('Đã dừng. Phần đã trả lời được giữ lại.')).toBeNull();
   expect(api.getMessages).not.toHaveBeenCalled();
   expect(screen.queryByText('Đang kiểm tra phần trả lời đã lưu…')).toBeNull();
   expect(api.sendMessage).toHaveBeenCalledOnce();
@@ -371,7 +374,7 @@ it('dừng lúc đang tìm web không để tiến trình treo hoặc nhận ngu
   fireEvent.click(screen.getByRole('button', { name: 'Gửi', exact: true }));
   await screen.findByText('Đang tìm trên web…');
   fireEvent.click(screen.getByRole('button', { name: 'Dừng', exact: true }));
-  await screen.findByText('Đã dừng. Phần đã trả lời được giữ lại.');
+  await screen.findByText('Đã dừng theo yêu cầu của bạn.');
   expect(screen.queryByText('Đang tìm trên web…')).toBeNull();
   expect(screen.getByText('Đã dừng khi đang tìm trên web')).toBeTruthy();
   expect(screen.queryByText('Nguồn tham khảo · 1')).toBeNull();
@@ -714,9 +717,9 @@ describe('Sending and stopping', () => {
     expect(document.querySelectorAll('.bubble.assistant').length).toBe(1);
   });
 
-  it('stops an empty reply without leaving a typing indicator', async () => {
+  it('stops an empty reply in the bubble and retries it in the same conversation', async () => {
     vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers, signal) => {
-      handlers.onMeta?.('C', 'low', row('Xin chào'));
+      handlers.onMeta?.('C', 'low', { id: 10, role: 'user', content: 'Xin chào' });
       await new Promise<void>((_resolve, reject) => signal?.addEventListener('abort', () => reject(new DOMException('Stopped', 'AbortError'))));
     });
     await openApp();
@@ -724,9 +727,20 @@ describe('Sending and stopping', () => {
     fireEvent.click(screen.getByRole('button', {name:'Gửi', exact:true}));
     await screen.findByRole('button', {name:'Dừng', exact:true});
     fireEvent.click(screen.getByRole('button', {name:'Dừng', exact:true}));
-    await screen.findByText('Đã dừng. Phần đã trả lời được giữ lại.');
-    expect(document.querySelector('.work-log')).toBeNull();
-    expect(document.querySelectorAll('.bubble.assistant').length).toBe(0);
+    await screen.findByText('Đã dừng theo yêu cầu của bạn.');
+    expect(document.querySelectorAll('.bubble.assistant').length).toBe(1);
+    expect(screen.getByText('Đã dừng', {selector: '.message-stopped-tag'})).toBeTruthy();
+    // "Thử lại" gửi lại đúng câu hỏi đã lưu; máy chủ thay câu trả lời dở ngay trong hội thoại này.
+    vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers) => {
+      handlers.onMeta?.('C', 'low', { id: 10, role: 'user', content: 'Xin chào' });
+      handlers.onDelta?.('Chào bạn');
+      handlers.onDone?.();
+    });
+    fireEvent.click(screen.getByRole('button', {name:'Thử lại', exact:true}));
+    await screen.findByText('Chào bạn');
+    const payload = vi.mocked(api.sendMessage).mock.calls.at(-1)![0];
+    expect(payload).toMatchObject({conversationId: 'C', branchMessageId: 10, message: 'Xin chào'});
+    expect(screen.queryByText('Đã dừng theo yêu cầu của bạn.')).toBeNull();
   });
 
   it('marks visible partial text incomplete after a stream error', async () => {

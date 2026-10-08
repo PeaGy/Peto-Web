@@ -7,6 +7,7 @@ vi.mock('../src/shared/api/api', async (original) => ({
   ...await original<typeof import('../src/shared/api/api')>(),
   listImagineJobs: vi.fn(), createImagineJob: vi.fn(), deleteImagineJob: vi.fn(),
   deleteImagineImage: vi.fn(), setImagineImageLiked: vi.fn(),
+  getImagineJob: vi.fn(), checkImagineRequest: vi.fn(),
 }));
 const job: api.ImagineJob = {
   id: 'job-1', prompt: 'Mèo trên mặt trăng', quality: 'medium', resolution: '2k',
@@ -26,12 +27,121 @@ const deferred = <T,>() => {
 beforeEach(() => {
   vi.resetAllMocks();
   localStorage.clear();
+  sessionStorage.clear();
   Element.prototype.scrollTo = vi.fn();
   vi.mocked(api.listImagineJobs).mockResolvedValue([]);
   vi.mocked(api.createImagineJob).mockResolvedValue(job);
   vi.mocked(api.deleteImagineJob).mockResolvedValue();
   vi.mocked(api.deleteImagineImage).mockResolvedValue({ job_deleted: false });
   vi.mocked(api.setImagineImageLiked).mockImplementation(async (_id, liked) => liked);
+});
+
+it('thêm nhiều ảnh, ghép ảnh thư viện và gửi đúng thứ tự ảnh đầu', async () => {
+  vi.mocked(api.listImagineJobs).mockResolvedValue([job]);
+  await open();
+  fireEvent.change(screen.getByLabelText('Chọn ảnh để sửa'), { target: { files: [sourceFile(), sourceFile()] } });
+  await screen.findByRole('img', { name: 'Ảnh tham chiếu 2' });
+  fireEvent.click(screen.getByRole('button', { name: 'Từ thư viện' }));
+  const library = screen.getByRole('dialog', { name: 'Thư viện ảnh' });
+  fireEvent.click(within(library).getByRole('button', { name: 'Chọn', exact: true }));
+  fireEvent.click(within(library).getAllByRole('button', { name: 'Chọn ảnh: Mèo trên mặt trăng' })[1]);
+  fireEvent.click(within(library).getByRole('button', { name: 'Dùng làm tham chiếu' }));
+  fireEvent.click(screen.getAllByRole('button', { name: 'Đặt làm ảnh đầu' })[1]);
+  fireEvent.change(screen.getByLabelText('Bạn muốn sửa gì trong ảnh?'), { target: { value: 'Ghép 3 ảnh' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Sửa ảnh', exact: true }));
+  await waitFor(() => expect(api.createImagineJob).toHaveBeenCalledWith(expect.objectContaining({
+    source_images: [{ image_id: 'img-2' }, { data: png }, { data: png }],
+  })));
+});
+
+it('từ chối ảnh thứ sáu mà giữ nguyên năm ảnh và mô tả', async () => {
+  await open();
+  fireEvent.change(screen.getByLabelText('Chọn ảnh để sửa'), { target: { files: Array.from({ length: 5 }, sourceFile) } });
+  await screen.findByRole('img', { name: 'Ảnh tham chiếu 5' });
+  const input = screen.getByLabelText('Bạn muốn sửa gì trong ảnh?');
+  fireEvent.change(input, { target: { value: 'Giữ mô tả này' } });
+  fireEvent.paste(input, { clipboardData: { files: [sourceFile()] } });
+  expect(screen.getByRole('alert').textContent).toContain('tối đa 5');
+  expect(screen.getAllByRole('img', { name: /Ảnh tham chiếu/ })).toHaveLength(5);
+  expect((input as HTMLTextAreaElement).value).toBe('Giữ mô tả này');
+});
+
+it('so sánh với từng ảnh tham chiếu và mở lại nguồn sau tải lịch sử', async () => {
+  const sources = [editedJob.source_image!, { id: 'source-2', mime: 'image/png', url: '/api/imagine/images/source-2' }];
+  vi.mocked(api.listImagineJobs).mockResolvedValue([{ ...job, source_images: sources }]);
+  await open();
+  fireEvent.click(screen.getByRole('button', { name: 'Xem ảnh 1: Mèo trên mặt trăng' }));
+  const dialog = screen.getByRole('dialog', { name: 'Xem ảnh đã tạo' });
+  fireEvent.click(within(dialog).getByRole('button', { name: 'So sánh trước / sau' }));
+  fireEvent.change(within(dialog).getByLabelText('Chọn ảnh gốc để so sánh'), { target: { value: '1' } });
+  expect(within(dialog).getByRole('img', { name: 'Ảnh gốc 2' }).getAttribute('src')).toBe(sources[1].url);
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Đóng ảnh' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Dùng lại mô tả' }));
+  expect(screen.getByRole('img', { name: 'Ảnh tham chiếu 2' }).getAttribute('src')).toBe(sources[1].url);
+});
+
+it('phục hồi lượt đang chạy rồi hiện kết quả mà không POST lần nữa', async () => {
+  vi.mocked(api.listImagineJobs).mockResolvedValue([{ ...job, status: 'running', images: [], n: 2 }]);
+  vi.mocked(api.getImagineJob).mockResolvedValue({ ...job, status: 'complete' });
+  await open();
+  expect(screen.getByText('Peto đang tạo ảnh…')).toBeTruthy();
+  await screen.findByRole('button', { name: 'Xem ảnh 1: Mèo trên mặt trăng' }, { timeout: 2500 });
+  expect(api.createImagineJob).not.toHaveBeenCalled();
+});
+
+it('mất phản hồi POST thì kiểm tra mã cũ trước khi cho tạo tiếp', async () => {
+  vi.mocked(api.createImagineJob).mockRejectedValue(new api.ImagineRequestUncertainError('request-1234567890'));
+  vi.mocked(api.checkImagineRequest).mockResolvedValue(job);
+  await open();
+  fireEvent.change(screen.getByLabelText('Bức ảnh bạn muốn tạo'), { target: { value: 'mèo' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Tạo ảnh', exact: true }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Kiểm tra lượt vừa gửi' }));
+  await screen.findByRole('button', { name: 'Xem ảnh 1: Mèo trên mặt trăng' });
+  expect(api.checkImagineRequest).toHaveBeenCalledWith('request-1234567890');
+  expect(api.createImagineJob).toHaveBeenCalledOnce();
+});
+
+it('tải thêm ảnh cũ mà không mất lượt mới trong thư viện', async () => {
+  const page = Array.from({ length: 40 }, (_, index) => ({ ...job, id: `job-${index}`, images: [{ ...job.images[0], id: `image-${index}` }] }));
+  vi.mocked(api.listImagineJobs).mockResolvedValueOnce(page).mockResolvedValueOnce([{ ...job, id: 'older', prompt: 'Ảnh rất cũ' }]);
+  await open();
+  fireEvent.click(screen.getByRole('button', { name: 'Xem ảnh cũ hơn' }));
+  await screen.findByRole('button', { name: 'Xem ảnh 1: Ảnh rất cũ' });
+  expect(api.listImagineJobs).toHaveBeenLastCalledWith('job-39');
+  expect(screen.getAllByRole('button', { name: /Xem ảnh 1:/ })).toHaveLength(41);
+});
+
+it('mở lịch sử tải đúng ảnh cha nằm ngoài trang thư viện hiện tại', async () => {
+  const child = { ...job, id: 'child', prompt: 'Lượt sửa sau', images: [{ ...job.images[0], id: 'child-image' }],
+    source_images: [{ ...editedJob.source_image!, parent_job_id: job.id, parent_image_id: 'img-2' }] };
+  vi.mocked(api.listImagineJobs).mockResolvedValue([child]);
+  vi.mocked(api.getImagineJob).mockResolvedValue(job);
+  await open();
+  const details = screen.getByText('Lịch sử chỉnh sửa').closest('details')!;
+  details.open = true;
+  fireEvent(details, new Event('toggle'));
+  const original = await within(details).findByRole('button', { name: job.prompt });
+  expect(api.getImagineJob).toHaveBeenCalledWith(job.id, expect.any(AbortSignal));
+  fireEvent.click(original);
+  const dialog = screen.getByRole('dialog', { name: 'Xem ảnh đã tạo' });
+  expect(within(dialog).getByRole('img').getAttribute('src')).toBe(job.images[1].url);
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Sửa ảnh này' }));
+  expect(screen.getByRole('img', { name: 'Ảnh gốc để chỉnh sửa' }).getAttribute('src')).toBe(job.images[1].url);
+});
+
+it('FileReader về muộn không khôi phục ảnh đã bị gỡ', async () => {
+  await open();
+  fireEvent.change(screen.getByLabelText('Chọn ảnh để sửa'), { target: { files: [sourceFile()] } });
+  await screen.findByRole('img', { name: 'Ảnh gốc để chỉnh sửa' });
+  let reader!: { result: string; onload: () => void };
+  vi.stubGlobal('FileReader', class {
+    result = ''; onload = () => {}; onerror = () => {};
+    readAsDataURL() { reader = this; }
+  });
+  fireEvent.change(screen.getByLabelText('Chọn ảnh để sửa'), { target: { files: [sourceFile()] } });
+  fireEvent.click(screen.getByRole('button', { name: 'Gỡ ảnh gốc' }));
+  await act(async () => { reader.result = `data:image/png;base64,${png}`; reader.onload(); });
+  expect(screen.queryByRole('img', { name: /Ảnh gốc để chỉnh sửa|Ảnh tham chiếu/ })).toBeNull();
 });
 afterEach(() => vi.unstubAllGlobals());
 /** Giả lập điện thoại: CSS đổi bố cục ở mốc 720px, còn JS đọc cùng mốc qua matchMedia. */
@@ -203,7 +313,7 @@ it('gỡ ảnh trở về tạo ảnh mới, không gửi lại ảnh đã gỡ'
 it.each([
   [new File(['ghi chú'], 'ghi-chu.txt', { type: 'text/plain' })],
   [new File([new Uint8Array(8 * 1024 * 1024 + 1)], 'qua-lon.png', { type: 'image/png' })],
-  [sourceFile(), sourceFile()],
+  Array.from({ length: 6 }, sourceFile),
 ])('từ chối tệp sai loại, quá lớn hoặc nhiều ảnh trước khi gọi dịch vụ: %#', async (...files) => {
   await open();
   fireEvent.change(screen.getByLabelText('Chọn ảnh để sửa'), { target: { files } });

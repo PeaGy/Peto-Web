@@ -3,8 +3,11 @@ import { flushSync } from "react-dom";
 import {
   UnauthorizedError, createImagineJob, deleteImagineImage, deleteImagineJob, listImagineJobs, setImagineImageLiked,
   type ImagineImage, type ImagineJob, type ImagineQuality, type ImagineResolution,
+  imagineSources, imaginePending, getImagineJob, checkImagineRequest, unconfirmedImagineRequest, ImagineRequestUncertainError,
 } from "../../shared/api/api";
 import ImagineLibrary, { HeartIcon } from "./ImagineLibrary";
+import EditHistory from "./EditHistory";
+import ImageComparison from "./ImageComparison";
 import StudioMenu from "./StudioMenu";
 import { LoadingIndicator } from '../../shared/ui/LoadingIndicator';
 import { COMPACT_QUERY } from "../companion/characters/characterView";
@@ -14,8 +17,8 @@ const RATIO_KEY = "peto-imagine-ratio";
 const RES_KEY = "peto-imagine-res";
 const COUNT_KEY = "peto-imagine-n";
 const MAX_SOURCE_BYTES = 8 * 1024 * 1024;
-type DraftSource = { name: string; preview: string; upload?: { data: string }; imageId?: string };
-const RATIOS = ["auto", "1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3", "2:1", "1:2"];
+type DraftSource = { name: string; preview: string; draftId?: string; size?: number; upload?: { data: string }; imageId?: string };
+const RATIOS = ["auto", "1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3", "2:1", "1:2", "19.5:9", "9:19.5", "20:9", "9:20", "21:9", "5:2"];
 const COUNTS = [1, 2, 3, 4];
 const IDEAS = [
   { label: "Một nhân vật", style: "character", prompt: "Mèo trắng đội mũ phù thủy màu tím, minh họa sách truyện, ánh sáng dịu và những ngôi sao nhỏ." },
@@ -99,7 +102,7 @@ function readSourceFile(file: File): Promise<DraftSource> {
       const preview = String(reader.result ?? "");
       const data = preview.split(",")[1];
       if (!data) return reject(new Error("Không đọc được ảnh. Bạn thử chọn lại nhé."));
-      resolve({ name: file.name, preview, upload: { data } });
+      resolve({ name: file.name, preview, draftId: crypto.randomUUID(), size: file.size, upload: { data } });
     };
     reader.onerror = () => reject(new Error("Không đọc được ảnh. Bạn thử chọn lại nhé."));
     reader.readAsDataURL(file);
@@ -140,7 +143,12 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
   onFocusHandled?: () => void;
 }) {
   const [prompt, setPrompt] = useState("");
-  const [source, setSource] = useState<DraftSource | null>(null);
+  const [sources, setSources] = useState<DraftSource[]>([]);
+  const source = sources[0] ?? null;
+  const [uncertainRequest, setUncertainRequest] = useState(unconfirmedImagineRequest);
+  const [checkingRequest, setCheckingRequest] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [readingSource, setReadingSource] = useState(false);
   const [draggingSource, setDraggingSource] = useState(false);
   const [quality, setQuality] = useState<ImagineQuality>(() => readStored(QUALITY_KEY, ["low", "medium"], "low"));
@@ -152,7 +160,7 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
   const [loadFailed, setLoadFailed] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [lightbox, setLightbox] = useState<{ job: ImagineJob; index: number; original?: boolean } | null>(null);
+  const [lightbox, setLightbox] = useState<{ job: ImagineJob; index: number; original?: boolean; sourceIndex?: number } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ImagineJob | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -160,12 +168,17 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
   const [expanded, setExpanded] = useState(false);
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [likeError, setLikeError] = useState<string | null>(null);
+  const [previewLikes, setPreviewLikes] = useState<Record<string, boolean>>({});
   const compact = useCompact();
   const dockRef = useRef<HTMLDivElement>(null);
   const optionsRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const sourceStripRef = useRef<HTMLDivElement>(null);
   const sourceVersion = useRef(0);
+  const readingRef = useRef(false);
+  const moreRef = useRef(false);
+  const [pollError, setPollError] = useState(false);
   const dragDepth = useRef(0);
   const galleryRef = useRef<HTMLDivElement>(null);
   const lightboxRef = useRef<HTMLDialogElement>(null);
@@ -194,7 +207,7 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
     setLoadFailed(false);
     try {
       const rows = await listImagineJobs();
-      if (version === loadVersion.current) setJobs(rows);
+      if (version === loadVersion.current) { setJobs(rows); setHasMore(rows.length === 40); }
     } catch (err) {
       if (version !== loadVersion.current) return;
       if (err instanceof UnauthorizedError) return onUnauthorized();
@@ -245,38 +258,103 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
   useEffect(() => setLikeError(null), [lightbox]);
 
   async function chooseSource(files: FileList | File[]) {
-    if (inFlight.current || files.length === 0) return;
-    if (files.length > 1) { setError("Chọn một ảnh gốc cho mỗi lượt sửa nhé."); return; }
-    const file = files[0];
-    if (!/^image\/(png|jpeg|webp)$/i.test(file.type) && !(file.type === "" && /\.(png|jpe?g|webp)$/i.test(file.name))) {
+    if (inFlight.current || pendingIds || uncertainRequest || readingRef.current || files.length === 0) return;
+    if (sources.length + files.length > 5) { setError("Mỗi lượt sửa nhận tối đa 5 ảnh tham chiếu."); return; }
+    const chosen = Array.from(files);
+    if (chosen.some(file => !/^image\/(png|jpeg|webp)$/i.test(file.type) && !(file.type === "" && /\.(png|jpe?g|webp)$/i.test(file.name)))) {
       setError("Peto nhận ảnh PNG, JPEG hoặc WebP để chỉnh sửa."); return;
     }
-    if (file.size === 0 || file.size > MAX_SOURCE_BYTES) { setError("Ảnh gốc phải có nội dung và không vượt quá 8 MB."); return; }
+    if (chosen.some(file => file.size === 0 || file.size > MAX_SOURCE_BYTES)) { setError("Ảnh gốc phải có nội dung và không vượt quá 8 MB."); return; }
+    if (chosen.reduce((total, file) => total + file.size, 0) + sources.reduce((total, image) => total + (image.size ?? 0), 0) > 16 * 1024 * 1024) {
+      setError("Tổng ảnh tham chiếu không được vượt quá 16 MB."); return;
+    }
     const version = ++sourceVersion.current;
-    setReadingSource(true);
-    setError(null);
+    readingRef.current = true;
+    setReadingSource(true); setError(null);
     try {
-      const image = await readSourceFile(file);
+      const images = await Promise.all(chosen.map(readSourceFile));
       if (version !== sourceVersion.current) return;
-      setSource(image);
+      setSources(prev => [...prev, ...images]);
+      setExpanded(true);
       if (activeRef.current) textareaRef.current?.focus();
     } catch (err) {
       if (version === sourceVersion.current) setError(err instanceof Error ? err.message : "Không đọc được ảnh.");
     } finally {
-      if (version === sourceVersion.current) setReadingSource(false);
+      if (version === sourceVersion.current) { setReadingSource(false); readingRef.current = false; }
     }
   }
-  function clearSource() {
+  function clearSource(index: number) {
     sourceVersion.current += 1;
+    readingRef.current = false;
     setReadingSource(false);
-    setSource(null);
+    setSources(prev => prev.filter((_, i) => i !== index));
     if (fileRef.current) fileRef.current.value = "";
   }
+  function moveSourceFirst(index: number) {
+    flushSync(() => setSources(prev => [prev[index], ...prev.filter((_, i) => i !== index)]));
+    sourceStripRef.current?.scrollTo({ left: 0 });
+    sourceStripRef.current?.querySelector<HTMLElement>(".source-preview")?.focus({ preventScroll: true });
+  }
+  function addLibrarySources(images: ImagineImage[]) {
+    if (inFlight.current || readingRef.current) return;
+    const fresh = images.filter(image => !sources.some(source => source.imageId === image.id));
+    if (sources.length + fresh.length > 5) { setError("Mỗi lượt sửa nhận tối đa 5 ảnh tham chiếu."); return; }
+    setSources(prev => [...prev, ...fresh.map(image => ({ name: "Ảnh trong thư viện", preview: image.url, imageId: image.id }))]);
+    setLibraryOpen(false); setExpanded(true); setError(null);
+    textareaRef.current?.focus();
+  }
+  async function loadMore() {
+    if (!hasMore || moreRef.current || !jobs.length) return;
+    moreRef.current = true; setLoadingMore(true);
+    try {
+      const rows = await listImagineJobs(jobs[jobs.length - 1].id);
+      setJobs(prev => [...prev, ...rows.filter(row => !prev.some(job => job.id === row.id))]);
+      setHasMore(rows.length === 40);
+    } catch (err) {
+      if (err instanceof UnauthorizedError) return onUnauthorized();
+      setError("Chưa tải được ảnh cũ hơn. Bạn thử lại nhé.");
+    } finally { moreRef.current = false; setLoadingMore(false); }
+  }
+  async function checkUnconfirmed() {
+    if (!uncertainRequest || checkingRequest) return;
+    setCheckingRequest(true);
+    try {
+      const job = await checkImagineRequest(uncertainRequest);
+      if (job) setJobs(prev => [job, ...prev.filter(row => row.id !== job.id)]);
+      setUncertainRequest(null);
+      setError(job ? null : "Máy chủ chưa có lượt vừa gửi, hoặc lượt đó đã bị xóa.");
+    } catch (err) {
+      if (err instanceof UnauthorizedError) return onUnauthorized();
+      setError("Chưa kiểm tra được lượt vừa gửi. Kiểm tra kết nối rồi thử lại nhé.");
+    } finally { setCheckingRequest(false); }
+  }
+  const pendingIds = jobs.filter(imaginePending).map(job => job.id).join(",");
+  useEffect(() => {
+    if (!pendingIds) return;
+    const controller = new AbortController();
+    let timer: number;
+    const poll = async () => {
+      try {
+        const rows = await Promise.all(pendingIds.split(",").map(id => getImagineJob(id, controller.signal)));
+        if (controller.signal.aborted) return;
+        setJobs(prev => prev.map(job => rows.find(row => row.id === job.id) ?? job));
+        setPollError(false);
+      } catch (err) {
+        if (controller.signal.aborted) return;
+        if (err instanceof UnauthorizedError) { onUnauthorized(); return; }
+        setPollError(true);
+      }
+      if (!controller.signal.aborted) timer = window.setTimeout(poll, 2000);
+    };
+    timer = window.setTimeout(poll, 1000);
+    return () => { controller.abort(); window.clearTimeout(timer); };
+  }, [pendingIds, onUnauthorized]);
   function editImage(job: ImagineJob, image: ImagineImage) {
     if (inFlight.current) return;
     sourceVersion.current += 1;
     setReadingSource(false);
-    setSource({ name: "Ảnh đã chọn", preview: image.url, imageId: image.id });
+    setSources([{ name: "Ảnh đã chọn", preview: image.url, imageId: image.id }]);
+    setExpanded(true);
     setPrompt("");
     setQuality(job.quality);
     setResolution(job.resolution);
@@ -310,9 +388,12 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
   }
   /** Đổi tim ngay khi bấm; máy chủ báo lỗi thì trả lại như cũ. */
   async function toggleLike(imageId: string, liked: boolean) {
-    const mark = (value: boolean) => setJobs((prev) => prev.map((job) => job.images.some((image) => image.id === imageId)
+    const mark = (value: boolean) => {
+      setPreviewLikes(prev => ({ ...prev, [imageId]: value }));
+      setJobs((prev) => prev.map((job) => job.images.some((image) => image.id === imageId)
       ? { ...job, images: job.images.map((image) => image.id === imageId ? { ...image, liked: value } : image) }
       : job));
+    };
     setLikeError(null);
     mark(liked);
     try {
@@ -330,7 +411,7 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
   }
   async function generate() {
     const text = prompt.trim();
-    if (!text || inFlight.current || loading || loadFailed || readingSource) return;
+    if (!text || inFlight.current || pendingIds || uncertainRequest || loading || loadFailed || readingSource) return;
     inFlight.current = true;
     setError(null);
     setGenerating(true);
@@ -340,12 +421,13 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
     galleryRef.current?.scrollTo({ top: 0 });
     try {
       const job = await createImagineJob({ prompt: text, quality, resolution, aspect_ratio: aspect, n: count,
-        ...(source?.upload ? { source_image: source.upload } : {}),
-        ...(source?.imageId ? { source_image_id: source.imageId } : {}),
+        ...(sources.length > 1 ? { source_images: sources.map(image => image.upload ?? { image_id: image.imageId! }) }
+          : source?.upload ? { source_image: source.upload } : source?.imageId ? { source_image_id: source.imageId } : {}),
       });
-      setJobs((prev) => [job, ...prev]);
+      setJobs((prev) => [job, ...prev.filter(row => row.id !== job.id)]);
     } catch (err) {
       if (err instanceof UnauthorizedError) return onUnauthorized();
+      if (err instanceof ImagineRequestUncertainError) setUncertainRequest(err.requestId);
       setError(err instanceof Error ? err.message : "Peto chưa tạo được ảnh. Thử lại nhé.");
     } finally {
       inFlight.current = false;
@@ -376,18 +458,20 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
   function reuse(job: ImagineJob) {
     sourceVersion.current += 1;
     setReadingSource(false);
-    setSource(job.source_image ? { name: "Ảnh gốc", preview: job.source_image.url, imageId: job.source_image.id } : null);
+    setSources(imagineSources(job).map(image => ({ name: "Ảnh gốc", preview: image.url, imageId: image.id })));
+    setExpanded(true);
     setPrompt(job.prompt);
     setQuality(job.quality);
     setResolution(job.resolution);
     setAspect(job.aspect_ratio);
     textareaRef.current?.focus();
   }
-  const lightboxImage = lightbox?.original ? lightbox.job.source_image : lightbox?.job.images[lightbox.index];
+  const lightboxImage = lightbox?.original ? imagineSources(lightbox.job)[lightbox.sourceIndex ?? 0] : lightbox?.job.images[lightbox.index];
   // lightbox giữ bản chụp của lượt lúc mở, nên trạng thái thích phải đọc từ danh sách hiện tại.
-  const lightboxLiked = !!lightboxImage && jobs.some((job) => job.images.some((image) => image.id === lightboxImage.id && image.liked));
+  const listedImage = lightboxImage && jobs.flatMap(job => job.images).find(image => image.id === lightboxImage.id);
+  const lightboxLiked = !!lightboxImage && (previewLikes[lightboxImage.id] ?? listedImage?.liked ?? lightboxImage.liked ?? false);
   const latestImage = jobs.find((job) => job.images.length > 0)?.images[0];
-  const controlsDisabled = generating || loading || loadFailed || readingSource;
+  const controlsDisabled = generating || !!pendingIds || !!uncertainRequest || loading || loadFailed || readingSource;
   // Như Grok: thanh thu gọn mời gõ, còn khung đang mở thì nói rõ cần nhập gì.
   const showFull = expanded || !compact;
   const placeholder = source
@@ -404,6 +488,7 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
       </button>
 
     <div className="imagine-gallery" ref={galleryRef}>
+      {pollError && <p className="error" role="status">Đang mất kết nối. Peto sẽ kiểm tra lại lượt ảnh khi có mạng.</p>}
       {loadFailed && <div className="studio-load-error" role="alert"><p>Chưa tải được ảnh đã tạo.</p><button type="button" onClick={() => void loadJobs()}>Thử tải lại</button></div>}
       {!loading && !loadFailed && jobs.length === 0 && !generating && <section className="studio-welcome">
         <span className="studio-eyebrow"><SparkleIcon /> Góc sáng tạo của bạn</span>
@@ -420,7 +505,7 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
         <p className="pending-prompt">{prompt}</p>
         <div className="imagine-thumbs" aria-hidden="true">{Array.from({ length: count }, (_, index) => <div className="image-placeholder" key={index}><SparkleIcon /></div>)}</div>
       </section>}
-      {jobs.length > 0 && <div className="studio-library-head"><h1>Ảnh của bạn</h1><span>{jobs.length} lượt gần đây</span></div>}
+      {jobs.length > 0 && <div className="studio-library-head"><h1>Ảnh của bạn</h1><span>{jobs.length} lượt đã tải</span><button type="button" className="studio-text-button" onClick={() => setLibraryOpen(true)}>Thư viện</button></div>}
       {jobs.map((job) => <section key={job.id} data-job-id={job.id} className="imagine-job">
         <div className="imagine-job-head">
           <div className="imagine-job-copy"><p className="imagine-prompt">{job.prompt}</p><div className="imagine-meta">
@@ -429,18 +514,23 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
             {job.created_at && <time dateTime={new Date(job.created_at * 1000).toISOString()}>{new Date(job.created_at * 1000).toLocaleDateString("vi-VN", { day: "numeric", month: "short" })}</time>}
           </div></div>
           <div className="imagine-job-actions">
-            <button type="button" disabled={generating} onClick={() => reuse(job)}>Dùng lại mô tả</button>
-            <button type="button" className="imagine-delete" aria-label={"Xóa lượt ảnh: " + job.prompt} onClick={() => { setDeleteError(null); setDeleteTarget(job); }}>Xóa</button>
+            <button type="button" disabled={controlsDisabled} onClick={() => reuse(job)}>Dùng lại mô tả</button>
+            <button type="button" className="imagine-delete" disabled={imaginePending(job)} aria-label={"Xóa lượt ảnh: " + job.prompt} onClick={() => { setDeleteError(null); setDeleteTarget(job); }}>Xóa</button>
           </div>
         </div>
-        {job.source_image && <button className="job-source" type="button" onClick={() => setLightbox({ job, index: 0, original: true })}><img src={job.source_image.url} alt="" loading="lazy" /><span>Xem ảnh gốc</span></button>}
+        <div className="job-sources">{imagineSources(job).map((image, sourceIndex) => <button key={image.id} className="job-source" type="button" onClick={() => setLightbox({ job, index: 0, original: true, sourceIndex })}><img src={image.url} alt="" loading="lazy" /><span>{imagineSources(job).length === 1 ? "Xem ảnh gốc" : `Ảnh tham chiếu ${sourceIndex + 1}`}</span></button>)}</div>
+        {imagineSources(job).some(image => image.parent_job_id) && <EditHistory job={job} jobs={jobs} onOpen={setLightbox} onUnauthorized={onUnauthorized} />}
+        {imaginePending(job) && <div className="generation-pending" role="status"><strong>{job.status === "queued" ? "Đang chờ đến lượt…" : "Peto đang tạo ảnh…"}</strong><p>Bạn có thể chuyển tab hoặc tải lại trang; lượt này vẫn được theo dõi.</p><JobElapsed createdAt={job.created_at} /><div className="imagine-thumbs" aria-hidden="true">{Array.from({ length: job.n ?? 1 }, (_, index) => <div className="image-placeholder" key={index}><SparkleIcon /></div>)}</div></div>}
+        {(job.status === "failed" || job.status === "unknown") && <p className="error">{job.error || "Chưa có kết quả cho lượt này."}{job.status === "unknown" && " Lượt này không được tự gửi lại."}</p>}
         <div className="imagine-thumbs">{job.images.map((image, index) => <button key={image.id} type="button" className="imagine-thumb" aria-label={"Xem ảnh " + (index + 1) + ": " + job.prompt} onClick={() => setLightbox({ job, index })}>
           <img src={image.url} alt={job.prompt} loading="lazy" decoding="async" /><span className="image-open-hint">Xem ảnh ↗</span>
         </button>)}</div>
       </section>)}
+      {hasMore && <button type="button" className="load-more" disabled={loadingMore} onClick={() => void loadMore()}>{loadingMore ? "Đang tải…" : "Xem ảnh cũ hơn"}</button>}
     </div>
 
     <div ref={dockRef} className={"studio-dock" + (expanded ? " expanded" : "")}>
+      {uncertainRequest && <div className="error" role="status">Chưa xác nhận được lượt vừa gửi. <button type="button" className="studio-text-button" disabled={checkingRequest} onClick={() => void checkUnconfirmed()}>{checkingRequest ? "Đang kiểm tra…" : "Kiểm tra lượt vừa gửi"}</button></div>}
       {error && <div className="error" role="alert">{error}<button type="button" className="dismiss-error" aria-label="Đóng thông báo" onClick={() => setError(null)}>×</button></div>}
       <form className={"composer-wrap studio-composer-wrap" + (draggingSource ? " dragging" : "")} onSubmit={(event) => { event.preventDefault(); void generate(); }}
         onDragEnter={(event) => { if (!event.dataTransfer.types.includes("Files") || generating) return; event.preventDefault(); dragDepth.current += 1; setDraggingSource(true); }}
@@ -462,18 +552,22 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
           {latestImage ? <img src={latestImage.url} alt="" /> : <PhotoIcon />}
         </button>
         <div className="composer imagine-composer">
-          <input ref={fileRef} className="source-file-input" type="file" accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp" aria-label="Chọn ảnh để sửa" disabled={generating} onChange={(event) => { const files = Array.from(event.target.files ?? []); event.target.value = ""; void chooseSource(files); }} />
-          {source && <div className="source-preview"><img src={source.preview} alt="Ảnh gốc để chỉnh sửa" /><div><strong>{source.name}</strong><span>Ảnh gốc · kết quả được lưu riêng</span></div><button type="button" disabled={generating} aria-label="Gỡ ảnh gốc" onClick={clearSource}>×</button></div>}
+          <input ref={fileRef} className="source-file-input" type="file" multiple accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp" aria-label="Chọn ảnh để sửa" disabled={controlsDisabled} onChange={(event) => { const files = Array.from(event.target.files ?? []); event.target.value = ""; void chooseSource(files); }} />
+          {sources.length > 0 && <div className="source-collection"><div className="source-guidance">{sources.length}/5 ảnh · Bạn có thể viết “lấy nhân vật ở ảnh 1, nền ở ảnh 2”. Khi để Tự động, tỉ lệ theo ảnh đầu.</div><div className="source-strip" ref={sourceStripRef}>{sources.map((image, index) => <div className="source-preview" key={image.imageId ?? image.draftId} tabIndex={-1} role="group" aria-label={`Ảnh tham chiếu ${index + 1}`}>
+            <img src={image.preview} alt={sources.length === 1 ? "Ảnh gốc để chỉnh sửa" : `Ảnh tham chiếu ${index + 1}`} /><div><strong>Ảnh {index + 1}</strong><span title={image.name}>{image.name}</span>{index > 0 && <button type="button" className="source-first" disabled={controlsDisabled} onClick={() => moveSourceFirst(index)}>Đặt làm ảnh đầu</button>}</div>
+            <button type="button" disabled={generating || !!pendingIds} aria-label={sources.length === 1 ? "Gỡ ảnh gốc" : `Gỡ ảnh ${index + 1}`} onClick={() => clearSource(index)}>×</button>
+          </div>)}</div></div>}
           <textarea id="image-prompt" ref={textareaRef} value={prompt} rows={2} aria-label={source ? "Bạn muốn sửa gì trong ảnh?" : "Bức ảnh bạn muốn tạo"} placeholder={placeholder}
-            disabled={generating} onFocus={() => setExpanded(true)} onChange={(event) => setPrompt(event.target.value)}
+            disabled={generating || !!pendingIds} onFocus={() => setExpanded(true)} onChange={(event) => setPrompt(event.target.value)}
             onPaste={(event) => { if (event.clipboardData.files.length) { event.preventDefault(); void chooseSource(event.clipboardData.files); } }} onKeyDown={(event) => {
             if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void generate(); }
           }} />
           <div className="imagine-controls">
-            <button className="add-source" type="button" disabled={generating || readingSource}
-              aria-label={readingSource ? "Đang đọc ảnh…" : source ? "Đổi ảnh gốc" : "Thêm ảnh để chỉnh sửa"}
-              title={readingSource ? "Đang đọc ảnh…" : (source ? "Đổi ảnh gốc" : "Thêm ảnh để chỉnh sửa") + " · PNG, JPEG, WebP · tối đa 8 MB"}
+            <button className="add-source" type="button" disabled={controlsDisabled || sources.length >= 5}
+              aria-label={readingSource ? "Đang đọc ảnh…" : source ? "Thêm ảnh tham chiếu" : "Thêm ảnh để chỉnh sửa"}
+              title={readingSource ? "Đang đọc ảnh…" : (source ? "Thêm ảnh tham chiếu" : "Thêm ảnh để chỉnh sửa") + " · PNG, JPEG, WebP · tối đa 8 MB"}
               onClick={() => fileRef.current?.click()}><ImagePlusIcon />{source && <img className="add-source-thumb" src={source.preview} alt="" />}</button>
+            <button type="button" className="studio-text-button reference-library" disabled={controlsDisabled || sources.length >= 5} onClick={() => setLibraryOpen(true)}>Từ thư viện</button>
             {/* Chỗ cặp nút Ảnh/Video của Grok. Peto chưa làm video nên dùng cho độ phân giải. */}
             <div className="seg" role="group" aria-label="Độ phân giải">
               {(["1k", "2k"] as const).map((value) => <button type="button" key={value} className={resolution === value ? "on" : ""} aria-pressed={resolution === value} disabled={controlsDisabled} onClick={() => setResolution(value)}>{value.toUpperCase()}</button>)}
@@ -488,18 +582,22 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
     </div>
 
     <ImagineLibrary open={active && libraryOpen} jobs={jobs} onClose={() => setLibraryOpen(false)}
-      onOpenImage={(job, index) => setLightbox({ job, index })} onDeleteImages={removeImages} />
+      onOpenImage={(job, index) => setLightbox({ job, index })} onDeleteImages={removeImages}
+      onUseSources={controlsDisabled ? undefined : addLibrarySources} sourceLimit={5 - sources.length}
+      hasMore={hasMore} loadingMore={loadingMore} onLoadMore={() => void loadMore()} />
     <dialog ref={lightboxRef} className="imagine-lightbox" aria-label="Xem ảnh đã tạo" onCancel={() => setLightbox(null)} onClick={(event) => { if (event.target === event.currentTarget) setLightbox(null); }}>
       {lightbox && lightboxImage && <div className="imagine-lightbox-card">
         <div className="lightbox-head"><span>{lightbox.original ? "Ảnh gốc" : `Peto tạo ảnh · ${lightbox.index + 1} / ${lightbox.job.images.length}`}</span><button type="button" autoFocus className="dialog-close" aria-label="Đóng ảnh" onClick={() => setLightbox(null)}>×</button></div>
-        <img src={lightboxImage.url} alt={lightbox.job.prompt} />
+        {!lightbox.original && imagineSources(lightbox.job).length > 0
+          ? <ImageComparison key={lightboxImage.id} sources={imagineSources(lightbox.job)} image={lightboxImage} prompt={lightbox.job.prompt} />
+          : <img src={lightboxImage.url} alt={lightbox.job.prompt} />}
         <p>{lightbox.job.prompt}</p>
         {likeError && <p className="lightbox-error" role="alert">{likeError}</p>}
         <div className="imagine-lightbox-actions">
           {!lightbox.original && lightbox.job.images.length > 1 && <div className="lightbox-navigation"><button type="button" disabled={lightbox.index === 0} onClick={() => setLightbox({ ...lightbox, index: lightbox.index - 1 })}>← Trước</button><button type="button" disabled={lightbox.index === lightbox.job.images.length - 1} onClick={() => setLightbox({ ...lightbox, index: lightbox.index + 1 })}>Sau →</button></div>}
           {!lightbox.original && <button type="button" className={"lightbox-like" + (lightboxLiked ? " on" : "")} aria-pressed={lightboxLiked}
             onClick={() => void toggleLike(lightboxImage.id, !lightboxLiked)}><HeartIcon filled={lightboxLiked} />Thích</button>}
-          <button type="button" disabled={generating} onClick={() => editImage(lightbox.job, lightboxImage)}>Sửa ảnh này</button>
+          <button type="button" disabled={controlsDisabled} onClick={() => editImage(lightbox.job, lightboxImage)}>Sửa ảnh này</button>
           <a href={lightboxImage.url + "?download=1"} download>Tải ảnh xuống ↓</a>
         </div>
       </div>}
@@ -512,4 +610,16 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
       <div className="dialog-actions"><button type="button" autoFocus disabled={deleting} onClick={() => setDeleteTarget(null)}>Giữ lại</button><button type="button" className="danger-button" disabled={deleting} onClick={() => void removeJob()}>{deleting ? "Đang xóa…" : "Xóa ảnh"}</button></div>
     </dialog>
   </main>;
+}
+
+
+function JobElapsed({ createdAt }: { createdAt: number | null }) {
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+  if (!createdAt) return null;
+  const elapsed = Math.max(0, Math.floor(now / 1000 - createdAt));
+  return <span className="imagine-elapsed">Đã chờ {elapsed < 60 ? `${elapsed} giây` : `${Math.floor(elapsed / 60)} phút ${elapsed % 60} giây`}</span>;
 }

@@ -44,7 +44,12 @@ function canShareFiles() {
  * Mỗi ô là một ảnh kết quả. Chạm để xem, "Chọn" để chọn nhiều, giữ lâu (hoặc chuột phải) để mở menu
  * của riêng ảnh đó. Việc gọi API xóa và cập nhật danh sách nằm ở Imagine, vì bộ ảnh và cột trái dùng chung.
  */
-export default function ImagineLibrary({ open, jobs, onClose, onOpenImage, onDeleteImages }: {
+export default function ImagineLibrary({ open, jobs, onClose, onOpenImage, onDeleteImages, onUseSources, sourceLimit = 5, hasMore, loadingMore, onLoadMore }: {
+  onUseSources?: (images: ImagineImage[]) => void;
+  sourceLimit?: number;
+  hasMore?: boolean;
+  loadingMore?: boolean;
+  onLoadMore?: () => void;
   open: boolean;
   jobs: ImagineJob[];
   onClose: () => void;
@@ -60,6 +65,7 @@ export default function ImagineLibrary({ open, jobs, onClose, onOpenImage, onDel
   const longPressed = useRef(false);
   const [query, setQuery] = useState("");
   const [columns, setColumns] = useState(readColumns);
+  const [kind, setKind] = useState("all");
   const [likedOnly, setLikedOnly] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
   const [selecting, setSelecting] = useState(false);
@@ -72,15 +78,15 @@ export default function ImagineLibrary({ open, jobs, onClose, onOpenImage, onDel
 
   const tiles = useMemo(() => jobs.flatMap((job) => job.images.map((image, index) => ({ job, image, index }))), [jobs]);
   const needle = fold(query.trim());
-  const shown = tiles.filter((tile) => (!likedOnly || tile.image.liked) && (!needle || fold(tile.job.prompt).includes(needle)));
-  const picked = tiles.filter((tile) => selected.has(tile.image.id));
+  const shown = tiles.filter((tile) => (!likedOnly || tile.image.liked) && (kind === "all" || (kind === "edited") === !!(tile.job.source_images?.length || tile.job.source_image)) && (!needle || fold(tile.job.prompt).includes(needle)));
+  const picked = Array.from(selected).flatMap(id => tiles.filter(tile => tile.image.id === id));
 
   useEffect(() => {
     if (open) { dialogRef.current?.showModal(); return; }
     dialogRef.current?.close();
     cancelPress();
     setSelecting(false); setSelected(new Set()); setMenu(null); setFilterOpen(false);
-    setConfirmIds(null); setNotice(null); setQuery(""); setLikedOnly(false);
+    setConfirmIds(null); setNotice(null); setQuery(""); setLikedOnly(false); setKind("all");
   }, [open]);
   useEffect(() => {
     if (confirmIds) confirmRef.current?.showModal();
@@ -209,6 +215,7 @@ export default function ImagineLibrary({ open, jobs, onClose, onOpenImage, onDel
         </button>
         <button type="button" className="library-pill" onClick={() => selecting ? exitSelecting() : setSelecting(true)}>{selecting ? "Hủy" : "Chọn"}</button>
       </div>
+      {selecting && onUseSources && <p className="library-reference-hint" role="status">Chọn theo thứ tự mong muốn · còn {sourceLimit} chỗ{picked.length > sourceLimit ? " · Bạn đã chọn quá số ảnh còn trống" : ""}</p>}
       <p className="sr-only" aria-live="polite">{selecting ? `Đã chọn ${picked.length} ảnh` : ""}</p>
 
       <div className="library-grid" style={{ "--library-columns": columns } as CSSProperties}>
@@ -224,13 +231,15 @@ export default function ImagineLibrary({ open, jobs, onClose, onOpenImage, onDel
               onContextMenu={(event) => { event.preventDefault(); cancelPress(); openMenu(tile, event.currentTarget); }}
               onClick={() => onTileClick(tile)}>
               <img src={tile.image.url} alt="" loading="lazy" decoding="async" draggable={false} />
-              {selecting && <span className="library-check" aria-hidden="true">{on && <CheckIcon />}</span>}
+              {selecting && <span className="library-check" aria-hidden="true">{on && (onUseSources ? Array.from(selected).indexOf(tile.image.id) + 1 : <CheckIcon />)}</span>}
             </button>;
           })}
+        {hasMore && <button type="button" className="load-more library-load-more" disabled={loadingMore} onClick={onLoadMore}>{loadingMore ? "Đang tải…" : "Xem ảnh cũ hơn"}</button>}
       </div>
 
       {notice && <div className="error library-notice" role="alert">{notice}<button type="button" className="dismiss-error" aria-label="Đóng thông báo" onClick={() => setNotice(null)}>×</button></div>}
       {selecting ? <div className="library-actions">
+        {onUseSources && <button type="button" disabled={!picked.length || picked.length > sourceLimit} onClick={() => onUseSources(picked.map(tile => tile.image))}><span aria-hidden="true">＋</span><span>Dùng làm tham chiếu</span></button> }
         {shareable && <button type="button" disabled={!picked.length} onClick={() => void share(picked)}><ShareIcon /><span>Chia sẻ</span></button>}
         <button type="button" disabled={!picked.length} onClick={() => download(picked)}><DownloadIcon /><span>Tải xuống</span></button>
         <button type="button" className="danger" disabled={!picked.length || deleting} onClick={() => setConfirmIds(picked.map((tile) => tile.image.id))}><TrashIcon /><span>Xóa</span></button>
@@ -244,6 +253,7 @@ export default function ImagineLibrary({ open, jobs, onClose, onOpenImage, onDel
             <Icon><path d="M4 7h16M7 12h10M10 17h4" /></Icon>
           </button>
           {filterOpen && <div className="effort-options library-filter-panel" role="group" aria-label="Bố cục và bộ lọc">
+            <label className="library-kind">Loại ảnh <select aria-label="Lọc loại ảnh" value={kind} onChange={event => setKind(event.target.value)}><option value="all">Tất cả</option><option value="created">Ảnh tạo mới</option><option value="edited">Ảnh chỉnh sửa</option></select></label>
             <p className="effort-heading">Bố cục</p>
             <div className="seg" role="group" aria-label="Số cột">
               {([2, 3] as const).map((value) => <button key={value} type="button" className={columns === value ? "on" : ""} aria-pressed={columns === value} onClick={() => setColumns(value)}>{value} cột</button>)}

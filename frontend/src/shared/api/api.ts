@@ -62,6 +62,8 @@ export interface Message {
   workStartedAt?: number;
   /** Bong bóng chỉ có ở trình duyệt (lượt hỏng trước khi có chữ, máy chủ không lưu): giữ lại để thấy Peto đã thử gì. */
   local?: boolean;
+  /** Người dùng bấm Dừng ở lượt này (chỉ ở trình duyệt): bong bóng ghi "Đã dừng" và có nút Thử lại, như Grok. */
+  stopped?: boolean;
   /** Cảm xúc Peto tự chọn cho câu trả lời Companion (emotion_tags.py), để nghe lại tin cũ thì nhân vật làm đúng mặt. */
   emotion?: string | null;
   /** Cảm xúc của câu ở vị trí 0; tin cũ có thể còn nhiều mốc UTF-16, Companion chỉ dùng mặt đầu tiên. */
@@ -351,6 +353,8 @@ export interface ImagineImage {
   /** Chỉ ảnh kết quả mới có; ảnh gốc của lượt sửa không thích được. */
   liked?: boolean;
   url: string;
+  parent_image_id?: string | null;
+  parent_job_id?: string | null;
 }
 
 export interface ImagineJob {
@@ -362,10 +366,22 @@ export interface ImagineJob {
   created_at: number | null;
   images: ImagineImage[];
   source_image?: ImagineImage | null;
+  source_images?: ImagineImage[];
+  status?: "queued" | "running" | "complete" | "failed" | "unknown";
+  error?: string | null;
+  n?: number;
+  updated_at?: number;
+  request_id?: string | null;
 }
 
-export async function listImagineJobs(): Promise<ImagineJob[]> {
-  const response = await fetch("/api/imagine");
+export function imagineSources(job: ImagineJob): ImagineImage[] {
+  return job.source_images ?? (job.source_image ? [job.source_image] : []);
+}
+export function imaginePending(job: ImagineJob): boolean {
+  return job.status === "queued" || job.status === "running";
+}
+export async function listImagineJobs(before?: string): Promise<ImagineJob[]> {
+  const response = await fetch("/api/imagine" + (before ? `?before=${encodeURIComponent(before)}` : ""));
   const data = await json<{ jobs: ImagineJob[] }>(response);
   return data.jobs;
 }
@@ -378,14 +394,55 @@ export async function createImagineJob(payload: {
   n: number;
   source_image?: { data: string };
   source_image_id?: string;
+  source_images?: ({ data: string } | { image_id: string })[];
 }): Promise<ImagineJob> {
-  const response = await fetch("/api/imagine", {
+  const requestId = crypto.randomUUID();
+  try { sessionStorage.setItem("peto-imagine-unconfirmed", requestId); } catch {}
+  let response: Response;
+  try { response = await fetch("/api/imagine", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
+    body: JSON.stringify({ ...payload, background: true, request_id: requestId }),
+  }); } catch { throw new ImagineRequestUncertainError(requestId); }
+  if (response.status >= 500) throw new ImagineRequestUncertainError(requestId);
+  if (response.ok) {
+    let data: { job: ImagineJob };
+    try {
+      data = await json<{ job: ImagineJob }>(response);
+      if (!data.job?.id) throw new Error();
+    } catch { throw new ImagineRequestUncertainError(requestId); }
+    clearImagineReceipt(requestId);
+    return data.job;
+  }
+  clearImagineReceipt(requestId);
   const data = await json<{ job: ImagineJob }>(response);
   return data.job;
+}
+
+export class ImagineRequestUncertainError extends Error {
+  constructor(public requestId: string) { super("Mất kết nối khi gửi ảnh. Kiểm tra lượt vừa gửi trước khi tạo tiếp nhé."); }
+}
+export function unconfirmedImagineRequest(): string | null {
+  try { return sessionStorage.getItem("peto-imagine-unconfirmed"); } catch { return null; }
+}
+function clearImagineReceipt(requestId: string) {
+  // Phản hồi cũ tới muộn sau đăng xuất không được xóa mã của lượt mới.
+  try {
+    if (sessionStorage.getItem("peto-imagine-unconfirmed") === requestId) sessionStorage.removeItem("peto-imagine-unconfirmed");
+  } catch {}
+}
+export async function checkImagineRequest(requestId: string): Promise<ImagineJob | null> {
+  const response = await fetch(`/api/imagine/requests/${encodeURIComponent(requestId)}`);
+  if (response.status === 404 || response.status === 410) {
+    clearImagineReceipt(requestId);
+    return null;
+  }
+  const data = await json<{ job: ImagineJob }>(response);
+  clearImagineReceipt(requestId);
+  return data.job;
+}
+export async function getImagineJob(jobId: string, signal?: AbortSignal): Promise<ImagineJob> {
+  return (await json<{ job: ImagineJob }>(await fetch(`/api/imagine/${encodeURIComponent(jobId)}`, { signal }))).job;
 }
 
 export async function deleteImagineJob(jobId: string): Promise<void> {

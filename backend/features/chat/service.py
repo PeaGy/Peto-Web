@@ -407,7 +407,10 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                     saved_paths: list[Path] = []
                     try:
                         if request.branch_message_id:
-                            conversation_id, message_id = await conversation_actions.fork(owner, conversation_id, request.branch_message_id, text)
+                            # Câu hỏi cuối vừa bị dừng/hỏng: gửi lại ngay tại chỗ; còn lại tạo phiên bản như trước.
+                            message_id = await conversation_actions.retry_in_place(owner, conversation_id, request.branch_message_id, text)
+                            if message_id is None:
+                                conversation_id, message_id = await conversation_actions.fork(owner, conversation_id, request.branch_message_id, text)
                         else:
                             message_id = await db.add_message(conversation_id, "user", text)
                         for item, document in zip(files, documents):

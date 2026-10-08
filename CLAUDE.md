@@ -344,6 +344,17 @@ summary ticker, and a phase bar sized by time spent.
   - **Finished:** "Đã làm trong 3 phút 18 giây". A stopped turn reads "Đã dừng sau …", with "Đã dừng khi …" on the
     unfinished step.
   - **No final `work` event** (Stop, lost connection): `closeWork` closes the steps on the client clock.
+  - **Stopped turns** (2026-10-08, the owner asked for Grok's look). After Stop, once the server has accepted the
+    message, the bubble always stays, even when empty. It is marked `stopped`, a flag that exists only in the browser.
+    It shows an italic "Đã dừng theo yêu cầu của bạn." and an action row with Sao chép (when there is text), "Thử lại"
+    (last turn only) and a "Đã dừng" label. The notice above the composer remains only for a stop that came before
+    `meta`, when the draft is still in the box.
+  - **Retrying in place.** "Thử lại" and editing the last question both send `branch_message_id`. That always forked a
+    new conversation version, so Stop and then resend left two chats with the same title (reported 2026-10-08).
+    `conversation_actions.retry_in_place` now handles the case where the target is the last user message and everything
+    after it is an unfinished assistant reply with no artifacts. It deletes that reply, updates the question's text, keeps
+    its attachments and answers in the same conversation. Anything else still forks
+    (`test_resending_a_stopped_last_question_stays_in_the_same_conversation`).
   - **Failed turn with no text:** the bubble is kept as `local` (not stored), and App skips it when matching stored ids
     by position.
 - **Mock:** `__suaexcel__` shows the whole flow (note, compose, edit result), `__suynghi__` streams a long
@@ -922,11 +933,29 @@ Fully separated from chat: its own router (`features/imagine/api.py`), its own R
 tables. Chat **intentionally has no image-generation tool**, so Peto never draws when the
 user was just talking.
 
-The request is synchronous (no background job): generate under
-`asyncio.timeout(IMAGINE_TIMEOUT_SECONDS)` covering the whole batch, then persist. If
-persistence fails partway, files and the job row are rolled back. Returned image bytes are
-format-sniffed before being written. It uses the same `admission` limiter under a separate
-key (`imagine:<owner>`) so image jobs and chat do not consume each other's cooldown.
+The current frontend submits `background: true` with a unique `request_id`. The API persists a queued job and
+its sources before returning 202, then generates and saves the result independently of the HTTP connection.
+`GET /api/imagine/{id}` tracks queued/running/complete/failed/unknown; the frontend resumes polling after reload.
+`GET /api/imagine/requests/{request_id}` recovers a lost POST response without submitting again. The owner-scoped
+`imagine_requests` ledger keeps a fingerprint and job ID even after deletion, so duplicate requests cannot generate
+a second billed batch. Conflicting reuse is 409; a deleted original request is 410. An uncertain POST receipt lives
+in sessionStorage until checked. No automatic paid retry happens on timeout, restart or lost provider response.
+
+The runner uses the existing `admission` limiter under `imagine:<owner>` and the batch timeout. SQLite serializes
+acceptance, allowing one active image job per owner and at most `MAX_CONCURRENT + MAX_QUEUE` accepted image jobs.
+Run the backend as a **single process**, as already required by voice: its background tasks are process-local.
+Startup marks orphan queued/running rows unknown, and graceful shutdown cancels tracked tasks without replay.
+Outputs are only exposed when complete; partial save failure removes them while retaining source snapshots and
+an error state. Old clients may still omit `background` and use the original synchronous response/rollback behavior.
+
+Edits accept up to five ordered `source_images: [{data: base64} | {image_id: owned_id}]`; the old mutually exclusive
+`source_image` / `source_image_id` fields remain accepted, but cannot be mixed with the new list. PNG/JPEG/WebP
+sources are decoded with Pillow and bounded at 8 MiB each (configurable), 16 MiB combined, and 40 MP each.
+The Imagine POST route caps the raw JSON body at 24 MiB before parsing, including chunked requests. Sources are
+copied per job with explicit `position`, `parent_image_id` and `parent_job_id`, so deleting a prior output never
+breaks later edits. Provider JSON uses `image` for one source and `images` for multiple; no multipart API is used.
+The API returns both ordered `source_images` and legacy `source_image` (first source). All 15 fixed xAI ratios plus
+auto are accepted. Paid provider calls have not been used to verify the current account's multi-image support.
 
 The composer copies Grok's Imagine at the owner's request. Chips above the box pick Nhanh/Chi tiết, the
 count and the ratio (`StudioMenu.tsx`, a popover reusing the `.effort-options` classes). The box holds the
@@ -936,10 +965,13 @@ the gallery and collapses to a bar (a library button showing the newest image, a
 button) until the prompt is focused or the options button is pressed. A tap outside or a submit collapses it
 and blurs the prompt so the phone keyboard hides.
 
-The library button opens `ImagineLibrary.tsx`, a full-screen `<dialog>` that only phones can reach (desktop keeps
-the sidebar list). It shows one tile per output image of the loaded jobs (the API returns the latest 40), searches
-prompts ignoring Vietnamese diacritics, and offers 2 or 3 columns (kept in `localStorage`) plus a liked-only
-filter. "Chọn", or a 500 ms long press or right click, selects tiles to share (Web Share with files, hidden when
+Both desktop and mobile can open `ImagineLibrary.tsx`, a full-screen `<dialog>`. It shows output tiles, searches
+loaded prompts ignoring Vietnamese diacritics, and offers 2 or 3 columns (localStorage), liked-only and created/edited
+filters. The API returns 40 jobs per page; `before=<last-job-id>` loads earlier jobs with a stable created_at/id order.
+The composer appends uploads/paste/drop sources and selected library images (in selection order), with remove and
+"Đặt làm ảnh đầu" controls. "Dùng lại mô tả" restores every source. `ImageComparison.tsx` compares a selectable
+source and output side by side without stretching. `EditHistory.tsx` follows saved parent links lazily when opened,
+including parents outside the current page, and keeps snapshot fallbacks if an ancestor was deleted. "Chọn", or a 500 ms long press or right click, selects tiles to share (Web Share with files, hidden when
 unsupported), download or delete. Deletion is per image: `DELETE /api/imagine/images/{id}` removes one output
 and deletes the job, source image included, once no output is left. `PUT /api/imagine/images/{id}/like` stores
 `imagine_images.liked`. Source images of edits cannot be deleted or liked on their own. The heart button lives
@@ -965,7 +997,7 @@ same way, preserving existing rows. Note that `PRAGMA foreign_keys=ON` is set pe
 where cascade deletes matter (SQLite has it off by default).
 
 Tables: `conversations`, `messages`, `attachments`, `users`, `user_profiles`,
-`imagine_jobs`, `imagine_images`, `agent_devices`, `agent_usage`, `roleplay_consents`, `voice_usage`,
+`imagine_jobs`, `imagine_images`, `imagine_requests`, `agent_devices`, `agent_usage`, `roleplay_consents`, `voice_usage`,
 `companion_memories`, `companion_memory_state`
 (`features/voice/cloud.py` also creates its own `speech_budget` on first use). `users` is the only place mapping
 a web account to a Discord ID.
