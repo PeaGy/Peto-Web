@@ -761,7 +761,9 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
         mobile={compact} pending={!!workspaceJob || submittingImageId === lightboxImage.id}
         original={!!lightbox.original} liked={lightboxLiked} disabled={controlsDisabled} likeError={likeError}
         canAdd={sources.length < 5} alreadyAdded={sources.some(source => source.imageId === lightboxImage.id)}
-        history={imageVersions.length > 1 || (compact && imageVersions.length > 0) ? { versions: imageVersions, onSelect: selectVersion } : undefined}
+        history={imageVersions.length > 0 ? { versions: imageVersions, onSelect: selectVersion }
+          : !compact && !lightbox.original && workspaceRootId === lightboxImage.id
+            ? { versions: [{ job: lightbox.job, image: lightboxImage }], onSelect: selectVersion } : undefined}
         historyNotice={<>
           {historyLoading && <p className="workspace-history-status" role="status">Đang tải lịch sử…</p>}
           {historyError && <p className="workspace-history-status" role="alert">{historyError} <button type="button" onClick={() => setHistoryReload(value => value + 1)}>Thử lại</button></p>}

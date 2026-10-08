@@ -1,0 +1,56 @@
+/* Bút vẽ desktop: không đổi khung ảnh khi thêm nét, gõ mô tả hoặc bắt đầu chờ. */
+.desktop-brush .workspace-panel { overflow-y: auto; overscroll-behavior: contain; }
+.desktop-brush .workspace-panel-body { min-height: 300px; overflow: visible; }
+.desktop-brush .workspace-edit-dock { position: relative; min-height: 40px; padding-bottom: 12px; }
+.desktop-brush .workspace-history-status { position: absolute; bottom: 10px; left: 20px; right: 20px; margin: 0; }
+.desktop-brush-history { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.desktop-brush-history > div { display: flex; padding: 2px; border-radius: 999px; background: var(--panel-2); }
+.desktop-brush-history > div button { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; padding: 0; }
+.desktop-brush-history + .workspace-zoom { margin-left: 0; }
+.desktop-brush .desktop-brush-size { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 0 14px; background: var(--panel-2); border-radius: 12px; margin-bottom: 16px; }
+.desktop-brush-size > span { flex-shrink: 0; width: 10px; height: 10px; border: 2px solid var(--muted); border-radius: 50%; opacity: .6; }
+.desktop-brush-size > span:last-child { width: 18px; height: 18px; }
+.desktop-brush .brush-size { flex: 1; min-width: 0; margin: 0; appearance: none; background: transparent; height: 20px; accent-color: var(--text); }
+.desktop-brush .brush-size::-webkit-slider-runnable-track { height: 4px; background: color-mix(in srgb, var(--muted) 35%, transparent); border-radius: 3px; }
+.desktop-brush .brush-size::-webkit-slider-thumb { appearance: none; width: 18px; height: 18px; border-radius: 50%; background: var(--text); margin-top: -7px; }
+.desktop-brush .brush-size::-moz-range-track { height: 4px; background: color-mix(in srgb, var(--muted) 35%, transparent); border-radius: 3px; }
+.desktop-brush .brush-size::-moz-range-thumb { width: 18px; height: 18px; border: 0; border-radius: 50%; background: var(--text); }
+.desktop-brush .seg { display: flex; width: 100%; min-height: var(--imagine-control-size); margin-bottom: 18px; }
+.desktop-brush .seg button { flex: 1; font-size: 14px; }
+.desktop-brush .seg button[aria-pressed="true"] { color: var(--text); background: var(--bg); }
+.desktop-brush .brush-colors { flex-wrap: nowrap; gap: 8px; margin: 12px 0 20px; }
+.desktop-brush .brush-colors button { position: relative; flex: 1; max-width: 30px; height: auto; aspect-ratio: 1; }
+.desktop-brush .brush-colors button[aria-pressed="true"] { outline: none; }
+.desktop-brush .brush-colors button[aria-pressed="true"]::after { content: ''; position: absolute; inset: 32%; background: var(--text); border-radius: 50%; box-shadow: 0 0 0 1px #0003; }
+.desktop-brush .brush-colors button[aria-pressed="true"][style*="255, 255, 255"]::after { background: #222; }
+.desktop-brush .brush-colors input { flex-shrink: 0; width: 28px; height: 28px; border-radius: 50%; overflow: hidden; }
+.desktop-brush .brush-colors input::-webkit-color-swatch-wrapper { padding: 0; }
+.desktop-brush .brush-colors input::-webkit-color-swatch { border: 1px solid var(--line); border-radius: 50%; }
+.desktop-brush .brush-colors input::-moz-color-swatch { border: 1px solid var(--line); border-radius: 50%; }
+.workspace-style .studio-menu { width: 100%; }
+.workspace-style .studio-chip { width: 100%; min-height: 40px; border-radius: 10px; padding: 8px 12px; justify-content: space-between; flex-direction: row-reverse; font-size: 14px; }
+.workspace-style .studio-menu-list { top: calc(100% + 4px); bottom: auto; left: 0; right: 0; min-width: 0; width: 100%; padding: 6px; border-radius: 14px; transform-origin: top; transition: none; animation: workspace-style-enter 160ms cubic-bezier(.23,1,.32,1); }
+.workspace-style .effort-option { min-height: 34px; padding: 8px 12px; font-size: 14px; background: none; }
+.workspace-style .effort-option:hover, .image-workspace .workspace-style .effort-option:focus-visible { background: var(--panel-2); outline: none; }
+.workspace-brush-form { display: grid; gap: 8px; }
+.workspace-brush-form textarea { display: block; width: 100%; min-height: 90px; max-height: 150px; resize: vertical; margin-bottom: 10px; padding: 14px; font: inherit; line-height: 1.5; color: var(--text); background: var(--panel-2); border: 1px solid transparent; border-radius: 12px; }
+.image-workspace .workspace-brush-form textarea:focus-visible { border-color: var(--muted); outline: none; }
+.workspace-brush-form :is(.workspace-share, .workspace-wide) { margin: 0; }
+.image-workspace:not(.workspace-mobile) .history-pending { flex-shrink: 0; width: 64px; height: 64px; display: grid; place-items: center; border: 1px solid var(--line); background: var(--panel-2); }
+/* Làm mờ cả nguồn và phác thảo, giữ lớp đốm sắc nét trong đúng biên ảnh. */
+.desktop-pending .workspace-picture { overflow: hidden; isolation: isolate; }
+.desktop-pending .workspace-picture > :is(img, canvas) { filter: blur(14px); opacity: .85; pointer-events: none; }
+.workspace-generation-dots { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+.workspace-generation-dots > span { position: absolute; inset: -36px; background-image: radial-gradient(circle, #fff9 1.8px, transparent 2.3px); background-size: 36px 36px; mask-image: linear-gradient(125deg, transparent 5%, #000 35%, transparent 65%); opacity: .35; animation: workspace-generation-drift 2.4s cubic-bezier(.45,0,.55,1) infinite alternate, workspace-generation-glow 2.4s cubic-bezier(.45,0,.55,1) infinite; }
+.workspace-generation-dots > span:nth-child(2) { mask-image: linear-gradient(125deg, transparent 25%, #000 60%, transparent 90%); animation-delay: 0s,-.8s; }
+.workspace-generation-dots > span:nth-child(3) { mask-image: linear-gradient(125deg, transparent 50%, #000 85%); animation-delay: 0s,-1.6s; }
+@keyframes workspace-generation-drift { from { transform: translate(-6px,-10px); } to { transform: translate(6px,10px); } }
+@keyframes workspace-generation-glow { 0%,100% { opacity: .15; } 50% { opacity: .85; } }
+@keyframes workspace-style-enter { from { transform: translateY(-4px) scale(.98); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (max-height: 700px) {
+  .workspace-style .studio-menu-list { top: auto; bottom: calc(100% + 4px); transform-origin: bottom; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .workspace-generation-dots > span, .workspace-style .studio-menu-list, .image-workspace:not(.workspace-mobile) .history-pending > span { animation: none; }
+}
+.image-workspace[data-keyboard="true"] .workspace-style .studio-menu-list { animation: none; }

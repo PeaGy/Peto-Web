@@ -1032,8 +1032,9 @@ On mobile it becomes a horizontal strip. Do not animate version selection or whe
 branch ancestry and `edit_kind` distinguishes AI/crop/brush. Existing rows keep NULL roots and their previous
 independent library behavior. `/api/imagine` lists roots plus a separate `active_edits` recovery field; children
 stay out of the library/gallery/sidebar. Workspace GET resolves an owner-scoped root and its child jobs.
-Applying crop/brush persists a new file/job with an idempotency receipt, without an AI call. Reference uploads
-viewed as sources retain their existing temporary editing behavior. Unapplied strokes/prompts remain drafts.
+Confirming a crop persists a new file/job with an idempotency receipt, without an AI call. Brush Apply now
+requests an AI edit on both desktop and mobile; legacy brush PNG revisions remain readable. Reference uploads
+viewed as sources keep temporary crop drafts; applying their brush sketch requests an AI result. Unapplied strokes/prompts remain drafts.
 Deleting a root deletes its child jobs/files and preserves request tombstones; active AI/local saves block root
 deletion. Source copies used by independent jobs remain independent. Every lookup/mutation filters by owner.
 Viewer URLs use `#imagine/<root-image-id>/<version-image-id>` with browser Back/Forward and reload recovery.
@@ -1069,18 +1070,38 @@ a tool row, horizontal palette presets, or a floating vertical brush-size slider
 controls when a stroke starts; keep undo, redo and eraser available. Mobile send always requests one
 AI edit, including stroke-only submissions: send the annotated PNG with the selected parent image ID.
 Without typed text, use a Vietnamese instruction to turn the sketch into matching image details and
-preserve the subject/composition. Explicit desktop brush saving and crop confirmation still save PNG
-versions locally on the server; do not route mobile send to that endpoint.
+preserve the subject/composition. Crop confirmation still saves PNG versions locally on the server;
+do not route brush Apply or mobile send to that endpoint.
 Use a separate bottom sheet for metadata, fitted zoom, aspect ratio, comparison and reference actions;
 it supports backdrop/Escape dismissal, focus trapping/restoration, and dragging its handle down to close.
 Use a non-passive touchstart listener only on custom drag surfaces (drawing canvas, crop box, sheet
 handle) to suppress compatibility taps. Do not cancel native scrolling on the version/palette tracks.
 The crop overlay takes focus and makes the underlying mobile workspace inert until it closes.
-Keep the desktop panel/rail intact. Pending edits cover PNG preparation, the in-flight HTTP request and
+Keep the mobile viewer layout intact. Pending edits cover PNG preparation, the in-flight HTTP request and
 the actual pending job for the blurred image, dotted overlay, pending thumbnail and "Đang tạo…" label;
 do not wait for the POST receipt to show progress or use timers that fake success. A rejected submission
 restores the editable sketch; uncertain requests still require receipt checking before another send.
 New results still belong to their root only.
+Desktop brush follows the owner's latest Grok references (2026-10-08). Brush size, eraser/color and Style
+live in the right panel; sketch undo/redo/delete sit over the canvas next to the existing zoom controls.
+Entering brush hides the central composer before drawing. Once there are strokes, redo history, typed text,
+or an explicit style, the right panel replaces its usual bottom actions with a prompt, Apply and Reset.
+Typing, the first stroke, and pending updates must not resize/reposition the fitted image; reserve a fixed
+40px dock for status below it. Reset clears sketch/redo/prompt/style without a request or saved version.
+Style defaults to preserving the original. Manga, Illustration, Painting and Realistic (Vietnamese UI labels)
+append an aesthetic instruction to the existing edit prompt only on Apply; never send on selection or add
+an unsupported provider `style` field. Official xAI image editing docs describe prompt-based style transfer:
+https://docs.x.ai/developers/model-capabilities/images/editing . The four consumer dropdown choices come
+from the owner's screenshots; the docs do not specify the consumer drawing tool's internal implementation.
+Desktop pending blur applies to both the source image and annotation canvas. Clip the white moving dot
+overlay to the picture bounds; only animate transform/opacity, never image layout/filter. The dots continue
+from PNG preparation through HTTP acknowledgement and job polling, with disabled editing controls and a
+pending version thumbnail. Reduced motion keeps static dots/status instead. Always include the root thumbnail
+on desktop too, so the first edit doesn't insert a new rail and shrink the image. Failed sends preserve the
+sketch, prompt and style. Keep the uncertain-request receipt checks and parent/root grouping unchanged.
+Desktop-specific styles live in `features/imagine/imageWorkspaceDesktop.css`; use project fonts and existing
+38px controls. The style menu reuses StudioMenu, with focus restoration without scrolling and Escape closing
+just the menu. Do not describe annotated reference uploads as a dedicated mask/inpaint implementation.
 Mobile styles live in `features/imagine/imageWorkspaceMobile.css`. Sheet transitions use transform/opacity
 (260ms entrance, 160ms exit), tool entrance is 180–220ms, and explicit tool layout changes use a 220ms FLIP
 transform captured before the action and measured at the final fitted size before paint. Never restart

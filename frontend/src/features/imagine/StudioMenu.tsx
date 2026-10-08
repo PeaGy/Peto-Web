@@ -30,7 +30,7 @@ export default function StudioMenu<T extends string | number>({
   useEffect(() => { if (disabled) setOpen(false); }, [disabled]);
   useEffect(() => {
     if (!open) return;
-    items.current[Math.max(0, options.findIndex((item) => item.value === value))]?.focus();
+    items.current[Math.max(0, options.findIndex((item) => item.value === value))]?.focus({ preventScroll: true });
     const outside = (event: PointerEvent) => {
       if (!root.current?.contains(event.target as Node)) setOpen(false);
     };
@@ -38,7 +38,7 @@ export default function StudioMenu<T extends string | number>({
     return () => document.removeEventListener("pointerdown", outside);
   }, [open]);
 
-  function close() { setOpen(false); trigger.current?.focus(); }
+  function close() { setOpen(false); trigger.current?.focus({ preventScroll: true }); }
 
   function onMenuKey(event: KeyboardEvent<HTMLDivElement>) {
     const list = items.current.filter((item): item is HTMLButtonElement => item !== null);
@@ -50,7 +50,7 @@ export default function StudioMenu<T extends string | number>({
     else if (event.key === "ArrowLeft") move(at - 1);
     else if (event.key === "Home") move(0);
     else if (event.key === "End") move(list.length - 1);
-    else if (event.key === "Escape") { event.preventDefault(); close(); }
+    else if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); close(); }
     else if (event.key === "Tab") setOpen(false);
   }
 

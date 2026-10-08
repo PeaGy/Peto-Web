@@ -2,6 +2,7 @@ import { expect, test, type Page, type Locator } from '@playwright/test';
 import { mockPeto, noPageOverflow } from './fixtures';
 
 async function clickTool(viewer: Locator, name: string) {
+  await expect(viewer).toBeVisible();
   if (!await viewer.getByRole('toolbar', { name: 'Công cụ ảnh' }).isVisible()) await viewer.getByRole('button', { name: 'Chỉnh sửa ảnh', exact: true }).click();
   await viewer.getByRole('button', { name, exact: true }).click();
 }
@@ -11,6 +12,13 @@ async function clickWorkspaceAction(viewer: Locator, name: string) {
   await control.click();
   const close = viewer.getByRole('button', { name: 'Đóng tùy chọn', exact: true });
   if (await close.isVisible()) await close.click();
+}
+async function drawDesktop(page: Page, viewer: Locator) {
+  const rect = (await viewer.getByLabel('Vẽ ghi chú lên ảnh').boundingBox())!;
+  await page.mouse.move(rect.x + rect.width / 2, rect.y + rect.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(rect.x + rect.width * .75, rect.y + rect.height / 2, { steps: 8 });
+  await page.mouse.up();
 }
 async function swipeLeft(page: Page, list: Locator) {
   const touch = await page.context().newCDPSession(page), row = (await list.boundingBox())!;
@@ -575,7 +583,7 @@ test('thư viện có ô ảnh nhỏ và khung xem vừa màn hình trên PC/mob
   await expect(library).not.toBeVisible();
 });
 
-test('desktop: cắt/vẽ lưu PNG, hoàn tác giữ ảnh gốc, gửi mô tả mới gọi AI', async ({ page }, testInfo) => {
+test('desktop: cắt lưu PNG, áp dụng nét vẽ và phong cách gọi AI từ đúng ảnh cha', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'pc', 'Mobile gửi nét vẽ qua AI trong ca cảm ứng riêng');
   const { posts, saves } = await setup(page);
   await page.goto('/#imagine');
@@ -597,38 +605,153 @@ test('desktop: cắt/vẽ lưu PNG, hoàn tác giữ ảnh gốc, gửi mô tả
   await clickWorkspaceAction(viewer, 'Làm lại chỉnh sửa');
   await expect(viewer.getByLabel('Kích thước ảnh thực tế')).toHaveText('864 × 864');
   await clickTool(viewer, 'Bút vẽ');
-  const canvas = viewer.getByLabel('Vẽ ghi chú lên ảnh');
-  const bounds = (await canvas.boundingBox())!;
-  // Pointer dùng cùng đường xử lý cho chuột và cảm ứng.
-  await canvas.dispatchEvent('pointerdown', { pointerId: 1, pointerType: 'mouse', isPrimary: true, button: 0, clientX: bounds.x + bounds.width / 2, clientY: bounds.y + bounds.height / 2 });
-  await canvas.dispatchEvent('pointermove', { pointerId: 1, pointerType: 'mouse', clientX: bounds.x + bounds.width * .75, clientY: bounds.y + bounds.height / 2 });
-  await canvas.dispatchEvent('pointerup', { pointerId: 1, pointerType: 'mouse' });
+  await drawDesktop(page, viewer);
   await expect(viewer.getByRole('button', { name: 'Hoàn tác nét vẽ' })).toBeEnabled();
   await viewer.getByRole('button', { name: 'Hoàn tác nét vẽ' }).click();
-  await expect(viewer.getByRole('button', { name: testInfo.project.name === 'mobile' ? 'Gửi chỉnh sửa ảnh' : 'Áp dụng nét vẽ' })).toBeDisabled();
+  await expect(viewer.getByRole('button', { name: 'Áp dụng', exact: true })).toBeDisabled();
   await viewer.getByRole('button', { name: 'Làm lại nét vẽ' }).click();
-  await viewer.getByRole('button', { name: 'Áp dụng nét vẽ' }).click();
-  const data = await viewer.locator('.workspace-picture img').getAttribute('src');
-  expect(data).toBe('/api/imagine/images/saved-2');
-  expect(saves).toHaveLength(2);
-  const pixel = await viewer.locator('.workspace-picture img').evaluate(async img => {
-    const image = img as HTMLImageElement; await image.decode();
+  await viewer.getByRole('button', { name: 'Phong cách: Theo ảnh gốc' }).click();
+  await expect(viewer.getByRole('menu', { name: 'Phong cách' }).getByRole('menuitemradio')).toHaveCount(5);
+  await expect(viewer.getByRole('menu', { name: 'Phong cách' })).toHaveCSS('opacity', '1');
+  await page.screenshot({ path: testInfo.outputPath('desktop-style-menu.png') });
+  await viewer.getByRole('menuitemradio', { name: 'Tranh vẽ', exact: true }).click();
+  expect(posts).toHaveLength(0);
+  await viewer.getByLabel('Mô tả chỉnh sửa ảnh').fill('Thêm một đám mây ở vị trí phác thảo');
+  await noPageOverflow(page);
+  await page.screenshot({ path: testInfo.outputPath('desktop-brush-form.png') });
+  await viewer.getByRole('button', { name: 'Áp dụng', exact: true }).click();
+  await expect(page).toHaveURL(/#imagine\/portrait\/result-1$/);
+  expect(saves).toHaveLength(1); expect(posts).toHaveLength(1);
+  expect(posts[0]).toMatchObject({ n: 1, background: true, edit_parent_image_id: 'saved-1', prompt: 'Thêm một đám mây ở vị trí phác thảo\nThể hiện kết quả theo phong cách tranh vẽ.' });
+  expect(posts[0].source_image_id).toBeUndefined();
+  const pixel = await page.evaluate(async data => {
+    const image = new Image(); image.src = `data:image/png;base64,${data}`; await image.decode();
     const c = document.createElement('canvas'); c.width = image.naturalWidth; c.height = image.naturalHeight;
     const ctx = c.getContext('2d')!; ctx.drawImage(image, 0, 0);
     return [...ctx.getImageData(c.width / 2, c.height / 2, 1, 1).data];
-  });
+  }, (posts[0].source_image as { data: string }).data);
   expect(pixel).toEqual([255, 255, 255, 255]);
-  await noPageOverflow(page);
-  await page.screenshot({ path: testInfo.outputPath('brush.png') });
-  expect(posts).toHaveLength(0);
   await viewer.getByLabel('Mô tả chỉnh sửa ảnh').fill('Đổi thành tranh màu nước');
   await viewer.getByRole('button', { name: 'Gửi chỉnh sửa ảnh' }).click();
-  await expect(viewer).toBeVisible();
-  expect(posts).toHaveLength(1);
-  expect(posts[0]).toMatchObject({ n: 1, background: true, source_image_id: 'saved-2', edit_parent_image_id: 'saved-2', prompt: 'Đổi thành tranh màu nước' });
+  await expect(page).toHaveURL(/#imagine\/portrait\/result-2$/);
+  expect(posts).toHaveLength(2);
+  expect(posts[1]).toMatchObject({ n: 1, background: true, source_image_id: 'result-1', edit_parent_image_id: 'result-1', prompt: 'Đổi thành tranh màu nước' });
   await expect(viewer.getByRole('button', { name: 'Phiên bản 3', exact: true })).toBeVisible();
   await viewer.getByRole('button', { name: 'Quay lại', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Xem ảnh 1: Ngôi nhà giữa núi xanh', exact: true }).locator('img')).toHaveAttribute('src', '/api/imagine/images/portrait');
+});
+
+test('desktop: Apply mờ ảnh và chạy đốm từ lúc gửi, lỗi giữ nháp và chờ thật không giật ảnh', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'pc', 'Hiệu ứng chờ desktop');
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  const { posts, saves, finish } = await setup(page, 'Ngôi nhà giữa núi xanh', 'square');
+  finish(false);
+  let received = 0, release: (() => void) | undefined;
+  await page.route('**/api/imagine', async route => {
+    if (route.request().method() !== 'POST') return route.fallback();
+    received++; await new Promise<void>(resolve => { release = resolve; });
+    if (received === 1) return route.fulfill({ status: 422, json: { detail: 'Chưa gửi được bản sửa. Thử lại nhé.' } });
+    return route.fallback();
+  });
+  await page.goto('/#imagine/portrait/portrait');
+  const viewer = page.getByRole('dialog', { name: 'Xem ảnh đã tạo', exact: true });
+  await clickTool(viewer, 'Bút vẽ');
+  const picture = viewer.locator('.workspace-picture'), before = (await picture.boundingBox())!;
+  await drawDesktop(page, viewer);
+  const afterStroke = (await picture.boundingBox())!;
+  expect(Math.abs(before.y - afterStroke.y)).toBeLessThan(1);
+  expect(Math.abs(before.width - afterStroke.width)).toBeLessThan(1);
+  await viewer.getByRole('button', { name: 'Phong cách: Theo ảnh gốc' }).click();
+  await viewer.getByRole('menuitemradio', { name: 'Manga', exact: true }).click();
+  await viewer.getByLabel('Mô tả chỉnh sửa ảnh').fill('Làm nét phác thảo thành đám mây');
+  await viewer.getByRole('button', { name: 'Áp dụng', exact: true }).click();
+  await expect.poll(() => received).toBe(1);
+  await expect(viewer.getByRole('status', { name: 'Phiên bản đang tạo' })).toBeVisible();
+  await expect(picture.locator('img')).toHaveCSS('filter', 'blur(14px)');
+  await expect(picture.locator('canvas')).toHaveCSS('filter', 'blur(14px)');
+  for (const control of ['Áp dụng', 'Đặt lại', 'Hoàn tác nét vẽ', 'Phong cách: Manga']) await expect(viewer.getByRole('button', { name: control, exact: true })).toBeDisabled();
+  await expect(viewer.getByLabel('Mô tả chỉnh sửa ảnh')).toBeDisabled();
+  expect(posts).toHaveLength(0); expect(saves).toHaveLength(0);
+  const dots = picture.locator('.workspace-generation-dots');
+  const overlay = (await dots.boundingBox())!;
+  expect(overlay).toEqual(before);
+  const movement = await dots.locator('span').first().evaluate(async element => {
+    const frames: string[] = [];
+    for (let i = 0; i < 12; i++) { await new Promise(requestAnimationFrame); frames.push(getComputedStyle(element).transform); }
+    return frames;
+  });
+  expect(new Set(movement).size).toBeGreaterThan(3);
+  await page.screenshot({ path: testInfo.outputPath('desktop-immediate-pending.png') });
+  release!();
+  await expect(viewer.getByRole('alert')).toContainText('Chưa gửi được bản sửa');
+  await expect(picture.locator('img')).toHaveCSS('filter', 'none');
+  await expect(dots).toHaveCount(0);
+  await expect(viewer.getByLabel('Mô tả chỉnh sửa ảnh')).toHaveValue('Làm nét phác thảo thành đám mây');
+  await expect(viewer.getByRole('button', { name: 'Phong cách: Manga' })).toBeEnabled();
+  await expect(viewer.getByRole('button', { name: 'Hoàn tác nét vẽ' })).toBeEnabled();
+  await viewer.getByRole('button', { name: 'Áp dụng', exact: true }).click();
+  await expect.poll(() => received).toBe(2); release!();
+  await expect.poll(() => posts.length).toBe(1);
+  expect(posts[0]).toMatchObject({ edit_parent_image_id: 'portrait', background: true, n: 1, prompt: 'Làm nét phác thảo thành đám mây\nThể hiện kết quả theo phong cách manga.' });
+  const pendingRect = (await picture.boundingBox())!;
+  await page.waitForTimeout(2400);
+  const afterPoll = (await picture.boundingBox())!;
+  expect(Math.abs(afterPoll.y - before.y)).toBeLessThan(1);
+  expect(Math.abs(afterPoll.width - before.width)).toBeLessThan(1);
+  expect(afterPoll).toEqual(pendingRect);
+  expect(await picture.evaluate(e => e.getAnimations().length)).toBe(0);
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  for (const dot of await dots.locator('span').all()) await expect(dot).toHaveCSS('animation-name', 'none');
+  finish(true);
+  await expect(page).toHaveURL(/#imagine\/portrait\/result-1$/);
+  await expect(viewer.locator('.workspace-generation-dots')).toHaveCount(0);
+  await expect(viewer.locator('.workspace-picture img')).toHaveCSS('filter', 'none');
+  expect(posts).toHaveLength(1); expect(saves).toHaveLength(0);
+  await viewer.getByRole('button', { name: 'Quay lại', exact: true }).click();
+  await page.getByRole('button', { name: 'Thư viện', exact: true }).last().click();
+  await expect(page.getByRole('dialog', { name: 'Thư viện ảnh' }).locator('.library-tile')).toHaveCount(2);
+});
+
+test('desktop: chọn phong cách không gửi sớm, Reset xóa nháp, menu dùng bàn phím và khung thấp', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'pc', 'Bảng bút vẽ desktop');
+  const { posts, saves } = await setup(page);
+  await page.setViewportSize({ width: 1100, height: 600 });
+  await page.goto('/#imagine/portrait/portrait');
+  const viewer = page.getByRole('dialog', { name: 'Xem ảnh đã tạo', exact: true });
+  await clickTool(viewer, 'Bút vẽ');
+  const trigger = viewer.getByRole('button', { name: /^Phong cách:/ });
+  await trigger.focus(); await page.keyboard.press('ArrowDown');
+  await expect(viewer.getByRole('menuitemradio', { name: 'Theo ảnh gốc' })).toBeFocused();
+  await page.keyboard.press('End'); await page.keyboard.press('Enter');
+  await expect(trigger).toHaveText('Chân thực');
+  await expect(trigger).toBeFocused();
+  await trigger.click();
+  await expect(viewer.getByRole('menuitemradio', { name: 'Manga', exact: true })).toBeInViewport();
+  await expect(viewer.getByRole('menuitemradio', { name: 'Chân thực', exact: true })).toBeInViewport();
+  await page.screenshot({ path: testInfo.outputPath('desktop-style-short.png') });
+  await page.keyboard.press('Escape');
+  await expect(viewer).toBeVisible(); await expect(trigger).toBeFocused();
+  await drawDesktop(page, viewer);
+  await viewer.getByLabel('Mô tả chỉnh sửa ảnh').fill('Bản nháp chưa gửi');
+  await viewer.getByRole('button', { name: 'Đặt lại', exact: true }).click();
+  await expect(trigger).toHaveText('Theo ảnh gốc');
+  await expect(viewer.getByRole('button', { name: 'Hoàn tác nét vẽ' })).toBeDisabled();
+  const alpha = await viewer.getByLabel('Vẽ ghi chú lên ảnh').evaluate(element => { const c = element as HTMLCanvasElement; return c.getContext('2d')!.getImageData(c.width / 2, c.height / 2, 1, 1).data[3]; });
+  expect(alpha).toBe(0); expect(posts).toHaveLength(0); expect(saves).toHaveLength(0);
+  await trigger.click(); await viewer.getByRole('menuitemradio', { name: 'Chân thực', exact: true }).click();
+  await viewer.getByRole('button', { name: 'Áp dụng', exact: true }).click();
+  await expect(page).toHaveURL(/#imagine\/portrait\/result-1$/);
+  expect(posts[0]).toMatchObject({ source_image_id: 'portrait', edit_parent_image_id: 'portrait', prompt: 'Giữ nguyên chủ thể và bố cục ảnh.\nThể hiện kết quả theo phong cách ảnh chụp chân thực.' });
+  expect(posts[0].source_image).toBeUndefined(); expect(saves).toHaveLength(0);
+  await clickTool(viewer, 'Bút vẽ');
+  await drawDesktop(page, viewer);
+  await viewer.getByRole('button', { name: 'Áp dụng', exact: true }).click();
+  await expect(page).toHaveURL(/#imagine\/portrait\/result-2$/);
+  expect(posts).toHaveLength(2); expect(saves).toHaveLength(0);
+  expect(posts[1].prompt).toMatch(/^Hoàn thiện ảnh theo các nét vẽ được thêm:/);
+  expect(posts[1]).toMatchObject({ edit_parent_image_id: 'result-1', n: 1, background: true });
+  expect((posts[1].source_image as { data: string }).data.length).toBeGreaterThan(1000);
+  await noPageOverflow(page);
 });
 
 
@@ -758,7 +881,10 @@ test('desktop giữ sidebar thật và bố cục Grok khi mở hoặc thu gọn
     expect(image.height).toBeGreaterThan(640);
     expect(form.width).toBe(760);
     expect(form.x + form.width / 2).toBeCloseTo(main.x + main.width / 2, 0);
-    expect(back.x).toBe(main.x + 12);
+    const rail = (await viewer.getByRole('navigation', { name: 'Lịch sử chỉnh sửa ảnh' }).boundingBox())!;
+    expect(rail.width).toBe(80);
+    expect(rail.x).toBe(nav.x + nav.width);
+    expect(back.x).toBe(rail.x + 12);
     expect(form.y).toBeGreaterThanOrEqual(image.y + image.height);
     await noPageOverflow(page);
   }

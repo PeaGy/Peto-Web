@@ -21,7 +21,7 @@ export default function ImageVersionRail({ versions, selectedId, disabled, onSel
       setArrows({ before: position > 1, after: position < total - 1 });
     };
     // Chỉ cuộn dải thumbnail, không để scrollIntoView kéo cả canvas/dialog theo.
-    const selected = list.querySelector<HTMLElement>(compact && pending ? '.history-pending' : '[aria-current="true"]');
+    const selected = list.querySelector<HTMLElement>(pending ? '.history-pending' : '[aria-current="true"]');
     if (selected) {
       const horizontal = getComputedStyle(list).flexDirection === 'row';
       const row = list.getBoundingClientRect(), item = selected.getBoundingClientRect();
@@ -49,7 +49,7 @@ export default function ImageVersionRail({ versions, selectedId, disabled, onSel
         aria-current={entry.image.id === selectedId ? 'true' : undefined} disabled={disabled} onClick={() => onSelect(entry)}>
         <img src={entry.image.url} alt="" loading="lazy" decoding="async" />
       </button>)}
-      {compact && pending && <span className="history-pending" role="status" aria-label="Phiên bản đang tạo"><span /></span>}
+      {pending && <span className="history-pending" role="status" aria-label="Phiên bản đang tạo"><span /></span>}
     </div>
     {!compact && arrows.after && <button type="button" className="history-scroll history-scroll-down" aria-label="Cuộn lịch sử xuống" onClick={() => scroll(1)}><StudioIcon name="arrowUp" /></button>}
   </nav>;

@@ -3,9 +3,11 @@ import type { ImagineImage, ImagineJob } from '../../shared/api/api';
 import { imagineSources } from '../../shared/api/api';
 import ImageComparison from './ImageComparison';
 import StudioIcon from './studioIcons';
+import StudioMenu from './StudioMenu';
 import ImageVersionRail, { type ImageVersion } from './ImageVersionRail';
 import { drawStrokes, extractPalette, renderEdit, FULL_CROP, type CropArea, type Stroke } from './imageTools';
 import './imageWorkspaceMobile.css';
+import './imageWorkspaceDesktop.css';
 
 type Tool = 'info' | 'palette' | 'crop' | 'brush';
 const TOOL_LABELS: Record<Tool, string> = { info: 'Thông tin ảnh', palette: 'Bảng màu', crop: 'Cắt ảnh', brush: 'Bút vẽ' };
@@ -18,6 +20,13 @@ const PALETTES = [
   { name: 'Hoa anh đào', colors: ['#fbf1f2', '#f0b6c4', '#cd6a8a', '#77354e'] },
 ];
 const COLORS = ['#ffffff', '#000000', '#f04444', '#fb8917', '#f7cf1b', '#21be65', '#397cf5'];
+const EDIT_STYLES = [
+  { value: 'original', label: 'Theo ảnh gốc', instruction: '' },
+  { value: 'manga', label: 'Manga', instruction: 'Thể hiện kết quả theo phong cách manga.' },
+  { value: 'illustration', label: 'Minh họa', instruction: 'Thể hiện kết quả theo phong cách minh họa.' },
+  { value: 'painting', label: 'Tranh vẽ', instruction: 'Thể hiện kết quả theo phong cách tranh vẽ.' },
+  { value: 'realistic', label: 'Chân thực', instruction: 'Thể hiện kết quả theo phong cách ảnh chụp chân thực.' },
+];
 const RATIOS = ['auto', '1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3', '2:1', '1:2', '19.5:9', '9:19.5', '20:9', '9:20', '21:9', '5:2'];
 const clamp = (n: number, min = 0, max = 1) => Math.max(min, Math.min(max, n));
 const MIN_ZOOM = .5;
@@ -66,6 +75,7 @@ export default function ImageWorkspace({ job, image, index, original, liked, dis
   const [color, setColor] = useState('#ffffff');
   const [brushSize, setBrushSize] = useState(12);
   const [erasing, setErasing] = useState(false);
+  const [editStyle, setEditStyle] = useState('original');
   const [strokes, setStrokes] = useState<Stroke[]>([]);
   const [redoStrokes, setRedoStrokes] = useState<Stroke[]>([]);
   const [crop, setCrop] = useState<CropArea>({ x: .1, y: .1, width: .8, height: .8 });
@@ -87,6 +97,8 @@ export default function ImageWorkspace({ job, image, index, original, liked, dis
   const historyIndex = history?.versions.findIndex(entry => entry.image.id === image.id) ?? -1;
   const generationPending = pending || submitting;
   const blocked = disabled || busy || generationPending;
+  const desktopBrush = !mobile && tool === 'brush';
+  const brushForm = desktopBrush && (strokes.length > 0 || redoStrokes.length > 0 || !!prompt.trim() || editStyle !== 'original' || generationPending);
   const ready = dimensions.width > 0;
   const fit = ready ? Math.min(space.width / dimensions.width, space.height / dimensions.height, 1) : 1;
   const displayWidth = ready ? dimensions.width * Math.max(.05, fit) * zoom : undefined;
@@ -330,12 +342,14 @@ export default function ImageWorkspace({ job, image, index, original, liked, dis
   }
   function startEditing() { if (!editing || tool !== 'brush') preparePictureTransition(); setEditing(true); setTool('brush'); setSizeOpen(true); }
   function submitEdit() {
-    if (blocked) return;
-    const text = prompt.trim() || (mobile && strokes.length ? 'Hoàn thiện ảnh theo các nét vẽ được thêm: biến các nét phác thảo thành chi tiết phù hợp với hình ảnh, giữ nguyên chủ thể, bố cục và những vùng không được vẽ.' : '');
+    if (blocked || operationRef.current) return;
+    const instruction = desktopBrush ? EDIT_STYLES.find(style => style.value === editStyle)?.instruction : '';
+    const description = prompt.trim() || (strokes.length ? 'Hoàn thiện ảnh theo các nét vẽ được thêm: biến các nét phác thảo thành chi tiết phù hợp với hình ảnh, giữ nguyên chủ thể, bố cục và những vùng không được vẽ.' : instruction ? 'Giữ nguyên chủ thể và bố cục ảnh.' : '');
+    const text = [description, instruction].filter(Boolean).join('\n');
     if (!text) return;
     setSubmitting(true);
     void execute(async () => {
-      try { await onSubmit(text, aspect, await editData()); }
+      try { await onSubmit(text, draft?.aspect ?? aspect, await editData()); }
       catch (error) { if (mobile) { setEditing(true); setTool(strokes.length ? 'brush' : tool); } throw error; }
       finally { setSubmitting(false); }
     });
@@ -344,7 +358,7 @@ export default function ImageWorkspace({ job, image, index, original, liked, dis
   const toolButtons = <div className="workspace-tools" role="toolbar" aria-label="Công cụ ảnh">{(['info', 'palette', 'crop', 'brush'] as const).map(value => <button key={value} type="button" aria-label={TOOL_LABELS[value]} title={TOOL_LABELS[value]} aria-pressed={tool === value} disabled={blocked || !ready} onClick={() => chooseTool(value)}><StudioIcon name={value} /></button>)}</div>;
   const versionRail = history && <ImageVersionRail versions={history.versions} selectedId={image.id} disabled={blocked || strokes.length > 0} onSelect={history.onSelect} onClose={onClose} compact={mobile} pending={generationPending} />;
 
-  return <div ref={workspaceRef} className={'image-workspace' + (!panelOpen ? ' panel-hidden' : '') + (history ? ' has-history' : '') + (mobile ? ' workspace-mobile' : '') + (mobile && editing ? ' mobile-editing' : '') + (mobile && generationPending ? ' mobile-pending' : '')} aria-busy={generationPending} data-keyboard={keyboardNavigation} onPointerDown={() => { pointerMotionRef.current = true; setKeyboardNavigation(false); }} onKeyDown={event => {
+  return <div ref={workspaceRef} className={'image-workspace' + (!panelOpen ? ' panel-hidden' : '') + (history ? ' has-history' : '') + (mobile ? ' workspace-mobile' : '') + (mobile && editing ? ' mobile-editing' : '') + (mobile && generationPending ? ' mobile-pending' : '') + (desktopBrush ? ' desktop-brush' : '') + (!mobile && generationPending ? ' desktop-pending' : '')} aria-busy={generationPending} data-keyboard={keyboardNavigation} onPointerDown={() => { pointerMotionRef.current = true; setKeyboardNavigation(false); }} onKeyDown={event => {
     pointerMotionRef.current = false; setKeyboardNavigation(true);
     if (mobile && tool === 'crop' && event.key === 'Tab') {
       const scope = event.currentTarget.querySelector('.workspace-crop-overlay');
@@ -363,6 +377,7 @@ export default function ImageWorkspace({ job, image, index, original, liked, dis
       <div className="workspace-body">
       <div className="workspace-topbar">
         {(!history || mobile) && <button type="button" className="workspace-round" aria-label={mobile && editing ? 'Đóng công cụ' : 'Quay lại'} onClick={mobile && editing ? leaveEditing : onClose}><StudioIcon name={mobile && editing ? 'close' : 'back'} /></button>}
+        {desktopBrush && <div className="desktop-brush-history"><div><button type="button" aria-label="Hoàn tác nét vẽ" title="Hoàn tác nét vẽ" disabled={!strokes.length || blocked} onClick={() => { setRedoStrokes(current => [...current, strokes[strokes.length - 1]]); setStrokes(current => current.slice(0, -1)); }}><StudioIcon name="undo" /></button><button type="button" aria-label="Làm lại nét vẽ" title="Làm lại nét vẽ" disabled={!redoStrokes.length || blocked} onClick={() => { setStrokes(current => [...current, redoStrokes[redoStrokes.length - 1]]); setRedoStrokes(current => current.slice(0, -1)); }}><StudioIcon name="redo" /></button></div><button type="button" className="workspace-round" aria-label="Xóa nét vẽ" title="Xóa nét vẽ" disabled={!strokes.length || blocked} onClick={() => { setStrokes([]); setRedoStrokes([]); }}><StudioIcon name="trash" /></button></div>}
         {!mobile && zoomControls}
         {mobile && editing && tool === 'brush' && (strokes.length > 0 || redoStrokes.length > 0) && <div className="mobile-brush-history"><button type="button" className="workspace-round" aria-label="Làm lại nét vẽ" disabled={!redoStrokes.length || blocked} onClick={() => { setStrokes(current => [...current, redoStrokes[redoStrokes.length - 1]]); setRedoStrokes(current => current.slice(0, -1)); }}><StudioIcon name="redo" /></button><button type="button" className="workspace-round" aria-label="Xóa nét vẽ" disabled={!strokes.length || blocked} onClick={() => { setStrokes([]); setRedoStrokes([]); }}><StudioIcon name="trash" /></button></div>}
         {mobile ? <button type="button" className="workspace-round workspace-panel-toggle" aria-label={editing && strokes.length ? 'Hoàn tác nét vẽ' : 'Chỉnh sửa ảnh'} disabled={blocked || !ready} onClick={() => { if (editing && strokes.length) { setRedoStrokes(current => [...current, strokes[strokes.length - 1]]); setStrokes(current => current.slice(0, -1)); } else startEditing(); }}><StudioIcon name={editing && strokes.length ? 'undo' : 'brush'} /></button> : <button type="button" className="workspace-round workspace-panel-toggle" aria-label={panelOpen ? 'Ẩn bảng công cụ' : 'Hiện bảng công cụ'} title={panelOpen ? 'Ẩn bảng công cụ' : 'Hiện bảng công cụ'} aria-controls="workspace-panel" aria-expanded={panelOpen} onClick={() => setPanelOpen(value => !value)}><StudioIcon name="panel" /></button>}
@@ -372,6 +387,7 @@ export default function ImageWorkspace({ job, image, index, original, liked, dis
           {comparing ? <ImageComparison sources={imagineSources(job)} image={{ ...image, url: src }} prompt={job.prompt} startComparing hideToggle /> : <div className="workspace-picture" style={{ width: displayWidth ?? 0, height: displayHeight ?? 0, visibility: ready && space.width > 0 ? undefined : 'hidden' }}>
             <img src={src} alt={job.prompt} draggable={false} onLoad={event => setDimensions({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })} onError={() => { setDimensions({ width: 0, height: 0 }); setNotice('Chưa tải được ảnh. Bạn đóng và mở lại ảnh nhé.'); }} />
             {tool === 'brush' && ready && <canvas ref={canvasRef} width={dimensions.width} height={dimensions.height} aria-label="Vẽ ghi chú lên ảnh" onPointerDown={beginStroke} onPointerMove={moveStroke} onPointerUp={endStroke} onPointerCancel={endStroke} />}
+            {!mobile && generationPending && <div className="workspace-generation-dots" aria-hidden="true"><span /><span /><span /></div>}
           </div>}
         </div>
         {mobile && editing && tool === 'brush' && sizeOpen && <div className="mobile-brush-size"><span aria-hidden="true" className="brush-dot large" /><input type="range" aria-label="Cỡ bút" min="2" max="64" value={brushSize} onChange={event => setBrushSize(Number(event.target.value))} /><span aria-hidden="true" className="brush-dot small" /><button type="button" aria-label={erasing ? 'Dùng bút vẽ' : 'Tẩy nét vẽ'} aria-pressed={erasing} onClick={() => setErasing(value => !value)}><StudioIcon name={erasing ? 'eraser' : 'brush'} /></button></div>}
@@ -385,13 +401,13 @@ export default function ImageWorkspace({ job, image, index, original, liked, dis
         {historyNotice}
         {mobile && ready && !comparing && <span className="workspace-sr-only" aria-label="Kích thước ảnh thực tế">{dimensions.width} × {dimensions.height}</span>}
         {mobile && tool !== 'crop' && (notice || likeError) && <p className="workspace-notice" role="alert">{likeError ?? notice}<button type="button" aria-label="Đóng thông báo" onClick={() => setNotice(null)}><StudioIcon name="close" /></button></p>}
-        {draft?.composer ?? <><div className="workspace-source-chip" hidden={mobile && (editing || generationPending)}><span title={job.prompt}>{changed ? 'Bản chỉnh sửa · chưa lưu' : job.prompt}</span><button type="button" disabled={blocked} onClick={() => { if (!changed) onUse(); else void execute(async () => onUse(await editData())); }}>Dùng ảnh này</button></div>
+        {!desktopBrush && (draft?.composer ?? <><div className="workspace-source-chip" hidden={mobile && (editing || generationPending)}><span title={job.prompt}>{changed ? 'Bản chỉnh sửa · chưa lưu' : job.prompt}</span><button type="button" disabled={blocked} onClick={() => { if (!changed) onUse(); else void execute(async () => onUse(await editData())); }}>Dùng ảnh này</button></div>
         {mobile && editing && tool === 'brush' && colorsOpen && <div className="mobile-brush-colors">{COLORS.map(hex => <button key={hex} type="button" style={{ background: hex }} aria-label={`Chọn màu ${hex}`} aria-pressed={color === hex} onClick={() => { setColor(hex); setColorsOpen(false); }} />)}<input type="color" aria-label="Màu tùy chọn" value={color} onChange={event => setColor(event.target.value)} /></div>}
         <form hidden={mobile && editing && tool === 'palette' && !prompt.trim()} onSubmit={event => { event.preventDefault(); submitEdit(); }}>
           {mobile && editing && tool === 'brush' && <button type="button" className="mobile-color-trigger" style={{ color }} aria-label="Chọn màu bút" aria-expanded={colorsOpen} onClick={() => setColorsOpen(value => !value)}><span /></button>}
           <textarea aria-label="Mô tả chỉnh sửa ảnh" placeholder={mobile ? 'Chỉnh sửa hình ảnh' : 'Mô tả chỉnh sửa bạn muốn thực hiện…'} enterKeyHint="send" rows={1} value={prompt} disabled={blocked} onChange={event => setPrompt(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); submitEdit(); } }} />
           <button type="submit" disabled={(!prompt.trim() && !(mobile && strokes.length)) || blocked} aria-label="Gửi chỉnh sửa ảnh"><StudioIcon name="arrowUp" /></button>
-        </form></>}
+        </form></>)}
       </div>
       </div>
     </section>
@@ -414,20 +430,25 @@ export default function ImageWorkspace({ job, image, index, original, liked, dis
           <p className="workspace-label">Chọn bảng màu để thêm vào mô tả, rồi gửi khi bạn sẵn sàng.</p>
         </>}
         {tool === 'brush' && <>
-          <p className="workspace-label">Cỡ bút</p><input className="brush-size" type="range" aria-label="Cỡ bút" min="2" max="64" value={brushSize} onChange={event => setBrushSize(Number(event.target.value))} />
-          <div className="seg"><button type="button" aria-pressed={!erasing} onClick={() => setErasing(false)}>Vẽ</button><button type="button" aria-pressed={erasing} onClick={() => setErasing(true)}>Tẩy nét vẽ</button></div>
-          <p className="workspace-label">Màu</p><div className="brush-colors">{COLORS.map(hex => <button key={hex} type="button" style={{ background: hex }} aria-label={`Chọn màu ${hex}`} aria-pressed={color === hex} onClick={() => setColor(hex)} />)}<input type="color" aria-label="Màu tùy chọn" value={color} onChange={event => setColor(event.target.value)} /></div>
-          <div className="brush-history"><button type="button" aria-label="Hoàn tác nét vẽ" disabled={!strokes.length || blocked} onClick={() => { setRedoStrokes(current => [...current, strokes[strokes.length - 1]]); setStrokes(current => current.slice(0, -1)); }}><StudioIcon name="undo" /></button><button type="button" aria-label="Làm lại nét vẽ" disabled={!redoStrokes.length || blocked} onClick={() => { setStrokes(current => [...current, redoStrokes[redoStrokes.length - 1]]); setRedoStrokes(current => current.slice(0, -1)); }}><StudioIcon name="redo" /></button><button type="button" aria-label="Xóa nét vẽ" disabled={!strokes.length || blocked} onClick={() => { setStrokes([]); setRedoStrokes([]); }}><StudioIcon name="trash" /></button></div>
-          <button type="button" className="workspace-wide" disabled={!strokes.length || blocked} onClick={() => void execute(async () => saveVersion(await renderEdit(src, FULL_CROP, strokes), 'brush'))}>Áp dụng nét vẽ</button><p className="workspace-label">Bút vẽ thêm nét trực tiếp lên ảnh; tẩy chỉ xóa nét đã vẽ.</p>
+          <p className="workspace-label">Cỡ bút</p><div className="desktop-brush-size"><span aria-hidden="true" /><input className="brush-size" type="range" aria-label="Cỡ bút" min="2" max="64" value={brushSize} disabled={blocked} onChange={event => setBrushSize(Number(event.target.value))} /><span aria-hidden="true" /></div>
+          <div className="seg"><button type="button" aria-pressed={!erasing} disabled={blocked} onClick={() => setErasing(false)}>Vẽ</button><button type="button" aria-pressed={erasing} disabled={blocked} onClick={() => setErasing(true)}>Tẩy nét vẽ</button></div>
+          <p className="workspace-label">Màu</p><div className="brush-colors">{COLORS.map(hex => <button key={hex} type="button" style={{ background: hex }} aria-label={`Chọn màu ${hex}`} aria-pressed={color === hex} disabled={blocked} onClick={() => setColor(hex)} />)}<input type="color" aria-label="Màu tùy chọn" value={color} disabled={blocked} onChange={event => setColor(event.target.value)} /></div>
+          <p className="workspace-label">Phong cách</p><div className="workspace-style"><StudioMenu label="Phong cách" value={editStyle} options={EDIT_STYLES} icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="m8 9 4-4 4 4m-8 6 4 4 4-4" /></svg>} disabled={blocked} onChange={setEditStyle} /></div>
         </>}
       </div>
       <div className="workspace-panel-bottom">
+        {brushForm && panelOpen ? <form className="workspace-brush-form" onSubmit={event => { event.preventDefault(); submitEdit(); }}>
+          <textarea aria-label="Mô tả chỉnh sửa ảnh" placeholder="Mô tả điều bạn muốn tạo…" rows={3} value={prompt} disabled={blocked} onChange={event => setPrompt(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); submitEdit(); } }} />
+          <button type="submit" className="workspace-share" disabled={blocked || (!strokes.length && !prompt.trim() && editStyle === 'original')}>Áp dụng</button>
+          <button type="button" className="workspace-wide" disabled={blocked} onClick={() => { setStrokes([]); setRedoStrokes([]); setPrompt(''); setEditStyle('original'); setNotice(null); }}>Đặt lại</button>
+        </form> : <>
         {original && sourceVersions.length > 1 && <div className="brush-history"><button type="button" aria-label="Hoàn tác chỉnh sửa" disabled={sourceVersion === 0 || blocked || strokes.length > 0} onClick={() => setSourceVersion(value => value - 1)}><StudioIcon name="undo" /></button><button type="button" aria-label="Làm lại chỉnh sửa" disabled={sourceVersion === sourceVersions.length - 1 || blocked || strokes.length > 0} onClick={() => setSourceVersion(value => value + 1)}><StudioIcon name="redo" /></button></div>}
         {history && history.versions.length > 1 && <div className="brush-history"><button type="button" aria-label="Hoàn tác chỉnh sửa" disabled={historyIndex <= 0 || blocked || strokes.length > 0} onClick={() => history.onSelect(history.versions[historyIndex - 1])}><StudioIcon name="undo" /></button><button type="button" aria-label="Làm lại chỉnh sửa" disabled={historyIndex >= history.versions.length - 1 || blocked || strokes.length > 0} onClick={() => history.onSelect(history.versions[historyIndex + 1])}><StudioIcon name="redo" /></button></div>}
         {panelOpen ? <label className="workspace-aspect">Tỉ lệ ảnh <select aria-label="Tỉ lệ ảnh chỉnh sửa" value={draft?.aspect ?? aspect} disabled={blocked} onChange={event => { if (draft) draft.onAspectChange(event.target.value); else setAspect(event.target.value); }}>{RATIOS.map(ratio => <option key={ratio} value={ratio}>{ratio === 'auto' ? 'Theo ảnh nguồn' : ratio}</option>)}</select></label> : <button type="button" className="workspace-wide" aria-label="Thiết lập tỉ lệ ảnh" title="Tỉ lệ ảnh" onClick={() => setPanelOpen(true)}><StudioIcon name="aspect" /></button>}
         <button type="button" className="workspace-wide" aria-label="Thêm làm tham chiếu" title="Thêm làm tham chiếu" disabled={blocked || !canAdd || (alreadyAdded && !changed)} onClick={() => { if (!changed) onAdd(); else void execute(async () => onAdd(await editData())); }}><StudioIcon name="plus" /><span>Thêm làm tham chiếu</span></button>
         <button type="button" className="workspace-share" aria-label="Chia sẻ" title="Chia sẻ" disabled={blocked || !ready} onClick={() => void execute(share)}><StudioIcon name="share" /><span>Chia sẻ</span></button>
         <div className="workspace-footer-actions">{!original && <button type="button" className={liked ? 'liked' : ''} aria-label="Thích" title="Thích" aria-pressed={liked} onClick={onLike}><StudioIcon name="heart" /></button>}<a href={src !== image.url ? src : `${image.url}?download=1`} download={src !== image.url ? 'peto-chinh-sua.png' : true} aria-label="Tải ảnh xuống" title="Tải ảnh xuống" onClick={event => { if (strokes.length) { event.preventDefault(); void execute(download); } }}><StudioIcon name="download" /></a></div>
+        </>}
         {(notice || likeError) && <p className="workspace-notice" role="alert">{likeError ?? notice}</p>}
       </div>
     </aside>}
