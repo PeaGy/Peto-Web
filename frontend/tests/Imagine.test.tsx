@@ -297,7 +297,7 @@ it('opens the correct image, navigates the set, downloads it and closes with Esc
   fireEvent.click(screen.getByRole('button', { name: /Xem ảnh 1:/ }));
   const dialog = screen.getByRole('dialog', { name: 'Xem ảnh đã tạo' });
   expect(within(dialog).getByRole('img').getAttribute('src')).toBe(job.images[0].url);
-  fireEvent.click(within(dialog).getByRole('button', { name: 'Ảnh 2' }));
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Sau →' }));
   expect(within(dialog).getByRole('link', { name: /Tải ảnh xuống/ }).getAttribute('href')).toBe(job.images[1].url + '?download=1');
   fireEvent(dialog, new Event('cancel', { bubbles: false, cancelable: true }));
   expect(screen.queryByRole('dialog')).toBeNull();
