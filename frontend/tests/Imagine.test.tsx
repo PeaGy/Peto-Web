@@ -41,7 +41,7 @@ it('thêm nhiều ảnh, ghép ảnh thư viện và gửi đúng thứ tự ả
   await open();
   fireEvent.change(screen.getByLabelText('Chọn ảnh để sửa'), { target: { files: [sourceFile(), sourceFile()] } });
   await screen.findByRole('img', { name: 'Ảnh tham chiếu 2' });
-  fireEvent.click(screen.getByRole('button', { name: 'Từ thư viện' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Thư viện', exact: true }));
   const library = screen.getByRole('dialog', { name: 'Thư viện ảnh' });
   fireEvent.click(within(library).getByRole('button', { name: 'Chọn', exact: true }));
   fireEvent.click(within(library).getAllByRole('button', { name: 'Chọn ảnh: Mèo trên mặt trăng' })[1]);

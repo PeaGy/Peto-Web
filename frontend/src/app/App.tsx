@@ -244,6 +244,7 @@ export default function App() {
   }, [settingsOpen]);
   // Bản sao chỉ để vẽ cột trái; Imagine.tsx mới là nơi tạo, xóa và giữ danh sách.
   const [imagineJobs, setImagineJobs] = useState<ImagineJob[]>([]);
+  const [imagineLibraryRequest, setImagineLibraryRequest] = useState(0);
   const [focusJobId, setFocusJobId] = useState<string | null>(null);
   const clearFocusJob = useCallback(() => setFocusJobId(null), []);
 
@@ -1155,6 +1156,7 @@ export default function App() {
         preloadImagine={preload(loadImagine)} preloadCompanion={preload(loadCompanion)} preloadSettings={preload(loadSettings)}
         setSidebarOpen={setSidebarOpen} setSceneRequest={setSceneRequest} setCharacterPickerOpen={setCharacterPickerOpen}
         setFocusJobId={setFocusJobId} openConversation={openConversation} setConversationMenu={setConversationMenu}
+        onOpenImagineLibrary={() => { setSidebarOpen(false); setImagineLibraryRequest(value => value + 1); }}
         onLoadMore={() => { listCount.current = conversations.length + 50; void refreshConversations(); }}
         toggleAccountMenu={toggleAccountMenu}
       />
@@ -1170,6 +1172,7 @@ export default function App() {
           onUnauthorized={handleUnauthorized}
           onOpenSidebar={() => setSidebarOpen(true)}
           onJobsChange={setImagineJobs}
+          libraryRequest={imagineLibraryRequest}
           focusJobId={focusJobId}
           onFocusHandled={clearFocusJob}
         />

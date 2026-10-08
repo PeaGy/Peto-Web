@@ -134,13 +134,14 @@ function IdeaArt({ style }: { style: string }) {
 const ratioLabel = (value: string) => value === "auto" ? "Tự động" : value;
 const qualityLabel = (value: string) => value === "low" ? "Nhanh" : "Chi tiết";
 
-export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsChange, focusJobId, onFocusHandled }: {
+export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsChange, focusJobId, onFocusHandled, libraryRequest = 0 }: {
   active: boolean;
   onUnauthorized: () => void;
   onOpenSidebar: () => void;
   onJobsChange?: (jobs: ImagineJob[]) => void;
   focusJobId?: string | null;
   onFocusHandled?: () => void;
+  libraryRequest?: number;
 }) {
   const [prompt, setPrompt] = useState("");
   const [sources, setSources] = useState<DraftSource[]>([]);
@@ -167,6 +168,9 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
   // Chỉ có tác dụng trên điện thoại: thanh thu gọn mở ra khi đang nhập hoặc chỉnh tùy chọn.
   const [expanded, setExpanded] = useState(false);
   const [libraryOpen, setLibraryOpen] = useState(false);
+  useEffect(() => {
+    if (libraryRequest > 0) setLibraryOpen(true);
+  }, [libraryRequest]);
   const [likeError, setLikeError] = useState<string | null>(null);
   const [previewLikes, setPreviewLikes] = useState<Record<string, boolean>>({});
   const compact = useCompact();
@@ -567,7 +571,6 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
               aria-label={readingSource ? "Đang đọc ảnh…" : source ? "Thêm ảnh tham chiếu" : "Thêm ảnh để chỉnh sửa"}
               title={readingSource ? "Đang đọc ảnh…" : (source ? "Thêm ảnh tham chiếu" : "Thêm ảnh để chỉnh sửa") + " · PNG, JPEG, WebP · tối đa 8 MB"}
               onClick={() => fileRef.current?.click()}><ImagePlusIcon />{source && <img className="add-source-thumb" src={source.preview} alt="" />}</button>
-            <button type="button" className="studio-text-button reference-library" disabled={controlsDisabled || sources.length >= 5} onClick={() => setLibraryOpen(true)}>Từ thư viện</button>
             {/* Chỗ cặp nút Ảnh/Video của Grok. Peto chưa làm video nên dùng cho độ phân giải. */}
             <div className="seg" role="group" aria-label="Độ phân giải">
               {(["1k", "2k"] as const).map((value) => <button type="button" key={value} className={resolution === value ? "on" : ""} aria-pressed={resolution === value} disabled={controlsDisabled} onClick={() => setResolution(value)}>{value.toUpperCase()}</button>)}

@@ -354,7 +354,7 @@
   .studio-dock .add-source { background: color-mix(in srgb, var(--text) 9%, transparent); }
 
   .studio-dock:not(.expanded) .studio-composer-wrap { flex-direction: row; align-items: center; gap: 8px; }
-  .studio-dock:not(.expanded) :is(.studio-options, .source-collection, .reference-library, .source-preview, .imagine-controls .seg, .studio-send) { display: none; }
+  .studio-dock:not(.expanded) :is(.studio-options, .source-collection, .source-preview, .imagine-controls .seg, .studio-send) { display: none; }
   .studio-dock:not(.expanded) :is(.studio-library, .studio-options-toggle) {
     display: grid; place-items: center; flex-shrink: 0; width: 48px; height: 48px; padding: 0;
     border-radius: 50%; color: var(--text); overflow: hidden; cursor: pointer;
@@ -416,7 +416,6 @@
 .library-reference-hint { position: absolute; top: calc(76px + env(safe-area-inset-top)); left: 16px; right: 16px; z-index: 2; margin: 0; padding: 8px; background: var(--panel); color: var(--muted); border-radius: 8px; font-size: 12px; text-align: center; pointer-events: none; }
 .library-kind { display: grid; gap: 6px; padding: 6px; }
 @media (max-width: 720px) {
-  .reference-library { font-size: 11px; padding: 7px; }
   .source-strip .source-preview { flex-basis: 190px; }
   .library-actions { gap: 2px; }
   .library-actions button { min-width: 0; flex: 1; font-size: 11px; }

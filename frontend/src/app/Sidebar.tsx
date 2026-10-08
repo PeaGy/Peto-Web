@@ -20,6 +20,7 @@ type SidebarProps = {
   openConversation: (id: string) => Promise<void>;
   setConversationMenu: (menu: {item: Conversation; left: number; top: number}) => void;
   onLoadMore: () => void; toggleAccountMenu: () => void;
+  onOpenImagineLibrary: () => void;
 };
 
 export default function Sidebar({
@@ -29,6 +30,7 @@ export default function Sidebar({
   setSearchOpen, onToggleCollapsed, goChat, go, preloadImagine, preloadCompanion,
   preloadSettings, setSidebarOpen, setSceneRequest, setCharacterPickerOpen,
   setFocusJobId, openConversation, setConversationMenu, onLoadMore, toggleAccountMenu,
+  onOpenImagineLibrary,
 }: SidebarProps) {
   return (
       <aside className={["sidebar", sidebarOpen && "open", collapsed && "collapsed"].filter(Boolean).join(" ")}>
@@ -92,7 +94,7 @@ export default function Sidebar({
         {view === "imagine" && (
           <div className="sidebar-section">
             <div className="imagine-library">
-              <h2 className="imagine-library-title">Thư viện</h2>
+              <h2 className="imagine-library-title"><button type="button" onClick={onOpenImagineLibrary}>Thư viện</button></h2>
               <nav className="imagine-job-list" aria-label="Thư viện">
                 {imagineJobs.length === 0 && (
                   <p className="empty-hint">Chưa có ảnh nào. Ảnh bạn tạo sẽ hiện ở đây.</p>

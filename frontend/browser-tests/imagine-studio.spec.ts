@@ -33,7 +33,8 @@ test('nhiều ảnh tham chiếu, tải lại lượt đang tạo và so sánh t
     { name: 'anh-2.png', mimeType: 'image/png', buffer: Buffer.from(png, 'base64') },
   ]);
   await expect(page.getByRole('img', { name: 'Ảnh tham chiếu 2' })).toBeVisible();
-  await page.getByRole('button', { name: 'Từ thư viện' }).click();
+  if (testInfo.project.name === 'mobile') await page.getByRole('button', { name: 'Mở menu', exact: true }).click();
+  await page.locator('aside').getByRole('button', { name: 'Thư viện', exact: true }).click();
   const library = page.getByRole('dialog', { name: 'Thư viện ảnh', exact: true });
   await library.getByRole('button', { name: 'Chọn', exact: true }).click();
   await library.getByRole('button', { name: 'Chọn ảnh: Bức ảnh đã lưu' }).click();

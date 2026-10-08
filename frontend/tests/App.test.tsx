@@ -499,6 +499,9 @@ it('báo cột trái trống khi chưa có ảnh nào', async () => {
   const list = await screen.findByRole('navigation', { name: 'Thư viện' });
   expect(within(list).getByText('Chưa có ảnh nào. Ảnh bạn tạo sẽ hiện ở đây.')).toBeTruthy();
   expect(within(list).queryAllByRole('button')).toHaveLength(0);
+  expect(screen.queryByRole('button', { name: 'Từ thư viện' })).toBeNull();
+  fireEvent.click(within(document.querySelector('aside')!).getByRole('button', { name: 'Thư viện', exact: true }));
+  expect(await screen.findByRole('dialog', { name: 'Thư viện ảnh', exact: true })).toBeTruthy();
 });
 
 it('thêm lượt vừa tạo vào cột trái', async () => {
