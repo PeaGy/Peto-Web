@@ -247,6 +247,19 @@ def test_compaction_preserves_tool_pairs():
     assert len(prefix) == 6 and tail == items[6:]
 
 
+def test_compaction_keeps_native_claude_blocks_with_normalized_calls():
+    prefix_items = [user_message('yêu cầu'), message('kết quả')] * 2
+    wrapper = {'type': 'reasoning', 'anthropic_model': 'claude-haiku-5-5', 'anthropic_output_count': 2,
+               'anthropic_content': [{'type': 'thinking', 'thinking': 'đang nghĩ', 'signature': 'chữ ký'}]}
+    items = [*prefix_items, wrapper, message('đang đọc'), call(1, 'read_file', path='a'),
+             {'type': 'function_call_output', 'call_id': '1', 'output': 'nội dung'}, message('xong')]
+    for keep in (2, 3, 4):
+        prefix, tail = compact_prefix(items, keep=keep)
+        assert prefix == prefix_items and tail == items[4:]
+    prefix, tail = compact_prefix(items, keep=1)
+    assert prefix == items[:-1] and tail == items[-1:]
+
+
 def test_compaction_success_persists_tail_and_clears_stale_reads(project):
     client = Client([[message("Goal: original. Decisions: retained. Tests: passed. Pending: next step.")]])
     work = Session(client, Workspace(project), FakeUI())

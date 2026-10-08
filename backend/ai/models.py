@@ -1,13 +1,16 @@
-"""Các model người dùng chọn được: Peto (Grok qua xAI), GPT-6 Luna/Sol và 5.6 Terra của OpenAI.
+"""Các model người dùng chọn được: Peto, dòng GPT của OpenAI và Haiku/Sonnet 5.5 của Claude.
 
 Chủ web chốt:
-- Web có Peto và 6 Luna (nút chọn model cạnh nút Gửi). Peto Agent có thêm 5.6 Terra và 6 Sol (lệnh /model).
+- Web có Peto, 6 Luna và Haiku 5.5 (nút chọn model cạnh nút Gửi). Peto Agent có thêm 5.6 Terra,
+  6 Sol và Sonnet 5.5 (lệnh /model).
 - 6 Luna dùng được với mọi tài khoản đã đăng nhập (Discord, Google, GitHub). 5.6 Terra và 6 Sol chỉ dành cho
   tài khoản của chủ web, khai trong ``PETO_OWNER_ACCOUNTS``. Terra giữ slug 5.6 cho đến khi OpenAI có bản GPT-6.
 - Trong Peto Agent, bước tính theo giá: Luna 1, Terra 2, Sol 4, nhân với mức suy nghĩ (mức cao tính gấp đôi).
+- Haiku dùng được với mọi tài khoản đã đăng nhập; Sonnet chỉ dành cho chủ web trong Agent. Cả hai nhận năm mức
+  suy nghĩ của Claude và tính bước theo hạn mức Peto: Haiku 1, Sonnet 2 trước khi nhân mức suy nghĩ.
 
 Các model OpenAI tính tiền vào billing API của chủ web, nên máy chủ kiểm quyền ở đây chứ không tin giao diện. Thiếu
-``OPENAI_API_KEY`` thì chỉ còn Peto.
+``OPENAI_API_KEY`` thì ẩn model OpenAI; thiếu ``ANTHROPIC_API_KEY`` thì ẩn Claude.
 """
 
 from __future__ import annotations
@@ -19,10 +22,11 @@ from core import config
 DEFAULT_MODEL = "peto"
 OPENAI_EFFORTS = ("none", "low", "medium", "high", "xhigh", "max")
 PETO_EFFORTS = ("low", "medium", "high")
+CLAUDE_EFFORTS = ("low", "medium", "high", "xhigh", "max")
 
 
 def supported_efforts(key: str) -> tuple[str, ...]:
-    return OPENAI_EFFORTS if MODELS[key].service == 'openai' else PETO_EFFORTS
+    return {"openai": OPENAI_EFFORTS, "anthropic": CLAUDE_EFFORTS}.get(MODELS[key].service, PETO_EFFORTS)
 
 
 @dataclass(frozen=True)
@@ -30,7 +34,7 @@ class Model:
     key: str
     label: str
     description: str
-    # "xai" dùng tài khoản Grok của máy chủ; "openai" dùng OPENAI_API_KEY.
+    # "xai" dùng tài khoản Grok; "openai" dùng OPENAI_API_KEY; "anthropic" dùng ANTHROPIC_API_KEY của máy chủ.
     service: str
     # Tên model trong API; Peto theo XAI_MODEL (web) hoặc PETO_AGENT_MODEL (agent).
     slug: str
@@ -46,6 +50,10 @@ MODELS: dict[str, Model] = {
     "terra": Model("terra", "5.6 Terra", "Cân bằng, của OpenAI", "openai", "gpt-5.6-terra", 2, web=False,
                    owner_only=True),
     "sol": Model("sol", "6 Sol", "Mạnh nhất, của OpenAI", "openai", "gpt-6-sol", 4, web=False, owner_only=True),
+    "haiku": Model("haiku", "Haiku 5.5", "Nhanh, của Claude", "anthropic", "claude-haiku-5-5", 1,
+                   web=True, owner_only=False),
+    "sonnet": Model("sonnet", "Sonnet 5.5", "Cân bằng, của Claude", "anthropic", "claude-sonnet-5-5", 2,
+                    web=False, owner_only=True),
 }
 
 
@@ -62,9 +70,10 @@ def openai_ready() -> bool:
 
 
 def _refusal(owner: str, model: Model) -> ModelUnavailable | None:
-    if model.service != "openai":
+    if model.service not in {"openai", "anthropic"}:
         return None
-    if not openai_ready():
+    ready = openai_ready() if model.service == "openai" else config.AI_PROVIDER == "mock" or bool(config.ANTHROPIC_API_KEY)
+    if not ready:
         return ModelUnavailable(503, f"Máy chủ Peto chưa bật {model.label}. Chọn Peto để tiếp tục nhé.")
     if not config.provider_from_owner(owner):
         return ModelUnavailable(403, f"{model.label} chỉ dùng được với tài khoản đã đăng nhập.")

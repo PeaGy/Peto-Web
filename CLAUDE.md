@@ -199,7 +199,7 @@ and the access rules; the server checks them on every chat turn and agent step, 
 - `peto` (Grok through the web's xAI account) for everyone; `luna` (`gpt-6-luna`) for every signed-in account,
   on the web and in the CLI; `terra` (`gpt-5.6-terra`, until a GPT-6 Terra exists) and `sol` (`gpt-6-sol`) only in the CLI and only for owners
   listed in `PETO_OWNER_ACCOUNTS` (`discord:<id>` or `google:<id>`, bare digits mean Discord). Without `OPENAI_API_KEY`
-  only Peto is offered (503 if a turn asks for another model); under `PETO_AI_PROVIDER=mock` every model uses the mock.
+  the OpenAI choices are hidden (503 if a turn asks for one); under `PETO_AI_PROVIDER=mock` every model uses the mock.
 - `get_provider(model)` caches one provider per model. `ai/xai.py` holds `ResponsesProvider`, the tool loop, web search
   and sources shared by `XAIProvider` and `ai/gpt.py`'s `GPTProvider`; subclasses only set the client, model, output
   budget (`PETO_OPENAI_MAX_OUTPUT_TOKENS`, 16000, since reasoning tokens count) and Vietnamese error messages. OpenAI
@@ -213,6 +213,22 @@ and the access rules; the server checks them on every chat turn and agent step, 
 - The persona rule still holds: whatever model runs, Peto does not name the model behind it.
 - Tests patch `features.chat.service.get_provider` with a callable that accepts the model (`lambda model="peto": ...`).
   `tests/test_models.py` covers the access rules, step costs and the OpenAI call shape with fake clients.
+
+Claude was added on 2026-10-08: `haiku` (`claude-haiku-5-5`) is available to every signed-in account on Web and Agent;
+`sonnet` (`claude-sonnet-5-5`) is owner-only in Agent, as explicitly chosen by the owner. Both accept
+`low/medium/high/xhigh/max`, never `none`; the API receives `thinking.type=adaptive` and `output_config.effort`.
+`ANTHROPIC_API_KEY` is a server-only Default workspace key. Missing key hides Claude; mock uses no credentials.
+`ai/claude.py` translates the existing internal Responses-shaped items/events to the native Anthropic Messages SDK,
+sharing Web's tool loop and Agent's step handling. It never calls an Anthropic Responses endpoint. Full native
+assistant blocks (including thinking signatures and server search results) are held in a `reasoning` wrapper beside
+portable text/tool items. Re-sending that group restores the exact native blocks; switching models drops the wrapper.
+CLI 0.14.2 keeps groups intact during compaction and can resume histories containing web search items.
+Web output budget is `PETO_ANTHROPIC_MAX_OUTPUT_TOKENS` (32768); Agent uses
+`PETO_ANTHROPIC_AGENT_MAX_OUTPUT_TOKENS` (128000). Basic native web search is capped at five uses per request;
+`pause_turn` continues up to three times and sums usage. HTTP failures are sanitized, no SDK retries silently
+spend another request, incomplete/disconnected streams never become successful answers. Haiku costs one Agent step,
+Sonnet two, multiplied by the existing effort cost; these are Peto quota units, not Anthropic billing prices.
+Tests use the real SDK against fake HTTP/SSE, never real keys or billing. Deployment/key activation is separate.
 
 ### Chat request lifecycle (`POST /api/chat`)
 

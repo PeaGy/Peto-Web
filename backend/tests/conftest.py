@@ -23,6 +23,7 @@ os.environ["PETO_COOLDOWN_SECONDS"] = "0"
 # Không để credential thật của máy lọt vào test.
 os.environ.pop("XAI_API_KEY", None)
 os.environ.pop("OPENAI_API_KEY", None)
+os.environ.pop("ANTHROPIC_API_KEY", None)
 for _connector_name in ('PETO_GITHUB_CLIENT_ID', 'PETO_GITHUB_CLIENT_SECRET', 'PETO_GITHUB_REDIRECT_URI', 'PETO_GITHUB_APP_SLUG', 'PETO_CONNECTOR_SECRET'):
     os.environ[_connector_name] = ''
 os.environ["PETO_OWNER_ACCOUNTS"] = ""

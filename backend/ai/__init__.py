@@ -38,7 +38,8 @@ def get_provider(model: str = "peto") -> ChatProvider:
     """Provider cho một model trong ``ai_models.MODELS``; mặc định là Peto.
 
     ``PETO_AI_PROVIDER=mock`` thì model nào cũng dùng provider giả. ``xai`` thì Peto đi qua xAI, còn các model OpenAI
-    đi qua ``ai/gpt.py``. Quyền chọn model được kiểm trước, ở ``ai_models.resolve``.
+    đi qua ``ai/gpt.py``, Claude qua Messages API trong ``ai/claude.py``. Quyền chọn model được kiểm trước,
+    ở ``ai_models.resolve``.
     """
     if model in _instances:
         return _instances[model]
@@ -58,9 +59,14 @@ def get_provider(model: str = "peto") -> ChatProvider:
     else:
         from ai.models import MODELS
 
-        from .gpt import GPTProvider
-
         info = MODELS[model]
-        provider = GPTProvider(info.slug, info.label)
+        if info.service == "anthropic":
+            from .claude import ClaudeProvider
+
+            provider = ClaudeProvider(info.slug, info.label)
+        else:
+            from .gpt import GPTProvider
+
+            provider = GPTProvider(info.slug, info.label)
     _instances[model] = provider
     return provider

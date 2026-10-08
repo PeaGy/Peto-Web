@@ -49,6 +49,7 @@ async def test_web_offers_luna_to_signed_in_accounts(client, anon_client, monkey
     assert me["models"] == [
         {"key": "peto", "label": "Peto", "description": "Mặc định", "step_cost": 1, "efforts": ['low', 'medium', 'high']},
         {"key": "luna", "label": "6 Luna", "description": "Nhanh, của OpenAI", "step_cost": 1, "efforts": ['none', 'low', 'medium', 'high', 'xhigh', 'max']},
+        {"key": "haiku", "label": "Haiku 5.5", "description": "Nhanh, của Claude", "step_cost": 1, "efforts": ['low', 'medium', 'high', 'xhigh', 'max']},
     ]
     seen = spy_models(monkeypatch)
     events = await read_events(await client.post("/api/chat", json={"message": "chào", "model": "luna"}))
@@ -61,7 +62,7 @@ async def test_web_offers_luna_to_signed_in_accounts(client, anon_client, monkey
     # Tài khoản GitHub đủ quyền như Google (chủ web chốt ngày 6/10/2026, khi bỏ đăng nhập khách).
     from conftest import sign_in
     await sign_in(anon_client)
-    assert keys((await anon_client.get("/api/auth/me")).json()["user"]["models"]) == ["peto", "luna"]
+    assert keys((await anon_client.get("/api/auth/me")).json()["user"]["models"]) == ["peto", "luna", "haiku"]
 
     for model in ("sol", "terra", "gpt-6-luna", ""):
         assert (await client.post("/api/chat", json={"message": "chào", "model": model})).status_code == 400
@@ -87,7 +88,7 @@ async def test_agent_models_and_step_costs(anon_client, client, monkeypatch):
     owner = await login_as(client, "discord")
     token = await connect(anon_client, client)
     me = (await anon_client.get("/api/agent/me", headers=bearer(token))).json()
-    assert keys(me["models"]) == ["peto", "luna"]
+    assert keys(me["models"]) == ["peto", "luna", "haiku"]
     task = {"type": "message", "role": "user", "content": "chào"}
 
     async def step(model: str, effort: str = "medium"):
@@ -102,7 +103,7 @@ async def test_agent_models_and_step_costs(anon_client, client, monkeypatch):
     monkeypatch.setattr(config, "OWNER_ACCOUNTS", frozenset({owner}))
     me = (await anon_client.get("/api/agent/me", headers=bearer(token))).json()
     assert [(model["key"], model["step_cost"]) for model in me["models"]] == [
-        ("peto", 1), ("luna", 1), ("terra", 2), ("sol", 4)]
+        ("peto", 1), ("luna", 1), ("terra", 2), ("sol", 4), ("haiku", 1), ("sonnet", 2)]
     for model, effort, expected in (("luna", "medium", 1), ("terra", "medium", 3), ("sol", "high", 11)):
         response = await step(model, effort)
         assert response.status_code == 200 and events_of(response)[-1]["type"] == "done"

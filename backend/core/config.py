@@ -58,13 +58,21 @@ XAI_TOKEN_PATH = Path(
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
 # Model suy luận tính cả token suy nghĩ vào giới hạn này, nên để rộng hơn của Grok.
 OPENAI_MAX_OUTPUT_TOKENS = _env_int("PETO_OPENAI_MAX_OUTPUT_TOKENS", 16000, 1024, 128000)
+
+# Claude dùng khóa của máy chủ, chung cho web và Agent; không gửi khóa xuống thiết bị người dùng.
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "").strip()
+# Adaptive thinking dùng chung ngân sách với câu trả lời; Agent cần chỗ cho các lượt suy nghĩ dài.
+ANTHROPIC_MAX_OUTPUT_TOKENS = _env_int("PETO_ANTHROPIC_MAX_OUTPUT_TOKENS", 32768, 1024, 128000)
+ANTHROPIC_AGENT_MAX_OUTPUT_TOKENS = _env_int("PETO_ANTHROPIC_AGENT_MAX_OUTPUT_TOKENS", 128000, 1024, 128000)
+
+
 def parse_owner_accounts(raw: str) -> frozenset[str]:
     """``discord:1,google:2,3`` thành các khóa owner; chỉ ghi số thì hiểu là Discord ID."""
     items = (part.strip() for part in raw.split(","))
     return frozenset(item if ":" in item else f"discord:{item}" for item in items if item)
 
 
-# Tài khoản của chủ web, được dùng 5.6 Terra và 6 Sol trong Peto Agent. Ngăn cách bằng dấu phẩy, dạng
+# Tài khoản của chủ web, được dùng 5.6 Terra, 6 Sol và Sonnet 5.5 trong Peto Agent. Ngăn cách bằng dấu phẩy, dạng
 # discord:<Discord ID>, google:<mã Google> hoặc github:<mã số GitHub>.
 OWNER_ACCOUNTS = parse_owner_accounts(os.getenv("PETO_OWNER_ACCOUNTS", ""))
 

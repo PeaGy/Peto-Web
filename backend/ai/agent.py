@@ -34,12 +34,17 @@ async def agent_step(
     *, instructions: str, input_items: list[dict], tools: list[dict], effort: str = AGENT_REASONING,
     model: str = "peto", web_search: bool = False,
 ) -> AsyncIterator[AgentEvent]:
-    """``model`` đã được ``ai_models.resolve`` kiểm quyền: Peto đi qua xAI, các model khác qua OpenAI."""
+    """``model`` đã được ``ai_models.resolve`` kiểm quyền: chọn xAI, OpenAI hoặc Claude theo danh mục."""
     if AI_PROVIDER == "mock":
         events = _mock_step(input_items, web_search)
     elif AI_PROVIDER == "xai":
-        events = (_xai_step(instructions, input_items, tools, effort, web_search) if model == "peto"
-                  else _openai_step(instructions, input_items, tools, effort, model, web_search))
+        from .models import MODELS
+
+        if MODELS[model].service == "anthropic":
+            events = _claude_step(instructions, input_items, tools, effort, model, web_search)
+        else:
+            events = (_xai_step(instructions, input_items, tools, effort, web_search) if model == "peto"
+                      else _openai_step(instructions, input_items, tools, effort, model, web_search))
     else:
         raise ProviderError("Nhà cung cấp AI hiện tại chưa hỗ trợ Peto Agent.")
     async for event in events:
@@ -51,6 +56,7 @@ async def agent_step(
 _client = None
 _auth = None
 _openai_client = None
+_claude_client = None
 
 
 def _dump(item) -> dict:
@@ -128,6 +134,25 @@ async def _openai_step(instructions: str, items: list[dict], tools: list[dict], 
         rate_message=f"{info.label} đang bị OpenAI giới hạn lượt hoặc đã hết hạn mức. Gõ /model peto để làm tiếp, "
                      "hoặc thử lại sau nhé.",
         web_search=web_search,
+    ):
+        yield event
+
+
+async def _claude_step(instructions: str, items: list[dict], tools: list[dict], effort: str,
+                       model: str, web_search: bool = False) -> AsyncIterator[AgentEvent]:
+    from core import config
+    from .claude import ClaudeClient
+    from .models import MODELS
+
+    global _claude_client
+    if not config.ANTHROPIC_API_KEY:
+        raise ProviderError("Máy chủ Peto chưa có khóa Claude. Gõ /model peto để tiếp tục nhé.")
+    if _claude_client is None:
+        _claude_client = ClaudeClient()
+    async for event in _responses_step(
+        _claude_client, "Anthropic", MODELS[model].slug, config.ANTHROPIC_AGENT_MAX_OUTPUT_TOKENS,
+        instructions, items, tools, effort, auth_message="Khóa Claude không dùng được.",
+        rate_message="Claude đang giới hạn lượt.", web_search=web_search,
     ):
         yield event
 

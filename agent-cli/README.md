@@ -270,6 +270,11 @@ nào được chọn, nên Enter không tự chạy gì. Các lệnh:
   đang dùng và các model tài khoản của bạn được chọn; gõ `/model` kèm dấu cách thì chọn trong danh sách. Model đắt hơn
   tính nhiều bước hơn: Terra 2, Sol 4, nhân với mức suy nghĩ. Đổi model giữa hội thoại vẫn làm tiếp được; phần suy nghĩ
   của model cũ được bỏ vì model mới không đọc được.
+- Từ bản **0.14.2**, có `/model haiku` (Haiku 5.5 cho tài khoản đã đăng nhập) và `/model sonnet` (Sonnet 5.5 chỉ
+  chủ web). Cần máy chủ có `ANTHROPIC_API_KEY`; CLI không cần khóa Claude. Cả hai nhận `low`, `medium`, `high`,
+  `xhigh`, `max`; không nhận `none`. Haiku tính 1 bước, Sonnet 2 bước trước khi nhân mức suy nghĩ; `high/xhigh/max`
+  nhân đôi. Danh sách model và effort vẫn lấy từ máy chủ. Cập nhật CLI để giữ nguyên block suy nghĩ có chữ ký và
+  nhóm công cụ của Claude khi tóm tắt, và mở lại hội thoại có tìm web bằng `/resume`.
 - `/usage`: số bước còn lại và số token đã dùng hôm nay, độ dài hội thoại đang mở, model và mức suy nghĩ.
 - `/help`: xem các lệnh. `/thoat`: thoát. Tên lệnh gõ có dấu (`/thoát`) vẫn được nhận.
 - **Ctrl+C**: dừng yêu cầu đang chạy; lệnh đang chạy bị dừng cả cây tiến trình. Ở dòng nhập, Ctrl+C xóa chữ đang gõ;

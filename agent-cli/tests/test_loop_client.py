@@ -379,6 +379,41 @@ def test_full_efforts_persist_forward_and_restrict_after_model_switch(project, p
     assert cli._supported_efforts({"efforts": ["unknown"]}) == ["low", "medium", "high"]
 
 
+def test_claude_models_and_all_efforts_with_saved_session(project, peto, monkeypatch):
+    efforts = ['low', 'medium', 'high', 'xhigh', 'max']
+    haiku = {'key': 'haiku', 'label': 'Haiku 5.5', 'description': 'Nhanh, của Claude', 'step_cost': 1, 'efforts': efforts}
+    sonnet = {'key': 'sonnet', 'label': 'Sonnet 5.5', 'description': 'Cân bằng, của Claude', 'step_cost': 2, 'efforts': efforts}
+    me = {'models': [PETO, haiku, sonnet], 'default_effort': 'low'}
+    native = {'type': 'reasoning', 'anthropic_model': 'claude-haiku-5-5', 'anthropic_output_count': 1,
+              'anthropic_content': [{'type': 'text', 'text': 'Xong'}], 'summary': []}
+    search = {'type': 'web_search_call', 'id': 'srvtoolu_test', 'status': 'completed'}
+
+    def reply(path, body):
+        if path == '/api/agent/me':
+            return 200, me
+        return 200, [{'type': 'done', 'output': [native, message('Xong'), search], 'usage': {}}]
+
+    peto.reply = reply
+    monkeypatch.chdir(project)
+    config.save({'server': peto.url, 'token': 'test'})
+    answers = ['/model haiku']
+    for effort in efforts:
+        answers.extend([f'/effort {effort}', 'chào'])
+    ui = FakeUI(answers=[*answers, '/effort none', '/model sonnet', 'tiếp', '/thoat'])
+    assert cli.session(ui) == 0
+    requests = [r['body'] for r in peto.requests if r['path'] == '/api/agent/step']
+    assert [r['effort'] for r in requests] == [*efforts, 'max']
+    assert [r['model'] for r in requests] == ['haiku'] * 5 + ['sonnet']
+    assert native in requests[1]['input'], 'lượt sau giữ nguyên block của Claude'
+    assert not any(i.get('type') in {'reasoning', 'web_search_call'} for i in requests[-1]['input'])
+    assert 'Model hiện tại chỉ nhận' in ui.text
+    assert config.load()['model'] == 'sonnet' and config.load()['effort'] == 'max'
+    saved = history.load(project, peto.url)
+    assert saved is not None and saved.model == 'sonnet'
+    assert search in saved.items, 'kết quả tìm web không làm hỏng /resume'
+    assert cli._supported_efforts(haiku) == efforts
+
+
 def test_switching_models_drops_what_only_the_old_model_can_read(project, peto):
     session = Session(Client(peto.url, "peto_token_thu"), Workspace(project), FakeUI())
     session.items = [

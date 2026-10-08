@@ -1373,6 +1373,27 @@ describe('Chế độ nhập vai', () => {
 });
 
 describe('Chọn model', () => {
+  it('Haiku có đủ năm effort, không có none; đổi từ Luna bỏ mức không hỗ trợ', async () => {
+    localStorage.setItem('peto-model', 'luna');
+    localStorage.setItem('peto-effort', 'none');
+    signIn([
+      MODELS[0],
+      { ...MODELS[1], efforts: ['none', 'low', 'medium', 'high', 'xhigh', 'max'] },
+      { key: 'haiku', label: 'Haiku 5.5', description: 'Nhanh, của Claude', step_cost: 1,
+        efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
+    ]);
+    vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers) => handlers.onError?.('Giữ bản nháp'));
+    await openApp();
+    fireEvent.click(screen.getByRole('button', { name: 'Model: 6 Luna' }));
+    fireEvent.click(within(screen.getByRole('menu', { name: 'Model' })).getByRole('menuitemradio', { name: /Haiku 5.5/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Mức suy nghĩ: Tự động' }));
+    const menu = screen.getByRole('menu', { name: 'Mức suy nghĩ' });
+    expect(within(menu).getAllByRole('menuitemradio')).toHaveLength(6);
+    expect(within(menu).queryByRole('menuitemradio', { name: 'Không suy luận' })).toBeNull();
+    fireEvent.click(within(menu).getByRole('menuitemradio', { name: 'Tối đa' }));
+    expect(await send('chào')).toMatchObject({ model: 'haiku', effort: 'max' });
+    expect(localStorage.getItem('peto-model')).toBe('haiku');
+  });
   it('Luna có đầy đủ effort, đổi về Peto không gửi mức không hỗ trợ', async () => {
     localStorage.setItem('peto-model', 'luna');
     signIn([

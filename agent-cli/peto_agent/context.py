@@ -20,12 +20,18 @@ def text_of(item):
 def compact_prefix(items, keep=24):
     pending = set()
     boundary = 0
+    native_end = 0
     for index, item in enumerate(items[:max(0, len(items) - keep)]):
+        # Block Claude có chữ ký đi cùng bản chữ/lệnh dành cho CLI; không cắt nhóm này làm đôi khi tóm tắt.
+        if item.get("type") == "reasoning" and item.get("anthropic_model"):
+            count = item.get("anthropic_output_count", 0)
+            if isinstance(count, int) and 0 <= count <= len(items):
+                native_end = index + count
         if item.get("type") == "function_call":
             pending.add(item.get("call_id"))
         elif item.get("type") == "function_call_output":
             pending.discard(item.get("call_id"))
-        if not pending:
+        if not pending and index >= native_end:
             boundary = index + 1
     if boundary < 4:
         return [], items
