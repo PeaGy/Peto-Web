@@ -972,11 +972,18 @@ the gallery and collapses to a bar (a library button showing the newest image, a
 button) until the prompt is focused or the options button is pressed. A tap outside or a submit collapses it
 and blurs the prompt so the phone keyboard hides.
 
-Reference edits expose a collapsed "Gợi ý chỉnh sửa" section in the composer, even with existing jobs.
-Its source-aware suggestions append to the draft without submitting or replacing the user's text. Reordering
+Reference edits use a compact strip of thumbnail attachments. Do not restore the reference-count guidance,
+"Gợi ý chỉnh sửa" section, suggestion buttons or their explanatory text: the owner explicitly removed them.
+Desktop thumbnails are 56px with a remove button; numbered badges and an accessible first-source action
+appear only for multiple sources. File names stay in tooltips instead of large text cards. Reordering
 or removing a reference that renumbers others shows a dismissible reminder to check numbered references in
 the prompt. Ratio options include purpose hints. The preview's "Thêm làm tham chiếu" appends the viewed
-image to the current draft; "Sửa ảnh này" starts an edit from that image. `MeasuredImage.tsx` reads actual
+image to the current draft; "Dùng ảnh này" replaces the draft's sources with the viewed image and fills its
+prompt from the saved job. It keeps the viewer and large canvas open, replaces the chip/single edit field
+with the shared studio composer, and focuses the prompt. Attachments appear above the text; existing
+quality/count/ratio controls sit in its footer, and no request is made until Send. The right panel's ratio
+and palette prompt actions operate on this same draft. The suspended library must not render another
+composer at the same time, to avoid duplicate input IDs and competing refs. `MeasuredImage.tsx` reads actual
 natural dimensions after loading for library tiles, previews and comparison panes; it hides previous-image
 metadata when the URL changes, rather than guessing dimensions from requested resolution or aspect ratio.
 
@@ -1025,7 +1032,9 @@ Desktop controls are 38px high; viewer panel text is 14px, metadata 12px, and ed
 input text at least 16px. Escape dismisses one library layer at a time; cancellation of the nested delete
 confirmation must not also cancel the selection. Resizing across the desktop/mobile boundary switches
 dialog modes without clearing the open library's filters.
-The viewer sends one edit result through the existing background/idempotency/uncertain-request path.
+The viewer's direct edit field sends one edit result; its "Dùng ảnh này" composer uses the existing studio
+controls and request path. Sending that draft returns to the gallery for pending/error feedback. Both use
+the existing background/idempotency/uncertain-request path, without issuing a request just to attach an image.
 No segmentation, AI mask/inpainting guarantee, transparent-background removal, video or tag manager is
 implemented here; do not add placeholder buttons that pretend those features are available.
 

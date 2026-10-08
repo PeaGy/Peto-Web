@@ -9,6 +9,7 @@ import ImagineLibrary from "./ImagineLibrary";
 import EditHistory from "./EditHistory";
 import ImageWorkspace from "./ImageWorkspace";
 import StudioMenu from "./StudioMenu";
+import StudioIcon from "./studioIcons";
 import { LoadingIndicator } from '../../shared/ui/LoadingIndicator';
 import { COMPACT_QUERY } from "../companion/characters/characterView";
 
@@ -168,7 +169,8 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
   const [loadFailed, setLoadFailed] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [lightbox, setLightbox] = useState<{ job: ImagineJob; index: number; original?: boolean; sourceIndex?: number } | null>(null);
+  const [lightbox, setLightbox] = useState<{ job: ImagineJob; index: number; original?: boolean; sourceIndex?: number; using?: boolean } | null>(null);
+  const viewerOpen = !!lightbox;
   const [deleteTarget, setDeleteTarget] = useState<ImagineJob | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -241,8 +243,8 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
     // Desktop dùng vùng nội dung hiện tại để thanh bên thật vẫn thao tác được.
     // Đóng trước khi đổi chế độ; trình duyệt không cho showModal trên dialog đã show.
     dialog.close();
-    if (active && lightbox) { if (compact) dialog.showModal(); else dialog.show(); }
-  }, [active, lightbox, compact]);
+    if (active && viewerOpen) { if (compact) dialog.showModal(); else dialog.show(); }
+  }, [active, viewerOpen, compact]);
   useEffect(() => {
     if (active && deleteTarget) deleteRef.current?.showModal();
     else deleteRef.current?.close();
@@ -385,10 +387,14 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
     flushSync(() => {
       setReadingSource(false); setSources(append ? [...sources, draft] : [draft]);
       setSourceOrderChanged(append && sourceOrderChanged); setExpanded(true); setError(null);
-      if (!append) { setPrompt(""); setQuality(job.quality); setResolution(job.resolution); setAspect("auto"); }
-      setLightbox(null); setLibraryOpen(false);
+      if (!append) {
+        setPrompt(job.prompt); setQuality(job.quality); setResolution(job.resolution); setAspect("auto");
+        // Dùng ảnh ngay trong khung xem, giữ canvas và thay ô sửa bằng bản nháp có ảnh đính kèm.
+        setLightbox(current => current ? { ...current, using: true } : current);
+      } else { setLightbox(null); setLibraryOpen(false); }
     });
-    lightboxRef.current?.close(); textareaRef.current?.focus();
+    if (append) lightboxRef.current?.close();
+    textareaRef.current?.focus();
   }
   async function submitWorkspaceEdit(job: ImagineJob, image: ImagineImage, text: string, ratio: string, data?: string) {
     if (controlsDisabled || inFlight.current) return;
@@ -460,7 +466,7 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
     setError(null);
     setGenerating(true);
     // Điện thoại: gửi rồi thì thu thanh lại và ẩn bàn phím để thấy ảnh đang tạo.
-    setLibraryOpen(false);
+    setLightbox(null); setLibraryOpen(false);
     const phone = isCompact();
     if (phone) { setExpanded(false); textareaRef.current?.blur(); }
     galleryRef.current?.scrollTo({ top: 0 });
@@ -518,17 +524,7 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
   const lightboxLiked = !!lightboxImage && (previewLikes[lightboxImage.id] ?? listedImage?.liked ?? lightboxImage.liked ?? false);
   const latestImage = jobs.find((job) => job.images.length > 0)?.images[0];
   const controlsDisabled = generating || !!pendingIds || !!uncertainRequest || loading || loadFailed || readingSource;
-  const suggestions = [
-    { label: "Đổi nền", prompt: "Đổi nền ảnh 1 thành khu vườn, giữ chủ thể và bố cục chính." },
-    ...(sources.length > 1 ? [{ label: "Ghép chủ thể", prompt: "Lấy chủ thể ở ảnh 1 và đặt vào bối cảnh ảnh 2, phối ánh sáng cho tự nhiên." }] : []),
-    { label: "Tham khảo phong cách", prompt: sources.length > 1 ? "Áp dụng phong cách của ảnh 2 cho ảnh 1, giữ bố cục và chủ thể của ảnh 1." : "Chuyển ảnh 1 thành tranh màu nước, giữ bố cục và chủ thể." },
-    { label: "Thêm chữ", prompt: 'Thêm dòng chữ "Peto" vào ảnh 1 ở vị trí dễ đọc, không che chủ thể.' },
-  ];
-  function applySuggestion(text: string) {
-    setPrompt(current => current.includes(text) ? current : current.trim() ? `${current.trimEnd()}\n${text}` : text);
-    setExpanded(true);
-    textareaRef.current?.focus();
-  }
+  const usingImage = !!lightbox?.using;
   // Như Grok: thanh thu gọn mời gõ, còn khung đang mở thì nói rõ cần nhập gì.
   const showFull = expanded || !compact;
   const placeholder = source
@@ -536,7 +532,17 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
     : showFull ? "Nhập để tạo hình ảnh" : "Gõ để tưởng tượng";
   const sendLabel = generating ? source ? "Đang sửa…" : "Đang tạo…" : source ? "Sửa ảnh" : "Tạo ảnh";
 
-  const studioDock = <div ref={dockRef} className={"studio-dock" + (expanded ? " expanded" : "")}>
+  const studioOptions = <div ref={optionsRef} className="studio-options" role="group" aria-label="Tùy chọn tạo ảnh">
+    <div className="seg" role="group" aria-label="Mức chi tiết">
+      {(["low", "medium"] as const).map((value) => <button type="button" key={value} className={quality === value ? "on" : ""} aria-pressed={quality === value} disabled={controlsDisabled} title={value === "low" ? "Tạo nhanh, phù hợp để thử ý tưởng" : "Dành thêm thời gian cho chi tiết"} onClick={() => setQuality(value)}>{qualityLabel(value)}</button>)}
+    </div>
+    <StudioMenu label="Số ảnh" value={count} icon={<PhotoIcon />} disabled={controlsDisabled} onChange={setCount}
+      options={COUNTS.map((n) => ({ value: n, label: `${n} ảnh` }))} />
+    <StudioMenu label="Tỉ lệ" value={aspect} icon={<RatioIcon value={aspect} />} disabled={controlsDisabled} onChange={setAspect}
+      columns={2} align="end" options={RATIOS.map((ratio) => ({ value: ratio, label: ratioLabel(ratio), description: ratio === "auto" && !source ? "Peto chọn khung hình" : RATIO_HINTS[ratio], icon: <RatioIcon value={ratio} /> }))} />
+  </div>;
+
+  const studioDock = <div ref={dockRef} className={"studio-dock" + (expanded ? " expanded" : "") + (usingImage ? " workspace-studio" : "")}>
       {uncertainRequest && <div className="error" role="status">Chưa xác nhận được lượt vừa gửi. <button type="button" className="studio-text-button" disabled={checkingRequest} onClick={() => void checkUnconfirmed()}>{checkingRequest ? "Đang kiểm tra…" : "Kiểm tra lượt vừa gửi"}</button></div>}
       {error && <div className="error" role="alert">{error}<button type="button" className="dismiss-error" aria-label="Đóng thông báo" onClick={() => setError(null)}>×</button></div>}
       <form className={"composer-wrap studio-composer-wrap" + (draggingSource ? " dragging" : "")} onSubmit={(event) => { event.preventDefault(); void generate(); }}
@@ -545,27 +551,20 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
         onDragLeave={(event) => { event.preventDefault(); dragDepth.current = Math.max(0, dragDepth.current - 1); if (!dragDepth.current) setDraggingSource(false); }}
         onDrop={(event) => { event.preventDefault(); dragDepth.current = 0; setDraggingSource(false); void chooseSource(event.dataTransfer.files); }}>
         {draggingSource && <div className="drop-hint">Thả ảnh vào đây để Peto chỉnh sửa</div>}
-        <div ref={optionsRef} className="studio-options" role="group" aria-label="Tùy chọn tạo ảnh">
-          <div className="seg" role="group" aria-label="Mức chi tiết">
-            {(["low", "medium"] as const).map((value) => <button type="button" key={value} className={quality === value ? "on" : ""} aria-pressed={quality === value} disabled={controlsDisabled} title={value === "low" ? "Tạo nhanh, phù hợp để thử ý tưởng" : "Dành thêm thời gian cho chi tiết"} onClick={() => setQuality(value)}>{qualityLabel(value)}</button>)}
-          </div>
-          <StudioMenu label="Số ảnh" value={count} icon={<PhotoIcon />} disabled={controlsDisabled} onChange={setCount}
-            options={COUNTS.map((n) => ({ value: n, label: `${n} ảnh` }))} />
-          <StudioMenu label="Tỉ lệ" value={aspect} icon={<RatioIcon value={aspect} />} disabled={controlsDisabled} onChange={setAspect}
-            columns={2} align="end" options={RATIOS.map((ratio) => ({ value: ratio, label: ratioLabel(ratio), description: ratio === "auto" && !source ? "Peto chọn khung hình" : RATIO_HINTS[ratio], icon: <RatioIcon value={ratio} /> }))} />
-        </div>
+        {!usingImage && studioOptions}
         {/* Nút thư viện (hiện ảnh mới nhất) và nút tùy chọn chỉ hiện ở thanh thu gọn trên điện thoại. */}
         <button type="button" className="studio-library" aria-label="Mở thư viện ảnh" onClick={() => setLibraryOpen(true)}>
           {latestImage ? <img src={latestImage.url} alt="" /> : <PhotoIcon />}
         </button>
         <div className="composer imagine-composer">
           <input ref={fileRef} className="source-file-input" type="file" multiple accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp" aria-label="Chọn ảnh để sửa" disabled={controlsDisabled} onChange={(event) => { const files = Array.from(event.target.files ?? []); event.target.value = ""; void chooseSource(files); }} />
-          {sources.length > 0 && <div className="source-collection"><div className="source-guidance">{sources.length}/5 ảnh tham chiếu · Khi để Tự động, tỉ lệ theo ảnh đầu.</div>
+          {sources.length > 0 && <div className="source-collection">
           {sourceOrderChanged && <div className="source-order-notice" role="status">Số thứ tự ảnh đã thay đổi. Bạn kiểm tra lại “ảnh 1”, “ảnh 2”… trong mô tả nhé.<button type="button" aria-label="Đóng nhắc thứ tự ảnh" onClick={() => setSourceOrderChanged(false)}>×</button></div>}
-          <details className="edit-tools"><summary>Gợi ý chỉnh sửa</summary><div className="edit-suggestions">{suggestions.map(item => <button key={item.label} type="button" disabled={controlsDisabled} onClick={() => applySuggestion(item.prompt)}>{item.label}</button>)}</div><p>Gợi ý được thêm vào mô tả; bạn sửa nội dung trước khi gửi.</p></details>
-          <div className="source-strip" ref={sourceStripRef}>{sources.map((image, index) => <div className="source-preview" key={image.imageId ?? image.draftId} tabIndex={-1} role="group" aria-label={`Ảnh tham chiếu ${index + 1}`}>
-            <img src={image.preview} alt={sources.length === 1 ? "Ảnh gốc để chỉnh sửa" : `Ảnh tham chiếu ${index + 1}`} /><div><strong>Ảnh {index + 1}</strong><span title={image.name}>{image.name}</span>{index > 0 && <button type="button" className="source-first" disabled={controlsDisabled} onClick={() => moveSourceFirst(index)}>Đặt làm ảnh đầu</button>}</div>
-            <button type="button" disabled={generating || !!pendingIds} aria-label={sources.length === 1 ? "Gỡ ảnh gốc" : `Gỡ ảnh ${index + 1}`} onClick={() => clearSource(index)}>×</button>
+          <div className="source-strip" ref={sourceStripRef}>{sources.map((image, index) => <div className="source-preview" key={image.imageId ?? image.draftId} tabIndex={-1} role="group" aria-label={`Ảnh tham chiếu ${index + 1}`} title={image.name}>
+            <img src={image.preview} alt={sources.length === 1 ? "Ảnh gốc để chỉnh sửa" : `Ảnh tham chiếu ${index + 1}`} />
+            {sources.length > 1 && <span className="source-index" aria-hidden="true">{index + 1}</span>}
+            {index > 0 && <button type="button" className="source-first" aria-label="Đặt làm ảnh đầu" title="Đặt làm ảnh đầu" disabled={controlsDisabled} onClick={() => moveSourceFirst(index)}><StudioIcon name="arrowUp" /></button>}
+            <button type="button" className="source-remove" disabled={generating || !!pendingIds} aria-label={sources.length === 1 ? "Gỡ ảnh gốc" : `Gỡ ảnh ${index + 1}`} onClick={() => clearSource(index)}><StudioIcon name="close" /></button>
           </div>)}</div></div>}
           <textarea id="image-prompt" ref={textareaRef} value={prompt} rows={2} aria-label={source ? "Bạn muốn sửa gì trong ảnh?" : "Bức ảnh bạn muốn tạo"} placeholder={placeholder}
             disabled={generating || !!pendingIds} onFocus={() => setExpanded(true)} onChange={(event) => setPrompt(event.target.value)}
@@ -581,6 +580,7 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
             <div className="seg" role="group" aria-label="Độ phân giải">
               {(["1k", "2k"] as const).map((value) => <button type="button" key={value} className={resolution === value ? "on" : ""} aria-pressed={resolution === value} disabled={controlsDisabled} onClick={() => setResolution(value)}>{value.toUpperCase()}</button>)}
             </div>
+            {usingImage && studioOptions}
             <button type="submit" className="studio-send" aria-label={sendLabel} title={sendLabel} disabled={!prompt.trim() || controlsDisabled}>
               {generating ? <span aria-hidden="true"><LoadingIndicator variant="icon" label="Đang tạo ảnh" /></span> : <ArrowUpIcon />}
             </button>
@@ -642,7 +642,7 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
 
     {!libraryOpen && !lightbox && studioDock}
 
-    <ImagineLibrary composer={studioDock} open={active && libraryOpen} modal={compact} suspended={!!lightbox} jobs={jobs} onClose={() => setLibraryOpen(false)}
+    <ImagineLibrary composer={lightbox ? undefined : studioDock} open={active && libraryOpen} modal={compact} suspended={!!lightbox} jobs={jobs} onClose={() => setLibraryOpen(false)}
       onOpenImage={(job, index) => setLightbox({ job, index })} onDeleteImages={removeImages}
       onUseSources={controlsDisabled ? undefined : addLibrarySources} sourceLimit={5 - sources.length}
       hasMore={hasMore} loadingMore={loadingMore} onLoadMore={() => void loadMore()} />
@@ -650,7 +650,11 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
       {lightbox && lightboxImage && <ImageWorkspace key={lightboxImage.id} job={lightbox.job} image={lightboxImage} index={lightbox.index}
         original={!!lightbox.original} liked={lightboxLiked} disabled={controlsDisabled} likeError={likeError}
         canAdd={sources.length < 5} alreadyAdded={sources.some(source => source.imageId === lightboxImage.id)}
-        onClose={() => setLightbox(null)} onNavigate={index => setLightbox({ ...lightbox, index })}
+        draft={usingImage ? { composer: studioDock, aspect, onAspectChange: setAspect, onAppendPrompt: text => {
+          setPrompt(current => current.trim() ? `${current.trimEnd()}\n${text}` : text);
+          setExpanded(true); textareaRef.current?.focus();
+        } } : undefined}
+        onClose={() => setLightbox(null)} onNavigate={index => setLightbox({ ...lightbox, index, using: false })}
         onLike={() => void toggleLike(lightboxImage.id, !lightboxLiked)}
         onUse={data => prepareWorkspaceSource(lightbox.job, lightboxImage, data, false)}
         onAdd={data => prepareWorkspaceSource(lightbox.job, lightboxImage, data, true)}

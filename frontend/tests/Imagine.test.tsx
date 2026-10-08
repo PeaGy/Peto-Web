@@ -66,17 +66,17 @@ it('từ chối ảnh thứ sáu mà giữ nguyên năm ảnh và mô tả', asy
   expect((input as HTMLTextAreaElement).value).toBe('Giữ mô tả này');
 });
 
-it('gợi ý theo nhiều nguồn giữ mô tả đang viết và không tự gửi; đổi thứ tự có lời nhắc', async () => {
+it('ảnh đính kèm không có hướng dẫn thừa; đổi thứ tự giữ mô tả và không tự gửi', async () => {
   vi.mocked(api.listImagineJobs).mockResolvedValue([job]);
   await open();
   fireEvent.change(screen.getByLabelText('Chọn ảnh để sửa'), { target: { files: [sourceFile(), sourceFile()] } });
   await screen.findByRole('img', { name: 'Ảnh tham chiếu 2' });
   const input = screen.getByLabelText('Bạn muốn sửa gì trong ảnh?') as HTMLTextAreaElement;
   fireEvent.change(input, { target: { value: 'Giữ chiếc nơ màu đỏ.' } });
-  fireEvent.click(screen.getByText('Gợi ý chỉnh sửa'));
-  fireEvent.click(screen.getByRole('button', { name: 'Ghép chủ thể' }));
-  expect(input.value).toContain('Giữ chiếc nơ màu đỏ.\nLấy chủ thể ở ảnh 1');
-  expect(input.value).toContain('bối cảnh ảnh 2');
+  expect(screen.queryByText('Gợi ý chỉnh sửa')).toBeNull();
+  expect(screen.queryByText(/ảnh tham chiếu · Khi để Tự động/)).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Đổi nền' })).toBeNull();
+  expect(input.value).toBe('Giữ chiếc nơ màu đỏ.');
   expect(api.createImagineJob).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: 'Đặt làm ảnh đầu' }));
   expect(screen.getByRole('status').textContent).toContain('Số thứ tự ảnh đã thay đổi');
@@ -160,7 +160,7 @@ it('mở lịch sử tải đúng ảnh cha nằm ngoài trang thư viện hiệ
   fireEvent.click(original);
   const dialog = screen.getByRole('dialog', { name: 'Xem ảnh đã tạo' });
   expect(within(dialog).getByRole('img').getAttribute('src')).toBe(job.images[1].url);
-  fireEvent.click(within(dialog).getByRole('button', { name: 'Sửa ảnh này' }));
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Dùng ảnh này' }));
   expect(screen.getByRole('img', { name: 'Ảnh gốc để chỉnh sửa' }).getAttribute('src')).toBe(job.images[1].url);
 });
 
@@ -362,10 +362,13 @@ it('sửa đúng ảnh đã chọn trong bộ ảnh mà không tải lên lần 
   vi.mocked(api.createImagineJob).mockResolvedValue({ ...editedJob, id: 'edited-2' });
   await open();
   fireEvent.click(screen.getByRole('button', { name: /Xem ảnh 2:/ }));
-  fireEvent.click(screen.getByRole('button', { name: 'Sửa ảnh này' }));
-  expect(screen.queryByRole('dialog')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Dùng ảnh này' }));
+  expect(screen.getByRole('dialog', { name: 'Xem ảnh đã tạo' })).toBeTruthy();
   expect(screen.getByRole('img', { name: 'Ảnh gốc để chỉnh sửa' }).getAttribute('src')).toBe(job.images[1].url);
   expect(document.activeElement).toBe(screen.getByLabelText('Bạn muốn sửa gì trong ảnh?'));
+  expect((screen.getByLabelText('Bạn muốn sửa gì trong ảnh?') as HTMLTextAreaElement).value).toBe(job.prompt);
+  expect(api.createImagineJob).not.toHaveBeenCalled();
+  expect(screen.queryByRole('button', { name: 'Dùng ảnh này' })).toBeNull();
   fireEvent.change(screen.getByLabelText('Bạn muốn sửa gì trong ảnh?'), { target: { value: 'Đổi nền' } });
   fireEvent.click(screen.getByRole('button', { name: 'Sửa ảnh', exact: true }));
   await screen.findByText('Đã chỉnh sửa');

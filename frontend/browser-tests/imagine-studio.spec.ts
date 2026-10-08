@@ -41,11 +41,9 @@ test('nhiều ảnh tham chiếu, tải lại lượt đang tạo và so sánh t
   await library.getByRole('button', { name: 'Dùng làm tham chiếu' }).click();
   await page.getByRole('button', { name: 'Đặt làm ảnh đầu' }).last().click();
   await expect(page.getByText(/Số thứ tự ảnh đã thay đổi/)).toBeVisible();
-  await page.getByText('Gợi ý chỉnh sửa', { exact: true }).click();
-  await page.getByRole('button', { name: 'Ghép chủ thể', exact: true }).click();
-  await expect(page.getByLabel('Bạn muốn sửa gì trong ảnh?')).toHaveValue(/Lấy chủ thể ở ảnh 1/);
+  await expect(page.getByText('Gợi ý chỉnh sửa', { exact: true })).toHaveCount(0);
+  await expect(page.getByText(/ảnh tham chiếu · Khi để Tự động/)).toHaveCount(0);
   expect(posts).toBe(0);
-  await page.getByText('Gợi ý chỉnh sửa', { exact: true }).click();
   await page.getByLabel('Bạn muốn sửa gì trong ảnh?').fill('Lấy chủ thể ảnh 1 và nền ảnh 2');
   await page.getByRole('button', { name: 'Tỉ lệ: Tự động' }).click();
   await expect(page.getByRole('menuitemradio', { name: '9:16', exact: true })).toContainText('Hình nền điện thoại');

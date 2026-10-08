@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type PointerEvent } from 'react';
+import { useEffect, useRef, useState, type PointerEvent, type ReactNode } from 'react';
 import type { ImagineImage, ImagineJob } from '../../shared/api/api';
 import { imagineSources } from '../../shared/api/api';
 import ImageComparison from './ImageComparison';
@@ -19,11 +19,12 @@ const COLORS = ['#ffffff', '#000000', '#f04444', '#fb8917', '#f7cf1b', '#21be65'
 const RATIOS = ['auto', '1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3', '2:1', '1:2', '19.5:9', '9:19.5', '20:9', '9:20', '21:9', '5:2'];
 const clamp = (n: number, min = 0, max = 1) => Math.max(min, Math.min(max, n));
 
-export default function ImageWorkspace({ job, image, index, original, liked, disabled, canAdd, alreadyAdded, likeError, onClose, onNavigate, onLike, onUse, onAdd, onSubmit }: {
+export default function ImageWorkspace({ job, image, index, original, liked, disabled, canAdd, alreadyAdded, likeError, draft, onClose, onNavigate, onLike, onUse, onAdd, onSubmit }: {
   job: ImagineJob; image: ImagineImage; index: number; original: boolean; liked: boolean; disabled: boolean; canAdd: boolean; alreadyAdded: boolean; likeError: string | null;
   onClose: () => void; onNavigate: (index: number) => void; onLike: () => void;
   onUse: (data?: string) => void; onAdd: (data?: string) => void;
   onSubmit: (prompt: string, aspect: string, data?: string) => Promise<void>;
+  draft?: { composer: ReactNode; aspect: string; onAspectChange: (value: string) => void; onAppendPrompt: (text: string) => void };
 }) {
   const [comparing, setComparing] = useState(false);
   const [tool, setTool] = useState<Tool>('info');
@@ -78,7 +79,10 @@ export default function ImageWorkspace({ job, image, index, original, liked, dis
     if (canvas && context) drawStrokes(context, strokes, canvas.width, canvas.height);
   }, [strokes, dimensions, tool, src]);
 
-  function appendPrompt(text: string) { setPrompt(current => current.trim() ? `${current.trimEnd()}\n${text}` : text); }
+  function appendPrompt(text: string) {
+    if (draft) draft.onAppendPrompt(text);
+    else setPrompt(current => current.trim() ? `${current.trimEnd()}\n${text}` : text);
+  }
   function saveVersion(data: string) {
     const next = [versions[0], ...[...versions.slice(1, version + 1), data].slice(-5)];
     setVersions(next); setVersion(next.length - 1); setStrokes([]); setRedoStrokes([]); setPalette([]); setZoom(1); setNotice('Bản chỉnh sửa chưa lưu vào thư viện. Bạn tải xuống hoặc dùng làm tham chiếu trước khi đóng nhé. Ảnh gốc vẫn được giữ.');
@@ -162,11 +166,11 @@ export default function ImageWorkspace({ job, image, index, original, liked, dis
         </div>
       </div>
       <div className="workspace-edit-dock">
-        <div className="workspace-source-chip"><span title={job.prompt}>{changed ? 'Bản chỉnh sửa · chưa lưu' : job.prompt}</span><button type="button" disabled={blocked} onClick={() => { if (!changed) onUse(); else void execute(async () => onUse(await editData())); }}>Sửa ảnh này</button></div>
+        {draft?.composer ?? <><div className="workspace-source-chip"><span title={job.prompt}>{changed ? 'Bản chỉnh sửa · chưa lưu' : job.prompt}</span><button type="button" disabled={blocked} onClick={() => { if (!changed) onUse(); else void execute(async () => onUse(await editData())); }}>Dùng ảnh này</button></div>
         <form onSubmit={event => { event.preventDefault(); if (prompt.trim() && !blocked) void execute(async () => onSubmit(prompt.trim(), aspect, await editData())); }}>
           <textarea aria-label="Mô tả chỉnh sửa ảnh" placeholder="Mô tả chỉnh sửa bạn muốn thực hiện…" enterKeyHint="send" rows={1} value={prompt} disabled={blocked} onChange={event => setPrompt(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); if (prompt.trim() && !blocked) void execute(async () => onSubmit(prompt.trim(), aspect, await editData())); } }} />
           <button type="submit" disabled={!prompt.trim() || blocked} aria-label="Gửi chỉnh sửa ảnh"><StudioIcon name="arrowUp" /></button>
-        </form>
+        </form></>}
       </div>
       </div>
     </section>
@@ -200,7 +204,7 @@ export default function ImageWorkspace({ job, image, index, original, liked, dis
       </div>
       <div className="workspace-panel-bottom">
         {(version > 0 || versions.length > 1) && <div className="brush-history"><button type="button" aria-label="Hoàn tác chỉnh sửa" disabled={version === 0 || blocked || strokes.length > 0} onClick={() => setVersion(value => value - 1)}><StudioIcon name="undo" /></button><button type="button" aria-label="Làm lại chỉnh sửa" disabled={version === versions.length - 1 || blocked || strokes.length > 0} onClick={() => setVersion(value => value + 1)}><StudioIcon name="redo" /></button></div>}
-        {panelOpen ? <label className="workspace-aspect">Tỉ lệ ảnh <select aria-label="Tỉ lệ ảnh chỉnh sửa" value={aspect} disabled={blocked} onChange={event => setAspect(event.target.value)}>{RATIOS.map(ratio => <option key={ratio} value={ratio}>{ratio === 'auto' ? 'Theo ảnh nguồn' : ratio}</option>)}</select></label> : <button type="button" className="workspace-wide" aria-label="Thiết lập tỉ lệ ảnh" title="Tỉ lệ ảnh" onClick={() => setPanelOpen(true)}><StudioIcon name="aspect" /></button>}
+        {panelOpen ? <label className="workspace-aspect">Tỉ lệ ảnh <select aria-label="Tỉ lệ ảnh chỉnh sửa" value={draft?.aspect ?? aspect} disabled={blocked} onChange={event => { if (draft) draft.onAspectChange(event.target.value); else setAspect(event.target.value); }}>{RATIOS.map(ratio => <option key={ratio} value={ratio}>{ratio === 'auto' ? 'Theo ảnh nguồn' : ratio}</option>)}</select></label> : <button type="button" className="workspace-wide" aria-label="Thiết lập tỉ lệ ảnh" title="Tỉ lệ ảnh" onClick={() => setPanelOpen(true)}><StudioIcon name="aspect" /></button>}
         <button type="button" className="workspace-wide" aria-label="Thêm làm tham chiếu" title="Thêm làm tham chiếu" disabled={blocked || !canAdd || (alreadyAdded && !changed)} onClick={() => { if (!changed) onAdd(); else void execute(async () => onAdd(await editData())); }}><StudioIcon name="plus" /><span>Thêm làm tham chiếu</span></button>
         <button type="button" className="workspace-share" aria-label="Chia sẻ" title="Chia sẻ" disabled={blocked || !ready} onClick={() => void execute(share)}><StudioIcon name="share" /><span>Chia sẻ</span></button>
         <div className="workspace-footer-actions">{!original && <button type="button" className={liked ? 'liked' : ''} aria-label="Thích" title="Thích" aria-pressed={liked} onClick={onLike}><StudioIcon name="heart" /></button>}<a href={src !== image.url ? src : `${image.url}?download=1`} download={src !== image.url ? 'peto-chinh-sua.png' : true} aria-label="Tải ảnh xuống" title="Tải ảnh xuống" onClick={event => { if (strokes.length) { event.preventDefault(); void execute(download); } }}><StudioIcon name="download" /></a></div>

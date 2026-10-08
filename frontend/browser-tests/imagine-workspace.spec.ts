@@ -196,7 +196,7 @@ test('mô tả dài và nút thao tác vẫn đọc/bấm được ở màn hìn
   const viewer = page.getByRole('dialog', { name: 'Xem ảnh đã tạo' });
   await expect(viewer.locator('.workspace-prompt')).toHaveText(prompt);
   await expect(viewer.locator('.workspace-source-chip span')).toHaveAttribute('title', prompt);
-  const edit = viewer.getByRole('button', { name: 'Sửa ảnh này', exact: true });
+  const edit = viewer.getByRole('button', { name: 'Dùng ảnh này', exact: true });
   const bounds = (await edit.boundingBox())!;
   expect(bounds.x).toBeGreaterThanOrEqual(0);
   expect(bounds.x + bounds.width).toBeLessThanOrEqual(320);
@@ -408,4 +408,59 @@ test('thư viện desktop giữ sidebar, font dự án và các lớp Escape sau
   await page.keyboard.press('Escape');
   await expect(library).not.toBeVisible();
   await expect(page.locator('.imagine-gallery')).toBeVisible();
+});
+
+test('Dùng ảnh này giữ canvas và mở ô nhập gọn với đúng ảnh đã chọn', async ({ page }, testInfo) => {
+  const { posts } = await setup(page);
+  if (testInfo.project.name === 'pc') await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('/#imagine');
+  await page.getByRole('button', { name: 'Thư viện', exact: true }).last().click();
+  const library = page.getByRole('dialog', { name: 'Thư viện ảnh' });
+  await library.locator('[data-image-id="portrait-two"]').click();
+  const viewer = page.getByRole('dialog', { name: 'Xem ảnh đã tạo' });
+  await viewer.getByRole('button', { name: 'Dùng ảnh này', exact: true }).click();
+  await expect(viewer).toBeVisible();
+  await expect(library).not.toBeVisible();
+  await expect(viewer.locator('.workspace-picture img')).toHaveAttribute('src', '/api/imagine/images/portrait-two');
+  const input = viewer.getByLabel('Bạn muốn sửa gì trong ảnh?');
+  await expect(input).toBeFocused();
+  await expect(input).toHaveValue('Ngôi nhà giữa núi xanh');
+  await expect(viewer.getByRole('img', { name: 'Ảnh gốc để chỉnh sửa' })).toHaveAttribute('src', '/api/imagine/images/portrait-two');
+  await expect(viewer.getByText('Gợi ý chỉnh sửa', { exact: true })).toHaveCount(0);
+  await expect(viewer.getByText(/ảnh tham chiếu · Khi để Tự động/)).toHaveCount(0);
+  await expect(viewer.getByText('Ảnh đã chọn', { exact: true })).toHaveCount(0);
+  expect(posts).toHaveLength(0);
+  const form = viewer.locator('.imagine-composer');
+  if (testInfo.project.name === 'pc') {
+    expect((await form.boundingBox())!.height).toBeLessThan(190);
+    expect((await viewer.locator('.source-preview').boundingBox())!.width).toBe(56);
+  }
+  const picture = (await viewer.locator('.workspace-picture').boundingBox())!;
+  expect((await form.boundingBox())!.y).toBeGreaterThanOrEqual(picture.y + picture.height);
+  await noPageOverflow(page);
+  await page.screenshot({ path: testInfo.outputPath('use-image-composer.png') });
+  await input.fill('Giữ ngôi nhà, đổi sang cảnh hoàng hôn');
+  const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+  await viewer.getByLabel('Chọn ảnh để sửa').setInputFiles({ name: 'tham-khao.png', mimeType: 'image/png', buffer: Buffer.from(png, 'base64') });
+  await expect(viewer.getByRole('img', { name: 'Ảnh tham chiếu 2' })).toBeVisible();
+  await viewer.getByRole('button', { name: 'Gỡ ảnh 2' }).click();
+  await expect(input).toHaveValue('Giữ ngôi nhà, đổi sang cảnh hoàng hôn');
+  await viewer.getByLabel('Tỉ lệ ảnh chỉnh sửa').selectOption('3:4');
+  await viewer.getByRole('button', { name: 'Tỉ lệ: 3:4' }).click();
+  await viewer.getByRole('menuitemradio', { name: 'Tự động', exact: true }).click();
+  await expect(viewer.getByLabel('Tỉ lệ ảnh chỉnh sửa')).toHaveValue('auto');
+  await viewer.getByRole('button', { name: 'Bảng màu', exact: true }).click();
+  await viewer.getByRole('button', { name: 'Bắc Âu', exact: true }).click();
+  await expect(input).toHaveValue(/Giữ ngôi nhà, đổi sang cảnh hoàng hôn\nÁp dụng bảng màu bắc âu/);
+  await input.fill('Giữ ngôi nhà, đổi sang cảnh hoàng hôn');
+  await viewer.getByRole('button', { name: 'Tỉ lệ: Tự động' }).click();
+  await page.keyboard.press('Escape');
+  await expect(viewer).toBeVisible();
+  await expect(viewer.getByRole('menu', { name: 'Tỉ lệ' })).toHaveCount(0);
+  await noPageOverflow(page);
+  await viewer.getByRole('button', { name: 'Sửa ảnh', exact: true }).click();
+  await expect(viewer).not.toBeVisible();
+  expect(posts).toHaveLength(1);
+  expect(posts[0]).toMatchObject({ prompt: 'Giữ ngôi nhà, đổi sang cảnh hoàng hôn', source_image_id: 'portrait-two', aspect_ratio: 'auto' });
+  expect(posts[0]).not.toHaveProperty('source_image');
 });
