@@ -46,7 +46,8 @@ function canShareFiles() {
  * Mỗi ô là một ảnh kết quả. Bấm để xem, giữ lâu hoặc bấm "Chọn" để chọn nhiều; chuột phải mở menu
  * của riêng ảnh đó. Việc gọi API xóa và cập nhật danh sách nằm ở Imagine, vì bộ ảnh và cột trái dùng chung.
  */
-export default function ImagineLibrary({ open, suspended = false, jobs, onClose, onOpenImage, onDeleteImages, onUseSources, sourceLimit = 5, hasMore, loadingMore, onLoadMore, composer }: {
+export default function ImagineLibrary({ open, modal = false, suspended = false, jobs, onClose, onOpenImage, onDeleteImages, onUseSources, sourceLimit = 5, hasMore, loadingMore, onLoadMore, composer }: {
+  modal?: boolean;
   suspended?: boolean;
   composer?: ReactNode;
   onUseSources?: (images: ImagineImage[]) => void;
@@ -87,20 +88,23 @@ export default function ImagineLibrary({ open, suspended = false, jobs, onClose,
   const picked = Array.from(selected).flatMap(id => tiles.filter(tile => tile.image.id === id));
 
   useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    // Đóng trước khi đổi chế độ lúc thay kích thước, nhưng không xóa bộ lọc đang dùng.
+    dialog.close();
     // Tạm nhường chỗ cho khung xem, giữ bộ lọc và vị trí thư viện khi quay lại.
-    if (open) { if (suspended) dialogRef.current?.close(); else dialogRef.current?.showModal(); return; }
-    dialogRef.current?.close();
+    if (open) { if (!suspended) { if (modal) dialog.showModal(); else dialog.show(); } return; }
     cancelPress(); suppressedClick.current = null;
     setSelecting(false); setSelected(new Set()); setMenu(null); setFilterOpen(false);
     setConfirmIds(null); setNotice(null); setQuery(""); setSearchOpen(false); setLikedOnly(false); setKind("all");
-  }, [open, suspended]);
+  }, [open, modal, suspended]);
   useLayoutEffect(() => {
     const dialog = dialogRef.current, dock = dialog?.querySelector<HTMLElement>(".studio-dock");
-    if (!open || !dialog || !dock || typeof ResizeObserver === "undefined") return;
+    if (!open || suspended || !dialog || !dock || typeof ResizeObserver === "undefined") return;
     const measure = () => dialog.style.setProperty("--studio-dock-height", `${dock.offsetHeight}px`);
     measure(); const observer = new ResizeObserver(measure); observer.observe(dock);
     return () => observer.disconnect();
-  }, [open, selecting]);
+  }, [open, selecting, suspended, modal]);
   useEffect(() => {
     if (confirmIds) confirmRef.current?.showModal();
     else confirmRef.current?.close();
@@ -214,14 +218,26 @@ export default function ImagineLibrary({ open, suspended = false, jobs, onClose,
     }
   }
 
-  return <dialog ref={dialogRef} className="imagine-library-view" aria-label="Thư viện ảnh" onCancel={(event) => {
+  function dismissLayer() {
     // Escape đóng từng lớp một: menu, bảng lọc, chế độ chọn, rồi mới tới thư viện.
-    event.preventDefault();
     if (menu) setMenu(null);
     else if (filterOpen) setFilterOpen(false);
     else if (selecting) exitSelecting();
     else onClose();
-  }}>
+  }
+
+  return <dialog ref={dialogRef} className="imagine-library-view" aria-label="Thư viện ảnh" aria-modal={modal}
+    onCancel={event => {
+      // Sự kiện từ hộp xác nhận chỉ đóng hộp đó, giữ nguyên ảnh đang chọn.
+      if (event.target !== event.currentTarget) return;
+      event.preventDefault(); dismissLayer();
+    }}
+    onKeyDown={event => {
+      // Dialog desktop không có sự kiện cancel tự động; khung xác nhận xóa tự xử lý Escape.
+      if (!modal && !confirmIds && event.key === 'Escape' && !event.defaultPrevented) {
+        event.preventDefault(); event.stopPropagation(); dismissLayer();
+      }
+    }}>
     {open && <>
       <div className="library-top">
         <div className="library-top-left">

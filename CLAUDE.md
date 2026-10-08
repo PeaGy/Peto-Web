@@ -980,7 +980,10 @@ image to the current draft; "Sửa ảnh này" starts an edit from that image. `
 natural dimensions after loading for library tiles, previews and comparison panes; it hides previous-image
 metadata when the URL changes, rather than guessing dimensions from requested resolution or aspect ratio.
 
-Both desktop and mobile can open `ImagineLibrary.tsx`, a full-screen `<dialog>`. It shows output tiles, searches
+`ImagineLibrary.tsx` opens as a non-modal `<dialog>` within Imagine on desktop, beside the existing app
+sidebar; on mobile it remains a full-screen modal. The real sidebar stays usable and can collapse/expand
+in both the desktop library and viewer. The gallery behind either view is hidden from keyboard navigation.
+It shows output tiles, searches
 loaded prompts ignoring Vietnamese diacritics via a top search toggle, and offers medium/small square tiles
 (localStorage), All/Liked tabs and created/edited filters. Desktop tiles stay bounded to 240–360px (medium) or
 180–240px (small), even with only one image; mobile retains 2/3 columns. Selection/download/delete actions
@@ -1007,15 +1010,21 @@ The owner's latest desktop screenshots supersede the earlier interpretation of t
 info/palette/crop/brush belong in a horizontal row at the top of the right panel. Keep the actual Peto
 sidebar visible and usable; never create another navigation sidebar or hide it with a desktop modal.
 Back sits at the top-left of the main area, zoom at the top-right. The composer is centered below the
-canvas, up to 940px of usable width regardless of portrait width. Photos retain their aspect ratio and
+canvas, up to 760px of usable width in an 800px dock regardless of portrait width. Photos retain their aspect ratio and
 fit the available height, with extra top clearance when the central area is narrow. Collapsing the right
-panel leaves a 72px rail with the existing aspect/reference/share/like/download actions, and an expand
+panel leaves a 60px rail (72px with a coarse pointer) with the existing aspect/reference/share/like/download actions, and an expand
 button; it does not add unavailable Grok actions. The full panel groups actions at its bottom. The reaction
 row has like/download only: no X social action or duplicate close button. Back closes the viewer. Mobile gives the
 image more height and scrolls the detail panel below; the body grid must use `minmax(0,1fr)` to prevent
 its controls expanding beyond narrow screens. Opening the viewer suspends the library dialog without
 resetting its search/filter state; Back/Escape restores it. Saved-version thumbnails and mouse-wheel zoom remain
 in the plan; do not invent a saved-history strip from `job.images`.
+Library and viewer inherit the project's body font, including native buttons, inputs and selects.
+Desktop controls are 38px high; viewer panel text is 14px, metadata 12px, and edit text 16px in a
+60px-high composer. The panel is bounded to 280–360px. Keep touch targets at least 44px and touch
+input text at least 16px. Escape dismisses one library layer at a time; cancellation of the nested delete
+confirmation must not also cancel the selection. Resizing across the desktop/mobile boundary switches
+dialog modes without clearing the open library's filters.
 The viewer sends one edit result through the existing background/idempotency/uncertain-request path.
 No segmentation, AI mask/inpainting guarantee, transparent-background removal, video or tag manager is
 implemented here; do not add placeholder buttons that pretend those features are available.

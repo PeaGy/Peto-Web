@@ -63,7 +63,7 @@ test('thư viện có ô ảnh nhỏ và khung xem vừa màn hình trên PC/mob
   const top = (await viewer.locator('.workspace-topbar').boundingBox())!;
   const dock = (await viewer.locator('.workspace-edit-dock').boundingBox())!;
   expect(dock.y).toBeGreaterThanOrEqual(shown.y + shown.height);
-  expect(dock.width).toBeLessThanOrEqual(Math.min(stage.width, 980));
+  expect(dock.width).toBeLessThanOrEqual(Math.min(stage.width, 800));
   await expect(viewer.getByRole('button', { name: 'Đóng khung xem' })).toHaveCount(0);
   if (testInfo.project.name === 'pc') {
     const tools = (await viewer.getByRole('toolbar', { name: 'Công cụ ảnh' }).boundingBox())!;
@@ -73,7 +73,7 @@ test('thư viện có ô ảnh nhỏ và khung xem vừa màn hình trên PC/mob
     expect((await viewer.boundingBox())!.x).toBe(sidebar.x + sidebar.width);
     expect(tools.x).toBeGreaterThanOrEqual(panel.x);
     expect(tools.y).toBeLessThan(16);
-    expect(dock.width).toBe(980);
+    expect(dock.width).toBe(800);
     const back = (await viewer.getByRole('button', { name: 'Quay lại', exact: true }).boundingBox())!;
     const zoom = (await viewer.locator('.workspace-zoom').boundingBox())!;
     expect(back.x + back.width).toBeLessThan(shown.x);
@@ -239,7 +239,7 @@ test('ảnh ngang và zoom giữ nút cùng ô nhập ngoài vùng ảnh', async
   await viewer.getByRole('button', { name: 'Ẩn bảng công cụ' }).click();
   await expect(viewer.locator('.workspace-panel-body')).toBeHidden();
   if (testInfo.project.name === 'pc') {
-    expect((await viewer.locator('.workspace-panel').boundingBox())!.width).toBe(72);
+    expect((await viewer.locator('.workspace-panel').boundingBox())!.width).toBe(60);
     await expect(viewer.getByRole('button', { name: 'Chia sẻ', exact: true })).toBeVisible();
     await viewer.getByRole('button', { name: 'Hiện bảng công cụ' }).click();
   } else {
@@ -273,9 +273,9 @@ test('desktop giữ sidebar thật và bố cục Grok khi mở hoặc thu gọn
     expect(image.width / image.height).toBeCloseTo(1, 2);
     expect(image.y).toBeCloseTo(40, 0);
     expect(image.height).toBeGreaterThan(640);
-    expect(form.width).toBe(940);
+    expect(form.width).toBe(760);
     expect(form.x + form.width / 2).toBeCloseTo(main.x + main.width / 2, 0);
-    expect(back.x).toBe(main.x + 16);
+    expect(back.x).toBe(main.x + 12);
     expect(form.y).toBeGreaterThanOrEqual(image.y + image.height);
     await noPageOverflow(page);
   }
@@ -288,7 +288,7 @@ test('desktop giữ sidebar thật và bố cục Grok khi mở hoặc thu gọn
   await page.screenshot({ path: testInfo.outputPath('desktop-sidebar-collapsed.png') });
   await viewer.getByRole('button', { name: 'Ẩn bảng công cụ' }).click();
   await expect(viewer.locator('.workspace-panel-body')).toBeHidden();
-  expect((await viewer.locator('.workspace-panel').boundingBox())!.width).toBe(72);
+  expect((await viewer.locator('.workspace-panel').boundingBox())!.width).toBe(60);
   await checkLayout();
   await page.screenshot({ path: testInfo.outputPath('desktop-right-rail.png') });
   // Các thao tác đang có vẫn hiện ở dải phải, cùng nguồn tải ảnh ban đầu.
@@ -343,4 +343,69 @@ test('desktop màn hình thấp và đổi kích thước giữ tỉ lệ ảnh 
   await expect(page.locator('.sidebar')).toBeVisible();
   await noPageOverflow(page);
   expect(errors).toEqual([]);
+});
+
+test('thư viện desktop giữ sidebar, font dự án và các lớp Escape sau khi thu gọn', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'pc', 'Thư viện desktop nằm cạnh sidebar thật.');
+  await setup(page);
+  await page.goto('/#imagine');
+  const sidebar = page.locator('.sidebar');
+  await sidebar.getByRole('button', { name: 'Thư viện', exact: true }).click();
+  const library = page.getByRole('dialog', { name: 'Thư viện ảnh' });
+  await expect(library).toBeVisible();
+  await expect(library.evaluate(element => element.matches(':modal'))).resolves.toBe(false);
+  async function checkSidebar() {
+    const nav = (await sidebar.boundingBox())!, lib = (await library.boundingBox())!;
+    expect(lib.x).toBe(nav.x + nav.width);
+    expect(lib.x + lib.width).toBe(1440);
+    await expect(page.locator('.imagine-gallery')).toBeHidden();
+    await noPageOverflow(page);
+  }
+  await checkSidebar();
+  const projectFont = await page.locator('body').evaluate(element => getComputedStyle(element).fontFamily);
+  await expect(library).toHaveCSS('font-family', projectFont);
+  const choose = library.getByRole('button', { name: 'Chọn', exact: true });
+  await expect(choose).toHaveCSS('font-size', '14px');
+  expect((await choose.boundingBox())!.height).toBe(38);
+  await page.screenshot({ path: testInfo.outputPath('desktop-library-sidebar.png') });
+  await sidebar.getByRole('button', { name: 'Thu gọn thanh bên', exact: true }).click();
+  await expect(sidebar).toHaveClass(/collapsed/);
+  await checkSidebar();
+  await library.getByRole('button', { name: 'Bố cục và bộ lọc' }).click();
+  await expect(library.getByLabel('Lọc loại ảnh')).toHaveCSS('font-family', projectFont);
+  await page.keyboard.press('Escape');
+  await expect(library.getByLabel('Lọc loại ảnh')).toHaveCount(0);
+  await expect(library).toBeVisible();
+  const tile = library.locator('[data-image-id="portrait"]');
+  await tile.click({ button: 'right' });
+  await expect(library.getByRole('menu', { name: 'Thao tác với ảnh' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(library.getByRole('menu')).toHaveCount(0);
+  await choose.click();
+  await tile.click();
+  await library.getByRole('button', { name: 'Xóa', exact: true }).click();
+  const confirm = library.getByRole('dialog', { name: 'Xóa ảnh này?' });
+  await expect(confirm).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(confirm).not.toBeVisible();
+  await expect(library.getByRole('button', { name: 'Hủy', exact: true })).toHaveText('1 đã chọn');
+  await library.getByRole('button', { name: 'Hủy', exact: true }).focus();
+  await page.keyboard.press('Escape');
+  await expect(choose).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('desktop-library-collapsed.png') });
+  await tile.click();
+  const viewer = page.getByRole('dialog', { name: 'Xem ảnh đã tạo' });
+  const panel = viewer.locator('.workspace-panel');
+  await expect(viewer).toHaveCSS('font-family', projectFont);
+  await expect(panel).toHaveCSS('font-size', '14px');
+  await expect(viewer.getByLabel('Mô tả chỉnh sửa ảnh')).toHaveCSS('font-family', projectFont);
+  await expect(viewer.getByLabel('Mô tả chỉnh sửa ảnh')).toHaveCSS('font-size', '16px');
+  expect((await panel.boundingBox())!.width).toBeLessThanOrEqual(360);
+  expect((await viewer.getByRole('button', { name: 'Quay lại', exact: true }).boundingBox())!.width).toBe(38);
+  expect((await viewer.locator('.workspace-edit-dock form').boundingBox())!.height).toBe(60);
+  await viewer.getByRole('button', { name: 'Quay lại', exact: true }).click();
+  await library.getByRole('button', { name: 'Quay lại Tạo ảnh' }).focus();
+  await page.keyboard.press('Escape');
+  await expect(library).not.toBeVisible();
+  await expect(page.locator('.imagine-gallery')).toBeVisible();
 });

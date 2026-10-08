@@ -263,11 +263,10 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
   useLayoutEffect(() => { onJobsChange?.(jobs); }, [jobs, onJobsChange]);
   useEffect(() => {
     if (!active || loading || !focusJobId) return;
-    if (lightbox) { setLightbox(null); return; }
-    setLibraryOpen(false);
+    if (lightbox || libraryOpen) { setLightbox(null); setLibraryOpen(false); return; }
     galleryRef.current?.querySelector(`[data-job-id="${focusJobId}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" });
     onFocusHandled?.();
-  }, [active, loading, focusJobId, onFocusHandled, lightbox]);
+  }, [active, loading, focusJobId, onFocusHandled, lightbox, libraryOpen]);
   useEffect(() => writeStored(QUALITY_KEY, quality), [quality]);
   useEffect(() => writeStored(RES_KEY, resolution), [resolution]);
   useEffect(() => writeStored(RATIO_KEY, aspect), [aspect]);
@@ -595,11 +594,11 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
   if (loading) return active ? <LoadingIndicator variant="screen" label="Loading" /> : null;
 
   return <main className={'imagine' + (lightbox ? ' viewer-open' : '')} hidden={!active}>
-      <button type="button" hidden={!!lightbox} className="menu-btn studio-menu-btn" aria-label="Mở menu" onClick={onOpenSidebar}>
+      <button type="button" hidden={!!lightbox || libraryOpen} className="menu-btn studio-menu-btn" aria-label="Mở menu" onClick={onOpenSidebar}>
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg>
       </button>
 
-    <div className="imagine-gallery" ref={galleryRef} hidden={!!lightbox}>
+    <div className="imagine-gallery" ref={galleryRef} hidden={!!lightbox || libraryOpen}>
       {pollError && <p className="error" role="status">Đang mất kết nối. Peto sẽ kiểm tra lại lượt ảnh khi có mạng.</p>}
       {loadFailed && <div className="studio-load-error" role="alert"><p>Chưa tải được ảnh đã tạo.</p><button type="button" onClick={() => void loadJobs()}>Thử tải lại</button></div>}
       {!loading && !loadFailed && jobs.length === 0 && !generating && <section className="studio-welcome">
@@ -643,7 +642,7 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
 
     {!libraryOpen && !lightbox && studioDock}
 
-    <ImagineLibrary composer={studioDock} open={active && libraryOpen} suspended={!!lightbox} jobs={jobs} onClose={() => setLibraryOpen(false)}
+    <ImagineLibrary composer={studioDock} open={active && libraryOpen} modal={compact} suspended={!!lightbox} jobs={jobs} onClose={() => setLibraryOpen(false)}
       onOpenImage={(job, index) => setLightbox({ job, index })} onDeleteImages={removeImages}
       onUseSources={controlsDisabled ? undefined : addLibrarySources} sourceLimit={5 - sources.length}
       hasMore={hasMore} loadingMore={loadingMore} onLoadMore={() => void loadMore()} />

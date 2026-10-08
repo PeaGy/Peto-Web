@@ -459,7 +459,8 @@ it('xóa từng ảnh trong thư viện: lượt còn ảnh thì ở lại, xóa
   await removeFirstTile();
   expect(api.deleteImagineImage).toHaveBeenLastCalledWith('img-1');
   expect(document.querySelectorAll('.imagine-job')).toHaveLength(1);
-  expect(screen.getAllByRole('button', { name: /^Xem ảnh \d: / })).toHaveLength(1);
+  // Bộ ảnh phía sau được đồng bộ nhưng không nhận focus khi thư viện đang mở.
+  expect(screen.getAllByRole('button', { name: /^Xem ảnh \d: /, hidden: true })).toHaveLength(1);
   expect(within(library).getAllByRole('button', { name: /^Xem ảnh: / })).toHaveLength(1);
 
   await removeFirstTile();
