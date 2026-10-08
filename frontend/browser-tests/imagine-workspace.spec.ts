@@ -2,8 +2,8 @@ import { expect, test, type Page } from '@playwright/test';
 import { mockPeto, noPageOverflow } from './fixtures';
 
 /** Ảnh dọc đủ lớn để phát hiện lỗi kích thước; không dùng ảnh 1 px để đánh giá bố cục. */
-async function setup(page: Page, prompt = 'Ngôi nhà giữa núi xanh', shape: 'portrait' | 'landscape' | 'square' = 'portrait') {
-  await mockPeto(page);
+async function setup(page: Page, prompt = 'Ngôi nhà giữa núi xanh', shape: 'portrait' | 'landscape' | 'square' = 'portrait', imageCount = 2) {
+  await mockPeto(page, { preservePreferences: true });
   const png = await page.evaluate(shape => {
     const canvas = document.createElement('canvas'); canvas.width = shape === 'landscape' ? 1440 : 960; canvas.height = shape === 'portrait' ? 1440 : 960;
     const ctx = canvas.getContext('2d')!;
@@ -16,7 +16,9 @@ async function setup(page: Page, prompt = 'Ngôi nhà giữa núi xanh', shape: 
     return canvas.toDataURL('image/png').split(',')[1];
   }, shape);
   const image = (id: string) => ({ id, mime: 'image/png', url: `/api/imagine/images/${id}` });
-  const job = { id: 'landscape', prompt, quality: 'medium', resolution: '2k', aspect_ratio: '2:3', created_at: 1, images: [image('portrait'), image('portrait-two')] };
+  const images: (ReturnType<typeof image> & { liked?: boolean })[] = Array.from({ length: imageCount }, (_, index) => ({ ...image(index === 0 ? 'portrait' : index === 1 ? 'portrait-two' : `photo-${index}`), liked: index === 0 }));
+  const job = { id: 'landscape', prompt, quality: 'medium', resolution: '2k', aspect_ratio: '2:3', created_at: 1,
+    images };
   const posts: Record<string, unknown>[] = [];
   const saves: Record<string, unknown>[] = [];
   const revisions: (typeof job & { root_image_id: string; edit_parent_image_id: string; status: string })[] = [];
@@ -54,6 +56,115 @@ async function setup(page: Page, prompt = 'Ngôi nhà giữa núi xanh', shape: 
   });
   return { posts, saves, revisions, job };
 }
+
+test('thư viện mobile có tìm kiếm dưới đáy và hai bố cục như mẫu', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'mobile', 'Bố cục dành cho điện thoại');
+  await setup(page, 'Ngôi nhà giữa núi xanh', 'portrait', 3);
+  await page.goto('/#imagine');
+  await page.getByRole('button', { name: 'Thư viện', exact: true }).last().tap();
+  const library = page.getByRole('dialog', { name: 'Thư viện ảnh' });
+  const tile = library.locator('[data-image-id="portrait"]');
+  await expect(tile.locator('img')).toHaveJSProperty('naturalWidth', 960);
+  await expect(library.locator('.library-composer')).toHaveCount(0);
+  const box = (await tile.boundingBox())!;
+  expect(box.x).toBe(1);
+  expect(box.width).toBeCloseTo(128, 0);
+  expect(box.height).toBeCloseTo(box.width, 0);
+  const bottom = library.locator('.library-mobile-bottom');
+  const search = library.getByRole('searchbox');
+  await expect(search).toHaveCSS('font-size', '16px');
+  expect((await search.boundingBox())!.y).toBeGreaterThan(700);
+  expect((await bottom.boundingBox())!.y + (await bottom.boundingBox())!.height).toBe(844);
+  for (const button of await library.locator('.library-top button, .library-filter > button').all()) {
+    const buttonBox = (await button.boundingBox())!;
+    expect(buttonBox.width).toBeGreaterThanOrEqual(44); expect(buttonBox.height).toBeGreaterThanOrEqual(44);
+  }
+  await page.screenshot({ path: testInfo.outputPath('mobile-library-compact.png') });
+  const filter = library.getByRole('button', { name: 'Bố cục và bộ lọc' });
+  await filter.tap();
+  await library.getByRole('button', { name: 'Rộng', exact: true }).tap();
+  await expect(tile).toHaveCSS('aspect-ratio', '960 / 1440');
+  const wide = (await tile.boundingBox())!;
+  expect(wide.width).toBeCloseTo(193, 0); expect(wide.height / wide.width).toBeCloseTo(1.5, 2);
+  await page.screenshot({ path: testInfo.outputPath('mobile-library-wide-filter.png') });
+  await page.touchscreen.tap(190, 30);
+  await expect(filter).toHaveAttribute('aria-expanded', 'false');
+  await search.fill('khong co');
+  await expect(library.getByText('Không có ảnh nào khớp')).toBeVisible();
+  await search.fill('nui xanh');
+  await expect(library.locator('.library-tile')).toHaveCount(3);
+  await filter.tap();
+  await library.getByRole('button', { name: 'Chỉ ảnh đã thích' }).tap();
+  await expect(library.locator('.library-tile')).toHaveCount(1);
+  await filter.tap();
+  await library.getByRole('button', { name: 'Chỉ ảnh đã thích' }).tap();
+  await expect(library.locator('.library-tile')).toHaveCount(3);
+  await page.reload();
+  await page.getByRole('button', { name: 'Thư viện', exact: true }).last().tap();
+  await expect(library.locator('.library-wide')).toHaveCount(1);
+  await expect(library.locator('.library-tile')).toHaveCount(3);
+  // Ô tìm kiếm giữ trong viewport khi vùng hiển thị bị thu lại bởi bàn phím.
+  await page.setViewportSize({ width: 320, height: 460 });
+  await search.focus();
+  await expect(bottom).toBeInViewport();
+  await noPageOverflow(page);
+  await filter.tap();
+  await expect(library.getByRole('button', { name: 'Rộng', exact: true })).toBeInViewport();
+  await page.screenshot({ path: testInfo.outputPath('mobile-library-narrow.png') });
+});
+
+test('cảm ứng mobile: chạm xem, giữ chọn và vuốt cuộn không chọn nhầm', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'mobile', 'Cử chỉ cảm ứng dành cho điện thoại');
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'canShare', { configurable: true, value: () => true });
+    Object.defineProperty(navigator, 'share', { configurable: true, value: async () => {} });
+  });
+  await setup(page, 'Ngôi nhà giữa núi xanh', 'portrait', 18);
+  await page.goto('/#imagine');
+  await page.getByRole('button', { name: 'Thư viện', exact: true }).last().tap();
+  const library = page.getByRole('dialog', { name: 'Thư viện ảnh' });
+  const tile = library.locator('[data-image-id="portrait"]');
+  await tile.tap();
+  const viewer = page.getByRole('dialog', { name: 'Xem ảnh đã tạo' });
+  await expect(viewer).toBeVisible();
+  await viewer.getByRole('button', { name: 'Quay lại', exact: true }).tap();
+  const touch = await page.context().newCDPSession(page);
+  const point = (await tile.boundingBox())!;
+  const x = point.x + point.width / 2, y = point.y + point.height / 2;
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+  await expect(library.getByRole('button', { name: 'Hủy', exact: true })).toBeVisible();
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await expect(tile).toHaveAttribute('aria-pressed', 'true');
+  await expect(viewer).not.toBeVisible();
+  await expect(library.getByRole('menu')).toHaveCount(0);
+  const toolbar = library.getByRole('toolbar', { name: 'Thao tác với ảnh đã chọn' });
+  await expect(toolbar).toBeInViewport();
+  const selectedBox = (await tile.boundingBox())!;
+  expect(selectedBox.height).toBeCloseTo(selectedBox.width, 0);
+  await expect(toolbar.getByRole('button', { name: 'Chia sẻ' })).toBeVisible();
+  const mark = (await tile.locator('.library-check').boundingBox())!;
+  expect(mark.x).toBeGreaterThan(point.x + point.width / 2);
+  await library.locator('[data-image-id="portrait-two"]').tap();
+  await expect(library.locator('.sr-only')).toHaveText('Đã chọn 2 ảnh');
+  await page.screenshot({ path: testInfo.outputPath('mobile-library-selected.png') });
+  await library.getByRole('button', { name: 'Hủy', exact: true }).tap();
+  await library.getByRole('button', { name: 'Chọn', exact: true }).tap();
+  await expect(toolbar).toHaveCount(0);
+  await expect(library.getByRole('searchbox')).toHaveCount(0);
+  await library.getByRole('button', { name: 'Hủy', exact: true }).tap();
+  // Cuộn thật bằng cảm ứng: trình duyệt phát pointercancel khi nhận thao tác pan.
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 60, y: 520 }] });
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: 60, y: 460 }] });
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: 60, y: 380 }] });
+  await expect.poll(() => library.locator('.library-grid').evaluate(element => element.scrollTop)).toBeGreaterThan(0);
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  // Chờ quá thời gian nhấn giữ để bắt lỗi tự bật chọn sau một cú vuốt.
+  await page.waitForTimeout(600);
+  await expect(library.getByRole('button', { name: 'Chọn', exact: true })).toBeVisible();
+  await expect(library.locator('.library-tile[aria-pressed="true"]')).toHaveCount(0);
+  await noPageOverflow(page);
+  await touch.detach();
+});
 
 test('thư viện có ô ảnh nhỏ và khung xem vừa màn hình trên PC/mobile', async ({ page }, testInfo) => {
   const { posts } = await setup(page);
@@ -179,7 +290,7 @@ test('cắt/vẽ tạo nguồn PNG mới, hoàn tác giữ ảnh gốc, chỉ g�
 });
 
 
-test('bấm ảnh để xem, nhấn giữ để chọn và hủy chọn trả về xem ảnh', async ({ page }) => {
+test('bấm ảnh để xem, nhấn giữ để chọn và hủy chọn trả về xem ảnh', async ({ page }, testInfo) => {
   await setup(page);
   await page.goto('/#imagine');
   await page.getByRole('button', { name: 'Thư viện', exact: true }).last().click();
@@ -194,14 +305,16 @@ test('bấm ảnh để xem, nhấn giữ để chọn và hủy chọn trả v�
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.down();
   // Chờ trạng thái do cử chỉ giữ thực sự, không bấm nút Chọn để giả lập.
-  await expect(library.getByRole('button', { name: 'Hủy', exact: true })).toHaveText('1 đã chọn');
+  await expect(library.getByRole('button', { name: 'Hủy', exact: true })).toHaveText(testInfo.project.name === 'mobile' ? 'Hủy' : '1 đã chọn');
+  await expect(library.locator('.sr-only')).toHaveText('Đã chọn 1 ảnh');
   await page.mouse.up();
   await expect(tile).toHaveAttribute('aria-pressed', 'true');
   await expect(viewer).not.toBeVisible();
   await expect(library.getByRole('menu')).toHaveCount(0);
   await expect(library.getByText(/Chọn theo thứ tự mong muốn/)).toHaveCount(0);
   await library.locator('[data-image-id="portrait-two"]').click();
-  await expect(library.getByRole('button', { name: 'Hủy', exact: true })).toHaveText('2 đã chọn');
+  await expect(library.getByRole('button', { name: 'Hủy', exact: true })).toHaveText(testInfo.project.name === 'mobile' ? 'Hủy' : '2 đã chọn');
+  await expect(library.locator('.sr-only')).toHaveText('Đã chọn 2 ảnh');
   await library.getByRole('button', { name: 'Hủy', exact: true }).click();
   await tile.click();
   await expect(viewer).toBeVisible();
@@ -215,7 +328,6 @@ test('mô tả dài và nút thao tác vẫn đọc/bấm được ở màn hìn
   await page.goto('/#imagine');
   await page.getByRole('button', { name: 'Thư viện', exact: true }).last().click();
   const library = page.getByRole('dialog', { name: 'Thư viện ảnh' });
-  await library.getByRole('button', { name: 'Tìm trong thư viện' }).click();
   const search = library.getByRole('searchbox');
   if (testInfo.project.name === 'mobile') await expect(search).toHaveCSS('font-size', '16px');
   await search.fill('Kiến trúc Việt Nam');

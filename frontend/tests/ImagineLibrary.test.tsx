@@ -56,6 +56,78 @@ it('bảng lọc đổi sang 3 cột và nhớ lại, còn lọc ảnh đã thí
   expect(screen.getByRole('button', { name: '3 cột' }).getAttribute('aria-pressed')).toBe('true');
 });
 
+it('mobile có tìm kiếm ở đáy, nhớ Rộng/Tinh gọn riêng với desktop và lọc Đã thích', () => {
+  localStorage.setItem('peto-imagine-library-columns', '3');
+  const { view } = setup({ modal: true, composer: <textarea aria-label="Ô tạo ảnh" /> });
+  expect(screen.queryByLabelText('Ô tạo ảnh')).toBeNull();
+  expect(screen.getByRole('searchbox').closest('.library-mobile-bottom')).toBeTruthy();
+  expect((document.querySelector('.library-grid') as HTMLElement).style.getPropertyValue('--library-columns')).toBe('3');
+  fireEvent.click(screen.getByRole('button', { name: 'Bố cục và bộ lọc' }));
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Tinh gọn' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Rộng' }));
+  expect(document.querySelector('.library-wide')).toBeTruthy();
+  expect(localStorage.getItem('peto-imagine-library-columns')).toBe('3');
+  fireEvent.click(screen.getByRole('button', { name: 'Chỉ ảnh đã thích' }));
+  expect(ids()).toEqual(['cat-1']);
+  expect(screen.getByRole('button', { name: 'Bố cục và bộ lọc' }).getAttribute('aria-expanded')).toBe('false');
+  fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'meo' } });
+  expect(ids()).toEqual(['cat-1']);
+  view.unmount();
+  setup({ modal: true });
+  expect(ids()).toHaveLength(3);
+  expect(document.querySelector('.library-wide')).toBeTruthy();
+});
+
+it('mobile nhấn giữ chọn, chặn menu cảm ứng và cú nhấc tay; Hủy trả lại tìm kiếm', () => {
+  vi.useFakeTimers();
+  const { onOpenImage } = setup({ modal: true });
+  const tile = tiles()[0];
+  fireEvent.click(tile);
+  expect(onOpenImage).toHaveBeenCalledTimes(1);
+  act(() => { tile.dispatchEvent(pointer('pointerdown')); });
+  // Một số trình duyệt phát contextmenu trước khi nhấc tay; vẫn phải hoàn tất nhấn giữ.
+  fireEvent.contextMenu(tile);
+  act(() => { vi.advanceTimersByTime(500); tile.dispatchEvent(pointer('pointerup')); });
+  fireEvent.click(tile, { detail: 1 });
+  expect(onOpenImage).toHaveBeenCalledTimes(1);
+  expect(tile.getAttribute('aria-pressed')).toBe('true');
+  expect(screen.queryByRole('menu')).toBeNull();
+  expect(screen.getByRole('toolbar', { name: 'Thao tác với ảnh đã chọn' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Hủy' }).textContent).toBe('Hủy');
+  fireEvent.click(tile);
+  expect(screen.queryByRole('toolbar')).toBeNull();
+  expect(screen.queryByRole('searchbox')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Hủy' }));
+  expect(screen.getByRole('searchbox')).toBeTruthy();
+  fireEvent.click(tile);
+  expect(onOpenImage).toHaveBeenCalledTimes(2);
+});
+
+it('mobile chỉ mở viewport tới mép khi thư viện đang hiển thị và trả lại khi đóng', () => {
+  const meta = document.createElement('meta'); meta.name = 'viewport'; meta.content = 'width=device-width, initial-scale=1';
+  document.head.append(meta);
+  try {
+    const { view, onClose, onOpenImage, onDeleteImages } = setup({ modal: true });
+    expect(meta.content).toContain('viewport-fit=cover');
+    view.rerender(<ImagineLibrary open modal suspended jobs={[cat]} onClose={onClose} onOpenImage={onOpenImage} onDeleteImages={onDeleteImages} />);
+    expect(meta.content).toBe('width=device-width, initial-scale=1');
+    view.rerender(<ImagineLibrary open modal jobs={[cat]} onClose={onClose} onOpenImage={onOpenImage} onDeleteImages={onDeleteImages} />);
+    expect(meta.content).toContain('viewport-fit=cover');
+    view.unmount();
+    expect(meta.content).toBe('width=device-width, initial-scale=1');
+  } finally { meta.remove(); }
+});
+
+it('ngón tay thứ hai ngoài ô ảnh hủy nhấn giữ, để pinch không chọn ảnh', () => {
+  vi.useFakeTimers();
+  setup({ modal: true });
+  act(() => { tiles()[0].dispatchEvent(pointer('pointerdown')); });
+  const secondFinger = pointer('pointerdown');
+  Object.defineProperties(secondFinger, { pointerType: { value: 'touch' }, isPrimary: { value: false } });
+  act(() => { document.dispatchEvent(secondFinger); vi.advanceTimersByTime(600); });
+  expect(screen.queryByRole('button', { name: 'Hủy' })).toBeNull();
+});
+
 it('chọn nhiều ảnh để tải xuống, rồi xóa sau khi xác nhận', async () => {
   const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
   const { onDeleteImages } = setup();

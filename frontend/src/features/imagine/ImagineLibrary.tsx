@@ -4,6 +4,7 @@ import MeasuredImage from "./MeasuredImage";
 import StudioIcon from "./studioIcons";
 
 const COLUMNS_KEY = "peto-imagine-library-columns";
+const MOBILE_COLUMNS_KEY = "peto-imagine-library-mobile-columns";
 const LONG_PRESS_MS = 500;
 const MENU_WIDTH = 200;
 const MENU_HEIGHT = 140;
@@ -24,9 +25,14 @@ const CheckIcon = () => <Icon size={16}><path d="m5 12.5 4.5 4.5L19 7" /></Icon>
 const ShareIcon = () => <Icon><circle cx="18" cy="5" r="2.5" /><circle cx="6" cy="12" r="2.5" /><circle cx="18" cy="19" r="2.5" /><path d="m8.2 10.8 7.6-4.4M8.2 13.2l7.6 4.4" /></Icon>;
 const DownloadIcon = () => <Icon><path d="M12 4v11M7 10l5 5 5-5M5 20h14" /></Icon>;
 const TrashIcon = () => <Icon><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" /></Icon>;
+const FilterIcon = () => <Icon><path d="M4 6h16M7 12h10M10 18h4" /></Icon>;
+const LayoutIcon = ({ columns }: { columns: 2 | 3 }) => <Icon><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 12h18" />{columns === 2 ? <path d="M12 4v16" /> : <path d="M9 4v16M15 4v16" />}</Icon>;
 
 function readColumns(): 2 | 3 {
   try { return localStorage.getItem(COLUMNS_KEY) === "3" ? 3 : 2; } catch { return 2; }
+}
+function readMobileColumns(): 2 | 3 {
+  try { return localStorage.getItem(MOBILE_COLUMNS_KEY) === "2" ? 2 : 3; } catch { return 3; }
 }
 /** Bỏ dấu để "meo" tìm ra "Mèo". Chữ đ không tách dấu được nên đổi riêng. */
 function fold(text: string) {
@@ -71,6 +77,7 @@ export default function ImagineLibrary({ open, modal = false, suspended = false,
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [columns, setColumns] = useState(readColumns);
+  const [mobileColumns, setMobileColumns] = useState(readMobileColumns);
   const [kind, setKind] = useState("all");
   const [likedOnly, setLikedOnly] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
@@ -86,6 +93,16 @@ export default function ImagineLibrary({ open, modal = false, suspended = false,
   const needle = fold(query.trim());
   const shown = tiles.filter((tile) => (!likedOnly || tile.image.liked) && (kind === "all" || (kind === "edited") === !!(tile.job.source_images?.length || tile.job.source_image)) && (!needle || fold(tile.job.prompt).includes(needle)));
   const picked = Array.from(selected).flatMap(id => tiles.filter(tile => tile.image.id === id));
+
+  useEffect(() => {
+    if (!open || suspended || !modal) return;
+    const viewport = document.querySelector<HTMLMetaElement>('meta[name="viewport"]');
+    if (!viewport || /viewport-fit\s*=/.test(viewport.content)) return;
+    // Chỉ khung thư viện đã chừa vùng tai thỏ/home bar mới mở rộng tới mép màn hình.
+    const previous = viewport.content;
+    viewport.content = `${previous}, viewport-fit=cover`;
+    return () => { viewport.content = previous; };
+  }, [open, suspended, modal]);
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -110,6 +127,10 @@ export default function ImagineLibrary({ open, modal = false, suspended = false,
     else confirmRef.current?.close();
   }, [confirmIds]);
   useEffect(() => { try { localStorage.setItem(COLUMNS_KEY, String(columns)); } catch {} }, [columns]);
+  useEffect(() => { try { localStorage.setItem(MOBILE_COLUMNS_KEY, String(mobileColumns)); } catch {} }, [mobileColumns]);
+  useEffect(() => {
+    if (modal && filterOpen) filterRef.current?.querySelector<HTMLButtonElement>('[aria-pressed="true"]')?.focus();
+  }, [filterOpen, modal]);
   useEffect(() => { if (menu) menuRef.current?.querySelector("button")?.focus(); }, [menu]);
   useEffect(() => {
     if (!menu && !filterOpen) return;
@@ -121,7 +142,13 @@ export default function ImagineLibrary({ open, modal = false, suspended = false,
     document.addEventListener("pointerdown", outside);
     return () => document.removeEventListener("pointerdown", outside);
   }, [menu, filterOpen]);
-  useEffect(() => () => cancelPress(), []);
+  useEffect(() => {
+    const cancelMultiTouch = (event: PointerEvent) => {
+      if (event.pointerType === 'touch' && event.isPrimary === false) cancelPress();
+    };
+    document.addEventListener('pointerdown', cancelMultiTouch);
+    return () => { cancelPress(); document.removeEventListener('pointerdown', cancelMultiTouch); };
+  }, []);
 
   function cancelPress() {
     if (press.current) window.clearTimeout(press.current.timer);
@@ -151,12 +178,14 @@ export default function ImagineLibrary({ open, modal = false, suspended = false,
     });
   }
   function onTilePointerDown(event: ReactPointerEvent<HTMLButtonElement>, tile: Tile) {
-    if (event.button !== 0 || event.isPrimary === false) return;
+    if (event.isPrimary === false) { cancelPress(); return; }
+    if (event.button !== 0) return;
     cancelPress(); suppressedClick.current = null;
     const timer = window.setTimeout(() => {
       press.current = null;
       suppressedClick.current = { imageId: tile.image.id, until: Date.now() + 1500 };
       setMenu(null); setSelecting(true);
+      setFilterOpen(false);
       setSelected(previous => new Set(previous).add(tile.image.id));
     }, LONG_PRESS_MS);
     press.current = { timer, x: event.clientX, y: event.clientY };
@@ -221,12 +250,24 @@ export default function ImagineLibrary({ open, modal = false, suspended = false,
   function dismissLayer() {
     // Escape đóng từng lớp một: menu, bảng lọc, chế độ chọn, rồi mới tới thư viện.
     if (menu) setMenu(null);
-    else if (filterOpen) setFilterOpen(false);
+    else if (filterOpen) {
+      setFilterOpen(false);
+      filterRef.current?.querySelector<HTMLButtonElement>('[aria-expanded]')?.focus();
+    }
     else if (selecting) exitSelecting();
     else onClose();
   }
 
-  return <dialog ref={dialogRef} className="imagine-library-view" aria-label="Thư viện ảnh" aria-modal={modal}
+  const referenceAction = onUseSources && <button type="button" aria-label="Dùng làm tham chiếu" disabled={!picked.length || picked.length > sourceLimit || deleting} onClick={() => onUseSources(picked.map(tile => tile.image))}><StudioIcon name="plus" /><span>{modal ? "Dùng ảnh" : "Dùng làm tham chiếu"}</span></button>;
+  const selectionActions = <div className="library-actions" role={modal ? "toolbar" : undefined} aria-label={modal ? "Thao tác với ảnh đã chọn" : undefined}>
+    {!modal && referenceAction}
+    {shareable && <button type="button" disabled={!picked.length || deleting} onClick={() => void share(picked)}><ShareIcon /><span>Chia sẻ</span></button>}
+    <button type="button" disabled={!picked.length || deleting} onClick={() => download(picked)}><DownloadIcon /><span>Tải xuống</span></button>
+    {modal && referenceAction}
+    <button type="button" className="danger" disabled={!picked.length || deleting} onClick={() => setConfirmIds(picked.map(tile => tile.image.id))}><TrashIcon /><span>Xóa</span></button>
+  </div>;
+
+  return <dialog ref={dialogRef} className={"imagine-library-view" + (modal ? " library-mobile" : "")} aria-label="Thư viện ảnh" aria-modal={modal}
     onCancel={event => {
       // Sự kiện từ hộp xác nhận chỉ đóng hộp đó, giữ nguyên ảnh đang chọn.
       if (event.target !== event.currentTarget) return;
@@ -239,7 +280,13 @@ export default function ImagineLibrary({ open, modal = false, suspended = false,
       }
     }}>
     {open && <>
-      <div className="library-top">
+      {modal ? <div className="library-top library-mobile-top">
+        <button type="button" className="library-round" aria-label="Quay lại Tạo ảnh" onClick={onClose}><StudioIcon name="close" /></button>
+        <button type="button" className="library-pill" aria-label={selecting ? "Hủy" : "Chọn"} onClick={() => {
+          setFilterOpen(false);
+          if (selecting) exitSelecting(); else setSelecting(true);
+        }}>{selecting ? "Hủy" : "Chọn"}</button>
+      </div> : <div className="library-top">
         <div className="library-top-left">
           <button type="button" className="library-round" aria-label="Quay lại Tạo ảnh" onClick={onClose}><StudioIcon name="back" /></button>
           {selecting ? <button type="button" className="library-pill" aria-label="Hủy" onClick={exitSelecting}><StudioIcon name="close" />{picked.length} đã chọn</button> : <>
@@ -248,12 +295,7 @@ export default function ImagineLibrary({ open, modal = false, suspended = false,
           </>}
         </div>
         <div className="library-top-right">
-          {selecting ? <div className="library-actions">
-            {onUseSources && <button type="button" disabled={!picked.length || picked.length > sourceLimit} onClick={() => onUseSources(picked.map(tile => tile.image))}><StudioIcon name="plus" />Dùng làm tham chiếu</button>}
-            {shareable && <button type="button" disabled={!picked.length} onClick={() => void share(picked)}><ShareIcon />Chia sẻ</button>}
-            <button type="button" disabled={!picked.length} onClick={() => download(picked)}><DownloadIcon />Tải xuống</button>
-            <button type="button" className="danger" disabled={!picked.length || deleting} onClick={() => setConfirmIds(picked.map(tile => tile.image.id))}><TrashIcon />Xóa</button>
-          </div> : <>
+          {selecting ? selectionActions : <>
             <div ref={filterRef} className="library-filter">
               <button type="button" className="library-pill" aria-label="Bố cục và bộ lọc" aria-expanded={filterOpen} onClick={() => setFilterOpen(value => !value)}><StudioIcon name="grid" />Xem</button>
               {filterOpen && <div className="effort-options library-filter-panel" role="group" aria-label="Bố cục và bộ lọc">
@@ -269,11 +311,11 @@ export default function ImagineLibrary({ open, modal = false, suspended = false,
             <button type="button" className="library-round" aria-label="Tìm trong thư viện" aria-expanded={searchOpen} onClick={() => setSearchOpen(value => !value)}><StudioIcon name="search" /></button>
           </>}
         </div>
-      </div>
-      {searchOpen && !selecting && <div className="library-search"><StudioIcon name="search" /><input autoFocus type="search" enterKeyHint="search" value={query} placeholder="Tìm ảnh theo mô tả" aria-label="Tìm ảnh theo mô tả" onChange={event => setQuery(event.target.value)} /></div>}
+      </div>}
+      {!modal && searchOpen && !selecting && <div className="library-search"><StudioIcon name="search" /><input autoFocus type="search" enterKeyHint="search" value={query} placeholder="Tìm ảnh theo mô tả" aria-label="Tìm ảnh theo mô tả" onChange={event => setQuery(event.target.value)} /></div>}
       <p className="sr-only" aria-live="polite">{selecting ? `Đã chọn ${picked.length} ảnh` : ""}</p>
 
-      <div className={"library-grid" + (composer && !selecting ? " with-composer" : "")} style={{ "--library-columns": columns, "--library-tile-size": columns === 2 ? "clamp(240px, 19vw, 360px)" : "clamp(180px, 14vw, 240px)" } as CSSProperties}>
+      <div className={"library-grid" + (modal && mobileColumns === 2 ? " library-wide" : "") + (!modal && composer && !selecting ? " with-composer" : "")} style={{ "--library-columns": modal ? mobileColumns : columns, "--library-tile-size": columns === 2 ? "clamp(240px, 19vw, 360px)" : "clamp(180px, 14vw, 240px)" } as CSSProperties}>
         {tiles.length === 0 ? <p className="library-empty">Chưa có ảnh nào. Ảnh bạn tạo sẽ hiện ở đây.</p>
           : shown.length === 0 ? <p className="library-empty">Không có ảnh nào khớp</p>
           : shown.map((tile) => {
@@ -283,17 +325,40 @@ export default function ImagineLibrary({ open, modal = false, suspended = false,
               aria-label={(selecting ? "Chọn ảnh: " : "Xem ảnh: ") + tile.job.prompt} aria-pressed={selecting ? on : undefined}
               onPointerDown={(event) => onTilePointerDown(event, tile)} onPointerMove={onTilePointerMove}
               onPointerUp={cancelPress} onPointerCancel={cancelPress} onPointerLeave={cancelPress}
-              onContextMenu={(event) => { event.preventDefault(); cancelPress(); if (suppressedClick.current?.imageId === tile.image.id && Date.now() < suppressedClick.current.until) return; openMenu(tile, event.currentTarget); }}
+              onContextMenu={(event) => { event.preventDefault(); if (modal) return; cancelPress(); if (suppressedClick.current?.imageId === tile.image.id && Date.now() < suppressedClick.current.until) return; openMenu(tile, event.currentTarget); }}
               onClick={event => onTileClick(event, tile)}>
-              <MeasuredImage src={tile.image.url} alt="" loading="lazy" decoding="async" draggable={false} />
-              {selecting && <span className="library-check" aria-hidden="true">{on && <CheckIcon />}</span>}
+              <MeasuredImage src={tile.image.url} alt="" loading="lazy" decoding="async" draggable={false} onLoad={event => {
+                const img = event.currentTarget;
+                if (img.naturalWidth && img.naturalHeight) img.parentElement?.style.setProperty('--library-image-ratio', `${img.naturalWidth} / ${img.naturalHeight}`);
+              }} />
+              {selecting && (!modal || on) && <span className="library-check" aria-hidden="true">{on && <CheckIcon />}</span>}
             </button>;
           })}
         {hasMore && <button type="button" className="load-more library-load-more" disabled={loadingMore} onClick={onLoadMore}>{loadingMore ? "Đang tải…" : "Xem ảnh cũ hơn"}</button>}
       </div>
 
       {notice && <div className="error library-notice" role="alert">{notice}<button type="button" className="dismiss-error" aria-label="Đóng thông báo" onClick={() => setNotice(null)}>×</button></div>}
-      {composer && !selecting && <div className="library-composer">{composer}</div>}
+      {!modal && composer && !selecting && <div className="library-composer">{composer}</div>}
+      {modal && (!selecting || picked.length > 0) && <div className="library-mobile-bottom">
+        {selecting ? selectionActions : <>
+          <div className="library-search"><StudioIcon name="search" /><input type="search" enterKeyHint="search" value={query} placeholder="Tìm kiếm" aria-label="Tìm ảnh theo mô tả" onChange={event => setQuery(event.target.value)} /></div>
+          <div ref={filterRef} className="library-filter">
+            <button type="button" className="library-round" aria-label="Bố cục và bộ lọc" aria-expanded={filterOpen} onClick={() => setFilterOpen(value => !value)}><FilterIcon /></button>
+            {filterOpen && <div className="library-mobile-filter" role="group" aria-label="Bố cục và bộ lọc" onKeyDown={event => {
+              if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return;
+              const controls = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('button'));
+              const current = controls.indexOf(document.activeElement as HTMLButtonElement);
+              const next = event.key === 'Home' ? 0 : event.key === 'End' ? controls.length - 1 : (current + (['ArrowLeft', 'ArrowUp'].includes(event.key) ? -1 : 1) + controls.length) % controls.length;
+              event.preventDefault(); controls[next]?.focus();
+            }}>
+              <div className="library-layout-options" role="group" aria-label="Kích thước ô ảnh">
+                {([2, 3] as const).map(value => <button key={value} type="button" aria-pressed={mobileColumns === value} onClick={() => setMobileColumns(value)}><LayoutIcon columns={value} /><span>{value === 2 ? "Rộng" : "Tinh gọn"}</span></button>)}
+              </div>
+              <button type="button" className="library-liked-filter" aria-label="Chỉ ảnh đã thích" aria-pressed={likedOnly} onClick={() => { setLikedOnly(value => !value); setFilterOpen(false); }}><HeartIcon filled={likedOnly} /><span>Đã thích</span>{likedOnly && <CheckIcon />}</button>
+            </div>}
+          </div>
+        </>}
+      </div>}
 
       {menu && <div ref={menuRef} className="effort-options library-menu" role="menu" aria-label="Thao tác với ảnh" style={{ top: menu.top, left: menu.left }}>
         <button type="button" role="menuitem" className="effort-option" onClick={() => download([menu.tile])}><DownloadIcon /><span className="effort-option-label">Tải xuống</span></button>

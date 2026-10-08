@@ -1050,6 +1050,18 @@ Desktop controls are 38px high; viewer panel text is 14px, metadata 12px, and ed
 input text at least 16px. Escape dismisses one library layer at a time; cancellation of the nested delete
 confirmation must not also cancel the selection. Resizing across the desktop/mobile boundary switches
 dialog modes without clearing the open library's filters.
+The mobile library uses a dedicated fullscreen layout: close/select at the top, edge-to-edge tiles,
+and a bottom search/filter dock. Compact defaults to three square columns; Wide uses two columns and
+the loaded image's natural aspect ratio. Persist mobile density separately from desktop density.
+Use explicit max-content grid rows so opening the selection dock never compresses the thumbnails.
+Tap views an image; a 500ms hold enters selection and selects it. Suppress the release click and native
+touch context menu. Pointer movement/cancel and a second touch anywhere cancel the pending hold; keep
+native vertical scrolling and pinch available. Selection shows a top-right check only on picked images,
+with the existing share/download/reference/delete actions at the bottom. Hide the dock with zero picks.
+Do not mount the generation composer in the mobile library or add an unavailable Tag action.
+Mobile controls have 44px targets, search text is 16px, and the header/footer honor all safe-area insets.
+Enable viewport-fit=cover only while this mobile library is visible, restoring the previous viewport meta
+when it closes or yields to the viewer, so other screens keep their existing viewport behavior.
 The viewer's direct edit field sends one edit result; its "Dùng ảnh này" composer uses the existing studio
 controls and request path. Both use
 the existing background/idempotency/uncertain-request path, without issuing a request just to attach an image.
