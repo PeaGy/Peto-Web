@@ -2,10 +2,10 @@ import { expect, test, type Page } from '@playwright/test';
 import { mockPeto, noPageOverflow } from './fixtures';
 
 /** Ảnh dọc đủ lớn để phát hiện lỗi kích thước; không dùng ảnh 1 px để đánh giá bố cục. */
-async function setup(page: Page, prompt = 'Ngôi nhà giữa núi xanh', landscape = false) {
+async function setup(page: Page, prompt = 'Ngôi nhà giữa núi xanh', shape: 'portrait' | 'landscape' | 'square' = 'portrait') {
   await mockPeto(page);
-  const png = await page.evaluate(isLandscape => {
-    const canvas = document.createElement('canvas'); canvas.width = isLandscape ? 1440 : 960; canvas.height = isLandscape ? 960 : 1440;
+  const png = await page.evaluate(shape => {
+    const canvas = document.createElement('canvas'); canvas.width = shape === 'landscape' ? 1440 : 960; canvas.height = shape === 'portrait' ? 1440 : 960;
     const ctx = canvas.getContext('2d')!;
     ctx.fillStyle = '#74c8e9'; ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.fillStyle = '#ffe1a0'; ctx.beginPath(); ctx.arc(690, 320, 125, 0, Math.PI * 2); ctx.fill();
@@ -14,7 +14,7 @@ async function setup(page: Page, prompt = 'Ngôi nhà giữa núi xanh', landsca
     ctx.fillStyle = '#e5cfaf'; ctx.fillRect(350, 1000, 250, 240);
     ctx.fillStyle = '#8c4935'; ctx.beginPath(); ctx.moveTo(300, 1000); ctx.lineTo(475, 850); ctx.lineTo(650, 1000); ctx.fill();
     return canvas.toDataURL('image/png').split(',')[1];
-  }, landscape);
+  }, shape);
   const image = (id: string) => ({ id, mime: 'image/png', url: `/api/imagine/images/${id}` });
   const job = { id: 'landscape', prompt, quality: 'medium', resolution: '2k', aspect_ratio: '2:3', created_at: 1, images: [image('portrait'), image('portrait-two')] };
   const posts: Record<string, unknown>[] = [];
@@ -62,13 +62,25 @@ test('thư viện có ô ảnh nhỏ và khung xem vừa màn hình trên PC/mob
   expect(shown.height).toBeLessThanOrEqual(stage.height);
   const top = (await viewer.locator('.workspace-topbar').boundingBox())!;
   const dock = (await viewer.locator('.workspace-edit-dock').boundingBox())!;
-  expect(top.y + top.height).toBeLessThanOrEqual(shown.y);
   expect(dock.y).toBeGreaterThanOrEqual(shown.y + shown.height);
-  expect(dock.width).toBeLessThanOrEqual(Math.max(360, shown.width + 81));
+  expect(dock.width).toBeLessThanOrEqual(Math.min(stage.width, 980));
   await expect(viewer.getByRole('button', { name: 'Đóng khung xem' })).toHaveCount(0);
   if (testInfo.project.name === 'pc') {
     const tools = (await viewer.getByRole('toolbar', { name: 'Công cụ ảnh' }).boundingBox())!;
-    expect(tools.x + tools.width).toBeLessThanOrEqual(stage.x);
+    const panel = (await viewer.locator('.workspace-panel').boundingBox())!;
+    const sidebar = (await page.locator('.sidebar').boundingBox())!;
+    await expect(viewer.evaluate(element => element.matches(':modal'))).resolves.toBe(false);
+    expect((await viewer.boundingBox())!.x).toBe(sidebar.x + sidebar.width);
+    expect(tools.x).toBeGreaterThanOrEqual(panel.x);
+    expect(tools.y).toBeLessThan(16);
+    expect(dock.width).toBe(980);
+    const back = (await viewer.getByRole('button', { name: 'Quay lại', exact: true }).boundingBox())!;
+    const zoom = (await viewer.locator('.workspace-zoom').boundingBox())!;
+    expect(back.x + back.width).toBeLessThan(shown.x);
+    expect(zoom.x).toBeGreaterThan(shown.x + shown.width);
+  } else {
+    expect(top.y + top.height).toBeLessThanOrEqual(shown.y);
+    await expect(viewer.evaluate(element => element.matches(':modal'))).resolves.toBe(true);
   }
   await expect(viewer.getByRole('button', { name: 'Gửi chỉnh sửa ảnh' })).toBeDisabled();
   await noPageOverflow(page);
@@ -205,7 +217,7 @@ test('mô tả dài và nút thao tác vẫn đọc/bấm được ở màn hìn
 });
 
 test('ảnh ngang và zoom giữ nút cùng ô nhập ngoài vùng ảnh', async ({ page }, testInfo) => {
-  await setup(page, 'Ngôi nhà giữa núi xanh', true);
+  await setup(page, 'Ngôi nhà giữa núi xanh', 'landscape');
   await page.goto('/#imagine');
   await page.getByRole('button', { name: 'Xem ảnh 1: Ngôi nhà giữa núi xanh', exact: true }).click();
   const viewer = page.getByRole('dialog', { name: 'Xem ảnh đã tạo' });
@@ -225,10 +237,110 @@ test('ảnh ngang và zoom giữ nút cùng ô nhập ngoài vùng ảnh', async
   expect(dock.y).toBeGreaterThanOrEqual(stage.y + stage.height);
   await viewer.getByRole('button', { name: 'Vừa khung' }).click();
   await viewer.getByRole('button', { name: 'Ẩn bảng công cụ' }).click();
-  await expect(viewer.locator('.workspace-panel')).toBeHidden();
-  await expect(viewer.getByRole('toolbar', { name: 'Công cụ ảnh' })).toBeVisible();
+  await expect(viewer.locator('.workspace-panel-body')).toBeHidden();
+  if (testInfo.project.name === 'pc') {
+    expect((await viewer.locator('.workspace-panel').boundingBox())!.width).toBe(72);
+    await expect(viewer.getByRole('button', { name: 'Chia sẻ', exact: true })).toBeVisible();
+    await viewer.getByRole('button', { name: 'Hiện bảng công cụ' }).click();
+  } else {
+    await expect(viewer.locator('.workspace-panel-bottom')).toBeHidden();
+    await expect(viewer.getByRole('toolbar', { name: 'Công cụ ảnh' })).toBeVisible();
+  }
   await viewer.getByRole('button', { name: 'Bảng màu', exact: true }).click();
   await expect(viewer.locator('.workspace-panel')).toBeVisible();
   await noPageOverflow(page);
   await page.screenshot({ path: testInfo.outputPath('landscape-workspace.png') });
+});
+
+test('desktop giữ sidebar thật và bố cục Grok khi mở hoặc thu gọn các bảng', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'pc', 'Lượt này ưu tiên bố cục desktop.');
+  const { posts } = await setup(page, 'Ngôi nhà giữa núi xanh', 'square');
+  await page.setViewportSize({ width: 1910, height: 870 });
+  await page.goto('/#imagine');
+  await page.getByRole('button', { name: 'Xem ảnh 1: Ngôi nhà giữa núi xanh', exact: true }).click();
+  const viewer = page.getByRole('dialog', { name: 'Xem ảnh đã tạo' });
+  const sidebar = page.locator('.sidebar');
+  const picture = viewer.locator('.workspace-picture img');
+  await expect(viewer.getByLabel('Kích thước ảnh thực tế')).toHaveText('960 × 960');
+  async function checkLayout() {
+    const nav = (await sidebar.boundingBox())!, view = (await viewer.boundingBox())!;
+    const main = (await viewer.locator('.workspace-main').boundingBox())!;
+    const image = (await picture.boundingBox())!;
+    const form = (await viewer.locator('.workspace-edit-dock form').boundingBox())!;
+    const back = (await viewer.getByRole('button', { name: 'Quay lại', exact: true }).boundingBox())!;
+    expect(view.x).toBe(nav.x + nav.width);
+    expect(view.x + view.width).toBe(1910);
+    expect(image.width / image.height).toBeCloseTo(1, 2);
+    expect(image.y).toBeCloseTo(40, 0);
+    expect(image.height).toBeGreaterThan(640);
+    expect(form.width).toBe(940);
+    expect(form.x + form.width / 2).toBeCloseTo(main.x + main.width / 2, 0);
+    expect(back.x).toBe(main.x + 16);
+    expect(form.y).toBeGreaterThanOrEqual(image.y + image.height);
+    await noPageOverflow(page);
+  }
+  await checkLayout();
+  await page.screenshot({ path: testInfo.outputPath('desktop-sidebar-open.png') });
+  // Nút thuộc sidebar thật phải bấm được khi khung xem đang mở.
+  await sidebar.getByRole('button', { name: 'Thu gọn thanh bên', exact: true }).click();
+  await expect(sidebar).toHaveClass(/collapsed/);
+  await checkLayout();
+  await page.screenshot({ path: testInfo.outputPath('desktop-sidebar-collapsed.png') });
+  await viewer.getByRole('button', { name: 'Ẩn bảng công cụ' }).click();
+  await expect(viewer.locator('.workspace-panel-body')).toBeHidden();
+  expect((await viewer.locator('.workspace-panel').boundingBox())!.width).toBe(72);
+  await checkLayout();
+  await page.screenshot({ path: testInfo.outputPath('desktop-right-rail.png') });
+  // Các thao tác đang có vẫn hiện ở dải phải, cùng nguồn tải ảnh ban đầu.
+  await expect(viewer.getByRole('button', { name: 'Thích', exact: true })).toBeVisible();
+  await expect(viewer.getByRole('link', { name: 'Tải ảnh xuống' })).toHaveAttribute('href', '/api/imagine/images/portrait?download=1');
+  await viewer.getByRole('button', { name: 'Thiết lập tỉ lệ ảnh' }).click();
+  await expect(viewer.getByLabel('Tỉ lệ ảnh chỉnh sửa')).toBeVisible();
+  await sidebar.getByRole('button', { name: 'Mở rộng thanh bên', exact: true }).click();
+  await sidebar.getByRole('button', { name: 'Thư viện', exact: true }).click();
+  const library = page.getByRole('dialog', { name: 'Thư viện ảnh' });
+  await expect(library).toBeVisible();
+  await expect(viewer).not.toBeVisible();
+  await library.getByRole('button', { name: 'Tìm trong thư viện' }).click();
+  await library.getByRole('searchbox').fill('núi xanh');
+  await library.locator('[data-image-id="portrait"]').click();
+  await expect(viewer).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(library).toBeVisible();
+  await expect(library.getByRole('searchbox')).toHaveValue('núi xanh');
+  expect(posts).toHaveLength(0);
+});
+
+test('desktop màn hình thấp và đổi kích thước giữ tỉ lệ ảnh cùng nội dung đang nhập', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'pc', 'Kiểm tra thay đổi vùng nội dung trên desktop.');
+  await setup(page);
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.setViewportSize({ width: 1366, height: 600 });
+  await page.goto('/#imagine');
+  await page.getByRole('button', { name: 'Xem ảnh 1: Ngôi nhà giữa núi xanh', exact: true }).click();
+  const viewer = page.getByRole('dialog', { name: 'Xem ảnh đã tạo' });
+  await expect(viewer.getByLabel('Kích thước ảnh thực tế')).toHaveText('960 × 1440');
+  const shown = (await viewer.locator('.workspace-picture img').boundingBox())!;
+  const stage = (await viewer.locator('.workspace-canvas').boundingBox())!;
+  const form = (await viewer.locator('.workspace-edit-dock form').boundingBox())!;
+  expect(shown.width / shown.height).toBeCloseTo(2 / 3, 2);
+  expect(shown.height).toBeLessThanOrEqual(stage.height);
+  expect(shown.y).toBeGreaterThanOrEqual(76);
+  expect(form.y).toBeGreaterThanOrEqual(shown.y + shown.height);
+  expect(form.y + form.height).toBeLessThanOrEqual(600);
+  await noPageOverflow(page);
+  await page.screenshot({ path: testInfo.outputPath('desktop-short-portrait.png') });
+  await viewer.getByLabel('Mô tả chỉnh sửa ảnh').fill('Giữ nguyên ngôi nhà và đổi màu trời');
+  // Chuyển show/showModal không được gây InvalidStateError hoặc làm mất mô tả.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(() => viewer.evaluate(element => element.matches(':modal'))).toBe(true);
+  await expect(viewer.getByLabel('Mô tả chỉnh sửa ảnh')).toHaveValue('Giữ nguyên ngôi nhà và đổi màu trời');
+  await noPageOverflow(page);
+  await page.setViewportSize({ width: 1366, height: 600 });
+  await expect.poll(() => viewer.evaluate(element => element.matches(':modal'))).toBe(false);
+  await expect(viewer.getByLabel('Mô tả chỉnh sửa ảnh')).toHaveValue('Giữ nguyên ngôi nhà và đổi màu trời');
+  await expect(page.locator('.sidebar')).toBeVisible();
+  await noPageOverflow(page);
+  expect(errors).toEqual([]);
 });

@@ -176,7 +176,7 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
   const [expanded, setExpanded] = useState(false);
   const [libraryOpen, setLibraryOpen] = useState(false);
   useEffect(() => {
-    if (libraryRequest > 0) setLibraryOpen(true);
+    if (libraryRequest > 0) { setLightbox(null); setLibraryOpen(true); }
   }, [libraryRequest]);
   const [likeError, setLikeError] = useState<string | null>(null);
   const [previewLikes, setPreviewLikes] = useState<Record<string, boolean>>({});
@@ -236,9 +236,13 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
     if (!active) { setLightbox(null); setDeleteTarget(null); setDraggingSource(false); setExpanded(false); setLibraryOpen(false); dragDepth.current = 0; }
   }, [active]);
   useEffect(() => {
-    if (active && lightbox) lightboxRef.current?.showModal();
-    else lightboxRef.current?.close();
-  }, [active, lightbox]);
+    const dialog = lightboxRef.current;
+    if (!dialog) return;
+    // Desktop dùng vùng nội dung hiện tại để thanh bên thật vẫn thao tác được.
+    // Đóng trước khi đổi chế độ; trình duyệt không cho showModal trên dialog đã show.
+    dialog.close();
+    if (active && lightbox) { if (compact) dialog.showModal(); else dialog.show(); }
+  }, [active, lightbox, compact]);
   useEffect(() => {
     if (active && deleteTarget) deleteRef.current?.showModal();
     else deleteRef.current?.close();
@@ -259,9 +263,11 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
   useLayoutEffect(() => { onJobsChange?.(jobs); }, [jobs, onJobsChange]);
   useEffect(() => {
     if (!active || loading || !focusJobId) return;
+    if (lightbox) { setLightbox(null); return; }
+    setLibraryOpen(false);
     galleryRef.current?.querySelector(`[data-job-id="${focusJobId}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" });
     onFocusHandled?.();
-  }, [active, loading, focusJobId, onFocusHandled]);
+  }, [active, loading, focusJobId, onFocusHandled, lightbox]);
   useEffect(() => writeStored(QUALITY_KEY, quality), [quality]);
   useEffect(() => writeStored(RES_KEY, resolution), [resolution]);
   useEffect(() => writeStored(RATIO_KEY, aspect), [aspect]);
@@ -588,12 +594,12 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
   // Màn hình chờ chung kéo dài tới khi có thư viện; không hiện thêm một khung chờ bên trong studio.
   if (loading) return active ? <LoadingIndicator variant="screen" label="Loading" /> : null;
 
-  return <main className="imagine" hidden={!active}>
-      <button type="button" className="menu-btn studio-menu-btn" aria-label="Mở menu" onClick={onOpenSidebar}>
+  return <main className={'imagine' + (lightbox ? ' viewer-open' : '')} hidden={!active}>
+      <button type="button" hidden={!!lightbox} className="menu-btn studio-menu-btn" aria-label="Mở menu" onClick={onOpenSidebar}>
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg>
       </button>
 
-    <div className="imagine-gallery" ref={galleryRef}>
+    <div className="imagine-gallery" ref={galleryRef} hidden={!!lightbox}>
       {pollError && <p className="error" role="status">Đang mất kết nối. Peto sẽ kiểm tra lại lượt ảnh khi có mạng.</p>}
       {loadFailed && <div className="studio-load-error" role="alert"><p>Chưa tải được ảnh đã tạo.</p><button type="button" onClick={() => void loadJobs()}>Thử tải lại</button></div>}
       {!loading && !loadFailed && jobs.length === 0 && !generating && <section className="studio-welcome">
@@ -635,13 +641,13 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
       {hasMore && <button type="button" className="load-more" disabled={loadingMore} onClick={() => void loadMore()}>{loadingMore ? "Đang tải…" : "Xem ảnh cũ hơn"}</button>}
     </div>
 
-    {!libraryOpen && studioDock}
+    {!libraryOpen && !lightbox && studioDock}
 
-    <ImagineLibrary composer={studioDock} open={active && libraryOpen} jobs={jobs} onClose={() => setLibraryOpen(false)}
+    <ImagineLibrary composer={studioDock} open={active && libraryOpen} suspended={!!lightbox} jobs={jobs} onClose={() => setLibraryOpen(false)}
       onOpenImage={(job, index) => setLightbox({ job, index })} onDeleteImages={removeImages}
       onUseSources={controlsDisabled ? undefined : addLibrarySources} sourceLimit={5 - sources.length}
       hasMore={hasMore} loadingMore={loadingMore} onLoadMore={() => void loadMore()} />
-    <dialog ref={lightboxRef} className="imagine-lightbox" aria-label="Xem ảnh đã tạo" onCancel={() => setLightbox(null)} onClick={(event) => { if (event.target === event.currentTarget) setLightbox(null); }}>
+    <dialog ref={lightboxRef} className="imagine-lightbox" aria-label="Xem ảnh đã tạo" aria-modal={compact} onCancel={() => setLightbox(null)} onKeyDown={event => { if (event.key === 'Escape' && !event.defaultPrevented) { event.preventDefault(); setLightbox(null); } }}>
       {lightbox && lightboxImage && <ImageWorkspace key={lightboxImage.id} job={lightbox.job} image={lightboxImage} index={lightbox.index}
         original={!!lightbox.original} liked={lightboxLiked} disabled={controlsDisabled} likeError={likeError}
         canAdd={sources.length < 5} alreadyAdded={sources.some(source => source.imageId === lightboxImage.id)}

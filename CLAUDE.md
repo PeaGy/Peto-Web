@@ -993,8 +993,9 @@ including parents outside the current page, and keeps snapshot fallbacks if an a
 unsupported), download or delete. Deletion is per image: `DELETE /api/imagine/images/{id}` removes one output
 and deletes the job, source image included, once no output is left. `PUT /api/imagine/images/{id}/like` stores
 `imagine_images.liked`. Source images of edits cannot be deleted or liked on their own. The heart button lives
-in `ImageWorkspace.tsx`, a full-screen viewer above the library: a fitted image and edit prompt on the left,
-existing tools in the left editing strip and a details/action panel on the right (below the image on mobile), zoom/panel toggles, navigation, and side-by-side
+in `ImageWorkspace.tsx`, a desktop viewer inside Imagine beside the real app sidebar (modal on mobile):
+a fitted image and wide edit prompt in the central area, existing tools across the top of the right
+details/action panel (above the image on mobile), zoom/panel toggles, navigation, and side-by-side
 comparison in the central stage. `imageTools.ts` implements local normalized crop and vector brush/eraser
 strokes with Canvas, extracts a four-color palette, and encodes a new PNG source without overwriting the
 stored original. Undo keeps the original plus at most five recent PNG versions in memory; closing/reloading
@@ -1002,14 +1003,18 @@ loses these local drafts, which are labelled as unsaved. Download/reference/edit
 unchanged images keep their saved ID. A modified reference obeys the existing 5-source, 8 MiB each/16 MiB
 aggregate limits. Palette presets only append an editable prompt; no provider request occurs before Send.
 
-The owner's latest viewer layout puts the existing info/palette/crop/brush controls in a slim tool strip
-inside the left side of the editing area (horizontal above the image on mobile). This is not an app navigation
-sidebar. The zoom/back/panel controls and edit composer use the fitted image width plus breathing room,
-bounded by the canvas width, and sit above/below the canvas rather than over the image. The right panel
-shows the selected tool with the reference/aspect/share actions grouped at its bottom. The reaction row has
-like/download only: no X social action or duplicate close button. Back closes the viewer. Mobile gives the
+The owner's latest desktop screenshots supersede the earlier interpretation of the left tool strip:
+info/palette/crop/brush belong in a horizontal row at the top of the right panel. Keep the actual Peto
+sidebar visible and usable; never create another navigation sidebar or hide it with a desktop modal.
+Back sits at the top-left of the main area, zoom at the top-right. The composer is centered below the
+canvas, up to 940px of usable width regardless of portrait width. Photos retain their aspect ratio and
+fit the available height, with extra top clearance when the central area is narrow. Collapsing the right
+panel leaves a 72px rail with the existing aspect/reference/share/like/download actions, and an expand
+button; it does not add unavailable Grok actions. The full panel groups actions at its bottom. The reaction
+row has like/download only: no X social action or duplicate close button. Back closes the viewer. Mobile gives the
 image more height and scrolls the detail panel below; the body grid must use `minmax(0,1fr)` to prevent
-its controls expanding beyond narrow screens. Saved-version thumbnails and mouse-wheel zoom remain
+its controls expanding beyond narrow screens. Opening the viewer suspends the library dialog without
+resetting its search/filter state; Back/Escape restores it. Saved-version thumbnails and mouse-wheel zoom remain
 in the plan; do not invent a saved-history strip from `job.images`.
 The viewer sends one edit result through the existing background/idempotency/uncertain-request path.
 No segmentation, AI mask/inpainting guarantee, transparent-background removal, video or tag manager is

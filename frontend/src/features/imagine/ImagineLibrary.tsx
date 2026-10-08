@@ -46,7 +46,8 @@ function canShareFiles() {
  * Mỗi ô là một ảnh kết quả. Bấm để xem, giữ lâu hoặc bấm "Chọn" để chọn nhiều; chuột phải mở menu
  * của riêng ảnh đó. Việc gọi API xóa và cập nhật danh sách nằm ở Imagine, vì bộ ảnh và cột trái dùng chung.
  */
-export default function ImagineLibrary({ open, jobs, onClose, onOpenImage, onDeleteImages, onUseSources, sourceLimit = 5, hasMore, loadingMore, onLoadMore, composer }: {
+export default function ImagineLibrary({ open, suspended = false, jobs, onClose, onOpenImage, onDeleteImages, onUseSources, sourceLimit = 5, hasMore, loadingMore, onLoadMore, composer }: {
+  suspended?: boolean;
   composer?: ReactNode;
   onUseSources?: (images: ImagineImage[]) => void;
   sourceLimit?: number;
@@ -86,12 +87,13 @@ export default function ImagineLibrary({ open, jobs, onClose, onOpenImage, onDel
   const picked = Array.from(selected).flatMap(id => tiles.filter(tile => tile.image.id === id));
 
   useEffect(() => {
-    if (open) { dialogRef.current?.showModal(); return; }
+    // Tạm nhường chỗ cho khung xem, giữ bộ lọc và vị trí thư viện khi quay lại.
+    if (open) { if (suspended) dialogRef.current?.close(); else dialogRef.current?.showModal(); return; }
     dialogRef.current?.close();
     cancelPress(); suppressedClick.current = null;
     setSelecting(false); setSelected(new Set()); setMenu(null); setFilterOpen(false);
     setConfirmIds(null); setNotice(null); setQuery(""); setSearchOpen(false); setLikedOnly(false); setKind("all");
-  }, [open]);
+  }, [open, suspended]);
   useLayoutEffect(() => {
     const dialog = dialogRef.current, dock = dialog?.querySelector<HTMLElement>(".studio-dock");
     if (!open || !dialog || !dock || typeof ResizeObserver === "undefined") return;

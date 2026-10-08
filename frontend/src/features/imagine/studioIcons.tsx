@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 
-export type StudioIconName = 'back' | 'grid' | 'search' | 'check' | 'download' | 'trash' | 'brush' | 'palette' | 'crop' | 'info' | 'plus' | 'minus' | 'undo' | 'redo' | 'share' | 'close' | 'eraser' | 'panel' | 'heart' | 'arrowUp';
+export type StudioIconName = 'back' | 'grid' | 'search' | 'check' | 'download' | 'trash' | 'brush' | 'palette' | 'crop' | 'info' | 'plus' | 'minus' | 'undo' | 'redo' | 'share' | 'close' | 'eraser' | 'panel' | 'heart' | 'arrowUp' | 'aspect';
 const paths: Record<StudioIconName, ReactNode> = {
   back: <path d="m12 5-7 7 7 7M5 12h14" />,
   grid: <><rect x="4" y="4" width="6" height="6" rx="1.5" /><rect x="14" y="4" width="6" height="6" rx="1.5" /><rect x="4" y="14" width="6" height="6" rx="1.5" /><rect x="14" y="14" width="6" height="6" rx="1.5" /></>,
@@ -20,6 +20,7 @@ const paths: Record<StudioIconName, ReactNode> = {
   close: <path d="m6 6 12 12M6 18 18 6" />,
   eraser: <><path d="m4 14 9-10 8 7-9 10H9l-5-4v-3Zm4-5 8 7M12 21h9" /></>,
   panel: <><rect x="3" y="4" width="18" height="16" rx="3" /><path d="M15 4v16" /></>,
+  aspect: <rect x="3" y="6" width="18" height="12" rx="2.5" />,
 };
 export default function StudioIcon({ name }: { name: StudioIconName }) {
   return <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
