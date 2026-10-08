@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type PointerEvent, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent, type ReactNode } from 'react';
 import type { ImagineImage, ImagineJob } from '../../shared/api/api';
 import { imagineSources } from '../../shared/api/api';
 import ImageComparison from './ImageComparison';
@@ -18,6 +18,8 @@ const PALETTES = [
 const COLORS = ['#ffffff', '#000000', '#f04444', '#fb8917', '#f7cf1b', '#21be65', '#397cf5'];
 const RATIOS = ['auto', '1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3', '2:1', '1:2', '19.5:9', '9:19.5', '20:9', '9:20', '21:9', '5:2'];
 const clamp = (n: number, min = 0, max = 1) => Math.max(min, Math.min(max, n));
+const MIN_ZOOM = .5;
+const MAX_ZOOM = 8;
 
 export default function ImageWorkspace({ job, image, index, original, liked, disabled, canAdd, alreadyAdded, likeError, draft, onClose, onNavigate, onLike, onUse, onAdd, onSubmit }: {
   job: ImagineJob; image: ImagineImage; index: number; original: boolean; liked: boolean; disabled: boolean; canAdd: boolean; alreadyAdded: boolean; likeError: string | null;
@@ -48,6 +50,7 @@ export default function ImageWorkspace({ job, image, index, original, liked, dis
   const [cropRatio, setCropRatio] = useState('free');
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
+  const zoomAnchorRef = useRef<{ x: number; y: number; imageX: number; imageY: number } | null>(null);
   const cropImageRef = useRef<HTMLImageElement>(null);
   const strokeRef = useRef<Stroke | null>(null);
   const cropDrag = useRef<{ x: number; y: number; rect: CropArea; mode: string } | null>(null);
@@ -74,6 +77,36 @@ export default function ImageWorkspace({ job, image, index, original, liked, dis
     const observer = new ResizeObserver(measure); observer.observe(element); return () => observer.disconnect();
   }, [panelOpen]);
   useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    const wheel = (event: WheelEvent) => {
+      // Chỉ zoom ảnh; giữ cuộn ngang, phím zoom trình duyệt và các thao tác đang vẽ.
+      if (!ready || blocked || comparing || strokeRef.current || event.ctrlKey || event.metaKey || event.shiftKey || !event.deltaY || Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
+      event.preventDefault();
+      const rect = stage.querySelector<HTMLElement>('.workspace-picture')?.getBoundingClientRect();
+      zoomAnchorRef.current = rect && rect.width && rect.height ? {
+        x: event.clientX, y: event.clientY,
+        imageX: (event.clientX - rect.left) / rect.width,
+        imageY: (event.clientY - rect.top) / rect.height,
+      } : null;
+      const unit = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 16 : event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? stage.clientHeight : 1;
+      const factor = Math.exp(-clamp(event.deltaY * unit, -240, 240) * .0015);
+      setZoom(current => clamp(current * factor, MIN_ZOOM, MAX_ZOOM));
+    };
+    // Listener React mặc định passive, không chặn được cuộn trang khi zoom.
+    stage.addEventListener('wheel', wheel, { passive: false });
+    return () => stage.removeEventListener('wheel', wheel);
+  }, [ready, blocked, comparing]);
+  useLayoutEffect(() => {
+    const anchor = zoomAnchorRef.current, stage = stageRef.current;
+    zoomAnchorRef.current = null;
+    const rect = stage?.querySelector<HTMLElement>('.workspace-picture')?.getBoundingClientRect();
+    if (!anchor || !stage || !rect) return;
+    // Giữ điểm ảnh dưới con trỏ tại chỗ sau khi ảnh đổi kích thước.
+    stage.scrollLeft += rect.left + anchor.imageX * rect.width - anchor.x;
+    stage.scrollTop += rect.top + anchor.imageY * rect.height - anchor.y;
+  }, [zoom]);
+  useEffect(() => {
     const canvas = canvasRef.current;
     const context = canvas?.getContext('2d');
     if (canvas && context) drawStrokes(context, strokes, canvas.width, canvas.height);
@@ -83,9 +116,18 @@ export default function ImageWorkspace({ job, image, index, original, liked, dis
     if (draft) draft.onAppendPrompt(text);
     else setPrompt(current => current.trim() ? `${current.trimEnd()}\n${text}` : text);
   }
+  function resetZoom() {
+    zoomAnchorRef.current = null;
+    setZoom(1);
+    if (stageRef.current) { stageRef.current.scrollLeft = 0; stageRef.current.scrollTop = 0; }
+  }
+  function stepZoom(step: number) {
+    zoomAnchorRef.current = null;
+    setZoom(current => clamp(current + step, MIN_ZOOM, MAX_ZOOM));
+  }
   function saveVersion(data: string) {
     const next = [versions[0], ...[...versions.slice(1, version + 1), data].slice(-5)];
-    setVersions(next); setVersion(next.length - 1); setStrokes([]); setRedoStrokes([]); setPalette([]); setZoom(1); setNotice('Bản chỉnh sửa chưa lưu vào thư viện. Bạn tải xuống hoặc dùng làm tham chiếu trước khi đóng nhé. Ảnh gốc vẫn được giữ.');
+    setVersions(next); setVersion(next.length - 1); setStrokes([]); setRedoStrokes([]); setPalette([]); resetZoom(); setNotice('Bản chỉnh sửa chưa lưu vào thư viện. Bạn tải xuống hoặc dùng làm tham chiếu trước khi đóng nhé. Ảnh gốc vẫn được giữ.');
   }
   async function execute(action: () => Promise<void>) {
     if (operationRef.current) return;
@@ -154,7 +196,7 @@ export default function ImageWorkspace({ job, image, index, original, liked, dis
       <div className="workspace-body">
       <div className="workspace-topbar">
         <button type="button" className="workspace-round" aria-label="Quay lại" onClick={onClose}><StudioIcon name="back" /></button>
-        <div className="workspace-zoom"><button type="button" aria-label="Thu nhỏ ảnh" disabled={zoom <= .5} onClick={() => setZoom(value => Math.max(.5, value - .25))}><StudioIcon name="minus" /></button><button type="button" aria-label="Vừa khung" onClick={() => setZoom(1)}>{Math.round(zoom * 100)}%</button><button type="button" aria-label="Phóng to ảnh" disabled={zoom >= 3} onClick={() => setZoom(value => Math.min(3, value + .25))}><StudioIcon name="plus" /></button></div>
+        <div className="workspace-zoom"><button type="button" aria-label="Thu nhỏ ảnh" disabled={zoom <= MIN_ZOOM} onClick={() => stepZoom(-.25)}><StudioIcon name="minus" /></button><button type="button" aria-label="Vừa khung" title="Về 100%" onClick={resetZoom}>{Math.round(zoom * 100)}%</button><button type="button" aria-label="Phóng to ảnh" disabled={zoom >= MAX_ZOOM} onClick={() => stepZoom(.25)}><StudioIcon name="plus" /></button></div>
         <button type="button" className="workspace-round workspace-panel-toggle" aria-label={panelOpen ? 'Ẩn bảng công cụ' : 'Hiện bảng công cụ'} title={panelOpen ? 'Ẩn bảng công cụ' : 'Hiện bảng công cụ'} aria-controls="workspace-panel" aria-expanded={panelOpen} onClick={() => setPanelOpen(value => !value)}><StudioIcon name="panel" /></button>
       </div>
       <div ref={stageRef} className="workspace-canvas">

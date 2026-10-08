@@ -1024,8 +1024,13 @@ button; it does not add unavailable Grok actions. The full panel groups actions 
 row has like/download only: no X social action or duplicate close button. Back closes the viewer. Mobile gives the
 image more height and scrolls the detail panel below; the body grid must use `minmax(0,1fr)` to prevent
 its controls expanding beyond narrow screens. Opening the viewer suspends the library dialog without
-resetting its search/filter state; Back/Escape restores it. Saved-version thumbnails and mouse-wheel zoom remain
+resetting its search/filter state; Back/Escape restores it. Saved-version thumbnails remain
 in the plan; do not invent a saved-history strip from `job.images`.
+Mouse-wheel input within the single-image canvas changes its fitted zoom from 50% to 800%, using a
+non-passive native listener. Normalize pixel/line/page wheel deltas and keep the image point under the
+pointer in place along scrollable axes. Ignore browser zoom modifiers, horizontal scrolling, active brush
+strokes and the comparison view. Clicking the percentage restores 100% (the existing fitted scale) and
+clears the canvas scroll offsets; plus/minus retain their 25-point steps. Do not animate wheel zoom.
 Library and viewer inherit the project's body font, including native buttons, inputs and selects.
 Desktop controls are 38px high; viewer panel text is 14px, metadata 12px, and edit text 16px in a
 60px-high composer. The panel is bounded to 280–360px. Keep touch targets at least 44px and touch

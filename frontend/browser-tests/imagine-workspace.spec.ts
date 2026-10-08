@@ -464,3 +464,65 @@ test('Dùng ảnh này giữ canvas và mở ô nhập gọn với đúng ảnh 
   expect(posts[0]).toMatchObject({ prompt: 'Giữ ngôi nhà, đổi sang cảnh hoàng hôn', source_image_id: 'portrait-two', aspect_ratio: 'auto' });
   expect(posts[0]).not.toHaveProperty('source_image');
 });
+
+for (const shape of ['portrait', 'landscape', 'square'] as const) {
+  test(`bánh xe zoom ảnh ${shape}, giữ con trỏ và bấm phần trăm về 100%`, async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== 'pc', 'Bánh xe chuột dành cho desktop.');
+    const { posts } = await setup(page, 'Ngôi nhà giữa núi xanh', shape);
+    const errors: string[] = [];
+    page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
+    await page.goto('/#imagine');
+    await page.getByRole('button', { name: 'Xem ảnh 1: Ngôi nhà giữa núi xanh', exact: true }).click();
+    const viewer = page.getByRole('dialog', { name: 'Xem ảnh đã tạo' });
+    const picture = viewer.locator('.workspace-picture img');
+    const percent = viewer.getByRole('button', { name: 'Vừa khung', exact: true });
+    const stage = viewer.locator('.workspace-canvas');
+    await expect(viewer.getByLabel('Kích thước ảnh thực tế')).toBeVisible();
+    const initial = (await picture.boundingBox())!;
+    const point = { x: initial.x + initial.width * .65, y: initial.y + initial.height * .65 };
+    await page.mouse.move(point.x, point.y);
+    await page.mouse.wheel(0, -120);
+    await expect.poll(async () => (await picture.boundingBox())!.height).toBeGreaterThan(initial.height * 1.05);
+    expect(Number((await percent.innerText()).replace('%', ''))).toBeGreaterThan(100);
+    const enlarged = (await picture.boundingBox())!;
+    // Điểm ảnh dưới chuột không nhảy sang chỗ khác khi ảnh đã cần cuộn.
+    // Khi ảnh vẫn nhỏ hơn khung theo một chiều, chiều đó tiếp tục căn giữa.
+    const overflow = await stage.evaluate(element => ({ x: element.scrollWidth > element.clientWidth, y: element.scrollHeight > element.clientHeight }));
+    if (overflow.x) expect(Math.abs(enlarged.x + enlarged.width * .65 - point.x)).toBeLessThan(3);
+    if (overflow.y) expect(Math.abs(enlarged.y + enlarged.height * .65 - point.y)).toBeLessThan(3);
+    const pageScroll = await page.evaluate(() => ({ x: window.scrollX, y: window.scrollY }));
+    expect(pageScroll).toEqual({ x: 0, y: 0 });
+    for (let i = 0; i < 8; i++) await page.mouse.wheel(0, -240);
+    await expect(percent).toHaveText('800%');
+    await expect(viewer.getByRole('button', { name: 'Phóng to ảnh' })).toBeDisabled();
+    await viewer.getByRole('button', { name: 'Thu nhỏ ảnh' }).click();
+    await expect(percent).toHaveText('775%');
+    await viewer.getByRole('button', { name: 'Phóng to ảnh' }).click();
+    await expect(percent).toHaveText('800%');
+    await expect(viewer.getByRole('button', { name: 'Phóng to ảnh' })).toBeDisabled();
+    await page.mouse.move(point.x, point.y);
+    for (let i = 0; i < 8; i++) await page.mouse.wheel(0, 240);
+    await expect(percent).toHaveText('50%');
+    await expect(viewer.getByRole('button', { name: 'Thu nhỏ ảnh' })).toBeDisabled();
+    await percent.click();
+    await expect(percent).toHaveText('100%');
+    await expect.poll(async () => Math.abs((await picture.boundingBox())!.height - initial.height)).toBeLessThan(3);
+    expect(await stage.evaluate(element => ({ left: element.scrollLeft, top: element.scrollTop }))).toEqual({ left: 0, top: 0 });
+    const panel = (await viewer.locator('.workspace-panel-body').boundingBox())!;
+    await page.mouse.move(panel.x + 20, panel.y + 20);
+    await page.mouse.wheel(0, -120);
+    await expect(percent).toHaveText('100%');
+    // Các phím zoom trình duyệt và cuộn ngang không bị listener giữ lại.
+    const untouched = await stage.evaluate(element => {
+      const browserZoom = new WheelEvent('wheel', { deltaY: -120, ctrlKey: true, bubbles: true, cancelable: true });
+      const horizontal = new WheelEvent('wheel', { deltaX: 120, bubbles: true, cancelable: true });
+      element.dispatchEvent(browserZoom); element.dispatchEvent(horizontal);
+      return !browserZoom.defaultPrevented && !horizontal.defaultPrevented;
+    });
+    expect(untouched).toBe(true);
+    await expect(percent).toHaveText('100%');
+    await noPageOverflow(page);
+    expect(posts).toHaveLength(0);
+    expect(errors).toEqual([]);
+  });
+}
