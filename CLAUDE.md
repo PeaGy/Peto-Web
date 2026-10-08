@@ -1062,6 +1062,25 @@ Do not mount the generation composer in the mobile library or add an unavailable
 Mobile controls have 44px targets, search text is 16px, and the header/footer honor all safe-area insets.
 Enable viewport-fit=cover only while this mobile library is visible, restoring the previous viewport meta
 when it closes or yields to the viewer, so other screens keep their existing viewport behavior.
+The mobile image workspace follows the owner's Grok recording (2026-10-08): the image is centered,
+small version thumbnails scroll horizontally above the bottom actions, and the direct edit input stays
+compact. Render the original thumbnail even before it has edits. Entering tools replaces that dock with
+a tool row, horizontal palette presets, or a floating vertical brush-size slider. Collapse the size/color
+controls when a stroke starts; keep undo, redo, eraser and local PNG version saving available.
+Use a separate bottom sheet for metadata, fitted zoom, aspect ratio, comparison and reference actions;
+it supports backdrop/Escape dismissal, focus trapping/restoration, and dragging its handle down to close.
+Use a non-passive touchstart listener only on custom drag surfaces (drawing canvas, crop box, sheet
+handle) to suppress compatibility taps. Do not cancel native scrolling on the version/palette tracks.
+The crop overlay takes focus and makes the underlying mobile workspace inert until it closes.
+Keep the desktop panel/rail intact. Pending edits use the actual job state for the blurred image, dotted
+overlay and pending thumbnail; no timers that fake success. New results still belong to their root only.
+Mobile styles live in `features/imagine/imageWorkspaceMobile.css`. Sheet transitions use transform/opacity
+(260ms entrance, 160ms exit), tool entrance is 180–220ms, and fitted image layout changes use a short FLIP
+transform. Version navigation and wheel zoom remain instant. Keyboard actions and reduced motion skip
+these transitions. Honor viewport-fit/safe areas, 44px touch targets and 16px inputs; use visualViewport
+height/offset for keyboards that shrink only the visible viewport, without resizing during browser pinch.
+Chromium emulation covers gestures/layout/animation, but physical-phone keyboard, safe-area and touch
+feel still need hardware verification.
 The viewer's direct edit field sends one edit result; its "Dùng ảnh này" composer uses the existing studio
 controls and request path. Both use
 the existing background/idempotency/uncertain-request path, without issuing a request just to attach an image.

@@ -1,0 +1,114 @@
+/* Khung xem mobile theo video: ảnh ở giữa, phiên bản và thao tác gom về đáy. */
+.image-workspace.workspace-mobile { position: absolute; top: var(--workspace-visible-top, 0px); left: 0; right: 0; display: flex; flex-direction: column; height: min(100%, var(--workspace-visible-height, 100dvh)); overflow: hidden; font-size: 14px; }
+.workspace-mobile .workspace-main { flex: 1; min-height: 0; height: 100%; display: flex; flex-direction: column; container-type: normal; }
+.workspace-mobile .workspace-body { display: grid; grid-template-rows: minmax(0, 1fr) auto; flex: 1; min-height: 0; }
+.workspace-mobile .workspace-topbar { position: absolute; top: 0; padding: calc(10px + env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) 10px max(12px, env(safe-area-inset-left)); }
+.workspace-mobile .workspace-topbar .workspace-round { width: 44px; height: 44px; background: var(--panel-2); }
+.workspace-mobile :is(button, a):active:not(:disabled) { transform: scale(.97); }
+/* Icon đi cùng nút: giữ cùng mục tiêu chạm khi phản hồi nhấn thay đổi transform. */
+.workspace-mobile :is(button, a) * { pointer-events: none; }
+.workspace-mobile .history-thumb:active { transform: none; }
+.workspace-mobile .workspace-panel-toggle { margin-left: auto; }
+.workspace-mobile .mobile-brush-history { display: flex; gap: 6px; margin-left: auto; }
+.workspace-mobile .mobile-brush-history + .workspace-panel-toggle { margin-left: 0; }
+.workspace-mobile .workspace-canvas { position: relative; min-height: 0; overflow: auto; }
+.workspace-mobile .workspace-canvas-inner { padding: calc(66px + env(safe-area-inset-top)) max(4px, env(safe-area-inset-right)) 10px max(4px, env(safe-area-inset-left)); }
+.workspace-mobile .workspace-picture { transform-origin: center; }
+.workspace-mobile .workspace-picture > img { border-radius: 4px; }
+.workspace-mobile .workspace-edit-dock { position: relative; max-width: none; margin: 0; padding: 4px max(12px, env(safe-area-inset-right)) calc(12px + env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left)); }
+.workspace-mobile .workspace-history { width: 100%; padding: 0 0 6px; }
+.workspace-mobile .history-list { flex-direction: row; gap: 4px; width: max-content; max-width: 100%; margin-left: auto; padding: 2px; overflow-x: auto; overflow-y: hidden; touch-action: pan-x pinch-zoom; }
+.workspace-mobile .history-thumb { width: 32px; height: 32px; border-width: 1px; border-radius: 6px; padding: 0; }
+.workspace-mobile .history-thumb img { border-radius: 5px; opacity: .6; }
+.workspace-mobile .history-thumb[aria-current="true"] img { opacity: 1; }
+/* Vùng chạm cao 44px nhưng ảnh thu nhỏ vẫn chỉ 32px. */
+.workspace-mobile .history-thumb { box-sizing: content-box; border: 6px solid transparent; }
+.workspace-mobile .history-thumb[aria-current="true"] { border-color: transparent; }
+.workspace-mobile .history-thumb[aria-current="true"] img { outline: 1px solid var(--text); outline-offset: -1px; }
+.workspace-mobile .history-pending { width: 32px; height: 32px; margin: 6px 0; flex-shrink: 0; display: grid; place-items: center; border: 1px solid var(--text); border-radius: 6px; }
+.history-pending > span { width: 12px; height: 12px; border: 1.5px solid var(--muted); border-top-color: var(--text); border-radius: 50%; animation: workspace-pending-spin 650ms linear infinite; }
+.mobile-image-actions { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+.workspace-mobile .mobile-image-actions button { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; height: 44px; padding: 0; border-radius: 50%; background: none; }
+.workspace-mobile .mobile-image-actions > .mobile-edit-button { gap: 6px; padding: 0 12px; border-radius: 999px; background: var(--panel-2); font-size: 12px; }
+.mobile-image-actions > div { display: flex; margin-left: auto; background: var(--panel-2); border-radius: 999px; }
+.workspace-mobile .mobile-image-actions > .mobile-more { background: var(--panel-2); }
+.mobile-image-actions .liked { color: var(--danger); }
+.mobile-image-actions .liked svg { fill: currentColor; }
+.workspace-mobile .workspace-source-chip { margin-bottom: 6px; font-size: 12px; padding: 0 8px; min-height: 28px; }
+.workspace-mobile .workspace-source-chip span { max-width: none; }
+.workspace-mobile .workspace-source-chip button { min-height: 44px; }
+.workspace-mobile .workspace-source-chip[hidden] { display: none; }
+.workspace-mobile .workspace-edit-dock > form { min-height: 52px; gap: 6px; padding: 4px 4px 4px 14px; border-radius: 28px; }
+.workspace-mobile .workspace-edit-dock > form[hidden] { display: none; }
+.workspace-mobile .workspace-edit-dock textarea { min-height: 24px; line-height: 24px; max-height: 96px; font-size: 16px; }
+.workspace-mobile .workspace-edit-dock > form > button { width: 44px; height: 44px; flex-shrink: 0; background: var(--text); color: var(--bg); }
+.workspace-mobile .workspace-edit-dock > form > button:disabled { background: color-mix(in srgb, var(--text) 15%, var(--panel-2)); color: var(--muted); }
+.workspace-mobile .workspace-studio .imagine-composer { background: var(--panel-2); }
+.workspace-mobile .workspace-sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.workspace-mobile .workspace-notice { margin: 4px 0; display: flex; align-items: center; gap: 8px; }
+.workspace-mobile .workspace-notice button { flex-shrink: 0; margin-left: auto; width: 44px; height: 44px; border-radius: 50%; }
+.workspace-mobile .workspace-history-status { max-height: 72px; overflow-y: auto; }
+
+/* Công cụ đi lên từ đáy; ảnh chuyển vị trí theo vùng còn lại. */
+.mobile-tool-dock { padding: 4px 0 8px; animation: workspace-tool-enter 220ms cubic-bezier(.32,.72,0,1); }
+.mobile-tool-label { width: fit-content; margin: 0 auto 8px; padding: 3px 8px; border-radius: 6px; background: var(--panel-2); color: var(--muted); font-size: 10px; text-transform: uppercase; }
+.workspace-mobile .workspace-tools { position: static; justify-content: center; gap: 12px; margin: 0; padding: 0; }
+.workspace-mobile .workspace-tools button { width: 44px; height: 44px; border-radius: 50%; background: var(--panel-2); }
+.workspace-mobile .workspace-tools button[aria-pressed="true"] { background: var(--text); color: var(--bg); box-shadow: none; }
+.workspace-mobile .workspace-tools button[aria-label="Bảng màu"] svg { stroke: transparent; }
+.workspace-mobile .mobile-palette-list { display: flex; gap: 8px; overflow-x: auto; overscroll-behavior: contain; touch-action: pan-x pinch-zoom; padding: 8px 0 0; scrollbar-width: none; animation: workspace-tool-enter 180ms cubic-bezier(.23,1,.32,1); }
+.mobile-palette-list button { flex: 0 0 44px; padding: 4px; background: none; }
+.mobile-palette-list .palette-strip { height: 40px; width: 32px; margin: 0; flex-direction: column; border-radius: 8px; }
+.workspace-mobile .mobile-extract { display: grid; place-items: center; min-height: 44px; color: var(--muted); }
+.workspace-mobile .mobile-extracted-color { width: 44px; height: 44px; border: 8px solid var(--bg); border-radius: 50%; }
+.mobile-brush-size { position: absolute; z-index: 2; top: 50%; left: max(8px, env(safe-area-inset-left)); transform: translateY(-50%); width: 44px; height: min(240px, calc(100% - 20px)); padding: 12px 0 0; display: flex; flex-direction: column; align-items: center; gap: 8px; border-radius: 20px; background: color-mix(in srgb, var(--bg) 88%, transparent); border: 1px solid var(--line); animation: workspace-slider-enter 180ms cubic-bezier(.23,1,.32,1); }
+.mobile-brush-size input { writing-mode: vertical-lr; direction: rtl; width: 32px; flex: 1; min-height: 40px; margin: 0; accent-color: var(--text); }
+.brush-dot { display: block; border: 1px solid var(--muted); border-radius: 50%; flex-shrink: 0; }
+.brush-dot.large { width: 13px; height: 13px; }
+.brush-dot.small { width: 5px; height: 5px; }
+.workspace-mobile .mobile-brush-size button { min-height: 44px; width: 44px; border-radius: 50%; background: var(--panel-2); }
+.workspace-mobile .workspace-edit-dock > form > .mobile-color-trigger { color: var(--text); background: transparent; margin-left: -10px; }
+.mobile-color-trigger span { display: block; width: 18px; height: 18px; border: 2px solid currentColor; border-radius: 50%; }
+.mobile-brush-colors { display: flex; gap: 4px; overflow-x: auto; padding: 6px 0; overscroll-behavior: contain; }
+.workspace-mobile .mobile-brush-colors button { width: 44px; height: 44px; flex-shrink: 0; border: 8px solid var(--panel-2); border-radius: 50%; }
+.mobile-brush-colors button[aria-pressed="true"] { outline: 1px solid var(--text); outline-offset: -6px; }
+.mobile-brush-colors input { width: 44px; height: 44px; flex-shrink: 0; border: 0; padding: 6px; background: none; }
+
+.mobile-sheet-layer { position: absolute; inset: 0; z-index: 12; visibility: hidden; pointer-events: none; transition: visibility 0s 160ms; }
+.mobile-sheet-layer[data-open="true"] { visibility: visible; pointer-events: auto; transition-delay: 0s; }
+.workspace-mobile .mobile-sheet-backdrop { position: absolute; inset: 0; background: #0007; border-radius: 0; opacity: 0; transition: opacity 160ms ease; transform: none; }
+.mobile-sheet-layer[data-open="true"] .mobile-sheet-backdrop { opacity: 1; }
+.mobile-image-sheet { position: absolute; bottom: calc(8px + env(safe-area-inset-bottom)); left: max(8px, env(safe-area-inset-left)); right: max(8px, env(safe-area-inset-right)); max-height: calc(85dvh - env(safe-area-inset-top)); display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-radius: 24px; overflow: hidden; transform: translateY(calc(100% + 48px)); opacity: 0; transition: transform 160ms cubic-bezier(.32,.72,0,1), opacity 160ms ease; }
+.mobile-sheet-layer[data-open="true"] .mobile-image-sheet { transform: translateY(0); opacity: 1; transition-duration: 260ms, 160ms; }
+.mobile-sheet-handle { display: grid; place-items: center; min-height: 28px; touch-action: none; }
+.mobile-sheet-handle span { width: 32px; height: 4px; background: var(--muted); opacity: .5; border-radius: 4px; }
+.mobile-sheet-heading { display: flex; align-items: center; padding: 0 12px 4px 16px; }
+.mobile-sheet-heading h2 { font-size: 15px; font-weight: 550; margin: 0; }
+.workspace-mobile .mobile-sheet-heading button { margin-left: auto; width: 44px; height: 44px; display: grid; place-items: center; border-radius: 50%; }
+.mobile-sheet-content { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 12px 12px; }
+.mobile-sheet-content .workspace-prompt { font-size: 14px; }
+.workspace-mobile .mobile-sheet-content .workspace-zoom { width: fit-content; margin: 12px 0; }
+.workspace-mobile .mobile-sheet-content .workspace-zoom button { width: 44px; height: 44px; }
+.workspace-mobile .mobile-sheet-content .workspace-aspect { min-height: 48px; padding: 8px 12px; }
+.workspace-mobile .mobile-sheet-content select { min-height: 44px; font-size: 16px; }
+.workspace-mobile .mobile-sheet-content .workspace-wide { min-height: 48px; padding: 10px 12px; font-size: 14px; border-radius: 12px; }
+.workspace-mobile .mobile-sheet-content .brush-history button { width: 44px; height: 44px; }
+.workspace-mobile .workspace-crop-overlay { padding: calc(16px + env(safe-area-inset-top)) 12px calc(16px + env(safe-area-inset-bottom)); animation: workspace-tool-enter 200ms cubic-bezier(.32,.72,0,1); }
+.workspace-mobile .crop-actions { gap: 6px; }
+.workspace-mobile .crop-actions button, .workspace-mobile .crop-actions select { min-height: 44px; padding: 8px 12px; font-size: 14px; }
+
+/* Lượt sửa đang chạy thật: vẫn nhận ra ảnh cũ dưới nền chấm. */
+.mobile-pending .workspace-picture { opacity: .5; filter: blur(18px); }
+.workspace-mobile.mobile-pending .workspace-canvas::after { content: ''; position: absolute; inset: 0; pointer-events: none; background-image: radial-gradient(var(--muted) .7px, transparent .8px); background-size: 12px 12px; opacity: .3; animation: workspace-pending-glow 1.5s ease-in-out infinite alternate; }
+@keyframes workspace-tool-enter { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes workspace-slider-enter { from { opacity: 0; translate: -8px 0; } to { opacity: 1; translate: 0 0; } }
+@keyframes workspace-pending-spin { to { transform: rotate(360deg); } }
+@keyframes workspace-pending-glow { from { opacity: .12; } to { opacity: .3; } }
+@media (prefers-reduced-motion: reduce) {
+  .workspace-mobile :is(.mobile-tool-dock, .mobile-palette-list, .mobile-brush-size, .workspace-crop-overlay, .history-pending > span), .workspace-mobile.mobile-pending .workspace-canvas::after { animation: none; }
+  .workspace-mobile :is(.mobile-sheet-layer, .mobile-sheet-backdrop, .mobile-image-sheet) { transition: none; }
+  .workspace-mobile .mobile-sheet-layer :is(.mobile-sheet-backdrop, .mobile-image-sheet) { transition: none; }
+}
+/* Bàn phím chuyển trạng thái ngay; chuyển động chỉ dành cho thao tác chạm/chuột. */
+.workspace-mobile[data-keyboard="true"] :is(.mobile-tool-dock, .mobile-palette-list, .mobile-brush-size, .workspace-crop-overlay) { animation: none; }
+.workspace-mobile[data-keyboard="true"] :is(.mobile-sheet-layer, .mobile-sheet-backdrop, .mobile-image-sheet) { transition: none; }

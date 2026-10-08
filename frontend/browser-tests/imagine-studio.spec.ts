@@ -59,6 +59,7 @@ test('nhiều ảnh tham chiếu, tải lại lượt đang tạo và so sánh t
   expect(posts).toBe(1);
   complete = true;
   await page.getByRole('button', { name: 'Xem ảnh 1: Lấy chủ thể ảnh 1 và nền ảnh 2' }).click();
+  if (testInfo.project.name === 'mobile') await page.getByRole('button', { name: 'Tùy chọn ảnh', exact: true }).click();
   await page.getByRole('button', { name: 'So sánh trước / sau' }).click();
   await page.getByLabel('Chọn ảnh gốc để so sánh').selectOption('1');
   await expect(page.getByRole('img', { name: 'Ảnh gốc 2', exact: true })).toBeVisible();

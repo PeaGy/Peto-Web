@@ -1,5 +1,32 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page, type Locator } from '@playwright/test';
 import { mockPeto, noPageOverflow } from './fixtures';
+
+async function clickTool(viewer: Locator, name: string) {
+  if (!await viewer.getByRole('toolbar', { name: 'Công cụ ảnh' }).isVisible()) await viewer.getByRole('button', { name: 'Chỉnh sửa ảnh', exact: true }).click();
+  await viewer.getByRole('button', { name, exact: true }).click();
+}
+async function clickWorkspaceAction(viewer: Locator, name: string) {
+  const control = viewer.getByRole('button', { name, exact: true });
+  if (!await control.isVisible()) await viewer.getByRole('button', { name: 'Tùy chọn ảnh', exact: true }).click();
+  await control.click();
+  const close = viewer.getByRole('button', { name: 'Đóng tùy chọn', exact: true });
+  if (await close.isVisible()) await close.click();
+}
+async function swipeLeft(page: Page, list: Locator) {
+  const touch = await page.context().newCDPSession(page), row = (await list.boundingBox())!;
+  const point = { x: row.x + row.width - 30, y: row.y + row.height / 2 };
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [point] });
+  // Đi ngón tay trong 300ms; cử chỉ thô tức thì tạo fling rất nhanh và tap chỉ dừng fling.
+  for (let step = 1; step <= 3; step++) {
+    await page.waitForTimeout(100);
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ ...point, x: point.x - 60 * step }] });
+  }
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await expect.poll(() => list.evaluate(element => element.scrollLeft)).toBeGreaterThan(0);
+  let last = -1, stable = 0;
+  await expect.poll(async () => { const position = await list.evaluate(element => element.scrollLeft); stable = position === last ? stable + 1 : 0; last = position; return stable; }, { intervals: [100] }).toBeGreaterThan(2);
+  await touch.detach();
+}
 
 /** Ảnh dọc đủ lớn để phát hiện lỗi kích thước; không dùng ảnh 1 px để đánh giá bố cục. */
 async function setup(page: Page, prompt = 'Ngôi nhà giữa núi xanh', shape: 'portrait' | 'landscape' | 'square' = 'portrait', imageCount = 2) {
@@ -23,6 +50,7 @@ async function setup(page: Page, prompt = 'Ngôi nhà giữa núi xanh', shape: 
   const saves: Record<string, unknown>[] = [];
   const revisions: (typeof job & { root_image_id: string; edit_parent_image_id: string; status: string })[] = [];
   const files = new Map<string, string>();
+  let finishEdits = true;
   await page.route('**/api/imagine**', async route => {
     const request = route.request(), url = new URL(request.url());
     const workspace = /^\/api\/imagine\/images\/([^/]+)\/workspace$/.exec(url.pathname);
@@ -51,11 +79,189 @@ async function setup(page: Page, prompt = 'Ngôi nhà giữa núi xanh', shape: 
     }
     if (url.pathname === '/api/imagine') return route.fulfill({ json: { jobs: [job] } });
     const child = revisions.find(child => url.pathname === `/api/imagine/${child.id}`);
-    if (child) { child.status = 'complete'; return route.fulfill({ json: { job: child } }); }
+    if (child) {
+      if (!finishEdits) return route.fulfill({ json: { job: { ...child, images: [] } } });
+      child.status = 'complete'; return route.fulfill({ json: { job: child } });
+    }
     return route.fulfill({ status: 404 });
   });
-  return { posts, saves, revisions, job };
+  return { posts, saves, revisions, job, finish: (value: boolean) => { finishEdits = value; } };
 }
+
+test('mobile: menu trượt lên, kéo xuống đóng và bàn phím chuyển trạng thái ngay', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'mobile', 'Khung xem dành cho điện thoại');
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await setup(page, 'Ngôi nhà giữa núi xanh', 'square');
+  await page.goto('/#imagine/portrait/portrait');
+  const viewer = page.getByRole('dialog', { name: 'Xem ảnh đã tạo', exact: true });
+  const rail = viewer.getByRole('navigation', { name: 'Lịch sử chỉnh sửa ảnh' });
+  await expect(rail.getByRole('button', { name: 'Ảnh chính' })).toBeVisible();
+  const thumb = (await rail.locator('.history-thumb').boundingBox())!;
+  expect(thumb.width).toBe(44); expect(thumb.height).toBe(44);
+  const picture = viewer.locator('.workspace-picture img');
+  await expect(picture).toHaveJSProperty('naturalWidth', 960);
+  const photo = (await picture.boundingBox())!;
+  expect(photo.width).toBeGreaterThan(360);
+  expect(thumb.y).toBeGreaterThan(photo.y + photo.height);
+  await page.screenshot({ path: testInfo.outputPath('mobile-viewer.png') });
+  const more = viewer.getByRole('button', { name: 'Tùy chọn ảnh', exact: true });
+  const frames = await more.evaluate(async element => {
+    const sheet = document.querySelector<HTMLElement>('.mobile-image-sheet')!;
+    // Đo khung chuyển động thực tế sau click, không chỉ kiểm tra giá trị CSS khai báo.
+    getComputedStyle(sheet).transform; (element as HTMLButtonElement).click();
+    const samples: number[] = [];
+    for (let i = 0; i < 10; i++) {
+      await new Promise(requestAnimationFrame);
+      samples.push(new DOMMatrixReadOnly(getComputedStyle(sheet).transform).m42);
+    }
+    return samples;
+  });
+  expect(Math.max(...frames)).toBeGreaterThan(20);
+  expect(frames.at(-1)!).toBeLessThan(frames[0]);
+  const sheet = viewer.getByRole('dialog', { name: 'Tùy chọn ảnh', exact: true });
+  const close = sheet.getByRole('button', { name: 'Đóng tùy chọn', exact: true });
+  await expect(close).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(sheet.getByRole('button', { name: 'Thêm làm tham chiếu' })).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(close).toBeFocused();
+  await page.screenshot({ path: testInfo.outputPath('mobile-viewer-sheet.png') });
+  await page.keyboard.press('Escape');
+  await expect(sheet).not.toBeVisible(); await expect(more).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(sheet).toBeVisible();
+  await expect(sheet).toHaveCSS('transition-duration', '0s');
+  await close.tap();
+  await more.tap();
+  await expect(sheet).toHaveCSS('transform', 'matrix(1, 0, 0, 1, 0, 0)');
+  const handle = (await sheet.locator('.mobile-sheet-handle').boundingBox())!;
+  const touch = await page.context().newCDPSession(page);
+  const point = { x: handle.x + handle.width / 2, y: handle.y + handle.height / 2, id: 1 };
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [point] });
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ ...point, y: point.y + 100 }] });
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await expect(sheet).not.toBeVisible(); await expect(more).toBeFocused();
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await more.tap(); await expect(sheet).toHaveCSS('transition-duration', '0s');
+  await viewer.getByRole('button', { name: 'Đóng tùy chọn ảnh', exact: true }).tap({ position: { x: 20, y: 70 } });
+  await expect(sheet).not.toBeVisible();
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  const movement = await viewer.getByRole('button', { name: 'Chỉnh sửa ảnh', exact: true }).evaluate(async button => {
+    const picture = document.querySelector<HTMLElement>('.workspace-picture')!;
+    const before = picture.getBoundingClientRect(); (button as HTMLButtonElement).click();
+    const frames: { top: number; animations: number }[] = [];
+    for (let i = 0; i < 18; i++) {
+      await new Promise(requestAnimationFrame);
+      frames.push({ top: picture.getBoundingClientRect().top, animations: picture.getAnimations().length });
+    }
+    return { before: before.top, frames };
+  });
+  expect(movement.frames.some(frame => frame.animations > 0)).toBe(true);
+  expect(Math.abs(movement.frames[0].top - movement.before)).toBeLessThan(8);
+  expect(Math.abs(movement.frames.at(-1)!.top - movement.before)).toBeGreaterThan(20);
+  await noPageOverflow(page); await touch.detach();
+});
+
+test('mobile: vẽ bằng cảm ứng, cỡ bút nổi và bảng màu cuộn ngang', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'mobile', 'Công cụ cảm ứng dành cho điện thoại');
+  const { saves, posts } = await setup(page);
+  await page.goto('/#imagine/portrait/portrait');
+  const viewer = page.getByRole('dialog', { name: 'Xem ảnh đã tạo', exact: true });
+  await viewer.getByRole('button', { name: 'Chỉnh sửa ảnh', exact: true }).tap();
+  const size = viewer.getByRole('slider', { name: 'Cỡ bút' });
+  await expect(size).toBeInViewport();
+  const slider = (await size.boundingBox())!;
+  expect(slider.height).toBeGreaterThan(slider.width * 3);
+  await page.screenshot({ path: testInfo.outputPath('mobile-viewer-brush-size.png') });
+  await viewer.getByRole('button', { name: 'Chọn màu bút' }).tap();
+  await viewer.getByRole('button', { name: 'Chọn màu #f04444' }).tap();
+  await expect(viewer.locator('.mobile-brush-colors')).toHaveCount(0);
+  const canvas = viewer.getByLabel('Vẽ ghi chú lên ảnh');
+  const bounds = (await canvas.boundingBox())!;
+  const touch = await page.context().newCDPSession(page);
+  const point = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2, id: 1 };
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [point] });
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ ...point, x: point.x + 40 }] });
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await expect(size).toHaveCount(0);
+  await expect(viewer.getByRole('button', { name: 'Hoàn tác nét vẽ' })).toBeEnabled();
+  await page.screenshot({ path: testInfo.outputPath('mobile-viewer-brush.png') });
+  await viewer.getByRole('button', { name: 'Hoàn tác nét vẽ' }).tap();
+  await viewer.getByRole('button', { name: 'Làm lại nét vẽ' }).tap();
+  await viewer.getByRole('button', { name: 'Áp dụng nét vẽ' }).tap();
+  await expect(viewer.locator('.workspace-picture img')).toHaveAttribute('src', '/api/imagine/images/saved-1');
+  expect(saves).toHaveLength(1); expect(posts).toHaveLength(0);
+  const pixel = await viewer.locator('.workspace-picture img').evaluate(async element => {
+    const img = element as HTMLImageElement; await img.decode();
+    const c = document.createElement('canvas'); c.width = img.naturalWidth; c.height = img.naturalHeight;
+    const ctx = c.getContext('2d')!; ctx.drawImage(img, 0, 0);
+    return [...ctx.getImageData(c.width / 2, c.height / 2, 1, 1).data];
+  });
+  expect(pixel).toEqual([240, 68, 68, 255]);
+  await page.setViewportSize({ width: 320, height: 844 });
+  await clickTool(viewer, 'Bảng màu');
+  const palettes = viewer.locator('.mobile-palette-list');
+  await expect(palettes).toBeInViewport();
+  await expect(viewer.getByLabel('Mô tả chỉnh sửa ảnh')).not.toBeVisible();
+  await swipeLeft(page, palettes);
+  await page.screenshot({ path: testInfo.outputPath('mobile-viewer-palette.png') });
+  await viewer.getByRole('button', { name: 'Đóng công cụ' }).tap();
+  await clickTool(viewer, 'Cắt ảnh');
+  const crop = viewer.getByRole('group', { name: 'Vùng cắt, dùng phím mũi tên để di chuyển' });
+  await expect(crop).toBeFocused();
+  const cropBox = (await crop.boundingBox())!, cropPoint = { x: cropBox.x + cropBox.width / 2, y: cropBox.y + cropBox.height / 2 };
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [cropPoint] });
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ ...cropPoint, x: cropPoint.x + 10 }] });
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await viewer.getByRole('button', { name: 'Cắt', exact: true }).tap();
+  await expect(viewer.locator('.workspace-picture img')).toHaveAttribute('src', '/api/imagine/images/saved-2');
+  expect(saves).toHaveLength(2); expect(posts).toHaveLength(0);
+  const input = viewer.getByLabel('Mô tả chỉnh sửa ảnh');
+  await input.fill('Giữ ngôi nhà và đổi nền');
+  // Bàn phím chỉ thu visualViewport, còn layout viewport vẫn cao 844px.
+  await page.evaluate(() => { Object.defineProperty(window.visualViewport!, 'height', { value: 460, configurable: true }); window.visualViewport!.dispatchEvent(new Event('resize')); });
+  await input.focus();
+  await expect(input).toBeInViewport();
+  await expect(viewer.getByRole('button', { name: 'Gửi chỉnh sửa ảnh' })).toBeInViewport();
+  const inputBox = (await input.boundingBox())!;
+  expect(inputBox.y + inputBox.height).toBeLessThanOrEqual(460);
+  await noPageOverflow(page);
+  await page.screenshot({ path: testInfo.outputPath('mobile-viewer-small-keyboard.png') });
+  await touch.detach();
+});
+
+test('mobile: chờ kết quả có hiệu ứng, chọn bản cũ tức thì và cuộn phiên bản riêng', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'mobile', 'Trạng thái chỉnh sửa trên điện thoại');
+  const { posts, revisions, job, finish } = await setup(page);
+  for (let i = 1; i <= 12; i++) revisions.push({ ...job, id: `history-${i}`, created_at: i + 1, status: 'complete', root_image_id: 'portrait', edit_parent_image_id: 'portrait', images: [{ id: `history-image-${i}`, url: `/api/imagine/images/history-image-${i}`, mime: 'image/png' }] });
+  finish(false);
+  await page.goto('/#imagine/portrait/portrait');
+  const viewer = page.getByRole('dialog', { name: 'Xem ảnh đã tạo', exact: true });
+  const rail = viewer.getByRole('navigation', { name: 'Lịch sử chỉnh sửa ảnh' });
+  const list = rail.locator('.history-list');
+  await expect(rail.locator('.history-thumb')).toHaveCount(13);
+  await swipeLeft(page, list);
+  await rail.getByRole('button', { name: 'Phiên bản 2', exact: true }).tap();
+  await expect(page).toHaveURL(/#imagine\/portrait\/history-image-2$/);
+  await expect.poll(() => viewer.locator('.workspace-picture').evaluate(element => element.getAnimations().length)).toBe(0);
+  await viewer.getByLabel('Mô tả chỉnh sửa ảnh').fill('Đổi thành tranh màu nước');
+  await viewer.getByRole('button', { name: 'Gửi chỉnh sửa ảnh' }).tap();
+  await expect(viewer.getByRole('status', { name: 'Phiên bản đang tạo' })).toBeInViewport();
+  await expect(viewer.locator('.workspace-picture')).toHaveCSS('filter', 'blur(18px)');
+  await expect(rail.locator('.history-thumb').first()).toBeDisabled();
+  await page.screenshot({ path: testInfo.outputPath('mobile-viewer-pending.png') });
+  expect(posts).toHaveLength(1);
+  expect(posts[0]).toMatchObject({ source_image_id: 'history-image-2', edit_parent_image_id: 'history-image-2' });
+  finish(true);
+  await expect(page).toHaveURL(/#imagine\/portrait\/result-1$/);
+  await expect(rail.locator('.history-thumb')).toHaveCount(14);
+  await expect(viewer.getByRole('status', { name: 'Phiên bản đang tạo' })).toHaveCount(0);
+  await expect(viewer.locator('.workspace-picture')).toHaveCSS('filter', 'none');
+  await viewer.getByRole('button', { name: 'Quay lại', exact: true }).tap();
+  await page.getByRole('button', { name: 'Thư viện', exact: true }).last().tap();
+  await expect(page.getByRole('dialog', { name: 'Thư viện ảnh' }).locator('.library-tile')).toHaveCount(2);
+  await noPageOverflow(page);
+});
 
 test('thư viện mobile có tìm kiếm dưới đáy và hai bố cục như mẫu', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'mobile', 'Bố cục dành cho điện thoại');
@@ -215,18 +421,20 @@ test('thư viện có ô ảnh nhỏ và khung xem vừa màn hình trên PC/mob
     expect(zoom.x).toBeGreaterThan(shown.x + shown.width);
   } else {
     expect(top.y + top.height).toBeLessThanOrEqual(shown.y);
-    await expect(viewer.evaluate(element => element.matches(':modal'))).resolves.toBe(true);
+    await expect(viewer).toHaveAttribute('aria-modal', 'true');
+    expect(await viewer.evaluate(element => element.matches(':modal'))).toBe(true);
   }
   await expect(viewer.getByRole('button', { name: 'Gửi chỉnh sửa ảnh' })).toBeDisabled();
   await noPageOverflow(page);
   await page.screenshot({ path: testInfo.outputPath('workspace.png') });
-  await viewer.getByRole('button', { name: 'Bảng màu', exact: true }).click();
+  await clickTool(viewer, 'Bảng màu');
   await viewer.getByRole('button', { name: 'Lấy màu từ ảnh' }).click();
   await expect(viewer.getByRole('button', { name: /^Màu #/ })).toHaveCount(4);
   await viewer.getByRole('button', { name: 'Bắc Âu', exact: true }).click();
   await expect(viewer.getByLabel('Mô tả chỉnh sửa ảnh')).toHaveValue(/Áp dụng bảng màu bắc âu/);
   expect(posts).toHaveLength(0);
   await page.screenshot({ path: testInfo.outputPath('palette.png') });
+  if (testInfo.project.name === 'mobile') await viewer.getByRole('button', { name: 'Đóng công cụ', exact: true }).click();
   await viewer.getByRole('button', { name: 'Quay lại', exact: true }).click();
   await expect(library).toBeVisible();
   await expect(tile.locator('img')).toHaveAttribute('src', '/api/imagine/images/portrait');
@@ -240,30 +448,30 @@ test('cắt/vẽ tạo nguồn PNG mới, hoàn tác giữ ảnh gốc, chỉ g�
   await page.getByRole('button', { name: 'Xem ảnh 1: Ngôi nhà giữa núi xanh', exact: true }).click();
   const viewer = page.getByRole('dialog', { name: 'Xem ảnh đã tạo' });
   await expect(viewer.getByLabel('Kích thước ảnh thực tế')).toHaveText('960 × 1440');
-  await viewer.getByRole('button', { name: 'Cắt ảnh', exact: true }).click();
+  await clickTool(viewer, 'Cắt ảnh');
   await viewer.getByLabel('Tỉ lệ cắt').selectOption('1:1');
   await page.screenshot({ path: testInfo.outputPath('crop.png') });
   // Escape chỉ hủy vùng cắt; khung xem vẫn mở.
   await page.keyboard.press('Escape');
   await expect(viewer).toBeVisible();
   await expect(viewer.getByLabel('Tỉ lệ cắt')).toHaveCount(0);
-  await viewer.getByRole('button', { name: 'Cắt ảnh', exact: true }).click();
+  await clickTool(viewer, 'Cắt ảnh');
   await viewer.getByRole('button', { name: 'Cắt', exact: true }).click();
   await expect(viewer.getByLabel('Kích thước ảnh thực tế')).toHaveText('864 × 864');
-  await viewer.getByRole('button', { name: 'Hoàn tác chỉnh sửa' }).click();
+  await clickWorkspaceAction(viewer, 'Hoàn tác chỉnh sửa');
   await expect(viewer.getByLabel('Kích thước ảnh thực tế')).toHaveText('960 × 1440');
-  await viewer.getByRole('button', { name: 'Làm lại chỉnh sửa' }).click();
+  await clickWorkspaceAction(viewer, 'Làm lại chỉnh sửa');
   await expect(viewer.getByLabel('Kích thước ảnh thực tế')).toHaveText('864 × 864');
-  await viewer.getByRole('button', { name: 'Bút vẽ', exact: true }).click();
+  await clickTool(viewer, 'Bút vẽ');
   const canvas = viewer.getByLabel('Vẽ ghi chú lên ảnh');
   const bounds = (await canvas.boundingBox())!;
   // Pointer dùng cùng đường xử lý cho chuột và cảm ứng.
-  await canvas.dispatchEvent('pointerdown', { pointerId: 1, pointerType: 'mouse', button: 0, clientX: bounds.x + bounds.width / 2, clientY: bounds.y + bounds.height / 2 });
+  await canvas.dispatchEvent('pointerdown', { pointerId: 1, pointerType: 'mouse', isPrimary: true, button: 0, clientX: bounds.x + bounds.width / 2, clientY: bounds.y + bounds.height / 2 });
   await canvas.dispatchEvent('pointermove', { pointerId: 1, pointerType: 'mouse', clientX: bounds.x + bounds.width * .75, clientY: bounds.y + bounds.height / 2 });
   await canvas.dispatchEvent('pointerup', { pointerId: 1, pointerType: 'mouse' });
   await expect(viewer.getByRole('button', { name: 'Hoàn tác nét vẽ' })).toBeEnabled();
   await viewer.getByRole('button', { name: 'Hoàn tác nét vẽ' }).click();
-  await expect(viewer.getByRole('button', { name: 'Áp dụng nét vẽ' })).toBeDisabled();
+  await expect(viewer.getByRole('button', { name: testInfo.project.name === 'mobile' ? 'Gửi chỉnh sửa ảnh' : 'Áp dụng nét vẽ' })).toBeDisabled();
   await viewer.getByRole('button', { name: 'Làm lại nét vẽ' }).click();
   await viewer.getByRole('button', { name: 'Áp dụng nét vẽ' }).click();
   const data = await viewer.locator('.workspace-picture img').getAttribute('src');
@@ -345,7 +553,7 @@ test('mô tả dài và nút thao tác vẫn đọc/bấm được ở màn hìn
   await expect(input).toHaveAttribute('enterkeyhint', 'send');
   expect(await input.evaluate(element => element.scrollHeight <= element.clientHeight + 1)).toBe(true);
   await expect(viewer.getByRole('button', { name: 'Gửi chỉnh sửa ảnh' })).toBeEnabled();
-  for (const name of ['Gửi chỉnh sửa ảnh', 'Ẩn bảng công cụ', 'Phóng to ảnh']) {
+  for (const name of ['Gửi chỉnh sửa ảnh', 'Chỉnh sửa ảnh', 'Tùy chọn ảnh']) {
     const control = (await viewer.getByRole('button', { name, exact: true }).boundingBox())!;
     expect(control.x + control.width).toBeLessThanOrEqual(320);
   }
@@ -367,26 +575,28 @@ test('ảnh ngang và zoom giữ nút cùng ô nhập ngoài vùng ảnh', async
   const stage = (await viewer.locator('.workspace-canvas').boundingBox())!;
   expect(shown.width).toBeLessThanOrEqual(stage.width);
   expect(shown.height).toBeLessThanOrEqual(stage.height);
-  await viewer.getByRole('button', { name: 'Phóng to ảnh' }).click();
-  await expect(viewer.getByRole('button', { name: 'Vừa khung' })).toHaveText('125%');
+  await clickWorkspaceAction(viewer, 'Phóng to ảnh');
+  await expect(viewer.locator('.workspace-zoom button[aria-label="Vừa khung"]')).toHaveText('125%');
   const zoomed = (await picture.boundingBox())!;
   const top = (await viewer.locator('.workspace-topbar').boundingBox())!;
   const dock = (await viewer.locator('.workspace-edit-dock').boundingBox())!;
   expect(top.y + top.height).toBeLessThanOrEqual(zoomed.y);
   expect(dock.y).toBeGreaterThanOrEqual(stage.y + stage.height);
-  await viewer.getByRole('button', { name: 'Vừa khung' }).click();
-  await viewer.getByRole('button', { name: 'Ẩn bảng công cụ' }).click();
-  await expect(viewer.locator('.workspace-panel-body')).toBeHidden();
+  await clickWorkspaceAction(viewer, 'Vừa khung');
   if (testInfo.project.name === 'pc') {
+    await viewer.getByRole('button', { name: 'Ẩn bảng công cụ' }).click();
+    await expect(viewer.locator('.workspace-panel-body')).toBeHidden();
     expect((await viewer.locator('.workspace-panel').boundingBox())!.width).toBe(60);
     await expect(viewer.getByRole('button', { name: 'Chia sẻ', exact: true })).toBeVisible();
     await viewer.getByRole('button', { name: 'Hiện bảng công cụ' }).click();
   } else {
-    await expect(viewer.locator('.workspace-panel-bottom')).toBeHidden();
+    await viewer.getByRole('button', { name: 'Chỉnh sửa ảnh', exact: true }).click();
+    await expect(viewer.locator('.workspace-panel')).toHaveCount(0);
     await expect(viewer.getByRole('toolbar', { name: 'Công cụ ảnh' })).toBeVisible();
   }
-  await viewer.getByRole('button', { name: 'Bảng màu', exact: true }).click();
-  await expect(viewer.locator('.workspace-panel')).toBeVisible();
+  await clickTool(viewer, 'Bảng màu');
+  if (testInfo.project.name === 'pc') await expect(viewer.locator('.workspace-panel')).toBeVisible();
+  else await expect(viewer.locator('.mobile-palette-list')).toBeVisible();
   await noPageOverflow(page);
   await page.screenshot({ path: testInfo.outputPath('landscape-workspace.png') });
 });
@@ -584,11 +794,13 @@ test('Dùng ảnh này giữ canvas và mở ô nhập gọn với đúng ảnh 
   await expect(viewer.getByRole('img', { name: 'Ảnh tham chiếu 2' })).toBeVisible();
   await viewer.getByRole('button', { name: 'Gỡ ảnh 2' }).click();
   await expect(input).toHaveValue('Giữ ngôi nhà, đổi sang cảnh hoàng hôn');
+  if (testInfo.project.name === 'mobile') await viewer.getByRole('button', { name: 'Tùy chọn ảnh', exact: true }).click();
   await viewer.getByLabel('Tỉ lệ ảnh chỉnh sửa').selectOption('3:4');
+  if (testInfo.project.name === 'mobile') await viewer.getByRole('button', { name: 'Đóng tùy chọn', exact: true }).click();
   await viewer.getByRole('button', { name: 'Tỉ lệ: 3:4' }).click();
   await viewer.getByRole('menuitemradio', { name: 'Tự động', exact: true }).click();
   await expect(viewer.getByLabel('Tỉ lệ ảnh chỉnh sửa')).toHaveValue('auto');
-  await viewer.getByRole('button', { name: 'Bảng màu', exact: true }).click();
+  await clickTool(viewer, 'Bảng màu');
   await viewer.getByRole('button', { name: 'Bắc Âu', exact: true }).click();
   await expect(input).toHaveValue(/Giữ ngôi nhà, đổi sang cảnh hoàng hôn\nÁp dụng bảng màu bắc âu/);
   await input.fill('Giữ ngôi nhà, đổi sang cảnh hoàng hôn');
@@ -636,7 +848,7 @@ for (const shape of ['portrait', 'landscape', 'square'] as const) {
     await expect(viewer.getByRole('button', { name: 'Phóng to ảnh' })).toBeDisabled();
     await viewer.getByRole('button', { name: 'Thu nhỏ ảnh' }).click();
     await expect(percent).toHaveText('775%');
-    await viewer.getByRole('button', { name: 'Phóng to ảnh' }).click();
+    await clickWorkspaceAction(viewer, 'Phóng to ảnh');
     await expect(percent).toHaveText('800%');
     await expect(viewer.getByRole('button', { name: 'Phóng to ảnh' })).toBeDisabled();
     await page.mouse.move(point.x, point.y);
