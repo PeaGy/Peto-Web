@@ -65,7 +65,10 @@ def normalize_sources(items: object) -> list[dict]:
     return sources[:MAX_SOURCES]
 
 
-def search_context(mode: str, enabled: bool) -> str:
+def search_context(mode: str, enabled: bool, *, english: bool = False) -> str:
+    if english and not spoken_reply.get():
+        from prompts.english import search_prompt
+        return search_prompt(mode, enabled)
     if not enabled or mode == "off":
         return (
             "## Tìm kiếm web của lượt này\nCông cụ tìm web đang tắt. Không tuyên bố đã tra cứu "

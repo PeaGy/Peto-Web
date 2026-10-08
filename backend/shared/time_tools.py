@@ -79,8 +79,16 @@ def current_datetime(timezone: str | None = None, *, now: datetime | None = None
     }
 
 
-def time_context(timezone: str | None = None) -> str:
+def time_context(timezone: str | None = None, *, english: bool = False) -> str:
     clock = current_datetime(timezone)
+    if english:
+        return (
+            "## Server-verified current time\n"
+            f"{clock['datetime']} ({clock['timezone']}, {clock['utc_offset']}).\n"
+            "Use this fresh time over historical timestamps for relative dates. The configured/browser timezone "
+            "does not prove the user's location. Do not add timestamps to every reply. For fresh time or another "
+            "timezone, use get_current_datetime; clarify ambiguous place names."
+        )
     return (
         "## Thời gian được máy chủ xác minh cho lượt hiện tại\n"
         f"{clock['weekday']}, {clock['date']}, {clock['time']} "

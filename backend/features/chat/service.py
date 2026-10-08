@@ -48,6 +48,8 @@ from features.chat.history import (
     _visible,
 )
 from features.chat.prompt_context import _build_system_prompt
+from prompts.routing import uses_english
+from prompts.english import DOCUMENT_MODE_PROMPT
 from features.chat.schemas import (
     ALLOWED_EFFORTS,
     CONVERSATION_MODES,
@@ -140,7 +142,7 @@ async def _stream_reply(
     try:
         async with asyncio.timeout_at(min(loop.time() + idle, hard)) as limit:
             async for chunk in provider.stream(
-                system_prompt=f"{system_prompt}\n\n{time_context(timezone)}",
+                system_prompt=f"{system_prompt}\n\n{time_context(timezone, english=uses_english(model))}",
                 messages=history, effort=effort, timezone=timezone,
                 web_search=web_search,
             ):
@@ -375,7 +377,7 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                         raise ProviderError('Hội thoại đã được lưu trữ. Hãy khôi phục trước khi gửi tin nhắn.')
                     if not current_settings or current_settings.get('project_id') != project_id:
                         raise ProviderError('Hội thoại đã chuyển dự án hoặc bị xóa. Mở lại trước khi gửi nhé.')
-                project_prompt = await project_context(owner, project_id, request.project_file_ids)
+                project_prompt = await project_context(owner, project_id, request.project_file_ids, english=uses_english(model))
                 # Từ chối cooldown/hàng chờ trước khi ghi bất kỳ tin nhắn nào.
                 if conversation_id and not await db.owns_conversation(owner, conversation_id):
                     raise ProviderError("Hội thoại đã bị xóa. Mở cuộc trò chuyện mới nhé.")
@@ -448,7 +450,7 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                     anyio.to_thread.run_sync(_to_chat_messages, rows),
                     _build_system_prompt(owner, mode, install_command, persona, conversation_id,
                         agent_question='\n'.join(str(row.get('content', ''))[:4000]
-                            for row in [r for r in rows if r.get('role') == 'user'][-3:])),
+                            for row in [r for r in rows if r.get('role') == 'user'][-3:]), model=model),
                 )
                 document_session = DocumentSession(owner, conversation_id, rows) if mode == 'chat' else None
                 if document_session:
@@ -458,7 +460,8 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                 # Tệp trong lịch sử vừa đọc (đã lọc theo chủ tài khoản trong SQL): Peto tìm/đọc thêm được khi cần.
                 files_session = attachment_tools.AttachmentFiles(rows, owner) if mode == 'chat' else None
                 if request.document_mode and mode == 'chat':
-                    system_prompt += '\n\n[PETO_DOCUMENT_CREATE]\nNgười dùng chọn tạo tài liệu: hãy gọi create_document để tạo tệp theo yêu cầu, mặc định DOCX nếu chưa chọn định dạng. Trả lời ngắn sau khi có kết quả; nội dung dài đặt trong công cụ.'
+                    system_prompt += '\n\n' + (DOCUMENT_MODE_PROMPT if uses_english(model) else
+                        '[PETO_DOCUMENT_CREATE]\nNgười dùng chọn tạo tài liệu: hãy gọi create_document để tạo tệp theo yêu cầu, mặc định DOCX nếu chưa chọn định dạng. Trả lời ngắn sau khi có kết quả; nội dung dài đặt trong công cụ.')
                 prepared_at = perf_counter()
                 github_session = GitHubSession(owner) if mode == 'chat' and await connector_store.get_github(owner) else None
                 # A timeout may already have consumed provider tokens. Do not repeat the whole turn invisibly.

@@ -27,6 +27,7 @@ from shared.time_tools import TOOL_SCHEMAS, execute_tool
 from features.documents.tools import current_session, SCHEMA as DOCUMENT_SCHEMA, EDIT_SCHEMA, PRESENTATION_SCHEMA, SPREADSHEET_SCHEMA
 from features.connectors.tools import current_session as github_session_context, NAMES as GITHUB_TOOLS, NOTE as GITHUB_NOTE
 from shared.web_search import normalize_sources, search_context
+from prompts.english import FINALIZING_PROMPT, GITHUB_PROMPT, NO_GITHUB_PROMPT
 
 from .base import ChatMessage, ChatProvider, ProviderError, StreamChunk
 
@@ -175,7 +176,8 @@ class ResponsesProvider(ChatProvider):
 
         payload_input = build_input_payload(messages)
         search_enabled = tools_enabled and WEB_SEARCH_ENABLED and web_search != "off"
-        instructions = f"{system_prompt}\n\n{search_context(web_search, search_enabled)}"
+        english = self.service in {"OpenAI", "Anthropic"}
+        instructions = f"{system_prompt}\n\n{search_context(web_search, search_enabled, english=english)}"
         sources: list[dict] = []
         search_finished = False
         search_ids: set[str] = set()
@@ -202,14 +204,17 @@ class ResponsesProvider(ChatProvider):
         github_session = github_session_context.get()
         github_schemas = github_session.schemas() if github_session else []
         if tools_enabled:
-            instructions += ('\n\nGitHub của người dùng đã kết nối. Dùng công cụ github_* khi cần dữ liệu repo hoặc GitHub Actions. '
-                             'Các công cụ chỉ đọc; không được nói đã sửa, chạy lại hay ghi lên GitHub. ' + GITHUB_NOTE) if github_schemas else (
-                '\n\nGitHub của người dùng chưa kết nối trong lượt này. Nếu cần đọc repo riêng hoặc log Actions, hướng dẫn mở Cài đặt → Kết nối. Không giả vờ đã truy cập tài khoản GitHub.')
+            if english:
+                instructions += '\n\n' + (GITHUB_PROMPT if github_schemas else NO_GITHUB_PROMPT)
+            else:
+                instructions += ('\n\nGitHub của người dùng đã kết nối. Dùng công cụ github_* khi cần dữ liệu repo hoặc GitHub Actions. '
+                                 'Các công cụ chỉ đọc; không được nói đã sửa, chạy lại hay ghi lên GitHub. ' + GITHUB_NOTE) if github_schemas else (
+                    '\n\nGitHub của người dùng chưa kết nối trong lượt này. Nếu cần đọc repo riêng hoặc log Actions, hướng dẫn mở Cài đặt → Kết nối. Không giả vờ đã truy cập tài khoản GitHub.')
         workbooks = bool(document_session and document_session.workbooks)
         max_rounds = max(MAX_TOOL_ROUNDS, MAX_GITHUB_TOOL_ROUNDS if github_schemas else 0, MAX_WORKBOOK_TOOL_ROUNDS if workbooks else 0)
         max_calls = max(MAX_TOOL_CALLS, MAX_GITHUB_TOOL_CALLS if github_schemas else 0, MAX_WORKBOOK_TOOL_CALLS if workbooks else 0)
         # Lượt nhờ sửa tệp Excel còn có thể nhắc làm tiếp: chưa sửa hay tạo tệp nào, và chưa nhắc lần nào.
-        watching = bool(tools_enabled and workbooks and getattr(document_session, "edit_request", False))
+        watching = bool(self.service == "xAI" and tools_enabled and workbooks and getattr(document_session, "edit_request", False))
         follow_up_next = False
         for round_index in range(max_rounds + 1):
             follow_up, follow_up_next = follow_up_next, False
@@ -224,8 +229,9 @@ class ResponsesProvider(ChatProvider):
             usage: dict = {}
             create_kwargs: dict = {
                 "model": self.model,
-                "instructions": instructions + ('\n\nLượt này đã chạm giới hạn tra cứu. Hãy trả lời bằng những kết quả đã nhận, không gọi thêm công cụ. '
-                    'Nếu dữ liệu chưa đủ, nêu rõ phần chưa đọc hoặc chưa xác minh; không bịa kết quả và không hứa tiếp tục tra cứu trong lượt này.' if finalizing else ''),
+                "instructions": instructions + ('\n\n' + (FINALIZING_PROMPT if english else
+                    'Lượt này đã chạm giới hạn tra cứu. Hãy trả lời bằng những kết quả đã nhận, không gọi thêm công cụ. '
+                    'Nếu dữ liệu chưa đủ, nêu rõ phần chưa đọc hoặc chưa xác minh; không bịa kết quả và không hứa tiếp tục tra cứu trong lượt này.') if finalizing else ''),
                 "input": payload_input,
                 "max_output_tokens": self.max_output_tokens if tools_enabled else min(self.max_output_tokens, 1024),
                 "reasoning": {

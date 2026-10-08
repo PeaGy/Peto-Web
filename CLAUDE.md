@@ -38,6 +38,25 @@ codebase is written in Vietnamese.** Keep it that way when adding code — an En
 string would be visibly out of place in the UI. Identifiers, type names and this file stay
 in English.
 
+Provider-specific model instructions are an explicit exception: OpenAI and Claude receive compact English
+instructions from `backend/prompts/english.py`, composed through `prompts/routing.py` for normal Web Chat and
+`features/agent/api.py` for Agent (including compaction). Peto/xAI retains its Vietnamese prompt; roleplay and
+Companion retain their existing prompts. The shared English core keeps the Peto identity and replies in the
+user's language, defaulting to Vietnamese with full diacritics. Raw user messages, memory, preferences, project guidance, skill metadata and
+documentation are never translated. Fixed context wrappers/search/time/tool-budget instructions have English
+variants; tool schemas, validation, user-facing errors and logs retain Vietnamese. CLI help enters English Web
+prompts only for product/Agent questions (using recent turns for follow-ups); file-tool instructions remain always
+present to avoid fragile keyword-based routing. Grok's short Excel-announcement follow-up is restricted to xAI.
+Routing and context preservation are covered in `backend/tests/test_prompt_routing.py`; these mocked tests do not
+establish live model answer quality or billed token usage.
+
+On 2026-10-09 the owner requested fuller, more readable Web Chat analysis for all providers. Normal Peto Chat
+adds `ANALYSIS_PRESENTATION_PROMPT` from `prompts/assistant.py`; the English Web block mirrors that policy for
+OpenAI/Claude. Reviews use meaningful headings, real short blockquotes, code excerpts, impact and suggested changes.
+Depth follows the task, not the question's length; simple questions and requested summaries stay concise. Numerical
+ratings require criteria, and quotations must be real. Agent work summaries, roleplay and spoken Companion are not
+forced into this Web presentation policy. The frontend already supports blockquotes and highlighted code blocks.
+
 ## Commands
 
 Python 3.12+ (the checked-in venv runs 3.14). Vite 8 requires Node >= 22.12 to build.

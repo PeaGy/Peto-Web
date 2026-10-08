@@ -43,8 +43,13 @@ _DIAGRAM_WORDS = re.compile(
 )
 
 
-def build_diagram_guide(question: str) -> str:
+def build_diagram_guide(question: str, *, english: bool = False) -> str:
     """Hướng dẫn vẽ sơ đồ khi vài tin nhắn gần đây nói tới sơ đồ; không thì chuỗi rỗng."""
     folded = unicodedata.normalize("NFD", question.lower().replace("đ", "d"))
     folded = "".join(char for char in folded if unicodedata.category(char) != "Mn")
-    return "\n\n" + DIAGRAM_PROMPT if _DIAGRAM_WORDS.search(folded) else ""
+    if not _DIAGRAM_WORDS.search(folded):
+        return ""
+    if english:
+        from .english import DIAGRAM_PROMPT as english_prompt
+        return "\n\n" + english_prompt
+    return "\n\n" + DIAGRAM_PROMPT
