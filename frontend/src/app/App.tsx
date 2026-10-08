@@ -208,9 +208,19 @@ export default function App() {
   const dropAccountMenu = useCallback(() => setAccountMenu(null), []);
   const [view, setView] = useState<AppView>(() => {
     const hash = typeof window !== "undefined" ? window.location.hash : "";
-    return hash === "#imagine" ? "imagine" : hash === "#companion" ? "companion" : "chat";
+    return hash === "#imagine" || hash.startsWith("#imagine/") ? "imagine" : hash === "#companion" ? "companion" : "chat";
   });
   const [imageVisited, setImageVisited] = useState(view === "imagine");
+  useEffect(() => {
+    const navigate = () => {
+      const hash = window.location.hash;
+      if (hash === '#imagine' || hash.startsWith('#imagine/')) { setView('imagine'); setImageVisited(true); }
+      else if (hash === '#companion') { setView('companion'); setCompanionVisited(true); }
+      else setView('chat');
+    };
+    window.addEventListener('popstate', navigate); window.addEventListener('hashchange', navigate);
+    return () => { window.removeEventListener('popstate', navigate); window.removeEventListener('hashchange', navigate); };
+  }, []);
   useEffect(() => {
     setDocumentPanelOpen(false); setDocumentPanelExpanded(false); setDocumentPreview(null); setDocumentSelection(null);
     setDiagram(null);

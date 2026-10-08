@@ -3,6 +3,7 @@ import type { ImagineImage, ImagineJob } from '../../shared/api/api';
 import { imagineSources } from '../../shared/api/api';
 import ImageComparison from './ImageComparison';
 import StudioIcon from './studioIcons';
+import ImageVersionRail, { type ImageVersion } from './ImageVersionRail';
 import { drawStrokes, extractPalette, renderEdit, FULL_CROP, type CropArea, type Stroke } from './imageTools';
 
 type Tool = 'info' | 'palette' | 'crop' | 'brush';
@@ -21,12 +22,15 @@ const clamp = (n: number, min = 0, max = 1) => Math.max(min, Math.min(max, n));
 const MIN_ZOOM = .5;
 const MAX_ZOOM = 8;
 
-export default function ImageWorkspace({ job, image, index, original, liked, disabled, canAdd, alreadyAdded, likeError, draft, onClose, onNavigate, onLike, onUse, onAdd, onSubmit }: {
+export default function ImageWorkspace({ job, image, index, original, liked, disabled, canAdd, alreadyAdded, likeError, draft, history, historyNotice, onSave, onClose, onNavigate, onLike, onUse, onAdd, onSubmit }: {
   job: ImagineJob; image: ImagineImage; index: number; original: boolean; liked: boolean; disabled: boolean; canAdd: boolean; alreadyAdded: boolean; likeError: string | null;
   onClose: () => void; onNavigate: (index: number) => void; onLike: () => void;
   onUse: (data?: string) => void; onAdd: (data?: string) => void;
   onSubmit: (prompt: string, aspect: string, data?: string) => Promise<void>;
   draft?: { composer: ReactNode; aspect: string; onAspectChange: (value: string) => void; onAppendPrompt: (text: string) => void };
+  history?: { versions: ImageVersion[]; onSelect: (version: ImageVersion) => void };
+  historyNotice?: ReactNode;
+  onSave: (data: string, operation: 'crop' | 'brush', requestId: string) => Promise<void>;
 }) {
   const [comparing, setComparing] = useState(false);
   const [tool, setTool] = useState<Tool>('info');
@@ -34,8 +38,8 @@ export default function ImageWorkspace({ job, image, index, original, liked, dis
   const [zoom, setZoom] = useState(1);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
   const [space, setSpace] = useState({ width: 800, height: 600 });
-  const [versions, setVersions] = useState([image.url]);
-  const [version, setVersion] = useState(0);
+  const [sourceVersions, setSourceVersions] = useState([image.url]);
+  const [sourceVersion, setSourceVersion] = useState(0);
   const [prompt, setPrompt] = useState('');
   const [aspect, setAspect] = useState('auto');
   const [notice, setNotice] = useState<string | null>(null);
@@ -55,8 +59,10 @@ export default function ImageWorkspace({ job, image, index, original, liked, dis
   const strokeRef = useRef<Stroke | null>(null);
   const cropDrag = useRef<{ x: number; y: number; rect: CropArea; mode: string } | null>(null);
   const operationRef = useRef(false);
-  const src = versions[version];
+  const saveRequestRef = useRef<{ data: string; operation: string; id: string } | null>(null);
+  const src = original ? sourceVersions[sourceVersion] : image.url;
   const changed = src !== image.url || strokes.length > 0;
+  const historyIndex = history?.versions.findIndex(entry => entry.image.id === image.id) ?? -1;
   const blocked = disabled || busy;
   const ready = dimensions.width > 0;
   const fit = ready ? Math.min(space.width / dimensions.width, space.height / dimensions.height, 1) : 1;
@@ -125,9 +131,18 @@ export default function ImageWorkspace({ job, image, index, original, liked, dis
     zoomAnchorRef.current = null;
     setZoom(current => clamp(current + step, MIN_ZOOM, MAX_ZOOM));
   }
-  function saveVersion(data: string) {
-    const next = [versions[0], ...[...versions.slice(1, version + 1), data].slice(-5)];
-    setVersions(next); setVersion(next.length - 1); setStrokes([]); setRedoStrokes([]); setPalette([]); resetZoom(); setNotice('Bản chỉnh sửa chưa lưu vào thư viện. Bạn tải xuống hoặc dùng làm tham chiếu trước khi đóng nhé. Ảnh gốc vẫn được giữ.');
+  async function saveVersion(data: string, operation: 'crop' | 'brush') {
+    if (original) {
+      const next = [sourceVersions[0], ...[...sourceVersions.slice(1, sourceVersion + 1), data].slice(-5)];
+      setSourceVersions(next); setSourceVersion(next.length - 1); setStrokes([]); setRedoStrokes([]); resetZoom();
+      setNotice('Bản sửa ảnh tham chiếu đang là bản tạm. Bạn tải xuống hoặc dùng ảnh này trước khi đóng nhé.');
+      return;
+    }
+    if (saveRequestRef.current?.data !== data || saveRequestRef.current.operation !== operation) {
+      saveRequestRef.current = { data, operation, id: crypto.randomUUID() };
+    }
+    await onSave(data, operation, saveRequestRef.current.id);
+    setStrokes([]); setRedoStrokes([]); resetZoom();
   }
   async function execute(action: () => Promise<void>) {
     if (operationRef.current) return;
@@ -191,11 +206,12 @@ export default function ImageWorkspace({ job, image, index, original, liked, dis
     } else { await download(); setNotice('Trình duyệt chưa hỗ trợ chia sẻ tệp. Ảnh đã được tải xuống để bạn chia sẻ.'); }
   }
 
-  return <div className={'image-workspace' + (!panelOpen ? ' panel-hidden' : '')} onKeyDown={event => { if (event.key === 'Escape' && tool === 'crop') { event.preventDefault(); event.stopPropagation(); if (!blocked) setTool('info'); } }}>
+  return <div className={'image-workspace' + (!panelOpen ? ' panel-hidden' : '') + (history ? ' has-history' : '')} onKeyDown={event => { if (event.key === 'Escape' && tool === 'crop') { event.preventDefault(); event.stopPropagation(); if (!blocked) setTool('info'); } }}>
+    {history && <ImageVersionRail versions={history.versions} selectedId={image.id} disabled={blocked || strokes.length > 0} onSelect={history.onSelect} onClose={onClose} />}
     <section className="workspace-main">
       <div className="workspace-body">
       <div className="workspace-topbar">
-        <button type="button" className="workspace-round" aria-label="Quay lại" onClick={onClose}><StudioIcon name="back" /></button>
+        {!history && <button type="button" className="workspace-round" aria-label="Quay lại" onClick={onClose}><StudioIcon name="back" /></button>}
         <div className="workspace-zoom"><button type="button" aria-label="Thu nhỏ ảnh" disabled={zoom <= MIN_ZOOM} onClick={() => stepZoom(-.25)}><StudioIcon name="minus" /></button><button type="button" aria-label="Vừa khung" title="Về 100%" onClick={resetZoom}>{Math.round(zoom * 100)}%</button><button type="button" aria-label="Phóng to ảnh" disabled={zoom >= MAX_ZOOM} onClick={() => stepZoom(.25)}><StudioIcon name="plus" /></button></div>
         <button type="button" className="workspace-round workspace-panel-toggle" aria-label={panelOpen ? 'Ẩn bảng công cụ' : 'Hiện bảng công cụ'} title={panelOpen ? 'Ẩn bảng công cụ' : 'Hiện bảng công cụ'} aria-controls="workspace-panel" aria-expanded={panelOpen} onClick={() => setPanelOpen(value => !value)}><StudioIcon name="panel" /></button>
       </div>
@@ -208,6 +224,7 @@ export default function ImageWorkspace({ job, image, index, original, liked, dis
         </div>
       </div>
       <div className="workspace-edit-dock">
+        {historyNotice}
         {draft?.composer ?? <><div className="workspace-source-chip"><span title={job.prompt}>{changed ? 'Bản chỉnh sửa · chưa lưu' : job.prompt}</span><button type="button" disabled={blocked} onClick={() => { if (!changed) onUse(); else void execute(async () => onUse(await editData())); }}>Dùng ảnh này</button></div>
         <form onSubmit={event => { event.preventDefault(); if (prompt.trim() && !blocked) void execute(async () => onSubmit(prompt.trim(), aspect, await editData())); }}>
           <textarea aria-label="Mô tả chỉnh sửa ảnh" placeholder="Mô tả chỉnh sửa bạn muốn thực hiện…" enterKeyHint="send" rows={1} value={prompt} disabled={blocked} onChange={event => setPrompt(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); if (prompt.trim() && !blocked) void execute(async () => onSubmit(prompt.trim(), aspect, await editData())); } }} />
@@ -241,11 +258,12 @@ export default function ImageWorkspace({ job, image, index, original, liked, dis
           <div className="seg"><button type="button" aria-pressed={!erasing} onClick={() => setErasing(false)}>Vẽ</button><button type="button" aria-pressed={erasing} onClick={() => setErasing(true)}>Tẩy nét vẽ</button></div>
           <p className="workspace-label">Màu</p><div className="brush-colors">{COLORS.map(hex => <button key={hex} type="button" style={{ background: hex }} aria-label={`Chọn màu ${hex}`} aria-pressed={color === hex} onClick={() => setColor(hex)} />)}<input type="color" aria-label="Màu tùy chọn" value={color} onChange={event => setColor(event.target.value)} /></div>
           <div className="brush-history"><button type="button" aria-label="Hoàn tác nét vẽ" disabled={!strokes.length || blocked} onClick={() => { setRedoStrokes(current => [...current, strokes[strokes.length - 1]]); setStrokes(current => current.slice(0, -1)); }}><StudioIcon name="undo" /></button><button type="button" aria-label="Làm lại nét vẽ" disabled={!redoStrokes.length || blocked} onClick={() => { setStrokes(current => [...current, redoStrokes[redoStrokes.length - 1]]); setRedoStrokes(current => current.slice(0, -1)); }}><StudioIcon name="redo" /></button><button type="button" aria-label="Xóa nét vẽ" disabled={!strokes.length || blocked} onClick={() => { setStrokes([]); setRedoStrokes([]); }}><StudioIcon name="trash" /></button></div>
-          <button type="button" className="workspace-wide" disabled={!strokes.length || blocked} onClick={() => void execute(async () => saveVersion(await renderEdit(src, FULL_CROP, strokes)))}>Áp dụng nét vẽ</button><p className="workspace-label">Bút vẽ thêm nét trực tiếp lên ảnh; tẩy chỉ xóa nét đã vẽ.</p>
+          <button type="button" className="workspace-wide" disabled={!strokes.length || blocked} onClick={() => void execute(async () => saveVersion(await renderEdit(src, FULL_CROP, strokes), 'brush'))}>Áp dụng nét vẽ</button><p className="workspace-label">Bút vẽ thêm nét trực tiếp lên ảnh; tẩy chỉ xóa nét đã vẽ.</p>
         </>}
       </div>
       <div className="workspace-panel-bottom">
-        {(version > 0 || versions.length > 1) && <div className="brush-history"><button type="button" aria-label="Hoàn tác chỉnh sửa" disabled={version === 0 || blocked || strokes.length > 0} onClick={() => setVersion(value => value - 1)}><StudioIcon name="undo" /></button><button type="button" aria-label="Làm lại chỉnh sửa" disabled={version === versions.length - 1 || blocked || strokes.length > 0} onClick={() => setVersion(value => value + 1)}><StudioIcon name="redo" /></button></div>}
+        {original && sourceVersions.length > 1 && <div className="brush-history"><button type="button" aria-label="Hoàn tác chỉnh sửa" disabled={sourceVersion === 0 || blocked || strokes.length > 0} onClick={() => setSourceVersion(value => value - 1)}><StudioIcon name="undo" /></button><button type="button" aria-label="Làm lại chỉnh sửa" disabled={sourceVersion === sourceVersions.length - 1 || blocked || strokes.length > 0} onClick={() => setSourceVersion(value => value + 1)}><StudioIcon name="redo" /></button></div>}
+        {history && history.versions.length > 1 && <div className="brush-history"><button type="button" aria-label="Hoàn tác chỉnh sửa" disabled={historyIndex <= 0 || blocked || strokes.length > 0} onClick={() => history.onSelect(history.versions[historyIndex - 1])}><StudioIcon name="undo" /></button><button type="button" aria-label="Làm lại chỉnh sửa" disabled={historyIndex >= history.versions.length - 1 || blocked || strokes.length > 0} onClick={() => history.onSelect(history.versions[historyIndex + 1])}><StudioIcon name="redo" /></button></div>}
         {panelOpen ? <label className="workspace-aspect">Tỉ lệ ảnh <select aria-label="Tỉ lệ ảnh chỉnh sửa" value={draft?.aspect ?? aspect} disabled={blocked} onChange={event => { if (draft) draft.onAspectChange(event.target.value); else setAspect(event.target.value); }}>{RATIOS.map(ratio => <option key={ratio} value={ratio}>{ratio === 'auto' ? 'Theo ảnh nguồn' : ratio}</option>)}</select></label> : <button type="button" className="workspace-wide" aria-label="Thiết lập tỉ lệ ảnh" title="Tỉ lệ ảnh" onClick={() => setPanelOpen(true)}><StudioIcon name="aspect" /></button>}
         <button type="button" className="workspace-wide" aria-label="Thêm làm tham chiếu" title="Thêm làm tham chiếu" disabled={blocked || !canAdd || (alreadyAdded && !changed)} onClick={() => { if (!changed) onAdd(); else void execute(async () => onAdd(await editData())); }}><StudioIcon name="plus" /><span>Thêm làm tham chiếu</span></button>
         <button type="button" className="workspace-share" aria-label="Chia sẻ" title="Chia sẻ" disabled={blocked || !ready} onClick={() => void execute(share)}><StudioIcon name="share" /><span>Chia sẻ</span></button>
@@ -258,7 +276,7 @@ export default function ImageWorkspace({ job, image, index, original, liked, dis
         {['nw', 'ne', 'sw', 'se'].map(handle => <button type="button" key={handle} className={`crop-handle ${handle}`} aria-label={`Góc cắt ${handle}`} onPointerDown={event => beginCrop(event, handle)} onPointerMove={moveCrop} onPointerUp={() => { cropDrag.current = null; }} onPointerCancel={() => { cropDrag.current = null; }} />)}
       </div></div>
       {notice && <p className="crop-notice" role="alert">{notice}</p>}
-      <div className="crop-actions"><select aria-label="Tỉ lệ cắt" value={cropRatio} disabled={blocked} onChange={event => setRatio(event.target.value)}>{['free', '1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3'].map(ratio => <option key={ratio} value={ratio}>{ratio === 'free' ? 'Tự do' : ratio}</option>)}</select><button type="button" disabled={blocked} onClick={() => setTool('info')}><StudioIcon name="close" />Hủy cắt</button><button type="button" className="crop-confirm" disabled={blocked} onClick={() => void execute(async () => { saveVersion(await renderEdit(src, crop)); setTool('info'); })}><StudioIcon name="check" />Cắt</button></div>
+      <div className="crop-actions"><select aria-label="Tỉ lệ cắt" value={cropRatio} disabled={blocked} onChange={event => setRatio(event.target.value)}>{['free', '1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3'].map(ratio => <option key={ratio} value={ratio}>{ratio === 'free' ? 'Tự do' : ratio}</option>)}</select><button type="button" disabled={blocked} onClick={() => setTool('info')}><StudioIcon name="close" />Hủy cắt</button><button type="button" className="crop-confirm" disabled={blocked} onClick={() => void execute(async () => { await saveVersion(await renderEdit(src, crop), 'crop'); setTool('info'); })}><StudioIcon name="check" />Cắt</button></div>
     </div>}
   </div>;
 }

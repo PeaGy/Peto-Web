@@ -4,10 +4,12 @@ import {
   UnauthorizedError, createImagineJob, deleteImagineImage, deleteImagineJob, listImagineJobs, setImagineImageLiked,
   type ImagineImage, type ImagineJob, type ImagineQuality, type ImagineResolution,
   imagineSources, imaginePending, getImagineJob, checkImagineRequest, unconfirmedImagineRequest, ImagineRequestUncertainError,
+  getImagineWorkspace, saveImagineRevision, type ImagineWorkspace,
 } from "../../shared/api/api";
 import ImagineLibrary from "./ImagineLibrary";
 import EditHistory from "./EditHistory";
 import ImageWorkspace from "./ImageWorkspace";
+import type { ImageVersion } from "./ImageVersionRail";
 import StudioMenu from "./StudioMenu";
 import StudioIcon from "./studioIcons";
 import { LoadingIndicator } from '../../shared/ui/LoadingIndicator';
@@ -140,6 +142,8 @@ function IdeaArt({ style }: { style: string }) {
 }
 const ratioLabel = (value: string) => value === "auto" ? "Tự động" : value;
 const qualityLabel = (value: string) => value === "low" ? "Nhanh" : "Chi tiết";
+type ImageView = { job: ImagineJob; index: number; original?: boolean; sourceIndex?: number; using?: boolean };
+function imageRoute(rootId: string, imageId: string) { return `#imagine/${encodeURIComponent(rootId)}/${encodeURIComponent(imageId)}`; }
 
 export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsChange, focusJobId, onFocusHandled, libraryRequest = 0 }: {
   active: boolean;
@@ -169,7 +173,15 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
   const [loadFailed, setLoadFailed] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [lightbox, setLightbox] = useState<{ job: ImagineJob; index: number; original?: boolean; sourceIndex?: number; using?: boolean } | null>(null);
+  const [lightbox, setLightbox] = useState<ImageView | null>(null);
+  const lightboxValue = useRef(lightbox); lightboxValue.current = lightbox;
+  const [workspace, setWorkspace] = useState<ImagineWorkspace | null>(null);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyReload, setHistoryReload] = useState(0);
+  const routeVersion = useRef(0);
+  const workspaceRootId = lightbox && !lightbox.original ? lightbox.job.root_image_id || lightbox.job.images[lightbox.index]?.id : null;
+  const rootJobs = jobs.filter(job => !job.root_image_id);
   const viewerOpen = !!lightbox;
   const [deleteTarget, setDeleteTarget] = useState<ImagineJob | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -178,7 +190,7 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
   const [expanded, setExpanded] = useState(false);
   const [libraryOpen, setLibraryOpen] = useState(false);
   useEffect(() => {
-    if (libraryRequest > 0) { setLightbox(null); setLibraryOpen(true); }
+    if (libraryRequest > 0) { closeImage(); setLibraryOpen(true); }
   }, [libraryRequest]);
   const [likeError, setLikeError] = useState<string | null>(null);
   const [previewLikes, setPreviewLikes] = useState<Record<string, boolean>>({});
@@ -201,6 +213,74 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
   const activeRef = useRef(active);
   const loadVersion = useRef(0);
 
+  function openImage(view: ImageView, push = true) {
+    routeVersion.current += 1;
+    setLightbox(view);
+    if (!view.original) {
+      const image = view.job.images[view.index];
+      const hash = imageRoute(view.job.root_image_id || image.id, image.id);
+      if (window.location.hash !== hash) window.history[push ? 'pushState' : 'replaceState'](null, '', hash);
+    }
+  }
+  function closeImage() {
+    routeVersion.current += 1; setLightbox(null);
+    if (window.location.hash.startsWith('#imagine/')) window.history.pushState(null, '', '#imagine');
+  }
+  function selectVersion(entry: ImageVersion) { openImage({ job: entry.job, index: entry.job.images.findIndex(image => image.id === entry.image.id) }); }
+  useEffect(() => {
+    if (!active) return;
+    const read = async () => {
+      const match = /^#imagine\/([^/]+)\/([^/?]+)$/.exec(window.location.hash);
+      const token = ++routeVersion.current;
+      if (!match) { setLightbox(null); return; }
+      try {
+        const rootId = decodeURIComponent(match[1]), imageId = decodeURIComponent(match[2]);
+        const loaded = await getImagineWorkspace(rootId);
+        if (token !== routeVersion.current) return;
+        const job = [loaded.root_job, ...loaded.jobs].find(job => (job.root_image_id === rootId || imageId === rootId) && job.images.some(image => image.id === imageId));
+        if (loaded.root_image_id !== rootId || !job) throw new Error('Phiên bản này không còn tồn tại.');
+        setWorkspace(loaded); setLightbox({ job, index: job.images.findIndex(image => image.id === imageId) });
+        setJobs(previous => [...previous.filter(job => !loaded.jobs.some(child => child.id === job.id)), ...loaded.jobs]);
+      } catch (err) {
+        if (token !== routeVersion.current) return;
+        if (err instanceof UnauthorizedError) return onUnauthorized();
+        setLightbox(null); setError(err instanceof Error ? err.message : 'Chưa mở được phiên bản ảnh.');
+      }
+    };
+    void read();
+    window.addEventListener('popstate', read); window.addEventListener('hashchange', read);
+    return () => { routeVersion.current += 1; window.removeEventListener('popstate', read); window.removeEventListener('hashchange', read); };
+  }, [active, onUnauthorized]);
+  useEffect(() => {
+    if (!active || !workspaceRootId) { setWorkspace(null); setHistoryError(null); return; }
+    const controller = new AbortController();
+    setHistoryLoading(true); setHistoryError(null);
+    void getImagineWorkspace(workspaceRootId, controller.signal).then(loaded => {
+      if (controller.signal.aborted) return;
+      setWorkspace(loaded);
+      setJobs(previous => [...previous.filter(job => !loaded.jobs.some(child => child.id === job.id)), ...loaded.jobs]);
+    }).catch(err => {
+      if (controller.signal.aborted) return;
+      if (err instanceof UnauthorizedError) return onUnauthorized();
+      setHistoryError('Chưa tải được lịch sử chỉnh sửa.');
+    }).finally(() => { if (!controller.signal.aborted) setHistoryLoading(false); });
+    return () => controller.abort();
+  }, [active, workspaceRootId, historyReload, onUnauthorized]);
+  function acceptRevision(result: ImagineJob, select = true) {
+    setJobs(previous => [result, ...previous.filter(job => job.id !== result.id)]);
+    setWorkspace(previous => previous && result.root_image_id === previous.root_image_id
+      ? { ...previous, jobs: [...previous.jobs.filter(job => job.id !== result.id), result] } : previous);
+    const current = lightboxValue.current;
+    const currentRoot = current && !current.original ? current.job.root_image_id || current.job.images[current.index].id : null;
+    if (select && result.root_image_id === currentRoot && result.status === 'complete' && result.images.length && current) openImage({ job: result, index: 0 });
+  }
+  async function saveWorkspaceRevision(data: string, operation: 'crop' | 'brush', requestId: string) {
+    const current = lightboxValue.current;
+    if (!current || current.original) return;
+    const result = await saveImagineRevision(current.job.images[current.index].id, data, operation, requestId);
+    if (lightboxValue.current?.job.images[lightboxValue.current.index]?.id === current.job.images[current.index].id) acceptRevision(result);
+  }
+
   useLayoutEffect(() => {
     const dock = dockRef.current;
     const stage = dock?.parentElement;
@@ -220,7 +300,7 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
     setLoadFailed(false);
     try {
       const rows = await listImagineJobs();
-      if (version === loadVersion.current) { setJobs(rows); setHasMore(rows.length === 40); }
+      if (version === loadVersion.current) { setJobs(previous => [...rows, ...previous.filter(job => job.root_image_id && !rows.some(row => row.id === job.id))]); setHasMore(rows.filter(job => !job.root_image_id).length === 40); }
     } catch (err) {
       if (version !== loadVersion.current) return;
       if (err instanceof UnauthorizedError) return onUnauthorized();
@@ -244,7 +324,7 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
     // Đóng trước khi đổi chế độ; trình duyệt không cho showModal trên dialog đã show.
     dialog.close();
     if (active && viewerOpen) { if (compact) dialog.showModal(); else dialog.show(); }
-  }, [active, viewerOpen, compact]);
+  }, [active, viewerOpen, compact, loading]);
   useEffect(() => {
     if (active && deleteTarget) deleteRef.current?.showModal();
     else deleteRef.current?.close();
@@ -262,10 +342,10 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
   }, [expanded]);
   // Cột trái ở App.tsx liệt kê danh sách này, nhưng Imagine vẫn giữ trạng thái gốc
   // để lượt tạo ảnh đang chạy không mất khi người dùng sang tab trò chuyện.
-  useLayoutEffect(() => { onJobsChange?.(jobs); }, [jobs, onJobsChange]);
+  useLayoutEffect(() => { onJobsChange?.(jobs.filter(job => !job.root_image_id)); }, [jobs, onJobsChange]);
   useEffect(() => {
     if (!active || loading || !focusJobId) return;
-    if (lightbox || libraryOpen) { setLightbox(null); setLibraryOpen(false); return; }
+    if (lightbox || libraryOpen) { closeImage(); setLibraryOpen(false); return; }
     galleryRef.current?.querySelector(`[data-job-id="${focusJobId}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" });
     onFocusHandled?.();
   }, [active, loading, focusJobId, onFocusHandled, lightbox, libraryOpen]);
@@ -328,7 +408,7 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
     if (!hasMore || moreRef.current || !jobs.length) return;
     moreRef.current = true; setLoadingMore(true);
     try {
-      const rows = await listImagineJobs(jobs[jobs.length - 1].id);
+      const rows = await listImagineJobs(rootJobs[rootJobs.length - 1].id);
       setJobs(prev => [...prev, ...rows.filter(row => !prev.some(job => job.id === row.id))]);
       setHasMore(rows.length === 40);
     } catch (err) {
@@ -341,7 +421,7 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
     setCheckingRequest(true);
     try {
       const job = await checkImagineRequest(uncertainRequest);
-      if (job) setJobs(prev => [job, ...prev.filter(row => row.id !== job.id)]);
+      if (job) acceptRevision(job);
       setUncertainRequest(null);
       setError(job ? null : "Máy chủ chưa có lượt vừa gửi, hoặc lượt đó đã bị xóa.");
     } catch (err) {
@@ -359,6 +439,9 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
         const rows = await Promise.all(pendingIds.split(",").map(id => getImagineJob(id, controller.signal)));
         if (controller.signal.aborted) return;
         setJobs(prev => prev.map(job => rows.find(row => row.id === job.id) ?? job));
+        const current = lightboxValue.current;
+        const currentRoot = current && !current.original ? current.job.root_image_id || current.job.images[current.index].id : null;
+        for (const row of rows) if (row.root_image_id === currentRoot) acceptRevision(row);
         setPollError(false);
       } catch (err) {
         if (controller.signal.aborted) return;
@@ -391,7 +474,7 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
         setPrompt(job.prompt); setQuality(job.quality); setResolution(job.resolution); setAspect("auto");
         // Dùng ảnh ngay trong khung xem, giữ canvas và thay ô sửa bằng bản nháp có ảnh đính kèm.
         setLightbox(current => current ? { ...current, using: true } : current);
-      } else { setLightbox(null); setLibraryOpen(false); }
+      } else { closeImage(); setLibraryOpen(false); }
     });
     if (append) lightboxRef.current?.close();
     textareaRef.current?.focus();
@@ -402,16 +485,17 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
     inFlight.current = true; setGenerating(true); setError(null);
     try {
       const result = await createImagineJob({ prompt: text, quality: job.quality, resolution: job.resolution, aspect_ratio: ratio, n: 1,
-        ...(draft.upload ? { source_image: draft.upload } : { source_image_id: image.id }) });
-      setJobs(previous => [result, ...previous.filter(row => row.id !== result.id)]);
-      setLightbox(null); setLibraryOpen(false); setPrompt(text); setSources([draft]); setSourceOrderChanged(false);
+        ...(draft.upload ? { source_image: draft.upload } : { source_image_id: image.id }),
+        ...(!lightbox?.original ? { edit_parent_image_id: image.id } : {}) });
+      acceptRevision(result); setPrompt(text); setSources([draft]); setSourceOrderChanged(false);
+      if (!result.root_image_id) { closeImage(); setLibraryOpen(false); }
       setQuality(job.quality); setResolution(job.resolution); setAspect(ratio); setCount(1);
       if (isCompact()) setExpanded(false);
       galleryRef.current?.scrollTo({ top: 0 });
     } catch (error) {
       if (error instanceof UnauthorizedError) { onUnauthorized(); return; }
       if (error instanceof ImagineRequestUncertainError) {
-        setUncertainRequest(error.requestId); setError(error.message); setLightbox(null); setLibraryOpen(false);
+        setUncertainRequest(error.requestId); setError(error.message);
       } else throw error;
     } finally { inFlight.current = false; setGenerating(false); }
   }
@@ -424,6 +508,7 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
       try {
         const { job_deleted } = await deleteImagineImage(id);
         setJobs((prev) => prev.flatMap((job) => {
+          if (job.root_image_id === id) return [];
           if (!job.images.some((image) => image.id === id)) return [job];
           const images = job.images.filter((image) => image.id !== id);
           return job_deleted || images.length === 0 ? [] : [{ ...job, images }];
@@ -466,7 +551,9 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
     setError(null);
     setGenerating(true);
     // Điện thoại: gửi rồi thì thu thanh lại và ẩn bàn phím để thấy ảnh đang tạo.
-    setLightbox(null); setLibraryOpen(false);
+    const editing = lightbox && !lightbox.original && lightbox.using ? lightbox.job.images[lightbox.index] : null;
+    if (!editing) closeImage();
+    setLibraryOpen(false);
     const phone = isCompact();
     if (phone) { setExpanded(false); textareaRef.current?.blur(); }
     galleryRef.current?.scrollTo({ top: 0 });
@@ -474,8 +561,10 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
       const job = await createImagineJob({ prompt: text, quality, resolution, aspect_ratio: aspect, n: count,
         ...(sources.length > 1 ? { source_images: sources.map(image => image.upload ?? { image_id: image.imageId! }) }
           : source?.upload ? { source_image: source.upload } : source?.imageId ? { source_image_id: source.imageId } : {}),
+        ...(editing && sources.length && (source.upload || source.imageId === editing.id) ? { edit_parent_image_id: editing.id } : {}),
       });
-      setJobs((prev) => [job, ...prev.filter(row => row.id !== job.id)]);
+      acceptRevision(job);
+      if (editing && imaginePending(job)) setLightbox(current => current ? { ...current, using: false } : current);
     } catch (err) {
       if (err instanceof UnauthorizedError) return onUnauthorized();
       if (err instanceof ImagineRequestUncertainError) setUncertainRequest(err.requestId);
@@ -495,7 +584,8 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
     setDeleteError(null);
     try {
       await deleteImagineJob(id);
-      setJobs((prev) => prev.filter((job) => job.id !== id));
+      const imageIds = deleteTarget.images.map(image => image.id);
+      setJobs((prev) => prev.filter((job) => job.id !== id && !imageIds.includes(job.root_image_id ?? '')));
       setLightbox((current) => current?.job.id === id ? null : current);
       setDeleteTarget(null);
     } catch (err) {
@@ -519,10 +609,18 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
     textareaRef.current?.focus();
   }
   const lightboxImage = lightbox?.original ? imagineSources(lightbox.job)[lightbox.sourceIndex ?? 0] : lightbox?.job.images[lightbox.index];
+  const imageVersions: ImageVersion[] = workspace && workspace.root_image_id === workspaceRootId ? [
+    ...workspace.root_job.images.filter(image => image.id === workspace.root_image_id).map(image => ({ job: workspace.root_job, image })),
+    ...workspace.jobs.slice().sort((a, b) => (a.created_at ?? 0) - (b.created_at ?? 0) || a.id.localeCompare(b.id))
+      .flatMap(job => job.images.map(image => ({ job, image }))),
+  ] : [];
+  const workspaceJob = jobs.find(job => job.root_image_id === workspaceRootId && imaginePending(job));
+  const latestEdit = workspace?.root_image_id === workspaceRootId ? workspace?.jobs.at(-1) : undefined;
+  const failedEdit = latestEdit && (latestEdit.status === 'failed' || latestEdit.status === 'unknown') ? latestEdit : undefined;
   // lightbox giữ bản chụp của lượt lúc mở, nên trạng thái thích phải đọc từ danh sách hiện tại.
   const listedImage = lightboxImage && jobs.flatMap(job => job.images).find(image => image.id === lightboxImage.id);
   const lightboxLiked = !!lightboxImage && (previewLikes[lightboxImage.id] ?? listedImage?.liked ?? lightboxImage.liked ?? false);
-  const latestImage = jobs.find((job) => job.images.length > 0)?.images[0];
+  const latestImage = rootJobs.find((job) => job.images.length > 0)?.images[0];
   const controlsDisabled = generating || !!pendingIds || !!uncertainRequest || loading || loadFailed || readingSource;
   const usingImage = !!lightbox?.using;
   // Như Grok: thanh thu gọn mời gõ, còn khung đang mở thì nói rõ cần nhập gì.
@@ -601,7 +699,7 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
     <div className="imagine-gallery" ref={galleryRef} hidden={!!lightbox || libraryOpen}>
       {pollError && <p className="error" role="status">Đang mất kết nối. Peto sẽ kiểm tra lại lượt ảnh khi có mạng.</p>}
       {loadFailed && <div className="studio-load-error" role="alert"><p>Chưa tải được ảnh đã tạo.</p><button type="button" onClick={() => void loadJobs()}>Thử tải lại</button></div>}
-      {!loading && !loadFailed && jobs.length === 0 && !generating && <section className="studio-welcome">
+      {!loading && !loadFailed && rootJobs.length === 0 && !generating && <section className="studio-welcome">
         <span className="studio-eyebrow"><SparkleIcon /> Góc sáng tạo của bạn</span>
         <h1>{source ? "Giữ điều bạn thích." : "Bạn tưởng tượng."}<br /><span>{source ? "Sửa điều bạn muốn." : "Peto vẽ nên."}</span></h1>
         <p>{source ? "Ảnh gốc đã sẵn sàng. Kể Peto nghe bạn muốn thay đổi gì." : "Kể Peto nghe về bức ảnh trong đầu bạn, hoặc thêm ảnh để chỉnh sửa."}</p>
@@ -616,8 +714,9 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
         <p className="pending-prompt">{prompt}</p>
         <div className="imagine-thumbs" aria-hidden="true">{Array.from({ length: count }, (_, index) => <div className="image-placeholder" key={index}><SparkleIcon /></div>)}</div>
       </section>}
-      {jobs.length > 0 && <div className="studio-library-head"><h1>Ảnh của bạn</h1><span>{jobs.length} lượt đã tải</span><button type="button" className="studio-text-button" onClick={() => setLibraryOpen(true)}>Thư viện</button></div>}
-      {jobs.map((job) => <section key={job.id} data-job-id={job.id} className="imagine-job">
+      {jobs.some(job => job.root_image_id && imaginePending(job)) && <p className="workspace-history-status" role="status">Peto đang chỉnh sửa ảnh. Mở ảnh chính để xem lịch sử và kết quả.</p>}
+      {rootJobs.length > 0 && <div className="studio-library-head"><h1>Ảnh của bạn</h1><span>{rootJobs.length} lượt đã tải</span><button type="button" className="studio-text-button" onClick={() => setLibraryOpen(true)}>Thư viện</button></div>}
+      {rootJobs.map((job) => <section key={job.id} data-job-id={job.id} className="imagine-job">
         <div className="imagine-job-head">
           <div className="imagine-job-copy"><p className="imagine-prompt">{job.prompt}</p><div className="imagine-meta">
             <span>{qualityLabel(job.quality)}</span><span>{job.resolution.toUpperCase()}</span><span>{ratioLabel(job.aspect_ratio)}</span><span>{job.images.length} ảnh</span>
@@ -630,10 +729,10 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
           </div>
         </div>
         <div className="job-sources">{imagineSources(job).map((image, sourceIndex) => <button key={image.id} className="job-source" type="button" onClick={() => setLightbox({ job, index: 0, original: true, sourceIndex })}><img src={image.url} alt="" loading="lazy" /><span>{imagineSources(job).length === 1 ? "Xem ảnh gốc" : `Ảnh tham chiếu ${sourceIndex + 1}`}</span></button>)}</div>
-        {imagineSources(job).some(image => image.parent_job_id) && <EditHistory job={job} jobs={jobs} onOpen={setLightbox} onUnauthorized={onUnauthorized} />}
+        {imagineSources(job).some(image => image.parent_job_id) && <EditHistory job={job} jobs={rootJobs} onOpen={openImage} onUnauthorized={onUnauthorized} />}
         {imaginePending(job) && <div className="generation-pending" role="status"><strong>{job.status === "queued" ? "Đang chờ đến lượt…" : "Peto đang tạo ảnh…"}</strong><p>Bạn có thể chuyển tab hoặc tải lại trang; lượt này vẫn được theo dõi.</p><JobElapsed createdAt={job.created_at} /><div className="imagine-thumbs" aria-hidden="true">{Array.from({ length: job.n ?? 1 }, (_, index) => <div className="image-placeholder" key={index}><SparkleIcon /></div>)}</div></div>}
         {(job.status === "failed" || job.status === "unknown") && <p className="error">{job.error || "Chưa có kết quả cho lượt này."}{job.status === "unknown" && " Lượt này không được tự gửi lại."}</p>}
-        <div className="imagine-thumbs">{job.images.map((image, index) => <button key={image.id} type="button" className="imagine-thumb" aria-label={"Xem ảnh " + (index + 1) + ": " + job.prompt} onClick={() => setLightbox({ job, index })}>
+        <div className="imagine-thumbs">{job.images.map((image, index) => <button key={image.id} type="button" className="imagine-thumb" aria-label={"Xem ảnh " + (index + 1) + ": " + job.prompt} onClick={() => openImage({ job, index })}>
           <img src={image.url} alt={job.prompt} loading="lazy" decoding="async" /><span className="image-open-hint">Xem ảnh ↗</span>
         </button>)}</div>
       </section>)}
@@ -642,19 +741,29 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
 
     {!libraryOpen && !lightbox && studioDock}
 
-    <ImagineLibrary composer={lightbox ? undefined : studioDock} open={active && libraryOpen} modal={compact} suspended={!!lightbox} jobs={jobs} onClose={() => setLibraryOpen(false)}
-      onOpenImage={(job, index) => setLightbox({ job, index })} onDeleteImages={removeImages}
+    <ImagineLibrary composer={lightbox ? undefined : studioDock} open={active && libraryOpen} modal={compact} suspended={!!lightbox} jobs={rootJobs} onClose={() => setLibraryOpen(false)}
+      onOpenImage={(job, index) => openImage({ job, index })} onDeleteImages={removeImages}
       onUseSources={controlsDisabled ? undefined : addLibrarySources} sourceLimit={5 - sources.length}
       hasMore={hasMore} loadingMore={loadingMore} onLoadMore={() => void loadMore()} />
-    <dialog ref={lightboxRef} className="imagine-lightbox" aria-label="Xem ảnh đã tạo" aria-modal={compact} onCancel={() => setLightbox(null)} onKeyDown={event => { if (event.key === 'Escape' && !event.defaultPrevented) { event.preventDefault(); setLightbox(null); } }}>
+    <dialog ref={lightboxRef} className="imagine-lightbox" aria-label="Xem ảnh đã tạo" aria-modal={compact} onCancel={() => closeImage()} onKeyDown={event => { if (event.key === 'Escape' && !event.defaultPrevented) { event.preventDefault(); closeImage(); } }}>
       {lightbox && lightboxImage && <ImageWorkspace key={lightboxImage.id} job={lightbox.job} image={lightboxImage} index={lightbox.index}
         original={!!lightbox.original} liked={lightboxLiked} disabled={controlsDisabled} likeError={likeError}
         canAdd={sources.length < 5} alreadyAdded={sources.some(source => source.imageId === lightboxImage.id)}
+        history={imageVersions.length > 1 ? { versions: imageVersions, onSelect: selectVersion } : undefined}
+        historyNotice={<>
+          {historyLoading && <p className="workspace-history-status" role="status">Đang tải lịch sử…</p>}
+          {historyError && <p className="workspace-history-status" role="alert">{historyError} <button type="button" onClick={() => setHistoryReload(value => value + 1)}>Thử lại</button></p>}
+          {workspaceJob && <p className="workspace-history-status" role="status">{pollError ? 'Mất kết nối. Peto sẽ kiểm tra lại kết quả.' : 'Peto đang chỉnh sửa ảnh…'}</p>}
+          {failedEdit && !workspaceJob && <p className="workspace-history-status" role="alert">{failedEdit.error || 'Lượt chỉnh sửa chưa có kết quả.'}</p>}
+          {!usingImage && uncertainRequest && <p className="workspace-history-status" role="status">Chưa xác nhận lượt vừa gửi. <button type="button" disabled={checkingRequest} onClick={() => void checkUnconfirmed()}>Kiểm tra lượt vừa gửi</button></p>}
+          {!usingImage && error && <p className="workspace-history-status" role="alert">{error}<button type="button" aria-label="Đóng thông báo" onClick={() => setError(null)}>×</button></p>}
+        </>}
+        onSave={saveWorkspaceRevision}
         draft={usingImage ? { composer: studioDock, aspect, onAspectChange: setAspect, onAppendPrompt: text => {
           setPrompt(current => current.trim() ? `${current.trimEnd()}\n${text}` : text);
           setExpanded(true); textareaRef.current?.focus();
         } } : undefined}
-        onClose={() => setLightbox(null)} onNavigate={index => setLightbox({ ...lightbox, index, using: false })}
+        onClose={closeImage} onNavigate={index => openImage({ ...lightbox, index, using: false })}
         onLike={() => void toggleLike(lightboxImage.id, !lightboxLiked)}
         onUse={data => prepareWorkspaceSource(lightbox.job, lightboxImage, data, false)}
         onAdd={data => prepareWorkspaceSource(lightbox.job, lightboxImage, data, true)}

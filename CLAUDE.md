@@ -1024,8 +1024,21 @@ button; it does not add unavailable Grok actions. The full panel groups actions 
 row has like/download only: no X social action or duplicate close button. Back closes the viewer. Mobile gives the
 image more height and scrolls the detail panel below; the body grid must use `minmax(0,1fr)` to prevent
 its controls expanding beyond narrow screens. Opening the viewer suspends the library dialog without
-resetting its search/filter state; Back/Escape restores it. Saved-version thumbnails remain
-in the plan; do not invent a saved-history strip from `job.images`.
+resetting its search/filter state; Back/Escape restores it. Saved versions now appear in an 80px
+rail beside the real sidebar, with 64px thumbnails, independent scrolling and overflow arrows.
+The rail contains the selected root image and its persisted edits, never sibling outputs from `job.images`.
+On mobile it becomes a horizontal strip. Do not animate version selection or wheel zoom.
+`imagine_jobs.root_image_id` groups edit jobs under one original output; `edit_parent_image_id` retains
+branch ancestry and `edit_kind` distinguishes AI/crop/brush. Existing rows keep NULL roots and their previous
+independent library behavior. `/api/imagine` lists roots plus a separate `active_edits` recovery field; children
+stay out of the library/gallery/sidebar. Workspace GET resolves an owner-scoped root and its child jobs.
+Applying crop/brush persists a new file/job with an idempotency receipt, without an AI call. Reference uploads
+viewed as sources retain their existing temporary editing behavior. Unapplied strokes/prompts remain drafts.
+Deleting a root deletes its child jobs/files and preserves request tombstones; active AI/local saves block root
+deletion. Source copies used by independent jobs remain independent. Every lookup/mutation filters by owner.
+Viewer URLs use `#imagine/<root-image-id>/<version-image-id>` with browser Back/Forward and reload recovery.
+These are authenticated workspace links, not public sharing links. Keep dialog opening dependent on initial
+library loading as well as the selected image; deep links can resolve before the dialog exists in the DOM.
 Mouse-wheel input within the single-image canvas changes its fitted zoom from 50% to 800%, using a
 non-passive native listener. Normalize pixel/line/page wheel deltas and keep the image point under the
 pointer in place along scrollable axes. Ignore browser zoom modifiers, horizontal scrolling, active brush
@@ -1038,8 +1051,9 @@ input text at least 16px. Escape dismisses one library layer at a time; cancella
 confirmation must not also cancel the selection. Resizing across the desktop/mobile boundary switches
 dialog modes without clearing the open library's filters.
 The viewer's direct edit field sends one edit result; its "Dùng ảnh này" composer uses the existing studio
-controls and request path. Sending that draft returns to the gallery for pending/error feedback. Both use
+controls and request path. Both use
 the existing background/idempotency/uncertain-request path, without issuing a request just to attach an image.
+Edits submitted from the viewer remain there while pending and select the saved result on completion.
 No segmentation, AI mask/inpainting guarantee, transparent-background removal, video or tag manager is
 implemented here; do not add placeholder buttons that pretend those features are available.
 

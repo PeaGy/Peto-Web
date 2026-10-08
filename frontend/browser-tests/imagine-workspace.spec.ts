@@ -18,17 +18,41 @@ async function setup(page: Page, prompt = 'Ngôi nhà giữa núi xanh', shape: 
   const image = (id: string) => ({ id, mime: 'image/png', url: `/api/imagine/images/${id}` });
   const job = { id: 'landscape', prompt, quality: 'medium', resolution: '2k', aspect_ratio: '2:3', created_at: 1, images: [image('portrait'), image('portrait-two')] };
   const posts: Record<string, unknown>[] = [];
+  const saves: Record<string, unknown>[] = [];
+  const revisions: (typeof job & { root_image_id: string; edit_parent_image_id: string; status: string })[] = [];
+  const files = new Map<string, string>();
   await page.route('**/api/imagine**', async route => {
     const request = route.request(), url = new URL(request.url());
-    if (url.pathname.startsWith('/api/imagine/images/')) return route.fulfill({ contentType: 'image/png', body: Buffer.from(png, 'base64') });
+    const workspace = /^\/api\/imagine\/images\/([^/]+)\/workspace$/.exec(url.pathname);
+    if (workspace) return route.fulfill({ json: { root_image_id: workspace[1], root_job: job, jobs: revisions.filter(child => child.root_image_id === workspace[1]) } });
+    const save = /^\/api\/imagine\/images\/([^/]+)\/revisions$/.exec(url.pathname);
+    if (save && request.method() === 'POST') {
+      const body = request.postDataJSON(); saves.push(body);
+      const parent = revisions.find(child => child.images.some(image => image.id === save[1]));
+      const id = `saved-${saves.length}`;
+      files.set(id, body.data);
+      const child = { ...job, id, status: 'complete', images: [image(id)], created_at: revisions.length + 2,
+        root_image_id: parent?.root_image_id ?? save[1], edit_parent_image_id: save[1] };
+      revisions.push(child);
+      return route.fulfill({ json: { job: child } });
+    }
+    if (url.pathname.startsWith('/api/imagine/images/')) return route.fulfill({ contentType: 'image/png', body: Buffer.from(files.get(url.pathname.split('/').at(-1)!) ?? png, 'base64') });
     if (request.method() === 'POST') {
       posts.push(request.postDataJSON());
-      return route.fulfill({ status: 202, json: { job: { ...job, id: 'edited', prompt: posts.at(-1)?.prompt, status: 'running', images: [], n: 1 } } });
+      const body = request.postDataJSON();
+      const parent = revisions.find(child => child.images.some(image => image.id === body.edit_parent_image_id));
+      const child = { ...job, id: `edited-${posts.length}`, prompt: body.prompt, status: 'running', images: [image(`result-${posts.length}`)],
+        created_at: revisions.length + 2, root_image_id: parent?.root_image_id ?? body.edit_parent_image_id,
+        edit_parent_image_id: body.edit_parent_image_id, n: body.n };
+      if (body.edit_parent_image_id) revisions.push(child);
+      return route.fulfill({ status: 202, json: { job: { ...child, images: [] } } });
     }
     if (url.pathname === '/api/imagine') return route.fulfill({ json: { jobs: [job] } });
+    const child = revisions.find(child => url.pathname === `/api/imagine/${child.id}`);
+    if (child) { child.status = 'complete'; return route.fulfill({ json: { job: child } }); }
     return route.fulfill({ status: 404 });
   });
-  return { posts };
+  return { posts, saves, revisions, job };
 }
 
 test('thư viện có ô ảnh nhỏ và khung xem vừa màn hình trên PC/mobile', async ({ page }, testInfo) => {
@@ -100,7 +124,7 @@ test('thư viện có ô ảnh nhỏ và khung xem vừa màn hình trên PC/mob
 });
 
 test('cắt/vẽ tạo nguồn PNG mới, hoàn tác giữ ảnh gốc, chỉ gửi khi bấm gửi', async ({ page }, testInfo) => {
-  const { posts } = await setup(page);
+  const { posts, saves } = await setup(page);
   await page.goto('/#imagine');
   await page.getByRole('button', { name: 'Xem ảnh 1: Ngôi nhà giữa núi xanh', exact: true }).click();
   const viewer = page.getByRole('dialog', { name: 'Xem ảnh đã tạo' });
@@ -132,7 +156,8 @@ test('cắt/vẽ tạo nguồn PNG mới, hoàn tác giữ ảnh gốc, chỉ g�
   await viewer.getByRole('button', { name: 'Làm lại nét vẽ' }).click();
   await viewer.getByRole('button', { name: 'Áp dụng nét vẽ' }).click();
   const data = await viewer.locator('.workspace-picture img').getAttribute('src');
-  expect(data).toMatch(/^data:image\/png;base64,/);
+  expect(data).toBe('/api/imagine/images/saved-2');
+  expect(saves).toHaveLength(2);
   const pixel = await viewer.locator('.workspace-picture img').evaluate(async img => {
     const image = img as HTMLImageElement; await image.decode();
     const c = document.createElement('canvas'); c.width = image.naturalWidth; c.height = image.naturalHeight;
@@ -145,9 +170,11 @@ test('cắt/vẽ tạo nguồn PNG mới, hoàn tác giữ ảnh gốc, chỉ g�
   expect(posts).toHaveLength(0);
   await viewer.getByLabel('Mô tả chỉnh sửa ảnh').fill('Đổi thành tranh màu nước');
   await viewer.getByRole('button', { name: 'Gửi chỉnh sửa ảnh' }).click();
-  await expect(viewer).not.toBeVisible();
+  await expect(viewer).toBeVisible();
   expect(posts).toHaveLength(1);
-  expect(posts[0]).toMatchObject({ n: 1, background: true, source_image: { data: data!.split(',')[1] }, prompt: 'Đổi thành tranh màu nước' });
+  expect(posts[0]).toMatchObject({ n: 1, background: true, source_image_id: 'saved-2', edit_parent_image_id: 'saved-2', prompt: 'Đổi thành tranh màu nước' });
+  await expect(viewer.getByRole('button', { name: 'Phiên bản 3', exact: true })).toBeVisible();
+  await viewer.getByRole('button', { name: 'Quay lại', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Xem ảnh 1: Ngôi nhà giữa núi xanh', exact: true }).locator('img')).toHaveAttribute('src', '/api/imagine/images/portrait');
 });
 
@@ -459,7 +486,7 @@ test('Dùng ảnh này giữ canvas và mở ô nhập gọn với đúng ảnh 
   await expect(viewer.getByRole('menu', { name: 'Tỉ lệ' })).toHaveCount(0);
   await noPageOverflow(page);
   await viewer.getByRole('button', { name: 'Sửa ảnh', exact: true }).click();
-  await expect(viewer).not.toBeVisible();
+  await expect(viewer).toBeVisible();
   expect(posts).toHaveLength(1);
   expect(posts[0]).toMatchObject({ prompt: 'Giữ ngôi nhà, đổi sang cảnh hoàng hôn', source_image_id: 'portrait-two', aspect_ratio: 'auto' });
   expect(posts[0]).not.toHaveProperty('source_image');
@@ -526,3 +553,52 @@ for (const shape of ['portrait', 'landscape', 'square'] as const) {
     expect(errors).toEqual([]);
   });
 }
+
+test('lịch sử sát sidebar, cuộn riêng, mở lại URL và sửa tiếp từ bản cũ', async ({ page }, testInfo) => {
+  const { posts, revisions, job } = await setup(page);
+  for (let i = 1; i <= 16; i++) revisions.push({ ...job, id: `history-${i}`, created_at: i + 1, status: 'complete',
+    root_image_id: 'portrait', edit_parent_image_id: i === 1 ? 'portrait' : `history-image-${i - 1}`,
+    images: [{ id: `history-image-${i}`, url: `/api/imagine/images/history-image-${i}`, mime: 'image/png' }] });
+  await page.goto('/#imagine');
+  await page.getByRole('button', { name: 'Xem ảnh 1: Ngôi nhà giữa núi xanh', exact: true }).click();
+  const viewer = page.getByRole('dialog', { name: 'Xem ảnh đã tạo' });
+  const rail = viewer.getByRole('navigation', { name: 'Lịch sử chỉnh sửa ảnh' });
+  await expect(rail.getByRole('button', { name: 'Ảnh chính', exact: true })).toHaveAttribute('aria-current', 'true');
+  await expect(rail.locator('.history-thumb')).toHaveCount(17);
+  const list = rail.locator('.history-list');
+  if (testInfo.project.name === 'pc') {
+    const sidebar = (await page.locator('.sidebar').boundingBox())!;
+    expect((await rail.boundingBox())!.x).toBe(sidebar.x + sidebar.width);
+    expect((await rail.locator('.history-thumb').first().boundingBox())!.width).toBe(64);
+    await rail.getByRole('button', { name: 'Cuộn lịch sử xuống' }).click();
+    await expect.poll(() => list.evaluate(element => element.scrollTop)).toBeGreaterThan(20);
+    await list.evaluate(element => { element.scrollTop = 0; });
+    const bounds = (await list.boundingBox())!;
+    await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+    await page.mouse.wheel(0, 480);
+    await expect.poll(() => list.evaluate(element => element.scrollTop)).toBeGreaterThan(200);
+    await expect(viewer.getByRole('button', { name: 'Vừa khung', exact: true })).toHaveText('100%');
+  }
+  await rail.getByRole('button', { name: 'Phiên bản 12', exact: true }).click();
+  await expect(page).toHaveURL(/#imagine\/portrait\/history-image-12$/);
+  await expect(viewer.locator('.workspace-picture img')).toHaveAttribute('src', '/api/imagine/images/history-image-12');
+  await page.reload();
+  await expect(viewer.locator('.workspace-picture img')).toHaveAttribute('src', '/api/imagine/images/history-image-12');
+  await rail.getByRole('button', { name: 'Phiên bản 2', exact: true }).click();
+  await page.goBack();
+  await expect(page).toHaveURL(/#imagine\/portrait\/history-image-12$/);
+  await expect(viewer.locator('.workspace-picture img')).toHaveAttribute('src', '/api/imagine/images/history-image-12');
+  await page.goForward();
+  await expect(viewer.locator('.workspace-picture img')).toHaveAttribute('src', '/api/imagine/images/history-image-2');
+  await viewer.getByLabel('Mô tả chỉnh sửa ảnh').fill('Đổi nền từ phiên bản cũ');
+  await viewer.getByRole('button', { name: 'Gửi chỉnh sửa ảnh' }).click();
+  expect(posts[0]).toMatchObject({ source_image_id: 'history-image-2', edit_parent_image_id: 'history-image-2' });
+  await expect(rail.locator('.history-thumb')).toHaveCount(18);
+  await expect(page).toHaveURL(/#imagine\/portrait\/result-1$/);
+  await noPageOverflow(page);
+  await page.screenshot({ path: testInfo.outputPath('version-history.png') });
+  await viewer.getByRole('button', { name: 'Quay lại', exact: true }).click();
+  await page.getByRole('button', { name: 'Thư viện', exact: true }).last().click();
+  const library = page.getByRole('dialog', { name: 'Thư viện ảnh' });
+  await expect(library.locator('.library-tile')).toHaveCount(2);
+});

@@ -18,23 +18,39 @@ async def create_imagine_job(
     n: int = 1,
     request_id: str | None = None,
     fingerprint: str | None = None,
+    root_image_id: str | None = None,
+    edit_parent_image_id: str | None = None,
+    edit_kind: str | None = None,
 ) -> str:
     job_id = uuid.uuid4().hex
     now = time.time()
     async with db_connection.connect() as db:
+        if root_image_id:
+            await db.execute("BEGIN IMMEDIATE")
+            parent = await (await db.execute(
+                "SELECT COALESCE(j.root_image_id, i.id) FROM imagine_images i JOIN imagine_jobs j ON j.id = i.job_id "
+                "WHERE i.owner = ? AND j.owner = ? AND i.id = ? AND i.kind = 'output' AND j.status = 'complete'",
+                (owner, owner, edit_parent_image_id),
+            )).fetchone()
+            root = await (await db.execute("SELECT 1 FROM imagine_images WHERE owner = ? AND id = ? AND kind = 'output'", (owner, root_image_id))).fetchone()
+            if not parent or parent[0] != root_image_id or not root:
+                raise LookupError("Không tìm thấy ảnh hoặc phiên bản chỉnh sửa.")
         if status == "queued":
             from core.config import MAX_CONCURRENT, MAX_QUEUE
-            await db.execute("BEGIN IMMEDIATE")
+            if not root_image_id:
+                await db.execute("BEGIN IMMEDIATE")
             rows = await (await db.execute("SELECT owner FROM imagine_jobs WHERE status IN ('queued', 'running')")).fetchall()
             if any(row[0] == owner for row in rows) or len(rows) >= MAX_CONCURRENT + MAX_QUEUE:
                 raise ValueError("Hàng đợi tạo ảnh đã đầy")
         await db.execute(
             """
             INSERT INTO imagine_jobs (
-                id, owner, prompt, quality, resolution, aspect_ratio, created_at, status, n, updated_at, request_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                id, owner, prompt, quality, resolution, aspect_ratio, created_at, status, n, updated_at, request_id,
+                root_image_id, edit_parent_image_id, edit_kind
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (job_id, owner, prompt, quality, resolution, aspect_ratio, now, status, n, now, request_id),
+            (job_id, owner, prompt, quality, resolution, aspect_ratio, now, status, n, now, request_id,
+             root_image_id, edit_parent_image_id, edit_kind),
         )
         if request_id:
             await db.execute("INSERT INTO imagine_requests VALUES (?, ?, ?, ?)", (owner, request_id, fingerprint, job_id))
@@ -66,7 +82,7 @@ async def add_imagine_image(
         await db.commit()
 
 
-async def list_imagine_jobs(owner: str, limit: int = 40, before: str | None = None, job_id: str | None = None) -> list[dict]:
+async def list_imagine_jobs(owner: str, limit: int = 40, before: str | None = None, job_id: str | None = None, root_image_id: str | None = None, active_edits: bool = False) -> list[dict]:
     async with db_connection.connect() as db:
         db.row_factory = aiosqlite.Row
         conditions = ["owner = ?"]
@@ -74,6 +90,13 @@ async def list_imagine_jobs(owner: str, limit: int = 40, before: str | None = No
         if job_id:
             conditions.append("id = ?")
             params.append(job_id)
+        elif active_edits:
+            conditions += ["root_image_id IS NOT NULL", "status IN ('queued', 'running')"]
+        elif root_image_id:
+            conditions.append("root_image_id = ?")
+            params.append(root_image_id)
+        else:
+            conditions.append("root_image_id IS NULL")
         if before:
             anchor = await (await db.execute("SELECT created_at, id FROM imagine_jobs WHERE owner = ? AND id = ?", (owner, before))).fetchone()
             if not anchor:
@@ -81,7 +104,7 @@ async def list_imagine_jobs(owner: str, limit: int = 40, before: str | None = No
             conditions.append("(created_at < ? OR (created_at = ? AND id < ?))")
             params += [anchor["created_at"], anchor["created_at"], anchor["id"]]
         cursor = await db.execute(
-            "SELECT id, prompt, quality, resolution, aspect_ratio, created_at, status, error, n, updated_at, request_id FROM imagine_jobs WHERE "
+            "SELECT id, prompt, quality, resolution, aspect_ratio, created_at, status, error, n, updated_at, request_id, root_image_id, edit_parent_image_id, edit_kind FROM imagine_jobs WHERE "
             + " AND ".join(conditions) + " ORDER BY created_at DESC, id DESC LIMIT ?", [*params, limit],
         )
         jobs = [dict(row) for row in await cursor.fetchall()]
@@ -111,24 +134,57 @@ async def get_imagine_image(owner: str, image_id: str) -> dict | None:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
             """
-            SELECT id, job_id, mime, path, created_at, kind
-              FROM imagine_images
-             WHERE id = ? AND owner = ?
+            SELECT i.id, i.job_id, i.mime, i.path, i.created_at, i.kind, j.root_image_id, j.status
+              FROM imagine_images i JOIN imagine_jobs j ON j.id = i.job_id
+             WHERE i.id = ? AND i.owner = ? AND j.owner = ?
             """,
-            (image_id, owner),
+            (image_id, owner, owner),
         )
         row = await cursor.fetchone()
         return dict(row) if row else None
 
 
+async def get_imagine_workspace(owner: str, image_id: str) -> dict | None:
+    image = await get_imagine_image(owner, image_id)
+    if not image or image["kind"] != "output" or image["status"] != "complete":
+        return None
+    root_id = image["root_image_id"] or image["id"]
+    root = await get_imagine_image(owner, root_id)
+    if not root:
+        return None
+    root_job = await get_imagine_job(owner, root["job_id"])
+    if not root_job:
+        return None
+    jobs = await list_imagine_jobs(owner, limit=-1, root_image_id=root_id)
+    jobs.reverse()
+    return {"root_image_id": root_id, "root_job": root_job, "jobs": jobs}
+
+
 async def delete_imagine_job(owner: str, job_id: str) -> bool:
     async with db_connection.connect() as db:
         db.row_factory = aiosqlite.Row
+        await db.execute("BEGIN IMMEDIATE")
+        pending = await (await db.execute(
+            "SELECT 1 FROM imagine_jobs WHERE owner = ? AND status IN ('queued', 'running', 'saving') "
+            "AND (id = ? OR root_image_id IN (SELECT id FROM imagine_images WHERE owner = ? AND job_id = ?))",
+            (owner, job_id, owner, job_id),
+        )).fetchone()
+        if pending:
+            raise ValueError("Đợi lượt chỉnh sửa kết thúc trước khi xóa ảnh nhé.")
+        children = [row[0] for row in await (await db.execute(
+            "SELECT id FROM imagine_jobs WHERE owner = ? AND root_image_id IN (SELECT id FROM imagine_images WHERE owner = ? AND job_id = ?)",
+            (owner, owner, job_id),
+        )).fetchall()]
+        paths = []
+        for child_id in children:
+            paths += [row[0] for row in await (await db.execute("SELECT path FROM imagine_images WHERE owner = ? AND job_id = ?", (owner, child_id))).fetchall()]
+            await db.execute("DELETE FROM imagine_images WHERE owner = ? AND job_id = ?", (owner, child_id))
+            await db.execute("DELETE FROM imagine_jobs WHERE owner = ? AND id = ?", (owner, child_id))
         cursor = await db.execute(
             "SELECT path FROM imagine_images WHERE job_id = ? AND owner = ?",
             (job_id, owner),
         )
-        paths = [str(row["path"]) for row in await cursor.fetchall()]
+        paths += [str(row["path"]) for row in await cursor.fetchall()]
         await db.execute("PRAGMA foreign_keys=ON")
         cursor = await db.execute(
             "DELETE FROM imagine_jobs WHERE id = ? AND owner = ?",
@@ -153,6 +209,7 @@ async def delete_imagine_image(owner: str, image_id: str) -> str | None:
     """
     async with db_connection.connect() as db:
         db.row_factory = aiosqlite.Row
+        await db.execute("BEGIN IMMEDIATE")
         cursor = await db.execute(
             "SELECT job_id, path FROM imagine_images WHERE id = ? AND owner = ? AND kind = 'output'",
             (image_id, owner),
@@ -162,6 +219,14 @@ async def delete_imagine_image(owner: str, image_id: str) -> str | None:
             return None
         job_id = row["job_id"]
         paths = [str(row["path"])]
+        pending = await (await db.execute("SELECT 1 FROM imagine_jobs WHERE owner = ? AND root_image_id = ? AND status IN ('queued', 'running', 'saving')", (owner, image_id))).fetchone()
+        if pending:
+            raise ValueError("Đợi lượt chỉnh sửa kết thúc trước khi xóa ảnh nhé.")
+        children = [row[0] for row in await (await db.execute("SELECT id FROM imagine_jobs WHERE owner = ? AND root_image_id = ?", (owner, image_id))).fetchall()]
+        for child_id in children:
+            paths += [item[0] for item in await (await db.execute("SELECT path FROM imagine_images WHERE owner = ? AND job_id = ?", (owner, child_id))).fetchall()]
+            await db.execute("DELETE FROM imagine_images WHERE owner = ? AND job_id = ?", (owner, child_id))
+            await db.execute("DELETE FROM imagine_jobs WHERE owner = ? AND id = ?", (owner, child_id))
         # DELETE mở giao dịch ghi trước, nên lần đếm ngay sau đó không bị một lượt xóa song song làm lệch.
         cursor = await db.execute(
             "DELETE FROM imagine_images WHERE id = ? AND owner = ? AND kind = 'output'",
@@ -220,7 +285,7 @@ async def update_imagine_job(owner: str, job_id: str, status: str, error: str | 
 async def interrupt_imagine_jobs() -> None:
     """Không tự gửi lại yêu cầu có thể đã được nhà cung cấp tính phí."""
     async with db_connection.connect() as db:
-        await db.execute("UPDATE imagine_jobs SET status = 'unknown', error = ?, updated_at = ? WHERE status IN ('queued', 'running')", ("Máy chủ đã khởi động lại. Chưa xác nhận được kết quả; lượt này không được tự gửi lại.", time.time()))
+        await db.execute("UPDATE imagine_jobs SET status = 'unknown', error = ?, updated_at = ? WHERE status IN ('queued', 'running', 'saving')", ("Máy chủ đã khởi động lại. Chưa xác nhận được kết quả; lượt này không được tự gửi lại.", time.time()))
         await db.commit()
 
 

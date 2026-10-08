@@ -372,6 +372,30 @@ export interface ImagineJob {
   n?: number;
   updated_at?: number;
   request_id?: string | null;
+  root_image_id?: string | null;
+  edit_parent_image_id?: string | null;
+  edit_kind?: "ai" | "crop" | "brush" | null;
+}
+
+export interface ImagineWorkspace {
+  root_image_id: string;
+  root_job: ImagineJob;
+  jobs: ImagineJob[];
+}
+
+export async function getImagineWorkspace(imageId: string, signal?: AbortSignal): Promise<ImagineWorkspace> {
+  return json(await fetch(`/api/imagine/images/${encodeURIComponent(imageId)}/workspace`, { signal }));
+}
+
+export async function saveImagineRevision(imageId: string, data: string, operation: "crop" | "brush", requestId: string): Promise<ImagineJob> {
+  let response: Response;
+  try { response = await fetch(`/api/imagine/images/${encodeURIComponent(imageId)}/revisions`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ data: data.split(",")[1], operation, request_id: requestId }),
+  }); } catch { throw new Error('Mất kết nối khi lưu bản chỉnh sửa. Bạn thử lưu lại nhé.'); }
+  const { job } = await json<{ job: ImagineJob }>(response);
+  if (job.status !== 'complete' || !job.images.length) throw new Error(job.error || 'Chưa xác nhận được bản chỉnh sửa đã lưu.');
+  return job;
 }
 
 export function imagineSources(job: ImagineJob): ImagineImage[] {
@@ -382,8 +406,8 @@ export function imaginePending(job: ImagineJob): boolean {
 }
 export async function listImagineJobs(before?: string): Promise<ImagineJob[]> {
   const response = await fetch("/api/imagine" + (before ? `?before=${encodeURIComponent(before)}` : ""));
-  const data = await json<{ jobs: ImagineJob[] }>(response);
-  return data.jobs;
+  const data = await json<{ jobs: ImagineJob[]; active_edits?: ImagineJob[] }>(response);
+  return [...data.jobs, ...(data.active_edits ?? [])];
 }
 
 export async function createImagineJob(payload: {
@@ -395,6 +419,7 @@ export async function createImagineJob(payload: {
   source_image?: { data: string };
   source_image_id?: string;
   source_images?: ({ data: string } | { image_id: string })[];
+  edit_parent_image_id?: string;
 }): Promise<ImagineJob> {
   const requestId = crypto.randomUUID();
   try { sessionStorage.setItem("peto-imagine-unconfirmed", requestId); } catch {}

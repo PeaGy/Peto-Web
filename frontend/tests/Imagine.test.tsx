@@ -8,6 +8,7 @@ vi.mock('../src/shared/api/api', async (original) => ({
   listImagineJobs: vi.fn(), createImagineJob: vi.fn(), deleteImagineJob: vi.fn(),
   deleteImagineImage: vi.fn(), setImagineImageLiked: vi.fn(),
   getImagineJob: vi.fn(), checkImagineRequest: vi.fn(),
+  getImagineWorkspace: vi.fn(), saveImagineRevision: vi.fn(),
 }));
 const job: api.ImagineJob = {
   id: 'job-1', prompt: 'Mèo trên mặt trăng', quality: 'medium', resolution: '2k',
@@ -28,12 +29,14 @@ beforeEach(() => {
   vi.resetAllMocks();
   localStorage.clear();
   sessionStorage.clear();
+  window.history.replaceState(null, '', '#imagine');
   Element.prototype.scrollTo = vi.fn();
   vi.mocked(api.listImagineJobs).mockResolvedValue([]);
   vi.mocked(api.createImagineJob).mockResolvedValue(job);
   vi.mocked(api.deleteImagineJob).mockResolvedValue();
   vi.mocked(api.deleteImagineImage).mockResolvedValue({ job_deleted: false });
   vi.mocked(api.setImagineImageLiked).mockImplementation(async (_id, liked) => liked);
+  vi.mocked(api.getImagineWorkspace).mockImplementation(async imageId => ({ root_image_id: imageId, root_job: job, jobs: [] }));
 });
 
 it('thêm nhiều ảnh, ghép ảnh thư viện và gửi đúng thứ tự ảnh đầu', async () => {
@@ -517,10 +520,10 @@ it('gửi chỉnh sửa trong khung xem dùng đúng ảnh, một kết quả v�
   const send = screen.getByRole('button', { name: 'Gửi chỉnh sửa ảnh' });
   fireEvent.click(send); fireEvent.click(send);
   await waitFor(() => expect(api.createImagineJob).toHaveBeenCalledTimes(1));
-  expect(api.createImagineJob).toHaveBeenCalledWith({ prompt: 'Đổi nền thành biển', quality: 'medium', resolution: '2k', aspect_ratio: '3:4', n: 1, source_image_id: 'img-2' });
-  await act(async () => request.resolve({ ...job, id: 'next', status: 'running', images: [] }));
-  expect(screen.queryByRole('dialog', { name: 'Xem ảnh đã tạo' })).toBeNull();
-  expect(screen.getByText('Peto đang tạo ảnh…')).toBeTruthy();
+  expect(api.createImagineJob).toHaveBeenCalledWith({ prompt: 'Đổi nền thành biển', quality: 'medium', resolution: '2k', aspect_ratio: '3:4', n: 1, source_image_id: 'img-2', edit_parent_image_id: 'img-2' });
+  await act(async () => request.resolve({ ...job, id: 'next', root_image_id: 'img-2', status: 'running', images: [] }));
+  expect(screen.getByRole('dialog', { name: 'Xem ảnh đã tạo' })).toBeTruthy();
+  expect(screen.getByText('Peto đang chỉnh sửa ảnh…')).toBeTruthy();
 });
 
 it('lỗi chỉnh sửa giữ mô tả trong khung xem để người dùng sửa hoặc thử lại', async () => {
@@ -537,7 +540,7 @@ it('lỗi chỉnh sửa giữ mô tả trong khung xem để người dùng sử
   expect(api.createImagineJob).toHaveBeenCalledTimes(1);
 });
 
-it('chỉnh sửa chưa xác nhận chuyển sang kiểm tra lượt cũ và không tự gửi lại', async () => {
+it('chỉnh sửa chưa xác nhận giữ khung xem để kiểm tra lượt cũ và không tự gửi lại', async () => {
   vi.mocked(api.listImagineJobs).mockResolvedValue([job]);
   vi.mocked(api.createImagineJob).mockRejectedValue(new api.ImagineRequestUncertainError('workspace-request'));
   await open();
@@ -545,7 +548,33 @@ it('chỉnh sửa chưa xác nhận chuyển sang kiểm tra lượt cũ và kh�
   fireEvent.change(screen.getByLabelText('Mô tả chỉnh sửa ảnh'), { target: { value: 'Đổi màu mũ' } });
   fireEvent.click(screen.getByRole('button', { name: 'Gửi chỉnh sửa ảnh' }));
   await screen.findByRole('button', { name: 'Kiểm tra lượt vừa gửi' });
-  await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Xem ảnh đã tạo' })).toBeNull());
+  expect(screen.getByRole('dialog', { name: 'Xem ảnh đã tạo' })).toBeTruthy();
   expect(api.createImagineJob).toHaveBeenCalledTimes(1);
-  expect((screen.getByRole('button', { name: 'Tạo ảnh', exact: true }) as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByRole('button', { name: 'Gửi chỉnh sửa ảnh' }) as HTMLButtonElement).disabled).toBe(true);
+});
+
+it('mở URL phiên bản, chọn ảnh cũ để sửa tiếp và giữ thư viện chỉ có ảnh chính', async () => {
+  const child: api.ImagineJob = { ...job, id: 'child', status: 'complete', root_image_id: 'img-1', edit_parent_image_id: 'img-1',
+    images: [{ id: 'version-1', mime: 'image/png', url: '/api/imagine/images/version-1' }] };
+  vi.mocked(api.listImagineJobs).mockResolvedValue([job]);
+  vi.mocked(api.getImagineWorkspace).mockResolvedValue({ root_image_id: 'img-1', root_job: job, jobs: [child] });
+  window.history.replaceState(null, '', '#imagine/img-1/version-1');
+  await open();
+  const dialog = await screen.findByRole('dialog', { name: 'Xem ảnh đã tạo' });
+  await waitFor(() => expect(dialog.querySelector('.workspace-picture img')?.getAttribute('src')).toBe(child.images[0].url));
+  const rail = within(dialog).getByRole('navigation', { name: 'Lịch sử chỉnh sửa ảnh' });
+  expect(within(rail).getByRole('button', { name: 'Phiên bản 1' }).getAttribute('aria-current')).toBe('true');
+  fireEvent.click(within(rail).getByRole('button', { name: 'Ảnh chính', exact: true }));
+  expect(window.location.hash).toBe('#imagine/img-1/img-1');
+  fireEvent.change(screen.getByLabelText('Mô tả chỉnh sửa ảnh'), { target: { value: 'Sửa từ ảnh gốc' } });
+  vi.mocked(api.createImagineJob).mockResolvedValue({ ...child, id: 'branch', images: [{ ...child.images[0], id: 'branch-image' }] });
+  fireEvent.click(screen.getByRole('button', { name: 'Gửi chỉnh sửa ảnh' }));
+  await waitFor(() => expect(api.createImagineJob).toHaveBeenCalledWith(expect.objectContaining({ source_image_id: 'img-1', edit_parent_image_id: 'img-1' })));
+  await waitFor(() => expect(window.location.hash).toBe('#imagine/img-1/branch-image'));
+  expect(screen.getByRole('button', { name: 'Phiên bản 1', exact: true })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Phiên bản 2', exact: true })).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Quay lại', exact: true }));
+  expect(document.querySelectorAll('.imagine-thumb')).toHaveLength(2);
+  fireEvent.click(screen.getByRole('button', { name: 'Thư viện', exact: true }));
+  expect(screen.getAllByRole('button', { name: `Xem ảnh: ${job.prompt}`, exact: true })).toHaveLength(2);
 });

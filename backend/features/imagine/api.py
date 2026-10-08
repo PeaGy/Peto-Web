@@ -11,6 +11,7 @@ import logging
 import sqlite3
 import uuid
 from pathlib import Path
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.routing import APIRoute
@@ -43,7 +44,7 @@ class ImagineRoute(APIRoute):
         handler = super().get_route_handler()
 
         async def limited(request: Request):
-            if request.method == "POST" and self.path == "/api/imagine":
+            if request.method == "POST" and self.path.startswith("/api/imagine"):
                 declared = request.headers.get("content-length", "")
                 if declared.isdigit() and int(declared) > MAX_REQUEST_BYTES:
                     raise HTTPException(413, "Ảnh gửi lên quá lớn. Tổng ảnh tham chiếu tối đa 16 MB.")
@@ -82,6 +83,7 @@ class ImagineRequest(BaseModel):
     source_images: list[SourceImageReference] | None = Field(default=None, min_length=1, max_length=5)
     background: bool = False
     request_id: str | None = Field(default=None, min_length=16, max_length=64, pattern=r"^[a-zA-Z0-9_-]+$")
+    edit_parent_image_id: str | None = Field(default=None, min_length=1, max_length=64)
 
 
 def _check_source(data: bytes) -> GeneratedImage:
@@ -155,6 +157,7 @@ def _public_job(row: dict) -> dict:
         "created_at": row["created_at"],
         "status": row.get("status", "complete"), "error": row.get("error"), "n": row.get("n", 1),
         "updated_at": row.get("updated_at"), "request_id": row.get("request_id"),
+        "root_image_id": row.get("root_image_id"), "edit_parent_image_id": row.get("edit_parent_image_id"), "edit_kind": row.get("edit_kind"),
         "source_image": public_source(source) if source else None,
         "source_images": [public_source(image) for image in all_images if image.get("kind") == "source"],
         "images": [
@@ -188,7 +191,8 @@ def _validate(request: ImagineRequest) -> tuple[str, str, str, str, int]:
 @router.get("/api/imagine")
 async def list_jobs(owner: str = Depends(current_owner), before: str | None = Query(default=None, max_length=64)) -> dict:
     rows = await db.list_imagine_jobs(owner, before=before)
-    return {"jobs": [_public_job(row) for row in rows]}
+    active = await db.list_imagine_jobs(owner, active_edits=True) if not before else []
+    return {"jobs": [_public_job(row) for row in rows], "active_edits": [_public_job(row) for row in active]}
 
 
 _tasks: set[asyncio.Task] = set()
@@ -272,14 +276,18 @@ async def create_job(request: ImagineRequest, owner: str = Depends(current_owner
                     raise HTTPException(410, "Lượt ảnh này đã bị xóa; yêu cầu cũ không được gửi lại.")
                 return {"job": _public_job(row)}
             sources, parents = await _sources(request, owner)
+            revision = await _revision_context(request, owner, sources, parents)
             try:
                 job_id = await db.create_imagine_job(owner=owner, prompt=prompt, quality=quality, resolution=resolution,
-                    aspect_ratio=aspect, status="queued", n=n, request_id=request.request_id, fingerprint=fingerprint)
+                    aspect_ratio=aspect, status="queued", n=n, request_id=request.request_id, fingerprint=fingerprint, **revision)
+            except LookupError as err:
+                raise HTTPException(404, str(err)) from err
             except (ValueError, sqlite3.IntegrityError) as err:
                 raise HTTPException(429, "Bạn đã có lượt ảnh đang chạy hoặc hàng đợi đang đầy. Đợi lượt đó xong nhé.") from err
             try:
                 await _save_images(owner, job_id, sources, "source", parents)
             except Exception:
+                await db.update_imagine_job(owner, job_id, "failed")
                 await db.delete_imagine_job(owner, job_id)
                 raise
             row = await db.get_imagine_job(owner, job_id)
@@ -291,6 +299,7 @@ async def create_job(request: ImagineRequest, owner: str = Depends(current_owner
 
     # Tương thích với bản frontend cũ: trả kết quả trong cùng request.
     sources, parents = await _sources(request, owner)
+    revision = await _revision_context(request, owner, sources, parents)
     try:
         images = await _generate(request, owner, sources)
     except AdmissionDenied as err:
@@ -299,7 +308,10 @@ async def create_job(request: ImagineRequest, owner: str = Depends(current_owner
         raise HTTPException(502, str(err)) from err
     except TimeoutError as err:
         raise HTTPException(504, "Peto tạo ảnh lâu quá nên đã dừng lượt này. Bạn có thể thử lại.") from err
-    job_id = await db.create_imagine_job(owner=owner, prompt=prompt, quality=quality, resolution=resolution, aspect_ratio=aspect, n=n)
+    try:
+        job_id = await db.create_imagine_job(owner=owner, prompt=prompt, quality=quality, resolution=resolution, aspect_ratio=aspect, n=n, **revision)
+    except LookupError as err:
+        raise HTTPException(404, str(err)) from err
     try:
         await _save_images(owner, job_id, sources, "source", parents)
         await _save_images(owner, job_id, images, "output")
@@ -307,6 +319,69 @@ async def create_job(request: ImagineRequest, owner: str = Depends(current_owner
         await db.delete_imagine_job(owner, job_id)
         raise
     return {"job": _public_job(await db.get_imagine_job(owner, job_id))}
+
+
+async def _revision_context(request: ImagineRequest, owner: str, sources: list, parents: list) -> dict:
+    if not request.edit_parent_image_id:
+        return {}
+    parent = await db.get_imagine_image(owner, request.edit_parent_image_id)
+    if not parent or parent["kind"] != "output" or parent["status"] != "complete":
+        raise HTTPException(404, "Không tìm thấy phiên bản ảnh để chỉnh sửa.")
+    if not sources or (parents[0] and parents[0]["id"] != parent["id"]):
+        raise HTTPException(400, "Ảnh tham chiếu đầu tiên phải là phiên bản đang chỉnh sửa.")
+    return {"root_image_id": parent["root_image_id"] or parent["id"], "edit_parent_image_id": parent["id"], "edit_kind": "ai"}
+
+
+@router.get("/api/imagine/images/{image_id}/workspace")
+async def get_workspace(image_id: str, owner: str = Depends(current_owner)):
+    workspace = await db.get_imagine_workspace(owner, image_id)
+    if not workspace:
+        raise HTTPException(404, "Không tìm thấy ảnh hoặc lịch sử chỉnh sửa.")
+    return {"root_image_id": workspace["root_image_id"], "root_job": _public_job(workspace["root_job"]),
+            "jobs": [_public_job(job) for job in workspace["jobs"]]}
+
+
+class RevisionRequest(SourceImageUpload):
+    operation: Literal["crop", "brush"]
+    request_id: str = Field(min_length=16, max_length=64, pattern=r"^[a-zA-Z0-9_-]+$")
+
+
+@router.post("/api/imagine/images/{image_id}/revisions")
+async def save_revision(image_id: str, request: RevisionRequest, owner: str = Depends(current_owner)):
+    # Cắt/vẽ lưu ngay trên máy chủ, không gọi nhà cung cấp AI; mã yêu cầu tránh bản lưu trùng.
+    fingerprint = hashlib.sha256((image_id + request.model_dump_json(exclude={"request_id"})).encode()).hexdigest()
+    async with _accept_lock:
+        previous = await db.get_imagine_request(owner, request.request_id)
+        if previous:
+            if previous["fingerprint"] != fingerprint:
+                raise HTTPException(409, "Mã lưu đã được dùng cho một bản chỉnh sửa khác.")
+            row = await db.get_imagine_job(owner, previous["job_id"])
+            if not row:
+                raise HTTPException(410, "Bản ảnh này đã bị xóa.")
+            return {"job": _public_job(row)}
+        parent = await db.get_imagine_image(owner, image_id)
+        if not parent or parent["kind"] != "output" or parent["status"] != "complete":
+            raise HTTPException(404, "Không tìm thấy phiên bản ảnh để lưu chỉnh sửa.")
+        try:
+            image = _check_source(base64.b64decode(request.data, validate=True))
+        except (binascii.Error, ValueError):
+            raise HTTPException(400, "Không đọc được bản chỉnh sửa.") from None
+        job = await db.get_imagine_job(owner, parent["job_id"])
+        try:
+            job_id = await db.create_imagine_job(owner=owner, prompt=job["prompt"], quality=job["quality"],
+                resolution=job["resolution"], aspect_ratio="auto", status="saving", request_id=request.request_id,
+                fingerprint=fingerprint, root_image_id=parent["root_image_id"] or image_id,
+                edit_parent_image_id=image_id, edit_kind=request.operation)
+        except LookupError as err:
+            raise HTTPException(404, str(err)) from err
+        try:
+            await _save_images(owner, job_id, [image], "output")
+            await db.update_imagine_job(owner, job_id, "complete")
+        except BaseException:
+            await db.update_imagine_job(owner, job_id, "failed")
+            await db.delete_imagine_job(owner, job_id)
+            raise
+        return {"job": _public_job(await db.get_imagine_job(owner, job_id))}
 
 
 @router.get("/api/imagine/requests/{request_id}")
@@ -362,7 +437,10 @@ class LikeRequest(BaseModel):
 @router.delete("/api/imagine/images/{image_id}")
 async def delete_image(image_id: str, owner: str = Depends(current_owner)) -> dict:
     """Xóa một ảnh trong thư viện; lượt không còn ảnh nào thì bị xóa theo."""
-    result = await db.delete_imagine_image(owner, image_id)
+    try:
+        result = await db.delete_imagine_image(owner, image_id)
+    except ValueError as err:
+        raise HTTPException(409, str(err)) from err
     if result is None:
         raise HTTPException(status_code=404, detail="Không tìm thấy ảnh")
     return {"deleted": True, "job_deleted": result == "job"}
@@ -380,6 +458,10 @@ async def delete_job(job_id: str, owner: str = Depends(current_owner)) -> dict:
     row = await db.get_imagine_job(owner, job_id)
     if row and row["status"] in {"queued", "running"}:
         raise HTTPException(409, "Đợi lượt tạo ảnh kết thúc trước khi xóa nhé.")
-    if not await db.delete_imagine_job(owner, job_id):
+    try:
+        deleted = await db.delete_imagine_job(owner, job_id)
+    except ValueError as err:
+        raise HTTPException(409, str(err)) from err
+    if not deleted:
         raise HTTPException(status_code=404, detail="Không tìm thấy ảnh")
     return {"deleted": True}

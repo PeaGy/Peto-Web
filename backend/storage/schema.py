@@ -201,9 +201,10 @@ async def init_db() -> None:
             if name not in image_column_names:
                 await db.execute(f"ALTER TABLE imagine_images ADD COLUMN {name} {definition}")
         job_columns = {row[1] for row in await (await db.execute("PRAGMA table_info(imagine_jobs)")).fetchall()}
-        for name, definition in {"status": "TEXT NOT NULL DEFAULT 'complete'", "error": "TEXT", "n": "INTEGER NOT NULL DEFAULT 1", "updated_at": "REAL", "request_id": "TEXT"}.items():
+        for name, definition in {"status": "TEXT NOT NULL DEFAULT 'complete'", "error": "TEXT", "n": "INTEGER NOT NULL DEFAULT 1", "updated_at": "REAL", "request_id": "TEXT", "root_image_id": "TEXT", "edit_parent_image_id": "TEXT", "edit_kind": "TEXT"}.items():
             if name not in job_columns:
                 await db.execute(f"ALTER TABLE imagine_jobs ADD COLUMN {name} {definition}")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_imagine_jobs_root ON imagine_jobs(owner, root_image_id, created_at)")
         # Giữ dấu nhận yêu cầu kể cả khi ảnh bị xóa, tránh phát sinh lượt tính phí lặp.
         await db.execute("CREATE TABLE IF NOT EXISTS imagine_requests (owner TEXT NOT NULL, request_id TEXT NOT NULL, fingerprint TEXT NOT NULL, job_id TEXT NOT NULL, PRIMARY KEY(owner, request_id))")
         # Hồ sơ người dùng tự điền trong Cài đặt. Tách khỏi `users` vì bảng đó bị

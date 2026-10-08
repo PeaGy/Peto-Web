@@ -40,6 +40,7 @@ from .imagine import (
     add_imagine_image,
     list_imagine_jobs,
     get_imagine_image,
+    get_imagine_workspace,
     delete_imagine_job,
     delete_imagine_image,
     set_imagine_image_liked,
