@@ -190,6 +190,8 @@
 .studio-menu-list.end { left: auto; right: 0; transform-origin: bottom right; }
 .studio-menu-list .effort-option { height: 38px; gap: 8px; padding: 0 8px; }
 .studio-menu-list .effort-option-label { white-space: nowrap; }
+.studio-menu-list .studio-option-described { height: auto; min-height: 52px; padding: 7px 8px; }
+.studio-menu-list .effort-option-label small { display: block; white-space: normal; color: var(--muted); font-size: 10px; line-height: 1.35; margin-top: 3px; }
 .studio-menu-list .effort-option > svg:first-child { color: var(--muted); }
 
 .studio-send { display: grid; place-items: center; flex-shrink: 0; width: 40px; height: 40px; margin-left: auto; padding: 0; border: 0; border-radius: 50%; background: var(--accent); color: var(--on-accent); cursor: pointer; }
@@ -389,6 +391,14 @@
 /* Ảnh tham chiếu có thứ tự và thao tác trực tiếp, dùng được bằng bàn phím lẫn cảm ứng. */
 .source-collection { min-width: 0; }
 .source-guidance { color: var(--muted); font-size: 12px; padding: 0 4px 8px; line-height: 1.5; }
+.edit-tools { margin: 0 4px 10px; color: var(--muted); font-size: 12px; }
+.edit-tools summary { cursor: pointer; width: fit-content; }
+.edit-tools .edit-suggestions { margin-top: 8px; }
+.edit-tools p { margin: 6px 0 0; line-height: 1.5; }
+.source-order-notice { display: flex; align-items: center; gap: 8px; padding: 6px 8px; margin-bottom: 8px; border-radius: 8px; background: var(--panel-2); color: var(--muted); font-size: 12px; line-height: 1.5; }
+.source-order-notice button { margin-left: auto; flex-shrink: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; padding: 5px; }
+.image-dimensions { display: block; color: var(--muted); font-size: 12px; text-align: center; margin: 6px 0; }
+.library-tile .image-dimensions { position: absolute; bottom: 0; left: 0; right: 0; margin: 0; padding: 18px 4px 7px; color: #fff; background: linear-gradient(transparent, rgba(0, 0, 0, .7)); pointer-events: none; font-size: 11px; }
 .source-strip { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
 .source-strip .source-preview { flex: 0 0 215px; min-width: 0; margin: 0; }
 .source-strip .source-preview img { width: 56px; height: 56px; }

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { ImagineImage } from "../../shared/api/api";
+import MeasuredImage from "./MeasuredImage";
 
 /** Hai khung giữ nguyên tỉ lệ riêng của mỗi ảnh, kể cả khi đã đổi khung hình. */
 export default function ImageComparison({ sources, image, prompt }: {
@@ -15,8 +16,8 @@ export default function ImageComparison({ sources, image, prompt }: {
       </select></label>}
     </div>
     {comparing ? <div className="comparison-panes">
-      <figure><figcaption>Trước · Ảnh {sourceIndex + 1}</figcaption><img src={sources[sourceIndex].url} alt={`Ảnh gốc ${sourceIndex + 1}`} /></figure>
-      <figure><figcaption>Sau</figcaption><img src={image.url} alt={prompt} /></figure>
-    </div> : <img src={image.url} alt={prompt} />}
+      <figure><figcaption>Trước · Ảnh {sourceIndex + 1}</figcaption><MeasuredImage src={sources[sourceIndex].url} alt={`Ảnh gốc ${sourceIndex + 1}`} /></figure>
+      <figure><figcaption>Sau</figcaption><MeasuredImage src={image.url} alt={prompt} /></figure>
+    </div> : <MeasuredImage src={image.url} alt={prompt} />}
   </div>;
 }

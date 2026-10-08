@@ -40,7 +40,18 @@ test('nhiều ảnh tham chiếu, tải lại lượt đang tạo và so sánh t
   await library.getByRole('button', { name: 'Chọn ảnh: Bức ảnh đã lưu' }).click();
   await library.getByRole('button', { name: 'Dùng làm tham chiếu' }).click();
   await page.getByRole('button', { name: 'Đặt làm ảnh đầu' }).last().click();
+  await expect(page.getByText(/Số thứ tự ảnh đã thay đổi/)).toBeVisible();
+  await page.getByText('Gợi ý chỉnh sửa', { exact: true }).click();
+  await page.getByRole('button', { name: 'Ghép chủ thể', exact: true }).click();
+  await expect(page.getByLabel('Bạn muốn sửa gì trong ảnh?')).toHaveValue(/Lấy chủ thể ở ảnh 1/);
+  expect(posts).toBe(0);
+  await page.getByText('Gợi ý chỉnh sửa', { exact: true }).click();
   await page.getByLabel('Bạn muốn sửa gì trong ảnh?').fill('Lấy chủ thể ảnh 1 và nền ảnh 2');
+  await page.getByRole('button', { name: 'Tỉ lệ: Tự động' }).click();
+  await expect(page.getByRole('menuitemradio', { name: '9:16', exact: true })).toContainText('Hình nền điện thoại');
+  await noPageOverflow(page);
+  await page.screenshot({ path: testInfo.outputPath('ratios.png') });
+  await page.getByRole('menuitemradio', { name: 'Tự động', exact: true }).click();
   await noPageOverflow(page);
   await page.screenshot({ path: testInfo.outputPath('references.png') });
   await page.getByRole('button', { name: 'Sửa ảnh', exact: true }).click();
@@ -54,6 +65,7 @@ test('nhiều ảnh tham chiếu, tải lại lượt đang tạo và so sánh t
   await page.getByLabel('Chọn ảnh gốc để so sánh').selectOption('1');
   await expect(page.getByRole('img', { name: 'Ảnh gốc 2', exact: true })).toBeVisible();
   await expect(page.getByRole('img', { name: 'Ảnh gốc 2', exact: true })).toHaveAttribute('src', '/api/imagine/images/copy-one');
+  await expect(page.getByLabel('Kích thước ảnh thực tế')).toHaveCount(2);
   await noPageOverflow(page);
   await page.screenshot({ path: testInfo.outputPath('comparison.png') });
   expect(posts).toBe(1);

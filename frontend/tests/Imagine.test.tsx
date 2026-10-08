@@ -66,6 +66,41 @@ it('từ chối ảnh thứ sáu mà giữ nguyên năm ảnh và mô tả', asy
   expect((input as HTMLTextAreaElement).value).toBe('Giữ mô tả này');
 });
 
+it('gợi ý theo nhiều nguồn giữ mô tả đang viết và không tự gửi; đổi thứ tự có lời nhắc', async () => {
+  vi.mocked(api.listImagineJobs).mockResolvedValue([job]);
+  await open();
+  fireEvent.change(screen.getByLabelText('Chọn ảnh để sửa'), { target: { files: [sourceFile(), sourceFile()] } });
+  await screen.findByRole('img', { name: 'Ảnh tham chiếu 2' });
+  const input = screen.getByLabelText('Bạn muốn sửa gì trong ảnh?') as HTMLTextAreaElement;
+  fireEvent.change(input, { target: { value: 'Giữ chiếc nơ màu đỏ.' } });
+  fireEvent.click(screen.getByText('Gợi ý chỉnh sửa'));
+  fireEvent.click(screen.getByRole('button', { name: 'Ghép chủ thể' }));
+  expect(input.value).toContain('Giữ chiếc nơ màu đỏ.\nLấy chủ thể ở ảnh 1');
+  expect(input.value).toContain('bối cảnh ảnh 2');
+  expect(api.createImagineJob).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Đặt làm ảnh đầu' }));
+  expect(screen.getByRole('status').textContent).toContain('Số thứ tự ảnh đã thay đổi');
+  expect(input.value).toContain('Giữ chiếc nơ màu đỏ.');
+  fireEvent.click(screen.getByRole('button', { name: 'Đóng nhắc thứ tự ảnh' }));
+  expect(screen.queryByText(/Số thứ tự ảnh đã thay đổi/)).toBeNull();
+});
+
+it('thêm ảnh đang xem làm tham chiếu giữ nguồn và mô tả đang viết', async () => {
+  vi.mocked(api.listImagineJobs).mockResolvedValue([job]);
+  await open();
+  fireEvent.change(screen.getByLabelText('Chọn ảnh để sửa'), { target: { files: [sourceFile()] } });
+  await screen.findByRole('img', { name: 'Ảnh gốc để chỉnh sửa' });
+  fireEvent.change(screen.getByLabelText('Bạn muốn sửa gì trong ảnh?'), { target: { value: 'Ghép thêm mèo' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Xem ảnh 2: Mèo trên mặt trăng' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Thêm làm tham chiếu' }));
+  expect(screen.getByRole('img', { name: 'Ảnh tham chiếu 2' }).getAttribute('src')).toBe(job.images[1].url);
+  expect((screen.getByLabelText('Bạn muốn sửa gì trong ảnh?') as HTMLTextAreaElement).value).toBe('Ghép thêm mèo');
+  fireEvent.click(screen.getByRole('button', { name: 'Sửa ảnh', exact: true }));
+  await waitFor(() => expect(api.createImagineJob).toHaveBeenCalledWith(expect.objectContaining({
+    source_images: [{ data: png }, { image_id: 'img-2' }], prompt: 'Ghép thêm mèo',
+  })));
+});
+
 it('so sánh với từng ảnh tham chiếu và mở lại nguồn sau tải lịch sử', async () => {
   const sources = [editedJob.source_image!, { id: 'source-2', mime: 'image/png', url: '/api/imagine/images/source-2' }];
   vi.mocked(api.listImagineJobs).mockResolvedValue([{ ...job, source_images: sources }]);

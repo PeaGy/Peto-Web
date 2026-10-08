@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 
-export type StudioOption<T extends string | number> = { value: T; label: string; icon?: ReactNode };
+export type StudioOption<T extends string | number> = { value: T; label: string; description?: string; icon?: ReactNode };
 
 /**
  * Chip chọn một giá trị trong ô nhập Tạo ảnh (Số ảnh, Tỉ lệ), bật menu lên phía trên như Grok.
@@ -72,10 +72,10 @@ export default function StudioMenu<T extends string | number>({
       {options.map((item, index) => {
         const on = item.value === value;
         return <button key={String(item.value)} ref={(element) => { items.current[index] = element; }} type="button"
-          role="menuitemradio" aria-checked={on} className={on ? "effort-option on" : "effort-option"}
+          role="menuitemradio" aria-label={item.label} aria-description={item.description} aria-checked={on} className={(on ? "effort-option on" : "effort-option") + (item.description ? " studio-option-described" : "")}
           onClick={() => { onChange(item.value); close(); }}>
           {item.icon}
-          <span className="effort-option-label">{item.label}</span>
+          <span className="effort-option-label">{item.label}{item.description && <small>{item.description}</small>}</span>
           {on && <svg className="effort-check" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="m5 12.5 4.5 4.5L19 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
           </svg>}

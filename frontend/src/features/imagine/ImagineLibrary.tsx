@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import type { ImagineImage, ImagineJob } from "../../shared/api/api";
+import MeasuredImage from "./MeasuredImage";
 
 const COLUMNS_KEY = "peto-imagine-library-columns";
 const LONG_PRESS_MS = 500;
@@ -39,7 +40,7 @@ function canShareFiles() {
 }
 
 /**
- * Thư viện ảnh kiểu Grok, mở từ nút bên trái thanh nhập trên điện thoại.
+ * Thư viện ảnh mở từ thanh bên hoặc nút thư viện trên điện thoại.
  *
  * Mỗi ô là một ảnh kết quả. Chạm để xem, "Chọn" để chọn nhiều, giữ lâu (hoặc chuột phải) để mở menu
  * của riêng ảnh đó. Việc gọi API xóa và cập nhật danh sách nằm ở Imagine, vì bộ ảnh và cột trái dùng chung.
@@ -230,7 +231,7 @@ export default function ImagineLibrary({ open, jobs, onClose, onOpenImage, onDel
               onPointerUp={cancelPress} onPointerCancel={cancelPress} onPointerLeave={cancelPress}
               onContextMenu={(event) => { event.preventDefault(); cancelPress(); openMenu(tile, event.currentTarget); }}
               onClick={() => onTileClick(tile)}>
-              <img src={tile.image.url} alt="" loading="lazy" decoding="async" draggable={false} />
+              <MeasuredImage src={tile.image.url} alt="" loading="lazy" decoding="async" draggable={false} />
               {selecting && <span className="library-check" aria-hidden="true">{on && (onUseSources ? Array.from(selected).indexOf(tile.image.id) + 1 : <CheckIcon />)}</span>}
             </button>;
           })}

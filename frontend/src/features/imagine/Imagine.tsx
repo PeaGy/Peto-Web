@@ -8,6 +8,7 @@ import {
 import ImagineLibrary, { HeartIcon } from "./ImagineLibrary";
 import EditHistory from "./EditHistory";
 import ImageComparison from "./ImageComparison";
+import MeasuredImage from "./MeasuredImage";
 import StudioMenu from "./StudioMenu";
 import { LoadingIndicator } from '../../shared/ui/LoadingIndicator';
 import { COMPACT_QUERY } from "../companion/characters/characterView";
@@ -20,6 +21,12 @@ const MAX_SOURCE_BYTES = 8 * 1024 * 1024;
 type DraftSource = { name: string; preview: string; draftId?: string; size?: number; upload?: { data: string }; imageId?: string };
 const RATIOS = ["auto", "1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3", "2:1", "1:2", "19.5:9", "9:19.5", "20:9", "9:20", "21:9", "5:2"];
 const COUNTS = [1, 2, 3, 4];
+const RATIO_HINTS: Record<string, string> = {
+  auto: "Theo ảnh đầu", "1:1": "Ảnh vuông", "16:9": "Ảnh bìa", "9:16": "Hình nền điện thoại",
+  "4:3": "Ảnh ngang", "3:4": "Chân dung", "3:2": "Ảnh chụp ngang", "2:3": "Áp phích",
+  "2:1": "Banner", "1:2": "Ảnh dọc dài", "19.5:9": "Màn hình rộng", "9:19.5": "Điện thoại dài",
+  "20:9": "Màn hình rộng", "9:20": "Điện thoại dài", "21:9": "Siêu rộng", "5:2": "Banner rộng",
+};
 const IDEAS = [
   { label: "Một nhân vật", style: "character", prompt: "Mèo trắng đội mũ phù thủy màu tím, minh họa sách truyện, ánh sáng dịu và những ngôi sao nhỏ." },
   { label: "Một thế giới", style: "landscape", prompt: "Ngôi nhà nhỏ bên hồ trên một hành tinh xa, trời hoàng hôn màu hồng, phong cảnh điện ảnh yên bình." },
@@ -145,6 +152,7 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
 }) {
   const [prompt, setPrompt] = useState("");
   const [sources, setSources] = useState<DraftSource[]>([]);
+  const [sourceOrderChanged, setSourceOrderChanged] = useState(false);
   const source = sources[0] ?? null;
   const [uncertainRequest, setUncertainRequest] = useState(unconfirmedImagineRequest);
   const [checkingRequest, setCheckingRequest] = useState(false);
@@ -292,10 +300,13 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
     readingRef.current = false;
     setReadingSource(false);
     setSources(prev => prev.filter((_, i) => i !== index));
+    if (sources.length === 1) setSourceOrderChanged(false);
+    else if (index < sources.length - 1) setSourceOrderChanged(true);
     if (fileRef.current) fileRef.current.value = "";
   }
   function moveSourceFirst(index: number) {
     flushSync(() => setSources(prev => [prev[index], ...prev.filter((_, i) => i !== index)]));
+    setSourceOrderChanged(true);
     sourceStripRef.current?.scrollTo({ left: 0 });
     sourceStripRef.current?.querySelector<HTMLElement>(".source-preview")?.focus({ preventScroll: true });
   }
@@ -358,6 +369,7 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
     sourceVersion.current += 1;
     setReadingSource(false);
     setSources([{ name: "Ảnh đã chọn", preview: image.url, imageId: image.id }]);
+    setSourceOrderChanged(false);
     setExpanded(true);
     setPrompt("");
     setQuality(job.quality);
@@ -463,6 +475,7 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
     sourceVersion.current += 1;
     setReadingSource(false);
     setSources(imagineSources(job).map(image => ({ name: "Ảnh gốc", preview: image.url, imageId: image.id })));
+    setSourceOrderChanged(false);
     setExpanded(true);
     setPrompt(job.prompt);
     setQuality(job.quality);
@@ -476,6 +489,17 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
   const lightboxLiked = !!lightboxImage && (previewLikes[lightboxImage.id] ?? listedImage?.liked ?? lightboxImage.liked ?? false);
   const latestImage = jobs.find((job) => job.images.length > 0)?.images[0];
   const controlsDisabled = generating || !!pendingIds || !!uncertainRequest || loading || loadFailed || readingSource;
+  const suggestions = [
+    { label: "Đổi nền", prompt: "Đổi nền ảnh 1 thành khu vườn, giữ chủ thể và bố cục chính." },
+    ...(sources.length > 1 ? [{ label: "Ghép chủ thể", prompt: "Lấy chủ thể ở ảnh 1 và đặt vào bối cảnh ảnh 2, phối ánh sáng cho tự nhiên." }] : []),
+    { label: "Tham khảo phong cách", prompt: sources.length > 1 ? "Áp dụng phong cách của ảnh 2 cho ảnh 1, giữ bố cục và chủ thể của ảnh 1." : "Chuyển ảnh 1 thành tranh màu nước, giữ bố cục và chủ thể." },
+    { label: "Thêm chữ", prompt: 'Thêm dòng chữ "Peto" vào ảnh 1 ở vị trí dễ đọc, không che chủ thể.' },
+  ];
+  function applySuggestion(text: string) {
+    setPrompt(current => current.includes(text) ? current : current.trim() ? `${current.trimEnd()}\n${text}` : text);
+    setExpanded(true);
+    textareaRef.current?.focus();
+  }
   // Như Grok: thanh thu gọn mời gõ, còn khung đang mở thì nói rõ cần nhập gì.
   const showFull = expanded || !compact;
   const placeholder = source
@@ -498,7 +522,7 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
         <span className="studio-eyebrow"><SparkleIcon /> Góc sáng tạo của bạn</span>
         <h1>{source ? "Giữ điều bạn thích." : "Bạn tưởng tượng."}<br /><span>{source ? "Sửa điều bạn muốn." : "Peto vẽ nên."}</span></h1>
         <p>{source ? "Ảnh gốc đã sẵn sàng. Kể Peto nghe bạn muốn thay đổi gì." : "Kể Peto nghe về bức ảnh trong đầu bạn, hoặc thêm ảnh để chỉnh sửa."}</p>
-        {source ? <div className="edit-suggestions">{["Đổi nền thành khu vườn, giữ nguyên chủ thể.", "Chuyển thành tranh màu nước.", "Làm ánh sáng ấm hơn, giữ bố cục cũ."].map((text) => <button key={text} type="button" onClick={() => { setPrompt(text); textareaRef.current?.focus(); }}>{text}</button>)}</div> : <div className="studio-ideas">
+        {!source && <div className="studio-ideas">
           {IDEAS.map((idea) => <button type="button" className="studio-idea" key={idea.style} onClick={() => { setPrompt(idea.prompt); textareaRef.current?.focus(); }}>
             <IdeaArt style={idea.style} /><span><strong>{idea.label}</strong><span>{idea.prompt}</span></span>
           </button>)}
@@ -549,7 +573,7 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
           <StudioMenu label="Số ảnh" value={count} icon={<PhotoIcon />} disabled={controlsDisabled} onChange={setCount}
             options={COUNTS.map((n) => ({ value: n, label: `${n} ảnh` }))} />
           <StudioMenu label="Tỉ lệ" value={aspect} icon={<RatioIcon value={aspect} />} disabled={controlsDisabled} onChange={setAspect}
-            columns={2} align="end" options={RATIOS.map((ratio) => ({ value: ratio, label: ratioLabel(ratio), icon: <RatioIcon value={ratio} /> }))} />
+            columns={2} align="end" options={RATIOS.map((ratio) => ({ value: ratio, label: ratioLabel(ratio), description: ratio === "auto" && !source ? "Peto chọn khung hình" : RATIO_HINTS[ratio], icon: <RatioIcon value={ratio} /> }))} />
         </div>
         {/* Nút thư viện (hiện ảnh mới nhất) và nút tùy chọn chỉ hiện ở thanh thu gọn trên điện thoại. */}
         <button type="button" className="studio-library" aria-label="Mở thư viện ảnh" onClick={() => setLibraryOpen(true)}>
@@ -557,7 +581,10 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
         </button>
         <div className="composer imagine-composer">
           <input ref={fileRef} className="source-file-input" type="file" multiple accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp" aria-label="Chọn ảnh để sửa" disabled={controlsDisabled} onChange={(event) => { const files = Array.from(event.target.files ?? []); event.target.value = ""; void chooseSource(files); }} />
-          {sources.length > 0 && <div className="source-collection"><div className="source-guidance">{sources.length}/5 ảnh · Bạn có thể viết “lấy nhân vật ở ảnh 1, nền ở ảnh 2”. Khi để Tự động, tỉ lệ theo ảnh đầu.</div><div className="source-strip" ref={sourceStripRef}>{sources.map((image, index) => <div className="source-preview" key={image.imageId ?? image.draftId} tabIndex={-1} role="group" aria-label={`Ảnh tham chiếu ${index + 1}`}>
+          {sources.length > 0 && <div className="source-collection"><div className="source-guidance">{sources.length}/5 ảnh tham chiếu · Khi để Tự động, tỉ lệ theo ảnh đầu.</div>
+          {sourceOrderChanged && <div className="source-order-notice" role="status">Số thứ tự ảnh đã thay đổi. Bạn kiểm tra lại “ảnh 1”, “ảnh 2”… trong mô tả nhé.<button type="button" aria-label="Đóng nhắc thứ tự ảnh" onClick={() => setSourceOrderChanged(false)}>×</button></div>}
+          <details className="edit-tools"><summary>Gợi ý chỉnh sửa</summary><div className="edit-suggestions">{suggestions.map(item => <button key={item.label} type="button" disabled={controlsDisabled} onClick={() => applySuggestion(item.prompt)}>{item.label}</button>)}</div><p>Gợi ý được thêm vào mô tả; bạn sửa nội dung trước khi gửi.</p></details>
+          <div className="source-strip" ref={sourceStripRef}>{sources.map((image, index) => <div className="source-preview" key={image.imageId ?? image.draftId} tabIndex={-1} role="group" aria-label={`Ảnh tham chiếu ${index + 1}`}>
             <img src={image.preview} alt={sources.length === 1 ? "Ảnh gốc để chỉnh sửa" : `Ảnh tham chiếu ${index + 1}`} /><div><strong>Ảnh {index + 1}</strong><span title={image.name}>{image.name}</span>{index > 0 && <button type="button" className="source-first" disabled={controlsDisabled} onClick={() => moveSourceFirst(index)}>Đặt làm ảnh đầu</button>}</div>
             <button type="button" disabled={generating || !!pendingIds} aria-label={sources.length === 1 ? "Gỡ ảnh gốc" : `Gỡ ảnh ${index + 1}`} onClick={() => clearSource(index)}>×</button>
           </div>)}</div></div>}
@@ -593,7 +620,7 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
         <div className="lightbox-head"><span>{lightbox.original ? "Ảnh gốc" : `Peto tạo ảnh · ${lightbox.index + 1} / ${lightbox.job.images.length}`}</span><button type="button" autoFocus className="dialog-close" aria-label="Đóng ảnh" onClick={() => setLightbox(null)}>×</button></div>
         {!lightbox.original && imagineSources(lightbox.job).length > 0
           ? <ImageComparison key={lightboxImage.id} sources={imagineSources(lightbox.job)} image={lightboxImage} prompt={lightbox.job.prompt} />
-          : <img src={lightboxImage.url} alt={lightbox.job.prompt} />}
+          : <MeasuredImage src={lightboxImage.url} alt={lightbox.job.prompt} />}
         <p>{lightbox.job.prompt}</p>
         {likeError && <p className="lightbox-error" role="alert">{likeError}</p>}
         <div className="imagine-lightbox-actions">
@@ -601,6 +628,7 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
           {!lightbox.original && <button type="button" className={"lightbox-like" + (lightboxLiked ? " on" : "")} aria-pressed={lightboxLiked}
             onClick={() => void toggleLike(lightboxImage.id, !lightboxLiked)}><HeartIcon filled={lightboxLiked} />Thích</button>}
           <button type="button" disabled={controlsDisabled} onClick={() => editImage(lightbox.job, lightboxImage)}>Sửa ảnh này</button>
+          <button type="button" disabled={controlsDisabled || sources.length >= 5 || sources.some(source => source.imageId === lightboxImage.id)} onClick={() => { setLightbox(null); setLibraryOpen(false); lightboxRef.current?.close(); addLibrarySources([lightboxImage]); }}>Thêm làm tham chiếu</button>
           <a href={lightboxImage.url + "?download=1"} download>Tải ảnh xuống ↓</a>
         </div>
       </div>}

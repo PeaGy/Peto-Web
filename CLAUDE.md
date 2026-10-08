@@ -965,6 +965,14 @@ the gallery and collapses to a bar (a library button showing the newest image, a
 button) until the prompt is focused or the options button is pressed. A tap outside or a submit collapses it
 and blurs the prompt so the phone keyboard hides.
 
+Reference edits expose a collapsed "Gợi ý chỉnh sửa" section in the composer, even with existing jobs.
+Its source-aware suggestions append to the draft without submitting or replacing the user's text. Reordering
+or removing a reference that renumbers others shows a dismissible reminder to check numbered references in
+the prompt. Ratio options include purpose hints. The preview's "Thêm làm tham chiếu" appends the viewed
+image to the current draft; "Sửa ảnh này" starts an edit from that image. `MeasuredImage.tsx` reads actual
+natural dimensions after loading for library tiles, previews and comparison panes; it hides previous-image
+metadata when the URL changes, rather than guessing dimensions from requested resolution or aspect ratio.
+
 Both desktop and mobile can open `ImagineLibrary.tsx`, a full-screen `<dialog>`. It shows output tiles, searches
 loaded prompts ignoring Vietnamese diacritics, and offers 2 or 3 columns (localStorage), liked-only and created/edited
 filters. The API returns 40 jobs per page; `before=<last-job-id>` loads earlier jobs with a stable created_at/id order.
