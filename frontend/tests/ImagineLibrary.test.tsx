@@ -34,6 +34,7 @@ it('mỗi ảnh một ô, chạm để xem, tìm kiếm không cần gõ dấu',
   expect(ids()).toEqual(['cat-1', 'cat-2', 'lake-1']);
   fireEvent.click(tiles()[1]);
   expect(onOpenImage).toHaveBeenCalledWith(cat, 1);
+  fireEvent.click(screen.getByRole('button', { name: 'Tìm trong thư viện' }));
   fireEvent.change(screen.getByLabelText('Tìm ảnh theo mô tả'), { target: { value: 'nha ben HO' } });
   expect(ids()).toEqual(['lake-1']);
   fireEvent.change(screen.getByLabelText('Tìm ảnh theo mô tả'), { target: { value: 'chó' } });

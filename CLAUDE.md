@@ -974,8 +974,11 @@ natural dimensions after loading for library tiles, previews and comparison pane
 metadata when the URL changes, rather than guessing dimensions from requested resolution or aspect ratio.
 
 Both desktop and mobile can open `ImagineLibrary.tsx`, a full-screen `<dialog>`. It shows output tiles, searches
-loaded prompts ignoring Vietnamese diacritics, and offers 2 or 3 columns (localStorage), liked-only and created/edited
-filters. The API returns 40 jobs per page; `before=<last-job-id>` loads earlier jobs with a stable created_at/id order.
+loaded prompts ignoring Vietnamese diacritics via a top search toggle, and offers medium/small square tiles
+(localStorage), All/Liked tabs and created/edited filters. Desktop tiles stay bounded to 240–360px (medium) or
+180–240px (small), even with only one image; mobile retains 2/3 columns. Selection/download/delete actions
+live in the top bar. The same composer moves into the library, then hides during selection; a ResizeObserver
+keeps the last grid row clear of its floating dock. The API returns 40 jobs per page; `before=<last-job-id>` loads earlier jobs with a stable created_at/id order.
 The composer appends uploads/paste/drop sources and selected library images (in selection order), with remove and
 "Đặt làm ảnh đầu" controls. "Dùng lại mô tả" restores every source. `ImageComparison.tsx` compares a selectable
 source and output side by side without stretching. `EditHistory.tsx` follows saved parent links lazily when opened,
@@ -983,7 +986,17 @@ including parents outside the current page, and keeps snapshot fallbacks if an a
 unsupported), download or delete. Deletion is per image: `DELETE /api/imagine/images/{id}` removes one output
 and deletes the job, source image included, once no output is left. `PUT /api/imagine/images/{id}/like` stores
 `imagine_images.liked`. Source images of edits cannot be deleted or liked on their own. The heart button lives
-in the lightbox, which opens on top of the library.
+in `ImageWorkspace.tsx`, a full-screen viewer above the library: a fitted image and edit prompt on the left,
+real tools/actions on the right (stacked below on mobile), zoom/panel toggles, navigation, and side-by-side
+comparison in the central stage. `imageTools.ts` implements local normalized crop and vector brush/eraser
+strokes with Canvas, extracts a four-color palette, and encodes a new PNG source without overwriting the
+stored original. Undo keeps the original plus at most five recent PNG versions in memory; closing/reloading
+loses these local drafts, which are labelled as unsaved. Download/reference/edit uses the working PNG;
+unchanged images keep their saved ID. A modified reference obeys the existing 5-source, 8 MiB each/16 MiB
+aggregate limits. Palette presets only append an editable prompt; no provider request occurs before Send.
+The viewer sends one edit result through the existing background/idempotency/uncertain-request path.
+No segmentation, AI mask/inpainting guarantee, transparent-background removal, video or tag manager is
+implemented here; do not add placeholder buttons that pretend those features are available.
 
 ### Configuration
 

@@ -5,10 +5,9 @@ import {
   type ImagineImage, type ImagineJob, type ImagineQuality, type ImagineResolution,
   imagineSources, imaginePending, getImagineJob, checkImagineRequest, unconfirmedImagineRequest, ImagineRequestUncertainError,
 } from "../../shared/api/api";
-import ImagineLibrary, { HeartIcon } from "./ImagineLibrary";
+import ImagineLibrary from "./ImagineLibrary";
 import EditHistory from "./EditHistory";
-import ImageComparison from "./ImageComparison";
-import MeasuredImage from "./MeasuredImage";
+import ImageWorkspace from "./ImageWorkspace";
 import StudioMenu from "./StudioMenu";
 import { LoadingIndicator } from '../../shared/ui/LoadingIndicator';
 import { COMPACT_QUERY } from "../companion/characters/characterView";
@@ -211,7 +210,7 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
     const observer = new ResizeObserver(measure);
     observer.observe(dock);
     return () => observer.disconnect();
-  }, [active, loading]);
+  }, [active, loading, libraryOpen]);
 
   const loadJobs = useCallback(async () => {
     const version = ++loadVersion.current;
@@ -364,22 +363,46 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
     timer = window.setTimeout(poll, 1000);
     return () => { controller.abort(); window.clearTimeout(timer); };
   }, [pendingIds, onUnauthorized]);
-  function editImage(job: ImagineJob, image: ImagineImage) {
-    if (inFlight.current) return;
-    sourceVersion.current += 1;
-    setReadingSource(false);
-    setSources([{ name: "Ảnh đã chọn", preview: image.url, imageId: image.id }]);
-    setSourceOrderChanged(false);
-    setExpanded(true);
-    setPrompt("");
-    setQuality(job.quality);
-    setResolution(job.resolution);
-    setAspect("auto");
-    setError(null);
-    setLightbox(null);
-    setLibraryOpen(false);
-    lightboxRef.current?.close();
-    textareaRef.current?.focus();
+  function workspaceSource(image: ImagineImage, data?: string): DraftSource {
+    if (!data) return { name: "Ảnh đã chọn", preview: image.url, imageId: image.id };
+    const encoded = data.split(",")[1];
+    const size = Math.floor((encoded?.length ?? 0) * 3 / 4);
+    if (!data.startsWith("data:image/png;base64,") || !encoded || size > MAX_SOURCE_BYTES) throw new Error("Bản chỉnh sửa phải là ảnh PNG và không vượt quá 8 MB.");
+    return { name: "Bản chỉnh sửa.png", preview: data, draftId: crypto.randomUUID(), size, upload: { data: encoded } };
+  }
+  function prepareWorkspaceSource(job: ImagineJob, image: ImagineImage, data: string | undefined, append: boolean) {
+    if (controlsDisabled || inFlight.current) return;
+    const draft = workspaceSource(image, data);
+    if (append && sources.length >= 5) throw new Error("Mỗi lượt sửa nhận tối đa 5 ảnh tham chiếu.");
+    if (append && (draft.size ?? 0) + sources.reduce((total, source) => total + (source.size ?? 0), 0) > 16 * 1024 * 1024) throw new Error("Tổng ảnh tham chiếu không được vượt quá 16 MB.");
+    if (append && !data && sources.some(source => source.imageId === image.id)) return;
+    sourceVersion.current += 1; readingRef.current = false;
+    flushSync(() => {
+      setReadingSource(false); setSources(append ? [...sources, draft] : [draft]);
+      setSourceOrderChanged(append && sourceOrderChanged); setExpanded(true); setError(null);
+      if (!append) { setPrompt(""); setQuality(job.quality); setResolution(job.resolution); setAspect("auto"); }
+      setLightbox(null); setLibraryOpen(false);
+    });
+    lightboxRef.current?.close(); textareaRef.current?.focus();
+  }
+  async function submitWorkspaceEdit(job: ImagineJob, image: ImagineImage, text: string, ratio: string, data?: string) {
+    if (controlsDisabled || inFlight.current) return;
+    const draft = workspaceSource(image, data);
+    inFlight.current = true; setGenerating(true); setError(null);
+    try {
+      const result = await createImagineJob({ prompt: text, quality: job.quality, resolution: job.resolution, aspect_ratio: ratio, n: 1,
+        ...(draft.upload ? { source_image: draft.upload } : { source_image_id: image.id }) });
+      setJobs(previous => [result, ...previous.filter(row => row.id !== result.id)]);
+      setLightbox(null); setLibraryOpen(false); setPrompt(text); setSources([draft]); setSourceOrderChanged(false);
+      setQuality(job.quality); setResolution(job.resolution); setAspect(ratio); setCount(1);
+      if (isCompact()) setExpanded(false);
+      galleryRef.current?.scrollTo({ top: 0 });
+    } catch (error) {
+      if (error instanceof UnauthorizedError) { onUnauthorized(); return; }
+      if (error instanceof ImagineRequestUncertainError) {
+        setUncertainRequest(error.requestId); setError(error.message); setLightbox(null); setLibraryOpen(false);
+      } else throw error;
+    } finally { inFlight.current = false; setGenerating(false); }
   }
 
   /** Xóa từng ảnh trong thư viện. Lượt hết ảnh biến khỏi bộ ảnh và cột trái; ảnh xóa lỗi thì ở lại. */
@@ -432,6 +455,7 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
     setError(null);
     setGenerating(true);
     // Điện thoại: gửi rồi thì thu thanh lại và ẩn bàn phím để thấy ảnh đang tạo.
+    setLibraryOpen(false);
     const phone = isCompact();
     if (phone) { setExpanded(false); textareaRef.current?.blur(); }
     galleryRef.current?.scrollTo({ top: 0 });
@@ -507,57 +531,7 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
     : showFull ? "Nhập để tạo hình ảnh" : "Gõ để tưởng tượng";
   const sendLabel = generating ? source ? "Đang sửa…" : "Đang tạo…" : source ? "Sửa ảnh" : "Tạo ảnh";
 
-  // Màn hình chờ chung kéo dài tới khi có thư viện; không hiện thêm một khung chờ bên trong studio.
-  if (loading) return active ? <LoadingIndicator variant="screen" label="Loading" /> : null;
-
-  return <main className="imagine" hidden={!active}>
-      <button type="button" className="menu-btn studio-menu-btn" aria-label="Mở menu" onClick={onOpenSidebar}>
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg>
-      </button>
-
-    <div className="imagine-gallery" ref={galleryRef}>
-      {pollError && <p className="error" role="status">Đang mất kết nối. Peto sẽ kiểm tra lại lượt ảnh khi có mạng.</p>}
-      {loadFailed && <div className="studio-load-error" role="alert"><p>Chưa tải được ảnh đã tạo.</p><button type="button" onClick={() => void loadJobs()}>Thử tải lại</button></div>}
-      {!loading && !loadFailed && jobs.length === 0 && !generating && <section className="studio-welcome">
-        <span className="studio-eyebrow"><SparkleIcon /> Góc sáng tạo của bạn</span>
-        <h1>{source ? "Giữ điều bạn thích." : "Bạn tưởng tượng."}<br /><span>{source ? "Sửa điều bạn muốn." : "Peto vẽ nên."}</span></h1>
-        <p>{source ? "Ảnh gốc đã sẵn sàng. Kể Peto nghe bạn muốn thay đổi gì." : "Kể Peto nghe về bức ảnh trong đầu bạn, hoặc thêm ảnh để chỉnh sửa."}</p>
-        {!source && <div className="studio-ideas">
-          {IDEAS.map((idea) => <button type="button" className="studio-idea" key={idea.style} onClick={() => { setPrompt(idea.prompt); textareaRef.current?.focus(); }}>
-            <IdeaArt style={idea.style} /><span><strong>{idea.label}</strong><span>{idea.prompt}</span></span>
-          </button>)}
-        </div>}
-      </section>}
-      {generating && <section className="generation-pending" role="status" aria-live="polite">
-        <div className="generation-copy"><span className="imagine-mark"><SparkleIcon /></span><div><strong>{source ? `Peto đang sửa ảnh · ${count} kết quả…` : `Peto đang tạo ${count} ảnh…`}</strong><p>Bạn có thể sang trò chuyện trong lúc đợi.</p></div></div>
-        <p className="pending-prompt">{prompt}</p>
-        <div className="imagine-thumbs" aria-hidden="true">{Array.from({ length: count }, (_, index) => <div className="image-placeholder" key={index}><SparkleIcon /></div>)}</div>
-      </section>}
-      {jobs.length > 0 && <div className="studio-library-head"><h1>Ảnh của bạn</h1><span>{jobs.length} lượt đã tải</span><button type="button" className="studio-text-button" onClick={() => setLibraryOpen(true)}>Thư viện</button></div>}
-      {jobs.map((job) => <section key={job.id} data-job-id={job.id} className="imagine-job">
-        <div className="imagine-job-head">
-          <div className="imagine-job-copy"><p className="imagine-prompt">{job.prompt}</p><div className="imagine-meta">
-            <span>{qualityLabel(job.quality)}</span><span>{job.resolution.toUpperCase()}</span><span>{ratioLabel(job.aspect_ratio)}</span><span>{job.images.length} ảnh</span>
-            {job.source_image && <span>Đã chỉnh sửa</span>}
-            {job.created_at && <time dateTime={new Date(job.created_at * 1000).toISOString()}>{new Date(job.created_at * 1000).toLocaleDateString("vi-VN", { day: "numeric", month: "short" })}</time>}
-          </div></div>
-          <div className="imagine-job-actions">
-            <button type="button" disabled={controlsDisabled} onClick={() => reuse(job)}>Dùng lại mô tả</button>
-            <button type="button" className="imagine-delete" disabled={imaginePending(job)} aria-label={"Xóa lượt ảnh: " + job.prompt} onClick={() => { setDeleteError(null); setDeleteTarget(job); }}>Xóa</button>
-          </div>
-        </div>
-        <div className="job-sources">{imagineSources(job).map((image, sourceIndex) => <button key={image.id} className="job-source" type="button" onClick={() => setLightbox({ job, index: 0, original: true, sourceIndex })}><img src={image.url} alt="" loading="lazy" /><span>{imagineSources(job).length === 1 ? "Xem ảnh gốc" : `Ảnh tham chiếu ${sourceIndex + 1}`}</span></button>)}</div>
-        {imagineSources(job).some(image => image.parent_job_id) && <EditHistory job={job} jobs={jobs} onOpen={setLightbox} onUnauthorized={onUnauthorized} />}
-        {imaginePending(job) && <div className="generation-pending" role="status"><strong>{job.status === "queued" ? "Đang chờ đến lượt…" : "Peto đang tạo ảnh…"}</strong><p>Bạn có thể chuyển tab hoặc tải lại trang; lượt này vẫn được theo dõi.</p><JobElapsed createdAt={job.created_at} /><div className="imagine-thumbs" aria-hidden="true">{Array.from({ length: job.n ?? 1 }, (_, index) => <div className="image-placeholder" key={index}><SparkleIcon /></div>)}</div></div>}
-        {(job.status === "failed" || job.status === "unknown") && <p className="error">{job.error || "Chưa có kết quả cho lượt này."}{job.status === "unknown" && " Lượt này không được tự gửi lại."}</p>}
-        <div className="imagine-thumbs">{job.images.map((image, index) => <button key={image.id} type="button" className="imagine-thumb" aria-label={"Xem ảnh " + (index + 1) + ": " + job.prompt} onClick={() => setLightbox({ job, index })}>
-          <img src={image.url} alt={job.prompt} loading="lazy" decoding="async" /><span className="image-open-hint">Xem ảnh ↗</span>
-        </button>)}</div>
-      </section>)}
-      {hasMore && <button type="button" className="load-more" disabled={loadingMore} onClick={() => void loadMore()}>{loadingMore ? "Đang tải…" : "Xem ảnh cũ hơn"}</button>}
-    </div>
-
-    <div ref={dockRef} className={"studio-dock" + (expanded ? " expanded" : "")}>
+  const studioDock = <div ref={dockRef} className={"studio-dock" + (expanded ? " expanded" : "")}>
       {uncertainRequest && <div className="error" role="status">Chưa xác nhận được lượt vừa gửi. <button type="button" className="studio-text-button" disabled={checkingRequest} onClick={() => void checkUnconfirmed()}>{checkingRequest ? "Đang kiểm tra…" : "Kiểm tra lượt vừa gửi"}</button></div>}
       {error && <div className="error" role="alert">{error}<button type="button" className="dismiss-error" aria-label="Đóng thông báo" onClick={() => setError(null)}>×</button></div>}
       <form className={"composer-wrap studio-composer-wrap" + (draggingSource ? " dragging" : "")} onSubmit={(event) => { event.preventDefault(); void generate(); }}
@@ -609,29 +583,74 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
         </div>
         <button type="button" className="studio-options-toggle" aria-label="Mở tùy chọn tạo ảnh" onClick={openOptions}><SlidersIcon /></button>
       </form>
+    </div>;
+
+  // Màn hình chờ chung kéo dài tới khi có thư viện; không hiện thêm một khung chờ bên trong studio.
+  if (loading) return active ? <LoadingIndicator variant="screen" label="Loading" /> : null;
+
+  return <main className="imagine" hidden={!active}>
+      <button type="button" className="menu-btn studio-menu-btn" aria-label="Mở menu" onClick={onOpenSidebar}>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg>
+      </button>
+
+    <div className="imagine-gallery" ref={galleryRef}>
+      {pollError && <p className="error" role="status">Đang mất kết nối. Peto sẽ kiểm tra lại lượt ảnh khi có mạng.</p>}
+      {loadFailed && <div className="studio-load-error" role="alert"><p>Chưa tải được ảnh đã tạo.</p><button type="button" onClick={() => void loadJobs()}>Thử tải lại</button></div>}
+      {!loading && !loadFailed && jobs.length === 0 && !generating && <section className="studio-welcome">
+        <span className="studio-eyebrow"><SparkleIcon /> Góc sáng tạo của bạn</span>
+        <h1>{source ? "Giữ điều bạn thích." : "Bạn tưởng tượng."}<br /><span>{source ? "Sửa điều bạn muốn." : "Peto vẽ nên."}</span></h1>
+        <p>{source ? "Ảnh gốc đã sẵn sàng. Kể Peto nghe bạn muốn thay đổi gì." : "Kể Peto nghe về bức ảnh trong đầu bạn, hoặc thêm ảnh để chỉnh sửa."}</p>
+        {!source && <div className="studio-ideas">
+          {IDEAS.map((idea) => <button type="button" className="studio-idea" key={idea.style} onClick={() => { setPrompt(idea.prompt); textareaRef.current?.focus(); }}>
+            <IdeaArt style={idea.style} /><span><strong>{idea.label}</strong><span>{idea.prompt}</span></span>
+          </button>)}
+        </div>}
+      </section>}
+      {generating && <section className="generation-pending" role="status" aria-live="polite">
+        <div className="generation-copy"><span className="imagine-mark"><SparkleIcon /></span><div><strong>{source ? `Peto đang sửa ảnh · ${count} kết quả…` : `Peto đang tạo ${count} ảnh…`}</strong><p>Bạn có thể sang trò chuyện trong lúc đợi.</p></div></div>
+        <p className="pending-prompt">{prompt}</p>
+        <div className="imagine-thumbs" aria-hidden="true">{Array.from({ length: count }, (_, index) => <div className="image-placeholder" key={index}><SparkleIcon /></div>)}</div>
+      </section>}
+      {jobs.length > 0 && <div className="studio-library-head"><h1>Ảnh của bạn</h1><span>{jobs.length} lượt đã tải</span><button type="button" className="studio-text-button" onClick={() => setLibraryOpen(true)}>Thư viện</button></div>}
+      {jobs.map((job) => <section key={job.id} data-job-id={job.id} className="imagine-job">
+        <div className="imagine-job-head">
+          <div className="imagine-job-copy"><p className="imagine-prompt">{job.prompt}</p><div className="imagine-meta">
+            <span>{qualityLabel(job.quality)}</span><span>{job.resolution.toUpperCase()}</span><span>{ratioLabel(job.aspect_ratio)}</span><span>{job.images.length} ảnh</span>
+            {job.source_image && <span>Đã chỉnh sửa</span>}
+            {job.created_at && <time dateTime={new Date(job.created_at * 1000).toISOString()}>{new Date(job.created_at * 1000).toLocaleDateString("vi-VN", { day: "numeric", month: "short" })}</time>}
+          </div></div>
+          <div className="imagine-job-actions">
+            <button type="button" disabled={controlsDisabled} onClick={() => reuse(job)}>Dùng lại mô tả</button>
+            <button type="button" className="imagine-delete" disabled={imaginePending(job)} aria-label={"Xóa lượt ảnh: " + job.prompt} onClick={() => { setDeleteError(null); setDeleteTarget(job); }}>Xóa</button>
+          </div>
+        </div>
+        <div className="job-sources">{imagineSources(job).map((image, sourceIndex) => <button key={image.id} className="job-source" type="button" onClick={() => setLightbox({ job, index: 0, original: true, sourceIndex })}><img src={image.url} alt="" loading="lazy" /><span>{imagineSources(job).length === 1 ? "Xem ảnh gốc" : `Ảnh tham chiếu ${sourceIndex + 1}`}</span></button>)}</div>
+        {imagineSources(job).some(image => image.parent_job_id) && <EditHistory job={job} jobs={jobs} onOpen={setLightbox} onUnauthorized={onUnauthorized} />}
+        {imaginePending(job) && <div className="generation-pending" role="status"><strong>{job.status === "queued" ? "Đang chờ đến lượt…" : "Peto đang tạo ảnh…"}</strong><p>Bạn có thể chuyển tab hoặc tải lại trang; lượt này vẫn được theo dõi.</p><JobElapsed createdAt={job.created_at} /><div className="imagine-thumbs" aria-hidden="true">{Array.from({ length: job.n ?? 1 }, (_, index) => <div className="image-placeholder" key={index}><SparkleIcon /></div>)}</div></div>}
+        {(job.status === "failed" || job.status === "unknown") && <p className="error">{job.error || "Chưa có kết quả cho lượt này."}{job.status === "unknown" && " Lượt này không được tự gửi lại."}</p>}
+        <div className="imagine-thumbs">{job.images.map((image, index) => <button key={image.id} type="button" className="imagine-thumb" aria-label={"Xem ảnh " + (index + 1) + ": " + job.prompt} onClick={() => setLightbox({ job, index })}>
+          <img src={image.url} alt={job.prompt} loading="lazy" decoding="async" /><span className="image-open-hint">Xem ảnh ↗</span>
+        </button>)}</div>
+      </section>)}
+      {hasMore && <button type="button" className="load-more" disabled={loadingMore} onClick={() => void loadMore()}>{loadingMore ? "Đang tải…" : "Xem ảnh cũ hơn"}</button>}
     </div>
 
-    <ImagineLibrary open={active && libraryOpen} jobs={jobs} onClose={() => setLibraryOpen(false)}
+    {!libraryOpen && studioDock}
+
+    <ImagineLibrary composer={studioDock} open={active && libraryOpen} jobs={jobs} onClose={() => setLibraryOpen(false)}
       onOpenImage={(job, index) => setLightbox({ job, index })} onDeleteImages={removeImages}
       onUseSources={controlsDisabled ? undefined : addLibrarySources} sourceLimit={5 - sources.length}
       hasMore={hasMore} loadingMore={loadingMore} onLoadMore={() => void loadMore()} />
     <dialog ref={lightboxRef} className="imagine-lightbox" aria-label="Xem ảnh đã tạo" onCancel={() => setLightbox(null)} onClick={(event) => { if (event.target === event.currentTarget) setLightbox(null); }}>
-      {lightbox && lightboxImage && <div className="imagine-lightbox-card">
-        <div className="lightbox-head"><span>{lightbox.original ? "Ảnh gốc" : `Peto tạo ảnh · ${lightbox.index + 1} / ${lightbox.job.images.length}`}</span><button type="button" autoFocus className="dialog-close" aria-label="Đóng ảnh" onClick={() => setLightbox(null)}>×</button></div>
-        {!lightbox.original && imagineSources(lightbox.job).length > 0
-          ? <ImageComparison key={lightboxImage.id} sources={imagineSources(lightbox.job)} image={lightboxImage} prompt={lightbox.job.prompt} />
-          : <MeasuredImage src={lightboxImage.url} alt={lightbox.job.prompt} />}
-        <p>{lightbox.job.prompt}</p>
-        {likeError && <p className="lightbox-error" role="alert">{likeError}</p>}
-        <div className="imagine-lightbox-actions">
-          {!lightbox.original && lightbox.job.images.length > 1 && <div className="lightbox-navigation"><button type="button" disabled={lightbox.index === 0} onClick={() => setLightbox({ ...lightbox, index: lightbox.index - 1 })}>← Trước</button><button type="button" disabled={lightbox.index === lightbox.job.images.length - 1} onClick={() => setLightbox({ ...lightbox, index: lightbox.index + 1 })}>Sau →</button></div>}
-          {!lightbox.original && <button type="button" className={"lightbox-like" + (lightboxLiked ? " on" : "")} aria-pressed={lightboxLiked}
-            onClick={() => void toggleLike(lightboxImage.id, !lightboxLiked)}><HeartIcon filled={lightboxLiked} />Thích</button>}
-          <button type="button" disabled={controlsDisabled} onClick={() => editImage(lightbox.job, lightboxImage)}>Sửa ảnh này</button>
-          <button type="button" disabled={controlsDisabled || sources.length >= 5 || sources.some(source => source.imageId === lightboxImage.id)} onClick={() => { setLightbox(null); setLibraryOpen(false); lightboxRef.current?.close(); addLibrarySources([lightboxImage]); }}>Thêm làm tham chiếu</button>
-          <a href={lightboxImage.url + "?download=1"} download>Tải ảnh xuống ↓</a>
-        </div>
-      </div>}
+      {lightbox && lightboxImage && <ImageWorkspace key={lightboxImage.id} job={lightbox.job} image={lightboxImage} index={lightbox.index}
+        original={!!lightbox.original} liked={lightboxLiked} disabled={controlsDisabled} likeError={likeError}
+        canAdd={sources.length < 5} alreadyAdded={sources.some(source => source.imageId === lightboxImage.id)}
+        onClose={() => setLightbox(null)} onNavigate={index => setLightbox({ ...lightbox, index })}
+        onLike={() => void toggleLike(lightboxImage.id, !lightboxLiked)}
+        onUse={data => prepareWorkspaceSource(lightbox.job, lightboxImage, data, false)}
+        onAdd={data => prepareWorkspaceSource(lightbox.job, lightboxImage, data, true)}
+        onSubmit={(text, ratio, data) => submitWorkspaceEdit(lightbox.job, lightboxImage, text, ratio, data)} />}
+
     </dialog>
     <dialog ref={deleteRef} className="confirm-dialog" aria-labelledby="delete-images-title" onCancel={(event) => { event.preventDefault(); if (!deleting) setDeleteTarget(null); }}>
       <h2 id="delete-images-title">Xóa lượt ảnh này?</h2>

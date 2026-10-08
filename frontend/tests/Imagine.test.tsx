@@ -502,3 +502,47 @@ it('điện thoại: bấm tạo ảnh thì thanh thu lại, ô nhập bỏ focu
   expect(document.activeElement).not.toBe(input);
   expect(input.value).toBe(job.prompt);
 });
+
+it('gửi chỉnh sửa trong khung xem dùng đúng ảnh, một kết quả và chống gửi trùng', async () => {
+  vi.mocked(api.listImagineJobs).mockResolvedValue([job]);
+  const request = deferred<api.ImagineJob>();
+  vi.mocked(api.createImagineJob).mockReturnValue(request.promise);
+  await open();
+  fireEvent.click(screen.getByRole('button', { name: 'Xem ảnh 2: Mèo trên mặt trăng' }));
+  fireEvent.change(screen.getByLabelText('Mô tả chỉnh sửa ảnh'), { target: { value: 'Đổi nền thành biển' } });
+  fireEvent.change(screen.getByLabelText('Tỉ lệ ảnh chỉnh sửa'), { target: { value: '3:4' } });
+  const send = screen.getByRole('button', { name: 'Gửi chỉnh sửa ảnh' });
+  fireEvent.click(send); fireEvent.click(send);
+  await waitFor(() => expect(api.createImagineJob).toHaveBeenCalledTimes(1));
+  expect(api.createImagineJob).toHaveBeenCalledWith({ prompt: 'Đổi nền thành biển', quality: 'medium', resolution: '2k', aspect_ratio: '3:4', n: 1, source_image_id: 'img-2' });
+  await act(async () => request.resolve({ ...job, id: 'next', status: 'running', images: [] }));
+  expect(screen.queryByRole('dialog', { name: 'Xem ảnh đã tạo' })).toBeNull();
+  expect(screen.getByText('Peto đang tạo ảnh…')).toBeTruthy();
+});
+
+it('lỗi chỉnh sửa giữ mô tả trong khung xem để người dùng sửa hoặc thử lại', async () => {
+  vi.mocked(api.listImagineJobs).mockResolvedValue([job]);
+  vi.mocked(api.createImagineJob).mockRejectedValue(new Error('Không nhận được ảnh nguồn.'));
+  await open();
+  fireEvent.click(screen.getByRole('button', { name: 'Xem ảnh 1: Mèo trên mặt trăng' }));
+  const input = screen.getByLabelText('Mô tả chỉnh sửa ảnh');
+  fireEvent.change(input, { target: { value: 'Thêm chiếc mũ' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Gửi chỉnh sửa ảnh' }));
+  expect((await screen.findByRole('alert')).textContent).toContain('Không nhận được ảnh nguồn.');
+  expect((input as HTMLTextAreaElement).value).toBe('Thêm chiếc mũ');
+  expect(screen.getByRole('dialog', { name: 'Xem ảnh đã tạo' })).toBeTruthy();
+  expect(api.createImagineJob).toHaveBeenCalledTimes(1);
+});
+
+it('chỉnh sửa chưa xác nhận chuyển sang kiểm tra lượt cũ và không tự gửi lại', async () => {
+  vi.mocked(api.listImagineJobs).mockResolvedValue([job]);
+  vi.mocked(api.createImagineJob).mockRejectedValue(new api.ImagineRequestUncertainError('workspace-request'));
+  await open();
+  fireEvent.click(screen.getByRole('button', { name: 'Xem ảnh 1: Mèo trên mặt trăng' }));
+  fireEvent.change(screen.getByLabelText('Mô tả chỉnh sửa ảnh'), { target: { value: 'Đổi màu mũ' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Gửi chỉnh sửa ảnh' }));
+  await screen.findByRole('button', { name: 'Kiểm tra lượt vừa gửi' });
+  expect(screen.queryByRole('dialog', { name: 'Xem ảnh đã tạo' })).toBeNull();
+  expect(api.createImagineJob).toHaveBeenCalledTimes(1);
+  expect((screen.getByRole('button', { name: 'Tạo ảnh', exact: true }) as HTMLButtonElement).disabled).toBe(true);
+});

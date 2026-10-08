@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import type { ImagineImage, ImagineJob } from "../../shared/api/api";
 import MeasuredImage from "./MeasuredImage";
+import StudioIcon from "./studioIcons";
 
 const COLUMNS_KEY = "peto-imagine-library-columns";
 const LONG_PRESS_MS = 500;
@@ -45,7 +46,8 @@ function canShareFiles() {
  * Mỗi ô là một ảnh kết quả. Chạm để xem, "Chọn" để chọn nhiều, giữ lâu (hoặc chuột phải) để mở menu
  * của riêng ảnh đó. Việc gọi API xóa và cập nhật danh sách nằm ở Imagine, vì bộ ảnh và cột trái dùng chung.
  */
-export default function ImagineLibrary({ open, jobs, onClose, onOpenImage, onDeleteImages, onUseSources, sourceLimit = 5, hasMore, loadingMore, onLoadMore }: {
+export default function ImagineLibrary({ open, jobs, onClose, onOpenImage, onDeleteImages, onUseSources, sourceLimit = 5, hasMore, loadingMore, onLoadMore, composer }: {
+  composer?: ReactNode;
   onUseSources?: (images: ImagineImage[]) => void;
   sourceLimit?: number;
   hasMore?: boolean;
@@ -65,6 +67,7 @@ export default function ImagineLibrary({ open, jobs, onClose, onOpenImage, onDel
   const press = useRef<{ timer: number; x: number; y: number } | null>(null);
   const longPressed = useRef(false);
   const [query, setQuery] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
   const [columns, setColumns] = useState(readColumns);
   const [kind, setKind] = useState("all");
   const [likedOnly, setLikedOnly] = useState(false);
@@ -87,8 +90,15 @@ export default function ImagineLibrary({ open, jobs, onClose, onOpenImage, onDel
     dialogRef.current?.close();
     cancelPress();
     setSelecting(false); setSelected(new Set()); setMenu(null); setFilterOpen(false);
-    setConfirmIds(null); setNotice(null); setQuery(""); setLikedOnly(false); setKind("all");
+    setConfirmIds(null); setNotice(null); setQuery(""); setSearchOpen(false); setLikedOnly(false); setKind("all");
   }, [open]);
+  useLayoutEffect(() => {
+    const dialog = dialogRef.current, dock = dialog?.querySelector<HTMLElement>(".studio-dock");
+    if (!open || !dialog || !dock || typeof ResizeObserver === "undefined") return;
+    const measure = () => dialog.style.setProperty("--studio-dock-height", `${dock.offsetHeight}px`);
+    measure(); const observer = new ResizeObserver(measure); observer.observe(dock);
+    return () => observer.disconnect();
+  }, [open, selecting]);
   useEffect(() => {
     if (confirmIds) confirmRef.current?.showModal();
     else confirmRef.current?.close();
@@ -210,16 +220,43 @@ export default function ImagineLibrary({ open, jobs, onClose, onOpenImage, onDel
     else onClose();
   }}>
     {open && <>
+      <div className="image-nav-rail"><button type="button" aria-label="Đóng thư viện" onClick={onClose}><StudioIcon name="panel" /></button><span><StudioIcon name="grid" /></span></div>
       <div className="library-top">
-        <button type="button" className="library-round" aria-label="Đóng thư viện" onClick={onClose}>
-          <Icon><path d="M6 6l12 12M18 6 6 18" /></Icon>
-        </button>
-        <button type="button" className="library-pill" onClick={() => selecting ? exitSelecting() : setSelecting(true)}>{selecting ? "Hủy" : "Chọn"}</button>
+        <div className="library-top-left">
+          <button type="button" className="library-round" aria-label="Quay lại Tạo ảnh" onClick={onClose}><StudioIcon name="back" /></button>
+          {selecting ? <button type="button" className="library-pill" aria-label="Hủy" onClick={exitSelecting}><StudioIcon name="close" />{picked.length} đã chọn</button> : <>
+            <button type="button" className={"library-pill" + (!likedOnly ? " active" : "")} aria-pressed={!likedOnly} onClick={() => setLikedOnly(false)}><StudioIcon name="grid" />Tất cả</button>
+            <button type="button" className={"library-pill" + (likedOnly ? " active" : "")} aria-pressed={likedOnly} onClick={() => setLikedOnly(true)}><HeartIcon />Đã thích</button>
+          </>}
+        </div>
+        <div className="library-top-right">
+          {selecting ? <div className="library-actions">
+            {onUseSources && <button type="button" disabled={!picked.length || picked.length > sourceLimit} onClick={() => onUseSources(picked.map(tile => tile.image))}><StudioIcon name="plus" />Dùng làm tham chiếu</button>}
+            {shareable && <button type="button" disabled={!picked.length} onClick={() => void share(picked)}><ShareIcon />Chia sẻ</button>}
+            <button type="button" disabled={!picked.length} onClick={() => download(picked)}><DownloadIcon />Tải xuống</button>
+            <button type="button" className="danger" disabled={!picked.length || deleting} onClick={() => setConfirmIds(picked.map(tile => tile.image.id))}><TrashIcon />Xóa</button>
+          </div> : <>
+            <div ref={filterRef} className="library-filter">
+              <button type="button" className="library-pill" aria-label="Bố cục và bộ lọc" aria-expanded={filterOpen} onClick={() => setFilterOpen(value => !value)}><StudioIcon name="grid" />Xem</button>
+              {filterOpen && <div className="effort-options library-filter-panel" role="group" aria-label="Bố cục và bộ lọc">
+                <label className="library-kind">Loại ảnh <select aria-label="Lọc loại ảnh" value={kind} onChange={event => setKind(event.target.value)}><option value="all">Tất cả</option><option value="created">Ảnh tạo mới</option><option value="edited">Ảnh chỉnh sửa</option></select></label>
+                <p className="effort-heading">Kích thước ô ảnh</p>
+                <div className="seg" role="group" aria-label="Số cột">
+                  {([2, 3] as const).map(value => <button key={value} type="button" className={columns === value ? "on" : ""} aria-label={`${value} cột`} aria-pressed={columns === value} onClick={() => setColumns(value)}>{value === 2 ? "Vừa" : "Nhỏ"}</button>)}
+                </div>
+                <button type="button" className="effort-option" aria-pressed={likedOnly} onClick={() => setLikedOnly(value => !value)}><HeartIcon filled={likedOnly} /><span className="effort-option-label">Chỉ ảnh đã thích</span>{likedOnly && <CheckIcon />}</button>
+              </div>}
+            </div>
+            <button type="button" className="library-pill" onClick={() => setSelecting(true)}><CheckIcon />Chọn</button>
+            <button type="button" className="library-round" aria-label="Tìm trong thư viện" aria-expanded={searchOpen} onClick={() => setSearchOpen(value => !value)}><StudioIcon name="search" /></button>
+          </>}
+        </div>
       </div>
+      {searchOpen && !selecting && <div className="library-search"><StudioIcon name="search" /><input autoFocus type="search" value={query} placeholder="Tìm ảnh theo mô tả" aria-label="Tìm ảnh theo mô tả" onChange={event => setQuery(event.target.value)} /></div>}
       {selecting && onUseSources && <p className="library-reference-hint" role="status">Chọn theo thứ tự mong muốn · còn {sourceLimit} chỗ{picked.length > sourceLimit ? " · Bạn đã chọn quá số ảnh còn trống" : ""}</p>}
       <p className="sr-only" aria-live="polite">{selecting ? `Đã chọn ${picked.length} ảnh` : ""}</p>
 
-      <div className="library-grid" style={{ "--library-columns": columns } as CSSProperties}>
+      <div className={"library-grid" + (composer && !selecting ? " with-composer" : "")} style={{ "--library-columns": columns, "--library-tile-size": columns === 2 ? "clamp(240px, 19vw, 360px)" : "clamp(180px, 14vw, 240px)" } as CSSProperties}>
         {tiles.length === 0 ? <p className="library-empty">Chưa có ảnh nào. Ảnh bạn tạo sẽ hiện ở đây.</p>
           : shown.length === 0 ? <p className="library-empty">Không có ảnh nào khớp</p>
           : shown.map((tile) => {
@@ -239,32 +276,7 @@ export default function ImagineLibrary({ open, jobs, onClose, onOpenImage, onDel
       </div>
 
       {notice && <div className="error library-notice" role="alert">{notice}<button type="button" className="dismiss-error" aria-label="Đóng thông báo" onClick={() => setNotice(null)}>×</button></div>}
-      {selecting ? <div className="library-actions">
-        {onUseSources && <button type="button" disabled={!picked.length || picked.length > sourceLimit} onClick={() => onUseSources(picked.map(tile => tile.image))}><span aria-hidden="true">＋</span><span>Dùng làm tham chiếu</span></button> }
-        {shareable && <button type="button" disabled={!picked.length} onClick={() => void share(picked)}><ShareIcon /><span>Chia sẻ</span></button>}
-        <button type="button" disabled={!picked.length} onClick={() => download(picked)}><DownloadIcon /><span>Tải xuống</span></button>
-        <button type="button" className="danger" disabled={!picked.length || deleting} onClick={() => setConfirmIds(picked.map((tile) => tile.image.id))}><TrashIcon /><span>Xóa</span></button>
-      </div> : <div className="library-bottom">
-        <div className="library-search">
-          <Icon size={18}><circle cx="11" cy="11" r="6.5" /><path d="m16 16 4 4" /></Icon>
-          <input type="search" value={query} placeholder="Tìm kiếm" aria-label="Tìm ảnh theo mô tả" onChange={(event) => setQuery(event.target.value)} />
-        </div>
-        <div ref={filterRef} className="library-filter">
-          <button type="button" className="library-round" aria-label="Bố cục và bộ lọc" aria-expanded={filterOpen} onClick={() => setFilterOpen((value) => !value)}>
-            <Icon><path d="M4 7h16M7 12h10M10 17h4" /></Icon>
-          </button>
-          {filterOpen && <div className="effort-options library-filter-panel" role="group" aria-label="Bố cục và bộ lọc">
-            <label className="library-kind">Loại ảnh <select aria-label="Lọc loại ảnh" value={kind} onChange={event => setKind(event.target.value)}><option value="all">Tất cả</option><option value="created">Ảnh tạo mới</option><option value="edited">Ảnh chỉnh sửa</option></select></label>
-            <p className="effort-heading">Bố cục</p>
-            <div className="seg" role="group" aria-label="Số cột">
-              {([2, 3] as const).map((value) => <button key={value} type="button" className={columns === value ? "on" : ""} aria-pressed={columns === value} onClick={() => setColumns(value)}>{value} cột</button>)}
-            </div>
-            <button type="button" className="effort-option" aria-pressed={likedOnly} onClick={() => setLikedOnly((value) => !value)}>
-              <HeartIcon filled={likedOnly} /><span className="effort-option-label">Chỉ ảnh đã thích</span>{likedOnly && <span className="effort-check"><CheckIcon /></span>}
-            </button>
-          </div>}
-        </div>
-      </div>}
+      {composer && !selecting && <div className="library-composer">{composer}</div>}
 
       {menu && <div ref={menuRef} className="effort-options library-menu" role="menu" aria-label="Thao tác với ảnh" style={{ top: menu.top, left: menu.left }}>
         <button type="button" role="menuitem" className="effort-option" onClick={() => download([menu.tile])}><DownloadIcon /><span className="effort-option-label">Tải xuống</span></button>
