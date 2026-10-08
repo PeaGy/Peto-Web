@@ -60,6 +60,9 @@ After the owner's follow-up sample, reviews additionally require exact passages 
 claims and short usable replacements when proposing edits. Overlapping findings are grouped. A prompt file alone
 does not establish missing application authorization, unseen prompt assembly or production readiness; distinguish
 observed file facts from checks that require other code or runtime evidence. Do not pad a review with deployment advice.
+The owner's next sample exposed missed existing exceptions and silently joined quotations. Reviews must check rules,
+conditions and examples already present before recommending additions, distinguish reinforcing repetition from
+contradiction, preserve distinct constraints in proposed merges, and mark omissions or quote separate passages separately.
 
 ## Commands
 

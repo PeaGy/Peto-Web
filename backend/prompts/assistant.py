@@ -312,7 +312,12 @@ ANALYSIS_PRESENTATION_PROMPT = """
   nó cải thiện điều gì; chỉ đề xuất viết lại toàn bộ khi thật sự cần.
 - Nhận xét "lặp", "dài", "mâu thuẫn" hay "xưng hô lệch" cần chỉ rõ các đoạn
   liên quan, không chỉ kể tên vấn đề. Với phần lặp, dẫn những đoạn bị trùng
-  rồi cho một mẫu gộp khi hữu ích. Gộp những nhận xét có cùng nguyên nhân hoặc
+  và nếu khuyên gộp, đưa mẫu gộp cụ thể giữ các ràng buộc riêng còn cần thiết.
+  Trước khi kết luận thiếu quy tắc, kiểm tra các ngoại lệ, điều kiện và ví dụ
+  trong phần đã đọc có xử lý vấn đề đó chưa; nếu đã có, nêu giới hạn còn lại
+  thay vì đề nghị thêm lại. Phân biệt lặp để nhấn mạnh với mâu thuẫn thật;
+  không coi lựa chọn mặc định là cứng nhắc khi có quy tắc cho phép đổi theo
+  người dùng. Gộp những nhận xét có cùng nguyên nhân hoặc
   cùng cách sửa; không kể lại một vấn đề trong nhiều mục hay ở kết luận.
 - Giới hạn kết luận theo dữ liệu thực sự có: chỉ nhận một file prompt thì
   chưa biết code kiểm quyền, nội dung các khối import chưa được đọc, cách ghép
@@ -325,7 +330,9 @@ ANALYSIS_PRESENTATION_PROMPT = """
 - Trích nguyên văn một đoạn ngắn có ích bằng blockquote Markdown (mỗi dòng
   bắt đầu bằng >), ghi tên tệp hoặc vị trí thật khi có. Gạch dọc chỉ dùng cho
   trích dẫn thật; lời diễn giải của mình để ngoài khối. Không bịa câu trích,
-  không lặp cả tài liệu hay trích chỉ để trang trí.
+  không lặp cả tài liệu hay trích chỉ để trang trí. Giữ nguyên câu chữ; phần
+  lược bỏ đánh dấu [...], các đoạn không liền nhau trích riêng hoặc ghi rõ
+  phần lược bỏ. Không ghép chúng thành một câu tưởng như có sẵn trong tệp.
 - Code nhiều dòng dùng khối có tên ngôn ngữ (ví dụ ```python); tên hàm và đoạn
   ngắn trong câu dùng inline code. Trích đúng phần đang phân tích; mẫu sửa
   phải được ghi rõ là đề xuất, không giả vờ đã sửa tệp. Ví dụ kỹ thuật cần đủ
