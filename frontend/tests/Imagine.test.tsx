@@ -162,7 +162,8 @@ it('mở lịch sử tải đúng ảnh cha nằm ngoài trang thư viện hiệ
   expect(api.getImagineJob).toHaveBeenCalledWith(job.id, expect.any(AbortSignal));
   fireEvent.click(original);
   const dialog = screen.getByRole('dialog', { name: 'Xem ảnh đã tạo' });
-  expect(within(dialog).getByRole('img').getAttribute('src')).toBe(job.images[1].url);
+  // JSDOM không tải/đo ảnh; khung xem giữ ảnh ẩn tới khi biết kích thước thật.
+  expect(within(dialog).getByRole('img', { hidden: true }).getAttribute('src')).toBe(job.images[1].url);
   fireEvent.click(within(dialog).getByRole('button', { name: 'Dùng ảnh này' }));
   expect(screen.getByRole('img', { name: 'Ảnh gốc để chỉnh sửa' }).getAttribute('src')).toBe(job.images[1].url);
 });
@@ -299,7 +300,7 @@ it('opens the correct image, navigates the set, downloads it and closes with Esc
   await open();
   fireEvent.click(screen.getByRole('button', { name: /Xem ảnh 1:/ }));
   const dialog = screen.getByRole('dialog', { name: 'Xem ảnh đã tạo' });
-  expect(within(dialog).getByRole('img').getAttribute('src')).toBe(job.images[0].url);
+  expect(within(dialog).getByRole('img', { hidden: true }).getAttribute('src')).toBe(job.images[0].url);
   fireEvent.click(within(dialog).getByRole('button', { name: 'Sau →' }));
   expect(within(dialog).getByRole('link', { name: /Tải ảnh xuống/ }).getAttribute('href')).toBe(job.images[1].url + '?download=1');
   fireEvent(dialog, new Event('cancel', { bubbles: false, cancelable: true }));
@@ -384,7 +385,7 @@ it('xem và dùng lại đúng ảnh gốc của lượt sửa', async () => {
   await open();
   fireEvent.click(screen.getByRole('button', { name: 'Xem ảnh gốc' }));
   const dialog = screen.getByRole('dialog');
-  expect(within(dialog).getByRole('img').getAttribute('src')).toBe(editedJob.source_image!.url);
+  expect(within(dialog).getByRole('img', { hidden: true }).getAttribute('src')).toBe(editedJob.source_image!.url);
   expect(within(dialog).queryByRole('button', { name: 'Sau →' })).toBeNull();
   fireEvent.click(within(dialog).getByRole('button', { name: 'Quay lại' }));
   fireEvent.click(screen.getByRole('button', { name: 'Dùng lại mô tả' }));

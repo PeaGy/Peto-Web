@@ -20,7 +20,16 @@ export default function ImageVersionRail({ versions, selectedId, disabled, onSel
       const total = horizontal ? list.scrollWidth - list.clientWidth : list.scrollHeight - list.clientHeight;
       setArrows({ before: position > 1, after: position < total - 1 });
     };
-    list.querySelector<HTMLElement>(compact && pending ? '.history-pending' : '[aria-current="true"]')?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
+    // Chỉ cuộn dải thumbnail, không để scrollIntoView kéo cả canvas/dialog theo.
+    const selected = list.querySelector<HTMLElement>(compact && pending ? '.history-pending' : '[aria-current="true"]');
+    if (selected) {
+      const horizontal = getComputedStyle(list).flexDirection === 'row';
+      const row = list.getBoundingClientRect(), item = selected.getBoundingClientRect();
+      const start = horizontal ? item.left - row.left : item.top - row.top;
+      const end = horizontal ? item.right - row.right : item.bottom - row.bottom;
+      const delta = start < 0 ? start : end > 0 ? end : 0;
+      if (horizontal) list.scrollLeft += delta; else list.scrollTop += delta;
+    }
     measure(); list.addEventListener('scroll', measure);
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure); observer?.observe(list);
     return () => { list.removeEventListener('scroll', measure); observer?.disconnect(); };

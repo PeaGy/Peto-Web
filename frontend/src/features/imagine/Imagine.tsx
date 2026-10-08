@@ -172,6 +172,7 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
   const [loading, setLoading] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [submittingImageId, setSubmittingImageId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [lightbox, setLightbox] = useState<ImageView | null>(null);
   const lightboxValue = useRef(lightbox); lightboxValue.current = lightbox;
@@ -325,6 +326,14 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
     dialog.close();
     if (active && viewerOpen) { if (compact) dialog.showModal(); else dialog.show(); }
   }, [active, viewerOpen, compact, loading]);
+  useEffect(() => {
+    if (!active || !viewerOpen || !compact) return;
+    const viewport = document.querySelector<HTMLMetaElement>('meta[name="viewport"]');
+    if (!viewport || /viewport-fit\s*=/.test(viewport.content)) return;
+    // Giữ viewport ổn định khi chọn phiên bản khác trong cùng khung xem.
+    const previous = viewport.content; viewport.content = `${previous}, viewport-fit=cover`;
+    return () => { viewport.content = previous; };
+  }, [active, viewerOpen, compact]);
   useEffect(() => {
     if (active && deleteTarget) deleteRef.current?.showModal();
     else deleteRef.current?.close();
@@ -482,7 +491,7 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
   async function submitWorkspaceEdit(job: ImagineJob, image: ImagineImage, text: string, ratio: string, data?: string) {
     if (controlsDisabled || inFlight.current) return;
     const draft = workspaceSource(image, data);
-    inFlight.current = true; setGenerating(true); setError(null);
+    inFlight.current = true; setGenerating(true); setSubmittingImageId(image.id); setError(null);
     try {
       const result = await createImagineJob({ prompt: text, quality: job.quality, resolution: job.resolution, aspect_ratio: ratio, n: 1,
         ...(draft.upload ? { source_image: draft.upload } : { source_image_id: image.id }),
@@ -497,7 +506,7 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
       if (error instanceof ImagineRequestUncertainError) {
         setUncertainRequest(error.requestId); setError(error.message);
       } else throw error;
-    } finally { inFlight.current = false; setGenerating(false); }
+    } finally { inFlight.current = false; setGenerating(false); setSubmittingImageId(null); }
   }
 
   /** Xóa từng ảnh trong thư viện. Lượt hết ảnh biến khỏi bộ ảnh và cột trái; ảnh xóa lỗi thì ở lại. */
@@ -552,6 +561,7 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
     setGenerating(true);
     // Điện thoại: gửi rồi thì thu thanh lại và ẩn bàn phím để thấy ảnh đang tạo.
     const editing = lightbox && !lightbox.original && lightbox.using ? lightbox.job.images[lightbox.index] : null;
+    if (editing) setSubmittingImageId(editing.id);
     if (!editing) closeImage();
     setLibraryOpen(false);
     const phone = isCompact();
@@ -572,6 +582,7 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
     } finally {
       inFlight.current = false;
       setGenerating(false);
+      setSubmittingImageId(null);
       // Focus lại trên điện thoại sẽ bật bàn phím lên giữa lúc người dùng đang xem ảnh.
       if (activeRef.current && !phone) textareaRef.current?.focus();
     }
@@ -747,14 +758,14 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
       hasMore={hasMore} loadingMore={loadingMore} onLoadMore={() => void loadMore()} />
     <dialog ref={lightboxRef} className="imagine-lightbox" aria-label="Xem ảnh đã tạo" aria-modal={compact} onCancel={() => closeImage()} onKeyDown={event => { if (event.key === 'Escape' && !event.defaultPrevented) { event.preventDefault(); closeImage(); } }}>
       {lightbox && lightboxImage && <ImageWorkspace key={lightboxImage.id} job={lightbox.job} image={lightboxImage} index={lightbox.index}
-        mobile={compact} pending={!!workspaceJob}
+        mobile={compact} pending={!!workspaceJob || submittingImageId === lightboxImage.id}
         original={!!lightbox.original} liked={lightboxLiked} disabled={controlsDisabled} likeError={likeError}
         canAdd={sources.length < 5} alreadyAdded={sources.some(source => source.imageId === lightboxImage.id)}
         history={imageVersions.length > 1 || (compact && imageVersions.length > 0) ? { versions: imageVersions, onSelect: selectVersion } : undefined}
         historyNotice={<>
           {historyLoading && <p className="workspace-history-status" role="status">Đang tải lịch sử…</p>}
           {historyError && <p className="workspace-history-status" role="alert">{historyError} <button type="button" onClick={() => setHistoryReload(value => value + 1)}>Thử lại</button></p>}
-          {workspaceJob && <p className="workspace-history-status" role="status">{pollError ? 'Mất kết nối. Peto sẽ kiểm tra lại kết quả.' : 'Peto đang chỉnh sửa ảnh…'}</p>}
+          {workspaceJob && (!compact || pollError) && <p className="workspace-history-status" role="status">{pollError ? 'Mất kết nối. Peto sẽ kiểm tra lại kết quả.' : 'Peto đang chỉnh sửa ảnh…'}</p>}
           {failedEdit && !workspaceJob && <p className="workspace-history-status" role="alert">{failedEdit.error || 'Lượt chỉnh sửa chưa có kết quả.'}</p>}
           {!usingImage && uncertainRequest && <p className="workspace-history-status" role="status">Chưa xác nhận lượt vừa gửi. <button type="button" disabled={checkingRequest} onClick={() => void checkUnconfirmed()}>Kiểm tra lượt vừa gửi</button></p>}
           {!usingImage && error && <p className="workspace-history-status" role="alert">{error}<button type="button" aria-label="Đóng thông báo" onClick={() => setError(null)}>×</button></p>}

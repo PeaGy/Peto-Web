@@ -1066,17 +1066,31 @@ The mobile image workspace follows the owner's Grok recording (2026-10-08): the 
 small version thumbnails scroll horizontally above the bottom actions, and the direct edit input stays
 compact. Render the original thumbnail even before it has edits. Entering tools replaces that dock with
 a tool row, horizontal palette presets, or a floating vertical brush-size slider. Collapse the size/color
-controls when a stroke starts; keep undo, redo, eraser and local PNG version saving available.
+controls when a stroke starts; keep undo, redo and eraser available. Mobile send always requests one
+AI edit, including stroke-only submissions: send the annotated PNG with the selected parent image ID.
+Without typed text, use a Vietnamese instruction to turn the sketch into matching image details and
+preserve the subject/composition. Explicit desktop brush saving and crop confirmation still save PNG
+versions locally on the server; do not route mobile send to that endpoint.
 Use a separate bottom sheet for metadata, fitted zoom, aspect ratio, comparison and reference actions;
 it supports backdrop/Escape dismissal, focus trapping/restoration, and dragging its handle down to close.
 Use a non-passive touchstart listener only on custom drag surfaces (drawing canvas, crop box, sheet
 handle) to suppress compatibility taps. Do not cancel native scrolling on the version/palette tracks.
 The crop overlay takes focus and makes the underlying mobile workspace inert until it closes.
-Keep the desktop panel/rail intact. Pending edits use the actual job state for the blurred image, dotted
-overlay and pending thumbnail; no timers that fake success. New results still belong to their root only.
+Keep the desktop panel/rail intact. Pending edits cover PNG preparation, the in-flight HTTP request and
+the actual pending job for the blurred image, dotted overlay, pending thumbnail and "Đang tạo…" label;
+do not wait for the POST receipt to show progress or use timers that fake success. A rejected submission
+restores the editable sketch; uncertain requests still require receipt checking before another send.
+New results still belong to their root only.
 Mobile styles live in `features/imagine/imageWorkspaceMobile.css`. Sheet transitions use transform/opacity
-(260ms entrance, 160ms exit), tool entrance is 180–220ms, and fitted image layout changes use a short FLIP
-transform. Version navigation and wheel zoom remain instant. Keyboard actions and reduced motion skip
+(260ms entrance, 160ms exit), tool entrance is 180–220ms, and explicit tool layout changes use a 220ms FLIP
+transform captured before the action and measured at the final fitted size before paint. Never restart
+picture animations for polling, metadata sheets, color popovers, keystrokes or viewport measurements.
+The brush color popover overlays the dock; closing it during a stroke must not resize/move the image.
+Measure only nonzero stage dimensions and skip identical measurements; keep an unloaded image hidden
+until its real fit is known. Move viewport-fit setup to the viewer lifecycle so selecting a version does
+not restore/reapply the viewport meta. Focus restoration uses preventScroll, and thumbnail auto-scroll
+only scrolls its own track, never dialog/canvas ancestors. Version navigation and wheel zoom remain instant.
+Keyboard actions and reduced motion skip
 these transitions. Honor viewport-fit/safe areas, 44px touch targets and 16px inputs; use visualViewport
 height/offset for keyboards that shrink only the visible viewport, without resizing during browser pinch.
 Chromium emulation covers gestures/layout/animation, but physical-phone keyboard, safe-area and touch

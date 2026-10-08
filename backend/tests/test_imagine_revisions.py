@@ -1,9 +1,11 @@
 """Lịch sử thuộc ảnh chính: lưu bền, phân nhánh và cách ly tài khoản."""
 import asyncio
 import base64
+import io
 import uuid
 from pathlib import Path
 from unittest.mock import AsyncMock
+from PIL import Image
 
 from ai import imagine
 from features.imagine import api
@@ -81,6 +83,40 @@ async def test_ai_revision_pending_receipt_and_cascade_cleanup(client, monkeypat
         assert (await client.get(f'/api/imagine/images/{image}')).status_code == 404
     assert (await client.post('/api/imagine', json=body)).status_code == 410
     provider.assert_awaited_once()
+
+
+async def test_annotated_upload_calls_ai_and_saves_only_generated_child(client, monkeypatch):
+    await sign_in(client)
+    root = (await client.post('/api/imagine', json={"prompt": "ảnh chính"})).json()['job']
+    parent_id = root['images'][0]['id']
+    buffer = io.BytesIO()
+    Image.new('RGB', (32, 32), '#f04444').save(buffer, format='PNG')
+    annotated = buffer.getvalue()
+    provider = AsyncMock(return_value=[imagine.GeneratedImage(imagine._MOCK_PNG, 'image/png')])
+    monkeypatch.setattr(api, 'generate_images', provider)
+    body = {"prompt": "Hoàn thiện ảnh theo các nét vẽ được thêm", "background": True,
+            "source_image": {"data": base64.b64encode(annotated).decode()},
+            "edit_parent_image_id": parent_id, "request_id": uuid.uuid4().hex}
+    response = await client.post('/api/imagine', json=body)
+    assert response.status_code == 202
+    child_id = response.json()['job']['id']
+    if api._tasks:
+        await asyncio.gather(*list(api._tasks))
+    provider.assert_awaited_once()
+    args = provider.await_args.kwargs
+    assert args['source_image'].data == annotated
+    assert args['source_image'].mime == 'image/png'
+    assert args['prompt'] == body['prompt'] and args['n'] == 1
+    child = (await client.get(f'/api/imagine/{child_id}')).json()['job']
+    assert child['status'] == 'complete' and child['edit_kind'] == 'ai'
+    assert child['root_image_id'] == parent_id and child['edit_parent_image_id'] == parent_id
+    assert (await client.get(child['source_image']['url'])).content == annotated
+    assert (await client.get(child['images'][0]['url'])).content == imagine._MOCK_PNG
+    assert child['images'][0]['id'] != parent_id
+    listed = (await client.get('/api/imagine')).json()['jobs']
+    assert len(listed) == 1 and listed[0]['id'] == root['id']
+    history = (await client.get(f'/api/imagine/images/{parent_id}/workspace')).json()['jobs']
+    assert [job['id'] for job in history] == [child_id]
 
 
 async def test_revision_ownership_and_parent_validation_before_provider(client, monkeypatch):

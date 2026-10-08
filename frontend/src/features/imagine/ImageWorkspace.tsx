@@ -50,16 +50,18 @@ export default function ImageWorkspace({ job, image, index, original, liked, dis
   const sheetFocusRef = useRef<HTMLElement | null>(null);
   const sheetWasOpenRef = useRef(false);
   const sheetDragRef = useRef<{ pointer: number; y: number; time: number } | null>(null);
-  const pictureLayoutRef = useRef<{ rect: DOMRect; zoom: number } | null>(null);
+  const pictureTransitionRef = useRef<DOMRect | null>(null);
+  const pictureAnimationRef = useRef<Animation | null>(null);
   const [zoom, setZoom] = useState(1);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
-  const [space, setSpace] = useState({ width: 800, height: 600 });
+  const [space, setSpace] = useState({ width: 0, height: 0 });
   const [sourceVersions, setSourceVersions] = useState([image.url]);
   const [sourceVersion, setSourceVersion] = useState(0);
   const [prompt, setPrompt] = useState('');
   const [aspect, setAspect] = useState('auto');
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [palette, setPalette] = useState<string[]>([]);
   const [color, setColor] = useState('#ffffff');
   const [brushSize, setBrushSize] = useState(12);
@@ -83,32 +85,50 @@ export default function ImageWorkspace({ job, image, index, original, liked, dis
   const src = original ? sourceVersions[sourceVersion] : image.url;
   const changed = src !== image.url || strokes.length > 0;
   const historyIndex = history?.versions.findIndex(entry => entry.image.id === image.id) ?? -1;
-  const blocked = disabled || busy;
+  const generationPending = pending || submitting;
+  const blocked = disabled || busy || generationPending;
   const ready = dimensions.width > 0;
   const fit = ready ? Math.min(space.width / dimensions.width, space.height / dimensions.height, 1) : 1;
   const displayWidth = ready ? dimensions.width * Math.max(.05, fit) * zoom : undefined;
   const displayHeight = ready ? dimensions.height * Math.max(.05, fit) * zoom : undefined;
-  useEffect(() => {
+  function measureSpace() {
+    const element = stageRef.current;
+    if (!element || !element.clientWidth || !element.clientHeight) return null;
+    const padding = getComputedStyle(element.firstElementChild ?? element);
+    return {
+      width: Math.max(1, element.clientWidth - parseFloat(padding.paddingLeft) - parseFloat(padding.paddingRight)),
+      height: Math.max(1, element.clientHeight - parseFloat(padding.paddingTop) - parseFloat(padding.paddingBottom)),
+    };
+  }
+  // Đo khung cuối trước khi vẽ màn hình. Không dùng kích thước giả khi dialog chưa mở.
+  useLayoutEffect(() => {
+    const next = measureSpace();
+    if (next && (next.width !== space.width || next.height !== space.height)) {
+      setSpace(next);
+      return;
+    }
+    const before = pictureTransitionRef.current;
+    if (!before || !ready || !next) return;
+    pictureTransitionRef.current = null;
+    const picture = stageRef.current?.querySelector<HTMLElement>('.workspace-picture');
+    if (!picture) return;
+    pictureAnimationRef.current?.cancel();
+    const rect = picture.getBoundingClientRect();
+    if (!rect.width || !before.width || document.activeElement instanceof HTMLTextAreaElement || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const dx = before.x + before.width / 2 - rect.x - rect.width / 2, dy = before.y + before.height / 2 - rect.y - rect.height / 2;
+    if (Math.abs(dx) + Math.abs(dy) + Math.abs(before.width - rect.width) < 1) return;
+    pictureAnimationRef.current = picture.animate([{ transform: `translate(${dx}px, ${dy}px) scale(${before.width / rect.width}, ${before.height / rect.height})` }, { transform: 'none' }], { duration: 220, easing: 'cubic-bezier(.32,.72,0,1)' });
+  }, [space.width, space.height, dimensions.width, dimensions.height, zoom, mobile, panelOpen, editing, tool, comparing, !!draft, prompt, notice, likeError, generationPending, palette.length, !!history]);
+  useLayoutEffect(() => {
     const element = stageRef.current;
     if (!element) return;
-    const measure = () => {
-      const padding = getComputedStyle(element.firstElementChild ?? element);
-      setSpace({
-        width: (element.clientWidth || 800) - parseFloat(padding.paddingLeft || '0') - parseFloat(padding.paddingRight || '0'),
-        height: (element.clientHeight || 600) - parseFloat(padding.paddingTop || '0') - parseFloat(padding.paddingBottom || '0'),
-      });
-    };
-    measure();
     if (typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(measure); observer.observe(element); return () => observer.disconnect();
+    const observer = new ResizeObserver(() => {
+      const next = measureSpace();
+      if (next) setSpace(current => current.width === next.width && current.height === next.height ? current : next);
+    });
+    observer.observe(element); return () => observer.disconnect();
   }, [panelOpen, mobile]);
-  useEffect(() => {
-    if (!mobile) return;
-    const viewport = document.querySelector<HTMLMetaElement>('meta[name="viewport"]');
-    if (!viewport || /viewport-fit\s*=/.test(viewport.content)) return;
-    const previous = viewport.content; viewport.content = `${previous}, viewport-fit=cover`;
-    return () => { viewport.content = previous; };
-  }, [mobile]);
   useEffect(() => {
     if (!mobile) return;
     const workspace = workspaceRef.current, viewport = window.visualViewport;
@@ -123,46 +143,26 @@ export default function ImageWorkspace({ job, image, index, original, liked, dis
     return () => { viewport.removeEventListener('resize', measure); viewport.removeEventListener('scroll', measure); workspace.style.removeProperty('--workspace-visible-height'); workspace.style.removeProperty('--workspace-visible-top'); };
   }, [mobile]);
   useEffect(() => {
-    if (sheetOpen) sheetRef.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus();
+    if (sheetOpen) sheetRef.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus({ preventScroll: true });
     else if (sheetWasOpenRef.current) {
-      if (sheetFocusRef.current?.isConnected) sheetFocusRef.current.focus();
-      else sheetTriggerRef.current?.focus();
+      if (sheetFocusRef.current?.isConnected) sheetFocusRef.current.focus({ preventScroll: true });
+      else sheetTriggerRef.current?.focus({ preventScroll: true });
     }
     sheetWasOpenRef.current = sheetOpen;
   }, [sheetOpen]);
   useEffect(() => {
-    if (!mobile || !pending) return;
+    if (!mobile || !generationPending) return;
+    pictureTransitionRef.current = null; pictureAnimationRef.current?.cancel();
     setEditing(false); setTool('info'); setSizeOpen(false); setColorsOpen(false); setSheetOpen(false);
     const input = document.activeElement;
     if (input instanceof HTMLTextAreaElement) input.blur();
-  }, [mobile, pending]);
+  }, [mobile, generationPending]);
   useEffect(() => {
     if (!mobile) return;
-    if (tool === 'crop') cropBoxRef.current?.focus();
-    else if (cropWasOpenRef.current && cropFocusRef.current?.isConnected) cropFocusRef.current.focus();
+    if (tool === 'crop') cropBoxRef.current?.focus({ preventScroll: true });
+    else if (cropWasOpenRef.current && cropFocusRef.current?.isConnected) cropFocusRef.current.focus({ preventScroll: true });
     cropWasOpenRef.current = tool === 'crop';
   }, [mobile, tool]);
-  useLayoutEffect(() => {
-    if (!mobile) return;
-    const picture = stageRef.current?.querySelector<HTMLElement>('.workspace-picture');
-    if (!picture) return;
-    const previous = pictureLayoutRef.current;
-    const animations = picture.getAnimations?.() ?? [];
-    let before = previous?.rect;
-    if (before && animations.length) {
-      // Khi đổi công cụ giữa chuyển động, tiếp tục từ vị trí đang nhìn thấy.
-      // Đo khung mới sau khi bỏ transform cũ để không cộng lệch hai lần.
-      const matrix = new DOMMatrixReadOnly(getComputedStyle(picture).transform);
-      before = new DOMRect(before.x + matrix.e + before.width * (1 - matrix.a) / 2, before.y + matrix.f + before.height * (1 - matrix.d) / 2, before.width * matrix.a, before.height * matrix.d);
-    }
-    animations.forEach(animation => animation.cancel());
-    const rect = picture.getBoundingClientRect();
-    pictureLayoutRef.current = { rect, zoom };
-    if (!previous || !before || previous.zoom !== zoom || !before.width || !rect.width || !pointerMotionRef.current || document.activeElement instanceof HTMLTextAreaElement || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    const dx = before.x + before.width / 2 - rect.x - rect.width / 2, dy = before.y + before.height / 2 - rect.y - rect.height / 2;
-    if (Math.abs(dx) + Math.abs(dy) + Math.abs(before.width - rect.width) < 1) return;
-    picture.animate([{ transform: `translate(${dx}px, ${dy}px) scale(${before.width / rect.width}, ${before.height / rect.height})` }, { transform: 'none' }], { duration: 240, easing: 'cubic-bezier(.32,.72,0,1)' });
-  }, [mobile, displayWidth, displayHeight, editing, tool, sheetOpen, palette.length, draft, keyboardNavigation]);
   useEffect(() => {
     const stage = stageRef.current;
     if (!stage) return;
@@ -249,6 +249,8 @@ export default function ImageWorkspace({ job, image, index, original, liked, dis
     // Cảm ứng đã được capture ngầm và chặn cuộn bằng touch-action: none.
     if (event.pointerType !== 'touch') { event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId); }
     if (mobile) { setSizeOpen(false); setColorsOpen(false); }
+    // Chạm vào ảnh đang chuyển khung thì giữ đúng khung đang nhìn thấy suốt nét vẽ.
+    if (pictureAnimationRef.current?.playState === 'running') pictureAnimationRef.current.pause();
     const rect = event.currentTarget.getBoundingClientRect();
     const stroke = { points: [point(event)], color, size: brushSize / rect.width, erasing };
     strokeRef.current = stroke; strokePointerRef.current = event.pointerId; setRedoStrokes([]); setStrokes(current => [...current, stroke]);
@@ -259,7 +261,10 @@ export default function ImageWorkspace({ job, image, index, original, liked, dis
     strokeRef.current = next; setStrokes(current => [...current.slice(0, -1), next]);
   }
   function endStroke(event: PointerEvent<HTMLCanvasElement>) {
-    if (event.pointerId === strokePointerRef.current) { strokeRef.current = null; strokePointerRef.current = null; }
+    if (event.pointerId === strokePointerRef.current) {
+      strokeRef.current = null; strokePointerRef.current = null;
+      if (pictureAnimationRef.current?.playState === 'paused') pictureAnimationRef.current.play();
+    }
   }
   function setRatio(value: string) {
     setCropRatio(value);
@@ -303,9 +308,14 @@ export default function ImageWorkspace({ job, image, index, original, liked, dis
 
   function openSheet() { sheetFocusRef.current = editing && document.activeElement instanceof HTMLButtonElement && document.activeElement.closest('.workspace-main') ? document.activeElement : sheetTriggerRef.current; setSheetOpen(true); }
   function closeSheet() { setSheetOpen(false); }
+  function preparePictureTransition() {
+    if (!mobile || !ready || !pointerMotionRef.current) return;
+    pictureTransitionRef.current = stageRef.current?.querySelector<HTMLElement>('.workspace-picture')?.getBoundingClientRect() ?? null;
+  }
   function chooseTool(value: Tool) {
     if (strokes.length && value !== 'brush') { setNotice('Bạn áp dụng hoặc xóa nét vẽ trước khi đổi công cụ nhé.'); return; }
     if (mobile && value === 'crop' && document.activeElement instanceof HTMLElement) cropFocusRef.current = document.activeElement;
+    if (!editing || tool !== value) preparePictureTransition();
     setComparing(false); setTool(value); setPanelOpen(true); setNotice(null);
     if (mobile) {
       setEditing(true); setColorsOpen(false);
@@ -316,18 +326,25 @@ export default function ImageWorkspace({ job, image, index, original, liked, dis
   function leaveEditing() {
     if (blocked) return;
     if (strokes.length) { setNotice('Bạn áp dụng hoặc xóa nét vẽ trước khi đóng công cụ nhé.'); return; }
-    setEditing(false); setSizeOpen(false); setColorsOpen(false); setTool('info');
+    preparePictureTransition(); setEditing(false); setSizeOpen(false); setColorsOpen(false); setTool('info');
   }
+  function startEditing() { if (!editing || tool !== 'brush') preparePictureTransition(); setEditing(true); setTool('brush'); setSizeOpen(true); }
   function submitEdit() {
     if (blocked) return;
-    if (prompt.trim()) void execute(async () => onSubmit(prompt.trim(), aspect, await editData()));
-    else if (mobile && strokes.length) void execute(async () => { await saveVersion(await renderEdit(src, FULL_CROP, strokes), 'brush'); setEditing(false); setTool('info'); });
+    const text = prompt.trim() || (mobile && strokes.length ? 'Hoàn thiện ảnh theo các nét vẽ được thêm: biến các nét phác thảo thành chi tiết phù hợp với hình ảnh, giữ nguyên chủ thể, bố cục và những vùng không được vẽ.' : '');
+    if (!text) return;
+    setSubmitting(true);
+    void execute(async () => {
+      try { await onSubmit(text, aspect, await editData()); }
+      catch (error) { if (mobile) { setEditing(true); setTool(strokes.length ? 'brush' : tool); } throw error; }
+      finally { setSubmitting(false); }
+    });
   }
   const zoomControls = <div className="workspace-zoom"><button type="button" aria-label="Thu nhỏ ảnh" disabled={zoom <= MIN_ZOOM} onClick={() => stepZoom(-.25)}><StudioIcon name="minus" /></button><button type="button" aria-label="Vừa khung" title="Về 100%" onClick={resetZoom}>{Math.round(zoom * 100)}%</button><button type="button" aria-label="Phóng to ảnh" disabled={zoom >= MAX_ZOOM} onClick={() => stepZoom(.25)}><StudioIcon name="plus" /></button></div>;
   const toolButtons = <div className="workspace-tools" role="toolbar" aria-label="Công cụ ảnh">{(['info', 'palette', 'crop', 'brush'] as const).map(value => <button key={value} type="button" aria-label={TOOL_LABELS[value]} title={TOOL_LABELS[value]} aria-pressed={tool === value} disabled={blocked || !ready} onClick={() => chooseTool(value)}><StudioIcon name={value} /></button>)}</div>;
-  const versionRail = history && <ImageVersionRail versions={history.versions} selectedId={image.id} disabled={blocked || strokes.length > 0} onSelect={history.onSelect} onClose={onClose} compact={mobile} pending={pending} />;
+  const versionRail = history && <ImageVersionRail versions={history.versions} selectedId={image.id} disabled={blocked || strokes.length > 0} onSelect={history.onSelect} onClose={onClose} compact={mobile} pending={generationPending} />;
 
-  return <div ref={workspaceRef} className={'image-workspace' + (!panelOpen ? ' panel-hidden' : '') + (history ? ' has-history' : '') + (mobile ? ' workspace-mobile' : '') + (mobile && editing ? ' mobile-editing' : '') + (mobile && pending ? ' mobile-pending' : '')} data-keyboard={keyboardNavigation} onPointerDown={() => { pointerMotionRef.current = true; setKeyboardNavigation(false); }} onKeyDown={event => {
+  return <div ref={workspaceRef} className={'image-workspace' + (!panelOpen ? ' panel-hidden' : '') + (history ? ' has-history' : '') + (mobile ? ' workspace-mobile' : '') + (mobile && editing ? ' mobile-editing' : '') + (mobile && generationPending ? ' mobile-pending' : '')} aria-busy={generationPending} data-keyboard={keyboardNavigation} onPointerDown={() => { pointerMotionRef.current = true; setKeyboardNavigation(false); }} onKeyDown={event => {
     pointerMotionRef.current = false; setKeyboardNavigation(true);
     if (mobile && tool === 'crop' && event.key === 'Tab') {
       const scope = event.currentTarget.querySelector('.workspace-crop-overlay');
@@ -348,11 +365,11 @@ export default function ImageWorkspace({ job, image, index, original, liked, dis
         {(!history || mobile) && <button type="button" className="workspace-round" aria-label={mobile && editing ? 'Đóng công cụ' : 'Quay lại'} onClick={mobile && editing ? leaveEditing : onClose}><StudioIcon name={mobile && editing ? 'close' : 'back'} /></button>}
         {!mobile && zoomControls}
         {mobile && editing && tool === 'brush' && (strokes.length > 0 || redoStrokes.length > 0) && <div className="mobile-brush-history"><button type="button" className="workspace-round" aria-label="Làm lại nét vẽ" disabled={!redoStrokes.length || blocked} onClick={() => { setStrokes(current => [...current, redoStrokes[redoStrokes.length - 1]]); setRedoStrokes(current => current.slice(0, -1)); }}><StudioIcon name="redo" /></button><button type="button" className="workspace-round" aria-label="Xóa nét vẽ" disabled={!strokes.length || blocked} onClick={() => { setStrokes([]); setRedoStrokes([]); }}><StudioIcon name="trash" /></button></div>}
-        {mobile ? <button type="button" className="workspace-round workspace-panel-toggle" aria-label={editing && strokes.length ? 'Hoàn tác nét vẽ' : 'Chỉnh sửa ảnh'} disabled={blocked || !ready} onClick={() => { if (editing && strokes.length) { setRedoStrokes(current => [...current, strokes[strokes.length - 1]]); setStrokes(current => current.slice(0, -1)); } else { setEditing(true); setTool('brush'); setSizeOpen(true); } }}><StudioIcon name={editing && strokes.length ? 'undo' : 'brush'} /></button> : <button type="button" className="workspace-round workspace-panel-toggle" aria-label={panelOpen ? 'Ẩn bảng công cụ' : 'Hiện bảng công cụ'} title={panelOpen ? 'Ẩn bảng công cụ' : 'Hiện bảng công cụ'} aria-controls="workspace-panel" aria-expanded={panelOpen} onClick={() => setPanelOpen(value => !value)}><StudioIcon name="panel" /></button>}
+        {mobile ? <button type="button" className="workspace-round workspace-panel-toggle" aria-label={editing && strokes.length ? 'Hoàn tác nét vẽ' : 'Chỉnh sửa ảnh'} disabled={blocked || !ready} onClick={() => { if (editing && strokes.length) { setRedoStrokes(current => [...current, strokes[strokes.length - 1]]); setStrokes(current => current.slice(0, -1)); } else startEditing(); }}><StudioIcon name={editing && strokes.length ? 'undo' : 'brush'} /></button> : <button type="button" className="workspace-round workspace-panel-toggle" aria-label={panelOpen ? 'Ẩn bảng công cụ' : 'Hiện bảng công cụ'} title={panelOpen ? 'Ẩn bảng công cụ' : 'Hiện bảng công cụ'} aria-controls="workspace-panel" aria-expanded={panelOpen} onClick={() => setPanelOpen(value => !value)}><StudioIcon name="panel" /></button>}
       </div>
       <div ref={stageRef} className="workspace-canvas">
         <div className="workspace-canvas-inner">
-          {comparing ? <ImageComparison sources={imagineSources(job)} image={{ ...image, url: src }} prompt={job.prompt} startComparing hideToggle /> : <div className="workspace-picture" style={{ width: displayWidth, height: displayHeight }}>
+          {comparing ? <ImageComparison sources={imagineSources(job)} image={{ ...image, url: src }} prompt={job.prompt} startComparing hideToggle /> : <div className="workspace-picture" style={{ width: displayWidth ?? 0, height: displayHeight ?? 0, visibility: ready && space.width > 0 ? undefined : 'hidden' }}>
             <img src={src} alt={job.prompt} draggable={false} onLoad={event => setDimensions({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })} onError={() => { setDimensions({ width: 0, height: 0 }); setNotice('Chưa tải được ảnh. Bạn đóng và mở lại ảnh nhé.'); }} />
             {tool === 'brush' && ready && <canvas ref={canvasRef} width={dimensions.width} height={dimensions.height} aria-label="Vẽ ghi chú lên ảnh" onPointerDown={beginStroke} onPointerMove={moveStroke} onPointerUp={endStroke} onPointerCancel={endStroke} />}
           </div>}
@@ -361,19 +378,19 @@ export default function ImageWorkspace({ job, image, index, original, liked, dis
       </div>
       <div className="workspace-edit-dock">
         {mobile && !editing && versionRail}
-        {mobile && !editing && <div className="mobile-image-actions"><button type="button" className="mobile-edit-button" disabled={blocked || !ready} onClick={() => { setEditing(true); setTool('brush'); setSizeOpen(true); }}><StudioIcon name="brush" /><span>Chỉnh sửa</span></button><div>{!original && <button type="button" aria-label="Thích" aria-pressed={liked} className={liked ? 'liked' : ''} onClick={onLike}><StudioIcon name="heart" /></button>}<button type="button" aria-label="Tải ảnh xuống" disabled={blocked || !ready} onClick={() => void execute(download)}><StudioIcon name="download" /></button><button type="button" aria-label="Chia sẻ" disabled={blocked || !ready} onClick={() => void execute(share)}><StudioIcon name="share" /></button></div><button type="button" ref={sheetTriggerRef} className="mobile-more" aria-label="Tùy chọn ảnh" aria-expanded={sheetOpen} onClick={openSheet}><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="12" cy="19" r="1.6" /></svg></button></div>}
+        {mobile && !editing && <div className="mobile-image-actions"><button type="button" className="mobile-edit-button" disabled={blocked || !ready} onClick={startEditing}>{generationPending ? <span role="status">Đang tạo…</span> : <><StudioIcon name="brush" /><span>Chỉnh sửa</span></>}</button><div>{!original && <button type="button" aria-label="Thích" aria-pressed={liked} className={liked ? 'liked' : ''} onClick={onLike}><StudioIcon name="heart" /></button>}<button type="button" aria-label="Tải ảnh xuống" disabled={blocked || !ready} onClick={() => void execute(download)}><StudioIcon name="download" /></button><button type="button" aria-label="Chia sẻ" disabled={blocked || !ready} onClick={() => void execute(share)}><StudioIcon name="share" /></button></div><button type="button" ref={sheetTriggerRef} className="mobile-more" aria-label="Tùy chọn ảnh" aria-expanded={sheetOpen} onClick={openSheet}><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="12" cy="19" r="1.6" /></svg></button></div>}
         {mobile && editing && <div className="mobile-tool-dock"><p className="mobile-tool-label">{TOOL_LABELS[tool]}</p>{toolButtons}
           {tool === 'palette' && <div className="mobile-palette-list">{PALETTES.map(item => <button type="button" key={item.name} aria-label={item.name} disabled={blocked} onClick={() => { setPalette(item.colors); appendPrompt(`Áp dụng bảng màu ${item.name.toLowerCase()} (${item.colors.join(', ')}), giữ chủ thể và bố cục ảnh.`); }}><span className="palette-strip">{item.colors.map(hex => <i key={hex} style={{ background: hex }} />)}</span></button>)}<button type="button" className="mobile-extract" aria-label="Lấy màu từ ảnh" title="Lấy màu từ ảnh" disabled={blocked} onClick={() => void execute(async () => setPalette(await extractPalette(src)))}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="m13 5 6 6m-5-3L4 18v3h3L17 11m-4-6 3-3 6 6-3 3" /></svg></button>{palette.map(hex => <button type="button" className="mobile-extracted-color" key={hex} style={{ background: hex }} aria-label={`Màu ${hex}`} onClick={() => { setColor(hex); setTool('brush'); setSizeOpen(true); }} />)}</div>}
         </div>}
         {historyNotice}
         {mobile && ready && !comparing && <span className="workspace-sr-only" aria-label="Kích thước ảnh thực tế">{dimensions.width} × {dimensions.height}</span>}
         {mobile && tool !== 'crop' && (notice || likeError) && <p className="workspace-notice" role="alert">{likeError ?? notice}<button type="button" aria-label="Đóng thông báo" onClick={() => setNotice(null)}><StudioIcon name="close" /></button></p>}
-        {draft?.composer ?? <><div className="workspace-source-chip" hidden={mobile && editing}><span title={job.prompt}>{changed ? 'Bản chỉnh sửa · chưa lưu' : job.prompt}</span><button type="button" disabled={blocked} onClick={() => { if (!changed) onUse(); else void execute(async () => onUse(await editData())); }}>Dùng ảnh này</button></div>
+        {draft?.composer ?? <><div className="workspace-source-chip" hidden={mobile && (editing || generationPending)}><span title={job.prompt}>{changed ? 'Bản chỉnh sửa · chưa lưu' : job.prompt}</span><button type="button" disabled={blocked} onClick={() => { if (!changed) onUse(); else void execute(async () => onUse(await editData())); }}>Dùng ảnh này</button></div>
         {mobile && editing && tool === 'brush' && colorsOpen && <div className="mobile-brush-colors">{COLORS.map(hex => <button key={hex} type="button" style={{ background: hex }} aria-label={`Chọn màu ${hex}`} aria-pressed={color === hex} onClick={() => { setColor(hex); setColorsOpen(false); }} />)}<input type="color" aria-label="Màu tùy chọn" value={color} onChange={event => setColor(event.target.value)} /></div>}
         <form hidden={mobile && editing && tool === 'palette' && !prompt.trim()} onSubmit={event => { event.preventDefault(); submitEdit(); }}>
           {mobile && editing && tool === 'brush' && <button type="button" className="mobile-color-trigger" style={{ color }} aria-label="Chọn màu bút" aria-expanded={colorsOpen} onClick={() => setColorsOpen(value => !value)}><span /></button>}
           <textarea aria-label="Mô tả chỉnh sửa ảnh" placeholder={mobile ? 'Chỉnh sửa hình ảnh' : 'Mô tả chỉnh sửa bạn muốn thực hiện…'} enterKeyHint="send" rows={1} value={prompt} disabled={blocked} onChange={event => setPrompt(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); submitEdit(); } }} />
-          <button type="submit" disabled={(!prompt.trim() && !(mobile && strokes.length)) || blocked} aria-label={mobile && strokes.length && !prompt.trim() ? 'Áp dụng nét vẽ' : 'Gửi chỉnh sửa ảnh'}><StudioIcon name={mobile && strokes.length && !prompt.trim() ? 'check' : 'arrowUp'} /></button>
+          <button type="submit" disabled={(!prompt.trim() && !(mobile && strokes.length)) || blocked} aria-label="Gửi chỉnh sửa ảnh"><StudioIcon name="arrowUp" /></button>
         </form></>}
       </div>
       </div>
