@@ -928,6 +928,13 @@ does not touch. The upload never changes; each edit is a new version.
 
 ### Imagine (image generation)
 
+For UI polish, apply the owner's selected `emil-design-eng` and `mobile-native` skills when available
+(source: https://github.com/emilkowalski/skills). Keep the owner's Grok screenshots and interaction requests
+authoritative. Use the existing motion tokens/press feedback; gate hover by pointer capability, retain
+keyboard focus, keep touch inputs at least 16px, and preserve pinch zoom and canvas gestures. Do not add
+navigation rails or decorative motion by default. `break-ui` is installed for explicit UI stress reviews.
+Emulated mobile tests do not certify Safari keyboard, safe areas, or physical touch feel.
+
 Fully separated from chat: its own router (`features/imagine/api.py`), its own REST call to
 `/v1/images/generations` (`ai/imagine.py`), its own `imagine_jobs` / `imagine_images`
 tables. Chat **intentionally has no image-generation tool**, so Peto never draws when the
@@ -987,13 +994,23 @@ unsupported), download or delete. Deletion is per image: `DELETE /api/imagine/im
 and deletes the job, source image included, once no output is left. `PUT /api/imagine/images/{id}/like` stores
 `imagine_images.liked`. Source images of edits cannot be deleted or liked on their own. The heart button lives
 in `ImageWorkspace.tsx`, a full-screen viewer above the library: a fitted image and edit prompt on the left,
-real tools/actions on the right (stacked below on mobile), zoom/panel toggles, navigation, and side-by-side
+existing tools in the left editing strip and a details/action panel on the right (below the image on mobile), zoom/panel toggles, navigation, and side-by-side
 comparison in the central stage. `imageTools.ts` implements local normalized crop and vector brush/eraser
 strokes with Canvas, extracts a four-color palette, and encodes a new PNG source without overwriting the
 stored original. Undo keeps the original plus at most five recent PNG versions in memory; closing/reloading
 loses these local drafts, which are labelled as unsaved. Download/reference/edit uses the working PNG;
 unchanged images keep their saved ID. A modified reference obeys the existing 5-source, 8 MiB each/16 MiB
 aggregate limits. Palette presets only append an editable prompt; no provider request occurs before Send.
+
+The owner's latest viewer layout puts the existing info/palette/crop/brush controls in a slim tool strip
+inside the left side of the editing area (horizontal above the image on mobile). This is not an app navigation
+sidebar. The zoom/back/panel controls and edit composer use the fitted image width plus breathing room,
+bounded by the canvas width, and sit above/below the canvas rather than over the image. The right panel
+shows the selected tool with the reference/aspect/share actions grouped at its bottom. The reaction row has
+like/download only: no X social action or duplicate close button. Back closes the viewer. Mobile gives the
+image more height and scrolls the detail panel below; the body grid must use `minmax(0,1fr)` to prevent
+its controls expanding beyond narrow screens. Saved-version thumbnails and mouse-wheel zoom remain
+in the plan; do not invent a saved-history strip from `job.images`.
 The viewer sends one edit result through the existing background/idempotency/uncertain-request path.
 No segmentation, AI mask/inpainting guarantee, transparent-background removal, video or tag manager is
 implemented here; do not add placeholder buttons that pretend those features are available.

@@ -252,7 +252,7 @@ export default function ImagineLibrary({ open, jobs, onClose, onOpenImage, onDel
           </>}
         </div>
       </div>
-      {searchOpen && !selecting && <div className="library-search"><StudioIcon name="search" /><input autoFocus type="search" value={query} placeholder="Tìm ảnh theo mô tả" aria-label="Tìm ảnh theo mô tả" onChange={event => setQuery(event.target.value)} /></div>}
+      {searchOpen && !selecting && <div className="library-search"><StudioIcon name="search" /><input autoFocus type="search" enterKeyHint="search" value={query} placeholder="Tìm ảnh theo mô tả" aria-label="Tìm ảnh theo mô tả" onChange={event => setQuery(event.target.value)} /></div>}
       <p className="sr-only" aria-live="polite">{selecting ? `Đã chọn ${picked.length} ảnh` : ""}</p>
 
       <div className={"library-grid" + (composer && !selecting ? " with-composer" : "")} style={{ "--library-columns": columns, "--library-tile-size": columns === 2 ? "clamp(240px, 19vw, 360px)" : "clamp(180px, 14vw, 240px)" } as CSSProperties}>

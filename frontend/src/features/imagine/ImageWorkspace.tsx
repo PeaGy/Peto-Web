@@ -6,6 +6,7 @@ import StudioIcon from './studioIcons';
 import { drawStrokes, extractPalette, renderEdit, FULL_CROP, type CropArea, type Stroke } from './imageTools';
 
 type Tool = 'info' | 'palette' | 'crop' | 'brush';
+const TOOL_LABELS: Record<Tool, string> = { info: 'Thông tin ảnh', palette: 'Bảng màu', crop: 'Cắt ảnh', brush: 'Bút vẽ' };
 const PALETTES = [
   { name: 'Đất nung', colors: ['#a35132', '#d8b287', '#55624c', '#f2eee5'] },
   { name: 'Bắc Âu', colors: ['#e2f2ff', '#9acded', '#2999d7', '#1450a1'] },
@@ -57,6 +58,8 @@ export default function ImageWorkspace({ job, image, index, original, liked, dis
   const fit = ready ? Math.min((space.width - 48) / dimensions.width, (space.height - 36) / dimensions.height, 1) : 1;
   const displayWidth = ready ? dimensions.width * Math.max(.05, fit) * zoom : undefined;
   const displayHeight = ready ? dimensions.height * Math.max(.05, fit) * zoom : undefined;
+  // Thanh trên và ô nhập bám vùng ảnh vừa khung, không kéo dài theo cả cửa sổ hay ảnh đang zoom.
+  const controlWidth = Math.min(space.width, Math.max(360, (displayWidth ?? 640) / zoom + 80));
 
   useEffect(() => {
     const element = stageRef.current;
@@ -141,10 +144,14 @@ export default function ImageWorkspace({ job, image, index, original, liked, dis
 
   return <div className={'image-workspace' + (!panelOpen ? ' panel-hidden' : '')} onKeyDown={event => { if (event.key === 'Escape' && tool === 'crop') { event.preventDefault(); event.stopPropagation(); if (!blocked) setTool('info'); } }}>
     <section className="workspace-main">
-      <div className="workspace-topbar">
+      <div className="workspace-tools" role="toolbar" aria-label="Công cụ ảnh">
+        {(['info', 'palette', 'crop', 'brush'] as const).map(value => <button key={value} type="button" aria-label={TOOL_LABELS[value]} title={TOOL_LABELS[value]} aria-pressed={tool === value} disabled={blocked || !ready} onClick={() => { setComparing(false); if (strokes.length && value !== 'brush') { setNotice('Bạn áp dụng hoặc xóa nét vẽ trước khi đổi công cụ nhé.'); return; } setTool(value); setPanelOpen(true); setNotice(null); }}><StudioIcon name={value} /></button>)}
+      </div>
+      <div className="workspace-body">
+      <div className="workspace-topbar" style={{ width: controlWidth }}>
         <button type="button" className="workspace-round" aria-label="Quay lại" onClick={onClose}><StudioIcon name="back" /></button>
         <div className="workspace-zoom"><button type="button" aria-label="Thu nhỏ ảnh" disabled={zoom <= .5} onClick={() => setZoom(value => Math.max(.5, value - .25))}><StudioIcon name="minus" /></button><button type="button" aria-label="Vừa khung" onClick={() => setZoom(1)}>{Math.round(zoom * 100)}%</button><button type="button" aria-label="Phóng to ảnh" disabled={zoom >= 3} onClick={() => setZoom(value => Math.min(3, value + .25))}><StudioIcon name="plus" /></button></div>
-        <button type="button" className="workspace-round" aria-label="Hiện bảng công cụ" aria-pressed={panelOpen} onClick={() => setPanelOpen(value => !value)}><StudioIcon name="panel" /></button>
+        <button type="button" className="workspace-round" aria-label={panelOpen ? 'Ẩn bảng công cụ' : 'Hiện bảng công cụ'} title={panelOpen ? 'Ẩn bảng công cụ' : 'Hiện bảng công cụ'} aria-controls="workspace-panel" aria-expanded={panelOpen} onClick={() => setPanelOpen(value => !value)}><StudioIcon name="panel" /></button>
       </div>
       <div ref={stageRef} className="workspace-canvas">
         <div className="workspace-canvas-inner">
@@ -154,18 +161,17 @@ export default function ImageWorkspace({ job, image, index, original, liked, dis
           </div>}
         </div>
       </div>
-      <div className="workspace-edit-dock">
+      <div className="workspace-edit-dock" style={{ width: controlWidth }}>
         <div className="workspace-source-chip"><span title={job.prompt}>{changed ? 'Bản chỉnh sửa · chưa lưu' : job.prompt}</span><button type="button" disabled={blocked} onClick={() => { if (!changed) onUse(); else void execute(async () => onUse(await editData())); }}>Sửa ảnh này</button></div>
         <form onSubmit={event => { event.preventDefault(); if (prompt.trim() && !blocked) void execute(async () => onSubmit(prompt.trim(), aspect, await editData())); }}>
-          <textarea aria-label="Mô tả chỉnh sửa ảnh" placeholder="Mô tả chỉnh sửa bạn muốn thực hiện…" rows={1} value={prompt} disabled={blocked} onChange={event => setPrompt(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); if (prompt.trim() && !blocked) void execute(async () => onSubmit(prompt.trim(), aspect, await editData())); } }} />
-          <button type="submit" disabled={!prompt.trim() || blocked} aria-label="Gửi chỉnh sửa ảnh">↑</button>
+          <textarea aria-label="Mô tả chỉnh sửa ảnh" placeholder="Mô tả chỉnh sửa bạn muốn thực hiện…" enterKeyHint="send" rows={1} value={prompt} disabled={blocked} onChange={event => setPrompt(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); if (prompt.trim() && !blocked) void execute(async () => onSubmit(prompt.trim(), aspect, await editData())); } }} />
+          <button type="submit" disabled={!prompt.trim() || blocked} aria-label="Gửi chỉnh sửa ảnh"><StudioIcon name="arrowUp" /></button>
         </form>
       </div>
-    </section>
-    <aside className="workspace-panel">
-      <div className="workspace-tools" role="group" aria-label="Công cụ ảnh">
-        {(['info', 'palette', 'crop', 'brush'] as const).map(value => <button key={value} type="button" aria-label={{ info: 'Thông tin ảnh', palette: 'Bảng màu', crop: 'Cắt ảnh', brush: 'Bút vẽ' }[value]} title={{ info: 'Thông tin ảnh', palette: 'Bảng màu', crop: 'Cắt ảnh', brush: 'Bút vẽ' }[value]} aria-pressed={tool === value} disabled={blocked || !ready} onClick={() => { setComparing(false); if (strokes.length && value !== 'brush') { setNotice('Bạn áp dụng hoặc xóa nét vẽ trước khi đổi công cụ nhé.'); return; } setTool(value); setPanelOpen(true); setNotice(null); }}><StudioIcon name={value} /></button>)}
       </div>
+    </section>
+    <aside className="workspace-panel" id="workspace-panel">
+      <h2 className="workspace-panel-title">{TOOL_LABELS[tool]}</h2>
       <div className="workspace-panel-body">
         {tool === 'info' && <>
           <p className="workspace-label">{original ? 'Ảnh tham chiếu' : 'Ảnh đã tạo'}</p><p className="workspace-prompt">{job.prompt}</p>
@@ -194,7 +200,7 @@ export default function ImageWorkspace({ job, image, index, original, liked, dis
         <label className="workspace-aspect">Tỉ lệ ảnh <select aria-label="Tỉ lệ ảnh chỉnh sửa" value={aspect} disabled={blocked} onChange={event => setAspect(event.target.value)}>{RATIOS.map(ratio => <option key={ratio} value={ratio}>{ratio === 'auto' ? 'Theo ảnh nguồn' : ratio}</option>)}</select></label>
         <button type="button" className="workspace-wide" disabled={blocked || !canAdd || (alreadyAdded && !changed)} onClick={() => { if (!changed) onAdd(); else void execute(async () => onAdd(await editData())); }}><StudioIcon name="plus" />Thêm làm tham chiếu</button>
         <button type="button" className="workspace-share" disabled={blocked || !ready} onClick={() => void execute(share)}><StudioIcon name="share" />Chia sẻ</button>
-        <div className="workspace-footer-actions">{!original && <button type="button" className={liked ? 'liked' : ''} aria-label="Thích" aria-pressed={liked} onClick={onLike}><span aria-hidden="true">♡</span></button>}<a href={src !== image.url ? src : `${image.url}?download=1`} download={src !== image.url ? 'peto-chinh-sua.png' : true} aria-label="Tải ảnh xuống" onClick={event => { if (strokes.length) { event.preventDefault(); void execute(download); } }}><StudioIcon name="download" /></a><button type="button" aria-label="Đóng khung xem" onClick={onClose}><StudioIcon name="close" /></button></div>
+        <div className="workspace-footer-actions">{!original && <button type="button" className={liked ? 'liked' : ''} aria-label="Thích" aria-pressed={liked} onClick={onLike}><StudioIcon name="heart" /></button>}<a href={src !== image.url ? src : `${image.url}?download=1`} download={src !== image.url ? 'peto-chinh-sua.png' : true} aria-label="Tải ảnh xuống" onClick={event => { if (strokes.length) { event.preventDefault(); void execute(download); } }}><StudioIcon name="download" /></a></div>
         {(notice || likeError) && <p className="workspace-notice" role="alert">{likeError ?? notice}</p>}
       </div>
     </aside>
