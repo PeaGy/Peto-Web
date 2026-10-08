@@ -229,6 +229,10 @@ Web output budget is `PETO_ANTHROPIC_MAX_OUTPUT_TOKENS` (32768); Agent uses
 spend another request, incomplete/disconnected streams never become successful answers. Haiku costs one Agent step,
 Sonnet two, multiplied by the existing effort cost; these are Peto quota units, not Anthropic billing prices.
 Tests use the real SDK against fake HTTP/SSE, never real keys or billing. Deployment/key activation is separate.
+On 2026-10-08 the owner's VPS logs showed `ModuleNotFoundError: No module named 'anthropic'` after adding the key:
+the service's venv had not installed the new backend requirements. Web and Agent now share a lazy Claude loader
+that converts dependency import failures to an actionable Vietnamese provider error. DEPLOY.md gives the exact
+venv install/import-check/restart commands; restarting alone never installs dependencies.
 
 ### Chat request lifecycle (`POST /api/chat`)
 

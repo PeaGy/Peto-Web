@@ -26,6 +26,18 @@ def _load_xai() -> type[ChatProvider]:
     return XAIProvider
 
 
+def _load_claude():
+    """Báo rõ khi VPS chưa cài các thư viện Claude, thay vì lỗi máy chủ chung chung."""
+    try:
+        from . import claude
+    except ImportError:
+        raise ProviderError(
+            "Máy chủ Peto chưa cài đủ thư viện Claude. Người quản trị cần cài lại "
+            "backend/requirements.txt trong môi trường chạy backend rồi khởi động lại dịch vụ."
+        ) from None
+    return claude
+
+
 _PROVIDERS: dict[str, type[ChatProvider] | Callable[[], type[ChatProvider]]] = {
     "mock": MockProvider,
     "xai": _load_xai,
@@ -61,9 +73,7 @@ def get_provider(model: str = "peto") -> ChatProvider:
 
         info = MODELS[model]
         if info.service == "anthropic":
-            from .claude import ClaudeProvider
-
-            provider = ClaudeProvider(info.slug, info.label)
+            provider = _load_claude().ClaudeProvider(info.slug, info.label)
         else:
             from .gpt import GPTProvider
 

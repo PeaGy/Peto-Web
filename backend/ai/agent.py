@@ -141,14 +141,14 @@ async def _openai_step(instructions: str, items: list[dict], tools: list[dict], 
 async def _claude_step(instructions: str, items: list[dict], tools: list[dict], effort: str,
                        model: str, web_search: bool = False) -> AsyncIterator[AgentEvent]:
     from core import config
-    from .claude import ClaudeClient
+    from ai import _load_claude
     from .models import MODELS
 
     global _claude_client
     if not config.ANTHROPIC_API_KEY:
         raise ProviderError("Máy chủ Peto chưa có khóa Claude. Gõ /model peto để tiếp tục nhé.")
     if _claude_client is None:
-        _claude_client = ClaudeClient()
+        _claude_client = _load_claude().ClaudeClient()
     async for event in _responses_step(
         _claude_client, "Anthropic", MODELS[model].slug, config.ANTHROPIC_AGENT_MAX_OUTPUT_TOKENS,
         instructions, items, tools, effort, auth_message="Khóa Claude không dùng được.",

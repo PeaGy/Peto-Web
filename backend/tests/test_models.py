@@ -6,6 +6,7 @@ bước Agent tính theo giá. Không test nào gọi OpenAI thật: provider gi
 
 from __future__ import annotations
 
+import builtins
 from types import SimpleNamespace
 
 import pytest
@@ -212,3 +213,36 @@ async def test_web_extended_effort_only_for_openai(client, effort):
     assert events[-1]['type'] == 'done'
     rejected = await client.post('/api/chat', json={'message': 'chào', 'model': 'peto', 'effort': effort})
     assert rejected.status_code == 400
+
+
+def block_claude_import(monkeypatch):
+    """Giả lập VPS có khóa nhưng chưa cài SDK mới trong đúng môi trường backend."""
+    original = builtins.__import__
+
+    def blocked(name, globals=None, locals=None, fromlist=(), level=0):
+        if level == 1 and "claude" in fromlist and (globals or {}).get("__package__") == "ai":
+            raise ModuleNotFoundError("không có thư viện", name="anthropic")
+        return original(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", blocked)
+
+
+async def test_web_missing_claude_sdk_has_actionable_error(client, monkeypatch):
+    block_claude_import(monkeypatch)
+    monkeypatch.setattr(ai, "AI_PROVIDER", "xai")
+    monkeypatch.setattr(ai, "_instances", {})
+    events = await read_events(await client.post("/api/chat", json={"message": "chào", "model": "haiku"}))
+    assert events[-1]["type"] == "error"
+    assert "chưa cài đủ thư viện Claude" in events[-1]["message"]
+    assert "backend/requirements.txt" in events[-1]["message"]
+
+
+async def test_agent_missing_claude_sdk_has_same_error(monkeypatch):
+    from ai import agent
+
+    block_claude_import(monkeypatch)
+    monkeypatch.setattr(agent, "AI_PROVIDER", "xai")
+    monkeypatch.setattr(agent, "_claude_client", None)
+    monkeypatch.setattr(config, "ANTHROPIC_API_KEY", "khoa-gia")
+    with pytest.raises(ProviderError, match="chưa cài đủ thư viện Claude"):
+        _ = [event async for event in agent.agent_step(instructions="chỉ dẫn", input_items=[], tools=[], model="haiku")]
