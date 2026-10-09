@@ -1,4 +1,4 @@
-.sidebar-history { overflow-y:auto; padding-bottom:20px; mask-image:linear-gradient(to bottom,#000 calc(100% - 20px),transparent); }
+.sidebar-history { width:calc(100% + 6px); overflow-y:auto; padding-right:6px; padding-bottom:20px; mask-image:linear-gradient(to bottom,#000 calc(100% - 20px),transparent); }
 .sidebar-history > * { flex-shrink:0; }
 .sidebar-history .conversation-list { overflow:visible; flex:none; mask-image:none; padding-bottom:0; }
 .project-sidebar { margin-bottom:20px; }

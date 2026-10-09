@@ -1,4 +1,5 @@
-import type { Dispatch, Ref, SetStateAction, ReactNode } from 'react';
+import type { CSSProperties, Dispatch, Ref, SetStateAction, ReactNode } from 'react';
+import { MIN_SIDEBAR_WIDTH, useSidebarResize } from './useSidebarResize';
 import type { AppInfo, AuthState, Conversation, ImagineJob } from '../shared/api/api';
 import type { AccountMenuPlace } from './AccountMenu';
 import type { AppView } from './preferences';
@@ -32,8 +33,10 @@ export default function Sidebar({
   setFocusJobId, openConversation, setConversationMenu, onLoadMore, toggleAccountMenu,
   onOpenImagineLibrary,
 }: SidebarProps) {
+  const { width, maxWidth, resizing, handleProps } = useSidebarResize(collapsed);
   return (
-      <aside className={["sidebar", sidebarOpen && "open", collapsed && "collapsed"].filter(Boolean).join(" ")}>
+      <aside className={["sidebar", sidebarOpen && "open", collapsed && "collapsed", resizing && "resizing"].filter(Boolean).join(" ")}
+        style={{ '--sidebar-width': `${width}px` } as CSSProperties}>
         <div className="sidebar-head">
           <div className="sidebar-brand">
             <PetoAvatar info={appInfo} />
@@ -180,6 +183,9 @@ export default function Sidebar({
             </span>
           </button>
         </div>
+        <div {...handleProps} className="sidebar-resize-handle" role="separator" aria-orientation="vertical"
+          aria-label="Đổi độ rộng thanh bên" aria-valuemin={MIN_SIDEBAR_WIDTH} aria-valuemax={maxWidth}
+          aria-valuenow={width} tabIndex={collapsed ? -1 : 0} />
       </aside>
   );
 }

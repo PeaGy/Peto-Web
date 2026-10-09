@@ -4,7 +4,7 @@
    bị cắt đi, còn icon đứng yên tại chỗ, không phải dựng lại bố cục. */
 .sidebar {
   position: relative;
-  width: 260px;
+  width: var(--sidebar-width, 260px);
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
@@ -93,7 +93,8 @@
 
   /* Rộng cố định bằng lúc mở, nên khi co lại khối này chỉ bị cắt và mờ đi chứ
      không bị bóp méo, không phải xuống dòng lại qua từng khung hình. */
-  .sidebar-section { width: 240px; }
+  .sidebar-section { width: calc(var(--sidebar-width, 260px) - 20px); }
+  .sidebar .sidebar-history { width: calc(var(--sidebar-width, 260px) - 14px); }
 
   /* Mở ra thì chữ hiện sau khi khung kịp giãn; thu lại thì chữ tắt ngay. */
   .sidebar .sidebar-brand,
@@ -112,6 +113,25 @@
     transition: opacity 100ms ease, visibility 0s linear 100ms;
   }
 }
+
+/* Vùng kéo ở mép, cách thanh cuộn một khe nhỏ; không thêm nút hay nhãn vào UI. */
+.sidebar-resize-handle {
+  position: absolute;
+  inset: 0 0 0 auto;
+  z-index: 2;
+  width: 6px;
+  cursor: col-resize;
+  touch-action: none;
+  outline: none;
+}
+.sidebar-resize-handle::after { content: ''; position: absolute; inset: 0 0 0 auto; width: 1px; }
+.sidebar-resize-handle:hover::after,
+.sidebar-resize-handle:focus-visible::after,
+.sidebar.resizing .sidebar-resize-handle::after { background: var(--muted); }
+.sidebar.resizing { transition: none; }
+html.sidebar-resizing, html.sidebar-resizing * { cursor: col-resize !important; user-select: none !important; }
+@media (min-width: 721px) { .sidebar.collapsed .sidebar-resize-handle { display: none; } }
+@media (max-width: 720px) { .sidebar-resize-handle { display: none; } }
 
 /* Giữ phần mờ dần, bỏ phần chuyển động. */
 @media (prefers-reduced-motion: reduce) {
@@ -155,6 +175,8 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  width: calc(100% + 6px);
+  padding-right: 6px;
   padding-bottom: 20px;
   -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 20px), transparent);
   mask-image: linear-gradient(to bottom, #000 calc(100% - 20px), transparent);
