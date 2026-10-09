@@ -22,6 +22,7 @@ backend/
   storage/               # Schema và truy vấn SQLite theo nhóm dữ liệu
   prompts/               # Trợ lý, nhập vai, Companion, Agent, sơ đồ, hồ sơ
   shared/                # Tệp, công cụ đọc/tìm tệp, thời gian, nguồn web, SSE
+  evals/                 # Benchmark prompt/hội thoại giả, CLI mock hoặc API thật
   tests/                 # Kiểm tra với provider giả và dữ liệu tạm
   assets/                # Font và tài nguyên xuất tài liệu
   docs_content/          # Nội dung hướng dẫn công khai
@@ -67,6 +68,10 @@ Tách thư mục không yêu cầu chuyển dữ liệu hay đổi API. Test đ�
 gọi AI thật. Quy tắc chi tiết nằm trong `../CLAUDE.md`.
 
 ## Vận hành
+
+Benchmark Chat/Companion/nhập vai có dataset, phiếu chấm ẩn tên model và báo cáo riêng. Xem
+[Peto Brain Benchmark v1](evals/README.md); mặc định dùng mock, không cần khóa và không tính phí. Chạy API thật phải
+chọn chế độ và đồng ý billing rõ ràng. Công cụ không đổi prompt/model đang phục vụ Web hoặc ghi database người dùng.
 
 Kết nối GitHub cần cấu hình GitHub App và khóa mã hóa riêng trên máy chủ. Hướng dẫn cấp quyền repo,
 callback và sử dụng nằm trong [features/connectors/README.md](features/connectors/README.md).

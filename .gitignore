@@ -4,6 +4,7 @@ backend/data/
 backups/
 restore-drill/
 operations-output/
+benchmark-output/
 peto-data-*.zip
 peto-data-*.partial
 *.db

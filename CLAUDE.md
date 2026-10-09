@@ -2585,6 +2585,14 @@ Chat, Companion and roleplay turn (not the Agent CLI).
 
 ## Testing
 
+`backend/evals/README.md` documents Peto Brain Benchmark v1 (30 synthetic Chat/Companion/roleplay cases, 37 turns).
+Run `python -m evals` from backend. Default mock ignores dotenv/credentials; live requires explicit `--mode live
+--allow-paid`, uses bounded requests/tokens and disables SDK retries/tools. It reuses prompt composition, providers
+and Companion filters with fake account/memory reads, never initializes the real database or modifies production
+prompts/model defaults. Tests in `tests/test_brain_evals.py` use only fixtures and mocked HTTP. Mock results are
+harness checks, not model-quality measurements. Results and blind human grading live in gitignored `benchmark-output/`.
+Agent continues to use its existing CLI eval suite; do not silently run paid benchmarks during tests or CI.
+
 `backend/tests/conftest.py` sets environment variables **before importing any module that
 imports `config`** — the `# noqa: E402` imports at the bottom are deliberate. `load_dotenv`
 runs with `override=False`, so these test values win over a developer's real `.env`.
