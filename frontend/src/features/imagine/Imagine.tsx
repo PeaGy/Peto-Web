@@ -14,6 +14,8 @@ import StudioMenu from "./StudioMenu";
 import StudioIcon from "./studioIcons";
 import { LoadingIndicator } from '../../shared/ui/LoadingIndicator';
 import { COMPACT_QUERY } from "../companion/characters/characterView";
+import { useLocation, useNavigate } from 'react-router';
+import { appPath, imageMatch, imageRoute } from '../../app/routes';
 
 const QUALITY_KEY = "peto-imagine-quality";
 const RATIO_KEY = "peto-imagine-ratio";
@@ -143,7 +145,6 @@ function IdeaArt({ style }: { style: string }) {
 const ratioLabel = (value: string) => value === "auto" ? "Tự động" : value;
 const qualityLabel = (value: string) => value === "low" ? "Nhanh" : "Chi tiết";
 type ImageView = { job: ImagineJob; index: number; original?: boolean; sourceIndex?: number; using?: boolean };
-function imageRoute(rootId: string, imageId: string) { return `#imagine/${encodeURIComponent(rootId)}/${encodeURIComponent(imageId)}`; }
 
 export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsChange, focusJobId, onFocusHandled, libraryRequest = 0 }: {
   active: boolean;
@@ -154,6 +155,9 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
   onFocusHandled?: () => void;
   libraryRequest?: number;
 }) {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const pathname = appPath(location);
   const [prompt, setPrompt] = useState("");
   const [sources, setSources] = useState<DraftSource[]>([]);
   const [sourceOrderChanged, setSourceOrderChanged] = useState(false);
@@ -214,29 +218,33 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
   const activeRef = useRef(active);
   const loadVersion = useRef(0);
 
-  function openImage(view: ImageView, push = true) {
+  function openImage(view: ImageView) {
     routeVersion.current += 1;
     setLightbox(view);
     if (!view.original) {
       const image = view.job.images[view.index];
-      const hash = imageRoute(view.job.root_image_id || image.id, image.id);
-      if (window.location.hash !== hash) window.history[push ? 'pushState' : 'replaceState'](null, '', hash);
+      const path = imageRoute(view.job.root_image_id || image.id, image.id);
+      if (window.location.pathname !== path) navigate({ pathname: path, search: window.location.search });
     }
   }
   function closeImage() {
     routeVersion.current += 1; setLightbox(null);
-    if (window.location.hash.startsWith('#imagine/')) window.history.pushState(null, '', '#imagine');
+    if (imageMatch(pathname)) navigate({ pathname: '/imagine', search: window.location.search });
   }
   function selectVersion(entry: ImageVersion) { openImage({ job: entry.job, index: entry.job.images.findIndex(image => image.id === entry.image.id) }); }
   useEffect(() => {
     if (!active) return;
+    const controller = new AbortController();
     const read = async () => {
-      const match = /^#imagine\/([^/]+)\/([^/?]+)$/.exec(window.location.hash);
+      const match = imageMatch(pathname);
       const token = ++routeVersion.current;
       if (!match) { setLightbox(null); return; }
       try {
-        const rootId = decodeURIComponent(match[1]), imageId = decodeURIComponent(match[2]);
-        const loaded = await getImagineWorkspace(rootId);
+        const rootId = decodeURIComponent(match.params.rootId!), imageId = decodeURIComponent(match.params.imageId!);
+        const current = lightboxValue.current;
+        if (current && !current.original && (current.job.root_image_id || current.job.images[current.index]?.id) === rootId
+          && current.job.images[current.index]?.id === imageId) return;
+        const loaded = await getImagineWorkspace(rootId, controller.signal);
         if (token !== routeVersion.current) return;
         const job = [loaded.root_job, ...loaded.jobs].find(job => (job.root_image_id === rootId || imageId === rootId) && job.images.some(image => image.id === imageId));
         if (loaded.root_image_id !== rootId || !job) throw new Error('Phiên bản này không còn tồn tại.');
@@ -249,9 +257,8 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
       }
     };
     void read();
-    window.addEventListener('popstate', read); window.addEventListener('hashchange', read);
-    return () => { routeVersion.current += 1; window.removeEventListener('popstate', read); window.removeEventListener('hashchange', read); };
-  }, [active, onUnauthorized]);
+    return () => { routeVersion.current += 1; controller.abort(); };
+  }, [pathname, active, onUnauthorized]);
   useEffect(() => {
     if (!active || !workspaceRootId) { setWorkspace(null); setHistoryError(null); return; }
     const controller = new AbortController();

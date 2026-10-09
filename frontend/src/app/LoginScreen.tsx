@@ -2,9 +2,9 @@ import type { AppInfo, AuthState } from '../shared/api/api';
 import { DISCORD_LOGIN_URL, GITHUB_LOGIN_URL, GOOGLE_LOGIN_URL } from '../shared/api/api';
 import { PetoAvatar, DiscordIcon, GitHubIcon, GoogleIcon } from './accountUi';
 
-type LoginScreenProps = { auth: AuthState; appInfo: AppInfo | null; authError: string | null };
+type LoginScreenProps = { auth: AuthState; appInfo: AppInfo | null; authError: string | null; onSignIn?: () => void };
 
-export default function LoginScreen({ auth, appInfo, authError }: LoginScreenProps) {
+export default function LoginScreen({ auth, appInfo, authError, onSignIn }: LoginScreenProps) {
     return (
       <div className="login">
         <div className="login-card">
@@ -26,7 +26,7 @@ export default function LoginScreen({ auth, appInfo, authError }: LoginScreenPro
           {auth.login_configured ? (
             <>
               {auth.providers?.discord !== false && (
-                <a className="discord-button" href={DISCORD_LOGIN_URL}>
+                <a className="discord-button" href={DISCORD_LOGIN_URL} onClick={onSignIn}>
                   <DiscordIcon />
                   Đăng nhập bằng Discord
                 </a>
@@ -39,13 +39,13 @@ export default function LoginScreen({ auth, appInfo, authError }: LoginScreenPro
 
               <div className="login-alts">
                 {auth.providers?.google && (
-                  <a className="alt-login" href={GOOGLE_LOGIN_URL}>
+                  <a className="alt-login" href={GOOGLE_LOGIN_URL} onClick={onSignIn}>
                     <GoogleIcon />
                     Google
                   </a>
                 )}
                 {auth.providers?.github && (
-                  <a className="alt-login" href={GITHUB_LOGIN_URL}>
+                  <a className="alt-login" href={GITHUB_LOGIN_URL} onClick={onSignIn}>
                     <GitHubIcon />
                     GitHub
                   </a>

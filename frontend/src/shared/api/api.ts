@@ -286,7 +286,7 @@ export async function conversationVersions(id: string): Promise<Conversation[]> 
 }
 
 export async function getMessages(conversationId: string, signal?: AbortSignal, onSettings?: (settings: {project_id?: string | null; persona?: Persona; archived?: boolean}) => void): Promise<Message[]> {
-  const response = await fetch(`/api/conversations/${conversationId}/messages`, { signal });
+  const response = await fetch(`/api/conversations/${encodeURIComponent(conversationId)}/messages`, { signal });
   const data = await json<{ messages: Message[]; project_id?: string | null; persona?: Persona; archived?: boolean }>(response);
   onSettings?.(data);
   return data.messages;

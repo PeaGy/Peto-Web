@@ -113,11 +113,7 @@ async def test_index_is_not_cached(site_client):
 
 
 async def test_unknown_path_serves_custom_404(site_client):
-    """Giao diện chuyển tab bằng hash nên không có route theo đường dẫn.
-
-    Trước đây chỗ này trả index.html kèm status 200, khiến mọi đường dẫn gõ sai
-    hiện ra y như trang chủ.
-    """
+    """Chỉ trang ứng dụng có fallback; đường dẫn gõ sai vẫn là 404 thật."""
     response = await site_client.get("/hoi-thoai/abc")
     assert response.status_code == 404
     assert "Ở đây không có gì cả." in response.text
@@ -150,6 +146,30 @@ async def test_unknown_api_path_is_404_not_html(site_client):
     response = await site_client.get("/api/khong-co-that")
     assert response.status_code == 404
     assert "Peto" not in response.text
+
+
+@pytest.mark.parametrize('path', ['/chat/thread-id', '/chat/thread-id/', '/companion', '/companion/', '/imagine', '/imagine/', '/imagine/root/version'])
+@pytest.mark.parametrize('method', ['get', 'head'])
+async def test_app_deep_links_have_spa_fallback(site_client, path, method):
+    """F5 và mở tab mới nhận SPA; HEAD cũng dùng được cho kiểm tra deploy."""
+    response = await getattr(site_client, method)(path)
+    assert response.status_code == 200
+    assert response.headers['content-type'].startswith('text/html')
+    assert response.headers['cache-control'] == 'no-cache'
+    if method == 'get':
+        assert response.text == SITE_INDEX
+
+
+@pytest.mark.parametrize('path', [
+    '/api', '/api/khong-co', '/assets/missing.js', '/favicon-missing.ico',
+    '/docs/khong-co/', '/companion/missing', '/imagine/root', '/imagine/root/version/extra',
+    '/imagine/missing.js/asset.png', '/redoc', '/openapi.json', '/install-missing.ps1',
+    '/chat', '/chat/thread/extra', '/chat/missing.js',
+])
+async def test_fallback_does_not_hide_missing_endpoints_or_assets(site_client, path):
+    response = await site_client.get(path)
+    assert response.status_code == 404
+    assert response.text != SITE_INDEX
 
 
 @pytest.mark.parametrize(

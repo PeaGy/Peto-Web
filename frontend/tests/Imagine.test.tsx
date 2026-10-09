@@ -1,7 +1,10 @@
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render as renderUi, screen, waitFor, within } from '@testing-library/react';
+import { BrowserRouter } from 'react-router';
+import type { ReactNode } from 'react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import Imagine from '../src/features/imagine/Imagine';
 import * as api from '../src/shared/api/api';
+const render = (ui: ReactNode) => renderUi(ui, { wrapper: BrowserRouter });
 
 vi.mock('../src/shared/api/api', async (original) => ({
   ...await original<typeof import('../src/shared/api/api')>(),
@@ -29,7 +32,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   localStorage.clear();
   sessionStorage.clear();
-  window.history.replaceState(null, '', '#imagine');
+  window.history.replaceState(null, '', '/imagine');
   Element.prototype.scrollTo = vi.fn();
   vi.mocked(api.listImagineJobs).mockResolvedValue([]);
   vi.mocked(api.createImagineJob).mockResolvedValue(job);
@@ -139,7 +142,7 @@ it.each(['kẹt', 'lỗi'])('hiện ảnh sửa đã xong dù lượt khác bị
     : mode === 'kẹt' ? new Promise(() => {}) : Promise.reject(new Error('Mất kết nối')));
   await open();
   fireEvent.click(screen.getByRole('button', { name: 'Xem ảnh 1: Mèo trên mặt trăng' }));
-  await waitFor(() => expect(window.location.hash).toBe('#imagine/img-1/edited-image'), { timeout: 2500 });
+  await waitFor(() => expect(window.location.pathname).toBe('/imagine/img-1/edited-image'), { timeout: 2500 });
   const dialog = screen.getByRole('dialog', { name: 'Xem ảnh đã tạo' });
   expect(dialog.querySelector('.workspace-picture img')?.getAttribute('src')).toBe(complete.images[0].url);
   expect(within(dialog).getByRole('button', { name: 'Phiên bản 1' }).getAttribute('aria-current')).toBe('true');
@@ -163,7 +166,7 @@ it.each(['đóng', 'mở ảnh khác'])('kết quả sửa về muộn không k�
   await act(async () => request.resolve({ ...pending, status: 'complete', images: [
     { id: 'edited-image', mime: 'image/png', url: '/api/imagine/images/edited-image' },
   ] }));
-  expect(window.location.hash).toBe(action === 'đóng' ? '#imagine' : '#imagine/img-2/img-2');
+  expect(window.location.pathname).toBe(action === 'đóng' ? '/imagine' : '/imagine/img-2/img-2');
   if (action === 'đóng') expect(screen.queryByRole('dialog', { name: 'Xem ảnh đã tạo' })).toBeNull();
   else expect(screen.getByRole('dialog', { name: 'Xem ảnh đã tạo' }).querySelector('.workspace-picture img')?.getAttribute('src')).toBe(job.images[1].url);
   expect(api.createImagineJob).not.toHaveBeenCalled();
@@ -601,19 +604,19 @@ it('mở URL phiên bản, chọn ảnh cũ để sửa tiếp và giữ thư vi
     images: [{ id: 'version-1', mime: 'image/png', url: '/api/imagine/images/version-1' }] };
   vi.mocked(api.listImagineJobs).mockResolvedValue([job]);
   vi.mocked(api.getImagineWorkspace).mockResolvedValue({ root_image_id: 'img-1', root_job: job, jobs: [child] });
-  window.history.replaceState(null, '', '#imagine/img-1/version-1');
+  window.history.replaceState(null, '', '/imagine/img-1/version-1');
   await open();
   const dialog = await screen.findByRole('dialog', { name: 'Xem ảnh đã tạo' });
   await waitFor(() => expect(dialog.querySelector('.workspace-picture img')?.getAttribute('src')).toBe(child.images[0].url));
   const rail = within(dialog).getByRole('navigation', { name: 'Lịch sử chỉnh sửa ảnh' });
   expect(within(rail).getByRole('button', { name: 'Phiên bản 1' }).getAttribute('aria-current')).toBe('true');
   fireEvent.click(within(rail).getByRole('button', { name: 'Ảnh chính', exact: true }));
-  expect(window.location.hash).toBe('#imagine/img-1/img-1');
+  expect(window.location.pathname).toBe('/imagine/img-1/img-1');
   fireEvent.change(screen.getByLabelText('Mô tả chỉnh sửa ảnh'), { target: { value: 'Sửa từ ảnh gốc' } });
   vi.mocked(api.createImagineJob).mockResolvedValue({ ...child, id: 'branch', images: [{ ...child.images[0], id: 'branch-image' }] });
   fireEvent.click(screen.getByRole('button', { name: 'Gửi chỉnh sửa ảnh' }));
   await waitFor(() => expect(api.createImagineJob).toHaveBeenCalledWith(expect.objectContaining({ source_image_id: 'img-1', edit_parent_image_id: 'img-1' })));
-  await waitFor(() => expect(window.location.hash).toBe('#imagine/img-1/branch-image'));
+  await waitFor(() => expect(window.location.pathname).toBe('/imagine/img-1/branch-image'));
   expect(screen.getByRole('button', { name: 'Phiên bản 1', exact: true })).toBeTruthy();
   expect(screen.getByRole('button', { name: 'Phiên bản 2', exact: true })).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: 'Quay lại', exact: true }));

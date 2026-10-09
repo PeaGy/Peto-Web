@@ -158,6 +158,31 @@ is the last statement in `main.py`. Move it earlier and API 404s start returning
 `index.html`. The handler also explicitly rejects paths starting with `api/` as a second
 line of defense, and blocks path traversal by resolving under `static_dir`.
 
+On 2026-10-09 navigation moved to React Router's BrowserRouter (declarative mode), scoped to the existing App shell.
+`app/routes.ts` maps `/`, `/companion`, `/imagine` and `/imagine/<root>/<version>`; it does not implement history itself.
+App and Imagine read router location and use navigate for user actions. Tab switches push only when the view changes;
+legacy `/#companion`, `/#imagine` and image hashes replace the current entry, preserving query parameters.
+Chat remains mounted, and visited Imagine/Companion stay mounted with their existing active props and account keys
+on the outer LazyBoundary. BrowserRouter uses `useTransitions={false}` so urgent image selection cannot get ahead
+of a deferred location commit when Back is pressed immediately; existing component animations are unchanged.
+Docs retains its separate entry and anchor navigation. FastAPI serves index only for declared app paths, after real
+files; missing API paths, assets, unknown Docs articles and other paths remain 404. The catch-all still runs last.
+`playwright.routing.config.ts` verifies browser history/F5/deep links against the production build with this real
+fallback, using mocked user/AI data and a loopback-only server without database access.
+
+Web Chat now uses `/chat/<conversation-id>`, with `/` for a new chat. A route effect loads messages/settings through
+the existing owner-filtered API, including chats outside the recents list and archived read-only chats. Selecting a
+chat pushes once; selecting the same chat preserves messages/draft. First-turn SSE metadata replaces the unnamed
+entry with its ID; a branch pushes a new entry. Returning from another tab restores the selected Chat URL. Route loads
+retain abort/version guards, without remounting Chat. An in-memory snapshot of the one active reply routes stream writes
+only to that conversation, so browser history may select another chat without aborting AI or leaking its deltas into
+the selected thread; returning while the reply runs uses that snapshot. Late metadata never forces a tab switch.
+Current shared-draft behavior and the single-stream send lock remain; no per-conversation draft persistence was added.
+The static fallback also accepts `/chat/<id>` but rejects missing `/chat`, extra segments and paths resembling assets.
+Signing in from a Chat deep link records only its same-origin path/query in sessionStorage; the normal OAuth root
+callback then replaces that root entry with the requested Chat URL. The pending return is consumed once; auth and
+owner checks remain unchanged, with no public sharing or arbitrary redirect target.
+
 The index page is not served verbatim: the handler inserts `og:image` (plus alt text)
 from `app_identity.get_app_identity()` — the bot's Discord CDN icon, already the absolute
 URL Open Graph requires. That keeps the domain out of the build and makes link previews
@@ -1090,7 +1115,8 @@ requests an AI edit on both desktop and mobile; legacy brush PNG revisions remai
 viewed as sources keep temporary crop drafts; applying their brush sketch requests an AI result. Unapplied strokes/prompts remain drafts.
 Deleting a root deletes its child jobs/files and preserves request tombstones; active AI/local saves block root
 deletion. Source copies used by independent jobs remain independent. Every lookup/mutation filters by owner.
-Viewer URLs use `#imagine/<root-image-id>/<version-image-id>` with browser Back/Forward and reload recovery.
+Viewer URLs use `/imagine/<root-image-id>/<version-image-id>` with browser Back/Forward and reload recovery;
+the previous `/#imagine/<root-image-id>/<version-image-id>` links remain supported.
 These are authenticated workspace links, not public sharing links. Keep dialog opening dependent on initial
 library loading as well as the selected image; deep links can resolve before the dialog exists in the DOM.
 Mouse-wheel input within the single-image canvas changes its fitted zoom from 50% to 800%, using a

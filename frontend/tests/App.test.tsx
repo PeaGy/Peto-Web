@@ -66,6 +66,219 @@ async function openApp() {
   await screen.findByRole('button', { name: 'A', exact: true }, { timeout: 5000 });
 }
 
+it('mở URL chat ngoài danh sách gần đây và đọc thiết lập lưu trữ', async () => {
+  window.history.replaceState(null, '', '/chat/archived-link?source=bookmark');
+  vi.mocked(api.getMessages).mockImplementation(async (id, _signal, settings) => {
+    expect(id).toBe('archived-link');
+    settings?.({ archived: true, persona: 'roleplay' });
+    return [row('Nội dung từ đường dẫn cá nhân')];
+  });
+  await openApp();
+  await screen.findByText('Nội dung từ đường dẫn cá nhân');
+  expect(document.querySelector('.archived-chat-notice')?.textContent).toContain('Hội thoại đã lưu trữ');
+  expect(screen.queryByLabelText('Nhắn cho Peto')).toBeNull();
+  expect(api.getMessages).toHaveBeenCalledOnce();
+  expect(window.location.pathname).toBe('/chat/archived-link');
+  expect(window.location.search).toBe('?source=bookmark');
+});
+
+it('tin đầu gắn URL trên entry hiện tại, không đọc lại lịch sử hay mất nháp khi chọn lại chat', async () => {
+  vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers) => {
+    handlers.onMeta?.('A', 'low', { id: 10, role: 'user', content: 'Tin đầu' });
+    handlers.onDelta?.('Câu trả lời đầu tiên');
+    handlers.onDone?.();
+  });
+  await openApp();
+  const length = history.length;
+  const composer = screen.getByLabelText('Nhắn cho Peto');
+  fireEvent.change(composer, { target: { value: 'Tin đầu' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Gửi', exact: true }));
+  await screen.findByText('Câu trả lời đầu tiên');
+  await waitFor(() => expect(screen.queryByRole('button', { name: 'Dừng', exact: true })).toBeNull());
+  expect(window.location.pathname).toBe('/chat/A');
+  expect(history.length).toBe(length);
+  fireEvent.change(composer, { target: { value: 'Nháp tiếp theo' } });
+  fireEvent.click(screen.getByRole('button', { name: 'A', exact: true }));
+  expect(api.getMessages).not.toHaveBeenCalled();
+  expect(history.length).toBe(length);
+  expect(screen.getByLabelText('Nhắn cho Peto')).toBe(composer);
+  expect((composer as HTMLTextAreaElement).value).toBe('Nháp tiếp theo');
+});
+
+it('ID đến muộn ở Imagine không kéo về Chat; quay lại tiếp tục cùng luồng', async () => {
+  const meta = deferred<void>(), done = deferred<void>();
+  let signal: AbortSignal | undefined;
+  vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers, requestSignal) => {
+    signal = requestSignal;
+    await meta.promise;
+    handlers.onMeta?.('C', 'low', { id: 10, role: 'user', content: 'Tin chờ ID' });
+    handlers.onDelta?.('Phần đang nhận');
+    await done.promise;
+    handlers.onDelta?.(' và phần cuối');
+    handlers.onDone?.();
+  });
+  await openApp();
+  fireEvent.change(screen.getByLabelText('Nhắn cho Peto'), { target: { value: 'Tin chờ ID' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Gửi', exact: true }));
+  await waitFor(() => expect(api.sendMessage).toHaveBeenCalledOnce());
+  fireEvent.click(screen.getByRole('button', { name: 'Tạo ảnh', exact: true }));
+  await screen.findByLabelText('Bức ảnh bạn muốn tạo');
+  await act(async () => meta.resolve());
+  expect(window.location.pathname).toBe('/imagine');
+  fireEvent.click(screen.getByRole('button', { name: 'Trò chuyện', exact: true }));
+  await screen.findByText('Phần đang nhận');
+  expect(window.location.pathname).toBe('/chat/C');
+  expect(api.getMessages).not.toHaveBeenCalled();
+  expect(signal?.aborted).toBe(false);
+  await act(async () => done.resolve());
+  await screen.findByText('Phần đang nhận và phần cuối');
+  expect(api.sendMessage).toHaveBeenCalledOnce();
+});
+
+it('đổi URL bằng history khi đang trả lời không hủy luồng hoặc ghi chữ vào chat khác', async () => {
+  const done = deferred<void>();
+  let handlers!: Parameters<typeof api.sendMessage>[1];
+  let signal: AbortSignal | undefined;
+  vi.mocked(api.getMessages).mockImplementation(async id => [row(`Lịch sử ${id}`)]);
+  vi.mocked(api.sendMessage).mockImplementation(async (_payload, callbacks, requestSignal) => {
+    handlers = callbacks; signal = requestSignal;
+    callbacks.onMeta?.('A', 'low', { id: 10, role: 'user', content: 'Tin tiếp theo' });
+    callbacks.onDelta?.('Phần đầu');
+    await done.promise;
+    callbacks.onDone?.();
+  });
+  await openApp();
+  fireEvent.click(screen.getByRole('button', { name: 'A', exact: true }));
+  await screen.findByText('Lịch sử A');
+  fireEvent.change(screen.getByLabelText('Nhắn cho Peto'), { target: { value: 'Tin tiếp theo' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Gửi', exact: true }));
+  await screen.findByText('Phần đầu');
+  const visit = (path: string) => act(() => {
+    history.pushState(history.state, '', path);
+    window.dispatchEvent(new PopStateEvent('popstate', { state: history.state }));
+  });
+  visit('/chat/B');
+  await screen.findByText('Lịch sử B');
+  act(() => handlers.onDelta?.(' và phần sau'));
+  expect(screen.queryByText('Phần đầu và phần sau')).toBeNull();
+  expect(signal?.aborted).toBe(false);
+  visit('/chat/A');
+  await screen.findByText('Phần đầu và phần sau');
+  expect(api.getMessages).toHaveBeenCalledTimes(2);
+  await act(async () => done.resolve());
+  expect(api.sendMessage).toHaveBeenCalledOnce();
+});
+
+it('Back rồi Forward trước khi có ID vẫn giữ tin đầu đang chờ máy chủ', async () => {
+  const meta = deferred<void>(), done = deferred<void>();
+  let signal: AbortSignal | undefined;
+  vi.mocked(api.getMessages).mockResolvedValue([row('Lịch sử trước đó')]);
+  vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers, requestSignal) => {
+    signal = requestSignal;
+    await meta.promise;
+    handlers.onMeta?.('C', 'low', { id: 10, role: 'user', content: 'Tin đầu chờ ID' });
+    handlers.onDelta?.('Câu trả lời mới');
+    await done.promise;
+    handlers.onDone?.();
+  });
+  await openApp();
+  fireEvent.click(screen.getByRole('button', { name: 'A', exact: true }));
+  await screen.findByText('Lịch sử trước đó');
+  fireEvent.click(screen.getByRole('button', { name: 'Trò chuyện', exact: true }));
+  await waitFor(() => expect(window.location.pathname).toBe('/'));
+  fireEvent.change(screen.getByLabelText('Nhắn cho Peto'), { target: { value: 'Tin đầu chờ ID' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Gửi', exact: true }));
+  await waitFor(() => expect(api.sendMessage).toHaveBeenCalledOnce());
+  expect(vi.mocked(api.sendMessage).mock.calls[0][0].conversationId).toBeNull();
+  act(() => history.back());
+  await waitFor(() => expect(window.location.pathname).toBe('/chat/A'));
+  await screen.findByText('Lịch sử trước đó');
+  act(() => history.forward());
+  await waitFor(() => expect(window.location.pathname).toBe('/'));
+  await screen.findByText('Tin đầu chờ ID', { selector: 'p' });
+  expect(window.location.pathname).toBe('/');
+  expect(signal?.aborted).toBe(false);
+  await act(async () => meta.resolve());
+  await screen.findByText('Câu trả lời mới');
+  expect(window.location.pathname).toBe('/chat/C');
+  expect(api.getMessages).toHaveBeenCalledTimes(2);
+  await act(async () => done.resolve());
+});
+
+it('quay lại luồng đang chạy rồi gặp lỗi vẫn thử lại đúng tin gốc', async () => {
+  const done = deferred<void>();
+  let handlers!: Parameters<typeof api.sendMessage>[1];
+  vi.mocked(api.sendMessage).mockImplementationOnce(async (_payload, callbacks) => {
+    handlers = callbacks;
+    callbacks.onMeta?.('A', 'low', { id: 50, role: 'user', content: 'Câu cần thử lại' });
+    callbacks.onDelta?.('Phần trả lời dở');
+    await done.promise;
+  });
+  await openApp();
+  fireEvent.change(screen.getByLabelText('Nhắn cho Peto'), { target: { value: 'Câu cần thử lại' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Gửi', exact: true }));
+  await screen.findByText('Phần trả lời dở');
+  const visit = (path: string) => act(() => {
+    history.pushState(history.state, '', path);
+    window.dispatchEvent(new PopStateEvent('popstate', { state: history.state }));
+  });
+  visit('/chat/B');
+  await waitFor(() => expect(api.getMessages).toHaveBeenCalledWith('B', expect.anything(), expect.anything()));
+  act(() => handlers.onError?.('Dịch vụ tạm lỗi trong chat A'));
+  expect(screen.queryByText('Dịch vụ tạm lỗi trong chat A')).toBeNull();
+  visit('/chat/A');
+  await screen.findByText('Phần trả lời dở');
+  await screen.findByText('Dịch vụ tạm lỗi trong chat A');
+  await act(async () => done.resolve());
+  const retry = screen.getByRole('button', { name: 'Thử lại', exact: true });
+  await waitFor(() => expect((retry as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(retry);
+  await waitFor(() => expect(api.sendMessage).toHaveBeenLastCalledWith(expect.objectContaining({
+    conversationId: 'A', branchMessageId: 50, message: 'Câu cần thử lại',
+  }), expect.anything(), expect.anything()));
+});
+
+it('sửa tin tạo URL bản rẽ nhánh bằng push, giữ entry bản gốc', async () => {
+  vi.mocked(api.getMessages).mockImplementation(async id => [
+    { id: 12, role: 'user', content: id === 'A' ? 'Câu cũ' : 'Câu mới' },
+    { id: 13, role: 'assistant', content: id === 'A' ? 'Đáp cũ' : 'Đáp mới' },
+  ]);
+  vi.mocked(api.sendMessage).mockImplementation(async (_payload, callbacks) => {
+    callbacks.onMeta?.('branch-id', 'low', { id: 12, role: 'user', content: 'Câu mới' });
+    callbacks.onDelta?.('Đáp mới');
+    callbacks.onDone?.();
+  });
+  await openApp();
+  fireEvent.click(screen.getByRole('button', { name: 'A', exact: true }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Sửa tin nhắn', exact: true }));
+  const length = history.length;
+  fireEvent.change(screen.getByRole('textbox', { name: 'Sửa tin nhắn' }), { target: { value: 'Câu mới' } });
+  fireEvent.submit(screen.getByRole('textbox', { name: 'Sửa tin nhắn' }).closest('form')!);
+  await screen.findByText('Đáp mới');
+  expect(window.location.pathname).toBe('/chat/branch-id');
+  expect(history.length).toBe(length + 1);
+  expect(api.getMessages).toHaveBeenCalledTimes(2);
+  act(() => history.back());
+  await screen.findByText('Đáp cũ');
+  expect(window.location.pathname).toBe('/chat/A');
+  expect(api.deleteConversation).not.toHaveBeenCalled();
+});
+
+it('deep link vào chat dự án ngoài danh sách gần đây giữ project_id khi gửi tiếp', async () => {
+  window.history.replaceState(null, '', '/chat/project-thread');
+  vi.mocked(api.getMessages).mockImplementation(async (_id, _signal, settings) => {
+    settings?.({ project_id: 'P' });
+    return [row('Lịch sử của dự án')];
+  });
+  await openApp();
+  await screen.findByText('Lịch sử của dự án');
+  fireEvent.change(screen.getByLabelText('Nhắn cho Peto'), { target: { value: 'Tiếp tục dự án' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Gửi', exact: true }));
+  await waitFor(() => expect(api.sendMessage).toHaveBeenCalledWith(expect.objectContaining({
+    conversationId: 'project-thread', projectId: 'P', message: 'Tiếp tục dự án',
+  }), expect.anything(), expect.anything()));
+});
+
 it('lưu trữ chat đang mở, đọc lại trong Cài đặt và khôi phục để tiếp tục', async () => {
   let archived=false;
   vi.mocked(api.listConversations).mockImplementation(async (_offset,_limit,_query,filter) => ({conversations:filter?.archived ? archived ? [{...conversation('A'),archived:true}] : [] : archived ? [conversation('B')] : [conversation('A'),conversation('B')],has_more:false}));

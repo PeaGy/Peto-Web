@@ -6,8 +6,8 @@ lo phần giao diện và module này đứng ngoài.
 Trên VPS, cách này giúp chỉ cần một tiến trình và một cổng cho Cloudflare
 Tunnel trỏ tới, thay vì phải dựng thêm nginx.
 
-Đường dẫn không khớp file nào sẽ nhận ``404.html`` kèm status 404. Nếu sau này
-giao diện dùng router theo đường dẫn thật, chỗ đó phải đổi lại thành index.html.
+Các đường dẫn ứng dụng được khai báo nhận index.html để mở trực tiếp hoặc F5.
+Đường dẫn lạ và tài nguyên không tồn tại vẫn nhận 404; API và Docs giữ xử lý riêng.
 
 Riêng trang chủ không trả nguyên file: nó được chèn ảnh xem trước link
 (``og:image``) lúc phục vụ, xem ``_with_preview_image``. Ảnh đó là
@@ -40,6 +40,8 @@ _IMMUTABLE_DIRS = {"assets"}
 # ngang khoảng 1.9:1 thì mới hiện khung lớn. Avatar vuông chỉ thành thumbnail.
 _BANNER_NAME = "og.png"
 _PNG_SIG = b"\x89PNG\r\n\x1a\n"
+# Chỉ fallback cho các trang thật; không nuốt API, Docs hay file tĩnh bị thiếu.
+_APP_PATH = re.compile(r"(?:chat/[^/.]+|companion|imagine(?:/[^/.]+/[^/.]+)?)/?\Z")
 
 
 def _safe_path(static_dir: Path, relative: str) -> Path | None:
@@ -158,7 +160,7 @@ def mount(app: FastAPI, static_dir: Path) -> bool:
     async def spa(full_path: str, request: Request) -> Response:
         # Route API đã được đăng ký trước nên tới được đây nghĩa là không khớp;
         # đừng trả index.html cho chúng, kẻo lỗi 404 hiện ra thành trang web.
-        if full_path.startswith("api/"):
+        if full_path == "api" or full_path.startswith("api/"):
             raise HTTPException(status_code=404, detail="Not found")
 
         if full_path in ("", "index.html"):
@@ -199,9 +201,11 @@ def mount(app: FastAPI, static_dir: Path) -> bool:
             )
             return FileResponse(target, headers={"Cache-Control": cache})
 
-        # Giao diện chuyển tab bằng hash (`#imagine`), không có router theo đường
-        # dẫn. Nên đường dẫn lạ là 404 thật, trả index.html kèm status 200 chỉ
-        # khiến mọi lỗi gõ nhầm trông như trang chủ.
+        if _APP_PATH.fullmatch(full_path):
+            return await index_page(request)
+
+        # URL ngoài danh sách trang ứng dụng là 404 thật, không biến đường dẫn
+        # gõ nhầm hoặc tài nguyên mất sau deploy thành trang chủ có status 200.
         if not_found.is_file():
             return FileResponse(
                 not_found, status_code=404, headers={"Cache-Control": "no-cache"}

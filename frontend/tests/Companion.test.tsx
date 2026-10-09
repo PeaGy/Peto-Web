@@ -603,7 +603,7 @@ async function sendInCompanion(text: string) {
 it('chỉ gọi giọng nói qua VPS sau khi bật trong Cài đặt', async () => {
   await openCompanion();
   expect(await screen.findByRole('textbox', { name: 'Nhắn cho Peto trong Companion' })).toBeTruthy();
-  expect(window.location.hash).toBe('#companion');
+  expect(window.location.pathname).toBe('/companion');
 
   const settings = await openSettings();
   expect(localCalls()).toHaveLength(0);

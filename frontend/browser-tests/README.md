@@ -22,6 +22,13 @@ không dùng ảnh của hệ điều hành khác để kết luận giao diện
 
 ## Những gì được kiểm tra
 
+- Routing: `/` → `/companion` → `/imagine` → Back → Back → Forward, giữ lịch sử và bản nháp, không remount tab,
+  bấm lại tab không thêm history. Kiểm tra F5, tab mới, query và URL hash cũ, lịch sử phiên bản ảnh.
+  `npm run build` rồi `npm run test:browser -- --config playwright.routing.config.ts` chạy riêng phần này trên bản build
+  do FastAPI phục vụ bằng fallback thật. Server kiểm thử chỉ nghe loopback, không đọc database hay gọi AI.
+  URL `/chat/<id>`: đổi giữa hội thoại và chat mới, giữ nháp khi quay từ Imagine, bookmark ngoài danh sách gần đây,
+  chat đã lưu trữ, F5/tab mới, cấp ID tin đầu không tải lại tin, quyền truy cập và quay lại URL sau đăng nhập.
+
 - PC 1440×900 và mobile 390×844: sidebar, nút tùy chọn, menu hội thoại, bảng, giá tiền, công thức và trình sửa tin.
 - Chat dài: giữ ô nhập, không cuộn ngang toàn trang, vị trí nút xuống cuối khi nhấn giữ.
 - Companion: khoảng cách bóng chat trên mobile; chat/Companion thu khung xuống 390×500 để mô phỏng chỗ bàn phím.

@@ -126,7 +126,7 @@ for (const failure of ['timeout', 'network']) {
     await expect.poll(() => posts.length).toBe(1);
     await expect(viewer.getByRole('status', { name: 'Phiên bản đang tạo' })).toBeVisible();
     const navigationCount = navigations;
-    await expect(page).toHaveURL(/#imagine\/portrait\/result-1$/, { timeout: 16_000 });
+    await expect(page).toHaveURL(/\/imagine\/portrait\/result-1$/, { timeout: 16_000 });
     await expect(viewer.locator('.image-workspace')).toHaveAttribute('aria-busy', 'false');
     await expect(viewer.getByRole('status', { name: 'Phiên bản đang tạo' })).toHaveCount(0);
     await expect(viewer.locator('.workspace-picture img')).toHaveAttribute('src', '/api/imagine/images/result-1');
@@ -292,7 +292,7 @@ test('mobile: chờ kết quả có hiệu ứng, chọn bản cũ tức thì v�
   await expect(rail.locator('.history-thumb')).toHaveCount(13);
   await swipeLeft(page, list);
   await rail.getByRole('button', { name: 'Phiên bản 2', exact: true }).tap();
-  await expect(page).toHaveURL(/#imagine\/portrait\/history-image-2$/);
+  await expect(page).toHaveURL(/\/imagine\/portrait\/history-image-2$/);
   await expect.poll(() => viewer.locator('.workspace-picture').evaluate(element => element.getAnimations().length)).toBe(0);
   await viewer.getByLabel('Mô tả chỉnh sửa ảnh').fill('Đổi thành tranh màu nước');
   await viewer.getByRole('button', { name: 'Gửi chỉnh sửa ảnh' }).tap();
@@ -303,7 +303,7 @@ test('mobile: chờ kết quả có hiệu ứng, chọn bản cũ tức thì v�
   expect(posts).toHaveLength(1);
   expect(posts[0]).toMatchObject({ source_image_id: 'history-image-2', edit_parent_image_id: 'history-image-2' });
   finish(true);
-  await expect(page).toHaveURL(/#imagine\/portrait\/result-1$/);
+  await expect(page).toHaveURL(/\/imagine\/portrait\/result-1$/);
   await expect(rail.locator('.history-thumb')).toHaveCount(14);
   await expect(viewer.getByRole('status', { name: 'Phiên bản đang tạo' })).toHaveCount(0);
   await expect(viewer.locator('.workspace-picture')).toHaveCSS('filter', 'none');
@@ -438,7 +438,7 @@ test('mobile: chờ ngay từ lúc gửi, lỗi giữ nét vẽ và thử lại 
   expect(Math.abs(before.width - after.width)).toBeLessThan(1);
   expect(await viewer.locator('.workspace-picture').evaluate(e => e.getAnimations().length)).toBe(0);
   finish(true);
-  await expect(page).toHaveURL(/#imagine\/portrait\/result-1$/);
+  await expect(page).toHaveURL(/\/imagine\/portrait\/result-1$/);
   await expect(viewer.getByRole('status', { name: 'Phiên bản đang tạo' })).toHaveCount(0);
   await expect(viewer.locator('.workspace-picture')).toHaveCSS('filter', 'none');
   expect(posts).toHaveLength(1); expect(saves).toHaveLength(0);
@@ -660,7 +660,7 @@ test('desktop: cắt lưu PNG, áp dụng nét vẽ và phong cách gọi AI t�
   await noPageOverflow(page);
   await page.screenshot({ path: testInfo.outputPath('desktop-brush-form.png') });
   await viewer.getByRole('button', { name: 'Áp dụng', exact: true }).click();
-  await expect(page).toHaveURL(/#imagine\/portrait\/result-1$/);
+  await expect(page).toHaveURL(/\/imagine\/portrait\/result-1$/);
   expect(saves).toHaveLength(1); expect(posts).toHaveLength(1);
   expect(posts[0]).toMatchObject({ n: 1, background: true, edit_parent_image_id: 'saved-1', prompt: 'Thêm một đám mây ở vị trí phác thảo\nThể hiện kết quả theo phong cách tranh vẽ.' });
   expect(posts[0].source_image_id).toBeUndefined();
@@ -673,7 +673,7 @@ test('desktop: cắt lưu PNG, áp dụng nét vẽ và phong cách gọi AI t�
   expect(pixel).toEqual([255, 255, 255, 255]);
   await viewer.getByLabel('Mô tả chỉnh sửa ảnh').fill('Đổi thành tranh màu nước');
   await viewer.getByRole('button', { name: 'Gửi chỉnh sửa ảnh' }).click();
-  await expect(page).toHaveURL(/#imagine\/portrait\/result-2$/);
+  await expect(page).toHaveURL(/\/imagine\/portrait\/result-2$/);
   expect(posts).toHaveLength(2);
   expect(posts[1]).toMatchObject({ n: 1, background: true, source_image_id: 'result-1', edit_parent_image_id: 'result-1', prompt: 'Đổi thành tranh màu nước' });
   await expect(viewer.getByRole('button', { name: 'Phiên bản 3', exact: true })).toBeVisible();
@@ -743,7 +743,7 @@ test('desktop: Apply mờ ảnh và chạy đốm từ lúc gửi, lỗi giữ n
   await page.emulateMedia({ reducedMotion: 'reduce' });
   for (const dot of await dots.locator('span').all()) await expect(dot).toHaveCSS('animation-name', 'none');
   finish(true);
-  await expect(page).toHaveURL(/#imagine\/portrait\/result-1$/);
+  await expect(page).toHaveURL(/\/imagine\/portrait\/result-1$/);
   await expect(viewer.locator('.workspace-generation-dots')).toHaveCount(0);
   await expect(viewer.locator('.workspace-picture img')).toHaveCSS('filter', 'none');
   expect(posts).toHaveLength(1); expect(saves).toHaveLength(0);
@@ -780,13 +780,13 @@ test('desktop: chọn phong cách không gửi sớm, Reset xóa nháp, menu dù
   expect(alpha).toBe(0); expect(posts).toHaveLength(0); expect(saves).toHaveLength(0);
   await trigger.click(); await viewer.getByRole('menuitemradio', { name: 'Chân thực', exact: true }).click();
   await viewer.getByRole('button', { name: 'Áp dụng', exact: true }).click();
-  await expect(page).toHaveURL(/#imagine\/portrait\/result-1$/);
+  await expect(page).toHaveURL(/\/imagine\/portrait\/result-1$/);
   expect(posts[0]).toMatchObject({ source_image_id: 'portrait', edit_parent_image_id: 'portrait', prompt: 'Giữ nguyên chủ thể và bố cục ảnh.\nThể hiện kết quả theo phong cách ảnh chụp chân thực.' });
   expect(posts[0].source_image).toBeUndefined(); expect(saves).toHaveLength(0);
   await clickTool(viewer, 'Bút vẽ');
   await drawDesktop(page, viewer);
   await viewer.getByRole('button', { name: 'Áp dụng', exact: true }).click();
-  await expect(page).toHaveURL(/#imagine\/portrait\/result-2$/);
+  await expect(page).toHaveURL(/\/imagine\/portrait\/result-2$/);
   expect(posts).toHaveLength(2); expect(saves).toHaveLength(0);
   expect(posts[1].prompt).toMatch(/^Hoàn thiện ảnh theo các nét vẽ được thêm:/);
   expect(posts[1]).toMatchObject({ edit_parent_image_id: 'result-1', n: 1, background: true });
@@ -1204,13 +1204,13 @@ test('lịch sử sát sidebar, cuộn riêng, mở lại URL và sửa tiếp t
     await expect(viewer.getByRole('button', { name: 'Vừa khung', exact: true })).toHaveText('100%');
   }
   await rail.getByRole('button', { name: 'Phiên bản 12', exact: true }).click();
-  await expect(page).toHaveURL(/#imagine\/portrait\/history-image-12$/);
+  await expect(page).toHaveURL(/\/imagine\/portrait\/history-image-12$/);
   await expect(viewer.locator('.workspace-picture img')).toHaveAttribute('src', '/api/imagine/images/history-image-12');
   await page.reload();
   await expect(viewer.locator('.workspace-picture img')).toHaveAttribute('src', '/api/imagine/images/history-image-12');
   await rail.getByRole('button', { name: 'Phiên bản 2', exact: true }).click();
   await page.goBack();
-  await expect(page).toHaveURL(/#imagine\/portrait\/history-image-12$/);
+  await expect(page).toHaveURL(/\/imagine\/portrait\/history-image-12$/);
   await expect(viewer.locator('.workspace-picture img')).toHaveAttribute('src', '/api/imagine/images/history-image-12');
   await page.goForward();
   await expect(viewer.locator('.workspace-picture img')).toHaveAttribute('src', '/api/imagine/images/history-image-2');
@@ -1218,7 +1218,7 @@ test('lịch sử sát sidebar, cuộn riêng, mở lại URL và sửa tiếp t
   await viewer.getByRole('button', { name: 'Gửi chỉnh sửa ảnh' }).click();
   expect(posts[0]).toMatchObject({ source_image_id: 'history-image-2', edit_parent_image_id: 'history-image-2' });
   await expect(rail.locator('.history-thumb')).toHaveCount(18);
-  await expect(page).toHaveURL(/#imagine\/portrait\/result-1$/);
+  await expect(page).toHaveURL(/\/imagine\/portrait\/result-1$/);
   await noPageOverflow(page);
   await page.screenshot({ path: testInfo.outputPath('version-history.png') });
   await viewer.getByRole('button', { name: 'Quay lại', exact: true }).click();

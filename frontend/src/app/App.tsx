@@ -1,5 +1,8 @@
 import { usePreferencesPersistence } from './usePreferencesPersistence';
 import LoginScreen from './LoginScreen';
+import { rememberChatLogin, takeChatLogin } from './chatLoginReturn';
+import { BrowserRouter, useLocation, useNavigate } from 'react-router';
+import { appPath, appView, chatId, chatRoute, legacyPath, VIEW_PATHS } from './routes';
 import { EditIcon } from '../shared/ui/EditIcon';
 import Sidebar from './Sidebar';
 import { useProjects } from '../features/projects/useProjects';
@@ -17,7 +20,7 @@ import { MenuIcon, PinIcon } from './navigationIcons';
 import { PetoAvatar, AccountAvatar, accountLine, accountSubtitle } from './accountUi';
 import { EFFORTS, THEMES, readStoredModel, readStoredEffort, readStoredTheme, readStoredCollapsed, type ThemeChoice, type AppView } from './preferences';
 import { MAX_FILES, MAX_MEDIA_FILES, MAX_FILE_BYTES, MAX_TOTAL_BYTES, isImageFile, isMediaFile, fileToBase64 } from '../features/chat/attachments';
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type SetStateAction } from "react";
 import '../shared/styles/styles.css';
 import { DiagramContext } from "../features/diagrams/DiagramCard";
 import { diagramBlocks } from "../features/diagrams/diagrams";
@@ -98,9 +101,28 @@ const AgentSettings = agentSettings.View;
 const ArchivedConversations = archiveSettings.View;
 const CharacterSettings = characterSettings.View;
 const ConnectorSettings = connectorSettings.View;
+type ChatRevision = { target: Message; text: string };
+type ActiveReply = { id: string | null; messages: Message[]; persona: Persona; projectId: string | null;
+  retry?: ChatRevision; error?: string };
 
 // Old messages keep their rendered Markdown while the draft or current reply changes.
 export default function App() {
+  // Đồng bộ URL cùng state của tab; các animation hiện có vẫn do component quản lý.
+  return <BrowserRouter useTransitions={false}><AppContent /></BrowserRouter>;
+}
+
+function AppContent() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const view = appView(appPath(location));
+  const routedConversationId = chatId(location.pathname);
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  // URL cũ đổi ngay trên entry hiện tại; không dựng lại các tab khi đổi địa chỉ.
+  useLayoutEffect(() => {
+    const path = legacyPath(location);
+    if (path) navigate({ pathname: path, search: window.location.search }, { replace: true, state: location.state });
+  }, [location, navigate]);
   const [auth, setAuth] = useState<AuthState | null>(null);
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
@@ -126,7 +148,7 @@ export default function App() {
   const [editTarget, setEditTarget] = useState<Message | null>(null);
   const [editText, setEditText] = useState('');
   const [retryAvailable, setRetryAvailable] = useState(false);
-  const retryRevision = useRef<{ target: Message; text: string } | undefined>(undefined);
+  const retryRevision = useRef<ChatRevision | undefined>(undefined);
   const [metadataBusy, setMetadataBusy] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const conversationIdRef = useRef(conversationId);
@@ -163,6 +185,9 @@ export default function App() {
   const [webSearch, setWebSearch] = useState<WebSearchMode>("auto");
 
   const [streaming, setStreaming] = useState(false);
+  // Một luồng đang chạy giữ tin riêng khi Back mở hội thoại khác; không hủy yêu cầu AI.
+  const replyRef = useRef<ActiveReply | null>(null);
+  const replyVisible = streaming && replyRef.current?.id === conversationId;
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -206,21 +231,12 @@ export default function App() {
     if (focusBack) accountRef.current?.focus();
   }, []);
   const dropAccountMenu = useCallback(() => setAccountMenu(null), []);
-  const [view, setView] = useState<AppView>(() => {
-    const hash = typeof window !== "undefined" ? window.location.hash : "";
-    return hash === "#imagine" || hash.startsWith("#imagine/") ? "imagine" : hash === "#companion" ? "companion" : "chat";
-  });
   const [imageVisited, setImageVisited] = useState(view === "imagine");
   useEffect(() => {
-    const navigate = () => {
-      const hash = window.location.hash;
-      if (hash === '#imagine' || hash.startsWith('#imagine/')) { setView('imagine'); setImageVisited(true); }
-      else if (hash === '#companion') { setView('companion'); setCompanionVisited(true); }
-      else setView('chat');
-    };
-    window.addEventListener('popstate', navigate); window.addEventListener('hashchange', navigate);
-    return () => { window.removeEventListener('popstate', navigate); window.removeEventListener('hashchange', navigate); };
-  }, []);
+    if (view === 'imagine') setImageVisited(true);
+    if (view === 'companion') setCompanionVisited(true);
+    setSidebarOpen(false);
+  }, [view]);
   useEffect(() => {
     setDocumentPanelOpen(false); setDocumentPanelExpanded(false); setDocumentPreview(null); setDocumentSelection(null);
     setDiagram(null);
@@ -294,7 +310,9 @@ export default function App() {
     const message = params.get("auth_error");
     if (message) {
       setAuthError(message);
-      window.history.replaceState({}, "", window.location.pathname);
+      params.delete('auth_error');
+      navigate({ pathname: appPath(location), search: params.toString(), hash: legacyPath(location) ? '' : location.hash },
+        { replace: true, state: location.state });
     }
   }, []);
 
@@ -358,6 +376,8 @@ export default function App() {
     setRetryAvailable(false);
     retryRevision.current = undefined;
     setConversationId(null);
+    conversationIdRef.current = null;
+    replyRef.current = null;
     setArchived(false);
     setDraft("");
     setNotice(null);
@@ -539,11 +559,11 @@ export default function App() {
 
   // Cuộc trò chuyện còn trống thì lời chào và ô nhắn đứng chung giữa màn hình như
   // Claude; có tin nhắn là ô nhắn về đáy (CSS .chat.empty-state).
-  const emptyChat = messages.length === 0 && !streaming && !loadingConversation && !loadFailed;
+  const emptyChat = messages.length === 0 && !replyVisible && !loadingConversation && !loadFailed;
   // Các sơ đồ của hội thoại theo thứ tự, để bảng sơ đồ chuyển qua lại; tin đang viết dở chưa tính.
   const diagramCodes = useMemo(() => messages.flatMap((message, index) =>
-    message.role === 'assistant' && !(streaming && index === messages.length - 1) ? diagramBlocks(message.content) : []),
-  [messages, streaming]);
+    message.role === 'assistant' && !(replyVisible && index === messages.length - 1) ? diagramBlocks(message.content) : []),
+  [messages, replyVisible]);
   // Chế độ nhập vai chỉ dùng Peto (máy chủ cũng chặn), nên không hiện nút chọn model.
   const models = persona === "roleplay" ? [] : auth?.user?.models ?? [];
   const chosenModel = models.some((item) => item.key === model) ? model : "peto";
@@ -579,16 +599,48 @@ export default function App() {
     );
   }, [emptyChat]);
 
+  // Callback đăng nhập về trang chủ thì mở lại bookmark chat đã yêu cầu.
+  useEffect(() => {
+    if (!auth?.authenticated) return;
+    const path = takeChatLogin();
+    if (path && window.location.pathname === '/') navigate(path, { replace: true });
+  }, [auth?.authenticated, navigate]);
+
+  // URL quyết định hội thoại cần mở. Quay lại cùng chat từ tab khác giữ nguyên tin và nháp.
+  useEffect(() => {
+    if (!auth?.authenticated || view !== 'chat' || routedConversationId === conversationIdRef.current) return;
+    if (routedConversationId) void loadConversation(routedConversationId);
+    else newConversation(true);
+  }, [auth?.authenticated, auth?.user?.id, view, routedConversationId]);
+
   if (auth === null) {
     return <LoadingIndicator variant="screen" label="Loading" />;
   }
 
   if (!auth.authenticated) {
-    return <LoginScreen auth={auth} appInfo={appInfo} authError={authError} />;
+    return <LoginScreen auth={auth} appInfo={appInfo} authError={authError} onSignIn={rememberChatLogin} />;
   }
 
   async function openConversation(id: string) {
     if (abortRef.current || deleting) return;
+    setSidebarOpen(false);
+    if (chatId(window.location.pathname) === id && view === 'chat') {
+      if (loadFailed) await loadConversation(id);
+      return;
+    }
+    navigate({ pathname: chatRoute(id), search: window.location.search });
+  }
+
+  function restoreReply(live: ActiveReply) {
+    setMessages(live.messages);
+    setPersona(live.persona);
+    setActiveProjectId(live.projectId);
+    retryRevision.current = live.retry;
+    setError(live.error ?? null);
+    setRetryAvailable(Boolean(live.error));
+  }
+
+  async function loadConversation(id: string) {
     recovery.cancel();
     loadRef.current?.abort();
     const controller = new AbortController();
@@ -599,10 +651,10 @@ export default function App() {
     retryRevision.current = undefined;
     setNotice(null);
     setConversationId(id);
+    conversationIdRef.current = id;
     setArchived(Boolean(allConversations.find(item => item.id === id)?.archived));
 
     setActiveProjectId(allConversations.find(item => item.id === id)?.project_id ?? null);
-    go('chat');
     setEditTarget(null);
     setPersona(allConversations.find((item) => item.id === id)?.persona ?? "assistant");
     setMessages([]);
@@ -612,6 +664,11 @@ export default function App() {
     setShowJump(false);
     setSidebarOpen(false);
     try {
+      const live = replyRef.current;
+      if (abortRef.current && live?.id === id) {
+        restoreReply(live);
+        return;
+      }
       const loaded = await getMessages(id, controller.signal, settings => {
         if (version !== loadVersion.current) return;
         setActiveProjectId(settings.project_id ?? null);
@@ -633,8 +690,8 @@ export default function App() {
     }
   }
 
-  function newConversation() {
-    if (abortRef.current) return;
+  function newConversation(fromRoute = false) {
+    if (!fromRoute && abortRef.current) return;
     recovery.cancel();
     setEditTarget(null);
     setRetryAvailable(false);
@@ -646,6 +703,7 @@ export default function App() {
     nearBottom.current = true;
     setShowJump(false);
     setConversationId(null);
+    conversationIdRef.current = null;
     setArchived(false);
     setActiveProjectId(null);
     setPersona("assistant");
@@ -653,6 +711,9 @@ export default function App() {
     setError(null);
     setNotice(null);
     setSidebarOpen(false);
+    const live = replyRef.current;
+    if (fromRoute && abortRef.current && live?.id === null) restoreReply(live);
+    if (!fromRoute && window.location.pathname !== '/') navigate({ pathname: '/', search: window.location.search });
     textareaRef.current?.focus();
   }
 
@@ -691,7 +752,7 @@ export default function App() {
     setDeleting(true);
     try {
       await deleteConversation(id);
-      if (id === conversationId) newConversation();
+      if (id === conversationIdRef.current) newConversation();
       setDeleteTarget(null);
       await refreshConversations();
       if (projectId && projectId !== activeProjectRef.current) void refreshProjectChats(projectId);
@@ -704,7 +765,7 @@ export default function App() {
     }
   }
 
-  async function submit(revision?: { target: Message; text: string }) {
+  async function submit(revision?: ChatRevision) {
     const text = revision ? revision.text.trim() : draft.trim();
     const hasAttachments = revision ? Boolean(revision.target.attachments?.length) : draftFiles.length > 0;
     if ((!text && !hasAttachments) || archived || abortRef.current || loadingConversation || loadFailed || !recovery.online || recovery.pending) return;
@@ -742,13 +803,15 @@ export default function App() {
     }));
 
     const startedAt = performance.now();
-    setMessages([
+    const reply: ActiveReply = { id: conversationId, persona, projectId: activeProjectId, retry: revision, messages: [
       ...prefix,
       { role: "user", content: text, attachments: revision?.target.attachments || optimistic },
       // Bước "chờ" chỉ có ở trình duyệt: bước đầu tiên máy chủ gửi thay nó.
       { role: "assistant", content: "", workStartedAt: startedAt,
         work: { ms: 0, steps: [{ id: 'wait', kind: 'wait', label: 'Đang gửi và chờ máy chủ…', state: 'live', start: 0 }] } },
-    ]);
+    ] };
+    replyRef.current = reply;
+    setMessages(reply.messages);
 
     const controller = new AbortController();
     abortRef.current = controller;
@@ -761,10 +824,16 @@ export default function App() {
     let storedUserId: number | undefined;
     const session = authVersion.current;
 
+    const writeReply = (change: SetStateAction<Message[]>) => {
+      if (session !== authVersion.current) return;
+      reply.messages = typeof change === 'function' ? change(reply.messages) : change;
+      if (conversationIdRef.current === reply.id) setMessages(reply.messages);
+    };
+
     // Câu trả lời đang viết luôn là tin cuối.
     const updateReply = (change: (last: Message) => Message) => {
       if (session !== authVersion.current) return;
-      setMessages((prev) => {
+      writeReply((prev) => {
         const last = prev[prev.length - 1];
         return last?.role === "assistant" ? [...prev.slice(0, -1), change(last)] : prev;
       });
@@ -804,10 +873,21 @@ export default function App() {
             accepted = true;
             storedUserId = storedMessage?.id;
             activeId = id;
-            setConversationId(id);
+            const selected = conversationIdRef.current === reply.id;
+            reply.id = id;
+            if (selected) {
+              conversationIdRef.current = id;
+              setConversationId(id);
+              const path = chatRoute(id);
+              // Tin đầu gắn ID vào trang hiện tại; bản rẽ nhánh là một hội thoại mới trong history.
+              if (viewRef.current === 'chat' && window.location.pathname !== path) {
+                navigate({ pathname: path, search: window.location.search }, { replace: !revision });
+              }
+            }
             if (!revision) { setDraft(""); setDraftFiles([]); }
-            if (storedMessage) retryRevision.current = {target:storedMessage, text:storedMessage.content};
-            if (storedMessage) setMessages((prev) => [...prev.slice(0, -2), storedMessage, prev[prev.length - 1]]);
+            if (storedMessage) reply.retry = {target:storedMessage, text:storedMessage.content};
+            if (selected) retryRevision.current = reply.retry;
+            if (storedMessage) writeReply((prev) => [...prev.slice(0, -2), storedMessage, prev[prev.length - 1]]);
             // Máy chủ đã nhận tin: bước chờ (nếu chưa có bước nào thay) đổi chữ cho đúng.
             updateReply(last => last.work ? { ...last, work: { ...last.work, steps: last.work.steps.map(step =>
               step.kind === 'wait' ? { ...step, label: 'Đang chuẩn bị câu trả lời…' } : step) } } : last);
@@ -841,10 +921,12 @@ export default function App() {
               else artifacts.push(artifact);
               return { ...last, artifacts };
             });
-            setDocumentRefresh(value => value + 1);
+            if (conversationIdRef.current === reply.id) setDocumentRefresh(value => value + 1);
           },
           onError: (message) => {
             if (session !== authVersion.current) return;
+            reply.error = message;
+            if (conversationIdRef.current !== reply.id) return;
             setError(message);
             setRetryAvailable(true);
           },
@@ -860,16 +942,19 @@ export default function App() {
       } else if (!controller.signal.aborted) {
         interrupted = true;
         const message = err instanceof Error ? err.message : "Mất kết nối tới máy chủ";
-        setError(accepted ? message : `${message} Bản nháp được giữ lại; kiểm tra lịch sử trước khi gửi lại nếu kết nối bị ngắt.`);
-        setRetryAvailable(true);
+        reply.error = accepted ? message : `${message} Bản nháp được giữ lại; kiểm tra lịch sử trước khi gửi lại nếu kết nối bị ngắt.`;
+        if (session === authVersion.current && conversationIdRef.current === reply.id) {
+          setError(reply.error);
+          setRetryAvailable(true);
+        }
       }
     } finally {
       const stoppedByUser = controller.signal.aborted && !networkInterrupted(controller) && !completed;
       if (session === authVersion.current) {
-        if (!accepted) setMessages(previousMessages);
+        if (!accepted) writeReply(previousMessages);
         else {
           const elapsed = Math.round(performance.now() - startedAt);
-          setMessages((prev) => {
+          writeReply((prev) => {
             const last = prev[prev.length - 1];
             if (last?.role !== "assistant") return prev;
             const work = finalWork ? last.work : closeWork(last.work, completed, elapsed);
@@ -883,18 +968,18 @@ export default function App() {
           });
         }
         // Dừng sau khi máy chủ đã nhận tin thì bong bóng tự ghi "Đã dừng"; chỉ lượt chưa kịp gửi mới cần dòng báo.
-        if (stoppedByUser && !accepted) setNotice("Đã dừng gửi. Bản nháp vẫn được giữ lại.");
+        if (stoppedByUser && !accepted && conversationIdRef.current === reply.id) setNotice("Đã dừng gửi. Bản nháp vẫn được giữ lại.");
         if (activeId || !accepted) void refreshConversations();
         if (revision && accepted && activeId) {
           // Fetch stable IDs for edit/regenerate; preserve the local progress log.
           try {
             const stored = await getMessages(activeId);
             // Bong bóng chỉ có ở trình duyệt (lượt hỏng) không có trong danh sách đã lưu: bỏ qua khi khớp thứ tự.
-            if (session === authVersion.current) setMessages(current => {
+            if (session === authVersion.current) writeReply(current => {
               let index = 0;
               return current.map(row => row.local ? row : { ...row, id: stored[index++]?.id });
             });
-          } catch { setMessages(current => current.map(row => ({...row,id:undefined}))); }
+          } catch { writeReply(current => current.map(row => ({...row,id:undefined}))); }
         }
         if ((interrupted || networkInterrupted(controller)) && accepted && activeId && storedUserId !== undefined) {
           recovery.interrupt({ conversationId: activeId, userMessageId: storedUserId });
@@ -904,7 +989,7 @@ export default function App() {
       setStreaming(false);
       setStopping(false);
       abortRef.current = null;
-      textareaRef.current?.focus();
+      if (viewRef.current === 'chat' && conversationIdRef.current === reply.id) textareaRef.current?.focus();
     }
   }
 
@@ -949,7 +1034,7 @@ export default function App() {
   function menuPosition(rect:DOMRect) {return {left:Math.max(8,Math.min(rect.left,window.innerWidth-192)),top:Math.max(8,Math.min(rect.bottom+6,window.innerHeight-242))};}
   function newProjectChat(id:string) {
     if (abortRef.current || deleting) return;
-    newConversation();setActiveProjectId(id);go('chat');setSidebarOpen(false);
+    newConversation();setActiveProjectId(id);setSidebarOpen(false);
     void refreshProjectChats(id);
   }
   async function saveProject() {
@@ -1011,10 +1096,9 @@ export default function App() {
   function go(next: AppView) {
     if (next === "imagine") setImageVisited(true);
     if (next === "companion") setCompanionVisited(true);
-    setView(next);
     setSidebarOpen(false);
-    const url = next === "chat" ? `${window.location.pathname}${window.location.search}` : `#${next}`;
-    window.history.replaceState(null, "", url);
+    if (next !== view) navigate({ pathname: next === 'chat' && conversationIdRef.current
+      ? chatRoute(conversationIdRef.current) : VIEW_PATHS[next], search: window.location.search });
   }
 
   function toggleAccountMenu() {
@@ -1171,10 +1255,9 @@ export default function App() {
         toggleAccountMenu={toggleAccountMenu}
       />
 
-      {/* Imagine và Companion nằm cạnh nhau trong cùng một danh sách con, nên key phải khác nhau. Trùng
-          key thì React nhân đôi tab, và mỗi bản Imagine mới lại tải danh sách ảnh, lặp mãi không dừng. */}
-      {imageVisited && (
-        <LazyBoundary>
+      {/* Key nằm ở lớp bọc ngoài cùng để thêm một tab đã ghé không khiến tab bên cạnh bị dựng lại. */}
+      {(imageVisited || view === 'imagine') && (
+        <LazyBoundary key={`imagine-${auth.user?.id}`}>
         <Suspense fallback={view === "imagine" ? <LoadingIndicator variant="screen" label="Loading" /> : null}>
         <Imagine
           key={`imagine-${auth.user?.id}`}
@@ -1189,8 +1272,8 @@ export default function App() {
         </Suspense>
         </LazyBoundary>
       )}
-      {companionVisited && (
-        <LazyBoundary>
+      {(companionVisited || view === 'companion') && (
+        <LazyBoundary key={`companion-${auth.user?.id}`}>
         <Suspense fallback={view === "companion" ? <LoadingIndicator variant="screen" label="Loading" /> : null}>
         <Companion
           key={`companion-${auth.user?.id}`}
@@ -1259,8 +1342,8 @@ export default function App() {
                 <textarea autoFocus aria-label="Sửa tin nhắn" value={editText} onChange={e => setEditText(e.target.value)} rows={Math.min(12,Math.max(3,editText.split('\n').length))} onKeyDown={e => {if(e.key==='Escape') setEditTarget(null);}}/>
                 <div><button type="button" onClick={() => setEditTarget(null)}>Hủy</button><button type="submit" disabled={streaming || (!editText.trim() && !editTarget.attachments?.length)}>Gửi</button></div>
               </form> : undefined}
-              live={streaming && !stopping && index === messages.length - 1}
-              writing={streaming && index === messages.length - 1}
+              live={replyVisible && !stopping && index === messages.length - 1}
+              writing={replyVisible && index === messages.length - 1}
               // Lượt cuối bị dừng: "Thử lại" gửi lại câu hỏi ngay trong hội thoại này (máy chủ thay câu trả lời dở).
               onRetry={message.stopped && index === messages.length - 1 && messages[index - 1]?.role === 'user' && messages[index - 1]?.id
                 ? () => void submit({ target: messages[index - 1], text: messages[index - 1].content }) : undefined}
@@ -1363,7 +1446,7 @@ export default function App() {
       {agentCode && <AgentConnectDialog code={agentCode}
         onClose={() => { forgetAgentCode(); setAgentCode(null); }} onUnauthorized={handleUnauthorized} />}
       {renameTarget && <TextEditDialog title="Đổi tên hội thoại" value={renameText} onChange={setRenameText} busy={metadataBusy} onClose={() => setRenameTarget(null)} onSave={() => void changeConversation(renameTarget, {title:renameText})}/>}
-      {searchOpen && <HistorySearch onClose={() => setSearchOpen(false)} onUnauthorized={handleUnauthorized} onSelect={id => {setSearchOpen(false); go('chat'); void openConversation(id);}}/>}
+      {searchOpen && <HistorySearch onClose={() => setSearchOpen(false)} onUnauthorized={handleUnauthorized} onSelect={id => {setSearchOpen(false); void openConversation(id);}}/>}
       {conversationMenu && <ConversationMenu left={conversationMenu.left} top={conversationMenu.top} onClose={() => setConversationMenu(null)}>
         <button onClick={() => {setRenameTarget(conversationMenu.item);setRenameText(conversationMenu.item.title);setConversationMenu(null);}}><EditIcon />Đổi tên</button>
         <button disabled={metadataBusy} onClick={() => {void changeConversation(conversationMenu.item,{pinned:!conversationMenu.item.pinned});setConversationMenu(null);}}><PinIcon />{conversationMenu.item.pinned ? 'Bỏ ghim' : 'Ghim'}</button>
