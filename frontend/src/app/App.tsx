@@ -37,6 +37,8 @@ import { useCharacters } from '../features/companion/characters/useCharacters';
 const CharacterPicker = lazy(() => import('../features/companion/characters/CharacterPicker'));
 import { readCharacterMotion, writeCharacterMotion, type CharacterMotion } from "../features/companion/characters/characterView";
 import Composer from "../features/chat/Composer";
+import { useChatDrafts } from '../features/chat/useChatDrafts';
+import { newChatContext, type NewChatContext } from '../features/chat/chatDrafts';
 import TextEditDialog from '../shared/ui/TextEditDialog';
 import HistorySearch from './HistorySearch';
 import ConversationMenu from './ConversationMenu';
@@ -44,7 +46,6 @@ import DocumentWorkspace from '../features/documents/DocumentWorkspace';
 import DocumentPanel, { RightPanelIcon, type DocumentPanelSelection } from '../features/documents/DocumentPanel';
 import type { DocumentDraftRequest } from '../features/documents/documentApi';
 import { takeConnectorResult } from '../features/connectors/connectorApi';
-import { type DraftFile } from "../features/chat/files";
 import { safeSources } from "../features/chat/WebSources";
 import { closeWork } from "../features/chat/WorkTimeline";
 import {
@@ -124,6 +125,7 @@ function AppContent() {
     if (path) navigate({ pathname: path, search: window.location.search }, { replace: true, state: location.state });
   }, [location, navigate]);
   const [auth, setAuth] = useState<AuthState | null>(null);
+  const authChecked = useRef(false);
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
   // Liên kết do peto login in ra mang ?agent_code=; mã được giữ qua lúc đăng nhập chuyển hướng.
@@ -155,7 +157,6 @@ function AppContent() {
   conversationIdRef.current = conversationId;
   const [archived, setArchived] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
-  const [draft, setDraft] = useState("");
   const [documentRequest, setDocumentRequest] = useState<DocumentDraftRequest | null>(null);
   const [documentSelection, setDocumentSelection] = useState<{ id: string; version: number; key: number } | null>(null);
   const [documentRefresh, setDocumentRefresh] = useState(0);
@@ -179,7 +180,6 @@ function AppContent() {
   const editDocument = useCallback((item: { id: string; version: number }) => {
     setDocumentSelection({ id: item.id, version: item.version, key: Date.now() });
   }, []);
-  const [draftFiles, setDraftFiles] = useState<DraftFile[]>([]);
   const [effort, setEffort] = useState<Effort>(readStoredEffort);
   const [model, setModel] = useState<string>(readStoredModel);
   const [webSearch, setWebSearch] = useState<WebSearchMode>("auto");
@@ -187,7 +187,6 @@ function AppContent() {
   const [streaming, setStreaming] = useState(false);
   // Một luồng đang chạy giữ tin riêng khi Back mở hội thoại khác; không hủy yêu cầu AI.
   const replyRef = useRef<ActiveReply | null>(null);
-  const replyVisible = streaming && replyRef.current?.id === conversationId;
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -200,6 +199,17 @@ function AppContent() {
   const [deleting, setDeleting] = useState(false);
   // Chế độ của hội thoại đang mở; hội thoại mới thì là lựa chọn trong menu dấu cộng, gửi tin đầu là chốt.
   const [persona, setPersona] = useState<Persona>("assistant");
+  const personaRef = useRef(persona);
+  personaRef.current = persona;
+  const replyVisible = streaming && Boolean(replyRef.current && isSelectedReply(replyRef.current));
+  const rootContext = newChatContext(location.state, auth?.user?.id ?? '', Boolean(auth?.user?.roleplay_confirmed));
+  const draftConversationId = view === 'chat' ? routedConversationId : conversationId;
+  const { draft, setDraft, draftFiles, setDraftFiles, snapshotDraft, acceptDraft, clearDrafts,
+    removeConversationDraft, removeProjectDraft } = useChatDrafts(auth?.authenticated && auth.user ? {
+      ownerId: auth.user.id, conversationId: draftConversationId,
+      projectId: view === 'chat' && !routedConversationId ? rootContext.projectId : activeProjectId,
+      persona: view === 'chat' && !routedConversationId ? rootContext.persona : persona,
+    } : null, authChecked.current ? auth?.authenticated : undefined);
   const [consentOpen, setConsentOpen] = useState(false);
   const [consentBusy, setConsentBusy] = useState(false);
   const [consentError, setConsentError] = useState<string | null>(null);
@@ -278,7 +288,6 @@ function AppContent() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-  const draftFilesRef = useRef<DraftFile[]>([]);
   const loadRef = useRef<AbortController | null>(null);
   const loadVersion = useRef(0);
   const listVersion = useRef(0);
@@ -318,7 +327,7 @@ function AppContent() {
 
   useEffect(() => {
     void getAuthState()
-      .then(setAuth)
+      .then(value => { authChecked.current = true; setAuth(value); })
       .catch(() => setAuth({ authenticated: false, login_configured: false }));
   }, []);
 
@@ -333,21 +342,15 @@ function AppContent() {
   usePreferencesPersistence({ effort, model, collapsed, theme });
 
   useEffect(() => {
-    draftFilesRef.current = draftFiles;
-  }, [draftFiles]);
-
-  useEffect(() => {
     return () => {
       abortRef.current?.abort();
       loadRef.current?.abort();
-      for (const item of draftFilesRef.current) {
-        if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
-      }
     };
   }, []);
 
   /** Phiên hết hạn giữa chừng: quay về màn hình đăng nhập thay vì báo lỗi lạ. */
   const handleUnauthorized = useCallback(() => {
+    authChecked.current = true;
     setDocumentRequest(null);
     setDocumentSelection(null);
     closeDocumentPanel(); setDocumentPreview(null); setDiagram(null);
@@ -379,13 +382,11 @@ function AppContent() {
     conversationIdRef.current = null;
     replyRef.current = null;
     setArchived(false);
-    setDraft("");
+    clearDrafts();
     setNotice(null);
     setWebSearch("auto");
     setPersona("assistant");
     setConsentOpen(false);
-    for (const item of draftFilesRef.current) if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
-    setDraftFiles([]);
     setLoadingConversation(false);
     setLoadingList(false);
     // Rác của tài khoản trước. Máy chủ vẫn lọc theo owner nên không lộ nội dung
@@ -401,7 +402,7 @@ function AppContent() {
     setHasMore(false);
     listCount.current = 50;
     setAuthError("Phiên đăng nhập đã hết hạn hoặc tài khoản không còn được cho phép.");
-  }, []);
+  }, [clearDrafts]);
 
   const projectState = useProjects(auth?.authenticated ? auth.user?.id ?? 'authenticated' : null, handleUnauthorized);
   const refreshProjects = projectState.refresh;
@@ -547,7 +548,7 @@ function AppContent() {
       }
       return next;
     });
-  }, []);
+  }, [setDraftFiles]);
 
   function removeDraftFile(id: string) {
     setDraftFiles((prev) => {
@@ -607,11 +608,15 @@ function AppContent() {
   }, [auth?.authenticated, navigate]);
 
   // URL quyết định hội thoại cần mở. Quay lại cùng chat từ tab khác giữ nguyên tin và nháp.
-  useEffect(() => {
-    if (!auth?.authenticated || view !== 'chat' || routedConversationId === conversationIdRef.current) return;
-    if (routedConversationId) void loadConversation(routedConversationId);
-    else newConversation(true);
-  }, [auth?.authenticated, auth?.user?.id, view, routedConversationId]);
+  useLayoutEffect(() => {
+    if (!auth?.authenticated || view !== 'chat') return;
+    if (routedConversationId) {
+      if (routedConversationId !== conversationIdRef.current) void loadConversation(routedConversationId);
+    }
+    else if (conversationIdRef.current !== null || activeProjectId !== rootContext.projectId || persona !== rootContext.persona) {
+      newConversation(true);
+    }
+  }, [auth?.authenticated, auth?.user?.id, view, routedConversationId, location.key]);
 
   if (auth === null) {
     return <LoadingIndicator variant="screen" label="Loading" />;
@@ -638,6 +643,11 @@ function AppContent() {
     retryRevision.current = live.retry;
     setError(live.error ?? null);
     setRetryAvailable(Boolean(live.error));
+  }
+
+  function isSelectedReply(reply: ActiveReply) {
+    return conversationIdRef.current === reply.id && (reply.id !== null
+      || (activeProjectRef.current === reply.projectId && personaRef.current === reply.persona));
   }
 
   async function loadConversation(id: string) {
@@ -690,7 +700,17 @@ function AppContent() {
     }
   }
 
-  function newConversation(fromRoute = false) {
+  function draftContextState(projectId: string | null, mode: Persona) {
+    const context: NewChatContext = { ownerId: auth?.user?.id ?? '', projectId, persona: mode };
+    return { ...location.state, chatDraftContext: context };
+  }
+
+  function rememberNewContext(mode: Persona) {
+    navigate({ pathname: window.location.pathname, search: window.location.search, hash: window.location.hash },
+      { replace: true, state: draftContextState(activeProjectId, mode) });
+  }
+
+  function newConversation(fromRoute = false, projectId: string | null = null) {
     if (!fromRoute && abortRef.current) return;
     recovery.cancel();
     setEditTarget(null);
@@ -705,15 +725,18 @@ function AppContent() {
     setConversationId(null);
     conversationIdRef.current = null;
     setArchived(false);
-    setActiveProjectId(null);
-    setPersona("assistant");
+    const context = fromRoute ? rootContext : { projectId, persona: 'assistant' as const };
+    setActiveProjectId(context.projectId);
+    setPersona(context.persona);
     setMessages([]);
     setError(null);
     setNotice(null);
     setSidebarOpen(false);
     const live = replyRef.current;
-    if (fromRoute && abortRef.current && live?.id === null) restoreReply(live);
-    if (!fromRoute && window.location.pathname !== '/') navigate({ pathname: '/', search: window.location.search });
+    if (fromRoute && abortRef.current && live?.id === null
+      && context.projectId === live.projectId && context.persona === live.persona) restoreReply(live);
+    if (!fromRoute) navigate({ pathname: '/', search: window.location.search },
+      { replace: window.location.pathname === '/', state: draftContextState(projectId, 'assistant') });
     textareaRef.current?.focus();
   }
 
@@ -722,8 +745,10 @@ function AppContent() {
     if (conversationId || abortRef.current) return;
     if (persona === "roleplay") {
       setPersona("assistant");
+      rememberNewContext('assistant');
     } else if (auth?.user?.roleplay_confirmed) {
       setPersona("roleplay");
+      rememberNewContext('roleplay');
     } else {
       setConsentError(null);
       setConsentOpen(true);
@@ -737,6 +762,7 @@ function AppContent() {
       await confirmRoleplayAge();
       setAuth((prev) => (prev?.user ? { ...prev, user: { ...prev.user, roleplay_confirmed: true } } : prev));
       setPersona("roleplay");
+      rememberNewContext('roleplay');
       setConsentOpen(false);
     } catch (err) {
       if (err instanceof UnauthorizedError) return handleUnauthorized();
@@ -748,20 +774,24 @@ function AppContent() {
 
   async function removeConversation(id: string) {
     if (abortRef.current || deleting) return;
+    const session = authVersion.current;
     const projectId = allConversations.find(item => item.id === id)?.project_id;
     setDeleting(true);
     try {
       await deleteConversation(id);
+      if (session !== authVersion.current) return;
+      removeConversationDraft(id);
       if (id === conversationIdRef.current) newConversation();
       setDeleteTarget(null);
       await refreshConversations();
       if (projectId && projectId !== activeProjectRef.current) void refreshProjectChats(projectId);
     } catch (err) {
+      if (session !== authVersion.current) return;
       if (err instanceof UnauthorizedError) return handleUnauthorized();
       setError(err instanceof Error ? err.message : "Không xóa được");
       setDeleteTarget(null);
     } finally {
-      setDeleting(false);
+      if (session === authVersion.current) setDeleting(false);
     }
   }
 
@@ -771,6 +801,7 @@ function AppContent() {
     if ((!text && !hasAttachments) || archived || abortRef.current || loadingConversation || loadFailed || !recovery.online || recovery.pending) return;
 
     const pending = revision ? [] : draftFiles;
+    const sentDraft = revision ? null : snapshotDraft();
     const previousMessages = messages;
     const revisionIndex = revision ? messages.findIndex(m => m.id === revision.target.id) : -1;
     if (revision && revisionIndex < 0) {
@@ -827,7 +858,7 @@ function AppContent() {
     const writeReply = (change: SetStateAction<Message[]>) => {
       if (session !== authVersion.current) return;
       reply.messages = typeof change === 'function' ? change(reply.messages) : change;
-      if (conversationIdRef.current === reply.id) setMessages(reply.messages);
+      if (isSelectedReply(reply)) setMessages(reply.messages);
     };
 
     // Câu trả lời đang viết luôn là tin cuối.
@@ -873,7 +904,7 @@ function AppContent() {
             accepted = true;
             storedUserId = storedMessage?.id;
             activeId = id;
-            const selected = conversationIdRef.current === reply.id;
+            const selected = isSelectedReply(reply);
             reply.id = id;
             if (selected) {
               conversationIdRef.current = id;
@@ -884,7 +915,7 @@ function AppContent() {
                 navigate({ pathname: path, search: window.location.search }, { replace: !revision });
               }
             }
-            if (!revision) { setDraft(""); setDraftFiles([]); }
+            if (sentDraft) acceptDraft(sentDraft);
             if (storedMessage) reply.retry = {target:storedMessage, text:storedMessage.content};
             if (selected) retryRevision.current = reply.retry;
             if (storedMessage) writeReply((prev) => [...prev.slice(0, -2), storedMessage, prev[prev.length - 1]]);
@@ -921,12 +952,12 @@ function AppContent() {
               else artifacts.push(artifact);
               return { ...last, artifacts };
             });
-            if (conversationIdRef.current === reply.id) setDocumentRefresh(value => value + 1);
+            if (isSelectedReply(reply)) setDocumentRefresh(value => value + 1);
           },
           onError: (message) => {
             if (session !== authVersion.current) return;
             reply.error = message;
-            if (conversationIdRef.current !== reply.id) return;
+            if (!isSelectedReply(reply)) return;
             setError(message);
             setRetryAvailable(true);
           },
@@ -943,7 +974,7 @@ function AppContent() {
         interrupted = true;
         const message = err instanceof Error ? err.message : "Mất kết nối tới máy chủ";
         reply.error = accepted ? message : `${message} Bản nháp được giữ lại; kiểm tra lịch sử trước khi gửi lại nếu kết nối bị ngắt.`;
-        if (session === authVersion.current && conversationIdRef.current === reply.id) {
+        if (session === authVersion.current && isSelectedReply(reply)) {
           setError(reply.error);
           setRetryAvailable(true);
         }
@@ -968,7 +999,7 @@ function AppContent() {
           });
         }
         // Dừng sau khi máy chủ đã nhận tin thì bong bóng tự ghi "Đã dừng"; chỉ lượt chưa kịp gửi mới cần dòng báo.
-        if (stoppedByUser && !accepted && conversationIdRef.current === reply.id) setNotice("Đã dừng gửi. Bản nháp vẫn được giữ lại.");
+        if (stoppedByUser && !accepted && isSelectedReply(reply)) setNotice("Đã dừng gửi. Bản nháp vẫn được giữ lại.");
         if (activeId || !accepted) void refreshConversations();
         if (revision && accepted && activeId) {
           // Fetch stable IDs for edit/regenerate; preserve the local progress log.
@@ -989,7 +1020,7 @@ function AppContent() {
       setStreaming(false);
       setStopping(false);
       abortRef.current = null;
-      if (viewRef.current === 'chat' && conversationIdRef.current === reply.id) textareaRef.current?.focus();
+      if (viewRef.current === 'chat' && isSelectedReply(reply)) textareaRef.current?.focus();
     }
   }
 
@@ -1034,7 +1065,7 @@ function AppContent() {
   function menuPosition(rect:DOMRect) {return {left:Math.max(8,Math.min(rect.left,window.innerWidth-192)),top:Math.max(8,Math.min(rect.bottom+6,window.innerHeight-242))};}
   function newProjectChat(id:string) {
     if (abortRef.current || deleting) return;
-    newConversation();setActiveProjectId(id);setSidebarOpen(false);
+    newConversation(false, id);setSidebarOpen(false);
     void refreshProjectChats(id);
   }
   async function saveProject() {
@@ -1053,7 +1084,17 @@ function AppContent() {
     if(!projectDelete || projectBusy)return;
     const session=authVersion.current, id=projectDelete.id;
     setProjectBusy(true);setProjectError('');
-    try {await deleteProject(id);if(session!==authVersion.current)return;if(activeProjectId===id)setActiveProjectId(null);setProjectDelete(null);await refreshConversations();}
+    try {
+      await deleteProject(id);
+      if(session!==authVersion.current)return;
+      removeProjectDraft(id);
+      if(activeProjectId===id) {
+        setActiveProjectId(null);
+        if(!conversationId)navigate({pathname:window.location.pathname,search:window.location.search,hash:window.location.hash},
+          {replace:true,state:draftContextState(null,persona)});
+      }
+      setProjectDelete(null);await refreshConversations();
+    }
     catch(err){if(session===authVersion.current){if(err instanceof UnauthorizedError)handleUnauthorized();else setProjectError(err instanceof Error ? err.message : 'Chưa xóa được dự án.');}}
     finally{if(session===authVersion.current)setProjectBusy(false);}
   }
@@ -1098,7 +1139,8 @@ function AppContent() {
     if (next === "companion") setCompanionVisited(true);
     setSidebarOpen(false);
     if (next !== view) navigate({ pathname: next === 'chat' && conversationIdRef.current
-      ? chatRoute(conversationIdRef.current) : VIEW_PATHS[next], search: window.location.search });
+      ? chatRoute(conversationIdRef.current) : VIEW_PATHS[next], search: window.location.search },
+      { state: draftContextState(activeProjectId, persona) });
   }
 
   function toggleAccountMenu() {
@@ -1129,6 +1171,7 @@ function AppContent() {
           <ArchivedConversations key={auth.user?.id} open={active} disabled={streaming || deleting || metadataBusy}
             onUnauthorized={handleUnauthorized} onOpen={id => {closeSettings(); void openConversation(id);}}
             onChanged={(item, deleted) => {
+              if (deleted) removeConversationDraft(item.id);
               if (item.id === conversationIdRef.current) {
                 if (deleted) newConversation();
                 else setArchived(false);

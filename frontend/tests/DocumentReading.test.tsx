@@ -25,17 +25,18 @@ describe('trạng thái đọc tài liệu', () => {
       pages: 3, pages_read: 1, ocr_pages: 1, reading_method: 'mixed'});
     expect(screen.getByText('Đọc được một phần · 1/3 trang · có OCR')).toBeTruthy();
   });
-  it('giữ thông báo tệp cũ chưa có số trang đã đọc', () => {
-    draw({status: 'ready', notice: 'Đã đọc lớp chữ.', characters: 50, pages: 2});
-    expect(screen.getByText('Đã đọc chữ · 2 trang')).toBeTruthy();
+  it('tệp cũ đã đọc đủ không hiện dòng xác nhận', () => {
+    const { container } = draw({status: 'ready', notice: 'Đã đọc lớp chữ.', characters: 50, pages: 2});
+    expect(container.querySelector('.document-details')).toBeNull();
+    expect(screen.getByRole('link', {name: /kế-hoạch.pdf/})).toBeTruthy();
   });
-  it('bảng tính Excel đếm trang tính, nêu số trang tính chưa đọc', () => {
-    draw({status: 'ready', notice: 'Đã đọc 2 trang tính, 14 hàng có dữ liệu.', characters: 900, sheets: 2, sheets_read: 2, rows: 14});
-    expect(screen.getByText('Đã đọc chữ · 2 trang tính')).toBeTruthy();
+  it('Excel đã đọc đủ không hiện dòng xác nhận dưới thẻ', () => {
+    const { container } = draw({status: 'ready', notice: 'Đã đọc 2 trang tính, 14 hàng có dữ liệu.', characters: 900, sheets: 2, sheets_read: 2, rows: 14});
+    expect(container.querySelector('.document-details')).toBeNull();
   });
-  it('Word đếm công thức đã đọc và công thức MathType chưa đọc', () => {
-    draw({status: 'ready', notice: 'Đã đọc phần thân văn bản, bảng biểu và 12 công thức trong Word.', characters: 900, formulas: 12});
-    expect(screen.getByText('Đã đọc chữ · 12 công thức')).toBeTruthy();
+  it('Word đã đọc đủ không hiện dòng xác nhận dưới thẻ', () => {
+    const { container } = draw({status: 'ready', notice: 'Đã đọc phần thân văn bản, bảng biểu và 12 công thức trong Word.', characters: 900, formulas: 12});
+    expect(container.querySelector('.document-details')).toBeNull();
   });
   it('Word có công thức MathType thì ghi đọc được một phần', () => {
     draw({status: 'partial', notice: 'Có 3 công thức MathType Peto không đọc được.', characters: 900, formulas: 2, formulas_unread: 3});

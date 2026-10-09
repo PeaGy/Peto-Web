@@ -7,6 +7,7 @@ import * as api from '../src/shared/api/api';
 import * as mathMarkdown from '../src/shared/markdown/mathMarkdown';
 import * as documentApi from '../src/features/documents/documentApi';
 import * as projectApi from '../src/features/projects/projectApi';
+import { CHAT_DRAFT_PREFIX, draftKey } from '../src/features/chat/chatDrafts';
 vi.mock('../src/features/projects/projectApi', async original => ({ ...await original<typeof import('../src/features/projects/projectApi')>(), listProjects: vi.fn() }));
 vi.mock('../src/features/documents/documentApi', async original => ({ ...await original<typeof import('../src/features/documents/documentApi')>(), listDocuments: vi.fn(), getDocument: vi.fn() }));
 
@@ -65,6 +66,217 @@ async function openApp() {
   // Lần dựng đầu tiên trong tệp mất hơn 1 giây khi chạy cả bộ test song song.
   await screen.findByRole('button', { name: 'A', exact: true }, { timeout: 5000 });
 }
+
+describe('bản nháp Chat riêng', () => {
+  const input = () => screen.getByLabelText('Nhắn cho Peto') as HTMLTextAreaElement;
+  const draftStorageKey = (id: string | null, projectId: string | null = null, persona: api.Persona = 'assistant') =>
+    draftKey({ ownerId: 'acc-111', conversationId: id, projectId, persona });
+  const type = (text: string) => fireEvent.change(input(), { target: { value: text } });
+  const select = async (id: string) => {
+    fireEvent.click(screen.getByRole('button', { name: id, exact: true }));
+    await waitFor(() => expect(window.location.pathname).toBe(`/chat/${id}`));
+    await waitFor(() => expect(api.getMessages).toHaveBeenCalledWith(id, expect.anything(), expect.anything()));
+  };
+
+  it('chat mới, A và B giữ nháp riêng qua Back/Forward, không dựng lại ô soạn', async () => {
+    await openApp();
+    const node = input();
+    type('Nháp chat mới');
+    await select('A'); expect(input().value).toBe(''); type('Nháp A');
+    await select('B'); expect(input().value).toBe(''); type('Nháp B');
+    act(() => history.back());
+    await waitFor(() => expect(window.location.pathname).toBe('/chat/A'));
+    expect(input().value).toBe('Nháp A');
+    act(() => history.back());
+    await waitFor(() => expect(window.location.pathname).toBe('/'));
+    expect(input().value).toBe('Nháp chat mới');
+    act(() => history.forward());
+    await waitFor(() => expect(window.location.pathname).toBe('/chat/A'));
+    expect(input().value).toBe('Nháp A');
+    expect(input()).toBe(node);
+    expect(api.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('F5 mô phỏng khôi phục chữ ở deep link; không phục hồi tệp', async () => {
+    await openApp(); await select('A'); type('Nháp chưa gửi');
+    await userEvent.upload(document.querySelector('input[type=file]') as HTMLInputElement,
+      new File(['nội dung'], 'private.txt', { type: 'text/plain' }));
+    await select('B');
+    expect(screen.queryByRole('button', { name: 'Gỡ private.txt' })).toBeNull();
+    await select('A');
+    expect(screen.getByRole('button', { name: 'Gỡ private.txt' })).toBeTruthy();
+    cleanup(); await openApp();
+    expect(input().value).toBe('Nháp chưa gửi');
+    expect(screen.queryByRole('button', { name: 'Gỡ private.txt' })).toBeNull();
+    expect(sessionStorage.getItem(draftStorageKey('A'))).toBe(JSON.stringify({ text: 'Nháp chưa gửi' }));
+  });
+
+  it('xác nhận gửi đến muộn chỉ xóa nháp đã gửi, không xóa nháp B đang mở', async () => {
+    const done = deferred<void>();
+    let callbacks!: Parameters<typeof api.sendMessage>[1];
+    vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers) => { callbacks = handlers; await done.promise; });
+    await openApp(); await select('B'); type('B chưa gửi');
+    await select('A'); type('Gửi từ A');
+    fireEvent.click(screen.getByRole('button', { name: 'Gửi', exact: true }));
+    await waitFor(() => expect(api.sendMessage).toHaveBeenCalledOnce());
+    act(() => history.back());
+    await waitFor(() => expect(window.location.pathname).toBe('/chat/B'));
+    expect(input().value).toBe('B chưa gửi');
+    act(() => callbacks.onMeta?.('A', 'low', { id: 10, role: 'user', content: 'Gửi từ A' }));
+    expect(input().value).toBe('B chưa gửi');
+    expect(sessionStorage.getItem(draftStorageKey('A'))).toBeNull();
+    await act(async () => { callbacks.onDone?.(); done.resolve(); });
+    cleanup(); await openApp();
+    expect(input().value).toBe('B chưa gửi');
+    await select('A'); expect(input().value).toBe('');
+  });
+
+  it('chat mới trong các dự án có nháp riêng và F5 giữ đúng projectId khi gửi', async () => {
+    vi.mocked(projectApi.listProjects).mockResolvedValue(['P', 'Q'].map(id => ({ id, name: id, created_at: 0, updated_at: 0 })));
+    vi.mocked(api.listConversations).mockImplementation(async (_offset, _limit, _query, filter) =>
+      ({ conversations: filter?.projectId ? [] : [conversation('A'), conversation('B')], has_more: false }));
+    await openApp(); type('Nháp thường');
+    fireEvent.click(await screen.findByRole('button', { name: 'Chat mới trong dự án P' }));
+    expect(input().value).toBe(''); type('Nháp P');
+    fireEvent.click(screen.getByRole('button', { name: 'Chat mới trong dự án Q' }));
+    expect(input().value).toBe(''); type('Nháp Q');
+    fireEvent.click(screen.getByRole('button', { name: 'Chat mới trong dự án P' }));
+    expect(input().value).toBe('Nháp P');
+    const length = history.length;
+    cleanup(); await openApp();
+    expect(history.length).toBe(length);
+    expect(input().value).toBe('Nháp P');
+    vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers) => {
+      handlers.onMeta?.('C', 'low', row('Nháp P')); handlers.onDone?.();
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Gửi', exact: true }));
+    await waitFor(() => expect(api.sendMessage).toHaveBeenCalledOnce());
+    expect(vi.mocked(api.sendMessage).mock.calls[0][0]).toMatchObject({ message: 'Nháp P', projectId: 'P' });
+    expect(sessionStorage.getItem(draftStorageKey(null, 'P'))).toBeNull();
+    expect(JSON.parse(sessionStorage.getItem(draftStorageKey(null, 'Q'))!).text).toBe('Nháp Q');
+  });
+
+  it('đăng xuất xóa mọi nháp của Chat và không xóa dữ liệu tính năng khác', async () => {
+    vi.mocked(api.logout).mockResolvedValue();
+    await openApp(); type('Nháp mới'); await select('A'); type('Nháp A');
+    sessionStorage.setItem('unrelated', 'Giữ nguyên');
+    fireEvent.click(screen.getByRole('button', { name: /Demo/ }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Đăng xuất' }));
+    await screen.findByRole('link', { name: /Đăng nhập bằng Discord/ });
+    expect(Object.keys(sessionStorage).filter(key => key.startsWith(CHAT_DRAFT_PREFIX))).toEqual([]);
+    expect(sessionStorage.getItem('unrelated')).toBe('Giữ nguyên');
+  });
+
+  it('mạng hỏng lúc xác minh đăng nhập không xóa nháp đã lưu', async () => {
+    sessionStorage.setItem(draftStorageKey('A'), JSON.stringify({ text: 'Nháp cần giữ' }));
+    vi.mocked(api.getAuthState).mockRejectedValue(new TypeError('Mạng hỏng'));
+    render(<App />);
+    await screen.findByText(/Chưa kết nối được dịch vụ đăng nhập/);
+    expect(sessionStorage.getItem(draftStorageKey('A'))).not.toBeNull();
+  });
+
+  it('nhập vai và chat thường có nháp riêng, F5 giữ đúng chế độ đã xác nhận', async () => {
+    vi.mocked(api.getAuthState).mockResolvedValue({ authenticated: true, login_configured: true,
+      user: { id: 'acc-111', provider: 'discord', username: 'demo', display_name: 'Demo', avatar_url: '', roleplay_confirmed: true } });
+    await openApp(); type('Nháp trợ lý');
+    fireEvent.click(screen.getByRole('button', { name: 'Thêm ảnh và tùy chọn' }));
+    fireEvent.click(screen.getByRole('button', { name: /Chế độ nhập vai/ }));
+    expect(input().value).toBe(''); type('Nháp nhập vai');
+    cleanup(); await openApp();
+    expect(input().value).toBe('Nháp nhập vai');
+    fireEvent.click(screen.getByRole('button', { name: 'Tắt chế độ nhập vai' }));
+    expect(input().value).toBe('Nháp trợ lý');
+    expect(JSON.parse(sessionStorage.getItem(draftStorageKey(null, null, 'roleplay'))!).text).toBe('Nháp nhập vai');
+  });
+
+  it('xóa chat thành công mới xóa nháp, lỗi xóa giữ lại chữ và nháp chat khác', async () => {
+    await openApp(); type('Nháp thường'); await select('B'); type('Nháp B'); await select('A'); type('Nháp A');
+    const deleteA = () => {
+      fireEvent.click(screen.getByLabelText('Tùy chọn A'));
+      fireEvent.click(screen.getByRole('button', { name: 'Xóa hội thoại' }));
+      fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Xóa hội thoại' }));
+    };
+    vi.mocked(api.deleteConversation).mockRejectedValueOnce(new Error('Chưa xóa được chat'));
+    deleteA(); await screen.findByText('Chưa xóa được chat');
+    expect(input().value).toBe('Nháp A');
+    vi.mocked(api.deleteConversation).mockResolvedValue();
+    deleteA(); await waitFor(() => expect(window.location.pathname).toBe('/'));
+    expect(input().value).toBe('Nháp thường');
+    expect(sessionStorage.getItem(draftStorageKey('A'))).toBeNull();
+    expect(JSON.parse(sessionStorage.getItem(draftStorageKey('B'))!).text).toBe('Nháp B');
+  });
+
+  it('phiên hết hạn giữa lúc mở chat xóa mọi nháp, không ghi lại sau unmount', async () => {
+    await openApp(); type('Nháp chat mới'); await select('A'); type('Nháp A');
+    vi.mocked(api.getMessages).mockRejectedValue(new api.UnauthorizedError());
+    fireEvent.click(screen.getByRole('button', { name: 'B', exact: true }));
+    await screen.findByRole('link', { name: /Đăng nhập bằng Discord/ });
+    cleanup();
+    expect(Object.keys(sessionStorage).filter(key => key.startsWith(CHAT_DRAFT_PREFIX))).toEqual([]);
+  });
+
+  it('quay lại chat mới từ Imagine giữ nháp và lỗi gửi chưa được nhận', async () => {
+    vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers) => handlers.onError?.('Tin chưa được nhận'));
+    await openApp(); type('Nháp bị từ chối');
+    fireEvent.click(screen.getByRole('button', { name: 'Gửi', exact: true }));
+    await screen.findByText('Tin chưa được nhận');
+    fireEvent.click(screen.getByRole('button', { name: 'Tạo ảnh', exact: true }));
+    await screen.findByLabelText('Bức ảnh bạn muốn tạo');
+    fireEvent.click(screen.getByRole('button', { name: 'Trò chuyện', exact: true }));
+    expect(input().value).toBe('Nháp bị từ chối');
+    expect(screen.getByText('Tin chưa được nhận')).toBeTruthy();
+    expect(api.sendMessage).toHaveBeenCalledOnce();
+  });
+
+  it('xóa dự án hoàn tất sau khi chuyển sang Imagine không kéo về Chat hoặc xóa nháp thường', async () => {
+    vi.mocked(projectApi.listProjects).mockResolvedValue([{ id: 'P', name: 'P', created_at: 0, updated_at: 0 }]);
+    vi.mocked(api.listConversations).mockImplementation(async (_offset, _limit, _query, filter) =>
+      ({ conversations: filter?.projectId ? [] : [conversation('A'), conversation('B')], has_more: false }));
+    const deleted = deferred<void>();
+    vi.spyOn(projectApi, 'deleteProject').mockImplementation(() => deleted.promise);
+    await openApp(); type('Nháp thường cần giữ');
+    fireEvent.click(await screen.findByRole('button', { name: 'Chat mới trong dự án P' })); type('Nháp P');
+    fireEvent.click(screen.getByRole('button', { name: 'Tùy chọn dự án P' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Xóa dự án' }));
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'Xóa dự án này?' })).getByRole('button', { name: 'Xóa' }));
+    act(() => {
+      history.pushState(history.state, '', '/imagine');
+      window.dispatchEvent(new PopStateEvent('popstate', { state: history.state }));
+    });
+    await screen.findByLabelText('Bức ảnh bạn muốn tạo');
+    await act(async () => deleted.resolve());
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Xóa dự án này?' })).toBeNull());
+    expect(window.location.pathname).toBe('/imagine');
+    expect(sessionStorage.getItem(draftStorageKey(null, 'P'))).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Trò chuyện', exact: true }));
+    expect(input().value).toBe('Nháp thường cần giữ');
+  });
+
+  it('Back về chat mới thường trước metadata của dự án không nhận nhầm URL hay phản hồi của dự án', async () => {
+    vi.mocked(projectApi.listProjects).mockResolvedValue([{ id: 'P', name: 'P', created_at: 0, updated_at: 0 }]);
+    vi.mocked(api.listConversations).mockImplementation(async (_offset, _limit, _query, filter) =>
+      ({ conversations: filter?.projectId ? [] : [conversation('A'), conversation('B')], has_more: false }));
+    const done = deferred<void>();
+    let callbacks!: Parameters<typeof api.sendMessage>[1];
+    vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers) => { callbacks = handlers; await done.promise; });
+    await openApp(); type('Nháp thường'); await select('A');
+    fireEvent.click(await screen.findByRole('button', { name: 'Chat mới trong dự án P' })); type('Tin dự án');
+    fireEvent.click(screen.getByRole('button', { name: 'Gửi', exact: true }));
+    await waitFor(() => expect(api.sendMessage).toHaveBeenCalledOnce());
+    act(() => history.go(-2));
+    await waitFor(() => expect(input().value).toBe('Nháp thường'));
+    act(() => {
+      callbacks.onMeta?.('C', 'low', { id: 10, role: 'user', content: 'Tin dự án' });
+      callbacks.onDelta?.('Phản hồi riêng của dự án');
+    });
+    expect(window.location.pathname).toBe('/');
+    expect(input().value).toBe('Nháp thường');
+    expect(screen.queryByText('Tin dự án', { selector: 'p' })).toBeNull();
+    expect(screen.queryByText('Phản hồi riêng của dự án')).toBeNull();
+    expect(sessionStorage.getItem(draftStorageKey(null, 'P'))).toBeNull();
+    await act(async () => { callbacks.onDone?.(); done.resolve(); });
+  });
+});
 
 it('mở URL chat ngoài danh sách gần đây và đọc thiết lập lưu trữ', async () => {
   window.history.replaceState(null, '', '/chat/archived-link?source=bookmark');
@@ -250,17 +462,21 @@ it('sửa tin tạo URL bản rẽ nhánh bằng push, giữ entry bản gốc',
   });
   await openApp();
   fireEvent.click(screen.getByRole('button', { name: 'A', exact: true }));
+  await screen.findByText('Đáp cũ');
+  fireEvent.change(screen.getByLabelText('Nhắn cho Peto'), { target: { value: 'Nháp gốc chưa gửi' } });
   fireEvent.click(await screen.findByRole('button', { name: 'Sửa tin nhắn', exact: true }));
   const length = history.length;
   fireEvent.change(screen.getByRole('textbox', { name: 'Sửa tin nhắn' }), { target: { value: 'Câu mới' } });
   fireEvent.submit(screen.getByRole('textbox', { name: 'Sửa tin nhắn' }).closest('form')!);
   await screen.findByText('Đáp mới');
   expect(window.location.pathname).toBe('/chat/branch-id');
+  expect((screen.getByLabelText('Nhắn cho Peto') as HTMLTextAreaElement).value).toBe('');
   expect(history.length).toBe(length + 1);
   expect(api.getMessages).toHaveBeenCalledTimes(2);
   act(() => history.back());
   await screen.findByText('Đáp cũ');
   expect(window.location.pathname).toBe('/chat/A');
+  expect((screen.getByLabelText('Nhắn cho Peto') as HTMLTextAreaElement).value).toBe('Nháp gốc chưa gửi');
   expect(api.deleteConversation).not.toHaveBeenCalled();
 });
 
@@ -438,7 +654,7 @@ it('yêu cầu file bằng chat thường nhận thẻ xem trước, không mở
   await waitFor(() => expect(screen.queryByRole('complementary', { name: 'Tài liệu trong hội thoại' })).toBeNull());
 });
 
-it('gửi Word qua dấu cộng, giữ bản nháp khi đọc và hiện trạng thái sau khi nhận', async () => {
+it('gửi Word qua dấu cộng, giữ bản nháp khi đọc và chỉ hiện thẻ sau khi đọc đủ', async () => {
   const result = deferred<void>();
   vi.mocked(api.sendMessage).mockImplementation(async (payload, handlers) => {
     expect(payload.attachments?.[0].name).toBe('ke-hoach.docx');
@@ -461,13 +677,14 @@ it('gửi Word qua dấu cộng, giữ bản nháp khi đọc và hiện trạng
   await screen.findByText('Đang đọc ke-hoach.docx…');
   expect((screen.getByLabelText('Nhắn cho Peto') as HTMLTextAreaElement).value).toBe('Tóm tắt');
   await act(async () => result.resolve());
-  await screen.findByText('Đã đọc chữ');
+  await screen.findByText('Đây là tóm tắt giả để kiểm tra giao diện.');
+  expect(screen.queryByText('Đã đọc chữ')).toBeNull();
   expect(screen.queryByText('Đang đọc ke-hoach.docx…')).toBeNull();
   expect((screen.getByLabelText('Nhắn cho Peto') as HTMLTextAreaElement).value).toBe('');
   expect(screen.getByRole('link', { name: /ke-hoach.docx/ }).getAttribute('href')).toBe('/api/attachments/word-1');
 });
 
-it('gửi tệp Excel: có ghi chú phần đọc được, sau khi nhận hiện số trang tính', async () => {
+it('gửi tệp Excel: có ghi chú phần đọc được, sau khi nhận không thêm dòng xác nhận đọc đủ', async () => {
   vi.mocked(api.sendMessage).mockImplementation(async (payload, handlers) => {
     expect(payload.attachments?.[0].name).toBe('bang-diem.xlsx');
     handlers.onMeta?.('C', 'low', { role: 'user', content: 'Ai điểm cao nhất?', attachments: [{
@@ -484,7 +701,8 @@ it('gửi tệp Excel: có ghi chú phần đọc được, sau khi nhận hiệ
   expect(screen.getByText(/Peto đọc dữ liệu, công thức, ghi chú, biểu đồ và bảng tổng hợp trong tệp Excel, và sửa thẳng được/)).toBeTruthy();
   fireEvent.change(screen.getByLabelText('Nhắn cho Peto'), { target: { value: 'Ai điểm cao nhất?' } });
   fireEvent.click(screen.getByRole('button', { name: 'Gửi', exact: true }));
-  expect(await screen.findByText('Đã đọc chữ · 2 trang tính')).toBeTruthy();
+  expect(await screen.findByText('Trần Gia Bảo cao nhất.')).toBeTruthy();
+  expect(screen.queryByText('Đã đọc chữ · 2 trang tính')).toBeNull();
   expect(screen.queryByText(/bảng tổng hợp trong tệp Excel/)).toBeNull();
 });
 

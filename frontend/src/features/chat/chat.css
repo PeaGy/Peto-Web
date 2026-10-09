@@ -97,6 +97,26 @@
   background: var(--user);
 }
 
+/* Đính kèm của Chat đứng riêng phía trên; chỉ phần chữ có nền bong bóng.
+   Lớp riêng tránh thay đổi bóng chat trên sân khấu Companion. */
+.bubble.user.chat-user-message {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  min-width: 0;
+  padding: 0;
+  border-radius: 0;
+  background: none;
+}
+.user-message-text {
+  min-width: 0;
+  max-width: 100%;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: var(--user);
+}
+
 /* Lời Peto không có khung: chữ chạy hết bề ngang cột như một trang tài liệu,
    nên câu trả lời dài và khối code đều rộng hơn hẳn. Bong bóng giờ chỉ còn ở
    lời người dùng — vẫn đủ để nhìn là biết ai đang nói. */
@@ -213,6 +233,71 @@
 .document-details p { margin: 5px 0 0; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
 .document-reading { display: flex; align-items: center; gap: 9px; color: var(--muted); font-size: 13px; padding: 6px 0; }
 .document-reading-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
+
+.message-attachments {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  width: max-content;
+  max-width: 100%;
+  min-width: 0;
+}
+.message-image-grid {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  width: max-content;
+  max-width: 100%;
+}
+.message-image-link {
+  display: block;
+  flex: none;
+  width: 112px;
+  height: 112px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+}
+.message-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  font-size: 12px;
+}
+.message-file-list { display: flex; flex-direction: column; gap: 8px; width: 320px; max-width: 100%; }
+.message-file-entry { min-width: 0; width: 100%; }
+.file-chip.message-file-card {
+  width: 100%;
+  max-width: 100%;
+  min-height: 64px;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  transition: background-color 150ms ease, border-color 150ms ease;
+}
+.message-file-card:hover { background: var(--panel-2); }
+.message-file-card:focus-visible, .message-image-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.message-file-card .message-file-copy { flex: 1; }
+.message-file-card strong { font-size: 14px; }
+.message-file-card em { margin-top: 3px; font-size: 12px; }
+.message-file-card .message-file-icon { display: grid; place-items: center; flex: none; width: 28px; height: 32px; color: #3299ed; }
+.message-file-card .message-file-icon.pdf { color: #ec6767; }
+.message-file-card .message-file-icon.sheet { color: #40ac7a; }
+.message-file-card .message-file-icon.slides { color: #df9950; }
+.message-file-card .message-file-icon.code { color: #a18ee8; }
+.message-file-card .message-file-icon.text, .message-file-card .message-file-icon.file { color: var(--muted); }
+.message-file-entry .document-details { margin: 5px 8px 0; }
+
+@media (max-width: 720px) {
+  .message-image-link { width: 96px; height: 96px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .file-chip.message-file-card { transition: none; }
+}
 
 .attach-chip img {
   width: 36px;

@@ -31,6 +31,70 @@ async function images(page: Page) {
   return () => reads;
 }
 
+test('nháp từng Chat sống qua F5/Back/Forward, chat mới riêng và tab mới không lấy nháp', async ({ page, context }) => {
+  const state = await mockPeto(page, { preservePreferences: true });
+  await page.goto('/');
+  const input = page.getByLabel('Nhắn cho Peto', { exact: true });
+  await input.fill('Nháp chat mới');
+  await openSidebar(page);
+  await page.getByRole('button', { name: title, exact: true }).click();
+  await expect(input).toHaveValue('');
+  await input.fill('Nháp A vừa gõ');
+  // F5 ngay sau nhập: chưa cần đợi debounce ghi storage.
+  await page.reload();
+  await expect(input).toHaveValue('Nháp A vừa gõ');
+  await openSidebar(page);
+  await page.getByRole('button', { name: 'Một hội thoại khác', exact: true }).click();
+  await expect(input).toHaveValue('');
+  await input.fill('Nháp B');
+  await page.goBack();
+  await expect(input).toHaveValue('Nháp A vừa gõ');
+  await page.goBack();
+  await expect(input).toHaveValue('Nháp chat mới');
+  await page.goForward();
+  await expect(input).toHaveValue('Nháp A vừa gõ');
+  await page.goForward();
+  await expect(input).toHaveValue('Nháp B');
+  const other = await context.newPage();
+  await mockPeto(other, { preservePreferences: true });
+  await other.goto('/chat/A');
+  await expect(other.getByLabel('Nhắn cho Peto', { exact: true })).toHaveValue('');
+  await other.close();
+  expect(state.posts).toBe(0);
+});
+
+test('F5 giữ nháp chat mới đúng dự án và gửi đúng projectId', async ({ page }) => {
+  await mockPeto(page, { preservePreferences: true });
+  await page.route('**/api/projects', route => route.fulfill({ json: { projects: ['P', 'Q'].map(id =>
+    ({ id, name: id, created_at: 1, updated_at: 1 })) } }));
+  await page.goto('/');
+  const input = page.getByLabel('Nhắn cho Peto', { exact: true });
+  await input.fill('Nháp không có dự án');
+  await openSidebar(page);
+  await page.getByRole('button', { name: 'P', exact: true }).hover();
+  await page.getByRole('button', { name: 'Chat mới trong dự án P' }).click();
+  await input.fill('Nháp dự án P');
+  await openSidebar(page);
+  await page.getByRole('button', { name: 'Q', exact: true }).hover();
+  await page.getByRole('button', { name: 'Chat mới trong dự án Q' }).click();
+  await expect(input).toHaveValue('');
+  await input.fill('Nháp dự án Q');
+  await openSidebar(page);
+  await page.getByRole('button', { name: 'P', exact: true }).hover();
+  await page.getByRole('button', { name: 'Chat mới trong dự án P' }).click();
+  await expect(input).toHaveValue('Nháp dự án P');
+  const length = await page.evaluate(() => history.length);
+  await page.reload();
+  await expect(input).toHaveValue('Nháp dự án P');
+  expect(await page.evaluate(() => history.length)).toBe(length);
+  const request = page.waitForRequest('**/api/chat');
+  await page.getByRole('button', { name: 'Gửi', exact: true }).click();
+  expect((await request).postDataJSON()).toMatchObject({ message: 'Nháp dự án P', project_id: 'P' });
+  await expect(input).toHaveValue('');
+  await page.reload();
+  await expect(input).toHaveValue('');
+});
+
 test('Back/Forward giữ tab, lịch sử và bản nháp; bấm lại tab không thêm history', async ({ page }) => {
   const state = await mockPeto(page);
   const errors: string[] = [];

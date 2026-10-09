@@ -6,7 +6,7 @@ import { useMarkdownPlugins } from '../../shared/markdown/markdownExtras';
 import { DiagramCard } from '../diagrams/DiagramCard';
 import { hastText } from '../diagrams/diagrams';
 import DocumentArtifactCard from '../documents/DocumentArtifactCard';
-import { FileGlyph, formatSize } from './files';
+import MessageAttachments from './MessageAttachments';
 import WebSources from './WebSources';
 import WorkTimeline from './WorkTimeline';
 import type { Message } from '../../shared/api/api';
@@ -117,6 +117,7 @@ export const ChatMessage = memo(function ChatMessage({ message, live, writing, o
   onPreview: (item: { id: string; version: number }) => void;
   onEdit: (item: { id: string; version: number }) => void;
 }) {
+  const hasUserAttachments = message.role === 'user' && Boolean(message.attachments?.length);
   const text = message.content ? normalizeMath(message.content) : "";
   const { remarkPlugins, rehypePlugins } = useMarkdownPlugins(text);
   // Giữ nguyên các hàm dựng thẻ giữa các lần vẽ lại. Hàm mới mỗi lần thì React coi là loại thẻ mới, gỡ ra dựng lại cả khối:
@@ -136,52 +137,16 @@ export const ChatMessage = memo(function ChatMessage({ message, live, writing, o
       return <CodeBlock language={tag ? tag.slice("language-".length) : ""}>{children}</CodeBlock>;
     },
   }), [writing]);
-  return (<article className={`bubble ${message.role}${editor ? ' editing' : ''}`}>
+  return (<article className={`bubble ${message.role}${hasUserAttachments ? ' chat-user-message' : ''}${editor ? ' editing' : ''}`}>
               {message.attachments && message.attachments.length > 0 && (
-                <div className="bubble-files">
-                  {message.attachments.map((file) =>
-                    file.kind === "image" && file.url ? (
-                      <a
-                        key={file.id}
-                        href={file.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="bubble-image-link"
-                      >
-                        <img src={file.url} alt={file.name} className="bubble-image" />
-                      </a>
-                    ) : (
-                      <div className="document-card" key={file.id}>
-                        <a href={file.url || undefined} className="file-chip" download={file.name}>
-                          <FileGlyph name={file.name} kind="file" />
-                          <span>
-                            <strong>{file.name}</strong>
-                            <em>{formatSize(file.size)}</em>
-                          </span>
-                        </a>
-                        {file.document && (
-                          <details className={`document-details ${file.document.status === "ready" ? "ready" : "limited"}`}>
-                            <summary>
-                              {file.document.status === "ready" ? (file.document.ocr_pages ? "Đã đọc bằng OCR" : "Đã đọc chữ") : file.document.status === "partial" ? "Đọc được một phần" : "Chưa đọc được"}
-                              {file.document.pages != null && ` · ${file.document.pages_read != null ? `${file.document.pages_read}/` : ""}${file.document.pages} trang`}
-                              {file.document.sheets != null && ` · ${file.document.sheets_read != null && file.document.sheets_read !== file.document.sheets ? `${file.document.sheets_read}/` : ""}${file.document.sheets} trang tính`}
-                              {file.document.status === "partial" && !!file.document.ocr_pages && " · có OCR"}
-                              {!!file.document.formulas && ` · ${file.document.formulas} công thức`}
-                              {!!file.document.formulas_unread && ` · ${file.document.formulas_unread} công thức MathType chưa đọc`}
-                            </summary>
-                            <p>{file.document.notice}</p>
-                          </details>
-                        )}
-                      </div>
-                    ),
-                  )}
-                </div>
+                <MessageAttachments attachments={message.attachments} sent={message.role === 'user'} />
               )}
               {message.role === "assistant" && message.work ? (
                 <WorkTimeline work={message.work} live={live} startedAt={message.workStartedAt} answering={Boolean(message.content)} />
               ) : null}
-              {editor || (message.content ? (
-                <Markdown remarkPlugins={remarkPlugins} rehypePlugins={rehypePlugins} components={components}>{text}</Markdown>
+              {editor || (message.content ? (hasUserAttachments
+                ? <div className="user-message-text"><Markdown remarkPlugins={remarkPlugins} rehypePlugins={rehypePlugins} components={components}>{text}</Markdown></div>
+                : <Markdown remarkPlugins={remarkPlugins} rehypePlugins={rehypePlugins} components={components}>{text}</Markdown>
               ) : null)}
               {message.role === "assistant" && <WebSources sources={message.sources} />}
               {message.artifacts?.map(artifact => <DocumentArtifactCard key={`${artifact.id}-${artifact.version}`} artifact={artifact} onOpen={onPreview} onEdit={onEdit} />)}

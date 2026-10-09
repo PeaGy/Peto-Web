@@ -4,7 +4,7 @@
 .user-message-actions button,.conv-hover-actions button,.sidebar-search-button { display:grid; place-items:center; width:32px; height:32px; padding:0; border:0; border-radius:8px; background:transparent; color:var(--muted); cursor:pointer; flex-shrink:0; }
 .user-message-actions button:hover,.conv-hover-actions button:hover,.sidebar-search-button:hover { background:var(--panel-2); color:var(--text); }
 .bubble.user:hover .user-message-actions,.bubble.user:focus-within .user-message-actions { opacity:1; pointer-events:auto; }
-.bubble.user.editing { width:100%; max-width:100%; box-sizing:border-box; padding:16px; }
+.bubble.user.editing,.bubble.user.chat-user-message.editing { width:100%; max-width:100%; box-sizing:border-box; padding:16px; border-radius:14px; background:var(--user); align-items:stretch; }
 .inline-message-editor textarea { display:block; width:100%; resize:vertical; box-sizing:border-box; border:0; outline:none; background:transparent; color:var(--text); font:inherit; line-height:1.6; min-height:80px; max-height:45dvh; }
 .inline-message-editor>div { display:flex; justify-content:flex-end; gap:8px; margin-top:12px; }
 .inline-message-editor button { border:1px solid var(--line); border-radius:24px; padding:8px 18px; background:transparent; color:var(--text); cursor:pointer; font:inherit; }

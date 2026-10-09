@@ -177,7 +177,18 @@ entry with its ID; a branch pushes a new entry. Returning from another tab resto
 retain abort/version guards, without remounting Chat. An in-memory snapshot of the one active reply routes stream writes
 only to that conversation, so browser history may select another chat without aborting AI or leaking its deltas into
 the selected thread; returning while the reply runs uses that snapshot. Late metadata never forces a tab switch.
-Current shared-draft behavior and the single-stream send lock remain; no per-conversation draft persistence was added.
+The single-stream send lock remains. Chat drafts now use `features/chat/useChatDrafts.ts` and `chatDrafts.ts`:
+text-only `sessionStorage` entries are keyed by account/conversation; unnamed chats also distinguish project and persona.
+Writes debounce 250 ms and flush on scope change, pagehide/beforeunload, hidden document and unmount. Files/previews
+stay in memory per draft and are never serialized. New-chat history state stores only owner/project/persona metadata
+so F5/Back recover the correct scope, without adding entries for context changes or remounting the composer.
+SSE receipt clears only the submitted snapshot, preserving another chat or later changes; pre-receipt failures retain it.
+Before the server assigns an ID, active-reply selection also checks project/persona so Back between unnamed chat
+contexts cannot redirect the wrong entry or display another draft's pending reply.
+Logout/confirmed expiry clears all Chat drafts and cached file URLs; a failed auth network check does not erase drafts.
+Successful conversation deletion clears its draft; project deletion clears only unnamed project drafts, retaining
+drafts of existing conversations. Storage denial/quota errors fall back to memory. Drafts do not sync across devices;
+sessionStorage is tab-session storage, not a durable backup. Companion/Imagine persistence is unchanged.
 The static fallback also accepts `/chat/<id>` but rejects missing `/chat`, extra segments and paths resembling assets.
 Signing in from a Chat deep link records only its same-origin path/query in sessionStorage; the normal OAuth root
 callback then replaces that root entry with the requested Chat URL. The pending return is consumed once; auth and
@@ -2554,6 +2565,24 @@ Chat, Companion and roleplay turn (not the Agent CLI).
   state is local to it. `files.tsx` holds what the composer and the message bubbles share
   (`DraftFile`, `formatSize`, `FileGlyph`) so `Composer.tsx` never imports from `App.tsx`
   and no import cycle can form.
+- `MessageAttachments.tsx` presents sent Chat attachments above and outside the user text bubble. Image thumbnails
+  have reserved square dimensions and wrap within the message width; document cards stack vertically with a file
+  icon, full accessible filename, type, size and download link. Ordinary successfully read files have no
+  "Đã đọc chữ" confirmation line; partial/failed reading and OCR retain their expandable notices. The
+  `chat-user-message` class applies only to user messages with attachments, preserving text-only and Companion
+  bubble geometry. This presentation is shared by optimistic messages, server receipts and restored history;
+  upload limits, the composer and the payload are unchanged. `MessageAttachments.test.tsx` and the mocked
+  `browser-tests/chat-attachments.spec.ts` cover mixed attachments, long filenames, maximum file count, receipt
+  layout stability, editing, refresh, themes and desktop/mobile layout without paid API calls.
+- Clicking a Chat image opens `ChatImageViewer.tsx`, a native modal over the current chat, without changing the URL
+  or browser history. Close/Escape restores the trigger's focus without scrolling. The viewer provides original
+  image downloads, fit-to-window and 25–800% zoom presets, wheel zoom, mouse drag, two-pointer pinch/pan, and
+  previous/next controls for images in that message. `imageView.ts` keeps the point under the pointer/pinch center
+  anchored and bounds panning; transforms have no transitions so gestures track directly. Pointer ownership is
+  limited to the viewer stage; browser zoom remains available elsewhere. Opening a preview during upload keeps
+  the modal and zoom when metadata replaces the temporary image URL. Unit tests and the mocked browser suite
+  `chat-image-viewer.spec.ts` cover geometry, focus, downloads, unchanged history/drafts/scroll, image failures and
+  Chromium touch input; this does not substitute for testing touch feel on physical Android/iOS hardware.
 
 ## Invariants — do not break these
 
