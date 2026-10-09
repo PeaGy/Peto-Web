@@ -55,7 +55,8 @@ test('kéo mép sidebar, cuộn gần mép có khe, giữ chat và nhớ độ r
   await sidebar.screenshot({ path: info.outputPath('sidebar-resized.png') });
   await sidebar.getByRole('button', { name: 'Thu gọn thanh bên', exact: true }).click();
   expect((await sidebar.boundingBox())!.width).toBe(64);
-  await expect(handle).toBeHidden();
+  await expect(handle).toBeVisible();
+  await expect(handle).toHaveAttribute('aria-valuenow', '64');
   await sidebar.getByRole('button', { name: 'Mở rộng thanh bên', exact: true }).click();
   expect((await sidebar.boundingBox())!.width).toBe(340);
   await page.reload();
@@ -76,7 +77,7 @@ test('giới hạn độ rộng, đổi kích thước màn hình và trở lạ
   await dragHandle(page, handle, 1500);
   expect((await sidebar.boundingBox())!.width).toBe(420);
   await dragHandle(page, handle, -1500);
-  expect((await sidebar.boundingBox())!.width).toBe(220);
+  expect((await sidebar.boundingBox())!.width).toBe(64);
   await handle.focus();
   await page.keyboard.press('End');
   expect((await sidebar.boundingBox())!.width).toBe(420);
@@ -92,6 +93,55 @@ test('giới hạn độ rộng, đổi kích thước màn hình và trở lạ
   await expect(handle).toHaveAttribute('aria-valuenow', '420');
   expect((await sidebar.boundingBox())!.width).toBe(420);
   expect(await page.evaluate(() => document.documentElement.classList.contains('sidebar-resizing'))).toBe(false);
+});
+
+test('kéo liên tục tới collapsed và kéo ra, không nhảy tại ngưỡng và nhớ trạng thái qua F5', async ({ page }, info) => {
+  test.skip(info.project.name !== 'pc', 'Kéo rail trên desktop.');
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await openLongSidebar(page);
+  const sidebar = page.locator('.sidebar'), handle = page.getByRole('separator', { name: 'Đổi độ rộng thanh bên' });
+  const draft = page.getByLabel('Nhắn cho Peto', { exact: true });
+  await draft.fill('Bản nháp còn nguyên sau khi kéo thu gọn.');
+  await dragHandle(page, handle, 80);
+  const box = (await handle.boundingBox())!;
+  const x = box.x + box.width / 2, y = box.y + box.height / 2;
+  const url = page.url(), length = await page.evaluate(() => history.length);
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  // Đi qua ngưỡng nhiều lần trong cùng lần kéo: width phải theo chuột cả khi nhãn đã ẩn.
+  for (const width of [260, 190, 128, 100, 170, 94, 64]) {
+    await page.mouse.move(x + width - 340, y);
+    await expect.poll(async () => Math.round((await sidebar.boundingBox())!.width)).toBe(width);
+    expect(await sidebar.evaluate(node => getComputedStyle(node).transitionDuration)).toBe('0s');
+    expect(await page.evaluate(() => localStorage.getItem('peto-sidebar-collapsed'))).toBe('0');
+  }
+  await page.mouse.up();
+  await expect(sidebar).toHaveClass(/collapsed/);
+  await expect(handle).toBeVisible();
+  await expect(handle).toHaveAttribute('aria-valuenow', '64');
+  expect(await page.evaluate(() => localStorage.getItem('peto-sidebar-width'))).toBe('340');
+  expect(await page.evaluate(() => localStorage.getItem('peto-sidebar-collapsed'))).toBe('1');
+  await expect(draft).toHaveValue('Bản nháp còn nguyên sau khi kéo thu gọn.');
+  expect(page.url()).toBe(url);
+  expect(await page.evaluate(() => history.length)).toBe(length);
+  await sidebar.getByRole('button', { name: 'Mở rộng thanh bên', exact: true }).click();
+  await expect.poll(async () => Math.round((await sidebar.boundingBox())!.width)).toBe(340);
+  await dragHandle(page, handle, -276);
+  await expect(handle).toHaveAttribute('aria-valuenow', '64');
+  await page.reload();
+  await expect(handle).toHaveAttribute('aria-valuenow', '64');
+  await expect(sidebar).toHaveClass(/collapsed/);
+  await dragHandle(page, handle, 276);
+  await expect(sidebar).not.toHaveClass(/collapsed/);
+  await expect(handle).toHaveAttribute('aria-valuenow', '340');
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('peto-sidebar-collapsed'))).toBe('0');
+  await expect(draft).toHaveValue('Bản nháp còn nguyên sau khi kéo thu gọn.');
+  await noPageOverflow(page);
+  await handle.focus();
+  await page.keyboard.press('Home');
+  await expect.poll(async () => Math.round((await sidebar.boundingBox())!.width)).toBe(64);
+  await page.keyboard.press('ArrowRight');
+  await expect.poll(async () => Math.round((await sidebar.boundingBox())!.width)).toBe(340);
 });
 
 test('mobile giữ ngăn kéo và cuộn danh sách, thanh cuộn không dính mép', async ({ page }, info) => {

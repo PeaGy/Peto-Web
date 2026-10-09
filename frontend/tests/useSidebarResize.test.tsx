@@ -1,9 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
+import { useEffect, useState } from 'react';
 import { SIDEBAR_WIDTH_KEY, useSidebarResize } from '../src/app/useSidebarResize';
 
-function SidebarWidth({ collapsed = false }: { collapsed?: boolean }) {
-  const { width, resizing, handleProps } = useSidebarResize(collapsed);
+function SidebarWidth({ collapsed: initialCollapsed = false, onCollapsedChange }: { collapsed?: boolean; onCollapsedChange?: (collapsed: boolean) => void }) {
+  const [collapsed, setCollapsed] = useState(initialCollapsed);
+  useEffect(() => setCollapsed(initialCollapsed), [initialCollapsed]);
+  const { width, resizing, handleProps } = useSidebarResize(collapsed, value => { setCollapsed(value); onCollapsedChange?.(value); });
   return <><output>{width}</output><div {...handleProps} role="separator" data-resizing={resizing} /></>;
 }
 
@@ -38,9 +41,9 @@ describe('độ rộng thanh bên', () => {
     pointer(node, 'pointermove', 2000);
     expect(screen.getByRole('status').textContent).toBe('420');
     pointer(node, 'pointermove', -1000);
-    expect(screen.getByRole('status').textContent).toBe('220');
+    expect(screen.getByRole('status').textContent).toBe('64');
     pointer(node, 'pointerup', -1000);
-    expect(localStorage.getItem(SIDEBAR_WIDTH_KEY)).toBe('220');
+    expect(localStorage.getItem(SIDEBAR_WIDTH_KEY)).toBe('260');
     expect(document.documentElement.classList.contains('sidebar-resizing')).toBe(false);
   });
 
@@ -61,12 +64,53 @@ describe('độ rộng thanh bên', () => {
     expect(localStorage.getItem(SIDEBAR_WIDTH_KEY)).toBe('280');
     rerender(<SidebarWidth collapsed />);
     fireEvent.keyDown(node, { key: 'Home' });
-    expect(screen.getByRole('status').textContent).toBe('280');
+    expect(screen.getByRole('status').textContent).toBe('64');
+    expect(localStorage.getItem(SIDEBAR_WIDTH_KEY)).toBe('280');
     rerender(<SidebarWidth />);
     fireEvent.keyDown(node, { key: 'End' });
     expect(screen.getByRole('status').textContent).toBe('420');
     fireEvent.doubleClick(node);
     expect(localStorage.getItem(SIDEBAR_WIDTH_KEY)).toBe('260');
+  });
+
+  it('kéo qua ngưỡng không chốt sớm, thu gọn giữ độ rộng cũ và kéo rail ra mở lại', () => {
+    localStorage.setItem(SIDEBAR_WIDTH_KEY, '340');
+    const changed = vi.fn();
+    render(<SidebarWidth onCollapsedChange={changed} />);
+    const node = handle();
+    pointer(node, 'pointerdown', 340);
+    pointer(node, 'pointermove', 170);
+    expect(screen.getByRole('status').textContent).toBe('170');
+    pointer(node, 'pointermove', 100);
+    expect(screen.getByRole('status').textContent).toBe('100');
+    expect(changed).not.toHaveBeenCalled();
+    pointer(node, 'pointermove', 180);
+    expect(screen.getByRole('status').textContent).toBe('180');
+    pointer(node, 'pointermove', 64);
+    pointer(node, 'pointerup', 64);
+    expect(screen.getByRole('status').textContent).toBe('64');
+    expect(changed).toHaveBeenLastCalledWith(true);
+    expect(localStorage.getItem(SIDEBAR_WIDTH_KEY)).toBe('340');
+    pointer(node, 'pointerdown', 64);
+    pointer(node, 'pointermove', 170);
+    expect(screen.getByRole('status').textContent).toBe('170');
+    pointer(node, 'pointerup', 170);
+    expect(screen.getByRole('status').textContent).toBe('220');
+    expect(changed).toHaveBeenLastCalledWith(false);
+    expect(localStorage.getItem(SIDEBAR_WIDTH_KEY)).toBe('220');
+  });
+
+  it('pointercancel hủy lần kéo, giữ lựa chọn và không chốt collapsed', () => {
+    const changed = vi.fn();
+    render(<SidebarWidth onCollapsedChange={changed} />);
+    const node = handle();
+    pointer(node, 'pointerdown', 260);
+    pointer(node, 'pointermove', 100);
+    pointer(node, 'pointercancel', 100);
+    expect(screen.getByRole('status').textContent).toBe('260');
+    expect(changed).not.toHaveBeenCalled();
+    expect(localStorage.getItem(SIDEBAR_WIDTH_KEY)).toBeNull();
+    expect(document.documentElement.classList.contains('sidebar-resizing')).toBe(false);
   });
 
   it('storage bị chặn và kết thúc kéo do blur/unmount không làm kẹt con trỏ', () => {

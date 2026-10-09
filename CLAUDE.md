@@ -2587,9 +2587,11 @@ Chat, Companion and roleplay turn (not the Agent CLI).
   `chat-image-viewer.spec.ts` cover geometry, focus, downloads, unchanged history/drafts/scroll, image failures and
   Chromium touch input; this does not substitute for testing touch feel on physical Android/iOS hardware.
 - The desktop sidebar has an unobtrusive right-edge resize separator (`useSidebarResize.ts`). Dragging tracks the
-  pointer without a width transition, clamps to 220–420px while leaving 360px for the main view, and saves
-  `peto-sidebar-width` only on release. Arrow keys/Home/End resize it; double-click restores 260px. Collapsing still
-  uses the 64px rail and expanding restores the chosen width. Mobile keeps its existing fixed drawer size.
+  pointer without a width transition from 64px to 420px, fades labels with the dragged width, and leaves 360px
+  for the main view. Release at/below 128px commits the existing collapsed state; otherwise it settles to a
+  220–420px expanded width. Collapsing preserves `peto-sidebar-width` for button expansion; dragging out from
+  the rail also works. Preferences are saved only on release. Arrow keys/Home/End resize/collapse it;
+  double-click restores 260px. Mobile keeps its existing fixed drawer size.
   Chat/Imagine scroll containers extend 6px toward the edge while preserving content padding, leaving a gap
   between the native scrollbar and the separator. Resizing does not touch chat state, drafts, routes or history.
 

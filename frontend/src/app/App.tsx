@@ -1289,7 +1289,7 @@ function AppContent() {
         appInfo={appInfo} auth={auth} view={view} imagineJobs={imagineJobs}
         conversations={conversations.filter(item => !item.project_id)} conversationId={conversationId} loadingList={loadingList} hasMore={hasMore}
         accountRef={accountRef} accountMenu={accountMenu} setSearchOpen={setSearchOpen}
-        onToggleCollapsed={() => setCollapsed(value => !value)} goChat={goChat} go={go}
+        onToggleCollapsed={() => setCollapsed(value => !value)} onCollapsedChange={setCollapsed} goChat={goChat} go={go}
         preloadImagine={preload(loadImagine)} preloadCompanion={preload(loadCompanion)} preloadSettings={preload(loadSettings)}
         setSidebarOpen={setSidebarOpen} setSceneRequest={setSceneRequest} setCharacterPickerOpen={setCharacterPickerOpen}
         setFocusJobId={setFocusJobId} openConversation={openConversation} setConversationMenu={setConversationMenu}

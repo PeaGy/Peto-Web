@@ -1,5 +1,5 @@
 import type { CSSProperties, Dispatch, Ref, SetStateAction, ReactNode } from 'react';
-import { MIN_SIDEBAR_WIDTH, useSidebarResize } from './useSidebarResize';
+import { COLLAPSED_SIDEBAR_WIDTH, useSidebarResize } from './useSidebarResize';
 import type { AppInfo, AuthState, Conversation, ImagineJob } from '../shared/api/api';
 import type { AccountMenuPlace } from './AccountMenu';
 import type { AppView } from './preferences';
@@ -14,6 +14,7 @@ type SidebarProps = {
   loadingList: boolean; hasMore: boolean;
   accountRef: Ref<HTMLButtonElement>; accountMenu: AccountMenuPlace | null;
   setSearchOpen: (open: boolean) => void; onToggleCollapsed: () => void;
+  onCollapsedChange: (collapsed: boolean) => void;
   goChat: () => void; go: (view: AppView) => void;
   preloadImagine: () => void; preloadCompanion: () => void; preloadSettings: () => void;
   setSidebarOpen: (open: boolean) => void; setSceneRequest: Dispatch<SetStateAction<number>>;
@@ -31,12 +32,12 @@ export default function Sidebar({
   setSearchOpen, onToggleCollapsed, goChat, go, preloadImagine, preloadCompanion,
   preloadSettings, setSidebarOpen, setSceneRequest, setCharacterPickerOpen,
   setFocusJobId, openConversation, setConversationMenu, onLoadMore, toggleAccountMenu,
-  onOpenImagineLibrary,
+  onOpenImagineLibrary, onCollapsedChange,
 }: SidebarProps) {
-  const { width, maxWidth, resizing, handleProps } = useSidebarResize(collapsed);
+  const { width, expandedWidth, maxWidth, resizing, visualCollapsed, contentOpacity, handleProps } = useSidebarResize(collapsed, onCollapsedChange);
   return (
-      <aside className={["sidebar", sidebarOpen && "open", collapsed && "collapsed", resizing && "resizing"].filter(Boolean).join(" ")}
-        style={{ '--sidebar-width': `${width}px` } as CSSProperties}>
+      <aside className={["sidebar", sidebarOpen && "open", visualCollapsed && "collapsed", resizing && "resizing"].filter(Boolean).join(" ")}
+        style={{ '--sidebar-width': `${expandedWidth}px`, '--sidebar-drag-width': `${width}px`, '--sidebar-content-opacity': contentOpacity } as CSSProperties}>
         <div className="sidebar-head">
           <div className="sidebar-brand">
             <PetoAvatar info={appInfo} />
@@ -46,9 +47,9 @@ export default function Sidebar({
           <button
             type="button"
             className="sidebar-toggle"
-            aria-expanded={!collapsed}
-            aria-label={collapsed ? "Mở rộng thanh bên" : "Thu gọn thanh bên"}
-            title={collapsed ? "Mở rộng thanh bên" : "Thu gọn thanh bên"}
+            aria-expanded={!visualCollapsed}
+            aria-label={visualCollapsed ? "Mở rộng thanh bên" : "Thu gọn thanh bên"}
+            title={visualCollapsed ? "Mở rộng thanh bên" : "Thu gọn thanh bên"}
             onClick={() => onToggleCollapsed()}
           >
             <SidebarIcon />
@@ -184,8 +185,8 @@ export default function Sidebar({
           </button>
         </div>
         <div {...handleProps} className="sidebar-resize-handle" role="separator" aria-orientation="vertical"
-          aria-label="Đổi độ rộng thanh bên" aria-valuemin={MIN_SIDEBAR_WIDTH} aria-valuemax={maxWidth}
-          aria-valuenow={width} tabIndex={collapsed ? -1 : 0} />
+          aria-label="Đổi độ rộng thanh bên" aria-valuemin={COLLAPSED_SIDEBAR_WIDTH} aria-valuemax={maxWidth}
+          aria-valuenow={width} tabIndex={0} />
       </aside>
   );
 }

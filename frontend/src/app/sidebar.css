@@ -128,9 +128,11 @@
 .sidebar-resize-handle:hover::after,
 .sidebar-resize-handle:focus-visible::after,
 .sidebar.resizing .sidebar-resize-handle::after { background: var(--muted); }
-.sidebar.resizing { transition: none; }
+.sidebar.resizing { width: var(--sidebar-drag-width); transition: none; }
+.sidebar.resizing :is(.sidebar-brand, .sidebar-search-button, .nav-label, .account-name) { opacity: var(--sidebar-content-opacity); transition: none; }
+.sidebar.resizing .sidebar-section { opacity: var(--sidebar-content-opacity); visibility: visible; transition: none; }
+.sidebar.resizing.collapsed .sidebar-section { pointer-events: none; }
 html.sidebar-resizing, html.sidebar-resizing * { cursor: col-resize !important; user-select: none !important; }
-@media (min-width: 721px) { .sidebar.collapsed .sidebar-resize-handle { display: none; } }
 @media (max-width: 720px) { .sidebar-resize-handle { display: none; } }
 
 /* Giữ phần mờ dần, bỏ phần chuyển động. */
