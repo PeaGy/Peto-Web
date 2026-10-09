@@ -1804,6 +1804,45 @@ describe('Chế độ nhập vai', () => {
 });
 
 describe('Chọn model', () => {
+  it('chat A/B khôi phục model và effort qua Back, F5 và trình duyệt không có lựa chọn cục bộ', async () => {
+    signIn([{ ...MODELS[0], efforts: ['low', 'medium', 'high'] },
+      { ...MODELS[1], efforts: ['none', 'low', 'medium', 'high', 'xhigh', 'max'] }]);
+    vi.mocked(api.getMessages).mockImplementation(async (id, _signal, settings) => {
+      settings?.(id === 'A' ? { model: 'luna', effort: 'xhigh' } : { model: 'peto', effort: 'low' });
+      return [row(`Tin ${id}`)];
+    });
+    const select = async (id: string, model: string, effort: string) => {
+      fireEvent.click(screen.getByRole('button', { name: id, exact: true }));
+      await screen.findByText(`Tin ${id}`);
+      expect(screen.getByRole('button', { name: `Model: ${model}` })).toBeTruthy();
+      expect(screen.getByRole('button', { name: `Mức suy nghĩ: ${effort}` })).toBeTruthy();
+    };
+    await openApp(); await select('A', '6 Luna', 'Rất cao'); await select('B', 'Peto', 'Thấp');
+    act(() => history.back()); await screen.findByText('Tin A');
+    expect(screen.getByRole('button', { name: 'Model: 6 Luna' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Mức suy nghĩ: Rất cao' })).toBeTruthy();
+    cleanup(); localStorage.clear(); await openApp(); await screen.findByText('Tin A');
+    expect(screen.getByRole('button', { name: 'Mức suy nghĩ: Rất cao' })).toBeTruthy();
+    expect(api.updateConversation).not.toHaveBeenCalled();
+  });
+
+  it('chọn khi chưa gửi lưu ngay đúng chat; gửi đợi thao tác lưu xong', async () => {
+    signIn([{ ...MODELS[0], efforts: ['low', 'medium', 'high'] }, MODELS[1]]);
+    vi.mocked(api.getMessages).mockImplementation(async (_id, _signal, settings) => { settings?.({ model: 'peto', effort: 'low' }); return [row('Lịch sử A')]; });
+    const saved = deferred<void>(); vi.mocked(api.updateConversation).mockReturnValue(saved.promise);
+    vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers) => { handlers.onMeta?.('A', 'high'); handlers.onDone?.(); });
+    await openApp(); fireEvent.click(screen.getByRole('button', { name: 'A', exact: true }));
+    await screen.findByText('Lịch sử A');
+    fireEvent.click(screen.getByRole('button', { name: 'Mức suy nghĩ: Thấp' }));
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'Cao', exact: true }));
+    await waitFor(() => expect(api.updateConversation).toHaveBeenCalledWith('A', { model: 'peto', effort: 'high' }));
+    fireEvent.change(screen.getByLabelText('Nhắn cho Peto'), { target: { value: 'Tiếp nhé' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Gửi', exact: true }));
+    expect(api.sendMessage).not.toHaveBeenCalled();
+    await act(async () => saved.resolve());
+    await waitFor(() => expect(api.sendMessage).toHaveBeenCalledOnce());
+    expect(vi.mocked(api.sendMessage).mock.calls[0][0]).toMatchObject({ conversationId: 'A', model: 'peto', effort: 'high' });
+  });
   it('Haiku có đủ năm effort, không có none; đổi từ Luna bỏ mức không hỗ trợ', async () => {
     localStorage.setItem('peto-model', 'luna');
     localStorage.setItem('peto-effort', 'none');

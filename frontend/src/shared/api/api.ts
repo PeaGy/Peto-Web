@@ -276,7 +276,14 @@ export async function listConversations(offset = 0, limit = 50, query = '', filt
   return json(response);
 }
 
-export async function updateConversation(id: string, change: { title?: string; pinned?: boolean; project_id?: string | null; archived?: boolean }): Promise<void> {
+export type ChatSelection = { model: string; effort: Effort };
+export type ConversationSettings = Partial<ChatSelection> & { project_id?: string | null; persona?: Persona; archived?: boolean; selection_notice?: string | null };
+
+export async function getConversationSettings(id: string, signal?: AbortSignal): Promise<ConversationSettings> {
+  return json(await fetch(`/api/conversations/${encodeURIComponent(id)}/settings`, { signal, cache: 'no-store' }));
+}
+
+export async function updateConversation(id: string, change: { title?: string; pinned?: boolean; project_id?: string | null; archived?: boolean; model?: string; effort?: Effort }): Promise<void> {
   await json(await fetch(`/api/conversations/${id}`, {method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(change)}));
 }
 
@@ -285,9 +292,9 @@ export async function conversationVersions(id: string): Promise<Conversation[]> 
   return data.versions;
 }
 
-export async function getMessages(conversationId: string, signal?: AbortSignal, onSettings?: (settings: {project_id?: string | null; persona?: Persona; archived?: boolean}) => void): Promise<Message[]> {
+export async function getMessages(conversationId: string, signal?: AbortSignal, onSettings?: (settings: ConversationSettings) => void): Promise<Message[]> {
   const response = await fetch(`/api/conversations/${encodeURIComponent(conversationId)}/messages`, { signal });
-  const data = await json<{ messages: Message[]; project_id?: string | null; persona?: Persona; archived?: boolean }>(response);
+  const data = await json<ConversationSettings & { messages: Message[] }>(response);
   onSettings?.(data);
   return data.messages;
 }

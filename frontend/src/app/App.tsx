@@ -18,7 +18,7 @@ import { Greeting } from '../features/chat/Greeting';
 import { LoadingIndicator } from '../shared/ui/LoadingIndicator';
 import { MenuIcon, PinIcon } from './navigationIcons';
 import { PetoAvatar, AccountAvatar, accountLine, accountSubtitle } from './accountUi';
-import { EFFORTS, THEMES, readStoredModel, readStoredEffort, readStoredTheme, readStoredCollapsed, type ThemeChoice, type AppView } from './preferences';
+import { EFFORTS, THEMES, readStoredTheme, readStoredCollapsed, type ThemeChoice, type AppView } from './preferences';
 import { MAX_FILES, MAX_MEDIA_FILES, MAX_FILE_BYTES, MAX_TOTAL_BYTES, isImageFile, isMediaFile, fileToBase64 } from '../features/chat/attachments';
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type SetStateAction } from "react";
 import '../shared/styles/styles.css';
@@ -38,6 +38,7 @@ const CharacterPicker = lazy(() => import('../features/companion/characters/Char
 import { readCharacterMotion, writeCharacterMotion, type CharacterMotion } from "../features/companion/characters/characterView";
 import Composer from "../features/chat/Composer";
 import { useChatDrafts } from '../features/chat/useChatDrafts';
+import { CHAT_SELECTION_ERROR, useChatSelection } from '../features/chat/useChatSelection';
 import { newChatContext, type NewChatContext } from '../features/chat/chatDrafts';
 import TextEditDialog from '../shared/ui/TextEditDialog';
 import HistorySearch from './HistorySearch';
@@ -63,7 +64,7 @@ import {
   type AuthState,
   type ChatAttachment,
   type Conversation,
-  type Effort,
+  type ChatSelection,
   type ImagineJob,
   type Message,
   type OutgoingAttachment,
@@ -104,7 +105,7 @@ const CharacterSettings = characterSettings.View;
 const ConnectorSettings = connectorSettings.View;
 type ChatRevision = { target: Message; text: string };
 type ActiveReply = { id: string | null; messages: Message[]; persona: Persona; projectId: string | null;
-  retry?: ChatRevision; error?: string };
+  selection: ChatSelection; retry?: ChatRevision; error?: string };
 
 // Old messages keep their rendered Markdown while the draft or current reply changes.
 export default function App() {
@@ -180,8 +181,6 @@ function AppContent() {
   const editDocument = useCallback((item: { id: string; version: number }) => {
     setDocumentSelection({ id: item.id, version: item.version, key: Date.now() });
   }, []);
-  const [effort, setEffort] = useState<Effort>(readStoredEffort);
-  const [model, setModel] = useState<string>(readStoredModel);
   const [webSearch, setWebSearch] = useState<WebSearchMode>("auto");
 
   const [streaming, setStreaming] = useState(false);
@@ -339,7 +338,7 @@ function AppContent() {
       .catch(() => setAppInfo(null));
   }, []);
 
-  usePreferencesPersistence({ effort, model, collapsed, theme });
+  usePreferencesPersistence({ collapsed, theme });
 
   useEffect(() => {
     return () => {
@@ -404,6 +403,11 @@ function AppContent() {
     setAuthError("Phiên đăng nhập đã hết hạn hoặc tài khoản không còn được cho phép.");
   }, [clearDrafts]);
 
+  const chatSelection = useChatSelection(auth?.authenticated ? auth.user?.id ?? 'authenticated' : null,
+    auth?.user?.models ?? [], handleUnauthorized,
+    message => setError(previous => message ?? (previous === CHAT_SELECTION_ERROR ? null : previous)),
+    setNotice, view === 'chat' && !streaming && !loadingConversation && !loadFailed);
+  const { model, effort, setModel, setEffort } = chatSelection;
   const projectState = useProjects(auth?.authenticated ? auth.user?.id ?? 'authenticated' : null, handleUnauthorized);
   const refreshProjects = projectState.refresh;
   const refreshProjectChats = projectState.refreshChats;
@@ -637,6 +641,7 @@ function AppContent() {
   }
 
   function restoreReply(live: ActiveReply) {
+    chatSelection.restore(live.id, { ...live.selection, persona: live.persona });
     setMessages(live.messages);
     setPersona(live.persona);
     setActiveProjectId(live.projectId);
@@ -662,6 +667,7 @@ function AppContent() {
     setNotice(null);
     setConversationId(id);
     conversationIdRef.current = id;
+    chatSelection.restore(id);
     setArchived(Boolean(allConversations.find(item => item.id === id)?.archived));
 
     setActiveProjectId(allConversations.find(item => item.id === id)?.project_id ?? null);
@@ -679,11 +685,14 @@ function AppContent() {
         restoreReply(live);
         return;
       }
+      await chatSelection.waitForSave(id);
+      if (version !== loadVersion.current) return;
       const loaded = await getMessages(id, controller.signal, settings => {
         if (version !== loadVersion.current) return;
         setActiveProjectId(settings.project_id ?? null);
         setPersona(settings.persona ?? 'assistant');
         setArchived(Boolean(settings.archived));
+        chatSelection.restore(id, settings);
       });
       if (version !== loadVersion.current) return;
       setMessages(loaded);
@@ -724,6 +733,7 @@ function AppContent() {
     setShowJump(false);
     setConversationId(null);
     conversationIdRef.current = null;
+    chatSelection.restore(null);
     setArchived(false);
     const context = fromRoute ? rootContext : { projectId, persona: 'assistant' as const };
     setActiveProjectId(context.projectId);
@@ -834,7 +844,8 @@ function AppContent() {
     }));
 
     const startedAt = performance.now();
-    const reply: ActiveReply = { id: conversationId, persona, projectId: activeProjectId, retry: revision, messages: [
+    const reply: ActiveReply = { id: conversationId, persona, projectId: activeProjectId,
+      selection: { model: chosenModel, effort: effectiveEffort }, retry: revision, messages: [
       ...prefix,
       { role: "user", content: text, attachments: revision?.target.attachments || optimistic },
       // Bước "chờ" chỉ có ở trình duyệt: bước đầu tiên máy chủ gửi thay nó.
@@ -886,6 +897,8 @@ function AppContent() {
         })),
       );
 
+      await chatSelection.waitForSave(conversationId);
+      if (session !== authVersion.current || controller.signal.aborted) return;
       await sendMessage(
         {
           message: text,
@@ -907,6 +920,7 @@ function AppContent() {
             const selected = isSelectedReply(reply);
             reply.id = id;
             if (selected) {
+              chatSelection.accepted(id, reply.selection);
               conversationIdRef.current = id;
               setConversationId(id);
               const path = chatRoute(id);
@@ -1444,7 +1458,7 @@ function AppContent() {
             unavailable: null,
             onToggle: toggleRoleplay,
           } : undefined}
-          menuDisabled={streaming || view !== "chat"}
+          menuDisabled={streaming || loadingConversation || loadFailed || archived || view !== "chat"}
           model={chosenModel}
           models={models}
           onModelChange={setModel}

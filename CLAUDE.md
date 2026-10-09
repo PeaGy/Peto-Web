@@ -269,12 +269,27 @@ and the access rules; the server checks them on every chat turn and agent step, 
 - `POST /api/chat` takes `model` per message, so switching mid-conversation works (history is plain text). Companion and
   roleplay conversations must stay on `peto` (400): the roleplay prompt can be 18+, and it must not reach the owner's
   OpenAI account. The title call uses the same model as the first message. `/api/auth/me` returns the account's web
-  `models`; `ModelMenu.tsx` sits left of the send button (hidden with fewer than two models or in roleplay), remembers
-  the choice in `localStorage` (`peto-model`), and phones show the send button as an arrow only to keep the bar on
+  `models`; `ModelMenu.tsx` sits left of the send button (hidden with fewer than two models or in roleplay), and
+  phones show the send button as an arrow only to keep the bar on
   one row.
 - The persona rule still holds: whatever model runs, Peto does not name the model behind it.
 - Tests patch `features.chat.service.get_provider` with a callable that accepts the model (`lambda model="peto": ...`).
   `tests/test_models.py` covers the access rules, step costs and the OpenAI call shape with fake clients.
+
+On 2026-10-10 Web Chat gained per-conversation `model`/`effort` columns, migrated at startup with `peto`/`auto`
+for old conversations. PATCH `/api/conversations/{id}` saves the pair together, separately from other metadata,
+with owner, persona, provider access and effort validation; it does not change the recents ordering. Accepted chat
+turns also save the UI choice (including `auto`, rather than the resolved effort for that message). Branches copy
+the selection, and changing a branch does not change its source. Reads return a valid fallback and a Vietnamese
+notice if a model/effort becomes unavailable, without destroying the stored preference on a read.
+`getMessages` returns selection metadata; GET `/api/conversations/{id}/settings` supports lightweight refresh on
+window focus/visibility return. `useChatSelection` restores selections without remounting the composer or reloading
+messages on focus, serializes writes per chat, guards stale replies/account changes, and waits for pending writes
+before sending or reopening that chat. Network save failures are visible; successful sends persist the current
+choice again. `peto-model`/`peto-effort` now only supply device-local defaults for chats without an ID, updated by
+explicit user choices rather than by opening an existing chat. Across devices, the last server write wins; this
+is not continuous push synchronization. Tests use temporary databases/fake APIs, including independent browser
+contexts, mobile, F5, Back/Forward and delayed writes; no paid provider requests are needed.
 
 Claude was added on 2026-10-08: `haiku` (`claude-haiku-5-5`) is available to every signed-in account on Web and Agent;
 `sonnet` (`claude-sonnet-5-5`) is owner-only in Agent, as explicitly chosen by the owner. Both accept

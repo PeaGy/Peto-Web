@@ -42,11 +42,21 @@ async def conversation_settings(owner: str, conversation_id: str) -> dict | None
     của owner."""
     async with db_connection.connect() as db:
         cursor = await db.execute(
-            "SELECT mode, persona, project_id, archived FROM conversations WHERE id = ? AND owner = ?",
+            "SELECT mode, persona, project_id, archived, model, effort FROM conversations WHERE id = ? AND owner = ?",
             (conversation_id, owner),
         )
         row = await cursor.fetchone()
-        return {"mode": row[0], "persona": row[1], "project_id": row[2], "archived": bool(row[3])} if row else None
+        return {"mode": row[0], "persona": row[1], "project_id": row[2], "archived": bool(row[3]), "model": row[4], "effort": row[5]} if row else None
+
+
+async def set_chat_selection(owner: str, conversation_id: str, model: str, effort: str) -> None:
+    """Lưu cặp lựa chọn đã kiểm tra quyền; không đổi thứ tự danh sách hội thoại."""
+    async with db_connection.connect() as db:
+        result = await db.execute("UPDATE conversations SET model=?, effort=? WHERE id=? AND owner=? AND mode='chat' AND archived=0",
+                                  (model, effort, conversation_id, owner))
+        if not result.rowcount:
+            raise HTTPException(409, 'Hội thoại đã thay đổi. Mở lại trước khi chọn model nhé.')
+        await db.commit()
 
 
 async def latest_conversation(owner: str, mode: str) -> str | None:

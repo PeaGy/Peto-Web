@@ -11,6 +11,51 @@ from fastapi import HTTPException
 
 from storage import connection as db_connection
 from core.config import UPLOAD_DIR
+from ai import models as ai_models
+from storage.conversations import conversation_settings, set_chat_selection
+
+
+def validate_selection(owner, settings, model, effort):
+    """Kiểm tra cả model, quyền tài khoản, persona và mức suy nghĩ trước khi lưu."""
+    if settings['mode'] != 'chat':
+        raise HTTPException(400, 'Lựa chọn model chỉ dùng trong tab Trò chuyện.')
+    if settings['persona'] == 'roleplay' and model != ai_models.DEFAULT_MODEL:
+        raise HTTPException(400, 'Chế độ nhập vai chỉ dùng Peto.')
+    try:
+        ai_models.resolve(owner, model, 'web')
+    except ai_models.ModelUnavailable as err:
+        raise HTTPException(err.status, err.message) from None
+    if effort != 'auto' and effort not in ai_models.supported_efforts(model):
+        raise HTTPException(400, 'Model này không hỗ trợ mức suy nghĩ đã chọn.')
+
+
+def public_selection(owner, settings):
+    """Khôi phục lựa chọn hợp lệ; đọc không ghi đè lựa chọn cũ khi provider tạm bị tắt."""
+    model, effort = settings['model'], settings['effort']
+    notice = None
+    if settings['mode'] != 'chat':
+        return {}
+    try:
+        validate_selection(owner, settings, model, effort)
+    except HTTPException:
+        allowed = {item.key for item in ai_models.usable(owner, 'web')}
+        if model not in allowed or (settings['persona'] == 'roleplay' and model != 'peto'):
+            model = 'peto'
+            notice = 'Model đã lưu hiện không dùng được. Peto được chọn để tiếp tục.'
+        if effort != 'auto' and effort not in ai_models.supported_efforts(model):
+            effort = 'auto'
+            notice = (notice + ' ' if notice else '') + 'Mức suy nghĩ đã lưu không được hỗ trợ; đã chuyển sang Tự động.'
+    return {'model': model, 'effort': effort, 'selection_notice': notice}
+
+
+async def update_selection(owner, conversation_id, model, effort):
+    settings = await conversation_settings(owner, conversation_id)
+    if not settings:
+        raise HTTPException(404, 'Không tìm thấy hội thoại')
+    if settings['archived']:
+        raise HTTPException(409, 'Hãy khôi phục hội thoại đã lưu trữ trước khi đổi model.')
+    validate_selection(owner, settings, model, effort)
+    await set_chat_selection(owner, conversation_id, model, effort)
 
 
 async def update(owner, conversation_id, title=None, pinned=None, archived=None):
@@ -112,8 +157,8 @@ async def fork(owner, conversation_id, message_id, text):
             group = source['branch_group'] or conversation_id
             now = time.time()
             await connection.execute('UPDATE conversations SET branch_group=? WHERE id=?', (group, conversation_id))
-            await connection.execute("""INSERT INTO conversations(id,owner,title,created_at,updated_at,mode,persona,title_state,branch_group,project_id)
-                VALUES(?,?,?,?,?,'chat',?,'locked',?,?)""", (new_id,owner,source['title'],now,now,source['persona'],group,source['project_id']))
+            await connection.execute("""INSERT INTO conversations(id,owner,title,created_at,updated_at,mode,persona,title_state,branch_group,project_id,model,effort)
+                VALUES(?,?,?,?,?,'chat',?,'locked',?,?,?,?)""", (new_id,owner,source['title'],now,now,source['persona'],group,source['project_id'],source['model'],source['effort']))
             document_ids, message_ids = {}, {}
             for row in rows:
                 artifacts = json.loads(row['artifacts'] or '[]')

@@ -32,6 +32,8 @@ class ChatRequest(BaseModel):
 
 
 class ConversationUpdate(BaseModel):
+    model: str | None = Field(default=None, max_length=16)
+    effort: str | None = Field(default=None, max_length=16)
     project_id: str | None = Field(default=None, max_length=64)
     title: str | None = Field(default=None, max_length=120)
     pinned: bool | None = None

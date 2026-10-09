@@ -1,22 +1,9 @@
 import { useEffect } from 'react';
-import type { Effort } from '../shared/api/api';
-import { EFFORT_KEY, MODEL_KEY, SIDEBAR_KEY, THEME_KEY, lightMediaQuery, type ThemeChoice } from './preferences';
+import { SIDEBAR_KEY, THEME_KEY, lightMediaQuery, type ThemeChoice } from './preferences';
 
-export function usePreferencesPersistence({ effort, model, collapsed, theme }: {
-  effort: Effort; model: string; collapsed: boolean; theme: ThemeChoice;
+export function usePreferencesPersistence({ collapsed, theme }: {
+  collapsed: boolean; theme: ThemeChoice;
 }) {
-  useEffect(() => {
-    try {
-      localStorage.setItem(EFFORT_KEY, effort);
-    } catch {}
-  }, [effort]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(MODEL_KEY, model);
-    } catch {}
-  }, [model]);
-
   useEffect(() => {
     try {
       localStorage.setItem(SIDEBAR_KEY, collapsed ? "1" : "0");

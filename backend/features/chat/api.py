@@ -33,7 +33,11 @@ async def list_conversations(
 
 @router.patch('/api/conversations/{conversation_id}')
 async def update_conversation(conversation_id: str, body: ConversationUpdate, owner: str = Depends(current_owner)):
-    if 'project_id' in body.model_fields_set:
+    if {'model', 'effort'} & body.model_fields_set:
+        if body.model_fields_set != {'model', 'effort'} or body.model is None or body.effort is None:
+            raise HTTPException(400, 'Gửi model và mức suy nghĩ cùng nhau, riêng với thay đổi hội thoại khác.')
+        await conversation_actions.update_selection(owner, conversation_id, body.model, body.effort)
+    elif 'project_id' in body.model_fields_set:
         if body.title is not None or body.pinned is not None or body.archived is not None:
             raise HTTPException(400, 'Chuyển dự án riêng với thay đổi tên, ghim hoặc lưu trữ')
         await projects.move_conversation(owner, conversation_id, body.project_id)
@@ -47,6 +51,14 @@ async def conversation_versions(conversation_id: str, owner: str = Depends(curre
     return {'versions': await conversation_actions.versions(owner, conversation_id)}
 
 
+@router.get('/api/conversations/{conversation_id}/settings')
+async def get_conversation_settings(conversation_id: str, owner: str = Depends(current_owner)):
+    settings = await db.conversation_settings(owner, conversation_id)
+    if not settings:
+        raise HTTPException(404, 'Không tìm thấy hội thoại')
+    return {'persona': settings['persona'], **conversation_actions.public_selection(owner, settings)}
+
+
 @router.get("/api/conversations/{conversation_id}/messages")
 async def get_messages(
     conversation_id: str, owner: str = Depends(current_owner)
@@ -56,7 +68,8 @@ async def get_messages(
         raise HTTPException(status_code=404, detail="Không tìm thấy hội thoại")
     rows = await db.get_messages(owner, conversation_id)
     companion = settings["mode"] == "companion"
-    return {"messages": [_public_message(row, companion) for row in rows], 'project_id': settings.get('project_id'), 'persona': settings['persona'], 'archived': settings['archived']}
+    return {"messages": [_public_message(row, companion) for row in rows], 'project_id': settings.get('project_id'), 'persona': settings['persona'], 'archived': settings['archived'],
+            **conversation_actions.public_selection(owner, settings)}
 
 
 @router.get("/api/attachments/{attachment_id}")

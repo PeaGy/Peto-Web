@@ -28,6 +28,9 @@ async def init_db() -> None:
             "ON conversations(owner, updated_at DESC)"
         )
         conversation_columns = await (await db.execute("PRAGMA table_info(conversations)")).fetchall()
+        for name, definition in [('model', "TEXT NOT NULL DEFAULT 'peto'"), ('effort', "TEXT NOT NULL DEFAULT 'auto'")]:
+            if name not in {column[1] for column in conversation_columns}:
+                await db.execute(f'ALTER TABLE conversations ADD COLUMN {name} {definition}')
         for name, definition in [('pinned', 'INTEGER NOT NULL DEFAULT 0'), ('archived', 'INTEGER NOT NULL DEFAULT 0'), ('branch_group', "TEXT NOT NULL DEFAULT ''")]:
             if name not in {column[1] for column in conversation_columns}:
                 await db.execute(f'ALTER TABLE conversations ADD COLUMN {name} {definition}')

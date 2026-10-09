@@ -429,6 +429,10 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                         attachment_lib.delete_files(saved_paths)
                         raise
                     await db.set_title_if_empty(conversation_id, _title_from(text, files))
+                    if mode == 'chat':
+                        # Lưu lựa chọn trong UI, không lưu mức suy nghĩ đã giải từ Tự động cho riêng tin này.
+                        from storage.conversations import set_chat_selection
+                        await set_chat_selection(owner, conversation_id, model, (request.effort or 'auto').strip().lower())
                     rows = await db.get_messages(owner, conversation_id, limit=history_limit)
                 stored_user = next(row for row in rows if row["id"] == message_id)
                 yield sse({
