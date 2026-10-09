@@ -1,7 +1,12 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Locator, type Page } from '@playwright/test';
 import { chatMessages, mockPeto, noPageOverflow, openChat } from './fixtures';
 
 const names = ['Cảnh biển.png', 'Ảnh dọc.png'];
+
+async function chooseZoom(dialog: Locator, label: string) {
+  await dialog.getByRole('button', { name: 'Mức phóng ảnh', exact: true }).click();
+  await dialog.getByRole('menuitemradio', { name: label, exact: true }).click();
+}
 async function openImageChat(page: Page, broken = false) {
   const state = await mockPeto(page);
   // Tải xuống của Chromium không đi qua route giả. Ảnh fixture dùng data URL
@@ -31,7 +36,7 @@ test('mở ảnh trong chat, zoom, tải, chuyển ảnh và đóng giữ nguyê
   await thumbnail.click();
   const dialog = page.getByRole('dialog', { name: 'Xem ảnh đính kèm' });
   const image = dialog.getByRole('img');
-  const zoom = dialog.getByRole('combobox', { name: 'Mức phóng ảnh' });
+  const zoom = dialog.getByRole('button', { name: 'Mức phóng ảnh', exact: true });
   await expect(zoom).toBeEnabled();
   await expect(image).toHaveAttribute('alt', names[0]);
   expect(page.url()).toBe(url);
@@ -46,10 +51,43 @@ test('mở ảnh trong chat, zoom, tải, chuyển ảnh và đóng giữ nguyê
     await page.keyboard.press('Tab');
     expect(await dialog.evaluate(node => node.contains(document.activeElement))).toBe(true);
   }
+  await zoom.click();
+  const menu = dialog.getByRole('menu', { name: 'Mức phóng ảnh' });
+  await expect(menu.getByRole('menuitemradio', { name: 'Vừa màn hình', checked: true })).toBeVisible();
+  await expect(zoom).toHaveText(/^\d+%$/);
+  await expect(dialog.locator('select, .chat-image-hint')).toHaveCount(0);
+  expect(await zoom.evaluate(node => getComputedStyle(node).outlineStyle)).toBe('none');
+  const arrowSpacing = await zoom.evaluate(node => node.getBoundingClientRect().right - node.querySelector('svg')!.getBoundingClientRect().right);
+  expect(arrowSpacing).toBeGreaterThanOrEqual(12);
+  const menuBox = (await menu.boundingBox())!;
+  expect(menuBox.x).toBeGreaterThanOrEqual(0);
+  expect(menuBox.x + menuBox.width).toBeLessThanOrEqual(page.viewportSize()!.width);
+  await page.screenshot({ path: info.outputPath('chat-image-zoom-menu.png') });
+  await page.keyboard.press('ArrowRight');
+  await expect(image).toHaveAttribute('alt', names[0]);
+  await page.keyboard.press('Escape');
+  await expect(menu).toHaveCount(0);
+  await expect(dialog).toBeVisible();
+  await expect(zoom).toBeFocused();
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Tab');
+  await expect(menu).toHaveCount(0);
+  await expect(dialog.getByRole('link', { name: 'Tải ảnh xuống' })).toBeFocused();
+  await zoom.click();
+  await page.keyboard.press('Shift+Tab');
+  await expect(menu).toHaveCount(0);
+  await expect(dialog.getByRole('button', { name: 'Ảnh tiếp theo' })).toBeFocused();
+  await zoom.click();
+  await dialog.locator('.chat-image-stage').click({ position: { x: 8, y: 8 } });
+  await expect(menu).toHaveCount(0);
+  await expect(dialog).toBeVisible();
+  // Mở/đóng bằng chuột không để lại viền chọn trắng của select gốc.
+  await zoom.click();
+  await zoom.click();
   await page.screenshot({ path: info.outputPath('chat-image-viewer.png') });
-  await zoom.selectOption('1');
+  await chooseZoom(dialog, '100%');
   await expect.poll(async () => (await image.boundingBox())!.width).toBeCloseTo(1600, 0);
-  await zoom.selectOption('fit');
+  await chooseZoom(dialog, 'Vừa màn hình');
   await expect.poll(async () => (await image.boundingBox())!.width).toBeCloseTo(fit!.width, 0);
   if (info.project.name === 'pc') {
     await page.mouse.move(viewport!.x + viewport!.width / 2, viewport!.y + viewport!.height / 2);
@@ -67,7 +105,9 @@ test('mở ảnh trong chat, zoom, tải, chuyển ảnh và đóng giữ nguyê
   await dialog.getByRole('button', { name: 'Ảnh tiếp theo' }).click();
   await expect(zoom).toBeEnabled();
   await expect(image).toHaveAttribute('alt', names[1]);
-  await expect(zoom).toHaveValue('fit');
+  await zoom.click();
+  await expect(dialog.getByRole('menuitemradio', { name: 'Vừa màn hình', checked: true })).toBeVisible();
+  await zoom.click();
   await expect(dialog.getByRole('button', { name: 'Ảnh tiếp theo' })).toBeDisabled();
   await dialog.getByRole('button', { name: 'Đóng ảnh' }).click();
   await expect(dialog).toHaveCount(0);
@@ -88,7 +128,7 @@ test('pinch hai ngón chỉ zoom ảnh, kéo sau khi thả và đổi hướng k
   await openImageChat(page);
   await page.locator('.message-image-link').first().click();
   const dialog = page.getByRole('dialog', { name: 'Xem ảnh đính kèm' });
-  await expect(dialog.getByRole('combobox')).toBeEnabled();
+  await expect(dialog.getByRole('button', { name: 'Mức phóng ảnh', exact: true })).toBeEnabled();
   const image = dialog.getByRole('img');
   const stage = dialog.locator('.chat-image-stage');
   const frame = (await stage.boundingBox())!;
@@ -110,9 +150,12 @@ test('pinch hai ngón chỉ zoom ảnh, kéo sau khi thả và đổi hướng k
   await expect.poll(async () => (await image.boundingBox())!.x - afterPinch.x).toBeCloseTo(50, 0);
   expect((await image.boundingBox())!.width).toBeCloseTo(afterPinch.width, 0);
   await page.screenshot({ path: info.outputPath('chat-image-pinch.png') });
-  await dialog.getByRole('combobox').selectOption('fit');
+  await chooseZoom(dialog, 'Vừa màn hình');
   await page.setViewportSize({ width: 844, height: 390 });
   await expect(dialog.getByRole('button', { name: 'Đóng ảnh' })).toBeInViewport();
+  await dialog.getByRole('button', { name: 'Mức phóng ảnh', exact: true }).click();
+  await expect(dialog.getByRole('menuitemradio', { name: 'Vừa màn hình', checked: true })).toBeInViewport();
+  await page.keyboard.press('Escape');
   await expect.poll(async () => (await image.boundingBox())!.height).toBeLessThan(390);
   await noPageOverflow(page);
   await dialog.getByRole('button', { name: 'Đóng ảnh' }).click();

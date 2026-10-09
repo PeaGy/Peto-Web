@@ -105,14 +105,15 @@ test('vừa gửi và khi máy chủ xác nhận có cùng kích thước thumbn
   const before = await imageGrid.boundingBox();
   await user.locator('.message-image-link').first().click();
   const viewer = page.getByRole('dialog', { name: 'Xem ảnh đính kèm' });
-  await expect(viewer.getByRole('combobox')).toBeEnabled();
-  await viewer.getByRole('combobox').selectOption('2');
+  await expect(viewer.getByRole('button', { name: 'Mức phóng ảnh', exact: true })).toBeEnabled();
+  await viewer.getByRole('button', { name: 'Mức phóng ảnh', exact: true }).click();
+  await viewer.getByRole('menuitemradio', { name: '200%', exact: true }).click();
   accept();
   await expect(page.getByText('Đã nhận ảnh và tài liệu.', { exact: true })).toBeVisible();
   await expect(user.locator('.message-image-link').first()).toHaveAttribute('href', '/api/attachments/scene-0');
   await expect(viewer).toBeVisible();
   await expect(viewer.getByRole('img')).toHaveAttribute('src', '/api/attachments/scene-0');
-  await expect(viewer.getByRole('combobox')).toHaveValue('2');
+  await expect(viewer.getByRole('button', { name: 'Mức phóng ảnh', exact: true })).toHaveText('200%');
   await viewer.getByRole('button', { name: 'Đóng ảnh' }).click();
   const after = await imageGrid.boundingBox();
   expect(after!.width).toBe(before!.width);

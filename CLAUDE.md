@@ -2577,6 +2577,9 @@ Chat, Companion and roleplay turn (not the Agent CLI).
 - Clicking a Chat image opens `ChatImageViewer.tsx`, a native modal over the current chat, without changing the URL
   or browser history. Close/Escape restores the trigger's focus without scrolling. The viewer provides original
   image downloads, fit-to-window and 25–800% zoom presets, wheel zoom, mouse drag, two-pointer pinch/pan, and
+  a compact percentage-only `ImageZoomMenu.tsx` using the Chat menu styles. It has no visible gesture hints or
+  native select; fit is a separate menu item. Escape dismisses the menu before the viewer, with keyboard focus
+  feedback only when using the keyboard, and the popup stays scrollable in mobile landscape. The viewer also has
   previous/next controls for images in that message. `imageView.ts` keeps the point under the pointer/pinch center
   anchored and bounds panning; transforms have no transitions so gestures track directly. Pointer ownership is
   limited to the viewer stage; browser zoom remains available elsewhere. Opening a preview during upload keeps

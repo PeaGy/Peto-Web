@@ -1,9 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import type { ChatAttachment } from '../../shared/api/api';
 import { boundImageView, fitImageScale, INITIAL_IMAGE_VIEW, transformImageView, type ImagePoint, type ImageSize, type ImageView } from './imageView';
+import ImageZoomMenu from './ImageZoomMenu';
 import './chatImageViewer.css';
 
-const ZOOM_PRESETS = [0.25, 0.5, 1, 1.5, 2, 4, 8];
 const EMPTY_SIZE: ImageSize = { width: 0, height: 0 };
 const midpoint = (a: ImagePoint, b: ImagePoint): ImagePoint => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
 const distance = (a: ImagePoint, b: ImagePoint) => Math.hypot(a.x - b.x, a.y - b.y);
@@ -94,6 +94,8 @@ export default function ChatImageViewer({ images, index, onIndexChange, onClose 
   }, []);
 
   function pointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+    // Lần chạm ngoài menu chỉ đóng menu, không đồng thời đóng hoặc kéo ảnh.
+    if (dialogRef.current?.querySelector('[role="menu"]')) { press.current = null; return; }
     if (!ready || (event.pointerType !== 'touch' && event.button !== 0)) return;
     event.preventDefault();
     const point = pointAt(event.clientX, event.clientY);
@@ -126,14 +128,10 @@ export default function ChatImageViewer({ images, index, onIndexChange, onClose 
   function select(next: number) {
     if (next >= 0 && next < images.length) onIndexChange(next);
   }
-  const preset = ZOOM_PRESETS.find(value => Math.abs(value - view.scale) < 0.00001);
-  const zoomValue = view.fit ? 'fit' : preset ? String(preset) : 'custom';
-  const percent = `${Math.round(view.scale * 100)}%`;
-
   return <dialog ref={dialogRef} className="chat-image-viewer" aria-label="Xem ảnh đính kèm" onCancel={event => { event.preventDefault(); onClose(); }}
     onKeyDown={event => {
       if (event.key === 'Tab') {
-        const controls = [...event.currentTarget.querySelectorAll<HTMLElement>('button:not(:disabled), a[href], select:not(:disabled)')];
+        const controls = [...event.currentTarget.querySelectorAll<HTMLElement>('button:not(:disabled):not([tabindex="-1"]), a[href]')];
         const first = controls[0], last = controls[controls.length - 1];
         // Chromium có thể chuyển Tab từ nút cuối sang thanh trình duyệt; giữ vòng focus trong modal.
         if (first && last && ((event.shiftKey && document.activeElement === first) || (!event.shiftKey && document.activeElement === last))) {
@@ -141,7 +139,6 @@ export default function ChatImageViewer({ images, index, onIndexChange, onClose 
         }
         return;
       }
-      if (event.target instanceof HTMLSelectElement) return;
       if (event.key === 'ArrowLeft') { event.preventDefault(); select(index - 1); }
       if (event.key === 'ArrowRight') { event.preventDefault(); select(index + 1); }
     }}>
@@ -150,11 +147,7 @@ export default function ChatImageViewer({ images, index, onIndexChange, onClose 
         {images.length > 1 && <small>{index + 1}/{images.length}</small>}
       </div>
       <div className="chat-image-controls">
-        <select aria-label="Mức phóng ảnh" value={zoomValue} disabled={!ready} onChange={event => event.target.value === 'fit' ? fit() : zoom(Number(event.target.value))}>
-          {zoomValue === 'custom' && <option value="custom" disabled>{percent}</option>}
-          <option value="fit">{view.fit ? `${percent} · Vừa khung` : 'Vừa khung'}</option>
-          {ZOOM_PRESETS.map(value => <option key={value} value={value}>{value * 100}%</option>)}
-        </select>
+        <ImageZoomMenu scale={view.scale} fit={view.fit} disabled={!ready} onZoom={zoom} onFit={fit} />
         <a className="chat-image-control" href={file.url} download={file.name} title="Tải ảnh xuống" aria-label="Tải ảnh xuống"><ViewerIcon name="download" /></a>
         <button type="button" className="chat-image-control" title="Đóng ảnh" aria-label="Đóng ảnh" onClick={onClose}><ViewerIcon name="close" /></button>
       </div>
@@ -178,6 +171,5 @@ export default function ChatImageViewer({ images, index, onIndexChange, onClose 
       <button type="button" className="chat-image-control chat-image-previous" aria-label="Ảnh trước" disabled={index === 0} onClick={() => select(index - 1)}><ViewerIcon name="previous" /></button>
       <button type="button" className="chat-image-control chat-image-next" aria-label="Ảnh tiếp theo" disabled={index === images.length - 1} onClick={() => select(index + 1)}><ViewerIcon name="next" /></button>
     </>}
-    <div className="chat-image-hint"><span className="chat-image-mouse-hint">Cuộn để zoom · Kéo để di chuyển</span><span className="chat-image-touch-hint">Dùng hai ngón để zoom · Kéo để di chuyển</span></div>
   </dialog>;
 }

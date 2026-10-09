@@ -16,6 +16,11 @@ function loadImage() {
   return dialog;
 }
 
+function chooseZoom(dialog: HTMLElement, label: string) {
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Mức phóng ảnh' }));
+  fireEvent.click(within(dialog).getByRole('menuitemradio', { name: label }));
+}
+
 describe('khung xem ảnh Chat', () => {
   it('mở tại chỗ, giữ URL/history, đóng bằng nút và trả focus về thumbnail', () => {
     render(<MessageAttachments attachments={images} sent />);
@@ -38,11 +43,11 @@ describe('khung xem ảnh Chat', () => {
     render(<MessageAttachments attachments={images} sent />);
     fireEvent.click(screen.getByRole('link', { name: images[0].name }));
     const dialog = loadImage();
-    const zoom = within(dialog).getByRole('combobox', { name: 'Mức phóng ảnh' }) as HTMLSelectElement;
-    expect(zoom.value).toBe('fit');
-    fireEvent.change(zoom, { target: { value: '2' } });
+    const zoom = within(dialog).getByRole('button', { name: 'Mức phóng ảnh' });
+    expect(zoom.textContent).toBe('50%');
+    chooseZoom(dialog, '200%');
     expect(within(dialog).getByRole('img').style.transform).toContain('scale(2)');
-    fireEvent.change(zoom, { target: { value: 'fit' } });
+    chooseZoom(dialog, 'Vừa màn hình');
     expect(within(dialog).getByRole('img').style.transform).toContain('scale(0.5)');
     fireEvent.keyDown(dialog, { key: 'ArrowRight' });
     loadImage();
@@ -56,11 +61,41 @@ describe('khung xem ảnh Chat', () => {
     const { rerender } = render(<MessageAttachments attachments={images} sent />);
     fireEvent.click(screen.getByRole('link', { name: images[0].name }));
     const dialog = loadImage();
-    fireEvent.change(within(dialog).getByRole('combobox'), { target: { value: '2' } });
+    chooseZoom(dialog, '200%');
     rerender(<MessageAttachments attachments={images.map(image => ({ ...image, id: `${image.id}-stored`, url: `${image.url}-stored` }))} sent />);
     expect(screen.getByRole('dialog')).toBe(dialog);
     expect(within(dialog).getByRole('img').getAttribute('src')).toBe(`${images[0].url}-stored`);
     expect(within(dialog).getByRole('img').style.transform).toContain('scale(2)');
+    expect(within(dialog).getByRole('button', { name: 'Mức phóng ảnh' }).textContent).toBe('200%');
+  });
+  it('menu zoom dùng phím riêng, Escape đóng menu trước và click ngoài giữ khung xem', () => {
+    render(<MessageAttachments attachments={images} sent />);
+    fireEvent.click(screen.getByRole('link', { name: images[0].name }));
+    const dialog = loadImage();
+    const zoom = within(dialog).getByRole('button', { name: 'Mức phóng ảnh' });
+    expect(dialog.querySelector('select')).toBeNull();
+    expect(within(dialog).queryByText(/Cuộn để zoom|Dùng hai ngón/)).toBeNull();
+    fireEvent.keyDown(zoom, { key: 'ArrowDown' });
+    const menu = within(dialog).getByRole('menu', { name: 'Mức phóng ảnh' });
+    expect(document.activeElement).toBe(within(menu).getByRole('menuitemradio', { name: 'Vừa màn hình', checked: true }));
+    fireEvent.keyDown(document.activeElement!, { key: 'Home' });
+    expect(document.activeElement).toBe(within(menu).getByRole('menuitemradio', { name: '25%' }));
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowRight' });
+    expect(within(dialog).getByRole('img').getAttribute('alt')).toBe(images[0].name);
+    fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
+    expect(within(dialog).queryByRole('menu')).toBeNull();
+    expect(screen.getByRole('dialog')).toBe(dialog);
+    expect(document.activeElement).toBe(zoom);
+    fireEvent.click(zoom);
+    const stage = dialog.querySelector('.chat-image-stage')!;
+    fireEvent.pointerDown(stage);
+    fireEvent.click(stage);
+    expect(within(dialog).queryByRole('menu')).toBeNull();
+    expect(screen.getByRole('dialog')).toBe(dialog);
+    fireEvent.click(zoom);
+    fireEvent.pointerDown(within(dialog).getByRole('link', { name: 'Tải ảnh xuống' }));
+    expect(within(dialog).queryByRole('menu')).toBeNull();
+    expect(screen.getByRole('dialog')).toBe(dialog);
   });
   it('ảnh lỗi tải vẫn đóng được và có nút thử lại', () => {
     render(<MessageAttachments attachments={images} sent />);
