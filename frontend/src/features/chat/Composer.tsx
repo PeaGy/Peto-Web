@@ -1,4 +1,4 @@
-import { useRef, useState, type RefObject } from "react";
+import type { RefObject } from "react";
 import ComposerMenu, { type RoleplayOption } from "./ComposerMenu";
 import EffortMenu from "./EffortMenu";
 import { isSpreadsheetFile } from "./attachments";
@@ -60,8 +60,8 @@ interface ComposerProps {
  * Ô nhắn: chữ đang gõ, tệp đính kèm, nút gửi hoặc dừng, và các gợi ý.
  *
  * Chỉ lo phần hiển thị. Bản nháp, danh sách tệp và luồng gửi vẫn nằm ở App vì
- * chúng dính với quy ước giữ nháp tới khi máy chủ xác nhận. Riêng trạng thái kéo
- * thả thì ở đây: ngoài ô nhắn không ai cần biết.
+ * chúng dính với quy ước giữ nháp tới khi máy chủ xác nhận. Kéo thả do vùng chat
+ * nhận chung, còn chọn tệp và dán ảnh vẫn dùng cùng luồng thêm đính kèm.
  */
 export default function Composer({
   draft, onDraftChange, files, onAddFiles, onRemoveFile,
@@ -69,37 +69,15 @@ export default function Composer({
   effort, efforts, onEffortChange, webSearch, onToggleWeb, persona, roleplay, menuDisabled,
   model, models, onModelChange, formRef, boxRef, textareaRef, fileRef,
 }: ComposerProps) {
-  const [dragging, setDragging] = useState(false);
-  const dragDepth = useRef(0);
-
   return (
     <form
       ref={formRef}
-      className={dragging ? "composer-wrap dragging" : "composer-wrap"}
+      className="composer-wrap"
       onSubmit={(event) => {
         event.preventDefault();
         if (!streaming && canSend) void onSubmit();
       }}
-      onDragEnter={(event) => {
-        event.preventDefault();
-        dragDepth.current += 1;
-        setDragging(true);
-      }}
-      onDragOver={(event) => event.preventDefault()}
-      onDragLeave={(event) => {
-        event.preventDefault();
-        dragDepth.current = Math.max(0, dragDepth.current - 1);
-        if (dragDepth.current === 0) setDragging(false);
-      }}
-      onDrop={(event) => {
-        event.preventDefault();
-        dragDepth.current = 0;
-        setDragging(false);
-        if (event.dataTransfer.files.length) onAddFiles(event.dataTransfer.files);
-      }}
     >
-      {dragging && <div className="drop-hint">Thả ảnh hoặc tệp vào đây</div>}
-
       <div className="composer" ref={boxRef}>
         {files.length > 0 && (
           <ul className="attach-list">

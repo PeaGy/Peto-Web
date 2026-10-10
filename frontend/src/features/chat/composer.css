@@ -6,11 +6,6 @@
   padding: 12px 20px 20px;
 }
 
-.composer-wrap.dragging .composer {
-  border-color: var(--accent);
-  background: var(--drop-active);
-}
-
 .drop-hint {
   position: absolute;
   inset: 12px 20px 20px;

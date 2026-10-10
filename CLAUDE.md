@@ -186,6 +186,14 @@ SSE receipt clears only the submitted snapshot, preserving another chat or later
 Since 2026-10-10 the Chat textarea remains editable during a reply, letting the user prepare the next message.
 Enter/form submit cannot start another turn while streaming; Shift+Enter still inserts a newline, Stop stays available,
 and completion never auto-sends the draft. Attachment/model/effort controls retain their existing stream lock.
+Chat file drag/drop is handled once by `ChatFileDropZone.tsx` on the existing `.chat-layout` container, including
+history, header, composer and the open document panel, excluding Sidebar. A non-interactive overlay dims only
+that area and shows a local SVG file cluster and two short Vietnamese lines; no external artwork is fetched.
+Only `Files` drags activate it; text/link drags keep their default behavior. Drops reuse `addFiles` for all existing
+limits/deduplication and never send a message. Streaming/loading/failed/archived states and open modals block drops.
+Leaving the chat, dropping outside, Escape, dragend, blur, hiding the page or changing draft scope clears the overlay.
+While Chat is active, accidental file drops on Sidebar/outside are ignored and prevented from navigating to the file;
+hidden Chat removes this guard so Imagine's existing drag/drop stays independent. Children are not keyed/remounted.
 If the first-turn receipt assigns an ID while the user is still on that unnamed chat, `accept(snapshot, id)` moves
 any remaining draft into the new conversation scope, without overwriting a nonempty destination. Background receipts
 do not move the selected draft. Tests cover late receipts, next-message send, Stop/errors, F5, Back/Forward and

@@ -1066,16 +1066,33 @@ describe('Conversation navigation', () => {
 });
 
 describe('Sending and stopping', () => {
+  it.each(['.messages', '.chat-tools'])('thả tệp ở %s thêm vào nháp hiện tại, không tự gửi', async selector => {
+    await openApp();
+    const input = screen.getByLabelText('Nhắn cho Peto') as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: 'Nội dung đang soạn' } });
+    const target = document.querySelector(selector)!;
+    const file = new File(['Ghi chú'], 'drop.txt', { type: 'text/plain' });
+    const dataTransfer = { files: [file], types: ['Files'] };
+    fireEvent.dragEnter(target, { dataTransfer });
+    expect(screen.getByRole('status').textContent).toContain('Thêm ảnh và tệp');
+    fireEvent.drop(target, { dataTransfer });
+    expect(await screen.findByRole('button', { name: 'Gỡ drop.txt' })).toBeTruthy();
+    expect(screen.getAllByText('drop.txt')).toHaveLength(1);
+    expect(screen.getByLabelText('Nhắn cho Peto')).toBe(input);
+    expect(input.value).toBe('Nội dung đang soạn');
+    expect(api.sendMessage).not.toHaveBeenCalled();
+  });
+
   it('kéo tệp thả vào ô nhắn thì thành đính kèm', async () => {
     await openApp();
     const form = screen.getByPlaceholderText('Nhắn cho Peto…').closest('form')!;
     const file = new File(['xin chào'], 'ghi-chu.txt', { type: 'text/plain' });
     const dataTransfer = { files: [file], types: ['Files'] };
     fireEvent.dragEnter(form, { dataTransfer });
-    expect(screen.getByText('Thả ảnh hoặc tệp vào đây')).toBeTruthy();
+    expect(screen.getByText('Thêm ảnh và tệp')).toBeTruthy();
     fireEvent.drop(form, { dataTransfer });
     expect(await screen.findByText('ghi-chu.txt')).toBeTruthy();
-    expect(screen.queryByText('Thả ảnh hoặc tệp vào đây')).toBeNull();
+    expect(screen.queryByText('Thêm ảnh và tệp')).toBeNull();
   });
 
   it('allows messages longer than the former 4,000 character limit', async () => {

@@ -37,6 +37,7 @@ import { useCharacters } from '../features/companion/characters/useCharacters';
 const CharacterPicker = lazy(() => import('../features/companion/characters/CharacterPicker'));
 import { readCharacterMotion, writeCharacterMotion, type CharacterMotion } from "../features/companion/characters/characterView";
 import Composer from "../features/chat/Composer";
+import ChatFileDropZone from '../features/chat/ChatFileDropZone';
 import { useChatDrafts } from '../features/chat/useChatDrafts';
 import { CHAT_SELECTION_ERROR, useChatSelection } from '../features/chat/useChatSelection';
 import { newChatContext, type NewChatContext } from '../features/chat/chatDrafts';
@@ -1352,7 +1353,10 @@ function AppContent() {
         </LazyBoundary>
       )}
       <DiagramContext.Provider value={diagramApi}>
-      <div className={`chat-layout${documentPanelOpen || diagram ? ' documents-open' : ''}${documentPanelOpen && documentPanelExpanded ? ' documents-expanded' : ''}`} hidden={view !== 'chat'}>
+      <ChatFileDropZone className={`chat-layout${documentPanelOpen || diagram ? ' documents-open' : ''}${documentPanelOpen && documentPanelExpanded ? ' documents-expanded' : ''}`} hidden={view !== 'chat'}
+        enabled={!streaming && !loadingConversation && !loadFailed && !archived && !deleting && !settingsOpen && !searchOpen && !consentOpen}
+        contextKey={JSON.stringify([auth.user?.id, draftConversationId, rootContext.projectId, rootContext.persona])}
+        onFiles={addFiles}>
       <main className={emptyChat ? "chat empty-state" : "chat"}>
         <div className="chat-tools">
         <button
@@ -1475,7 +1479,7 @@ function AppContent() {
           <diagramPanel.View codes={diagramCodes} current={diagram} onPick={setDiagram} onClose={closeDiagram} />
         </Suspense></LazyBoundary>
       )}
-      </div>
+      </ChatFileDropZone>
       </DiagramContext.Provider>
       <DocumentWorkspace key={auth.user?.id || 'session'} request={documentRequest} selection={documentSelection} onUnauthorized={handleUnauthorized} onChanged={item => {
         setDocumentRefresh(value => value + 1);
