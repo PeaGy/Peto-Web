@@ -1,5 +1,6 @@
 import type { WebSource } from '../../shared/api/api';
 import { GitHubIcon } from '../../shared/ui/GitHubIcon';
+import { YouTubeIcon } from '../../shared/ui/YouTubeIcon';
 
 export function safeSources(sources: WebSource[] | undefined): WebSource[] {
   const seen = new Set<string>();
@@ -18,23 +19,40 @@ export function GlobeIcon() {
   return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.6" /><path d="M3 12h18M12 3c5 5 5 13 0 18-5-5-5-13 0-18Z" stroke="currentColor" strokeWidth="1.6" /></svg>;
 }
 
+function sourceSite(url: string) {
+  const host = new URL(url).hostname;
+  // Dựa vào hostname thật, không dựa vào tiêu đề, đường dẫn hoặc tên miền giả có chứa tên dịch vụ.
+  const belongsTo = (domain: string) => host === domain || host.endsWith(`.${domain}`);
+  if (belongsTo('youtube.com') || belongsTo('youtu.be') || belongsTo('youtube-nocookie.com')) return 'youtube';
+  if (belongsTo('github.com')) return 'github';
+  return 'web';
+}
+
+function SourceIcon({ site }: { site: ReturnType<typeof sourceSite> }) {
+  if (site === 'youtube') return <YouTubeIcon />;
+  if (site === 'github') return <GitHubIcon />;
+  return <GlobeIcon />;
+}
+
 function SourceList({ items }: { items: WebSource[] }) {
   return <div className="web-source-list">{items.map(source => <a key={source.url} href={source.url} target="_blank" rel="noopener noreferrer" className="web-source-card" title={source.url}>
-    <span><strong>{source.title}</strong><small>{new URL(source.url).hostname.replace(/^www\./, '')}{new URL(source.url).pathname}</small></span><span aria-hidden="true">↗</span>
+    <span className="web-source-icon"><SourceIcon site={sourceSite(source.url)} /></span>
+    <span className="web-source-text"><strong>{source.title}</strong><small>{new URL(source.url).hostname.replace(/^www\./, '')}{new URL(source.url).pathname}</small></span><span aria-hidden="true">↗</span>
   </a>)}</div>;
 }
 
 export default function WebSources({ sources }: { sources?: WebSource[] }) {
   const items = safeSources(sources);
   if (!items.length) return null;
-  const githubOnly = items.every(item => ['github.com', 'www.github.com'].includes(new URL(item.url).hostname));
+  const firstSite = sourceSite(items[0].url);
+  const summarySite = items.every(item => sourceSite(item.url) === firstSite) ? firstSite : 'web';
   const cited = items.filter(item => item.kind === 'citation');
   const results = items.filter(item => item.kind === 'result');
   const legacy = items.filter(item => !item.kind);
   const label = cited.length ? `Nguồn · ${cited.length}`
     : results.length ? `Kết quả tìm kiếm · ${results.length}` : `Nguồn tham khảo · ${legacy.length}`;
   return <details className="web-sources">
-    <summary>{githubOnly ? <GitHubIcon /> : <GlobeIcon />}<span>{label}</span></summary>
+    <summary><SourceIcon site={summarySite} /><span>{label}</span></summary>
     <div className="web-sources-panel">
       {cited.length > 0 && <section><h3>Nguồn trích dẫn</h3><SourceList items={cited} /></section>}
       {results.length > 0 && (cited.length > 0

@@ -20,3 +20,35 @@ it('phân biệt trích dẫn, kết quả tìm kiếm và dữ liệu cũ', () 
   expect(within(panel).getByText('Old')).toBeTruthy();
   expect(screen.queryByText('Unsafe')).toBeNull();
 });
+
+it('nhận diện nguồn theo hostname thật kể cả link ngắn, không theo tiêu đề hoặc tên miền giả', () => {
+  const { container } = render(<WebSources sources={[
+    { url: 'https://www.youtube.com/watch?v=abc', title: 'Video' },
+    { url: 'https://youtu.be/abc', title: 'Video ngắn' },
+    { url: 'https://m.youtube.com/watch?v=abc', title: 'Video trên điện thoại' },
+    { url: 'https://github.com/user/repo', title: 'Repo' },
+    { url: 'https://gist.github.com/user/abc', title: 'Đoạn code' },
+    { url: 'https://youtube.com.example.org/watch', title: 'YouTube' },
+    { url: 'https://example.org/youtube.com', title: 'YouTube' },
+  ]} />);
+  for (const title of ['Video', 'Video ngắn', 'Video trên điện thoại']) {
+    expect(screen.getByText(title).closest('a')!.querySelector('.youtube-icon')).toBeTruthy();
+  }
+  for (const title of ['Repo', 'Đoạn code']) {
+    expect(screen.getByText(title).closest('a')!.querySelector('.github-icon')).toBeTruthy();
+  }
+  for (const title of screen.getAllByText('YouTube')) {
+    expect(title.closest('a')!.querySelector('.youtube-icon')).toBeNull();
+  }
+  expect(container.querySelector('.web-sources > summary .youtube-icon')).toBeNull();
+  expect(container.querySelector('img')).toBeNull();
+});
+
+it('nút nguồn hiện YouTube khi tất cả nguồn cùng từ YouTube', () => {
+  const { container } = render(<WebSources sources={[
+    { url: 'https://www.youtube.com/watch?v=abc', title: 'Video', kind: 'citation' },
+    { url: 'https://youtu.be/def', title: 'Video khác', kind: 'citation' },
+  ]} />);
+  expect(container.querySelector('.web-sources > summary .youtube-icon')).toBeTruthy();
+  expect(screen.getByText('Nguồn · 2')).toBeTruthy();
+});

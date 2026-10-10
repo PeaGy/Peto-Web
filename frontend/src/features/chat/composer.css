@@ -124,7 +124,8 @@
 .web-source-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: 8px; }
 .web-source-card { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-2); color: var(--text); text-decoration: none; min-width: 0; }
 .web-source-card:hover { border-color: var(--accent); }
-.web-source-card > span:first-child { min-width: 0; display: grid; gap: 3px; }
+.web-source-icon { display: grid; place-items: center; flex: 0 0 20px; color: var(--muted); }
+.web-source-text { flex: 1; min-width: 0; display: grid; gap: 3px; }
 .web-source-card strong { font-size: 12px; font-weight: 500; overflow-wrap: anywhere; }
 .web-source-card small { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .composer-bar > .send, .composer-bar > .stop { flex-shrink: 0; }
