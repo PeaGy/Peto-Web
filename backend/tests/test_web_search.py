@@ -223,7 +223,7 @@ async def test_supplemental_search_failure_gets_one_summary_without_tools(monkey
                     messages=[ChatMessage('user', 'private input')], web_search=mode)]
     assert len(requests) == 2 and first.closed and second.closed
     summary = requests[1]
-    assert summary['tools'] == [] and summary['tool_choice'] == 'none'
+    assert summary['tools'] == [] and 'tool_choice' not in summary
     assert summary['max_output_tokens'] == requests[0]['max_output_tokens']
     assert summary['input'][0]['content'][0]['text'] == 'private input'
     assert [item['id'] for item in summary['input'] if item.get('type') == 'web_search_call'] == ['web-1']
@@ -281,7 +281,7 @@ async def test_search_recovery_preserves_previous_tool_results_and_uses_remainin
     provider, requests = fake_provider(monkeypatch, [first, second, third])
     chunks = [chunk async for chunk in provider.stream(system_prompt='Peto', messages=[])]
     assert len(requests) == 3 and first.closed and second.closed and third.closed
-    assert requests[-1]['tools'] == [] and requests[-1]['tool_choice'] == 'none'
+    assert requests[-1]['tools'] == [] and 'tool_choice' not in requests[-1]
     assert any(item.get('type') == 'function_call_output' and item['call_id'] == 'call_1'
                for item in requests[-1]['input'])
     assert 'Kết quả.' in chunks
@@ -439,7 +439,7 @@ async def test_real_sdk_parses_search_events_and_annotations(monkeypatch):
 
 
 async def test_real_sdk_recovers_from_a_failed_supplemental_search(monkeypatch):
-    """SDK thật đọc SSE qua mạng giả; chỉ gửi item tra thành công sang yêu cầu tổng hợp."""
+    """SDK thật đọc SSE qua mạng giả; máy chủ từ chối tool_choice khi danh sách công cụ rỗng như xAI."""
     requests = []
     successful, failed = search_call(), search_call('failed')
     failed.id = 'web-failed'
@@ -457,6 +457,11 @@ async def test_real_sdk_recovers_from_a_failed_supplemental_search(monkeypatch):
     def handle(request):
         requests.append(json.loads(request.content))
         assert len(requests) <= 2
+        if not requests[-1].get('tools') and 'tool_choice' in requests[-1]:
+            return httpx.Response(400, json={
+                'code': 'invalid-argument',
+                'error': 'Invalid request content: A tool_choice was set on the request but no tools were specified.',
+            })
         events = first if len(requests) == 1 else second
         data = ''.join('data: ' + json.dumps(event) + '\n\n' for event in events)
         return httpx.Response(200, content=data, headers={'content-type': 'text/event-stream'})
@@ -470,7 +475,7 @@ async def test_real_sdk_recovers_from_a_failed_supplemental_search(monkeypatch):
     finally:
         await provider._client.close()
     assert answer in chunks and len(requests) == 2
-    assert requests[1]['tools'] == [] and requests[1]['tool_choice'] == 'none'
+    assert requests[1]['tools'] == [] and 'tool_choice' not in requests[1]
     assert [item['id'] for item in requests[1]['input']] == ['web-1']
 
 

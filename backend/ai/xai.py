@@ -263,7 +263,7 @@ class ResponsesProvider(ChatProvider):
                 "store": False,
             }
             if finalizing:
-                create_kwargs["tool_choice"] = "none"
+                # Danh sách công cụ đã rỗng: không gửi tool_choice, kể cả "none", vì xAI từ chối cặp này.
                 logger.info("Kết thúc tra cứu: vòng=%d công_cụ_đã_gọi=%d github=%s", round_index, calls_used, bool(github_schemas))
             if search_enabled:
                 create_kwargs["include"].append("web_search_call.action.sources")

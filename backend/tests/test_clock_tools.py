@@ -218,7 +218,7 @@ async def test_endless_tool_requests_are_bounded(monkeypatch):
     with pytest.raises(ProviderError, match='tra cứu'):
         _ = [chunk async for chunk in provider.stream(system_prompt='Peto', messages=[])]
     assert len(requests) == MAX_TOOL_ROUNDS + 1
-    assert requests[-1]['tools'] == [] and requests[-1]['tool_choice'] == 'none'
+    assert requests[-1]['tools'] == [] and 'tool_choice' not in requests[-1]
     assert all(stream.closed for stream in streams)
 
 
@@ -228,7 +228,7 @@ async def test_round_limit_finishes_with_available_results(monkeypatch):
     provider, requests = fake_provider(monkeypatch, streams)
     chunks = [chunk async for chunk in provider.stream(system_prompt='Peto', messages=[], web_search='off')]
     assert ''.join(chunk for chunk in chunks if isinstance(chunk, str)).startswith('Đây là kết quả đã đọc')
-    assert requests[-1]['tools'] == [] and requests[-1]['tool_choice'] == 'none'
+    assert requests[-1]['tools'] == [] and 'tool_choice' not in requests[-1]
     assert 'chưa xác minh' in requests[-1]['instructions']
     assert sum(item.get('type') == 'function_call_output' for item in requests[-1]['input']) == MAX_TOOL_ROUNDS
 
@@ -248,7 +248,7 @@ async def test_call_budget_runs_only_allowed_calls_and_reports_unexecuted_ones(m
     outputs = [item for item in requests[-1]['input'] if item.get('type') == 'function_call_output']
     assert len(outputs) == len(calls) and len({item['call_id'] for item in outputs}) == len(calls)
     assert all('chưa được chạy' in json.loads(item['output'])['error'] for item in outputs[MAX_TOOL_CALLS:])
-    assert requests[-1]['tools'] == [] and requests[-1]['tool_choice'] == 'none'
+    assert requests[-1]['tools'] == [] and 'tool_choice' not in requests[-1]
 
 
 async def test_model_receives_tool_validation_error_instead_of_crashing(monkeypatch):
