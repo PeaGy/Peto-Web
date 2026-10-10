@@ -183,6 +183,13 @@ Writes debounce 250 ms and flush on scope change, pagehide/beforeunload, hidden 
 stay in memory per draft and are never serialized. New-chat history state stores only owner/project/persona metadata
 so F5/Back recover the correct scope, without adding entries for context changes or remounting the composer.
 SSE receipt clears only the submitted snapshot, preserving another chat or later changes; pre-receipt failures retain it.
+Since 2026-10-10 the Chat textarea remains editable during a reply, letting the user prepare the next message.
+Enter/form submit cannot start another turn while streaming; Shift+Enter still inserts a newline, Stop stays available,
+and completion never auto-sends the draft. Attachment/model/effort controls retain their existing stream lock.
+If the first-turn receipt assigns an ID while the user is still on that unnamed chat, `accept(snapshot, id)` moves
+any remaining draft into the new conversation scope, without overwriting a nonempty destination. Background receipts
+do not move the selected draft. Tests cover late receipts, next-message send, Stop/errors, F5, Back/Forward and
+desktop/mobile browser input with fake APIs only.
 Before the server assigns an ID, active-reply selection also checks project/persona so Back between unnamed chat
 contexts cannot redirect the wrong entry or display another draft's pending reply.
 Logout/confirmed expiry clears all Chat drafts and cached file URLs; a failed auth network check does not erase drafts.

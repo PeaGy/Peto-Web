@@ -78,7 +78,7 @@ export default function Composer({
       className={dragging ? "composer-wrap dragging" : "composer-wrap"}
       onSubmit={(event) => {
         event.preventDefault();
-        void onSubmit();
+        if (!streaming && canSend) void onSubmit();
       }}
       onDragEnter={(event) => {
         event.preventDefault();
@@ -134,7 +134,6 @@ export default function Composer({
           rows={1}
           placeholder="Nhắn cho Peto…"
           aria-label="Nhắn cho Peto"
-          disabled={streaming}
           onChange={(event) => onDraftChange(event.target.value)}
           onPaste={(event) => {
             const pasted = Array.from(event.clipboardData.files);
@@ -146,7 +145,7 @@ export default function Composer({
           onKeyDown={(event) => {
             if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
               event.preventDefault();
-              void onSubmit();
+              if (!streaming && canSend) void onSubmit();
             }
           }}
         />

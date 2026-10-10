@@ -30,7 +30,7 @@ export function useChatDrafts(scope: DraftScope | null, authenticated: boolean |
     if (key) { store.setFiles(key, update); changed(); }
   }, [store, key]);
   const clearDrafts = useCallback(() => { store.clear(); changed(); }, [store]);
-  const acceptDraft = useCallback((snapshot: DraftSnapshot) => { store.accept(snapshot); changed(); }, [store]);
+  const acceptDraft = useCallback((snapshot: DraftSnapshot, conversationId?: string) => { store.accept(snapshot, conversationId); changed(); }, [store]);
   const removeConversationDraft = useCallback((id: string) => { store.removeConversation(id); changed(); }, [store]);
   const removeProjectDraft = useCallback((id: string) => { store.removeProject(id); changed(); }, [store]);
   const draft = key ? store.get(key) : null;

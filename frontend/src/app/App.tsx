@@ -929,7 +929,7 @@ function AppContent() {
                 navigate({ pathname: path, search: window.location.search }, { replace: !revision });
               }
             }
-            if (sentDraft) acceptDraft(sentDraft);
+            if (sentDraft) acceptDraft(sentDraft, selected ? id : undefined);
             if (storedMessage) reply.retry = {target:storedMessage, text:storedMessage.content};
             if (selected) retryRevision.current = reply.retry;
             if (storedMessage) writeReply((prev) => [...prev.slice(0, -2), storedMessage, prev[prev.length - 1]]);

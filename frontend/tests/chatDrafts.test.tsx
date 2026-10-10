@@ -61,6 +61,31 @@ it('xóa hội thoại/dự án chỉ xóa phạm vi tương ứng, kể cả nh
   expect(fresh.get(key(null)).text).toBe('Nháp');
 });
 
+it('chat mới mang chữ gõ sau khi gửi theo ID vừa cấp, không để sót nháp ở trang chủ', () => {
+  const store = new ChatDraftStore();
+  store.setText(key(null), 'Tin đầu');
+  const sent = store.snapshot(key(null));
+  store.setText(key(null), 'Câu hỏi tiếp theo');
+  store.accept(sent, 'C');
+  expect(store.get(key('C')).text).toBe('Câu hỏi tiếp theo');
+  expect(store.get(key(null)).text).toBe('');
+  expect(sessionStorage.getItem(key(null))).toBeNull();
+  expect(new ChatDraftStore().get(key('C')).text).toBe('Câu hỏi tiếp theo');
+});
+
+it('xác nhận chat mới không đè nháp đích hoặc hồi sinh nháp của tài khoản đã đóng', () => {
+  const store = new ChatDraftStore();
+  store.setText(key(null), 'Tin đầu');
+  const sent = store.snapshot(key(null));
+  store.setText(key(null), 'Nháp mới');
+  store.setText(key('C'), 'Nháp đích');
+  store.accept(sent, 'C');
+  expect(store.get(key('C')).text).toBe('Nháp đích');
+  expect(store.get(key(null)).text).toBe('Nháp mới');
+  store.clear(); store.accept(sent, 'C');
+  expect(sessionStorage.length).toBe(0);
+});
+
 it('đăng xuất hủy ghi đang chờ, thu hồi mọi URL và không xóa storage tính năng khác', () => {
   sessionStorage.setItem('other-feature', 'giữ');
   const store = new ChatDraftStore();

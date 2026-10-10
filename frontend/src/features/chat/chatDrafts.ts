@@ -67,7 +67,7 @@ export class ChatDraftStore {
     return { key, revision: draft.revision, fileIds: draft.files.map(file => file.id) };
   }
 
-  accept(snapshot: DraftSnapshot) {
+  accept(snapshot: DraftSnapshot, conversationId?: string) {
     // Không đọc lại storage ở đây: callback của phiên đã đóng không được hồi sinh nháp.
     const draft = this.drafts.get(snapshot.key);
     if (!draft) return;
@@ -77,6 +77,22 @@ export class ChatDraftStore {
       this.dirty.add(snapshot.key);
     }
     draft.files = draft.files.filter(file => !snapshot.fileIds.includes(file.id));
+    const parts = this.parts(snapshot.key);
+    if (conversationId && parts?.[1] === 'new' && typeof parts[0] === 'string') {
+      const targetKey = draftKey({ ownerId: parts[0], conversationId, projectId: null, persona: 'assistant' });
+      const target = this.get(targetKey);
+      // Chữ gõ sau lần gửi đầu đi theo ID vừa cấp; không đè một bản nháp đích đã có.
+      if (!target.text && !target.files.length) {
+        target.text = draft.text;
+        target.files = draft.files;
+        target.revision++;
+        draft.text = '';
+        draft.files = [];
+        draft.revision++;
+        this.dirty.add(targetKey);
+        this.dirty.add(snapshot.key);
+      }
+    }
     // URL của tệp vừa gửi còn được tin nhắn tạm dùng; App thu hồi khi lượt gửi kết thúc.
     this.flush();
   }

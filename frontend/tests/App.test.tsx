@@ -67,6 +67,86 @@ async function openApp() {
   await screen.findByRole('button', { name: 'A', exact: true }, { timeout: 5000 });
 }
 
+describe('soạn tiếp trong lúc Peto trả lời', () => {
+  it('giữ chữ qua xác nhận tin đầu đến muộn, Enter không gửi thêm, hoàn tất không tự gửi', async () => {
+    const done = deferred<void>();
+    let callbacks!: Parameters<typeof api.sendMessage>[1];
+    vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers) => { callbacks = handlers; await done.promise; });
+    await openApp();
+    const input = screen.getByLabelText('Nhắn cho Peto') as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: 'Tin đầu' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Gửi', exact: true }));
+    await waitFor(() => expect(api.sendMessage).toHaveBeenCalledOnce());
+    expect(input.disabled).toBe(false);
+    fireEvent.change(input, { target: { value: 'Câu tiếp theo\nĐã soạn sẵn' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    fireEvent.submit(input.closest('form')!);
+    expect(api.sendMessage).toHaveBeenCalledOnce();
+    act(() => { callbacks.onMeta?.('C', 'low', { id: 10, role: 'user', content: 'Tin đầu' }); callbacks.onDelta?.('Đang trả lời'); });
+    await waitFor(() => expect(window.location.pathname).toBe('/chat/C'));
+    expect(input.value).toBe('Câu tiếp theo\nĐã soạn sẵn');
+    expect(input).toBe(screen.getByLabelText('Nhắn cho Peto'));
+    await act(async () => { callbacks.onDone?.(); done.resolve(); });
+    expect(input.value).toBe('Câu tiếp theo\nĐã soạn sẵn');
+    expect(api.sendMessage).toHaveBeenCalledOnce();
+    expect(screen.getByRole('button', { name: 'Gửi', exact: true })).toHaveProperty('disabled', false);
+    vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers) => { handlers.onMeta?.('C', 'low'); handlers.onDone?.(); });
+    fireEvent.click(screen.getByRole('button', { name: 'Gửi', exact: true }));
+    await waitFor(() => expect(api.sendMessage).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(api.sendMessage).mock.calls[1][0]).toMatchObject({ conversationId: 'C', message: 'Câu tiếp theo\nĐã soạn sẵn' });
+  });
+
+  it.each(['dừng', 'lỗi'] as const)('%s sau khi nhận tin giữ nháp tiếp theo', async outcome => {
+    const done = deferred<void>();
+    let callbacks!: Parameters<typeof api.sendMessage>[1];
+    vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers, signal) => {
+      callbacks = handlers;
+      handlers.onMeta?.('A', 'low', { id: 10, role: 'user', content: 'Câu đầu' });
+      handlers.onDelta?.('Câu trả lời dở');
+      signal?.addEventListener('abort', () => done.reject(new DOMException('Đã dừng', 'AbortError')), { once: true });
+      await done.promise;
+    });
+    await openApp();
+    const input = screen.getByLabelText('Nhắn cho Peto') as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: 'Câu đầu' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Gửi', exact: true }));
+    await screen.findByText('Câu trả lời dở');
+    fireEvent.change(input, { target: { value: 'Nháp mới cần giữ' } });
+    if (outcome === 'dừng') fireEvent.click(screen.getByRole('button', { name: 'Dừng', exact: true }));
+    else await act(async () => { callbacks.onError?.('Dịch vụ đang bận'); done.resolve(); });
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Dừng', exact: true })).toBeNull());
+    expect(input.value).toBe('Nháp mới cần giữ');
+    expect(api.sendMessage).toHaveBeenCalledOnce();
+    cleanup(); await openApp();
+    expect((screen.getByLabelText('Nhắn cho Peto') as HTMLTextAreaElement).value).toBe('Nháp mới cần giữ');
+  });
+
+  it('Back sang chat B lúc A trả lời cho soạn riêng, hoàn tất A không xóa nháp B', async () => {
+    const done = deferred<void>();
+    vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers) => {
+      handlers.onMeta?.('A', 'low', { id: 10, role: 'user', content: 'Tin A' });
+      await done.promise; handlers.onDelta?.('Xong A'); handlers.onDone?.();
+    });
+    await openApp();
+    fireEvent.click(screen.getByRole('button', { name: 'B', exact: true }));
+    await waitFor(() => expect(window.location.pathname).toBe('/chat/B'));
+    fireEvent.click(screen.getByRole('button', { name: 'A', exact: true }));
+    await waitFor(() => expect(api.getMessages).toHaveBeenCalledWith('A', expect.anything(), expect.anything()));
+    const input = screen.getByLabelText('Nhắn cho Peto') as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: 'Tin A' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Gửi', exact: true }));
+    await waitFor(() => expect(api.sendMessage).toHaveBeenCalledOnce());
+    fireEvent.change(input, { target: { value: 'Nháp A tiếp' } });
+    act(() => history.back()); await waitFor(() => expect(window.location.pathname).toBe('/chat/B'));
+    fireEvent.change(input, { target: { value: 'Nháp B riêng' } });
+    await act(async () => done.resolve());
+    expect(input.value).toBe('Nháp B riêng');
+    act(() => history.forward()); await waitFor(() => expect(window.location.pathname).toBe('/chat/A'));
+    expect(input.value).toBe('Nháp A tiếp');
+    expect(api.sendMessage).toHaveBeenCalledOnce();
+  });
+});
+
 describe('bản nháp Chat riêng', () => {
   const input = () => screen.getByLabelText('Nhắn cho Peto') as HTMLTextAreaElement;
   const draftStorageKey = (id: string | null, projectId: string | null = null, persona: api.Persona = 'assistant') =>
