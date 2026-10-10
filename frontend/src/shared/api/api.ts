@@ -142,7 +142,7 @@ interface ChatHandlers {
   /** Bản chốt của nhật ký lúc hết lượt, đúng như bản lưu cùng tin nhắn. */
   onWork?: (work: WorkLog) => void;
   onReading?: (text: string) => void;
-  onSearch?: (status: "searching" | "completed") => void;
+  onSearch?: (status: "searching" | "completed" | "failed") => void;
   onSources?: (sources: WebSource[]) => void;
   onArtifact?: (artifact: DocumentArtifact) => void;
   onDocumentStatus?: (text: string) => void;

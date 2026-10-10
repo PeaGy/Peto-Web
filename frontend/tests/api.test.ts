@@ -67,6 +67,28 @@ it('gửi chế độ tìm web và đọc nguồn qua SSE mà không trộn vào
   expect(body.web_search).toBe('on');
 });
 
+it('lượt tìm bổ sung lỗi vẫn nhận bản tổng hợp và kết thúc bình thường', async () => {
+  const sources = [{ url: 'https://docs.python.org/3/', title: 'Tài liệu Python' }];
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(
+    event({ type: 'search', status: 'completed' }) + event({ type: 'sources', sources })
+    + event({ type: 'delta', text: 'Bản nháp' }) + event({ type: 'search', status: 'failed' })
+    + event({ type: 'replace', text: '' }) + event({ type: 'delta', text: 'Phân tích từ nguồn đã lấy.' })
+    + event({ type: 'done' }))));
+  const onSearch = vi.fn(), onSources = vi.fn(), onReplace = vi.fn(), onDone = vi.fn(), onError = vi.fn();
+  let text = '';
+  await sendMessage({ message: 'Phân tích', conversationId: 'C', effort: 'auto' }, {
+    onSearch, onSources, onDone, onError,
+    onReplace: (value) => { text = value; onReplace(value); },
+    onDelta: (value) => { text += value; },
+  });
+  expect(onSearch.mock.calls).toEqual([['completed'], ['failed']]);
+  expect(onSources).toHaveBeenCalledExactlyOnceWith(sources);
+  expect(onReplace).toHaveBeenCalledExactlyOnceWith('');
+  expect(text).toBe('Phân tích từ nguồn đã lấy.');
+  expect(onDone).toHaveBeenCalledOnce();
+  expect(onError).not.toHaveBeenCalled();
+});
+
 it.each([{ source_image: { data: 'anh-base64' } }, { source_image_id: 'anh-da-luu' }])('gửi ảnh gốc trong yêu cầu chỉnh sửa', async (source) => {
   const fetchMock = vi.fn(async () => new Response(JSON.stringify({ job: { id: 'ket-qua' } })));
   vi.stubGlobal('fetch', fetchMock);

@@ -27,7 +27,7 @@ from shared.time_tools import TOOL_SCHEMAS, execute_tool
 from features.documents.tools import current_session, SCHEMA as DOCUMENT_SCHEMA, EDIT_SCHEMA, PRESENTATION_SCHEMA, SPREADSHEET_SCHEMA
 from features.connectors.tools import current_session as github_session_context, NAMES as GITHUB_TOOLS, NOTE as GITHUB_NOTE
 from shared.web_search import normalize_sources, search_context
-from prompts.english import FINALIZING_PROMPT, GITHUB_PROMPT, NO_GITHUB_PROMPT
+from prompts.english import FINALIZING_PROMPT, GITHUB_PROMPT, NO_GITHUB_PROMPT, SEARCH_FALLBACK_PROMPT
 
 from .base import ChatMessage, ChatProvider, ProviderError, StreamChunk
 
@@ -144,6 +144,10 @@ def _recent_image_keys(messages: list[ChatMessage], limit: int) -> set[tuple[int
     return set(keys)
 
 
+class _SearchFallback(Exception):
+    """Ngắt lượt tra bị lỗi để dành một lượt tổng hợp từ kết quả đã nhận."""
+
+
 class ResponsesProvider(ChatProvider):
     supported_efforts = ("low", "medium", "high")
     """Phần chung của các dịch vụ dùng Responses API. Lớp con đặt ``_client``, ``model`` và ``max_output_tokens``."""
@@ -181,14 +185,22 @@ class ResponsesProvider(ChatProvider):
         sources: list[dict] = []
         search_finished = False
         search_ids: set[str] = set()
+        usable_search_sources: list[dict] = []
+        search_fallback = False
 
         def observe_item(item: dict):
-            nonlocal sources, search_finished
+            nonlocal sources, search_finished, usable_search_sources
             if item.get("type") == "web_search_call":
                 if item.get("id"):
                     search_ids.add(str(item["id"]))
                 if item.get("status") == "failed":
+                    # Chỉ kết quả tra thành công trong lượt này mới cho phép tổng hợp; nguồn cũ hoặc nguồn
+                    # nằm trong chính item bị lỗi không chứng minh đã tra được.
+                    if usable_search_sources and not search_fallback and not finalizing:
+                        raise _SearchFallback()
                     raise ProviderError("Peto chưa tra cứu web được lượt này. Bạn thử lại nhé.")
+                if item.get("status") == "completed":
+                    usable_search_sources = normalize_sources([*usable_search_sources, *_item_sources(item)])
                 search_finished = search_finished or item.get("status") == "completed"
                 yield StreamChunk("search", "completed" if item.get("status") == "completed" else "searching")
             merged = normalize_sources([*sources, *_item_sources(item)])
@@ -219,7 +231,7 @@ class ResponsesProvider(ChatProvider):
         for round_index in range(max_rounds + 1):
             follow_up, follow_up_next = follow_up_next, False
             # Dành lần gọi cuối để tổng hợp kết quả đã đọc, không mở thêm tra cứu khi hết ngân sách.
-            finalizing = tools_enabled and (round_index == max_rounds or calls_used >= max_calls)
+            finalizing = tools_enabled and (search_fallback or round_index == max_rounds or calls_used >= max_calls)
             round_started = perf_counter()
             if tools_enabled and not follow_up:
                 # Mốc cho nhật ký "Đang làm": từ đây tới chữ hay lệnh đầu tiên là lúc mô hình suy nghĩ. Lần gọi nhắc làm
@@ -229,7 +241,12 @@ class ResponsesProvider(ChatProvider):
             usage: dict = {}
             create_kwargs: dict = {
                 "model": self.model,
-                "instructions": instructions + ('\n\n' + (FINALIZING_PROMPT if english else
+                "instructions": instructions + ('\n\n' + (SEARCH_FALLBACK_PROMPT if english else
+                    'Lượt tìm web bổ sung bị lỗi, nhưng các lượt tra trước đã có kết quả. Không gọi thêm công cụ. '
+                    'Trả lời yêu cầu bằng dữ liệu đã nhận; nói ngắn gọn rằng lượt tìm bổ sung bị lỗi và nêu rõ '
+                    'phần chưa đọc hoặc chưa xác minh. Chỉ có URL không chứng minh đã đọc nội dung trang. '
+                    'Không bịa lời bài hát, nội dung video, kết quả hoặc nguồn; không hứa tra tiếp trong lượt này.')
+                    if search_fallback else '\n\n' + (FINALIZING_PROMPT if english else
                     'Lượt này đã chạm giới hạn tra cứu. Hãy trả lời bằng những kết quả đã nhận, không gọi thêm công cụ. '
                     'Nếu dữ liệu chưa đủ, nêu rõ phần chưa đọc hoặc chưa xác minh; không bịa kết quả và không hứa tiếp tục tra cứu trong lượt này.') if finalizing else ''),
                 "input": payload_input,
@@ -257,6 +274,7 @@ class ResponsesProvider(ChatProvider):
             stream = None
             output_items: list[dict] = []
             completed = False
+            recovering_search = False
             emitted_text = follow_up       # lần gọi nhắc: câu báo lần trước vẫn đang hiện
             noted = False
             written: list[str] = []     # chữ lần gọi này đã phát
@@ -350,6 +368,10 @@ class ResponsesProvider(ChatProvider):
                         raise ProviderError("Câu trả lời chạm giới hạn của lượt AI. Phần đã viết được giữ lại; bạn có thể yêu cầu tiếp tục.")
                     elif event_type in {"response.failed", "error"}:
                         raise ProviderError("Peto gặp lỗi khi đang trả lời. Thử lại nha.", retryable=True)
+            except _SearchFallback:
+                recovering_search = True
+                logger.warning("%s: lượt tìm bổ sung bị lỗi; tổng hợp từ %d nguồn đã tra thành công",
+                               self.service, len(usable_search_sources))
             except AuthenticationError as err:
                 raise ProviderError(self.auth_error_message) from err
             except RateLimitError as err:
@@ -375,6 +397,21 @@ class ResponsesProvider(ChatProvider):
                 if stream is not None:
                     with anyio.CancelScope(shield=True):
                         await stream.close()
+
+            if recovering_search:
+                # Bỏ bản nháp của lần gọi vừa ngắt trước khi mở mốc suy nghĩ mới. Không chạy lệnh công cụ
+                # chưa thực thi, không gửi item tra bị lỗi hoặc item đang viết dở sang lượt tổng hợp.
+                yield StreamChunk("search", "failed")
+                yield StreamChunk("replace")
+                payload_input.extend(item for item in output_items
+                                     if item.get("status") in {None, "completed"}
+                                     and item.get("type") in {"message", "reasoning", "web_search_call"}
+                                     and (item.get("type") != "web_search_call" or item.get("status") == "completed"))
+                search_fallback = True
+                search_enabled = False
+                watching = False
+                follow_up_next = False
+                continue
 
             if not completed:
                 raise ProviderError("Kết nối tới AI bị ngắt trước khi trả lời xong.", retryable=True)

@@ -60,6 +60,23 @@ def test_steps_follow_the_turn_with_their_own_times():
     assert work['ms'] == 90_400 and work['complete'] is True
 
 
+def test_supplemental_search_failure_stays_visible_when_answer_completes():
+    log = WorkLog()
+    log.search('searching')
+    log.sources(3)
+    log.search('completed')
+    log.search('searching')
+    failed = events_of(log.search('failed'))[0]['step']
+    assert failed['state'] == 'failed' and failed['detail'] == '3 nguồn'
+    log.round()
+    log.text()
+    work = log.close(True)
+    assert work['complete'] is True
+    step = next(step for step in work['steps'] if step['kind'] == 'search')
+    assert step['state'] == 'failed' and step['label'] == failed['label']
+    assert step['problems'] == ['Lượt tìm bổ sung bị lỗi; tổng hợp từ kết quả đã lấy được.']
+
+
 def test_results_lookups_github_and_search_read_naturally():
     clock = Clock()
     log = WorkLog(clock=clock)

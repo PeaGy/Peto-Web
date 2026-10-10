@@ -259,6 +259,14 @@ class WorkLog:
         """Các lần tra web liền nhau (chỉ cách nhau lúc suy nghĩ) gom một dòng, như đọc GitHub: Grok hay tra 5–6 lần
         liền, và mỗi lần một dòng "Đã tìm trên web" thì danh sách dài mà không nói thêm gì (6/10/2026)."""
         step = self._live('search')
+        if status == 'failed':
+            step = step or next((item for item in reversed(self.steps) if item.kind == 'search'), None)
+            label = 'Tìm trên web · lượt bổ sung lỗi'
+            if step is None:
+                return self._begin('search', label, state='failed')[1]
+            step.state, step.end, step.label = 'failed', self.now(), label
+            step.problems.append('Lượt tìm bổ sung bị lỗi; tổng hợp từ kết quả đã lấy được.')
+            return self._event(step)
         if status == 'completed':
             if step is None:
                 return ''

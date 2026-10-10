@@ -491,6 +491,14 @@ default bounds and the existing chat timeout; do not confuse the local clock-too
 round limit with native search calls. Do not automatically retry a timed-out turn once
 search activity has been observed, or a forced search turn.
 
+If a native search item fails after a completed search in the same turn supplied valid sources,
+`ResponsesProvider` closes that stream and uses one remaining tool round to summarize without any tools
+(`tool_choice=none`). It keeps completed search/message/reasoning items and drops the interrupted round's
+draft, failed items and unexecuted function calls. The final instructions disclose the supplemental lookup
+failure and distinguish unread/unverified gaps; URLs alone are not page contents. No successful sources,
+timeouts, connection errors or failure of the summarizing call still follow the existing error handling.
+This is a bounded summary call, not a retry of the failed search; all normal chat timeout/output limits remain.
+
 `shared/web_search.py` validates HTTP(S) source URLs, removes duplicates and bounds the list.
 Extract sources from tool outputs or URL annotations, never by scraping model prose
 for links. Persist them in `messages.sources`, return them in history, and include them

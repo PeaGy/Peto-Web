@@ -194,6 +194,121 @@ async def test_failed_search_is_reported(monkeypatch):
     assert stream.closed
 
 
+@pytest.mark.parametrize('failure_at', ['item', 'response'])
+@pytest.mark.parametrize('service, mode', [('xAI', 'auto'), ('OpenAI', 'on')])
+async def test_supplemental_search_failure_gets_one_summary_without_tools(monkeypatch, caplog, failure_at, service, mode):
+    """Giữ ngữ cảnh tra thành công, bỏ bản nháp/lệnh chưa chạy và đóng stream trước lượt tổng hợp."""
+    successful = search_call()
+    failed = search_call('failed')
+    failed.id = 'web-failed'
+    failed.action = {'type': 'search', 'sources': [{'url': 'https://failed.example/private', 'title': 'Nguồn lỗi'}]}
+    reasoning = Item(type='reasoning', id='r1', encrypted_content='opaque', summary=[], status='completed')
+    events = [SimpleNamespace(type='response.output_item.done', item=reasoning),
+              SimpleNamespace(type='response.output_item.done', item=successful),
+              SimpleNamespace(type='response.output_text.delta', delta='Bản nháp chưa xong.'),
+              SimpleNamespace(type='response.output_item.done', item=call())]
+    events.append(SimpleNamespace(type='response.output_item.done', item=failed) if failure_at == 'item'
+                  else done(reasoning, successful, call(), failed))
+    # Sự kiện sau lỗi không được đọc tiếp hoặc dùng làm dữ liệu đã xác minh.
+    events.append(SimpleNamespace(type='response.output_text.delta', delta='Chữ sau lỗi không được giữ.'))
+    first = FakeStream(events)
+    second = FakeStream([SimpleNamespace(type='response.output_text.delta', delta='Phân tích từ nguồn đã lấy; phần bổ sung chưa xác minh.'), done(cited_message())])
+    provider, requests = fake_provider(monkeypatch, [first, second])
+    provider.service = service
+    def no_execution(*args):
+        pytest.fail('Không được chạy công cụ còn dở khi chuyển sang tổng hợp.')
+    monkeypatch.setattr(xai, 'execute_tool', no_execution)
+    with caplog.at_level('WARNING', logger='peto_web.xai'):
+        chunks = [chunk async for chunk in provider.stream(system_prompt='private instructions',
+                    messages=[ChatMessage('user', 'private input')], web_search=mode)]
+    assert len(requests) == 2 and first.closed and second.closed
+    summary = requests[1]
+    assert summary['tools'] == [] and summary['tool_choice'] == 'none'
+    assert summary['max_output_tokens'] == requests[0]['max_output_tokens']
+    assert summary['input'][0]['content'][0]['text'] == 'private input'
+    assert [item['id'] for item in summary['input'] if item.get('type') == 'web_search_call'] == ['web-1']
+    assert any(item.get('encrypted_content') == 'opaque' for item in summary['input'])
+    assert not any(item.get('type') in {'function_call', 'function_call_output'} for item in summary['input'])
+    assert 'additional web lookup failed' in summary['instructions'] if service == 'OpenAI' else 'Lượt tìm web bổ sung bị lỗi' in summary['instructions']
+    kinds = [chunk.kind for chunk in chunks if isinstance(chunk, StreamChunk)]
+    assert kinds.index('replace') < len(kinds) - 1
+    assert any(isinstance(chunk, StreamChunk) and chunk.kind == 'search' and chunk.text == 'failed' for chunk in chunks)
+    kept = []
+    for chunk in chunks:
+        if isinstance(chunk, StreamChunk) and chunk.kind == 'replace':
+            kept = []
+        elif isinstance(chunk, str):
+            kept.append(chunk)
+    assert ''.join(kept) == 'Phân tích từ nguồn đã lấy; phần bổ sung chưa xác minh.'
+    assert all('failed.example' not in str(chunk.sources) for chunk in chunks if isinstance(chunk, StreamChunk))
+    assert len(caplog.records) == 1
+    assert 'private' not in caplog.records[0].message and SOURCE['url'] not in caplog.records[0].message
+
+
+async def test_old_sources_do_not_allow_recovery_from_first_search_failure(monkeypatch):
+    stream = FakeStream([done(search_call('failed'))])
+    provider, requests = fake_provider(monkeypatch, [stream])
+    with pytest.raises(ProviderError, match='chưa tra cứu'):
+        _ = [chunk async for chunk in provider.stream(system_prompt='Peto', messages=[
+            ChatMessage('assistant', 'Câu cũ', sources=(SOURCE,)), ChatMessage('user', 'Tra lại')])]
+    assert len(requests) == 1 and stream.closed
+
+
+async def test_empty_successful_search_does_not_allow_recovery(monkeypatch):
+    empty = search_call()
+    empty.action = {'type': 'search', 'sources': [{'url': 'javascript:alert(1)'}]}
+    stream = FakeStream([SimpleNamespace(type='response.output_item.done', item=empty), done(empty, search_call('failed'))])
+    provider, requests = fake_provider(monkeypatch, [stream])
+    with pytest.raises(ProviderError, match='chưa tra cứu'):
+        _ = [chunk async for chunk in provider.stream(system_prompt='Peto', messages=[])]
+    assert len(requests) == 1 and stream.closed
+
+
+async def test_failed_summary_does_not_trigger_another_call(monkeypatch):
+    first = FakeStream([done(search_call(), search_call('failed'))])
+    second = FakeStream([SimpleNamespace(type='response.failed')])
+    provider, requests = fake_provider(monkeypatch, [first, second])
+    with pytest.raises(ProviderError, match='gặp lỗi'):
+        _ = [chunk async for chunk in provider.stream(system_prompt='Peto', messages=[])]
+    assert len(requests) == 2 and first.closed and second.closed
+
+
+async def test_search_recovery_preserves_previous_tool_results_and_uses_remaining_round(monkeypatch):
+    monkeypatch.setattr(xai, 'MAX_TOOL_ROUNDS', 2)
+    first = FakeStream([done(search_call(), call())])
+    second = FakeStream([done(search_call('failed'))])
+    third = FakeStream([SimpleNamespace(type='response.output_text.delta', delta='Kết quả.'), done()])
+    provider, requests = fake_provider(monkeypatch, [first, second, third])
+    chunks = [chunk async for chunk in provider.stream(system_prompt='Peto', messages=[])]
+    assert len(requests) == 3 and first.closed and second.closed and third.closed
+    assert requests[-1]['tools'] == [] and requests[-1]['tool_choice'] == 'none'
+    assert any(item.get('type') == 'function_call_output' and item['call_id'] == 'call_1'
+               for item in requests[-1]['input'])
+    assert 'Kết quả.' in chunks
+
+
+async def test_recovered_search_saves_complete_answer_sources_and_failed_step(client, monkeypatch):
+    first = FakeStream([
+        SimpleNamespace(type='response.output_item.added', item=search_call('in_progress')),
+        SimpleNamespace(type='response.output_item.done', item=search_call()),
+        SimpleNamespace(type='response.output_text.delta', delta='Peto đang tìm thêm.'),
+        SimpleNamespace(type='response.output_item.added', item=search_call('in_progress')),
+        SimpleNamespace(type='response.output_item.done', item=search_call('failed')),
+    ])
+    answer = 'Theo nguồn đã lấy. Lượt tìm bổ sung bị lỗi nên phần này chưa xác minh.'
+    second = FakeStream([SimpleNamespace(type='response.output_text.delta', delta=answer), done(cited_message())])
+    provider, requests = fake_provider(monkeypatch, [first, second])
+    monkeypatch.setattr(chat_service, 'get_provider', lambda model='peto': provider)
+    events = await read_events(await client.post('/api/chat', json={'message': 'Phân tích', 'web_search': 'on'}))
+    assert events[-1]['type'] == 'done' and not any(event['type'] == 'error' for event in events)
+    assert len(requests) == 2
+    saved = (await client.get(f"/api/conversations/{events[0]['conversation_id']}/messages")).json()['messages'][-1]
+    assert saved['status'] == 'complete' and saved['content'] == answer
+    assert saved['sources'] == [{**SOURCE, 'kind': 'citation'}]
+    assert any(step['kind'] == 'search' and step['state'] == 'failed' and step['problems']
+               for step in saved['work']['steps'])
+
+
 async def test_replaced_draft_is_not_saved(client, monkeypatch):
     class RestartProvider:
         async def stream(self, **kwargs):
@@ -321,6 +436,42 @@ async def test_real_sdk_parses_search_events_and_annotations(monkeypatch):
     assert requests[0]["tool_choice"] == "required"
     assert any(isinstance(chunk, StreamChunk) and {**SOURCE, "kind": "citation"} in chunk.sources for chunk in chunks)
     assert "Có nguồn." in chunks
+
+
+async def test_real_sdk_recovers_from_a_failed_supplemental_search(monkeypatch):
+    """SDK thật đọc SSE qua mạng giả; chỉ gửi item tra thành công sang yêu cầu tổng hợp."""
+    requests = []
+    successful, failed = search_call(), search_call('failed')
+    failed.id = 'web-failed'
+    first = [
+        {'type': 'response.output_item.done', 'item': vars(successful), 'output_index': 0, 'sequence_number': 1},
+        {'type': 'response.output_item.done', 'item': vars(failed), 'output_index': 1, 'sequence_number': 2},
+    ]
+    answer = 'Lượt tra bổ sung lỗi; phân tích dựa trên tài liệu đã nhận.'
+    second = [
+        {'type': 'response.output_text.delta', 'delta': answer, 'item_id': 'msg-1', 'output_index': 0,
+         'content_index': 0, 'sequence_number': 1},
+        {'type': 'response.completed', 'sequence_number': 2, 'response': {'id': 'resp-2', 'object': 'response',
+         'created_at': 1, 'status': 'completed', 'output': [vars(cited_message())]}},
+    ]
+    def handle(request):
+        requests.append(json.loads(request.content))
+        assert len(requests) <= 2
+        events = first if len(requests) == 1 else second
+        data = ''.join('data: ' + json.dumps(event) + '\n\n' for event in events)
+        return httpx.Response(200, content=data, headers={'content-type': 'text/event-stream'})
+    provider = xai.XAIProvider()
+    monkeypatch.setattr(provider._auth, 'get_access_token', lambda: asyncio.sleep(0, result='token-gia'))
+    await provider._client.close()
+    provider._client = xai.AsyncOpenAI(api_key='gia', base_url='https://example.test/v1',
+                                     http_client=httpx.AsyncClient(transport=httpx.MockTransport(handle)))
+    try:
+        chunks = [chunk async for chunk in provider.stream(system_prompt='Peto', messages=[], web_search='on')]
+    finally:
+        await provider._client.close()
+    assert answer in chunks and len(requests) == 2
+    assert requests[1]['tools'] == [] and requests[1]['tool_choice'] == 'none'
+    assert [item['id'] for item in requests[1]['input']] == ['web-1']
 
 
 async def test_companion_searches_when_needed_with_spoken_instructions(client, monkeypatch):
