@@ -2039,6 +2039,13 @@ keyword guess (`replyEmotion`) almost never matched once the Companion prompt ba
 - **VRM.** `VRM_EMOTIONS` maps onto the VRM presets (happy, sad, angry, surprised, relaxed) plus a head roll, and uses a
   model's own expression when it defines one with the emotion's name. `vrmFace` returns the weights, the roll and the
   mouth baseline.
+  On 2026-10-11 the owner requested gentler VRM faces: happy/sad use 0.7 and surprised 0.8, matching AIRI's
+  `packages/stage-ui-three/src/composables/vrm/expression.ts`; angry was already 0.7. FaceBlend timing, mouth baselines,
+  other emotions and Live2D presets stay unchanged. The model's native overrideBlink/overrideMouth rules still apply;
+  lower weights may leave more room for blink/lip sync but do not guarantee that for every imported model.
+  `browser-tests/companion-vrm.spec.ts` is an opt-in real-render check using `PETO_VRM_SAMPLE_PATH`, with API mocks
+  and a local silent WAV. It compares old/new weights on the same real VRM, reads applied mesh morphs and captures
+  face previews; the inspection hook and old-weight substitution exist only in test network responses.
 - **Picker** (`ExpressionPicker.tsx`, layout B).
   - Nine cards in a 3×3 grid, the on/off switch, and the selected card's source: the shared `Dropdown` for Live2D,
     plain text for VRM.

@@ -5,6 +5,22 @@ không gọi AI và không đọc dữ liệu chạy. Các bài kiểm tra bố 
 chuyển động và WebGL không làm ảnh đối chiếu thay đổi. Riêng `companion-presence.spec.ts` dùng renderer Live2D
 thật để kiểm tra loading chờ nhân vật và bong bóng đang nghĩ bám theo đầu nhân vật.
 
+`companion-vrm.spec.ts` kiểm tra renderer VRM thật, so sánh mức biểu cảm cũ/mới, morph trên mesh,
+chớp mắt, khẩu hình với WAV tạo tại máy, hết hạn biểu cảm và tháo sân khấu khi rời tab. Bài này chỉ
+chạy khi đặt `PETO_VRM_SAMPLE_PATH` trỏ tới `VRM1_Constraint_Twist_Sample.vrm`; không tự tải model
+hoặc gọi AI/TTS. Canvas kiểm tra dùng 360×480 và nhịp chớp mắt xác định để giảm tải và tránh chờ
+ngẫu nhiên; viewport/giao diện vẫn theo PC hoặc mobile. Kết quả không đo FPS hay thay cho thử trên
+điện thoại thật. Bản mẫu chính thức của pixiv dùng [VRM Public License 1.0](https://vrm.dev/licenses/1.0/),
+không được đóng kèm bản phát hành Peto. Nguồn đã thử: kho `vrm-c/vrm-specification`, revision
+`c24d76d99a18738dd2c266be1c83f089064a7b5e`, tệp
+`samples/VRM1_Constraint_Twist_Sample/vrm/VRM1_Constraint_Twist_Sample.vrm`, SHA-256
+`12c2b97e95e700783a6a550dc0eee2d7880aeedccef9ae67bc4c5a2f0f2631a2`.
+
+```powershell
+$env:PETO_VRM_SAMPLE_PATH = 'đường-dẫn-tới\VRM1_Constraint_Twist_Sample.vrm'
+npm run test:browser -- companion-vrm.spec.ts --workers=1
+```
+
 ## Chạy tại máy
 
 Từ thư mục `frontend`, dùng Node 24:

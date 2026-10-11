@@ -139,10 +139,11 @@ export function faceApplier(core: CubismCore) {
  * nghiêng đầu. Model có biểu cảm tự đặt trùng tên cảm xúc (ví dụ "think") thì dùng biểu cảm đó.
  */
 export const VRM_EMOTIONS: Record<Emotion, { expressions: [string, number][]; roll?: number; mouth?: number }> = {
-  happy: { expressions: [['happy', 1]], mouth: 0.2 },
-  sad: { expressions: [['sad', 1]] },
+  // Nhẹ hơn mức tối đa như AIRI: giữ tốc độ chuyển mặt và khẩu hình, chỉ giảm trọng số biểu cảm VRM.
+  happy: { expressions: [['happy', 0.7]], mouth: 0.2 },
+  sad: { expressions: [['sad', 0.7]] },
   angry: { expressions: [['angry', 0.7]] },
-  surprised: { expressions: [['surprised', 1]], mouth: 0.4 },
+  surprised: { expressions: [['surprised', 0.8]], mouth: 0.4 },
   think: { expressions: [['relaxed', 0.35]], roll: -5 },
   awkward: { expressions: [['happy', 0.3], ['relaxed', 0.4]], roll: 4 },
   question: { expressions: [['surprised', 0.3]], roll: 9 },

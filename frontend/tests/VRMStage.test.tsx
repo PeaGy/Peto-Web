@@ -121,7 +121,8 @@ it('VRM làm mặt theo cảm xúc Peto chọn bằng biểu cảm có sẵn, v�
   await waitFor(() => expect(mocks.frame).toBeTypeOf('function'));
   act(() => { for (let i = 1; i < 30; i++) mocks.frame!(40 * i); });
   const surprised = vrm.expressionManager.setValue.mock.calls.filter(([name]) => name === 'surprised');
-  expect(surprised.at(-1)![1]).toBeGreaterThan(0.9);
+  expect(surprised.at(-1)![1]).toBeGreaterThan(0.7);
+  expect(surprised.at(-1)![1]).toBeLessThanOrEqual(0.8);
   // Ngạc nhiên hé miệng sẵn khi Peto im lặng.
   expect(vrm.expressionManager.setValue).toHaveBeenCalledWith('aa', expect.closeTo(0.4, 1));
 

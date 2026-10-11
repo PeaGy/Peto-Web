@@ -29,7 +29,11 @@ không chạy script hoặc tải tài nguyên mạng do model cung cấp. Bỏ 
 VRM phải là GLB có phần mở rộng VRM và tài nguyên nhúng. Thư viện không tải model của người dùng lên VPS.
 
 VRM có tư thế nghỉ, chớp mắt, nhìn theo con trỏ và biểu cảm miệng `aa` theo WAV đang phát. Model cần có
-các biểu cảm tương ứng. Tư thế tay được tính theo hướng xương thực trong `src/features/companion/characters/vrmPose.ts`, tránh xoay
+các biểu cảm tương ứng. Biểu cảm vui/buồn dùng mức 70%, ngạc nhiên 80%, giận giữ 70%, tham khảo
+[biểu cảm VRM của AIRI](https://github.com/moeru-ai/airi/blob/main/packages/stage-ui-three/src/composables/vrm/expression.ts).
+Tốc độ chuyển mặt, khẩu hình nền và biểu cảm Live2D giữ nguyên. Quy tắc ghi đè miệng/chớp mắt của từng
+model vẫn áp dụng; giảm trọng số không bảo đảm mọi model đều nhép miệng giống nhau.
+Tư thế tay được tính theo hướng xương thực trong `src/features/companion/characters/vrmPose.ts`, tránh xoay
 ngược thành chữ V trên VRM 0 khi áp dụng góc dành cho VRM 1. Không cần nhập lại model sau bản sửa.
 Trên máy tính: cuộn để phóng, chuột giữa để dời, chuột phải để xoay, bấm đúp để
 về khung ban đầu. Bản đầu chưa nhập animation VRMA hay lưu góc nhìn VRM. Live2D giữ góc nhìn riêng theo

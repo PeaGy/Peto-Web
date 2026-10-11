@@ -63,7 +63,7 @@ it('skips parameters a model does not have and refuses models without a face', (
 it('maps emotions onto VRM presets, preferring an expression the model defines itself', () => {
   const presets = new Set(['happy', 'sad', 'angry', 'surprised', 'relaxed']);
   expect(vrmFace([{ emotion: 'happy', weight: 0.5 }], name => presets.has(name))).toEqual(
-    { values: new Map([['happy', 0.5]]), roll: 0, mouth: 0.1 });
+    { values: new Map([['happy', 0.35]]), roll: 0, mouth: 0.1 });
   const think = vrmFace([{ emotion: 'think', weight: 1 }], name => presets.has(name));
   expect(think.values).toEqual(new Map([['relaxed', 0.35]]));
   expect(think.roll).toBe(-5);
