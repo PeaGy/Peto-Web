@@ -1,4 +1,5 @@
 import {useEffect, useRef, useState} from 'react';
+import {Dropdown} from '../../shared/ui/Dropdown';
 import type {Conversation} from '../../shared/api/api';
 import type {Project} from './projectApi';
 
@@ -28,19 +29,19 @@ export default function MoveConversationDialog({item, projects, busy, error, loa
     setCreated(project);setTarget(project.id);setCreating(false);setName('');
     onSave(project.id);
   }
-  return <dialog className="text-edit-dialog" ref={ref} aria-label="Chuyển hội thoại vào dự án" onCancel={e => {e.preventDefault();if(!busy)onClose();}}>
+  return <dialog className="text-edit-dialog move-project-dialog" ref={ref} aria-label="Chuyển hội thoại vào dự án" onCancel={e => {e.preventDefault();if(!busy)onClose();}}>
     <form onSubmit={e => {e.preventDefault();void submit();}}>
       <h2>Chuyển hội thoại</h2><p>“{item.title}”</p>
       {loading && <p role="status">Đang tải danh sách dự án…</p>}
       {loadError && <p role="alert">{loadError} <button type="button" disabled={busy || loading} onClick={onRetry}>Thử tải lại</button></p>}
       {empty && <p>Chưa có dự án. Đặt tên bên dưới để tạo và chuyển hội thoại vào đó.</p>}
-      {createMode ? <><label htmlFor="move-project-name">Tên dự án mới</label><input id="move-project-name" autoFocus required maxLength={100} value={name} disabled={busy || loading} onChange={e=>setName(e.target.value)}/>{!empty && <button type="button" disabled={busy} onClick={()=>setCreating(false)}>Chọn dự án có sẵn</button>}</> : <>
-        <label htmlFor="move-project">Nơi lưu hội thoại</label>
-        <select id="move-project" value={target} disabled={busy || loading} onChange={e => setTarget(e.target.value)}>
-          <option value="">Ngoài dự án · Gần đây</option>
-          {item.project_id && !choices.some(project=>project.id===item.project_id) && <option value={item.project_id}>Dự án hiện tại</option>}
-          {choices.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}
-        </select>
+      {createMode ? <><label htmlFor="move-project-name">Tên dự án mới</label><input id="move-project-name" className="text-field" autoFocus required maxLength={100} value={name} disabled={busy || loading} onChange={e=>setName(e.target.value)}/>{!empty && <button type="button" disabled={busy} onClick={()=>setCreating(false)}>Chọn dự án có sẵn</button>}</> : <>
+        <label htmlFor="move-project" id="move-project-label">Nơi lưu hội thoại</label>
+        <Dropdown id="move-project" value={target} disabled={busy || loading} onChange={setTarget} options={[
+          {value:'', label:'Ngoài dự án · Gần đây'},
+          ...(item.project_id && !choices.some(project=>project.id===item.project_id) ? [{value:item.project_id, label:'Dự án hiện tại'}] : []),
+          ...choices.map(project => ({value:project.id, label:project.name})),
+        ]}/>
         <button className="move-project-create" type="button" disabled={busy || loading} onClick={()=>setCreating(true)}>+ Tạo dự án mới</button>
       </>}
       {error && <p role="alert">{error}</p>}

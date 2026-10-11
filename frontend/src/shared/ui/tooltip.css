@@ -1,0 +1,42 @@
+/* Tooltip của nút (TooltipLayer.tsx), theo ảnh Grok chủ web gửi ngày 2026-10-11: ô tối bo 8px, chữ 13px, phím tắt mờ.
+   Hiện thì mờ dần và nở nhẹ từ phía nút trong 125ms; rê sang nút bên cạnh thì đổi ngay, không chạy lại hiệu ứng. */
+.app-tooltip {
+  position: fixed;
+  inset: auto;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(280px, calc(100vw - 16px));
+  margin: 0;
+  padding: 6px 10px;
+  overflow: visible;
+  border: 0;
+  border-radius: 8px;
+  background: var(--tooltip-bg);
+  color: var(--tooltip-fg);
+  box-shadow: var(--tooltip-shadow);
+  font: 500 13px/1.35 "Segoe UI", system-ui, -apple-system, sans-serif;
+  text-align: left;
+  pointer-events: none;
+  -webkit-user-select: none;
+  user-select: none;
+  transition: opacity 125ms var(--ease-out), transform 125ms var(--ease-out);
+}
+
+.app-tooltip[hidden] { display: none; }
+.app-tooltip kbd { flex: none; color: var(--tooltip-muted); font: inherit; font-weight: 400; white-space: nowrap; }
+
+@starting-style {
+  .app-tooltip { opacity: 0; transform: translateY(-3px) scale(0.97); }
+  .app-tooltip[data-side="top"] { transform: translateY(3px) scale(0.97); }
+  .app-tooltip[data-side="left"] { transform: translateX(3px) scale(0.97); }
+  .app-tooltip[data-side="right"] { transform: translateX(-3px) scale(0.97); }
+}
+
+.app-tooltip.instant { transition: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .app-tooltip { transition: opacity 125ms ease-out; }
+  @starting-style { .app-tooltip, .app-tooltip[data-side] { transform: none; } }
+}

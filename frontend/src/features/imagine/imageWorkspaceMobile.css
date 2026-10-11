@@ -95,7 +95,7 @@
 .workspace-mobile .mobile-sheet-content .brush-history button { width: 44px; height: 44px; }
 .workspace-mobile .workspace-crop-overlay { padding: calc(16px + env(safe-area-inset-top)) 12px calc(16px + env(safe-area-inset-bottom)); animation: workspace-tool-enter 200ms cubic-bezier(.32,.72,0,1); }
 .workspace-mobile .crop-actions { gap: 6px; }
-.workspace-mobile .crop-actions button, .workspace-mobile .crop-actions select { min-height: 44px; padding: 8px 12px; font-size: 14px; }
+.workspace-mobile .crop-actions > button, .workspace-mobile .dropdown.compact.crop-ratio .dropdown-trigger { min-height: 44px; padding: 8px 12px; font-size: 14px; }
 
 /* Lượt sửa đang chạy thật: vẫn nhận ra ảnh cũ dưới nền chấm. */
 .workspace-mobile .workspace-history-status { position: absolute; bottom: calc(112px + env(safe-area-inset-bottom)); left: 12px; right: 12px; z-index: 3; margin: 0; padding: 6px 10px; border-radius: 12px; background: var(--panel); }

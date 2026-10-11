@@ -2166,6 +2166,15 @@ describe('Chọn model', () => {
   });
 });
 
+it('Ctrl+K mở tìm hội thoại như Grok, nút tìm ghi phím tắt đó', async () => {
+  await openApp();
+  const search = screen.getByRole('button', { name: 'Tìm kiếm hội thoại' });
+  expect(search.getAttribute('data-tip-kbd')).toBe('Ctrl+K');
+  expect(search.getAttribute('title')).toBeNull();
+  fireEvent.keyDown(window, { key: 'k', ctrlKey: true });
+  expect(await screen.findByRole('searchbox', { name: 'Tìm trong lịch sử chat' })).toBeTruthy();
+});
+
 it('tìm nội dung lịch sử qua máy chủ, đổi tên và ghim', async () => {
   await openApp();
   fireEvent.click(screen.getByRole('button',{name:'Tìm kiếm hội thoại'}));

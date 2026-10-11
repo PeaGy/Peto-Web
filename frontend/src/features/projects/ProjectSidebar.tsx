@@ -33,8 +33,8 @@ export default function ProjectSidebar({state, activeId, conversationId, disable
   }
   return <section className="project-sidebar" aria-label="Dự án">
     <div className="project-sidebar-label">
-      <h2 className="sidebar-label"><button type="button" className="project-section-toggle" aria-expanded={sectionOpen} aria-controls="project-sidebar-content" title={sectionOpen ? 'Thu gọn mục Dự án' : 'Mở rộng mục Dự án'} onClick={()=>changeSection(!sectionOpen)}>Dự án<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true"><path d="m4 2 4 4-4 4"/></svg></button></h2>
-      <button type="button" className="project-create" aria-label="Tạo dự án" title="Tạo dự án" disabled={disabled} onClick={()=>{changeSection(true);onCreate();}}>+</button>
+      <h2 className="sidebar-label"><button type="button" className="project-section-toggle" aria-expanded={sectionOpen} aria-controls="project-sidebar-content" data-tip={sectionOpen ? 'Thu gọn mục Dự án' : 'Mở rộng mục Dự án'} onClick={()=>changeSection(!sectionOpen)}>Dự án<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true"><path d="m4 2 4 4-4 4"/></svg></button></h2>
+      <button type="button" className="project-create" aria-label="Tạo dự án" data-tip disabled={disabled} onClick={()=>{changeSection(true);onCreate();}}>+</button>
     </div>
     <div id="project-sidebar-content" hidden={!sectionOpen}>
     {state.loading && !state.projects.length && <ProjectLoading label="Đang tải dự án"/>}
@@ -46,8 +46,8 @@ export default function ProjectSidebar({state, activeId, conversationId, disable
         <div className={`project-row conv${activeId === item.id ? ' active' : ''}`}>
           <button className="project-open" title={item.name} aria-expanded={open} aria-controls={`project-chats-${item.id}`} disabled={disabled} onClick={() => toggle(item.id)}><FolderIcon open={open}/><span>{item.name}</span></button>
           <div className="conv-hover-actions">
-            <button aria-label={`Tùy chọn dự án ${item.name}`} title="Tùy chọn dự án" disabled={disabled} onClick={e => onMenu(item, e.currentTarget.getBoundingClientRect())}>⋯</button>
-            <button aria-label={`Chat mới trong dự án ${item.name}`} title="Chat mới trong dự án" disabled={disabled} onClick={()=>{setExpanded(old=>new Set(old).add(item.id));onNewChat(item.id);}}><EditIcon/></button>
+            <button aria-label={`Tùy chọn dự án ${item.name}`} data-tip="Tùy chọn dự án" disabled={disabled} onClick={e => onMenu(item, e.currentTarget.getBoundingClientRect())}>⋯</button>
+            <button aria-label={`Chat mới trong dự án ${item.name}`} data-tip="Chat mới trong dự án" disabled={disabled} onClick={()=>{setExpanded(old=>new Set(old).add(item.id));onNewChat(item.id);}}><EditIcon/></button>
           </div>
         </div>
         {open && <div className="project-chats" id={`project-chats-${item.id}`}>

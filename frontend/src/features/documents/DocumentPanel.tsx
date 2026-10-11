@@ -1,4 +1,5 @@
-import { Suspense, useEffect, useRef, useState } from 'react';
+import { Suspense, useEffect, useId, useRef, useState } from 'react';
+import { Dropdown } from '../../shared/ui/Dropdown';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { UnauthorizedError } from '../../shared/api/api';
@@ -30,6 +31,7 @@ export default function DocumentPanel({ conversationId, open, expanded, selectio
   const scroll = useRef<HTMLDivElement>(null);
   const [mobile, setMobile] = useState(() => window.matchMedia?.('(max-width: 1100px)')?.matches ?? false);
   const [filesOpen, setFilesOpen] = useState(true);
+  const versionId = useId();
   const [query, setQuery] = useState('');
   const [files, setFiles] = useState<DocumentSummary[]>([]);
   const [selected, setSelected] = useState<{ id: string; version?: number } | null>(selection);
@@ -110,26 +112,26 @@ export default function DocumentPanel({ conversationId, open, expanded, selectio
     onCancel={event => { event.preventDefault(); onClose(); }} onKeyDown={event => { if (!mobile && event.key === 'Escape') { event.preventDefault(); onClose(); } }}>
     <header className="document-panel-head">
       <DocumentIcon /><h2>Tài liệu</h2><span className="document-panel-count">{files.length}</span>
-      <button type="button" className="artifact-icon document-panel-expand" aria-label={expanded ? 'Thu gọn bảng tài liệu' : 'Phóng rộng bảng tài liệu'} title={expanded ? 'Thu gọn' : 'Phóng rộng'} onClick={onExpand}><ExpandIcon /></button>
-      <button type="button" className="artifact-icon" aria-label="Đóng bảng tài liệu" title="Đóng bảng tài liệu · Ctrl+Alt+B" onClick={onClose}><RightPanelIcon /></button>
+      <button type="button" className="artifact-icon document-panel-expand" aria-label={expanded ? 'Thu gọn bảng tài liệu' : 'Phóng rộng bảng tài liệu'} data-tip={expanded ? 'Thu gọn' : 'Phóng rộng'} onClick={onExpand}><ExpandIcon /></button>
+      <button type="button" className="artifact-icon" aria-label="Đóng bảng tài liệu" data-tip data-tip-kbd="Ctrl+Alt+B" aria-keyshortcuts="Control+Alt+B" onClick={onClose}><RightPanelIcon /></button>
     </header>
     <div className="document-panel-toolbar">
-      <button type="button" className="artifact-icon" aria-label={filesOpen ? 'Ẩn danh sách tệp' : 'Hiện danh sách tệp'} aria-expanded={filesOpen} aria-controls="document-file-list" title="Danh sách tệp" onClick={() => setFilesOpen(value => !value)}><FileListIcon /></button>
+      <button type="button" className="artifact-icon" aria-label={filesOpen ? 'Ẩn danh sách tệp' : 'Hiện danh sách tệp'} aria-expanded={filesOpen} aria-controls="document-file-list" data-tip="Danh sách tệp" onClick={() => setFilesOpen(value => !value)}><FileListIcon /></button>
       <strong title={current ? filename(current) : undefined}>{current ? filename(current) : 'Tài liệu của hội thoại'}</strong>
       {current && (sheet
-        ? <>{current.versions.length > 1 && <select className="document-panel-version" aria-label="Phiên bản xem trước" value={current.version} onChange={event => setSelected({ id: current.id, version: Number(event.target.value) })}>{current.versions.map(version => <option key={version.version} value={version.version}>Phiên bản {version.version}</option>)}</select>}<a className="artifact-icon" href={downloadUrl(current)} download={filename(current)} aria-label={`Tải ${filename(current)}`} title="Tải XLSX"><DownloadIcon /></a></>
+        ? <>{current.versions.length > 1 && <Dropdown id={`${versionId}-sheet`} className="compact document-panel-version" ariaLabel="Phiên bản xem trước" value={String(current.version)} options={current.versions.map(version => ({ value: String(version.version), label: `Phiên bản ${version.version}` }))} onChange={next => setSelected({ id: current.id, version: Number(next) })} />}<a className="artifact-icon" href={downloadUrl(current)} download={filename(current)} aria-label={`Tải ${filename(current)}`} data-tip="Tải XLSX"><DownloadIcon /></a></>
         : slides
-        ? <><a className="document-panel-edit" href={downloadUrl(current, 'pdf')} download={`${current.title}.pdf`}>Tải PDF</a><a className="artifact-icon" href={downloadUrl(current)} download={filename(current)} aria-label={`Tải ${filename(current)}`} title="Tải PPTX"><DownloadIcon /></a></>
-        : <><button type="button" className="document-panel-edit" onClick={() => onEdit(current)}>Sửa nội dung</button><a className="artifact-icon" href={downloadUrl(current)} download={filename(current)} aria-label={`Tải ${filename(current)}`} title="Tải xuống"><DownloadIcon /></a></>)}
+        ? <><a className="document-panel-edit" href={downloadUrl(current, 'pdf')} download={`${current.title}.pdf`}>Tải PDF</a><a className="artifact-icon" href={downloadUrl(current)} download={filename(current)} aria-label={`Tải ${filename(current)}`} data-tip="Tải PPTX"><DownloadIcon /></a></>
+        : <><button type="button" className="document-panel-edit" onClick={() => onEdit(current)}>Sửa nội dung</button><a className="artifact-icon" href={downloadUrl(current)} download={filename(current)} aria-label={`Tải ${filename(current)}`} data-tip="Tải xuống"><DownloadIcon /></a></>)}
     </div>
     <div className="document-panel-body">
       <nav id="document-file-list" className="document-file-list" aria-label="Danh sách tài liệu" hidden={!filesOpen}>
-        <label className="document-file-search"><span>Tệp trong hội thoại</span><input type="search" aria-label="Tìm tài liệu" placeholder="Tìm tài liệu…" value={query} onChange={event => setQuery(event.target.value)} /></label>
+        <label className="document-file-search"><span>Tệp trong hội thoại</span><input type="search" className="text-field" aria-label="Tìm tài liệu" placeholder="Tìm tài liệu…" value={query} onChange={event => setQuery(event.target.value)} /></label>
         {listBusy && !files.length && <p role="status">Đang tải danh sách…</p>}
         {listError && <div role="alert"><p>{listError}</p><button type="button" onClick={() => setRetry(value => value + 1)}>Thử lại</button></div>}
         {filtered.map(item => <div key={item.id} className={`document-file-row${selected?.id === item.id ? ' selected' : ''}`}>
           <button type="button" aria-label={`Mở ${filename(item)}`} aria-current={selected?.id === item.id ? 'true' : undefined} title={filename(item)} onClick={() => { setSelected({ id: item.id }); if (mobile) setFilesOpen(false); }}><FileIcon item={item} /><span><strong>{filename(item)}</strong><small>Phiên bản {item.version}{item.pages ? ` · ${item.pages} ${unitOf(item.format)}` : ''}</small></span></button>
-          <a className="artifact-icon" href={downloadUrl(item)} download={filename(item)} aria-label={`Tải ${filename(item)} từ danh sách`} title="Tải xuống"><DownloadIcon /></a>
+          <a className="artifact-icon" href={downloadUrl(item)} download={filename(item)} aria-label={`Tải ${filename(item)} từ danh sách`} data-tip="Tải xuống"><DownloadIcon /></a>
         </div>)}
         {!listBusy && !listError && !filtered.length && <p>{query ? 'Không có tài liệu phù hợp.' : 'Chưa có tài liệu nào.'}</p>}
       </nav>
@@ -139,7 +141,7 @@ export default function DocumentPanel({ conversationId, open, expanded, selectio
         </Suspense></LazyBoundary>}
         {current && !sheet && <div className="document-panel-pagination">
           {preview && <><button type="button" aria-label={`${unit} trước`} disabled={page <= 1} onClick={() => setPage(value => value - 1)}>‹</button><span aria-live="polite">{unit} {page} / {current.pages}</span><button type="button" aria-label={`${unit} sau`} disabled={page >= (current.pages || 1)} onClick={() => setPage(value => value + 1)}>›</button></>}
-          <select aria-label="Phiên bản xem trước" value={current.version} onChange={event => setSelected({ id: current.id, version: Number(event.target.value) })}>{current.versions.map(version => <option key={version.version} value={version.version}>Phiên bản {version.version}</option>)}</select>
+          <Dropdown id={`${versionId}-pages`} className="compact document-panel-page-version" ariaLabel="Phiên bản xem trước" value={String(current.version)} options={current.versions.map(version => ({ value: String(version.version), label: `Phiên bản ${version.version}` }))} onChange={next => setSelected({ id: current.id, version: Number(next) })} />
         </div>}
         {!sheet && <div className="document-panel-pages" ref={scroll}>
           {busy && <div className="document-panel-empty" role="status">Đang mở tài liệu…</div>}

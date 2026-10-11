@@ -157,7 +157,7 @@ export const ChatMessage = memo(function ChatMessage({ message, live, writing, o
                 <MessageCopy text={message.content} stopped={message.stopped} onRetry={onRetry} disabled={actionsDisabled} />
               )}
               {!writing && !editor && message.role === 'user' && <span className="user-message-actions">
-                {message.id && <button type="button" aria-label="Sửa tin nhắn" title="Sửa tin nhắn" disabled={actionsDisabled} data-revise={message.id}><EditIcon /></button>}
+                {message.id && <button type="button" aria-label="Sửa tin nhắn" data-tip disabled={actionsDisabled} data-revise={message.id}><EditIcon /></button>}
               </span>}
             </article>);
 });

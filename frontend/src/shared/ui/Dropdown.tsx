@@ -22,6 +22,10 @@ interface DropdownProps {
   editable?: boolean;
   /** Ô gõ được mà để trống thì dùng giá trị này (giọng mặc định): bảng đánh dấu nó là lựa chọn hiện tại. */
   emptyValue?: string;
+  /** Tên đọc khi ô không có <label> hiện ra (thanh công cụ). Có nhãn thì để trống: nhãn phải có id `${id}-label`. */
+  ariaLabel?: string;
+  /** Lớp thêm cho khung ngoài, ví dụ `compact` cho ô gọn trên thanh công cụ, cộng lớp riêng của từng chỗ. */
+  className?: string;
 }
 
 const LIST_MAX_HEIGHT = 300;
@@ -124,8 +128,9 @@ function CheckIcon() {
   );
 }
 
-function OptionList({ id, listRef, options, value, active, placement, onPick, onHover }: {
+function OptionList({ id, label, listRef, options, value, active, placement, onPick, onHover }: {
   id: string;
+  label?: string;
   listRef: RefObject<HTMLUListElement | null>;
   options: DropdownOption[];
   value: string;
@@ -164,7 +169,8 @@ function OptionList({ id, listRef, options, value, active, placement, onPick, on
       ref={listRef}
       id={`${id}-list`}
       role="listbox"
-      aria-labelledby={`${id}-label`}
+      aria-labelledby={label ? undefined : `${id}-label`}
+      aria-label={label}
       className={placement.above ? "dropdown-list above" : "dropdown-list"}
       style={{ maxHeight: placement.maxHeight }}
       // Giữ tiêu điểm ở ô khi bấm vào bảng (kể cả thanh cuộn của bảng), để ô không mất tiêu điểm rồi đóng bảng.
@@ -213,7 +219,7 @@ export function Dropdown(props: DropdownProps) {
   return props.editable ? <EditableDropdown {...props} /> : <SelectDropdown {...props} />;
 }
 
-function SelectDropdown({ id, value, options, onChange, placeholder, disabled }: DropdownProps) {
+function SelectDropdown({ id, value, options, onChange, placeholder, disabled, ariaLabel, className }: DropdownProps) {
   const { showing, active, setActive, close, openAt, clamp, wrap, list, placement } = useList(options.length, disabled);
   const selectedIndex = options.findIndex((option) => option.value === value);
   const selected = options[selectedIndex];
@@ -268,12 +274,13 @@ function SelectDropdown({ id, value, options, onChange, placeholder, disabled }:
   }
 
   return (
-    <div ref={wrap} className={showing ? "dropdown open" : "dropdown"}>
+    <div ref={wrap} className={["dropdown", className, showing && "open"].filter(Boolean).join(" ")}>
       <button
         id={id}
         type="button"
         role="combobox"
         className="dropdown-trigger"
+        aria-label={ariaLabel}
         aria-haspopup="listbox"
         aria-expanded={showing}
         aria-controls={`${id}-list`}
@@ -290,6 +297,7 @@ function SelectDropdown({ id, value, options, onChange, placeholder, disabled }:
       {showing && (
         <OptionList
           id={id}
+          label={ariaLabel}
           listRef={list}
           options={options}
           value={value}
@@ -303,7 +311,7 @@ function SelectDropdown({ id, value, options, onChange, placeholder, disabled }:
   );
 }
 
-function EditableDropdown({ id, value, options, onChange, placeholder, disabled, emptyValue }: DropdownProps) {
+function EditableDropdown({ id, value, options, onChange, placeholder, disabled, emptyValue, ariaLabel, className }: DropdownProps) {
   const input = useRef<HTMLInputElement>(null);
   const current = value.trim() || emptyValue || "";
   const [filtering, setFiltering] = useState(false);
@@ -349,13 +357,14 @@ function EditableDropdown({ id, value, options, onChange, placeholder, disabled,
   }
 
   return (
-    <div ref={wrap} className={showing ? "dropdown editable open" : "dropdown editable"}>
+    <div ref={wrap} className={["dropdown editable", className, showing && "open"].filter(Boolean).join(" ")}>
       <input
         ref={input}
         id={id}
         type="text"
         role="combobox"
         className="dropdown-trigger"
+        aria-label={ariaLabel}
         aria-autocomplete="list"
         aria-expanded={showing}
         aria-controls={`${id}-list`}
@@ -393,6 +402,7 @@ function EditableDropdown({ id, value, options, onChange, placeholder, disabled,
       {showing && (
         <OptionList
           id={id}
+          label={ariaLabel}
           listRef={list}
           options={shown}
           value={current}

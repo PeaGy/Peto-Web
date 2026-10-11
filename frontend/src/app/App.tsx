@@ -50,6 +50,7 @@ import type { DocumentDraftRequest } from '../features/documents/documentApi';
 import { takeConnectorResult } from '../features/connectors/connectorApi';
 import { safeSources } from "../features/chat/WebSources";
 import { closeWork } from "../features/chat/WorkTimeline";
+import TooltipLayer from '../shared/ui/TooltipLayer';
 import {
   UnauthorizedError,
   confirmRoleplayAge,
@@ -266,6 +267,20 @@ function AppContent() {
     window.addEventListener('keydown', shortcut);
     return () => window.removeEventListener('keydown', shortcut);
   }, [view]);
+  // Ctrl+K (⌘K trên Mac) mở tìm hội thoại như Grok và ChatGPT, ở mọi tab; tooltip của nút tìm ghi phím này.
+  // Không mở khi đang trả lời (nút tìm cũng tắt lúc đó) hay khi một hộp thoại modal khác đang mở.
+  useEffect(() => {
+    const openSearch = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey || event.key.toLowerCase() !== 'k') return;
+      let modal = false;
+      try { modal = Boolean(document.querySelector('dialog:modal')); } catch { /* trình duyệt cũ không có :modal */ }
+      if (streaming || modal) return;
+      event.preventDefault();
+      setSearchOpen(true);
+    };
+    window.addEventListener('keydown', openSearch);
+    return () => window.removeEventListener('keydown', openSearch);
+  }, [streaming]);
   const [companionVisited, setCompanionVisited] = useState(view === "companion");
   // Giọng nói dùng chung cho Companion và mục Giọng nói trong Cài đặt. Chỉ dò 127.0.0.1 sau khi đã mở
   // Companion hoặc lúc Cài đặt đang mở, để tab Trò chuyện không gọi gì ra máy.
@@ -1425,7 +1440,7 @@ function AppContent() {
           <MenuIcon />
         </button>
         {activeProjectId && <ProjectChatHeader name={projectState.projects.find(project=>project.id===activeProjectId)?.name}/>}
-        <button type="button" className="artifact-icon document-panel-toggle" aria-label={documentPanelOpen ? 'Đóng bảng tài liệu' : 'Mở bảng tài liệu'} aria-expanded={documentPanelOpen} aria-controls="document-panel" title="Tài liệu · Ctrl+Alt+B" onClick={() => { setDocumentPanelOpen(value => !value); setDocumentPanelExpanded(false); setDiagram(null); }}><RightPanelIcon /></button>
+        <button type="button" className="artifact-icon document-panel-toggle" aria-label={documentPanelOpen ? 'Đóng bảng tài liệu' : 'Mở bảng tài liệu'} aria-expanded={documentPanelOpen} aria-controls="document-panel" data-tip="Tài liệu" data-tip-kbd="Ctrl+Alt+B" aria-keyshortcuts="Control+Alt+B" onClick={() => { setDocumentPanelOpen(value => !value); setDocumentPanelExpanded(false); setDiagram(null); }}><RightPanelIcon /></button>
         </div>
 
         <div className="messages" ref={messagesRef} onClick={e => {
@@ -1470,7 +1485,7 @@ function AppContent() {
           <div ref={bottomRef} />
         </div>
 
-        {showJump && <button type="button" className="jump-latest" aria-label="Tin mới nhất" title="Tin mới nhất" onClick={() => {
+        {showJump && <button type="button" className="jump-latest" aria-label="Tin mới nhất" data-tip onClick={() => {
           nearBottom.current = true;
           setShowJump(false);
           bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -1605,6 +1620,7 @@ function AppContent() {
           <button className="primary-button" disabled={consentBusy} onClick={() => void confirmRoleplay()}>{consentBusy ? "Đang lưu…" : "Tôi đủ 18 tuổi"}</button>
         </div>
       </dialog>
+      <TooltipLayer />
     </div>
   );
 }

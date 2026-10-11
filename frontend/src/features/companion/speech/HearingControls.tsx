@@ -112,7 +112,7 @@ export function MicButton({ onClick, buttonRef }: { onClick: () => void; buttonR
       className={on ? `hearing-mic on ${hearing.phase}` : "hearing-mic"}
       aria-label={label}
       aria-pressed={on}
-      title={label}
+      data-tip
       style={{ "--hearing-level": on && hearing.phase !== "paused" ? level : 0 } as CSSProperties}
       onClick={onClick}
     >

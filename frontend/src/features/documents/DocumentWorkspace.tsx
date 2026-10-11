@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
+import { Dropdown } from '../../shared/ui/Dropdown';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { UnauthorizedError } from '../../shared/api/api';
@@ -16,6 +17,7 @@ export default function DocumentWorkspace({ request, onUnauthorized, selection, 
   const body = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [saved, setSaved] = useState<SavedDocument | null>(null);
+  const versionId = useId();
   const [sourceConversation, setSourceConversation] = useState('');
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
@@ -118,9 +120,8 @@ export default function DocumentWorkspace({ request, onUnauthorized, selection, 
       </header>
       <div className="document-workspace-toolbar">
         <button className={editing ? 'active' : ''} aria-pressed={editing} disabled={!!busy} onClick={() => setEditing(value => !value)}>{editing ? 'Xem trước' : 'Chỉnh nội dung'}</button>
-        {saved && <select aria-label="Phiên bản tài liệu" value={saved.version} disabled={!!busy || dirty} onChange={event => void load(saved.id, Number(event.target.value))}>
-          {saved.versions.map(version => <option key={version.version} value={version.version}>Phiên bản {version.version}</option>)}
-        </select>}
+        {saved && <Dropdown id={versionId} className="compact document-workspace-version" ariaLabel="Phiên bản tài liệu" value={String(saved.version)} disabled={!!busy || dirty}
+          options={saved.versions.map(version => ({ value: String(version.version), label: `Phiên bản ${version.version}` }))} onChange={next => void load(saved.id, Number(next))} />}
         <span className="document-save-state">{dirty ? 'Chưa lưu' : 'Đã lưu'}</span>
         <button disabled={!!busy || !dirty || !title.trim() || !content.trim()} onClick={() => void save()}>Lưu</button>
         <button disabled={!!busy || !title.trim() || !content.trim()} onClick={() => void download('docx')}>Tải DOCX</button>
@@ -133,8 +134,8 @@ export default function DocumentWorkspace({ request, onUnauthorized, selection, 
       {deleting && <div className="document-unsaved" role="alert"><p>Xóa tài liệu và toàn bộ phiên bản? Cuộc trò chuyện vẫn được giữ lại.</p><button disabled={!!busy} onClick={() => setDeleting(false)}>Giữ lại</button><button disabled={!!busy} onClick={() => void remove()}>Xóa tài liệu</button></div>}
       <div ref={body} className="document-workspace-body">
         {editing ? <div className="document-editor">
-          <label htmlFor="document-name">Tên tài liệu</label><input id="document-name" value={title} maxLength={120} disabled={!!busy} onChange={event => rename(event.target.value)} />
-          <label htmlFor="document-content">Nội dung</label><textarea id="document-content" value={content} maxLength={60000} disabled={!!busy} onChange={event => setContent(event.target.value)} />
+          <label htmlFor="document-name">Tên tài liệu</label><input id="document-name" className="text-field" value={title} maxLength={120} disabled={!!busy} onChange={event => rename(event.target.value)} />
+          <label htmlFor="document-content">Nội dung</label><textarea id="document-content" className="text-field" value={content} maxLength={60000} disabled={!!busy} onChange={event => setContent(event.target.value)} />
           <small>{content.length.toLocaleString('vi-VN')} / 60.000 ký tự · Giữ các dấu định dạng của bản nháp để bảo toàn tiêu đề và bảng.</small>
         </div> : <article className="document-paper" aria-label="Nội dung tài liệu">
           <h1>{title}</h1><Markdown remarkPlugins={[remarkGfm]} components={{

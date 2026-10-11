@@ -52,7 +52,7 @@ export default function ModelMenu({ value, options, disabled, onChange }: {
   }}>
     <button ref={trigger} type="button" className="effort-trigger" disabled={disabled}
       aria-haspopup="menu" aria-expanded={open} aria-controls={menuId} aria-label={`Model: ${current.label}`}
-      title={`Model · ${current.description}`}
+      data-tip={`Model · ${current.description}`}
       onClick={() => setOpen((value) => !value)}
       onKeyDown={(event) => {
         if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); setOpen(true); }

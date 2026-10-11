@@ -91,7 +91,7 @@ export default function CharacterPicker({ library, onClose }: { library: Charact
           </button>
           <div className="character-card-info">
             {editing === model.id ? <form onSubmit={event => { event.preventDefault(); void run(() => library.rename(model.id, name)); }}>
-              <input aria-label="Tên nhân vật mới" autoFocus maxLength={80} value={name} onChange={event => setName(event.target.value)} />
+              <input className="text-field" aria-label="Tên nhân vật mới" autoFocus maxLength={80} value={name} onChange={event => setName(event.target.value)} />
               <div className="character-card-actions"><button disabled={busy || !name.trim()}>Lưu tên</button><button type="button" disabled={busy} onClick={() => setEditing('')}>Hủy</button></div>
             </form> : <><strong>{model.name}</strong><small>{model.builtin ? 'Model mẫu · © Live2D Inc.' : `${(model.bytes / 1024 / 1024).toFixed(1)} MB${model.author ? ` · ${model.author}` : ''}`}</small></>}
             {!model.builtin && editing !== model.id && <div className="character-card-actions">

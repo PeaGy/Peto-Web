@@ -1,4 +1,5 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
+import { Dropdown } from '../../shared/ui/Dropdown';
 import type { ImagineImage, ImagineJob } from "../../shared/api/api";
 import MeasuredImage from "./MeasuredImage";
 import StudioIcon from "./studioIcons";
@@ -79,6 +80,7 @@ export default function ImagineLibrary({ open, modal = false, suspended = false,
   const [columns, setColumns] = useState(readColumns);
   const [mobileColumns, setMobileColumns] = useState(readMobileColumns);
   const [kind, setKind] = useState("all");
+  const kindId = useId();
   const [likedOnly, setLikedOnly] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
   const [selecting, setSelecting] = useState(false);
@@ -299,7 +301,7 @@ export default function ImagineLibrary({ open, modal = false, suspended = false,
             <div ref={filterRef} className="library-filter">
               <button type="button" className="library-pill" aria-label="Bố cục và bộ lọc" aria-expanded={filterOpen} onClick={() => setFilterOpen(value => !value)}><StudioIcon name="grid" />Xem</button>
               {filterOpen && <div className="effort-options library-filter-panel" role="group" aria-label="Bố cục và bộ lọc">
-                <label className="library-kind">Loại ảnh <select aria-label="Lọc loại ảnh" value={kind} onChange={event => setKind(event.target.value)}><option value="all">Tất cả</option><option value="created">Ảnh tạo mới</option><option value="edited">Ảnh chỉnh sửa</option></select></label>
+                <div className="library-kind"><span aria-hidden="true">Loại ảnh</span><Dropdown id={kindId} className="compact" ariaLabel="Lọc loại ảnh" value={kind} onChange={setKind} options={[{ value: "all", label: "Tất cả" }, { value: "created", label: "Ảnh tạo mới" }, { value: "edited", label: "Ảnh chỉnh sửa" }]} /></div>
                 <p className="effort-heading">Kích thước ô ảnh</p>
                 <div className="seg" role="group" aria-label="Số cột">
                   {([2, 3] as const).map(value => <button key={value} type="button" className={columns === value ? "on" : ""} aria-label={`${value} cột`} aria-pressed={columns === value} onClick={() => setColumns(value)}>{value === 2 ? "Vừa" : "Nhỏ"}</button>)}

@@ -45,7 +45,7 @@ export default function ImageVersionRail({ versions, selectedId, disabled, onSel
     {!compact && arrows.before && <button type="button" className="history-scroll history-scroll-up" aria-label="Cuộn lịch sử lên" onClick={() => scroll(-1)}><StudioIcon name="arrowUp" /></button>}
     <div className="history-list" ref={listRef}>
       {versions.map((entry, index) => <button type="button" className="history-thumb" key={entry.image.id}
-        aria-label={index === 0 ? 'Ảnh chính' : `Phiên bản ${index}`} title={index === 0 ? 'Ảnh chính' : `Phiên bản ${index}`}
+        aria-label={index === 0 ? 'Ảnh chính' : `Phiên bản ${index}`} data-tip
         aria-current={entry.image.id === selectedId ? 'true' : undefined} disabled={disabled} onClick={() => onSelect(entry)}>
         <img src={entry.image.url} alt="" loading="lazy" decoding="async" />
       </button>)}

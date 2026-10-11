@@ -110,10 +110,10 @@
 .character-card-info { padding: 15px; display: flex; flex-direction: column; gap: 7px; }
 .character-card-info strong { font-size: 15px; overflow-wrap: anywhere; }
 .character-card-info small { color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
-.character-card-info form input { width: 100%; box-sizing: border-box; border: 1px solid var(--line); border-radius: 8px; padding: 9px; background: var(--bg); color: var(--text); }
+.character-card-info form .text-field { padding: 9px; }
 .character-card-actions { display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
 .character-card-actions button { border: 1px solid var(--line); border-radius: 7px; background: transparent; color: var(--text); padding: 7px 10px; cursor: pointer; font-size: 11px; }
-@media (hover: hover) and (pointer: fine) { .character-card-actions button:hover { background: var(--bg); } }
+@media (hover: hover) and (pointer: fine) { .character-card-actions button:hover { background: var(--panel-2); } }
 .character-remove-confirm p { font-size: 12px; color: var(--muted); margin: 6px 0; }
 .character-library-footnote { margin: 24px 0 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
 .character-library-notice, .character-library-error { padding: 11px 14px; border-radius: 10px; font-size: 13px; line-height: 1.5; background: #4096ae15; }
@@ -223,7 +223,7 @@
   cursor: pointer;
   transition: transform 160ms var(--ease-out);
 }
-@media (hover: hover) and (pointer: fine) { .companion-notice button:hover { border-color: var(--accent); } }
+@media (hover: hover) and (pointer: fine) { .companion-notice button:hover { background: var(--panel-3); } }
 .companion-notice button:active { transform: scale(0.97); }
 .companion-messages {
   flex: 1;
@@ -332,10 +332,7 @@
   }
   @media (hover: hover) and (pointer: fine) {
     .companion-head .menu-btn:hover,
-  .companion-head .companion-tool:hover:not(:disabled) {
-      background: var(--stage-button);
-      color: var(--stage-text);
-    }
+    .companion-head .companion-tool:hover:not(:disabled) { background: var(--stage-button); color: var(--stage-text); }
   }
   .companion-head .companion-tool[aria-pressed="true"] { background: var(--stage-accent-strong); }
   .companion-title { min-height: 42px; align-content: center; justify-items: center; text-align: center; text-shadow: 0 1px 8px var(--stage-bg); }

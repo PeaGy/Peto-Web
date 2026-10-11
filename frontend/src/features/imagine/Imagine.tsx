@@ -655,7 +655,7 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
 
   const studioOptions = <div ref={optionsRef} className="studio-options" role="group" aria-label="Tùy chọn tạo ảnh">
     <div className="seg" role="group" aria-label="Mức chi tiết">
-      {(["low", "medium"] as const).map((value) => <button type="button" key={value} className={quality === value ? "on" : ""} aria-pressed={quality === value} disabled={controlsDisabled} title={value === "low" ? "Tạo nhanh, phù hợp để thử ý tưởng" : "Dành thêm thời gian cho chi tiết"} onClick={() => setQuality(value)}>{qualityLabel(value)}</button>)}
+      {(["low", "medium"] as const).map((value) => <button type="button" key={value} className={quality === value ? "on" : ""} aria-pressed={quality === value} disabled={controlsDisabled} data-tip={value === "low" ? "Tạo nhanh, phù hợp để thử ý tưởng" : "Dành thêm thời gian cho chi tiết"} onClick={() => setQuality(value)}>{qualityLabel(value)}</button>)}
     </div>
     <StudioMenu label="Số ảnh" value={count} icon={<PhotoIcon />} disabled={controlsDisabled} onChange={setCount}
       options={COUNTS.map((n) => ({ value: n, label: `${n} ảnh` }))} />
@@ -684,7 +684,7 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
           <div className="source-strip" ref={sourceStripRef}>{sources.map((image, index) => <div className="source-preview" key={image.imageId ?? image.draftId} tabIndex={-1} role="group" aria-label={`Ảnh tham chiếu ${index + 1}`} title={image.name}>
             <img src={image.preview} alt={sources.length === 1 ? "Ảnh gốc để chỉnh sửa" : `Ảnh tham chiếu ${index + 1}`} />
             {sources.length > 1 && <span className="source-index" aria-hidden="true">{index + 1}</span>}
-            {index > 0 && <button type="button" className="source-first" aria-label="Đặt làm ảnh đầu" title="Đặt làm ảnh đầu" disabled={controlsDisabled} onClick={() => moveSourceFirst(index)}><StudioIcon name="arrowUp" /></button>}
+            {index > 0 && <button type="button" className="source-first" aria-label="Đặt làm ảnh đầu" data-tip disabled={controlsDisabled} onClick={() => moveSourceFirst(index)}><StudioIcon name="arrowUp" /></button>}
             <button type="button" className="source-remove" disabled={generating || !!pendingIds} aria-label={sources.length === 1 ? "Gỡ ảnh gốc" : `Gỡ ảnh ${index + 1}`} onClick={() => clearSource(index)}><StudioIcon name="close" /></button>
           </div>)}</div></div>}
           <textarea id="image-prompt" ref={textareaRef} value={prompt} rows={2} aria-label={source ? "Bạn muốn sửa gì trong ảnh?" : "Bức ảnh bạn muốn tạo"} placeholder={placeholder}
@@ -695,14 +695,14 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
           <div className="imagine-controls">
             <button className="add-source" type="button" disabled={controlsDisabled || sources.length >= 5}
               aria-label={readingSource ? "Đang đọc ảnh…" : source ? "Thêm ảnh tham chiếu" : "Thêm ảnh để chỉnh sửa"}
-              title={readingSource ? "Đang đọc ảnh…" : (source ? "Thêm ảnh tham chiếu" : "Thêm ảnh để chỉnh sửa") + " · PNG, JPEG, WebP · tối đa 8 MB"}
+              data-tip={readingSource ? "Đang đọc ảnh…" : (source ? "Thêm ảnh tham chiếu" : "Thêm ảnh để chỉnh sửa") + " · PNG, JPEG, WebP · tối đa 8 MB"}
               onClick={() => fileRef.current?.click()}><ImagePlusIcon />{source && <img className="add-source-thumb" src={source.preview} alt="" />}</button>
             {/* Chỗ cặp nút Ảnh/Video của Grok. Peto chưa làm video nên dùng cho độ phân giải. */}
             <div className="seg" role="group" aria-label="Độ phân giải">
               {(["1k", "2k"] as const).map((value) => <button type="button" key={value} className={resolution === value ? "on" : ""} aria-pressed={resolution === value} disabled={controlsDisabled} onClick={() => setResolution(value)}>{value.toUpperCase()}</button>)}
             </div>
             {usingImage && studioOptions}
-            <button type="submit" className="studio-send" aria-label={sendLabel} title={sendLabel} disabled={!prompt.trim() || controlsDisabled}>
+            <button type="submit" className="studio-send" aria-label={sendLabel} data-tip disabled={!prompt.trim() || controlsDisabled}>
               {generating ? <span aria-hidden="true"><LoadingIndicator variant="icon" label="Đang tạo ảnh" /></span> : <ArrowUpIcon />}
             </button>
           </div>

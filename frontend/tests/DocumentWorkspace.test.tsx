@@ -54,8 +54,9 @@ it('mở lại tài liệu đã lưu và tải đúng phiên bản cũ đang xem
   const old = { ...saved, versions: [{ version: 2, title: 'Mới', created_at: 2 }, ...saved.versions] };
   vi.mocked(api.getDocument).mockResolvedValueOnce({ ...old, version: 2, title: 'Mới' }).mockResolvedValueOnce(old);
   render(<DocumentWorkspace request={null} selection={{ id: 'D1', version: 2, key: 1 }} onUnauthorized={unauthorized} />);
-  fireEvent.change(await screen.findByLabelText('Phiên bản tài liệu'), { target: { value: '1' } });
-  await waitFor(() => expect(screen.getByLabelText('Phiên bản tài liệu')).toHaveProperty('value', '1'));
+  fireEvent.click(await screen.findByRole('combobox', { name: 'Phiên bản tài liệu' }));
+  fireEvent.click(screen.getByRole('option', { name: 'Phiên bản 1' }));
+  await waitFor(() => expect(screen.getByRole('combobox', { name: 'Phiên bản tài liệu' }).textContent).toBe('Phiên bản 1'));
   fireEvent.click(screen.getByRole('button', { name: 'Tải DOCX' }));
   await waitFor(() => expect(api.downloadDocument).toHaveBeenCalledWith(old, 'docx'));
   expect(api.saveDocument).not.toHaveBeenCalled();

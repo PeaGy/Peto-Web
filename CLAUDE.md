@@ -2619,9 +2619,15 @@ Chat, Companion and roleplay turn (not the Agent CLI).
     the delete item, which uses `--danger` instead of `#ef7777`.
   - Appearance-only `:hover` rules moved into `@media (hover: hover) and (pointer: fine)`, so taps no longer leave
     rows highlighted on phones; reveal-on-hover rules keep their focus and touch fallbacks.
-  - The selects inside scrolling panels (idle motion, phone render quality, Companion timing run) became `Dropdown`.
-    Toolbar and short-dialog selects stay native.
   - `button:disabled` moved to `base.css`; unused `.settings-select` and `.conv-delete` CSS was removed.
+  - A second pass the same day followed the owner's Grok screenshots:
+    - Button hints use the shared `TooltipLayer` (`data-tip`, `data-tip-kbd`, `data-tip-side`) instead of native
+      `title`.
+    - Ctrl+K opens history search.
+    - Hover fills the background (`--panel-3` on `--panel-2` buttons) instead of flashing the border.
+    - Bordered inputs share `.text-field`; the archive search was drawn black with the browser focus ring.
+    - Every native `<select>` became `Dropdown` (new `ariaLabel`/`className` props, `compact` variant).
+    - The Micro row's long note was removed.
 - **Stale-response guarding.** Async loads use a monotonically increasing `useRef` counter
   (`loadVersion`, `listVersion`, `authVersion`) plus an `AbortController`; results are
   discarded unless the version still matches. Follow this pattern for any new fetch — fast

@@ -71,7 +71,7 @@ export default function EffortMenu<T extends string>({ value, options, disabled,
   }}>
     <button ref={trigger} type="button" className="effort-trigger" disabled={disabled}
       aria-haspopup="menu" aria-expanded={open} aria-controls="effort-options"
-      aria-label={`Mức suy nghĩ: ${current.label}`} title={`Mức suy nghĩ · ${current.hint}`}
+      aria-label={`Mức suy nghĩ: ${current.label}`} data-tip={`Mức suy nghĩ · ${current.hint}`}
       onClick={() => setOpen((value) => !value)}
       onKeyDown={(event) => {
         if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); setOpen(true); }
@@ -87,7 +87,7 @@ export default function EffortMenu<T extends string>({ value, options, disabled,
         const on = item.value === value;
         return <button key={item.value} ref={(element) => { items.current[index] = element; }} type="button"
           role="menuitemradio" aria-checked={on} className={on ? 'effort-option on' : 'effort-option'}
-          title={item.hint} onClick={() => { onChange(item.value); close(); }}>
+          data-tip={item.hint} data-tip-side="right" onClick={() => { onChange(item.value); close(); }}>
           <ModeIcon value={item.value} />
           <span className="effort-option-label">{item.label}</span>
           {on && <svg className="effort-check" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">

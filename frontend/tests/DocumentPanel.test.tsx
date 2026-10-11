@@ -34,7 +34,8 @@ it('thẻ trong chat mở bản cũ, có thể chọn lại bản mới đã s�
   render(<DocumentPanel {...props} selection={{ id: 'D1', version: 1, key: 1 }} />);
   await screen.findByRole('img');
   expect(api.getDocument).toHaveBeenCalledWith('D1', 1, expect.any(AbortSignal));
-  fireEvent.change(screen.getByRole('combobox', { name: 'Phiên bản xem trước' }), { target: { value: '2' } });
+  fireEvent.click(screen.getByRole('combobox', { name: 'Phiên bản xem trước' }));
+  fireEvent.click(screen.getByRole('option', { name: 'Phiên bản 2' }));
   expect((await screen.findByRole('article', { name: 'Nội dung tài liệu' })).textContent).toContain('Nội dung đã sửa');
   expect(screen.getByRole('link', { name: 'Tải Bài văn.docx', exact: true }).getAttribute('href')).toContain('version=2');
 });

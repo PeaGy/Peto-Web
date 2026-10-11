@@ -735,7 +735,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
             className="companion-title"
             aria-label={`Đổi nhân vật ${name}`}
             aria-haspopup="dialog"
-            title="Đổi nhân vật"
+            data-tip="Đổi nhân vật"
             onClick={onOpenCharacters}
           >
             <strong>
@@ -753,7 +753,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
                 className="companion-tool"
                 aria-label="Tắt tiếng"
                 aria-pressed={muted}
-                title={muted ? "Bật tiếng" : "Tắt tiếng"}
+                data-tip={muted ? "Bật tiếng" : "Tắt tiếng"}
                 onClick={() => setMuted((value) => !value)}
               >
                 {muted ? <SpeakerOffIcon /> : <SpeakerIcon />}
@@ -763,7 +763,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
               type="button"
               className="companion-tool"
               aria-label="Bắt đầu lại"
-              title="Bắt đầu lại"
+              data-tip
               disabled={!conversationId || streaming || resetting}
               onClick={() => setConfirmReset(true)}
             >
@@ -914,7 +914,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
             />
             <div className="composer-bar">
               <div className="companion-compose-tools">
-                <button type="button" className="companion-image-button" aria-label="Đính kèm ảnh" title="Đính kèm ảnh"
+                <button type="button" className="companion-image-button" aria-label="Đính kèm ảnh" data-tip
                   disabled={loading || resetting} onClick={() => imageInput.current?.click()}>
                   <CompanionImageIcon />
                 </button>
@@ -936,10 +936,10 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
       </section>
 
       <div className="companion-scene-tools" inert={opening} aria-hidden={opening}>
-        <button type="button" className="companion-scene-button" aria-label="Bối cảnh" title="Bối cảnh" aria-haspopup="dialog" onClick={() => setScenesOpen(true)}>
+        <button type="button" className="companion-scene-button" aria-label="Bối cảnh" data-tip aria-haspopup="dialog" onClick={() => setScenesOpen(true)}>
           <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4" stroke="currentColor" strokeWidth="1.7" /><circle cx="9" cy="8" r="2" stroke="currentColor" strokeWidth="1.7" /><path d="m4 18 5-5 3 3 4-6 5 8" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" /></svg>
         </button>
-        <button type="button" className="companion-scene-button" onClick={onOpenCharacters} aria-label="Chọn nhân vật" title="Nhân vật" aria-haspopup="dialog">
+        <button type="button" className="companion-scene-button" onClick={onOpenCharacters} aria-label="Chọn nhân vật" data-tip="Nhân vật" aria-haspopup="dialog">
           <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="8" r="4" stroke="currentColor" strokeWidth="1.7" /><path d="M4 21v-2a8 8 0 0 1 16 0v2" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" /></svg>
         </button>
       </div>

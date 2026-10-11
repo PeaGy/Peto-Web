@@ -26,6 +26,9 @@
 .project-loading { display:grid; gap:10px; padding:12px 10px; }
 .project-loading span { height:12px; width:72%; border-radius:6px; background:var(--line); }
 .project-loading span:nth-child(2) { width:50%; }
-.text-edit-dialog select { box-sizing:border-box; width:100%; padding:12px; margin-top:10px; background:var(--bg); color:var(--text); border:1px solid var(--line); border-radius:10px; font:inherit; }
+/* Danh sách dự án là Dropdown: hộp không cắt phần tràn để danh sách mở ra ngoài, như ô của Cài đặt. */
+.move-project-dialog { overflow:visible; }
+.move-project-dialog .dropdown { margin-top:10px; }
+.move-project-dialog .dropdown-trigger { min-height:46px; padding:10px 12px; background:var(--panel-2); }
 @media (hover:none),(pointer:coarse) { .project-open { padding-right:84px; }.project-sidebar-label button { min-height:36px; }.project-section-toggle svg { opacity:1; } }
 @media (max-width:720px) { .project-row .conv-hover-actions { opacity:1;pointer-events:auto; }.project-open { padding-right:84px; } }

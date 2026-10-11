@@ -129,7 +129,7 @@ export function Segmented<T extends string>({ label, value, options, onChange }:
   return (
     <div className={options.some((item) => item.icon) ? "settings-seg icons" : "settings-seg"} role="radiogroup" aria-label={label}>
       {options.map((item) => (
-        <label key={item.value} title={item.hint ?? (item.icon ? item.label : undefined)}>
+        <label key={item.value} data-tip={item.hint ?? (item.icon ? item.label : undefined)}>
           <input
             type="radio"
             name={name}

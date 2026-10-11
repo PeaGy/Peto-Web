@@ -128,7 +128,7 @@
 .adm-error.inline { margin-bottom: 12px; }
 .adm-error p { margin: 0; color: var(--danger); }
 .adm-retry { min-height: 36px; padding: 0 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); color: var(--text); font: inherit; cursor: pointer; }
-@media (hover: hover) and (pointer: fine) { .adm-retry:hover { border-color: var(--accent); } }
+@media (hover: hover) and (pointer: fine) { .adm-retry:hover { background: var(--panel-3); } }
 .adm-retry:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 @media (max-width: 960px) {

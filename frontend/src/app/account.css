@@ -80,7 +80,7 @@
   cursor: pointer;
 }
 
-@media (hover: hover) and (pointer: fine) { .alt-login:hover:not(:disabled) { border-color: var(--accent); } }
+@media (hover: hover) and (pointer: fine) { .alt-login:hover:not(:disabled) { background: var(--panel-3); } }
 
 /* Chữ cái đầu cho tài khoản không có ảnh (khách). Hai lớp để thắng
    `.account-avatar` đứng sau trong file: trước đây nó đè nền thành xám tối

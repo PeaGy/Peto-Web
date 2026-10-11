@@ -1,7 +1,7 @@
 # DESIGN.md — Peto Web frontend conventions
 
 This file records **what the interface actually does**, taken from the existing CSS and components (2026-10-11, after
-a cleanup pass the same day), so new frontend work matches the small details: colours, type sizes, radii, control
+cleanup passes the same day), so new frontend work matches the small details: colours, type sizes, radii, control
 heights, motion and Vietnamese UI copy. Every value below exists in the code; if you need a value that is not here,
 copy it from the nearest existing component instead of inventing one.
 
@@ -52,6 +52,8 @@ Dark is the default on `:root`; light lives on `:root[data-theme="light"]`.
 | `--code-bg`, `--inline-code`, `--hl-*` | | | Code blocks, inline code, syntax colours |
 | `--menu-bg`, `--menu-line`, `--menu-hover`, `--menu-shadow` | `#242424`, `#313131`, white 7% | `#ffffff`, `#e3e3e3`, black 5% | Action menus (§8), Settings navigation hover |
 | `--seg-bg`, `--seg-on` | | | Segmented control |
+| `--panel-3` | `#303030` | `#e4e4e4` | Hover background of buttons that already rest on `--panel-2` |
+| `--tooltip-bg`, `--tooltip-fg`, `--tooltip-muted`, `--tooltip-shadow` | `#2f2f2f`, `#f5f5f5`, `#a3a3a3` | `#1f1f1f`, `#ffffff`, `#a8a8a8` | Button tooltips (§8); dark on both themes, like Grok |
 | `--overlay-soft` | | | File-drop overlay |
 | `--shadow` | | | Composer, composer option menus |
 | `--dialog-shadow` | | | Dialogs, Dropdown lists, the history search dialog |
@@ -97,7 +99,7 @@ Only these places may write hex directly. Any other new colour becomes a token.
 ### Shadows
 
 - Floating surfaces use tokens: `--menu-shadow` (action menus), `--shadow` (composer and its option menus),
-  `--dialog-shadow` (dialogs, Dropdown lists), `--shadow-strong` (mobile drawer).
+  `--dialog-shadow` (dialogs, Dropdown lists), `--tooltip-shadow` (tooltips), `--shadow-strong` (mobile drawer).
 - Hard-coded shadows are allowed only for: small raised parts inside a control (switch knob, active segment, active
   connector tab), simulated paper and charts in document previews, the Imagine crop dimmer, Companion stage elements,
   the always-dark image viewer, and the sliding Settings page edge on mobile.
@@ -226,10 +228,17 @@ file.**
 - **All hover styles sit inside `@media (hover: hover) and (pointer: fine)`.** On touch screens `:hover` sticks after a
   tap and leaves rows highlighted. Write the hover rule separately from `:focus-visible` (do not share one selector
   list), because the focus style must not be gated.
-- Rows and menu items: background becomes `--panel-2` (action menus and Settings navigation use `--menu-hover`).
-- Bordered icon buttons: border and icon become `--accent`.
-- Transparent buttons: text goes from `--muted` to `--text`.
-- Small remove buttons (×): text becomes `--danger`.
+- **Like Grok (owner's screenshots, 2026-10-11): hover fills the background one step; it never flashes the border to
+  `--accent`.**
+  - Transparent buttons (icon or text): background `--panel-2`, text `--text`.
+  - Buttons resting on `--panel-2` (`.icon-btn`, chips, secondary buttons): background `--panel-3`, border unchanged.
+  - Primary buttons: `color-mix(in srgb, var(--accent) 86%, var(--bg))`.
+  - Rows and menu items: background `--panel-2` (action menus and Settings navigation use `--menu-hover`).
+  - Small remove buttons (×) and destructive text: text becomes `--danger`.
+  - Common buttons without their own rule get these from the shared list in `shared/styles/interactions.css`; a new
+    shared button class is added there, a feature-specific one writes its hover beside its base rule.
+- Cards and fields may still change their border on hover (web source cards, Imagine tiles, Dropdown fields): they
+  are not buttons.
 - **Reveal-on-hover** (controls that appear when a row is hovered: `.conv-hover-actions`, `.user-message-actions`) is
   the one exception left ungated. It is allowed only together with `:focus-within` and a
   `@media (hover: none), (pointer: coarse)` rule that shows the controls permanently.
@@ -309,8 +318,30 @@ Before writing a new component, find the same kind below and copy its sizes.
 | Icon | `.icon-btn`, 36×36 |
 | Transparent | No background, `--muted` text, `--panel-2` on hover (copy buttons, in-row buttons) |
 
-Icon-only buttons need an `aria-label` (plus `title` when a hover hint helps). Nearby buttons need distinct accessible
-names ("Sao chép" vs "Sao chép câu trả lời").
+Icon-only buttons need an `aria-label` and a tooltip (`data-tip`, below). Nearby buttons need distinct accessible
+names ("Sao chép" vs "Sao chép câu trả lời"). The sidebar's search and collapse buttons are both 36×36, radius 10.
+
+### Tooltips
+
+Never use the native `title` attribute for a button hint: browsers draw it as a white system box after about a
+second. Use the shared tooltip (`shared/ui/TooltipLayer.tsx`, mounted once in `App.tsx`), modelled on Grok:
+
+| Attribute | Meaning |
+| --- | --- |
+| `data-tip` (no value) | Show the element's `aria-label` (React writes it as `"true"`, which the layer treats the same way) |
+| `data-tip="Text"` | Show this text instead, when the hint differs from the accessible name |
+| `data-tip-kbd="Ctrl+K"` | Shortcut shown in `--tooltip-muted` after the text; `Ctrl+` becomes `⌘` on Mac. Add `aria-keyshortcuts` too |
+| `data-tip-side="right"` | Preferred side (`bottom` by default); flips when there is no room |
+
+- Look: `--tooltip-bg` box, radius 8, padding `6px 10px`, 13px weight 500, 8px from the button. Sidebar buttons and
+  the collapsed rail use `right`; most others keep `bottom`.
+- Behaviour: appears after 450ms of mouse/pen hover, or on keyboard focus; moving to a neighbouring button within
+  300ms switches instantly without animation. Hidden on touch, on press (until the pointer leaves), on scroll, Esc,
+  blur, and while the button's own menu is open (`aria-haspopup` + `aria-expanded="true"`). Rendered as a
+  `popover="manual"` so it sits above open modal dialogs.
+- Native `title` stays only where it reveals the full text of a truncated name (conversation titles, file names,
+  source URLs, prompts). Shortcuts in use: Ctrl+K opens history search; Ctrl+Alt+B toggles the document panel;
+  Ctrl+` shows formulas in sheets.
 
 ### Menus
 
@@ -336,13 +367,26 @@ Keyboard (see `EffortMenu.tsx`, `AccountMenu.tsx`):
 
 ### Select fields
 
-- **Inside scrolling panels** (Settings, the character panel, the Companion chat column) use `Dropdown`
-  (`shared/ui/Dropdown.tsx`): the native picker popup does not follow its field when the panel scrolls (reported by the
-  owner on 2026-09-25). It flips upward when space runs out and supports an editable variant (`editable`), groups and
-  hint lines. Pair it with ``<label htmlFor={id} id={`${id}-label`}>``; the listbox borrows that label.
-- Settings uses the compact `.settings-choice` variant (transparent field, right-aligned value, action-menu surface).
-- **Native `<select>` is allowed** only in fixed toolbars and short non-scrolling dialogs (Imagine viewer and library,
-  document panel version pickers, the move-to-project dialog), where phones get the OS picker.
+- **Every select is `Dropdown`** (`shared/ui/Dropdown.tsx`); the app has no native `<select>` or `<datalist>` (owner's
+  call, 2026-10-11). The native popup does not follow its field when a panel scrolls (reported 2026-09-25) and does
+  not match the theme. `Dropdown` flips upward when space runs out and supports an editable variant (`editable`),
+  groups and hint lines.
+- Naming: pair it with ``<label htmlFor={id} id={`${id}-label`}>``, or pass `ariaLabel` when no label is visible
+  (toolbars).
+- Variants: the default field (42px, Settings forms); `className="compact"` for toolbars and panels (32px, 13px text,
+  list aligned right and as wide as its text; add your own class for width); `.settings-choice` in Settings rows
+  (transparent field, right-aligned value, action-menu surface).
+- A container that clips overflow (`overflow: auto/hidden`) limits the list to the space inside it. A small popover or
+  dialog holding a Dropdown sets `overflow: visible` (the Imagine library filter panel, the move-to-project dialog).
+
+### Text fields
+
+- Bordered text inputs use the shared class `text-field` (`base.css`): `--panel-2` background, 1px `--line` border,
+  radius 10, padding `10px 12px`, 14px text (16px on touch). Focus has no outline; the border lightens to
+  `color-mix(in srgb, var(--text) 30%, var(--line))`. Never leave the browser's default focus ring: on the dark theme it
+  draws a thick black border (the owner's report on the archive search, 2026-10-11).
+- Settings rows use `.settings-input`, the same look at 36px high. Inputs living inside a container that already has a
+  border (composer, history search header, connector search) stay borderless and transparent.
 
 ### Dialogs
 
@@ -416,6 +460,9 @@ below their label while switches stay on the right.
   - En dash `–` for ranges ("20–30 tuổi"); middle dot `·` between metadata items ("5 trang tính · 152 công thức").
 - **Address:** the user is "bạn"; the assistant is "Peto" ("Peto vừa ghi nhớ…").
 - **Irreversible actions** state the consequence: "… sẽ bị xóa. Không thể hoàn tác."
+- **Keep helper text short:** one sentence under a setting, no explanation of internals. The owner removed the Micro
+  row's note ("… thanh âm lượng chỉ cho biết có âm thanh, chưa xác nhận đã nhận ra lời.") as too much text on
+  2026-10-11. Put details in Docs instead.
 - **Errors** say what happened and what to do next, with no jargon or English. Server errors (`ProviderError`) are
   already written for users and are shown verbatim.
 - Model names and descriptions come from the server catalogue (`models` in `/api/auth/me`), never hard-coded in the
@@ -459,6 +506,8 @@ Left as they are on purpose; do not copy them into new code.
 
 - Reveal-on-hover rules stay ungated (§6): `.conv-hover-actions`, `.user-message-actions` and the project section
   chevron (`.project-section-toggle:hover svg`). Each also shows on focus and has a touch fallback.
+- Imagine's own send buttons (round accent and blue workspace send) keep their own colours and have no hover fill.
+- Docs (`/docs/`) keeps its own design system and does not mount the tooltip layer.
 - Switches, the selected expression card and the selected character card keep the Companion teal (§2), shared with the
   Companion hearing toggles, instead of `--accent`.
 - The Companion Micro popover uses the stage palette with its own hard-coded shadow.
@@ -470,6 +519,7 @@ Left as they are on purpose; do not copy them into new code.
 - [ ] Keyboard only: everything reachable by Tab, a visible focus ring, Esc closes exactly one layer.
 - [ ] Reduced motion: no movement left, but presses still give feedback.
 - [ ] Touch: 44px targets, 16px inputs, nothing that needs hover.
+- [ ] Every icon-only button has `aria-label` + `data-tip`; no native `title` on buttons; no native `<select>`.
 - [ ] Long Vietnamese strings (conversation titles, file names, error messages) neither overflow nor cover buttons.
 - [ ] Every state: loading, empty, error, disabled, streaming.
 - [ ] Checked in a real browser. jsdom applies no CSS, so vitest cannot see visual bugs, and a hidden browser pane

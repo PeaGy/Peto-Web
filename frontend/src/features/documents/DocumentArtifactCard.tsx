@@ -37,8 +37,8 @@ function SheetArtifactCard({ artifact, onOpen }: { artifact: DocumentArtifact; o
   return <section className="document-artifact sheet" aria-label={`Bảng tính ${artifact.filename}`}>
     <header className="artifact-heading">
       <SheetIcon /><button type="button" className="artifact-name" onClick={() => onOpen(artifact)} title={artifact.filename}>{artifact.filename}</button>
-      <a className="artifact-icon" href={download} download={artifact.filename} aria-label={`Tải ${artifact.filename}`} title="Tải XLSX"><DownloadIcon /></a>
-      <button type="button" className="artifact-icon" aria-label={`Mở rộng ${artifact.filename}`} title="Mở trong bảng tài liệu" onClick={() => onOpen(artifact)}><ExpandIcon /></button>
+      <a className="artifact-icon" href={download} download={artifact.filename} aria-label={`Tải ${artifact.filename}`} data-tip="Tải XLSX"><DownloadIcon /></a>
+      <button type="button" className="artifact-icon" aria-label={`Mở rộng ${artifact.filename}`} data-tip="Mở trong bảng tài liệu" onClick={() => onOpen(artifact)}><ExpandIcon /></button>
     </header>
     <div className="artifact-preview-crop">
       {error ? <div className="artifact-page-error" role="alert"><p>Chưa mở được bản xem trước. Tệp có thể đã bị xóa hoặc phiên đăng nhập đã hết hạn.</p><button type="button" onClick={retry}>Thử lại</button></div>
@@ -60,8 +60,8 @@ function WorkbookArtifactCard({ artifact, onOpen }: { artifact: DocumentArtifact
   return <section className="document-artifact sheet workbook" aria-label={`Bảng tính ${artifact.filename}`}>
     <header className="artifact-heading">
       <SheetIcon /><button type="button" className="artifact-name" onClick={() => onOpen(artifact)} title={artifact.filename}>{artifact.filename}</button>
-      <a className="artifact-icon" href={download} download={artifact.filename} aria-label={`Tải ${artifact.filename}`} title="Tải tệp đã sửa"><DownloadIcon /></a>
-      <button type="button" className="artifact-icon" aria-label={`Mở rộng ${artifact.filename}`} title="Mở trong bảng tài liệu" onClick={() => onOpen(artifact)}><ExpandIcon /></button>
+      <a className="artifact-icon" href={download} download={artifact.filename} aria-label={`Tải ${artifact.filename}`} data-tip="Tải tệp đã sửa"><DownloadIcon /></a>
+      <button type="button" className="artifact-icon" aria-label={`Mở rộng ${artifact.filename}`} data-tip="Mở trong bảng tài liệu" onClick={() => onOpen(artifact)}><ExpandIcon /></button>
     </header>
     {changes.length > 0 ? <ol className="wb-card-log" aria-label="Peto đã sửa">
       {changes.slice(0, SHOWN_CHANGES).map((change, index) => <li key={index}><span className="wb-log-where">{changeLabel(change.where)}</span><ChangeText text={change.text} /></li>)}
@@ -84,8 +84,8 @@ export default function DocumentArtifactCard({ artifact, onEdit, onOpen }: { art
   return <section className={`document-artifact${slides ? ' slides' : ''}`} aria-label={`${slides ? 'Bài thuyết trình' : 'Tài liệu'} ${artifact.filename}`}>
     <header className="artifact-heading">
       {slides ? <SlidesIcon /> : <DocumentIcon />}<button type="button" className="artifact-name" onClick={() => onOpen(artifact)} title={artifact.filename}>{artifact.filename}</button>
-      <a className="artifact-icon" href={download} download={artifact.filename} aria-label={`Tải ${artifact.filename}`} title="Tải xuống"><DownloadIcon /></a>
-      <button type="button" className="artifact-icon" aria-label={`Mở rộng ${artifact.filename}`} title="Mở trong bảng tài liệu" onClick={() => onOpen(artifact)}><ExpandIcon /></button>
+      <a className="artifact-icon" href={download} download={artifact.filename} aria-label={`Tải ${artifact.filename}`} data-tip="Tải xuống"><DownloadIcon /></a>
+      <button type="button" className="artifact-icon" aria-label={`Mở rộng ${artifact.filename}`} data-tip="Mở trong bảng tài liệu" onClick={() => onOpen(artifact)}><ExpandIcon /></button>
     </header>
     <div className="artifact-preview-crop"><PageImage key={preview(1)} src={preview(1)} page={1} title={artifact.title} />
       <button type="button" className="artifact-open-overlay" onClick={() => onOpen(artifact)}>{slides ? 'Xem slide' : 'Xem tài liệu'} <span>· {artifact.pages} {slides ? 'slide' : 'trang'}</span><ExpandIcon /></button>

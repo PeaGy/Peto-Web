@@ -631,7 +631,8 @@ test('desktop: cắt lưu PNG, áp dụng nét vẽ và phong cách gọi AI t�
   const viewer = page.getByRole('dialog', { name: 'Xem ảnh đã tạo' });
   await expect(viewer.getByLabel('Kích thước ảnh thực tế')).toHaveText('960 × 1440');
   await clickTool(viewer, 'Cắt ảnh');
-  await viewer.getByLabel('Tỉ lệ cắt').selectOption('1:1');
+  await viewer.getByRole('combobox', { name: 'Tỉ lệ cắt' }).click();
+  await viewer.getByRole('option', { name: '1:1', exact: true }).click();
   await page.screenshot({ path: testInfo.outputPath('crop.png') });
   // Escape chỉ hủy vùng cắt; khung xem vẫn mở.
   await page.keyboard.press('Escape');
@@ -1095,11 +1096,12 @@ test('Dùng ảnh này giữ canvas và mở ô nhập gọn với đúng ảnh 
   await viewer.getByRole('button', { name: 'Gỡ ảnh 2' }).click();
   await expect(input).toHaveValue('Giữ ngôi nhà, đổi sang cảnh hoàng hôn');
   if (testInfo.project.name === 'mobile') await viewer.getByRole('button', { name: 'Tùy chọn ảnh', exact: true }).click();
-  await viewer.getByLabel('Tỉ lệ ảnh chỉnh sửa').selectOption('3:4');
+  await viewer.getByRole('combobox', { name: 'Tỉ lệ ảnh chỉnh sửa' }).click();
+  await viewer.getByRole('option', { name: '3:4', exact: true }).click();
   if (testInfo.project.name === 'mobile') await viewer.getByRole('button', { name: 'Đóng tùy chọn', exact: true }).click();
   await viewer.getByRole('button', { name: 'Tỉ lệ: 3:4' }).click();
   await viewer.getByRole('menuitemradio', { name: 'Tự động', exact: true }).click();
-  await expect(viewer.getByLabel('Tỉ lệ ảnh chỉnh sửa')).toHaveValue('auto');
+  await expect(viewer.getByLabel('Tỉ lệ ảnh chỉnh sửa', { exact: true })).toHaveText('Theo ảnh nguồn');
   await clickTool(viewer, 'Bảng màu');
   await viewer.getByRole('button', { name: 'Bắc Âu', exact: true }).click();
   await expect(input).toHaveValue(/Giữ ngôi nhà, đổi sang cảnh hoàng hôn\nÁp dụng bảng màu bắc âu/);

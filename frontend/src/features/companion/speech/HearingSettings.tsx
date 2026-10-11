@@ -129,7 +129,6 @@ export default function HearingSettings({ open }: { open: boolean }) {
         <SettingsRow label="Micro" htmlFor={micId} labelId={`${micId}-label`}>
           <div className="settings-dropdown">
             <MicrophoneSelect id={micId} microphones={microphones} />
-            {hearing.source === "browser" && <p className="voice-note">Dùng micro mặc định của trình duyệt hoặc hệ điều hành. Chọn micro khác ở đó; thanh âm lượng chỉ cho biết có âm thanh, chưa xác nhận đã nhận ra lời.</p>}
           </div>
         </SettingsRow>
         <SettingsRow label="Bạn nói bằng" htmlFor={languageId} labelId={`${languageId}-label`}>

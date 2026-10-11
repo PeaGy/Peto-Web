@@ -130,9 +130,9 @@ function PanZoom({ svg, label }: { svg: string; label: string }) {
         )}
       </div>
       <div className="diagram-pz-controls">
-        <button type="button" aria-label="Thu nhỏ" title="Thu nhỏ" onClick={() => step(() => zoomAt(0.8))}><MinusIcon /></button>
+        <button type="button" aria-label="Thu nhỏ" data-tip onClick={() => step(() => zoomAt(0.8))}><MinusIcon /></button>
         <span className="diagram-pz-scale" aria-live="polite">{view ? Math.round(view.scale * 100) : 100}%</span>
-        <button type="button" aria-label="Phóng to" title="Phóng to" onClick={() => step(() => zoomAt(1.25))}><PlusIcon /></button>
+        <button type="button" aria-label="Phóng to" data-tip onClick={() => step(() => zoomAt(1.25))}><PlusIcon /></button>
         <button type="button" className="diagram-pz-fit" onClick={() => step(fit)}>Vừa khung</button>
       </div>
     </div>
@@ -250,11 +250,11 @@ export default function DiagramPanel({ codes, current, onPick, onClose }: {
       <header className="document-panel-head">
         <DiagramIcon size={18} /><h2>Sơ đồ</h2>
         <span className="document-panel-count">{index >= 0 ? `${index + 1} / ${codes.length}` : ""}</span>
-        <button type="button" className="artifact-icon diagram-step" aria-label="Sơ đồ trước" title="Sơ đồ trước"
+        <button type="button" className="artifact-icon diagram-step" aria-label="Sơ đồ trước" data-tip
           disabled={index <= 0} onClick={() => onPick(codes[index - 1])}>‹</button>
-        <button type="button" className="artifact-icon diagram-step" aria-label="Sơ đồ sau" title="Sơ đồ sau"
+        <button type="button" className="artifact-icon diagram-step" aria-label="Sơ đồ sau" data-tip
           disabled={index < 0 || index >= codes.length - 1} onClick={() => onPick(codes[index + 1])}>›</button>
-        <button type="button" className="artifact-icon" aria-label="Đóng bảng sơ đồ" title="Đóng" onClick={onClose}><CloseIcon /></button>
+        <button type="button" className="artifact-icon" aria-label="Đóng bảng sơ đồ" data-tip="Đóng" onClick={onClose}><CloseIcon /></button>
       </header>
       <div className="document-panel-toolbar diagram-toolbar">
         <strong className="diagram-title" title={title}>{title}{kindNote(kind, title) && <small> · {kind}</small>}</strong>
@@ -264,7 +264,7 @@ export default function DiagramPanel({ codes, current, onPick, onClose }: {
         </span>
         <DownloadMenu code={current} />
         <a className="diagram-button" href={link || undefined} target="_blank" rel="noopener noreferrer" aria-disabled={!link}
-          title="Mở bằng draw.io: sửa tay (thêm làn, kéo lại vị trí) rồi xuất PDF dạng nét vẽ">draw.io<ExternalIcon /></a>
+          data-tip="Mở bằng draw.io: sửa tay (thêm làn, kéo lại vị trí) rồi xuất PDF dạng nét vẽ">draw.io<ExternalIcon /></a>
       </div>
       <div className="diagram-panel-body">
         {error ? (

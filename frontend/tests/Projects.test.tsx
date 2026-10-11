@@ -30,7 +30,7 @@ it('chưa có dự án thì tạo và chuyển ngay, lỗi chuyển không tạo
   await waitFor(()=>expect(onSave).toHaveBeenCalledWith('P'));
   expect(onCreate).toHaveBeenCalledWith('Báo cáo');
   view.rerender(<MoveConversationDialog {...props} error="Chưa chuyển được hội thoại"/>);
-  expect((screen.getByLabelText('Nơi lưu hội thoại') as HTMLSelectElement).value).toBe('P');
+  expect(screen.getByRole('combobox',{name:'Nơi lưu hội thoại'}).textContent).toBe('Báo cáo');
   fireEvent.click(screen.getByRole('button',{name:'Chuyển',exact:true}));
   expect(onSave).toHaveBeenCalledTimes(2);
   expect(onCreate).toHaveBeenCalledTimes(1);
@@ -41,7 +41,8 @@ it('không cho chuyển về đích cũ, báo tải lỗi và cho thử tải l�
   const view=render(<MoveConversationDialog {...props}/>);
   const button=screen.getByRole('button',{name:'Chuyển',exact:true}) as HTMLButtonElement;
   expect(button.disabled).toBe(true);
-  fireEvent.change(screen.getByLabelText('Nơi lưu hội thoại'),{target:{value:''}});
+  fireEvent.click(screen.getByRole('combobox',{name:'Nơi lưu hội thoại'}));
+  fireEvent.click(screen.getByRole('option',{name:'Ngoài dự án · Gần đây'}));
   expect(button.disabled).toBe(false);
   fireEvent.click(button);
   expect(props.onSave).toHaveBeenCalledWith(null);

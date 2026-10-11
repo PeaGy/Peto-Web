@@ -44,8 +44,9 @@ button.artifact-name { cursor: pointer; }
 .document-eyebrow { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 10px; letter-spacing: 1.3px; }
 .document-workspace-head h2 { font-size: 23px; font-weight: 600; margin: 8px 0 0; letter-spacing: -.5px; }
 .document-workspace-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 12px 24px; border-block: 1px solid var(--line); }
-.document-workspace-toolbar button, .document-workspace-toolbar select, .document-unsaved button { min-height: 36px; border: 1px solid var(--line); border-radius: 8px; padding: 7px 11px; background: var(--panel); color: var(--text); font: inherit; font-size: 12px; cursor: pointer; }
+.document-workspace-toolbar button:not(.dropdown-trigger), .document-unsaved button { min-height: 36px; border: 1px solid var(--line); border-radius: 8px; padding: 7px 11px; background: var(--panel); color: var(--text); font: inherit; font-size: 12px; cursor: pointer; }
 .document-workspace-toolbar button.active { border-color: var(--accent); }
+.dropdown.compact.document-workspace-version .dropdown-trigger { min-height: 36px; }
 .document-workspace-toolbar .document-download-primary { background: var(--text); color: var(--bg); }
 .document-save-state { flex: 1; font-size: 11px; color: var(--muted); }
 .document-workspace-status, .document-workspace-error { padding: 10px 24px; margin: 0; font-size: 13px; }
@@ -66,7 +67,7 @@ button.artifact-name { cursor: pointer; }
 .document-paper a { color: #28568a; }
 .document-paper pre { white-space: pre-wrap; padding: 12px; background: #f3f4f6; border-radius: 6px; }
 .document-editor { display: flex; flex-direction: column; gap: 9px; height: 100%; min-height: 380px; font-size: 13px; }
-.document-editor input, .document-editor textarea { width: 100%; min-width: 0; border: 1px solid var(--line); border-radius: 9px; padding: 12px; background: var(--bg); color: var(--text); font: inherit; }
+.document-editor .text-field { padding: 12px; }
 .document-editor textarea { flex: 1; resize: vertical; min-height: 260px; line-height: 1.65; }
 .document-editor small { color: var(--muted); }
 .document-workspace-foot { display: flex; align-items: center; gap: 16px; padding: 12px 24px; border-top: 1px solid var(--line); }
@@ -76,7 +77,7 @@ button.artifact-name { cursor: pointer; }
   .document-workspace-head { padding: 18px 16px; }
   .document-workspace-head h2 { font-size: 20px; }
   .document-workspace-toolbar { padding: 10px 12px; gap: 6px; }
-  .document-workspace-toolbar button, .document-workspace-toolbar select { min-height: 40px; }
+  .document-workspace-toolbar button { min-height: 40px; }
   .document-save-state { min-width: 45px; }
   .document-workspace-body { padding: 12px; }
   .document-paper { padding: 26px 20px; min-height: 500px; font-size: 13px; }

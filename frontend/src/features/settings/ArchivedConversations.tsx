@@ -65,7 +65,7 @@ export default function ArchivedConversations({open, disabled, onOpen, onChanged
 
   return <div className="archive-settings">
     <p className="settings-hint">Hội thoại đã lưu trữ được giữ nguyên nội dung và tệp đính kèm. Khôi phục để tiếp tục trò chuyện.</p>
-    <input className="archive-search" type="search" aria-label="Tìm hội thoại đã lưu trữ" placeholder="Tìm tiêu đề hoặc nội dung…" maxLength={200} value={query} disabled={busy} onChange={e => {setQuery(e.target.value); setOffset(0); setItems([]); setConfirm(null);}} />
+    <input className="archive-search text-field" type="search" aria-label="Tìm hội thoại đã lưu trữ" placeholder="Tìm tiêu đề hoặc nội dung…" maxLength={200} value={query} disabled={busy} onChange={e => {setQuery(e.target.value); setOffset(0); setItems([]); setConfirm(null);}} />
     {error && <div role="alert"><p>{error}</p><button className="settings-button" disabled={busy} onClick={() => {setOffset(0); setRevision(n => n + 1);}}>Thử lại</button></div>}
     <ul className="archive-list" aria-label="Danh sách hội thoại đã lưu trữ">
       {items.map(item => <li key={item.id}>

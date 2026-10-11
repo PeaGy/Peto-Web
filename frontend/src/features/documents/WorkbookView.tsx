@@ -89,7 +89,7 @@ export default function WorkbookView({ grid }: { grid: WorkbookGridData }) {
         {current?.p && <span className="sheet-fx-value">Excel tính khi mở tệp</span>}
         {changedHere && <span className="wb-fx-changed">Peto vừa sửa</span>}
       </div>
-      <button type="button" className="sheet-fx-toggle" aria-pressed={formulas} title="Hiện công thức trong ô (Ctrl+`)" onClick={() => setFormulas(value => !value)}>Công thức</button>
+      <button type="button" className="sheet-fx-toggle" aria-pressed={formulas} data-tip="Hiện công thức trong ô" data-tip-kbd="Ctrl+`" aria-keyshortcuts="Control+`" onClick={() => setFormulas(value => !value)}>Công thức</button>
     </div>
     <div className="sheet-grid-wrap" ref={wrap} tabIndex={0} role="region" aria-label={`Lưới trang tính ${sheet.name}`} onKeyDown={move}>
       <WorkbookGrid sheet={sheet} styles={grid.styles} selected={selected} onSelect={setSelected} area={area} formulas={formulas} />

@@ -46,7 +46,7 @@
   background: var(--panel-2); color: var(--text); font: inherit; font-weight: 500; white-space: nowrap; cursor: pointer;
 }
 .chat-error-retry svg { flex-shrink: 0; }
-@media (hover: hover) and (pointer: fine) { .chat-error-retry:hover:not(:disabled) { border-color: var(--muted); } }
+@media (hover: hover) and (pointer: fine) { .chat-error-retry:hover:not(:disabled) { background: var(--panel-3); } }
 .chat-error-retry:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .chat-error-retry:disabled { opacity: .5; cursor: default; }
 @media (max-width: 600px) {

@@ -30,12 +30,10 @@
    vẫn phải chừa một lối mở. Luật .menu-btn ở trên giữ nó ẩn trên desktop. */
 .chat-menu { align-self: flex-start; margin: 10px 0 0 14px; }
 
+/* Như Grok: rê vào thì nền sáng thêm một bậc, viền giữ nguyên. */
 @media (hover: hover) and (pointer: fine) {
   .menu-btn:hover,
-.icon-btn:hover:not(:disabled) {
-    border-color: var(--accent);
-    color: var(--accent);
-  }
+  .icon-btn:hover:not(:disabled) { background: var(--panel-3); }
 }
 
 .avatar {
@@ -344,6 +342,6 @@
   cursor: pointer;
 }
 
-@media (hover: hover) and (pointer: fine) { .code-copy:hover { border-color: var(--line); color: var(--text); } }
+@media (hover: hover) and (pointer: fine) { .code-copy:hover { background: var(--panel-2); color: var(--text); } }
 .code-copy svg { flex: none; }
 

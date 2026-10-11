@@ -45,6 +45,13 @@
   --menu-shadow: 0 18px 44px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.25);
   --seg-bg: #121212;
   --seg-on: #2c2c2c;
+  /* Tooltip của nút (TooltipLayer.tsx): ô tối như Grok ở cả hai giao diện. */
+  --tooltip-bg: #2f2f2f;
+  --tooltip-fg: #f5f5f5;
+  --tooltip-muted: #a3a3a3;
+  --tooltip-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+  /* Nền khi rê lên nút vốn đã có nền --panel-2 (nút biểu tượng có viền, chip, nút phụ). */
+  --panel-3: #303030;
   /* Đường cong mạnh cho UI, lấy nguyên từ bộ chuẩn — đừng tự chế thêm. */
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
@@ -95,6 +102,11 @@
   --menu-shadow: 0 18px 44px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.06);
   --seg-bg: #ececec;
   --seg-on: #ffffff;
+  --tooltip-bg: #1f1f1f;
+  --tooltip-fg: #ffffff;
+  --tooltip-muted: #a8a8a8;
+  --tooltip-shadow: 0 4px 14px rgba(0, 0, 0, 0.16);
+  --panel-3: #e4e4e4;
   color-scheme: light;
 }
 
@@ -144,4 +156,24 @@ body {
 /* Nút bị tắt trong cả app. Đứng sớm trong thứ tự CSS (trước đây ở đầu sidebar.css): quy tắc riêng của từng phần đứng
    sau vẫn được đặt lại con trỏ hay độ mờ của nút tắt nếu cần. */
 button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Ô nhập chữ có viền dùng chung (tìm hội thoại lưu trữ, hộp đổi tên, trình sửa tài liệu…), cùng kiểu với ô trong Hồ
+   sơ (.settings-input): nền --panel-2, bấm vào thì viền sáng lên. Không để vòng focus mặc định của trình duyệt, vì trên
+   nền tối nó vẽ một viền đen dày. Ô nằm trong khung đã có viền riêng (composer, ô tìm trong thanh tiêu đề) thì không
+   dùng lớp này. */
+.text-field {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+}
+.text-field::placeholder { color: var(--muted); }
+.text-field:focus { outline: none; border-color: color-mix(in srgb, var(--text) 30%, var(--line)); }
+.text-field:disabled { color: var(--muted); cursor: not-allowed; }
 

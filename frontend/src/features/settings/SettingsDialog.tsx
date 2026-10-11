@@ -166,7 +166,7 @@ export default function SettingsDialog({ view, onView, onClose, render }: {
         </div>
       </div>
 
-      <button type="button" className="settings-close" aria-label="Đóng cài đặt" title="Đóng" onClick={onClose}>
+      <button type="button" className="settings-close" aria-label="Đóng cài đặt" data-tip="Đóng" onClick={onClose}>
         <SettingsIcon name="close" size={18} />
       </button>
     </dialog>

@@ -82,7 +82,7 @@ test('chuyển chat khi chưa có dự án: tạo ngay và thử lại không t�
   await dialog.getByLabel('Tên dự án mới').fill('Dự án đầu tiên');
   await dialog.getByRole('button',{name:'Tạo và chuyển'}).click();
   await expect(dialog.getByRole('alert')).toHaveText('Chưa chuyển được hội thoại. Thử lại nhé.');
-  await expect(dialog.getByLabel('Nơi lưu hội thoại')).toHaveValue('NEW');
+  await expect(dialog.getByRole('combobox',{name:'Nơi lưu hội thoại'})).toHaveText('Dự án đầu tiên');
   await dialog.getByRole('button',{name:'Chuyển',exact:true}).click();
   await expect(dialog).toHaveCount(0);await expect.poll(()=>state.assigned).toBe('NEW');
   expect(state.creates).toBe(1);
@@ -195,7 +195,8 @@ test('tạo chat trong folder, đổi tên và xóa dự án vẫn giữ hội t
   await page.getByRole('button',{name:`Tùy chọn ${title}`,exact:true}).click();
   await page.getByRole('button',{name:'Chuyển vào dự án',exact:true}).click();
   const move=page.getByRole('dialog',{name:'Chuyển hội thoại vào dự án'});
-  await move.getByLabel('Nơi lưu hội thoại').selectOption('NEW');await move.getByRole('button',{name:'Chuyển',exact:true}).click();
+  await move.getByRole('combobox',{name:'Nơi lưu hội thoại'}).click();await move.getByRole('option',{name:'Bài tập mới',exact:true}).click();
+  await move.getByRole('button',{name:'Chuyển',exact:true}).click();
   await expect(move).toHaveCount(0);await expect.poll(()=>state.assigned).toBe('NEW');
   await expandFolder(page,'Bài tập mới');
   await page.locator('.project-chats').getByRole('button',{name:title,exact:true}).click();

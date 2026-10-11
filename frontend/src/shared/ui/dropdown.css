@@ -82,6 +82,15 @@ input.dropdown-trigger:focus { outline: none; }
 @keyframes dropdown-in { from { opacity: 0; transform: translateY(-4px) scale(0.98); } }
 @keyframes dropdown-in-above { from { opacity: 0; transform: translateY(4px) scale(0.98); } }
 
+/* Ô gọn trên thanh công cụ và trong bảng (phiên bản tài liệu, tỉ lệ ảnh, lọc thư viện, chuyển dự án…): thấp hơn, chữ
+   13px, bảng canh mép phải và rộng theo chữ. Mỗi chỗ thêm lớp riêng để đặt bề ngang. */
+.dropdown.compact .dropdown-trigger { min-height: 32px; padding: 5px 8px 5px 10px; gap: 6px; border-radius: 8px; background: var(--panel-2); font-size: 13px; }
+.dropdown.compact .dropdown-list { left: auto; width: max-content; min-width: 100%; max-width: min(280px, calc(100vw - 32px)); }
+.dropdown.compact .dropdown-list li[role="option"] { min-height: 34px; font-size: 13px; }
+@media (pointer: coarse) {
+  .dropdown.compact .dropdown-trigger, .dropdown.compact .dropdown-list li[role="option"] { min-height: 44px; }
+}
+
 @media (prefers-reduced-motion: reduce) { .dropdown-chevron { transition: none; } .dropdown-list { animation: none; } }
 @media (pointer: coarse) { .dropdown-trigger { font-size: 16px; } }
 

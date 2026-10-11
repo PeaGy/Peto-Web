@@ -43,13 +43,13 @@ export default function Sidebar({
             <PetoAvatar info={appInfo} />
             <strong>{appInfo?.name ?? "Peto"}</strong>
           </div>
-          <button type="button" className="sidebar-search-button" aria-label="Tìm kiếm hội thoại" title="Tìm kiếm hội thoại" disabled={streaming} onClick={() => setSearchOpen(true)}><SearchIcon /></button>
+          <button type="button" className="sidebar-search-button" aria-label="Tìm kiếm hội thoại" data-tip data-tip-kbd="Ctrl+K" aria-keyshortcuts="Control+K" disabled={streaming} onClick={() => setSearchOpen(true)}><SearchIcon /></button>
           <button
             type="button"
             className="sidebar-toggle"
             aria-expanded={!visualCollapsed}
             aria-label={visualCollapsed ? "Mở rộng thanh bên" : "Thu gọn thanh bên"}
-            title={visualCollapsed ? "Mở rộng thanh bên" : "Thu gọn thanh bên"}
+            data-tip data-tip-side="right"
             onClick={() => onToggleCollapsed()}
           >
             <SidebarIcon />
@@ -60,7 +60,7 @@ export default function Sidebar({
             type="button"
             className={view === "chat" ? "nav-item on" : "nav-item"}
             aria-current={view === "chat" ? "page" : undefined}
-            title={view === "chat" ? "Trò chuyện mới" : collapsed ? "Trò chuyện" : undefined}
+            data-tip={view === "chat" ? "Trò chuyện mới" : collapsed ? "Trò chuyện" : undefined} data-tip-side="right"
             onClick={goChat}
           >
             <ComposeIcon />
@@ -70,7 +70,7 @@ export default function Sidebar({
             type="button"
             className={view === "imagine" ? "nav-item on" : "nav-item"}
             aria-current={view === "imagine" ? "page" : undefined}
-            title={collapsed ? "Tạo ảnh" : undefined}
+            data-tip={collapsed ? "Tạo ảnh" : undefined} data-tip-side="right"
             onClick={() => go("imagine")}
             onPointerEnter={preloadImagine}
             onFocus={preloadImagine}
@@ -82,7 +82,7 @@ export default function Sidebar({
             type="button"
             className={view === "companion" ? "nav-item on" : "nav-item"}
             aria-current={view === "companion" ? "page" : undefined}
-            title={collapsed ? "Companion" : undefined}
+            data-tip={collapsed ? "Companion" : undefined} data-tip-side="right"
             onClick={() => go("companion")}
             onPointerEnter={preloadCompanion}
             onFocus={preloadCompanion}
@@ -151,7 +151,7 @@ export default function Sidebar({
                 {conversation.persona === "roleplay" && <span className="conv-persona">· Nhập vai</span>}
               </button>
               <div className="conv-hover-actions">
-                <button type="button" aria-label={`Tùy chọn ${conversation.title}`} title="Tùy chọn hội thoại" disabled={streaming || deleting} onClick={e => { const r=e.currentTarget.getBoundingClientRect(); setConversationMenu({item:conversation,left:Math.max(8,Math.min(r.left,window.innerWidth-192)),top:Math.max(8,Math.min(r.bottom+6,window.innerHeight-242))}); }}>⋯</button>
+                <button type="button" aria-label={`Tùy chọn ${conversation.title}`} data-tip="Tùy chọn hội thoại" disabled={streaming || deleting} onClick={e => { const r=e.currentTarget.getBoundingClientRect(); setConversationMenu({item:conversation,left:Math.max(8,Math.min(r.left,window.innerWidth-192)),top:Math.max(8,Math.min(r.bottom+6,window.innerHeight-242))}); }}>⋯</button>
               </div>
             </div>
           ))}
@@ -172,7 +172,7 @@ export default function Sidebar({
             aria-haspopup="menu"
             aria-expanded={Boolean(accountMenu && !accountMenu.closing)}
             aria-label={`Tài khoản · ${auth.user?.display_name}`}
-            title={collapsed ? auth.user?.display_name : undefined}
+            data-tip={collapsed ? auth.user?.display_name : undefined} data-tip-side="right"
             onClick={toggleAccountMenu}
             onPointerEnter={preloadSettings}
             onFocus={preloadSettings}

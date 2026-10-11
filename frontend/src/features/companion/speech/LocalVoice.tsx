@@ -447,7 +447,7 @@ export function SpeakButton({ phase, onSpeak, onStop }: {
       type="button"
       className={phase ? `message-speak ${phase}` : "message-speak"}
       aria-label={label}
-      title={label}
+      data-tip
       onClick={phase ? onStop : onSpeak}
     >
       {phase === "playing" || phase === "buffering" ? <StopIcon /> : <SpeakerIcon size={15} />}

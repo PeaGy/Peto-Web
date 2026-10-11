@@ -14,7 +14,7 @@
   cursor: pointer;
 }
 .message-copy.done { color: var(--text); }
-@media (hover: hover) and (pointer: fine) { .message-copy:hover { color: var(--text); } }
+@media (hover: hover) and (pointer: fine) { .message-copy:hover { background: var(--panel-2); color: var(--text); } }
 .message-copy svg { flex: none; }
 .message-copy:disabled { opacity: 0.5; cursor: default; }
 /* Lượt bị dừng, như Grok: một dòng nghiêng nhạt ngay chỗ câu trả lời, nhãn "Đã dừng" cuối hàng nút. */

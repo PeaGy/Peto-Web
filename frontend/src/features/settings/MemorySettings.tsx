@@ -124,7 +124,7 @@ export default function MemorySettings({ open, onUnauthorized }: {
                     type="button"
                     className="memory-delete"
                     aria-label={`Xóa ghi nhớ: ${item.text}`}
-                    title="Xóa ghi nhớ này"
+                    data-tip="Xóa ghi nhớ này"
                     disabled={busy}
                     onClick={() => forget(item.id)}
                   >

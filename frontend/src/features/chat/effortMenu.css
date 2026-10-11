@@ -19,7 +19,7 @@
 
 .effort-trigger[aria-expanded="true"] { color: var(--text); }
 
-@media (hover: hover) and (pointer: fine) { .effort-trigger:hover:not(:disabled) { color: var(--text); } }
+@media (hover: hover) and (pointer: fine) { .effort-trigger:hover:not(:disabled) { background: var(--panel-3); color: var(--text); } }
 
 .effort-trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 

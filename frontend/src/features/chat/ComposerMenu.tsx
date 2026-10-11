@@ -51,7 +51,7 @@ export default function ComposerMenu({ disabled, webDisabled, onToggleWeb, onAtt
   }}>
     <button ref={trigger} type="button" className="icon-btn composer-plus" disabled={disabled}
       aria-label="Thêm ảnh và tùy chọn" aria-expanded={open} aria-controls="composer-options"
-      title={webDisabled ? 'Thêm ảnh và tùy chọn · Tìm web đang tắt' : 'Thêm ảnh và tùy chọn'} onClick={() => setOpen((value) => !value)}>
+      data-tip={webDisabled ? 'Thêm ảnh và tùy chọn · Tìm web đang tắt' : 'Thêm ảnh và tùy chọn'} onClick={() => setOpen((value) => !value)}>
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg>
       {webDisabled && <span className="web-off-dot" aria-hidden="true" />}
     </button>

@@ -148,8 +148,8 @@ export default function ChatImageViewer({ images, index, onIndexChange, onClose 
       </div>
       <div className="chat-image-controls">
         <ImageZoomMenu scale={view.scale} fit={view.fit} disabled={!ready} onZoom={zoom} onFit={fit} />
-        <a className="chat-image-control" href={file.url} download={file.name} title="Tải ảnh xuống" aria-label="Tải ảnh xuống"><ViewerIcon name="download" /></a>
-        <button type="button" className="chat-image-control" title="Đóng ảnh" aria-label="Đóng ảnh" onClick={onClose}><ViewerIcon name="close" /></button>
+        <a className="chat-image-control" href={file.url} download={file.name} data-tip aria-label="Tải ảnh xuống"><ViewerIcon name="download" /></a>
+        <button type="button" className="chat-image-control" data-tip aria-label="Đóng ảnh" onClick={onClose}><ViewerIcon name="close" /></button>
       </div>
     </header>
     <div ref={stageRef} className={`chat-image-stage${ready ? ' ready' : ''}`} onPointerDown={pointerDown} onPointerMove={pointerMove}

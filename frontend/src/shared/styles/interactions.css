@@ -4,7 +4,7 @@
    đó chặn luôn thao tác phóng to của người cần đọc chữ lớn.
    Phải nằm cuối file: .imagine-composer textarea (14px) có cùng độ ưu tiên. */
 @media (pointer: coarse) {
-  .composer textarea { font-size: 16px; }
+  .composer textarea, .text-field { font-size: 16px; }
 }
 
 /* ---------- Chạm trên điện thoại ---------- */
@@ -31,6 +31,20 @@ label,
   :disabled, .nav-item, .conv-open, .account, .popup-menu > :is(button, a), .settings-nav-item, .work-head, .sidebar-backdrop,
   .composer-options > button, .effort-option, .jump-latest
 ) { transform: scale(0.97); }
+
+/* Rê chuột lên nút, kiểu Grok (chủ web gửi ảnh ngày 2026-10-11): nền đổi một bậc, không lóe viền màu nhấn.
+   Nút chính (nền màu nhấn) nhạt đi một chút; nút phụ nền --panel-2 sáng lên --panel-3; nút phụ trong suốt có viền thì
+   lấy nền --panel-2. Nút của từng phần tự viết quy tắc rê riêng cạnh nó; danh sách này gom những nút dùng chung chưa có. */
+@media (hover: hover) and (pointer: fine) {
+  :is(.composer .send, .profile-save, .dialog-actions .primary-button,
+    .inline-message-editor button[type="submit"], .text-edit-dialog button[type="submit"]):hover:not(:disabled) {
+    background: color-mix(in srgb, var(--accent) 86%, var(--bg));
+  }
+  :is(.load-more, .studio-text-button, .dialog-actions button:not(.primary-button), .text-edit-dialog button:not([type="submit"]),
+    .archived-chat-notice button):hover:not(:disabled) { background: var(--panel-3); }
+  :is(.inline-message-editor button:not([type="submit"]), .profile-load-error button,
+    .document-panel-empty button, .document-file-list [role="alert"] button):hover:not(:disabled) { background: var(--panel-2); }
+}
 
 /* Giảm chuyển động: vẫn co để báo đã bấm, chỉ bỏ phần chạy chuyển tiếp. */
 @media (prefers-reduced-motion: reduce) {

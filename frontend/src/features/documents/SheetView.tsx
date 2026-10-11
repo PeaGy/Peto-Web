@@ -100,7 +100,7 @@ function TableView({ grid }: { grid: TableGrid }) {
       <div className="sheet-fx-text" aria-live="polite" aria-label="Nội dung ô">
         {current?.f ?? current?.d ?? ''}{current?.f && <span className="sheet-fx-value">= {current.d}</span>}
       </div>
-      <button type="button" className="sheet-fx-toggle" aria-pressed={formulas} title="Hiện công thức trong ô (Ctrl+`)" onClick={() => setFormulas(value => !value)}>Công thức</button>
+      <button type="button" className="sheet-fx-toggle" aria-pressed={formulas} data-tip="Hiện công thức trong ô" data-tip-kbd="Ctrl+`" aria-keyshortcuts="Control+`" onClick={() => setFormulas(value => !value)}>Công thức</button>
     </div>
     <div className="sheet-grid-wrap" ref={wrap} tabIndex={0} role="region" aria-label={`Lưới trang tính ${sheet.name}`} onKeyDown={move}>
       <div className="sheet-canvas">

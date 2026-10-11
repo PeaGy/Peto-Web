@@ -15,7 +15,7 @@ export function CompanionImageDrafts({ images, onRemove }: { images: DraftFile[]
   return <ul className="companion-image-drafts" aria-label="Ảnh chờ gửi">
     {images.map(image => <li key={image.id}>
       <img src={image.previewUrl ?? ''} alt={`Ảnh chờ gửi: ${image.file.name}`} />
-      <button type="button" aria-label={`Gỡ ${image.file.name}`} title="Gỡ ảnh" onClick={() => onRemove(image.id)}>×</button>
+      <button type="button" aria-label={`Gỡ ${image.file.name}`} data-tip="Gỡ ảnh" onClick={() => onRemove(image.id)}>×</button>
     </li>)}
   </ul>;
 }

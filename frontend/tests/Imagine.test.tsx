@@ -114,7 +114,8 @@ it('so sánh với từng ảnh tham chiếu và mở lại nguồn sau tải l�
   fireEvent.click(screen.getByRole('button', { name: 'Xem ảnh 1: Mèo trên mặt trăng' }));
   const dialog = screen.getByRole('dialog', { name: 'Xem ảnh đã tạo' });
   fireEvent.click(within(dialog).getByRole('button', { name: 'So sánh trước / sau' }));
-  fireEvent.change(within(dialog).getByLabelText('Chọn ảnh gốc để so sánh'), { target: { value: '1' } });
+  fireEvent.click(within(dialog).getByRole('combobox', { name: 'Chọn ảnh gốc để so sánh' }));
+  fireEvent.click(within(dialog).getByRole('option', { name: 'Ảnh 2' }));
   expect(within(dialog).getByRole('img', { name: 'Ảnh gốc 2' }).getAttribute('src')).toBe(sources[1].url);
   fireEvent.click(within(dialog).getByRole('button', { name: 'Quay lại' }));
   fireEvent.click(screen.getByRole('button', { name: 'Dùng lại mô tả' }));
@@ -562,7 +563,8 @@ it('gửi chỉnh sửa trong khung xem dùng đúng ảnh, một kết quả v�
   await open();
   fireEvent.click(screen.getByRole('button', { name: 'Xem ảnh 2: Mèo trên mặt trăng' }));
   fireEvent.change(screen.getByLabelText('Mô tả chỉnh sửa ảnh'), { target: { value: 'Đổi nền thành biển' } });
-  fireEvent.change(screen.getByLabelText('Tỉ lệ ảnh chỉnh sửa'), { target: { value: '3:4' } });
+  fireEvent.click(screen.getByRole('combobox', { name: 'Tỉ lệ ảnh chỉnh sửa' }));
+  fireEvent.click(screen.getByRole('option', { name: '3:4' }));
   const send = screen.getByRole('button', { name: 'Gửi chỉnh sửa ảnh' });
   fireEvent.click(send); fireEvent.click(send);
   await waitFor(() => expect(api.createImagineJob).toHaveBeenCalledTimes(1));

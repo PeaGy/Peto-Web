@@ -10,7 +10,8 @@
 .inline-message-editor button { border:1px solid var(--line); border-radius:24px; padding:8px 18px; background:transparent; color:var(--text); cursor:pointer; font:inherit; }
 .inline-message-editor button[type=submit] { background:var(--accent); color:var(--on-accent); }
 .sidebar-brand { margin-right:auto; }
-.sidebar-search-button { width:30px; margin-right:44px; }
+/* Cùng cỡ và bo góc với nút thu gọn bên cạnh, như cặp nút tìm/thu gọn của Grok. */
+.sidebar-search-button { width:36px; height:36px; border-radius:10px; margin-right:46px; }
 @media (min-width:721px) { .sidebar.collapsed .sidebar-search-button { display:none; } }
 @media (max-width:720px) { .sidebar-search-button { margin-right:4px; } }
 .conv { position:relative; }
@@ -41,7 +42,7 @@
 .text-edit-dialog::backdrop { background:#0008; }
 .text-edit-dialog h2 { font-size:20px; margin:0 0 14px; }
 .text-edit-dialog p { color:var(--muted); line-height:1.6; font-size:14px; }
-.text-edit-dialog input,.text-edit-dialog textarea { width:100%; box-sizing:border-box; padding:12px; font:inherit; font-size:16px; color:var(--text); background:var(--bg); border:1px solid var(--line); border-radius:10px; resize:vertical; }
+.text-edit-dialog .text-field { padding:12px; font-size:16px; resize:vertical; }
 .text-edit-dialog form>div { display:flex; justify-content:flex-end; gap:10px; margin-top:18px; }
 .text-edit-dialog button { padding:10px 16px; font:inherit; color:var(--text); background:var(--panel-2); border:1px solid var(--line); border-radius:10px; cursor:pointer; }
 .text-edit-dialog button[type=submit] { background:var(--accent); color:var(--on-accent); }
