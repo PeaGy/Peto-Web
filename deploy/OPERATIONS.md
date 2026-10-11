@@ -163,6 +163,25 @@ nano /home/ubuntu/peto-web/gia.json
 sudo systemctl restart peto-web
 ```
 
+Mẫu tệp giá theo bảng giá công bố của OpenAI và Anthropic, kiểm ngày 2026-10-11 (tự đối chiếu lại khi nhà cung cấp đổi
+giá). `long_context` là mức giá khi một request có prompt dài hơn `threshold` token, tính cả token cache: OpenAI trên
+272K, Claude Haiku 5.5 trên 100.000; Sonnet 5.5 không có mức này. Token ghi cache của Claude được cộng phụ phí 0,25
+lần giá đầu vào (ghi cache 5 phút = 1,25 lần), không cần khai.
+
+```json
+{
+  "gpt-6-luna": {"input": 0.10, "cached_input": 0.01, "output": 0.50,
+    "long_context": {"threshold": 272000, "input": 0.20, "cached_input": 0.02, "output": 0.75}},
+  "gpt-6-sol": {"input": 2.00, "cached_input": 0.20, "output": 10.00,
+    "long_context": {"threshold": 272000, "input": 4.00, "cached_input": 0.40, "output": 15.00}},
+  "gpt-5.6-terra": {"input": 2.00, "cached_input": 0.20, "output": 12.00,
+    "long_context": {"threshold": 272000, "input": 4.00, "cached_input": 0.40, "output": 18.00}},
+  "claude-haiku-5-5": {"input": 0.10, "cached_input": 0.01, "output": 0.50,
+    "long_context": {"threshold": 100000, "input": 0.50, "cached_input": 0.05, "output": 2.50}},
+  "claude-sonnet-5-5": {"input": 2.00, "cached_input": 0.10, "output": 10.00}
+}
+```
+
 Chỉ cần khởi động lại lần đầu để nạp biến môi trường; sau đó sửa tệp giá là trang tự đọc lại. Peto đăng nhập xAI bằng
 gói thuê bao thì không khai giá Grok: trang hiện "chưa có giá" cho Peto, không ghi $0. Đây vẫn là ước tính từ token,
 không gồm tạo ảnh, phí tra web, giọng đọc hay thuế.

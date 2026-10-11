@@ -63,10 +63,10 @@ def _dump(item) -> dict:
     return item if isinstance(item, dict) else item.model_dump(mode="json", exclude_none=True)
 
 
-def _cached_tokens(usage) -> int | None:
-    """Token đọc từ cache theo dạng Responses; Claude cũng báo dạng này (ai/claude.py). Không có thì None, không 0."""
+def _cached_tokens(usage, key: str = "cached_tokens") -> int | None:
+    """Token cache theo dạng Responses (đọc: cached_tokens; ghi, chỉ Claude: cache_write_tokens). Không có thì None."""
     details = getattr(usage, "input_tokens_details", None)
-    value = details.get("cached_tokens") if isinstance(details, dict) else getattr(details, "cached_tokens", None)
+    value = details.get(key) if isinstance(details, dict) else getattr(details, key, None)
     return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
 
 
@@ -155,7 +155,7 @@ async def _claude_step(instructions: str, items: list[dict], tools: list[dict], 
     if not config.ANTHROPIC_API_KEY:
         raise ProviderError("Máy chủ Peto chưa có khóa Claude. Gõ /model peto để tiếp tục nhé.")
     if _claude_client is None:
-        _claude_client = _load_claude().ClaudeClient()
+        _claude_client = _load_claude().ClaudeClient(cache_history="always")
     async for event in _responses_step(
         _claude_client, "Anthropic", MODELS[model].slug, config.ANTHROPIC_AGENT_MAX_OUTPUT_TOKENS,
         instructions, items, tools, effort, auth_message="Khóa Claude không dùng được.",
@@ -220,6 +220,7 @@ async def _responses_step(client, service: str, model: str, max_output_tokens: i
                         "output_tokens": int(getattr(usage, "output_tokens", 0) or 0),
                         # Cho trang Quản trị tính giá; CLI chỉ đọc hai khóa trên nên khóa thêm không ảnh hưởng.
                         **({"cached_tokens": cached} if (cached := _cached_tokens(usage)) is not None else {}),
+                        **({"cache_write_tokens": written} if (written := _cached_tokens(usage, "cache_write_tokens")) is not None else {}),
                     },
                 )
                 return

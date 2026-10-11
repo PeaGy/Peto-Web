@@ -329,6 +329,15 @@ Web output budget is `PETO_ANTHROPIC_MAX_OUTPUT_TOKENS` (32768); Agent uses
 spend another request, incomplete/disconnected streams never become successful answers. Haiku costs one Agent step,
 Sonnet two, multiplied by the existing effort cost; these are Peto quota units, not Anthropic billing prices.
 Tests use the real SDK against fake HTTP/SSE, never real keys or billing. Deployment/key activation is separate.
+Prompt caching (2026-10-11; before that no request sent `cache_control`, so the admin page showed 0 cached tokens):
+`ClaudeClient` sends the system prompt as a cached stable block followed by the time block (`split_time_context`),
+because a per-second clock anywhere before a breakpoint makes everything after it uncacheable. A second marker goes on
+the last block of the last message, on a copy so caller history is never edited: always for Agent
+(`cache_history="always"`), only inside a tool loop for Chat (a single-round turn would only pay the 1.25× write
+premium, since the chat clock still changes every turn). Agent instructions end with `agent_time_context`, rounded to
+the hour, so steps within an hour reuse the whole cached history; this also helps OpenAI/xAI automatic caching. Cache
+reads and writes are reported in `input_tokens_details` (`cached_tokens`, `cache_write_tokens`) and summed over
+`pause_turn`. Real cache hit rates still need checking on the admin page after deployment.
 On 2026-10-08 the owner's VPS logs showed `ModuleNotFoundError: No module named 'anthropic'` after adding the key:
 the service's venv had not installed the new backend requirements. Web and Agent now share a lazy Claude loader
 that converts dependency import failures to an actionable Vietnamese provider error. DEPLOY.md gives the exact
@@ -1303,7 +1312,11 @@ dense ledger and a narrative report. No per-account view, by the owner's call; A
   `by_service`. Active accounts are one count from user messages plus Agent usage days.
 - **Prices.** `PETO_COST_RATES_FILE`, same JSON and validation as `ops.report --rates` (slug → input/cached_input/output
   USD per million), reread on mtime/size change. Missing cached tokens price as uncached and are flagged. The owner's
-  xAI login is a subscription, so Grok is deliberately left unpriced ("chưa có giá").
+  xAI login is a subscription, so Grok is deliberately left unpriced ("chưa có giá"). An optional `long_context`
+  tier (`threshold` plus the three prices) prices a whole call whose prompt, cache tokens included, exceeds the threshold
+  (OpenAI >272K, Haiku 5.5 >100,000; `ops.report.token_cost` is shared). Claude cache writes (`cache_write_tokens`
+  column, added to existing tables at startup) add 0.25 × input price, Anthropic's 5-minute write premium. A dated
+  example file is in `deploy/OPERATIONS.md`.
 - **Frontend.** `AppView` gained `admin`; `/admin` is served by the static fallback. `features/admin/AdminDashboard.tsx`
   is a lazy chunk mounted only while open; the account menu shows "Quản trị" only when `/api/auth/me` returns
   `is_owner`, and a non-owner on `/admin` is replaced to `/`. Charts are hand-written SVG measured to real width; the

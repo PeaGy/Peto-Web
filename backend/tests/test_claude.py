@@ -15,11 +15,12 @@ from conftest import read_events
 from test_agent_api import bearer, connect, events_of, login_as
 
 
-def message_events(blocks, stop="end_turn", *, input_tokens=20, output_tokens=8, cache_read=None):
+def message_events(blocks, stop="end_turn", *, input_tokens=20, output_tokens=8, cache_read=None, cache_write=None):
     events = [{"type": "message_start", "message": {"id": "msg_test", "type": "message", "role": "assistant",
         "model": "claude-haiku-5-5", "content": [], "stop_reason": None, "stop_sequence": None,
         "usage": {"input_tokens": input_tokens, "output_tokens": 0,
-                  **({"cache_read_input_tokens": cache_read} if cache_read is not None else {})}}}]
+                  **({"cache_read_input_tokens": cache_read} if cache_read is not None else {}),
+                  **({"cache_creation_input_tokens": cache_write} if cache_write is not None else {})}}}]
     for index, block in enumerate(blocks):
         kind = block["type"]
         initial = dict(block)
@@ -94,10 +95,11 @@ async def test_agent_native_api_efforts_and_usage(monkeypatch, model, effort):
         events = [event async for event in agent.agent_step(instructions="chỉ dẫn", input_items=[USER],
             tools=[SCHEMA], effort=effort, model=model)]
     assert [event.kind for event in events] == ["thinking", "delta", "done"]
-    assert events[-1].usage == {"input_tokens": 20, "output_tokens": 8, "cached_tokens": 0}
+    assert events[-1].usage == {"input_tokens": 20, "output_tokens": 8, "cached_tokens": 0, "cache_write_tokens": 0}
     request = calls[0]
     assert request["model"] == models.MODELS[model].slug
-    assert request["system"] == "chỉ dẫn" and request["messages"] == [{"role": "user", "content": [{"type": "text", "text": "chào"}]}]
+    assert request["system"] == [{"type": "text", "text": "chỉ dẫn", "cache_control": {"type": "ephemeral"}}]
+    assert request["messages"] == [{"role": "user", "content": [{"type": "text", "text": "chào"}]}]
     assert request["output_config"] == {"effort": effort}
     assert request["thinking"] == {"type": "adaptive"}
     assert request["max_tokens"] == config.ANTHROPIC_AGENT_MAX_OUTPUT_TOKENS
@@ -122,7 +124,9 @@ async def test_tool_roundtrip_preserves_signature_and_no_duplicate_output():
         second = await client.create(**kwargs)
         assert [event async for event in second][-1].type == "response.completed"
     assert calls[1]["messages"][1] == {"role": "assistant", "content": [THINKING, TOOL]}
-    assert calls[1]["messages"][2] == {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_test", "content": "nội dung"}]}
+    # Đang trong vòng công cụ: kết quả công cụ cuối mang điểm cache để vòng sau đọc lại lịch sử.
+    assert calls[1]["messages"][2] == {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_test",
+                                                                     "content": "nội dung", "cache_control": {"type": "ephemeral"}}]}
     assert len(calls[1]["messages"]) == 3 and len(closed) >= 2
     # Đổi model bỏ phần chữ ký nhưng giữ lời gọi để tiếp tục được với kết quả vừa chạy.
     other = claude.build_messages(kwargs["input"], "claude-sonnet-5-5")
@@ -239,11 +243,52 @@ async def test_agent_sonnet_owner_gate_and_claude_step_costs(client, anon_client
 
 async def test_cache_reads_are_reported_like_responses_for_pricing(monkeypatch):
     """Token đọc từ cache vào cả tổng đầu vào lẫn input_tokens_details.cached_tokens, để log và trang Quản trị tính giá."""
-    sdk, _calls, _closed = sdk_with_responses(message_events([TEXT], input_tokens=20, cache_read=12))
+    sdk, _calls, _closed = sdk_with_responses(message_events([TEXT], input_tokens=20, cache_read=12, cache_write=30))
     monkeypatch.setattr(agent, "AI_PROVIDER", "xai")
     monkeypatch.setattr(config, "ANTHROPIC_API_KEY", "khoa-gia")
     monkeypatch.setattr(agent, "_claude_client", claude.ClaudeClient(sdk))
     async with sdk:
         events = [event async for event in agent.agent_step(instructions="chỉ dẫn", input_items=[USER],
             tools=[], effort="low", model="haiku")]
-    assert events[-1].usage == {"input_tokens": 32, "output_tokens": 8, "cached_tokens": 12}
+    assert events[-1].usage == {"input_tokens": 62, "output_tokens": 8, "cached_tokens": 12, "cache_write_tokens": 30}
+
+
+def test_system_cache_point_sits_before_the_changing_clock():
+    """Giờ hiện tại đổi mỗi lượt nên phải đứng sau điểm cache; phần chỉ dẫn ổn định mới đọc lại được."""
+    from shared.time_tools import time_context
+    clock = time_context(english=True)
+    system = claude.cached_system(f"Chỉ dẫn A\n\n{clock}\n\nChỉ dẫn B")
+    assert system == [{"type": "text", "text": "Chỉ dẫn A\n\nChỉ dẫn B", "cache_control": {"type": "ephemeral"}},
+                      {"type": "text", "text": clock}]
+    assert claude.cached_system("Chỉ dẫn") == [{"type": "text", "text": "Chỉ dẫn", "cache_control": {"type": "ephemeral"}}]
+
+
+def test_history_cache_point_never_edits_the_callers_history():
+    shared_block = {"type": "text", "text": "chào"}
+    messages = [{"role": "user", "content": [shared_block]}]
+    claude.mark_history(messages)
+    assert messages[0]["content"][0] == {"type": "text", "text": "chào", "cache_control": {"type": "ephemeral"}}
+    assert shared_block == {"type": "text", "text": "chào"}
+
+
+async def test_agent_marks_history_every_step_but_chat_only_inside_a_tool_loop(monkeypatch):
+    for mode, marked in (("always", True), ("loop", False)):
+        sdk, calls, _closed = sdk_with_responses(message_events([TEXT]))
+        client = claude.ClaudeClient(sdk, cache_history=mode)
+        async with sdk:
+            stream = await client.create(model="claude-haiku-5-5", instructions="chỉ dẫn", input=[USER],
+                                         max_output_tokens=100, reasoning={"effort": "low"})
+            [event async for event in stream]
+        assert ("cache_control" in calls[0]["messages"][-1]["content"][-1]) is marked
+
+
+def test_agent_instructions_end_with_an_hourly_clock():
+    """Agent gửi lại cả lịch sử mỗi bước: mốc giờ làm tròn và đứng cuối thì các bước trong một giờ dùng chung cache."""
+    import re
+    from features.agent import api as agent_api
+    from shared.time_tools import split_time_context
+    for model in ("haiku", "peto"):
+        instructions = agent_api._instructions({"project": "Dự án", "os": "Windows"}, False, model)
+        rest, clock = split_time_context(instructions)
+        assert clock and instructions.endswith(clock) and clock not in rest
+        assert not re.search(r"\d\d:\d\d:\d\d", instructions)

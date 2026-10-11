@@ -17,6 +17,7 @@ from core import config
 from .base import ProviderError
 from .models import CLAUDE_EFFORTS
 from .xai import ResponsesProvider
+from shared.time_tools import split_time_context
 
 logger = logging.getLogger("peto_web.claude")
 MAX_SEARCH_PAUSES = 3
@@ -125,13 +126,56 @@ def _failure(err: Exception) -> ProviderError:
     return ProviderError("Kết nối Claude bị ngắt trước khi trả lời xong. Thử lại nhé.", retryable=True)
 
 
-class ClaudeClient:
-    """Giao diện nội bộ giống Responses; bên ngoài luôn gọi SDK Messages của Anthropic."""
+CACHE = {"type": "ephemeral"}
+CACHEABLE_BLOCKS = {"text", "image", "tool_result"}
 
-    def __init__(self, sdk=None):
+
+def cached_system(text: str) -> list[dict] | str:
+    """System prompt thành hai khối: phần ổn định có điểm cache, mốc thời gian (đổi mỗi lượt) đứng sau, không cache.
+
+    Cache của Anthropic khớp theo tiền tố: chỉ một byte khác ở giữa (giờ hiện tại) là mọi thứ sau nó phải tính lại.
+    """
+    static, clock = split_time_context(text)
+    blocks = [{"type": "text", "text": static, "cache_control": CACHE}] if static.strip() else []
+    if clock:
+        blocks.append({"type": "text", "text": clock})
+    return blocks or text
+
+
+def mark_history(messages: list[dict]) -> None:
+    """Điểm cache thứ hai ở block cuối của tin cuối, để lần gọi sau đọc lại cả lịch sử phía trước.
+
+    Gắn trên bản sao: danh sách block có thể là của lịch sử người gọi (khối gốc khôi phục từ nhóm reasoning).
+    """
+    if not messages:
+        return
+    last = messages[-1]
+    content = list(last["content"])
+    for index in range(len(content) - 1, -1, -1):
+        if content[index].get("type") in CACHEABLE_BLOCKS:
+            content[index] = {**content[index], "cache_control": CACHE}
+            messages[-1] = {**last, "content": content}
+            return
+
+
+def _in_tool_loop(messages: list[dict]) -> bool:
+    return bool(messages) and messages[-1]["role"] == "user" and any(
+        block.get("type") == "tool_result" for block in messages[-1]["content"])
+
+
+class ClaudeClient:
+    """Giao diện nội bộ giống Responses; bên ngoài luôn gọi SDK Messages của Anthropic.
+
+    ``cache_history``: "always" (Agent: lịch sử gửi lại ở mọi bước, mốc giờ đã làm tròn nên các bước trong một giờ đọc
+    lại được) hoặc "loop" (Chat: chỉ trong vòng công cụ của một lượt; giờ chính xác đến giây đổi mỗi lượt, nên ghi
+    cache lịch sử ở lượt một vòng chỉ tốn thêm phí ghi mà không bao giờ được đọc lại).
+    """
+
+    def __init__(self, sdk=None, *, cache_history: str = "loop"):
         self.sdk = sdk or AsyncAnthropic(api_key=config.ANTHROPIC_API_KEY or "chua-co-khoa", max_retries=0,
                                         timeout=config.AGENT_STEP_TIMEOUT_SECONDS)
         self.responses = self
+        self.cache_history = cache_history
 
     async def create(self, **kwargs):
         effort = kwargs.get("reasoning", {}).get("effort", "low")
@@ -145,8 +189,11 @@ class ClaudeClient:
             elif tool.get("type") == "function":
                 tools.append({"name": tool["name"], "description": tool.get("description", ""),
                               "input_schema": tool.get("parameters") or {"type": "object", "properties": {}}})
-        request = {"model": kwargs["model"], "system": kwargs.get("instructions", ""),
-                   "messages": build_messages(kwargs["input"], kwargs["model"]),
+        messages = build_messages(kwargs["input"], kwargs["model"])
+        if self.cache_history == "always" or _in_tool_loop(messages):
+            mark_history(messages)
+        request = {"model": kwargs["model"], "system": cached_system(kwargs.get("instructions", "")),
+                   "messages": messages,
                    "max_tokens": kwargs["max_output_tokens"], "thinking": {"type": "adaptive"},
                    "output_config": {"effort": effort}}
         if tools:
@@ -176,7 +223,7 @@ class ClaudeStream:
     async def _events(self):
         output: list[dict] = []
         usage = {"input_tokens": 0, "output_tokens": 0}
-        cache_read = 0
+        cache_read = cache_write = 0
         try:
             for pause in range(MAX_SEARCH_PAUSES + 1):
                 if self.closed:
@@ -228,6 +275,7 @@ class ClaudeStream:
                                           + (message.usage.cache_creation_input_tokens or 0))
                 usage["output_tokens"] += message.usage.output_tokens
                 cache_read += message.usage.cache_read_input_tokens or 0
+                cache_write += message.usage.cache_creation_input_tokens or 0
                 if message.stop_reason == "pause_turn":
                     if pause == MAX_SEARCH_PAUSES:
                         raise ProviderError("Claude chưa tra cứu xong trong giới hạn lượt này. Thử thu gọn yêu cầu nhé.")
@@ -242,9 +290,10 @@ class ClaudeStream:
                     raise ProviderError("Claude chưa trả nội dung câu trả lời. Thử mức suy nghĩ thấp hơn nhé.")
                 # Usage của SDK giữ dạng model để phần chat và Agent đọc cùng một cách.
                 # Token đọc từ cache báo theo dạng của Responses (input_tokens_details.cached_tokens), để log
-                # model_usage, ops.report và trang Quản trị tính giá Claude như OpenAI. Token ghi vào cache vẫn tính
-                # theo giá đầu vào thường, nên ước tính hơi thấp hơn hóa đơn khi cache mới được tạo.
-                final_usage = message.usage.model_copy(update={**usage, "input_tokens_details": {"cached_tokens": cache_read}})
+                # model_usage, ops.report và trang Quản trị tính giá Claude như OpenAI. Token ghi cache (Anthropic tính
+                # 1,25 lần giá đầu vào) đi kèm riêng để trang Quản trị cộng phần phụ phí đó.
+                final_usage = message.usage.model_copy(update={**usage, "input_tokens_details": {
+                    "cached_tokens": cache_read, "cache_write_tokens": cache_write}})
                 yield SimpleNamespace(type="response.completed",
                     response=SimpleNamespace(status="completed", output=output, usage=final_usage))
                 return

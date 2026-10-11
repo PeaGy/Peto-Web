@@ -32,18 +32,46 @@ def distribution(values):
             "p95_ms": values[math.ceil(len(values) * .95) - 1]}
 
 
+PRICE_KEYS = {"input", "cached_input", "output"}
+
+
+def _price(value) -> bool:
+    return not isinstance(value, bool) and isinstance(value, (int, float)) and math.isfinite(value) and value >= 0
+
+
 def validate_rates(raw):
-    """Đơn giá do người vận hành cung cấp, USD trên một triệu token."""
+    """Đơn giá do người vận hành cung cấp, USD trên một triệu token.
+
+    ``long_context`` (tùy chọn): bảng giá cho request có prompt dài hơn ``threshold`` token, như Claude Haiku 5.5
+    tính gấp năm lần khi prompt trên 100.000 token.
+    """
     if not isinstance(raw, dict):
         raise ValueError("Bảng đơn giá phải là đối tượng JSON.")
     for model, prices in raw.items():
         if not LABEL.fullmatch(model) or not isinstance(prices, dict):
             raise ValueError("Tên model hoặc đơn giá không hợp lệ.")
-        if set(prices) != {"input", "cached_input", "output"}:
-            raise ValueError("Mỗi model cần input, cached_input và output.")
-        if any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) or v < 0 for v in prices.values()):
+        if not PRICE_KEYS <= set(prices) or set(prices) - PRICE_KEYS - {"long_context"}:
+            raise ValueError("Mỗi model cần input, cached_input và output (long_context là tùy chọn).")
+        if not all(_price(prices[key]) for key in PRICE_KEYS):
             raise ValueError("Đơn giá phải là số hữu hạn, không âm.")
+        tier = prices.get("long_context")
+        if tier is not None and (not isinstance(tier, dict) or set(tier) != PRICE_KEYS | {"threshold"}
+                                 or not all(_price(tier[key]) for key in PRICE_KEYS)
+                                 or isinstance(tier["threshold"], bool) or not isinstance(tier["threshold"], int)
+                                 or tier["threshold"] <= 0):
+            raise ValueError("long_context cần threshold (số token) cùng input, cached_input và output.")
     return raw
+
+
+def token_cost(rate, incoming, cached, outgoing, written=0, write_premium=0.0):
+    """USD của một lần gọi. Prompt dài hơn long_context.threshold dùng bảng giá riêng cho cả lần gọi đó.
+
+    ``written``/``write_premium``: token ghi cache và phần phụ phí trên giá đầu vào (Anthropic: 0,25).
+    """
+    tier = rate.get("long_context")
+    prices = tier if tier and incoming > tier["threshold"] else rate
+    return ((incoming - cached) * prices["input"] + cached * prices["cached_input"] + outgoing * prices["output"]
+            + written * prices["input"] * write_premium) / 1_000_000
 
 
 def summarize(lines, rates=None):
@@ -96,7 +124,7 @@ def summarize(lines, rates=None):
             group["cached_tokens"] += cached or 0
             rate = rates.get(labels[1])
             if rate and cached is not None and cached <= incoming:
-                cost = ((incoming - cached) * rate["input"] + cached * rate["cached_input"] + outgoing * rate["output"]) / 1_000_000
+                cost = token_cost(rate, incoming, cached, outgoing)
                 group["estimated_token_usd"] = (group["estimated_token_usd"] or 0) + cost
                 group["priced_calls"] += 1
     timing_rows = []

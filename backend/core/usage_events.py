@@ -29,6 +29,7 @@ PRUNE_SECONDS = 86_400
 COLUMNS = (
     "at", "kind", "surface", "purpose", "service", "model", "slug", "outcome", "complete", "elapsed_ms",
     "first_text_ms", "input_tokens", "output_tokens", "cached_tokens", "reasoning_tokens", "search_calls",
+    "cache_write_tokens",
 )
 KINDS = {"call", "turn"}
 # Nhãn kỹ thuật như trong log (tên model, kết quả…); chuỗi lạ bị bỏ thay vì lưu nguyên.
@@ -53,7 +54,7 @@ def record(
     purpose: str | None = None, outcome: str | None = None, complete: bool | None = None,
     elapsed_ms: int | None = None, first_text_ms: int | None = None, input_tokens: int | None = None,
     output_tokens: int | None = None, cached_tokens: int | None = None, reasoning_tokens: int | None = None,
-    search_calls: int | None = None,
+    search_calls: int | None = None, cache_write_tokens: int | None = None,
 ) -> None:
     """Thêm một sự kiện vào hàng đợi. Số liệu hỏng chỉ thành ô trống; không bao giờ làm hỏng lượt chat."""
     global _dropped
@@ -64,7 +65,7 @@ def record(
             time.time(), kind, _label(surface), _label(purpose), _label(service) or "unknown", _label(model),
             _label(slug), _label(outcome), None if complete is None else int(bool(complete)), _count(elapsed_ms),
             _count(first_text_ms), _count(input_tokens), _count(output_tokens), _count(cached_tokens),
-            _count(reasoning_tokens), _count(search_calls),
+            _count(reasoning_tokens), _count(search_calls), _count(cache_write_tokens),
         )
         if len(_pending) == MAX_PENDING:
             _dropped += 1

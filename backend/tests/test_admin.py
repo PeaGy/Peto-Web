@@ -194,6 +194,17 @@ def test_cost_uses_cache_price_and_never_guesses_missing_data():
     assert stats.call_cost(row(0, slug="grok-4.7", input_tokens=10, output_tokens=5), RATES) is None
 
 
+def test_anthropic_cache_writes_add_the_write_premium():
+    rates = {"claude-sonnet-5-5": {"input": 2, "cached_input": 0.2, "output": 10}}
+    call = row(0, service="anthropic", model="sonnet", slug="claude-sonnet-5-5",
+               input_tokens=1_000_000, cached_tokens=600_000, cache_write_tokens=300_000, output_tokens=0)
+    # 400k thường × $2 + 600k đọc cache × $0,2 + phụ phí ghi 300k × $2 × 0,25.
+    assert stats.call_cost(call, rates) == pytest.approx(0.8 + 0.12 + 0.15)
+    # OpenAI không có phụ phí ghi cache.
+    other = row(0, input_tokens=1_000_000, output_tokens=0, cached_tokens=0, cache_write_tokens=300_000)
+    assert stats.call_cost(other, RATES) == pytest.approx(2.0)
+
+
 def test_summary_marks_unpriced_and_cache_unknown_models():
     now = local(2026, 10, 11, 15)
     rows = [
@@ -281,3 +292,33 @@ def test_rates_file_states(tmp_path, monkeypatch):
     assert rate_file.load() == (RATES, "ok")
     path.write_text('{"gpt-6-luna": {"input": -1}}', encoding="utf-8")
     assert rate_file.load() == ({}, "invalid")
+
+
+async def test_table_from_the_first_release_gains_the_cache_write_column():
+    """VPS đã tạo usage_events ở bản đầu; khởi động bản mới phải tự thêm cột, giữ dòng cũ."""
+    await db.init_db()
+    async with aiosqlite.connect(config.DB_PATH) as conn:
+        await conn.execute("DROP TABLE usage_events")
+        await conn.execute("CREATE TABLE usage_events (id INTEGER PRIMARY KEY AUTOINCREMENT, at REAL NOT NULL, "
+                           "kind TEXT NOT NULL, surface TEXT, purpose TEXT, service TEXT NOT NULL, model TEXT, slug TEXT, "
+                           "outcome TEXT, complete INTEGER, elapsed_ms INTEGER, first_text_ms INTEGER, input_tokens INTEGER, "
+                           "output_tokens INTEGER, cached_tokens INTEGER, reasoning_tokens INTEGER, search_calls INTEGER)")
+        await conn.execute("INSERT INTO usage_events (at, kind, service) VALUES (1, 'turn', 'xai')")
+        await conn.commit()
+    await db.init_db()
+    rows = await stored_rows()
+    assert len(rows) == 1 and "cache_write_tokens" in rows[0] and rows[0]["cache_write_tokens"] is None
+
+
+def test_long_prompt_tier_prices_the_whole_call():
+    """Haiku 5.5 tính giá riêng cho prompt trên 100.000 token (tính cả token cache)."""
+    from ops.report import validate_rates
+    rates = validate_rates({"claude-haiku-5-5": {"input": 0.1, "cached_input": 0.01, "output": 0.5,
+        "long_context": {"threshold": 100_000, "input": 0.5, "cached_input": 0.05, "output": 2.5}}})
+    short = row(0, service="anthropic", model="haiku", slug="claude-haiku-5-5", input_tokens=100_000, cached_tokens=0, output_tokens=0)
+    long = {**short, "input_tokens": 100_001}
+    assert stats.call_cost(short, rates) == pytest.approx(0.01)
+    assert stats.call_cost(long, rates) == pytest.approx(100_001 * 0.5 / 1e6)
+    for bad in ({"threshold": 0, "input": 1, "cached_input": 1, "output": 1}, {"threshold": 10, "input": 1}):
+        with pytest.raises(ValueError):
+            validate_rates({"m": {"input": 1, "cached_input": 1, "output": 1, "long_context": bad}})

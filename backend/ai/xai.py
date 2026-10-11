@@ -401,6 +401,7 @@ class ResponsesProvider(ChatProvider):
                     elapsed_ms=round((perf_counter() - round_started) * 1000),
                     input_tokens=usage.get("input_tokens"), output_tokens=usage.get("output_tokens"),
                     cached_tokens=(usage.get("input_tokens_details") or {}).get("cached_tokens"),
+                    cache_write_tokens=(usage.get("input_tokens_details") or {}).get("cache_write_tokens"),
                     reasoning_tokens=(usage.get("output_tokens_details") or {}).get("reasoning_tokens"),
                     search_calls=len(search_ids),
                 )

@@ -17,6 +17,8 @@ from ai.models import MODELS
 from shared.time_tools import resolve_timezone
 from storage.connection import connect
 
+from ops.report import token_cost
+
 from . import rates as rate_file
 
 RANGES = {"24h": 1, "7d": 7, "30d": 30, "90d": 90}
@@ -33,7 +35,10 @@ OUTCOME_ORDER = ("complete", "stopped", "error", "timeout", "other")
 NOT_COUNTED = ("Tạo ảnh (tính theo ảnh)", "Phí tra web (tính theo lượt)", "Giọng Peto (tính theo ký tự)")
 
 COLUMNS = ("at", "kind", "surface", "purpose", "service", "model", "slug", "outcome", "complete", "elapsed_ms",
-           "first_text_ms", "input_tokens", "output_tokens", "cached_tokens", "reasoning_tokens", "search_calls")
+           "first_text_ms", "input_tokens", "output_tokens", "cached_tokens", "reasoning_tokens", "search_calls",
+           "cache_write_tokens")
+# Anthropic tính token ghi cache 5 phút bằng 1,25 lần giá đầu vào; phần đầu vào thường đã có trong input_tokens.
+ANTHROPIC_CACHE_WRITE_PREMIUM = 0.25
 
 
 def percentile(values: list[int], share: float) -> int | None:
@@ -51,7 +56,9 @@ def call_cost(row: dict, rates: dict) -> float | None:
     if not rate or incoming is None or outgoing is None:
         return None
     cached = min(row.get("cached_tokens") or 0, incoming)
-    return ((incoming - cached) * rate["input"] + cached * rate["cached_input"] + outgoing * rate["output"]) / 1_000_000
+    if row.get("service") != "anthropic":
+        return token_cost(rate, incoming, cached, outgoing)
+    return token_cost(rate, incoming, cached, outgoing, row.get("cache_write_tokens") or 0, ANTHROPIC_CACHE_WRITE_PREMIUM)
 
 
 @dataclass

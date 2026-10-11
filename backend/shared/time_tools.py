@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -83,14 +84,14 @@ def time_context(timezone: str | None = None, *, english: bool = False) -> str:
     clock = current_datetime(timezone)
     if english:
         return (
-            "## Server-verified current time\n"
+            f"{TIME_HEADER_EN}\n"
             f"{clock['datetime']} ({clock['timezone']}, {clock['utc_offset']}).\n"
             "Use this fresh time over historical timestamps for relative dates. The configured/browser timezone "
             "does not prove the user's location. Do not add timestamps to every reply. For fresh time or another "
             "timezone, use get_current_datetime; clarify ambiguous place names."
         )
     return (
-        "## Thời gian được máy chủ xác minh cho lượt hiện tại\n"
+        f"{TIME_HEADER_VI}\n"
         f"{clock['weekday']}, {clock['date']}, {clock['time']} "
         f"({clock['timezone']}, {clock['utc_offset']}).\n"
         "Đây là mốc thời gian mới của lượt này, ưu tiên hơn ngày giờ trong lịch sử. "
@@ -98,6 +99,47 @@ def time_context(timezone: str | None = None, *, english: bool = False) -> str:
         "Dùng mốc này cho hôm nay, hôm qua, ngày mai. Không tự chèn ngày giờ vào mọi câu trả lời. "
         "Khi cần giờ mới nhất hoặc giờ ở nơi khác, gọi get_current_datetime; nếu địa danh mơ hồ thì hỏi rõ."
     )
+
+
+def agent_time_context(timezone: str | None = None, *, english: bool = False) -> str:
+    """Mốc thời gian cho Peto Agent, làm tròn xuống giờ.
+
+    Agent gửi lại cả lịch sử ở mỗi bước. Giờ chính xác đến giây đổi system prompt ở mọi bước, nên prompt caching
+    (Claude, và cache tự động của OpenAI/xAI) không bao giờ đọc lại được phần lịch sử phía sau. Làm tròn theo giờ thì
+    các bước trong cùng một giờ dùng chung cache; giờ chính xác thì Agent chạy lệnh trên máy.
+    """
+    clock = current_datetime(timezone)
+    hour = clock["time"][:2]
+    if english:
+        return (
+            f"{TIME_HEADER_EN}\n"
+            f"{clock['date']}, between {hour}:00 and {hour}:59 ({clock['timezone']}, {clock['utc_offset']}).\n"
+            "Rounded to the hour; run a command on the machine when the exact time matters. Use this date over "
+            "historical timestamps for today, yesterday and tomorrow. The timezone does not prove the user's location."
+        )
+    return (
+        f"{TIME_HEADER_VI}\n"
+        f"{clock['weekday']}, {clock['date']}, trong khoảng {hour}:00–{hour}:59 ({clock['timezone']}, {clock['utc_offset']}).\n"
+        "Giờ được làm tròn theo giờ; khi cần giờ chính xác, chạy lệnh xem đồng hồ trên máy. Dùng ngày này cho hôm nay, "
+        "hôm qua, ngày mai, ưu tiên hơn ngày giờ trong lịch sử. Múi giờ không chứng minh vị trí người dùng."
+    )
+
+
+TIME_HEADER_EN = "## Server-verified current time"
+TIME_HEADER_VI = "## Thời gian được máy chủ xác minh cho lượt hiện tại"
+# Khối thời gian luôn là đúng ba dòng: tiêu đề, mốc giờ, một dòng hướng dẫn (time_context, agent_time_context).
+_TIME_BLOCK = re.compile(rf"(?:\n\n)?((?:{re.escape(TIME_HEADER_EN)}|{re.escape(TIME_HEADER_VI)})\n[^\n]*\n[^\n]*)")
+
+
+def split_time_context(text: str) -> tuple[str, str]:
+    """(phần còn lại, khối thời gian). Để provider đặt khối hay đổi này sau cùng, sau điểm đánh dấu cache."""
+    match = _TIME_BLOCK.search(text)
+    if not match:
+        return text, ""
+    rest = text[:match.start()] + text[match.end():]
+    if match.start() == 0:
+        rest = rest.lstrip("\n")
+    return rest, match.group(1)
 
 
 TOOL_SCHEMAS = [{
