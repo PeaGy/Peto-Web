@@ -61,6 +61,8 @@ import {
   updateConversation,
   logout,
   sendMessage,
+  stopChat,
+  type StopChatResult,
   type AppInfo,
   type AuthState,
   type ChatAttachment,
@@ -285,6 +287,7 @@ function AppContent() {
   const clearFocusJob = useCallback(() => setFocusJobId(null), []);
 
   const abortRef = useRef<AbortController | null>(null);
+  const stopTicketRef = useRef<{ requestId: string; dispatched: boolean; promise?: Promise<StopChatResult | null> } | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -858,10 +861,13 @@ function AppContent() {
 
     const controller = new AbortController();
     abortRef.current = controller;
+    const stopTicket = { requestId: crypto.randomUUID(), dispatched: false } as NonNullable<typeof stopTicketRef.current>;
+    stopTicketRef.current = stopTicket;
     let activeId = conversationId;
     let accepted = false;
     let completed = false;
     let interrupted = false;
+    let serverStopped = false;
     // Máy chủ đã gửi bản chốt của nhật ký "Đang làm" (sự kiện "work").
     let finalWork = false;
     let storedUserId: number | undefined;
@@ -889,6 +895,30 @@ function AppContent() {
       }));
     };
 
+    const acceptMessage = (id: string, _usedEffort: string, storedMessage?: Message) => {
+      if (session !== authVersion.current || (accepted && activeId === id)) return;
+      accepted = true;
+      storedUserId = storedMessage?.id;
+      activeId = id;
+      const selected = isSelectedReply(reply);
+      reply.id = id;
+      if (selected) {
+        chatSelection.accepted(id, reply.selection);
+        conversationIdRef.current = id;
+        setConversationId(id);
+        const path = chatRoute(id);
+        if (viewRef.current === 'chat' && window.location.pathname !== path) {
+          navigate({ pathname: path, search: window.location.search }, { replace: !revision });
+        }
+      }
+      if (sentDraft) acceptDraft(sentDraft, selected ? id : undefined);
+      if (storedMessage) reply.retry = { target: storedMessage, text: storedMessage.content };
+      if (selected) retryRevision.current = reply.retry;
+      if (storedMessage) writeReply(prev => [...prev.slice(0, -2), storedMessage, prev[prev.length - 1]]);
+      updateReply(last => last.work ? { ...last, work: { ...last.work, steps: last.work.steps.map(step =>
+        step.kind === 'wait' ? { ...step, label: 'Đang chuẩn bị câu trả lời…' } : step) } } : last);
+    };
+
     try {
       const attachments: OutgoingAttachment[] = await Promise.all(
         pending.map(async (item) => ({
@@ -900,8 +930,10 @@ function AppContent() {
 
       await chatSelection.waitForSave(conversationId);
       if (session !== authVersion.current || controller.signal.aborted) return;
+      stopTicket.dispatched = true;
       await sendMessage(
         {
+          requestId: stopTicket.requestId,
           message: text,
           projectId:activeProjectId,
           conversationId,
@@ -913,31 +945,8 @@ function AppContent() {
           model: chosenModel,
         },
         {
-          onMeta: (id, _usedEffort, storedMessage) => {
-            if (session !== authVersion.current) return;
-            accepted = true;
-            storedUserId = storedMessage?.id;
-            activeId = id;
-            const selected = isSelectedReply(reply);
-            reply.id = id;
-            if (selected) {
-              chatSelection.accepted(id, reply.selection);
-              conversationIdRef.current = id;
-              setConversationId(id);
-              const path = chatRoute(id);
-              // Tin đầu gắn ID vào trang hiện tại; bản rẽ nhánh là một hội thoại mới trong history.
-              if (viewRef.current === 'chat' && window.location.pathname !== path) {
-                navigate({ pathname: path, search: window.location.search }, { replace: !revision });
-              }
-            }
-            if (sentDraft) acceptDraft(sentDraft, selected ? id : undefined);
-            if (storedMessage) reply.retry = {target:storedMessage, text:storedMessage.content};
-            if (selected) retryRevision.current = reply.retry;
-            if (storedMessage) writeReply((prev) => [...prev.slice(0, -2), storedMessage, prev[prev.length - 1]]);
-            // Máy chủ đã nhận tin: bước chờ (nếu chưa có bước nào thay) đổi chữ cho đúng.
-            updateReply(last => last.work ? { ...last, work: { ...last.work, steps: last.work.steps.map(step =>
-              step.kind === 'wait' ? { ...step, label: 'Đang chuẩn bị câu trả lời…' } : step) } } : last);
-          },
+          onMeta: acceptMessage,
+          onStopped: () => { serverStopped = true; },
           onDelta: (chunk) => updateReply(last => ({ ...last, content: last.content + chunk })),
           onReplace: (rest) => updateReply(last => ({ ...last, content: rest })),
           // Nhật ký "Đang làm" do máy chủ dựng (features/chat/work_log.py): mỗi bước tới là thêm hoặc thay theo id.
@@ -995,8 +1004,17 @@ function AppContent() {
         }
       }
     } finally {
-      const stoppedByUser = controller.signal.aborted && !networkInterrupted(controller) && !completed;
+      const stopResult = stopTicket.promise ? await stopTicket.promise : null;
+      if (!accepted && stopResult?.conversation_id && stopResult.message) acceptMessage(stopResult.conversation_id, effectiveEffort, stopResult.message);
+      if (stopResult?.state === 'complete') completed = true;
+      const stoppedByUser = !completed && (serverStopped || stopResult?.stopped === true ||
+        (!stopTicket.dispatched && controller.signal.aborted && !networkInterrupted(controller)));
       if (session === authVersion.current) {
+        if (stoppedByUser && isSelectedReply(reply)) {
+          reply.error = undefined;
+          setError(null);
+          setRetryAvailable(false);
+        }
         if (!accepted) writeReply(previousMessages);
         else {
           const elapsed = Math.round(performance.now() - startedAt);
@@ -1004,12 +1022,10 @@ function AppContent() {
             const last = prev[prev.length - 1];
             if (last?.role !== "assistant") return prev;
             const work = finalWork ? last.work : closeWork(last.work, completed, elapsed);
-            // Máy chủ chỉ lưu câu trả lời có chữ hay có tệp. Lượt hỏng trước khi có chữ vẫn giữ bong bóng với nhật ký
-            // ở trình duyệt, để thấy Peto đã thử gì (trước đây bong bóng biến mất, chỉ còn dòng báo lỗi). Lượt bị dừng
-            // luôn giữ bong bóng, kể cả chưa có gì, để ghi "Đã dừng" ngay chỗ câu trả lời thay vì dòng báo trên ô nhắn.
+            // Lượt hỏng trước khi có chữ giữ nhật ký ở trình duyệt. Lượt chủ động dừng được máy chủ lưu cả khi trống.
             const stored = Boolean(last.content || last.artifacts?.length);
             if (!stored && !work?.steps.length && !stoppedByUser) return prev.slice(0, -1);
-            return [...prev.slice(0, -1), { ...last, work, workStartedAt: undefined, local: stored ? undefined : true,
+            return [...prev.slice(0, -1), { ...last, work, workStartedAt: undefined, local: stored || stoppedByUser ? undefined : true,
               status: completed ? "complete" : "incomplete", stopped: stoppedByUser || undefined }];
           });
         }
@@ -1027,7 +1043,7 @@ function AppContent() {
             });
           } catch { writeReply(current => current.map(row => ({...row,id:undefined}))); }
         }
-        if ((interrupted || networkInterrupted(controller)) && accepted && activeId && storedUserId !== undefined) {
+        if (!stoppedByUser && (interrupted || networkInterrupted(controller)) && accepted && activeId && storedUserId !== undefined) {
           recovery.interrupt({ conversationId: activeId, userMessageId: storedUserId });
         }
       }
@@ -1035,13 +1051,30 @@ function AppContent() {
       setStreaming(false);
       setStopping(false);
       abortRef.current = null;
+      if (stopTicketRef.current === stopTicket) stopTicketRef.current = null;
       if (viewRef.current === 'chat' && isSelectedReply(reply)) textareaRef.current?.focus();
     }
   }
 
   function stop() {
+    const ticket = stopTicketRef.current;
+    const controller = abortRef.current;
+    if (!controller || ticket?.promise) return;
     setStopping(true);
-    abortRef.current?.abort();
+    if (!ticket?.dispatched) { controller.abort(); return; }
+    const session = authVersion.current;
+    ticket.promise = stopChat(ticket.requestId).then(result => {
+      if (result.stopped) controller.abort();
+      else if (session === authVersion.current) setStopping(false);
+      return result;
+    }).catch(() => {
+      ticket.promise = undefined;
+      if (session === authVersion.current) {
+        setStopping(false);
+        setError('Chưa xác nhận được Dừng trên máy chủ. Bạn bấm Dừng lại nhé.');
+      }
+      return null;
+    });
   }
 
   async function changeConversation(item: Pick<Conversation, 'id' | 'project_id'>, change: {title?: string; pinned?: boolean; archived?: boolean}) {

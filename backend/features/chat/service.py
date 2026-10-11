@@ -3,8 +3,10 @@
 from __future__ import annotations
 from starlette.background import BackgroundTask
 import asyncio
+import uuid
 from time import perf_counter
 from collections.abc import AsyncIterator
+from contextlib import aclosing
 from pathlib import Path
 import anyio
 from fastapi import Depends, HTTPException, Request
@@ -15,6 +17,8 @@ from shared import attachment_tools
 from shared import attachments as attachment_lib
 from features.companion import memory as companion_memory
 import storage as db
+from storage import chat_turns
+from features.chat import turn_control
 from features.documents import reader as document_reader
 from features.companion import emotion_tags
 from features.documents.tools import DocumentSession, asks_edit, current_session as document_session_context
@@ -46,6 +50,7 @@ from features.chat.history import (
     _title_from,
     _to_chat_messages,
     _visible,
+    context_rows,
 )
 from features.chat.prompt_context import _build_system_prompt
 from prompts.routing import uses_english
@@ -141,13 +146,14 @@ async def _stream_reply(
     limit = None
     try:
         async with asyncio.timeout_at(min(loop.time() + idle, hard)) as limit:
-            async for chunk in provider.stream(
+            async with aclosing(provider.stream(
                 system_prompt=f"{system_prompt}\n\n{time_context(timezone, english=uses_english(model))}",
                 messages=history, effort=effort, timezone=timezone,
                 web_search=web_search,
-            ):
-                limit.reschedule(min(loop.time() + idle, hard))
-                yield _as_chunk(chunk)
+            )) as stream:
+                async for chunk in stream:
+                    limit.reschedule(min(loop.time() + idle, hard))
+                    yield _as_chunk(chunk)
     except TimeoutError as error:
         if limit is not None and limit.expired():
             whole = limit.when() >= hard
@@ -248,6 +254,8 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
         raise HTTPException(status_code=400, detail="Model này không hỗ trợ mức suy nghĩ đã chọn.")
 
     conversation_id = request.conversation_id
+    request_id = request.request_id or uuid.uuid4().hex
+    await chat_turns.reserve(owner, request_id)
     turn_complete = False
 
     async def event_stream() -> AsyncIterator[str]:
@@ -267,6 +275,7 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
         # Nhật ký "Đang làm" của tab Trò chuyện (Companion có dòng trạng thái riêng): gửi từng bước, lưu cùng tin nhắn.
         log = WorkLog(started) if mode == "chat" else None
         work: dict | None = None
+        message_id = None
         # Chữ của lần gọi mô hình hiện tại bắt đầu từ đâu trong ``collected``: lượt gọi kết thúc bằng lệnh công cụ thì
         # phần chữ đó là câu dẫn, chuyển sang nhật ký.
         round_start = 0
@@ -415,6 +424,7 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                                 conversation_id, message_id = await conversation_actions.fork(owner, conversation_id, request.branch_message_id, text)
                         else:
                             message_id = await db.add_message(conversation_id, "user", text)
+                        await chat_turns.bind(owner, request_id, conversation_id, message_id)
                         for item, document in zip(files, documents):
                             attachment_id, path = attachment_lib.write_file(conversation_id, item)
                             saved_paths.append(path)
@@ -450,11 +460,12 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                     await _read_legacy_documents(owner, rows, MAX_ATTACHMENTS - document_count)
                     step = log.read_done("Đã đọc lại tài liệu đã gửi trước đó") if log else ""
                     yield sse({"type": "reading", "text": ""}) + step
+                active_rows = context_rows(rows, english=uses_english(model))
                 history, system_prompt = await asyncio.gather(
-                    anyio.to_thread.run_sync(_to_chat_messages, rows),
+                    anyio.to_thread.run_sync(_to_chat_messages, active_rows),
                     _build_system_prompt(owner, mode, install_command, persona, conversation_id,
                         agent_question='\n'.join(str(row.get('content', ''))[:4000]
-                            for row in [r for r in rows if r.get('role') == 'user'][-3:]), model=model),
+                            for row in [r for r in active_rows if r.get('role') == 'user' and r.get('turn_state') != 'stopped'][-3:]), model=model),
                 )
                 document_session = DocumentSession(owner, conversation_id, rows) if mode == 'chat' else None
                 if document_session:
@@ -469,11 +480,12 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                 prepared_at = perf_counter()
                 github_session = GitHubSession(owner) if mode == 'chat' and await connector_store.get_github(owner) else None
                 # A timeout may already have consumed provider tokens. Do not repeat the whole turn invisibly.
-                async for chunk in _stream_reply(system_prompt, history, effort, timezone, web_search, document_session,
-                                                 model, spoken=mode == "companion", files=files_session, github_session=github_session):
-                    event = chunk_event(chunk)
-                    if event:
-                        yield event
+                async with aclosing(_stream_reply(system_prompt, history, effort, timezone, web_search, document_session,
+                                                 model, spoken=mode == "companion", files=files_session, github_session=github_session)) as stream:
+                    async for chunk in stream:
+                        event = chunk_event(chunk)
+                        if event:
+                            yield event
                 if notes:
                     tail = visible_events("", final=True)
                     if tail:
@@ -504,6 +516,11 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
             logger.exception("Lỗi không mong đợi khi gọi AI")
             failure = "Có lỗi ở phía máy chủ. Thử lại sau nha."
         finally:
+            with anyio.CancelScope(shield=True):
+                state = await chat_turns.finish(owner, request_id, 'complete' if complete else
+                                               'timeout' if outcome == 'timeout' else 'interrupted' if outcome == 'cancelled' else 'error')
+            if state == 'stopped':
+                complete = False
             ended_at = perf_counter()
             logger.info(
                 "chat_timing model=%s effort=%s mode=%s queue_ms=%s prepare_ms=%s first_text_ms=%s total_ms=%d search=%s complete=%s outcome=%s",
@@ -523,16 +540,19 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
             artifacts = document_session.created if document_session else []
             if artifacts and not reply: reply = 'Tệp đã được tạo. Phản hồi bị ngắt; bạn vẫn có thể tải tài liệu bên dưới.'
             work = log.close(complete) if log else None
-            if reply and conversation_id and _visible(reply, mode):
+            if conversation_id and ((reply and _visible(reply, mode)) or (state == 'stopped' and message_id)):
                 with anyio.CancelScope(shield=True):
                     if await db.owns_conversation(owner, conversation_id):
-                        await db.add_message(
+                        assistant_id = await db.add_message(
                             conversation_id, "assistant", reply,
                             status="complete" if complete else "incomplete",
                             sources=sources,
                             artifacts=artifacts,
                             work=work,
                         )
+                        await chat_turns.attach_reply(owner, request_id, assistant_id)
+        if state == 'stopped':
+            return
         if work is not None and admitted_at is not None:
             # Bản chốt của nhật ký (bước suy nghĩ quá ngắn đã bỏ, bước dở đã đóng), đúng như bản lưu cùng tin nhắn.
             yield sse({"type": "work", "work": work})
@@ -545,6 +565,31 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                 companion_memory.mark_pending(owner)
             yield sse({"type": "done"})
 
+    async def controlled_stream():
+        key = (owner, request_id)
+        row = await chat_turns.get(owner, request_id)
+        if not row or row['state'] == 'stopped':
+            yield sse({'type': 'stopped'})
+            return
+        with anyio.CancelScope() as scope:
+            ticket = turn_control.RunningTurn(scope, asyncio.Event())
+            turn_control.running[key] = ticket
+            try:
+                if (await chat_turns.get(owner, request_id))['state'] != 'stopped':
+                    stream = event_stream()
+                    try:
+                        async for event in stream:
+                            yield event
+                    finally:
+                        with anyio.CancelScope(shield=True):
+                            await stream.aclose()
+            finally:
+                turn_control.running.pop(key, None)
+                ticket.done.set()
+        row = await chat_turns.get(owner, request_id)
+        if row and row['state'] == 'stopped':
+            yield sse({'type': 'stopped'})
+
     async def name_after_response():
         if conversation_id and mode == "chat":
             await titles.maybe_generate(owner, conversation_id, model)
@@ -553,7 +598,7 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
             await companion_memory.remember(owner, history_limit)
 
     return StreamingResponse(
-        event_stream(),
+        controlled_stream(),
         background=BackgroundTask(name_after_response),
         media_type="text/event-stream",
         headers={

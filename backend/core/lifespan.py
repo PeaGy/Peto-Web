@@ -19,6 +19,8 @@ async def lifespan(app: FastAPI):
     configure_operational_logging()
     resolve_timezone()  # Báo lỗi cấu hình sớm nếu thiếu dữ liệu múi giờ.
     await db.init_db()
+    from storage.chat_turns import interrupt_running
+    await interrupt_running()
     await db.interrupt_imagine_jobs()
     logger.info("Peto Web sẵn sàng — provider=%s", get_provider().name)
     mo = [name for name, ready in auth.available_providers().items() if ready]

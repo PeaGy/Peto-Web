@@ -326,4 +326,6 @@ async def init_db() -> None:
         await init_document_tables(db)
         await init_project_tables(db)
         await init_connector_tables(db)
+        from storage.chat_turns import init_tables as init_chat_turns
+        await init_chat_turns(db)
         await db.commit()

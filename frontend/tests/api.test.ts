@@ -1,8 +1,30 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { createImagineJob, sendMessage } from '../src/shared/api/api';
+import { createImagineJob, sendMessage, stopChat } from '../src/shared/api/api';
 
 afterEach(() => vi.unstubAllGlobals());
 const event = (value: object) => `data: ${JSON.stringify(value)}\n\n`;
+
+it('gửi mã lượt và đọc xác nhận stopped riêng, không coi là trả lời hoàn tất', async () => {
+  const fetchMock = vi.fn(async () => new Response(event({ type: 'stopped' })));
+  vi.stubGlobal('fetch', fetchMock);
+  const onStopped = vi.fn(), onDone = vi.fn(), onError = vi.fn();
+  await sendMessage({ requestId: 'ma-luot-test-123456', message: 'Câu hỏi', conversationId: null, effort: 'low' }, { onStopped, onDone, onError });
+  expect(onStopped).toHaveBeenCalledOnce();
+  expect(onDone).not.toHaveBeenCalled();
+  expect(onError).not.toHaveBeenCalled();
+  expect(JSON.parse((fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].body as string).request_id).toBe('ma-luot-test-123456');
+});
+
+it('xác nhận Dừng là yêu cầu riêng có timeout, không dùng signal của luồng trả lời', async () => {
+  const result = { stopped: true, state: 'stopped', conversation_id: 'A', message: null };
+  const fetchMock = vi.fn(async () => new Response(JSON.stringify(result)));
+  vi.stubGlobal('fetch', fetchMock);
+  expect(await stopChat('ma-luot-test-123456')).toEqual(result);
+  const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+  expect(url).toBe('/api/chat/stop');
+  expect(JSON.parse(init.body as string)).toEqual({ request_id: 'ma-luot-test-123456' });
+  expect(init.signal).toBeInstanceOf(AbortSignal);
+});
 
 it('giữ vị trí và thứ tự nhiều cảm xúc khi đọc SSE', async () => {
   vi.stubGlobal('fetch', vi.fn(async () => new Response(

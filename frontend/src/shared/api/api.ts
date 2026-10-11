@@ -62,8 +62,9 @@ export interface Message {
   workStartedAt?: number;
   /** Bong bóng chỉ có ở trình duyệt (lượt hỏng trước khi có chữ, máy chủ không lưu): giữ lại để thấy Peto đã thử gì. */
   local?: boolean;
-  /** Người dùng bấm Dừng ở lượt này (chỉ ở trình duyệt): bong bóng ghi "Đã dừng" và có nút Thử lại, như Grok. */
+  /** Máy chủ đã xác nhận người dùng dừng lượt; giữ nhãn và Thử lại cả khi tải lại trang. */
   stopped?: boolean;
+  turn_state?: 'running' | 'complete' | 'stopped' | 'interrupted' | 'timeout' | 'error';
   /** Cảm xúc Peto tự chọn cho câu trả lời Companion (emotion_tags.py), để nghe lại tin cũ thì nhân vật làm đúng mặt. */
   emotion?: string | null;
   /** Cảm xúc của câu ở vị trí 0; tin cũ có thể còn nhiều mốc UTF-16, Companion chỉ dùng mặt đầu tiên. */
@@ -126,9 +127,11 @@ type ChatEvent =
   | { type: "file_lookup"; text: string; live: boolean }
   | { type: "connector_lookup"; text: string; live: boolean }
   | { type: "error"; message: string }
+  | { type: "stopped" }
   | { type: "done" };
 
 interface ChatHandlers {
+  onStopped?: () => void;
   onMeta?: (conversationId: string, effort: string, message?: Message, voiceStream?: boolean) => void;
   onDelta?: (text: string) => void;
   /** Chỉ lượt Companion: cảm xúc Peto chọn, tới trước chữ để nhân vật đổi nét mặt ngay khi bắt đầu trả lời. */
@@ -559,10 +562,27 @@ export async function revokeAgentDevice(deviceId: string): Promise<void> {
  * Dùng fetch chứ không dùng EventSource vì endpoint là POST. `signal` cho phép
  * người dùng bấm dừng giữa chừng.
  */
+export interface StopChatResult {
+  stopped: boolean;
+  state: string;
+  conversation_id: string | null;
+  message: Message | null;
+}
+
+export async function stopChat(requestId: string): Promise<StopChatResult> {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), 15_000);
+  try {
+    return await json<StopChatResult>(await fetch('/api/chat/stop', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ request_id: requestId }), signal: controller.signal }));
+  } finally { window.clearTimeout(timer); }
+}
+
 export async function sendMessage(
   payload: {
     projectId?: string | null;
     branchMessageId?: number;
+    requestId?: string;
     message: string;
     conversationId: string | null;
     effort: Effort;
@@ -580,6 +600,7 @@ export async function sendMessage(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
+      request_id: payload.requestId,
       branch_message_id: payload.branchMessageId,
       message: payload.message,
       project_id: payload.projectId,
@@ -661,6 +682,9 @@ export async function sendMessage(
           handlers.onConnectorLookup?.(event.text, event.live);
         } else if (event.type === "error") {
           handlers.onError?.(event.message);
+          ended = true;
+        } else if (event.type === 'stopped') {
+          handlers.onStopped?.();
           ended = true;
         } else if (event.type === "done") {
           handlers.onDone?.();

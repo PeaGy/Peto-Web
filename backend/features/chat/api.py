@@ -8,12 +8,24 @@ import storage as db
 from features.accounts.auth import current_owner
 from features.chat import conversations as conversation_actions
 from features.chat.history import _public_message
-from features.chat.schemas import ConversationUpdate
+from features.chat.schemas import ConversationUpdate, StopRequest
 from fastapi import APIRouter
 from features.chat import service
 from storage import projects
 router = APIRouter()
 router.add_api_route("/api/chat", service.chat, methods=["POST"])
+
+
+@router.post('/api/chat/stop')
+async def stop_chat(body: StopRequest, owner: str = Depends(current_owner)):
+    from features.chat import turn_control
+    row = await turn_control.stop(owner, body.request_id)
+    message = None
+    if row['conversation_id'] and row['user_message_id']:
+        rows = await db.get_messages(owner, row['conversation_id'])
+        message = next((_public_message(item) for item in rows if item['id'] == row['user_message_id']), None)
+    return {'stopped': row['state'] == 'stopped', 'state': row['state'],
+            'conversation_id': row['conversation_id'], 'message': message}
 
 @router.get("/api/conversations")
 async def list_conversations(

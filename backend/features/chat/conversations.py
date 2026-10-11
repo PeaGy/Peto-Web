@@ -182,6 +182,16 @@ async def fork(owner, conversation_id, message_id, text):
                 cursor = await connection.execute('''INSERT INTO messages(conversation_id,role,content,created_at,status,sources,artifacts,work)
                     VALUES(?,?,?,?,?,?,?,?)''', (new_id,row['role'],text if row['id']==message_id else row['content'],row['created_at'],row['status'],row['sources'],json.dumps(artifacts),row['work']))
                 message_ids[row['id']] = cursor.lastrowid
+            # Lượt dừng ở phần lịch sử chép sang không được sống lại thành yêu cầu đang chờ.
+            for old_user_id, new_user_id in message_ids.items():
+                if old_user_id == message_id:
+                    continue
+                turn = await (await connection.execute('''SELECT state,assistant_message_id FROM chat_turns
+                    WHERE owner=? AND user_message_id=? ORDER BY id DESC LIMIT 1''', (owner, old_user_id))).fetchone()
+                if turn:
+                    await connection.execute('''INSERT INTO chat_turns(owner,request_id,state,conversation_id,user_message_id,assistant_message_id,created_at)
+                        VALUES(?,?,?,?,?,?,?)''', (owner, uuid.uuid4().hex, turn['state'], new_id, new_user_id,
+                                                  message_ids.get(turn['assistant_message_id']), now))
             for item in attachments:
                 aid = uuid.uuid4().hex
                 path = UPLOAD_DIR / new_id / (aid + Path(item['path']).suffix)

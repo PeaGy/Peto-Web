@@ -105,9 +105,12 @@ async def get_messages(
         if limit is None:
             cursor = await db.execute(
                 """
-                SELECT m.id, m.role, m.content, m.created_at, m.status, m.sources, m.artifacts, m.work
+                SELECT m.id, m.role, m.content, m.created_at, m.status, m.sources, m.artifacts, m.work,
+                       t.request_id AS turn_request_id, t.state AS turn_state, t.user_message_id AS turn_user_id
                   FROM messages m
                   JOIN conversations c ON c.id = m.conversation_id
+                  LEFT JOIN chat_turns t ON t.id=(SELECT MAX(id) FROM chat_turns
+                      WHERE owner=c.owner AND (user_message_id=m.id OR assistant_message_id=m.id))
                  WHERE m.conversation_id = ? AND c.owner = ?
                  ORDER BY m.id
                 """,
@@ -118,9 +121,12 @@ async def get_messages(
             # Lấy N tin gần nhất rồi đảo lại, tránh đọc toàn bộ hội thoại dài.
             cursor = await db.execute(
                 """
-                SELECT m.id, m.role, m.content, m.created_at, m.status, m.sources, m.artifacts, m.work
+                SELECT m.id, m.role, m.content, m.created_at, m.status, m.sources, m.artifacts, m.work,
+                       t.request_id AS turn_request_id, t.state AS turn_state, t.user_message_id AS turn_user_id
                   FROM messages m
                   JOIN conversations c ON c.id = m.conversation_id
+                  LEFT JOIN chat_turns t ON t.id=(SELECT MAX(id) FROM chat_turns
+                      WHERE owner=c.owner AND (user_message_id=m.id OR assistant_message_id=m.id))
                  WHERE m.conversation_id = ? AND c.owner = ?
                  ORDER BY m.id DESC
                  LIMIT ?

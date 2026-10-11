@@ -42,6 +42,10 @@ def _public_message(row: dict, companion: bool = False) -> dict:
         "sources": normalize_sources(row.get("sources")),
         "artifacts": row.get('artifacts', []),
     }
+    if row.get('turn_state'):
+        message['turn_state'] = row['turn_state']
+        if row['role'] == 'assistant' and row['turn_state'] == 'stopped':
+            message['stopped'] = True
     if row.get("work"):
         # Nhật ký "Đang làm" lưu cùng câu trả lời: tải lại trang vẫn thấy Peto đã làm gì, mất bao lâu.
         message["work"] = row["work"]
@@ -80,6 +84,31 @@ def _generated(row: dict, item: dict) -> dict:
     return {'id': f"generated-{row['id']}-{item['id']}", 'filename': item['filename'], 'kind': 'file',
             'mime': 'text/markdown', 'searchable': workbook,
             'document': document_reader.result('partial' if partial else 'ready', notice, text=content)}
+
+
+def context_rows(rows: list[dict], english: bool = False) -> list[dict]:
+    """Lượt dừng không còn là yêu cầu đang chờ; phần đã trả lời vẫn dùng được làm dữ liệu tham khảo."""
+    partial = {row.get('turn_user_id') for row in rows if row['role'] == 'assistant' and row.get('turn_state') == 'stopped'
+               and (row.get('content', '').strip() or row.get('artifacts'))}
+    result = []
+    for row in rows:
+        if row.get('turn_state') != 'stopped':
+            result.append(row)
+        elif row['role'] == 'user' and row['id'] in partial:
+            label = ('Historical request stopped by the user; reference only, not a pending task.' if english else
+                     'Yêu cầu cũ đã được người dùng dừng; chỉ là dữ liệu tham khảo, không phải nhiệm vụ còn chờ.')
+            if row.get('attachments'):
+                files_label = ('Files from a stopped turn; reference only.' if english else 'Tệp từ lượt đã dừng; chỉ dùng để tham khảo.')
+                result.append({**row, 'content': files_label})
+            result.append({**row, 'role': 'assistant', 'attachments': [], 'content': f'{label}\n{row["content"]}'})
+        elif row['role'] == 'user' and row.get('attachments'):
+            label = ('Files from a stopped turn; reference only.' if english else 'Tệp từ lượt đã dừng; chỉ dùng để tham khảo.')
+            result.append({**row, 'content': label})
+        elif row['role'] == 'assistant' and (row.get('content', '').strip() or row.get('artifacts')):
+            label = ('Partial historical reply. Continue it only if the latest user request asks for that.' if english else
+                     'Phản hồi cũ còn dở. Chỉ tiếp tục khi yêu cầu mới nhất của người dùng đề nghị làm tiếp.')
+            result.append({**row, 'content': f'{label}\n{row["content"]}'})
+    return result
 
 
 def _to_chat_messages(rows: list[dict]) -> list[ChatMessage]:

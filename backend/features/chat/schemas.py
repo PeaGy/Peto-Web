@@ -13,6 +13,7 @@ class AttachmentIn(BaseModel):
 
 
 class ChatRequest(BaseModel):
+    request_id: str | None = Field(default=None, pattern=r'^[a-zA-Z0-9-]{16,64}$')
     project_id: str | None = Field(default=None, max_length=64)
     project_file_ids: list[Annotated[str, Field(max_length=64)]] = Field(default_factory=list, max_length=4)
     branch_message_id: int | None = Field(default=None, gt=0)
@@ -29,6 +30,10 @@ class ChatRequest(BaseModel):
     document_mode: bool = False
     # Model chọn ở nút cạnh nút Gửi (ai_models.MODELS); mỗi tin một lựa chọn, đổi giữa chừng được.
     model: str = Field(default=ai_models.DEFAULT_MODEL, max_length=16)
+
+
+class StopRequest(BaseModel):
+    request_id: str = Field(pattern=r'^[a-zA-Z0-9-]{16,64}$')
 
 
 class ConversationUpdate(BaseModel):

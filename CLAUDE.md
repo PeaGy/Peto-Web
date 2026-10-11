@@ -329,13 +329,28 @@ venv install/import-check/restart commands; restarting alone never installs depe
 ### Chat request lifecycle (`POST /api/chat`)
 
 This is the most intricate part of the codebase. The endpoint returns a `StreamingResponse`
-of SSE events: `meta` then many `delta` then a terminal `error` or `done`.
+of SSE events: `meta` then many `delta` then a terminal `error`, `done`, or `stopped`.
+
+Web Chat sends a fresh `request_id` for each attempt. `POST /api/chat/stop` authenticates the owner, persists
+`stopped` in the additive `chat_turns` table and cancels the registered turn, including queue/file-reading waits.
+It waits for persistence before acknowledging; an early Stop leaves a tombstone so a late POST cannot start AI.
+The client aborts its stream only after confirmation. A failed confirmation remains retryable, never a false Stop.
+Disconnects become `interrupted`, timeouts `timeout`, provider failures `error`; startup marks leftover `running`
+attempts interrupted. The registry matches the deployment's single backend worker; multiple workers would require
+cross-worker cancellation/acknowledgment before changing the worker count.
+
+`history.context_rows` removes explicitly stopped unanswered requests from model context and from `agent_question`.
+Partial responses/artifacts and attachments remain reference data; their old question is wrapped as an assistant
+historical reference, never a pending user task. Image attachments keep the user role. Titles skip stopped turns.
+Retry binds a new attempt to the same question; forks copy prior turn states but reactivate their selected target.
+Legacy rows have no explicit Stop state and cannot be retroactively classified. `test_chat_turns.py` verifies actual
+provider payloads, persisted labels, owner isolation, early Stop, Retry, forks and disconnect distinction using fakes.
 
 Order of operations inside `event_stream()`, and why:
 
 1. `admission.slot(owner)` wraps the whole turn. Cooldown and queue rejection happen
-   **before anything is written to the DB**, so a throttled request leaves no orphan
-   message. Cooldown is only recorded for requests actually admitted.
+   **before conversation messages are written**, so a throttled request leaves no orphan
+   message (only its attempt record). Cooldown is only recorded for requests actually admitted.
 2. Conversation ownership is re-checked *inside* the slot — the conversation may have been
    deleted while the request sat in the queue.
 3. All SQLite writes are wrapped in `anyio.CancelScope(shield=True)`. Without the shield,
@@ -457,10 +472,12 @@ summary ticker, and a phase bar sized by time spent.
     unfinished step.
   - **No final `work` event** (Stop, lost connection): `closeWork` closes the steps on the client clock.
   - **Stopped turns** (2026-10-08, the owner asked for Grok's look). After Stop, once the server has accepted the
-    message, the bubble always stays, even when empty. It is marked `stopped`, a flag that exists only in the browser.
+    message, the bubble always stays, even when empty. Explicit Stop now persists `stopped` through backend turn state,
+    so F5 preserves the label and Retry action.
     It shows an italic "Đã dừng theo yêu cầu của bạn." and an action row with Sao chép (when there is text), "Thử lại"
     (last turn only) and a "Đã dừng" label. The notice above the composer remains only for a stop that came before
-    `meta`, when the draft is still in the box.
+    the server stores the question, when the draft is still in the box. The Stop acknowledgment can recover a stored
+    question even when its `meta` event never arrived.
   - **Retrying in place.** "Thử lại" and editing the last question both send `branch_message_id`. That always forked a
     new conversation version, so Stop and then resend left two chats with the same title (reported 2026-10-08).
     `conversation_actions.retry_in_place` now handles the case where the target is the last user message and everything

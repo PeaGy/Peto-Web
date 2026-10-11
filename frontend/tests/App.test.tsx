@@ -15,7 +15,7 @@ vi.mock('../src/shared/api/api', async (original) => ({
   ...await original<typeof import('../src/shared/api/api')>(),
   getAuthState: vi.fn(), listConversations: vi.fn(), getMessages: vi.fn(),
   conversationVersions: vi.fn(), updateConversation: vi.fn(),
-  sendMessage: vi.fn(), deleteConversation: vi.fn(), logout: vi.fn(),
+  sendMessage: vi.fn(), stopChat: vi.fn(), deleteConversation: vi.fn(), logout: vi.fn(),
   listImagineJobs: vi.fn(), createImagineJob: vi.fn(),
   getProfile: vi.fn(), saveProfile: vi.fn(),
   getAgentDevice: vi.fn(), answerAgentDevice: vi.fn(), listAgentDevices: vi.fn(), revokeAgentDevice: vi.fn(),
@@ -36,6 +36,7 @@ beforeAll(preloadLazyParts);
 
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.mocked(api.stopChat).mockResolvedValue({ stopped: true, state: 'stopped', conversation_id: null, message: null });
   vi.mocked(projectApi.listProjects).mockResolvedValue([]);
   vi.mocked(api.conversationVersions).mockResolvedValue([]);
   vi.mocked(api.updateConversation).mockResolvedValue();
@@ -1066,6 +1067,58 @@ describe('Conversation navigation', () => {
 });
 
 describe('Sending and stopping', () => {
+  it('xác nhận Dừng đến trước metadata vẫn nhận đúng chat và giữ nháp mới', async () => {
+    const stream = deferred<void>();
+    const ack = deferred<api.StopChatResult>();
+    let signal!: AbortSignal;
+    vi.mocked(api.sendMessage).mockImplementation(async (_payload, _handlers, incoming) => {
+      signal = incoming!;
+      signal.addEventListener('abort', () => stream.reject(new DOMException('Đã dừng', 'AbortError')));
+      await stream.promise;
+    });
+    vi.mocked(api.stopChat).mockReturnValue(ack.promise);
+    await openApp();
+    const input = screen.getByLabelText('Nhắn cho Peto') as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: 'Câu đã gửi' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Gửi', exact: true }));
+    await waitFor(() => expect(api.sendMessage).toHaveBeenCalledOnce());
+    fireEvent.change(input, { target: { value: 'Nháp tiếp theo' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Dừng', exact: true }));
+    expect(api.stopChat).toHaveBeenCalledWith(vi.mocked(api.sendMessage).mock.calls[0][0].requestId);
+    expect(signal.aborted).toBe(false);
+    expect(screen.getByRole('button', { name: 'Đang dừng…', exact: true })).toHaveProperty('disabled', true);
+    await act(async () => ack.resolve({ stopped: true, state: 'stopped', conversation_id: 'C', message: { id: 10, role: 'user', content: 'Câu đã gửi' } }));
+    await screen.findByText('Đã dừng theo yêu cầu của bạn.');
+    expect(window.location.pathname).toBe('/chat/C');
+    expect(input.value).toBe('Nháp tiếp theo');
+    expect(api.getMessages).not.toHaveBeenCalled();
+    expect(api.sendMessage).toHaveBeenCalledOnce();
+  });
+
+  it('Dừng bị lỗi mạng không tự hủy stream hoặc báo đã dừng, cho xác nhận lại', async () => {
+    const stream = deferred<void>();
+    let signal!: AbortSignal;
+    vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers, incoming) => {
+      signal = incoming!;
+      handlers.onMeta?.('C', 'low', { id: 10, role: 'user', content: 'Câu hỏi' });
+      signal.addEventListener('abort', () => stream.reject(new DOMException('Đã dừng', 'AbortError')));
+      await stream.promise;
+    });
+    vi.mocked(api.stopChat).mockRejectedValueOnce(new Error('Mất mạng'));
+    await openApp();
+    fireEvent.change(screen.getByLabelText('Nhắn cho Peto'), { target: { value: 'Câu hỏi' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Gửi', exact: true }));
+    await waitFor(() => expect(api.sendMessage).toHaveBeenCalledOnce());
+    fireEvent.click(screen.getByRole('button', { name: 'Dừng', exact: true }));
+    await screen.findByText('Chưa xác nhận được Dừng trên máy chủ. Bạn bấm Dừng lại nhé.');
+    expect(signal.aborted).toBe(false);
+    expect(screen.queryByText('Đã dừng theo yêu cầu của bạn.')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Dừng', exact: true }));
+    await screen.findByText('Đã dừng theo yêu cầu của bạn.');
+    expect(api.stopChat).toHaveBeenCalledTimes(2);
+    expect(screen.queryByText('Chưa xác nhận được Dừng trên máy chủ. Bạn bấm Dừng lại nhé.')).toBeNull();
+  });
+
   it.each(['.messages', '.chat-tools'])('thả tệp ở %s thêm vào nháp hiện tại, không tự gửi', async selector => {
     await openApp();
     const input = screen.getByLabelText('Nhắn cho Peto') as HTMLTextAreaElement;
