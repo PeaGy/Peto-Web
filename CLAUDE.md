@@ -63,6 +63,11 @@ observed file facts from checks that require other code or runtime evidence. Do 
 The owner's next sample exposed missed existing exceptions and silently joined quotations. Reviews must check rules,
 conditions and examples already present before recommending additions, distinguish reinforcing repetition from
 contradiction, preserve distinct constraints in proposed merges, and mark omissions or quote separate passages separately.
+On 2026-10-11 the owner asked why Peto's answers looked shorter than ChatGPT/Claude. The Vietnamese prompt's explanation
+examples (asyncio, race condition) were two-sentence answers placed last in `SYSTEM_PROMPT`, contradicting its own depth
+rules; they now show only the opening line plus a bracketed outline of the sections that follow. The owner's manual
+test with Grok (one mRNA question at Tự động/Trung bình/Cao) gave similar, already structured answers, so effort routing
+was left unchanged. The Brain Benchmark caps output at 1024 tokens, so it cannot measure answer depth as it stands.
 
 ## Commands
 
