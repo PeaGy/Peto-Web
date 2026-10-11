@@ -7,7 +7,9 @@ import * as api from '../src/shared/api/api';
 import * as mathMarkdown from '../src/shared/markdown/mathMarkdown';
 import * as documentApi from '../src/features/documents/documentApi';
 import * as projectApi from '../src/features/projects/projectApi';
+import * as adminApi from '../src/features/admin/adminApi';
 import { CHAT_DRAFT_PREFIX, draftKey } from '../src/features/chat/chatDrafts';
+vi.mock('../src/features/admin/adminApi', async original => ({ ...await original<typeof import('../src/features/admin/adminApi')>(), getAdminOverview: vi.fn() }));
 vi.mock('../src/features/projects/projectApi', async original => ({ ...await original<typeof import('../src/features/projects/projectApi')>(), listProjects: vi.fn() }));
 vi.mock('../src/features/documents/documentApi', async original => ({ ...await original<typeof import('../src/features/documents/documentApi')>(), listDocuments: vi.fn(), getDocument: vi.fn() }));
 
@@ -1655,6 +1657,30 @@ describe('Menu tài khoản và hộp Cài đặt', () => {
     expect(items[0].textContent).toContain('Demo @demo');
     expect(items.slice(1).map((item) => item.textContent?.trim())).toEqual(['Hồ sơ', 'Cài đặt', 'Hướng dẫn', 'Đăng xuất']);
     expect(menu.getByRole('menuitem', { name: 'Hướng dẫn' }).getAttribute('href')).toBe('/docs/');
+  });
+
+  it('chủ web mở Quản trị từ menu; trang có URL riêng /admin', async () => {
+    vi.mocked(api.getAuthState).mockResolvedValue({ authenticated: true, login_configured: true,
+      providers: { discord: true, google: true, github: true },
+      user: { id: 'acc-111', provider: 'discord', username: 'demo', display_name: 'Demo', avatar_url: '', is_owner: true } });
+    vi.mocked(adminApi.getAdminOverview).mockRejectedValue(new Error('Máy chủ bận'));
+    await openApp();
+    fireEvent.click(account());
+    const menu = within(await screen.findByRole('menu', { name: 'Tài khoản' }));
+    fireEvent.click(menu.getByRole('menuitem', { name: 'Quản trị' }));
+    expect(await screen.findByRole('heading', { name: 'Tổng quan vận hành' })).toBeTruthy();
+    expect(window.location.pathname).toBe('/admin');
+    expect(await screen.findByText('Máy chủ bận')).toBeTruthy();
+    // Khung chat ẩn hẳn khi đang ở trang Quản trị.
+    expect(document.querySelector<HTMLElement>('.chat-layout')!.hidden).toBe(true);
+  });
+
+  it('tài khoản thường gõ /admin thì về trang chủ và không gọi API thống kê', async () => {
+    window.history.replaceState(null, '', '/admin');
+    await openApp();
+    await waitFor(() => expect(window.location.pathname).toBe('/'));
+    expect(adminApi.getAdminOverview).not.toHaveBeenCalled();
+    expect(screen.queryByRole('heading', { name: 'Tổng quan vận hành' })).toBeNull();
   });
 
   it('menu đi bằng mũi tên; Esc đóng menu và trả tiêu điểm về ô tài khoản', async () => {

@@ -76,6 +76,11 @@ def parse_owner_accounts(raw: str) -> frozenset[str]:
 # discord:<Discord ID>, google:<mã Google> hoặc github:<mã số GitHub>.
 OWNER_ACCOUNTS = parse_owner_accounts(os.getenv("PETO_OWNER_ACCOUNTS", ""))
 
+# Tệp JSON đơn giá cho chi phí ước tính ở trang Quản trị (/admin, chỉ OWNER_ACCOUNTS xem được): mỗi slug model một
+# mục {"input", "cached_input", "output"}, USD trên một triệu token, cùng định dạng với `ops.report --rates`. Bỏ trống
+# hoặc thiếu model nào thì model đó hiện "Chưa có đơn giá" (không tính là 0). Đọc lại khi tệp đổi, không cần khởi động lại.
+COST_RATES_FILE = os.getenv("PETO_COST_RATES_FILE", "").strip()
+
 # --- Đăng nhập Discord ---------------------------------------------------
 DISCORD_CLIENT_ID = os.getenv("DISCORD_CLIENT_ID", "").strip()
 DISCORD_CLIENT_SECRET = os.getenv("DISCORD_CLIENT_SECRET", "").strip()

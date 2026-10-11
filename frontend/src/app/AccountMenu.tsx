@@ -21,7 +21,7 @@ export function placeAccountMenu(anchor: HTMLElement): AccountMenuPlace {
  * thì tiêu điểm vào mục đầu; mũi tên, Home, End đi giữa các mục; Esc đóng và trả tiêu điểm về ô tài khoản; bấm ra ngoài
  * hay đổi cỡ cửa sổ thì đóng.
  */
-export default function AccountMenu({ place, avatar, name, subtitle, signOutDisabled, onClose, onExited, onOpenSettings, onSignOut }: {
+export default function AccountMenu({ place, avatar, name, subtitle, signOutDisabled, onClose, onExited, onOpenSettings, onOpenAdmin, onSignOut }: {
   place: AccountMenuPlace;
   avatar: ReactNode;
   name: string;
@@ -31,6 +31,8 @@ export default function AccountMenu({ place, avatar, name, subtitle, signOutDisa
   onExited: () => void;
   /** `page`: trên điện thoại vào thẳng trang của mục, không dừng ở danh sách mục. */
   onOpenSettings: (section: SettingsSection, page: boolean) => void;
+  /** Chỉ truyền cho chủ web; không có thì không có mục Quản trị. API /api/admin vẫn tự kiểm quyền. */
+  onOpenAdmin?: () => void;
   onSignOut: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -98,6 +100,9 @@ export default function AccountMenu({ place, avatar, name, subtitle, signOutDisa
       <button type="button" role="menuitem" tabIndex={-1} onClick={() => onOpenSettings("giao-dien", false)}>
         <SettingsIcon name="gear" />Cài đặt
       </button>
+      {onOpenAdmin && <button type="button" role="menuitem" tabIndex={-1} onClick={onOpenAdmin}>
+        <SettingsIcon name="chart" />Quản trị
+      </button>}
       <div className="account-menu-sep" role="separator" />
       <a role="menuitem" tabIndex={-1} href="/docs/" target="_blank" rel="noreferrer" onClick={() => onClose(false)}>
         <SettingsIcon name="help" />Hướng dẫn

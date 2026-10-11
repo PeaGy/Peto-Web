@@ -63,6 +63,13 @@ def _dump(item) -> dict:
     return item if isinstance(item, dict) else item.model_dump(mode="json", exclude_none=True)
 
 
+def _cached_tokens(usage) -> int | None:
+    """Token đọc từ cache theo dạng Responses; Claude cũng báo dạng này (ai/claude.py). Không có thì None, không 0."""
+    details = getattr(usage, "input_tokens_details", None)
+    value = details.get("cached_tokens") if isinstance(details, dict) else getattr(details, "cached_tokens", None)
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
+
+
 # Lý do lỗi xAI trả về chỉ ghi vào log máy chủ, để chủ web biết vì sao một bước hỏng (hội thoại quá dài, item bị từ
 # chối, khai báo công cụ sai...). Người dùng vẫn chỉ thấy câu báo tiếng Việt.
 MAX_LOGGED_REASON = 500
@@ -211,6 +218,8 @@ async def _responses_step(client, service: str, model: str, max_output_tokens: i
                     usage={
                         "input_tokens": int(getattr(usage, "input_tokens", 0) or 0),
                         "output_tokens": int(getattr(usage, "output_tokens", 0) or 0),
+                        # Cho trang Quản trị tính giá; CLI chỉ đọc hai khóa trên nên khóa thêm không ảnh hưởng.
+                        **({"cached_tokens": cached} if (cached := _cached_tokens(usage)) is not None else {}),
                     },
                 )
                 return

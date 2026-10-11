@@ -171,6 +171,8 @@ export interface AccountUser {
   roleplay_confirmed?: boolean;
   /** Model tài khoản này chọn được ở nút cạnh nút Gửi; chỉ một model thì ẩn nút. */
   models?: ModelOption[];
+  /** Chủ web (PETO_OWNER_ACCOUNTS): hiện mục Quản trị. Chỉ để hiện giao diện, server vẫn tự kiểm quyền. */
+  is_owner?: boolean;
 }
 
 export interface ModelOption {

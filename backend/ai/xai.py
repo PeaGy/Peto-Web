@@ -20,6 +20,7 @@ from openai import (
     RateLimitError,
 )
 
+from core import usage_events
 from core.config import MAX_HISTORY_IMAGES, XAI_API_BASE, XAI_MAX_OUTPUT_TOKENS, XAI_MODEL, WEB_SEARCH_ENABLED
 from ai.xai_auth import XaiAuth, XaiAuthError
 from shared.attachment_tools import NAMES as FILE_TOOLS, current_files
@@ -393,6 +394,15 @@ class ResponsesProvider(ChatProvider):
                     usage.get("input_tokens"), usage.get("output_tokens"),
                     (usage.get("input_tokens_details") or {}).get("cached_tokens"),
                     (usage.get("output_tokens_details") or {}).get("reasoning_tokens"), len(search_ids),
+                )
+                usage_events.record(
+                    "call", service=self.service, model=getattr(self, "catalog_key", None), slug=self.model,
+                    purpose="chat" if tools_enabled else "side", complete=completed,
+                    elapsed_ms=round((perf_counter() - round_started) * 1000),
+                    input_tokens=usage.get("input_tokens"), output_tokens=usage.get("output_tokens"),
+                    cached_tokens=(usage.get("input_tokens_details") or {}).get("cached_tokens"),
+                    reasoning_tokens=(usage.get("output_tokens_details") or {}).get("reasoning_tokens"),
+                    search_calls=len(search_ids),
                 )
                 if stream is not None:
                     with anyio.CancelScope(shield=True):

@@ -145,7 +145,27 @@ Người vận hành điền và cập nhật giá phù hợp nhà cung cấp/g�
 Lượt thiếu usage/cache/đơn giá sẽ không được định giá; báo cáo chỉ rõ số lượt có giá trên tổng lượt gọi.
 Phí tìm web, tạo ảnh, giọng nói, tác vụ Agent không có usage theo model trong log, thuế và usage ngoài Peto không
 nằm trong ước tính token này. Đối chiếu billing của nhà cung cấp khi cần số tiền thực tế. Không cộng khoản dự trù TTS
-vào tổng token. Công cụ không thu thập metrics vào database và không mở dashboard quản trị mới.
+vào tổng token. Riêng `ops.report` chỉ đọc log, không ghi gì vào database.
+
+## Trang Quản trị (`/admin`)
+
+Từ bản có trang Quản trị, máy chủ ghi thêm số liệu vào bảng `usage_events` tại đúng ba chỗ đang log
+`model_usage`, `chat_timing`, `agent_timing`: dịch vụ, model, kết quả, thời gian, token. Không có owner, mã hội
+thoại hay nội dung. Ghi theo lô vài giây một lần ngoài đường gửi tin; tự xóa dữ liệu cũ hơn 90 ngày. Số liệu chỉ có
+từ lần khởi động đầu tiên của bản này; trang ghi rõ "mới có N ngày" thay vì vẽ số 0 cho phần trước đó.
+
+Chỉ tài khoản trong `PETO_OWNER_ACCOUNTS` thấy mục "Quản trị" trong menu tài khoản và đọc được
+`/api/admin/overview`; người khác nhận 404. Chi phí ước tính dùng tệp giá cùng định dạng với `--rates` ở trên:
+
+```bash
+nano /home/ubuntu/peto-web/gia.json
+# trong .env:  PETO_COST_RATES_FILE=/home/ubuntu/peto-web/gia.json
+sudo systemctl restart peto-web
+```
+
+Chỉ cần khởi động lại lần đầu để nạp biến môi trường; sau đó sửa tệp giá là trang tự đọc lại. Peto đăng nhập xAI bằng
+gói thuê bao thì không khai giá Grok: trang hiện "chưa có giá" cho Peto, không ghi $0. Đây vẫn là ước tính từ token,
+không gồm tạo ảnh, phí tra web, giọng đọc hay thuế.
 
 ## Kiểm tra code
 

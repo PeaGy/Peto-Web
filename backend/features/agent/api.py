@@ -37,7 +37,8 @@ from ai.agent import agent_step
 from shared.attachments import sniff_image_mime
 from ai.base import ProviderError
 from shared.time_tools import resolve_timezone, time_context
-from core.config import AGENT_DAILY_STEPS, AGENT_MAX_CONCURRENT, AGENT_MAX_QUEUE, AGENT_MAX_REQUEST_BYTES, AGENT_REASONING, AGENT_SLOW_STEP_SECONDS, AGENT_STEP_TIMEOUT_SECONDS, AGENT_TOKEN_IDLE_DAYS, AGENT_WEB_SEARCH, provider_from_owner
+from core import usage_events
+from core.config import AGENT_DAILY_STEPS, AGENT_MODEL, AGENT_MAX_CONCURRENT, AGENT_MAX_QUEUE, AGENT_MAX_REQUEST_BYTES, AGENT_REASONING, AGENT_SLOW_STEP_SECONDS, AGENT_STEP_TIMEOUT_SECONDS, AGENT_TOKEN_IDLE_DAYS, AGENT_WEB_SEARCH, provider_from_owner
 from prompts import AGENT_BROWSER_ACT_PROMPT, AGENT_BROWSER_OUTSIDE_PROMPT, AGENT_NO_SEARCH_PROMPT, AGENT_PROMPT, AGENT_SEARCH_PROMPT, PERSONA_PROMPT, browser_prompt
 from prompts import english as english_prompts
 from prompts.routing import provider_prompt, uses_english
@@ -499,6 +500,13 @@ async def step(request: Request, device: dict = Depends(device_auth)):
                                 )
                             completed = True
                             outcome = "complete"
+                            usage_events.record(
+                                "call", service=model.service, model=model.key, slug=model.slug or AGENT_MODEL,
+                                surface="agent", purpose="compact" if compacting else "agent", complete=True,
+                                elapsed_ms=round((time.monotonic() - started) * 1000),
+                                input_tokens=event.usage.get("input_tokens"), output_tokens=event.usage.get("output_tokens"),
+                                cached_tokens=event.usage.get("cached_tokens"),
+                            )
                             yield _sse({"type": "done", "output": list(event.output), "usage": event.usage,
                                         **({"purpose": "compact"} if compacting else {})})
                         else:
@@ -531,6 +539,12 @@ async def step(request: Request, device: dict = Depends(device_auth)):
             logger.info("agent_timing model=%s effort=%s mode=agent first_text_ms=%s total_ms=%d complete=%s outcome=%s",
                         model.key, effort, round((first_at - started) * 1000) if first_at is not None else None,
                         round(elapsed * 1000), completed, outcome)
+            usage_events.record(
+                "turn", service=model.service, model=model.key, slug=model.slug or AGENT_MODEL, surface="agent",
+                purpose="compact" if compacting else "agent", outcome=outcome, complete=completed,
+                elapsed_ms=round(elapsed * 1000),
+                first_text_ms=round((first_at - started) * 1000) if first_at is not None else None,
+            )
             if elapsed >= AGENT_SLOW_STEP_SECONDS:
                 logger.warning("Bước agent chậm: model %s · mức %s · %d mục vào · chờ phản hồi đầu %.1fs · tổng "
                                "%.1fs%s", model.key, effort, len(items),

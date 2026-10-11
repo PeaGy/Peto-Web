@@ -17,6 +17,7 @@ backend/
     documents/           # Đọc, tạo, xuất và xem tài liệu
     connectors/          # Cấp quyền GitHub theo tài khoản và công cụ chỉ đọc
     agent/               # API Agent, công cụ, bộ cài, hướng dẫn CLI
+    admin/               # Trang Quản trị của chủ web: số liệu vận hành, chi phí ước tính
     docs/                # API hướng dẫn, tìm kiếm và ngữ cảnh cho Peto
     voice/               # API giọng nói và gọi dịch vụ tạo giọng
   storage/               # Schema và truy vấn SQLite theo nhóm dữ liệu

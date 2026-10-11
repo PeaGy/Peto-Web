@@ -255,6 +255,32 @@ async def init_db() -> None:
             )
             """
         )
+        # Số liệu vận hành cho trang Quản trị (core/usage_events.py). Cố ý không có owner, mã hội thoại hay nội dung:
+        # mỗi dòng là một lần gọi model ("call") hoặc một lượt chat/bước Agent ("turn").
+        await db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS usage_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                at REAL NOT NULL,
+                kind TEXT NOT NULL,
+                surface TEXT,
+                purpose TEXT,
+                service TEXT NOT NULL,
+                model TEXT,
+                slug TEXT,
+                outcome TEXT,
+                complete INTEGER,
+                elapsed_ms INTEGER,
+                first_text_ms INTEGER,
+                input_tokens INTEGER,
+                output_tokens INTEGER,
+                cached_tokens INTEGER,
+                reasoning_tokens INTEGER,
+                search_calls INTEGER
+            )
+            """
+        )
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_usage_events_at ON usage_events(at)")
         # Số ký tự Giọng Peto (nguồn giọng chính thức) đã dùng theo tháng (giờ PETO_DEFAULT_TIMEZONE) cho mỗi tài khoản.
         await db.execute(
             """

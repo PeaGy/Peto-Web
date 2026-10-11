@@ -88,6 +88,9 @@ const agentSettings = preloadable(() => import("../features/settings/AgentSettin
 const archiveSettings = preloadable(() => import("../features/settings/ArchivedConversations"));
 const characterSettings = preloadable(() => import("../features/companion/characters/CharacterSettings"));
 const connectorSettings = preloadable(() => import('../features/connectors/ConnectorSettings'));
+// Trang Quản trị chỉ chủ web mở; tải riêng nên người dùng thường không phải tải mã biểu đồ.
+const adminDashboard = preloadable(() => import('../features/admin/AdminDashboard'));
+const AdminDashboard = adminDashboard.View;
 const loadImagine = imagine.preload;
 const loadCompanion = companion.preload;
 const loadSettings = () => Promise.all([
@@ -607,6 +610,12 @@ function AppContent() {
       { duration: 300, easing: easing || "ease-in-out" },
     );
   }, [emptyChat]);
+
+  // /admin chỉ dành cho chủ web; tài khoản khác gõ thẳng địa chỉ thì về trang chủ (API cũng trả 404 cho họ).
+  useEffect(() => {
+    if (auth?.authenticated && view === 'admin' && !auth.user?.is_owner) navigate('/', { replace: true });
+  }, [auth?.authenticated, auth?.user?.is_owner, view, navigate]);
+  const leaveAdmin = useCallback(() => navigate('/', { replace: true }), [navigate]);
 
   // Callback đăng nhập về trang chủ thì mở lại bookmark chat đã yêu cầu.
   useEffect(() => {
@@ -1390,6 +1399,13 @@ function AppContent() {
         </Suspense>
         </LazyBoundary>
       )}
+      {view === 'admin' && auth.user?.is_owner && (
+        <LazyBoundary key={`admin-${auth.user?.id}`}>
+        <Suspense fallback={<LoadingIndicator variant="screen" label="Loading" />}>
+        <AdminDashboard onUnauthorized={handleUnauthorized} onForbidden={leaveAdmin} onOpenSidebar={() => setSidebarOpen(true)} />
+        </Suspense>
+        </LazyBoundary>
+      )}
       <DiagramContext.Provider value={diagramApi}>
       <ChatFileDropZone className={`chat-layout${documentPanelOpen || diagram ? ' documents-open' : ''}${documentPanelOpen && documentPanelExpanded ? ' documents-expanded' : ''}`} hidden={view !== 'chat'}
         enabled={!streaming && !loadingConversation && !loadFailed && !archived && !deleting && !settingsOpen && !searchOpen && !consentOpen}
@@ -1533,6 +1549,7 @@ function AppContent() {
           onClose={closeAccountMenu}
           onExited={dropAccountMenu}
           onOpenSettings={openFromAccountMenu}
+          onOpenAdmin={auth.user?.is_owner ? () => { closeAccountMenu(false); go('admin'); } : undefined}
           onSignOut={() => {
             closeAccountMenu(false);
             setSidebarOpen(false);

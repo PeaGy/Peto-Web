@@ -78,5 +78,7 @@ def get_provider(model: str = "peto") -> ChatProvider:
             from .gpt import GPTProvider
 
             provider = GPTProvider(info.slug, info.label)
+    # Khóa trong danh mục (peto, luna…) cho số liệu trang Quản trị; slug thật nằm ở provider.model.
+    provider.catalog_key = model
     _instances[model] = provider
     return provider

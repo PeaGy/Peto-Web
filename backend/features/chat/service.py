@@ -41,6 +41,7 @@ from core.config import (
     TURN_TIMEOUT_SECONDS,
     WEB_SEARCH_ENABLED,
 )
+from core import usage_events
 from core.rate_limit import AdmissionDenied, admission
 from shared.web_search import normalize_sources, spoken_reply
 from features.chat import conversations as conversation_actions
@@ -529,6 +530,12 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                 round((prepared_at - admitted_at) * 1000) if prepared_at is not None and admitted_at is not None else None,
                 round((first_text_at - started) * 1000) if first_text_at is not None else None,
                 round((ended_at - started) * 1000), search_started, complete, outcome,
+            )
+            usage_events.record(
+                "turn", service=ai_models.MODELS[model].service, model=model, surface=mode,
+                outcome="stopped" if state == "stopped" else outcome, complete=complete,
+                elapsed_ms=round((ended_at - started) * 1000),
+                first_text_ms=round((first_text_at - started) * 1000) if first_text_at is not None else None,
             )
             # Cả timeout/lỗi lẫn đóng tab đều giữ phần đã phát. Shield tránh
             # cancel scope của StreamingResponse hủy luôn thao tác lưu SQLite.

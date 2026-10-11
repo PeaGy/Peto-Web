@@ -10,6 +10,7 @@ from shared.time_tools import resolve_timezone
 from core.config import MEMORY_GATEWAY_TOKEN, MEMORY_GATEWAY_URL
 from features.accounts.discord_memory import discord_memory
 from core.operational_logging import configure_operational_logging
+from core import usage_events
 import logging
 
 logger = logging.getLogger("peto_web")
@@ -22,6 +23,8 @@ async def lifespan(app: FastAPI):
     from storage.chat_turns import interrupt_running
     await interrupt_running()
     await db.interrupt_imagine_jobs()
+    # Số liệu cho trang Quản trị: chỉ tiến trình máy chủ mới ghi, test và lệnh ops thì không.
+    usage_events.start()
     logger.info("Peto Web sẵn sàng — provider=%s", get_provider().name)
     mo = [name for name, ready in auth.available_providers().items() if ready]
     logger.info("Cách đăng nhập đang bật: %s", ", ".join(mo))
@@ -49,4 +52,5 @@ async def lifespan(app: FastAPI):
     finally:
         from features.imagine.api import shutdown_jobs
         await shutdown_jobs()
+        await usage_events.stop()
 

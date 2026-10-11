@@ -176,6 +176,7 @@ class ClaudeStream:
     async def _events(self):
         output: list[dict] = []
         usage = {"input_tokens": 0, "output_tokens": 0}
+        cache_read = 0
         try:
             for pause in range(MAX_SEARCH_PAUSES + 1):
                 if self.closed:
@@ -226,6 +227,7 @@ class ClaudeStream:
                 usage["input_tokens"] += (message.usage.input_tokens + (message.usage.cache_read_input_tokens or 0)
                                           + (message.usage.cache_creation_input_tokens or 0))
                 usage["output_tokens"] += message.usage.output_tokens
+                cache_read += message.usage.cache_read_input_tokens or 0
                 if message.stop_reason == "pause_turn":
                     if pause == MAX_SEARCH_PAUSES:
                         raise ProviderError("Claude chưa tra cứu xong trong giới hạn lượt này. Thử thu gọn yêu cầu nhé.")
@@ -239,7 +241,10 @@ class ClaudeStream:
                 if not any(item.get("type") in {"message", "function_call"} for item in output):
                     raise ProviderError("Claude chưa trả nội dung câu trả lời. Thử mức suy nghĩ thấp hơn nhé.")
                 # Usage của SDK giữ dạng model để phần chat và Agent đọc cùng một cách.
-                final_usage = message.usage.model_copy(update=usage)
+                # Token đọc từ cache báo theo dạng của Responses (input_tokens_details.cached_tokens), để log
+                # model_usage, ops.report và trang Quản trị tính giá Claude như OpenAI. Token ghi vào cache vẫn tính
+                # theo giá đầu vào thường, nên ước tính hơi thấp hơn hóa đơn khi cache mới được tạo.
+                final_usage = message.usage.model_copy(update={**usage, "input_tokens_details": {"cached_tokens": cache_read}})
                 yield SimpleNamespace(type="response.completed",
                     response=SimpleNamespace(status="completed", output=output, usage=final_usage))
                 return

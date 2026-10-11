@@ -148,7 +148,7 @@ async def test_unknown_api_path_is_404_not_html(site_client):
     assert "Peto" not in response.text
 
 
-@pytest.mark.parametrize('path', ['/chat/thread-id', '/chat/thread-id/', '/companion', '/companion/', '/imagine', '/imagine/', '/imagine/root/version'])
+@pytest.mark.parametrize('path', ['/chat/thread-id', '/chat/thread-id/', '/companion', '/companion/', '/imagine', '/imagine/', '/imagine/root/version', '/admin', '/admin/'])
 @pytest.mark.parametrize('method', ['get', 'head'])
 async def test_app_deep_links_have_spa_fallback(site_client, path, method):
     """F5 và mở tab mới nhận SPA; HEAD cũng dùng được cho kiểm tra deploy."""
@@ -164,7 +164,7 @@ async def test_app_deep_links_have_spa_fallback(site_client, path, method):
     '/api', '/api/khong-co', '/assets/missing.js', '/favicon-missing.ico',
     '/docs/khong-co/', '/companion/missing', '/imagine/root', '/imagine/root/version/extra',
     '/imagine/missing.js/asset.png', '/redoc', '/openapi.json', '/install-missing.ps1',
-    '/chat', '/chat/thread/extra', '/chat/missing.js',
+    '/chat', '/chat/thread/extra', '/chat/missing.js', '/admin/overview', '/admin/x.js',
 ])
 async def test_fallback_does_not_hide_missing_endpoints_or_assets(site_client, path):
     response = await site_client.get(path)

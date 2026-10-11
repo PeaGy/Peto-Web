@@ -24,6 +24,7 @@ const ICONS = {
   </>,
   terminal: <><rect x="3.5" y="4.5" width="17" height="15" rx="3" /><path d="m7.5 9.5 3 2.5-3 2.5M12.5 15h4" /></>,
   wave: <path d="M4 10.5v3M8 7.5v9M12 4.5v15M16 8v8M20 10.5v3" />,
+  chart: <><path d="M4.5 19.5h15" /><path d="M7.5 16v-4M12 16V8M16.5 16v-6" /></>,
   bookmark: <path d="M7.5 4h9a1 1 0 0 1 1 1v15l-5.5-3.6L6.5 20V5a1 1 0 0 1 1-1Z" />,
   globe: <>
     <circle cx="12" cy="12" r="8.5" />

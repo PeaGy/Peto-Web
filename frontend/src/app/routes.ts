@@ -1,7 +1,7 @@
 import { matchPath, type Location } from 'react-router';
 import type { AppView } from './preferences';
 
-export const VIEW_PATHS: Record<AppView, string> = { chat: '/', companion: '/companion', imagine: '/imagine' };
+export const VIEW_PATHS: Record<AppView, string> = { chat: '/', companion: '/companion', imagine: '/imagine', admin: '/admin' };
 const IMAGE_PATTERN = '/imagine/:rootId/:imageId';
 const CHAT_PATTERN = '/chat/:conversationId';
 
@@ -34,5 +34,6 @@ export function appPath(location: Pick<Location, 'pathname' | 'hash'>) {
 export function appView(pathname: string): AppView {
   if (matchPath('/companion', pathname)) return 'companion';
   if (matchPath('/imagine', pathname) || imageMatch(pathname)) return 'imagine';
+  if (matchPath('/admin', pathname)) return 'admin';
   return 'chat';
 }

@@ -17,6 +17,7 @@ src/
     diagrams/                  Sơ đồ Mermaid và bảng sơ đồ
     docs/                      Trang hướng dẫn công khai
     settings/                  Hộp cài đặt và các mục tài khoản, Agent, trí nhớ
+    admin/                     Trang Quản trị (/admin) của chủ web, tải riêng
   shared/
     api/                       Hợp đồng dữ liệu và kết nối backend
     markdown/                  Plugin Markdown, công thức, tô màu mã

@@ -1281,6 +1281,40 @@ Edits submitted from the viewer remain there while pending and select the saved 
 No segmentation, AI mask/inpainting guarantee, transparent-background removal, video or tag manager is
 implemented here; do not add placeholder buttons that pretend those features are available.
 
+### Admin dashboard (`/admin`)
+
+Built 2026-10-11. The owner chose an owner-only page with its own URL (not a Settings section) and picked the
+"Tổng quan" mockup (four stat tiles, stacked daily cost by provider, outcome and p50/p95 cards, per-model table) over a
+dense ledger and a narrative report. No per-account view, by the owner's call; Agent is included.
+- **Data.** Logs only reach journald, so `core/usage_events.py` appends content-free rows to `usage_events` at the
+  existing `model_usage` (`ai/xai.py`), `chat_timing` and `agent_timing` points: kind `call` or `turn`, surface,
+  purpose (`chat`, `side` for title/memory/summary calls, `agent`, `compact`), service, catalog key and slug, outcome,
+  timings, tokens. No owner, conversation id or text. `record` is synchronous, I/O-free and never raises; a lifespan
+  task flushes every 5 s (shielded), prunes rows older than 90 days daily, and flushes on shutdown. The queue is
+  bounded (oldest dropped and counted). Tests, benchmarks and ops commands never start it, so it stays off there.
+  `get_provider` sets `provider.catalog_key`. Claude now reports cache reads as `input_tokens_details.cached_tokens`
+  (summed over `pause_turn` requests) and Agent `done` usage carries `cached_tokens`; the CLI reads only
+  `input_tokens`/`output_tokens`. No backfill command from journald exists yet.
+- **API.** `GET /api/admin/overview?range=24h|7d|30d|90d` (`features/admin/`), `Cache-Control: private, no-store`.
+  Non-owners and anonymous visitors get 404 before the range is validated. `stats.summarize` is pure: local-midnight
+  day buckets (hourly for 24h) in `PETO_DEFAULT_TIMEZONE`, nearest-rank p50/p95 over completed turns only (first text
+  over all turns), outcomes grouped complete/stopped/error/timeout/other, previous-period comparison only when data
+  covers it. Missing tokens or prices are `null`, never 0; a provider with calls but no priced call gets `null` in
+  `by_service`. Active accounts are one count from user messages plus Agent usage days.
+- **Prices.** `PETO_COST_RATES_FILE`, same JSON and validation as `ops.report --rates` (slug → input/cached_input/output
+  USD per million), reread on mtime/size change. Missing cached tokens price as uncached and are flagged. The owner's
+  xAI login is a subscription, so Grok is deliberately left unpriced ("chưa có giá").
+- **Frontend.** `AppView` gained `admin`; `/admin` is served by the static fallback. `features/admin/AdminDashboard.tsx`
+  is a lazy chunk mounted only while open; the account menu shows "Quản trị" only when `/api/auth/me` returns
+  `is_owner`, and a non-owner on `/admin` is replaced to `/`. Charts are hand-written SVG measured to real width; the
+  three provider colours passed the dataviz CVD validator on Peto's light and dark surfaces. Refetch keeps the old
+  frame dimmed. The chosen range persists in `peto-admin-range`.
+- **Tests.** `backend/tests/test_admin.py` (access, empty data, recorder privacy/overflow/failure/prune, chat and Agent
+  rows, statistics, rates file), `test_claude.py` cache reads, `test_static_files.py` paths; frontend
+  `AdminDashboard.test.tsx` and two `App.test.tsx` cases. A real-browser run against a mock backend with seeded events
+  checked menu entry, F5/Back, tooltip, 90-day coverage, a new chat turn appearing after the flush, phone layout and
+  the regular-account redirect.
+
 ### Configuration
 
 `core/config.py` is where environment variables are read. Every numeric knob goes through

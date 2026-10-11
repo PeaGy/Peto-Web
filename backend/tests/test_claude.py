@@ -15,10 +15,11 @@ from conftest import read_events
 from test_agent_api import bearer, connect, events_of, login_as
 
 
-def message_events(blocks, stop="end_turn", *, input_tokens=20, output_tokens=8):
+def message_events(blocks, stop="end_turn", *, input_tokens=20, output_tokens=8, cache_read=None):
     events = [{"type": "message_start", "message": {"id": "msg_test", "type": "message", "role": "assistant",
         "model": "claude-haiku-5-5", "content": [], "stop_reason": None, "stop_sequence": None,
-        "usage": {"input_tokens": input_tokens, "output_tokens": 0}}}]
+        "usage": {"input_tokens": input_tokens, "output_tokens": 0,
+                  **({"cache_read_input_tokens": cache_read} if cache_read is not None else {})}}}]
     for index, block in enumerate(blocks):
         kind = block["type"]
         initial = dict(block)
@@ -93,7 +94,7 @@ async def test_agent_native_api_efforts_and_usage(monkeypatch, model, effort):
         events = [event async for event in agent.agent_step(instructions="chỉ dẫn", input_items=[USER],
             tools=[SCHEMA], effort=effort, model=model)]
     assert [event.kind for event in events] == ["thinking", "delta", "done"]
-    assert events[-1].usage == {"input_tokens": 20, "output_tokens": 8}
+    assert events[-1].usage == {"input_tokens": 20, "output_tokens": 8, "cached_tokens": 0}
     request = calls[0]
     assert request["model"] == models.MODELS[model].slug
     assert request["system"] == "chỉ dẫn" and request["messages"] == [{"role": "user", "content": [{"type": "text", "text": "chào"}]}]
@@ -234,3 +235,15 @@ async def test_agent_sonnet_owner_gate_and_claude_step_costs(client, anon_client
         response = await step(model, effort)
         assert response.status_code == 200 and events_of(response)[-1]["type"] == "done"
         assert (await client.get("/api/agent/devices")).json()["steps_used"] == used
+
+
+async def test_cache_reads_are_reported_like_responses_for_pricing(monkeypatch):
+    """Token đọc từ cache vào cả tổng đầu vào lẫn input_tokens_details.cached_tokens, để log và trang Quản trị tính giá."""
+    sdk, _calls, _closed = sdk_with_responses(message_events([TEXT], input_tokens=20, cache_read=12))
+    monkeypatch.setattr(agent, "AI_PROVIDER", "xai")
+    monkeypatch.setattr(config, "ANTHROPIC_API_KEY", "khoa-gia")
+    monkeypatch.setattr(agent, "_claude_client", claude.ClaudeClient(sdk))
+    async with sdk:
+        events = [event async for event in agent.agent_step(instructions="chỉ dẫn", input_items=[USER],
+            tools=[], effort="low", model="haiku")]
+    assert events[-1].usage == {"input_tokens": 32, "output_tokens": 8, "cached_tokens": 12}

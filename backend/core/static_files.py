@@ -41,7 +41,7 @@ _IMMUTABLE_DIRS = {"assets"}
 _BANNER_NAME = "og.png"
 _PNG_SIG = b"\x89PNG\r\n\x1a\n"
 # Chỉ fallback cho các trang thật; không nuốt API, Docs hay file tĩnh bị thiếu.
-_APP_PATH = re.compile(r"(?:chat/[^/.]+|companion|imagine(?:/[^/.]+/[^/.]+)?)/?\Z")
+_APP_PATH = re.compile(r"(?:chat/[^/.]+|companion|admin|imagine(?:/[^/.]+/[^/.]+)?)/?\Z")
 
 
 def _safe_path(static_dir: Path, relative: str) -> Path | None:

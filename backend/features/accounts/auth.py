@@ -28,6 +28,7 @@ from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
 from ai import models as ai_models
 import storage as db
+from core import config
 from core.config import DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET, DISCORD_REDIRECT_URI, FRONTEND_URL, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI, GITHUB_LOGIN_CLIENT_ID, GITHUB_LOGIN_CLIENT_SECRET, GITHUB_LOGIN_REDIRECT_URI, SESSION_COOKIE, SESSION_COOKIE_SECURE, SESSION_MAX_AGE, SESSION_SECRET, owner_key, provider_from_owner
 
 logger = logging.getLogger("peto_web.auth")
@@ -496,6 +497,8 @@ async def me(request: Request) -> dict:
             "roleplay_confirmed": await db.has_roleplay_consent(owner),
             # Model tài khoản này chọn được ở nút cạnh nút Gửi; chỉ một model thì giao diện ẩn nút.
             "models": ai_models.public(ai_models.usable(owner, "web")),
+            # Chỉ để hiện mục "Quản trị" trong menu tài khoản; API /api/admin vẫn tự kiểm quyền.
+            "is_owner": owner in config.OWNER_ACCOUNTS,
         },
     }
 
