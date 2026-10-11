@@ -37,6 +37,7 @@ function DocumentReading({ document }: { document: NonNullable<ChatAttachment['d
       {document.status === 'partial' && !!document.ocr_pages && ' · có OCR'}
       {!!document.formulas && ` · ${document.formulas} công thức`}
       {!!document.formulas_unread && ` · ${document.formulas_unread} công thức MathType chưa đọc`}
+      {!!document.images_unread && ` · ${document.images_unread} hình chưa xem được`}
     </summary>
     <p>{document.notice}</p>
   </details>;

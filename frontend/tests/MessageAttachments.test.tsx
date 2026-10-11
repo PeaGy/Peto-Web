@@ -78,4 +78,16 @@ describe('đính kèm của tin nhắn Chat', () => {
     expect(container.querySelector('.bubble.assistant strong')?.textContent).toBe('Câu trả lời');
     expect(container.querySelector('.user-message-text')).toBeNull();
   });
+
+  it('Word giữ một thẻ tệp và chỉ báo phần hình chưa xem được khi bị giới hạn', () => {
+    const file = { ...document, name: 'diagram.docx', document: { status: 'ready' as const,
+      notice: 'Đã chuẩn bị 1 ảnh nhúng.', characters: 100, images: 1, images_prepared: 1, images_unread: 0 } };
+    const { rerender } = draw({ attachments: [file] });
+    expect(screen.getAllByRole('link')).toHaveLength(1);
+    expect(screen.queryByText(/Đã chuẩn bị 1 ảnh/)).toBeNull();
+    rerender(<ChatMessage message={{ role: 'user', content: 'Xem hình', attachments: [{ ...file,
+      document: { ...file.document, status: 'partial', images_unread: 1, notice: 'Có 1 hình Peto chưa xem được.' } }] }}
+      live={false} writing={false} onEdit={() => {}} onPreview={() => {}} />);
+    expect(screen.getByText(/1 hình chưa xem được/)).toBeTruthy();
+  });
 });

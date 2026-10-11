@@ -98,7 +98,9 @@ def build_input_payload(messages: list[ChatMessage]) -> list[dict]:
         for att_index, attachment in enumerate(message.attachments):
             key = (index, att_index)
             if attachment.kind == "image" and attachment.data_url and key in keep_images:
-                if attachment.number:
+                if attachment.source_label:
+                    parts.append({"type": text_type, "text": attachment.source_label})
+                elif attachment.number:
                     # Số ảnh model dùng khi chèn ảnh vào tài liệu: ![chú thích](anh-N).
                     parts.append({"type": text_type, "text": f"[Ảnh {attachment.number}: {attachment.name}]"})
                 parts.append(

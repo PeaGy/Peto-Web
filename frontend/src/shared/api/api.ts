@@ -33,7 +33,10 @@ export interface ChatAttachment {
       sheets?: number;
       sheets_read?: number;
       rows?: number;
-      /** Word: số công thức Word đã đọc, số công thức MathType (đối tượng cũ) chưa đọc được. */
+      /** Word: ảnh nhúng và công thức; chỉ là số đếm, không chứa bitmap nội bộ. */
+      images?: number;
+      images_prepared?: number;
+      images_unread?: number;
       formulas?: number;
       formulas_unread?: number;
   } | null;

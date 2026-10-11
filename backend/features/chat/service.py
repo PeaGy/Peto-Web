@@ -387,7 +387,9 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                         raise ProviderError('Hội thoại đã được lưu trữ. Hãy khôi phục trước khi gửi tin nhắn.')
                     if not current_settings or current_settings.get('project_id') != project_id:
                         raise ProviderError('Hội thoại đã chuyển dự án hoặc bị xóa. Mở lại trước khi gửi nhé.')
-                project_prompt = await project_context(owner, project_id, request.project_file_ids, english=uses_english(model))
+                project_documents: list[dict] = []
+                project_prompt = await project_context(owner, project_id, request.project_file_ids,
+                    english=uses_english(model), documents=project_documents)
                 # Từ chối cooldown/hàng chờ trước khi ghi bất kỳ tin nhắn nào.
                 if conversation_id and not await db.owns_conversation(owner, conversation_id):
                     raise ProviderError("Hội thoại đã bị xóa. Mở cuộc trò chuyện mới nhé.")
@@ -463,7 +465,7 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                     yield sse({"type": "reading", "text": ""}) + step
                 active_rows = context_rows(rows, english=uses_english(model))
                 history, system_prompt = await asyncio.gather(
-                    anyio.to_thread.run_sync(_to_chat_messages, active_rows),
+                    anyio.to_thread.run_sync(_to_chat_messages, active_rows, project_documents),
                     _build_system_prompt(owner, mode, install_command, persona, conversation_id,
                         agent_question='\n'.join(str(row.get('content', ''))[:4000]
                             for row in [r for r in active_rows if r.get('role') == 'user' and r.get('turn_state') != 'stopped'][-3:]), model=model),

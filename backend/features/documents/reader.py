@@ -17,14 +17,15 @@ PDF_MIME = "application/pdf"
 # Bảng tính Excel đọc ở workbook_reader (cùng tiến trình con, cùng giới hạn thời gian).
 from features.documents.workbook_reader import (SHEET_FORMAT, SPREADSHEET_MIMES, XLSM_MIME, XLSX_MIME,  # noqa: E402
                                                 read_workbook)
-from features.documents import word_reader  # noqa: E402
+from features.documents import word_reader, word_images  # noqa: E402
 # 2 (29/9/2026): tệp chữ dài giữ phần đầu, phần cuối và các đoạn có lỗi thay vì chỉ phần đầu. Đổi số này thì tệp cũ
 # được đọc lại ở lượt sau (features.chat.history._read_legacy_documents).
 # 3 (1/10/2026): thêm chữ OCR theo trang và số trang đã đọc.
 VERSION = 3
 # Cách đọc Word (word_reader). 2 (6/10/2026): công thức Word thành LaTeX, số thứ tự a), b)… Word tự đánh, chữ phông Symbol,
 # đánh dấu hình và công thức MathType. Tệp Word đọc theo cách cũ được đọc lại ở lượt sau (cached_document).
-WORD_FORMAT = 2
+# 3: ảnh nhúng được chuẩn hóa và lưu nội bộ, vị trí [Hình N] được giữ để gửi cùng phần chữ.
+WORD_FORMAT = 3
 MAX_XML_BYTES = 8 * 1024 * 1024
 MAX_ZIP_BYTES = 32 * 1024 * 1024
 MAX_PAGE_BYTES = 2 * 1024 * 1024
@@ -267,22 +268,29 @@ def _docx(data: bytes, max_chars: int) -> dict:
     except Exception:
         numbering = styles = None
     body = word_reader.read_body(root, numbering, styles, max_chars)
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        images = word_images.extract(archive, body['image_specs'], MAX_XML_BYTES)
     text, shortened = body["text"], body["shortened"]
     counted = "và bảng biểu" if not body["formulas"] else f", bảng biểu và {number(body['formulas'])} công thức"
     notice = f"Đã đọc phần thân văn bản {counted} trong Word." if text else "Word chưa có chữ đọc được trong phần thân tài liệu."
     if body["mathtype"]:
         notice += (f" Có {number(body['mathtype'])} công thức MathType (kiểu đối tượng cũ) Peto không đọc được, ghi là"
                    " [Công thức MathType N] tại chỗ; câu nào cần thì gửi kèm ảnh chụp câu đó.")
-    unseen = [f"{number(body['images'])} hình" if body["images"] else "",
+    unread_images = body['images'] - len(images)
+    if images:
+        notice += f" Đã chuẩn bị {number(len(images))} ảnh nhúng để xem cùng phần chữ, theo vị trí [Hình N trong tệp]."
+    unseen = [f"{number(unread_images)} hình" if unread_images else "",
               f"{number(body['charts'])} biểu đồ" if body["charts"] else ""]
     unseen = " và ".join(item for item in unseen if item)
     if unseen:
         notice += f" Tệp có {unseen} Peto chưa xem được (ghi [Hình N trong tệp] tại chỗ); cần thì gửi kèm ảnh chụp."
     if shortened:
         notice += " Tài liệu dài: Peto đọc sẵn phần đầu, khi cần sẽ tìm thêm trong tệp."
-    status = "partial" if shortened or (text and body["mathtype"]) else "ready" if text else "no_text"
+    status = "partial" if shortened or (text and (body["mathtype"] or unread_images or body['charts'])) else "ready" if text else "no_text"
     return result(status, notice, text, word_format=WORD_FORMAT, formulas=body["formulas"],
-                  formulas_unread=body["mathtype"], images=body["images"] + body["charts"], truncated=shortened)
+                  formulas_unread=body["mathtype"], images=body["images"] + body["charts"],
+                  images_prepared=len(images), images_unread=unread_images + body['charts'],
+                  embedded_images=images, truncated=shortened)
 
 
 def extract_document(data: bytes, mime: str, max_chars: int, max_pages: int) -> dict:
@@ -388,4 +396,4 @@ def public_document(raw) -> dict | None:
         return None
     return {key: cached[key] for key in ("status", "notice", "characters", "pages", "pages_processed",
                                         "pages_read", "ocr_pages", "reading_method", "sheets", "sheets_read",
-                                        "rows", "formulas", "formulas_unread") if key in cached}
+                                        "rows", "formulas", "formulas_unread", "images", "images_prepared", "images_unread") if key in cached}

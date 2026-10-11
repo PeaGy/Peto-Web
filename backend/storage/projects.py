@@ -141,3 +141,11 @@ async def delete_file(owner, project_id, file_id):
         if not cursor.rowcount:
             raise HTTPException(404, 'Không tìm thấy tài liệu dự án')
         await db.commit()
+
+
+async def save_file_document(owner, project_id, file_id, document):
+    """Cập nhật kết quả đọc sau nâng cấp, giữ giới hạn đúng chủ tài khoản và dự án."""
+    async with connection.connect() as db:
+        await db.execute('UPDATE project_files SET document=? WHERE owner=? AND project_id=? AND id=?',
+                         (json.dumps(document, ensure_ascii=False), owner, project_id, file_id))
+        await db.commit()

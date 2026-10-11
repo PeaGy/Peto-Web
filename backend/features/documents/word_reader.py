@@ -1,5 +1,5 @@
 """Đọc phần thân tệp Word cho Peto: đoạn văn, bảng, công thức Word (thành LaTeX), số thứ tự Word tự đánh (a), b), 1.1…)
-và chữ gõ bằng phông Symbol; hình, biểu đồ và công thức MathType được đánh dấu tại chỗ vì Peto không đọc được.
+và chữ gõ bằng phông Symbol; hình được đánh dấu và liên kết với bitmap, biểu đồ và MathType được ghi phần chưa đọc.
 
 Chỉ đọc XML trong bộ nhớ, không chạy gì trong tệp. reader._docx lo phần giới hạn tệp nén rồi gọi read_body.
 """
@@ -243,6 +243,7 @@ class Body:
         self.numbering = numbering
         self.formulas = 0
         self.images = 0
+        self.image_specs: list[dict] = []
         self.charts = 0
         self.mathtype = 0
         self.objects = 0
@@ -301,16 +302,26 @@ class Body:
                 choice = next((item for item in child if local(item) == (COMPATIBILITY_NAMESPACE, "Choice")), None)
                 self._walk(choice if choice is not None else child, parts, symbol_font)
             elif namespace == PICTURE_NAMESPACE and name == "pic":
-                self.images += 1
-                parts.append(f"[Hình {self.images} trong tệp]")
+                self._picture(child, parts)
             elif namespace in CHART_NAMESPACES and name == "chart":
                 self.charts += 1
                 parts.append(f"[Biểu đồ {self.charts} trong tệp]")
             elif namespace == VML_NAMESPACE and name == "imagedata":
-                self.images += 1
-                parts.append(f"[Hình {self.images} trong tệp]")
+                self._picture(child, parts, vml=True)
             else:
                 self._walk(child, parts, symbol_font)
+
+    def _picture(self, element, parts: list[str], vml: bool = False) -> None:
+        self.images += 1
+        parts.append(f"[Hình {self.images} trong tệp]")
+        blip = next((node for node in element.iter() if local(node)[1] == 'blip'), None)
+        crop = next((node for node in element.iter() if local(node)[1] == 'srcRect'), None)
+        transform = next((node for node in element.iter() if local(node)[1] == 'xfrm'), None)
+        self.image_specs.append({'number': self.images,
+            'relationship': _attr(element, 'id') if vml else _attr(blip, 'embed'),
+            'crop': {key: _attr(crop, key) or '0' for key in ('l', 't', 'r', 'b')} if crop is not None else {},
+            'rotation': _attr(transform, 'rot') or '0',
+            'flip_h': _attr(transform, 'flipH') in {'1', 'true'}, 'flip_v': _attr(transform, 'flipV') in {'1', 'true'}})
 
     def _object(self, element, parts: list[str]) -> None:
         program = next((node.get("ProgID", "") for node in element.iter()
@@ -398,4 +409,5 @@ def read_body(document_root, numbering_root, styles_root, max_chars: int) -> dic
             shortened = True
             break
     return {"text": "".join(parts).strip(), "shortened": shortened, "formulas": body.formulas,
-            "images": body.images, "charts": body.charts, "mathtype": body.mathtype, "objects": body.objects}
+            "images": body.images, "image_specs": body.image_specs, "charts": body.charts,
+            "mathtype": body.mathtype, "objects": body.objects}

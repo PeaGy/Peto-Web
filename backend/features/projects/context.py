@@ -2,10 +2,11 @@
 import json
 from fastapi import HTTPException
 from storage import projects
+from features.documents import reader
 
 MAX_CONTEXT_CHARS = 32000
 
-async def context(owner, project_id, selected, *, english=False):
+async def context(owner, project_id, selected, *, english=False, documents=None):
     if not project_id:
         if selected:
             raise HTTPException(400, 'Chọn dự án trước khi dùng tài liệu chung')
@@ -18,6 +19,19 @@ async def context(owner, project_id, selected, *, english=False):
     for file_id in dict.fromkeys(selected):
         file = await projects.get_file(owner, project_id, file_id)
         document = json.loads(file['document'])
+        if documents is not None and file['mime'] == reader.DOCX_MIME:
+            cached = reader.cached_document(document)
+            if cached is None:
+                # Word đã tải lên trước nâng cấp cũng nhận ảnh; không đọc lại ở bước kiểm quyền trước lượt chat.
+                original = await projects.get_file(owner, project_id, file_id, data=True)
+                document = await reader.read_document(original['data'], original['mime'])
+                await projects.get_file(owner, project_id, file_id)
+                await projects.save_file_document(owner, project_id, file_id, document)
+            else:
+                document = cached
+            if document.get('embedded_images'):
+                documents.append({'id': f'project-{file_id}', 'kind': 'file', 'mime': file['mime'],
+                                  'filename': file['name'], 'document': document})
         text = document.get('text', '')
         excerpt = text[:budget]
         budget -= len(excerpt)

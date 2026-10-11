@@ -26,6 +26,8 @@ class ChatAttachment:
     text_excerpt: str = ""
     # Ảnh: số "Ảnh N" trong hội thoại (0 khi không rõ), để model chèn đúng ảnh vào tài liệu.
     number: int = 0
+    # Hình trong Word: nhãn vị trí riêng, không dùng số "Ảnh N" của tệp ảnh gửi độc lập.
+    source_label: str = ''
 
 
 @dataclass(frozen=True)

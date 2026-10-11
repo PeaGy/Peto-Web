@@ -63,6 +63,8 @@ def read_detail(document: dict | None) -> str:
         parts.append(f'{_number(document["pages"])} trang')
     if document.get('ocr_pages'):
         parts.append('có OCR')
+    if document.get('images_prepared'):
+        parts.append(f'{_number(document["images_prepared"])} ảnh nhúng')
     status = document.get('status')
     if status == 'partial':
         parts.append('đọc được một phần')

@@ -598,7 +598,7 @@ one CPU thread per engine, 8 scanned pages/file, 30s total including queue/rende
 output is capped and cancellation closes/kills the engine. Native text survives OCR errors/timeouts. Labels keep
 original page numbers and identify OCR; notices expose read/total counts and accuracy limitations.
 Missing/disabled OCR and encrypted/broken/oversized documents retain honest reading status.
-Do not promise image/chart/layout understanding for PDF/DOCX or legacy .doc support.
+Do not promise PDF image/layout understanding, complete Word page layout, native Word charts or legacy .doc support.
 
 **Word uploads** (`features/documents/word_reader.py`, 2026-10-06). The owner's Word uses are solving math exercises sent
 as .docx and writing school reports. The old reader took only `w:t`, so every Word equation (Alt+=, OMML) vanished:
@@ -612,14 +612,24 @@ formulas were typed as Unicode math italics with combining overlines.
   `startOverride` restarts a list on its first use, `numStyleLink` is followed once, bullets in Symbol/Wingdings read as •.
 - **Symbol font.** Old worksheets typed Greek and operators in the Symbol font ("x Î A" for x ∈ A); runs in that font and
   `w:sym` are mapped through the Adobe Symbol table (`math/symbols.SYMBOL_FONT`).
-- **Marked, not read:** pictures and charts (`[Hình N trong tệp]`, `[Biểu đồ N trong tệp]`) and MathType/Equation 3.0
-  OLE objects (`[Công thức MathType N: Peto không đọc được]`). MathType makes the status `partial`, with `truncated`
-  false so `history` does not suggest the attachment tools; the notice asks for a screenshot. Text boxes are read once
-  (only the `mc:Choice` of an AlternateContent); tracked deletions are skipped.
-- **Cache.** Word results carry `word_format` (`WORD_FORMAT` 2). `cached_document` treats older Word reads (no key, a
-  notice mentioning "Word") as unread, so they are re-read lazily; `public_document` still shows their old status.
-  `formulas` and `formulas_unread` are public, and the chat chip reads "· 12 công thức".
-- **Tests:** `tests/test_word_reader.py`.
+- **Embedded pictures** (`word_images.py`, 2026-10-11) follow body relationships and retain `[Hình N trong tệp]`
+  numbers. Raster pictures are normalized with Pillow in the reader process, respecting DrawingML crop/rotation;
+  no external links or orphan media are loaded. At most the first 8 references are attempted, with 10 MiB/20 MP
+  source limits, 2048 px maximum edge, 1 MiB/output and 4 MiB total. Unsupported/broken/omitted pictures remain
+  explicitly unread; headers, footers, native charts and vector media are not rendered as Word pages.
+  Chat history sends selected pictures through the existing shared Responses/Claude image pipeline, labelled with
+  filename and figure number. The existing `MAX_HISTORY_IMAGES` budget (default 4) is shared with standalone images,
+  preferring recent messages; omitted pictures are identified in model context. Word figures do not consume the
+  standalone "Ảnh N" numbering used by generated documents. Selected project DOCX files use the same pipeline.
+- **Marked, not read:** native charts (`[Biểu đồ N trong tệp]`) and MathType/Equation 3.0 OLE objects
+  (`[Công thức MathType N: Peto không đọc được]`). These and unread pictures make status `partial`, with `truncated`
+  false unless text was cut, so history does not suggest attachment text tools to recover images. The notice asks
+  for a screenshot. Text boxes are read once (only the `mc:Choice` of an AlternateContent); tracked deletions are skipped.
+- **Cache.** Word results carry `word_format` (`WORD_FORMAT` 3). Older Word reads are re-read lazily from the original
+  file, including selected project files, without changing visible attachments. Normalized `embedded_images` stay
+  in the internal document cache for follow-up turns; `public_document` exposes counts, never bitmap/data URLs.
+  `formulas`, `formulas_unread`, `images`, `images_prepared` and `images_unread` are public.
+- **Tests:** `tests/test_word_reader.py`, `tests/test_word_images.py`; provider tests use mocks, not paid API calls.
 
 **Excel uploads** (`features/documents/workbook_reader.py`, 2026-10-04, the owner's next step after `create_spreadsheet`).
 `.xlsx` and `.xlsm` are accepted as attachments (magic bytes `PK`, counted as media like PDF/Word). An OLE container
