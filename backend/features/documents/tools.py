@@ -1,5 +1,6 @@
 """Request-scoped creation of real, private chat artifacts. No model-supplied paths."""
 from contextvars import ContextVar
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
 import logging
@@ -20,6 +21,8 @@ from features.documents.sheets.view import summary as sheet_summary
 from features.documents.slides.spec import SCHEMA as PRESENTATION_SCHEMA, DeckInput, image_numbers as slide_images, normalize, plain_text
 from features.documents.workbook_edit.ops import SCHEMA as EDIT_SCHEMA, EditInput, changed_line, run as run_edit
 from features.documents.workbook_reader import SPREADSHEET_MIMES
+from features.documents.reader import DOCX_MIME
+from features.documents.word_edit.ops import SCHEMA as WORD_EDIT_SCHEMA, EditInput as WordEditInput, run as run_word_edit
 from storage import documents as document_store
 
 # Sửa tệp Excel: chờ tối đa (giây) trong tiến trình riêng; phần chữ của tệp mới lưu kèm để Peto đọc ở lượt sau.
@@ -27,9 +30,10 @@ EDIT_TIMEOUT = 45
 EDIT_EXCERPT_CHARS = 40_000
 MAX_EDITS_PER_TURN = 4
 CHANGED_PREFIX = 'Ô đã sửa: '
-# Lời nhờ sửa trong tin nhắn (có dấu, không phân biệt hoa thường). Chỉ để nhà cung cấp AI biết có nên nhắc Grok làm tiếp
-# khi nó báo sắp sửa rồi dừng (ai/xai.py, FOLLOW_UP); không quyết định công cụ nào được dùng.
-_EDIT_WORDS = re.compile(r'(?<!\w)(sửa|chỉnh|điền|thêm|xóa|xoá|đổi|gộp|tô màu|định dạng|cập nhật|làm lại|fix|edit)(?!\w)',
+# Lời nhờ sửa (hay làm bài vào tệp Word) trong tin nhắn (có dấu, không phân biệt hoa thường). Chỉ để nhà cung cấp AI biết có
+# nên nhắc Grok làm tiếp khi nó báo sắp sửa rồi dừng (ai/xai.py, FOLLOW_UP); không quyết định công cụ nào được dùng.
+_EDIT_WORDS = re.compile(r'(?<!\w)(sửa|chỉnh|điền|thêm|xóa|xoá|đổi|gộp|tô màu|định dạng|cập nhật|làm lại|chèn|làm bài|giải bài|'
+                         r'giải giúp|ghi vào|viết vào|fix|edit)(?!\w)',
                          re.IGNORECASE)
 
 
@@ -102,12 +106,27 @@ def conversation_workbooks(rows) -> list[dict]:
     return found
 
 
+def conversation_word_files(rows) -> list[dict]:
+    """Tệp Word sửa được của hội thoại, cũ trước mới sau: tệp .docx người dùng gửi và các bản Peto đã sửa (tài liệu
+    kiểu 'wordedit'). Tài liệu Peto tự tạo bằng create_document thì sửa bằng cách tạo phiên bản mới, không ở đây."""
+    found = []
+    for row in rows or []:
+        for item in row.get('attachments') or []:
+            if item.get('kind') == 'file' and item.get('mime') == DOCX_MIME and item.get('path'):
+                found.append({'name': item['filename'], 'kind': 'upload', 'path': item['path']})
+        for artifact in row.get('artifacts') or []:
+            if isinstance(artifact, dict) and artifact.get('style') == 'wordedit' and artifact.get('id'):
+                found.append({'name': artifact.get('filename', ''), 'kind': 'document', 'id': artifact['id']})
+    return found
+
+
 class DocumentSession:
     def __init__(self, owner, conversation_id, rows=None):
         self.owner, self.conversation_id = owner, conversation_id
         self.created = []
         self._completed = {}
         self.workbooks = conversation_workbooks(rows)
+        self.word_files = conversation_word_files(rows)
         # Tin nhắn của lượt này nhờ sửa (asks_edit): phía chat đặt sau khi tạo phiên.
         self.edit_request = False
         # Tệp Excel đã sửa trong lượt này, theo mã tài liệu: dòng thay đổi, ô đã sửa và chỗ thẻ của nó trong ``created``.
@@ -242,6 +261,108 @@ class DocumentSession:
         except Exception:
             logger.exception('Không tạo được bảng tính')
             return {'error': 'Chưa tạo được tệp. Không nói đã tạo xong; báo người dùng thử lại.'}
+
+    async def _word_file(self, name: str) -> dict:
+        """Bản mới nhất của tệp Word tên ``name`` trong hội thoại, như _workbook."""
+        wanted = ' '.join(str(name or '').split())
+        matches = [item for item in self.word_files if item['name'] == wanted] or [
+            item for item in self.word_files if item['name'].casefold() == wanted.casefold()]
+        if not matches:
+            names = ', '.join(dict.fromkeys(f'"{item["name"]}"' for item in self.word_files)) or 'chưa có'
+            raise ValueError(f'Không có tệp Word "{wanted[:80]}" trong hội thoại. Tệp sửa được: {names}.')
+        latest = matches[-1]
+        if latest['kind'] == 'upload':
+            try:
+                data = await anyio.to_thread.run_sync(Path(latest['path']).read_bytes)
+            except OSError:
+                raise ValueError('Không mở được tệp đã lưu. Nhờ người dùng gửi lại tệp Word.') from None
+            return {'data': data, 'filename': latest['name'], 'document_id': None, 'version': None}
+        document = await document_store.get_document(self.owner, latest['id'])
+        assets = await document_store.get_assets(self.owner, latest['id'], document['version'])
+        if not assets or not assets.get('docx'):
+            raise ValueError('Bản Word Peto đã sửa không còn tệp. Nhờ người dùng gửi lại tệp gốc.')
+        return {'data': assets['docx'], 'filename': latest['name'], 'document_id': latest['id'],
+                'version': document['version']}
+
+    async def revise(self, arguments: str):
+        """Công cụ edit_document: sửa thẳng tệp Word của hội thoại bằng Theo dõi thay đổi, trong tiến trình riêng; lưu
+        bản mới như một phiên bản tài liệu kiểu 'wordedit' (tệp gửi lên lần đầu thì thành tài liệu mới)."""
+        try:
+            if not isinstance(arguments, str) or len(arguments) > 200_000:
+                raise ValueError('Tham số sửa tệp Word quá lớn. Chia thành vài lần gọi edit_document.')
+            spec = WordEditInput.model_validate_json(arguments)
+            written = '\n'.join(change.content or '' for change in spec.changes)
+            if _looks_like_unaccented_vietnamese('', written):
+                raise ValueError('Chữ tiếng Việt đang bị gửi không dấu. Hãy gọi lại edit_document với chữ tiếng Việt đầy '
+                                 'đủ dấu; không tự đoán hoặc bỏ qua lỗi này.')
+            key = ('word', arguments)
+            if key in self._completed: return self._completed[key]
+            if self.edits >= MAX_EDITS_PER_TURN:
+                raise ValueError(f'Mỗi lượt chỉ lưu tối đa {MAX_EDITS_PER_TURN} bản sửa. Báo người dùng phần đã sửa; '
+                                 'phần còn lại làm ở lượt sau.')
+            source = await self._word_file(spec.file)
+            changes = [change.model_dump() for change in spec.changes]
+            date = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+            try:
+                async with render_queue.slot(TOOL_WAIT):
+                    with anyio.fail_after(EDIT_TIMEOUT):
+                        outcome = await to_process.run_sync(run_word_edit, source['data'], changes, date,
+                                                            EDIT_EXCERPT_CHARS, cancellable=True)
+            except RenderBusy:
+                raise ValueError('Peto đang xuất tài liệu khác. Hãy báo người dùng thử lại sau vài giây.') from None
+            except TimeoutError:
+                raise ValueError('Tệp lớn quá nên sửa mất quá lâu. Báo người dùng chia nhỏ tệp hoặc sửa ít chỗ hơn mỗi lần.') from None
+            if 'error' in outcome:
+                if outcome.get('internal'):
+                    logger.warning('Bộ sửa Word lỗi: %s', outcome['internal'])
+                problems = [line for line in outcome['error'].splitlines() if line.startswith(('Thay đổi ', '(và '))] or [
+                    outcome['error']]
+                return {'error': outcome['error'] + '\nChưa ghi gì vào tệp, kể cả các thay đổi không lỗi. Sửa hết các lỗi '
+                        'trên rồi gọi lại edit_document với đủ danh sách thay đổi.',
+                        '_ui': {'label': 'Sửa tệp Word bị từ chối, chưa ghi gì', 'problems': problems}}
+            filename = source['filename']
+            title = filename.rsplit('.', 1)[0].strip() or 'Tài liệu Word'
+            earlier = self._turn_edits.get(source['document_id']) if source['document_id'] else None
+            lines = [*(earlier['lines'] if earlier else []), *outcome['lines']]
+            ranges = [*(earlier['ranges'] if earlier else []), *outcome['ranges']]
+            content = word_content(filename, lines, ranges, outcome['readout'])
+            # Không có trang xem trước (máy chủ không có Word để dàn trang): pages 0, bảng tài liệu dựng bản xem riêng.
+            files = {'docx': outcome['data'], 'pdf': b'', 'preview': b'', 'pages': 0, 'format': 'docx'}
+            with anyio.CancelScope(shield=True):
+                if source['document_id'] and source['version'] < document_store.MAX_VERSIONS:
+                    draft = await document_store.save_document(self.owner, None, title, content, source['document_id'],
+                                                               source['version'], style='wordedit', assets=files)
+                else:
+                    draft = await document_store.save_document(self.owner, self.conversation_id, title, content,
+                                                               style='wordedit', assets=files)
+                artifact = {k: draft[k] for k in ('id', 'title', 'version', 'style')}
+                artifact.update(format='docx', filename=filename, pages=0, changes=lines[:20], change_count=len(lines))
+                if earlier is not None:
+                    index = earlier['index']
+                    self.created[index] = artifact
+                    self._turn_edits.pop(source['document_id'], None)
+                else:
+                    index = len(self.created)
+                    self.created.append(artifact)
+                self._turn_edits[draft['id']] = {'lines': lines, 'ranges': ranges, 'changed': {}, 'index': index}
+                self.edits += 1
+                self.word_files.append({'name': filename, 'kind': 'document', 'id': draft['id']})
+                result = {'ok': True, 'artifact': artifact, 'changes': outcome['lines'], 'instruction': (
+                    'Tệp Word đã sửa bằng Theo dõi thay đổi (tác giả Peto); thẻ xem tự hiển thị trong chat. Trả lời ngắn: '
+                    'đã chèn hay sửa gì ở những câu nào. Dặn một câu: mở bằng Word, xem rồi chọn Review → Accept All '
+                    'Changes (Chấp nhận tất cả) để thành chữ thường, chỗ chưa ưng thì Reject riêng. Không chép lại cả '
+                    'bài, không tự viết đường dẫn. Các số Đoạn/Bảng của tệp đã đổi: sửa tiếp thì theo chữ đọc lại mới.')}
+                result['_ui'] = {'label': f'Đã sửa {filename}', 'detail': f'{len(spec.changes)} thay đổi'}
+                self._completed[key] = result
+                return result
+        except ValidationError as error:
+            details = '; '.join(f"{'.'.join(str(part) for part in item['loc'])}: {item['msg']}" for item in error.errors()[:4])
+            return {'error': f'Tham số chưa đúng lược đồ ({details}). Sửa rồi gọi lại edit_document.'}
+        except (ValueError, HTTPException) as error:
+            return {'error': str(error.detail) if isinstance(error, HTTPException) else str(error)}
+        except Exception:
+            logger.exception('Không sửa được tệp Word')
+            return {'error': 'Chưa sửa được tệp. Không nói đã sửa xong; báo người dùng thử lại.'}
 
     async def _workbook(self, name: str) -> dict:
         """Bản mới nhất của tệp Excel tên ``name`` trong hội thoại: bytes, tên tệp và tài liệu (nếu là bản Peto đã sửa)."""
@@ -380,6 +501,40 @@ def parse_changes(content: str) -> list[dict]:
         else:
             out.append({'sheet': '', 'where': '', 'text': line[2:]})
     return out
+
+
+REVISIONS_PREFIX = 'Mã dấu sửa của từng thay đổi (chỉ cho bản xem): '
+
+
+def word_content(filename: str, lines: list[str], ranges: list[list[int]], readout: str) -> str:
+    """Nội dung lưu của bản Word đã sửa, cũng là chữ Peto đọc ở lượt sau: các thay đổi, rồi chữ đọc lại của tệp mới với
+    số Đoạn/Bảng mới (phần Peto chèn tính như chữ thường, phần đánh dấu xóa không còn)."""
+    out = [f'[Bản Peto đã sửa của tệp "{filename}", ghi bằng Theo dõi thay đổi của Word (tác giả Peto). Định dạng, hình '
+           'và mọi phần khác giữ như tệp trước. Sửa tiếp thì gọi edit_document với đúng tên tệp này và số Đoạn/Bảng dưới '
+           'đây.]', 'Thay đổi:']
+    out.extend(f'- {line}' for line in lines)
+    out.append(REVISIONS_PREFIX + '; '.join(f'{item[0]}-{item[1]}' if item else '' for item in ranges))
+    out.append('')
+    out.append(readout)
+    return '\n'.join(out)
+
+
+def word_changes(content: str) -> list[dict]:
+    """Các dòng thay đổi của bản Word đã sửa (word_content), mỗi dòng kèm [mã đầu, mã cuối] của dấu sửa nó tạo."""
+    lines, ranges, started = [], [], False
+    for line in content.splitlines():
+        if line == 'Thay đổi:':
+            started = True
+        elif started and line.startswith('- '):
+            lines.append(line[2:])
+        elif started and line.startswith(REVISIONS_PREFIX):
+            for item in line[len(REVISIONS_PREFIX):].split('; '):
+                low, _, high = item.partition('-')
+                ranges.append([int(low), int(high)] if low.isdigit() and high.isdigit() else [])
+            break
+        elif started:
+            break
+    return [{'text': text, 'revs': ranges[index] if index < len(ranges) else []} for index, text in enumerate(lines)]
 
 
 def workbook_content(filename: str, outcome: dict) -> str:

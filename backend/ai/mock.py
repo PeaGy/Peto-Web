@@ -536,6 +536,33 @@ class MockProvider(ChatProvider):
             else:
                 yield 'Chưa sửa được tệp: ' + result['error']
             return
+        # "__suaword__": chèn lời giải mẫu (một đoạn có công thức và một bảng) sau đoạn đầu của tệp Word mới nhất trong hội
+        # thoại bằng edit_document, để chạy thử thẻ và bản xem tệp Word đã sửa.
+        if session and '__suaword__' in last_user:
+            if not session.word_files:
+                yield 'Hội thoại chưa có tệp Word nào để sửa.'
+                return
+            name = session.word_files[-1]['name']
+            yield 'Mình chèn lời giải ngay dưới câu đầu của tệp.'
+            yield StreamChunk('note')
+            yield StreamChunk('tool', 'edit_document')
+            yield StreamChunk('document_status', 'Đang sửa tệp Word…')
+            result = await session.revise(json.dumps({'file': name, 'changes': [
+                {'action': 'insert_after', 'target': 'Đoạn 1', 'row': None, 'column': None,
+                 'content': '**Lời giải.** Ta có $F = \\overline{x}\\,\\overline{y} + xy$.\n\n'
+                            '| x | y | F |\n|---|---|---|\n| 0 | 0 | 1 |\n| 0 | 1 | 0 |\n| 1 | 0 | 0 |\n| 1 | 1 | 1 |'},
+            ]}, ensure_ascii=False))
+            if result.get('ok'):
+                yield StreamChunk('artifact', artifact=result['artifact'])
+            yield _tool_result('edit_document', result)
+            yield StreamChunk('document_status', '')
+            yield StreamChunk('round')
+            if result.get('ok'):
+                yield (f'Đã chèn lời giải vào **{name}** bằng Theo dõi thay đổi. Mở bằng Word, xem rồi chọn Review → Accept '
+                       'All Changes để thành chữ thường.')
+            else:
+                yield 'Chưa sửa được tệp: ' + result['error']
+            return
         lowered = last_user.casefold()
         # Only the offline mock uses keyword routing. The real provider chooses its tool.
         create_requested = '[PETO_DOCUMENT_CREATE]' in system_prompt or '__baocao__' in last_user or (

@@ -29,6 +29,7 @@ SHORT_THOUGHT_MS = 1_500
 # Công cụ có tham số dài: Grok soạn lệnh mất thời gian thấy được, nên có bước "soạn" riêng.
 COMPOSE = {
     'edit_spreadsheet': 'Đang soạn lệnh sửa tệp Excel…',
+    'edit_document': 'Đang soạn phần sửa tệp Word…',
     'create_document': 'Đang soạn tài liệu…',
     'create_presentation': 'Đang soạn slide…',
     'create_spreadsheet': 'Đang soạn bảng tính…',
@@ -222,7 +223,7 @@ class WorkLog:
             return self._finish(step, label or _done_label(step.label), detail=_clip(detail, 200))
         problems = [_clip(item, MAX_PROBLEM_CHARS) for item in (info.get('problems') or [info.get('error') or ''])
                     if str(item).strip()][:MAX_PROBLEMS]
-        label = info.get('label') or ('Chưa sửa được tệp' if info.get('tool') == 'edit_spreadsheet' else 'Chưa tạo được tệp')
+        label = info.get('label') or ('Chưa sửa được tệp' if info.get('tool') in {'edit_spreadsheet', 'edit_document'} else 'Chưa tạo được tệp')
         return self._finish(step, label, state='failed', problems=problems)
 
     def tool_end(self) -> str:

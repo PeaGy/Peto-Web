@@ -4,6 +4,7 @@ import { DocumentIcon } from './DocumentWorkspace';
 import ChangeText from './ChangeText';
 import { SheetIcon, SheetPreview, useSheet } from './SheetPreview';
 import { changeLabel, parseChange } from './workbookChanges';
+import { parseWordChange, VERBS } from './wordChanges';
 
 export function DownloadIcon() {
   return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3v12m-4-4 4 4 4-4M4 16v4h16v-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>;
@@ -72,9 +73,31 @@ function WorkbookArtifactCard({ artifact, onOpen }: { artifact: DocumentArtifact
   </section>;
 }
 
+/** Tệp Word người dùng Peto đã sửa bằng Theo dõi thay đổi (mẫu "Nhật ký", như bản Excel): danh sách việc Peto đã làm;
+ * máy chủ không có Word nên không có ảnh trang, bản xem dựng lại nằm trong bảng tài liệu. */
+function WordEditArtifactCard({ artifact, onOpen }: { artifact: DocumentArtifact; onOpen: (artifact: DocumentArtifact) => void }) {
+  const download = `/api/documents/${encodeURIComponent(artifact.id)}/export/docx?version=${artifact.version}`;
+  const changes = (artifact.changes ?? []).map(parseWordChange);
+  const total = Math.max(artifact.change_count ?? 0, changes.length);
+  return <section className="document-artifact sheet workbook" aria-label={`Tệp Word ${artifact.filename}`}>
+    <header className="artifact-heading">
+      <DocumentIcon /><button type="button" className="artifact-name" onClick={() => onOpen(artifact)} title={artifact.filename}>{artifact.filename}</button>
+      <a className="artifact-icon" href={download} download={artifact.filename} aria-label={`Tải ${artifact.filename}`} data-tip="Tải tệp đã sửa"><DownloadIcon /></a>
+      <button type="button" className="artifact-icon" aria-label={`Mở rộng ${artifact.filename}`} data-tip="Mở trong bảng tài liệu" onClick={() => onOpen(artifact)}><ExpandIcon /></button>
+    </header>
+    {changes.length > 0 ? <ol className="wb-card-log" aria-label="Peto đã sửa">
+      {changes.slice(0, SHOWN_CHANGES).map((change, index) => <li key={index}><span className="wb-log-where">{change.where}</span><span>{VERBS[change.kind]} {change.text}</span></li>)}
+    </ol> : <p className="wb-card-empty">Bản Peto đã sửa của tệp bạn gửi.</p>}
+    {total > SHOWN_CHANGES && <p className="wb-card-more">và {total - SHOWN_CHANGES} thay đổi khác</p>}
+    <footer className="artifact-caption"><span>DOCX · Theo dõi thay đổi (Peto){artifact.version > 1 ? ` · phiên bản ${artifact.version}` : ''}</span>
+      <button type="button" onClick={() => onOpen(artifact)}>Xem tệp</button></footer>
+  </section>;
+}
+
 export default function DocumentArtifactCard({ artifact, onEdit, onOpen }: { artifact: DocumentArtifact; onEdit: (artifact: DocumentArtifact) => void; onOpen: (artifact: DocumentArtifact) => void }) {
   if (artifact.format === 'xlsx') return artifact.style === 'workbook'
     ? <WorkbookArtifactCard artifact={artifact} onOpen={onOpen} /> : <SheetArtifactCard artifact={artifact} onOpen={onOpen} />;
+  if (artifact.style === 'wordedit') return <WordEditArtifactCard artifact={artifact} onOpen={onOpen} />;
   const base = `/api/documents/${encodeURIComponent(artifact.id)}`;
   const download = `${base}/export/${artifact.format}?version=${artifact.version}`;
   const preview = (number: number) => `${base}/preview?version=${artifact.version}&page=${number}`;

@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { beforeAll, beforeEach, expect, it, vi } from 'vitest';
 import DocumentPanel from '../src/features/documents/DocumentPanel';
 import * as api from '../src/features/documents/documentApi';
-vi.mock('../src/features/documents/documentApi', async original => ({ ...await original<typeof import('../src/features/documents/documentApi')>(), listDocuments: vi.fn(), getDocument: vi.fn(), getSheet: vi.fn() }));
+vi.mock('../src/features/documents/documentApi', async original => ({ ...await original<typeof import('../src/features/documents/documentApi')>(), listDocuments: vi.fn(), getDocument: vi.fn(), getSheet: vi.fn(), getWordPreview: vi.fn() }));
 import { sheetGrid } from './sheetFixture';
 import { preloadLazyParts } from './lazyParts';
 beforeAll(preloadLazyParts);
@@ -133,4 +133,36 @@ it('mở bảng tính từ thẻ trong chat thì thu danh sách tệp để lư�
   expect(screen.queryByRole('navigation', { name: 'Danh sách tài liệu' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: 'Hiện danh sách tệp' }));
   expect(screen.getByRole('navigation', { name: 'Danh sách tài liệu' })).toBeTruthy();
+});
+
+it('tệp Word Peto đã sửa: danh sách thay đổi trỏ đúng chỗ theo mã dấu sửa, phần chèn và xóa được tô, chỉ tải DOCX', async () => {
+  const edited: api.SavedDocument = { ...one, id: 'W1', title: 'Bài tập 05', format: 'docx', pages: 0, style: 'wordedit', version: 2,
+    content: 'x', versions: [{ version: 2, title: 'Bài tập 05', created_at: 2 }, { version: 1, title: 'Bài tập 05', created_at: 1 }] };
+  vi.mocked(api.listDocuments).mockResolvedValue({ documents: [edited, one] });
+  vi.mocked(api.getDocument).mockImplementation(async id => id === 'W1' ? edited : one);
+  const scrolled: string[] = [];
+  Element.prototype.scrollIntoView = function (this: Element) { scrolled.push(this.textContent ?? ''); };
+  vi.mocked(api.getWordPreview).mockResolvedValue({ kind: 'word', title: 'Bài tập 05', truncated: false, blocks: [
+    { type: 'p', number: 1, parts: [{ text: 'Ghi chú cũ', state: 'del' }], state: 'del', revs: [3] },
+    { type: 'p', number: 2, label: 'a)', parts: [{ text: 'Lập bảng giá trị của F.' }] },
+    // Lời giải của lần sửa trước (mã 1–2) và của lần này (mã 4–6): dòng thay đổi của lần này phải tới khối sau.
+    { type: 'p', number: 3, parts: [{ text: 'Lời giải cũ', state: 'ins' }], state: 'ins', revs: [1, 2] },
+    { type: 'p', number: 4, parts: [{ text: 'Ta có ', state: 'ins' }, { math: '\overline{x}', display: false, state: 'ins' }], state: 'ins', revs: [4, 5] },
+    { type: 'table', rows: [{ state: 'ins', cells: [{ parts: [{ text: 'x', state: 'ins' }] }, { parts: [{ text: 'F', state: 'ins' }] }] }], revs: [6] },
+  ], changes: [{ text: 'Xóa Đoạn 1', revs: [3, 3] }, { text: 'Chèn sau Đoạn 2: 1 đoạn, 1 bảng', revs: [4, 6] }, { text: 'Xóa Đoạn 9', revs: [] }] });
+  render(<DocumentPanel {...props} selection={{ id: 'W1', version: 2, key: 3 }} />);
+  const log = await screen.findByRole('region', { name: 'Peto đã sửa' });
+  expect(screen.queryByRole('navigation', { name: 'Danh sách tài liệu' })).toBeNull();
+  expect(within(log).getAllByRole('button').slice(1).map(button => button.textContent)).toEqual(['Đoạn 1Xóa đoạn', 'Đoạn 2Chèn 1 đoạn, 1 bảng', 'Đoạn 9Xóa đoạn']);
+  expect((within(log).getByRole('button', { name: 'Đoạn 9Xóa đoạn' }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(within(log).getByRole('button', { name: 'Đoạn 2Chèn 1 đoạn, 1 bảng' }));
+  expect(scrolled[0]).toContain('Ta có');
+  const doc = screen.getByLabelText('Nội dung Bài tập 05');
+  expect(doc.querySelectorAll('.wv-active')).toHaveLength(2);
+  expect(doc.querySelector('.wv-del')?.textContent).toBe('Ghi chú cũ');
+  expect(doc.querySelector('.katex')).toBeTruthy();
+  expect(screen.getByRole('link', { name: 'Tải Bài tập 05.docx' }).getAttribute('href')).toBe('/api/documents/W1/export/docx?version=2');
+  expect(screen.queryByRole('button', { name: 'Sửa nội dung' })).toBeNull();
+  expect(screen.getByText(/Accept All Changes/)).toBeTruthy();
+  expect(api.getWordPreview).toHaveBeenCalledWith('W1', 2, expect.anything());
 });

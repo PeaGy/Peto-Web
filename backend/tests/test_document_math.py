@@ -87,6 +87,17 @@ def test_word_equation_structures_follow_the_schema_order():
     assert [child.tag.replace(M, "") for child in properties] == ["nor"]
 
 
+def test_a_function_name_without_argument_is_plain_text_not_an_empty_slot():
+    """F_{\\min}: một m:func có m:e rỗng hiện thành ô trống chờ điền trong Word (chủ web thấy "Fmin□", 12/10/2026)."""
+    paragraph = omml(r"F_{\min} = \overline{x} + \max_{i} a_i + \sin x", display=False)
+    for function in paragraph.iter(M + "func"):
+        assert "".join(function.find(M + "e").itertext()).strip(), "không còn m:func nào có phần đối số rỗng"
+    subscript = next(paragraph.iter(M + "sSub"))
+    assert "".join(subscript.find(M + "sub").itertext()) == "min"
+    assert subscript.find(f"{M}sub/{M}r/{M}rPr/{M}sty").get(M + "val") == "p"
+    assert back_to_latex(paragraph).startswith(r"F_{\mathrm{min}}")
+
+
 @pytest.mark.parametrize("source,message", [
     (r"\frac{a}{", "Thiếu dấu }"),
     (r"x^2^3", "Hai chỉ số trên"),

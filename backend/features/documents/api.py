@@ -13,8 +13,9 @@ from features.documents.export import MAX_CONTENT, clean_text, image_numbers, pa
 from features.documents.jobs import (EXPORT_WAIT, PREVIEW_WAIT, RenderBusy, build_presentation, build_spreadsheet, export_file,
                                      prepare_spreadsheet, render_page, render_queue)
 from features.documents.sheets.view import grid as sheet_grid
-from features.documents.tools import CHANGED_PREFIX, parse_changes
+from features.documents.tools import CHANGED_PREFIX, parse_changes, word_changes
 from features.documents.workbook_edit.package import EditError
+from features.documents.word_edit import package as word_package, preview as word_preview
 from features.documents.workbook_grid import grid as workbook_grid
 from features.documents.slides.spec import image_numbers as slide_images, load as load_deck
 from features.documents import images as document_images
@@ -68,6 +69,9 @@ async def revise(document_id: str, draft: Revision, owner: str = Depends(current
         raise HTTPException(400, 'Bài thuyết trình chưa sửa tay được. Nhờ Peto sửa trong chat, Peto sẽ tạo phiên bản mới.')
     if current.get('format') == 'xlsx':
         raise HTTPException(400, 'Bảng tính chưa sửa tay được. Nhờ Peto sửa trong chat, Peto sẽ tạo phiên bản mới.')
+    if current.get('style') == 'wordedit':
+        raise HTTPException(400, 'Tệp Word Peto đã sửa không sửa tay ở đây được. Tải về sửa bằng Word, hoặc nhờ Peto sửa '
+                                 'trong chat.')
     title, content = validate(draft)
     return await store.save_document(owner, None, title, content, document_id, draft.base_version, style=draft.style)
 
@@ -88,6 +92,13 @@ async def export(document_id: str, format: Literal['docx', 'pdf', 'pptx', 'xlsx'
         return await export_spreadsheet(draft, assets, version, format)
     if format in ('pptx', 'xlsx'):
         raise HTTPException(400, 'Tài liệu này không có bản PowerPoint.' if format == 'pptx' else 'Tài liệu này không có bản Excel.')
+    if draft.get('style') == 'wordedit':
+        # Tệp Word của người dùng Peto đã sửa: chỉ có chính tệp đó, máy chủ không có Word để xuất PDF.
+        if format != 'docx':
+            raise HTTPException(400, 'Tệp Word Peto đã sửa chỉ tải được DOCX.')
+        if not assets or not assets.get('docx'):
+            raise HTTPException(404, 'Không còn tệp của bản sửa này.')
+        return file_response(draft, version, format, assets['docx'])
     if assets:
         data = assets[format]
         return file_response(draft, version, format, data)
@@ -144,6 +155,32 @@ async def export_spreadsheet(draft, assets, version, format):
     return file_response(draft, version, format, files['xlsx'])
 
 
+@router.get('/{document_id}/word')
+async def word(document_id: str, version: int = Query(ge=1), owner: str = Depends(current_owner)):
+    """Bản xem tệp Word Peto đã sửa: đoạn và bảng theo thứ tự, phần chèn/xóa của Theo dõi thay đổi, công thức dạng
+    LaTeX, cùng danh sách thay đổi. Đọc thẳng từ tệp đã lưu."""
+    draft = await store.get_document(owner, document_id, version)
+    if draft.get('style') != 'wordedit':
+        raise HTTPException(404, 'Tài liệu này không phải tệp Word Peto đã sửa.')
+    assets = await store.get_assets(owner, document_id, version)
+    if not assets or not assets.get('docx'):
+        raise HTTPException(404, 'Không còn tệp của bản sửa này.')
+
+    def build(data: bytes) -> dict:
+        package = word_package.Package(data)
+        return word_preview.build(package.document(), package.optional('word/numbering.xml'),
+                                  package.optional('word/styles.xml'))
+
+    try:
+        data = await anyio.to_thread.run_sync(build, assets['docx'])
+    except ValueError as error:
+        raise HTTPException(422, f'Chưa đọc lại được tệp Word: {error}') from error
+    data['kind'] = 'word'
+    data['title'] = draft['title']
+    data['changes'] = word_changes(draft['content'])
+    return JSONResponse(data, headers={'Cache-Control': 'private, no-store'})
+
+
 @router.get('/{document_id}/sheet')
 async def sheet(document_id: str, version: int = Query(ge=1), owner: str = Depends(current_owner)):
     """Số liệu cho lưới xem bảng tính: chữ đã định dạng, công thức từng ô, biểu đồ. Tính lại từ nội dung đã lưu."""
@@ -196,7 +233,7 @@ def file_response(draft, version, format, data):
 @router.get('/{document_id}/preview')
 async def preview(document_id: str, version: int = Query(ge=1), page: int = Query(1, ge=1, le=40), owner: str = Depends(current_owner)):
     assets = await store.get_assets(owner, document_id, version)
-    if not assets or page > assets['pages'] or assets['format'] == 'xlsx':
+    if not assets or page > assets['pages'] or assets['format'] == 'xlsx' or not assets['preview']:
         raise HTTPException(404, 'Không tìm thấy bản xem trước này.')
     if page == 1:
         data = assets['preview']

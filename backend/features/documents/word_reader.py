@@ -379,35 +379,59 @@ def parse(xml: bytes | None):
     return None if not xml else fromstring(xml, forbid_dtd=True)
 
 
-def read_body(document_root, numbering_root, styles_root, max_chars: int) -> dict:
-    """Chữ cho Peto: ``[Đoạn N]`` và ``[Bảng N]`` như trước, kèm số đếm công thức, hình, MathType."""
-    body_element = next((child for child in document_root if _word(child) == "body"), None)
-    if body_element is None:
-        raise ValueError("Word thiếu phần nội dung")
-    numbering = Numbering(numbering_root, styles_root) if numbering_root is not None else None
-    body = Body(numbering)
-    parts: list[str] = []
-    used = paragraphs = tables = 0
-    shortened = False
+def numbered_blocks(body_element, body: Body):
+    """(loại "p" hoặc "tbl", số thứ tự, phần tử, chữ hoặc các dòng bảng) của từng đoạn và bảng có chữ, theo đúng số
+    ``[Đoạn N]`` / ``[Bảng N]`` Peto đọc. Bộ sửa Word (word_edit) dùng chung để chỉ đúng chỗ Peto đã đọc. Phải đi qua cả
+    đoạn trống: bộ đếm số thứ tự Word vẫn tăng ở đó."""
+    paragraphs = tables = 0
     for block in _blocks(body_element):
         if _word(block) == "p":
             value = body.paragraph(block)
-            if not value:
-                continue
-            paragraphs += 1
-            value = f"[Đoạn {paragraphs}]\n{value}\n\n"
+            if value:
+                paragraphs += 1
+                yield "p", paragraphs, block, value
         else:
             rows = body.table_rows(block)
-            if not any(row.strip(" /|\t\n") for row in rows):
+            if not rows:
                 continue
+            if not any(row.strip(" /|\t\n") for row in rows):
+                # Bảng trống là khung đề cho sẵn để điền (bảng giá trị, bìa Karnaugh): vẫn đánh số để Peto thấy và điền.
+                columns = max(len(row.split(" | ")) for row in rows)
+                rows = [f"(bảng trống: {len(rows)} hàng × {columns} cột)"]
             tables += 1
-            value = f"[Bảng {tables}]\n" + "\n".join(rows) + "\n\n"
+            yield "tbl", tables, block, rows
+
+
+def body_of(document_root):
+    body_element = next((child for child in document_root if _word(child) == "body"), None)
+    if body_element is None:
+        raise ValueError("Word thiếu phần nội dung")
+    return body_element
+
+
+def read_body(document_root, numbering_root, styles_root, max_chars: int) -> dict:
+    """Chữ cho Peto: ``[Đoạn N]`` và ``[Bảng N]`` như trước, kèm số đếm công thức, hình, MathType."""
+    body_element = body_of(document_root)
+    numbering = Numbering(numbering_root, styles_root) if numbering_root is not None else None
+    body = Body(numbering)
+    parts: list[str] = []
+    used = 0
+    shortened = False
+    for kind, number, _element, value in numbered_blocks(body_element, body):
+        if kind == "p":
+            value = f"[Đoạn {number}]\n{value}\n\n"
+        else:
+            value = f"[Bảng {number}]\n" + "\n".join(value) + "\n\n"
         room = max_chars - used
         parts.append(value[:room])
         used += min(room, len(value))
         if len(value) > room:
             shortened = True
             break
-    return {"text": "".join(parts).strip(), "shortened": shortened, "formulas": body.formulas,
+    text = "".join(parts).strip()
+    if all(line.startswith(("[Bảng ", "(bảng trống:")) for line in text.splitlines() if line):
+        # Chỉ có khung bảng trống, không một chữ nào: không coi là đọc được chữ.
+        text = ""
+    return {"text": text, "shortened": shortened, "formulas": body.formulas,
             "images": body.images, "image_specs": body.image_specs, "charts": body.charts,
             "mathtype": body.mathtype, "objects": body.objects}

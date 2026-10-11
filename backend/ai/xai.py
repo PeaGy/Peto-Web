@@ -25,7 +25,8 @@ from core.config import MAX_HISTORY_IMAGES, XAI_API_BASE, XAI_MAX_OUTPUT_TOKENS,
 from ai.xai_auth import XaiAuth, XaiAuthError
 from shared.attachment_tools import NAMES as FILE_TOOLS, current_files
 from shared.time_tools import TOOL_SCHEMAS, execute_tool
-from features.documents.tools import current_session, SCHEMA as DOCUMENT_SCHEMA, EDIT_SCHEMA, PRESENTATION_SCHEMA, SPREADSHEET_SCHEMA
+from features.documents.tools import (current_session, SCHEMA as DOCUMENT_SCHEMA, EDIT_SCHEMA, PRESENTATION_SCHEMA,
+                                      SPREADSHEET_SCHEMA, WORD_EDIT_SCHEMA)
 from features.connectors.tools import current_session as github_session_context, NAMES as GITHUB_TOOLS, NOTE as GITHUB_NOTE
 from shared.web_search import normalize_sources, search_context
 from prompts.english import FINALIZING_PROMPT, GITHUB_PROMPT, NO_GITHUB_PROMPT, SEARCH_FALLBACK_PROMPT
@@ -44,6 +45,7 @@ DOCUMENT_TOOLS = {
     'create_presentation': ('Đang dàn trang slide…', 'present'),
     'create_spreadsheet': ('Đang tính bảng tính…', 'tabulate'),
     'edit_spreadsheet': ('Đang sửa tệp Excel…', 'edit'),
+    'edit_document': ('Đang sửa tệp Word…', 'revise'),
 }
 
 _TEXT_TYPE = {"user": "input_text", "assistant": "output_text"}
@@ -51,8 +53,8 @@ MAX_TOOL_ROUNDS = 3
 MAX_GITHUB_TOOL_ROUNDS = 12
 MAX_TOOL_CALLS = 8
 MAX_GITHUB_TOOL_CALLS = 30
-# Hội thoại có tệp Excel sửa được: sửa một bảng nhiều lỗi cần vài lần edit_spreadsheet (40 thay đổi mỗi lần), cộng lần
-# làm lại khi bị từ chối và vài lần tra trong tệp.
+# Hội thoại có tệp Excel hay Word sửa được: sửa một bảng nhiều lỗi cần vài lần edit_spreadsheet (40 thay đổi mỗi lần),
+# giải cả bài trong tệp Word cần vài lần edit_document, cộng lần làm lại khi bị từ chối và vài lần tra trong tệp.
 MAX_WORKBOOK_TOOL_ROUNDS = 8
 MAX_WORKBOOK_TOOL_CALLS = 16
 # Grok soạn lệnh công cụ dài hay suy nghĩ mà chưa có gì để hiện: cứ chừng này giây báo một nhịp "vẫn đang làm", để lượt
@@ -64,7 +66,7 @@ PULSE_SECONDS = 10.0
 FOLLOW_UP_CHARS = 300
 FOLLOW_UP = ('[Nhắc tự động của Peto, không phải lời người dùng] Câu trả lời vừa rồi chỉ báo sắp làm mà chưa gọi công cụ '
              'nào, nên chưa có gì được sửa và người dùng chưa nhận được tệp. Làm tiếp ngay trong câu trả lời này: gọi '
-             'edit_spreadsheet (hay công cụ yêu cầu cần). Được nhờ liệt kê lỗi trước thì viết danh sách rồi gọi công cụ '
+             'edit_spreadsheet hay edit_document (hay công cụ yêu cầu cần). Được nhờ liệt kê lỗi trước thì viết danh sách rồi gọi công cụ '
              'luôn trong cùng câu trả lời, trừ khi người dùng dặn chờ họ đồng ý. Không lặp lại câu báo. Nếu yêu cầu thật sự '
              'không cần công cụ nào, chỉ trả lời đúng một chữ: XONG.')
 
@@ -229,10 +231,11 @@ class ResponsesProvider(ChatProvider):
                 instructions += ('\n\nGitHub của người dùng đã kết nối. Dùng công cụ github_* khi cần dữ liệu repo hoặc GitHub Actions. '
                                  'Các công cụ chỉ đọc; không được nói đã sửa, chạy lại hay ghi lên GitHub. ' + GITHUB_NOTE) if github_schemas else (
                     '\n\nGitHub của người dùng chưa kết nối trong lượt này. Nếu cần đọc repo riêng hoặc log Actions, hướng dẫn mở Cài đặt → Kết nối. Không giả vờ đã truy cập tài khoản GitHub.')
-        workbooks = bool(document_session and document_session.workbooks)
+        workbooks = bool(document_session and (getattr(document_session, 'workbooks', None)
+                                               or getattr(document_session, 'word_files', None)))
         max_rounds = max(MAX_TOOL_ROUNDS, MAX_GITHUB_TOOL_ROUNDS if github_schemas else 0, MAX_WORKBOOK_TOOL_ROUNDS if workbooks else 0)
         max_calls = max(MAX_TOOL_CALLS, MAX_GITHUB_TOOL_CALLS if github_schemas else 0, MAX_WORKBOOK_TOOL_CALLS if workbooks else 0)
-        # Lượt nhờ sửa tệp Excel còn có thể nhắc làm tiếp: chưa sửa hay tạo tệp nào, và chưa nhắc lần nào.
+        # Lượt nhờ sửa tệp Excel hay Word còn có thể nhắc làm tiếp: chưa sửa hay tạo tệp nào, và chưa nhắc lần nào.
         watching = bool(self.service == "xAI" and tools_enabled and workbooks and getattr(document_session, "edit_request", False))
         follow_up_next = False
         for round_index in range(max_rounds + 1):
@@ -262,7 +265,8 @@ class ResponsesProvider(ChatProvider):
                     "effort": effort if effort in self.supported_efforts else "low"
                 },
                 "stream": True,
-                "tools": [*TOOL_SCHEMAS, *([DOCUMENT_SCHEMA, PRESENTATION_SCHEMA, SPREADSHEET_SCHEMA, *([EDIT_SCHEMA] if document_session.workbooks else [])]
+                "tools": [*TOOL_SCHEMAS, *([DOCUMENT_SCHEMA, PRESENTATION_SCHEMA, SPREADSHEET_SCHEMA, *([EDIT_SCHEMA] if document_session.workbooks else []),
+                                *([WORD_EDIT_SCHEMA] if getattr(document_session, 'word_files', None) else [])]
                             if document_session else []), *file_schemas, *github_schemas,
                           *([{"type": "web_search"}] if search_enabled else [])] if tools_enabled and not finalizing else [],
                 "include": ["reasoning.encrypted_content"],

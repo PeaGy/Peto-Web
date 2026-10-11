@@ -89,3 +89,22 @@ it('tệp Excel Peto đã sửa: thẻ hiện danh sách thay đổi, không t�
   expect(open).toHaveBeenCalledWith(workbookArtifact);
   expect(fetchMock).not.toHaveBeenCalled();
 });
+
+it('tệp Word Peto đã sửa: thẻ kể các thay đổi theo đoạn, tải DOCX, không có ảnh trang hay nút sửa tay', () => {
+  const fetchMock = vi.fn();
+  vi.stubGlobal('fetch', fetchMock);
+  const open = vi.fn();
+  const edited: DocumentArtifact = { id: 'W1', title: 'Bài tập 05', filename: 'Bài tập 05.docx', format: 'docx', style: 'wordedit', pages: 0,
+    version: 1, change_count: 6, changes: ['Xóa Đoạn 2', 'Chèn sau Đoạn 5: 1 bảng', 'Điền Bảng 1, ô hàng 2 cột 1: 0', 'Thay chữ Đoạn 1: BÀI 5', 'Chèn sau Đoạn 7: 1 đoạn'] };
+  render(<DocumentArtifactCard artifact={edited} onEdit={() => {}} onOpen={open} />);
+  const card = within(screen.getByRole('region', { name: 'Tệp Word Bài tập 05.docx' }));
+  expect(card.getAllByRole('listitem').map(item => item.textContent)).toEqual(['Đoạn 2Xóa đoạn', 'Đoạn 5Chèn 1 bảng',
+    'Bảng 1Điền ô hàng 2 cột 1: 0', 'Đoạn 1Thay BÀI 5']);
+  expect(card.getByText('và 2 thay đổi khác')).toBeTruthy();
+  expect(card.getByRole('link', { name: 'Tải Bài tập 05.docx' }).getAttribute('href')).toBe('/api/documents/W1/export/docx?version=1');
+  expect(card.queryByRole('img')).toBeNull();
+  expect(card.queryByRole('button', { name: 'Sửa nội dung' })).toBeNull();
+  fireEvent.click(card.getByRole('button', { name: 'Xem tệp' }));
+  expect(open).toHaveBeenCalledWith(edited);
+  expect(fetchMock).not.toHaveBeenCalled();
+});

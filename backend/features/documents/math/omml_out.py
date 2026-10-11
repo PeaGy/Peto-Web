@@ -168,6 +168,10 @@ class _Writer:
                     f"<m:lim>{self.row(item.sub)}</m:lim></m:limLow>")
         elif item.sub is not None or item.sup is not None:
             name = self.scripts(name, item.sub, item.sup)
+        if not argument:
+            # Tên hàm đứng một mình (F_{\min}, chỉ số "max"): m:func có m:e rỗng thì Word vẽ ô trống chờ điền (chủ web thấy
+            # "F min□" khi mở tệp ngày 12/10/2026), nên chỉ viết tên hàm bằng chữ đứng.
+            return name
         return f"<m:func><m:funcPr><m:ctrlPr/></m:funcPr><m:fName>{name}</m:fName><m:e>{self.row(argument)}</m:e></m:func>"
 
     def accent(self, item: tree.Accent) -> str:

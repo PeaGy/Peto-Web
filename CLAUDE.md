@@ -851,7 +851,8 @@ came second, PowerPoint third and Excel fourth (sections below).
   - **Tests:** `tests/test_document_themes.py`.
 - **Small fixes that day.** The essay header said "Nghị luận xã hội" on every essay (now the title). Table cells and
   code lines took the essay's first-line indent and justification.
-- **Not done:** editing an uploaded Word file in place, charts, and images from Imagine (the user attaches them).
+- **Not done:** charts and images from Imagine (the user attaches them). Editing an uploaded Word file in place is
+  "Editing uploaded Word files" below.
 - **Tests:** `tests/test_document_features.py`, `test_document_export.py`, `test_document_artifacts.py`,
   `test_document_math.py`.
 
@@ -1111,6 +1112,56 @@ does not touch. The upload never changes; each edit is a new version.
   - a check in real Excel (none on this PC).
 - **Tests:** `backend/tests/test_workbook_edit.py` and `test_turn_limits.py`, frontend `DocumentArtifactCard.test.tsx`
   (`tests/workbookFixture.ts`).
+
+### Editing uploaded Word files (`edit_document`)
+
+Step 4 of the owner's Word plan, built 2026-10-12. Their use: a teacher's exercise file (Đại số Bool, hồi quy…) where
+answers go right under each question, with real equations, truth tables and Karnaugh maps. Before this they pasted Peto's
+chat answer into Word, which broke overlines into "xˉ".
+- **Tracked changes, author "Peto"** (the owner's pick over plain text or bold answers). Every insertion is `w:ins`, every
+  removal `w:del` with `w:delText`, so the user reviews in Word and uses Accept All or Reject. Revision ids continue
+  after the largest `w:id` in the file. Replacing or deleting Peto's own earlier insertion removes it outright, as Word
+  does for your own tracked text, so revising an answer never stacks two layers of marks.
+- **Package** (`features/documents/word_edit/package.py`): only `word/document.xml` is rewritten (lxml, keeps namespace
+  declarations for `mc:Ignorable`); every other part is copied byte for byte with its name, order, date and compression.
+  Same size limits as the reader; DTDs, encrypted/OLE (.doc) and Strict Open XML files are refused with a hint.
+- **Operations** (`ops.py`, strict schema, at most 30 per call, atomic, up to 8 refusals reported at once):
+  `insert_after` (Markdown content, parsed by `export.parse_blocks`: paragraphs, lists written as text labels, Markdown
+  tables, `$…$`/`$$…$$` as native OMML through `math/omml_out`), `replace` (one paragraph), `delete` (paragraph or table)
+  and `fill_cell` (row/column by grid position, honouring `gridSpan`, refusing `vMerge` continuations).
+  - Targets are the reader's own numbers: `word_reader.numbered_blocks` is shared by `read_body` and the editor, and every
+    target in one call refers to the file before that call. Repeated inserts after one target keep their order;
+    deletions run last.
+  - Paragraphs or cells holding equations, pictures, fields, footnotes, text boxes or section breaks cannot be replaced
+    or deleted (Peto inserts a new paragraph instead); Peto's own insertions inside them do not count.
+  - Inserted text takes font, size and language from the target paragraph, or the nearest paragraphs that set them,
+    never bold/italic/colour. Tables get single borders, a header row (`tblHeader`), widths from `export.column_widths`
+    and the page's text width. An empty Peto paragraph separates two adjacent tables (Word would merge them) and follows
+    a table that would otherwise end the body.
+  - The reader now numbers empty tables too (`[Bảng N]` / `(bảng trống: R hàng × C cột)`) so Peto can fill a blank
+    answer grid; a file with nothing but empty tables still reads as no text. `WORD_FORMAT` is 4.
+- **Storage.** Each success is a `style='wordedit'` version (`docx` asset, `pages` 0, no PDF/preview: no Word on the
+  server to lay pages out). Content holds the change lines, a "Mã dấu sửa của từng thay đổi" line (each change's first
+  and last revision id) and a 40,000-character reread with the new numbers, which Peto reads next turn. The same
+  card-per-file-per-turn merging as Excel applies; `MAX_EDITS_PER_TURN` is shared.
+- **API.** Export serves only `docx` (pdf 400); manual `versions` edits 400; `/preview` 404.
+  `GET /api/documents/{id}/word?version=` (`preview.py`) rebuilds blocks from the stored file: parts marked ins/del,
+  equations as LaTeX, Word numbering labels, per-block revision ids, and the change list with its id ranges.
+- **UI** ("Nhật ký", picked by the owner 2026-10-12 from three live variants; the others were a white Word-like page with
+  a markup/final toggle, and a diff of only the changed spots). The card (`WordEditArtifactCard`) lists the first changes
+  ("Đoạn 5 · Chèn 1 bảng"). The panel (`WordView.tsx`, lazy, KaTeX) puts the clickable change list above the content in
+  the app theme: inserted blocks tinted with `--sheet-accent`, deletions struck in `--danger`. A change jumps to the
+  blocks whose revision ids fall in its range, so it stays right on later versions that still carry earlier marks.
+- **Prompt.** Both cores tell Peto to use `edit_document` only when asked to write into the file, to put a whole
+  exercise in one call, and to say it cannot draw circuits or figures into the file. `asks_edit` also matches "chèn",
+  "làm bài", "giải bài"… for the Grok follow-up nudge.
+- **Mock:** `__suaword__` inserts a sample answer (paragraph with an equation, and a table) after Đoạn 1 of the newest
+  Word file.
+- **Checked in real Word by the owner (2026-10-12):** insertions, including equations (`w:ins` wrapping `m:oMath`), show
+  as tracked insertions, the deletion is struck, and Accept All leaves a clean file. That check also found "F_{\min}"
+  drawn as "Fmin□": `omml_out` wrote a function name with no argument as `m:func` with an empty `m:e`, which Word shows
+  as an empty slot. A bare function name is now a plain upright run (this also fixes `create_document`).
+- **Tests:** `backend/tests/test_word_edit.py`, frontend `DocumentArtifactCard.test.tsx` and `DocumentPanel.test.tsx`.
 
 ### Imagine (image generation)
 

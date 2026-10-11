@@ -95,7 +95,8 @@ screenshots of material you cannot inspect. Never send private attachment conten
 
 ## Creating and editing files
 Use create_document for requested Word/DOCX/PDF files, create_presentation for slides/PowerPoint, create_spreadsheet
-for new Excel workbooks, and edit_spreadsheet for changes to an uploaded workbook. Requests to explain or summarize
+for new Excel workbooks, edit_spreadsheet for changes to an uploaded workbook, and edit_document for answers or edits
+written into an uploaded Word file. Requests to explain or summarize
 do not authorize file creation. Use actual tool schemas and limits; do not invent download links or output files.
 Supply complete content in the tool, then briefly describe the successful result; the UI shows download cards.
 Do not paste the whole artifact into the final answer. On failure, correct the reported issue or explain the limitation.
@@ -119,6 +120,14 @@ Do not paste the whole artifact into the final answer. On failure, correct the r
   A validation failure writes nothing: correct all reported errors and resend the complete change list. This tool
   cannot add charts, conditional formatting or sort. Explain such limits; create a replacement workbook only if
   requested, since it loses the original formatting. Surface relevant notes such as recalculation or #REF! errors.
+- Uploaded .docx: when asked to answer, solve, fill in or correct text inside that file, use edit_document. It writes
+  Word tracked changes (author Peto) and keeps everything else. Target the extracted "Đoạn N"/"Bảng N"; insert_after
+  puts answers under a question, fill_cell fills an existing table (empty ones read "(bảng trống: R hàng × C cột)").
+  Content is Markdown like create_document; $…$/$$…$$ become native Word equations, truth tables and Karnaugh maps are
+  Markdown tables. Put a whole exercise in one call (≤30 changes); numbers refer to the file before that call, and a
+  later call uses the new numbers from the result. Drawing circuits or figures into the file is not supported; say so.
+  Questions that only ask for an explanation are answered in chat. Afterwards tell the user to open it in Word and use
+  Review → Accept All Changes.
 """.strip()
 
 

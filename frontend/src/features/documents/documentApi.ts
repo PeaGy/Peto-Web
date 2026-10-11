@@ -2,7 +2,7 @@ import { UnauthorizedError } from '../../shared/api/api';
 
 export interface DocumentSummary { id: string; conversation_id: string; title: string; version: number; created_at: number; format?: 'docx' | 'pdf' | 'pptx' | 'xlsx' | null; pages?: number | null }
 export interface SavedDocument extends DocumentSummary {
-  style?: 'report' | 'essay' | 'classic' | 'band' | 'minimal' | 'clean' | 'academic' | 'bold' | 'sheet' | 'workbook';
+  style?: 'report' | 'essay' | 'classic' | 'band' | 'minimal' | 'clean' | 'academic' | 'bold' | 'sheet' | 'workbook' | 'wordedit';
   content: string;
   versions: { version: number; title: string; created_at: number }[];
 }
@@ -59,6 +59,17 @@ export type SheetGrid = TableGrid | WorkbookGrid;
 /** Lưới bảng tính: bảng Peto tạo (tính lại từ bảng đã lưu) hoặc tệp người dùng Peto đã sửa (đọc từ tệp). Không lưu đệm
  * giữa các tài khoản. */
 export const getSheet = (id: string, version: number, signal?: AbortSignal) => json<SheetGrid>(`/api/documents/${encodeURIComponent(id)}/sheet?version=${version}`, { signal });
+/** Một phần chữ trong bản xem tệp Word đã sửa: chữ, công thức (LaTeX) hay hình; state là phần Peto chèn hay xóa. */
+export interface WordPart { text?: string; math?: string; display?: boolean; image?: boolean; state?: 'ins' | 'del' | null; b?: boolean; i?: boolean }
+export interface WordBlock {
+  type: 'p' | 'table'; parts?: WordPart[]; rows?: { cells: { parts: WordPart[]; span?: number }[]; state?: 'ins' | 'del' }[];
+  label?: string; number?: number; state?: 'ins' | 'del'; align?: 'center' | 'right'; heading?: boolean;
+  /** Mã các dấu sửa (w:id) trong khối, để biết khối thuộc dòng thay đổi nào. */
+  revs?: number[];
+}
+/** Bản xem tệp Word Peto đã sửa: đoạn và bảng theo thứ tự, cùng các dòng thay đổi kèm [mã đầu, mã cuối] dấu sửa của dòng. */
+export interface WordPreview { kind: 'word'; title: string; blocks: WordBlock[]; truncated: boolean; changes: { text: string; revs: number[] }[] }
+export const getWordPreview = (id: string, version: number, signal?: AbortSignal) => json<WordPreview>(`/api/documents/${encodeURIComponent(id)}/word?version=${version}`, { signal });
 export const deleteDocument = (id: string) => json(`/api/documents/${encodeURIComponent(id)}`, { method: 'DELETE' });
 export async function downloadDocument(document: SavedDocument, format: 'docx' | 'pdf') {
   const response = await checked(await fetch(`/api/documents/${encodeURIComponent(document.id)}/export/${format}?version=${document.version}`));

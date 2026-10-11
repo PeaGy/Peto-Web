@@ -25,7 +25,8 @@ VERSION = 3
 # Cách đọc Word (word_reader). 2 (6/10/2026): công thức Word thành LaTeX, số thứ tự a), b)… Word tự đánh, chữ phông Symbol,
 # đánh dấu hình và công thức MathType. Tệp Word đọc theo cách cũ được đọc lại ở lượt sau (cached_document).
 # 3: ảnh nhúng được chuẩn hóa và lưu nội bộ, vị trí [Hình N] được giữ để gửi cùng phần chữ.
-WORD_FORMAT = 3
+# 4 (12/10/2026): bảng trống (khung đề cho sẵn để điền) cũng được đánh số [Bảng N], để Peto điền bằng edit_document.
+WORD_FORMAT = 4
 MAX_XML_BYTES = 8 * 1024 * 1024
 MAX_ZIP_BYTES = 32 * 1024 * 1024
 MAX_PAGE_BYTES = 2 * 1024 * 1024
