@@ -1506,6 +1506,21 @@ describe('Màn hình đăng nhập', () => {
     expect(api.getAuthState).toHaveBeenCalledTimes(1);
   });
 
+  it('đăng xuất khỏi một chat không biến chat đó thành đích quay về của tài khoản khác', async () => {
+    // Đổi Google ↔ Discord từng mở /chat/<id của tài khoản cũ> và báo "Không tìm thấy hội thoại".
+    vi.mocked(api.logout).mockResolvedValue(undefined);
+    window.history.replaceState(null, '', '/chat/A?source=bookmark');
+    sessionStorage.setItem('peto-chat-login-return', '/chat/B');
+    await openApp();
+    await waitFor(() => expect(api.getMessages).toHaveBeenCalled());
+    await fromAccountMenu('Đăng xuất');
+
+    fireEvent.click(await screen.findByRole('link', { name: /Đăng nhập bằng Discord/ }));
+    expect(window.location.pathname).toBe('/');
+    expect(window.location.search).toBe('');
+    expect(sessionStorage.getItem('peto-chat-login-return')).toBeNull();
+  });
+
   it('báo lỗi thay vì bày nút chết khi không gọi được /api/auth/me', async () => {
     // getAuthState hỏng -> login_configured false. Trước đây màn hình vẫn bày
     // nút Discord bấm không ăn thua và giấu Google, làm người dùng tưởng thiếu

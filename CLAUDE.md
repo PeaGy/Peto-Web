@@ -213,6 +213,9 @@ The static fallback also accepts `/chat/<id>` but rejects missing `/chat`, extra
 Signing in from a Chat deep link records only its same-origin path/query in sessionStorage; the normal OAuth root
 callback then replaces that root entry with the requested Chat URL. The pending return is consumed once; auth and
 owner checks remain unchanged, with no public sharing or arbitrary redirect target.
+Explicit sign-out clears any pending return and replaces the URL with `/` (2026-10-11: switching Google ↔ Discord
+from an open chat made the next account land on the previous account's `/chat/<id>`, "Không tìm thấy hội thoại").
+A mid-session expiry keeps the URL, so signing back in still returns to that chat.
 
 The index page is not served verbatim: the handler inserts `og:image` (plus alt text)
 from `app_identity.get_app_identity()` — the bot's Discord CDN icon, already the absolute
@@ -1403,6 +1406,12 @@ disabled. `PETO_MEMORY_CACHE_TTL` is kept only for config compatibility and does
 
 Disabled unless both `PETO_MEMORY_GATEWAY_URL` and `PETO_MEMORY_GATEWAY_TOKEN` are set;
 half-configured setups log a warning at startup rather than failing silently.
+
+The bot writes its summary in its roleplay voice. On 2026-10-11 the owner's Discord account got assistant replies
+(Grok and Luna) that called itself "Peto" and the owner "ad", with an empty profile; the same question from their
+Google account (no gateway) did not. `build_memory_context` therefore adds `VOICE_RULE_VI`/`VOICE_RULE_EN` outside
+roleplay: never adopt forms of address, nicknames or character voice from the summary; a different name for the user
+only when they asked for it in saved memories or the profile. Roleplay turns keep the bot's voice and omit the rule.
 
 ### Companion tab and voice relay
 

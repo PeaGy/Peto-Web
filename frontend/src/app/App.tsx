@@ -1,6 +1,6 @@
 import { usePreferencesPersistence } from './usePreferencesPersistence';
 import LoginScreen from './LoginScreen';
-import { rememberChatLogin, takeChatLogin } from './chatLoginReturn';
+import { forgetChatLogin, rememberChatLogin, takeChatLogin } from './chatLoginReturn';
 import { BrowserRouter, useLocation, useNavigate } from 'react-router';
 import { appPath, appView, chatId, chatRoute, legacyPath, VIEW_PATHS } from './routes';
 import { EditIcon } from '../shared/ui/EditIcon';
@@ -1103,6 +1103,11 @@ function AppContent() {
       await logout();
       handleUnauthorized();
       setAuthError(null);
+      // URL chat/ảnh thuộc tài khoản vừa thoát. Để nguyên thì bấm đăng nhập sẽ ghi nhớ nó làm đích quay về, và
+      // tài khoản khác đăng nhập vào gặp "Không tìm thấy hội thoại" (chủ web gặp khi đổi Google ↔ Discord, 2026-10-11).
+      // Hết phiên giữa chừng (handleUnauthorized riêng) vẫn giữ URL để đăng nhập lại đúng chỗ.
+      forgetChatLogin();
+      navigate('/', { replace: true });
     } catch {
       setError("Chưa đăng xuất được. Thử lại nhé.");
     }

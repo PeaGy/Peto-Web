@@ -57,6 +57,7 @@ async def _build_system_prompt(
         summary=snapshot.summary if snapshot else "",
         explicit=snapshot.explicit if snapshot else (),
         english=english,
+        roleplay=mode != "companion" and persona == "roleplay",
     )
     # Đọc lại ở MỖI lượt, không đệm: người dùng sửa hồ sơ trong Cài đặt thì
     # ngay tin nhắn kế tiếp đã theo.

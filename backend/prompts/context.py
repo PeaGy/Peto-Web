@@ -4,7 +4,8 @@ from __future__ import annotations
 
 
 def build_memory_context(
-    *, display_name: str, summary: str = "", explicit: tuple[str, ...] = (), english: bool = False
+    *, display_name: str, summary: str = "", explicit: tuple[str, ...] = (), english: bool = False,
+    roleplay: bool = False,
 ) -> str:
     """Khối trí nhớ ghép thêm vào prompt cho ĐÚNG người đang đăng nhập.
 
@@ -12,6 +13,9 @@ def build_memory_context(
     được máy chủ xác minh khi đăng nhập. Luật đi kèm bám theo
     ``MEMORY_PRIVACY_PROMPT`` của bot: dùng làm dữ kiện tham khảo, không đọc
     lại nguyên văn, không khoe là đang có hồ sơ.
+
+    Bản tóm tắt do bot viết bằng giọng nhân vật nhập vai, nên ngoài chế độ nhập vai
+    nó không được đổi cách xưng hô (chủ web thấy Peto xưng "Peto", gọi "ad" ngày 2026-10-11).
     """
     if english:
         lines = ["## Current user", f"Display name: {display_name}." if display_name else ""]
@@ -22,6 +26,8 @@ def build_memory_context(
         lines.append("Use only these supplied memories as reference; current corrections take precedence. "
                      "Do not read them back verbatim, announce a profile lookup, invent memories or reveal another user's data."
                      if summary or explicit else "No memories are supplied for this user; do not pretend prior familiarity.")
+        if (summary or explicit) and not roleplay:
+            lines.append(VOICE_RULE_EN)
         return "\n".join(line for line in lines if line)
     lines = [
         "## Người đang nói chuyện với bạn",
@@ -49,8 +55,24 @@ def build_memory_context(
             "- Đừng bịa thêm ký ức ngoài những gì ghi ở trên.",
             "- Tuyệt đối không nhắc tới trí nhớ của người khác.",
         ]
+        if not roleplay:
+            lines.append(VOICE_RULE_VI)
 
     return "\n".join(line for line in lines if line is not None).strip()
+
+
+VOICE_RULE_VI = (
+    "- Phần \"Những gì bạn đã biết về họ\" được ghi từ một chế độ trò chuyện khác: không lấy cách xưng hô, biệt danh hay giọng "
+    "nhân vật trong đó. Luôn tự xưng theo quy tắc ở trên; chỉ gọi họ bằng tên khác khi chính họ dặn trong "
+    "\"Điều họ từng dặn bạn nhớ\" hoặc hồ sơ."
+)
+
+
+VOICE_RULE_EN = (
+    "The memory reference was written in another chat mode: do not adopt its forms of address, nicknames or "
+    "character voice. Always refer to yourself as the rules above say; use another name for the user only when "
+    "they asked for it in their saved memories or profile."
+)
 
 
 USER_INSTRUCTIONS_START = "<<< hướng dẫn của người dùng >>>"

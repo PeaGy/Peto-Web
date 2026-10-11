@@ -152,6 +152,17 @@ def test_memory_context_includes_rules():
     assert "trí nhớ của người khác" in context
 
 
+def test_memory_summary_does_not_set_the_voice_outside_roleplay():
+    """Bot viết tóm tắt bằng giọng nhập vai; ngoài nhập vai không được mượn cách xưng hô của nó."""
+    from prompts.context import VOICE_RULE_EN, VOICE_RULE_VI
+
+    memory = {"display_name": "Người Test", "summary": "Hay gọi Peto là ad.", "explicit": ("Đang ôn thi.",)}
+    assert VOICE_RULE_VI in build_memory_context(**memory)
+    assert VOICE_RULE_EN in build_memory_context(**memory, english=True)
+    assert VOICE_RULE_VI not in build_memory_context(**memory, roleplay=True)
+    assert VOICE_RULE_VI not in build_memory_context(display_name="Người Test")
+
+
 async def test_chat_still_works_when_gateway_is_down(client, patch_httpx, monkeypatch):
     """Bot tắt thì Peto vẫn phải trả lời — không được chặn cuộc trò chuyện."""
 

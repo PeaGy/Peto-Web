@@ -9,6 +9,11 @@ export function rememberChatLogin() {
   try { sessionStorage.setItem(KEY, chatRoute(id) + window.location.search); } catch { /* Vẫn đăng nhập được khi bộ nhớ bị chặn. */ }
 }
 
+/** Chủ động đăng xuất: chat của tài khoản cũ không còn là đích quay về của lần đăng nhập sau. */
+export function forgetChatLogin() {
+  try { sessionStorage.removeItem(KEY); } catch { /* Bộ nhớ bị chặn thì cũng chẳng có gì để xóa. */ }
+}
+
 /** Đọc một lần sau đăng nhập; chỉ chấp nhận URL chat cùng nguồn gốc. */
 export function takeChatLogin(): string | null {
   try {
