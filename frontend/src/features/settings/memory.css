@@ -1,4 +1,4 @@
-/* Trí nhớ Companion trong Cài đặt (MemorySettings.tsx) và dòng "Peto vừa ghi nhớ" dưới câu trả lời Companion. */
+/* Trí nhớ trong Cài đặt (MemorySettings.tsx). */
 .memory-list { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
 .memory-list li { display: flex; align-items: center; gap: 12px; min-height: 50px; padding: 8px 0; font-size: 14px; line-height: 1.45; }
 .memory-list li + li { border-top: 1px solid var(--line); }
@@ -11,11 +11,6 @@
 .memory-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; margin-top: 16px; color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
 .memory-confirm { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--text); }
 .settings-button.danger { color: var(--danger); border-color: var(--danger); }
-/* Dòng chảy thường, không flex: chữ dài xuống dòng như một câu, bút ở đầu dòng đầu và "· Xem" nối theo cuối chữ. */
-.companion-messages .bubble .memory-notice { flex-basis: 100%; margin: 6px 0 0; color: var(--stage-muted); font-size: 12px; line-height: 1.45; white-space: normal; }
-.memory-notice svg { margin-right: 5px; vertical-align: -2px; }
-.memory-notice-dot { margin: 0 5px; }
-.memory-notice .voice-link { color: var(--stage-text); font-size: 12px; }
 
 .settings-button {
   padding: 8px 14px;

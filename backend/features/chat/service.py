@@ -233,6 +233,8 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
     elif persona == "roleplay":
         await _check_roleplay_start(owner, mode)
     history_limit = ROLEPLAY_MAX_HISTORY if persona == "roleplay" else MAX_HISTORY_MESSAGES
+    # Trí nhớ dùng chung (companion_memory.py) đọc Companion và Chat thường, không đọc Chat nhập vai.
+    remembers = mode == "companion" or persona != "roleplay"
     from features.projects.context import context as project_context
     project_id = settings.get('project_id') if request.conversation_id else request.project_id
     if mode != 'chat' and (project_id or request.project_file_ids):
@@ -575,7 +577,7 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
         else:
             turn_complete = complete
             # Trang hỏi lại vài giây sau "done" để hiện dòng "Peto vừa ghi nhớ"; đánh dấu trước cho khỏi hỏi hụt.
-            if complete and mode == "companion" and await companion_memory.enabled_for(owner):
+            if complete and remembers and await companion_memory.enabled_for(owner):
                 companion_memory.mark_pending(owner)
             yield sse({"type": "done"})
 
@@ -608,7 +610,7 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
         if conversation_id and mode == "chat":
             await titles.maybe_generate(owner, conversation_id, model)
         # Ghi nhớ chạy sau khi trả lời xong, như đặt tiêu đề: câu trả lời và giọng đọc không phải chờ.
-        if conversation_id and mode == "companion" and turn_complete:
+        if conversation_id and remembers and turn_complete:
             await companion_memory.remember(owner, history_limit)
 
     return StreamingResponse(

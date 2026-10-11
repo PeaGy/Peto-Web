@@ -30,7 +30,7 @@ async def ensure_memory_state(owner: str) -> dict:
     """Lần đầu ghi nhớ thì bắt đầu từ tin người dùng mới nhất: lịch sử có từ trước khi có trí nhớ không bị lục lại,
     cả để ghi nhớ lẫn để tóm tắt."""
     async with db_connection.connect() as db:
-        start = max(await _last_companion_message_id(db, owner, "user") - 1, 0)
+        start = max(await _last_memory_message_id(db, owner, "user") - 1, 0)
         await db.execute(
             "INSERT OR IGNORE INTO companion_memory_state (owner, enabled, cursor, since, updated_at) "
             "VALUES (?, 1, ?, ?, ?)",
@@ -40,10 +40,15 @@ async def ensure_memory_state(owner: str) -> dict:
     return await memory_state(owner) or {"enabled": True, "cursor": start, "since": start}
 
 
-async def _last_companion_message_id(db: aiosqlite.Connection, owner: str, role: str | None = None) -> int:
+# Tin nào được đọc để ghi nhớ: Companion và Chat thường. Chat nhập vai thì không (chủ web chốt 11/10/2026): lời thoại
+# nhân vật và nội dung 18+ không được lẫn vào trí nhớ của trợ lý.
+MEMORY_SOURCE = "(c.mode = 'companion' OR (c.mode = 'chat' AND c.persona = 'assistant'))"
+
+
+async def _last_memory_message_id(db: aiosqlite.Connection, owner: str, role: str | None = None) -> int:
     query = (
         "SELECT MAX(m.id) FROM messages m JOIN conversations c ON c.id = m.conversation_id "
-        "WHERE c.owner = ? AND c.mode = 'companion'"
+        f"WHERE c.owner = ? AND {MEMORY_SOURCE}"
     )
     params: tuple = (owner,)
     if role:
@@ -56,7 +61,7 @@ async def _last_companion_message_id(db: aiosqlite.Connection, owner: str, role:
 async def set_memory_enabled(owner: str, enabled: bool) -> None:
     """Bật lại thì bắt đầu đọc từ tin mới nhất: điều người dùng nói lúc đang tắt không bị ghi nhớ hay tóm tắt về sau."""
     async with db_connection.connect() as db:
-        latest = await _last_companion_message_id(db, owner)
+        latest = await _last_memory_message_id(db, owner)
         await db.execute(
             """
             INSERT INTO companion_memory_state (owner, enabled, cursor, since, updated_at) VALUES (?, ?, ?, ?, ?)
@@ -73,19 +78,21 @@ async def set_memory_enabled(owner: str, enabled: bool) -> None:
         await db.commit()
 
 
-async def companion_messages_after(owner: str, after_id: int, limit: int) -> list[dict]:
-    """Tin Companion mới hơn ``after_id``, lấy ``limit`` tin gần nhất, xếp cũ trước mới sau.
+async def memory_messages_after(owner: str, after_id: int, limit: int) -> list[dict]:
+    """Tin Companion và Chat thường mới hơn ``after_id``, lấy ``limit`` tin gần nhất, xếp cũ trước mới sau. Mỗi tin có
+    ``conversation_id`` và ``mode`` để đoạn gửi model phụ tách được từng cuộc trò chuyện.
 
     Người dùng chưa từng có vị trí đã đọc (``after_id`` âm) thì chỉ đọc từ tin người dùng mới nhất: lịch sử có từ
     trước khi có trí nhớ không bị lục lại.
     """
     async with db_connection.connect() as db:
         if after_id < 0:
-            after_id = max(await _last_companion_message_id(db, owner, "user") - 1, 0)
+            after_id = max(await _last_memory_message_id(db, owner, "user") - 1, 0)
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
-            "SELECT m.id, m.role, m.content FROM messages m JOIN conversations c ON c.id = m.conversation_id "
-            "WHERE c.owner = ? AND c.mode = 'companion' AND m.id > ? AND m.role IN ('user', 'assistant') "
+            "SELECT m.id, m.role, m.content, m.conversation_id, c.mode FROM messages m "
+            "JOIN conversations c ON c.id = m.conversation_id "
+            f"WHERE c.owner = ? AND {MEMORY_SOURCE} AND m.id > ? AND m.role IN ('user', 'assistant') "
             "ORDER BY m.id DESC LIMIT ?",
             (owner, after_id, limit),
         )

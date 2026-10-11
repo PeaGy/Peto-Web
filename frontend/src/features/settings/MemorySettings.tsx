@@ -90,9 +90,9 @@ export default function MemorySettings({ open, onUnauthorized }: {
   }
 
   const memories = state?.memories ?? [];
-  const intro = "Peto ghi lại vài điều bạn kể trong Companion, và tóm tắt phần trò chuyện đã cũ, để lần sau nhớ.";
+  const intro = "Peto ghi lại điều bạn kể trong Chat và Companion (trừ nhập vai), kể cả cách bạn muốn được xưng hô, để lần sau nhớ.";
   const hint = !state ? intro
-    : !state.available ? "Chủ web đã tắt trí nhớ Companion trên máy chủ này."
+    : !state.available ? "Chủ web đã tắt trí nhớ trên máy chủ này."
     : state.enabled ? `${intro} Chỉ bạn thấy danh sách này; xóa dòng nào là Peto quên dòng đó.`
     : "Đang tắt: Peto không ghi thêm và không dùng các ghi nhớ bên dưới.";
 
@@ -134,7 +134,7 @@ export default function MemorySettings({ open, onUnauthorized }: {
               ))}
             </ul>
           ) : (
-            <p className="memory-empty">Chưa có ghi nhớ nào. Cứ trò chuyện trong Companion, Peto sẽ tự ghi lại những điều đáng nhớ.</p>
+            <p className="memory-empty">Chưa có ghi nhớ nào. Cứ trò chuyện, Peto sẽ tự ghi lại những điều đáng nhớ.</p>
           )}
         </SettingsGroup>
       )}

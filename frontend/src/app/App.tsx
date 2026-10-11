@@ -287,8 +287,7 @@ function AppContent() {
   const localVoice = useLocalVoice(companionVisited || settingsOpen);
   // Thẻ đang mở của mục Giọng nói (Peto nói / Peto nghe); bảng Micro trong Companion mở thẳng thẻ Peto nghe.
   const [voiceTab, setVoiceTab] = useState<VoiceTab>("noi");
-  // Nút "Xem" ở dòng "Peto vừa ghi nhớ" và đường dẫn trong bảng Micro mở thẳng mục của chúng, cả trên điện thoại.
-  const openMemorySettings = useCallback(() => setSettings({ open: true, section: "tri-nho", page: true }), []);
+  // Đường dẫn trong bảng Micro mở thẳng thẻ Peto nghe, cả trên điện thoại.
   const openHearingSettings = useCallback(() => {
     setVoiceTab("nghe");
     setSettings({ open: true, section: "giong-noi", page: true });
@@ -1412,7 +1411,6 @@ function AppContent() {
           onUnauthorized={handleUnauthorized}
           onOpenSidebar={() => setSidebarOpen(true)}
           onOpenHearingSettings={openHearingSettings}
-          onOpenMemorySettings={openMemorySettings}
         />
         </Suspense>
         </LazyBoundary>

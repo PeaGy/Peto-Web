@@ -1,4 +1,5 @@
-"""Cài đặt → Trí nhớ Companion: xem, xóa và bật/tắt những điều Peto tự ghi nhớ (companion_memory.py).
+"""Cài đặt → Trí nhớ: xem, xóa và bật/tắt những điều Peto tự ghi nhớ từ Chat và Companion (companion_memory.py).
+Đường dẫn giữ /api/companion/memory như lúc trí nhớ chỉ có ở Companion.
 
 Mọi thao tác chỉ đụng dòng của đúng tài khoản đang đăng nhập; biết id ghi nhớ của người khác cũng chỉ nhận 404.
 """
@@ -38,7 +39,7 @@ async def read_memory(owner: str = Depends(current_owner)) -> dict:
 @router.put("/settings")
 async def update_settings(body: MemorySettings, owner: str = Depends(current_owner)) -> dict:
     if not companion_memory.available():
-        raise HTTPException(status_code=503, detail="Chủ web đã tắt trí nhớ Companion trên máy chủ này.")
+        raise HTTPException(status_code=503, detail="Chủ web đã tắt trí nhớ trên máy chủ này.")
     await db.set_memory_enabled(owner, body.enabled)
     return {"enabled": body.enabled}
 

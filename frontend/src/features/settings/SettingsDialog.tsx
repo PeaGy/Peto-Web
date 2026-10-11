@@ -16,13 +16,13 @@ export const CLOSED_SETTINGS: SettingsView = { open: false, section: "giao-dien"
 export const SETTINGS_SECTIONS: { id: SettingsSection; title: string; icon: SettingsIconName; group?: "Companion" }[] = [
   { id: "giao-dien", title: "Giao diện", icon: "palette" },
   { id: "ho-so", title: "Hồ sơ", icon: "user" },
+  { id: "tri-nho", title: "Trí nhớ", icon: "bookmark" },
   { id: "tai-khoan", title: "Tài khoản", icon: "idcard" },
   { id: "luu-tru", title: "Hội thoại đã lưu trữ", icon: "archive" },
   { id: "agent", title: "Peto Agent", icon: "terminal" },
   { id: "ket-noi", title: "Kết nối", icon: "connectors" },
   { id: "nhan-vat", title: "Nhân vật", icon: "character", group: "Companion" },
   { id: "giong-noi", title: "Giọng nói", icon: "wave", group: "Companion" },
-  { id: "tri-nho", title: "Trí nhớ", icon: "bookmark", group: "Companion" },
   { id: "tra-web", title: "Tra web", icon: "globe", group: "Companion" },
 ];
 

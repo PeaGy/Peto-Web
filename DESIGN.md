@@ -458,7 +458,7 @@ below their label while switches stay on the right.
   - The ellipsis is the single character `…`, never `...`.
   - Curly quotes “…” when echoing the user's own text ("“Tên hội thoại” và các tệp đính kèm sẽ bị xóa.").
   - En dash `–` for ranges ("20–30 tuổi"); middle dot `·` between metadata items ("5 trang tính · 152 công thức").
-- **Address:** the user is "bạn"; the assistant is "Peto" ("Peto vừa ghi nhớ…").
+- **Address:** the user is "bạn"; the assistant is "Peto" ("Peto sẽ tự ghi lại những điều đáng nhớ.").
 - **Irreversible actions** state the consequence: "… sẽ bị xóa. Không thể hoàn tác."
 - **Keep helper text short:** one sentence under a setting, no explanation of internals. The owner removed the Micro
   row's note ("… thanh âm lượng chỉ cho biết có âm thanh, chưa xác nhận đã nhận ra lời.") as too much text on

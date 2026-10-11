@@ -74,5 +74,11 @@ async def _build_system_prompt(
     )
     # Trí nhớ Companion (và bản tóm tắt của mạch này) chỉ vào lượt Companion, đọc lại mỗi lượt: xóa một dòng trong Cài
     # đặt là lượt sau Peto quên.
-    companion_block = await companion_memory.memory_block(owner, conversation_id) if mode == "companion" else ""
+    if mode == "companion":
+        companion_block = await companion_memory.memory_block(owner, conversation_id)
+    elif persona != "roleplay":
+        # Trí nhớ dùng chung với Companion (11/10/2026); Chat nhập vai không đọc, không ghi.
+        companion_block = await companion_memory.chat_memory_block(owner, english=english)
+    else:
+        companion_block = ""
     return "\n\n".join(part for part in (base, agent_guide, context, profile_block, companion_block) if part)

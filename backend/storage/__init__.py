@@ -67,7 +67,7 @@ from .memory import (
     memory_state,
     ensure_memory_state,
     set_memory_enabled,
-    companion_messages_after,
+    memory_messages_after,
     apply_memory_changes,
     delete_memory,
     clear_memories,

@@ -1,8 +1,11 @@
-"""Trí nhớ dài hạn của tab Companion (phần Brain; phương án A chủ web chọn ngày 2026-09-27).
+"""Trí nhớ dài hạn của mỗi tài khoản (phần Brain; phương án A chủ web chọn ngày 2026-09-27 cho Companion).
 
-Mỗi lượt Companion chỉ gửi 20 tin gần nhất, nên trò chuyện lâu là Peto quên. Sau khi một lượt trả lời xong, một lượt
-gọi model nhỏ chạy nền đọc các tin mới cùng danh sách đang có, rồi thêm, sửa hay xóa vài ghi nhớ ngắn (mỗi người tối
-đa MAX_MEMORIES). Các lượt Companion sau nhận danh sách này trong system prompt (``persona.build_companion_memory``).
+Ngày 11/10/2026 chủ web mở nó sang Chat, như "Generate memory from chats" của Claude: một trí nhớ chung cho Chat và
+Companion, bật sẵn, không đọc Chat nhập vai. Peto nhờ đó đổi dần cách nói chuyện theo người dùng, kể cả cách xưng hô.
+
+Mỗi lượt chỉ gửi 20 tin gần nhất, nên trò chuyện lâu là Peto quên. Sau khi một lượt trả lời xong, một lượt gọi model nhỏ
+chạy nền đọc các tin mới cùng danh sách đang có, rồi thêm, sửa hay xóa vài ghi nhớ ngắn (mỗi người tối đa
+MAX_MEMORIES). Các lượt Chat và Companion sau nhận danh sách này trong system prompt (``persona.build_companion_memory``).
 
 Ngoài danh sách, mỗi mạch Companion có một bản tóm tắt phần trò chuyện đã trôi khỏi 20 tin đó: đủ SUMMARY_BATCH tin
 trôi ra thì một lượt gọi nhỏ nữa gộp chúng vào bản tóm tắt (``persona.build_companion_summary``). Bản tóm tắt theo
@@ -11,7 +14,7 @@ xóa trắng khi người dùng xóa một ghi nhớ (điều vừa xóa có th�
 
 Chạy sau khi trả lời xong nên không làm chậm câu trả lời hay giọng đọc. Mỗi người chỉ một tác vụ chạy cùng lúc; tin
 đến trong lúc đang chạy được gộp vào lần chạy kế tiếp. Lỗi thì ghi log rồi thôi: vị trí đã đọc không dời, lượt sau thử
-lại. Người dùng xem, xóa và tắt trong Cài đặt → Trí nhớ Companion (memory_api.py).
+lại. Người dùng xem, xóa và tắt trong Cài đặt → Trí nhớ (memory_api.py).
 """
 
 from __future__ import annotations
@@ -48,17 +51,23 @@ SUMMARY_MAX_MESSAGES = 40
 MAX_SUMMARY_CHARS = 1200
 
 # Nhà cung cấp giả nhận ra lượt ghi nhớ và lượt tóm tắt nhờ các câu này nằm trong system prompt.
-MEMORY_MARKER = "Bạn là bộ phận ghi nhớ của Peto trong tab Companion"
+MEMORY_MARKER = "Bạn là bộ phận ghi nhớ của Peto"
 SUMMARY_MARKER = "Bạn là bộ phận tóm tắt của Peto trong tab Companion"
 
-SYSTEM_PROMPT = f"""{MEMORY_MARKER}. Đọc danh sách ghi nhớ hiện có và đoạn hội thoại mới, rồi quyết định cần thêm, sửa
-hay xóa ghi nhớ nào để lần sau Peto nhớ người dùng.
+SYSTEM_PROMPT = f"""{MEMORY_MARKER} (dùng chung cho tab Trò chuyện và Companion). Đọc danh sách ghi nhớ hiện có
+và đoạn hội thoại mới, rồi quyết định cần thêm, sửa hay xóa ghi nhớ nào để lần sau Peto nhớ người dùng.
 
 Ghi những điều người dùng tự kể về bản thân và còn đáng nhớ về sau: tên gọi, người thân, bạn bè, thú cưng, việc học,
-công việc, sở thích, thói quen, kế hoạch sắp tới (kèm ngày nếu có), chuyện quan trọng vừa xảy ra với họ.
+công việc, dự án đang làm, sở thích, thói quen, kế hoạch sắp tới (kèm ngày nếu có), chuyện quan trọng vừa xảy ra với họ.
+
+Ghi cả cách họ muốn trò chuyện với Peto, khi họ thể hiện rõ hoặc dặn:
+- cách xưng hô: họ tự xưng là gì, gọi Peto là gì (ví dụ "Tự xưng là ad, gọi Peto là Peto");
+- cách trả lời họ thích (ngắn gọn, có ví dụ, giải thích kỹ…).
+Họ đổi cách xưng hô hay dặn khác đi thì sửa dòng cũ, đừng để hai dòng trái nhau.
 
 Không ghi:
-- điều chỉ Peto nói, câu hỏi kiến thức, chuyện phiếm một lần, điều không chắc hay phải đoán;
+- điều chỉ Peto nói, câu hỏi kiến thức, nội dung bài tập hay tài liệu họ nhờ làm, chuyện phiếm một lần, điều không chắc
+  hay phải đoán;
 - thông tin nhạy cảm: mật khẩu, số tài khoản, giấy tờ, địa chỉ nhà, số điện thoại, chi tiết bệnh tật.
 
 Cách viết:
@@ -176,9 +185,15 @@ def clean_summary(raw: str) -> str:
 
 def _talk(rows: list[dict], keep_notes: bool = False) -> str:
     """Đoạn hội thoại cho model phụ, không có thẻ cảm xúc. Ghi chú riêng của Peto chỉ giữ khi tóm tắt: ghi nhớ không cần
-    tới bí mật trò chơi."""
+    tới bí mật trò chơi. Tin của nhiều cuộc trò chuyện (Chat và Companion) thì mỗi cuộc mở bằng một dòng tách."""
     lines = []
+    current = None
     for row in rows:
+        conversation = row.get("conversation_id")
+        if conversation and conversation != current:
+            if current is not None or any(other.get("conversation_id") != conversation for other in rows):
+                lines.append(f"--- {'Companion' if row.get('mode') == 'companion' else 'Trò chuyện'} ---")
+            current = conversation
         content = row["content"]
         if row["role"] == "user":
             speaker = "Người dùng"
@@ -223,7 +238,7 @@ async def _remember_once(owner: str) -> None:
     if not await enabled_for(owner):
         return
     state = await db.ensure_memory_state(owner)
-    rows = await db.companion_messages_after(owner, state["cursor"], CONTEXT_MESSAGES)
+    rows = await db.memory_messages_after(owner, state["cursor"], CONTEXT_MESSAGES)
     if sum(len(row["content"].strip()) for row in rows if row["role"] == "user") < MIN_NEW_CHARS:
         return
     existing = await db.list_memories(owner)
@@ -232,7 +247,7 @@ async def _remember_once(owner: str) -> None:
         raw = await _ask(_prompt(existing, rows))
     except Exception as err:
         # Lỗi mạng hay model: không dời vị trí đã đọc, lượt sau đọc lại.
-        logger.warning("Không ghi nhớ được lượt Companion: %s", type(err).__name__)
+        logger.warning("Không ghi nhớ được lượt vừa xong: %s", type(err).__name__)
         return
     finally:
         logger.info("memory_timing total_ms=%d", round((perf_counter() - started) * 1000))
@@ -315,3 +330,12 @@ async def memory_block(owner: str, conversation_id: str | None = None) -> str:
     notes = build_companion_memory([item["text"] for item in await db.list_memories(owner)])
     summary = await db.companion_summary(owner, conversation_id) if conversation_id else None
     return "\n\n".join(part for part in (notes, build_companion_summary(summary["text"] if summary else "")) if part)
+
+
+async def chat_memory_block(owner: str, english: bool = False) -> str:
+    """Khối ghi nhớ cho lượt Chat thường (không nhập vai); bản tóm tắt chỉ có ở Companion. Rỗng khi tắt hay chưa có gì."""
+    if not await enabled_for(owner):
+        return ""
+    from prompts import build_companion_memory
+
+    return build_companion_memory([item["text"] for item in await db.list_memories(owner)], english=english)

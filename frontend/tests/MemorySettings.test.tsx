@@ -86,7 +86,7 @@ it('Xóa hết phải xác nhận; Giữ lại thì thôi, xác nhận thì danh
 it('chủ web tắt trên máy chủ thì chỉ có lời giải thích, không có công tắc hay danh sách', async () => {
   vi.mocked(api.getCompanionMemory).mockResolvedValue(state({ available: false, enabled: false }));
   render(<MemorySettings open onUnauthorized={vi.fn()} />);
-  expect(await screen.findByText('Chủ web đã tắt trí nhớ Companion trên máy chủ này.')).toBeTruthy();
+  expect(await screen.findByText('Chủ web đã tắt trí nhớ trên máy chủ này.')).toBeTruthy();
   expect(screen.queryByRole('switch')).toBeNull();
   expect(screen.queryByRole('list')).toBeNull();
 });

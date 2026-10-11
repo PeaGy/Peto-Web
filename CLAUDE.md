@@ -1438,11 +1438,11 @@ scrollspy list, and grouped cards with coloured icons.
     Tab or a resize closes.
   - It fades out for 110 ms before unmounting, with a timer fallback: jsdom and hidden windows fire no animationend.
 - **Dialog** (`SettingsDialog.tsx`, still a `<dialog>` opened with `showModal` in a layout effect). A 216px list of
-  sections sits on the left and one section shows on the right. The sections are Giao diện, Hồ sơ, Tài khoản and Peto
-  Agent, then a "Companion" group with Giọng nói, Trí nhớ and Tra web. App keeps a `SettingsView` of `{open, section,
+  sections sits on the left and one section shows on the right. The sections are Giao diện, Hồ sơ, Trí nhớ, Tài khoản and
+  Peto Agent, then a "Companion" group with Giọng nói and Tra web. App keeps a `SettingsView` of `{open, section,
   page}`.
   - **Opening.** "Cài đặt" in the menu opens Giao diện, "Hồ sơ" opens Hồ sơ and the account item opens Tài khoản.
-    Companion's "Xem" opens Trí nhớ, and the Micro panel link opens Giọng nói on the Peto nghe tab.
+    The Micro panel link opens Giọng nói on the Peto nghe tab.
   - **Focus.** On open, focus goes to the current section's item (on a phone page, to the back button). After opening
     from the menu, closing refocuses the account row (`settingsReturn`), since the menu item is gone.
   - **Mounting.** Visited sections stay mounted and are only hidden, so an unsaved Hồ sơ edit survives switching
@@ -1496,9 +1496,18 @@ half-configured setups log a warning at startup rather than failing silently.
 
 The bot writes its summary in its roleplay voice. On 2026-10-11 the owner's Discord account got assistant replies
 (Grok and Luna) that called itself "Peto" and the owner "ad", with an empty profile; the same question from their
-Google account (no gateway) did not. `build_memory_context` therefore adds `VOICE_RULE_VI`/`VOICE_RULE_EN` outside
-roleplay: never adopt forms of address, nicknames or character voice from the summary; a different name for the user
-only when they asked for it in saved memories or the profile. Roleplay turns keep the bot's voice and omit the rule.
+Google account (no gateway) did not. A first rule forbade taking any form of address from the summary; the owner found
+it too rigid the same day (they wrote "peto không nhớ ad hả" and Peto still answered with "bạn"). They want Peto to
+adapt the way Claude's memory does, and to follow changes asked for in chat or in Settings. Now:
+- The assistant core (`prompts/assistant.py`, English in `prompts/english.py`) mirrors the user: default "mình"/"bạn",
+  but when the user calls themselves or Peto something else ("ad", "anh"…; "Peto", "em"…), Peto answers with that pair.
+  The latest request, in chat or in the profile, wins. Only forms of address change, never personality or character.
+- `VOICE_RULE_VI`/`VOICE_RULE_EN` (outside roleplay, only when there is a summary) let Peto use the forms of address the
+  summary shows when the current conversation and the profile say nothing else, and forbid the character's voice,
+  personality and actions. Roleplay turns keep the bot's voice and omit the rule.
+- Lasting changes come from the web's own memory, now shared by Chat and Companion (see "Memory (Brain)"): its
+  extraction records how the user wants to be addressed, so a change said in chat carries over to later conversations,
+  for every account type. Settings → Hồ sơ still works and the latest request wins.
 
 ### Companion tab and voice relay
 
@@ -1891,21 +1900,33 @@ does not add requests. Reload/unmount or Xóa kết quả đo clears them and in
 - The backend only relays text and audio, or calls TTS APIs over HTTP. Never add TTS models or their packages to the
   backend or the frontend: `pip install` and `npm ci` on the VPS would ship them to every deployment.
 
-### Companion memory (Brain)
+### Memory (Brain)
 
-The first Brain feature, picked by the owner from mockups on 2026-09-27. It has its own section in Settings, "Trí nhớ"
-in the Companion group (layout A). The Companion chat column shows a "Peto vừa ghi nhớ: … · Xem" line, and the feature
-is on by default.
+The first Brain feature, picked by the owner from mockups on 2026-09-27 for Companion. It has its own section in
+Settings, "Trí nhớ", and is on by default.
 
-- **When it runs.** After a complete Companion turn, `features/chat/service.py` marks the owner pending before `done`. It then runs
+On 2026-10-11 the owner asked for Peto to adapt the way Claude's memory does (forms of address, preferences), and chose:
+one memory **shared** by Chat and Companion, roleplay Chat **never read or written**, **on by default**. The same day
+they found Companion's "Peto vừa ghi nhớ: … · Xem" line under replies redundant, and it was removed (with its polling);
+memories are seen only in Settings → Trí nhớ. Table and API names keep their `companion_` prefix.
+
+- **When it runs.** After a complete Companion turn, or a Chat turn outside roleplay (`remembers` in
+  `features/chat/service.py`), the service marks the owner pending before `done`. It then runs
   `companion_memory.remember(owner)` in the response's background task, so the reply and voice are never delayed. Runs
   for the same owner are coalesced (`_running` / `_again`). Each run is one extra small `peto` call: `MEMORY_MARKER` in
   its system prompt, JSON `{add, update, remove}` out. It is skipped when the new user text is under `MIN_NEW_CHARS`.
+  The extraction prompt asks for forms of address ("Tự xưng là ad, gọi Peto là Peto") and preferred answer style,
+  updating old lines instead of leaving contradictions, and never homework or document contents. `_talk` marks
+  `--- Companion ---` / `--- Trò chuyện ---` when the new messages span several conversations.
 - **What it reads.** A message-id cursor in `companion_memory_state` decides this:
   - On first use the cursor starts at the latest user message, so history from before memory existed is never mined.
   - Turning memory back on moves it to the latest message, so what was said while it was off is never read.
-  - Only the owner's own Companion messages are read, filtered in SQL. The Chat tab never reads or writes this memory,
-    and it has nothing to do with the Discord bot's memory.
+  - Only the owner's own messages are read, filtered in SQL by `storage/memory.MEMORY_SOURCE` (Companion, plus Chat
+    with persona `assistant`; `memory_messages_after`). Roleplay never enters. It has nothing to do with the Discord
+    bot's memory.
+  - The startup migration that added `companion_memory_state.chat` moved every existing cursor past all current
+    messages, so Chat history from before the change is never mined; `since` (the Companion summary floor) is
+    unchanged.
 - **Summary of older talk.** The other half of the proposal the owner agreed to: each Companion thread keeps a short
   summary of what has scrolled out of the `PETO_MAX_HISTORY` window (`companion_summaries`, one row per conversation).
   - Once `SUMMARY_BATCH` (10) messages have left the window unsummarized, the same background task makes one more
@@ -1923,8 +1944,8 @@ is on by default.
   - `parse_changes` accepts lists only, cuts texts at 150 characters, and drops case-insensitive duplicates and unknown
     ids.
   - At most 5 adds per run and 50 memories in total. `apply_memory_changes` applies everything in one transaction.
-- **Prompt.** On Companion turns only, `_build_system_prompt` appends `persona.build_companion_memory` after the profile
-  block. It is fenced by `COMPANION_MEMORY_START/END` (copies are stripped from notes) and labelled as possibly
+- **Prompt.** On Companion turns (`memory_block`) and Chat turns outside roleplay (`chat_memory_block`, with an English
+  variant for OpenAI/Claude), `_build_system_prompt` appends `build_companion_memory` after the profile block. It is fenced by `COMPANION_MEMORY_START/END` (copies are stripped from notes) and labelled as possibly
   outdated data, not instructions.
 - **API.** `features/companion/memory_api.py`:
   - `GET /api/companion/memory` returns `available`, `enabled`, `pending`, `limit` and `memories`.
@@ -1935,10 +1956,8 @@ is on by default.
 - **UI.**
   - `MemorySettings.tsx` has the switch, the list, delete-one, and "Xóa hết" with an inline confirmation. Changes are
     optimistic and roll back on error.
-  - After a turn, `Companion.tsx` polls at `memoryNotice.MEMORY_POLL_DELAYS`. When an item is new or its `updated_at`
-    changed, it shows the notice under that reply, and scrolls to it only if the reader is still at the bottom.
-  - "Xem" opens Settings at Trí nhớ (`openMemorySettings`). The section reloads its list whenever it becomes the one
-    shown, so a list mounted by an earlier visit never shows stale lines.
+  - The section reloads its list whenever it becomes the one shown, so a list mounted by an earlier visit never shows
+    stale lines. Nothing polls the memory after a turn.
   - "Bắt đầu lại" deletes the thread, never the memories. Its dialog re-fetches the list when it opens and, when
     memories exist, says they are kept and where to delete them.
 - **Tests.**
@@ -1946,8 +1965,8 @@ is on by default.
     and turns a summary call into the old summary plus the user lines it was given. The summary tests shrink the
     window with `features.chat.service.MAX_HISTORY_MESSAGES` and `companion_memory.SUMMARY_BATCH` (both 4).
   - Provider spies must filter out `MEMORY_MARKER` and `SUMMARY_MARKER` as well as `TITLE_MARKER`.
-  - Frontend: `MemorySettings.test.tsx`, and the notice and "Xem" tests in `Companion.test.tsx` and `Hearing.test.tsx`,
-    with `MEMORY_POLL_DELAYS` mocked to 0.
+  - Chat sharing, roleplay exclusion and the upgrade migration are covered there too.
+  - Frontend: `MemorySettings.test.tsx`, and in `Companion.test.tsx` the absence of a notice and the reset dialog.
 
 ### Companion private notes
 

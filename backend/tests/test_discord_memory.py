@@ -152,9 +152,12 @@ def test_memory_context_includes_rules():
     assert "trí nhớ của người khác" in context
 
 
-def test_memory_summary_does_not_set_the_voice_outside_roleplay():
-    """Bot viết tóm tắt bằng giọng nhập vai; ngoài nhập vai không được mượn cách xưng hô của nó."""
+def test_memory_summary_lends_forms_of_address_but_not_the_character_voice():
+    """Bot viết tóm tắt bằng giọng nhập vai. Ngoài nhập vai, Peto lấy từ đó cách người dùng quen xưng hô (chủ web muốn
+    Peto đổi dần cách nói chuyện theo trí nhớ, 11/10/2026), nhưng không lấy giọng hay tính cách nhân vật."""
     from prompts.context import VOICE_RULE_EN, VOICE_RULE_VI
+
+    assert "chỉ lấy cách xưng hô" in VOICE_RULE_VI and "take only the forms of address" in VOICE_RULE_EN
 
     memory = {"display_name": "Người Test", "summary": "Hay gọi Peto là ad.", "explicit": ("Đang ôn thi.",)}
     assert VOICE_RULE_VI in build_memory_context(**memory)

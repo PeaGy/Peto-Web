@@ -78,12 +78,27 @@ async def test_short_replies_do_not_spend_a_memory_call(client, prompts):
     assert not [prompt for prompt in prompts if MEMORY_MARKER in prompt]
 
 
-async def test_the_chat_tab_never_writes_or_reads_companion_memory(client, prompts):
+async def test_plain_chat_shares_the_memory_and_roleplay_chat_never_touches_it(client, prompts):
+    """Ngày 11/10/2026 chủ web mở trí nhớ sang Chat, dùng chung với Companion như Claude; Chat nhập vai thì không."""
     await db.apply_memory_changes(TEST_OWNER, add=["Thích trà sữa"], update={}, remove=[], cursor=0, limit=50)
-    await send(client, "Remember this for me please __nho__:Không được ghi", mode="chat")
-    assert await texts(client) == ["Thích trà sữa"]
-    assert not [prompt for prompt in prompts if MEMORY_MARKER in prompt]
-    assert all(COMPANION_MEMORY_START not in prompt for prompt in replies(prompts))
+    await send(client, "Từ giờ mình tự xưng là ad nhé __nho__:Tự xưng là ad", mode="chat")
+    assert await texts(client) == ["Thích trà sữa", "Tự xưng là ad"]
+    await send(client, "Hôm nay ôn môn gì trước nhỉ", mode="chat")
+    assert COMPANION_MEMORY_START in replies(prompts)[-1] and "- Tự xưng là ad" in replies(prompts)[-1]
+
+    await client.post("/api/profile/roleplay-consent")
+    try:
+        async with client.stream("POST", "/api/chat", json={"message": "Nhập vai nào __nho__:Lời nhập vai", "persona": "roleplay"}) as response:
+            assert (await read_events(response))[-1]["type"] == "done"
+    finally:
+        # Cơ sở dữ liệu test dùng chung cả phiên: test_roleplay cần tài khoản này chưa xác nhận 18+.
+        async with db_connection.aiosqlite.connect(db_connection.DB_PATH) as connection:
+            await connection.execute("DELETE FROM roleplay_consents WHERE owner = ?", (TEST_OWNER,))
+            await connection.commit()
+    assert COMPANION_MEMORY_START not in replies(prompts)[-1], "lượt nhập vai không nhận trí nhớ"
+    # Lượt Chat thường sau đó đọc các tin mới, nhưng bỏ qua tin của cuộc nhập vai.
+    await send(client, "Mai mình thi toán rồi, hồi hộp ghê", mode="chat")
+    assert "Lời nhập vai" not in await texts(client)
 
 
 async def test_updates_and_removals_only_touch_the_owners_own_notes(client):
@@ -129,6 +144,27 @@ async def test_history_from_before_memory_existed_is_not_mined(client):
         "message": "New thing to know __nho__:Chuyện mới", "mode": "companion", "conversation_id": conversation,
     }) as response:
         await read_events(response)
+    assert await texts(client) == ["Chuyện mới"]
+
+
+async def test_upgrading_to_shared_memory_never_mines_old_chat_history(client):
+    """Bản trước chỉ đọc Companion. Nâng cấp (thêm cột `chat`) dời vị trí đã đọc qua mọi tin đang có, nên tin Chat cũ
+    không bị lục lại; mốc tóm tắt Companion (`since`) giữ nguyên."""
+    await db.ensure_memory_state(TEST_OWNER)
+    old_chat = await db.create_conversation(TEST_OWNER)
+    await db.add_message(old_chat, "user", "Chuyện Chat cũ __nho__:Chuyện Chat cũ")
+    await db.add_message(old_chat, "assistant", "Ừ.")
+    async with db_connection.aiosqlite.connect(db_connection.DB_PATH) as connection:
+        await connection.execute("UPDATE companion_memory_state SET cursor = 0, since = 0 WHERE owner = ?", (TEST_OWNER,))
+        await connection.execute("ALTER TABLE companion_memory_state DROP COLUMN chat")
+        await connection.commit()
+
+    await db.init_db()
+    async with db_connection.aiosqlite.connect(db_connection.DB_PATH) as connection:
+        cursor, since = await (await connection.execute(
+            "SELECT cursor, since FROM companion_memory_state WHERE owner = ?", (TEST_OWNER,))).fetchone()
+    assert cursor > 0 and since == 0
+    await send(client, "Chuyện mới để nhớ __nho__:Chuyện mới", mode="chat")
     assert await texts(client) == ["Chuyện mới"]
 
 

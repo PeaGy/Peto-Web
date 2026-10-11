@@ -4,7 +4,6 @@ import {
   deleteConversation,
   getCompanion,
   getCompanionMemory,
-  type CompanionMemory,
   sendMessage,
   type AppInfo,
   type Message,
@@ -27,7 +26,6 @@ import {
   stopListening,
   useHearing,
 } from "./speech/hearingEngine";
-import { MEMORY_POLL_DELAYS, noticeText } from "./memoryNotice";
 import { HearingBar, HearingPopover, hearingPlaceholder, MicButton } from "./speech/HearingControls";
 import { SpeakButton, SpeakerIcon, SpeakerOffIcon, type LocalVoice } from "./speech/LocalVoice";
 import type { CharacterMotion } from "./characters/characterView";
@@ -63,15 +61,6 @@ function messageEmotion(message: Message): StageEmotion | null {
     ?? replyEmotion(message.content) ?? null;
 }
 
-function PencilIcon() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M4 20h4L19 9l-4-4L4 16v4z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
-      <path d="M13.5 6.5l4 4" stroke="currentColor" strokeWidth="2" />
-    </svg>
-  );
-}
-
 function MenuIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -100,7 +89,7 @@ function RestartIcon() {
  * Được giữ mounted như Imagine (prop `active`) để câu trả lời đang về không bị cắt khi đổi tab;
  * rời tab thì Peto thôi đọc và giải phóng renderer nhân vật.
  */
-export default function Companion({ active, appInfo, voice, characterMotion, character = DEFAULT_CHARACTER, characterLoading = false, onCharacterPreview, onOpenCharacters, sceneRequest = 0, onUnauthorized, onOpenSidebar, onOpenHearingSettings, onOpenMemorySettings }: {
+export default function Companion({ active, appInfo, voice, characterMotion, character = DEFAULT_CHARACTER, characterLoading = false, onCharacterPreview, onOpenCharacters, sceneRequest = 0, onUnauthorized, onOpenSidebar, onOpenHearingSettings }: {
   active: boolean;
   sceneRequest?: number;
   appInfo: AppInfo | null;
@@ -114,8 +103,6 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
   onOpenSidebar: () => void;
   /** Mở Cài đặt → Giọng nói → Peto nghe (từ bảng Micro). */
   onOpenHearingSettings?: () => void;
-  /** Nút "Xem" ở dòng "Peto vừa ghi nhớ": mở Cài đặt ở mục Trí nhớ. */
-  onOpenMemorySettings?: () => void;
 }) {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -132,11 +119,6 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
     releaseTimer.current = setTimeout(() => setStageEmotion(null), delay);
   }, []);
   useEffect(() => () => clearTimeout(releaseTimer.current), []);
-  /** Dòng "Peto vừa ghi nhớ" dưới câu trả lời thứ `after`; chỉ sống trong phiên này, không lưu. */
-  const [memoryNotes, setMemoryNotes] = useState<{ after: number; items: CompanionMemory[] }[]>([]);
-  /** Ghi nhớ đã biết (id → lúc sửa cuối) để nhận ra dòng mới; null khi chưa tải được lần nào. */
-  const knownMemory = useRef<Map<number, number> | null>(null);
-  const memoryWatch = useRef(0);
   /** Số ghi nhớ đang có, hỏi lại lúc mở hộp "Bắt đầu lại": xóa mạch không xóa ghi nhớ, nên hộp nói rõ điều đó. */
   const [keptMemories, setKeptMemories] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -266,44 +248,6 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
     cue(null);
   }, [character.id, haltSpeech, cue]);
 
-  // Danh sách ghi nhớ lúc mở tab, để sau mỗi lượt biết dòng nào là mới. Lỗi thì thôi: lượt sau lấy làm mốc.
-  useEffect(() => {
-    const controller = new AbortController();
-    getCompanionMemory(controller.signal).then(
-      (state) => { knownMemory.current = new Map(state.memories.map((item) => [item.id, item.updated_at])); },
-      () => {},
-    );
-    return () => {
-      controller.abort();
-      memoryWatch.current += 1;
-    };
-  }, []);
-
-  /** Sau một lượt xong: hỏi máy chủ vài lần xem tác vụ nền vừa ghi nhớ gì, có thì hiện dòng báo dưới câu trả lời. */
-  async function watchMemory(after: number) {
-    const version = ++memoryWatch.current;
-    for (const delay of MEMORY_POLL_DELAYS) {
-      await new Promise((resolve) => window.setTimeout(resolve, delay));
-      if (version !== memoryWatch.current) return;
-      let state;
-      try {
-        state = await getCompanionMemory();
-      } catch {
-        return;
-      }
-      if (version !== memoryWatch.current) return;
-      const known = knownMemory.current;
-      knownMemory.current = new Map(state.memories.map((item) => [item.id, item.updated_at]));
-      if (!known || !state.enabled) return;
-      const fresh = state.memories.filter((item) => known.get(item.id) !== item.updated_at);
-      if (fresh.length) {
-        setMemoryNotes((prev) => [...prev, { after, items: fresh }]);
-        return;
-      }
-      if (!state.pending) return;
-    }
-  }
-
   // Giọng nói sống ở App, lâu hơn tab này (đăng xuất thì tab bị gỡ), nên gỡ tab thì cũng thôi đọc.
   useEffect(() => () => { haltSpeech(); clearCompanionTimings(); }, [haltSpeech]);
 
@@ -344,11 +288,6 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
       observer.disconnect();
     };
   }, []);
-
-  // Dòng báo ghi nhớ đến vài giây sau câu trả lời: cuộn cho thấy nó, trừ khi người dùng đã cuộn lên đọc tin cũ.
-  useEffect(() => {
-    if (memoryNotes.length && atBottom.current) bottomRef.current?.scrollIntoView({ block: "end" });
-  }, [memoryNotes]);
 
   function reportSpeechError(err: unknown) {
     setError(err instanceof Error ? err.message : "Chưa đọc được tin này.");
@@ -546,7 +485,6 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
       }
     }
     const now = latest.current;
-    if (completed && reply.trim()) void watchMemory(replyIndex);
     const speaking = completed && reply.trim() && !spoken.cancelled && now.active && now.foreground && !now.muted && now.voice.status === "ready";
     if (completed && reply.trim() && now.active && now.foreground) {
       // Peto quên gắn thẻ thì đoán theo từ khóa như trước. Không đọc thành tiếng thì giữ mặt vài giây để kịp thấy.
@@ -590,9 +528,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
       setConversationId(null);
       setMessages([]);
       cue(null);
-      setMemoryNotes([]);
       images.clear();
-      memoryWatch.current += 1;
       setConfirmReset(false);
     } catch (err) {
       if (err instanceof UnauthorizedError) return onUnauthorized();
@@ -832,18 +768,6 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
                   />
                 )}
                 {message.status === "incomplete" && <span className="message-status">Chưa trả lời xong</span>}
-                {memoryNotes.filter((note) => note.after === index).map((note) => (
-                  <p key={note.items.map((item) => item.id).join("-")} className="memory-notice" role="status">
-                    <PencilIcon />
-                    <span>Peto vừa ghi nhớ: {noticeText(note.items)}</span>
-                    {onOpenMemorySettings && (
-                      <>
-                        <span className="memory-notice-dot" aria-hidden="true">·</span>
-                        <button type="button" className="voice-link" onClick={onOpenMemorySettings}>Xem</button>
-                      </>
-                    )}
-                  </p>
-                ))}
               </article>
             );
           })}

@@ -30,11 +30,6 @@ vi.mock('../src/features/companion/characters/Live2DStage', () => ({
     return <div data-testid="stage" data-activity={activity} data-emotion={emotion?.emotion ?? ''} />;
   },
 }));
-// Dòng "Peto vừa ghi nhớ" hỏi lại máy chủ sau vài giây; trong test hỏi ngay.
-vi.mock('../src/features/companion/memoryNotice', async (original) => ({
-  ...await original<typeof import('../src/features/companion/memoryNotice')>(),
-  MEMORY_POLL_DELAYS: [0, 0, 0],
-}));
 
 const fetchMock = vi.fn();
 const played: string[] = [];
@@ -1006,75 +1001,27 @@ function replyWith(...replies: string[]) {
   });
 }
 
-it('ghi nhớ xong thì cột chat báo ngay dưới câu trả lời, bấm Xem mở Cài đặt ở mục Trí nhớ với danh sách mới', async () => {
+it('Companion không báo "Peto vừa ghi nhớ" hay hỏi lại trí nhớ sau lượt; mục Trí nhớ tải lại mỗi lần mở', async () => {
+  // Chủ web thấy dòng báo dưới câu trả lời là thừa (11/10/2026): ghi nhớ chỉ xem trong Cài đặt → Trí nhớ.
   const note = { id: 7, text: 'Đang học năm hai ngành điện', created_at: 100, updated_at: 100 };
   vi.mocked(api.getCompanionMemory)
-    .mockResolvedValueOnce(MEMORY) // lúc mở tab: mốc để so
     .mockResolvedValueOnce(MEMORY) // mở mục Trí nhớ lần đầu
-    .mockResolvedValueOnce({ ...MEMORY, pending: true }) // lần hỏi đầu sau lượt chat: máy chủ còn đang ghi
     .mockResolvedValue({ ...MEMORY, memories: [note] });
   replyWith('Electrical engineering, nice!');
   await openCompanion();
-  await waitFor(() => expect(api.getCompanionMemory).toHaveBeenCalledTimes(1));
-  // Mục Trí nhớ đã mở một lần nên vẫn còn trong hộp (chỉ ẩn đi): bấm Xem thì nó phải tải lại, không hiện danh sách cũ.
   const first = await openSettings('Trí nhớ');
   expect(await first.findByText(/Chưa có ghi nhớ nào/)).toBeTruthy();
   fireEvent.click(first.getByRole('button', { name: 'Đóng cài đặt' }));
-  await waitFor(() => expect(api.getCompanionMemory).toHaveBeenCalledTimes(2));
 
   await sendInCompanion('mình đang học năm hai ngành điện');
-  const notice = await chatColumn().findByText('Peto vừa ghi nhớ: Đang học năm hai ngành điện');
-  expect(notice.closest('article')?.textContent).toContain('Electrical engineering, nice!');
-  expect(api.getCompanionMemory).toHaveBeenCalledTimes(4);
+  await screen.findByText('Electrical engineering, nice!');
+  expect(screen.queryByText(/vừa ghi nhớ/)).toBeNull();
+  expect(api.getCompanionMemory).toHaveBeenCalledTimes(1);
 
-  fireEvent.click(within(notice.closest('p')!).getByRole('button', { name: 'Xem' }));
-  const settings = within(screen.getByRole('dialog', { name: 'Cài đặt' }));
-  expect(settings.getByRole('heading', { name: 'Trí nhớ' })).toBeTruthy();
-  expect(settings.getByRole('button', { name: 'Trí nhớ' }).getAttribute('aria-current')).toBe('page');
-  expect(await settings.findByText('Đang học năm hai ngành điện')).toBeTruthy();
-  expect(api.getCompanionMemory).toHaveBeenCalledTimes(5);
-
-  // Mở Cài đặt bình thường sau đó thì về mục đầu, không còn đứng ở Trí nhớ.
-  fireEvent.click(settings.getByRole('button', { name: 'Đóng cài đặt' }));
-  fireEvent.click(await screen.findByRole('button', { name: /Tài khoản · Demo/ }));
-  fireEvent.click(await screen.findByRole('menuitem', { name: 'Cài đặt' }));
-  expect(within(screen.getByRole('dialog', { name: 'Cài đặt' })).getByRole('heading', { name: 'Giao diện' })).toBeTruthy();
-});
-
-it('sửa một dòng cũ và thêm một dòng mới trong cùng lượt thì dòng báo nêu dòng đầu kèm số còn lại', async () => {
-  const old = { id: 3, text: 'Nuôi một con mèo', created_at: 100, updated_at: 100 };
-  vi.mocked(api.getCompanionMemory)
-    .mockResolvedValueOnce({ ...MEMORY, memories: [old] })
-    .mockResolvedValue({ ...MEMORY, memories: [
-      { ...old, text: 'Nuôi một con mèo tên Mướp', updated_at: 300 },
-      { id: 9, text: 'Thích nghe mưa', created_at: 300, updated_at: 300 },
-    ] });
-  replyWith('Mướp is a cute name.');
-  await openCompanion();
-  await waitFor(() => expect(api.getCompanionMemory).toHaveBeenCalledTimes(1));
-
-  await sendInCompanion('con mèo nhà mình tên Mướp, mình cũng thích nghe mưa');
-  expect(await chatColumn().findByText('Peto vừa ghi nhớ: Nuôi một con mèo tên Mướp (và 1 điều khác)')).toBeTruthy();
-});
-
-it('lượt không có gì mới, hay trí nhớ đang tắt, thì không có dòng báo', async () => {
-  const note = { id: 7, text: 'Nuôi một con mèo tên Mướp', created_at: 100, updated_at: 100 };
-  vi.mocked(api.getCompanionMemory).mockResolvedValue({ ...MEMORY, memories: [note] });
-  replyWith('Cool.', 'Rain is cozy.');
-  await openCompanion();
-  await waitFor(() => expect(api.getCompanionMemory).toHaveBeenCalledTimes(1));
-
-  await sendInCompanion('ok');
-  await screen.findByText('Cool.');
-  await waitFor(() => expect(api.getCompanionMemory).toHaveBeenCalledTimes(2));
-
-  vi.mocked(api.getCompanionMemory).mockResolvedValue({ ...MEMORY, enabled: false, memories: [
-    note, { id: 8, text: 'Thích nghe mưa', created_at: 200, updated_at: 200 },
-  ] });
-  await sendInCompanion('trời đang mưa');
-  await screen.findByText('Rain is cozy.');
-  await waitFor(() => expect(api.getCompanionMemory).toHaveBeenCalledTimes(3));
-  expect(screen.queryByText(/Peto vừa ghi nhớ/)).toBeNull();
+  // Mục đã mở một lần vẫn còn trong hộp (chỉ ẩn): mở lại thì nó tải lại, không hiện danh sách cũ.
+  const again = await openSettings('Trí nhớ');
+  expect(await again.findByText('Đang học năm hai ngành điện')).toBeTruthy();
+  expect(api.getCompanionMemory).toHaveBeenCalledTimes(2);
 });
 
 it('hộp Bắt đầu lại nói rõ ghi nhớ vẫn giữ khi đang có ghi nhớ, và chỉ xóa mạch trò chuyện', async () => {
@@ -1089,7 +1036,7 @@ it('hộp Bắt đầu lại nói rõ ghi nhớ vẫn giữ khi đang có ghi nh
   // Chưa có ghi nhớ nào: hộp không nhắc tới.
   fireEvent.click(screen.getByRole('button', { name: 'Bắt đầu lại' }));
   const dialog = await screen.findByRole('dialog', { name: 'Bắt đầu lại với Peto?' });
-  await waitFor(() => expect(api.getCompanionMemory).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(api.getCompanionMemory).toHaveBeenCalledTimes(1));
   expect(within(dialog).queryByText(kept)).toBeNull();
   fireEvent.click(within(dialog).getByRole('button', { name: 'Giữ lại' }));
 

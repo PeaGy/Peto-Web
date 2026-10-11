@@ -340,6 +340,14 @@ async def init_db() -> None:
             await db.execute("ALTER TABLE companion_memory_state ADD COLUMN since INTEGER NOT NULL DEFAULT 0")
             # Tin đã đọc để ghi nhớ thì coi như đã qua; không tóm tắt ngược lịch sử cũ.
             await db.execute("UPDATE companion_memory_state SET since = cursor")
+        if "chat" not in {column[1] for column in state_columns}:
+            # Trí nhớ mở sang Chat (11/10/2026): như lúc mới có trí nhớ, tin Chat có từ trước không bị lục lại. Dời vị trí
+            # đã đọc tới tin mới nhất đang có; mốc tóm tắt Companion (`since`) giữ nguyên.
+            await db.execute("ALTER TABLE companion_memory_state ADD COLUMN chat INTEGER NOT NULL DEFAULT 1")
+            await db.execute(
+                "UPDATE companion_memory_state SET cursor = MAX(cursor, COALESCE((SELECT MAX(m.id) FROM messages m "
+                "JOIN conversations c ON c.id = m.conversation_id WHERE c.owner = companion_memory_state.owner), 0))"
+            )
         # Tóm tắt phần trò chuyện Companion đã trôi khỏi lịch sử gửi kèm, theo từng mạch: xóa mạch ("Bắt đầu lại") là
         # xóa luôn bản tóm tắt. `upto` là id tin cuối cùng đã tóm tắt hoặc đã bỏ qua.
         await db.execute(
