@@ -141,3 +141,7 @@ body {
 
 .app { display: flex; height: 100dvh; }
 
+/* Nút bị tắt trong cả app. Đứng sớm trong thứ tự CSS (trước đây ở đầu sidebar.css): quy tắc riêng của từng phần đứng
+   sau vẫn được đặt lại con trỏ hay độ mờ của nút tắt nếu cần. */
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+

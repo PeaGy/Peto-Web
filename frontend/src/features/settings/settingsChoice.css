@@ -4,7 +4,7 @@
 .settings-choice .dropdown.open .dropdown-trigger { border-color: transparent; }
 .settings-choice .dropdown-value { text-align: right; }
 .settings-choice .dropdown-chevron { transition: none; }
-.settings-choice .dropdown-list { left: auto; width: max-content; min-width: 220px; max-width: min(310px, calc(100vw - 40px)); padding: 5px; border-radius: 12px; background: var(--panel-2); box-shadow: 0 10px 28px rgb(0 0 0 / .2); animation: none; scrollbar-width: thin; }
+.settings-choice .dropdown-list { left: auto; width: max-content; min-width: 220px; max-width: min(310px, calc(100vw - 40px)); padding: 5px; border-color: var(--menu-line); border-radius: 12px; background: var(--menu-bg); box-shadow: var(--menu-shadow); animation: none; scrollbar-width: thin; }
 .settings-choice .dropdown-list li[role="option"] { min-height: 36px; padding: 8px 10px; font-weight: 400; font-size: 14px; }
 .settings-choice .dropdown-list li.active { background: var(--menu-hover); }
 .settings-choice .dropdown-check { width: 14px; color: var(--muted); }

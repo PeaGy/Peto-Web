@@ -30,10 +30,12 @@
    vẫn phải chừa một lối mở. Luật .menu-btn ở trên giữ nó ẩn trên desktop. */
 .chat-menu { align-self: flex-start; margin: 10px 0 0 14px; }
 
-.menu-btn:hover,
+@media (hover: hover) and (pointer: fine) {
+  .menu-btn:hover,
 .icon-btn:hover:not(:disabled) {
-  border-color: var(--accent);
-  color: var(--accent);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
 }
 
 .avatar {
@@ -279,7 +281,7 @@
   border-radius: 16px;
   transition: background-color 150ms ease, border-color 150ms ease;
 }
-.message-file-card:hover { background: var(--panel-2); }
+@media (hover: hover) and (pointer: fine) { .message-file-card:hover { background: var(--panel-2); } }
 .message-file-card:focus-visible, .message-image-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .message-file-card .message-file-copy { flex: 1; }
 .message-file-card strong { font-size: 14px; }
@@ -342,6 +344,6 @@
   cursor: pointer;
 }
 
-.code-copy:hover { border-color: var(--line); color: var(--text); }
+@media (hover: hover) and (pointer: fine) { .code-copy:hover { border-color: var(--line); color: var(--text); } }
 .code-copy svg { flex: none; }
 

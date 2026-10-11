@@ -1124,7 +1124,8 @@ function AppContent() {
 
   const canSend = (draft.trim().length > 0 || draftFiles.length > 0) && !streaming && !loadingConversation && !loadFailed && recovery.online && !recovery.pending;
 
-  function menuPosition(rect:DOMRect) {return {left:Math.max(8,Math.min(rect.left,window.innerWidth-192)),top:Math.max(8,Math.min(rect.bottom+6,window.innerHeight-242))};}
+  // Chừa đủ chỗ cho menu rộng 196px và cao tối đa ~250px (mục 44px trên màn cảm ứng), cách mép 8px.
+  function menuPosition(rect:DOMRect) {return {left:Math.max(8,Math.min(rect.left,window.innerWidth-204)),top:Math.max(8,Math.min(rect.bottom+6,window.innerHeight-262))};}
   function newProjectChat(id:string) {
     if (abortRef.current || deleting) return;
     newConversation(false, id);setSidebarOpen(false);
@@ -1570,11 +1571,13 @@ function AppContent() {
         <button disabled={metadataBusy} onClick={() => {void changeConversation(conversationMenu.item,{pinned:!conversationMenu.item.pinned});setConversationMenu(null);}}><PinIcon />{conversationMenu.item.pinned ? 'Bỏ ghim' : 'Ghim'}</button>
         <button disabled={metadataBusy} onClick={()=>{setMoveTarget(conversationMenu.item);setProjectError('');setConversationMenu(null);void refreshProjects();}}><FolderIcon/>Chuyển vào dự án</button>
         <button disabled={metadataBusy || streaming || deleting} onClick={() => {void changeConversation(conversationMenu.item, {archived:true}); setConversationMenu(null);}}><SettingsIcon name="archive"/>Lưu trữ</button>
-        <button className="danger-button" onClick={() => {setDeleteTarget(conversationMenu.item);setConversationMenu(null);}}>Xóa hội thoại</button>
+        <div className="popup-menu-sep" role="separator" />
+        <button className="danger-button" onClick={() => {setDeleteTarget(conversationMenu.item);setConversationMenu(null);}}><SettingsIcon name="trash"/>Xóa hội thoại</button>
       </ConversationMenu>}
       {projectMenu && <ConversationMenu label="Tùy chọn dự án" left={projectMenu.left} top={projectMenu.top} onClose={()=>setProjectMenu(null)}>
         <button onClick={()=>{setProjectEdit(projectMenu.item);setProjectName(projectMenu.item.name);setProjectError('');setProjectMenu(null);}}><EditIcon/>Đổi tên dự án</button>
-        <button className="danger-button" onClick={()=>{setProjectDelete(projectMenu.item);setProjectError('');setProjectMenu(null);}}>Xóa dự án</button>
+        <div className="popup-menu-sep" role="separator" />
+        <button className="danger-button" onClick={()=>{setProjectDelete(projectMenu.item);setProjectError('');setProjectMenu(null);}}><SettingsIcon name="trash"/>Xóa dự án</button>
       </ConversationMenu>}
       {projectEdit && <><TextEditDialog title={projectEdit==='create' ? 'Tạo dự án' : 'Đổi tên dự án'} description={projectError || 'Gom hội thoại cùng một công việc.'} value={projectName} onChange={setProjectName} busy={projectBusy} onClose={()=>setProjectEdit(null)} onSave={()=>void saveProject()}/></>}
       {projectDelete && <ProjectConfirm title="Xóa dự án này?" busy={projectBusy} onClose={()=>setProjectDelete(null)} onConfirm={()=>void removeProject()}><p>“{projectDelete.name}” cùng hướng dẫn và tài liệu chung sẽ bị xóa. Các hội thoại được giữ và trở về Gần đây.</p>{projectError && <p role="alert">{projectError}</p>}</ProjectConfirm>}

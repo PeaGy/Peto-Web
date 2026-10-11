@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import IdleMotionPicker from '../src/features/companion/characters/IdleMotionPicker';
 import { DEFAULT_CHARACTER } from '../src/features/companion/characters/characterLibrary';
@@ -10,11 +10,15 @@ it('offers named motions, saves selection and supports disabling', async () => {
     Motions: { Idle: [{ File: 'motions/a.motion3.json' }], Wave: [{ File: 'wave.motion3.json' }] },
   } }) }));
   render(<IdleMotionPicker character={DEFAULT_CHARACTER} />);
-  const option = await screen.findByRole('option', { name: 'wave.motion3.json' });
-  const select = screen.getByRole('combobox', { name: 'Chuyển động khi chờ' });
-  fireEvent.change(select, { target: { value: (option as HTMLOptionElement).value } });
+  const select = screen.getByRole('combobox', { name: 'Chuyển động khi chờ' }) as HTMLButtonElement;
+  await waitFor(() => expect(select.disabled).toBe(false));
+  fireEvent.click(select);
+  expect(screen.getByRole('listbox').textContent).toContain('Wave');
+  fireEvent.click(screen.getByRole('option', { name: 'wave.motion3.json' }));
   expect(readIdle(DEFAULT_CHARACTER.id)).toContain('Wave');
-  fireEvent.change(select, { target: { value: 'off' } });
+  expect(select.textContent).toBe('wave.motion3.json');
+  fireEvent.click(select);
+  fireEvent.click(screen.getByRole('option', { name: 'Tắt idle animation' }));
   expect(readIdle(DEFAULT_CHARACTER.id)).toBe('off');
   const physics = screen.getByRole('switch', { name: 'Vật lý' }) as HTMLInputElement;
   expect(physics.disabled).toBe(true);

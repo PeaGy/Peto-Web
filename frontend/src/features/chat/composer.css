@@ -52,7 +52,7 @@
   cursor: pointer;
   padding: 0 2px;
 }
-.chip-remove:hover { color: var(--danger); }
+@media (hover: hover) and (pointer: fine) { .chip-remove:hover { color: var(--danger); } }
 
 .composer textarea {
   flex: 1;
@@ -91,17 +91,18 @@
 .web-off-dot { position: absolute; right: 3px; bottom: 3px; width: 6px; height: 6px; border-radius: 50%; background: var(--muted); border: 1px solid var(--panel); }
 .composer-options { position: absolute; z-index: 20; left: 0; bottom: calc(100% + 10px); width: min(280px, calc(100vw - 56px)); padding: 6px; border: 1px solid var(--line); border-radius: 16px; background: var(--panel); box-shadow: var(--shadow); }
 .composer-options > button { display: flex; align-items: center; gap: 12px; width: 100%; border: 0; border-radius: 10px; padding: 12px; background: transparent; color: var(--text); text-align: left; font: inherit; cursor: pointer; }
-.composer-options > button:hover, .composer-options > button:focus-visible { background: var(--panel-2); outline: 2px solid var(--accent); outline-offset: -2px; }
+.composer-options > button:focus-visible { background: var(--panel-2); outline: 2px solid var(--accent); outline-offset: -2px; }
+@media (hover: hover) and (pointer: fine) { .composer-options > button:hover { background: var(--panel-2); outline: 2px solid var(--accent); outline-offset: -2px; } }
 .composer-options > button > svg { flex-shrink: 0; color: var(--accent); }
 .composer-options > button > span { display: grid; gap: 4px; }
 .composer-options strong { font-size: 13px; font-weight: 500; }
 .composer-options small { font-size: 11px; color: var(--muted); }
 .composer-options > button:disabled { cursor: default; opacity: 0.55; }
-.composer-options > button:disabled:hover { background: transparent; outline: none; }
+@media (hover: hover) and (pointer: fine) { .composer-options > button:disabled:hover { background: transparent; outline: none; } }
 /* Nhãn chế độ nhập vai cạnh mức suy nghĩ; hội thoại mới thì có nút × để tắt. */
 .persona-chip { display: inline-flex; align-items: center; gap: 2px; height: 34px; padding: 0 6px 0 13px; border-radius: 999px; background: var(--panel-2); color: var(--accent); font-size: 13.5px; font-weight: 500; flex-shrink: 0; }
 .persona-chip button { display: grid; place-items: center; width: 24px; height: 24px; border: 0; border-radius: 50%; background: transparent; color: var(--muted); font: inherit; font-size: 16px; line-height: 1; cursor: pointer; }
-.persona-chip button:hover:not(:disabled) { color: var(--text); background: var(--panel); }
+@media (hover: hover) and (pointer: fine) { .persona-chip button:hover:not(:disabled) { color: var(--text); background: var(--panel); } }
 .persona-chip button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .web-search-status { display: flex; align-items: center; gap: 8px; color: var(--accent); font-size: 13px; padding: 7px 0; }
 .web-search-status svg { flex-shrink: 0; }
@@ -109,7 +110,7 @@
 .web-sources summary { display: flex; align-items: center; gap: 8px; width: fit-content; cursor: pointer; color: var(--muted); font-weight: 500; list-style: none; }
 .web-sources summary::-webkit-details-marker { display: none; }
 .web-sources > summary { padding: 7px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); }
-.web-sources summary:hover { color: var(--text); }
+@media (hover: hover) and (pointer: fine) { .web-sources summary:hover { color: var(--text); } }
 .web-sources summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .web-sources summary::after { content: '+'; margin-left: 3px; }
 .web-sources[open] > summary::after, .web-source-results[open] > summary::after { content: '−'; }
@@ -118,7 +119,7 @@
 .web-sources-panel p { color: var(--muted); font-size: 12px; margin: 8px 0 10px; }
 .web-source-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: 8px; }
 .web-source-card { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-2); color: var(--text); text-decoration: none; min-width: 0; }
-.web-source-card:hover { border-color: var(--accent); }
+@media (hover: hover) and (pointer: fine) { .web-source-card:hover { border-color: var(--accent); } }
 .web-source-icon { display: grid; place-items: center; flex: 0 0 20px; color: var(--muted); }
 .web-source-text { flex: 1; min-width: 0; display: grid; gap: 3px; }
 .web-source-card strong { font-size: 12px; font-weight: 500; overflow-wrap: anywhere; }

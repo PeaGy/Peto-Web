@@ -5,7 +5,7 @@
 .memory-list li span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .memory-list.off li span { color: var(--muted); }
 .memory-delete { flex: none; width: 32px; height: 32px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 8px; background: none; color: var(--muted); font: inherit; font-size: 18px; line-height: 1; cursor: pointer; }
-.memory-delete:hover:not(:disabled) { background: var(--panel-2); color: var(--text); }
+@media (hover: hover) and (pointer: fine) { .memory-delete:hover:not(:disabled) { background: var(--panel-2); color: var(--text); } }
 .memory-delete:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .memory-empty { margin: 0; padding: 14px 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
 .memory-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; margin-top: 16px; color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
@@ -28,7 +28,7 @@
   cursor: pointer;
   transition: transform 160ms var(--ease-out);
 }
-.settings-button:hover:not(:disabled) { border-color: var(--accent); }
+@media (hover: hover) and (pointer: fine) { .settings-button:hover:not(:disabled) { border-color: var(--accent); } }
 .settings-button:active:not(:disabled) { transform: scale(0.97); }
 @media (prefers-reduced-motion: reduce) {
   .settings-button { transition: none; }

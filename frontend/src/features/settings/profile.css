@@ -9,18 +9,13 @@
 .profile-avatar-edit { position: absolute; inset: 0; display: grid; place-items: center; opacity: 0; border-radius: inherit; background: rgb(0 0 0 / .55); color: white; transition: opacity 120ms ease; }
 .profile-avatar-trigger:focus-visible .profile-avatar-edit { opacity: 1; }
 .profile-avatar-trigger:disabled { opacity: .55; cursor: wait; }
-.profile-avatar-options { position: absolute; right: 0; top: calc(100% + 8px); width: 192px; padding: 5px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-2); color: var(--text); box-shadow: 0 10px 28px rgb(0 0 0 / .2); z-index: 31; }
-.profile-avatar-options button { width: 100%; display: flex; align-items: center; gap: 10px; min-height: 38px; padding: 8px 10px; border: 0; border-radius: 8px; background: transparent; color: inherit; font: inherit; font-size: 14px; text-align: left; cursor: pointer; }
-.profile-avatar-options button:disabled { color: var(--muted); opacity: .6; cursor: default; }
-.profile-avatar-options button:focus-visible { outline: none; background: var(--menu-hover); }
-.profile-avatar-options button:active:not(:disabled) { background: var(--menu-hover); }
+/* Nền, viền, bóng và mục lấy từ .popup-menu (shared/ui/menu.css). */
+.profile-avatar-options { position: absolute; right: 0; top: calc(100% + 8px); width: 192px; z-index: 31; }
 .profile-avatar-status, .profile-avatar-error { max-width: 240px; font-size: 12px; line-height: 1.5; text-align: right; color: var(--muted); }
 .profile-avatar-error { color: var(--danger); }
 @media (hover: hover) and (pointer: fine) {
   .profile-avatar-trigger:hover .profile-avatar-edit { opacity: 1; }
-  .profile-avatar-options button:hover:not(:disabled) { background: var(--menu-hover); }
 }
-@media (pointer: coarse) { .profile-avatar-options button { min-height: 44px; } }
 @media (max-width: 720px) {
   .profile-form .settings-input:not(textarea) { width: 100%; }
   .profile-occupation { width: min(180px, 46vw); }

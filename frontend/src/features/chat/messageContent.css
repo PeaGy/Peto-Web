@@ -13,7 +13,8 @@
   font-size: 12px;
   cursor: pointer;
 }
-.message-copy:hover, .message-copy.done { color: var(--text); }
+.message-copy.done { color: var(--text); }
+@media (hover: hover) and (pointer: fine) { .message-copy:hover { color: var(--text); } }
 .message-copy svg { flex: none; }
 .message-copy:disabled { opacity: 0.5; cursor: default; }
 /* Lượt bị dừng, như Grok: một dòng nghiêng nhạt ngay chỗ câu trả lời, nhãn "Đã dừng" cuối hàng nút. */
@@ -88,9 +89,9 @@
   cursor: pointer;
 }
 
-.work-head:hover { color: var(--text); }
+@media (hover: hover) and (pointer: fine) { .work-head:hover { color: var(--text); } }
 .work-head.static { cursor: default; }
-.work-head.static:hover { color: var(--muted); }
+@media (hover: hover) and (pointer: fine) { .work-head.static:hover { color: var(--muted); } }
 .work-head:focus-visible, .work-item summary:focus-visible, .work-more summary:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 3px;

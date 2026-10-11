@@ -7,9 +7,10 @@ import ComposerGazeSetting from './ComposerGazeSetting';
 import ExpressionPicker from './ExpressionPicker';
 import type { ExpressionChoice } from './characterExpressions';
 import { selectMusicCharacter } from './musicVibe';
+import { Dropdown, type DropdownOption } from '../../../shared/ui/Dropdown';
 
 export default function IdleMotionPicker({ character }: { character: CharacterModel }) {
-  const label = useId();
+  const field = useId();
   const [choices, setChoices] = useState<IdleMotion[]>([]);
   const [value, setValue] = useState(() => readIdle(character.id));
   const [loading, setLoading] = useState(true);
@@ -31,16 +32,17 @@ export default function IdleMotionPicker({ character }: { character: CharacterMo
   }, [character.id, attempt]);
   const selected = choices.find(item => item.id === value);
   const resolved = value === 'off' ? 'off' : selected ? value : 'auto';
-  return <section className="idle-motion-picker" aria-labelledby={label}>
-    <div><h3 id={label}>Chuyển động khi chờ</h3><p>{character.name} · Live2D</p></div>
-    <select aria-labelledby={label} value={resolved} disabled={loading || !!error}
-      onChange={event => { setValue(event.target.value); writeIdle(character.id, event.target.value); }}>
-      <option value="auto">Tự động · ngẫu nhiên nhóm Idle</option>
-      <option value="off">Tắt idle animation</option>
-      {[...new Set(choices.map(item => item.group))].map(group => <optgroup key={group} label={group || 'Không tên'}>
-        {choices.filter(item => item.group === group).map(item => <option key={item.id} value={item.id}>{item.label}</option>)}
-      </optgroup>)}
-    </select>
+  // Bảng cài đặt nhân vật cuộn được, nên dùng Dropdown: bảng chọn gốc của trình duyệt không đi theo ô khi cuộn.
+  const options: DropdownOption[] = [
+    { value: 'auto', label: 'Tự động · ngẫu nhiên nhóm Idle' },
+    { value: 'off', label: 'Tắt idle animation' },
+    ...[...new Set(choices.map(item => item.group))].flatMap(group => choices.filter(item => item.group === group)
+      .map(item => ({ value: item.id, label: item.label, group: group || 'Không tên' }))),
+  ];
+  return <section className="idle-motion-picker" aria-labelledby={`${field}-label`}>
+    <div><h3><label htmlFor={field} id={`${field}-label`}>Chuyển động khi chờ</label></h3><p>{character.name} · Live2D</p></div>
+    <Dropdown id={field} value={resolved} options={options} disabled={loading || !!error}
+      onChange={next => { setValue(next); writeIdle(character.id, next); }} />
     {loading ? <p role="status">Đang đọc chuyển động…</p> : error
       ? <p role="alert">{error} <button type="button" className="settings-button" onClick={() => setAttempt(n => n + 1)}>Thử lại</button></p>
       : <p>{selected?.file || (value === 'off' ? 'Đã tắt phát motion khi chờ.' : choices.some(item => item.group === 'Idle')

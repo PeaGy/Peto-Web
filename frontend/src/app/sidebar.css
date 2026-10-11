@@ -49,7 +49,7 @@
   transition: transform 160ms var(--ease-out);
 }
 
-.sidebar-toggle:hover { background: var(--panel-2); color: var(--text); }
+@media (hover: hover) and (pointer: fine) { .sidebar-toggle:hover { background: var(--panel-2); color: var(--text); } }
 .sidebar-toggle:active { transform: scale(0.97); }
 
 .app-nav { display: flex; flex-direction: column; gap: 2px; }
@@ -75,7 +75,8 @@
 }
 
 .nav-item svg { flex-shrink: 0; }
-.nav-item:hover, .nav-item.on { background: var(--panel-2); }
+.nav-item.on { background: var(--panel-2); }
+@media (hover: hover) and (pointer: fine) { .nav-item:hover { background: var(--panel-2); } }
 
 .sidebar-section {
   flex: 1;
@@ -125,9 +126,9 @@
   outline: none;
 }
 .sidebar-resize-handle::after { content: ''; position: absolute; inset: 0 0 0 auto; width: 1px; }
-.sidebar-resize-handle:hover::after,
 .sidebar-resize-handle:focus-visible::after,
 .sidebar.resizing .sidebar-resize-handle::after { background: var(--muted); }
+@media (hover: hover) and (pointer: fine) { .sidebar-resize-handle:hover::after { background: var(--muted); } }
 .sidebar.resizing { width: var(--sidebar-drag-width); transition: none; }
 .sidebar.resizing :is(.sidebar-brand, .sidebar-search-button, .nav-label, .account-name) { opacity: var(--sidebar-content-opacity); transition: none; }
 .sidebar.resizing .sidebar-section { opacity: var(--sidebar-content-opacity); visibility: visible; transition: none; }
@@ -170,7 +171,7 @@ html.sidebar-resizing, html.sidebar-resizing * { cursor: col-resize !important; 
   font: inherit;
   cursor: pointer;
 }
-.imagine-library-title button:hover { color: var(--text); }
+@media (hover: hover) and (pointer: fine) { .imagine-library-title button:hover { color: var(--text); } }
 .imagine-library-title button:focus-visible { outline: 2px solid var(--text); outline-offset: 3px; border-radius: 3px; }
 
 .imagine-job-list {
@@ -200,7 +201,9 @@ html.sidebar-resizing, html.sidebar-resizing * { cursor: col-resize !important; 
   cursor: pointer;
 }
 
-.job-link:hover, .job-link:focus-visible { border-color: var(--accent); }
+.job-link:focus-visible { border-color: var(--accent); }
+
+@media (hover: hover) and (pointer: fine) { .job-link:hover { border-color: var(--accent); } }
 
 .job-link img, .job-link-blank {
   display: block;
@@ -224,7 +227,8 @@ html.sidebar-resizing, html.sidebar-resizing * { cursor: col-resize !important; 
 .empty-hint { color: var(--muted); font-size: 13px; padding: 4px 8px; }
 
 .conv { display: flex; align-items: center; border-radius: 8px; }
-.conv:hover, .conv.active { background: var(--panel-2); }
+.conv.active { background: var(--panel-2); }
+@media (hover: hover) and (pointer: fine) { .conv:hover { background: var(--panel-2); } }
 
 .conv-open {
   display: flex;
@@ -247,20 +251,5 @@ html.sidebar-resizing, html.sidebar-resizing * { cursor: col-resize !important; 
 .conv-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .conv-persona { flex-shrink: 0; color: var(--muted); font-size: 12px; }
 
-.conv-delete {
-  border: 0;
-  background: none;
-  color: var(--muted);
-  font-size: 18px;
-  padding: 0 10px;
-  cursor: pointer;
-  opacity: 0;
-}
-
-.conv:hover .conv-delete, .conv:focus-within .conv-delete { opacity: 1; }
-.conv-delete:hover { color: var(--danger); }
-
 .sidebar-footer { color: var(--muted); font-size: 12px; padding: 0 8px; }
-
-button:disabled { opacity: 0.5; cursor: not-allowed; }
 

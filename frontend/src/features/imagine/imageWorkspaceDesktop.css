@@ -31,7 +31,8 @@
 .workspace-style .studio-chip { width: 100%; min-height: 40px; border-radius: 10px; padding: 8px 12px; justify-content: space-between; flex-direction: row-reverse; font-size: 14px; }
 .workspace-style .studio-menu-list { top: calc(100% + 4px); bottom: auto; left: 0; right: 0; min-width: 0; width: 100%; padding: 6px; border-radius: 14px; transform-origin: top; transition: none; animation: workspace-style-enter 160ms cubic-bezier(.23,1,.32,1); }
 .workspace-style .effort-option { min-height: 34px; padding: 8px 12px; font-size: 14px; background: none; }
-.workspace-style .effort-option:hover, .image-workspace .workspace-style .effort-option:focus-visible { background: var(--panel-2); outline: none; }
+.image-workspace .workspace-style .effort-option:focus-visible { background: var(--panel-2); outline: none; }
+@media (hover: hover) and (pointer: fine) { .workspace-style .effort-option:hover { background: var(--panel-2); outline: none; } }
 .workspace-brush-form { display: grid; gap: 8px; }
 .workspace-brush-form textarea { display: block; width: 100%; min-height: 90px; max-height: 150px; resize: vertical; margin-bottom: 10px; padding: 14px; font: inherit; line-height: 1.5; color: var(--text); background: var(--panel-2); border: 1px solid transparent; border-radius: 12px; }
 .image-workspace .workspace-brush-form textarea:focus-visible { border-color: var(--muted); outline: none; }

@@ -16,7 +16,7 @@
   cursor: pointer;
   transition: transform 160ms var(--ease-out), box-shadow 90ms linear;
 }
-.hearing-mic:hover { color: var(--stage-text); background: var(--stage-surface); }
+@media (hover: hover) and (pointer: fine) { .hearing-mic:hover { color: var(--stage-text); background: var(--stage-surface); } }
 .hearing-mic:active { transform: scale(0.95); }
 .hearing-mic:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 /* Vòng sáng dày lên theo âm lượng (--hearing-level do MicButton đặt, 0..1). */

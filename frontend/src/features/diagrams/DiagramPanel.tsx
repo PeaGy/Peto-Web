@@ -170,7 +170,7 @@ function DownloadMenu({ code }: { code: string }) {
         <DownloadIcon />Tải
       </button>
       {open && (
-        <span className="diagram-menu" role="menu" aria-label="Tải sơ đồ">
+        <span className="diagram-menu popup-menu" role="menu" aria-label="Tải sơ đồ">
           <button type="button" role="menuitem" onClick={() => run(downloadPng)}><strong>Ảnh PNG</strong><small>Nền trắng, dán vào Word hay slide</small></button>
           <button type="button" role="menuitem" onClick={() => run(downloadSvg)}><strong>Ảnh SVG</strong><small>Phóng to bao nhiêu cũng nét</small></button>
           <button type="button" role="menuitem" onClick={() => run(downloadPdf)}><strong>PDF</strong><small>Khổ A4, in hay nộp bài</small></button>

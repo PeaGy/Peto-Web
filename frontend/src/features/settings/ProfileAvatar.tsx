@@ -52,7 +52,7 @@ export default function ProfileAvatar({ avatar, custom, onChanged, onUnauthorize
         }}>
         {avatar}<span className="profile-avatar-edit"><SettingsIcon name="pencil" size={19} /></span>
       </button>
-      {open && <div id={menuId} role="menu" aria-label="Ảnh đại diện" className="profile-avatar-options" onKeyDown={event => {
+      {open && <div id={menuId} role="menu" aria-label="Ảnh đại diện" className="profile-avatar-options popup-menu" onKeyDown={event => {
         const list = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')];
         const at = list.indexOf(document.activeElement as HTMLButtonElement);
         if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {

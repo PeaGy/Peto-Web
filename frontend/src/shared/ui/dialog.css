@@ -14,7 +14,7 @@
   line-height: 1;
   cursor: pointer;
 }
-.dialog-close:hover { color: var(--text); border-color: var(--line); background: var(--panel-2); }
+@media (hover: hover) and (pointer: fine) { .dialog-close:hover { color: var(--text); border-color: var(--line); background: var(--panel-2); } }
 .dialog-actions .danger-button { color: var(--danger); border-color: var(--danger); }
 .dialog-actions .primary-button { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
 .confirm-dialog .consent-error { color: var(--danger); }

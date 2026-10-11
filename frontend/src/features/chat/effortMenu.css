@@ -17,8 +17,9 @@
   cursor: pointer;
 }
 
-.effort-trigger:hover:not(:disabled),
 .effort-trigger[aria-expanded="true"] { color: var(--text); }
+
+@media (hover: hover) and (pointer: fine) { .effort-trigger:hover:not(:disabled) { color: var(--text); } }
 
 .effort-trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
@@ -68,7 +69,7 @@
 }
 
 .effort-option svg { flex-shrink: 0; }
-.effort-option:hover { background: var(--panel-2); }
+@media (hover: hover) and (pointer: fine) { .effort-option:hover { background: var(--panel-2); } }
 .effort-option:focus-visible { background: var(--panel-2); outline: 2px solid var(--accent); outline-offset: -2px; }
 .effort-option-label { flex: 1; }
 .effort-check { color: var(--muted); }

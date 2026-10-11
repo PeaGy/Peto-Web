@@ -1,0 +1,52 @@
+/* Menu nổi dùng chung (.popup-menu): menu tài khoản, menu hội thoại và dự án, menu ảnh đại diện, menu tải sơ đồ.
+   Mỗi menu chỉ tự đặt vị trí, bề ngang và hiệu ứng mở; nền, viền, bóng và mục đều lấy ở đây.
+   Không đặt display ở đây: menu hội thoại là <dialog>, đặt display lên <dialog> đang đóng là nó hiện ra.
+   Menu chọn một mức ở composer (.effort-options) là họ riêng, xem DESIGN.md. */
+.popup-menu {
+  padding: 6px;
+  border: 1px solid var(--menu-line);
+  border-radius: 12px;
+  background: var(--menu-bg);
+  color: var(--text);
+  box-shadow: var(--menu-shadow);
+}
+
+.popup-menu > :is(button, a) {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.3;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.popup-menu > button:disabled { cursor: not-allowed; }
+.popup-menu > :is(button, a) > svg { flex: none; width: 18px; height: 18px; color: var(--muted); }
+.popup-menu > .danger-button, .popup-menu > .danger-button > svg { color: var(--danger); }
+
+/* Bàn phím đi giữa các mục bằng mũi tên, nên mục đang chọn sáng nền như menu của hệ điều hành thay cho vòng focus. */
+.popup-menu > :is(button, a):focus-visible { background: var(--menu-hover); outline: none; }
+.popup-menu > :is(button, a):focus-visible:not(.danger-button) > svg { color: var(--text); }
+/* Màn cảm ứng không có rê chuột: nền sáng lúc ngón tay đang nhấn là dấu đã nhận cú chạm. */
+.popup-menu > :is(button, a):active:not(:disabled) { background: var(--menu-hover); }
+
+@media (hover: hover) and (pointer: fine) {
+  .popup-menu > :is(button, a):hover:not(:disabled) { background: var(--menu-hover); }
+  .popup-menu > :is(button, a):hover:not(:disabled, .danger-button) > svg { color: var(--text); }
+}
+
+.popup-menu-sep { height: 1px; margin: 5px 6px; background: var(--menu-line); }
+
+@media (pointer: coarse) {
+  .popup-menu > :is(button, a) { min-height: 44px; }
+}

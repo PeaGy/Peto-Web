@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { characterError, type CharacterFormat } from './characterLibrary';
 import type { CharacterLibrary } from './useCharacters';
 import IdleMotionPicker from './IdleMotionPicker';
@@ -8,9 +8,12 @@ import CharacterImportReview from './CharacterImportReview';
 import type { Live2DImportReport } from './characterImport';
 import { CHARACTER } from './characterConfig';
 import { useRenderQuality, writeRenderQuality } from './renderQuality';
+import { Dropdown } from '../../../shared/ui/Dropdown';
 
 export default function CharacterPicker({ library, onClose }: { library: CharacterLibrary; onClose: () => void }) {
   const quality = useRenderQuality();
+  const sharpId = useId();
+  const smoothId = useId();
   const dialog = useRef<HTMLDialogElement>(null);
   const menu = useRef<HTMLDetailsElement>(null);
   const zip = useRef<HTMLInputElement>(null);
@@ -101,8 +104,16 @@ export default function CharacterPicker({ library, onClose }: { library: Charact
       </div>
       <section className="mobile-render-settings" aria-label="Hiển thị trên điện thoại">
         <h3>Hiển thị trên điện thoại</h3>
-        <label>Chất lượng hình ảnh <select value={quality.sharp ? 'high' : 'normal'} onChange={e => writeRenderQuality({ ...quality, sharp: e.target.value === 'high' })}><option value="normal">Tiết kiệm · 1×</option><option value="high">Cao · tối đa 2×</option></select></label>
-        <label>Độ mượt <select value={quality.smooth ? 'high' : 'normal'} onChange={e => writeRenderQuality({ ...quality, smooth: e.target.value === 'high' })}><option value="normal">Tiết kiệm · 24 FPS</option><option value="high">Cao · tối đa 60 FPS</option></select></label>
+        <div className="mobile-render-field">
+          <label htmlFor={sharpId} id={`${sharpId}-label`}>Chất lượng hình ảnh</label>
+          <Dropdown id={sharpId} value={quality.sharp ? 'high' : 'normal'} options={[{ value: 'normal', label: 'Tiết kiệm · 1×' }, { value: 'high', label: 'Cao · tối đa 2×' }]}
+            onChange={next => writeRenderQuality({ ...quality, sharp: next === 'high' })} />
+        </div>
+        <div className="mobile-render-field">
+          <label htmlFor={smoothId} id={`${smoothId}-label`}>Độ mượt</label>
+          <Dropdown id={smoothId} value={quality.smooth ? 'high' : 'normal'} options={[{ value: 'normal', label: 'Tiết kiệm · 24 FPS' }, { value: 'high', label: 'Cao · tối đa 60 FPS' }]}
+            onChange={next => writeRenderQuality({ ...quality, smooth: next === 'high' })} />
+        </div>
         <p>Áp dụng cho Live2D và VRM trên thiết bị này. Mức cao có thể dùng nhiều pin và làm máy ấm hơn.</p>
       </section>
       {library.selected.format === 'live2d' && <details className="character-motion-settings" key={library.selected.id}>

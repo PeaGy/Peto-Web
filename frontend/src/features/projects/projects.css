@@ -4,10 +4,10 @@
 .project-sidebar { margin-bottom:20px; }
 .project-sidebar-label { display:flex; align-items:center; justify-content:space-between; margin-bottom:5px; }
 .project-create { display:grid; place-items:center; border:0; background:transparent; color:var(--muted); border-radius:8px; width:30px; height:30px; cursor:pointer; font-size:20px; }
-.project-create:hover { color:var(--text); background:var(--panel-2); }
+@media (hover: hover) and (pointer: fine) { .project-create:hover { color:var(--text); background:var(--panel-2); } }
 .project-sidebar-label .sidebar-label { padding:0; }
 .project-section-toggle { display:flex; align-items:center; gap:5px; min-height:30px; padding:0 10px; border:0; border-radius:8px; background:transparent; color:inherit; font:inherit; cursor:pointer; }
-.project-section-toggle:hover { color:var(--text); }
+@media (hover: hover) and (pointer: fine) { .project-section-toggle:hover { color:var(--text); } }
 .project-section-toggle svg { opacity:0; flex-shrink:0; }
 .project-section-toggle[aria-expanded="true"] svg { transform:rotate(90deg); }
 .project-section-toggle:hover svg,.project-section-toggle:focus-visible svg,.project-section-toggle[aria-expanded="false"] svg { opacity:1; }
@@ -15,7 +15,8 @@
 .project-open { display:flex; align-items:center; gap:8px; flex:1; min-width:0; border:0; background:transparent; color:var(--text); padding:8px 10px; font:inherit; font-size:14px; cursor:pointer; text-align:left; }
 .project-open svg { flex-shrink:0; }
 .project-open span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.project-row:hover .project-open,.project-row:focus-within .project-open { padding-right:76px; }
+.project-row:focus-within .project-open { padding-right:76px; }
+@media (hover: hover) and (pointer: fine) { .project-row:hover .project-open { padding-right:76px; } }
 .project-chats { margin-left:18px; }
 .project-chats .conv-open { font-size:13px; }
 .project-retry { border:0; background:transparent; color:var(--muted); font:inherit; font-size:12px; padding:8px; cursor:pointer; text-align:left; }

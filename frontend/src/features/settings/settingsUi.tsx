@@ -14,6 +14,7 @@ const ICONS = {
   search: <><circle cx="10.5" cy="10.5" r="6.5" /><path d="m16 16 4.5 4.5" /></>,
   connectors: <><rect x="3.5" y="3.5" width="6.5" height="6.5" rx="1.5" /><rect x="14" y="3.5" width="6.5" height="6.5" rx="1.5" /><rect x="3.5" y="14" width="6.5" height="6.5" rx="1.5" /><path d="M17.25 14v6.5M14 17.25h6.5" /></>,
   archive: <><rect x="3.5" y="4" width="17" height="4" rx="1" /><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8M10 12h4" /></>,
+  trash: <><path d="M4.5 7h15M9.5 7V5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v2" /><path d="m6.5 7 .9 11.6A1.5 1.5 0 0 0 8.9 20h6.2a1.5 1.5 0 0 0 1.5-1.4L17.5 7M10 11v5.5M14 11v5.5" /></>,
   palette: <>
     <path d="M12 3.5a8.5 8.5 0 0 0 0 17c1 0 1.7-.7 1.7-1.6 0-.5-.2-.9-.5-1.2a1.7 1.7 0 0 1 1.2-2.9h2A4.6 4.6 0 0 0 21 10.2C21 6.5 17 3.5 12 3.5Z" />
     <circle cx="7.7" cy="11.2" r="1.05" fill="currentColor" stroke="none" />

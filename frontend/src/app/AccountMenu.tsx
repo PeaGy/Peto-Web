@@ -79,7 +79,7 @@ export default function AccountMenu({ place, avatar, name, subtitle, signOutDisa
   return (
     <div
       ref={ref}
-      className={place.closing ? "account-menu closing" : "account-menu"}
+      className={place.closing ? "account-menu popup-menu closing" : "account-menu popup-menu"}
       role="menu"
       aria-label="Tài khoản"
       style={{ left: place.left, bottom: place.bottom, width: place.width }}
@@ -93,7 +93,7 @@ export default function AccountMenu({ place, avatar, name, subtitle, signOutDisa
         <span className="account-name"><strong>{name}</strong>{" "}<span>{subtitle}</span></span>
         <span className="account-menu-trail"><SettingsIcon name="chevronRight" size={16} /></span>
       </button>
-      <div className="account-menu-sep" role="separator" />
+      <div className="popup-menu-sep" role="separator" />
       <button type="button" role="menuitem" tabIndex={-1} onClick={() => onOpenSettings("ho-so", true)}>
         <SettingsIcon name="user" />Hồ sơ
       </button>
@@ -103,7 +103,7 @@ export default function AccountMenu({ place, avatar, name, subtitle, signOutDisa
       {onOpenAdmin && <button type="button" role="menuitem" tabIndex={-1} onClick={onOpenAdmin}>
         <SettingsIcon name="chart" />Quản trị
       </button>}
-      <div className="account-menu-sep" role="separator" />
+      <div className="popup-menu-sep" role="separator" />
       <a role="menuitem" tabIndex={-1} href="/docs/" target="_blank" rel="noreferrer" onClick={() => onClose(false)}>
         <SettingsIcon name="help" />Hướng dẫn
         <span className="account-menu-trail"><SettingsIcon name="external" size={14} /></span>

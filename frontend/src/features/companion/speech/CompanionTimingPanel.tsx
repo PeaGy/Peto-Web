@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
+import { Dropdown } from '../../../shared/ui/Dropdown';
 import { clearCompanionTimings, elapsed, useCompanionTimings, type TimingStatus } from './companionTiming';
 import { keyProvider } from './voiceProviders';
 import { hearingProvider } from './hearingProviders';
@@ -12,6 +13,7 @@ const duration = (value: number | null) => value === null ? 'Chưa đo được'
 export default function CompanionTimingPanel() {
   const records = useCompanionTimings();
   const [picked, setPicked] = useState<number | null>(null);
+  const field = useId();
   const record = records.find(item => item.id === picked) ?? records[0];
   const rows: [string, number | null][] = record ? [
     ['Ngừng nói → chốt lời', elapsed(record.hearing?.endedAt, record.hearing?.finalizedAt)],
@@ -27,11 +29,12 @@ export default function CompanionTimingPanel() {
     <p>Đo các lượt trò chuyện trên trang này. Không lưu nội dung hoặc gửi thống kê lên máy chủ.</p>
     {!record ? <p>Chưa có lượt đo. Gửi một lời nhắn trong Companion rồi quay lại đây.</p> : <>
       <div className="companion-timing-controls">
-        <label>Lượt đo <select value={record.id} onChange={event => setPicked(Number(event.target.value))}>
-          {records.map((item, index) => <option key={item.id} value={item.id}>
-            {index === 0 ? 'Gần nhất' : `Trước ${index} lượt`} · {states[item.status]}
-          </option>)}
-        </select></label>
+        {/* Mục này nằm trong vùng cuộn của Cài đặt: Dropdown đi theo ô khi cuộn, bảng chọn gốc thì không. */}
+        <label htmlFor={field} id={`${field}-label`}>Lượt đo</label>
+        <Dropdown id={field} value={String(record.id)} onChange={next => setPicked(Number(next))}
+          options={records.map((item, index) => ({
+            value: String(item.id), label: `${index === 0 ? 'Gần nhất' : `Trước ${index} lượt`} · ${states[item.status]}`,
+          }))} />
         <button type="button" onClick={clearCompanionTimings}>Xóa kết quả đo</button>
       </div>
       <p>{record.input === 'voice' ? 'Nhắn bằng micro' : 'Nhắn bằng chữ'} · {record.search ? 'Tra web bật' : 'Tra web tắt'}</p>

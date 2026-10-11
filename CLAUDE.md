@@ -2609,6 +2609,19 @@ Chat, Companion and roleplay turn (not the Agent CLI).
 
 ## Frontend conventions
 
+- **Visual details live in [DESIGN.md](DESIGN.md)** (English for agents; written 2026-10-11 from the existing CSS):
+  colour tokens and the few allowed hard-coded colours, type scale, radii, control heights, breakpoints,
+  press/focus/hover/motion rules, the two menu families, select and dialog rules, Vietnamese UI copy (old-style tone
+  marks such as xóa, hủy; `…`) and a pre-ship checklist. Read it before frontend work; when code deliberately departs
+  from it, update it in the same commit. The same day the owner approved a cleanup of its listed inconsistencies:
+  - Action menus (account, conversation/project, avatar, diagram download) share `.popup-menu` in
+    `shared/ui/menu.css` on the `--menu-*` tokens. Conversation/project menus gained a separator and a trash icon on
+    the delete item, which uses `--danger` instead of `#ef7777`.
+  - Appearance-only `:hover` rules moved into `@media (hover: hover) and (pointer: fine)`, so taps no longer leave
+    rows highlighted on phones; reveal-on-hover rules keep their focus and touch fallbacks.
+  - The selects inside scrolling panels (idle motion, phone render quality, Companion timing run) became `Dropdown`.
+    Toolbar and short-dialog selects stay native.
+  - `button:disabled` moved to `base.css`; unused `.settings-select` and `.conv-delete` CSS was removed.
 - **Stale-response guarding.** Async loads use a monotonically increasing `useRef` counter
   (`loadVersion`, `listVersion`, `authVersion`) plus an `AbortController`; results are
   discarded unless the version still matches. Follow this pattern for any new fetch — fast
@@ -2810,6 +2823,7 @@ regressions, not flaky tests.
 
 ## Related documents
 
+- `DESIGN.md` — frontend visual and copy conventions (see "Frontend conventions").
 - `README.md` — deliberately short (rewritten 2026-09-30 at the owner's request, from 674 lines): what the project is,
   how to run, configure, test and deploy it, and links. Do not grow it back into a manual: behaviour belongs in this
   file and in `/docs/`.

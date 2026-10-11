@@ -5,7 +5,7 @@
 .diagram-panel .document-panel-head > svg { flex-shrink: 0; color: var(--muted); }
 .diagram-step { font-size: 20px; }
 .diagram-step:disabled { opacity: 0.35; cursor: default; }
-.diagram-step:disabled:hover { background: none; color: var(--muted); }
+@media (hover: hover) and (pointer: fine) { .diagram-step:disabled:hover { background: none; color: var(--muted); } }
 
 .diagram-toolbar { gap: 8px; }
 .diagram-title { flex: 1; min-width: 0; overflow: hidden; font-size: 13px; white-space: nowrap; text-overflow: ellipsis; }
@@ -24,7 +24,7 @@
   cursor: pointer;
   transition: color 150ms ease;
 }
-.diagram-seg button:hover { color: var(--text); }
+@media (hover: hover) and (pointer: fine) { .diagram-seg button:hover { color: var(--text); } }
 .diagram-seg button[aria-selected="true"] { background: var(--seg-on); color: var(--text); }
 
 .diagram-button {
@@ -45,7 +45,7 @@
   cursor: pointer;
   transition: background-color 150ms ease, transform 100ms ease-out;
 }
-.diagram-button:hover { background: var(--panel-2); }
+@media (hover: hover) and (pointer: fine) { .diagram-button:hover { background: var(--panel-2); } }
 .diagram-button:active { transform: scale(0.97); }
 .diagram-button[aria-disabled="true"] { opacity: 0.5; pointer-events: none; }
 
@@ -57,28 +57,12 @@
   z-index: 20;
   display: grid;
   min-width: 240px;
-  padding: 6px;
-  border: 1px solid var(--menu-line);
-  border-radius: 12px;
-  background: var(--menu-bg);
-  box-shadow: var(--menu-shadow);
   transform-origin: top right;
   animation: diagram-menu-in 150ms var(--ease-out);
 }
 @keyframes diagram-menu-in { from { opacity: 0; transform: scale(0.97) translateY(-2px); } }
-.diagram-menu button {
-  display: grid;
-  gap: 2px;
-  padding: 8px 10px;
-  border: 0;
-  border-radius: 8px;
-  background: none;
-  color: var(--text);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-.diagram-menu button:hover, .diagram-menu button:focus-visible { background: var(--menu-hover); outline: none; }
+/* Nền, viền, bóng, rê và focus lấy từ .popup-menu (shared/ui/menu.css); mục ở đây có hai dòng. */
+.diagram-menu button { display: grid; gap: 2px; padding: 8px 10px; }
 .diagram-menu strong { font-size: 13px; font-weight: 600; line-height: 1.4; }
 .diagram-menu small { color: var(--muted); font-size: 12px; line-height: 1.4; }
 .diagram-download-error { position: absolute; top: calc(100% + 6px); right: 0; color: var(--danger); font-size: 12px; white-space: nowrap; }
@@ -142,7 +126,7 @@
   font-size: 13px;
   cursor: pointer;
 }
-.diagram-pz-controls button:hover { background: var(--panel-2); }
+@media (hover: hover) and (pointer: fine) { .diagram-pz-controls button:hover { background: var(--panel-2); } }
 .diagram-pz-scale { min-width: 46px; color: var(--muted); font-size: 12.5px; text-align: center; font-variant-numeric: tabular-nums; }
 
 @media (max-width: 1100px) {

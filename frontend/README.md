@@ -34,6 +34,8 @@ src/
 
 ## CSS và tải riêng
 
+Màu, cỡ chữ, bo góc, chiều cao nút, điểm ngắt, chuyển động và cách viết chữ trên giao diện: xem [`DESIGN.md`](../DESIGN.md) ở gốc repo.
+
 `shared/styles/styles.css` là danh sách import có thứ tự, dùng bởi App và các trang kiểm tra giao diện. CSS từng phần nằm cạnh tính năng. Thứ tự này giữ nguyên cách áp dụng quy tắc của giao diện cũ, kể cả quy tắc trên điện thoại và các thành phần dùng chung giữa Chat và Companion. Đừng đổi thứ tự hoặc import lại từng tệp từ component nếu chưa kiểm tra ảnh hưởng.
 
 Một vài tệp trong `app/`, như `mobileShell.css` và `conversationControls.css`, nối nhiều thành phần của khung ứng dụng. Quy tắc khoảng trống cho nút sửa phải có phạm vi `.chat .bubble.user`; áp dụng lên `.bubble.user` chung sẽ tạo khoảng trống trong Companion. Bong bóng và composer chung vẫn được Companion tùy biến bên trong `.companion`.

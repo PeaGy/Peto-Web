@@ -16,7 +16,7 @@
   cursor: pointer;
   transition: border-color 150ms ease, background-color 150ms ease, transform 100ms ease-out;
 }
-.diagram-card:hover { border-color: color-mix(in srgb, var(--text) 22%, var(--line)); }
+@media (hover: hover) and (pointer: fine) { .diagram-card:hover { border-color: color-mix(in srgb, var(--text) 22%, var(--line)); } }
 .diagram-card:active { transform: scale(0.99); }
 .diagram-card.active { border-color: color-mix(in srgb, var(--text) 35%, var(--line)); background: var(--panel-2); }
 .diagram-card.pending { cursor: default; }
