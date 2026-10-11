@@ -335,7 +335,8 @@ async def test_github_multi_step_read_finishes_and_persists_at_round_limit(clien
     events = await read_events(await client.post('/api/chat', json={'message': 'Đọc repo và đề xuất cải thiện', 'web_search': 'off'}))
     assert events[-1]['type'] == 'done' and not any(event['type'] == 'error' for event in events)
     assert len([event for event in events if event['type'] == 'connector_lookup' and event['live']]) == len(steps)
-    assert requests[3]['tools'] and requests[-1]['tools'] == [] and requests[-1]['tool_choice'] == 'none'
+    # Lượt chốt không gửi công cụ nào, nên cũng không gửi tool_choice: xAI từ chối cả "none" khi danh sách rỗng.
+    assert requests[3]['tools'] and requests[-1]['tools'] == [] and 'tool_choice' not in requests[-1]
     assert TOKEN not in json.dumps(requests)
     saved_messages = (await client.get(f"/api/conversations/{events[0]['conversation_id']}/messages")).json()['messages']
     assert saved_messages[-1]['status'] == 'complete' and 'Chưa kiểm tra hết' in saved_messages[-1]['content']
@@ -358,7 +359,7 @@ async def test_github_call_budget_allows_more_reads_and_skips_excess(client, con
     reads = [request.url.path for request in github_http if '/contents/' in request.url.path]
     assert reads == [f'/repos/nguoi-test/Peto/contents/src/file_{index}.ts' for index in range(MAX_GITHUB_TOOL_CALLS)]
     assert all(request['tools'] for request in requests[:-1])
-    assert requests[-1]['tools'] == [] and requests[-1]['tool_choice'] == 'none'
+    assert requests[-1]['tools'] == [] and 'tool_choice' not in requests[-1]
     outputs = [item for item in requests[-1]['input'] if item.get('type') == 'function_call_output']
     assert len(outputs) == len(calls) and len({item['call_id'] for item in outputs}) == len(calls)
     assert all(json.loads(item['output'])['ok'] for item in outputs[:MAX_GITHUB_TOOL_CALLS])

@@ -45,6 +45,7 @@ class StreamChunk:
     ``text`` là câu trả lời sẽ lưu. ``thinking`` là tóm tắt suy nghĩ của Grok,
     chỉ hiện lúc đang trả lời, không trộn vào tin nhắn.
     ``search`` là tiến trình tra web; ``sources`` là nguồn tham khảo để lưu và hiển thị riêng.
+    ``page`` là Claude mở một link có trong hội thoại (web_fetch): ``fetching``, rồi ``fetched`` hoặc ``failed``.
     ``file_lookup`` / ``file_lookup_done`` là lúc Peto bắt đầu và xong một lần tìm/đọc trong tệp đã gửi.
     ``connector_lookup`` / ``connector_lookup_done`` là tiến trình đọc dịch vụ đã kết nối.
     ``pulse`` không mang gì: dịch vụ AI vẫn đang gửi (soạn lệnh công cụ dài, suy nghĩ) dù chưa có gì để hiện.
@@ -55,7 +56,7 @@ class StreamChunk:
 
     # "text" | "thinking" | "search" | "sources" | "document_status" | "artifact" | "replace" | "file_lookup"
     # | "file_lookup_done" | "connector_lookup" | "connector_lookup_done" | "pulse" | "round" | "tool" | "note"
-    # | "tool_result"
+    # | "tool_result" | "page"
     kind: str
     text: str = ""
     sources: tuple[dict, ...] = field(default_factory=tuple)

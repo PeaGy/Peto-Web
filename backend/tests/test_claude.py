@@ -326,7 +326,9 @@ async def test_fetched_page_becomes_a_source_and_survives_the_next_round(monkeyp
         usage_events.disable()
     assert {"type": "web_search_20250305", "name": "web_search", "max_uses": 5} in calls[0]["tools"]
     assert claude.WEB_FETCH_TOOL in calls[0]["tools"]
-    assert any(getattr(chunk, "kind", None) == "search" and chunk.text == "searching" for chunk in chunks)
+    marks = [(chunk.kind, chunk.text) for chunk in chunks if getattr(chunk, "kind", None) in {"search", "page"}]
+    # Đọc trang có mốc riêng ("Đang đọc trang…" trong nhật ký), không phải một lần tra web.
+    assert marks[0] == ("page", "fetching") and ("page", "fetched") in marks and not any(kind == "search" for kind, _ in marks)
     sources = [chunk.sources for chunk in chunks if getattr(chunk, "kind", None) == "sources"]
     assert sources and sources[-1][0]["url"] == "https://example.com/bai-viet" and sources[-1][0]["title"] == "Bài viết"
     # Khối gốc giữ nguyên cho lần gọi tiếp; đọc trang không tính là một lượt tra web có phí.
@@ -344,3 +346,5 @@ async def test_failed_fetch_does_not_break_the_turn(monkeypatch):
             messages=[ChatMessage("user", "đọc https://example.com/bai-viet")])]
     assert "Trang này không mở được." in "".join(chunk for chunk in chunks if isinstance(chunk, str))
     assert not any(getattr(chunk, "kind", None) == "sources" for chunk in chunks)
+    assert [(chunk.kind, chunk.text) for chunk in chunks if getattr(chunk, "kind", None) == "page"] == [
+        ("page", "fetching"), ("page", "failed")]

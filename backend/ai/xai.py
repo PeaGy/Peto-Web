@@ -206,7 +206,10 @@ class ResponsesProvider(ChatProvider):
                 if item.get("status") == "completed":
                     usable_search_sources = normalize_sources([*usable_search_sources, *_item_sources(item)])
                 search_finished = search_finished or item.get("status") == "completed"
-                yield StreamChunk("search", "completed" if item.get("status") == "completed" else "searching")
+                if (item.get("action") or {}).get("type") == "fetch":
+                    yield StreamChunk("page", "fetched")
+                else:
+                    yield StreamChunk("search", "completed" if item.get("status") == "completed" else "searching")
             merged = normalize_sources([*sources, *_item_sources(item)])
             if merged != sources:
                 sources = merged
@@ -314,6 +317,13 @@ class ResponsesProvider(ChatProvider):
                     elif event_type == "response.web_search_call.completed":
                         search_finished = True
                         yield StreamChunk("search", "completed")
+                    elif event_type == "peto.page_fetch.started":
+                        draft = drop_pre_search_draft()
+                        if draft is not None:
+                            yield draft
+                        yield StreamChunk("page", "fetching")
+                    elif event_type == "peto.page_fetch.failed":
+                        yield StreamChunk("page", "failed")
                     elif event_type == "response.output_item.added":
                         item_type = getattr(event.item, "type", "")
                         if item_type == "web_search_call":

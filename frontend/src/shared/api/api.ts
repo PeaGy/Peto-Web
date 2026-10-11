@@ -77,7 +77,7 @@ export interface Message {
 /** Một bước trong nhật ký "Đang làm". ``start``/``end`` là mili giây tính từ đầu lượt, theo đồng hồ máy chủ. */
 export interface WorkStep {
   id: string;
-  kind: 'wait' | 'read' | 'think' | 'note' | 'compose' | 'tool' | 'lookup' | 'github' | 'search';
+  kind: 'wait' | 'read' | 'think' | 'note' | 'compose' | 'tool' | 'lookup' | 'github' | 'search' | 'page';
   label: string;
   state: 'live' | 'done' | 'failed' | 'stopped';
   start: number;

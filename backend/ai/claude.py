@@ -258,8 +258,11 @@ class ClaudeStream:
                             if block.type == "tool_use":
                                 yield SimpleNamespace(type="response.output_item.added",
                                     item=SimpleNamespace(type="function_call", name=block.name))
-                            elif block.type == "server_tool_use" and block.name in {"web_search", "web_fetch"}:
+                            elif block.type == "server_tool_use" and block.name == "web_search":
                                 yield SimpleNamespace(type="response.web_search_call.searching")
+                            elif block.type == "server_tool_use" and block.name == "web_fetch":
+                                # Đọc trang từ link, không phải tra web: nhật ký "Đang làm" ghi "Đang đọc trang…".
+                                yield SimpleNamespace(type="peto.page_fetch.started")
                         elif kind == "content_block_delta":
                             delta = event.delta
                             if delta.type == "text_delta":
@@ -276,8 +279,13 @@ class ClaudeStream:
                         elif kind == "content_block_stop":
                             block = stream.current_message_snapshot.content[event.index]
                             if block.type in {"web_search_tool_result", "web_fetch_tool_result"}:
-                                for item in _portable_output([block.model_dump(mode="json", exclude_none=True)]):
+                                items = _portable_output([block.model_dump(mode="json", exclude_none=True)])
+                                for item in items:
                                     yield SimpleNamespace(type="response.output_item.done", item=item)
+                                # Trang không đọc được (chặn, cần JavaScript…) không thành nguồn nào; vẫn báo để nhật
+                                # ký không để bước "Đang đọc trang…" treo tới hết lượt.
+                                if block.type == "web_fetch_tool_result" and not items:
+                                    yield SimpleNamespace(type="peto.page_fetch.failed")
                     if not stopped:
                         raise ProviderError("Kết nối Claude bị ngắt trước khi trả lời xong. Thử lại nhé.", retryable=True)
                     message = await stream.get_final_message()

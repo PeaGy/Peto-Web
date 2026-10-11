@@ -76,7 +76,7 @@ def read_detail(document: dict | None) -> str:
 @dataclass
 class Step:
     id: str
-    kind: str                  # read | think | note | compose | tool | lookup | github | search
+    kind: str                  # read | think | note | compose | tool | lookup | github | search | page
     label: str
     start: int
     state: str = 'live'        # live | done | failed | stopped
@@ -110,6 +110,7 @@ class WorkLog:
         self.text_at: int | None = None
         self.github_read = self.github_failed = 0
         self.searches = 0
+        self.pages_read = self.pages_failed = 0
 
     def now(self) -> int:
         return max(0, round((self.clock() - self.started) * 1000))
@@ -283,6 +284,36 @@ class WorkLog:
         self.searches = 1
         return self._begin('search', 'Đang tìm trên web…')[1]
 
+    def page(self, status: str) -> str:
+        """Claude mở link có trong hội thoại (web_fetch). Bước riêng, không gom vào "Đã tìm trên web": ngày 11/10/2026
+        chủ web thấy Haiku đọc trang mà nhật ký ghi là tìm web. Các lần đọc liền nhau gom một dòng như tra web."""
+        step = self._live('page')
+        if status == 'fetching':
+            if step:
+                return ''
+            last = next((item for item in reversed(self.steps) if item.kind != 'think'), None)
+            if last is not None and last.kind == 'page':
+                last.state, last.end, last.label = 'live', None, 'Đang đọc trang…'
+                return self._event(last)
+            self.pages_read = self.pages_failed = 0
+            return self._begin('page', 'Đang đọc trang…')[1]
+        if step is None:
+            return ''
+        if status == 'fetched':
+            self.pages_read += 1
+        else:
+            self.pages_failed += 1
+            problem = 'Trang chặn truy cập hoặc cần JavaScript; Peto trả lời tiếp từ phần đã có.'
+            if problem not in step.problems:
+                step.problems.append(problem)
+        return self._finish(step, self._page_label(), state='done' if self.pages_read else 'failed')
+
+    def _page_label(self) -> str:
+        if not self.pages_read:
+            return 'Không đọc được trang' if self.pages_failed <= 1 else f'Không đọc được {self.pages_failed} trang'
+        label = 'Đã đọc trang' if self.pages_read == 1 else f'Đã đọc {self.pages_read} trang'
+        return label + (f' · {self.pages_failed} trang không đọc được' if self.pages_failed else '')
+
     def sources(self, count: int) -> str:
         step = next((item for item in reversed(self.steps) if item.kind == 'search'), None)
         detail = f'{count} nguồn' if count else ''
@@ -303,7 +334,8 @@ class WorkLog:
                 if step.state == 'done':
                     step.label = 'Đã suy nghĩ' if step.kind == 'think' else \
                         'Đã tìm trên web' + (f' · {self.searches} lần' if self.searches > 1 else '') \
-                        if step.kind == 'search' else _done_label(step.label)
+                        if step.kind == 'search' else self._page_label() \
+                        if step.kind == 'page' and (self.pages_read or self.pages_failed) else _done_label(step.label)
         # Giữ thứ tự tới (provider báo câu dẫn trước lệnh công cụ), đúng như trình duyệt đã vẽ trong lúc chạy.
         kept = [step for step in self.steps if not (
             step.kind == 'think' and not step.summary and step.state == 'done'

@@ -1,11 +1,22 @@
 import type { CharacterFile, CharacterFormat, CharacterImport } from './characterLibrary';
+import { MAX_EXPANDED_BYTES, MAX_FILE_BYTES, MAX_FILES, MAX_IMPORT_BYTES, MAX_JSON_BYTES, megabytes } from './characterLimits';
 
-export const MAX_IMPORT_BYTES = 80 * 1024 * 1024;
-export const MAX_EXPANDED_BYTES = 160 * 1024 * 1024;
-const MAX_FILES = 512;
-const MAX_FILE_BYTES = 64 * 1024 * 1024;
-const MAX_JSON_BYTES = 4 * 1024 * 1024;
 type Json = Record<string, any>;
+
+const TOO_BIG_FILE = `Một tệp trong model vượt quá ${megabytes(MAX_FILE_BYTES)}.`;
+
+/** Đọc tệp theo từng khối của trình duyệt: gói ZIP lớn không phải nằm nguyên trong bộ nhớ cạnh phần đã giải nén. */
+async function* fileChunks(file: Blob): AsyncGenerator<Uint8Array> {
+  if (typeof file.stream !== 'function') { yield new Uint8Array(await file.arrayBuffer()); return; }
+  const reader = file.stream().getReader();
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) return;
+      if (value.length) yield value;
+    }
+  } finally { reader.releaseLock(); }
+}
 
 /** Chỉ tham chiếu tài nguyên bên trong gói, tuyệt đối không tải URL do model cung cấp. */
 export function modelPath(path: string, base = ''): string {
@@ -23,7 +34,6 @@ export function modelPath(path: string, base = ''): string {
 
 async function readZip(file: File): Promise<CharacterFile[]> {
   const { Unzip, UnzipInflate } = await import('fflate');
-  const bytes = new Uint8Array(await file.arrayBuffer());
   const files: CharacterFile[] = [];
   let total = 0, count = 0, pending = 0;
   const seen = new Set<string>();
@@ -33,25 +43,39 @@ async function readZip(file: File): Promise<CharacterFile[]> {
     if (entry.name.endsWith('/') || path.startsWith('__MACOSX/') || path.split('/').some(part => part.startsWith('.'))) return;
     if (seen.has(path.toLowerCase())) throw new Error('Gói model có đường dẫn tệp trùng nhau.');
     seen.add(path.toLowerCase());
-    if ((entry.originalSize ?? 0) > MAX_FILE_BYTES) throw new Error('Một tệp trong model vượt quá 64 MB.');
+    if ((entry.originalSize ?? 0) > MAX_FILE_BYTES) throw new Error(TOO_BIG_FILE);
     let size = 0;
     const chunks: Uint8Array<ArrayBuffer>[] = [];
     pending++;
     entry.ondata = (error, data, final) => {
       if (error) throw new Error('Không giải nén được ZIP. Hãy dùng gói ZIP không có mật khẩu.');
       size += data.length; total += data.length;
-      if (size > MAX_FILE_BYTES || total > MAX_EXPANDED_BYTES) throw new Error('Model sau giải nén quá lớn (tối đa 160 MB, 64 MB mỗi tệp).');
+      if (size > MAX_FILE_BYTES || total > MAX_EXPANDED_BYTES) {
+        throw new Error(`Model sau giải nén quá lớn (tối đa ${megabytes(MAX_EXPANDED_BYTES)}, ${megabytes(MAX_FILE_BYTES)} mỗi tệp).`);
+      }
       chunks.push(new Uint8Array(data));
       if (final) { files.push({ path, blob: new Blob(chunks) }); pending--; }
     };
     entry.start();
   });
   archive.register(UnzipInflate);
-  // Đẩy từng khối nhỏ để kiểm tra kích thước thực sau giải nén, không tin số byte trong ZIP header.
-  for (let offset = 0; offset < bytes.length; offset += 16384) {
-    archive.push(bytes.subarray(offset, offset + 16384), offset + 16384 >= bytes.length);
-    if (offset % (256 * 1024) === 0) await new Promise(resolve => setTimeout(resolve, 0));
+  // Đẩy từng khối nhỏ để kiểm tra kích thước thực sau giải nén, không tin số byte trong ZIP header. Giữ lại khối vừa đọc
+  // một nhịp: chỉ khi biết nó là khối cuối mới báo final cho fflate.
+  const feed = (chunk: Uint8Array, final: boolean) => {
+    for (let offset = 0; offset < chunk.length; offset += 16384) {
+      archive.push(chunk.subarray(offset, offset + 16384), final && offset + 16384 >= chunk.length);
+    }
+  };
+  let previous: Uint8Array | null = null;
+  let fed = 0;
+  for await (const chunk of fileChunks(file)) {
+    if (previous) feed(previous, false);
+    previous = chunk;
+    fed += chunk.length;
+    // Nhường luồng chính mỗi ~256 KB để trang không đứng hình khi giải nén gói lớn.
+    if (fed >= 256 * 1024) { fed = 0; await new Promise(resolve => setTimeout(resolve, 0)); }
   }
+  if (previous) feed(previous, true);
   if (pending || !files.length) throw new Error('ZIP bị thiếu dữ liệu hoặc không có tệp model.');
   return files;
 }
@@ -135,14 +159,16 @@ export function validateVRM(buffer: ArrayBuffer): { name?: string; author?: stri
 
 function checkInput(input: File[]) {
   if (!input.length) throw new Error('Bạn chưa chọn tệp model.');
-  if (input.length > MAX_FILES || input.reduce((size, file) => size + file.size, 0) > MAX_IMPORT_BYTES) throw new Error('Model nhập vào tối đa 80 MB và 512 tệp.');
+  if (input.length > MAX_FILES || input.reduce((size, file) => size + file.size, 0) > MAX_IMPORT_BYTES) {
+    throw new Error(`Model nhập vào tối đa ${megabytes(MAX_IMPORT_BYTES)} và ${MAX_FILES} tệp.`);
+  }
 }
 async function liveFiles(input: File[]) {
   checkInput(input);
   const files = input.length === 1 && input[0].name.toLowerCase().endsWith('.zip')
     ? await readZip(input[0])
     : input.map(file => ({ path: modelPath(file.webkitRelativePath || file.name), blob: file }));
-  if (files.some(file => file.blob.size > MAX_FILE_BYTES)) throw new Error('Một tệp trong model vượt quá 64 MB.');
+  if (files.some(file => file.blob.size > MAX_FILE_BYTES)) throw new Error(TOO_BIG_FILE);
   if (new Set(files.map(file => file.path.toLowerCase())).size !== files.length) throw new Error('Model có tệp trùng đường dẫn.');
   return files;
 }

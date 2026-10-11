@@ -52,6 +52,8 @@ const ICONS = {
   compose: svg(<><path d="M4 20h4L19 9l-4-4L4 16z" /><path d="m14 6 4 4" /></>),
   tool: svg(<><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 10h18M3 15h18M9 4v16" /></>),
   lookup: svg(<><circle cx="11" cy="11" r="6" /><path d="m20 20-4.5-4.5" /></>),
+  // Đọc trang từ link người dùng gửi (Claude web_fetch): biểu tượng mắt xích, khác quả cầu của tra web.
+  page: svg(<><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1" /><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1" /></>),
   done: svg(<path d="m5 12 4.5 4.5L19 7" />),
   failed: svg(<path d="M6 6l12 12M18 6 6 18" />),
   wait: svg(<><circle cx="12" cy="12" r="8" /><path d="M12 8v4l2.5 2" /></>),

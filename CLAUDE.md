@@ -438,6 +438,8 @@ summary ticker, and a phase bar sized by time spent.
   - `lookup`, `github` (consecutive reads become one step) and `search`. Consecutive searches, with only think steps
     between them, also become one step ("Đã tìm trên web · 3 lần", sources counted for the turn): on 2026-10-06 the
     owner saw 5–6 identical "Đã tìm trên web" lines.
+  - `page`: Claude opening a link from the conversation (`web_fetch`), grouped the same way ("Đã đọc 2 trang · 1 trang
+    không đọc được"; all failed is a failed step "Không đọc được trang"). A link icon, not the search globe.
 - **Events and storage.**
   - SSE `step` upserts a step by id, and `thinking` carries its `step`.
   - The final `work` event comes right before `done`/`error` and equals what is stored in `messages.work` (JSON, manual
@@ -553,7 +555,9 @@ models, and Peto gave Claude only `web_search`. No provider documents video unde
   can only fetch URLs already in the conversation). Not in Agent: the CLI browser asks per domain and a server-side
   fetch would bypass it. A fetched page becomes a `web_search_call` item with action `fetch`, so it shows as a source
   card and is not counted as a billed search; a failed fetch (JS-only page, blocked) adds no item and the turn goes on.
-  The work log still labels it as a web lookup.
+  `ClaudeClient` emits `peto.page_fetch.started` / `.failed`, and the provider turns those and completed fetch items
+  into `StreamChunk("page", fetching|fetched|failed)`, the work log's `page` step. The SSE `search` event keeps only
+  `searching`/`completed` for pages loaded before the update.
 
 `shared/web_search.py` validates HTTP(S) source URLs, removes duplicates and bounds the list.
 Extract sources from tool outputs or URL annotations, never by scraping model prose

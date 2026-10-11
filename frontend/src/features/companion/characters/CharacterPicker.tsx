@@ -6,6 +6,7 @@ import ExpressionPicker from './ExpressionPicker';
 import ComposerGazeSetting from './ComposerGazeSetting';
 import CharacterImportReview from './CharacterImportReview';
 import type { Live2DImportReport } from './characterImport';
+import { MAX_IMPORT_BYTES, megabytes } from './characterLimits';
 import { CHARACTER } from './characterConfig';
 import { useRenderQuality, writeRenderQuality } from './renderQuality';
 import { Dropdown } from '../../../shared/ui/Dropdown';
@@ -128,7 +129,7 @@ export default function CharacterPicker({ library, onClose }: { library: Charact
         </section>
       </details>}
       <p className="character-library-footnote"><a href={CHARACTER.creditUrl} target="_blank" rel="noopener noreferrer">Hiyori Momose · © Live2D Inc.</a></p>
-      <p className="character-library-footnote">Tối đa 80 MB mỗi lần nhập. Model lưu trong trình duyệt này, chưa đồng bộ sang máy khác. Xóa dữ liệu trang web sẽ xóa thư viện. Chỉ nhập model bạn có quyền sử dụng.</p>
+      <p className="character-library-footnote">Tối đa {megabytes(MAX_IMPORT_BYTES)} mỗi lần nhập. Model lưu trong trình duyệt này, chưa đồng bộ sang máy khác. Xóa dữ liệu trang web sẽ xóa thư viện. Chỉ nhập model bạn có quyền sử dụng.</p>
     </div>
   </dialog>;
 }

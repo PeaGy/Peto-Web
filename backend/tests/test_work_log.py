@@ -125,6 +125,32 @@ def test_results_lookups_github_and_search_read_naturally():
     assert [step['kind'] for step in apart.close(True)['steps']].count('search') == 2
 
 
+def test_reading_a_linked_page_is_its_own_step():
+    log = WorkLog(clock=Clock())
+    log.search('searching')
+    log.search('completed')
+    log.page('fetching')
+    log.page('fetched')
+    steps = log.close(True)['steps']
+    assert [(step['kind'], step['label']) for step in steps] == [('search', 'Đã tìm trên web'), ('page', 'Đã đọc trang')]
+    # Đọc liền mấy trang (chỉ suy nghĩ ở giữa): một dòng, đếm số trang; trang lỗi được nêu, Peto vẫn trả lời tiếp.
+    many = WorkLog(clock=Clock())
+    for result in ('fetched', 'failed', 'fetched'):
+        many.round()
+        many.thinking('Xem tiếp trang sau.')
+        many.page('fetching')
+        many.page(result)
+    page = next(step for step in many.close(True)['steps'] if step['kind'] == 'page')
+    assert page['label'] == 'Đã đọc 2 trang · 1 trang không đọc được' and page['state'] == 'done'
+    assert page['problems'] == ['Trang chặn truy cập hoặc cần JavaScript; Peto trả lời tiếp từ phần đã có.']
+    blocked = WorkLog(clock=Clock())
+    blocked.page('fetching')
+    blocked.page('failed')
+    blocked.page('fetched')  # cùng kết quả báo lần hai (output_item.done rồi response.completed): bỏ qua
+    only = blocked.close(True)['steps'][0]
+    assert only['label'] == 'Không đọc được trang' and only['state'] == 'failed'
+
+
 def test_unfinished_steps_stop_when_the_turn_fails():
     clock = Clock()
     log = WorkLog(clock=clock)
@@ -187,6 +213,23 @@ async def test_chat_streams_steps_moves_the_lead_in_out_of_the_answer_and_saves_
     saved = (await client.get(f'/api/conversations/{conversation}/messages')).json()['messages'][-1]
     assert saved['content'] == 'Xong rồi.', 'câu dẫn nằm trong nhật ký, không trong câu trả lời'
     assert saved['work'] == work
+
+
+async def test_chat_reports_page_reading_and_keeps_the_old_search_event(client, monkeypatch):
+    class Reader:
+        async def stream(self, **_kwargs):
+            yield StreamChunk('round')
+            yield StreamChunk('page', 'fetching')
+            yield StreamChunk('page', 'fetched')
+            yield 'Bài viết nói về mRNA.'
+
+    monkeypatch.setattr(chat_service, 'get_provider', lambda model='peto': Reader())
+    events = await read_events(await client.post('/api/chat', json={'message': 'tóm tắt https://example.com/bai', 'web_search': 'off'}))
+    assert events[-1]['type'] == 'done'
+    # Trang mở từ trước khi cập nhật vẫn chỉ biết hai trạng thái của sự kiện "search".
+    assert [event['status'] for event in events if event['type'] == 'search'] == ['searching', 'completed']
+    work = next(event['work'] for event in events if event['type'] == 'work')
+    assert [(step['kind'], step['label']) for step in work['steps'] if step['kind'] != 'think'] == [('page', 'Đã đọc trang')]
 
 
 async def test_failed_turn_still_reports_what_was_tried(client, monkeypatch):

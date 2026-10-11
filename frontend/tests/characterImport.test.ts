@@ -2,6 +2,7 @@
 import { expect, it } from 'vitest';
 import { zipSync, strToU8 } from 'fflate';
 import { importCharacter, inspectLive2D, modelPath, validateLive2D, validateVRM } from '../src/features/companion/characters/characterImport';
+import { MAX_IMPORT_BYTES } from '../src/features/companion/characters/characterLimits';
 
 const settings = (file = 'avatar.moc3') => ({ Version: 3, FileReferences: { Moc: file, Textures: ['textures/顔.png'], Motions: { Idle: [{ File: 'idle.motion3.json', Sound: 'https://external.test/sound.wav' }] } } });
 const zip = (json = settings(), extra = {}) => new File([zipSync({
@@ -16,6 +17,33 @@ it('nhập ZIP có thư mục con và tên Unicode, chuẩn hóa tham chiếu v�
   expect(json.FileReferences.Moc).toBe('folder/avatar.moc3');
   expect(json.FileReferences.Textures).toEqual(['folder/textures/顔.png']);
   expect(json.FileReferences.Motions.Idle[0]).not.toHaveProperty('Sound');
+});
+it('đọc ZIP lớn theo từng khối của trình duyệt, giữ nguyên dữ liệu tới byte cuối', async () => {
+  // Dữ liệu giả ngẫu nhiên không nén được, nên gói đủ lớn để luồng đọc chia thành nhiều khối.
+  const texture = new Uint8Array(300_000);
+  let seed = 7;
+  for (let index = 0; index < texture.length; index += 1) { seed = (Math.imul(seed, 1103515245) + 12345) >>> 0; texture[index] = seed >>> 24; }
+  texture.set([137, 80, 78, 71]);
+  const file = zip(settings(), { 'folder/textures/顔.png': texture });
+  expect(file.size).toBeGreaterThan(200_000);
+  // Node trả cả Blob trong một khối; trình duyệt đọc tệp trên đĩa thành nhiều khối nhỏ. Giả lập như trình duyệt.
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  let reads = 0;
+  Object.defineProperty(file, 'stream', { value: () => new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (let offset = 0; offset < bytes.length; offset += 7000) { reads += 1; controller.enqueue(bytes.slice(offset, offset + 7000)); }
+      controller.close();
+    },
+  }) });
+  const imported = await importCharacter([file], 'live2d');
+  expect(reads).toBeGreaterThan(30);
+  const stored = imported.assets.files.find(item => item.path === 'folder/textures/顔.png')!;
+  expect(new Uint8Array(await stored.blob.arrayBuffer())).toEqual(texture);
+});
+it('báo đúng giới hạn khi gói nhập quá lớn', async () => {
+  const big = zip();
+  Object.defineProperty(big, 'size', { value: MAX_IMPORT_BYTES + 1 });
+  await expect(importCharacter([big], 'live2d')).rejects.toThrow('Model nhập vào tối đa 200 MB và 512 tệp.');
 });
 it('chặn tài nguyên ngoài gói, đường dẫn thoát gói và thiếu tệp bắt buộc', async () => {
   for (const value of ['https://external.test/a.moc3', '../../escape.moc3', 'missing.moc3']) {

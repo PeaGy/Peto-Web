@@ -23,8 +23,9 @@ Model lưu trong IndexedDB `peto-characters` của **trình duyệt và địa c
 trình duyệt; chưa đồng bộ tài khoản/VPS. Máy hoặc trình duyệt khác cần nhập lại. Xóa dữ liệu trang web,
 hoặc trình duyệt thu hồi bộ nhớ, có thể làm mất thư viện; giữ tệp gốc để nhập lại.
 
-Tối đa 20 model riêng, 80 MB/lần nhập, 512 tệp; ZIP giải nén tối đa 160 MB, 64 MB/tệp. Giới hạn kiểm tra
-cả số byte thực sau giải nén. Peto kiểm tra entry, moc header, JSON, tham chiếu thiếu và đường dẫn thoát gói;
+Tối đa 20 model riêng, 200 MB/lần nhập, 512 tệp; ZIP giải nén tối đa 400 MB, 128 MB/tệp (nâng từ 80/160/64 MB
+ngày 11/10/2026; số nằm ở `characterLimits.ts`). Giới hạn kiểm tra cả số byte thực sau giải nén. ZIP được đọc theo
+từng khối của trình duyệt, không nạp cả gói vào bộ nhớ cạnh phần đã giải nén. Peto kiểm tra entry, moc header, JSON, tham chiếu thiếu và đường dẫn thoát gói;
 không chạy script hoặc tải tài nguyên mạng do model cung cấp. Bỏ âm thanh đi kèm motion để không chồng lên TTS.
 VRM phải là GLB có phần mở rộng VRM và tài nguyên nhúng. Thư viện không tải model của người dùng lên VPS.
 
