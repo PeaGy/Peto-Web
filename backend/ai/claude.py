@@ -21,7 +21,11 @@ from shared.time_tools import split_time_context
 
 logger = logging.getLogger("peto_web.claude")
 MAX_SEARCH_PAUSES = 3
-NATIVE_BLOCK_TYPES = {"text", "thinking", "redacted_thinking", "tool_use", "server_tool_use", "web_search_tool_result"}
+NATIVE_BLOCK_TYPES = {"text", "thinking", "redacted_thinking", "tool_use", "server_tool_use", "web_search_tool_result",
+                      "web_fetch_tool_result"}
+# Đọc trang từ link (chỉ Chat): bản cơ bản chạy được trên mọi model Claude, không tính phí riêng ngoài token. Claude chỉ
+# mở được link đã có trong hội thoại; giới hạn số lần và cỡ nội dung để một trang dài không ngốn token.
+WEB_FETCH_TOOL = {"type": "web_fetch_20250910", "name": "web_fetch", "max_uses": 3, "max_content_tokens": 20_000}
 
 
 def _citation(value: dict) -> dict | None:
@@ -42,6 +46,15 @@ def _portable_output(content: list[dict]) -> list[dict]:
         elif kind == "tool_use":
             output.append({"type": "function_call", "call_id": block["id"], "name": block["name"],
                            "arguments": json.dumps(block["input"], ensure_ascii=False)})
+        elif kind == "web_fetch_tool_result":
+            # Trang đã đọc thành một nguồn như kết quả tìm kiếm (action "fetch": không tính là một lượt tra web có phí).
+            # Đọc lỗi (trang chặn, cần JavaScript…) thì Claude tự thấy lỗi và trả lời tiếp; không thành nguồn.
+            result = block.get("content")
+            if isinstance(result, dict) and result.get("type") == "web_fetch_result" and result.get("url"):
+                document = result.get("content") if isinstance(result.get("content"), dict) else {}
+                output.append({"type": "web_search_call", "id": block["tool_use_id"], "status": "completed",
+                               "action": {"type": "fetch", "sources": [
+                                   {"url": result["url"], "title": document.get("title") or result["url"]}]}})
         elif kind == "web_search_tool_result":
             results = block.get("content")
             failed = isinstance(results, dict) and results.get("type") == "web_search_tool_result_error"
@@ -171,11 +184,13 @@ class ClaudeClient:
     cache lịch sử ở lượt một vòng chỉ tốn thêm phí ghi mà không bao giờ được đọc lại).
     """
 
-    def __init__(self, sdk=None, *, cache_history: str = "loop"):
+    def __init__(self, sdk=None, *, cache_history: str = "loop", web_fetch: bool = False):
         self.sdk = sdk or AsyncAnthropic(api_key=config.ANTHROPIC_API_KEY or "chua-co-khoa", max_retries=0,
                                         timeout=config.AGENT_STEP_TIMEOUT_SECONDS)
         self.responses = self
         self.cache_history = cache_history
+        # Agent không có: trình duyệt của CLI đã hỏi quyền theo từng tên miền, đọc trang phía máy chủ sẽ đi vòng qua đó.
+        self.web_fetch = web_fetch
 
     async def create(self, **kwargs):
         effort = kwargs.get("reasoning", {}).get("effort", "low")
@@ -186,6 +201,8 @@ class ClaudeClient:
             if tool.get("type") == "web_search":
                 # Tìm trực tiếp, giới hạn phí công cụ; không mở thêm môi trường chạy mã ở Anthropic.
                 tools.append({"type": "web_search_20250305", "name": "web_search", "max_uses": 5})
+                if self.web_fetch:
+                    tools.append(dict(WEB_FETCH_TOOL))
             elif tool.get("type") == "function":
                 tools.append({"name": tool["name"], "description": tool.get("description", ""),
                               "input_schema": tool.get("parameters") or {"type": "object", "properties": {}}})
@@ -241,7 +258,7 @@ class ClaudeStream:
                             if block.type == "tool_use":
                                 yield SimpleNamespace(type="response.output_item.added",
                                     item=SimpleNamespace(type="function_call", name=block.name))
-                            elif block.type == "server_tool_use" and block.name == "web_search":
+                            elif block.type == "server_tool_use" and block.name in {"web_search", "web_fetch"}:
                                 yield SimpleNamespace(type="response.web_search_call.searching")
                         elif kind == "content_block_delta":
                             delta = event.delta
@@ -258,7 +275,7 @@ class ClaudeStream:
                                 yield SimpleNamespace(type="peto.pulse")
                         elif kind == "content_block_stop":
                             block = stream.current_message_snapshot.content[event.index]
-                            if block.type == "web_search_tool_result":
+                            if block.type in {"web_search_tool_result", "web_fetch_tool_result"}:
                                 for item in _portable_output([block.model_dump(mode="json", exclude_none=True)]):
                                     yield SimpleNamespace(type="response.output_item.done", item=item)
                     if not stopped:
@@ -313,7 +330,7 @@ class ClaudeProvider(ResponsesProvider):
     def __init__(self, slug: str, label: str):
         self.model = slug
         self.max_output_tokens = config.ANTHROPIC_MAX_OUTPUT_TOKENS
-        self._client = ClaudeClient()
+        self._client = ClaudeClient(web_fetch=True)
 
     async def _prepare(self):
         if not config.ANTHROPIC_API_KEY:

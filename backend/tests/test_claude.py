@@ -292,3 +292,55 @@ def test_agent_instructions_end_with_an_hourly_clock():
         rest, clock = split_time_context(instructions)
         assert clock and instructions.endswith(clock) and clock not in rest
         assert not re.search(r"\d\d:\d\d:\d\d", instructions)
+
+
+FETCH = {"type": "server_tool_use", "id": "srvtoolu_fetch", "name": "web_fetch", "input": {"url": "https://example.com/bai-viet"}}
+FETCHED = {"type": "web_fetch_tool_result", "tool_use_id": "srvtoolu_fetch", "content": {
+    "type": "web_fetch_result", "url": "https://example.com/bai-viet", "retrieved_at": "2026-10-11T10:00:00Z",
+    "content": {"type": "document", "title": "Bài viết", "source": {"type": "text", "media_type": "text/plain", "data": "Nội dung trang"}}}}
+FETCH_FAILED = {"type": "web_fetch_tool_result", "tool_use_id": "srvtoolu_fetch",
+                "content": {"type": "web_fetch_tool_result_error", "error_code": "url_not_accessible"}}
+
+
+def test_chat_reads_links_but_agent_does_not():
+    """Đọc trang chỉ có ở Chat; Agent dùng trình duyệt của CLI có hỏi quyền theo tên miền."""
+    from ai import agent
+    import inspect
+    assert claude.ClaudeProvider("claude-haiku-5-5", "Haiku 5.5")._client.web_fetch is True
+    assert 'cache_history="always")' in inspect.getsource(agent) and "web_fetch=True" not in inspect.getsource(agent)
+
+
+async def test_fetched_page_becomes_a_source_and_survives_the_next_round(monkeypatch):
+    from core import usage_events
+    sdk, calls, _ = sdk_with_responses(message_events([FETCH, FETCHED], "pause_turn"), message_events([TEXT]))
+    monkeypatch.setattr(config, "ANTHROPIC_API_KEY", "khoa-gia")
+    provider = claude.ClaudeProvider("claude-haiku-5-5", "Haiku 5.5")
+    provider._client = claude.ClaudeClient(sdk, web_fetch=True)
+    usage_events.enable()
+    try:
+        async with sdk:
+            chunks = [chunk async for chunk in provider.stream(system_prompt="chỉ dẫn", effort="low", web_search="auto",
+                messages=[ChatMessage("user", "tóm tắt https://example.com/bai-viet")])]
+        rows = list(usage_events._pending)
+    finally:
+        usage_events.disable()
+    assert {"type": "web_search_20250305", "name": "web_search", "max_uses": 5} in calls[0]["tools"]
+    assert claude.WEB_FETCH_TOOL in calls[0]["tools"]
+    assert any(getattr(chunk, "kind", None) == "search" and chunk.text == "searching" for chunk in chunks)
+    sources = [chunk.sources for chunk in chunks if getattr(chunk, "kind", None) == "sources"]
+    assert sources and sources[-1][0]["url"] == "https://example.com/bai-viet" and sources[-1][0]["title"] == "Bài viết"
+    # Khối gốc giữ nguyên cho lần gọi tiếp; đọc trang không tính là một lượt tra web có phí.
+    assert calls[1]["messages"][-1] == {"role": "assistant", "content": [FETCH, FETCHED]}
+    assert rows and all(row[usage_events.COLUMNS.index("search_calls")] == 0 for row in rows)
+
+
+async def test_failed_fetch_does_not_break_the_turn(monkeypatch):
+    sdk, _calls, _ = sdk_with_responses(message_events([FETCH, FETCH_FAILED, {"type": "text", "text": "Trang này không mở được."}]))
+    monkeypatch.setattr(config, "ANTHROPIC_API_KEY", "khoa-gia")
+    provider = claude.ClaudeProvider("claude-haiku-5-5", "Haiku 5.5")
+    provider._client = claude.ClaudeClient(sdk, web_fetch=True)
+    async with sdk:
+        chunks = [chunk async for chunk in provider.stream(system_prompt="chỉ dẫn", effort="low", web_search="auto",
+            messages=[ChatMessage("user", "đọc https://example.com/bai-viet")])]
+    assert "Trang này không mở được." in "".join(chunk for chunk in chunks if isinstance(chunk, str))
+    assert not any(getattr(chunk, "kind", None) == "sources" for chunk in chunks)

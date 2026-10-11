@@ -542,6 +542,19 @@ failure and distinguish unread/unverified gaps; URLs alone are not page contents
 timeouts, connection errors or failure of the summarizing call still follow the existing error handling.
 This is a bounded summary call, not a retry of the failed search; all normal chat timeout/output limits remain.
 
+**Links the user sends** (2026-10-11). The owner noticed Peto analysed a YouTube link while Luna and Haiku only
+searched around it. Per the providers' docs, xAI's web search browses pages itself, OpenAI's can `open_page` on reasoning
+models, and Peto gave Claude only `web_search`. No provider documents video understanding; nothing here watches videos.
+- `shared/youtube.py`: for YouTube links in the last three user messages (watch, youtu.be, shorts, live, embed; exact
+  hosts only, at most three), `_build_system_prompt` adds title and channel from the fixed public oEmbed endpoint, for
+  every model and mode. No redirects, 3 s timeout, 64 KB cap, cached a day (failures 10 minutes); any failure adds
+  nothing. Titles are JSON-quoted data; the block forbids describing unseen scenes and reproducing lyrics.
+- Claude Chat also gets `web_fetch_20250910` (`max_uses` 3, `max_content_tokens` 20,000; no fee beyond tokens; Claude
+  can only fetch URLs already in the conversation). Not in Agent: the CLI browser asks per domain and a server-side
+  fetch would bypass it. A fetched page becomes a `web_search_call` item with action `fetch`, so it shows as a source
+  card and is not counted as a billed search; a failed fetch (JS-only page, blocked) adds no item and the turn goes on.
+  The work log still labels it as a web lookup.
+
 `shared/web_search.py` validates HTTP(S) source URLs, removes duplicates and bounds the list.
 Extract sources from tool outputs or URL annotations, never by scraping model prose
 for links. Persist them in `messages.sources`, return them in history, and include them

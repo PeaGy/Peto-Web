@@ -192,7 +192,8 @@ class ResponsesProvider(ChatProvider):
         def observe_item(item: dict):
             nonlocal sources, search_finished, usable_search_sources
             if item.get("type") == "web_search_call":
-                if item.get("id"):
+                # Claude đọc trang từ link (action "fetch") không phải một lượt tra web tính phí theo lượt.
+                if item.get("id") and (item.get("action") or {}).get("type") != "fetch":
                     search_ids.add(str(item["id"]))
                 if item.get("status") == "failed":
                     # Chỉ kết quả tra thành công trong lượt này mới cho phép tổng hợp; nguồn cũ hoặc nguồn

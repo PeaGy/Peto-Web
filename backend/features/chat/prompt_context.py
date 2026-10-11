@@ -15,6 +15,7 @@ from prompts import (
     build_profile_context,
 )
 from features.docs import api as docs_api
+from shared import youtube
 from prompts.routing import chat_prompt, uses_english
 
 
@@ -43,6 +44,8 @@ async def _build_system_prompt(
     agent_guide = build_agent_guide(install_command=install_command, daily_steps=AGENT_DAILY_STEPS,
                                   question=agent_question, english=english)
     agent_guide += docs_api.context(agent_question, english=english)
+    # Tiêu đề và kênh của link YouTube trong vài tin gần đây (đọc lại mỗi lượt, có nhớ tạm), cho mọi model.
+    agent_guide += await youtube.context(agent_question, english=english)
     if mode == "chat" and persona != "roleplay":
         agent_guide += build_diagram_guide(agent_question, english=english)
     user = await db.get_user(owner)
