@@ -1360,7 +1360,7 @@ plus `ALTER TABLE` — there is no migration framework and no version table. Add
 same way, preserving existing rows. Note that `PRAGMA foreign_keys=ON` is set per connection
 where cascade deletes matter (SQLite has it off by default).
 
-Tables: `conversations`, `messages`, `attachments`, `users`, `user_profiles`,
+Tables: `conversations`, `messages`, `attachments`, `users`, `user_profiles`, `user_avatars`,
 `imagine_jobs`, `imagine_images`, `imagine_requests`, `agent_devices`, `agent_usage`, `roleplay_consents`, `voice_usage`,
 `companion_memories`, `companion_memory_state`
 (`features/voice/cloud.py` also creates its own `speech_budget` on first use). `users` is the only place mapping
@@ -1383,6 +1383,19 @@ rules above it. Validation errors are Vietnamese 400s, not Pydantic's English 42
 `ProfileSettings.tsx` ties labels to inputs with `htmlFor` instead of wrapping them:
 every `<label>` is `user-select: none` for tap handling, and iOS Safari can refuse to
 edit inputs nested inside such an element.
+
+Profile occupations and connector status filters use the existing accessible voice dropdown,
+now shared at `frontend/src/shared/ui/Dropdown.tsx` (re-exported by `voiceUi.tsx`). Settings
+use compact transparent triggers and scrollable menus, with keyboard navigation and Escape
+closing the menu before the dialog. `ProfileAvatar.tsx` provides Upload / Restore default actions.
+Authenticated `PUT/GET/DELETE /api/profile/avatar` accepts one PNG/JPEG/WebP, up to 10 MiB and
+16 million pixels; Pillow validates, applies EXIF orientation, crops to 512px square PNG and
+strips metadata. `storage/avatars.py` stores one image BLOB per owner in `user_avatars`, included
+in existing SQLite backups. Original provider photos stay in `users.avatar_url`; later logins
+do not overwrite the custom image. Both `/api/auth/me` and `/api/profile` return the effective
+avatar URL and `custom_avatar`. Restoring default deletes only the custom image. Avatar reads
+use the authenticated owner and private/no-store responses; a version in the URL refreshes
+all visible avatars immediately. Tests cover validation, isolation, login persistence and reset.
 
 `/api/auth/me` also returns the profile's `nickname`, so the empty-state greeting can use
 it on first paint without a second request or a visible name swap. The greeting line

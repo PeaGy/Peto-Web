@@ -1,34 +1,53 @@
-.connectors-intro { margin: 0 0 24px; color: var(--muted); line-height: 1.65; }
-.connectors-toolbar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 24px; }
-.connectors-tabs { display: flex; gap: 3px; padding: 3px; border-radius: 10px; background: var(--panel); border: 1px solid var(--line); }
-.connectors-tabs button { padding: 8px 12px; border: 0; border-radius: 7px; background: transparent; color: var(--muted); cursor: pointer; white-space: nowrap; }
-.connectors-tabs button[aria-selected="true"] { background: var(--panel-2); color: var(--text); }
-.connectors-toolbar input, .connectors-toolbar select { box-sizing: border-box; min-width: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--text); font: inherit; }
-.connectors-toolbar input { flex: 1; min-width: 140px; }
-.connectors-toolbar select { max-width: 100%; }
-.connector-card { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; padding: 20px; border: 1px solid var(--line); border-radius: 14px; }
-.connector-details-button { display: flex; flex: 1; min-width: 180px; gap: 14px; align-items: center; border: 0; padding: 0; background: transparent; color: var(--text); text-align: left; cursor: pointer; }
-.connector-logo { display: grid; place-items: center; flex: none; width: 42px; height: 42px; border-radius: 10px; border: 1px solid var(--line); }
-.connector-description { display: flex; flex-direction: column; gap: 6px; }
-.connector-description > span, .connector-description small { color: var(--muted); font-size: 13px; line-height: 1.5; }
-.connector-status { color: var(--muted); font-size: 12px; white-space: nowrap; }
-.connector-status.connected { color: var(--text); }
-.connector-status.connected::before { content: "✓ "; }
-.connectors-empty { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 48px 16px; color: var(--muted); text-align: center; }
-.connector-detail { margin-top: 24px; padding: 20px; border: 1px solid var(--line); border-radius: 14px; }
+.connectors-intro { margin: 0 0 20px; color: var(--muted); font-size: 13.5px; line-height: 1.6; }
+.connectors-toolbar { display: flex; flex-direction: column; align-items: stretch; gap: 16px; margin-bottom: 20px; }
+.connectors-tabs { align-self: flex-start; display: flex; gap: 3px; padding: 3px; border-radius: 10px; background: var(--panel-2); }
+.connectors-tabs button { min-height: 32px; padding: 6px 13px; border: 0; border-radius: 7px; background: transparent; color: var(--muted); font: inherit; font-size: 13px; cursor: pointer; white-space: nowrap; }
+.connectors-tabs button[aria-selected="true"] { background: var(--panel); color: var(--text); box-shadow: 0 1px 3px rgb(0 0 0 / .12); }
+.connectors-filters { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.connectors-search { display: flex; flex: 1; align-items: center; gap: 8px; min-width: 100px; min-height: 38px; padding: 0 10px; border: 1px solid var(--line); border-radius: 10px; color: var(--muted); background: transparent; }
+.connectors-search > svg { flex: none; }
+.connectors-search:focus-within { border-color: color-mix(in srgb, var(--text) 30%, var(--line)); }
+.connectors-search input { width: 100%; min-width: 0; height: 36px; padding: 0; border: 0; outline: none; background: transparent; color: var(--text); font: inherit; font-size: 13.5px; }
+.connectors-filter { flex: none; max-width: 50%; }
+.connectors-filter .dropdown-trigger { min-height: 38px; }
+.connector-card { display: flex; gap: 16px; align-items: center; padding: 18px; border: 1px solid var(--line); border-radius: 14px; }
+.connector-card + .connector-card { margin-top: 12px; }
+.connector-details-button { display: flex; flex: 1; min-width: 0; gap: 14px; align-items: center; border: 0; padding: 0; background: transparent; color: var(--text); text-align: left; cursor: pointer; }
+.connector-logo { display: grid; place-items: center; flex: none; width: 44px; height: 44px; border-radius: 12px; background: var(--panel-2); }
+.connector-description { display: flex; flex-direction: column; min-width: 0; gap: 5px; }
+.connector-description strong { font-size: 14.5px; font-weight: 600; }
+.connector-description > span { color: var(--muted); font-size: 13px; line-height: 1.5; }
+.connector-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; }
+.connector-meta small { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.connector-status { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
+.connector-status::before { content: ''; width: 5px; height: 5px; flex: none; border-radius: 50%; background: var(--muted); }
+.connector-status.connected::before { background: #54a879; }
+.connector-status.reconnect::before { background: #caa25c; }
+.connector-card > .settings-button { flex: none; min-height: 34px; font-size: 13px; }
+.connectors-empty { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 44px 16px; color: var(--muted); text-align: center; font-size: 13.5px; }
+.connectors-empty p { margin: 4px 0; }
+.connector-detail { margin-top: 16px; padding: 18px; border: 1px solid var(--line); border-radius: 14px; }
 .connector-detail-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
-.connector-detail h3 { margin: 0; font-size: 18px; }
-.connector-detail p { line-height: 1.65; color: var(--muted); }
-.connector-actions { display: flex; flex-wrap: wrap; gap: 10px; }
-.connector-confirm { margin-top: 20px; padding-top: 12px; border-top: 1px solid var(--line); }
-.connectors-note { color: var(--muted); font-size: 12px; line-height: 1.65; }
-.connectors-notice { padding: 12px 16px; border: 1px solid var(--line); border-radius: 10px; line-height: 1.6; }
-.connectors-error { margin-bottom: 20px; color: var(--danger, #ef7777); }
-@media (max-width: 720px) {
-  .connectors-toolbar input { flex-basis: 100%; }
-  .connectors-toolbar select { width: 100%; }
-  .connector-card { gap: 14px; padding: 16px; }
-  .connector-details-button { flex-basis: 100%; }
-  .connector-status { flex: 1; }
+.connector-detail h3 { margin: 0; font-size: 14.5px; font-weight: 600; }
+.connector-close { display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--muted); cursor: pointer; }
+.connector-detail p { margin: 12px 0; line-height: 1.6; font-size: 13px; color: var(--muted); }
+.connector-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.connector-actions .settings-button { min-height: 34px; font-size: 12.5px; }
+.connector-confirm { margin-top: 20px; padding-top: 4px; border-top: 1px solid var(--line); }
+.connectors-note, .connector-detail .connectors-note { color: var(--muted); font-size: 12px; line-height: 1.6; }
+.connectors-notice { margin: 0 0 16px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; font-size: 13px; line-height: 1.6; }
+.connectors-error { margin-bottom: 20px; color: var(--danger); font-size: 13px; }
+@media (hover: hover) and (pointer: fine) { .connector-close:hover { background: var(--menu-hover); color: var(--text); } .connectors-tabs button:hover { color: var(--text); } }
+@media (pointer: coarse) {
+  .connectors-search input { font-size: 16px; }
+  .connectors-search, .connectors-filter .dropdown-trigger, .connectors-tabs button, .connector-card > .settings-button, .connector-actions .settings-button, .connector-close { min-height: 44px; }
 }
-
+@media (max-width: 520px) {
+  .connectors-filters { gap: 8px; }
+  .connectors-filter .dropdown-trigger { font-size: 13px; padding-inline: 8px; gap: 8px; }
+  .connector-card { flex-wrap: wrap; gap: 12px; padding: 16px; }
+  .connector-details-button { flex-basis: 100%; }
+  .connector-card > .settings-button { margin-left: 58px; }
+  .connector-description > span { font-size: 12.5px; }
+}
+.connectors-settings .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }

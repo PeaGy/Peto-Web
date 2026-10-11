@@ -19,7 +19,7 @@ vi.mock('../src/shared/api/api', async (original) => ({
   conversationVersions: vi.fn(), updateConversation: vi.fn(),
   sendMessage: vi.fn(), stopChat: vi.fn(), deleteConversation: vi.fn(), logout: vi.fn(),
   listImagineJobs: vi.fn(), createImagineJob: vi.fn(),
-  getProfile: vi.fn(), saveProfile: vi.fn(),
+  getProfile: vi.fn(), saveProfile: vi.fn(), uploadAvatar: vi.fn(), resetAvatar: vi.fn(),
   getAgentDevice: vi.fn(), answerAgentDevice: vi.fn(), listAgentDevices: vi.fn(), revokeAgentDevice: vi.fn(),
   confirmRoleplayAge: vi.fn(),
   getCompanionMemory: vi.fn(),
@@ -1775,7 +1775,7 @@ describe('Hồ sơ trong Cài đặt', () => {
     await openSettings();
     expect((await screen.findByLabelText('Họ và tên') as HTMLInputElement).value).toBe('Nguyễn An');
     expect((screen.getByLabelText('Peto nên gọi bạn là gì?') as HTMLInputElement).value).toBe('An');
-    expect((screen.getByLabelText('Công việc của bạn') as HTMLSelectElement).value).toBe('student');
+    expect(screen.getByRole('combobox', { name: 'Công việc của bạn' }).textContent).toContain('Học sinh, sinh viên');
     expect((screen.getByLabelText('Hướng dẫn cho Peto') as HTMLTextAreaElement).value).toBe('Trả lời ngắn.');
     const save = screen.getByRole('button', { name: 'Lưu thay đổi' });
     expect(save).toHaveProperty('disabled', true);
@@ -1788,7 +1788,8 @@ describe('Hồ sơ trong Cài đặt', () => {
     vi.mocked(api.saveProfile).mockResolvedValue({ ...PROFILE, nickname: 'Bé An', occupation: 'other' });
     await openSettings();
     fireEvent.change(await screen.findByLabelText('Peto nên gọi bạn là gì?'), { target: { value: '  Bé   An ' } });
-    fireEvent.change(screen.getByLabelText('Công việc của bạn'), { target: { value: 'other' } });
+    fireEvent.click(screen.getByRole('combobox', { name: 'Công việc của bạn' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Khác' }));
     fireEvent.click(screen.getByRole('button', { name: 'Lưu thay đổi' }));
     await screen.findByText('Đã lưu');
     expect(api.saveProfile).toHaveBeenCalledWith({ ...PROFILE, nickname: '  Bé   An ', occupation: 'other' });
@@ -1811,6 +1812,43 @@ describe('Hồ sơ trong Cài đặt', () => {
     await openSettings();
     fireEvent.click(await screen.findByRole('button', { name: 'Thử lại' }));
     expect((await screen.findByLabelText('Họ và tên') as HTMLInputElement).value).toBe('Nguyễn An');
+  });
+
+  it('đổi ảnh và về mặc định cập nhật toàn ứng dụng, giữ chữ hồ sơ chưa lưu', async () => {
+    vi.mocked(api.getProfile).mockResolvedValue(data());
+    vi.mocked(api.uploadAvatar).mockResolvedValue({ avatar_url: '/api/profile/avatar?v=new', custom_avatar: true });
+    vi.mocked(api.resetAvatar).mockResolvedValue({ avatar_url: '/default-avatar.png', custom_avatar: false });
+    await openSettings();
+    fireEvent.change(await screen.findByLabelText('Họ và tên'), { target: { value: 'Tên chưa lưu' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Đổi ảnh đại diện' }));
+    expect(screen.getByRole('menuitem', { name: 'Về mặc định' })).toHaveProperty('disabled', true);
+    fireEvent.keyDown(screen.getByRole('menu', { name: 'Ảnh đại diện' }), { key: 'Escape' });
+    const file = new File(['photo'], 'photo.png', { type: 'image/png' });
+    fireEvent.change(screen.getByLabelText('Chọn ảnh đại diện'), { target: { files: [file] } });
+    await waitFor(() => expect(document.querySelectorAll('img[src="/api/profile/avatar?v=new"]').length).toBeGreaterThanOrEqual(2));
+    expect(api.uploadAvatar).toHaveBeenCalledWith(file);
+    expect((screen.getByLabelText('Họ và tên') as HTMLInputElement).value).toBe('Tên chưa lưu');
+    fireEvent.click(screen.getByRole('button', { name: 'Đổi ảnh đại diện' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Về mặc định' }));
+    await waitFor(() => expect(document.querySelectorAll('img[src="/default-avatar.png"]').length).toBeGreaterThanOrEqual(2));
+    expect(api.saveProfile).not.toHaveBeenCalled();
+  });
+
+  it('từ chối tệp sai, giữ ảnh cũ khi tải lên bị lỗi và cho chọn lại cùng tệp', async () => {
+    vi.mocked(api.getProfile).mockResolvedValue(data());
+    vi.mocked(api.uploadAvatar).mockRejectedValueOnce(new Error('Không đọc được ảnh.')).mockResolvedValue({ avatar_url: '/api/profile/avatar?v=retry', custom_avatar: true });
+    await openSettings();
+    const picker = await screen.findByLabelText('Chọn ảnh đại diện');
+    fireEvent.change(picker, { target: { files: [new File(['svg'], 'bad.svg', { type: 'image/svg+xml' })] } });
+    expect(await screen.findByRole('alert')).toHaveProperty('textContent', 'Chọn ảnh PNG, JPEG hoặc WebP, tối đa 10 MB nhé.');
+    expect(api.uploadAvatar).not.toHaveBeenCalled();
+    const file = new File(['photo'], 'photo.png', { type: 'image/png' });
+    fireEvent.change(picker, { target: { files: [file] } });
+    expect(await screen.findByText('Không đọc được ảnh.')).toBeTruthy();
+    expect(document.querySelector('img[src^="/api/profile/avatar"]')).toBeNull();
+    fireEvent.change(picker, { target: { files: [file] } });
+    await waitFor(() => expect(document.querySelector('img[src="/api/profile/avatar?v=retry"]')).toBeTruthy());
+    expect(api.uploadAvatar).toHaveBeenCalledTimes(2);
   });
 });
 

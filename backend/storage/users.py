@@ -77,8 +77,9 @@ async def get_user(owner: str) -> dict | None:
     async with db_connection.connect() as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
-            "SELECT owner, provider, discord_id, username, display_name, "
-            "avatar_url, first_login_at, last_login_at FROM users WHERE owner = ?",
+            "SELECT u.owner, u.provider, u.discord_id, u.username, u.display_name, "
+            "u.avatar_url, u.first_login_at, u.last_login_at, a.version AS avatar_version FROM users u "
+            "LEFT JOIN user_avatars a ON a.owner=u.owner WHERE u.owner = ?",
             (owner,),
         )
         row = await cursor.fetchone()

@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from 'react';
-import { UnauthorizedError, getProfile, saveProfile, type Profile, type ProfileData } from '../../shared/api/api';
+import { UnauthorizedError, getProfile, saveProfile, type Profile, type ProfileData, type AvatarInfo } from '../../shared/api/api';
+import { Dropdown } from '../../shared/ui/Dropdown';
+import ProfileAvatar from './ProfileAvatar';
+import './profile.css';
 import { SettingsGroup, SettingsRow } from './settingsUi';
 
 const EMPTY: Profile = { full_name: '', nickname: '', occupation: '', instructions: '' };
@@ -14,12 +17,12 @@ const FIELDS = Object.keys(EMPTY) as (keyof Profile)[];
  * đang user-select: none, và iOS Safari có lỗi khiến ô nhập nằm trong phần tử
  * như vậy không gõ hay bôi chọn được chữ.
  */
-export default function ProfileSettings({ open, avatar, avatarNote, onUnauthorized, onSaved }: {
+export default function ProfileSettings({ open, avatar, customAvatar, onAvatarChanged, onUnauthorized, onSaved }: {
   /** Mục Hồ sơ đang được xem: lúc đó mới tải hồ sơ. */
   open: boolean;
   avatar: ReactNode;
-  /** Ảnh lấy từ đâu ("Theo tài khoản Discord"); khách không có ảnh thì bỏ trống. */
-  avatarNote?: string;
+  customAvatar?: boolean;
+  onAvatarChanged: (avatar: AvatarInfo) => void;
   onUnauthorized: () => void;
   /** Báo bản vừa lưu lên App, để lời chào ở màn hình trống đổi tên ngay. */
   onSaved?: (profile: Profile) => void;
@@ -52,6 +55,7 @@ export default function ProfileSettings({ open, avatar, avatarNote, onUnauthoriz
         setData(result);
         setForm(result.profile);
         setSaved(result.profile);
+        if (result.avatar) onAvatarChanged(result.avatar);
       })
       .catch((err: unknown) => {
         if (version !== loadVersion.current) return;
@@ -97,7 +101,7 @@ export default function ProfileSettings({ open, avatar, avatarNote, onUnauthoriz
 
   return <>
     <p className="settings-intro">
-      Peto dựa vào đây để hiểu và xưng hô với bạn trong mọi cuộc trò chuyện. Chỉ dùng cho Peto trên web này.
+      Cá nhân hóa cách Peto trò chuyện với bạn.
     </p>
     {loadFailed ? (
       <div className="profile-load-error" role="alert">
@@ -109,7 +113,9 @@ export default function ProfileSettings({ open, avatar, avatarNote, onUnauthoriz
     ) : (
       <form className="profile-form" onSubmit={(event) => void save(event)}>
         <SettingsGroup>
-          <SettingsRow label="Ảnh đại diện" desc={avatarNote}>{avatar}</SettingsRow>
+          <SettingsRow label="Ảnh đại diện" desc="PNG, JPEG hoặc WebP, tối đa 10 MB.">
+            <ProfileAvatar avatar={avatar} custom={customAvatar ?? false} onChanged={onAvatarChanged} onUnauthorized={onUnauthorized} />
+          </SettingsRow>
           <SettingsRow label="Họ và tên" htmlFor="profile-full-name">
             <input id="profile-full-name" className="settings-input" value={form.full_name} maxLength={limits.full_name}
               autoComplete="name" onChange={update('full_name')} />
@@ -118,12 +124,11 @@ export default function ProfileSettings({ open, avatar, avatarNote, onUnauthoriz
             <input id="profile-nickname" className="settings-input" value={form.nickname} maxLength={limits.nickname}
               autoComplete="nickname" onChange={update('nickname')} />
           </SettingsRow>
-          <SettingsRow label="Công việc của bạn" htmlFor="profile-occupation">
-            <select id="profile-occupation" className="settings-input settings-select" value={form.occupation}
-              onChange={update('occupation')}>
-              <option value="">Chọn</option>
-              {data.occupations.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
-            </select>
+          <SettingsRow label="Công việc của bạn" htmlFor="profile-occupation" labelId="profile-occupation-label">
+            <div className="settings-choice profile-occupation">
+              <Dropdown id="profile-occupation" value={form.occupation} placeholder="Chọn" options={[{ value: '', label: 'Chọn' }, ...data.occupations]}
+                onChange={value => { setForm(prev => ({ ...prev, occupation: value })); setJustSaved(false); setError(null); }} />
+            </div>
           </SettingsRow>
           <SettingsRow
             stack

@@ -1,4 +1,5 @@
 import { useId, type ReactNode } from "react";
+import './settingsChoice.css';
 
 /*
  * Mảnh ghép chung của Cài đặt, kiểu "Từng mục" chủ web chọn từ ba bản mẫu ngày 2026-09-29 (theo Cài đặt của Claude):
@@ -7,6 +8,10 @@ import { useId, type ReactNode } from "react";
 
 /** Biểu tượng nét 1.7px cùng họ với thanh bên, cho danh sách mục của Cài đặt và menu tài khoản. */
 const ICONS = {
+  pencil: <><path d="m14.5 5 4.5 4.5M4 20l4.5-1 11-11a3.2 3.2 0 0 0-4.5-4.5L4 14.5Z" /></>,
+  photo: <><rect x="3.5" y="3.5" width="17" height="17" rx="3" /><circle cx="8.5" cy="8.5" r="1.5" /><path d="m4 17 5-5 4 4 3-3 4 4" /></>,
+  reset: <><path d="M4 10a8 8 0 1 1 1 7M4 4v6h6" /></>,
+  search: <><circle cx="10.5" cy="10.5" r="6.5" /><path d="m16 16 4.5 4.5" /></>,
   connectors: <><rect x="3.5" y="3.5" width="6.5" height="6.5" rx="1.5" /><rect x="14" y="3.5" width="6.5" height="6.5" rx="1.5" /><rect x="3.5" y="14" width="6.5" height="6.5" rx="1.5" /><path d="M17.25 14v6.5M14 17.25h6.5" /></>,
   archive: <><rect x="3.5" y="4" width="17" height="4" rx="1" /><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8M10 12h4" /></>,
   palette: <>

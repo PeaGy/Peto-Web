@@ -8,11 +8,16 @@ nên sửa xong là tin nhắn kế tiếp đã theo — không có bộ nhớ �
 from __future__ import annotations
 
 import re
+from io import BytesIO
+import warnings
+import anyio
+from PIL import Image, ImageOps, UnidentifiedImageError
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
 import storage as db
+from storage import avatars
 from features.accounts.auth import current_owner
 
 router = APIRouter(tags=["profile"])
@@ -20,6 +25,9 @@ router = APIRouter(tags=["profile"])
 MAX_FULL_NAME = 80
 MAX_NICKNAME = 40
 MAX_INSTRUCTIONS = 1500
+MAX_AVATAR_BYTES = 10 * 1024 * 1024
+MAX_AVATAR_PIXELS = 16_000_000
+AVATAR_TYPES = {'image/png': 'PNG', 'image/jpeg': 'JPEG', 'image/webp': 'WEBP'}
 
 # Giá trị lưu trong DB là mã ổn định; nhãn tiếng Việt chỉ để hiển thị và ghép
 # vào prompt, nên đổi chữ thoải mái mà không làm hỏng dữ liệu đã lưu.
@@ -77,6 +85,7 @@ def _public(profile: dict) -> dict:
 async def read_profile(owner: str = Depends(current_owner)) -> dict:
     return {
         "profile": _public(await db.get_profile(owner)),
+        "avatar": avatars.info(await db.get_user(owner) or {}),
         "occupations": [{"value": value, "label": label} for value, label in OCCUPATIONS],
         "limits": {
             "full_name": MAX_FULL_NAME,
@@ -112,6 +121,55 @@ async def update_profile(body: ProfileIn, owner: str = Depends(current_owner)) -
         instructions=instructions,
     )
     return {"profile": _public(await db.get_profile(owner))}
+
+
+def _prepare_avatar(data: bytes, mime: str) -> bytes:
+    """Kiểm tra ảnh thật, bỏ metadata và thu về ảnh vuông 512px để tải nhanh."""
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter('error', Image.DecompressionBombWarning)
+            with Image.open(BytesIO(data)) as source:
+                if source.format != AVATAR_TYPES[mime]:
+                    raise HTTPException(400, 'Nội dung ảnh không đúng định dạng. Chọn PNG, JPEG hoặc WebP nhé.')
+                if source.width * source.height > MAX_AVATAR_PIXELS:
+                    raise HTTPException(400, 'Ảnh có độ phân giải quá lớn. Chọn ảnh dưới 16 triệu điểm ảnh nhé.')
+                source.load()
+                image = ImageOps.fit(ImageOps.exif_transpose(source).convert('RGBA'), (512, 512), method=Image.Resampling.LANCZOS)
+                image.info.clear()
+                output = BytesIO()
+                image.save(output, 'PNG')
+                return output.getvalue()
+    except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombWarning, Image.DecompressionBombError):
+        raise HTTPException(400, 'Không đọc được ảnh. Chọn PNG, JPEG hoặc WebP hợp lệ nhé.') from None
+
+
+@router.put('/api/profile/avatar')
+async def upload_avatar(request: Request, owner: str = Depends(current_owner)) -> dict:
+    mime = request.headers.get('content-type', '').split(';')[0].strip().lower()
+    if mime not in AVATAR_TYPES:
+        raise HTTPException(400, 'Chọn ảnh PNG, JPEG hoặc WebP nhé.')
+    content = bytearray()
+    async for chunk in request.stream():
+        if len(content) + len(chunk) > MAX_AVATAR_BYTES:
+            raise HTTPException(413, 'Ảnh quá lớn. Chọn ảnh tối đa 10 MB nhé.')
+        content.extend(chunk)
+    prepared = await anyio.to_thread.run_sync(_prepare_avatar, bytes(content), mime)
+    await avatars.save(owner, prepared)
+    return avatars.info(await db.get_user(owner) or {})
+
+
+@router.delete('/api/profile/avatar')
+async def reset_avatar(owner: str = Depends(current_owner)) -> dict:
+    await avatars.reset(owner)
+    return avatars.info(await db.get_user(owner) or {})
+
+
+@router.get('/api/profile/avatar')
+async def read_avatar(owner: str = Depends(current_owner)) -> Response:
+    data = await avatars.get(owner)
+    if data is None:
+        raise HTTPException(404, 'Chưa có ảnh đại diện riêng.')
+    return Response(data, media_type='image/png', headers={'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff'})
 
 
 @router.post("/api/profile/roleplay-consent")

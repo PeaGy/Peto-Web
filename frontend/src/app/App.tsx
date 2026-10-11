@@ -1263,9 +1263,11 @@ function AppContent() {
         return (
           <LazyBoundary><Suspense fallback={settingsLoading}>
             <ProfileSettings
+              key={auth.user?.id}
               open={active}
-              avatar={<AccountAvatar user={auth.user} size={36} />}
-              avatarNote={`Theo tài khoản ${{ google: "Google", github: "GitHub", discord: "Discord" }[auth.user?.provider ?? "discord"]}`}
+              avatar={<AccountAvatar user={auth.user} size={48} />}
+              customAvatar={auth.user?.custom_avatar}
+              onAvatarChanged={avatar => setAuth(prev => prev?.user ? { ...prev, user: { ...prev.user, ...avatar } } : prev)}
               onUnauthorized={handleUnauthorized}
               onSaved={(profile) => setAuth((prev) => (prev?.user
                 ? { ...prev, user: { ...prev.user, nickname: profile.nickname } }

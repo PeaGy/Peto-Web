@@ -35,6 +35,16 @@ test('quản lý GitHub, kiểm tra và ngắt kết nối trên PC/mobile', asy
   await expect(dialog.getByText('@nguoi-kiem-thu')).toBeVisible();
   await noPageOverflow(page);
   await expect(dialog).toHaveScreenshot('github-connected.png', { maxDiffPixelRatio: 0 });
+  const filter = dialog.getByRole('combobox', { name: 'Lọc trạng thái kết nối' });
+  await filter.click();
+  await expect(dialog).toHaveScreenshot('github-filter.png');
+  await filter.press('Escape');
+  await expect(dialog).toBeVisible();
+  await filter.click();
+  await dialog.getByRole('option', { name: 'Cần kết nối' }).click();
+  await expect(dialog.getByText('Không có kết nối phù hợp.')).toBeVisible();
+  await filter.click();
+  await dialog.getByRole('option', { name: 'Tất cả trạng thái' }).click();
   await dialog.getByRole('button', { name: 'Quản lý', exact: true }).click();
   await dialog.getByRole('button', { name: 'Kiểm tra kết nối' }).click();
   await expect(dialog.getByText('Kết nối GitHub đang hoạt động.')).toBeVisible();

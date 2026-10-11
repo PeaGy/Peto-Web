@@ -159,6 +159,7 @@ interface ChatHandlers {
 export type AuthProvider = "discord" | "google" | "github";
 
 export interface AccountUser {
+  custom_avatar?: boolean;
   /** Mã băm ổn định do server sinh. KHÔNG phải khóa owner. */
   id: string;
   provider: AuthProvider;
@@ -229,6 +230,7 @@ export interface Profile {
 }
 
 export interface ProfileData {
+  avatar?: AvatarInfo;
   profile: Profile;
   occupations: { value: string; label: string }[];
   limits: { full_name: number; nickname: number; instructions: number };
@@ -246,6 +248,16 @@ export async function saveProfile(profile: Profile): Promise<Profile> {
     body: JSON.stringify(profile),
   });
   return (await json<{ profile: Profile }>(response)).profile;
+}
+
+export type AvatarInfo = { avatar_url: string; custom_avatar: boolean };
+
+export async function uploadAvatar(file: File): Promise<AvatarInfo> {
+  return json(await fetch('/api/profile/avatar', { method: 'PUT', headers: { 'Content-Type': file.type }, body: file }));
+}
+
+export async function resetAvatar(): Promise<AvatarInfo> {
+  return json(await fetch('/api/profile/avatar', { method: 'DELETE' }));
 }
 
 /** Lưu xác nhận đủ 18 tuổi cho tài khoản, để bật được chế độ nhập vai. */

@@ -476,6 +476,7 @@ async def me(request: Request) -> dict:
     if not user:
         return anonymous
     profile = await db.get_profile(owner)
+    from storage.avatars import info as avatar_info
 
     return {
         "authenticated": True,
@@ -488,7 +489,7 @@ async def me(request: Request) -> dict:
             "provider": user["provider"],
             "username": user["username"],
             "display_name": user["display_name"],
-            "avatar_url": user["avatar_url"],
+            **avatar_info(user),
             # Tên tự đặt trong Cài đặt → Hồ sơ. Lời chào ở màn hình trống dùng
             # nó ngay lúc tải trang; gửi kèm ở đây thì khỏi tải hồ sơ riêng rồi
             # thấy tên nhảy từ tên Discord sang.

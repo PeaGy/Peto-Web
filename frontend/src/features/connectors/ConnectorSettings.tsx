@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { UnauthorizedError } from '../../shared/api/api';
 import { LoadingIndicator } from '../../shared/ui/LoadingIndicator';
 import { GitHubIcon } from '../../shared/ui/GitHubIcon';
+import { Dropdown } from '../../shared/ui/Dropdown';
 import { SettingsIcon } from '../settings/settingsUi';
 import { checkGitHub, connectGitHub, disconnectGitHub, listConnectors, type Connector } from './connectorApi';
 import './connectors.css';
@@ -95,10 +96,18 @@ export default function ConnectorSettings({ open, result, onUnauthorized }: {
         <button type="button" role="tab" id="connectors-yours" tabIndex={tab === 'yours' ? 0 : -1} aria-selected={tab === 'yours'} aria-controls="connectors-list" onClick={() => { setTab('yours'); setSelected(false); }}>Đã kết nối</button>
         <button type="button" role="tab" id="connectors-discover" tabIndex={tab === 'discover' ? 0 : -1} aria-selected={tab === 'discover'} aria-controls="connectors-list" onClick={() => { setTab('discover'); setSelected(false); }}>Khám phá</button>
       </div>
-      <input type="search" aria-label="Tìm kết nối" placeholder="Tìm kết nối" value={query} onChange={event => setQuery(event.target.value)} />
-      <select aria-label="Lọc trạng thái kết nối" value={filter} onChange={event => setFilter(event.target.value)}>
-        <option value="all">Tất cả trạng thái</option><option value="connected">Đang hoạt động</option><option value="disconnected">Chưa kết nối / cần kết nối lại</option>
-      </select>
+      <div className="connectors-filters">
+        <div className="connectors-search"><SettingsIcon name="search" size={17} />
+          <input type="search" aria-label="Tìm kết nối" placeholder="Tìm kết nối" value={query} onChange={event => setQuery(event.target.value)} />
+        </div>
+        <div className="settings-choice connectors-filter">
+          <label id="connector-status-filter-label" htmlFor="connector-status-filter" className="sr-only">Lọc trạng thái kết nối</label>
+          <Dropdown id="connector-status-filter" value={filter} onChange={setFilter} options={[
+            { value: 'all', label: 'Tất cả trạng thái' }, { value: 'connected', label: 'Đang hoạt động' },
+            { value: 'disconnected', label: 'Cần kết nối' },
+          ]} />
+        </div>
+      </div>
     </div>
     {notice && <p className="connectors-notice" role="status">{notice}</p>}
     {error && <div className="connectors-error" role="alert"><p>{error}</p>{!busy && <button type="button" className="settings-button" onClick={() => setRevision(value => value + 1)}>Tải lại danh sách</button>}</div>}
@@ -107,11 +116,15 @@ export default function ConnectorSettings({ open, result, onUnauthorized }: {
         {visible.map(item => <div className="connector-card" key={item.id}>
           <button type="button" className="connector-details-button" onClick={() => { setSelected(true); setConfirm(false); }} aria-label="Chi tiết kết nối GitHub">
             <span className="connector-logo"><GitHubIcon size={24} /></span>
-            <span className="connector-description"><strong>GitHub</strong><span>Đọc repo, tệp và log GitHub Actions.</span>{item.login && <small>@{item.login}</small>}</span>
+            <span className="connector-description"><strong>GitHub</strong><span>Đọc repo, tệp và log GitHub Actions.</span>
+              <span className="connector-meta">
+                <span className={`connector-status ${item.status}`}>
+                  {item.status === 'connected' ? 'Đã kết nối' : item.status === 'reconnect' ? 'Cần kết nối lại' : 'Chưa kết nối'}
+                </span>
+                {item.login && <small>@{item.login}</small>}
+              </span>
+            </span>
           </button>
-          <span className={`connector-status ${item.status}`}>
-            {item.status === 'connected' ? 'Đã kết nối' : item.status === 'reconnect' ? 'Cần kết nối lại' : 'Chưa kết nối'}
-          </span>
           <button type="button" className="settings-button" disabled={!!busy || !item.configured} onClick={() => item.status === 'connected' ? setSelected(true) : void run('connect')}>
             {busy === 'connect' ? 'Đang kết nối…' : item.status === 'connected' ? 'Quản lý' : item.status === 'reconnect' ? 'Kết nối lại' : 'Kết nối'}
           </button>
@@ -124,7 +137,7 @@ export default function ConnectorSettings({ open, result, onUnauthorized }: {
       </>}
     </div>
     {selected && github && <div className="connector-detail" aria-label="Quản lý kết nối GitHub">
-      <div className="connector-detail-head"><h3>GitHub</h3><button type="button" className="settings-button" onClick={() => { setSelected(false); setConfirm(false); }}>Đóng chi tiết</button></div>
+      <div className="connector-detail-head"><h3>Quản lý GitHub</h3><button type="button" className="connector-close" aria-label="Đóng chi tiết" onClick={() => { setSelected(false); setConfirm(false); }}><SettingsIcon name="close" size={18} /></button></div>
       <p>Peto chỉ đọc dữ liệu. Kết nối này không sửa tệp, tạo bình luận hay chạy lại workflow.</p>
       <p>Chọn repo được phép truy cập trên GitHub. Nếu repo chưa xuất hiện, cấp quyền cho repo rồi thử lại trong chat.</p>
       <div className="connector-actions">
