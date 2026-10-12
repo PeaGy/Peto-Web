@@ -372,6 +372,10 @@ def session(ui: UI) -> int:
         folder = str(Path("~") / root.relative_to(Path.home()))
     except ValueError:
         folder = str(root)
+    # Màn hình toàn phần (giao diện terminal) bật trước đầu phiên, để mascot nằm trong màn hình của Peto; ống dẫn và
+    # input() không có màn hình này.
+    if hasattr(ui, "start_footer"):
+        ui.start_footer()
     ui.session_header(__version__, folder, model=model.get("label") or model["key"], effort=EFFORT_LABELS[effort])
     _update_notice(ui, client, me)
     saved_model = config.load().get("model")
@@ -395,9 +399,6 @@ def session(ui: UI) -> int:
         else:
             ui.line(f"Có hội thoại {history.when(saved.saved_at)} ({saved.message_count} tin) · gõ /resume để mở lại.",
                     "dim")
-    # Chân cố định (giao diện terminal): ô nhập ở đáy suốt phiên, gõ được cả lúc Peto đang làm.
-    if hasattr(ui, "start_footer"):
-        ui.start_footer()
     try:
         while True:
             try:
@@ -518,13 +519,18 @@ def session(ui: UI) -> int:
             work.run_task(text, ui.attached)
     finally:
         # Lệnh nền và trình duyệt ẩn không sống lâu hơn phiên: đóng peto là dừng hết, kể cả khi thoát vì lỗi.
-        if stopped := work.tools.jobs.stop_all():
-            ui.line(f"Đã dừng {len(stopped)} lệnh nền: " + ", ".join(stopped), "dim")
+        stopped = work.tools.jobs.stop_all()
         work.tools.close_browser()
         work.tools.mcp.close()
+        fullscreen = getattr(ui, "fullscreen", False)
         if hasattr(ui, "stop_footer"):
             ui.stop_footer()
-    ui.line("Tạm biệt!", "dim")
+        # In sau khi rời màn hình toàn phần, để còn lại trong terminal: người dùng cần biết dev server của họ đã dừng.
+        if stopped:
+            ui.line(f"Đã dừng {len(stopped)} lệnh nền: " + ", ".join(stopped), "dim")
+    # Màn hình toàn phần thoát ra là terminal sạch như trước khi gõ peto (như Claude Code), không chào thêm.
+    if not fullscreen:
+        ui.line("Tạm biệt!", "dim")
     return 0
 
 

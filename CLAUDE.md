@@ -2468,8 +2468,8 @@ results in the next step. The server stores no conversation (`store=False`), and
 - **Redesign after OpenCode (in progress since 2026-10-12).** The owner asked to redo everything seen in the terminal
   after OpenCode (MIT, https://github.com/anomalyco/opencode): display, tool behaviour and a concise reply voice.
   Owner's picks after real xterm.js mockups (https://claude.ai/artifact/2PGMSbJruX1EedZUk6quZ2):
-  - **Inline with a fixed footer** (like `opencode mini`), not OpenCode's full-screen view. The transcript still goes
-    to the terminal's own scrollback, and the prompt stays at the bottom while Peto works. There is no sidebar.
+  - **Inline with a fixed footer** (like `opencode mini`), not OpenCode's full-screen view, picked first. Superseded
+    by the full screen in 0.19.0 (below). There is no sidebar.
   - **No painted background.** Only panels get a background: user messages, tool blocks, the prompt. The terminal's
     own background shows elsewhere. Theme colours are OpenCode's `opencode` theme with Peto's rose as primary.
   - **Paste collapsing unchanged:** 4+ lines or 1000+ characters.
@@ -2482,6 +2482,7 @@ results in the next step. The server stores no conversation (`store=False`), and
   - 0.16.0: the OpenCode look.
   - 0.17.x: the footer engine.
   - 0.18.0: tool behaviour, behind new `features`.
+  - 0.19.0: the full screen, replacing the inline footer as the default.
   - Voice: backend prompts, measured with evals first.
 
   Tolerant edit matching relaxes "exact unique match" and needs the owner's separate approval. Until 0.16.0 ships,
@@ -2540,8 +2541,9 @@ results in the next step. The server stores no conversation (`store=False`), and
       fake console, and the ANSI was replayed in xterm.js. Real Windows Terminal, conhost and VS Code typing (Unikey)
       still need the owner's check.
 
-  **0.17.0 (done 2026-10-12): fixed footer, like Claude Code.** The owner kept "chân cố định" after learning that Claude
-  Code is inline, not full-screen.
+  **0.17.0 (done 2026-10-12): fixed footer.** The owner kept "chân cố định" after being told that Claude Code is
+  inline, not full-screen. That was outdated (see 0.19.0); since 0.19.0 this engine runs only with
+  `PETO_AGENT_UI=inline`.
   - **Engine** (`tui/footer.py`, `FooterEngine`). `__main__.session` calls `ui.start_footer()` after the header and
     `stop_footer()` in its `finally`.
     - The console stays raw for the whole session (`WindowsConsole.ensure_raw()` re-applies it every second, since child
@@ -2600,6 +2602,43 @@ results in the next step. The server stores no conversation (`store=False`), and
       pick.
   - **Tests.** `agent-cli/tests/test_tools_v2.py`, two `test_tui.py` cases, and feature negotiation in
     `test_loop_client.py`.
+
+  **0.19.0 (done 2026-10-12): full screen, like Claude Code.**
+  - **Why it changed.** The owner saw that their Claude Code (v2.1.278) draws on the alternate screen, pins the prompt
+    at the bottom and leaves the terminal clean on exit. That is Claude Code's fullscreen renderer
+    (https://code.claude.com/docs/en/fullscreen), the default for users who started after 2026-05-06. They asked for
+    that, and saw 0.17's footer leave stacked prompt boxes when the VS Code panel was resized (xterm.js reflows the old
+    footer rows). They picked Claude Code's layout (header at top, prompt at bottom) over opencode's centred home, and
+    mouse capture.
+  - **Engine** (`tui/screen.py`, `ScreenEngine`, a `FooterEngine` subclass that keeps its input thread, queue, panel
+    and stop keys).
+    - `?1049h` on start, `?1049l` on stop, after clearing the alternate screen. `__main__.session` now starts it before
+      the header. Exit prints nothing except "Đã dừng N lệnh nền", shown after leaving.
+    - The transcript is a list of `Entry` objects holding a build function, cached per width. On resize everything
+      reflows: `TerminalUI._emit`/`_out` take builders, which capture the preview at emit time. Text written directly
+      becomes a `TextEntry` (`text.parse_ansi`). The header picks its mascot size at draw time. A streaming reply is
+      one entry re-rendered from its Markdown source.
+    - Each frame rewrites only changed rows, each from column 1 followed by EL. Claude Code's docs say ConPTY mangles
+      sparse cell writes. `PETO_AGENT_FULL_REPAINT=1` rewrites every row.
+  - **Scrolling.**
+    - Wheel 3 lines, PgUp/PgDn half a screen, Ctrl+Home/End.
+    - The anchor is (entry, line) so new output does not move a scrolled view. The last transcript row shows
+      "↓ còn N dòng bên dưới".
+    - Sending a message or a permission question returns to the bottom.
+  - **Mouse** (`line_editor.WindowsConsole`, `mouse` flag).
+    - Raw mode adds `ENABLE_MOUSE_INPUT | ENABLE_WINDOW_INPUT | ENABLE_EXTENDED_FLAGS` and drops QuickEdit.
+    - Checked through ConPTY on 2026-10-12: wheel, press, drag and release arrive as `MOUSE_EVENT` records in screen
+      cells, so no VT input parsing is needed. Hover moves are dropped.
+    - Drag selects and copies on release (`tui/clipboard.py`, CF_UNICODETEXT), and a double click copies a word.
+    - Ctrl+C with a selection copies instead of stopping. Shift+drag keeps native selection.
+    - Ctrl+click opens a URL or existing path, except in VS Code, which handles links itself. Ctrl+L redraws.
+  - **Tests and checks.**
+    - `agent-cli/tests/test_screen.py`. `tests/vt.py` gained `?1049`, CUP and `2J`.
+    - A scratch ConPTY run of real `python -m peto_agent` (typing, permission, wheel, resize 100→70→50→90→100, exit)
+      was replayed in xterm.js.
+    - xterm.js's WebGL addon (headless) kept stale panel backgrounds on the main screen after a resize followed by
+      leaving the alternate screen. A minimal sequence without peto does the same, the buffer itself is clean, and
+      the DOM renderer shows nothing. Whether real VS Code shows it needs the owner's check.
 - **CLI display** (picked by the owner from mockups): tool steps stay as permanent lines; while waiting for the model
   there is one transient `… Peto đang nghĩ · Ns` status line (`UI.status`, redrawn with `\r\033[2K`, only when colors
   are on). `ReplyWriter` prints replies line by line so `UI.markdown` can color bold, inline code, headings, bullets and

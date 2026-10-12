@@ -318,22 +318,26 @@ class UI:
         if not self.terminal:
             self.line(f"Peto Agent {version} · {directory} · {model} · mức {effort}")
             return
+        for text in self.header_lines(version, directory, model=model, effort=effort):
+            self.line(text)
+
+    def header_lines(self, version: str, directory: str, *, model: str, effort: str) -> list[str]:
+        """Các dòng đầu phiên (đã có mã màu), theo bề ngang và bề cao cửa sổ lúc gọi."""
         art = self._mascot_art()
         room = self.width - (1 + len(art[0]) + 3 if art else 2)
         details = (self.paint("Peto Agent", "bold") + self.paint(f" {version}", "dim"),
                    self.paint(clip_cells(f"{model} · mức {effort}", room), "dim"),
                    self.paint(clip_cells(visible(directory), room), "dim"))
-        self.line()
+        lines = [""]
         if not art:
-            for text in details:
-                self.line("  " + text)
+            lines += ["  " + text for text in details]
         else:
             # Ba dòng chữ nằm giữa chiều cao của hình.
             first = (len(art) - len(details)) // 2
             for index, row in enumerate(art):
                 text = details[index - first] if 0 <= index - first < len(details) else ""
-                self.line(" " + self._mascot_row(row) + ("   " + text if text else ""))
-        self.line()
+                lines.append(" " + self._mascot_row(row) + ("   " + text if text else ""))
+        return lines + [""]
 
     def _mascot_art(self):
         """Cỡ mascot lớn nhất vừa cửa sổ cả bề ngang lẫn bề cao; None thì chỉ in chữ.

@@ -13,6 +13,7 @@ Vẫn là dòng nối tiếp như trước: mọi thứ in vào lịch sử cu�
 from __future__ import annotations
 
 import json
+import os
 import re
 import time
 
@@ -23,7 +24,7 @@ from ..ui import (CLEAR_LINE, READ_ONLY_LINES, REFUSED_LINES, UI, _count, _page_
 from . import prompt as prompt_view
 from .diff import Diff
 from .markdown import Markdown
-from .text import Line, S, clip, fit, render, wrap
+from .text import Line, S, clip, fit, parse_ansi, render, wrap
 from .theme import load as load_theme
 
 PAD = 2
@@ -63,22 +64,30 @@ class TerminalUI(UI):
         self.thinking_title: str | None = None
         # /suynghi: in cả phần tóm tắt suy nghĩ dưới dòng "+ Đã nghĩ" (mặc định tắt như OpenCode).
         self.show_thoughts = False
-        # Chân cố định (footer.py): bật khi phiên có ô nhập đọc phím thô; None thì in nối tiếp như 0.16.
+        # Màn hình toàn phần (screen.py), hoặc chân cố định (footer.py) khi PETO_AGENT_UI=inline: bật khi phiên có ô
+        # nhập đọc phím thô; None thì in nối tiếp như 0.16.
         self.engine = None
 
     def toggle_thoughts(self) -> bool:
         self.show_thoughts = not self.show_thoughts
         return self.show_thoughts
 
-    # ---- Chân cố định
+    # ---- Màn hình toàn phần, chân cố định
+
+    @property
+    def fullscreen(self) -> bool:
+        return self.engine is not None and getattr(self.engine, "fullscreen", False)
 
     def start_footer(self) -> None:
-        """Bật chân cố định: ô nhập ở đáy suốt phiên, gõ được cả lúc Peto đang làm."""
+        """Bật màn hình toàn phần như Claude Code (ô nhập ghim ở đáy, thoát ra terminal sạch như trước); gõ được cả lúc
+        Peto đang làm. ``PETO_AGENT_UI=inline`` giữ kiểu chân cố định in vào lịch sử cuộn của 0.17."""
         if self.editor is None or self.engine is not None:
             return
-        from .footer import FooterEngine
-
-        engine = FooterEngine(self, self.editor, size=self.editor.size)
+        if os.environ.get("PETO_AGENT_UI", "").strip().lower() == "inline":
+            from .footer import FooterEngine as Engine
+        else:
+            from .screen import ScreenEngine as Engine
+        engine = Engine(self, self.editor, size=self.editor.size)
         try:
             engine.start()
         except OSError:
@@ -96,13 +105,37 @@ class TerminalUI(UI):
             return
         super().write(text, color)
 
-    def commit_user(self, lines: list[Line]) -> None:
-        """Tin vừa gửi nằm lại trong lịch sử cuộn thành khung có thanh ┃."""
+    def commit_user(self, sent) -> None:
+        """Tin vừa gửi nằm lại trong hội thoại thành khung có thanh ┃ (``sent`` là ``prompt.Sent``)."""
         self._flush_group()
-        text = "\n" if self._last not in {None, "blank"} else ""
-        text += "".join(render(line, self.colors) + "\n" for line in lines)
-        self.write(text)
+        if self._last not in {None, "blank"}:
+            self._out(lambda: [Line()], pad=False)
+        self._out(lambda: prompt_view.user_panel(sent, self.theme, self.width), pad=False)
         self._last = "user"
+
+    def bell(self) -> None:
+        if self.engine is not None:
+            if self.terminal and not os.environ.get("PETO_AGENT_NO_BELL"):
+                self.engine.raw_write("\a")
+            return
+        super().bell()
+
+    def title(self, text: str) -> None:
+        if self.engine is not None:
+            self._title = text
+            if self.terminal:
+                self.engine.raw_write(f"\033]0;{visible(text)}\033\\")
+            return
+        super().title(text)
+
+    def session_header(self, version: str, directory: str, *, model: str, effort: str) -> None:
+        """Màn hình toàn phần: đầu phiên là khối đầu của hội thoại, chọn lại cỡ mascot mỗi khi cửa sổ đổi cỡ."""
+        if not self.fullscreen:
+            super().session_header(version, directory, model=model, effort=effort)
+            return
+        self._out(lambda: [parse_ansi(text) for text in self.header_lines(version, directory, model=model,
+                                                                           effort=effort)], pad=False)
+        self._last = "blank"
 
     @property
     def animated(self) -> bool:
@@ -126,20 +159,37 @@ class TerminalUI(UI):
     def content_width(self) -> int:
         return max(20, self.width - PAD)
 
-    def _write_lines(self, lines: list[Line]) -> None:
-        self.write("".join(" " * PAD + render(line, self.colors) + "\n" if line.spans else "\n" for line in lines))
+    def _out(self, build, *, pad: bool = True, now: list[Line] | None = None):
+        """Đưa một khối ra màn hình. Màn hình toàn phần giữ hàm vẽ ``build`` để vẽ lại theo bề ngang mới; kiểu nối tiếp
+        in ngay các hàng (``now`` nếu đã vẽ sẵn)."""
+        if self.fullscreen:
+            return self.engine.add(build, pad=pad)
+        lines = build() if now is None else now
+        prefix = " " * PAD if pad else ""
+        self.write("".join(prefix + render(line, self.colors) + "\n" if line.spans else "\n" for line in lines))
+        return None
 
-    def _emit(self, lines: list[Line], kind: str) -> None:
-        """In các hàng của một phần; giữa các phần khác loại có một dòng trống như OpenCode."""
+    def _write_lines(self, lines: list[Line]) -> None:
+        self._out(lambda: lines, now=lines)
+
+    def _emit(self, lines, kind: str):
+        """In các hàng của một phần; giữa các phần khác loại có một dòng trống như OpenCode.
+
+        ``lines`` là các hàng, hoặc hàm vẽ chúng theo bề ngang hiện tại (màn hình toàn phần gọi lại khi đổi cỡ)."""
         self._flush_group()
-        while lines and not lines[0].spans and self._last in {None, "blank"}:
-            lines = lines[1:]
-        if not lines:
-            return
-        if self._last not in {None, "blank"} and lines[0].spans and not (kind == self._last and kind in {"row", "text"}):
+        build = lines if callable(lines) else (lambda: lines)
+        drawn = build()
+        skip = 0
+        while skip < len(drawn) and not drawn[skip].spans and self._last in {None, "blank"}:
+            skip += 1
+        drawn = drawn[skip:]
+        if not drawn:
+            return None
+        if self._last not in {None, "blank"} and drawn[0].spans and not (kind == self._last and kind in {"row", "text"}):
             self._write_lines([Line()])
-        self._write_lines(lines)
-        self._last = "blank" if not lines[-1].spans else kind
+        entry = self._out((lambda: build()[skip:]) if skip else build, now=drawn)
+        self._last = "blank" if not drawn[-1].spans else kind
+        return entry
 
     def _row(self, icon: str, spans: list, icon_color: str | None = None) -> list[Line]:
         """Một dòng công cụ: biểu tượng rồi chữ, dòng dài gập thẳng hàng với chữ."""
@@ -174,24 +224,31 @@ class TerminalUI(UI):
             return
         role = COLOR_ROLES.get(color or "")
         style = {"fg": getattr(self.theme, role) if role else self.theme.text, "b": color == "bold"}
-        self.write(render(Line([(text, style)]), self.colors) + "\n")
+        if self.fullscreen:
+            # Gập theo bề ngang hiện tại; hàng sau thụt như hàng đầu (danh sách của /help, /permissions…).
+            body = text.lstrip(" ")
+            indent = " " * (len(text) - len(body))
+            self._out(lambda: [Line([S(indent)] + row) for row in wrap([(body, style)], self.width - len(indent))],
+                      pad=False)
+        else:
+            self.write(render(Line([(text, style)]), self.colors) + "\n")
         self._last = "row"
 
     def step(self, text: str) -> None:
-        self._emit(self._row("↳", [S(visible(text), self.theme.muted)]), "row")
+        self._emit(lambda: self._row("↳", [S(visible(text), self.theme.muted)]), "row")
 
     def success(self, text: str) -> None:
-        self._emit(self._row("✓", [S(visible(text), self.theme.text)], self.theme.success), "row")
+        self._emit(lambda: self._row("✓", [S(visible(text), self.theme.text)], self.theme.success), "row")
 
     def failure(self, text: str) -> None:
-        self._emit(self._row("✗", [S(visible(text), self.theme.error)], self.theme.error), "row")
+        self._emit(lambda: self._row("✗", [S(visible(text), self.theme.error)], self.theme.error), "row")
 
     def item(self, text: str) -> None:
-        self._emit(self._detail(text), "row")
+        self._emit(lambda: self._detail(text), "row")
 
     def notice(self, text: str, level: str = "dim") -> None:
         color = self.theme.warning if level == "yellow" else self.theme.muted
-        self._emit(self._row("·", [S(visible(text), color)], color), "row")
+        self._emit(lambda: self._row("·", [S(visible(text), color)], color), "row")
 
     def plan(self, steps: list[dict]) -> None:
         theme = self.theme
@@ -205,7 +262,8 @@ class TerminalUI(UI):
                 body.append(Line([S("[•] ", theme.warning, panel), S(title, theme.text, panel, b=True)]))
             else:
                 body.append(Line([S("[ ] ", theme.muted, panel), S(title, theme.text, panel)]))
-        self._emit(self._block([S("# ", theme.muted, panel), S("Việc cần làm", theme.muted, panel)], body), "block")
+        self._emit(lambda: self._block([S("# ", theme.muted, panel), S("Việc cần làm", theme.muted, panel)], body),
+                   "block")
         if self.engine is not None:
             # Việc đang làm hiện ngay trên ô nhập trong lúc Peto làm, thay cho sidebar của bản toàn màn hình.
             running = next(((index, step) for index, step in enumerate(steps) if step.get("status") == "running"), None)
@@ -259,7 +317,7 @@ class TerminalUI(UI):
 
     def search(self, state: str) -> None:
         if state == "searching":
-            self._emit(self._row(self.theme.glyphs["web"], [S("Tìm trên web", self.theme.muted)]), "row")
+            self._emit(lambda: self._row(self.theme.glyphs["web"], [S("Tìm trên web", self.theme.muted)]), "row")
 
     def _explore_label(self, name: str, args: dict, result: dict, meta: dict) -> tuple[str, str]:
         if name == "read_file":
@@ -281,6 +339,12 @@ class TerminalUI(UI):
         if not self._group:
             return
         group, self._group = self._group, []
+        if self._last not in {None, "blank", "row"}:
+            self._write_lines([Line()])
+        self._out(lambda: self._group_lines(group))
+        self._last = "row"
+
+    def _group_lines(self, group: list[tuple[str, str]]) -> list[Line]:
         theme = self.theme
         if len(group) == 1:
             kind, label = group[0]
@@ -299,13 +363,7 @@ class TerminalUI(UI):
                 rows = rows[:2]
                 rows[-1] = rows[-1] + [S(" …", theme.muted)]
             lines += [Line([S("     ")] + row) for row in rows]
-        self._group_out(lines)
-
-    def _group_out(self, lines: list[Line]) -> None:
-        if self._last not in {None, "blank", "row"}:
-            self._write_lines([Line()])
-        self._write_lines(lines)
-        self._last = "row"
+        return lines
 
     def tool_finished(self, done: ToolDone) -> None:
         name, args, result, meta = done.name, done.args, done.result, done.meta
@@ -335,30 +393,32 @@ class TerminalUI(UI):
             else:
                 self.failure(f"Bạn bỏ qua đăng nhập · {where}")
             return
+        preview, static = self._preview, self._static_diff
         if name == "run_command" and "exit_code" in result:
-            self._emit(self._shell_block(result), "block")
+            self._emit(lambda: self._shell_block(result, preview), "block")
             return
         if "error" in result:
-            self._emit(self._row("·", [S(clip(visible(str(result["error"])), 300), theme.muted)]), "row")
+            self._emit(lambda: self._row("·", [S(clip(visible(str(result["error"])), 300), theme.muted)]), "row")
             return
         if name in {"edit_file", "write_file", "delete_file"}:
-            self._emit(self._edit_block(name, result), "block")
+            self._emit(lambda: self._edit_block(name, result, preview, static), "block")
         elif name == "update_plan":
             self.plan(meta["plan"])
         elif name == "move_file":
-            self._emit(self._row("→", [S("Đổi tên ", theme.muted), S(f"{result['moved_from']} → {result['path']}",
-                                                                      theme.dim_text)]), "row")
+            self._emit(lambda: self._row("→", [S("Đổi tên ", theme.muted),
+                                               S(f"{result['moved_from']} → {result['path']}", theme.dim_text)]), "row")
         elif name == "start_command":
             where = result.get("cwd", ".")
-            self._emit(self._row("$", [S(f"Chạy nền #{result['id']} ", theme.muted),
-                                       S(visible(result["command"]), theme.dim_text),
-                                       S(f" · trong {where}" if where != "." else "", theme.muted)]), "row")
+            self._emit(lambda: self._row("$", [S(f"Chạy nền #{result['id']} ", theme.muted),
+                                               S(visible(result["command"]), theme.dim_text),
+                                               S(f" · trong {where}" if where != "." else "", theme.muted)]), "row")
         elif name == "read_command_output":
             state = "đang chạy" if result.get("running") else f"đã dừng, mã thoát {result.get('exit_code')}"
-            self._emit(self._row("→", [S(f"Đọc output lệnh nền #{result['id']} ({state})", theme.muted)]), "row")
+            self._emit(lambda: self._row("→", [S(f"Đọc output lệnh nền #{result['id']} ({state})", theme.muted)]),
+                       "row")
         elif name == "stop_command":
-            self._emit(self._row("■", [S(f"Đã dừng lệnh nền #{result['id']}: ", theme.muted),
-                                       S(visible(result["command"]), theme.dim_text)]), "row")
+            self._emit(lambda: self._row("■", [S(f"Đã dừng lệnh nền #{result['id']}: ", theme.muted),
+                                               S(visible(result["command"]), theme.dim_text)]), "row")
         elif name == "browser_open":
             self.page(f"Xem trang {result['url']} · {_viewport_label(result['viewport'])}", _page_details(result),
                       result.get("problems") or [])
@@ -376,32 +436,43 @@ class TerminalUI(UI):
             title = result["action"][:1].upper() + result["action"][1:]
             self.page(title, action_details(name.removeprefix("browser_"), result), result.get("problems") or [])
         elif name == "load_skill":
-            self._emit(self._row("→", [S("Nạp skill ", theme.muted), S(f'"{args.get("name")}"', theme.dim_text)]), "row")
-        elif name == "mcp_call_tool":
-            self._emit(self._row(theme.glyphs["tool"], [S("MCP ", theme.muted),
-                                                        S(f"{args.get('server')} → {args.get('tool')}", theme.dim_text)]),
+            self._emit(lambda: self._row("→", [S("Nạp skill ", theme.muted), S(f'"{args.get("name")}"', theme.dim_text)]),
                        "row")
+        elif name == "mcp_call_tool":
+            self._emit(lambda: self._row(theme.glyphs["tool"], [S("MCP ", theme.muted),
+                                                                S(f"{args.get('server')} → {args.get('tool')}",
+                                                                  theme.dim_text)]), "row")
         elif name == "mcp_list_tools":
-            self._emit(self._row(theme.glyphs["tool"], [S(f"Xem công cụ MCP {args.get('server')}", theme.muted)]), "row")
+            self._emit(lambda: self._row(theme.glyphs["tool"], [S(f"Xem công cụ MCP {args.get('server')}", theme.muted)]),
+                       "row")
 
     def page(self, title: str, details: str, problems: list[str], *, path: str | None = None) -> None:
         """Một lần Peto xem hay thao tác trên trang: dòng chính, dòng chi tiết, tối đa 5 lỗi, đường dẫn ảnh."""
         theme = self.theme
-        lines = self._row("%", [S(visible(title), theme.muted)])
-        if details:
-            lines += self._detail(details)
-        for problem in problems[:5]:
-            lines += [Line([S("     "), S("✗ ", theme.error)] + row)
-                      for row in wrap([S(visible(problem), theme.error)], self.content_width - 7)]
-        if len(problems) > 5:
-            lines += self._detail(f"… còn {len(problems) - 5} lỗi")
-        self._emit(lines, "row")
-        if path:
-            # In liền một dòng, không gập, để terminal VS Code nhận ra đường dẫn và cho Ctrl+Click mở ảnh.
-            self.write(" " * PAD + render(Line([S("     ảnh: ", theme.muted), S(visible(path), theme.muted)]),
-                                          self.colors) + "\n")
 
-    def _edit_block(self, name: str, result: dict) -> list[Line]:
+        def build() -> list[Line]:
+            lines = self._row("%", [S(visible(title), theme.muted)])
+            if details:
+                lines += self._detail(details)
+            for problem in problems[:5]:
+                lines += [Line([S("     "), S("✗ ", theme.error)] + row)
+                          for row in wrap([S(visible(problem), theme.error)], self.content_width - 7)]
+            if len(problems) > 5:
+                lines += self._detail(f"… còn {len(problems) - 5} lỗi")
+            return lines
+
+        self._emit(build, "row")
+        if path:
+            # In liền một dòng, không gập, để terminal VS Code nhận ra đường dẫn và cho Ctrl+Click mở ảnh. Màn hình toàn
+            # phần không viết quá bề ngang, nên đường dẫn dài hơn cả hàng mới bị bẻ.
+            line = Line([S("     ảnh: ", theme.muted), S(visible(path), theme.muted)])
+            if self.fullscreen:
+                self._out(lambda: [Line(row) for row in wrap(line.spans, self.content_width, hard=True)])
+            else:
+                self.write(" " * PAD + render(line, self.colors) + "\n")
+
+    def _edit_block(self, name: str, result: dict, preview: tuple[str, dict] | None = None,
+                    static: bool = False) -> list[Line]:
         theme = self.theme
         panel = theme.panel
         rel = result["path"]
@@ -416,18 +487,17 @@ class TerminalUI(UI):
         if result.get("match"):
             header.append(S(f"  · khớp gần đúng: {result['match']}", theme.warning, panel))
         body: list[Line] = []
-        if name != "delete_file" and not self._static_diff and self._preview and self._preview[0] == "file":
-            preview = self._preview[1]
-            rows = Diff(preview["before"], preview["after"], path=rel).rows(theme, self.content_width - 3)
+        if name != "delete_file" and not static and preview and preview[0] == "file":
+            rows = Diff(preview[1]["before"], preview[1]["after"], path=rel).rows(theme, self.content_width - 3)
             body = rows[:BLOCK_DIFF_ROWS]
             if len(rows) > BLOCK_DIFF_ROWS:
                 body.append(Line([S(f"… còn {len(rows) - BLOCK_DIFF_ROWS} dòng · /diff để xem đủ", theme.muted, panel)]))
         return self._block(header, body)
 
-    def _shell_block(self, result: dict) -> list[Line]:
+    def _shell_block(self, result: dict, preview: tuple[str, dict] | None = None) -> list[Line]:
         theme = self.theme
         panel = theme.panel
-        body = self._preview[1] if self._preview and self._preview[0] in {"command", "background"} else {}
+        body = preview[1] if preview and preview[0] in {"command", "background"} else {}
         command = str(body.get("command") or result.get("command") or "")
         powershell = body.get("shell") == "powershell"
         first, *more = command.split("\n")
@@ -749,10 +819,14 @@ class TerminalUI(UI):
         theme = self.theme
         panel = theme.panel
         diff = Diff(before, after, path=title.split(" ")[0])
-        rows = diff.rows(theme, self.content_width - 3) if not diff.empty else [
-            Line([S("Nội dung không đổi.", theme.muted, panel)])]
         header = [S("← ", theme.muted, panel), S(visible(title), theme.text, panel, b=True),
                   S(f"  +{diff.added}", theme.diff_added, panel), S(f"  −{diff.removed}", theme.diff_removed, panel)]
+        if self.fullscreen:
+            self._emit(lambda: self._block(header, diff.rows(theme, self.content_width - 3) if not diff.empty else [
+                Line([S("Nội dung không đổi.", theme.muted, panel)])]), "block")
+            return
+        rows = diff.rows(theme, self.content_width - 3) if not diff.empty else [
+            Line([S("Nội dung không đổi.", theme.muted, panel)])]
         page = 2000 if self.engine is not None else 120
         shown = rows[:page]
         self._emit(self._block(header, shown), "block")
@@ -800,8 +874,7 @@ class TerminalUI(UI):
             parts.append(f"{min(100, round(end.context_share * 100))}% tới lúc tự tóm tắt")
         for part in parts:
             spans.append(S(f" · {part}", theme.muted))
-        lines = [Line([S("   ")] + row) for row in wrap(spans, self.content_width - 3)]
-        self._emit(lines, "footer")
+        self._emit(lambda: [Line([S("   ")] + row) for row in wrap(spans, self.content_width - 3)], "footer")
 
     # ---- Ô nhập
 
@@ -841,6 +914,9 @@ class TerminalReply:
         self.pending = ""
         self.started = False
         self.markdown = Markdown(ui.theme, ui.content_width)
+        # Màn hình toàn phần: cả câu trả lời là một khối, vẽ lại từ nguồn mỗi khi có chữ mới hay cửa sổ đổi cỡ.
+        self.source = ""
+        self.entry = None
         self._thought: list[str] = []
         self._think_started: float | None = None
         self._think_ended: float | None = None
@@ -862,18 +938,45 @@ class TerminalReply:
         text = f"+ Đã nghĩ: {clip(title, 60)} · {_seconds(seconds).replace(' giây', 's')}" if title else \
             f"+ Đã nghĩ · {_seconds(seconds).replace(' giây', 's')}"
         self.ui.thinking_title = None
-        lines = [Line([S("   "), S(visible(text), self.ui.theme.thought)])]
-        if self.ui.show_thoughts:
-            for paragraph in "".join(self._thought).split("\n"):
-                spans = [S(visible(paragraph.replace("**", "")), self.ui.theme.muted, i=True)]
-                lines += [Line([S("     ")] + row) for row in wrap(spans, self.ui.content_width - 5)]
-        self.ui._emit(lines, "row")
+        thought = "".join(self._thought) if self.ui.show_thoughts else ""
+        ui = self.ui
+
+        def build() -> list[Line]:
+            lines = [Line([S("   "), S(visible(text), ui.theme.thought)])]
+            for paragraph in thought.split("\n") if thought else []:
+                spans = [S(visible(paragraph.replace("**", "")), ui.theme.muted, i=True)]
+                lines += [Line([S("     ")] + row) for row in wrap(spans, ui.content_width - 5)]
+            return lines
+
+        self.ui._emit(build, "row")
+
+    def _render(self) -> list[Line]:
+        """Cả câu trả lời tới lúc này, vẽ theo bề ngang hiện tại; dòng đang viết dở cũng hiện luôn."""
+        markdown = Markdown(self.ui.theme, self.ui.content_width)
+        lines: list[Line] = []
+        for line in self.source.split("\n"):
+            lines += markdown.feed(line)
+        lines += markdown.flush()
+        while lines and not lines[0].spans:
+            lines.pop(0)
+        while lines and not lines[-1].spans:
+            lines.pop()
+        return lines
 
     def feed(self, text: str) -> None:
         if text and not self.started:
             self._think_ended = time.monotonic()
             self._commit_thought()
         self.started = self.started or bool(text)
+        if self.ui.fullscreen:
+            self.source += text
+            if self.entry is not None:
+                self.entry.changed()
+                self.ui.engine.changed()
+            elif self.source.strip():
+                self.ui.clear_status()
+                self.entry = self.ui._emit(self._render, "text")
+            return
         self.pending += text
         while "\n" in self.pending:
             line, self.pending = self.pending.split("\n", 1)
@@ -883,6 +986,9 @@ class TerminalReply:
 
     def finish(self) -> None:
         self._commit_thought()
+        if self.ui.fullscreen:
+            self.ui.thinking_title = None
+            return
         if self.pending:
             self._emit(self.markdown.feed(self.pending))
             self.pending = ""

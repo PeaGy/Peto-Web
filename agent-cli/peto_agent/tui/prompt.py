@@ -42,7 +42,26 @@ def _text_rows(state: EditorState, theme, bg: str | None, width: int, *, show_cu
     return rows, cursor
 
 
-def user_panel(state: EditorState, theme, width: int) -> list[Line]:
+class Sent:
+    """Bản chụp tin vừa gửi (chữ và nhãn đoạn dán, ảnh): ô nhập xóa ngay sau khi gửi, còn màn hình toàn phần phải vẽ
+    lại khung tin mỗi khi cửa sổ đổi cỡ."""
+
+    def __init__(self, state: EditorState):
+        self.text = state.text
+        self._labels = {char: state.label(char) for char in set(state.text)
+                        if state.is_paste(char) or state.is_image(char)}
+
+    def is_paste(self, char: str) -> bool:
+        return char in self._labels
+
+    def is_image(self, char: str) -> bool:
+        return False
+
+    def label(self, char: str) -> str:
+        return self._labels.get(char, char)
+
+
+def user_panel(state: EditorState | Sent, theme, width: int) -> list[Line]:
     """Tin vừa gửi: thanh ┃ hồng trên nền panel, đệm một hàng trên và dưới."""
     panel_width = max(8, width - PAD)
     bg = theme.panel

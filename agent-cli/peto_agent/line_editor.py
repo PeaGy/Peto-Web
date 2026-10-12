@@ -51,11 +51,16 @@ class Key:
 
     ``name`` là char, paste, enter, newline, tab, backspace, delete, left, right, up, down, home, end, escape hoặc
     interrupt (Ctrl+C). ``text`` là chữ của char và paste.
+
+    Khi màn hình toàn phần bắt chuột còn có ``wheel`` (``text`` là up hay down), ``mouse`` (``text`` là press, drag hay
+    release của nút trái) với ô ``x``, ``y`` tính từ 0, và ``resize`` khi cửa sổ đổi cỡ.
     """
 
     name: str
     text: str = ""
     ctrl: bool = False
+    x: int = 0
+    y: int = 0
 
 
 def clean(text: str, keep: str = "") -> str:
@@ -427,13 +432,18 @@ def group_paste(keys: list[Key]) -> list[Key]:
 
 # --- Console Windows --------------------------------------------------------
 
-KEY_EVENT = 0x0001
+KEY_EVENT, MOUSE_EVENT, WINDOW_BUFFER_SIZE_EVENT = 0x0001, 0x0002, 0x0004
+LEFT_BUTTON, MOUSE_MOVED, DOUBLE_CLICK, MOUSE_WHEELED = 0x0001, 0x0001, 0x0002, 0x0004
 VK_BACK, VK_TAB, VK_RETURN, VK_MENU, VK_ESCAPE, VK_V = 0x08, 0x09, 0x0D, 0x12, 0x1B, 0x56
 NAVIGATION = {0x21: "pageup", 0x22: "pagedown", 0x23: "end", 0x24: "home", 0x25: "left", 0x26: "up", 0x27: "right",
               0x28: "down", 0x2E: "delete"}
 RIGHT_ALT, LEFT_ALT, RIGHT_CTRL, LEFT_CTRL, SHIFT = 0x01, 0x02, 0x04, 0x08, 0x10
 # Tắt Ctrl+C thành tín hiệu, nhập theo dòng, tự in phím, sự kiện cửa sổ và chuột, và mã VT cho phím.
 RAW_MODE_OFF = 0x0001 | 0x0002 | 0x0004 | 0x0008 | 0x0010 | 0x0200
+# Màn hình toàn phần bắt chuột (chủ web chọn ngày 2026-10-12): bật sự kiện chuột và đổi cỡ cửa sổ, tắt QuickEdit (cần
+# cờ mở rộng), như vậy cửa sổ console cổ không tự chọn chữ khi kéo chuột. Qua ConPTY (Windows Terminal, VS Code) bánh
+# xe, bấm và kéo tới thành sự kiện chuột với tọa độ ô màn hình (thử ngày 2026-10-12).
+MOUSE_INPUT, WINDOW_INPUT, QUICK_EDIT, EXTENDED_FLAGS = 0x0010, 0x0008, 0x0040, 0x0080
 READ_CHUNK = 512
 PASTE_GRACE_MS = 15
 MAX_PASTE_KEYS = 400_000
@@ -462,6 +472,9 @@ def translate(vk: int, char: str, state: int) -> Key | None:
     if char == "\x17":
         # Ctrl+W, và là thứ terminal của VS Code gửi khi bấm Ctrl+Backspace.
         return Key("backspace", ctrl=True)
+    if char == "\x0c":
+        # Ctrl+L: vẽ lại cả màn hình khi có gì đó vẽ đè lên (như Claude Code).
+        return Key("redraw")
     if char >= " " and char != "\x7f":
         return Key("char", char)
     return None
@@ -478,8 +491,12 @@ class WindowsConsole:
             _fields_ = [("key_down", wintypes.BOOL), ("repeat", wintypes.WORD), ("vk", wintypes.WORD),
                         ("scan", wintypes.WORD), ("char", wintypes.WCHAR), ("state", wintypes.DWORD)]
 
+        class MouseEvent(ctypes.Structure):
+            _fields_ = [("x", wintypes.SHORT), ("y", wintypes.SHORT), ("buttons", wintypes.DWORD),
+                        ("state", wintypes.DWORD), ("flags", wintypes.DWORD)]
+
         class Event(ctypes.Union):
-            _fields_ = [("key", KeyEvent), ("raw", ctypes.c_byte * 16)]
+            _fields_ = [("key", KeyEvent), ("mouse", MouseEvent), ("raw", ctypes.c_byte * 16)]
 
         class InputRecord(ctypes.Structure):
             _fields_ = [("type", wintypes.WORD), ("event", Event)]
@@ -502,6 +519,9 @@ class WindowsConsole:
         self._handle = kernel32.GetStdHandle(-10 & 0xFFFFFFFF)
         self._buffer = (InputRecord * READ_CHUNK)()
         self._high = ""
+        # Bật bởi màn hình toàn phần: chế độ thô thêm sự kiện chuột và đổi cỡ.
+        self.mouse = False
+        self._pressed = False
         self._mode()
 
     def _check(self, ok) -> None:
@@ -513,20 +533,26 @@ class WindowsConsole:
         self._check(self._handle and self._kernel32.GetConsoleMode(self._handle, self._ctypes.byref(mode)))
         return mode.value
 
+    def _raw_mode(self, mode: int) -> int:
+        if self.mouse:
+            return (mode & ~(RAW_MODE_OFF | QUICK_EDIT)) | MOUSE_INPUT | WINDOW_INPUT | EXTENDED_FLAGS
+        return mode & ~RAW_MODE_OFF
+
     @contextlib.contextmanager
     def raw(self):
         original = self._mode()
-        self._check(self._kernel32.SetConsoleMode(self._handle, original & ~RAW_MODE_OFF))
+        self._check(self._kernel32.SetConsoleMode(self._handle, self._raw_mode(original)))
         try:
             yield
         finally:
-            self._kernel32.SetConsoleMode(self._handle, original)
+            # Trả QuickEdit như cũ cần cờ mở rộng đi kèm.
+            self._kernel32.SetConsoleMode(self._handle, original | (EXTENDED_FLAGS if self.mouse else 0))
 
     def ensure_raw(self) -> None:
         """Giữ chế độ phím thô suốt phiên: chương trình con dùng chung console có thể đã đổi lại chế độ."""
         mode = self._mode()
-        if mode & RAW_MODE_OFF:
-            self._kernel32.SetConsoleMode(self._handle, mode & ~RAW_MODE_OFF)
+        if mode != self._raw_mode(mode):
+            self._kernel32.SetConsoleMode(self._handle, self._raw_mode(mode))
 
     def wait(self, timeout_ms: int) -> bool:
         """Chờ tới khi console có sự kiện (phím, đổi cỡ…) tối đa ``timeout_ms``; True nếu có."""
@@ -565,6 +591,13 @@ class WindowsConsole:
                                                      self._ctypes.byref(count)))
         keys: list[Key] = []
         for record in self._buffer[:count.value]:
+            if record.type == MOUSE_EVENT and self.mouse:
+                if (key := self._mouse(record.event.mouse)) is not None:
+                    keys.append(key)
+                continue
+            if record.type == WINDOW_BUFFER_SIZE_EVENT and self.mouse:
+                keys.append(Key("resize"))
+                continue
             if record.type != KEY_EVENT:
                 continue
             event = record.event.key
@@ -584,6 +617,23 @@ class WindowsConsole:
             if key is not None:
                 keys.extend([key] * max(1, event.repeat))
         return keys
+
+    def _mouse(self, event) -> Key | None:
+        """Bánh xe và nút trái; con trỏ chuột chỉ lướt qua (không giữ nút) thì bỏ, khỏi phải vẽ lại vô ích."""
+        ctrl = bool(event.state & (LEFT_CTRL | RIGHT_CTRL))
+        if event.flags & MOUSE_WHEELED:
+            delta = (event.buttons >> 16) & 0xFFFF
+            return Key("wheel", "up" if delta and delta < 0x8000 else "down", ctrl, event.x, event.y)
+        held = bool(event.buttons & LEFT_BUTTON)
+        if event.flags & MOUSE_MOVED:
+            return Key("mouse", "drag", ctrl, event.x, event.y) if held and self._pressed else None
+        if held and not self._pressed:
+            self._pressed = True
+            return Key("mouse", "double" if event.flags & DOUBLE_CLICK else "press", ctrl, event.x, event.y)
+        if not held and self._pressed:
+            self._pressed = False
+            return Key("mouse", "release", ctrl, event.x, event.y)
+        return None
 
 
 class LineEditor:

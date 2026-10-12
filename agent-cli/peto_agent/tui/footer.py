@@ -54,8 +54,8 @@ class FooterEngine:
         self.interrupt = interrupt or (lambda: signal.raise_signal(signal.SIGINT))
         self.lock = threading.RLock()
         self.submitted: queue.Queue = queue.Queue()
-        # Tin gõ trong lúc Peto đang làm: (chữ, ảnh, các hàng khung tin).
-        self.queued: list[tuple[str, list, list[Line]]] = []
+        # Tin gõ trong lúc Peto đang làm: (chữ, ảnh, bản chụp tin để vẽ khung).
+        self.queued: list[tuple[str, list, object]] = []
         self.busy = False
         self.panel: Panel | None = None
         self.status: str | None = None
@@ -175,6 +175,14 @@ class FooterEngine:
         with self.lock:
             self._draw()
 
+    def raw_write(self, text: str) -> None:
+        """Mã không vẽ gì (tiêu đề cửa sổ, chuông): ghi trong khóa để không chen vào giữa một lần vẽ."""
+        with self.lock:
+            self._write(text)
+
+    def _submitted(self) -> None:
+        """Vừa gửi một tin (gửi ngay hay để chờ)."""
+
     def set_status(self, text: str | None) -> None:
         with self.lock:
             if text == self.status:
@@ -198,9 +206,9 @@ class FooterEngine:
         """Tin kế tiếp: tin đã gõ trong lúc Peto làm, hoặc chờ người dùng gửi. Ctrl+C lúc ô trống thì thoát."""
         with self.lock:
             if self.queued:
-                text, images, panel = self.queued.pop(0)
+                text, images, sent = self.queued.pop(0)
                 self.busy = True
-                self.ui.commit_user(panel)
+                self.ui.commit_user(sent)
                 return text, images
         while True:
             try:
@@ -247,6 +255,12 @@ class FooterEngine:
                     self._tick()
                     continue
                 keys = self.console.keys()
+                if not keys:
+                    # Chuột lướt qua (không bấm) cũng đánh thức console mà không thành phím nào: không vẽ lại vì nó,
+                    # nhưng vẫn giữ nhịp vòng quay khi chuột cứ di mãi.
+                    if time.monotonic() - self._last_draw >= TICK_MS / 1000:
+                        self._tick()
+                    continue
                 with self.lock:
                     for key in keys:
                         self._key(key)
@@ -308,14 +322,15 @@ class FooterEngine:
         images = state.attached()
         if kind == SUBMIT and text.strip():
             from . import prompt as prompt_view
-            panel = prompt_view.user_panel(state, self.ui.theme, self.size()[0] - 1)
+            sent = prompt_view.Sent(state)
             if self.busy:
-                self.queued.append((text, images, panel))
+                self.queued.append((text, images, sent))
             else:
                 self.busy = True
                 self.status = None
-                self.ui.commit_user(panel)
+                self.ui.commit_user(sent)
                 self.submitted.put((text, images))
+            self._submitted()
         state.clear()
 
     def _attach(self, load) -> None:

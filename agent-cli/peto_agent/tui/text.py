@@ -53,12 +53,18 @@ def sgr(style: dict, colors: bool = True) -> str:
     codes = ["0"]
     if style.get("b"):
         codes.append("1")
+    if style.get("d"):
+        codes.append("2")
+    if style.get("r"):
+        codes.append("7")
     if style.get("i"):
         codes.append("3")
     if style.get("u"):
         codes.append("4")
     if style.get("s"):
         codes.append("9")
+    if colors and style.get("c16"):
+        codes.append(style["c16"])
     if colors and style.get("fg"):
         codes.append("38;2;" + _rgb(style["fg"]))
     if colors and style.get("bg"):
@@ -107,6 +113,105 @@ def clip(text: str, width: int) -> str:
 
 def indent(line: Line, columns: int, bg: str | None = None) -> Line:
     return Line([S(" " * columns, bg=bg)] + line.spans) if columns else line
+
+
+SGR = re.compile(r"\x1b\[([0-9;]*)m")
+
+
+def parse_ansi(text: str) -> Line:
+    """Một dòng chữ đã có mã màu (đầu phiên, thông báo in thẳng) thành ``Line``, để màn hình toàn phần gập lại được khi
+    cửa sổ đổi cỡ. Hiểu các mã ``render`` và ``UI.paint`` sinh ra; mã điều khiển khác bị bỏ."""
+    spans, style, position = [], {}, 0
+    for match in ANSI.finditer(text):
+        if match.start() > position:
+            spans.append((text[position:match.start()], dict(style)))
+        position = match.end()
+        code = SGR.fullmatch(match.group(0))
+        if code is None:
+            continue
+        numbers = [int(part) if part else 0 for part in code.group(1).split(";")]
+        index = 0
+        while index < len(numbers):
+            number = numbers[index]
+            if number == 0:
+                style = {}
+            elif number in (1, 2, 3, 4, 7, 9):
+                style[{1: "b", 2: "d", 3: "i", 4: "u", 7: "r", 9: "s"}[number]] = True
+            elif number == 22:
+                style.pop("b", None)
+                style.pop("d", None)
+            elif number in (23, 24, 27, 29):
+                style.pop({23: "i", 24: "u", 27: "r", 29: "s"}[number], None)
+            elif number in (38, 48) and index + 4 < len(numbers) and numbers[index + 1] == 2:
+                color = "#%02x%02x%02x" % tuple(max(0, min(255, value)) for value in numbers[index + 2:index + 5])
+                style["fg" if number == 38 else "bg"] = color
+                if number == 38:
+                    style.pop("c16", None)
+                index += 4
+            elif 30 <= number <= 37 or 90 <= number <= 97:
+                style["c16"] = str(number)
+                style.pop("fg", None)
+            elif number == 39:
+                style.pop("fg", None)
+                style.pop("c16", None)
+            elif number == 49:
+                style.pop("bg", None)
+            index += 1
+    if position < len(text):
+        spans.append((text[position:], dict(style)))
+    return Line(spans)
+
+
+def crop(line: Line, width: int) -> Line:
+    """Cắt một hàng còn ``width`` ô, không đệm thêm."""
+    if line.width() <= width:
+        return line
+    spans, used = [], 0
+    for text, style in line.spans:
+        kept = []
+        for char in text:
+            if used + cell(char) > width:
+                break
+            kept.append(char)
+            used += cell(char)
+        if kept:
+            spans.append(("".join(kept), style))
+        if len(kept) < len(text):
+            break
+    return Line(spans)
+
+
+def _split(line: Line, columns: list[int]) -> list[list]:
+    """Các đoạn của hàng tách ở những cột cho trước; trả từng nhóm đoạn giữa hai cột liền nhau."""
+    groups: list[list] = [[] for _ in range(len(columns) + 1)]
+    used = 0
+    for text, style in line.spans:
+        for char in text:
+            group = sum(1 for column in columns if used >= column)
+            target = groups[group]
+            if target and target[-1][1] is style:
+                target[-1] = (target[-1][0] + char, style)
+            else:
+                target.append((char, style))
+            used += cell(char)
+    return groups
+
+
+def highlight(line: Line, start: int, end: int, fg: str | None, bg: str | None) -> Line:
+    """Tô ô ``start``..``end`` (không tính ``end``) bằng màu vùng chọn; hàng ngắn hơn thì tô cả phần trống.
+
+    Không có màu (NO_COLOR) thì đảo màu chữ và nền."""
+    if line.width() < end:
+        line = Line(line.spans + [(" " * (end - line.width()), {})])
+    before, middle, after = _split(line, [start, end])
+    chosen = [(text, {**style, "fg": fg, "bg": bg, "c16": None, "d": False, "r": not (fg or bg)})
+              for text, style in middle]
+    return Line(before + chosen + after)
+
+
+def text_between(line: Line, start: int, end: int) -> str:
+    """Chữ thuần nằm trong ô ``start``..``end`` của hàng."""
+    return "".join(text for text, _ in _split(line, [start, end])[1])
 
 
 def wrap(spans: list, width: int, *, hard: bool = False) -> list[list]:

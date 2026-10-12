@@ -186,14 +186,15 @@ cd C:\Projects\website-a
 peto
 ```
 
-Giao diện theo OpenCode (từ 0.16.0, chủ web chọn từ bản mô phỏng ngày 2026-10-12). Mọi thứ vẫn in vào lịch sử cuộn của
-terminal, cuộn và chọn chữ như bình thường. Đầu phiên là mascot của Peto (ký tự khối có màu) đứng cạnh ba dòng ngắn, cỡ
-theo cửa sổ: từ 19 dòng là hình 24 cột × 12 dòng, từ 16 dòng là 18 × 9, từ 13 dòng (bảng terminal thấp của VS Code) là
+Giao diện theo OpenCode (từ 0.16.0, chủ web chọn từ bản mô phỏng ngày 2026-10-12). Từ 0.19.0 Peto chiếm cả cửa sổ
+terminal như Claude Code và opencode: đầu phiên và hội thoại ở trên, ô nhập ghim ở đáy, thoát ra (`Ctrl+C` lúc ô trống,
+`/thoat`) thì terminal trở lại y như trước khi gõ `peto`. Đầu phiên là mascot của Peto (ký tự khối có màu) đứng cạnh ba
+dòng ngắn, cỡ theo cửa sổ: từ 19 dòng là hình 24 cột × 12 dòng, từ 16 dòng là 18 × 9, từ 13 dòng (bảng terminal thấp của VS Code) là
 quả lê 6 × 6. Thấp hơn nữa, hẹp dưới 41 cột, hay terminal tắt màu (`NO_COLOR`), thì chỉ còn ba dòng chữ. Trong terminal
 của VS Code, Peto chừa thêm 2 cột bên phải, vì VS Code che khoảng hai cột sát mép:
 
 ```text
- [mascot]   Peto Agent 0.16.0
+ [mascot]   Peto Agent 0.19.0
  [mascot]   6 Luna · mức thấp
  [mascot]   ~\Projects\website-a
 
@@ -205,12 +206,29 @@ của VS Code, Peto chừa thêm 2 cột bên phải, vì VS Code che khoảng h
   còn 193/200 bước · ngữ cảnh 12% tới lúc tự tóm tắt · /resume mở hội thoại lúc 14:45 hôm qua
 ```
 
-Từ 0.17.0, ô nhập luôn nằm ở đáy cửa sổ như Claude Code, kể cả lúc Peto đang làm; chữ mới in phía trên ô và vẫn vào
-lịch sử cuộn. Trong lúc Peto làm, ngay trên ô có dòng đang làm (`⠋ Đang nghĩ · 8s`, lệnh đang chạy, việc hiện tại của
-danh sách việc), và bạn gõ được tin tiếp theo: Enter thì tin chờ (`↳ Chờ gửi: …`) và tự gửi khi Peto xong việc đang làm.
-`Esc` hai lần hoặc `Ctrl+C` dừng yêu cầu đang chạy; `Ctrl+C` lúc ô trống và Peto đang rảnh thì thoát `peto`. Câu hỏi
-quyền thay chỗ ô nhập cho tới khi bạn trả lời, chữ đang gõ dở vẫn còn. Cửa sổ hẹp lại có thể để sót một mảnh khung cũ
-phía trên; chữ đã in không bao giờ bị xóa.
+Ô nhập luôn nằm ở đáy, kể cả lúc Peto đang làm. Trong lúc Peto làm, ngay trên ô có dòng đang làm (`⠋ Đang nghĩ · 8s`,
+lệnh đang chạy, việc hiện tại của danh sách việc), và bạn gõ được tin tiếp theo: Enter thì tin chờ (`↳ Chờ gửi: …`) và tự
+gửi khi Peto xong việc đang làm. `Esc` hai lần hoặc `Ctrl+C` dừng yêu cầu đang chạy; `Ctrl+C` lúc ô trống và Peto đang
+rảnh thì thoát `peto`. Câu hỏi quyền thay chỗ ô nhập cho tới khi bạn trả lời, chữ đang gõ dở vẫn còn.
+
+Hội thoại nằm trong màn hình của Peto chứ không trong lịch sử cuộn của terminal, nên Peto tự cuộn:
+
+| Phím, chuột | Làm gì |
+|---|---|
+| Lăn chuột | Cuộn hội thoại 3 dòng mỗi nấc |
+| `PgUp` / `PgDn` | Cuộn nửa màn hình |
+| `Ctrl+Home` / `Ctrl+End` | Về đầu phiên / về cuối và bám theo chữ mới |
+| Kéo chuột | Chọn chữ; thả tay là chép vào clipboard |
+| Bấm đúp | Chọn và chép một từ (cả đường dẫn `src/app.py:42`) |
+| `Ctrl+C` khi đang chọn chữ | Chép lại, không dừng Peto |
+| `Shift` + kéo chuột | Chọn chữ kiểu terminal như cũ |
+| `Ctrl+L` | Vẽ lại cả màn hình khi có gì vẽ đè lên |
+
+Đang cuộn lên thì chữ mới không kéo màn hình đi; hàng cuối khung hội thoại báo còn bao nhiêu dòng bên dưới. Gửi tin là về
+cuối. Đổi cỡ cửa sổ thì Peto vẽ lại mọi thứ theo bề ngang mới. Ngoài VS Code, `Ctrl` + bấm vào đường dẫn ảnh chụp hay
+địa chỉ web thì mở nó; VS Code tự mở link khi `Ctrl` + bấm. Terminal nào vẽ sót mảnh cũ thì đặt
+`$env:PETO_AGENT_FULL_REPAINT = '1'` để Peto vẽ lại mọi hàng mỗi lần. `PETO_AGENT_UI=inline` giữ kiểu 0.17: ô nhập ở
+đáy nhưng chữ in vào lịch sử cuộn của terminal (cửa sổ hẹp lại có thể để sót một mảnh khung cũ).
 
 Gõ yêu cầu trong ô có thanh `┃` hồng. Trong ô là model và mức suy nghĩ đang dùng; dưới ô là số bước còn lại hôm nay
 (cập nhật sau mỗi bước), hội thoại đã tới đâu so với lúc Peto tự tóm tắt phần cũ (để biết khi nào nên `/compact`) và lời
@@ -355,9 +373,9 @@ danh sách lệnh, lịch sử, dán nhiều dòng hay gửi ảnh. Khi input đ
 đơn giản `›`, không vẽ khung. `NO_COLOR` tắt cả màu nền của khung.
 
 Trong lúc chờ, một dòng tạm `⠋ Đang nghĩ · 8s` tự đếm giây rồi biến mất khi có chữ. Câu dài đang viết hiện dần trên
-dòng tạm; khi xong dòng sẽ in đủ nội dung. Nội dung đã in nằm trong lịch sử cuộn của terminal. Không chuyển sang màn
-hình toàn phần, không cần cài thêm thư viện. `NO_COLOR` tắt màu; khi output chuyển sang tệp hoặc ống dẫn, Peto dùng
-giao diện chữ thường, không có mã điều khiển hay dòng trạng thái vẽ lại.
+dòng tạm; ở màn hình toàn phần câu trả lời hiện dần ngay trong hội thoại. Không cần cài thêm thư viện. `NO_COLOR`
+tắt màu; khi output chuyển sang tệp hoặc ống dẫn, Peto dùng giao diện chữ thường, không có mã điều khiển hay dòng trạng
+thái vẽ lại.
 
 Mỗi lần Peto muốn sửa hay tạo tệp, một khung "Cần bạn duyệt" hiện ở cuối màn hình với diff có cột số dòng, nền xanh cho
 dòng thêm, đỏ cho dòng xóa; terminal rộng hơn 120 cột thì diff chia hai cột cũ và mới. Chọn bằng `←`/`→` rồi `Enter`
@@ -572,8 +590,8 @@ hoàn toàn, socket có thể cần chờ tới timeout mới nhận ra; Ctrl+C 
 
 `presentation.py` khai báo giao diện mà `Session` và `Tools` sử dụng. Công cụ không tự in chữ: mỗi lần gọi báo sự kiện
 có cấu trúc (`events.py`: bắt đầu, xem trước, câu hỏi quyền, kết quả kèm phần chỉ để hiển thị), và giao diện tự quyết
-định vẽ thế nào. `tui/` là giao diện kiểu OpenCode cho terminal (theme, Markdown, diff, ô nhập, khung duyệt); `ui.py`
-là bản chữ thường cho ống dẫn, tệp, test và bài thi. Bộ chạy lệnh chỉ báo tiến độ qua callback.
+định vẽ thế nào. `tui/` là giao diện kiểu OpenCode cho terminal (theme, Markdown, diff, ô nhập, khung duyệt; `screen.py`
+là màn hình toàn phần, `footer.py` kiểu chân cố định); `ui.py` là bản chữ thường cho ống dẫn, tệp, test và bài thi. Bộ chạy lệnh chỉ báo tiến độ qua callback.
 
 Terminal không vẽ được LaTeX, nên công thức trong câu trả lời được `texmath.py` đổi sang ký hiệu Unicode trước khi in:
 `\lnot A \lor B` hiện thành `¬A ∨ B`, `x^2` thành `x²`, `\frac{a+1}{2}` thành `(a+1)/2`, khối `\[ … \]` in thụt vào và

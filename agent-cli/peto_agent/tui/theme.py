@@ -59,6 +59,9 @@ class Theme:
         self.glyphs = RICH if (rich_terminal() if rich is None else rich) else PLAIN
         self._values["thought"] = blend(self._values["warning"], self._values["bg"], 0.6)
         self._values["dim_text"] = blend(self._values["text"], self._values["bg"], 0.8)
+        # Vùng chữ đang chọn bằng chuột ở màn hình toàn phần: hồng nhạt, chữ vẫn đọc rõ.
+        self._values["selection"] = blend(self._values["primary"], self._values["bg"],
+                                          0.25 if self.name == "light" else 0.35)
 
     def __getattr__(self, name: str) -> str | None:
         values = self.__dict__.get("_values")

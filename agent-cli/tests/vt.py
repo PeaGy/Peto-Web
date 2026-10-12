@@ -1,7 +1,8 @@
 """Terminal ảo tối giản cho test: đủ mã điều khiển mà Peto dùng để kiểm lịch sử cuộn và phần chân cố định.
 
-Hiểu: chữ (đo ô như terminal), CR, LF (dòng trôi lên lịch sử cuộn khi chạm đáy), CSI n A/B/C/D, CSI J, CSI K, và bỏ qua
-SGR, ?25, ?2026, OSC. Không tự xuống dòng ở cột cuối: Peto không bao giờ viết vào cột cuối, nên chạm cột cuối là lỗi.
+Hiểu: chữ (đo ô như terminal), CR, LF (dòng trôi lên lịch sử cuộn khi chạm đáy), CSI n A/B/C/D, CSI H, CSI J (0 và 2),
+CSI K, màn hình phụ ?1049 (như vim: không có lịch sử cuộn, rời ra thì màn hình chính trở lại), và bỏ qua SGR, ?25,
+?2026, OSC. Không tự xuống dòng ở cột cuối: Peto không bao giờ viết vào cột cuối, nên chạm cột cuối là lỗi.
 """
 
 from __future__ import annotations
@@ -24,6 +25,17 @@ class Terminal:
         self.screen = [[] for _ in range(rows)]
         self.scrollback: list[str] = []
         self.row = self.col = 0
+        self.alternate = False
+        self._main: tuple | None = None
+        # Mọi lần vào, ra màn hình phụ, để test kiểm thoát ra là sạch.
+        self.switches: list[str] = []
+
+    def resize(self, columns: int, rows: int) -> None:
+        """Đổi cỡ như terminal không tự gập lại hàng cũ: cắt hoặc thêm cột, hàng."""
+        self.columns = columns
+        self.screen = [line[:columns] for line in self.screen][:rows] + [[] for _ in range(rows - len(self.screen))]
+        self.rows = rows
+        self.row, self.col = min(self.row, rows - 1), min(self.col, columns - 1)
 
     def _line(self, index: int) -> list:
         line = self.screen[index]
@@ -61,13 +73,33 @@ class Terminal:
 
     def _down(self) -> None:
         if self.row == self.rows - 1:
-            self.scrollback.append(self.text(0))
+            if not self.alternate:
+                self.scrollback.append(self.text(0))
             self.screen = self.screen[1:] + [[]]
         else:
             self.row += 1
 
     def _csi(self, params: str, final: str) -> None:
         if params.startswith("?"):
+            if params == "?1049" and final == "h" and not self.alternate:
+                self._main = (self.screen, self.row, self.col)
+                self.screen, self.row, self.col = [[] for _ in range(self.rows)], 0, 0
+                self.alternate = True
+                self.switches.append("vào")
+            elif params == "?1049" and final == "l" and self.alternate:
+                screen, self.row, self.col = self._main
+                self.screen = [line[:self.columns] for line in screen][:self.rows]
+                self.screen += [[] for _ in range(self.rows - len(self.screen))]
+                self.alternate = False
+                self.switches.append("ra")
+            return
+        if final in "Hf":
+            parts = [int(part) if part else 1 for part in (params.split(";") + ["", ""])[:2]]
+            self.row = min(self.rows - 1, max(0, parts[0] - 1))
+            self.col = min(self.columns - 1, max(0, parts[1] - 1))
+            return
+        if final == "J" and params == "2":
+            self.screen = [[] for _ in range(self.rows)]
             return
         number = int(params) if params.isdigit() else 0
         if final == "A":
