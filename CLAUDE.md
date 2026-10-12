@@ -2537,6 +2537,36 @@ results in the next step. The server stores no conversation (`store=False`), and
     - Visual check: a scratch script ran the real `TerminalUI` and `Tools` (real edit, real `py -m unittest`) with a
       fake console, and the ANSI was replayed in xterm.js. Real Windows Terminal, conhost and VS Code typing (Unikey)
       still need the owner's check.
+
+  **0.17.0 (done 2026-10-12): fixed footer, like Claude Code.** The owner kept "chân cố định" after learning that Claude
+  Code is inline, not full-screen.
+  - **Engine** (`tui/footer.py`, `FooterEngine`). `__main__.session` calls `ui.start_footer()` after the header and
+    `stop_footer()` in its `finally`.
+    - The console stays raw for the whole session (`WindowsConsole.ensure_raw()` re-applies it every second, since child
+      processes share the console).
+    - One input thread waits with `WindowsConsole.wait(100)` and feeds keys to the shared `EditorState`.
+    - All output goes through `TerminalUI.write` → `engine.commit`: erase the footer, write lines, redraw the footer, in
+      one write wrapped in `?2026`. No DECSTBM.
+  - **Footer contents.**
+    - Above the prompt: queued messages ("↳ Chờ gửi"), the spinner status and the running plan item ("▶ … (k/n)").
+    - Busy: the prompt placeholder and footer line change; the footer line becomes "esc lần nữa để dừng" after one
+      Esc.
+  - **Keys and requests.**
+    - Enter while busy queues the message; `take()` returns queued messages before waiting.
+    - Ctrl+C or Esc Esc while busy calls `signal.raise_signal(SIGINT)`, so the main thread gets the usual
+      `KeyboardInterrupt` and `runner` still kills the process tree.
+    - Ctrl+C on an idle prompt clears text, or exits when the prompt is empty.
+    - Permission questions and `wait_for_user` replace the prompt via `engine.ask(render, handle)`. They share
+      `TerminalUI._chooser` with the pre-engine panel, ignore keys for 300 ms, and keep the draft. `/diff` prints the
+      whole diff.
+  - **Resize.** The erase assumes one line per footer row even after a width shrink. Assuming reflow made ConPTY
+    erase two committed lines in a test. A shrink may now leave a stray "┃" row above; history is never erased.
+  - **Tests.**
+    - `tests/test_footer.py` with `tests/vt.py`, a minimal terminal emulator. It checks that every committed line
+      reaches scrollback once and in order with the footer at the bottom, plus queueing, Ctrl+C/Esc, the panel and stop.
+    - A scratch ConPTY driver ran real `python -m peto_agent` against a fake local server with scripted keys, replayed
+      in xterm.js. It covered typing while busy, the queued message auto-sending, arrow-key approval, Esc Esc and
+      Ctrl+C stopping a request without exiting, Ctrl+C exiting from idle, and resizing 100→70→50→90→100 columns.
 - **CLI display** (picked by the owner from mockups): tool steps stay as permanent lines; while waiting for the model
   there is one transient `… Peto đang nghĩ · Ns` status line (`UI.status`, redrawn with `\r\033[2K`, only when colors
   are on). `ReplyWriter` prints replies line by line so `UI.markdown` can color bold, inline code, headings, bullets and

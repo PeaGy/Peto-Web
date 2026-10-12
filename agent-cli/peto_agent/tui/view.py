@@ -63,10 +63,62 @@ class TerminalUI(UI):
         self.thinking_title: str | None = None
         # /suynghi: in cả phần tóm tắt suy nghĩ dưới dòng "+ Đã nghĩ" (mặc định tắt như OpenCode).
         self.show_thoughts = False
+        # Chân cố định (footer.py): bật khi phiên có ô nhập đọc phím thô; None thì in nối tiếp như 0.16.
+        self.engine = None
 
     def toggle_thoughts(self) -> bool:
         self.show_thoughts = not self.show_thoughts
         return self.show_thoughts
+
+    # ---- Chân cố định
+
+    def start_footer(self) -> None:
+        """Bật chân cố định: ô nhập ở đáy suốt phiên, gõ được cả lúc Peto đang làm."""
+        if self.editor is None or self.engine is not None:
+            return
+        from .footer import FooterEngine
+
+        engine = FooterEngine(self, self.editor, size=self.editor.size)
+        try:
+            engine.start()
+        except OSError:
+            return
+        self.engine = engine
+
+    def stop_footer(self) -> None:
+        if self.engine is not None:
+            engine, self.engine = self.engine, None
+            engine.stop()
+
+    def write(self, text: str, color: str | None = None) -> None:
+        if self.engine is not None:
+            self.engine.commit(self.paint(text, color))
+            return
+        super().write(text, color)
+
+    def commit_user(self, lines: list[Line]) -> None:
+        """Tin vừa gửi nằm lại trong lịch sử cuộn thành khung có thanh ┃."""
+        self._flush_group()
+        text = "\n" if self._last not in {None, "blank"} else ""
+        text += "".join(render(line, self.colors) + "\n" for line in lines)
+        self.write(text)
+        self._last = "user"
+
+    @property
+    def animated(self) -> bool:
+        return len(self.theme.glyphs["spinner"]) > 4
+
+    def spinner_frame(self) -> str:
+        glyphs = self.theme.glyphs["spinner"]
+        return glyphs[int(time.monotonic() * 10) % len(glyphs)] if self.animated else "…"
+
+    def status_body(self, body: str) -> str:
+        """Chữ của dòng trạng thái: "Peto đang nghĩ" kèm tiêu đề suy nghĩ khi có."""
+        if self.thinking_title and body.startswith("Peto đang nghĩ"):
+            return f"Đang nghĩ: {self.thinking_title}" + body[len("Peto đang nghĩ"):]
+        if body.startswith("Peto đang "):
+            return "Đang " + body[len("Peto đang "):]
+        return body
 
     # ---- In ra lịch sử cuộn
 
@@ -104,7 +156,9 @@ class TerminalUI(UI):
         theme = self.theme
         panel, width = theme.panel, self.content_width
         blank = fit(Line([S(" "), S(" ", bg=panel)]), width, panel)
-        out = [blank, fit(Line([S(" "), S("  ", bg=panel)] + header), width, panel)]
+        # Tiêu đề dài (lệnh dài, đường dẫn sâu) xuống hàng thay vì bị cắt: đó là thứ người dùng cần đọc đủ.
+        out = [blank] + [fit(Line([S(" "), S("  ", bg=panel)] + row), width, panel)
+                         for row in wrap(header, width - 4, hard=True)]
         if body:
             out.append(blank)
             out += [fit(Line([S(" "), S("  ", bg=panel)] + line.spans), width, panel) for line in body]
@@ -152,21 +206,23 @@ class TerminalUI(UI):
             else:
                 body.append(Line([S("[ ] ", theme.muted, panel), S(title, theme.text, panel)]))
         self._emit(self._block([S("# ", theme.muted, panel), S("Việc cần làm", theme.muted, panel)], body), "block")
+        if self.engine is not None:
+            # Việc đang làm hiện ngay trên ô nhập trong lúc Peto làm, thay cho sidebar của bản toàn màn hình.
+            running = next(((index, step) for index, step in enumerate(steps) if step.get("status") == "running"), None)
+            self.engine.plan_line = (f"{visible(str(running[1].get('title', '')))} ({running[0] + 1}/{len(steps)})"
+                                     if running else None)
 
     # ---- Dòng trạng thái tạm
 
     def status(self, text: str) -> None:
         if not self.terminal:
             return
+        if self.engine is not None:
+            self.engine.set_status(clip(visible(text), self.content_width - 6))
+            return
         theme = self.theme
-        glyphs = theme.glyphs["spinner"]
-        animated = len(glyphs) > 4
-        spin = glyphs[int(time.monotonic() * 10) % len(glyphs)] if animated else "…"
-        body = text.removeprefix("… ")
-        if self.thinking_title and body.startswith("Peto đang nghĩ"):
-            body = f"Đang nghĩ: {self.thinking_title}" + body[len("Peto đang nghĩ"):]
-        elif body.startswith("Peto đang "):
-            body = "Đang " + body[len("Peto đang "):]
+        spin = self.spinner_frame()
+        body = self.status_body(text.removeprefix("… "))
         line = Line([S("   "), S(spin + " ", theme.primary), S(clip(visible(body), self.content_width - 5), theme.muted)])
         rendered = " " * PAD + render(line, self.colors)
         if rendered == self._status:
@@ -535,6 +591,9 @@ class TerminalUI(UI):
         self.bell()
         options = self._options(permission)
         try:
+            if self.engine is not None:
+                render_lines, handle = self._chooser(permission, options, max(8, self.height - 1))
+                return self.engine.ask(render_lines, handle)
             console = getattr(self.editor, "console", None) if self.editor is not None else None
             if console is not None:
                 try:
@@ -544,6 +603,37 @@ class TerminalUI(UI):
             return self._ask_typed(permission, options)
         finally:
             self.title(waiting)
+
+    def _chooser(self, permission: Permission, options: list[Option], budget: int):
+        """Khung duyệt và cách nó nhận phím: ←/→ chọn, Enter đồng ý, Esc từ chối, phím chữ chọn thẳng, v/PgDn xem
+        tiếp diff dài. Trả hàm vẽ và hàm nhận phím (trả câu trả lời khi xong, None khi chưa)."""
+        state = {"selected": 0, "offset": 0, "hidden": 0}
+        letters = {option.key for option in options}
+
+        def render_lines() -> list[Line]:
+            lines, state["hidden"] = self._panel(permission, options, state["selected"], state["offset"], budget)
+            return lines
+
+        def handle(key) -> str | None:
+            text = key.text.lower() if key.name == "char" else ""
+            if key.name in {"left", "up"}:
+                state["selected"] = (state["selected"] - 1) % len(options)
+            elif key.name in {"right", "down", "tab"}:
+                state["selected"] = (state["selected"] + 1) % len(options)
+            elif key.name == "enter":
+                return options[state["selected"]].key
+            elif key.name == "escape":
+                return "n" if "n" in letters else options[-1].key
+            elif key.name == "pagedown" or text == "v":
+                if state["hidden"]:
+                    state["offset"] += max(1, budget - 12)
+            elif key.name == "pageup":
+                state["offset"] = max(0, state["offset"] - max(1, budget - 12))
+            elif text in letters:
+                return text
+            return None
+
+        return render_lines, handle
 
     def _draw(self, lines: list[Line], drawn: int) -> int:
         parts = [HIDE_CURSOR]
@@ -560,47 +650,30 @@ class TerminalUI(UI):
         self.out.flush()
 
     def _ask_keys(self, console, permission: Permission, options: list[Option]) -> str:
-        """Khung duyệt tạm ở cuối màn hình: ←/→ chọn, Enter đồng ý, Esc từ chối, phím chữ chọn thẳng."""
-        selected, offset, drawn = 0, 0, 0
-        letters = {option.key: option.key for option in options}
-        budget = max(8, self.height - 1)
+        """Khung duyệt tạm ở cuối màn hình khi chưa có chân cố định."""
+        render_lines, handle = self._chooser(permission, options, max(8, self.height - 1))
         if self._last not in {None, "blank"}:
             self.write("\n")
             self._last = "blank"
         opened = time.monotonic()
         answer = None
+        drawn = 0
         with console.raw():
             try:
-                lines, hidden = self._panel(permission, options, selected, offset, budget)
-                drawn = self._draw(lines, drawn)
+                drawn = self._draw(render_lines(), drawn)
                 while answer is None:
                     keys = console.keys()
                     if time.monotonic() - opened < 0.3:
                         # Phím gõ trước khi khung hiện (Enter của tin trước…) không được thành câu trả lời.
                         continue
                     for key in keys:
-                        text = key.text.lower() if key.name == "char" else ""
                         if key.name == "interrupt":
                             raise KeyboardInterrupt
-                        if key.name in {"left", "up"}:
-                            selected = (selected - 1) % len(options)
-                        elif key.name in {"right", "down", "tab"}:
-                            selected = (selected + 1) % len(options)
-                        elif key.name == "enter":
-                            answer = options[selected].key
-                        elif key.name == "escape":
-                            answer = "n"
-                        elif key.name == "pagedown" or text == "v":
-                            offset += max(1, budget - 12) if hidden else 0
-                        elif key.name == "pageup":
-                            offset = max(0, offset - max(1, budget - 12))
-                        elif text in letters:
-                            answer = letters[text]
+                        answer = handle(key)
                         if answer is not None:
                             break
                     if answer is None:
-                        lines, hidden = self._panel(permission, options, selected, offset, budget)
-                        drawn = self._draw(lines, drawn)
+                        drawn = self._draw(render_lines(), drawn)
             finally:
                 self._erase(drawn)
         return answer
@@ -630,8 +703,30 @@ class TerminalUI(UI):
                                 question or "Đồng ý?")
         return self.ask(permission)
 
+    def wait_for_user(self) -> bool:
+        """Chờ người dùng đăng nhập xong trong cửa sổ trình duyệt: khung ở chỗ ô nhập khi có chân cố định."""
+        if self.engine is None:
+            return super().wait_for_user()
+        waiting = self._title
+        self.title("Peto · cần bạn")
+        self.bell()
+        try:
+            permission = Permission("login", {}, question="Đăng nhập xong trong cửa sổ trình duyệt chưa?")
+            options = [Option("y", "Xong rồi"), Option("n", "Bỏ qua")]
+            render_lines, handle = self._chooser(permission, options, max(8, self.height - 1))
+            return self.engine.ask(render_lines, handle) == "y"
+        finally:
+            self.title(waiting)
+
+    def clear_status(self) -> None:
+        if self.engine is not None:
+            self.engine.set_status(None)
+            return
+        super().clear_status()
+
     def review_diff(self, title: str, before: str, after: str) -> None:
-        """/diff và /undo: khối diff đầy đủ của một tệp, xem tiếp từng trang bằng v."""
+        """/diff và /undo: khối diff đầy đủ của một tệp, xem tiếp từng trang bằng v. Có chân cố định thì in hết: diff
+        nằm trong lịch sử cuộn, kéo lên xem như mọi chữ khác."""
         theme = self.theme
         panel = theme.panel
         diff = Diff(before, after, path=title.split(" ")[0])
@@ -639,7 +734,7 @@ class TerminalUI(UI):
             Line([S("Nội dung không đổi.", theme.muted, panel)])]
         header = [S("← ", theme.muted, panel), S(visible(title), theme.text, panel, b=True),
                   S(f"  +{diff.added}", theme.diff_added, panel), S(f"  −{diff.removed}", theme.diff_removed, panel)]
-        page = 120
+        page = 2000 if self.engine is not None else 120
         shown = rows[:page]
         self._emit(self._block(header, shown), "block")
         position = len(shown)
@@ -695,8 +790,13 @@ class TerminalUI(UI):
         self._flush_group()
         self.clear_status()
         self.attached = []
+        meta = ["Peto"] + [part.strip() for part in status.removeprefix("◉").split("·") if part.strip()]
+        if self.engine is not None:
+            self.engine.idle(meta, footer)
+            text, images = self.engine.take()
+            self.attached = list(images)
+            return text
         if self.editor is not None:
-            meta = ["Peto"] + [part.strip() for part in status.removeprefix("◉").split("·") if part.strip()]
             if self._last not in {None, "blank"}:
                 self.write("\n")
             try:

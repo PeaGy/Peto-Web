@@ -391,6 +391,9 @@ def session(ui: UI) -> int:
         else:
             ui.line(f"Có hội thoại {history.when(saved.saved_at)} ({saved.message_count} tin) · gõ /resume để mở lại.",
                     "dim")
+    # Chân cố định (giao diện terminal): ô nhập ở đáy suốt phiên, gõ được cả lúc Peto đang làm.
+    if hasattr(ui, "start_footer"):
+        ui.start_footer()
     try:
         while True:
             try:
@@ -515,6 +518,8 @@ def session(ui: UI) -> int:
             ui.line(f"Đã dừng {len(stopped)} lệnh nền: " + ", ".join(stopped), "dim")
         work.tools.close_browser()
         work.tools.mcp.close()
+        if hasattr(ui, "stop_footer"):
+            ui.stop_footer()
     ui.line("Tạm biệt!", "dim")
     return 0
 

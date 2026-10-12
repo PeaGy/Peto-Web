@@ -522,6 +522,16 @@ class WindowsConsole:
         finally:
             self._kernel32.SetConsoleMode(self._handle, original)
 
+    def ensure_raw(self) -> None:
+        """Giữ chế độ phím thô suốt phiên: chương trình con dùng chung console có thể đã đổi lại chế độ."""
+        mode = self._mode()
+        if mode & RAW_MODE_OFF:
+            self._kernel32.SetConsoleMode(self._handle, mode & ~RAW_MODE_OFF)
+
+    def wait(self, timeout_ms: int) -> bool:
+        """Chờ tới khi console có sự kiện (phím, đổi cỡ…) tối đa ``timeout_ms``; True nếu có."""
+        return self._kernel32.WaitForSingleObject(self._handle, timeout_ms) == WAIT_OBJECT_0
+
     def keys(self) -> list[Key]:
         """Chờ tới khi có phím, rồi lấy luôn mọi phím đang chờ; đoạn dán được gom lại."""
         keys = self._read() + self._drain()

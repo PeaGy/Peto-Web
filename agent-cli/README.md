@@ -205,6 +205,13 @@ của VS Code, Peto chừa thêm 2 cột bên phải, vì VS Code che khoảng h
   còn 193/200 bước · ngữ cảnh 12% tới lúc tự tóm tắt · /resume mở hội thoại lúc 14:45 hôm qua
 ```
 
+Từ 0.17.0, ô nhập luôn nằm ở đáy cửa sổ như Claude Code, kể cả lúc Peto đang làm; chữ mới in phía trên ô và vẫn vào
+lịch sử cuộn. Trong lúc Peto làm, ngay trên ô có dòng đang làm (`⠋ Đang nghĩ · 8s`, lệnh đang chạy, việc hiện tại của
+danh sách việc), và bạn gõ được tin tiếp theo: Enter thì tin chờ (`↳ Chờ gửi: …`) và tự gửi khi Peto xong việc đang làm.
+`Esc` hai lần hoặc `Ctrl+C` dừng yêu cầu đang chạy; `Ctrl+C` lúc ô trống và Peto đang rảnh thì thoát `peto`. Câu hỏi
+quyền thay chỗ ô nhập cho tới khi bạn trả lời, chữ đang gõ dở vẫn còn. Cửa sổ hẹp lại có thể để sót một mảnh khung cũ
+phía trên; chữ đã in không bao giờ bị xóa.
+
 Gõ yêu cầu trong ô có thanh `┃` hồng. Trong ô là model và mức suy nghĩ đang dùng; dưới ô là số bước còn lại hôm nay
 (cập nhật sau mỗi bước), hội thoại đã tới đâu so với lúc Peto tự tóm tắt phần cũ (để biết khi nào nên `/compact`) và lời
 nhắc `/resume` khi thư mục có hội thoại cũ. Gửi xong, tin của bạn nằm lại thành một khung nền nhạt. Tên tài khoản xem

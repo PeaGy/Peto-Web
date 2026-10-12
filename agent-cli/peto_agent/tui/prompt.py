@@ -59,8 +59,13 @@ def user_panel(state: EditorState, theme, width: int) -> list[Line]:
 
 
 def frame(state: EditorState, theme, *, width: int, height: int, meta: list[str], footer: str = "",
-          placeholder: str = PLACEHOLDER, colors: bool = True) -> Frame:
-    """Các hàng cần vẽ của ô nhập và chỗ đặt con trỏ."""
+          placeholder: str = PLACEHOLDER, colors: bool = True, footer_line: Line | None = None,
+          above: list[Line] | None = None) -> Frame:
+    """Các hàng cần vẽ của ô nhập và chỗ đặt con trỏ.
+
+    ``footer_line`` thay dòng chân bằng chữ ``footer`` (lúc Peto đang làm: thanh chạy, "esc dừng"); ``above`` là các
+    hàng đặt trên ô (dòng trạng thái, tin đang chờ gửi), bị bỏ trước khi màn hình thấp quá.
+    """
     # Không bao giờ viết vào cột cuối, để khỏi phụ thuộc cách từng terminal tự xuống dòng.
     usable = max(width, 16) - 1
     panel_width = usable - PAD
@@ -103,10 +108,17 @@ def frame(state: EditorState, theme, *, width: int, height: int, meta: list[str]
         color = theme.primary if index == 0 else theme.warning if index == len(meta) - 1 and index > 1 else theme.text
         meta_spans.append(S(part, color, bg, b=index == 0 or (index == len(meta) - 1 and index > 1)))
     cap = Line([S(" " * PAD), S("╹", theme.primary), S("▀" * (panel_width - 1), bg)])
-    footer_line = Line([S(" " * PAD), S(clip(clean(footer), panel_width), theme.muted)]) if footer else None
+    if footer_line is not None:
+        footer_line = Line([S(" " * PAD)]) + fit(footer_line, panel_width)
+    elif footer:
+        footer_line = Line([S(" " * PAD), S(clip(clean(footer), panel_width), theme.muted)])
 
     # Màn hình thấp: bỏ dần đệm trên, dòng chân, hàng trống và hàng thông tin; hàng chữ và mép dưới luôn còn.
     budget = max(1, height - 1)
+    above = list(above or [])
+    while above and budget - len(above) < 4:
+        above.pop(0)
+    budget -= len(above)
     parts = {"top": True, "blank": True, "meta": bool(meta), "footer": footer_line is not None}
     for drop in ("top", "footer", "blank", "meta"):
         if sum(parts.values()) + 2 <= budget:
@@ -123,7 +135,7 @@ def frame(state: EditorState, theme, *, width: int, height: int, meta: list[str]
         top = min(max(0, cursor_row - available + 1), len(rows) - available)
     visible = rows[top:top + available]
 
-    lines = list(popup)
+    lines = [Line([S(" " * PAD)]) + fit(line, panel_width) for line in above] + list(popup)
     if parts["top"]:
         lines.append(row([]))
     first_text = len(lines)
