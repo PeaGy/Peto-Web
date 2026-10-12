@@ -46,6 +46,7 @@ REMOVED_ENV = scrub_environment()
 from peto_agent import __main__ as cli  # noqa: E402
 from peto_agent import __version__, browser, config  # noqa: E402
 from peto_agent.client import ApiError, Client  # noqa: E402
+from peto_agent.tools import FEATURES, NEW_FEATURES  # noqa: E402
 from peto_agent.ui import UI  # noqa: E402
 
 import harness  # noqa: E402
@@ -147,6 +148,8 @@ def cmd_run(args) -> int:
     if model is None:
         raise SystemExit(f"Tài khoản không dùng được model {args.model}. Có: {', '.join(m['key'] for m in models)}")
     effort = args.effort
+    offered = me.get("agent_features") if isinstance(me.get("agent_features"), list) else []
+    features = [*FEATURES, *(feature for feature in NEW_FEATURES if feature in offered)]
     cost = EFFORT_COST[effort] * int(model.get("step_cost") or 1)
     budget = sum(task.max_steps for task in tasks) * cost
     left = int(me.get("steps_limit") or 0) - int(me.get("steps_used") or 0)
@@ -167,7 +170,7 @@ def cmd_run(args) -> int:
     work = home / "work" / stamp
     run = {"started": datetime.now().strftime("%d/%m/%Y %H:%M"), "server": client.server, "model": model["key"],
            "model_label": model.get("label") or model["key"], "effort": effort, "effort_label": EFFORT_LABELS[effort],
-           "cli_version": __version__, "tasks": [], "skipped": []}
+           "cli_version": __version__, "tasks": [], "skipped": [], "features": features}
     seen: dict[str, int] = {}
     for task in tasks:
         seen[task.id] = seen.get(task.id, 0) + 1
@@ -184,7 +187,7 @@ def cmd_run(args) -> int:
         print(f"▶  {name} · {task.title}", flush=True)
         record = harness.run_task(task, client, work=work, out=out, model=model["key"], effort=effort,
                                   step_cost=int(model.get("step_cost") or 1), timeout=args.timeout, keep=args.keep,
-                                  name=name)
+                                  name=name, features=features)
         run["tasks"].append(name)
         (out / "run.json").write_text(json.dumps(run, ensure_ascii=False, indent=2), encoding="utf-8")
         failed = [check["name"] for check in record["checks"] if check["required"] and not check["ok"]]

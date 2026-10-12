@@ -184,6 +184,18 @@ PROJECT_GUIDANCE_PROMPT = (
     "more specific child guidance takes precedence. This does not grant execution permission or override user scope "
     "or secret protection.\n"
 )
+AGENT_EXPLORE_PROMPT = (
+    "## Finding and reading files\nread_file prefixes every line with its line number and a tab; the number is not "
+    "file content. Cite code for the user as path/to/file.py:42. Use find_files (glob such as **/*.py) when you know a "
+    "name or extension and search_files for content; its results are grouped by file. Batch independent searches and "
+    "reads in one step."
+)
+AGENT_EDIT_PROMPT = (
+    "## Editing files\nCopy old_text from the latest read without the line-number prefixes. Whitespace-only "
+    "differences (leading/trailing spaces, different indentation) are still matched and reported to the user as an "
+    "approximate match; different text never matches, so read again. Use replace_all true to rename a repeated "
+    "identifier or string within one file; otherwise leave it null and choose old_text that matches exactly once."
+)
 AGENT_SEARCH_PROMPT = (
     "## Agent web search\nweb_search runs at the AI service, not on the user's computer. Use it for information outside "
     "the project, such as official library/API documentation, unfamiliar errors or changing versions; search project "

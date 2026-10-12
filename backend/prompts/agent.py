@@ -59,6 +59,24 @@ AGENT_PROMPT = "\n".join([
 ])
 
 
+# Khả năng "explore_v2" và "edit_v2" (CLI 0.18.0, theo OpenCode): chỉ thêm khi CLI khai báo.
+AGENT_EXPLORE_PROMPT = "\n".join([
+    "## Tìm và đọc tệp",
+    "- read_file trả mỗi dòng kèm số dòng và một ký tự tab ở đầu; số đó không thuộc tệp. Dẫn code cho người dùng bằng "
+    "đường/dẫn.py:42.",
+    "- Biết tên hay đuôi tệp thì dùng find_files (mẫu glob như **/*.py); tìm theo nội dung thì search_files, kết quả "
+    "đã gộp theo tệp. Gọi các lần tìm, đọc độc lập trong cùng một bước.",
+])
+
+AGENT_EDIT_PROMPT = "\n".join([
+    "## Sửa tệp",
+    "- old_text chép từ lần đọc gần nhất, bỏ phần số dòng ở đầu. Nếu chỉ lệch khoảng trắng đầu, cuối dòng hay thụt lề, "
+    "CLI vẫn tìm được và báo người dùng là khớp gần đúng; khác chữ thì không khớp, đọc lại rồi sửa.",
+    "- Đổi tên một biến hay chuỗi lặp lại trong một tệp thì đặt replace_all là true thay vì sửa từng chỗ; bình thường "
+    "để null và chọn old_text đủ dài để chỉ khớp một chỗ.",
+])
+
+
 AGENT_SEARCH_PROMPT = "\n".join([
     "## Tìm web trong Peto Agent",
     "Công cụ web_search chạy ở phía dịch vụ AI, không đụng tới máy người dùng và không thay cho việc đọc code.",

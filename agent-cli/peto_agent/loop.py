@@ -19,7 +19,7 @@ from .client import ApiError, Client
 from .config import log_dir
 from .presentation import AgentUI
 from .runner import cap_text
-from .tools import FEATURES, Tools
+from .tools import Tools
 from .workspace import Workspace, WorkspaceError
 
 MAX_STEPS_PER_TASK = 40
@@ -543,7 +543,7 @@ class Session:
     def _step(self) -> list[dict] | None:
         body = {"input": efficient_input(self.items), "effort": self.effort, "model": self.model, "context": {
             "project": self.ws.root.name, "os": f"{platform.system()} {platform.release()}".strip(),
-            "project_guidance": guides(self.ws), "features": list(FEATURES),
+            "project_guidance": guides(self.ws), "features": list(self.tools.features),
             "skills": self.tools.skills.catalog(), "mcp_servers": self.tools.mcp.catalog()}}
         writer = self.ui.reply()
         started = time.monotonic()

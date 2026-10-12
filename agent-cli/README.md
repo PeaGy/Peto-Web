@@ -529,6 +529,15 @@ tệp hội thoại cho `/resume` thì mỗi dự án chỉ giữ lần gần nh
 Mặc định `read_file` đọc 160 dòng; chỉ định khoảng thì tối đa 400 dòng. Kết quả cho biết dòng tiếp theo khi còn nội
 dung. Peto được hướng dẫn tìm từ khóa trước rồi đọc đúng khoảng cần thiết; mỗi lần đọc vẫn kiểm tra nội dung trên đĩa.
 
+Từ 0.18.0 (khi máy chủ đã cập nhật), công cụ làm việc theo OpenCode:
+- `read_file` và tệp đính kèm bằng `@` có số dòng ở đầu mỗi dòng, nên Peto dẫn chỗ code kiểu `app.py:42`.
+- `search_files` gộp kết quả theo tệp, tệp sửa gần nhất trước. `find_files` tìm tệp theo tên bằng mẫu như `**/*.py`.
+- `edit_file` khớp gần đúng có kiểm soát (chủ web duyệt ngày 2026-10-12). Khi đoạn cũ Peto gửi chỉ lệch khoảng trắng,
+  thụt lề, hoặc lỡ chép cả số dòng, CLI vẫn tìm được, nhưng vẫn phải đúng một chỗ, và khung duyệt ghi rõ "khớp gần
+  đúng: …". Khác chữ thì không bao giờ khớp. `replace_all` thay mọi chỗ khớp nguyên văn, dùng khi đổi tên.
+- Peto gọi y hệt một công cụ ba lần liền mà không có tệp nào đổi thì CLI hỏi bạn có cho gọi tiếp không. Từ chối thì
+  Peto phải đổi cách làm. Chờ lệnh nền và xem trang không tính.
+
 Trước khi gửi, CLI thay các kết quả đọc trùng hoàn toàn (nội dung, khoảng dòng và hướng dẫn giống nhau) bằng tham
 chiếu tới bản mới hơn vẫn có đầy đủ trong cùng ngữ cảnh. Bản khác nội dung hoặc phạm vi không bị gộp. Output lệnh
 cũ hơn 6 kết quả công cụ gần nhất được thu gọn còn khoảng 4.000 ký tự đầu/cuối; mã thoát, lỗi và phân loại vẫn giữ.

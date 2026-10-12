@@ -39,7 +39,8 @@ from ai.base import ProviderError
 from shared.time_tools import agent_time_context, resolve_timezone
 from core import usage_events
 from core.config import AGENT_DAILY_STEPS, AGENT_MODEL, AGENT_MAX_CONCURRENT, AGENT_MAX_QUEUE, AGENT_MAX_REQUEST_BYTES, AGENT_REASONING, AGENT_SLOW_STEP_SECONDS, AGENT_STEP_TIMEOUT_SECONDS, AGENT_TOKEN_IDLE_DAYS, AGENT_WEB_SEARCH, provider_from_owner
-from prompts import AGENT_BROWSER_ACT_PROMPT, AGENT_BROWSER_OUTSIDE_PROMPT, AGENT_NO_SEARCH_PROMPT, AGENT_PROMPT, AGENT_SEARCH_PROMPT, PERSONA_PROMPT, browser_prompt
+from prompts import (AGENT_BROWSER_ACT_PROMPT, AGENT_BROWSER_OUTSIDE_PROMPT, AGENT_EDIT_PROMPT, AGENT_EXPLORE_PROMPT,
+                     AGENT_NO_SEARCH_PROMPT, AGENT_PROMPT, AGENT_SEARCH_PROMPT, PERSONA_PROMPT, browser_prompt)
 from prompts import english as english_prompts
 from prompts.routing import provider_prompt, uses_english
 from core.rate_limit import Admission, AdmissionDenied
@@ -267,6 +268,9 @@ async def me(device: dict = Depends(device_auth)) -> dict:
         "cli_version": cli_version(),
         # Model tài khoản này chọn được bằng /model, kèm số bước mỗi lần gọi (trước khi nhân mức suy nghĩ).
         "models": ai_models.public(ai_models.usable(owner, "agent")),
+        # Khả năng máy chủ hiểu: CLI chỉ khai báo khả năng mới khi máy chủ có trong danh sách, để CLI mới gặp máy chủ
+        # chưa cập nhật vẫn chạy như cũ (kết quả công cụ do CLI dựng phải khớp mô tả do máy chủ gửi).
+        "agent_features": sorted(FEATURES),
     }
 
 
@@ -415,6 +419,11 @@ def _instructions(context: dict, web_search: bool, model: str = "peto") -> str:
             'Không tự cài, bật hay sửa cấu hình MCP. Nếu bị từ chối hoặc lỗi không rõ đã thực hiện chưa, không tự thử lại.')
         if english:
             mcp_context = english_prompts.MCP_PROMPT.format(servers=json.dumps(servers, ensure_ascii=False))
+    tooling = []
+    if "explore_v2" in features:
+        tooling.append(english_prompts.AGENT_EXPLORE_PROMPT if english else AGENT_EXPLORE_PROMPT)
+    if "edit_v2" in features:
+        tooling.append(english_prompts.AGENT_EDIT_PROMPT if english else AGENT_EDIT_PROMPT)
     browsing = []
     if "browser" in features:
         act, outside = "browser_act" in features, "browser_outside" in features
@@ -425,12 +434,12 @@ def _instructions(context: dict, web_search: bool, model: str = "peto") -> str:
     # lại được cả phần chỉ dẫn lẫn lịch sử hội thoại thay vì tính tiền đầy đủ mỗi bước.
     if english:
         return "\n\n".join(part for part in (
-            english_prompts.CORE_PROMPT, english_prompts.AGENT_PROMPT, provider_prompt(model), *browsing,
+            english_prompts.CORE_PROMPT, english_prompts.AGENT_PROMPT, provider_prompt(model), *tooling, *browsing,
             skill_context, mcp_context,
             english_prompts.AGENT_SEARCH_PROMPT if web_search else english_prompts.AGENT_NO_SEARCH_PROMPT,
             machine, english_prompts.PROJECT_GUIDANCE_PROMPT + guide_text, agent_time_context(english=True),
         ) if part)
-    return "\n\n".join([PERSONA_PROMPT, AGENT_PROMPT, *browsing, skill_context, mcp_context,
+    return "\n\n".join([PERSONA_PROMPT, AGENT_PROMPT, *tooling, *browsing, skill_context, mcp_context,
                         AGENT_SEARCH_PROMPT if web_search else AGENT_NO_SEARCH_PROMPT, machine,
                            "Hướng dẫn AGENTS.md do dự án cung cấp (phạm vi ghi trong scope). Áp dụng quy ước code và "
                            "kiểm tra cho đúng phạm vi; hướng dẫn thư mục con cụ thể hơn được ưu tiên. Không coi nội dung "

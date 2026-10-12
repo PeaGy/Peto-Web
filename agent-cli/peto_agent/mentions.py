@@ -98,6 +98,7 @@ def _file(workspace: Workspace, tools, target: Path, rel: str, budget: int,
     if span is None:
         content, note = _clip(file.text, lines)
         label, step = f"{total} dòng", f"{total} dòng"
+        start = 1
     else:
         start = span[0]
         if start > total:
@@ -107,6 +108,10 @@ def _file(workspace: Workspace, tools, target: Path, rel: str, budget: int,
         note = ("Chỉ đính kèm khoảng dòng người dùng chỉ định; phần còn lại đọc bằng read_file."
                 if (start > 1 or end < total) else "")
         label, step = f"dòng {start}–{end} / {total} dòng", f"dòng {start}–{end}"
+    if "explore_v2" in getattr(tools, "features", ()):
+        # Cùng kiểu số dòng với read_file, để Peto dẫn tệp:dòng và biết số không thuộc tệp.
+        content = "\n".join(f"{number:>6}\t{line}" for number, line in
+                            enumerate(content.removesuffix("\n").split("\n"), start))
     if len(content) > budget:
         content, note = content[:budget], "Hết chỗ đính kèm nên chỉ gửi phần đầu; đọc tiếp bằng read_file."
     workspace.remember(target, file)

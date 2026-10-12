@@ -28,7 +28,7 @@ from .theme import load as load_theme
 
 PAD = 2
 # Đọc, liệt kê, tìm liền nhau thì gộp thành một dòng "Đã xem" như OpenCode.
-EXPLORE = {"read_file", "list_files", "search_files"}
+EXPLORE = {"read_file", "list_files", "search_files", "find_files"}
 # Số hàng diff tối đa trong khối sửa tệp; cả diff đã hiện ở khung duyệt, và /diff xem đủ.
 BLOCK_DIFF_ROWS = 40
 OUTPUT_TAIL = 10
@@ -241,7 +241,8 @@ class TerminalUI(UI):
             return
         args = call.args
         what = {"read_file": f"Đang đọc {args.get('path', '')}", "list_files": f"Đang xem thư mục {args.get('path', '.')}",
-                "search_files": f'Đang tìm "{args.get("pattern", "")}"'}[call.name]
+                "search_files": f'Đang tìm "{args.get("pattern", "")}"',
+                "find_files": f'Đang tìm tệp "{args.get("pattern", "")}"'}[call.name]
         self.status("… " + what)
 
     def tool_progress(self, call_id: str, seconds: float, output: str) -> None:
@@ -268,8 +269,11 @@ class TerminalUI(UI):
         if name == "list_files":
             path = result["path"]
             return "list", ("./" if path == "." else path.rstrip("/") + "/")
-        count = len(result.get("matches") or [])
         where = meta.get("base", ".")
+        if name == "find_files":
+            return "find", (f'"{args.get("pattern", "")}" {result.get("total", 0)} tệp'
+                            + (f" trong {where}" if where != "." else ""))
+        count = result.get("total", len(result.get("matches") or []))
         return "search", (f'"{args.get("pattern", "")}" {count}{"+" if result.get("truncated") else ""} kết quả'
                           + (f" trong {where}" if where != "." else ""))
 
@@ -280,13 +284,14 @@ class TerminalUI(UI):
         theme = self.theme
         if len(group) == 1:
             kind, label = group[0]
-            verb = {"read": "Đọc ", "list": "Xem thư mục ", "search": "Tìm "}[kind]
-            icon = theme.glyphs["search"] if kind == "search" else "→"
+            verb = {"read": "Đọc ", "list": "Xem thư mục ", "search": "Tìm ", "find": "Tìm tệp "}[kind]
+            icon = theme.glyphs["search"] if kind in {"search", "find"} else "→"
             lines = self._row(icon, [S(verb, theme.muted), S(visible(label), theme.dim_text)])
         else:
-            counts = {kind: sum(1 for item, _ in group if item == kind) for kind in ("read", "list", "search")}
-            names = {"read": "lần đọc", "list": "thư mục", "search": "lần tìm"}
-            summary = ", ".join(f"{counts[kind]} {names[kind]}" for kind in ("read", "list", "search") if counts[kind])
+            kinds = ("read", "list", "search", "find")
+            counts = {kind: sum(1 for item, _ in group if item == kind) for kind in kinds}
+            names = {"read": "lần đọc", "list": "thư mục", "search": "lần tìm", "find": "lần tìm tệp"}
+            summary = ", ".join(f"{counts[kind]} {names[kind]}" for kind in kinds if counts[kind])
             lines = self._row("→", [S("Đã xem: ", theme.muted), S(summary, theme.muted)])
             labels = [label for _, label in group]
             rows = wrap([S(visible(" · ".join(labels)), theme.dim_text)], self.content_width - 5)
@@ -406,6 +411,10 @@ class TerminalUI(UI):
             header.append(S(f"  +{result['added_lines']}", theme.diff_added, panel))
         if result.get("removed_lines"):
             header.append(S(f"  −{result['removed_lines']}", theme.diff_removed, panel))
+        if (result.get("replacements") or 1) > 1:
+            header.append(S(f"  · {result['replacements']} chỗ", theme.muted, panel))
+        if result.get("match"):
+            header.append(S(f"  · khớp gần đúng: {result['match']}", theme.warning, panel))
         body: list[Line] = []
         if name != "delete_file" and not self._static_diff and self._preview and self._preview[0] == "file":
             preview = self._preview[1]
@@ -463,6 +472,8 @@ class TerminalUI(UI):
             return [Option("y", "Cho phép"), Option("n", "Từ chối")]
         if kind == "undo":
             return [Option("y", "Hoàn tác"), Option("n", "Thôi")]
+        if kind == "loop":
+            return [Option("y", "Cho gọi tiếp"), Option("n", "Dừng lại")]
         if kind == "site" and body.get("unusual"):
             return [Option("y", "Mở đúng địa chỉ này"), Option("a", "Mọi bước trong yêu cầu"), Option("n", "Từ chối")]
         first = {"page": "Trang này tới hết yêu cầu", "site": f"{body.get('site', '')} tới hết yêu cầu"}.get(kind,
@@ -491,6 +502,8 @@ class TerminalUI(UI):
                 header.append(S(f"  +{diff.added}", theme.diff_added))
             if diff.removed:
                 header.append(S(f"  −{diff.removed}", theme.diff_removed))
+            if body.get("match"):
+                header.append(S(f"  · khớp gần đúng: {body['match']}", theme.warning))
             rows = diff.rows(theme, width) if not diff.empty else [Line([S("Nội dung không đổi.", theme.muted)])]
             return header, rows
         if kind == "move":
@@ -534,6 +547,12 @@ class TerminalUI(UI):
                     [Line(row) for row in wrap([S(visible(text), theme.muted)], width, hard=True)]
                     + [Line(row) for row in wrap([S("MCP cục bộ chạy với quyền tài khoản máy; không nằm trong giới hạn "
                                                     "công cụ tệp của Peto.", theme.warning)], width)])
+        if kind == "loop":
+            text = json.dumps(body.get("arguments", {}), ensure_ascii=False)
+            return ([S("⟳ ", theme.warning), S("Peto gọi lặp lại", theme.text, b=True)],
+                    [Line(row) for row in wrap([S(f"{body['name']} y hệt {body['count']} lần liền mà không có tệp nào "
+                                                  "đổi. Dừng lại thì Peto phải đổi cách làm.", theme.text)], width)]
+                    + [Line(row) for row in wrap([S(visible(clip(text, 400)), theme.muted)], width, hard=True)])
         if kind == "undo":
             files = body.get("files") or []
             return ([S("↶ ", theme.muted), S(f"Hoàn tác {len(files)} tệp", theme.text, b=True)],

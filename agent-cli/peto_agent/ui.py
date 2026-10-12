@@ -614,6 +614,10 @@ class UI:
             self.page_permission(body["origin"], body["action"])
         elif permission.kind == "site":
             self.site_permission(body["url"], body["site"], body.get("unusual", False))
+        elif permission.kind == "loop":
+            self.line()
+            self._wrapped("  ⟳ ", f"Peto gọi {body['name']} y hệt {body['count']} lần liền mà không có tệp nào đổi.",
+                          "yellow")
         return self.ask_permission(allow_session=permission.allow_session, allow_always=permission.allow_always,
                                    session_label=permission.session_label, question=permission.question)
 
@@ -667,6 +671,8 @@ class UI:
                       else f"Đọc {rel} (tệp trống)")
         elif name == "search_files":
             self.step(f'Tìm "{args.get("pattern", "")}" trong {meta.get("base", ".")}')
+        elif name == "find_files":
+            self.step(f'Tìm tệp "{args.get("pattern", "")}" trong {meta.get("base", ".")}: {result.get("total", 0)} tệp')
         elif name == "edit_file":
             self.success(f"Đã sửa {result['path']} (+{result['added_lines']} −{result['removed_lines']})")
         elif name == "write_file":

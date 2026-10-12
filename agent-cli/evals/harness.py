@@ -33,7 +33,7 @@ from policy import Policy, PolicyUI
 TASKS_DIR = Path(__file__).with_name("tasks")
 REPO = Path(__file__).resolve().parents[2]
 FILE_TOOLS = {"edit_file", "write_file", "delete_file", "move_file"}
-LOOK_TOOLS = {"list_files", "read_file", "search_files", "browser_read"}
+LOOK_TOOLS = {"list_files", "read_file", "search_files", "find_files", "browser_read"}
 MAX_PATCH_CHARS = 300_000
 MAX_RESULT_PREVIEW = 1500
 GENERATED = ("__pycache__/", "*.pyc", ".pytest_cache/", "bin/", "obj/", "node_modules/", "*.egg-info/")
@@ -251,7 +251,7 @@ def score(task: Task, ctx: Context) -> list[Check]:
 
 
 def run_task(task: Task, client: Client, *, work: Path, out: Path, model: str, effort: str, step_cost: int,
-             timeout: int, keep: bool = False, name: str | None = None) -> dict:
+             timeout: int, keep: bool = False, name: str | None = None, features: list[str] | None = None) -> dict:
     """Cho Peto làm một bài; trả bản ghi kết quả (cũng lưu vào ``out``/<name>/, name mặc định là mã bài; chạy một bài
     nhiều lần trong một lượt thì mỗi lần một name)."""
     name = name or task.id
@@ -261,6 +261,9 @@ def run_task(task: Task, client: Client, *, work: Path, out: Path, model: str, e
     ui = PolicyUI(Policy(root, sites=task.sites, allow=task.allow, deny=task.deny))
     log = TaskLog(task.project)
     session = Session(client, Workspace(root), ui, log=log, effort=effort, model=model, model_step_cost=step_cost)
+    if features:
+        # Như phiên thật: khả năng mới chỉ bật khi máy chủ có trong /me.
+        session.tools.features = list(features)
     recorder = Recorder(session)
     before = _steps_used(client)
     shots_before = set(config.screenshots_dir().glob("*")) if config.screenshots_dir().is_dir() else set()

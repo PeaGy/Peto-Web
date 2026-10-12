@@ -14,7 +14,9 @@ from __future__ import annotations
 # "browser": ba công cụ xem trang chạy trên máy bằng trình duyệt ẩn (CLI 0.10.0). "browser_act": bấm, gõ, nhấn phím và
 # nhờ người dùng đăng nhập trên trang đang xem (CLI 0.11.0); "browser_outside": browser_open nhận cả trang ngoài máy,
 # chỉ xem (CLI 0.12.0). Hai khả năng sau chỉ có tác dụng cùng "browser".
-FEATURES = frozenset({"cwd", "browser", "browser_act", "browser_outside", "skills", "mcp"})
+# "explore_v2" (CLI 0.18.0, theo OpenCode): read_file đánh số dòng, search_files gộp theo tệp, thêm find_files.
+# "edit_v2" (CLI 0.18.0, chủ web duyệt ngày 2026-10-12): edit_file khớp gần đúng có kiểm soát và replace_all.
+FEATURES = frozenset({"cwd", "browser", "browser_act", "browser_outside", "skills", "mcp", "explore_v2", "edit_v2"})
 
 _PATH = {"type": "string", "description": "Đường dẫn tương đối tính từ gốc dự án, ví dụ src/app.py; '.' là gốc."}
 _SHELL = {
@@ -138,6 +140,51 @@ _FILE_TOOLS = [
         },
     ),
 ]
+
+
+# Bản mới của ba công cụ tệp (GĐ 4 theo OpenCode), thay đúng chỗ bản cũ trong danh sách khi CLI khai báo khả năng.
+_READ_V2 = _tool(
+    "read_file",
+    "Đọc một tệp chữ trong dự án, có thể theo khoảng dòng. Mỗi dòng trong content bắt đầu bằng số dòng rồi một ký tự "
+    "tab (như cat -n): số đó không thuộc tệp, đừng chép vào old_text. Kèm tổng số dòng của tệp.",
+    _FILE_TOOLS[1]["parameters"]["properties"],
+)
+_SEARCH_V2 = _tool(
+    "search_files",
+    "Tìm biểu thức chính quy (cú pháp Python re) trong các tệp chữ của dự án, bỏ qua thư mục nặng và những gì "
+    ".gitignore bỏ qua. Kết quả gộp theo tệp, tệp sửa gần nhất trước; mỗi chỗ khớp có số dòng và nội dung dòng. "
+    "Tối đa 100 chỗ khớp. Tìm tệp theo tên thì dùng find_files.",
+    _FILE_TOOLS[2]["parameters"]["properties"],
+)
+_EDIT_V2 = _tool(
+    "edit_file",
+    "Sửa một tệp bằng cách thay một đoạn. Người dùng xem diff và phải đồng ý; tệp phải chưa bị đổi kể từ lần đọc gần "
+    "nhất. old_text chép từ lần đọc đó, không kèm số dòng. Khớp nguyên văn trước; không khớp thì CLI thử khớp gần "
+    "đúng (bỏ qua khoảng trắng đầu và cuối dòng, thụt lề khác) và ghi rõ cho người dùng. Đoạn phải chỉ khớp một chỗ, "
+    "trừ khi replace_all là true.",
+    {
+        **_FILE_TOOLS[3]["parameters"]["properties"],
+        "replace_all": {"type": ["boolean", "null"],
+                        "description": "true thay mọi chỗ khớp nguyên văn với old_text; null hoặc false chỉ một chỗ."},
+    },
+)
+_FIND = _tool(
+    "find_files",
+    "Tìm tệp theo tên bằng mẫu glob, ví dụ **/*.py, src/**/test_*.ts hay *.json; bỏ qua thư mục nặng và những gì "
+    ".gitignore bỏ qua. Trả tối đa 100 đường dẫn, tệp sửa gần nhất trước. Tìm theo nội dung thì dùng search_files.",
+    {
+        "pattern": {"type": "string", "description": "Mẫu glob: * khớp trong một tên, ** khớp qua nhiều thư mục, ? "
+                                                     "một ký tự."},
+        "path": {"type": ["string", "null"], "description": "Thư mục để tìm. null là cả dự án."},
+    },
+)
+
+
+def _file_tools(key: frozenset[str]) -> list[dict]:
+    explore, edit = "explore_v2" in key, "edit_v2" in key
+    replaced = {"read_file": _READ_V2 if explore else None, "search_files": _SEARCH_V2 if explore else None,
+                "edit_file": _EDIT_V2 if edit else None}
+    return [replaced.get(tool["name"]) or tool for tool in _FILE_TOOLS]
 
 
 def _command_tools(cwd: bool) -> list[dict]:
@@ -332,5 +379,7 @@ def tool_schemas(features: frozenset[str] = frozenset()) -> list[dict]:
             _tool('mcp_call_tool', 'Gọi công cụ MCP đã xem schema. CLI hỏi người dùng mỗi lần. Không gửi bí mật trong tham số.',
                   {'server': {'type': 'string'}, 'tool': {'type': 'string'}, 'arguments_json': {'type': 'string'}})
         ] if 'mcp' in key else []
-        _SCHEMAS[key] = _FILE_TOOLS + _command_tools(cwd="cwd" in key) + browsing + skills + mcp
+        # Công cụ mới đứng cuối danh sách, để phần đầu giống hệt bản cũ và prompt cache vẫn dùng lại được.
+        _SCHEMAS[key] = (_file_tools(key) + _command_tools(cwd="cwd" in key) + browsing + skills + mcp
+                         + ([_FIND] if "explore_v2" in key else []))
     return _SCHEMAS[key]

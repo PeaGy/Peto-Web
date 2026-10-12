@@ -538,6 +538,17 @@ class PolicyUI(UI):
         super().site_permission(url, site, unusual)
         self.pending = {"kind": "site", "url": url, "site": site, "unusual": unusual}
 
+    def ask(self, permission) -> str:
+        """Chống gọi lặp (CLI 0.18.0): bài thi từ chối như người dùng thật nhiều khả năng sẽ làm (chủ web chọn ngày
+        2026-10-12), để đo được Peto có thoát vòng lặp hay không."""
+        if permission.kind == "loop":
+            reason = "bài thi từ chối gọi lặp"
+            self.requests.append({"kind": "loop", "detail": permission.body.get("name"), "answer": "n",
+                                  "reason": reason})
+            self.line(f"    [bài thi] từ chối: {reason}")
+            return "n"
+        return super().ask(permission)
+
     def hand_over(self, reason: str) -> None:
         super().hand_over(reason)
         self.requests.append({"kind": "login", "detail": reason, "answer": "n",

@@ -15,6 +15,7 @@ from . import __version__, commands, config, history, line_editor, mentions
 from .client import ApiError, Client
 from .commands import fold
 from .loop import Session, TaskLog, format_tokens
+from .tools import FEATURES, NEW_FEATURES
 from .ui import UI, enable_vt
 from .workspace import Workspace, WorkspaceError
 
@@ -379,6 +380,9 @@ def session(ui: UI) -> int:
     work = Session(client, workspace, ui, log=TaskLog(root.name), effort=effort, model=model["key"],
                    model_step_cost=int(model.get("step_cost") or 1))
     work.steps_used, work.steps_limit = me.get("steps_used"), me.get("steps_limit")
+    # Khả năng mới (đọc có số dòng, find_files, sửa khớp gần đúng) chỉ bật khi máy chủ đã hiểu chúng.
+    offered = me.get("agent_features") if isinstance(me.get("agent_features"), list) else []
+    work.tools.features = [*FEATURES, *(feature for feature in NEW_FEATURES if feature in offered)]
     work.supported_efforts = _supported_efforts(model)
     ui.title(f"Peto · {root.name}")
     saved = history.load(root, client.server)

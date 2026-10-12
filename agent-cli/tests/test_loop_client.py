@@ -1176,3 +1176,27 @@ def test_long_addresses_refusals_and_the_home_network(project, peto, monkeypatch
     work.run_task("Mở router")
     assert "192.168.1.1 là địa chỉ trên máy hay trong mạng nhà" in ui.text
     assert ui.text.count("▶ Muốn mở trang ngoài") == 3, "mạng nhà bị từ chối ngay, không hỏi"
+
+
+@pytest.mark.parametrize("offered,expected", [
+    (None, ["cwd", "browser", "browser_act", "browser_outside", "skills", "mcp"]),
+    (["edit_v2", "explore_v2", "mcp", "skills"], ["cwd", "browser", "browser_act", "browser_outside", "skills", "mcp",
+                                                  "explore_v2", "edit_v2"]),
+])
+def test_new_tool_features_are_declared_only_when_the_server_offers_them(project, peto, monkeypatch, offered, expected):
+    """CLI 0.18.0 gặp máy chủ chưa cập nhật thì vẫn khai báo đúng bộ khả năng cũ, để mô tả công cụ khớp kết quả."""
+    me = {"account": "Bình", "device_name": "MAY-THU", "steps_used": 1, "steps_limit": 200, "default_effort": "low",
+          **({"agent_features": offered} if offered is not None else {})}
+
+    def reply(path, body):
+        if path == "/api/agent/me":
+            return 200, me
+        return 200, [{"type": "meta", "steps_used": 2, "steps_limit": 200},
+                     {"type": "done", "output": [message("Chào bạn.")]}]
+
+    peto.reply = reply
+    config.save({"server": peto.url, "token": "peto_token_thu"})
+    monkeypatch.chdir(project)
+    assert cli.session(FakeUI(["xin chào", "/thoat"])) == 0
+    step = next(request for request in peto.requests if request["path"] == "/api/agent/step")
+    assert step["body"]["context"]["features"] == expected

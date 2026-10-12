@@ -2434,7 +2434,9 @@ results in the next step. The server stores no conversation (`store=False`), and
   - Resolved paths, following symlinks and junctions, must stay under the folder it was opened in, which cannot be a
     drive root or the home directory.
   - `.env*`, keys and `.git` are never read or written.
-  - An edit needs a prior `read_file`, an exact unique match and an unchanged file, and keeps CRLF/BOM.
+  - An edit needs a prior `read_file`, a unique match and an unchanged file, and keeps CRLF/BOM. Since 0.18.0, with
+    the server's `edit_v2`, the match may be approximate under strict rules the owner approved on 2026-10-12; see the
+    0.18.0 bullet under "Redesign after OpenCode".
   - Every edit, write, delete, rename and command asks `[y/n/a]`, where `a` lasts for the current request only.
     Commands (`run_command` and `start_command`, through `Tools._approve_command`) also offer `s` (this exact command,
     folder, timeout and shell, for the session) and `l` (this exact command, folder and shell, always, in this project).
@@ -2567,6 +2569,37 @@ results in the next step. The server stores no conversation (`store=False`), and
     - A scratch ConPTY driver ran real `python -m peto_agent` against a fake local server with scripted keys, replayed
       in xterm.js. It covered typing while busy, the queued message auto-sending, arrow-key approval, Esc Esc and
       Ctrl+C stopping a request without exiting, Ctrl+C exiting from idle, and resizing 100→70→50→90→100 columns.
+
+  **0.18.0 (done 2026-10-12): tool behaviour like OpenCode.** It needs the backend deployed. Old CLIs keep
+  byte-identical schemas.
+  - **Handshake.** `/api/agent/me` returns `agent_features`. The CLI (`__main__`, and `evals/run.py`) declares
+    `NEW_FEATURES` only when they are listed there. Results are built by the CLI while descriptions come from the
+    server, so a new CLI on an old server stays on the old behaviour.
+  - **Schema pins.** `backend/tests/test_agent_tool_features.py` pins the sha256 of every shipped feature set. New
+    variants replace tools in place, and `find_files` is appended last to keep the prefix cache.
+  - **`explore_v2`.**
+    - `read_file` content is `cat -n` style (`f"{n:>6}\t"`), and so are `@` mentions.
+    - `search_files` returns `{files: [{path, matches: [{line, text}]}], total, truncated}`, newest file first.
+    - The new `find_files(pattern, path)` uses its own glob translation (`tools.glob_regex`: `**`, `*`, `?`, `[!x]`,
+      case-insensitive). It goes through `iter_files`, so it honours ignores, and returns at most 100 results, newest
+      first.
+    - Prompts: `AGENT_EXPLORE_PROMPT` in Vietnamese and English.
+  - **`edit_v2`** (owner-approved).
+    - `edit_file` gains `replace_all`. `edit_match.find` tries, in order: exact, then stripping line-number prefixes,
+      then line-trimmed, then whitespace-normalised lines. There is no character-distance fuzzing.
+    - Every strategy still needs a unique match; `replace_all` covers exact matches only. Ambiguity names up to 8
+      line numbers.
+    - On an approximate match, `reindent` maps each old_text line's indentation to the file's (longest prefix).
+    - The result carries `match` and `replacements`, and the permission panel and edit block say "khớp gần đúng: …".
+    - Read-before-edit, the digest check, CRLF/BOM and the checkpoint are unchanged.
+    - Prompt: `AGENT_EDIT_PROMPT`.
+  - **Loop guard (CLI only).** The third identical call (same name and canonical arguments, no file revision in
+    between) asks `Permission("loop")`.
+    - Polling and browser tools are exempt (`LOOP_EXEMPT`).
+    - A refusal returns an error telling Peto to change approach. `PolicyUI` refuses with a reason, by the owner's
+      pick.
+  - **Tests.** `agent-cli/tests/test_tools_v2.py`, two `test_tui.py` cases, and feature negotiation in
+    `test_loop_client.py`.
 - **CLI display** (picked by the owner from mockups): tool steps stay as permanent lines; while waiting for the model
   there is one transient `… Peto đang nghĩ · Ns` status line (`UI.status`, redrawn with `\r\033[2K`, only when colors
   are on). `ReplyWriter` prints replies line by line so `UI.markdown` can color bold, inline code, headings, bullets and

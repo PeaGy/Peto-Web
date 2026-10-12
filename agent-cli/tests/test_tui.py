@@ -303,3 +303,27 @@ def test_terminal_ui_is_used_only_in_a_real_terminal(monkeypatch):
     monkeypatch.delenv("PETO_AGENT_UI")
     monkeypatch.setattr(cli, "enable_vt", lambda stream: False)
     assert not isinstance(cli.create_ui(), TerminalUI)
+
+
+def test_find_files_joins_the_explored_line_and_approximate_edits_are_flagged(project):
+    from peto_agent.tools import FEATURES
+
+    (project / "app.py").write_text("def f():\n        return 1\n")
+    ui = make_ui(["y"])
+    tools = Tools(Workspace(project), ui)
+    tools.features = [*FEATURES, "explore_v2", "edit_v2"]
+    tools.call("find_files", args(pattern="**/*.py", path=None))
+    tools.call("read_file", args(path="app.py", start_line=None, end_line=None))
+    ui.editor = None
+    tools.call("edit_file", args(path="app.py", old_text="def f():\n    return 1", new_text="def f():\n    return 2",
+                                 replace_all=None))
+    text = plain(ui.out.getvalue())
+    assert "→ Đã xem: 1 lần đọc, 1 lần tìm tệp" in text and '"**/*.py" 1 tệp' in text
+    assert "khớp gần đúng: bỏ qua khoảng trắng đầu và cuối dòng" in text
+
+
+def test_the_loop_question_offers_continue_or_stop():
+    ui = make_ui()
+    ui.editor = FakeEditor(FakeConsole([[Key("right")], [Key("enter")]]))
+    answer = ui.ask(Permission("loop", {"name": "read_file", "count": 3, "arguments": {"path": "a.py"}}))
+    assert answer == "n" and "Cho gọi tiếp" in plain(ui.out.getvalue())

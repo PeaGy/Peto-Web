@@ -15,7 +15,7 @@ import re
 import time
 from pathlib import Path
 
-from . import approvals, browser, runner
+from . import approvals, browser, edit_match, runner
 from .background import Jobs
 from .checkpoint import Checkpoint
 from .command_outcome import classify, command_kind, local_probe
@@ -39,6 +39,17 @@ REFUSED = "Người dùng không đồng ý {action}. Đừng lặp lại y nguy
 # (agent_tools.py): "cwd" từ 0.9.8, "browser" (xem trang trên máy) từ 0.10.0, "browser_act" (bấm, gõ, nhờ người dùng
 # đăng nhập) từ 0.11.0, "browser_outside" (xem trang ngoài máy) từ 0.12.0.
 FEATURES = ("cwd", "browser", "browser_act", "browser_outside", "skills", "mcp")
+# Khả năng mới (0.18.0, theo OpenCode) chỉ bật khi máy chủ liệt kê trong /me (agent_features): kết quả công cụ do CLI
+# dựng phải khớp mô tả máy chủ gửi, nên CLI mới gặp máy chủ cũ vẫn chạy kiểu cũ.
+NEW_FEATURES = ("explore_v2", "edit_v2")
+# Gọi y hệt một công cụ ngần này lần liền mà không tệp nào đổi thì hỏi người dùng có cho gọi tiếp không.
+LOOP_LIMIT = 3
+# Công cụ mà gọi lại y hệt là bình thường: chờ output lệnh nền, xem lại trang sau khi bấm, cập nhật danh sách việc.
+LOOP_EXEMPT = {"update_plan", "read_command_output", "browser_open", "browser_screenshot", "browser_read",
+               "browser_click", "browser_type", "browser_press", "browser_login", "mcp_list_tools", "stop_command"}
+LOOP_QUESTION = "    Cho Peto gọi tiếp? [y] có  [n] không › "
+MAX_FOUND_FILES = 100
+NUMBER_WIDTH = 6
 # Câu hỏi khi Peto thao tác lần đầu trên một trang: [y] là cho trang đó tới hết yêu cầu (chủ web chọn ngày 2026-09-23).
 PAGE_QUESTION = "    Đồng ý cho trang này tới hết yêu cầu? [y] có  [n] không  [a] có cho mọi bước trong yêu cầu này › "
 # Trang ngoài (chủ web chọn ngày 2026-09-24): hỏi theo tên miền; địa chỉ dài bất thường thì hỏi cho đúng địa chỉ đó.
@@ -56,6 +67,45 @@ def tool(method):
     def run(self, *args, **kwargs):
         return self._run_tool(method.__name__, functools.partial(method, self), args, kwargs)
     return run
+
+
+def _modified(path: Path) -> float:
+    try:
+        return path.stat().st_mtime
+    except OSError:
+        return 0.0
+
+
+def glob_regex(pattern: str) -> re.Pattern:
+    """Mẫu glob kiểu OpenCode (**, *, ?, [abc]) thành biểu thức chính quy cho đường dẫn dùng "/".
+
+    Python 3.12 chưa có glob.translate, nên tự dịch: ** khớp qua nhiều thư mục (kể cả không thư mục nào), * và ? không
+    vượt qua "/". So không phân biệt hoa thường như hệ tệp Windows.
+    """
+    parts, index = [], 0
+    while index < len(pattern):
+        char = pattern[index]
+        if pattern.startswith("**/", index):
+            parts.append("(?:.*/)?")
+            index += 3
+            continue
+        if pattern.startswith("**", index):
+            parts.append(".*")
+            index += 2
+            continue
+        if char == "*":
+            parts.append("[^/]*")
+        elif char == "?":
+            parts.append("[^/]")
+        elif char == "[" and (close := pattern.find("]", index + 1)) > index:
+            inside = pattern[index + 1:close].replace("\\", "\\\\")
+            parts.append("[" + ("^" + inside[1:] if inside.startswith("!") else inside) + "]")
+            index = close + 1
+            continue
+        else:
+            parts.append(re.escape(char))
+        index += 1
+    return re.compile("".join(parts), re.IGNORECASE)
 
 
 def changed_lines(before: str, after: str) -> tuple[int, int]:
@@ -117,6 +167,10 @@ class Tools:
         # Lời gọi đang chạy và phần chỉ để hiển thị của nó (events.ToolDone.meta).
         self._active: ToolCall | None = None
         self.meta: dict = {}
+        # Khả năng báo máy chủ ở mỗi bước; phiên thêm NEW_FEATURES khi máy chủ có (__main__).
+        self.features: list[str] = list(FEATURES)
+        # Lời gọi gần nhất (khóa, lần sửa tệp lúc đó, số lần liền) cho chặn gọi lặp.
+        self._last_call: tuple[tuple[str, str], int, int] | None = None
         self._handlers = {
             "load_skill": self.load_skill,
             "mcp_list_tools": self._evented("mcp_list_tools", self.mcp.list_tools),
@@ -125,6 +179,7 @@ class Tools:
             "list_files": self.list_files,
             "read_file": self.read_file,
             "search_files": self.search_files,
+            "find_files": self.find_files,
             "edit_file": self.edit_file,
             "write_file": self.write_file,
             "delete_file": self.delete_file,
@@ -156,6 +211,7 @@ class Tools:
         self.command_failures = {}
         self.revision = 0
         self.checked_revision = -1
+        self._last_call = None
 
     def _checked(self) -> None:
         """Peto vừa kiểm lại việc mình làm trên máy: chạy test hay build, xem hoặc thao tác trên trang, gọi API của
@@ -246,6 +302,9 @@ class Tools:
             signature.bind(**params)
         except TypeError:
             return {"error": f"Tham số không đúng với công cụ {name}."}
+        if (refused := self._loop_guard(name, params)) is not None:
+            self.call_id = ""
+            return refused
         # Giao diện đã được báo lỗi qua tool_finished; ở đây chỉ đổi lỗi thành kết quả cho Peto.
         try:
             return handler(**params)
@@ -257,6 +316,28 @@ class Tools:
             return {"error": _os_message(err)}
         finally:
             self.call_id = ""
+
+    def _loop_guard(self, name: str, params: dict) -> dict | None:
+        """Chống gọi lặp (theo OpenCode): cùng công cụ, cùng tham số, lần thứ 3 liền mà không có tệp nào đổi thì hỏi
+        người dùng. Từ chối thì Peto nhận lỗi và phải đổi cách làm."""
+        if name in LOOP_EXEMPT:
+            self._last_call = None
+            return None
+        key = (name, json.dumps(params, ensure_ascii=False, sort_keys=True))
+        last = self._last_call
+        count = last[2] + 1 if last and last[0] == key and last[1] == self.revision else 1
+        self._last_call = (key, self.revision, count)
+        if count < LOOP_LIMIT:
+            return None
+        with self.metrics.measure("permission"):
+            answer = self.ui.ask(Permission("loop", {"name": name, "count": count, "arguments": params},
+                                            question=LOOP_QUESTION))
+        if answer in {"y", "a"}:
+            self._last_call = (key, self.revision, 0)
+            return None
+        self.ui.notice(f"Đã chặn: Peto gọi {name} y hệt {count} lần liền.", "yellow")
+        return {"error": f"Người dùng dừng vòng lặp: {name} đã được gọi y hệt {count} lần liền mà không có tệp nào đổi. "
+                         "Đừng gọi lại; xem kết quả trước đó rồi đổi cách làm, hoặc báo người dùng chỗ đang vướng."}
 
     def _approve(self, kind: str = "file", **body) -> bool:
         if self.approve_all:
@@ -326,8 +407,14 @@ class Tools:
             raise WorkspaceError(f"{rel} chỉ có {total} dòng.")
         limit = MAX_READ_LINES if end_line is not None else 160
         end = max(0, min(total, end_line or total, start + limit - 1))
+        chosen = lines[start - 1:end]
+        if "explore_v2" in self.features:
+            # Số dòng ở đầu mỗi dòng như cat -n (OpenCode), để Peto dẫn tệp:dòng và chọn khoảng đọc tiếp cho đúng.
+            content = "\n".join(f"{number:>{NUMBER_WIDTH}}\t{line}" for number, line in enumerate(chosen, start))
+        else:
+            content = "\n".join(chosen)
         return {"path": rel, "start_line": start, "end_line": end, "total_lines": total,
-                "content": "\n".join(lines[start - 1:end]), "project_guidance": self._guidance(target, reading=True),
+                "content": content, "project_guidance": self._guidance(target, reading=True),
                 **({"next_start_line": end + 1, "truncated": True} if end < total else {})}
 
     @tool
@@ -339,6 +426,8 @@ class Tools:
         base = self.ws.resolve(path or ".")
         files = [base] if base.is_file() else self.ws.iter_files(base)
         matches: list[str] = []
+        grouped: dict[str, list[dict]] = {}
+        modified: dict[str, float] = {}
         truncated = False
         for file in files:
             rel = self.ws.relative(file)
@@ -351,16 +440,45 @@ class Tools:
             for number, line in enumerate(text.split("\n"), 1):
                 if regex.search(line):
                     matches.append(f"{rel}:{number}: {line.strip()[:300]}")
+                    grouped.setdefault(rel, []).append({"line": number, "text": line.strip()[:300]})
                     if len(matches) >= MAX_MATCHES:
                         truncated = True
                         break
+            if rel in grouped:
+                modified[rel] = _modified(file)
             if truncated:
                 break
         self.meta["base"] = self.ws.relative(base)
+        if "explore_v2" in self.features:
+            # Gộp theo tệp, tệp sửa gần nhất trước (OpenCode): Peto thấy ngay tệp nào đáng đọc.
+            order = sorted(grouped, key=lambda rel: -modified.get(rel, 0))
+            return {"files": [{"path": rel, "matches": grouped[rel]} for rel in order], "total": len(matches),
+                    "truncated": truncated}
         return {"matches": matches, "truncated": truncated}
 
     @tool
-    def edit_file(self, path: str, old_text: str, new_text: str) -> dict:
+    def find_files(self, pattern: str, path: str | None = None) -> dict:
+        """Tìm tệp theo tên bằng mẫu glob (theo OpenCode), tệp sửa gần nhất trước."""
+        pattern = pattern.strip().replace("\\", "/")
+        if not pattern:
+            raise WorkspaceError("Mẫu tìm tệp đang trống, ví dụ **/*.py.")
+        base = self.ws.resolve(path or ".")
+        if not base.is_dir():
+            raise WorkspaceError(f"{self.ws.relative(base)} không phải thư mục.")
+        regex = glob_regex(pattern)
+        found: list[tuple[float, str]] = []
+        for file in self.ws.iter_files(base):
+            rel = self.ws.relative(file)
+            inside = file.relative_to(base).as_posix() if base != self.ws.root else rel
+            if regex.fullmatch(inside) or ("/" not in pattern and regex.fullmatch(file.name)):
+                found.append((-_modified(file), rel))
+        found.sort()
+        self.meta["base"] = self.ws.relative(base)
+        return {"files": [rel for _, rel in found[:MAX_FOUND_FILES]], "total": len(found),
+                "truncated": len(found) > MAX_FOUND_FILES}
+
+    @tool
+    def edit_file(self, path: str, old_text: str, new_text: str, replace_all: bool | None = None) -> dict:
         target = self.ws.resolve(path)
         self._guidance(target)
         self.checkpoint.check(target)
@@ -372,15 +490,22 @@ class Tools:
         if file.digest != known:
             raise WorkspaceError(f"{rel} đã thay đổi kể từ lần đọc gần nhất. Đọc lại rồi sửa nhé.")
         old = old_text.replace("\r\n", "\n")
+        new = new_text.replace("\r\n", "\n")
         if not old:
             raise WorkspaceError("old_text đang trống; tạo tệp mới thì dùng write_file.")
-        count = file.text.count(old)
-        if count == 0:
-            raise WorkspaceError(f"Không thấy old_text trong {rel}. Đọc lại đoạn cần sửa rồi chép nguyên văn.")
-        if count > 1:
-            raise WorkspaceError(f"old_text khớp {count} chỗ trong {rel}; thêm vài dòng xung quanh cho chỉ khớp một chỗ.")
-        updated = file.text.replace(old, new_text.replace("\r\n", "\n"), 1)
-        body = {"title": f"Muốn sửa {rel}", "path": rel, "before": file.text, "after": updated}
+        label = None
+        if "edit_v2" in self.features:
+            updated, label, replacements = self._replace(file.text, old, new, rel, bool(replace_all))
+        else:
+            count = file.text.count(old)
+            if count == 0:
+                raise WorkspaceError(f"Không thấy old_text trong {rel}. Đọc lại đoạn cần sửa rồi chép nguyên văn.")
+            if count > 1:
+                raise WorkspaceError(f"old_text khớp {count} chỗ trong {rel}; thêm vài dòng xung quanh cho chỉ khớp một "
+                                     "chỗ.")
+            updated, replacements = file.text.replace(old, new, 1), 1
+        body = {"title": f"Muốn sửa {rel}" + (f" (khớp gần đúng: {label})" if label else ""), "path": rel,
+                "before": file.text, "after": updated, **({"match": label} if label else {})}
         self.ui.preview("file", body)
         if not self._approve("file", **body):
             return self._refused(f"sửa {rel}", rel)
@@ -392,7 +517,30 @@ class Tools:
         self.ws.write(target, updated, newline=file.newline, bom=file.bom)
         self.revision += 1
         added, removed = self._record(rel, file.text, updated)
-        return {"ok": True, "path": rel, "added_lines": added, "removed_lines": removed}
+        result = {"ok": True, "path": rel, "added_lines": added, "removed_lines": removed}
+        if "edit_v2" in self.features:
+            result["replacements"] = replacements
+            if label:
+                result["match"] = label
+        return result
+
+    def _replace(self, text: str, old: str, new: str, rel: str, replace_all: bool) -> tuple[str, str | None, int]:
+        """Thay đoạn cần sửa (edit_v2): khớp nguyên văn, không thì khớp gần đúng có kiểm soát (edit_match.py)."""
+        found = edit_match.find(text, old)
+        matches = found.matches
+        if not matches:
+            raise WorkspaceError(f"Không thấy old_text trong {rel}, kể cả khi bỏ qua khoảng trắng và số dòng. Đọc lại "
+                                 "đoạn cần sửa rồi chép đúng chữ.")
+        if len(matches) > 1 and not (replace_all and found.strategy == "exact"):
+            lines = ", ".join(str(number) for number in edit_match.line_numbers(text, matches)[:8])
+            hint = ("; replace_all chỉ thay các chỗ khớp nguyên văn" if replace_all else
+                    "; hoặc đặt replace_all là true nếu muốn thay hết")
+            raise WorkspaceError(f"old_text khớp {len(matches)} chỗ trong {rel} (dòng {lines}). Thêm vài dòng xung quanh "
+                                 f"cho chỉ khớp một chỗ{hint}.")
+        if found.strategy == "exact":
+            return text.replace(old, new) if replace_all else text.replace(old, new, 1), None, len(matches)
+        match = matches[0]
+        return text[:match.start] + edit_match.reindent(new, match) + text[match.end:], found.label, 1
 
     @tool
     def write_file(self, path: str, content: str) -> dict:
