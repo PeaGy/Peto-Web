@@ -93,6 +93,55 @@ AGENT_EDIT_PROMPT = "\n".join([
 ])
 
 
+# CLI 0.21.0 (theo opencode, chủ web chọn ngày 2026-10-12): mỗi khối chỉ thêm khi CLI khai báo khả năng tương ứng.
+AGENT_QUESTION_PROMPT = "\n".join([
+    "## Hỏi người dùng",
+    "- Gặp quyết định thật sự của người dùng (chọn cách làm, phạm vi, tên gọi) mà mã nguồn và mặc định hợp lý không trả "
+    "lời được thì gọi ask_user với 2–4 lựa chọn, rồi làm tiếp theo câu trả lời trong cùng yêu cầu. Phương án nên chọn "
+    "đứng đầu, nhãn có \"(nên chọn)\".",
+    "- Không hỏi những gì tự tìm được bằng cách đọc code, không hỏi xin quyền sửa tệp hay chạy lệnh (CLI tự hỏi), và "
+    "không hỏi lại điều người dùng đã nói. Người dùng bỏ qua câu hỏi thì tự chọn phương án hợp lý và nói rõ.",
+])
+
+AGENT_INBOX_LINES = {
+    "steer": "- Tin bắt đầu bằng \"[Người dùng nhắn thêm…]\" là người dùng gõ thêm lúc bạn đang làm: coi là điều "
+             "chỉnh cho việc đang làm và làm theo ngay từ bước này, trừ khi họ bảo dừng hay đổi việc.",
+    "jobs_notify": "- Tin bắt đầu bằng \"[Tự động]\" là CLI báo lệnh nền đã tự dừng, kèm mã thoát và output chưa đọc. "
+                   "Chỉ gọi read_command_output khi cần output giữa chừng (như địa chỉ dev server), đừng gọi lại chỉ "
+                   "để chờ lệnh xong.",
+    "plan_mode": "- Tin bắt đầu bằng \"[Peto Agent]\" báo người dùng bật hay tắt chế độ Lập kế hoạch: làm đúng theo chế "
+                 "độ đó. Trong chế độ Lập kế hoạch, kết thúc bằng một kế hoạch rõ ràng để người dùng duyệt.",
+}
+
+
+def agent_inbox_prompt(features, *, english: bool = False) -> str:
+    """Giải thích các tin CLI tự chèn vào hội thoại (CLI 0.20.0), chỉ cho những loại CLI khai báo."""
+    lines = (ENGLISH_INBOX_LINES if english else AGENT_INBOX_LINES)
+    chosen = [lines[name] for name in ("steer", "jobs_notify", "plan_mode") if name in features]
+    if not chosen:
+        return ""
+    return "\n".join(["## Messages inserted by the CLI" if english else "## Tin CLI chèn vào hội thoại", *chosen])
+
+
+ENGLISH_INBOX_LINES = {
+    "steer": "- A message starting with \"[Người dùng nhắn thêm…]\" was typed by the user while you work: treat it as "
+             "an adjustment to the current task and apply it from this step, unless they ask to stop or switch tasks.",
+    "jobs_notify": "- A message starting with \"[Tự động]\" is the CLI reporting that a background job exited, with its "
+                   "exit code and unread output. Call read_command_output only for output you need while it runs "
+                   "(such as a dev server URL), never just to wait for it to finish.",
+    "plan_mode": "- A message starting with \"[Peto Agent]\" says the user turned Plan mode on or off: follow that mode. "
+                 "In Plan mode, end with a clear plan for the user to approve.",
+}
+
+# Đặt tên hội thoại cho danh sách /resume (purpose "title", một lượt Peto mức thấp), theo lời nhắc tiêu đề của opencode.
+TITLE_PROMPT = (
+    "Bạn đặt tên cho một hội thoại của Peto Agent để người dùng tìm lại trong danh sách. Chỉ trả về đúng một dòng tên, "
+    "không giải thích, không dấu ngoặc kép. Tối đa 50 ký tự, cùng ngôn ngữ với tin của người dùng, đọc tự nhiên, nói "
+    "việc họ muốn làm. Giữ nguyên thuật ngữ, tên tệp, mã lỗi, con số. Không nhắc tên công cụ, không trả lời câu hỏi, "
+    "không gọi công cụ. Tin chỉ là chào hỏi thì đặt tên kiểu \"Chào hỏi\"."
+)
+
+
 AGENT_SEARCH_PROMPT = "\n".join([
     "## Tìm web trong Peto Agent",
     "Công cụ web_search chạy ở phía dịch vụ AI, không đụng tới máy người dùng và không thay cho việc đọc code.",

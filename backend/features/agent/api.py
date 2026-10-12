@@ -40,7 +40,8 @@ from shared.time_tools import agent_time_context, resolve_timezone
 from core import usage_events
 from core.config import AGENT_DAILY_STEPS, AGENT_MODEL, AGENT_MAX_CONCURRENT, AGENT_MAX_QUEUE, AGENT_MAX_REQUEST_BYTES, AGENT_REASONING, AGENT_SLOW_STEP_SECONDS, AGENT_STEP_TIMEOUT_SECONDS, AGENT_TOKEN_IDLE_DAYS, AGENT_WEB_SEARCH, provider_from_owner
 from prompts import (AGENT_BROWSER_ACT_PROMPT, AGENT_BROWSER_OUTSIDE_PROMPT, AGENT_EDIT_PROMPT, AGENT_EXPLORE_PROMPT,
-                     AGENT_NO_SEARCH_PROMPT, AGENT_PROMPT, AGENT_SEARCH_PROMPT, PERSONA_PROMPT, browser_prompt)
+                     AGENT_NO_SEARCH_PROMPT, AGENT_PROMPT, AGENT_QUESTION_PROMPT, AGENT_SEARCH_PROMPT, PERSONA_PROMPT,
+                     TITLE_PROMPT, agent_inbox_prompt, browser_prompt)
 from prompts import english as english_prompts
 from prompts.routing import provider_prompt, uses_english
 from core.rate_limit import Admission, AdmissionDenied
@@ -283,7 +284,7 @@ async def logout(device: dict = Depends(device_auth)) -> dict:
 async def _read_body(request: Request) -> bytes:
     too_large = HTTPException(
         status_code=413,
-        detail="Bước gửi lên quá lớn. Gõ /moi để bắt đầu hội thoại mới, hoặc đọc ít tệp và gửi ít ảnh hơn mỗi lần.",
+        detail="Bước gửi lên quá lớn. Gõ /new (bản cũ: /moi) để bắt đầu hội thoại mới, hoặc đọc ít tệp và gửi ít ảnh hơn mỗi lần.",
     )
     declared = request.headers.get("content-length", "")
     if declared.isdigit() and int(declared) > AGENT_MAX_REQUEST_BYTES:
@@ -344,7 +345,7 @@ def _parse_step(raw: bytes) -> tuple[list[dict], dict, str]:
     if not isinstance(items, list) or not items:
         raise HTTPException(status_code=400, detail="Bước gửi lên chưa có nội dung.")
     if len(items) > MAX_ITEMS:
-        raise HTTPException(status_code=400, detail=f"Hội thoại đã quá {MAX_ITEMS} mục. Gõ /moi để bắt đầu hội thoại mới nhé.")
+        raise HTTPException(status_code=400, detail=f"Hội thoại đã quá {MAX_ITEMS} mục. Gõ /new (bản cũ: /moi) để bắt đầu hội thoại mới nhé.")
     images = 0
     for item in items:
         kind = item.get("type", "message") if isinstance(item, dict) else None
@@ -356,7 +357,7 @@ def _parse_step(raw: bytes) -> tuple[list[dict], dict, str]:
         if kind == "message" and item.get("role") == "user":
             images += _count_images(item.get("content"))
     if images > MAX_STEP_IMAGES:
-        raise HTTPException(status_code=400, detail=f"Mỗi bước gửi kèm tối đa {MAX_STEP_IMAGES} ảnh. Gõ /moi để bắt đầu "
+        raise HTTPException(status_code=400, detail=f"Mỗi bước gửi kèm tối đa {MAX_STEP_IMAGES} ảnh. Gõ /new (bản cũ: /moi) để bắt đầu "
                                                     "hội thoại mới nhé.")
     # CLI cũ không gửi mức suy nghĩ thì dùng mức mặc định của máy chủ.
     effort = payload.get("effort") or AGENT_REASONING
@@ -374,6 +375,17 @@ def _features(context: dict) -> frozenset[str]:
     if not isinstance(value, list) or len(value) > 32:
         return frozenset()
     return frozenset(item for item in value if isinstance(item, str) and item in FEATURES)
+
+
+def _patch_model(model: str) -> bool:
+    """GPT (Luna, Terra, Sol) sửa tệp bằng apply_patch khi CLI hiểu nó, như opencode (CLI 0.21.0)."""
+    found = ai_models.MODELS.get(model)
+    return found is not None and found.service == "openai"
+
+
+# Lượt đặc biệt của CLI: tóm tắt hội thoại (purpose "compact") và đặt tên hội thoại cho /resume (purpose "title", CLI
+# 0.21.0). Cả hai không có công cụ, kể cả tìm web.
+SPECIAL_PURPOSES = {"compact", "title"}
 
 
 def _instructions(context: dict, web_search: bool, model: str = "peto") -> str:
@@ -424,6 +436,12 @@ def _instructions(context: dict, web_search: bool, model: str = "peto") -> str:
         tooling.append(english_prompts.AGENT_EXPLORE_PROMPT if english else AGENT_EXPLORE_PROMPT)
     if "edit_v2" in features:
         tooling.append(english_prompts.AGENT_EDIT_PROMPT if english else AGENT_EDIT_PROMPT)
+    if "patch" in features and _patch_model(model):
+        tooling.append(english_prompts.AGENT_PATCH_PROMPT)
+    if "question" in features:
+        tooling.append(english_prompts.AGENT_QUESTION_PROMPT if english else AGENT_QUESTION_PROMPT)
+    if inbox := agent_inbox_prompt(features, english=english):
+        tooling.append(inbox)
     browsing = []
     if "browser" in features:
         act, outside = "browser_act" in features, "browser_outside" in features
@@ -476,17 +494,22 @@ async def step(request: Request, device: dict = Depends(device_auth)):
         left = max(0, AGENT_DAILY_STEPS - await db.get_agent_steps(owner, day))
         if 0 < left < cost:
             detail = (f"Mỗi bước {model.label} ở mức suy nghĩ này tính {cost} bước, nhưng hôm nay chỉ còn {left} bước. "
-                      "Gõ /effort vua hoặc /model peto để dùng nốt.")
+                      "Gõ /effort medium hoặc /model peto để dùng nốt.")
         else:
             detail = f"Hôm nay tài khoản của bạn đã dùng hết {AGENT_DAILY_STEPS} bước Peto Agent. Lượt mới bắt đầu lúc 0 giờ."
         raise HTTPException(status_code=429, detail=detail)
-    compacting = context.get("purpose") == "compact"
-    # Tóm tắt không cần công cụ nào, kể cả tìm web: đó là một lượt đọc lại lịch sử rồi viết bản ghi nhớ.
+    special = context.get("purpose") if context.get("purpose") in SPECIAL_PURPOSES else None
+    compacting = special is not None
+    # Tóm tắt và đặt tên không cần công cụ nào, kể cả tìm web: chỉ đọc lại lịch sử rồi viết.
     searching = AGENT_WEB_SEARCH and not compacting
-    if compacting:
-        instructions = english_prompts.COMPACT_PROMPT if uses_english(model.key) else COMPACT_PROMPT
+    english = uses_english(model.key)
+    if special == "compact":
+        instructions = english_prompts.COMPACT_PROMPT if english else COMPACT_PROMPT
+    elif special == "title":
+        instructions = english_prompts.TITLE_PROMPT if english else TITLE_PROMPT
     else:
         instructions = _instructions(context, searching, model.key)
+    usage_purpose = {"compact": "compact", "title": "side"}.get(special or "", "agent")
 
     async def event_stream() -> AsyncIterator[str]:
         failure: str | None = None
@@ -500,7 +523,8 @@ async def step(request: Request, device: dict = Depends(device_auth)):
             async with admission.slot(f"agent:{owner}"):
                 async with asyncio.timeout(AGENT_STEP_TIMEOUT_SECONDS):
                     async for event in agent_step(instructions=instructions, input_items=items,
-                                                  tools=[] if compacting else tool_schemas(_features(context)),
+                                                  tools=[] if compacting else tool_schemas(
+                                                      _features(context), patch_model=_patch_model(model.key)),
                                                   effort=effort, model=model.key, web_search=searching):
                         if not produced:
                             first_at = time.monotonic()
@@ -514,14 +538,14 @@ async def step(request: Request, device: dict = Depends(device_auth)):
                             outcome = "complete"
                             usage_events.record(
                                 "call", service=model.service, model=model.key, slug=model.slug or AGENT_MODEL,
-                                surface="agent", purpose="compact" if compacting else "agent", complete=True,
+                                surface="agent", purpose=usage_purpose, complete=True,
                                 elapsed_ms=round((time.monotonic() - started) * 1000),
                                 input_tokens=event.usage.get("input_tokens"), output_tokens=event.usage.get("output_tokens"),
                                 cached_tokens=event.usage.get("cached_tokens"),
                                 cache_write_tokens=event.usage.get("cache_write_tokens"),
                             )
                             yield _sse({"type": "done", "output": list(event.output), "usage": event.usage,
-                                        **({"purpose": "compact"} if compacting else {})})
+                                        **({"purpose": special} if special else {})})
                         else:
                             yield _sse({"type": event.kind, "text": event.text})
                     if not completed:
@@ -554,7 +578,7 @@ async def step(request: Request, device: dict = Depends(device_auth)):
                         round(elapsed * 1000), completed, outcome)
             usage_events.record(
                 "turn", service=model.service, model=model.key, slug=model.slug or AGENT_MODEL, surface="agent",
-                purpose="compact" if compacting else "agent", outcome=outcome, complete=completed,
+                purpose=usage_purpose, outcome=outcome, complete=completed,
                 elapsed_ms=round(elapsed * 1000),
                 first_text_ms=round((first_at - started) * 1000) if first_at is not None else None,
             )

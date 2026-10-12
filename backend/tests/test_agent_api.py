@@ -71,6 +71,27 @@ async def test_compaction_has_no_tools_and_uses_normal_auth_quota(anon_client, c
     assert seen[0]["effort"] == "low"
 
 
+async def test_a_title_call_has_no_tools_and_counts_as_a_side_call(anon_client, client, monkeypatch):
+    """CLI 0.21.0 đặt tên hội thoại cho /resume bằng một lượt Peto mức thấp (chủ web chọn ngày 2026-10-12)."""
+    from ai.agent import AgentEvent
+
+    seen = []
+
+    async def name(**kwargs):
+        seen.append(kwargs)
+        yield AgentEvent("done", output=({"type": "message", "role": "assistant", "content": "Sửa README"},),
+                         usage={"input_tokens": 50, "output_tokens": 5})
+    monkeypatch.setattr(agent_api, "agent_step", name)
+    monkeypatch.setattr(agent_api, "AGENT_WEB_SEARCH", True)
+    await login_as(client, "discord")
+    token = await connect(anon_client, client)
+    body = {"input": [DEMO_TASK], "effort": "low", "context": {"purpose": "title", "features": ["question"]}}
+    events = events_of(await anon_client.post("/api/agent/step", headers=bearer(token), json=body))
+    assert events[0]["steps_used"] == 1 and events[-1]["purpose"] == "title"
+    assert seen[0]["tools"] == [] and seen[0]["web_search"] is False
+    assert seen[0]["instructions"] == agent_api.TITLE_PROMPT
+
+
 def test_skills_are_feature_gated_and_catalog_is_bounded():
     from features.agent.tools import tool_schemas
     assert 'load_skill' not in {t['name'] for t in tool_schemas(frozenset())}
@@ -252,7 +273,7 @@ async def test_effort_reaches_the_model_and_high_costs_two_steps(anon_client, cl
 
     short = await send({"input": [DEMO_TASK], "effort": "high"})
     assert short.status_code == 429
-    assert "chỉ còn 1 bước" in short.json()["detail"] and "/effort vua" in short.json()["detail"]
+    assert "chỉ còn 1 bước" in short.json()["detail"] and "/effort medium" in short.json()["detail"]
     assert (await send({"input": [DEMO_TASK], "effort": "low"})).status_code == 200
     blocked = await send({"input": [DEMO_TASK], "effort": "high"})
     assert blocked.status_code == 429 and "dùng hết 4 bước" in blocked.json()["detail"]

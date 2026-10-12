@@ -36,6 +36,10 @@ class Job:
     total: int = 0
     dropped: int = 0
     sent: int = 0
+    # Lệnh tự dừng thì CLI báo Peto một lần ở bước kế tiếp (CLI 0.20.0, theo opencode). Peto đã thấy nó dừng qua
+    # read_command_output, hay chính Peto dừng nó, thì không báo nữa.
+    reported: bool = False
+    stopped_by_peto: bool = False
 
     def running(self) -> bool:
         return self.process.poll() is None
@@ -104,17 +108,32 @@ class Jobs:
         text = output.decode("utf-8", errors="replace")
         if lost:
             text = f"… (bỏ bớt {lost} byte output cũ) …\n" + text
+        running = job.running()
+        if not running:
+            job.reported = True
         return {
             "id": job.id,
             "command": job.command,
-            "running": job.running(),
+            "running": running,
             "exit_code": job.process.returncode,
             "seconds": round(time.monotonic() - job.started, 1),
             "output": runner.cap_text(text),
         }
 
+    def finished(self) -> list[dict]:
+        """Các lệnh vừa tự dừng mà Peto chưa biết: phần output chưa gửi kèm mã thoát, mỗi lệnh chỉ một lần."""
+        done = []
+        for job in self.jobs.values():
+            if job.reported or job.stopped_by_peto or job.running():
+                continue
+            # Luồng đọc có thể chưa gom hết phần cuối: chờ chút cho chắc.
+            job.fresh.wait(0.2)
+            done.append(self.read(job.id, 0))
+        return done
+
     def stop(self, job_id: str) -> dict:
         job = self._job(job_id)
+        job.stopped_by_peto = True
         runner.kill_tree(job.process)
         try:
             job.process.wait(timeout=10)
@@ -127,6 +146,7 @@ class Jobs:
         """Dừng mọi lệnh nền còn chạy khi đóng phiên; trả danh sách lệnh đã dừng."""
         stopped = []
         for job in self.running():
+            job.stopped_by_peto = True
             runner.kill_tree(job.process)
             stopped.append(job.command)
         for job in self.jobs.values():

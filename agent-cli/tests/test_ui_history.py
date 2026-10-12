@@ -53,15 +53,16 @@ def test_saved_conversation_belongs_to_one_folder_and_server(project, tmp_path):
     other.mkdir()
     items = [{"type": "message", "role": "user", "content": "Sửa README"},
              {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "Xong rồi nè."}]}]
-    history.save(project, "https://peto.example", items)
+    history.save(project, "https://peto.example", items, session_id="mot")
     saved = history.load(project, "https://peto.example")
     assert saved is not None and saved.items == items and saved.message_count == 2
+    assert saved.id == "mot" and saved.title == "Sửa README"
     assert history.recap(saved.items) == [("Bạn", "Sửa README"), ("Peto", "Xong rồi nè.")]
     assert history.when(saved.saved_at).startswith("lúc ") and history.when(saved.saved_at).endswith(" hôm nay")
     assert history.load(project, "https://khac.example") is None
     assert history.load(other, "https://peto.example") is None
 
-    history._path(project).write_text("{hỏng", encoding="utf-8")
+    (history._folder(project) / "mot.json").write_text("{hỏng", encoding="utf-8")
     assert history.load(project, "https://peto.example") is None
 
 

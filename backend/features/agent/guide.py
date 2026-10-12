@@ -75,7 +75,8 @@ def build_agent_guide(*, install_command: str, daily_steps: int, question: str =
     folded = _fold(question[-12000:])
     aliases = {'/skill': ('skill', 'skills', 'ky nang'), '/mcp': ('mcp',),
                '/effort': ('effort', 'suy nghi', 'reasoning'), '/model': ('model', 'mo hinh'),
-               '/trinhduyet': ('trinh duyet', 'trinhduyet', 'browser'),
+               '/browser': ('trinh duyet', 'trinhduyet', 'browser'), '/plan': ('plan', 'lap ke hoach'),
+               '/remember': ('remember', 'ghi nho', 'nho'),
                '/permissions': ('permissions', 'quyen'), '/compact': ('compact', 'chat dai', 'hoi thoai dai')}
     for item in entries:
         terms = aliases.get(item['name'], (item['name'].lstrip('/'),))
@@ -115,7 +116,8 @@ def _english_guide(install_command: str, daily_steps: int, question: str) -> str
             f"- `{item['name']}`: {item['description']}" for item in entries))
         aliases = {'/skill': ('skill', 'skills', 'ky nang'), '/mcp': ('mcp',),
                    '/effort': ('effort', 'suy nghi', 'reasoning'), '/model': ('model', 'mo hinh'),
-                   '/trinhduyet': ('trinh duyet', 'trinhduyet', 'browser'),
+                   '/browser': ('trinh duyet', 'trinhduyet', 'browser'), '/plan': ('plan', 'lap ke hoach'),
+                   '/remember': ('remember', 'ghi nho', 'nho'),
                    '/permissions': ('permissions', 'quyen'), '/compact': ('compact', 'chat dai', 'hoi thoai dai')}
         for item in entries:
             if any(re.search(r'(?<!\w)' + re.escape(term) + r'(?!\w)', folded)

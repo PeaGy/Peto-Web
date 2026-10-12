@@ -34,7 +34,7 @@ from policy import Policy, PolicyUI
 
 TASKS_DIR = Path(__file__).with_name("tasks")
 REPO = Path(__file__).resolve().parents[2]
-FILE_TOOLS = {"edit_file", "write_file", "delete_file", "move_file"}
+FILE_TOOLS = {"edit_file", "write_file", "delete_file", "move_file", "apply_patch"}
 LOOK_TOOLS = {"list_files", "read_file", "search_files", "find_files", "browser_read"}
 MAX_PATCH_CHARS = 300_000
 MAX_RESULT_PREVIEW = 1500
@@ -310,6 +310,8 @@ def run_task(task: Task, client: Client, *, work: Path, out: Path, model: str, e
     ui = PolicyUI(Policy(root, sites=task.sites, allow=task.allow, deny=task.deny))
     log = TaskLog(task.project)
     session = Session(client, Workspace(root), ui, log=log, effort=effort, model=model, model_step_cost=step_cost)
+    # Bài thi không đặt tên hội thoại: mỗi lần đặt là một bước Peto ngoài bài.
+    session.auto_title = False
     if features:
         # Như phiên thật: khả năng mới chỉ bật khi máy chủ có trong /me.
         session.tools.features = list(features)

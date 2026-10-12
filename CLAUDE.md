@@ -2663,6 +2663,74 @@ results in the next step. The server stores no conversation (`store=False`), and
     - The opening announcement did not change: Grok dropped "sẽ" ("Mình xem cấu trúc…"). `harness.PREAMBLE` was
       widened to catch that, giving 10 → 10. The rule was then sharpened: when tools are needed, the first turn holds
       tool calls only, and nothing announces the next step. This version needs a third run (owner's go-ahead).
+  **Features from opencode, 0.20.0 (done 2026-10-12, CLI only).**
+  The owner asked to mine opencode (commit `bcf23b6`) for useful features and picked six. 0.20.0 has four of them;
+  0.21.0 adds the rest with the backend.
+  - **Inbox** (`Session._inbox`). Before each next step, and at the start of a request, it adds user-role items.
+    - A **steer**: Enter while Peto works goes into `FooterEngine.steers` and shows as "↳ Nhắn thêm". Slash commands
+      still wait in `queued` ("↳ Chờ chạy"). The steer is added as `history.STEER_NOTE` + text.
+      - If the model was about to stop, the loop runs one more step to read it.
+      - Leftover steers become the next request.
+    - A **plan-mode note** whenever `ui.mode` changed since the last announcement (`PLAN_ON_NOTE`/`PLAN_OFF_NOTE`).
+    - A **job note** (`JOB_NOTE`) for each background job that exited by itself (`Jobs.finished`). A job is not
+      reported if Peto stopped it or already saw the exit via `read_command_output`.
+    - Notes start with `[Peto Agent]` or `[Tự động]`; `history.recap` and `first_title` skip them.
+  - **Plan mode.**
+    - Shift+Tab arrives as `Key("backtab")` (Tab with SHIFT through ConPTY). Shift+Tab or `/plan` toggles `ui.mode`.
+    - The prompt shows "Lập kế hoạch" in `secondary` (`prompt.frame(accent=)`) plus a footer hint.
+    - `Tools.call` refuses `PLAN_BLOCKED` (file changes, browser actions) with `PLAN_REFUSAL`. Commands still ask.
+  - **Sessions** (`history` v2): `sessions/<project key>/<id>.json` with `title`; the old single file migrates on
+    first read. At most 50 per project, 30 days.
+    - `Session.save()` assigns the id. `/new` (`reset`) starts a new id and keeps the old file.
+    - `/resume` opens the only session directly, otherwise `ui.choose` (TUI `_list_chooser`). `/resume N` opens one
+      directly.
+  - **English command names.** `command_catalog.json` items gained `aliases`; `commands.canonical` maps old names and
+    the menu suggests new names when old ones are typed. The renames are `/new`, `/exit`, `/remember`, `/browser
+    [clear]`, `/thinking`, `/plan`, and `/effort low|medium|high`.
+    - `features/agent/guide.py` keyword aliases follow the new names.
+    - Backend errors say "Gõ /new (bản cũ: /moi)".
+  - **Tests.**
+    - `tests/test_inbox.py`, `tests/test_sessions.py`, and new cases in `test_screen.py`.
+    - A ConPTY run of real `peto` against a scripted fake server confirmed: a steer reaching step 2, Shift+Tab
+      (`\x1b[Z`) blocking an edit, the `/resume` list with two sessions, and a job exit reported in the next step.
+  **Features from opencode, 0.21.0 (done 2026-10-12, needs the backend deployed).** New `features` (`question`,
+  `patch`, `title`, `steer`, `jobs_notify`, `plan_mode`) are listed in `/me agent_features` and declared by the CLI only
+  when listed, as in 0.18. Schema hashes of earlier feature sets are unchanged; `test_agent_tool_features.py` pins them.
+  - **Model-named sessions.** After a session's first completed request, `Session._name_conversation` runs a background
+    thread that posts `context.purpose = "title"` with `model: "peto"`, `effort: "low"` (1 step): up to 2,000 characters
+    of the first user message and 1,000 of the reply (`TITLE_SOURCE_CHARS`). The server treats `title` like `compact`
+    (`SPECIAL_PURPOSES`: no tools, `TITLE_PROMPT`, usage purpose `side`, `done` carries the purpose). The CLI keeps the
+    first-message title on failure, writes the new title under `_save_lock`, names a session once, and the eval
+    harness sets `auto_title = False`. A title arriving after `/new` or `/resume` goes to the old file
+    (`history.rename`). The title call goes to xAI even when the session uses OpenAI or Claude; the
+    README says so.
+  - **`ask_user`** (feature `question`, appended last to keep the cached prefix): 1–3 questions with a ≤12-character
+    header, 2–4 options with descriptions and `multiple`. `AGENT_QUESTION_PROMPT` (Vietnamese and English) limits it to
+    real user decisions and forbids asking for permissions the CLI already asks. `Tools.ask_user` validates and calls
+    `ui.questions`; Esc returns `dismissed` with a note to choose sensibly and say so. It is in `LOOP_EXEMPT` and allowed
+    in plan mode. The TUI panel (`_question_chooser`) takes ↑/↓/Enter, digits, Space for multi-select and a "✎ Tự trả
+    lời…" row with inline typing (on a multi-select question the typed answer joins the checked options; the pencil is
+    `theme.glyphs["write"]`, `>` on old consoles); the classic UI reads numbers, comma lists or free text. `PolicyUI.questions` picks the
+    "(nên chọn)" option, else the first, and records a `question` request.
+  - **`apply_patch`** (feature `patch`, OpenAI models only: `api._patch_model`). `tool_schemas(features,
+    patch_model=True)` puts `apply_patch` in `edit_file`'s slot and drops `write_file`; `delete_file`/`move_file` stay.
+    `AGENT_PATCH_PROMPT` is English only, since only OpenAI gets it. `peto_agent/patch.py` ports opencode's
+    `util/src/patch.ts` (MIT) with the strict matching approved for `edit_v2`: exact, then trailing spaces, then both
+    ends; a hunk must match once unless an `@@` context line anchors it. `Tools.apply_patch` applies `edit_file`'s rules
+    per file (read first and unchanged, add only to a missing file, move only to a free destination), computes every
+    file before writing, asks once (`Permission("patch")`, per-file diffs) and records checkpoints, so `/undo` reverts
+    the whole patch. One failing hunk writes nothing. An update that also moves counts its own changed lines in the
+    result, while the request summary counts it like `move_file` (old path deleted, new path created).
+  - **Prompts for 0.20.0's features:** `agent_inbox_prompt(features, english=)` explains steer notes, job notes (do not
+    poll `read_command_output` just to wait) and plan-mode notes, only for CLIs that declare them.
+  - Old command names in server messages now name the new ones ("/effort medium", "Gõ /new (bản cũ: /moi)").
+  - In full screen, `TerminalUI.line` (slash-command notices, `/help`) now starts at column PAD + 3, aligned with
+    replies and tool rows, keeping each line's own extra indent.
+  - **Tests:** `agent-cli/tests/test_patch.py`, `test_question.py`; backend `test_agent_tool_features.py` (pins,
+    patch only for OpenAI, prompts) and `test_agent_api.py` (title purpose). A ConPTY run of real `peto` against a
+    fake server listing the new features checked the two-question panel (arrows, multi-select plus a typed answer), a
+    three-file patch (update, update+move, add) approved once, and `/resume` listing two model-named sessions. A Luna
+    eval of `apply_patch` costs OpenAI money and needs the owner's go-ahead.
   - **CLI 0.19.1.** Grok cites code as ```` ```21:24:src/main.c ````. `tui/markdown.CITATION` labels such a block
     `src/main.c:21-24` and highlights it by the file extension; before this the label was just "21". The harness
     counts these blocks as `path:line` references.

@@ -65,7 +65,7 @@ def test_suggestions_do_not_displace_cursor_or_overflow_short_screen():
     assert frame.lines[-1].strip() == "Peto · mức vừa"
     state.selected = len(state.items()) - 1
     small = layout(state, prompt="› ", width=40, height=5, boxed=True, footer="Peto · mức vừa")
-    assert any("❯ /thoat" in line for line in small.lines), "menu hẹp phải cuộn theo lệnh đang chọn"
+    assert any("❯ /exit" in line for line in small.lines), "menu hẹp phải cuộn theo lệnh đang chọn"
 
 
 def test_submitting_removes_padding_placeholder_footer_and_suggestions():

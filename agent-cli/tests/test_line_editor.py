@@ -36,17 +36,18 @@ def labels(text: str) -> list[str]:
 
 
 def test_suggestions_filter_commands_and_effort_levels():
-    assert labels("/") == ["/moi", "/resume", "/retry", "/diff", "/undo", "/compact", "/init", "/nho", "/permissions",
-                           "/trinhduyet", "/model", "/effort", "/usage", "/suynghi", "/help", "/skill", "/mcp", "/thoat"]
-    assert labels("/trinhduyet ") == ["xoa"]
-    assert labels("/nhớ") == ["/nho"], "gõ có dấu vẫn ra /nho"
-    assert labels("/re") == ["/resume", "/retry"]
+    assert labels("/") == ["/new", "/resume", "/plan", "/retry", "/diff", "/undo", "/compact", "/init", "/remember",
+                           "/permissions", "/browser", "/model", "/effort", "/usage", "/thinking", "/help", "/skill",
+                           "/mcp", "/exit"]
+    assert labels("/browser ") == ["clear"]
+    assert labels("/nhớ") == ["/remember"], "gõ tên cũ có dấu vẫn ra lệnh mới"
+    assert labels("/re") == ["/resume", "/retry", "/remember"]
     assert labels("/ret") == ["/retry"]
-    assert labels("/thoát") == ["/thoat"], "bộ gõ tiếng Việt thêm dấu vẫn khớp"
+    assert labels("/thoát") == ["/exit"], "tên cũ, bộ gõ tiếng Việt thêm dấu, vẫn ra /exit"
     assert labels("/sume") == ["/resume"], "gõ phần giữa tên lệnh cũng tìm ra"
-    assert labels("/effort ") == ["thap", "vua", "cao"]
-    assert [item.text for item in suggestions("/effort C")] == ["/effort cao"]
-    for text in ("/effort cao thêm", "/moi ", "xin chào", "/moi\n"):
+    assert labels("/effort ") == ["low", "medium", "high"]
+    assert [item.text for item in suggestions("/effort H")] == ["/effort high"]
+    for text in ("/effort cao thêm", "/new ", "xin chào", "/new\n"):
         assert labels(text) == []
 
     assert labels("/model ") == ["peto"], "chưa hỏi máy chủ thì chỉ gợi ý Peto"
@@ -65,23 +66,23 @@ def test_enter_runs_the_highlighted_command_only_after_something_was_typed():
     state.clear()
     feed(state, typed("/"))
     assert state.selected is None
-    assert state.handle(Key("enter")) == (SUBMIT, "/"), "chỉ gõ / rồi Enter không tự chạy /moi"
+    assert state.handle(Key("enter")) == (SUBMIT, "/"), "chỉ gõ / rồi Enter không tự chạy /new"
 
     state.clear()
     feed(state, [*typed("/"), Key("down"), Key("down")])
     assert state.handle(Key("enter")) == (SUBMIT, "/resume")
     state.clear()
     feed(state, [*typed("/"), Key("up")])
-    assert state.handle(Key("enter")) == (SUBMIT, "/thoat")
+    assert state.handle(Key("enter")) == (SUBMIT, "/exit")
 
     state.clear()
     feed(state, typed("/eff\t"))
-    assert state.text == "/effort " and [item.label for item in state.items()] == ["thap", "vua", "cao"]
+    assert state.text == "/effort " and [item.label for item in state.items()] == ["low", "medium", "high"]
     assert state.handle(Key("enter")) == (SUBMIT, "/effort "), "chưa chọn mức thì chỉ xem mức đang dùng"
 
     state.clear()
-    feed(state, typed("/effort c"))
-    assert state.handle(Key("enter")) == (SUBMIT, "/effort cao")
+    feed(state, typed("/effort h"))
+    assert state.handle(Key("enter")) == (SUBMIT, "/effort high")
 
     state.clear()
     feed(state, [*typed("/re"), Key("escape")])
@@ -165,11 +166,10 @@ def test_console_key_events_are_translated():
 
 def test_layout_wraps_before_the_last_column_and_draws_the_menu():
     state = EditorState()
-    feed(state, typed("/re"))
+    feed(state, typed("/ret"))
     frame = layout(state, prompt=PROMPT, width=80, height=24)
-    assert frame.lines == ["Bạn › /re", "  ❯ /resume  Mở lại hội thoại gần nhất của thư mục này",
-                           "    /retry   Thử lại bước bị gián đoạn kết nối"]
-    assert (frame.cursor_row, frame.cursor_col) == (0, 9)
+    assert frame.lines == ["Bạn › /ret", "  ❯ /retry  Thử lại bước bị gián đoạn kết nối"]
+    assert (frame.cursor_row, frame.cursor_col) == (0, 10)
 
     state.clear()
     feed(state, typed("a" * 30))
@@ -203,14 +203,13 @@ class FakeConsole:
 
 
 def test_line_editor_redraws_in_place():
-    console = FakeConsole([typed("/re"), [Key("enter")]])
+    console = FakeConsole([typed("/ret"), [Key("enter")]])
     out = io.StringIO()
     editor = LineEditor(console, out, size=lambda: (80, 24))
-    assert editor.read(PROMPT) == "/resume"
+    assert editor.read(PROMPT) == "/retry"
     text = out.getvalue()
-    assert ("Bạn › /re\r\n  ❯ /resume  Mở lại hội thoại gần nhất của thư mục này\r\n"
-            "    /retry   Thử lại bước bị gián đoạn kết nối\033[2A\r\033[9C") in text
-    assert text.endswith("\r\033[JBạn › /resume\r\033[13C\033[?25h\r\n"), "lần vẽ cuối xóa bảng gợi ý rồi xuống dòng"
+    assert "Bạn › /ret\r\n  ❯ /retry  Thử lại bước bị gián đoạn kết nối\033[1A\r\033[10C" in text
+    assert text.endswith("\r\033[JBạn › /retry\r\033[12C\033[?25h\r\n"), "lần vẽ cuối xóa bảng gợi ý rồi xuống dòng"
 
     console = FakeConsole([typed("a" * 30), [Key("interrupt")], [Key("interrupt")]])
     editor = LineEditor(console, io.StringIO(), size=lambda: (20, 24))

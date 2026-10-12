@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import json
 import platform
+import threading
 import time
 from datetime import datetime
 
@@ -26,6 +27,12 @@ MAX_STEPS_PER_TASK = 40
 # Hội thoại tới ngần này mục hoặc ngần này ký tự thì Peto tự tóm tắt phần cũ trước bước kế tiếp.
 COMPACT_ITEMS = 180
 COMPACT_CHARS = 200_000
+# Phần cuối output gửi kèm tin báo lệnh nền vừa dừng; muốn hơn thì Peto đọc bằng read_command_output.
+MAX_JOB_NOTE_CHARS = 4000
+# Đặt tên hội thoại (CLI 0.21.0, chủ web chọn ngày 2026-10-12): một lượt Peto mức thấp (1 bước), gửi đầu tin đầu tiên
+# và đầu câu trả lời; tên dài quá thì cắt.
+TITLE_SOURCE_CHARS = (2000, 1000)
+MAX_TITLE_CHARS = 60
 # Mỗi lời Peto ghi vào nhật ký giữ tối đa ngần này ký tự (phần đầu và phần cuối), để nhật ký không phình theo code dài.
 MAX_LOGGED_REPLY = 4000
 # Máy chủ không lưu hội thoại nên bước nào cũng gửi lại ảnh: chỉ giữ 4 ảnh gần nhất, như chat trên web.
@@ -159,12 +166,21 @@ class Session:
         self.items: list[dict] = []
         self.steps_used: int | None = None
         self.steps_limit: int | None = None
-        # Độ dài hội thoại mô hình thấy ở bước gần nhất (token vào + ra): cho biết lúc nào nên /moi.
+        # Độ dài hội thoại mô hình thấy ở bước gần nhất (token vào + ra): cho biết lúc nào nên /new.
         self.context_tokens: int | None = None
         self.can_retry = False
         self.metrics = self.tools.metrics
         self._running = False
         self.active_seconds = 0.0
+        # Chế độ (làm việc hay Lập kế hoạch) Peto được báo gần nhất trong hội thoại; đổi thì báo lại ở bước kế tiếp.
+        self._announced_mode = "build"
+        # Hội thoại đang mở trong danh sách /resume (CLI 0.20.0): mã sinh ở lần lưu đầu, tên tạm là đầu tin đầu tiên.
+        self.session_id: str | None = None
+        self.title: str | None = None
+        # Model đặt tên hội thoại sau yêu cầu đầu (cần máy chủ có "title"); bài thi tắt để khỏi tốn bước.
+        self.auto_title = True
+        self._titling = False
+        self._save_lock = threading.Lock()
 
     def reset(self) -> None:
         self.tools.skills.loaded.clear()
@@ -177,6 +193,61 @@ class Session:
         self.tools.command_grants.clear()
         self.tools.seen_guides.clear()
         self.tools.checkpoint = Checkpoint(self.ws)
+        self._announced_mode = "build"
+        # /new: hội thoại mới có mã mới, hội thoại cũ vẫn nằm trong /resume.
+        self.session_id = self.title = None
+
+    def save(self, items: list[dict] | None = None, **flags) -> None:
+        """Lưu hội thoại đang mở để /resume mở lại (``flags``: retryable, interrupted)."""
+        with self._save_lock:
+            if self.session_id is None:
+                self.session_id = history.new_id()
+            history.save(self.ws.root, self.client.server, self.items if items is None else items,
+                         session_id=self.session_id, title=self.title or "", model=self.model, **flags)
+
+    def _name_conversation(self) -> None:
+        """Sau yêu cầu đầu của một hội thoại: nhờ model đặt tên cho danh sách /resume, ở luồng nền để người dùng gõ
+        tiếp ngay. Lỗi, hết bước hay máy chủ cũ thì giữ tên tạm (đầu tin đầu tiên)."""
+        if (not self.auto_title or self.title or self._titling or "title" not in self.tools.features
+                or self.session_id is None):
+            return
+        first = next((history.raw_text(item) for item in self.items if item.get("role") == "user"
+                      and not history.is_note(item) and history.raw_text(item).strip()), "")
+        reply = next((text_of(item) for item in self.items if item.get("role") == "assistant" and text_of(item)), "")
+        if not first:
+            return
+        session_id = self.session_id
+        prompt = (f"Tin đầu của người dùng:\n{first[:TITLE_SOURCE_CHARS[0]]}\n\n"
+                  f"Đầu câu trả lời của Peto:\n{reply[:TITLE_SOURCE_CHARS[1]]}")
+        body = {"input": [user_message(prompt)], "effort": "low", "model": "peto", "context": {"purpose": "title"}}
+        self._titling = True
+
+        def run() -> None:
+            try:
+                with contextlib.closing(self.client.stream("/api/agent/step", body)) as events:
+                    for event in events:
+                        if event.get("type") != "done" or event.get("purpose") != "title":
+                            continue
+                        text = " ".join(text_of(item) for item in event.get("output") or []
+                                        if item.get("role") == "assistant").strip()
+                        title = " ".join(text.splitlines()[0].split()).strip("\"' ") if text else ""
+                        if not title:
+                            continue
+                        title = title if len(title) <= MAX_TITLE_CHARS else title[:MAX_TITLE_CHARS - 1] + "…"
+                        if self.session_id == session_id:
+                            self.title = title
+                            if not self._running:
+                                self.save()
+                        else:  # đã /new hay /resume sang hội thoại khác: ghi tên vào tệp của hội thoại cũ
+                            with self._save_lock:
+                                history.rename(self.ws.root, self.client.server, session_id, title)
+                        self._log("title", title=title)
+            except (ApiError, OSError, ValueError):
+                pass
+            finally:
+                self._titling = False
+
+        threading.Thread(target=run, name="peto-title", daemon=True).start()
 
     def context_share(self) -> float | None:
         """Hội thoại đã tới đâu so với mức tự tóm tắt (0 tới 1), để người dùng biết lúc nào nên /compact (chủ web hỏi
@@ -191,7 +262,8 @@ class Session:
             self.items = portable(self.items)
         self.model, self.model_step_cost = model, step_cost
 
-    def resume(self, items: list[dict], *, retryable: bool = False, model: str = "peto") -> None:
+    def resume(self, items: list[dict], *, retryable: bool = False, model: str = "peto", session_id: str | None = None,
+               title: str | None = None) -> None:
         """Mở lại hội thoại đã lưu. Quên các tệp đã đọc, để Peto phải đọc lại trước khi sửa."""
         self.tools.skills.loaded.clear()
         self.tools.reset_task()
@@ -204,10 +276,55 @@ class Session:
         self.tools.command_grants.clear()
         self.tools.seen_guides.clear()
         self.tools.checkpoint = Checkpoint(self.ws)
+        self.session_id, self.title = session_id, title
+        notes = [history.raw_text(item) for item in self.items if history.is_note(item)]
+        self._announced_mode = "build"
+        for text in notes:
+            if text == history.PLAN_ON_NOTE:
+                self._announced_mode = "plan"
+            elif text == history.PLAN_OFF_NOTE:
+                self._announced_mode = "build"
 
     def _log(self, kind: str, **data) -> None:
         if self.log is not None:
             self.log.write(kind, **data)
+
+    def _inbox(self, *, steers: bool = True) -> bool:
+        """Những gì tới trong lúc Peto làm, chèn vào hội thoại trước bước kế tiếp (theo opencode, CLI 0.20.0):
+
+        - chế độ vừa đổi (Shift+Tab hay /plan) thì một tin nhắc chế độ;
+        - lệnh nền vừa tự dừng thì một tin báo kèm phần output chưa đọc, để Peto khỏi đọc đi đọc lại chờ nó xong;
+        - tin người dùng nhắn thêm (Enter lúc Peto đang làm), để lái việc đang làm thay vì chờ tới lượt sau.
+
+        Trả True khi có tin nhắn thêm: model định kết thúc thì vẫn chạy thêm một bước để đọc nó.
+        """
+        mode = getattr(self.ui, "mode", "build")
+        if mode != self._announced_mode:
+            self.items.append(user_message(history.PLAN_ON_NOTE if mode == "plan" else history.PLAN_OFF_NOTE))
+            self._announced_mode = mode
+            self._log("mode", mode=mode)
+        for job in self.tools.jobs.finished():
+            code = job["exit_code"]
+            output = job["output"].strip()
+            if len(output) > MAX_JOB_NOTE_CHARS:
+                output = "…\n" + output[-MAX_JOB_NOTE_CHARS:]
+            text = (f"{history.JOB_NOTE}Lệnh nền #{job['id']} ({job['command']}) đã tự dừng sau "
+                    f"{format_duration(job['seconds'])}, mã thoát {code}."
+                    + (f" Output chưa đọc:\n{output}" if output else " Không có output mới."))
+            self.items.append(user_message(text))
+            self.ui.notice(f"Lệnh nền #{job['id']} đã dừng · mã thoát {code}", "yellow" if code else "dim")
+            self._log("job_finished", id=job["id"], exit_code=code)
+        take = getattr(self.ui, "take_steers", None) if steers else None
+        steered = False
+        for text, images in take() if take else []:
+            attached = mentions.attach(self.ws, self.tools, text)
+            for step in attached.steps:
+                self.ui.step(step)
+            self.items.append(user_message(history.STEER_NOTE + attached.text, images))
+            drop_old_images(self.items)
+            self._log("steer", text=text, images=len(images))
+            steered = True
+        return steered
 
     def run_task(self, text: str, images=()) -> None:
         """Chạy một yêu cầu. ``images`` là các cặp (số ảnh, ảnh) dán kèm bằng Alt+V hay kéo thả."""
@@ -217,6 +334,8 @@ class Session:
             self.ui.step(step)
         for notice in attached.notices:
             self.ui.line(f"  {notice}", "yellow")
+        # Đổi chế độ, lệnh nền dừng trong lúc rảnh: báo trước tin của người dùng, như opencode chèn lời nhắc chế độ.
+        self._inbox(steers=False)
         self.items.append(user_message(attached.text, images))
         drop_old_images(self.items)
         # Nhật ký chỉ ghi số ảnh và đường dẫn đính kèm, không ghi dữ liệu ảnh hay nội dung tệp.
@@ -242,7 +361,7 @@ class Session:
         self.run_task("\n\n".join(lines))
 
     def note(self, text: str) -> None:
-        """/nho: ghi một điều cần nhớ vào mục "Ghi nhớ" của AGENTS.md ở gốc dự án.
+        """/remember: ghi một điều cần nhớ vào mục "Ghi nhớ" của AGENTS.md ở gốc dự án.
 
         Ghi ngay trên máy, không gọi model nên không tốn bước; AGENTS.md gốc đi kèm mọi bước nên Peto nhớ từ yêu cầu
         tới. Chính người dùng gõ nội dung nên không hỏi lại. Không đưa vào bản hoàn tác, để /undo vẫn là lần sửa của
@@ -250,7 +369,7 @@ class Session:
         """
         note = " ".join(text.split())
         if not note:
-            self.ui.line("  Gõ /nho kèm điều Peto cần nhớ về dự án, ví dụ: /nho chạy test bằng python -m pytest", "dim")
+            self.ui.line("  Gõ /remember kèm điều Peto cần nhớ về dự án, ví dụ: /remember chạy test bằng python -m pytest", "dim")
             return
         if len(note) > MAX_NOTE_CHARS:
             self.ui.line(f"  Ghi chú dài quá {MAX_NOTE_CHARS} ký tự; viết gọn lại nhé.", "yellow")
@@ -305,7 +424,7 @@ class Session:
         self.items.append(user_message("Người dùng vừa yêu cầu /undo. Các tệp hoàn tác thành công: "
                                        + ", ".join(restored) + ". Đọc lại tệp trước khi tiếp tục; không tự làm lại thay đổi."))
         self.can_retry = False
-        history.save(self.ws.root, self.client.server, self.items, model=self.model)
+        self.save()
         if restored:
             self.ui.success(f"Đã hoàn tác {len(restored)} tệp.")
 
@@ -345,8 +464,8 @@ class Session:
             self.ui.item(f"xem trang ngoài {site}")
 
     def browser_window(self, value: str = "") -> None:
-        """/trinhduyet hiện hoặc ẩn cửa sổ trình duyệt của Peto (chủ web chọn ngày 2026-09-23: ẩn, hiện khi cần);
-        /trinhduyet xoa quên đăng nhập và dữ liệu trang đã lưu trong hồ sơ của dự án."""
+        """/browser hiện hoặc ẩn cửa sổ trình duyệt của Peto (chủ web chọn ngày 2026-09-23: ẩn, hiện khi cần);
+        /browser clear quên đăng nhập và dữ liệu trang đã lưu trong hồ sơ của dự án."""
         if value == "xoa":
             if self.tools.forget_browser():
                 self.ui.success("Đã xóa hồ sơ trình duyệt của dự án này: đăng nhập, cookie và dữ liệu trang đã lưu.")
@@ -365,7 +484,7 @@ class Session:
             return
         where = f" · {page.origin.split('://', 1)[-1]}" if page.url else ""
         self.ui.success(f"Đã hiện cửa sổ {page.name} của Peto{where}")
-        self.ui.line("    Peto bấm, gõ ở đâu bạn thấy ở đó. Gõ /trinhduyet lần nữa để ẩn, hoặc đóng cửa sổ.", "dim")
+        self.ui.line("    Peto bấm, gõ ở đâu bạn thấy ở đó. Gõ /browser lần nữa để ẩn, hoặc đóng cửa sổ.", "dim")
 
     def compact(self, *, propagate_cancel=False):
         metrics = self.metrics if self._running else Metrics()
@@ -415,7 +534,7 @@ class Session:
                     self.ws.read_digests.clear()
                     self.tools.seen_guides.clear()
                     self.context_tokens = None
-                    history.save(self.ws.root, self.client.server, self.items, retryable=self.can_retry, model=self.model)
+                    self.save(retryable=self.can_retry)
                     self.ui.success("Đã tóm tắt phần cũ và giữ nguyên các bước gần nhất.")
                     return True
         except KeyboardInterrupt:
@@ -460,7 +579,7 @@ class Session:
                 if not compact_failed and (len(self.items) >= COMPACT_ITEMS or context_size(self.items) > COMPACT_CHARS):
                     compact_failed = not self.compact(propagate_cancel=True)
                 if len(self.items) >= 270:
-                    self.ui.failure("Hội thoại quá dài và chưa tóm tắt được. Gõ /compact để thử lại hoặc /moi.")
+                    self.ui.failure("Hội thoại quá dài và chưa tóm tắt được. Gõ /compact để thử lại hoặc /new.")
                     outcome = "limit"
                     return
                 output = self._step()
@@ -476,6 +595,10 @@ class Session:
                 self.items.extend(output)
                 pending = [item for item in output if item.get("type") == "function_call"]
                 if not pending:
+                    if self._inbox():
+                        # Người dùng nhắn thêm lúc Peto vừa viết xong: chạy thêm một bước để Peto đọc tin đó.
+                        self._save_progress()
+                        continue
                     if self.tools.changes and self.tools.checked_revision < self.tools.revision and not verification_reminded:
                         verification_reminded = True
                         self.items.append({"type": "message", "role": "assistant", "content": (
@@ -502,6 +625,7 @@ class Session:
                     self.items.append(tool_images(self.tools.captured))
                     self.tools.captured = []
                     drop_old_images(self.items)
+                self._inbox()
             else:
                 outcome = "limit"
                 self.ui.line(f'Peto đã làm {MAX_STEPS_PER_TASK} bước trong yêu cầu này nên tạm dừng. Gõ "làm tiếp" nếu '
@@ -516,14 +640,16 @@ class Session:
                 self.items.append({"type": "function_call_output", "call_id": call.get("call_id", ""),
                                    "output": json.dumps(STOPPED_RESULT, ensure_ascii=False)})
             self.ui.line()
-            self.ui.line("Đã dừng yêu cầu. Gõ yêu cầu mới, hoặc /thoat để thoát.", "yellow")
+            self.ui.line("Đã dừng yêu cầu. Gõ yêu cầu mới, hoặc /exit để thoát.", "yellow")
             self._log("stopped")
         finally:
             self.tools.approve_all = False
             self.active_seconds += time.monotonic() - started
             self._running = False
             self._summary(self.active_seconds, outcome)
-            history.save(self.ws.root, self.client.server, self.items, retryable=self.can_retry, model=self.model)
+            self.save(retryable=self.can_retry)
+            if outcome == "done":
+                self._name_conversation()
 
     def _save_progress(self) -> None:
         """Lưu hội thoại giữa yêu cầu, để đóng cửa sổ giữa chừng thì /resume vẫn còn những gì Peto đã làm.
@@ -538,7 +664,7 @@ class Session:
             if item.get("type") == "function_call" and item.get("call_id") not in answered:
                 items.append({"type": "function_call_output", "call_id": item.get("call_id", ""),
                               "output": json.dumps(INTERRUPTED_RESULT, ensure_ascii=False)})
-        history.save(self.ws.root, self.client.server, items, model=self.model, interrupted=True)
+        self.save(items, interrupted=True)
 
     def _step(self) -> list[dict] | None:
         body = {"input": efficient_input(self.items), "effort": self.effort, "model": self.model, "context": {

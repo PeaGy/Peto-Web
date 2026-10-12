@@ -266,11 +266,11 @@ def test_commands_usage_and_update_notice(project, peto, monkeypatch):
     assert header.startswith(f"Peto Agent {__version__} · ") and header.endswith("project · Peto · mức vừa")
     assert "Bình" not in header and "/help xem các lệnh" not in ui.text
     assert ui.text.count("Thời gian yêu cầu") == 1, "chi tiết thời gian và token chỉ hiện khi gõ /usage"
-    assert re.search(r"/effort\s+Xem hoặc đổi mức suy nghĩ: thap, vua, cao", ui.text)
+    assert re.search(r"/effort\s+Xem hoặc đổi mức suy nghĩ: low, medium, high", ui.text)
     steps = [request["body"] for request in peto.requests if request["path"] == "/api/agent/step"]
     assert [step["input"][0]["content"] for step in steps] == ["/api/users lỗi 500"], "đường dẫn API không phải lệnh"
     assert "  Hôm nay còn 190/200 bước · đã dùng 1.2k token · hội thoại này 1k token · Peto · mức vừa." in ui.text
-    assert "Lệnh /moi không nhận thêm gì phía sau." in ui.text and "Không có lệnh này" in ui.text
+    assert "Lệnh /new không nhận thêm gì phía sau." in ui.text and "Không có lệnh này" in ui.text
     assert ui.answers == ["/usage"], "/thoát gõ có dấu vẫn thoát"
 
     me["cli_version"] = __version__
@@ -368,7 +368,7 @@ def test_full_efforts_persist_forward_and_restrict_after_model_switch(project, p
     assert [step["effort"] for step in steps] == efforts
     assert config.load()["effort"] == "max"
     assert cli._effort(me) == "max"
-    assert [item.label for item in cli.commands.suggestions("/effort ")] == ["none", "thap", "vua", "cao", "xhigh", "max"]
+    assert [item.label for item in cli.commands.suggestions("/effort ")] == ["none", "low", "medium", "high", "xhigh", "max"]
     ui = FakeUI(answers=["/model peto", "/effort max", "chào", "/thoat"])
     assert cli.session(ui) == 0
     assert "chuyển sang mức vừa" in ui.text
@@ -440,13 +440,14 @@ def test_switching_models_drops_what_only_the_old_model_can_read(project, peto):
     session.resume(kept, model="peto")
     assert not any(item.get("type") == "reasoning" or "id" in item for item in session.items)
 
-    history.save(project, peto.url, kept, model="luna")
+    history.save(project, peto.url, kept, session_id="cu", model="luna")
     assert history.load(project, peto.url).model == "luna"
 
 
 def test_split_command():
     assert cli.split_command("/effort Cao") == ("/effort", "Cao")
-    assert cli.split_command("/Thoát") == ("/thoat", "")
+    assert cli.split_command("/Thoát") == ("/exit", ""), "tên tiếng Việt cũ vẫn nhận, đổi về tên chính"
+    assert cli.split_command("/moi") == ("/new", "") and cli.split_command("/nho chạy test") == ("/remember", "chạy test")
     assert cli.split_command("/") == ("/", "")
     for text in ("/api/users lỗi 500", "sửa /moi", "/moi\nthêm dòng"):
         assert cli.split_command(text) == ("", "")
@@ -679,7 +680,8 @@ def test_the_input_line_carries_steps_status_and_resume_until_a_conversation_sta
     peto.reply = reply
     config.save({"server": peto.url, "token": "peto_token_thu"})
     monkeypatch.chdir(project)
-    history.save(project.resolve(), normalize_server(peto.url), [{"type": "message", "role": "user", "content": "cũ"}])
+    history.save(project.resolve(), normalize_server(peto.url), [{"type": "message", "role": "user", "content": "cũ"}],
+                 session_id="cu")
 
     ui = Recording(["xin chào", "/thoat"])
     assert cli.session(ui) == 0
@@ -729,7 +731,7 @@ def test_resuming_a_request_cut_by_a_closed_window_says_so_and_shows_the_plan(pr
              {"type": "function_call_output", "call_id": "call_0", "output": json.dumps({"ok": True})},
              call(1, "edit_file", path="a.py", old_text="x", new_text="y"),
              {"type": "function_call_output", "call_id": "call_1", "output": json.dumps(INTERRUPTED_RESULT)}]
-    history.save(project, peto.url, items, interrupted=True)
+    history.save(project, peto.url, items, session_id="mot", interrupted=True)
     saved = history.load(project, peto.url)
     assert cli._resume_hint(saved).startswith("/resume làm tiếp yêu cầu bị ngắt lúc ")
 
@@ -738,7 +740,7 @@ def test_resuming_a_request_cut_by_a_closed_window_says_so_and_shows_the_plan(pr
     assert "☑ Đọc code" in ui.text and "▶ Sửa lỗi" in ui.text
     assert "Yêu cầu cuối bị ngắt giữa chừng" in ui.text and '"làm tiếp"' in ui.text
 
-    history.save(project, peto.url, items)
+    history.save(project, peto.url, items, session_id="mot")
     assert cli._resume_hint(history.load(project, peto.url)).startswith("/resume mở hội thoại lúc "), \
         "bản lưu lúc xong yêu cầu thì nhắc như cũ"
     assert history.last_plan([call(2, "update_plan", steps="hỏng")]) == []
@@ -761,7 +763,7 @@ def test_note_command_writes_agents_md_without_calling_the_model(project, peto, 
     ui = FakeUI(["/nhớ chạy test bằng python -m pytest", "/nho", "/thoat"])
     assert cli.session(ui) == 0
     assert (project / "AGENTS.md").read_text(encoding="utf-8") == "## Ghi nhớ\n\n- chạy test bằng python -m pytest\n"
-    assert "Gõ /nho kèm điều Peto cần nhớ" in ui.text
+    assert "Gõ /remember kèm điều Peto cần nhớ" in ui.text
     assert not any(request["path"] == "/api/agent/step" for request in peto.requests), "/nho không tốn bước nào"
 
 
@@ -1037,7 +1039,7 @@ def test_browser_window_command_shows_hides_and_forgets(project, peto, monkeypat
     monkeypatch.setattr(browser_module, "forget_project", lambda root: forgotten.append(root) or True)
     work, ui = start(project, peto, [])
     work.browser_window()
-    assert "✓ Đã hiện cửa sổ Edge của Peto" in ui.text and "Gõ /trinhduyet lần nữa để ẩn" in ui.text
+    assert "✓ Đã hiện cửa sổ Edge của Peto" in ui.text and "Gõ /browser lần nữa để ẩn" in ui.text
     work.browser_window()
     assert "✓ Đã ẩn cửa sổ. Peto vẫn xem và thao tác được." in ui.text
     first = work.tools.browser

@@ -235,5 +235,5 @@ def test_note_needs_text_and_stays_short(project):
     work = Session(Client("http://127.0.0.1:9", "peto_token_thu"), Workspace(project), ui)
     work.note("   ")
     work.note("x" * 501)
-    assert "Gõ /nho kèm điều Peto cần nhớ" in ui.text and "dài quá 500 ký tự" in ui.text
+    assert "Gõ /remember kèm điều Peto cần nhớ" in ui.text and "dài quá 500 ký tự" in ui.text
     assert not (project / "AGENTS.md").exists()

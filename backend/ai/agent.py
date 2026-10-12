@@ -254,7 +254,7 @@ async def _responses_step(client, service: str, model: str, max_output_tokens: i
                 yield event
             return
         if err.status_code == 400:
-            raise ProviderError("Dịch vụ AI không nhận nội dung bước này. Gõ /moi để bắt đầu hội thoại mới nhé.") from err
+            raise ProviderError("Dịch vụ AI không nhận nội dung bước này. Gõ /new (bản cũ: /moi) để bắt đầu hội thoại mới nhé.") from err
         raise ProviderError("Peto gặp lỗi kết nối với dịch vụ AI. Thử lại sau nhé.") from err
     finally:
         if stream is not None:

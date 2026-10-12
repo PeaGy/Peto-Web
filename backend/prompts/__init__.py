@@ -51,4 +51,7 @@ from .agent import (
     AGENT_BROWSER_OUTSIDE_PROMPT,
     AGENT_EXPLORE_PROMPT,
     AGENT_EDIT_PROMPT,
+    AGENT_QUESTION_PROMPT,
+    TITLE_PROMPT,
+    agent_inbox_prompt,
 )

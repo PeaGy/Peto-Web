@@ -209,6 +209,36 @@ AGENT_EDIT_PROMPT = (
     "approximate match; different text never matches, so read again. Use replace_all true to rename a repeated "
     "identifier or string within one file; otherwise leave it null and choose old_text that matches exactly once."
 )
+AGENT_QUESTION_PROMPT = (
+    "## Asking the user\nWhen a real user decision (approach, scope, naming) cannot be answered from the code or a "
+    "sensible default, call ask_user with 2-4 options and continue with the answer in the same request. Put the "
+    "recommended option first and end its label with \"(nên chọn)\". Do not ask what you can find by reading code, do "
+    "not ask permission to edit files or run commands (the CLI asks), and do not ask again what the user already said. "
+    "If the user dismisses the question, pick a reasonable option and say so."
+)
+# GPT models (Luna, Terra, Sol) edit through apply_patch, like opencode; based on opencode's tool/patch.txt (MIT).
+AGENT_PATCH_PROMPT = (
+    "## Editing with apply_patch\nEdit files only through apply_patch; edit_file and write_file are not available. "
+    "Send the whole patch as patch_text:\n"
+    "*** Begin Patch\n"
+    "*** Add File: path/new.py\n+every line of a new file starts with +\n"
+    "*** Update File: path/app.py\n*** Move to: path/main.py   (optional rename)\n"
+    "@@ def greet():\n-    print(\"Hi\")\n+    print(\"Hello\")\n"
+    "*** Delete File: path/old.txt\n"
+    "*** End Patch\n"
+    "Paths are relative to the project root. In an Update section, '@@' lines name nearby context (a function or class) "
+    "and each hunk uses ' ' for unchanged lines, '-' for removed and '+' for added lines; include about three unchanged "
+    "lines around each change so the hunk matches exactly one place. Read files before updating or deleting them, and "
+    "copy context from the latest read without line-number prefixes. One patch may change several files; the user "
+    "approves it once, and nothing is written if any hunk fails to match. Use delete_file or move_file for a plain "
+    "delete or rename."
+)
+TITLE_PROMPT = (
+    "You name a Peto Agent conversation so the user can find it later in a list. Output only the title on one line, no "
+    "explanation and no quotes. At most 50 characters, in the language of the user's message, reading naturally and "
+    "saying what they want to do. Keep technical terms, file names, error codes and numbers exact. Never mention tool "
+    "names, never answer the question, never call tools. For a mere greeting use a title like \"Greeting\"."
+)
 AGENT_SEARCH_PROMPT = (
     "## Agent web search\nweb_search runs at the AI service, not on the user's computer. Use it for information outside "
     "the project, such as official library/API documentation, unfamiliar errors or changing versions; search project "

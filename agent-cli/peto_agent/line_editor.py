@@ -458,7 +458,8 @@ def translate(vk: int, char: str, state: int) -> Key | None:
     if vk == VK_BACK or char in ("\b", "\x7f"):
         return Key("backspace", ctrl=ctrl)
     if vk == VK_TAB or char == "\t":
-        return Key("tab")
+        # Shift+Tab (terminal gửi ESC [ Z, ConPTY đổi thành Tab kèm Shift): đổi chế độ Lập kế hoạch.
+        return Key("backtab") if state & SHIFT else Key("tab")
     if vk == VK_ESCAPE or char == "\x1b":
         return Key("escape")
     if vk in NAVIGATION and char < " ":

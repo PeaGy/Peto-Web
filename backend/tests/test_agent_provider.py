@@ -61,7 +61,7 @@ async def test_rejected_step_logs_the_reason_from_xai(monkeypatch, caplog):
     caplog.set_level(logging.WARNING, logger="peto_web.agent")
     with pytest.raises(ProviderError) as raised:
         await run_step()
-    assert "Gõ /moi" in str(raised.value)
+    assert "Gõ /new (bản cũ: /moi)" in str(raised.value)
     assert "HTTP 400" in caplog.text and "maximum prompt length is 131072" in caplog.text
     assert SECRET_TEXT not in caplog.text and "xai-token-thu" not in caplog.text
 

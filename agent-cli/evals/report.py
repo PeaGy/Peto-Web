@@ -186,13 +186,16 @@ def render(run: dict, results: list[dict]) -> str:
             label = check["name"] if check["required"] else f"(phụ) {check['name']}"
             lines.append(f"- {mark} {label}" + (f" · {check['detail']}" if check["detail"] else ""))
         requests = [request for request in result["requests"] if request.get("kind") in {"command", "background",
-                                                                                          "site", "login"}]
+                                                                                          "site", "login", "question"}]
         if requests:
             lines += ["", "Xin quyền:"]
             for request in requests:
                 what = request.get("command") or request.get("url") or request.get("detail") or ""
-                answer = "đồng ý" if request.get("answer") == "y" else f"từ chối ({request.get('reason')})"
-                kind = {"background": "lệnh nền", "site": "trang ngoài", "login": "đăng nhập"}.get(request["kind"], "lệnh")
+                answer = ("đồng ý" if request.get("answer") == "y" else
+                          f"trả lời {request.get('answer')}" if request["kind"] == "question" else
+                          f"từ chối ({request.get('reason')})")
+                kind = {"background": "lệnh nền", "site": "trang ngoài", "login": "đăng nhập",
+                        "question": "câu hỏi"}.get(request["kind"], "lệnh")
                 lines.append(f"- {kind} `{what[:160]}` → {answer}")
         habits = result["behavior"]
         lines += ["", f"Kết thúc: {OUTCOMES.get(result['outcome'], result['outcome'])} · {result['steps']} lượt · "

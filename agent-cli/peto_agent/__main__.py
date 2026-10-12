@@ -20,15 +20,15 @@ from .ui import UI, enable_vt
 from .workspace import Workspace, WorkspaceError
 
 # Lệnh không nhận gì phía sau; gõ thêm chữ thì nhắc chứ không gửi cả câu cho Peto.
-PLAIN_COMMANDS = {"/thoat", "/exit", "/quit", "/moi", "/help", "/resume", "/usage", "/retry", "/diff", "/undo",
-                  "/compact", "/init", "/suynghi"}
+PLAIN_COMMANDS = {"/exit", "/new", "/help", "/usage", "/retry", "/diff", "/undo", "/compact", "/init", "/thinking",
+                  "/plan"}
 EFFORT_LABELS = {"none": "không suy luận", "low": "thấp", "medium": "vừa", "high": "cao",
                  "xhigh": "rất cao", "max": "tối đa"}
 # Giống STEP_COST của máy chủ: mức cao tính gấp đôi, nhân với số bước của model.
 EFFORT_COST = {"none": 1, "low": 1, "medium": 1, "high": 2, "xhigh": 2, "max": 2}
 # Máy chủ cũ chưa có /model thì chỉ có Peto.
 DEFAULT_MODELS = [{"key": "peto", "label": "Peto", "description": "Mặc định", "step_cost": 1}]
-# Gõ không dấu cho dễ, như /moi và /thoat; có dấu hay tên tiếng Anh cũng nhận.
+# Tên tiếng Anh như lệnh khác; tên tiếng Việt cũ, gõ có dấu hay không dấu, vẫn nhận.
 EFFORT_ALIASES = {"thap": "low", "thấp": "low", "low": "low", "vua": "medium", "vừa": "medium", "tb": "medium",
                   "medium": "medium", "cao": "high", "high": "high", "none": "none", "khong": "none",
                   "xhigh": "xhigh", "ratcao": "xhigh", "max": "max", "toida": "max"}
@@ -43,7 +43,8 @@ def split_command(text: str) -> tuple[str, str]:
     if not re.fullmatch(r"/[^\s/]*( .*)?", text):
         return "", ""
     name, _, value = text.partition(" ")
-    return fold(name), value.strip()
+    # Tên tiếng Việt cũ (/moi, /thoat…) đổi về tên chính, để mọi chỗ chỉ so với một tên.
+    return commands.canonical(fold(name)), value.strip()
 
 
 def _saved_client(ui: UI) -> Client | None:
@@ -219,16 +220,36 @@ def _usage(ui: UI, work: Session) -> None:
         work.show_metrics()
 
 
-def _resume(ui: UI, work: Session) -> None:
-    saved = history.load(work.ws.root, work.client.server)
-    if saved is None:
+RESUME_SHOWN = 20
+
+
+def _resume(ui: UI, work: Session, value: str = "") -> None:
+    """/resume: danh sách hội thoại đã lưu của thư mục (mới nhất trước) để chọn; /resume 2 mở thẳng cái thứ hai."""
+    sessions = history.list_sessions(work.ws.root, work.client.server)[:RESUME_SHOWN]
+    if not sessions:
         ui.line("  Chưa có hội thoại nào được lưu ở thư mục này.", "dim")
         return
-    if work.items == saved.items:
-        ui.line("  Đang ở đúng hội thoại gần nhất rồi.", "dim")
+    if value:
+        if not value.isdigit() or not 1 <= int(value) <= len(sessions):
+            ui.line(f"  Gõ /resume để chọn trong danh sách, hoặc /resume 1 tới /resume {len(sessions)}.", "yellow")
+            return
+        index = int(value) - 1
+    elif len(sessions) == 1:
+        # Chỉ một hội thoại thì mở luôn như trước, khỏi phải chọn.
+        index = 0
+    else:
+        rows = [(saved.title, f"{history.when(saved.saved_at)} · {saved.message_count} tin"
+                 + (" · bị ngắt giữa chừng" if saved.interrupted else "")
+                 + (" · đang mở" if saved.id == work.session_id else "")) for saved in sessions]
+        index = ui.choose("Mở lại hội thoại", rows)
+        if index is None:
+            return
+    saved = sessions[index]
+    if saved.id == work.session_id and work.items == saved.items:
+        ui.line("  Đang ở đúng hội thoại này rồi.", "dim")
         return
-    work.resume(saved.items, retryable=saved.retryable, model=saved.model)
-    ui.success(f"Đã mở lại hội thoại {history.when(saved.saved_at)}:")
+    work.resume(saved.items, retryable=saved.retryable, model=saved.model, session_id=saved.id, title=saved.title)
+    ui.success(f"Đã mở lại hội thoại {history.when(saved.saved_at)}: \"{saved.title}\"")
     for who, text in history.recap(saved.items):
         ui.line(f"    {who} › {text}", "dim")
     if saved.interrupted:
@@ -240,6 +261,20 @@ def _resume(ui: UI, work: Session) -> None:
     ui.line("  Peto không chạy lại lệnh nào; muốn sửa tệp thì sẽ đọc lại tệp trước.", "dim")
     if work.can_retry:
         ui.line("  Hội thoại này bị gián đoạn kết nối. Gõ /retry để thử lại bước chưa xong.", "yellow")
+
+
+def _toggle_plan(ui: UI) -> None:
+    """/plan (cũng là Shift+Tab): đổi qua lại chế độ làm việc và Lập kế hoạch."""
+    toggle = getattr(ui, "toggle_mode", None)
+    if toggle is not None:
+        mode = toggle()
+    else:
+        ui.mode = mode = "build" if ui.mode == "plan" else "plan"
+    if mode == "plan":
+        ui.line("  Chế độ Lập kế hoạch: Peto chỉ tìm hiểu và bàn kế hoạch, không sửa tệp hay thao tác trên trang. Lệnh "
+                "vẫn hỏi bạn như thường. Gõ /plan hoặc bấm Shift+Tab để về chế độ làm việc.", "dim")
+    else:
+        ui.line("  Đã về chế độ làm việc: Peto sửa tệp, chạy lệnh như thường (vẫn hỏi bạn trước).", "dim")
 
 
 def _resume_hint(saved: history.Saved) -> str:
@@ -424,18 +459,21 @@ def session(ui: UI) -> int:
             if name in PLAIN_COMMANDS and value:
                 ui.line(f"Lệnh {name} không nhận thêm gì phía sau.", "yellow")
                 continue
-            if name in {"/thoat", "/exit", "/quit"}:
+            if name == "/exit":
                 break
-            if name == "/moi":
-                # Hội thoại cũ vẫn mở lại được bằng /resume cho tới khi hội thoại mới được lưu đè sau yêu cầu đầu tiên.
+            if name == "/new":
+                # Hội thoại cũ vẫn nằm trong danh sách /resume; hội thoại mới có mã riêng từ lần lưu đầu.
                 work.reset()
-                ui.line("Đã bắt đầu hội thoại mới.", "dim")
+                ui.line("Đã bắt đầu hội thoại mới. Hội thoại cũ vẫn mở lại được bằng /resume.", "dim")
+                continue
+            if name == "/plan":
+                _toggle_plan(ui)
                 continue
             if name == "/help":
                 _help(ui)
                 continue
             if name == "/resume":
-                _resume(ui, work)
+                _resume(ui, work, value)
                 continue
             if name == "/retry":
                 work.retry_task()
@@ -447,7 +485,7 @@ def session(ui: UI) -> int:
                 except (KeyboardInterrupt, EOFError):
                     ui.line("Đã dừng.", "dim")
                 continue
-            if name == "/nho":
+            if name == "/remember":
                 work.note(value)
                 continue
             if name == "/mcp":
@@ -476,7 +514,7 @@ def session(ui: UI) -> int:
                         work.items.append({'type': 'message', 'role': 'user', 'content':
                             'Tôi chọn skill sau cho công việc phù hợp trong hội thoại này. Skill không cấp thêm quyền.\n' +
                             json.dumps(result, ensure_ascii=False)})
-                        history.save(work.ws.root, work.client.server, work.items, model=work.model)
+                        work.save()
                         if task.strip():
                             work.run_task(task.strip(), ui.attached)
                     except (OSError, WorkspaceError) as err:
@@ -488,22 +526,22 @@ def session(ui: UI) -> int:
                 else:
                     work.permissions(clear=value == "clear")
                 continue
-            if name == "/trinhduyet":
-                if fold(value) not in {"", "xoa"}:
-                    ui.line("Dùng /trinhduyet (hiện hoặc ẩn cửa sổ) hoặc /trinhduyet xoa.", "yellow")
+            if name == "/browser":
+                if fold(value) not in {"", "clear", "xoa"}:
+                    ui.line("Dùng /browser (hiện hoặc ẩn cửa sổ) hoặc /browser clear.", "yellow")
                 else:
-                    work.browser_window(fold(value))
+                    work.browser_window("xoa" if fold(value) in {"clear", "xoa"} else "")
                 continue
             if name == "/usage":
                 _usage(ui, work)
                 continue
-            if name == "/suynghi":
+            if name == "/thinking":
                 toggle = getattr(ui, "toggle_thoughts", None)
                 if toggle is None:
                     ui.line("  Chỉ giao diện trong terminal mới hiện suy nghĩ của Peto.", "dim")
                 elif toggle():
                     ui.line("  Đã bật: sau mỗi bước Peto in cả phần suy nghĩ model gửi về (không phải model nào cũng "
-                            "gửi). Gõ /suynghi lần nữa để tắt.", "dim")
+                            "gửi). Gõ /thinking lần nữa để tắt.", "dim")
                 else:
                     ui.line("  Đã tắt: chỉ còn dòng \"+ Đã nghĩ\".", "dim")
                 continue

@@ -25,6 +25,8 @@ SHIPPED = {
         "5c1d1cba99e10a6cad7058cc6e6154f4b4aa466e3dde4c02f406b7c93783d2ec",
     BASE[:5]: "f2667e6eb422077cf04f3d2cab07ab0eca13bd714008203ec58b5ce7642fa8d2",
     BASE: "9cbf0adbc6889295adaa79a729d43f244b6d3a08930bcdb4153b5e0551f15f36",
+    # CLI 0.18–0.20 (ghim ngày 2026-10-12 trước khi thêm question, patch).
+    BASE + ("explore_v2", "edit_v2"): "1934f1c23f55230fd65021385c8dcdf621820e752a7e069e0887f10373cbcd09",
 }
 
 
@@ -65,7 +67,7 @@ def test_edit_v2_adds_replace_all_in_place():
 
 
 def test_new_features_are_known_to_the_server():
-    assert {"explore_v2", "edit_v2"} <= FEATURES
+    assert {"explore_v2", "edit_v2", "question", "patch", "title", "steer", "jobs_notify", "plan_mode"} <= FEATURES
 
 
 def test_instructions_explain_the_new_tools_only_when_declared():
@@ -86,3 +88,52 @@ async def test_me_lists_the_features_the_server_understands(client, anon_client)
     token = await connect(anon_client, client)
     me = (await anon_client.get("/api/agent/me", headers=bearer(token))).json()
     assert me["agent_features"] == sorted(FEATURES) and "explore_v2" in me["agent_features"]
+
+
+def _strict(node) -> None:
+    """Schema strict: mọi object liệt kê đủ required và cấm thuộc tính lạ, ở mọi tầng."""
+    if isinstance(node, dict):
+        if node.get("type") == "object":
+            assert node["additionalProperties"] is False and node["required"] == list(node["properties"])
+        for value in node.values():
+            _strict(value)
+    elif isinstance(node, list):
+        for value in node:
+            _strict(value)
+
+
+def test_question_adds_ask_user_last_with_a_strict_schema():
+    before, after = names(BASE + ("explore_v2", "edit_v2")), names(BASE + ("explore_v2", "edit_v2", "question"))
+    assert after[:-1] == before and after[-1] == "ask_user", "công cụ mới ở cuối để giữ prompt cache"
+    ask = schema(BASE + ("question",), "ask_user")
+    _strict(ask["parameters"])
+    assert "(nên chọn)" in ask["description"]
+
+
+def test_patch_replaces_edit_and_write_only_for_gpt_models():
+    features = frozenset(BASE + ("explore_v2", "edit_v2", "patch"))
+    plain = [tool["name"] for tool in tool_schemas(features)]
+    assert plain == names(BASE + ("explore_v2", "edit_v2")), "model không phải GPT thì khả năng patch không đổi gì"
+    gpt = [tool["name"] for tool in tool_schemas(features, patch_model=True)]
+    assert "edit_file" not in gpt and "write_file" not in gpt
+    assert gpt.index("apply_patch") == plain.index("edit_file"), "apply_patch đứng đúng chỗ edit_file"
+    assert {"delete_file", "move_file"} <= set(gpt)
+    assert [tool["name"] for tool in tool_schemas(frozenset(BASE), patch_model=True)] == names(BASE), \
+        "CLI chưa khai báo patch thì GPT vẫn dùng edit_file"
+    patch = next(tool for tool in tool_schemas(features, patch_model=True) if tool["name"] == "apply_patch")
+    _strict(patch["parameters"])
+
+
+def test_new_prompts_follow_the_declared_features_and_model():
+    from features.agent import api as agent_api
+
+    plain = agent_api._instructions({"features": list(BASE)}, False)
+    assert "ask_user" not in plain and "[Người dùng nhắn thêm" not in plain and "[Tự động]" not in plain
+    full = agent_api._instructions({"features": list(BASE) + ["question", "steer", "jobs_notify", "plan_mode",
+                                                              "patch"]}, False)
+    assert "ask_user" in full and "[Người dùng nhắn thêm" in full and "[Tự động]" in full and "[Peto Agent]" in full
+    assert "apply_patch" not in full, "Peto (Grok) vẫn sửa bằng edit_file"
+    luna = agent_api._instructions({"features": ["patch", "question", "steer"]}, False, model="luna")
+    assert "*** Begin Patch" in luna and "ask_user" in luna and "adjustment to the current task" in luna
+    haiku = agent_api._instructions({"features": ["patch"]}, False, model="haiku")
+    assert "*** Begin Patch" not in haiku, "Claude vẫn sửa bằng edit_file"

@@ -16,7 +16,11 @@ from __future__ import annotations
 # chỉ xem (CLI 0.12.0). Hai khả năng sau chỉ có tác dụng cùng "browser".
 # "explore_v2" (CLI 0.18.0, theo OpenCode): read_file đánh số dòng, search_files gộp theo tệp, thêm find_files.
 # "edit_v2" (CLI 0.18.0, chủ web duyệt ngày 2026-10-12): edit_file khớp gần đúng có kiểm soát và replace_all.
-FEATURES = frozenset({"cwd", "browser", "browser_act", "browser_outside", "skills", "mcp", "explore_v2", "edit_v2"})
+# CLI 0.21.0 (theo opencode, chủ web chọn ngày 2026-10-12): "question" thêm ask_user; "patch" thay edit_file và
+# write_file bằng apply_patch khi model là GPT (Luna, Terra, Sol), như opencode; "title" là lượt đặt tên hội thoại
+# (purpose "title"); "steer", "jobs_notify", "plan_mode" chỉ thêm lời nhắc giải thích tin CLI 0.20 chèn vào hội thoại.
+FEATURES = frozenset({"cwd", "browser", "browser_act", "browser_outside", "skills", "mcp", "explore_v2", "edit_v2",
+                      "question", "patch", "title", "steer", "jobs_notify", "plan_mode"})
 
 _PATH = {"type": "string", "description": "Đường dẫn tương đối tính từ gốc dự án, ví dụ src/app.py; '.' là gốc."}
 _SHELL = {
@@ -180,11 +184,55 @@ _FIND = _tool(
 )
 
 
-def _file_tools(key: frozenset[str]) -> list[dict]:
+_ASK = _tool(
+    "ask_user",
+    "Hỏi người dùng giữa chừng bằng câu hỏi có lựa chọn, rồi làm tiếp với câu trả lời. Chỉ hỏi khi có quyết định thật "
+    "sự của người dùng mà mã nguồn và mặc định hợp lý không trả lời được; không dùng để xin quyền sửa tệp hay chạy "
+    "lệnh (CLI đã hỏi). Người dùng luôn có thêm ô tự trả lời, nên đừng thêm lựa chọn \"Khác\". Phương án nên chọn đặt "
+    "đầu, nhãn kết thúc bằng \"(nên chọn)\".",
+    {
+        "questions": {
+            "type": "array", "description": "Một tới ba câu hỏi.",
+            "items": {
+                "type": "object", "additionalProperties": False,
+                "required": ["question", "header", "options", "multiple"],
+                "properties": {
+                    "question": {"type": "string", "description": "Câu hỏi đầy đủ, kết thúc bằng dấu hỏi."},
+                    "header": {"type": "string", "description": "Nhãn ngắn, tối đa 12 ký tự."},
+                    "options": {
+                        "type": "array", "description": "Hai tới bốn lựa chọn.",
+                        "items": {"type": "object", "additionalProperties": False, "required": ["label", "description"],
+                                  "properties": {"label": {"type": "string", "description": "1–5 chữ."},
+                                                 "description": {"type": "string",
+                                                                 "description": "Chọn cái này thì sao."}}},
+                    },
+                    "multiple": {"type": ["boolean", "null"], "description": "true cho chọn nhiều; null là chọn một."},
+                },
+            },
+        },
+    },
+)
+_PATCH = _tool(
+    "apply_patch",
+    "Sửa, tạo, xóa hay đổi tên tệp bằng một bản patch (có thể nhiều tệp một lần). Người dùng xem diff từng tệp và đồng "
+    "ý một lần cho cả bản patch. Tệp sửa hay xóa phải đã đọc và chưa đổi kể từ lần đọc đó; một chỗ không khớp là không "
+    "ghi tệp nào. Định dạng: *** Begin Patch, rồi từng mục *** Add File: đường/dẫn (mọi dòng bắt đầu bằng +), "
+    "*** Delete File: đường/dẫn, *** Update File: đường/dẫn (có thể kèm *** Move to: đường/mới) với các đoạn @@ gồm "
+    "dòng ' ' giữ nguyên, '-' bỏ, '+' thêm; cuối cùng *** End Patch.",
+    {"patch_text": {"type": "string", "description": "Toàn bộ bản patch, từ *** Begin Patch tới *** End Patch."}},
+)
+
+
+def _file_tools(key: frozenset[str], patch: bool = False) -> list[dict]:
     explore, edit = "explore_v2" in key, "edit_v2" in key
     replaced = {"read_file": _READ_V2 if explore else None, "search_files": _SEARCH_V2 if explore else None,
                 "edit_file": _EDIT_V2 if edit else None}
-    return [replaced.get(tool["name"]) or tool for tool in _FILE_TOOLS]
+    tools = [replaced.get(tool["name"]) or tool for tool in _FILE_TOOLS]
+    if patch:
+        # Như opencode: GPT được huấn luyện với định dạng patch, nên apply_patch thay edit_file (đúng chỗ đó trong danh
+        # sách) và write_file. delete_file, move_file giữ nguyên.
+        tools = [_PATCH if tool["name"] == "edit_file" else tool for tool in tools if tool["name"] != "write_file"]
+    return tools
 
 
 def _command_tools(cwd: bool) -> list[dict]:
@@ -357,15 +405,18 @@ _BROWSER_ACT_TOOLS = [
 
 # Schema cho CLI không khai báo khả năng nào (bản 0.9.7 trở về trước): giữ nguyên từng chữ.
 TOOL_SCHEMAS = _FILE_TOOLS + _command_tools(cwd=False)
-_SCHEMAS: dict[frozenset[str], list[dict]] = {frozenset(): TOOL_SCHEMAS}
+_SCHEMAS: dict[tuple[frozenset[str], bool], list[dict]] = {(frozenset(), False): TOOL_SCHEMAS}
 
 TOOL_NAMES = frozenset(tool["name"] for tool in TOOL_SCHEMAS)
 
 
-def tool_schemas(features: frozenset[str] = frozenset()) -> list[dict]:
-    """Schema theo khả năng CLI khai báo, để bản CLI đang cài không nhận công cụ hay tham số nó chưa hiểu."""
+def tool_schemas(features: frozenset[str] = frozenset(), *, patch_model: bool = False) -> list[dict]:
+    """Schema theo khả năng CLI khai báo, để bản CLI đang cài không nhận công cụ hay tham số nó chưa hiểu.
+
+    ``patch_model``: model của bước là GPT; cùng khả năng "patch" thì dùng apply_patch thay edit_file, write_file."""
     key = frozenset(features) & FEATURES
-    if key not in _SCHEMAS:
+    patch = patch_model and "patch" in key
+    if (key, patch) not in _SCHEMAS:
         browsing = []
         if "browser" in key:
             act = "browser_act" in key
@@ -380,6 +431,6 @@ def tool_schemas(features: frozenset[str] = frozenset()) -> list[dict]:
                   {'server': {'type': 'string'}, 'tool': {'type': 'string'}, 'arguments_json': {'type': 'string'}})
         ] if 'mcp' in key else []
         # Công cụ mới đứng cuối danh sách, để phần đầu giống hệt bản cũ và prompt cache vẫn dùng lại được.
-        _SCHEMAS[key] = (_file_tools(key) + _command_tools(cwd="cwd" in key) + browsing + skills + mcp
-                         + ([_FIND] if "explore_v2" in key else []))
-    return _SCHEMAS[key]
+        _SCHEMAS[(key, patch)] = (_file_tools(key, patch) + _command_tools(cwd="cwd" in key) + browsing + skills + mcp
+                                  + ([_FIND] if "explore_v2" in key else []) + ([_ASK] if "question" in key else []))
+    return _SCHEMAS[(key, patch)]

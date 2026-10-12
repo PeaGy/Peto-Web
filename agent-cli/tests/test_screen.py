@@ -137,9 +137,10 @@ def test_dragging_selects_text_and_copies_it_on_release(run):
     for number in range(5):
         screen.ui.line(f"dòng {number:02d} có chữ")
     first, second = screen.row_of("dòng 01"), screen.row_of("dòng 02")
-    screen.press(Key("mouse", "press", x=0, y=first), Key("mouse", "drag", x=6, y=second),
-                 Key("mouse", "release", x=6, y=second))
-    assert screen.copied == ["dòng 01 có chữ\ndòng 02"]
+    left = screen.rows()[first].index("dòng")
+    screen.press(Key("mouse", "press", x=left, y=first), Key("mouse", "drag", x=left + 6, y=second),
+                 Key("mouse", "release", x=left + 6, y=second))
+    assert screen.copied == [f"dòng 01 có chữ\n{' ' * left}dòng 02"], "hàng sau giữ phần thụt lề như terminal"
     assert any("Đã chép" in row for row in screen.rows()), "báo đã chép"
     screen.ui.engine.busy = True
     screen.press(Key("interrupt"))
@@ -210,6 +211,52 @@ def test_permission_panel_replaces_the_prompt_and_wheel_still_scrolls(run):
     assert answer["value"] == "y"
 
 
+def test_shift_tab_switches_to_plan_mode_and_back(run):
+    screen = run(90, 20)
+    assert not any("Lập kế hoạch" in row for row in screen.rows())
+    screen.press(Key("backtab"))
+    assert screen.ui.mode == "plan"
+    rows = screen.rows()
+    assert any("Lập kế hoạch" in row for row in rows[-6:]), "nhãn chế độ thay chữ Peto ở hàng thông tin"
+    assert any("shift+tab hoặc /plan về chế độ làm việc" in row for row in rows[-2:])
+    screen.press(Key("backtab"))
+    assert screen.ui.mode == "build" and not any("Lập kế hoạch" in row for row in screen.rows())
+
+
+def test_the_list_chooser_picks_with_arrows_numbers_or_escape(run):
+    import threading
+
+    screen = run(90, 24)
+    rows = [("Sửa lỗi checksum", "lúc 14:32 hôm nay · 12 tin"), ("Thêm lệnh done", "hôm qua · 6 tin"),
+            ("Đổi sku", "ngày 10/10 · 30 tin · bị ngắt giữa chừng")]
+    for keys, expected in (([Key("down"), Key("enter")], 1), ([Key("char", "3")], 2), ([Key("escape")], None)):
+        answer = {}
+        thread = threading.Thread(target=lambda: answer.setdefault("value", screen.ui.choose("Mở lại hội thoại", rows)))
+        thread.start()
+        assert settle(lambda: screen.ui.engine.panel is not None)
+        text = "\n".join(screen.rows())
+        assert "Mở lại hội thoại" in text and "› " in text and "Thêm lệnh done" in text and "bị ngắt giữa chừng" in text
+        import time
+        time.sleep(0.35)
+        screen.press(*keys)
+        thread.join(timeout=3)
+        assert answer["value"] == expected
+
+
+def test_a_message_typed_while_busy_waits_then_lands_with_a_note(run):
+    screen = run(90, 20)
+    screen.ui.engine.busy = True
+    type_text(screen.console, "đổi tên hàm luôn")
+    screen.press(Key("enter"))
+    assert settle(lambda: screen.ui.engine.steers)
+    assert any("Nhắn thêm: đổi tên hàm luôn" in row for row in screen.rows())
+    assert screen.ui.take_steers() == [("đổi tên hàm luôn", [])]
+    rows = screen.rows()
+    assert not any("Nhắn thêm:" in row for row in rows)
+    assert any("đổi tên hàm luôn" in row and "┃" in row for row in rows)
+    assert any("nhắn thêm lúc Peto đang làm" in row for row in rows)
+
+
 def test_console_mouse_records_become_keys():
     """Bản ghi chuột ConPTY gửi (đo ngày 2026-10-12): bánh xe ở nửa trên của buttons, kéo là MOUSE_MOVED kèm nút trái."""
     from types import SimpleNamespace
@@ -230,6 +277,7 @@ def test_console_mouse_records_become_keys():
     assert console._mouse(event(0, 0, 7, 2)) == Key("mouse", "release", False, 7, 2)
     assert console._mouse(event(1, 0x2, 7, 2)).text == "double"
     assert translate(0x4C, "\x0c", 0x08) == Key("redraw")
+    assert translate(0x09, "\t", 0x10) == Key("backtab") and translate(0x09, "\t", 0) == Key("tab"), "Shift+Tab"
 
 
 def test_text_helpers_for_selection_and_ansi():

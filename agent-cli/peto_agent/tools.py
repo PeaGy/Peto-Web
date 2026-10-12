@@ -16,6 +16,7 @@ import time
 from pathlib import Path
 
 from . import approvals, browser, edit_match, runner
+from . import patch as patch_text_lib
 from .background import Jobs
 from .checkpoint import Checkpoint
 from .command_outcome import classify, command_kind, local_probe
@@ -40,14 +41,22 @@ REFUSED = "Người dùng không đồng ý {action}. Đừng lặp lại y nguy
 # đăng nhập) từ 0.11.0, "browser_outside" (xem trang ngoài máy) từ 0.12.0.
 FEATURES = ("cwd", "browser", "browser_act", "browser_outside", "skills", "mcp")
 # Khả năng mới (0.18.0, theo OpenCode) chỉ bật khi máy chủ liệt kê trong /me (agent_features): kết quả công cụ do CLI
-# dựng phải khớp mô tả máy chủ gửi, nên CLI mới gặp máy chủ cũ vẫn chạy kiểu cũ.
-NEW_FEATURES = ("explore_v2", "edit_v2")
+# dựng phải khớp mô tả máy chủ gửi, nên CLI mới gặp máy chủ cũ vẫn chạy kiểu cũ. Từ 0.21.0 (theo opencode): ask_user,
+# apply_patch cho model GPT, đặt tên hội thoại, và lời nhắc giải thích các tin 0.20.0 chèn vào hội thoại.
+NEW_FEATURES = ("explore_v2", "edit_v2", "question", "patch", "title", "steer", "jobs_notify", "plan_mode")
 # Gọi y hệt một công cụ ngần này lần liền mà không tệp nào đổi thì hỏi người dùng có cho gọi tiếp không.
 LOOP_LIMIT = 3
 # Công cụ mà gọi lại y hệt là bình thường: chờ output lệnh nền, xem lại trang sau khi bấm, cập nhật danh sách việc.
 LOOP_EXEMPT = {"update_plan", "read_command_output", "browser_open", "browser_screenshot", "browser_read",
-               "browser_click", "browser_type", "browser_press", "browser_login", "mcp_list_tools", "stop_command"}
+               "browser_click", "browser_type", "browser_press", "browser_login", "mcp_list_tools", "stop_command",
+               "ask_user"}
 LOOP_QUESTION = "    Cho Peto gọi tiếp? [y] có  [n] không › "
+# Chế độ Lập kế hoạch (CLI 0.20.0, chủ web chọn ngày 2026-10-12): chặn ngay trên máy mọi công cụ đổi tệp hay thao tác
+# trên trang. Lệnh vẫn chạy được, vẫn hỏi người dùng như thường, để Peto còn xem git log hay chạy test khi tìm hiểu.
+PLAN_BLOCKED = {"edit_file", "write_file", "delete_file", "move_file", "apply_patch", "browser_click", "browser_type",
+                "browser_press", "browser_login"}
+PLAN_REFUSAL = ("Đang ở chế độ Lập kế hoạch: không sửa tệp hay thao tác trên trang. Trình bày kế hoạch; người dùng bấm "
+                "Shift+Tab hoặc gõ /plan khi muốn Peto bắt tay làm.")
 MAX_FOUND_FILES = 100
 NUMBER_WIDTH = 6
 # Câu hỏi khi Peto thao tác lần đầu trên một trang: [y] là cho trang đó tới hết yêu cầu (chủ web chọn ngày 2026-09-23).
@@ -184,6 +193,8 @@ class Tools:
             "write_file": self.write_file,
             "delete_file": self.delete_file,
             "move_file": self.move_file,
+            "apply_patch": self.apply_patch,
+            "ask_user": self.ask_user,
             "run_command": self.run_command,
             "start_command": self.start_command,
             "read_command_output": self.read_command_output,
@@ -302,6 +313,13 @@ class Tools:
             signature.bind(**params)
         except TypeError:
             return {"error": f"Tham số không đúng với công cụ {name}."}
+        if name in PLAN_BLOCKED and getattr(self.ui, "mode", "build") == "plan":
+            self.call_id = ""
+            verb = {"edit_file": "sửa", "write_file": "ghi", "delete_file": "xóa", "move_file": "đổi tên",
+                    "apply_patch": "sửa tệp"}.get(name, "bấm, gõ trên trang")
+            target = params.get("path") if isinstance(params.get("path"), str) else ""
+            self.ui.failure(f"Đang lập kế hoạch nên chưa {verb}{' ' + target if target else ''}")
+            return {"error": PLAN_REFUSAL}
         if (refused := self._loop_guard(name, params)) is not None:
             self.call_id = ""
             return refused
@@ -640,6 +658,134 @@ class Tools:
         self._record(old_rel, file.text, "")
         self._record(new_rel, "", file.text)
         return {"ok": True, "path": new_rel, "moved_from": old_rel}
+
+    @tool
+    def apply_patch(self, patch_text: str) -> dict:
+        """Bản patch nhiều tệp cho model GPT (CLI 0.21.0, theo opencode). Cùng luật với edit_file, write_file,
+        delete_file và move_file: đọc trước khi sửa, tệp không đổi giữa chừng, giữ CRLF/BOM, mọi tệp vào bản hoàn tác.
+        Tính hết nội dung mới rồi mới hỏi một lần cho cả bản; một chỗ sai thì không ghi tệp nào."""
+        try:
+            ops = patch_text_lib.parse(patch_text)
+        except patch_text_lib.PatchError as err:
+            raise WorkspaceError(str(err)) from None
+        if not ops:
+            raise WorkspaceError("Bản patch không có tệp nào.")
+        plans: list[dict] = []
+        touched: set[Path] = set()
+        for op in ops:
+            target = self.ws.resolve(op.path, must_exist=op.kind != "add")
+            self._guidance(target)
+            self.checkpoint.check(target)
+            rel = self.ws.relative(target)
+            if target in touched:
+                raise WorkspaceError(f"Bản patch đụng {rel} hai lần; gộp các thay đổi của tệp đó vào một mục.")
+            touched.add(target)
+            plan = {"op": op.kind, "target": target, "rel": rel, "before": "", "after": "", "newline": "\n",
+                    "bom": False, "digest": None, "destination": None}
+            if op.kind == "add":
+                if target.exists():
+                    raise WorkspaceError(f"{rel} đã có sẵn; sửa nó bằng mục '*** Update File: {rel}'.")
+                plan["after"] = op.contents.replace("\r\n", "\n")
+            elif op.kind == "delete":
+                if target.is_dir():
+                    raise WorkspaceError(f"{rel} là thư mục; Peto chỉ xóa được từng tệp.")
+                file = self._undoable(target)
+                plan.update(before=file.text, digest=file.digest)
+            else:
+                known = self.ws.read_digests.get(target)
+                if known is None:
+                    raise WorkspaceError(f"Đọc {rel} bằng read_file trước khi sửa.")
+                file = self.ws.read(target)
+                if file.digest != known:
+                    raise WorkspaceError(f"{rel} đã thay đổi kể từ lần đọc gần nhất. Đọc lại rồi sửa nhé.")
+                try:
+                    after = patch_text_lib.apply(file.text, op.chunks, rel)
+                except patch_text_lib.PatchError as err:
+                    raise WorkspaceError(str(err)) from None
+                plan.update(before=file.text, after=after, newline=file.newline, bom=file.bom, digest=file.digest)
+                if op.move_to:
+                    destination = self.ws.resolve(op.move_to, must_exist=False)
+                    self._guidance(destination)
+                    self.checkpoint.check(destination)
+                    if destination.exists() or destination in touched:
+                        raise WorkspaceError(f"{self.ws.relative(destination)} đã có sẵn; chọn tên khác.")
+                    touched.add(destination)
+                    plan["destination"] = destination
+            plans.append(plan)
+        files = [{"path": plan["rel"], "op": plan["op"], "before": plan["before"], "after": plan["after"],
+                  **({"new_path": self.ws.relative(plan["destination"])} if plan["destination"] else {})}
+                 for plan in plans]
+        body = {"title": f"Muốn áp bản patch ({len(plans)} tệp)", "files": files}
+        self.ui.preview("patch", body)
+        if not self._approve("patch", **body):
+            return self._refused(f"áp bản patch ({len(plans)} tệp)", plans[0]["rel"])
+        for plan in plans:
+            target = plan["target"]
+            changed = (target.exists() if plan["op"] == "add" else
+                       not target.exists() or digest(target.read_bytes()) != plan["digest"])
+            if changed or (plan["destination"] is not None and plan["destination"].exists()):
+                raise WorkspaceError(f"{plan['rel']} vừa bị đổi trong lúc chờ đồng ý. Đọc lại rồi tính tiếp nhé.")
+        results = []
+        for plan in plans:
+            target, rel = plan["target"], plan["rel"]
+            self._guidance(target)
+            if plan["op"] == "add":
+                self.checkpoint.record(target, None, text_bytes(plan["after"], "\n", False))
+                self.ws.write(target, plan["after"])
+            elif plan["op"] == "delete":
+                self.checkpoint.record(target, target.read_bytes(), None)
+                target.unlink()
+                self.ws.read_digests.pop(target, None)
+            elif plan["destination"] is not None:
+                # Sửa kèm đổi tên: trong bản hoàn tác là "xóa tệp cũ, tạo tệp mới với nội dung mới".
+                destination = plan["destination"]
+                self.checkpoint.record(target, target.read_bytes(), None)
+                self.checkpoint.record(destination, None, text_bytes(plan["after"], plan["newline"], plan["bom"]))
+                self.ws.write(destination, plan["after"], newline=plan["newline"], bom=plan["bom"])
+                target.unlink()
+                self.ws.read_digests.pop(target, None)
+            else:
+                self.checkpoint.record(target, target.read_bytes(),
+                                       text_bytes(plan["after"], plan["newline"], plan["bom"]))
+                self.ws.write(target, plan["after"], newline=plan["newline"], bom=plan["bom"])
+            if plan["destination"] is not None:
+                new_rel = self.ws.relative(plan["destination"])
+                # Tổng của yêu cầu tính như move_file (xóa cũ, tạo mới); kết quả thì đếm phần nội dung thật sự đổi.
+                self._record(rel, plan["before"], "")
+                self._record(new_rel, "", plan["after"])
+                added, removed = changed_lines(plan["before"], plan["after"])
+                results.append({"path": new_rel, "op": "update", "moved_from": rel, "added_lines": added,
+                                "removed_lines": removed})
+            else:
+                added, removed = self._record(rel, plan["before"], plan["after"])
+                results.append({"path": rel, "op": plan["op"], "added_lines": added, "removed_lines": removed})
+        self.revision += 1
+        return {"ok": True, "files": results}
+
+    @tool
+    def ask_user(self, questions: list) -> dict:
+        """Hỏi người dùng giữa chừng bằng câu hỏi có lựa chọn (CLI 0.21.0, theo opencode). Không đụng tệp nào."""
+        if not isinstance(questions, list) or not 1 <= len(questions) <= 3:
+            raise WorkspaceError("ask_user nhận 1 tới 3 câu hỏi.")
+        cleaned = []
+        for item in questions:
+            options = item.get("options") if isinstance(item, dict) else None
+            if not isinstance(options, list) or not 2 <= len(options) <= 4:
+                raise WorkspaceError("Mỗi câu hỏi cần 2 tới 4 lựa chọn; người dùng đã có sẵn ô tự trả lời.")
+            cleaned.append({
+                "question": str(item.get("question") or "").strip()[:500],
+                "header": str(item.get("header") or "").strip()[:24],
+                "multiple": item.get("multiple") is True,
+                "options": [{"label": str(option.get("label") or "").strip()[:80],
+                             "description": str(option.get("description") or "").strip()[:300]}
+                            for option in options if isinstance(option, dict)],
+            })
+        answers = self.ui.questions(cleaned)
+        if answers is None:
+            return {"dismissed": True, "note": "Người dùng không trả lời; tự chọn phương án hợp lý và nói rõ, hoặc hỏi "
+                                               "bằng lời ở câu trả lời cuối."}
+        return {"answers": [{"question": question["question"], "answer": answer}
+                            for question, answer in zip(cleaned, answers)]}
 
     @tool
     def start_command(self, command: str, shell: str | None = None, cwd: str | None = None) -> dict:

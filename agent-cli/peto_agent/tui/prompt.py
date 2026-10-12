@@ -79,12 +79,14 @@ def user_panel(state: EditorState | Sent, theme, width: int) -> list[Line]:
 
 def frame(state: EditorState, theme, *, width: int, height: int, meta: list[str], footer: str = "",
           placeholder: str = PLACEHOLDER, colors: bool = True, footer_line: Line | None = None,
-          above: list[Line] | None = None) -> Frame:
+          above: list[Line] | None = None, accent: str | None = None) -> Frame:
     """Các hàng cần vẽ của ô nhập và chỗ đặt con trỏ.
 
     ``footer_line`` thay dòng chân bằng chữ ``footer`` (lúc Peto đang làm: thanh chạy, "esc dừng"); ``above`` là các
-    hàng đặt trên ô (dòng trạng thái, tin đang chờ gửi), bị bỏ trước khi màn hình thấp quá.
+    hàng đặt trên ô (dòng trạng thái, tin đang chờ gửi), bị bỏ trước khi màn hình thấp quá. ``accent`` thay màu hồng
+    của thanh, mép dưới và mục đầu hàng thông tin (chế độ Lập kế hoạch dùng màu xanh, như opencode đổi màu theo agent).
     """
+    accent = accent or theme.primary
     # Không bao giờ viết vào cột cuối, để khỏi phụ thuộc cách từng terminal tự xuống dòng.
     usable = max(width, 16) - 1
     panel_width = usable - PAD
@@ -98,7 +100,7 @@ def frame(state: EditorState, theme, *, width: int, height: int, meta: list[str]
     rows, (cursor_row, cursor_col) = _text_rows(state, theme, bg, text_width, show_cursor=True)
     if not state.text and placeholder:
         rows = [[S(clip(placeholder, text_width), theme.muted, bg)]]
-    bar = S("┃", theme.primary, bg)
+    bar = S("┃", accent, bg)
 
     def row(spans: list) -> Line:
         return Line([S(" " * PAD)]) + fit(Line([bar, S("  ", bg=bg)] + spans), panel_width, bg)
@@ -124,9 +126,9 @@ def frame(state: EditorState, theme, *, width: int, height: int, meta: list[str]
     for index, part in enumerate(meta):
         if index:
             meta_spans.append(S(" · ", theme.muted, bg))
-        color = theme.primary if index == 0 else theme.warning if index == len(meta) - 1 and index > 1 else theme.text
+        color = accent if index == 0 else theme.warning if index == len(meta) - 1 and index > 1 else theme.text
         meta_spans.append(S(part, color, bg, b=index == 0 or (index == len(meta) - 1 and index > 1)))
-    cap = Line([S(" " * PAD), S("╹", theme.primary), S("▀" * (panel_width - 1), bg)])
+    cap = Line([S(" " * PAD), S("╹", accent), S("▀" * (panel_width - 1), bg)])
     if footer_line is not None:
         footer_line = Line([S(" " * PAD)]) + fit(footer_line, panel_width)
     elif footer:

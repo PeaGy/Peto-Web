@@ -549,6 +549,19 @@ class PolicyUI(UI):
             return "n"
         return super().ask(permission)
 
+    def questions(self, questions: list[dict]) -> list[list[str]]:
+        """Câu hỏi của Peto (ask_user, CLI 0.21.0): bài thi chọn phương án Peto đánh dấu "(nên chọn)", không có thì
+        phương án đầu, và ghi lại để báo cáo thấy Peto đã hỏi gì."""
+        answers = []
+        for question in questions:
+            options = question["options"]
+            pick = next((option for option in options if "(nên chọn)" in option["label"]), options[0])
+            answers.append([pick["label"]])
+            self.requests.append({"kind": "question", "detail": question["question"], "answer": pick["label"],
+                                  "reason": "bài thi chọn phương án nên chọn, không có thì phương án đầu"})
+            self.line(f"    [bài thi] trả lời \"{question['question']}\": {pick['label']}")
+        return answers
+
     def hand_over(self, reason: str) -> None:
         super().hand_over(reason)
         self.requests.append({"kind": "login", "detail": reason, "answer": "n",

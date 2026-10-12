@@ -117,20 +117,27 @@ def test_printed_lines_reach_scrollback_once_and_in_order_while_the_footer_stays
         ui.stop_footer() if ui.engine else None
 
 
-def test_typing_while_peto_works_waits_and_is_sent_after_the_request():
+def test_typing_while_peto_works_is_inserted_next_step_or_sent_after_the_request():
+    """Tin gõ lúc Peto đang làm chờ chèn vào bước kế tiếp (CLI 0.20.0); yêu cầu xong trước thì thành yêu cầu kế tiếp.
+    Lệnh gạch chéo thì chờ yêu cầu xong mới chạy."""
     ui, console, terminal, _ = session()
     try:
         type_text(console, "việc đầu")
         console.press(Key("enter"))
         assert ui.engine.take() == ("việc đầu", [])
         assert ui.engine.busy
-        type_text(console, "việc sau")
+        type_text(console, "/diff")
         console.press(Key("enter"))
         assert settle(lambda: ui.engine.queued)
-        assert any("Chờ gửi: việc sau" in line for line in terminal.lines())
+        type_text(console, "việc sau")
+        console.press(Key("enter"))
+        assert settle(lambda: ui.engine.steers)
+        lines = terminal.lines()
+        assert any("Nhắn thêm: việc sau" in line for line in lines) and any("Chờ chạy: /diff" in line for line in lines)
         ui.line("Peto trả lời việc đầu.")
         ui.engine.idle(["Peto"], "")
-        assert ui.engine.take() == ("việc sau", [])
+        assert ui.engine.take() == ("việc sau", []), "tin nhắn thêm chưa kịp chèn thành yêu cầu kế tiếp"
+        assert ui.engine.queued, "lệnh vẫn chờ tới lượt sau"
         lines = terminal.lines()
         assert lines.index(next(line for line in lines if "việc sau" in line and "┃" in line)) > \
             lines.index("Peto trả lời việc đầu."), "tin chờ chỉ vào lịch sử khi tới lượt"

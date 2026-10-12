@@ -62,7 +62,7 @@ class TerminalUI(UI):
         self._preview: tuple[str, dict] | None = None
         self._static_diff = False
         self.thinking_title: str | None = None
-        # /suynghi: in cả phần tóm tắt suy nghĩ dưới dòng "+ Đã nghĩ" (mặc định tắt như OpenCode).
+        # /thinking: in cả phần tóm tắt suy nghĩ dưới dòng "+ Đã nghĩ" (mặc định tắt như OpenCode).
         self.show_thoughts = False
         # Màn hình toàn phần (screen.py), hoặc chân cố định (footer.py) khi PETO_AGENT_UI=inline: bật khi phiên có ô
         # nhập đọc phím thô; None thì in nối tiếp như 0.16.
@@ -105,13 +105,32 @@ class TerminalUI(UI):
             return
         super().write(text, color)
 
-    def commit_user(self, sent) -> None:
-        """Tin vừa gửi nằm lại trong hội thoại thành khung có thanh ┃ (``sent`` là ``prompt.Sent``)."""
+    def commit_user(self, sent, *, steer: bool = False) -> None:
+        """Tin vừa gửi nằm lại trong hội thoại thành khung có thanh ┃ (``sent`` là ``prompt.Sent``). Tin nhắn thêm lúc
+        Peto đang làm có thêm một dòng mờ nói nó được chèn giữa chừng."""
         self._flush_group()
         if self._last not in {None, "blank"}:
             self._out(lambda: [Line()], pad=False)
         self._out(lambda: prompt_view.user_panel(sent, self.theme, self.width), pad=False)
+        if steer:
+            self._out(lambda: [Line([S("   ↳ nhắn thêm lúc Peto đang làm", self.theme.muted)])])
         self._last = "user"
+
+    def take_steers(self) -> list[tuple[str, list]]:
+        """Tin người dùng nhắn thêm lúc Peto đang làm, để vòng làm việc chèn vào bước kế tiếp (CLI 0.20.0)."""
+        if self.engine is None:
+            return []
+        taken = self.engine.take_steers()
+        for _, _, sent in taken:
+            self.commit_user(sent, steer=True)
+        return [(text, images) for text, images, _ in taken]
+
+    def toggle_mode(self) -> str:
+        """Đổi qua lại chế độ làm việc và Lập kế hoạch (Shift+Tab hay /plan); vẽ lại ô nhập ngay."""
+        self.mode = "build" if self.mode == "plan" else "plan"
+        if self.engine is not None:
+            self.engine.refresh()
+        return self.mode
 
     def bell(self) -> None:
         if self.engine is not None:
@@ -227,7 +246,8 @@ class TerminalUI(UI):
         if self.fullscreen:
             # Gập theo bề ngang hiện tại; hàng sau thụt như hàng đầu (danh sách của /help, /permissions…).
             body = text.lstrip(" ")
-            indent = " " * (len(text) - len(body))
+            # Thẳng cột với tin trả lời và dòng công cụ (lề chung + 3), giữ phần thụt riêng của câu (danh sách /help).
+            indent = " " * (PAD + 3 + len(text) - len(body))
             self._out(lambda: [Line([S(indent)] + row) for row in wrap([(body, style)], self.width - len(indent))],
                       pad=False)
         else:
@@ -402,6 +422,18 @@ class TerminalUI(UI):
             return
         if name in {"edit_file", "write_file", "delete_file"}:
             self._emit(lambda: self._edit_block(name, result, preview, static), "block")
+        elif name == "apply_patch":
+            files = preview[1]["files"] if preview and preview[0] == "patch" else []
+            for index, item in enumerate(result["files"]):
+                source = files[index] if index < len(files) and not static else None
+                self._emit(lambda item=item, source=source: self._patch_block(item, source), "block")
+        elif name == "ask_user":
+            for item in result.get("answers") or []:
+                self._emit(lambda item=item: self._row("?", [S(visible(item["question"]) + " ", theme.muted),
+                                                             S(visible(", ".join(item["answer"]) or "(trống)"),
+                                                               theme.text)], theme.secondary), "row")
+            if result.get("dismissed"):
+                self._emit(lambda: self._row("?", [S("Bạn bỏ qua câu hỏi của Peto", theme.muted)]), "row")
         elif name == "update_plan":
             self.plan(meta["plan"])
         elif name == "move_file":
@@ -494,6 +526,25 @@ class TerminalUI(UI):
                 body.append(Line([S(f"… còn {len(rows) - BLOCK_DIFF_ROWS} dòng · /diff để xem đủ", theme.muted, panel)]))
         return self._block(header, body)
 
+    def _patch_block(self, item: dict, source: dict | None) -> list[Line]:
+        """Một tệp của bản patch: như khối sửa tệp, kèm diff khi có bản xem trước."""
+        theme = self.theme
+        panel = theme.panel
+        verb = {"add": "Tạo", "delete": "Xóa"}.get(item["op"], "Sửa")
+        where = f"{item['moved_from']} → {item['path']}" if item.get("moved_from") else item["path"]
+        header = [S("← ", theme.muted, panel), S(verb + " ", theme.text, panel, b=True), S(where, theme.text, panel)]
+        if item.get("added_lines"):
+            header.append(S(f"  +{item['added_lines']}", theme.diff_added, panel))
+        if item.get("removed_lines"):
+            header.append(S(f"  −{item['removed_lines']}", theme.diff_removed, panel))
+        body: list[Line] = []
+        if source is not None and item["op"] != "delete":
+            rows = Diff(source["before"], source["after"], path=item["path"]).rows(theme, self.content_width - 3)
+            body = rows[:BLOCK_DIFF_ROWS]
+            if len(rows) > BLOCK_DIFF_ROWS:
+                body.append(Line([S(f"… còn {len(rows) - BLOCK_DIFF_ROWS} dòng · /diff để xem đủ", theme.muted, panel)]))
+        return self._block(header, body)
+
     def _shell_block(self, result: dict, preview: tuple[str, dict] | None = None) -> list[Line]:
         theme = self.theme
         panel = theme.panel
@@ -575,6 +626,24 @@ class TerminalUI(UI):
             if body.get("match"):
                 header.append(S(f"  · khớp gần đúng: {body['match']}", theme.warning))
             rows = diff.rows(theme, width) if not diff.empty else [Line([S("Nội dung không đổi.", theme.muted)])]
+            return header, rows
+        if kind == "patch":
+            files = body.get("files") or []
+            added = removed = 0
+            rows: list[Line] = []
+            for item in files:
+                diff = Diff(item.get("before", ""), item.get("after", ""), path=item["path"])
+                added, removed = added + diff.added, removed + diff.removed
+                verb = {"add": "Tạo", "delete": "Xóa"}.get(item["op"], "Sửa")
+                where = item["path"] + (f" → {item['new_path']}" if item.get("new_path") else "")
+                if rows:
+                    rows.append(Line())
+                rows.append(Line([S(verb + " ", theme.text, b=True), S(where, theme.text),
+                                  S(f"  +{diff.added}", theme.diff_added), S(f"  −{diff.removed}", theme.diff_removed)]))
+                if item["op"] != "delete":
+                    rows += diff.rows(theme, width) if not diff.empty else [Line([S("Nội dung không đổi.", theme.muted)])]
+            header = [S("← ", theme.muted), S(f"Áp bản patch · {len(files)} tệp", theme.text, b=True),
+                      S(f"  +{added}", theme.diff_added), S(f"  −{removed}", theme.diff_removed)]
             return header, rows
         if kind == "move":
             return [S("→ ", theme.muted), S("Đổi tên ", theme.text, b=True),
@@ -784,6 +853,181 @@ class TerminalUI(UI):
             if answer in choices:
                 return answer
             self.line(f"     Gõ {', '.join(choices[:-1])} hoặc {choices[-1]} nhé.", "yellow")
+
+    def questions(self, questions: list[dict]) -> list[list[str]] | None:
+        """Câu hỏi của Peto (ask_user, CLI 0.21.0) ở chỗ ô nhập, từng câu một: ↑/↓ chọn, Enter chọn, phím số chọn
+        nhanh, Space đánh dấu khi chọn nhiều, dòng cuối "Tự trả lời…" mở ô gõ ngay trong khung, Esc bỏ qua."""
+        if self.engine is None:
+            return super().questions(questions)
+        self._flush_group()
+        self.clear_status()
+        waiting = self._title
+        self.title("Peto · hỏi bạn")
+        self.bell()
+        answers = []
+        try:
+            for index, question in enumerate(questions):
+                render_lines, handle = self._question_chooser(question, index, len(questions), max(10, self.height - 1))
+                answer = self.engine.ask(render_lines, handle)
+                if not answer:
+                    return None
+                answers.append(json.loads(answer))
+        finally:
+            self.title(waiting)
+        return answers
+
+    def _question_chooser(self, question: dict, index: int, total: int, budget: int):
+        options = question["options"]
+        multiple = question["multiple"]
+        custom = len(options)
+        state = {"selected": 0, "checked": set(), "typing": False, "text": ""}
+        theme = self.theme
+
+        def render_lines() -> list[Line]:
+            width = self.content_width
+            panel, element = theme.panel, theme.element
+
+            def row(spans: list, bg=panel) -> Line:
+                return fit(Line([S("┃", theme.secondary, bg), S("  ", bg=bg)] + spans), width, bg)
+
+            lines = [row([S("? ", theme.secondary, panel), S(visible(question["header"]) or "Peto hỏi", theme.text,
+                                                               panel, b=True),
+                          S(f"  {index + 1}/{total}" if total > 1 else "", theme.muted, panel)])]
+            lines += [row(spans) for spans in wrap([S(visible(question["question"]), theme.text, panel)], width - 4)]
+            lines.append(row([]))
+            for number, option in enumerate(options):
+                chosen = number == state["selected"]
+                bg = element if chosen else panel
+                mark = ("[x] " if number in state["checked"] else "[ ] ") if multiple else f"{number + 1} "
+                spans = [S("› " if chosen else "  ", theme.secondary, bg), S(mark, theme.muted, bg),
+                         S(visible(option["label"]), theme.text, bg, b=chosen)]
+                if option["description"]:
+                    spans.append(S("  " + visible(option["description"]), theme.muted, bg))
+                lines.append(row([(text, style) for text, style in spans], bg))
+            chosen = state["selected"] == custom
+            bg = element if chosen else panel
+            if state["typing"]:
+                lines.append(row([S("› ", theme.secondary, bg), S(theme.glyphs["write"] + " ", theme.muted, bg),
+                                  S(state["text"] + "▏", theme.text, bg)], bg))
+            else:
+                lines.append(row([S("› " if chosen else "  ", theme.secondary, bg),
+                                  S(theme.glyphs["write"] + " Tự trả lời…", theme.muted, bg, b=chosen)], bg))
+            if state["typing"]:
+                hint = [("gõ câu trả lời  ", theme.muted), ("enter", theme.text), (" gửi  ", theme.muted),
+                        ("esc", theme.text), (" quay lại", theme.muted)]
+            elif multiple:
+                hint = [("↑↓", theme.text), (" chọn  ", theme.muted), ("space", theme.text), (" đánh dấu  ", theme.muted),
+                        ("enter", theme.text), (" xong  ", theme.muted), ("esc", theme.text), (" bỏ qua", theme.muted)]
+            else:
+                hint = [("↑↓", theme.text), (" chọn  ", theme.muted), ("enter", theme.text), (" chọn  ", theme.muted),
+                        (f"1–{len(options)}", theme.text), (" chọn nhanh  ", theme.muted), ("esc", theme.text),
+                        (" bỏ qua", theme.muted)]
+            lines += [row([]), fit(Line([S("┃", theme.secondary, element), S("  ", bg=element)]
+                                        + [S(text, color, element) for text, color in hint]), width, element),
+                      Line([S("╹", theme.secondary), S("▀" * (width - 1), element)])]
+            return lines
+
+        def handle(key) -> str | None:
+            if state["typing"]:
+                if key.name in {"char", "paste"}:
+                    state["text"] += " ".join(key.text.split()) if key.name == "paste" else key.text
+                elif key.name == "backspace":
+                    state["text"] = state["text"][:-1]
+                elif key.name == "escape":
+                    state["typing"] = False
+                elif key.name == "enter" and state["text"].strip():
+                    # Câu nhiều đáp án: chữ tự gõ đi cùng các mục đã đánh dấu.
+                    picked = [options[number]["label"] for number in sorted(state["checked"])] if multiple else []
+                    return json.dumps([*picked, state["text"].strip()], ensure_ascii=False)
+                return None
+            if key.name in {"up", "left"}:
+                state["selected"] = (state["selected"] - 1) % (custom + 1)
+            elif key.name in {"down", "right", "tab"}:
+                state["selected"] = (state["selected"] + 1) % (custom + 1)
+            elif key.name == "escape":
+                return ""
+            elif key.name == "enter":
+                if state["selected"] == custom:
+                    state["typing"] = True
+                    return None
+                if multiple:
+                    picked = sorted(state["checked"]) or [state["selected"]]
+                    return json.dumps([options[number]["label"] for number in picked], ensure_ascii=False)
+                return json.dumps([options[state["selected"]]["label"]], ensure_ascii=False)
+            elif key.name == "char" and key.text == " " and multiple and state["selected"] < custom:
+                state["checked"] ^= {state["selected"]}
+            elif key.name == "char" and key.text.isdigit() and 1 <= int(key.text) <= len(options):
+                if multiple:
+                    state["checked"] ^= {int(key.text) - 1}
+                    state["selected"] = int(key.text) - 1
+                else:
+                    return json.dumps([options[int(key.text) - 1]["label"]], ensure_ascii=False)
+            return None
+
+        return render_lines, handle
+
+    def choose(self, title: str, rows: list[tuple[str, str]]) -> int | None:
+        """Bảng chọn dạng danh sách dọc ở chỗ ô nhập (/resume): ↑/↓, Enter mở, phím số chọn nhanh, Esc thôi. Không có
+        màn hình toàn phần hay chân cố định thì hỏi bằng chữ như bản cũ."""
+        if self.engine is None:
+            return super().choose(title, rows)
+        self._flush_group()
+        self.clear_status()
+        render_lines, handle = self._list_chooser(title, rows, max(8, self.height - 1))
+        answer = self.engine.ask(render_lines, handle)
+        return int(answer) if answer else None
+
+    def _list_chooser(self, title: str, rows: list[tuple[str, str]], budget: int):
+        state = {"selected": 0}
+        theme = self.theme
+
+        def render_lines() -> list[Line]:
+            width = self.content_width
+            panel, element = theme.panel, theme.element
+
+            def row(spans: list, bg=panel) -> Line:
+                return fit(Line([S("┃", theme.primary, bg), S("  ", bg=bg)] + spans), width, bg)
+
+            room = max(1, budget - 6)
+            selected = state["selected"]
+            start = min(max(0, selected - room + 1), max(0, len(rows) - room))
+            lines = [row([S(title, theme.text, panel, b=True),
+                          S(f"  {len(rows)} mục" if len(rows) > room else "", theme.muted, panel)]), row([])]
+            for index in range(start, min(len(rows), start + room)):
+                label, detail = rows[index]
+                chosen = index == selected
+                bg = element if chosen else panel
+                number = f"{index + 1:>2} " if index < 9 else "   "
+                spans = [S("› " if chosen else "  ", theme.primary, bg), S(number, theme.muted, bg),
+                         S(clip(visible(label), max(10, width - 30)), theme.text, bg, b=chosen)]
+                if detail:
+                    spans.append(S("  " + visible(detail), theme.muted, bg))
+                lines.append(row(spans, bg))
+            hint = [S("↑↓", theme.text, element), S(" chọn  ", theme.muted, element), S("enter", theme.text, element),
+                    S(" mở  ", theme.muted, element), S("esc", theme.text, element), S(" thôi  ", theme.muted, element),
+                    S("1–9", theme.text, element), S(" chọn nhanh", theme.muted, element)]
+            lines += [row([]), fit(Line([S("┃", theme.primary, element), S("  ", bg=element)] + hint), width, element),
+                      Line([S("╹", theme.primary), S("▀" * (width - 1), element)])]
+            return lines
+
+        def handle(key) -> str | None:
+            if key.name in {"up", "left"}:
+                state["selected"] = (state["selected"] - 1) % len(rows)
+            elif key.name in {"down", "right", "tab"}:
+                state["selected"] = (state["selected"] + 1) % len(rows)
+            elif key.name == "pageup":
+                state["selected"] = max(0, state["selected"] - max(1, budget - 6))
+            elif key.name == "pagedown":
+                state["selected"] = min(len(rows) - 1, state["selected"] + max(1, budget - 6))
+            elif key.name == "enter":
+                return str(state["selected"])
+            elif key.name == "escape":
+                return ""
+            elif key.name == "char" and key.text.isdigit() and 1 <= int(key.text) <= min(9, len(rows)):
+                return str(int(key.text) - 1)
+            return None
+
+        return render_lines, handle
 
     def ask_permission(self, *, allow_session: bool = False, allow_always: bool = False,
                        session_label: str = "nhớ lệnh này trong phiên", question: str = "") -> str:

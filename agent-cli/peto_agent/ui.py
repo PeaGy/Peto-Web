@@ -192,6 +192,7 @@ REFUSED_LINES = {
     "move_file": "Không đổi tên {path}", "start_command": "Không chạy lệnh nền", "run_command": "Không chạy lệnh",
     "browser_open": "Không mở trang ngoài", "browser_click": "Không thao tác trên trang",
     "browser_type": "Không thao tác trên trang", "browser_press": "Không thao tác trên trang",
+    "apply_patch": "Không áp bản patch (từ {path})",
 }
 READ_ONLY_LINES = {
     "browser_login": "Trang ngoài chỉ xem: Peto không nhờ đăng nhập trên trang ngoài.",
@@ -218,6 +219,8 @@ class UI:
         self.editor = None
         # Ảnh gửi kèm lượt nhập vừa xong: (số ảnh, ảnh). Chỉ ô nhập mới dán được ảnh.
         self.attached: list = []
+        # Chế độ làm việc ("build") hay Lập kế hoạch ("plan", CLI 0.20.0): Tools chặn sửa tệp khi đang lập kế hoạch.
+        self.mode = "build"
 
     @property
     def width(self) -> int:
@@ -297,6 +300,51 @@ class UI:
                 self.line("    Bấm Enter khi xong, hoặc gõ n để bỏ qua.", "yellow")
         finally:
             self.title(waiting)
+
+    def questions(self, questions: list[dict]) -> list[list[str]] | None:
+        """Câu hỏi có lựa chọn của Peto (ask_user, CLI 0.21.0): in lựa chọn đánh số, gõ số (chọn nhiều thì cách nhau
+        bằng dấu phẩy) hoặc tự gõ câu trả lời; Enter trống hay hết đầu vào là bỏ qua cả lượt hỏi."""
+        self.bell()
+        answers = []
+        for question in questions:
+            self.line()
+            self.line(f"  ? {question['header']}: {question['question']}", "blue")
+            options = question["options"]
+            for number, option in enumerate(options, 1):
+                self.line(f"    {number}. {option['label']}" + (f" · {option['description']}" if option["description"]
+                                                                  else ""))
+            hint = "các số, cách nhau bằng dấu phẩy" if question["multiple"] else "một số"
+            try:
+                answer = self.reader(f"    Gõ {hint}, hoặc tự trả lời; Enter để bỏ qua › ").strip()
+            except EOFError:
+                self.line()
+                return None
+            if not answer:
+                return None
+            picks = [part.strip() for part in answer.split(",")] if question["multiple"] else [answer]
+            if all(part.isdigit() and 1 <= int(part) <= len(options) for part in picks):
+                answers.append([options[int(part) - 1]["label"] for part in picks])
+            else:
+                answers.append([answer])
+        return answers
+
+    def choose(self, title: str, rows: list[tuple[str, str]]) -> int | None:
+        """Chọn một mục trong danh sách (như /resume): in danh sách đánh số rồi hỏi số; Enter trống hay hết đầu vào
+        là thôi. ``rows`` là các cặp (tên, chi tiết mờ)."""
+        self.line(f"  {title}:")
+        for number, (label, detail) in enumerate(rows, 1):
+            self.line(f"    {number}. {label}" + (f" · {detail}" if detail else ""))
+        while True:
+            try:
+                answer = self.reader(f"    Chọn 1–{len(rows)}, Enter để thôi › ").strip()
+            except EOFError:
+                self.line()
+                return None
+            if not answer:
+                return None
+            if answer.isdigit() and 1 <= int(answer) <= len(rows):
+                return int(answer) - 1
+            self.line(f"    Gõ một số từ 1 tới {len(rows)}.", "yellow")
 
     def item(self, text: str) -> None:
         """Một mục mờ trong danh sách (như /permissions), ngắt theo bề ngang terminal thay vì để terminal tự bẻ chữ."""
@@ -598,6 +646,11 @@ class UI:
         """Thứ công cụ sắp làm, hiện trước khi hỏi (và cả khi đã được cho phép sẵn): diff, lệnh, đổi tên, gọi MCP."""
         if kind == "file":
             self.diff(body["title"], body["before"], body["after"])
+        elif kind == "patch":
+            for item in body["files"]:
+                verb = {"add": "Muốn tạo", "delete": "Muốn xóa"}.get(item["op"], "Muốn sửa")
+                where = item["path"] + (f" → {item['new_path']}" if item.get("new_path") else "")
+                self.diff(f"{verb} {where}", item["before"], item["after"])
         elif kind == "move":
             self.line()
             self.line(f"  ✎ Muốn đổi tên {body['old']} → {body['new']}", "blue")
@@ -686,6 +739,16 @@ class UI:
             self.success(f"Đã xóa {result['path']} (−{result['removed_lines']})")
         elif name == "move_file":
             self.success(f"Đã đổi tên {result['moved_from']} → {result['path']}")
+        elif name == "apply_patch":
+            for item in result["files"]:
+                verb = {"add": "Đã tạo", "delete": "Đã xóa"}.get(item["op"], "Đã sửa")
+                where = f"{item['moved_from']} → {item['path']}" if item.get("moved_from") else item["path"]
+                self.success(f"{verb} {where} (+{item['added_lines']} −{item['removed_lines']})")
+        elif name == "ask_user":
+            for item in result.get("answers") or []:
+                self.step(f"Bạn trả lời \"{item['question']}\": {', '.join(item['answer']) or '(trống)'}")
+            if result.get("dismissed"):
+                self.step("Bạn bỏ qua câu hỏi của Peto")
         elif name == "start_command":
             where = result.get("cwd", ".")
             self.success(f"Đã chạy nền #{result['id']}: {result['command']}" + (f" (trong {where})" if where != "." else ""))

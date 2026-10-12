@@ -19,6 +19,14 @@ from .catalog import commands as catalog_commands
 
 COMMANDS = tuple(Command(item['name'], item['description'], tuple(tuple(option) for option in item['options']))
                  for item in catalog_commands())
+# Tên tiếng Việt cũ (/moi, /thoat, /nho…) vẫn gõ được nhưng không hiện trong gợi ý: chủ web chọn tên tiếng Anh cho
+# quen tay từ CLI 0.20.0.
+ALIASES = {alias: item['name'] for item in catalog_commands() for alias in item.get('aliases', [])}
+
+
+def canonical(name: str) -> str:
+    """Tên lệnh chính của một tên cũ ("/moi" thành "/new"); tên khác giữ nguyên."""
+    return ALIASES.get(name, name)
 
 @dataclass(frozen=True)
 class Suggestion:
@@ -48,8 +56,8 @@ def use_models(models: list[dict]) -> None:
 def use_efforts(efforts: list[str]) -> None:
     """Chỉ gợi ý mức máy chủ hỗ trợ cho model đang chọn."""
     global COMMANDS
-    choices = {"none": ("none", "Không suy luận"), "low": ("thap", "Nhanh, suy nghĩ ít"),
-               "medium": ("vua", "Cân bằng giữa nhanh và kỹ"), "high": ("cao", "Cao · nhân đôi số bước"),
+    choices = {"none": ("none", "Không suy luận"), "low": ("low", "Nhanh, suy nghĩ ít"),
+               "medium": ("medium", "Cân bằng giữa nhanh và kỹ"), "high": ("high", "Cao · nhân đôi số bước"),
                "xhigh": ("xhigh", "Rất cao · nhân đôi số bước"), "max": ("max", "Tối đa · nhân đôi số bước")}
     options = tuple(choices[value] for value in efforts if value in choices)
     COMMANDS = tuple(replace(command, options=options,
@@ -70,7 +78,9 @@ def suggestions(text: str) -> list[Suggestion]:
     name, space, rest = text.partition(" ")
     typed = fold(name)
     if not space:
-        starts = [command for command in COMMANDS if fold(command.name).startswith(typed)]
+        # Gõ tên cũ (/nhớ, /thoát) thì gợi ý tên mới, để người quen tay vẫn tìm ra.
+        starts = [command for command in COMMANDS if fold(command.name).startswith(typed)
+                  or any(alias.startswith(typed) for alias, name in ALIASES.items() if name == command.name)]
         inside = [command for command in COMMANDS
                   if len(typed) > 1 and command not in starts and typed[1:] in fold(command.name)]
         return [Suggestion(command.name, command.name, command.description, bool(command.options))

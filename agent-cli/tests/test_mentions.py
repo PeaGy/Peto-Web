@@ -138,7 +138,7 @@ def test_the_input_line_offers_commands_and_paths_from_the_same_menu(project):
 
     for char in "/mo":
         state.handle(Key("char", char))
-    assert [item.label for item in state.items()] == ["/moi", "/model"]
+    assert [item.label for item in state.items()] == ["/new", "/model"], "/mo khớp cả tên cũ /moi của /new"
 
     state.handle(Key("escape"))  # ẩn bảng gợi ý
     state.handle(Key("escape"))  # xóa chữ đang gõ

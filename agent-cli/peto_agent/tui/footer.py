@@ -28,7 +28,7 @@ ESC_WINDOW = 3.0
 # Phím tới trong ngần này giây sau khi khung duyệt hiện chưa được tính: đó thường là phím gõ cho ô nhập.
 PANEL_GUARD = 0.3
 TICK_MS = 100
-BUSY_PLACEHOLDER = "Gõ tin tiếp theo; Peto gửi khi làm xong việc này…"
+BUSY_PLACEHOLDER = "Nhắn thêm cho Peto; tin được chèn vào bước kế tiếp…"
 
 
 class Panel:
@@ -54,7 +54,9 @@ class FooterEngine:
         self.interrupt = interrupt or (lambda: signal.raise_signal(signal.SIGINT))
         self.lock = threading.RLock()
         self.submitted: queue.Queue = queue.Queue()
-        # Tin gõ trong lúc Peto đang làm: (chữ, ảnh, bản chụp tin để vẽ khung).
+        # Gõ trong lúc Peto đang làm (theo opencode, CLI 0.20.0): tin thường chèn vào bước kế tiếp để lái việc đang làm
+        # (steers), lệnh gạch chéo chờ yêu cầu xong mới chạy (queued). Mỗi mục là (chữ, ảnh, bản chụp tin để vẽ khung).
+        self.steers: list[tuple[str, list, object]] = []
         self.queued: list[tuple[str, list, object]] = []
         self.busy = False
         self.panel: Panel | None = None
@@ -125,9 +127,10 @@ class FooterEngine:
             return ([" " * 2 + render(line, ui.colors) for line in rows], [2 + line.width() for line in rows],
                     (len(rows) - 1, 0))
         above: list[Line] = []
-        for text, _, _ in self.queued:
-            above.append(Line([S("   ↳ ", theme.muted), S("Chờ gửi: ", theme.muted),
-                               S(clip(" ".join(text.split()), 200), theme.dim_text)]))
+        for label, waiting in (("Nhắn thêm: ", self.steers), ("Chờ chạy: ", self.queued)):
+            for text, _, _ in waiting:
+                above.append(Line([S("   ↳ ", theme.muted), S(label, theme.muted),
+                                   S(clip(" ".join(text.split()), 200), theme.dim_text)]))
         if self.busy:
             spin = ui.spinner_frame()
             body = (self.status or "… Peto đang làm").removeprefix("… ")
@@ -141,10 +144,19 @@ class FooterEngine:
                 footer_line = Line([S("esc", theme.warning, b=True), S(" lần nữa để dừng yêu cầu", theme.warning)])
             else:
                 footer_line = Line([S("esc esc", theme.text), S(" hoặc ", theme.muted), S("ctrl+c", theme.text),
-                                    S(" dừng · Enter gửi tin chờ Peto làm xong", theme.muted)])
+                                    S(" dừng · Enter nhắn thêm cho Peto", theme.muted)])
         placeholder = BUSY_PLACEHOLDER if self.busy else prompt_view.PLACEHOLDER
-        frame = prompt_view.frame(self.state, theme, width=width, height=height, meta=self.meta, footer=self.footer,
-                                  colors=ui.colors, footer_line=footer_line, above=above, placeholder=placeholder)
+        meta, accent = self.meta, None
+        if getattr(ui, "mode", "build") == "plan":
+            # Chế độ Lập kế hoạch: nhãn thay chữ "Peto" ở hàng thông tin, thanh đổi màu, dòng chân nói cách quay lại.
+            meta, accent = ["Lập kế hoạch", *self.meta[1:]], theme.secondary
+            if footer_line is None:
+                footer_line = Line([S("shift+tab", theme.text), S(" hoặc ", theme.muted), S("/plan", theme.text),
+                                    S(" về chế độ làm việc", theme.muted)]
+                                   + ([S(" · " + self.footer, theme.muted)] if self.footer else []))
+        frame = prompt_view.frame(self.state, theme, width=width, height=height, meta=meta, footer=self.footer,
+                                  colors=ui.colors, footer_line=footer_line, above=above, placeholder=placeholder,
+                                  accent=accent)
         widths = [cells(_plain(line)) for line in frame.lines]
         return frame.lines, widths, (frame.cursor_row, frame.cursor_col)
 
@@ -183,6 +195,14 @@ class FooterEngine:
     def _submitted(self) -> None:
         """Vừa gửi một tin (gửi ngay hay để chờ)."""
 
+    def take_steers(self) -> list[tuple[str, list, object]]:
+        """Các tin nhắn thêm đang chờ chèn vào bước kế tiếp; lấy ra là hết."""
+        with self.lock:
+            steers, self.steers = self.steers, []
+            if steers:
+                self._draw()
+        return steers
+
     def set_status(self, text: str | None) -> None:
         with self.lock:
             if text == self.status:
@@ -205,8 +225,9 @@ class FooterEngine:
     def take(self) -> tuple[str, list]:
         """Tin kế tiếp: tin đã gõ trong lúc Peto làm, hoặc chờ người dùng gửi. Ctrl+C lúc ô trống thì thoát."""
         with self.lock:
-            if self.queued:
-                text, images, sent = self.queued.pop(0)
+            if self.steers or self.queued:
+                # Yêu cầu xong trước khi kịp chèn tin nhắn thêm: tin đó thành yêu cầu kế tiếp.
+                text, images, sent = (self.steers or self.queued).pop(0)
                 self.busy = True
                 self.ui.commit_user(sent)
                 return text, images
@@ -309,6 +330,12 @@ class FooterEngine:
             else:
                 self._esc_until = time.monotonic() + ESC_WINDOW
             return
+        if key.name == "backtab":
+            # Shift+Tab đổi chế độ làm việc ↔ Lập kế hoạch, như Claude Code; áp dụng từ bước kế tiếp.
+            toggle = getattr(self.ui, "toggle_mode", None)
+            if toggle is not None:
+                toggle()
+            return
         if key.name == "image":
             self._attach(self.editor.clipboard)
             return
@@ -324,7 +351,7 @@ class FooterEngine:
             from . import prompt as prompt_view
             sent = prompt_view.Sent(state)
             if self.busy:
-                self.queued.append((text, images, sent))
+                (self.queued if text.lstrip().startswith("/") else self.steers).append((text, images, sent))
             else:
                 self.busy = True
                 self.status = None
