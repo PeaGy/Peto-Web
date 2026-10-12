@@ -2657,6 +2657,15 @@ results in the next step. The server stores no conversation (`store=False`), and
       tokens. Every task opened with "Mình sẽ xem…"; 20 turns carried 2,360 characters of narration between tools.
       Final replies averaged 5.6 lines / 582 characters; no closing offers; 3 `path:line` references.
     - The CLI stays unchanged between runs so only the prompt differs.
+    - After the change (same day, deployed): still 10/10, 70 → 68 turns, output tokens 28k → 26k, final replies
+      5.6 → 4.1 lines and 582 → 492 characters, narration 2,360 → 1,984 characters. The fix tasks shortened most
+      (sua-api 12 → 4 lines); question answers kept their evidence.
+    - The opening announcement did not change: Grok dropped "sẽ" ("Mình xem cấu trúc…"). `harness.PREAMBLE` was
+      widened to catch that, giving 10 → 10. The rule was then sharpened: when tools are needed, the first turn holds
+      tool calls only, and nothing announces the next step. This version needs a third run (owner's go-ahead).
+  - **CLI 0.19.1.** Grok cites code as ```` ```21:24:src/main.c ````. `tui/markdown.CITATION` labels such a block
+    `src/main.c:21-24` and highlights it by the file extension; before this the label was just "21". The harness
+    counts these blocks as `path:line` references.
 - **CLI display** (picked by the owner from mockups): tool steps stay as permanent lines; while waiting for the model
   there is one transient `… Peto đang nghĩ · Ns` status line (`UI.status`, redrawn with `\r\033[2K`, only when colors
   are on). `ReplyWriter` prints replies line by line so `UI.markdown` can color bold, inline code, headings, bullets and

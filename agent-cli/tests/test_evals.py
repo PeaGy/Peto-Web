@@ -217,6 +217,10 @@ def test_voice_counts_reply_length_narration_filler_and_file_references():
     assert voice["file_refs"] == 1 and voice["output_tokens"] == 140
     plain = harness.voice([{"text": "Đã sửa xong, test qua.", "calls": [], "output_tokens": 5}], "Đã sửa xong, test qua.")
     assert not plain["preamble"] and not plain["closing_offer"] and plain["interim_steps"] == 0
+    announced = harness.voice([{"text": "Mình xem cấu trúc dự án trước.", "calls": ["list_files"]}], "Xong.")
+    assert announced["preamble"], "bỏ chữ \"sẽ\" vẫn là báo kế hoạch"
+    cited = harness.voice([], "Có.\n```21:24:src/main.c\nint x;\n```")
+    assert cited["file_refs"] == 1, "khối code trích kèm chỗ cũng là dẫn tệp:dòng"
 
 
 def test_compare_lines_up_two_runs_without_spending_steps(tmp_path):

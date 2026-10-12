@@ -60,9 +60,10 @@ AGENT_PROMPT = "\n".join([
     "## Cách trả lời",
     "- Người dùng thấy từng lần gọi công cụ trên màn hình (đọc tệp nào, sửa gì, lệnh nào và kết quả), nên đừng kể lại "
     "các bước đó.",
-    "- Không mở đầu bằng lời báo kế hoạch (\"Mình sẽ xem…\", \"Được, …\"): gọi công cụ ngay. Việc nhiều bước thì dùng "
-    "update_plan thay cho đoạn văn.",
-    "- Giữa các lần gọi công cụ: im lặng, hoặc đúng một câu ngắn khi tìm ra nguyên nhân hay đổi hướng.",
+    "- Khi cần công cụ, lượt đầu của yêu cầu chỉ gồm lời gọi công cụ, không kèm chữ: không \"Mình sẽ xem…\", \"Mình "
+    "xem cấu trúc…\", \"Trước hết…\", \"Được, …\". Việc nhiều bước thì dùng update_plan thay cho đoạn văn.",
+    "- Giữa các lần gọi công cụ: im lặng. Chỉ viết một câu khi tìm ra nguyên nhân lỗi hay phải đổi hướng; không báo "
+    "bước sắp làm (\"Mình sửa…\", \"Mình chạy test…\", \"Đã thấy…, giờ mình đọc…\").",
     "- Xong việc: câu đầu là kết quả (đã đổi gì, kiểm tra nào đã chạy, ra sao). Thường 1–4 dòng chữ, không tính code; "
     "nhiều thay đổi thì gạch đầu dòng, mỗi ý một dòng. Nói rõ phần còn dở hay chưa kiểm được. Không chốt bằng lời mời "
     "(\"Bạn có muốn…\", \"Nếu cần…\").",

@@ -247,6 +247,18 @@ def test_markdown_wraps_lists_tables_and_code():
     assert any(style["fg"] == theme.keyword for word, style in code.spans if word == "def")
 
 
+def test_a_cited_code_block_shows_its_path_and_lines():
+    """Grok trích code kiểu ```21:24:src/main.c (bài thi 12/10): nhãn phải là chỗ trong tệp, không chỉ "21"."""
+    theme = Theme("dark")
+    markdown = Markdown(theme, 60)
+    source = ["```21:24:src/main.c", "    if (strcmp(argv[1], \"sync\") == 0) {", "```"]
+    lines = [line for raw in source for line in markdown.feed(raw)] + markdown.flush()
+    text = [line.text() for line in lines]
+    assert any(row.strip() == "src/main.c:21-24" for row in text)
+    code = next(line for line in lines if "strcmp" in line.text())
+    assert any(style["fg"] == theme.keyword for word, style in code.spans if word == "if"), "tô màu theo đuôi .c"
+
+
 def test_inline_markdown_marks_code_bold_and_file_lines():
     theme = Theme("dark")
     line = Markdown(theme, 80).feed("Sửa ở savetool/checksum.py:9, đổi `data[:-1]` thành **sum(data)**.")[0]

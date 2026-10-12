@@ -15,6 +15,8 @@ from . import highlight
 from .text import Line, S, cells, fit, wrap
 
 FENCE = re.compile(r"^\s*(```+|~~~+)\s*([\w#+.-]*)")
+# Trích code kèm chỗ, kiểu ```21:24:src/main.c: model (Grok) hay viết vậy khi dẫn chứng; trước 0.19.1 nhãn chỉ còn "21".
+CITATION = re.compile(r"^\s*(?:```+|~~~+)\s*(\d+):(\d+):(\S+)\s*$")
 HEADING = re.compile(r"^(#{1,6})\s+(.*?)\s*#*\s*$")
 RULE = re.compile(r"^\s*([-*_])(?:\s*\1){2,}\s*$")
 QUOTE = re.compile(r"^\s*>\s?(.*)$")
@@ -120,6 +122,10 @@ class Markdown:
             self._blank = False
             self.code, self.lang = fence.group(1), highlight.language(fence.group(2))
             label = fence.group(2).strip()
+            if cited := CITATION.match(line):
+                start, end, path = cited.groups()
+                self.lang = highlight.language(path)
+                label = f"{path}:{start}" + (f"-{end}" if end != start else "")
             return out + [self._code_row([S(label, theme.muted, theme.panel)] if label else [], label=True)]
         stripped = line.strip()
         if self.math:

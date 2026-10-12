@@ -244,11 +244,15 @@ def behavior(calls: list[dict], requests: list[dict]) -> dict:
 
 # Giọng trả lời (giai đoạn V của bản làm lại theo OpenCode, 2026-10-12): đo lời Peto, không tốn bước nào. So khớp trên
 # chữ đã bỏ dấu, chữ thường.
+# Lần đo sau đổi lời nhắc (12/10) cho thấy Peto chỉ bỏ chữ "sẽ": "Mình xem cấu trúc…", "Mình tìm…" vẫn là báo kế hoạch.
 PREAMBLE = re.compile(r"^(duoc(\s*roi)?|ok(ay)?|vang|chac chan|tuyet|minh se|de minh|duoi day( la)?|sau day( la)?|"
-                      r"sure|certainly|of course|great|i'll|i will|let me|here's|here is)\b")
+                      r"truoc het|minh (xem|tim|doc|ra soat|kiem tra|chay|bat dau)|"
+                      r"sure|certainly|of course|great|i'll|i will|let me|here's|here is|first,? i)\b")
 CLOSING_OFFER = re.compile(r"ban (co )?muon|neu ban (muon|can)|neu can|cu noi|bao minh|minh co the giup|"
                            r"let me know|would you like|want me to|if you('d| would) like|if you want|feel free")
 FILE_LINE = re.compile(r"[\w./\\-]+\.[A-Za-z]\w{0,7}:\d+")
+# Khối code trích kèm chỗ (```21:24:src/main.c) cũng là một lần dẫn tệp:dòng.
+CITED_BLOCK = re.compile(r"(?m)^\s*(?:```+|~~~+)\s*\d+:\d+:\S+")
 
 
 def _folded(text: str) -> str:
@@ -280,7 +284,7 @@ def voice(steps: list[dict], reply: str) -> dict:
         "interim_steps": len(interim), "interim_chars": sum(len(text) for text in interim),
         "preamble": bool(PREAMBLE.match(first)) or any(PREAMBLE.match(_folded(text.strip())) for text in interim),
         "closing_offer": bool(CLOSING_OFFER.search(last)),
-        "file_refs": len(FILE_LINE.findall(reply)),
+        "file_refs": len(FILE_LINE.findall(reply)) + len(CITED_BLOCK.findall(reply)),
         "output_tokens": sum(step.get("output_tokens") or 0 for step in steps),
     }
 
