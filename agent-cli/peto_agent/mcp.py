@@ -13,6 +13,7 @@ import time
 from urllib.parse import urlsplit
 
 from . import __version__, config
+from .events import Permission
 from .runner import kill_tree
 from .workspace import WorkspaceError
 
@@ -292,9 +293,9 @@ class MCP:
             if not spec:
                 raise WorkspaceError('Không tìm thấy MCP đã cấu hình.')
             display = {**spec, 'env': {key: '(đã cấu hình)' for key in spec.get('env', {})}}
-            self.ui.line('Kết nối MCP: ' + json.dumps(display, ensure_ascii=False))
-            self.ui.line('MCP cục bộ chạy với quyền tài khoản máy; không nằm trong giới hạn công cụ tệp của Peto.')
-            if self.ui.ask_permission(question='Cho phép kết nối trong phiên này? [y] có [n] không › ') not in {'y', 'a'}:
+            self.ui.preview('mcp_enable', {'name': name, 'spec': display})
+            question = 'Cho phép kết nối trong phiên này? [y] có [n] không › '
+            if self.ui.ask(Permission('mcp_enable', {'name': name, 'spec': display}, question=question)) not in {'y', 'a'}:
                 return
             self.disable(name)
             conn = Connection(spec, self.ws.root)
@@ -338,8 +339,9 @@ class MCP:
                 raise ValueError
         except (ValueError, TypeError):
             raise WorkspaceError('arguments_json cần là object JSON, tối đa 32.000 ký tự.') from None
-        self.ui.line(f'MCP {server} → {tool}\n' + json.dumps(args, ensure_ascii=False))
-        if self.ui.ask_permission(question='Cho phép gọi công cụ MCP này? [y] có [n] không › ') not in {'y', 'a'}:
+        body = {'server': server, 'tool': tool, 'arguments': args}
+        self.ui.preview('mcp', body)
+        if self.ui.ask(Permission('mcp', body, question='Cho phép gọi công cụ MCP này? [y] có [n] không › ')) not in {'y', 'a'}:
             return {'error': 'Người dùng từ chối gọi MCP. Không thử lại bằng công cụ khác.'}
         try:
             return conn.request('tools/call', {'name': tool, 'arguments': args})

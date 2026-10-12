@@ -2463,6 +2463,45 @@ results in the next step. The server stores no conversation (`store=False`), and
   - Commands run with a timeout; timeout or Ctrl+C kills the whole tree with `taskkill /T`.
   - Tool results are capped at 20k characters. A stopped request still appends an output for every pending call, so the
     next step stays valid for the model.
+- **Redesign after OpenCode (in progress since 2026-10-12).** The owner asked to redo everything seen in the terminal
+  after OpenCode (MIT, https://github.com/anomalyco/opencode): display, tool behaviour and a concise reply voice.
+  Owner's picks after real xterm.js mockups (https://claude.ai/artifact/2PGMSbJruX1EedZUk6quZ2):
+  - **Inline with a fixed footer** (like `opencode mini`), not OpenCode's full-screen view. The transcript still goes
+    to the terminal's own scrollback, and the prompt stays at the bottom while Peto works. There is no sidebar.
+  - **No painted background.** Only panels get a background: user messages, tool blocks, the prompt. The terminal's
+    own background shows elsewhere. Theme colours are OpenCode's `opencode` theme with Peto's rose as primary.
+  - **Paste collapsing unchanged:** 4+ lines or 1000+ characters.
+  - **Show context use**, so users know when to `/compact` and when compaction runs by itself. The figure is measured
+    against the CLI's own automatic-compaction threshold (`loop.py`: 180 items or 200,000 characters), not the
+    model's window, so no server change is needed.
+
+  Phases:
+  - 0.15.0: tools and the loop emit structured events; same look.
+  - 0.16.0: the OpenCode look.
+  - 0.17.x: the footer engine.
+  - 0.18.0: tool behaviour, behind new `features`.
+  - Voice: backend prompts, measured with evals first.
+
+  Tolerant edit matching relaxes "exact unique match" and needs the owner's separate approval. Until 0.16.0 ships,
+  the bullets below describe the current look.
+
+  **0.15.0 (done 2026-10-12): structured events.** `peto_agent/events.py` defines the events, and handlers no longer
+  build display strings.
+  - Every tool method carries `@tool`, and MCP handlers go through `Tools._evented`. A call emits `ui.tool_started` and
+    `ui.tool_finished(ToolDone)`, including direct calls such as `/init`'s `list_files` and tests.
+  - `ToolDone.result` is exactly what the model receives. `meta` is display-only and never sent: `refused`, `raised`
+    (with `message`), `read_only`, `done`, `plan`, `base`, and the screenshot `path`.
+  - Before approval a handler calls `ui.preview(kind, body)` for a diff, command, move or MCP call. Questions go through
+    `ui.ask(Permission)`; the y/n/a/s/l semantics are unchanged.
+  - Other events: `ui.notice`, `ui.search`, `ui.request_finished(RequestEnd)`, `ui.tool_progress(call_id, …)`.
+  - The loop sets `tools.call_id` before each call instead of passing a new argument, so the evals `Recorder` wrapper
+    keeps working.
+  - `UI` in `ui.py` turns these events back into the exact old lines, so all 334 tests pass. `PolicyUI` is unchanged,
+    because the legacy `preview`/`ask` still call `diff`/`command`/`page_permission`.
+  - Server `thinking` events now reach `ReplyWriter.think` (still not drawn) and tick the "đang nghĩ · Ns" clock, which
+    used to freeze while summaries streamed.
+  - `format_duration`/`format_tokens` moved to `formats.py`; `loop` re-exports them.
+  - Tests: `agent-cli/tests/test_events.py`.
 - **CLI display** (picked by the owner from mockups): tool steps stay as permanent lines; while waiting for the model
   there is one transient `… Peto đang nghĩ · Ns` status line (`UI.status`, redrawn with `\r\033[2K`, only when colors
   are on). `ReplyWriter` prints replies line by line so `UI.markdown` can color bold, inline code, headings, bullets and

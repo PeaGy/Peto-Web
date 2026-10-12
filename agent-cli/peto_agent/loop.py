@@ -11,6 +11,8 @@ from datetime import datetime
 from . import approvals, history, mentions
 from .checkpoint import Checkpoint
 from .context import compact_prefix, context_size, text_of, efficient_input
+from .events import Permission, RequestEnd
+from .formats import format_duration, format_tokens  # noqa: F401 - evals/report.py và __main__ lấy từ đây
 from .project_guide import MAX_GUIDE_CHARS, MAX_NOTE_CHARS, add_note, guides
 from .metrics import Metrics
 from .client import ApiError, Client
@@ -50,8 +52,6 @@ chạy; các thư mục chính dùng để làm gì; quy ước code và ngôn n
 6. Ghi tệp rồi tóm tắt ngắn những gì đã đưa vào. Không sửa tệp nào khác."""
 INIT_EXISTING = ("Dự án đã có AGENTS.md: đọc trước, giữ những phần còn đúng và chỉ sửa chỗ sai hoặc thiếu bằng "
                  "edit_file.")
-OUTCOME_LABELS = {"done": "Xong trong", "stopped": "Đã dừng sau", "error": "Dừng vì lỗi sau", "limit": "Tạm dừng sau"}
-OUTCOME_MARKS = {"done": "✓", "stopped": "■", "error": "✗", "limit": "■"}
 # Nhãn trên tiêu đề cửa sổ, để người dùng làm việc khác vẫn thấy Peto xong chưa.
 TITLE_LABELS = {"done": "xong", "stopped": "đã dừng", "error": "lỗi", "limit": "tạm dừng"}
 # Yêu cầu lâu hơn ngần này giây thì kêu một tiếng khi xong; việc vài giây thì kêu chỉ tổ ồn.
@@ -114,24 +114,6 @@ def drop_old_images(items: list[dict], keep: int = MAX_KEPT_IMAGES) -> None:
                 seen += 1
                 if seen > keep:
                     content[index] = {"type": "input_text", "text": OLD_IMAGE_NOTE}
-
-
-def format_duration(seconds: float) -> str:
-    minutes, rest = divmod(max(0, round(seconds)), 60)
-    if not minutes:
-        return f"{rest} giây"
-    return f"{minutes} phút {rest} giây" if rest else f"{minutes} phút"
-
-
-def format_tokens(count: int) -> str:
-    """850, 1.2k, 18k, 1.3M."""
-    if count < 1000:
-        return str(count)
-    if count < 9950:
-        return f"{count / 1000:.1f}k".replace(".0k", "k")
-    if count < 999_500:
-        return f"{round(count / 1000)}k"
-    return f"{count / 1_000_000:.1f}M".replace(".0M", "M")
 
 
 class TaskLog:
@@ -298,7 +280,7 @@ class Session:
         if not self.tools.checkpoint.files:
             return
         self.ui.line("Hoàn tác các tệp trên? Đây là bản sửa trực tiếp gần nhất được lưu cho dự án này.", "yellow")
-        if self.ui.ask_permission() not in {"y", "a"}:
+        if self.ui.ask(Permission("undo", {"files": sorted(self.tools.checkpoint.files)})) not in {"y", "a"}:
             return
         before = set(self.tools.checkpoint.files)
         try:
@@ -495,6 +477,7 @@ class Session:
                 self.tools.start_step()
                 while pending:
                     call = pending[0]
+                    self.tools.call_id = str(call.get("call_id", ""))
                     with self.metrics.measure("tools"):
                         result = cap_result(self.tools.call(str(call.get("name", "")), str(call.get("arguments", ""))))
                     encoded = json.dumps(result, ensure_ascii=False)
@@ -574,8 +557,13 @@ class Session:
                         if event.get("text") == "searching" and not searching:
                             searching = True
                             phase = "tìm web"
-                            self.ui.step("Tìm trên web")
+                            self.ui.search("searching")
                             self._log("search")
+                        waiting()
+                    elif kind == "thinking":
+                        # Tóm tắt suy nghĩ đến liên tục thì client không còn lúc rảnh để gọi waiting(): gọi ở đây để
+                        # dòng "Peto đang nghĩ · Ns" vẫn đếm giây.
+                        writer.think(str(event.get("text", "")))
                         waiting()
                     elif kind == "delta":
                         phase = "viết"
@@ -624,22 +612,11 @@ class Session:
         self.ui.title(f"Peto · {TITLE_LABELS[outcome]} · {self.ws.root.name}")
         if elapsed >= BELL_AFTER_SECONDS:
             self.ui.bell()
-        # Một dòng duy nhất, theo bản phác chủ web chọn ngày 2026-09-22: số bước còn lại đã nằm dưới ô nhập, còn thời
-        # gian từng phần và token chi tiết thì ghi vào nhật ký và xem bằng /usage.
-        parts = [f"{OUTCOME_MARKS[outcome]} {OUTCOME_LABELS[outcome]} {format_duration(elapsed)}"]
-        if self.tools.changes:
-            parts.append(f"sửa {len(self.tools.changes)} tệp")
-        if self.tools.commands:
-            failed = sum(1 for command in self.tools.commands
-                         if command.get("classification") not in {"passed", "success", "no_match"})
-            parts.append(f"chạy {len(self.tools.commands)} lệnh" + (f" ({failed} lỗi)" if failed else ""))
-        if running := self.tools.jobs.running():
-            parts.append(f"đang chạy {len(running)} lệnh nền")
-        if left := sum(1 for step in self.tools.plan if step.get("status") != "done"):
-            parts.append(f"còn {left} việc chưa xong")
-        if self.context_tokens:
-            parts.append(f"hội thoại {format_tokens(self.context_tokens)} token")
-        self.ui.line("  " + " · ".join(parts), "dim")
+        self.ui.request_finished(RequestEnd(
+            outcome, elapsed, dict(self.tools.changes), list(self.tools.commands),
+            background_jobs=len(self.tools.jobs.running()),
+            plan_left=sum(1 for step in self.tools.plan if step.get("status") != "done"),
+            context_tokens=self.context_tokens))
         self._log("summary", outcome=outcome, seconds=round(elapsed, 1), changes=self.tools.changes,
                   commands=self.tools.commands, metrics=self.metrics.snapshot())
 

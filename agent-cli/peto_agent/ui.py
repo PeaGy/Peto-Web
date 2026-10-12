@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import difflib
+import json
 import os
 import re
 import shutil
 import sys
 import unicodedata
+from urllib.parse import urlsplit
 
 from . import mascot, texmath
+from .events import PERMISSION_QUESTION, Permission, RequestEnd, ToolCall, ToolDone
+from .formats import format_duration, format_tokens
 
 COLORS = {"dim": "2", "bold": "1", "red": "31", "green": "32", "yellow": "33", "blue": "34", "cyan": "36"}
 # Chừa ít nhất ngần này cột cho ba dòng chữ bên phải mascot; cửa sổ hẹp hơn thì bỏ hình, chỉ in chữ.
@@ -25,7 +29,8 @@ MAX_DIFF_LINES = 120
 # Số lỗi trang in dưới mỗi lần Peto xem trang; Peto vẫn nhận đủ.
 MAX_PAGE_PROBLEMS = 5
 MAX_OUTPUT_LINES = 8
-PERMISSION_QUESTION = "    Đồng ý? [y] có  [n] không  [a] có cho mọi bước trong yêu cầu này › "
+OUTCOME_LABELS = {"done": "Xong trong", "stopped": "Đã dừng sau", "error": "Dừng vì lỗi sau", "limit": "Tạm dừng sau"}
+OUTCOME_MARKS = {"done": "✓", "stopped": "■", "error": "✗", "limit": "■"}
 # Về đầu dòng rồi xóa cả dòng: dùng để vẽ lại và xóa dòng trạng thái tạm.
 CLEAR_LINE = "\r\033[2K"
 
@@ -120,6 +125,77 @@ def _plain(text: str) -> str:
     """Bỏ dấu Markdown trong đoạn sẽ được tô nguyên dòng (tiêu đề, trích dẫn)."""
     text = INLINE_CODE.sub(lambda match: match.group(1)[1:-1], text)
     return BOLD.sub(r"\1", LINK.sub(r"\1 (\2)", text))
+
+
+def _seconds(value: float) -> str:
+    return f"{value:.1f}".replace(".", ",") + " giây"
+
+
+def _count(value: int) -> str:
+    return f"{value:,}".replace(",", ".")
+
+
+def _clip(text: str, limit: int) -> str:
+    text = " ".join(str(text).split())
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def _viewport_label(viewport: str) -> str:
+    from .browser import viewport_label
+    return viewport_label(viewport)
+
+
+def page_notes(result: dict) -> list[str]:
+    """Hộp thoại và việc Peto chặn (trang ngoài, tab mới, tải tệp) cho dòng chi tiết. Hộp thoại in ở dòng mờ chứ không
+    thành dòng lỗi đỏ: hộp thoại không phải lỗi."""
+    dialogs = ["hộp thoại " + "; ".join(result["dialogs"])] if result.get("dialogs") else []
+    return dialogs + list(result.get("notes") or [])
+
+
+def _where(url: str) -> str:
+    """localhost:5173/admin: địa chỉ gọn cho dòng tổng kết."""
+    parts = urlsplit(url or "")
+    return f"{parts.netloc}{parts.path if parts.path != '/' else ''}" or url
+
+
+def _page_details(page: dict) -> str:
+    details = [f"Tải xong {_seconds(page['seconds'])}" if page.get("loaded")
+               else f"Chưa tải xong sau {_seconds(page['seconds'])}"]
+    if page.get("status") and page["status"] >= 400:
+        details.append(f"HTTP {page['status']}")
+    details.append(f"\"{page['title']}\"" if page.get("title") else "không có tiêu đề")
+    details.append(f"{len(page['problems'])} lỗi" if page.get("problems") else "không lỗi")
+    return " · ".join(details + page_notes(page))
+
+
+def action_details(kind: str, result: dict) -> str:
+    """Dòng chi tiết dưới một thao tác (bản phác chủ web chọn ngày 2026-09-23): trang chuyển tới đâu, chữ mới hiện, hộp
+    thoại, việc bị chặn, số lỗi. Gõ mà không có gì mới thì không in dòng này."""
+    parts = []
+    if result.get("new_page") or result.get("moved"):
+        parts.append(f"Chuyển tới {urlsplit(result['url']).path or '/'}"
+                     + (f' · "{result["title"]}"' if result.get("title") else ""))
+    elif result.get("appeared"):
+        more = len(result["appeared"]) - 1
+        parts.append(f'Hiện thêm: "{_clip(result["appeared"][0], 80)}"' + (f" (+{more} dòng)" if more else ""))
+    elif kind == "click" and not result.get("elements") and not page_notes(result):
+        parts.append("Chữ trên trang không đổi")
+    parts += page_notes(result)
+    if parts or result.get("problems"):
+        parts.append(f"{len(result['problems'])} lỗi" if result.get("problems") else "không lỗi")
+    return " · ".join(parts)
+
+
+# Dòng báo khi người dùng từ chối, theo công cụ.
+REFUSED_LINES = {
+    "edit_file": "Không sửa {path}", "write_file": "Không ghi {path}", "delete_file": "Không xóa {path}",
+    "move_file": "Không đổi tên {path}", "start_command": "Không chạy lệnh nền", "run_command": "Không chạy lệnh",
+    "browser_open": "Không mở trang ngoài", "browser_click": "Không thao tác trên trang",
+    "browser_type": "Không thao tác trên trang", "browser_press": "Không thao tác trên trang",
+}
+READ_ONLY_LINES = {
+    "browser_login": "Trang ngoài chỉ xem: Peto không nhờ đăng nhập trên trang ngoài.",
+}
 
 
 class UI:
@@ -506,6 +582,147 @@ class UI:
         else:
             self.failure(f"{summary} · mã thoát {result['exit_code']}")
 
+    # ---- Sự kiện có cấu trúc (events.py). Bản này vẽ lại đúng các dòng như trước khi có sự kiện.
+
+    def tool_started(self, call: ToolCall) -> None:
+        """Một công cụ bắt đầu chạy. Bản dòng nối tiếp chưa vẽ gì: dòng của công cụ in lúc xong."""
+
+    def tool_progress(self, call_id: str, seconds: float, output: str) -> None:
+        self.command_progress(seconds, output)
+
+    def preview(self, kind: str, body: dict) -> None:
+        """Thứ công cụ sắp làm, hiện trước khi hỏi (và cả khi đã được cho phép sẵn): diff, lệnh, đổi tên, gọi MCP."""
+        if kind == "file":
+            self.diff(body["title"], body["before"], body["after"])
+        elif kind == "move":
+            self.line()
+            self.line(f"  ✎ Muốn đổi tên {body['old']} → {body['new']}", "blue")
+            self.line("    Nội dung giữ nguyên.", "dim")
+        elif kind in {"command", "background"}:
+            self.command(body["command"], body["directory"], body.get("timeout", 0), shell=body.get("shell", "cmd"),
+                         background=kind == "background")
+        elif kind == "mcp":
+            self.line(f"MCP {body['server']} → {body['tool']}\n" + json.dumps(body["arguments"], ensure_ascii=False))
+        elif kind == "mcp_enable":
+            self.line("Kết nối MCP: " + json.dumps(body["spec"], ensure_ascii=False))
+            self.line("MCP cục bộ chạy với quyền tài khoản máy; không nằm trong giới hạn công cụ tệp của Peto.")
+
+    def ask(self, permission: Permission) -> str:
+        """Hỏi một câu quyền; trang và tên miền thì in phần giải thích trước câu hỏi."""
+        body = permission.body
+        if permission.kind == "page":
+            self.page_permission(body["origin"], body["action"])
+        elif permission.kind == "site":
+            self.site_permission(body["url"], body["site"], body.get("unusual", False))
+        return self.ask_permission(allow_session=permission.allow_session, allow_always=permission.allow_always,
+                                   session_label=permission.session_label, question=permission.question)
+
+    def notice(self, text: str, level: str = "dim") -> None:
+        """Một dòng báo ngắn trong lúc làm (quyền đã nhớ, trình duyệt đổi chế độ…); level là dim hoặc yellow."""
+        self.line(f"  {text}", level)
+
+    def search(self, state: str) -> None:
+        """Bước này có tra web (chạy ở phía dịch vụ AI)."""
+        if state == "searching":
+            self.step("Tìm trên web")
+
+    def tool_finished(self, done: ToolDone) -> None:
+        """Dòng kết quả của một công cụ, dựng từ kết quả gửi cho model và phần meta chỉ để hiển thị."""
+        name, args, result, meta = done.name, done.args, done.result, done.meta
+        if meta.get("stopped"):
+            return
+        if meta.get("raised") == "guide":
+            self.step(meta["message"])
+            return
+        if meta.get("raised"):
+            self.failure(meta["message"])
+            return
+        if meta.get("refused"):
+            self.failure(REFUSED_LINES[name].format(path=meta.get("path", "")))
+            return
+        if meta.get("read_only"):
+            self.failure(READ_ONLY_LINES.get(name, "Trang ngoài chỉ xem: mở link bằng địa chỉ của nó."))
+            return
+        if name == "browser_login" and "done" in meta:
+            where = (f'"{result["title"]}" · ' if result.get("title") else "") + _where(result.get("url") or "")
+            if meta["done"]:
+                self.success(f"Đã đăng nhập · {where}")
+            else:
+                self.failure(f"Bạn bỏ qua đăng nhập · {where}")
+            return
+        if name == "run_command" and "exit_code" in result:
+            # Lệnh đã chạy: "error" ở đây là lỗi của lệnh (hết giờ…), in cùng dòng kết quả.
+            self.command_result(result)
+            return
+        if "error" in result:
+            # Lỗi trả thẳng cho Peto (vượt giới hạn, bỏ qua vì bước trước lỗi…): trước đây không in gì.
+            return
+        if name == "update_plan":
+            self.plan(meta["plan"])
+        elif name == "list_files":
+            self.step(f"Xem thư mục {result['path']}")
+        elif name == "read_file":
+            rel = result["path"]
+            self.step(f"Đọc {rel} (dòng {result['start_line']}–{result['end_line']})" if result["total_lines"]
+                      else f"Đọc {rel} (tệp trống)")
+        elif name == "search_files":
+            self.step(f'Tìm "{args.get("pattern", "")}" trong {meta.get("base", ".")}')
+        elif name == "edit_file":
+            self.success(f"Đã sửa {result['path']} (+{result['added_lines']} −{result['removed_lines']})")
+        elif name == "write_file":
+            self.success(("Đã tạo " if result.get("created") else "Đã ghi đè ")
+                         + f"{result['path']} (+{result['added_lines']} −{result['removed_lines']})")
+        elif name == "delete_file":
+            self.success(f"Đã xóa {result['path']} (−{result['removed_lines']})")
+        elif name == "move_file":
+            self.success(f"Đã đổi tên {result['moved_from']} → {result['path']}")
+        elif name == "start_command":
+            where = result.get("cwd", ".")
+            self.success(f"Đã chạy nền #{result['id']}: {result['command']}" + (f" (trong {where})" if where != "." else ""))
+        elif name == "read_command_output":
+            state = "đang chạy" if result.get("running") else f"đã dừng, mã thoát {result.get('exit_code')}"
+            self.step(f"Đọc output lệnh nền #{result['id']} ({state})")
+        elif name == "stop_command":
+            self.success(f"Đã dừng lệnh nền #{result['id']}: {result['command']}")
+        elif name == "run_command":
+            self.command_result(result)
+        elif name == "browser_open":
+            self.page(f"Xem trang {result['url']} · {_viewport_label(result['viewport'])}", _page_details(result),
+                      result.get("problems") or [])
+        elif name == "browser_screenshot":
+            label = _viewport_label(result["viewport"]) + (" · cả trang" if result.get("full_page") else "")
+            if result.get("cut"):
+                label += f" (cắt ở {result['height']}px)"
+            self.page(f"Chụp trang · {label}", " · ".join(page_notes(result)), result.get("problems") or [],
+                      path=meta.get("path"))
+        elif name == "browser_read":
+            what = f"Đọc chữ trong {args['selector']}" if args.get("selector") else "Đọc chữ trên trang"
+            self.page(f"{what} ({_count(result.get('chars', 0))} ký tự)", " · ".join(page_notes(result)),
+                      result.get("problems") or [])
+        elif name in {"browser_click", "browser_type", "browser_press"}:
+            title = result["action"][:1].upper() + result["action"][1:]
+            self.page(title, action_details(name.removeprefix("browser_"), result), result.get("problems") or [])
+        elif name == "load_skill":
+            self.line(f"Đã nạp skill {args.get('name')} · {result['path']}", "dim")
+
+    def request_finished(self, end: RequestEnd) -> None:
+        """Một dòng duy nhất cuối mỗi yêu cầu (bản phác chủ web chọn ngày 2026-09-22): số bước còn lại nằm dưới ô
+        nhập, thời gian từng phần và token chi tiết xem bằng /usage."""
+        parts = [f"{OUTCOME_MARKS[end.outcome]} {OUTCOME_LABELS[end.outcome]} {format_duration(end.seconds)}"]
+        if end.changes:
+            parts.append(f"sửa {len(end.changes)} tệp")
+        if end.commands:
+            failed = sum(1 for command in end.commands
+                         if command.get("classification") not in {"passed", "success", "no_match"})
+            parts.append(f"chạy {len(end.commands)} lệnh" + (f" ({failed} lỗi)" if failed else ""))
+        if end.background_jobs:
+            parts.append(f"đang chạy {end.background_jobs} lệnh nền")
+        if end.plan_left:
+            parts.append(f"còn {end.plan_left} việc chưa xong")
+        if end.context_tokens:
+            parts.append(f"hội thoại {format_tokens(end.context_tokens)} token")
+        self.line("  " + " · ".join(parts), "dim")
+
     def ask_permission(self, *, allow_session: bool = False, allow_always: bool = False,
                        session_label: str = "nhớ lệnh này trong phiên", question: str = PERMISSION_QUESTION) -> str:
         """Hỏi y/n/a; lệnh chạy và thao tác trên trang thì thêm [s] (nhớ trong phiên) và [l] (luôn cho phép ở dự án
@@ -587,6 +804,9 @@ class ReplyWriter:
             if sum(map(cell_width, part)) > self.ui.width - 9:
                 part = "…" + wrap_cells(part, max(1, self.ui.width - 10))[-1]
             self.ui.status("Peto › " + part)
+
+    def think(self, text: str) -> None:
+        """Tóm tắt suy nghĩ của model. Bản dòng nối tiếp chưa hiện; dòng "Peto đang nghĩ" vẫn đếm giây."""
 
     def finish(self) -> None:
         if self.pending:
