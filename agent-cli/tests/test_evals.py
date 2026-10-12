@@ -200,3 +200,40 @@ def test_selftest_catches_a_check_that_cannot_fail(tmp_path, monkeypatch):
     monkeypatch.setattr(task.module, "check", lambda ctx: ctx.require("luôn qua", True))
     ok, detail = harness.selftest(task, tmp_path)
     assert not ok and "không phân biệt" in detail
+
+
+def test_voice_counts_reply_length_narration_filler_and_file_references():
+    steps = [
+        {"text": "Mình sẽ xem cấu trúc dự án trước.", "calls": ["list_files"], "output_tokens": 40},
+        {"text": "", "calls": ["read_file"], "output_tokens": 10},
+        {"text": "Checksum bỏ byte cuối; sửa luôn.", "calls": ["edit_file"], "output_tokens": 30},
+        {"text": "Đã sửa `savetool/checksum.py:12`, test qua.\n\n```py\nfor byte in data:\n```\nBạn có muốn mình thêm test?",
+         "calls": [], "output_tokens": 60},
+    ]
+    voice = harness.voice(steps, steps[-1]["text"])
+    assert voice["reply_lines"] == 2, "dòng trong khối code không tính"
+    assert voice["interim_steps"] == 2 and voice["interim_chars"] == len(steps[0]["text"]) + len(steps[2]["text"])
+    assert voice["preamble"] and voice["closing_offer"]
+    assert voice["file_refs"] == 1 and voice["output_tokens"] == 140
+    plain = harness.voice([{"text": "Đã sửa xong, test qua.", "calls": [], "output_tokens": 5}], "Đã sửa xong, test qua.")
+    assert not plain["preamble"] and not plain["closing_offer"] and plain["interim_steps"] == 0
+
+
+def test_compare_lines_up_two_runs_without_spending_steps(tmp_path):
+    import report
+
+    def run_dir(name, reply, steps):
+        folder = tmp_path / name
+        (folder / "bai").mkdir(parents=True)
+        (folder / "run.json").write_text(json.dumps({
+            "tasks": ["bai"], "model_label": "Peto", "effort_label": "vừa", "cli_version": "0.19.0"}), encoding="utf-8")
+        (folder / "bai" / "result.json").write_text(json.dumps({
+            "task": "bai", "name": "bai", "passed": True, "steps": steps, "reply": reply,
+            "steps_detail": [{"text": reply, "calls": [], "output_tokens": len(reply)}]}), encoding="utf-8")
+        return folder
+
+    before = run_dir("truoc", "Được rồi, mình đã sửa.\nDòng hai.\nDòng ba.\nNếu cần gì cứ nói nhé.", 6)
+    after = run_dir("sau", "Đã sửa `a.py:3`; test qua.", 5)
+    text = report.compare(before, after)
+    assert "| bai | ✓ → ✓ | 6 → 5 |" in text
+    assert "4.0 → 1.0 dòng" in text and "lời mời ở cuối: 1 → 0 bài" in text and "dẫn tệp:dòng: 0 → 1 chỗ" in text

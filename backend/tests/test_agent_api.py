@@ -604,3 +604,21 @@ def test_agent_prompt_explains_the_step_budget_and_the_new_tools():
     assert "git status --short" in AGENT_PROMPT
     # Ngày 2026-09-20 Peto chạy npm run dev ở gốc Peto-Web (không có package.json) rồi mới cd frontend: nói trước.
     assert "cd ở lệnh trước không giữ sang lệnh sau" in AGENT_PROMPT and "cwd" in AGENT_PROMPT
+
+
+def test_agent_reply_voice_is_concise_in_both_languages():
+    """Giọng trả lời theo OpenCode (2026-10-12): không báo kế hoạch, kết quả trước, không lời mời, dẫn tệp:dòng; câu
+    hỏi và lời giải thích vẫn đủ ý. Bài thi 24/09 cho thấy lượt đầu nào cũng mở bằng "Mình sẽ xem…", và lời nhắc kiểm
+    tra sau sửa làm Peto viết lại bản tóm tắt."""
+    from prompts import AGENT_PROMPT
+    from prompts.english import AGENT_PROMPT as ENGLISH
+
+    assert "## Cách trả lời" in AGENT_PROMPT and "## Replies" in ENGLISH
+    for text, words in ((AGENT_PROMPT, ("Mình sẽ xem", "1–4 dòng", "Không chốt bằng lời mời", "đường/dẫn.py:42",
+                                        "Kiểm tra sau sửa", "giải thích đủ")),
+                        (ENGLISH, ("I'll look at", "1–4 lines", "No closing offers", "path/to/file.py:42",
+                                   "Kiểm tra sau sửa", "explanations are complete"))):
+        for word in words:
+            assert word in text, word
+    # Các luật trung thực giữ nguyên.
+    assert "Chỉ nói đã sửa xong hay test đã qua khi kết quả công cụ cho thấy vậy" in AGENT_PROMPT

@@ -41,6 +41,11 @@ Mỗi bài nằm trong `tasks/<bài>/`:
   - lệnh bị từ chối, và có xin lại lệnh đó không;
   - có dùng danh sách việc không;
   - có chạm giới hạn lượt hay hết giờ không.
+- **Giọng trả lời** (từ 2026-10-12, giai đoạn giọng trả lời theo OpenCode), tính từ lời Peto đã ghi nên không tốn bước:
+  - câu trả lời cuối dài bao nhiêu dòng, bao nhiêu ký tự, không tính code;
+  - chữ Peto viết chen giữa các lần gọi công cụ;
+  - câu mở đầu thừa ("Mình sẽ xem…", "Được, …") và lời mời ở cuối ("Bạn có muốn…");
+  - số chỗ dẫn `tệp:dòng`, và token ra của cả bài.
 
 ## An toàn: bài thi chạy trên máy thật
 
@@ -79,6 +84,7 @@ Từ gốc repo, bằng Python của venv:
     .venv\Scripts\python.exe agent-cli\evals\run.py run --model peto --effort low
     .venv\Scripts\python.exe agent-cli\evals\run.py run sua-loi-checksum hoi-code-c    # chỉ vài bài
     .venv\Scripts\python.exe agent-cli\evals\run.py run test-do-tren-windows --repeat 3   # một bài 3 lần
+    .venv\Scripts\python.exe agent-cli\evals\run.py compare <lượt trước> <lượt sau>      # so hai lượt, không tốn bước
 
 **Đăng nhập:** `login` kết nối một máy riêng tên "Bài thi Peto", mặc định với máy chủ peto hằng ngày đang dùng (đổi
 bằng `--server`). Máy đó thu hồi được trong Cài đặt → Peto Agent.

@@ -2639,6 +2639,24 @@ results in the next step. The server stores no conversation (`store=False`), and
     - xterm.js's WebGL addon (headless) kept stale panel backgrounds on the main screen after a resize followed by
       leaving the alternate screen. A minimal sequence without peto does the same, the buffer itself is clean, and
       the DOM renderer shows nothing. Whether real VS Code shows it needs the owner's check.
+
+  **Voice (in progress 2026-10-12, backend only).**
+  - **Prompts.** `AGENT_PROMPT` gained "## Cách trả lời" and the English prompt "## Replies", replacing "gọn và đi
+    thẳng vào việc", "Xong việc thì tóm tắt ngắn…" and "Finish with changes…". The rules:
+    - no plan announcement before tools; `update_plan` for multi-step work;
+    - silence between tool calls, or one sentence when the cause is found;
+    - result first, usually 1–4 prose lines, bullets for several changes;
+    - no closing offers;
+    - code questions answered in the first sentence with `path:line`, explanations complete;
+    - after the CLI's "Kiểm tra sau sửa" reminder, only what is new.
+  - **Measurement.**
+    - `evals/harness.voice` measures final reply lines and characters (excluding code), text between tool calls,
+      filler openers, closing offers, `path:line` references and output tokens. It works from recorded steps, so it
+      costs nothing. `report.md` has a "Giọng trả lời" section; `run.py compare A B` lines up two runs.
+    - Baseline 2026-10-12 (Peto, medium, CLI 0.19.0, prompts before the change): 10/10 passed, 70 turns, 28k output
+      tokens. Every task opened with "Mình sẽ xem…"; 20 turns carried 2,360 characters of narration between tools.
+      Final replies averaged 5.6 lines / 582 characters; no closing offers; 3 `path:line` references.
+    - The CLI stays unchanged between runs so only the prompt differs.
 - **CLI display** (picked by the owner from mockups): tool steps stay as permanent lines; while waiting for the model
   there is one transient `… Peto đang nghĩ · Ns` status line (`UI.status`, redrawn with `\r\033[2K`, only when colors
   are on). `ReplyWriter` prints replies line by line so `UI.markdown` can color bold, inline code, headings, bullets and

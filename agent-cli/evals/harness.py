@@ -11,12 +11,14 @@ import _thread
 import importlib.util
 import json
 import os
+import re
 import shutil
 import stat
 import subprocess
 import threading
 import time
 import traceback
+import unicodedata
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from types import ModuleType
@@ -240,6 +242,49 @@ def behavior(calls: list[dict], requests: list[dict]) -> dict:
             "plan_used": bool(plans), "plan_left": left}
 
 
+# Giọng trả lời (giai đoạn V của bản làm lại theo OpenCode, 2026-10-12): đo lời Peto, không tốn bước nào. So khớp trên
+# chữ đã bỏ dấu, chữ thường.
+PREAMBLE = re.compile(r"^(duoc(\s*roi)?|ok(ay)?|vang|chac chan|tuyet|minh se|de minh|duoi day( la)?|sau day( la)?|"
+                      r"sure|certainly|of course|great|i'll|i will|let me|here's|here is)\b")
+CLOSING_OFFER = re.compile(r"ban (co )?muon|neu ban (muon|can)|neu can|cu noi|bao minh|minh co the giup|"
+                           r"let me know|would you like|want me to|if you('d| would) like|if you want|feel free")
+FILE_LINE = re.compile(r"[\w./\\-]+\.[A-Za-z]\w{0,7}:\d+")
+
+
+def _folded(text: str) -> str:
+    text = unicodedata.normalize("NFKD", text.replace("đ", "d").replace("Đ", "D"))
+    return "".join(char for char in text if not unicodedata.combining(char)).lower()
+
+
+def _prose(text: str) -> list[str]:
+    """Các dòng chữ không trống, bỏ khối code: số dòng người dùng phải đọc."""
+    lines, fenced = [], False
+    for line in text.splitlines():
+        if line.strip().startswith(("```", "~~~")):
+            fenced = not fenced
+            continue
+        if not fenced and line.strip():
+            lines.append(line.strip())
+    return lines
+
+
+def voice(steps: list[dict], reply: str) -> dict:
+    """Câu trả lời cuối dài bao nhiêu (dòng, ký tự không tính code), chữ chen giữa các lần gọi công cụ, câu mở đầu
+    thừa, lời mời cuối câu, số chỗ dẫn tệp:dòng, và token ra của cả bài."""
+    prose = _prose(reply)
+    interim = [step["text"] for step in steps if step.get("text") and step.get("calls")]
+    first = _folded(prose[0]) if prose else ""
+    last = _folded(prose[-1]) if prose else ""
+    return {
+        "reply_lines": len(prose), "reply_chars": sum(len(line) for line in prose),
+        "interim_steps": len(interim), "interim_chars": sum(len(text) for text in interim),
+        "preamble": bool(PREAMBLE.match(first)) or any(PREAMBLE.match(_folded(text.strip())) for text in interim),
+        "closing_offer": bool(CLOSING_OFFER.search(last)),
+        "file_refs": len(FILE_LINE.findall(reply)),
+        "output_tokens": sum(step.get("output_tokens") or 0 for step in steps),
+    }
+
+
 def score(task: Task, ctx: Context) -> list[Check]:
     try:
         task.module.check(ctx)
@@ -312,7 +357,8 @@ def run_task(task: Task, client: Client, *, work: Path, out: Path, model: str, e
         "reply": recorder.reply, "text": recorder.text[:20000], "changed": ctx.changed,
         "checks": [asdict(check) for check in checks],
         "passed": all(check.ok for check in checks if check.required),
-        "behavior": behavior(recorder.calls, ui.requests), "calls": recorder.calls, "requests": ui.requests,
+        "behavior": behavior(recorder.calls, ui.requests), "voice": voice(recorder.steps, recorder.reply),
+        "calls": recorder.calls, "requests": ui.requests,
         "steps_detail": recorder.steps,
     }
     (folder / "result.json").write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")

@@ -211,8 +211,19 @@ def cmd_report(args) -> int:
     for path in folder.glob("*/result.json"):
         record = json.loads(path.read_text(encoding="utf-8"))
         record["behavior"] = harness.behavior(record["calls"], record["requests"])
+        record["voice"] = harness.voice(record.get("steps_detail") or [], record.get("reply") or "")
         path.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
     print(report.write(folder))
+    return 0
+
+
+def cmd_compare(args) -> int:
+    first, second = Path(args.first), Path(args.second)
+    text = report.compare(first, second)
+    path = second / f"compare-{first.name}.md"
+    path.write_text(text, encoding="utf-8")
+    print(text)
+    print(f"Đã lưu: {path}")
     return 0
 
 
@@ -244,10 +255,13 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--yes", action="store_true", help="không hỏi lại trước khi chạy")
     again = commands.add_parser("report", help="viết lại report.md")
     again.add_argument("folder")
+    versus = commands.add_parser("compare", help="so hai lượt thi (trước và sau một thay đổi), không tốn bước")
+    versus.add_argument("first")
+    versus.add_argument("second")
     args = parser.parse_args(argv)
     use_home(Path(args.home))
     handler = {"login": cmd_login, "status": cmd_status, "list": cmd_list, "selftest": cmd_selftest,
-               "run": cmd_run, "report": cmd_report}[args.command]
+               "run": cmd_run, "report": cmd_report, "compare": cmd_compare}[args.command]
     try:
         return handler(args)
     except ApiError as err:
