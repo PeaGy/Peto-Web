@@ -186,36 +186,47 @@ cd C:\Projects\website-a
 peto
 ```
 
-Màn hình gọn như Claude Code, để phần giữa chỉ còn lời Peto. Đầu phiên là mascot của Peto (ký tự khối có màu) đứng cạnh
-ba dòng ngắn, cỡ theo cửa sổ: từ 19 dòng là hình 24 cột × 12 dòng, từ 16 dòng là 18 × 9, từ 13 dòng (bảng terminal thấp
-của VS Code) là quả lê 6 × 6. Thấp hơn nữa, hẹp dưới 41 cột, hay terminal tắt màu (`NO_COLOR`), thì chỉ còn ba dòng
-chữ. Trong terminal của VS Code, Peto chừa thêm 2 cột bên phải, vì VS Code che khoảng hai cột sát mép:
+Giao diện theo OpenCode (từ 0.16.0, chủ web chọn từ bản mô phỏng ngày 2026-10-12). Mọi thứ vẫn in vào lịch sử cuộn của
+terminal, cuộn và chọn chữ như bình thường. Đầu phiên là mascot của Peto (ký tự khối có màu) đứng cạnh ba dòng ngắn, cỡ
+theo cửa sổ: từ 19 dòng là hình 24 cột × 12 dòng, từ 16 dòng là 18 × 9, từ 13 dòng (bảng terminal thấp của VS Code) là
+quả lê 6 × 6. Thấp hơn nữa, hẹp dưới 41 cột, hay terminal tắt màu (`NO_COLOR`), thì chỉ còn ba dòng chữ. Trong terminal
+của VS Code, Peto chừa thêm 2 cột bên phải, vì VS Code che khoảng hai cột sát mép:
 
 ```text
- [mascot]   Peto Agent 0.12.0
- [mascot]   Peto · mức vừa
+ [mascot]   Peto Agent 0.16.0
+ [mascot]   6 Luna · mức thấp
  [mascot]   ~\Projects\website-a
 
-                                                  ◉ Peto · vừa
-──────────────────────────────────────────────────────────────
-› Nhờ Peto làm gì đó…
-──────────────────────────────────────────────────────────────
-  còn 193/200 bước · /resume mở hội thoại lúc 14:45 hôm qua
+  ┃
+  ┃  Nhờ Peto làm gì đó…
+  ┃
+  ┃  Peto · 6 Luna · Thấp
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+  còn 193/200 bước · ngữ cảnh 12% tới lúc tự tóm tắt · /resume mở hội thoại lúc 14:45 hôm qua
 ```
 
-Gõ yêu cầu giữa hai đường kẻ. Phía trên, bên phải là model và mức suy nghĩ đang dùng; phía dưới là số bước còn lại hôm
-nay (cập nhật sau mỗi bước) và lời nhắc `/resume` khi thư mục có hội thoại cũ, tự tắt khi bạn bắt đầu hội thoại mới. Tên
-tài khoản xem bằng `peto status`, các phím tắt và lệnh xem bằng `/help`. Khi nhập nhiều dòng, khung tự giãn theo nội
-dung; tin quá dài được cuộn quanh vị trí con trỏ. Mỗi yêu cầu kết thúc bằng đúng một dòng mờ, ví dụ
-`✓ Xong trong 12 giây · sửa 2 tệp · chạy 1 lệnh · hội thoại 15k token`; thời gian từng phần và token chi tiết xem bằng
-`/usage`, và vẫn ghi đủ trong nhật ký.
+Gõ yêu cầu trong ô có thanh `┃` hồng. Trong ô là model và mức suy nghĩ đang dùng; dưới ô là số bước còn lại hôm nay
+(cập nhật sau mỗi bước), hội thoại đã tới đâu so với lúc Peto tự tóm tắt phần cũ (để biết khi nào nên `/compact`) và lời
+nhắc `/resume` khi thư mục có hội thoại cũ. Gửi xong, tin của bạn nằm lại thành một khung nền nhạt. Tên tài khoản xem
+bằng `peto status`, các phím tắt và lệnh xem bằng `/help`. Khi nhập nhiều dòng, ô tự giãn theo nội dung; tin quá dài
+được cuộn quanh vị trí con trỏ.
 
-Gõ `/` thì danh sách lệnh hiện ngay dưới khung nhập và lọc dần theo chữ bạn gõ:
+Lời Peto thụt vào, tự xuống dòng theo bề ngang, có danh sách, bảng kẻ khung và khối code tô màu. Mỗi công cụ là một
+dòng mờ (`→ Đọc app.py:1-40`, `✱ Tìm "checksum" 3 kết quả`); các lần đọc, tìm liền nhau gộp thành
+`→ Đã xem: 2 lần đọc, 1 lần tìm` kèm danh sách tệp. Sửa tệp là một khối có diff, chạy lệnh là một khối có phần cuối
+output và kết quả. Suy nghĩ của model chỉ hiện một dòng `+ Đã nghĩ: … · 3,2s`; `/suynghi` bật hiện cả phần tóm tắt suy
+nghĩ. Mỗi yêu cầu kết thúc bằng một dòng như
+`▣ Peto · 6 Luna · 12 giây · sửa 2 tệp · chạy 1 lệnh · 15k token · 8% tới lúc tự tóm tắt`; thời gian từng phần và token
+chi tiết xem bằng `/usage`, và vẫn ghi đủ trong nhật ký. `PETO_AGENT_THEME=light` dùng màu cho terminal nền sáng;
+`PETO_AGENT_UI=classic` quay về giao diện chữ trước 0.16.0.
+
+Gõ `/` thì danh sách lệnh hiện ngay trên ô nhập và lọc dần theo chữ bạn gõ:
 
 ```text
-› /re
-  ❯ /resume  Mở lại hội thoại gần nhất của thư mục này
-    /retry   Thử lại bước bị gián đoạn kết nối
+  ┃ /resume  Mở lại hội thoại gần nhất của thư mục này      (dòng đang chọn tô nền hồng)
+  ┃ /retry   Thử lại bước bị gián đoạn kết nối
+  ┃
+  ┃  /re
 ```
 
 Mũi tên lên/xuống chọn lệnh, Tab điền lệnh, Enter chạy lệnh đang chọn, Esc ẩn danh sách. Mới gõ mỗi `/` thì chưa có lệnh
@@ -276,6 +287,7 @@ nào được chọn, nên Enter không tự chạy gì. Các lệnh:
   nhân đôi. Danh sách model và effort vẫn lấy từ máy chủ. Cập nhật CLI để giữ nguyên block suy nghĩ có chữ ký và
   nhóm công cụ của Claude khi tóm tắt, và mở lại hội thoại có tìm web bằng `/resume`.
 - `/usage`: số bước còn lại và số token đã dùng hôm nay, độ dài hội thoại đang mở, model và mức suy nghĩ.
+- `/suynghi`: bật hoặc tắt hiện toàn văn suy nghĩ của Peto dưới dòng `+ Đã nghĩ` (không phải model nào cũng gửi).
 - `/help`: xem các lệnh. `/thoat`: thoát. Tên lệnh gõ có dấu (`/thoát`) vẫn được nhận.
 - **Ctrl+C**: dừng yêu cầu đang chạy; lệnh đang chạy bị dừng cả cây tiến trình. Ở dòng nhập, Ctrl+C xóa chữ đang gõ;
   dòng đã trống thì thoát.
@@ -335,13 +347,16 @@ terminal của bạn, đặt `$env:PETO_AGENT_SIMPLE_INPUT = '1'` trước khi c
 danh sách lệnh, lịch sử, dán nhiều dòng hay gửi ảnh. Khi input được chuyển từ tệp hay ống dẫn, `peto` cũng dùng dấu nhắc
 đơn giản `›`, không vẽ khung. `NO_COLOR` tắt cả màu nền của khung.
 
-Trong lúc chờ, một dòng tạm `… Peto đang nghĩ · 8s` tự đếm giây rồi biến mất khi có chữ. Câu dài đang viết hiện dần trên
-dòng tạm; khi xong dòng sẽ in đủ nội dung cùng chữ đậm và `mã`. Nội dung đã in nằm trong lịch sử cuộn của terminal.
-Không chuyển sang màn hình toàn phần, không cần cài thêm thư viện. `NO_COLOR` tắt màu; khi output chuyển sang tệp hoặc
-ống dẫn, không có mã điều khiển hay dòng trạng thái vẽ lại.
+Trong lúc chờ, một dòng tạm `⠋ Đang nghĩ · 8s` tự đếm giây rồi biến mất khi có chữ. Câu dài đang viết hiện dần trên
+dòng tạm; khi xong dòng sẽ in đủ nội dung. Nội dung đã in nằm trong lịch sử cuộn của terminal. Không chuyển sang màn
+hình toàn phần, không cần cài thêm thư viện. `NO_COLOR` tắt màu; khi output chuyển sang tệp hoặc ống dẫn, Peto dùng
+giao diện chữ thường, không có mã điều khiển hay dòng trạng thái vẽ lại.
 
-Mỗi lần Peto muốn sửa hay tạo tệp, CLI hiện diff có cột **Cũ / Mới**, số dòng thêm/xóa và ngắt dòng code dài theo chiều
-rộng terminal. Diff dài hiện từng phần; gõ `v` tại câu hỏi đồng ý để xem phần tiếp theo, không cấp quyền sửa tệp.
+Mỗi lần Peto muốn sửa hay tạo tệp, một khung "Cần bạn duyệt" hiện ở cuối màn hình với diff có cột số dòng, nền xanh cho
+dòng thêm, đỏ cho dòng xóa; terminal rộng hơn 120 cột thì diff chia hai cột cũ và mới. Chọn bằng `←`/`→` rồi `Enter`
+(`Esc` là từ chối), hoặc gõ thẳng chữ của lựa chọn (`y`, `a`, `s`, `l`, `n`). Phím gõ trước khi khung hiện không được
+tính. Diff dài hơn màn hình thì `v` hoặc `PgDn` xem tiếp, không cấp quyền sửa tệp. Trả lời xong khung biến mất; tệp đã
+sửa hiện thành một khối có diff, bị từ chối thì một dòng `✗ Không sửa …`.
 Mỗi lần muốn chạy lệnh, CLI hiện nguyên lệnh, thư mục và giới hạn thời gian. Khi chạy có bộ đếm thời gian và dòng output
 mới nhất (ở terminal đủ rộng); khi xong hiện tối đa 8 dòng output cuối cùng cùng kết quả hoặc mã lỗi. Bạn trả lời:
 
@@ -539,9 +554,10 @@ hoàn toàn, socket có thể cần chờ tới timeout mới nhận ra; Ctrl+C 
 
 ### Cấu trúc giao diện
 
-`presentation.py` khai báo giao diện mà `Session` và `Tools` sử dụng; `ui.py` chịu trách nhiệm Markdown đang stream,
-diff, câu hỏi quyền, khối lệnh và các dòng trạng thái. Bộ chạy lệnh chỉ báo tiến độ qua callback, không tự in chữ.
-Nhờ đó có thể thay lớp hiển thị sau này mà không thay cách thực thi công cụ hay lưu hội thoại.
+`presentation.py` khai báo giao diện mà `Session` và `Tools` sử dụng. Công cụ không tự in chữ: mỗi lần gọi báo sự kiện
+có cấu trúc (`events.py`: bắt đầu, xem trước, câu hỏi quyền, kết quả kèm phần chỉ để hiển thị), và giao diện tự quyết
+định vẽ thế nào. `tui/` là giao diện kiểu OpenCode cho terminal (theme, Markdown, diff, ô nhập, khung duyệt); `ui.py`
+là bản chữ thường cho ống dẫn, tệp, test và bài thi. Bộ chạy lệnh chỉ báo tiến độ qua callback.
 
 Terminal không vẽ được LaTeX, nên công thức trong câu trả lời được `texmath.py` đổi sang ký hiệu Unicode trước khi in:
 `\lnot A \lor B` hiện thành `¬A ∨ B`, `x^2` thành `x²`, `\frac{a+1}{2}` thành `(a+1)/2`, khối `\[ … \]` in thụt vào và

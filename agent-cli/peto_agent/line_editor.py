@@ -429,7 +429,8 @@ def group_paste(keys: list[Key]) -> list[Key]:
 
 KEY_EVENT = 0x0001
 VK_BACK, VK_TAB, VK_RETURN, VK_MENU, VK_ESCAPE, VK_V = 0x08, 0x09, 0x0D, 0x12, 0x1B, 0x56
-NAVIGATION = {0x23: "end", 0x24: "home", 0x25: "left", 0x26: "up", 0x27: "right", 0x28: "down", 0x2E: "delete"}
+NAVIGATION = {0x21: "pageup", 0x22: "pagedown", 0x23: "end", 0x24: "home", 0x25: "left", 0x26: "up", 0x27: "right",
+              0x28: "down", 0x2E: "delete"}
 RIGHT_ALT, LEFT_ALT, RIGHT_CTRL, LEFT_CTRL, SHIFT = 0x01, 0x02, 0x04, 0x08, 0x10
 # Tắt Ctrl+C thành tín hiệu, nhập theo dòng, tự in phím, sự kiện cửa sổ và chuột, và mã VT cho phím.
 RAW_MODE_OFF = 0x0001 | 0x0002 | 0x0004 | 0x0008 | 0x0010 | 0x0200
@@ -594,14 +595,19 @@ class LineEditor:
         self._boxed = False
         self._footer = ""
         self._status = ""
+        self._frame: Callable[[EditorState, int, int], Frame] | None = None
 
-    def read(self, prompt: str, paint=_no_paint, *, boxed: bool = False, footer: str = "", status: str = "") -> str:
-        """Đọc một lượt nhập. Ctrl+C lúc ô trống ném KeyboardInterrupt như input()."""
+    def read(self, prompt: str, paint=_no_paint, *, boxed: bool = False, footer: str = "", status: str = "",
+             frame: Callable[[EditorState, int, int], Frame] | None = None) -> str:
+        """Đọc một lượt nhập. Ctrl+C lúc ô trống ném KeyboardInterrupt như input().
+
+        ``frame(state, cột, dòng)`` thay cách xếp khung mặc định (``layout``): giao diện kiểu OpenCode dùng nó.
+        """
         state = self.state
         state.clear()
         self.last_images = []
         self._row = 0
-        self._boxed, self._footer, self._status = boxed, footer, status
+        self._boxed, self._footer, self._status, self._frame = boxed, footer, status, frame
         result = None
         try:
             with self.console.raw():
@@ -656,8 +662,11 @@ class LineEditor:
 
     def _draw(self, prompt: str, paint) -> None:
         columns, lines = self.size()
-        frame = layout(self.state, prompt=prompt, width=columns, height=lines, paint=paint,
-                       boxed=self._boxed, footer=self._footer, status=self._status)
+        if self._frame is not None:
+            frame = self._frame(self.state, columns, lines)
+        else:
+            frame = layout(self.state, prompt=prompt, width=columns, height=lines, paint=paint,
+                           boxed=self._boxed, footer=self._footer, status=self._status)
         parts = [HIDE_CURSOR]
         if self._row:
             parts.append(f"\033[{self._row}A")

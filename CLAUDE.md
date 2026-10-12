@@ -2502,6 +2502,41 @@ results in the next step. The server stores no conversation (`store=False`), and
     used to freeze while summaries streamed.
   - `format_duration`/`format_tokens` moved to `formats.py`; `loop` re-exports them.
   - Tests: `agent-cli/tests/test_events.py`.
+
+  **0.16.0 (done 2026-10-12): the OpenCode look, still inline.**
+  - **Which UI runs.** `__main__.create_ui` picks `tui.view.TerminalUI` when stdout is a VT terminal.
+    `PETO_AGENT_UI=classic` forces the old `ui.UI`, which also serves pipes, files, tests and `PolicyUI`. The old
+    colored `UI` path and `line_editor.layout` are now used only by tests.
+  - **Modules (`peto_agent/tui/`).**
+    - `theme.py`: OpenCode `opencode` tokens with an MIT attribution, rose primary, `PETO_AGENT_THEME=light`. Glyphs
+      fall back to ASCII-ish ones outside Windows Terminal and VS Code, where conhost/Consolas may lack Braille and
+      some symbols.
+    - `text.py`: spans, cell width, wrap.
+    - `highlight.py`: regex highlighting, no parser.
+    - `markdown.py`: streaming blocks; tables are drawn once complete.
+    - `diff.py`: line-number gutter; split into two columns above 120 cells.
+    - `prompt.py`: the prompt frame, passed to `LineEditor.read(frame=…)`. Suggestions show above the box. On submit
+      the box becomes the user-message panel in scrollback.
+    - `view.py`: `TerminalUI` and `TerminalReply`.
+  - **Behaviour.**
+    - Consecutive read/list/search calls stay in `_group` and print as one "→ Đã xem: …" line when other output starts.
+    - Edits and commands print as panel blocks. The diff in an edit block is capped at 40 rows; `/diff` shows all.
+    - The permission panel is drawn transiently at the bottom and answered with ←/→ + Enter. Esc means n, letters work,
+      and v/PgDn pages the diff. Keys arriving within 300 ms of opening are ignored. The panel is erased after the
+      answer.
+    - Without raw keys (`editor` is None), the panel prints statically and the answer is typed.
+    - Thinking shows only as "+ Đã nghĩ: <last bold heading> · Ns"; `/suynghi` (new command) also prints the summary.
+    - The request ends with "▣ Peto · <model> · <time> · … · N% tới lúc tự tóm tắt".
+    - The prompt footer adds "ngữ cảnh N% tới lúc tự tóm tắt", from `Session.context_share()` against `COMPACT_ITEMS`
+      and `COMPACT_CHARS`.
+  - **Packaging.** `pyproject` lists `peto_agent.tui`. `install.build_wheel` maps dotted names to folders and dedupes
+    files.
+  - **Checking.**
+    - `agent-cli/tests/test_tui.py` checks that no row reaches the last column at 40–160 columns, plus grouping,
+      blocks, panel keys, the prompt frame and NO_COLOR.
+    - Visual check: a scratch script ran the real `TerminalUI` and `Tools` (real edit, real `py -m unittest`) with a
+      fake console, and the ANSI was replayed in xterm.js. Real Windows Terminal, conhost and VS Code typing (Unikey)
+      still need the owner's check.
 - **CLI display** (picked by the owner from mockups): tool steps stay as permanent lines; while waiting for the model
   there is one transient `… Peto đang nghĩ · Ns` status line (`UI.status`, redrawn with `\r\033[2K`, only when colors
   are on). `ReplyWriter` prints replies line by line so `UI.markdown` can color bold, inline code, headings, bullets and

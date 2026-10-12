@@ -134,6 +134,14 @@
       "details": "Số bước và token đã dùng hôm nay."
     },
     {
+      "name": "/suynghi",
+      "description": "Bật hoặc tắt hiện toàn văn suy nghĩ của Peto",
+      "options": [],
+      "usage": "/suynghi",
+      "since": "0.16.0",
+      "details": "Mặc định chỉ hiện một dòng \"+ Đã nghĩ: … · 3,2s\" như OpenCode; bật thì in cả phần tóm tắt suy nghĩ model gửi về (không phải mọi model đều gửi)."
+    },
+    {
       "name": "/help",
       "description": "Xem các lệnh",
       "options": [],

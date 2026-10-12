@@ -685,7 +685,8 @@ def test_the_input_line_carries_steps_status_and_resume_until_a_conversation_sta
     assert cli.session(ui) == 0
     (first_footer, first_status), (second_footer, second_status) = ui.seen
     assert first_footer.startswith("còn 193/200 bước · /resume mở hội thoại lúc ")
-    assert second_footer == "còn 192/200 bước", "số bước theo máy chủ sau mỗi bước, và hết nhắc /resume"
+    assert second_footer == "còn 192/200 bước · ngữ cảnh 1% tới lúc tự tóm tắt", \
+        "số bước theo máy chủ sau mỗi bước, ngữ cảnh so với mức tự tóm tắt, và hết nhắc /resume"
     assert first_status == second_status == "◉ Peto · thấp"
 
 

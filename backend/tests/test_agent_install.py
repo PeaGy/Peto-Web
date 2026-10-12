@@ -74,6 +74,8 @@ def test_wheel_is_reproducible_and_matches_its_record():
     dist_info = f"peto-{version}.dist-info"
     assert names[-1] == f"{dist_info}/RECORD"
     assert "peto_agent/__main__.py" in files
+    # Gói con giao diện terminal (0.16.0) vào wheel đúng một lần dù pyproject ghi cả gói cha lẫn gói con.
+    assert "peto_agent/tui/view.py" in files and len(names) == len(set(names))
     assert files['peto_agent/command_catalog.json'] == (agent_install.CLI_DIR / 'peto_agent/command_catalog.json').read_bytes()
     assert not any("__pycache__" in name or name.startswith("tests/") for name in names)
     assert files["peto_agent/default_server.txt"].decode() == f"{ORIGIN}\n"
@@ -98,7 +100,7 @@ def test_pip_installs_the_wheel_and_the_cli_knows_its_server(tmp_path):
         check=True, capture_output=True,
     )
     assert any((target / "bin").glob("peto*"))
-    probe = "from peto_agent import config; print(config.default_server())"
+    probe = "from peto_agent import config; import peto_agent.tui.view; print(config.default_server())"
     result = subprocess.run([sys.executable, "-c", probe], cwd=tmp_path, capture_output=True, text=True, check=True,
                             env={**os.environ, "PYTHONPATH": str(target)})
     assert result.stdout.strip() == ORIGIN

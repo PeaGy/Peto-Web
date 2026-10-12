@@ -103,10 +103,14 @@ def build_wheel(server: str) -> Wheel:
     dist_info = f"{name}-{version}.dist-info"
 
     files: list[tuple[str, bytes]] = []
+    seen: set[str] = set()
+    # Gói con ghi kiểu setuptools (peto_agent.tui) nằm sẵn trong thư mục gói cha: mỗi tệp chỉ vào wheel một lần.
     for package in project["tool"]["setuptools"]["packages"]:
-        for path in sorted((CLI_DIR / package).rglob("*.py")):
-            if "__pycache__" not in path.parts:
-                files.append((path.relative_to(CLI_DIR).as_posix(), path.read_bytes()))
+        for path in sorted((CLI_DIR / package.replace(".", "/")).rglob("*.py")):
+            relative = path.relative_to(CLI_DIR).as_posix()
+            if "__pycache__" not in path.parts and relative not in seen:
+                seen.add(relative)
+                files.append((relative, path.read_bytes()))
     files.append((DEFAULT_SERVER_FILE, f"{server}\n".encode("utf-8")))
     catalog = CLI_DIR / 'peto_agent' / 'command_catalog.json'
     files.append(('peto_agent/command_catalog.json', catalog.read_bytes()))

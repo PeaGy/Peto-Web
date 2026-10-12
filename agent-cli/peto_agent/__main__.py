@@ -20,7 +20,7 @@ from .workspace import Workspace, WorkspaceError
 
 # Lệnh không nhận gì phía sau; gõ thêm chữ thì nhắc chứ không gửi cả câu cho Peto.
 PLAIN_COMMANDS = {"/thoat", "/exit", "/quit", "/moi", "/help", "/resume", "/usage", "/retry", "/diff", "/undo",
-                  "/compact", "/init"}
+                  "/compact", "/init", "/suynghi"}
 EFFORT_LABELS = {"none": "không suy luận", "low": "thấp", "medium": "vừa", "high": "cao",
                  "xhigh": "rất cao", "max": "tối đa"}
 # Giống STEP_COST của máy chủ: mức cao tính gấp đôi, nhân với số bước của model.
@@ -395,10 +395,14 @@ def session(ui: UI) -> int:
         while True:
             try:
                 label = next((item.get("label") for item in models if item["key"] == work.model), None) or work.model
+                work.model_label = label
                 if work.items:
                     # Phiên đã có hội thoại (vừa hỏi, /init hay /resume): tệp lưu đã hoặc sẽ bị ghi đè, lời nhắc hết đúng.
                     resume_hint = ""
                 footer = [f"còn {_steps_text(work)} bước"] if work.steps_limit else []
+                if (share := work.context_share()) is not None:
+                    # Để người dùng biết lúc nào nên /compact, hay lúc nào Peto sẽ tự tóm tắt.
+                    footer.append(f"ngữ cảnh {min(100, round(share * 100))}% tới lúc tự tóm tắt")
                 if resume_hint:
                     footer.append(resume_hint)
                 text = ui.prompt(footer=" · ".join(footer),
@@ -485,6 +489,16 @@ def session(ui: UI) -> int:
             if name == "/usage":
                 _usage(ui, work)
                 continue
+            if name == "/suynghi":
+                toggle = getattr(ui, "toggle_thoughts", None)
+                if toggle is None:
+                    ui.line("  Chỉ giao diện trong terminal mới hiện suy nghĩ của Peto.", "dim")
+                elif toggle():
+                    ui.line("  Đã bật: sau mỗi bước Peto in cả phần suy nghĩ model gửi về (không phải model nào cũng "
+                            "gửi). Gõ /suynghi lần nữa để tắt.", "dim")
+                else:
+                    ui.line("  Đã tắt: chỉ còn dòng \"+ Đã nghĩ\".", "dim")
+                continue
             if name == "/effort":
                 _change_effort(ui, work, fold(value))
                 continue
@@ -505,6 +519,16 @@ def session(ui: UI) -> int:
     return 0
 
 
+def create_ui() -> UI:
+    """Giao diện kiểu OpenCode khi output là terminal (chủ web chọn ngày 2026-10-12); ống dẫn, tệp và
+    ``PETO_AGENT_UI=classic`` dùng bản in chữ cũ."""
+    if os.environ.get("PETO_AGENT_UI", "").strip().lower() != "classic" and enable_vt(sys.stdout):
+        from .tui.view import TerminalUI
+
+        return TerminalUI()
+    return UI()
+
+
 def main(argv: list[str] | None = None) -> int:
     # Khi output bị chuyển sang tệp hay ống dẫn, Windows dùng bảng mã cũ và vỡ tiếng Việt; ép UTF-8. Stdin dùng
     # utf-8-sig vì Windows PowerShell 5.1 chèn BOM vào đầu dữ liệu truyền qua ống, làm lệnh ở dòng đầu không khớp.
@@ -519,7 +543,7 @@ def main(argv: list[str] | None = None) -> int:
     commands.add_parser("logout", help="ngắt kết nối máy này")
     commands.add_parser("status", help="xem tài khoản và số bước còn lại hôm nay")
     args = parser.parse_args(argv)
-    ui = UI()
+    ui = create_ui()
     try:
         if args.command == "login":
             return login(ui, args.server)

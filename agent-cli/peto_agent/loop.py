@@ -23,6 +23,9 @@ from .tools import FEATURES, Tools
 from .workspace import Workspace, WorkspaceError
 
 MAX_STEPS_PER_TASK = 40
+# Hội thoại tới ngần này mục hoặc ngần này ký tự thì Peto tự tóm tắt phần cũ trước bước kế tiếp.
+COMPACT_ITEMS = 180
+COMPACT_CHARS = 200_000
 # Mỗi lời Peto ghi vào nhật ký giữ tối đa ngần này ký tự (phần đầu và phần cuối), để nhật ký không phình theo code dài.
 MAX_LOGGED_REPLY = 4000
 # Máy chủ không lưu hội thoại nên bước nào cũng gửi lại ảnh: chỉ giữ 4 ảnh gần nhất, như chat trên web.
@@ -151,6 +154,8 @@ class Session:
         # Model chọn bằng /model, và số bước mỗi lần gọi model đó (trước khi nhân mức suy nghĩ).
         self.model = model
         self.model_step_cost = model_step_cost
+        # Tên model hiện cho người dùng ở dòng cuối yêu cầu; phiên đặt lại theo danh sách model của máy chủ.
+        self.model_label = model
         self.items: list[dict] = []
         self.steps_used: int | None = None
         self.steps_limit: int | None = None
@@ -172,6 +177,13 @@ class Session:
         self.tools.command_grants.clear()
         self.tools.seen_guides.clear()
         self.tools.checkpoint = Checkpoint(self.ws)
+
+    def context_share(self) -> float | None:
+        """Hội thoại đã tới đâu so với mức tự tóm tắt (0 tới 1), để người dùng biết lúc nào nên /compact (chủ web hỏi
+        ngày 2026-10-12). Tính theo mức của chính CLI chứ không theo cỡ ngữ cảnh của model: CLI tóm tắt sớm hơn nhiều."""
+        if not self.items:
+            return None
+        return max(len(self.items) / COMPACT_ITEMS, context_size(self.items) / COMPACT_CHARS)
 
     def set_model(self, model: str, step_cost: int = 1) -> None:
         """Đổi model; hội thoại đang dở vẫn giữ, chỉ bỏ phần model cũ tạo ra mà model mới không đọc được."""
@@ -445,7 +457,7 @@ class Session:
         compact_failed = False
         try:
             for _ in range(MAX_STEPS_PER_TASK):
-                if not compact_failed and (len(self.items) >= 180 or context_size(self.items) > 200000):
+                if not compact_failed and (len(self.items) >= COMPACT_ITEMS or context_size(self.items) > COMPACT_CHARS):
                     compact_failed = not self.compact(propagate_cancel=True)
                 if len(self.items) >= 270:
                     self.ui.failure("Hội thoại quá dài và chưa tóm tắt được. Gõ /compact để thử lại hoặc /moi.")
@@ -616,7 +628,7 @@ class Session:
             outcome, elapsed, dict(self.tools.changes), list(self.tools.commands),
             background_jobs=len(self.tools.jobs.running()),
             plan_left=sum(1 for step in self.tools.plan if step.get("status") != "done"),
-            context_tokens=self.context_tokens))
+            context_tokens=self.context_tokens, model=self.model_label, context_share=self.context_share()))
         self._log("summary", outcome=outcome, seconds=round(elapsed, 1), changes=self.tools.changes,
                   commands=self.tools.commands, metrics=self.metrics.snapshot())
 

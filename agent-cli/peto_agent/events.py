@@ -58,3 +58,7 @@ class RequestEnd:
     background_jobs: int = 0
     plan_left: int = 0
     context_tokens: int | None = None
+    # Tên model người dùng thấy (6 Luna, Peto…).
+    model: str = ""
+    # Hội thoại đã tới đâu so với mức tự tóm tắt của CLI (0 tới 1); None khi chưa có hội thoại.
+    context_share: float | None = None
