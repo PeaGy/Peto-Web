@@ -4,6 +4,7 @@ import IdleMotionPicker from '../src/features/companion/characters/IdleMotionPic
 import { DEFAULT_CHARACTER } from '../src/features/companion/characters/characterLibrary';
 import { readIdle } from '../src/features/companion/characters/live2dMotions';
 import { readEffects } from '../src/features/companion/characters/characterEffects';
+import { DEFAULT_MAGIC, readMagic } from '../src/features/companion/characters/magic/magicSettings';
 afterEach(() => { vi.unstubAllGlobals(); localStorage.clear(); });
 it('offers named motions, saves selection and supports disabling', async () => {
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({ FileReferences: {
@@ -34,4 +35,31 @@ it('offers named motions, saves selection and supports disabling', async () => {
   expect(readEffects(DEFAULT_CHARACTER.id).idleEyes).toBe(false);
   expect(readEffects(DEFAULT_CHARACTER.id).composerGaze).toBe(false);
   expect(readIdle(DEFAULT_CHARACTER.id)).toBe('off');
+});
+
+it('Cách chuyển động: mặc định Hiện tại; MAGIC lưu riêng nhân vật, khóa chuyển động chờ, đảo mắt và nhìn theo con trỏ', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({ FileReferences: { Motions: { Idle: [{ File: 'a.motion3.json' }] } } }) }));
+  render(<IdleMotionPicker character={DEFAULT_CHARACTER} />);
+  const idle = screen.getByRole('combobox', { name: 'Chuyển động khi chờ' }) as HTMLButtonElement;
+  await waitFor(() => expect(idle.disabled).toBe(false));
+  const current = screen.getByRole('radio', { name: 'Hiện tại' }) as HTMLInputElement;
+  expect(current.checked).toBe(true);
+  expect(screen.queryByRole('combobox', { name: 'Bộ chuyển động MAGIC' })).toBeNull();
+  fireEvent.click(screen.getByRole('radio', { name: 'MAGIC' }));
+  expect(readMagic(DEFAULT_CHARACTER.id)).toEqual({ driver: 'magic', profile: 'excited', viewTarget: true, mouthForm: true });
+  expect(idle.disabled).toBe(true);
+  expect((screen.getByRole('switch', { name: 'Nhìn theo con trỏ' }) as HTMLInputElement).disabled).toBe(true);
+  expect((screen.getByRole('switch', { name: 'Đảo mắt khi chờ' }) as HTMLInputElement).disabled).toBe(true);
+  expect((screen.getByRole('switch', { name: 'Thở' }) as HTMLInputElement).disabled).toBe(false);
+  const profile = screen.getByRole('combobox', { name: 'Bộ chuyển động MAGIC' });
+  expect(profile.textContent).toBe('Hào hứng');
+  fireEvent.click(profile);
+  fireEvent.click(screen.getByRole('option', { name: /Theo lúc nói/ }));
+  fireEvent.click(screen.getByRole('switch', { name: 'MAGIC điều khiển dáng miệng' }));
+  expect(readMagic(DEFAULT_CHARACTER.id)).toEqual({ driver: 'magic', profile: 'speech', viewTarget: true, mouthForm: false });
+  expect(readMagic('khac')).toEqual(DEFAULT_MAGIC);
+  fireEvent.click(current);
+  expect(readMagic(DEFAULT_CHARACTER.id).driver).toBe('universal');
+  expect(idle.disabled).toBe(false);
+  expect(screen.queryByRole('switch', { name: 'Mắt nhìn thẳng' })).toBeNull();
 });

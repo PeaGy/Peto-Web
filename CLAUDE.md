@@ -2276,6 +2276,7 @@ data deletes them.
     per file, 4 MB per JSON file, 512 files.
 - **Per-character settings**, under "Cài đặt nhân vật" in the picker.
   - **Live2D** (`IdleMotionPicker.tsx`):
+    - "Cách chuyển động": Hiện tại or MAGIC (`MotionDriverPicker.tsx`, see "Companion MAGIC motion");
     - the idle motion: "auto" (random `Idle` group), off, or one looped motion file, in `peto-idle-motion:<id>`;
     - switches for cursor tracking, idle eyes, breathing, physics and composer gaze, all on by default, in
       `peto-character-effects:<id>`. Physics is disabled when the model declares none. `withCharacterEffects` skips
@@ -2315,6 +2316,46 @@ data deletes them.
     sharing, so the Nhún theo nhạc page works. Closing the panel keeps it running. Audio is analysed on the device and never uploaded.
 - **Tests:** frontend `characterLibrary`, `characterImport`, `CharacterImportReview`, `CharacterPickerImport`,
   `characterEffects`, `sceneLibrary`, `musicVibe`, `beatMotion` and `MusicVibePicker`.
+
+### Companion MAGIC motion (`characters/magic/`)
+
+AIRI PR #2376 (v0.12.0-beta.5): "Markovian Animation Generator with Illusory Conditioning", procedural Live2D motion AIRI
+calls "Neuro-sama like (aka Neuro bump)". Surveyed 2026-10-13 (notes in `PETO_COMPANION_PLAN.md` §4); the owner tried a
+live mockup with four variants and on 2026-10-14 chose: add it, default stays "Hiện tại" (AIRI's default is Universal),
+keep the mouth-form switch.
+- **Setting.** Per Live2D character in "Cài đặt nhân vật" → "Cách chuyển động: Hiện tại / MAGIC" (AIRI: Settings → Models →
+  Animation → Motion driver). `magicSettings.ts` stores `{driver, profile, viewTarget, mouthForm}` in
+  `peto-character-magic:<id>` with a change event, like `characterEffects.ts`. Profiles: Hào hứng (`excited`, AIRI's
+  "Speaking / excited", the default profile), Bình thản (`calm`, "Idle / calm") and Theo lúc nói (`speech`, Peto's own:
+  calm while waiting, blending to excited while `voicePlaying()` or activity `speaking`; AIRI makes the user pick one).
+  "Mắt nhìn thẳng" is AIRI's force-view-target (eyes counter the head); "MAGIC điều khiển dáng miệng" off keeps the model's
+  default `ParamMouthForm` (AIRI always drives it). With MAGIC the idle motion select, cursor tracking and idle eyes are
+  disabled, as in AIRI; composer gaze, breathing, physics, blink, emotions, lip sync and Beat Sync stay.
+- **Model** (`magicModel.ts`): AIRI's VAR only (production AIRI never uses AR-HMM): ridge regression on the last 20 frames
+  at 30 Hz, duplicate channels folded, generation = prediction + a residual drawn from the recording × 1.15, clamped to the
+  recording's range, seeded random (mulberry32). Algorithms unchanged, comments translated; MIT notice in
+  `AIRI-LICENSE.txt` beside it.
+- **Data.** `idle-calm.json` and `speaking-excited.json` are AIRI's two recordings already resampled to 30 Hz (what AIRI fits
+  on) and rounded to 4 decimals: 137 + 132 KB, 17 + 21 KB gzipped, versus AIRI's 49 + 65 KB. `magicProfiles.ts` imports them
+  and fits both; `loadMagic()` reaches it through a dynamic import (a 42 KB gzipped chunk) only when a character uses MAGIC,
+  caching the fit for the page. Fitting both takes about 60–190 ms in the browser on the owner's PC.
+- **Runtime** (`magicMotion.ts`): `MagicSource` generates 30 Hz frames on the stage's own clock (AIRI uses a separate
+  requestAnimationFrame loop) through AIRI's output filter (cutoff 0.0575, smoothing 0.8) and drops generated mouth opening;
+  `MagicRuntime` runs both profiles, blends them (0.35 s in, 0.9 s out), applies the view target and AIRI's spring
+  (follow 1, inertia 0.6, 1/120 s substeps), and takes or releases control over ~0.3 s (`owned`).
+- **Live2DStage.** `start()` awaits `prepareMagic()` before the first frame, so the Companion loading screen covers the fit;
+  a later switch loads it on the fly. `magicWriter` writes in `afterMotionUpdate` (before physics, like AIRI's "final" motion
+  plugin, so hair follows the head): head ×30°, body ×10°, eye balls, mouth form, honouring an imported model's
+  `live2dControls` mappings for head and eyes. Squint multiplies eye openness in `beforeModelUpdate` after blinking, then the
+  emotion face is applied on top (so Vui still smiles and closes the eyes). Values written before `saveParameters` persist
+  into the next frame, so on release a parameter no motion rewrote eases back to the model default instead of freezing
+  (the prototype had left Hiyori's mouth stuck). `magicOffset` shifts the whole model (AIRI: ±20 px across, ±40 px down).
+  Reduced motion (unless "Luôn cử động") keeps MAGIC off. A failed chunk shows "Chưa tải được MAGIC…" and keeps the old
+  motion.
+- **Not done:** VRM (AIRI has none either); AIRI's motion workbench (recording, keyframe editor, gamepad) and custom
+  datasets; checks on a physical phone. Lip sync with MAGIC was checked in headless Edge with a muted fake voice.
+- **Tests:** `tests/magic.test.ts` (fit, determinism, ranges, real datasets, filter, runtime, writer release and mappings,
+  settings), `IdleMotionPicker.test.tsx` and `Live2DStage.test.tsx` MAGIC cases.
 
 ### Companion settings page (`/companion/settings/`)
 

@@ -33,6 +33,9 @@ import { composerPoint, type ComposerAttention } from './stageInteraction';
 import { trackLive2DHead } from './live2dHead';
 import { ComposerGaze } from './presenceMotion';
 import { applyLive2DControls, controlValue, type Live2DControls } from './live2dControls';
+import { MagicRuntime, loadMagic, magicOffset, magicWriter } from './magic/magicMotion';
+import { readMagic, watchMagic } from './magic/magicSettings';
+import type { MagicProfiles } from './magic/magicProfiles';
 
 let coreReady: Promise<void> | undefined;
 function loadCore() {
@@ -62,7 +65,8 @@ function loadCore() {
  * Máy tính: cuộn chuột hoặc chụm hai ngón để phóng to/thu nhỏ quanh chỗ đang chỉ, giữ chuột giữa kéo để dời, bấm đúp để về
  * cỡ vừa khung; góc nhìn được nhớ trong trình duyệt. Điện thoại (`COMPACT_QUERY`): khung khóa cứng như AIRI,
  * giữ ngón tay trên màn hình thì nhân vật nhìn theo ngón tay. Khi được cử động (`motionEnabled`), nhân vật
- * chạy motion Idle, thở, chớp mắt và nhìn theo con trỏ. Miệng luôn theo âm thanh đang phát.
+ * chạy motion Idle, thở, chớp mắt và nhìn theo con trỏ, hoặc chạy MAGIC nếu nhân vật đã chọn (`magic/`). Miệng luôn theo
+ * âm thanh đang phát.
  */
 export default function Live2DStage({ fallbackUrl, name, motion = "system", character = DEFAULT_CHARACTER, onPreview, onStatusChange, emotion, activity = 'idle', thinking = false, attention }: {
   thinking?: boolean;
@@ -92,6 +96,7 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
   const [attempt, setAttempt] = useState(0);
   const [idleError, setIdleError] = useState(false);
   const [expressionError, setExpressionError] = useState(false);
+  const [magicError, setMagicError] = useState(false);
   const emotionRef = useRef(emotion);
   emotionRef.current = emotion;
   const showEmotion = useRef<(emotion: StageEmotion | null) => void>(() => {});
@@ -119,6 +124,7 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
     changeStatus("loading");
     setIdleError(false);
     setExpressionError(false);
+    setMagicError(false);
 
     async function start() {
       await loadCore();
@@ -173,10 +179,14 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
       // Máy tính: phóng và dời chỉ nhân thêm lên cỡ vừa khung, nên đổi cỡ cửa sổ vẫn giữ đúng góc nhìn đã chọn.
       let view = readCharacterView(character.id);
       const box: StageBox = { width: 1, height: 1, baseX: 0, baseY: 0, baseScale: 1 };
+      // MAGIC dịch cả model vài chục điểm ảnh quanh chỗ đặt (`magicOffset`); không có MAGIC thì luôn bằng 0.
+      let base = { x: 0, y: 0 };
+      let shift = { x: 0, y: 0 };
       const place = () => {
         const { scale, x, y } = placement(compact.matches ? DEFAULT_VIEW : view, box);
         current.scale.set(scale);
-        current.position.set(x, y);
+        base = { x, y };
+        current.position.set(x + shift.x, y + shift.y);
       };
       // Bàn phím điện thoại làm sân khấu thấp đi nhưng bề ngang giữ nguyên. Khung điện thoại tính theo chiều cao
       // lớn nhất đã thấy ở bề ngang hiện tại, để mở bàn phím không làm nhân vật nhỏ lại hay trôi mặt đi.
@@ -324,6 +334,16 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
         controller?.dispose();
         showEmotion.current = () => {};
       };
+      // MAGIC (Cài đặt nhân vật → Cách chuyển động): chỉ tải và học bộ chuyển động khi nhân vật này bật nó, trong lúc màn tải
+      // còn che sân khấu (vài chục đến vài trăm mili giây). Như AIRI, lúc MAGIC chạy thì tắt chuyển động chờ, đảo mắt và nhìn
+      // theo con trỏ.
+      let magicSettings = readMagic(character.id);
+      let magicProfiles: MagicProfiles | null = null;
+      const prepareMagic = () => magicSettings.driver !== 'magic' || magicProfiles ? Promise.resolve()
+        : loadMagic().then(profiles => { if (!disposed) { magicProfiles = profiles; setMagicError(false); } })
+          .catch(() => { if (!disposed) setMagicError(true); });
+      await prepareMagic();
+      if (disposed) return;
       let effects = readEffects(character.id);
       let lastPointer = -Infinity;
       const composerGaze = new ComposerGaze();
@@ -332,16 +352,18 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
         effects = value;
         if (!composerGaze.owned) internal.focusController.focus(0, 0, true);
       });
+      const unwatchMagic = watchMagic(character.id, value => { magicSettings = value; setMagicError(false); void prepareMagic(); });
+      const magicOn = () => magicSettings.driver === 'magic' && magicProfiles !== null && moving();
       const idle = controlIdle(internal.motionManager, motionChoices(internal.motionManager.definitions), () => setIdleError(true));
       idle.select(readIdle(character.id));
-      idle.enable(moving());
+      idle.enable(moving() && !magicOn());
       const unwatchIdle = watchIdle(character.id, value => { setIdleError(false); idle.select(value); });
-      disposeIdle = () => { unwatchEffects(); unwatchIdle(); idle.dispose(); };
+      disposeIdle = () => { unwatchEffects(); unwatchIdle(); unwatchMagic(); idle.dispose(); };
       let touchId: number | null = null;
       // Nhìn theo con trỏ ở mọi chỗ trên trang như AIRI. Trên điện thoại, ngón tay đang giữ trên màn hình đóng
       // vai con trỏ; trên máy tính thì chạm dùng để kéo nhân vật nên không tính.
       const onLook = (event: PointerEvent) => {
-        if (!moving() || !effects.cursor) return;
+        if (!moving() || !effects.cursor || magicOn()) return;
         if (event.pointerType === "touch") {
           if (!compact.matches) return;
           if (event.type === "pointerdown") touchId = event.pointerId;
@@ -388,18 +410,27 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
         mappedOpen = mouth < 0.01 ? 0 : mouth;
         liveCore.setParameterValueById(mappedMouth.id, controlValue(mappedMouth, Math.max(mappedOpen, mappedFaceMouth)));
       });
+      // MAGIC ghi tư thế sau motion và trước vật lý (như plugin "final" của AIRI); nheo mắt ghi sau chớp mắt, bên dưới.
+      const magic = new MagicRuntime();
+      const writeMagic = magicWriter(liveCore, acceptedControls);
+      internal.on('afterMotionUpdate', () => {
+        magic.step(magicSettings, magicProfiles, magicOn(), voicePlaying() || activityRef.current === 'speaking', app!.ticker.deltaMS / 1000);
+        writeMagic.body(magic.pose, magic.owned, magicSettings.mouthForm);
+      });
       internal.on("beforeModelUpdate", () => {
         // Keep expression fades alive when body motion is paused for reduced motion.
         if (!moving()) manager?.update(liveCore, performance.now());
         const cursorActive = composerGaze.owned || (effects.cursor && (touchId !== null || performance.now() - lastPointer < 3000));
         // AIRI separates idle gaze from pointer tracking. Blend ownership of the eye
         // parameters so an authored idle cannot pin them at an extreme value.
-        const eyes = idleEyes.step(app!.ticker.deltaMS / 1000, effects.idleEyes && !cursorActive);
+        const eyes = idleEyes.step(app!.ticker.deltaMS / 1000, effects.idleEyes && !cursorActive && !magicOn());
         [eyes.x, eyes.y].forEach((value, i) => {
           if (eyeParameters[i].supported && eyes.weight > 0.001) liveCore.setParameterValueById(eyeParameters[i].id,
             eyeParameters[i].binding ? controlValue(eyeParameters[i].binding!, value) : value, eyes.weight);
         });
-        // Mặt dựng sẵn đè lên mắt khi chờ (mặt nhìn đi chỗ khác mới thấy được), rồi mới cộng nhịp đầu bên dưới.
+        // Mặt dựng sẵn đè lên mắt khi chờ (mặt nhìn đi chỗ khác mới thấy được), rồi mới cộng nhịp đầu bên dưới. Cảm xúc ghi
+        // sau MAGIC nên mặt vui vẫn cười và nhắm mắt khi MAGIC chạy.
+        writeMagic.squint(magic.pose, magic.owned);
         const faceMouth = face.apply(faceBlend.step(app!.ticker.deltaMS / 1000));
         mappedFaceMouth = faceMouth;
         if (moving()) {
@@ -433,11 +464,21 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
           const headY = current.position.y - originalHeight * current.scale.y * CHARACTER.headHeight;
           target = lookTarget(point.x - rect.left, point.y - rect.top, current.position.x, headY, box.width, box.height);
         }
+        // MAGIC vừa bật: thôi nhìn theo con trỏ ngay, như AIRI.
+        if (magicOn() && lastPointer > -Infinity) {
+          lastPointer = -Infinity; pointerTarget = { x: 0, y: 0 }; touchId = null;
+          if (!composerGaze.owned) internal.focusController.focus(0, 0);
+        }
         const owned = composerGaze.owned;
         const normal = effects.cursor && now - lastPointer < 3000 ? pointerTarget : { x: 0, y: 0 };
         const gaze = composerGaze.step(target, normal, app!.ticker.deltaMS / 1000);
         if (owned || composerGaze.owned) internal.focusController.focus(gaze.x, gaze.y);
-        idle.enable(moving());
+        idle.enable(moving() && !magicOn());
+        const nextShift = magicOffset(magic.pose, magic.owned);
+        if (nextShift.x !== shift.x || nextShift.y !== shift.y) {
+          shift = nextShift;
+          current.position.set(base.x + shift.x, base.y + shift.y);
+        }
         withCharacterEffects(internal, { ...effects, cursor: effects.cursor || owned || composerGaze.owned }, () => {
           if (moving()) {
             still = false;
@@ -548,6 +589,7 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
     <ThinkingBubble bubble={bubble} visible={thinking && status === 'ready'} />
     {idleError && <p className="character-motion-error" role="status">Chưa tải được chuyển động. Hãy mở Nhân vật và chọn lại chuyển động.</p>}
     {expressionError && <p className="character-motion-error" role="status">Chưa tải được biểu cảm. Hãy kiểm tra tệp biểu cảm của model.</p>}
+    {magicError && <p className="character-motion-error" role="status">Chưa tải được MAGIC, nhân vật đang dùng chuyển động hiện tại. Hãy tải lại trang.</p>}
     {status !== "ready" && <div className="character-fallback">
       {fallbackUrl ? <img src={fallbackUrl} alt={name} /> : <span>{name.charAt(0)}</span>}
       <p role="status">{status === "loading" ? "Đang đưa nhân vật lên sân khấu…" : "Chưa hiển thị được nhân vật. Bạn vẫn có thể nhắn và nghe Peto."}</p>

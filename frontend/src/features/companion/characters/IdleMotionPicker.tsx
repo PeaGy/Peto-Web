@@ -8,6 +8,8 @@ import ExpressionPicker from './ExpressionPicker';
 import type { ExpressionChoice } from './characterExpressions';
 import { selectMusicCharacter } from './musicVibe';
 import { Dropdown, type DropdownOption } from '../../../shared/ui/Dropdown';
+import MotionDriverPicker from './MotionDriverPicker';
+import { readMagic, watchMagic, writeMagic } from './magic/magicSettings';
 
 export default function IdleMotionPicker({ character }: { character: CharacterModel }) {
   const field = useId();
@@ -19,9 +21,12 @@ export default function IdleMotionPicker({ character }: { character: CharacterMo
   const [effects, setEffects] = useState(() => readEffects(character.id));
   const [hasPhysics, setHasPhysics] = useState(false);
   const [expressions, setExpressions] = useState<ExpressionChoice[]>([]);
+  const [magic, setMagic] = useState(() => readMagic(character.id));
+  const magicOn = magic.driver === 'magic';
   useEffect(() => selectMusicCharacter(character.id), [character.id]);
   useEffect(() => watchEffects(character.id, setEffects), [character.id]);
   useEffect(() => watchIdle(character.id, setValue), [character.id]);
+  useEffect(() => { setMagic(readMagic(character.id)); return watchMagic(character.id, setMagic); }, [character.id]);
   useEffect(() => {
     let alive = true;
     setLoading(true); setError('');
@@ -39,26 +44,29 @@ export default function IdleMotionPicker({ character }: { character: CharacterMo
     ...[...new Set(choices.map(item => item.group))].flatMap(group => choices.filter(item => item.group === group)
       .map(item => ({ value: item.id, label: item.label, group: group || 'Không tên' }))),
   ];
-  return <section className="idle-motion-picker" aria-labelledby={`${field}-label`}>
-    <div><h3><label htmlFor={field} id={`${field}-label`}>Chuyển động khi chờ</label></h3><p>{character.name} · Live2D</p></div>
-    <Dropdown id={field} value={resolved} options={options} disabled={loading || !!error}
+  return <section className="idle-motion-picker" aria-labelledby={`${field}-title`}>
+    <div><h3 id={`${field}-title`}>Chuyển động</h3><p>{character.name} · Live2D</p></div>
+    <MotionDriverPicker value={magic} onChange={next => { setMagic(next); writeMagic(character.id, next); }} />
+    <label className="motion-driver-label" htmlFor={field} id={`${field}-label`}>Chuyển động khi chờ</label>
+    <Dropdown id={field} value={resolved} options={options} disabled={loading || !!error || magicOn}
       onChange={next => { setValue(next); writeIdle(character.id, next); }} />
     {loading ? <p role="status">Đang đọc chuyển động…</p> : error
       ? <p role="alert">{error} <button type="button" className="settings-button" onClick={() => setAttempt(n => n + 1)}>Thử lại</button></p>
       : <p>{selected?.file || (value === 'off' ? 'Đã tắt phát motion khi chờ.' : choices.some(item => item.group === 'Idle')
         ? 'Tự chọn chuyển động trong nhóm Idle của model.' : 'Model không khai báo nhóm Idle. Bạn có thể chọn một chuyển động bên trên.')}</p>}
-    <p>Chọn một tệp để phát lặp lại. Tắt idle chỉ dừng motion khi chờ.</p>
+    <p>{magicOn ? 'MAGIC đang lo chuyển động khi chờ. Chọn "Hiện tại" để dùng lại chuyển động này.'
+      : 'Chọn một tệp để phát lặp lại. Tắt idle chỉ dừng motion khi chờ.'}</p>
     <div className="character-effect-options">
       <ComposerGazeSetting characterId={character.id} />
       {([
-        ['cursor', 'Nhìn theo con trỏ', 'Mắt và đầu nhìn theo chuột hoặc điểm chạm.'],
-        ['idleEyes', 'Đảo mắt khi chờ', 'Thỉnh thoảng nhìn quanh khi con trỏ không hoạt động.'],
+        ['cursor', 'Nhìn theo con trỏ', magicOn ? 'Tắt khi dùng MAGIC, như AIRI.' : 'Mắt và đầu nhìn theo chuột hoặc điểm chạm.'],
+        ['idleEyes', 'Đảo mắt khi chờ', magicOn ? 'Tắt khi dùng MAGIC, như AIRI.' : 'Thỉnh thoảng nhìn quanh khi con trỏ không hoạt động.'],
         ['breath', 'Thở', 'Hiệu ứng thở tự động; mức thể hiện tùy model.'],
         ['physics', 'Vật lý', !loading && !error && !hasPhysics ? 'Model chưa khai báo tệp vật lý.' : 'Chuyển động phụ của tóc, quần áo và phụ kiện.'],
       ] as const).map(([key, title, description]) => <label className="character-effect-option" key={key}>
         <span><strong>{title}</strong><small>{description}</small></span>
         <input type="checkbox" role="switch" aria-label={title} checked={effects[key]}
-          disabled={key === 'physics' && (loading || !!error || !hasPhysics)}
+          disabled={(key === 'physics' && (loading || !!error || !hasPhysics)) || (magicOn && (key === 'cursor' || key === 'idleEyes'))}
           onChange={event => {
             const next: CharacterEffects = { ...effects, [key]: event.target.checked };
             setEffects(next); writeEffects(character.id, next);

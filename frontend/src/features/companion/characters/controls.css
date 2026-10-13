@@ -3,6 +3,19 @@
 .idle-motion-picker p { margin: 8px 0 0; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; line-height: 1.5; }
 .idle-motion-picker .dropdown { margin-top: 12px; }
 .idle-motion-picker .dropdown-trigger { min-height: 46px; padding: 8px 12px; background: var(--panel-2); }
+/* Cách chuyển động (Hiện tại / MAGIC), như Motion driver của AIRI: nhãn bên trái, nút chọn liền khối bên phải. */
+.motion-driver { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
+.motion-driver-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.motion-driver-row strong { display: block; font-size: 14px; font-weight: 500; }
+.motion-driver-row small { display: block; margin-top: 4px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.motion-driver-row .settings-seg { flex: none; }
+.motion-driver-label { display: block; margin-top: 16px; font-size: 14px; font-weight: 500; }
+.idle-motion-picker .motion-driver-label + .dropdown { margin-top: 8px; }
+.motion-driver .character-effect-options { margin-top: 12px; }
+@media (max-width: 520px) {
+  .motion-driver-row { flex-direction: column; align-items: stretch; }
+  .motion-driver-row .settings-seg { align-self: flex-start; }
+}
 .character-motion-error { position: absolute; bottom: 30px; left: 5%; right: 5%; padding: 10px; border-radius: 10px; background: #222e; color: #eee; font-size: 12px; text-align: center; }
 .character-effect-options { margin-top: 16px; border-top: 1px solid var(--line); }
 .character-effect-option { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 0; cursor: pointer; }

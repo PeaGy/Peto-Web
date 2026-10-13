@@ -4,6 +4,7 @@ import Live2DStage from '../src/features/companion/characters/Live2DStage';
 import { CHARACTER } from '../src/features/companion/characters/characterConfig';
 import { writeIdle } from '../src/features/companion/characters/live2dMotions';
 import { readEffects, writeEffects } from '../src/features/companion/characters/characterEffects';
+import { DEFAULT_MAGIC, writeMagic } from '../src/features/companion/characters/magic/magicSettings';
 import * as music from '../src/features/companion/characters/musicVibe';
 import { previewExpression, watchSnapshots, writeExpressions } from '../src/features/companion/characters/characterExpressions';
 
@@ -491,3 +492,35 @@ it('bảng Nhân vật che sân khấu, nên thẻ bấm thử được chụp l
   off(); view.unmount();
 });
 
+
+it('MAGIC: học xong mới báo sẵn sàng, tắt idle và nhìn theo con trỏ, đầu chuyển động, về Hiện tại thì nhả quyền', async () => {
+  writeMagic(CHARACTER.id, { ...DEFAULT_MAGIC, driver: 'magic' });
+  const model = fakeModel(), internal = model.internalModel, core = internal.coreModel;
+  const ids = ['ParamAngleX', 'ParamAngleY', 'ParamAngleZ', 'ParamBodyAngleX', 'ParamEyeBallX', 'ParamEyeBallY', 'ParamMouthForm', 'ParamEyeLOpen', 'ParamEyeROpen'];
+  const values = new Map(ids.map(id => [id, 0]));
+  Object.assign(core, { getParameterIndex: (id: string) => ids.indexOf(id), getParameterCount: () => ids.length,
+    getParameterValueById: (id: string) => values.get(id) ?? 0, getParameterMinimumValue: () => -1, getParameterMaximumValue: () => 1,
+    multiplyParameterValueById: vi.fn(), setParameterValueById: vi.fn((id: string, value: number) => { values.set(id, value); }) });
+  mocks.from.mockResolvedValue(model);
+  const status = vi.fn();
+  const view = render(<Live2DStage name="Peto" motion="always" onStatusChange={status} />);
+  await waitFor(() => expect(status).toHaveBeenLastCalledWith('ready'));
+  expect(await internal.motionManager.startRandomMotion('Idle', 1)).toBe(false);
+  const magic = internal.on.mock.calls.filter(([name]) => name === 'afterMotionUpdate').at(-1)![1];
+  const angles = new Set<string>();
+  for (let i = 0; i < 60; i++) { mocks.tick!(); magic(); angles.add(values.get('ParamAngleX')!.toFixed(2)); }
+  expect(angles.size).toBeGreaterThan(5);
+  expect(Math.max(...[...angles].map(Number).map(Math.abs))).toBeLessThanOrEqual(30);
+  internal.focusController.focus.mockClear();
+  act(() => { window.dispatchEvent(pointer('pointermove', 100, 100, 'mouse')); });
+  expect(internal.focusController.focus).not.toHaveBeenCalled();
+  // Về "Hiện tại": nhả quyền dần (gần hết sau 1 giây), khoảng 2 giây thì thôi ghi hẳn.
+  act(() => writeMagic(CHARACTER.id, DEFAULT_MAGIC));
+  for (let i = 0; i < 80; i++) { mocks.tick!(); magic(); }
+  core.setParameterValueById.mockClear();
+  magic();
+  expect(core.setParameterValueById.mock.calls.some(([id]) => id === 'ParamAngleX')).toBe(false);
+  expect(model.position.set).toHaveBeenLastCalledWith(model.position.x, model.position.y);
+  expect(await internal.motionManager.startRandomMotion('Idle', 1)).toBe(true);
+  view.unmount();
+});

@@ -154,9 +154,11 @@
       "nhap model",
       "cu dong",
       "doi boi canh",
-      "chon boi canh"
+      "chon boi canh",
+      "cach chuyen dong",
+      "neuro bump"
     ],
-    "body": "## Chọn hoặc nhập nhân vật\nMở **Nhân vật**, chọn một thẻ model có sẵn hoặc nhập model Live2D dạng ZIP. Trước khi nhập, đọc bảng tổng quan tài nguyên và các lỗi/cảnh báo mà Peto phát hiện.\n\nChỉ nhập model bạn có quyền sử dụng. Credit của model mẫu nằm trong tab Nhân vật.\n\n## Chuyển động\nTrong cài đặt nhân vật, bạn có thể điều chỉnh chuyển động khi chờ, nhìn theo con trỏ và nhún theo nhạc. Các chuyển động thực tế còn phụ thuộc tham số mà model hỗ trợ.\n\n## Chất lượng trên điện thoại\nNếu thiết bị đủ mạnh, bạn có thể chọn chất lượng và FPS cao hơn trong cài đặt nhân vật. Nếu thấy máy nóng hoặc hao pin, giảm lại các lựa chọn này.\n\n## Bối cảnh\nMở **Bối cảnh** để đổi nền. Nền trải ra phía sau khung chat nổi để sân khấu có thêm không gian.\n\n## Lưu trên trình duyệt\nModel nhập được lưu trên trình duyệt đó, chưa tự đồng bộ sang máy khác. Xóa dữ liệu trang có thể xóa thư viện model, nên giữ bản ZIP gốc."
+    "body": "## Chọn hoặc nhập nhân vật\nMở **Nhân vật**, chọn một thẻ model có sẵn hoặc nhập model Live2D dạng ZIP. Trước khi nhập, đọc bảng tổng quan tài nguyên và các lỗi/cảnh báo mà Peto phát hiện.\n\nChỉ nhập model bạn có quyền sử dụng. Credit của model mẫu nằm trong tab Nhân vật.\n\n## Chuyển động\nTrong cài đặt nhân vật, bạn có thể điều chỉnh chuyển động khi chờ, nhìn theo con trỏ và nhún theo nhạc. Các chuyển động thực tế còn phụ thuộc tham số mà model hỗ trợ.\n\nVới nhân vật Live2D, mục **Cách chuyển động** có hai lựa chọn. **Hiện tại** (mặc định) dùng chuyển động có sẵn của model, đảo mắt và nhìn theo con trỏ. **MAGIC** tự sinh chuyển động nhún, lắc liên tục và không lặp lại, theo Project AIRI. MAGIC có ba bộ: **Hào hứng**, **Bình thản** và **Theo lúc nói** (chờ thì bình thản, lúc Peto nói thì hào hứng). Khi dùng MAGIC, nhân vật không nhìn theo con trỏ và không phát chuyển động khi chờ của model; khẩu hình, biểu cảm và nhún theo nhạc vẫn như cũ. Nhân vật VRM chưa có MAGIC.\n\n## Chất lượng trên điện thoại\nNếu thiết bị đủ mạnh, bạn có thể chọn chất lượng và FPS cao hơn trong cài đặt nhân vật. Nếu thấy máy nóng hoặc hao pin, giảm lại các lựa chọn này.\n\n## Bối cảnh\nMở **Bối cảnh** để đổi nền. Nền trải ra phía sau khung chat nổi để sân khấu có thêm không gian.\n\n## Lưu trên trình duyệt\nModel nhập được lưu trên trình duyệt đó, chưa tự đồng bộ sang máy khác. Xóa dữ liệu trang có thể xóa thư viện model, nên giữ bản ZIP gốc."
   },
   {
     "slug": "giong-noi",

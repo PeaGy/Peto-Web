@@ -60,6 +60,16 @@ https://github.com/moeru-ai/airi/blob/main/packages/stage-ui/src/stores/display-
 và https://github.com/moeru-ai/airi/tree/main/packages/stage-ui/src/components/scenarios/dialogs/model-selector .
 API VRM: https://github.com/pixiv/three-vrm/tree/dev/packages/three-vrm .
 
+### MAGIC (chuyển động tự sinh)
+
+Cài đặt nhân vật → **Cách chuyển động: Hiện tại / MAGIC**, chỉ cho Live2D, mặc định Hiện tại (chủ web chốt 14/10/2026).
+Mã trong `src/features/companion/characters/magic/` chuyển từ Project AIRI (PR #2376, commit `b60533b`), giấy phép MIT,
+Copyright (c) 2024-PRESENT Neko Ayaka; bản giấy phép nằm ở `magic/AIRI-LICENSE.txt`. Hai bản ghi chuyển động
+(`idle-calm.json`, `speaking-excited.json`) là bản ghi của AIRI lấy mẫu lại 30 Hz, không gắn với model nào: MAGIC ghi
+vào các tham số chuẩn (`ParamAngleX/Y/Z`, `ParamBodyAngleX/Y/Z`, `ParamEyeBallX/Y`, `ParamMouthForm`, độ mở mắt) và theo
+ánh xạ đầu/mắt riêng của model nhập. Model thiếu tham số nào thì phần đó đứng yên. Chi tiết ở CLAUDE.md, mục
+"Companion MAGIC motion".
+
 `src/features/companion/characters/characterConfig.ts` giữ cấu hình model mặc định. Model riêng nhập qua thư viện được đọc từ
 bộ nhớ trình duyệt mà không thay hệ thống chat/TTS. Tài nguyên đi kèm được phục vụ từ chính Peto,
 không gọi CDN hoặc AIRI khi người dùng mở trang.
