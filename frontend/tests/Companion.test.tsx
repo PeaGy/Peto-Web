@@ -825,10 +825,18 @@ it('khóa OpenAI riêng: trình duyệt gọi thẳng OpenAI, máy chủ Peto kh
   render(<App />);
   const settings = await openSettings();
   fireEvent.click(await settings.findByRole('button', { name: 'OpenAI' }));
-  const detail = within(settings.getByRole('group', { name: 'OpenAI' }));
-  expect(detail.getByText(/máy chủ Peto không nhận được khóa/)).toBeTruthy();
+  let detail = within(settings.getByRole('group', { name: 'OpenAI' }));
   expect(detail.getByRole('button', { name: 'Nghe thử' }).hasAttribute('disabled')).toBe(true);
-  fireEvent.change(detail.getByLabelText('Khóa API OpenAI'), { target: { value: 'sk-user-key' } });
+  // Khóa nhập ở Nhà cung cấp (biến thể "Như AIRI"), trang Giọng nói chỉ còn chọn.
+  expect(detail.getByText('Chưa có khóa OpenAI.')).toBeTruthy();
+  fireEvent.click(detail.getByRole('button', { name: 'Nhập khóa ở Nhà cung cấp' }));
+  await settings.findByRole('heading', { level: 1, name: 'OpenAI' });
+  expect(settings.getByText(/Giọng nói và nghe: trình duyệt gọi thẳng OpenAI, máy chủ Peto không nhận khóa/)).toBeTruthy();
+  fireEvent.change(settings.getByLabelText('Khóa API OpenAI'), { target: { value: 'sk-user-key' } });
+  fireEvent.click(settings.getByRole('button', { name: 'Mở Giọng nói' }));
+  await settings.findByRole('heading', { level: 1, name: 'Giọng nói' });
+  detail = within(settings.getByRole('group', { name: 'OpenAI' }));
+  expect(detail.getByText('Đã có khóa OpenAI.')).toBeTruthy();
   fireEvent.click(detail.getByRole('button', { name: 'Nghe thử' }));
 
   await waitFor(() => expect(played).toHaveLength(1));
@@ -838,9 +846,11 @@ it('khóa OpenAI riêng: trình duyệt gọi thẳng OpenAI, máy chủ Peto kh
   expect(JSON.stringify(localCalls())).not.toContain('sk-user-key');
   expect(localStorage.getItem('peto-voice-keys')).toContain('sk-user-key');
 
-  fireEvent.click(detail.getByRole('button', { name: 'Xóa khóa khỏi trình duyệt' }));
+  fireEvent.click(detail.getByRole('button', { name: 'Sửa ở Nhà cung cấp' }));
+  await settings.findByRole('heading', { level: 1, name: 'OpenAI' });
+  fireEvent.click(settings.getByRole('button', { name: 'Xóa khóa khỏi trình duyệt' }));
   expect(localStorage.getItem('peto-voice-keys')).not.toContain('sk-user-key');
-  expect((detail.getByLabelText('Khóa API OpenAI') as HTMLInputElement).value).toBe('');
+  expect((settings.getByLabelText('Khóa API OpenAI') as HTMLInputElement).value).toBe('');
 });
 
 it('khóa StepFun riêng đi qua máy chủ Peto trong header, không nằm trong thân yêu cầu', async () => {
@@ -855,7 +865,7 @@ it('khóa StepFun riêng đi qua máy chủ Peto trong header, không nằm tron
   render(<App />);
   const settings = await openSettings();
   const detail = within(await settings.findByRole('group', { name: 'StepFun' }));
-  expect(detail.getByText(/Máy chủ chỉ chuyển tiếp, không lưu và không ghi lại khóa/)).toBeTruthy();
+  expect(detail.getByText('Đã có khóa StepFun.')).toBeTruthy();
   fireEvent.click(detail.getByRole('button', { name: 'Nghe thử' }));
 
   await waitFor(() => expect(played).toHaveLength(1));
@@ -865,6 +875,9 @@ it('khóa StepFun riêng đi qua máy chủ Peto trong header, không nằm tron
     provider: 'stepfun', text: expect.stringContaining('Peto'), voice: 'jilingshaonv', model: 'stepaudio-2.5-tts', region: 'intl',
   });
   expect(String(init.body)).not.toContain('step-user-key');
+  fireEvent.click(detail.getByRole('button', { name: 'Sửa ở Nhà cung cấp' }));
+  await settings.findByRole('heading', { level: 1, name: 'StepFun' });
+  expect(settings.getByText(/StepFun không cho trình duyệt gọi thẳng, nên khóa đi qua máy chủ Peto, không lưu và không ghi log/)).toBeTruthy();
 });
 
 it('thẻ Alibaba Cloud: đổi sang CosyVoice v2 thì danh sách giọng đổi theo, Nghe thử gửi model và mã giọng mới', async () => {
@@ -879,7 +892,7 @@ it('thẻ Alibaba Cloud: đổi sang CosyVoice v2 thì danh sách giọng đổi
   render(<App />);
   const settings = await openSettings();
   const detail = within(await settings.findByRole('group', { name: 'Alibaba Cloud' }));
-  expect(detail.getByText(/CosyVoice cần gắn khóa vào kết nối/)).toBeTruthy();
+  expect(detail.getByText('Đã có khóa Alibaba Cloud.')).toBeTruthy();
 
   fireEvent.click(detail.getByRole('combobox', { name: 'Model' }));
   fireEvent.click(detail.getByRole('option', { name: /CosyVoice v2/ }));

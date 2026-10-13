@@ -12,6 +12,15 @@ class AttachmentIn(BaseModel):
     data: str = Field(min_length=8)
 
 
+class ProviderChoiceIn(BaseModel):
+    """Bộ não Companion dùng khóa API riêng (Cài đặt Companion → Mô-đun → Bộ não). Khóa không nằm ở đây mà trong header
+    X-Peto-Provider-Key (khóa Tavily: X-Peto-Search-Key), dùng cho đúng lượt này rồi bỏ."""
+    id: str = Field(min_length=1, max_length=32)
+    model: str = Field(default="", max_length=100)
+    # Chỉ Azure OpenAI: địa chỉ tài nguyên https://<tên>.openai.azure.com.
+    endpoint: str | None = Field(default=None, max_length=200)
+
+
 class ChatRequest(BaseModel):
     request_id: str | None = Field(default=None, pattern=r'^[a-zA-Z0-9-]{16,64}$')
     project_id: str | None = Field(default=None, max_length=64)
@@ -30,6 +39,8 @@ class ChatRequest(BaseModel):
     document_mode: bool = False
     # Model chọn ở nút cạnh nút Gửi (ai_models.MODELS); mỗi tin một lựa chọn, đổi giữa chừng được.
     model: str = Field(default=ai_models.DEFAULT_MODEL, max_length=16)
+    # Chỉ Companion: dùng khóa riêng của người dùng thay cho Grok của Peto.
+    provider: ProviderChoiceIn | None = None
 
 
 class StopRequest(BaseModel):

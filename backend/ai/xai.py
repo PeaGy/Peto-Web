@@ -273,6 +273,11 @@ class ResponsesProvider(ChatProvider):
                 # Tự giữ các item trong lượt này, không cần lưu hội thoại ở dịch vụ AI.
                 "store": False,
             }
+            if not getattr(self, "send_reasoning", True):
+                # Khóa riêng của người dùng với model không chỉnh được mức suy nghĩ (ai/byok.py): gửi tham số này thì cả
+                # lượt bị từ chối.
+                create_kwargs.pop("reasoning")
+                create_kwargs["include"] = []
             if finalizing:
                 # Danh sách công cụ đã rỗng: không gửi tool_choice, kể cả "none", vì xAI từ chối cặp này.
                 logger.info("Kết thúc tra cứu: vòng=%d công_cụ_đã_gọi=%d github=%s", round_index, calls_used, bool(github_schemas))
@@ -412,8 +417,10 @@ class ResponsesProvider(ChatProvider):
                     (usage.get("input_tokens_details") or {}).get("cached_tokens"),
                     (usage.get("output_tokens_details") or {}).get("reasoning_tokens"), len(search_ids),
                 )
+                # Khóa riêng của người dùng ghi dịch vụ "byok" và slug "byok/…": trang Quản trị không tính vào chi phí chủ web.
                 usage_events.record(
-                    "call", service=self.service, model=getattr(self, "catalog_key", None), slug=self.model,
+                    "call", service=getattr(self, "usage_service", self.service), model=getattr(self, "catalog_key", None),
+                    slug=getattr(self, "usage_slug", self.model),
                     purpose="chat" if tools_enabled else "side", complete=completed,
                     elapsed_ms=round((perf_counter() - round_started) * 1000),
                     input_tokens=usage.get("input_tokens"), output_tokens=usage.get("output_tokens"),

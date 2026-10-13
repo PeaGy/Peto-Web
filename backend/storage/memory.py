@@ -41,7 +41,8 @@ async def ensure_memory_state(owner: str) -> dict:
 
 
 # Tin nào được đọc để ghi nhớ: Companion và Chat thường. Chat nhập vai thì không (chủ web chốt 11/10/2026): lời thoại
-# nhân vật và nội dung 18+ không được lẫn vào trí nhớ của trợ lý.
+# nhân vật và nội dung 18+ không được lẫn vào trí nhớ của trợ lý. Tin của lượt Companion dùng khóa riêng (cột provider)
+# cũng không (13/10/2026); hai truy vấn đọc tin bên dưới lọc thêm ``m.provider = ''``.
 MEMORY_SOURCE = "(c.mode = 'companion' OR (c.mode = 'chat' AND c.persona = 'assistant'))"
 
 
@@ -92,7 +93,7 @@ async def memory_messages_after(owner: str, after_id: int, limit: int) -> list[d
         cursor = await db.execute(
             "SELECT m.id, m.role, m.content, m.conversation_id, c.mode FROM messages m "
             "JOIN conversations c ON c.id = m.conversation_id "
-            f"WHERE c.owner = ? AND {MEMORY_SOURCE} AND m.id > ? AND m.role IN ('user', 'assistant') "
+            f"WHERE c.owner = ? AND {MEMORY_SOURCE} AND m.id > ? AND m.role IN ('user', 'assistant') AND m.provider = '' "
             "ORDER BY m.id DESC LIMIT ?",
             (owner, after_id, limit),
         )
@@ -199,7 +200,7 @@ async def messages_before_window(
         cursor = await db.execute(
             """
             SELECT m.id, m.role, m.content FROM messages m JOIN conversations c ON c.id = m.conversation_id
-             WHERE c.id = ? AND c.owner = ? AND m.id > ? AND m.role IN ('user', 'assistant')
+             WHERE c.id = ? AND c.owner = ? AND m.id > ? AND m.role IN ('user', 'assistant') AND m.provider = ''
                AND m.id < (SELECT MIN(id) FROM (
                      SELECT id FROM messages WHERE conversation_id = ? ORDER BY id DESC LIMIT ?))
              ORDER BY m.id

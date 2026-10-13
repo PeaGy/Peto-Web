@@ -15,6 +15,9 @@ import VoiceSettings from '../speech/VoiceSettings';
 import MemorySettings from '../../settings/MemorySettings';
 import SearchSettings from '../../settings/SearchSettings';
 import { CompanionSettingsIcon, type SettingsIconName } from './settingsIcons';
+import { BrainPage, ProviderPage, ProvidersPage, TavilySection } from './ProvidersPages';
+import { chatProvider, providerName } from '../providers/catalog';
+import { useBrain } from '../providers/brain';
 import './companionSettings.css';
 
 /**
@@ -26,7 +29,10 @@ import './companionSettings.css';
 
 const PAGES: Record<CompanionSettingsPage, { title: string; desc: string; icon: SettingsIconName; parent?: CompanionSettingsPage }> = {
   home: { title: 'Cài đặt', desc: '', icon: 'settings' },
-  modules: { title: 'Mô-đun', desc: 'Giọng nói, nghe, tra web và nhún theo nhạc.', icon: 'layers', parent: 'home' },
+  modules: { title: 'Mô-đun', desc: 'Bộ não, giọng nói, nghe, tra web và nhún theo nhạc.', icon: 'layers', parent: 'home' },
+  brain: { title: 'Bộ não', desc: 'Ai trả lời trong Companion: Peto hay khóa API của bạn.', icon: 'spark', parent: 'modules' },
+  providers: { title: 'Nhà cung cấp', desc: 'Khóa API của bạn cho bộ não, giọng nói và nghe.', icon: 'key', parent: 'home' },
+  provider: { title: 'Nhà cung cấp', desc: '', icon: 'key', parent: 'providers' },
   voice: { title: 'Giọng nói', desc: 'Peto đọc câu trả lời thành tiếng.', icon: 'wave', parent: 'modules' },
   hearing: { title: 'Nghe', desc: 'Nói chuyện với Peto qua micro.', icon: 'mic', parent: 'modules' },
   'web-search': { title: 'Tra web', desc: 'Peto tự tra web khi câu hỏi cần tin mới.', icon: 'globe', parent: 'modules' },
@@ -35,8 +41,8 @@ const PAGES: Record<CompanionSettingsPage, { title: string; desc: string; icon: 
   memory: { title: 'Trí nhớ', desc: 'Những điều Peto nhớ về bạn. Dùng chung với Trò chuyện.', icon: 'bookmark', parent: 'home' },
   diagnostics: { title: 'Chẩn đoán', desc: 'Đo thời gian từ lúc bạn nói tới lúc Peto đáp.', icon: 'gauge', parent: 'home' },
 };
-const MODULES: CompanionSettingsPage[] = ['voice', 'hearing', 'web-search', 'beat-sync'];
-const HOME: (CompanionSettingsPage | 'character')[] = ['character', 'modules', 'scene', 'memory', 'diagnostics'];
+const MODULES: CompanionSettingsPage[] = ['brain', 'voice', 'hearing', 'web-search', 'beat-sync'];
+const HOME: (CompanionSettingsPage | 'character')[] = ['character', 'providers', 'modules', 'scene', 'memory', 'diagnostics'];
 /** Khoảng trễ mỗi bậc khoảng cách trên lưới khi thẻ hiện kiểu gợn sóng (AIRI dùng 80 ms). */
 const RIPPLE_STEP_MS = 70;
 // Thẻ bấm lần trước là tâm gợn sóng của trang kế tiếp, như useRippleGridState của AIRI; giữ qua các lần mở trang.
@@ -55,9 +61,11 @@ function useCompact() {
   return compact;
 }
 
-export default function CompanionSettings({ page, onNavigate, onExit, voice, character, onOpenCharacters, onUnauthorized }: {
+export default function CompanionSettings({ page, providerId, onNavigate, onExit, voice, character, onOpenCharacters, onUnauthorized }: {
   page: CompanionSettingsPage;
-  onNavigate: (page: CompanionSettingsPage) => void;
+  /** Mã nhà cung cấp khi ``page`` là 'provider'. */
+  providerId?: string | null;
+  onNavigate: (page: CompanionSettingsPage, providerId?: string) => void;
   /** Nút quay lại ở trang đầu: về sân khấu Companion. */
   onExit: () => void;
   voice: LocalVoice;
@@ -65,7 +73,7 @@ export default function CompanionSettings({ page, onNavigate, onExit, voice, cha
   onOpenCharacters: () => void;
   onUnauthorized: () => void;
 }) {
-  const meta = PAGES[page];
+  const meta = page === 'provider' && providerId ? { ...PAGES.provider, title: providerName(providerId) } : PAGES[page];
   const parent = meta.parent ? PAGES[meta.parent] : null;
   const scroll = useRef<HTMLDivElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
@@ -116,9 +124,16 @@ export default function CompanionSettings({ page, onNavigate, onExit, voice, cha
               </div>
             )}
             {page === 'modules' && <Modules voice={voice} character={character} cols={compact ? 1 : 2} delay={delay} onOpen={open} />}
-            {page === 'voice' && <div className="companion-settings-groups"><VoiceSettings voice={voice} open /></div>}
-            {page === 'hearing' && <div className="companion-settings-groups"><HearingSettings open /></div>}
-            {page === 'web-search' && <div className="companion-settings-groups"><SearchSettings /></div>}
+            {page === 'brain' && <BrainPage onOpenProviders={() => onNavigate('providers')} />}
+            {page === 'voice' && <div className="companion-settings-groups">
+              <VoiceSettings voice={voice} open onOpenProvider={id => onNavigate('provider', id)} />
+            </div>}
+            {page === 'hearing' && <div className="companion-settings-groups">
+              <HearingSettings open onOpenProvider={id => onNavigate('provider', id)} />
+            </div>}
+            {page === 'web-search' && <div className="companion-settings-groups"><SearchSettings /><TavilySection /></div>}
+            {page === 'providers' && <ProvidersPage onOpenProvider={id => onNavigate('provider', id)} onOpenModule={onNavigate} />}
+            {page === 'provider' && providerId && <ProviderPage key={providerId} id={providerId} onOpenModule={onNavigate} />}
             {page === 'beat-sync' && <BeatSyncPage character={character} />}
             {page === 'scene' && <ScenePage character={character} />}
             {page === 'memory' && <div className="companion-settings-groups"><MemorySettings open onUnauthorized={onUnauthorized} /></div>}
@@ -161,9 +176,12 @@ function Modules({ voice, character, cols, delay, onOpen }: {
   const hearing = useHearing();
   const search = useCompanionSearch();
   const music = useMusicVibe();
+  const brain = useBrain();
+  const brainName = brain.provider === 'peto' ? '' : chatProvider(brain.provider)?.name ?? '';
   const voiceName = voice.source === 'official' ? 'Giọng Peto' : voice.source === 'home' ? 'Máy nhà của Peto'
     : keyProvider(voice.source)?.name ?? voice.source;
   const status: Record<string, { on: boolean; desc: string }> = {
+    brain: { on: true, desc: brainName ? `${brainName}${brain.model ? ` · ${brain.model}` : ''} · khóa của bạn` : 'Peto · Grok qua tài khoản Peto' },
     voice: !voice.enabled ? { on: false, desc: 'Đang tắt · Peto chỉ nhắn chữ' }
       : { on: true, desc: voice.status === 'missing' ? `${voiceName} · chưa nói được` : voiceName },
     hearing: {

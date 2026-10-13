@@ -20,6 +20,9 @@ export interface KeyConfig {
   baseUrl?: string;
   /** Model chép lời của phần Peto nghe; `model` ở trên là của phần Peto nói. */
   sttModel?: string;
+  /** Bộ não Companion qua Azure OpenAI: địa chỉ tài nguyên và tên bản triển khai (features/companion/providers). */
+  endpoint?: string;
+  deployment?: string;
 }
 
 /** Khóa theo mã nhà cung cấp, dùng chung cho phần Peto nói và Peto nghe (Groq, Deepgram chỉ có ở phần nghe). */

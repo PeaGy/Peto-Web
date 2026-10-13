@@ -24,6 +24,7 @@ async def _build_system_prompt(
     conversation_id: str | None = None,
     agent_question: str = '',
     model: str = 'peto',
+    memory: bool = True,
 ) -> str:
     """Prompt gốc: trợ lý, nhập vai, hoặc Companion. Companion là persona riêng, không
     vá lên trợ lý. Sau đó ghép hướng dẫn Peto Agent, trí nhớ Discord và hồ sơ người dùng.
@@ -31,6 +32,9 @@ async def _build_system_prompt(
     Trí nhớ chỉ được tra bằng Discord ID lấy từ phiên đã xác minh — không bao
     giờ từ dữ liệu do trình duyệt gửi lên. Lấy không được thì bỏ qua, chat vẫn
     chạy bình thường.
+
+    ``memory=False`` là lượt Companion dùng khóa API riêng của người dùng (ai/byok.py): không kèm trí nhớ Discord, Trí
+    nhớ hay bản tóm tắt, vì chủ web chốt lượt đó không đọc, không ghi trí nhớ và prompt đi tới nhà cung cấp khác.
     """
     english = mode == "chat" and persona != "roleplay" and uses_english(model)
     if mode == "companion":
@@ -53,7 +57,7 @@ async def _build_system_prompt(
         return "\n\n".join(part for part in (base, agent_guide) if part)
 
     discord_id = discord_id_from_owner(owner)
-    snapshot = await discord_memory.fetch(discord_id) if discord_id else None
+    snapshot = await discord_memory.fetch(discord_id) if discord_id and memory else None
 
     context = build_memory_context(
         display_name=user.get("display_name") or user.get("username") or "",
@@ -74,7 +78,9 @@ async def _build_system_prompt(
     )
     # Trí nhớ Companion (và bản tóm tắt của mạch này) chỉ vào lượt Companion, đọc lại mỗi lượt: xóa một dòng trong Cài
     # đặt là lượt sau Peto quên.
-    if mode == "companion":
+    if not memory:
+        companion_block = ""
+    elif mode == "companion":
         companion_block = await companion_memory.memory_block(owner, conversation_id)
     elif persona != "roleplay":
         # Trí nhớ dùng chung với Companion (11/10/2026); Chat nhập vai không đọc, không ghi.

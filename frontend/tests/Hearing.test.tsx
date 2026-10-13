@@ -540,10 +540,16 @@ it('Cài đặt Companion → Nghe: khóa Azure dùng chung với trang Giọng 
   expect(azure.textContent).toContain('Đã có khóa');
   fireEvent.click(settings.getByRole('button', { name: 'Groq' }));
   const detail = within(settings.getByRole('group', { name: 'Groq' }));
-  fireEvent.change(detail.getByLabelText('Khóa API Groq'), { target: { value: 'gsk_new' } });
+  // Khóa nhập ở Nhà cung cấp (biến thể "Như AIRI"); trang Nghe chỉ còn chọn nguồn.
+  fireEvent.click(detail.getByRole('button', { name: 'Nhập khóa ở Nhà cung cấp' }));
+  await settings.findByRole('heading', { level: 1, name: 'Groq' });
+  fireEvent.change(settings.getByLabelText('Khóa API Groq'), { target: { value: 'gsk_new' } });
   const stored = JSON.parse(localStorage.getItem('peto-voice-keys') ?? '{}');
   expect(stored).toEqual({ azure: { key: 'az-key', region: 'eastus' }, groq: { key: 'gsk_new' } });
   expect(localStorage.getItem('peto-hearing-source')).toBe('groq');
+  fireEvent.click(settings.getByRole('button', { name: 'Mở Nghe' }));
+  await settings.findByRole('heading', { level: 1, name: 'Nghe' });
+  expect(within(settings.getByRole('group', { name: 'Groq' })).getByText('Đã có khóa Groq.')).toBeTruthy();
 
   fireEvent.click(settings.getByRole('button', { name: 'Quay lại Mô-đun' }));
   fireEvent.click(await settings.findByRole('button', { name: /^Giọng nói/ }));

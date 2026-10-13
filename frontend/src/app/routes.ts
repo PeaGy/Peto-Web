@@ -36,11 +36,16 @@ export function appPath(location: Pick<Location, 'pathname' | 'hash'>) {
  * đường dẫn cố định; đường dẫn lạ dưới /companion/settings không phải trang của ứng dụng.
  */
 export type CompanionSettingsPage =
-  | 'home' | 'modules' | 'voice' | 'hearing' | 'web-search' | 'beat-sync' | 'scene' | 'memory' | 'diagnostics';
+  | 'home' | 'modules' | 'brain' | 'voice' | 'hearing' | 'web-search' | 'beat-sync' | 'providers' | 'provider' | 'scene'
+  | 'memory' | 'diagnostics';
+/** Trang có đường dẫn cố định; trang một nhà cung cấp ('provider') có thêm mã ở cuối. */
+export type FixedCompanionSettingsPage = Exclude<CompanionSettingsPage, 'provider'>;
 
-const COMPANION_SETTINGS_PATHS: Record<CompanionSettingsPage, string> = {
+const COMPANION_SETTINGS_PATHS: Record<FixedCompanionSettingsPage, string> = {
   home: '/companion/settings/',
   modules: '/companion/settings/modules',
+  brain: '/companion/settings/modules/brain',
+  providers: '/companion/settings/providers',
   voice: '/companion/settings/modules/voice',
   hearing: '/companion/settings/modules/hearing',
   'web-search': '/companion/settings/modules/web-search',
@@ -50,12 +55,29 @@ const COMPANION_SETTINGS_PATHS: Record<CompanionSettingsPage, string> = {
   diagnostics: '/companion/settings/diagnostics',
 };
 
-export function companionSettingsRoute(page: CompanionSettingsPage) { return COMPANION_SETTINGS_PATHS[page]; }
+export function companionSettingsRoute(page: FixedCompanionSettingsPage) { return COMPANION_SETTINGS_PATHS[page]; }
+
+/**
+ * Mã nhà cung cấp có trang riêng trong Cài đặt Companion → Nhà cung cấp. Khớp PROVIDER_PAGE_IDS
+ * (features/companion/providers/catalog.ts, test so khớp) và _COMPANION_SETTINGS trong backend/core/static_files.py; viết
+ * thẳng ở đây để vỏ ứng dụng không phải tải danh mục giọng nói.
+ */
+export const COMPANION_PROVIDER_IDS = ['xai', 'anthropic', 'openai', 'gemini', 'deepseek', 'mistral', 'azure-openai', 'ollama',
+  'elevenlabs', 'azure', 'minimax', 'qwen', 'stepfun', 'compat', 'groq', 'deepgram'];
+
+export function companionProviderRoute(id: string) { return `/companion/settings/providers/${id}`; }
+
+/** Mã nhà cung cấp trong đường dẫn /companion/settings/providers/<mã>; null nếu không phải trang đó. */
+export function companionProviderId(pathname: string): string | null {
+  const id = /^\/companion\/settings\/providers\/([a-z-]+)\/?$/.exec(pathname)?.[1];
+  return id && COMPANION_PROVIDER_IDS.includes(id) ? id : null;
+}
 
 /** Trang cài đặt Companion của đường dẫn, có hay không có dấu "/" cuối; null nếu không phải trang đó. */
 export function companionSettingsPage(pathname: string): CompanionSettingsPage | null {
+  if (companionProviderId(pathname)) return 'provider';
   const path = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
-  for (const [page, route] of Object.entries(COMPANION_SETTINGS_PATHS) as [CompanionSettingsPage, string][]) {
+  for (const [page, route] of Object.entries(COMPANION_SETTINGS_PATHS) as [FixedCompanionSettingsPage, string][]) {
     if (path === route.replace(/\/+$/, '')) return page;
   }
   return null;

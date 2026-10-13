@@ -302,7 +302,8 @@ and the access rules; the server checks them on every chat turn and agent step, 
   reasoning summaries are not requested, because they can require organization verification.
 - `POST /api/chat` takes `model` per message, so switching mid-conversation works (history is plain text). Companion and
   roleplay conversations must stay on `peto` (400): the roleplay prompt can be 18+, and it must not reach the owner's
-  OpenAI account. The title call uses the same model as the first message. `/api/auth/me` returns the account's web
+  OpenAI account. Since 2026-10-13 Companion can instead use the user's own API key (`provider` field; see "Companion
+  providers"), which never touches the owner's accounts. The title call uses the same model as the first message. `/api/auth/me` returns the account's web
   `models`; `ModelMenu.tsx` sits left of the send button (hidden with fewer than two models or in roleplay), and
   phones show the send button as an arrow only to keep the bar on
   one row.
@@ -419,7 +420,7 @@ capped the whole turn, and an Excel edit was cut at 5 minutes while Peto was sti
 `mode` is `chat` by default; `companion` comes only from the Companion tab. `_resolve_mode`
 rejects anything else with a Vietnamese 400. A companion turn is forced to `effort="low"`, searches the web only
 when Peto decides to (see "Companion web search"), accepts image attachments only, must use the `peto` model (400
-otherwise), and skips the title call. `_build_system_prompt` uses `COMPANION_SYSTEM_PROMPT` as the base prompt instead
+otherwise) unless it brings the user's own key (see "Companion providers"), and skips the title call. `_build_system_prompt` uses `COMPANION_SYSTEM_PROMPT` as the base prompt instead
 of the assistant core (see "Companion persona"), then appends the usual agent/docs guide, Discord memory, profile, and
 the Companion memory list plus the thread summary (`companion_memory.memory_block`). Conversations store their
 `mode` and a turn must match the conversation's mode; `list_conversations` only returns `chat`
@@ -1735,7 +1736,9 @@ Companion speaks with:
   allowance is a 429 with `X-Peto-Quota: exhausted`, which, like 502/503/504, lets `/speak` switch to the request's
   `fallback` voice. The shared USD ceiling (`PETO_TTS_MONTHLY_USD`, `speech_budget`) still applies on top.
 - **Máy nhà của Peto** (`home`): the relay above.
-- **Khóa của bạn**: eight providers in `voiceProviders.ts` (OpenAI, ElevenLabs, Azure Speech, Google Gemini, MiniMax,
+- **Khóa của bạn**: since 2026-10-13 the keys are entered on Cài đặt Companion → Nhà cung cấp (see "Companion
+  providers"); the Giọng nói page only picks the source, model and voice. Eight providers in `voiceProviders.ts` (OpenAI,
+  ElevenLabs, Azure Speech, Google Gemini, MiniMax,
   Alibaba Cloud, StepFun, any OpenAI-compatible server). Keys stay in that browser's `localStorage` (`peto-voice-keys`)
   and bill the user's own account. The browser calls the provider directly, except StepFun (it blocks browser calls,
   checked 2026-09-24) and Alibaba Cloud (Qwen answers with an audio URL the browser cannot fetch, and CosyVoice is a
@@ -2320,7 +2323,8 @@ beside the stage, and a two-column page with an overview). Plan and AIRI reading
 - **Routes.**
   - `app/routes.ts` (`CompanionSettingsPage`, `companionSettingsRoute`, `companionSettingsPage`) defines:
     - `/companion/settings/`;
-    - `modules`, `modules/voice`, `modules/hearing`, `modules/web-search` and `modules/beat-sync`;
+    - `modules`, `modules/brain`, `modules/voice`, `modules/hearing`, `modules/web-search` and `modules/beat-sync`;
+    - `providers` and `providers/<id>` (see "Companion providers");
     - `scene`, `memory` and `diagnostics`.
   - Each works with or without a trailing slash. `appView` maps them to `companion`, so the sidebar keeps Companion
     selected.
@@ -2340,9 +2344,9 @@ beside the stage, and a two-column page with an overview). Plan and AIRI reading
 - **Layout** (after AIRI's `stage-layouts/settings.vue`, `page-header.vue`, `icon-item.vue` and `ripple-grid`).
   - One centred column, at most 1040px wide, with a sticky header: back button, the parent page's name small above, and
     the page title at 30px.
-  - The home page is a list of large cards: Nhân vật, Mô-đun, Bối cảnh, Trí nhớ, Chẩn đoán. Each card has a title, one
-    description line and a large faded icon.
-  - Mô-đun is a two-column grid: Giọng nói, Nghe, Tra web, Nhún theo nhạc.
+  - The home page is a list of large cards: Nhân vật, Nhà cung cấp, Mô-đun, Bối cảnh, Trí nhớ, Chẩn đoán. Each card has
+    a title, one description line and a large faded icon.
+  - Mô-đun is a two-column grid: Bộ não, Giọng nói, Nghe, Tra web, Nhún theo nhạc.
     - A green dot means "on now": voice enabled, microphone listening, web search on, Beat Sync sharing.
     - Each card also has a one-line status.
   - Leaf pages reuse the existing components: `VoiceSettings` (now without tabs), `HearingSettings`, `SearchSettings`,
@@ -2365,6 +2369,86 @@ beside the stage, and a two-column page with an overview). Plan and AIRI reading
   - `App.test.tsx`: the shared dialog has no Companion group.
   - `Hearing.test.tsx`: the Micro panel link and leaving the page stopping a test listen.
   - Playwright: `companion-barge-in`, `companion-stream` and `routing`.
+
+### Companion providers (own API keys, `/companion/settings/providers`)
+
+Built 2026-10-13. The owner asked for AIRI's Settings → Providers so users can bring their own API keys, and picked the
+"Như AIRI" variant from three live mockups (the others: keys inside each module page like Giọng nói, and one "Khóa API"
+page per company). Their calls the same day:
+- Own keys change only Companion's brain; the Chat tab stays Peto, Luna, Haiku.
+- Own-key turns neither read nor write memory, because AIRI's memory is still work in progress. Chat history is still
+  stored.
+- Web search uses the provider's own search where it has one (xAI, OpenAI, Anthropic, Gemini). Otherwise the user enters
+  a Tavily key on the Tra web page, as in AIRI's Web Search module.
+- The first batch is xAI, Anthropic, OpenAI, DeepSeek, Ollama (the ollama.com cloud, the owner's pick; the server cannot
+  reach Ollama on the user's machine), Google Gemini, Azure OpenAI and Mistral.
+
+**Backend** (`ai/byok.py`, `features/companion/providers_api.py`).
+- `ChatRequest.provider` (`{id, model, endpoint?}`) is accepted only in Companion (400 elsewhere). The key comes in
+  `X-Peto-Provider-Key`, the Tavily key in `X-Peto-Search-Key`; both live only for that turn and are never stored or
+  logged, like the voice relay's `X-Voice-Key`. `byok.choose` validates the id, model and key (printable ASCII, 8–512
+  characters) before anything is stored.
+- The server only calls a fixed list of hosts. Azure OpenAI accepts only `https://<name>.openai.azure.com` (or
+  `cognitiveservices.azure.com`, `services.ai.azure.com`) and calls `<endpoint>/openai/v1`. This keeps users from using the
+  server to reach arbitrary addresses.
+- Provider kinds:
+  - xAI and OpenAI: a keyed `ResponsesProvider` subclass. `send_reasoning` drops `reasoning` and the encrypted reasoning
+    include for models that reject them: OpenAI outside `o*`/`gpt-5`/`gpt-6`, and xAI outside `XAI_MODEL` and
+    `grok-3-mini`.
+  - Anthropic: `ClaudeProvider` with the user's SDK client. `ClaudeClient(adaptive=False)` skips adaptive thinking for
+    models older than generation 5.
+  - Gemini: the native `streamGenerateContent` API (SSE), with `google_search` grounding when search is on. The key is
+    sent in `x-goog-api-key`, never in the URL. The OpenAI-compatible layer has no search.
+  - DeepSeek, Mistral and Azure OpenAI: `ChatCompletionsProvider`.
+  - Ollama cloud: `OllamaProvider` on `/api/chat` with NDJSON.
+  - Both share `_ToolLoopProvider`: up to 3 tool rounds with the time tool and, with a Tavily key, a `web_search`
+    function backed by `api.tavily.com`. Text written before a tool call becomes a `replace` draft, like Grok's.
+  - DeepSeek and Ollama get image labels instead of images.
+  - No SDK retries. HTTP failures map to Vietnamese messages (key refused, quota, rate limit, unknown model, provider
+    down); provider text is only logged, clipped.
+- A Tavily provider without a Tavily key forces `web_search="off"`, so early speech still works.
+- `remembers` is false for own-key turns, and `_build_system_prompt(memory=False)` drops the Discord memory, the memory
+  list and the thread summary. `messages.provider` (new column, `''` for Peto) marks both messages of the turn.
+  `memory_messages_after` and `messages_before_window` skip marked rows, so a later Peto turn never mines them.
+- Usage events use service `byok`, model `byok:<id>` and slug `byok/<id>/<model>` (`usage_service` and `usage_slug` on the
+  provider). The admin page therefore never prices them as owner cost, even when the model name matches a priced slug.
+- `POST /api/companion/providers/check` (authenticated, `no-store`) lists models with the user's key to verify it.
+  Results are filtered to chat models. Azure returns an empty list; the user types the deployment name. Ollama's tag list
+  may not prove the key; a bad key then fails on the first turn.
+- Mock mode (`PETO_AI_PROVIDER=mock`): own-key turns use `MockProvider("byok:<id>:<model>")`, and the check returns sample
+  models (a key containing `__sai__` is refused).
+
+**Frontend.**
+- Catalogue: `features/companion/providers/catalog.ts` mirrors `PROVIDERS`.
+- Keys share the `peto-voice-keys` store by provider id, so one OpenAI or Gemini key serves the brain, voice and hearing.
+  `KeyConfig` gained `endpoint` and `deployment`.
+- Brain store: `providers/brain.ts`.
+  - `peto-companion-brain` holds `{provider, model}`; Peto when absent.
+  - `peto-provider-models` holds the model list from the last successful check.
+  - A provider is "connected" only after a check with the current key. Editing or forgetting the key clears that list and
+    resets the brain to Peto.
+  - `brainRequest(search)` builds the turn's `provider`, key and, only for Tavily providers with search on, the Tavily
+    key. `sendMessage` sends the keys as headers.
+- Pages (`settings/ProvidersPages.tsx`):
+  - `/companion/settings/providers`: intro box, tabs Bộ não / Giọng nói / Nghe, a price filter (not on Giọng nói, whose
+    catalogue has no free-tier data), and AIRI-style cards with a status foot (Đã kết nối, Chưa kiểm tra, Chưa có khóa,
+    Không cần khóa).
+  - `/companion/settings/providers/<id>`: key fields, Kiểm tra kết nối for brain providers, and where the key is used.
+  - `/companion/settings/modules/brain`: provider and model dropdowns plus the own-key notice.
+  - Tra web: `TavilySection`.
+  - Giọng nói and Nghe no longer show key inputs. `KeyLink` reads "Đã có khóa X · Sửa ở Nhà cung cấp" and opens the
+    provider page. Model and voice choices stay there.
+- Routes: `COMPANION_PROVIDER_IDS` in `app/routes.ts` (`companionProviderRoute`, `companionProviderId`) matches the
+  catalogue (a test compares them) and `_COMPANION_PROVIDERS` in `core/static_files.py`.
+- Companion's status line under the character's name adds the provider ("Trả lời ngắn bằng tiếng Anh · DeepSeek").
+- **Tests:**
+  - `backend/tests/test_byok.py`: turns, validation, memory exclusion, the check endpoint, request shapes over
+    `httpx.MockTransport`, Tavily, Gemini, Ollama, error messages and usage labels.
+  - `frontend/tests/Providers.test.tsx`.
+  - Updated key tests in `Companion.test.tsx` and `Hearing.test.tsx`.
+  - Browser: `browser-tests/companion-providers.spec.ts` and `routing.spec.ts`.
+- **Not checked:** none of the eight providers or Tavily has been called with a real key; request shapes follow each
+  provider's docs as of 2026-10-13.
 
 ### Motion setting (Cài đặt → Giao diện → Chuyển động)
 

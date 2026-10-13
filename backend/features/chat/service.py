@@ -27,7 +27,8 @@ from storage import connectors as connector_store
 from features.companion import private_notes
 from features.chat import titles
 from features.chat.work_log import NOTE_LIMIT, WorkLog, read_detail
-from ai import ChatMessage, ProviderError, StreamChunk, get_provider
+from ai import ChatMessage, ChatProvider, ProviderError, StreamChunk, get_provider
+from ai import byok
 from ai.routing import choose_effort
 from shared.attachments import AttachmentError
 from features.accounts.auth import current_owner
@@ -127,7 +128,7 @@ def _timeout_message(error: TimeoutError, effort: str) -> str:
 async def _stream_reply(
     system_prompt: str, history: list[ChatMessage], effort: str, timezone: str | None = None, web_search: str = "auto",
     document_session=None, model: str = ai_models.DEFAULT_MODEL, spoken: bool = False,
-    files: attachment_tools.AttachmentFiles | None = None, github_session=None,
+    files: attachment_tools.AttachmentFiles | None = None, github_session=None, provider: ChatProvider | None = None,
 ) -> AsyncIterator[StreamChunk]:
     """Gọi provider của model đã chọn một lần. Trả về từng mảnh stream. ``spoken`` là lượt
     Companion: câu trả lời được đọc thành tiếng, nên chỉ dẫn tra web dặn không chèn đường dẫn hay dấu trích dẫn.
@@ -135,8 +136,9 @@ async def _stream_reply(
 
     Chỉ dừng khi bị kẹt hoặc quá dài: mỗi mảnh nhận được (kể cả nhịp ``pulse`` lúc Grok soạn lệnh dài) dời mốc im lặng
     thêm RESPONSE_TIMEOUTS[effort], nhưng không quá TURN_TIMEOUT_SECONDS tính từ đầu. Việc sửa Excel nhiều vòng có
-    thể mất vài phút; trước đây cả lượt chỉ được 3/5/8 phút nên bị cắt giữa chừng dù Peto vẫn đang làm."""
-    provider = get_provider(model)
+    thể mất vài phút; trước đây cả lượt chỉ được 3/5/8 phút nên bị cắt giữa chừng dù Peto vẫn đang làm.
+    ``provider`` là provider dựng riêng cho lượt dùng khóa API của người dùng (ai/byok.py)."""
+    provider = provider or get_provider(model)
     idle = RESPONSE_TIMEOUTS.get(effort, RESPONSE_TIMEOUTS["low"])
     loop = asyncio.get_running_loop()
     hard = loop.time() + TURN_TIMEOUT_SECONDS
@@ -217,6 +219,22 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
         effort = "low"
         web_search = "off" if web_search == "off" else "auto"
 
+    # Bộ não Companion dùng khóa API riêng (chủ web chốt 13/10/2026): khóa nằm trong header, chỉ dùng cho lượt này.
+    own_key: byok.Choice | None = None
+    if request.provider is not None:
+        if mode != "companion":
+            raise HTTPException(status_code=400, detail="Khóa API riêng chỉ dùng cho Companion.")
+        headers = http_request.headers if http_request is not None else {}
+        try:
+            own_key = byok.choose(request.provider.id, request.provider.model, request.provider.endpoint,
+                                  headers.get("x-peto-provider-key"), headers.get("x-peto-search-key"))
+        except byok.ByokError as err:
+            raise HTTPException(status_code=400, detail=str(err)) from None
+        # Nhà cung cấp không có tìm kiếm riêng mà chưa có khóa Tavily: lượt này không tra web (và đọc sớm được).
+        if own_key.info.search == "tavily" and not own_key.search_key:
+            web_search = "off"
+    own_provider = own_key.info.id if own_key else ""
+
     if request.persona not in CONVERSATION_PERSONAS:
         raise HTTPException(status_code=400, detail="Chế độ trả lời không hợp lệ")
     persona = request.persona
@@ -234,7 +252,8 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
         await _check_roleplay_start(owner, mode)
     history_limit = ROLEPLAY_MAX_HISTORY if persona == "roleplay" else MAX_HISTORY_MESSAGES
     # Trí nhớ dùng chung (companion_memory.py) đọc Companion và Chat thường, không đọc Chat nhập vai.
-    remembers = mode == "companion" or persona != "roleplay"
+    # Lượt dùng khóa riêng không ghi nhớ (chủ web chốt 13/10/2026).
+    remembers = (mode == "companion" or persona != "roleplay") and own_key is None
     from features.projects.context import context as project_context
     project_id = settings.get('project_id') if request.conversation_id else request.project_id
     if mode != 'chat' and (project_id or request.project_file_ids):
@@ -433,7 +452,7 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                             if message_id is None:
                                 conversation_id, message_id = await conversation_actions.fork(owner, conversation_id, request.branch_message_id, text)
                         else:
-                            message_id = await db.add_message(conversation_id, "user", text)
+                            message_id = await db.add_message(conversation_id, "user", text, provider=own_provider)
                         await chat_turns.bind(owner, request_id, conversation_id, message_id)
                         for item, document in zip(files, documents):
                             attachment_id, path = attachment_lib.write_file(conversation_id, item)
@@ -475,7 +494,8 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                     anyio.to_thread.run_sync(_to_chat_messages, active_rows, project_documents),
                     _build_system_prompt(owner, mode, install_command, persona, conversation_id,
                         agent_question='\n'.join(str(row.get('content', ''))[:4000]
-                            for row in [r for r in active_rows if r.get('role') == 'user' and r.get('turn_state') != 'stopped'][-3:]), model=model),
+                            for row in [r for r in active_rows if r.get('role') == 'user' and r.get('turn_state') != 'stopped'][-3:]), model=model,
+                        memory=own_key is None),
                 )
                 document_session = DocumentSession(owner, conversation_id, rows) if mode == 'chat' else None
                 if document_session:
@@ -491,7 +511,8 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                 github_session = GitHubSession(owner) if mode == 'chat' and await connector_store.get_github(owner) else None
                 # A timeout may already have consumed provider tokens. Do not repeat the whole turn invisibly.
                 async with aclosing(_stream_reply(system_prompt, history, effort, timezone, web_search, document_session,
-                                                 model, spoken=mode == "companion", files=files_session, github_session=github_session)) as stream:
+                                                 model, spoken=mode == "companion", files=files_session, github_session=github_session,
+                                                 provider=byok.build(own_key) if own_key else None)) as stream:
                     async for chunk in stream:
                         event = chunk_event(chunk)
                         if event:
@@ -534,14 +555,15 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
             ended_at = perf_counter()
             logger.info(
                 "chat_timing model=%s effort=%s mode=%s queue_ms=%s prepare_ms=%s first_text_ms=%s total_ms=%d search=%s complete=%s outcome=%s",
-                model, effort, mode,
+                f"byok:{own_provider}" if own_key else model, effort, mode,
                 round((admitted_at - started) * 1000) if admitted_at is not None else None,
                 round((prepared_at - admitted_at) * 1000) if prepared_at is not None and admitted_at is not None else None,
                 round((first_text_at - started) * 1000) if first_text_at is not None else None,
                 round((ended_at - started) * 1000), search_started, complete, outcome,
             )
             usage_events.record(
-                "turn", service=ai_models.MODELS[model].service, model=model, surface=mode,
+                "turn", service="byok" if own_key else ai_models.MODELS[model].service,
+                model=f"byok:{own_provider}" if own_key else model, surface=mode,
                 outcome="stopped" if state == "stopped" else outcome, complete=complete,
                 elapsed_ms=round((ended_at - started) * 1000),
                 first_text_ms=round((first_text_at - started) * 1000) if first_text_at is not None else None,
@@ -565,6 +587,7 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                             sources=sources,
                             artifacts=artifacts,
                             work=work,
+                            provider=own_provider,
                         )
                         await chat_turns.attach_reply(owner, request_id, assistant_id)
         if state == 'stopped':

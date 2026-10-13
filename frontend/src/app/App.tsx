@@ -2,7 +2,7 @@ import { usePreferencesPersistence } from './usePreferencesPersistence';
 import LoginScreen from './LoginScreen';
 import { forgetChatLogin, rememberChatLogin, takeChatLogin } from './chatLoginReturn';
 import { BrowserRouter, useLocation, useNavigate } from 'react-router';
-import { appPath, appView, chatId, chatRoute, companionSettingsPage, companionSettingsRoute, legacyPath, VIEW_PATHS } from './routes';
+import { appPath, appView, chatId, chatRoute, companionProviderId, companionProviderRoute, companionSettingsPage, companionSettingsRoute, legacyPath, VIEW_PATHS } from './routes';
 import { EditIcon } from '../shared/ui/EditIcon';
 import Sidebar from './Sidebar';
 import { useProjects } from '../features/projects/useProjects';
@@ -1409,7 +1409,8 @@ function AppContent() {
         <CompanionSettings
           key={`companion-settings-${auth.user?.id}`}
           page={companionSettingsView}
-          onNavigate={page => navigate(companionSettingsRoute(page))}
+          providerId={companionProviderId(appPath(location))}
+          onNavigate={(page, id) => navigate(page === 'provider' ? companionProviderRoute(id ?? '') : companionSettingsRoute(page))}
           onExit={() => navigate(VIEW_PATHS.companion)}
           voice={localVoice}
           character={characters.selected}

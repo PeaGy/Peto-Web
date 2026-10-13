@@ -20,7 +20,7 @@ import {
   type HearingProvider,
 } from "./hearingProviders";
 import { updateKeyConfig, useKeyConfigs, type KeyConfig } from "./voiceProviders";
-import { Dropdown, Field, SourceCard, type Card } from "./voiceUi";
+import { Dropdown, Field, KeyLink, SourceCard, type Card } from "./voiceUi";
 import { Segmented, SettingsGroup, SettingsRow, SettingsSwitch } from "../../settings/settingsUi";
 
 /** Trình duyệt đang dùng gửi âm thanh đi đâu để chép lời (chỉ để nói rõ với người dùng). */
@@ -38,7 +38,11 @@ function browserNote(): string {
  * tắc. Khóa dùng chung với trang Giọng nói. Hai công tắc tạm dừng và nói chen chỉ dành cho Luôn nghe: Giữ để nói chỉ mở
  * micro lúc người dùng giữ.
  */
-export default function HearingSettings({ open }: { open: boolean }) {
+export default function HearingSettings({ open, onOpenProvider }: {
+  open: boolean;
+  /** Mở trang của nhà cung cấp trong Nhà cung cấp để nhập khóa; không có thì nhập khóa ngay tại đây như trước. */
+  onOpenProvider?: (id: string) => void;
+}) {
   const hearing = useHearing();
   const keys = useKeyConfigs();
   const microphones = useMicrophones(open);
@@ -107,7 +111,7 @@ export default function HearingSettings({ open }: { open: boolean }) {
     return [button, (
       <div className="voice-detail" role="group" aria-label={card.name} key={`${card.id}-detail`}>
         <strong className="voice-detail-title">{card.name}</strong>
-        {item ? <KeyDetail provider={item} config={keys[item.id]} /> : (
+        {item ? <KeyDetail provider={item} config={keys[item.id]} onOpenProvider={onOpenProvider} /> : (
           <>
             <p className="voice-line">
               <i className={supported ? "voice-dot on" : "voice-dot"} />
@@ -251,7 +255,9 @@ export default function HearingSettings({ open }: { open: boolean }) {
   );
 }
 
-function KeyDetail({ provider, config }: { provider: HearingProvider; config: KeyConfig | undefined }) {
+function KeyDetail({ provider, config, onOpenProvider }: {
+  provider: HearingProvider; config: KeyConfig | undefined; onOpenProvider?: (id: string) => void;
+}) {
   const ids = { url: useId(), key: useId(), region: useId(), model: useId() };
   const current = config ?? {};
   const update = (patch: KeyConfig) => updateKeyConfig(provider.id, { ...current, ...patch });
@@ -260,6 +266,10 @@ function KeyDetail({ provider, config }: { provider: HearingProvider; config: Ke
   const shared = provider.sharedWithMouth ? " Khóa này dùng chung với phần Peto nói." : "";
   return (
     <>
+      {onOpenProvider ? (
+        <KeyLink name={provider.name} ready={hearingKeyReady(provider, config)} optional={provider.keyOptional}
+          onOpen={() => onOpenProvider(provider.id)} />
+      ) : <>
       {provider.needsBaseUrl && (
         <Field id={ids.url} label="Địa chỉ máy chủ" hint="Địa chỉ gốc của API, trước /audio/transcriptions.">
           <input
@@ -295,6 +305,7 @@ function KeyDetail({ provider, config }: { provider: HearingProvider; config: Ke
           />
         </Field>
       )}
+      </>}
       {provider.modelFree ? (
         <Field id={ids.model} label="Model">
           <input

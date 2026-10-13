@@ -184,13 +184,15 @@ class ClaudeClient:
     cache lịch sử ở lượt một vòng chỉ tốn thêm phí ghi mà không bao giờ được đọc lại).
     """
 
-    def __init__(self, sdk=None, *, cache_history: str = "loop", web_fetch: bool = False):
+    def __init__(self, sdk=None, *, cache_history: str = "loop", web_fetch: bool = False, adaptive: bool = True):
         self.sdk = sdk or AsyncAnthropic(api_key=config.ANTHROPIC_API_KEY or "chua-co-khoa", max_retries=0,
                                         timeout=config.AGENT_STEP_TIMEOUT_SECONDS)
         self.responses = self
         self.cache_history = cache_history
         # Agent không có: trình duyệt của CLI đã hỏi quyền theo từng tên miền, đọc trang phía máy chủ sẽ đi vòng qua đó.
         self.web_fetch = web_fetch
+        # Khóa riêng của người dùng với Claude đời cũ (ai/byok.py): không gửi suy nghĩ tự điều chỉnh và mức suy nghĩ.
+        self.adaptive = adaptive
 
     async def create(self, **kwargs):
         effort = kwargs.get("reasoning", {}).get("effort", "low")
@@ -211,8 +213,10 @@ class ClaudeClient:
             mark_history(messages)
         request = {"model": kwargs["model"], "system": cached_system(kwargs.get("instructions", "")),
                    "messages": messages,
-                   "max_tokens": kwargs["max_output_tokens"], "thinking": {"type": "adaptive"},
-                   "output_config": {"effort": effort}}
+                   "max_tokens": kwargs["max_output_tokens"]}
+        if self.adaptive:
+            request["thinking"] = {"type": "adaptive"}
+            request["output_config"] = {"effort": effort}
         if tools:
             # Ép tool_choice không tương thích adaptive thinking. Lượt bắt buộc tìm web đã có chỉ dẫn và kiểm chứng
             # sau khi stream xong trong ResponsesProvider; không tự nhận đã tra nếu Claude chưa chạy công cụ.

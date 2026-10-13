@@ -345,6 +345,20 @@ export interface CompanionMemoryState {
   memories: CompanionMemory[];
 }
 
+/**
+ * Kiểm tra khóa API riêng cho bộ não Companion và lấy danh sách model (Cài đặt Companion → Nhà cung cấp). Khóa đi trong
+ * header cho đúng lần gọi này; máy chủ không lưu. ``deployment``: Azure OpenAI, người dùng tự gõ tên bản triển khai.
+ */
+export async function checkProvider(provider: string, key: string, endpoint?: string, signal?: AbortSignal
+): Promise<{ models: string[]; deployment: boolean }> {
+  return json(await fetch("/api/companion/providers/check", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Peto-Provider-Key": key },
+    body: JSON.stringify({ provider, ...(endpoint ? { endpoint } : {}) }),
+    signal,
+  }));
+}
+
 export async function getCompanionMemory(signal?: AbortSignal): Promise<CompanionMemoryState> {
   return json(await fetch("/api/companion/memory", { signal }));
 }
@@ -610,13 +624,22 @@ export async function sendMessage(
     persona?: Persona;
     /** Model cho tin này; máy chủ kiểm quyền, thiếu thì dùng Peto. */
     model?: string;
+    /** Chỉ Companion: bộ não dùng khóa API riêng (features/companion/providers/brain.ts). Khóa đi trong header. */
+    provider?: { id: string; model: string; endpoint?: string };
+    providerKey?: string;
+    /** Khóa Tavily cho nhà cung cấp không có tìm kiếm riêng. */
+    searchKey?: string;
   },
   handlers: ChatHandlers,
   signal?: AbortSignal,
 ): Promise<void> {
   const response = await fetch("/api/chat", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(payload.provider && payload.providerKey ? { "X-Peto-Provider-Key": payload.providerKey } : {}),
+      ...(payload.provider && payload.searchKey ? { "X-Peto-Search-Key": payload.searchKey } : {}),
+    },
     body: JSON.stringify({
       request_id: payload.requestId,
       branch_message_id: payload.branchMessageId,
@@ -630,6 +653,7 @@ export async function sendMessage(
       mode: payload.mode ?? "chat",
       persona: payload.persona ?? "assistant",
       model: payload.model ?? "peto",
+      ...(payload.provider && payload.providerKey ? { provider: payload.provider } : {}),
     }),
     signal,
   });

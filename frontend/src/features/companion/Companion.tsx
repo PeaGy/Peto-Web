@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   UnauthorizedError,
   deleteConversation,
@@ -40,6 +40,8 @@ import { asStageEmotion, replyEmotion, type StageCue, type StageEmotion } from '
 import { SceneBackdrop, ScenePicker, useCompanionScene } from './CompanionScenes';
 import { GlobeIcon } from '../chat/WebSources';
 import { readCompanionSearch } from './companionSearch';
+import { brainRequest, useBrain, useModels } from './providers/brain';
+import { useKeyConfigs } from './speech/voiceProviders';
 import type { VoiceStream } from './speech/streamSpeech';
 import { beginCompanionTiming, clearCompanionTimings, type HearingTiming, type TurnTiming } from './speech/companionTiming';
 
@@ -172,6 +174,12 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
   useEffect(() => { if (sceneRequest > 0) setScenesOpen(true); }, [sceneRequest]);
   const [resetting, setResetting] = useState(false);
   const hearing = useHearing();
+  // Tên nhà cung cấp khi bộ não dùng khóa riêng, hiện dưới tên nhân vật; đổi trong Cài đặt thì cập nhật ngay.
+  const brainChoice = useBrain();
+  const providerModels = useModels();
+  const providerKeys = useKeyConfigs();
+  const brainLabel = useMemo(() => (brainChoice.provider === 'peto' ? '' : brainRequest(false)?.label ?? ''),
+    [brainChoice, providerModels, providerKeys]);
   const [micOpen, setMicOpen] = useState(false);
   /** Lúc câu nghe được cuối cùng vào ô nhắn; tự gửi chỉ gửi chữ nghe được, không gửi chữ người dùng tự gõ. */
   const [heardAt, setHeardAt] = useState(0);
@@ -341,6 +349,8 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
     abortRef.current = controller;
     const sentDraftVersion = draftVersion.current;
     const search = readCompanionSearch();
+    // Bộ não dùng khóa riêng (Cài đặt Companion → Mô-đun → Bộ não); null là Peto.
+    const brain = brainRequest(search);
     const heard = draftTiming.current;
     draftTiming.current = null;
     const timing = beginCompanionTiming({ input: heard ? 'voice' : 'text', hearing: heard?.hearing,
@@ -385,7 +395,8 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
         ? { ...message, attachments: optimisticImages.map((image, i) => ({ ...image, url: `data:${attachments[i].mime || 'image/png'};base64,${attachments[i].data}` })) }
         : message));
       await sendMessage(
-        { message: text, conversationId, attachments, effort: "low", webSearch: search ? "auto" : "off", mode: "companion" },
+        { message: text, conversationId, attachments, effort: "low", webSearch: search ? "auto" : "off", mode: "companion",
+          ...(brain ? { provider: brain.provider, providerKey: brain.providerKey, searchKey: brain.searchKey } : {}) },
         {
           onMeta: (id, _effort, stored, voiceStream) => {
             if (!current()) return;
@@ -709,7 +720,8 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
   const stateText = speech?.phase === "playing" ? "Đang nói…"
     : speech?.phase === "buffering" ? "Đang chờ tiếng…"
       : speech?.phase === "loading" ? "Sắp nói…"
-        : searching ? "Đang tra web…" : streaming ? "Đang nhắn…" : "Trả lời ngắn bằng tiếng Anh";
+        : searching ? "Đang tra web…" : streaming ? "Đang nhắn…"
+          : brainLabel ? `Trả lời ngắn bằng tiếng Anh · ${brainLabel}` : "Trả lời ngắn bằng tiếng Anh";
   const canSend = (draft.trim().length > 0 || images.images.length > 0) && !images.pending && !interim && !streaming && !loading && !resetting && !loadFailed && recovery.online && !recovery.pending;
 
   function addImages(files: FileList | File[]) {

@@ -42,7 +42,11 @@ _BANNER_NAME = "og.png"
 _PNG_SIG = b"\x89PNG\r\n\x1a\n"
 # Chỉ fallback cho các trang thật; không nuốt API, Docs hay file tĩnh bị thiếu.
 # Trang cài đặt Companion (từ 13/10/2026): chỉ các trang có thật, khớp COMPANION_SETTINGS_PATHS của frontend/src/app/routes.ts.
-_COMPANION_SETTINGS = r"companion/settings(?:/(?:modules(?:/(?:voice|hearing|web-search|beat-sync))?|scene|memory|diagnostics))?"
+# Trang cài đặt Companion, khớp app/routes.ts (COMPANION_SETTINGS_PATHS, COMPANION_PROVIDER_IDS).
+_COMPANION_PROVIDERS = (r"xai|anthropic|openai|gemini|deepseek|mistral|azure-openai|ollama|elevenlabs|azure|minimax|qwen|stepfun"
+                        r"|compat|groq|deepgram")
+_COMPANION_SETTINGS = (r"companion/settings(?:/(?:modules(?:/(?:brain|voice|hearing|web-search|beat-sync))?"
+                       r"|providers(?:/(?:%s))?|scene|memory|diagnostics))?" % _COMPANION_PROVIDERS)
 _APP_PATH = re.compile(r"(?:chat/[^/.]+|companion|%s|admin|imagine(?:/[^/.]+/[^/.]+)?)/?\Z" % _COMPANION_SETTINGS)
 
 

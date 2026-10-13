@@ -41,6 +41,22 @@ export function SourceCard({ card, selected, onPick }: { card: Card; selected: b
   );
 }
 
+/**
+ * Dòng khóa trong trang Giọng nói và Nghe: từ ngày 13/10/2026 khóa nhập ở Cài đặt Companion → Nhà cung cấp (biến thể
+ * "Như AIRI"), hai trang này chỉ còn chọn nguồn, model và giọng.
+ */
+export function KeyLink({ name, ready, optional, onOpen }: { name: string; ready: boolean; optional?: boolean; onOpen: () => void }) {
+  return (
+    <p className="voice-line voice-key-link">
+      <i className={ready ? "voice-dot on" : "voice-dot"} />
+      <span>{ready ? (optional ? `Đã lưu địa chỉ ${name}.` : `Đã có khóa ${name}.`) : `Chưa có khóa ${name}.`}</span>
+      <button type="button" className="voice-link" onClick={onOpen}>
+        {ready ? "Sửa ở Nhà cung cấp" : "Nhập khóa ở Nhà cung cấp"}
+      </button>
+    </p>
+  );
+}
+
 export function Field({ id, label, hint, children }: { id: string; label: string; hint?: ReactNode; children: ReactNode }) {
   // Nhãn đứng riêng, nối bằng htmlFor: iOS Safari có khi không cho sửa ô nhập nằm trong <label> (xem ProfileSettings).
   // Nhãn có mã riêng để bảng lựa chọn của Dropdown mượn làm tên.

@@ -8,6 +8,7 @@ from features.accounts import auth
 from features.documents import api as document_api
 from features.imagine import api as imagine_api
 from features.companion import memory_api
+from features.companion import providers_api
 from features.accounts import profile as profile_api
 from features.voice import api as voice_api
 from core import static_files
@@ -37,6 +38,7 @@ app.include_router(auth.router)
 app.include_router(imagine_api.router)
 app.include_router(profile_api.router)
 app.include_router(memory_api.router)
+app.include_router(providers_api.router)
 app.include_router(voice_api.router)
 app.include_router(document_api.router)
 app.include_router(agent_api.router)

@@ -14,7 +14,7 @@ import {
   type VoiceOption,
 } from "./voiceProviders";
 import { SettingsGroup, SettingsRow, SettingsSwitch } from "../../settings/settingsUi";
-import { Dropdown, Field, SourceCard, type Card as SourceCardData, type DropdownOption } from "./voiceUi";
+import { Dropdown, Field, KeyLink, SourceCard, type Card as SourceCardData, type DropdownOption } from "./voiceUi";
 import type { SpeakPhase } from './localSpeech';
 
 /** Giọng nào cũng nói tiếng Anh tốt nhất, nên câu nghe thử mặc định bằng tiếng Anh. */
@@ -39,10 +39,12 @@ type Card = SourceCardData<VoiceSourceId>;
  * thoại nó hiện ngay dưới thẻ. Nút tắt tiếng không ở đây mà ở cột chat của Companion. Phần nghe (micro) và đo tốc độ là
  * hai trang riêng từ ngày 13/10/2026 (`HearingSettings`, `CompanionTimingPanel`).
  */
-export default function VoiceSettings({ voice, open }: {
+export default function VoiceSettings({ voice, open, onOpenProvider }: {
   voice: LocalVoice;
   /** Trang đang được xem; rời trang thì thôi đọc câu mẫu. */
   open: boolean;
+  /** Mở trang của nhà cung cấp trong Nhà cung cấp để nhập khóa; không có thì nhập khóa ngay tại đây như trước. */
+  onOpenProvider?: (id: string) => void;
 }) {
   const [error, setError] = useState<string | null>(null);
   const [sampleText, setSampleText] = useState(SAMPLE_TEXT);
@@ -105,7 +107,7 @@ export default function VoiceSettings({ voice, open }: {
       <strong className="voice-detail-title">{card.name}</strong>
       {card.id === "official" ? <OfficialDetail voice={voice} />
         : card.id === "home" ? <HomeDetail voice={voice} />
-        : <KeyDetail voice={voice} provider={KEY_PROVIDERS.find((item) => item.id === card.id)!} />}
+        : <KeyDetail voice={voice} provider={KEY_PROVIDERS.find((item) => item.id === card.id)!} onOpenProvider={onOpenProvider} />}
       {/* Nguồn của máy chủ chưa dùng được thì ở đây không làm gì cho nó nói được; khóa riêng thì nút sáng lên khi nhập đủ. */}
       {(sampleReady || KEY_PROVIDERS.some((item) => item.id === card.id)) && (
         <SampleRow
@@ -296,7 +298,7 @@ function HomeDetail({ voice }: { voice: LocalVoice }) {
   );
 }
 
-function KeyDetail({ voice, provider }: { voice: LocalVoice; provider: KeyProvider }) {
+function KeyDetail({ voice, provider, onOpenProvider }: { voice: LocalVoice; provider: KeyProvider; onOpenProvider?: (id: string) => void }) {
   const ids = { url: useId(), key: useId(), region: useId(), model: useId(), voice: useId() };
   const config = voice.keys[provider.id] ?? {};
   const update = (patch: KeyConfig) => {
@@ -327,6 +329,10 @@ function KeyDetail({ voice, provider }: { voice: LocalVoice; provider: KeyProvid
   }
   return (
     <>
+      {onOpenProvider ? (
+        <KeyLink name={provider.name} ready={keyReady(provider, config)} optional={provider.keyOptional}
+          onOpen={() => onOpenProvider(provider.id)} />
+      ) : <>
       {provider.needsBaseUrl && (
         <Field id={ids.url} label="Địa chỉ máy chủ" hint="Địa chỉ gốc của API, trước /audio/speech.">
           <input
@@ -381,6 +387,7 @@ function KeyDetail({ voice, provider }: { voice: LocalVoice; provider: KeyProvid
           Khóa chỉ nằm trên trình duyệt này. Trình duyệt gọi thẳng tới {provider.name}; máy chủ Peto không nhận được khóa.
         </p>
       )}
+      </>}
       {provider.modelFree ? (
         <Field id={ids.model} label="Model">
           <input
