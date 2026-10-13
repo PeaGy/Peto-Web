@@ -29,6 +29,21 @@ từng khối của trình duyệt, không nạp cả gói vào bộ nhớ cạn
 không chạy script hoặc tải tài nguyên mạng do model cung cấp. Bỏ âm thanh đi kèm motion để không chồng lên TTS.
 VRM phải là GLB có phần mở rộng VRM và tài nguyên nhúng. Thư viện không tải model của người dùng lên VPS.
 
+### Ánh xạ điều khiển Live2D riêng
+
+Màn **Trước khi nhập → Điều khiển nhân vật** đọc `.vtube.json` nằm cạnh `.model3.json`, khi cấu hình trỏ đúng model.
+Peto nhận ánh xạ quay/nghiêng đầu, hướng mắt và mở miệng; không thực thi phím nóng, plugin hoặc cấu hình theo dõi khuôn
+mặt VTube Studio. Đây là cải tiến riêng được chủ web cho phép ngày 13/10/2026 sau khi thử model Teto có tham số đầu `…IN`.
+
+Chỉ ánh xạ hợp lệ được lưu cùng tài nguyên trong IndexedDB. Thông số được đối chiếu với DisplayInfo khi nhập và với MOC
+thật khi tải; thông số sai, xung đột hoặc không tồn tại dùng mặc định. Công tắc trong màn duyệt cho phép bỏ ánh xạ riêng.
+Các tham số chuẩn, Hiyori đi kèm, model không có ánh xạ và VRM tiếp tục dùng đường xử lý cũ. Cần nhập lại model đã lưu
+trước cải tiến, vì lần nhập cũ không giữ cấu hình VTube Studio.
+
+Ánh xạ con trỏ được áp dụng trước vật lý, tránh bị vật lý ghi đè như `ParamAngleXIN → ParamAngleX` của Teto. Không sửa
+MOC, texture, vật lý hay tự thêm chuyển động. Các tệp motion/biểu cảm chưa khai báo trong `.model3.json` vẫn được cảnh báo
+và bỏ qua; ánh xạ điều khiển không tự tắt watermark hoặc nhập những tệp đó.
+
 VRM có tư thế nghỉ, chớp mắt, nhìn theo con trỏ và biểu cảm miệng `aa` theo WAV đang phát. Model cần có
 các biểu cảm tương ứng. Biểu cảm vui/buồn dùng mức 70%, ngạc nhiên 80%, giận giữ 70%, tham khảo
 [biểu cảm VRM của AIRI](https://github.com/moeru-ai/airi/blob/main/packages/stage-ui-three/src/composables/vrm/expression.ts).

@@ -1,5 +1,6 @@
 import type { CharacterFile, CharacterFormat, CharacterImport } from './characterLibrary';
 import { MAX_EXPANDED_BYTES, MAX_FILE_BYTES, MAX_FILES, MAX_IMPORT_BYTES, MAX_JSON_BYTES, megabytes } from './characterLimits';
+import { parseControlBindings, type ControlReview, type Live2DControls } from './live2dControls';
 
 type Json = Record<string, any>;
 
@@ -89,7 +90,39 @@ async function jsonFile(file: CharacterFile): Promise<Json> {
   } catch { throw new Error(`Không đọc được cấu hình ${file.path}.`); }
 }
 
-export async function validateLive2D(files: CharacterFile[]): Promise<{ entry: string; files: CharacterFile[] }> {
+async function readLive2DControls(files: CharacterFile[], entry: string, displayInfo?: CharacterFile) {
+  const empty = (): { controls?: Live2DControls; review: ControlReview } => ({ review: { bindings: [], warnings: [] } });
+  const base = entry.split('/').slice(0, -1).join('/');
+  const candidates = files.filter(file => /\.vtube\.json$/i.test(file.path) && file.path.split('/').slice(0, -1).join('/') === base);
+  if (!candidates.length) return empty();
+  if (candidates.length > 8) {
+    return { review: { bindings: [], warnings: ['Có quá nhiều cấu hình VTube Studio cạnh model. Peto dùng điều khiển mặc định.'] } };
+  }
+  const matched: { path: string; json: Json }[] = [];
+  const warnings: string[] = [];
+  for (const file of candidates) {
+    try {
+      const json = await jsonFile(file);
+      if (typeof json.FileReferences?.Model !== 'string' || modelPath(json.FileReferences.Model, base) !== entry) continue;
+      if (json.Version !== 1) throw new Error('Phiên bản cấu hình VTube Studio chưa được hỗ trợ.');
+      matched.push({ path: file.path, json });
+    } catch {
+      warnings.push(`Không đọc được cấu hình điều khiển ${file.path}; Peto bỏ qua tệp này.`);
+    }
+  }
+  if (matched.length !== 1) {
+    if (matched.length > 1) warnings.push('Có nhiều cấu hình VTube Studio trỏ tới model này. Peto dùng điều khiển mặc định.');
+    return { review: { bindings: [], warnings } };
+  }
+  const parameters = displayInfo ? (await jsonFile(displayInfo)).Parameters : undefined;
+  const knownIds = Array.isArray(parameters) ? new Set<string>(parameters.filter((item: Json) => typeof item?.Id === 'string').map((item: Json) => item.Id)) : undefined;
+  const { controls, review } = parseControlBindings(matched[0].json.ParameterSettings, knownIds);
+  review.source = matched[0].path;
+  review.warnings.unshift(...warnings);
+  return { controls: Object.keys(controls).length ? controls : undefined, review };
+}
+
+async function prepareLive2D(files: CharacterFile[]) {
   const entries = files.filter(file => file.path.toLowerCase().endsWith('.model3.json'));
   if (entries.length !== 1) throw new Error(entries.length ? 'Gói này có nhiều model. Hãy nhập riêng thư mục của một model.' : 'Thiếu tệp .model3.json. Hãy chọn toàn bộ thư mục model Cubism 3/4/5 hoặc ZIP của nó.');
   const entry = entries[0];
@@ -136,7 +169,13 @@ export async function validateLive2D(files: CharacterFile[]): Promise<{ entry: s
   }
   const groups = Array.isArray(settings.Groups) ? settings.Groups.filter((group: Json) => group && group.Target === 'Parameter' && ['EyeBlink', 'LipSync'].includes(group.Name) && Array.isArray(group.Ids)).map((group: Json) => ({ Target: 'Parameter', Name: group.Name, Ids: group.Ids.filter((id: unknown) => typeof id === 'string' && id.length <= 128).slice(0, 16) })) : [];
   const normalized = { Version: 3, FileReferences: refs, Groups: groups, HitAreas: settings.HitAreas, Layout: settings.Layout };
-  return { entry: 'model.model3.json', files: [{ path: 'model.model3.json', blob: new Blob([JSON.stringify(normalized)], { type: 'application/json' }) }, ...used.values()] };
+  const { controls, review } = await readLive2DControls(files, entry.path, refs.DisplayInfo ? map.get(refs.DisplayInfo) : undefined);
+  return { entry: 'model.model3.json', files: [{ path: 'model.model3.json', blob: new Blob([JSON.stringify(normalized)], { type: 'application/json' }) }, ...used.values()], controls, review };
+}
+
+export async function validateLive2D(files: CharacterFile[]) {
+  const { review: _review, ...data } = await prepareLive2D(files);
+  return data;
 }
 
 /** VRM phải là GLB tự chứa; chặn URL ngoài trước khi GLTFLoader chạm vào tài nguyên. */
@@ -177,6 +216,7 @@ export interface Live2DImportReport {
   motions: { found: string[]; referenced: string[] }; expressions: { found: string[]; referenced: string[] };
   textures: string[]; parameters: number | null; physics: boolean;
   issues: { severity: 'error' | 'warning'; message: string; paths?: string[] }[];
+  controls?: ControlReview;
   prepared?: CharacterImport;
 }
 /** Inspect bounded archive data without saving it or loading an executable model runtime. */
@@ -227,7 +267,9 @@ export async function inspectLive2D(input: File[]): Promise<Live2DImportReport> 
     } catch (reason) { error(reason instanceof Error ? reason.message : 'Không đọc được cấu hình model.'); }
   }
   try {
-    const data = await validateLive2D(files);
+    const { review, ...data } = await prepareLive2D(files);
+    report.controls = review;
+    report.issues.push(...review.warnings.map(message => ({ severity: 'warning' as const, message })));
     if (!report.issues.some(issue => issue.severity === 'error')) {
       const id = crypto.randomUUID();
       report.prepared = { model: { id, name: name.slice(0, 80), format: 'live2d', bytes: data.files.reduce((sum, file) => sum + file.blob.size, 0), createdAt: Date.now() }, assets: { id, ...data } };
@@ -240,7 +282,7 @@ export async function importCharacter(input: File[], format: CharacterFormat): P
   checkInput(input);
   const id = crypto.randomUUID();
   let name = input[0].name.replace(/\.(zip|vrm)$/i, ''), author: string | undefined;
-  let data: { entry: string; files: CharacterFile[] };
+  let data: { entry: string; files: CharacterFile[]; controls?: Live2DControls };
   if (format === 'vrm') {
     if (input.length !== 1 || !input[0].name.toLowerCase().endsWith('.vrm')) throw new Error('Hãy chọn một tệp .vrm.');
     const meta = validateVRM(await input[0].arrayBuffer());

@@ -86,6 +86,29 @@ it('từ chối moc giả và ZIP cụt', async () => {
   await expect(validateLive2D([{ path: 'model.model3.json', blob: new Blob([JSON.stringify(settings())]) }, { path: 'avatar.moc3', blob: new Blob(['fake']) }])).rejects.toThrow('.moc3');
   await expect(importCharacter([new File([new Uint8Array([80, 75, 3, 4])], 'bad.zip')], 'live2d')).rejects.toThrow();
 });
+
+const headMapping = { Input: 'FaceAngleX', OutputLive2D: 'ParamAngleXIN', InputRangeLower: -30, InputRangeUpper: 30, OutputRangeLower: -30, OutputRangeUpper: 30 };
+it('duyệt và chỉ lưu ánh xạ VTube Studio trỏ đúng model, không lưu thiết lập hoặc tài nguyên ngoài khai báo', async () => {
+  const json = { ...settings(), FileReferences: { ...settings().FileReferences, DisplayInfo: 'avatar.cdi3.json' } };
+  const report = await inspectLive2D([zip(json, {
+    'folder/avatar.cdi3.json': strToU8(JSON.stringify({ Parameters: [{ Id: 'ParamAngleXIN' }] })),
+    'folder/avatar.vtube.json': strToU8(JSON.stringify({ Version: 1, FileReferences: { Model: 'avatar.model3.json' }, ParameterSettings: [headMapping], Hotkeys: [{ File: 'unused.exp3.json' }] })),
+  })]);
+  expect(report.controls?.bindings).toEqual([{ role: 'headX', id: 'ParamAngleXIN', verified: true }]);
+  expect(report.prepared?.assets.controls?.headX.id).toBe('ParamAngleXIN');
+  expect(report.prepared?.assets.files.some(file => file.path.endsWith('.vtube.json'))).toBe(false);
+  const saved = await importCharacter([zip(settings(), { 'folder/avatar.vtube.json': strToU8(JSON.stringify({ Version: 1, FileReferences: { Model: 'avatar.model3.json' }, ParameterSettings: [headMapping] })) })], 'live2d');
+  expect(saved.assets.controls?.headX.id).toBe('ParamAngleXIN');
+});
+it('model cũ, cấu hình hỏng, cấu hình cho model khác và ánh xạ mơ hồ đều nhập được với mặc định', async () => {
+  for (const extra of [{}, { 'folder/avatar.vtube.json': strToU8('invalid') },
+    { 'folder/avatar.vtube.json': strToU8(JSON.stringify({ Version: 1, FileReferences: { Model: 'other.model3.json' }, ParameterSettings: [headMapping] })) },
+    Object.fromEntries(['a', 'b'].map(name => [`folder/${name}.vtube.json`, strToU8(JSON.stringify({ Version: 1, FileReferences: { Model: 'avatar.model3.json' }, ParameterSettings: [headMapping] }))]))]) {
+    const report = await inspectLive2D([zip(settings(), extra)]);
+    expect(report.prepared).toBeDefined();
+    expect(report.prepared?.assets.controls).toBeUndefined();
+  }
+});
 function glb(json: object) {
   const text = JSON.stringify(json), data = new TextEncoder().encode(text + ' '.repeat((4 - text.length % 4) % 4));
   const buffer = new ArrayBuffer(20 + data.length), view = new DataView(buffer);

@@ -55,11 +55,11 @@ export default function CharacterPicker({ library, motion, onMotionChange, onClo
     });
     else void run(() => library.add(input, format), 'Đã thêm và chọn nhân vật. Đóng cửa sổ này để xem trên sân khấu.');
   };
-  const confirmImport = async () => {
+  const confirmImport = async (useControls = true) => {
     if (!review?.prepared || busy) return;
     setBusy(true); setError('');
     try {
-      await library.addPrepared(review.prepared);
+      await library.addPrepared(useControls ? review.prepared : { ...review.prepared, assets: { ...review.prepared.assets, controls: undefined } });
       setReview(null); setNotice('Đã thêm và chọn nhân vật. Đóng cửa sổ này để xem trên sân khấu.');
     } catch (reason) { setError(characterError(reason)); }
     finally { setBusy(false); }
@@ -67,7 +67,7 @@ export default function CharacterPicker({ library, motion, onMotionChange, onClo
   const chooseFile = (ref: { current: HTMLInputElement | null }) => { if (menu.current) menu.current.open = false; ref.current?.click(); };
   return <dialog ref={dialog} className="character-picker" aria-labelledby="character-picker-title" onCancel={event => { event.preventDefault(); if (!busy) onClose(); }}>
     {review && <CharacterImportReview report={review} busy={busy} error={error}
-      onCancel={() => { setReview(null); setError(''); }} onConfirm={() => void confirmImport()} />}
+      onCancel={() => { setReview(null); setError(''); }} onConfirm={useControls => void confirmImport(useControls)} />}
     <div className="character-picker-head">
       <div><h2 id="character-picker-title">Nhân vật</h2><p>Chọn gương mặt đồng hành cùng bạn.</p></div>
       <button className="dialog-close" aria-label="Đóng chọn nhân vật" disabled={busy} onClick={onClose}>×</button>

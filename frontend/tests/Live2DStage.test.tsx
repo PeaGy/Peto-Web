@@ -9,7 +9,7 @@ import { previewExpression, watchSnapshots, writeExpressions } from '../src/feat
 
 const mocks = vi.hoisted(() => ({
   from: vi.fn(), destroy: vi.fn(), start: vi.fn(), stop: vi.fn(), render: vi.fn(), tick: null as null | (() => void),
-  mouth: 0, reduced: true, compact: false, resize: null as null | (() => void),
+  mouth: 0, reduced: true, compact: false, resize: null as null | (() => void), getAssets: vi.fn(),
 }));
 vi.mock('../src/shared/motion', async original => ({
   ...await original<typeof import('../src/shared/motion')>(), isReducedMotion: () => mocks.reduced,
@@ -27,6 +27,7 @@ vi.mock('../src/features/companion/speech/voiceActivity', () => ({ voiceMouth: (
 // jsdom không vẽ canvas: ảnh chụp mặt giả để kiểm luồng chụp.
 vi.mock('../src/features/companion/characters/characterLibrary', async (original) => ({
   ...await original<typeof import('../src/features/companion/characters/characterLibrary')>(), faceThumbnail: vi.fn(() => 'data:image/png;base64,FACE'),
+  getCharacterAssets: mocks.getAssets,
 }));
 
 type Point = { x: number; y: number };
@@ -80,6 +81,35 @@ beforeEach(() => {
   vi.spyOn(Element.prototype, 'clientHeight', 'get').mockReturnValue(600);
 });
 afterEach(() => vi.unstubAllGlobals());
+
+it('model nhập riêng dùng ánh xạ đầu, mắt và miệng; dừng giọng thì khép miệng riêng', async () => {
+  const model = fakeModel(), internal = model.internalModel, core = internal.coreModel;
+  const ids = ['ParamAngleX', 'ParamAngleY', 'ParamAngleZ', 'HeadInput', 'EyeInput', 'MouthInput'];
+  core.getParameterIndex = id => ids.includes(id) ? ids.indexOf(id) : ids.length;
+  core.getParameterCount = () => ids.length;
+  Object.assign(core, { getParameterValueById: () => 0 });
+  Object.assign(internal.focusController, { x: 0.5, y: 0 });
+  const ranges = { inputMin: -30, inputMax: 30, outputMin: -20, outputMax: 20 };
+  mocks.getAssets.mockResolvedValue({ id: 'custom', entry: 'model.model3.json', files: [{ path: 'model.model3.json', blob: new Blob([JSON.stringify({ Version: 3, FileReferences: {} })]) }],
+    controls: { headX: { id: 'HeadInput', ...ranges }, eyeX: { id: 'EyeInput', inputMin: -1, inputMax: 1, outputMin: 1, outputMax: -1 },
+      mouth: { id: 'MouthInput', inputMin: 0, inputMax: 1, outputMin: 0, outputMax: 2 } } });
+  mocks.from.mockResolvedValue(model);
+  mocks.mouth = 0.7;
+  const view = render(<Live2DStage name="Avatar" motion="always" character={{ id: 'custom', name: 'Avatar', format: 'live2d', bytes: 0, createdAt: 0 }} />);
+  await waitFor(() => expect(mocks.start).toHaveBeenCalled());
+  internal.updateFocus();
+  expect(core.setParameterValueById).toHaveBeenCalledWith('HeadInput', 10);
+  expect(core.setParameterValueById).toHaveBeenCalledWith('EyeInput', -0.5);
+  const beforePhysics = internal.on.mock.calls.find(([event]) => event === 'afterMotionUpdate')![1];
+  const beforeDraw = internal.on.mock.calls.find(([event]) => event === 'beforeModelUpdate')![1];
+  beforePhysics(); beforeDraw();
+  expect(core.setParameterValueById.mock.calls.some(([id, value]) => id === 'MouthInput' && value > 0)).toBe(true);
+  expect(core.setParameterValueById.mock.calls.some(([id]) => id === 'ParamMouthOpenY')).toBe(false);
+  mocks.mouth = 0;
+  beforePhysics(); beforeDraw();
+  expect(core.setParameterValueById).toHaveBeenLastCalledWith('MouthInput', 0);
+  view.unmount();
+});
 
 it('Live2D chỉ báo ready sau lần vẽ đầu tiên, lỗi vẽ vẫn cho phép thử lại', async () => {
   let finish!: (value: ReturnType<typeof fakeModel>) => void;

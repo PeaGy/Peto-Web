@@ -1,4 +1,5 @@
 import { CHARACTER } from './characterConfig';
+import type { Live2DControls } from './live2dControls';
 
 export type CharacterFormat = 'live2d' | 'vrm';
 export interface CharacterModel {
@@ -12,7 +13,7 @@ export interface CharacterModel {
   author?: string;
 }
 export interface CharacterFile { path: string; blob: Blob }
-export interface CharacterAssets { id: string; entry: string; files: CharacterFile[] }
+export interface CharacterAssets { id: string; entry: string; files: CharacterFile[]; controls?: Live2DControls }
 export interface CharacterImport { model: CharacterModel; assets: CharacterAssets }
 
 export const DEFAULT_CHARACTER: CharacterModel = {

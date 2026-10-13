@@ -32,6 +32,7 @@ import ThinkingBubble, { useThinkingBubble } from './ThinkingBubble';
 import { composerPoint, type ComposerAttention } from './stageInteraction';
 import { trackLive2DHead } from './live2dHead';
 import { ComposerGaze } from './presenceMotion';
+import { applyLive2DControls, controlValue, type Live2DControls } from './live2dControls';
 
 let coreReady: Promise<void> | undefined;
 function loadCore() {
@@ -133,12 +134,14 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
       container.append(canvas);
       let source: string | InstanceType<typeof Cubism4ModelSettings> = CHARACTER.modelUrl;
       let mouthParameters = [CHARACTER.mouthParameter];
+      let controls: Live2DControls | undefined;
       if (!character.builtin) {
         const assets = await getCharacterAssets(character.id);
         if (disposed) return;
         const entry = assets?.files.find(file => file.path === assets.entry);
         if (!assets || !entry) throw new Error('Không còn tìm thấy tệp của model này. Hãy nhập lại model.');
         const json = JSON.parse(await entry.blob.text());
+        controls = assets.controls;
         if (disposed) return;
         json.url = '/imported/model.model3.json';
         const settings = new Cubism4ModelSettings(json);
@@ -271,6 +274,8 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
       };
 
       const internal = current.internalModel as Cubism4InternalModel;
+      const acceptedControls = controls ? applyLive2DControls(internal, controls) : undefined;
+      const mappedMouth = acceptedControls?.mouth && !mouthParameters.includes(acceptedControls.mouth.id) ? acceptedControls.mouth : undefined;
       const readHead = trackLive2DHead(internal);
       const manager = internal.motionManager.expressionManager;
       // Cảm xúc Peto chọn, hay thẻ bấm thử trong bảng Nhân vật: tệp biểu cảm của model nếu có, không thì mặt dựng sẵn.
@@ -368,11 +373,21 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
       });
       const mouthBlend = new VoiceMouthBlend();
       const idleEyes = new IdleEyes();
-      const eyeParameters = ['ParamEyeBallX', 'ParamEyeBallY'].map(id => {
+      const eyeParameters = ['ParamEyeBallX', 'ParamEyeBallY'].map((standardId, i) => {
+        const binding = i === 0 ? acceptedControls?.eyeX : acceptedControls?.eyeY;
+        const id = binding?.id ?? standardId;
         const index = liveCore.getParameterIndex?.(id);
-        return { id, supported: index !== undefined && index >= 0 && index < liveCore.getParameterCount() };
+        return { id, binding, supported: index !== undefined && index >= 0 && index < liveCore.getParameterCount() };
       });
       const conversationMotion = new CompanionMotion();
+      let mappedFaceMouth = 0;
+      let mappedOpen = 0;
+      // Miệng riêng có thể là đầu vào của vật lý, nên phải đặt sau motion và trước khi tính vật lý.
+      if (mappedMouth) internal.on('afterMotionUpdate', () => {
+        const mouth = mouthBlend.step(voiceMouth(), app!.ticker.deltaMS / 1000, voicePlaying());
+        mappedOpen = mouth < 0.01 ? 0 : mouth;
+        liveCore.setParameterValueById(mappedMouth.id, controlValue(mappedMouth, Math.max(mappedOpen, mappedFaceMouth)));
+      });
       internal.on("beforeModelUpdate", () => {
         // Keep expression fades alive when body motion is paused for reduced motion.
         if (!moving()) manager?.update(liveCore, performance.now());
@@ -381,10 +396,12 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
         // parameters so an authored idle cannot pin them at an extreme value.
         const eyes = idleEyes.step(app!.ticker.deltaMS / 1000, effects.idleEyes && !cursorActive);
         [eyes.x, eyes.y].forEach((value, i) => {
-          if (eyeParameters[i].supported && eyes.weight > 0.001) liveCore.setParameterValueById(eyeParameters[i].id, value, eyes.weight);
+          if (eyeParameters[i].supported && eyes.weight > 0.001) liveCore.setParameterValueById(eyeParameters[i].id,
+            eyeParameters[i].binding ? controlValue(eyeParameters[i].binding!, value) : value, eyes.weight);
         });
         // Mặt dựng sẵn đè lên mắt khi chờ (mặt nhìn đi chỗ khác mới thấy được), rồi mới cộng nhịp đầu bên dưới.
         const faceMouth = face.apply(faceBlend.step(app!.ticker.deltaMS / 1000));
+        mappedFaceMouth = faceMouth;
         if (moving()) {
           const pose = musicPose(performance.now());
           const conversation = conversationMotion.step(activityRef.current, app!.ticker.deltaMS / 1000, voiceMouth());
@@ -394,11 +411,15 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
             if (beatParameters[i].supported && value) liveCore.addParameterValueById(beatParameters[i].id, value);
           });
         }
-        const target = voiceMouth();
-        const mouth = mouthBlend.step(target, app!.ticker.deltaMS / 1000, voicePlaying());
-        // Ép trạng thái miệng sau motion để model không nói khi âm thanh đang im lặng.
-        const open = Math.max(mouth < 0.01 ? 0 : mouth, faceMouth);
-        for (const parameter of mouthParameters) core.setParameterValueById(parameter, open);
+        if (mappedMouth) {
+          liveCore.setParameterValueById(mappedMouth.id, controlValue(mappedMouth, Math.max(mappedOpen, faceMouth)));
+        } else {
+          const target = voiceMouth();
+          const mouth = mouthBlend.step(target, app!.ticker.deltaMS / 1000, voicePlaying());
+          // Ép trạng thái miệng sau motion để model không nói khi âm thanh đang im lặng.
+          const open = Math.max(mouth < 0.01 ? 0 : mouth, faceMouth);
+          for (const parameter of mouthParameters) core.setParameterValueById(parameter, open);
+        }
       });
       app.ticker.maxFPS = stageQuality(compact.matches, window.devicePixelRatio, qualityPreference).fps;
       let still = false;

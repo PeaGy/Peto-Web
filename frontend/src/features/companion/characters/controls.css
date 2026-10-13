@@ -84,6 +84,13 @@
 .import-review-issues p { margin: 5px 0; line-height: 1.5; }
 .import-review-issues details { margin-top: 8px; font-size: 13px; }
 .import-review-hint, .import-review-ok { font-size: 13px; line-height: 1.6; }
+.import-review-controls { padding: 0 0 12px; }
+.import-review-controls details { font-size: 13px; }
+.import-review-controls summary { cursor: pointer; }
+.import-review-controls dl { display: grid; gap: 10px; }
+.import-review-controls dl > div { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+.import-review-controls dd { margin: 0; overflow-wrap: anywhere; }
+.import-review-controls dd small { display: block; color: var(--muted); margin-top: 4px; }
 .import-review-actions { display: flex; justify-content: flex-end; gap: 12px; padding: 18px 24px; border-top: 1px solid var(--line); position: sticky; bottom: 0; background: var(--panel); }
 .import-review-actions .import-confirm { background: var(--panel-2); font-weight: 600; }
 @media (max-width: 600px) {

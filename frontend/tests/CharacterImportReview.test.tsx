@@ -25,3 +25,14 @@ it('blocks errors and preserves the report when saving fails', () => {
   expect(button.disabled).toBe(true); fireEvent.click(button); expect(confirm).not.toHaveBeenCalled();
   expect(screen.getByRole('alert').textContent).toBe('Không đủ dung lượng');
 });
+it('cho xem ánh xạ của model và tắt trước khi nhập', () => {
+  const confirm = vi.fn();
+  render(<CharacterImportReview report={{ ...report, controls: { source: 'avatar.vtube.json', warnings: [], bindings: [{ role: 'headX', id: 'ParamAngleXIN', verified: true }] } }}
+    busy={false} error="" onConfirm={confirm} onCancel={vi.fn()} />);
+  expect(screen.getByText('ParamAngleXIN')).toBeTruthy();
+  const toggle = screen.getByRole('switch', { name: /Dùng cấu hình điều khiển của model/ });
+  expect((toggle as HTMLInputElement).checked).toBe(true);
+  fireEvent.click(toggle);
+  fireEvent.click(screen.getByRole('button', { name: 'Vẫn nhập model' }));
+  expect(confirm).toHaveBeenCalledWith(false);
+});

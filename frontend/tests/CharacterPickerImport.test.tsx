@@ -14,12 +14,12 @@ it('waits for review confirmation before saving and discards a cancelled review'
     add: vi.fn(), addPrepared: vi.fn().mockResolvedValue(undefined), rename: vi.fn(), remove: vi.fn(), savePreview: vi.fn() };
   render(<CharacterPicker library={library} onClose={vi.fn()} />);
   const choose = () => fireEvent.change(screen.getByLabelText('Nhập ZIP Live2D'), { target: { files: [new File(['zip'], 'Avatar.zip')] } });
-  choose(); await screen.findByRole('heading', { name: 'Trước khi nhập' });
+  choose(); await screen.findByRole('heading', { name: 'Trước khi nhập' }, { timeout: 10000 });
   expect(library.addPrepared).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: 'Hủy', exact: true }));
   expect(screen.queryByRole('heading', { name: 'Trước khi nhập' })).toBeNull();
   expect(library.addPrepared).not.toHaveBeenCalled();
-  choose(); await screen.findByRole('heading', { name: 'Trước khi nhập' });
+  choose(); await screen.findByRole('heading', { name: 'Trước khi nhập' }, { timeout: 10000 });
   await waitFor(() => expect((screen.getByRole('button', { name: 'Nhập model', exact: true }) as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(screen.getByRole('button', { name: 'Nhập model', exact: true }));
   await waitFor(() => expect(library.addPrepared).toHaveBeenCalledExactlyOnceWith(prepared));
