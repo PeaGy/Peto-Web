@@ -599,22 +599,19 @@ class Session:
                         # Người dùng nhắn thêm lúc Peto vừa viết xong: chạy thêm một bước để Peto đọc tin đó.
                         self._save_progress()
                         continue
-                    if self.tools.changes and self.tools.checked_revision < self.tools.revision and not verification_reminded:
+                    if not verification_reminded and self._remind_to_check():
                         verification_reminded = True
-                        self.items.append({"type": "message", "role": "assistant", "content": (
-                            "Kiểm tra sau sửa: xem hướng dẫn AGENTS.md và cấu hình dự án để chọn test/build/lint phù hợp. "
-                            "Chạy kiểm tra với quyền người dùng cho phép. Nếu không cần, không có hoặc bị từ chối, "
-                            "nêu rõ lý do; không lặp lại lệnh đã bị từ chối. Chỉ sửa lỗi liên quan, tối đa 3 lần kiểm tra thất bại, "
-                            "không cài thêm công cụ hay mở rộng phạm vi. Báo lệnh nào đã chạy và kết quả thực tế.")})
                         continue
                     break
                 self._save_progress()
                 self.tools.start_step()
+                results = []
                 while pending:
                     call = pending[0]
                     self.tools.call_id = str(call.get("call_id", ""))
                     with self.metrics.measure("tools"):
                         result = cap_result(self.tools.call(str(call.get("name", "")), str(call.get("arguments", ""))))
+                    results.append((str(call.get("name", "")), result))
                     encoded = json.dumps(result, ensure_ascii=False)
                     self._log("tool", name=call.get("name"), arguments=cap_text(str(call.get("arguments", "")), 2000),
                               result=cap_text(encoded, 4000))
@@ -625,7 +622,16 @@ class Session:
                     self.items.append(tool_images(self.tools.captured))
                     self.tools.captured = []
                     drop_old_images(self.items)
-                self._inbox()
+                steered = self._inbox()
+                # Câu trả lời cuối gửi kèm lần đánh dấu xong cả danh sách việc: yêu cầu đã xong, khỏi tốn thêm một bước
+                # chỉ để model đọc {"ok": true}. Bài thi ngày 2026-10-13: 6 Luna dành 29/96 lượt cho update_plan đứng
+                # riêng. Lời mở đầu kèm kế hoạch còn việc dở (thói quen của Grok) vẫn đi tiếp như thường.
+                if reply and not steered and all(name == "update_plan" and result.get("left") == 0
+                                                 for name, result in results):
+                    if not verification_reminded and self._remind_to_check():
+                        verification_reminded = True
+                        continue
+                    break
             else:
                 outcome = "limit"
                 self.ui.line(f'Peto đã làm {MAX_STEPS_PER_TASK} bước trong yêu cầu này nên tạm dừng. Gõ "làm tiếp" nếu '
@@ -650,6 +656,17 @@ class Session:
             self.save(retryable=self.can_retry)
             if outcome == "done":
                 self._name_conversation()
+
+    def _remind_to_check(self) -> bool:
+        """Peto định xong mà còn tệp sửa chưa kiểm tra: thêm lời nhắc "Kiểm tra sau sửa" để chạy thêm một bước."""
+        if not (self.tools.changes and self.tools.checked_revision < self.tools.revision):
+            return False
+        self.items.append({"type": "message", "role": "assistant", "content": (
+            "Kiểm tra sau sửa: xem hướng dẫn AGENTS.md và cấu hình dự án để chọn test/build/lint phù hợp. "
+            "Chạy kiểm tra với quyền người dùng cho phép. Nếu không cần, không có hoặc bị từ chối, "
+            "nêu rõ lý do; không lặp lại lệnh đã bị từ chối. Chỉ sửa lỗi liên quan, tối đa 3 lần kiểm tra thất bại, "
+            "không cài thêm công cụ hay mở rộng phạm vi. Báo lệnh nào đã chạy và kết quả thực tế.")})
+        return True
 
     def _save_progress(self) -> None:
         """Lưu hội thoại giữa yêu cầu, để đóng cửa sổ giữa chừng thì /resume vẫn còn những gì Peto đã làm.

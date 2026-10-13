@@ -2662,7 +2662,21 @@ results in the next step. The server stores no conversation (`store=False`), and
       (sua-api 12 → 4 lines); question answers kept their evidence.
     - The opening announcement did not change: Grok dropped "sẽ" ("Mình xem cấu trúc…"). `harness.PREAMBLE` was
       widened to catch that, giving 10 → 10. The rule was then sharpened: when tools are needed, the first turn holds
-      tool calls only, and nothing announces the next step. This version needs a third run (owner's go-ahead).
+      tool calls only, and nothing announces the next step.
+    - Third run (2026-10-13, deployed, CLI 0.21.0): still 10/10, 70 turns, 25k output tokens, final replies 4.0 lines,
+      narration 1,887 characters, `path:line` 6 → 11. The opener did not move (10 → 10): Grok still writes "Mình sẽ
+      xem…" in the first turn, and `WEB_PLATFORM_PROMPT`'s lead-in rule is not part of the Agent prompt, so nothing
+      contradicts it. Two prompt versions have failed on this; it looks like Grok's habit. Peto asked no `ask_user`
+      question on these clear tasks.
+    - **6 Luna, same day, same tasks** (the owner allowed the OpenAI spend): 10/10, 96 turns, 16k output tokens, final
+      replies 3.3 lines, no narration and no openers, 18 `path:line` references. `apply_patch` ran 8 times with no
+      error, editing several files per call. 29 of the 96 turns held only an `update_plan` call (Peto: 1 of 70), and
+      `tran-ngang-dien-thoai` hit the task's 14-turn cap with no final reply because of them.
+    - **Fix, CLI 0.21.1 + prompts.** Both prompts now say to send `update_plan` in the same turn as the next step's
+      tools and the final all-done update with the final answer. The CLI ends a request when a step has reply text and
+      only `update_plan` calls that leave nothing undone (`result.left == 0`), still applying the "Kiểm tra sau sửa"
+      reminder (`Session._remind_to_check`) and steers. Text with an unfinished plan (Grok's lead-in) continues as
+      before. Not yet measured: a Luna rerun needs the prompt deployed.
   **Features from opencode, 0.20.0 (done 2026-10-12, CLI only).**
   The owner asked to mine opencode (commit `bcf23b6`) for useful features and picked six. 0.20.0 has four of them;
   0.21.0 adds the rest with the backend.
@@ -2729,8 +2743,9 @@ results in the next step. The server stores no conversation (`store=False`), and
   - **Tests:** `agent-cli/tests/test_patch.py`, `test_question.py`; backend `test_agent_tool_features.py` (pins,
     patch only for OpenAI, prompts) and `test_agent_api.py` (title purpose). A ConPTY run of real `peto` against a
     fake server listing the new features checked the two-question panel (arrows, multi-select plus a typed answer), a
-    three-file patch (update, update+move, add) approved once, and `/resume` listing two model-named sessions. A Luna
-    eval of `apply_patch` costs OpenAI money and needs the owner's go-ahead.
+    three-file patch (update, update+move, add) approved once, and `/resume` listing two model-named sessions.
+    `test_evals.py` runs a whole task with a fake GPT that asks a question and fixes the bug with `apply_patch`;
+    `PolicyUI` records a patch approval with every file it touches. The real Luna run is in the Voice bullet above.
   - **CLI 0.19.1.** Grok cites code as ```` ```21:24:src/main.c ````. `tui/markdown.CITATION` labels such a block
     `src/main.c:21-24` and highlights it by the file extension; before this the label was just "21". The harness
     counts these blocks as `path:line` references.

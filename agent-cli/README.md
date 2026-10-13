@@ -194,7 +194,7 @@ quả lê 6 × 6. Thấp hơn nữa, hẹp dưới 41 cột, hay terminal tắt 
 của VS Code, Peto chừa thêm 2 cột bên phải, vì VS Code che khoảng hai cột sát mép:
 
 ```text
- [mascot]   Peto Agent 0.21.0
+ [mascot]   Peto Agent 0.21.1
  [mascot]   6 Luna · mức thấp
  [mascot]   ~\Projects\website-a
 

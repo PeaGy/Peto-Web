@@ -547,6 +547,11 @@ class PolicyUI(UI):
                                   "reason": reason})
             self.line(f"    [bài thi] từ chối: {reason}")
             return "n"
+        if permission.kind == "patch":
+            # apply_patch (CLI 0.21.0): một lần duyệt cho cả bản; báo cáo ghi đủ các tệp, không chỉ tệp cuối của diff.
+            files = ", ".join(item["path"] + (f" → {item['new_path']}" if item.get("new_path") else "")
+                              for item in permission.body["files"])
+            self.pending = {"kind": "file", "detail": f"Áp bản patch: {files}"}
         return super().ask(permission)
 
     def questions(self, questions: list[dict]) -> list[list[str]]:

@@ -140,3 +140,38 @@ def test_a_background_job_that_stops_by_itself_is_reported_once(project, server)
     work.tools.jobs.read(seen.id, 0)
     work._inbox()
     assert len(work.items) == count, "lệnh Peto tự dừng, hay Peto đã thấy nó dừng, thì không báo"
+
+
+PLAN = [{"title": "Đọc README", "status": "done"}, {"title": "Trả lời", "status": "done"}]
+
+
+def test_a_final_answer_sent_with_an_all_done_plan_ends_the_request(project, server):
+    server.script = [("", [call(0, "update_plan", steps=[{**PLAN[0], "status": "running"}, {**PLAN[1], "status": "pending"}]),
+                           call(1, "read_file", path="README.md", start_line=None, end_line=None)]),
+                     ("README chỉ có tiêu đề.", [call(2, "update_plan", steps=PLAN)]),
+                     ("không được tới đây", [])]
+    work = session(project, server, InboxUI())
+    work.run_task("README có gì?")
+    assert len(inputs(server)) == 2, "đánh dấu xong hết kèm câu trả lời thì không tốn thêm bước"
+    assert work.items[-1]["type"] == "function_call_output", "lời gọi update_plan vẫn có kết quả cho lượt sau"
+    assert "Peto › README chỉ có tiêu đề." in work.ui.text
+
+
+def test_a_lead_in_with_an_unfinished_plan_or_an_unchecked_edit_keeps_going(project, server):
+    running = [{**PLAN[0], "status": "running"}, {**PLAN[1], "status": "pending"}]
+    server.script = [("Mình xem README.", [call(0, "update_plan", steps=running)]),
+                     ("Xong.", [])]
+    work = session(project, server, InboxUI())
+    work.run_task("README có gì?")
+    assert len(inputs(server)) == 2, "kế hoạch còn việc dở thì câu chữ chỉ là lời mở đầu"
+
+    server.requests.clear()
+    server.script = [("", [call(0, "read_file", path="README.md", start_line=None, end_line=None)]),
+                     ("", [call(1, "edit_file", path="README.md", old_text="# Dự án", new_text="# Mới",
+                                replace_all=None)]),
+                     ("Đã đổi tiêu đề.", [call(2, "update_plan", steps=PLAN)]),
+                     ("Không có test; đã đọc lại tệp.", [])]
+    edit = session(project, server, InboxUI(["y"]))
+    edit.run_task("Đổi tiêu đề")
+    assert len(inputs(server)) == 4, "sửa mà chưa kiểm tra thì vẫn nhắc kiểm tra như khi Peto tự dừng"
+    assert "Kiểm tra sau sửa" in json.dumps(inputs(server)[3], ensure_ascii=False)

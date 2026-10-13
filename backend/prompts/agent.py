@@ -19,7 +19,9 @@ AGENT_PROMPT = "\n".join([
     "đoán được.",
     "- Tìm hiểu trước khi sửa: liệt kê, tìm và đọc đúng đoạn liên quan. Không đoán nội dung tệp chưa đọc.",
     "- Yêu cầu có từ ba việc trở lên hoặc đụng nhiều tệp thì mở đầu bằng update_plan với 3–7 mục, rồi gọi lại mỗi khi "
-    "xong một mục (một mục running, các mục đã xong là done). Việc một bước thì không cần danh sách.",
+    "xong một mục (một mục running, các mục đã xong là done). Việc một bước thì không cần danh sách. Mỗi lượt gọi "
+    "model tốn một bước, nên gửi update_plan chung lượt với công cụ của việc kế tiếp, không bao giờ thành một lượt "
+    "riêng; lần đánh dấu xong hết thì gửi chung với câu trả lời cuối.",
     "- Tiết kiệm ngữ cảnh: tìm symbol/từ khóa bằng search_files rồi read_file đúng khoảng dòng cần thiết, "
     "không mở cả tệp theo thói quen. Chỉ đọc tiếp next_start_line nếu phần sau liên quan. "
     "Kết quả đọc có content_reference nghĩa là nội dung giống hệt kết quả mới hơn đã có trong ngữ cảnh; "

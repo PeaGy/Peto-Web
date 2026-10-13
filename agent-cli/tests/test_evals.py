@@ -20,6 +20,7 @@ import harness  # noqa: E402
 from policy import CommandPolicy, Policy, risky_code  # noqa: E402
 
 from peto_agent.client import Client  # noqa: E402
+from peto_agent.tools import FEATURES  # noqa: E402
 
 ALLOWED = [
     ("python -m unittest", "cmd"),
@@ -192,6 +193,49 @@ def test_a_whole_task_runs_scores_and_records(tmp_path, model):
     assert (folder / "log.jsonl").is_file()
     assert not (tmp_path / "work" / "sua-loi-checksum").exists(), "bản sao dự án bị xóa sau khi chấm"
     assert all(request["auth"] == "Bearer peto_token_thu" for request in server.requests)
+
+
+PATCH = ("*** Begin Patch\n*** Update File: savetool/checksum.py\n@@ def checksum(data: bytes) -> int:\n"
+         "-    for byte in data[:-1]:\n+    for byte in data:\n*** End Patch")
+ASK = {"question": "Sửa luôn hay chỉ báo lỗi?", "header": "Cách làm", "multiple": None,
+       "options": [{"label": "Chỉ báo lỗi", "description": "Không đụng tệp"},
+                   {"label": "Sửa luôn (nên chọn)", "description": "Sửa rồi chạy test"}]}
+
+
+def solve_with_patch(path: str, body: dict):
+    """Model GPT giả (CLI 0.21.0): hỏi một câu có lựa chọn, đọc, sửa bằng apply_patch, chạy test, trả lời."""
+    if path == "/api/agent/me":
+        return 200, {"steps_used": 7, "steps_limit": 200, "account": "thử"}
+    done = sum(1 for item in body["input"] if item.get("type") == "function_call_output")
+    scripts = {
+        0: ("", [call(0, "ask_user", questions=[ASK])]),
+        1: ("", [call(1, "read_file", path="savetool/checksum.py", start_line=None, end_line=None)]),
+        2: ("", [call(2, "apply_patch", patch_text=PATCH)]),
+        3: ("", [call(3, "run_command", command=f'"{sys.executable}" -m unittest')]),
+    }
+    text, calls = scripts.get(done, ("Đã sửa `savetool/checksum.py:9`, test qua hết.", []))
+    return 200, [{"type": "meta", "steps_used": 8 + done, "steps_limit": 200}, {"type": "delta", "text": text},
+                 {"type": "done", "output": [message(text), *calls], "usage": {"input_tokens": 1000, "output_tokens": 50}}]
+
+
+def test_a_task_solved_with_apply_patch_and_a_question_is_scored_like_edits(tmp_path, model):
+    url, server = model
+    server.reply = solve_with_patch
+    task = harness.load_tasks(["sua-loi-checksum"])[0]
+    task.allow = (re.escape(f'"{sys.executable}" -m unittest'),)
+    record = harness.run_task(task, Client(url, "peto_token_thu"), work=tmp_path / "work", out=tmp_path / "out",
+                              model="luna", effort="low", step_cost=1, timeout=120,
+                              features=[*FEATURES, "explore_v2", "question", "patch"])
+    assert record["passed"], record["checks"]
+    assert record["changed"] == ["savetool/checksum.py"]
+    assert record["behavior"]["edits"] == 1 and record["behavior"]["verified_after_edit"] is True
+    kinds = [(request["kind"], request["answer"]) for request in record["requests"]]
+    assert ("question", "Sửa luôn (nên chọn)") in kinds and ("file", "y") in kinds
+    last = [request for request in server.requests if request["path"] == "/api/agent/step"][-1]
+    answered = next(json.loads(item["output"]) for item in last["body"]["input"]
+                    if item.get("type") == "function_call_output" and item["call_id"] == "call_0")
+    assert answered["answers"][0]["answer"] == ["Sửa luôn (nên chọn)"]
+    assert any(request.get("detail") == "Áp bản patch: savetool/checksum.py" for request in record["requests"])
 
 
 def test_selftest_catches_a_check_that_cannot_fail(tmp_path, monkeypatch):

@@ -643,3 +643,5 @@ def test_agent_reply_voice_is_concise_in_both_languages():
             assert word in text, word
     # Các luật trung thực giữ nguyên.
     assert "Chỉ nói đã sửa xong hay test đã qua khi kết quả công cụ cho thấy vậy" in AGENT_PROMPT
+    # Bài thi 2026-10-13: 6 Luna gọi update_plan thành lượt riêng ở 29/96 lượt, mỗi lượt một bước.
+    assert "không bao giờ thành một lượt riêng" in AGENT_PROMPT and "never as a turn of its own" in ENGLISH
