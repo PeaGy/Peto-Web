@@ -330,16 +330,19 @@ export function HearingBar() {
       <span className={`hearing-dot ${hearing.phase}`} aria-hidden="true" />
       <span className="hearing-bar-title" role="status">{phaseTitle(hearing)}</span>
       <LevelBars count={9} className="hearing-bar-levels" />
-      <label className="hearing-bar-toggle">
-        <span>Tự gửi</span>
-        <input
-          type="checkbox"
-          role="switch"
-          aria-label="Tự gửi khi nói xong"
-          checked={hearing.autoSend}
-          onChange={(event) => setHearingSetting("autoSend", event.target.checked)}
-        />
-      </label>
+      {/* Lúc đang kết nối, dòng trạng thái dài đẩy công tắc ra ngoài thanh (chủ web báo ngày 13/10/2026): ẩn Tự gửi. */}
+      {hearing.phase !== "starting" && (
+        <label className="hearing-bar-toggle">
+          <span>Tự gửi</span>
+          <input
+            type="checkbox"
+            role="switch"
+            aria-label="Tự gửi khi nói xong"
+            checked={hearing.autoSend}
+            onChange={(event) => setHearingSetting("autoSend", event.target.checked)}
+          />
+        </label>
+      )}
     </div>
   );
 }

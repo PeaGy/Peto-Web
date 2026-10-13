@@ -828,3 +828,15 @@ it('Cài đặt Companion → Nghe: chọn Giữ để nói được lưu, ẩn 
   fireEvent.click(settings.getByRole('button', { name: 'Quay lại Mô-đun' }));
   expect((await settings.findByRole('button', { name: /^Nghe/ })).textContent).toContain('Giữ để nói');
 });
+
+it('thanh nghe trên điện thoại ẩn Tự gửi lúc đang kết nối nguồn nghe, kết nối xong thì hiện lại', async () => {
+  FakeRecognition.autoReady = false;
+  await openCompanion();
+  fireEvent.click(screen.getByRole('button', { name: 'Bật nghe' }));
+  await waitFor(() => expect(lastRecognition()?.started).toBe(true));
+  const bar = document.querySelector('.hearing-bar') as HTMLElement;
+  expect(bar.textContent).toContain('Đang kết nối nguồn nghe…');
+  expect(within(bar).queryByRole('switch')).toBeNull();
+  act(() => lastRecognition().onstart?.());
+  expect(within(bar).getByRole('switch', { name: 'Tự gửi khi nói xong' })).toBeTruthy();
+});

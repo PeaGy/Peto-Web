@@ -115,9 +115,9 @@
     -webkit-backdrop-filter: blur(10px);
     backdrop-filter: blur(10px);
   }
-  .hearing-bar-title { font-weight: 600; white-space: nowrap; }
-  .hearing-bar-levels { width: 42px; height: 16px; }
-  .hearing-bar-toggle { display: flex; align-items: center; gap: 8px; margin-left: auto; color: var(--stage-muted); font-size: 12.5px; cursor: pointer; }
+  .hearing-bar-title { min-width: 0; overflow: hidden; font-weight: 600; white-space: nowrap; text-overflow: ellipsis; }
+  .hearing-bar-levels { flex: none; width: 42px; height: 16px; }
+  .hearing-bar-toggle { display: flex; flex: none; align-items: center; gap: 8px; margin-left: auto; color: var(--stage-muted); font-size: 12.5px; white-space: nowrap; cursor: pointer; }
   .hearing-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--voice-online); }
   .hearing-dot.paused, .hearing-dot.starting { background: var(--stage-muted); }
 }
