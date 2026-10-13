@@ -531,6 +531,8 @@ Left as they are on purpose; do not copy them into new code.
 - Switches, the selected expression card and the selected character card keep the Companion teal (§2), shared with the
   Companion hearing toggles, instead of `--accent`.
 - The Companion Micro popover uses the stage palette with its own hard-coded shadow.
+- The Push to Talk strip and the phone "Giữ để nói" pad (2026-10-13) use the stage palette too; the pad is a 52px pill,
+  and the strip shows the Space key as a small `kbd` keycap.
 
 ## 14. Before calling UI work done
 

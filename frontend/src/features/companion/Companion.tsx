@@ -17,8 +17,13 @@ import { CompanionImageDrafts, CompanionImageIcon, CompanionMessageImages } from
 import { disconnectStream, networkInterrupted, useReplyRecovery } from '../chat/useReplyRecovery';
 import { ReplyRecoveryNotice } from '../chat/ReplyRecoveryNotice';
 import {
+  beginHold,
+  cancelHold,
   clearHearingMessage,
+  endHold,
+  flashHearingHint,
   getHearingState,
+  HOLD_TOO_SHORT,
   joinSpeech,
   setHearingPaused,
   setHearingSink,
@@ -26,7 +31,7 @@ import {
   stopListening,
   useHearing,
 } from "./speech/hearingEngine";
-import { HearingBar, HearingPopover, hearingPlaceholder, MicButton } from "./speech/HearingControls";
+import { HearingBar, HearingPopover, hearingPlaceholder, HoldControls, MicButton } from "./speech/HearingControls";
 import { SpeakButton, SpeakerIcon, SpeakerOffIcon, type LocalVoice } from "./speech/LocalVoice";
 import type { CharacterMotion } from "./characters/characterView";
 import { DEFAULT_CHARACTER, type CharacterModel } from './characters/characterLibrary';
@@ -45,6 +50,15 @@ const VRMStage = lazy(() => import('./characters/VRMStage'));
 const SPEECH_PREFIX = "companion-";
 /** Tự gửi chờ thêm chừng này sau câu vừa nghe, để kịp nói tiếp nếu chưa xong ý. */
 const AUTO_SEND_DELAY = 700;
+/**
+ * Phần tử có việc riêng với phím Space (gõ chữ, bấm nút, chọn mục): giữ Space ở đó không phải giữ để nói. Như
+ * KEY_OWNER_SELECTOR trong voice-hold.ts của AIRI. Nút micro và nút "Giữ để nói" tự xử lý Space của mình.
+ */
+const SPACE_OWNERS = [
+  'input', 'textarea', 'select', 'button', 'a[href]', '[contenteditable]:not([contenteditable="false"])',
+  '[role="button"]', '[role="textbox"]', '[role="menuitem"]', '[role="menuitemcheckbox"]', '[role="menuitemradio"]',
+  '[role="option"]', '[role="checkbox"]', '[role="switch"]', '[role="slider"]', '[role="tab"]', '[role="combobox"]',
+].join(', ');
 
 function readMuted(): boolean {
   try {
@@ -570,20 +584,25 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
   // Chữ nghe được vào ô nhắn, nối sau chữ đang có.
   useEffect(() => {
     if (!active) return;
+    // Peto thôi nói và thôi trả lời để nghe người dùng. Giữ nguyên bộ nghe và bản nháp để không mất âm đầu hay chữ đã gõ.
+    const interrupt = () => {
+      const now = latest.current;
+      // Giọng nghe thử trong Cài đặt không phải lời Peto trong hội thoại.
+      if (!now.active || (!abortRef.current && !now.voice.speaking?.key.startsWith(SPEECH_PREFIX))) return;
+      setHeardAt(0);
+      setMicOpen(false);
+      setStopping(Boolean(abortRef.current));
+      haltSpeech();
+      abortRef.current?.abort();
+      cue(null);
+    };
     setHearingSink({
       onSpeechStart: () => {
-        const hearing = getHearingState(), now = latest.current;
-        if (!now.active || !hearing.bargeIn || !hearing.listening || hearing.testing) return;
-        // Giọng nghe thử trong Cài đặt không phải lời Peto trong hội thoại.
-        if (!abortRef.current && !now.voice.speaking?.key.startsWith(SPEECH_PREFIX)) return;
-        setHeardAt(0);
-        setMicOpen(false);
-        setStopping(Boolean(abortRef.current));
-        haltSpeech();
-        abortRef.current?.abort();
-        cue(null);
-        // Giữ nguyên bộ nghe và bản nháp để không mất âm đầu hay chữ người dùng đã gõ.
+        const hearing = getHearingState();
+        if (hearing.bargeIn && hearing.listening && !hearing.testing) interrupt();
       },
+      // Giữ để nói là người dùng chủ động muốn nói, nên luôn ngắt Peto, không cần bật "Cho phép nói chen".
+      onHoldStart: interrupt,
       onFinal: (text, finalized = true, timing) => {
         draftTiming.current = finalized && timing ? { hearing: timing, source: getHearingState().source } : null;
         draftVersion.current++;
@@ -608,23 +627,59 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
     setHearingPaused(false);
   }, []);
 
-  // Peto đang trả lời hay đang nói thì tạm không nghe, để Peto khỏi tự nghe giọng mình qua loa.
+  // Peto đang trả lời hay đang nói thì tạm không nghe, để Peto khỏi tự nghe giọng mình qua loa. Giữ để nói thì micro
+  // chỉ mở lúc người dùng giữ, nên không cần tạm dừng.
   const replying = streaming || Boolean(speech);
   useEffect(() => {
-    setHearingPaused(!hearing.bargeIn && hearing.pauseWhileSpeaking && replying);
-  }, [hearing.bargeIn, hearing.pauseWhileSpeaking, replying]);
+    setHearingPaused(hearing.mode === 'always' && !hearing.bargeIn && hearing.pauseWhileSpeaking && replying);
+  }, [hearing.mode, hearing.bargeIn, hearing.pauseWhileSpeaking, replying]);
+
+  // Giữ để nói: giữ Space ở bất cứ đâu trong Companion, trừ lúc đang gõ chữ, đứng trên nút hay đang mở hộp thoại. Esc
+  // trong lúc giữ thì bỏ. Mất tiêu điểm hay rời trang thì bộ nghe tự bỏ lần giữ (hearingEngine).
+  const holdArmed = active && hearing.mode === 'hold' && hearing.listening && !hearing.testing;
+  useEffect(() => {
+    if (!holdArmed) return;
+    const down = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && getHearingState().holding) {
+        event.preventDefault();
+        cancelHold();
+        return;
+      }
+      if (event.code !== 'Space' || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+      if (event.target instanceof Element && event.target.closest(SPACE_OWNERS)) return;
+      if (document.querySelector('dialog[open]')) return;
+      // Trang thuộc về phím này khi đã bật Giữ để nói; không chặn thì Space cuộn trang.
+      event.preventDefault();
+      if (!event.repeat) beginHold();
+    };
+    const up = (event: KeyboardEvent) => {
+      if (event.code !== 'Space' || !getHearingState().holding) return;
+      event.preventDefault();
+      if (endHold() === 'short') flashHearingHint(HOLD_TOO_SHORT);
+    };
+    window.addEventListener('keydown', down);
+    window.addEventListener('keyup', up);
+    return () => {
+      window.removeEventListener('keydown', down);
+      window.removeEventListener('keyup', up);
+    };
+  }, [holdArmed]);
 
   // Tự gửi: câu nghe được đã vào ô nhắn, người dùng không nói tiếp một lúc thì gửi.
   const latestSend = useRef(send);
   useEffect(() => {
     latestSend.current = send;
   });
+  // Giữ để nói: thả ra là đã nói xong, nên gửi ngay khi chữ đã chốt, không chờ thêm.
   useEffect(() => {
     if (!heardAt || hearingNeedsReview || !hearing.autoSend || !hearing.listening || hearing.testing) return;
-    if (hearing.interim || hearing.phase !== 'waiting' || replying || images.pending || !draft.trim()) return;
-    const timer = window.setTimeout(() => void latestSend.current(), AUTO_SEND_DELAY);
+    const hold = hearing.mode === 'hold';
+    const settled = hold ? hearing.phase === 'ready' && !hearing.holding : hearing.phase === 'waiting';
+    if (hearing.interim || !settled || replying || images.pending || !draft.trim()) return;
+    const timer = window.setTimeout(() => void latestSend.current(), hold ? 0 : AUTO_SEND_DELAY);
     return () => window.clearTimeout(timer);
-  }, [heardAt, hearingNeedsReview, hearing.autoSend, hearing.listening, hearing.testing, hearing.interim, hearing.phase, replying, draft, images.pending]);
+  }, [heardAt, hearingNeedsReview, hearing.autoSend, hearing.listening, hearing.testing, hearing.interim, hearing.phase,
+    hearing.mode, hearing.holding, replying, draft, images.pending]);
 
   const closeMic = useCallback(() => setMicOpen(false), []);
   // Bảng Micro chỉ hiện trong lúc nghe: tắt bằng nút lớn hay dừng vì lỗi thì đóng luôn, để thấy câu báo lỗi.
@@ -640,14 +695,17 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
       return;
     }
     clearHearingMessage();
-    setMicOpen(true);
+    // Giữ để nói không mở bảng Micro: thanh "Giữ Space hoặc nút micro để nói" hiện ngay trên ô nhắn.
+    if (current.mode !== 'hold') setMicOpen(true);
     void startListening();
   }
 
   const hearingOn = hearing.listening && !hearing.testing;
+  // Giữ để nói đã bật nhưng chưa giữ thì micro còn đóng: không tô viền ô nhắn như đang nghe.
+  const hearingLive = hearingOn && (hearing.mode === 'always' || hearing.holding || hearing.phase === 'transcribing');
   const interim = hearingOn ? hearing.interim : "";
   const { activity, noteTyping, typing } = useCompanionActivity(active, streaming, speech?.phase ?? null,
-    hearingOn && (hearing.phase === 'speaking' || hearing.phase === 'transcribing'));
+    hearingOn && (hearing.holding || hearing.phase === 'speaking' || hearing.phase === 'transcribing'));
   const stateText = speech?.phase === "playing" ? "Đang nói…"
     : speech?.phase === "buffering" ? "Đang chờ tiếng…"
       : speech?.phase === "loading" ? "Sắp nói…"
@@ -818,8 +876,9 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
             />
           )}
           <HearingBar />
+          {active && <HoldControls />}
           {images.pending > 0 && <p className="companion-image-status" role="status">Đang chuẩn bị ảnh…</p>}
-          <div className={`composer${hearingOn ? ' listening' : ''}${images.images.length ? ' has-images' : ''}`}>
+          <div className={`composer${hearingLive ? ' listening' : ''}${images.images.length ? ' has-images' : ''}`}>
             <CompanionImageDrafts images={images.images} onRemove={id => { setHeardAt(0); images.remove([id]); }} />
             <input ref={imageInput} type="file" hidden multiple accept="image/jpeg,image/png,image/webp,image/gif"
               aria-label="Chọn ảnh cho Companion" onChange={event => {

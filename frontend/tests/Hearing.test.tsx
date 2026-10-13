@@ -65,7 +65,9 @@ class FakeRecognition {
   onspeechend: (() => void) | null = null;
   constructor() { FakeRecognition.instances.push(this); }
   start() { this.started = true; if (FakeRecognition.autoReady) this.onstart?.(); }
-  stop() { this.aborted = true; }
+  /** Giữ để nói kết thúc có chốt bằng stop(); test tự gọi onresult/onend như trình duyệt. */
+  stopRequested = false;
+  stop() { this.stopRequested = true; }
   abort() { this.aborted = true; }
   say(text: string, isFinal: boolean) {
     this.onspeechstart?.();
@@ -653,4 +655,176 @@ it('thanh đo không mở được vẫn giữ bộ nhận giọng và nhận ch
   act(() => lastRecognition().say('Hello from the default microphone', true));
   expect(composer().value).toBe('Hello from the default microphone');
   expect(screen.queryByRole('alert')).toBeNull();
+});
+
+/* ---------- Giữ để nói (biến thể "Bật rồi giữ", chủ web chọn ngày 13/10/2026) ---------- */
+const pause = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+const space = { key: ' ', code: 'Space' };
+const holdStrip = () => document.querySelector('.hearing-strip-title')?.textContent ?? '';
+
+it('Giữ để nói: bật micro chưa mở micro; giữ Space ngoài ô nhắn thì nghe, thả ra thì trình duyệt chốt câu vào ô nhắn', async () => {
+  setHearingSetting('mode', 'hold');
+  await openCompanion();
+  fireEvent.click(screen.getByRole('button', { name: 'Bật Giữ để nói' }));
+  expect(holdStrip()).toBe('Giữ Space hay micro để nói');
+  expect(screen.queryByRole('dialog', { name: 'Micro' })).toBeNull();
+  expect(FakeRecognition.instances).toHaveLength(0);
+  expect(openMicrophone).not.toHaveBeenCalled();
+
+  // Space trong ô nhắn vẫn là gõ chữ.
+  fireEvent.keyDown(composer(), space);
+  expect(FakeRecognition.instances).toHaveLength(0);
+
+  fireEvent.keyDown(document.body, space);
+  const recognition = lastRecognition();
+  expect(recognition.started).toBe(true);
+  expect(holdStrip()).toBe('Đang nghe');
+  act(() => recognition.say('Can you', false));
+  expect(composer().value).toBe('Can you');
+  await pause(350);
+  fireEvent.keyUp(document.body, space);
+  expect(recognition.stopRequested).toBe(true);
+  expect(recognition.aborted).toBe(false);
+  expect(holdStrip()).toBe('Đang chép lời…');
+  act(() => {
+    recognition.onresult?.({ resultIndex: 0, results: [{ isFinal: true, 0: { transcript: 'Can you hear me?' } }] });
+    recognition.onend?.();
+  });
+  expect(composer().value).toBe('Can you hear me?');
+  expect(composer().readOnly).toBe(false);
+  expect(holdStrip()).toBe('Giữ Space hay micro để nói');
+  expect(microphone.stops).toBe(1);
+  await pause(100);
+  expect(api.sendMessage).not.toHaveBeenCalled();
+
+  // Esc trong lúc giữ thì bỏ, không thêm chữ.
+  fireEvent.keyDown(document.body, space);
+  act(() => lastRecognition().say('Never mind', false));
+  fireEvent.keyDown(document.body, { key: 'Escape', code: 'Escape' });
+  expect(lastRecognition().aborted).toBe(true);
+  expect(composer().value).toBe('Can you hear me?');
+
+  // Rời cửa sổ giữa lúc giữ: chữ dở thành bản nháp để sửa, không tự gửi.
+  setHearingSetting('autoSend', true);
+  fireEvent.keyDown(document.body, space);
+  act(() => lastRecognition().say('Wait for', false));
+  act(() => { window.dispatchEvent(new Event('blur')); });
+  expect(composer().value).toBe('Can you hear me? Wait for');
+  expect(holdStrip()).toMatch(/Đã thôi nghe khi rời trang/);
+  await pause(100);
+  expect(api.sendMessage).not.toHaveBeenCalled();
+});
+
+it('Giữ để nói với Tự gửi: chữ chốt giữa lúc giữ chưa gửi, thả ra là gửi; giữ lúc Peto đang trả lời thì ngắt lượt đó', async () => {
+  setHearingSetting('mode', 'hold');
+  setHearingSetting('autoSend', true);
+  const signals: AbortSignal[] = [];
+  vi.mocked(api.sendMessage).mockImplementation((_payload, handlers, abort) => new Promise(resolve => {
+    signals.push(abort!);
+    handlers.onMeta?.('C1', 'low'); handlers.onDelta?.('Thinking about it');
+    abort!.addEventListener('abort', () => resolve(), { once: true });
+  }));
+  await openCompanion();
+  fireEvent.click(screen.getByRole('button', { name: 'Bật Giữ để nói' }));
+  fireEvent.keyDown(document.body, space);
+  act(() => lastRecognition().say('Hello Peto', true));
+  await pause(350);
+  expect(api.sendMessage).not.toHaveBeenCalled();
+  fireEvent.keyUp(document.body, space);
+  act(() => lastRecognition().onend?.());
+  await waitFor(() => expect(api.sendMessage).toHaveBeenCalledOnce());
+  expect(vi.mocked(api.sendMessage).mock.calls[0][0]).toMatchObject({ message: 'Hello Peto', mode: 'companion' });
+  expect(signals[0].aborted).toBe(false);
+
+  fireEvent.keyDown(document.body, space);
+  expect(signals[0].aborted).toBe(true);
+  expect(lastRecognition().started).toBe(true);
+});
+
+it('nút micro ở Giữ để nói: bấm để bật, Space trên nút đang có tiêu điểm hay giữ chuột là nói, bấm nhanh là tắt', async () => {
+  setHearingSetting('mode', 'hold');
+  await openCompanion();
+  fireEvent.click(screen.getByRole('button', { name: 'Bật Giữ để nói' }));
+  const mic = screen.getByRole('button', { name: 'Giữ để nói, bấm để tắt' });
+  expect(document.activeElement).toBe(mic);
+  expect(mic.getAttribute('aria-pressed')).toBe('true');
+
+  // Nhấn nhanh Space ngay sau khi bật: không tắt micro, chỉ nhắc cách giữ.
+  fireEvent.keyDown(mic, space);
+  expect(lastRecognition().started).toBe(true);
+  fireEvent.keyUp(mic, space);
+  expect(lastRecognition().aborted).toBe(true);
+  expect(holdStrip()).toBe('Giữ trong lúc nói, thả ra là xong.');
+  expect(mic.getAttribute('aria-pressed')).toBe('true');
+
+  fireEvent.keyDown(mic, space);
+  act(() => lastRecognition().say('Hi', false));
+  await pause(350);
+  fireEvent.keyUp(mic, space);
+  act(() => lastRecognition().onend?.());
+  expect(composer().value).toBe('Hi');
+
+  fireEvent.pointerDown(mic, { pointerId: 1, button: 0 });
+  act(() => lastRecognition().say('there', true));
+  await pause(350);
+  fireEvent.pointerUp(mic, { pointerId: 1, button: 0 });
+  fireEvent.click(mic);
+  act(() => lastRecognition().onend?.());
+  expect(composer().value).toBe('Hi there');
+  expect(mic.getAttribute('aria-pressed')).toBe('true');
+
+  fireEvent.pointerDown(mic, { pointerId: 2, button: 0 });
+  fireEvent.pointerUp(mic, { pointerId: 2, button: 0 });
+  fireEvent.click(mic);
+  expect(screen.getByRole('button', { name: 'Bật Giữ để nói' }).getAttribute('aria-pressed')).toBe('false');
+  expect(document.querySelector('.hearing-strip')).toBeNull();
+});
+
+it('Giữ để nói với nguồn Groq: cả lần giữ thành một tệp WAV, thả ra mới gửi đi chép; giữ mà im lặng thì không gửi', async () => {
+  localStorage.setItem('peto-hearing-source', 'groq');
+  localStorage.setItem('peto-hearing-mode', 'hold');
+  localStorage.setItem('peto-voice-keys', JSON.stringify({ groq: { key: 'gsk_user' } }));
+  loadHearingSettings();
+  fetchMock.mockImplementation(async (url: string) => {
+    if (url === 'https://api.groq.com/openai/v1/audio/transcriptions') return new Response(JSON.stringify({ text: 'Hello Peto' }));
+    throw new Error(`Không mong đợi ${url}`);
+  });
+  await openCompanion();
+  fireEvent.click(screen.getByRole('button', { name: 'Bật Giữ để nói' }));
+  expect(openMicrophone).not.toHaveBeenCalled();
+
+  fireEvent.keyDown(document.body, space);
+  await waitFor(() => expect(microphone.onChunk).not.toBeNull());
+  act(() => microphone.feed(0, 6));
+  await pause(350);
+  fireEvent.keyUp(document.body, space);
+  expect(microphone.stops).toBe(1);
+  expect(fetchMock).not.toHaveBeenCalled();
+  expect(holdStrip()).toMatch(/Chưa nghe thấy tiếng nói/);
+
+  fireEvent.keyDown(document.body, space);
+  await waitFor(() => expect(microphone.onChunk).not.toBeNull());
+  // Im lặng giữa câu không cắt câu như Luôn nghe: thả ra mới gửi một lần.
+  act(() => { microphone.feed(0.2, 8); microphone.feed(0, 30); microphone.feed(0.2, 4); });
+  await pause(350);
+  fireEvent.keyUp(document.body, space);
+  await waitFor(() => expect(composer().value).toBe('Hello Peto'));
+  expect(fetchMock).toHaveBeenCalledOnce();
+  const file = ((fetchMock.mock.calls[0] as [string, RequestInit])[1].body as FormData).get('file') as Blob;
+  expect(file.size).toBe(44 + 42 * 1024 * 2);
+});
+
+it('Cài đặt Companion → Nghe: chọn Giữ để nói được lưu, ẩn hai công tắc chỉ dành cho Luôn nghe', async () => {
+  render(<App />);
+  const settings = within(await openHearingSettings());
+  expect(settings.getByRole('radio', { name: 'Luôn nghe' })).toHaveProperty('checked', true);
+  expect(settings.getByRole('switch', { name: 'Cho phép nói chen' })).toBeTruthy();
+  fireEvent.click(settings.getByRole('radio', { name: 'Giữ để nói' }));
+  expect(localStorage.getItem('peto-hearing-mode')).toBe('hold');
+  expect(getHearingState().mode).toBe('hold');
+  expect(settings.queryByRole('switch', { name: 'Cho phép nói chen' })).toBeNull();
+  expect(settings.queryByRole('switch', { name: 'Tạm không nghe khi Peto đang nói' })).toBeNull();
+  expect(settings.getByText(/Thả ra là gửi luôn/)).toBeTruthy();
+  fireEvent.click(settings.getByRole('button', { name: 'Quay lại Mô-đun' }));
+  expect((await settings.findByRole('button', { name: /^Nghe/ })).textContent).toContain('Giữ để nói');
 });

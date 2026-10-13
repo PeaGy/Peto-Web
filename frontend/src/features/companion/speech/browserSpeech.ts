@@ -71,6 +71,11 @@ function errorMessage(code: string, language: HearingLanguage): string {
 
 export interface BrowserSpeechSession {
   stop(): void;
+  /**
+   * Kết thúc có chốt (Giữ để nói, lúc thả ra): trình duyệt trả nốt phần đang nghe dở, phần chưa chốt kịp cũng được coi
+   * là đã chốt vì người dùng tự báo đã nói xong. Không mở lại phiên. `done` chạy một lần khi đã xong.
+   */
+  finish(done: () => void): void;
   /** Thanh đo chỉ xác nhận có âm thanh, không coi đó là chữ đã nhận được. */
   noteSound(): void;
 }
@@ -88,6 +93,7 @@ export function startBrowserSpeech(language: HearingLanguage, handlers: BrowserS
   let resultTimer: ReturnType<typeof setTimeout> | undefined;
   let soundNoticed = false;
   let warned = false;
+  let finishing: (() => void) | null = null;
   const clearTimers = () => {
     clearTimeout(startTimer);
     clearTimeout(restartTimer);
@@ -99,6 +105,37 @@ export function startBrowserSpeech(language: HearingLanguage, handlers: BrowserS
     const current = recognition;
     recognition = null;
     try { current?.abort(); } catch {}
+  };
+  /** Phiên đã hết khi đang kết thúc có chốt: chữ dở thành chữ chốt, rồi báo xong. */
+  const settle = () => {
+    const done = finishing;
+    finishing = null;
+    stopped = true;
+    clearTimers();
+    recognition = null;
+    if (interim.trim()) handlers.onFinal(interim.trim());
+    interim = "";
+    handlers.onInterim("");
+    done?.();
+  };
+  const finish = (done: () => void) => {
+    if (stopped) {
+      done();
+      return;
+    }
+    finishing = done;
+    clearTimers();
+    const current = recognition;
+    // Đang ở quãng nghỉ giữa hai phiên tự mở lại: không còn gì để trình duyệt chốt thêm.
+    if (!current) {
+      settle();
+      return;
+    }
+    try {
+      current.stop();
+    } catch {
+      settle();
+    }
   };
   const noteSound = () => {
     if (stopped || warned || resultTimer) return;
@@ -156,6 +193,11 @@ export function startBrowserSpeech(language: HearingLanguage, handlers: BrowserS
     };
     next.onerror = (event) => {
       if (!current()) return;
+      // Đang kết thúc có chốt: lỗi lúc này (không có tiếng, bị ngắt) chỉ nghĩa là phiên đã hết.
+      if (finishing) {
+        settle();
+        return;
+      }
       if (event.error === "no-speech") {
         if (soundNoticed) handlers.onNotice("Trình duyệt chưa nhận ra lời. Kiểm tra micro mặc định và ngôn ngữ bạn nói, rồi thử lại.");
         return;
@@ -170,6 +212,10 @@ export function startBrowserSpeech(language: HearingLanguage, handlers: BrowserS
     };
     next.onend = () => {
       if (!current()) return;
+      if (finishing) {
+        settle();
+        return;
+      }
       clearTimeout(startTimer);
       recognition = null;
       if (interim.trim()) {
@@ -204,5 +250,5 @@ export function startBrowserSpeech(language: HearingLanguage, handlers: BrowserS
   };
 
   begin();
-  return { stop, noteSound };
+  return { stop, finish, noteSound };
 }

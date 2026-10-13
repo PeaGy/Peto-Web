@@ -8,6 +8,11 @@
  *   gửi từng câu đi chép.
  *
  * Micro chỉ mở khi người dùng bấm nút micro hay "Bắt đầu nghe thử"; không có gì tự bật.
+ *
+ * Hai cách nghe (Cài đặt Companion → Nghe, theo Push to Talk của AIRI, PR #2729):
+ * - "always" (Luôn nghe, mặc định): bật micro là nghe liên tục, tự cắt câu.
+ * - "hold" (Giữ để nói): nút micro chỉ bật chế độ chờ ("ready"), micro vẫn đóng. Micro mở khi giữ phím Space, giữ nút
+ *   micro hay nút "Giữ để nói", và đóng khi thả; thả ra là chốt câu. Giữ dưới 300 ms là bấm nhầm, không nghe gì.
  */
 import { useSyncExternalStore } from "react";
 import { browserSpeechSupported, startBrowserSpeech, type BrowserSpeechSession } from "./browserSpeech";
@@ -26,7 +31,9 @@ import type { HearingTiming } from './companionTiming';
 import { audioRequest } from './audioRequest';
 
 export type HearingSource = "browser" | HearingProviderId;
-export type HearingPhase = "off" | "starting" | "waiting" | "speaking" | "transcribing" | "paused";
+export type HearingMode = "always" | "hold";
+/** "ready": đã bật Giữ để nói, micro còn đóng, chờ người dùng giữ phím hay nút. */
+export type HearingPhase = "off" | "ready" | "starting" | "waiting" | "speaking" | "transcribing" | "paused";
 
 export interface HearingSettings {
   source: HearingSource;
@@ -38,6 +45,8 @@ export interface HearingSettings {
   pauseWhileSpeaking: boolean;
   /** Cho phép lời nói mới dừng câu trả lời và giọng đang phát; mặc định tắt. */
   bargeIn: boolean;
+  /** Luôn nghe hay Giữ để nói; mặc định Luôn nghe như AIRI. */
+  mode: HearingMode;
 }
 
 export interface HearingState extends HearingSettings {
@@ -48,6 +57,12 @@ export interface HearingState extends HearingSettings {
   /** Chữ đang nghe dở (chỉ nguồn trình duyệt có). */
   interim: string;
   message: string;
+  /** Đang giữ để nói (Giữ để nói). */
+  holding: boolean;
+  /** Mốc performance.now() lúc bắt đầu giữ, cho đồng hồ trên thanh Giữ để nói. */
+  holdStartedAt: number;
+  /** Lời nhắc ngắn, tự tắt sau vài giây (giữ quá nhanh, giữ quá lâu). */
+  hint: string;
 }
 
 const SETTING_KEYS: Record<keyof HearingSettings, string> = {
@@ -58,6 +73,7 @@ const SETTING_KEYS: Record<keyof HearingSettings, string> = {
   autoSend: "peto-hearing-autosend",
   pauseWhileSpeaking: "peto-hearing-pause",
   bargeIn: "peto-hearing-barge-in",
+  mode: "peto-hearing-mode",
 };
 
 const SOURCES = new Set<string>(["browser", "groq", "azure", "openai", "deepgram", "elevenlabs", "gemini", "compat"]);
@@ -89,11 +105,13 @@ function readSettings(): HearingSettings {
     autoSend: read(SETTING_KEYS.autoSend) === "1",
     pauseWhileSpeaking: read(SETTING_KEYS.pauseWhileSpeaking) !== "0",
     bargeIn: read(SETTING_KEYS.bargeIn) === "1",
+    mode: read(SETTING_KEYS.mode) === "hold" ? "hold" : "always",
   };
 }
 
 let state: HearingState = {
   ...readSettings(), listening: false, testing: false, phase: "off", interim: "", message: "",
+  holding: false, holdStartedAt: 0, hint: "",
 };
 const listeners = new Set<() => void>();
 
@@ -139,6 +157,8 @@ export function useHearingLevel(): number {
 export interface HearingSink {
   onFinal(text: string, finalized?: boolean, timing?: HearingTiming): void;
   onSpeechStart?(): void;
+  /** Người dùng bắt đầu giữ để nói: Peto thôi nói và thôi trả lời để nghe, như nói chen nhưng không cần bật. */
+  onHoldStart?(): void;
 }
 
 let companionSink: HearingSink | null = null;
@@ -189,6 +209,7 @@ function stopEngine() {
 function fail(error: unknown) {
   generation += 1;
   stopEngine();
+  dropHold();
   publish({
     listening: false, testing: false, phase: "off", interim: "",
     message: error instanceof Error ? error.message : "Chưa nghe được.",
@@ -400,16 +421,315 @@ async function keyEngine(token: number, source: HearingProviderId): Promise<Engi
   };
 }
 
+/* ---------- Giữ để nói ---------- */
+
+/** Giữ ngắn hơn chừng này là bấm nhầm (như AIRI): không nghe, không gửi gì. */
+export const MIN_HOLD_MS = 300;
+/** Giữ lâu hơn chừng này thì tự chốt câu, để không ghi âm vô hạn khi phím bị kẹt. */
+export const MAX_HOLD_MS = 60000;
+export const HOLD_TOO_SHORT = "Giữ trong lúc nói, thả ra là xong.";
+
+interface HoldEngine {
+  /** Thả ra: chốt câu, chép lời rồi gọi holdFinished. */
+  finish(endedAt: number): void;
+  /** Bỏ: không giao chữ nào. */
+  cancel(): void;
+}
+
+interface Hold {
+  token: number;
+  engine: HoldEngine | null;
+  ended: "finish" | "cancel" | null;
+  endedAt: number;
+}
+
+let hold: Hold | null = null;
+let holdTimer: ReturnType<typeof setTimeout> | undefined;
+let hintTimer: ReturnType<typeof setTimeout> | undefined;
+
+/** Lời nhắc ngắn trên thanh Giữ để nói, tự tắt. */
+export function flashHearingHint(text: string) {
+  clearTimeout(hintTimer);
+  publish({ hint: text });
+  hintTimer = setTimeout(() => publish({ hint: "" }), 2600);
+}
+
+/** Bỏ lần giữ đang có mà không đổi trạng thái hiển thị (người gọi tự đặt lại). */
+function dropHold() {
+  clearTimeout(holdTimer);
+  const current = hold;
+  hold = null;
+  if (!current) return;
+  current.ended = "cancel";
+  current.engine?.cancel();
+  if (state.holding) publish({ holding: false });
+}
+
+/** Lần giữ đã chép xong (hay không có gì để chép): về lại trạng thái chờ giữ. */
+function holdFinished(token: number) {
+  if (hold?.token !== token || token !== generation) return;
+  hold = null;
+  publish({ holding: false, phase: state.listening ? "ready" : "off", interim: "" });
+  publishLevel(0);
+}
+
+function holdFailed(token: number, error: unknown) {
+  if (token !== generation) return;
+  // Khóa sai, hết số dư, không có quyền micro: thôi hẳn. Lỗi mạng, giới hạn lượt: báo rồi chờ lần giữ sau.
+  if (error instanceof HearingError && !error.fatal) {
+    dropHold();
+    publish({ holding: false, phase: "ready", interim: "", message: error.message });
+    publishLevel(0);
+  } else {
+    fail(error);
+  }
+}
+
+/** Bật Giữ để nói: chưa mở micro, chỉ chờ người dùng giữ. Rời trang hay mất tiêu điểm lúc đang giữ thì thôi lần giữ đó. */
+function armHold() {
+  publish({ listening: true, testing: false, phase: "ready", interim: "", message: "", holding: false });
+  publishLevel(0);
+  const interrupt = () => {
+    if (!hold) return;
+    cancelHold({ keepInterim: true });
+    flashHearingHint("Đã thôi nghe khi rời trang. Giữ lại để nói tiếp.");
+  };
+  const hidden = () => {
+    if (document.visibilityState === "hidden") interrupt();
+  };
+  document.addEventListener("visibilitychange", hidden);
+  window.addEventListener("pagehide", interrupt);
+  window.addEventListener("offline", interrupt);
+  window.addEventListener("blur", interrupt);
+  removeLifecycle = () => {
+    document.removeEventListener("visibilitychange", hidden);
+    window.removeEventListener("pagehide", interrupt);
+    window.removeEventListener("offline", interrupt);
+    window.removeEventListener("blur", interrupt);
+  };
+}
+
+/** Thanh đo cho nguồn trình duyệt khi giữ: mở sau khi bộ nhận giọng đã chạy, hỏng thì thôi, không ảnh hưởng việc nghe. */
+function holdMeter(current: () => boolean) {
+  let capture: MicCapture | null = null;
+  let stopped = false;
+  let started = false;
+  return {
+    start() {
+      if (stopped || started || !captureSupported()) return;
+      started = true;
+      void openMicrophone("", (chunk) => {
+        if (current() && !stopped) publishLevel(levelOf(rmsOf(chunk)));
+      }, () => {}).then((opened) => {
+        if (stopped || !current()) opened.stop();
+        else capture = opened;
+      }).catch(() => {});
+    },
+    stop() {
+      stopped = true;
+      capture?.stop();
+      capture = null;
+    },
+  };
+}
+
+function browserHold(token: number): HoldEngine {
+  if (!browserSpeechSupported()) throw new Error(UNSUPPORTED);
+  const current = () => token === generation;
+  let finishing = false;
+  let endedAt = 0;
+  let safety: ReturnType<typeof setTimeout> | undefined;
+  const meter = holdMeter(current);
+  const timing = (): HearingTiming => ({ endedAt, finalizedAt: performance.now() });
+  // Câu trình duyệt chốt giữa lúc giữ vào ô nhắn ngay; Tự gửi chờ tới khi thả.
+  const recognition = startBrowserSpeech(state.language, {
+    onConnecting: () => { if (current() && !finishing) publish({ phase: "starting" }); },
+    onReady: () => {
+      if (!current() || finishing) return;
+      publish({ phase: "waiting" });
+      meter.start();
+    },
+    onSpeechStart: () => { if (current() && !finishing) publish({ phase: "speaking" }); },
+    onSpeechEnd: () => {},
+    onInterim: (text) => { if (current()) publish({ interim: text }); },
+    onFinal: (text) => { if (current()) deliver(text, true, finishing ? timing() : undefined); },
+    onDraft: (text) => { if (current()) deliver(text, false); },
+    onNotice: (message) => { if (current() && message) publish({ message }); },
+    onError: (message) => {
+      if (!current()) return;
+      if (finishing) {
+        clearTimeout(safety);
+        holdFinished(token);
+      } else {
+        holdFailed(token, new Error(message));
+      }
+    },
+  });
+  return {
+    finish(at) {
+      finishing = true;
+      endedAt = at;
+      meter.stop();
+      publishLevel(0);
+      // Trình duyệt chốt phần đang nghe dở rồi mới kết thúc; chờ tối đa 3 giây rồi lấy chữ đang có.
+      safety = setTimeout(() => {
+        if (!current()) return;
+        if (state.interim.trim()) deliver(state.interim.trim(), true, timing());
+        recognition.stop();
+        holdFinished(token);
+      }, 3000);
+      recognition.finish(() => {
+        clearTimeout(safety);
+        holdFinished(token);
+      });
+    },
+    cancel() {
+      clearTimeout(safety);
+      meter.stop();
+      recognition.stop();
+    },
+  };
+}
+
+async function keyHold(token: number, source: HearingProviderId): Promise<HoldEngine> {
+  const provider = hearingProvider(source)!;
+  if (!hearingKeyReady(provider, getKeyConfigs()[provider.id])) {
+    throw new Error(`Chưa nhập đủ khóa ${provider.name} trong Cài đặt Companion → Nghe.`);
+  }
+  if (!captureSupported()) throw new Error("Trình duyệt này chưa cho ghi âm từ micro.");
+  const controller = new AbortController();
+  const chunks: Float32Array[] = [];
+  let length = 0;
+  let speechMs = 0;
+  let finished = false;
+  let sampleRate = 0;
+  const capture = await openMicrophone(state.deviceId, (chunk) => {
+    if (token !== generation || finished || !sampleRate) return;
+    const rms = rmsOf(chunk);
+    publishLevel(levelOf(rms));
+    if (rms >= thresholdFor(state.sensitivity)) {
+      speechMs += chunk.length / sampleRate * 1000;
+      if (state.phase !== "speaking") publish({ phase: "speaking" });
+    }
+    chunks.push(chunk.slice());
+    length += chunk.length;
+  }, (error) => { if (token === generation) holdFailed(token, error); });
+  sampleRate = capture.sampleRate;
+  return {
+    finish(endedAt) {
+      finished = true;
+      capture.stop();
+      publishLevel(0);
+      // Không có đoạn nào đủ to để là tiếng nói: khỏi gửi đi chép, đỡ tốn lượt của người dùng.
+      if (speechMs < 150) {
+        flashHearingHint("Chưa nghe thấy tiếng nói. Giữ trong lúc nói nhé.");
+        holdFinished(token);
+        return;
+      }
+      const samples = new Float32Array(length);
+      let offset = 0;
+      for (const chunk of chunks) {
+        samples.set(chunk, offset);
+        offset += chunk.length;
+      }
+      const audio = wavFromSamples(samples, sampleRate);
+      const language = state.language;
+      void audioRequest(abort => transcribeWithKey(provider, getKeyConfigs()[provider.id] ?? {}, audio, language, abort),
+        controller.signal, 30000, new HearingError("Nguồn nghe chép lời quá lâu. Bạn có thể giữ và nói lại.", false))
+        .then((words) => {
+          if (token !== generation) return;
+          if (words) deliver(words, true, { endedAt, finalizedAt: performance.now() });
+          else flashHearingHint("Chưa nghe ra chữ nào. Giữ và nói lại nhé.");
+          holdFinished(token);
+        })
+        .catch((error) => { if (token === generation && !controller.signal.aborted) holdFailed(token, error); });
+    },
+    cancel() {
+      finished = true;
+      controller.abort();
+      capture.stop();
+    },
+  };
+}
+
+/**
+ * Bắt đầu giữ để nói. Trả false khi chưa bật Giữ để nói hay lần giữ trước còn đang chép. Gọi ngay trong sự kiện nhấn
+ * phím hay nhấn nút: nguồn trình duyệt cần lượt thao tác của người dùng để mở micro.
+ */
+export function beginHold(): boolean {
+  if (!state.listening || state.testing || state.mode !== "hold" || hold || state.phase !== "ready") return false;
+  if (document.visibilityState === "hidden" || !navigator.onLine) return false;
+  const token = ++generation;
+  const current: Hold = { token, engine: null, ended: null, endedAt: 0 };
+  hold = current;
+  clearTimeout(hintTimer);
+  publish({ holding: true, holdStartedAt: performance.now(), phase: "starting", interim: "", message: "", hint: "" });
+  companionSink?.onHoldStart?.();
+  holdTimer = setTimeout(() => {
+    if (hold !== current || current.ended) return;
+    endHold();
+    flashHearingHint("Giữ tối đa một phút mỗi lần; câu vừa rồi đã được chốt.");
+  }, MAX_HOLD_MS);
+  const attach = (engine: HoldEngine) => {
+    if (token !== generation || hold !== current) {
+      engine.cancel();
+      return;
+    }
+    current.engine = engine;
+    if (current.ended === "finish") engine.finish(current.endedAt);
+    else if (state.source !== "browser" && state.phase === "starting") publish({ phase: "waiting" });
+  };
+  try {
+    if (state.source === "browser") attach(browserHold(token));
+    else void keyHold(token, state.source).then(attach, (error) => holdFailed(token, error));
+  } catch (error) {
+    holdFailed(token, error);
+  }
+  return true;
+}
+
+/** Thả ra: chốt câu. "short" khi giữ quá ngắn (đã bỏ, không nghe gì). */
+export function endHold(): "short" | "done" | null {
+  const current = hold;
+  if (!current || current.ended) return null;
+  if (performance.now() - state.holdStartedAt < MIN_HOLD_MS) {
+    cancelHold();
+    return "short";
+  }
+  clearTimeout(holdTimer);
+  current.ended = "finish";
+  current.endedAt = performance.now();
+  publish({ holding: false, phase: "transcribing" });
+  publishLevel(0);
+  current.engine?.finish(current.endedAt);
+  return "done";
+}
+
+/** Bỏ lần giữ (Esc, rời trang). `keepInterim`: giữ chữ đang nghe dở làm bản nháp để sửa, không tự gửi. */
+export function cancelHold(options: { keepInterim?: boolean } = {}) {
+  if (!hold) return;
+  if (options.keepInterim && state.interim.trim()) deliver(state.interim.trim(), false);
+  generation += 1;
+  dropHold();
+  publish({ holding: false, phase: state.listening ? "ready" : "off", interim: "" });
+  publishLevel(0);
+}
+
 /** Bật nghe. `test`: nghe thử trong Cài đặt, chữ về khung Nghe thử và không bị tạm dừng khi Peto nói. */
 export async function startListening(mode: "companion" | "test" = "companion"): Promise<void> {
   const token = ++generation;
   stopEngine();
+  dropHold();
   if (document.visibilityState === 'hidden' || !navigator.onLine) {
     publish({ listening: false, testing: false, phase: 'off', interim: '', message: 'Mở lại trang và kiểm tra mạng rồi bấm micro để nghe nhé.' });
     publishLevel(0);
     return;
   }
   const testing = mode === "test";
+  if (!testing && state.mode === "hold") {
+    armHold();
+    return;
+  }
   publish({ listening: true, testing, phase: "starting", interim: "", message: "" });
   const suspend = (message: string) => {
     if (token !== generation) return;
@@ -450,6 +770,7 @@ export function stopListening(options: { keepInterim?: boolean } = {}) {
   if (options.keepInterim && state.interim.trim()) deliver(state.interim.trim(), false);
   generation += 1;
   stopEngine();
+  dropHold();
   publish({ listening: false, testing: false, phase: "off", interim: "" });
   publishLevel(0);
 }
@@ -472,8 +793,8 @@ export function setHearingPaused(paused: boolean) {
 export function setHearingSetting<K extends keyof HearingSettings>(key: K, value: HearingSettings[K]) {
   write(SETTING_KEYS[key], typeof value === "boolean" ? (value ? "1" : "0") : String(value));
   publish({ [key]: value } as Partial<HearingState>);
-  // Đổi nguồn, micro hay ngôn ngữ lúc đang nghe thì mở lại bộ nghe theo lựa chọn mới.
-  if (state.listening && (key === "source" || key === "deviceId" || key === "language")) {
+  // Đổi nguồn, micro hay ngôn ngữ lúc đang nghe thì mở lại bộ nghe theo lựa chọn mới; đổi cách nghe cũng vậy.
+  if (state.listening && (key === "source" || key === "deviceId" || key === "language" || (key === "mode" && !state.testing))) {
     void startListening(state.testing ? "test" : "companion");
   }
 }

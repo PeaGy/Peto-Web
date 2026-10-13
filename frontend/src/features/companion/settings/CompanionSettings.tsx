@@ -169,7 +169,8 @@ function Modules({ voice, character, cols, delay, onOpen }: {
     hearing: {
       on: hearing.listening && !hearing.testing,
       desc: `${hearing.source === 'browser' ? 'Có sẵn trong trình duyệt' : hearingProvider(hearing.source)?.name ?? hearing.source}`
-        + ` · ${hearing.language === 'vi' ? 'Tiếng Việt' : 'Tiếng Anh'}${hearing.listening && !hearing.testing ? ' · đang nghe' : ''}`,
+        + ` · ${hearing.language === 'vi' ? 'Tiếng Việt' : 'Tiếng Anh'}${hearing.mode === 'hold' ? ' · Giữ để nói' : ''}`
+        + `${hearing.listening && !hearing.testing ? ' · đang nghe' : ''}`,
     },
     'web-search': { on: search, desc: search ? 'Peto tự quyết khi nào cần tra' : 'Đang tắt' },
     'beat-sync': character.format === 'vrm' ? { on: false, desc: 'Chỉ dùng với nhân vật Live2D' }

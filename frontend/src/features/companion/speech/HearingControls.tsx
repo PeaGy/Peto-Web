@@ -2,9 +2,21 @@
  * Giao diện phần Peto nghe trong Companion (phương án A chủ web chọn ngày 2026-09-24, giống AIRI): nút micro ở góc
  * trái ô nhắn, bảng Micro bật lên ngay trên ô nhắn trên máy tính, và một thanh trạng thái gọn trên điện thoại. Bảng
  * nằm trong cột chat, không nổi trên sân khấu: sân khấu chỉ dành cho nhân vật.
+ *
+ * Giữ để nói (biến thể "Bật rồi giữ" chủ web chọn ngày 13/10/2026, như AIRI): nút micro vẫn là công tắc. Bật lên thì
+ * máy tính giữ Space (khi không gõ chữ) hoặc giữ chính nút micro, điện thoại giữ nút lớn "Giữ để nói" phía trên ô nhắn.
+ * Bấm nhanh nút micro là tắt.
  */
-import { useEffect, useId, useRef, useState, type CSSProperties, type RefObject } from "react";
 import {
+  useEffect, useId, useRef, useState, useSyncExternalStore,
+  type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type RefObject,
+} from "react";
+import {
+  beginHold,
+  cancelHold,
+  endHold,
+  flashHearingHint,
+  HOLD_TOO_SHORT,
   setHearingSetting,
   startListening,
   stopListening,
@@ -13,6 +25,7 @@ import {
   type HearingSource,
   type HearingState,
 } from "./hearingEngine";
+import { COMPACT_QUERY } from "../characters/characterView";
 import { listMicrophones, type Microphone } from "./hearingCapture";
 import { hearingProvider } from "./hearingProviders";
 import { Dropdown, Field } from "./voiceUi";
@@ -49,6 +62,7 @@ export function sourceName(source: HearingSource): string {
 
 export function phaseTitle(state: HearingState): string {
   switch (state.phase) {
+    case "ready": return "Giữ để nói";
     case "starting": return "Đang kết nối nguồn nghe…";
     case "waiting": return "Đang nghe";
     case "speaking": return "Bạn đang nói";
@@ -75,6 +89,10 @@ function phaseHint(state: HearingState): string {
 /** Chữ gợi ý trong ô nhắn theo trạng thái nghe. */
 export function hearingPlaceholder(state: HearingState): string | null {
   if (!state.listening || state.testing) return null;
+  if (state.mode === "hold") {
+    if (state.holding) return state.phase === "starting" ? "Đang mở micro…" : "Đang nghe… thả ra để xong";
+    return state.phase === "transcribing" ? "Đang chép lời…" : null;
+  }
   if (state.phase === "paused") return "Peto đang trả lời, tạm không nghe…";
   if (state.phase === "transcribing") return "Đang chép lời…";
   if (state.phase === "starting") return "Đang kết nối nguồn nghe…";
@@ -99,22 +117,87 @@ export function LevelBars({ count, className = "", threshold }: { count: number;
   );
 }
 
-/** Nút micro ở góc trái ô nhắn Companion; vòng sáng quanh nút lớn theo âm lượng. */
+/** Giữ để nói bằng chuột hay ngón tay trên một nút: nhấn là mở micro, thả là chốt câu. */
+function useHoldPointer(onShort: () => void) {
+  const pointer = useRef<number | null>(null);
+  const skipClick = useRef(false);
+  return {
+    skipClick,
+    handlers: {
+      onPointerDown(event: ReactPointerEvent<HTMLButtonElement>) {
+        if (event.button !== 0 || pointer.current !== null) return;
+        // Không mở được (lần trước còn đang chép): để cú bấm đi theo đường thường.
+        if (!beginHold()) return;
+        try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* con trỏ đã mất */ }
+        pointer.current = event.pointerId;
+      },
+      onPointerUp(event: ReactPointerEvent<HTMLButtonElement>) {
+        if (pointer.current !== event.pointerId) return;
+        pointer.current = null;
+        skipClick.current = true;
+        if (endHold() === "short") onShort();
+      },
+      onPointerCancel() {
+        if (pointer.current === null) return;
+        pointer.current = null;
+        cancelHold();
+      },
+    },
+  };
+}
+
+/** Space trên chính nút đang có tiêu điểm cũng là giữ để nói (Enter vẫn là bấm). */
+function holdKeys(onShort: () => void) {
+  return {
+    onKeyDown(event: ReactKeyboardEvent<HTMLButtonElement>) {
+      if (event.key !== " ") return;
+      event.preventDefault();
+      if (!event.repeat) beginHold();
+    },
+    onKeyUp(event: ReactKeyboardEvent<HTMLButtonElement>) {
+      if (event.key !== " ") return;
+      event.preventDefault();
+      if (endHold() === "short") onShort();
+    },
+  };
+}
+
+/**
+ * Nút micro ở góc trái ô nhắn Companion; vòng sáng quanh nút lớn theo âm lượng. Ở Giữ để nói, đã bật thì giữ nút (hay
+ * giữ Space khi nút có tiêu điểm) là nói, bấm nhanh là tắt.
+ */
 export function MicButton({ onClick, buttonRef }: { onClick: () => void; buttonRef?: RefObject<HTMLButtonElement | null> }) {
   const hearing = useHearing();
   const level = useHearingLevel();
   const on = hearing.listening && !hearing.testing;
-  const label = on ? "Tắt nghe" : "Bật nghe";
+  const holdMode = hearing.mode === "hold";
+  const armed = on && holdMode;
+  const hold = useHoldPointer(onClick);
+  const label = holdMode ? (on ? "Giữ để nói, bấm để tắt" : "Bật Giữ để nói") : on ? "Tắt nghe" : "Bật nghe";
+  const lit = on && hearing.phase !== "paused" && (!holdMode || hearing.holding);
   return (
     <button
       ref={buttonRef}
       type="button"
-      className={on ? `hearing-mic on ${hearing.phase}` : "hearing-mic"}
+      className={on ? `hearing-mic on ${hearing.phase}${holdMode ? " hold" : ""}${hearing.holding ? " holding" : ""}` : "hearing-mic"}
       aria-label={label}
       aria-pressed={on}
       data-tip
-      style={{ "--hearing-level": on && hearing.phase !== "paused" ? level : 0 } as CSSProperties}
-      onClick={onClick}
+      style={{ "--hearing-level": lit ? level : 0 } as CSSProperties}
+      {...(armed ? hold.handlers : {})}
+      {...(armed ? holdKeys(() => flashHearingHint(HOLD_TOO_SHORT)) : {})}
+      onContextMenu={armed ? (event) => event.preventDefault() : undefined}
+      onClick={(event) => {
+        if (hold.skipClick.current) {
+          hold.skipClick.current = false;
+          return;
+        }
+        const arming = holdMode && !on;
+        onClick();
+        // Safari không tự đặt tiêu điểm vào nút khi bấm chuột: đặt tay để Space ngay sau đó là giữ để nói. Màn cảm ứng
+        // không có Space, mà tiêu điểm làm hiện chú thích che công tắc Tự gửi.
+        if (arming && window.matchMedia?.("(pointer: coarse)")?.matches !== true) event.currentTarget.focus({ preventScroll: true });
+      }}
     >
       {on ? <MicIcon /> : <MicOffIcon />}
       {on && hearing.phase === "paused" && <span className="hearing-mic-badge"><PauseIcon /></span>}
@@ -241,7 +324,7 @@ export function HearingPopover({ anchorRef, onClose, onOpenSettings }: {
 /** Thanh trạng thái gọn trên điện thoại, nằm ngay trên ô nhắn trong lúc nghe. */
 export function HearingBar() {
   const hearing = useHearing();
-  if (!hearing.listening || hearing.testing) return null;
+  if (!hearing.listening || hearing.testing || hearing.mode === "hold") return null;
   return (
     <div className="hearing-bar">
       <span className={`hearing-dot ${hearing.phase}`} aria-hidden="true" />
@@ -257,6 +340,112 @@ export function HearingBar() {
           onChange={(event) => setHearingSetting("autoSend", event.target.checked)}
         />
       </label>
+    </div>
+  );
+}
+
+function subscribeCompact(listener: () => void) {
+  const query = window.matchMedia?.(COMPACT_QUERY);
+  query?.addEventListener?.("change", listener);
+  return () => query?.removeEventListener?.("change", listener);
+}
+
+/** Đang ở bố cục điện thoại (cùng mốc 720px với CSS). */
+function useCompact(): boolean {
+  return useSyncExternalStore(subscribeCompact, () => window.matchMedia?.(COMPACT_QUERY)?.matches === true, () => false);
+}
+
+function clock(ms: number): string {
+  const seconds = Math.max(0, Math.floor(ms / 1000));
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
+function HoldAutoSend() {
+  const hearing = useHearing();
+  return (
+    <label className="hearing-bar-toggle hearing-hold-autosend">
+      <span>Tự gửi</span>
+      <input
+        type="checkbox"
+        role="switch"
+        aria-label="Tự gửi"
+        checked={hearing.autoSend}
+        onChange={(event) => setHearingSetting("autoSend", event.target.checked)}
+      />
+    </label>
+  );
+}
+
+/** Nút lớn "Giữ để nói" trên điện thoại. */
+function HoldPad() {
+  const hearing = useHearing();
+  const level = useHearingLevel();
+  const short = () => flashHearingHint(HOLD_TOO_SHORT);
+  const hold = useHoldPointer(short);
+  const content = hearing.holding
+    ? <><LevelBars count={7} className="hearing-pad-levels" /><span>{hearing.phase === "starting" ? "Đang mở micro…" : "Đang nghe · thả tay để xong"}</span></>
+    : hearing.phase === "transcribing" ? <span>Đang chép lời…</span>
+      : <><MicIcon /><span>Giữ để nói</span></>;
+  return (
+    <button
+      type="button"
+      className={hearing.holding ? "hearing-pad on" : "hearing-pad"}
+      aria-label="Giữ để nói"
+      style={{ "--hearing-level": hearing.holding ? level : 0 } as CSSProperties}
+      {...hold.handlers}
+      {...holdKeys(short)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") event.preventDefault();
+        holdKeys(short).onKeyDown(event);
+      }}
+      onContextMenu={(event) => event.preventDefault()}
+      onClick={() => { hold.skipClick.current = false; }}
+    >
+      {content}
+    </button>
+  );
+}
+
+/**
+ * Giữ để nói đã bật: máy tính có một thanh nhắc ngay trên ô nhắn (giữ Space hay nút micro, đồng hồ lúc đang giữ, Tự
+ * gửi); điện thoại có nút lớn "Giữ để nói" và công tắc Tự gửi.
+ */
+export function HoldControls() {
+  const hearing = useHearing();
+  const compact = useCompact();
+  const [now, setNow] = useState(() => performance.now());
+  useEffect(() => {
+    if (!hearing.holding) return;
+    setNow(performance.now());
+    const timer = window.setInterval(() => setNow(performance.now()), 250);
+    return () => window.clearInterval(timer);
+  }, [hearing.holding]);
+  if (!hearing.listening || hearing.testing || hearing.mode !== "hold") return null;
+  if (compact) {
+    return (
+      <div className="hearing-pad-wrap">
+        {hearing.hint && <p className="hearing-pad-hint" role="status">{hearing.hint}</p>}
+        <HoldPad />
+        <HoldAutoSend />
+      </div>
+    );
+  }
+  const busy = hearing.holding || hearing.phase === "transcribing";
+  const title = hearing.hint ? hearing.hint
+    : hearing.holding ? (hearing.phase === "starting" ? "Đang mở micro…" : "Đang nghe")
+      : hearing.phase === "transcribing" ? "Đang chép lời…"
+        : <>Giữ <kbd>Space</kbd> hay micro để nói</>;
+  return (
+    <div className={busy ? "hearing-strip on" : "hearing-strip"} role="status">
+      <span className="hearing-strip-dot" aria-hidden="true" />
+      <span className="hearing-strip-title">{title}</span>
+      {hearing.holding && (
+        <>
+          <LevelBars count={12} className="hearing-strip-levels" />
+          <span className="hearing-strip-time">{clock(now - hearing.holdStartedAt)}</span>
+        </>
+      )}
+      <HoldAutoSend />
     </div>
   );
 }

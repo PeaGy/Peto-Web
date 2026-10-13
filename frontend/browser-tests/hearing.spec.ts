@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { mockPeto, noPageOverflow, openSidebar } from './fixtures';
 
 // Micro và dịch vụ chép lời giả; AudioWorklet, bộ nghe, ô nhắn và bố cục là mã sản phẩm thật.
@@ -7,8 +7,8 @@ const fakeAudioPath = decodeURIComponent(new URL('./fixtures/hearing.wav', impor
 test.use({ permissions: ['microphone'], launchOptions: { args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream',
   `--use-file-for-fake-audio-capture=${fakeAudioPath}`] } });
 
-test('Companion nhận chữ, giữ câu dở khi tắt, chặn phiên cũ và tiếp tục nghe', async ({ page }) => {
-  const state = await mockPeto(page);
+/** Nhận giọng giả của trình duyệt; `stop()` (kết thúc có chốt) báo hết phiên như Chromium. */
+async function installRecognition(page: Page) {
   await page.addInitScript(() => {
     type Result = { resultIndex: number; results: { isFinal: boolean; 0: { transcript: string } }[] };
     class Recognition {
@@ -24,7 +24,7 @@ test('Companion nhận chữ, giữ câu dở khi tắt, chặn phiên cũ và t
       onspeechend: (() => void) | null = null;
       constructor() { Recognition.instances.push(this); }
       start() { setTimeout(() => this.onstart?.(), 30); }
-      stop() {}
+      stop() { setTimeout(() => this.onend?.(), 30); }
       abort() {}
       say(text: string, isFinal: boolean) {
         this.onspeechstart?.();
@@ -41,6 +41,11 @@ test('Companion nhận chữ, giữ câu dở khi tắt, chặn phiên cũ và t
       },
     });
   });
+}
+
+test('Companion nhận chữ, giữ câu dở khi tắt, chặn phiên cũ và tiếp tục nghe', async ({ page }) => {
+  const state = await mockPeto(page);
+  await installRecognition(page);
   await page.goto('/');
   await expect(page.getByRole('textbox', { name: 'Nhắn cho Peto', exact: true })).toBeVisible();
   await openSidebar(page);
@@ -125,4 +130,67 @@ test('30 lần mở/đóng capture thật giải phóng track và AudioContext',
     } finally { window.AudioContext = Context; navigator.mediaDevices.getUserMedia = getUserMedia; }
   });
   expect(result).toEqual({ contexts: 30, closed: true, tracks: 30, ended: true, errors: 0 });
+});
+
+test('Giữ để nói: micro thật chỉ mở trong lúc giữ; máy tính giữ Space, điện thoại giữ nút lớn', async ({ page }) => {
+  const state = await mockPeto(page);
+  await page.addInitScript(() => {
+    localStorage.setItem('peto-hearing-mode', 'hold');
+    const getUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+    const tracks: MediaStreamTrack[] = [];
+    navigator.mediaDevices.getUserMedia = async constraints => {
+      const stream = await getUserMedia(constraints);
+      tracks.push(...stream.getTracks());
+      return stream;
+    };
+    Object.assign(window, { liveTracks: () => tracks.filter(track => track.readyState === 'live').length });
+  });
+  await installRecognition(page);
+  await page.goto('/');
+  await expect(page.getByRole('textbox', { name: 'Nhắn cho Peto', exact: true })).toBeVisible();
+  await openSidebar(page);
+  await page.getByRole('button', { name: 'Companion', exact: true }).click();
+  const composer = page.getByRole('textbox', { name: 'Nhắn cho Peto trong Companion' });
+  await expect(composer).toBeVisible();
+  const liveTracks = () => page.evaluate(() => (window as unknown as { liveTracks(): number }).liveTracks());
+  const say = (text: string) => page.evaluate(text => {
+    (window as unknown as { testHearing: { say(text: string, final: boolean): void } }).testHearing.say(text, false);
+  }, text);
+  const compact = page.viewportSize()!.width <= 720;
+
+  await page.getByRole('button', { name: 'Bật Giữ để nói', exact: true }).click();
+  await expect(page.locator('.hearing-mic')).toHaveClass(/ready/);
+  expect(await liveTracks()).toBe(0);
+  const pad = page.getByRole('button', { name: 'Giữ để nói', exact: true });
+  if (compact) {
+    await expect(pad).toBeVisible();
+    await expect(page.locator('.hearing-strip')).toHaveCount(0);
+  } else {
+    await expect(page.locator('.hearing-strip-title')).toHaveText('Giữ Space hay micro để nói');
+    await expect(pad).toHaveCount(0);
+  }
+  await noPageOverflow(page);
+
+  if (compact) {
+    const box = (await pad.boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+  } else {
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+    await page.keyboard.down('Space');
+  }
+  await expect(page.locator('.hearing-mic')).toHaveClass(/holding/);
+  // Thanh đo thật mở micro sau khi bộ nhận giọng đã chạy.
+  await expect.poll(liveTracks).toBeGreaterThan(0);
+  await say('Hello from a hold');
+  await expect(composer).toHaveValue('Hello from a hold');
+  await page.waitForTimeout(350);
+  if (compact) await page.mouse.up();
+  else await page.keyboard.up('Space');
+  await expect(page.locator('.hearing-mic')).toHaveClass(/ready/);
+  await expect(composer).toHaveValue('Hello from a hold');
+  await expect(composer).toHaveJSProperty('readOnly', false);
+  await expect.poll(liveTracks).toBe(0);
+  await noPageOverflow(page);
+  expect(state.posts).toBe(0);
 });

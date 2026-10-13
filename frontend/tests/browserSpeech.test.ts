@@ -128,3 +128,48 @@ it('lỗi mạng giữ phần chữ đã nghe, dọn mọi hẹn giờ và khôn
   expect(Recognition.instances).toHaveLength(1);
   expect(vi.getTimerCount()).toBe(0);
 });
+
+it('kết thúc có chốt (Giữ để nói): gọi stop chứ không abort, chữ dở thành chữ chốt, không mở phiên mới', () => {
+  const handlers = callbacks();
+  session = startBrowserSpeech('en', handlers);
+  const recognition = Recognition.instances[0];
+  recognition.onstart?.();
+  recognition.say('Hello Peto', true);
+  recognition.say('how are', false);
+  const done = vi.fn();
+  session.finish(done);
+  expect(recognition.stop).toHaveBeenCalledOnce();
+  expect(recognition.abort).not.toHaveBeenCalled();
+  // Trình duyệt trả nốt kết quả rồi mới kết thúc phiên.
+  recognition.onresult?.({ resultIndex: 1, results: [{ isFinal: true, 0: { transcript: 'Hello Peto' } }, { isFinal: false, 0: { transcript: 'how are you' } }] });
+  recognition.onend?.();
+  expect(handlers.onFinal.mock.calls.map(call => call[0])).toEqual(['Hello Peto', 'how are you']);
+  expect(handlers.onDraft).not.toHaveBeenCalled();
+  expect(handlers.onNotice).not.toHaveBeenCalledWith(expect.stringMatching(/chưa được chốt/));
+  expect(done).toHaveBeenCalledOnce();
+  vi.advanceTimersByTime(1000);
+  expect(Recognition.instances).toHaveLength(1);
+});
+
+it('kết thúc có chốt lúc trình duyệt báo lỗi hay đang nghỉ giữa hai phiên vẫn xong một lần', () => {
+  const handlers = callbacks();
+  session = startBrowserSpeech('en', handlers);
+  const first = Recognition.instances[0];
+  first.onstart?.();
+  const done = vi.fn();
+  session.finish(done);
+  first.onerror?.({ error: 'no-speech' });
+  first.onend?.();
+  expect(done).toHaveBeenCalledOnce();
+  expect(handlers.onError).not.toHaveBeenCalled();
+
+  const later = startBrowserSpeech('en', callbacks());
+  const second = Recognition.instances[1];
+  second.onstart?.();
+  second.onend?.();
+  const after = vi.fn();
+  later.finish(after);
+  expect(after).toHaveBeenCalledOnce();
+  vi.advanceTimersByTime(1000);
+  expect(Recognition.instances).toHaveLength(2);
+});

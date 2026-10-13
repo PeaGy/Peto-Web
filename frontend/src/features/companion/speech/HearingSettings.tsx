@@ -7,6 +7,7 @@ import {
   startListening,
   stopListening,
   useHearing,
+  type HearingMode,
   type HearingSource,
 } from "./hearingEngine";
 import { thresholdLevel } from "./hearingAudio";
@@ -20,7 +21,7 @@ import {
 } from "./hearingProviders";
 import { updateKeyConfig, useKeyConfigs, type KeyConfig } from "./voiceProviders";
 import { Dropdown, Field, SourceCard, type Card } from "./voiceUi";
-import { SettingsGroup, SettingsRow, SettingsSwitch } from "../../settings/settingsUi";
+import { Segmented, SettingsGroup, SettingsRow, SettingsSwitch } from "../../settings/settingsUi";
 
 /** Trình duyệt đang dùng gửi âm thanh đi đâu để chép lời (chỉ để nói rõ với người dùng). */
 function browserNote(): string {
@@ -33,8 +34,9 @@ function browserNote(): string {
 
 /**
  * Trang Nghe của Cài đặt Companion (phương án A chủ web chọn ngày 2026-09-24; trước 13/10/2026 là thẻ "Peto nghe" trong
- * mục Giọng nói): micro, ngôn ngữ, nguồn chép lời bằng thẻ như trang Giọng nói, khung Nghe thử và ba công tắc. Khóa dùng
- * chung với trang Giọng nói.
+ * mục Giọng nói): micro, ngôn ngữ, nguồn chép lời bằng thẻ như trang Giọng nói, khung Nghe thử, cách nghe và các công
+ * tắc. Khóa dùng chung với trang Giọng nói. Hai công tắc tạm dừng và nói chen chỉ dành cho Luôn nghe: Giữ để nói chỉ mở
+ * micro lúc người dùng giữ.
  */
 export default function HearingSettings({ open }: { open: boolean }) {
   const hearing = useHearing();
@@ -48,6 +50,7 @@ export default function HearingSettings({ open }: { open: boolean }) {
   const pauseId = useId();
   const bargeInId = useId();
   const supported = browserSpeechSupported();
+  const hold = hearing.mode === "hold";
 
   useEffect(() => {
     setHearingTestSink({ onFinal: (text) => setResults((previous) => [text, ...previous].slice(0, 5)) });
@@ -202,29 +205,47 @@ export default function HearingSettings({ open }: { open: boolean }) {
 
       <SettingsGroup>
         <SettingsRow
+          label="Cách nghe"
+          desc={hold
+            ? "Bật micro rồi giữ Space hay nút micro (điện thoại: nút Giữ để nói) trong lúc nói; micro chỉ mở khi giữ."
+            : "Bật micro là Peto nghe liên tục và tự nhận ra lúc bạn nói xong."}
+        >
+          <Segmented<HearingMode>
+            label="Cách nghe"
+            value={hearing.mode}
+            options={[{ value: "always", label: "Luôn nghe" }, { value: "hold", label: "Giữ để nói" }]}
+            onChange={(value) => setHearingSetting("mode", value)}
+          />
+        </SettingsRow>
+        <SettingsRow
           label="Tự gửi khi nói xong"
           htmlFor={autoSendId}
-          desc="Im lặng khoảng một giây thì gửi luôn. Tắt thì chữ nằm trong ô nhắn để bạn sửa trước."
+          desc={hold ? "Thả ra là gửi luôn. Tắt thì chữ nằm trong ô nhắn để bạn sửa trước."
+            : "Im lặng khoảng một giây thì gửi luôn. Tắt thì chữ nằm trong ô nhắn để bạn sửa trước."}
         >
           <SettingsSwitch id={autoSendId} label="Tự gửi khi nói xong" checked={hearing.autoSend}
             onChange={(value) => setHearingSetting("autoSend", value)} />
         </SettingsRow>
-        <SettingsRow
-          label="Tạm không nghe khi Peto đang nói"
-          htmlFor={pauseId}
-          desc={hearing.bargeIn ? "Đang bật nói chen nên micro vẫn nghe. Tắt nói chen để dùng lại lựa chọn này."
-            : "Để Peto khỏi tự nghe giọng mình qua loa. Tắt thì micro tiếp tục nghe, nhưng không tự dừng lời Peto."}
-        >
-          <SettingsSwitch id={pauseId} label="Tạm không nghe khi Peto đang nói" checked={hearing.pauseWhileSpeaking}
-            disabled={hearing.bargeIn}
-            onChange={(value) => setHearingSetting("pauseWhileSpeaking", value)} />
-        </SettingsRow>
-        <SettingsRow label="Cho phép nói chen" htmlFor={bargeInId}
-          desc="Khi micro đang bật, bạn nói thì Peto dừng tiếng và câu trả lời để nghe lời mới. Nên dùng tai nghe; loa ngoài có thể làm Peto tự ngắt nhầm. Không tự bật micro hoặc Tự gửi."
-        >
-          <SettingsSwitch id={bargeInId} label="Cho phép nói chen" checked={hearing.bargeIn}
-            onChange={value => setHearingSetting("bargeIn", value)} />
-        </SettingsRow>
+        {!hold && (
+          <>
+            <SettingsRow
+              label="Tạm không nghe khi Peto đang nói"
+              htmlFor={pauseId}
+              desc={hearing.bargeIn ? "Đang bật nói chen nên micro vẫn nghe. Tắt nói chen để dùng lại lựa chọn này."
+                : "Để Peto khỏi tự nghe giọng mình qua loa. Tắt thì micro tiếp tục nghe, nhưng không tự dừng lời Peto."}
+            >
+              <SettingsSwitch id={pauseId} label="Tạm không nghe khi Peto đang nói" checked={hearing.pauseWhileSpeaking}
+                disabled={hearing.bargeIn}
+                onChange={(value) => setHearingSetting("pauseWhileSpeaking", value)} />
+            </SettingsRow>
+            <SettingsRow label="Cho phép nói chen" htmlFor={bargeInId}
+              desc="Khi micro đang bật, bạn nói thì Peto dừng tiếng và câu trả lời để nghe lời mới. Nên dùng tai nghe; loa ngoài có thể làm Peto tự ngắt nhầm. Không tự bật micro hoặc Tự gửi."
+            >
+              <SettingsSwitch id={bargeInId} label="Cho phép nói chen" checked={hearing.bargeIn}
+                onChange={value => setHearingSetting("bargeIn", value)} />
+            </SettingsRow>
+          </>
+        )}
       </SettingsGroup>
     </>
   );

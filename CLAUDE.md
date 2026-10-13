@@ -1851,6 +1851,7 @@ Settings scrolled, since the browser draws it as a separate window, and asked fo
   Each sentence becomes WAV PCM16, 16 kHz mono, and sentences are transcribed in order.
 - **Errors.** Auth, billing and bad-model errors (`HearingError.fatal`) stop listening. Rate limits and network errors
   show a notice and listening continues.
+- **Cách nghe.** "Luôn nghe" (default) or "Giữ để nói"; see "Push to Talk" below.
 - **Switches.** "Tạm không nghe khi Peto đang nói" is on by default. It pauses listening while a reply streams or Peto
   speaks, so Peto does not transcribe itself through the speakers, and resumes afterwards. "Tự gửi" is off by default,
   the owner's call, as in AIRI. It sends 700 ms after a heard sentence, and only text that came from hearing: typing
@@ -1933,6 +1934,36 @@ Optional spoken barge-in (2026-10-02) is "Cho phép nói chen" on the Nghe page 
   new speech and cause false interruption. Do not claim reliable full duplex or verified automatic barge-in in AIRI.
   Unit tests and `browser-tests/companion-barge-in.spec.ts` cover cancellation, draft retention, noise guards,
   default settings and PC/mobile flows with simulated speech/services; physical microphones/providers need real trials.
+
+Push to Talk ("Giữ để nói", 2026-10-13, after AIRI PR #2729) is the "Cách nghe" choice on the Nghe page:
+- **Pick.** The owner chose "Bật rồi giữ" from three live mockups (the others: the mic button as the hold control with no
+  arming step, and a messaging-app recorder where an empty composer's Send becomes a mic with slide-to-cancel). Testing the
+  mockup, they found that clicking the mic then pressing Space only toggled it, because the button kept focus; so Space on
+  the armed mic button and pressing and holding it with the mouse or a finger also talk, and a quick click still disarms.
+- **Setting.** `HearingSettings.mode` is `always` (default, as in AIRI) or `hold`, in `peto-hearing-mode`. With `hold`, the
+  pause-while-speaking and barge-in rows are hidden: the microphone only opens during a hold.
+- **Engine** (`hearingEngine.ts`). In hold mode `startListening()` only arms (`phase: "ready"`, no capture). `beginHold()`
+  must run inside the key or pointer event, because browser recognition needs the user activation; `endHold()` returns
+  `short` under `MIN_HOLD_MS` (300, a cancel) and otherwise finishes; `cancelHold()` drops it (Esc), and blur, hidden page,
+  pagehide and offline cancel it keeping interim words as an unfinalized draft. `MAX_HOLD_MS` (60 s) ends a stuck hold.
+  - Browser source: one recognition per hold; release calls the new `BrowserSpeechSession.finish(done)`, which uses
+    `stop()` (not `abort()`), treats leftover interim text as final because the user said they were done, and never
+    restarts. A 3 s safety timer takes the interim text if the browser never ends the session. The level meter opens after
+    recognition starts.
+  - Key sources: the whole hold is one recording (no silence segmenter), sent once on release; a hold with under 150 ms
+    above the sensitivity threshold sends nothing and shows a hint.
+  - `onHoldStart` on the sink: starting a hold always stops Peto's speech and reply, like barge-in without its switch.
+  - `hint` in the state is a short message that clears itself (`flashHearingHint`).
+- **UI** (`HearingControls.tsx`). Arming does not open the Micro popover. Desktop shows `HoldControls`' strip above the
+  composer ("Giữ Space hay micro để nói", then "Đang nghe" with levels and a timer, Tự gửi switch); phones (720px) show a
+  large "Giữ để nói" button and a Tự gửi pill instead, and `HearingBar` is hidden. `MicButton` focuses itself after arming
+  (except on coarse pointers, where the tooltip would cover the pill) so the next Space is a hold. Companion's window
+  listener follows AIRI's `KEY_OWNER_SELECTOR` (`SPACE_OWNERS`) and also ignores Space while a `dialog` is open.
+- **Auto-send** in hold mode fires as soon as the phase is back to `ready` after a release, with no 700 ms wait.
+- **Tests:** `Hearing.test.tsx` (Space, Esc, blur, the armed mic button, Groq one-file recording, the settings row),
+  `browserSpeech.test.ts` (`finish`), `browser-tests/hearing.spec.ts` (real capture only during a hold, PC Space and phone
+  pad). Not checked on a physical phone or with a real recognition service; the first syllable can be lost while the
+  microphone opens, which neither Peto nor AIRI has measured.
 
 Companion images (2026-10-02), following the owner's AIRI desktop/mobile references:
 - The image button sits immediately left of the mic on desktop, and as a small separate round button left of the pill
