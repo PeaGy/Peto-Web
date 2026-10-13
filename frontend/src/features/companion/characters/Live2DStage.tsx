@@ -23,7 +23,7 @@ import { voiceMouth, voicePlaying } from "../speech/voiceActivity";
 import { IdleEyes } from './idleEyes';
 import { controlIdle, motionChoices, readIdle, watchIdle } from './live2dMotions';
 import { readEffects, watchEffects, withCharacterEffects } from './characterEffects';
-import { musicPose, selectMusicCharacter, stopMusicVibe } from './musicVibe';
+import { leaveMusicVibe, musicPose, selectMusicCharacter } from './musicVibe';
 import { CompanionMotion, VoiceMouthBlend, stageQuality, type CompanionActivity } from './companionMotion';
 import { controlExpressions, faceSource, publishSnapshot, readExpressions, watchExpressions, type StageCue, type StageEmotion } from './characterExpressions';
 import { FaceBlend, faceApplier, type CubismCore } from './builtinFaces';
@@ -510,7 +510,7 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
     });
     return () => {
       disposed = true;
-      stopMusicVibe();
+      leaveMusicVibe();
       observer?.disconnect();
       removeEvents();
       disposeIdle();

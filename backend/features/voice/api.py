@@ -142,7 +142,7 @@ async def relay(body: Relay, request: Request, owner: str = Depends(current_owne
     """
     key = request.headers.get("x-voice-key", "").strip()
     if not key or len(key) > 256 or not key.isascii() or not key.isprintable():
-        raise HTTPException(400, "Chưa có khóa hợp lệ của nhà cung cấp này. Nhập khóa trong Cài đặt → Giọng nói.")
+        raise HTTPException(400, "Chưa có khóa hợp lệ của nhà cung cấp này. Nhập khóa trong Cài đặt Companion → Giọng nói.")
     if body.provider not in speech_cloud.RELAY_NAMES:
         raise HTTPException(400, "Nguồn giọng này không đi qua máy chủ Peto.")
     if not body.text.strip() or not RELAY_TEXT.match(body.voice) or (body.model and not RELAY_TEXT.match(body.model)):

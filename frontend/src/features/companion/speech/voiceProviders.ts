@@ -396,7 +396,7 @@ function providerError(status: number, name: string): Error {
   if (status === 402) return new Error(`Tài khoản ${name} của bạn đã hết số dư.`);
   if (status === 429) return new Error(`${name} đang giới hạn lượt gọi của khóa này. Thử lại sau.`);
   if (status === 400 || status === 404 || status === 422) {
-    return new Error(`${name} không nhận giọng hoặc model này. Kiểm tra lại trong Cài đặt → Giọng nói.`);
+    return new Error(`${name} không nhận giọng hoặc model này. Kiểm tra lại trong Cài đặt Companion → Giọng nói.`);
   }
   return new Error(`${name} chưa đọc được câu này (mã ${status}).`);
 }
@@ -432,7 +432,7 @@ export async function speakWithKey(provider: KeyProvider, config: KeyConfig, tex
       return audioBytesToWav(new Uint8Array(await response.arrayBuffer()));
     }
     case "elevenlabs": {
-      if (!voice) throw new Error("Chọn một giọng ElevenLabs trong Cài đặt → Giọng nói.");
+      if (!voice) throw new Error("Chọn một giọng ElevenLabs trong Cài đặt Companion → Giọng nói.");
       const response = await call(provider.name,
         `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voice)}?output_format=wav_24000`, {
           method: "POST",
@@ -467,7 +467,7 @@ export async function speakWithKey(provider: KeyProvider, config: KeyConfig, tex
         }),
       }, signal);
       const data = findAudio(await response.json().catch(() => null));
-      if (!data) throw new Error("Gemini không trả về âm thanh. Kiểm tra model trong Cài đặt → Giọng nói.");
+      if (!data) throw new Error("Gemini không trả về âm thanh. Kiểm tra model trong Cài đặt Companion → Giọng nói.");
       return audioBytesToWav(fromBase64(data));
     }
     case "minimax": {

@@ -12,7 +12,7 @@ export interface Card<Id extends string = string> {
   locked?: boolean;
 }
 
-/** Một thẻ nguồn (giọng nói hay nghe) trong Cài đặt → Giọng nói; bấm là chọn nguồn đó. */
+/** Một thẻ nguồn (giọng nói hay nghe) trong Cài đặt Companion → Giọng nói; bấm là chọn nguồn đó. */
 export function SourceCard({ card, selected, onPick }: { card: Card; selected: boolean; onPick: () => void }) {
   const nameId = useId();
   const descId = useId();

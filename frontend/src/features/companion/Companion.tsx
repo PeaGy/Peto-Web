@@ -69,6 +69,15 @@ function MenuIcon() {
   );
 }
 
+function SettingsGearIcon() {
+  return (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 function RestartIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -83,13 +92,14 @@ function RestartIcon() {
  * bằng âm thanh từ máy tạo giọng chuyển qua VPS. Chỉ có một mạch trò chuyện, tách khỏi danh sách Trò chuyện.
  *
  * Sân khấu bên trái hiển thị Live2D và ghi công model. Mọi thứ
- * để nhắn và nghe nằm ở cột chat; bật giọng nói và chọn giọng nằm trong Cài đặt (`VoiceSettings.tsx`).
+ * để nhắn và nghe nằm ở cột chat; bật giọng nói, chọn giọng, nguồn nghe, tra web… nằm ở trang Cài đặt Companion
+ * (/companion/settings/, nút bánh răng ở đầu cột chat; chủ web chốt ngày 13/10/2026).
  * Trên điện thoại, nhân vật phủ cả màn hình; tiêu đề, tin nhắn và ô nhắn nổi trong suốt bên trên như AIRI.
  *
  * Được giữ mounted như Imagine (prop `active`) để câu trả lời đang về không bị cắt khi đổi tab;
  * rời tab thì Peto thôi đọc và giải phóng renderer nhân vật.
  */
-export default function Companion({ active, appInfo, voice, characterMotion, character = DEFAULT_CHARACTER, characterLoading = false, onCharacterPreview, onOpenCharacters, sceneRequest = 0, onUnauthorized, onOpenSidebar, onOpenHearingSettings }: {
+export default function Companion({ active, appInfo, voice, characterMotion, character = DEFAULT_CHARACTER, characterLoading = false, onCharacterPreview, onOpenCharacters, sceneRequest = 0, onUnauthorized, onOpenSidebar, onOpenHearingSettings, onOpenSettings }: {
   active: boolean;
   sceneRequest?: number;
   appInfo: AppInfo | null;
@@ -101,8 +111,10 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
   onOpenCharacters?: () => void;
   onUnauthorized: () => void;
   onOpenSidebar: () => void;
-  /** Mở Cài đặt → Giọng nói → Peto nghe (từ bảng Micro). */
+  /** Mở trang Nghe của Cài đặt Companion (từ bảng Micro). */
   onOpenHearingSettings?: () => void;
+  /** Mở trang Cài đặt Companion (nút bánh răng ở đầu cột chat). */
+  onOpenSettings?: () => void;
 }) {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -695,6 +707,11 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
                 {muted ? <SpeakerOffIcon /> : <SpeakerIcon />}
               </button>
             )}
+            {onOpenSettings && (
+              <button type="button" className="companion-tool" aria-label="Cài đặt Companion" data-tip onClick={onOpenSettings}>
+                <SettingsGearIcon />
+              </button>
+            )}
             <button
               type="button"
               className="companion-tool"
@@ -718,7 +735,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
         {voice.status === "missing" && (
           <div className="companion-notice">
             <span>{voice.problem || "Chưa thấy máy chủ giọng nói."} Peto chỉ nhắn chữ.</span>
-            {/* Thiếu khóa thì dò lại cũng vậy: phải vào Cài đặt → Giọng nói. */}
+            {/* Thiếu khóa thì dò lại cũng vậy: phải vào Cài đặt Companion → Giọng nói. */}
             {(voice.source === "official" || voice.source === "home") && (
               <button type="button" onClick={voice.recheck}>Kiểm tra lại</button>
             )}

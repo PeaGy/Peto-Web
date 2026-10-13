@@ -2,7 +2,7 @@ import { useId } from 'react';
 import { useCompanionSearch, writeCompanionSearch } from '../companion/companionSearch';
 import { SettingsGroup, SettingsRow, SettingsSwitch } from './settingsUi';
 
-/** Cài đặt → Tra web (phương án A chủ web chọn ngày 2026-09-28, giống Modules → Web Search của AIRI). */
+/** Cài đặt Companion → Tra web (phương án A chủ web chọn ngày 2026-09-28, giống Modules → Web Search của AIRI). */
 export default function SearchSettings() {
   const on = useCompanionSearch();
   const id = useId();

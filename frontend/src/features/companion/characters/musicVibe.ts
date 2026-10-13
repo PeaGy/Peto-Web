@@ -66,6 +66,18 @@ export function resetBeatParameters() { setBeatParameters({ ...DEFAULT_BEAT_PARA
 let detector = new BeatPulse();
 let generation = 0;
 let release: (() => void) | undefined;
+/**
+ * Sân khấu hay trang Cài đặt Companion vừa gỡ: chỉ dừng chia sẻ khi đã rời hẳn Companion. Mở /companion/settings/ cũng gỡ
+ * sân khấu, mà người dùng thường vào trang Nhún theo nhạc ngay lúc đó (chủ web chốt trang này ngày 13/10/2026). Đợi một
+ * nhịp để trang mới vẽ xong: còn ở đường dẫn của Companion và khung ứng dụng còn đó (chưa đăng xuất) thì giữ nguyên.
+ */
+export function leaveMusicVibe() {
+  window.setTimeout(() => {
+    const path = window.location.pathname;
+    const inCompanion = path === '/companion' || path.startsWith('/companion/');
+    if (!inCompanion || !document.querySelector('.app')) stopMusicVibe();
+  }, 0);
+}
 export function stopMusicVibe() {
   generation++;
   release?.(); release = undefined;

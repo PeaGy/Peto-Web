@@ -577,16 +577,40 @@ it('lỗi tải model mở lại giao diện và thử tải lại tiếp tục 
   await screen.findByRole('textbox', { name: 'Nhắn cho Peto trong Companion' });
 });
 
-/** Mở Cài đặt như người dùng: ô tài khoản → Cài đặt trong menu → mục cần xem (mặc định Giọng nói). */
+/**
+ * Mở cài đặt như người dùng. Trí nhớ ở hộp Cài đặt chung (ô tài khoản → Cài đặt → Trí nhớ). Giọng nói và Tra web ở trang
+ * Cài đặt Companion (/companion/settings/, từ 13/10/2026): bánh răng ở đầu cột chat → Mô-đun → trang cần xem.
+ */
 async function openSettings(section = 'Giọng nói') {
-  fireEvent.click(await screen.findByRole('button', { name: /Tài khoản · Demo/ }));
-  fireEvent.click(await screen.findByRole('menuitem', { name: 'Cài đặt' }));
-  const settings = within(screen.getByRole('dialog', { name: 'Cài đặt' }));
-  fireEvent.click(settings.getByRole('button', { name: section }));
-  expect(settings.getByRole('heading', { name: section })).toBeTruthy();
-  // Mục Giọng nói tải riêng lúc mở lần đầu.
-  if (section === 'Giọng nói') await settings.findByRole('tab', { name: 'Peto nói' });
-  return settings;
+  if (section === 'Trí nhớ') {
+    fireEvent.click(await screen.findByRole('button', { name: /Tài khoản · Demo/ }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Cài đặt' }));
+    const settings = within(screen.getByRole('dialog', { name: 'Cài đặt' }));
+    fireEvent.click(settings.getByRole('button', { name: section }));
+    expect(settings.getByRole('heading', { name: section })).toBeTruthy();
+    return settings;
+  }
+  const page = await openCompanionSettings();
+  fireEvent.click(page.getByRole('button', { name: /^Mô-đun/ }));
+  fireEvent.click(await page.findByRole('button', { name: new RegExp(`^${section}`) }));
+  await page.findByRole('heading', { level: 1, name: section });
+  return page;
+}
+
+/** Trang đầu của Cài đặt Companion: bánh răng ở đầu cột chat (mở tab Companion trước nếu đang ở tab khác). */
+async function openCompanionSettings() {
+  if (!screen.queryByRole('region', { name: 'Trò chuyện trong Companion' })) {
+    fireEvent.click(await screen.findByRole('button', { name: 'Companion', exact: true }));
+  }
+  const column = within(await screen.findByRole('region', { name: 'Trò chuyện trong Companion' }));
+  fireEvent.click(await column.findByRole('button', { name: 'Cài đặt Companion' }));
+  return within(await screen.findByRole('main', { name: 'Cài đặt' }));
+}
+
+/** Rời trang Cài đặt Companion về sân khấu, như bấm mục Companion trên thanh bên. */
+async function leaveSettings() {
+  fireEvent.click(screen.getByRole('button', { name: 'Companion', exact: true }));
+  await screen.findByRole('region', { name: 'Trò chuyện trong Companion' });
 }
 
 async function sendInCompanion(text: string) {
@@ -608,6 +632,7 @@ it('chỉ gọi giọng nói qua VPS sau khi bật trong Cài đặt', async () 
   expect(await settings.findByText('3.600 / 5.000 ký tự')).toBeTruthy();
   expect(settings.getByRole('button', { name: 'Giọng Peto' }).getAttribute('aria-pressed')).toBe('true');
   expect(localCalls()).toHaveLength(1);
+  await leaveSettings();
   expect(await chatColumn().findByRole('button', { name: 'Tắt tiếng' })).toBeTruthy();
 });
 
@@ -799,7 +824,7 @@ it('khóa OpenAI riêng: trình duyệt gọi thẳng OpenAI, máy chủ Peto kh
   });
   render(<App />);
   const settings = await openSettings();
-  fireEvent.click(await within(settings.getByRole('tabpanel', { name: 'Peto nói' })).findByRole('button', { name: 'OpenAI' }));
+  fireEvent.click(await settings.findByRole('button', { name: 'OpenAI' }));
   const detail = within(settings.getByRole('group', { name: 'OpenAI' }));
   expect(detail.getByText(/máy chủ Peto không nhận được khóa/)).toBeTruthy();
   expect(detail.getByRole('button', { name: 'Nghe thử' }).hasAttribute('disabled')).toBe(true);
@@ -915,9 +940,68 @@ it('chưa nhập khóa và không có giọng dự phòng thì Companion chỉ n
   localStorage.setItem('peto-voice-fallback', '');
   await openCompanion();
   const column = chatColumn();
-  expect(await column.findByText('Chưa nhập đủ thông tin ElevenLabs trong Cài đặt → Giọng nói. Peto chỉ nhắn chữ.')).toBeTruthy();
+  expect(await column.findByText('Chưa nhập đủ thông tin ElevenLabs trong Cài đặt Companion → Giọng nói. Peto chỉ nhắn chữ.')).toBeTruthy();
   expect(column.queryByRole('button', { name: 'Kiểm tra lại' })).toBeNull();
   expect(column.queryByRole('button', { name: 'Tắt tiếng' })).toBeNull();
+});
+
+it('trang Cài đặt Companion: mở từ bánh răng, đi từng tầng theo đường dẫn, Back và nút quay lại về đúng chỗ', async () => {
+  await openCompanion();
+  const page = await openCompanionSettings();
+  expect(window.location.pathname).toBe('/companion/settings/');
+  expect(page.getByText('Companion')).toBeTruthy();
+  const cards = page.getAllByRole('button').map(button => button.textContent ?? '');
+  for (const name of ['Nhân vật', 'Mô-đun', 'Bối cảnh', 'Trí nhớ', 'Chẩn đoán']) {
+    expect(cards.some(text => text.startsWith(name))).toBe(true);
+  }
+  // Sân khấu nhường chỗ: cột chat không còn trong cây trợ năng, thanh bên vẫn sáng mục Companion.
+  expect(screen.queryByRole('region', { name: 'Trò chuyện trong Companion' })).toBeNull();
+  expect(screen.getByRole('button', { name: 'Companion', exact: true }).getAttribute('aria-current')).toBe('page');
+
+  fireEvent.click(page.getByRole('button', { name: /^Mô-đun/ }));
+  expect(await page.findByRole('heading', { level: 1, name: 'Mô-đun' })).toBeTruthy();
+  expect(window.location.pathname).toBe('/companion/settings/modules');
+  expect(page.getByRole('button', { name: /^Giọng nói/ }).textContent).toContain('Đang tắt');
+  expect(page.getByRole('button', { name: /^Tra web/ }).textContent).toContain('Đang tắt');
+
+  fireEvent.click(page.getByRole('button', { name: /^Tra web/ }));
+  const heading = await page.findByRole('heading', { level: 1, name: 'Tra web' });
+  expect(window.location.pathname).toBe('/companion/settings/modules/web-search');
+  // Đổi trang thì tiêu điểm lên tiêu đề, để bàn phím và trình đọc màn hình theo kịp.
+  await waitFor(() => expect(document.activeElement).toBe(heading));
+  expect(page.getByRole('switch', { name: 'Cho Peto tra web trong Companion' })).toBeTruthy();
+
+  act(() => window.history.back());
+  expect(await page.findByRole('heading', { level: 1, name: 'Mô-đun' })).toBeTruthy();
+  fireEvent.click(page.getByRole('button', { name: 'Quay lại Cài đặt' }));
+  expect(await page.findByRole('heading', { level: 1, name: 'Cài đặt' })).toBeTruthy();
+  fireEvent.click(page.getByRole('button', { name: 'Quay lại Companion' }));
+  expect(await screen.findByRole('region', { name: 'Trò chuyện trong Companion' })).toBeTruthy();
+  expect(window.location.pathname).toBe('/companion');
+});
+
+it('mục Nhân vật mở hộp chọn nhân vật; Nhân vật cử động nằm trong hộp đó và được lưu', async () => {
+  await openCompanion();
+  const page = await openCompanionSettings();
+  fireEvent.click(page.getByRole('button', { name: /^Nhân vật/ }));
+  const dialog = within(await screen.findByRole('dialog', { name: 'Nhân vật' }));
+  const group = await dialog.findByRole('radiogroup', { name: 'Nhân vật cử động' });
+  expect((within(group).getByRole('radio', { name: /Theo máy/ }) as HTMLInputElement).checked).toBe(true);
+  fireEvent.click(within(group).getByRole('radio', { name: /Luôn cử động/ }));
+  expect(localStorage.getItem('peto-character-motion')).toBe('always');
+  // Vẫn ở trang cài đặt sau khi chọn: hộp chỉ là lối tắt.
+  expect(window.location.pathname).toBe('/companion/settings/');
+});
+
+it('mở thẳng đường dẫn trang cài đặt (F5, link sâu) và Trí nhớ ở đây cùng danh sách với Cài đặt chung', async () => {
+  vi.mocked(api.getCompanionMemory).mockResolvedValue({ ...MEMORY,
+    memories: [{ id: 3, text: 'Thích câu trả lời ngắn', created_at: 1, updated_at: 1 }] });
+  window.history.replaceState(null, '', '/companion/settings/memory');
+  render(<App />);
+  const page = within(await screen.findByRole('main', { name: 'Trí nhớ' }));
+  expect(page.getByText('Cài đặt')).toBeTruthy();
+  expect(await page.findByText('Thích câu trả lời ngắn')).toBeTruthy();
+  expect(screen.queryByRole('region', { name: 'Trò chuyện trong Companion' })).toBeNull();
 });
 
 it('Bắt đầu lại xóa mạch cũ sau khi xác nhận', async () => {
@@ -1129,7 +1213,7 @@ it('Peto tự tra web khi cần: báo Đang tra web, bỏ chữ viết trước 
   expect(screen.getByTestId('stage').dataset.emotion).toBe('think');
 });
 
-it('tra web trong Companion mặc định tắt như AIRI; bật ở Cài đặt → Tra web thì lượt sau Peto được tra', async () => {
+it('tra web trong Companion mặc định tắt như AIRI; bật ở Cài đặt Companion → Tra web thì lượt sau Peto được tra', async () => {
   vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers) => {
     handlers.onMeta?.('C1', 'low');
     handlers.onDelta?.('Sure.');
@@ -1147,7 +1231,7 @@ it('tra web trong Companion mặc định tắt như AIRI; bật ở Cài đặt
   fireEvent.click(toggle);
   expect((toggle as HTMLInputElement).checked).toBe(true);
   expect(localStorage.getItem('peto-companion-web-search')).toBe('1');
-  fireEvent.click(settings.getByRole('button', { name: 'Đóng cài đặt' }));
+  await leaveSettings();
 
   await sendInCompanion('What is the weather today?');
   await waitFor(() => expect(api.sendMessage).toHaveBeenCalledTimes(2));

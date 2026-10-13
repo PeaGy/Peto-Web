@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type AnimationEvent, type ReactNode } from "react";
 import { SettingsIcon, type SettingsIconName } from "./settingsUi";
 
-export type SettingsSection = "giao-dien" | "ho-so" | "tai-khoan" | "luu-tru" | "agent" | "ket-noi" | "nhan-vat" | "giong-noi" | "tri-nho" | "tra-web";
+export type SettingsSection = "giao-dien" | "ho-so" | "tai-khoan" | "luu-tru" | "agent" | "ket-noi" | "tri-nho";
 
 export interface SettingsView {
   open: boolean;
@@ -12,7 +12,10 @@ export interface SettingsView {
 
 export const CLOSED_SETTINGS: SettingsView = { open: false, section: "giao-dien", page: false };
 
-/** Thứ tự các mục; nhóm Companion có nhãn riêng như nhóm "Customize" trong Cài đặt của Claude. */
+/**
+ * Thứ tự các mục. Nhóm có nhãn riêng như nhóm "Customize" trong Cài đặt của Claude; nhóm Companion (Nhân vật, Giọng nói,
+ * Tra web) đã chuyển sang trang /companion/settings/ ngày 13/10/2026, nên hiện không còn nhóm nào.
+ */
 export const SETTINGS_SECTIONS: { id: SettingsSection; title: string; icon: SettingsIconName; group?: "Companion" }[] = [
   { id: "giao-dien", title: "Giao diện", icon: "palette" },
   { id: "ho-so", title: "Hồ sơ", icon: "user" },
@@ -21,9 +24,6 @@ export const SETTINGS_SECTIONS: { id: SettingsSection; title: string; icon: Sett
   { id: "luu-tru", title: "Hội thoại đã lưu trữ", icon: "archive" },
   { id: "agent", title: "Peto Agent", icon: "terminal" },
   { id: "ket-noi", title: "Kết nối", icon: "connectors" },
-  { id: "nhan-vat", title: "Nhân vật", icon: "character", group: "Companion" },
-  { id: "giong-noi", title: "Giọng nói", icon: "wave", group: "Companion" },
-  { id: "tra-web", title: "Tra web", icon: "globe", group: "Companion" },
 ];
 
 const GROUPS = [...new Set(SETTINGS_SECTIONS.map((item) => item.group))].map(

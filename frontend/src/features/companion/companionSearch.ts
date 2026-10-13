@@ -2,7 +2,7 @@ import { useSyncExternalStore } from 'react';
 
 /**
  * Companion có được tra web không. Chủ web chọn ngày 2026-09-28: mặc định tắt như mô-đun Web Search của AIRI, bật ở
- * Cài đặt → Tra web. Lưu theo trình duyệt như các tùy chọn Companion khác; tab Trò chuyện có công tắc riêng ở menu +.
+ * Cài đặt Companion → Tra web. Lưu theo trình duyệt như các tùy chọn Companion khác; tab Trò chuyện có công tắc riêng ở menu +.
  */
 const KEY = 'peto-companion-web-search';
 const EVENT = 'peto-companion-web-search-change';

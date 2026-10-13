@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { appPath, appView, chatId, chatRoute, imageMatch, imageRoute, legacyPath } from '../src/app/routes';
+import { appPath, appView, chatId, chatRoute, companionSettingsPage, companionSettingsRoute, imageMatch, imageRoute, legacyPath } from '../src/app/routes';
 
 it.each([
   ['#companion', '/companion'], ['#imagine', '/imagine'],
@@ -32,4 +32,19 @@ it('URL chat dùng ID riêng, giữ chat mới tại gốc và không đọc nh�
   expect(chatId('/chat/A/')).toBe('A');
   expect(appView('/chat/A')).toBe('chat');
   for (const path of ['/', '/chat', '/chat/A/extra', '/companion']) expect(chatId(path)).toBeNull();
+});
+
+it('trang Cài đặt Companion: mỗi trang một đường dẫn, có hay không có "/" cuối; đường dẫn lạ không phải trang', () => {
+  expect(companionSettingsRoute('home')).toBe('/companion/settings/');
+  expect(companionSettingsRoute('hearing')).toBe('/companion/settings/modules/hearing');
+  for (const page of ['home', 'modules', 'voice', 'hearing', 'web-search', 'beat-sync', 'scene', 'memory', 'diagnostics'] as const) {
+    const route = companionSettingsRoute(page);
+    expect(companionSettingsPage(route)).toBe(page);
+    expect(companionSettingsPage(route.endsWith('/') ? route.slice(0, -1) : `${route}/`)).toBe(page);
+    expect(appView(route)).toBe('companion');
+  }
+  for (const path of ['/companion', '/companion/settings/missing', '/companion/settings/voice', '/companion/settings/scene/extra']) {
+    expect(companionSettingsPage(path)).toBeNull();
+  }
+  expect(appView('/companion/settings/missing')).toBe('chat');
 });

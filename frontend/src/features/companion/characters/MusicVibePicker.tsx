@@ -15,16 +15,12 @@ export function BeatIndicator({ beats, lastBeat }: { beats: number; lastBeat: nu
     data-lit={lit} className={beats ? 'beat-sync-ring' : ''} /></div>;
 }
 
-function BeatSyncPanel({ onClose }: { onClose: () => void }) {
-  const dialog = useRef<HTMLDialogElement>(null);
+/** Nguồn âm thanh, độ nhạy, độ mạnh và bảng theo dõi tín hiệu: thân của hộp Beat Sync và trang Nhún theo nhạc. */
+export function BeatSyncBody() {
   const state = useMusicVibe();
   const supported = musicSupported();
   const parameters = state.parameters;
-  useEffect(() => { dialog.current?.showModal(); return () => dialog.current?.close(); }, []);
-  return createPortal(<dialog ref={dialog} className="beat-sync-dialog" aria-labelledby="beat-sync-title"
-    onCancel={event => { event.preventDefault(); event.stopPropagation(); onClose(); }}>
-    <header className="character-picker-head"><div><h2 id="beat-sync-title">Beat Sync</h2><p>Cho nhân vật nhún theo nhạc</p></div>
-      <button type="button" className="dialog-close" aria-label="Đóng Beat Sync" onClick={onClose}>×</button></header>
+  return <>
     <div className="beat-sync-layout">
       <div className="beat-sync-controls">
         <h3>Nguồn âm thanh</h3>
@@ -71,8 +67,19 @@ function BeatSyncPanel({ onClose }: { onClose: () => void }) {
         <p>Biểu đồ chuyển động: có âm thanh. Vòng tròn nháy: đã bắt nhịp. Nếu có nhịp nhưng nhân vật đứng yên, kiểm tra cài đặt giảm chuyển động và tham số góc đầu của model.</p>
       </section>
     </div>
-    <footer className="beat-sync-footer">Âm thanh được phân tích trên thiết bị, không gửi lên máy chủ. Peto không dùng hình ảnh chia sẻ. Đóng bảng này vẫn tiếp tục nhún; rời Companion hoặc đổi model sẽ dừng chia sẻ.
-      <a href="/vendor/beat-sync/NOTICE.txt" target="_blank" rel="noopener noreferrer">Nguồn và giấy phép</a></footer>
+    <p className="beat-sync-footer">Âm thanh được phân tích trên thiết bị, không gửi lên máy chủ. Peto không dùng hình ảnh chia sẻ. Đóng bảng hay trang này vẫn tiếp tục nhún; sang tab khác, đăng xuất hoặc đổi model sẽ dừng chia sẻ.
+      <a href="/vendor/beat-sync/NOTICE.txt" target="_blank" rel="noopener noreferrer">Nguồn và giấy phép</a></p>
+  </>;
+}
+
+function BeatSyncPanel({ onClose }: { onClose: () => void }) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => { dialog.current?.showModal(); return () => dialog.current?.close(); }, []);
+  return createPortal(<dialog ref={dialog} className="beat-sync-dialog" aria-labelledby="beat-sync-title"
+    onCancel={event => { event.preventDefault(); event.stopPropagation(); onClose(); }}>
+    <header className="character-picker-head"><div><h2 id="beat-sync-title">Beat Sync</h2><p>Cho nhân vật nhún theo nhạc</p></div>
+      <button type="button" className="dialog-close" aria-label="Đóng Beat Sync" onClick={onClose}>×</button></header>
+    <BeatSyncBody />
   </dialog>, document.body);
 }
 

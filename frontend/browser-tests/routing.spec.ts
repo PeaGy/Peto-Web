@@ -360,3 +360,26 @@ test('fallback của bản build giữ API, Docs và asset thiếu ngoài trang 
   }
   expect((await request.get('/docs')).status()).toBe(200);
 });
+
+test('trang Cài đặt Companion: link sâu, F5, Back/Forward theo từng trang; đường dẫn lạ là 404', async ({ page }) => {
+  await mockPeto(page);
+  await page.goto('/companion/settings/modules/hearing');
+  const settings = page.locator('main.companion-settings');
+  await expect(settings.getByRole('heading', { level: 1, name: 'Nghe' })).toBeVisible();
+  await page.reload();
+  await expect(settings.getByRole('heading', { level: 1, name: 'Nghe' })).toBeVisible();
+  await settings.getByRole('button', { name: 'Quay lại Mô-đun', exact: true }).click();
+  await expect(page).toHaveURL(/\/companion\/settings\/modules$/);
+  await expect(settings.getByRole('heading', { level: 1, name: 'Mô-đun' })).toBeVisible();
+  await page.goBack();
+  await expect(settings.getByRole('heading', { level: 1, name: 'Nghe' })).toBeVisible();
+  await page.goForward();
+  await expect(settings.getByRole('heading', { level: 1, name: 'Mô-đun' })).toBeVisible();
+  await settings.getByRole('button', { name: 'Quay lại Cài đặt', exact: true }).click();
+  await settings.getByRole('button', { name: 'Quay lại Companion', exact: true }).click();
+  await expect(page).toHaveURL(/\/companion$/);
+  await expect(page.getByRole('textbox', { name: 'Nhắn cho Peto trong Companion' })).toBeVisible();
+  for (const path of ['/companion/settings/missing', '/companion/settings/voice']) {
+    expect((await page.request.get(path)).status()).toBe(404);
+  }
+});

@@ -9,7 +9,10 @@ const states: Record<TimingStatus, string> = {
 };
 const duration = (value: number | null) => value === null ? 'Chưa đo được' : `${(value / 1000).toFixed(2)} giây`;
 
-/** Kết quả lượt thật; mở mục này không tạo thêm cuộc gọi AI, tạo giọng hay bật micro. */
+/**
+ * Trang Chẩn đoán của Cài đặt Companion (trước 13/10/2026 là mục gập dưới phần Giọng nói). Kết quả lượt thật; mở trang
+ * này không tạo thêm cuộc gọi AI, tạo giọng hay bật micro.
+ */
 export default function CompanionTimingPanel() {
   const records = useCompanionTimings();
   const [picked, setPicked] = useState<number | null>(null);
@@ -24,12 +27,12 @@ export default function CompanionTimingPanel() {
     [record.input === 'voice' ? 'Ngừng nói → bắt đầu phát' : 'Gửi → bắt đầu phát',
       elapsed(record.input === 'voice' ? record.hearing?.endedAt : record.sentAt, record.marks.playing)],
   ] : [];
-  return <details className="companion-timing">
-    <summary>Kiểm tra tốc độ Companion</summary>
+  return <section className="companion-timing" aria-labelledby={`${field}-title`}>
+    <h3 id={`${field}-title`} className="companion-timing-title">Kiểm tra tốc độ Companion</h3>
     <p>Đo các lượt trò chuyện trên trang này. Không lưu nội dung hoặc gửi thống kê lên máy chủ.</p>
     {!record ? <p>Chưa có lượt đo. Gửi một lời nhắn trong Companion rồi quay lại đây.</p> : <>
       <div className="companion-timing-controls">
-        {/* Mục này nằm trong vùng cuộn của Cài đặt: Dropdown đi theo ô khi cuộn, bảng chọn gốc thì không. */}
+        {/* Trang này cuộn được: Dropdown đi theo ô khi cuộn, bảng chọn gốc thì không. */}
         <label htmlFor={field} id={`${field}-label`}>Lượt đo</label>
         <Dropdown id={field} value={String(record.id)} onChange={next => setPicked(Number(next))}
           options={records.map((item, index) => ({
@@ -47,5 +50,5 @@ export default function CompanionTimingPanel() {
       <p>Chốt lời → gửi gồm thời gian bạn chờ bấm Gửi hoặc thời gian Tự gửi. Chữ đầu → sẵn sàng đọc gồm chờ câu hoàn chỉnh; bật Tra web sẽ chờ câu trả lời chốt. Tạo tiếng → bắt đầu phát gồm mạng và chuẩn bị âm thanh.</p>
       {record.input === 'voice' && <p>Tính từ câu chốt cuối cùng của lượt. Mốc ngừng nói dựa trên thông báo của bộ nghe, có thể trễ hơn lúc bạn ngừng nói thật. Mốc thiếu hoặc thứ tự không xác định sẽ hiện Chưa đo được.</p>}
     </>}
-  </details>;
+  </section>;
 }

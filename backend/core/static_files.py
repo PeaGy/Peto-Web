@@ -41,7 +41,9 @@ _IMMUTABLE_DIRS = {"assets"}
 _BANNER_NAME = "og.png"
 _PNG_SIG = b"\x89PNG\r\n\x1a\n"
 # Chỉ fallback cho các trang thật; không nuốt API, Docs hay file tĩnh bị thiếu.
-_APP_PATH = re.compile(r"(?:chat/[^/.]+|companion|admin|imagine(?:/[^/.]+/[^/.]+)?)/?\Z")
+# Trang cài đặt Companion (từ 13/10/2026): chỉ các trang có thật, khớp COMPANION_SETTINGS_PATHS của frontend/src/app/routes.ts.
+_COMPANION_SETTINGS = r"companion/settings(?:/(?:modules(?:/(?:voice|hearing|web-search|beat-sync))?|scene|memory|diagnostics))?"
+_APP_PATH = re.compile(r"(?:chat/[^/.]+|companion|%s|admin|imagine(?:/[^/.]+/[^/.]+)?)/?\Z" % _COMPANION_SETTINGS)
 
 
 def _safe_path(static_dir: Path, relative: str) -> Path | None:

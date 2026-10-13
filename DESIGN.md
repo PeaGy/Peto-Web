@@ -79,6 +79,7 @@ Declared on the area's root class, with their own light values. Never use these 
 | Class | Prefix | Notes |
 | --- | --- | --- |
 | `.companion` | `--stage-*` | Mobile stage after AIRI: patterned background, translucent teal bubbles |
+| `.companion-settings` | `--cs-*` | Companion settings page after AIRI's Settings: cards on `--cs-card`, the allowed Companion teal for hover sweeps and on states |
 | `.adm` | `--adm-*` | Admin page; the three provider colours passed a colour-blindness check on both themes |
 | `.docs` | `--docs-*` | Public guides |
 | `.chat-image-viewer` | overrides `--text`, `--muted`, `--panel-2`, `--accent` | The image viewer is always dark, even on the light theme |
@@ -303,6 +304,19 @@ Stay under 300ms except page transitions on phones.
   - The loading logo keeps animating.
   - Companion characters follow the "Nhân vật cử động" setting.
   - Docs has its own motion switch.
+- **Decided 2026-10-13, not built yet:** the owner wants smooth motion across the whole web by default, even when the
+  OS asks for reduced motion. Users will reduce it in Cài đặt → Giao diện, like Claude's Appearance → Motion setting.
+  When that setting lands, this rule changes from the OS media query to the app's own setting. Details are in
+  `PETO_COMPANION_PLAN.md`, decision 2. Until then, keep following the rule above.
+  - **The first part is already built:** the Companion settings page (`/companion/settings/`,
+    `features/companion/settings/companionSettings.css`). It animates regardless of the OS setting, which is the
+    owner's decision for the whole web, and it already honours `:root[data-motion="reduced"]` (fades only) for when the
+    Motion setting exists.
+  - **Its card motion follows AIRI's Settings** and departs from the timings above:
+    - a 260ms rise per card, with a 70ms ripple step;
+    - a 520ms rotation of the decorative icon when a page opens;
+    - a 320ms teal sweep on hover, using transform and opacity only.
+    The owner chose this look. Do not copy these timings to other areas.
 
 ## 8. Reusable components
 

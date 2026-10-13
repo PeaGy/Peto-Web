@@ -91,7 +91,7 @@ function providerError(status: number, name: string): HearingError {
   if (status === 402) return new HearingError(`Tài khoản ${name} của bạn đã hết số dư.`, true);
   if (status === 429) return new HearingError(`${name} đang giới hạn lượt gọi của khóa này. Chờ một lát rồi nói tiếp.`, false);
   if (status === 400 || status === 404 || status === 413 || status === 422) {
-    return new HearingError(`${name} không nhận model hay đoạn âm thanh này. Kiểm tra model trong Cài đặt → Giọng nói → Peto nghe.`, true);
+    return new HearingError(`${name} không nhận model hay đoạn âm thanh này. Kiểm tra model trong Cài đặt Companion → Nghe.`, true);
   }
   return new HearingError(`${name} chưa chép được câu này (mã ${status}).`, false);
 }

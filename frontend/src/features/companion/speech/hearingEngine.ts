@@ -197,7 +197,7 @@ function fail(error: unknown) {
 }
 
 const UNSUPPORTED = "Trình duyệt này chưa có tính năng nghe (Firefox chưa hỗ trợ). Dùng Chrome, Edge hoặc Safari, "
-  + "hoặc chọn nguồn dùng khóa trong Cài đặt → Giọng nói → Peto nghe.";
+  + "hoặc chọn nguồn dùng khóa trong Cài đặt Companion → Nghe.";
 
 async function browserEngine(token: number): Promise<Engine> {
   if (!browserSpeechSupported()) throw new Error(UNSUPPORTED);
@@ -315,7 +315,7 @@ async function browserEngine(token: number): Promise<Engine> {
 async function keyEngine(token: number, source: HearingProviderId): Promise<Engine> {
   const provider = hearingProvider(source)!;
   if (!hearingKeyReady(provider, getKeyConfigs()[provider.id])) {
-    throw new Error(`Chưa nhập đủ khóa ${provider.name} trong Cài đặt → Giọng nói → Peto nghe.`);
+    throw new Error(`Chưa nhập đủ khóa ${provider.name} trong Cài đặt Companion → Nghe.`);
   }
   if (!captureSupported()) throw new Error("Trình duyệt này chưa cho ghi âm từ micro.");
   let controller = new AbortController();

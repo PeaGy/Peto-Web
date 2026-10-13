@@ -7,6 +7,8 @@ export async function preloadLazyParts(): Promise<void> {
   await Promise.all([
     import('../src/features/imagine/Imagine'),
     import('../src/features/companion/Companion'),
+    import('../src/features/companion/settings/CompanionSettings'),
+    import('../src/features/companion/characters/CharacterPicker'),
     import('../src/features/settings/ProfileSettings'),
     import('../src/features/companion/speech/VoiceSettings'),
     import('../src/features/settings/MemorySettings'),

@@ -230,8 +230,7 @@ it('nguồn dùng khóa bỏ tiếng cộp ngắn, lời đủ dài ngắt lư�
 
 it('nói chen mặc định tắt; bật/tắt trong Cài đặt giữ lựa chọn tạm không nghe và không mở micro', async () => {
   await openCompanion();
-  const settings = within(await openVoiceSettings());
-  fireEvent.click(settings.getByRole('tab', { name: 'Peto nghe' }));
+  const settings = within(await openHearingSettings());
   const bargeIn = await settings.findByRole('switch', { name: 'Cho phép nói chen' });
   const pause = settings.getByRole('switch', { name: 'Tạm không nghe khi Peto đang nói' });
   expect(bargeIn).toHaveProperty('checked', false); expect(pause).toHaveProperty('checked', true);
@@ -254,12 +253,15 @@ it('Nghe thử và lời tới muộn từ phiên micro cũ không ngắt câu t
   const old = lastRecognition();
   fireEvent.change(composer(), { target: { value: 'Hi' } });
   fireEvent.click(screen.getByRole('button', { name: 'Gửi', exact: true }));
-  const settings = within(await openVoiceSettings());
-  fireEvent.click(settings.getByRole('tab', { name: 'Peto nghe' }));
+  // Mở trang cài đặt là rời sân khấu: micro của Companion tắt, nhưng câu trả lời vẫn chạy tiếp.
+  const settings = within(await openHearingSettings());
   fireEvent.click(await settings.findByRole('button', { name: 'Bắt đầu nghe thử' }));
   act(() => { old.say('Old words', true); lastRecognition().say('Testing microphone', true); });
-  expect(signal.aborted).toBe(false); expect(composer().value).toBe('');
+  expect(signal.aborted).toBe(false);
   expect(settings.getByText('“Testing microphone”')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Companion', exact: true }));
+  expect(((await screen.findByRole('textbox', { name: 'Nhắn cho Peto trong Companion' })) as HTMLTextAreaElement).value).toBe('');
+  expect(signal.aborted).toBe(false);
 });
 
 it('câu mới đang nói hoãn tự gửi; chốt thêm câu rồi chỉ gửi một lượt', async () => {
@@ -376,14 +378,18 @@ it('lượt đo dùng mốc bộ nghe thật; gõ sửa không gán thời gian 
   expect(getCompanionTimings()[0].hearing).toBeUndefined();
 });
 
-/** Ô tài khoản → Cài đặt trong menu → mục Giọng nói. */
-async function openVoiceSettings() {
-  fireEvent.click(await screen.findByRole('button', { name: /Tài khoản · Demo/ }));
-  fireEvent.click(await screen.findByRole('menuitem', { name: 'Cài đặt' }));
-  const dialog = screen.getByRole('dialog', { name: 'Cài đặt' });
-  fireEvent.click(within(dialog).getByRole('button', { name: 'Giọng nói' }));
-  await within(dialog).findByRole('tab', { name: 'Peto nói' });
-  return dialog;
+/** Trang Nghe của Cài đặt Companion, như người dùng: bánh răng ở đầu cột chat → Mô-đun → Nghe. */
+async function openHearingSettings() {
+  if (!screen.queryByRole('region', { name: 'Trò chuyện trong Companion' })) {
+    fireEvent.click(await screen.findByRole('button', { name: 'Companion', exact: true }));
+  }
+  const column = within(await screen.findByRole('region', { name: 'Trò chuyện trong Companion' }));
+  fireEvent.click(await column.findByRole('button', { name: 'Cài đặt Companion' }));
+  const page = await screen.findByRole('main', { name: 'Cài đặt' });
+  fireEvent.click(within(page).getByRole('button', { name: /^Mô-đun/ }));
+  fireEvent.click(await within(page).findByRole('button', { name: /^Nghe/ }));
+  await within(page).findByRole('heading', { level: 1, name: 'Nghe' });
+  return page;
 }
 
 it('bấm micro thì nghe bằng trình duyệt: chữ hiện dần rồi vào ô nhắn, không tự gửi; bấm lại thì tắt', async () => {
@@ -517,7 +523,7 @@ it('khóa Groq sai thì báo lỗi và thôi nghe', async () => {
   expect(microphone.stops).toBe(1);
 });
 
-it('Cài đặt → Peto nghe: khóa Azure dùng chung với phần Peto nói, nhập khóa Groq không làm mất khóa khác', async () => {
+it('Cài đặt Companion → Nghe: khóa Azure dùng chung với trang Giọng nói, nhập khóa Groq không làm mất khóa khác', async () => {
   localStorage.setItem('peto-local-voice', '1');
   localStorage.setItem('peto-voice-keys', JSON.stringify({ azure: { key: 'az-key', region: 'eastus' } }));
   fetchMock.mockImplementation(async (url: string) => {
@@ -525,9 +531,7 @@ it('Cài đặt → Peto nghe: khóa Azure dùng chung với phần Peto nói, n
     throw new Error(`Không mong đợi ${url}`);
   });
   render(<App />);
-  const settings = within(await openVoiceSettings());
-  fireEvent.click(settings.getByRole('tab', { name: 'Peto nghe' }));
-  expect(settings.getByRole('tab', { name: 'Peto nghe' }).getAttribute('aria-selected')).toBe('true');
+  const settings = within(await openHearingSettings());
   expect(settings.queryByRole('switch', { name: 'Bật giọng nói' })).toBeNull();
 
   const azure = settings.getByRole('button', { name: 'Azure Speech' });
@@ -539,34 +543,34 @@ it('Cài đặt → Peto nghe: khóa Azure dùng chung với phần Peto nói, n
   expect(stored).toEqual({ azure: { key: 'az-key', region: 'eastus' }, groq: { key: 'gsk_new' } });
   expect(localStorage.getItem('peto-hearing-source')).toBe('groq');
 
-  fireEvent.click(settings.getByRole('tab', { name: 'Peto nói' }));
-  expect(settings.getByRole('button', { name: 'Azure Speech' }).textContent).toContain('Đã lưu khóa');
+  fireEvent.click(settings.getByRole('button', { name: 'Quay lại Mô-đun' }));
+  fireEvent.click(await settings.findByRole('button', { name: /^Giọng nói/ }));
+  expect((await settings.findByRole('button', { name: 'Azure Speech' })).textContent).toContain('Đã lưu khóa');
 });
 
-it('Nghe thử trong Cài đặt: chữ nghe được hiện trong khung, không vào ô nhắn; đóng Cài đặt thì thôi nghe', async () => {
+it('Nghe thử trong Cài đặt Companion: chữ nghe được hiện trong khung, không vào ô nhắn; rời trang thì thôi nghe', async () => {
   render(<App />);
-  const settings = within(await openVoiceSettings());
-  fireEvent.click(settings.getByRole('tab', { name: 'Peto nghe' }));
+  const settings = within(await openHearingSettings());
   fireEvent.click(settings.getByRole('button', { name: 'Bắt đầu nghe thử' }));
   await waitFor(() => expect(lastRecognition()?.started).toBe(true));
   act(() => lastRecognition().say('Testing one two', true));
   expect(settings.getByText('“Testing one two”')).toBeTruthy();
 
-  fireEvent.click(settings.getByRole('button', { name: 'Đóng cài đặt' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Companion', exact: true }));
   await waitFor(() => expect(lastRecognition().aborted).toBe(true));
+  expect((await screen.findByRole('textbox', { name: 'Nhắn cho Peto trong Companion' }) as HTMLTextAreaElement).value).toBe('');
 });
 
-it('bảng Micro mở thẳng Cài đặt ở mục Giọng nói, thẻ Peto nghe', async () => {
+it('bảng Micro mở thẳng trang Nghe của Cài đặt Companion, rời sân khấu thì thôi nghe', async () => {
   await openCompanion();
-  // Mục Giọng nói đã mở một lần (đang ở thẻ Peto nói) nên còn trong hộp: đường dẫn phải đổi được sang thẻ Peto nghe.
-  fireEvent.click(within(await openVoiceSettings()).getByRole('button', { name: 'Đóng cài đặt' }));
   fireEvent.click(screen.getByRole('button', { name: 'Bật nghe' }));
+  await waitFor(() => expect(lastRecognition()?.started).toBe(true));
   fireEvent.click(await micPanel().findByRole('button', { name: 'đổi trong Cài đặt' }));
-  const settings = within(screen.getByRole('dialog', { name: 'Cài đặt' }));
-  expect(settings.getByRole('heading', { name: 'Giọng nói' })).toBeTruthy();
-  expect(settings.getByRole('button', { name: 'Giọng nói' }).getAttribute('aria-current')).toBe('page');
-  expect((await settings.findByRole('tab', { name: 'Peto nghe' })).getAttribute('aria-selected')).toBe('true');
+  const settings = within(await screen.findByRole('main', { name: 'Nghe' }));
+  expect(window.location.pathname).toBe('/companion/settings/modules/hearing');
+  expect(settings.getByText('Mô-đun')).toBeTruthy();
   expect(settings.getByRole('button', { name: 'Có sẵn trong trình duyệt' }).getAttribute('aria-pressed')).toBe('true');
+  expect(getHearingState().listening).toBe(false);
 });
 
 it('nguồn trình duyệt khởi động trước thanh đo, dùng micro mặc định dù còn lưu micro USB', async () => {

@@ -1367,20 +1367,16 @@ it('opens settings from the account menu and switches to the light theme', async
   expect(screen.queryByRole('dialog')).toBeNull();
 });
 
-it('lưu lựa chọn Luôn cử động cho nhân vật Companion', async () => {
+it('hộp Cài đặt chung không còn nhóm Companion (đã sang /companion/settings/); Trí nhớ vẫn ở đây', async () => {
   await openApp();
   await fromAccountMenu('Cài đặt');
-  const dialog = screen.getByRole('dialog');
-  expect(within(dialog).queryByRole('button', {name: 'Chọn nhân vật'})).toBeNull();
-  expect(within(dialog).queryByRole('radiogroup', {name: 'Nhân vật cử động'})).toBeNull();
-  fireEvent.click(within(dialog).getByRole('button', {name: 'Nhân vật', exact: true}));
-  expect(within(dialog).getByRole('heading', {name: 'Nhân vật', exact: true})).toBeTruthy();
-  const group = await within(dialog).findByRole('radiogroup', {name: 'Nhân vật cử động'});
-  expect(within(dialog).getByRole('button', {name: 'Chọn nhân vật'})).toBeTruthy();
-  expect(within(dialog).queryByRole('radiogroup', {name: 'Chủ đề'})).toBeNull();
-  expect((within(group).getByRole('radio', {name: /Theo máy/}) as HTMLInputElement).checked).toBe(true);
-  fireEvent.click(within(group).getByRole('radio', {name: /Luôn cử động/}));
-  expect(localStorage.getItem('peto-character-motion')).toBe('always');
+  const dialog = within(screen.getByRole('dialog', {name: 'Cài đặt'}));
+  for (const gone of ['Nhân vật', 'Giọng nói', 'Tra web']) {
+    expect(dialog.queryByRole('button', {name: gone, exact: true})).toBeNull();
+  }
+  expect(dialog.queryByText('Companion')).toBeNull();
+  expect(dialog.getByRole('button', {name: 'Trí nhớ', exact: true})).toBeTruthy();
+  expect(dialog.queryByRole('radiogroup', {name: 'Nhân vật cử động'})).toBeNull();
 });
 
 it('renders Markdown tables as a scrollable table', async () => {

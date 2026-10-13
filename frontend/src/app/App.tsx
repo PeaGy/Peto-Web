@@ -2,7 +2,7 @@ import { usePreferencesPersistence } from './usePreferencesPersistence';
 import LoginScreen from './LoginScreen';
 import { forgetChatLogin, rememberChatLogin, takeChatLogin } from './chatLoginReturn';
 import { BrowserRouter, useLocation, useNavigate } from 'react-router';
-import { appPath, appView, chatId, chatRoute, legacyPath, VIEW_PATHS } from './routes';
+import { appPath, appView, chatId, chatRoute, companionSettingsPage, companionSettingsRoute, legacyPath, VIEW_PATHS } from './routes';
 import { EditIcon } from '../shared/ui/EditIcon';
 import Sidebar from './Sidebar';
 import { useProjects } from '../features/projects/useProjects';
@@ -28,7 +28,6 @@ import { diagramPanel } from "../features/diagrams/diagramPanelLazy";
 import LazyBoundary from "../shared/ui/LazyBoundary";
 import { preloadable } from "../shared/ui/preloadable";
 import { useLocalVoice } from "../features/companion/speech/LocalVoice";
-import type { VoiceTab } from "../features/companion/speech/VoiceSettings";
 import AgentConnectDialog, { forgetAgentCode, takeAgentCode } from "../features/settings/AgentConnectDialog";
 import AccountMenu, { placeAccountMenu, type AccountMenuPlace } from "./AccountMenu";
 import SettingsDialog, { CLOSED_SETTINGS, type SettingsSection, type SettingsView } from "../features/settings/SettingsDialog";
@@ -81,13 +80,13 @@ import {
 // nhỏ thì điện thoại càng sớm thấy ô chat (đo ngày 2026-09-27). preload* gọi lúc rê chuột hay chạm vào nút mở.
 const imagine = preloadable(() => import("../features/imagine/Imagine"));
 const companion = preloadable(() => import("../features/companion/Companion"));
+// Trang cài đặt riêng của Companion (/companion/settings/, chủ web chốt ngày 13/10/2026); hộp Cài đặt chung không còn
+// nhóm Companion.
+const companionSettings = preloadable(() => import("../features/companion/settings/CompanionSettings"));
 const profileSettings = preloadable(() => import("../features/settings/ProfileSettings"));
-const voiceSettings = preloadable(() => import("../features/companion/speech/VoiceSettings"));
 const memorySettings = preloadable(() => import("../features/settings/MemorySettings"));
-const searchSettings = preloadable(() => import("../features/settings/SearchSettings"));
 const agentSettings = preloadable(() => import("../features/settings/AgentSettings"));
 const archiveSettings = preloadable(() => import("../features/settings/ArchivedConversations"));
-const characterSettings = preloadable(() => import("../features/companion/characters/CharacterSettings"));
 const connectorSettings = preloadable(() => import('../features/connectors/ConnectorSettings'));
 // Trang Quản trị chỉ chủ web mở; tải riêng nên người dùng thường không phải tải mã biểu đồ.
 const adminDashboard = preloadable(() => import('../features/admin/AdminDashboard'));
@@ -95,20 +94,17 @@ const AdminDashboard = adminDashboard.View;
 const loadImagine = imagine.preload;
 const loadCompanion = companion.preload;
 const loadSettings = () => Promise.all([
-  profileSettings.preload(), voiceSettings.preload(), memorySettings.preload(), searchSettings.preload(),
-  agentSettings.preload(), characterSettings.preload(), archiveSettings.preload(), connectorSettings.preload(),
+  profileSettings.preload(), memorySettings.preload(), agentSettings.preload(), archiveSettings.preload(), connectorSettings.preload(),
 ]);
 // Tải trước: lỗi ở đây bỏ qua, lần mở thật sẽ tải lại và LazyBoundary lo phần báo lỗi.
 const preload = (load: () => Promise<unknown>) => () => void load().catch(() => {});
 const Imagine = imagine.View;
 const Companion = companion.View;
+const CompanionSettings = companionSettings.View;
 const ProfileSettings = profileSettings.View;
-const VoiceSettings = voiceSettings.View;
 const MemorySettings = memorySettings.View;
-const SearchSettings = searchSettings.View;
 const AgentSettings = agentSettings.View;
 const ArchivedConversations = archiveSettings.View;
-const CharacterSettings = characterSettings.View;
 const ConnectorSettings = connectorSettings.View;
 type ChatRevision = { target: Message; text: string };
 type ActiveReply = { id: string | null; messages: Message[]; persona: Persona; projectId: string | null;
@@ -124,6 +120,8 @@ function AppContent() {
   const location = useLocation();
   const navigate = useNavigate();
   const view = appView(appPath(location));
+  // Đang ở /companion/settings/…: tab vẫn là Companion (thanh bên sáng mục Companion), nhưng sân khấu nhường chỗ cho trang cài đặt.
+  const companionSettingsView = view === 'companion' ? companionSettingsPage(appPath(location)) : null;
   const routedConversationId = chatId(location.pathname);
   const viewRef = useRef(view);
   viewRef.current = view;
@@ -284,14 +282,16 @@ function AppContent() {
   const [companionVisited, setCompanionVisited] = useState(view === "companion");
   // Giọng nói dùng chung cho Companion và mục Giọng nói trong Cài đặt. Chỉ dò 127.0.0.1 sau khi đã mở
   // Companion hoặc lúc Cài đặt đang mở, để tab Trò chuyện không gọi gì ra máy.
-  const localVoice = useLocalVoice(companionVisited || settingsOpen);
-  // Thẻ đang mở của mục Giọng nói (Peto nói / Peto nghe); bảng Micro trong Companion mở thẳng thẻ Peto nghe.
-  const [voiceTab, setVoiceTab] = useState<VoiceTab>("noi");
-  // Đường dẫn trong bảng Micro mở thẳng thẻ Peto nghe, cả trên điện thoại.
-  const openHearingSettings = useCallback(() => {
-    setVoiceTab("nghe");
-    setSettings({ open: true, section: "giong-noi", page: true });
-  }, []);
+  // Giọng nói dùng ở Companion và trang cài đặt của nó (cũng là tab Companion), nên chỉ dò sau khi đã mở Companion.
+  const localVoice = useLocalVoice(companionVisited);
+  // Nút cài đặt trong bảng Micro mở thẳng trang Nghe của Cài đặt Companion.
+  const openHearingSettings = useCallback(() => navigate(companionSettingsRoute('hearing')), [navigate]);
+  const openCompanionSettings = useCallback(() => navigate(companionSettingsRoute('home')), [navigate]);
+  // Mục Bối cảnh trên thanh bên điện thoại: ở sân khấu thì mở hộp Bối cảnh, ở trang cài đặt thì sang trang Bối cảnh.
+  const openScenes = useCallback(() => {
+    if (companionSettingsView) navigate(companionSettingsRoute('scene'));
+    else setSceneRequest(value => value + 1);
+  }, [companionSettingsView, navigate]);
   useEffect(() => {
     if (settingsOpen || !settingsReturn.current) return;
     settingsReturn.current.focus({ preventScroll: true });
@@ -1215,7 +1215,9 @@ function AppContent() {
     if (next === "imagine") setImageVisited(true);
     if (next === "companion") setCompanionVisited(true);
     setSidebarOpen(false);
-    if (next !== view) navigate({ pathname: next === 'chat' && conversationIdRef.current
+    // Từ trang cài đặt Companion, bấm Companion trên thanh bên là về sân khấu.
+    if (next === 'companion' && companionSettingsView) navigate(VIEW_PATHS.companion);
+    else if (next !== view) navigate({ pathname: next === 'chat' && conversationIdRef.current
       ? chatRoute(conversationIdRef.current) : VIEW_PATHS[next], search: window.location.search },
       { state: draftContextState(activeProjectId, persona) });
   }
@@ -1263,15 +1265,6 @@ function AppContent() {
             <SettingsRow label="Chủ đề" desc="Nền sáng, nền tối, hoặc theo cài đặt của máy.">
               <Segmented label="Chủ đề" value={theme} options={THEMES} onChange={setTheme} />
             </SettingsRow>
-          </SettingsGroup>
-        );
-      case "nhan-vat":
-        return (
-          <SettingsGroup>
-            <LazyBoundary><Suspense fallback={settingsLoading}>
-              <CharacterSettings value={characterMotion} onChange={changeCharacterMotion}
-                onOpenCharacters={() => setCharacterPickerOpen(true)} selectedName={characters.selected.name} />
-            </Suspense></LazyBoundary>
           </SettingsGroup>
         );
       case "ho-so":
@@ -1329,22 +1322,10 @@ function AppContent() {
             <AgentSettings open={active} onUnauthorized={handleUnauthorized} />
           </Suspense></LazyBoundary>
         );
-      case "giong-noi":
-        return (
-          <LazyBoundary><Suspense fallback={settingsLoading}>
-            <VoiceSettings voice={localVoice} open={active} tab={voiceTab} onTab={setVoiceTab} />
-          </Suspense></LazyBoundary>
-        );
       case "tri-nho":
         return (
           <LazyBoundary><Suspense fallback={settingsLoading}>
             <MemorySettings open={active} onUnauthorized={handleUnauthorized} />
-          </Suspense></LazyBoundary>
-        );
-      case "tra-web":
-        return (
-          <LazyBoundary><Suspense fallback={settingsLoading}>
-            <SearchSettings />
           </Suspense></LazyBoundary>
         );
     }
@@ -1370,7 +1351,7 @@ function AppContent() {
         accountRef={accountRef} accountMenu={accountMenu} setSearchOpen={setSearchOpen}
         onToggleCollapsed={() => setCollapsed(value => !value)} onCollapsedChange={setCollapsed} goChat={goChat} go={go}
         preloadImagine={preload(loadImagine)} preloadCompanion={preload(loadCompanion)} preloadSettings={preload(loadSettings)}
-        setSidebarOpen={setSidebarOpen} setSceneRequest={setSceneRequest} setCharacterPickerOpen={setCharacterPickerOpen}
+        setSidebarOpen={setSidebarOpen} onOpenScenes={openScenes} setCharacterPickerOpen={setCharacterPickerOpen}
         setFocusJobId={setFocusJobId} openConversation={openConversation} setConversationMenu={setConversationMenu}
         onOpenImagineLibrary={() => { setSidebarOpen(false); setImagineLibraryRequest(value => value + 1); }}
         onLoadMore={() => { listCount.current = conversations.length + 50; void refreshConversations(); }}
@@ -1399,7 +1380,7 @@ function AppContent() {
         <Suspense fallback={view === "companion" ? <LoadingIndicator variant="screen" label="Loading" /> : null}>
         <Companion
           key={`companion-${auth.user?.id}`}
-          active={view === "companion"}
+          active={view === "companion" && !companionSettingsView}
           appInfo={appInfo}
           voice={localVoice}
           sceneRequest={sceneRequest}
@@ -1411,6 +1392,23 @@ function AppContent() {
           onUnauthorized={handleUnauthorized}
           onOpenSidebar={() => setSidebarOpen(true)}
           onOpenHearingSettings={openHearingSettings}
+          onOpenSettings={openCompanionSettings}
+        />
+        </Suspense>
+        </LazyBoundary>
+      )}
+      {companionSettingsView && (
+        <LazyBoundary key={`companion-settings-${auth.user?.id}`}>
+        <Suspense fallback={<LoadingIndicator variant="screen" label="Loading" />}>
+        <CompanionSettings
+          key={`companion-settings-${auth.user?.id}`}
+          page={companionSettingsView}
+          onNavigate={page => navigate(companionSettingsRoute(page))}
+          onExit={() => navigate(VIEW_PATHS.companion)}
+          voice={localVoice}
+          character={characters.selected}
+          onOpenCharacters={() => setCharacterPickerOpen(true)}
+          onUnauthorized={handleUnauthorized}
         />
         </Suspense>
         </LazyBoundary>
@@ -1574,7 +1572,7 @@ function AppContent() {
         />
       )}
       <SettingsDialog view={settings} onView={setSettings} onClose={closeSettings} render={renderSettings} />
-      {characterPickerOpen && <LazyBoundary><Suspense fallback={null}><CharacterPicker library={characters} onClose={() => setCharacterPickerOpen(false)} /></Suspense></LazyBoundary>}
+      {characterPickerOpen && <LazyBoundary><Suspense fallback={null}><CharacterPicker library={characters} motion={characterMotion} onMotionChange={changeCharacterMotion} onClose={() => setCharacterPickerOpen(false)} /></Suspense></LazyBoundary>}
       {agentCode && <AgentConnectDialog code={agentCode}
         onClose={() => { forgetAgentCode(); setAgentCode(null); }} onUnauthorized={handleUnauthorized} />}
       {renameTarget && <TextEditDialog title="Đổi tên hội thoại" value={renameText} onChange={setRenameText} busy={metadataBusy} onClose={() => setRenameTarget(null)} onSave={() => void changeConversation(renameTarget, {title:renameText})}/>}

@@ -10,8 +10,15 @@ import { MAX_IMPORT_BYTES, megabytes } from './characterLimits';
 import { CHARACTER } from './characterConfig';
 import { useRenderQuality, writeRenderQuality } from './renderQuality';
 import { Dropdown } from '../../../shared/ui/Dropdown';
+import CharacterSettings from './CharacterSettings';
+import type { CharacterMotion } from './characterView';
 
-export default function CharacterPicker({ library, onClose }: { library: CharacterLibrary; onClose: () => void }) {
+export default function CharacterPicker({ library, motion, onMotionChange, onClose }: {
+  library: CharacterLibrary;
+  motion: CharacterMotion;
+  onMotionChange: (value: CharacterMotion) => void;
+  onClose: () => void;
+}) {
   const quality = useRenderQuality();
   const sharpId = useId();
   const smoothId = useId();
@@ -103,6 +110,9 @@ export default function CharacterPicker({ library, onClose }: { library: Charact
           </div>
         </article>)}
       </div>
+      <section className="character-motion-row" aria-label="Cử động">
+        <CharacterSettings value={motion} onChange={onMotionChange} />
+      </section>
       <section className="mobile-render-settings" aria-label="Hiển thị trên điện thoại">
         <h3>Hiển thị trên điện thoại</h3>
         <div className="mobile-render-field">

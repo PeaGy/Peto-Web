@@ -32,8 +32,9 @@ function browserNote(): string {
 }
 
 /**
- * Thẻ "Peto nghe" trong Cài đặt → Giọng nói (phương án A chủ web chọn ngày 2026-09-24): micro, ngôn ngữ, nguồn chép
- * lời bằng thẻ như phần Peto nói, khung Nghe thử và ba công tắc. Khóa dùng chung với phần Peto nói.
+ * Trang Nghe của Cài đặt Companion (phương án A chủ web chọn ngày 2026-09-24; trước 13/10/2026 là thẻ "Peto nghe" trong
+ * mục Giọng nói): micro, ngôn ngữ, nguồn chép lời bằng thẻ như trang Giọng nói, khung Nghe thử và ba công tắc. Khóa dùng
+ * chung với trang Giọng nói.
  */
 export default function HearingSettings({ open }: { open: boolean }) {
   const hearing = useHearing();

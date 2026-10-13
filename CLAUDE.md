@@ -34,6 +34,13 @@ Minecraft planning context (Peto joining the owner's LAN world, from AIRI's Mine
 recorded in [PETO_MINECRAFT_PLAN.md](PETO_MINECRAFT_PLAN.md) in the same way. Nothing of it is built yet; consult it
 before any Minecraft work.
 
+Companion direction is recorded in [PETO_COMPANION_PLAN.md](PETO_COMPANION_PLAN.md) (rewritten 2026-10-13): the AIRI drift
+review, what AIRI is building now, the prioritised next steps and the "not doing" list; the original September plan is
+kept at its end as history. The owner's calls of 2026-10-13: web first, and a Companion-only settings page at
+`/companion/settings/` modelled on AIRI's web Settings, with the Companion group removed from the shared Settings dialog.
+The page was built the same day (see "Companion settings page"). Consult the plan before any Companion work. Like the other plan files it is gitignored, so it
+exists only on the owner's machine.
+
 **Every comment, docstring, log message, error message, and user-facing string in this
 codebase is written in Vietnamese.** Keep it that way when adding code — an English error
 string would be visibly out of place in the UI. Identifiers, type names and this file stay
@@ -165,7 +172,8 @@ is the last statement in `main.py`. Move it earlier and API 404s start returning
 line of defense, and blocks path traversal by resolving under `static_dir`.
 
 On 2026-10-09 navigation moved to React Router's BrowserRouter (declarative mode), scoped to the existing App shell.
-`app/routes.ts` maps `/`, `/companion`, `/imagine` and `/imagine/<root>/<version>`; it does not implement history itself.
+`app/routes.ts` maps `/`, `/companion`, `/imagine` and `/imagine/<root>/<version>` (plus the `/companion/settings/…` pages
+since 2026-10-13); it does not implement history itself.
 App and Imagine read router location and use navigate for user actions. Tab switches push only when the view changes;
 legacy `/#companion`, `/#imagine` and image hashes replace the current entry, preserving query parameters.
 Chat remains mounted, and visited Imagine/Companion stay mounted with their existing active props and account keys
@@ -211,6 +219,8 @@ Successful conversation deletion clears its draft; project deletion clears only 
 drafts of existing conversations. Storage denial/quota errors fall back to memory. Drafts do not sync across devices;
 sessionStorage is tab-session storage, not a durable backup. Companion/Imagine persistence is unchanged.
 The static fallback also accepts `/chat/<id>` but rejects missing `/chat`, extra segments and paths resembling assets.
+It also accepts exactly the Companion settings pages (`_COMPANION_SETTINGS` in `core/static_files.py`, mirroring
+`COMPANION_SETTINGS_PATHS` in `app/routes.ts`); any other path under `/companion/settings` is a 404.
 Signing in from a Chat deep link records only its same-origin path/query in sessionStorage; the normal OAuth root
 callback then replaces that root entry with the requested Chat URL. The pending return is consumed once; auth and
 owner checks remain unchanged, with no public sharing or arbitrary redirect target.
@@ -1492,16 +1502,16 @@ scrollspy list, and grouped cards with coloured icons.
     Tab or a resize closes.
   - It fades out for 110 ms before unmounting, with a timer fallback: jsdom and hidden windows fire no animationend.
 - **Dialog** (`SettingsDialog.tsx`, still a `<dialog>` opened with `showModal` in a layout effect). A 216px list of
-  sections sits on the left and one section shows on the right. The sections are Giao diện, Hồ sơ, Trí nhớ, Tài khoản and
-  Peto Agent, then a "Companion" group with Giọng nói and Tra web. App keeps a `SettingsView` of `{open, section,
-  page}`.
+  sections sits on the left and one section shows on the right. The sections are Giao diện, Hồ sơ, Trí nhớ, Tài khoản,
+  Hội thoại đã lưu trữ, Peto Agent and Kết nối. App keeps a `SettingsView` of `{open, section, page}`.
+  - **No Companion group since 2026-10-13.** Nhân vật, Giọng nói and Tra web moved to the Companion settings page (see
+    "Companion settings page"). Trí nhớ stays here and also appears there.
   - **Opening.** "Cài đặt" in the menu opens Giao diện, "Hồ sơ" opens Hồ sơ and the account item opens Tài khoản.
-    The Micro panel link opens Giọng nói on the Peto nghe tab.
   - **Focus.** On open, focus goes to the current section's item (on a phone page, to the back button). After opening
     from the menu, closing refocuses the account row (`settingsReturn`), since the menu item is gone.
   - **Mounting.** Visited sections stay mounted and are only hidden, so an unsaved Hồ sơ edit survives switching
     sections. `render(section, active)` passes `active` (dialog open, section shown) as each component's `open` prop.
-    Sections therefore load their data when shown, and Giọng nói stops a sample or a test listen when you leave it.
+    Sections therefore load their data when shown.
   - **Close button.** It has its own `.settings-close`. The shared `.dialog-close` × still belongs to the other
     dialogs (Nhân vật, Bối cảnh, model check, Beat Sync, documents, the Imagine lightbox). Commit 33d52a4 deleted it
     together with the old settings CSS, and those buttons fell back to the browser's grey box until it was restored.
@@ -1517,8 +1527,9 @@ scrollspy list, and grouped cards with coloured icons.
     On phones, inputs and dropdowns drop under their label, while switches stay on the right.
 - **Tests:**
   - `App.test.tsx` has a "Menu tài khoản và hộp Cài đặt" group.
-  - The settings helpers in `Companion.test.tsx` and `Hearing.test.tsx` open Settings the way a user does: account row,
-    then the menu, then the section.
+  - The settings helpers in `Companion.test.tsx` and `Hearing.test.tsx` open settings the way a user does: Trí nhớ
+    through the account row, the menu and the section; voice, hearing and web search through the gear in the Companion
+    chat column, then Mô-đun, then the page.
 
 ### Roleplay mode
 
@@ -1572,6 +1583,8 @@ upstream documentation/code and distinguish implemented features from roadmap/WI
 Ears/Mouth/Body/Brain interaction and the web/mobile stage experience. History navigation is a supporting improvement;
 voice interaction and character presence should drive the Companion roadmap. Adapt to Peto's current stack and retain
 the owner's existing choices for the stage, short English replies, microphone defaults and optional web search.
+Since 2026-10-13 the web comes first (AIRI's `apps/stage-web` and the shared `packages/stage-pages`/`stage-ui` code, not its
+desktop-only features). The next steps and the AIRI comparison live in `PETO_COMPANION_PLAN.md`.
 
 `Companion.tsx` is mounted alongside Chat like `Imagine.tsx` (an `active` prop, kept alive once
 visited) and owns one continuous thread from `GET /api/companion`; "Bắt đầu lại" deletes it. It
@@ -1594,7 +1607,8 @@ the character and the model's credit line. The owner added an animated three-dot
 2026-10-02; other text and controls remain in the chat column. The chat column carries the speaking status, the mute toggle, "Bắt đầu lại", a notice when
 voice is on but the chosen source cannot speak (`voice.problem`), the mic button and its panel (see "Hearing" below), and
 the Chat tab's composer styles. Enabling
-voice, choosing a source and a voice, and "Nghe thử" live in Settings, in `VoiceSettings.tsx` (see "Voice sources"
+voice, choosing a source and a voice, and "Nghe thử" live on the Giọng nói page of the Companion settings page, in
+`VoiceSettings.tsx` (see "Voice sources"
 below).
 
 The default character is the Live2D sample Hiyori; users can import their own Live2D or VRM models (see "Companion
@@ -1608,8 +1622,8 @@ saved in `localStorage`. The pure math (zoom, pan limits, look
 direction, wheel steps) lives in `characterView.ts` with its own tests.
 
 When motion is allowed the model plays its `Idle` motions, breathes, blinks and turns toward the
-pointer anywhere on the page; otherwise it holds its pose. "Nhân vật cử động" in Settings → Giao diện
-picks `system` (the default, which follows `prefers-reduced-motion`) or `always`. Windows with
+pointer anywhere on the page; otherwise it holds its pose. "Nhân vật cử động" (in the character picker dialog since
+2026-10-13) picks `system` (the default, which follows `prefers-reduced-motion`) or `always`. Windows with
 Animation effects off reports reduced motion, which is why the owner asked for the override. The
 mouth follows the audio that is actually playing (`voiceActivity.ts` reads a 20 ms loudness
 envelope against `currentTime`). PCM16 WAV takes the direct path; other browser-supported formats
@@ -1707,7 +1721,7 @@ use the owner's GPU while the relay runs; stopping the relay stops sharing. Setu
 limits are in `voice-worker/README.md`.
 
 **Voice sources** (option A, picked by the owner from mockups on 2026-09-24, modelled on AIRI's "official provider plus
-your own key"). Settings → Giọng nói shows the sources as cards in two groups, and the card picked is the source
+your own key"). The Giọng nói page of the Companion settings page shows the sources as cards in two groups, and the card picked is the source
 Companion speaks with:
 
 - **Giọng Peto** (`official`): the voices in `speech_cloud.catalog()` (StepFun, plus OpenAI or Qwen Cloud when
@@ -1744,7 +1758,7 @@ character settings switch. `backend/tests/test_voice_sources.py`, `frontend/test
 `localSpeech.test.ts` and `Companion.test.tsx` cover the allowance, the relay, each provider's request and the fallback
 rules.
 
-Every picker in Settings → Giọng nói (both tabs) and in the Micro panel is `Dropdown` from `voiceUi.tsx`, never a native
+Every picker on the Giọng nói and Nghe pages of the Companion settings page and in the Micro panel is `Dropdown` from `voiceUi.tsx`, never a native
 `<select>` or `<datalist>`. The owner reported on 2026-09-25 that the datalist popup stayed where it was while
 Settings scrolled, since the browser draws it as a separate window, and asked for AIRI's behaviour.
 - **Placement.** The list sits in the page right under the field (`position: absolute`), so it moves with the field. It
@@ -1786,8 +1800,8 @@ Settings scrolled, since the browser draws it as a separate window, and asked fo
 
 **Hearing (Peto nghe, "Ears")**. This is option A, picked by the owner from mockups on 2026-09-24 (AIRI's mic button).
 - **UI.** A mic button sits at the left of the Companion composer. Clicking it starts listening and opens the "Micro"
-  panel above the composer: a big toggle, a level meter, "Tự gửi", the microphone select and a link to Settings → Giọng
-  nói → Peto nghe. The panel sits inside the chat column, never on the stage, and closes when listening stops. On phones
+  panel above the composer: a big toggle, a level meter, "Tự gửi", the microphone select and a link to the Nghe page
+  of the Companion settings page (`/companion/settings/modules/hearing`). The panel sits inside the chat column, never on the stage, and closes when listening stops. On phones
   (below 720px) a compact status bar above the pill composer replaces it. It all runs in the browser; the backend has no
   part in it.
 - **Store.** `hearingEngine.ts` is a module store, like `musicVibe.ts`, shared by Companion and Settings. It holds:
@@ -1899,7 +1913,7 @@ Companion long-session recovery (2026-10-02):
   capture cycles per PC/mobile project. Hidden-page/lock behavior is simulated; physical Android/iOS lock and live
   browser recognition/provider services still require device trials.
 
-Optional spoken barge-in (2026-10-02) is under Settings → Giọng nói → Peto nghe → "Cho phép nói chen":
+Optional spoken barge-in (2026-10-02) is "Cho phép nói chen" on the Nghe page of the Companion settings page:
 - Off by default. Enabling it neither starts the microphone nor enables auto-send. While enabled, the existing
   pause-while-speaking preference is preserved but temporarily overridden; its switch is disabled with an explanation.
   Turning barge-in off restores that choice. No extra controls or panels are added to the stage.
@@ -1939,8 +1953,8 @@ Companion images (2026-10-02), following the owner's AIRI desktop/mobile referen
 - `Companion.test.tsx`, `Hearing.test.tsx`, chat API tests and `browser-tests/companion-images.spec.ts` cover lifecycle,
   microphone questions, provider payload/history, ownership/deletion and desktop/mobile layout with fake services.
 
-Companion timing diagnostics (2026-10-02) live in the collapsed "Kiểm tra tốc độ Companion" section under Settings →
-Giọng nói, below either voice tab. `companionTiming.ts` keeps at most five in-memory records containing source IDs,
+Companion timing diagnostics (2026-10-02) live on the Chẩn đoán page of the Companion settings page ("Kiểm tra tốc độ
+Companion", shown open since 2026-10-13; before that it was a collapsed section under Settings → Giọng nói). `companionTiming.ts` keeps at most five in-memory records containing source IDs,
 input kind, search flag and monotonic `performance.now()` milestones only; it stores no message, audio or key and
 does not add requests. Reload/unmount or Xóa kết quả đo clears them and invalidates pending updates.
 - Hearing supplies provider-confirmed end/finalization timestamps. Browser end can arrive after final text, or never
@@ -1955,9 +1969,9 @@ does not add requests. Reload/unmount or Xóa kết quả đo clears them and in
   latency claim is made from these client-observed combined intervals. AIRI-style stage layout and microphone defaults
   remain unchanged. Coverage includes store guards, real hooks with fake services and PC/mobile Settings/browser flows.
 
-- Voice stays off until the user turns on the "Bật giọng nói" switch in Settings, and nothing calls
-  `/api/voice` before that. Even once enabled, the hook only probes after Companion has been opened
-  or while Settings is open, so the Chat tab never calls it. `tests/Companion.test.tsx` asserts both.
+- Voice stays off until the user turns on the "Bật giọng nói" switch on the Giọng nói page, and nothing calls
+  `/api/voice` before that. Even once enabled, the hook only probes after Companion (or its settings page, which is
+  part of the Companion tab) has been opened, so the Chat tab never calls it. `tests/Companion.test.tsx` asserts both.
 - Chunks stay roughly equal (target 150 characters). Generation is only slightly faster than real
   time; the next chunk is requested when the previous one arrives, so it is ready in time only if
   it is not much longer than the one playing. One request at a time also fits the backend's
@@ -2160,7 +2174,8 @@ On 2026-09-28 the owner decided Companion should only gain features AIRI has, an
 the list, with option C from mockups: the page shows no sources.
 
 - **Switch, off by default.** Later on 2026-09-28 a Companion reply on the owner's phone was slow. The owner then picked
-  a switch in Settings → "Tra web" (option A, in the Companion group after Trí nhớ, like AIRI's Modules → Web Search),
+  a switch in Settings → "Tra web" (option A, like AIRI's Modules → Web Search; since 2026-10-13 it is the Tra web page
+  under Mô-đun of the Companion settings page),
   off by default as in AIRI.
   - `companionSearch.ts` keeps it per browser (`peto-companion-web-search`); `SearchSettings.tsx` renders it.
   - Companion sends `off` unless the switch is on.
@@ -2201,7 +2216,8 @@ data deletes them.
     - the character name in the Companion header ("Đổi nhân vật");
     - the person button beside the stage;
     - "Nhân vật" in the phone sidebar while Companion is open;
-    - Settings → Nhân vật.
+    - the "Nhân vật" card of the Companion settings page (which only opens this dialog, by the owner's call on
+      2026-10-13). "Nhân vật cử động" lives in this dialog too.
   - **Storage.** Hiyori is built in. Users can add up to 20 of their own models, saved in IndexedDB `peto-characters`
     (stores `models` and `assets`). The selected id lives in `peto-selected-character`; a missing id falls back to
     Hiyori, and a `storage` event keeps tabs in sync. Card thumbnails are captured from the rendered canvas
@@ -2235,7 +2251,10 @@ data deletes them.
 - **Scenes** (`CompanionScenes.tsx`, `sceneLibrary.ts`; built 2026-09-23). A background picture behind the stage and chat
   column (`.companion-with-scene`).
   - **Where it opens.** The "Bối cảnh" dialog opens from the image button beside the stage, or "Bối cảnh" in the phone
-    sidebar (App's `sceneRequest` counter).
+    sidebar (App's `sceneRequest` counter; on the settings page that sidebar item opens the Bối cảnh page instead). The
+    Bối cảnh page of the Companion settings page shows the same `SceneEditor`. A `peto-scene-change` event keeps every
+    `useCompanionScene` instance in step, since Companion stays mounted while its settings page is open; it reloads the
+    stored images only when images were added or removed.
   - **Backgrounds.** Three are built in: `dark` (the default, no picture) and two of Project AIRI's backgrounds in
     `public/scenes/airi/` (MIT, `AIRI-LICENSE.txt`). Users can upload PNG/JPEG/WebP/AVIF files up to 12 MB and 32
     megapixels. Uploads are stored unchanged as Blobs in IndexedDB `peto-scenes` and shared by every character.
@@ -2254,10 +2273,65 @@ data deletes them.
   - **Saved settings.** Strength (default 50%) and analyser parameters are kept per character in
     `peto-beat-sync:<id>`.
   - **Lifecycle.** Capture always needs a fresh click and is never restarted automatically. It stops when the shared
-    track ends, the model changes, or the Live2D stage unmounts (leaving Companion). Closing the panel keeps it
-    running. Audio is analysed on the device and never uploaded.
+    track ends, the model changes, or the user leaves the Companion tab or signs out (`leaveMusicVibe`, run when the
+    Live2D stage or the settings page unmounts). Opening the Companion settings page unmounts the stage but keeps
+    sharing, so the Nhún theo nhạc page works. Closing the panel keeps it running. Audio is analysed on the device and never uploaded.
 - **Tests:** frontend `characterLibrary`, `characterImport`, `CharacterImportReview`, `CharacterPickerImport`,
   `characterEffects`, `sceneLibrary`, `musicVibe`, `beatMotion` and `MusicVibePicker`.
+
+### Companion settings page (`/companion/settings/`)
+
+Built 2026-10-13. The owner picked the "Thẻ AIRI" variant from three live mockups (the others were a settings column
+beside the stage, and a two-column page with an overview). Plan and AIRI reading notes: `PETO_COMPANION_PLAN.md`.
+- **Routes.**
+  - `app/routes.ts` (`CompanionSettingsPage`, `companionSettingsRoute`, `companionSettingsPage`) defines:
+    - `/companion/settings/`;
+    - `modules`, `modules/voice`, `modules/hearing`, `modules/web-search` and `modules/beat-sync`;
+    - `scene`, `memory` and `diagnostics`.
+  - Each works with or without a trailing slash. `appView` maps them to `companion`, so the sidebar keeps Companion
+    selected.
+  - The backend fallback accepts exactly these paths.
+  - `tests/routes.test.ts`, `backend/tests/test_static_files.py` and `browser-tests/routing.spec.ts` cover deep links,
+    F5, Back/Forward and 404s.
+- **App wiring.**
+  - On these paths App renders the lazy `features/companion/settings/CompanionSettings.tsx`, and Companion stays mounted
+    with `active=false`. As when leaving the tab, speech stops, the stage unmounts and the microphone closes; a reply
+    that is streaming keeps going.
+  - Entry points:
+    - the gear "Cài đặt Companion" in the Companion chat column header (`onOpenSettings`);
+    - the Micro panel link, which opens the Nghe page.
+  - Navigation:
+    - Sidebar "Companion" returns to `/companion`.
+    - Each page's back button goes to its parent; the home page's back button returns to `/companion`.
+- **Layout** (after AIRI's `stage-layouts/settings.vue`, `page-header.vue`, `icon-item.vue` and `ripple-grid`).
+  - One centred column, at most 1040px wide, with a sticky header: back button, the parent page's name small above, and
+    the page title at 30px.
+  - The home page is a list of large cards: Nhân vật, Mô-đun, Bối cảnh, Trí nhớ, Chẩn đoán. Each card has a title, one
+    description line and a large faded icon.
+  - Mô-đun is a two-column grid: Giọng nói, Nghe, Tra web, Nhún theo nhạc.
+    - A green dot means "on now": voice enabled, microphone listening, web search on, Beat Sync sharing.
+    - Each card also has a one-line status.
+  - Leaf pages reuse the existing components: `VoiceSettings` (now without tabs), `HearingSettings`, `SearchSettings`,
+    `BeatSyncBody`, `SceneEditor`, `MemorySettings` and `CompanionTimingPanel`. Each `SettingsGroup` is styled as a card
+    with a large grey title.
+  - Palette: scoped `--cs-*` tokens, using the Companion teal already allowed for on/selected states.
+  - Icons are drawn locally (`settingsIcons.tsx`). AIRI's Solar icon set was not copied; its licence has not been
+    checked.
+- **Motion** (owner, 2026-10-13: smooth by default even when the OS asks for reduced motion).
+  - The header title slides in over 250ms.
+  - Cards rise with a ripple delay from the card clicked last: 70ms per grid step, 260ms each.
+  - On hover (fine pointers only): a teal sweep (transform/opacity), the dotted pattern grows stronger, and the icon
+    scales and tilts.
+  - A giant faded icon rotates in at the bottom right.
+  - `:root[data-motion="reduced"]` keeps only the fades. It is ready for the web-wide Motion setting, which is not built
+    yet (plan decision 2).
+  - Focus moves to the page title on every page change.
+- **Tests:**
+  - `Companion.test.tsx`: the gear, levels, Back, the back buttons, focus, the Nhân vật card, the motion row in the
+    picker, and a deep link to Trí nhớ.
+  - `App.test.tsx`: the shared dialog has no Companion group.
+  - `Hearing.test.tsx`: the Micro panel link and leaving the page stopping a test listen.
+  - Playwright: `companion-barge-in`, `companion-stream` and `routing`.
 
 ### Peto Agent (CLI)
 
@@ -3125,9 +3199,9 @@ Chat, Companion and roleplay turn (not the Agent CLI).
   and `features/chat/ChatMessage.tsx` own their presentation. `Imagine.tsx` and `Companion.tsx` are mounted alongside
   it and receive an `active` prop rather than being unmounted — that is what keeps a running generation
   alive when the user switches back to Chat.
-- Settings → "Giao diện" contains the theme selector. "Nhân vật", the first section under the Companion group,
-  contains the character picker entry and character motion preference; the existing saved selection and motion values
-  are preserved.
+- Settings → "Giao diện" contains the theme selector. Since 2026-10-13 the shared Settings dialog has no Companion
+  group: character motion is in the character picker dialog, and voice, hearing, web search, Beat Sync, scenes and
+  diagnostics are on `/companion/settings/`. Saved selections and motion values are unchanged.
 - Settings → "Kết nối" manages per-owner GitHub App connections (`features/connectors/`, `storage/connectors.py`).
   Configure the five `PETO_GITHUB_*` / `PETO_CONNECTOR_SECRET` variables described in
   `backend/features/connectors/README.md`; no live connection exists until that setup and user consent are complete.

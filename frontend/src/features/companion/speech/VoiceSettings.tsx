@@ -1,6 +1,4 @@
-import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
-import HearingSettings from "./HearingSettings";
-import CompanionTimingPanel from './CompanionTimingPanel';
+import { useEffect, useId, useRef, useState } from "react";
 import { VOICE_LABELS, voiceLabel, type FallbackChoice, type LocalVoice, type VoiceSourceId } from "./LocalVoice";
 import {
   KEY_PROVIDERS,
@@ -34,21 +32,17 @@ const RELAY_REASON: Partial<Record<KeyProvider["id"], string>> = {
 
 type Card = SourceCardData<VoiceSourceId>;
 
-/** Hai thẻ của mục Giọng nói: Peto nói (giọng đọc) và Peto nghe (micro, chép lời). */
-export type VoiceTab = "noi" | "nghe";
-
 /**
- * Mục Giọng nói trong Cài đặt (phương án A chủ web chọn ngày 2026-09-24): bật tắt, rồi chọn nguồn giọng bằng thẻ.
- * "Không cần khóa" là Giọng Peto (khóa của chủ web, lượt miễn phí mỗi tháng) và Máy nhà của Peto; "Khóa của bạn" là
- * các nhà cung cấp dùng khóa riêng, lưu trên trình duyệt này. Khung chi tiết nằm ngay sau thẻ đang chọn, nên trên
- * điện thoại nó hiện ngay dưới thẻ. Nút tắt tiếng không ở đây mà ở cột chat của Companion.
+ * Trang Giọng nói trong Cài đặt Companion (phương án A chủ web chọn ngày 2026-09-24): bật tắt, rồi chọn nguồn giọng bằng
+ * thẻ. "Không cần khóa" là Giọng Peto (khóa của chủ web, lượt miễn phí mỗi tháng) và Máy nhà của Peto; "Khóa của bạn" là
+ * các nhà cung cấp dùng khóa riêng, lưu trên trình duyệt này. Khung chi tiết nằm ngay sau thẻ đang chọn, nên trên điện
+ * thoại nó hiện ngay dưới thẻ. Nút tắt tiếng không ở đây mà ở cột chat của Companion. Phần nghe (micro) và đo tốc độ là
+ * hai trang riêng từ ngày 13/10/2026 (`HearingSettings`, `CompanionTimingPanel`).
  */
-export default function VoiceSettings({ voice, open, tab = "noi", onTab }: {
+export default function VoiceSettings({ voice, open }: {
   voice: LocalVoice;
-  /** Mục Giọng nói đang được xem; rời mục hay đóng Cài đặt thì thôi đọc câu mẫu và thôi nghe thử. */
+  /** Trang đang được xem; rời trang thì thôi đọc câu mẫu. */
   open: boolean;
-  tab?: VoiceTab;
-  onTab?: (tab: VoiceTab) => void;
 }) {
   const [error, setError] = useState<string | null>(null);
   const [sampleText, setSampleText] = useState(SAMPLE_TEXT);
@@ -56,14 +50,6 @@ export default function VoiceSettings({ voice, open, tab = "noi", onTab }: {
   const sampling = speaking?.key === SAMPLE_KEY ? speaking.phase : null;
   const fallbackId = useId();
   const switchId = useId();
-
-  function tabKeys(event: KeyboardEvent<HTMLDivElement>) {
-    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-    event.preventDefault();
-    const next = tab === "noi" ? "nghe" : "noi";
-    onTab?.(next);
-    document.getElementById(`voice-tab-${next}`)?.focus();
-  }
 
   // Rời mục hay đóng Cài đặt thì thôi đọc câu mẫu; tin Companion đang đọc thì để yên.
   useEffect(() => {
@@ -149,87 +135,61 @@ export default function VoiceSettings({ voice, open, tab = "noi", onTab }: {
 
   return (
     <>
-      <div className="voice-tabs" role="tablist" aria-label="Giọng nói" onKeyDown={tabKeys}>
-        {([["noi", "Peto nói"], ["nghe", "Peto nghe"]] as const).map(([id, label]) => (
-          <button
-            key={id}
-            type="button"
-            role="tab"
-            id={`voice-tab-${id}`}
-            aria-selected={tab === id}
-            aria-controls={`voice-panel-${id}`}
-            tabIndex={tab === id ? 0 : -1}
-            onClick={() => onTab?.(id)}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+      <SettingsGroup>
+        <SettingsRow
+          label="Bật giọng nói"
+          htmlFor={switchId}
+          desc={voice.enabled
+            ? "Peto nói thành tiếng trong Companion. Chọn nguồn giọng bên dưới; đổi lúc nào cũng được, chữ vẫn hiện như thường."
+            : "Peto có thể nói thành tiếng trong Companion. Bật lên để chọn nguồn giọng; khi tắt, Peto chỉ nhắn chữ."}
+        >
+          <SettingsSwitch
+            id={switchId}
+            label="Bật giọng nói"
+            checked={voice.enabled}
+            onChange={(value) => { setError(null); voice.setEnabled(value); }}
+          />
+        </SettingsRow>
+      </SettingsGroup>
 
-      {tab === "nghe" ? (
-        <div role="tabpanel" id="voice-panel-nghe" aria-labelledby="voice-tab-nghe">
-          <HearingSettings open={open} />
-        </div>
-      ) : (
-        <div role="tabpanel" id="voice-panel-noi" aria-labelledby="voice-tab-noi">
-          <SettingsGroup>
-            <SettingsRow
-              label="Bật giọng nói"
-              htmlFor={switchId}
-              desc={voice.enabled
-                ? "Peto nói thành tiếng trong Companion. Chọn nguồn giọng bên dưới; đổi lúc nào cũng được, chữ vẫn hiện như thường."
-                : "Peto có thể nói thành tiếng trong Companion. Bật lên để chọn nguồn giọng; khi tắt, Peto chỉ nhắn chữ."}
-            >
-              <SettingsSwitch
-                id={switchId}
-                label="Bật giọng nói"
-                checked={voice.enabled}
-                onChange={(value) => { setError(null); voice.setEnabled(value); }}
-              />
-            </SettingsRow>
+      {voice.enabled && (
+        <>
+          <SettingsGroup title="Nguồn giọng">
+            <div className="voice-sources">
+              <div className="voice-group"><strong>Không cần khóa</strong></div>
+              <div className="voice-cards">{cards(free)}</div>
+
+              <div className="voice-group">
+                <strong>Khóa của bạn</strong>
+                <span>Khóa lưu trên trình duyệt này, tính tiền vào tài khoản của bạn</span>
+              </div>
+              <div className="voice-cards">{cards(byok)}</div>
+            </div>
           </SettingsGroup>
 
-          {voice.enabled && (
-            <>
-              <SettingsGroup title="Nguồn giọng">
-                <div className="voice-sources">
-                  <div className="voice-group"><strong>Không cần khóa</strong></div>
-                  <div className="voice-cards">{cards(free)}</div>
-
-                  <div className="voice-group">
-                    <strong>Khóa của bạn</strong>
-                    <span>Khóa lưu trên trình duyệt này, tính tiền vào tài khoản của bạn</span>
-                  </div>
-                  <div className="voice-cards">{cards(byok)}</div>
-                </div>
-              </SettingsGroup>
-
-              <SettingsGroup>
-                <SettingsRow
-                  label="Khi nguồn chính không nói được"
-                  htmlFor={fallbackId}
-                  labelId={`${fallbackId}-label`}
-                  desc="Giọng nói do AI tạo. Giọng dự phòng có thể khác chất giọng; Giọng Peto dự phòng cũng trừ lượt tháng này."
-                >
-                  <div className="settings-dropdown">
-                    <Dropdown
-                      id={fallbackId}
-                      value={fallback}
-                      onChange={(value) => voice.setFallback(value as FallbackChoice)}
-                      options={[
-                        ...(offerHome ? [{ value: "home", label: "Dùng Máy nhà của Peto nếu đang bật" }] : []),
-                        ...(offerOfficial ? [{ value: "official", label: "Dùng Giọng Peto nếu còn lượt" }] : []),
-                        { value: "", label: "Chỉ hiện chữ" },
-                      ]}
-                    />
-                  </div>
-                </SettingsRow>
-              </SettingsGroup>
-            </>
-          )}
-        </div>
+          <SettingsGroup>
+            <SettingsRow
+              label="Khi nguồn chính không nói được"
+              htmlFor={fallbackId}
+              labelId={`${fallbackId}-label`}
+              desc="Giọng nói do AI tạo. Giọng dự phòng có thể khác chất giọng; Giọng Peto dự phòng cũng trừ lượt tháng này."
+            >
+              <div className="settings-dropdown">
+                <Dropdown
+                  id={fallbackId}
+                  value={fallback}
+                  onChange={(value) => voice.setFallback(value as FallbackChoice)}
+                  options={[
+                    ...(offerHome ? [{ value: "home", label: "Dùng Máy nhà của Peto nếu đang bật" }] : []),
+                    ...(offerOfficial ? [{ value: "official", label: "Dùng Giọng Peto nếu còn lượt" }] : []),
+                    { value: "", label: "Chỉ hiện chữ" },
+                  ]}
+                />
+              </div>
+            </SettingsRow>
+          </SettingsGroup>
+        </>
       )}
-      <CompanionTimingPanel />
     </>
   );
 }

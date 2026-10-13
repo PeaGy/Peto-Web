@@ -95,3 +95,6 @@
   .import-review-body { padding: 0 16px 16px; }
   .import-review-actions { padding: 14px 16px; flex-wrap: wrap; }
 }
+
+/* Nhân vật cử động: trước nằm ở Cài đặt → Nhân vật, từ 13/10/2026 nằm trong hộp chọn nhân vật. */
+.character-motion-row { margin-top: 20px; padding: 6px 18px; border: 1px solid var(--line); border-radius: 16px; }

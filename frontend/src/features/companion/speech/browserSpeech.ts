@@ -107,7 +107,7 @@ export function startBrowserSpeech(language: HearingLanguage, handlers: BrowserS
       resultTimer = undefined;
       if (stopped) return;
       warned = true;
-      handlers.onNotice("Micro có âm thanh nhưng dịch vụ nhận giọng chưa trả chữ. Kiểm tra micro mặc định, mạng và ngôn ngữ trong Cài đặt → Giọng nói → Peto nghe; thử nguồn nghe khác nếu vẫn lỗi.");
+      handlers.onNotice("Micro có âm thanh nhưng dịch vụ nhận giọng chưa trả chữ. Kiểm tra micro mặc định, mạng và ngôn ngữ trong Cài đặt Companion → Nghe; thử nguồn nghe khác nếu vẫn lỗi.");
     }, 8000);
   };
 
@@ -193,7 +193,7 @@ export function startBrowserSpeech(language: HearingLanguage, handlers: BrowserS
     startTimer = setTimeout(() => {
       if (!current()) return;
       stop();
-      handlers.onError("Dịch vụ nhận giọng của trình duyệt chưa khởi động. Kiểm tra quyền micro và mạng, hoặc chọn nguồn nghe khác trong Cài đặt → Giọng nói → Peto nghe.");
+      handlers.onError("Dịch vụ nhận giọng của trình duyệt chưa khởi động. Kiểm tra quyền micro và mạng, hoặc chọn nguồn nghe khác trong Cài đặt Companion → Nghe.");
     }, 10000);
     try {
       next.start();

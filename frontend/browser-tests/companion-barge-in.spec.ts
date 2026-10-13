@@ -72,21 +72,21 @@ test('bật nói chen trong Cài đặt rồi ngắt SSE và tiếng; giữ micr
   const composer = page.getByRole('textbox', { name: 'Nhắn cho Peto trong Companion' });
   const panel = page.getByRole('region', { name: 'Trò chuyện trong Companion' });
   await expect(page.getByRole('button', { name: 'Tắt tiếng', exact: true })).toBeVisible();
-  if (!await page.locator('.sidebar').isVisible()) await page.getByRole('button', { name: 'Mở menu', exact: true }).click();
-  await page.getByRole('button', { name: 'Tài khoản · Người kiểm thử' }).click();
-  await page.getByRole('menuitem', { name: 'Cài đặt', exact: true }).click();
-  const settings = page.getByRole('dialog', { name: 'Cài đặt', exact: true });
-  await settings.getByRole('button', { name: 'Giọng nói', exact: true }).click();
-  await settings.getByRole('tab', { name: 'Peto nghe' }).click();
+  // Cài đặt Companion (/companion/settings/, từ 13/10/2026): bánh răng ở đầu cột chat → Mô-đun → Nghe.
+  await panel.getByRole('button', { name: 'Cài đặt Companion' }).click();
+  const settings = page.locator('main.companion-settings');
+  await settings.getByRole('button', { name: /^Mô-đun/ }).click();
+  await settings.getByRole('button', { name: /^Nghe/ }).click();
+  await expect(settings.getByRole('heading', { level: 1, name: 'Nghe' })).toBeVisible();
   const barge = settings.getByRole('switch', { name: 'Cho phép nói chen' });
   await expect(barge).not.toBeChecked();
   await barge.check();
   await expect(settings.getByRole('switch', { name: 'Tạm không nghe khi Peto đang nói' })).toBeDisabled();
   await expect(settings.getByRole('switch', { name: 'Tự gửi khi nói xong' })).not.toBeChecked();
-  await settings.getByRole('button', { name: 'Đóng cài đặt' }).click();
-  if (page.viewportSize()!.width < 768 && await page.locator('.sidebar').isVisible()) {
-    await page.getByRole('button', { name: 'Đóng danh sách hội thoại' }).click({ position: { x: page.viewportSize()!.width - 5, y: 300 } });
+  for (const back of ['Quay lại Mô-đun', 'Quay lại Cài đặt', 'Quay lại Companion']) {
+    await settings.getByRole('button', { name: back, exact: true }).click();
   }
+  await expect(composer).toBeVisible();
   await page.getByRole('button', { name: 'Bật nghe', exact: true }).click();
   await expect(page.locator('.hearing-mic')).toHaveClass(/waiting/);
   type BargeState = {

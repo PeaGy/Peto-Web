@@ -155,7 +155,7 @@ export function sourceState(
   if (provider) {
     return keyReady(provider, keys[provider.id])
       ? { ready: true, problem: "" }
-      : { ready: false, problem: `Chưa nhập đủ thông tin ${provider.name} trong Cài đặt → Giọng nói.` };
+      : { ready: false, problem: `Chưa nhập đủ thông tin ${provider.name} trong Cài đặt Companion → Giọng nói.` };
   }
   if (!health) return { ready: false, problem: "Chưa kết nối được máy chủ giọng nói." };
   if (source === "home") {
