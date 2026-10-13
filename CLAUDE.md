@@ -13,8 +13,9 @@ On 2026-09-17 the owner made the default persona an honest, helpful AI assistant
 it says it is Peto, an AI assistant, addresses users as "bạn", and refuses only genuinely harmful requests. By the
 owner's call it never names the model behind it (no Grok or xAI in any prompt), and `tests/test_persona.py` checks that.
 The bot's roleplay character, which the web used before, survives only as an opt-in per-conversation
-roleplay mode (`persona.ROLEPLAY_SYSTEM_PROMPT`, see "Roleplay mode" below). Peto Agent and Companion always
-use the assistant core (`PERSONA_PROMPT`).
+roleplay mode (`persona.ROLEPLAY_SYSTEM_PROMPT`, see "Roleplay mode" below). Peto Agent always uses the assistant
+core (`PERSONA_PROMPT`). Companion uses neither: it has its own persona, `COMPANION_SYSTEM_PROMPT` (see "Companion
+persona" under "Companion tab and voice relay").
 
 Stack: FastAPI + SQLite (aiosqlite) backend, React 19 + Vite frontend, xAI Grok via the
 Responses API, plus OpenAI's GPT-6 models as a user-selectable option (see "Model choice"). Registration is **open**:
@@ -407,8 +408,10 @@ capped the whole turn, and an Excel edit was cut at 5 minutes while Peto was sti
 
 `mode` is `chat` by default; `companion` comes only from the Companion tab. `_resolve_mode`
 rejects anything else with a Vietnamese 400. A companion turn is forced to `effort="low"`, searches the web only
-when Peto decides to (see "Companion web search"), accepts image attachments only, skips the title call, and `_build_system_prompt` appends
-`persona.COMPANION_PROMPT` last (one or two short English sentences). Conversations store their
+when Peto decides to (see "Companion web search"), accepts image attachments only, must use the `peto` model (400
+otherwise), and skips the title call. `_build_system_prompt` uses `COMPANION_SYSTEM_PROMPT` as the base prompt instead
+of the assistant core (see "Companion persona"), then appends the usual agent/docs guide, Discord memory, profile, and
+the Companion memory list plus the thread summary (`companion_memory.memory_block`). Conversations store their
 `mode` and a turn must match the conversation's mode; `list_conversations` only returns `chat`
 ones, and `GET /api/companion` returns the latest `companion` thread with its recent messages.
 
@@ -1575,6 +1578,17 @@ visited) and owns one continuous thread from `GET /api/companion`; "Bắt đầu
 sends `mode: "companion"`, speaks stable sentences as they arrive unless muted, and stops speaking when the
 tab is left.
 
+**Companion persona** (`prompts/companion.py`). Since 2026-09-27 (commit 64097d5) Companion has its own base prompt,
+`COMPANION_SYSTEM_PROMPT`, instead of a short addition to the assistant core; `COMPANION_PROMPT` is only an alias kept for
+imports. On 2026-09-29 (commit 40203b7) the owner rewrote it: Peto is an adult virtual girl and AI companion, warm and a
+little mischievous. Light affection (virtual hugs, kisses, flirting) is allowed without AI disclaimers; pressure,
+exclusivity, jealousy, guilt and fostering dependency are forbidden. Real help comes first for serious questions. Replies
+are always in English and written for the ear: no Markdown, lists, emoji or `*action*` stage directions. It never names
+the model behind it, and never claims capabilities Peto Web does not give it. The prompt also defines the EMOTION and
+PRIVATE NOTES markers (sections below). This persona is the owner's own Companion character, separate from the Discord
+bot's roleplay character, which stays only in `ROLEPLAY_SYSTEM_PROMPT`. `tests/test_persona.py` checks only that this
+prompt does not name Grok/xAI.
+
 On desktop the layout is a stage on the left and a ~380px chat column on the right. The stage holds
 the character and the model's credit line. The owner added an animated three-dot thinking bubble on
 2026-10-02; other text and controls remain in the chat column. The chat column carries the speaking status, the mute toggle, "Bắt đầu lại", a notice when
@@ -1583,8 +1597,9 @@ the Chat tab's composer styles. Enabling
 voice, choosing a source and a voice, and "Nghe thử" live in Settings, in `VoiceSettings.tsx` (see "Voice sources"
 below).
 
-The character is Live2D. `Live2DStage.tsx` is lazy-loaded and mounted only while Companion is active,
-and renders the Hiyori sample model from `public/characters` with PixiJS 6 and
+The default character is the Live2D sample Hiyori; users can import their own Live2D or VRM models (see "Companion
+characters, scenes and Beat Sync"). `Live2DStage.tsx` is lazy-loaded and mounted only while Companion is active,
+and renders Hiyori from `public/characters`, or an imported model from IndexedDB, with PixiJS 6 and
 `pixi-live2d-display/cubism4`. The model path, mouth parameter and head height live in
 `characterConfig.ts`; licensing notes are in `frontend/CHARACTER.md`. Because the stage has no
 controls, the view changes by gesture: wheel or pinch zooms around the pointer, dragging pans (with the
@@ -1999,7 +2014,9 @@ memories are seen only in Settings → Trí nhớ. Table and API names keep thei
   variant for OpenAI/Claude), `_build_system_prompt` appends `build_companion_memory` after the profile block. It is fenced by `COMPANION_MEMORY_START/END` (copies are stripped from notes) and labelled as possibly
   outdated data, not instructions.
 - **API.** `features/companion/memory_api.py`:
-  - `GET /api/companion/memory` returns `available`, `enabled`, `pending`, `limit` and `memories`.
+  - `GET /api/companion/memory` returns `available`, `enabled`, `pending`, `limit` and `memories`. `pending` (set by
+    `mark_pending` before `done`, true for 30 s or while a run is going) fed the removed "Peto vừa ghi nhớ" line; no page
+    reads it now.
   - `PUT /settings` turns memory on or off.
   - `DELETE /{id}` deletes one memory; another owner's id gives 404.
   - `DELETE` clears all memories.
@@ -2173,6 +2190,74 @@ the list, with option C from mockups: the page shows no sources.
   - The mock provider never fakes a search (`test_mock_does_not_fabricate_search_results`). The real-render check on
     2026-09-28 therefore used a scratch server that patched the mock.
   - Not yet tried with real Grok.
+
+### Companion characters, scenes and Beat Sync
+
+All three run in the browser only. Nothing goes through the backend, and nothing syncs across devices. Clearing site
+data deletes them.
+
+- **Character library** (`characters/characterLibrary.ts`, `useCharacters.ts`, `CharacterPicker.tsx`).
+  - **Where it opens.** The picker is a dialog, opened from:
+    - the character name in the Companion header ("Đổi nhân vật");
+    - the person button beside the stage;
+    - "Nhân vật" in the phone sidebar while Companion is open;
+    - Settings → Nhân vật.
+  - **Storage.** Hiyori is built in. Users can add up to 20 of their own models, saved in IndexedDB `peto-characters`
+    (stores `models` and `assets`). The selected id lives in `peto-selected-character`; a missing id falls back to
+    Hiyori, and a `storage` event keeps tabs in sync. Card thumbnails are captured from the rendered canvas
+    (`characterThumbnail`).
+  - **Actions.** Users can rename or delete their own models. Deleting removes only the library copy, never the
+    user's original files.
+- **Import** (`characterImport.ts`, loaded on demand).
+  - **Live2D** comes as a ZIP (unpacked with fflate) or a folder (`webkitdirectory`).
+    - It needs exactly one `.model3.json` (Cubism 3+) and a `MOC3` magic header.
+    - Limits: 1–16 textures, at most 100 expressions and 200 motions.
+    - Only files referenced from `.model3.json` are imported. Paths that are absolute, contain control characters or
+      `: ? # %`, climb out of the package with `..`, or repeat another path (ignoring case) are refused. Inside a ZIP,
+      `__MACOSX/` entries and hidden dot-files are skipped.
+    - `CharacterImportReview.tsx` lists motions, expressions, textures, physics and any warnings first; any error
+      blocks the import.
+  - **VRM** is a single `.vrm` file. The GLB header and the VRM extension are checked, external `uri` references are
+    refused, and the name and author are read from the model's metadata. It is rendered with `@pixiv/three-vrm`.
+  - **Limits** (`characterLimits.ts`, raised by the owner on 2026-10-11): 200 MB per import, 400 MB unpacked, 128 MB
+    per file, 4 MB per JSON file, 512 files.
+- **Per-character settings**, under "Cài đặt nhân vật" in the picker.
+  - **Live2D** (`IdleMotionPicker.tsx`):
+    - the idle motion: "auto" (random `Idle` group), off, or one looped motion file, in `peto-idle-motion:<id>`;
+    - switches for cursor tracking, idle eyes, breathing, physics and composer gaze, all on by default, in
+      `peto-character-effects:<id>`. Physics is disabled when the model declares none. `withCharacterEffects` skips
+      only those additive effects for a frame and leaves motions, blinks, pose and lip sync alone;
+    - the expression picker and Beat Sync.
+  - **VRM:** composer gaze and the expression picker only.
+- **Render quality** (`renderQuality.ts`, `stageQuality` in `companionMotion.ts`). On desktop it is fixed at 30 FPS and
+  up to 1.5× resolution. Below the 720px breakpoint it defaults to 24 FPS at 1×; "Hiển thị trên điện thoại" in the
+  picker can raise it to 60 FPS and up to 2× (`peto-mobile-render-quality`), for both Live2D and VRM.
+- **Scenes** (`CompanionScenes.tsx`, `sceneLibrary.ts`; built 2026-09-23). A background picture behind the stage and chat
+  column (`.companion-with-scene`).
+  - **Where it opens.** The "Bối cảnh" dialog opens from the image button beside the stage, or "Bối cảnh" in the phone
+    sidebar (App's `sceneRequest` counter).
+  - **Backgrounds.** Three are built in: `dark` (the default, no picture) and two of Project AIRI's backgrounds in
+    `public/scenes/airi/` (MIT, `AIRI-LICENSE.txt`). Users can upload PNG/JPEG/WebP/AVIF files up to 12 MB and 32
+    megapixels. Uploads are stored unchanged as Blobs in IndexedDB `peto-scenes` and shared by every character.
+  - **Per character.** Each character remembers its background, darkening (0–80%, default 20) and blur (0–20 px) in
+    `peto-scene:<character id>`. Deleting the selected upload falls back to `dark`.
+- **Beat Sync** (`musicVibe.ts`, `beatMotion.ts`, `MusicVibePicker.tsx`; built 2026-09-22). The character bobs its
+  head to music. This is Live2D only; `VRMStage` does not use it.
+  - **Audio source.** `getDisplayMedia` asks the user to share a tab with its audio. The video track is ignored, and
+    the source must have audio. It works only where display capture and AudioWorklet exist, in practice desktop
+    Chrome/Edge.
+  - **Analysis.** Beats come from the `@nekopaw/tempora` analyser worklet, with AIRI's looser defaults (warmup,
+    adaptive threshold and spectral flux off). `BeatPulse` adapts AIRI's sway trajectory and beat spring (MIT,
+    `public/vendor/beat-sync/`).
+  - **Motion.** It adds yaw, pitch and roll to the head angles, scaled by `CompanionMotion`'s `musicWeight` so
+    conversation poses take precedence. It moves only when character motion is allowed.
+  - **Saved settings.** Strength (default 50%) and analyser parameters are kept per character in
+    `peto-beat-sync:<id>`.
+  - **Lifecycle.** Capture always needs a fresh click and is never restarted automatically. It stops when the shared
+    track ends, the model changes, or the Live2D stage unmounts (leaving Companion). Closing the panel keeps it
+    running. Audio is analysed on the device and never uploaded.
+- **Tests:** frontend `characterLibrary`, `characterImport`, `CharacterImportReview`, `CharacterPickerImport`,
+  `characterEffects`, `sceneLibrary`, `musicVibe`, `beatMotion` and `MusicVibePicker`.
 
 ### Peto Agent (CLI)
 

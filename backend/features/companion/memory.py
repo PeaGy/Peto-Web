@@ -119,7 +119,8 @@ async def enabled_for(owner: str) -> bool:
 
 
 def mark_pending(owner: str) -> None:
-    """Gọi lúc lượt Companion xong: trang hỏi lại vài giây sau sẽ biết là còn đang ghi nhớ."""
+    """Gọi lúc một lượt Chat hay Companion có ghi nhớ trả lời xong: ``pending`` của API trí nhớ báo còn đang ghi nhớ
+    trong PENDING_SECONDS. Trang hiện không đọc trường này (dòng "Peto vừa ghi nhớ" đã bỏ ngày 11/10/2026)."""
     _pending_until[owner] = time.monotonic() + PENDING_SECONDS
 
 

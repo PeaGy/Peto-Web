@@ -576,7 +576,8 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
             yield sse({"type": "error", "message": failure})
         else:
             turn_complete = complete
-            # Trang hỏi lại vài giây sau "done" để hiện dòng "Peto vừa ghi nhớ"; đánh dấu trước cho khỏi hỏi hụt.
+            # Đánh dấu "đang ghi nhớ" trước "done" cho trường ``pending`` của GET /api/companion/memory. Dòng "Peto vừa
+            # ghi nhớ" từng đọc trường này đã bỏ ngày 11/10/2026; hiện trang không đọc nó nữa.
             if complete and remembers and await companion_memory.enabled_for(owner):
                 companion_memory.mark_pending(owner)
             yield sse({"type": "done"})
