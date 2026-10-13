@@ -1354,6 +1354,35 @@ it('asks before deleting and keeps the conversation when cancelled', async () =>
   expect(screen.queryByRole('dialog')).toBeNull();
 });
 
+it('Cài đặt → Giao diện → Chuyển động: mặc định Mượt dù máy giảm chuyển động; Giảm và Theo máy áp ngay', async () => {
+  const original = window.matchMedia;
+  const listeners: (() => void)[] = [];
+  let deviceReduces = true;
+  window.matchMedia = vi.fn((query: string) => ({ get matches() { return query.includes('reduce') ? deviceReduces : false; },
+    media: query, addEventListener: (_: string, listener: () => void) => listeners.push(listener),
+    removeEventListener: vi.fn() })) as unknown as typeof window.matchMedia;
+  await openApp();
+  expect(document.documentElement.dataset.motion).toBe('full');
+  await fromAccountMenu('Cài đặt');
+  const group = within(screen.getByRole('radiogroup', {name: 'Chuyển động'}));
+  expect((group.getByRole('radio', {name: /Mượt/}) as HTMLInputElement).checked).toBe(true);
+
+  fireEvent.click(group.getByRole('radio', {name: /Giảm/}));
+  expect(document.documentElement.dataset.motion).toBe('reduced');
+  expect(localStorage.getItem('peto-motion')).toBe('reduced');
+
+  fireEvent.click(group.getByRole('radio', {name: /Theo máy/}));
+  expect(document.documentElement.dataset.motion).toBe('reduced');
+  deviceReduces = false;
+  act(() => listeners.forEach(listener => listener()));
+  expect(document.documentElement.dataset.motion).toBe('full');
+
+  fireEvent.click(group.getByRole('radio', {name: /Mượt/}));
+  expect(localStorage.getItem('peto-motion')).toBe('full');
+  expect(document.documentElement.dataset.motion).toBe('full');
+  window.matchMedia = original;
+});
+
 it('opens settings from the account menu and switches to the light theme', async () => {
   await openApp();
   expect(document.documentElement.dataset.theme).toBe('dark');
@@ -1946,9 +1975,8 @@ describe('Bố cục màn hình trống', () => {
     expect(animate.mock.calls[0][1]).toMatchObject({ duration: 300 });
   });
 
-  it('bật giảm chuyển động thì chỉ hiện dần, không trượt', async () => {
-    window.matchMedia = vi.fn((query: string) => ({ matches: query.includes('reduce'), media: query,
-      addEventListener: vi.fn(), removeEventListener: vi.fn() })) as unknown as typeof window.matchMedia;
+  it('Chuyển động là Giảm thì chỉ hiện dần, không trượt', async () => {
+    localStorage.setItem('peto-motion', 'reduced');
     await openApp();
     send('Chào Peto');
     await waitFor(() => expect(animate).toHaveBeenCalledTimes(1));

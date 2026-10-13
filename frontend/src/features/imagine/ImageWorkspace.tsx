@@ -1,4 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type PointerEvent, type ReactNode } from 'react';
+import { isReducedMotion } from '../../shared/motion';
 import { Dropdown } from '../../shared/ui/Dropdown';
 import type { ImagineImage, ImagineJob } from '../../shared/api/api';
 import { imagineSources } from '../../shared/api/api';
@@ -128,7 +129,7 @@ export default function ImageWorkspace({ job, image, index, original, liked, dis
     if (!picture) return;
     pictureAnimationRef.current?.cancel();
     const rect = picture.getBoundingClientRect();
-    if (!rect.width || !before.width || document.activeElement instanceof HTMLTextAreaElement || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    if (!rect.width || !before.width || document.activeElement instanceof HTMLTextAreaElement || isReducedMotion()) return;
     const dx = before.x + before.width / 2 - rect.x - rect.width / 2, dy = before.y + before.height / 2 - rect.y - rect.height / 2;
     if (Math.abs(dx) + Math.abs(dy) + Math.abs(before.width - rect.width) < 1) return;
     pictureAnimationRef.current = picture.animate([{ transform: `translate(${dx}px, ${dy}px) scale(${before.width / rect.width}, ${before.height / rect.height})` }, { transform: 'none' }], { duration: 220, easing: 'cubic-bezier(.32,.72,0,1)' });

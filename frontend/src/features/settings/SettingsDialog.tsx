@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type AnimationEvent, type ReactNode } from "react";
 import { SettingsIcon, type SettingsIconName } from "./settingsUi";
+import { isReducedMotion } from "../../shared/motion";
 
 export type SettingsSection = "giao-dien" | "ho-so" | "tai-khoan" | "luu-tru" | "agent" | "ket-noi" | "tri-nho";
 
@@ -35,9 +36,9 @@ function narrow(): boolean {
   return typeof window.matchMedia === "function" && window.matchMedia("(max-width: 720px)").matches;
 }
 
-/** Trang của mục chỉ trượt vào, trượt ra trên điện thoại, và chỉ khi máy không bật giảm chuyển động. */
+/** Trang của mục chỉ trượt vào, trượt ra trên điện thoại, và chỉ khi Cài đặt → Giao diện → Chuyển động không phải Giảm. */
 function slides(): boolean {
-  return narrow() && !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  return narrow() && !isReducedMotion();
 }
 
 /**

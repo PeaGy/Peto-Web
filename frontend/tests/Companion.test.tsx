@@ -986,7 +986,7 @@ it('mục Nhân vật mở hộp chọn nhân vật; Nhân vật cử động n�
   fireEvent.click(page.getByRole('button', { name: /^Nhân vật/ }));
   const dialog = within(await screen.findByRole('dialog', { name: 'Nhân vật' }));
   const group = await dialog.findByRole('radiogroup', { name: 'Nhân vật cử động' });
-  expect((within(group).getByRole('radio', { name: /Theo máy/ }) as HTMLInputElement).checked).toBe(true);
+  expect((within(group).getByRole('radio', { name: /Theo cài đặt chung/ }) as HTMLInputElement).checked).toBe(true);
   fireEvent.click(within(group).getByRole('radio', { name: /Luôn cử động/ }));
   expect(localStorage.getItem('peto-character-motion')).toBe('always');
   // Vẫn ở trang cài đặt sau khi chọn: hộp chỉ là lối tắt.

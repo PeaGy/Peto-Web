@@ -47,7 +47,5 @@ label,
 }
 
 /* Giảm chuyển động: vẫn co để báo đã bấm, chỉ bỏ phần chạy chuyển tiếp. */
-@media (prefers-reduced-motion: reduce) {
-  :where(button, .discord-button, .alt-login) { transition: none; }
-}
+:root[data-motion="reduced"] :where(button, .discord-button, .alt-login) { transition: none; }
 

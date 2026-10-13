@@ -121,7 +121,5 @@
   .hearing-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--voice-online); }
   .hearing-dot.paused, .hearing-dot.starting { background: var(--stage-muted); }
 }
-@media (prefers-reduced-motion: reduce) {
-  .hearing-mic, .hearing-big, .hearing-levels i { transition: none; }
-}
+:root[data-motion="reduced"] .hearing-mic, :root[data-motion="reduced"] .hearing-big, :root[data-motion="reduced"] .hearing-levels i { transition: none; }
 

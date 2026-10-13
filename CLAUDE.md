@@ -1623,8 +1623,10 @@ direction, wheel steps) lives in `characterView.ts` with its own tests.
 
 When motion is allowed the model plays its `Idle` motions, breathes, blinks and turns toward the
 pointer anywhere on the page; otherwise it holds its pose. "Nhân vật cử động" (in the character picker dialog since
-2026-10-13) picks `system` (the default, which follows `prefers-reduced-motion`) or `always`. Windows with
-Animation effects off reports reduced motion, which is why the owner asked for the override. The
+2026-10-13) picks `system` ("Theo cài đặt chung", the default) or `always`. Since 2026-10-13 `system` follows the web's
+Cài đặt → Giao diện → Chuyển động (default "Mượt", so characters move) instead of the OS. Before that it followed
+`prefers-reduced-motion`, and Windows with Animation effects off reports reduced motion, which is why the owner asked
+for the "Luôn cử động" override. The
 mouth follows the audio that is actually playing (`voiceActivity.ts` reads a 20 ms loudness
 envelope against `currentTime`). PCM16 WAV takes the direct path; other browser-supported formats
 use `OfflineAudioContext.decodeAudioData` without rerouting or delaying playback. Decoding is serialized,
@@ -1641,7 +1643,7 @@ angles once before showing the model. Probing restores parameters; subsequent fr
 Models without a head rig retain a face-height fallback; VRM projects its head bone. A damped spring follows
 the animated head with slight lag/overshoot, substepped at 120 Hz, with stabilized placement decisions.
 It follows pan/zoom, never receives input, hides with unavailable/offscreen characters and on stop/end/tab exit,
-and uses static dots under system reduced motion unless the owner selects "Luôn cử động". Generation controls it independently of speech playback.
+and uses static dots when the web reduces motion unless the owner selects "Luôn cử động". Generation controls it independently of speech playback.
 Character settings include per-model `composerGaze` (default true, including old saved preferences). Only actual
 typing in a focused desktop composer attracts eyes/head for 3 s after the latest keystroke; blur, send and inactivity release attention.
 Both renderers restore the previous pointer/idle behavior with a 0.45 s release time constant, retaining gaze
@@ -1677,7 +1679,8 @@ VRM characters (`VRMStage.tsx`) got the missing items of AIRI's Body list on 202
   Before, VRM blinked every 4.3 s exactly.
 - **Checking it.** On 2026-09-28 the owner's VRoid model was checked in headless Edge. This machine's Windows has
   animation effects off, so headless Edge reports reduced motion too. Emulate `prefers-reduced-motion: no-preference`
-  (`Emulation.setEmulatedMedia`) to see blinks.
+  (`Emulation.setEmulatedMedia`) to see blinks. Since 2026-10-13 this only matters when Chuyển động is "Theo máy": by
+  default the web ignores the OS setting.
 
 Phones get AIRI's mobile look instead, at the owner's request. Below `COMPACT_QUERY` (the same 720px
 breakpoint as the CSS) the character fills the screen in a fixed frame (`compactHeight` and
@@ -2323,8 +2326,7 @@ beside the stage, and a two-column page with an overview). Plan and AIRI reading
   - On hover (fine pointers only): a teal sweep (transform/opacity), the dotted pattern grows stronger, and the icon
     scales and tilts.
   - A giant faded icon rotates in at the bottom right.
-  - `:root[data-motion="reduced"]` keeps only the fades. It is ready for the web-wide Motion setting, which is not built
-    yet (plan decision 2).
+  - `:root[data-motion="reduced"]` keeps only the fades: users choose "Giảm" in Cài đặt → Giao diện → Chuyển động.
   - Focus moves to the page title on every page change.
 - **Tests:**
   - `Companion.test.tsx`: the gear, levels, Back, the back buttons, focus, the Nhân vật card, the motion row in the
@@ -2332,6 +2334,34 @@ beside the stage, and a two-column page with an overview). Plan and AIRI reading
   - `App.test.tsx`: the shared dialog has no Companion group.
   - `Hearing.test.tsx`: the Micro panel link and leaving the page stopping a test listen.
   - Playwright: `companion-barge-in`, `companion-stream` and `routing`.
+
+### Motion setting (Cài đặt → Giao diện → Chuyển động)
+
+Built 2026-10-13, after the owner asked for smooth motion across the web "dù máy đã bật giảm chuyển động". Users who
+dislike it reduce it here, like Claude's Appearance → Motion.
+- **Choices** (`peto-motion`, `MOTIONS` in `app/preferences.tsx`):
+  - "Mượt" (`full`, the default) animates even when the OS asks for reduced motion;
+  - "Theo máy" (`system`) follows `prefers-reduced-motion` live;
+  - "Giảm" (`reduced`).
+- **How it is applied.**
+  - The resolved value is `<html data-motion="full|reduced">`. The inline script in `index.html` sets it before React
+    runs, so nothing flashes (it runs on /docs too), and `usePreferencesPersistence` keeps it current.
+  - `shared/motion.ts` exposes `readMotionChoice`, `resolveMotion`, `applyMotion`, `isReducedMotion` and
+    `useReducedMotion`; the last one watches the attribute with a MutationObserver.
+- **What follows it.**
+  - App CSS: all 25 former `@media (prefers-reduced-motion: reduce)` blocks became `:root[data-motion="reduced"] …`
+    rules.
+  - JS:
+    - the composer's first-send FLIP;
+    - phone Settings page slides;
+    - the Imagine viewer FLIP;
+    - Live2D and VRM "Theo cài đặt chung";
+    - the Docs default.
+  - The loading logo is still exempt.
+- **Tests and checks.**
+  - Unit tests: `tests/motion.test.tsx` and an `App.test.tsx` case; Live2D and VRM tests mock `isReducedMotion`.
+  - Playwright: `playwright.config.ts` emulates an OS that reduces motion, and `mockPeto` sets `peto-motion=system`, so
+    screenshots keep their old meaning. `browser-tests/motion.spec.ts` checks the default and "Giảm" across F5.
 
 ### Peto Agent (CLI)
 
@@ -3119,9 +3149,10 @@ Chat, Companion and roleplay turn (not the Agent CLI).
     drawer (`<dialog>`).
   - **Search** is a combobox in the header (Ctrl K). It ignores diacritics and opens the matching `##` section.
 - **Motion.** Once pressed, the header switch decides (`peto-docs-motion`). Until then the docs follow Peto's "Nhân vật
-  cử động" (`peto-character-motion`; same origin, so the app setting carries over), whose default respects
-  `prefers-reduced-motion`. The owner's Windows reports reduced motion, so there the character stays still until the
-  switch or "Luôn cử động" is on. Everything that moves sits under `.docs-motion`; without it only opacity fades remain.
+  cử động" (`peto-character-motion`; same origin, so the app setting carries over). Its default ("Theo cài đặt chung")
+  follows the web's Chuyển động setting (`data-motion`, set by `index.html` on /docs too). That default is "Mượt", so
+  the docs animate even on the owner's Windows with Animation effects off. Before 2026-10-13 it followed
+  `prefers-reduced-motion`. Everything that moves sits under `.docs-motion`; without it only opacity fades remain.
 - **Assets.** `peto-hero.webp` (263 KB) and `logo.webp` (7 KB) replaced 2.2 MB of PNGs on 2026-09-28. They were made
   with Pillow from the originals, which stay in git history (commit 2ffde96).
 - **Names.** Never add a `docs.ts`: Windows resolves `./Docs` to it before `Docs.tsx` (the `LocalVoice` problem above).
@@ -3191,7 +3222,7 @@ Chat, Companion and roleplay turn (not the Agent CLI).
   prompt also asks for `\lnot` or `\overline{…}`.
 - Per-user preferences (effort, theme, imagine quality/resolution/ratio/count, voice on/off, source, voices, fallback
   and the user's own TTS/STT keys, hearing source/mic/language/sensitivity/auto-send, Companion mute and web search,
-  character motion and view) live in
+  character motion and view, web motion `peto-motion`) live in
   `localStorage` behind try/catch helpers. In-flight Imagine state lives in component state,
   so it survives switching tabs but not a page reload.
 - Frontend code is grouped under `src/app`, `src/features` and `src/shared`; see `frontend/README.md` for ownership,
@@ -3199,7 +3230,7 @@ Chat, Companion and roleplay turn (not the Agent CLI).
   and `features/chat/ChatMessage.tsx` own their presentation. `Imagine.tsx` and `Companion.tsx` are mounted alongside
   it and receive an `active` prop rather than being unmounted — that is what keeps a running generation
   alive when the user switches back to Chat.
-- Settings → "Giao diện" contains the theme selector. Since 2026-10-13 the shared Settings dialog has no Companion
+- Settings → "Giao diện" contains the theme selector and Chuyển động. Since 2026-10-13 the shared Settings dialog has no Companion
   group: character motion is in the character picker dialog, and voice, hearing, web search, Beat Sync, scenes and
   diagnostics are on `/companion/settings/`. Saved selections and motion values are unchanged.
 - Settings → "Kết nối" manages per-owner GitHub App connections (`features/connectors/`, `storage/connectors.py`).

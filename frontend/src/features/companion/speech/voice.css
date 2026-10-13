@@ -133,7 +133,5 @@
   .voice-cards { grid-template-columns: 1fr; }
   .voice-sample { flex-direction: column; align-items: stretch; }
 }
-@media (prefers-reduced-motion: reduce) {
-  .voice-card, .voice-primary, .dropdown-chevron { transition: none; }
-  .dropdown-list { animation: none; }
-}
+:root[data-motion="reduced"] .voice-card, :root[data-motion="reduced"] .voice-primary, :root[data-motion="reduced"] .dropdown-chevron { transition: none; }
+:root[data-motion="reduced"] .dropdown-list { animation: none; }

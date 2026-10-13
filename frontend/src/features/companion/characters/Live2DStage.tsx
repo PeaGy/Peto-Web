@@ -24,6 +24,7 @@ import { IdleEyes } from './idleEyes';
 import { controlIdle, motionChoices, readIdle, watchIdle } from './live2dMotions';
 import { readEffects, watchEffects, withCharacterEffects } from './characterEffects';
 import { leaveMusicVibe, musicPose, selectMusicCharacter } from './musicVibe';
+import { isReducedMotion } from '../../../shared/motion';
 import { CompanionMotion, VoiceMouthBlend, stageQuality, type CompanionActivity } from './companionMotion';
 import { controlExpressions, faceSource, publishSnapshot, readExpressions, watchExpressions, type StageCue, type StageEmotion } from './characterExpressions';
 import { FaceBlend, faceApplier, type CubismCore } from './builtinFaces';
@@ -163,8 +164,8 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
       const originalHeight = current.height;
       current.anchor.set(0.5, 1);
 
-      const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
-      const moving = () => motionEnabled(motionRef.current, reducedMotion.matches);
+      // "Theo cài đặt chung" theo Cài đặt → Giao diện → Chuyển động của web (13/10/2026), không hỏi thẳng thiết bị.
+      const moving = () => motionEnabled(motionRef.current, isReducedMotion());
 
       // Máy tính: phóng và dời chỉ nhân thêm lên cỡ vừa khung, nên đổi cỡ cửa sổ vẫn giữ đúng góc nhìn đã chọn.
       let view = readCharacterView(character.id);

@@ -1,4 +1,5 @@
 import type { Effort } from '../shared/api/api';
+import type { MotionChoice } from "../shared/motion";
 import { SettingsIcon, type SegmentOption } from '../features/settings/settingsUi';
 
 export const EFFORT_KEY = "peto-effort";
@@ -22,6 +23,13 @@ export const THEMES: SegmentOption<ThemeChoice>[] = [
   { value: "system", label: "Theo máy", hint: "Theo máy: đổi theo cài đặt của thiết bị", icon: <SettingsIcon name="monitor" size={17} /> },
   { value: "light", label: "Sáng", hint: "Sáng: nền trắng, hợp ban ngày", icon: <SettingsIcon name="sun" size={17} /> },
   { value: "dark", label: "Tối", hint: "Tối: nền tối, dịu mắt buổi đêm", icon: <SettingsIcon name="moon" size={17} /> },
+];
+
+/** Cài đặt → Giao diện → Chuyển động (13/10/2026): mặc định Mượt, kể cả khi thiết bị bật giảm chuyển động. */
+export const MOTIONS: SegmentOption<MotionChoice>[] = [
+  { value: "full", label: "Mượt", hint: "Luôn có hiệu ứng, kể cả khi thiết bị bật giảm chuyển động" },
+  { value: "system", label: "Theo máy", hint: "Giảm hiệu ứng khi thiết bị bật giảm chuyển động" },
+  { value: "reduced", label: "Giảm", hint: "Bỏ trượt, phóng và xoay; chỉ giữ hiện mờ dần" },
 ];
 
 /** Model đã chọn lần trước; tài khoản không còn được dùng model đó thì lúc gửi tự về Peto. */

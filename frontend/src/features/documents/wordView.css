@@ -11,7 +11,7 @@
 .wv-ins-block, .wv-mixed-block { background: color-mix(in srgb, var(--sheet-accent) 10%, transparent); box-shadow: inset 3px 0 0 var(--sheet-accent); }
 .wv-active { box-shadow: inset 3px 0 0 var(--sheet-accent), 0 0 0 2px color-mix(in srgb, var(--sheet-accent) 55%, transparent); }
 .wv-del-block.wv-active { box-shadow: 0 0 0 2px color-mix(in srgb, var(--danger) 55%, transparent); }
-@media (prefers-reduced-motion: reduce) { .wv-block { transition: none; } }
+:root[data-motion="reduced"] .wv-block { transition: none; }
 
 .wv-p { margin: 0 0 0.55em; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
 .wv-center { text-align: center; }

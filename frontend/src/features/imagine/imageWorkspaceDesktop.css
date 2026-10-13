@@ -51,7 +51,5 @@
 @media (max-height: 700px) {
   .workspace-style .studio-menu-list { top: auto; bottom: calc(100% + 4px); transform-origin: bottom; }
 }
-@media (prefers-reduced-motion: reduce) {
-  .workspace-generation-dots > span, .workspace-style .studio-menu-list, .image-workspace:not(.workspace-mobile) .history-pending > span { animation: none; }
-}
+:root[data-motion="reduced"] .workspace-generation-dots > span, :root[data-motion="reduced"] .workspace-style .studio-menu-list, :root[data-motion="reduced"] .image-workspace:not(.workspace-mobile) .history-pending > span { animation: none; }
 .image-workspace[data-keyboard="true"] .workspace-style .studio-menu-list { animation: none; }

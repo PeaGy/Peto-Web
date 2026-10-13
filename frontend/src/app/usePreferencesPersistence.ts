@@ -1,8 +1,9 @@
 import { useEffect } from 'react';
 import { SIDEBAR_KEY, THEME_KEY, lightMediaQuery, type ThemeChoice } from './preferences';
+import { MOTION_KEY, applyMotion, systemMotionQuery, type MotionChoice } from '../shared/motion';
 
-export function usePreferencesPersistence({ collapsed, theme }: {
-  collapsed: boolean; theme: ThemeChoice;
+export function usePreferencesPersistence({ collapsed, theme, motion }: {
+  collapsed: boolean; theme: ThemeChoice; motion: MotionChoice;
 }) {
   useEffect(() => {
     try {
@@ -26,6 +27,20 @@ export function usePreferencesPersistence({ collapsed, theme }: {
     media.addEventListener("change", apply);
     return () => media.removeEventListener("change", apply);
   }, [theme]);
+
+  // Chuyển động: "Theo máy" bám cài đặt giảm chuyển động của thiết bị và đổi ngay khi thiết bị đổi; "Mượt" (mặc định)
+  // và "Giảm" thì giữ nguyên. index.html đã gắn data-motion trước khi React chạy, nên trang không nháy hiệu ứng.
+  useEffect(() => {
+    try {
+      localStorage.setItem(MOTION_KEY, motion);
+    } catch {}
+    applyMotion(motion);
+    const media = systemMotionQuery();
+    if (motion !== "system" || !media?.addEventListener) return;
+    const apply = () => applyMotion(motion);
+    media.addEventListener("change", apply);
+    return () => media.removeEventListener("change", apply);
+  }, [motion]);
 
 
 }

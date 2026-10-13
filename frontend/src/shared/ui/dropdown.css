@@ -91,6 +91,6 @@ input.dropdown-trigger:focus { outline: none; }
   .dropdown.compact .dropdown-trigger, .dropdown.compact .dropdown-list li[role="option"] { min-height: 44px; }
 }
 
-@media (prefers-reduced-motion: reduce) { .dropdown-chevron { transition: none; } .dropdown-list { animation: none; } }
+:root[data-motion="reduced"] .dropdown-chevron { transition: none; } :root[data-motion="reduced"] .dropdown-list { animation: none; }
 @media (pointer: coarse) { .dropdown-trigger { font-size: 16px; } }
 

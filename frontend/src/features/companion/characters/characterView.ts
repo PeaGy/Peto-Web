@@ -43,9 +43,12 @@ export function writeCharacterMotion(value: CharacterMotion) {
   } catch {}
 }
 
-/** "Theo máy" nhường cho cài đặt giảm chuyển động của thiết bị; "Luôn cử động" thì bỏ qua cài đặt đó. */
-export function motionEnabled(preference: CharacterMotion, systemReducesMotion: boolean): boolean {
-  return preference === "always" || !systemReducesMotion;
+/**
+ * "Theo cài đặt chung" (giá trị lưu vẫn là "system") nhường cho Cài đặt → Giao diện → Chuyển động của web từ 13/10/2026
+ * (trước đó là cài đặt giảm chuyển động của thiết bị); "Luôn cử động" thì bỏ qua cài đặt đó.
+ */
+export function motionEnabled(preference: CharacterMotion, webReducesMotion: boolean): boolean {
+  return preference === "always" || !webReducesMotion;
 }
 
 /** Giới hạn mức phóng và độ dời, đủ rộng để soi mặt khi phóng to nhưng không đẩy nhân vật mất hẳn. */

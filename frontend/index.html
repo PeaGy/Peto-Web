@@ -27,6 +27,14 @@
           else if (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches) theme = "light";
         } catch (error) {}
         document.documentElement.dataset.theme = theme;
+        // Chuyển động (Cài đặt → Giao diện): mặc định "full" kể cả khi máy bật giảm chuyển động; xem shared/motion.ts.
+        var motion = "full";
+        try {
+          var choice = localStorage.getItem("peto-motion");
+          if (choice === "reduced" || (choice === "system" && window.matchMedia
+            && window.matchMedia("(prefers-reduced-motion: reduce)").matches)) motion = "reduced";
+        } catch (error) {}
+        document.documentElement.dataset.motion = motion;
       })();
     </script>
   </head>

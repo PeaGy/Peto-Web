@@ -1,4 +1,5 @@
 import { useRenderQuality } from './renderQuality';
+import { isReducedMotion } from '../../../shared/motion';
 import { useEffect, useRef, useState } from 'react';
 import type { Vector3, WebGLRenderer } from 'three';
 import type { VRM } from '@pixiv/three-vrm';
@@ -101,7 +102,7 @@ export default function VRMStage({ character, motion, onPreview, onStatusChange,
       scene.add(loaded.scene);
       scene.add(new THREE.HemisphereLight(0xffffff, 0x9f9bad, 2.2));
       const key = new THREE.DirectionalLight(0xffffff, 2.5); key.position.set(1, 3, 4); scene.add(key);
-      const compact = window.matchMedia(COMPACT_QUERY), reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
+      const compact = window.matchMedia(COMPACT_QUERY);
       renderer = new THREE.WebGLRenderer({ alpha: true, antialias: !compact.matches || qualityPreference.sharp });
       renderer.setPixelRatio(stageQuality(compact.matches, window.devicePixelRatio, qualityPreference).resolution);
       renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -173,7 +174,7 @@ export default function VRMStage({ character, motion, onPreview, onStatusChange,
         if (now < nextFrame) return;
         nextFrame = now + interval - Math.max(0, now - nextFrame) % interval;
         const dt = Math.min((now - last) / 1000, 0.05); last = now;
-        const moving = motionEnabled(motionRef.current, reduced.matches);
+        const moving = motionEnabled(motionRef.current, isReducedMotion());
         if (moving) elapsed += dt;
         const blink = moving ? blinker.step(dt) : 0;
         const target = voiceMouth();

@@ -29,6 +29,9 @@ export async function mockPeto(page: Page, options: { long?: boolean; broken?: b
     localStorage.clear(); sessionStorage.clear();
     localStorage.setItem('peto-theme', 'dark');
     localStorage.setItem('peto-companion-muted', '1');
+    // Cấu hình chung giả lập máy giảm chuyển động để ảnh chụp ổn định. Web mặc định "Mượt" (bỏ qua thiết lập đó) từ
+    // 13/10/2026, nên bài kiểm tra chọn "Theo máy" để giữ ý cũ; motion.spec.ts kiểm tra riêng mặc định.
+    localStorage.setItem('peto-motion', 'system');
     sessionStorage.setItem('test-peto-initialized', '1');
   }, options.preservePreferences ?? false);
   await page.route('**/*', async route => {

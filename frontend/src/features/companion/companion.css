@@ -286,11 +286,9 @@
 .companion-message-images img { display: block; width: auto; max-width: 100%; max-height: 220px; object-fit: contain; border-radius: 12px; }
 .companion-messages .bubble.user:has(.companion-message-images) { min-width: 0; }
 
-@media (prefers-reduced-motion: reduce) {
-  .companion-portrait.speaking::after { animation: none; opacity: 1; }
-  .message-speak.loading svg { animation: none; }
-  .companion-tool, .companion-notice button, .message-speak { transition: none; }
-}
+:root[data-motion="reduced"] .companion-portrait.speaking::after { animation: none; opacity: 1; }
+:root[data-motion="reduced"] .message-speak.loading svg { animation: none; }
+:root[data-motion="reduced"] .companion-tool, :root[data-motion="reduced"] .companion-notice button, :root[data-motion="reduced"] .message-speak { transition: none; }
 @media (max-width: 720px) {
   /* Điện thoại: bố cục kiểu AIRI theo yêu cầu của chủ web. Nhân vật khóa khung, to và phủ gần hết màn hình;
      nút, tin nhắn và ô nhắn nổi trong suốt bên trên. Giữ ngón tay trên màn hình thì nhân vật nhìn theo. */

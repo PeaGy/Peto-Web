@@ -295,9 +295,7 @@
 @media (max-width: 720px) {
   .message-image-link { width: 96px; height: 96px; }
 }
-@media (prefers-reduced-motion: reduce) {
-  .file-chip.message-file-card { transition: none; }
-}
+:root[data-motion="reduced"] .file-chip.message-file-card { transition: none; }
 
 .attach-chip img {
   width: 36px;

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
 import { motionEnabled, readCharacterMotion } from '../companion/characters/characterView';
+import { useReducedMotion } from '../../shared/motion';
 import DocsHome from './DocsHome';
 import DocsReader from './DocsReader';
 import { DISCORD, GITHUB, GROUP_ICONS, Icon, SUGGESTED, pageHref, searchPages, type DocsData, type Hit, type Page } from './docsShared';
@@ -11,7 +12,6 @@ import './docs.css';
  */
 const THEME_KEY = 'peto-docs-theme';
 const MOTION_KEY = 'peto-docs-motion';
-const REDUCED_MOTION = '(prefers-reduced-motion: reduce)';
 const HOME_TITLE = 'Peto Docs · Cùng Peto, bắt đầu điều mới';
 
 function readLight() {
@@ -27,25 +27,15 @@ function readMotionChoice(): 'on' | 'off' | null {
   }
 }
 
-function systemReducesMotion() {
-  return typeof matchMedia === 'function' && matchMedia(REDUCED_MOTION).matches;
-}
-
 /**
  * Hiệu ứng động (nhân vật theo chuột, họa tiết trôi). Đã bấm công tắc trên header thì theo công tắc. Chưa bấm thì theo
- * "Nhân vật cử động" của Peto (cùng localStorage vì cùng tên miền): mặc định nhường cài đặt giảm chuyển động của máy.
+ * "Nhân vật cử động" của Peto (cùng localStorage vì cùng tên miền), mà mặc định của nó theo Cài đặt → Giao diện →
+ * Chuyển động của web (index.html gắn data-motion cả ở /docs), không hỏi thẳng thiết bị (từ 13/10/2026).
  */
 function useMotion() {
   const [choice, setChoice] = useState(readMotionChoice);
-  const [systemReduces, setSystemReduces] = useState(systemReducesMotion);
-  useEffect(() => {
-    if (typeof matchMedia !== 'function') return;
-    const query = matchMedia(REDUCED_MOTION);
-    const change = () => setSystemReduces(query.matches);
-    query.addEventListener('change', change);
-    return () => query.removeEventListener('change', change);
-  }, []);
-  const enabled = choice ? choice === 'on' : motionEnabled(readCharacterMotion(), systemReduces);
+  const webReduces = useReducedMotion();
+  const enabled = choice ? choice === 'on' : motionEnabled(readCharacterMotion(), webReduces);
   const toggle = () => {
     const next = enabled ? 'off' : 'on';
     setChoice(next);

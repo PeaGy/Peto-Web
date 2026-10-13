@@ -265,10 +265,8 @@
   .settings-row-control > .settings-input, .settings-row-control > .settings-dropdown { width: 100%; }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .account-menu { animation-name: account-menu-fade; }
-  .settings-dialog[open] { animation-name: settings-fade; }
-  .settings-nav { transition: none; }
-  .account, .settings-nav-item, .settings-seg span, .settings-close { transition: none; }
-}
+:root[data-motion="reduced"] .account-menu { animation-name: account-menu-fade; }
+:root[data-motion="reduced"] .settings-dialog[open] { animation-name: settings-fade; }
+:root[data-motion="reduced"] .settings-nav { transition: none; }
+:root[data-motion="reduced"] .account, :root[data-motion="reduced"] .settings-nav-item, :root[data-motion="reduced"] .settings-seg span, :root[data-motion="reduced"] .settings-close { transition: none; }
 

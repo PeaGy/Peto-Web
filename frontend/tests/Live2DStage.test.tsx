@@ -11,6 +11,9 @@ const mocks = vi.hoisted(() => ({
   from: vi.fn(), destroy: vi.fn(), start: vi.fn(), stop: vi.fn(), render: vi.fn(), tick: null as null | (() => void),
   mouth: 0, reduced: true, compact: false, resize: null as null | (() => void),
 }));
+vi.mock('../src/shared/motion', async original => ({
+  ...await original<typeof import('../src/shared/motion')>(), isReducedMotion: () => mocks.reduced,
+}));
 vi.mock('pixi.js', () => ({ Application: class {
   view = document.createElement('canvas');
   stage = { addChild: vi.fn() };

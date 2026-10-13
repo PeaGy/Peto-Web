@@ -28,7 +28,7 @@
 
 :root[data-theme="light"] .chat-file-drop-overlay { background: rgb(255 255 255 / 90%); color: var(--text); }
 @keyframes chat-file-drop-in { from { opacity: 0; } to { opacity: 1; } }
-@media (prefers-reduced-motion: reduce) { .chat-file-drop-overlay { animation: none; } }
+:root[data-motion="reduced"] .chat-file-drop-overlay { animation: none; }
 @media (max-width: 720px) {
   .chat-file-drop-content strong { font-size: 22px; }
   .chat-file-drop-content span { font-size: 14px; }

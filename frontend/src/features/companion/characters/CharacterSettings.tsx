@@ -1,9 +1,10 @@
 import type { CharacterMotion } from "./characterView";
+import { useReducedMotion } from "../../../shared/motion";
 import { Segmented, SettingsRow, type SegmentOption } from "../../settings/settingsUi";
 
 const OPTIONS: SegmentOption<CharacterMotion>[] = [
-  { value: "system", label: "Theo máy", hint: "Đứng yên khi thiết bị bật giảm chuyển động" },
-  { value: "always", label: "Luôn cử động", hint: "Kể cả khi thiết bị bật giảm chuyển động" },
+  { value: "system", label: "Theo cài đặt chung", hint: "Đứng yên khi Cài đặt → Giao diện → Chuyển động là Giảm" },
+  { value: "always", label: "Luôn cử động", hint: "Kể cả khi Chuyển động là Giảm" },
 ];
 
 /**
@@ -14,13 +15,12 @@ export default function CharacterSettings({ value, onChange }: {
   value: CharacterMotion;
   onChange: (value: CharacterMotion) => void;
 }) {
-  const reduced = typeof window !== "undefined"
-    && window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches === true;
+  const reduced = useReducedMotion();
   return (
     <SettingsRow
       label="Nhân vật cử động"
-      desc={"Nhân vật trong Companion lắc lư, thở, chớp mắt và nhìn theo con trỏ. Theo máy thì đứng yên khi thiết bị bật "
-        + `giảm chuyển động.${reduced ? " Thiết bị này đang bật." : ""}`}
+      desc={"Nhân vật trong Companion lắc lư, thở, chớp mắt và nhìn theo con trỏ. Theo cài đặt chung thì đứng yên khi "
+        + `Cài đặt → Giao diện → Chuyển động là Giảm.${reduced ? " Hiện đang giảm chuyển động." : ""}`}
     >
       <Segmented label="Nhân vật cử động" value={value} options={OPTIONS} onChange={onChange} />
     </SettingsRow>

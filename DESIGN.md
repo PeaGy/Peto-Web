@@ -299,24 +299,30 @@ Stay under 300ms except page transitions on phones.
   zoom. Only the first send slides the composer down.
 - **Animate only `transform` and `opacity`.** Never animate size, layout position or `filter`.
 - **Exit animations need a timer fallback** before unmounting: jsdom and hidden windows fire no `animationend`.
-- **Reduced motion:** every new animation ships a `@media (prefers-reduced-motion: reduce)` block that keeps fades
-  and drops movement. Three owner-approved exceptions:
-  - The loading logo keeps animating.
-  - Companion characters follow the "Nhân vật cử động" setting.
-  - Docs has its own motion switch.
-- **Decided 2026-10-13, not built yet:** the owner wants smooth motion across the whole web by default, even when the
-  OS asks for reduced motion. Users will reduce it in Cài đặt → Giao diện, like Claude's Appearance → Motion setting.
-  When that setting lands, this rule changes from the OS media query to the app's own setting. Details are in
-  `PETO_COMPANION_PLAN.md`, decision 2. Until then, keep following the rule above.
-  - **The first part is already built:** the Companion settings page (`/companion/settings/`,
-    `features/companion/settings/companionSettings.css`). It animates regardless of the OS setting, which is the
-    owner's decision for the whole web, and it already honours `:root[data-motion="reduced"]` (fades only) for when the
-    Motion setting exists.
-  - **Its card motion follows AIRI's Settings** and departs from the timings above:
-    - a 260ms rise per card, with a 70ms ripple step;
-    - a 520ms rotation of the decorative icon when a page opens;
-    - a 320ms teal sweep on hover, using transform and opacity only.
-    The owner chose this look. Do not copy these timings to other areas.
+- **Reduced motion is the app's own setting, not the OS media query.** The owner decided this on 2026-10-13, like
+  Claude's Appearance → Motion.
+  - **The setting:** Cài đặt → Giao diện → Chuyển động, stored as `peto-motion`:
+    - "Mượt" (`full`, the default): animate even when the OS asks for reduced motion;
+    - "Theo máy" (`system`): follow the OS;
+    - "Giảm" (`reduced`).
+  - **How it reaches the page:**
+    - The inline script in `index.html` sets `<html data-motion="full|reduced">` before React runs, for /docs too.
+    - `usePreferencesPersistence` keeps it current, including live OS changes under "Theo máy".
+  - **CSS:** every animation ships a `:root[data-motion="reduced"]` rule that keeps fades and drops movement. Never write
+    `@media (prefers-reduced-motion: …)` in app CSS.
+  - **JS:** use `isReducedMotion()` or `useReducedMotion()` from `shared/motion.ts`, never `matchMedia` for motion.
+  - **Owner-approved exceptions:**
+    - The loading logo keeps animating.
+    - Companion characters follow "Nhân vật cử động". Its "Theo cài đặt chung" option follows this setting;
+      "Luôn cử động" ignores it.
+    - Docs has its own switch. Until that switch is pressed, Docs follows the character choice.
+  - **Playwright** emulates an OS that reduces motion and sets `peto-motion=system` in `mockPeto`, so screenshots stay
+    still. `browser-tests/motion.spec.ts` checks the default.
+- **The Companion settings page** (`features/companion/settings/companionSettings.css`) follows AIRI's Settings and departs
+  from the timings above. The owner chose this look; do not copy these timings to other areas:
+  - a 260ms rise per card, with a 70ms ripple step;
+  - a 520ms rotation of the decorative icon when a page opens;
+  - a 320ms teal sweep on hover, using transform and opacity only.
 
 ## 8. Reusable components
 

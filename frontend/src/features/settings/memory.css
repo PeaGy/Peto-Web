@@ -25,7 +25,5 @@
 }
 @media (hover: hover) and (pointer: fine) { .settings-button:hover:not(:disabled) { background: var(--panel-3); } }
 .settings-button:active:not(:disabled) { transform: scale(0.97); }
-@media (prefers-reduced-motion: reduce) {
-  .settings-button { transition: none; }
-}
+:root[data-motion="reduced"] .settings-button { transition: none; }
 

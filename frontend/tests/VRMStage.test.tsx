@@ -5,6 +5,10 @@ import VRMStage from '../src/features/companion/characters/VRMStage';
 import { readEffects, writeEffects } from '../src/features/companion/characters/characterEffects';
 
 const mocks = vi.hoisted(() => ({ parse: vi.fn(), dispose: vi.fn(), rendererDispose: vi.fn(), render: vi.fn(), frame: null as null | ((time: number) => void), mouth: 0 }));
+// Như trước: web đang giảm chuyển động (trước 13/10/2026 là thiết bị), "Theo cài đặt chung" thì đứng yên.
+vi.mock('../src/shared/motion', async original => ({
+  ...await original<typeof import('../src/shared/motion')>(), isReducedMotion: () => true,
+}));
 vi.mock('three', async original => ({ ...await original<typeof import('three')>(), WebGLRenderer: class {
   domElement = document.createElement('canvas');
   setPixelRatio() {} setClearColor() {} setSize() {} render = mocks.render; forceContextLoss() {}

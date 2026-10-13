@@ -36,7 +36,5 @@
 
 .app-tooltip.instant { transition: none; }
 
-@media (prefers-reduced-motion: reduce) {
-  .app-tooltip { transition: opacity 125ms ease-out; }
-  @starting-style { .app-tooltip, .app-tooltip[data-side] { transform: none; } }
-}
+:root[data-motion="reduced"] .app-tooltip { transition: opacity 125ms ease-out; }
+@starting-style { :root[data-motion="reduced"] .app-tooltip, :root[data-motion="reduced"] .app-tooltip[data-side] { transform: none; } }

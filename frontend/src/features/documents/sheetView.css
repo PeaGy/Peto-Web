@@ -72,7 +72,7 @@
 .wb-log-head small { color: var(--muted); font-weight: 400; }
 .wb-chevron { margin-left: auto; color: var(--muted); transition: transform 200ms var(--ease-out); }
 .wb-log-panel:not(.open) .wb-chevron { transform: rotate(-90deg); }
-@media (prefers-reduced-motion: reduce) { .wb-chevron { transition: none; } }
+:root[data-motion="reduced"] .wb-chevron { transition: none; }
 .wb-log { margin: 0; padding: 0 8px 10px; list-style: none; font-size: 13px; }
 .wb-log li > button { display: flex; gap: 12px; width: 100%; padding: 7px 8px; border: 0; border-radius: 8px; background: none; color: var(--text); font: inherit; line-height: 1.45; text-align: left; cursor: pointer; }
 .wb-log li > button[aria-pressed="true"] { background: var(--panel-2); }

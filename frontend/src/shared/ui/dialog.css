@@ -21,12 +21,10 @@
 button:focus-visible, a:focus-visible, .table-scroll:focus-visible {
   outline: 2px solid var(--accent); outline-offset: 3px;
 }
-@media (prefers-reduced-motion: reduce) {
-  .work-shimmer { animation: none; color: var(--text); background: none; }
-  .work-timeline > li { animation: none; }
-  .work-chevron { transition: none; }
-  * { scroll-behavior: auto !important; }
-}
+:root[data-motion="reduced"] .work-shimmer { animation: none; color: var(--text); background: none; }
+:root[data-motion="reduced"] .work-timeline > li { animation: none; }
+:root[data-motion="reduced"] .work-chevron { transition: none; }
+:root[data-motion="reduced"] * { scroll-behavior: auto !important; }
 
 /* Avatar that cua Peto lay tu Discord application */
 .avatar-image {

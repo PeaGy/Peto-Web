@@ -137,9 +137,7 @@ html.sidebar-resizing, html.sidebar-resizing * { cursor: col-resize !important; 
 @media (max-width: 720px) { .sidebar-resize-handle { display: none; } }
 
 /* Giữ phần mờ dần, bỏ phần chuyển động. */
-@media (prefers-reduced-motion: reduce) {
-  .sidebar, .sidebar-toggle { transition: none; }
-}
+:root[data-motion="reduced"] .sidebar, :root[data-motion="reduced"] .sidebar-toggle { transition: none; }
 
 
 /* Thư viện: lưới hai ảnh mỗi hàng, vừa đúng bề ngang cột. */

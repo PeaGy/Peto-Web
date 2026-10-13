@@ -51,7 +51,5 @@
 }
 @keyframes diagram-appear { from { opacity: 0; transform: translateY(3px); } }
 @keyframes diagram-wait { from { opacity: 1; } to { opacity: 0.55; } }
-@media (prefers-reduced-motion: reduce) {
-  .diagram-thumb-svg, .diagram-card.pending .diagram-thumb { animation: none; }
-}
+:root[data-motion="reduced"] .diagram-thumb-svg, :root[data-motion="reduced"] .diagram-card.pending .diagram-thumb { animation: none; }
 

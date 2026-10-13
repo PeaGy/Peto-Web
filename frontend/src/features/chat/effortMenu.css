@@ -76,10 +76,8 @@
 
 /* Giảm chuyển động: chỉ còn mờ dần. transform không nằm trong danh sách chuyển
    tiếp nên scale(0.95) lúc bắt đầu nhảy thẳng về 1, không có chuyển động. */
-@media (prefers-reduced-motion: reduce) {
-  .effort-chevron { transition: none; }
-  .effort-options { transition: opacity 180ms ease; }
-}
+:root[data-motion="reduced"] .effort-chevron { transition: none; }
+:root[data-motion="reduced"] .effort-options { transition: opacity 180ms ease; }
 
 /* Nút chọn model nằm sát nút Gửi ở mép phải: menu canh theo mép phải và mọc ra từ góc dưới bên phải. */
 .effort-options.model-options { left: auto; right: 0; width: min(248px, calc(100vw - 32px)); transform-origin: bottom right; }

@@ -14,9 +14,12 @@ const pages = [
 const data = { version: '0.14.1', pages };
 const REST = 'translate3d(0.0px, 0.0px, 0)';
 
+/** Cài đặt → Giao diện → Chuyển động của web (index.html gắn data-motion cả ở /docs); thiết bị luôn báo giảm chuyển động
+ * để chắc Docs không còn hỏi thẳng thiết bị. */
 function stubMotion(reduced: boolean) {
+  document.documentElement.dataset.motion = reduced ? 'reduced' : 'full';
   vi.stubGlobal('matchMedia', vi.fn((query: string) => ({
-    matches: query.includes('reduce') ? reduced : false, media: query, addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    matches: query.includes('reduce'), media: query, addEventListener: vi.fn(), removeEventListener: vi.fn(),
   })));
 }
 
@@ -153,7 +156,7 @@ describe('trang đầu và hiệu ứng', () => {
     await waitFor(() => expect(art.style.transform).toBe(`translate3d(${(-0.5 * 0.02 * innerWidth).toFixed(1)}px, 0.0px, 0)`));
   });
 
-  it('follows the device reduced-motion setting until the switch is used', async () => {
+  it('follows the web Motion setting (not the device) until the switch is used', async () => {
     stubMotion(true);
     render(<Docs />);
     const toggle = screen.getByRole('switch', { name: 'Hiệu ứng chuyển động' });

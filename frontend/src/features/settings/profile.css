@@ -58,5 +58,5 @@
   .settings-input { font-size: 16px; }
 }
 
-@media (prefers-reduced-motion: reduce) { .profile-avatar-edit { transition: none; } }
+:root[data-motion="reduced"] .profile-avatar-edit { transition: none; }
 

@@ -267,9 +267,7 @@
 .library-mobile :is(.library-round, .library-pill, .library-actions button, .library-mobile-filter button):active:not(:disabled) { transform: scale(.97); }
 .library-mobile .library-empty { margin-top: 32px; }
 .library-mobile .library-notice { bottom: calc(112px + env(safe-area-inset-bottom)); z-index: 5; max-height: 30dvh; overflow-y: auto; }
-@media (prefers-reduced-motion: reduce) {
-  .library-tile img { transition: none; }
-}
+:root[data-motion="reduced"] .library-tile img { transition: none; }
 .delete-prompt-preview { max-height: 8em; overflow: auto; overflow-wrap: anywhere; color: var(--muted); font-size: 13px; }
 .imagine button:focus-visible, .imagine a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .imagine button:disabled { opacity: .5; cursor: not-allowed; }
@@ -334,10 +332,8 @@
   }
   .studio-dock:not(.expanded) .add-source-thumb { display: block; position: absolute; inset: 6px; width: 28px; height: 28px; border-radius: 8px; object-fit: cover; background: var(--panel-2); }
 }
-@media (prefers-reduced-motion: reduce) {
-  .image-placeholder { animation: none; }
-  .studio-idea, .image-open-hint { transition: none; }
-}
+:root[data-motion="reduced"] .image-placeholder { animation: none; }
+:root[data-motion="reduced"] .studio-idea, :root[data-motion="reduced"] .image-open-hint { transition: none; }
 @media (max-height: 800px) and (min-width: 721px) {
   .studio-welcome { padding: 0; }
   .studio-welcome h1 { font-size: 38px; margin: 12px 0; }

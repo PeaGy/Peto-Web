@@ -361,7 +361,7 @@ test('fallback của bản build giữ API, Docs và asset thiếu ngoài trang 
   expect((await request.get('/docs')).status()).toBe(200);
 });
 
-test('trang Cài đặt Companion: link sâu, F5, Back/Forward theo từng trang; đường dẫn lạ là 404', async ({ page }) => {
+test('trang Cài đặt Companion: link sâu, F5, Back/Forward theo từng trang; đường dẫn lạ là 404', async ({ page }, testInfo) => {
   await mockPeto(page);
   await page.goto('/companion/settings/modules/hearing');
   const settings = page.locator('main.companion-settings');
@@ -379,7 +379,10 @@ test('trang Cài đặt Companion: link sâu, F5, Back/Forward theo từng trang
   await settings.getByRole('button', { name: 'Quay lại Companion', exact: true }).click();
   await expect(page).toHaveURL(/\/companion$/);
   await expect(page.getByRole('textbox', { name: 'Nhắn cho Peto trong Companion' })).toBeVisible();
-  for (const path of ['/companion/settings/missing', '/companion/settings/voice']) {
-    expect((await page.request.get(path)).status()).toBe(404);
+  // Chỉ backend phục vụ bản build mới trả 404; máy chủ Vite trả trang cho mọi đường dẫn.
+  if (testInfo.config.configFile?.endsWith('playwright.routing.config.ts')) {
+    for (const path of ['/companion/settings/missing', '/companion/settings/voice']) {
+      expect((await page.request.get(path)).status()).toBe(404);
+    }
   }
 });

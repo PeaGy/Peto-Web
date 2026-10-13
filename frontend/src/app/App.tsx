@@ -18,7 +18,8 @@ import { Greeting } from '../features/chat/Greeting';
 import { LoadingIndicator } from '../shared/ui/LoadingIndicator';
 import { MenuIcon, PinIcon } from './navigationIcons';
 import { PetoAvatar, AccountAvatar, accountLine, accountSubtitle } from './accountUi';
-import { EFFORTS, THEMES, readStoredTheme, readStoredCollapsed, type ThemeChoice, type AppView } from './preferences';
+import { EFFORTS, MOTIONS, THEMES, readStoredTheme, readStoredCollapsed, type ThemeChoice, type AppView } from './preferences';
+import { isReducedMotion, readMotionChoice, type MotionChoice } from '../shared/motion';
 import { MAX_FILES, MAX_MEDIA_FILES, MAX_FILE_BYTES, MAX_TOTAL_BYTES, isImageFile, isMediaFile, fileToBase64 } from '../features/chat/attachments';
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type SetStateAction } from "react";
 import '../shared/styles/styles.css';
@@ -220,6 +221,7 @@ function AppContent() {
   const [showJump, setShowJump] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [theme, setTheme] = useState<ThemeChoice>(readStoredTheme);
+  const [motion, setMotion] = useState<MotionChoice>(readMotionChoice);
   const [characterMotion, setCharacterMotion] = useState<CharacterMotion>(readCharacterMotion);
   const characters = useCharacters();
   const [characterPickerOpen, setCharacterPickerOpen] = useState(false);
@@ -359,7 +361,7 @@ function AppContent() {
       .catch(() => setAppInfo(null));
   }, []);
 
-  usePreferencesPersistence({ collapsed, theme });
+  usePreferencesPersistence({ collapsed, theme, motion });
 
   useEffect(() => {
     return () => {
@@ -613,7 +615,7 @@ function AppContent() {
     const distance = from - box.getBoundingClientRect().top;
     // Điện thoại giữ ô nhắn ở đáy cả hai lúc, nên không có gì để trượt.
     if (Math.abs(distance) < 1) return;
-    if (window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches) {
+    if (isReducedMotion()) {
       // Giảm chuyển động: bỏ quãng trượt, chỉ để ô nhắn hiện dần ở chỗ mới.
       composerMove.current = form.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 200, easing: "ease" });
       return;
@@ -1264,6 +1266,10 @@ function AppContent() {
           <SettingsGroup>
             <SettingsRow label="Chủ đề" desc="Nền sáng, nền tối, hoặc theo cài đặt của máy.">
               <Segmented label="Chủ đề" value={theme} options={THEMES} onChange={setTheme} />
+            </SettingsRow>
+            <SettingsRow label="Chuyển động"
+              desc="Hiệu ứng khi mở menu, chuyển trang, hiện câu trả lời và các phần khác. Mượt thì luôn có hiệu ứng, kể cả khi thiết bị bật giảm chuyển động.">
+              <Segmented label="Chuyển động" value={motion} options={MOTIONS} onChange={setMotion} />
             </SettingsRow>
           </SettingsGroup>
         );

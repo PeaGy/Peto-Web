@@ -144,7 +144,5 @@
 }
 
 @keyframes diagram-fade { from { opacity: 0; } }
-@media (prefers-reduced-motion: reduce) {
-  .diagram-panel[open], .diagram-menu { animation-name: diagram-fade; }
-  .diagram-pz-content.smooth { transition: none; }
-}
+:root[data-motion="reduced"] .diagram-panel[open], :root[data-motion="reduced"] .diagram-menu { animation-name: diagram-fade; }
+:root[data-motion="reduced"] .diagram-pz-content.smooth { transition: none; }
