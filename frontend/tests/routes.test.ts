@@ -37,13 +37,15 @@ it('URL chat dùng ID riêng, giữ chat mới tại gốc và không đọc nh�
 it('trang Cài đặt Companion: mỗi trang một đường dẫn, có hay không có "/" cuối; đường dẫn lạ không phải trang', () => {
   expect(companionSettingsRoute('home')).toBe('/companion/settings/');
   expect(companionSettingsRoute('hearing')).toBe('/companion/settings/modules/hearing');
-  for (const page of ['home', 'modules', 'voice', 'hearing', 'web-search', 'beat-sync', 'scene', 'memory', 'diagnostics'] as const) {
+  expect(companionSettingsRoute('character')).toBe('/companion/settings/character');
+  for (const page of ['home', 'character', 'modules', 'voice', 'hearing', 'web-search', 'beat-sync', 'scene', 'memory', 'diagnostics'] as const) {
     const route = companionSettingsRoute(page);
     expect(companionSettingsPage(route)).toBe(page);
     expect(companionSettingsPage(route.endsWith('/') ? route.slice(0, -1) : `${route}/`)).toBe(page);
     expect(appView(route)).toBe('companion');
   }
-  for (const path of ['/companion', '/companion/settings/missing', '/companion/settings/voice', '/companion/settings/scene/extra']) {
+  for (const path of ['/companion', '/companion/settings/missing', '/companion/settings/voice', '/companion/settings/scene/extra',
+    '/companion/settings/character/extra', '/companion/settings/models']) {
     expect(companionSettingsPage(path)).toBeNull();
   }
   expect(appView('/companion/settings/missing')).toBe('chat');

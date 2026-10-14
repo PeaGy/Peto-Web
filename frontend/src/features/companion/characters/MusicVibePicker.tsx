@@ -1,5 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
+import { useEffect, useState } from 'react';
 import { musicSupported, resetBeatParameters, setBeatParameters, setMusicStrength, startMusicVibe, stopMusicVibe, useMusicVibe } from './musicVibe';
 
 export function BeatIndicator({ beats, lastBeat }: { beats: number; lastBeat: number }) {
@@ -15,7 +14,7 @@ export function BeatIndicator({ beats, lastBeat }: { beats: number; lastBeat: nu
     data-lit={lit} className={beats ? 'beat-sync-ring' : ''} /></div>;
 }
 
-/** Nguồn âm thanh, độ nhạy, độ mạnh và bảng theo dõi tín hiệu: thân của hộp Beat Sync và trang Nhún theo nhạc. */
+/** Nguồn âm thanh, độ nhạy, độ mạnh và bảng theo dõi tín hiệu: trang Nhún theo nhạc và khối cùng tên ở trang Nhân vật. */
 export function BeatSyncBody() {
   const state = useMusicVibe();
   const supported = musicSupported();
@@ -70,24 +69,4 @@ export function BeatSyncBody() {
     <p className="beat-sync-footer">Âm thanh được phân tích trên thiết bị, không gửi lên máy chủ. Peto không dùng hình ảnh chia sẻ. Đóng bảng hay trang này vẫn tiếp tục nhún; sang tab khác, đăng xuất hoặc đổi model sẽ dừng chia sẻ.
       <a href="/vendor/beat-sync/NOTICE.txt" target="_blank" rel="noopener noreferrer">Nguồn và giấy phép</a></p>
   </>;
-}
-
-function BeatSyncPanel({ onClose }: { onClose: () => void }) {
-  const dialog = useRef<HTMLDialogElement>(null);
-  useEffect(() => { dialog.current?.showModal(); return () => dialog.current?.close(); }, []);
-  return createPortal(<dialog ref={dialog} className="beat-sync-dialog" aria-labelledby="beat-sync-title"
-    onCancel={event => { event.preventDefault(); event.stopPropagation(); onClose(); }}>
-    <header className="character-picker-head"><div><h2 id="beat-sync-title">Beat Sync</h2><p>Cho nhân vật nhún theo nhạc</p></div>
-      <button type="button" className="dialog-close" aria-label="Đóng Beat Sync" onClick={onClose}>×</button></header>
-    <BeatSyncBody />
-  </dialog>, document.body);
-}
-
-export default function MusicVibePicker() {
-  const [open, setOpen] = useState(false);
-  return <section className="music-vibe-picker" aria-label="Nhún theo nhạc">
-    <h3>Nhún theo nhạc</h3><p>Chọn nguồn nhạc, xem tín hiệu và chỉnh độ nhạy trong Beat Sync.</p>
-    <button type="button" className="settings-button" onClick={() => setOpen(true)}>Mở Beat Sync</button>
-    {open && <BeatSyncPanel onClose={() => setOpen(false)} />}
-  </section>;
 }

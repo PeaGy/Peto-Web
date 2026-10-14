@@ -3,12 +3,12 @@ import { isReducedMotion } from '../../../shared/motion';
 import { useEffect, useRef, useState } from 'react';
 import type { Vector3, WebGLRenderer } from 'three';
 import type { VRM } from '@pixiv/three-vrm';
-import { characterThumbnail, faceThumbnail, getCharacterAssets, type CharacterModel } from './characterLibrary';
+import { characterThumbnail, getCharacterAssets, type CharacterModel } from './characterLibrary';
 import { COMPACT_QUERY, motionEnabled, type CharacterMotion } from './characterView';
 import { voiceMouth, voicePlaying } from '../speech/voiceActivity';
 import { relaxVRMArms } from './vrmPose';
 import { CompanionMotion, VoiceMouthBlend, stageQuality, type CompanionActivity } from './companionMotion';
-import { publishSnapshot, readExpressions, watchExpressions, type StageCue, type StageEmotion } from './characterExpressions';
+import { readExpressions, watchExpressions, type StageCue, type StageEmotion } from './characterExpressions';
 import { FaceBlend, vrmFace } from './builtinFaces';
 import { Blinker, IdleEyes } from './idleEyes';
 import { readEffects, watchEffects } from './characterEffects';
@@ -37,11 +37,8 @@ export default function VRMStage({ character, motion, onPreview, onStatusChange,
   const faceBlend = useRef(new FaceBlend());
   const preferences = useRef(readExpressions(character.id));
   const previewTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
-  /** Mặt vừa bấm thử và lúc chụp: vòng vẽ chụp quanh đầu khi mặt đã hiện hẳn (bảng Nhân vật che sân khấu). */
-  const snapshotDue = useRef<{ emotion: StageEmotion; at: number } | null>(null);
   const showEmotion = (value: StageEmotion | null, preview = false) => {
     clearTimeout(previewTimer.current);
-    snapshotDue.current = preview && value ? { emotion: value, at: performance.now() + 1200 } : null;
     faceBlend.current.show(value && (preview || preferences.current.enabled) ? value : null);
     if (preview) previewTimer.current = setTimeout(() => showEmotion(emotionRef.current?.emotion ?? null), 6000);
   };
@@ -144,7 +141,7 @@ export default function VRMStage({ character, motion, onPreview, onStatusChange,
       const headPoint = new THREE.Vector3(), neckPoint = new THREE.Vector3(), gazeDirection = new THREE.Vector3();
       const composerTarget = new THREE.Vector3(), gazeBase = new THREE.Vector3();
       let composerWeight = 0;
-      const headBone = loaded.humanoid.getRawBoneNode('head'), neckBone = loaded.humanoid.getRawBoneNode('neck');
+      const headBone = loaded.humanoid.getRawBoneNode('head');
       /** Nhìn về điểm gốc, lệch thêm theo góc liếc khi chờ (tính quanh đầu để góc không phụ thuộc khoảng cách). */
       const gaze = (base: Vector3, eyes: { x: number; y: number; weight: number }) => {
         if (!headBone || eyes.weight < 0.001) { look.position.copy(base); return; }
@@ -226,17 +223,6 @@ export default function VRMStage({ character, motion, onPreview, onStatusChange,
           const x = (headPoint.x + 1) * w / 2, y = (1 - headPoint.y) * h / 2;
           updateBubble(headPoint.z < -1 || headPoint.z > 1 ? null : { x: x - reach, y: y - reach, width: reach * 2, height: reach * 2 }, w, h, dt, moving);
         } else updateBubble(null, container.clientWidth, container.clientHeight, 0, false);
-        const due = snapshotDue.current;
-        if (due && now >= due.at && headBone) {
-          snapshotDue.current = null;
-          try {
-            headBone.getWorldPosition(headPoint).project(camera);
-            const x = (headPoint.x + 1) / 2 * canvas.width, y = (1 - headPoint.y) / 2 * canvas.height;
-            const neck = neckBone ? neckBone.getWorldPosition(neckPoint).project(camera) : null;
-            const reach = neck ? Math.hypot((neck.x - headPoint.x) * canvas.width, (neck.y - headPoint.y) * canvas.height) / 2 : 0;
-            publishSnapshot(character.id, due.emotion, faceThumbnail(canvas, x, y, Math.max(reach * 5, canvas.height * 0.12)));
-          } catch { /* Ảnh xem thử không chặn hiển thị. */ }
-        }
         if (!captured && previewRef.current) {
           captured = true;
           try { previewRef.current(character.id, characterThumbnail(canvas)); } catch { /* Thumbnail không chặn hiển thị. */ }

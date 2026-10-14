@@ -62,7 +62,8 @@ API VRM: https://github.com/pixiv/three-vrm/tree/dev/packages/three-vrm .
 
 ### MAGIC (chuyển động tự sinh)
 
-Cài đặt nhân vật → **Cách chuyển động: Hiện tại / MAGIC**, chỉ cho Live2D, mặc định Hiện tại (chủ web chốt 14/10/2026).
+Cài đặt Companion → Nhân vật → Chuyển động → **Cách chuyển động: Hiện tại / MAGIC**, chỉ cho Live2D, mặc định Hiện tại
+(chủ web chốt 14/10/2026).
 Mã trong `src/features/companion/characters/magic/` chuyển từ Project AIRI (PR #2376, commit `b60533b`), giấy phép MIT,
 Copyright (c) 2024-PRESENT Neko Ayaka; bản giấy phép nằm ở `magic/AIRI-LICENSE.txt`. Hai bản ghi chuyển động
 (`idle-calm.json`, `speaking-excited.json`) là bản ghi của AIRI lấy mẫu lại 30 Hz, không gắn với model nào: MAGIC ghi

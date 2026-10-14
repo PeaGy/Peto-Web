@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { expect, it, vi } from 'vitest';
-import MusicVibePicker, { BeatIndicator } from '../src/features/companion/characters/MusicVibePicker';
+import { BeatIndicator, BeatSyncBody } from '../src/features/companion/characters/MusicVibePicker';
 import { getMusicState } from '../src/features/companion/characters/musicVibe';
 
 it('lights each beat without depending on CSS animations and clears its timer', () => {
@@ -18,16 +18,12 @@ it('lights each beat without depending on CSS animations and clears its timer', 
   } finally { vi.useRealTimers(); }
 });
 
-it('opens a separate panel, adjusts sensitivity separately from strength and restores defaults', () => {
-  render(<MusicVibePicker />);
-  fireEvent.click(screen.getByRole('button', { name: 'Mở Beat Sync' }));
-  expect(screen.getByRole('dialog', { name: 'Beat Sync' })).toBeTruthy();
+it('adjusts sensitivity separately from strength and restores defaults', () => {
+  render(<BeatSyncBody />);
   expect(screen.getByLabelText('Mức âm thanh đầu vào')).toBeTruthy();
   fireEvent.change(screen.getByLabelText('Độ nhạy bắt nhịp'), { target: { value: '0.95' } });
   expect(getMusicState().parameters.sensitivity).toBe(0.95);
   expect(getMusicState().strength).toBe(0.5);
   fireEvent.click(screen.getByRole('button', { name: 'Khôi phục mặc định' }));
   expect(getMusicState().parameters.sensitivity).toBe(0.7);
-  fireEvent.click(screen.getByRole('button', { name: 'Đóng Beat Sync' }));
-  expect(screen.queryByRole('dialog')).toBeNull();
 });

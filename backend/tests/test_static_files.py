@@ -152,6 +152,7 @@ async def test_unknown_api_path_is_404_not_html(site_client):
     '/companion/settings', '/companion/settings/', '/companion/settings/modules', '/companion/settings/modules/voice',
     '/companion/settings/modules/hearing/', '/companion/settings/modules/web-search', '/companion/settings/modules/beat-sync',
     '/companion/settings/scene', '/companion/settings/memory', '/companion/settings/diagnostics',
+    '/companion/settings/character', '/companion/settings/character/',
     '/companion/settings/modules/brain', '/companion/settings/providers', '/companion/settings/providers/',
     '/companion/settings/providers/deepseek', '/companion/settings/providers/azure-openai/', '/companion/settings/providers/groq'])
 @pytest.mark.parametrize('method', ['get', 'head'])
@@ -170,6 +171,7 @@ async def test_app_deep_links_have_spa_fallback(site_client, path, method):
     '/docs/khong-co/', '/companion/missing', '/imagine/root', '/imagine/root/version/extra',
     '/companion/settings/missing', '/companion/settings/modules/missing', '/companion/settings/voice', '/companion/settings/scene/extra',
     '/companion/settings/providers/evil', '/companion/settings/providers/deepseek/extra', '/companion/settings/brain',
+    '/companion/settings/character/extra', '/companion/settings/models',
     '/imagine/missing.js/asset.png', '/redoc', '/openapi.json', '/install-missing.ps1',
     '/chat', '/chat/thread/extra', '/chat/missing.js', '/admin/overview', '/admin/x.js',
 ])

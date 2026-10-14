@@ -6,7 +6,8 @@ import { writeIdle } from '../src/features/companion/characters/live2dMotions';
 import { readEffects, writeEffects } from '../src/features/companion/characters/characterEffects';
 import { DEFAULT_MAGIC, writeMagic } from '../src/features/companion/characters/magic/magicSettings';
 import * as music from '../src/features/companion/characters/musicVibe';
-import { previewExpression, watchSnapshots, writeExpressions } from '../src/features/companion/characters/characterExpressions';
+import { previewExpression, writeExpressions } from '../src/features/companion/characters/characterExpressions';
+import { readCharacterView, watchCharacterView, writeCharacterView } from '../src/features/companion/characters/characterView';
 
 const mocks = vi.hoisted(() => ({
   from: vi.fn(), destroy: vi.fn(), start: vi.fn(), stop: vi.fn(), render: vi.fn(), tick: null as null | (() => void),
@@ -25,9 +26,8 @@ vi.mock('pixi.js', () => ({ Application: class {
 } }));
 vi.mock('pixi-live2d-display/cubism4', () => ({ Live2DModel: { from: mocks.from }, MotionPreloadStrategy: { IDLE: 'IDLE' }, Cubism4ModelSettings: class {} }));
 vi.mock('../src/features/companion/speech/voiceActivity', () => ({ voiceMouth: () => mocks.mouth, voicePlaying: () => mocks.mouth > 0 }));
-// jsdom không vẽ canvas: ảnh chụp mặt giả để kiểm luồng chụp.
 vi.mock('../src/features/companion/characters/characterLibrary', async (original) => ({
-  ...await original<typeof import('../src/features/companion/characters/characterLibrary')>(), faceThumbnail: vi.fn(() => 'data:image/png;base64,FACE'),
+  ...await original<typeof import('../src/features/companion/characters/characterLibrary')>(),
   getCharacterAssets: mocks.getAssets,
 }));
 
@@ -479,16 +479,30 @@ it('gõ trên máy tính ưu tiên ô chat dù tắt theo chuột; tắt toggle,
   reduced.unmount(); input.remove();
 });
 
-it('bảng Nhân vật che sân khấu, nên thẻ bấm thử được chụp lại khi mặt đã hiện hẳn', async () => {
-  const model = fakeModel();
-  mocks.from.mockResolvedValue(model);
-  const shots: [string, string][] = [];
-  const off = watchSnapshots(CHARACTER.id, (emotion, image) => shots.push([emotion, image]));
-  const view = render(<Live2DStage name="Peto" />);
-  await waitFor(() => expect(model.internalModel.on).toHaveBeenCalledWith('beforeModelUpdate', expect.any(Function)));
-  act(() => previewExpression(CHARACTER.id, 'surprised'));
-  expect(shots).toEqual([]);
-  await waitFor(() => expect(shots).toEqual([['surprised', 'data:image/png;base64,FACE']]), { timeout: 3000 });
+it('Kích thước và vị trí ở trang Nhân vật: góc nhìn ghi từ thanh trượt đặt lại nhân vật ngay; chỉ đổi mức phóng thì phóng quanh đầu rồi báo lại', async () => {
+  const { model, view } = await mount();
+  // Sân khấu 800 × 600, model 1000 × 2000: vừa khung theo chiều cao, chân ở giữa đáy.
+  expect(model.scale.x).toBeCloseTo(0.288);
+  const head = () => model.position.y - 2000 * model.scale.y * CHARACTER.headHeight;
+  const before = head();
+  const seen: [unknown, unknown][] = [];
+  const off = watchCharacterView(CHARACTER.id, (next, source) => seen.push([next, source]));
+  act(() => writeCharacterView({ zoom: 2, panX: 0, panY: 0 }, CHARACTER.id, 'panel'));
+  expect(model.scale.x).toBeCloseTo(0.576);
+  expect(model.position.x).toBeCloseTo(400);
+  expect(head()).toBeCloseTo(before);
+  // Sân khấu báo độ dời mới (bên ghi là chính nó) để thanh Dọc đi theo, và lưu lại.
+  expect(seen).toHaveLength(2);
+  expect(seen.filter(([, source]) => source !== 'panel')).toHaveLength(1);
+  expect(readCharacterView(CHARACTER.id).zoom).toBe(2);
+  expect(readCharacterView(CHARACTER.id).panY).toBeGreaterThan(0);
+  act(() => writeCharacterView({ zoom: 2, panX: 0.1, panY: 0.2 }, CHARACTER.id, 'panel'));
+  expect(model.position.x).toBeCloseTo(480);
+  expect(model.position.y).toBeCloseTo(594 + 120);
+  expect(seen).toHaveLength(3);
+  // Góc nhìn của nhân vật khác không đụng tới sân khấu này.
+  act(() => writeCharacterView({ zoom: 3, panX: 0, panY: 0 }, 'khac', 'panel'));
+  expect(model.scale.x).toBeCloseTo(0.576);
   off(); view.unmount();
 });
 

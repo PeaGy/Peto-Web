@@ -46,7 +46,7 @@ _PNG_SIG = b"\x89PNG\r\n\x1a\n"
 _COMPANION_PROVIDERS = (r"xai|anthropic|openai|gemini|deepseek|mistral|azure-openai|ollama|elevenlabs|azure|minimax|qwen|stepfun"
                         r"|compat|groq|deepgram")
 _COMPANION_SETTINGS = (r"companion/settings(?:/(?:modules(?:/(?:brain|voice|hearing|web-search|beat-sync))?"
-                       r"|providers(?:/(?:%s))?|scene|memory|diagnostics))?" % _COMPANION_PROVIDERS)
+                       r"|providers(?:/(?:%s))?|character|scene|memory|diagnostics))?" % _COMPANION_PROVIDERS)
 _APP_PATH = re.compile(r"(?:chat/[^/.]+|companion|%s|admin|imagine(?:/[^/.]+/[^/.]+)?)/?\Z" % _COMPANION_SETTINGS)
 
 

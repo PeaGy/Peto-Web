@@ -192,3 +192,87 @@
 :root[data-motion="reduced"] .companion-settings-item::before { transform: none; }
 :root[data-motion="reduced"] .companion-provider-card { animation-name: companion-settings-fade; }
 :root[data-motion="reduced"] .companion-settings-item-icon { transition-property: color, opacity; }
+
+/* Trang Nhân vật (/companion/settings/character), biến thể "Như AIRI" chủ web chọn ngày 14/10/2026 theo Settings → Models của
+   AIRI: tiêu đề và các khối gập mở bên trái, nhân vật đứng giữa phần còn lại của trang. Điện thoại: sân khấu dính ở trên,
+   các khối cuộn bên dưới để luôn thấy nhân vật. */
+.companion-character-page .companion-settings-head { position: absolute; top: 0; left: 0; z-index: 3; padding: 30px 32px 0; background: none; }
+.character-page-panel {
+  --character-panel: clamp(340px, 31%, 440px);
+  position: absolute; z-index: 2; top: 112px; bottom: 0; left: 28px; width: var(--character-panel);
+  display: flex; flex-direction: column; gap: 10px; padding: 0 8px 28px 4px; overflow-y: auto; scrollbar-width: thin;
+}
+.character-page-panel > * { flex-shrink: 0; }
+.character-page-stage { position: absolute; z-index: 1; inset: 0 0 0 calc(28px + clamp(340px, 31%, 440px) + 12px); }
+.character-page-current { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
+.character-page-current > span { display: grid; min-width: 0; }
+.character-page-current strong { overflow: hidden; font-size: 14px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.character-page-current small { color: var(--muted); font-size: 12px; }
+.character-page-pick {
+  flex: none; height: 40px; padding: 0 16px; border: 0; border-radius: 10px; font: inherit; font-size: 14px; font-weight: 500;
+  background: color-mix(in srgb, var(--text) 11%, transparent); color: var(--text); cursor: pointer;
+  transition: background-color 150ms var(--ease-out), transform 160ms var(--ease-out);
+}
+.character-page-pick:active { transform: scale(0.97); }
+.character-page-pick:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.character-page-footnote { margin: 8px 0 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.character-page-footnote a { color: inherit; }
+
+/* Khối gập mở, như Section của AIRI: nền kính mờ, mở ra bằng chiều cao hàng lưới (0fr → 1fr). */
+.character-sections { display: flex; flex-direction: column; gap: 8px; }
+.character-section {
+  flex-shrink: 0; border: 1px solid var(--cs-card-line); border-radius: 12px;
+  background: color-mix(in srgb, var(--cs-card) 82%, transparent); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
+}
+.character-section-head { margin: 0; font: inherit; }
+.character-section-head button {
+  display: flex; align-items: center; gap: 10px; width: 100%; min-height: 50px; padding: 0 14px 0 16px; border: 0; border-radius: 12px;
+  background: transparent; color: var(--text); font: inherit; font-size: 14px; font-weight: 500; text-align: left; cursor: pointer;
+  transition: background-color 150ms var(--ease-out);
+}
+.character-section-head button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.character-section-icon { display: grid; place-items: center; color: var(--muted); }
+.character-section.open .character-section-icon { color: var(--cs-accent-text); }
+.character-section-title { flex: 1; min-width: 0; }
+.character-section-chevron { display: grid; place-items: center; color: var(--muted); transition: transform 220ms var(--ease-out); }
+.character-section.open .character-section-chevron { transform: rotate(180deg); }
+.character-section-body { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 240ms var(--ease-out); }
+.character-section.open .character-section-body { grid-template-rows: 1fr; }
+.character-section-body > div { min-height: 0; overflow: hidden; }
+.character-section[data-settled] .character-section-body > div { overflow: visible; }
+.character-section-inner { padding: 2px 16px 16px; }
+.character-section-inner > .motion-driver { margin-top: 0; }
+.character-section-inner > .expression-picker { margin-top: 0; padding-top: 0; border-top: 0; }
+.character-section-note { margin: 10px 0 0; color: var(--muted); font-size: 12.5px; line-height: 1.55; overflow-wrap: anywhere; }
+.character-section-actions { display: flex; gap: 8px; margin-top: 14px; }
+.character-beat .beat-sync-layout { grid-template-columns: 1fr; gap: 16px; padding: 0; }
+.character-beat .beat-sync-monitor { grid-row: 1; }
+.character-beat .beat-sync-footer { margin: 12px 0 0; padding: 0; }
+
+/* Thanh trượt kèm nút đặt lại, như FieldRange của AIRI. */
+.character-range + .character-range { margin-top: 14px; }
+.character-range-head { display: flex; align-items: center; gap: 2px; font-size: 13.5px; }
+.character-range-head output { margin-left: auto; color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.character-range-reset { display: grid; place-items: center; width: 26px; height: 26px; border: 0; border-radius: 7px; background: transparent; color: var(--muted); cursor: pointer; }
+.character-range-reset:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.character-range input { display: block; width: 100%; margin: 6px 0 0; accent-color: var(--cs-accent); }
+
+@media (hover: hover) and (pointer: fine) {
+  .character-page-pick:hover { background: color-mix(in srgb, var(--text) 16%, transparent); }
+  .character-section-head button:hover { background: color-mix(in srgb, var(--text) 5%, transparent); }
+  .character-range-reset:hover { background: color-mix(in srgb, var(--text) 8%, transparent); color: var(--text); }
+}
+@media (max-width: 720px) {
+  .companion-character-page { overflow-y: auto; }
+  .companion-character-page .companion-settings-head { position: relative; padding: max(14px, env(safe-area-inset-top, 0px)) 12px 4px; }
+  .character-page-stage {
+    position: sticky; inset: auto; top: 0; z-index: 1; height: 44dvh; background: var(--bg); border-bottom: 1px solid var(--cs-card-line);
+  }
+  .character-page-panel { position: static; width: auto; padding: 14px 14px calc(32px + env(safe-area-inset-bottom, 0px)); overflow: visible; }
+  .companion-character-page .companion-settings-deco { display: none; }
+}
+@media (pointer: coarse) {
+  .character-page-pick { height: 44px; }
+  .character-range-reset { width: 36px; height: 36px; }
+}
+:root[data-motion="reduced"] :is(.character-section-body, .character-section-chevron) { transition: none; }

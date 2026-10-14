@@ -1,6 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
 import { existsSync } from 'node:fs';
-import { writeFile } from 'node:fs/promises';
 import type { VRM } from '@pixiv/three-vrm';
 import { mockPeto } from './fixtures';
 
@@ -79,10 +78,12 @@ for (const baseline of [true, false]) {
     // Giữ canvas nhỏ để renderer phần mềm không làm thời gian vẽ lấn hết sáu giây xem thử.
     // Viewport/dialog vẫn theo PC hoặc mobile; loader, mesh, FaceBlend và renderer dùng mã thật.
     await page.addStyleTag({ content: '.character-canvas { width: 360px !important; height: 480px !important; }' });
+    // Đổi nhân vật mở Cài đặt → Nhân vật; nhập trong hộp Chọn nhân vật, hộp tự đóng và sân khấu của trang vẽ model mới.
     await page.getByRole('button', { name: 'Đổi nhân vật Peto' }).click();
+    await page.getByRole('button', { name: 'Chọn nhân vật', exact: true }).click();
     await page.getByLabel('Nhập VRM', { exact: true }).setInputFiles(samplePath!);
     await expect(page.locator('.character-canvas canvas')).toBeVisible({ timeout: 30000 });
-    await page.locator('summary').filter({ hasText: 'Cài đặt nhân vật' }).click();
+    await page.getByRole('button', { name: 'Biểu cảm', exact: true }).click();
     for (const [name, label, amount] of [['happy', 'Vui', 0.7], ['sad', 'Buồn', 0.7], ['surprised', 'Ngạc nhiên', 0.8]] as const) {
       await page.locator('.expression-cards').getByRole('button', { name: label, exact: true }).click();
       const expected = baseline ? 1 : amount;
@@ -91,11 +92,9 @@ for (const baseline of [true, false]) {
       expect(values.weight).toBeLessThanOrEqual(expected);
       expect(values.morph).toBeGreaterThan(expected - 0.01);
       expect(values.morph).toBeLessThanOrEqual(expected);
-      const shot = page.locator('.expression-snapshot img');
-      await expect(shot).toBeVisible();
-      const data = (await shot.getAttribute('src'))!.split(',')[1];
+      // Sân khấu nằm ngay cạnh các thẻ cảm xúc: chụp chính nó thay cho ảnh chụp mặt của hộp cũ.
       const imagePath = info.outputPath(`${name}.png`);
-      await writeFile(imagePath, Buffer.from(data, 'base64'));
+      await page.locator('.character-page-stage').screenshot({ path: imagePath });
       await info.attach(`${name}-${baseline ? 'before' : 'after'}`, { path: imagePath, contentType: 'image/png' });
     }
     await page.locator('.expression-cards').getByRole('button', { name: 'Bình thường', exact: true }).click();

@@ -1,6 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import type { CompanionSettingsPage } from '../../../app/routes';
 import type { CharacterModel } from '../characters/characterLibrary';
+import type { CharacterLibrary } from '../characters/useCharacters';
+import type { CharacterMotion } from '../characters/characterView';
+import CharacterPage from './CharacterPage';
 import { BeatSyncBody } from '../characters/MusicVibePicker';
 import { leaveMusicVibe, selectMusicCharacter, useMusicVibe } from '../characters/musicVibe';
 import { SceneEditor, useCompanionScene } from '../CompanionScenes';
@@ -24,11 +27,13 @@ import './companionSettings.css';
  * Trang cài đặt riêng của Companion tại /companion/settings/ (chủ web chọn biến thể "Thẻ AIRI" ngày 13/10/2026), theo
  * Settings bản web của AIRI: trang đầu là danh sách thẻ lớn, mỗi tầng là một trang có tiêu đề lớn và tên mục cha nhỏ phía
  * trên, thẻ hiện kiểu gợn sóng tỏa ra từ thẻ vừa bấm lần trước (ripple-grid của AIRI). Hộp Cài đặt chung không còn nhóm
- * Companion. Nhân vật vẫn chỉnh trong hộp chọn nhân vật; Trí nhớ là cùng một danh sách với Cài đặt chung.
+ * Companion. Trang Nhân vật (14/10/2026) theo Settings → Models của AIRI: cài đặt bên trái, nhân vật ở giữa
+ * (CharacterPage). Trí nhớ là cùng một danh sách với Cài đặt chung.
  */
 
 const PAGES: Record<CompanionSettingsPage, { title: string; desc: string; icon: SettingsIconName; parent?: CompanionSettingsPage }> = {
   home: { title: 'Cài đặt', desc: '', icon: 'settings' },
+  character: { title: 'Nhân vật', desc: '', icon: 'character', parent: 'home' },
   modules: { title: 'Mô-đun', desc: 'Bộ não, giọng nói, nghe, tra web và nhún theo nhạc.', icon: 'layers', parent: 'home' },
   brain: { title: 'Bộ não', desc: 'Ai trả lời trong Companion: Peto hay khóa API của bạn.', icon: 'spark', parent: 'modules' },
   providers: { title: 'Nhà cung cấp', desc: 'Khóa API của bạn cho bộ não, giọng nói và nghe.', icon: 'key', parent: 'home' },
@@ -42,7 +47,7 @@ const PAGES: Record<CompanionSettingsPage, { title: string; desc: string; icon: 
   diagnostics: { title: 'Chẩn đoán', desc: 'Đo thời gian từ lúc bạn nói tới lúc Peto đáp.', icon: 'gauge', parent: 'home' },
 };
 const MODULES: CompanionSettingsPage[] = ['brain', 'voice', 'hearing', 'web-search', 'beat-sync'];
-const HOME: (CompanionSettingsPage | 'character')[] = ['character', 'providers', 'modules', 'scene', 'memory', 'diagnostics'];
+const HOME: CompanionSettingsPage[] = ['character', 'providers', 'modules', 'scene', 'memory', 'diagnostics'];
 /** Khoảng trễ mỗi bậc khoảng cách trên lưới khi thẻ hiện kiểu gợn sóng (AIRI dùng 80 ms). */
 const RIPPLE_STEP_MS = 70;
 // Thẻ bấm lần trước là tâm gợn sóng của trang kế tiếp, như useRippleGridState của AIRI; giữ qua các lần mở trang.
@@ -61,7 +66,7 @@ function useCompact() {
   return compact;
 }
 
-export default function CompanionSettings({ page, providerId, onNavigate, onExit, voice, character, onOpenCharacters, onUnauthorized }: {
+export default function CompanionSettings({ page, providerId, onNavigate, onExit, voice, library, motion, onMotionChange, fallbackUrl, onUnauthorized }: {
   page: CompanionSettingsPage;
   /** Mã nhà cung cấp khi ``page`` là 'provider'. */
   providerId?: string | null;
@@ -69,10 +74,14 @@ export default function CompanionSettings({ page, providerId, onNavigate, onExit
   /** Nút quay lại ở trang đầu: về sân khấu Companion. */
   onExit: () => void;
   voice: LocalVoice;
-  character: CharacterModel;
-  onOpenCharacters: () => void;
+  library: CharacterLibrary;
+  motion: CharacterMotion;
+  onMotionChange: (value: CharacterMotion) => void;
+  /** Ảnh hiện thay khi sân khấu trang Nhân vật chưa vẽ được (như sân khấu Companion). */
+  fallbackUrl?: string;
   onUnauthorized: () => void;
 }) {
+  const character = library.selected;
   const meta = page === 'provider' && providerId ? { ...PAGES.provider, title: providerName(providerId) } : PAGES[page];
   const parent = meta.parent ? PAGES[meta.parent] : null;
   const scroll = useRef<HTMLDivElement>(null);
@@ -96,29 +105,36 @@ export default function CompanionSettings({ page, providerId, onNavigate, onExit
     return distance * RIPPLE_STEP_MS;
   };
 
-  return (
-    <main className="companion-settings" aria-labelledby="companion-settings-title">
-      <div className="companion-settings-scroll" ref={scroll}>
-        <div className="companion-settings-column">
-          <header className="companion-settings-head">
-            <button type="button" className="companion-settings-back" aria-label={`Quay lại ${parent ? parent.title : 'Companion'}`}
-              data-tip={parent ? parent.title : 'Companion'} onClick={() => (meta.parent ? onNavigate(meta.parent) : onExit())}>
-              <CompanionSettingsIcon name="chevronLeft" size={22} />
-            </button>
-            <div key={page} className="companion-settings-heading">
-              <span className="companion-settings-parent">{parent ? parent.title : 'Companion'}</span>
-              <h1 id="companion-settings-title" ref={heading} tabIndex={-1}>{meta.title}</h1>
-            </div>
-          </header>
+  const head = (
+    <header className="companion-settings-head">
+      <button type="button" className="companion-settings-back" aria-label={`Quay lại ${parent ? parent.title : 'Companion'}`}
+        data-tip={parent ? parent.title : 'Companion'} onClick={() => (meta.parent ? onNavigate(meta.parent) : onExit())}>
+        <CompanionSettingsIcon name="chevronLeft" size={22} />
+      </button>
+      <div key={page} className="companion-settings-heading">
+        <span className="companion-settings-parent">{parent ? parent.title : 'Companion'}</span>
+        <h1 id="companion-settings-title" ref={heading} tabIndex={-1}>{meta.title}</h1>
+      </div>
+    </header>
+  );
 
+  return (
+    <main className={page === 'character' ? 'companion-settings companion-character-page' : 'companion-settings'}
+      aria-labelledby="companion-settings-title">
+      {page === 'character' ? <>
+        {head}
+        <CharacterPage library={library} motion={motion} onMotionChange={onMotionChange} fallbackUrl={fallbackUrl} />
+      </> : <div className="companion-settings-scroll" ref={scroll}>
+        <div className="companion-settings-column">
+          {head}
           <div key={page} className="companion-settings-page">
             {page === 'home' && (
               <div className="companion-settings-list">
                 {HOME.map((entry, index) => entry === 'character'
                   ? <SettingsCard key="character" icon="character" title="Nhân vật" delay={delay(index, 1)}
                       desc={`Đang dùng: ${character.name} · ${character.format === 'vrm' ? 'VRM' : 'Live2D'}`}
-                      note="Chọn, nhập và chỉnh nhân vật trong hộp chọn nhân vật"
-                      onClick={() => { rippleOrigin = index; onOpenCharacters(); }} />
+                      note="Chọn, nhập và chỉnh nhân vật, xem thay đổi ngay trên sân khấu"
+                      onClick={() => open('character', index)} />
                   : <SettingsCard key={entry} icon={PAGES[entry].icon} title={PAGES[entry].title} desc={PAGES[entry].desc}
                       delay={delay(index, 1)} onClick={() => open(entry, index)} />)}
               </div>
@@ -140,7 +156,7 @@ export default function CompanionSettings({ page, providerId, onNavigate, onExit
             {page === 'diagnostics' && <div className="companion-settings-card"><CompanionTimingPanel /></div>}
           </div>
         </div>
-      </div>
+      </div>}
       <div key={`deco-${page}`} className="companion-settings-deco" aria-hidden="true">
         <CompanionSettingsIcon name={meta.icon} size={compact ? 150 : 220} />
       </div>

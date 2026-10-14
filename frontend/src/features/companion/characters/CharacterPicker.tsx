@@ -1,27 +1,17 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { characterError, type CharacterFormat } from './characterLibrary';
 import type { CharacterLibrary } from './useCharacters';
-import IdleMotionPicker from './IdleMotionPicker';
-import ExpressionPicker from './ExpressionPicker';
-import ComposerGazeSetting from './ComposerGazeSetting';
 import CharacterImportReview from './CharacterImportReview';
 import type { Live2DImportReport } from './characterImport';
 import { MAX_IMPORT_BYTES, megabytes } from './characterLimits';
 import { CHARACTER } from './characterConfig';
-import { useRenderQuality, writeRenderQuality } from './renderQuality';
-import { Dropdown } from '../../../shared/ui/Dropdown';
-import CharacterSettings from './CharacterSettings';
-import type { CharacterMotion } from './characterView';
 
-export default function CharacterPicker({ library, motion, onMotionChange, onClose }: {
-  library: CharacterLibrary;
-  motion: CharacterMotion;
-  onMotionChange: (value: CharacterMotion) => void;
-  onClose: () => void;
-}) {
-  const quality = useRenderQuality();
-  const sharpId = useId();
-  const smoothId = useId();
+/**
+ * Hộp "Chọn nhân vật" của trang Cài đặt → Nhân vật, như ModelSelectorDialog của AIRI: chỉ có thư viện (chọn, nhập, đổi
+ * tên, xóa). Cài đặt của nhân vật nằm ngay trên trang, cạnh sân khấu (chủ web chọn biến thể "Như AIRI" ngày 14/10/2026).
+ * Chọn hay nhập xong thì hộp đóng lại để thấy ngay nhân vật mới trên sân khấu.
+ */
+export default function CharacterPicker({ library, onClose }: { library: CharacterLibrary; onClose: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const menu = useRef<HTMLDetailsElement>(null);
   const zip = useRef<HTMLInputElement>(null);
@@ -49,18 +39,17 @@ export default function CharacterPicker({ library, motion, onMotionChange, onClo
     if (!files?.length) return;
     const input = Array.from(files);
     if (format === 'live2d') void run(async () => {
-      setNotice('');
       const { inspectLive2D } = await import('./characterImport');
       setReview(await inspectLive2D(input));
     });
-    else void run(() => library.add(input, format), 'Đã thêm và chọn nhân vật. Đóng cửa sổ này để xem trên sân khấu.');
+    else void run(async () => { await library.add(input, format); onClose(); });
   };
   const confirmImport = async (useControls = true) => {
     if (!review?.prepared || busy) return;
     setBusy(true); setError('');
     try {
       await library.addPrepared(useControls ? review.prepared : { ...review.prepared, assets: { ...review.prepared.assets, controls: undefined } });
-      setReview(null); setNotice('Đã thêm và chọn nhân vật. Đóng cửa sổ này để xem trên sân khấu.');
+      setReview(null); onClose();
     } catch (reason) { setError(characterError(reason)); }
     finally { setBusy(false); }
   };
@@ -69,12 +58,8 @@ export default function CharacterPicker({ library, motion, onMotionChange, onClo
     {review && <CharacterImportReview report={review} busy={busy} error={error}
       onCancel={() => { setReview(null); setError(''); }} onConfirm={useControls => void confirmImport(useControls)} />}
     <div className="character-picker-head">
-      <div><h2 id="character-picker-title">Nhân vật</h2><p>Chọn gương mặt đồng hành cùng bạn.</p></div>
-      <button className="dialog-close" aria-label="Đóng chọn nhân vật" disabled={busy} onClick={onClose}>×</button>
-    </div>
-    <div className="character-picker-body">
-      <div className="character-library-bar">
-        <span>{library.models.length} nhân vật · Trên thiết bị này</span>
+      <div><h2 id="character-picker-title">Chọn nhân vật</h2><p>{library.models.length} nhân vật · Trên thiết bị này</p></div>
+      <div className="character-picker-actions">
         <details ref={menu} className="character-import-menu">
           <summary aria-label="Thêm model" aria-disabled={busy}>＋ Thêm model</summary>
           <div>
@@ -83,7 +68,10 @@ export default function CharacterPicker({ library, motion, onMotionChange, onClo
             <button disabled={busy || library.loading} onClick={() => chooseFile(vrm)}>VRM <small>Tệp .vrm · Nhân vật 3D</small></button>
           </div>
         </details>
+        <button className="dialog-close" aria-label="Đóng chọn nhân vật" disabled={busy} onClick={onClose}>×</button>
       </div>
+    </div>
+    <div className="character-picker-body">
       <input ref={zip} type="file" accept=".zip" hidden aria-label="Nhập ZIP Live2D" onChange={event => { picked(event.target.files, 'live2d'); event.target.value = ''; }} />
       <input ref={folder} type="file" multiple hidden aria-label="Nhập thư mục Live2D" onChange={event => { picked(event.target.files, 'live2d'); event.target.value = ''; }} />
       <input ref={vrm} type="file" accept=".vrm" hidden aria-label="Nhập VRM" onChange={event => { picked(event.target.files, 'vrm'); event.target.value = ''; }} />
@@ -92,7 +80,8 @@ export default function CharacterPicker({ library, motion, onMotionChange, onClo
       {notice && <p className="character-library-notice" role="status">{notice}</p>}
       <div className="character-library-grid" aria-label="Thư viện nhân vật">
         {library.models.map(model => <article key={model.id} className={`character-card${library.selected.id === model.id ? ' selected' : ''}`}>
-          <button className="character-card-art" disabled={busy} aria-label={`Chọn ${model.name}`} aria-pressed={library.selected.id === model.id} onClick={() => { library.select(model.id); setNotice('Đã chọn nhân vật. Đóng cửa sổ này để xem trên sân khấu.'); }}>
+          <button className="character-card-art" disabled={busy} aria-label={`Chọn ${model.name}`} aria-pressed={library.selected.id === model.id}
+            onClick={() => { library.select(model.id); onClose(); }}>
             {model.preview ? <img src={model.preview} alt={model.name} /> : <span className="character-card-placeholder"><b>{model.format === 'vrm' ? '3D' : '2D'}</b><span>{model.name}</span></span>}
             <span className="character-format">{model.format === 'vrm' ? 'VRM' : 'Live2D'}</span>
             {library.selected.id === model.id && <span className="character-selected-badge">✓ Đang dùng</span>}
@@ -110,34 +99,6 @@ export default function CharacterPicker({ library, motion, onMotionChange, onClo
           </div>
         </article>)}
       </div>
-      <section className="character-motion-row" aria-label="Cử động">
-        <CharacterSettings value={motion} onChange={onMotionChange} />
-      </section>
-      <section className="mobile-render-settings" aria-label="Hiển thị trên điện thoại">
-        <h3>Hiển thị trên điện thoại</h3>
-        <div className="mobile-render-field">
-          <label htmlFor={sharpId} id={`${sharpId}-label`}>Chất lượng hình ảnh</label>
-          <Dropdown id={sharpId} value={quality.sharp ? 'high' : 'normal'} options={[{ value: 'normal', label: 'Tiết kiệm · 1×' }, { value: 'high', label: 'Cao · tối đa 2×' }]}
-            onChange={next => writeRenderQuality({ ...quality, sharp: next === 'high' })} />
-        </div>
-        <div className="mobile-render-field">
-          <label htmlFor={smoothId} id={`${smoothId}-label`}>Độ mượt</label>
-          <Dropdown id={smoothId} value={quality.smooth ? 'high' : 'normal'} options={[{ value: 'normal', label: 'Tiết kiệm · 24 FPS' }, { value: 'high', label: 'Cao · tối đa 60 FPS' }]}
-            onChange={next => writeRenderQuality({ ...quality, smooth: next === 'high' })} />
-        </div>
-        <p>Áp dụng cho Live2D và VRM trên thiết bị này. Mức cao có thể dùng nhiều pin và làm máy ấm hơn.</p>
-      </section>
-      {library.selected.format === 'live2d' && <details className="character-motion-settings" key={library.selected.id}>
-        <summary>Cài đặt nhân vật <span>Chuyển động · Biểu cảm · Nhún theo nhạc</span></summary>
-        <IdleMotionPicker character={library.selected} />
-      </details>}
-      {library.selected.format === 'vrm' && <details className="character-motion-settings" key={library.selected.id}>
-        <summary>Cài đặt nhân vật <span>Biểu cảm</span></summary>
-        <section className="idle-motion-picker" aria-label="Biểu cảm của nhân vật VRM">
-          <div className="character-effect-options"><ComposerGazeSetting characterId={library.selected.id} /></div>
-          <ExpressionPicker characterId={library.selected.id} choices={[]} format="vrm" />
-        </section>
-      </details>}
       <p className="character-library-footnote"><a href={CHARACTER.creditUrl} target="_blank" rel="noopener noreferrer">Hiyori Momose · © Live2D Inc.</a></p>
       <p className="character-library-footnote">Tối đa {megabytes(MAX_IMPORT_BYTES)} mỗi lần nhập. Model lưu trong trình duyệt này, chưa đồng bộ sang máy khác. Xóa dữ liệu trang web sẽ xóa thư viện. Chỉ nhập model bạn có quyền sử dụng.</p>
     </div>

@@ -7,12 +7,12 @@ the production service, mono downmix, real browser AudioWorklet, beat events, mo
 and resource cleanup without requesting screen permissions or playing audible sound.
 
 Expected: `PASS`, around 16 beats, nonzero peak pitch, visible indicator opacity changes,
-and capture stopped. Hiyori is rendered to preview the nodding motion. The Beat Sync button also
-opens the production panel for desktop/mobile layout checks. These fixtures are not included
+and capture stopped. Hiyori is rendered to preview the nodding motion. The production Beat Sync
+controls are rendered below for desktop/mobile layout checks. These fixtures are not included
 in the production Vite build.
 
 This does not validate screen-sharing permissions or beat quality on actual music. For that,
-open Companion, select a Live2D model, then **Nhân vật → Nhún theo nhạc → Mở Beat Sync**.
+open Companion with a Live2D model, then **Cài đặt Companion → Nhân vật → Nhún theo nhạc** (or Mô-đun → Nhún theo nhạc).
 Select a music tab and explicitly include audio. Check the spectrum, input meter and beat count.
 If the meter moves but the count does not increase, increase sensitivity or reset advanced
 parameters. Check that browser stop-sharing, switching model and leaving Companion release

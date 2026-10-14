@@ -57,6 +57,7 @@ for (const useControls of [true, false]) {
     test.skip(!samplePath || !existsSync(samplePath), 'Cần PETO_LIVE2D_SAMPLE_FOLDER trỏ tới thư mục Teto gốc.');
     await openStage(page);
     await page.getByRole('button', { name: /^Đổi nhân vật / }).click();
+    await page.getByRole('button', { name: 'Chọn nhân vật', exact: true }).click();
     await page.getByLabel('Nhập thư mục Live2D', { exact: true }).setInputFiles(samplePath!);
     await expect(page.getByRole('heading', { name: 'Trước khi nhập', exact: true })).toBeVisible({ timeout: 30000 });
     await page.getByText('Xem thông số điều khiển', { exact: true }).click();
@@ -67,9 +68,10 @@ for (const useControls of [true, false]) {
     await page.screenshot({ path: info.outputPath('import-controls.png') });
     if (!useControls) await toggle.uncheck();
     await page.getByRole('button', { name: 'Vẫn nhập model', exact: true }).click();
-    await page.getByRole('button', { name: 'Đóng chọn nhân vật', exact: true }).click();
+    // Nhập xong hộp tự đóng; sân khấu của trang Nhân vật vẽ model mới. Về Companion để kiểm sân khấu thật.
+    await expect(page.getByRole('dialog', { name: 'Chọn nhân vật' })).toBeHidden();
     await expect(page.locator('.character-canvas')).toBeVisible({ timeout: 45000 });
-    await page.reload();
+    await page.goto('/companion');
     await expect(page.locator('.character-canvas')).toBeVisible({ timeout: 45000 });
     const headId = await page.evaluate(() => (window as unknown as ModelWindow).controlTestModel!.internalModel.idParamAngleX);
     expect(headId).toBe(useControls ? 'ParamAngleXIN' : 'ParamAngleX');

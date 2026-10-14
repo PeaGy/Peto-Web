@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Application } from "pixi.js";
 import type { Cubism4InternalModel } from 'pixi-live2d-display/cubism4';
 import { CHARACTER } from "./characterConfig";
-import { DEFAULT_CHARACTER, getCharacterAssets, characterThumbnail, faceThumbnail, type CharacterModel } from './characterLibrary';
+import { DEFAULT_CHARACTER, getCharacterAssets, characterThumbnail, type CharacterModel } from './characterLibrary';
 import {
   COMPACT_QUERY,
   DEFAULT_VIEW,
@@ -12,6 +12,7 @@ import {
   panBy,
   placement,
   readCharacterView,
+  watchCharacterView,
   wheelZoomFactor,
   writeCharacterView,
   zoomAt,
@@ -26,7 +27,7 @@ import { readEffects, watchEffects, withCharacterEffects } from './characterEffe
 import { leaveMusicVibe, musicPose, selectMusicCharacter } from './musicVibe';
 import { isReducedMotion } from '../../../shared/motion';
 import { CompanionMotion, VoiceMouthBlend, stageQuality, type CompanionActivity } from './companionMotion';
-import { controlExpressions, faceSource, publishSnapshot, readExpressions, watchExpressions, type StageCue, type StageEmotion } from './characterExpressions';
+import { controlExpressions, faceSource, readExpressions, watchExpressions, type StageCue, type StageEmotion } from './characterExpressions';
 import { FaceBlend, faceApplier, type CubismCore } from './builtinFaces';
 import ThinkingBubble, { useThinkingBubble } from './ThinkingBubble';
 import { composerPoint, type ComposerAttention } from './stageInteraction';
@@ -223,15 +224,34 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
       fit();
 
       let saveTimer: number | undefined;
+      const viewSource = {};
       const changeView = (next: CharacterView) => {
         view = next;
         place();
         window.clearTimeout(saveTimer);
         saveTimer = window.setTimeout(() => {
           saveTimer = undefined;
-          writeCharacterView(view, character.id);
+          writeCharacterView(view, character.id, viewSource);
         }, 300);
       };
+      // Thanh trượt "Kích thước và vị trí" ghi góc nhìn: đặt lại nhân vật ngay, bỏ lượt lưu đang chờ của thao tác cũ.
+      const unwatchView = watchCharacterView(character.id, (next, source) => {
+        if (source === viewSource) return;
+        window.clearTimeout(saveTimer);
+        saveTimer = undefined;
+        // Chỉ đổi mức phóng (thanh Thu phóng): phóng quanh đầu cho mặt đứng yên, rồi báo lại độ dời mới cho thanh trượt.
+        if (next.zoom !== view.zoom && next.panX === view.panX && next.panY === view.panY && !compact.matches) {
+          const headY = base.y - originalHeight * current.scale.y * CHARACTER.headHeight;
+          view = zoomAt(view, next.zoom / view.zoom, base.x, headY, box);
+          place();
+          writeCharacterView(view, character.id, viewSource);
+          return;
+        }
+        view = next;
+        place();
+      });
+      // Gỡ ngay cả khi sân khấu bị gỡ giữa chừng lúc còn tải (removeEvents đầy đủ được gán ở cuối và cũng gỡ nó).
+      removeEvents = unwatchView;
       const local = (event: MouseEvent) => {
         const rect = container.getBoundingClientRect();
         return { x: event.clientX - rect.left, y: event.clientY - rect.top };
@@ -288,7 +308,7 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
       const mappedMouth = acceptedControls?.mouth && !mouthParameters.includes(acceptedControls.mouth.id) ? acceptedControls.mouth : undefined;
       const readHead = trackLive2DHead(internal);
       const manager = internal.motionManager.expressionManager;
-      // Cảm xúc Peto chọn, hay thẻ bấm thử trong bảng Nhân vật: tệp biểu cảm của model nếu có, không thì mặt dựng sẵn.
+      // Cảm xúc Peto chọn, hay thẻ bấm thử ở Cài đặt → Nhân vật: tệp biểu cảm của model nếu có, không thì mặt dựng sẵn.
       const face = faceApplier(internal.coreModel as unknown as CubismCore);
       const faceBlend = new FaceBlend();
       const builtin = face.supported();
@@ -296,21 +316,8 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
       const choices = controller?.choices ?? [];
       let preferences = readExpressions(character.id);
       let previewTimer: ReturnType<typeof setTimeout> | undefined;
-      let snapshotTimer: ReturnType<typeof setTimeout> | undefined;
-      // Bảng Nhân vật che sân khấu: chụp vùng quanh đầu khi mặt đã hiện hẳn để thẻ cảm xúc hiện ảnh thay.
-      const snapshot = (emotion: StageEmotion) => {
-        try {
-          app!.renderer.render(app!.stage);
-          const resolution = app!.renderer.resolution;
-          const height = originalHeight * current.scale.y;
-          const headY = current.position.y - height * CHARACTER.headHeight;
-          publishSnapshot(character.id, emotion,
-            faceThumbnail(canvas, current.position.x * resolution, (headY + height * 0.015) * resolution, height * 0.19 * resolution));
-        } catch { /* Ảnh xem thử không chặn model. */ }
-      };
       const show = (emotion: StageEmotion | null, preview = false) => {
         clearTimeout(previewTimer);
-        clearTimeout(snapshotTimer);
         setExpressionError(false);
         const source = emotion && emotion !== 'neutral' && (preview || preferences.enabled)
           ? faceSource(emotion, choices, preferences, builtin) : { kind: 'none' as const };
@@ -318,7 +325,6 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
         if (source.kind === 'file') void controller?.show(source.choice.id);
         else controller?.reset();
         // Xem thử xong thì về lại cảm xúc của cuộc trò chuyện (hoặc mặt bình thường).
-        if (preview && emotion) snapshotTimer = setTimeout(() => snapshot(emotion), 1200);
         if (preview) previewTimer = setTimeout(() => show(emotionRef.current?.emotion ?? null), 6000);
       };
       showEmotion.current = emotion => show(emotion);
@@ -329,7 +335,6 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
       }, emotion => show(emotion, true));
       disposeExpressions = () => {
         clearTimeout(previewTimer);
-        clearTimeout(snapshotTimer);
         unwatchExpressions();
         controller?.dispose();
         showEmotion.current = () => {};
@@ -554,9 +559,10 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
         document.removeEventListener("visibilitychange", visible);
         canvas.removeEventListener("webglcontextlost", lost);
         compact.removeEventListener?.("change", fit);
+        unwatchView();
         if (saveTimer !== undefined) {
           window.clearTimeout(saveTimer);
-          writeCharacterView(view, character.id);
+          writeCharacterView(view, character.id, viewSource);
         }
       };
       // Vẽ vào canvas đang ẩn trước khi báo sẵn sàng, để loading và nhân vật đổi trong cùng lượt cập nhật.

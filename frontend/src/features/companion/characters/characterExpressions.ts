@@ -39,22 +39,9 @@ export function writeExpressions(id: string, preferences: ExpressionPreferences)
   try { localStorage.setItem(key(id), JSON.stringify(value)); } catch { /* Session only. */ }
   window.dispatchEvent(new CustomEvent(eventName, { detail: { id, value } }));
 }
-/** Bấm thẻ cảm xúc trong bảng Nhân vật: sân khấu làm mặt đó một lúc để xem thử. */
+/** Bấm thẻ cảm xúc ở Cài đặt → Nhân vật: sân khấu làm mặt đó một lúc để xem thử. */
 export function previewExpression(id: string, emotion: StageEmotion) {
   window.dispatchEvent(new CustomEvent(previewEvent, { detail: { id, emotion } }));
-}
-const snapshotEvent = 'peto-expression-snapshot';
-/** Sân khấu chụp mặt vừa xem thử: bảng Nhân vật che sân khấu, nên thẻ cảm xúc hiện ảnh này thay cho sân khấu. */
-export function publishSnapshot(id: string, emotion: StageEmotion, image: string) {
-  window.dispatchEvent(new CustomEvent(snapshotEvent, { detail: { id, emotion, image } }));
-}
-export function watchSnapshots(id: string, update: (emotion: StageEmotion, image: string) => void) {
-  const listener = (event: Event) => {
-    const d = (event as CustomEvent).detail; const emotion = asStageEmotion(d?.emotion);
-    if (d?.id === id && emotion && typeof d.image === 'string') update(emotion, d.image);
-  };
-  window.addEventListener(snapshotEvent, listener);
-  return () => window.removeEventListener(snapshotEvent, listener);
 }
 export function watchExpressions(id: string, update: (value: ExpressionPreferences) => void, preview?: (emotion: StageEmotion) => void) {
   const changed = (event: Event) => { const d = (event as CustomEvent).detail; if (d?.id === id) update(normalize(d.value)); };

@@ -36,13 +36,14 @@ export function appPath(location: Pick<Location, 'pathname' | 'hash'>) {
  * đường dẫn cố định; đường dẫn lạ dưới /companion/settings không phải trang của ứng dụng.
  */
 export type CompanionSettingsPage =
-  | 'home' | 'modules' | 'brain' | 'voice' | 'hearing' | 'web-search' | 'beat-sync' | 'providers' | 'provider' | 'scene'
-  | 'memory' | 'diagnostics';
+  | 'home' | 'character' | 'modules' | 'brain' | 'voice' | 'hearing' | 'web-search' | 'beat-sync' | 'providers' | 'provider'
+  | 'scene' | 'memory' | 'diagnostics';
 /** Trang có đường dẫn cố định; trang một nhà cung cấp ('provider') có thêm mã ở cuối. */
 export type FixedCompanionSettingsPage = Exclude<CompanionSettingsPage, 'provider'>;
 
 const COMPANION_SETTINGS_PATHS: Record<FixedCompanionSettingsPage, string> = {
   home: '/companion/settings/',
+  character: '/companion/settings/character',
   modules: '/companion/settings/modules',
   brain: '/companion/settings/modules/brain',
   providers: '/companion/settings/providers',

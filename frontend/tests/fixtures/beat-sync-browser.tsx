@@ -1,6 +1,6 @@
 // Manual browser integration fixture. Synthetic capture only; never shipped by the production build.
 import { createRoot } from 'react-dom/client';
-import MusicVibePicker, { BeatIndicator } from '../../src/features/companion/characters/MusicVibePicker';
+import { BeatIndicator, BeatSyncBody } from '../../src/features/companion/characters/MusicVibePicker';
 import Live2DStage from '../../src/features/companion/characters/Live2DStage';
 import { getMusicState, musicPose, startMusicVibe, stopMusicVibe, useMusicVibe } from '../../src/features/companion/characters/musicVibe';
 import '../../src/shared/styles/styles.css';
@@ -48,7 +48,7 @@ function IndicatorPreview() {
 createRoot(document.getElementById('root')!).render(<main style={{ padding: 24, maxWidth: 960, margin: 'auto' }}>
   <h1>Beat Sync browser verification</h1><p>Synthetic right-channel PCM, real browser AudioWorklet and production service. No screen capture or audible output.</p>
   <button className="settings-button" onClick={event => { const button = event.currentTarget; button.disabled = true; void run().finally(() => { button.disabled = false; }); }}>Run PCM verification</button>
-  <p id="result" role="status">Not run.</p><MusicVibePicker />
+  <p id="result" role="status">Not run.</p><BeatSyncBody />
   <IndicatorPreview />
   <div style={{ height: 440 }}><Live2DStage name="Hiyori" motion="always" /></div>
 </main>);

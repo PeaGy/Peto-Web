@@ -993,17 +993,35 @@ it('trang Cài đặt Companion: mở từ bánh răng, đi từng tầng theo �
   expect(window.location.pathname).toBe('/companion');
 });
 
-it('mục Nhân vật mở hộp chọn nhân vật; Nhân vật cử động nằm trong hộp đó và được lưu', async () => {
+it('trang Nhân vật như AIRI: mở từ tên nhân vật và thẻ ở Cài đặt, nhân vật đứng cạnh các khối cài đặt', async () => {
   await openCompanion();
-  const page = await openCompanionSettings();
-  fireEvent.click(page.getByRole('button', { name: /^Nhân vật/ }));
-  const dialog = within(await screen.findByRole('dialog', { name: 'Nhân vật' }));
-  const group = await dialog.findByRole('radiogroup', { name: 'Nhân vật cử động' });
+  const column = within(await screen.findByRole('region', { name: 'Trò chuyện trong Companion' }));
+  fireEvent.click(column.getByRole('button', { name: /^Đổi nhân vật / }));
+  let page = within(await screen.findByRole('main', { name: 'Nhân vật' }));
+  expect(window.location.pathname).toBe('/companion/settings/character');
+  // Sân khấu Companion nhường chỗ; trang có sân khấu xem trước của riêng nó.
+  expect(screen.queryByRole('region', { name: 'Trò chuyện trong Companion' })).toBeNull();
+  expect(await within(page.getByRole('region', { name: /^Sân khấu xem trước/ })).findByTestId('stage')).toBeTruthy();
+  expect(page.getByRole('button', { name: 'Kích thước và vị trí' }).getAttribute('aria-expanded')).toBe('true');
+  expect(page.queryByText(/hỗ trợ nhân vật 2D và 3D/)).toBeNull();
+
+  fireEvent.click(page.getByRole('button', { name: 'Chuyển động' }));
+  const group = await page.findByRole('radiogroup', { name: 'Nhân vật cử động' });
   expect((within(group).getByRole('radio', { name: /Theo cài đặt chung/ }) as HTMLInputElement).checked).toBe(true);
   fireEvent.click(within(group).getByRole('radio', { name: /Luôn cử động/ }));
   expect(localStorage.getItem('peto-character-motion')).toBe('always');
-  // Vẫn ở trang cài đặt sau khi chọn: hộp chỉ là lối tắt.
-  expect(window.location.pathname).toBe('/companion/settings/');
+
+  fireEvent.click(page.getByRole('button', { name: 'Chọn nhân vật' }));
+  const dialog = within(await screen.findByRole('dialog', { name: 'Chọn nhân vật' }));
+  fireEvent.click(dialog.getByRole('button', { name: 'Đóng chọn nhân vật' }));
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Chọn nhân vật' })).toBeNull());
+
+  fireEvent.click(page.getByRole('button', { name: 'Quay lại Cài đặt' }));
+  const home = within(await screen.findByRole('main', { name: 'Cài đặt' }));
+  fireEvent.click(home.getByRole('button', { name: /^Nhân vật/ }));
+  page = within(await screen.findByRole('main', { name: 'Nhân vật' }));
+  expect(window.location.pathname).toBe('/companion/settings/character');
+  expect(page.getByRole('button', { name: 'Chọn nhân vật' })).toBeTruthy();
 });
 
 it('mở thẳng đường dẫn trang cài đặt (F5, link sâu) và Trí nhớ ở đây cùng danh sách với Cài đặt chung', async () => {

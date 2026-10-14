@@ -1623,8 +1623,8 @@ saved in `localStorage`. The pure math (zoom, pan limits, look
 direction, wheel steps) lives in `characterView.ts` with its own tests.
 
 When motion is allowed the model plays its `Idle` motions, breathes, blinks and turns toward the
-pointer anywhere on the page; otherwise it holds its pose. "Nhân vật cử động" (in the character picker dialog since
-2026-10-13) picks `system` ("Theo cài đặt chung", the default) or `always`. Since 2026-10-13 `system` follows the web's
+pointer anywhere on the page; otherwise it holds its pose. "Nhân vật cử động" (since 2026-10-14 the first row of the
+Chuyển động block on Cài đặt Companion → Nhân vật) picks `system` ("Theo cài đặt chung", the default) or `always`. Since 2026-10-13 `system` follows the web's
 Cài đặt → Giao diện → Chuyển động (default "Mượt", so characters move) instead of the OS. Before that it followed
 `prefers-reduced-motion`, and Windows with Animation effects off reports reduced motion, which is why the owner asked
 for the "Luôn cử động" override. The
@@ -2192,9 +2192,9 @@ keyword guess (`replyEmotion`) almost never matched once the Companion prompt ba
   - Nine cards in a 3×3 grid, the on/off switch, and the selected card's source: the shared `Dropdown` for Live2D,
     plain text for VRM.
   - A card sends `previewExpression(id, emotion)`. The stage holds the face for 6 s even when the switch is off.
-  - The character panel is a dialog that covers the stage, so the stage photographs the head 1.2 s after a preview
-    (`publishSnapshot` → `faceThumbnail`) and the picker shows that image beside the source.
-  - `CharacterPicker` now also has a settings panel for VRM characters, holding only the picker.
+  - It is the Biểu cảm block of Cài đặt Companion → Nhân vật, beside the page's own stage, so the face shows live.
+    Until 2026-10-14 it sat in a dialog covering the stage, and the stage photographed the head for the picker
+    (`publishSnapshot`, `faceThumbnail`); that pipeline was removed with the dialog.
 - **Checking faces.** A hidden browser pane draws no frames, so the face never moves there. Real renders were captured
   with headless Edge over the DevTools protocol, with a temporary profile and a debug build that exposes `show` on
   `window`. That hook must never reach the source.
@@ -2202,7 +2202,7 @@ keyword guess (`replyEmotion`) almost never matched once the Companion prompt ba
   - `backend/tests/test_emotion_tags.py`: the filter at every cut point, event order, notes plus a marker, the Chat
     tab. The mock prefixes `<|EMOTE_X|>` for `__camxuc__:x`.
   - Frontend: `builtinFaces.test.ts`, `characterExpressions.test.ts`, `ExpressionPicker.test.tsx`,
-    `Live2DStage.test.tsx` (built-in face and snapshot), `VRMStage.test.tsx`, `api.test.ts`, and `Companion.test.tsx`
+    `Live2DStage.test.tsx` (built-in face), `VRMStage.test.tsx`, `api.test.ts`, and `Companion.test.tsx`
     (stubbed stage reading the `emotion` prop).
 
 ### Companion web search
@@ -2249,12 +2249,11 @@ All three run in the browser only. Nothing goes through the backend, and nothing
 data deletes them.
 
 - **Character library** (`characters/characterLibrary.ts`, `useCharacters.ts`, `CharacterPicker.tsx`).
-  - **Where it opens.** The picker is a dialog, opened from:
-    - the character name in the Companion header ("Đổi nhân vật");
-    - the person button beside the stage;
-    - "Nhân vật" in the phone sidebar while Companion is open;
-    - the "Nhân vật" card of the Companion settings page (which only opens this dialog, by the owner's call on
-      2026-10-13). "Nhân vật cử động" lives in this dialog too.
+  - **Where it opens.** Since 2026-10-14 the library is the "Chọn nhân vật" dialog (AIRI's ModelSelectorDialog) of the
+    Cài đặt Companion → Nhân vật page (see "Companion character page"). It only selects, imports, renames and deletes;
+    picking a card or finishing an import closes it so the new character shows on the page's stage. The character name
+    in the Companion header ("Đổi nhân vật"), the person button beside the stage, "Nhân vật" in the phone sidebar and
+    the settings home card all open that page.
   - **Storage.** Hiyori is built in. Users can add up to 20 of their own models, saved in IndexedDB `peto-characters`
     (stores `models` and `assets`). The selected id lives in `peto-selected-character`; a missing id falls back to
     Hiyori, and a `storage` event keeps tabs in sync. Card thumbnails are captured from the rendered canvas
@@ -2274,18 +2273,18 @@ data deletes them.
     refused, and the name and author are read from the model's metadata. It is rendered with `@pixiv/three-vrm`.
   - **Limits** (`characterLimits.ts`, raised by the owner on 2026-10-11): 200 MB per import, 400 MB unpacked, 128 MB
     per file, 4 MB per JSON file, 512 files.
-- **Per-character settings**, under "Cài đặt nhân vật" in the picker.
-  - **Live2D** (`IdleMotionPicker.tsx`):
+- **Per-character settings**, the blocks of the Nhân vật page (`CharacterSections.tsx`).
+  - **Live2D:**
     - "Cách chuyển động": Hiện tại or MAGIC (`MotionDriverPicker.tsx`, see "Companion MAGIC motion");
     - the idle motion: "auto" (random `Idle` group), off, or one looped motion file, in `peto-idle-motion:<id>`;
     - switches for cursor tracking, idle eyes, breathing, physics and composer gaze, all on by default, in
       `peto-character-effects:<id>`. Physics is disabled when the model declares none. `withCharacterEffects` skips
       only those additive effects for a frame and leaves motions, blinks, pose and lip sync alone;
-    - the expression picker and Beat Sync.
-  - **VRM:** composer gaze and the expression picker only.
+    - size and position, the expression picker and Beat Sync.
+  - **VRM:** composer gaze and the expression picker only (no size, position or Beat Sync).
 - **Render quality** (`renderQuality.ts`, `stageQuality` in `companionMotion.ts`). On desktop it is fixed at 30 FPS and
-  up to 1.5× resolution. Below the 720px breakpoint it defaults to 24 FPS at 1×; "Hiển thị trên điện thoại" in the
-  picker can raise it to 60 FPS and up to 2× (`peto-mobile-render-quality`), for both Live2D and VRM.
+  up to 1.5× resolution. Below the 720px breakpoint it defaults to 24 FPS at 1×; the "Hiển thị trên điện thoại" block
+  of the Nhân vật page (shown on phones only) can raise it to 60 FPS and up to 2× (`peto-mobile-render-quality`), for both Live2D and VRM.
 - **Scenes** (`CompanionScenes.tsx`, `sceneLibrary.ts`; built 2026-09-23). A background picture behind the stage and chat
   column (`.companion-with-scene`).
   - **Where it opens.** The "Bối cảnh" dialog opens from the image button beside the stage, or "Bối cảnh" in the phone
@@ -2323,7 +2322,8 @@ AIRI PR #2376 (v0.12.0-beta.5): "Markovian Animation Generator with Illusory Con
 calls "Neuro-sama like (aka Neuro bump)". Surveyed 2026-10-13 (notes in `PETO_COMPANION_PLAN.md` §4); the owner tried a
 live mockup with four variants and on 2026-10-14 chose: add it, default stays "Hiện tại" (AIRI's default is Universal),
 keep the mouth-form switch.
-- **Setting.** Per Live2D character in "Cài đặt nhân vật" → "Cách chuyển động: Hiện tại / MAGIC" (AIRI: Settings → Models →
+- **Setting.** Per Live2D character in Cài đặt Companion → Nhân vật → Chuyển động → "Cách chuyển động: Hiện tại / MAGIC"
+  (AIRI: Settings → Models →
   Animation → Motion driver). `magicSettings.ts` stores `{driver, profile, viewTarget, mouthForm}` in
   `peto-character-magic:<id>` with a change event, like `characterEffects.ts`. Profiles: Hào hứng (`excited`, AIRI's
   "Speaking / excited", the default profile), Bình thản (`calm`, "Idle / calm") and Theo lúc nói (`speech`, Peto's own:
@@ -2355,7 +2355,7 @@ keep the mouth-form switch.
 - **Not done:** VRM (AIRI has none either); AIRI's motion workbench (recording, keyframe editor, gamepad) and custom
   datasets; checks on a physical phone. Lip sync with MAGIC was checked in headless Edge with a muted fake voice.
 - **Tests:** `tests/magic.test.ts` (fit, determinism, ranges, real datasets, filter, runtime, writer release and mappings,
-  settings), `IdleMotionPicker.test.tsx` and `Live2DStage.test.tsx` MAGIC cases.
+  settings), `CharacterSections.test.tsx` and `Live2DStage.test.tsx` MAGIC cases.
 
 ### Companion settings page (`/companion/settings/`)
 
@@ -2364,6 +2364,7 @@ beside the stage, and a two-column page with an overview). Plan and AIRI reading
 - **Routes.**
   - `app/routes.ts` (`CompanionSettingsPage`, `companionSettingsRoute`, `companionSettingsPage`) defines:
     - `/companion/settings/`;
+    - `character` (see "Companion character page");
     - `modules`, `modules/brain`, `modules/voice`, `modules/hearing`, `modules/web-search` and `modules/beat-sync`;
     - `providers` and `providers/<id>` (see "Companion providers");
     - `scene`, `memory` and `diagnostics`.
@@ -2405,11 +2406,42 @@ beside the stage, and a two-column page with an overview). Plan and AIRI reading
   - `:root[data-motion="reduced"]` keeps only the fades: users choose "Giảm" in Cài đặt → Giao diện → Chuyển động.
   - Focus moves to the page title on every page change.
 - **Tests:**
-  - `Companion.test.tsx`: the gear, levels, Back, the back buttons, focus, the Nhân vật card, the motion row in the
-    picker, and a deep link to Trí nhớ.
+  - `Companion.test.tsx`: the gear, levels, Back, the back buttons, focus, the Nhân vật page from the header and the
+    card, and a deep link to Trí nhớ.
   - `App.test.tsx`: the shared dialog has no Companion group.
   - `Hearing.test.tsx`: the Micro panel link and leaving the page stopping a test listen.
   - Playwright: `companion-barge-in`, `companion-stream` and `routing`.
+
+### Companion character page (`/companion/settings/character`)
+
+Built 2026-10-14. The owner asked for AIRI's Settings → Models layout "vì có nhân vật nằm ở giữa để dễ xem những gì đã
+thay đổi", picked "Như AIRI" from three live variants (the others: editing in place where the chat column swaps for the
+settings, and a three-column page with the library always visible), and had AIRI's "We support both 2D and 3D models"
+callout dropped as cramped and unneeded.
+- **Layout** (`settings/CharacterPage.tsx`, after AIRI's `pages/settings/models/index.vue` and `model-settings/`). The
+  settings page header, then a panel on the left (`clamp(340px, 31%, 440px)`): "Chọn nhân vật" with the current name and
+  format, the blocks, a footnote. The page's own `Live2DStage`/`VRMStage` fills the rest and centres the character there
+  (Companion's stage is unmounted on settings pages). No scene background, as on AIRI's page. Phones: header, a sticky
+  44dvh stage, then the blocks scroll under it, so the character stays in view.
+- **Blocks** (`characters/CharacterSections.tsx`, AIRI's collapsible `Section`s; Kích thước và vị trí open first):
+  - Kích thước và vị trí (AIRI: Scale And Position): Thu phóng, Ngang, Dọc sliders with reset buttons and "Về vừa khung".
+    They write the same per-model view as wheel/drag on the stage; `writeCharacterView(view, id, source)` now dispatches
+    `peto-character-view-change` and `watchCharacterView` listens, so the stage moves at once and the sliders follow
+    wheel and drag. When only the zoom changes, `Live2DStage` zooms around the head (`zoomAt` at the head point) and
+    writes the new pan back. Phones keep the fixed frame, so the block says the values are for desktop. VRM: a note.
+  - Chuyển động (AIRI: Animation): "Nhân vật cử động", MAGIC (`MotionDriverPicker`), idle motion, the effect switches.
+  - Biểu cảm (`ExpressionPicker`), Nhún theo nhạc (`BeatSyncBody`, Live2D only) and, on phones only, Hiển thị trên điện
+    thoại (render quality).
+  - Collapsing animates `grid-template-rows` 0fr → 1fr (240 ms); content is `inert` while closed and may overflow only
+    once open, so dropdowns are not clipped.
+  - Not ported: AIRI's "Extract colors from model" (Peto has no model-derived theme colour) and the manual parameter
+    sliders of "Model Parameters".
+- **Removed with the old dialog:** `IdleMotionPicker.tsx`, the Beat Sync dialog (`MusicVibePicker`'s default export)
+  and the face snapshot pipeline (`publishSnapshot`, `watchSnapshots`, `faceThumbnail`). App no longer holds
+  `characterPickerOpen`; `openCharacters` navigates to the page.
+- **Tests:** `CharacterSections.test.tsx`, `CharacterPickerImport.test.tsx`, `Live2DStage.test.tsx` (view sync and
+  head-anchored zoom), `Companion.test.tsx` (header and card entry, stage beside the blocks), route tests, Playwright
+  `routing`, `companion-presence`, and the opt-in `companion-vrm` / `companion-live2d-controls`.
 
 ### Companion providers (own API keys, `/companion/settings/providers`)
 
@@ -3387,8 +3419,8 @@ Chat, Companion and roleplay turn (not the Agent CLI).
   it and receive an `active` prop rather than being unmounted — that is what keeps a running generation
   alive when the user switches back to Chat.
 - Settings → "Giao diện" contains the theme selector and Chuyển động. Since 2026-10-13 the shared Settings dialog has no Companion
-  group: character motion is in the character picker dialog, and voice, hearing, web search, Beat Sync, scenes and
-  diagnostics are on `/companion/settings/`. Saved selections and motion values are unchanged.
+  group: character motion, voice, hearing, web search, Beat Sync, scenes and diagnostics are on `/companion/settings/`
+  (character motion on its Nhân vật page). Saved selections and motion values are unchanged.
 - Settings → "Kết nối" manages per-owner GitHub App connections (`features/connectors/`, `storage/connectors.py`).
   Configure the five `PETO_GITHUB_*` / `PETO_CONNECTOR_SECRET` variables described in
   `backend/features/connectors/README.md`; no live connection exists until that setup and user consent are complete.

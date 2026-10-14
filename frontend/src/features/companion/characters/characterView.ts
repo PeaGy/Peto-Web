@@ -72,10 +72,26 @@ export function readCharacterView(modelId = 'hiyori'): CharacterView {
   }
 }
 
-export function writeCharacterView(view: CharacterView, modelId = 'hiyori') {
+const VIEW_CHANGE = "peto-character-view-change";
+
+/**
+ * Lưu góc nhìn và báo cho nơi khác cùng trang: sân khấu đổi theo thanh trượt "Kích thước và vị trí", thanh trượt đi theo
+ * thao tác cuộn hay kéo trên sân khấu. ``source`` là bên ghi, để bên đó bỏ qua thông báo của chính mình.
+ */
+export function writeCharacterView(view: CharacterView, modelId = 'hiyori', source?: unknown) {
   try {
     localStorage.setItem(modelId === 'hiyori' ? CHARACTER_VIEW_KEY : `${CHARACTER_VIEW_KEY}:${modelId}`, JSON.stringify(view));
   } catch {}
+  window.dispatchEvent(new CustomEvent(VIEW_CHANGE, { detail: { id: modelId, view, source } }));
+}
+
+export function watchCharacterView(modelId: string, update: (view: CharacterView, source: unknown) => void): () => void {
+  const changed = (event: Event) => {
+    const detail = (event as CustomEvent<{ id: string; view: CharacterView; source: unknown }>).detail;
+    if (detail?.id === modelId) update(clampView(detail.view), detail.source);
+  };
+  window.addEventListener(VIEW_CHANGE, changed);
+  return () => window.removeEventListener(VIEW_CHANGE, changed);
 }
 
 export function placement(view: CharacterView, box: StageBox) {

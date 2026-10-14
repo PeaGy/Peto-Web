@@ -1,21 +1,19 @@
 import { useEffect, useId, useState } from 'react';
 import {
   BUILTIN_FACE, EMOTIONS, NEUTRAL_LABEL, emotionLabels, faceSource, previewExpression, readExpressions, watchExpressions,
-  watchSnapshots, writeExpressions, type Emotion, type ExpressionChoice, type StageEmotion,
+  writeExpressions, type Emotion, type ExpressionChoice, type StageEmotion,
 } from './characterExpressions';
 import { Dropdown, Field, type DropdownOption } from '../speech/voiceUi';
-
-import { LoadingIndicator } from '../../../shared/ui/LoadingIndicator';
 
 const AUTO = 'auto';
 const CARDS: StageEmotion[] = [...EMOTIONS, 'neutral'];
 const label = (emotion: StageEmotion) => emotion === 'neutral' ? NEUTRAL_LABEL : emotionLabels[emotion];
 
 /**
- * Mục biểu cảm trong bảng Nhân vật (phương án B chủ web chọn ngày 2026-09-27): chín thẻ cảm xúc của AIRI, bấm thẻ là
- * nhân vật làm mặt đó để xem thử; nguồn của thẻ đang chọn hiện bên dưới. Live2D chọn được tệp biểu cảm của model hay
- * mặt dựng sẵn; VRM dùng biểu cảm có sẵn của chuẩn VRM. Bảng Nhân vật che sân khấu, nên sân khấu chụp mặt vừa làm và
- * ảnh đó hiện cạnh nguồn (publishSnapshot).
+ * Khối Biểu cảm của trang Cài đặt → Nhân vật (phương án B chủ web chọn ngày 2026-09-27): chín thẻ cảm xúc của AIRI, bấm thẻ
+ * là nhân vật trên sân khấu bên cạnh làm mặt đó để xem thử; nguồn của thẻ đang chọn hiện bên dưới. Live2D chọn được tệp
+ * biểu cảm của model hay mặt dựng sẵn; VRM dùng biểu cảm có sẵn của chuẩn VRM. Trước 14/10/2026 khối này nằm trong hộp
+ * che sân khấu nên kèm ảnh chụp mặt; nay sân khấu luôn hiện nên bỏ ảnh đó.
  */
 export default function ExpressionPicker({ characterId, choices, format = 'live2d' }: {
   characterId: string;
@@ -24,14 +22,11 @@ export default function ExpressionPicker({ characterId, choices, format = 'live2
 }) {
   const [preferences, setPreferences] = useState(() => readExpressions(characterId));
   const [selected, setSelected] = useState<StageEmotion | null>(null);
-  const [snapshot, setSnapshot] = useState<{ emotion: StageEmotion; image: string } | null>(null);
   const sourceId = useId();
   useEffect(() => watchExpressions(characterId, setPreferences), [characterId]);
-  useEffect(() => watchSnapshots(characterId, (emotion, image) => setSnapshot({ emotion, image })), [characterId]);
 
   function pick(emotion: StageEmotion) {
     setSelected(emotion);
-    setSnapshot(null);
     previewExpression(characterId, emotion);
   }
 
@@ -39,7 +34,6 @@ export default function ExpressionPicker({ characterId, choices, format = 'live2
     const mapping = { ...preferences.mapping };
     if (value === AUTO) delete mapping[emotion]; else mapping[emotion] = value;
     writeExpressions(characterId, { ...preferences, mapping });
-    setSnapshot(null);
     previewExpression(characterId, emotion);
   }
 
@@ -53,7 +47,6 @@ export default function ExpressionPicker({ characterId, choices, format = 'live2
     ];
   }
 
-  const shot = selected !== null && snapshot?.emotion === selected ? snapshot.image : null;
   const hint = preferences.enabled
     ? 'Peto tự chọn cảm xúc cho từng câu trả lời.'
     : 'Đang tắt: nhân vật giữ mặt bình thường khi trò chuyện. Bấm thẻ vẫn xem thử được.';
@@ -67,10 +60,6 @@ export default function ExpressionPicker({ characterId, choices, format = 'live2
     </div>
     <div className="expression-source">
       {selected === null ? <p className="expression-source-empty">Bấm một thẻ để xem nhân vật làm mặt đó.</p> : <>
-        <div className="expression-snapshot">
-          {shot ? <img src={shot} alt={`Nhân vật làm mặt ${label(selected).toLowerCase()}`} />
-            : <LoadingIndicator variant="icon" label="Đang chụp mặt nhân vật" />}
-        </div>
         <div className="expression-source-body">
           {selected === 'neutral' ? <p>Nhân vật đang về mặt bình thường.</p> : <>
             {format === 'vrm'

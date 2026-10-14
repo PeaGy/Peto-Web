@@ -21,7 +21,7 @@ import { PetoAvatar, AccountAvatar, accountLine, accountSubtitle } from './accou
 import { EFFORTS, MOTIONS, THEMES, readStoredTheme, readStoredCollapsed, type ThemeChoice, type AppView } from './preferences';
 import { isReducedMotion, readMotionChoice, type MotionChoice } from '../shared/motion';
 import { MAX_FILES, MAX_MEDIA_FILES, MAX_FILE_BYTES, MAX_TOTAL_BYTES, isImageFile, isMediaFile, fileToBase64 } from '../features/chat/attachments';
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type SetStateAction } from "react";
+import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type SetStateAction } from "react";
 import '../shared/styles/styles.css';
 import { DiagramContext } from "../features/diagrams/DiagramCard";
 import { diagramBlocks } from "../features/diagrams/diagrams";
@@ -34,7 +34,6 @@ import AccountMenu, { placeAccountMenu, type AccountMenuPlace } from "./AccountM
 import SettingsDialog, { CLOSED_SETTINGS, type SettingsSection, type SettingsView } from "../features/settings/SettingsDialog";
 import { Segmented, SettingsGroup, SettingsIcon, SettingsRow } from "../features/settings/settingsUi";
 import { useCharacters } from '../features/companion/characters/useCharacters';
-const CharacterPicker = lazy(() => import('../features/companion/characters/CharacterPicker'));
 import { readCharacterMotion, writeCharacterMotion, type CharacterMotion } from "../features/companion/characters/characterView";
 import Composer from "../features/chat/Composer";
 import ChatFileDropZone from '../features/chat/ChatFileDropZone';
@@ -224,7 +223,6 @@ function AppContent() {
   const [motion, setMotion] = useState<MotionChoice>(readMotionChoice);
   const [characterMotion, setCharacterMotion] = useState<CharacterMotion>(readCharacterMotion);
   const characters = useCharacters();
-  const [characterPickerOpen, setCharacterPickerOpen] = useState(false);
   const [sceneRequest, setSceneRequest] = useState(0);
   const changeCharacterMotion = useCallback((value: CharacterMotion) => {
     setCharacterMotion(value);
@@ -289,6 +287,8 @@ function AppContent() {
   // Nút cài đặt trong bảng Micro mở thẳng trang Nghe của Cài đặt Companion.
   const openHearingSettings = useCallback(() => navigate(companionSettingsRoute('hearing')), [navigate]);
   const openCompanionSettings = useCallback(() => navigate(companionSettingsRoute('home')), [navigate]);
+  // Đổi nhân vật (tên nhân vật, nút người cạnh sân khấu, mục Nhân vật trên thanh bên điện thoại): trang Cài đặt → Nhân vật.
+  const openCharacters = useCallback(() => navigate(companionSettingsRoute('character')), [navigate]);
   // Mục Bối cảnh trên thanh bên điện thoại: ở sân khấu thì mở hộp Bối cảnh, ở trang cài đặt thì sang trang Bối cảnh.
   const openScenes = useCallback(() => {
     if (companionSettingsView) navigate(companionSettingsRoute('scene'));
@@ -1357,7 +1357,7 @@ function AppContent() {
         accountRef={accountRef} accountMenu={accountMenu} setSearchOpen={setSearchOpen}
         onToggleCollapsed={() => setCollapsed(value => !value)} onCollapsedChange={setCollapsed} goChat={goChat} go={go}
         preloadImagine={preload(loadImagine)} preloadCompanion={preload(loadCompanion)} preloadSettings={preload(loadSettings)}
-        setSidebarOpen={setSidebarOpen} onOpenScenes={openScenes} setCharacterPickerOpen={setCharacterPickerOpen}
+        setSidebarOpen={setSidebarOpen} onOpenScenes={openScenes} onOpenCharacters={openCharacters}
         setFocusJobId={setFocusJobId} openConversation={openConversation} setConversationMenu={setConversationMenu}
         onOpenImagineLibrary={() => { setSidebarOpen(false); setImagineLibraryRequest(value => value + 1); }}
         onLoadMore={() => { listCount.current = conversations.length + 50; void refreshConversations(); }}
@@ -1394,7 +1394,7 @@ function AppContent() {
           character={characters.selected}
           characterLoading={characters.loading}
           onCharacterPreview={characters.savePreview}
-          onOpenCharacters={() => setCharacterPickerOpen(true)}
+          onOpenCharacters={openCharacters}
           onUnauthorized={handleUnauthorized}
           onOpenSidebar={() => setSidebarOpen(true)}
           onOpenHearingSettings={openHearingSettings}
@@ -1413,8 +1413,10 @@ function AppContent() {
           onNavigate={(page, id) => navigate(page === 'provider' ? companionProviderRoute(id ?? '') : companionSettingsRoute(page))}
           onExit={() => navigate(VIEW_PATHS.companion)}
           voice={localVoice}
-          character={characters.selected}
-          onOpenCharacters={() => setCharacterPickerOpen(true)}
+          library={characters}
+          motion={characterMotion}
+          onMotionChange={changeCharacterMotion}
+          fallbackUrl={appInfo?.avatar_url ?? undefined}
           onUnauthorized={handleUnauthorized}
         />
         </Suspense>
@@ -1579,7 +1581,6 @@ function AppContent() {
         />
       )}
       <SettingsDialog view={settings} onView={setSettings} onClose={closeSettings} render={renderSettings} />
-      {characterPickerOpen && <LazyBoundary><Suspense fallback={null}><CharacterPicker library={characters} motion={characterMotion} onMotionChange={changeCharacterMotion} onClose={() => setCharacterPickerOpen(false)} /></Suspense></LazyBoundary>}
       {agentCode && <AgentConnectDialog code={agentCode}
         onClose={() => { forgetAgentCode(); setAgentCode(null); }} onUnauthorized={handleUnauthorized} />}
       {renameTarget && <TextEditDialog title="Đổi tên hội thoại" value={renameText} onChange={setRenameText} busy={metadataBusy} onClose={() => setRenameTarget(null)} onSave={() => void changeConversation(renameTarget, {title:renameText})}/>}

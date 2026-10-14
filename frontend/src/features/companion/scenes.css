@@ -47,10 +47,6 @@
 .companion-scene-button { display: flex; align-items: center; justify-content: center; width: 42px; height: 42px; padding: 0; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); color: var(--text); cursor: pointer; box-shadow: 0 4px 18px #0003; }
 @media (hover: hover) and (pointer: fine) { .companion-scene-button:hover { background: var(--panel-2); } }
 .companion-scene-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
-.character-motion-settings { margin-top: 22px; border: 1px solid var(--line); border-radius: 16px; background: var(--panel); }
-.character-motion-settings summary { cursor: pointer; padding: 18px; font-weight: 600; }
-.character-motion-settings summary span { display: block; margin: 6px 0 0 18px; font-size: 12px; font-weight: 400; color: var(--muted); }
-.character-motion-settings .idle-motion-picker { margin: 0; border: 0; border-top: 1px solid var(--line); border-radius: 0 0 16px 16px; }
 .character-library-footnote a { color: inherit; }
 @media (max-width: 720px) {
   .companion > .scene-backdrop { z-index: 0; }
@@ -63,15 +59,11 @@
 /* Reserve a single toolbar row beneath the floating chat. */
 @media (min-width: 721px) { .companion-panel { margin-bottom: 76px; } }
 @media (max-width: 720px) { .companion-panel { bottom: calc(98px + env(safe-area-inset-bottom)); } }
-.mobile-companion-nav, .mobile-render-settings { display: none; }
+.mobile-companion-nav { display: none; }
 @media (max-width: 720px) {
   .companion-scene-tools { display: none; }
   .companion-panel { bottom: 0; }
   .mobile-companion-nav { display: grid; gap: 4px; padding-left: 20px; }
   .mobile-companion-nav .nav-item { font-size: 14px; }
-  .mobile-render-settings { display: grid; gap: 14px; margin-top: 20px; padding: 18px; border: 1px solid var(--line); border-radius: 16px; }
-  .mobile-render-settings h3, .mobile-render-settings p { margin: 0; }
-  .mobile-render-settings p { color: var(--muted); font-size: 12px; line-height: 1.6; }
-  .mobile-render-field { display: grid; gap: 8px; }
 }
 

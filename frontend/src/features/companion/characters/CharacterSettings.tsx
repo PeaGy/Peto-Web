@@ -8,8 +8,8 @@ const OPTIONS: SegmentOption<CharacterMotion>[] = [
 ];
 
 /**
- * Nhân vật cử động: một hàng trong hộp chọn nhân vật. Trước ngày 13/10/2026 nó nằm ở Cài đặt → Nhân vật; hộp Cài đặt chung
- * nay không còn nhóm Companion, và hộp chọn nhân vật là nơi chỉnh nhân vật (chủ web chốt cùng ngày).
+ * Nhân vật cử động: hàng đầu của khối Chuyển động ở Cài đặt Companion → Nhân vật (14/10/2026). Trước 13/10/2026 nó nằm ở
+ * Cài đặt chung → Nhân vật, rồi một ngày trong hộp chọn nhân vật. Áp dụng cho mọi nhân vật.
  */
 export default function CharacterSettings({ value, onChange }: {
   value: CharacterMotion;

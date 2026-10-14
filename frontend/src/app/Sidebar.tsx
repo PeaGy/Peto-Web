@@ -18,7 +18,7 @@ type SidebarProps = {
   goChat: () => void; go: (view: AppView) => void;
   preloadImagine: () => void; preloadCompanion: () => void; preloadSettings: () => void;
   setSidebarOpen: (open: boolean) => void; onOpenScenes: () => void;
-  setCharacterPickerOpen: (open: boolean) => void; setFocusJobId: (id: string) => void;
+  onOpenCharacters: () => void; setFocusJobId: (id: string) => void;
   openConversation: (id: string) => Promise<void>;
   setConversationMenu: (menu: {item: Conversation; left: number; top: number}) => void;
   onLoadMore: () => void; toggleAccountMenu: () => void;
@@ -30,7 +30,7 @@ export default function Sidebar({
   sidebarOpen, collapsed, streaming, deleting, appInfo, auth, view, imagineJobs,
   conversations, conversationId, loadingList, hasMore, accountRef, accountMenu,
   setSearchOpen, onToggleCollapsed, goChat, go, preloadImagine, preloadCompanion,
-  preloadSettings, setSidebarOpen, onOpenScenes, setCharacterPickerOpen,
+  preloadSettings, setSidebarOpen, onOpenScenes, onOpenCharacters,
   setFocusJobId, openConversation, setConversationMenu, onLoadMore, toggleAccountMenu,
   onOpenImagineLibrary, onCollapsedChange,
 }: SidebarProps) {
@@ -92,7 +92,7 @@ export default function Sidebar({
           </button>
           {view === "companion" && <div className="mobile-companion-nav">
             <button type="button" className="nav-item" onClick={() => { setSidebarOpen(false); onOpenScenes(); }}><ImageIcon /><span>Bối cảnh</span></button>
-            <button type="button" className="nav-item" onClick={() => { setSidebarOpen(false); setCharacterPickerOpen(true); }}><span aria-hidden="true">◇</span><span>Nhân vật</span></button>
+            <button type="button" className="nav-item" onClick={() => { setSidebarOpen(false); onOpenCharacters(); }}><span aria-hidden="true">◇</span><span>Nhân vật</span></button>
           </div>}
         </nav>
         {view === "imagine" && (

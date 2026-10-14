@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { mockPeto, openSidebar, title } from './fixtures';
+import { mockPeto, noPageOverflow, openSidebar, title } from './fixtures';
 
 async function go(page: Page, label: string) {
   if (!await page.locator('.sidebar').isVisible()) {
@@ -388,9 +388,21 @@ test('trang Cài đặt Companion: link sâu, F5, Back/Forward theo từng trang
   await expect(page).toHaveURL(/\/companion\/settings\/providers$/);
   await page.goto('/companion/settings/modules/brain');
   await expect(settings.getByRole('heading', { level: 1, name: 'Bộ não' })).toBeVisible();
+  // Trang Nhân vật (14/10/2026): link sâu và F5 giữ trang, có sân khấu riêng cạnh các khối, quay lại về Cài đặt.
+  // (mockPeto thay renderer nhân vật bằng bản rỗng, nên chỉ kiểm khung sân khấu.)
+  await page.goto('/companion/settings/character');
+  await expect(settings.getByRole('heading', { level: 1, name: 'Nhân vật' })).toBeVisible();
+  await page.reload();
+  await expect(settings.getByRole('heading', { level: 1, name: 'Nhân vật' })).toBeVisible();
+  await expect(settings.getByRole('region', { name: /^Sân khấu xem trước/ })).toBeVisible();
+  await expect(settings.getByRole('button', { name: 'Kích thước và vị trí', exact: true })).toHaveAttribute('aria-expanded', 'true');
+  await noPageOverflow(page);
+  await settings.getByRole('button', { name: 'Quay lại Cài đặt', exact: true }).click();
+  await expect(page).toHaveURL(/\/companion\/settings\/$/);
   // Chỉ backend phục vụ bản build mới trả 404; máy chủ Vite trả trang cho mọi đường dẫn.
   if (testInfo.config.configFile?.endsWith('playwright.routing.config.ts')) {
-    for (const path of ['/companion/settings/missing', '/companion/settings/voice', '/companion/settings/providers/evil']) {
+    for (const path of ['/companion/settings/missing', '/companion/settings/voice', '/companion/settings/providers/evil',
+      '/companion/settings/character/extra']) {
       expect((await page.request.get(path)).status()).toBe(404);
     }
   }
