@@ -3069,7 +3069,11 @@ results in the next step. The server stores no conversation (`store=False`), and
     - **Owner's call (2026-10-14): GPT models get no `update_plan`.** `tool_schemas(…, patch_model=True)` drops it for
       every feature set, and GPT steps use `english.AGENT_PROMPT_NO_PLAN` (the plan sentences cut out; import fails if
       they no longer match). Peto and Claude keep the tool and the prompt. Pinned non-GPT schema hashes are unchanged.
-      `test_gpt_models_get_no_update_plan_tool_or_prompt` covers it. Needs a deploy, then a Luna run to measure.
+      `test_gpt_models_get_no_update_plan_tool_or_prompt` covers it.
+    - **Measured the same day after deploy** (`20261014-170204-luna-medium`): 10/10, turns 90 → 67, input tokens
+      1.25M → 0.93M, output 15k, no task at the turn cap. Final replies 3.1 lines; `path:line` 11 → 19.
+      `apply_patch` 8 successes plus one refusal ("read before editing"), after which Luna read the file and
+      patched again.
   **Features from opencode, 0.20.0 (done 2026-10-12, CLI only).**
   The owner asked to mine opencode (commit `bcf23b6`) for useful features and picked six. 0.20.0 has four of them;
   0.21.0 adds the rest with the backend.
