@@ -67,7 +67,8 @@ def test_edit_v2_adds_replace_all_in_place():
 
 
 def test_new_features_are_known_to_the_server():
-    assert {"explore_v2", "edit_v2", "question", "patch", "title", "steer", "jobs_notify", "plan_mode"} <= FEATURES
+    assert {"explore_v2", "edit_v2", "question", "patch", "title", "steer", "jobs_notify", "plan_mode",
+            "btw"} <= FEATURES
 
 
 def test_instructions_explain_the_new_tools_only_when_declared():

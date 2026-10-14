@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import difflib
 import json
 import os
@@ -363,6 +364,24 @@ class UI:
 
     def jump_to(self, item: dict) -> bool:
         return False
+
+    @contextlib.contextmanager
+    def suspended(self, message: str = ""):
+        """/editor: bản chữ không chiếm terminal nên chỉ in ``message`` rồi để trình soạn chạy."""
+        if message:
+            self.line(message, "dim")
+        yield
+
+    def side_answer(self, question: str, answer: str, *, failed: bool = False) -> None:
+        """/btw: bản chữ in câu trả lời ngay sau câu hỏi; màn hình toàn phần hiện hộp nổi (CLI 0.23.0)."""
+        self.line()
+        self.line(f"  /btw · {' '.join(question.split())}", "dim")
+        if failed:
+            self.failure(answer)
+            return
+        for line in answer.splitlines():
+            self._wrapped("    ", visible(line), None)
+        self.line("  (câu hỏi bên lề, không thêm vào hội thoại)", "dim")
 
     def prefill(self, text: str) -> None:
         """/fork: không đặt sẵn chữ vào input() được, nên in ra để chép lại."""

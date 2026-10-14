@@ -12,10 +12,13 @@ Vẫn là dòng nối tiếp như trước: mọi thứ in vào lịch sử cu�
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import re
+import threading
 import time
+from collections.abc import Callable
 from dataclasses import replace
 from datetime import date, datetime, timedelta
 
@@ -124,6 +127,16 @@ class TerminalUI(UI):
             return
         self.engine = engine
 
+    @contextlib.contextmanager
+    def suspended(self, message: str = ""):
+        """Nhường terminal cho trình soạn của /editor (CLI 0.23.0); không có màn hình của Peto thì chỉ in ``message``."""
+        if self.engine is None:
+            with super().suspended(message):
+                yield
+            return
+        with self.engine.suspended(message):
+            yield
+
     def stop_footer(self) -> None:
         if self.engine is not None:
             engine, self.engine = self.engine, None
@@ -170,6 +183,9 @@ class TerminalUI(UI):
         self.engine.refresh()
 
     def copy(self, text: str) -> bool:
+        # Màn hình toàn phần có hàm chép riêng (test thay được, không đụng clipboard thật).
+        if self.engine is not None and callable(getattr(self.engine, "copy", None)):
+            return bool(self.engine.copy(text))
         from .clipboard import copy_text
 
         return copy_text(text)
@@ -1104,6 +1120,113 @@ class TerminalUI(UI):
                     state["selected"] = int(key.text) - 1
                 else:
                     return json.dumps([options[int(key.text) - 1]["label"]], ensure_ascii=False)
+            return None
+
+        return render_lines, handle
+
+    # ---- /btw: câu hỏi bên lề (CLI 0.23.0, theo hộp trả lời /btw của opencode)
+
+    def ask_aside(self, question: str, run: Callable[[], tuple[str, bool]]) -> None:
+        """Hỏi bên lề ở luồng riêng, kể cả lúc Peto đang làm: câu hỏi hiện "⠋ /btw …" trên ô nhập tới khi có trả lời,
+        rồi hộp trả lời hiện ở chỗ ô nhập. ``run`` trả (chữ, lỗi?) và không được ném lỗi. Gọi được trong khóa màn hình."""
+        engine = self.engine
+        with engine.lock:
+            engine.side_pending.append(question)
+
+        def worker() -> None:
+            try:
+                answer, failed = run()
+            except Exception:  # noqa: BLE001 - luồng nền không được chết lặng lẽ mà để dòng chờ treo mãi
+                answer, failed = "Không hỏi được câu này.", True
+            finally:
+                with engine.lock:
+                    if question in engine.side_pending:
+                        engine.side_pending.remove(question)
+                    engine._draw()
+            self.side_answer(question, answer, failed=failed)
+
+        threading.Thread(target=worker, name="peto-btw", daemon=True).start()
+
+    def side_answer(self, question: str, answer: str, *, failed: bool = False) -> None:
+        """Hộp trả lời /btw ở chỗ ô nhập: cao tối đa 60% màn hình, ↑/↓ PgUp/PgDn cuộn, c chép, Esc hay Enter đóng.
+        Khung khác đang mở (câu hỏi quyền) thì hộp chờ nó đóng. Ctrl+C trong hộp chỉ đóng hộp, không dừng Peto."""
+        if self.engine is None:
+            super().side_answer(question, answer, failed=failed)
+            return
+        render_lines, handle = self._side_box(question, answer, failed)
+        self.engine.ask(render_lines, handle, on_interrupt="")
+
+    def _side_box(self, question: str, answer: str, failed: bool):
+        theme = self.theme
+        state = {"top": 0, "copied": None}
+
+        def body(width: int) -> list[Line]:
+            if failed:
+                return [Line(row) for row in wrap([S(visible(answer), theme.error)], width)]
+            markdown = Markdown(theme, width)
+            lines: list[Line] = []
+            for line in answer.split("\n"):
+                lines += markdown.feed(line)
+            lines += markdown.flush()
+            while lines and not lines[0].spans:
+                lines.pop(0)
+            while lines and not lines[-1].spans:
+                lines.pop()
+            return lines
+
+        def room() -> int:
+            return max(4, int(self.height * 0.6) - 5)
+
+        def render_lines() -> list[Line]:
+            width = self.content_width
+            panel, element = theme.panel, theme.element
+
+            def row(spans: list, bg=panel) -> Line:
+                # Chữ Markdown không có nền riêng: tô nền khung để hộp liền một khối.
+                spans = [(text, {**style, "bg": style.get("bg") or bg}) for text, style in spans]
+                return fit(Line([S("┃", theme.secondary, bg), S("  ", bg=bg)] + spans), width, bg)
+
+            lines = body(max(10, width - 4))
+            view = room()
+            state["top"] = max(0, min(state["top"], len(lines) - view))
+            top = state["top"]
+            head = [S("/btw", theme.text, panel, b=True),
+                    S("  " + clip(" ".join(question.split()), max(10, width - 16)), theme.muted, panel)]
+            out = [row(head), row([])]
+            out += [row(line.spans) for line in lines[top:top + view]]
+            if state["copied"] is True:
+                hint = [S("✓ Đã chép câu trả lời", theme.success, element)]
+            elif state["copied"] is False:
+                hint = [S("Không chép được vào clipboard", theme.warning, element)]
+            else:
+                hint = [S("c", theme.text, element), S(" chép  ", theme.muted, element)]
+            if len(lines) > view:
+                hint += [S("↑↓ pgup pgdn", theme.text, element),
+                         S(f" cuộn · dòng {top + 1}–{min(top + view, len(lines))}/{len(lines)}  ", theme.muted, element)]
+            hint += [S("esc", theme.text, element), S(" đóng · không thêm vào hội thoại", theme.muted, element)]
+            out += [row([]), fit(Line([S("┃", theme.secondary, element), S("  ", bg=element)] + hint), width, element),
+                    Line([S("╹", theme.secondary), S("▀" * (width - 1), element)])]
+            return out
+
+        def handle(key) -> str | None:
+            step = room()
+            if key.name in {"escape", "enter"} or (key.name == "char" and key.text in {"q", "Q"}):
+                return ""
+            if key.name == "up":
+                state["top"] -= 1
+            elif key.name == "down":
+                state["top"] += 1
+            elif key.name == "pageup":
+                state["top"] -= step
+            elif key.name == "pagedown":
+                state["top"] += step
+            elif key.name == "home":
+                state["top"] = 0
+            elif key.name == "end":
+                state["top"] = 10 ** 9
+            elif key.name == "char" and key.text in {"c", "C"}:
+                state["copied"] = bool(self.copy(answer))
+            state["top"] = max(0, state["top"])
             return None
 
         return render_lines, handle

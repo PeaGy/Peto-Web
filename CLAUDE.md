@@ -3151,7 +3151,7 @@ results in the next step. The server stores no conversation (`store=False`), and
   and a video, named `/update`, a `/resume` that brings back the whole conversation and the animation beside "esc
   interrupt", and picked more from opencode's TUI (commit `bcf23b6`): a better session list, `/btw`, `/timeline` and
   `/fork`, `/editor`, the title on top, `/export`. Plan: phase A = 0.22.0 (below, no server change); phase B = 0.23.0
-  with the backend (`/btw` as purpose `btw`, `/editor`, `/export` built on `transcript.py`), not started.
+  with the backend (`/btw`, `/editor`, `/export`; see the 0.23.0 bullet below). The owner deployed phase A on 2026-10-14.
   - **Scanner** (`tui/scanner.py`, port of opencode `ui/spinner.ts`, MIT). 8 cells, `■`/`⬝` (`■`/`·` on old consoles),
     forward 8, hold 9, back 7, rest 30 frames of 40 ms; 6-step trail (1, 0.9 brightened 15%, then 0.65^(i−1)), inactive
     cells 0.6 fading to 0.3 during holds. Terminals have no alpha, so `trail_colors` pre-blends with `theme.bg`;
@@ -3195,6 +3195,50 @@ results in the next step. The server stores no conversation (`store=False`), and
     `peto.exe`: scanner, title bar, `/timeline` jump, `/fork`, the session dialog (search, Ctrl+D on the open session),
     replay, and `/update` reinstalling and reopening the same conversation in a new process (exit 0), replayed in
     xterm.js. Real Windows Terminal/VS Code still need the owner's look.
+
+  **Phase B: 0.23.0 (done 2026-10-14, needs the backend deployed).**
+  - **`/btw`** (after opencode `feature-plugins/prompt/btw.tsx`; Claude Code has the same). Server: feature `btw` in
+    `FEATURES`, `"btw"` in `SPECIAL_PURPOSES` (no tools, no web search, usage purpose `side`, normal step cost of the
+    model and effort). `_btw_instructions` is the persona core (`PERSONA_PROMPT`, or `CORE_PROMPT` +
+    `provider_prompt` for GPT/Claude) + `BTW_PROMPT` (vi/en) + time; not the Agent working prompt. CLI:
+    `Session.side_question` sends a snapshot (`efficient_input` of the items, pending calls given `PENDING_RESULT`, the
+    question last) with the current model at `low`, reads `meta` for the step count, and never touches `items`, the
+    session file or the log; `done` must carry `purpose: "btw"` or it reports an old server.
+    - **Asking while Peto works is the point**, so the screen engine handles it, not the command loop:
+      `FooterEngine.side` (set in `session()` to `__main__._aside`) sees every submitted text under the engine lock and
+      claims `/btw` before steers/queued. `TerminalUI.ask_aside` starts a `peto-btw` thread and lists the question
+      above the prompt as "⠋ /btw …" (`side_pending`, animated) until the answer arrives. A bare `/btw` keeps "/btw "
+      in the prompt with `BTW_HINT`; an old server keeps the text with a notice. The classic UI handles `/btw` in the
+      loop (`_btw`, synchronous, printed).
+    - **The box** (`TerminalUI._side_box`): Markdown with the panel background, at most 60% of the screen,
+      ↑/↓/PgUp/PgDn/Home/End scroll, `c` copies (through the engine's copy hook, so tests never touch the real
+      clipboard), Esc/Enter/q close. Secondary-colour bar, unlike permission panels.
+    - **Panels now queue:** `FooterEngine.ask` waits until no other panel is open (a permission question and a btw
+      answer never overlap), and the 300 ms key guard counts from when the panel actually shows. `Panel.on_interrupt`
+      makes Ctrl+C close the btw box instead of stopping Peto, and `ScreenEngine.ask` does not jump to the bottom for
+      it. There is no way to cancel a pending btw; exiting peto drops it.
+  - **`/editor [text]`** (`external_editor.py`): `VISUAL`, `EDITOR`, `code --wait` inside VS Code's terminal, else
+    `notepad.exe` (`vi` elsewhere). The program is resolved first (`shutil.which` or an existing path), because
+    `cmd /c` reports an unknown command as exit code 1 like any failure. It runs `<cmd> "<temp .md>"` with
+    `shell=True`, reads back with `utf-8-sig`, deletes the file, and returns None for empty or unchanged text.
+    `FooterEngine.suspended()` (and `TerminalUI.suspended`) stops the input thread and raw mode, leaves the alternate
+    screen, prints "Đang soạn trong …", then restarts and redraws everything; `_suspended` blocks every draw and keeps a
+    btw box waiting meanwhile, so nothing paints over a terminal editor. The text goes into the prompt via `ui.prefill`,
+    unsent.
+  - **`/export`** (`export.py`, from `transcript.events`): header (title, date, model, folder, a note that file contents,
+    command output and images are left out), `## Bạn` / `## Peto` sections, steers as their own heading, job notes in
+    italics, the compaction summary as a blockquote, and one bullet per tool (`tool_lines`: read, edit with +/−, patch
+    files, `$`/`PS>` command → exit code, plan as a checklist, ask_user answers, browser actions, refusals as "— không
+    xong: …"). `save` writes `peto-<slug>-<yyyymmdd>.md` at the project root with mode `x`, adding `-2`, `-3`…, never
+    overwriting. The other choice copies through `ui.copy` (the classic UI cannot).
+  - **Tests:** backend `test_agent_api.py` (btw purpose, persona, English for Luna, step cost), feature set in
+    `test_agent_tool_features.py`; CLI `test_btw.py` (snapshot and pending calls against a fake server, old server,
+    the text UI, the waiting line and box while busy, Ctrl+C, a bare `/btw`, queuing behind an open chooser,
+    scrolling), `test_editor.py` (editor choice, a fake Python editor, failures, the full screen stepping aside and a
+    btw box waiting for it), `test_export.py`. A ConPTY run of real `peto` from source against a fake server checked
+    `/btw` asked while Peto was thinking (waiting line, then the box, Esc), `/editor` with a fake editor through
+    `EDITOR` (prompt prefilled on return) and `/export` writing the file; replayed in xterm.js. The "c" key was not
+    pressed there, since ConPTY uses the machine's real clipboard.
 - **CLI display** (picked by the owner from mockups): tool steps stay as permanent lines; while waiting for the model
   there is one transient `… Peto đang nghĩ · Ns` status line (`UI.status`, redrawn with `\r\033[2K`, only when colors
   are on). `ReplyWriter` prints replies line by line so `UI.markdown` can color bold, inline code, headings, bullets and

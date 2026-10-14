@@ -41,7 +41,7 @@ from core import usage_events
 from core.config import AGENT_DAILY_STEPS, AGENT_MODEL, AGENT_MAX_CONCURRENT, AGENT_MAX_QUEUE, AGENT_MAX_REQUEST_BYTES, AGENT_REASONING, AGENT_SLOW_STEP_SECONDS, AGENT_STEP_TIMEOUT_SECONDS, AGENT_TOKEN_IDLE_DAYS, AGENT_WEB_SEARCH, provider_from_owner
 from prompts import (AGENT_BROWSER_ACT_PROMPT, AGENT_BROWSER_OUTSIDE_PROMPT, AGENT_EDIT_PROMPT, AGENT_EXPLORE_PROMPT,
                      AGENT_NO_SEARCH_PROMPT, AGENT_PROMPT, AGENT_QUESTION_PROMPT, AGENT_SEARCH_PROMPT, PERSONA_PROMPT,
-                     TITLE_PROMPT, agent_inbox_prompt, browser_prompt)
+                     BTW_PROMPT, TITLE_PROMPT, agent_inbox_prompt, browser_prompt)
 from prompts import english as english_prompts
 from prompts.routing import provider_prompt, uses_english
 from core.rate_limit import Admission, AdmissionDenied
@@ -383,9 +383,17 @@ def _patch_model(model: str) -> bool:
     return found is not None and found.service == "openai"
 
 
-# Lượt đặc biệt của CLI: tóm tắt hội thoại (purpose "compact") và đặt tên hội thoại cho /resume (purpose "title", CLI
-# 0.21.0). Cả hai không có công cụ, kể cả tìm web.
-SPECIAL_PURPOSES = {"compact", "title"}
+# Lượt đặc biệt của CLI: tóm tắt hội thoại (purpose "compact"), đặt tên hội thoại cho /resume (purpose "title", CLI
+# 0.21.0) và câu hỏi bên lề /btw (purpose "btw", CLI 0.23.0). Cả ba không có công cụ, kể cả tìm web.
+SPECIAL_PURPOSES = {"compact", "title", "btw"}
+
+
+def _btw_instructions(model: str) -> str:
+    """/btw: vẫn là Peto (lõi trợ lý, không nêu model phía sau), cộng lời nhắc câu hỏi bên lề và giờ hiện tại."""
+    if uses_english(model):
+        return "\n\n".join(part for part in (english_prompts.CORE_PROMPT, provider_prompt(model),
+                                               english_prompts.BTW_PROMPT, agent_time_context(english=True)) if part)
+    return "\n\n".join([PERSONA_PROMPT, BTW_PROMPT, agent_time_context()])
 
 
 def _instructions(context: dict, web_search: bool, model: str = "peto") -> str:
@@ -502,16 +510,18 @@ async def step(request: Request, device: dict = Depends(device_auth)):
         raise HTTPException(status_code=429, detail=detail)
     special = context.get("purpose") if context.get("purpose") in SPECIAL_PURPOSES else None
     compacting = special is not None
-    # Tóm tắt và đặt tên không cần công cụ nào, kể cả tìm web: chỉ đọc lại lịch sử rồi viết.
+    # Tóm tắt, đặt tên và /btw không cần công cụ nào, kể cả tìm web: chỉ đọc lại lịch sử rồi viết.
     searching = AGENT_WEB_SEARCH and not compacting
     english = uses_english(model.key)
     if special == "compact":
         instructions = english_prompts.COMPACT_PROMPT if english else COMPACT_PROMPT
     elif special == "title":
         instructions = english_prompts.TITLE_PROMPT if english else TITLE_PROMPT
+    elif special == "btw":
+        instructions = _btw_instructions(model.key)
     else:
         instructions = _instructions(context, searching, model.key)
-    usage_purpose = {"compact": "compact", "title": "side"}.get(special or "", "agent")
+    usage_purpose = {"compact": "compact", "title": "side", "btw": "side"}.get(special or "", "agent")
 
     async def event_stream() -> AsyncIterator[str]:
         failure: str | None = None

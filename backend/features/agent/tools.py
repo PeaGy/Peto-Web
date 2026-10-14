@@ -20,7 +20,7 @@ from __future__ import annotations
 # write_file bằng apply_patch khi model là GPT (Luna, Terra, Sol), như opencode; "title" là lượt đặt tên hội thoại
 # (purpose "title"); "steer", "jobs_notify", "plan_mode" chỉ thêm lời nhắc giải thích tin CLI 0.20 chèn vào hội thoại.
 FEATURES = frozenset({"cwd", "browser", "browser_act", "browser_outside", "skills", "mcp", "explore_v2", "edit_v2",
-                      "question", "patch", "title", "steer", "jobs_notify", "plan_mode"})
+                      "question", "patch", "title", "steer", "jobs_notify", "plan_mode", "btw"})
 
 _PATH = {"type": "string", "description": "Đường dẫn tương đối tính từ gốc dự án, ví dụ src/app.py; '.' là gốc."}
 _SHELL = {

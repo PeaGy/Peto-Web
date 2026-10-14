@@ -200,6 +200,8 @@ class ScreenEngine(FooterEngine):
     # ---- Vẽ
 
     def _draw(self, committed: str = "") -> None:
+        if self._suspended:
+            return
         columns, height = self.size()
         columns, height = max(columns, 20), max(height, 6)
         if (columns, height) != self._size:
@@ -314,7 +316,7 @@ class ScreenEngine(FooterEngine):
     def _tick(self) -> None:
         with self.lock:
             size = self.size()
-            animated = self.busy and self.panel is None
+            animated = (self.busy or bool(self.side_pending)) and self.panel is None
             esc_expired = self._esc_until and time.monotonic() >= self._esc_until
             if esc_expired:
                 self._esc_until = 0.0
@@ -332,11 +334,13 @@ class ScreenEngine(FooterEngine):
     def _submitted(self) -> None:
         self.follow = True
 
-    def ask(self, render_lines, handle) -> str:
-        # Câu hỏi quyền nằm ở đáy; hội thoại về cuối để thấy Peto vừa làm gì trước khi hỏi.
-        with self.lock:
-            self.follow = True
-        return super().ask(render_lines, handle)
+    def ask(self, render_lines, handle, *, on_interrupt: str | None = None) -> str:
+        # Câu hỏi quyền nằm ở đáy; hội thoại về cuối để thấy Peto vừa làm gì trước khi hỏi. Hộp /btw (Ctrl+C chỉ đóng
+        # hộp) không kéo màn hình đi: người dùng có thể đang cuộn lên đọc.
+        if on_interrupt is None:
+            with self.lock:
+                self.follow = True
+        return super().ask(render_lines, handle, on_interrupt=on_interrupt)
 
     def _key(self, key) -> None:
         name = key.name

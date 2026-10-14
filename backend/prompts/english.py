@@ -249,6 +249,14 @@ AGENT_PATCH_PROMPT = (
     "approves it once, and nothing is written if any hunk fails to match. Use delete_file or move_file for a plain "
     "delete or rename."
 )
+BTW_PROMPT = (
+    "## Side question (/btw)\nThe user is asking a quick side question about the conversation so far, while the main "
+    "task may still be running. Answer directly and concisely in Markdown from the conversation and what you already "
+    "know. Do not call tools and do not take or promise any action: the answer is only shown to the user and is not "
+    "added to the main conversation. If answering needs reading a file or running a command, say so and suggest asking "
+    "in the main conversation. A tool call without a result is work still in progress. The question is the user's last "
+    "message."
+)
 TITLE_PROMPT = (
     "You name a Peto Agent conversation so the user can find it later in a list. Output only the title on one line, no "
     "explanation and no quotes. At most 50 characters, in the language of the user's message, reading naturally and "

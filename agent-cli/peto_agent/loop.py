@@ -45,6 +45,8 @@ STOPPED_RESULT = {"error": "Người dùng đã dừng yêu cầu bằng Ctrl+C.
 # đúng bản này, nên nói rõ công cụ có thể đã chạy một phần.
 INTERRUPTED_RESULT = {"error": "Peto bị đóng giữa chừng (cửa sổ terminal đóng hoặc máy tắt) trước khi có kết quả này. "
                                "Công cụ có thể đã chạy một phần: đọc lại tệp hoặc kiểm tra trạng thái trước khi làm tiếp."}
+# /btw hỏi lúc Peto đang làm: lệnh gọi công cụ chưa xong được ghi thế này trong bản gửi đi, để hội thoại vẫn hợp lệ.
+PENDING_RESULT = {"error": "Công cụ này đang chạy, chưa có kết quả (câu hỏi /btw được gửi giữa chừng)."}
 # Số mục nhiều nhất đưa vào lời nhờ của /init: đủ để thấy bố cục mà không thổi phồng bước đầu tiên.
 MAX_INIT_ENTRIES = 200
 INIT_TASK = """Hãy viết tệp AGENTS.md ở gốc dự án này.
@@ -261,6 +263,35 @@ class Session:
                 self._titling = False
 
         threading.Thread(target=run, name="peto-title", daemon=True).start()
+
+    def side_question(self, question: str) -> str:
+        """/btw (CLI 0.23.0, theo opencode): hỏi bên lề về hội thoại đang mở bằng model đang dùng, mức thấp, một lượt
+        không công cụ. Câu hỏi và câu trả lời không vào hội thoại, tệp lưu hay nhật ký. Gọi được từ luồng khác lúc Peto
+        đang làm: chỉ đọc một bản chụp của hội thoại. Lỗi ném ApiError (hết bước, máy chủ cũ, mất kết nối)."""
+        items = list(self.items)
+        answered = {item.get("call_id") for item in items if item.get("type") == "function_call_output"}
+        for item in list(items):
+            if item.get("type") == "function_call" and item.get("call_id") not in answered:
+                items.append({"type": "function_call_output", "call_id": item.get("call_id", ""),
+                              "output": json.dumps(PENDING_RESULT, ensure_ascii=False)})
+        effort = "low" if "low" in getattr(self, "supported_efforts", ["low"]) else self.effort
+        body = {"input": [*efficient_input(items), user_message(question)], "effort": effort, "model": self.model,
+                "context": {"purpose": "btw", "project": self.ws.root.name}}
+        with contextlib.closing(self.client.stream("/api/agent/step", body)) as events:
+            for event in events:
+                if event.get("type") == "meta":
+                    self.steps_used, self.steps_limit = event.get("steps_used"), event.get("steps_limit")
+                if event.get("type") == "error":
+                    raise ApiError(0, str(event.get("message") or "Không hỏi được câu này."))
+                if event.get("type") != "done":
+                    continue
+                if event.get("purpose") != "btw":
+                    raise ApiError(0, "Máy chủ chưa hỗ trợ /btw. Cập nhật máy chủ Peto rồi thử lại.")
+                answer = "\n\n".join(text for item in event.get("output") or []
+                                       if isinstance(item, dict) and item.get("role") == "assistant"
+                                       and (text := text_of(item).strip()))
+                return answer or "(Peto không trả lời gì.)"
+        raise ApiError(0, "Kết nối tới máy chủ Peto bị ngắt trước khi có câu trả lời.")
 
     def context_share(self) -> float | None:
         """Hội thoại đã tới đâu so với mức tự tóm tắt (0 tới 1), để người dùng biết lúc nào nên /compact (chủ web hỏi

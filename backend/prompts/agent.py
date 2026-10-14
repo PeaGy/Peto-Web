@@ -143,6 +143,17 @@ TITLE_PROMPT = (
     "không gọi công cụ. Tin chỉ là chào hỏi thì đặt tên kiểu \"Chào hỏi\"."
 )
 
+# Câu hỏi bên lề /btw (purpose "btw", CLI 0.23.0), theo lời nhắc /btw của opencode: một lượt không công cụ, câu trả lời
+# hiện trong hộp nổi và không thêm vào hội thoại chính.
+BTW_PROMPT = (
+    "## Câu hỏi bên lề (/btw)\n"
+    "Người dùng hỏi nhanh một câu bên lề về cuộc trò chuyện tới giờ, trong lúc việc chính có thể vẫn đang chạy. Trả lời "
+    "thẳng và ngắn gọn bằng Markdown, dựa trên hội thoại và hiểu biết sẵn có. Không gọi công cụ, không làm hay hứa làm "
+    "việc gì: câu trả lời chỉ hiện cho người dùng xem rồi đóng, không vào hội thoại chính. Cần đọc tệp hay chạy lệnh mới "
+    "trả lời được thì nói rõ điều đó và gợi ý hỏi trong hội thoại chính. Lời gọi công cụ chưa có kết quả là việc đang "
+    "chạy dở. Câu hỏi nằm ở tin cuối cùng của người dùng."
+)
+
 
 AGENT_SEARCH_PROMPT = "\n".join([
     "## Tìm web trong Peto Agent",

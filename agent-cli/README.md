@@ -197,7 +197,7 @@ quả lê 6 × 6. Thấp hơn nữa, hẹp dưới 41 cột, hay terminal tắt 
 của VS Code, Peto chừa thêm 2 cột bên phải, vì VS Code che khoảng hai cột sát mép:
 
 ```text
- [mascot]   Peto Agent 0.22.0
+ [mascot]   Peto Agent 0.23.0
  [mascot]   6 Luna · mức thấp
  [mascot]   ~\Projects\website-a
 
@@ -308,6 +308,21 @@ nào được chọn, nên Enter không tự chạy gì. Từ 0.20.0 tên lệnh
 - `/fork` (từ 0.22.0): chọn một tin của bạn để tách. Peto mở một hội thoại mới gồm mọi thứ trước tin đó, tên
   "<tên cũ> (nhánh)", và đặt sẵn chữ của tin vào ô nhập để bạn sửa rồi gửi lại. Hội thoại cũ giữ nguyên trong
   `/resume`. Không tệp nào bị hoàn tác: tách chỉ đổi hội thoại, còn tệp đã sửa vẫn như bây giờ (`/undo` riêng).
+- `/btw <câu hỏi>` (từ 0.23.0, theo opencode và Claude Code): hỏi nhanh bên lề về hội thoại, kể cả lúc Peto đang làm,
+  mà không chen vào việc đang làm. Trong lúc chờ, trên ô nhập có dòng `⠋ /btw …`; có câu trả lời thì nó hiện trong một
+  hộp ở chỗ ô nhập: ↑/↓, `PgUp`/`PgDn` cuộn, `c` chép, `Esc` hay Enter đóng (`Ctrl+C` trong hộp cũng chỉ đóng hộp, không
+  dừng Peto). Câu hỏi và câu trả lời không vào hội thoại hay tệp lưu, nên Peto không "nhớ" chúng ở bước sau. Peto trả
+  lời từ những gì đã có trong hội thoại, không đọc tệp hay chạy lệnh. Mỗi câu tốn một bước của model đang dùng ở mức
+  suy nghĩ thấp. Cần máy chủ Peto đã cập nhật; máy chủ cũ thì `peto` báo "Máy chủ chưa hỗ trợ /btw".
+- `/editor [chữ]` (từ 0.23.0): soạn yêu cầu dài trong trình soạn của bạn. Peto lấy trình soạn từ biến `VISUAL` rồi
+  `EDITOR` (như git, ví dụ `$env:EDITOR = 'code --wait'`); không đặt thì dùng VS Code khi đang ở terminal của nó, không
+  thì Notepad. Trong lúc soạn, Peto nhường cả cửa sổ terminal (trình soạn chạy trong terminal như vim cũng dùng được);
+  lưu rồi đóng tệp là quay lại, chữ nằm sẵn trong ô nhập để xem lại, Enter mới gửi. Tệp trống hay không đổi gì thì ô
+  nhập để nguyên.
+- `/export` (từ 0.23.0): xuất hội thoại đang mở ra Markdown, lưu thành `peto-<tên>-<ngày>.md` ở gốc dự án (không ghi đè
+  tệp có sẵn, thêm `-2`, `-3`…) hoặc chép vào clipboard. Tệp có tin của bạn, lời Peto, mỗi công cụ một dòng
+  ("Sửa `app.py` (+1 −1)", "Chạy `$ npm test` → mã thoát 0") và danh sách việc; không có nội dung tệp, output lệnh hay
+  ảnh, nên gửi cho người khác được.
 - `/retry`: thử lại bước bị gián đoạn kết nối, dùng kết quả các bước đã hoàn tất. Không tự phát lại lệnh hay thao tác
   sửa tệp cũ; thao tác mới vẫn hỏi quyền. Nếu đã thoát thì `/resume` trước, rồi `/retry`.
 - `/diff`: xem bản sửa/ghi tệp trực tiếp gần nhất đã lưu cho dự án. Diff dài có thể xem tiếp bằng `v`.
@@ -640,7 +655,8 @@ hoàn toàn, socket có thể cần chờ tới timeout mới nhận ra; Ctrl+C 
 `presentation.py` khai báo giao diện mà `Session` và `Tools` sử dụng. Công cụ không tự in chữ: mỗi lần gọi báo sự kiện
 có cấu trúc (`events.py`: bắt đầu, xem trước, câu hỏi quyền, kết quả kèm phần chỉ để hiển thị), và giao diện tự quyết
 định vẽ thế nào. `tui/` là giao diện kiểu OpenCode cho terminal (theme, Markdown, diff, ô nhập, khung duyệt; `screen.py`
-là màn hình toàn phần, `footer.py` kiểu chân cố định); `ui.py` là bản chữ thường cho ống dẫn, tệp, test và bài thi. Bộ chạy lệnh chỉ báo tiến độ qua callback. `transcript.py` đọc hội thoại đã lưu thành chuỗi sự kiện (tin, lời Peto, công cụ kèm kết quả), để `/resume` và `/fork` vẽ lại bằng đúng các hàm vẽ lúc đang làm.
+là màn hình toàn phần, `footer.py` kiểu chân cố định); `ui.py` là bản chữ thường cho ống dẫn, tệp, test và bài thi. Bộ chạy lệnh chỉ báo tiến độ qua callback. `transcript.py` đọc hội thoại đã lưu thành chuỗi sự kiện (tin, lời Peto, công cụ kèm kết quả), để `/resume` và `/fork` vẽ lại bằng đúng các hàm vẽ lúc đang làm, và `export.py` dựng Markdown của `/export`.
+`external_editor.py` mở trình soạn của `/editor`.
 
 Terminal không vẽ được LaTeX, nên công thức trong câu trả lời được `texmath.py` đổi sang ký hiệu Unicode trước khi in:
 `\lnot A \lor B` hiện thành `¬A ∨ B`, `x^2` thành `x²`, `\frac{a+1}{2}` thành `(a+1)/2`, khối `\[ … \]` in thụt vào và
@@ -688,6 +704,9 @@ Tên hội thoại (từ 0.21.0) do Peto đặt: tối đa 2.000 ký tự đầu
 được gửi qua máy chủ tới xAI một lần cho mỗi hội thoại, kể cả khi bạn đang dùng model OpenAI hay Claude.
 
 `/update` tải bộ cài và gói `peto` từ đúng máy chủ trong `config.json` (chỗ bạn đã đăng nhập), không gửi gì của dự án.
+
+`/btw` (từ 0.23.0) gửi hội thoại đang mở kèm câu hỏi đi như một bước bình thường, tới dịch vụ AI của model đang chọn.
+`/export` chỉ ghi tệp trên máy bạn hoặc chép vào clipboard, không gửi gì đi.
 
 Để `/resume` hoạt động, các hội thoại của mỗi thư mục (tối đa 50) được lưu trên chính máy bạn ở
 `%LOCALAPPDATA%\PetoAgent\sessions\` sau từng bước, gồm cả nội dung tệp Peto đã đọc, output lệnh và các ảnh còn giữ

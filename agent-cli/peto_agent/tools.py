@@ -42,8 +42,10 @@ REFUSED = "Người dùng không đồng ý {action}. Đừng lặp lại y nguy
 FEATURES = ("cwd", "browser", "browser_act", "browser_outside", "skills", "mcp")
 # Khả năng mới (0.18.0, theo OpenCode) chỉ bật khi máy chủ liệt kê trong /me (agent_features): kết quả công cụ do CLI
 # dựng phải khớp mô tả máy chủ gửi, nên CLI mới gặp máy chủ cũ vẫn chạy kiểu cũ. Từ 0.21.0 (theo opencode): ask_user,
-# apply_patch cho model GPT, đặt tên hội thoại, và lời nhắc giải thích các tin 0.20.0 chèn vào hội thoại.
-NEW_FEATURES = ("explore_v2", "edit_v2", "question", "patch", "title", "steer", "jobs_notify", "plan_mode")
+# apply_patch cho model GPT, đặt tên hội thoại, và lời nhắc giải thích các tin 0.20.0 chèn vào hội thoại. Từ 0.23.0:
+# câu hỏi bên lề /btw.
+NEW_FEATURES = ("explore_v2", "edit_v2", "question", "patch", "title", "steer", "jobs_notify", "plan_mode",
+                "btw")
 # Gọi y hệt một công cụ ngần này lần liền mà không tệp nào đổi thì hỏi người dùng có cho gọi tiếp không.
 LOOP_LIMIT = 3
 # Công cụ mà gọi lại y hệt là bình thường: chờ output lệnh nền, xem lại trang sau khi bấm, cập nhật danh sách việc.

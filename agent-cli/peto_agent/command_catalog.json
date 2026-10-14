@@ -37,6 +37,30 @@
       "details": "Chọn một tin của bạn: hội thoại mới gồm mọi thứ trước tin đó, và chữ của tin nằm sẵn trong ô nhập để sửa rồi gửi lại. Hội thoại cũ vẫn nằm trong /resume."
     },
     {
+      "name": "/btw",
+      "description": "Hỏi nhanh bên lề, không thêm vào hội thoại",
+      "options": [],
+      "usage": "/btw <câu hỏi>",
+      "since": "0.23.0",
+      "details": "Hỏi một câu về hội thoại đang mở, kể cả lúc Peto đang làm. Câu trả lời hiện trong một hộp nổi (c chép, Esc đóng) và không vào hội thoại. Tốn một bước của model đang dùng, ở mức suy nghĩ thấp; không đọc tệp hay chạy lệnh."
+    },
+    {
+      "name": "/editor",
+      "description": "Soạn yêu cầu dài trong trình soạn của bạn",
+      "options": [],
+      "usage": "/editor [chữ có sẵn]",
+      "since": "0.23.0",
+      "details": "Mở trình soạn (biến VISUAL hay EDITOR; không đặt thì VS Code khi đang ở terminal của nó, không thì Notepad). Lưu rồi đóng tệp thì chữ nằm sẵn trong ô nhập, Enter mới gửi."
+    },
+    {
+      "name": "/export",
+      "description": "Xuất hội thoại đang mở ra Markdown",
+      "options": [],
+      "usage": "/export",
+      "since": "0.23.0",
+      "details": "Lưu hội thoại thành peto-<tên>-<ngày>.md ở gốc dự án (không ghi đè tệp có sẵn) hoặc chép vào clipboard. Có tin của bạn, lời Peto và mỗi công cụ một dòng; không có nội dung tệp, output lệnh hay ảnh."
+    },
+    {
       "name": "/plan",
       "description": "Bật hoặc tắt chế độ Lập kế hoạch (cũng là Shift+Tab)",
       "options": [],

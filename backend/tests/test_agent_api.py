@@ -92,6 +92,37 @@ async def test_a_title_call_has_no_tools_and_counts_as_a_side_call(anon_client, 
     assert seen[0]["instructions"] == agent_api.TITLE_PROMPT
 
 
+async def test_a_side_question_has_no_tools_keeps_the_persona_and_costs_a_normal_step(anon_client, client, monkeypatch):
+    """/btw (CLI 0.23.0, theo opencode): một lượt không công cụ, không tìm web, tính bước như lượt thường của model."""
+    from ai.agent import AgentEvent
+    from prompts import english as english_prompts
+
+    seen = []
+
+    async def answer(**kwargs):
+        seen.append(kwargs)
+        yield AgentEvent("done", output=({"type": "message", "role": "assistant", "content": "Đang sửa app.py."},),
+                         usage={"input_tokens": 900, "output_tokens": 20})
+    monkeypatch.setattr(agent_api, "agent_step", answer)
+    monkeypatch.setattr(agent_api, "AGENT_WEB_SEARCH", True)
+    await login_as(client, "google")
+    token = await connect(anon_client, client)
+    body = {"input": [DEMO_TASK, {"type": "message", "role": "user", "content": "Peto đang làm gì vậy?"}],
+            "effort": "low", "context": {"purpose": "btw", "features": ["question", "btw"]}}
+    events = events_of(await anon_client.post("/api/agent/step", headers=bearer(token), json=body))
+    assert events[0]["steps_used"] == 1 and events[-1]["purpose"] == "btw"
+    assert seen[0]["tools"] == [] and seen[0]["web_search"] is False
+    instructions = seen[0]["instructions"]
+    assert instructions.startswith(agent_api.PERSONA_PROMPT) and agent_api.BTW_PROMPT in instructions
+    assert agent_api.AGENT_PROMPT not in instructions, "không phải chỉ dẫn làm việc của agent"
+
+    events = events_of(await anon_client.post("/api/agent/step", headers=bearer(token),
+                                              json={**body, "model": "luna", "effort": "high"}))
+    assert events[0]["steps_used"] == 1 + 2, "mức cao tính 2 bước như lượt thường"
+    assert english_prompts.BTW_PROMPT in seen[1]["instructions"] and agent_api.BTW_PROMPT not in seen[1]["instructions"]
+    assert "Grok" not in seen[1]["instructions"] and "xAI" not in seen[1]["instructions"]
+
+
 def test_skills_are_feature_gated_and_catalog_is_bounded():
     from features.agent.tools import tool_schemas
     assert 'load_skill' not in {t['name'] for t in tool_schemas(frozenset())}

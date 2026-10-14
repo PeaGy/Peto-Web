@@ -10,9 +10,10 @@ import subprocess
 import sys
 import time
 import webbrowser
+from datetime import datetime
 from pathlib import Path
 
-from . import __version__, commands, config, history, line_editor, mentions, transcript, updater
+from . import __version__, commands, config, export, external_editor, history, line_editor, mentions, transcript, updater
 from .client import ApiError, Client
 from .commands import fold
 from .events import ToolDone
@@ -23,7 +24,7 @@ from .workspace import Workspace, WorkspaceError
 
 # Lệnh không nhận gì phía sau; gõ thêm chữ thì nhắc chứ không gửi cả câu cho Peto.
 PLAIN_COMMANDS = {"/exit", "/new", "/help", "/usage", "/retry", "/diff", "/undo", "/compact", "/init", "/thinking",
-                  "/plan", "/timeline", "/fork", "/update"}
+                  "/plan", "/timeline", "/fork", "/update", "/export"}
 EFFORT_LABELS = {"none": "không suy luận", "low": "thấp", "medium": "vừa", "high": "cao",
                  "xhigh": "rất cao", "max": "tối đa"}
 # Giống STEP_COST của máy chủ: mức cao tính gấp đôi, nhân với số bước của model.
@@ -381,6 +382,101 @@ def _update(ui: UI, work: Session) -> list[str] | None:
     return updater.restart_argv(work.session_id if work.items else None)
 
 
+BTW_HINT = "Gõ câu hỏi sau /btw, ví dụ: /btw Peto đang sửa tệp nào?"
+
+
+def _btw_problem(work: Session, question: str) -> str:
+    """Vì sao chưa hỏi bên lề được: máy chủ cũ chưa có /btw, hay chưa gõ câu hỏi. Rỗng là hỏi được."""
+    if "btw" not in work.tools.features:
+        return "Máy chủ chưa hỗ trợ /btw. Cập nhật máy chủ Peto rồi thử lại."
+    return "" if question.strip() else BTW_HINT
+
+
+def _side_answer(work: Session, question: str) -> tuple[str, bool]:
+    """Câu trả lời /btw và có phải lỗi không; không bao giờ ném lỗi (chạy cả ở luồng nền)."""
+    try:
+        return work.side_question(question), False
+    except ApiError as err:
+        return err.message, True
+    except (OSError, ValueError):
+        return "Không kết nối được máy chủ Peto.", True
+
+
+def _aside(ui: UI, work: Session, text: str) -> str | None:
+    """Màn hình gọi hàm này cho mọi tin vừa gửi (trong khóa của nó): /btw thì hỏi bên lề ở luồng riêng, kể cả lúc Peto
+    đang làm, như opencode (CLI 0.23.0). Trả None nếu không phải /btw, "" nếu đã nhận, hay lời nhắc giữ chữ lại."""
+    name, question = split_command(text)
+    if name != "/btw":
+        return None
+    if problem := _btw_problem(work, question):
+        return problem
+    ui.ask_aside(question, lambda: _side_answer(work, question))
+    return ""
+
+
+def _btw(ui: UI, work: Session, question: str) -> None:
+    """/btw trong bản chữ (không có màn hình của Peto): hỏi xong mới gõ tiếp được."""
+    if problem := _btw_problem(work, question):
+        ui.line(problem, "yellow")
+        return
+    ui.status("… Đang hỏi bên lề · Ctrl+C dừng")
+    try:
+        answer, failed = _side_answer(work, question)
+    except KeyboardInterrupt:
+        ui.clear_status()
+        ui.line("Đã dừng câu hỏi bên lề.", "dim")
+        return
+    ui.clear_status()
+    ui.side_answer(question, answer, failed=failed)
+
+
+def _editor(ui: UI, initial: str) -> None:
+    """/editor: soạn trong trình soạn của bạn, xong thì chữ nằm sẵn trong ô nhập, Enter mới gửi (CLI 0.23.0)."""
+    cmd = external_editor.command()
+    try:
+        with ui.suspended(f"Đang soạn trong {external_editor.label(cmd)}: lưu rồi đóng tệp để quay lại Peto."):
+            text = external_editor.edit(initial, cmd=cmd)
+    except external_editor.EditorError as err:
+        ui.failure(err.message)
+        return
+    if text is None:
+        ui.line("  Không có chữ mới; ô nhập để nguyên.", "dim")
+        return
+    ui.prefill(text)
+
+
+def _export(ui: UI, work: Session) -> None:
+    """/export: hội thoại đang mở thành Markdown, lưu ở gốc dự án hay chép vào clipboard (CLI 0.23.0)."""
+    if not any(transcript.is_user(item) for item in work.items):
+        ui.line("  Hội thoại này chưa có gì để xuất.", "dim")
+        return
+    now = datetime.now()
+    title = work.shown_title() or "Hội thoại với Peto"
+    text = export.markdown(work.items, title=title, model=getattr(work, "model_label", "") or work.model,
+                           folder=work.ws.root.name, when=now, version=__version__)
+    name = f"peto-{export.slug(title)}-{now:%Y%m%d}.md"
+    choice = ui.choose("Xuất hội thoại ra Markdown", [
+        ("Lưu vào thư mục dự án", name + " · không ghi đè tệp có sẵn"),
+        ("Chép vào clipboard", f"{len(text):,} ký tự".replace(",", ".")),
+    ])
+    if choice is None:
+        return
+    if choice == 1:
+        if ui.copy(text):
+            ui.success("Đã chép hội thoại (Markdown) vào clipboard.")
+        else:
+            ui.failure("Không chép được vào clipboard; chọn lưu vào thư mục dự án nhé.")
+        return
+    try:
+        path = export.save(work.ws.root, text, title=title, when=now)
+    except OSError as err:
+        ui.failure(f"Không ghi được tệp: {err}")
+        return
+    ui.success(f"Đã xuất hội thoại ra {path.name}")
+    # In liền một dòng để terminal nhận ra đường dẫn (Ctrl+bấm để mở).
+    ui.line(f"  {path}", "dim")
+
+
 def _toggle_plan(ui: UI) -> None:
     """/plan (cũng là Shift+Tab): đổi qua lại chế độ làm việc và Lập kế hoạch."""
     toggle = getattr(ui, "toggle_mode", None)
@@ -542,6 +638,9 @@ def session(ui: UI, resume: str | None = None) -> int:
     offered = me.get("agent_features") if isinstance(me.get("agent_features"), list) else []
     work.tools.features = [*FEATURES, *(feature for feature in NEW_FEATURES if feature in offered)]
     work.supported_efforts = _supported_efforts(model)
+    if (engine := getattr(ui, "engine", None)) is not None:
+        # /btw gõ ở ô nhập được màn hình xử lý ngay, cả lúc Peto đang làm, không qua vòng lệnh bên dưới.
+        engine.side = lambda text: _aside(ui, work, text)
     ui.folder_name = root.name
     ui.title(ui.tab_title())
     saved = history.load(root, client.server)
@@ -602,6 +701,15 @@ def session(ui: UI, resume: str | None = None) -> int:
                 continue
             if name in {"/timeline", "/fork"}:
                 _timeline(ui, work, fork=name == "/fork")
+                continue
+            if name == "/btw":
+                _btw(ui, work, value)
+                continue
+            if name == "/editor":
+                _editor(ui, value)
+                continue
+            if name == "/export":
+                _export(ui, work)
                 continue
             if name == "/update":
                 restart = _update(ui, work)

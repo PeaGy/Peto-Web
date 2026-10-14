@@ -10,6 +10,7 @@ trước. Câu hỏi quyền thay chỗ ô nhập cho tới khi được trả l
 
 from __future__ import annotations
 
+import contextlib
 import queue
 import signal
 import threading
@@ -35,11 +36,15 @@ BUSY_PLACEHOLDER = "Nhắn thêm cho Peto; tin được chèn vào bước kế 
 
 
 class Panel:
-    """Một câu hỏi đang chờ trả lời ở chỗ ô nhập (quyền, đăng nhập trình duyệt)."""
+    """Một câu hỏi đang chờ trả lời ở chỗ ô nhập (quyền, đăng nhập trình duyệt), hoặc hộp trả lời /btw.
 
-    def __init__(self, render_lines: Callable[[], list[Line]], handle: Callable[[Key], str | None]):
+    ``on_interrupt``: Ctrl+C trả lời khung bằng giá trị này thay vì dừng Peto (hộp /btw chỉ đóng lại)."""
+
+    def __init__(self, render_lines: Callable[[], list[Line]], handle: Callable[[Key], str | None],
+                 on_interrupt: str | None = None):
         self.render_lines = render_lines
         self.handle = handle
+        self.on_interrupt = on_interrupt
         self.opened = time.monotonic()
         self.answer: str | None = None
         self.done = threading.Event()
@@ -61,6 +66,11 @@ class FooterEngine:
         # (steers), lệnh gạch chéo chờ yêu cầu xong mới chạy (queued). Mỗi mục là (chữ, ảnh, bản chụp tin để vẽ khung).
         self.steers: list[tuple[str, list, object]] = []
         self.queued: list[tuple[str, list, object]] = []
+        # /btw (CLI 0.23.0): ``side`` nhận chữ vừa gửi, trả None nếu không phải /btw, "" nếu đã nhận câu hỏi, hay một
+        # lời nhắc giữ chữ lại trong ô. Gọi trong khóa của màn hình nên chỉ được mở luồng rồi trả về ngay.
+        # ``side_pending`` là các câu hỏi bên lề đang chờ trả lời, hiện ngay trên ô nhập.
+        self.side: Callable[[str], str | None] | None = None
+        self.side_pending: list[str] = []
         self.busy = False
         self.panel: Panel | None = None
         self.status: str | None = None
@@ -77,6 +87,8 @@ class FooterEngine:
         self._raw = None
         self._last_draw = 0.0
         self._drawn_status: str | None = None
+        # /editor đang nhường terminal cho trình soạn: không vẽ gì, khung /btw tới lúc đó chờ tới khi quay lại.
+        self._suspended = False
 
     # ---- Vòng đời
 
@@ -98,6 +110,22 @@ class FooterEngine:
         if self._raw is not None:
             self._raw.__exit__(None, None, None)
             self._raw = None
+
+    @contextlib.contextmanager
+    def suspended(self, message: str = ""):
+        """Nhường cả terminal cho chương trình khác (trình soạn của /editor, CLI 0.23.0), rồi bật lại như cũ: tắt luồng
+        phím và chế độ phím thô, rời màn hình của Peto, in ``message``; xong thì vẽ lại toàn bộ."""
+        self._suspended = True
+        self.stop()
+        if message:
+            self.out.write(message + "\r\n")
+            self.out.flush()
+        try:
+            yield
+        finally:
+            self._stop.clear()
+            self._suspended = False
+            self.start()
 
     # ---- Vẽ
 
@@ -134,6 +162,9 @@ class FooterEngine:
             for text, _, _ in waiting:
                 above.append(Line([S("   ↳ ", theme.muted), S(label, theme.muted),
                                    S(clip(" ".join(text.split()), 200), theme.dim_text)]))
+        for question in self.side_pending:
+            above.append(Line([S("   "), S(ui.spinner_frame() + " ", theme.secondary), S("/btw ", theme.text),
+                               S(clip(" ".join(question.split()), 200), theme.muted)]))
         if self.busy:
             spin = ui.spinner_frame()
             body = (self.status or "… Peto đang làm").removeprefix("… ")
@@ -167,6 +198,8 @@ class FooterEngine:
         return frame.lines, widths, (frame.cursor_row, frame.cursor_col)
 
     def _draw(self, committed: str = "") -> None:
+        if self._suspended:
+            return
         columns, height = self.size()
         lines, widths, cursor = self._footer_lines(columns, height)
         parts = [SYNC_ON, HIDE_CURSOR, self._erase(), committed]
@@ -251,14 +284,26 @@ class FooterEngine:
                 raise KeyboardInterrupt
             return item
 
-    def ask(self, render_lines: Callable[[], list[Line]], handle: Callable[[Key], str | None]) -> str:
-        panel = Panel(render_lines, handle)
-        with self.lock:
-            self.panel = panel
-            self._draw()
+    def ask(self, render_lines: Callable[[], list[Line]], handle: Callable[[Key], str | None], *,
+            on_interrupt: str | None = None) -> str:
+        """Hiện một khung ở chỗ ô nhập rồi chờ trả lời. Khung khác đang mở (câu hỏi quyền, hộp /btw tới từ luồng
+        khác) thì chờ nó đóng trước; phiên đã dừng thì trả chuỗi rỗng."""
+        panel = Panel(render_lines, handle, on_interrupt)
+        while True:
+            with self.lock:
+                if self.panel is None and not self._suspended:
+                    self.panel = panel
+                    # Thời gian bỏ qua phím tính từ lúc khung thật sự hiện, không từ lúc nó bắt đầu chờ.
+                    panel.opened = time.monotonic()
+                    self._draw()
+                    break
+            if self._stop.is_set() and not self._suspended:
+                return ""
+            time.sleep(0.05)
         try:
             while not panel.done.wait(0.1):
-                pass
+                if self._stop.is_set() and not self._suspended:
+                    break
         finally:
             with self.lock:
                 if self.panel is panel:
@@ -303,7 +348,7 @@ class FooterEngine:
         """Mỗi 0,1 giây khi không có phím: vẽ lại vòng quay, cỡ cửa sổ mới, hoặc gỡ lời nhắc Esc đã hết hạn."""
         with self.lock:
             columns, _ = self.size()
-            animated = self.busy and self.panel is None
+            animated = (self.busy or bool(self.side_pending)) and self.panel is None
             esc_expired = self._esc_until and time.monotonic() >= self._esc_until
             if esc_expired:
                 self._esc_until = 0.0
@@ -313,6 +358,11 @@ class FooterEngine:
     def _key(self, key: Key) -> None:
         if self.panel is not None:
             if key.name == "interrupt":
+                if self.panel.on_interrupt is not None:
+                    self.panel.answer = self.panel.on_interrupt
+                    self.panel.done.set()
+                    self.panel = None
+                    return
                 self.interrupt()
                 return
             if time.monotonic() - self.panel.opened < PANEL_GUARD:
@@ -357,6 +407,16 @@ class FooterEngine:
             return
         kind, text = result
         images = state.attached()
+        if kind == SUBMIT and text.strip() and self.side is not None:
+            # /btw không vào hội thoại: câu hỏi chạy ở luồng riêng, kể cả lúc Peto đang làm (theo opencode).
+            note = self.side(text)
+            if note is not None:
+                state.clear()
+                if note:
+                    # Chưa có câu hỏi: giữ "/btw " trong ô để gõ tiếp, kèm lời nhắc.
+                    state.insert(text.strip() + " ")
+                    state.notice = note
+                return
         if kind == SUBMIT and text.strip():
             from . import prompt as prompt_view
             sent = prompt_view.Sent(state)

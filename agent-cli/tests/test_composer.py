@@ -61,7 +61,7 @@ def test_suggestions_do_not_displace_cursor_or_overflow_short_screen():
         assert frame.lines[frame.cursor_row].rstrip() == "› /"
         assert frame.cursor_col == 3
     assert any("/resume" in line for line in frame.lines)
-    assert any("/retry" in line for line in frame.lines)
+    assert any("/btw" in line for line in frame.lines)
     assert frame.lines[-1].strip() == "Peto · mức vừa"
     state.selected = len(state.items()) - 1
     small = layout(state, prompt="› ", width=40, height=5, boxed=True, footer="Peto · mức vừa")
