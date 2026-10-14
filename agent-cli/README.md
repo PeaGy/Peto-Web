@@ -197,7 +197,7 @@ quả lê 6 × 6. Thấp hơn nữa, hẹp dưới 41 cột, hay terminal tắt 
 của VS Code, Peto chừa thêm 2 cột bên phải, vì VS Code che khoảng hai cột sát mép:
 
 ```text
- [mascot]   Peto Agent 0.23.0
+ [mascot]   Peto Agent 0.24.0
  [mascot]   6 Luna · mức thấp
  [mascot]   ~\Projects\website-a
 
@@ -251,6 +251,24 @@ Hội thoại nằm trong màn hình của Peto chứ không trong lịch sử c
 | `Ctrl+C` khi đang chọn chữ | Chép lại, không dừng Peto |
 | `Shift` + kéo chuột | Chọn chữ kiểu terminal như cũ |
 | `Ctrl+L` | Vẽ lại cả màn hình khi có gì vẽ đè lên |
+
+**Bấm chuột** (từ 0.24.0, như opencode). Rê chuột qua chỗ bấm được thì nó sáng lên (gạch chân, hay sáng nền với khung
+tin của bạn); terminal không đổi được hình con trỏ, nên đó là dấu hiệu bấm được. Bấm rồi thả tại chỗ mới tính là bấm;
+kéo đi vẫn là chọn chữ.
+
+| Bấm vào | Làm gì |
+|---|---|
+| Nút trong khung duyệt quyền (Cho phép, Cả yêu cầu này, Từ chối…) | Chọn nút đó; rê qua nút là nút đó được chọn |
+| Dòng `+ Đã nghĩ` | Mở toàn văn suy nghĩ ngay dưới; bấm lần nữa thu lại (`/thinking` vẫn mở tất cả) |
+| `↓ còn N dòng bên dưới` | Về cuối hội thoại |
+| `→ Đã xem: 3 lần đọc…` | Hiện từng lần đọc, tìm trên một dòng; bấm lần nữa thu lại |
+| `… còn N dòng · bấm để xem đủ` (diff), `(N dòng trước đó · bấm để xem đủ)` (output lệnh) | Hiện đủ; `▴ thu gọn` để thu lại |
+| Tin của bạn | Menu Chép / Tách hội thoại từ đây; lúc Peto đang làm thì chỉ chép |
+| Dòng trong bảng chọn (`/resume`, `/model`, `/timeline`, câu hỏi của Peto) | Chọn dòng đó; câu nhiều đáp án thì đánh dấu |
+| `esc thôi`, `enter xong` ở chân khung; `c chép`, `esc đóng` của hộp `/btw` | Như bấm phím đó |
+| Lệnh trong danh sách gợi ý khi gõ `/` | Chạy lệnh; lệnh còn cần gõ thêm (`/btw`, `/model`) thì điền vào ô |
+
+Khung vừa hiện thì 0,3 giây đầu cú bấm không tính, như phím, để một cú bấm lỡ tay không trả lời thay bạn.
 
 Đang cuộn lên thì chữ mới không kéo màn hình đi; hàng cuối khung hội thoại báo còn bao nhiêu dòng bên dưới. Gửi tin là về
 cuối. Đổi cỡ cửa sổ thì Peto vẽ lại mọi thứ theo bề ngang mới. Ngoài VS Code, `Ctrl` + bấm vào đường dẫn ảnh chụp hay

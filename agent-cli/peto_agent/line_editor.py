@@ -19,7 +19,7 @@ import os
 import sys
 import unicodedata
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from . import images as image_files
 from .commands import Suggestion, suggestions
@@ -192,7 +192,9 @@ class EditorState:
         elif name == "tab":
             if items:
                 choice = items[self.selected or 0]
-                self._edit(choice.text + (" " if choice.has_options else ""), 0, len(self.text))
+                # Lệnh còn cần giá trị hay chữ (/model, /btw <câu hỏi>): thêm dấu cách để gõ tiếp ngay.
+                spaced = choice.has_options or getattr(choice, "takes_text", False)
+                self._edit(choice.text + (" " if spaced else ""), 0, len(self.text))
         elif name == "escape":
             if items:
                 self.dismissed = True
@@ -318,6 +320,8 @@ class Frame:
     lines: list[str]
     cursor_row: int
     cursor_col: int
+    # Các hàng trước khi đổi thành mã terminal (ô nhập của màn hình toàn phần): để biết chuột đang ở chỗ bấm nào.
+    source: list = field(default_factory=list)
 
 
 def _no_paint(text: str, color: str | None) -> str:
@@ -627,14 +631,20 @@ class WindowsConsole:
         return keys
 
     def _mouse(self, event) -> Key | None:
-        """Bánh xe và nút trái; con trỏ chuột chỉ lướt qua (không giữ nút) thì bỏ, khỏi phải vẽ lại vô ích."""
+        """Bánh xe, nút trái, và chuột rê qua (không giữ nút) để tô sáng chỗ bấm được (CLI 0.24.0): chỉ báo khi chuột
+        sang ô khác."""
         ctrl = bool(event.state & (LEFT_CTRL | RIGHT_CTRL))
         if event.flags & MOUSE_WHEELED:
             delta = (event.buttons >> 16) & 0xFFFF
             return Key("wheel", "up" if delta and delta < 0x8000 else "down", ctrl, event.x, event.y)
         held = bool(event.buttons & LEFT_BUTTON)
         if event.flags & MOUSE_MOVED:
-            return Key("mouse", "drag", ctrl, event.x, event.y) if held and self._pressed else None
+            if held and self._pressed:
+                return Key("mouse", "drag", ctrl, event.x, event.y)
+            if held or (event.x, event.y) == getattr(self, "_moved", None):
+                return None
+            self._moved = (event.x, event.y)
+            return Key("mouse", "move", ctrl, event.x, event.y)
         if held and not self._pressed:
             self._pressed = True
             return Key("mouse", "double" if event.flags & DOUBLE_CLICK else "press", ctrl, event.x, event.y)

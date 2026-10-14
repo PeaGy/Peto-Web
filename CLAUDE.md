@@ -3239,6 +3239,42 @@ results in the next step. The server stores no conversation (`store=False`), and
     `/btw` asked while Peto was thinking (waiting line, then the box, Esc), `/editor` with a fake editor through
     `EDITOR` (prompt prefilled on return) and `/export` writing the file; replayed in xterm.js. The "c" key was not
     pressed there, since ConPTY uses the machine's real clipboard.
+
+  **Mouse, 0.24.0 (done 2026-10-14, CLI only).** The owner asked for opencode's clicking (permission buttons, the
+  thinking line, "Jump to latest") and picked everything offered: every chooser, expanding cut blocks, clicking their
+  own message, the `/` menu, hover highlighting like opencode, and thinking opening in place.
+  - **Targets** (`tui/text.py`): `Target(key, run, hover, look)` stored in the span style as `"act"` by `clickable`;
+    `render` ignores it. `key` is stable across rebuilds so hover survives redraws. `run` returns a `Key` to feed the
+    engine as if typed (choosers select the row and press Enter/Space/Esc, so clicks share the keyboard path and the
+    300 ms panel guard) or None. `hover` moves a chooser's selection (opencode's onMouseMove); `look` is "underline",
+    "bg" (`theme.hover`, #2c2c2c dark / #dcdcdc light; `element` was too close to `panel` to see) or "".
+  - **Engine.** `Frame.source` and `FooterEngine._footer_source` keep the footer as `Line`s. `ScreenEngine._compose`
+    records the drawn line of every screen row in `_hits` (title row None, transcript rows cropped, the overlay, footer
+    rows) and paints the hovered target (`_paint` → `hovered`). `WindowsConsole._mouse` now reports button-less moves
+    as `Key("mouse", "move")`, once per cell; `_run` redraws only when a key changed something (moves that keep the
+    same target return False) and still ticks animations. Press records the target and cell, a drag off the cell turns
+    it into a text selection, release on the same target runs it; a double click on a target is a second click, not a
+    word copy. The wheel clears the hover.
+  - **Where** (`tui/view.py` unless noted): "+ Đã nghĩ" (`TerminalReply._commit_thought`, "−" when open; `/thinking`
+    still opens all), "↓ còn N dòng bên dưới" (`_overlay` → `_to_latest`), "Đã xem" groups (one row per read/search when
+    open), long diffs (`_cut`: "… còn N dòng · bấm để xem đủ" / "▴ thu gọn"; the inline UI keeps "/diff để xem đủ"),
+    command output ("(N dòng trước đó · bấm để xem đủ)"), permission buttons (`_panel(pick=…)`), list, session and
+    question choosers (rows; `esc`/`enter` hints), the btw box hints, and `/` suggestions (`prompt._menu_target`: Enter,
+    or Tab for `has_options` / the new `takes_text`, from "<" in the catalog usage; Tab now adds the space for those
+    too). Expandable blocks keep `{"open", "entry"}` and `_toggle` rebuilds just that entry.
+  - **Your message:** `commit_user` builds the panel with a "bg" target only once `link_user_entry` has tied it to a
+    conversation item (slash-command echoes stay inert). Idle: `_message_clicked` stores `clicked_message`, marks the
+    engine busy and queues "/timeline", whose `_timeline` takes it (`take_clicked`) and opens Chép / Tách hội thoại từ
+    đây directly (no Nhảy tới). While Peto works it only copies, with a toast (`ScreenEngine.notify`), since forking must
+    wait.
+  - **Tests:** `test_mouse.py` (hit testing and hover painting, thinking, a drag that must select, jump, groups, diff
+    and output, permission hover and click, list rows and the esc hint, the 300 ms guard, question options and the btw
+    box, message click idle/busy and inert echoes, `_timeline` with a clicked item, the `/` menu), the move key in
+    `test_screen.py`. A ConPTY run of real `peto` sent SGR mouse sequences (`\x1b[<35;x;yM` moves, `\x1b[<0;x;yM`/`m`
+    clicks), located text with a lenient copy of `tests/vt.py` (ConPTY writes the last column), and checked hover on
+    the thinking line, a permission button and the message panel, opening thinking, clicking Cho phép (the edit was
+    applied), jump to latest, the message menu, and the `/` menu; replayed in xterm.js. The fix of a pre-existing race in
+    `test_footer.py` (reading the screen before the redraw) came out of the full run.
 - **CLI display** (picked by the owner from mockups): tool steps stay as permanent lines; while waiting for the model
   there is one transient `… Peto đang nghĩ · Ns` status line (`UI.status`, redrawn with `\r\033[2K`, only when colors
   are on). `ReplyWriter` prints replies line by line so `UI.markdown` can color bold, inline code, headings, bullets and

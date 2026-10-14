@@ -132,8 +132,9 @@ def test_typing_while_peto_works_is_inserted_next_step_or_sent_after_the_request
         type_text(console, "việc sau")
         console.press(Key("enter"))
         assert settle(lambda: ui.engine.steers)
-        lines = terminal.lines()
-        assert any("Nhắn thêm: việc sau" in line for line in lines) and any("Chờ chạy: /diff" in line for line in lines)
+        # Tin vào hàng chờ trước, lần vẽ xong sau một chút: chờ màn hình chứ không đọc ngay.
+        assert settle(lambda: any("Nhắn thêm: việc sau" in line for line in terminal.lines())
+                      and any("Chờ chạy: /diff" in line for line in terminal.lines()))
         ui.line("Peto trả lời việc đầu.")
         ui.engine.idle(["Peto"], "")
         assert ui.engine.take() == ("việc sau", []), "tin nhắn thêm chưa kịp chèn thành yêu cầu kế tiếp"

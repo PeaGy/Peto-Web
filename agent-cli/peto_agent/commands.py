@@ -12,12 +12,15 @@ class Command:
     description: str
     # Giá trị đi sau lệnh, ví dụ mức của /effort: (giá trị, mô tả).
     options: tuple[tuple[str, str], ...] = ()
+    # Lệnh cần gõ thêm chữ (/btw <câu hỏi>, /remember <ghi chú>): bấm chuột vào gợi ý thì điền lệnh, chưa chạy.
+    takes_text: bool = False
 
 
 # Shared with the web guide; runtime model/effort options are still supplied by the server.
 from .catalog import commands as catalog_commands
 
-COMMANDS = tuple(Command(item['name'], item['description'], tuple(tuple(option) for option in item['options']))
+COMMANDS = tuple(Command(item['name'], item['description'], tuple(tuple(option) for option in item['options']),
+                         "<" in item.get("usage", ""))
                  for item in catalog_commands())
 # Tên tiếng Việt cũ (/moi, /thoat, /nho…) vẫn gõ được nhưng không hiện trong gợi ý: chủ web chọn tên tiếng Anh cho
 # quen tay từ CLI 0.20.0.
@@ -36,6 +39,7 @@ class Suggestion:
     label: str
     description: str
     has_options: bool = False
+    takes_text: bool = False
 
 
 def model_option(model: dict) -> tuple[str, str]:
@@ -83,7 +87,7 @@ def suggestions(text: str) -> list[Suggestion]:
                   or any(alias.startswith(typed) for alias, name in ALIASES.items() if name == command.name)]
         inside = [command for command in COMMANDS
                   if len(typed) > 1 and command not in starts and typed[1:] in fold(command.name)]
-        return [Suggestion(command.name, command.name, command.description, bool(command.options))
+        return [Suggestion(command.name, command.name, command.description, bool(command.options), command.takes_text)
                 for command in starts + inside]
     command = next((command for command in COMMANDS if fold(command.name) == typed), None)
     value = rest.lstrip(" ")

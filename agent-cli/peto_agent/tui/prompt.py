@@ -6,8 +6,8 @@ lịch sử cuộn. Thuần Python như ``line_editor.layout`` nên test đượ
 
 from __future__ import annotations
 
-from ..line_editor import MAX_ITEMS, EditorState, Frame, clean
-from .text import Line, S, cells, clip, fit, render, wrap
+from ..line_editor import MAX_ITEMS, EditorState, Frame, Key, clean
+from .text import Line, S, Target, cells, clickable, clip, fit, render, wrap
 
 PAD = 2
 PLACEHOLDER = "Nhờ Peto làm gì đó…"
@@ -92,9 +92,9 @@ def frame(state: EditorState, theme, *, width: int, height: int, meta: list[str]
     panel_width = usable - PAD
     if state.finished:
         if not state.text.strip():
-            return Frame([""], 0, 0)
+            return Frame([""], 0, 0, [Line()])
         lines = user_panel(state, theme, usable)
-        return Frame([render(line, colors) for line in lines], len(lines) - 1, 0)
+        return Frame([render(line, colors) for line in lines], len(lines) - 1, 0, lines)
     bg = theme.element
     text_width = panel_width - 4
     rows, (cursor_row, cursor_col) = _text_rows(state, theme, bg, text_width, show_cursor=True)
@@ -119,8 +119,9 @@ def frame(state: EditorState, theme, *, width: int, height: int, meta: list[str]
             head = S(" " + item.label + " " * (label_width - cells(item.label)) + "  ",
                      theme.on_primary if chosen else theme.text, item_bg, b=chosen)
             body = S(item.description, theme.on_primary if chosen else theme.muted, item_bg)
-            popup.append(Line([S(" " * PAD)]) + fit(Line([S("┃", theme.border, theme.popup), head, body]),
-                                                    panel_width, item_bg))
+            target = _menu_target(state, index, item)
+            popup.append(Line([S(" " * PAD)]) + Line(clickable(
+                fit(Line([S("┃", theme.border, theme.popup), head, body]), panel_width, item_bg).spans, target)))
 
     meta_spans = []
     for index, part in enumerate(meta):
@@ -168,7 +169,20 @@ def frame(state: EditorState, theme, *, width: int, height: int, meta: list[str]
     lines.append(cap)
     if parts["footer"]:
         lines.append(footer_line)
-    return Frame([render(line, colors) for line in lines], first_text + cursor_row - top, PAD + 3 + cursor_col)
+    return Frame([render(line, colors) for line in lines], first_text + cursor_row - top, PAD + 3 + cursor_col, lines)
+
+
+def _menu_target(state: EditorState, index: int, item) -> Target:
+    """Bấm chuột vào một gợi ý (CLI 0.24.0, như opencode): rê qua là chọn nó; bấm thì như Enter, trừ lệnh còn cần gõ
+    thêm (giá trị của /model, câu hỏi của /btw) thì như Tab, điền lệnh vào ô."""
+    def select() -> None:
+        state.selected = index
+
+    def run() -> Key:
+        select()
+        return Key("tab" if item.has_options or getattr(item, "takes_text", False) else "enter")
+
+    return Target(("menu", item.text), run, hover=select, look="")
 
 
 def _merge(spans: list) -> list:

@@ -21,7 +21,7 @@ from ..line_editor import INTERRUPT, SUBMIT, EditorState, Key
 from .. import images as image_files
 from ..ui import terminal_size
 from . import scanner
-from .text import Line, S, cells, clip, render
+from .text import Line, S, clip, hovered, render
 
 SYNC_ON, SYNC_OFF = "\x1b[?2026h", "\x1b[?2026l"
 HIDE_CURSOR, SHOW_CURSOR = "\x1b[?25l", "\x1b[?25h"
@@ -71,6 +71,8 @@ class FooterEngine:
         # ``side_pending`` là các câu hỏi bên lề đang chờ trả lời, hiện ngay trên ô nhập.
         self.side: Callable[[str], str | None] | None = None
         self.side_pending: list[str] = []
+        # Chỗ bấm được đang có chuột rê trên nó (``Target.key``, CLI 0.24.0); chỉ màn hình toàn phần bắt chuột.
+        self.hover_key = None
         self.busy = False
         self.panel: Panel | None = None
         self.status: str | None = None
@@ -147,7 +149,20 @@ class FooterEngine:
         # thử ngày 2026-10-12) thì xóa mất chữ đã in, tệ hơn nhiều.
         return (f"\x1b[{row}A" if row else "") + "\r\x1b[J"
 
+    def _paint(self, line: Line) -> Line:
+        """Tô chỗ bấm đang có chuột rê trên nó."""
+        if self.hover_key is None:
+            return line
+        theme = self.ui.theme
+        # Nền khi rê chuột đậm hơn nền ô nhập: khung tin của bạn sáng hẳn lên chứ không chỉ nhích một chút.
+        return hovered(line, self.hover_key, text=theme.text, bg=theme.hover)
+
     def _footer_lines(self, width: int, height: int):
+        """Các hàng của phần chân đã đổi thành mã terminal, bề ngang từng hàng và chỗ con trỏ."""
+        lines, cursor = self._footer_source(width, height)
+        return ([render(self._paint(line), self.ui.colors) for line in lines], [line.width() for line in lines], cursor)
+
+    def _footer_source(self, width: int, height: int) -> tuple[list[Line], tuple[int, int]]:
         """Các hàng của phần chân và chỗ con trỏ: khung duyệt nếu đang hỏi, không thì dòng trạng thái và ô nhập."""
         from . import prompt as prompt_view
 
@@ -155,8 +170,7 @@ class FooterEngine:
         theme = ui.theme
         if self.panel is not None:
             rows = self.panel.render_lines()
-            return ([" " * 2 + render(line, ui.colors) for line in rows], [2 + line.width() for line in rows],
-                    (len(rows) - 1, 0))
+            return [Line([S("  ")]) + line for line in rows], (len(rows) - 1, 0)
         above: list[Line] = []
         for label, waiting in (("Nhắn thêm: ", self.steers), ("Chờ chạy: ", self.queued)):
             for text, _, _ in waiting:
@@ -194,8 +208,7 @@ class FooterEngine:
         frame = prompt_view.frame(self.state, theme, width=width, height=height, meta=meta, footer=self.footer,
                                   colors=ui.colors, footer_line=footer_line, above=above, placeholder=placeholder,
                                   accent=accent)
-        widths = [cells(_plain(line)) for line in frame.lines]
-        return frame.lines, widths, (frame.cursor_row, frame.cursor_col)
+        return frame.source, (frame.cursor_row, frame.cursor_col)
 
     def _draw(self, committed: str = "") -> None:
         if self._suspended:
@@ -338,9 +351,14 @@ class FooterEngine:
                         self._tick()
                     continue
                 with self.lock:
+                    # Chuột rê qua mà không sang chỗ bấm khác thì không có gì đổi: khỏi vẽ lại, chỉ giữ nhịp hoạt ảnh.
+                    redraw = False
                     for key in keys:
-                        self._key(key)
-                    self._draw()
+                        redraw = self._key(key) is not False or redraw
+                    if redraw:
+                        self._draw()
+                if not redraw and time.monotonic() - self._last_draw >= self._wait_ms() / 1000:
+                    self._tick()
             except Exception:  # noqa: BLE001 - luồng phím không được chết lặng lẽ, nhưng cũng không làm sập phiên
                 time.sleep(0.2)
 
@@ -441,8 +459,3 @@ class FooterEngine:
             return
         state.notice = None
         state.insert_images(found)
-
-
-def _plain(text: str) -> str:
-    from .text import ANSI
-    return ANSI.sub("", text)

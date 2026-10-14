@@ -283,22 +283,31 @@ def _timeline(ui: UI, work: Session, *, fork: bool = False) -> None:
     """/timeline: các tin của bạn trong hội thoại đang mở, rồi Nhảy tới, Chép hay Tách từ đó; /fork chọn tin để tách
     (CLI 0.22.0, theo dialog-timeline và dialog-message của opencode)."""
     picks = [(position, item) for position, item in enumerate(work.items) if transcript.is_user(item)]
-    if not picks:
-        ui.line("  Hội thoại này chưa có tin nào của bạn.", "dim")
-        return
-    rows = []
-    for _, item in picks:
-        text = " ".join(transcript.typed_text(item).split()) or "(chỉ có ảnh)"
-        steer = history.raw_text(item).startswith(history.STEER_NOTE)
-        rows.append((text if len(text) <= 80 else text[:79] + "…", "nhắn thêm lúc Peto đang làm" if steer else ""))
-    index = ui.choose("Tách hội thoại từ tin nào" if fork else "Các tin của bạn", rows)
-    if index is None:
-        return
+    # Bấm chuột vào một tin trên màn hình (CLI 0.24.0) cũng tới đây: mở thẳng menu của tin đó, không cần chọn lại.
+    clicked = ui.take_clicked() if hasattr(ui, "take_clicked") else None
+    if clicked is not None:
+        index = next((number for number, (_, item) in enumerate(picks) if item is clicked), None)
+        if index is None:
+            return
+    else:
+        if not picks:
+            ui.line("  Hội thoại này chưa có tin nào của bạn.", "dim")
+            return
+        rows = []
+        for _, item in picks:
+            text = " ".join(transcript.typed_text(item).split()) or "(chỉ có ảnh)"
+            steer = history.raw_text(item).startswith(history.STEER_NOTE)
+            rows.append((text if len(text) <= 80 else text[:79] + "…", "nhắn thêm lúc Peto đang làm" if steer else ""))
+        index = ui.choose("Tách hội thoại từ tin nào" if fork else "Các tin của bạn", rows)
+        if index is None:
+            return
     position, item = picks[index]
     if fork:
         _fork(ui, work, position)
         return
-    actions = [("Nhảy tới", "cuộn màn hình tới tin này")] if getattr(ui, "fullscreen", False) else []
+    # Tin vừa bấm đã nằm ngay trên màn hình nên không cần "Nhảy tới".
+    actions = ([("Nhảy tới", "cuộn màn hình tới tin này")] if getattr(ui, "fullscreen", False) and clicked is None
+               else [])
     actions += [("Chép", "chép chữ của tin"), ("Tách hội thoại từ đây", "hội thoại mới gồm phần trước tin này")]
     choice = ui.choose(f"Tin {index + 1}", actions)
     if choice is None:

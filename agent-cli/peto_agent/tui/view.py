@@ -30,7 +30,8 @@ from ..ui import (CLEAR_LINE, READ_ONLY_LINES, REFUSED_LINES, UI, _count, _page_
 from . import prompt as prompt_view
 from .diff import Diff
 from .markdown import Markdown
-from .text import Line, S, clip, fit, parse_ansi, render, wrap
+from ..line_editor import Key
+from .text import Line, S, Target, clickable, clip, fit, parse_ansi, render, wrap
 from .theme import load as load_theme
 
 PAD = 2
@@ -154,7 +155,19 @@ class TerminalUI(UI):
         self._flush_group()
         if self._last not in {None, "blank"}:
             self._out(lambda: [Line()], pad=False)
-        self._last_user_entry = self._out(lambda: prompt_view.user_panel(sent, self.theme, self.width), pad=False)
+        holder: dict = {}
+
+        def build() -> list[Line]:
+            lines = prompt_view.user_panel(sent, self.theme, self.width)
+            if holder.get("item") is None:
+                return lines
+            # Chỉ tin đã vào hội thoại mới bấm được (lệnh gạch chéo cũng hiện thành khung tin nhưng không có gì để làm).
+            target = Target(("message", id(holder)), lambda: self._message_clicked(holder), look="bg")
+            return [Line([(text, {**style, "act": target}) if style.get("bg") else (text, style)
+                          for text, style in line.spans]) for line in lines]
+
+        self._last_user_entry = self._out(build, pad=False)
+        self._last_user_holder = holder
         if steer:
             self._out(lambda: [Line([S("   ↳ nhắn thêm lúc Peto đang làm", self.theme.muted)])])
         self._last = "user"
@@ -163,7 +176,36 @@ class TerminalUI(UI):
         """Mục vừa thêm vào hội thoại là tin trong khung vừa vẽ (gửi, nhắn thêm, hay vẽ lại khi /resume)."""
         if item is not None and self._last_user_entry is not None:
             self._user_entries[id(item)] = (item, self._last_user_entry)
+            holder = getattr(self, "_last_user_holder", None)
+            if holder is not None:
+                holder["item"] = item
+                self._last_user_entry.changed()
+                if self.engine is not None:
+                    self.engine.changed()
         self._last_user_entry = None
+        self._last_user_holder = None
+
+    def _message_clicked(self, holder: dict) -> None:
+        """Bấm vào tin của bạn (CLI 0.24.0, như opencode): Peto rảnh thì mở menu Chép / Tách hội thoại từ đây qua vòng
+        lệnh (/timeline); Peto đang làm thì chỉ chép, vì tách hội thoại phải đợi việc đang làm xong."""
+        item, engine = holder.get("item"), self.engine
+        if item is None or engine is None:
+            return None
+        if engine.busy or engine.panel is not None:
+            copied = self.copy(transcript.typed_text(item))
+            engine.notify("✓ Đã chép tin · tách hội thoại được khi Peto làm xong" if copied
+                          else "Không chép được vào clipboard")
+            return None
+        self.clicked_message = item
+        engine.busy = True
+        engine.status = None
+        engine.submitted.put(("/timeline", []))
+        return None
+
+    def take_clicked(self) -> dict | None:
+        """Tin vừa được bấm (cho /timeline mở thẳng menu của nó); lấy ra là hết."""
+        item, self.clicked_message = getattr(self, "clicked_message", None), None
+        return item
 
     def jump_to(self, item: dict) -> bool:
         """/timeline "Nhảy tới": cuộn tới khung của tin này. False khi không có màn hình toàn phần hay không còn khung."""
@@ -304,6 +346,34 @@ class TerminalUI(UI):
         entry = self._out((lambda: build()[skip:]) if skip else build, now=drawn)
         self._last = "blank" if not drawn[-1].spans else kind
         return entry
+
+    def _toggle(self, state: dict) -> None:
+        """Mở hay thu một khối (suy nghĩ, nhóm Đã xem, diff hay output bị cắt): vẽ lại đúng khối đó."""
+        state["open"] = not state.get("open")
+        entry = state.get("entry")
+        if entry is not None:
+            entry.changed()
+        if self.engine is not None:
+            self.engine.changed()
+
+    def _opener(self, state: dict | None) -> Target | None:
+        """Chỗ bấm mở/thu của một khối; chỉ màn hình toàn phần bấm được."""
+        if state is None or not self.fullscreen:
+            return None
+        return Target(("open", id(state)), lambda: self._toggle(state))
+
+    def _cut(self, rows: list[Line], limit: int, state: dict | None) -> list[Line]:
+        """Diff dài quá ``limit`` hàng thì cắt, kèm một dòng bấm vào để mở hết; mở rồi thì dòng cuối thu lại. Kiểu in
+        nối tiếp không bấm được nên vẫn chỉ đường /diff như cũ."""
+        theme = self.theme
+        if len(rows) <= limit:
+            return rows
+        target = self._opener(state)
+        if target is not None and state.get("open"):
+            return rows + [Line(clickable([S("▴ thu gọn", theme.muted, theme.panel)], target))]
+        hidden = len(rows) - limit
+        label = f"… còn {hidden} dòng · " + ("bấm để xem đủ" if target else "/diff để xem đủ")
+        return rows[:limit] + [Line(clickable([S(label, theme.muted, theme.panel)], target))]
 
     def _row(self, icon: str, spans: list, icon_color: str | None = None) -> list[Line]:
         """Một dòng công cụ: biểu tượng rồi chữ, dòng dài gập thẳng hàng với chữ."""
@@ -456,10 +526,11 @@ class TerminalUI(UI):
         group, self._group = self._group, []
         if self._last not in {None, "blank", "row"}:
             self._write_lines([Line()])
-        self._out(lambda: self._group_lines(group))
+        state: dict = {}
+        state["entry"] = self._out(lambda: self._group_lines(group, state))
         self._last = "row"
 
-    def _group_lines(self, group: list[tuple[str, str]]) -> list[Line]:
+    def _group_lines(self, group: list[tuple[str, str]], state: dict | None = None) -> list[Line]:
         theme = self.theme
         if len(group) == 1:
             kind, label = group[0]
@@ -471,12 +542,22 @@ class TerminalUI(UI):
             counts = {kind: sum(1 for item, _ in group if item == kind) for kind in kinds}
             names = {"read": "lần đọc", "list": "thư mục", "search": "lần tìm", "find": "lần tìm tệp"}
             summary = ", ".join(f"{counts[kind]} {names[kind]}" for kind in kinds if counts[kind])
-            lines = self._row("→", [S("Đã xem: ", theme.muted), S(summary, theme.muted)])
+            # Bấm "Đã xem" thì hiện từng lần đọc, tìm trên một dòng; bấm lần nữa thu lại (CLI 0.24.0, như opencode).
+            target = self._opener(state)
+            opened = target is not None and state.get("open")
+            lines = self._row("▾" if opened else "→", clickable([S("Đã xem: ", theme.muted), S(summary, theme.muted)],
+                                                                target))
+            if opened:
+                verbs = {"read": "Đọc ", "list": "Xem thư mục ", "search": "Tìm ", "find": "Tìm tệp "}
+                for kind, label in group:
+                    lines += [Line([S("     ")] + row) for row in wrap(
+                        [S(verbs[kind], theme.muted), S(visible(label), theme.dim_text)], self.content_width - 5)]
+                return lines
             labels = [label for _, label in group]
             rows = wrap([S(visible(" · ".join(labels)), theme.dim_text)], self.content_width - 5)
             if len(rows) > 2:
                 rows = rows[:2]
-                rows[-1] = rows[-1] + [S(" …", theme.muted)]
+                rows[-1] = rows[-1] + clickable([S(" …", theme.muted)], target)
             lines += [Line([S("     ")] + row) for row in rows]
         return lines
 
@@ -510,18 +591,22 @@ class TerminalUI(UI):
             return
         preview, static = self._preview, self._static_diff
         if name == "run_command" and "exit_code" in result:
-            self._emit(lambda: self._shell_block(result, preview), "block")
+            shell: dict = {}
+            shell["entry"] = self._emit(lambda: self._shell_block(result, preview, shell), "block")
             return
         if "error" in result:
             self._emit(lambda: self._row("·", [S(clip(visible(str(result["error"])), 300), theme.muted)]), "row")
             return
         if name in {"edit_file", "write_file", "delete_file"}:
-            self._emit(lambda: self._edit_block(name, result, preview, static), "block")
+            edit: dict = {}
+            edit["entry"] = self._emit(lambda: self._edit_block(name, result, preview, static, edit), "block")
         elif name == "apply_patch":
             files = preview[1]["files"] if preview and preview[0] == "patch" else []
             for index, item in enumerate(result["files"]):
                 source = files[index] if index < len(files) and not static else None
-                self._emit(lambda item=item, source=source: self._patch_block(item, source), "block")
+                cut: dict = {}
+                cut["entry"] = self._emit(lambda item=item, source=source, cut=cut: self._patch_block(item, source, cut),
+                                          "block")
         elif name == "ask_user":
             for item in result.get("answers") or []:
                 self._emit(lambda item=item: self._row("?", [S(visible(item["question"]) + " ", theme.muted),
@@ -660,7 +745,7 @@ class TerminalUI(UI):
                 self.write(" " * PAD + render(line, self.colors) + "\n")
 
     def _edit_block(self, name: str, result: dict, preview: tuple[str, dict] | None = None,
-                    static: bool = False) -> list[Line]:
+                    static: bool = False, state: dict | None = None) -> list[Line]:
         theme = self.theme
         panel = theme.panel
         rel = result["path"]
@@ -678,12 +763,10 @@ class TerminalUI(UI):
         if name != "delete_file" and not static and preview and preview[0] == "file":
             rows = Diff(preview[1]["before"], preview[1]["after"], path=rel,
                         numbered=not preview[1].get("snippet")).rows(theme, self.content_width - 3)
-            body = rows[:BLOCK_DIFF_ROWS]
-            if len(rows) > BLOCK_DIFF_ROWS:
-                body.append(Line([S(f"… còn {len(rows) - BLOCK_DIFF_ROWS} dòng · /diff để xem đủ", theme.muted, panel)]))
+            body = self._cut(rows, BLOCK_DIFF_ROWS, state)
         return self._block(header, body)
 
-    def _patch_block(self, item: dict, source: dict | None) -> list[Line]:
+    def _patch_block(self, item: dict, source: dict | None, state: dict | None = None) -> list[Line]:
         """Một tệp của bản patch: như khối sửa tệp, kèm diff khi có bản xem trước."""
         theme = self.theme
         panel = theme.panel
@@ -698,12 +781,11 @@ class TerminalUI(UI):
         if source is not None and item["op"] != "delete":
             rows = Diff(source["before"], source["after"], path=item["path"],
                         numbered=not source.get("snippet")).rows(theme, self.content_width - 3)
-            body = rows[:BLOCK_DIFF_ROWS]
-            if len(rows) > BLOCK_DIFF_ROWS:
-                body.append(Line([S(f"… còn {len(rows) - BLOCK_DIFF_ROWS} dòng · /diff để xem đủ", theme.muted, panel)]))
+            body = self._cut(rows, BLOCK_DIFF_ROWS, state)
         return self._block(header, body)
 
-    def _shell_block(self, result: dict, preview: tuple[str, dict] | None = None) -> list[Line]:
+    def _shell_block(self, result: dict, preview: tuple[str, dict] | None = None,
+                     state: dict | None = None) -> list[Line]:
         theme = self.theme
         panel = theme.panel
         body = preview[1] if preview and preview[0] in {"command", "background"} else {}
@@ -716,11 +798,19 @@ class TerminalUI(UI):
         if result.get("cwd"):
             header.append(S(f"  trong {result['cwd']}", theme.muted, panel))
         lines = output_lines(str(result.get("output") or ""))
+        # Mỗi dòng output có thể gập thành vài hàng: cắt theo dòng output, rồi mới gập.
+        opened = self._opener(state) is not None and state.get("open")
+        kept = lines if opened or len(lines) <= OUTPUT_TAIL else lines[-OUTPUT_TAIL:]
         rows: list[Line] = []
-        if len(lines) > OUTPUT_TAIL:
-            rows.append(Line([S(f"({len(lines) - OUTPUT_TAIL} dòng trước đó)", theme.muted, panel)]))
-        for text in lines[-OUTPUT_TAIL:]:
+        for text in kept:
             rows += [Line(row) for row in wrap([S(text, theme.muted, panel)], self.content_width - 5, hard=True)]
+        if len(lines) > OUTPUT_TAIL:
+            target = self._opener(state)
+            if opened:
+                rows.append(Line(clickable([S("▴ thu gọn", theme.muted, panel)], target)))
+            else:
+                label = f"({len(lines) - OUTPUT_TAIL} dòng trước đó" + (" · bấm để xem đủ)" if target else ")")
+                rows.insert(0, Line(clickable([S(label, theme.muted, panel)], target)))
         seconds = result.get("seconds")
         took = _seconds(seconds) if isinstance(seconds, (int, float)) else f"{seconds} giây"
         classification = result.get("classification")
@@ -857,7 +947,7 @@ class TerminalUI(UI):
         return [S(visible(permission.question.strip().removesuffix("›").strip()), theme.text)], []
 
     def _panel(self, permission: Permission, options: list[Option], selected: int, offset: int,
-               budget: int) -> tuple[list[Line], int]:
+               budget: int, pick: Callable[[int], Target] | None = None) -> tuple[list[Line], int]:
         """Các hàng của khung duyệt và số hàng nội dung còn ẩn phía sau."""
         theme = self.theme
         width = self.content_width
@@ -874,10 +964,11 @@ class TerminalUI(UI):
                row([(text, {**style, "bg": style.get("bg") or panel}) for text, style in header])]
         choices = [S("┃", theme.primary, element), S("  ", bg=element)]
         for index, option in enumerate(options):
+            target = pick(index) if pick is not None else None
             if index == selected:
-                choices.append(S(f" {option.label} ", theme.on_primary, theme.primary, b=True))
+                choices += clickable([S(f" {option.label} ", theme.on_primary, theme.primary, b=True)], target)
             else:
-                choices.append(S(f" {option.label} ", theme.muted, element))
+                choices += clickable([S(f" {option.label} ", theme.muted, element)], target)
             choices.append(S(" ", bg=element))
         letters = "/".join(option.key for option in options)
         hint = [S("┃", theme.primary, element), S("  ", bg=element), S("←→", theme.text, element),
@@ -898,6 +989,24 @@ class TerminalUI(UI):
         if hidden:
             body.append(row([S(f"… còn {hidden} dòng · v hoặc PgDn xem tiếp", theme.muted, panel)]))
         return top + body + bottom, hidden
+
+    @staticmethod
+    def _pick(state: dict, field: str, index, press: Key) -> Target:
+        """Chỗ bấm của một dòng hay nút trong khung chọn: rê qua là chọn nó (như opencode), bấm là chọn rồi bấm phím
+        ``press`` (thường là Enter), đi đúng đường của bàn phím."""
+        def select() -> None:
+            state[field] = index
+
+        def run() -> Key:
+            select()
+            return press
+
+        return Target(("pick", id(state), index), run, hover=select, look="")
+
+    @staticmethod
+    def _press(state: dict, key: Key, name: str) -> Target:
+        """Chỗ bấm của một gợi ý phím ở chân khung ("esc thôi", "c chép"): bấm là bấm phím đó."""
+        return Target(("press", id(state), name), lambda: key)
 
     def ask(self, permission: Permission) -> str:
         self._flush_group()
@@ -926,8 +1035,11 @@ class TerminalUI(UI):
         state = {"selected": 0, "offset": 0, "hidden": 0}
         letters = {option.key for option in options}
 
+        def pick(index: int) -> Target:
+            return self._pick(state, "selected", index, Key("enter"))
+
         def render_lines() -> list[Line]:
-            lines, state["hidden"] = self._panel(permission, options, state["selected"], state["offset"], budget)
+            lines, state["hidden"] = self._panel(permission, options, state["selected"], state["offset"], budget, pick)
             return lines
 
         def handle(key) -> str | None:
@@ -1061,15 +1173,18 @@ class TerminalUI(UI):
                          S(visible(option["label"]), theme.text, bg, b=chosen)]
                 if option["description"]:
                     spans.append(S("  " + visible(option["description"]), theme.muted, bg))
-                lines.append(row([(text, style) for text, style in spans], bg))
+                # Câu nhiều đáp án: bấm là đánh dấu (như Space); câu một đáp án: bấm là chọn luôn.
+                press = Key("char", " ") if multiple else Key("enter")
+                lines.append(Line(clickable(row(spans, bg).spans, self._pick(state, "selected", number, press))))
             chosen = state["selected"] == custom
             bg = element if chosen else panel
             if state["typing"]:
                 lines.append(row([S("› ", theme.secondary, bg), S(theme.glyphs["write"] + " ", theme.muted, bg),
                                   S(state["text"] + "▏", theme.text, bg)], bg))
             else:
-                lines.append(row([S("› " if chosen else "  ", theme.secondary, bg),
-                                  S(theme.glyphs["write"] + " Tự trả lời…", theme.muted, bg, b=chosen)], bg))
+                lines.append(Line(clickable(row([S("› " if chosen else "  ", theme.secondary, bg),
+                                                 S(theme.glyphs["write"] + " Tự trả lời…", theme.muted, bg, b=chosen)],
+                                                bg).spans, self._pick(state, "selected", custom, Key("enter")))))
             if state["typing"]:
                 hint = [("gõ câu trả lời  ", theme.muted), ("enter", theme.text), (" gửi  ", theme.muted),
                         ("esc", theme.text), (" quay lại", theme.muted)]
@@ -1080,8 +1195,15 @@ class TerminalUI(UI):
                 hint = [("↑↓", theme.text), (" chọn  ", theme.muted), ("enter", theme.text), (" chọn  ", theme.muted),
                         (f"1–{len(options)}", theme.text), (" chọn nhanh  ", theme.muted), ("esc", theme.text),
                         (" bỏ qua", theme.muted)]
-            lines += [row([]), fit(Line([S("┃", theme.secondary, element), S("  ", bg=element)]
-                                        + [S(text, color, element) for text, color in hint]), width, element),
+            keys = {"enter": Key("enter"), "esc": Key("escape")}
+            spans = []
+            for position, (text, color) in enumerate(hint):
+                # "enter" và "esc" ở chân khung bấm được, kèm chữ ngay sau chúng ("enter xong", "esc bỏ qua").
+                name = text if text in keys else hint[position - 1][0] if position and hint[position - 1][0] in keys \
+                    else None
+                target = self._press(state, keys[name], name) if name else None
+                spans += clickable([S(text, color, element)], target)
+            lines += [row([]), fit(Line([S("┃", theme.secondary, element), S("  ", bg=element)] + spans), width, element),
                       Line([S("╹", theme.secondary), S("▀" * (width - 1), element)])]
             return lines
 
@@ -1199,11 +1321,14 @@ class TerminalUI(UI):
             elif state["copied"] is False:
                 hint = [S("Không chép được vào clipboard", theme.warning, element)]
             else:
-                hint = [S("c", theme.text, element), S(" chép  ", theme.muted, element)]
+                hint = clickable([S("c", theme.text, element), S(" chép", theme.muted, element)],
+                                 self._press(state, Key("char", "c"), "copy")) + [S("  ", bg=element)]
             if len(lines) > view:
                 hint += [S("↑↓ pgup pgdn", theme.text, element),
                          S(f" cuộn · dòng {top + 1}–{min(top + view, len(lines))}/{len(lines)}  ", theme.muted, element)]
-            hint += [S("esc", theme.text, element), S(" đóng · không thêm vào hội thoại", theme.muted, element)]
+            hint += clickable([S("esc", theme.text, element), S(" đóng", theme.muted, element)],
+                              self._press(state, Key("escape"), "close"))
+            hint += [S(" · không thêm vào hội thoại", theme.muted, element)]
             out += [row([]), fit(Line([S("┃", theme.secondary, element), S("  ", bg=element)] + hint), width, element),
                     Line([S("╹", theme.secondary), S("▀" * (width - 1), element)])]
             return out
@@ -1267,10 +1392,12 @@ class TerminalUI(UI):
                          S(clip(visible(label), max(10, width - 30)), theme.text, bg, b=chosen)]
                 if detail:
                     spans.append(S("  " + visible(detail), theme.muted, bg))
-                lines.append(row(spans, bg))
+                lines.append(Line(clickable(row(spans, bg).spans, self._pick(state, "selected", index, Key("enter")))))
             hint = [S("↑↓", theme.text, element), S(" chọn  ", theme.muted, element), S("enter", theme.text, element),
-                    S(" mở  ", theme.muted, element), S("esc", theme.text, element), S(" thôi  ", theme.muted, element),
-                    S("1–9", theme.text, element), S(" chọn nhanh", theme.muted, element)]
+                    S(" mở  ", theme.muted, element)]
+            hint += clickable([S("esc", theme.text, element), S(" thôi", theme.muted, element)],
+                              self._press(state, Key("escape"), "close"))
+            hint += [S("  ", bg=element), S("1–9", theme.text, element), S(" chọn nhanh", theme.muted, element)]
             lines += [row([]), fit(Line([S("┃", theme.primary, element), S("  ", bg=element)] + hint), width, element),
                       Line([S("╹", theme.primary), S("▀" * (width - 1), element)])]
             return lines
@@ -1348,6 +1475,8 @@ class TerminalUI(UI):
                 chosen = index == state["selected"]
                 bg = element if chosen else panel
                 spans = [S("› " if chosen else "  ", theme.primary, bg)]
+                target = None if state["renaming"] or state["deleting"] else self._pick(state, "selected", index,
+                                                                                      Key("enter"))
                 if chosen and state["renaming"] == saved.id:
                     spans += [S(state["text"] + "▏", theme.text, bg, b=True),
                               S("  enter lưu · esc thôi", theme.muted, bg)]
@@ -1362,7 +1491,7 @@ class TerminalUI(UI):
                         detail += " · đang mở"
                     spans += [S(clip(visible(saved.title), max(10, width - 34)), theme.text, bg, b=chosen),
                               S("  " + detail, theme.muted, bg)]
-                body.append((row(spans, bg), chosen))
+                body.append((Line(clickable(row(spans, bg).spans, target)), chosen))
             if not visible_items:
                 body.append((row([S("Không có hội thoại nào khớp", theme.muted, panel)]), False))
             room = max(3, budget - 7)
@@ -1379,7 +1508,9 @@ class TerminalUI(UI):
                 lines += [row([]), row([S(state["message"], theme.warning, panel)])]
             hint = [S("enter", theme.text, element), S(" mở  ", theme.muted, element), S("ctrl+r", theme.text, element),
                     S(" đổi tên  ", theme.muted, element), S("ctrl+d", theme.text, element),
-                    S(" xóa  ", theme.muted, element), S("esc", theme.text, element), S(" thôi", theme.muted, element)]
+                    S(" xóa  ", theme.muted, element)]
+            hint += clickable([S("esc", theme.text, element), S(" thôi", theme.muted, element)],
+                              self._press(state, Key("escape"), "close"))
             lines += [row([]), fit(Line([S("┃", theme.primary, element), S("  ", bg=element)] + hint), width, element),
                       Line([S("╹", theme.primary), S("▀" * (width - 1), element)])]
             return lines
@@ -1589,17 +1720,22 @@ class TerminalReply:
         text = f"+ Đã nghĩ: {clip(title, 60)} · {_seconds(seconds).replace(' giây', 's')}" if title else \
             f"+ Đã nghĩ · {_seconds(seconds).replace(' giây', 's')}"
         self.ui.thinking_title = None
-        thought = "".join(self._thought) if self.ui.show_thoughts else ""
+        thought = "".join(self._thought)
         ui = self.ui
+        state: dict = {}
+        # Bấm dòng "+ Đã nghĩ" thì toàn văn hiện ngay dưới, như opencode (CLI 0.24.0); /thinking mở tất cả.
+        target = ui._opener(state) if thought.strip() else None
 
         def build() -> list[Line]:
-            lines = [Line([S("   "), S(visible(text), ui.theme.thought)])]
-            for paragraph in thought.split("\n") if thought else []:
+            opened = bool(thought.strip()) and (ui.show_thoughts or state.get("open"))
+            label = "− " + text[2:] if opened and target is not None else text
+            lines = [Line([S("   ")] + clickable([S(visible(label), ui.theme.thought)], target))]
+            for paragraph in thought.split("\n") if opened else []:
                 spans = [S(visible(paragraph.replace("**", "")), ui.theme.muted, i=True)]
                 lines += [Line([S("     ")] + row) for row in wrap(spans, ui.content_width - 5)]
             return lines
 
-        self.ui._emit(build, "row")
+        state["entry"] = self.ui._emit(build, "row")
 
     def _render(self) -> list[Line]:
         """Cả câu trả lời tới lúc này, vẽ theo bề ngang hiện tại; dòng đang viết dở cũng hiện luôn."""

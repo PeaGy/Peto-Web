@@ -271,7 +271,8 @@ def test_console_mouse_records_become_keys():
 
     assert console._mouse(event(0x00800000, 0x4)) == Key("wheel", "up", False, 9, 4)
     assert console._mouse(event(0xFF800000, 0x4)).text == "down"
-    assert console._mouse(event(0, 0x1)) is None, "chuột lướt qua không thành phím"
+    assert console._mouse(event(0, 0x1)) == Key("mouse", "move", False, 9, 4), "rê chuột để tô chỗ bấm được (0.24.0)"
+    assert console._mouse(event(0, 0x1)) is None, "vẫn ở ô cũ thì không báo lại"
     assert console._mouse(event(1, 0, 4, 2, state=0x08)) == Key("mouse", "press", True, 4, 2)
     assert console._mouse(event(1, 0x1, 7, 2)) == Key("mouse", "drag", False, 7, 2)
     assert console._mouse(event(0, 0, 7, 2)) == Key("mouse", "release", False, 7, 2)

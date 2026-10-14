@@ -20,8 +20,10 @@ import time
 from collections.abc import Callable
 
 from .clipboard import copy_text
+from ..line_editor import Key
 from .footer import HIDE_CURSOR, SCAN_TICK_MS, SHOW_CURSOR, SYNC_OFF, SYNC_ON, TICK_MS, FooterEngine
-from .text import Line, S, cells, clip, crop, highlight, parse_ansi, render, text_between, wrap
+from .text import (Line, S, Target, cells, clickable, clip, crop, highlight, parse_ansi, render, target_at,
+                   text_between, wrap)
 
 ENTER_SCREEN, LEAVE_SCREEN = "\x1b[?1049h", "\x1b[?1049l"
 PAD = 2
@@ -104,6 +106,11 @@ class ScreenEngine(FooterEngine):
         # Số hàng cố định trên cùng (thanh tên hội thoại, CLI 0.22.0); hội thoại bắt đầu ngay dưới.
         self._head = 0
         self._saved_size = (ui._width, ui._height)
+        # Hàng đã vẽ ở từng hàng màn hình (None: không có chỗ bấm), để biết chuột đang ở chỗ bấm nào (CLI 0.24.0).
+        self._hits: list[Line | None] = []
+        # Chỗ bấm dưới nút chuột lúc nhấn, và ô nhấn: thả tại đó mới là bấm, kéo đi là chọn chữ như cũ.
+        self._press_target: Target | None = None
+        self._press_cell: tuple[int, int] | None = None
 
     # ---- Vòng đời
 
@@ -231,11 +238,12 @@ class ScreenEngine(FooterEngine):
         ui = self.ui
         # Mọi khối vẽ theo bề ngang ui.width (= cột - 1, không bao giờ chạm cột cuối).
         ui._width, ui._height = columns, height
-        footer, _, cursor = self._footer_lines(columns, height)
-        if len(footer) > height - 1:
-            cut = len(footer) - (height - 1)
-            footer = footer[cut:]
+        source, cursor = self._footer_source(columns, height)
+        if len(source) > height - 1:
+            cut = len(source) - (height - 1)
+            source = source[cut:]
             cursor = (max(0, cursor[0] - cut), cursor[1])
+        footer = [render(self._paint(line), ui.colors) for line in source]
         width = columns - 1
         head = self._title_rows(width) if height - len(footer) > 3 else []
         view = height - len(footer) - len(head)
@@ -244,18 +252,23 @@ class ScreenEngine(FooterEngine):
         top = self._resolve_top(total, view, starts)
         self._top, self._view, self._head = top, view, len(head)
         rows = []
+        hits: list[Line | None] = [None] * len(head)
         for index in range(view):
             number = top + index
             if number >= total:
                 rows.append("")
+                hits.append(None)
                 continue
             line = crop(lines[number], width)
+            hits.append(line)
             if self.selection is not None:
                 line = self._highlight(line, number, width)
-            rows.append(render(line, ui.colors))
+            rows.append(render(self._paint(line), ui.colors))
         overlay = self._overlay(total, top, view, width)
         if overlay is not None and view:
-            rows[-1] = render(overlay, ui.colors)
+            rows[-1] = render(self._paint(overlay), ui.colors)
+            hits[-1] = overlay
+        self._hits = hits + source
         return head + rows + footer, (len(head) + view + cursor[0], cursor[1])
 
     def _title_rows(self, width: int) -> list[str]:
@@ -297,9 +310,22 @@ class ScreenEngine(FooterEngine):
         below = total - (top + view)
         if self.follow or below <= 0:
             return None
-        spans = [S("   "), S(f" ↓ còn {below} dòng bên dưới ", theme.text, theme.element),
-                 S("  ctrl+end", theme.text), S(" hoặc lăn xuống để về cuối", theme.muted)]
+        # Bấm vào dòng này là về cuối, như "Jump to latest ↓" của opencode (CLI 0.24.0).
+        latest = Target(("latest",), self._to_latest)
+        spans = [S("   ")] + clickable([S(f" ↓ còn {below} dòng bên dưới ", theme.text, theme.element),
+                                       S("  ctrl+end", theme.text), S(" hoặc bấm vào đây để về cuối", theme.muted)],
+                                      latest)
         return crop(Line(spans), width)
+
+    def _to_latest(self) -> None:
+        self.follow = True
+        self.hover_key = None
+
+    def notify(self, message: str) -> None:
+        """Thông báo ngắn ở hàng cuối khung hội thoại (đã chép…)."""
+        with self.lock:
+            self.toast = (message, time.monotonic() + TOAST_SECONDS)
+            self._draw()
 
     def _highlight(self, line: Line, number: int, width: int) -> Line:
         (first_row, first_col), (last_row, last_col) = self.selection
@@ -342,14 +368,15 @@ class ScreenEngine(FooterEngine):
                 self.follow = True
         return super().ask(render_lines, handle, on_interrupt=on_interrupt)
 
-    def _key(self, key) -> None:
+    def _key(self, key) -> bool | None:
         name = key.name
         if name == "wheel":
             self._scroll(-WHEEL_LINES if key.text == "up" else WHEEL_LINES)
+            # Hội thoại vừa trôi dưới con trỏ: chỗ đang tô không còn nằm dưới chuột nữa.
+            self.hover_key = None
             return
         if name == "mouse":
-            self._mouse(key)
-            return
+            return self._mouse(key)
         if name in {"resize", "redraw"}:
             self._full = True
             return
@@ -392,13 +419,44 @@ class ScreenEngine(FooterEngine):
             return None
         return self._top + y, max(0, key.x)
 
-    def _mouse(self, key) -> None:
+    def _hit(self, x: int, y: int) -> Target | None:
+        """Chỗ bấm được ở ô (x, y) của màn hình."""
+        return target_at(self._hits[y], x) if 0 <= y < len(self._hits) else None
+
+    def _hover(self, target: Target | None) -> bool:
+        """Chuột sang chỗ khác: tô chỗ mới (khung chọn thì chuyển lựa chọn tới đó). False khi không có gì đổi."""
+        key = target.key if target is not None else None
+        if key == self.hover_key:
+            return False
+        self.hover_key = key
+        if target is not None and target.hover is not None:
+            target.hover()
+        return True
+
+    def _click(self, target: Target) -> None:
+        result = target.run()
+        if isinstance(result, Key):
+            # Khung chọn trả phím của bàn phím (chọn dòng rồi Enter…): đi đúng đường đó, kể cả thời gian bỏ qua phím
+            # ngay khi khung vừa hiện.
+            self._key(result)
+
+    def _mouse(self, key) -> bool | None:
+        if key.text == "move":
+            return self._hover(self._hit(key.x, key.y))
         if key.text == "release":
+            target, self._press_target = self._press_target, None
             if self._drag is not None and self.selection is not None:
                 self._copy_selection()
+            elif target is not None:
+                released = self._hit(key.x, key.y)
+                if released is not None and released.key == target.key:
+                    self._click(target)
             self._drag = None
             return
         if key.text == "drag":
+            if self._press_cell is not None and (key.x, key.y) != self._press_cell:
+                # Kéo khỏi chỗ vừa nhấn: là chọn chữ, không còn là bấm.
+                self._press_target = None
             if self._drag is None:
                 return
             y = key.y - self._head
@@ -412,16 +470,19 @@ class ScreenEngine(FooterEngine):
             return
         position = self._position(key)
         self.selection = None
+        self._press_target, self._press_cell = self._hit(key.x, key.y), (key.x, key.y)
         if position is None:
-            self._drag = None
-            return
-        if key.text == "double":
-            self._select_word(*position)
             self._drag = None
             return
         if key.ctrl and self._open_link(*position):
             self._drag = None
+            self._press_target = None
             return
+        if key.text == "double" and self._press_target is None:
+            self._select_word(*position)
+            self._drag = None
+            return
+        # Lần nhấn thứ hai của bấm đúp lên chỗ bấm được cũng chỉ là một lần bấm, không chọn từ.
         self._drag = position
 
     def _line(self, number: int) -> Line | None:

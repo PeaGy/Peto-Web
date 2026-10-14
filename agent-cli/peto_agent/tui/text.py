@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from collections.abc import Callable
+from dataclasses import dataclass
 
 ANSI = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\))")
 
@@ -43,6 +45,59 @@ class Line:
 
     def __repr__(self) -> str:
         return f"Line({self.text()!r})"
+
+
+@dataclass(eq=False)
+class Target:
+    """Một chỗ bấm chuột được (CLI 0.24.0, theo opencode), gắn vào các đoạn chữ của nó bằng ``clickable``.
+
+    - ``key`` giữ nguyên qua các lần vẽ, để biết chuột còn đang rê trên chỗ này không.
+    - ``run`` chạy khi bấm rồi thả tại chỗ. Trả một phím (``Key``) thì màn hình xử lý như vừa bấm phím đó: khung chọn
+      dùng nó để chọn dòng được bấm, theo đúng đường của bàn phím. Trả None là đã tự làm xong.
+    - ``hover`` chạy khi chuột rê vào (khung chọn: chuyển lựa chọn tới dòng đó, như opencode).
+    - ``look`` là cách tô khi rê: "underline" (gạch chân, chữ sáng lên), "bg" (cả khối sáng nền) hay "" (đã tô qua
+      ``hover``).
+    """
+
+    key: object
+    run: Callable[[], object]
+    hover: Callable[[], None] | None = None
+    look: str = "underline"
+
+
+def clickable(spans: list, target: Target | None) -> list:
+    """Các đoạn chữ của một chỗ bấm được; ``target`` None thì để nguyên."""
+    if target is None:
+        return list(spans)
+    return [(text, {**style, "act": target}) for text, style in spans]
+
+
+def target_at(line: Line | None, column: int) -> Target | None:
+    """Chỗ bấm được ở cột ``column`` (tính từ 0) của một hàng đã vẽ."""
+    if line is None or column < 0:
+        return None
+    used = 0
+    for text, style in line.spans:
+        used += cells(text)
+        if column < used:
+            return style.get("act")
+    return None
+
+
+def hovered(line: Line, key, *, text: str | None, bg: str | None) -> Line:
+    """Hàng đang có chuột rê trên chỗ bấm ``key``: tô theo ``look`` của chỗ đó."""
+    if key is None or not any((style.get("act") is not None and style["act"].key == key) for _, style in line.spans):
+        return line
+    spans = []
+    for part, style in line.spans:
+        target = style.get("act")
+        if target is None or target.key != key or not target.look:
+            spans.append((part, style))
+        elif target.look == "bg":
+            spans.append((part, {**style, "bg": bg}))
+        else:
+            spans.append((part, {**style, "u": True, "fg": text or style.get("fg")}))
+    return Line(spans)
 
 
 def _rgb(color: str) -> str:
