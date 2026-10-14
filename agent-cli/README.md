@@ -539,7 +539,8 @@ Từ bản 0.12.0 (cần cả VPS mới), Peto xem được cả trang ngoài m�
 
 - **Danh sách việc:** yêu cầu từ ba việc trở lên thì Peto liệt kê các việc định làm và cập nhật khi xong từng mục, hiện
   ngay trong terminal: `☑` đã xong, `▶` đang làm, `☐` chưa làm. Còn mục chưa xong thì dòng tóm tắt cuối yêu cầu nói rõ
-  còn bao nhiêu, để không ai tưởng đã xong hết.
+  còn bao nhiêu, để không ai tưởng đã xong hết. Với 6 Luna, 5.6 Terra và 6 Sol thì không có danh sách này (từ
+  2026-10-14): các model GPT dành gần một phần ba số bước chỉ để cập nhật nó, nên câu trả lời cuối thay cho nó.
 - **Lệnh nền:** lệnh không tự kết thúc (dev server, `--watch`) được chạy nền và trả về ngay, thay vì chờ tới khi xong.
   Bạn vẫn duyệt trước khi chạy, và ô hỏi nói rõ lệnh sẽ sống tiếp sau khi yêu cầu xong. Tối đa 3 lệnh nền một lúc;
   Peto đọc output khi cần và tự dừng khi xong việc. **Đóng peto là mọi lệnh nền bị dừng**, cả cây tiến trình.

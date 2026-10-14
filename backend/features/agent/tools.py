@@ -405,7 +405,7 @@ _BROWSER_ACT_TOOLS = [
 
 # Schema cho CLI không khai báo khả năng nào (bản 0.9.7 trở về trước): giữ nguyên từng chữ.
 TOOL_SCHEMAS = _FILE_TOOLS + _command_tools(cwd=False)
-_SCHEMAS: dict[tuple[frozenset[str], bool], list[dict]] = {(frozenset(), False): TOOL_SCHEMAS}
+_SCHEMAS: dict[tuple[frozenset[str], bool, bool], list[dict]] = {(frozenset(), False, False): TOOL_SCHEMAS}
 
 TOOL_NAMES = frozenset(tool["name"] for tool in TOOL_SCHEMAS)
 
@@ -413,10 +413,12 @@ TOOL_NAMES = frozenset(tool["name"] for tool in TOOL_SCHEMAS)
 def tool_schemas(features: frozenset[str] = frozenset(), *, patch_model: bool = False) -> list[dict]:
     """Schema theo khả năng CLI khai báo, để bản CLI đang cài không nhận công cụ hay tham số nó chưa hiểu.
 
-    ``patch_model``: model của bước là GPT; cùng khả năng "patch" thì dùng apply_patch thay edit_file, write_file."""
+    ``patch_model``: model của bước là GPT; cùng khả năng "patch" thì dùng apply_patch thay edit_file, write_file.
+    GPT cũng không có update_plan (chủ web chọn ngày 2026-10-14): ở hai lượt thi, 6 Luna dành 29/96 rồi 29/90 lượt
+    chỉ để cập nhật danh sách việc, mỗi lượt một bước, và lời nhắc gửi chung lượt không đổi được thói quen đó."""
     key = frozenset(features) & FEATURES
     patch = patch_model and "patch" in key
-    if (key, patch) not in _SCHEMAS:
+    if (key, patch, patch_model) not in _SCHEMAS:
         browsing = []
         if "browser" in key:
             act = "browser_act" in key
@@ -431,6 +433,8 @@ def tool_schemas(features: frozenset[str] = frozenset(), *, patch_model: bool = 
                   {'server': {'type': 'string'}, 'tool': {'type': 'string'}, 'arguments_json': {'type': 'string'}})
         ] if 'mcp' in key else []
         # Công cụ mới đứng cuối danh sách, để phần đầu giống hệt bản cũ và prompt cache vẫn dùng lại được.
-        _SCHEMAS[(key, patch)] = (_file_tools(key, patch) + _command_tools(cwd="cwd" in key) + browsing + skills + mcp
-                                  + ([_FIND] if "explore_v2" in key else []) + ([_ASK] if "question" in key else []))
-    return _SCHEMAS[(key, patch)]
+        files = [tool for tool in _file_tools(key, patch) if not (patch_model and tool["name"] == "update_plan")]
+        _SCHEMAS[(key, patch, patch_model)] = (files + _command_tools(cwd="cwd" in key) + browsing + skills + mcp
+                                               + ([_FIND] if "explore_v2" in key else [])
+                                               + ([_ASK] if "question" in key else []))
+    return _SCHEMAS[(key, patch, patch_model)]

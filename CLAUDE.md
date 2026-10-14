@@ -3061,7 +3061,15 @@ results in the next step. The server stores no conversation (`store=False`), and
       tools and the final all-done update with the final answer. The CLI ends a request when a step has reply text and
       only `update_plan` calls that leave nothing undone (`result.left == 0`), still applying the "Kiểm tra sau sửa"
       reminder (`Session._remind_to_check`) and steers. Text with an unfinished plan (Grok's lead-in) continues as
-      before. Not yet measured: a Luna rerun needs the prompt deployed.
+      before.
+    - **Luna rerun (2026-10-14, 0.21.1 deployed):** 10/10, 90 turns, 15k output tokens, `apply_patch` 8/8 again. The
+      fix did nothing: still 29 turns held only `update_plan` (9 plans made alone in the first turn, the rest marking
+      items done), and `test-do-tren-windows` hit the 14-turn cap. Luna never puts text and tool calls in one turn, so
+      the CLI's early end never fired: it sends the final all-done update alone, then answers in the next turn.
+    - **Owner's call (2026-10-14): GPT models get no `update_plan`.** `tool_schemas(…, patch_model=True)` drops it for
+      every feature set, and GPT steps use `english.AGENT_PROMPT_NO_PLAN` (the plan sentences cut out; import fails if
+      they no longer match). Peto and Claude keep the tool and the prompt. Pinned non-GPT schema hashes are unchanged.
+      `test_gpt_models_get_no_update_plan_tool_or_prompt` covers it. Needs a deploy, then a Luna run to measure.
   **Features from opencode, 0.20.0 (done 2026-10-12, CLI only).**
   The owner asked to mine opencode (commit `bcf23b6`) for useful features and picked six. 0.20.0 has four of them;
   0.21.0 adds the rest with the backend.

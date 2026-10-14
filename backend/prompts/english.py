@@ -174,6 +174,20 @@ After a "Kiểm tra sau sửa" reminder, run the check and report only what is n
 No Markdown headings in short replies.
 """.strip()
 
+# GPT (Luna, Terra, Sol) không có update_plan từ ngày 2026-10-14 (xem features/agent/tools.tool_schemas): bỏ hai chỗ
+# lời nhắc nói tới nó. Chỗ nào đổi chữ mà không còn khớp thì báo ngay lúc nạp, khỏi lặng lẽ giữ lại.
+_PLAN_PARTS = (
+    " For tasks with at least three parts or multiple files, use update_plan with\n3–7 steps and maintain one running "
+    "step and completed steps as done. Simple tasks need no plan. Send update_plan in\nthe same turn as the next step's "
+    "tool calls, never as a turn of its own, and send the final all-done update together\nwith your final answer.",
+    " Use update_plan for multi-step work instead of prose.",
+)
+AGENT_PROMPT_NO_PLAN = AGENT_PROMPT
+for _part in _PLAN_PARTS:
+    if _part not in AGENT_PROMPT:
+        raise RuntimeError("Lời nhắc Agent tiếng Anh đã đổi: cập nhật _PLAN_PARTS.")
+    AGENT_PROMPT_NO_PLAN = AGENT_PROMPT_NO_PLAN.replace(_part, "")
+
 
 PROVIDER_PROMPTS = {
     "openai": "## Execution\nUse the supplied task goals and constraints to choose an approach. Explain results and relevant evidence, without exposing private internal reasoning.",

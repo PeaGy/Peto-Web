@@ -118,8 +118,8 @@ def test_patch_replaces_edit_and_write_only_for_gpt_models():
     assert "edit_file" not in gpt and "write_file" not in gpt
     assert gpt.index("apply_patch") == plain.index("edit_file"), "apply_patch đứng đúng chỗ edit_file"
     assert {"delete_file", "move_file"} <= set(gpt)
-    assert [tool["name"] for tool in tool_schemas(frozenset(BASE), patch_model=True)] == names(BASE), \
-        "CLI chưa khai báo patch thì GPT vẫn dùng edit_file"
+    assert [tool["name"] for tool in tool_schemas(frozenset(BASE), patch_model=True)] == \
+        [name for name in names(BASE) if name != "update_plan"], "CLI chưa khai báo patch thì GPT vẫn dùng edit_file"
     patch = next(tool for tool in tool_schemas(features, patch_model=True) if tool["name"] == "apply_patch")
     _strict(patch["parameters"])
 
@@ -137,3 +137,20 @@ def test_new_prompts_follow_the_declared_features_and_model():
     assert "*** Begin Patch" in luna and "ask_user" in luna and "adjustment to the current task" in luna
     haiku = agent_api._instructions({"features": ["patch"]}, False, model="haiku")
     assert "*** Begin Patch" not in haiku, "Claude vẫn sửa bằng edit_file"
+
+
+def test_gpt_models_get_no_update_plan_tool_or_prompt():
+    """Chủ web chọn ngày 2026-10-14: ở hai lượt thi, 6 Luna dành 29/96 rồi 29/90 lượt chỉ để gọi update_plan, và lời
+    nhắc gửi chung lượt không đổi được. GPT mất công cụ đó; Peto (Grok) và Claude giữ nguyên."""
+    from features.agent import api as agent_api
+
+    for features in ((), BASE, BASE + ("explore_v2", "edit_v2", "question", "patch")):
+        gpt = [tool["name"] for tool in tool_schemas(frozenset(features), patch_model=True)]
+        assert "update_plan" not in gpt, features
+        assert "update_plan" in names(features), "model không phải GPT vẫn có danh sách việc"
+    context = {"features": list(BASE) + ["patch", "question"]}
+    for model in ("luna", "terra", "sol"):
+        assert "update_plan" not in agent_api._instructions(context, False, model=model), model
+    for model in ("haiku", "sonnet"):
+        assert "update_plan" in agent_api._instructions(context, False, model=model), model
+    assert "update_plan" in agent_api._instructions(context, False), "Peto giữ lời nhắc tiếng Việt về danh sách việc"

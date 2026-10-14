@@ -452,7 +452,9 @@ def _instructions(context: dict, web_search: bool, model: str = "peto") -> str:
     # lại được cả phần chỉ dẫn lẫn lịch sử hội thoại thay vì tính tiền đầy đủ mỗi bước.
     if english:
         return "\n\n".join(part for part in (
-            english_prompts.CORE_PROMPT, english_prompts.AGENT_PROMPT, provider_prompt(model), *tooling, *browsing,
+            english_prompts.CORE_PROMPT,
+            english_prompts.AGENT_PROMPT_NO_PLAN if _patch_model(model) else english_prompts.AGENT_PROMPT,
+            provider_prompt(model), *tooling, *browsing,
             skill_context, mcp_context,
             english_prompts.AGENT_SEARCH_PROMPT if web_search else english_prompts.AGENT_NO_SEARCH_PROMPT,
             machine, english_prompts.PROJECT_GUIDANCE_PROMPT + guide_text, agent_time_context(english=True),
