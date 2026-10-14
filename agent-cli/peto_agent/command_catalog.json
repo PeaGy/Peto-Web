@@ -18,7 +18,23 @@
       "options": [],
       "usage": "/resume [số]",
       "since": "0.0.0",
-      "details": "Không kèm gì thì hiện danh sách hội thoại đã lưu của thư mục (mới nhất trước, có tên) để chọn; /resume 2 mở thẳng hội thoại thứ hai. Peto không chạy lại lệnh nào; muốn sửa tệp thì sẽ đọc lại tệp trước. Hội thoại giữ 30 ngày, tối đa 50 mỗi thư mục."
+      "details": "Không kèm gì thì mở bảng hội thoại đã lưu của thư mục (mới nhất trước, nhóm theo ngày): gõ để tìm theo tên, Enter mở, Ctrl+R đổi tên, Ctrl+D bấm hai lần để xóa. /resume 2 mở thẳng hội thoại thứ hai. Mở lại thì cả hội thoại hiện lại trên màn hình; Peto không chạy lại lệnh nào và đọc lại tệp trước khi sửa."
+    },
+    {
+      "name": "/timeline",
+      "description": "Các tin của bạn trong hội thoại: nhảy tới, chép hay tách từ đó",
+      "options": [],
+      "usage": "/timeline",
+      "since": "0.22.0",
+      "details": "Chọn một tin của bạn trong hội thoại đang mở, rồi chọn Nhảy tới (cuộn màn hình tới tin đó), Chép, hay Tách hội thoại từ đây (như /fork)."
+    },
+    {
+      "name": "/fork",
+      "description": "Tách hội thoại mới từ một tin cũ của bạn",
+      "options": [],
+      "usage": "/fork",
+      "since": "0.22.0",
+      "details": "Chọn một tin của bạn: hội thoại mới gồm mọi thứ trước tin đó, và chữ của tin nằm sẵn trong ô nhập để sửa rồi gửi lại. Hội thoại cũ vẫn nằm trong /resume."
     },
     {
       "name": "/plan",
@@ -149,6 +165,14 @@
       "usage": "/usage",
       "since": "0.0.0",
       "details": "Số bước và token đã dùng hôm nay."
+    },
+    {
+      "name": "/update",
+      "description": "Cập nhật peto lên bản mới nhất trên máy chủ",
+      "options": [],
+      "usage": "/update",
+      "since": "0.22.0",
+      "details": "Hỏi máy chủ bản peto mới nhất; có bản mới thì cài lại bằng install.ps1 của máy chủ rồi mở lại peto, tiếp tục đúng hội thoại đang làm. Bản chạy từ mã nguồn thì chỉ in lệnh cài."
     },
     {
       "name": "/thinking",

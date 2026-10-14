@@ -20,8 +20,8 @@ import time
 from collections.abc import Callable
 
 from .clipboard import copy_text
-from .footer import HIDE_CURSOR, SHOW_CURSOR, SYNC_OFF, SYNC_ON, FooterEngine
-from .text import Line, S, cells, crop, highlight, parse_ansi, render, text_between, wrap
+from .footer import HIDE_CURSOR, SCAN_TICK_MS, SHOW_CURSOR, SYNC_OFF, SYNC_ON, TICK_MS, FooterEngine
+from .text import Line, S, cells, clip, crop, highlight, parse_ansi, render, text_between, wrap
 
 ENTER_SCREEN, LEAVE_SCREEN = "\x1b[?1049h", "\x1b[?1049l"
 PAD = 2
@@ -101,6 +101,8 @@ class ScreenEngine(FooterEngine):
         self._full = True
         self._top = 0
         self._view = 0
+        # Số hàng cố định trên cùng (thanh tên hội thoại, CLI 0.22.0); hội thoại bắt đầu ngay dưới.
+        self._head = 0
         self._saved_size = (ui._width, ui._height)
 
     # ---- Vòng đời
@@ -160,6 +162,24 @@ class ScreenEngine(FooterEngine):
             last.changed()
             self.changed()
 
+    def clear(self) -> None:
+        """Xóa hội thoại trên màn hình (/new, /resume, /fork): bám cuối lại, bỏ vùng chọn."""
+        with self.lock:
+            self.entries = []
+            self.follow, self.anchor = True, (0, 0)
+            self.selection, self._drag = None, None
+            self._full = True
+            self.changed()
+
+    def jump(self, entry: Entry) -> bool:
+        """Cuộn tới một khối (/timeline "Nhảy tới"). Khối gần cuối thì vẫn bám cuối như khi tự cuộn tới đó."""
+        with self.lock:
+            if entry not in self.entries:
+                return False
+            self.follow, self.anchor = False, (self.entries.index(entry), 0)
+            self._draw()
+        return True
+
     def changed(self) -> None:
         """Có khối mới hay khối vừa đổi: vẽ lại."""
         with self.lock:
@@ -214,12 +234,13 @@ class ScreenEngine(FooterEngine):
             cut = len(footer) - (height - 1)
             footer = footer[cut:]
             cursor = (max(0, cursor[0] - cut), cursor[1])
-        view = height - len(footer)
+        width = columns - 1
+        head = self._title_rows(width) if height - len(footer) > 3 else []
+        view = height - len(footer) - len(head)
         lines, starts = self._layout(ui.width)
         total = len(lines)
         top = self._resolve_top(total, view, starts)
-        self._top, self._view = top, view
-        width = columns - 1
+        self._top, self._view, self._head = top, view, len(head)
         rows = []
         for index in range(view):
             number = top + index
@@ -233,7 +254,22 @@ class ScreenEngine(FooterEngine):
         overlay = self._overlay(total, top, view, width)
         if overlay is not None and view:
             rows[-1] = render(overlay, ui.colors)
-        return rows + footer, (view + cursor[0], cursor[1])
+        return head + rows + footer, (len(head) + view + cursor[0], cursor[1])
+
+    def _title_rows(self, width: int) -> list[str]:
+        """Thanh trên cùng như opencode: tên hội thoại đậm bên trái, thư mục mờ bên phải; chưa có tên thì không có."""
+        ui = self.ui
+        title = getattr(ui, "session_title", None)
+        if not title:
+            return []
+        theme = ui.theme
+        folder = getattr(ui, "folder_name", "") or ""
+        right = f"  {folder} " if folder and width > 50 else " "
+        left = Line([S(" " * PAD + " ", bg=theme.panel), S(clip(" ".join(title.split()), width - len(right) - PAD - 2),
+                                                             theme.text, theme.panel, b=True)])
+        gap = max(0, width - left.width() - len(right))
+        row = Line(left.spans + [S(" " * gap, bg=theme.panel), S(right, theme.muted, theme.panel)])
+        return [render(crop(row, width), ui.colors)]
 
     def _resolve_top(self, total: int, view: int, starts: list[int]) -> int:
         bottom = max(0, total - view)
@@ -278,7 +314,7 @@ class ScreenEngine(FooterEngine):
     def _tick(self) -> None:
         with self.lock:
             size = self.size()
-            animated = self.busy and self.panel is None and self.ui.animated
+            animated = self.busy and self.panel is None
             esc_expired = self._esc_until and time.monotonic() >= self._esc_until
             if esc_expired:
                 self._esc_until = 0.0
@@ -286,6 +322,10 @@ class ScreenEngine(FooterEngine):
             if (animated or esc_expired or toast_expired or self.status != self._drawn_status
                     or (max(size[0], 20), max(size[1], 6)) != self._size):
                 self._draw()
+
+    def _wait_ms(self) -> int:
+        # Chỉ hàng đã đổi được ghi lại (thường chỉ hàng chân), nên vẽ theo từng khung của hoạt ảnh không tốn gì mấy.
+        return SCAN_TICK_MS if self.busy and self.panel is None else TICK_MS
 
     # ---- Phím và chuột
 
@@ -343,9 +383,10 @@ class ScreenEngine(FooterEngine):
 
     def _position(self, key) -> tuple[int, int] | None:
         """Hàng (của cả hội thoại) và cột dưới con trỏ chuột; None khi chuột nằm ở ô nhập."""
-        if not 0 <= key.y < self._view:
+        y = key.y - self._head
+        if not 0 <= y < self._view:
             return None
-        return self._top + key.y, max(0, key.x)
+        return self._top + y, max(0, key.x)
 
     def _mouse(self, key) -> None:
         if key.text == "release":
@@ -356,11 +397,12 @@ class ScreenEngine(FooterEngine):
         if key.text == "drag":
             if self._drag is None:
                 return
-            if key.y <= 0:
+            y = key.y - self._head
+            if y <= 0:
                 self._scroll(-1)
-            elif key.y >= self._view - 1:
+            elif y >= self._view - 1:
                 self._scroll(1)
-            row = self._top + max(0, min(key.y, self._view - 1))
+            row = self._top + max(0, min(y, self._view - 1))
             point = (row, max(0, key.x))
             self.selection = tuple(sorted([self._drag, point]))
             return

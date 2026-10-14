@@ -196,6 +196,18 @@ class Session:
         self._announced_mode = "build"
         # /new: hội thoại mới có mã mới, hội thoại cũ vẫn nằm trong /resume.
         self.session_id = self.title = None
+        self._announce_title()
+
+    def shown_title(self) -> str | None:
+        """Tên hội thoại để hiện: tên đã đặt, hoặc đầu tin đầu tiên của người dùng; hội thoại trống thì chưa có tên."""
+        if self.title:
+            return self.title
+        if any(item.get("role") == "user" and not history.is_note(item) for item in self.items):
+            return history.first_title(self.items)
+        return None
+
+    def _announce_title(self) -> None:
+        self.ui.set_session_title(self.shown_title())
 
     def save(self, items: list[dict] | None = None, **flags) -> None:
         """Lưu hội thoại đang mở để /resume mở lại (``flags``: retryable, interrupted)."""
@@ -236,6 +248,7 @@ class Session:
                         title = title if len(title) <= MAX_TITLE_CHARS else title[:MAX_TITLE_CHARS - 1] + "…"
                         if self.session_id == session_id:
                             self.title = title
+                            self._announce_title()
                             if not self._running:
                                 self.save()
                         else:  # đã /new hay /resume sang hội thoại khác: ghi tên vào tệp của hội thoại cũ
@@ -277,6 +290,7 @@ class Session:
         self.tools.seen_guides.clear()
         self.tools.checkpoint = Checkpoint(self.ws)
         self.session_id, self.title = session_id, title
+        self._announce_title()
         notes = [history.raw_text(item) for item in self.items if history.is_note(item)]
         self._announced_mode = "build"
         for text in notes:
@@ -321,6 +335,7 @@ class Session:
             for step in attached.steps:
                 self.ui.step(step)
             self.items.append(user_message(history.STEER_NOTE + attached.text, images))
+            self.ui.link_user_entry(self.items[-1])
             drop_old_images(self.items)
             self._log("steer", text=text, images=len(images))
             steered = True
@@ -337,7 +352,10 @@ class Session:
         # Đổi chế độ, lệnh nền dừng trong lúc rảnh: báo trước tin của người dùng, như opencode chèn lời nhắc chế độ.
         self._inbox(steers=False)
         self.items.append(user_message(attached.text, images))
+        self.ui.link_user_entry(self.items[-1])
         drop_old_images(self.items)
+        if not self.title:
+            self._announce_title()
         # Nhật ký chỉ ghi số ảnh và đường dẫn đính kèm, không ghi dữ liệu ảnh hay nội dung tệp.
         self._log("task", text=text, effort=self.effort, model=self.model, images=len(images),
                   **({"mentions": attached.paths} if attached.paths else {}))
@@ -566,7 +584,7 @@ class Session:
             self.metrics = self.tools.metrics = Metrics()
             self.active_seconds = 0.0
         self._running = True
-        self.ui.title(f"Peto · đang làm · {self.ws.root.name}")
+        self.ui.title(self.ui.tab_title("đang làm"))
         self.tools.approve_all = False
         self.can_retry = False
         started = time.monotonic()
@@ -764,7 +782,7 @@ class Session:
         self.ui.line("  Phần trả lời đang nhận chưa hoàn tất. Thử lại có thể dùng thêm một bước trên máy chủ.", "dim")
 
     def _summary(self, elapsed: float, outcome: str) -> None:
-        self.ui.title(f"Peto · {TITLE_LABELS[outcome]} · {self.ws.root.name}")
+        self.ui.title(self.ui.tab_title(TITLE_LABELS[outcome]))
         if elapsed >= BELL_AFTER_SECONDS:
             self.ui.bell()
         self.ui.request_finished(RequestEnd(

@@ -35,8 +35,10 @@ LIGHT = {
 }
 
 # Ký hiệu. Cửa sổ console cổ (conhost với Consolas) thiếu chữ Braille và vài ký hiệu, nên dùng bộ dự phòng.
-RICH = {"spinner": "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏", "search": "✱", "web": "◈", "warn": "△", "done": "▣", "tool": "⚙", "write": "✎"}
-PLAIN = {"spinner": "-\\|/", "search": "*", "web": "@", "warn": "!", "done": "■", "tool": "#", "write": ">"}
+RICH = {"spinner": "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏", "search": "✱", "web": "◈", "warn": "△", "done": "▣", "tool": "⚙", "write": "✎",
+        "scan_on": "■", "scan_off": "⬝"}
+PLAIN = {"spinner": "-\\|/", "search": "*", "web": "@", "warn": "!", "done": "■", "tool": "#", "write": ">",
+         "scan_on": "■", "scan_off": "·"}
 
 
 def blend(color: str, background: str, alpha: float) -> str:

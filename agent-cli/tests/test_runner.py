@@ -74,3 +74,13 @@ def test_progress_shows_output_before_process_exits_and_interrupt_kills_tree(tmp
         runner.run(f'"{sys.executable}" "{script}"', tmp_path, 10, on_progress=interrupt)
     assert any("Đang kiểm tra" in chunk for chunk in progress)
     assert not alive(int(marker.read_text()))
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows PowerShell 5.1")
+def test_powershell_output_keeps_vietnamese(tmp_path):
+    result = runner.run('Write-Host "Cài đặt Việt"; "Đã xong"', tmp_path, 60, shell="powershell")
+    assert "Cài đặt Việt" in result["output"] and "Đã xong" in result["output"], "trước 0.22.0 thành C?i ?t Vi?t"
+    assert not result["output"].startswith(chr(0xFEFF)), "không có BOM ở đầu output"
+    used = runner.run('using namespace System.Text; [StringBuilder]::new("ok").ToString()', tmp_path, 60,
+                      shell="powershell")
+    assert used["exit_code"] == 0 and "ok" in used["output"], "lệnh mở đầu bằng using vẫn chạy"

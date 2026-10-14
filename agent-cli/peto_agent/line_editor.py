@@ -226,6 +226,10 @@ class EditorState:
                 self._edit("", self.cursor, self._word_end() if key.ctrl else self.cursor + 1)
         return None
 
+    def insert(self, text: str) -> None:
+        """Chèn chữ ở con trỏ: /fork đưa tin được chọn vào ô nhập (CLI 0.22.0)."""
+        self._insert(text)
+
     def _insert(self, text: str) -> None:
         if text:
             self._edit(text, self.cursor, self.cursor)
@@ -476,6 +480,9 @@ def translate(vk: int, char: str, state: int) -> Key | None:
     if char == "\x0c":
         # Ctrl+L: vẽ lại cả màn hình khi có gì đó vẽ đè lên (như Claude Code).
         return Key("redraw")
+    if len(char) == 1 and "\x01" <= char <= "\x1a" and char not in "\t\n\r\x08":
+        # Ctrl+chữ chưa có nghĩa riêng ở trên, như bảng /resume (Ctrl+R đổi tên, Ctrl+D xóa); ô nhập bỏ qua.
+        return Key("ctrl", chr(ord(char) + 96))
     if char >= " " and char != "\x7f":
         return Key("char", char)
     return None

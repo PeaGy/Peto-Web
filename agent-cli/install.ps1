@@ -201,6 +201,8 @@
 
         Write-Host "✓ Đã cài $($version.Output) vào $root" -ForegroundColor Green
         if ($pathNote) { Write-Host "  $pathNote" }
+        # /update trong peto (CLI 0.22.0) chạy lại bộ cài này: máy đã đăng nhập sẵn nên không in các bước bắt đầu.
+        if ($env:PETO_AGENT_UPDATING) { return }
         Write-Host ''
         Write-Host 'Bước tiếp theo:'
         Write-Host '  peto login   kết nối máy này với tài khoản Peto (Discord hoặc Google)'

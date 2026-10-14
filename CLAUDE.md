@@ -3146,6 +3146,55 @@ results in the next step. The server stores no conversation (`store=False`), and
   - **CLI 0.19.1.** Grok cites code as ```` ```21:24:src/main.c ````. `tui/markdown.CITATION` labels such a block
     `src/main.c:21-24` and highlights it by the file extension; before this the label was just "21". The harness
     counts these blocks as `path:line` references.
+
+  **Features from opencode, round two: 0.22.0 (done 2026-10-14, CLI only).** The owner sent opencode 2.0.29 screenshots
+  and a video, named `/update`, a `/resume` that brings back the whole conversation and the animation beside "esc
+  interrupt", and picked more from opencode's TUI (commit `bcf23b6`): a better session list, `/btw`, `/timeline` and
+  `/fork`, `/editor`, the title on top, `/export`. Plan: phase A = 0.22.0 (below, no server change); phase B = 0.23.0
+  with the backend (`/btw` as purpose `btw`, `/editor`, `/export` built on `transcript.py`), not started.
+  - **Scanner** (`tui/scanner.py`, port of opencode `ui/spinner.ts`, MIT). 8 cells, `■`/`⬝` (`■`/`·` on old consoles),
+    forward 8, hold 9, back 7, rest 30 frames of 40 ms; 6-step trail (1, 0.9 brightened 15%, then 0.65^(i−1)), inactive
+    cells 0.6 fading to 0.3 during holds. Terminals have no alpha, so `trail_colors` pre-blends with `theme.bg`;
+    `primary` in build mode, `secondary` in plan mode. It sits before both busy footer lines ("esc esc hoặc ctrl+c
+    dừng", "esc lần nữa…"); the Braille spinner on the status line stays. The full screen waits 40 ms per key poll while
+    busy (`SCAN_TICK_MS`), inline keeps 100 ms. As in opencode, the cells are all dark for about half of each 2.2 s
+    cycle; the ConPTY run drew 13 distinct frames.
+  - **Title bar and tab.** `ScreenEngine._title_rows` adds one fixed row on top once the session has a title (bold title
+    on the panel colour, folder name muted on the right); mouse rows are offset by `_head`. `Session._announce_title`
+    feeds `ui.set_session_title` on `run_task`, the title thread, `reset`, `resume`; `ui.tab_title(state)` gives
+    "Peto · đang làm · <title>".
+  - **`/resume` replays the conversation** (`transcript.events` → `TerminalUI.replay`): user and steer panels, replies
+    through `TerminalReply`, tool blocks through the live `tool_finished` with a preview rebuilt from the arguments
+    (edit snippet with `Diff(numbered=False)`, since results store no line numbers; created files; `patch.parse` chunks;
+    command; plan). Thinking and page screenshots were never saved. The classic UI keeps the old recap. `/new`,
+    `/resume` and `/fork` clear the screen first (`ScreenEngine.clear`, header redrawn).
+  - **Session dialog** (`TerminalUI.choose_session`/`_session_chooser`, after `dialog-session-list.tsx`): fold-based
+    search, day groups, Ctrl+R inline rename, Ctrl+D twice to delete (`history.delete`, refused for the open session).
+    `Saved` is frozen, so a rename replaces the list item (`dataclasses.replace`); the chooser works on its own copy.
+    `history.rename` keeps `saved_at`. `line_editor.translate` now returns `Key("ctrl", letter)` for control characters.
+  - **`/timeline` and `/fork`** (`__main__._timeline`/`_fork`): the user's messages (`transcript.is_user`, steers
+    marked); Nhảy tới (`ui.jump_to` → `ScreenEngine.jump`, via `_user_entries` keyed by `id(item)` holding the item to
+    guard id reuse), Chép, or Tách. A fork saves the old session, opens a new id with the items before the message,
+    titles it "<old> (nhánh)" and prefills the message (`ui.prefill`; the classic UI prints it). Files are not reverted.
+  - **`/update`** (`updater.py`, after `dialog-update.tsx`): only when `sys.prefix` is the install venv
+    (`PETO_AGENT_INSTALL_DIR` or `%LOCALAPPDATA%\PetoAgent\venv`); otherwise it prints the `irm` command. It runs
+    `$env:PETO_AGENT_UPDATING='1'; & { irm '<server>/install.ps1' | iex }` through `runner.run` (PowerShell, 600 s,
+    Ctrl+C stops the tree) and shows it as a command block. `install.ps1` skips its "Bước tiếp theo" lines when
+    `PETO_AGENT_UPDATING` is set (needs the backend deployed; an old server's script still prints them). "Mở lại ngay"
+    saves, leaves the full screen, stops jobs and the browser, then `subprocess.call([bin\peto.exe, "--resume", id])`
+    and exits with its code. `--resume` is a hidden argument accepting only `history.valid_id` ids.
+  - **PowerShell output was losing Vietnamese** (found by the `/update` ConPTY run, true of every `run_command` with
+    `shell=powershell` since it existed): Windows PowerShell 5.1 writes to a pipe in the console's legacy code page, so
+    "Cài đặt" came back "C?i ?t", lossy. `runner.spawn` now prefixes `POWERSHELL_UTF8` (`[Console]::OutputEncoding` to
+    UTF-8 without BOM), except for commands starting with `using`, which must come first. Grant keys and the eval
+    policy still see the original command.
+  - **Tests:** `test_scanner.py`, `test_transcript.py`, `test_update.py`, new cases in `test_screen.py` (replay, title
+    bar, jump, session dialog, prefill), `test_sessions.py` (delete, rename keeps the time, `valid_id`, fork, timeline),
+    `test_runner.py` (PowerShell Vietnamese). A ConPTY run installed peto for real with `install.ps1` into a temp
+    `PETO_AGENT_INSTALL_DIR` from a fake server serving the real template and wheel, then drove the installed
+    `peto.exe`: scanner, title bar, `/timeline` jump, `/fork`, the session dialog (search, Ctrl+D on the open session),
+    replay, and `/update` reinstalling and reopening the same conversation in a new process (exit 0), replayed in
+    xterm.js. Real Windows Terminal/VS Code still need the owner's look.
 - **CLI display** (picked by the owner from mockups): tool steps stay as permanent lines; while waiting for the model
   there is one transient `… Peto đang nghĩ · Ns` status line (`UI.status`, redrawn with `\r\033[2K`, only when colors
   are on). `ReplyWriter` prints replies line by line so `UI.markdown` can color bold, inline code, headings, bullets and
@@ -3237,7 +3286,7 @@ results in the next step. The server stores no conversation (`store=False`), and
     so the user's clipboard was never touched), and Alt+V/drag-and-drop in a ConPTY with a fake clipboard.
 - **Update notice.** `/me` returns `cli_version`, read from `agent-cli/pyproject.toml` by `agent_install.cli_version`. The
   CLI compares the dotted numbers and, when the server's is newer, prints the install command in the session header and
-  `peto status`. Bump `version` and `peto_agent.__version__` together whenever the CLI changes (`test_agent_install.py`
+  `peto status` (since 0.22.0 an install.ps1 copy says "Gõ /update" instead; see the 0.22.0 bullet). Bump `version` and `peto_agent.__version__` together whenever the CLI changes (`test_agent_install.py`
   checks they match), or installed copies are never told to update. `/usage` shows today's steps and tokens, the open
   conversation's size and the effort.
 - **One-line install** (`irm https://<site>/install.ps1 | iex`). `features/agent/install.py` serves `GET /install.ps1`, which is

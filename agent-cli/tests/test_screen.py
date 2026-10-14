@@ -290,3 +290,144 @@ def test_text_helpers_for_selection_and_ansi():
     marked = highlight(plain, 1, 8, "#000000", "#ff0000")
     assert marked.text() == "abcdef  "
     assert [text for text, style in marked.spans if style.get("bg") == "#ff0000"] == ["b", "cdef", "  "]
+
+
+# ---- CLI 0.22.0: /resume vẽ lại cả hội thoại, thanh tên, bảng hội thoại, /timeline
+
+def _saved_items():
+    import json
+
+    from peto_agent.loop import user_message
+
+    def call(call_id, name, **arguments):
+        return {"type": "function_call", "call_id": call_id, "name": name, "arguments": json.dumps(arguments)}
+
+    def output(call_id, result):
+        return {"type": "function_call_output", "call_id": call_id, "output": json.dumps(result, ensure_ascii=False)}
+
+    def said(text):
+        return {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": text}]}
+
+    return [
+        user_message("Sửa lời chào trong app.py"),
+        said("Đọc tệp trước."),
+        call("a", "read_file", path="app.py", start_line=None, end_line=None),
+        output("a", {"path": "app.py", "start_line": 1, "end_line": 1, "total_lines": 1, "content": "1"}),
+        call("b", "edit_file", path="app.py", old_text='print("Hi")', new_text='print("Xin chào")', replace_all=None),
+        output("b", {"ok": True, "path": "app.py", "added_lines": 1, "removed_lines": 1}),
+        call("c", "run_command", command="py -m pytest -q", timeout_seconds=None, cwd=None, shell=None),
+        output("c", {"exit_code": 0, "seconds": 1.4, "output": "3 passed", "outcome": "passed"}),
+        said("Đã đổi lời chào thành **Xin chào**."),
+        user_message("Thêm dấu chấm than"),
+        said("Xong."),
+    ]
+
+
+def test_resume_draws_the_whole_conversation_with_the_live_blocks(run):
+    screen = run(100, 60)
+    screen.ui.session_header("0.22.0", "~\\du-an", model="Peto", effort="vừa")
+    screen.ui.line("dòng cũ của hội thoại trước")
+    assert screen.ui.clear_conversation()
+    items = _saved_items()
+    screen.ui.replay(items)
+    text = "\n".join(screen.rows())
+    assert "dòng cũ của hội thoại trước" not in text, "mở hội thoại khác thì xóa màn hình"
+    assert "Peto Agent 0.22.0" in text, "đầu phiên vẫn ở trên cùng"
+    assert "Sửa lời chào trong app.py" in text and "Thêm dấu chấm than" in text
+    assert "→ Đọc app.py:1-1" in text, "lượt đọc như lúc chạy"
+    assert "Sửa app.py" in text and "+1" in text and "−1" in text
+    assert 'print("Xin chào")' in text and 'print("Hi")' in text, "khối sửa tệp có đoạn diff"
+    edit_rows = [row for row in screen.rows() if 'print("Xin chào")' in row]
+    assert not any(char.isdigit() for row in edit_rows for char in row.split("print")[0]), \
+        "đoạn sửa không có số dòng thật nên không in số"
+    assert "py -m pytest -q" in text and "3 passed" in text
+    assert "Đã đổi lời chào thành Xin chào." in text and "**" not in text, "lời Peto vẽ Markdown"
+    users = [item for item in items if item.get("role") == "user"]
+    assert screen.ui.jump_to(users[0]) and screen.ui.jump_to(users[1])
+
+
+def test_the_title_bar_shows_the_conversation_name_and_folder(run):
+    screen = run(90, 20)
+    screen.ui.folder_name = "du-an"
+    screen.ui.line("chữ đầu tiên")
+    assert "chữ đầu tiên" in screen.rows()[0], "chưa có tên thì không có thanh"
+    screen.ui.set_session_title("Sửa lỗi checksum khi lưu tệp")
+    top = screen.rows()[0]
+    assert "Sửa lỗi checksum khi lưu tệp" in top and top.rstrip().endswith("du-an")
+    assert "chữ đầu tiên" in screen.rows()[1]
+    assert screen.ui.tab_title("đang làm") == "Peto · đang làm · Sửa lỗi checksum khi lưu tệp"
+    screen.ui.set_session_title(None)
+    assert "chữ đầu tiên" in screen.rows()[0]
+    assert screen.ui.tab_title() == "Peto · du-an"
+
+
+def test_jumping_to_a_message_scrolls_it_to_the_top(run):
+    from peto_agent.loop import user_message
+
+    screen = run(90, 20)
+    first = user_message("tin số một")
+    screen.ui.replay([first])
+    for number in range(80):
+        screen.ui.line(f"dòng {number:02d}")
+    assert not any("tin số một" in row for row in screen.rows())
+    assert screen.ui.jump_to(first)
+    assert "tin số một" in "".join(screen.rows()[:3])
+    assert not screen.ui.jump_to(user_message("tin số một")), "chỉ đúng mục đã vẽ, không phải mục trùng chữ"
+    screen.ui.clear_conversation()
+    assert not screen.ui.jump_to(first), "xóa màn hình thì quên các khung cũ"
+
+
+def test_the_session_dialog_searches_renames_and_deletes_twice(run):
+    import threading
+    import time as clock
+
+    from peto_agent import history
+
+    now = clock.time()
+    sessions = [history.Saved(now - 60, [{"role": "user", "content": "a"}], id="s1", title="Sửa lỗi checksum"),
+                history.Saved(now - 120, [{"role": "user", "content": "b"}], id="s2", title="Thêm lệnh done"),
+                history.Saved(now - 86400 - 60, [{"role": "user", "content": "c"}], id="s3", title="Đổi sku",
+                              interrupted=True)]
+    renamed, deleted = [], []
+    screen = run(90, 30)
+    screen.ui.folder_name = "du-an"
+    answer = {}
+    thread = threading.Thread(target=lambda: answer.setdefault("value", screen.ui.choose_session(
+        sessions, "s1", rename=lambda sid, title: renamed.append((sid, title)),
+        delete=lambda sid: deleted.append(sid) or True)), daemon=True)
+    thread.start()
+    assert settle(lambda: screen.ui.engine.panel is not None)
+    clock.sleep(0.35)
+    text = "\n".join(screen.rows())
+    assert "Hội thoại của du-an" in text and "Hôm nay" in text and "Hôm qua" in text
+    assert "đang mở" in text and "bị ngắt" in text
+    screen.press(Key("ctrl", "d"))
+    assert "Đang mở hội thoại này nên không xóa được." in "\n".join(screen.rows())
+    screen.press(Key("down"), Key("ctrl", "d"))
+    assert "bấm ctrl+d lần nữa để xóa" in "\n".join(screen.rows()) and not deleted
+    screen.press(Key("ctrl", "d"))
+    assert deleted == ["s2"] and "Thêm lệnh done" not in "\n".join(screen.rows())
+    for char in "SKU":
+        screen.press(Key("char", char))
+    text = "\n".join(screen.rows())
+    assert "Đổi sku" in text and "Sửa lỗi checksum" not in text, "tìm không phân biệt hoa thường"
+    screen.press(Key("ctrl", "r"), *[Key("backspace")] * 3, *[Key("char", char) for char in "mã hàng"])
+    assert "Đổi mã hàng▏" in "\n".join(screen.rows())
+    screen.press(Key("enter"))
+    assert renamed == [("s3", "Đổi mã hàng")]
+    for _ in range(3):
+        screen.press(Key("backspace"))
+    screen.press(Key("down"), Key("enter"))
+    thread.join(timeout=3)
+    assert answer["value"].id == "s3" and answer["value"].title == "Đổi mã hàng", "mở với tên mới"
+
+
+def test_fork_prefills_the_prompt_and_new_clears_the_screen(run):
+    screen = run(90, 20)
+    screen.ui.session_header("0.22.0", "~\\du-an", model="Peto", effort="vừa")
+    screen.ui.line("câu trả lời cũ")
+    screen.ui.prefill("sửa lại câu này")
+    assert any("sửa lại câu này" in row for row in screen.rows()[-6:])
+    screen.ui.clear_conversation()
+    text = "\n".join(screen.rows())
+    assert "câu trả lời cũ" not in text and "Peto Agent 0.22.0" in text

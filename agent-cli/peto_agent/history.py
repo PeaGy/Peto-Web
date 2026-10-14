@@ -15,6 +15,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import secrets
 import time
 from dataclasses import dataclass
@@ -84,6 +85,11 @@ def new_id() -> str:
     return f"{datetime.now():%Y%m%d-%H%M%S}-{secrets.token_hex(3)}"
 
 
+def valid_id(session_id: str) -> bool:
+    """Mã đúng dạng new_id: ``peto --resume`` nhận mã từ dòng lệnh, không được ghép thành đường dẫn khác."""
+    return bool(re.fullmatch(r"\d{8}-\d{6}-[0-9a-f]{6}", session_id or ""))
+
+
 def first_title(items: list[dict]) -> str:
     """Tên tạm của hội thoại: đầu tin đầu tiên của người dùng (máy chủ chưa đặt tên được thì giữ luôn)."""
     for item in items:
@@ -98,14 +104,15 @@ def first_title(items: list[dict]) -> str:
 
 
 def save(root: Path, server: str, items: list[dict], *, session_id: str, title: str = "", retryable: bool = False,
-         model: str = "peto", interrupted: bool = False) -> None:
-    """Ghi đè một hội thoại của thư mục. Ghi đĩa lỗi thì bỏ qua: mất bản lưu không được làm hỏng phiên đang chạy."""
+         model: str = "peto", interrupted: bool = False, saved_at: float | None = None) -> None:
+    """Ghi đè một hội thoại của thư mục. Ghi đĩa lỗi thì bỏ qua: mất bản lưu không được làm hỏng phiên đang chạy.
+    ``saved_at`` giữ giờ lưu cũ (đổi tên không làm hội thoại nhảy lên đầu danh sách)."""
     if not items or not session_id:
         return
     target = _folder(root) / f"{session_id}.json"
     data = {"version": VERSION, "id": session_id, "title": title or first_title(items), "root": str(root),
-            "server": server, "saved_at": time.time(), "items": items, "retryable": retryable, "model": model,
-            "interrupted": interrupted}
+            "server": server, "saved_at": time.time() if saved_at is None else saved_at, "items": items,
+            "retryable": retryable, "model": model, "interrupted": interrupted}
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
         temporary = target.with_suffix(".tmp")
@@ -122,7 +129,18 @@ def rename(root: Path, server: str, session_id: str, title: str) -> None:
     if saved is None or not title.strip():
         return
     save(root, server, saved.items, session_id=session_id, title=title.strip(), retryable=saved.retryable,
-         model=saved.model, interrupted=saved.interrupted)
+         model=saved.model, interrupted=saved.interrupted, saved_at=saved.saved_at)
+
+
+def delete(root: Path, server: str, session_id: str) -> bool:
+    """Xóa một hội thoại đã lưu của thư mục (bảng /resume, Ctrl+D). Chỉ tệp của đúng máy chủ và thư mục này."""
+    if load(root, server, session_id) is None:
+        return False
+    try:
+        (_folder(root) / f"{session_id}.json").unlink()
+    except OSError:
+        return False
+    return True
 
 
 def _parse(data, root: Path, server: str, *, legacy: bool = False) -> Saved | None:

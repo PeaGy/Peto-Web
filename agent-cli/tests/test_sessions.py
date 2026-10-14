@@ -84,3 +84,61 @@ def test_new_keeps_the_old_conversation_and_resume_lists_them(project):
     assert work.items == said("Việc thứ hai"), "hội thoại vừa làm tiếp lên đầu danh sách"
     cli._resume(ui, work, "9")
     assert "/resume 1 tới /resume 2" in ui.text
+
+
+def test_delete_and_rename_keep_to_this_folder_and_keep_the_save_time(project, tmp_path):
+    history.save(project, SERVER, said("Việc một"), session_id="20261014-090000-aaaaaa")
+    history.save(project, SERVER, said("Việc hai"), session_id="20261014-091000-bbbbbb")
+    before = history.load(project, SERVER, "20261014-090000-aaaaaa").saved_at
+    time.sleep(0.01)
+    history.rename(project, SERVER, "20261014-090000-aaaaaa", "Tên mới")
+    assert history.load(project, SERVER, "20261014-090000-aaaaaa").saved_at == before, \
+        "đổi tên không đẩy hội thoại lên đầu danh sách"
+    other = tmp_path / "khac"
+    other.mkdir()
+    assert not history.delete(other, SERVER, "20261014-090000-aaaaaa"), "thư mục khác không xóa được"
+    assert not history.delete(project, "https://khac.example", "20261014-090000-aaaaaa"), "máy chủ khác cũng không"
+    assert history.delete(project, SERVER, "20261014-090000-aaaaaa")
+    assert not history.delete(project, SERVER, "20261014-090000-aaaaaa"), "xóa rồi thì không còn gì để xóa"
+    assert [saved.id for saved in history.list_sessions(project, SERVER)] == ["20261014-091000-bbbbbb"]
+    assert history.valid_id(history.new_id()) and history.valid_id("20261014-091000-bbbbbb")
+    for bad in ("", "..\\..\\x", "../x","20261014-091000-bbbbbb.json", "20261014-091000-BBBBBB", "a"):
+        assert not history.valid_id(bad), bad
+
+
+def test_fork_starts_a_new_conversation_from_before_the_chosen_message(project):
+    work = Session(Client(SERVER, "t"), Workspace(project), FakeUI())
+    work.items = said("Việc một") + said("Việc hai") + said("Việc ba")
+    work.title = "Ba việc"
+    work.save()
+    first = work.session_id
+    ui = FakeUI(answers=["2"])
+    work.ui = ui
+    cli._timeline(ui, work, fork=True)
+    assert "1. Việc một" in ui.text and "3. Việc ba" in ui.text
+    assert work.items == said("Việc một") and work.session_id not in {None, first}
+    assert work.title == "Ba việc (nhánh)" and 'Đã tách thành hội thoại mới "Ba việc (nhánh)"' in ui.text
+    assert "Việc hai" in ui.text.split("Chữ của tin đó")[1], "chữ của tin được chọn để gửi lại"
+    saved = {saved.id: saved for saved in history.list_sessions(project, SERVER)}
+    assert saved[first].items == said("Việc một") + said("Việc hai") + said("Việc ba"), "hội thoại cũ giữ nguyên"
+    assert saved[work.session_id].title == "Ba việc (nhánh)"
+
+
+def test_timeline_copies_a_message_or_forks_from_it(project):
+    work = Session(Client(SERVER, "t"), Workspace(project), FakeUI())
+    ui = FakeUI()
+    work.ui = ui
+    cli._timeline(ui, work)
+    assert "chưa có tin nào của bạn" in ui.text
+    work.items = said("Việc một") + said("Việc hai")
+    ui = FakeUI(answers=["1", "1"])
+    work.ui = ui
+    cli._timeline(ui, work)
+    assert "Nhảy tới" not in ui.text, "bản in chữ không cuộn được nên không có Nhảy tới"
+    assert "Chữ của tin đó" in ui.text and "Việc một" in ui.text.split("Chữ của tin đó")[1], \
+        "không chép được vào clipboard thì in ra"
+    assert work.items == said("Việc một") + said("Việc hai")
+    ui = FakeUI(answers=["2", "2"])
+    work.ui = ui
+    cli._timeline(ui, work)
+    assert work.items == said("Việc một"), "Tách hội thoại từ đây"

@@ -346,6 +346,43 @@ class UI:
                 return int(answer) - 1
             self.line(f"    Gõ một số từ 1 tới {len(rows)}.", "yellow")
 
+    def clear_conversation(self) -> bool:
+        """/new, /resume, /fork: in nối tiếp thì không xóa được gì (màn hình toàn phần xóa và vẽ lại đầu phiên)."""
+        return False
+
+    def replay(self, items: list[dict]) -> None:
+        """Mở lại một hội thoại: bản in chữ chỉ nhắc tin cuối của bạn và câu trả lời cuối; màn hình toàn phần vẽ lại cả
+        hội thoại (CLI 0.22.0)."""
+        from . import history
+
+        for who, text in history.recap(items):
+            self.line(f"    {who} › {text}", "dim")
+
+    def link_user_entry(self, item: dict | None) -> None:
+        """Màn hình toàn phần nhớ khung của từng tin để /timeline nhảy tới; bản in chữ không cuộn được nên bỏ qua."""
+
+    def jump_to(self, item: dict) -> bool:
+        return False
+
+    def prefill(self, text: str) -> None:
+        """/fork: không đặt sẵn chữ vào input() được, nên in ra để chép lại."""
+        self.line("  Chữ của tin đó (chép lại để gửi):", "dim")
+        self.line("    " + text.replace("\n", "\n    "))
+
+    def copy(self, text: str) -> bool:
+        return False
+
+    def choose_session(self, sessions: list, current: str | None, *, rename, delete):
+        """Bảng /resume: chọn một hội thoại đã lưu (``history.Saved``), hoặc None. Bản chữ chỉ có danh sách đánh số;
+        màn hình toàn phần thêm tìm kiếm, nhóm theo ngày, đổi tên và xóa (CLI 0.22.0)."""
+        from . import history
+
+        rows = [(saved.title, f"{history.when(saved.saved_at)} · {saved.message_count} tin"
+                 + (" · bị ngắt giữa chừng" if saved.interrupted else "")
+                 + (" · đang mở" if saved.id == current else "")) for saved in sessions]
+        index = self.choose("Mở lại hội thoại", rows)
+        return None if index is None else sessions[index]
+
     def item(self, text: str) -> None:
         """Một mục mờ trong danh sách (như /permissions), ngắt theo bề ngang terminal thay vì để terminal tự bẻ chữ."""
         self._wrapped("    ", visible(text), "dim")
@@ -515,6 +552,20 @@ class UI:
         if self.terminal and not os.environ.get("PETO_AGENT_NO_BELL"):
             self.out.write("\a")
             self.out.flush()
+
+    # Tên hội thoại đang mở và tên thư mục dự án: thanh trên cùng của màn hình toàn phần, tiêu đề tab (CLI 0.22.0).
+    session_title: str | None = None
+    folder_name: str = ""
+
+    def set_session_title(self, title: str | None) -> None:
+        self.session_title = title
+
+    def tab_title(self, state: str = "") -> str:
+        """Tiêu đề tab terminal: trạng thái, rồi tên hội thoại (chưa có thì tên thư mục), như "OC | tên" của opencode."""
+        name = self.session_title or self.folder_name
+        if len(name) > 40:
+            name = name[:39] + "…"
+        return " · ".join(part for part in ("Peto", state, name) if part)
 
     def title(self, text: str) -> None:
         """Đổi tiêu đề cửa sổ terminal, để liếc thanh tác vụ là biết Peto xong chưa."""

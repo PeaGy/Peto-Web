@@ -16,7 +16,10 @@ import json
 import os
 import re
 import time
+from dataclasses import replace
+from datetime import date, datetime, timedelta
 
+from .. import patch as patch_text, transcript
 from ..events import Permission, RequestEnd, ToolCall, ToolDone
 from ..formats import format_duration, format_tokens
 from ..ui import (CLEAR_LINE, READ_ONLY_LINES, REFUSED_LINES, UI, _count, _page_details, _seconds, _viewport_label,
@@ -53,6 +56,28 @@ class Option:
         self.key, self.label = key, label
 
 
+class SavedText:
+    """Tin đã lưu, vẽ lại thành khung tin như ``prompt.Sent``: chữ đã gõ, nhãn ảnh ở cuối. Tin quá dài (thường là đoạn
+    dán) chỉ giữ phần đầu, như lúc gửi đoạn dán dài chỉ hiện một nhãn."""
+
+    LINES = 12
+
+    def __init__(self, text: str, images=()):
+        lines = text.split("\n")
+        if len(lines) > self.LINES:
+            lines = lines[:self.LINES - 2] + [f"… (còn {len(lines) - self.LINES + 2} dòng)"]
+        self.text = "\n".join(lines) + "".join(" " + label for label in images)
+
+    def is_paste(self, char: str) -> bool:
+        return False
+
+    def is_image(self, char: str) -> bool:
+        return False
+
+    def label(self, char: str) -> str:
+        return char
+
+
 class TerminalUI(UI):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -67,6 +92,11 @@ class TerminalUI(UI):
         # Màn hình toàn phần (screen.py), hoặc chân cố định (footer.py) khi PETO_AGENT_UI=inline: bật khi phiên có ô
         # nhập đọc phím thô; None thì in nối tiếp như 0.16.
         self.engine = None
+        # Khung trên màn hình của từng tin người dùng trong hội thoại, theo id của mục (giữ cả mục để id không bị dùng
+        # lại): /timeline nhảy tới (CLI 0.22.0). Lệnh gạch chéo cũng thành khung tin nhưng không phải mục nào.
+        self._user_entries: dict[int, tuple[dict, object]] = {}
+        self._last_user_entry = None
+        self._header: tuple | None = None
 
     def toggle_thoughts(self) -> bool:
         self.show_thoughts = not self.show_thoughts
@@ -111,10 +141,38 @@ class TerminalUI(UI):
         self._flush_group()
         if self._last not in {None, "blank"}:
             self._out(lambda: [Line()], pad=False)
-        self._out(lambda: prompt_view.user_panel(sent, self.theme, self.width), pad=False)
+        self._last_user_entry = self._out(lambda: prompt_view.user_panel(sent, self.theme, self.width), pad=False)
         if steer:
             self._out(lambda: [Line([S("   ↳ nhắn thêm lúc Peto đang làm", self.theme.muted)])])
         self._last = "user"
+
+    def link_user_entry(self, item: dict | None) -> None:
+        """Mục vừa thêm vào hội thoại là tin trong khung vừa vẽ (gửi, nhắn thêm, hay vẽ lại khi /resume)."""
+        if item is not None and self._last_user_entry is not None:
+            self._user_entries[id(item)] = (item, self._last_user_entry)
+        self._last_user_entry = None
+
+    def jump_to(self, item: dict) -> bool:
+        """/timeline "Nhảy tới": cuộn tới khung của tin này. False khi không có màn hình toàn phần hay không còn khung."""
+        pair = self._user_entries.get(id(item))
+        if not self.fullscreen or pair is None or pair[0] is not item:
+            return False
+        return self.engine.jump(pair[1])
+
+    def prefill(self, text: str) -> None:
+        """/fork: chữ của tin được chọn nằm sẵn trong ô nhập để sửa rồi gửi lại."""
+        if self.engine is None:
+            super().prefill(text)
+            return
+        with self.engine.lock:
+            self.engine.state.clear()
+            self.engine.state.insert(text)
+        self.engine.refresh()
+
+    def copy(self, text: str) -> bool:
+        from .clipboard import copy_text
+
+        return copy_text(text)
 
     def take_steers(self) -> list[tuple[str, list]]:
         """Tin người dùng nhắn thêm lúc Peto đang làm, để vòng làm việc chèn vào bước kế tiếp (CLI 0.20.0)."""
@@ -131,6 +189,12 @@ class TerminalUI(UI):
         if self.engine is not None:
             self.engine.refresh()
         return self.mode
+
+    def set_session_title(self, title: str | None) -> None:
+        """Tên hội thoại cho thanh trên cùng; luồng nền đặt tên cũng gọi được (vẽ lại trong khóa của màn hình)."""
+        super().set_session_title(title)
+        if self.engine is not None:
+            self.engine.refresh()
 
     def bell(self) -> None:
         if self.engine is not None:
@@ -149,12 +213,27 @@ class TerminalUI(UI):
 
     def session_header(self, version: str, directory: str, *, model: str, effort: str) -> None:
         """Màn hình toàn phần: đầu phiên là khối đầu của hội thoại, chọn lại cỡ mascot mỗi khi cửa sổ đổi cỡ."""
+        self._header = (version, directory, model, effort)
         if not self.fullscreen:
             super().session_header(version, directory, model=model, effort=effort)
             return
         self._out(lambda: [parse_ansi(text) for text in self.header_lines(version, directory, model=model,
                                                                            effort=effort)], pad=False)
         self._last = "blank"
+
+    def clear_conversation(self) -> bool:
+        """/new, /resume, /fork: xóa hội thoại trên màn hình, chỉ để lại đầu phiên (CLI 0.22.0, như opencode mở hẳn
+        hội thoại khác). Kiểu in nối tiếp không xóa được gì: trả về False."""
+        self._group = []
+        self._user_entries, self._last_user_entry = {}, None
+        if not self.fullscreen:
+            return False
+        self.engine.clear()
+        self._last = None
+        if self._header is not None:
+            version, directory, model, effort = self._header
+            self.session_header(version, directory, model=model, effort=effort)
+        return True
 
     @property
     def animated(self) -> bool:
@@ -478,6 +557,67 @@ class TerminalUI(UI):
             self._emit(lambda: self._row(theme.glyphs["tool"], [S(f"Xem công cụ MCP {args.get('server')}", theme.muted)]),
                        "row")
 
+    # ---- Vẽ lại hội thoại đã lưu (/resume, /fork; CLI 0.22.0, theo opencode)
+
+    def replay(self, items: list[dict]) -> None:
+        """Vẽ lại cả hội thoại bằng đúng các hàm vẽ lúc đang làm, để /resume thấy lại mọi thứ chứ không chỉ tin cuối.
+        Suy nghĩ của model và ảnh chụp trang không được lưu nên không có."""
+        for event in transcript.events(items):
+            if event.kind in {"user", "steer"}:
+                self.commit_user(SavedText(event.text, event.images), steer=event.kind == "steer")
+                self.link_user_entry(event.item)
+                for path in event.files:
+                    self.step(f"Đính kèm {path}")
+            elif event.kind == "summary":
+                self.notice("Phần trước của hội thoại đã được tóm tắt")
+            elif event.kind == "note":
+                self.notice(event.text)
+            elif event.kind == "reply":
+                writer = self.reply()
+                writer.feed(event.text)
+                writer.finish()
+            elif event.result is not None:
+                self._replay_tool(event)
+        self._flush_group()
+        self._preview = None
+        if self.engine is not None:
+            self.engine.plan_line = None
+
+    def _replay_tool(self, event) -> None:
+        name, args, result = event.name, event.args, event.result
+        meta: dict = {}
+        preview = None
+        if name == "edit_file":
+            # Kết quả không lưu số dòng của tệp: diff chỉ là đoạn bị thay, không số dòng.
+            preview = ("file", {"before": str(args.get("old_text") or ""), "after": str(args.get("new_text") or ""),
+                                "snippet": True})
+        elif name == "write_file" and result.get("created"):
+            preview = ("file", {"before": "", "after": str(args.get("content") or "")})
+        elif name == "apply_patch" and result.get("files"):
+            try:
+                ops = patch_text.parse(str(args.get("patch_text") or ""))
+            except patch_text.PatchError:
+                ops = []
+            files = []
+            for op in ops:
+                if op.kind == "add":
+                    files.append({"before": "", "after": op.contents})
+                elif op.kind == "update":
+                    files.append({"before": "\n".join(line for chunk in op.chunks for line in chunk.old),
+                                  "after": "\n".join(line for chunk in op.chunks for line in chunk.new), "snippet": True})
+                else:
+                    files.append({"before": "", "after": ""})
+            preview = ("patch", {"files": files}) if len(files) == len(result["files"]) else None
+        elif name in {"run_command", "start_command"}:
+            preview = ("command", {"command": str(args.get("command") or ""), "shell": args.get("shell") or "cmd"})
+        elif name == "update_plan":
+            steps = args.get("steps")
+            if not isinstance(steps, list) or "error" in result:
+                return
+            meta["plan"] = [step for step in steps if isinstance(step, dict)]
+        self._preview, self._static_diff = preview, False
+        self.tool_finished(ToolDone("", name, args, result, meta))
+
     def page(self, title: str, details: str, problems: list[str], *, path: str | None = None) -> None:
         """Một lần Peto xem hay thao tác trên trang: dòng chính, dòng chi tiết, tối đa 5 lỗi, đường dẫn ảnh."""
         theme = self.theme
@@ -520,7 +660,8 @@ class TerminalUI(UI):
             header.append(S(f"  · khớp gần đúng: {result['match']}", theme.warning, panel))
         body: list[Line] = []
         if name != "delete_file" and not static and preview and preview[0] == "file":
-            rows = Diff(preview[1]["before"], preview[1]["after"], path=rel).rows(theme, self.content_width - 3)
+            rows = Diff(preview[1]["before"], preview[1]["after"], path=rel,
+                        numbered=not preview[1].get("snippet")).rows(theme, self.content_width - 3)
             body = rows[:BLOCK_DIFF_ROWS]
             if len(rows) > BLOCK_DIFF_ROWS:
                 body.append(Line([S(f"… còn {len(rows) - BLOCK_DIFF_ROWS} dòng · /diff để xem đủ", theme.muted, panel)]))
@@ -539,7 +680,8 @@ class TerminalUI(UI):
             header.append(S(f"  −{item['removed_lines']}", theme.diff_removed, panel))
         body: list[Line] = []
         if source is not None and item["op"] != "delete":
-            rows = Diff(source["before"], source["after"], path=item["path"]).rows(theme, self.content_width - 3)
+            rows = Diff(source["before"], source["after"], path=item["path"],
+                        numbered=not source.get("snippet")).rows(theme, self.content_width - 3)
             body = rows[:BLOCK_DIFF_ROWS]
             if len(rows) > BLOCK_DIFF_ROWS:
                 body.append(Line([S(f"… còn {len(rows) - BLOCK_DIFF_ROWS} dòng · /diff để xem đủ", theme.muted, panel)]))
@@ -550,7 +692,7 @@ class TerminalUI(UI):
         panel = theme.panel
         body = preview[1] if preview and preview[0] in {"command", "background"} else {}
         command = str(body.get("command") or result.get("command") or "")
-        powershell = body.get("shell") == "powershell"
+        powershell = (body.get("shell") or result.get("shell")) == "powershell"
         first, *more = command.split("\n")
         header = [S("PS> " if powershell else "$ ", theme.muted, panel), S(visible(first), theme.text, panel)]
         if more:
@@ -1025,6 +1167,148 @@ class TerminalUI(UI):
                 return ""
             elif key.name == "char" and key.text.isdigit() and 1 <= int(key.text) <= min(9, len(rows)):
                 return str(int(key.text) - 1)
+            return None
+
+        return render_lines, handle
+
+    def choose_session(self, sessions: list, current: str | None, *, rename, delete):
+        """Bảng /resume như opencode (``dialog-session-list.tsx``; CLI 0.22.0): gõ để tìm theo tên (không phân biệt
+        dấu), nhóm Hôm nay / Hôm qua / theo ngày, Ctrl+R đổi tên ngay trên dòng, Ctrl+D bấm hai lần để xóa. Không xóa
+        được hội thoại đang mở. ``rename(id, tên)`` và ``delete(id) -> bool`` ghi vào đĩa."""
+        if self.engine is None:
+            return super().choose_session(sessions, current, rename=rename, delete=delete)
+        self._flush_group()
+        self.clear_status()
+        items = list(sessions)
+        render_lines, handle = self._session_chooser(items, current, rename, delete, max(10, self.height - 1))
+        answer = self.engine.ask(render_lines, handle)
+        # Tìm trong danh sách của bảng: hội thoại vừa đổi tên mở ra với tên mới.
+        return next((saved for saved in items if saved.id == answer), None)
+
+    def _session_chooser(self, sessions: list, current: str | None, rename, delete, budget: int):
+        from ..commands import fold
+
+        theme = self.theme
+        state = {"query": "", "selected": 0, "renaming": None, "text": "", "deleting": None, "message": None}
+        # ``sessions`` là danh sách của riêng bảng này: đổi tên và xóa sửa thẳng trong nó.
+        items = sessions
+
+        def shown() -> list:
+            query = fold(state["query"].strip())
+            return [saved for saved in items if not query or query in fold(saved.title)]
+
+        def day(saved) -> str:
+            moment = datetime.fromtimestamp(saved.saved_at)
+            today = date.today()
+            if moment.date() == today:
+                return "Hôm nay"
+            if moment.date() == today - timedelta(days=1):
+                return "Hôm qua"
+            return f"{moment:%d/%m}" if moment.year == today.year else f"{moment:%d/%m/%Y}"
+
+        def render_lines() -> list[Line]:
+            width = self.content_width
+            panel, element = theme.panel, theme.element
+
+            def row(spans: list, bg=panel) -> Line:
+                return fit(Line([S("┃", theme.primary, bg), S("  ", bg=bg)] + spans), width, bg)
+
+            visible_items = shown()
+            state["selected"] = min(state["selected"], max(0, len(visible_items) - 1))
+            body: list[tuple[Line, bool]] = []
+            group = None
+            for index, saved in enumerate(visible_items):
+                label = day(saved)
+                if label != group:
+                    group = label
+                    body.append((row([S(label, theme.accent, panel, b=True)]), False))
+                chosen = index == state["selected"]
+                bg = element if chosen else panel
+                spans = [S("› " if chosen else "  ", theme.primary, bg)]
+                if chosen and state["renaming"] == saved.id:
+                    spans += [S(state["text"] + "▏", theme.text, bg, b=True),
+                              S("  enter lưu · esc thôi", theme.muted, bg)]
+                elif chosen and state["deleting"] == saved.id:
+                    spans += [S(clip(visible(saved.title), max(10, width - 44)), theme.text, bg, b=True),
+                              S("  bấm ctrl+d lần nữa để xóa", theme.warning, bg)]
+                else:
+                    detail = f"{datetime.fromtimestamp(saved.saved_at):%H:%M} · {saved.message_count} tin"
+                    if saved.interrupted:
+                        detail += " · bị ngắt"
+                    if saved.id == current:
+                        detail += " · đang mở"
+                    spans += [S(clip(visible(saved.title), max(10, width - 34)), theme.text, bg, b=chosen),
+                              S("  " + detail, theme.muted, bg)]
+                body.append((row(spans, bg), chosen))
+            if not visible_items:
+                body.append((row([S("Không có hội thoại nào khớp", theme.muted, panel)]), False))
+            room = max(3, budget - 7)
+            focus = next((index for index, (_, chosen) in enumerate(body) if chosen), 0)
+            start = min(max(0, focus - room + 1), max(0, len(body) - room))
+            query = state["query"]
+            search = ([S("Tìm: ", theme.muted, panel), S(query + "▏", theme.text, panel)] if query
+                      else [S("Gõ để tìm theo tên", theme.muted, panel)])
+            lines = [row([S("Hội thoại", theme.text, panel, b=True),
+                          S(f" của {self.folder_name}" if self.folder_name else "", theme.muted, panel)]),
+                     row(search), row([])]
+            lines += [line for line, _ in body[start:start + room]]
+            if state["message"]:
+                lines += [row([]), row([S(state["message"], theme.warning, panel)])]
+            hint = [S("enter", theme.text, element), S(" mở  ", theme.muted, element), S("ctrl+r", theme.text, element),
+                    S(" đổi tên  ", theme.muted, element), S("ctrl+d", theme.text, element),
+                    S(" xóa  ", theme.muted, element), S("esc", theme.text, element), S(" thôi", theme.muted, element)]
+            lines += [row([]), fit(Line([S("┃", theme.primary, element), S("  ", bg=element)] + hint), width, element),
+                      Line([S("╹", theme.primary), S("▀" * (width - 1), element)])]
+            return lines
+
+        def handle(key) -> str | None:
+            visible_items = shown()
+            selected = visible_items[state["selected"]] if visible_items else None
+            if state["renaming"] is not None:
+                if key.name in {"char", "paste"}:
+                    state["text"] += " ".join(key.text.split()) if key.name == "paste" else key.text
+                elif key.name == "backspace":
+                    state["text"] = state["text"][:-1]
+                elif key.name == "escape":
+                    state["renaming"] = None
+                elif key.name == "enter":
+                    title = " ".join(state["text"].split())
+                    if title and selected is not None:
+                        rename(selected.id, title)
+                        items[items.index(selected)] = replace(selected, title=title)
+                    state["renaming"] = None
+                return None
+            armed, state["deleting"], state["message"] = state["deleting"], None, None
+            if key.name == "up" and visible_items:
+                state["selected"] = (state["selected"] - 1) % len(visible_items)
+            elif key.name == "down" and visible_items:
+                state["selected"] = (state["selected"] + 1) % len(visible_items)
+            elif key.name == "pageup":
+                state["selected"] = max(0, state["selected"] - max(1, budget - 7))
+            elif key.name == "pagedown" and visible_items:
+                state["selected"] = min(len(visible_items) - 1, state["selected"] + max(1, budget - 7))
+            elif key.name == "enter" and selected is not None:
+                return selected.id
+            elif key.name == "escape":
+                return ""
+            elif key.name == "ctrl" and key.text == "r" and selected is not None:
+                state["renaming"], state["text"] = selected.id, selected.title
+            elif key.name == "ctrl" and key.text == "d" and selected is not None:
+                if selected.id == current:
+                    state["message"] = "Đang mở hội thoại này nên không xóa được."
+                elif armed == selected.id:
+                    if delete(selected.id):
+                        items.remove(selected)
+                    else:
+                        state["message"] = "Không xóa được hội thoại này."
+                else:
+                    state["deleting"] = selected.id
+            elif key.name in {"char", "paste"}:
+                state["query"] += " ".join(key.text.split()) if key.name == "paste" else key.text
+                state["selected"] = 0
+            elif key.name == "backspace":
+                state["query"] = state["query"][:-1]
+                state["selected"] = 0
             return None
 
         return render_lines, handle

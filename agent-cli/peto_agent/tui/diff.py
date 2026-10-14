@@ -20,9 +20,16 @@ def _visible(text: str) -> str:
 
 
 class Diff:
-    """Các dòng đổi giữa hai bản; ``rows(width)`` dựng các hàng có màu cho một bề ngang."""
+    """Các dòng đổi giữa hai bản; ``rows(width)`` dựng các hàng có màu cho một bề ngang.
 
-    def __init__(self, before: str, after: str, *, path: str | None = None, context: int = CONTEXT):
+    ``numbered=False`` cho hai đoạn cắt ra từ tệp (đoạn sửa của edit_file khi /resume vẽ lại hội thoại): số dòng của
+    đoạn không phải số dòng của tệp, nên không in số, và đoạn không có xuống dòng ở cuối cũng không bị nhắc."""
+
+    def __init__(self, before: str, after: str, *, path: str | None = None, context: int = CONTEXT,
+                 numbered: bool = True):
+        self.numbered = numbered
+        if not numbered:
+            before, after = (text if not text or text.endswith("\n") else text + "\n" for text in (before, after))
         self.old = before.splitlines(keepends=True)
         self.new = after.splitlines(keepends=True)
         self.groups = list(difflib.SequenceMatcher(None, self.old, self.new, autojunk=False)
@@ -31,7 +38,7 @@ class Diff:
         self.removed = sum(i2 - i1 for group in self.groups for tag, i1, i2, _, _ in group
                            if tag in {"delete", "replace"})
         self.lang = highlight.language(path)
-        self.digits = max(3, len(str(max(len(self.old), len(self.new), 1))))
+        self.digits = max(3, len(str(max(len(self.old), len(self.new), 1)))) if numbered else 0
 
     @property
     def empty(self) -> bool:
@@ -50,7 +57,8 @@ class Diff:
         rows = wrap(code, max(1, width - gutter), hard=True)
         lines = []
         for index, row in enumerate(rows):
-            head = ([S(f"{number:>{self.digits}}" if number else " " * self.digits, theme.line_number, number_bg),
+            head = ([S(f"{number:>{self.digits}}" if number and self.numbered else " " * self.digits, theme.line_number,
+                       number_bg),
                      S(f" {sign} ", sign_color, number_bg)] if index == 0
                     else [S(" " * gutter, bg=number_bg)])
             lines.append(fit(Line(head + row), width, bg))
@@ -64,8 +72,8 @@ class Diff:
         rows: list[Line] = []
         for number, group in enumerate(self.groups):
             if number:
-                rows.append(fit(Line([S(f" @@ dòng {group[0][1] + 1} → {group[0][3] + 1} @@", theme.hunk,
-                                        theme.panel)]), width, theme.panel))
+                where = f" @@ dòng {group[0][1] + 1} → {group[0][3] + 1} @@" if self.numbered else " ⋯"
+                rows.append(fit(Line([S(where, theme.hunk, theme.panel)]), width, theme.panel))
             for tag, i1, i2, j1, j2 in group:
                 if not split:
                     if tag == "equal":

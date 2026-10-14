@@ -15,6 +15,10 @@ KEEP_BYTES = 512 * 1024
 # -NoProfile để hồ sơ PowerShell của người dùng không in thêm gì, -NonInteractive để lệnh không đứng chờ bàn phím.
 POWERSHELL = ["powershell", "-NoProfile", "-NonInteractive", "-Command"]
 SHELLS = ("cmd", "powershell")
+# Windows PowerShell 5.1 ghi ra ống theo bảng mã cũ của console, nên chữ có dấu thành "?" và mất hẳn (CLI 0.22.0, thấy
+# khi /update in output của install.ps1). Đặt UTF-8 không BOM trước lệnh; lệnh mở đầu bằng ``using`` phải đứng đầu
+# script nên để nguyên.
+POWERSHELL_UTF8 = "[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false; "
 
 
 def cap_text(text: str, limit: int = MAX_RESULT_CHARS) -> str:
@@ -45,6 +49,8 @@ def spawn(command: str, cwd: Path, shell: str = "cmd") -> subprocess.Popen:
     options: dict = ({"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == "nt"
                      else {"start_new_session": True})
     # PowerShell nhận cả lệnh qua một tham số nên không phải lo trích dẫn như khi để shell tự tách.
+    if shell == "powershell" and not command.lstrip().lower().startswith("using "):
+        command = POWERSHELL_UTF8 + command
     argv: list[str] | str = [*POWERSHELL, command] if shell == "powershell" else command
     return subprocess.Popen(argv, shell=shell != "powershell", cwd=cwd, env=env, stdin=subprocess.DEVNULL,
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, **options)

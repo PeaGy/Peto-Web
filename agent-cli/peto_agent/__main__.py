@@ -6,14 +6,16 @@ import argparse
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 import webbrowser
 from pathlib import Path
 
-from . import __version__, commands, config, history, line_editor, mentions
+from . import __version__, commands, config, history, line_editor, mentions, transcript, updater
 from .client import ApiError, Client
 from .commands import fold
+from .events import ToolDone
 from .loop import Session, TaskLog, format_tokens
 from .tools import FEATURES, NEW_FEATURES
 from .ui import UI, enable_vt
@@ -21,7 +23,7 @@ from .workspace import Workspace, WorkspaceError
 
 # Lệnh không nhận gì phía sau; gõ thêm chữ thì nhắc chứ không gửi cả câu cho Peto.
 PLAIN_COMMANDS = {"/exit", "/new", "/help", "/usage", "/retry", "/diff", "/undo", "/compact", "/init", "/thinking",
-                  "/plan"}
+                  "/plan", "/timeline", "/fork", "/update"}
 EFFORT_LABELS = {"none": "không suy luận", "low": "thấp", "medium": "vừa", "high": "cao",
                  "xhigh": "rất cao", "max": "tối đa"}
 # Giống STEP_COST của máy chủ: mức cao tính gấp đôi, nhân với số bước của model.
@@ -82,6 +84,9 @@ def _update_notice(ui: UI, client: Client, me: dict) -> None:
     latest = me.get("cli_version")
     if _version(latest) > _version(__version__):
         # Lệnh cài nằm riêng một dòng: dòng dài bị terminal cắt ngang giữa lệnh thì khó chép.
+        if updater.installed():
+            ui.line(f"Có bản peto mới {latest} (máy này đang dùng {__version__}). Gõ /update để cập nhật.", "yellow")
+            return
         ui.line(f"Có bản peto mới {latest} (máy này đang dùng {__version__}). Thoát peto rồi chạy lệnh cài để cập nhật:",
                 "yellow")
         ui.line(f"  irm {client.server}/install.ps1 | iex", "cyan")
@@ -224,8 +229,10 @@ RESUME_SHOWN = 20
 
 
 def _resume(ui: UI, work: Session, value: str = "") -> None:
-    """/resume: danh sách hội thoại đã lưu của thư mục (mới nhất trước) để chọn; /resume 2 mở thẳng cái thứ hai."""
-    sessions = history.list_sessions(work.ws.root, work.client.server)[:RESUME_SHOWN]
+    """/resume: bảng hội thoại đã lưu của thư mục (mới nhất trước; tìm, đổi tên, xóa); /resume 2 mở thẳng cái thứ
+    hai."""
+    root, server = work.ws.root, work.client.server
+    sessions = history.list_sessions(root, server)[:RESUME_SHOWN]
     if not sessions:
         ui.line("  Chưa có hội thoại nào được lưu ở thư mục này.", "dim")
         return
@@ -233,25 +240,33 @@ def _resume(ui: UI, work: Session, value: str = "") -> None:
         if not value.isdigit() or not 1 <= int(value) <= len(sessions):
             ui.line(f"  Gõ /resume để chọn trong danh sách, hoặc /resume 1 tới /resume {len(sessions)}.", "yellow")
             return
-        index = int(value) - 1
+        saved = sessions[int(value) - 1]
     elif len(sessions) == 1:
         # Chỉ một hội thoại thì mở luôn như trước, khỏi phải chọn.
-        index = 0
+        saved = sessions[0]
     else:
-        rows = [(saved.title, f"{history.when(saved.saved_at)} · {saved.message_count} tin"
-                 + (" · bị ngắt giữa chừng" if saved.interrupted else "")
-                 + (" · đang mở" if saved.id == work.session_id else "")) for saved in sessions]
-        index = ui.choose("Mở lại hội thoại", rows)
-        if index is None:
+        def rename(session_id: str, title: str) -> None:
+            history.rename(root, server, session_id, title)
+            if session_id == work.session_id:
+                work.title = title
+                work._announce_title()
+
+        saved = ui.choose_session(sessions, work.session_id, rename=rename,
+                                  delete=lambda session_id: history.delete(root, server, session_id))
+        if saved is None:
             return
-    saved = sessions[index]
     if saved.id == work.session_id and work.items == saved.items:
         ui.line("  Đang ở đúng hội thoại này rồi.", "dim")
         return
+    _open_session(ui, work, saved)
+
+
+def _open_session(ui: UI, work: Session, saved: history.Saved) -> None:
+    """Mở một hội thoại đã lưu (/resume, peto --resume sau /update): màn hình toàn phần vẽ lại cả hội thoại."""
     work.resume(saved.items, retryable=saved.retryable, model=saved.model, session_id=saved.id, title=saved.title)
+    ui.clear_conversation()
+    ui.replay(work.items)
     ui.success(f"Đã mở lại hội thoại {history.when(saved.saved_at)}: \"{saved.title}\"")
-    for who, text in history.recap(saved.items):
-        ui.line(f"    {who} › {text}", "dim")
     if saved.interrupted:
         # Bản lưu giữa yêu cầu: Peto bị đóng khi đang làm. Danh sách việc cho biết đã tới đâu.
         plan = history.last_plan(saved.items)
@@ -261,6 +276,109 @@ def _resume(ui: UI, work: Session, value: str = "") -> None:
     ui.line("  Peto không chạy lại lệnh nào; muốn sửa tệp thì sẽ đọc lại tệp trước.", "dim")
     if work.can_retry:
         ui.line("  Hội thoại này bị gián đoạn kết nối. Gõ /retry để thử lại bước chưa xong.", "yellow")
+
+
+def _timeline(ui: UI, work: Session, *, fork: bool = False) -> None:
+    """/timeline: các tin của bạn trong hội thoại đang mở, rồi Nhảy tới, Chép hay Tách từ đó; /fork chọn tin để tách
+    (CLI 0.22.0, theo dialog-timeline và dialog-message của opencode)."""
+    picks = [(position, item) for position, item in enumerate(work.items) if transcript.is_user(item)]
+    if not picks:
+        ui.line("  Hội thoại này chưa có tin nào của bạn.", "dim")
+        return
+    rows = []
+    for _, item in picks:
+        text = " ".join(transcript.typed_text(item).split()) or "(chỉ có ảnh)"
+        steer = history.raw_text(item).startswith(history.STEER_NOTE)
+        rows.append((text if len(text) <= 80 else text[:79] + "…", "nhắn thêm lúc Peto đang làm" if steer else ""))
+    index = ui.choose("Tách hội thoại từ tin nào" if fork else "Các tin của bạn", rows)
+    if index is None:
+        return
+    position, item = picks[index]
+    if fork:
+        _fork(ui, work, position)
+        return
+    actions = [("Nhảy tới", "cuộn màn hình tới tin này")] if getattr(ui, "fullscreen", False) else []
+    actions += [("Chép", "chép chữ của tin"), ("Tách hội thoại từ đây", "hội thoại mới gồm phần trước tin này")]
+    choice = ui.choose(f"Tin {index + 1}", actions)
+    if choice is None:
+        return
+    action = actions[choice][0]
+    if action == "Nhảy tới":
+        if not ui.jump_to(item):
+            ui.line("  Không tìm thấy tin này trên màn hình.", "dim")
+    elif action == "Chép":
+        text = transcript.typed_text(item)
+        if ui.copy(text):
+            ui.success("Đã chép tin vào clipboard.")
+        else:
+            ui.prefill(text)
+    else:
+        _fork(ui, work, position)
+
+
+def _fork(ui: UI, work: Session, position: int) -> None:
+    """Hội thoại mới gồm mọi thứ trước tin ở ``position``; chữ của tin đó nằm sẵn trong ô nhập (như /fork của opencode).
+    Hội thoại cũ đã lưu sau mỗi bước nên vẫn nằm trong /resume."""
+    item = work.items[position]
+    text = transcript.typed_text(item)
+    title = f"{work.shown_title() or 'Hội thoại'} (nhánh)"
+    if work.items:
+        work.save()
+    work.resume(work.items[:position], model=work.model, session_id=None, title=title)
+    ui.clear_conversation()
+    ui.replay(work.items)
+    if work.items:
+        work.save()
+    ui.success(f"Đã tách thành hội thoại mới \"{title}\"; hội thoại cũ vẫn mở lại được bằng /resume.")
+    ui.prefill(text)
+
+
+def _update(ui: UI, work: Session) -> list[str] | None:
+    """/update (CLI 0.22.0, như opencode): có bản mới thì chạy install.ps1 của máy chủ, rồi hỏi mở lại ngay. Trả lệnh
+    mở lại peto bản mới, hoặc None."""
+    try:
+        me = work.client.json("GET", "/api/agent/me")
+    except ApiError as err:
+        ui.failure(err.message)
+        return None
+    latest = str(me.get("cli_version") or "")
+    if _version(latest) <= _version(__version__):
+        ui.line(f"  Đang dùng bản mới nhất ({__version__}).", "dim")
+        return None
+    if not updater.installed():
+        ui.line(f"  Có bản peto {latest}, nhưng peto này không chạy từ bản cài bằng install.ps1 nên không tự cập nhật "
+                "được. Thoát peto rồi chạy:", "yellow")
+        ui.line(f"  irm {work.client.server}/install.ps1 | iex", "cyan")
+        return None
+    choice = ui.choose(f"Có bản peto {latest} (máy này đang dùng {__version__})",
+                       [("Cập nhật ngay", "chạy install.ps1 của máy chủ, thường dưới một phút"), ("Để sau", "")])
+    if choice != 0:
+        return None
+
+    def progress(seconds: float, output: str) -> None:
+        lines = [line.strip() for line in output.replace("\r", "\n").split("\n") if line.strip()]
+        ui.status(f"… Đang cài peto {latest} · {int(seconds)}s" + (f" │ {lines[-1]}" if lines else ""))
+
+    try:
+        result = updater.install(work.client.server, on_progress=progress)
+    except KeyboardInterrupt:
+        ui.clear_status()
+        ui.line("  Đã dừng cập nhật; peto đang dùng vẫn chạy bình thường.", "yellow")
+        return None
+    ui.clear_status()
+    # Khối lệnh như run_command, nhưng không qua preview: bản in chữ in preview thành câu hỏi "Muốn chạy lệnh".
+    result = {**result, "command": f"irm {work.client.server}/install.ps1 | iex", "shell": "powershell"}
+    ui.tool_finished(ToolDone("", "run_command", {}, result, {}))
+    if result.get("exit_code") != 0:
+        ui.failure("Cập nhật chưa xong; peto đang dùng vẫn chạy bình thường. Xem output ở trên.")
+        return None
+    choice = ui.choose(f"Đã cài peto {latest}", [("Mở lại ngay", "tiếp tục đúng hội thoại này trong bản mới"),
+                                                  ("Để sau", "bản mới chạy từ lần mở peto sau")])
+    if choice != 0:
+        return None
+    if work.items:
+        work.save()
+    return updater.restart_argv(work.session_id if work.items else None)
 
 
 def _toggle_plan(ui: UI) -> None:
@@ -382,7 +500,8 @@ def too_broad(root: Path) -> bool:
     return root == Path(root.anchor) or root == Path.home().resolve()
 
 
-def session(ui: UI) -> int:
+def session(ui: UI, resume: str | None = None) -> int:
+    """Phiên làm việc. ``resume``: mã hội thoại mở ngay (peto --resume, khi /update mở lại bản mới)."""
     client = _saved_client(ui)
     if client is None:
         return 1
@@ -423,17 +542,22 @@ def session(ui: UI) -> int:
     offered = me.get("agent_features") if isinstance(me.get("agent_features"), list) else []
     work.tools.features = [*FEATURES, *(feature for feature in NEW_FEATURES if feature in offered)]
     work.supported_efforts = _supported_efforts(model)
-    ui.title(f"Peto · {root.name}")
+    ui.folder_name = root.name
+    ui.title(ui.tab_title())
     saved = history.load(root, client.server)
     # Hội thoại cũ mở lại được: nhắc ở dòng dưới ô nhập thay vì một dòng vàng giữa màn hình. Không có ô nhập (ống
     # dẫn, input()) thì không có dòng đó, nên in ra như cũ.
     resume_hint = _resume_hint(saved) if saved is not None else ""
+    if resume and history.valid_id(resume) and (wanted := history.load(root, client.server, resume)) is not None:
+        _open_session(ui, work, wanted)
+        resume_hint = ""
     if resume_hint and ui.editor is None:
         if saved.interrupted:
             ui.line(f"Yêu cầu {history.when(saved.saved_at)} bị ngắt giữa chừng · gõ /resume để làm tiếp.", "yellow")
         else:
             ui.line(f"Có hội thoại {history.when(saved.saved_at)} ({saved.message_count} tin) · gõ /resume để mở lại.",
                     "dim")
+    restart: list[str] | None = None
     try:
         while True:
             try:
@@ -464,6 +588,7 @@ def session(ui: UI) -> int:
             if name == "/new":
                 # Hội thoại cũ vẫn nằm trong danh sách /resume; hội thoại mới có mã riêng từ lần lưu đầu.
                 work.reset()
+                ui.clear_conversation()
                 ui.line("Đã bắt đầu hội thoại mới. Hội thoại cũ vẫn mở lại được bằng /resume.", "dim")
                 continue
             if name == "/plan":
@@ -474,6 +599,14 @@ def session(ui: UI) -> int:
                 continue
             if name == "/resume":
                 _resume(ui, work, value)
+                continue
+            if name in {"/timeline", "/fork"}:
+                _timeline(ui, work, fork=name == "/fork")
+                continue
+            if name == "/update":
+                restart = _update(ui, work)
+                if restart:
+                    break
                 continue
             if name == "/retry":
                 work.retry_task()
@@ -566,6 +699,13 @@ def session(ui: UI) -> int:
         # In sau khi rời màn hình toàn phần, để còn lại trong terminal: người dùng cần biết dev server của họ đã dừng.
         if stopped:
             ui.line(f"Đã dừng {len(stopped)} lệnh nền: " + ", ".join(stopped), "dim")
+    if restart:
+        # /update: mở bản mới trong cùng cửa sổ, tiếp tục hội thoại vừa lưu; peto cũ chờ rồi thoát theo mã của nó.
+        try:
+            return subprocess.call(restart)
+        except OSError as err:
+            ui.failure(f"Không mở lại được peto bản mới ({err}). Gõ peto để mở, rồi /resume.")
+            return 1
     # Màn hình toàn phần thoát ra là terminal sạch như trước khi gõ peto (như Claude Code), không chào thêm.
     if not fullscreen:
         ui.line("Tạm biệt!", "dim")
@@ -595,6 +735,8 @@ def main(argv: list[str] | None = None) -> int:
     login_parser.add_argument("--server", help="địa chỉ Peto, ví dụ https://peto.example.com")
     commands.add_parser("logout", help="ngắt kết nối máy này")
     commands.add_parser("status", help="xem tài khoản và số bước còn lại hôm nay")
+    # /update mở lại bản mới bằng tham số này để tiếp tục đúng hội thoại; không phải lệnh người dùng gõ.
+    parser.add_argument("--resume", metavar="MÃ", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     ui = create_ui()
     try:
@@ -604,7 +746,7 @@ def main(argv: list[str] | None = None) -> int:
             return logout(ui)
         if args.command == "status":
             return status(ui)
-        return session(ui)
+        return session(ui, resume=args.resume)
     except KeyboardInterrupt:
         ui.line()
         ui.line("Đã hủy.", "dim")

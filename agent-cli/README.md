@@ -40,8 +40,11 @@ Biến môi trường tùy chọn: `PETO_AGENT_INSTALL_DIR` để cài chỗ kh�
 
 ### Cập nhật
 
-Khi máy chủ có bản `peto` mới hơn bản trên máy, `peto` nhắc ngay lúc mở phiên và trong `peto status`, kèm lệnh cài để
-chạy lại. `peto --version` xem bản đang dùng.
+Khi máy chủ có bản `peto` mới hơn bản trên máy, `peto` nhắc ngay lúc mở phiên và trong `peto status`. Từ 0.22.0 (theo
+opencode) gõ `/update` ngay trong `peto`: Peto chạy lại bộ cài của đúng máy chủ đang đăng nhập (vài giây tới một phút,
+`Ctrl+C` dừng được), hiện output như một khối lệnh, rồi hỏi "Mở lại ngay". Chọn mở lại thì bản mới mở trong cùng cửa
+sổ và vẽ lại đúng hội thoại đang dở. `/update` chỉ tự cài cho bản cài bằng lệnh `irm … | iex` ở trên; chạy từ mã
+nguồn thì nó in lệnh cài để bạn tự chạy. `peto --version` xem bản đang dùng.
 
 Ai mở được trang Peto cũng tải được bộ cài và mã nguồn CLI; trong đó không có bí mật nào.
 
@@ -194,7 +197,7 @@ quả lê 6 × 6. Thấp hơn nữa, hẹp dưới 41 cột, hay terminal tắt 
 của VS Code, Peto chừa thêm 2 cột bên phải, vì VS Code che khoảng hai cột sát mép:
 
 ```text
- [mascot]   Peto Agent 0.21.1
+ [mascot]   Peto Agent 0.22.0
  [mascot]   6 Luna · mức thấp
  [mascot]   ~\Projects\website-a
 
@@ -209,6 +212,11 @@ của VS Code, Peto chừa thêm 2 cột bên phải, vì VS Code che khoảng h
 Ô nhập luôn nằm ở đáy, kể cả lúc Peto đang làm. Trong lúc Peto làm, ngay trên ô có dòng đang làm (`⠋ Đang nghĩ · 8s`,
 lệnh đang chạy, việc hiện tại của danh sách việc). `Esc` hai lần hoặc `Ctrl+C` dừng yêu cầu đang chạy; `Ctrl+C` lúc ô
 trống và Peto đang rảnh thì thoát `peto`. Câu hỏi quyền thay chỗ ô nhập cho tới khi bạn trả lời, chữ đang gõ dở vẫn còn.
+Từ 0.22.0, lúc Peto làm, dưới ô nhập có một dãy 8 ô chạy qua lại kiểu Knight Rider như opencode (`■■■■⬝⬝⬝⬝`, màu hồng;
+xanh ở chế độ Lập kế hoạch) cạnh dòng `esc esc hoặc ctrl+c dừng`, nghỉ một nhịp rồi chạy tiếp.
+
+Khi hội thoại đã có tên (từ tin đầu, rồi tên Peto đặt), hàng trên cùng màn hình là thanh tên: tên hội thoại đậm bên trái,
+thư mục mờ bên phải. Tên đó cũng nằm trên tab của terminal (`Peto · đang làm · Sửa lỗi checksum…`).
 
 **Nhắn thêm giữa chừng** (từ 0.20.0, theo opencode). Gõ tin rồi Enter lúc Peto đang làm thì tin hiện `↳ Nhắn thêm: …`
 trên ô nhập và được chèn vào bước kế tiếp, để chỉnh việc đang làm ("dùng tiếng Anh", "đừng đụng tệp test") mà không
@@ -279,16 +287,27 @@ Mũi tên lên/xuống chọn lệnh, Tab điền lệnh, Enter chạy lệnh đ
 nào được chọn, nên Enter không tự chạy gì. Từ 0.20.0 tên lệnh là tiếng Anh (chủ web chọn cho quen tay); tên cũ
 `/moi`, `/thoat`, `/nho`, `/trinhduyet`, `/suynghi` vẫn gõ được, và gõ tên cũ thì danh sách gợi ý tên mới. Các lệnh:
 
-- `/new`: bắt đầu hội thoại mới. Hội thoại cũ vẫn mở lại được bằng `/resume`.
+- `/new`: bắt đầu hội thoại mới; màn hình xóa hội thoại cũ, chỉ để lại đầu phiên. Hội thoại cũ vẫn mở lại được bằng
+  `/resume`.
 - `/resume`: mở lại một hội thoại đã lưu của thư mục này, kể cả sau khi đã thoát. Từ 0.20.0 mỗi thư mục giữ nhiều hội
-  thoại có tên (tối đa 50, 30 ngày): có từ hai hội thoại thì hiện danh sách mới nhất trước để chọn bằng ↑/↓ và Enter
-  (hay phím số); `/resume 2` mở thẳng cái thứ hai. Từ 0.21.0, sau yêu cầu đầu tiên của mỗi hội thoại Peto tự đặt một
+  thoại có tên (tối đa 50, 30 ngày); `/resume 2` mở thẳng cái thứ hai. Từ 0.22.0 (theo opencode) có từ hai hội thoại
+  thì hiện bảng hội thoại: gõ chữ để tìm theo tên (không phân biệt dấu), nhóm "Hôm nay", "Hôm qua" rồi theo ngày, ↑/↓
+  và Enter để mở, `Ctrl+R` đổi tên ngay trên dòng (Enter lưu, Esc thôi), `Ctrl+D` bấm hai lần để xóa (không xóa được
+  hội thoại đang mở). Mở ra thì màn hình vẽ lại cả hội thoại như lúc đang làm: tin của bạn, lời Peto, các lần đọc,
+  khối sửa tệp có diff, khối lệnh có output và danh sách việc; trước 0.22.0 chỉ in mờ tin cuối. Suy nghĩ của model và
+  ảnh chụp trang không được lưu nên không có, và diff của một lần sửa chỉ là đoạn bị thay, không số dòng. Từ 0.21.0,
+  sau yêu cầu đầu tiên của mỗi hội thoại Peto tự đặt một
   tên ngắn ở nền (tốn 1 bước Peto mức thấp, dù đang chọn model nào); máy chủ cũ hay khi lỗi thì tên lấy từ tin đầu
   tiên. Không lệnh nào được chạy lại, và muốn
   sửa tệp thì Peto phải đọc lại tệp trước. Mở `peto` ở thư mục có hội thoại cũ sẽ có dòng nhắc. Hội thoại được lưu
   sau từng bước, nên lỡ đóng cửa sổ hay tắt máy khi Peto đang làm thì lần mở sau dòng nhắc thành
   `/resume làm tiếp yêu cầu bị ngắt …`. Mở lại sẽ thấy danh sách việc còn dở; gõ "làm tiếp" để Peto làm nốt. Công cụ
   đang chạy dở lúc đóng được ghi là bị ngắt, nên Peto kiểm tra lại tệp trước khi làm tiếp.
+- `/timeline` (từ 0.22.0, theo opencode): danh sách các tin bạn đã gửi trong hội thoại đang mở. Chọn một tin rồi
+  "Nhảy tới" (cuộn màn hình tới đúng tin đó), "Chép" (chép chữ của tin vào clipboard) hoặc "Tách hội thoại từ đây".
+- `/fork` (từ 0.22.0): chọn một tin của bạn để tách. Peto mở một hội thoại mới gồm mọi thứ trước tin đó, tên
+  "<tên cũ> (nhánh)", và đặt sẵn chữ của tin vào ô nhập để bạn sửa rồi gửi lại. Hội thoại cũ giữ nguyên trong
+  `/resume`. Không tệp nào bị hoàn tác: tách chỉ đổi hội thoại, còn tệp đã sửa vẫn như bây giờ (`/undo` riêng).
 - `/retry`: thử lại bước bị gián đoạn kết nối, dùng kết quả các bước đã hoàn tất. Không tự phát lại lệnh hay thao tác
   sửa tệp cũ; thao tác mới vẫn hỏi quyền. Nếu đã thoát thì `/resume` trước, rồi `/retry`.
 - `/diff`: xem bản sửa/ghi tệp trực tiếp gần nhất đã lưu cho dự án. Diff dài có thể xem tiếp bằng `v`.
@@ -340,6 +359,7 @@ nào được chọn, nên Enter không tự chạy gì. Từ 0.20.0 tên lệnh
   nhân đôi. Danh sách model và effort vẫn lấy từ máy chủ. Cập nhật CLI để giữ nguyên block suy nghĩ có chữ ký và
   nhóm công cụ của Claude khi tóm tắt, và mở lại hội thoại có tìm web bằng `/resume`.
 - `/usage`: số bước còn lại và số token đã dùng hôm nay, độ dài hội thoại đang mở, model và mức suy nghĩ.
+- `/update` (từ 0.22.0): cập nhật lên bản mới nhất của máy chủ rồi mở lại đúng hội thoại, xem "Cập nhật" ở trên.
 - `/thinking`: bật hoặc tắt hiện toàn văn suy nghĩ của Peto dưới dòng `+ Đã nghĩ` (không phải model nào cũng gửi).
 - `/help`: xem các lệnh. `/exit`: thoát. Tên lệnh gõ có dấu (`/thoát`) vẫn được nhận.
 - **Ctrl+C**: dừng yêu cầu đang chạy; lệnh đang chạy bị dừng cả cây tiến trình. Ở dòng nhập, Ctrl+C xóa chữ đang gõ;
@@ -620,7 +640,7 @@ hoàn toàn, socket có thể cần chờ tới timeout mới nhận ra; Ctrl+C 
 `presentation.py` khai báo giao diện mà `Session` và `Tools` sử dụng. Công cụ không tự in chữ: mỗi lần gọi báo sự kiện
 có cấu trúc (`events.py`: bắt đầu, xem trước, câu hỏi quyền, kết quả kèm phần chỉ để hiển thị), và giao diện tự quyết
 định vẽ thế nào. `tui/` là giao diện kiểu OpenCode cho terminal (theme, Markdown, diff, ô nhập, khung duyệt; `screen.py`
-là màn hình toàn phần, `footer.py` kiểu chân cố định); `ui.py` là bản chữ thường cho ống dẫn, tệp, test và bài thi. Bộ chạy lệnh chỉ báo tiến độ qua callback.
+là màn hình toàn phần, `footer.py` kiểu chân cố định); `ui.py` là bản chữ thường cho ống dẫn, tệp, test và bài thi. Bộ chạy lệnh chỉ báo tiến độ qua callback. `transcript.py` đọc hội thoại đã lưu thành chuỗi sự kiện (tin, lời Peto, công cụ kèm kết quả), để `/resume` và `/fork` vẽ lại bằng đúng các hàm vẽ lúc đang làm.
 
 Terminal không vẽ được LaTeX, nên công thức trong câu trả lời được `texmath.py` đổi sang ký hiệu Unicode trước khi in:
 `\lnot A \lor B` hiện thành `¬A ∨ B`, `x^2` thành `x²`, `\frac{a+1}{2}` thành `(a+1)/2`, khối `\[ … \]` in thụt vào và
@@ -649,7 +669,8 @@ không bao giờ bị đổi, và hội thoại gửi lại cho Peto vẫn là c
   phải giữ được nội dung; đích của đổi tên phải là chỗ chưa có tệp.
 - **Chạy lệnh:** chạy ở gốc dự án, hoặc trong một thư mục con có thật của dự án khi lệnh thuộc về đó (ví dụ `frontend`
   có `package.json` riêng; ô hỏi ghi rõ thư mục). Thư mục ngoài dự án hay `.git` bị từ chối. Chạy bằng `cmd`, hoặc bằng
-  PowerShell khi lệnh cần cmdlet hay biến `$env:` (ô hỏi ghi rõ `PS>`). Mặc định dừng sau 120 giây (tối đa 600). Lệnh
+  PowerShell khi lệnh cần cmdlet hay biến `$env:` (ô hỏi ghi rõ `PS>`). Từ 0.22.0 lệnh PowerShell in tiếng Việt đúng
+  dấu; trước đó Windows PowerShell 5.1 làm mất chữ có dấu trong output. Mặc định dừng sau 120 giây (tối đa 600). Lệnh
   test cũng chạy code nằm trong dự án, nên hãy xem kỹ các thay đổi trước khi đồng ý chạy. Lệnh nền không có thời hạn
   nhưng bị dừng khi bạn đóng peto, kể cả khi đóng hẳn cửa sổ terminal. Chạy lệnh trong thư mục con cần VPS và CLI từ
   bản 0.9.8; CLI cũ hơn vẫn nhận công cụ như trước.
@@ -665,6 +686,8 @@ muốn gửi đi.
 
 Tên hội thoại (từ 0.21.0) do Peto đặt: tối đa 2.000 ký tự đầu tin đầu tiên của bạn và 1.000 ký tự đầu câu trả lời
 được gửi qua máy chủ tới xAI một lần cho mỗi hội thoại, kể cả khi bạn đang dùng model OpenAI hay Claude.
+
+`/update` tải bộ cài và gói `peto` từ đúng máy chủ trong `config.json` (chỗ bạn đã đăng nhập), không gửi gì của dự án.
 
 Để `/resume` hoạt động, các hội thoại của mỗi thư mục (tối đa 50) được lưu trên chính máy bạn ở
 `%LOCALAPPDATA%\PetoAgent\sessions\` sau từng bước, gồm cả nội dung tệp Peto đã đọc, output lệnh và các ảnh còn giữ

@@ -19,6 +19,7 @@ from collections.abc import Callable
 from ..line_editor import INTERRUPT, SUBMIT, EditorState, Key
 from .. import images as image_files
 from ..ui import terminal_size
+from . import scanner
 from .text import Line, S, cells, clip, render
 
 SYNC_ON, SYNC_OFF = "\x1b[?2026h", "\x1b[?2026l"
@@ -28,6 +29,8 @@ ESC_WINDOW = 3.0
 # Phím tới trong ngần này giây sau khi khung duyệt hiện chưa được tính: đó thường là phím gõ cho ô nhập.
 PANEL_GUARD = 0.3
 TICK_MS = 100
+# Lúc bận, màn hình toàn phần vẽ lại theo nhịp của hoạt ảnh Knight Rider (scanner.FRAME_MS) để không khung nào bị bỏ.
+SCAN_TICK_MS = scanner.FRAME_MS
 BUSY_PLACEHOLDER = "Nhắn thêm cho Peto; tin được chèn vào bước kế tiếp…"
 
 
@@ -139,15 +142,18 @@ class FooterEngine:
             if self.plan_line:
                 above.append(Line([S("   "), S("▶ ", theme.warning), S(self.plan_line, theme.muted)]))
         footer_line = None
+        planning = getattr(ui, "mode", "build") == "plan"
         if self.busy:
+            # Dãy Knight Rider như opencode, tô theo chế độ đang dùng (CLI 0.22.0); vòng quay trên vẫn giữ.
+            scan = scanner.spans(theme, theme.secondary if planning else theme.primary) + [S("  ")]
             if time.monotonic() < self._esc_until:
-                footer_line = Line([S("esc", theme.warning, b=True), S(" lần nữa để dừng yêu cầu", theme.warning)])
+                footer_line = Line(scan + [S("esc", theme.warning, b=True), S(" lần nữa để dừng yêu cầu", theme.warning)])
             else:
-                footer_line = Line([S("esc esc", theme.text), S(" hoặc ", theme.muted), S("ctrl+c", theme.text),
-                                    S(" dừng · Enter nhắn thêm cho Peto", theme.muted)])
+                footer_line = Line(scan + [S("esc esc", theme.text), S(" hoặc ", theme.muted), S("ctrl+c", theme.text),
+                                           S(" dừng · Enter nhắn thêm cho Peto", theme.muted)])
         placeholder = BUSY_PLACEHOLDER if self.busy else prompt_view.PLACEHOLDER
         meta, accent = self.meta, None
-        if getattr(ui, "mode", "build") == "plan":
+        if planning:
             # Chế độ Lập kế hoạch: nhãn thay chữ "Peto" ở hàng thông tin, thanh đổi màu, dòng chân nói cách quay lại.
             meta, accent = ["Lập kế hoạch", *self.meta[1:]], theme.secondary
             if footer_line is None:
@@ -262,6 +268,10 @@ class FooterEngine:
 
     # ---- Luồng đọc phím
 
+    def _wait_ms(self) -> int:
+        """Chờ phím bao lâu trước khi vẽ lại hoạt ảnh. Chân cố định vẽ lại cả phần chân mỗi lần nên giữ nhịp 0,1 giây."""
+        return TICK_MS
+
     def _run(self) -> None:
         last_mode_check = 0.0
         while not self._stop.is_set():
@@ -272,14 +282,14 @@ class FooterEngine:
                     ensure = getattr(self.console, "ensure_raw", None)
                     if ensure is not None:
                         ensure()
-                if not self.console.wait(TICK_MS):
+                if not self.console.wait(self._wait_ms()):
                     self._tick()
                     continue
                 keys = self.console.keys()
                 if not keys:
                     # Chuột lướt qua (không bấm) cũng đánh thức console mà không thành phím nào: không vẽ lại vì nó,
                     # nhưng vẫn giữ nhịp vòng quay khi chuột cứ di mãi.
-                    if time.monotonic() - self._last_draw >= TICK_MS / 1000:
+                    if time.monotonic() - self._last_draw >= self._wait_ms() / 1000:
                         self._tick()
                     continue
                 with self.lock:
@@ -293,7 +303,7 @@ class FooterEngine:
         """Mỗi 0,1 giây khi không có phím: vẽ lại vòng quay, cỡ cửa sổ mới, hoặc gỡ lời nhắc Esc đã hết hạn."""
         with self.lock:
             columns, _ = self.size()
-            animated = self.busy and self.panel is None and self.ui.animated
+            animated = self.busy and self.panel is None
             esc_expired = self._esc_until and time.monotonic() >= self._esc_until
             if esc_expired:
                 self._esc_until = 0.0
