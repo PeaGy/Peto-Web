@@ -94,21 +94,22 @@ function Range({ label, value, min, max, unit, onChange, onReset }: {
 
 /**
  * Kích thước và vị trí (AIRI: Scale And Position). Ghi góc nhìn cho sân khấu đổi ngay; thanh trượt đi theo cuộn hay kéo trên
- * sân khấu. Chỉ gửi mức phóng khi kéo Thu phóng: sân khấu phóng quanh đầu nhân vật rồi báo lại độ dời mới.
+ * sân khấu. Chỉ gửi mức phóng khi kéo Thu phóng: sân khấu phóng quanh đầu nhân vật rồi báo lại độ dời mới. Điện thoại có
+ * góc nhìn riêng và chỉ chỉnh được ở đây: sân khấu điện thoại không nhận kéo hay chụm ngón (chủ web, 15/10/2026).
  */
 function ViewSettings({ character }: { character: CharacterModel }) {
-  const [view, setView] = useState<CharacterView>(() => readCharacterView(character.id));
-  const source = useRef({}).current;
   const compact = useCompactScreen();
+  const [view, setView] = useState<CharacterView>(() => readCharacterView(character.id, compact));
+  const source = useRef({}).current;
   useEffect(() => {
-    setView(readCharacterView(character.id));
-    return watchCharacterView(character.id, (next, from) => { if (from !== source) setView(next); });
-  }, [character.id, source]);
+    setView(readCharacterView(character.id, compact));
+    return watchCharacterView(character.id, (next, from, forCompact) => { if (from !== source && forCompact === compact) setView(next); });
+  }, [character.id, compact, source]);
   if (character.format === 'vrm') return <p className="character-section-note">Model VRM luôn đứng giữa khung; chưa chỉnh được cỡ và vị trí.</p>;
   const change = (patch: Partial<CharacterView>) => {
     const next = clampView({ ...view, ...patch });
     setView(next);
-    writeCharacterView(next, character.id, source);
+    writeCharacterView(next, character.id, source, compact);
   };
   const reachX = Math.round((0.35 + view.zoom / 2) * 100);
   return <>
@@ -122,7 +123,7 @@ function ViewSettings({ character }: { character: CharacterModel }) {
       <button type="button" className="settings-button" onClick={() => change(DEFAULT_VIEW)}>Về vừa khung</button>
     </div>
     <p className="character-section-note">{compact
-      ? 'Trên điện thoại nhân vật giữ khung cố định như AIRI; cỡ và vị trí này dùng khi mở bằng máy tính.'
+      ? 'Cỡ và vị trí riêng cho điện thoại. Sân khấu Companion trên điện thoại không kéo hay chụm ngón được, nên chỉnh ở đây.'
       : 'Trên sân khấu: cuộn chuột để phóng, giữ chuột giữa rồi kéo để dời, bấm đúp để về vừa khung.'}</p>
   </>;
 }

@@ -62,9 +62,18 @@ export function clampView(view: CharacterView): CharacterView {
   };
 }
 
-export function readCharacterView(modelId = 'hiyori'): CharacterView {
+/**
+ * Khóa lưu góc nhìn của một model. Điện thoại (`compact`) lưu riêng từ 15/10/2026: khung điện thoại là cận cảnh nửa người,
+ * máy tính là cả người, nên cùng một mức phóng không hợp cho cả hai. Hiyori trên máy tính giữ khóa cũ không kèm mã.
+ */
+function viewKey(modelId: string, compact: boolean) {
+  if (compact) return `${CHARACTER_VIEW_KEY}-compact:${modelId}`;
+  return modelId === 'hiyori' ? CHARACTER_VIEW_KEY : `${CHARACTER_VIEW_KEY}:${modelId}`;
+}
+
+export function readCharacterView(modelId = 'hiyori', compact = false): CharacterView {
   try {
-    const raw = JSON.parse(localStorage.getItem(modelId === 'hiyori' ? CHARACTER_VIEW_KEY : `${CHARACTER_VIEW_KEY}:${modelId}`) ?? "null") as Partial<CharacterView> | null;
+    const raw = JSON.parse(localStorage.getItem(viewKey(modelId, compact)) ?? "null") as Partial<CharacterView> | null;
     if (!raw || typeof raw !== "object") return DEFAULT_VIEW;
     return clampView({ zoom: Number(raw.zoom), panX: Number(raw.panX), panY: Number(raw.panY) });
   } catch {
@@ -76,19 +85,20 @@ const VIEW_CHANGE = "peto-character-view-change";
 
 /**
  * Lưu góc nhìn và báo cho nơi khác cùng trang: sân khấu đổi theo thanh trượt "Kích thước và vị trí", thanh trượt đi theo
- * thao tác cuộn hay kéo trên sân khấu. ``source`` là bên ghi, để bên đó bỏ qua thông báo của chính mình.
+ * thao tác cuộn hay kéo trên sân khấu. ``source`` là bên ghi, để bên đó bỏ qua thông báo của chính mình; ``compact`` cho
+ * biết góc nhìn của khung điện thoại hay máy tính.
  */
-export function writeCharacterView(view: CharacterView, modelId = 'hiyori', source?: unknown) {
+export function writeCharacterView(view: CharacterView, modelId = 'hiyori', source?: unknown, compact = false) {
   try {
-    localStorage.setItem(modelId === 'hiyori' ? CHARACTER_VIEW_KEY : `${CHARACTER_VIEW_KEY}:${modelId}`, JSON.stringify(view));
+    localStorage.setItem(viewKey(modelId, compact), JSON.stringify(view));
   } catch {}
-  window.dispatchEvent(new CustomEvent(VIEW_CHANGE, { detail: { id: modelId, view, source } }));
+  window.dispatchEvent(new CustomEvent(VIEW_CHANGE, { detail: { id: modelId, view, source, compact } }));
 }
 
-export function watchCharacterView(modelId: string, update: (view: CharacterView, source: unknown) => void): () => void {
+export function watchCharacterView(modelId: string, update: (view: CharacterView, source: unknown, compact: boolean) => void): () => void {
   const changed = (event: Event) => {
-    const detail = (event as CustomEvent<{ id: string; view: CharacterView; source: unknown }>).detail;
-    if (detail?.id === modelId) update(clampView(detail.view), detail.source);
+    const detail = (event as CustomEvent<{ id: string; view: CharacterView; source: unknown; compact: boolean }>).detail;
+    if (detail?.id === modelId) update(clampView(detail.view), detail.source, detail.compact === true);
   };
   window.addEventListener(VIEW_CHANGE, changed);
   return () => window.removeEventListener(VIEW_CHANGE, changed);

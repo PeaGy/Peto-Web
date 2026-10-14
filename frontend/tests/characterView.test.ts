@@ -1,7 +1,7 @@
 import { beforeEach, expect, it } from 'vitest';
 import {
   CHARACTER_VIEW_KEY, DEFAULT_VIEW, MAX_ZOOM, MIN_ZOOM, clampView, lookTarget, motionEnabled, panBy, placement,
-  readCharacterMotion, readCharacterView, wheelZoomFactor, writeCharacterMotion, zoomAt,
+  readCharacterMotion, readCharacterView, watchCharacterView, wheelZoomFactor, writeCharacterMotion, writeCharacterView, zoomAt,
 } from '../src/features/companion/characters/characterView';
 
 const box = { width: 800, height: 600, baseX: 400, baseY: 594, baseScale: 0.3 };
@@ -53,4 +53,22 @@ it('đọc lại lựa chọn đã lưu và bỏ qua dữ liệu hỏng', () => 
   expect(readCharacterView()).toEqual(DEFAULT_VIEW);
   localStorage.setItem(CHARACTER_VIEW_KEY, JSON.stringify({ zoom: 9, panX: 0.2, panY: 0 }));
   expect(readCharacterView()).toEqual({ zoom: MAX_ZOOM, panX: 0.2, panY: 0 });
+});
+
+it('điện thoại lưu góc nhìn riêng, máy tính giữ khóa cũ; thông báo kèm khung và bên ghi', () => {
+  const seen: unknown[] = [];
+  const off = watchCharacterView('teto', (view, source, compact) => seen.push([view, source, compact]));
+  writeCharacterView({ zoom: 2, panX: 0.1, panY: 0.3 }, 'teto', 'stage');
+  writeCharacterView({ zoom: 0.8, panX: 0, panY: -0.1 }, 'teto', 'panel', true);
+  writeCharacterView({ zoom: 1.5, panX: 0, panY: 0 }, 'khac', 'panel', true);
+  off();
+  expect(readCharacterView('teto')).toEqual({ zoom: 2, panX: 0.1, panY: 0.3 });
+  expect(readCharacterView('teto', true)).toEqual({ zoom: 0.8, panX: 0, panY: -0.1 });
+  expect(localStorage.getItem('peto-character-view:teto')).toBeTruthy();
+  expect(localStorage.getItem('peto-character-view-compact:teto')).toBeTruthy();
+  expect(readCharacterView('hiyori', true)).toEqual(DEFAULT_VIEW);
+  expect(seen).toEqual([
+    [{ zoom: 2, panX: 0.1, panY: 0.3 }, 'stage', false],
+    [{ zoom: 0.8, panX: 0, panY: -0.1 }, 'panel', true],
+  ]);
 });

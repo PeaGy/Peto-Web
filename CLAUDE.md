@@ -1687,7 +1687,8 @@ Phones get AIRI's mobile look instead, at the owner's request. Below `COMPACT_QU
 breakpoint as the CSS) the character fills the screen in a fixed frame (`compactHeight` and
 `compactTop` in `characterConfig.ts`). The header, messages and a pill composer float over it in
 translucent `--stage-*` colours defined on `.companion`. Zoom, drag and double-click are ignored
-there. Instead, a finger held on the screen acts as the pointer, and the character looks at it until
+there; since 2026-10-15 the size and position are set on Cài đặt Companion → Nhân vật instead (see "Companion character
+page"). A finger held on the screen acts as the pointer, and the character looks at it until
 the finger lifts. `index.html` sets `interactive-widget=resizes-content`, so on Chrome for Android the
 keyboard shrinks the layout instead of panning the page away. That shrink keeps the message list's scroll position,
 which used to hide the newest reply behind the keyboard (the owner saw the middle of the thread on 2026-09-27). A
@@ -2428,7 +2429,14 @@ callout dropped as cramped and unneeded.
     They write the same per-model view as wheel/drag on the stage; `writeCharacterView(view, id, source)` now dispatches
     `peto-character-view-change` and `watchCharacterView` listens, so the stage moves at once and the sliders follow
     wheel and drag. When only the zoom changes, `Live2DStage` zooms around the head (`zoomAt` at the head point) and
-    writes the new pan back. Phones keep the fixed frame, so the block says the values are for desktop. VRM: a note.
+    writes the new pan back. VRM: a note.
+  - **Phones** (owner's correction, 2026-10-15): size and position are adjustable on phones too, only here, since the
+    phone stage still takes no pinch or drag. The phone view is stored apart from the desktop one
+    (`peto-character-view-compact:<id>`; `readCharacterView`/`writeCharacterView` take a `compact` flag and events carry
+    it), because the phone frame is an upper-body close-up and the desktop a full body. On phones `Live2DStage`
+    measures pan in units of the frame height (horizontal: `PHONE_ASPECT`, 9 : 19.5, of it), so the 44dvh preview
+    places the character exactly as the full-screen Companion stage does, only smaller, and the keyboard never moves
+    it. Crossing 720px saves any pending view and switches to the other frame's view.
   - Chuyển động (AIRI: Animation): "Nhân vật cử động", MAGIC (`MotionDriverPicker`), idle motion, the effect switches.
   - Biểu cảm (`ExpressionPicker`), Nhún theo nhạc (`BeatSyncBody`, Live2D only) and, on phones only, Hiển thị trên điện
     thoại (render quality).

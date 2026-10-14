@@ -310,25 +310,38 @@ it('máy tính: giữ chuột giữa để dời nhân vật, kéo bằng chuộ
   expect(model.position.x).toBe(moved);
 });
 
-it('điện thoại khóa khung: cuộn, kéo hay bấm đúp đều không đổi góc nhìn', async () => {
+it('điện thoại: cuộn, kéo hay bấm đúp không đổi góc nhìn; dùng góc nhìn riêng của điện thoại, chỉnh từ trang Nhân vật', async () => {
   mocks.compact = true;
+  // Góc nhìn máy tính không áp lên khung điện thoại.
   localStorage.setItem('peto-character-view', JSON.stringify({ zoom: 3, panX: 0.4, panY: 1 }));
+  localStorage.setItem(`peto-character-view-compact:${CHARACTER.id}`, JSON.stringify({ zoom: 0.8, panX: 0.1, panY: 0 }));
   const { model, view, host } = await mount();
-  const locked = model.scale.y;
-  expect(locked).toBeCloseTo(600 * CHARACTER.compactHeight / 2000);
-  expect(model.position.x).toBe(400);
+  const frame = 600 * CHARACTER.compactHeight / 2000;
+  // Độ dời ngang trên điện thoại tính theo chiều cao khung (bề ngang danh nghĩa 9 : 19,5), không theo bề ngang sân khấu.
+  const unit = 600 * 9 / 19.5;
+  expect(model.scale.y).toBeCloseTo(frame * 0.8);
+  expect(model.position.x).toBeCloseTo(400 + 0.1 * unit);
   fireEvent.wheel(host, { deltaY: -200, clientX: 400, clientY: 300 });
   host.dispatchEvent(pointer('pointerdown', 400, 300, 'touch'));
   host.dispatchEvent(pointer('pointermove', 480, 360, 'touch'));
   fireEvent.doubleClick(host);
-  expect(model.scale.y).toBe(locked);
-  expect(model.position.x).toBe(400);
+  expect(model.scale.y).toBeCloseTo(frame * 0.8);
+  expect(model.position.x).toBeCloseTo(400 + 0.1 * unit);
+  // Thanh trượt của trang Nhân vật trên điện thoại đổi khung điện thoại; góc nhìn máy tính gửi tới thì bỏ qua.
+  act(() => writeCharacterView({ zoom: 1.5, panX: 0.1, panY: 0 }, CHARACTER.id, 'panel', false));
+  expect(model.scale.y).toBeCloseTo(frame * 0.8);
+  act(() => writeCharacterView({ zoom: 1.2, panX: -0.2, panY: 0.1 }, CHARACTER.id, 'panel', true));
+  expect(model.scale.y).toBeCloseTo(frame * 1.2);
+  expect(model.position.x).toBeCloseTo(400 - 0.2 * unit);
   view.unmount();
-  expect(JSON.parse(localStorage.getItem('peto-character-view')!)).toEqual({ zoom: 3, panX: 0.4, panY: 1 });
+  // Sân khấu điện thoại không ghi đè góc nhìn máy tính (chỉ còn giá trị bên máy tính vừa ghi).
+  expect(JSON.parse(localStorage.getItem('peto-character-view')!)).toEqual({ zoom: 1.5, panX: 0.1, panY: 0 });
+  expect(readCharacterView(CHARACTER.id, true)).toEqual({ zoom: 1.2, panX: -0.2, panY: 0.1 });
 });
 
 it('điện thoại mở bàn phím: sân khấu thấp đi nhưng nhân vật giữ cỡ và chỗ đứng', async () => {
   mocks.compact = true;
+  localStorage.setItem(`peto-character-view-compact:${CHARACTER.id}`, JSON.stringify({ zoom: 1.1, panX: 0, panY: 0.2 }));
   const { model } = await mount();
   const scale = model.scale.y;
   const bottom = model.position.y;
@@ -339,7 +352,7 @@ it('điện thoại mở bàn phím: sân khấu thấp đi nhưng nhân vật g
   // Xoay máy đổi bề ngang thì khung được tính lại theo chiều cao mới.
   vi.spyOn(Element.prototype, 'clientWidth', 'get').mockReturnValue(600);
   mocks.resize!();
-  expect(model.scale.y).toBeCloseTo(340 * CHARACTER.compactHeight / 2000);
+  expect(model.scale.y).toBeCloseTo(340 * CHARACTER.compactHeight / 2000 * 1.1);
 });
 
 it('nhìn theo con trỏ khi được cử động, đứng yên thì không', async () => {

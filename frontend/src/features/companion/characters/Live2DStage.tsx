@@ -38,6 +38,9 @@ import { MagicRuntime, loadMagic, magicOffset, magicWriter } from './magic/magic
 import { readMagic, watchMagic } from './magic/magicSettings';
 import type { MagicProfiles } from './magic/magicProfiles';
 
+/** Bề ngang danh nghĩa của khung điện thoại so với chiều cao (máy dọc 9 : 19,5), làm đơn vị cho độ dời ngang. */
+const PHONE_ASPECT = 9 / 19.5;
+
 let coreReady: Promise<void> | undefined;
 function loadCore() {
   if ("Live2DCubismCore" in window) return Promise.resolve();
@@ -177,14 +180,18 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
       // "Theo cài đặt chung" theo Cài đặt → Giao diện → Chuyển động của web (13/10/2026), không hỏi thẳng thiết bị.
       const moving = () => motionEnabled(motionRef.current, isReducedMotion());
 
-      // Máy tính: phóng và dời chỉ nhân thêm lên cỡ vừa khung, nên đổi cỡ cửa sổ vẫn giữ đúng góc nhìn đã chọn.
-      let view = readCharacterView(character.id);
+      // Phóng và dời chỉ nhân thêm lên cỡ vừa khung, nên đổi cỡ cửa sổ vẫn giữ đúng góc nhìn đã chọn. Điện thoại có góc
+      // nhìn riêng (15/10/2026, chủ web): chỉnh ở Cài đặt → Nhân vật; trên sân khấu điện thoại vẫn không kéo hay chụm ngón.
+      let viewCompact = compact.matches;
+      let view = readCharacterView(character.id, viewCompact);
+      let saveTimer: number | undefined;
+      const viewSource = {};
       const box: StageBox = { width: 1, height: 1, baseX: 0, baseY: 0, baseScale: 1 };
       // MAGIC dịch cả model vài chục điểm ảnh quanh chỗ đặt (`magicOffset`); không có MAGIC thì luôn bằng 0.
       let base = { x: 0, y: 0 };
       let shift = { x: 0, y: 0 };
       const place = () => {
-        const { scale, x, y } = placement(compact.matches ? DEFAULT_VIEW : view, box);
+        const { scale, x, y } = placement(view, box);
         current.scale.set(scale);
         base = { x, y };
         current.position.set(x + shift.x, y + shift.y);
@@ -210,12 +217,26 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
           } else {
             frameHeight = Math.max(frameHeight, height);
           }
-          // Điện thoại: nửa trên nhân vật phủ màn hình, đỉnh đầu nằm ngay dưới hàng nút.
+          // Điện thoại: nửa trên nhân vật phủ màn hình, đỉnh đầu nằm ngay dưới hàng nút. Độ dời cũng tính theo chiều cao
+          // khung (ngang theo một bề ngang điện thoại danh nghĩa), để bàn phím mở ra không kéo nhân vật đi, và sân khấu xem
+          // trước thấp hơn ở Cài đặt → Nhân vật đặt nhân vật y như sân khấu Companion, chỉ nhỏ hơn.
+          box.height = frameHeight;
+          box.width = frameHeight * PHONE_ASPECT;
           box.baseScale = frameHeight * CHARACTER.compactHeight / originalHeight;
           box.baseY = frameHeight * CHARACTER.compactTop + originalHeight * box.baseScale;
         } else {
           box.baseScale = Math.min(width * 0.94 / originalWidth, height * 0.96 / originalHeight);
           box.baseY = height * 0.99;
+        }
+        // Qua mốc 720px (xoay máy tính bảng, thu hẹp cửa sổ): lưu nốt góc nhìn đang chờ, rồi dùng góc nhìn của khung kia.
+        if (compact.matches !== viewCompact) {
+          if (saveTimer !== undefined) {
+            window.clearTimeout(saveTimer);
+            saveTimer = undefined;
+            writeCharacterView(view, character.id, viewSource, viewCompact);
+          }
+          viewCompact = compact.matches;
+          view = readCharacterView(character.id, viewCompact);
         }
         place();
       };
@@ -223,28 +244,26 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
       observer.observe(container);
       fit();
 
-      let saveTimer: number | undefined;
-      const viewSource = {};
       const changeView = (next: CharacterView) => {
         view = next;
         place();
         window.clearTimeout(saveTimer);
         saveTimer = window.setTimeout(() => {
           saveTimer = undefined;
-          writeCharacterView(view, character.id, viewSource);
+          writeCharacterView(view, character.id, viewSource, viewCompact);
         }, 300);
       };
       // Thanh trượt "Kích thước và vị trí" ghi góc nhìn: đặt lại nhân vật ngay, bỏ lượt lưu đang chờ của thao tác cũ.
-      const unwatchView = watchCharacterView(character.id, (next, source) => {
-        if (source === viewSource) return;
+      const unwatchView = watchCharacterView(character.id, (next, source, forCompact) => {
+        if (source === viewSource || forCompact !== viewCompact) return;
         window.clearTimeout(saveTimer);
         saveTimer = undefined;
         // Chỉ đổi mức phóng (thanh Thu phóng): phóng quanh đầu cho mặt đứng yên, rồi báo lại độ dời mới cho thanh trượt.
-        if (next.zoom !== view.zoom && next.panX === view.panX && next.panY === view.panY && !compact.matches) {
+        if (next.zoom !== view.zoom && next.panX === view.panX && next.panY === view.panY) {
           const headY = base.y - originalHeight * current.scale.y * CHARACTER.headHeight;
           view = zoomAt(view, next.zoom / view.zoom, base.x, headY, box);
           place();
-          writeCharacterView(view, character.id, viewSource);
+          writeCharacterView(view, character.id, viewSource, viewCompact);
           return;
         }
         view = next;
@@ -562,7 +581,7 @@ export default function Live2DStage({ fallbackUrl, name, motion = "system", char
         unwatchView();
         if (saveTimer !== undefined) {
           window.clearTimeout(saveTimer);
-          writeCharacterView(view, character.id, viewSource);
+          writeCharacterView(view, character.id, viewSource, viewCompact);
         }
       };
       // Vẽ vào canvas đang ẩn trước khi báo sẵn sàng, để loading và nhân vật đổi trong cùng lượt cập nhật.

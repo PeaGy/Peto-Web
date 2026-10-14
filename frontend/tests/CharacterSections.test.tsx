@@ -135,11 +135,20 @@ it('VRM chỉ có cử động chung, nhìn ô chat và biểu cảm; không có
   expect(fetch).not.toHaveBeenCalled();
 });
 
-it('trên điện thoại có thêm Hiển thị trên điện thoại, lưu chất lượng và độ mượt', () => {
+it('trên điện thoại chỉnh cỡ và vị trí riêng của điện thoại, có thêm Hiển thị trên điện thoại', () => {
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({ FileReferences: { Motions: {} } }) }));
   vi.stubGlobal('matchMedia', vi.fn((query: string) => ({ matches: query.includes('720px'), addEventListener: vi.fn(), removeEventListener: vi.fn() })));
+  writeCharacterView({ zoom: 2, panX: 0, panY: 0 }, DEFAULT_CHARACTER.id);
   render(<CharacterSections character={DEFAULT_CHARACTER} motion="system" onMotionChange={vi.fn()} />);
-  expect(screen.getByText(/Trên điện thoại nhân vật giữ khung cố định/)).toBeTruthy();
+  expect(screen.getByText(/Cỡ và vị trí riêng cho điện thoại/)).toBeTruthy();
+  const zoom = screen.getByRole('slider', { name: 'Thu phóng' }) as HTMLInputElement;
+  expect(zoom.value).toBe('100');
+  fireEvent.change(zoom, { target: { value: '130' } });
+  expect(readCharacterView(DEFAULT_CHARACTER.id, true).zoom).toBe(1.3);
+  expect(readCharacterView(DEFAULT_CHARACTER.id).zoom).toBe(2);
+  // Góc nhìn máy tính đổi thì thanh trượt điện thoại không chạy theo.
+  act(() => writeCharacterView({ zoom: 3, panX: 0, panY: 0 }, DEFAULT_CHARACTER.id, {}));
+  expect(zoom.value).toBe('130');
   open('Hiển thị trên điện thoại');
   fireEvent.click(screen.getByRole('combobox', { name: 'Độ mượt' }));
   fireEvent.click(screen.getByRole('option', { name: 'Cao · tối đa 60 FPS' }));
