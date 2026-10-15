@@ -42,6 +42,49 @@ beforeEach(() => {
   vi.mocked(api.getImagineWorkspace).mockImplementation(async imageId => ({ root_image_id: imageId, root_job: job, jobs: [] }));
 });
 
+it('tạo thêm dùng đúng cấu hình và nguồn của lượt cũ, giữ bản nháp và chặn bấm trùng', async () => {
+  const oldJob = { ...editedJob, n: 3, source_images: [editedJob.source_image!, job.images[0]] };
+  vi.mocked(api.listImagineJobs).mockResolvedValue([oldJob]);
+  const request = deferred<api.ImagineJob>();
+  vi.mocked(api.createImagineJob).mockReturnValue(request.promise);
+  await open();
+  fireEvent.change(screen.getByLabelText('Chọn ảnh để sửa'), { target: { files: [sourceFile()] } });
+  await screen.findByRole('img', { name: 'Ảnh gốc để chỉnh sửa' });
+  fireEvent.change(screen.getByLabelText('Bạn muốn sửa gì trong ảnh?'), { target: { value: 'Bản nháp chưa gửi' } });
+  const button = screen.getByRole('button', { name: 'Tạo thêm', exact: true });
+  fireEvent.click(button); fireEvent.click(button);
+  expect(api.createImagineJob).toHaveBeenCalledTimes(1);
+  expect(api.createImagineJob).toHaveBeenCalledWith({ prompt: oldJob.prompt, quality: 'medium', resolution: '2k', aspect_ratio: '16:9', n: 3,
+    source_images: [{ image_id: 'source-1' }, { image_id: 'img-1' }] });
+  expect(screen.getByText('Đang gửi yêu cầu…')).toBeTruthy();
+  expect(document.querySelectorAll('.generation-result:disabled')).toHaveLength(3);
+  await act(async () => request.resolve({ ...oldJob, id: 'another-job' }));
+  expect((screen.getByLabelText('Bạn muốn sửa gì trong ảnh?') as HTMLTextAreaElement).value).toBe('Bản nháp chưa gửi');
+  expect(screen.getByRole('img', { name: 'Ảnh gốc để chỉnh sửa' }).getAttribute('src')).toContain('data:image/png');
+  expect(screen.getByRole('button', { name: 'Số ảnh: 1 ảnh' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: '1K' }).getAttribute('aria-pressed')).toBe('true');
+});
+
+it('tạo thêm chưa xác nhận thì giữ bản nháp và yêu cầu kiểm tra, không gửi lại', async () => {
+  vi.mocked(api.listImagineJobs).mockResolvedValue([job]);
+  vi.mocked(api.createImagineJob).mockRejectedValue(new api.ImagineRequestUncertainError('repeat-uncertain'));
+  await open();
+  fireEvent.change(screen.getByLabelText('Bức ảnh bạn muốn tạo'), { target: { value: 'Để sau' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Tạo thêm', exact: true }));
+  await screen.findByRole('button', { name: 'Kiểm tra lượt vừa gửi' });
+  fireEvent.click(screen.getByRole('button', { name: 'Tạo thêm', exact: true }));
+  expect(api.createImagineJob).toHaveBeenCalledTimes(1);
+  expect((screen.getByLabelText('Bức ảnh bạn muốn tạo') as HTMLTextAreaElement).value).toBe('Để sau');
+});
+
+it('dùng lại mô tả phục hồi cả số ảnh gốc', async () => {
+  vi.mocked(api.listImagineJobs).mockResolvedValue([{ ...job, n: 4 }]);
+  await open();
+  fireEvent.click(screen.getByRole('button', { name: 'Dùng lại mô tả' }));
+  expect(screen.getByRole('button', { name: 'Số ảnh: 4 ảnh' })).toBeTruthy();
+  expect(api.createImagineJob).not.toHaveBeenCalled();
+});
+
 it('thêm nhiều ảnh, ghép ảnh thư viện và gửi đúng thứ tự ảnh đầu', async () => {
   vi.mocked(api.listImagineJobs).mockResolvedValue([job]);
   await open();
@@ -126,7 +169,7 @@ it('phục hồi lượt đang chạy rồi hiện kết quả mà không POST l
   vi.mocked(api.listImagineJobs).mockResolvedValue([{ ...job, status: 'running', images: [], n: 2 }]);
   vi.mocked(api.getImagineJob).mockResolvedValue({ ...job, status: 'complete' });
   await open();
-  expect(screen.getByText('Peto đang tạo ảnh…')).toBeTruthy();
+  expect(screen.getByText('Đang tạo 2 ảnh…')).toBeTruthy();
   await screen.findByRole('button', { name: 'Xem ảnh 1: Mèo trên mặt trăng' }, { timeout: 2500 });
   expect(api.createImagineJob).not.toHaveBeenCalled();
 });

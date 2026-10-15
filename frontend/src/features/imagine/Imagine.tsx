@@ -9,6 +9,7 @@ import {
 import ImagineLibrary from "./ImagineLibrary";
 import EditHistory from "./EditHistory";
 import ImageWorkspace from "./ImageWorkspace";
+import GenerationPreview from './GenerationPreview';
 import type { ImageVersion } from "./ImageVersionRail";
 import StudioMenu from "./StudioMenu";
 import StudioIcon from "./studioIcons";
@@ -33,8 +34,8 @@ const RATIO_HINTS: Record<string, string> = {
 };
 const IDEAS = [
   { label: "Một nhân vật", style: "character", prompt: "Mèo trắng đội mũ phù thủy màu tím, minh họa sách truyện, ánh sáng dịu và những ngôi sao nhỏ." },
-  { label: "Một thế giới", style: "landscape", prompt: "Ngôi nhà nhỏ bên hồ trên một hành tinh xa, trời hoàng hôn màu hồng, phong cảnh điện ảnh yên bình." },
-  { label: "Một ý tưởng", style: "poster", prompt: "Áp phích cho ban nhạc giả tưởng, phong cách synthwave, mặt trời và những đường nét hình học tím cam." },
+  { label: "Ảnh sản phẩm", style: "product", prompt: "Ảnh chụp sản phẩm: một cốc gốm trắng trên bàn gỗ sáng, nền tối giản, ánh sáng tự nhiên từ cửa sổ, bóng đổ mềm, chất liệu rõ nét." },
+  { label: "Áp phích", style: "poster", prompt: "Áp phích cho đêm nhạc tên “Mơ”, phong cách synthwave, mặt trời tím cam, bố cục thoáng với tiêu đề lớn ở phía trên, không thêm chữ khác." },
 ];
 
 function readStored<T extends string>(key: string, allowed: T[], fallback: T): T {
@@ -128,12 +129,12 @@ function IdeaArt({ style }: { style: string }) {
         <path d="M64 55h72" stroke="#c2a1f0" strokeWidth="6" strokeLinecap="round" />
         <path d="M88 75h1m21 0h1" stroke="#4c365f" strokeWidth="4" strokeLinecap="round" />
         <path d="m149 23 2 6 6 2-6 2-2 6-2-6-6-2 6-2 2-6Z" fill="#f6d398" />
-      </> : style === "landscape" ? <>
-        <circle cx="142" cy="32" r="18" fill="#f3b3a6" />
-        <path d="m0 72 44-36 47 38 30-24 79 36v14H0Z" fill="#605b86" />
-        <path d="m0 89 76-31 66 30 58-23v35H0Z" fill="#383c60" />
-        <path d="M86 70h21v18H86Z" fill="#e5b692" /><path d="m81 71 16-14 15 14H81Z" fill="#242942" />
-        <path d="M0 91h200" stroke="#b7a5d9" strokeWidth="2" />
+      </> : style === "product" ? <>
+        <ellipse cx="100" cy="84" rx="46" ry="6" fill="#242424" />
+        <path d="M120 40h10a14 14 0 0 1 0 28h-10" stroke="#d3ccbd" strokeWidth="6" />
+        <path d="M72 35h51v33a16 16 0 0 1-16 16H88a16 16 0 0 1-16-16Z" fill="#e9e2d3" />
+        <ellipse cx="97.5" cy="35" rx="25.5" ry="6" fill="#b8ab94" />
+        <path d="M89 23c-7-8 8-9 1-17M105 23c-7-8 8-9 1-17" stroke="#ded7cb" strokeOpacity=".5" strokeWidth="2" strokeLinecap="round" />
       </> : <>
         <circle cx="100" cy="42" r="30" fill="#ecaf8d" />
         <path d="M67 41h66M66 48h68M68 55h64M71 62h58" stroke="#805887" strokeWidth="3" />
@@ -145,6 +146,8 @@ function IdeaArt({ style }: { style: string }) {
 const ratioLabel = (value: string) => value === "auto" ? "Tự động" : value;
 const qualityLabel = (value: string) => value === "low" ? "Nhanh" : "Chi tiết";
 type ImageView = { job: ImagineJob; index: number; original?: boolean; sourceIndex?: number; using?: boolean };
+type SubmissionPreview = Pick<ImagineJob, 'prompt' | 'quality' | 'resolution' | 'aspect_ratio'> & { n: number; sourceUrl?: string };
+const jobCount = (job: ImagineJob) => Math.min(4, Math.max(1, job.n ?? job.images.length));
 
 export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsChange, focusJobId, onFocusHandled, libraryRequest = 0 }: {
   active: boolean;
@@ -176,6 +179,7 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
   const [loading, setLoading] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [submissionPreview, setSubmissionPreview] = useState<SubmissionPreview | null>(null);
   const [submittingImageId, setSubmittingImageId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [lightbox, setLightbox] = useState<ImageView | null>(null);
@@ -565,14 +569,26 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
     flushSync(() => setExpanded(true));
     optionsRef.current?.querySelector<HTMLButtonElement>("button[aria-pressed='true']")?.focus();
   }
-  async function generate() {
-    const text = prompt.trim();
+  async function generate(repeat?: ImagineJob) {
+    const text = (repeat?.prompt ?? prompt).trim();
     if (!text || inFlight.current || pendingIds || uncertainRequest || loading || loadFailed || readingSource) return;
+    if (repeat && (imaginePending(repeat) || repeat.status === 'failed' || repeat.status === 'unknown' || !repeat.images.length)) return;
+    const references = repeat ? imagineSources(repeat) : [];
+    const request: Parameters<typeof createImagineJob>[0] = repeat
+      ? { prompt: text, quality: repeat.quality, resolution: repeat.resolution, aspect_ratio: repeat.aspect_ratio, n: jobCount(repeat),
+        ...(references.length > 1 ? { source_images: references.map(image => ({ image_id: image.id })) }
+          : references[0] ? { source_image_id: references[0].id } : {}) }
+      : { prompt: text, quality, resolution, aspect_ratio: aspect, n: count,
+        ...(sources.length > 1 ? { source_images: sources.map(image => image.upload ?? { image_id: image.imageId! }) }
+          : source?.upload ? { source_image: source.upload } : source?.imageId ? { source_image_id: source.imageId } : {}) };
     inFlight.current = true;
     setError(null);
     setGenerating(true);
     // Điện thoại: gửi rồi thì thu thanh lại và ẩn bàn phím để thấy ảnh đang tạo.
-    const editing = lightbox && !lightbox.original && lightbox.using ? lightbox.job.images[lightbox.index] : null;
+    const editing = !repeat && lightbox && !lightbox.original && lightbox.using ? lightbox.job.images[lightbox.index] : null;
+    if (editing && sources.length && (source.upload || source.imageId === editing.id)) request.edit_parent_image_id = editing.id;
+    // Chụp cấu hình lượt gửi, không thay bản nháp khi tạo thêm từ lượt cũ.
+    setSubmissionPreview({ ...request, sourceUrl: repeat ? references[0]?.url : source?.preview });
     if (editing) setSubmittingImageId(editing.id);
     if (!editing) closeImage();
     setLibraryOpen(false);
@@ -580,11 +596,7 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
     if (phone) { setExpanded(false); textareaRef.current?.blur(); }
     galleryRef.current?.scrollTo({ top: 0 });
     try {
-      const job = await createImagineJob({ prompt: text, quality, resolution, aspect_ratio: aspect, n: count,
-        ...(sources.length > 1 ? { source_images: sources.map(image => image.upload ?? { image_id: image.imageId! }) }
-          : source?.upload ? { source_image: source.upload } : source?.imageId ? { source_image_id: source.imageId } : {}),
-        ...(editing && sources.length && (source.upload || source.imageId === editing.id) ? { edit_parent_image_id: editing.id } : {}),
-      });
+      const job = await createImagineJob(request);
       acceptRevision(job);
       if (editing && imaginePending(job)) setLightbox(current => current ? { ...current, using: false } : current);
     } catch (err) {
@@ -594,6 +606,7 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
     } finally {
       inFlight.current = false;
       setGenerating(false);
+      setSubmissionPreview(null);
       setSubmittingImageId(null);
       // Focus lại trên điện thoại sẽ bật bàn phím lên giữa lúc người dùng đang xem ảnh.
       if (activeRef.current && !phone) textareaRef.current?.focus();
@@ -629,6 +642,7 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
     setQuality(job.quality);
     setResolution(job.resolution);
     setAspect(job.aspect_ratio);
+    setCount(jobCount(job));
     textareaRef.current?.focus();
   }
   const lightboxImage = lightbox?.original ? imagineSources(lightbox.job)[lightbox.sourceIndex ?? 0] : lightbox?.job.images[lightbox.index];
@@ -732,17 +746,17 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
           </button>)}
         </div>}
       </section>}
-      {generating && <section className="generation-pending" role="status" aria-live="polite">
-        <div className="generation-copy"><span className="imagine-mark"><SparkleIcon /></span><div><strong>{source ? `Peto đang sửa ảnh · ${count} kết quả…` : `Peto đang tạo ${count} ảnh…`}</strong><p>Bạn có thể sang trò chuyện trong lúc đợi.</p></div></div>
-        <p className="pending-prompt">{prompt}</p>
-        <div className="imagine-thumbs" aria-hidden="true">{Array.from({ length: count }, (_, index) => <div className="image-placeholder" key={index}><SparkleIcon /></div>)}</div>
+      {generating && submissionPreview && !submittingImageId && <section className="imagine-job">
+        <p className="imagine-prompt submitting-prompt">{submissionPreview.prompt}</p>
+        <GenerationPreview images={[]} count={submissionPreview.n} aspect={submissionPreview.aspect_ratio} sourceUrl={submissionPreview.sourceUrl}
+          pending paused={!active} status="Đang gửi yêu cầu…" prompt={submissionPreview.prompt} />
       </section>}
       {jobs.some(job => job.root_image_id && imaginePending(job)) && <p className="workspace-history-status" role="status">Peto đang chỉnh sửa ảnh. Mở ảnh chính để xem lịch sử và kết quả.</p>}
       {rootJobs.length > 0 && <div className="studio-library-head"><h1>Ảnh của bạn</h1><span>{rootJobs.length} lượt đã tải</span><button type="button" className="studio-text-button" onClick={() => setLibraryOpen(true)}>Thư viện</button></div>}
       {rootJobs.map((job) => <section key={job.id} data-job-id={job.id} className="imagine-job">
         <div className="imagine-job-head">
           <div className="imagine-job-copy"><p className="imagine-prompt">{job.prompt}</p><div className="imagine-meta">
-            <span>{qualityLabel(job.quality)}</span><span>{job.resolution.toUpperCase()}</span><span>{ratioLabel(job.aspect_ratio)}</span><span>{job.images.length} ảnh</span>
+            <span>{qualityLabel(job.quality)}</span><span>{job.resolution.toUpperCase()}</span><span>{ratioLabel(job.aspect_ratio)}</span><span>{imaginePending(job) ? jobCount(job) : job.images.length} ảnh</span>
             {job.source_image && <span>Đã chỉnh sửa</span>}
             {job.created_at && <time dateTime={new Date(job.created_at * 1000).toISOString()}>{new Date(job.created_at * 1000).toLocaleDateString("vi-VN", { day: "numeric", month: "short" })}</time>}
           </div></div>
@@ -753,11 +767,14 @@ export default function Imagine({ active, onUnauthorized, onOpenSidebar, onJobsC
         </div>
         <div className="job-sources">{imagineSources(job).map((image, sourceIndex) => <button key={image.id} className="job-source" type="button" onClick={() => setLightbox({ job, index: 0, original: true, sourceIndex })}><img src={image.url} alt="" loading="lazy" /><span>{imagineSources(job).length === 1 ? "Xem ảnh gốc" : `Ảnh tham chiếu ${sourceIndex + 1}`}</span></button>)}</div>
         {imagineSources(job).some(image => image.parent_job_id) && <EditHistory job={job} jobs={rootJobs} onOpen={openImage} onUnauthorized={onUnauthorized} />}
-        {imaginePending(job) && <div className="generation-pending" role="status"><strong>{job.status === "queued" ? "Đang chờ đến lượt…" : "Peto đang tạo ảnh…"}</strong><p>Bạn có thể chuyển tab hoặc tải lại trang; lượt này vẫn được theo dõi.</p><JobElapsed createdAt={job.created_at} /><div className="imagine-thumbs" aria-hidden="true">{Array.from({ length: job.n ?? 1 }, (_, index) => <div className="image-placeholder" key={index}><SparkleIcon /></div>)}</div></div>}
         {(job.status === "failed" || job.status === "unknown") && <p className="error">{job.error || "Chưa có kết quả cho lượt này."}{job.status === "unknown" && " Lượt này không được tự gửi lại."}</p>}
-        <div className="imagine-thumbs">{job.images.map((image, index) => <button key={image.id} type="button" className="imagine-thumb" aria-label={"Xem ảnh " + (index + 1) + ": " + job.prompt} onClick={() => openImage({ job, index })}>
-          <img src={image.url} alt={job.prompt} loading="lazy" decoding="async" /><span className="image-open-hint">Xem ảnh ↗</span>
-        </button>)}</div>
+        <GenerationPreview images={job.images} count={jobCount(job)} aspect={job.aspect_ratio} sourceUrl={imagineSources(job)[0]?.url}
+          pending={imaginePending(job)} paused={!active || pollError || job.status === 'queued'} prompt={job.prompt}
+          status={pollError ? 'Đang kết nối lại…' : job.status === 'queued' ? 'Đang chờ đến lượt…' : `Đang tạo ${jobCount(job)} ảnh…`}
+          elapsed={<JobElapsed createdAt={job.created_at} />} onOpen={index => openImage({ job, index })} />
+        {job.images.length > 0 && (!job.status || job.status === 'complete') && <div className="imagine-result-actions">
+          <button type="button" disabled={controlsDisabled} data-tip="Tạo lượt mới với cùng mô tả, ảnh tham chiếu và tùy chọn" onClick={() => void generate(job)}><SparkleIcon />Tạo thêm</button>
+        </div>}
       </section>)}
       {hasMore && <button type="button" className="load-more" disabled={loadingMore} onClick={() => void loadMore()}>{loadingMore ? "Đang tải…" : "Xem ảnh cũ hơn"}</button>}
     </div>
@@ -815,5 +832,5 @@ function JobElapsed({ createdAt }: { createdAt: number | null }) {
   }, []);
   if (!createdAt) return null;
   const elapsed = Math.max(0, Math.floor(now / 1000 - createdAt));
-  return <span className="imagine-elapsed">Đã chờ {elapsed < 60 ? `${elapsed} giây` : `${Math.floor(elapsed / 60)} phút ${elapsed % 60} giây`}</span>;
+  return <span className="imagine-elapsed" aria-label={`Đã chờ ${elapsed} giây`}>{elapsed < 60 ? `${elapsed} giây` : `${Math.floor(elapsed / 60)} phút ${elapsed % 60} giây`}</span>;
 }

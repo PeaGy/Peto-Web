@@ -1181,6 +1181,19 @@ chat answer into Word, which broke overlines into "xˉ".
 
 ### Imagine (image generation)
 
+**Gallery generation UX (owner request, 2026-10-15):** `GenerationPreview` keeps the chosen ratio and tile positions
+from pending to decoded final images. Auto uses a neutral square unless a pending reference's ratio is available;
+read that ratio from the displayed source, never eagerly download reference images across historical jobs.
+The provisional Auto frame does not claim an output size.
+Subtle grain/dots indicate activity only: never show invented percent or fake intermediate AI images. Pause motion
+for queued jobs, failed polling, inactive Imagine or a hidden document; honour `data-motion="reduced"`.
+Image download/decode failures offer an image-only retry, never another generation POST.
+“Tạo thêm” is an explicit new billed batch using the original prompt, count, quality, resolution, ratio and ordered
+source snapshots, independent of the current composer draft. It reuses the existing in-flight lock, background job
+and uncertain-receipt recovery, never retries an unknown job automatically, and does not create an edit-history child.
+“Dùng lại mô tả” restores count too. Welcome templates only fill the draft; keep edit suggestions/reference guidance
+removed as previously requested. No provider streaming-preview, video, removal or enhancement capability is implied.
+
 For UI polish, apply the owner's selected `emil-design-eng` and `mobile-native` skills when available
 (source: https://github.com/emilkowalski/skills). Keep the owner's Grok screenshots and interaction requests
 authoritative. Use the existing motion tokens/press feedback; gate hover by pointer capability, retain

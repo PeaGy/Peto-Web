@@ -11,21 +11,6 @@
   position: relative;
 }
 
-.imagine-mark {
-  display: grid;
-  place-items: center;
-  color: var(--accent);
-}
-
-.imagine-mark {
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  background: var(--panel-2);
-  border: 1px solid var(--line);
-  flex-shrink: 0;
-}
-
 .imagine-gallery {
   flex: 1;
   min-height: 0;
@@ -52,7 +37,7 @@
 .idea-art { display: block; height: 105px; background: #242424; overflow: hidden; }
 .idea-art svg { display: block; width: 100%; height: 100%; }
 .idea-art.character { background: radial-gradient(ellipse at 50% 110%, #4a4a4a, #1e1e1e); }
-.idea-art.landscape { background: linear-gradient(140deg, #2e2e2e, #5a5a5a); }
+.idea-art.product { background: linear-gradient(140deg, #2e2e2e, #5a5a5a); }
 .idea-art.poster { background: linear-gradient(130deg, #262626, #4a4a4a); }
 .studio-library-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
 .studio-library-head > button { margin-left: auto; }
@@ -133,14 +118,27 @@
 .imagine-thumb:focus-visible { border-color: var(--accent); }
 .image-open-hint { position: absolute; bottom: 10px; right: 10px; border-radius: 8px; padding: 5px 10px; background: var(--overlay-soft); color: var(--text); backdrop-filter: blur(8px); font-size: 11px; opacity: 0; transition: opacity .2s; }
 .imagine-thumb:focus-visible .image-open-hint { opacity: 1; }
-.generation-pending { border: 1px solid var(--line); border-radius: 16px; background: var(--panel); padding: 20px; }
-.generation-copy { display: flex; align-items: center; gap: 12px; }
-.generation-copy strong { font-size: 14px; }
-.generation-copy p { color: var(--muted); font-size: 12px; margin: 2px 0 0; }
-.pending-prompt { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; max-height: 4.8em; overflow: auto; }
-.image-placeholder { display: grid; place-items: center; aspect-ratio: 1; max-width: 300px; border: 1px solid var(--line); border-radius: 12px; color: var(--accent); background: linear-gradient(110deg, var(--panel-2) 20%, var(--drop-active) 45%, var(--panel-2) 70%); background-size: 250% 100%; animation: image-shimmer 2.5s ease-in-out infinite; }
-.image-placeholder svg { width: 32px; height: 32px; }
-@keyframes image-shimmer { to { background-position: -200% 0; } }
+.submitting-prompt { margin-bottom: 10px; }
+.imagine-result-actions { display: flex; margin-top: 12px; }
+.imagine-result-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 38px;
+  padding: 7px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.imagine-result-actions svg { width: 16px; height: 16px; }
+@media (hover: hover) and (pointer: fine) { .imagine-result-actions button:hover:not(:disabled) { background: var(--panel-2); } }
+@media (pointer: coarse) { .imagine-result-actions button { min-height: 44px; } }
 /* Ô nhập kiểu Grok: hàng chip tùy chọn ở trên, khung bo tròn ở dưới. Máy tính luôn thấy đủ;
    điện thoại thu thành một thanh nổi trên bộ ảnh (khối @media ngay sau phần này). */
 .studio-dock { position: absolute; left: 0; right: 0; bottom: 0; z-index: 5; pointer-events: none; width: 100%; padding: 8px max(24px, calc((100% - 980px) / 2)) 20px; }
@@ -332,7 +330,6 @@
   }
   .studio-dock:not(.expanded) .add-source-thumb { display: block; position: absolute; inset: 6px; width: 28px; height: 28px; border-radius: 8px; object-fit: cover; background: var(--panel-2); }
 }
-:root[data-motion="reduced"] .image-placeholder { animation: none; }
 :root[data-motion="reduced"] .studio-idea, :root[data-motion="reduced"] .image-open-hint { transition: none; }
 @media (max-height: 800px) and (min-width: 721px) {
   .studio-welcome { padding: 0; }

@@ -1,0 +1,144 @@
+/* Bề mặt chờ dùng chuyển động nhẹ, giữ nguyên khung khi nhận ảnh thật. */
+.generation-preview {
+  min-width: 0;
+  width: 100%;
+  max-width: calc(var(--generation-columns) * min(440px, 520px * var(--generation-ratio)) + (var(--generation-columns) - 1) * 12px);
+}
+.generation-preview .generation-grid {
+  grid-template-columns: repeat(var(--generation-columns), minmax(0, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+.generation-tile {
+  position: relative;
+  min-width: 0;
+  aspect-ratio: var(--generation-ratio);
+  overflow: hidden;
+  isolation: isolate;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel-2);
+}
+.generation-surface {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background: var(--panel-2);
+  opacity: 1;
+  transition: opacity 240ms var(--ease-out);
+}
+.generation-grain {
+  position: absolute;
+  inset: -24px;
+  opacity: .13;
+  background: url('./generationGrain.svg') repeat;
+}
+.generation-source {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: blur(18px);
+  opacity: .35;
+  transform: scale(1.08);
+}
+.generation-drift {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+.generation-drift > span {
+  position: absolute;
+  inset: -36px;
+  opacity: .2;
+  background-image: radial-gradient(circle, color-mix(in srgb, var(--text) 55%, transparent) 1.3px, transparent 1.8px);
+  background-size: 28px 28px;
+  mask-image: linear-gradient(125deg, transparent 10%, black 45%, transparent 75%);
+  animation: generation-drift 2.8s cubic-bezier(.45,0,.55,1) infinite alternate, generation-glow 2.8s cubic-bezier(.45,0,.55,1) infinite;
+}
+.generation-drift > span:nth-child(2) {
+  mask-image: linear-gradient(125deg, transparent 30%, black 65%, transparent 95%);
+  animation-delay: -.9s;
+}
+.generation-drift > span:nth-child(3) {
+  mask-image: linear-gradient(125deg, transparent, black 25%, transparent 55%);
+  animation-delay: -1.8s;
+}
+@keyframes generation-drift {
+  from { transform: translate3d(-8px, 10px, 0); }
+  to { transform: translate3d(16px, -14px, 0); }
+}
+@keyframes generation-glow {
+  0%, 100% { opacity: .16; }
+  50% { opacity: .5; }
+}
+.generation-preview:not([data-pending="true"]) .generation-drift { display: none; }
+.generation-preview[data-paused="true"] .generation-drift > span { animation-play-state: paused; }
+.generation-preview .generation-result {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  aspect-ratio: auto;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+}
+.generation-result img {
+  opacity: 0;
+  transition: opacity 240ms var(--ease-out);
+}
+.generation-tile[data-ready="true"] .generation-result img { opacity: 1; }
+.generation-tile[data-ready="true"] .generation-surface { opacity: 0; }
+.generation-tile .generation-result:disabled {
+  opacity: 1;
+  cursor: default;
+}
+.generation-tile .generation-result:focus-visible { outline-offset: -4px; }
+.generation-status {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.generation-status .imagine-elapsed {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+.generation-image-error {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 12px;
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: 13px;
+}
+.generation-image-error button {
+  min-height: 38px;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--panel);
+  font: inherit;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+@media (hover: hover) and (pointer: fine) {
+  .generation-image-error button:hover { background: var(--panel-3); }
+  .generation-tile[data-ready="true"] .generation-result:hover .image-open-hint { opacity: 1; }
+}
+@media (pointer: coarse) { .generation-image-error button { min-height: 44px; } }
+@media (max-width: 720px) { .generation-preview .generation-grid { gap: 8px; } }
+:root[data-motion="reduced"] .generation-drift > span { animation: none; }
+:root[data-motion="reduced"] :is(.generation-surface, .generation-result img) { transition: none; }

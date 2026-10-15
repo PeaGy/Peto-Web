@@ -53,9 +53,9 @@ test('nhiều ảnh tham chiếu, tải lại lượt đang tạo và so sánh t
   await noPageOverflow(page);
   await page.screenshot({ path: testInfo.outputPath('references.png') });
   await page.getByRole('button', { name: 'Sửa ảnh', exact: true }).click();
-  await expect(page.getByText('Peto đang tạo ảnh…', { exact: true })).toBeVisible();
+  await expect(page.getByText('Đang tạo 1 ảnh…', { exact: true })).toBeVisible();
   await page.reload();
-  await expect(page.getByText('Peto đang tạo ảnh…', { exact: true })).toBeVisible();
+  await expect(page.getByText('Đang tạo 1 ảnh…', { exact: true })).toBeVisible();
   expect(posts).toBe(1);
   complete = true;
   await page.getByRole('button', { name: 'Xem ảnh 1: Lấy chủ thể ảnh 1 và nền ảnh 2' }).click();
