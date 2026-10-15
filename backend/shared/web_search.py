@@ -10,8 +10,8 @@ MAX_SOURCES = 30
 # document_tools.current_session), provider đọc qua search_context mà không phải thêm tham số.
 spoken_reply: ContextVar[bool] = ContextVar("spoken_reply", default=False)
 
-# Companion tra web khi cần (chủ web chọn ngày 2026-09-28, theo mô-đun tra web của AIRI). Câu trả lời vẫn là lời nói tiếng
-# Anh như prompt Companion, và trang không hiện nguồn (phương án C), nên không chèn đường dẫn hay dấu trích dẫn.
+# Companion tra web khi cần (chủ web chọn ngày 2026-09-28, theo mô-đun tra web của AIRI). Câu trả lời có thể được đọc
+# thành tiếng, và trang không hiện nguồn (phương án C), nên không chèn đường dẫn hay dấu trích dẫn.
 SPOKEN_SEARCH_CONTEXT = (
     "## Web search this turn\n"
     "You can use web_search. Decide for yourself: search when the user asks you to look something up, or asks about "

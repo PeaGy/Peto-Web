@@ -10,6 +10,8 @@ import storage as db
 from storage import connection as db_connection
 from features.chat import titles
 from prompts import COMPANION_SYSTEM_PROMPT
+from prompts.companion import COMPANION_EXAMPLES_PROMPT, COMPANION_PERSONA_PROMPT
+from prompts.companion_runtime import COMPANION_RUNTIME_PROMPT
 from conftest import read_events
 
 
@@ -185,8 +187,8 @@ async def test_invalid_effort_is_rejected(client):
     assert response.status_code == 400
 
 
-async def test_companion_mode_uses_short_english_persona(client, monkeypatch):
-    """Tab Companion dặn Peto trả lời ngắn bằng tiếng Anh, suy nghĩ ít, và tự quyết khi nào tra web."""
+async def test_companion_mode_uses_its_persona_and_runtime(client, monkeypatch):
+    """Companion nhận tính cách, giao thức và ví dụ riêng; vẫn suy nghĩ ít và tự quyết tra web."""
     calls: list[dict] = []
     from ai.mock import MockProvider
 
@@ -209,10 +211,9 @@ async def test_companion_mode_uses_short_english_persona(client, monkeypatch):
     assert prompt.startswith(COMPANION_SYSTEM_PROMPT)
     assert "Bạn là Peto, trợ lý AI của Peto Web" not in prompt
     assert "không giả vờ là bạn bè ngoài đời" not in prompt
-    # Kiểm tra quy tắc hiện tại, không phụ thuộc tiêu đề hay câu chữ của prompt cũ.
-    assert "answer truthfully" in prompt
-    assert "Do not invent real-world personal history or physical events" in prompt
-    assert "Always respond in English" in prompt
+    for part in (COMPANION_PERSONA_PROMPT, COMPANION_RUNTIME_PROMPT, COMPANION_EXAMPLES_PROMPT):
+        assert prompt.count(part) == 1
+    assert "Always respond in English" not in prompt
 
     calls.clear()
     await _send(client, "chào")

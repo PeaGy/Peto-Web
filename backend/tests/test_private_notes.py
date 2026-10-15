@@ -86,7 +86,7 @@ def test_summaries_keep_the_note_so_a_long_game_survives_the_history_window():
 def test_the_companion_prompt_tells_peto_how_to_keep_a_secret():
     assert "<private>...</private>" in COMPANION_SYSTEM_PROMPT
     assert "no hidden memory between turns" in COMPANION_SYSTEM_PROMPT
-    assert "Never claim that you secretly chose or remembered something" in COMPANION_SYSTEM_PROMPT
+    assert "Recall secrets from the supplied notes" in COMPANION_SYSTEM_PROMPT
 
 
 CASES = [
