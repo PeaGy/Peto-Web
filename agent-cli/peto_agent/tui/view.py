@@ -36,7 +36,7 @@ from .theme import load as load_theme
 
 PAD = 2
 # Đọc, liệt kê, tìm liền nhau thì gộp thành một dòng "Đã xem" như OpenCode.
-EXPLORE = {"read_file", "list_files", "search_files", "find_files"}
+EXPLORE = {"read_file", "list_files", "search_files", "find_files", "read_output"}
 # Số hàng diff tối đa trong khối sửa tệp; cả diff đã hiện ở khung duyệt, và /diff xem đủ.
 BLOCK_DIFF_ROWS = 40
 OUTPUT_TAIL = 10
@@ -488,6 +488,10 @@ class TerminalUI(UI):
                 "find_files": f'Đang tìm tệp "{args.get("pattern", "")}"'}[call.name]
         self.status("… " + what)
 
+    def explore_progress(self, text: str) -> None:
+        """Agent con explore (CLI 0.27.0): việc nó đang làm hiện ở dòng trạng thái."""
+        self.status(f"… Khám phá · {text}")
+
     def tool_progress(self, call_id: str, seconds: float, output: str) -> None:
         command = (self._preview[1].get("command", "") if self._preview else "").split("\n")[0]
         label = f"… $ {clip(command, 40)} · {int(seconds)}s · Ctrl+C dừng lệnh"
@@ -505,6 +509,12 @@ class TerminalUI(UI):
             self._emit(lambda: self._row(self.theme.glyphs["web"], [S("Tìm trên web", self.theme.muted)]), "row")
 
     def _explore_label(self, name: str, args: dict, result: dict, meta: dict) -> tuple[str, str]:
+        if name == "read_output":
+            # Output đầy đủ của một lệnh dài mà CLI đã lưu (CLI 0.25.0).
+            if args.get("pattern"):
+                return "search", (f'"{args["pattern"]}" {result.get("total_matches", 0)} kết quả trong output '
+                                  f'{result.get("output_id", "")}')
+            return "read", f'output {result.get("output_id", "")}:{result.get("start_line")}-{result.get("end_line")}'
         if name == "read_file":
             if not result.get("total_lines"):
                 return "read", f"{result['path']} (trống)"
@@ -529,6 +539,33 @@ class TerminalUI(UI):
         state: dict = {}
         state["entry"] = self._out(lambda: self._group_lines(group, state))
         self._last = "row"
+
+    def _explore_lines(self, args: dict, result: dict, meta: dict, state: dict) -> list[Line]:
+        """Khối của agent con explore: một dòng tóm tắt, bấm để mở từng việc nó làm và kết luận nó trả về."""
+        theme = self.theme
+        target = self._opener(state)
+        opened = target is not None and state.get("open")
+        task = " ".join(str(args.get("task", "")).split())
+        task = task if len(task) <= 70 else task[:69] + "…"
+        where = f" · {result.get('steps', 0)} bước · đọc {len(result.get('files_read') or [])} tệp"
+        failed = bool(result.get("error"))
+        icon = ("▾" if opened else "◇") if target else "◇"
+        lines = self._row(icon, clickable([S("Khám phá ", theme.muted), S(visible(task), theme.dim_text),
+                                           S(where + (" · chưa xong" if failed else ""),
+                                             theme.error if failed else theme.muted)], target),
+                          theme.error if failed else None)
+        if not opened:
+            return lines
+        for action in meta.get("actions") or []:
+            lines += [Line([S("     ")] + row) for row in wrap([S(visible(action), theme.muted)],
+                                                                 self.content_width - 5)]
+        summary = [line for line in str(result.get("error") or result.get("summary") or "").split("\n")]
+        for text in summary[:30]:
+            lines += [Line([S("     ")] + row) for row in wrap([S(visible(text), theme.dim_text)],
+                                                                 self.content_width - 5)] or [Line()]
+        if len(summary) > 30:
+            lines.append(Line([S("     "), S(f"… còn {len(summary) - 30} dòng", theme.muted)]))
+        return lines
 
     def _group_lines(self, group: list[tuple[str, str]], state: dict | None = None) -> list[Line]:
         theme = self.theme
@@ -572,6 +609,14 @@ class TerminalUI(UI):
         self._flush_group()
         if meta.get("raised") == "guide":
             self.step(meta["message"])
+            return
+        if name == "explore" and not meta.get("raised"):
+            state: dict = {}
+            state["entry"] = self._emit(lambda: self._explore_lines(args, result, meta, state), "row")
+            return
+        if meta.get("raised") == "unread":
+            # Sửa tệp chưa đọc (CLI 0.25.0): không phải lỗi, nội dung đã gửi cho Peto để sửa ở bước sau.
+            self.notice(meta["message"], "yellow")
             return
         if meta.get("raised"):
             self.failure(meta["message"])
@@ -828,6 +873,10 @@ class TerminalUI(UI):
             status = [S("✓ ", theme.success, panel), S(f"xong · {took}", theme.muted, panel)]
         else:
             status = [S("✗ ", theme.error, panel), S(f"mã thoát {result.get('exit_code')} · {took}", theme.error, panel)]
+        # Ảnh chụp dự án (CLI 0.26.0) biết lệnh đã đổi tệp nào; /diff xem đủ, /undo trả lại được.
+        changed = result.get("files_changed_total") or len(result.get("files_changed") or [])
+        if changed:
+            status.append(S(f" · đổi {changed} tệp", theme.muted, panel))
         if rows:
             rows.append(Line([S("", bg=panel)]))
         rows.append(Line(status))
@@ -1646,6 +1695,8 @@ class TerminalUI(UI):
             failed = sum(1 for command in end.commands
                          if command.get("classification") not in {"passed", "success", "no_match"})
             parts.append(f"chạy {len(end.commands)} lệnh" + (f" ({failed} lỗi)" if failed else ""))
+        if end.command_files:
+            parts.append(f"lệnh đổi {end.command_files} tệp")
         if end.background_jobs:
             parts.append(f"đang chạy {end.background_jobs} lệnh nền")
         if end.plan_left:

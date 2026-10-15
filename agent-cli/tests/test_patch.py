@@ -116,7 +116,9 @@ def test_the_same_rules_as_edit_file_apply(project):
     (project / "co.py").write_text("x\n", encoding="utf-8")
     tools = make(project, ["n"])
     update = "*** Begin Patch\n*** Update File: a.py\n@@\n-a = 1\n+a = 2\n*** End Patch"
-    assert "Đọc a.py bằng read_file trước khi sửa" in tools.call("apply_patch", args(patch_text=update))["error"]
+    refused = tools.call("apply_patch", args(patch_text=update))
+    assert "chưa đọc hoặc đã đổi (a.py)" in refused["error"] and refused["current"][0]["path"] == "a.py"
+    assert (project / "a.py").read_text(encoding="utf-8") == "a = 1\n"
     add = "*** Begin Patch\n*** Add File: co.py\n+y\n*** End Patch"
     assert "đã có sẵn" in tools.call("apply_patch", args(patch_text=add))["error"]
     read(tools, "a.py")

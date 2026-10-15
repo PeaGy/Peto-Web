@@ -41,6 +41,11 @@ def screenshots_dir() -> Path:
     return log_dir().parent / "screenshots"
 
 
+def outputs_dir() -> Path:
+    """Output đầy đủ của những lệnh in quá dài (CLI 0.25.0), cạnh thư mục nhật ký: cùng loại riêng tư với nhật ký."""
+    return log_dir().parent / "outputs"
+
+
 def browser_profiles_dir() -> Path:
     """Hồ sơ trình duyệt riêng của từng dự án (giữ đăng nhập người dùng tự làm trong cửa sổ của Peto)."""
     return log_dir().parent / "browser"

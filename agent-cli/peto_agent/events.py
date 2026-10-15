@@ -62,3 +62,5 @@ class RequestEnd:
     model: str = ""
     # Hội thoại đã tới đâu so với mức tự tóm tắt của CLI (0 tới 1); None khi chưa có hội thoại.
     context_share: float | None = None
+    # Số tệp lệnh đã đổi trong yêu cầu, biết nhờ ảnh chụp dự án (CLI 0.26.0).
+    command_files: int = 0

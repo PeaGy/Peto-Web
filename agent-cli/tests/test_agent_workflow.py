@@ -216,8 +216,9 @@ def test_looking_at_the_page_or_calling_the_local_api_counts_as_checking(project
 
 
 def test_retry_keeps_checkpoint_and_counters_without_replaying_tools(project):
+    # 408: lỗi không tự thử lại (CLI 0.25.0 tự thử lại lỗi kết nối trước sự kiện đầu tiên), nên phải gõ /retry.
     client = Client([
-        [call(1, "write_file", path="a", content="new")], ApiError(0, "lost"),
+        [call(1, "write_file", path="a", content="new")], ApiError(408, "lost"),
         [message("done")], [message("No check applies to this text file")],
     ])
     work = Session(client, Workspace(project), FakeUI(["y"]))

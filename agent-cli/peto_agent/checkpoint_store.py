@@ -49,10 +49,11 @@ def prune(keep=None):
             total -= size
 
 
-def save(root, files, shell_used):
+def save(root, files, shell_used, commands_covered=False):
     target = path_for(root)
-    body = json.dumps({"version": 1, "root": str(root), "files": files,
-                       "shell_used": shell_used}, ensure_ascii=False).encode("utf-8")
+    body = json.dumps({"version": 1, "root": str(root), "files": files, "shell_used": shell_used,
+                       **({"commands_covered": True} if commands_covered else {})},
+                      ensure_ascii=False).encode("utf-8")
     if len(body) > MAX_BYTES:
         raise WorkspaceError("Bản hoàn tác vượt 16 MB. Chia yêu cầu thành các phần nhỏ hơn trước khi sửa tiếp.")
     target.parent.mkdir(parents=True, exist_ok=True)

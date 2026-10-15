@@ -61,6 +61,14 @@
       "details": "Lưu hội thoại thành peto-<tên>-<ngày>.md ở gốc dự án (không ghi đè tệp có sẵn) hoặc chép vào clipboard. Có tin của bạn, lời Peto và mỗi công cụ một dòng; không có nội dung tệp, output lệnh hay ảnh."
     },
     {
+      "name": "/guide",
+      "description": "Sửa hướng dẫn chung cho mọi dự án, hoặc AGENTS.md của dự án này",
+      "options": [],
+      "usage": "/guide",
+      "since": "0.25.0",
+      "details": "Mở trong trình soạn của /editor. Hướng dẫn chung nằm trong hồ sơ của bạn (%APPDATA%\\PetoAgent\\AGENTS.md), đi kèm mọi bước ở mọi dự án; AGENTS.md của dự án được ưu tiên về quy ước code. Không tốn bước."
+    },
+    {
       "name": "/plan",
       "description": "Bật hoặc tắt chế độ Lập kế hoạch (cũng là Shift+Tab)",
       "options": [],

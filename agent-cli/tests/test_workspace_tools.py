@@ -50,7 +50,8 @@ def test_junction_pointing_outside_cannot_be_used(tmp_path, project):
 def test_edit_needs_a_fresh_read_and_keeps_crlf(project):
     (project / "app.py").write_bytes(b"line1\r\nline2\r\nline3\r\n")
     tools = Tools(Workspace(project), FakeUI(answers=["y"]))
-    assert "read_file" in tools.call("edit_file", args(path="app.py", old_text="line2", new_text="x"))["error"]
+    assert "chưa được đọc" in tools.call("edit_file", args(path="app.py", old_text="line2", new_text="x"))["error"]
+    assert (project / "app.py").read_bytes() == b"line1\r\nline2\r\nline3\r\n"
 
     read = tools.call("read_file", args(path="app.py", start_line=2, end_line=3))
     assert read == {"path": "app.py", "start_line": 2, "end_line": 3, "total_lines": 3, "content": "line2\nline3", "project_guidance": []}
@@ -87,7 +88,7 @@ def test_refusal_keeps_the_file_and_approve_all_lasts_for_one_task(project):
     assert "không đồng ý" in refused["error"] and (project / "a.txt").read_text() == "one\n"
     assert tools.call("edit_file", args(path="a.txt", old_text="one", new_text="1"))["ok"]
     assert tools.call("edit_file", args(path="b.txt", old_text="two", new_text="2"))["ok"]
-    assert "Đọc tệp trước" in tools.call("write_file", args(path="exists.txt", content="y\n"))["error"]
+    assert "chưa ghi đè" in tools.call("write_file", args(path="exists.txt", content="y\n"))["error"]
     created = tools.call("write_file", args(path="docs/new.md", content="# Mới\n"))
     assert created["created"] and (project / "docs" / "new.md").read_text(encoding="utf-8") == "# Mới\n"
     assert ui.answers == []

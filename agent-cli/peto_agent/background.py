@@ -12,7 +12,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import runner
+from . import outputs, runner
 from .workspace import WorkspaceError
 
 MAX_JOBS = 3
@@ -40,6 +40,10 @@ class Job:
     # read_command_output, hay chính Peto dừng nó, thì không báo nữa.
     reported: bool = False
     stopped_by_peto: bool = False
+    # Khả năng "output_files" (CLI 0.25.0): cả output được ghi vào tệp; chỉ giữ tệp khi có lần đọc bị cắt hay mất phần
+    # đầu, để Peto tìm lại bằng read_output.
+    spool: outputs.Spool | None = None
+    spool_kept: bool = False
 
     def running(self) -> bool:
         return self.process.poll() is None
@@ -55,11 +59,12 @@ class Jobs:
     def running(self) -> list[Job]:
         return [job for job in self.jobs.values() if job.running()]
 
-    def start(self, command: str, cwd: Path, shell: str = "cmd") -> Job:
+    def start(self, command: str, cwd: Path, shell: str = "cmd", *, spool: bool = False) -> Job:
         if len(self.running()) >= MAX_JOBS:
             raise WorkspaceError(f"Đang có {MAX_JOBS} lệnh nền chạy rồi; dừng bớt bằng stop_command trước.")
         process = runner.spawn(command, cwd, shell)
-        job = Job(id=str(self._next), command=command, shell=shell, process=process, started=time.monotonic())
+        job = Job(id=str(self._next), command=command, shell=shell, process=process, started=time.monotonic(),
+                  spool=outputs.Spool() if spool else None)
         self._next += 1
         self.jobs[job.id] = job
         threading.Thread(target=self._reader, args=(job,), daemon=True).start()
@@ -68,6 +73,8 @@ class Jobs:
     def _reader(self, job: Job) -> None:
         try:
             while chunk := job.process.stdout.read1(65536):
+                if job.spool is not None:
+                    job.spool.write(chunk)
                 with job.lock:
                     job.buffer.extend(chunk)
                     job.total += len(chunk)
@@ -79,6 +86,8 @@ class Jobs:
         except (OSError, ValueError):
             pass
         finally:
+            if job.spool is not None:
+                job.spool.close()
             job.fresh.set()
 
     def _job(self, job_id: str) -> Job:
@@ -111,6 +120,11 @@ class Jobs:
         running = job.running()
         if not running:
             job.reported = True
+        saved = {}
+        if job.spool is not None and (lost or len(text) > runner.MAX_RESULT_CHARS):
+            job.spool_kept = True
+            saved = {"output_id": job.spool.id, "output_note": "Output bị cắt; bản đầy đủ của cả lệnh nền đọc bằng "
+                                                               "read_output."}
         return {
             "id": job.id,
             "command": job.command,
@@ -118,6 +132,7 @@ class Jobs:
             "exit_code": job.process.returncode,
             "seconds": round(time.monotonic() - job.started, 1),
             "output": runner.cap_text(text),
+            **saved,
         }
 
     def finished(self) -> list[dict]:
@@ -154,4 +169,7 @@ class Jobs:
                 job.process.wait(timeout=5)
             except Exception:  # noqa: BLE001
                 pass
+            # Hết phiên thì không ai đọc output lệnh nền nữa, trừ khi Peto đã được báo output_id.
+            if job.spool is not None and not job.spool_kept:
+                job.spool.discard()
         return stopped

@@ -84,6 +84,11 @@ def tool_lines(event: transcript.Event) -> list[str]:
         return [f"- Chạy nền {_code('$ ' + str(args.get('command', '')))}{error}"]
     if name == "read_command_output":
         return [f"- Đọc output lệnh nền #{args.get('job_id', '?')}{error}"]
+    if name == "explore":
+        return [f"- Khám phá ({result.get('steps', 0)} bước): {_clip(str(args.get('task', '')))}{error}"]
+    if name == "read_output":
+        what = f"tìm {_code(str(args['pattern']))} trong" if args.get("pattern") else "đọc"
+        return [f"- {what.capitalize()} output đầy đủ {_code(str(args.get('output_id', '')))}{error}"]
     if name == "stop_command":
         return [f"- Dừng lệnh nền #{args.get('job_id', '?')}{error}"]
     if name == "update_plan":

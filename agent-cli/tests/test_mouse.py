@@ -269,3 +269,19 @@ def _state(text: str):
     state.insert(text)
     state.finished = True
     return state
+
+
+def test_the_explore_block_opens_to_show_the_subagent_s_work(run):  # noqa: F811
+    """Agent con explore (CLI 0.27.0): một dòng tóm tắt; bấm để thấy từng việc nó làm và kết luận nó trả về."""
+    screen = run(110, 40)
+    screen.ui.tool_finished(ToolDone(
+        "p1", "explore", {"task": "Tìm nơi in lời chào.", "depth": "quick"},
+        {"summary": "Lời chào in ở app.py:2.", "steps": 3, "files_read": ["app.py"]},
+        {"actions": ["Tìm \"print\"", "Đọc app.py"], "depth": "quick"}))
+    assert "Khám phá Tìm nơi in lời chào. · 3 bước · đọc 1 tệp" in rows(screen)
+    assert "Lời chào in ở app.py:2." not in rows(screen)
+    click(screen, "Khám phá")
+    text = rows(screen)
+    assert 'Tìm "print"' in text and "Đọc app.py" in text and "Lời chào in ở app.py:2." in text
+    click(screen, "Khám phá")
+    assert "Lời chào in ở app.py:2." not in rows(screen)

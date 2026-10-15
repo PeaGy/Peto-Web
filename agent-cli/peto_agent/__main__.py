@@ -13,7 +13,8 @@ import webbrowser
 from datetime import datetime
 from pathlib import Path
 
-from . import __version__, commands, config, export, external_editor, history, line_editor, mentions, transcript, updater
+from . import (__version__, commands, config, export, external_editor, history, line_editor, mentions, transcript,
+               outputs, snapshot, updater, user_guide)
 from .client import ApiError, Client
 from .commands import fold
 from .events import ToolDone
@@ -24,7 +25,7 @@ from .workspace import Workspace, WorkspaceError
 
 # Lệnh không nhận gì phía sau; gõ thêm chữ thì nhắc chứ không gửi cả câu cho Peto.
 PLAIN_COMMANDS = {"/exit", "/new", "/help", "/usage", "/retry", "/diff", "/undo", "/compact", "/init", "/thinking",
-                  "/plan", "/timeline", "/fork", "/update", "/export"}
+                  "/plan", "/timeline", "/fork", "/update", "/export", "/guide"}
 EFFORT_LABELS = {"none": "không suy luận", "low": "thấp", "medium": "vừa", "high": "cao",
                  "xhigh": "rất cao", "max": "tối đa"}
 # Giống STEP_COST của máy chủ: mức cao tính gấp đôi, nhân với số bước của model.
@@ -264,7 +265,8 @@ def _resume(ui: UI, work: Session, value: str = "") -> None:
 
 def _open_session(ui: UI, work: Session, saved: history.Saved) -> None:
     """Mở một hội thoại đã lưu (/resume, peto --resume sau /update): màn hình toàn phần vẽ lại cả hội thoại."""
-    work.resume(saved.items, retryable=saved.retryable, model=saved.model, session_id=saved.id, title=saved.title)
+    work.resume(saved.items, retryable=saved.retryable, model=saved.model, session_id=saved.id, title=saved.title,
+                snapshots=saved.snapshots)
     ui.clear_conversation()
     ui.replay(work.items)
     ui.success(f"Đã mở lại hội thoại {history.when(saved.saved_at)}: \"{saved.title}\"")
@@ -309,6 +311,10 @@ def _timeline(ui: UI, work: Session, *, fork: bool = False) -> None:
     actions = ([("Nhảy tới", "cuộn màn hình tới tin này")] if getattr(ui, "fullscreen", False) and clicked is None
                else [])
     actions += [("Chép", "chép chữ của tin"), ("Tách hội thoại từ đây", "hội thoại mới gồm phần trước tin này")]
+    # Ảnh chụp dự án (CLI 0.26.0, theo revert.ts của opencode): đưa tệp về đúng lúc trước tin này.
+    point = work.restore_point(position)
+    if point:
+        actions.append(("Khôi phục tệp về lúc trước tin này", "/undo ngay sau đó trả lại như bây giờ"))
     choice = ui.choose(f"Tin {index + 1}", actions)
     if choice is None:
         return
@@ -322,8 +328,15 @@ def _timeline(ui: UI, work: Session, *, fork: bool = False) -> None:
             ui.success("Đã chép tin vào clipboard.")
         else:
             ui.prefill(text)
+    elif action == "Khôi phục tệp về lúc trước tin này":
+        work.restore_files(point, _short(transcript.typed_text(item)))
     else:
         _fork(ui, work, position)
+
+
+def _short(text: str) -> str:
+    text = " ".join(text.split()) or "(chỉ có ảnh)"
+    return text if len(text) <= 40 else text[:39] + "…"
 
 
 def _fork(ui: UI, work: Session, position: int) -> None:
@@ -332,14 +345,19 @@ def _fork(ui: UI, work: Session, position: int) -> None:
     item = work.items[position]
     text = transcript.typed_text(item)
     title = f"{work.shown_title() or 'Hội thoại'} (nhánh)"
+    point = work.restore_point(position)
     if work.items:
         work.save()
-    work.resume(work.items[:position], model=work.model, session_id=None, title=title)
+    work.resume(work.items[:position], model=work.model, session_id=None, title=title, snapshots=work.snapshot_marks)
     ui.clear_conversation()
     ui.replay(work.items)
     if work.items:
         work.save()
     ui.success(f"Đã tách thành hội thoại mới \"{title}\"; hội thoại cũ vẫn mở lại được bằng /resume.")
+    # Như opencode: tách nhánh thì hỏi có đưa cả tệp về lúc đó không (CLI 0.26.0, cần ảnh chụp của tin đó).
+    if point and ui.choose("Khôi phục cả tệp về lúc trước tin đó?", [
+            ("Không", "tệp giữ như bây giờ"), ("Khôi phục", "/undo ngay sau đó trả lại như bây giờ")]) == 1:
+        work.restore_files(point, _short(text))
     ui.prefill(text)
 
 
@@ -452,6 +470,40 @@ def _editor(ui: UI, initial: str) -> None:
         ui.line("  Không có chữ mới; ô nhập để nguyên.", "dim")
         return
     ui.prefill(text)
+
+
+def _guide(ui: UI, work: Session) -> None:
+    """/guide: sửa hướng dẫn chung (mọi dự án) hay AGENTS.md của dự án này trong trình soạn của /editor (CLI 0.25.0)."""
+    shared = user_guide.path()
+    project = work.ws.root / "AGENTS.md"
+    choice = ui.choose("Sửa hướng dẫn cho Peto", [
+        ("Hướng dẫn chung", f"áp cho mọi dự án · {shared}"),
+        ("AGENTS.md của dự án này", "đi kèm mọi bước trong dự án này" + ("" if project.exists() else
+                                                                         " · chưa có, sẽ tạo")),
+    ])
+    if choice is None:
+        return
+    target = shared if choice == 0 else project
+    try:
+        current = target.read_text(encoding="utf-8-sig") if target.exists() else ""
+    except (OSError, UnicodeDecodeError) as err:
+        ui.failure(f"Không đọc được {target}: {getattr(err, 'strerror', None) or type(err).__name__}.")
+        return
+    cmd = external_editor.command()
+    try:
+        with ui.suspended(f"Đang soạn {target.name} trong {external_editor.label(cmd)}: lưu rồi đóng tệp để quay lại "
+                          "Peto."):
+            text = external_editor.edit(current or (user_guide.TEMPLATE if choice == 0 else ""), cmd=cmd)
+    except external_editor.EditorError as err:
+        ui.failure(err.message)
+        return
+    if text is None:
+        ui.line("  Không có gì đổi; tệp để nguyên.", "dim")
+        return
+    if choice == 0:
+        work.write_user_guide(text)
+    else:
+        work.write_project_guide(text)
 
 
 def _export(ui: UI, work: Session) -> None:
@@ -647,6 +699,10 @@ def session(ui: UI, resume: str | None = None) -> int:
     offered = me.get("agent_features") if isinstance(me.get("agent_features"), list) else []
     work.tools.features = [*FEATURES, *(feature for feature in NEW_FEATURES if feature in offered)]
     work.supported_efforts = _supported_efforts(model)
+    # Output đầy đủ của lệnh dài (CLI 0.25.0) chỉ giữ 7 ngày; kho ảnh chụp dự án (0.26.0) dọn mỗi ngày một lần.
+    outputs.prune()
+    if not os.environ.get("PETO_AGENT_NO_SNAPSHOTS"):
+        snapshot.maintain()
     if (engine := getattr(ui, "engine", None)) is not None:
         # /btw gõ ở ô nhập được màn hình xử lý ngay, cả lúc Peto đang làm, không qua vòng lệnh bên dưới.
         engine.side = lambda text: _aside(ui, work, text)
@@ -719,6 +775,9 @@ def session(ui: UI, resume: str | None = None) -> int:
                 continue
             if name == "/export":
                 _export(ui, work)
+                continue
+            if name == "/guide":
+                _guide(ui, work)
                 continue
             if name == "/update":
                 restart = _update(ui, work)

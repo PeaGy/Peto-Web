@@ -688,6 +688,9 @@ class UI:
         for line in lines[-MAX_OUTPUT_LINES:]:
             self._wrapped("    │ ", line, "dim", code=True)
         summary = f"{result['seconds']} giây"
+        changed = result.get("files_changed_total") or len(result.get("files_changed") or [])
+        if changed:
+            summary += f" · đổi {changed} tệp"
         if result.get("classification") == "no_match":
             self.line(f"  {summary} · không tìm thấy kết quả", "dim")
             return
@@ -711,6 +714,11 @@ class UI:
 
     def tool_progress(self, call_id: str, seconds: float, output: str) -> None:
         self.command_progress(seconds, output)
+
+    def explore_progress(self, text: str) -> None:
+        """Agent con explore (CLI 0.27.0) đang làm gì; bản chữ thường in mỗi việc một dòng mờ."""
+        if not text.startswith("bước "):
+            self.line(f"    · {text}", "dim")
 
     def preview(self, kind: str, body: dict) -> None:
         """Thứ công cụ sắp làm, hiện trước khi hỏi (và cả khi đã được cho phép sẵn): diff, lệnh, đổi tên, gọi MCP."""
@@ -764,6 +772,9 @@ class UI:
             return
         if meta.get("raised") == "guide":
             self.step(meta["message"])
+            return
+        if meta.get("raised") == "unread":
+            self.notice(meta["message"], "yellow")
             return
         if meta.get("raised"):
             self.failure(meta["message"])
@@ -825,6 +836,19 @@ class UI:
         elif name == "read_command_output":
             state = "đang chạy" if result.get("running") else f"đã dừng, mã thoát {result.get('exit_code')}"
             self.step(f"Đọc output lệnh nền #{result['id']} ({state})")
+        elif name == "explore":
+            where = f"{result.get('steps', 0)} bước · đọc {len(result.get('files_read') or [])} tệp"
+            if result.get("error"):
+                self.failure(f"Khám phá chưa xong ({where}): {result['error']}")
+            else:
+                self.step(f"Khám phá xong · {where}")
+        elif name == "read_output":
+            if args.get("pattern"):
+                self.step(f'Tìm "{args["pattern"]}" trong output {result.get("output_id", "")}: '
+                          f'{result.get("total_matches", 0)} kết quả')
+            else:
+                self.step(f'Đọc output {result.get("output_id", "")} (dòng {result.get("start_line")}–'
+                          f'{result.get("end_line")})')
         elif name == "stop_command":
             self.success(f"Đã dừng lệnh nền #{result['id']}: {result['command']}")
         elif name == "run_command":
@@ -858,6 +882,8 @@ class UI:
             failed = sum(1 for command in end.commands
                          if command.get("classification") not in {"passed", "success", "no_match"})
             parts.append(f"chạy {len(end.commands)} lệnh" + (f" ({failed} lỗi)" if failed else ""))
+        if end.command_files:
+            parts.append(f"lệnh đổi {end.command_files} tệp")
         if end.background_jobs:
             parts.append(f"đang chạy {end.background_jobs} lệnh nền")
         if end.plan_left:

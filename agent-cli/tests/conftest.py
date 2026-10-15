@@ -53,4 +53,6 @@ def agent_home(tmp_path: Path, monkeypatch) -> Path:
     home = tmp_path / "agent-home"
     monkeypatch.setenv("PETO_AGENT_HOME", str(home))
     monkeypatch.setenv("PETO_AGENT_NO_BROWSER", "1")
+    # Ảnh chụp dự án (CLI 0.26.0) gọi git trước và sau mỗi lệnh; test của nó tự bật lại.
+    monkeypatch.setenv("PETO_AGENT_NO_SNAPSHOTS", "1")
     return home

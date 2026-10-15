@@ -11,11 +11,12 @@ import fnmatch
 import functools
 import inspect
 import json
+import os
 import re
 import time
 from pathlib import Path
 
-from . import approvals, browser, edit_match, runner
+from . import approvals, browser, edit_match, outputs, runner, snapshot
 from . import patch as patch_text_lib
 from .background import Jobs
 from .checkpoint import Checkpoint
@@ -30,6 +31,10 @@ from .mcp import MCP
 from .workspace import Workspace, WorkspaceError, digest, list_entries, text_bytes
 
 MAX_READ_LINES = 400
+# "read_more" (CLI 0.25.0, theo opencode): mỗi lần đọc tới ngần này dòng, cắt ở ranh giới dòng khi vượt ngần này ký tự.
+# Nhật ký thật của chủ web: 88/269 lần đọc bị cắt ở 160 dòng, một nửa là tệp chừng 186 dòng.
+READ_MORE_LINES = 1000
+READ_MORE_CHARS = 32_000
 MAX_LIST_ENTRIES = 400
 MAX_MATCHES = 100
 MAX_PLAN_STEPS = 10
@@ -43,9 +48,10 @@ FEATURES = ("cwd", "browser", "browser_act", "browser_outside", "skills", "mcp")
 # Khả năng mới (0.18.0, theo OpenCode) chỉ bật khi máy chủ liệt kê trong /me (agent_features): kết quả công cụ do CLI
 # dựng phải khớp mô tả máy chủ gửi, nên CLI mới gặp máy chủ cũ vẫn chạy kiểu cũ. Từ 0.21.0 (theo opencode): ask_user,
 # apply_patch cho model GPT, đặt tên hội thoại, và lời nhắc giải thích các tin 0.20.0 chèn vào hội thoại. Từ 0.23.0:
-# câu hỏi bên lề /btw.
+# câu hỏi bên lề /btw. Từ 0.25.0 (theo lõi opencode): đọc tới 1000 dòng, lưu đủ output dài (read_output), lượt tóm tắt
+# khi hết bước và AGENTS.md chung của người dùng. Từ 0.27.0: agent con chỉ đọc explore.
 NEW_FEATURES = ("explore_v2", "edit_v2", "question", "patch", "title", "steer", "jobs_notify", "plan_mode",
-                "btw")
+                "btw", "read_more", "output_files", "wrapup", "user_guide", "subagent")
 # Gọi y hệt một công cụ ngần này lần liền mà không tệp nào đổi thì hỏi người dùng có cho gọi tiếp không.
 LOOP_LIMIT = 3
 # Công cụ mà gọi lại y hệt là bình thường: chờ output lệnh nền, xem lại trang sau khi bấm, cập nhật danh sách việc.
@@ -59,6 +65,8 @@ PLAN_BLOCKED = {"edit_file", "write_file", "delete_file", "move_file", "apply_pa
                 "browser_press", "browser_login"}
 PLAN_REFUSAL = ("Đang ở chế độ Lập kế hoạch: không sửa tệp hay thao tác trên trang. Trình bày kế hoạch; người dùng bấm "
                 "Shift+Tab hoặc gõ /plan khi muốn Peto bắt tay làm.")
+# Công cụ có thể đổi tệp: đợi ảnh chụp đầu yêu cầu (CLI 0.26.0) xong rồi mới chạy.
+CHANGES_FILES = {"edit_file", "write_file", "delete_file", "move_file", "apply_patch", "run_command", "start_command"}
 MAX_FOUND_FILES = 100
 NUMBER_WIDTH = 6
 # Câu hỏi khi Peto thao tác lần đầu trên một trang: [y] là cho trang đó tới hết yêu cầu (chủ web chọn ngày 2026-09-23).
@@ -66,6 +74,17 @@ PAGE_QUESTION = "    Đồng ý cho trang này tới hết yêu cầu? [y] có  
 # Trang ngoài (chủ web chọn ngày 2026-09-24): hỏi theo tên miền; địa chỉ dài bất thường thì hỏi cho đúng địa chỉ đó.
 SITE_QUESTION = "    Đồng ý cho {site} tới hết yêu cầu? [y] có  [n] không  [a] có cho mọi bước trong yêu cầu này › "
 ODD_URL_QUESTION = "    Mở đúng địa chỉ này? [y] có  [n] không  [a] có cho mọi bước trong yêu cầu này › "
+
+
+class UnreadFile(WorkspaceError):
+    """Sửa một tệp chưa đọc, hay đã đổi kể từ lần đọc (CLI 0.25.0). Lời từ chối gửi kèm nội dung hiện tại (``current``)
+    và tính là đã đọc, để bước sau sửa được ngay. Trước đây Peto mất một bước chỉ để đọc rồi thêm một bước để sửa;
+    nhật ký thật của chủ web có 11 lần như vậy."""
+
+    def __init__(self, message: str, current, display: str):
+        super().__init__(message)
+        self.current = current
+        self.display = display
 
 
 def _os_message(err: OSError) -> str:
@@ -182,6 +201,18 @@ class Tools:
         self.features: list[str] = list(FEATURES)
         # Lời gọi gần nhất (khóa, lần sửa tệp lúc đó, số lần liền) cho chặn gọi lặp.
         self._last_call: tuple[tuple[str, str], int, int] | None = None
+        # Tệp bị từ chối sửa vì chưa đọc trong bước này (UnreadFile): các lần sửa sau của nó trong cùng bước được viết
+        # khi Peto chưa thấy tệp, nên cũng bị từ chối.
+        self._unread_refused: set[Path] = set()
+        # Ảnh chụp dự án (CLI 0.26.0): tạo ở lần dùng đầu; tệp lệnh đã đổi trong yêu cầu (tên → "lệnh").
+        self._snapshots: snapshot.Snapshots | None = None
+        self._snapshot_noted = False
+        self.command_changes: dict[str, int] = {}
+        # Ảnh chụp đầu yêu cầu chạy ở luồng nền trong lúc chờ model; thao tác đổi tệp đầu tiên phải đợi nó xong, không
+        # thì ảnh "trước tin này" đã lẫn thay đổi của chính tin đó.
+        self.pending_snapshot = None
+        # Agent con explore (CLI 0.27.0): phiên (loop.Session) gắn hàm chạy nó, vì cần máy chủ và model của phiên.
+        self.explorer = None
         self._handlers = {
             "load_skill": self.load_skill,
             "mcp_list_tools": self._evented("mcp_list_tools", self.mcp.list_tools),
@@ -200,6 +231,8 @@ class Tools:
             "run_command": self.run_command,
             "start_command": self.start_command,
             "read_command_output": self.read_command_output,
+            "read_output": self.read_output,
+            "explore": self.explore,
             "stop_command": self.stop_command,
             "browser_open": self.browser_open,
             "browser_screenshot": self.browser_screenshot,
@@ -225,6 +258,58 @@ class Tools:
         self.revision = 0
         self.checked_revision = -1
         self._last_call = None
+        self._unread_refused = set()
+        self.command_changes = {}
+
+    def wait_snapshot(self) -> None:
+        pending, self.pending_snapshot = self.pending_snapshot, None
+        if pending is not None:
+            pending.join()
+
+    def snapshots(self) -> snapshot.Snapshots | None:
+        """Ảnh chụp dự án của phiên; None khi tắt hẳn (biến PETO_AGENT_NO_SNAPSHOTS, dùng cho test)."""
+        if os.environ.get("PETO_AGENT_NO_SNAPSHOTS"):
+            return None
+        if self._snapshots is None:
+            self._snapshots = snapshot.Snapshots(self.ws.root)
+        return self._snapshots
+
+    def _capture(self) -> str | None:
+        shots = self.snapshots()
+        if shots is None:
+            return None
+        tree = shots.capture()
+        if tree is None and shots.problem and not self._snapshot_noted:
+            self._snapshot_noted = True
+            self.ui.notice(shots.problem, "yellow")
+        return tree
+
+    def _record_command(self, before: str | None, result: dict) -> None:
+        """So ảnh trước và sau một lệnh: tệp lệnh đã đổi vào bản hoàn tác, vào kết quả gửi Peto và dòng cuối yêu cầu."""
+        shots = self.snapshots()
+        after = self._capture() if before else None
+        if shots is None or not before or not after:
+            return
+        try:
+            names = shots.changed(before, after)
+            old, new = shots.contents(before, names), shots.contents(after, names)
+        except snapshot.SnapshotError as err:
+            self.ui.notice(f"Không so được ảnh chụp trước và sau lệnh: {err}", "yellow")
+            return
+        names = [name for name in names if old.get(name) != new.get(name)]
+        problem = self.checkpoint.record_command({name: (old.get(name), new.get(name)) for name in names})
+        if problem:
+            self.ui.notice(problem, "yellow")
+        if not names:
+            return
+        for name in names:
+            self.command_changes[name] = self.command_changes.get(name, 0) + 1
+            # Tệp Peto đã đọc mà lệnh vừa đổi: bắt đọc lại trước khi sửa (lời từ chối gửi kèm bản mới).
+            self.ws.read_digests.pop(self.ws.root / name, None)
+        result["files_changed"] = names[:20]
+        if len(names) > 20:
+            result["files_changed_total"] = len(names)
+        self.meta["files_changed"] = len(names)
 
     def _checked(self) -> None:
         """Peto vừa kiểm lại việc mình làm trên máy: chạy test hay build, xem hoặc thao tác trên trang, gọi API của
@@ -236,6 +321,7 @@ class Tools:
         """Gọi trước khi chạy các công cụ của một bước."""
         self.page_failure = None
         self.open_failed = False
+        self._unread_refused = set()
 
     def _guidance(self, target, *, reading=False):
         current = guides(self.ws, target)
@@ -277,6 +363,10 @@ class Tools:
         except GuideUpdate as err:
             self.meta.update(raised="guide", message=str(err))
             result = {"error": str(err), "project_guidance": err.guidance}
+            raise
+        except UnreadFile as err:
+            self.meta.update(raised="unread", message=err.display)
+            result = {"error": str(err), "current": err.current}
             raise
         except WorkspaceError as err:
             self.meta.update(raised="workspace", message=str(err))
@@ -325,11 +415,15 @@ class Tools:
         if (refused := self._loop_guard(name, params)) is not None:
             self.call_id = ""
             return refused
+        if name in CHANGES_FILES:
+            self.wait_snapshot()
         # Giao diện đã được báo lỗi qua tool_finished; ở đây chỉ đổi lỗi thành kết quả cho Peto.
         try:
             return handler(**params)
         except GuideUpdate as err:
             return {"error": str(err), "project_guidance": err.guidance}
+        except UnreadFile as err:
+            return {"error": str(err), "current": err.current}
         except WorkspaceError as err:
             return {"error": str(err)}
         except OSError as err:
@@ -415,6 +509,12 @@ class Tools:
     @tool
     def read_file(self, path: str, start_line: int | None = None, end_line: int | None = None) -> dict:
         target = self.ws.resolve(path)
+        # Đọc thật thì như trước 0.25.0: đọc rồi sửa trong cùng bước vẫn được, kể cả sau một lần bị từ chối vì chưa đọc.
+        self._unread_refused.discard(target)
+        return self._read_view(target, start_line, end_line)
+
+    def _read_view(self, target: Path, start_line: int | None, end_line: int | None) -> dict:
+        """Nội dung tệp như read_file trả về, và ghi nhận Peto đã đọc tệp. Dùng chung cho lời từ chối UnreadFile."""
         rel = self.ws.relative(target)
         file = self.ws.read(target)
         self.ws.remember(target, file)
@@ -425,17 +525,49 @@ class Tools:
         start = max(1, start_line or 1)
         if total and start > total:
             raise WorkspaceError(f"{rel} chỉ có {total} dòng.")
-        limit = MAX_READ_LINES if end_line is not None else 160
+        more = "read_more" in self.features
+        limit = READ_MORE_LINES if more else MAX_READ_LINES if end_line is not None else 160
         end = max(0, min(total, end_line or total, start + limit - 1))
-        chosen = lines[start - 1:end]
-        if "explore_v2" in self.features:
+        numbered = "explore_v2" in self.features
+        chosen, size = [], 0
+        for number in range(start, end + 1):
             # Số dòng ở đầu mỗi dòng như cat -n (OpenCode), để Peto dẫn tệp:dòng và chọn khoảng đọc tiếp cho đúng.
-            content = "\n".join(f"{number:>{NUMBER_WIDTH}}\t{line}" for number, line in enumerate(chosen, start))
-        else:
-            content = "\n".join(chosen)
+            line = f"{number:>{NUMBER_WIDTH}}\t{lines[number - 1]}" if numbered else lines[number - 1]
+            if more:
+                if len(line) > READ_MORE_CHARS:
+                    line = line[:READ_MORE_CHARS] + f" … (dòng này dài {len(lines[number - 1])} ký tự, đã cắt)"
+                if chosen and size + len(line) + 1 > READ_MORE_CHARS:
+                    end = number - 1
+                    break
+                size += len(line) + 1
+            chosen.append(line)
         return {"path": rel, "start_line": start, "end_line": end, "total_lines": total,
-                "content": content, "project_guidance": self._guidance(target, reading=True),
+                "content": "\n".join(chosen), "project_guidance": self._guidance(target, reading=True),
                 **({"next_start_line": end + 1, "truncated": True} if end < total else {})}
+
+    def _require_read(self, target: Path, rel: str, *, hint: str | None = None, action: str = "sửa",
+                      advice: str = "chép old_text từ đó rồi gọi lại edit_file."):
+        """Tệp Peto sắp sửa phải đã đọc và chưa đổi kể từ lần đọc. Không thì từ chối, gửi kèm nội dung hiện tại (quanh
+        chỗ ``hint`` khớp, nếu tìm được) và tính là đã đọc, để bước sau sửa được ngay."""
+        if target in self._unread_refused:
+            raise WorkspaceError(f"Lần sửa trước của {rel} trong bước này đã bị từ chối vì chưa đọc; xem nội dung gửi "
+                                 "kèm lời từ chối đó rồi sửa lại.")
+        known = self.ws.read_digests.get(target)
+        file = self.ws.read(target)
+        if known == file.digest:
+            return file
+        self._unread_refused.add(target)
+        start = 1
+        if hint:
+            found = edit_match.find(file.text, hint.replace("\r\n", "\n"))
+            if found.matches:
+                start = max(1, file.text.count("\n", 0, found.matches[0].start) + 1 - 40)
+        current = self._read_view(target, start, None)
+        why = "chưa được đọc" if known is None else "đã thay đổi kể từ lần đọc gần nhất"
+        display = (f"Chưa đọc {rel} · đã gửi nội dung cho Peto" if known is None
+                   else f"{rel} vừa đổi · đã gửi bản mới cho Peto")
+        raise UnreadFile(f"{rel} {why} nên chưa {action}. Nội dung hiện tại nằm trong current và đã tính là đã đọc: "
+                         f"{advice}", current, display)
 
     @tool
     def search_files(self, pattern: str, path: str | None = None, glob: str | None = None) -> dict:
@@ -503,12 +635,7 @@ class Tools:
         self._guidance(target)
         self.checkpoint.check(target)
         rel = self.ws.relative(target)
-        known = self.ws.read_digests.get(target)
-        if known is None:
-            raise WorkspaceError(f"Đọc {rel} bằng read_file trước khi sửa.")
-        file = self.ws.read(target)
-        if file.digest != known:
-            raise WorkspaceError(f"{rel} đã thay đổi kể từ lần đọc gần nhất. Đọc lại rồi sửa nhé.")
+        file = self._require_read(target, rel, hint=old_text)
         old = old_text.replace("\r\n", "\n")
         new = new_text.replace("\r\n", "\n")
         if not old:
@@ -573,9 +700,8 @@ class Tools:
         existed = target.exists()
         before, newline, bom, original = "", "\n", False, None
         if existed:
-            file = self.ws.read(target)
-            if self.ws.read_digests.get(target) != file.digest:
-                raise WorkspaceError(f"{rel} đã có sẵn. Đọc tệp trước, rồi ưu tiên sửa bằng edit_file.")
+            file = self._require_read(target, rel, action="ghi đè",
+                                      advice="tệp đã có sẵn nên ưu tiên sửa bằng edit_file.")
             before, newline, bom, original = file.text, file.newline, file.bom, file.digest
         after = content.replace("\r\n", "\n")
         body = {"title": ("Muốn ghi đè " if existed else "Muốn tạo ") + rel, "path": rel, "before": before,
@@ -674,6 +800,8 @@ class Tools:
             raise WorkspaceError("Bản patch không có tệp nào.")
         plans: list[dict] = []
         touched: set[Path] = set()
+        unread: list[UnreadFile] = []
+        unread_names: list[str] = []
         for op in ops:
             target = self.ws.resolve(op.path, must_exist=op.kind != "add")
             self._guidance(target)
@@ -684,6 +812,10 @@ class Tools:
             touched.add(target)
             plan = {"op": op.kind, "target": target, "rel": rel, "before": "", "after": "", "newline": "\n",
                     "bom": False, "digest": None, "destination": None}
+            # Đã có tệp chưa đọc thì bản patch sẽ bị từ chối kèm nội dung: chỉ gom thêm tệp chưa đọc, không kiểm phần
+            # còn lại, để lỗi khác không che mất nội dung vừa tính là đã đọc.
+            if unread_names and op.kind != "update":
+                continue
             if op.kind == "add":
                 if target.exists():
                     raise WorkspaceError(f"{rel} đã có sẵn; sửa nó bằng mục '*** Update File: {rel}'.")
@@ -694,12 +826,19 @@ class Tools:
                 file = self._undoable(target)
                 plan.update(before=file.text, digest=file.digest)
             else:
-                known = self.ws.read_digests.get(target)
-                if known is None:
-                    raise WorkspaceError(f"Đọc {rel} bằng read_file trước khi sửa.")
-                file = self.ws.read(target)
-                if file.digest != known:
-                    raise WorkspaceError(f"{rel} đã thay đổi kể từ lần đọc gần nhất. Đọc lại rồi sửa nhé.")
+                if len(unread) >= 2 and self.ws.read_digests.get(target) != self.ws.read(target).digest:
+                    # Gửi kèm tối đa hai tệp cho gọn; các tệp còn lại chỉ nêu tên, chưa tính là đã đọc.
+                    unread_names.append(rel)
+                    continue
+                try:
+                    file = self._require_read(target, rel, hint="\n".join(op.chunks[0].old) if op.chunks else None,
+                                              advice="viết lại bản patch theo nội dung đó.")
+                except UnreadFile as err:
+                    unread.append(err)
+                    unread_names.append(rel)
+                    continue
+                if unread_names:
+                    continue
                 try:
                     after = patch_text_lib.apply(file.text, op.chunks, rel)
                 except patch_text_lib.PatchError as err:
@@ -714,6 +853,13 @@ class Tools:
                     touched.add(destination)
                     plan["destination"] = destination
             plans.append(plan)
+        if unread_names:
+            names = ", ".join(unread_names)
+            raise UnreadFile(f"Bản patch đụng tệp chưa đọc hoặc đã đổi ({names}) nên chưa ghi tệp nào. Nội dung hiện tại "
+                             f"của {len(unread)} tệp nằm trong current và đã tính là đã đọc"
+                             + (", các tệp còn lại thì đọc trước" if len(unread) < len(unread_names) else "")
+                             + ": viết lại bản patch theo nội dung đó.",
+                             [err.current for err in unread], f"Chưa đọc {names} · đã gửi nội dung cho Peto")
         files = [{"path": plan["rel"], "op": plan["op"], "before": plan["before"], "after": plan["after"],
                   **({"new_path": self.ws.relative(plan["destination"])} if plan["destination"] else {})}
                  for plan in plans]
@@ -801,7 +947,7 @@ class Tools:
         if not self._approve_command(command, directory, 0, shell, background=True):
             return self._refused("chạy lệnh nền này")
         self.checkpoint.shell_used = True
-        job = self.jobs.start(command, directory, shell)
+        job = self.jobs.start(command, directory, shell, spool="output_files" in self.features)
         return {"ok": True, "id": job.id, "command": command, "cwd": self.ws.relative(directory),
                 "note": "Lệnh chạy tiếp sau khi yêu cầu này xong. Đọc output bằng read_command_output, dừng bằng "
                         "stop_command."}
@@ -813,6 +959,28 @@ class Tools:
     @tool
     def stop_command(self, job_id: str) -> dict:
         return self.jobs.stop(str(job_id))
+
+    @tool
+    def explore(self, task: str, depth: str | None = None) -> dict:
+        """Giao việc dò mã cho agent con chỉ đọc (subagent.py); chỉ kết luận của nó quay về Peto."""
+        task = str(task or "").strip()
+        if not task:
+            raise WorkspaceError("task đang trống: viết rõ việc cần dò.")
+        if self.explorer is None or "subagent" not in self.features:
+            raise WorkspaceError("Phiên này chưa chạy được agent con.")
+        depth = depth if depth in ("quick", "medium", "thorough") else "medium"
+        result = self.explorer(task, depth, self.ui.explore_progress)
+        self.meta.update(actions=result.pop("_actions", []), depth=depth)
+        return result
+
+    @tool
+    def read_output(self, output_id: str, pattern: str | None = None, start_line: int | None = None,
+                    end_line: int | None = None) -> dict:
+        """Output đầy đủ CLI đã lưu cho một lệnh in quá dài (khả năng "output_files"); chỉ đọc nên không hỏi quyền."""
+        try:
+            return outputs.read(str(output_id), pattern, start_line, end_line)
+        except outputs.OutputError as err:
+            raise WorkspaceError(str(err)) from None
 
     def _browser(self) -> browser.Browser:
         if self.browser is None:
@@ -1150,13 +1318,20 @@ class Tools:
         if not self._approve_command(command, directory, timeout, shell):
             return self._refused("chạy lệnh này")
         call_id = self._active.call_id if self._active is not None else ""
+        before = self._capture()
         try:
             self.checkpoint.shell_used = True
             with self.metrics.measure("commands"):
                 result = runner.run(command, directory, timeout, shell=shell,
-                                    on_progress=lambda seconds, output: self.ui.tool_progress(call_id, seconds, output))
+                                    on_progress=lambda seconds, output: self.ui.tool_progress(call_id, seconds, output),
+                                    spool="output_files" in self.features)
         except FileNotFoundError:
             raise WorkspaceError(f"Máy này không chạy được {shell}. Thử lại bằng shell khác nhé.") from None
+        except KeyboardInterrupt:
+            # Lệnh bị dừng giữa chừng vẫn có thể đã đổi tệp: ghi lại để /undo trả được.
+            self._record_command(before, {})
+            raise
+        self._record_command(before, result)
         classification = classify(command, result)
         result["classification"] = classification
         if directory != self.ws.root:

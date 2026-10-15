@@ -136,10 +136,10 @@ def test_a_permissions_file_shipped_inside_a_repo_grants_nothing(project, execut
 
 def test_background_commands_can_be_always_allowed_too(project, monkeypatch):
     tools = Tools(Workspace(project), FakeUI(["l"]))
-    monkeypatch.setattr(tools.jobs, "start", lambda command, cwd, shell: SimpleNamespace(id="1"))
+    monkeypatch.setattr(tools.jobs, "start", lambda command, cwd, shell, **_: SimpleNamespace(id="1"))
     assert tools.call("start_command", args(command="npm run dev", shell=None, cwd=None))["ok"]
     later = Tools(Workspace(project), FakeUI())
-    monkeypatch.setattr(later.jobs, "start", lambda command, cwd, shell: SimpleNamespace(id="1"))
+    monkeypatch.setattr(later.jobs, "start", lambda command, cwd, shell, **_: SimpleNamespace(id="1"))
     assert later.call("start_command", args(command="npm run dev", shell=None, cwd=None))["ok"]
 
 
@@ -227,7 +227,9 @@ def test_note_writes_agents_md_keeps_crlf_and_costs_no_step(project):
     edited = work.tools.edit_file("a.py", "x = 1", "x = 2")
     assert edited.get("ok"), "bước kế mang AGENTS.md mới nên lần sửa tới không bị chặn vì hướng dẫn vừa đổi"
     refused = work.tools.call("edit_file", args(path="AGENTS.md", old_text="npm test", new_text="pnpm test"))
-    assert "read_file" in refused["error"], "muốn tự sửa AGENTS.md thì Peto phải đọc lại, như mọi tệp đổi ngoài công cụ"
+    # Từ CLI 0.25.0 lời từ chối gửi kèm nội dung hiện tại và tính là đã đọc, để bước sau sửa được ngay.
+    assert "chưa được đọc" in refused["error"] and "pnpm" in refused["current"]["content"], \
+        "muốn tự sửa AGENTS.md thì Peto phải đọc lại, như mọi tệp đổi ngoài công cụ"
 
 
 def test_note_needs_text_and_stays_short(project):

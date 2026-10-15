@@ -10,6 +10,8 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
+from . import outputs
+
 MAX_RESULT_CHARS = 20_000
 KEEP_BYTES = 512 * 1024
 # -NoProfile để hồ sơ PowerShell của người dùng không in thêm gì, -NonInteractive để lệnh không đứng chờ bàn phím.
@@ -57,9 +59,14 @@ def spawn(command: str, cwd: Path, shell: str = "cmd") -> subprocess.Popen:
 
 
 def run(command: str, cwd: Path, timeout: float, *, shell: str = "cmd",
-        on_progress: Callable[[float, str], None] | None = None) -> dict:
-    """Trả mã thoát, thời gian và output đã cắt gọn. Ctrl+C thì giết cây tiến trình rồi ném lại KeyboardInterrupt."""
+        on_progress: Callable[[float, str], None] | None = None, spool: bool = False) -> dict:
+    """Trả mã thoát, thời gian và output đã cắt gọn. Ctrl+C thì giết cây tiến trình rồi ném lại KeyboardInterrupt.
+
+    ``spool`` (khả năng "output_files", CLI 0.25.0): ghi cả luồng output vào một tệp trong hồ sơ người dùng; output bị
+    cắt thì kết quả kèm output_id để Peto đọc phần giữa bằng read_output, không thì xóa tệp.
+    """
     started = time.monotonic()
+    saved = outputs.Spool() if spool else None
     process = spawn(command, cwd, shell)
     head, tail = bytearray(), bytearray()
     recent = bytearray()
@@ -69,6 +76,8 @@ def run(command: str, cwd: Path, timeout: float, *, shell: str = "cmd",
     def reader() -> None:
         nonlocal dropped
         while chunk := process.stdout.read1(65536):
+            if saved is not None:
+                saved.write(chunk)
             if on_progress is not None:
                 with recent_lock:
                     recent.extend(chunk)
@@ -100,6 +109,8 @@ def run(command: str, cwd: Path, timeout: float, *, shell: str = "cmd",
             time.sleep(0.1)
     except KeyboardInterrupt:
         kill_tree(process)
+        if saved is not None:
+            saved.discard()
         raise
     finally:
         try:
@@ -113,6 +124,12 @@ def run(command: str, cwd: Path, timeout: float, *, shell: str = "cmd",
         output += f"\n… (bỏ bớt {dropped} byte output) …\n"
     output += tail.decode("utf-8", errors="replace")
     result = {"exit_code": process.returncode, "seconds": round(time.monotonic() - started, 1), "output": cap_text(output)}
+    if saved is not None:
+        kept = saved.keep() if (dropped or len(output) > MAX_RESULT_CHARS) else None
+        if kept:
+            result.update(kept)
+        else:
+            saved.discard()
     if timed_out:
         result["error"] = f"Lệnh chạy quá {int(timeout)} giây nên đã bị dừng."
     return result

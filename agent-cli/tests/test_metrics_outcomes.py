@@ -120,7 +120,8 @@ def done(usage=None, **extra):
 
 
 def test_task_retry_metrics_accumulate_and_new_task_resets(project):
-    client = Client([ApiError(0, "lost"), done({"input_tokens": 100, "output_tokens": 20}), done()])
+    # 408 không tự thử lại (lỗi kết nối 0/502–504 trước sự kiện đầu tiên thì có, từ CLI 0.25.0).
+    client = Client([ApiError(408, "lost"), done({"input_tokens": 100, "output_tokens": 20}), done()])
     work = Session(client, Workspace(project), FakeUI())
     work.run_task("task")
     assert work.metrics.calls["model"] == 1

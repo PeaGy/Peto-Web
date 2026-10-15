@@ -221,6 +221,10 @@ class ClaudeClient:
             # Ép tool_choice không tương thích adaptive thinking. Lượt bắt buộc tìm web đã có chỉ dẫn và kiểm chứng
             # sau khi stream xong trong ResponsesProvider; không tự nhận đã tra nếu Claude chưa chạy công cụ.
             request["tools"] = tools
+            # Lượt "wrapup" của Agent (CLI 0.25.0): lịch sử còn lời gọi công cụ nên vẫn khai báo công cụ, nhưng cấm gọi.
+            # Suy nghĩ tự điều chỉnh chỉ nhận tool_choice auto hoặc none, nên none dùng được cùng nó.
+            if kwargs.get("tool_choice") == "none":
+                request["tool_choice"] = {"type": "none"}
         return ClaudeStream(self.sdk, request)
 
 

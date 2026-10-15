@@ -3275,6 +3275,109 @@ results in the next step. The server stores no conversation (`store=False`), and
     the thinking line, a permission button and the message panel, opening thinking, clicking Cho phép (the edit was
     applied), jump to latest, the message menu, and the `/` menu; replayed in xterm.js. The fix of a pre-existing race in
     `test_footer.py` (reading the screen before the redraw) came out of the full run.
+
+  **From opencode's core, 0.25.0 (done 2026-10-15, needs the backend deployed).** The owner asked whether opencode's
+  backend/harness (`packages/core/src` at `bcf23b6`: `session/runner/step.ts`, `retry.ts`, `max-steps.ts`,
+  `compaction.ts`, `snapshot.ts`, `revert.ts`, `tool-output.ts`, `plugin/agent.ts`) was worth learning from. Matched
+  against their own `%LOCALAPPDATA%\PetoAgent\logs` (48 files, 79 requests, 693 tool calls): 88/269 reads cut at 160
+  lines (half of them files of ~186 lines, 19 re-read later), 11 edits refused for "read first", 10/68 commands changing
+  files that `/undo` cannot see, 4 command outputs losing their middle, 2 manual `/retry`, a 39-step request. They picked
+  all eight items; 0.25.0 has six, 0.26.0 (snapshots) and 0.27.0 (explore subagent) follow. New features `read_more`,
+  `output_files`, `wrapup`, `user_guide`; the 0.21–0.24 schema and its GPT variant are now pinned too, and the
+  Vietnamese instructions of old feature sets stay byte-identical (empty parts are still joined).
+  - **Bigger reads** (`read_more`): `read_file` reads up to 1000 lines, cut at a line boundary past 32,000 characters (a
+    longer single line is cut with a note). `_READ_V3` replaces the schema in place when `explore_v2` is also declared.
+    `prompts/agent.AGENT_PROMPT_READ_MORE` and `english.agent_prompt(plan=, read_more=)` swap the "targeted ranges"
+    sentence, checked at import like `AGENT_PROMPT_NO_PLAN`. `loop.cap_result(…, READ_BOUNDED_KEYS)` no longer cuts read
+    content at 20,000 characters. Reason: each extra step resends the whole conversation, far more than a few hundred
+    lines.
+  - **Refusal with content** (CLI only): `Tools._require_read` replaces the "read first" errors of `edit_file`,
+    `write_file` (overwriting) and `apply_patch`. An unread or changed file raises `UnreadFile` (error + `current`, the
+    `read_file` view centred 40 lines above where `old_text` or the patch's first chunk matches, else from the top); the
+    file counts as read. Further edits of it in the same step are refused (`_unread_refused`, reset by `start_step` and by
+    an explicit `read_file`). A patch attaches at most two files, writes nothing, and once one file is unread skips every
+    other check so another error cannot hide the attached content. The UI shows a yellow notice (`raised="unread"`).
+  - **Automatic retry** (`loop._step` → `_attempt`, `RETRY_WAITS` 2/5/10 s, Ctrl+C stops): ApiError 0/502/503/504 before
+    any SSE event, or an `error` event with `"retryable": true`. The server sets that only when the step was refunded
+    (nothing produced) and the failure is transient: `ProviderError.retryable` in `ai/agent.py` (rate limit, connection,
+    5xx, stream cut before `done`, `response.failed`, not completed; Claude already had it) or `queue_full`. A drop after
+    text keeps `/retry`. Tests that meant the `/retry` path now use status 408.
+  - **Full output** (`output_files`, `outputs.py`): `runner.run(spool=True)` and background jobs write the whole stream to
+    `%LOCALAPPDATA%\PetoAgent\outputs\out_<12 hex>.log` (20 MB cap, 7 days, pruned at session start). Kept only when the
+    result was cut (run) or a read was cut or lost bytes (job, else deleted at `stop_all`); the result gains `output_id`.
+    `read_output(output_id, pattern, start_line, end_line)` is appended last: regex search (40 matches) or 400 lines, no
+    permission. `AGENT_OUTPUT_PROMPT` explains it; `run_command`'s schema is unchanged.
+  - **Wrap-up turn** (`wrapup`): after `MAX_STEPS_PER_TASK` the CLI sends `context.purpose = "wrapup"`
+    (`Session._wrap_up`); the reply is shown and appended, then the old "gõ làm tiếp" line. Server: normal `_instructions`
+    with `extra=WRAPUP_PROMPT` placed before the time block (cache prefix), normal step cost, `agent_step(final=True)`:
+    xAI gets `tools=[]` (it rejects `tool_choice` none without tools), OpenAI and Claude keep the tools with `tool_choice`
+    none (Claude `{"type": "none"}`, allowed with adaptive thinking), no web search. Claude's behaviour with a real key is
+    unchecked.
+  - **Shared AGENTS.md** (`user_guide`, `user_guide.py`): `%APPDATA%\PetoAgent\AGENTS.md` (`config.home()`), 32,000
+    characters, read every step and sent as `context.user_guidance`; never from the project. The server wraps it with
+    `USER_GUIDANCE_PROMPT` before the project guidance (project conventions win, the conversation wins over both), capped
+    at 40,000. `/guide` picks the shared file or the project's AGENTS.md and edits it in the `/editor` editor
+    (`user_guide.TEMPLATE` for a new shared file); like `/remember`, writes skip the checkpoint and drop the read digest.
+  - **Tests:** backend `test_agent_tool_features.py` (pins, read_more, read_output, prompts, byte-identical old
+    instructions, user guidance), `test_agent_api.py` (wrapup, mock wrapup, retryable only when refunded),
+    `test_models.py` (final turn per service, retryable mapping), `test_claude.py` (tool_choice none); CLI
+    `test_fewer_steps.py`, `test_outputs_guide.py`, and updated read-first assertions in five older files.
+
+  **Project snapshots, 0.26.0 (done 2026-10-15, CLI only; ships together with 0.25.0, nothing committed between).**
+  After opencode's `snapshot.ts`/`revert.ts`, for the 10/68 file-changing commands `/undo` could not see.
+  - **`snapshot.py`:** a hidden git repository per project in `%LOCALAPPDATA%\PetoAgent\snapshots\<key>`, git run with
+    `--git-dir` there and `--work-tree` the project, plus `-c` overrides (no autocrlf, quotepath, fsmonitor, hooks,
+    gc.auto). Never touches the project's `.git`, never checks out. Works in non-git folders; needs `git` on PATH
+    (`shutil.which`), else disabled with one notice. `info/exclude` holds `SKIPPED_DIRS` and `BLOCKED_FILE_PATTERNS`, so
+    `.env` and keys are never copied; the project's `.gitignore` applies; files over 2 MB and symlinks are dropped.
+    `capture()` = `ls-files --others --modified --deleted --exclude-standard`, `update-index --add --remove`
+    (`HASH_TIMEOUT` 120 s, other calls 20 s), `write-tree`; any error disables it for the session. `changed`,
+    `contents` (one `cat-file --batch`), `has`. `maintain()` runs `gc --prune=30.days.ago` daily in a thread and
+    deletes repositories unused for 30 days. Measured on Peto-Web: first capture 7–10 s, later ones 0.3–0.45 s.
+  - **Commands:** `Tools.run_command` captures before and after (also after Ctrl+C) and `_record_command` diffs them:
+    changed files go into the checkpoint through `Checkpoint.record_command` (`Change.source` "command"; a file Peto
+    edited earlier keeps its first `before`), their read digests are dropped, the result gains `files_changed`
+    (≤20, plus `files_changed_total`), the command block shows "đổi N tệp" and `RequestEnd.command_files` adds "lệnh
+    đổi N tệp". More than 200 files or 12 MB is not recorded (notice). Background jobs are not covered.
+  - **Checkpoint:** binary content allowed for "command"/"restore" entries, `source` and `commands_covered` persisted;
+    `/diff` labels "· do lệnh", shows binary sizes, and keeps the old "lệnh terminal" warning only when commands ran
+    uncovered.
+  - **Restore to a message** (`Session._mark_request` captures at each request start in a thread; tools that change files
+    wait for it via `Tools.wait_snapshot`/`CHANGES_FILES`, and `_run` joins it before the final save). Marks are
+    `history.fingerprint` (content hash + count of identical earlier items) → tree, saved as `snapshots` in the session
+    file and kept through resume and fork. The message menu (`/timeline`, clicking a message) offers "Khôi phục tệp về
+    lúc trước tin này"; `/fork` asks "Khôi phục cả tệp về lúc trước tin đó?" (default no). `Session.restore_files` lists
+    the files, asks via `ui.choose`, applies through `Checkpoint.undo` on Change(tree, now), then stores the inverse as
+    the checkpoint so `/undo` brings back the pre-restore state, and tells Peto with a user note.
+  - **Tests:** `test_snapshot.py` (excludes, the project's own git untouched, a command creating/changing/deleting a
+    binary file and undo, Peto edit then command, refusal after a user edit, no git, restore and undo of the restore,
+    marks through save/resume, the message menu); `conftest.py` sets `PETO_AGENT_NO_SNAPSHOTS` for every other test. A
+    ConPTY run of real `peto` checked a Python command creating, changing and deleting files, `/diff`, `/undo`, a
+    second request, clicking the first message → restore → `/undo`, with the file states verified at each step.
+
+  **Explore subagent, 0.27.0 (done 2026-10-15, needs the backend deployed; ships with 0.25.0 and 0.26.0).** After
+  opencode's `plugin/agent.ts` (`PROMPT_EXPLORE`) and `tool/plugin/subagent.ts`. The owner picked the session's own
+  model at low effort.
+  - **Server:** feature `subagent` appends `explore(task, depth)` last (`depth` enum quick/medium/thorough, caps 4/8/15
+    in `EXPLORE_DEPTHS`) and adds `AGENT_SUBAGENT_PROMPT` (vi/en: when to use it, the subagent's reads are not Peto's,
+    write a complete task, every child step costs quota). A step with `context.purpose = "explore"` (only with the
+    feature) gets `explore_schemas` (the session's own read_file/list/search/find variants, nothing else) and
+    `_explore_instructions`: persona core + `EXPLORE_PROMPT` + explore tool notes + search prompt + project and user
+    guidance + time, no Agent working prompt; `context.final` adds `EXPLORE_FINAL_PROMPT` and `agent_step(final=True)`.
+    Normal step cost and usage purpose; `done` carries `purpose: "explore"`.
+  - **CLI** (`subagent.py`): `Tools.explore` (refused without the feature) calls `Session._explore` → `subagent.run`: its
+    own `items` (only the task), its own `Workspace` (separate read digests), a `Tools` limited to the four read tools
+    with a `_ChildUI` that turns each call into `ui.explore_progress` lines and collects actions and files read. Steps
+    use the session's model, `low` effort (or the model's first supported), and `Session._step_context` plus
+    `purpose`/`final`; the last allowed step is final, calls outside the list or after it get an error result. The
+    result is `{summary (≤8000), steps, files_read}` (plus `error` "Agent con dừng giữa chừng: …" on a server or network
+    failure); `_actions` goes to `meta`. Ctrl+C propagates and stops the request. Logged as `explore`.
+  - **UI:** TUI status "… Khám phá · Đọc app.py" while it runs, then a clickable "◇ Khám phá <task> · N bước · đọc K tệp"
+    row that opens the actions and the summary (`_explore_lines`); the classic UI prints one dim line per action and a
+    closing line. `/export` writes "Khám phá (N bước): task".
+  - **Tests:** backend `test_agent_tool_features.py` (schema, read-only subset, prompt), `test_agent_api.py` (explore
+    step tools, instructions, final, old CLIs); CLI `test_subagent.py` (separate context and reads, final step and
+    refused tools, error result, Ctrl+C, old server) and a `test_mouse.py` case for the block.
 - **CLI display** (picked by the owner from mockups): tool steps stay as permanent lines; while waiting for the model
   there is one transient `… Peto đang nghĩ · Ns` status line (`UI.status`, redrawn with `\r\033[2K`, only when colors
   are on). `ReplyWriter` prints replies line by line so `UI.markdown` can color bold, inline code, headings, bullets and

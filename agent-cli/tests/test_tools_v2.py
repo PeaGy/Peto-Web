@@ -90,7 +90,7 @@ def test_without_edit_v2_the_old_exact_rules_stay(project):
 def test_the_edit_still_requires_a_fresh_read_and_keeps_crlf(project):
     (project / "app.py").write_bytes(b"a = 1\r\n    b = 2\r\n")
     tools = make(project, ["y"])
-    assert "read_file trước" in tools.call("edit_file", args(path="app.py", old_text="b = 2", new_text="b = 3"))["error"]
+    assert "chưa được đọc" in tools.call("edit_file", args(path="app.py", old_text="b = 2", new_text="b = 3"))["error"]
     tools.read_file("app.py")
     tools.call("edit_file", args(path="app.py", old_text="b = 2  ", new_text="b = 3", replace_all=None))
     assert (project / "app.py").read_bytes() == b"a = 1\r\n    b = 3\r\n"

@@ -348,3 +348,23 @@ async def test_failed_fetch_does_not_break_the_turn(monkeypatch):
     assert not any(getattr(chunk, "kind", None) == "sources" for chunk in chunks)
     assert [(chunk.kind, chunk.text) for chunk in chunks if getattr(chunk, "kind", None) == "page"] == [
         ("page", "fetching"), ("page", "failed")]
+
+
+async def test_agent_final_turn_keeps_tools_declared_but_forbids_calls(monkeypatch):
+    """Lượt "wrapup" (CLI 0.25.0): lịch sử còn tool_use nên vẫn khai báo công cụ, kèm tool_choice none, không tìm web."""
+    sdk, calls, _ = sdk_with_responses(message_events([TEXT]))
+    monkeypatch.setattr(agent, "AI_PROVIDER", "xai")
+    monkeypatch.setattr(config, "ANTHROPIC_API_KEY", "khoa-gia")
+    monkeypatch.setattr(agent, "_claude_client", claude.ClaudeClient(sdk))
+    history = [USER, {"type": "function_call", "call_id": "toolu_test", "name": "read_file",
+                      "arguments": json.dumps({"path": "README.md"})},
+               {"type": "function_call_output", "call_id": "toolu_test", "output": "{\"content\": \"x\"}"}]
+    async with sdk:
+        events = [event async for event in agent.agent_step(instructions="chỉ dẫn", input_items=history,
+                                                            tools=[SCHEMA], effort="low", model="haiku",
+                                                            web_search=True, final=True)]
+    assert events[-1].kind == "done"
+    request = calls[0]
+    assert request["tool_choice"] == {"type": "none"}
+    assert [tool["name"] for tool in request["tools"]] == ["read_file"], "không kèm tìm web"
+    assert request["thinking"] == {"type": "adaptive"}

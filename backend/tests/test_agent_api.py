@@ -676,3 +676,112 @@ def test_agent_reply_voice_is_concise_in_both_languages():
     assert "Chỉ nói đã sửa xong hay test đã qua khi kết quả công cụ cho thấy vậy" in AGENT_PROMPT
     # Bài thi 2026-10-13: 6 Luna gọi update_plan thành lượt riêng ở 29/96 lượt, mỗi lượt một bước.
     assert "không bao giờ thành một lượt riêng" in AGENT_PROMPT and "never as a turn of its own" in ENGLISH
+
+
+async def test_wrapup_keeps_the_working_instructions_forbids_tools_and_costs_a_normal_step(anon_client, client,
+                                                                                         monkeypatch):
+    """CLI 0.25.0 (theo MAX_STEPS_PROMPT của opencode): hết bước của một yêu cầu thì một lượt cuối chỉ tóm tắt."""
+    from ai.agent import AgentEvent
+    from prompts import english as english_prompts
+
+    seen = []
+
+    async def summarize(**kwargs):
+        seen.append(kwargs)
+        yield AgentEvent("done", output=({"type": "message", "role": "assistant", "content": "Đã chạm giới hạn."},),
+                         usage={"input_tokens": 900, "output_tokens": 20})
+    monkeypatch.setattr(agent_api, "agent_step", summarize)
+    monkeypatch.setattr(agent_api, "AGENT_WEB_SEARCH", True)
+    await login_as(client, "google")
+    token = await connect(anon_client, client)
+    context = {"purpose": "wrapup", "features": ["explore_v2", "wrapup"], "project": "du-an"}
+    body = {"input": [DEMO_TASK], "effort": "medium", "context": context}
+    events = events_of(await anon_client.post("/api/agent/step", headers=bearer(token), json=body))
+    assert events[0]["steps_used"] == 1 and events[-1]["purpose"] == "wrapup"
+    call = seen[0]
+    assert call["final"] is True and call["web_search"] is False
+    assert [tool["name"] for tool in call["tools"]][:2] == ["list_files", "read_file"], "công cụ vẫn khai báo"
+    normal = agent_api._instructions({**context, "purpose": None}, True)
+    instructions = call["instructions"]
+    assert agent_api.WRAPUP_PROMPT in instructions
+    head = normal[:normal.index("## Thời gian")] if "## Thời gian" in normal else normal[:-200]
+    assert instructions.startswith(head), "phần đầu giống bước thường để prompt cache dùng lại"
+
+    await anon_client.post("/api/agent/step", headers=bearer(token), json={**body, "model": "luna"})
+    assert english_prompts.WRAPUP_PROMPT in seen[1]["instructions"]
+
+
+async def test_mock_wrapup_answers_without_tools(anon_client, client):
+    await login_as(client, "discord")
+    token = await connect(anon_client, client)
+    body = {"input": [DEMO_TASK], "effort": "low", "context": {"purpose": "wrapup", "features": ["wrapup"]}}
+    events = events_of(await anon_client.post("/api/agent/step", headers=bearer(token), json=body))
+    done = events[-1]
+    assert done["type"] == "done" and done["purpose"] == "wrapup"
+    assert all(item.get("type") != "function_call" for item in done["output"])
+    assert "giới hạn bước" in json.dumps(done["output"], ensure_ascii=False)
+
+
+async def test_transient_failures_are_marked_retryable_only_when_the_step_was_refunded(anon_client, client,
+                                                                                      monkeypatch):
+    """CLI 0.25.0 tự thử lại lỗi tạm thời; máy chủ chỉ đánh dấu khi bước chưa có phản hồi, tức đã được hoàn lại."""
+    from ai.agent import AgentEvent
+    from ai.base import ProviderError
+
+    await login_as(client, "discord")
+    token = await connect(anon_client, client)
+    task = {"type": "message", "role": "user", "content": "thử __tamloi__"}
+    events = events_of(await anon_client.post("/api/agent/step", headers=bearer(token),
+                                              json={"input": [task], "effort": "low"}))
+    assert events[-1] == {"type": "error", "message": "Nhà cung cấp AI lỗi tạm thời (giả lập). Thử lại nhé.",
+                          "retryable": True}
+    assert (await client.get("/api/agent/devices")).json()["steps_used"] == 0, "bước đã được hoàn lại"
+
+    lasting = {"type": "message", "role": "user", "content": "thử __error__"}
+    events = events_of(await anon_client.post("/api/agent/step", headers=bearer(token),
+                                              json={"input": [lasting], "effort": "low"}))
+    assert events[-1]["type"] == "error" and "retryable" not in events[-1]
+
+    async def half(**kwargs):
+        yield AgentEvent("delta", "Đang")
+        raise ProviderError("Kết nối tới AI bị ngắt.", retryable=True)
+    monkeypatch.setattr(agent_api, "agent_step", half)
+    events = events_of(await anon_client.post("/api/agent/step", headers=bearer(token),
+                                              json={"input": [DEMO_TASK], "effort": "low"}))
+    assert events[-1]["type"] == "error" and "retryable" not in events[-1], "đã có chữ: không tự thử lại"
+
+
+async def test_an_explore_step_gets_read_only_tools_and_its_own_prompt(anon_client, client, monkeypatch):
+    """Agent con explore (CLI 0.27.0): cùng model của phiên, tính bước như thường, chỉ công cụ đọc, lời nhắc riêng."""
+    from ai.agent import AgentEvent
+
+    seen = []
+
+    async def step(**kwargs):
+        seen.append(kwargs)
+        yield AgentEvent("done", output=({"type": "message", "role": "assistant", "content": "Ở app.py:2."},),
+                         usage={"input_tokens": 500, "output_tokens": 20})
+    monkeypatch.setattr(agent_api, "agent_step", step)
+    monkeypatch.setattr(agent_api, "AGENT_WEB_SEARCH", True)
+    await login_as(client, "discord")
+    token = await connect(anon_client, client)
+    context = {"purpose": "explore", "features": ["explore_v2", "read_more", "subagent"], "project": "du-an",
+               "project_guidance": [{"path": "AGENTS.md", "scope": ".", "text": "Dùng pytest."}]}
+    body = {"input": [{"type": "message", "role": "user", "content": "Tìm nơi in lời chào."}], "effort": "low",
+            "context": context}
+    events = events_of(await anon_client.post("/api/agent/step", headers=bearer(token), json=body))
+    assert events[0]["steps_used"] == 1 and events[-1]["purpose"] == "explore"
+    call = seen[0]
+    assert [tool["name"] for tool in call["tools"]] == ["list_files", "read_file", "search_files", "find_files"]
+    assert call["final"] is False and call["web_search"] is True
+    instructions = call["instructions"]
+    assert agent_api.EXPLORE_PROMPT in instructions and agent_api.AGENT_PROMPT_READ_MORE not in instructions
+    assert "Dùng pytest." in instructions and "edit_file" not in instructions
+
+    events = events_of(await anon_client.post("/api/agent/step", headers=bearer(token),
+                                              json={**body, "context": {**context, "final": True}}))
+    assert seen[1]["final"] is True and agent_api.EXPLORE_FINAL_PROMPT in seen[1]["instructions"]
+
+    old = {**context, "features": ["explore_v2"]}
+    await anon_client.post("/api/agent/step", headers=bearer(token), json={**body, "context": old})
+    assert "edit_file" in [tool["name"] for tool in seen[2]["tools"]], "CLI chưa khai báo subagent: bước thường"

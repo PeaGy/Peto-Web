@@ -246,3 +246,79 @@ async def test_agent_missing_claude_sdk_has_same_error(monkeypatch):
     monkeypatch.setattr(config, "ANTHROPIC_API_KEY", "khoa-gia")
     with pytest.raises(ProviderError, match="chưa cài đủ thư viện Claude"):
         _ = [event async for event in agent.agent_step(instructions="chỉ dẫn", input_items=[], tools=[], model="haiku")]
+
+
+async def test_agent_final_turn_forbids_tools_per_service(monkeypatch):
+    """Lượt "wrapup" (CLI 0.25.0): OpenAI giữ công cụ kèm tool_choice none (lịch sử còn lời gọi công cụ); xAI từ chối
+    none khi không có công cụ nên bỏ hẳn công cụ, như lượt tóm tắt ngữ cảnh."""
+    from ai import agent
+
+    calls: list[dict] = []
+
+    async def create(**kwargs):
+        calls.append(kwargs)
+        return FakeStream(completed("Đã chạm giới hạn bước."))
+
+    tool = {"type": "function", "name": "read_file", "parameters": {"type": "object", "properties": {}}}
+    fake = SimpleNamespace(responses=SimpleNamespace(create=create))
+    monkeypatch.setattr(agent, "AI_PROVIDER", "xai")
+    monkeypatch.setattr(agent, "OPENAI_API_KEY", "khoa-thu")
+    monkeypatch.setattr(agent, "_openai_client", fake)
+    events = [event async for event in agent.agent_step(
+        instructions="chỉ dẫn", input_items=[{"role": "user", "content": "chào"}], tools=[tool], model="luna",
+        web_search=True, final=True)]
+    assert events[-1].kind == "done"
+    assert calls[0]["tool_choice"] == "none" and calls[0]["tools"] == [tool], "không kèm tìm web"
+
+    class Auth:
+        async def get_access_token(self):
+            return "token-thu"
+
+    monkeypatch.setattr(agent, "_client", fake)
+    monkeypatch.setattr(agent, "_auth", Auth())
+    [event async for event in agent.agent_step(
+        instructions="chỉ dẫn", input_items=[{"role": "user", "content": "chào"}], tools=[tool], model="peto",
+        web_search=True, final=True)]
+    assert calls[1]["tools"] == [] and "tool_choice" not in calls[1]
+
+    [event async for event in agent.agent_step(
+        instructions="chỉ dẫn", input_items=[{"role": "user", "content": "chào"}], tools=[tool], model="luna")]
+    assert "tool_choice" not in calls[2], "bước thường không đổi"
+
+
+async def test_agent_transient_provider_failures_are_retryable(monkeypatch):
+    from ai import agent
+
+    request = httpx2.Request("POST", "https://api.openai.com/v1/responses")
+
+    def raising(error):
+        async def create(**kwargs):
+            raise error
+        return SimpleNamespace(responses=SimpleNamespace(create=create))
+
+    async def run():
+        async for _ in agent.agent_step(instructions="", input_items=[{"role": "user", "content": "chào"}],
+                                        tools=[], model="luna"):
+            pass
+
+    monkeypatch.setattr(agent, "AI_PROVIDER", "xai")
+    monkeypatch.setattr(agent, "OPENAI_API_KEY", "khoa-thu")
+    cases = [
+        (openai.RateLimitError("quota", response=httpx2.Response(429, request=request), body=None), True),
+        (openai.APIConnectionError(request=request), True),
+        (openai.InternalServerError("lỗi", response=httpx2.Response(503, request=request), body=None), True),
+        (openai.BadRequestError("sai", response=httpx2.Response(400, request=request), body=None), False),
+        (openai.AuthenticationError("khóa", response=httpx2.Response(401, request=request), body=None), False),
+    ]
+    for error, expected in cases:
+        monkeypatch.setattr(agent, "_openai_client", raising(error))
+        with pytest.raises(ProviderError) as caught:
+            await run()
+        assert caught.value.retryable is expected, type(error).__name__
+
+    async def cut(**kwargs):
+        return FakeStream([SimpleNamespace(type="response.output_text.delta", delta="Đang")])
+    monkeypatch.setattr(agent, "_openai_client", SimpleNamespace(responses=SimpleNamespace(create=cut)))
+    with pytest.raises(ProviderError, match="bị ngắt") as caught:
+        await run()
+    assert caught.value.retryable is True

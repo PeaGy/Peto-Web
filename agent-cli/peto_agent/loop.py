@@ -9,8 +9,8 @@ import threading
 import time
 from datetime import datetime
 
-from . import approvals, history, mentions
-from .checkpoint import Checkpoint
+from . import approvals, history, mentions, subagent, user_guide
+from .checkpoint import Change, Checkpoint
 from .context import compact_prefix, context_size, text_of, efficient_input
 from .events import Permission, RequestEnd
 from .formats import format_duration, format_tokens  # noqa: F401 - evals/report.py và __main__ lấy từ đây
@@ -68,9 +68,20 @@ INIT_EXISTING = ("Dự án đã có AGENTS.md: đọc trước, giữ những ph
 TITLE_LABELS = {"done": "xong", "stopped": "đã dừng", "error": "lỗi", "limit": "tạm dừng"}
 # Yêu cầu lâu hơn ngần này giây thì kêu một tiếng khi xong; việc vài giây thì kêu chỉ tổ ồn.
 BELL_AFTER_SECONDS = 10.0
+# Tự thử lại (CLI 0.25.0, theo opencode): lỗi tạm thời mà bước chưa có phản hồi (máy chủ đã hoàn lại bước, hoặc chưa
+# tới được máy chủ) thì chờ ngần này giây rồi gửi lại, tối đa ba lần. opencode chờ 2–10 giây, tối đa mười lần.
+RETRY_WAITS = (2, 5, 10)
+# Lỗi kết nối tới máy chủ Peto (0: không nối được; 502–504: Cloudflare hay VPS đang khởi động lại) trước sự kiện đầu
+# tiên: bước chưa được tính nên gửi lại không tốn gì.
+RETRY_STATUSES = {0, 502, 503, 504}
+# Khóa mà công cụ đã tự giới hạn, không được cắt giữa chừng: hướng dẫn dự án, và nội dung tệp gửi kèm lời từ chối sửa
+# tệp chưa đọc (``current``, cùng giới hạn như read_file).
+BOUNDED_KEYS = frozenset({"project_guidance", "skill_guidance", "current"})
+# read_file với "read_more" trả tới 32.000 ký tự, quá mức 20.000 chung của cap_text: cắt phần giữa thì mất code.
+READ_BOUNDED_KEYS = BOUNDED_KEYS | {"content"}
 
 
-def cap_result(value):
+def cap_result(value, bounded=BOUNDED_KEYS):
     """Cắt chuỗi và danh sách dài trong kết quả công cụ mà vẫn giữ JSON hợp lệ."""
     if isinstance(value, str):
         return cap_text(value)
@@ -78,8 +89,16 @@ def cap_result(value):
         return [cap_result(item) for item in value[:400]]
     if isinstance(value, dict):
         # Guidance is already bounded by its reader; never truncate rules in the middle.
-        return {key: item if key in {"project_guidance", "skill_guidance"} else cap_result(item) for key, item in value.items()}
+        return {key: item if key in bounded else cap_result(item) for key, item in value.items()}
     return value
+
+
+class _Retry(Exception):
+    """Lỗi tạm thời của một bước mà bước chưa có phản hồi: _step chờ rồi gửi lại."""
+
+    def __init__(self, message: str):
+        super().__init__(message)
+        self.message = message
 
 
 def portable(items: list[dict]) -> list[dict]:
@@ -183,8 +202,15 @@ class Session:
         self.auto_title = True
         self._titling = False
         self._save_lock = threading.Lock()
+        # Lời báo gần nhất về AGENTS.md chung (dài quá, đọc lỗi): chỉ in lại khi đổi, khỏi lặp mỗi bước.
+        self._guide_problem: str | None = None
+        # Ảnh chụp dự án lúc bắt đầu mỗi yêu cầu (CLI 0.26.0): dấu của tin → mã cây, lưu cùng hội thoại.
+        self.snapshot_marks: dict[str, str] = {}
+        # Agent con explore (CLI 0.27.0) dùng máy chủ, model và ngữ cảnh bước của phiên này.
+        self.tools.explorer = self._explore
 
     def reset(self) -> None:
+        self.snapshot_marks = {}
         self.tools.skills.loaded.clear()
         self.tools.reset_task()
         self.metrics = self.tools.metrics = Metrics()
@@ -217,7 +243,8 @@ class Session:
             if self.session_id is None:
                 self.session_id = history.new_id()
             history.save(self.ws.root, self.client.server, self.items if items is None else items,
-                         session_id=self.session_id, title=self.title or "", model=self.model, **flags)
+                         session_id=self.session_id, title=self.title or "", model=self.model,
+                         snapshots=self.snapshot_marks, **flags)
 
     def _name_conversation(self) -> None:
         """Sau yêu cầu đầu của một hội thoại: nhờ model đặt tên cho danh sách /resume, ở luồng nền để người dùng gõ
@@ -307,8 +334,9 @@ class Session:
         self.model, self.model_step_cost = model, step_cost
 
     def resume(self, items: list[dict], *, retryable: bool = False, model: str = "peto", session_id: str | None = None,
-               title: str | None = None) -> None:
+               title: str | None = None, snapshots: dict | None = None) -> None:
         """Mở lại hội thoại đã lưu. Quên các tệp đã đọc, để Peto phải đọc lại trước khi sửa."""
+        self.snapshot_marks = dict(snapshots or {})
         self.tools.skills.loaded.clear()
         self.tools.reset_task()
         self.metrics = self.tools.metrics = Metrics()
@@ -383,6 +411,7 @@ class Session:
         # Đổi chế độ, lệnh nền dừng trong lúc rảnh: báo trước tin của người dùng, như opencode chèn lời nhắc chế độ.
         self._inbox(steers=False)
         self.items.append(user_message(attached.text, images))
+        self._mark_request(len(self.items) - 1)
         self.ui.link_user_entry(self.items[-1])
         drop_old_images(self.items)
         if not self.title:
@@ -437,14 +466,148 @@ class Session:
         except OSError as err:
             self.ui.failure(f"Không ghi được AGENTS.md: {err.strerror or type(err).__name__}.")
             return
+        self._guide_written(path, written)
+        self._log("note", text=note)
+        self.ui.success(f"Đã ghi vào AGENTS.md, mục Ghi nhớ: {note}")
+
+    def _guide_written(self, path, written: str) -> None:
         # Tệp đổi ngoài công cụ sửa tệp: Peto phải đọc lại trước khi tự sửa AGENTS.md, như mọi tệp khác.
         self.ws.read_digests.pop(path, None)
         # Bước kế tiếp mang theo bản AGENTS.md mới, nên coi như Peto đã thấy nó; không thì lần sửa tệp tới bị chặn vì
         # "hướng dẫn vừa đổi" và tốn thêm một bước.
         if "AGENTS.md" in self.tools.seen_guides:
             self.tools.seen_guides["AGENTS.md"] = written
-        self._log("note", text=note)
-        self.ui.success(f"Đã ghi vào AGENTS.md, mục Ghi nhớ: {note}")
+
+    def write_project_guide(self, text: str) -> bool:
+        """/guide: ghi AGENTS.md ở gốc dự án bằng chữ người dùng vừa soạn (CLI 0.25.0). Như /remember: không hỏi lại,
+        không vào bản hoàn tác, giữ CRLF/BOM của tệp cũ."""
+        if len(text) > MAX_GUIDE_CHARS:
+            self.ui.failure("AGENTS.md vượt 32.000 ký tự; rút gọn rồi lưu lại.")
+            return False
+        try:
+            path = self.ws.resolve("AGENTS.md", must_exist=False)
+            file = self.ws.read(path) if path.exists() else None
+            self.ws.write(path, text.replace("\r\n", "\n"), newline=file.newline if file else "\n",
+                          bom=file.bom if file else False)
+            written = self.ws.read(path).digest
+        except WorkspaceError as err:
+            self.ui.failure(str(err))
+            return False
+        except OSError as err:
+            self.ui.failure(f"Không ghi được AGENTS.md: {err.strerror or type(err).__name__}.")
+            return False
+        self._guide_written(path, written)
+        self._log("guide", target="project")
+        self.ui.success("Đã lưu AGENTS.md của dự án; bước sau Peto dùng bản mới.")
+        return True
+
+    def write_user_guide(self, text: str) -> bool:
+        """/guide: ghi AGENTS.md chung trong hồ sơ người dùng (CLI 0.25.0)."""
+        try:
+            user_guide.write(text)
+        except ValueError as err:
+            self.ui.failure(str(err))
+            return False
+        except OSError as err:
+            self.ui.failure(f"Không ghi được hướng dẫn chung: {err.strerror or type(err).__name__}.")
+            return False
+        self._guide_problem = None
+        self._log("guide", target="user")
+        if "user_guide" in self.tools.features:
+            self.ui.success("Đã lưu hướng dẫn chung; mọi dự án dùng bản mới từ bước sau.")
+        else:
+            self.ui.line("  Đã lưu hướng dẫn chung, nhưng máy chủ Peto chưa nhận loại hướng dẫn này: Peto sẽ dùng khi máy "
+                         "chủ được cập nhật.", "yellow")
+        return True
+
+    def _explore(self, task: str, depth: str, progress) -> dict:
+        result = subagent.run(self, task, depth, progress)
+        self._log("explore", task=cap_text(task, 500), depth=depth, steps=result.get("steps"),
+                  files=result.get("files_read"), error=result.get("error"))
+        return result
+
+    def _mark_request(self, position: int) -> None:
+        """Chụp dự án lúc bắt đầu yêu cầu, ở luồng nền trong lúc chờ model (như opencode chụp khi request đang bay).
+        Thao tác đổi tệp đầu tiên đợi ảnh này xong (Tools.wait_snapshot)."""
+        shots = self.tools.snapshots()
+        if shots is None or not shots.available:
+            return
+        key = history.fingerprint(self.items, position)
+
+        def capture() -> None:
+            tree = shots.capture()
+            if tree:
+                self.snapshot_marks[key] = tree
+
+        thread = threading.Thread(target=capture, name="peto-snapshot", daemon=True)
+        self.tools.pending_snapshot = thread
+        thread.start()
+
+    def restore_point(self, position: int) -> str | None:
+        """Mã ảnh chụp lúc trước tin ở ``position``; không có (tắt ảnh chụp, tin cũ hơn 0.26.0) thì None."""
+        if self.tools.snapshots() is None:
+            return None
+        return self.snapshot_marks.get(history.fingerprint(self.items, position))
+
+    def restore_files(self, tree: str, label: str) -> None:
+        """Đưa tệp trong dự án về đúng ảnh ``tree`` (theo revert.ts của opencode). Liệt kê tệp sẽ đổi, kể cả tệp người
+        dùng tự sửa sau đó, rồi hỏi. Ghi bằng bản hoàn tác nên /undo ngay sau đó trả lại như trước khi khôi phục."""
+        shots = self.tools.snapshots()
+        self.tools.wait_snapshot()
+        if shots is None or not shots.available:
+            self.ui.failure(shots.problem if shots and shots.problem else "Ảnh chụp dự án đang tắt.")
+            return
+        if not shots.has(tree):
+            self.ui.failure("Ảnh chụp của tin này đã bị dọn (giữ 30 ngày) nên không khôi phục được.")
+            return
+        now = shots.capture()
+        if now is None:
+            self.ui.failure(shots.problem or "Không chụp được dự án lúc này.")
+            return
+        try:
+            names = shots.changed(tree, now)
+            old, current = shots.contents(tree, names), shots.contents(now, names)
+        except Exception as err:  # noqa: BLE001 - lỗi git nào cũng chỉ báo, không đụng tệp
+            self.ui.failure(f"Không đọc được ảnh chụp: {err}")
+            return
+        names = [name for name in names if old.get(name) != current.get(name)]
+        if not names:
+            self.ui.line("  Các tệp trong dự án đã giống lúc đó.", "dim")
+            return
+        self.ui.line(f"  Khôi phục về lúc trước tin \"{label}\" sẽ đổi {len(names)} tệp:", "dim")
+        for name in names[:15]:
+            state = " (xóa)" if old.get(name) is None else " (tạo lại)" if current.get(name) is None else ""
+            self.ui.line(f"    {name}{state}", "dim")
+        if len(names) > 15:
+            self.ui.line(f"    … và {len(names) - 15} tệp nữa", "dim")
+        self.ui.line("  Tệp .gitignore bỏ qua, tệp lớn hơn 2 MB và .env không nằm trong ảnh chụp nên giữ nguyên.", "dim")
+        choice = self.ui.choose(f"Khôi phục {len(names)} tệp?", [
+            ("Khôi phục", "kể cả thay đổi bạn tự làm sau tin đó; /undo ngay sau đó trả lại như bây giờ"),
+            ("Thôi", "không đổi tệp nào")])
+        if choice != 0:
+            return
+        plan = Checkpoint(self.ws)
+        plan.files = {name: Change(old.get(name), current.get(name), "restore") for name in names}
+        try:
+            restored = plan.undo()
+        except (WorkspaceError, OSError, KeyboardInterrupt) as err:
+            self.ui.failure(str(err) or "Đã dừng khôi phục.")
+            restored = [name for name in names if name not in plan.files]
+        back = Checkpoint(self.ws)
+        back.files = {name: Change(current.get(name), old.get(name), "restore") for name in restored}
+        back.commands_covered = True
+        try:
+            back.persist()
+        except (WorkspaceError, OSError):
+            pass
+        self.tools.checkpoint = back
+        self.ws.read_digests.clear()
+        if restored:
+            self.items.append(user_message(
+                f"Người dùng vừa khôi phục {len(restored)} tệp về lúc trước tin \"{label}\": " + ", ".join(restored[:30])
+                + ("…" if len(restored) > 30 else "") + ". Đọc lại tệp trước khi tiếp tục; không tự làm lại thay đổi cũ."))
+            self.save()
+            self.ui.success(f"Đã khôi phục {len(restored)} tệp. Gõ /undo để trả lại như trước khi khôi phục.")
 
     def show_diff(self):
         if not self.tools.checkpoint.files:
@@ -459,7 +622,8 @@ class Session:
         self.show_diff()
         if not self.tools.checkpoint.files:
             return
-        self.ui.line("Hoàn tác các tệp trên? Đây là bản sửa trực tiếp gần nhất được lưu cho dự án này.", "yellow")
+        self.ui.line("Hoàn tác các tệp trên? Đây là lần sửa gần nhất được lưu cho dự án này (của Peto, của lệnh "
+                     "Peto chạy, hay lần khôi phục).", "yellow")
         if self.ui.ask(Permission("undo", {"files": sorted(self.tools.checkpoint.files)})) not in {"y", "a"}:
             return
         before = set(self.tools.checkpoint.files)
@@ -658,8 +822,10 @@ class Session:
                 while pending:
                     call = pending[0]
                     self.tools.call_id = str(call.get("call_id", ""))
+                    name = str(call.get("name", ""))
                     with self.metrics.measure("tools"):
-                        result = cap_result(self.tools.call(str(call.get("name", "")), str(call.get("arguments", ""))))
+                        result = cap_result(self.tools.call(name, str(call.get("arguments", ""))),
+                                            READ_BOUNDED_KEYS if name == "read_file" else BOUNDED_KEYS)
                     results.append((str(call.get("name", "")), result))
                     encoded = json.dumps(result, ensure_ascii=False)
                     self._log("tool", name=call.get("name"), arguments=cap_text(str(call.get("arguments", "")), 2000),
@@ -683,6 +849,7 @@ class Session:
                     break
             else:
                 outcome = "limit"
+                self._wrap_up()
                 self.ui.line(f'Peto đã làm {MAX_STEPS_PER_TASK} bước trong yêu cầu này nên tạm dừng. Gõ "làm tiếp" nếu '
                              "muốn Peto làm tiếp.", "yellow")
         except WorkspaceError as err:
@@ -702,9 +869,27 @@ class Session:
             self.active_seconds += time.monotonic() - started
             self._running = False
             self._summary(self.active_seconds, outcome)
+            # Ảnh chụp đầu yêu cầu (CLI 0.26.0) phải vào bản lưu, kể cả khi yêu cầu không đổi tệp nào.
+            self.tools.wait_snapshot()
             self.save(retryable=self.can_retry)
             if outcome == "done":
                 self._name_conversation()
+
+    def _wrap_up(self) -> None:
+        """Hết bước của yêu cầu (CLI 0.25.0, theo opencode): một lượt không công cụ để Peto tóm tắt đã làm gì, còn gì.
+        Tốn một bước như thường; máy chủ cũ không có lượt này thì chỉ in lời nhắc như trước."""
+        if "wrapup" not in self.tools.features:
+            return
+        output = self._step(purpose="wrapup")
+        if not output:
+            return
+        # Máy chủ đã cấm gọi công cụ; lời gọi nào lọt qua thì bỏ, khỏi để lại lời gọi không có kết quả.
+        output = [item for item in output if item.get("type") != "function_call"]
+        reply = "\n".join(text_of(item) for item in output
+                          if item.get("type") == "message" and item.get("role") == "assistant").strip()
+        if reply:
+            self._log("reply", text=cap_text(reply, MAX_LOGGED_REPLY))
+        self.items.extend(output)
 
     def _remind_to_check(self) -> bool:
         """Peto định xong mà còn tệp sửa chưa kiểm tra: thêm lời nhắc "Kiểm tra sau sửa" để chạy thêm một bước."""
@@ -732,12 +917,45 @@ class Session:
                               "output": json.dumps(INTERRUPTED_RESULT, ensure_ascii=False)})
         self.save(items, interrupted=True)
 
-    def _step(self) -> list[dict] | None:
-        body = {"input": efficient_input(self.items), "effort": self.effort, "model": self.model, "context": {
-            "project": self.ws.root.name, "os": f"{platform.system()} {platform.release()}".strip(),
-            "project_guidance": guides(self.ws), "features": list(self.tools.features),
-            "skills": self.tools.skills.catalog(), "mcp_servers": self.tools.mcp.catalog()}}
+    def _step_context(self) -> dict:
+        context = {"project": self.ws.root.name, "os": f"{platform.system()} {platform.release()}".strip(),
+                   "project_guidance": guides(self.ws), "features": list(self.tools.features),
+                   "skills": self.tools.skills.catalog(), "mcp_servers": self.tools.mcp.catalog()}
+        if "user_guide" in self.tools.features:
+            text, problem = user_guide.read()
+            if problem and problem != self._guide_problem:
+                self.ui.line(f"  {problem}", "yellow")
+            self._guide_problem = problem
+            if text:
+                context["user_guidance"] = text
+        return context
+
+    def _step(self, *, purpose: str | None = None) -> list[dict] | None:
+        """Một lượt gọi model. Lỗi tạm thời trước khi có phản hồi thì tự chờ rồi gửi lại (RETRY_WAITS); Ctrl+C lúc
+        chờ thì dừng yêu cầu như mọi khi."""
+        for attempt in range(len(RETRY_WAITS) + 1):
+            try:
+                return self._attempt(purpose, may_retry=attempt < len(RETRY_WAITS))
+            except _Retry as retry:
+                wait = RETRY_WAITS[attempt]
+                self._log("retry_auto", attempt=attempt + 1, seconds=wait, message=retry.message)
+                deadline = time.monotonic() + wait
+                try:
+                    while (left := deadline - time.monotonic()) > 0:
+                        self.ui.status(f"… {retry.message} · thử lại lần {attempt + 1}/{len(RETRY_WAITS)} sau "
+                                       f"{max(1, round(left))}s · Ctrl+C dừng")
+                        time.sleep(min(0.2, left))
+                finally:
+                    self.ui.clear_status()
+        return None
+
+    def _attempt(self, purpose: str | None, *, may_retry: bool) -> list[dict] | None:
+        context = self._step_context()
+        if purpose:
+            context["purpose"] = purpose
+        body = {"input": efficient_input(self.items), "effort": self.effort, "model": self.model, "context": context}
         writer = self.ui.reply()
+        received = False
         started = time.monotonic()
         phase = "nghĩ"
         output = None
@@ -754,6 +972,7 @@ class Session:
             with self.metrics.measure("model"), contextlib.closing(self.client.stream("/api/agent/step", body, on_idle=waiting)) as events:
                 for event in events:
                     kind = event.get("type")
+                    received = True
                     if kind == "meta":
                         self.steps_used, self.steps_limit = event.get("steps_used"), event.get("steps_limit")
                     elif kind == "search":
@@ -788,12 +1007,18 @@ class Session:
                         return output
                     elif kind == "error":
                         message = str(event.get("message") or "Máy chủ báo lỗi ở bước này.")
+                        # Máy chủ chỉ gắn retryable khi bước chưa có phản hồi và đã được hoàn lại.
+                        if event.get("retryable") is True and may_retry and not writer.started:
+                            writer.finish()
+                            raise _Retry(message.rstrip(". ") or "Lỗi tạm thời")
                         writer.finish()
                         self.ui.failure(message)
                         self._log("error", message=message)
                         return None
         except ApiError as err:
             writer.finish()
+            if err.status in RETRY_STATUSES and not received and may_retry:
+                raise _Retry("Mất kết nối tới máy chủ Peto") from err
             self.ui.failure(err.message)
             self._log("error", message=err.message, status=err.status)
             if err.status in {0, 408, 502, 503, 504}:
@@ -820,7 +1045,8 @@ class Session:
             outcome, elapsed, dict(self.tools.changes), list(self.tools.commands),
             background_jobs=len(self.tools.jobs.running()),
             plan_left=sum(1 for step in self.tools.plan if step.get("status") != "done"),
-            context_tokens=self.context_tokens, model=self.model_label, context_share=self.context_share()))
+            context_tokens=self.context_tokens, model=self.model_label, context_share=self.context_share(),
+            command_files=len(self.tools.command_changes)))
         self._log("summary", outcome=outcome, seconds=round(elapsed, 1), changes=self.tools.changes,
                   commands=self.tools.commands, metrics=self.metrics.snapshot())
 

@@ -155,3 +155,116 @@ def test_gpt_models_get_no_update_plan_tool_or_prompt():
     for model in ("haiku", "sonnet"):
         assert "update_plan" in agent_api._instructions(context, False, model=model), model
     assert "update_plan" in agent_api._instructions(context, False), "Peto giữ lời nhắc tiếng Việt về danh sách việc"
+
+
+# CLI 0.21–0.24 (ghim ngày 2026-10-15 trước khi thêm read_more, output_files, wrapup, user_guide). Model GPT có bộ
+# riêng: apply_patch thay edit_file và không có update_plan.
+SHIPPED_0_21 = BASE + ("explore_v2", "edit_v2", "question", "patch", "title", "steer", "jobs_notify", "plan_mode",
+                       "btw")
+SHIPPED_GPT = {
+    SHIPPED_0_21: "c5063ed42e2df8753bfa089743dad5a2e9bf4c19e8f4141801e633477261a927",
+}
+
+
+def test_cli_0_21_to_0_24_keep_their_exact_schemas():
+    assert digest(SHIPPED_0_21) == "91cab53d5c5de2d65761670a1e99ee339356c21da389b1894bc0bd82c9a64951"
+    assert digest(SHIPPED_0_21[:-1]) == digest(SHIPPED_0_21), "btw không đổi schema"
+    for features, expected in SHIPPED_GPT.items():
+        data = json.dumps(tool_schemas(frozenset(features), patch_model=True), ensure_ascii=False, sort_keys=True)
+        assert hashlib.sha256(data.encode()).hexdigest() == expected
+
+
+def test_read_more_replaces_read_file_in_place_only_with_explore_v2():
+    """CLI 0.25.0: nhật ký thật có 88/269 lần đọc bị cắt ở 160 dòng; đọc tới 1000 dòng mỗi lần."""
+    v2, v3 = SHIPPED_0_21, SHIPPED_0_21 + ("read_more",)
+    assert names(v3) == names(v2), "thay đúng chỗ, không thêm bớt công cụ"
+    read = schema(v3, "read_file")
+    assert "1000 dòng" in read["description"] and "số dòng" in read["description"]
+    assert list(read["parameters"]["properties"]) == ["path", "start_line", "end_line"]
+    assert "1000 dòng" in read["parameters"]["properties"]["end_line"]["description"]
+    _strict(read["parameters"])
+    assert "160" not in json.dumps(read, ensure_ascii=False)
+    assert schema(BASE + ("read_more",), "read_file") == schema(BASE, "read_file"), "CLI chưa đánh số dòng: giữ bản cũ"
+
+
+def test_output_files_appends_read_output_last():
+    before, after = names(SHIPPED_0_21), names(SHIPPED_0_21 + ("output_files",))
+    assert after[:-1] == before and after[-1] == "read_output"
+    read_output = schema(SHIPPED_0_21 + ("output_files",), "read_output")
+    _strict(read_output["parameters"])
+    assert list(read_output["parameters"]["properties"]) == ["output_id", "pattern", "start_line", "end_line"]
+    gpt = [tool["name"] for tool in tool_schemas(frozenset(SHIPPED_0_21 + ("output_files",)), patch_model=True)]
+    assert gpt[-1] == "read_output"
+
+
+def test_new_0_25_features_are_known_and_change_prompts_only_when_declared():
+    from features.agent import api as agent_api
+    from prompts import english as english_prompts
+
+    assert {"read_more", "output_files", "wrapup", "user_guide"} <= FEATURES
+    old = agent_api._instructions({"features": list(SHIPPED_0_21)}, False)
+    assert "Tiết kiệm ngữ cảnh" in old and "read_output" not in old and "Đọc đủ trong một lần" not in old
+    new = agent_api._instructions({"features": list(SHIPPED_0_21) + ["read_more", "output_files"]}, False)
+    assert "Đọc đủ trong một lần" in new and "Tiết kiệm ngữ cảnh" not in new and "read_output" in new
+    for model in ("luna", "haiku"):
+        before = agent_api._instructions({"features": list(SHIPPED_0_21)}, False, model=model)
+        after = agent_api._instructions({"features": list(SHIPPED_0_21) + ["read_more", "output_files"]}, False,
+                                        model=model)
+        assert "targeted read_file ranges" in before and "targeted read_file ranges" not in after, model
+        assert "whole in one read_file call" in after and "read_output" in after, model
+    assert english_prompts.agent_prompt(plan=False, read_more=True).count("update_plan") == 0
+
+
+def test_old_feature_sets_keep_their_exact_instructions():
+    """Chỉ dẫn của CLI cũ không đổi từng byte (phần đầu giống hệt thì prompt cache vẫn dùng lại được)."""
+    from features.agent import api as agent_api
+    from prompts import english as english_prompts
+
+    context = {"features": list(SHIPPED_0_21), "user_guidance": "Luôn dùng pnpm."}
+    vietnamese = agent_api._instructions(context, False)
+    assert "Luôn dùng pnpm" not in vietnamese, "chưa khai báo user_guide thì không gửi hướng dẫn chung"
+    assert agent_api.AGENT_PROMPT in vietnamese and "\n\n\n\n" in vietnamese, "phần rỗng vẫn nối như trước"
+    luna = agent_api._instructions(context, False, model="luna")
+    assert english_prompts.AGENT_PROMPT_NO_PLAN in luna
+
+
+def test_user_guidance_is_wrapped_apart_from_project_guidance_and_bounded():
+    from features.agent import api as agent_api
+
+    context = {"features": ["user_guide"], "user_guidance": "Luôn trả lời tiếng Việt, dùng pnpm.",
+               "project_guidance": [{"path": "AGENTS.md", "scope": ".", "text": "Chạy npm test."}]}
+    text = agent_api._instructions(context, False)
+    assert "Hướng dẫn chung của người dùng" in text and "dùng pnpm" in text
+    assert text.index("dùng pnpm") < text.index("Chạy npm test."), "hướng dẫn dự án đứng sau, được ưu tiên"
+    english = agent_api._instructions(context, False, model="haiku")
+    assert "general guidance" in english and "dùng pnpm" in english
+    long = agent_api._instructions({**context, "user_guidance": "x" * 40001}, False)
+    assert "quá dài" in long and "x" * 100 not in long
+    assert "Hướng dẫn chung" not in agent_api._instructions({**context, "user_guidance": "   "}, False)
+
+
+def test_subagent_appends_explore_last_and_its_tools_are_read_only():
+    """CLI 0.27.0 (theo agent "explore" của opencode): công cụ explore ở cuối danh sách; agent con chỉ tìm và đọc."""
+    from features.agent.tools import EXPLORE_DEPTHS, explore_schemas
+
+    current = SHIPPED_0_21 + ("read_more", "output_files", "wrapup", "user_guide")
+    before, after = names(current), names(current + ("subagent",))
+    assert after[:-1] == before and after[-1] == "explore"
+    explore = schema(current + ("subagent",), "explore")
+    _strict(explore["parameters"])
+    assert explore["parameters"]["properties"]["depth"]["enum"] == list(EXPLORE_DEPTHS) == ["quick", "medium", "thorough"]
+    child = explore_schemas(frozenset(current + ("subagent",)))
+    assert [tool["name"] for tool in child] == ["list_files", "read_file", "search_files", "find_files"]
+    assert child[1] == schema(current, "read_file"), "agent con đọc đúng như Peto (số dòng, 1000 dòng)"
+    assert [tool["name"] for tool in explore_schemas(frozenset())] == ["list_files", "read_file", "search_files"]
+
+
+def test_subagent_prompt_only_when_declared():
+    from features.agent import api as agent_api
+
+    plain = agent_api._instructions({"features": list(SHIPPED_0_21)}, False)
+    assert "Agent con khám phá" not in plain
+    declared = agent_api._instructions({"features": list(SHIPPED_0_21) + ["subagent"]}, False)
+    assert "Agent con khám phá" in declared and "depth" in declared
+    english = agent_api._instructions({"features": ["subagent"]}, False, model="haiku")
+    assert "Explore subagent" in english

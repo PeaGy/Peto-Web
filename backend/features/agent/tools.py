@@ -19,8 +19,17 @@ from __future__ import annotations
 # CLI 0.21.0 (theo opencode, chủ web chọn ngày 2026-10-12): "question" thêm ask_user; "patch" thay edit_file và
 # write_file bằng apply_patch khi model là GPT (Luna, Terra, Sol), như opencode; "title" là lượt đặt tên hội thoại
 # (purpose "title"); "steer", "jobs_notify", "plan_mode" chỉ thêm lời nhắc giải thích tin CLI 0.20 chèn vào hội thoại.
+# CLI 0.25.0 (theo lõi opencode, chủ web chọn ngày 2026-10-15): "read_more" đọc tới 1000 dòng mỗi lần; "output_files"
+# lưu đủ output lệnh dài và thêm read_output; "wrapup" là lượt tóm tắt không công cụ khi hết bước của một yêu cầu;
+# "user_guide" gửi kèm AGENTS.md chung của người dùng. CLI 0.27.0: "subagent" thêm explore, giao việc dò mã cho một
+# agent con chỉ đọc (purpose "explore").
 FEATURES = frozenset({"cwd", "browser", "browser_act", "browser_outside", "skills", "mcp", "explore_v2", "edit_v2",
-                      "question", "patch", "title", "steer", "jobs_notify", "plan_mode", "btw"})
+                      "question", "patch", "title", "steer", "jobs_notify", "plan_mode", "btw", "read_more",
+                      "output_files", "wrapup", "user_guide", "subagent"})
+# Công cụ của agent con explore: chỉ tìm và đọc trong dự án (theo agent "explore" của opencode).
+EXPLORE_TOOLS = ("list_files", "find_files", "search_files", "read_file")
+# Số bước tối đa của agent con theo độ kỹ: nhanh, vừa, kỹ.
+EXPLORE_DEPTHS = {"quick": 4, "medium": 8, "thorough": 15}
 
 _PATH = {"type": "string", "description": "Đường dẫn tương đối tính từ gốc dự án, ví dụ src/app.py; '.' là gốc."}
 _SHELL = {
@@ -153,6 +162,24 @@ _READ_V2 = _tool(
     "tab (như cat -n): số đó không thuộc tệp, đừng chép vào old_text. Kèm tổng số dòng của tệp.",
     _FILE_TOOLS[1]["parameters"]["properties"],
 )
+# "read_more" (CLI 0.25.0): nhật ký thật của chủ web có 88/269 lần đọc bị cắt ở 160 dòng, một nửa là tệp chừng 186
+# dòng, và mỗi lần đọc thiếu tốn thêm một bước. Đọc tới 1000 dòng (khoảng 32.000 ký tự) như opencode khuyên đọc một
+# lần cho đủ thay vì nhiều khúc nhỏ.
+_READ_V3 = _tool(
+    "read_file",
+    "Đọc một tệp chữ trong dự án, cả tệp hoặc một khoảng dòng. Mỗi dòng trong content bắt đầu bằng số dòng rồi một ký "
+    "tự tab (như cat -n): số đó không thuộc tệp, đừng chép vào old_text. Kèm tổng số dòng của tệp. Mỗi lần đọc tới "
+    "1000 dòng hay khoảng 32.000 ký tự: tệp ngắn hơn thế thì đọc cả tệp một lần, đừng chia nhiều khúc nhỏ.",
+    {
+        "path": _PATH,
+        "start_line": {"type": ["integer", "null"], "description": "Dòng bắt đầu, tính từ 1. null là từ đầu tệp."},
+        "end_line": {
+            "type": ["integer", "null"],
+            "description": "Dòng kết thúc, tính cả dòng này. null là tới cuối tệp (tối đa 1000 dòng mỗi lần). Dùng "
+                           "next_start_line trong kết quả để đọc tiếp khi cần.",
+        },
+    },
+)
 _SEARCH_V2 = _tool(
     "search_files",
     "Tìm biểu thức chính quy (cú pháp Python re) trong các tệp chữ của dự án, bỏ qua thư mục nặng và những gì "
@@ -223,9 +250,52 @@ _PATCH = _tool(
 )
 
 
+# "output_files" (CLI 0.25.0): output vượt 20.000 ký tự được CLI lưu đủ vào tệp trên máy người dùng, kết quả lệnh chỉ
+# giữ phần đầu và cuối kèm output_id.
+_READ_OUTPUT = _tool(
+    "read_output",
+    "Đọc hoặc tìm trong output đầy đủ của một lệnh đã chạy, khi kết quả run_command hay read_command_output có "
+    "output_id (output dài bị bỏ phần giữa). Chỉ đọc dữ liệu CLI đã lưu trên máy nên không cần xin phép. Có pattern "
+    "thì trả tối đa 40 dòng khớp kèm số dòng; không có thì đọc theo khoảng dòng, tối đa 400 dòng.",
+    {
+        "output_id": {"type": "string", "description": "Mã output_id trong kết quả lệnh."},
+        "pattern": {"type": ["string", "null"],
+                    "description": "Biểu thức chính quy (cú pháp Python re) cần tìm, ví dụ error|failed. null là đọc "
+                                   "theo khoảng dòng."},
+        "start_line": {"type": ["integer", "null"], "description": "Dòng bắt đầu, tính từ 1. null là 1."},
+        "end_line": {"type": ["integer", "null"],
+                     "description": "Dòng kết thúc, tính cả dòng này. null là đọc tối đa 400 dòng."},
+    },
+)
+
+
+# "subagent" (CLI 0.27.0, theo tool/plugin/subagent.ts và agent "explore" của opencode).
+_EXPLORE = _tool(
+    "explore",
+    "Giao một việc dò tìm cho agent con chỉ đọc: nó tự tìm và đọc trong dự án (list_files, find_files, search_files, "
+    "read_file) với ngữ cảnh riêng, rồi chỉ trả kết luận về đây. Dùng khi cần dò rộng nhiều tệp, nhiều chỗ mà chỉ cần "
+    "kết luận; không dùng cho một tệp đã biết. Agent con không thấy hội thoại này, nên task phải đủ ý. Mỗi bước của nó "
+    "trừ hạn mức như một bước thường.",
+    {
+        "task": {"type": "string",
+                 "description": "Việc cần dò, viết đủ ý: tìm gì, ở đâu, trả về những gì (tệp, dòng, kết luận)."},
+        "depth": {"type": "string", "enum": list(EXPLORE_DEPTHS),
+                  "description": "Độ kỹ: quick (tối đa 4 bước), medium (8), thorough (15)."},
+    },
+)
+
+
+def explore_schemas(features: frozenset[str] = frozenset()) -> list[dict]:
+    """Công cụ của agent con explore: đúng bản các công cụ đọc mà CLI của phiên khai báo, không gì khác."""
+    key = frozenset(features) & FEATURES
+    tools = _file_tools(key) + ([_FIND] if "explore_v2" in key else [])
+    return [tool for tool in tools if tool["name"] in EXPLORE_TOOLS]
+
+
 def _file_tools(key: frozenset[str], patch: bool = False) -> list[dict]:
     explore, edit = "explore_v2" in key, "edit_v2" in key
-    replaced = {"read_file": _READ_V2 if explore else None, "search_files": _SEARCH_V2 if explore else None,
+    read = _READ_V3 if explore and "read_more" in key else _READ_V2 if explore else None
+    replaced = {"read_file": read, "search_files": _SEARCH_V2 if explore else None,
                 "edit_file": _EDIT_V2 if edit else None}
     tools = [replaced.get(tool["name"]) or tool for tool in _FILE_TOOLS]
     if patch:
@@ -436,5 +506,7 @@ def tool_schemas(features: frozenset[str] = frozenset(), *, patch_model: bool = 
         files = [tool for tool in _file_tools(key, patch) if not (patch_model and tool["name"] == "update_plan")]
         _SCHEMAS[(key, patch, patch_model)] = (files + _command_tools(cwd="cwd" in key) + browsing + skills + mcp
                                                + ([_FIND] if "explore_v2" in key else [])
-                                               + ([_ASK] if "question" in key else []))
+                                               + ([_ASK] if "question" in key else [])
+                                               + ([_READ_OUTPUT] if "output_files" in key else [])
+                                               + ([_EXPLORE] if "subagent" in key else []))
     return _SCHEMAS[(key, patch, patch_model)]

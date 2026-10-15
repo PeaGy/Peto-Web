@@ -16,6 +16,16 @@ class Change:
     # after None, đổi tên là một cặp xóa chỗ cũ và tạo chỗ mới.
     before: bytes | None
     after: bytes | None
+    # "peto": Peto tự sửa bằng công cụ tệp (luôn là chữ); "command": chỉ lệnh đổi tệp này, biết nhờ ảnh chụp dự án
+    # (CLI 0.26.0), có thể là tệp nhị phân; "restore": khôi phục về lúc một tin cũ.
+    source: str = "peto"
+
+
+# Một lệnh đổi nhiều hơn ngần này tệp, hoặc tổng nội dung vượt ngần này byte, thì không đưa vào bản hoàn tác (bản hoàn
+# tác giữ cả nội dung trước và sau, tối đa 400 tệp và 16 MB).
+MAX_COMMAND_FILES = 200
+MAX_COMMAND_BYTES = 12 * 1024 * 1024
+SOURCES = {"peto", "command", "restore"}
 
 
 class Checkpoint:
@@ -23,11 +33,43 @@ class Checkpoint:
         self.ws = workspace
         self.files: dict[str, Change] = {}
         self.shell_used = False
+        # Ảnh chụp dự án đã ghi lại thay đổi do lệnh (CLI 0.26.0): /diff, /undo gồm cả chúng, khỏi cảnh báo cũ.
+        self.commands_covered = False
 
     def persist(self):
         encode = lambda value: base64.b64encode(value).decode("ascii") if value is not None else None
-        checkpoint_store.save(self.ws.root, {rel: {"before": encode(change.before), "after": encode(change.after)}
-                                            for rel, change in self.files.items()}, self.shell_used)
+        checkpoint_store.save(self.ws.root, {rel: {"before": encode(change.before), "after": encode(change.after),
+                                                   **({"source": change.source} if change.source != "peto" else {})}
+                                            for rel, change in self.files.items()}, self.shell_used,
+                              self.commands_covered)
+
+    def record_command(self, changes: dict[str, tuple[bytes | None, bytes | None]]) -> str | None:
+        """Thay đổi một lệnh vừa gây ra (rel → (trước, sau)), lấy từ ảnh chụp trước và sau lệnh. Tệp Peto đã sửa trong
+        yêu cầu thì giữ nội dung "trước" của lần đầu. Trả lời báo khi không ghi được (quá nhiều tệp, quá lớn)."""
+        if not changes:
+            self.commands_covered = True
+            return None
+        size = sum(len(before or b"") + len(after or b"") for before, after in changes.values())
+        if len(changes) > MAX_COMMAND_FILES or size > MAX_COMMAND_BYTES:
+            return (f"Lệnh đổi {len(changes)} tệp ({size // 1024 // 1024} MB), quá nhiều để đưa vào /undo; hoàn tác "
+                    "phần này bằng tay nếu cần.")
+        previous = dict(self.files)
+        for rel, (before, after) in changes.items():
+            old = self.files.get(rel)
+            if old is not None:
+                before = old.before
+            if before == after:
+                self.files.pop(rel, None)
+                continue
+            self.files[rel] = Change(before, after, "command" if old is None or old.source == "command" else old.source)
+        covered = self.commands_covered
+        self.commands_covered = True
+        try:
+            self.persist()
+        except (OSError, WorkspaceError) as err:
+            self.files, self.commands_covered = previous, covered
+            return f"Không lưu được thay đổi do lệnh vào bản hoàn tác: {err}"
+        return None
 
     @classmethod
     def restore(cls, workspace):
@@ -47,11 +89,16 @@ class Checkpoint:
                     raise ValueError()
                 before = None if item["before"] is None else base64.b64decode(item["before"], validate=True)
                 after = None if item["after"] is None else base64.b64decode(item["after"], validate=True)
-                for raw in (before, after):
+                source = item.get("source", "peto")
+                if source not in SOURCES:
+                    raise ValueError()
+                # Tệp Peto tự sửa luôn là chữ; tệp do lệnh đổi thì có thể là nhị phân (ảnh, gói).
+                for raw in (before, after) if source == "peto" else ():
                     if raw is not None:
                         raw.decode("utf-8-sig")
-                checkpoint.files[rel] = Change(before, after)
+                checkpoint.files[rel] = Change(before, after, source)
             checkpoint.shell_used = data.get("shell_used") is True
+            checkpoint.commands_covered = data.get("commands_covered") is True
         except (ValueError, TypeError, KeyError, binascii.Error) as err:
             raise WorkspaceError("Bản hoàn tác hỏng hoặc có đường dẫn không hợp lệ; không khôi phục tệp nào.") from err
         return checkpoint
@@ -88,13 +135,21 @@ class Checkpoint:
 
     def show(self, ui):
         if not self.files:
-            ui.line("  Chưa có thay đổi tệp trực tiếp trong yêu cầu gần nhất.", "dim")
+            ui.line("  Chưa có thay đổi tệp trong yêu cầu gần nhất.", "dim")
         for rel, change in self.files.items():
             label = rel + (" (đã xóa)" if change.after is None else " (tạo mới)" if change.before is None else "")
-            ui.review_diff(label, (change.before or b"").decode("utf-8-sig"),
-                           (change.after or b"").decode("utf-8-sig"))
-        if self.files or self.shell_used:
+            label += {"command": " · do lệnh", "restore": " · khôi phục"}.get(change.source, "")
+            try:
+                before = (change.before or b"").decode("utf-8-sig")
+                after = (change.after or b"").decode("utf-8-sig")
+            except UnicodeDecodeError:
+                ui.line(f"  {label}: tệp nhị phân, {len(change.before or b'')} → {len(change.after or b'')} byte", "dim")
+                continue
+            ui.review_diff(label, before, after)
+        if self.shell_used and not self.commands_covered:
             ui.line("  /diff và /undo chỉ gồm sửa tệp trực tiếp, không bao gồm thay đổi do lệnh terminal tạo ra.", "yellow")
+        elif self.shell_used:
+            ui.line("  Thay đổi do lệnh nền, cơ sở dữ liệu hay gói đã cài không nằm trong /undo.", "dim")
 
     def record_move(self, source, destination, raw):
         """Ghi nhận rồi đổi tên tệp: chỗ cũ thành không còn, chỗ mới thành tệp vừa tới.

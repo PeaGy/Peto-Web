@@ -197,7 +197,7 @@ quả lê 6 × 6. Thấp hơn nữa, hẹp dưới 41 cột, hay terminal tắt 
 của VS Code, Peto chừa thêm 2 cột bên phải, vì VS Code che khoảng hai cột sát mép:
 
 ```text
- [mascot]   Peto Agent 0.24.0
+ [mascot]   Peto Agent 0.27.0
  [mascot]   6 Luna · mức thấp
  [mascot]   ~\Projects\website-a
 
@@ -323,9 +323,11 @@ nào được chọn, nên Enter không tự chạy gì. Từ 0.20.0 tên lệnh
   đang chạy dở lúc đóng được ghi là bị ngắt, nên Peto kiểm tra lại tệp trước khi làm tiếp.
 - `/timeline` (từ 0.22.0, theo opencode): danh sách các tin bạn đã gửi trong hội thoại đang mở. Chọn một tin rồi
   "Nhảy tới" (cuộn màn hình tới đúng tin đó), "Chép" (chép chữ của tin vào clipboard) hoặc "Tách hội thoại từ đây".
+  Từ 0.26.0 còn có "Khôi phục tệp về lúc trước tin này" (xem "Ảnh chụp dự án" bên dưới).
 - `/fork` (từ 0.22.0): chọn một tin của bạn để tách. Peto mở một hội thoại mới gồm mọi thứ trước tin đó, tên
   "<tên cũ> (nhánh)", và đặt sẵn chữ của tin vào ô nhập để bạn sửa rồi gửi lại. Hội thoại cũ giữ nguyên trong
-  `/resume`. Không tệp nào bị hoàn tác: tách chỉ đổi hội thoại, còn tệp đã sửa vẫn như bây giờ (`/undo` riêng).
+  `/resume`. Tách chỉ đổi hội thoại; từ 0.26.0, nếu có ảnh chụp của tin đó, Peto hỏi thêm có khôi phục cả tệp về lúc
+  đó không (mặc định là không).
 - `/btw <câu hỏi>` (từ 0.23.0, theo opencode và Claude Code): hỏi nhanh bên lề về hội thoại, kể cả lúc Peto đang làm,
   mà không chen vào việc đang làm. Trong lúc chờ, trên ô nhập có dòng `⠋ /btw …`; có câu trả lời thì nó hiện trong một
   hộp ở chỗ ô nhập: ↑/↓, `PgUp`/`PgDn` cuộn, `c` chép, `Esc` hay Enter đóng (`Ctrl+C` trong hộp cũng chỉ đóng hộp, không
@@ -341,12 +343,19 @@ nào được chọn, nên Enter không tự chạy gì. Từ 0.20.0 tên lệnh
   tệp có sẵn, thêm `-2`, `-3`…) hoặc chép vào clipboard. Tệp có tin của bạn, lời Peto, mỗi công cụ một dòng
   ("Sửa `app.py` (+1 −1)", "Chạy `$ npm test` → mã thoát 0") và danh sách việc; không có nội dung tệp, output lệnh hay
   ảnh, nên gửi cho người khác được.
+- `/guide` (từ 0.25.0): sửa hướng dẫn cho Peto trong trình soạn của `/editor`. Chọn "Hướng dẫn chung" (một tệp
+  AGENTS.md trong hồ sơ của bạn, `%APPDATA%\PetoAgent\AGENTS.md`, đi kèm mọi bước ở mọi dự án: cách xưng hô, trình quản
+  lý gói, quy ước commit…) hoặc "AGENTS.md của dự án này". Về quy ước code thì AGENTS.md của dự án được ưu tiên; yêu
+  cầu trong hội thoại đứng trên cả hai. Ghi ngay trên máy, không tốn bước và không vào `/undo`. Peto không bao giờ đọc
+  hướng dẫn chung từ thư mục dự án. Cần máy chủ đã cập nhật; máy chủ cũ thì tệp vẫn lưu, Peto dùng khi máy chủ có.
 - `/retry`: thử lại bước bị gián đoạn kết nối, dùng kết quả các bước đã hoàn tất. Không tự phát lại lệnh hay thao tác
   sửa tệp cũ; thao tác mới vẫn hỏi quyền. Nếu đã thoát thì `/resume` trước, rồi `/retry`.
-- `/diff`: xem bản sửa/ghi tệp trực tiếp gần nhất đã lưu cho dự án. Diff dài có thể xem tiếp bằng `v`.
+- `/diff`: xem bản sửa/ghi tệp gần nhất đã lưu cho dự án; từ 0.26.0 có cả tệp do lệnh Peto chạy đổi (ghi "do lệnh";
+  tệp nhị phân chỉ ghi cỡ). Diff dài có thể xem tiếp bằng `v`.
 - `/undo`: xem diff rồi xác nhận hoàn tác yêu cầu gần nhất; giữ nguyên BOM và kiểu xuống dòng ban đầu, xóa các tệp
   mới do công cụ ghi tạo ra. Nếu bất kỳ tệp nào đã bị sửa/xóa bên ngoài, từ chối trước khi hoàn tác. Bản lưu nằm ở
   `%LOCALAPPDATA%\PetoAgent\checkpoints`, mở lại CLI tại đúng dự án rồi dùng `/diff` hoặc `/undo`, không cần `/resume`.
+  Từ 0.26.0 `/undo` hoàn tác cả tệp do lệnh tạo, sửa hay xóa (xem "Ảnh chụp dự án").
   `/new`, `/resume` và yêu cầu chỉ đọc không xóa bản này; yêu cầu mới có sửa tệp sẽ thay thế bằng bản của yêu cầu mới.
   Mỗi dự án giữ một bản, tối đa 16 MB/bản (tính cả mã hóa), tổng 64 MB, dọn bản cũ nhất khi vượt dung lượng và hết hạn
   sau 30 ngày. Bản đã hoàn tác được lưu trạng thái rỗng để không khôi phục lần nữa. `/retry` tiếp tục cùng bản.
@@ -601,7 +610,45 @@ Từ bản 0.12.0 (cần cả VPS mới), Peto xem được cả trang ngoài m�
   xong; tiêu đề cửa sổ đổi theo trạng thái (`Peto · đang làm · tên-thư-mục`, `· cần bạn duyệt`, `· xong`) nên liếc
   thanh tác vụ là biết. Đặt `PETO_AGENT_NO_BELL=1` để tắt tiếng chuông, tiêu đề vẫn đổi.
 
+### Agent con khám phá (từ 0.27.0)
+
+Theo agent "explore" của opencode: khi cần dò rộng nhiều tệp mà chỉ cần kết luận (tìm nơi xử lý một việc, liệt kê chỗ
+gọi một hàm, nắm một phần dự án lạ), Peto giao việc cho một agent con bằng `explore`. Agent con có hội thoại riêng, chỉ
+tìm và đọc (`list_files`, `find_files`, `search_files`, `read_file`), không sửa, không chạy lệnh, rồi chỉ trả kết luận
+về hội thoại chính, nên hội thoại chính gọn hơn và ít phải tự tóm tắt.
+
+- Chạy cùng model đang dùng, ở mức suy nghĩ thấp (chủ web chọn). Mỗi bước của agent con trừ hạn mức như một bước
+  thường; Peto chọn độ kỹ quick (tối đa 4 bước), medium (8) hay thorough (15). Bước cuối không có công cụ để luôn có câu
+  trả lời.
+- Màn hình hiện "Khám phá · Đọc app.py…" ở dòng trạng thái trong lúc chạy, rồi một dòng "◇ Khám phá … · 3 bước · đọc 2
+  tệp"; bấm vào để xem từng việc agent con làm và kết luận nó trả về.
+- Agent con đọc không tính là Peto đã đọc: muốn sửa tệp nào Peto vẫn phải tự đọc trước. Ctrl+C dừng cả agent con lẫn yêu
+  cầu. Không có agent con lồng nhau. Cần máy chủ đã cập nhật.
+
+### Ảnh chụp dự án (từ 0.26.0)
+
+Theo opencode: trước và sau mỗi lệnh Peto chạy (`run_command`), CLI chụp lại cả dự án vào một kho git ẩn riêng ở
+`%LOCALAPPDATA%\PetoAgent\snapshots\`, so hai ảnh để biết lệnh đã tạo, sửa hay xóa tệp nào. Những thay đổi đó vào bản
+hoàn tác như lần Peto tự sửa, nên `/diff` thấy và `/undo` trả lại được (`dotnet ef migrations add`, `copy`, `del`…). Kết
+quả lệnh ghi "đổi N tệp", Peto được báo tên các tệp đó, và dòng cuối yêu cầu thêm "lệnh đổi N tệp". Ảnh lúc bắt đầu
+mỗi yêu cầu được nhớ theo tin của bạn, nên bấm vào một tin (hay `/timeline`) rồi chọn "Khôi phục tệp về lúc trước tin
+này" đưa tệp về đúng lúc đó; danh sách tệp sẽ đổi hiện trước để bạn duyệt, và `/undo` ngay sau đó trả lại như trước.
+
+- Cần máy có git; không có thì như trước 0.26.0 và CLI báo một lần. Thư mục chưa phải kho git vẫn chụp được. CLI không
+  bao giờ đụng `.git` của dự án hay checkout vào thư mục dự án: khôi phục là CLI tự ghi từng tệp.
+- Không chụp: những gì `.gitignore` bỏ qua, `node_modules`, `.venv`, `dist`, `build`…, `.env`, khóa, tệp trên 2 MB và
+  symlink. Những tệp đó không được khôi phục.
+- Lệnh nền (`start_command`), cơ sở dữ liệu (`dotnet ef database update`) và gói đã cài vào hệ thống không nằm trong
+  `/undo`.
+- Lần chụp đầu ở một dự án băm cả dự án, chạy nền trong lúc chờ model (Peto-Web, khoảng 950 tệp: 7–10 giây); các lần
+  sau dưới nửa giây. Lần sửa tệp hay chạy lệnh đầu tiên của yêu cầu đợi ảnh đầu yêu cầu chụp xong.
+- Một lệnh đổi hơn 200 tệp hay hơn 12 MB thì không đưa vào `/undo` (CLI báo). Kho dọn mỗi ngày một lần: ảnh quá 30 ngày
+  bị bỏ, kho của dự án không dùng 30 ngày bị xóa.
+
 ### Hướng dẫn dự án và kiểm tra sau sửa
+
+Một yêu cầu chạy tối đa 40 bước. Từ 0.25.0 (theo opencode), chạm mức đó thì Peto dùng thêm một bước không có công cụ để
+tóm tắt: đã làm được gì, còn gì dở, nên làm gì tiếp; rồi bạn gõ "làm tiếp" nếu muốn. Máy chủ cũ thì chỉ có lời nhắc.
 
 `AGENTS.md` ở gốc dự án được đọc lại ở mỗi bước. Khi đọc một tệp, Peto nhận thêm hướng dẫn trên đường từ gốc tới
 thư mục chứa tệp đó; thư mục con có phạm vi riêng, không áp dụng sang thư mục ngang hàng. Khi hướng dẫn mới xuất hiện
@@ -626,8 +673,22 @@ tệp hội thoại cho `/resume` thì mỗi dự án chỉ giữ lần gần nh
 
 ### Giảm nội dung gửi cho model
 
-Mặc định `read_file` đọc 160 dòng; chỉ định khoảng thì tối đa 400 dòng. Kết quả cho biết dòng tiếp theo khi còn nội
-dung. Peto được hướng dẫn tìm từ khóa trước rồi đọc đúng khoảng cần thiết; mỗi lần đọc vẫn kiểm tra nội dung trên đĩa.
+Từ 0.25.0 (khi máy chủ đã cập nhật), `read_file` đọc tới 1000 dòng mỗi lần, cắt ở ranh giới dòng khi quá khoảng 32.000
+ký tự, và Peto được dặn đọc cả tệp vừa phải trong một lần thay vì nhiều khúc nhỏ. Nhật ký thật của chủ web có 88 trên
+269 lần đọc bị cắt ở mức cũ 160 dòng, một nửa là tệp chừng 186 dòng, mà mỗi lần đọc thiếu tốn thêm một bước (mỗi bước
+gửi lại cả hội thoại, đắt hơn nhiều so với vài trăm dòng đọc thêm). Máy chủ cũ thì vẫn như trước: 160 dòng, chỉ định
+khoảng thì tối đa 400 dòng. Kết quả cho biết dòng tiếp theo khi còn nội dung; mỗi lần đọc vẫn kiểm tra nội dung trên đĩa.
+
+Cũng từ 0.25.0: Peto sửa một tệp chưa đọc (hay đã đổi kể từ lần đọc) thì vẫn bị từ chối, nhưng lời từ chối gửi kèm nội
+dung hiện tại của tệp (quanh đoạn định sửa, nếu tìm được) và tính là đã đọc, nên bước sau sửa được ngay thay vì mất một
+bước chỉ để đọc. Màn hình hiện dòng vàng "Chưa đọc X · đã gửi nội dung cho Peto". Các lần sửa khác của tệp đó trong cùng
+bước vẫn bị từ chối, vì chúng được viết khi Peto chưa thấy tệp. Với `apply_patch`, nội dung của tối đa hai tệp được gửi
+kèm và không tệp nào bị ghi.
+
+Output của một lệnh dài hơn khoảng 20.000 ký tự vẫn chỉ gửi phần đầu và cuối cho Peto, nhưng từ 0.25.0 cả output được
+lưu vào `%LOCALAPPDATA%\PetoAgent\outputs\` (tối đa 20 MB mỗi lệnh, giữ 7 ngày) và kết quả kèm `output_id`. Peto tìm
+hay đọc phần giữa bằng `read_output`, không cần chạy lại lệnh và không phải hỏi bạn. Lệnh nền cũng vậy khi có lần đọc
+bị cắt. Output ngắn thì không lưu gì.
 
 Từ 0.18.0 (khi máy chủ đã cập nhật), công cụ làm việc theo OpenCode:
 - `read_file` và tệp đính kèm bằng `@` có số dòng ở đầu mỗi dòng, nên Peto dẫn chỗ code kiểu `app.py:42`.
@@ -659,9 +720,13 @@ Nhật ký `summary.metrics` lưu các số đo này để so sánh khi tối ư
 
 ### Khi mất kết nối
 
-CLI chỉ chạy công cụ sau khi nhận đủ sự kiện hoàn tất bước. Kết nối bị cắt giữa câu trả lời thì giữ kết quả các bước
-trước, đánh dấu bước hiện tại chưa xong và trả về ô nhập. Khi mạng ổn, gõ `/retry`. Không tự gửi lại ngầm, vì một bước
-AI mà máy chủ đã nhận có thể vẫn được tính vào lượt dùng. `/retry` xóa quyền `a` cũ; quyền `s` cho đúng lệnh vẫn giữ
+CLI chỉ chạy công cụ sau khi nhận đủ sự kiện hoàn tất bước. Từ 0.25.0 (theo opencode), lỗi tạm thời mà bước chưa có
+phản hồi thì CLI tự thử lại tối đa 3 lần, chờ 2, 5 rồi 10 giây, dòng trạng thái ghi "thử lại lần 1/3 sau 2s · Ctrl+C
+dừng". Đó là: không nối được máy chủ Peto, máy chủ trả 502/503/504 trước sự kiện đầu tiên (thường là lúc VPS khởi động
+lại), hoặc máy chủ báo lỗi tạm thời của dịch vụ AI (giới hạn lượt, mất kết nối, lỗi 5xx) kèm cờ đã hoàn lại bước. Những
+lần đó không tốn bước. Kết nối bị cắt giữa câu trả lời thì giữ kết quả các bước trước, đánh dấu bước hiện tại chưa xong
+và trả về ô nhập. Khi mạng ổn, gõ `/retry`. Lần này không tự gửi lại, vì một bước AI mà máy chủ đã nhận có thể vẫn được
+tính vào lượt dùng. `/retry` xóa quyền `a` cũ; quyền `s` cho đúng lệnh vẫn giữ
 trong phiên, các thao tác khác sẽ hỏi lại.
 
 Nếu đã đóng CLI, mở lại trong cùng thư mục, gõ `/resume` rồi `/retry`. `/new` hoặc gửi yêu cầu mới bỏ trạng thái chờ thử
@@ -725,6 +790,12 @@ Tên hội thoại (từ 0.21.0) do Peto đặt: tối đa 2.000 ký tự đầu
 
 `/btw` (từ 0.23.0) gửi hội thoại đang mở kèm câu hỏi đi như một bước bình thường, tới dịch vụ AI của model đang chọn.
 `/export` chỉ ghi tệp trên máy bạn hoặc chép vào clipboard, không gửi gì đi.
+
+Hướng dẫn chung của `/guide` (từ 0.25.0) được gửi kèm mọi bước ở mọi dự án, như AGENTS.md của dự án. Output đầy đủ của
+lệnh dài nằm trên máy bạn ở `%LOCALAPPDATA%\PetoAgent\outputs\`; chỉ phần Peto đọc bằng `read_output` mới được gửi đi. Ảnh chụp dự án (từ
+0.26.0) là bản sao các tệp của dự án trong `%LOCALAPPDATA%\PetoAgent\snapshots\`, chỉ nằm trên máy bạn; Peto chỉ được
+báo tên các tệp lệnh đã đổi. Agent con khám phá (từ 0.27.0) gửi task và các tệp nó đọc đi như những bước
+bình thường.
 
 Để `/resume` hoạt động, các hội thoại của mỗi thư mục (tối đa 50) được lưu trên chính máy bạn ở
 `%LOCALAPPDATA%\PetoAgent\sessions\` sau từng bước, gồm cả nội dung tệp Peto đã đọc, output lệnh và các ảnh còn giữ

@@ -18,7 +18,7 @@ import os
 import re
 import secrets
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
@@ -61,6 +61,8 @@ class Saved:
     interrupted: bool = False
     id: str = ""
     title: str = ""
+    # Ảnh chụp dự án lúc bắt đầu mỗi yêu cầu (CLI 0.26.0): dấu của tin người dùng (fingerprint) → mã cây trong kho ẩn.
+    snapshots: dict = field(default_factory=dict)
 
     @property
     def message_count(self) -> int:
@@ -90,6 +92,15 @@ def valid_id(session_id: str) -> bool:
     return bool(re.fullmatch(r"\d{8}-\d{6}-[0-9a-f]{6}", session_id or ""))
 
 
+def fingerprint(items: list[dict], position: int) -> str:
+    """Dấu của một tin trong hội thoại: băm nội dung, kèm số tin giống hệt đứng trước nó (hai lần gõ "làm tiếp" vẫn
+    khác dấu). Không đổi khi mở lại, tách nhánh hay đổi model; tóm tắt hội thoại giữ nguyên tin cuối của người dùng."""
+    item = items[position]
+    encoded = json.dumps(item, ensure_ascii=False, sort_keys=True)
+    same = sum(1 for earlier in items[:position] if json.dumps(earlier, ensure_ascii=False, sort_keys=True) == encoded)
+    return hashlib.sha1(encoded.encode("utf-8")).hexdigest()[:20] + f"#{same}"
+
+
 def first_title(items: list[dict]) -> str:
     """Tên tạm của hội thoại: đầu tin đầu tiên của người dùng (máy chủ chưa đặt tên được thì giữ luôn)."""
     for item in items:
@@ -104,7 +115,8 @@ def first_title(items: list[dict]) -> str:
 
 
 def save(root: Path, server: str, items: list[dict], *, session_id: str, title: str = "", retryable: bool = False,
-         model: str = "peto", interrupted: bool = False, saved_at: float | None = None) -> None:
+         model: str = "peto", interrupted: bool = False, saved_at: float | None = None,
+         snapshots: dict | None = None) -> None:
     """Ghi đè một hội thoại của thư mục. Ghi đĩa lỗi thì bỏ qua: mất bản lưu không được làm hỏng phiên đang chạy.
     ``saved_at`` giữ giờ lưu cũ (đổi tên không làm hội thoại nhảy lên đầu danh sách)."""
     if not items or not session_id:
@@ -112,7 +124,8 @@ def save(root: Path, server: str, items: list[dict], *, session_id: str, title: 
     target = _folder(root) / f"{session_id}.json"
     data = {"version": VERSION, "id": session_id, "title": title or first_title(items), "root": str(root),
             "server": server, "saved_at": time.time() if saved_at is None else saved_at, "items": items,
-            "retryable": retryable, "model": model, "interrupted": interrupted}
+            "retryable": retryable, "model": model, "interrupted": interrupted,
+            **({"snapshots": dict(snapshots)} if snapshots else {})}
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
         temporary = target.with_suffix(".tmp")
@@ -129,7 +142,7 @@ def rename(root: Path, server: str, session_id: str, title: str) -> None:
     if saved is None or not title.strip():
         return
     save(root, server, saved.items, session_id=session_id, title=title.strip(), retryable=saved.retryable,
-         model=saved.model, interrupted=saved.interrupted, saved_at=saved.saved_at)
+         model=saved.model, interrupted=saved.interrupted, saved_at=saved.saved_at, snapshots=saved.snapshots)
 
 
 def delete(root: Path, server: str, session_id: str) -> bool:
@@ -160,9 +173,12 @@ def _parse(data, root: Path, server: str, *, legacy: bool = False) -> Saved | No
     session_id = data.get("id") if isinstance(data.get("id"), str) and data.get("id") else \
         f"{datetime.fromtimestamp(saved_at):%Y%m%d-%H%M%S}-cu"
     title = data.get("title") if isinstance(data.get("title"), str) and data.get("title") else first_title(items)
+    marks = data.get("snapshots") if isinstance(data.get("snapshots"), dict) else {}
+    snapshots = {key: value for key, value in marks.items()
+                 if isinstance(key, str) and isinstance(value, str) and re.fullmatch(r"[0-9a-f]{40}", value)}
     return Saved(saved_at=saved_at, items=items, retryable=data.get("retryable") is True,
                  model=data["model"] if isinstance(data.get("model"), str) and data["model"] else "peto",
-                 interrupted=data.get("interrupted") is True, id=session_id, title=title)
+                 interrupted=data.get("interrupted") is True, id=session_id, title=title, snapshots=snapshots)
 
 
 def _migrate(root: Path, server: str) -> None:
