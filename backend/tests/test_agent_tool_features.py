@@ -77,9 +77,8 @@ def test_instructions_explain_the_new_tools_only_when_declared():
     plain = agent_api._instructions({"features": list(BASE)}, False)
     assert "find_files" not in plain and "replace_all" not in plain
     both = agent_api._instructions({"features": list(BASE) + ["explore_v2", "edit_v2"]}, False)
-    assert "find_files" in both and "replace_all" in both and "đường/dẫn.py:42" in both
-    english = agent_api._instructions({"features": ["explore_v2", "edit_v2"]}, False, model="luna")
-    assert "find_files" in english and "replace_all" in english and "approximate match" in english
+    assert "find_files" in both and "replace_all" in both and "path/to/file.py:42" in both
+    assert "approximate match" in both
 
 
 async def test_me_lists_the_features_the_server_understands(client, anon_client):
@@ -202,11 +201,7 @@ def test_new_0_25_features_are_known_and_change_prompts_only_when_declared():
     from prompts import english as english_prompts
 
     assert {"read_more", "output_files", "wrapup", "user_guide"} <= FEATURES
-    old = agent_api._instructions({"features": list(SHIPPED_0_21)}, False)
-    assert "Tiết kiệm ngữ cảnh" in old and "read_output" not in old and "Đọc đủ trong một lần" not in old
-    new = agent_api._instructions({"features": list(SHIPPED_0_21) + ["read_more", "output_files"]}, False)
-    assert "Đọc đủ trong một lần" in new and "Tiết kiệm ngữ cảnh" not in new and "read_output" in new
-    for model in ("luna", "haiku"):
+    for model in ("peto", "luna", "haiku"):
         before = agent_api._instructions({"features": list(SHIPPED_0_21)}, False, model=model)
         after = agent_api._instructions({"features": list(SHIPPED_0_21) + ["read_more", "output_files"]}, False,
                                         model=model)
@@ -215,15 +210,15 @@ def test_new_0_25_features_are_known_and_change_prompts_only_when_declared():
     assert english_prompts.agent_prompt(plan=False, read_more=True).count("update_plan") == 0
 
 
-def test_old_feature_sets_keep_their_exact_instructions():
-    """Chỉ dẫn của CLI cũ không đổi từng byte (phần đầu giống hệt thì prompt cache vẫn dùng lại được)."""
+def test_old_feature_sets_get_the_english_instructions_without_new_parts():
+    """Từ 2026-10-15 mọi CLI, kể cả bản cũ, nhận chỉ dẫn tiếng Anh; phần của khả năng chưa khai báo vẫn không có."""
     from features.agent import api as agent_api
     from prompts import english as english_prompts
 
     context = {"features": list(SHIPPED_0_21), "user_guidance": "Luôn dùng pnpm."}
-    vietnamese = agent_api._instructions(context, False)
-    assert "Luôn dùng pnpm" not in vietnamese, "chưa khai báo user_guide thì không gửi hướng dẫn chung"
-    assert agent_api.AGENT_PROMPT in vietnamese and "\n\n\n\n" in vietnamese, "phần rỗng vẫn nối như trước"
+    peto = agent_api._instructions(context, False)
+    assert "Luôn dùng pnpm" not in peto, "chưa khai báo user_guide thì không gửi hướng dẫn chung"
+    assert english_prompts.AGENT_PROMPT in peto and "\n\n\n\n" not in peto
     luna = agent_api._instructions(context, False, model="luna")
     assert english_prompts.AGENT_PROMPT_NO_PLAN in luna
 
@@ -234,13 +229,11 @@ def test_user_guidance_is_wrapped_apart_from_project_guidance_and_bounded():
     context = {"features": ["user_guide"], "user_guidance": "Luôn trả lời tiếng Việt, dùng pnpm.",
                "project_guidance": [{"path": "AGENTS.md", "scope": ".", "text": "Chạy npm test."}]}
     text = agent_api._instructions(context, False)
-    assert "Hướng dẫn chung của người dùng" in text and "dùng pnpm" in text
+    assert "general guidance" in text and "dùng pnpm" in text
     assert text.index("dùng pnpm") < text.index("Chạy npm test."), "hướng dẫn dự án đứng sau, được ưu tiên"
-    english = agent_api._instructions(context, False, model="haiku")
-    assert "general guidance" in english and "dùng pnpm" in english
     long = agent_api._instructions({**context, "user_guidance": "x" * 40001}, False)
-    assert "quá dài" in long and "x" * 100 not in long
-    assert "Hướng dẫn chung" not in agent_api._instructions({**context, "user_guidance": "   "}, False)
+    assert "too long" in long and "x" * 100 not in long
+    assert "general guidance" not in agent_api._instructions({**context, "user_guidance": "   "}, False)
 
 
 def test_subagent_appends_explore_last_and_its_tools_are_read_only():
@@ -263,8 +256,6 @@ def test_subagent_prompt_only_when_declared():
     from features.agent import api as agent_api
 
     plain = agent_api._instructions({"features": list(SHIPPED_0_21)}, False)
-    assert "Agent con khám phá" not in plain
+    assert "Explore subagent" not in plain
     declared = agent_api._instructions({"features": list(SHIPPED_0_21) + ["subagent"]}, False)
-    assert "Agent con khám phá" in declared and "depth" in declared
-    english = agent_api._instructions({"features": ["subagent"]}, False, model="haiku")
-    assert "Explore subagent" in english
+    assert "Explore subagent" in declared and "depth" in declared

@@ -48,7 +48,9 @@ in English.
 
 Provider-specific model instructions are an explicit exception: OpenAI and Claude receive compact English
 instructions from `backend/prompts/english.py`, composed through `prompts/routing.py` for normal Web Chat and
-`features/agent/api.py` for Agent (including compaction). Peto/xAI retains its Vietnamese prompt; roleplay and
+`features/agent/api.py` for Agent (including compaction). Since 2026-10-15 Agent uses these English instructions for
+every model, Peto/xAI included (see "English Agent instructions" under Peto Agent). Peto/xAI Web Chat retains its
+Vietnamese prompt; roleplay and
 Companion retain their existing prompts. The shared English core keeps the Peto identity and replies in the
 user's language, defaulting to Vietnamese with full diacritics. Raw user messages, memory, preferences, project guidance, skill metadata and
 documentation are never translated. Fixed context wrappers/search/time/tool-budget instructions have English
@@ -2647,7 +2649,7 @@ results in the next step. The server stores no conversation (`store=False`), and
   `input_image` parts. Images must be base64 data URLs whose magic bytes match the declared PNG/JPEG/GIF/WebP type (never
   a web URL, so the AI service fetches nothing on the CLI's behalf), at most `MAX_STEP_IMAGES` (8) per step and
   `MAX_STEP_IMAGE_BYTES` (3 MB) each. Rejected images cost no step. The instructions
-  are always the server's: `PERSONA_PROMPT` + `persona.AGENT_PROMPT` + the search prompt for the current setting + time
+  are always the server's: `english.CORE_PROMPT` + `english.agent_prompt(…)` + the search prompt for the current setting + time
   context + project/OS line. Tool schemas are server-owned (`features/agent/tools.py`). `ai/agent.py` holds the xAI call and a mock that runs a scripted `__demo__` task (read
   `README.md` → edit its first line → run a command → summarize) based on the tool results the CLI sends back. The mock
   estimates usage at about 4 characters per token so the CLI's token display has numbers.
@@ -3430,6 +3432,18 @@ results in the next step. The server stores no conversation (`store=False`), and
   - **Tests:** backend `test_agent_tool_features.py` (schema, read-only subset, prompt), `test_agent_api.py` (explore
     step tools, instructions, final, old CLIs); CLI `test_subagent.py` (separate context and reads, final step and
     refused tools, error result, Ctrl+C, old server) and a `test_mouse.py` case for the block.
+
+  **English Agent instructions (2026-10-15, backend only).** The owner asked for the Agent system prompt in English to
+  cut tokens, since Vietnamese costs more tokens per character and the instructions are resent at every step. Luna and
+  Claude already used `prompts/english.py`; now Peto/xAI does too, for every purpose (steps, wrapup, explore, /btw,
+  title, compaction) and every CLI version. `prompts/agent.py` (the Vietnamese copies) was removed, and the inbox lines
+  moved to `english.agent_inbox_prompt`. Replies still follow the user's language, defaulting to Vietnamese (the
+  English core says so), and the core still forbids naming the model behind Peto. Measured on the 0.27 feature set:
+  Peto's instructions went from 15,786 characters (3,344 words, 3,109 non-ASCII characters) to 13,231 (2,047 words).
+  Before the change, the first step of each eval task cost Peto about 11,450 input tokens and Luna (English, other
+  tokenizer) about 10,520. Tool schema descriptions stay Vietnamese (about 19,800 characters, the larger part of
+  each step) and so do CLI notes such as "[Người dùng nhắn thêm…]"; the prompts quote those markers verbatim. Grok's
+  reply voice under the English prompt has not been measured with evals yet.
 - **CLI display** (picked by the owner from mockups): tool steps stay as permanent lines; while waiting for the model
   there is one transient `… Peto đang nghĩ · Ns` status line (`UI.status`, redrawn with `\r\033[2K`, only when colors
   are on). `ReplyWriter` prints replies line by line so `UI.markdown` can color bold, inline code, headings, bullets and

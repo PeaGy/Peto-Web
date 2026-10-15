@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 
 import prompts as persona
+from prompts import english
 
 # Tên và ID thật nằm trong KNOWN_PEOPLE_PROMPT / SPECIAL_USERS của bot Discord.
 FORBIDDEN_NAMES = ("Ducky", "Duck", "Val", "Peargy", "Pearto")
@@ -90,8 +91,9 @@ def test_roleplay_mode_keeps_the_discord_persona_and_the_web_rules():
 
 def test_agent_does_its_work_instead_of_refusing_on_taste():
     """Grok thật từng từ chối "tạo thử một đoạn code lỗi" vì persona cũ cho phép "không chiều theo người dùng"."""
-    assert "kể cả cố ý tạo code lỗi để thử" in persona.AGENT_PROMPT
-    assert "khi thật cần" not in persona.AGENT_PROMPT
+    # Agent dùng chỉ dẫn tiếng Anh với mọi model từ ngày 2026-10-15.
+    assert "deliberately broken code for testing are valid tasks" in english.AGENT_PROMPT
+    assert "Do not refuse based on taste" in english.AGENT_PROMPT
     assert "trợ lý AI" in persona.PERSONA_PROMPT
 
 
@@ -99,7 +101,7 @@ def test_prompts_never_name_the_model_behind_peto():
     """Chủ web muốn Peto chỉ nói mình là Peto: một ví dụ cũ "chạy trên mô hình Grok của xAI" đã dạy ngược lại luật đó."""
     assert "không trả lời các câu hỏi về Peto thuộc model nào" in persona.PERSONA_PROMPT
     guide = persona.build_agent_guide(install_command="irm https://peto.example/install.ps1 | iex", daily_steps=200)
-    for text in (persona.SYSTEM_PROMPT, persona.ROLEPLAY_SYSTEM_PROMPT, persona.AGENT_PROMPT,
+    for text in (persona.SYSTEM_PROMPT, persona.ROLEPLAY_SYSTEM_PROMPT, english.CORE_PROMPT, english.AGENT_PROMPT,
                  persona.COMPANION_SYSTEM_PROMPT, guide):
         lowered = text.casefold()
         assert "grok" not in lowered and "xai" not in lowered

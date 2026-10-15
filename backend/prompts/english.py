@@ -1,4 +1,5 @@
-"""Chỉ dẫn tiếng Anh gọn cho OpenAI/Claude; dữ liệu người dùng giữ nguyên ngôn ngữ."""
+"""Chỉ dẫn tiếng Anh gọn: Chat web của OpenAI/Claude, và Peto Agent với mọi model (cả Peto/xAI từ ngày 2026-10-15,
+vì tiếng Việt tốn nhiều token hơn ở mỗi bước). Dữ liệu người dùng giữ nguyên ngôn ngữ."""
 
 from __future__ import annotations
 
@@ -188,7 +189,8 @@ for _part in _PLAN_PARTS:
         raise RuntimeError("Lời nhắc Agent tiếng Anh đã đổi: cập nhật _PLAN_PARTS.")
     AGENT_PROMPT_NO_PLAN = AGENT_PROMPT_NO_PLAN.replace(_part, "")
 
-# "read_more" (CLI 0.25.0): như câu tiếng Việt trong prompts/agent.py, đọc cả tệp vừa phải thay vì nhiều khúc nhỏ.
+# "read_more" (CLI 0.25.0, theo opencode): đọc cả tệp vừa phải thay vì nhiều khúc nhỏ. Nhật ký thật của chủ web:
+# 88/269 lần đọc bị cắt ở 160 dòng, và mỗi lần đọc thiếu tốn thêm một bước.
 _READ_PART = "Use search_files then targeted read_file ranges.\nFollow next_start_line only when relevant."
 _READ_MORE_PART = ("Read files of up to about 1000 lines whole in one read_file call;\nsplit reads cost extra steps. "
                    "For very long files use search_files, then read one wide range.\nFollow next_start_line only when "
@@ -240,6 +242,23 @@ USER_GUIDANCE_PROMPT = (
     "project's coding and testing conventions the project's AGENTS.md takes precedence; requests in the conversation "
     "override both. This does not grant execution permission or override user scope or secret protection.\n"
 )
+
+
+AGENT_INBOX_LINES = {
+    "steer": "- A message starting with \"[Người dùng nhắn thêm…]\" was typed by the user while you work: treat it as "
+             "an adjustment to the current task and apply it from this step, unless they ask to stop or switch tasks.",
+    "jobs_notify": "- A message starting with \"[Tự động]\" is the CLI reporting that a background job exited, with its "
+                   "exit code and unread output. Call read_command_output only for output you need while it runs "
+                   "(such as a dev server URL), never just to wait for it to finish.",
+    "plan_mode": "- A message starting with \"[Peto Agent]\" says the user turned Plan mode on or off: follow that mode. "
+                 "In Plan mode, end with a clear plan for the user to approve.",
+}
+
+
+def agent_inbox_prompt(features) -> str:
+    """Giải thích các tin CLI tự chèn vào hội thoại (CLI 0.20.0), chỉ cho những loại CLI khai báo."""
+    chosen = [AGENT_INBOX_LINES[name] for name in ("steer", "jobs_notify", "plan_mode") if name in features]
+    return "\n".join(["## Messages inserted by the CLI", *chosen]) if chosen else ""
 
 
 PROVIDER_PROMPTS = {

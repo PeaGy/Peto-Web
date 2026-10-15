@@ -1,4 +1,4 @@
-"""Prompt theo ngữ cảnh; không trộn phần nhập vai vào trợ lý hay Agent."""
+"""Prompt theo ngữ cảnh; không trộn phần nhập vai vào trợ lý hay Agent. Prompt của Peto Agent nằm trong english.py."""
 from features.agent.guide import build_agent_guide
 from .assistant import (
     PERSONA_PROMPT,
@@ -40,26 +40,4 @@ from .context import (
 from .companion import (
     COMPANION_SYSTEM_PROMPT,
     COMPANION_PROMPT,
-)
-from .agent import (
-    AGENT_PROMPT,
-    AGENT_SEARCH_PROMPT,
-    AGENT_NO_SEARCH_PROMPT,
-    browser_prompt,
-    AGENT_BROWSER_PROMPT,
-    AGENT_BROWSER_ACT_PROMPT,
-    AGENT_BROWSER_OUTSIDE_PROMPT,
-    AGENT_EXPLORE_PROMPT,
-    AGENT_EDIT_PROMPT,
-    AGENT_QUESTION_PROMPT,
-    TITLE_PROMPT,
-    BTW_PROMPT,
-    AGENT_PROMPT_READ_MORE,
-    AGENT_OUTPUT_PROMPT,
-    WRAPUP_PROMPT,
-    USER_GUIDANCE_PROMPT,
-    AGENT_SUBAGENT_PROMPT,
-    EXPLORE_PROMPT,
-    EXPLORE_FINAL_PROMPT,
-    agent_inbox_prompt,
 )

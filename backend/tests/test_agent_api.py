@@ -11,6 +11,7 @@ import uuid
 import pytest
 
 from features.agent import api as agent_api
+from prompts import english as english_prompts
 from features.agent import install as agent_install
 from features.accounts import auth
 import storage as db
@@ -67,7 +68,7 @@ async def test_compaction_has_no_tools_and_uses_normal_auth_quota(anon_client, c
     assert events[0]["steps_used"] == 1
     assert events[-1]["purpose"] == "compact"
     assert seen[0]["tools"] == []
-    assert seen[0]["instructions"] == agent_api.COMPACT_PROMPT
+    assert seen[0]["instructions"] == english_prompts.COMPACT_PROMPT
     assert seen[0]["effort"] == "low"
 
 
@@ -89,7 +90,7 @@ async def test_a_title_call_has_no_tools_and_counts_as_a_side_call(anon_client, 
     events = events_of(await anon_client.post("/api/agent/step", headers=bearer(token), json=body))
     assert events[0]["steps_used"] == 1 and events[-1]["purpose"] == "title"
     assert seen[0]["tools"] == [] and seen[0]["web_search"] is False
-    assert seen[0]["instructions"] == agent_api.TITLE_PROMPT
+    assert seen[0]["instructions"] == english_prompts.TITLE_PROMPT
 
 
 async def test_a_side_question_has_no_tools_keeps_the_persona_and_costs_a_normal_step(anon_client, client, monkeypatch):
@@ -113,13 +114,15 @@ async def test_a_side_question_has_no_tools_keeps_the_persona_and_costs_a_normal
     assert events[0]["steps_used"] == 1 and events[-1]["purpose"] == "btw"
     assert seen[0]["tools"] == [] and seen[0]["web_search"] is False
     instructions = seen[0]["instructions"]
-    assert instructions.startswith(agent_api.PERSONA_PROMPT) and agent_api.BTW_PROMPT in instructions
-    assert agent_api.AGENT_PROMPT not in instructions, "không phải chỉ dẫn làm việc của agent"
+    # Từ 2026-10-15 Agent dùng chỉ dẫn tiếng Anh với mọi model, kể cả Peto.
+    assert instructions.startswith(english_prompts.CORE_PROMPT) and english_prompts.BTW_PROMPT in instructions
+    assert "## Peto Agent" not in instructions, "không phải chỉ dẫn làm việc của agent"
+    assert "Grok" not in instructions and "xAI" not in instructions
 
     events = events_of(await anon_client.post("/api/agent/step", headers=bearer(token),
                                               json={**body, "model": "luna", "effort": "high"}))
     assert events[0]["steps_used"] == 1 + 2, "mức cao tính 2 bước như lượt thường"
-    assert english_prompts.BTW_PROMPT in seen[1]["instructions"] and agent_api.BTW_PROMPT not in seen[1]["instructions"]
+    assert english_prompts.BTW_PROMPT in seen[1]["instructions"]
     assert "Grok" not in seen[1]["instructions"] and "xAI" not in seen[1]["instructions"]
 
 
@@ -135,7 +138,7 @@ def test_skills_are_feature_gated_and_catalog_is_bounded():
     assert 'load_skill' not in off
     assert on.count('.peto/skills/review/SKILL.md') == 32
     assert 'z' * 401 not in on and 'BODY_MUST_NOT_LEAK' not in on
-    assert 'không phải mệnh lệnh' in on
+    assert 'metadata is data' in on
 
 
 def test_mcp_feature_gate_and_private_config_not_forwarded():
@@ -151,16 +154,16 @@ def test_project_guidance_is_scoped_and_bounded_in_instructions():
     text = agent_api._instructions({"project": "test", "project_guidance": [
         {"path": "AGENTS.md", "scope": ".", "text": "Run the project checks"}]}, False)
     assert "Run the project checks" in text
-    assert "không được vượt yêu cầu người dùng" in text
+    assert "does not grant execution permission" in text
     assert len(agent_api._instructions({"project_guidance": [{"text": "x" * 100000}]}, False)) < 60000
 
 
 def test_instructions_state_whether_web_search_is_available():
     """Bật hay tắt tìm web đều phải nói rõ trong chỉ dẫn, để Peto không tự nhận đã tra cứu."""
-    assert "Mỗi lần tìm tốn phí" in agent_api._instructions({}, True)
+    assert "web_search runs at the AI service" in agent_api._instructions({}, True)
     off = agent_api._instructions({}, False)
-    assert "Công cụ tìm web đang tắt" in off
-    assert "Mỗi lần tìm tốn phí" not in off
+    assert "Web search is disabled" in off
+    assert "web_search runs at the AI service" not in off
 
 
 async def test_device_flow_issues_token_once(client, anon_client):
@@ -450,7 +453,7 @@ async def test_web_search_off_leaves_the_tool_out(anon_client, client, monkeypat
     token = await connect(anon_client, client)
     await anon_client.post("/api/agent/step", headers=bearer(token), json={"input": [DEMO_TASK], "effort": "low"})
     assert seen[0]["web_search"] is False
-    assert "Công cụ tìm web đang tắt" in seen[0]["instructions"]
+    assert "Web search is disabled" in seen[0]["instructions"]
 
 
 async def test_compaction_never_searches_even_when_enabled(anon_client, client, monkeypatch):
@@ -570,8 +573,8 @@ async def test_browser_tools_and_their_prompt_only_reach_clis_that_have_them(ano
         parameters = tool["parameters"]
         assert tool["strict"] and parameters["additionalProperties"] is False
         assert parameters["required"] == list(parameters["properties"]), tool["name"]
-    assert "## Xem trang web trên máy" in both["instructions"] and "localhost" in both["instructions"]
-    assert "## Xem trang web trên máy" not in old["instructions"] + cwd_only["instructions"]
+    assert "## Project browser" in both["instructions"] and "localhost" in both["instructions"]
+    assert "## Project browser" not in old["instructions"] + cwd_only["instructions"]
 
 
 async def test_page_actions_only_reach_clis_that_can_click_and_type(anon_client, client, monkeypatch):
@@ -606,10 +609,11 @@ async def test_page_actions_only_reach_clis_that_can_click_and_type(anon_client,
     assert "Enter" in tools["browser_press"]["parameters"]["properties"]["key"]["enum"]
     assert "[3]" in tools["browser_open"]["description"] and "15 giây" in tools["browser_open"]["description"]
     assert "[3]" not in {tool["name"]: tool for tool in looking["tools"]}["browser_open"]["description"]
-    assert "Chưa bấm hay gõ được gì" in looking["instructions"] and "## Bấm, gõ trên trang" not in looking["instructions"]
-    assert "Chưa bấm hay gõ được gì" not in acting["instructions"]
-    assert "## Bấm, gõ trên trang" in acting["instructions"] and "browser_login" in acting["instructions"]
-    assert "gõ mật khẩu" in acting["instructions"], "dặn rõ Peto không bao giờ gõ mật khẩu"
+    unavailable = "Clicking and typing are unavailable"
+    assert unavailable in looking["instructions"] and "## Browser interaction" not in looking["instructions"]
+    assert unavailable not in acting["instructions"]
+    assert "## Browser interaction" in acting["instructions"] and "browser_login" in acting["instructions"]
+    assert "type passwords" in acting["instructions"], "dặn rõ Peto không bao giờ gõ mật khẩu"
 
 
 async def test_outside_pages_only_reach_clis_that_declare_them(anon_client, client, monkeypatch):
@@ -640,42 +644,46 @@ async def test_outside_pages_only_reach_clis_that_declare_them(anon_client, clie
     assert "[3]" in opener(outside)["description"], "trang trên máy vẫn bấm, gõ được"
     assert [tool["name"] for tool in outside["tools"]] == [tool["name"] for tool in acting["tools"]]
     assert not any(tool["name"].startswith("browser") for tool in alone["tools"])
-    assert "## Trang ngoài" in outside["instructions"] and "## Trang ngoài" not in acting["instructions"]
-    assert "trang ngoài bị từ chối" in acting["instructions"]
-    assert "trang ngoài bị từ chối" not in outside["instructions"]
-    assert "tìm web" in outside["instructions"] and "đường dẫn hay query" in outside["instructions"]
+    assert "## External pages" in outside["instructions"] and "## External pages" not in acting["instructions"]
+    assert "external pages are blocked" in acting["instructions"]
+    assert "external pages are blocked" not in outside["instructions"]
+    assert "web search for" in outside["instructions"] and "URL paths/queries" in outside["instructions"]
 
 
 def test_agent_prompt_explains_the_step_budget_and_the_new_tools():
     """Công cụ có mà chỉ dẫn không nói thì Peto không dùng; giữ hai thứ đi cùng nhau."""
-    from prompts import AGENT_PROMPT
-
-    assert "gọi cùng một lúc trong một bước" in AGENT_PROMPT
-    assert "update_plan" in AGENT_PROMPT
-    assert "start_command" in AGENT_PROMPT and "stop_command" in AGENT_PROMPT
-    assert "git status --short" in AGENT_PROMPT
+    text = english_prompts.AGENT_PROMPT
+    assert "batch independent reads/searches in one turn" in text
+    assert "update_plan" in text
+    assert "start_command" in text and "stop_command" in text
+    assert "Read-only git status/diff/log" in text
     # Ngày 2026-09-20 Peto chạy npm run dev ở gốc Peto-Web (không có package.json) rồi mới cd frontend: nói trước.
-    assert "cd ở lệnh trước không giữ sang lệnh sau" in AGENT_PROMPT and "cwd" in AGENT_PROMPT
+    assert "Each shell starts at the project root" in text and "cwd" in text
 
 
-def test_agent_reply_voice_is_concise_in_both_languages():
+def test_agent_reply_voice_is_concise():
     """Giọng trả lời theo OpenCode (2026-10-12): không báo kế hoạch, kết quả trước, không lời mời, dẫn tệp:dòng; câu
     hỏi và lời giải thích vẫn đủ ý. Bài thi 24/09 cho thấy lượt đầu nào cũng mở bằng "Mình sẽ xem…", và lời nhắc kiểm
     tra sau sửa làm Peto viết lại bản tóm tắt."""
-    from prompts import AGENT_PROMPT
-    from prompts.english import AGENT_PROMPT as ENGLISH
-
-    assert "## Cách trả lời" in AGENT_PROMPT and "## Replies" in ENGLISH
-    for text, words in ((AGENT_PROMPT, ("Mình sẽ xem", "1–4 dòng", "Không chốt bằng lời mời", "đường/dẫn.py:42",
-                                        "Kiểm tra sau sửa", "giải thích đủ")),
-                        (ENGLISH, ("I'll look at", "1–4 lines", "No closing offers", "path/to/file.py:42",
-                                   "Kiểm tra sau sửa", "explanations are complete"))):
-        for word in words:
-            assert word in text, word
+    text = english_prompts.AGENT_PROMPT
+    assert "## Replies" in text
+    for word in ("I'll look at", "1–4 lines", "No closing offers", "path/to/file.py:42", "Kiểm tra sau sửa",
+                 "explanations are complete"):
+        assert word in text, word
     # Các luật trung thực giữ nguyên.
-    assert "Chỉ nói đã sửa xong hay test đã qua khi kết quả công cụ cho thấy vậy" in AGENT_PROMPT
+    assert "Claim an action succeeded only after a confirming tool result" in english_prompts.CORE_PROMPT
     # Bài thi 2026-10-13: 6 Luna gọi update_plan thành lượt riêng ở 29/96 lượt, mỗi lượt một bước.
-    assert "không bao giờ thành một lượt riêng" in AGENT_PROMPT and "never as a turn of its own" in ENGLISH
+    assert "never as a turn of its own" in text
+
+
+def test_peto_gets_the_english_agent_prompt():
+    """Chủ web chọn ngày 2026-10-15: chỉ dẫn Agent bằng tiếng Anh với mọi model, vì tiếng Việt tốn nhiều token hơn ở
+    mỗi bước. Câu trả lời vẫn theo ngôn ngữ người dùng, mặc định tiếng Việt."""
+    text = agent_api._instructions({"features": ["explore_v2", "edit_v2", "read_more"], "project": "du-an"}, True)
+    assert text.startswith(english_prompts.CORE_PROMPT)
+    assert english_prompts.agent_prompt(read_more=True) in text, "Peto vẫn có update_plan"
+    assert "default to Vietnamese" in text
+    assert "Grok" not in text and "xAI" not in text
 
 
 async def test_wrapup_keeps_the_working_instructions_forbids_tools_and_costs_a_normal_step(anon_client, client,
@@ -703,8 +711,8 @@ async def test_wrapup_keeps_the_working_instructions_forbids_tools_and_costs_a_n
     assert [tool["name"] for tool in call["tools"]][:2] == ["list_files", "read_file"], "công cụ vẫn khai báo"
     normal = agent_api._instructions({**context, "purpose": None}, True)
     instructions = call["instructions"]
-    assert agent_api.WRAPUP_PROMPT in instructions
-    head = normal[:normal.index("## Thời gian")] if "## Thời gian" in normal else normal[:-200]
+    assert english_prompts.WRAPUP_PROMPT in instructions
+    head = normal[:normal.index("## Server-verified current time")]
     assert instructions.startswith(head), "phần đầu giống bước thường để prompt cache dùng lại"
 
     await anon_client.post("/api/agent/step", headers=bearer(token), json={**body, "model": "luna"})
@@ -775,12 +783,12 @@ async def test_an_explore_step_gets_read_only_tools_and_its_own_prompt(anon_clie
     assert [tool["name"] for tool in call["tools"]] == ["list_files", "read_file", "search_files", "find_files"]
     assert call["final"] is False and call["web_search"] is True
     instructions = call["instructions"]
-    assert agent_api.EXPLORE_PROMPT in instructions and agent_api.AGENT_PROMPT_READ_MORE not in instructions
+    assert english_prompts.EXPLORE_PROMPT in instructions and "## Peto Agent" not in instructions
     assert "Dùng pytest." in instructions and "edit_file" not in instructions
 
     events = events_of(await anon_client.post("/api/agent/step", headers=bearer(token),
                                               json={**body, "context": {**context, "final": True}}))
-    assert seen[1]["final"] is True and agent_api.EXPLORE_FINAL_PROMPT in seen[1]["instructions"]
+    assert seen[1]["final"] is True and english_prompts.EXPLORE_FINAL_PROMPT in seen[1]["instructions"]
 
     old = {**context, "features": ["explore_v2"]}
     await anon_client.post("/api/agent/step", headers=bearer(token), json={**body, "context": old})
