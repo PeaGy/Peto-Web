@@ -2121,7 +2121,10 @@ sections come from the owner's screenshots. Before this, memory was up to 50 one
     the body, which would let the next Esc close the dialog.
   - Deleting is immediate; the toast's "Hoàn tác" recreates the entry with `POST`. Errors roll back and show the
     server's Vietnamese message; the tell box keeps its text on failure.
-  - The section reloads whenever it becomes the one shown. Nothing polls the memory after a turn.
+  - The section reloads whenever it becomes the one shown. Nothing polls the memory after a turn. The first load shows
+    `LoadingIndicator` ("Đang tải trí nhớ") in place of the whole section, as Kết nối does; while old notes are being
+    sorted, a bordered line with the icon variant says "Peto đang xếp các ghi nhớ cũ vào từng mục…". A bare "Đang tải…"
+    line was there before and the owner found it unprofessional (2026-10-15).
   - "Bắt đầu lại" deletes the thread, never the memories. Its dialog re-fetches the list when it opens and, when
     memories exist, says they are kept and where to delete them.
 - **Tests.**

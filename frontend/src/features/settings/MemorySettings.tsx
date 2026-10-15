@@ -12,6 +12,7 @@ import {
   type CompanionMemoryState,
   type MemorySection,
 } from "../../shared/api/api";
+import { LoadingIndicator } from "../../shared/ui/LoadingIndicator";
 import { SettingsGroup, SettingsIcon, SettingsRow, SettingsSwitch } from "./settingsUi";
 
 /*
@@ -506,6 +507,11 @@ export default function MemorySettings({ open, onUnauthorized }: {
     { key: "legacy", title: "Chưa xếp mục", items: memories.filter((item) => item.legacy) },
   ].filter((group) => group.items.length);
 
+  // Lần tải đầu: logo chờ của Peto thay cả mục (DESIGN.md, "Notices, errors, loading"), như mục Kết nối.
+  if (!state && !loadFailed) {
+    return <div className="memory-page"><div className="settings-loading"><LoadingIndicator label="Đang tải trí nhớ" /></div></div>;
+  }
+
   return (
     <div className="memory-page" ref={rootRef}>
       <SettingsGroup>
@@ -521,11 +527,16 @@ export default function MemorySettings({ open, onUnauthorized }: {
           <p className="settings-hint" role="alert">Chưa tải được trí nhớ.</p>
           <button type="button" className="settings-button" onClick={() => load()}>Thử lại</button>
         </div>
-      ) : !state && <p className="memory-empty" role="status">Đang tải…</p>}
+      ) : null}
 
       {!loadFailed && state?.available && (
         <>
-          {state.sorting && <p className="memory-empty" role="status">Peto đang xếp các ghi nhớ cũ vào từng mục…</p>}
+          {state.sorting && (
+            <div className="memory-sorting">
+              <LoadingIndicator variant="icon" label="Peto đang xếp các ghi nhớ cũ vào từng mục" />
+              <span aria-hidden="true">Peto đang xếp các ghi nhớ cũ vào từng mục…</span>
+            </div>
+          )}
           {groups.length ? groups.map((group) => (
             <SettingsGroup key={group.key} title={group.title} className="memory-group">
               <ul className={state.enabled ? "memory-rows" : "memory-rows off"} aria-label={group.title}>

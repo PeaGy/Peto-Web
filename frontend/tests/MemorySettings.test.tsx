@@ -225,6 +225,18 @@ it('ghi nhớ cũ đang được xếp thì báo và hỏi lại sau vài giây;
   expect(api.getCompanionMemory).toHaveBeenCalledTimes(2);
 });
 
+it('lần tải đầu hiện logo chờ của Peto thay cả mục, không phải một dòng chữ trơn', async () => {
+  let finish!: (value: api.CompanionMemoryState) => void;
+  vi.mocked(api.getCompanionMemory).mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+  const { container } = render(<MemorySettings open onUnauthorized={vi.fn()} />);
+  expect(screen.getByRole('status', { name: 'Đang tải trí nhớ' })).toBeTruthy();
+  expect(container.querySelector('.settings-loading .brand-loading')).toBeTruthy();
+  expect(screen.queryByRole('switch')).toBeNull();
+  finish(state());
+  expect(await screen.findByRole('switch', { name: 'Cho Peto ghi nhớ' })).toBeTruthy();
+  expect(screen.queryByRole('status', { name: 'Đang tải trí nhớ' })).toBeNull();
+});
+
 it('chủ web tắt trên máy chủ thì chỉ có lời giải thích, không có công tắc, danh sách hay ô bảo Peto', async () => {
   vi.mocked(api.getCompanionMemory).mockResolvedValue(state({ available: false, enabled: false }));
   render(<MemorySettings open onUnauthorized={vi.fn()} />);

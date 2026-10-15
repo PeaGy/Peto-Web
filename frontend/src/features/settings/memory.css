@@ -5,6 +5,9 @@
 .memory-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; margin-top: 18px; color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
 .memory-confirm { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--text); }
 .memory-note { margin: 0 0 8px; color: var(--muted); font-size: 12.5px; line-height: 1.5; }
+/* Peto đang xếp ghi nhớ cũ: logo chờ nhỏ (LoadingIndicator bản icon) cạnh một dòng chữ, trong khung viền mảnh. */
+.memory-sorting { display: flex; align-items: center; gap: 10px; margin-top: 18px; padding: 8px 14px 8px 10px; border: 1px solid var(--line); border-radius: 12px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.memory-sorting + .settings-group { margin-top: 26px; }
 
 .settings-button.danger { color: var(--danger); border-color: var(--danger); }
 
