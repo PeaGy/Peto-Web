@@ -1,6 +1,7 @@
 """Khởi tạo và nâng cấp schema; giữ dữ liệu từ các phiên bản cũ."""
 
 from __future__ import annotations
+import json
 import aiosqlite
 from storage.documents import init_tables as init_document_tables
 from storage.projects import init_tables as init_project_tables
@@ -326,6 +327,58 @@ async def init_db() -> None:
         await db.execute(
             "CREATE INDEX IF NOT EXISTS idx_companion_memories_owner ON companion_memories(owner, id)"
         )
+        # Trí nhớ chia mục (15/10/2026, theo trang Memory của Claude): mỗi mục thuộc nhóm `section` (you, topic, area),
+        # có tên, một dòng tóm tắt và các ý (`details`, mảng JSON các câu ngắn). `slot` đánh dấu hai mục cố định của nhóm
+        # Bạn (`style`: Cách trả lời, `profile`: Hồ sơ) và mục `legacy` chứa các ghi nhớ một dòng có từ trước, chờ Peto
+        # xếp vào từng mục (features/companion/memory.py, sort_legacy).
+        await db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS companion_memory_entries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                owner TEXT NOT NULL,
+                section TEXT NOT NULL,
+                slot TEXT NOT NULL DEFAULT '',
+                title TEXT NOT NULL,
+                summary TEXT NOT NULL DEFAULT '',
+                details TEXT NOT NULL DEFAULT '[]',
+                created_at REAL NOT NULL,
+                updated_at REAL NOT NULL
+            )
+            """
+        )
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_companion_memory_entries_owner ON companion_memory_entries(owner, id)"
+        )
+        await db.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_companion_memory_entries_slot "
+            "ON companion_memory_entries(owner, slot) WHERE slot != ''"
+        )
+        # Ghi nhớ một dòng của bảng cũ thành mục `legacy` của từng người (giữ nguyên chữ và thứ tự), rồi xóa ở bảng cũ.
+        # Chạy mỗi lần khởi động nhưng chỉ có việc một lần; bảng cũ giữ lại (trống) cho câu truy vấn này.
+        old_rows = await (await db.execute(
+            "SELECT owner, text, created_at, updated_at FROM companion_memories ORDER BY owner, id"
+        )).fetchall()
+        by_owner: dict[str, list] = {}
+        for row in old_rows:
+            by_owner.setdefault(row[0], []).append(row)
+        for owner, rows in by_owner.items():
+            notes = [row[1] for row in rows]
+            existing = await (await db.execute(
+                "SELECT id, details FROM companion_memory_entries WHERE owner = ? AND slot = 'legacy'", (owner,)
+            )).fetchone()
+            if existing:
+                notes = [*json.loads(existing[1] or "[]"), *notes]
+                await db.execute("UPDATE companion_memory_entries SET details = ? WHERE id = ?",
+                                 (json.dumps(notes, ensure_ascii=False), existing[0]))
+            else:
+                await db.execute(
+                    "INSERT INTO companion_memory_entries (owner, section, slot, title, summary, details, created_at, "
+                    "updated_at) VALUES (?, 'topic', 'legacy', 'Ghi nhớ cũ', "
+                    "'Những điều Peto ghi trước khi trí nhớ chia mục', ?, ?, ?)",
+                    (owner, json.dumps(notes, ensure_ascii=False), min(row[2] for row in rows), max(row[3] for row in rows)),
+                )
+        if old_rows:
+            await db.execute("DELETE FROM companion_memories")
         # Bật/tắt theo người dùng, tin nhắn Companion cuối cùng đã đọc để ghi nhớ (id tin nhắn tăng dần), và `since`:
         # tin có id từ đó trở xuống (có từ trước khi có trí nhớ, hay nói lúc đang tắt) không bao giờ được tóm tắt.
         await db.execute(

@@ -1441,7 +1441,8 @@ where cascade deletes matter (SQLite has it off by default).
 
 Tables: `conversations`, `messages`, `attachments`, `users`, `user_profiles`, `user_avatars`,
 `imagine_jobs`, `imagine_images`, `imagine_requests`, `agent_devices`, `agent_usage`, `roleplay_consents`, `voice_usage`,
-`companion_memories`, `companion_memory_state`
+`companion_memory_entries`, `companion_memory_state` (`companion_memories`, the old one-line notes, stays empty after the
+startup migration; see "Memory (Brain)")
 (`features/voice/cloud.py` also creates its own `speech_budget` on first use). `users` is the only place mapping
 a web account to a Discord ID.
 `conversations.mode` (`chat` or `companion`) was added with the same manual migration; older rows
@@ -2028,14 +2029,42 @@ one memory **shared** by Chat and Companion, roleplay Chat **never read or writt
 they found Companion's "Peto vừa ghi nhớ: … · Xem" line under replies redundant, and it was removed (with its polling);
 memories are seen only in Settings → Trí nhớ. Table and API names keep their `companion_` prefix.
 
+**Entries in three sections** (2026-10-15). The owner sent screenshots of Claude's Settings → Memory (You, Topics,
+Areas; each entry a title, a one-line summary, "Updated" date and bullet details; a box at the bottom to tell Claude what
+to change) and picked "Như Claude" from three live variants (the others: entries opening in place with × per bullet,
+and a two-column list/detail). Claude's help pages only document "Topics" and saving during the chat; the three
+sections come from the owner's screenshots. Before this, memory was up to 50 one-line notes.
+- **Storage.** `companion_memory_entries` (`storage/memory.py`): `section` (`you` "Bạn", `topic` "Chủ đề", `area`
+  "Lĩnh vực"), `slot`, `title`, `summary`, `details` (JSON list of short sentences). `you` holds exactly two fixed entries
+  by `slot` (`style` "Cách trả lời", `profile` "Hồ sơ"; unique per owner, title not editable); `area` is one entry per
+  project, subject or job. Limits (`features/companion/memory.py`): 20 entries, 12 details each, 150 characters per
+  detail, at most 3 new entries per run, `MEMORY_BUDGET` 8000 characters told to the model.
+- **Old notes.** At startup `init_db` moves each owner's rows of the old `companion_memories` table into one entry with
+  slot `legacy` ("Ghi nhớ cũ", up to 60 details) and empties that table. `sort_legacy` then makes one call
+  (`SORT_MARKER`) that distributes them into entries and deletes the legacy entry; it runs before the next background
+  memory run, or in the background of `GET /api/companion/memory` (which then reports `sorting: true`; the page polls
+  every 4 s, at most 10 times). A failed or unparsable sort keeps the notes and waits `SORT_RETRY_SECONDS` (600).
+- **Concurrency.** Every model-driven write of an owner (background run, sort, tell) holds `_lock(owner)`. Patches carry
+  the entry's `updated_at` at read time (`_seen`) and `apply_memory_changes` skips entries changed since, so a manual edit
+  made while the model was thinking is never overwritten.
+
 - **When it runs.** After a complete Companion turn, or a Chat turn outside roleplay (`remembers` in
   `features/chat/service.py`), the service marks the owner pending before `done`. It then runs
   `companion_memory.remember(owner)` in the response's background task, so the reply and voice are never delayed. Runs
   for the same owner are coalesced (`_running` / `_again`). Each run is one extra small `peto` call: `MEMORY_MARKER` in
-  its system prompt, JSON `{add, update, remove}` out. It is skipped when the new user text is under `MIN_NEW_CHARS`.
-  The extraction prompt asks for forms of address ("Tự xưng là ad, gọi Peto là Peto") and preferred answer style,
-  updating old lines instead of leaving contradictions, and never homework or document contents. `_talk` marks
-  `--- Companion ---` / `--- Trò chuyện ---` when the new messages span several conversations.
+  its system prompt; the current entries are listed as `[id] section · title — summary` plus `  - detail` lines, and the
+  model returns `{"entries": [{"id", "details" (the whole new list), "summary"?, "title"?} | {"section", "title",
+  "summary", "details"}], "remove": [ids]}`. It is skipped when the new user text is under `MIN_NEW_CHARS`.
+  The extraction prompt asks for forms of address ("Tự xưng là ad, gọi Peto là Peto") and preferred answer style in
+  "Cách trả lời", updating old details instead of leaving contradictions, opening a new entry only when nothing fits,
+  and never homework or document contents. `_talk` marks `--- Companion ---` / `--- Trò chuyện ---` when the new
+  messages span several conversations.
+- **"Bảo Peto…" (`tell`).** `POST /api/companion/memory/tell` (`{text, entry_id?}`, up to 500 characters) is one small
+  call (`TELL_MARKER` in the message) that applies the user's request with the same JSON. It answers `message` (built by
+  `describe`: "Đã thêm vào “Hồ sơ”.", "Đã bỏ khỏi …", "Đã thêm mục … vào nhóm Lĩnh vực." …), `changes` (`id`, `kind`
+  new/add/remove/update/delete, `fresh` indices to highlight) and the new list. 409 while memory is off, 503 when the
+  site disabled it, 404 for an entry that is not the owner's, 502 when the model call fails (nothing changes, the box
+  keeps the text). Sensitive data is still refused.
 - **What it reads.** A message-id cursor in `companion_memory_state` decides this:
   - On first use the cursor starts at the latest user message, so history from before memory existed is never mined.
   - Turning memory back on moves it to the latest message, so what was said while it was off is never read.
@@ -2053,40 +2082,60 @@ memories are seen only in Settings → Trí nhớ. Table and API names keep thei
   - It follows the list's rules. It is written and used only while memory is on. It never covers messages at or below
     `companion_memory_state.since`: that is where memory started, or was last switched back on
     (`ensure_memory_state`, `set_memory_enabled`).
-  - Deleting any memory, or "Xóa hết", blanks every summary and moves its `upto` past all current messages
-    (`_forget_summaries`). A single fact cannot be cut out of a summary, and Settings promises that a deleted line is
-    forgotten. The cost is lost context, never a deleted fact coming back.
+  - Deleting an entry, "Xóa hết", or a user action that drops a detail (a manual edit, or telling Peto to forget)
+    blanks every summary and moves its `upto` past all current messages (`_forget_summaries`, `forget_summaries`). A
+    single fact cannot be cut out of a summary, and Settings promises that a deleted line is forgotten. The cost is lost
+    context, never a deleted fact coming back. Background model edits do not blank it.
   - `save_companion_summary` saves only if `upto` is unchanged since it was read, so a delete that lands while the model
     is writing drops the result. `delete_conversation` removes the row, so "Bắt đầu lại" deletes it too.
-- **Validation.**
-  - `parse_changes` accepts lists only, cuts texts at 150 characters, and drops case-insensitive duplicates and unknown
-    ids.
-  - At most 5 adds per run and 50 memories in total. `apply_memory_changes` applies everything in one transaction.
+- **Validation** (`parse_changes`, `new_entry`). Lists only; details cut at 150 characters, case-insensitive
+  duplicates dropped; unknown ids and bad sections ignored. A new `you` entry must map to a slot (`slot_for`: "trả lời",
+  "hồ sơ"…); a new entry whose slot or title already exists is merged into it; an entry whose details become empty is
+  deleted. `apply_memory_changes` applies everything in one transaction.
 - **Prompt.** On Companion turns (`memory_block`) and Chat turns outside roleplay (`chat_memory_block`, with an English
-  variant for OpenAI/Claude), `_build_system_prompt` appends `build_companion_memory` after the profile block. It is fenced by `COMPANION_MEMORY_START/END` (copies are stripped from notes) and labelled as possibly
-  outdated data, not instructions.
+  variant for OpenAI/Claude), `_build_system_prompt` appends `build_companion_memory` after the profile block: one
+  `### Bạn · Hồ sơ: summary` heading per entry with its details, Bạn first, then the most recently updated. Past
+  `MEMORY_BLOCK_BUDGET` (9000) the remaining entries keep only their heading. Plain strings (the Brain Benchmark) still
+  render as single lines. It is fenced by `COMPANION_MEMORY_START/END` (copies are stripped) and labelled as possibly
+  outdated data, not instructions. Stored titles and details are never translated.
 - **API.** `features/companion/memory_api.py`:
-  - `GET /api/companion/memory` returns `available`, `enabled`, `pending`, `limit` and `memories`. `pending` (set by
-    `mark_pending` before `done`, true for 30 s or while a run is going) fed the removed "Peto vừa ghi nhớ" line; no page
-    reads it now.
+  - `GET /api/companion/memory` returns `available`, `enabled`, `pending`, `sorting`, `limit` (entries) and `memories`
+    (`id`, `section`, `title`, `summary`, `details`, `fixed`, `legacy`, dates). `pending` (set by `mark_pending` before
+    `done`, true for 30 s or while a run is going) fed the removed "Peto vừa ghi nhớ" line; no page reads it now.
   - `PUT /settings` turns memory on or off.
-  - `DELETE /{id}` deletes one memory; another owner's id gives 404.
+  - `POST /tell` as above. `PATCH /{id}` edits title (not for fixed entries), summary or details (1–12). `POST` recreates
+    an entry (the Hoàn tác button; 409 for a taken slot or a full memory).
+  - `DELETE /{id}` deletes one entry; another owner's id gives 404 on every route.
   - `DELETE` clears all memories.
-  - `PETO_COMPANION_MEMORY=false` turns the feature off for everyone (`PUT` then returns 503).
-- **UI.**
-  - `MemorySettings.tsx` has the switch, the list, delete-one, and "Xóa hết" with an inline confirmation. Changes are
-    optimistic and roll back on error.
-  - The section reloads its list whenever it becomes the one shown, so a list mounted by an earlier visit never shows
-    stale lines. Nothing polls the memory after a turn.
+  - `PETO_COMPANION_MEMORY=false` turns the feature off for everyone (`PUT` and `tell` then return 503).
+- **UI** (`MemorySettings.tsx`, `memory.css`; also the Trí nhớ page of the Companion settings page, where each group is a
+  card).
+  - List: the switch, then SettingsGroups "Bạn", "Chủ đề", "Lĩnh vực" (and "Chưa xếp mục" for the legacy entry), rows
+    sorted by title (`localeCompare` vi) with title, summary and "Cập nhật hôm nay/hôm qua/14 thg 10"; Sửa and Xóa
+    appear on hover or focus (space reserved, so nothing shifts). Phones show title and summary with a chevron only.
+    Footer "N/20 mục · M ý" with "Xóa hết" (inline confirmation). A sticky box at the bottom ("Ví dụ: Con mèo của mình
+    tên Mơ") sends `tell`; its result shows as a toast with "Xem", which opens the entry with the new details tinted.
+  - Detail: "← Trí nhớ", the section, the title (focused), Sửa and Xóa, "Cập nhật lần cuối", "Tóm tắt", "Chi tiết", and a
+    sticky "Bảo Peto đổi hay bỏ điều gì" box for that entry. Sửa edits title (not fixed), summary and one detail per
+    line. Esc steps back (stop editing, then back to the list) without closing the Settings dialog; focus never drops to
+    the body, which would let the next Esc close the dialog.
+  - Deleting is immediate; the toast's "Hoàn tác" recreates the entry with `POST`. Errors roll back and show the
+    server's Vietnamese message; the tell box keeps its text on failure.
+  - The section reloads whenever it becomes the one shown. Nothing polls the memory after a turn.
   - "Bắt đầu lại" deletes the thread, never the memories. Its dialog re-fetches the list when it opens and, when
     memories exist, says they are kept and where to delete them.
 - **Tests.**
-  - `backend/tests/test_companion_memory.py`. The mock answers `__nho__:text`, `__sua__:id:text` and `__quen__:id`,
-    and turns a summary call into the old summary plus the user lines it was given. The summary tests shrink the
-    window with `features.chat.service.MAX_HISTORY_MESSAGES` and `companion_memory.SUMMARY_BATCH` (both 4).
+  - `backend/tests/test_companion_memory.py`. In a conversation the mock (`ai/mock._memory_changes`) answers
+    `__nho__:text` (adds to Hồ sơ), `__sua__:id:text` (replaces an entry's details), `__quen__:id` (deletes) and
+    `__muc__:section:title:text` (new entry); a sort puts every old note into Hồ sơ; a tell starting with "bỏ", "quên"
+    or "xóa" drops details sharing a word, anything else is added to the entry (or Hồ sơ). A summary call becomes the
+    old summary plus the user lines it was given. The summary tests shrink the window with
+    `features.chat.service.MAX_HISTORY_MESSAGES` and `companion_memory.SUMMARY_BATCH` (both 4).
   - Provider spies must filter out `MEMORY_MARKER` and `SUMMARY_MARKER` as well as `TITLE_MARKER`.
-  - Chat sharing, roleplay exclusion and the upgrade migration are covered there too.
+  - Chat sharing, roleplay exclusion, the upgrade migrations, legacy sorting, tell, manual edits, undo and the
+    `_seen` guard are covered there too.
   - Frontend: `MemorySettings.test.tsx`, and in `Companion.test.tsx` the absence of a notice and the reset dialog.
+  - Real model behaviour (how well Grok sorts and routes notes) has not been checked; only the mock has run.
 
 ### Companion private notes
 

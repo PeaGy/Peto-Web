@@ -382,6 +382,63 @@ def _pick_reply(user_text: str, timezone: str | None = None) -> str:
     return _DEFAULT
 
 
+def _memory_entries(prompt: str) -> dict[int, dict]:
+    """Đọc lại các mục trí nhớ từ lời nhắn gửi bộ phận ghi nhớ (``companion_memory._memory_text``)."""
+    entries: dict[int, dict] = {}
+    current = None
+    for line in prompt.splitlines():
+        head = re.match(r"\[(\d+)\] (\w+) · (.+?)( \(CHƯA XẾP MỤC\))? — ", line)
+        if head:
+            current = entries[int(head[1])] = {"section": head[2], "title": head[3], "legacy": bool(head[4]), "details": []}
+        elif current is not None and line.startswith("  - "):
+            current["details"].append(line[4:])
+        elif not line.strip():
+            current = None
+    return entries
+
+
+def _memory_changes(prompt: str) -> dict:
+    """Bộ phận ghi nhớ giả: chỉ đổi khi lời người dùng có từ khóa thử, để test và bản chạy thử đoán trước được.
+
+    Trong hội thoại: __nho__:<câu> thêm vào Hồ sơ, __sua__:<id>:<câu> thay các ý của một mục, __quen__:<id> xóa mục,
+    __muc__:<nhóm>:<tên>:<câu> mở mục mới. Xếp ghi nhớ cũ: mọi câu cũ vào Hồ sơ. Ô "Bảo Peto…": câu mở đầu bằng "bỏ",
+    "quên" hay "xóa" bỏ ý có chữ trùng, câu khác thêm vào mục đang xem (không có thì vào Hồ sơ).
+    """
+    from features.companion.memory import SORT_MARKER, TELL_MARKER
+
+    entries = _memory_entries(prompt)
+    if SORT_MARKER in prompt:
+        legacy = next((key for key, item in entries.items() if item["legacy"]), None)
+        notes = entries[legacy]["details"] if legacy else []
+        return {"entries": [{"section": "you", "title": "Hồ sơ", "summary": "Ghi nhớ đã xếp", "details": notes}],
+                "remove": [legacy] if legacy else []}
+    if TELL_MARKER in prompt:
+        found = re.search(r'^Yêu cầu: (".*")$', prompt, re.M)
+        request = json.loads(found[1]) if found else ""
+        about = re.search(r"nói về mục \[(\d+)\]", prompt)
+        target = int(about[1]) if about else None
+        if re.match(r"(bỏ|quên|xóa)\b", request.casefold()):
+            words = [word for word in re.findall(r"\w+", request.casefold())[1:] if len(word) >= 3]
+            for key, item in entries.items():
+                if target is not None and key != target:
+                    continue
+                kept = [text for text in item["details"] if not any(word in text.casefold() for word in words)]
+                if len(kept) < len(item["details"]):
+                    return {"entries": [{"id": key, "details": kept}], "remove": []}
+            return {"entries": [], "remove": []}
+        if target is not None and target in entries:
+            return {"entries": [{"id": target, "details": [*entries[target]["details"], request]}], "remove": []}
+        return {"entries": [{"section": "you", "title": "Hồ sơ", "details": [request]}], "remove": []}
+    talk = prompt.split("Đoạn hội thoại mới:", 1)[-1]
+    said = "\n".join(line for line in talk.splitlines() if line.startswith("Người dùng:"))
+    changes = [{"section": "you", "title": "Hồ sơ", "details": [text.strip()]}
+               for text in re.findall(r"__nho__:([^_\n]+)", said)]
+    changes += [{"id": int(key), "details": [text.strip()]} for key, text in re.findall(r"__sua__:(\d+):([^_\n]+)", said)]
+    changes += [{"section": section, "title": title.strip(), "details": [text.strip()]}
+                for section, title, text in re.findall(r"__muc__:(you|topic|area):([^:_\n]+):([^_\n]+)", said)]
+    return {"entries": changes, "remove": [int(key) for key in re.findall(r"__quen__:(\d+)", said)]}
+
+
 class MockProvider(ChatProvider):
     name = "mock"
 
@@ -412,8 +469,7 @@ class MockProvider(ChatProvider):
             yield title[:1].upper() + title[1:]
             return
 
-        # Lượt ghi nhớ Companion: chỉ đổi khi lời người dùng có từ khóa thử, để test và bản chạy thử đoán trước được.
-        # __nho__:<câu> thêm, __sua__:<id>:<câu> sửa, __quen__:<id> xóa một ghi nhớ.
+        # Lượt ghi nhớ và lượt tóm tắt: xem _memory_changes cho các từ khóa thử.
         from features.companion.memory import MEMORY_MARKER, SUMMARY_MARKER
 
         if SUMMARY_MARKER in system_prompt:
@@ -425,13 +481,7 @@ class MockProvider(ChatProvider):
             return
 
         if MEMORY_MARKER in system_prompt:
-            talk = last_user.split("Đoạn hội thoại mới:", 1)[-1]
-            said = "\n".join(line for line in talk.splitlines() if line.startswith("Người dùng:"))
-            yield json.dumps({
-                "add": [text.strip() for text in re.findall(r"__nho__:([^_\n]+)", said)],
-                "update": [{"id": int(key), "text": text.strip()} for key, text in re.findall(r"__sua__:(\d+):([^_\n]+)", said)],
-                "remove": [int(key) for key in re.findall(r"__quen__:(\d+)", said)],
-            }, ensure_ascii=False)
+            yield json.dumps(_memory_changes(last_user), ensure_ascii=False)
             return
 
         if "__error__" in last_user:

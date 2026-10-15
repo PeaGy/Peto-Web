@@ -327,10 +327,22 @@ export async function deleteConversation(conversationId: string): Promise<void> 
   await json<{ deleted: boolean }>(response);
 }
 
-/** Một điều Peto tự ghi nhớ từ lời người dùng kể trong Companion (Cài đặt → Trí nhớ Companion). */
+export type MemorySection = "you" | "topic" | "area";
+
+/**
+ * Một mục trí nhớ Peto tự ghi từ Chat và Companion (Cài đặt → Trí nhớ), chia nhóm như trang Memory của Claude: Bạn,
+ * Chủ đề, Lĩnh vực. Mỗi mục có tên, một dòng tóm tắt và các ý.
+ */
 export interface CompanionMemory {
   id: number;
-  text: string;
+  section: MemorySection;
+  title: string;
+  summary: string;
+  details: string[];
+  /** Hai mục cố định của nhóm Bạn (Cách trả lời, Hồ sơ): không đổi tên được. */
+  fixed: boolean;
+  /** Mục "Ghi nhớ cũ": các câu ghi trước khi trí nhớ chia mục, chờ Peto xếp. */
+  legacy: boolean;
   created_at: number;
   updated_at: number;
 }
@@ -341,7 +353,17 @@ export interface CompanionMemoryState {
   enabled: boolean;
   /** Còn đang ghi nhớ lượt vừa xong: hỏi lại sau vài giây. */
   pending: boolean;
+  /** Peto đang xếp các ghi nhớ cũ vào từng mục: hỏi lại sau vài giây. */
+  sorting: boolean;
+  /** Số mục tối đa. */
   limit: number;
+  memories: CompanionMemory[];
+}
+
+/** Kết quả một lần bảo Peto nhớ, đổi hay bỏ điều gì: câu báo, các mục đã đổi (``fresh``: vị trí ý mới) và trí nhớ mới. */
+export interface MemoryTellResult {
+  message: string;
+  changes: { id: number; kind: "new" | "add" | "remove" | "update" | "delete"; fresh: number[] }[];
   memories: CompanionMemory[];
 }
 
@@ -373,6 +395,37 @@ export async function setCompanionMemoryEnabled(enabled: boolean): Promise<void>
 
 export async function deleteCompanionMemory(id: number): Promise<void> {
   await json(await fetch(`/api/companion/memory/${id}`, { method: "DELETE" }));
+}
+
+/** Sửa tay một mục: tên (trừ mục cố định), dòng tóm tắt hay các ý. */
+export async function updateCompanionMemory(
+  id: number, patch: { title?: string; summary?: string; details?: string[] },
+): Promise<CompanionMemory> {
+  return json(await fetch(`/api/companion/memory/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  }));
+}
+
+/** Tạo lại một mục vừa xóa (nút Hoàn tác). */
+export async function createCompanionMemory(
+  entry: Pick<CompanionMemory, "section" | "title" | "summary" | "details">,
+): Promise<CompanionMemory> {
+  return json(await fetch("/api/companion/memory", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(entry),
+  }));
+}
+
+/** Ô "Bảo Peto…": Peto đổi trí nhớ theo lời người dùng (một lượt gọi model nhỏ trên máy chủ). */
+export async function tellCompanionMemory(text: string, entryId?: number): Promise<MemoryTellResult> {
+  return json(await fetch("/api/companion/memory/tell", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(entryId === undefined ? { text } : { text, entry_id: entryId }),
+  }));
 }
 
 export async function clearCompanionMemory(): Promise<void> {

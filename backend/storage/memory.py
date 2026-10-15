@@ -1,19 +1,33 @@
-"""Truy vấn ghi nhớ và tóm tắt hội thoại Companion."""
+"""Truy vấn trí nhớ chia mục và tóm tắt hội thoại Companion."""
 
 from __future__ import annotations
+import json
 import time
 import aiosqlite
 from storage import connection as db_connection
 
 
+def _entry(row: aiosqlite.Row) -> dict:
+    item = dict(row)
+    try:
+        details = json.loads(item.get("details") or "[]")
+    except ValueError:
+        details = []
+    item["details"] = [text for text in details if isinstance(text, str)] if isinstance(details, list) else []
+    return item
+
+
+ENTRY_COLUMNS = "id, section, slot, title, summary, details, created_at, updated_at"
+
+
 async def list_memories(owner: str) -> list[dict]:
+    """Các mục trí nhớ của ``owner``, mỗi mục có ``details`` là danh sách câu."""
     async with db_connection.connect() as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
-            "SELECT id, text, created_at, updated_at FROM companion_memories WHERE owner = ? ORDER BY id",
-            (owner,),
+            f"SELECT {ENTRY_COLUMNS} FROM companion_memory_entries WHERE owner = ? ORDER BY id", (owner,)
         )
-        return [dict(row) for row in await cursor.fetchall()]
+        return [_entry(row) for row in await cursor.fetchall()]
 
 
 async def memory_state(owner: str) -> dict | None:
@@ -102,57 +116,86 @@ async def memory_messages_after(owner: str, after_id: int, limit: int) -> list[d
 
 
 async def apply_memory_changes(
-    owner: str, *, add: list[str], update: dict[int, str], remove: list[int], cursor: int, limit: int
+    owner: str, *, upserts: list[dict], remove: list[int], cursor: int | None = None, limit: int
 ) -> list[dict]:
-    """Ghi các thay đổi trong một giao dịch rồi dời vị trí đã đọc; trả về ghi nhớ vừa thêm hay vừa sửa.
+    """Ghi các thay đổi trong một giao dịch; trả về các mục vừa thêm hay vừa sửa (sau khi đổi).
 
-    Chỉ đụng tới dòng của đúng ``owner``; thêm quá ``limit`` dòng thì bỏ phần thừa.
+    Mỗi phần tử ``upserts`` có ``id`` là sửa mục đó (chỉ các trường có mặt: ``title``, ``summary``, ``details``; còn
+    ``details`` rỗng là xóa cả mục), không có ``id`` là thêm mục mới (``section``, ``slot``, ``title``, ``summary``,
+    ``details``). ``_seen`` là ``updated_at`` lúc đọc: mục đã đổi sau lúc đó (người dùng vừa sửa tay) thì bỏ qua thay
+    đổi này. Chỉ đụng tới dòng của đúng ``owner``; thêm quá ``limit`` mục thì bỏ phần thừa; mỗi người chỉ một mục cho
+    mỗi ``slot``. ``cursor`` (nếu có) là vị trí đã đọc mới cho lượt ghi nhớ nền.
     """
     now = time.time()
     changed: list[int] = []
     async with db_connection.connect() as db:
         for memory_id in remove:
-            await db.execute("DELETE FROM companion_memories WHERE id = ? AND owner = ?", (memory_id, owner))
-        for memory_id, text in update.items():
+            await db.execute("DELETE FROM companion_memory_entries WHERE id = ? AND owner = ?", (memory_id, owner))
+        for patch in upserts:
+            if "id" not in patch:
+                continue
+            guard, params = ("", ()) if patch.get("_seen") is None else (" AND updated_at = ?", (patch["_seen"],))
+            if "details" in patch and not patch["details"]:
+                await db.execute(
+                    f"DELETE FROM companion_memory_entries WHERE id = ? AND owner = ?{guard}", (patch["id"], owner, *params)
+                )
+                continue
+            fields = {key: patch[key] for key in ("title", "summary") if patch.get(key)}
+            if "details" in patch:
+                fields["details"] = json.dumps(patch["details"], ensure_ascii=False)
+            if not fields:
+                continue
+            sets = ", ".join(f"{key} = ?" for key in fields)
+            differs = " OR ".join(f"{key} != ?" for key in fields)
             result = await db.execute(
-                "UPDATE companion_memories SET text = ?, updated_at = ? WHERE id = ? AND owner = ? AND text != ?",
-                (text, now, memory_id, owner, text),
+                f"UPDATE companion_memory_entries SET {sets}, updated_at = ? "
+                f"WHERE id = ? AND owner = ?{guard} AND ({differs})",
+                (*fields.values(), now, patch["id"], owner, *params, *fields.values()),
             )
             if result.rowcount:
-                changed.append(memory_id)
+                changed.append(patch["id"])
         count = (await (await db.execute(
-            "SELECT COUNT(*) FROM companion_memories WHERE owner = ?", (owner,)
+            "SELECT COUNT(*) FROM companion_memory_entries WHERE owner = ?", (owner,)
         )).fetchone())[0]
-        for text in add[: max(limit - count, 0)]:
+        for patch in upserts:
+            if "id" in patch or not patch.get("details") or count >= limit:
+                continue
             result = await db.execute(
-                "INSERT INTO companion_memories (owner, text, created_at, updated_at) VALUES (?, ?, ?, ?)",
-                (owner, text, now, now),
+                "INSERT OR IGNORE INTO companion_memory_entries "
+                "(owner, section, slot, title, summary, details, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (owner, patch["section"], patch.get("slot", ""), patch["title"], patch.get("summary", ""),
+                 json.dumps(patch["details"], ensure_ascii=False), now, now),
             )
-            changed.append(result.lastrowid)
-        await db.execute(
-            """
-            INSERT INTO companion_memory_state (owner, enabled, cursor, since, updated_at) VALUES (?, 1, ?, ?, ?)
-            ON CONFLICT(owner) DO UPDATE SET cursor = MAX(companion_memory_state.cursor, excluded.cursor),
-                                             updated_at = excluded.updated_at
-            """,
-            (owner, cursor, cursor, now),
-        )
+            if result.rowcount:
+                changed.append(result.lastrowid)
+                count += 1
+        if cursor is not None:
+            await db.execute(
+                """
+                INSERT INTO companion_memory_state (owner, enabled, cursor, since, updated_at) VALUES (?, 1, ?, ?, ?)
+                ON CONFLICT(owner) DO UPDATE SET cursor = MAX(companion_memory_state.cursor, excluded.cursor),
+                                                 updated_at = excluded.updated_at
+                """,
+                (owner, cursor, cursor, now),
+            )
         await db.commit()
         if not changed:
             return []
         db.row_factory = aiosqlite.Row
         marks = ",".join("?" * len(changed))
         rows = await (await db.execute(
-            f"SELECT id, text, created_at, updated_at FROM companion_memories WHERE owner = ? AND id IN ({marks}) ORDER BY id",
+            f"SELECT {ENTRY_COLUMNS} FROM companion_memory_entries WHERE owner = ? AND id IN ({marks}) ORDER BY id",
             (owner, *changed),
         )).fetchall()
-    return [dict(row) for row in rows]
+    return [_entry(row) for row in rows]
 
 
 async def delete_memory(owner: str, memory_id: int) -> bool:
-    """Xóa một ghi nhớ, và bỏ luôn bản tóm tắt: điều vừa xóa có thể nằm trong đó, mà không gỡ riêng ra được."""
+    """Xóa một mục, và bỏ luôn bản tóm tắt: điều vừa xóa có thể nằm trong đó, mà không gỡ riêng ra được."""
     async with db_connection.connect() as db:
-        result = await db.execute("DELETE FROM companion_memories WHERE id = ? AND owner = ?", (memory_id, owner))
+        result = await db.execute(
+            "DELETE FROM companion_memory_entries WHERE id = ? AND owner = ?", (memory_id, owner)
+        )
         if result.rowcount:
             await _forget_summaries(db, owner)
         await db.commit()
@@ -161,10 +204,18 @@ async def delete_memory(owner: str, memory_id: int) -> bool:
 
 async def clear_memories(owner: str) -> int:
     async with db_connection.connect() as db:
-        result = await db.execute("DELETE FROM companion_memories WHERE owner = ?", (owner,))
+        result = await db.execute("DELETE FROM companion_memory_entries WHERE owner = ?", (owner,))
+        await db.execute("DELETE FROM companion_memories WHERE owner = ?", (owner,))
         await _forget_summaries(db, owner)
         await db.commit()
     return result.rowcount
+
+
+async def forget_summaries(owner: str) -> None:
+    """Người dùng vừa bỏ một ý (sửa tay hay bảo Peto quên): bỏ luôn bản tóm tắt Companion, như khi xóa cả mục."""
+    async with db_connection.connect() as db:
+        await _forget_summaries(db, owner)
+        await db.commit()
 
 
 async def _forget_summaries(db: aiosqlite.Connection, owner: str) -> None:

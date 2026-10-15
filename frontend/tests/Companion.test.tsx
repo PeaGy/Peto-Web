@@ -41,7 +41,7 @@ beforeEach(() => {
   clearCompanionTimings();
   vi.resetAllMocks();
   vi.mocked(prepareCompanionImage).mockImplementation(async file => file);
-  vi.mocked(api.getCompanionMemory).mockResolvedValue({ available: true, enabled: true, pending: false, limit: 50, memories: [] });
+  vi.mocked(api.getCompanionMemory).mockResolvedValue({ available: true, enabled: true, pending: false, sorting: false, limit: 20, memories: [] });
   localStorage.clear();
   played.length = 0;
   window.history.replaceState(null, '', '/');
@@ -1026,7 +1026,7 @@ it('trang Nhân vật như AIRI: mở từ tên nhân vật và thẻ ở Cài �
 
 it('mở thẳng đường dẫn trang cài đặt (F5, link sâu) và Trí nhớ ở đây cùng danh sách với Cài đặt chung', async () => {
   vi.mocked(api.getCompanionMemory).mockResolvedValue({ ...MEMORY,
-    memories: [{ id: 3, text: 'Thích câu trả lời ngắn', created_at: 1, updated_at: 1 }] });
+    memories: [{ id: 3, section: 'you', title: 'Hồ sơ', summary: 'Thích câu trả lời ngắn', details: ['Thích câu trả lời ngắn'], fixed: true, legacy: false, created_at: 1, updated_at: 1 }] });
   window.history.replaceState(null, '', '/companion/settings/memory');
   render(<App />);
   const page = within(await screen.findByRole('main', { name: 'Trí nhớ' }));
@@ -1105,7 +1105,7 @@ it('chuyển qua lại giữa Companion và Tạo ảnh không nhân đôi tab n
   expect(consoleError.mock.calls.some((args) => args.some((arg) => String(arg).includes('same key')))).toBe(false);
 });
 
-const MEMORY: api.CompanionMemoryState = { available: true, enabled: true, pending: false, limit: 50, memories: [] };
+const MEMORY: api.CompanionMemoryState = { available: true, enabled: true, pending: false, sorting: false, limit: 20, memories: [] };
 
 /** Mỗi lượt Companion trả lời xong ngay bằng câu kế tiếp trong `replies`. */
 function replyWith(...replies: string[]) {
@@ -1118,7 +1118,7 @@ function replyWith(...replies: string[]) {
 
 it('Companion không báo "Peto vừa ghi nhớ" hay hỏi lại trí nhớ sau lượt; mục Trí nhớ tải lại mỗi lần mở', async () => {
   // Chủ web thấy dòng báo dưới câu trả lời là thừa (11/10/2026): ghi nhớ chỉ xem trong Cài đặt → Trí nhớ.
-  const note = { id: 7, text: 'Đang học năm hai ngành điện', created_at: 100, updated_at: 100 };
+  const note = { id: 7, section: 'you', title: 'Hồ sơ', summary: 'Đang học năm hai ngành điện', details: ['Đang học năm hai ngành điện'], fixed: true, legacy: false, created_at: 100, updated_at: 100 };
   vi.mocked(api.getCompanionMemory)
     .mockResolvedValueOnce(MEMORY) // mở mục Trí nhớ lần đầu
     .mockResolvedValue({ ...MEMORY, memories: [note] });
@@ -1157,7 +1157,7 @@ it('hộp Bắt đầu lại nói rõ ghi nhớ vẫn giữ khi đang có ghi nh
 
   // Có ghi nhớ (vd. vừa ghi ở lượt trước): mở lại hộp thì hỏi lại máy chủ và nhắc.
   vi.mocked(api.getCompanionMemory).mockResolvedValue({ ...MEMORY, memories: [
-    { id: 7, text: 'Nuôi một con mèo tên Mướp', created_at: 100, updated_at: 100 },
+    { id: 7, section: 'you', title: 'Hồ sơ', summary: 'Nuôi một con mèo tên Mướp', details: ['Nuôi một con mèo tên Mướp'], fixed: true, legacy: false, created_at: 100, updated_at: 100 },
   ] });
   fireEvent.click(screen.getByRole('button', { name: 'Bắt đầu lại' }));
   expect(await within(dialog).findByText(kept)).toBeTruthy();

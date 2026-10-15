@@ -50,7 +50,7 @@ beforeEach(() => {
     : []);
   vi.mocked(api.listImagineJobs).mockResolvedValue([]);
   vi.mocked(api.listAgentDevices).mockResolvedValue({ devices: [], steps_used: 0, steps_limit: 200 });
-  vi.mocked(api.getCompanionMemory).mockResolvedValue({ available: true, enabled: true, pending: false, limit: 50, memories: [] });
+  vi.mocked(api.getCompanionMemory).mockResolvedValue({ available: true, enabled: true, pending: false, sorting: false, limit: 20, memories: [] });
   vi.mocked(documentApi.listDocuments).mockResolvedValue({ documents: [] });
   Element.prototype.scrollTo = vi.fn();
 });

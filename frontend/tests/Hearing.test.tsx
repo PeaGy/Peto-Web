@@ -84,7 +84,7 @@ beforeEach(() => {
   clearCompanionTimings();
   vi.resetAllMocks();
   vi.mocked(projectApi.listProjects).mockResolvedValue([]);
-  vi.mocked(api.getCompanionMemory).mockResolvedValue({ available: true, enabled: true, pending: false, limit: 50, memories: [] });
+  vi.mocked(api.getCompanionMemory).mockResolvedValue({ available: true, enabled: true, pending: false, sorting: false, limit: 20, memories: [] });
   localStorage.clear();
   loadHearingSettings();
   FakeRecognition.instances = [];

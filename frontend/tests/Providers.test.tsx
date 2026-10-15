@@ -40,7 +40,7 @@ beforeEach(() => {
   vi.mocked(api.getProfile).mockResolvedValue({ profile: { full_name: '', nickname: '', occupation: '', instructions: '' },
     occupations: [], limits: { full_name: 80, nickname: 40, instructions: 1500 } });
   vi.mocked(api.getCompanion).mockResolvedValue({ conversation_id: null, messages: [] });
-  vi.mocked(api.getCompanionMemory).mockResolvedValue({ available: true, enabled: true, pending: false, limit: 50, memories: [] });
+  vi.mocked(api.getCompanionMemory).mockResolvedValue({ available: true, enabled: true, pending: false, sorting: false, limit: 20, memories: [] });
   vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers) => {
     handlers.onMeta?.('C1', 'low'); handlers.onDelta?.('Hello.'); handlers.onDone?.();
   });

@@ -71,6 +71,7 @@ from .memory import (
     apply_memory_changes,
     delete_memory,
     clear_memories,
+    forget_summaries,
     companion_summary,
     messages_before_window,
     save_companion_summary,

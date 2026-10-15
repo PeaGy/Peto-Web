@@ -29,7 +29,7 @@ label,
 
 :where(button, .discord-button, .alt-login):active:not(
   :disabled, .nav-item, .conv-open, .account, .popup-menu > :is(button, a), .settings-nav-item, .work-head, .sidebar-backdrop,
-  .composer-options > button, .effort-option, .jump-latest
+  .composer-options > button, .effort-option, .jump-latest, .memory-row-main
 ) { transform: scale(0.97); }
 
 /* Rê chuột lên nút, kiểu Grok (chủ web gửi ảnh ngày 2026-10-11): nền đổi một bậc, không lóe viền màu nhấn.

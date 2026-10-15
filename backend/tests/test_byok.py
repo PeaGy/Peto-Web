@@ -58,7 +58,8 @@ async def send(client, message: str, provider: dict | None = None, headers: dict
 
 
 async def test_companion_turn_uses_own_key_without_memory(client, calls, monkeypatch):
-    await db.apply_memory_changes(TEST_OWNER, add=["Thích trà sữa"], update={}, remove=[], cursor=0, limit=50)
+    await db.apply_memory_changes(TEST_OWNER, upserts=[companion_memory.new_entry("topic", "Sở thích", "", ["Thích trà sữa"])],
+                                  remove=[], limit=companion_memory.MAX_ENTRIES)
     remembered: list[str] = []
     monkeypatch.setattr(companion_memory, "remember", lambda owner, window=0: remembered.append(owner) or _done())
     status, events = await send(client, "hello there", {"id": "deepseek", "model": "deepseek-chat"},

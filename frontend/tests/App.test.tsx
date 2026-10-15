@@ -42,7 +42,7 @@ beforeEach(() => {
   vi.mocked(projectApi.listProjects).mockResolvedValue([]);
   vi.mocked(api.conversationVersions).mockResolvedValue([]);
   vi.mocked(api.updateConversation).mockResolvedValue();
-  vi.mocked(api.getCompanionMemory).mockResolvedValue({ available: true, enabled: true, pending: false, limit: 50, memories: [] });
+  vi.mocked(api.getCompanionMemory).mockResolvedValue({ available: true, enabled: true, pending: false, sorting: false, limit: 20, memories: [] });
   localStorage.clear();
   // Mã Peto Agent còn sót từ test trước sẽ mở hộp kết nối trong mọi test sau.
   sessionStorage.clear();
