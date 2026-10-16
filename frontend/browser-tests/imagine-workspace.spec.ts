@@ -1,5 +1,4 @@
 import { expect, test, type Page, type Locator } from '@playwright/test';
-import { readFile, copyFile } from 'node:fs/promises';
 import { mockPeto, noPageOverflow } from './fixtures';
 
 async function clickTool(viewer: Locator, name: string) {
@@ -20,25 +19,6 @@ async function drawDesktop(page: Page, viewer: Locator) {
   await page.mouse.down();
   await page.mouse.move(rect.x + rect.width * .75, rect.y + rect.height / 2, { steps: 8 });
   await page.mouse.up();
-}
-
-async function drawSelection(page: Page, viewer: Locator, touch: boolean, x = .5, y = .5) {
-  const rect = (await viewer.getByLabel('Tô vùng chọn trên ảnh').boundingBox())!;
-  const point = { x: rect.x + rect.width * x, y: rect.y + rect.height * y };
-  if (touch) {
-    const session = await page.context().newCDPSession(page);
-    await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [point] });
-    await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-    await session.detach();
-  } else {
-    await page.mouse.move(point.x, point.y); await page.mouse.down(); await page.mouse.up();
-  }
-}
-
-async function selectionDownload(page: Page, viewer: Locator, label: string) {
-  const [download] = await Promise.all([page.waitForEvent('download'), viewer.getByRole('button', { name: label, exact: true }).click()]);
-  const path = (await download.path())!;
-  return { path, data: `data:image/png;base64,${(await readFile(path)).toString('base64')}` };
 }
 async function swipeLeft(page: Page, list: Locator) {
   const touch = await page.context().newCDPSession(page), row = (await list.boundingBox())!;
@@ -1247,114 +1227,4 @@ test('lịch sử sát sidebar, cuộn riêng, mở lại URL và sửa tiếp t
   await page.getByRole('button', { name: 'Thư viện', exact: true }).last().click();
   const library = page.getByRole('dialog', { name: 'Thư viện ảnh' });
   await expect(library.locator('.library-tile')).toHaveCount(2);
-});
-
-test('vùng chọn: mask độc lập, đảo đúng alpha, thêm bớt sau đảo, hoàn tác và đặt lại', async ({ page }, testInfo) => {
-  const { posts, saves } = await setup(page);
-  await page.goto('/imagine/portrait/portrait');
-  const viewer = page.getByRole('dialog', { name: 'Xem ảnh đã tạo', exact: true });
-  await clickTool(viewer, 'Vùng chọn');
-  await expect(viewer.getByRole('button', { name: 'Tải PNG vùng chọn' })).toBeDisabled();
-  await expect(viewer.getByRole('button', { name: 'Gửi chỉnh sửa ảnh' })).not.toBeVisible();
-  await drawSelection(page, viewer, testInfo.project.name === 'mobile');
-  await expect(viewer.getByRole('img', { name: 'Xem trước vùng chọn' })).toBeVisible();
-  const before = await selectionDownload(page, viewer, 'Tải mask');
-  await viewer.getByRole('button', { name: 'Đảo vùng chọn', exact: true }).click();
-  const inverted = await selectionDownload(page, viewer, 'Tải mask');
-  const difference = await page.evaluate(async ({ first, second }) => {
-    async function pixels(src: string) {
-      const image = new Image(); image.src = src; await image.decode();
-      const canvas = document.createElement('canvas'); canvas.width = image.width; canvas.height = image.height;
-      const ctx = canvas.getContext('2d')!; ctx.drawImage(image, 0, 0);
-      return { width: image.width, height: image.height, data: ctx.getImageData(0, 0, image.width, image.height).data };
-    }
-    const [a, b] = await Promise.all([pixels(first), pixels(second)]);
-    let wrong = 0;
-    for (let index = 3; index < a.data.length; index += 4) if (Math.abs(a.data[index] + b.data[index] - 255) > 1) wrong++;
-    return { width: a.width, height: a.height, wrong };
-  }, { first: before.data, second: inverted.data });
-  expect(difference).toEqual({ width: 960, height: 1440, wrong: 0 });
-  await drawSelection(page, viewer, testInfo.project.name === 'mobile');
-  await viewer.getByRole('button', { name: 'Bớt vùng', exact: true }).click();
-  await drawSelection(page, viewer, testInfo.project.name === 'mobile', .75, .25);
-  const refined = await selectionDownload(page, viewer, 'Tải mask');
-  const values = await page.evaluate(async src => {
-    const image = new Image(); image.src = src; await image.decode();
-    const canvas = document.createElement('canvas'); canvas.width = image.width; canvas.height = image.height;
-    const context = canvas.getContext('2d')!; context.drawImage(image, 0, 0);
-    return { added: context.getImageData(480, 720, 1, 1).data[3], removed: context.getImageData(720, 360, 1, 1).data[3] };
-  }, refined.data);
-  expect(values).toEqual({ added: 255, removed: 0 });
-  await viewer.getByRole('button', { name: 'Hoàn tác vùng chọn', exact: true }).click();
-  await expect(viewer.getByRole('button', { name: 'Làm lại vùng chọn', exact: true })).toBeEnabled();
-  await viewer.getByRole('button', { name: 'Làm lại vùng chọn', exact: true }).click();
-  expect((await selectionDownload(page, viewer, 'Tải mask')).data).toBe(refined.data);
-  await page.screenshot({ path: testInfo.outputPath('selection-inverted.png') });
-  await viewer.getByRole('button', { name: 'Đặt lại vùng chọn', exact: true }).click();
-  await expect(viewer.getByRole('button', { name: 'Tải PNG vùng chọn' })).toBeDisabled();
-  await expect(viewer.getByRole('img', { name: 'Xem trước vùng chọn' })).toHaveCount(0);
-  await noPageOverflow(page); expect(posts).toHaveLength(0); expect(saves).toHaveLength(0);
-});
-
-test('vùng chọn: PNG thật thành tham chiếu, giữ nháp và không gọi AI trước khi gửi', async ({ page }, testInfo) => {
-  const { posts, saves } = await setup(page);
-  await page.goto('/imagine/portrait/portrait');
-  const viewer = page.getByRole('dialog', { name: 'Xem ảnh đã tạo', exact: true });
-  await viewer.getByLabel('Mô tả chỉnh sửa ảnh').fill('Bản nháp vẫn còn');
-  await clickTool(viewer, 'Vùng chọn');
-  await drawSelection(page, viewer, testInfo.project.name === 'mobile');
-  await expect(viewer.getByRole('button', { name: 'Tải PNG vùng chọn' })).toBeEnabled();
-  const cutout = await selectionDownload(page, viewer, 'Tải PNG vùng chọn');
-  await copyFile(cutout.path, testInfo.outputPath('selection-cutout.png'));
-  const pixels = await page.evaluate(async src => {
-    const image = new Image(); image.src = src; await image.decode();
-    const canvas = document.createElement('canvas'); canvas.width = image.width; canvas.height = image.height;
-    const ctx = canvas.getContext('2d')!; ctx.drawImage(image, 0, 0);
-    const data = ctx.getImageData(0, 0, image.width, image.height).data;
-    let clear = 0, solid = 0;
-    for (let i = 3; i < data.length; i += 4) { if (!data[i]) clear++; if (data[i] === 255) solid++; }
-    return { width: image.width, height: image.height, clear, solid };
-  }, cutout.data);
-  expect(pixels.width).toBeLessThan(960); expect(pixels.height).toBeLessThan(1440);
-  expect(pixels.clear).toBeGreaterThan(0); expect(pixels.solid).toBeGreaterThan(0);
-  await page.screenshot({ path: testInfo.outputPath('selection-sidebar.png') });
-  if (testInfo.project.name === 'pc') {
-    await viewer.getByRole('button', { name: 'Phóng to ảnh', exact: true }).click();
-    expect((await selectionDownload(page, viewer, 'Tải PNG vùng chọn')).data).toBe(cutout.data);
-  }
-  await page.setViewportSize(testInfo.project.name === 'mobile' ? { width: 320, height: 740 } : { width: 900, height: 700 });
-  await page.evaluate(() => { document.documentElement.dataset.theme = 'light'; document.documentElement.dataset.motion = 'reduced'; });
-  await noPageOverflow(page);
-  expect((await selectionDownload(page, viewer, 'Tải PNG vùng chọn')).data).toBe(cutout.data);
-  await page.screenshot({ path: testInfo.outputPath('selection-sidebar-light-narrow.png') });
-  await page.keyboard.press('Escape');
-  await expect(viewer).toBeVisible();
-  await expect(viewer.getByLabel('Mô tả chỉnh sửa ảnh')).toHaveValue('Bản nháp vẫn còn');
-  await clickTool(viewer, 'Vùng chọn');
-  await expect(viewer.getByRole('button', { name: 'Tải PNG vùng chọn' })).toBeEnabled();
-  expect(posts).toHaveLength(0); expect(saves).toHaveLength(0);
-  await viewer.getByRole('button', { name: 'Dùng vùng chọn làm tham chiếu', exact: true }).click();
-  await expect(viewer).not.toBeVisible();
-  await expect(page.getByRole('img', { name: 'Ảnh gốc để chỉnh sửa', exact: true })).toHaveAttribute('src', cutout.data);
-  expect(posts).toHaveLength(0); expect(saves).toHaveLength(0);
-});
-
-test('vùng chọn: bản khác và F5 không nhận nhầm mask; phiên bản, Back và nháp giữ hành vi cũ', async ({ page }, testInfo) => {
-  const { posts } = await setup(page);
-  await page.goto('/imagine/portrait/portrait');
-  const viewer = page.getByRole('dialog', { name: 'Xem ảnh đã tạo', exact: true });
-  await clickTool(viewer, 'Vùng chọn');
-  await drawSelection(page, viewer, testInfo.project.name === 'mobile');
-  await expect(viewer.getByRole('button', { name: 'Tải PNG vùng chọn' })).toBeEnabled();
-  await page.keyboard.press('Escape');
-  await clickWorkspaceAction(viewer, 'Sau →');
-  await expect(page).toHaveURL(/\/imagine\/portrait-two\/portrait-two$/);
-  await clickTool(viewer, 'Vùng chọn');
-  await expect(viewer.getByRole('button', { name: 'Tải PNG vùng chọn' })).toBeDisabled();
-  await page.goBack();
-  await expect(page).toHaveURL(/\/imagine\/portrait\/portrait$/);
-  await page.reload();
-  await clickTool(viewer, 'Vùng chọn');
-  await expect(viewer.getByRole('button', { name: 'Tải PNG vùng chọn' })).toBeDisabled();
-  await noPageOverflow(page); expect(posts).toHaveLength(0);
 });

@@ -181,11 +181,6 @@ padding inside cards and dialogs is 16–24px.
 | Composer textarea | min 44, max 180 (`field-sizing: content`) |
 | Imagine | 38px desktop controls; details in the Imagine section of `CLAUDE.md` |
 
-Imagine's manual selection tool (selected prototype, 2026-10-16) uses the existing right panel, rounded rectangular
-toolbar buttons and neutral bordered actions. The selection preview uses a small transparency checker; it is functional,
-not a decorative background. On mobile the controls live in the existing bottom tool dock, with internal scrolling on
-short screens. It does not add another navigation sidebar or imply automatic object detection.
-
 **Touch screens: every target is at least 44×44.** Add new classes to `shared/styles/touchTargets.css` inside its
 `@media (pointer: coarse)` block; do not enlarge them on desktop.
 

@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 
-export type StudioIconName = 'back' | 'grid' | 'search' | 'check' | 'download' | 'trash' | 'brush' | 'selection' | 'palette' | 'crop' | 'info' | 'plus' | 'minus' | 'undo' | 'redo' | 'share' | 'close' | 'eraser' | 'panel' | 'heart' | 'arrowUp' | 'aspect';
+export type StudioIconName = 'back' | 'grid' | 'search' | 'check' | 'download' | 'trash' | 'brush' | 'palette' | 'crop' | 'info' | 'plus' | 'minus' | 'undo' | 'redo' | 'share' | 'close' | 'eraser' | 'panel' | 'heart' | 'arrowUp' | 'aspect';
 const paths: Record<StudioIconName, ReactNode> = {
   back: <path d="m12 5-7 7 7 7M5 12h14" />,
   grid: <><rect x="4" y="4" width="6" height="6" rx="1.5" /><rect x="14" y="4" width="6" height="6" rx="1.5" /><rect x="4" y="14" width="6" height="6" rx="1.5" /><rect x="14" y="14" width="6" height="6" rx="1.5" /></>,
@@ -11,7 +11,6 @@ const paths: Record<StudioIconName, ReactNode> = {
   brush: <><path d="m9 14 9-10a2 2 0 0 1 3 3L11 16M9 14l2 2" /><path d="M9 14c-4-1-5 2-5 6 4 0 7-1 7-4" /></>,
   palette: <><circle cx="12" cy="12" r="9" /><path d="M12 3v9l8 4M12 12l-8 4m8-4v9M5 6l7 6 7-6" /></>,
   crop: <path d="M6 3v15h15M3 6h15v15" />,
-  selection: <><rect x="4" y="4" width="16" height="16" rx="4" strokeDasharray="3 3" /><path d="m9 12 2 2 4-4" /></>,
   info: <><rect x="4" y="4" width="7" height="7" rx="2" /><rect x="14" y="7" width="6" height="6" rx="2" /><rect x="7" y="14" width="6" height="6" rx="2" /></>,
   plus: <path d="M12 5v14M5 12h14" />, minus: <path d="M5 12h14" />,
   undo: <path d="m8 4-5 5 5 5M3 9h11a6 6 0 0 1 0 12" />, redo: <path d="m16 4 5 5-5 5M21 9H10a6 6 0 0 0 0 12" />,
