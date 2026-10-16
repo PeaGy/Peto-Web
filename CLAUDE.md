@@ -1181,6 +1181,20 @@ chat answer into Word, which broke overlines into "xˉ".
 
 ### Imagine (image generation)
 
+**Selected tools prototype promoted (owner request, 2026-10-16):** the right-hand panel remains the chosen layout;
+desktop tools use its compact rounded toolbar. `useImageSelection.tsx` / `imageSelection.css` add a separate manual
+"Vùng chọn" tool: add/subtract strokes, invert, undo/redo/reset, PNG cutout export, full-size alpha mask export, and
+append the cutout through the existing reference workflow. Preview masks are bounded to 1024px on the long edge;
+export renders normalized strokes at the source dimensions, limited to 16 MP and 8 MiB PNG. History is bounded and
+local to the current source/version while the viewer remains open; closing/reloading does not persist selections.
+Changing tools retains the mask and existing controlled prompt; changing the image never reuses its mask. The edit
+composer stays mounted but hidden during selection, so masking cannot be mistaken for an AI inpainting request.
+Selection exports never call AI or save an image revision. Brush annotation, crop persistence, URLs/history and the
+existing generated-image lifecycle stay separate. Mobile uses its existing tool dock, scrolls controls internally and
+keeps 44px touch targets. The old `frontend/prototypes/imagine-tools` surface and its sample assets were removed after
+promotion. No precomputed Grok/SAM masks, SAM runtime/model, automatic Segments, background-removal or precise AI edit
+capability is shipped in this change. Those remain gated by engine/quality testing; phase 1 (`@` and Tags) is separate.
+
 **Gallery generation UX (owner request, 2026-10-15):** `GenerationPreview` keeps the chosen ratio and tile positions
 from pending to decoded final images. Auto uses a neutral square unless a pending reference's ratio is available;
 read that ratio from the displayed source, never eagerly download reference images across historical jobs.
