@@ -647,8 +647,11 @@ này" đưa tệp về đúng lúc đó; danh sách tệp sẽ đổi hiện tr�
 
 ### Hướng dẫn dự án và kiểm tra sau sửa
 
-Một yêu cầu chạy tối đa 40 bước. Từ 0.25.0 (theo opencode), chạm mức đó thì Peto dùng thêm một bước không có công cụ để
-tóm tắt: đã làm được gì, còn gì dở, nên làm gì tiếp; rồi bạn gõ "làm tiếp" nếu muốn. Máy chủ cũ thì chỉ có lời nhắc.
+Từ 0.28.4, phiên Peto thông thường không còn trần 40 bước cho mỗi yêu cầu. Peto tiếp tục tới khi trả lời xong hoặc
+bạn dừng bằng Ctrl+C; hạn mức ngày, lỗi kết nối/lưu phiên và giới hạn ngữ cảnh vẫn được xử lý như trước. Không cần
+thêm biến `.env`. Theo cách OpenCode áp dụng `agent.steps` tùy chọn, bộ chấm tự động có thể đặt ngân sách riêng bằng
+`Session(max_steps=N)`; khi chạm ngân sách này, Peto dùng thêm một lượt không công cụ để tóm tắt phần đã làm và còn dở
+(cần máy chủ hỗ trợ `wrapup`). Ngân sách bài thi không áp dụng sang phiên thông thường.
 
 `AGENTS.md` ở gốc dự án được đọc lại ở mỗi bước. Khi đọc một tệp, Peto nhận thêm hướng dẫn trên đường từ gốc tới
 thư mục chứa tệp đó; thư mục con có phạm vi riêng, không áp dụng sang thư mục ngang hàng. Khi hướng dẫn mới xuất hiện
@@ -830,8 +833,8 @@ không bao giờ bị đổi, và hội thoại gửi lại cho Peto vẫn là c
   test cũng chạy code nằm trong dự án, nên hãy xem kỹ các thay đổi trước khi đồng ý chạy. Lệnh nền không có thời hạn
   nhưng bị dừng khi bạn đóng peto, kể cả khi đóng hẳn cửa sổ terminal. Chạy lệnh trong thư mục con cần VPS và CLI từ
   bản 0.9.8; CLI cũ hơn vẫn nhận công cụ như trước.
-- **Giới hạn bước:** mỗi yêu cầu tối đa 40 bước; mỗi tài khoản có số bước mỗi ngày do máy chủ đặt (mặc định 200). Ở mức
-  suy nghĩ cao, mỗi bước tính 2; với 5.6 Terra nhân thêm 2, với 6 Sol nhân thêm 4.
+- **Giới hạn bước:** phiên thông thường không có trần bước cho mỗi yêu cầu; mỗi tài khoản có số bước mỗi ngày do máy
+  chủ đặt (mặc định 200). Ở mức suy nghĩ cao, mỗi bước tính 2; với 5.6 Terra nhân thêm 2, với 6 Sol nhân thêm 4.
 
 ## Dữ liệu gửi đi
 

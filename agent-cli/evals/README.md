@@ -6,6 +6,10 @@ bằng con số thay vì cảm giác, và so được trước với sau mỗi l
 Peto chạy bằng đúng mã của `agent-cli` (Session, Tools) và máy chủ thật. Chỉ có câu hỏi quyền là được trả lời tự động
 theo luật của bài thi thay cho người dùng.
 
+Từ CLI 0.28.4, phiên thông thường không giới hạn số bước mỗi yêu cầu. Bộ thi vẫn truyền `MAX_STEPS` của từng bài vào
+`Session(max_steps=...)`, không thay biến toàn cục của vòng làm việc. Ngân sách này đếm lượt chính; các lượt tóm tắt
+ngữ cảnh và lượt `wrapup` có thể dùng thêm bước tài khoản. Hạn giờ của bộ thi vẫn áp dụng.
+
 ## Các bài
 
 | Bài | Loại | Giống việc thật nào |

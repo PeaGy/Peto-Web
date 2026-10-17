@@ -24,7 +24,6 @@ from .tools import Tools
 from .session_protocol import INTERRUPTED_RESULT, interrupted_items
 from .workspace import Workspace, WorkspaceError
 
-MAX_STEPS_PER_TASK = 40
 # Hội thoại tới ngần này mục hoặc ngần này ký tự thì Peto tự tóm tắt phần cũ trước bước kế tiếp.
 COMPACT_ITEMS = 180
 COMPACT_CHARS = 200_000
@@ -169,13 +168,18 @@ class TaskLog:
 
 class Session:
     def __init__(self, client: Client, workspace: Workspace, ui: AgentUI, *, log: TaskLog | None = None,
-                 effort: str = "medium", model: str = "peto", model_step_cost: int = 1):
+                 effort: str = "medium", model: str = "peto", model_step_cost: int = 1,
+                 max_steps: int | None = None):
+        if max_steps is not None and (type(max_steps) is not int or max_steps < 1):
+            raise ValueError("Giới hạn bước phải là số nguyên dương hoặc None.")
         self.client = client
         self.ws = workspace
         self.ui = ui
         self.tools = Tools(workspace, ui)
         self.log = log
         self.effort = effort
+        # Phiên thường không giới hạn bước; bộ chấm có thể đặt ngân sách riêng cho mỗi yêu cầu của phiên đó.
+        self.max_steps = max_steps
         # Model chọn bằng /model, và số bước mỗi lần gọi model đó (trước khi nhân mức suy nghĩ).
         self.model = model
         self.model_step_cost = model_step_cost
@@ -794,10 +798,13 @@ class Session:
         pending: list[dict] = []
         verification_reminded = False
         compact_failed = False
+        step_limit = self.max_steps
+        steps = 0
         try:
             # Nhận yêu cầu phải được lưu trước lần gọi model đầu, kể cả khi đóng cửa sổ lúc đang chờ phản hồi.
             self._save_progress()
-            for _ in range(MAX_STEPS_PER_TASK):
+            while step_limit is None or steps < step_limit:
+                steps += 1
                 if not compact_failed and (len(self.items) >= COMPACT_ITEMS or context_size(self.items) > COMPACT_CHARS):
                     compact_failed = not self.compact(propagate_cancel=True)
                 if len(self.items) >= 270:
@@ -858,7 +865,7 @@ class Session:
             else:
                 outcome = "limit"
                 self._wrap_up()
-                self.ui.line(f'Peto đã làm {MAX_STEPS_PER_TASK} bước trong yêu cầu này nên tạm dừng. Gõ "làm tiếp" nếu '
+                self.ui.line(f'Peto đã làm {step_limit} bước trong yêu cầu này nên tạm dừng. Gõ "làm tiếp" nếu '
                              "muốn Peto làm tiếp.", "yellow")
         except WorkspaceError as err:
             outcome = "error"
@@ -895,7 +902,7 @@ class Session:
                 self._name_conversation()
 
     def _wrap_up(self) -> None:
-        """Hết bước của yêu cầu (CLI 0.25.0, theo opencode): một lượt không công cụ để Peto tóm tắt đã làm gì, còn gì.
+        """Chạm ngân sách được đặt riêng: một lượt không công cụ để Peto tóm tắt đã làm gì, còn gì.
         Tốn một bước như thường; máy chủ cũ không có lượt này thì chỉ in lời nhắc như trước."""
         if "wrapup" not in self.tools.features:
             return

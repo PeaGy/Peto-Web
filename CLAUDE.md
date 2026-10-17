@@ -1,5 +1,17 @@
 # CLAUDE.md
 
+## Optional per-request step budget (2026-10-17; CLI 0.28.4)
+
+The owner explicitly requested removing the fixed 40-step interruption before the next GTA test. Interactive
+Session now defaults to max_steps=None, matching the optional agent.steps check in the pinned OpenCode CLI engine
+(`packages/core/src/session/runner/llm.ts`). Only an explicit positive Session(max_steps=N) budget triggers wrapup
+and the continue prompt. Evals pass their task budget into that session, never mutate a global loop limit.
+Daily account quota, Ctrl+C, retry limits, compaction/context guards, save failures, permissions and repair guards
+remain in effect. No .env setting is needed. This source change does not install, deploy or start the GTA task.
+Regression coverage runs 45 successful, distinct read tools before completion, quota denial or Ctrl+C, verifies
+saved tool results, and checks that an eval still stops at its own budget with a wrapup turn. Model calls are mocked.
+Validation: 157 related CLI tests (fewer_steps, harness_boundaries, loop_client, evals) and 5 wheel/install tests pass.
+
 ## OpenCode harness comparison (2026-10-17; CLI 0.28.3 source only)
 
 The owner requested an offline clone and detailed harness/function comparison. Reference checkout:
@@ -3432,7 +3444,8 @@ results in the next step. The server stores no conversation (`store=False`), and
     result was cut (run) or a read was cut or lost bytes (job, else deleted at `stop_all`); the result gains `output_id`.
     `read_output(output_id, pattern, start_line, end_line)` is appended last: regex search (40 matches) or 400 lines, no
     permission. `AGENT_OUTPUT_PROMPT` explains it; `run_command`'s schema is unchanged.
-  - **Wrap-up turn** (`wrapup`): after `MAX_STEPS_PER_TASK` the CLI sends `context.purpose = "wrapup"`
+  - **Wrap-up turn** (`wrapup`): when an explicit `Session(max_steps=N)` budget is reached, the CLI sends
+    `context.purpose = "wrapup"` (since 0.28.4 interactive sessions have no default step ceiling)
     (`Session._wrap_up`); the reply is shown and appended, then the old "gõ làm tiếp" line. Server: normal `_instructions`
     with `extra=WRAPUP_PROMPT` placed before the time block (cache prefix), normal step cost, `agent_step(final=True)`:
     xAI gets `tools=[]` (it rejects `tool_choice` none without tools), OpenAI and Claude keep the tools with `tool_choice`

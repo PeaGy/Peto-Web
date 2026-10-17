@@ -12,7 +12,7 @@ import json
 import pytest
 from conftest import FakeUI
 
-from peto_agent import loop
+from peto_agent import history, loop
 from peto_agent.client import ApiError
 from peto_agent.loop import Session
 from peto_agent.tools import FEATURES, NEW_FEATURES, READ_MORE_CHARS, Tools
@@ -176,8 +176,8 @@ def quick_retries(monkeypatch):
     return waits
 
 
-def session(project, replies, features=("wrapup",)):
-    work = Session(Client(replies), Workspace(project), FakeUI())
+def session(project, replies, features=("wrapup",), *, max_steps=None):
+    work = Session(Client(replies), Workspace(project), FakeUI(), max_steps=max_steps)
     work.tools.features = [*FEATURES, *features]
     work.auto_title = False
     return work
@@ -230,12 +230,43 @@ def test_ctrl_c_while_waiting_stops_the_request(project, monkeypatch):
 
 # ---- Hết bước: lượt tóm tắt
 
-def test_the_step_limit_ends_with_a_wrapup_turn(project, monkeypatch):
-    monkeypatch.setattr(loop, "MAX_STEPS_PER_TASK", 2)
+@pytest.mark.parametrize(("ending", "outcome"), [
+    (done("Đã làm xong yêu cầu dài."), "done"),
+    (ApiError(429, "Hôm nay đã dùng hết bước."), "error"),
+    (KeyboardInterrupt(), "stopped"),
+])
+def test_interactive_work_can_pass_40_steps_and_still_finish_or_stop(project, monkeypatch, ending, outcome):
+    replies = []
+    for number in range(45):
+        folder = f"phan-{number}"
+        (project / folder).mkdir()
+        call = {"type": "function_call", "call_id": str(number), "name": "list_files",
+                "arguments": args(path=folder, depth=None)}
+        replies.append([{"type": "done", "output": [call], "usage": {}}])
+    work = session(project, [*replies, ending])
+    outcomes = []
+    monkeypatch.setattr(work, "_summary", lambda elapsed, result: outcomes.append(result))
+    work.run_task("Làm việc dài, giữ kết quả đã thực hiện.")
+    assert len(work.client.bodies) == 46 and outcomes == [outcome]
+    assert all(body["context"].get("purpose") != "wrapup" for body in work.client.bodies)
+    assert 'Gõ "làm tiếp"' not in work.ui.text and not work.can_retry
+    saved = history.load(project, work.client.server)
+    outputs = [item for item in saved.items if item.get("type") == "function_call_output"]
+    assert [item["call_id"] for item in outputs] == [str(number) for number in range(45)]
+    assert all("error" not in json.loads(item["output"]) for item in outputs)
+    if outcome == "error":
+        assert "Hôm nay đã dùng hết bước." in work.ui.text
+    elif outcome == "stopped":
+        assert "Đã dừng yêu cầu" in work.ui.text
+    else:
+        assert "Đã làm xong yêu cầu dài." in work.ui.text
+
+
+def test_an_explicit_step_limit_ends_with_a_wrapup_turn(project):
     call = {"type": "function_call", "call_id": "1", "name": "list_files", "arguments": args(path=".", depth=None)}
     working = [{"type": "meta", "steps_used": 1}, {"type": "done", "output": [call], "usage": {}}]
     work = session(project, [copy.deepcopy(working), copy.deepcopy(working),
-                             done("Đã chạm giới hạn bước; còn lại: viết test.", "wrapup")])
+                             done("Đã chạm giới hạn bước; còn lại: viết test.", "wrapup")], max_steps=2)
     work.run_task("làm việc dài")
     wrapup = work.client.bodies[-1]
     assert wrapup["context"]["purpose"] == "wrapup"
@@ -244,9 +275,8 @@ def test_the_step_limit_ends_with_a_wrapup_turn(project, monkeypatch):
     assert work.items[-1]["content"][0]["text"].startswith("Đã chạm giới hạn")
 
 
-def test_an_old_server_gets_no_wrapup_turn(project, monkeypatch):
-    monkeypatch.setattr(loop, "MAX_STEPS_PER_TASK", 1)
+def test_an_old_server_gets_no_wrapup_turn(project):
     call = {"type": "function_call", "call_id": "1", "name": "list_files", "arguments": args(path=".", depth=None)}
-    work = session(project, [[{"type": "done", "output": [call], "usage": {}}]], features=())
+    work = session(project, [[{"type": "done", "output": [call], "usage": {}}]], features=(), max_steps=1)
     work.run_task("làm việc dài")
     assert len(work.client.bodies) == 1 and 'Gõ "làm tiếp"' in work.ui.text

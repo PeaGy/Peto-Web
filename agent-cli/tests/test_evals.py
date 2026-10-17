@@ -195,6 +195,32 @@ def test_a_whole_task_runs_scores_and_records(tmp_path, model):
     assert all(request["auth"] == "Bearer peto_token_thu" for request in server.requests)
 
 
+def test_an_eval_keeps_its_own_step_budget(tmp_path, model):
+    url, server = model
+    task = harness.load_tasks(["sua-loi-checksum"])[0]
+    task.max_steps = 2
+
+    def working(path, body):
+        if path == "/api/agent/me":
+            return 200, {"steps_used": 0, "steps_limit": 200}
+        if body["context"].get("purpose") == "wrapup":
+            output = [message("Đã chạm ngân sách bài thi; chưa sửa checksum.")]
+        else:
+            number = sum(item.get("type") == "function_call_output" for item in body["input"])
+            output = [call(number, "list_files", path=".")]
+        return 200, [{"type": "done", "output": output, "usage": {}}]
+
+    server.reply = working
+    record = harness.run_task(task, Client(url, "peto_token_thu"), work=tmp_path / "work", out=tmp_path / "out",
+                              model="peto", effort="low", step_cost=1, timeout=120,
+                              features=[*FEATURES, "wrapup"])
+    assert record["outcome"] == "limit" and record["max_steps"] == 2 and record["steps"] == 3
+    assert [entry["name"] for entry in record["calls"]] == ["list_files", "list_files"]
+    assert "chưa sửa checksum" in record["reply"] and not record["passed"]
+    steps = [request for request in server.requests if request["path"] == "/api/agent/step"]
+    assert steps[-1]["body"]["context"]["purpose"] == "wrapup"
+
+
 PATCH = ("*** Begin Patch\n*** Update File: savetool/checksum.py\n@@ def checksum(data: bytes) -> int:\n"
          "-    for byte in data[:-1]:\n+    for byte in data:\n*** End Patch")
 ASK = {"question": "Sửa luôn hay chỉ báo lỗi?", "header": "Cách làm", "multiple": None,

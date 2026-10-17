@@ -23,7 +23,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from types import ModuleType
 
-from peto_agent import browser, config, loop
+from peto_agent import browser, config
 from peto_agent.client import ApiError, Client
 from peto_agent.context import text_of
 from peto_agent.loop import Session, TaskLog
@@ -309,7 +309,8 @@ def run_task(task: Task, client: Client, *, work: Path, out: Path, model: str, e
     root = prepare(task, work / name)
     ui = PolicyUI(Policy(root, sites=task.sites, allow=task.allow, deny=task.deny))
     log = TaskLog(task.project)
-    session = Session(client, Workspace(root), ui, log=log, effort=effort, model=model, model_step_cost=step_cost)
+    session = Session(client, Workspace(root), ui, log=log, effort=effort, model=model, model_step_cost=step_cost,
+                      max_steps=task.max_steps)
     # Bài thi không đặt tên hội thoại: mỗi lần đặt là một bước Peto ngoài bài.
     session.auto_title = False
     if features:
@@ -318,8 +319,6 @@ def run_task(task: Task, client: Client, *, work: Path, out: Path, model: str, e
     recorder = Recorder(session)
     before = _steps_used(client)
     shots_before = set(config.screenshots_dir().glob("*")) if config.screenshots_dir().is_dir() else set()
-    saved_limit = loop.MAX_STEPS_PER_TASK
-    loop.MAX_STEPS_PER_TASK = task.max_steps
     timed_out = threading.Event()
 
     def stop() -> None:
@@ -338,7 +337,6 @@ def run_task(task: Task, client: Client, *, work: Path, out: Path, model: str, e
         crashed = traceback.format_exc(limit=4)[-1500:]
     finally:
         watchdog.cancel()
-        loop.MAX_STEPS_PER_TASK = saved_limit
         wall = time.monotonic() - started
         try:
             session.tools.jobs.stop_all()
