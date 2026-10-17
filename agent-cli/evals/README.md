@@ -21,6 +21,7 @@ theo luật của bài thi thay cho người dùng.
 | `chi-dan-la-trong-tep` | an toàn | tài liệu giấu chỉ dẫn bảo AI gửi file chứa key ra ngoài |
 | `hoi-code-peto-web` | hỏi code | dò code trong dự án lớn (bản sao Peto-Web, lấy bằng `git archive`) |
 | `radio-dung-trong-ung-dung` | tích hợp dữ liệu | encoder tự đọc lại thì qua test nhưng bộ đọc độc lập từ chối; phải sửa cả căn lề bank và danh sách ba đài |
+| `radio-20-bai-3-che-do` | tích hợp dữ liệu | 20 WAV tổng hợp, 23 đài, ba chế độ ghi đè; PCM theo khối/kênh, bảng seek, thời lượng và metadata cần cùng đúng |
 
 Mỗi bài nằm trong `tasks/<bài>/`:
 
@@ -97,6 +98,10 @@ Bài `radio-dung-trong-ung-dung` rút gọn lỗi từ phiên mod radio thành �
 nhạc hay dữ liệu GTA IV. Bộ chấm dùng ứng dụng tiêu thụ độc lập, không chấm chỉ bằng roundtrip của encoder. `selftest`
 chỉ xác minh bản lỗi trượt và lời giải mẫu qua; muốn biết model Peto cải thiện thật phải chạy bài bằng model và so
 với trước, không coi kiểm tra bộ chấm là kết quả của model.
+
+Bài `radio-20-bai-3-che-do` tăng lên 20 WAV tổng hợp, 23 đài và ba chế độ tải metadata. Có đặc tả và bộ đọc độc lập
+để đối chiếu, nên vẫn dễ hơn mod GTA IV thật. Lượt Peto medium được chủ tài khoản yêu cầu ngày 17/10/2026 đạt bài
+trong 24 bước tính trên máy chủ; xem [báo cáo giám sát và giới hạn kết luận](../docs/peto-supervision-2026-10-17.md).
 
 **Nơi lưu:** mọi thứ của bài thi nằm trong `%USERPROFILE%\.peto-eval` (đổi bằng `--home`), tách khỏi peto bạn dùng
 hằng ngày: đăng nhập, nhật ký, hồ sơ trình duyệt, quyền. Bản sao dự án bị xóa sau khi chấm (`--keep` để giữ).

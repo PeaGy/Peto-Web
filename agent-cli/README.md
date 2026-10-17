@@ -671,6 +671,41 @@ Nhật ký từng phiên lưu ở `%LOCALAPPDATA%\PetoAgent\logs\`: yêu cầu b
 4000 ký tự, cả phần đầu lẫn phần cuối), các lệnh gọi công cụ và dòng tổng kết. Nhờ vậy xem lại được cả những lần cũ;
 tệp hội thoại cho `/resume` thì mỗi dự án giữ tối đa 50 hội thoại. Nhật ký chỉ nằm trên máy bạn.
 
+### Hợp đồng công cụ và độ bền tiến độ (0.28.3)
+
+Sau đợt [đối chiếu harness với OpenCode](docs/opencode-harness-review-2026-10-17.md), CLI kiểm kiểu tham số JSON
+theo handler trước khi hỏi quyền/thực thi. Ví dụ số dòng dạng chuỗi nhận lỗi `invalid_arguments` để Peto sửa lại,
+thay vì gây TypeError. Giữ tương thích các tham số nullable và tham số tùy chọn lạ mang null của máy chủ mới hơn.
+
+Khi không lưu được tiến độ, CLI dừng trước công cụ hoặc bước model tiếp theo và báo lỗi lưu; không tiếp tục sửa
+mà bỏ qua việc lưu. Yêu cầu mới được lưu trước lần gọi model đầu tiên. Phiên cũ có lời gọi chưa trả kết quả được
+đánh dấu bị ngắt trong bộ nhớ khi mở lại; không tự
+chạy lại công cụ và không tự ghi đè tệp gốc chỉ vì đọc phiên. Giới hạn ba lần kiểm tra lỗi áp dụng cả apply_patch.
+
+Lưu session dùng tệp tạm riêng và thử lại ngắn, có giới hạn cho lỗi chia sẻ/quyền tạm thời của Windows; lỗi kéo dài
+vẫn dừng. Chỉ thao tác thay tệp được thử lại, không chạy lại công cụ hoặc bước model.
+
+Nguồn tham chiếu OpenCode đã có trong máy; [bản đồ đọc ngoại tuyến](docs/opencode-reading-map.md) ghi phiên bản,
+commit và đường dẫn đối chiếu. Bản sửa này không đổi hạn mức, model, quyền thực thi hoặc trần bước.
+
+### Sửa giao diện đọc output và lưu phiên bị lỗi (0.28.2)
+
+Giao diện terminal từng thoát với `KeyError: 'read_output'` (và tương tự với `read_history`) ngay khi bắt đầu
+đọc output dài hoặc tra lịch sử: công cụ đã được nhận diện nhưng thiếu nhãn trạng thái. Danh sách công cụ đọc/tìm
+và nhãn bắt đầu nay dùng chung một bảng. Các công cụ này được kiểm thử qua đúng TerminalUI và Tools.
+
+Nếu lỗi lập trình làm ngắt vòng làm việc, CLI ghi kết quả là lỗi và lưu bản hội thoại dang dở với kết quả thay thế
+cho các lời gọi chưa xong, thay vì ghi “xong” rồi để lời gọi thiếu kết quả. Traceback vẫn được giữ để chẩn đoán;
+mở lại không tự chạy lại công cụ cũ. Xem [phân tích sự cố](docs/peto-read-output-crash-2026-10-17.md).
+
+### Tránh chạy thiếu lệnh nhiều dòng trên Windows (0.28.1)
+
+`run_command` và `start_command` từ chối lệnh nhiều dòng khi chọn `cmd` trên Windows, trước khi xin quyền hay chạy.
+`cmd /c` có thể bỏ phần sau dòng đầu mà vẫn báo mã thành công, kể cả nội dung nhiều dòng bên trong `python -c`.
+Peto nhận hướng dẫn dùng `shell="powershell"` với cú pháp PowerShell, hoặc ghi script rồi chạy bằng một dòng.
+Lệnh một dòng và PowerShell nhiều dòng vẫn dùng bình thường. Lỗi này được tái hiện khi giám sát bài thử
+[20 bài/23 đài/ba chế độ](docs/peto-supervision-2026-10-17.md); bản sửa nằm ở CLI, cần phát hành để máy khác nhận được.
+
 ### Giữ yêu cầu và tra lại trước tóm tắt (0.28.0)
 
 Trước khi thay phần hội thoại cũ bằng bản tóm tắt, CLI lưu bản tra cứu trong

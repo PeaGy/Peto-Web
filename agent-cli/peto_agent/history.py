@@ -23,6 +23,8 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from .config import sessions_dir
+from .atomic_file import write_text as atomic_write_text
+from .session_protocol import interrupted_items
 
 VERSION = 2
 LEGACY_VERSION = 1
@@ -117,11 +119,11 @@ def first_title(items: list[dict]) -> str:
 
 def save(root: Path, server: str, items: list[dict], *, session_id: str, title: str = "", retryable: bool = False,
          model: str = "peto", interrupted: bool = False, saved_at: float | None = None,
-         snapshots: dict | None = None) -> None:
-    """Ghi đè một hội thoại của thư mục. Ghi đĩa lỗi thì bỏ qua: mất bản lưu không được làm hỏng phiên đang chạy.
+         snapshots: dict | None = None) -> bool:
+    """Ghi nguyên tử một hội thoại; trả False khi lỗi để vòng làm việc dừng trước tác dụng phụ tiếp theo.
     ``saved_at`` giữ giờ lưu cũ (đổi tên không làm hội thoại nhảy lên đầu danh sách)."""
     if not items or not session_id:
-        return
+        return False
     target = _folder(root) / f"{session_id}.json"
     data = {"version": VERSION, "id": session_id, "title": title or first_title(items), "root": str(root),
             "server": server, "saved_at": time.time() if saved_at is None else saved_at, "items": items,
@@ -129,12 +131,11 @@ def save(root: Path, server: str, items: list[dict], *, session_id: str, title: 
             **({"snapshots": dict(snapshots)} if snapshots else {})}
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
-        temporary = target.with_suffix(".tmp")
-        temporary.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
-        os.replace(temporary, target)
+        atomic_write_text(target, json.dumps(data, ensure_ascii=False))
     except OSError:
-        return
+        return False
     _prune(target.parent, keep=target)
+    return True
 
 
 def rename(root: Path, server: str, session_id: str, title: str) -> None:
@@ -170,6 +171,7 @@ def _parse(data, root: Path, server: str, *, legacy: bool = False) -> Saved | No
         return None
     if not all(isinstance(item, dict) and item.get("type", "message") in ITEM_TYPES for item in items):
         return None
+    items, recovered = interrupted_items(items)
     saved_at = data.get("saved_at")
     saved_at = float(saved_at) if isinstance(saved_at, (int, float)) else 0.0
     session_id = data.get("id") if isinstance(data.get("id"), str) and data.get("id") else \
@@ -178,9 +180,9 @@ def _parse(data, root: Path, server: str, *, legacy: bool = False) -> Saved | No
     marks = data.get("snapshots") if isinstance(data.get("snapshots"), dict) else {}
     snapshots = {key: value for key, value in marks.items()
                  if isinstance(key, str) and isinstance(value, str) and re.fullmatch(r"[0-9a-f]{40}", value)}
-    return Saved(saved_at=saved_at, items=items, retryable=data.get("retryable") is True,
+    return Saved(saved_at=saved_at, items=items, retryable=data.get("retryable") is True and not recovered,
                  model=data["model"] if isinstance(data.get("model"), str) and data["model"] else "peto",
-                 interrupted=data.get("interrupted") is True, id=session_id, title=title, snapshots=snapshots)
+                 interrupted=data.get("interrupted") is True or bool(recovered), id=session_id, title=title, snapshots=snapshots)
 
 
 def _migrate(root: Path, server: str) -> None:
@@ -194,8 +196,9 @@ def _migrate(root: Path, server: str) -> None:
         return
     if saved is None:
         return
-    save(root, server, saved.items, session_id=saved.id, title=saved.title, retryable=saved.retryable,
-         model=saved.model, interrupted=saved.interrupted)
+    if not save(root, server, saved.items, session_id=saved.id, title=saved.title, retryable=saved.retryable,
+                model=saved.model, interrupted=saved.interrupted):
+        return
     try:
         legacy.unlink()
     except OSError:

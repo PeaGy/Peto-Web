@@ -17,6 +17,7 @@ import time
 from pathlib import Path
 
 from . import approvals, browser, edit_match, outputs, runner, snapshot
+from .tool_input import argument_error
 from . import patch as patch_text_lib
 from .background import Jobs
 from .checkpoint import Checkpoint
@@ -404,7 +405,7 @@ class Tools:
         handler = self._handlers.get(name)
         if handler is None:
             return {"error": f"Peto Agent không có công cụ {name}."}
-        if self.failed_commands >= 3 and name in {"edit_file", "write_file", "delete_file", "move_file"}:
+        if self.failed_commands >= 3 and name in {"edit_file", "write_file", "delete_file", "move_file", "apply_patch"}:
             return {"error": "Đã có 3 lần kiểm tra thất bại. Dừng sửa tiếp, báo phần còn lại và đợi yêu cầu mới."}
         try:
             params = json.loads(arguments or "{}")
@@ -420,6 +421,9 @@ class Tools:
             signature.bind(**params)
         except TypeError:
             return {"error": f"Tham số không đúng với công cụ {name}."}
+        if problem := argument_error(handler, params):
+            self.call_id = ""
+            return {"error": problem, "classification": "invalid_arguments"}
         if name in PLAN_BLOCKED and getattr(self.ui, "mode", "build") == "plan":
             self.call_id = ""
             verb = {"edit_file": "sửa", "write_file": "ghi", "delete_file": "xóa", "move_file": "đổi tên",
@@ -956,7 +960,7 @@ class Tools:
         command = command.strip()
         if not command:
             raise WorkspaceError("Lệnh đang trống.")
-        shell = self._shell(shell)
+        shell = self._shell(shell, command)
         directory = self._cwd(cwd)
         self.ui.preview("background", {"command": command, "directory": str(directory), "timeout": 0, "shell": shell})
         if not self._approve_command(command, directory, 0, shell, background=True):
@@ -1272,10 +1276,16 @@ class Tools:
                 "note": "Người dùng báo đã xong. Trang vẫn là trang đăng nhập thì có thể họ chưa đăng nhập được: hỏi "
                         "họ thay vì thử lại."}
 
-    def _shell(self, shell: str | None) -> str:
+    def _shell(self, shell: str | None, command: str = "") -> str:
         chosen = (shell or "cmd").strip().lower()
         if chosen not in runner.SHELLS:
             raise WorkspaceError(f"shell chỉ nhận {' hoặc '.join(runner.SHELLS)}.")
+        # cmd /c có thể bỏ phần sau xuống dòng, kể cả bên trong python -c, mà vẫn trả 0.
+        # Từ chối trước khi xin quyền hoặc chạy tiến trình để không báo kiểm tra thành công giả.
+        if os.name == "nt" and chosen == "cmd" and ("\n" in command or "\r" in command):
+            raise WorkspaceError("cmd trên Windows không hỗ trợ lệnh nhiều dòng ở đây: có thể bỏ phần sau mà vẫn "
+                                 "báo thành công. Chọn shell='powershell' với cú pháp PowerShell, hoặc viết nội dung "
+                                 "vào tệp script rồi chạy tệp đó bằng một dòng.")
         return chosen
 
     def _cwd(self, cwd: str | None) -> Path:
@@ -1323,7 +1333,7 @@ class Tools:
         if not command:
             raise WorkspaceError("Lệnh đang trống.")
         timeout = max(1, min(600, timeout_seconds or 120))
-        shell = self._shell(shell)
+        shell = self._shell(shell, command)
         directory = self._cwd(cwd)
         if self.failed_commands >= 3 and command_kind(command) == "check":
             return {"error": "Đã có 3 lần kiểm tra thất bại. Dừng thử sửa/kiểm tra tiếp và báo kết quả cho người dùng."}

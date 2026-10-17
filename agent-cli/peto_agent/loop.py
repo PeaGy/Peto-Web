@@ -21,6 +21,7 @@ from .config import log_dir
 from .presentation import AgentUI
 from .runner import cap_text
 from .tools import Tools
+from .session_protocol import INTERRUPTED_RESULT, interrupted_items
 from .workspace import Workspace, WorkspaceError
 
 MAX_STEPS_PER_TASK = 40
@@ -41,10 +42,6 @@ OLD_IMAGE_NOTE = "(Ảnh này đã gửi ở tin trước; để hội thoại n
 # web_search_call do dịch vụ AI sinh ra khi Peto tra web: giữ lại để hội thoại gửi đi không hụt mục.
 KEPT_ITEM_TYPES = {"message", "function_call", "reasoning", "web_search_call"}
 STOPPED_RESULT = {"error": "Người dùng đã dừng yêu cầu bằng Ctrl+C."}
-# Kết quả ghi thay trong bản lưu giữa yêu cầu cho lệnh gọi công cụ chưa xong. Peto bị đóng lúc đó thì /resume mở lại
-# đúng bản này, nên nói rõ công cụ có thể đã chạy một phần.
-INTERRUPTED_RESULT = {"error": "Peto bị đóng giữa chừng (cửa sổ terminal đóng hoặc máy tắt) trước khi có kết quả này. "
-                               "Công cụ có thể đã chạy một phần: đọc lại tệp hoặc kiểm tra trạng thái trước khi làm tiếp."}
 # /btw hỏi lúc Peto đang làm: lệnh gọi công cụ chưa xong được ghi thế này trong bản gửi đi, để hội thoại vẫn hợp lệ.
 PENDING_RESULT = {"error": "Công cụ này đang chạy, chưa có kết quả (câu hỏi /btw được gửi giữa chừng)."}
 # Số mục nhiều nhất đưa vào lời nhờ của /init: đủ để thấy bố cục mà không thổi phồng bước đầu tiên.
@@ -238,14 +235,14 @@ class Session:
     def _announce_title(self) -> None:
         self.ui.set_session_title(self.shown_title())
 
-    def save(self, items: list[dict] | None = None, **flags) -> None:
+    def save(self, items: list[dict] | None = None, **flags) -> bool:
         """Lưu hội thoại đang mở để /resume mở lại (``flags``: retryable, interrupted)."""
         with self._save_lock:
             if self.session_id is None:
                 self.session_id = history.new_id()
-            history.save(self.ws.root, self.client.server, self.items if items is None else items,
-                         session_id=self.session_id, title=self.title or "", model=self.model,
-                         snapshots=self.snapshot_marks, **flags)
+            return history.save(self.ws.root, self.client.server, self.items if items is None else items,
+                                session_id=self.session_id, title=self.title or "", model=self.model,
+                                snapshots=self.snapshot_marks, **flags)
 
     def _name_conversation(self) -> None:
         """Sau yêu cầu đầu của một hội thoại: nhờ model đặt tên cho danh sách /resume, ở luồng nền để người dùng gõ
@@ -793,10 +790,13 @@ class Session:
         self.can_retry = False
         started = time.monotonic()
         outcome = "done"
+        crashed = False
         pending: list[dict] = []
         verification_reminded = False
         compact_failed = False
         try:
+            # Nhận yêu cầu phải được lưu trước lần gọi model đầu, kể cả khi đóng cửa sổ lúc đang chờ phản hồi.
+            self._save_progress()
             for _ in range(MAX_STEPS_PER_TASK):
                 if not compact_failed and (len(self.items) >= COMPACT_ITEMS or context_size(self.items) > COMPACT_CHARS):
                     compact_failed = not self.compact(propagate_cancel=True)
@@ -872,14 +872,25 @@ class Session:
             self.ui.line()
             self.ui.line("Đã dừng yêu cầu. Gõ yêu cầu mới, hoặc /exit để thoát.", "yellow")
             self._log("stopped")
+        except Exception as err:
+            # Không biến lỗi lập trình thành thành công; giữ traceback và bản lưu hợp lệ để /resume làm tiếp.
+            outcome, crashed = "error", True
+            self._log("internal_error", error_type=type(err).__name__)
+            raise
         finally:
             self.tools.approve_all = False
             self.active_seconds += time.monotonic() - started
             self._running = False
-            self._summary(self.active_seconds, outcome)
             # Ảnh chụp đầu yêu cầu (CLI 0.26.0) phải vào bản lưu, kể cả khi yêu cầu không đổi tệp nào.
             self.tools.wait_snapshot()
-            self.save(retryable=self.can_retry)
+            # Lúc đã dừng, kết quả bị ngắt phải có cả trong bộ nhớ; yêu cầu mới không gửi lại lời gọi thiếu kết quả.
+            self.items, missing = interrupted_items(self.items)
+            self.can_retry = self.can_retry and not missing
+            saved = self.save(retryable=self.can_retry, interrupted=crashed or bool(missing))
+            if not saved:
+                outcome = "error"
+                self.ui.failure("Không lưu được hội thoại. Giữ cửa sổ này và kiểm tra dung lượng/quyền ghi trước khi làm tiếp.")
+            self._summary(self.active_seconds, outcome)
             if outcome == "done":
                 self._name_conversation()
 
@@ -921,20 +932,19 @@ class Session:
         return recall.read(self.ws.root, self.client.server, self.session_id, pattern=pattern,
                            start_entry=start_entry, start_character=start_character)
 
-    def _save_progress(self) -> None:
+    def _save_progress(self) -> bool:
         """Lưu hội thoại giữa yêu cầu, để đóng cửa sổ giữa chừng thì /resume vẫn còn những gì Peto đã làm.
 
         Cửa sổ console đóng thì Windows tắt Python ngay, khối finally của _run không chạy (thử trong ConPTY ngày
         2026-09-23), nên chỉ lưu lúc xong yêu cầu là mất cả yêu cầu đang dở. Lệnh gọi công cụ chưa có kết quả được ghi
         INTERRUPTED_RESULT trong bản lưu, để bước kế tiếp sau /resume vẫn hợp lệ với model.
         """
-        answered = {item.get("call_id") for item in self.items if item.get("type") == "function_call_output"}
-        items = list(self.items)
-        for item in self.items:
-            if item.get("type") == "function_call" and item.get("call_id") not in answered:
-                items.append({"type": "function_call_output", "call_id": item.get("call_id", ""),
-                              "output": json.dumps(INTERRUPTED_RESULT, ensure_ascii=False)})
-        self.save(items, interrupted=True)
+        items, _ = interrupted_items(self.items)
+        saved = self.save(items, interrupted=True)
+        if not saved:
+            raise WorkspaceError("Không lưu được tiến độ nên Peto đã dừng trước công cụ/bước tiếp theo. "
+                                 "Giữ cửa sổ này và kiểm tra dung lượng/quyền ghi trước khi làm tiếp.")
+        return saved
 
     def _step_context(self) -> dict:
         context = {"project": self.ws.root.name, "os": f"{platform.system()} {platform.release()}".strip(),

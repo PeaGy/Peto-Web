@@ -111,6 +111,36 @@ def test_a_single_read_is_its_own_line(project):
     assert "→ Đọc a.py:1-3" in plain(ui.out.getvalue())
 
 
+@pytest.mark.parametrize("pattern", [None, "CS0246"])
+def test_saved_command_output_can_be_read_through_the_terminal_ui(project, pattern):
+    from peto_agent import outputs
+
+    saved = outputs.Spool()
+    saved.write(b"Program.cs: CS0246\nBuild failed\n")
+    output_id = saved.keep()["output_id"]
+    ui = make_ui()
+    tools = Tools(Workspace(project), ui)
+    result = tools.call("read_output", args(output_id=output_id, pattern=pattern, start_line=1, end_line=2))
+    assert result["total_lines"] == 2 and "error" not in result
+    if pattern:
+        assert result["matches"][0]["text"] == "Program.cs: CS0246"
+    else:
+        assert "Build failed" in result["content"]
+    ui.line("Đọc xong")
+    assert output_id in plain(ui.out.getvalue())
+
+
+def test_archived_history_can_be_read_through_the_terminal_ui(project):
+    ui = make_ui()
+    tools = Tools(Workspace(project), ui)
+    tools.features = [*tools.features, "recall"]
+    tools.history_reader = lambda **kwargs: {"entries": [{"role": "user", "text": "Giữ nguyên logic"}]}
+    result = tools.call("read_history", args(pattern="logic", start_entry=None, start_character=None))
+    assert len(result["entries"]) == 1
+    ui.line("Đọc xong")
+    assert "lịch sử trước tóm tắt · 1 mục" in plain(ui.out.getvalue())
+
+
 def test_an_approved_edit_is_a_block_with_its_diff(project):
     (project / "app.py").write_text("def f():\n    return 1\n")
     ui = make_ui()

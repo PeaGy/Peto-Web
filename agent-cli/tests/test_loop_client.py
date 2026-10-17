@@ -692,6 +692,34 @@ def test_the_input_line_carries_steps_status_and_resume_until_a_conversation_sta
     assert first_status == second_status == "◉ Peto · thấp"
 
 
+@pytest.mark.parametrize("phase", ["tool_started", "tool_finished"])
+def test_ui_crash_saves_an_interrupted_request_without_unanswered_calls(project, monkeypatch, phase):
+    from peto_agent.loop import INTERRUPTED_RESULT
+
+    (project / "README.md").write_text("Giữ nguyên logic", encoding="utf-8")
+    ui = FakeUI()
+    work = Session(Client("https://peto.example", "peto_token_thu"), Workspace(project), ui)
+    outcomes = []
+    monkeypatch.setattr(ui, "request_finished", lambda end: outcomes.append(end.outcome))
+
+    def crash(event):
+        raise KeyError("read_output")
+
+    monkeypatch.setattr(ui, phase, crash)
+    monkeypatch.setattr(work, "_step", lambda: [
+        call(0, "read_file", path="README.md"),
+        call(1, "edit_file", path="README.md", old_text="Giữ nguyên logic", new_text="khác")])
+    with pytest.raises(KeyError, match="read_output"):
+        work.run_task("Sửa giúp tôi, giữ nguyên logic")
+    saved = history.load(project, work.client.server)
+    assert saved.interrupted and outcomes == ["error"]
+    assert work.items == saved.items
+    assert_every_call_has_output(saved.items)
+    assert all(json.loads(item["output"]) == INTERRUPTED_RESULT for item in saved.items
+               if item.get("type") == "function_call_output")
+    assert (project / "README.md").read_text(encoding="utf-8") == "Giữ nguyên logic"
+
+
 def test_progress_is_saved_after_every_step_so_closing_the_window_loses_nothing(project, peto):
     """Đóng cửa sổ giữa yêu cầu thì Windows tắt Python và khối finally không chạy, nên bản lưu phải có sẵn từng bước.
 

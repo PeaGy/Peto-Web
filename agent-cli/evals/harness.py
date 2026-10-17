@@ -156,15 +156,15 @@ class Recorder:
         self.seconds = 0.0
         original_step, original_call, original_summary = session._step, session.tools.call, session._summary
 
-        def step():
+        def step(*, purpose: str | None = None):
             started = time.monotonic()
             before = dict(session.metrics.usage["model"])
-            output = original_step()
+            output = original_step(purpose=purpose) if purpose else original_step()
             after = session.metrics.usage["model"]
             messages = [text_of(item) for item in output or []
                         if item.get("type") == "message" and item.get("role") == "assistant"]
             self.steps.append({
-                "index": len(self.steps) + 1, "seconds": round(time.monotonic() - started, 1),
+                "index": len(self.steps) + 1, "purpose": purpose, "seconds": round(time.monotonic() - started, 1),
                 "ok": output is not None, "text": "\n".join(text for text in messages if text).strip(),
                 "calls": [item.get("name") for item in output or [] if item.get("type") == "function_call"],
                 "input_tokens": after["input_tokens"] - before["input_tokens"],

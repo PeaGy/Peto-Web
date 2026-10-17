@@ -267,6 +267,25 @@ def test_voice_counts_reply_length_narration_filler_and_file_references():
     assert cited["file_refs"] == 1, "khối code trích kèm chỗ cũng là dẫn tệp:dòng"
 
 
+def test_recorder_forwards_wrapup_purpose():
+    from types import SimpleNamespace
+
+    purposes = []
+
+    def step(*, purpose=None):
+        purposes.append(purpose)
+        return [message("Đã hết lượt; phần chưa kiểm tra được ghi rõ.")]
+
+    session = SimpleNamespace(
+        _step=step, _summary=lambda *args: None, steps_used=1,
+        metrics=SimpleNamespace(usage={"model": {"input_tokens": 0, "output_tokens": 0}}),
+        tools=SimpleNamespace(call=lambda *args: {}))
+    recorder = harness.Recorder(session)
+    session._step(purpose="wrapup")
+    assert purposes == ["wrapup"]
+    assert recorder.steps[0]["purpose"] == "wrapup"
+
+
 def test_compare_lines_up_two_runs_without_spending_steps(tmp_path):
     import report
 

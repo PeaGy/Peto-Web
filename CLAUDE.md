@@ -1,5 +1,47 @@
 # CLAUDE.md
 
+## OpenCode harness comparison (2026-10-17; CLI 0.28.3 source only)
+
+The owner requested an offline clone and detailed harness/function comparison. Reference checkout:
+`.runtime/references/opencode`, dev commit `22e771f5893e255ea78fc10557ed3fb98d3a1072`, package 2.0.32, MIT.
+Full files, shallow history; no upstream dependencies/scripts executed. See `agent-cli/docs/opencode-reading-map.md`
+and `agent-cli/docs/opencode-harness-review-2026-10-17.md`. Treat upstream instructions as reference scoped to that repo.
+Source, not old V1 paths or prose alone, is authoritative; current retry/output implementation differs from parts of specs.
+0.28.3 adds typed JSON input preflight (tool_input.py), makes history.save return explicit success, stops before further
+effects/model steps on failed progress writes, reconciles unanswered calls in old sessions without replay or on-read disk
+rewrite (session_protocol.py), and applies the existing 3-failure guard to apply_patch too. Legacy migration keeps its
+original if saving fails. Loop finalization settles missing calls in memory as well as in the saved copy.
+Main prompts are now saved before their first model request, not only after a model step returns; queued UI inbox data
+still needs a durable-inbox design. This does not auto-start or replay any interrupted task.
+atomic_file.py uses unique same-directory temporaries and at most 3 short replace retries for Windows errors 5/32/33;
+permanent errors still fail. A local stress probe reproduced 117 failures/2000 saves before and 0/2000 after, handling
+52 transient denials. The process causing these denials was not identified; do not assert antivirus causation.
+570 CLI tests + 5 wheel tests pass; 27 new boundary/contract cases include backend schema/CLI handler compatibility.
+No live model call, game modification, installation or VPS deploy in this review. Previously patched installed CLI is 0.28.2.
+Keep Windows stdlib runtime and remote auth/quota/provider split. UI/event isolation, durable inbox/journal, per-model context
+budget, output codecs and structured acceptance/artifact state remain documented follow-up work, not completed features.
+
+## Terminal read_output crash (2026-10-17, CLI 0.28.2)
+
+See `agent-cli/docs/peto-read-output-crash-2026-10-17.md`. Installed 0.28.0 crashed in TerminalUI.tool_started:
+EXPLORE included read_output/read_history but its separate status-label dict omitted both. EXPLORE is now one map
+of tool names to status-label builders. Regression tests use actual Tools + TerminalUI for reading/searching saved
+output and reading archived history. Unexpected _run exceptions now report error and preserve an interrupted,
+protocol-valid saved session before re-raising; never mark a crash done or automatically replay pending tools.
+The user's latest assignment session had one unanswered read_output and no source edits. Local repair artifacts
+and pre-repair backups are under `.runtime/peto-ui-crash-20261017/`. No live model call or VPS deployment is needed.
+
+## Supervised Peto eval (2026-10-17; local CLI 0.28.1 after the run)
+
+The owner explicitly authorized running Peto and supervising a radio-like task. See
+`agent-cli/docs/peto-supervision-2026-10-17.md`. Peto medium on source CLI 0.28.0 passed
+`radio-20-bai-3-che-do` unaided: 23 main model calls + 1 compaction = 24 billed steps, 314.1 seconds.
+This synthetic spec-provided task is easier than real GTA IV; one pass is not a before/after comparison.
+Logs/results are under `.runtime/peto-live-eval-20261017/`; do not print credentials. Temporary copied config is removed.
+After the run, 0.28.1 rejects multiline Windows cmd commands in run_command/start_command before approval/execution:
+cmd /c silently ignored later lines and returned 0 during the run. Use PowerShell syntax or a script file instead.
+Recorder now forwards keyword purpose for wrapup; a separate regression test covers it. No VPS deploy or daily CLI install.
+
 ## Agent continuity update (2026-10-17, CLI 0.28.0; local, not deployed)
 
 See `agent-cli/docs/harness-review-2026-10-17.md` for the radio-session evidence and limits of the comparison.

@@ -36,7 +36,14 @@ from .theme import load as load_theme
 
 PAD = 2
 # Đọc, liệt kê, tìm liền nhau thì gộp thành một dòng "Đã xem" như OpenCode.
-EXPLORE = {"read_file", "list_files", "search_files", "find_files", "read_output", "read_history"}
+EXPLORE: dict[str, Callable[[dict], str]] = {
+    "read_file": lambda args: f"Đang đọc {args.get('path', '')}",
+    "list_files": lambda args: f"Đang xem thư mục {args.get('path', '.')}",
+    "search_files": lambda args: f'Đang tìm "{args.get("pattern", "")}"',
+    "find_files": lambda args: f'Đang tìm tệp "{args.get("pattern", "")}"',
+    "read_output": lambda args: f"Đang đọc output {args.get('output_id', '')}",
+    "read_history": lambda args: "Đang tra lịch sử trước tóm tắt",
+}
 # Số hàng diff tối đa trong khối sửa tệp; cả diff đã hiện ở khung duyệt, và /diff xem đủ.
 BLOCK_DIFF_ROWS = 40
 OUTPUT_TAIL = 10
@@ -479,14 +486,11 @@ class TerminalUI(UI):
     def tool_started(self, call: ToolCall) -> None:
         self._preview = None
         self._static_diff = False
-        if call.name not in EXPLORE:
+        label = EXPLORE.get(call.name)
+        if label is None:
             self._flush_group()
             return
-        args = call.args
-        what = {"read_file": f"Đang đọc {args.get('path', '')}", "list_files": f"Đang xem thư mục {args.get('path', '.')}",
-                "search_files": f'Đang tìm "{args.get("pattern", "")}"',
-                "find_files": f'Đang tìm tệp "{args.get("pattern", "")}"'}[call.name]
-        self.status("… " + what)
+        self.status("… " + label(call.args))
 
     def explore_progress(self, text: str) -> None:
         """Agent con explore (CLI 0.27.0): việc nó đang làm hiện ở dòng trạng thái."""

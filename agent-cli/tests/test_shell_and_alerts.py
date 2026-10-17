@@ -44,6 +44,32 @@ def test_unknown_shell_is_refused(project):
     assert "shell chỉ nhận" in tools.call("run_command", args(command="echo hi", timeout_seconds=None, shell="bash"))["error"]
 
 
+@pytest.mark.skipif(os.name != "nt", reason="cmd /c trên Windows")
+@pytest.mark.parametrize("name", ["run_command", "start_command"])
+@pytest.mark.parametrize("shell", [None, "cmd"])
+@pytest.mark.parametrize("newline", ["\n", "\r\n", "\r"])
+def test_multiline_cmd_is_rejected_before_running_a_partial_command(project, monkeypatch, name, shell, newline):
+    tools = Tools(Workspace(project), FakeUI())
+
+    def unexpected_spawn(*args, **kwargs):
+        pytest.fail("Lệnh bị cắt dòng không được chạy một phần")
+
+    monkeypatch.setattr(runner, "spawn", unexpected_spawn)
+    result = tools.call(name, args(command=f'python -c "import sys;{newline}print(123); sys.exit(7)"', shell=shell))
+    assert "lệnh nhiều dòng" in result["error"]
+    assert "powershell" in result["error"] and "script" in result["error"]
+    assert "exit_code" not in result and not tools.commands and not tools.jobs.running()
+
+
+@powershell_only
+def test_multiline_powershell_still_executes_both_lines(project):
+    tools = Tools(Workspace(project), FakeUI(["y"]))
+    result = tools.call("run_command", args(command='Write-Output "dong-mot"\nWrite-Output "dong-hai"',
+                                            shell="powershell", timeout_seconds=30))
+    assert result["exit_code"] == 0
+    assert "dong-mot" in result["output"] and "dong-hai" in result["output"]
+
+
 def test_powershell_missing_command_reads_as_an_environment_error():
     output = "khong-co-lenh-nay : The term 'khong-co-lenh-nay' is not recognized as the name of a cmdlet, function…"
     assert classify("khong-co-lenh-nay", {"exit_code": 1, "output": output}) == "environment_error"
