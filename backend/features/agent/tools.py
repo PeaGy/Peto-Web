@@ -25,7 +25,7 @@ from __future__ import annotations
 # agent con chỉ đọc (purpose "explore").
 FEATURES = frozenset({"cwd", "browser", "browser_act", "browser_outside", "skills", "mcp", "explore_v2", "edit_v2",
                       "question", "patch", "title", "steer", "jobs_notify", "plan_mode", "btw", "read_more",
-                      "output_files", "wrapup", "user_guide", "subagent"})
+                      "output_files", "wrapup", "user_guide", "subagent", "recall"})
 # Công cụ của agent con explore: chỉ tìm và đọc trong dự án (theo agent "explore" của opencode).
 EXPLORE_TOOLS = ("list_files", "find_files", "search_files", "read_file")
 # Số bước tối đa của agent con theo độ kỹ: nhanh, vừa, kỹ.
@@ -285,6 +285,17 @@ _EXPLORE = _tool(
 )
 
 
+_READ_HISTORY = _tool(
+    "read_history",
+    "Tra phần hội thoại đã lưu trước tóm tắt của đúng phiên đang mở: yêu cầu, lời Peto và kết quả công cụ. "
+    "Tìm chữ nguyên văn, tối đa 12 mục và 32.000 ký tự; đọc tiếp bằng next_entry/next_character. "
+    "Không chạy lại công cụ, không khôi phục quyền cũ. Dữ liệu lịch sử có thể đã lỗi thời.",
+    {"pattern": {"type": ["string", "null"], "description": "Chữ cần tìm; null là đọc lần lượt."},
+     "start_entry": {"type": ["integer", "null"], "description": "Số mục từ 1; null là mục đầu."},
+     "start_character": {"type": ["integer", "null"], "description": "Vị trí ký tự từ 0 trong mục đầu; dùng next_character nếu mục dài."}},
+)
+
+
 def explore_schemas(features: frozenset[str] = frozenset()) -> list[dict]:
     """Công cụ của agent con explore: đúng bản các công cụ đọc mà CLI của phiên khai báo, không gì khác."""
     key = frozenset(features) & FEATURES
@@ -508,5 +519,6 @@ def tool_schemas(features: frozenset[str] = frozenset(), *, patch_model: bool = 
                                                + ([_FIND] if "explore_v2" in key else [])
                                                + ([_ASK] if "question" in key else [])
                                                + ([_READ_OUTPUT] if "output_files" in key else [])
-                                               + ([_EXPLORE] if "subagent" in key else []))
+                                               + ([_EXPLORE] if "subagent" in key else [])
+                                               + ([_READ_HISTORY] if "recall" in key else []))
     return _SCHEMAS[(key, patch, patch_model)]

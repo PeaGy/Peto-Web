@@ -1,5 +1,21 @@
 # CLAUDE.md
 
+## Agent continuity update (2026-10-17, CLI 0.28.0; local, not deployed)
+
+See `agent-cli/docs/harness-review-2026-10-17.md` for the radio-session evidence and limits of the comparison.
+`recall.py` saves visible prefix messages/calls/results before successful compaction to
+`sessions/<project>/<id>.archive/`; a failed write keeps the original conversation. It omits provider reasoning,
+signatures and image bytes. `request_anchors` retains selected verbatim user requests within 12,000 characters/24
+messages; `history.SUMMARY_NOTE` is an internal note, not a real user request. Archived content remains available
+through feature-negotiated `read_history(pattern,start_entry,start_character)`, including after resume. No extra
+model call for storage/lookup itself; the normal model step selecting a tool still costs quota. Archive limit 64 MB,
+cleanup follows session deletion/pruning. Never describe this as recovering already-lost old history.
+`check_observations` carries bounded local observations and command outcomes at the end of the Agent prompt;
+checked_revision records an attempt, not task success. Prompt/reminder require appropriately scoped independent
+consumer/application checks for non-code tasks and preserve user failure feedback in compaction. No model, context
+threshold, quota, authorization or repair-budget change. `radio-dung-trong-ung-dung` is an offline MUS1-consumer eval;
+grader selftest is not evidence of improved live-model performance. Existing schema feature sets stay unchanged.
+
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## What this is

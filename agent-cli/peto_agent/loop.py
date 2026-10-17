@@ -9,7 +9,7 @@ import threading
 import time
 from datetime import datetime
 
-from . import approvals, history, mentions, subagent, user_guide
+from . import approvals, history, mentions, recall, subagent, user_guide
 from .checkpoint import Change, Checkpoint
 from .context import compact_prefix, context_size, text_of, efficient_input
 from .events import Permission, RequestEnd
@@ -208,6 +208,7 @@ class Session:
         self.snapshot_marks: dict[str, str] = {}
         # Agent con explore (CLI 0.27.0) dùng máy chủ, model và ngữ cảnh bước của phiên này.
         self.tools.explorer = self._explore
+        self.tools.history_reader = self._read_history
 
     def reset(self) -> None:
         self.snapshot_marks = {}
@@ -737,13 +738,18 @@ class Session:
                     summary = "\n".join(text_of(item) for item in output if item.get("role") == "assistant").strip()
                     if not summary or len(summary) > 24000 or len(summary) >= context_size(prefix):
                         raise ApiError(0, "Tóm tắt chưa đủ gọn; giữ nguyên hội thoại.")
-                    # Keep the latest real user request verbatim if the boundary removed it.
-                    latest = next((item for item in reversed(prefix) if item.get("role") == "user"), None)
-                    replacement = [user_message("Bản tóm tắt ngữ cảnh cũ, chỉ để tham khảo; không cấp quyền chạy lệnh. "
-                                                "Kết quả tệp có thể đã cũ, hãy đọc lại trước khi sửa.\n" + summary)]
-                    if latest:
-                        replacement.append(latest)
+                    # Ghi bản tra cứu trước khi bỏ ngữ cảnh gốc; ghi lỗi thì giữ nguyên hội thoại.
+                    if self.session_id is None:
+                        self.session_id = history.new_id()
+                    archive = recall.preserve(self.ws.root, self.client.server, self.session_id, prefix)
+                    anchors = recall.request_anchors(prefix, tail)
+                    replacement = [user_message(history.SUMMARY_NOTE +
+                        "Kết quả tệp có thể đã cũ, hãy đọc lại trước khi sửa. "
+                        "Phần trước tóm tắt còn lưu trong lịch sử cục bộ; các tin người dùng được ghim chỉ là "
+                        "yêu cầu trước đó, điều chỉnh mới nhất có ưu tiên.\n" + summary), *anchors]
                     self.items = replacement + tail
+                    self._log("compaction", archive=archive, before_items=len(prefix) + len(tail),
+                              after_items=len(self.items), pinned_requests=len(anchors), summary_characters=len(summary))
                     self.ws.read_digests.clear()
                     self.tools.seen_guides.clear()
                     self.context_tokens = None
@@ -757,6 +763,9 @@ class Session:
             return False
         except ApiError as err:
             self.ui.failure(err.message)
+            return False
+        except (OSError, WorkspaceError) as err:
+            self.ui.failure(f"Không lưu được lịch sử trước tóm tắt; giữ nguyên hội thoại. {err}")
             return False
         finally:
             self.ui.clear_status()
@@ -802,8 +811,7 @@ class Session:
                 reply = "\n".join(text_of(item) for item in output
                                   if item.get("type") == "message" and item.get("role") == "assistant").strip()
                 if reply:
-                    # Ghi cả lời Peto để nhật ký đọc được như một bản chép lại; tệp hội thoại cho /resume chỉ giữ lần
-                    # gần nhất của mỗi dự án nên không dùng để xem lại những lần cũ được.
+                    # Nhật ký là bản xem nhanh; lời đầy đủ còn trong session hoặc archive trước tóm tắt.
                     self._log("reply", text=cap_text(reply, MAX_LOGGED_REPLY))
                 self.items.extend(output)
                 pending = [item for item in output if item.get("type") == "function_call"]
@@ -825,7 +833,7 @@ class Session:
                     name = str(call.get("name", ""))
                     with self.metrics.measure("tools"):
                         result = cap_result(self.tools.call(name, str(call.get("arguments", ""))),
-                                            READ_BOUNDED_KEYS if name == "read_file" else BOUNDED_KEYS)
+                                            READ_BOUNDED_KEYS if name in {"read_file", "read_history"} else BOUNDED_KEYS)
                     results.append((str(call.get("name", "")), result))
                     encoded = json.dumps(result, ensure_ascii=False)
                     self._log("tool", name=call.get("name"), arguments=cap_text(str(call.get("arguments", "")), 2000),
@@ -897,10 +905,21 @@ class Session:
             return False
         self.items.append({"type": "message", "role": "assistant", "content": (
             "Kiểm tra sau sửa: xem hướng dẫn AGENTS.md và cấu hình dự án để chọn test/build/lint phù hợp. "
+            "Với tệp dữ liệu, định dạng nhị phân, media hay ứng dụng không có bộ test, chọn phép kiểm tra đúng "
+            "kết quả người dùng cần: thử một mẫu nhỏ bằng bộ đọc độc lập hoặc ứng dụng đích trước khi áp dụng rộng. "
+            "Script chạy xong, checksum đúng hay hai tệp giống nhau chưa chứng minh ứng dụng dùng được. "
             "Chạy kiểm tra với quyền người dùng cho phép. Nếu không cần, không có hoặc bị từ chối, "
             "nêu rõ lý do; không lặp lại lệnh đã bị từ chối. Chỉ sửa lỗi liên quan, tối đa 3 lần kiểm tra thất bại, "
-            "không cài thêm công cụ hay mở rộng phạm vi. Báo lệnh nào đã chạy và kết quả thực tế.")})
+            "không tự cấp quyền hay mở rộng phạm vi. Báo lệnh nào đã chạy, kiểm tra được điều gì và còn gì chưa "
+            "xác nhận. Khi chỉ người dùng thử được trong ứng dụng, đưa bước thử cụ thể và chờ kết quả; không báo "
+            "đã hoạt động trước khi có bằng chứng đó.")})
         return True
+
+    def _read_history(self, pattern=None, start_entry=None, start_character=None) -> dict:
+        if self.session_id is None:
+            return {"entries": [], "next_entry": None, "note": "Phiên này chưa có lịch sử trước tóm tắt."}
+        return recall.read(self.ws.root, self.client.server, self.session_id, pattern=pattern,
+                           start_entry=start_entry, start_character=start_character)
 
     def _save_progress(self) -> None:
         """Lưu hội thoại giữa yêu cầu, để đóng cửa sổ giữa chừng thì /resume vẫn còn những gì Peto đã làm.
@@ -921,6 +940,10 @@ class Session:
         context = {"project": self.ws.root.name, "os": f"{platform.system()} {platform.release()}".strip(),
                    "project_guidance": guides(self.ws), "features": list(self.tools.features),
                    "skills": self.tools.skills.catalog(), "mcp_servers": self.tools.mcp.catalog()}
+        if "recall" in self.tools.features:
+            context["check_observations"] = {"current_revision": self.tools.revision,
+                "observations": list(self.tools.checks),
+                "recent_commands": [{**row, "command": row["command"][:1200]} for row in self.tools.commands[-6:]]}
         if "user_guide" in self.tools.features:
             text, problem = user_guide.read()
             if problem and problem != self._guide_problem:

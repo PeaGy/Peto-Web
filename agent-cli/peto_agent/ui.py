@@ -842,6 +842,8 @@ class UI:
                 self.failure(f"Khám phá chưa xong ({where}): {result['error']}")
             else:
                 self.step(f"Khám phá xong · {where}")
+        elif name == "read_history":
+            self.step(f'Tra lịch sử trước tóm tắt · {len(result.get("entries") or [])} mục')
         elif name == "read_output":
             if args.get("pattern"):
                 self.step(f'Tìm "{args["pattern"]}" trong output {result.get("output_id", "")}: '

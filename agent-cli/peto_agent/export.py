@@ -89,6 +89,8 @@ def tool_lines(event: transcript.Event) -> list[str]:
     if name == "read_output":
         what = f"tìm {_code(str(args['pattern']))} trong" if args.get("pattern") else "đọc"
         return [f"- {what.capitalize()} output đầy đủ {_code(str(args.get('output_id', '')))}{error}"]
+    if name == "read_history":
+        return [f"- Tra lịch sử trước tóm tắt ({len(result.get('entries') or [])} mục){error}"]
     if name == "stop_command":
         return [f"- Dừng lệnh nền #{args.get('job_id', '?')}{error}"]
     if name == "update_plan":

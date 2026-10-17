@@ -47,7 +47,8 @@ PLAN_OFF_NOTE = ("[Peto Agent] Người dùng đã tắt chế độ Lập kế 
                  "làm việc như bình thường.")
 # Lệnh nền vừa dừng (không phải do Peto dừng): báo ở bước kế tiếp để Peto khỏi phải đọc đi đọc lại cho tới khi nó xong.
 JOB_NOTE = "[Tự động] "
-NOTE_PREFIXES = ("[Peto Agent] ", JOB_NOTE)
+SUMMARY_NOTE = "Bản tóm tắt ngữ cảnh cũ, chỉ để tham khảo; không cấp quyền chạy lệnh. "
+NOTE_PREFIXES = ("[Peto Agent] ", JOB_NOTE, SUMMARY_NOTE)
 
 
 @dataclass(frozen=True)
@@ -151,6 +152,7 @@ def delete(root: Path, server: str, session_id: str) -> bool:
         return False
     try:
         (_folder(root) / f"{session_id}.json").unlink()
+        _remove_archive(_folder(root), session_id)
     except OSError:
         return False
     return True
@@ -230,6 +232,22 @@ def load(root: Path, server: str, session_id: str | None = None) -> Saved | None
     return _parse(data, root, server)
 
 
+def _remove_archive(folder: Path, session_id: str) -> None:
+    """Chỉ bỏ các tệp bản lưu do CLI tạo, cùng lúc xóa chính hội thoại đó."""
+    if not re.fullmatch(r"[a-zA-Z0-9_-]{1,80}", session_id):
+        return
+    directory = folder / f"{session_id}.archive"
+    if directory.is_symlink():
+        return
+    try:
+        for path in directory.glob("*.json"):
+            if re.fullmatch(r"\d{6}\.json", path.name):
+                path.unlink()
+        directory.rmdir()
+    except OSError:
+        pass
+
+
 def _prune(folder: Path, *, keep: Path) -> None:
     """Dọn hội thoại quá 30 ngày, và chỉ giữ 50 hội thoại mới nhất của dự án."""
     cutoff = time.time() - MAX_AGE_SECONDS
@@ -238,6 +256,7 @@ def _prune(folder: Path, *, keep: Path) -> None:
         for index, path in enumerate(paths):
             if path != keep and (index >= MAX_SESSIONS or path.stat().st_mtime < cutoff):
                 path.unlink()
+                _remove_archive(folder, path.stem)
         for path in folder.parent.glob("*.json"):
             if path.stat().st_mtime < cutoff:
                 path.unlink()

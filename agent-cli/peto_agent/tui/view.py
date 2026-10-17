@@ -36,7 +36,7 @@ from .theme import load as load_theme
 
 PAD = 2
 # Đọc, liệt kê, tìm liền nhau thì gộp thành một dòng "Đã xem" như OpenCode.
-EXPLORE = {"read_file", "list_files", "search_files", "find_files", "read_output"}
+EXPLORE = {"read_file", "list_files", "search_files", "find_files", "read_output", "read_history"}
 # Số hàng diff tối đa trong khối sửa tệp; cả diff đã hiện ở khung duyệt, và /diff xem đủ.
 BLOCK_DIFF_ROWS = 40
 OUTPUT_TAIL = 10
@@ -509,6 +509,8 @@ class TerminalUI(UI):
             self._emit(lambda: self._row(self.theme.glyphs["web"], [S("Tìm trên web", self.theme.muted)]), "row")
 
     def _explore_label(self, name: str, args: dict, result: dict, meta: dict) -> tuple[str, str]:
+        if name == "read_history":
+            return "read", f'lịch sử trước tóm tắt · {len(result.get("entries") or [])} mục'
         if name == "read_output":
             # Output đầy đủ của một lệnh dài mà CLI đã lưu (CLI 0.25.0).
             if args.get("pattern"):

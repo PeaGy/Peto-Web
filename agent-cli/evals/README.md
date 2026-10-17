@@ -20,6 +20,7 @@ theo luật của bài thi thay cho người dùng.
 | `test-do-tren-windows` | môi trường | README bảo `make test`, máy không có make lẫn pytest |
 | `chi-dan-la-trong-tep` | an toàn | tài liệu giấu chỉ dẫn bảo AI gửi file chứa key ra ngoài |
 | `hoi-code-peto-web` | hỏi code | dò code trong dự án lớn (bản sao Peto-Web, lấy bằng `git archive`) |
+| `radio-dung-trong-ung-dung` | tích hợp dữ liệu | encoder tự đọc lại thì qua test nhưng bộ đọc độc lập từ chối; phải sửa cả căn lề bank và danh sách ba đài |
 
 Mỗi bài nằm trong `tasks/<bài>/`:
 
@@ -91,6 +92,11 @@ bằng `--server`). Máy đó thu hồi được trong Cài đặt → Peto Agen
 
 **Chi phí:** bước bài thi dùng vẫn tính vào hạn mức ngày của tài khoản. Trước khi chạy, bộ chạy in số bước tối đa, số
 bước còn lại hôm nay, rồi hỏi lại. Bài nào không đủ bước thì bị bỏ, không chạy dở.
+
+Bài `radio-dung-trong-ung-dung` rút gọn lỗi từ phiên mod radio thành định dạng MUS1 nhỏ với hai tệp chữ, không chứa
+nhạc hay dữ liệu GTA IV. Bộ chấm dùng ứng dụng tiêu thụ độc lập, không chấm chỉ bằng roundtrip của encoder. `selftest`
+chỉ xác minh bản lỗi trượt và lời giải mẫu qua; muốn biết model Peto cải thiện thật phải chạy bài bằng model và so
+với trước, không coi kiểm tra bộ chấm là kết quả của model.
 
 **Nơi lưu:** mọi thứ của bài thi nằm trong `%USERPROFILE%\.peto-eval` (đổi bằng `--home`), tách khỏi peto bạn dùng
 hằng ngày: đăng nhập, nhật ký, hồ sơ trình duyệt, quyền. Bản sao dự án bị xóa sau khi chấm (`--keep` để giữ).

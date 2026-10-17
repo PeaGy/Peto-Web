@@ -51,7 +51,7 @@ FEATURES = ("cwd", "browser", "browser_act", "browser_outside", "skills", "mcp")
 # câu hỏi bên lề /btw. Từ 0.25.0 (theo lõi opencode): đọc tới 1000 dòng, lưu đủ output dài (read_output), lượt tóm tắt
 # khi hết bước và AGENTS.md chung của người dùng. Từ 0.27.0: agent con chỉ đọc explore.
 NEW_FEATURES = ("explore_v2", "edit_v2", "question", "patch", "title", "steer", "jobs_notify", "plan_mode",
-                "btw", "read_more", "output_files", "wrapup", "user_guide", "subagent")
+                "btw", "read_more", "output_files", "wrapup", "user_guide", "subagent", "recall")
 # Gọi y hệt một công cụ ngần này lần liền mà không tệp nào đổi thì hỏi người dùng có cho gọi tiếp không.
 LOOP_LIMIT = 3
 # Công cụ mà gọi lại y hệt là bình thường: chờ output lệnh nền, xem lại trang sau khi bấm, cập nhật danh sách việc.
@@ -192,6 +192,7 @@ class Tools:
         # kiểm thì vòng làm việc nhắc một lần trước khi cho Peto kết thúc.
         self.revision = 0
         self.checked_revision = -1
+        self.checks: list[dict] = []
         # Mã lời gọi (call_id) của model cho công cụ sắp chạy; vòng làm việc đặt trước mỗi lần gọi call().
         self.call_id = ""
         # Lời gọi đang chạy và phần chỉ để hiển thị của nó (events.ToolDone.meta).
@@ -213,6 +214,7 @@ class Tools:
         self.pending_snapshot = None
         # Agent con explore (CLI 0.27.0): phiên (loop.Session) gắn hàm chạy nó, vì cần máy chủ và model của phiên.
         self.explorer = None
+        self.history_reader = None
         self._handlers = {
             "load_skill": self.load_skill,
             "mcp_list_tools": self._evented("mcp_list_tools", self.mcp.list_tools),
@@ -232,6 +234,7 @@ class Tools:
             "start_command": self.start_command,
             "read_command_output": self.read_command_output,
             "read_output": self.read_output,
+            "read_history": self.read_history,
             "explore": self.explore,
             "stop_command": self.stop_command,
             "browser_open": self.browser_open,
@@ -257,6 +260,7 @@ class Tools:
         self.command_failures = {}
         self.revision = 0
         self.checked_revision = -1
+        self.checks = []
         self._last_call = None
         self._unread_refused = set()
         self.command_changes = {}
@@ -311,11 +315,22 @@ class Tools:
             result["files_changed_total"] = len(names)
         self.meta["files_changed"] = len(names)
 
-    def _checked(self) -> None:
+    def _checked(self, observation: dict | None = None) -> None:
         """Peto vừa kiểm lại việc mình làm trên máy: chạy test hay build, xem hoặc thao tác trên trang, gọi API của
         server trên máy. Không có dòng này thì xem trang xong vẫn bị nhắc kiểm tra, tốn thêm một bước (bài thi ngày
         2026-09-24: 5 trên 68 bước, có bài Peto build lại chỉ để làm vừa câu nhắc)."""
         self.checked_revision = self.revision
+        call = self._active
+        self.checks.append({"tool": call.name if call else "unknown", "call_id": call.call_id if call else "",
+                            "revision": self.revision, **(observation or {})})
+        self.checks = self.checks[-8:]
+
+    @tool
+    def read_history(self, pattern: str | None = None, start_entry: int | None = None,
+                     start_character: int | None = None) -> dict:
+        if "recall" not in self.features or self.history_reader is None:
+            raise WorkspaceError("Máy chủ hoặc phiên này chưa hỗ trợ tra lịch sử trước tóm tắt.")
+        return self.history_reader(pattern=pattern, start_entry=start_entry, start_character=start_character)
 
     def start_step(self) -> None:
         """Gọi trước khi chạy các công cụ của một bước."""
@@ -1340,7 +1355,7 @@ class Tools:
                               "classification": classification})
         if classification in {"passed", "check_failed"} or (
                 local_probe(command) and classification not in {"execution_error", "environment_error"}):
-            self._checked()
+            self._checked({"classification": classification, "exit_code": result["exit_code"]})
         if classification == "check_failed":
             self.failed_commands += 1
         if classification not in {"passed", "success", "no_match"}:

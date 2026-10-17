@@ -669,7 +669,29 @@ Cuối mỗi yêu cầu có một dòng tổng kết: thời gian, số tệp đ
 số bước còn lại hôm nay. Có thể dùng `/compact` để giảm ngữ cảnh hoặc `/new` để bắt đầu việc khác.
 Nhật ký từng phiên lưu ở `%LOCALAPPDATA%\PetoAgent\logs\`: yêu cầu bạn gõ, từng lời Peto trả lời (mỗi lời giữ tối đa
 4000 ký tự, cả phần đầu lẫn phần cuối), các lệnh gọi công cụ và dòng tổng kết. Nhờ vậy xem lại được cả những lần cũ;
-tệp hội thoại cho `/resume` thì mỗi dự án chỉ giữ lần gần nhất. Nhật ký chỉ nằm trên máy bạn.
+tệp hội thoại cho `/resume` thì mỗi dự án giữ tối đa 50 hội thoại. Nhật ký chỉ nằm trên máy bạn.
+
+### Giữ yêu cầu và tra lại trước tóm tắt (0.28.0)
+
+Trước khi thay phần hội thoại cũ bằng bản tóm tắt, CLI lưu bản tra cứu trong
+`%LOCALAPPDATA%\PetoAgent\sessions\<khóa dự án>\<mã hội thoại>.archive\`. Bản này giữ lời người dùng, lời Peto và kết
+quả công cụ đúng như đã có trong hội thoại, không cắt lời Peto theo mức 4.000 ký tự của nhật ký xem nhanh. Không lưu
+suy nghĩ riêng của dịch vụ, chữ ký hay dữ liệu ảnh. Output đã bị giới hạn trước đó vẫn theo giới hạn cũ; output dài
+có `output_id` thì xem bằng `read_output`, không suy đoán phần đã bỏ.
+
+CLI ghim yêu cầu đầu cùng các điều chỉnh còn vừa trong 12.000 ký tự, tối đa 24 tin; các tin khác vẫn ở bản tra cứu.
+Bản tóm tắt không còn bị nhận nhầm thành lời người dùng. Khi cần đúng chi tiết cũ, Peto dùng `read_history` để tìm
+chữ hoặc đọc từng phần, kể cả sau `/resume`; công cụ chỉ đọc đúng phiên, dự án và máy chủ đang mở. Nó không tự gọi
+thêm model; bước model yêu cầu tra vẫn tính như bước thường. Cần cập nhật cả backend để model có công cụ này.
+
+Kho tra cứu tối đa 64 MB mỗi phiên; không ghi được thì giữ nguyên ngữ cảnh, báo lỗi và không âm thầm bỏ lịch sử.
+Kho đi cùng hội thoại khi xóa hoặc dọn sau 30 ngày/giới hạn 50 phiên. Các phiên cũ đã mất nội dung trước khi cập nhật
+không được tự khôi phục. Đây là bản lịch sử cục bộ, không phải nơi lưu quyền chạy lệnh.
+
+Với tác vụ dữ liệu, media hay định dạng nhị phân, lời nhắc kiểm tra yêu cầu một phép thử đúng ứng dụng tiêu thụ:
+tự đọc lại, checksum hay mã thoát 0 chỉ xác nhận tính chất tương ứng. Nếu kết quả chỉ kiểm được trong ứng dụng của
+người dùng, Peto cần đưa bước thử cụ thể và báo phần đó chưa xác nhận. CLI gửi các lần kiểm tra đã quan sát cùng mốc
+sửa tệp; đây là dữ liệu để model đánh giá, không phải bộ chấm tự động rằng cả yêu cầu đã thành công.
 
 ### Giảm nội dung gửi cho model
 

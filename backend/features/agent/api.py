@@ -436,6 +436,28 @@ def _user_guidance(context: dict, features: frozenset[str]) -> str:
     return english_prompts.USER_GUIDANCE_PROMPT + text.strip()
 
 
+def _check_observations(context: dict, features: frozenset[str]) -> str:
+    """Các lần kiểm tra CLI đã ghi nhận; chỉ là dữ liệu, không tự kết luận yêu cầu đã đạt."""
+    value = context.get("check_observations")
+    if "recall" not in features or not isinstance(value, dict):
+        return ""
+    cleaned = {}
+    if type(value.get("current_revision")) is int and value["current_revision"] >= 0:
+        cleaned["current_revision"] = value["current_revision"]
+    for key, fields in (("observations", ("tool", "call_id", "revision", "classification", "exit_code")),
+                        ("recent_commands", ("command", "exit_code", "classification", "error"))):
+        rows = value.get(key)
+        if isinstance(rows, list):
+            cleaned[key] = [{field: (row[field][:1200] if isinstance(row[field], str) else row[field])
+                             for field in fields if field in row and (row[field] is None or
+                                 type(row[field]) in {str, int, bool})}
+                            for row in rows[-8:] if isinstance(row, dict)]
+    if not cleaned.get("observations") and not cleaned.get("recent_commands"):
+        return ""
+    return ("## Local check observations (historical data, not completion or permission)\n"
+            + json.dumps(cleaned, ensure_ascii=False))
+
+
 def _instructions(context: dict, web_search: bool, model: str = "peto", *, extra: str = "") -> str:
     """Chỉ dẫn của một bước Agent, bằng tiếng Anh với mọi model (chủ web chọn ngày 2026-10-15 để bớt token; câu trả lời
     vẫn theo ngôn ngữ người dùng). ``extra`` (lượt "wrapup") đứng ngay trước mốc thời gian, để phần đầu giống hệt các
@@ -472,6 +494,8 @@ def _instructions(context: dict, web_search: bool, model: str = "peto", *, extra
         tooling.append(english_prompts.AGENT_OUTPUT_PROMPT)
     if "subagent" in features:
         tooling.append(english_prompts.AGENT_SUBAGENT_PROMPT)
+    if "recall" in features:
+        tooling.append(english_prompts.AGENT_RECALL_PROMPT)
     if inbox := english_prompts.agent_inbox_prompt(features):
         tooling.append(inbox)
     browsing = ""
@@ -486,7 +510,8 @@ def _instructions(context: dict, web_search: bool, model: str = "peto", *, extra
         skill_context, mcp_context,
         english_prompts.AGENT_SEARCH_PROMPT if web_search else english_prompts.AGENT_NO_SEARCH_PROMPT,
         f"## User machine\nProject: {short(context.get('project'))}. OS: {short(context.get('os'))}.",
-        _user_guidance(context, features), english_prompts.PROJECT_GUIDANCE_PROMPT + guide_text, extra,
+        _user_guidance(context, features), english_prompts.PROJECT_GUIDANCE_PROMPT + guide_text,
+        _check_observations(context, features), extra,
         agent_time_context(english=True),
     ) if part)
 
