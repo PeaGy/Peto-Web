@@ -643,17 +643,44 @@ class Session:
         if restored:
             self.ui.success(f"Đã hoàn tác {len(restored)} tệp.")
 
-    def permissions(self, clear=False):
-        """/permissions: lệnh và trang nhớ trong phiên ([s]), luôn cho phép ở dự án này ([l], lưu trên máy)."""
+    def permissions(self, clear=False, *, value=""):
+        """/permissions: chính sách allow/ask/deny và các quyền đã nhớ, chỉ đổi khi người dùng gõ lệnh."""
         tools = self.tools
+        if value == "clear":
+            clear = True
+        elif value:
+            parts = value.split()
+            action = None
+            if len(parts) == 1 and parts[0] in approvals.POLICY_EFFECTS:
+                effect = parts[0]
+            elif len(parts) == 2 and parts[0] in approvals.POLICY_ACTIONS and parts[1] in approvals.POLICY_EFFECTS:
+                action, effect = parts
+            else:
+                self.ui.line("Dùng /permissions [allow|ask|deny|clear], hoặc /permissions shell|edit allow|ask|deny.",
+                             "yellow")
+                return
+            if not approvals.set_policy(self.ws.root, effect, action):
+                self.ui.failure("Không lưu được chính sách quyền. Kiểm tra permissions.json trong hồ sơ người dùng.")
+                return
+            tools.approve_all = False
+            self.ui.success("Đã lưu chính sách quyền cho dự án này.")
         if clear:
+            try:
+                removed = approvals.clear(self.ws.root)
+            except OSError as err:
+                self.ui.failure(str(err))
+                return
             for grants in (tools.command_grants, tools.page_session_grants, tools.page_grants,
                            tools.site_session_grants, tools.site_grants):
                 grants.clear()
-            removed = approvals.clear(self.ws.root)
+            tools.approve_all = False
             self.ui.success("Đã xóa quyền nhớ trong phiên" +
                             (f" và {removed} quyền luôn cho phép ở dự án này." if removed else "."))
-            return
+            self.ui.line("  Đã về mặc định: tự chạy lệnh và thay đổi tệp. /permissions ask để hỏi trước.", "dim")
+        labels = {"allow": "tự thực hiện", "ask": "hỏi trước (trừ quyền đã nhớ)", "deny": "chặn"}
+        for action, title in (("shell", "Chạy lệnh"), ("edit", "Thay đổi tệp")):
+            effect = approvals.policy(self.ws.root, action)
+            self.ui.line(f"  {title}: {labels[effect]} ({effect})", "dim")
         saved, pages, sites = (approvals.entries(self.ws.root), approvals.pages(self.ws.root),
                                approvals.sites(self.ws.root))
         in_session = tools.command_grants or tools.page_session_grants or tools.site_session_grants

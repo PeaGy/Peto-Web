@@ -98,7 +98,7 @@ def test_unknown_job_and_too_many_jobs_are_refused(project):
         tools.jobs.stop_all()
 
 
-def test_refusing_a_background_command_starts_nothing(project):
+def test_refusing_a_background_command_starts_nothing(project, ask_permissions):
     tools = tools_for(project, ["n"])
     assert "không đồng ý" in start_script(tools, project)["error"]
     assert not tools.jobs.jobs

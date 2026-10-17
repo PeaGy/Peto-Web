@@ -10,6 +10,9 @@ Từ CLI 0.28.4, phiên thông thường không giới hạn số bước mỗi 
 `Session(max_steps=...)`, không thay biến toàn cục của vòng làm việc. Ngân sách này đếm lượt chính; các lượt tóm tắt
 ngữ cảnh và lượt `wrapup` có thể dùng thêm bước tài khoản. Hạn giờ của bộ thi vẫn áp dụng.
 
+Từ 0.28.5 CLI tương tác mặc định tự chạy/sửa; bộ thi đặt `tools.require_approval=True` để mọi thao tác vẫn qua
+`PolicyUI`/`CommandPolicy`, không bỏ qua bộ kiểm lệnh của bài thi.
+
 ## Các bài
 
 | Bài | Loại | Giống việc thật nào |

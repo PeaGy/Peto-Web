@@ -137,7 +137,7 @@ def test_task_reads_edits_runs_and_summarizes(project, peto):
     assert peto.requests[0]["body"]["context"]["project"] == "project"
 
 
-def test_refusing_an_edit_stops_without_changes(project, peto):
+def test_refusing_an_edit_stops_without_changes(project, peto, ask_permissions):
     session, ui = start(project, peto, ["n"])
     session.run_task("Sửa README")
     assert (project / "README.md").read_bytes() == "# Dự án thử\r\nnội dung\r\n".encode()
@@ -146,7 +146,7 @@ def test_refusing_an_edit_stops_without_changes(project, peto):
     assert_every_call_has_output(session.items)
 
 
-def test_ctrl_c_at_a_question_leaves_a_valid_history(project, peto):
+def test_ctrl_c_at_a_question_leaves_a_valid_history(project, peto, ask_permissions):
     session, ui = start(project, peto, [KeyboardInterrupt()])
     session.run_task("Sửa README")
     assert "Đã dừng yêu cầu" in ui.text
@@ -213,7 +213,7 @@ def test_effort_is_remembered_and_resume_reopens_the_last_conversation(project, 
     (project / "README.md").write_bytes("# Dự án thử\r\nnội dung\r\n".encode())
     monkeypatch.chdir(project)
 
-    first = FakeUI(answers=["/effort", "/effort cao", "/efort", "Sửa README", "y", "y", "/thoat"])
+    first = FakeUI(answers=["/effort", "/effort cao", "/efort", "Sửa README", "/thoat"])
     assert cli.session(first) == 0
     assert "mức thấp" in first.text and "Mức suy nghĩ: thấp." in first.text
     assert "Đã chuyển sang mức cao; mỗi bước tính 2 bước." in first.text
@@ -236,6 +236,22 @@ def test_effort_is_remembered_and_resume_reopens_the_last_conversation(project, 
     assert cli.status(status) == 0
     assert f"· mức cao · hôm nay còn 196/200 bước · đã dùng 45k token · peto {__version__}." in status.text
     assert "Có bản peto mới" not in status.text, "máy chủ không báo phiên bản thì không nhắc"
+
+
+def test_permission_commands_configure_the_project_without_model_calls(project, peto, monkeypatch):
+    from peto_agent import approvals
+    def reply(path, body):
+        assert path == "/api/agent/me", "Lệnh /permissions không gọi model"
+        return 200, {"account": "Bình", "device_name": "MAY-THU", "steps_used": 0, "steps_limit": 200,
+                     "tokens_used": 0, "default_effort": "medium"}
+    peto.reply = reply
+    config.save({"server": peto.url, "token": "peto_token_thu"})
+    monkeypatch.chdir(project)
+    ui = FakeUI(["/permissions", "/permissions shell ask", "/permissions edit deny", "/permissions", "/thoat"])
+    assert cli.session(ui) == 0
+    assert approvals.policy(project, "shell") == "ask" and approvals.policy(project, "edit") == "deny"
+    assert "Chạy lệnh: tự thực hiện (allow)" in ui.text and "Thay đổi tệp: chặn (deny)" in ui.text
+    assert not [request for request in peto.requests if request["path"] == "/api/agent/step"]
 
 
 def test_commands_usage_and_update_notice(project, peto, monkeypatch):
@@ -491,7 +507,7 @@ def test_disconnect_after_edit_and_command_can_resume_without_replaying(project,
     assert sum(item.get("role") == "user" for item in resumed.items) == 1
 
 
-def test_retry_requires_fresh_permission_for_new_tools(project, peto):
+def test_retry_requires_fresh_permission_for_new_tools(project, peto, ask_permissions):
     session, ui = start(project, peto, ["a", "n"])
 
     def interrupted(path, body):
@@ -606,7 +622,7 @@ def test_deleting_and_renaming_run_through_the_real_step_loop(project, peto):
     assert "Đã hoàn tác 3 tệp." in ui.text
 
 
-def test_refusing_a_delete_leaves_the_file_and_tells_the_model(project, peto):
+def test_refusing_a_delete_leaves_the_file_and_tells_the_model(project, peto, ask_permissions):
     def reply(path, body):
         results = [item for item in body["input"] if item.get("type") == "function_call_output"]
         if not results:
@@ -720,7 +736,7 @@ def test_ui_crash_saves_an_interrupted_request_without_unanswered_calls(project,
     assert (project / "README.md").read_text(encoding="utf-8") == "Giữ nguyên logic"
 
 
-def test_progress_is_saved_after_every_step_so_closing_the_window_loses_nothing(project, peto):
+def test_progress_is_saved_after_every_step_so_closing_the_window_loses_nothing(project, peto, ask_permissions):
     """Đóng cửa sổ giữa yêu cầu thì Windows tắt Python và khối finally không chạy, nên bản lưu phải có sẵn từng bước.
 
     Lệnh gọi công cụ chưa xong được lưu với kết quả "bị ngắt", để bước sau /resume vẫn hợp lệ với model.

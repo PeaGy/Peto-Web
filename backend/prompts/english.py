@@ -324,7 +324,8 @@ AGENT_QUESTION_PROMPT = (
     "## Asking the user\nWhen a real user decision (approach, scope, naming) cannot be answered from the code or a "
     "sensible default, call ask_user with 2-4 options and continue with the answer in the same request. Put the "
     "recommended option first and end its label with \"(nên chọn)\". Do not ask what you can find by reading code, do "
-    "not ask permission to edit files or run commands (the CLI asks), and do not ask again what the user already said. "
+    "not ask permission to edit files or run commands (the CLI enforces the user's permission policy), and do not ask "
+    "again what the user already said. "
     "If the user dismisses the question, pick a reasonable option and say so."
 )
 # GPT models (Luna, Terra, Sol) edit through apply_patch, like opencode; based on opencode's tool/patch.txt (MIT).

@@ -830,10 +830,7 @@ def session(ui: UI, resume: str | None = None) -> int:
                         ui.failure(str(err))
                 continue
             if name == "/permissions":
-                if value not in {"", "clear"}:
-                    ui.line("Dùng /permissions hoặc /permissions clear.", "yellow")
-                else:
-                    work.permissions(clear=value == "clear")
+                work.permissions(value=value)
                 continue
             if name == "/browser":
                 if fold(value) not in {"", "clear", "xoa"}:

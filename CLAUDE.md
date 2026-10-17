@@ -1,5 +1,27 @@
 # CLAUDE.md
 
+## Default tool permissions (2026-10-17; CLI 0.28.5)
+
+The owner requested OpenCode-style default execution after the supervised GTA test spent about 65 minutes awaiting
+approvals (including the conversation interruption). Build-mode commands, background commands and file mutations now
+default to allow. This is permission behavior, not an OS sandbox or a complete port of OpenCode's rule engine.
+`/permissions [allow|ask|deny]` sets both groups; `/permissions shell|edit allow|ask|deny` sets one. The setting lives
+in the user-profile permissions.json `policies` map, keyed by project root; never read policy from the repo or history.
+Ask keeps legacy exact s/l grants and request a; deny is checked first and cannot be overridden by those grants.
+`/permissions clear` clears remembered grants AND project policy and visibly returns to allow. Ask must be selected
+after clear to restore prompts. Malformed/unreadable profile JSON falls back to ask and cannot be silently overwritten.
+Grant writes preserve policies; saves use atomic_file. Failed clear/save is reported, not treated as success.
+Plan commands still go through legacy approval, and plan file restrictions stay enforced. Browser/MCP/undo retain
+their separate approval flows. CLI still renders commands/diffs/results, and read-before-edit/checkpoints/timeout,
+Windows multiline-command guards and Ctrl+C still apply. No live Peto call, deployment or installed CLI update is
+part of this source change. Permission-specific legacy tests select ask explicitly; default-mode tests use no prompts.
+The eval harness sets tools.require_approval=True so PolicyUI/CommandPolicy still evaluates every command/file effect;
+this owner-controlled runtime flag is not read from project files or session history, and reset_task preserves it.
+Validation: all 590 CLI cases covered successfully across the full run and targeted recheck. The full run had 589 passes
+and one new test fixture missing /me; after fixing that fixture, all 58 session/policy/catalog tests pass. Backend API,
+prompt and installer tests: 61 pass; final installer/wheel recheck: 5 pass. No paid model calls. Sandbox denied temporary
+browser/socket access, so full integration checks ran with dedicated workspace temp directories outside that sandbox.
+
 ## Optional per-request step budget (2026-10-17; CLI 0.28.4)
 
 The owner explicitly requested removing the fixed 40-step interruption before the next GTA test. Interactive
@@ -2959,7 +2981,8 @@ results in the next step. The server stores no conversation (`store=False`), and
   - An edit needs a prior `read_file`, a unique match and an unchanged file, and keeps CRLF/BOM. Since 0.18.0, with
     the server's `edit_v2`, the match may be approximate under strict rules the owner approved on 2026-10-12; see the
     0.18.0 bullet under "Redesign after OpenCode".
-  - Every edit, write, delete, rename and command asks `[y/n/a]`, where `a` lasts for the current request only.
+  - From 0.28.5, edits and commands default to allow; `/permissions` can set allow/ask/deny per project, separately
+    for shell and edit. In ask mode, edits, writes, deletes, renames and commands ask `[y/n/a]`, where `a` lasts for the current request only.
     Commands (`run_command` and `start_command`, through `Tools._approve_command`) also offer `s` (this exact command,
     folder, timeout and shell, for the session) and `l` (this exact command, folder and shell, always, in this project).
   - `l` grants live in `approvals.py`, in `permissions.json` next to `config.json` in the user's profile, keyed by the
@@ -2969,7 +2992,7 @@ results in the next step. The server stores no conversation (`store=False`), and
     wildcard or prefix matching, so `npm test && …` never rides on `npm test`. The timeout is left out of the key: it
     is only a cap, Ctrl+C still stops the command, and the model varies it between runs. A command that runs on an `l`
     grant prints a dim line saying so. `/permissions` lists both kinds, plus pages Peto may click and type on (browser
-    phase 2) and outside domains it may view (phase 3), and `/permissions clear` drops all of them.
+    phase 2) and outside domains it may view (phase 3). `/permissions clear` drops grants and policy, returning to allow.
   - Commands take an optional `cwd`: an existing folder inside the project, resolved like any path, so outside
     folders and `.git` are refused. It was added because on 2026-09-20 Peto ran `npm run dev` at the root of this repo
     (no `package.json` there), then retried with `cd frontend && …`. Each command opens a fresh shell, so a

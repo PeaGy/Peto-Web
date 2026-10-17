@@ -1,11 +1,8 @@
-"""Lệnh và trang được "luôn cho phép" trong từng dự án, lưu trong hồ sơ người dùng (``permissions.json`` cạnh
-config.json). Trang là địa chỉ (origin) Peto được bấm, gõ mà không hỏi lại, từ CLI 0.11.0.
+"""Chính sách allow/ask/deny và quyền đã nhớ theo dự án, lưu trong hồ sơ người dùng (permissions.json cạnh config.json).
 
-Không bao giờ đọc quyền từ thư mục dự án: một repo tải về có thể kèm sẵn tệp cấp quyền để lệnh chạy mà không hỏi, nên
-quyền chỉ nằm trên máy người dùng và chỉ được thêm khi chính họ chọn [l] ở câu hỏi đồng ý. Khớp đúng từng chữ của
-lệnh, thư mục chạy và shell, không có ký tự đại diện hay khớp phần đầu, để "npm test && …" không lọt qua quyền của
-"npm test". Thời hạn không nằm trong khóa: đó chỉ là mức trần và Ctrl+C vẫn dừng được lệnh, còn model đổi thời hạn giữa
-các lần chạy thì quyền không nên mất.
+Từ 0.28.5, shell/edit mặc định allow. Người dùng đổi bằng /permissions; dự án không thể tự cấp quyền từ tệp của repo.
+Ở chế độ ask, [l] vẫn chỉ nhớ đúng chuỗi lệnh, thư mục và shell, không có wildcard hay khớp phần đầu. Thời hạn chỉ là
+mức trần nên không nằm trong khóa. Quyền deny luôn ưu tiên hơn [l], [s] và [a]. Quyền origin/site vẫn hỏi như trước.
 """
 
 from __future__ import annotations
@@ -16,11 +13,14 @@ import time
 from pathlib import Path
 
 from .config import home
+from .atomic_file import write_text
 
 VERSION = 1
 MAX_PER_PROJECT = 100
 MAX_COMMAND_CHARS = 4000
 SHELLS = {"cmd", "powershell"}
+POLICY_ACTIONS = ("shell", "edit")
+POLICY_EFFECTS = {"allow", "ask", "deny"}
 
 
 def _file() -> Path:
@@ -32,14 +32,52 @@ def _key(root: Path) -> str:
     return os.path.normcase(str(root))
 
 
-def _projects() -> dict:
+def _document() -> dict | None:
     try:
         data = json.loads(_file().read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {"version": VERSION, "projects": {}}
     except (OSError, ValueError):
-        return {}
+        return None
     if not isinstance(data, dict) or data.get("version") != VERSION or not isinstance(data.get("projects"), dict):
-        return {}
-    return data["projects"]
+        return None
+    if "policies" in data and not isinstance(data["policies"], dict):
+        return None
+    return data
+
+
+def _projects() -> dict:
+    return (_document() or {}).get("projects", {})
+
+
+def policy(root: Path, action: str) -> str:
+    """Mặc định cho phép lệnh và sửa tệp; cấu hình hỏng thì hỏi, không bỏ qua một quyền deny bị mất."""
+    if action not in POLICY_ACTIONS:
+        raise ValueError(f"Loại quyền không hợp lệ: {action}")
+    data = _document()
+    if data is None:
+        return "ask"
+    rules = data.get("policies", {}).get(_key(root), {})
+    if not isinstance(rules, dict):
+        return "ask"
+    effect = rules.get(action, "allow")
+    return effect if isinstance(effect, str) and effect in POLICY_EFFECTS else "ask"
+
+
+def set_policy(root: Path, effect: str, action: str | None = None) -> bool:
+    """Cài quyền từ lệnh người dùng, lưu riêng theo dự án trong hồ sơ trên máy."""
+    if effect not in POLICY_EFFECTS or (action is not None and action not in POLICY_ACTIONS):
+        return False
+    data = _document()
+    if data is None:
+        return False
+    policies = data.setdefault("policies", {})
+    current = policies.get(_key(root), {})
+    current = dict(current) if isinstance(current, dict) else {}
+    for target in (action,) if action else POLICY_ACTIONS:
+        current[target] = effect
+    policies[_key(root)] = current
+    return _write_document(data)
 
 
 def _items(root: Path) -> list[dict]:
@@ -111,22 +149,32 @@ def add(root: Path, directory: str, command: str, shell: str) -> bool:
 
 
 def clear(root: Path) -> int:
-    """Bỏ mọi lệnh, trang và tên miền đã nhớ của dự án này; trả về số mục đã bỏ."""
+    """Xóa quyền đã nhớ và chính sách dự án, trở về mặc định allow; lỗi lưu không báo thành công."""
     removed = len(entries(root)) + len(pages(root)) + len(sites(root))
-    projects = _projects()
-    if projects.pop(_key(root), None) is not None:
-        _write(projects)
+    data = _document()
+    if data is None:
+        raise OSError("Không đọc được permissions.json; chưa xóa quyền.")
+    changed = _key(root) in data["projects"] or _key(root) in data.get("policies", {})
+    data["projects"].pop(_key(root), None)
+    data.get("policies", {}).pop(_key(root), None)
+    if changed and not _write_document(data):
+        raise OSError("Không lưu được permissions.json; chưa xóa quyền.")
     return removed
 
 
 def _write(projects: dict) -> bool:
+    data = _document()
+    if data is None:
+        return False
+    data["projects"] = projects
+    return _write_document(data)
+
+
+def _write_document(data: dict) -> bool:
     path = _file()
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = path.with_suffix(".tmp")
-        temporary.write_text(json.dumps({"version": VERSION, "projects": projects}, ensure_ascii=False, indent=2),
-                             encoding="utf-8")
-        os.replace(temporary, path)
+        write_text(path, json.dumps(data, ensure_ascii=False, indent=2))
     except OSError:
         return False
     return True

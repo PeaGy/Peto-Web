@@ -1,7 +1,7 @@
 """Các công cụ Peto gọi, chạy ngay trên máy người dùng trong phạm vi thư mục dự án.
 
-Đọc, liệt kê và tìm thì tự làm. Sửa tệp, ghi tệp và chạy lệnh luôn hỏi người dùng trước (trừ khi họ chọn "có cho mọi
-bước" trong yêu cầu đang chạy). Kết quả trả về là dict, sẽ được gửi lại cho Peto ở bước sau.
+Đọc, liệt kê và tìm thì tự làm. Sửa tệp và chạy lệnh mặc định được phép; /permissions đổi sang hỏi hoặc chặn theo dự án.
+Kết quả trả về là dict, sẽ được gửi lại cho Peto ở bước sau.
 """
 
 from __future__ import annotations
@@ -157,6 +157,8 @@ class Tools:
         self.skills = Skills(workspace)
         self.mcp = MCP(workspace, ui)
         self.approve_all = False
+        # Bộ thi/người giám sát có thể buộc đi qua bộ kiểm quyền riêng; không lấy giá trị này từ model hoặc repo.
+        self.require_approval = False
         self.changes: dict[str, list[int]] = {}
         self.commands: list[dict] = []
         self.checkpoint = Checkpoint(workspace)
@@ -473,6 +475,12 @@ class Tools:
                          "Đừng gọi lại; xem kết quả trước đó rồi đổi cách làm, hoặc báo người dùng chỗ đang vướng."}
 
     def _approve(self, kind: str = "file", **body) -> bool:
+        if kind in {"file", "move", "patch"}:
+            effect = approvals.policy(self.ws.root, "edit")
+            if effect == "deny":
+                raise WorkspaceError("Chính sách /permissions edit deny đang chặn thay đổi tệp trong dự án này.")
+            if effect == "allow" and not self.require_approval:
+                return True
         if self.approve_all:
             return True
         with self.metrics.measure("permission"):
@@ -956,7 +964,7 @@ class Tools:
 
     @tool
     def start_command(self, command: str, shell: str | None = None, cwd: str | None = None) -> dict:
-        """Chạy lệnh nền và trả về ngay. Hỏi quyền như run_command, và nói rõ lệnh sống lâu hơn yêu cầu này."""
+        """Chạy lệnh nền và trả về ngay. Áp chính sách như run_command; nói rõ lệnh sống lâu hơn yêu cầu này."""
         command = command.strip()
         if not command:
             raise WorkspaceError("Lệnh đang trống.")
@@ -1299,10 +1307,15 @@ class Tools:
 
     def _approve_command(self, command: str, directory: Path, timeout: int, shell: str, *,
                          background: bool = False) -> bool:
-        """Hỏi quyền chạy lệnh. Nhớ được đúng lệnh đó trong phiên ([s]) hoặc luôn trong dự án này ([l]).
+        """Áp chính sách lệnh: allow mặc định, deny không bị quyền đã nhớ hoặc [a] vượt qua.
 
         Quyền [l] nằm trong hồ sơ người dùng (approvals.py), không bao giờ trong thư mục dự án.
         """
+        effect = approvals.policy(self.ws.root, "shell")
+        if effect == "deny":
+            raise WorkspaceError("Chính sách /permissions shell deny đang chặn chạy lệnh trong dự án này.")
+        if effect == "allow" and not self.require_approval and getattr(self.ui, "mode", "build") != "plan":
+            return True
         grant = (str(directory), command, timeout, shell)
         if self.approve_all or grant in self.command_grants:
             return True

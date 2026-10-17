@@ -153,7 +153,7 @@ def test_an_approved_edit_is_a_block_with_its_diff(project):
     assert "2 −     return 1" in text and "2 +     return 2" in text
 
 
-def test_a_refused_edit_says_so_and_writes_nothing(project):
+def test_a_refused_edit_says_so_and_writes_nothing(project, ask_permissions):
     (project / "app.py").write_text("x = 1\n")
     ui = make_ui(["n"])
     tools = Tools(Workspace(project), ui)

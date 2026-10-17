@@ -72,7 +72,7 @@ def test_apply_matches_strictly_and_only_once():
 
 # ---- Công cụ
 
-def test_one_patch_changes_several_files_after_one_approval_and_undo_restores_all(project):
+def test_one_patch_changes_several_files_after_one_approval_and_undo_restores_all(project, ask_permissions):
     (project / "app.py").write_bytes(codecs.BOM_UTF8 + b"def greet():\r\n    print('Hi')\r\n")
     (project / "cu.txt").write_text("bỏ đi\n", encoding="utf-8")
     (project / "doi.py").write_text("x = 1\n", encoding="utf-8")
@@ -111,7 +111,7 @@ def test_one_wrong_hunk_writes_nothing(project):
     assert tools.ui.answers == ["y"], "sai thì không hỏi gì"
 
 
-def test_the_same_rules_as_edit_file_apply(project):
+def test_the_same_rules_as_edit_file_apply(project, ask_permissions):
     (project / "a.py").write_text("a = 1\n", encoding="utf-8")
     (project / "co.py").write_text("x\n", encoding="utf-8")
     tools = make(project, ["n"])

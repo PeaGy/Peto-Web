@@ -69,7 +69,7 @@ def test_a_read_is_one_started_and_one_finished_event_carrying_what_peto_got(pro
     assert tools.call_id == "", "mã lời gọi chỉ dùng cho đúng một lần gọi"
 
 
-def test_an_edit_shows_its_diff_before_asking_and_a_refusal_is_marked_for_display(project):
+def test_an_edit_shows_its_diff_before_asking_and_a_refusal_is_marked_for_display(project, ask_permissions):
     (project / "app.py").write_text("x = 1\n")
     ui = RecordingUI(["n"])
     tools = Tools(Workspace(project), ui)
@@ -123,7 +123,7 @@ def test_a_direct_call_without_the_loop_also_reports(project):
     assert "Xem thư mục ." in ui.text
 
 
-def test_page_and_command_permissions_carry_what_is_being_asked(project):
+def test_page_and_command_permissions_carry_what_is_being_asked(project, ask_permissions):
     ui = RecordingUI(["n"])
     tools = Tools(Workspace(project), ui)
 

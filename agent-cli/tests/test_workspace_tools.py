@@ -75,7 +75,7 @@ def test_edit_needs_a_unique_match_and_keeps_bom(project):
     assert (project / "notes.txt").read_bytes() == codecs.BOM_UTF8 + b"a\nc\na\n"
 
 
-def test_refusal_keeps_the_file_and_approve_all_lasts_for_one_task(project):
+def test_refusal_keeps_the_file_and_approve_all_lasts_for_one_task(project, ask_permissions):
     (project / "a.txt").write_text("one\n")
     (project / "b.txt").write_text("two\n")
     (project / "exists.txt").write_text("x\n")

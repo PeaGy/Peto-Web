@@ -56,3 +56,10 @@ def agent_home(tmp_path: Path, monkeypatch) -> Path:
     # Ảnh chụp dự án (CLI 0.26.0) gọi git trước và sau mỗi lệnh; test của nó tự bật lại.
     monkeypatch.setenv("PETO_AGENT_NO_SNAPSHOTS", "1")
     return home
+
+
+@pytest.fixture
+def ask_permissions(project, agent_home):
+    """Các test kiểm giao diện từ chối/nhớ quyền phải chọn chế độ hỏi rõ ràng, thay vì dựa vào mặc định cũ."""
+    from peto_agent import approvals
+    assert approvals.set_policy(project, "ask")

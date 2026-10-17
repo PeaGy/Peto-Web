@@ -311,6 +311,8 @@ def run_task(task: Task, client: Client, *, work: Path, out: Path, model: str, e
     log = TaskLog(task.project)
     session = Session(client, Workspace(root), ui, log=log, effort=effort, model=model, model_step_cost=step_cost,
                       max_steps=task.max_steps)
+    # CLI tương tác mặc định allow, nhưng bài thi phải qua PolicyUI/CommandPolicy cho từng thao tác như trước.
+    session.tools.require_approval = True
     # Bài thi không đặt tên hội thoại: mỗi lần đặt là một bước Peto ngoài bài.
     session.auto_title = False
     if features:

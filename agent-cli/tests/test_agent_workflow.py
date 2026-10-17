@@ -79,7 +79,7 @@ def test_intervening_external_edit_not_absorbed_by_checkpoint(project):
     assert (project / "a").read_text() == "mine"
 
 
-def test_undo_decline_then_restore_updates_context(project):
+def test_undo_decline_then_restore_updates_context(project, ask_permissions):
     client = Client()
     ui = FakeUI(["y", "n", "y"])
     work = Session(client, Workspace(project), ui)
@@ -118,7 +118,7 @@ def test_guidance_large_is_not_silently_truncated(project):
         guides(Workspace(project))
 
 
-def test_guidance_changed_during_permission_blocks_write(project):
+def test_guidance_changed_during_permission_blocks_write(project, ask_permissions):
     guide = project / "AGENTS.md"
     guide.write_text("old rule")
     target = project / "a"
@@ -135,7 +135,7 @@ def test_guidance_changed_during_permission_blocks_write(project):
     assert target.read_text() == "old"
 
 
-def test_session_permission_exact_command_timeout_and_revocation(project, monkeypatch):
+def test_session_permission_exact_command_timeout_and_revocation(project, monkeypatch, ask_permissions):
     executed = []
     def run(command, root, timeout, **kwargs):
         executed.append((command, root, timeout))
@@ -152,6 +152,7 @@ def test_session_permission_exact_command_timeout_and_revocation(project, monkey
     work.permissions()
     assert "npm test ·" in ui.text and "120s" in ui.text, "/permissions liệt kê đúng quyền đã nhớ"
     work.permissions(clear=True)
+    work.permissions(value="ask")
     assert "error" in tools.run_command("npm test")
     assert len(executed) == 2
     tools.command_grants.add((str(project), "x", 120, "cmd"))
@@ -173,7 +174,7 @@ def test_three_failed_commands_stop_execution_and_further_edits(project, monkeyp
     assert len(executed) == 3 and not (project / "a").exists()
 
 
-def test_verification_followup_is_bounded_and_honors_refusal(project):
+def test_verification_followup_is_bounded_and_honors_refusal(project, ask_permissions):
     client = Client([
         [call(1, "write_file", path="a", content="new")],
         [message("done")],

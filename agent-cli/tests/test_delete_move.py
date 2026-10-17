@@ -34,7 +34,7 @@ def test_delete_asks_first_and_can_be_undone(project):
     assert (project / "cu.py").read_bytes() == original, "giữ nguyên BOM và CRLF như lúc xóa"
 
 
-def test_delete_refused_keeps_the_file(project):
+def test_delete_refused_keeps_the_file(project, ask_permissions):
     (project / "cu.py").write_text("x\n")
     tools = Tools(Workspace(project), FakeUI(["n"]))
     assert "không đồng ý xóa cu.py" in tools.call("delete_file", args(path="cu.py"))["error"]

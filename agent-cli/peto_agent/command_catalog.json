@@ -129,16 +129,21 @@
     },
     {
       "name": "/permissions",
-      "description": "Xem lệnh, trang đã nhớ trong phiên và luôn cho phép ở dự án này",
+      "description": "Xem hoặc đổi quyền tự làm, hỏi trước, chặn của dự án này",
       "options": [
+        ["allow", "Tự chạy lệnh và thay đổi tệp (mặc định)"],
+        ["ask", "Hỏi trước khi chạy lệnh hoặc thay đổi tệp"],
+        ["deny", "Chặn chạy lệnh và thay đổi tệp"],
+        ["shell ask", "Chỉ hỏi trước khi chạy lệnh"],
+        ["edit ask", "Chỉ hỏi trước khi thay đổi tệp"],
         [
           "clear",
-          "Xóa quyền đã nhớ trong phiên và của dự án này"
+          "Xóa quyền đã nhớ và trở về mặc định tự làm"
         ]
       ],
-      "usage": "/permissions [clear]",
+      "usage": "/permissions [allow|ask|deny|clear] hoặc /permissions shell|edit <allow|ask|deny>",
       "since": "0.0.0",
-      "details": "Xem hoặc xóa quyền lệnh/trang đã nhớ trong phiên và trong dự án. Công cụ thông thường hỏi trước khi sửa/chạy; quyền đã nhớ có thể bỏ qua lần hỏi tương ứng. MCP vẫn hỏi mỗi lần gọi riêng."
+      "details": "Từ 0.28.5, chạy lệnh (kể cả lệnh nền) và sửa/tạo/xóa/chuyển/patch tệp mặc định allow. Dùng ask để hỏi trước, deny để chặn, hoặc đổi riêng shell/edit. Lưu theo dự án trong hồ sơ người dùng; deny ưu tiên hơn quyền đã nhớ. Trong ask, quyền s/l/a vẫn có hiệu lực. clear xóa quyền đã nhớ và chính sách dự án, trở về allow. Plan vẫn hỏi lệnh, MCP/trang web giữ cơ chế duyệt riêng."
     },
     {
       "name": "/browser",

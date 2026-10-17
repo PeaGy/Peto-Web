@@ -349,7 +349,7 @@ nào được chọn, nên Enter không tự chạy gì. Từ 0.20.0 tên lệnh
   cầu trong hội thoại đứng trên cả hai. Ghi ngay trên máy, không tốn bước và không vào `/undo`. Peto không bao giờ đọc
   hướng dẫn chung từ thư mục dự án. Cần máy chủ đã cập nhật; máy chủ cũ thì tệp vẫn lưu, Peto dùng khi máy chủ có.
 - `/retry`: thử lại bước bị gián đoạn kết nối, dùng kết quả các bước đã hoàn tất. Không tự phát lại lệnh hay thao tác
-  sửa tệp cũ; thao tác mới vẫn hỏi quyền. Nếu đã thoát thì `/resume` trước, rồi `/retry`.
+  sửa tệp cũ; thao tác mới theo chính sách `/permissions`. Nếu đã thoát thì `/resume` trước, rồi `/retry`.
 - `/diff`: xem bản sửa/ghi tệp gần nhất đã lưu cho dự án; từ 0.26.0 có cả tệp do lệnh Peto chạy đổi (ghi "do lệnh";
   tệp nhị phân chỉ ghi cỡ). Diff dài có thể xem tiếp bằng `v`.
 - `/undo`: xem diff rồi xác nhận hoàn tác yêu cầu gần nhất; giữ nguyên BOM và kiểu xuống dòng ban đầu, xóa các tệp
@@ -364,14 +364,16 @@ nào được chọn, nên Enter không tự chạy gì. Từ 0.20.0 tên lệnh
   Xóa và đổi tên do Peto làm bằng công cụ thì thuộc bản hoàn tác; thay đổi do lệnh terminal thì không. Nếu lỗi ổ đĩa
   xảy ra giữa chừng, những tệp chưa khôi phục vẫn được giữ trong bản nhớ để kiểm tra lại; không có giao dịch nguyên
   khối nhiều tệp.
-- `/permissions`: xem lệnh, trang (được bấm, gõ) và tên miền ngoài (được xem) đã nhớ trong phiên (`s`) và luôn cho
-  phép ở dự án này (`l`); `/permissions clear` thu hồi hết. Lệnh nhớ trong phiên mất khi `/new` hoặc `/resume`; lệnh luôn cho phép thì còn tới
-  khi bạn xóa.
+- `/permissions`: xem và đổi chính sách quyền của dự án. Từ 0.28.5, mặc định tự chạy lệnh và thay đổi tệp;
+  `/permissions ask` để hỏi trước, `/permissions deny` để chặn. Đổi riêng bằng `/permissions shell ask` hoặc
+  `/permissions edit deny` (mỗi nhóm nhận `allow`, `ask`, `deny`). Cũng hiện quyền lệnh/trang/tên miền đã nhớ.
+  `/permissions clear` xóa quyền đã nhớ và chính sách dự án, **trở về mặc định allow**; dùng `ask` sau đó nếu muốn hỏi lại.
+  Quyền `s` mất khi `/new` hoặc `/resume`; chính sách và quyền `l` còn tới khi bạn đổi hoặc xóa.
 - `/browser`: hiện hoặc ẩn cửa sổ trình duyệt của Peto, để xem Peto bấm, gõ trên trang (xem "Bấm, gõ trên trang"
   bên dưới). `/browser clear`: quên đăng nhập, cookie và dữ liệu trang mà trình duyệt của Peto lưu cho dự án này.
 - `/init`: Peto xem qua dự án (cấu trúc thư mục được gửi sẵn trong yêu cầu, khỏi tốn một bước), đọc README cùng các tệp
   cấu hình rồi viết `AGENTS.md` ở gốc dự án. Đây là một yêu cầu bình thường nên tốn vài bước, và bản ghi tệp vẫn hiện
-  diff để bạn đồng ý. Dự án đã có `AGENTS.md` thì Peto đọc trước và chỉ sửa chỗ sai hoặc thiếu.
+  diff để bạn theo dõi và áp dụng chính sách `/permissions`. Dự án đã có `AGENTS.md` thì Peto đọc trước và chỉ sửa chỗ sai hoặc thiếu.
 - `/plan`: bật hoặc tắt chế độ Lập kế hoạch (cũng là `Shift+Tab`), xem ở trên.
 - `/remember <ghi chú>`: ghi một điều Peto cần nhớ về dự án vào mục `## Ghi nhớ` của `AGENTS.md` ở gốc (chưa có mục
   hay chưa có tệp thì tạo), ví dụ `/remember chạy test bằng python -m pytest`. Ghi ngay trên máy, không gọi model nên không tốn
@@ -467,13 +469,36 @@ dòng tạm; ở màn hình toàn phần câu trả lời hiện dần ngay tron
 tắt màu; khi output chuyển sang tệp hoặc ống dẫn, Peto dùng giao diện chữ thường, không có mã điều khiển hay dòng trạng
 thái vẽ lại.
 
-Mỗi lần Peto muốn sửa hay tạo tệp, một khung "Cần bạn duyệt" hiện ở cuối màn hình với diff có cột số dòng, nền xanh cho
+Từ **0.28.5**, chạy lệnh (gồm lệnh nền) và sửa/tạo/xóa/chuyển/patch tệp mặc định **allow**, theo mặc định của OpenCode CLI.
+CLI vẫn hiện lệnh, thư mục, thời hạn, diff và kết quả. Không cần chọn `a` mỗi yêu cầu hoặc nhớ từng lệnh để làm tiếp.
+
+Đổi ngay trong Peto, không tốn bước model:
+
+| Lệnh | Kết quả |
+|---|---|
+| `/permissions` | Xem chế độ hiện tại |
+| `/permissions ask` | Hỏi trước cho cả lệnh và thao tác tệp |
+| `/permissions shell allow` | Tự chạy lệnh |
+| `/permissions edit ask` | Hỏi trước khi thay đổi tệp |
+| `/permissions shell deny` | Chặn mọi lệnh, kể cả lệnh đã nhớ |
+| `/permissions allow` | Tự chạy lệnh và thao tác tệp |
+
+Cài đặt nằm trong `permissions.json` ở hồ sơ người dùng, theo từng dự án;
+không đọc chính sách từ repo và không đưa quyền vào session/summary. `deny` ưu tiên hơn `a`, `s`, `l`. `ask` vẫn dùng được
+các quyền đã nhớ; `/permissions clear` xóa chúng và chính sách dự án, trở về `allow`. File cấu hình hỏng/không đọc được
+thì hỏi trước và báo lỗi khi lưu; không tự ghi đè để bỏ qua một quyền chặn.
+
+Quyền này áp dụng cho hai nhóm `shell` và `edit`, chưa phải toàn bộ bộ luật theo action/resource của OpenCode.
+`edit deny` chỉ chặn công cụ thay đổi tệp; lệnh shell có quyền riêng và chạy với quyền tài khoản hệ điều hành.
+Trong Plan, lệnh vẫn đi qua duyệt như trước; MCP, truy cập/thao tác web và yêu cầu hoàn tác có cơ chế duyệt riêng.
+
+Khi chọn **ask**, mỗi lần Peto muốn sửa hay tạo tệp, một khung "Cần bạn duyệt" hiện ở cuối màn hình với diff có cột số dòng, nền xanh cho
 dòng thêm, đỏ cho dòng xóa; terminal rộng hơn 120 cột thì diff chia hai cột cũ và mới. Chọn bằng `←`/`→` rồi `Enter`
 (`Esc` là từ chối), hoặc gõ thẳng chữ của lựa chọn (`y`, `a`, `s`, `l`, `n`). Phím gõ trước khi khung hiện không được
 tính. Diff dài hơn màn hình thì `v` hoặc `PgDn` xem tiếp, không cấp quyền sửa tệp. Trả lời xong khung biến mất; tệp đã
 sửa hiện thành một khối có diff, bị từ chối thì một dòng `✗ Không sửa …`.
 Mỗi lần muốn chạy lệnh, CLI hiện nguyên lệnh, thư mục và giới hạn thời gian. Khi chạy có bộ đếm thời gian và dòng output
-mới nhất (ở terminal đủ rộng); khi xong hiện tối đa 8 dòng output cuối cùng cùng kết quả hoặc mã lỗi. Bạn trả lời:
+mới nhất (ở terminal đủ rộng); khi xong hiện tối đa 8 dòng output cuối cùng cùng kết quả hoặc mã lỗi. Khi được hỏi, bạn trả lời:
 
 - `y`: đồng ý bước này.
 - `n`: không đồng ý. Peto được báo lại để hỏi bạn cách khác.
@@ -822,7 +847,7 @@ không bao giờ bị đổi, và hội thoại gửi lại cho Peto vẫn là c
   quen định dạng đó. Luật vẫn như trên: tệp sửa hay xóa phải đã đọc và chưa đổi, tệp tạo mới chưa có, đoạn sửa khớp
   đúng một chỗ (chỉ bỏ qua khoảng trắng đầu, cuối dòng). Bạn duyệt một lần cho cả bản, khung hiện diff từng tệp; một
   đoạn không khớp là không tệp nào bị ghi, và `/undo` hoàn tác cả bản. Peto (Grok) và Claude vẫn sửa từng đoạn.
-- **Xóa và đổi tên:** Peto có công cụ riêng cho hai việc này và luôn hỏi trước; xóa thì hiện nội dung sắp mất, đổi tên
+- **Xóa và đổi tên:** Peto có công cụ riêng cho hai việc này, theo chính sách `/permissions edit`; xóa thì hiện nội dung sắp mất, đổi tên
   thì hiện đường dẫn cũ và mới. Cả hai đi qua bản nhớ hoàn tác nên `/undo` lấy lại được, khác với xóa bằng lệnh
   terminal. Peto chỉ xóa được tệp chữ đọc được (không phải thư mục, tệp nhị phân hay tệp trên 1 MB), vì bản hoàn tác
   phải giữ được nội dung; đích của đổi tên phải là chỗ chưa có tệp.

@@ -33,7 +33,7 @@ def test_numbered_diff_wraps_without_losing_code_or_vietnamese(width):
     assert "    +1 thêm · −1 xóa" in lines
 
 
-def test_paging_a_large_diff_does_not_approve_the_change(project):
+def test_paging_a_large_diff_does_not_approve_the_change(project, ask_permissions):
     out = io.StringIO()
     answers = iter(["v", "v", "n"])
     ui = display.UI(out=out, colors=False, reader=lambda _: next(answers))
