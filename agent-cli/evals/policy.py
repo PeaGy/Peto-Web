@@ -23,6 +23,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path, PureWindowsPath
 
@@ -281,7 +282,7 @@ class CommandPolicy:
         self.allow = [re.compile(pattern, re.I) for pattern in allow]
         self.deny = [re.compile(pattern, re.I) for pattern in deny]
 
-    def decide(self, command: str, directory: str | Path, shell: str = "cmd") -> Decision:
+    def decide(self, command: str, directory: str | Path, shell: str = "cmd", *, argv: list[str] | None = None) -> Decision:
         text = command.strip()
         if not text:
             return Decision(False, "lệnh trống")
@@ -296,7 +297,14 @@ class CommandPolicy:
             if not LOCAL_URL.match(url):
                 return Decision(False, f"địa chỉ ngoài máy: {url[:80]}")
         outline = powershell_outline(text) if shell == "powershell" else None
-        if outline is not None:
+        if shell == "python":
+            # Không phân tích lại chuỗi hiển thị như cú pháp shell: đây là argv thật, shell=False.
+            if (not isinstance(argv, list) or len(argv) != 3 or not all(isinstance(arg, str) for arg in argv)
+                    or argv[1] != "-c" or Path(argv[0]).resolve() != Path(sys.executable).resolve()
+                    or subprocess.list2cmdline(argv) != text):
+                return Decision(False, "run_python của bài thi chỉ dùng Python hiện tại và argv khớp")
+            decision, runs_code = self._python(argv[1:], cwd)
+        elif outline is not None:
             decision, runs_code = self._powershell(outline, cwd)
         else:
             decision, runs_code = self._plain(text, cwd, shell)
@@ -486,7 +494,8 @@ class Policy:
         if kind == "file":
             return ALLOW
         if kind in {"command", "background"}:
-            return self.commands.decide(pending["command"], pending["directory"], pending.get("shell", "cmd"))
+            return self.commands.decide(pending["command"], pending["directory"], pending.get("shell", "cmd"),
+                                        argv=pending.get("argv"))
         if kind == "page":
             return ALLOW  # Peto chỉ bấm, gõ trên trang của máy này (trình duyệt của dự án không mở trang ngoài)
         if kind == "site":
@@ -541,6 +550,8 @@ class PolicyUI(UI):
     def ask(self, permission) -> str:
         """Chống gọi lặp (CLI 0.18.0): bài thi từ chối như người dùng thật nhiều khả năng sẽ làm (chủ web chọn ngày
         2026-10-12), để đo được Peto có thoát vòng lặp hay không."""
+        if permission.kind in {"command", "background"}:
+            self.pending = {"kind": permission.kind, **permission.body}
         if permission.kind == "loop":
             reason = "bài thi từ chối gọi lặp"
             self.requests.append({"kind": "loop", "detail": permission.body.get("name"), "answer": "n",

@@ -18,7 +18,7 @@ from .atomic_file import write_text
 VERSION = 1
 MAX_PER_PROJECT = 100
 MAX_COMMAND_CHARS = 4000
-SHELLS = {"cmd", "powershell"}
+SHELLS = {"cmd", "powershell", "python"}
 POLICY_ACTIONS = ("shell", "edit")
 POLICY_EFFECTS = {"allow", "ask", "deny"}
 

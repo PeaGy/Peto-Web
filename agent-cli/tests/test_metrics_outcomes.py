@@ -2,7 +2,7 @@ import copy
 import json
 
 import pytest
-from conftest import FakeUI
+from conftest import FakeUI, handoff
 
 from peto_agent.client import ApiError
 from peto_agent.command_outcome import classify, command_kind, local_probe
@@ -115,7 +115,7 @@ class Client:
 
 
 def done(usage=None, **extra):
-    return {"type": "done", "output": [{"type": "message", "role": "assistant", "content": "summary"}],
+    return {"type": "done", "output": [{"type": "message", "role": "assistant", "content": handoff() if extra.get("purpose") == "compact" else "summary"}],
             "usage": usage, **extra}
 
 

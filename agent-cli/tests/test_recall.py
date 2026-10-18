@@ -4,7 +4,7 @@ import copy
 import json
 
 import pytest
-from conftest import FakeUI
+from conftest import FakeUI, handoff
 from test_agent_workflow import Client, message
 
 from peto_agent import history, recall
@@ -20,7 +20,7 @@ def test_repeated_compaction_retains_goal_correction_and_failure_verbatim(projec
     goal = "Đưa 20 bài vào các đài, giữ bản sao lưu và phải nghe được trong game."
     correction = "Thay cả các đài nói chuyện, không dùng đài nhạc người dùng thay thế."
     failure = "Tôi vừa vào game, vẫn không có bài nào phát."
-    work = Session(Client([[message("Đã sửa tệp; chưa xác nhận trong game.")]] * 2), Workspace(project), FakeUI())
+    work = Session(Client([[message(handoff("Đã sửa tệp; chưa xác nhận trong game."))]] * 2), Workspace(project), FakeUI())
     work.items = [user_message(goal), *old_steps(), user_message(correction), user_message(failure),
                   *old_steps(), user_message("làm tiếp")]
     assert work.compact()
@@ -36,7 +36,7 @@ def test_repeated_compaction_retains_goal_correction_and_failure_verbatim(projec
 def test_complete_old_reply_and_tool_result_can_be_recovered_after_resume(project):
     reply = "đầu\n" + "một đoạn không có trong nhật ký rút gọn\n" * 600 + "CUỐI"
     result = json.dumps({"output": "đầu\n" + "chi tiết\n" * 6000 + "KẾT THÚC", "exit_code": 1}, ensure_ascii=False)
-    work = Session(Client([[message("Chưa đạt kết quả; cần kiểm tra bộ đọc độc lập.")]]), Workspace(project), FakeUI())
+    work = Session(Client([[message(handoff("Chưa đạt kết quả; cần kiểm tra bộ đọc độc lập."))]]), Workspace(project), FakeUI())
     work.tools.features.append("recall")
     work.items = [user_message("Tạo tệp mà ứng dụng đọc được."), message(reply),
                   {"type": "function_call", "call_id": "reader", "name": "run_command", "arguments": "{}"},
@@ -59,7 +59,7 @@ def test_complete_old_reply_and_tool_result_can_be_recovered_after_resume(projec
 
 
 def test_archive_failure_preserves_original_context(project, monkeypatch):
-    work = Session(Client([[message("Một bản tóm tắt ngắn.")]]), Workspace(project), FakeUI())
+    work = Session(Client([[message(handoff())]]), Workspace(project), FakeUI())
     work.items = [user_message("Yêu cầu không được mất."), *old_steps()]
     original = copy.deepcopy(work.items)
     def fail(*args, **kwargs):

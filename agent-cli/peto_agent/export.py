@@ -74,6 +74,9 @@ def tool_lines(event: transcript.Event) -> list[str]:
                      else _code(item.get("path", "")))
             lines.append(f"- {verb} {where}{_counts(item)}")
         return lines
+    if name == "run_python":
+        suffix = f" → mã thoát {result['exit_code']}" if "exit_code" in result else error
+        return [f"- Chạy Python ({len(str(args.get('code', '')).splitlines())} dòng){suffix}"]
     if name == "run_command":
         prompt = "PS> " if args.get("shell") == "powershell" else "$ "
         command = _code(prompt + str(args.get("command", "")).split("\n")[0])

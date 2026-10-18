@@ -21,12 +21,28 @@ BLOCKED_DIRS = {".git"}
 SKIPPED_DIRS = {".git", "node_modules", ".venv", "venv", "__pycache__", "dist", "build", ".pytest_cache",
                 ".mypy_cache", ".next"}
 MAX_FILE_BYTES = 1_000_000
+# Đọc/tìm theo dòng độc lập với giới hạn tệp có thể sửa và lưu undo.
+MAX_TEXT_SCAN_BYTES = 64 * 1024 * 1024
+MAX_TEXT_LINE_CHARS = 1_000_000
 MAX_WALK_FILES = 5000
 MAX_GITIGNORE_RULES = 500
 
 
 class WorkspaceError(Exception):
     """Lỗi về đường dẫn hay tệp; nội dung được gửi lại cho Peto như kết quả công cụ."""
+
+
+class TextScanError(WorkspaceError):
+    def __init__(self, message: str, reason: str):
+        super().__init__(message)
+        self.reason = reason
+
+
+@dataclass(frozen=True)
+class TextLine:
+    text: str
+    characters: int
+    truncated: bool = False
 
 
 @dataclass(frozen=True)
@@ -205,6 +221,41 @@ class Workspace:
 
     def remember(self, path: Path, file: TextFile) -> None:
         self.read_digests[path] = file.digest
+
+    def text_lines(self, path: Path) -> Iterator[TextLine]:
+        """Đọc UTF-8 theo dòng, không nạp toàn bộ tệp hoặc dòng khổng lồ vào RAM."""
+        path = self.resolve(str(path))
+        rel = self.relative(path)
+        if not path.is_file():
+            raise TextScanError(f"{rel} không phải tệp.", "not_file")
+        if path.stat().st_size > MAX_TEXT_SCAN_BYTES:
+            raise TextScanError(f"{rel} vượt giới hạn quét văn bản 64 MB.", "too_large")
+        with path.open("rb") as raw:
+            if b"\x00" in raw.read(8192):
+                raise TextScanError(f"{rel} là tệp nhị phân.", "binary")
+        try:
+            with path.open("r", encoding="utf-8-sig", newline="\n") as stream:
+                scanned = 0
+                while part := stream.readline(MAX_TEXT_LINE_CHARS + 1):
+                    scanned += len(part.encode("utf-8"))
+                    text, characters = part[:MAX_TEXT_LINE_CHARS], len(part)
+                    finished = part.endswith("\n")
+                    while not finished and len(part) == MAX_TEXT_LINE_CHARS + 1:
+                        part = stream.readline(MAX_TEXT_LINE_CHARS + 1)
+                        characters += len(part)
+                        scanned += len(part.encode("utf-8"))
+                        finished = part.endswith("\n") or not part
+                        if scanned > MAX_TEXT_SCAN_BYTES:
+                            raise TextScanError(f"{rel} tăng quá giới hạn khi đang đọc.", "too_large")
+                    if scanned > MAX_TEXT_SCAN_BYTES:
+                        raise TextScanError(f"{rel} tăng quá giới hạn khi đang đọc.", "too_large")
+                    clipped = characters > MAX_TEXT_LINE_CHARS
+                    if not clipped:
+                        text = text.removesuffix("\n").removesuffix("\r")
+                        characters = len(text)
+                    yield TextLine(text, characters, clipped)
+        except UnicodeError:
+            raise TextScanError(f"{rel} không phải UTF-8.", "not_utf8") from None
 
     def write(self, path: Path, text: str, *, newline: str = "\n", bom: bool = False) -> None:
         raw = text_bytes(text, newline, bom)

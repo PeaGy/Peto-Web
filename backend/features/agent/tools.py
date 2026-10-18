@@ -25,7 +25,7 @@ from __future__ import annotations
 # agent con chỉ đọc (purpose "explore").
 FEATURES = frozenset({"cwd", "browser", "browser_act", "browser_outside", "skills", "mcp", "explore_v2", "edit_v2",
                       "question", "patch", "title", "steer", "jobs_notify", "plan_mode", "btw", "read_more",
-                      "output_files", "wrapup", "user_guide", "subagent", "recall"})
+                      "output_files", "wrapup", "user_guide", "subagent", "recall", "python_exec"})
 # Công cụ của agent con explore: chỉ tìm và đọc trong dự án (theo agent "explore" của opencode).
 EXPLORE_TOOLS = ("list_files", "find_files", "search_files", "read_file")
 # Số bước tối đa của agent con theo độ kỹ: nhanh, vừa, kỹ.
@@ -316,6 +316,18 @@ def _file_tools(key: frozenset[str], patch: bool = False) -> list[dict]:
     return tools
 
 
+_PYTHON = _tool(
+    "run_python",
+    "Chạy mã Python nhiều dòng trực tiếp trên máy người dùng, không qua shell nên không phải quote/escape python -c. "
+    "Dùng cho chẩn đoán, đọc metadata và xử lý dữ liệu bằng Python. Chịu chính sách quyền chạy lệnh như run_command; "
+    "có timeout, output và mã thoát. Chỉ tác động trong phạm vi công việc được giao.",
+    {"code": {"type": "string", "description": "Mã Python nguyên văn, có thể nhiều dòng, tối đa 12.000 ký tự."},
+     "python": {"type": ["string", "null"], "description": "Tên hoặc đường dẫn trình thông dịch, không kèm tham số; null dùng Python của Peto."},
+     "timeout_seconds": {"type": ["integer", "null"], "description": "1 đến 600 giây, null là 120."},
+     "cwd": _CWD},
+)
+
+
 def _command_tools(cwd: bool) -> list[dict]:
     where = {"cwd": _CWD} if cwd else {}
     place = "ở gốc dự án hoặc thư mục con cwd" if cwd else "trong thư mục gốc dự án"
@@ -520,5 +532,6 @@ def tool_schemas(features: frozenset[str] = frozenset(), *, patch_model: bool = 
                                                + ([_ASK] if "question" in key else [])
                                                + ([_READ_OUTPUT] if "output_files" in key else [])
                                                + ([_EXPLORE] if "subagent" in key else [])
-                                               + ([_READ_HISTORY] if "recall" in key else []))
+                                               + ([_READ_HISTORY] if "recall" in key else [])
+                                               + ([_PYTHON] if "python_exec" in key else []))
     return _SCHEMAS[(key, patch, patch_model)]

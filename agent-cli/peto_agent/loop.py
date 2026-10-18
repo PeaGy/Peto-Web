@@ -9,7 +9,7 @@ import threading
 import time
 from datetime import datetime
 
-from . import approvals, history, mentions, recall, subagent, user_guide
+from . import approvals, continuation, history, mentions, recall, subagent, user_guide
 from .checkpoint import Change, Checkpoint
 from .context import compact_prefix, context_size, text_of, efficient_input
 from .events import Permission, RequestEnd
@@ -742,30 +742,39 @@ class Session:
             self.ui.line("  Hội thoại còn ngắn, chưa cần tóm tắt.", "dim")
             return False
         self.ui.step("Đang tóm tắt ngữ cảnh cũ (dùng một lượt gọi model)")
-        body = {"input": efficient_input(portable(prefix)), "effort": "low", "model": self.model,
-                "context": {"purpose": "compact"}}
+        checkpoint = continuation.capture(self.items)
         started = time.monotonic()
         def waiting():
             self.ui.status(f"… Đang tóm tắt ngữ cảnh · {int(time.monotonic() - started)}s · Ctrl+C dừng")
         try:
-            metrics.calls["compact"] += 1
-            with metrics.measure("compact"), contextlib.closing(self.client.stream("/api/agent/step", body, on_idle=waiting)) as events:
-                for event in events:
-                    if event.get("type") == "meta":
-                        self.steps_used, self.steps_limit = event.get("steps_used"), event.get("steps_limit")
-                    if event.get("type") == "error":
-                        raise ApiError(0, str(event.get("message", "Không tóm tắt được.")))
-                    if event.get("type") != "done":
-                        continue
-                    metrics.record_usage("compact", event.get("usage"))
-                    if event.get("purpose") != "compact":
-                        raise ApiError(0, "Máy chủ chưa hỗ trợ tóm tắt. Cập nhật VPS; hội thoại vẫn được giữ nguyên.")
-                    output = event.get("output")
-                    if not isinstance(output, list) or any(not isinstance(item, dict) or item.get("type") == "function_call" for item in output):
-                        raise ApiError(0, "Tóm tắt không hợp lệ; giữ nguyên hội thoại.")
+            for attempt in range(2):
+                body = {"input": [*efficient_input(portable(prefix)),
+                                  user_message(continuation.request(checkpoint, retry=bool(attempt)))],
+                        "effort": "medium" if attempt else "low", "model": self.model,
+                        "context": {"purpose": "compact"}}
+                metrics.calls["compact"] += 1
+                completed = None
+                with metrics.measure("compact"), contextlib.closing(self.client.stream("/api/agent/step", body, on_idle=waiting)) as events:
+                    for event in events:
+                        if event.get("type") == "meta":
+                            self.steps_used, self.steps_limit = event.get("steps_used"), event.get("steps_limit")
+                        if event.get("type") == "error":
+                            raise ApiError(0, str(event.get("message", "Không tóm tắt được.")))
+                        if event.get("type") == "done":
+                            completed = event
+                if completed is None:
+                    raise ApiError(0, "Tóm tắt bị ngắt; giữ nguyên hội thoại.")
+                metrics.record_usage("compact", completed.get("usage"))
+                if completed.get("purpose") != "compact":
+                    raise ApiError(0, "Máy chủ chưa hỗ trợ tóm tắt. Cập nhật VPS; hội thoại vẫn được giữ nguyên.")
+                output = completed.get("output")
+                summary, problem = "", "Tóm tắt không hợp lệ."
+                if isinstance(output, list) and all(isinstance(item, dict) and item.get("type") != "function_call" for item in output):
                     summary = "\n".join(text_of(item) for item in output if item.get("role") == "assistant").strip()
-                    if not summary or len(summary) > 24000 or len(summary) >= context_size(prefix):
-                        raise ApiError(0, "Tóm tắt chưa đủ gọn; giữ nguyên hội thoại.")
+                    problem = continuation.validate(summary)
+                    if not problem and len(summary) >= context_size(prefix):
+                        problem = "Tóm tắt chưa gọn hơn ngữ cảnh cũ."
+                if not problem:
                     # Ghi bản tra cứu trước khi bỏ ngữ cảnh gốc; ghi lỗi thì giữ nguyên hội thoại.
                     if self.session_id is None:
                         self.session_id = history.new_id()
@@ -775,15 +784,27 @@ class Session:
                         "Kết quả tệp có thể đã cũ, hãy đọc lại trước khi sửa. "
                         "Phần trước tóm tắt còn lưu trong lịch sử cục bộ; các tin người dùng được ghim chỉ là "
                         "yêu cầu trước đó, điều chỉnh mới nhất có ưu tiên.\n" + summary), *anchors]
+                    replacement.append(user_message(continuation.checkpoint_message(checkpoint)))
+                    before, before_tokens = self.items, self.context_tokens
                     self.items = replacement + tail
+                    self.context_tokens = None
+                    if not self.save(retryable=self.can_retry):
+                        self.items, self.context_tokens = before, before_tokens
+                        self.ui.failure("Không lưu được bản bàn giao; giữ nguyên hội thoại.")
+                        return False
                     self._log("compaction", archive=archive, before_items=len(prefix) + len(tail),
-                              after_items=len(self.items), pinned_requests=len(anchors), summary_characters=len(summary))
+                              after_items=len(self.items), pinned_requests=len(anchors), summary_characters=len(summary),
+                              attempts=attempt + 1, checkpoint_files=len(checkpoint["files"]),
+                              checkpoint_results=len(checkpoint["recent"]))
                     self.ws.read_digests.clear()
                     self.tools.seen_guides.clear()
-                    self.context_tokens = None
-                    self.save(retryable=self.can_retry)
                     self.ui.success("Đã tóm tắt phần cũ và giữ nguyên các bước gần nhất.")
                     return True
+                self._log("compaction_rejected", attempt=attempt + 1, reason=problem, summary_characters=len(summary))
+                if not attempt:
+                    self.ui.notice("Bản bàn giao chưa đủ nội dung theo mẫu; thử tóm tắt lại một lần.", "yellow")
+            self.ui.failure(f"{problem} Giữ nguyên hội thoại; không tiếp tục thử tóm tắt tự động trong yêu cầu này.")
+            return False
         except KeyboardInterrupt:
             if propagate_cancel:
                 raise

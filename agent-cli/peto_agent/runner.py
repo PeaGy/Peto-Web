@@ -44,22 +44,24 @@ def kill_tree(process: subprocess.Popen) -> None:
             pass
 
 
-def spawn(command: str, cwd: Path, shell: str = "cmd") -> subprocess.Popen:
+def spawn(command: str, cwd: Path, shell: str = "cmd", *, argv: list[str] | None = None) -> subprocess.Popen:
     """Mở tiến trình cho một lệnh, bằng shell mặc định của hệ hoặc bằng PowerShell."""
     env = dict(os.environ, PYTHONUTF8="1", PYTHONIOENCODING="utf-8")
     # Nhóm tiến trình riêng: Ctrl+C trong cửa sổ chỉ tới CLI, CLI tự quyết định dừng lệnh.
     options: dict = ({"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == "nt"
                      else {"start_new_session": True})
     # PowerShell nhận cả lệnh qua một tham số nên không phải lo trích dẫn như khi để shell tự tách.
-    if shell == "powershell" and not command.lstrip().lower().startswith("using "):
+    if argv is None and shell == "powershell" and not command.lstrip().lower().startswith("using "):
         command = POWERSHELL_UTF8 + command
-    argv: list[str] | str = [*POWERSHELL, command] if shell == "powershell" else command
-    return subprocess.Popen(argv, shell=shell != "powershell", cwd=cwd, env=env, stdin=subprocess.DEVNULL,
+    direct = argv is not None
+    invocation = argv if direct else [*POWERSHELL, command] if shell == "powershell" else command
+    return subprocess.Popen(invocation, shell=not direct and shell != "powershell", cwd=cwd, env=env, stdin=subprocess.DEVNULL,
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, **options)
 
 
 def run(command: str, cwd: Path, timeout: float, *, shell: str = "cmd",
-        on_progress: Callable[[float, str], None] | None = None, spool: bool = False) -> dict:
+        on_progress: Callable[[float, str], None] | None = None, spool: bool = False,
+        argv: list[str] | None = None) -> dict:
     """Trả mã thoát, thời gian và output đã cắt gọn. Ctrl+C thì giết cây tiến trình rồi ném lại KeyboardInterrupt.
 
     ``spool`` (khả năng "output_files", CLI 0.25.0): ghi cả luồng output vào một tệp trong hồ sơ người dùng; output bị
@@ -67,7 +69,7 @@ def run(command: str, cwd: Path, timeout: float, *, shell: str = "cmd",
     """
     started = time.monotonic()
     saved = outputs.Spool() if spool else None
-    process = spawn(command, cwd, shell)
+    process = spawn(command, cwd, shell, **({"argv": argv} if argv is not None else {}))
     head, tail = bytearray(), bytearray()
     recent = bytearray()
     recent_lock = threading.Lock()

@@ -378,13 +378,21 @@ def test_jumping_to_a_message_scrolls_it_to_the_top(run):
     assert not screen.ui.jump_to(first), "xóa màn hình thì quên các khung cũ"
 
 
-def test_the_session_dialog_searches_renames_and_deletes_twice(run):
+def test_the_session_dialog_searches_renames_and_deletes_twice(run, monkeypatch):
     import threading
     import time as clock
 
     from peto_agent import history
 
-    now = clock.time()
+    from datetime import date, datetime
+    from peto_agent.tui import view
+    fixed_day = date(2026, 10, 17)
+    class FixedDate(date):
+        @classmethod
+        def today(cls):
+            return fixed_day
+    monkeypatch.setattr(view, "date", FixedDate)
+    now = datetime(2026, 10, 17, 12).timestamp()
     sessions = [history.Saved(now - 60, [{"role": "user", "content": "a"}], id="s1", title="Sửa lỗi checksum"),
                 history.Saved(now - 120, [{"role": "user", "content": "b"}], id="s2", title="Thêm lệnh done"),
                 history.Saved(now - 86400 - 60, [{"role": "user", "content": "c"}], id="s3", title="Đổi sku",

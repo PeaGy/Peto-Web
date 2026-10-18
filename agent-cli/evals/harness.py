@@ -225,7 +225,7 @@ def behavior(calls: list[dict], requests: list[dict]) -> dict:
     verified = None
     if edits:
         after = calls[edits[-1] + 1:]
-        verified = any(call["ok"] and (call["name"] in {"run_command", "browser_open", "browser_screenshot",
+        verified = any(call["ok"] and (call["name"] in {"run_command", "run_python", "browser_open", "browser_screenshot",
                                                         "read_command_output", "start_command"})
                        for call in after)
     refused = [request for request in requests if request.get("answer") == "n"]
@@ -238,7 +238,7 @@ def behavior(calls: list[dict], requests: list[dict]) -> dict:
     return {"repeated": repeated, "repeated_looks": sum(1 for name in repeated if name in LOOK_TOOLS),
             "edits": len(edits), "verified_after_edit": verified, "refused": len(refused),
             "refused_repeated": len(refused_commands) - len(set(refused_commands)),
-            "commands": sum(1 for call in calls if call["name"] in {"run_command", "start_command"}),
+            "commands": sum(1 for call in calls if call["name"] in {"run_command", "run_python", "start_command"}),
             "plan_used": bool(plans), "plan_left": left}
 
 

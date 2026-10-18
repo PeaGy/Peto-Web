@@ -641,7 +641,7 @@ class TerminalUI(UI):
                 self.failure(f"Bạn bỏ qua đăng nhập · {where}")
             return
         preview, static = self._preview, self._static_diff
-        if name == "run_command" and "exit_code" in result:
+        if name in {"run_command", "run_python"} and "exit_code" in result:
             shell: dict = {}
             shell["entry"] = self._emit(lambda: self._shell_block(result, preview, shell), "block")
             return
@@ -762,6 +762,8 @@ class TerminalUI(UI):
             preview = ("patch", {"files": files}) if len(files) == len(result["files"]) else None
         elif name in {"run_command", "start_command"}:
             preview = ("command", {"command": str(args.get("command") or ""), "shell": args.get("shell") or "cmd"})
+        elif name == "run_python":
+            preview = ("command", {"command": str(args.get("code") or ""), "shell": "python"})
         elif name == "update_plan":
             steps = args.get("steps")
             if not isinstance(steps, list) or "error" in result:

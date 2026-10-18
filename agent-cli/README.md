@@ -381,7 +381,8 @@ nào được chọn, nên Enter không tự chạy gì. Từ 0.20.0 tên lệnh
   thì sửa `AGENTS.md`.
 - `/compact`: tóm tắt phần hội thoại cũ, giữ các bước gần nhất và yêu cầu gần nhất nằm trong phần được tóm tắt.
   Peto cũng tự tóm tắt giữa các bước khi lịch sử đạt 180 mục hoặc khoảng 200.000 ký tự chữ. Tóm tắt dùng một lượt
-  gọi model ở mức suy nghĩ thấp, vẫn tính bước theo model và token như bình thường. Cần cập nhật cả VPS và CLI.
+  gọi model ở mức suy nghĩ thấp, vẫn tính bước theo model và token như bình thường. Từ 0.28.6, nếu thiếu mục bàn giao,
+  CLI thử lại đúng một lần ở mức vừa (có tính thêm bước); vẫn lỗi thì giữ nguyên lịch sử. Cần cập nhật cả VPS và CLI.
   Không chạy công cụ khi tóm tắt, không tách cặp gọi công cụ/kết quả. Lỗi, hủy hoặc máy chủ cũ thì giữ nguyên lịch sử.
   Tóm tắt có thể bỏ sót chi tiết; tệp phải được đọc lại trước khi sửa và ảnh cũ trong phần tóm tắt được thay bằng ghi chú.
 - `/effort low`, `/effort medium`, `/effort high`: mức suy nghĩ, được nhớ trên máy này cho lần sau (`thap`, `vua`,
@@ -734,6 +735,28 @@ Peto nhận hướng dẫn dùng `shell="powershell"` với cú pháp PowerShell
 Lệnh một dòng và PowerShell nhiều dòng vẫn dùng bình thường. Lỗi này được tái hiện khi giám sát bài thử
 [20 bài/23 đài/ba chế độ](docs/peto-supervision-2026-10-17.md); bản sửa nằm ở CLI, cần phát hành để máy khác nhận được.
 
+### Bàn giao ngữ cảnh và công cụ Windows (0.28.6)
+
+Bản tóm tắt phải có đủ sáu mục: mục tiêu, ràng buộc/quyết định, việc đã làm/bằng chứng, tệp/trạng thái,
+lỗi/giả thuyết chưa xác minh và bước tiếp theo. CLI kiểm định dạng, không chứng minh được model đã tóm tắt đúng
+mọi ý. Yêu cầu người dùng vẫn ghim nguyên văn; lịch sử cũ vẫn tra bằng `read_history`. CLI còn ghim dữ kiện từ
+kết quả công cụ: tối đa 20 đường dẫn đã thay đổi, 10 việc trong kế hoạch và 6 kết quả lệnh/lỗi gần nhất. Đây là
+quan sát quá khứ, cần đọc lại tệp trước khi sửa, không phải quyền thực thi hay bằng chứng ứng dụng đã chạy đúng.
+Chỉ thay ngữ cảnh sau khi lưu bản bàn giao thành công; lỗi lưu/hủy thì giữ lịch sử và trạng thái đọc hiện tại.
+
+`find_files` và bộ lọc `glob` của `search_files` dùng chung cú pháp `**`, `*`, `?`, `[abc]`, `{py,json,md}`,
+ví dụ `**/*.{py,json,md}`. Ngoặc lồng tối đa 8 lần và 64 lựa chọn sau mở rộng; mẫu hỏng báo lỗi rõ.
+`read_file` đọc được đoạn cuối metadata UTF-8 lớn mà không nạp cả tệp vào RAM; output vẫn giới hạn số dòng/ký tự.
+`search_files` báo `incomplete`, số tệp bị bỏ và lý do (nhị phân, sai UTF-8, quá 64 MB, không đọc được);
+dòng trên một triệu ký tự bị bỏ khỏi tìm kiếm và có ghi số dòng. Quét thư mục và số kết quả vẫn có giới hạn cũ.
+
+Máy chủ và CLI cùng hỗ trợ `python_exec` thì Peto có `run_python(code, python, timeout_seconds, cwd)`.
+Mã nhiều dòng đi thẳng tới trình thông dịch bằng argv, không qua cmd/PowerShell. `python=null` dùng Python của
+Peto; muốn dùng thư viện trong venv khác thì chọn đường dẫn trình thông dịch đó. Mã tối đa 12.000 ký tự,
+timeout tối đa 600 giây; code dài hơn thì ghi tệp `.py`. Công cụ dùng cùng chính sách `/permissions shell`,
+ảnh chụp thay đổi, output lưu đủ và cách hủy lệnh. Máy chủ cũ không quảng bá công cụ này; vẫn dùng script `.py`
+và `run_command`. Lệnh cmd nhiều dòng tiếp tục bị chặn để tránh báo thành công khi chỉ chạy một phần.
+
 ### Giữ yêu cầu và tra lại trước tóm tắt (0.28.0)
 
 Trước khi thay phần hội thoại cũ bằng bản tóm tắt, CLI lưu bản tra cứu trong
@@ -836,8 +859,9 @@ không bao giờ bị đổi, và hội thoại gửi lại cho Peto vẫn là c
 - **Phạm vi:** Peto chỉ đụng tới tệp trong thư mục đang mở. Đường dẫn ra ngoài, kể cả qua symlink hay junction, bị chặn.
   CLI không chạy ở gốc ổ đĩa hay thư mục người dùng.
 - **Tệp bí mật:** không đọc, không sửa `.env`, `.env.*`, `*.pem`, `*.key`, `*.p12`, `*.pfx`, `id_rsa*` và thư mục `.git`.
-- **Tệp bị bỏ qua:** `node_modules`, `.venv`, `venv`, `dist`, `build` không được liệt kê hay tìm; tệp nhị phân và tệp lớn
-  hơn 1 MB không được đọc. Những gì `.gitignore` ở gốc dự án bỏ qua (như `coverage/`, `target/`, `*.log`) cũng không
+- **Tệp bị bỏ qua:** `node_modules`, `.venv`, `venv`, `dist`, `build` không được liệt kê hay tìm; tệp nhị phân không được đọc.
+  Từ 0.28.6, đọc/tìm UTF-8 theo dòng tới 64 MB; sửa/hoàn tác tệp chữ vẫn giới hạn 1 MB. Những gì `.gitignore` ở gốc
+  dự án bỏ qua (như `coverage/`, `target/`, `*.log`) cũng không
   được liệt kê, tìm hay gợi ý sau `@`, nhưng biết đường dẫn thì Peto vẫn đọc được. Chỉ đọc `.gitignore` ở gốc, có tính
   dòng `!`; `.gitignore` của thư mục con và cấu hình git toàn máy thì không. Sửa `.gitignore` là có tác dụng ngay.
 - **Sửa tệp:** chỉ sửa tệp đã đọc và chưa bị đổi từ lúc đọc; đoạn cần thay phải khớp đúng một chỗ. Kiểu xuống dòng

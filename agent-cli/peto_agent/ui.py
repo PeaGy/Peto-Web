@@ -191,6 +191,7 @@ def action_details(kind: str, result: dict) -> str:
 REFUSED_LINES = {
     "edit_file": "Không sửa {path}", "write_file": "Không ghi {path}", "delete_file": "Không xóa {path}",
     "move_file": "Không đổi tên {path}", "start_command": "Không chạy lệnh nền", "run_command": "Không chạy lệnh",
+    "run_python": "Không chạy Python",
     "browser_open": "Không mở trang ngoài", "browser_click": "Không thao tác trên trang",
     "browser_type": "Không thao tác trên trang", "browser_press": "Không thao tác trên trang",
     "apply_patch": "Không áp bản patch (từ {path})",
@@ -792,7 +793,7 @@ class UI:
             else:
                 self.failure(f"Bạn bỏ qua đăng nhập · {where}")
             return
-        if name == "run_command" and "exit_code" in result:
+        if name in {"run_command", "run_python"} and "exit_code" in result:
             # Lệnh đã chạy: "error" ở đây là lỗi của lệnh (hết giờ…), in cùng dòng kết quả.
             self.command_result(result)
             return
@@ -853,7 +854,7 @@ class UI:
                           f'{result.get("end_line")})')
         elif name == "stop_command":
             self.success(f"Đã dừng lệnh nền #{result['id']}: {result['command']}")
-        elif name == "run_command":
+        elif name in {"run_command", "run_python"}:
             self.command_result(result)
         elif name == "browser_open":
             self.page(f"Xem trang {result['url']} · {_viewport_label(result['viewport'])}", _page_details(result),

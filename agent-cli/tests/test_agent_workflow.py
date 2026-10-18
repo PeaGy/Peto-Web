@@ -4,7 +4,7 @@ import copy
 import json
 
 import pytest
-from conftest import FakeUI
+from conftest import FakeUI, handoff
 
 from peto_agent import history
 from peto_agent.client import ApiError
@@ -263,7 +263,7 @@ def test_compaction_keeps_native_claude_blocks_with_normalized_calls():
 
 
 def test_compaction_success_persists_tail_and_clears_stale_reads(project):
-    client = Client([[message("Goal: original. Decisions: retained. Tests: passed. Pending: next step.")]])
+    client = Client([[message(handoff("Tests passed; pending next step."))]])
     work = Session(client, Workspace(project), FakeUI())
     work.items = long_history()
     tail = copy.deepcopy(work.items[-24:])
@@ -281,7 +281,7 @@ def test_compaction_success_persists_tail_and_clears_stale_reads(project):
                                   [call(1, "run_command", command="bad")], [message("x" * 24001)],
                                   [{"type": "message", "role": "assistant", "content": None}]])
 def test_failed_compaction_leaves_original_untouched(project, reply):
-    work = Session(Client([reply]), Workspace(project), FakeUI())
+    work = Session(Client([reply, reply]), Workspace(project), FakeUI())
     work.items = long_history()
     original = copy.deepcopy(work.items)
     assert not work.compact()

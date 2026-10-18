@@ -76,7 +76,7 @@ def efficient_input(items):
                 value["note"] = "Nội dung giống hệt kết quả read_file mới hơn có call_id này; xem bản đó trong ngữ cảnh."
             else:
                 seen_reads[signature] = item.get("call_id")
-        elif name == "run_command" and tool_results > 6 and isinstance(value.get("output"), str):
+        elif name in {"run_command", "run_python"} and tool_results > 6 and isinstance(value.get("output"), str):
             output = value["output"]
             if len(output) > 4000:
                 value["output"] = cap_text(output, 4000)

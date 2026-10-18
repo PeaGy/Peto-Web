@@ -15,6 +15,16 @@ from features.agent.tools import FEATURES, tool_schemas
 
 BASE = ("cwd", "browser", "browser_act", "browser_outside", "skills", "mcp")
 
+
+def test_python_exec_is_negotiated_and_appended_without_changing_existing_tools():
+    old = tool_schemas(frozenset(FEATURES - {"python_exec"}))
+    new = tool_schemas(FEATURES)
+    assert new[:-1] == old and new[-1]["name"] == "run_python"
+    assert "run_python" not in {tool["name"] for tool in old}
+    params = new[-1]["parameters"]
+    assert params["required"] == ["code", "python", "timeout_seconds", "cwd"]
+    _strict(params)
+
 # Mã băm schema của các bộ khả năng đã phát hành, ghim ngày 2026-10-12 trước khi thêm khả năng mới.
 SHIPPED = {
     (): "a30c0d446daada74d4b774a29a28f0b5d289df70a0ee5c7b731cc2f0c150c2ed",

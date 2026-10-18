@@ -13,6 +13,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from peto_agent.ui import UI  # noqa: E402
 
 
+def handoff(text="Chưa xác nhận hành vi thực tế của ứng dụng."):
+    """Bản bàn giao đúng định dạng cho các test khác tập trung vào lưu/khôi phục lịch sử."""
+    return ("## Goal\nTiếp tục yêu cầu gốc đã ghim trong hội thoại.\n"
+            "## Constraints and decisions\nGiữ ràng buộc và điều chỉnh của người dùng.\n"
+            f"## Completed work and evidence\n{text}\n"
+            "## Files and current state\nĐọc lại tệp trước khi sửa; xem checkpoint để biết tệp liên quan.\n"
+            "## Errors and unverified assumptions\nKhông coi kiểm file là xác nhận ứng dụng đã chạy.\n"
+            "## Next steps\nKiểm chứng phần chưa đạt theo yêu cầu đang làm.\n")
+
+
 class FakeUI(UI):
     """Không in ra terminal; trả lời câu hỏi theo danh sách cho sẵn. Phần tử là exception thì ném ra."""
 

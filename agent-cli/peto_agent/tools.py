@@ -7,12 +7,14 @@ Kết quả trả về là dict, sẽ được gửi lại cho Peto ở bước 
 from __future__ import annotations
 
 import difflib
-import fnmatch
+import contextlib
 import functools
 import inspect
 import json
 import os
 import re
+import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -24,12 +26,13 @@ from .checkpoint import Checkpoint
 from .command_outcome import classify, command_kind, local_probe
 from .events import Permission, ToolCall, ToolDone
 from .images import Image
+from .file_glob import glob_regex
 from .metrics import Metrics
 from .project_guide import GuideUpdate, guides
 from .presentation import AgentUI
 from .skills import Skills
 from .mcp import MCP
-from .workspace import Workspace, WorkspaceError, digest, list_entries, text_bytes
+from .workspace import MAX_FILE_BYTES, TextLine, TextScanError, Workspace, WorkspaceError, digest, list_entries, text_bytes
 
 MAX_READ_LINES = 400
 # "read_more" (CLI 0.25.0, theo opencode): mỗi lần đọc tới ngần này dòng, cắt ở ranh giới dòng khi vượt ngần này ký tự.
@@ -52,7 +55,7 @@ FEATURES = ("cwd", "browser", "browser_act", "browser_outside", "skills", "mcp")
 # câu hỏi bên lề /btw. Từ 0.25.0 (theo lõi opencode): đọc tới 1000 dòng, lưu đủ output dài (read_output), lượt tóm tắt
 # khi hết bước và AGENTS.md chung của người dùng. Từ 0.27.0: agent con chỉ đọc explore.
 NEW_FEATURES = ("explore_v2", "edit_v2", "question", "patch", "title", "steer", "jobs_notify", "plan_mode",
-                "btw", "read_more", "output_files", "wrapup", "user_guide", "subagent", "recall")
+                "btw", "read_more", "output_files", "wrapup", "user_guide", "subagent", "recall", "python_exec")
 # Gọi y hệt một công cụ ngần này lần liền mà không tệp nào đổi thì hỏi người dùng có cho gọi tiếp không.
 LOOP_LIMIT = 3
 # Công cụ mà gọi lại y hệt là bình thường: chờ output lệnh nền, xem lại trang sau khi bấm, cập nhật danh sách việc.
@@ -67,7 +70,7 @@ PLAN_BLOCKED = {"edit_file", "write_file", "delete_file", "move_file", "apply_pa
 PLAN_REFUSAL = ("Đang ở chế độ Lập kế hoạch: không sửa tệp hay thao tác trên trang. Trình bày kế hoạch; người dùng bấm "
                 "Shift+Tab hoặc gõ /plan khi muốn Peto bắt tay làm.")
 # Công cụ có thể đổi tệp: đợi ảnh chụp đầu yêu cầu (CLI 0.26.0) xong rồi mới chạy.
-CHANGES_FILES = {"edit_file", "write_file", "delete_file", "move_file", "apply_patch", "run_command", "start_command"}
+CHANGES_FILES = {"edit_file", "write_file", "delete_file", "move_file", "apply_patch", "run_command", "start_command", "run_python"}
 MAX_FOUND_FILES = 100
 NUMBER_WIDTH = 6
 # Câu hỏi khi Peto thao tác lần đầu trên một trang: [y] là cho trang đó tới hết yêu cầu (chủ web chọn ngày 2026-09-23).
@@ -105,38 +108,6 @@ def _modified(path: Path) -> float:
         return path.stat().st_mtime
     except OSError:
         return 0.0
-
-
-def glob_regex(pattern: str) -> re.Pattern:
-    """Mẫu glob kiểu OpenCode (**, *, ?, [abc]) thành biểu thức chính quy cho đường dẫn dùng "/".
-
-    Python 3.12 chưa có glob.translate, nên tự dịch: ** khớp qua nhiều thư mục (kể cả không thư mục nào), * và ? không
-    vượt qua "/". So không phân biệt hoa thường như hệ tệp Windows.
-    """
-    parts, index = [], 0
-    while index < len(pattern):
-        char = pattern[index]
-        if pattern.startswith("**/", index):
-            parts.append("(?:.*/)?")
-            index += 3
-            continue
-        if pattern.startswith("**", index):
-            parts.append(".*")
-            index += 2
-            continue
-        if char == "*":
-            parts.append("[^/]*")
-        elif char == "?":
-            parts.append("[^/]")
-        elif char == "[" and (close := pattern.find("]", index + 1)) > index:
-            inside = pattern[index + 1:close].replace("\\", "\\\\")
-            parts.append("[" + ("^" + inside[1:] if inside.startswith("!") else inside) + "]")
-            index = close + 1
-            continue
-        else:
-            parts.append(re.escape(char))
-        index += 1
-    return re.compile("".join(parts), re.IGNORECASE)
 
 
 def changed_lines(before: str, after: str) -> tuple[int, int]:
@@ -234,6 +205,7 @@ class Tools:
             "apply_patch": self.apply_patch,
             "ask_user": self.ask_user,
             "run_command": self.run_command,
+            "run_python": self.run_python,
             "start_command": self.start_command,
             "read_command_output": self.read_command_output,
             "read_output": self.read_output,
@@ -543,34 +515,54 @@ class Tools:
     def _read_view(self, target: Path, start_line: int | None, end_line: int | None) -> dict:
         """Nội dung tệp như read_file trả về, và ghi nhận Peto đã đọc tệp. Dùng chung cho lời từ chối UnreadFile."""
         rel = self.ws.relative(target)
-        file = self.ws.read(target)
-        self.ws.remember(target, file)
-        lines = file.text.split("\n")
-        if file.text.endswith("\n"):
-            lines.pop()
-        total = len(lines) if file.text else 0
+        large = target.stat().st_size > MAX_FILE_BYTES
+        if large:
+            self.ws.read_digests.pop(target, None)
+            source = self.ws.text_lines(target)
+        else:
+            file = self.ws.read(target)
+            self.ws.remember(target, file)
+            lines = file.text.split("\n") if file.text else []
+            if file.text.endswith("\n"):
+                lines.pop()
+            source = iter(TextLine(line, len(line)) for line in lines)
         start = max(1, start_line or 1)
-        if total and start > total:
-            raise WorkspaceError(f"{rel} chỉ có {total} dòng.")
         more = "read_more" in self.features
         limit = READ_MORE_LINES if more else MAX_READ_LINES if end_line is not None else 160
-        end = max(0, min(total, end_line or total, start + limit - 1))
+        requested_end = min(end_line or start + limit - 1, start + limit - 1)
         numbered = "explore_v2" in self.features
-        chosen, size = [], 0
-        for number in range(start, end + 1):
-            # Số dòng ở đầu mỗi dòng như cat -n (OpenCode), để Peto dẫn tệp:dòng và chọn khoảng đọc tiếp cho đúng.
-            line = f"{number:>{NUMBER_WIDTH}}\t{lines[number - 1]}" if numbered else lines[number - 1]
-            if more:
-                if len(line) > READ_MORE_CHARS:
-                    line = line[:READ_MORE_CHARS] + f" … (dòng này dài {len(lines[number - 1])} ký tự, đã cắt)"
-                if chosen and size + len(line) + 1 > READ_MORE_CHARS:
-                    end = number - 1
-                    break
-                size += len(line) + 1
-            chosen.append(line)
+        chosen, size, total, end = [], 0, 0, 0
+        clipped_lines = []
+        accepting = True
+        try:
+            for number, item in enumerate(source, 1):
+                total = number
+                if not accepting or number < start or number > requested_end:
+                    continue
+                line = f"{number:>{NUMBER_WIDTH}}\t{item.text}" if numbered else item.text
+                if more or large:
+                    clipped = item.truncated or len(line) > READ_MORE_CHARS
+                    if clipped:
+                        suffix = f" … (dòng dài {item.characters} ký tự, đã cắt)"
+                        line = line[:READ_MORE_CHARS - len(suffix)] + suffix
+                    if chosen and size + len(line) + 1 > READ_MORE_CHARS:
+                        accepting = False
+                        continue
+                    if clipped:
+                        clipped_lines.append(number)
+                    size += len(line) + 1
+                chosen.append(line)
+                end = number
+        finally:
+            if large:
+                source.close()
+        if total and start > total:
+            raise WorkspaceError(f"{rel} chỉ có {total} dòng.")
         return {"path": rel, "start_line": start, "end_line": end, "total_lines": total,
                 "content": "\n".join(chosen), "project_guidance": self._guidance(target, reading=True),
-                **({"next_start_line": end + 1, "truncated": True} if end < total else {})}
+                **({"next_start_line": end + 1, "truncated": True} if end < total else {}),
+                **({"truncated": True, "truncated_lines": clipped_lines} if clipped_lines else {}),
+                **({"editing_supported": False, "note": "Đọc theo dòng; công cụ sửa tệp vẫn giới hạn 1 MB."} if large else {})}
 
     def _require_read(self, target: Path, rel: str, *, hint: str | None = None, action: str = "sửa",
                       advice: str = "chép old_text từ đó rồi gọi lại edit_file."):
@@ -604,36 +596,53 @@ class Tools:
             raise WorkspaceError(f"Biểu thức tìm không hợp lệ: {err}.") from None
         base = self.ws.resolve(path or ".")
         files = [base] if base.is_file() else self.ws.iter_files(base)
+        file_filter = glob_regex(glob) if glob else None
         matches: list[str] = []
         grouped: dict[str, list[dict]] = {}
         modified: dict[str, float] = {}
         truncated = False
+        skipped, skip_details, long_lines = {}, [], []
         for file in files:
             rel = self.ws.relative(file)
-            if glob and not (fnmatch.fnmatch(rel, glob) or fnmatch.fnmatch(file.name, glob)):
+            inside = file.relative_to(base).as_posix() if base.is_dir() else file.name
+            if file_filter and not (file_filter.fullmatch(inside) or ("/" not in glob.replace("\\", "/") and file_filter.fullmatch(file.name))):
                 continue
+            found = []
             try:
-                text = self.ws.read(file).text
-            except (WorkspaceError, OSError):
+                with contextlib.closing(self.ws.text_lines(file)) as lines:
+                    for number, line in enumerate(lines, 1):
+                        if line.truncated:
+                            skipped["long_line"] = skipped.get("long_line", 0) + 1
+                            if len(long_lines) < 10:
+                                long_lines.append({"path": rel, "line": number, "reason": "long_line"})
+                            continue
+                        if regex.search(line.text):
+                            found.append({"line": number, "text": line.text.strip()[:300]})
+                            if len(matches) + len(found) >= MAX_MATCHES:
+                                truncated = True
+                                break
+            except (WorkspaceError, OSError) as err:
+                reason = err.reason if isinstance(err, TextScanError) else "unreadable"
+                skipped[reason] = skipped.get(reason, 0) + 1
+                if len(skip_details) < 10:
+                    skip_details.append({"path": rel, "reason": reason})
                 continue
-            for number, line in enumerate(text.split("\n"), 1):
-                if regex.search(line):
-                    matches.append(f"{rel}:{number}: {line.strip()[:300]}")
-                    grouped.setdefault(rel, []).append({"line": number, "text": line.strip()[:300]})
-                    if len(matches) >= MAX_MATCHES:
-                        truncated = True
-                        break
+            for item in found:
+                matches.append(f"{rel}:{item['line']}: {item['text']}")
+                grouped.setdefault(rel, []).append(item)
             if rel in grouped:
                 modified[rel] = _modified(file)
             if truncated:
                 break
         self.meta["base"] = self.ws.relative(base)
+        diagnostics = ({"skipped": skipped, "skipped_files": skip_details, "skipped_lines": long_lines,
+                        "incomplete": True} if skipped else {})
         if "explore_v2" in self.features:
             # Gộp theo tệp, tệp sửa gần nhất trước (OpenCode): Peto thấy ngay tệp nào đáng đọc.
             order = sorted(grouped, key=lambda rel: -modified.get(rel, 0))
             return {"files": [{"path": rel, "matches": grouped[rel]} for rel in order], "total": len(matches),
-                    "truncated": truncated}
-        return {"matches": matches, "truncated": truncated}
+                    "truncated": truncated, **diagnostics}
+        return {"matches": matches, "truncated": truncated, **diagnostics}
 
     @tool
     def find_files(self, pattern: str, path: str | None = None) -> dict:
@@ -1293,7 +1302,9 @@ class Tools:
         if os.name == "nt" and chosen == "cmd" and ("\n" in command or "\r" in command):
             raise WorkspaceError("cmd trên Windows không hỗ trợ lệnh nhiều dòng ở đây: có thể bỏ phần sau mà vẫn "
                                  "báo thành công. Chọn shell='powershell' với cú pháp PowerShell, hoặc viết nội dung "
-                                 "vào tệp script rồi chạy tệp đó bằng một dòng.")
+                                 "vào tệp script rồi chạy tệp đó bằng một dòng."
+                                 + (" Với mã Python nhiều dòng, dùng run_python(code=..., python=..., cwd=...)."
+                                    if "python_exec" in self.features else ""))
         return chosen
 
     def _cwd(self, cwd: str | None) -> Path:
@@ -1306,7 +1317,7 @@ class Tools:
         return directory
 
     def _approve_command(self, command: str, directory: Path, timeout: int, shell: str, *,
-                         background: bool = False) -> bool:
+                         background: bool = False, argv: list[str] | None = None) -> bool:
         """Áp chính sách lệnh: allow mặc định, deny không bị quyền đã nhớ hoặc [a] vượt qua.
 
         Quyền [l] nằm trong hồ sơ người dùng (approvals.py), không bao giờ trong thư mục dự án.
@@ -1324,6 +1335,8 @@ class Tools:
             self.ui.notice("Lệnh này đã được luôn cho phép trong dự án · /permissions để xem hoặc xóa.")
             return True
         body = {"command": command, "directory": str(directory), "timeout": timeout, "shell": shell}
+        if argv is not None:
+            body["argv"] = list(argv)
         with self.metrics.measure("permission"):
             answer = self.ui.ask(Permission("background" if background else "command", body, allow_session=True,
                                             allow_always=True))
@@ -1340,6 +1353,25 @@ class Tools:
         return answer in {"y", "a", "s", "l"}
 
     @tool
+    def run_python(self, code: str, python: str | None = None, timeout_seconds: int | None = None,
+                   cwd: str | None = None) -> dict:
+        """Truyền mã Python trực tiếp qua argv, không qua bộ phân tích cmd/PowerShell."""
+        if "python_exec" not in self.features:
+            raise WorkspaceError("Máy chủ chưa bật run_python; dùng tệp .py và run_command.")
+        if not code.strip() or len(code) > 12000 or "\x00" in code:
+            raise WorkspaceError("Mã Python phải có nội dung, không có NUL và tối đa 12.000 ký tự; mã dài hơn thì ghi tệp .py.")
+        interpreter = (python or sys.executable).strip()
+        if not interpreter or any(char in interpreter for char in "\r\n\x00") or len(interpreter) > 2000:
+            raise WorkspaceError("python phải là tên hoặc đường dẫn một trình thông dịch, không kèm tham số.")
+        argv = [interpreter, "-c", code]
+        command = subprocess.list2cmdline(argv)
+        if len(command.encode("utf-16-le")) // 2 > 30000:
+            raise WorkspaceError("Mã Python vượt giới hạn dòng lệnh Windows; ghi tệp .py rồi chạy tệp đó.")
+        timeout = max(1, min(600, timeout_seconds or 120))
+        directory = self._cwd(cwd)
+        return self._execute_command(command, directory, timeout, "python", argv=argv)
+
+    @tool
     def run_command(self, command: str, timeout_seconds: int | None = None, shell: str | None = None,
                     cwd: str | None = None) -> dict:
         command = command.strip()
@@ -1348,12 +1380,16 @@ class Tools:
         timeout = max(1, min(600, timeout_seconds or 120))
         shell = self._shell(shell, command)
         directory = self._cwd(cwd)
+        return self._execute_command(command, directory, timeout, shell)
+
+    def _execute_command(self, command: str, directory: Path, timeout: int, shell: str,
+                         *, argv: list[str] | None = None) -> dict:
         if self.failed_commands >= 3 and command_kind(command) == "check":
             return {"error": "Đã có 3 lần kiểm tra thất bại. Dừng thử sửa/kiểm tra tiếp và báo kết quả cho người dùng."}
         if self.command_failures.get(command, 0) >= 3:
             return {"error": "Lệnh này đã lỗi 3 lần; không lặp lại y nguyên. Đọc lỗi và báo nguyên nhân hoặc chọn cách khác."}
         self.ui.preview("command", {"command": command, "directory": str(directory), "timeout": timeout, "shell": shell})
-        if not self._approve_command(command, directory, timeout, shell):
+        if not self._approve_command(command, directory, timeout, shell, argv=argv):
             return self._refused("chạy lệnh này")
         call_id = self._active.call_id if self._active is not None else ""
         before = self._capture()
@@ -1362,9 +1398,10 @@ class Tools:
             with self.metrics.measure("commands"):
                 result = runner.run(command, directory, timeout, shell=shell,
                                     on_progress=lambda seconds, output: self.ui.tool_progress(call_id, seconds, output),
-                                    spool="output_files" in self.features)
+                                    spool="output_files" in self.features, **({"argv": argv} if argv is not None else {}))
         except FileNotFoundError:
-            raise WorkspaceError(f"Máy này không chạy được {shell}. Thử lại bằng shell khác nhé.") from None
+            raise WorkspaceError(f"Không tìm thấy trình thông dịch {argv[0]}. Chọn python khác."
+                                 if argv else f"Máy này không chạy được {shell}. Thử lại bằng shell khác nhé.") from None
         except KeyboardInterrupt:
             # Lệnh bị dừng giữa chừng vẫn có thể đã đổi tệp: ghi lại để /undo trả được.
             self._record_command(before, {})

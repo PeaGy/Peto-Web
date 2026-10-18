@@ -1,5 +1,30 @@
 # CLAUDE.md
 
+## Post-GTA continuity improvements (2026-10-17–18; CLI 0.28.6 source)
+
+Owner authorized the post-test priorities and quicker Peto supervision. See `agent-cli/docs/harness-continuity-0.28.6.md`.
+No commit/deploy/installed update or game writes in this change. Installed/server version used for live validation: 0.28.5;
+the test imported source CLI 0.28.6. Compaction now requires six nonempty ordered sections, at most 8000 characters;
+one malformed-summary retry at medium effort, then preserve history. This validates format, not semantic correctness.
+continuation.py separately pins bounded tool observations (20 paths, 10 plan rows, 6 recent command/error results),
+filters seeded fields and carries no execution grants. Save failure restores in-memory items/context tokens/read state.
+read_file/search_files stream UTF-8 through 64 MB; mutation/undo cap stays 1 MB. Search reports skipped files/huge lines.
+file_glob.py shares bounded brace expansion for find/search. run_python (negotiated python_exec) executes multiline
+code as direct argv through the existing permission/snapshot/output/timeout path; cmd multiline guard stays active.
+Eval policy receives actual argv and scans source; default build permissions remain allow, with require_approval for evals.
+Validation: full CLI 613 pass / 3 fixture failures in 616 cases; fixed summary/replay fixtures and a midnight-dependent
+session-picker test; recheck all four affected modules 62 pass. All 616 cases covered across runs, not a single full-green
+run. Final evidence-dedup regression added; 83 related cases pass, covering 617 total CLI cases across runs.
+Backend API/schema/prompt/installer 74 pass; old schemas unchanged. Tests use workspace temp dirs, mock models.
+Real Peto controlled continuity case: 2.3 MB metadata, synthetic binary fixture, forced compaction then persisted resume;
+independent decoder/hash checks confirm 20 old + 5 new, duplicate ID preserved, original catalog unchanged. 13 billed
+steps (1 compact + 12 work), 18 agent tools, 86.65s continuation, zero manual approvals. Automatic fixture policy still
+checks commands. Runtime artifacts: `.runtime/peto-continuity-20261017/`. Supervisor setup errors and recovery are logged;
+do not attribute seeded history to Peto or call this an equal-difficulty GTA benchmark. Server has no python_exec yet,
+so model selection of the new Python tool is untested until deploy. Peto still made Windows quoting errors and spent
+two extra calls after a passing consumer because verification-reminder logic lacks explicit acceptance results.
+Structured acceptance, durable journal/inbox and UI/runtime separation remain follow-up work, not implemented here.
+
 ## Default tool permissions (2026-10-17; CLI 0.28.5)
 
 The owner requested OpenCode-style default execution after the supervised GTA test spent about 65 minutes awaiting
