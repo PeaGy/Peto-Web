@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import uuid
 from collections.abc import Callable
 
 from .client import ApiError
@@ -91,6 +92,9 @@ def run(session, task: str, depth: str, progress: Callable[[str], None]) -> dict
             steps += 1
             items.extend(output)
             calls = [item for item in output if item.get("type") == "function_call"]
+            journal = session._journal()
+            child_step = uuid.uuid4().hex
+            journal.child_step(child_step, calls, request_id=getattr(session, '_last_explore_request_id', None))
             text = "\n".join(text_of(item) for item in output
                              if item.get("type") == "message" and item.get("role") == "assistant").strip()
             if text:
@@ -98,13 +102,22 @@ def run(session, task: str, depth: str, progress: Callable[[str], None]) -> dict
             if not calls:
                 break
             tools.start_step()
-            for call in calls:
+            for ordinal, call in enumerate(calls):
+                journal.tool_started(child_step, ordinal)
+                settled = []
+                def record(done):
+                    result = cap_result(done.result, READ_BOUNDED_KEYS if done.name == 'read_file' else BOUNDED_KEYS)
+                    journal.child_finished(child_step, ordinal, result)
+                    settled.append(True)
+                tools.record_result = record
                 name = str(call.get("name", ""))
                 if final or name not in ALLOWED:
                     result = {"error": NOT_ALLOWED if name not in ALLOWED else "Đã hết bước, không chạy nữa."}
                 else:
                     result = cap_result(tools.call(name, str(call.get("arguments", ""))),
                                         READ_BOUNDED_KEYS if name == "read_file" else BOUNDED_KEYS)
+                if not settled:
+                    journal.child_finished(child_step, ordinal, result)
                 items.append({"type": "function_call_output", "call_id": call.get("call_id", ""),
                               "output": json.dumps(result, ensure_ascii=False)})
     except SubagentError as err:
@@ -134,6 +147,7 @@ def _step(session, items: list[dict], effort: str, final: bool) -> list[dict]:
                 elif kind == "error":
                     raise SubagentError(str(event.get("message") or "Máy chủ báo lỗi."))
                 elif kind == "done":
+                    session._last_explore_request_id = event.get('_peto_request_id')
                     usage = event.get("usage") if isinstance(event.get("usage"), dict) else {}
                     session.metrics.record_usage("model", usage)
                     session.metrics.calls["model"] += 1

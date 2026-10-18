@@ -281,7 +281,10 @@ class FooterEngine:
                 # Yêu cầu xong trước khi kịp chèn tin nhắn thêm: tin đó thành yêu cầu kế tiếp.
                 text, images, sent = (self.steers or self.queued).pop(0)
                 self.busy = True
-                self.ui.commit_user(sent)
+                try:
+                    self.ui.commit_user(sent)
+                except Exception:
+                    pass  # Tin đã lưu; lỗi vẽ không được làm mất lần nhận.
                 return text, images
         while True:
             try:
@@ -438,13 +441,25 @@ class FooterEngine:
         if kind == SUBMIT and text.strip():
             from . import prompt as prompt_view
             sent = prompt_view.Sent(state)
+            admit = getattr(self.ui, 'runtime_admit', None)
+            if admit:
+                try:
+                    admit(text, images, delivery='queue' if self.busy and text.lstrip().startswith('/')
+                          else 'steer' if self.busy else 'input')
+                except Exception:
+                    state.notice = 'Chưa lưu được tin nhắn. Nội dung vẫn ở ô nhập; kiểm tra runtime rồi thử lại.'
+                    return
             if self.busy:
                 (self.queued if text.lstrip().startswith("/") else self.steers).append((text, images, sent))
             else:
                 self.busy = True
                 self.status = None
-                self.ui.commit_user(sent)
+                try:
+                    self.ui.commit_user(sent)
+                except Exception:
+                    pass  # Runtime giữ receipt, không phụ thuộc khung tin được vẽ hay chưa.
                 self.submitted.put((text, images))
+            state.clear()
             self._submitted()
         state.clear()
 

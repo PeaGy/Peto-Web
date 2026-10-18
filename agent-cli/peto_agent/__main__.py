@@ -22,9 +22,10 @@ from .loop import Session, TaskLog, format_tokens
 from .tools import FEATURES, NEW_FEATURES
 from .ui import UI, enable_vt
 from .workspace import Workspace, WorkspaceError
+from .journal import DurabilityError
 
 # Lệnh không nhận gì phía sau; gõ thêm chữ thì nhắc chứ không gửi cả câu cho Peto.
-PLAIN_COMMANDS = {"/exit", "/new", "/help", "/usage", "/retry", "/diff", "/undo", "/compact", "/init", "/thinking",
+PLAIN_COMMANDS = {"/exit", "/new", "/help", "/usage", "/retry", "/diff", "/undo", "/compact", "/init", "/thinking", "/pending",
                   "/plan", "/timeline", "/fork", "/update", "/export", "/guide"}
 EFFORT_LABELS = {"none": "không suy luận", "low": "thấp", "medium": "vừa", "high": "cao",
                  "xhigh": "rất cao", "max": "tối đa"}
@@ -743,9 +744,18 @@ def session(ui: UI, resume: str | None = None) -> int:
                 break
             if not text:
                 continue
+            if text.startswith('/'):
+                try:
+                    work.ack_control(text)
+                except DurabilityError as error:
+                    ui.failure(str(error))
+                    continue
             name, value = split_command(text)
             if name in PLAIN_COMMANDS and value:
                 ui.line(f"Lệnh {name} không nhận thêm gì phía sau.", "yellow")
+                continue
+            if name == '/pending':
+                work.show_pending()
                 continue
             if name == "/exit":
                 break
@@ -920,6 +930,12 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "status":
             return status(ui)
         return session(ui, resume=args.resume)
+    except DurabilityError as error:
+        # Có thể lỗi ngay lúc đọc phiên, trước khi vào vòng lệnh có finally dọn terminal.
+        if hasattr(ui, 'stop_footer'):
+            ui.stop_footer()
+        ui.failure(str(error))
+        return 1
     except KeyboardInterrupt:
         ui.line()
         ui.line("Đã hủy.", "dim")

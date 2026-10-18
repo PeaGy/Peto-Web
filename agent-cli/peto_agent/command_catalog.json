@@ -264,6 +264,14 @@
       "details": "MCP cung cấp công cụ bên ngoài. /mcp add docs docs-mcp.json nhập một cấu hình JSON từ tệp trong dự án, lưu trong hồ sơ CLI, chưa kết nối. /mcp enable docs hỏi quyền rồi bật trong phiên; /mcp tools docs xem công cụ; /mcp disable docs tắt. Mỗi lần gọi công cụ hỏi quyền riêng, không tự thử lại khi lỗi. HTTP dùng {\"url\":\"https://<endpoint-thực>/mcp\",\"headers\":{\"Authorization\":\"Bearer ${DOCS_API_KEY}\"}}; bỏ headers nếu không cần. Stdio dùng {\"command\":\"node\",\"args\":[\"C:/tools/server.js\"],\"env\":{\"SERVICE_API_KEY\":\"${SERVICE_API_KEY}\"}}. Chương trình cần cài sẵn. Khóa đặt ở biến môi trường trước khi mở CLI, không gửi khóa vào chat. MCP cục bộ chạy với quyền tài khoản máy, không nằm trong sandbox công cụ tệp Peto. Hỗ trợ stdio và Streamable HTTP; chưa hỗ trợ OAuth, SSE cũ, prompts/resources/sampling/elicitation. Mỗi phiên bắt đầu tắt hết MCP; /resume không tự bật lại. Tối đa 16 máy chủ, 128 công cụ và 64 KB schema/máy chủ, 30 giây/yêu cầu."
     },
     {
+      "name": "/pending",
+      "description": "Xem tin đã lưu nhưng chưa được Agent nhận",
+      "options": [],
+      "usage": "/pending",
+      "since": "0.29.0",
+      "details": "Xem inbox bền vững của hội thoại. Xem nội dung rồi gửi lại đúng tin và ảnh đính kèm hoặc xóa tin. Lệnh gạch chéo chỉ được đưa lại vào ô nhập; không tự chạy sau khi khôi phục phiên."
+    },
+    {
       "name": "/exit",
       "description": "Thoát peto",
       "options": [],

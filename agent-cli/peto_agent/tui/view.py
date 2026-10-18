@@ -90,6 +90,9 @@ class SavedText:
 
 
 class TerminalUI(UI):
+    def bind_runtime(self, admit, pending):
+        self.runtime_admit, self.runtime_pending = admit, pending
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.theme = load_theme(colors=self.colors)
@@ -246,7 +249,8 @@ class TerminalUI(UI):
         taken = self.engine.take_steers()
         for _, _, sent in taken:
             self.commit_user(sent, steer=True)
-        return [(text, images) for text, images, _ in taken]
+        # Runtime mới đã lưu ở lúc Enter; chỉ xóa phần hiển thị, không nhận lại cùng tin lần hai.
+        return [] if getattr(self, 'runtime_admit', None) else [(text, images) for text, images, _ in taken]
 
     def toggle_mode(self) -> str:
         """Đổi qua lại chế độ làm việc và Lập kế hoạch (Shift+Tab hay /plan); vẽ lại ô nhập ngay."""
@@ -667,6 +671,12 @@ class TerminalUI(UI):
                 self._emit(lambda: self._row("?", [S("Bạn bỏ qua câu hỏi của Peto", theme.muted)]), "row")
         elif name == "update_plan":
             self.plan(meta["plan"])
+        elif name == 'record_acceptance':
+            row = result.get('acceptance', {})
+            labels = {'passed': 'Đạt trong phạm vi đã kiểm', 'failed': 'Chưa đạt', 'unverified': 'Chưa xác minh'}
+            self._emit(lambda: self._row('✓' if row.get('status') == 'passed' else '·',
+                       [S(labels.get(row.get('status'), 'Nghiệm thu') + ': ', theme.muted),
+                        S(visible(row.get('criterion', '')), theme.text)]), 'row')
         elif name == "move_file":
             self._emit(lambda: self._row("→", [S("Đổi tên ", theme.muted),
                                                S(f"{result['moved_from']} → {result['path']}", theme.dim_text)]), "row")

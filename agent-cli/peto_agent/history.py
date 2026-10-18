@@ -17,6 +17,7 @@ import json
 import os
 import re
 import secrets
+import sqlite3
 import time
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
@@ -119,7 +120,7 @@ def first_title(items: list[dict]) -> str:
 
 def save(root: Path, server: str, items: list[dict], *, session_id: str, title: str = "", retryable: bool = False,
          model: str = "peto", interrupted: bool = False, saved_at: float | None = None,
-         snapshots: dict | None = None) -> bool:
+         snapshots: dict | None = None, runtime_managed: bool = False) -> bool:
     """Ghi nguyên tử một hội thoại; trả False khi lỗi để vòng làm việc dừng trước tác dụng phụ tiếp theo.
     ``saved_at`` giữ giờ lưu cũ (đổi tên không làm hội thoại nhảy lên đầu danh sách)."""
     if not items or not session_id:
@@ -128,6 +129,7 @@ def save(root: Path, server: str, items: list[dict], *, session_id: str, title: 
     data = {"version": VERSION, "id": session_id, "title": title or first_title(items), "root": str(root),
             "server": server, "saved_at": time.time() if saved_at is None else saved_at, "items": items,
             "retryable": retryable, "model": model, "interrupted": interrupted,
+            **({'runtime_managed': True} if runtime_managed else {}),
             **({"snapshots": dict(snapshots)} if snapshots else {})}
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -143,19 +145,32 @@ def rename(root: Path, server: str, session_id: str, title: str) -> None:
     saved = load(root, server, session_id)
     if saved is None or not title.strip():
         return
+    from .journal import Journal
+    journal = Journal(root, server, session_id)
     save(root, server, saved.items, session_id=session_id, title=title.strip(), retryable=saved.retryable,
-         model=saved.model, interrupted=saved.interrupted, saved_at=saved.saved_at, snapshots=saved.snapshots)
+         model=saved.model, interrupted=saved.interrupted, saved_at=saved.saved_at, snapshots=saved.snapshots,
+         runtime_managed=journal.path.is_file())
+    if journal.path.is_file():
+        journal.rename(title.strip())
 
 
 def delete(root: Path, server: str, session_id: str) -> bool:
     """Xóa một hội thoại đã lưu của thư mục (bảng /resume, Ctrl+D). Chỉ tệp của đúng máy chủ và thư mục này."""
     if load(root, server, session_id) is None:
         return False
+    from .journal import Journal
+    journal = Journal(root, server, session_id)
+    journal.claim()
     try:
-        (_folder(root) / f"{session_id}.json").unlink()
+        journal.purge()
+        (_folder(root) / f"{session_id}.json").unlink(missing_ok=True)
         _remove_archive(_folder(root), session_id)
+        for suffix in ('', '-wal', '-shm'):
+            Path(str(journal.path) + suffix).unlink(missing_ok=True)
     except OSError:
         return False
+    finally:
+        journal.release()
     return True
 
 
@@ -167,7 +182,7 @@ def _parse(data, root: Path, server: str, *, legacy: bool = False) -> Saved | No
     if os.path.normcase(str(data.get("root") or "")) != os.path.normcase(str(root)):
         return None
     items = data.get("items")
-    if not isinstance(items, list) or not items:
+    if not isinstance(items, list) or (not items and not data.get('runtime_pending')):
         return None
     if not all(isinstance(item, dict) and item.get("type", "message") in ITEM_TYPES for item in items):
         return None
@@ -215,12 +230,65 @@ def list_sessions(root: Path, server: str) -> list[Saved]:
         return []
     for path in paths:
         try:
-            saved = _parse(json.loads(path.read_text(encoding="utf-8")), root, server)
+            data = json.loads(path.read_text(encoding='utf-8'))
+            _require_runtime(root, server, data)
+            saved = _parse(data, root, server)
         except (OSError, ValueError):
             continue
         if saved is not None:
+            from .journal import Journal
+            if Journal(root, server, saved.id).deleted():
+                continue
             found.append(saved)
-    return sorted(found, key=lambda saved: saved.saved_at, reverse=True)
+    # Projection SQLite thắng bản xuất JSON, kể cả crash trước lần xuất đầu tiên.
+    durable = _durable_sessions(root, server)
+    merged = {saved.id: saved for saved in found}
+    for data in durable:
+        saved = _parse(data, root, server)
+        if saved:
+            merged[saved.id] = saved
+    return sorted(merged.values(), key=lambda saved: saved.saved_at, reverse=True)
+
+
+def _require_runtime(root, server, data):
+    from .journal import Journal, DurabilityError
+    if not isinstance(data, dict) or data.get('server') != server or not data.get('runtime_managed'):
+        return
+    journal = Journal(root, server, data.get('id', ''))
+    if not journal.path.is_file() and not journal.deleted():
+        raise DurabilityError('Thiếu journal của phiên này. Chưa dùng JSON cũ; khôi phục bản sao runtime trước khi tiếp tục.')
+
+
+def _durable_sessions(root, server):
+    from .journal import DurabilityError
+    result = []
+    for path in (_folder(root) / 'runtime').glob('*.sqlite3'):
+        if path.with_suffix('.deleted').is_file():
+            continue
+        db = None
+        try:
+            db = sqlite3.connect(path.as_uri() + '?mode=ro', uri=True, timeout=5)
+            db.execute('BEGIN')
+            row = db.execute('SELECT data FROM snapshot WHERE id=1').fetchone()
+            if not row:
+                continue
+            data = json.loads(row[0])
+            if data.get('server') != server or os.path.normcase(data.get('root', '')) != os.path.normcase(str(root)):
+                continue
+            pending = db.execute("SELECT data FROM inbox WHERE status='pending' ORDER BY position LIMIT 1").fetchone()
+            if db.execute("SELECT 1 FROM executions WHERE status='running'").fetchone():
+                data['interrupted'] = True
+            if pending:
+                data['runtime_pending'] = True
+                if not data.get('title') and not data.get('items'):
+                    data['title'] = json.loads(pending[0]).get('text', '')[:60]
+            result.append(data)
+        except (OSError, sqlite3.Error, ValueError) as error:
+            raise DurabilityError('Không đọc được journal. Chưa dùng bản JSON cũ để tránh chạy lặp công việc.') from error
+        finally:
+            if db:
+                db.close()
+    return result
 
 
 def load(root: Path, server: str, session_id: str | None = None) -> Saved | None:
@@ -228,10 +296,17 @@ def load(root: Path, server: str, session_id: str | None = None) -> Saved | None
     if session_id is None:
         sessions = list_sessions(root, server)
         return sessions[0] if sessions else None
+    from .journal import Journal
+    if Journal(root, server, session_id).deleted():
+        return None
+    for data in _durable_sessions(root, server):
+        if data.get('id') == session_id:
+            return _parse(data, root, server)
     try:
         data = json.loads((_folder(root) / f"{session_id}.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
+    _require_runtime(root, server, data)
     return _parse(data, root, server)
 
 
@@ -258,12 +333,26 @@ def _prune(folder: Path, *, keep: Path) -> None:
         paths = sorted(folder.glob("*.json"), key=lambda path: path.stat().st_mtime, reverse=True)
         for index, path in enumerate(paths):
             if path != keep and (index >= MAX_SESSIONS or path.stat().st_mtime < cutoff):
+                from .journal import Journal, DurabilityError
+                data = json.loads(path.read_text(encoding='utf-8'))
+                journal = Journal(Path(data.get('root', '')), data.get('server', ''), path.stem)
+                if journal.path.parent.parent.resolve() != folder.resolve():
+                    continue
+                if journal.path.is_file():
+                    try:
+                        journal.claim()
+                    except DurabilityError:
+                        continue
+                    try:
+                        journal.purge()
+                    finally:
+                        journal.release()
                 path.unlink()
                 _remove_archive(folder, path.stem)
         for path in folder.parent.glob("*.json"):
             if path.stat().st_mtime < cutoff:
                 path.unlink()
-    except OSError:
+    except (OSError, ValueError):
         pass
 
 

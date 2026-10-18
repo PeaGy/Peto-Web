@@ -1,5 +1,39 @@
 # CLAUDE.md
 
+## Durable Agent runtime, inbox and acceptance (2026-10-19; CLI 0.29.0)
+
+Owner approved the three reliability upgrades based on OpenCode and explicitly excluded Execution isolation.
+See `agent-cli/docs/durable-runtime-0.29.0.md`. Reference: OpenCode 2.0.32, pinned commit
+`22e771f5893e255ea78fc10557ed3fb98d3a1072` (MIT), local `.runtime/references/opencode`; no upstream scripts run.
+The earlier continuity section's three follow-ups are implemented in this source version, with the limits below.
+
+- `journal.py`: per-root/server/session SQLite WAL/FULL event log + canonical snapshot, schema version 1. Durable
+  physical request intents (including compact/title/btw/explore/wrapup), logical step IDs, `(step, ordinal)` tool
+  identities, result/task-state commits before renderer, process lease, interrupted/unknown recovery without replay.
+  JSON remains a compatibility export; managed JSON missing its journal and corrupt/future journals fail closed.
+  Legacy unmanaged JSON still opens. Rename is metadata-only; delete/retention take the lease, remove DB/WAL and
+  leave a tombstone so late callbacks cannot resurrect a deleted session. Active sessions are skipped by retention.
+- `observer.py`: presentation exceptions cannot erase results or manufacture failed tools; failing interactive
+  methods deny/dismiss rather than grant. KeyboardInterrupt still stops. Rendering remains synchronous and terminal
+  close stops the local runtime; this is not a full independent OpenCode Core/UI transport or persistent daemon.
+- Terminal input is admitted durably before Enter acknowledgement/draft clear; delivery+transcript is transactional.
+  `/pending` explicitly sends or cancels saved text/images; queued slash commands only prefill for another Enter.
+  Resume never auto-runs pending input. Captured tool images are included in recovery checkpoints.
+- `task_state.py`: goal/plan/artifact hashes/revision/runtime evidence/acceptance survive compaction/resume. Negotiated
+  `task_state` adds evidence_id to outcomes and a strict record_acceptance tool; old feature schemas are unchanged.
+  Passed requires current real check evidence, not a write/plan/failed check; edits and external artifact changes
+  stale prior criteria. Scope is agent-reported, not semantic proof. Model projection is bounded (~14k chars) with
+  omitted counts; full current state has 100 evidence rows/30 criteria, prior tool output remains in journal/archive.
+  No new permissions, provider retry expansion, OS isolation, frontend change or production DB migration.
+
+Use `pytest tests` from agent-cli, not bare pytest (eval fixture projects intentionally contain failing tests).
+Tests use mock models, temporary workspaces and real child-process crashes. No paid model calls, commit/deploy,
+installed CLI update or user project/game changes in this source task. Deploy backend then update CLI to 0.29.0
+for acceptance negotiation; journal/UI/inbox also work with older backends. No new third-party dependencies.
+Final validation: full CLI 656/656 pass; related backend Agent/API/schema/provider/guide/installer 83/83 pass.
+Installer test installs the built wheel into a temporary target and runs its CLI; a separate 0.29.0 wheel build
+also compiled every packaged Python module. `git diff --check` passes. No live-provider or physical power-loss test.
+
 ## English model instructions, provider overlays, no roleplay mode (2026-10-18)
 
 The owner asked for every system prompt in English to save tokens, including the Web Chat assistant and its examples,

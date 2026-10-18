@@ -802,6 +802,10 @@ class UI:
             return
         if name == "update_plan":
             self.plan(meta["plan"])
+        elif name == 'record_acceptance':
+            row = result.get('acceptance', {})
+            labels = {'passed': 'Đạt trong phạm vi đã kiểm', 'failed': 'Chưa đạt', 'unverified': 'Chưa xác minh'}
+            self.step(f"{labels.get(row.get('status'), 'Nghiệm thu')}: {row.get('criterion', '')}")
         elif name == "list_files":
             self.step(f"Xem thư mục {result['path']}")
         elif name == "read_file":

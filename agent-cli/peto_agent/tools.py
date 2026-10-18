@@ -24,6 +24,7 @@ from . import patch as patch_text_lib
 from .background import Jobs
 from .checkpoint import Checkpoint
 from .command_outcome import classify, command_kind, local_probe
+from .observer import observe
 from .events import Permission, ToolCall, ToolDone
 from .images import Image
 from .file_glob import glob_regex
@@ -55,7 +56,7 @@ FEATURES = ("cwd", "browser", "browser_act", "browser_outside", "skills", "mcp")
 # câu hỏi bên lề /btw. Từ 0.25.0 (theo lõi opencode): đọc tới 1000 dòng, lưu đủ output dài (read_output), lượt tóm tắt
 # khi hết bước và AGENTS.md chung của người dùng. Từ 0.27.0: agent con chỉ đọc explore.
 NEW_FEATURES = ("explore_v2", "edit_v2", "question", "patch", "title", "steer", "jobs_notify", "plan_mode",
-                "btw", "read_more", "output_files", "wrapup", "user_guide", "subagent", "recall", "python_exec")
+                "btw", "read_more", "output_files", "wrapup", "user_guide", "subagent", "recall", "python_exec", "task_state")
 # Gọi y hệt một công cụ ngần này lần liền mà không tệp nào đổi thì hỏi người dùng có cho gọi tiếp không.
 LOOP_LIMIT = 3
 # Công cụ mà gọi lại y hệt là bình thường: chờ output lệnh nền, xem lại trang sau khi bấm, cập nhật danh sách việc.
@@ -124,9 +125,11 @@ def changed_lines(before: str, after: str) -> tuple[int, int]:
 class Tools:
     def __init__(self, workspace: Workspace, ui: AgentUI):
         self.ws = workspace
-        self.ui = ui
+        self.ui = observe(ui)
+        self.record_result = None
+        self.acceptance = None
         self.skills = Skills(workspace)
-        self.mcp = MCP(workspace, ui)
+        self.mcp = MCP(workspace, self.ui)
         self.approve_all = False
         # Bộ thi/người giám sát có thể buộc đi qua bộ kiểm quyền riêng; không lấy giá trị này từ model hoặc repo.
         self.require_approval = False
@@ -190,6 +193,7 @@ class Tools:
         self.explorer = None
         self.history_reader = None
         self._handlers = {
+            'record_acceptance': self.record_acceptance,
             "load_skill": self.load_skill,
             "mcp_list_tools": self._evented("mcp_list_tools", self.mcp.list_tools),
             "mcp_call_tool": self._evented("mcp_call_tool", self.mcp.call),
@@ -366,14 +370,21 @@ class Tools:
             self.meta.update(raised="os", message=_os_message(err))
             result = {"error": _os_message(err)}
             raise
+        except KeyboardInterrupt:
+            self.meta['stopped'] = True
+            result = {'error': 'Người dùng đã dừng yêu cầu bằng Ctrl+C.'}
+            raise
         except BaseException:
             self.meta["stopped"] = True
             result = {"error": "Đã dừng."}
             raise
         finally:
             self._active = None
-            self.ui.tool_finished(ToolDone(call.call_id, name, params, result if isinstance(result, dict) else {},
-                                           dict(self.meta), time.monotonic() - started))
+            done = ToolDone(call.call_id, name, params, result if isinstance(result, dict) else {},
+                            dict(self.meta), time.monotonic() - started)
+            if self.record_result is not None:
+                self.record_result(done)
+            self.ui.tool_finished(done)
 
     def call(self, name: str, arguments: str) -> dict:
         handler = self._handlers.get(name)
@@ -471,6 +482,16 @@ class Tools:
         total[0] += added
         total[1] += removed
         return added, removed
+
+    @tool
+    def record_acceptance(self, criterion: str, status: str, evidence_ids: list, note: str) -> dict:
+        """Ghi nhận nghiệm thu do agent báo; tham chiếu bằng chứng thật, không tự suy từ tên lệnh/mã thoát."""
+        if self.acceptance is None or 'task_state' not in self.features:
+            raise WorkspaceError('Phiên chưa bật trạng thái nghiệm thu.')
+        try:
+            return self.acceptance.accept(criterion, status, evidence_ids, note)
+        except ValueError as error:
+            raise WorkspaceError(str(error)) from error
 
     @tool
     def update_plan(self, steps: list) -> dict:

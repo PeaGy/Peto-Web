@@ -3,13 +3,19 @@
 from __future__ import annotations
 
 import contextlib
+import copy
 import json
 import platform
 import threading
 import time
+import uuid
 from datetime import datetime
 
 from . import approvals, continuation, history, mentions, recall, subagent, user_guide
+from .journal import Journal, DurabilityError
+from .observer import observe
+from .runtime_client import RuntimeClient
+from .task_state import TaskState
 from .checkpoint import Change, Checkpoint
 from .context import compact_prefix, context_size, text_of, efficient_input
 from .events import Permission, RequestEnd
@@ -174,8 +180,18 @@ class Session:
             raise ValueError("Giới hạn bước phải là số nguyên dương hoặc None.")
         self.client = client
         self.ws = workspace
-        self.ui = ui
-        self.tools = Tools(workspace, ui)
+        self.ui = observe(ui)
+        self.tools = Tools(workspace, self.ui)
+        self.task_state = TaskState(workspace)
+        self.tools.acceptance = self.task_state
+        self._store = None
+        self._active_step = None
+        self._active_ordinal = None
+        self._settled = set()
+        self._published_output = None
+        self._logical_step = None
+        self._compaction_step = None
+        self.tools.record_result = self._record_tool
         self.log = log
         self.effort = effort
         # Phiên thường không giới hạn bước; bộ chấm có thể đặt ngân sách riêng cho mỗi yêu cầu của phiên đó.
@@ -202,7 +218,7 @@ class Session:
         # Model đặt tên hội thoại sau yêu cầu đầu (cần máy chủ có "title"); bài thi tắt để khỏi tốn bước.
         self.auto_title = True
         self._titling = False
-        self._save_lock = threading.Lock()
+        self._save_lock = threading.RLock()
         # Lời báo gần nhất về AGENTS.md chung (dài quá, đọc lỗi): chỉ in lại khi đổi, khỏi lặp mỗi bước.
         self._guide_problem: str | None = None
         # Ảnh chụp dự án lúc bắt đầu mỗi yêu cầu (CLI 0.26.0): dấu của tin → mã cây, lưu cùng hội thoại.
@@ -210,8 +226,114 @@ class Session:
         # Agent con explore (CLI 0.27.0) dùng máy chủ, model và ngữ cảnh bước của phiên này.
         self.tools.explorer = self._explore
         self.tools.history_reader = self._read_history
+        self.client = RuntimeClient(client, self._journal, self._publish_model,
+                                    lambda purpose: self._logical_step if purpose in {'work', 'wrapup'}
+                                    else self._compaction_step if purpose == 'compact' else None)
+        # UI chỉ giữ callback nhận đầu vào, không giữ quyền sở hữu transcript hay kết quả công cụ.
+        bind = getattr(ui, 'bind_runtime', None)
+        if bind:
+            bind(self.enqueue, self.pending_input)
+
+    def _journal(self):
+        with self._save_lock:
+            if self.session_id is None:
+                self.session_id = history.new_id()
+            if self._store is None or self._store.identity['id'] != self.session_id:
+                self._store = Journal(self.ws.root, self.client.server, self.session_id)
+            return self._store
+
+    def _runtime_data(self, items=None, **flags):
+        return {'version': history.VERSION, 'id': self.session_id, 'title': self.title or '', 'model': self.model,
+                'saved_at': time.time(), 'items': self.items if items is None else items,
+                'retryable': self.can_retry, 'interrupted': False, 'snapshots': self.snapshot_marks,
+                'task_state': self.task_state.data,
+                'pending_images': tool_images(self.tools.captured) if self.tools.captured else None, **flags}
+
+    def _publish_output(self, output, *, journal=None, request_id=None, response=None):
+        journal = journal or self._journal()
+        step = self._logical_step or uuid.uuid4().hex
+        candidate = self.items + output
+        calls = [item for item in output if item.get('type') == 'function_call']
+        journal.publish_step(step, calls, self._runtime_data(candidate), request_id=request_id, response=response)
+        self.items = candidate
+        self._active_step, self._settled = step, set()
+        self._published_output = output
+
+    def _publish_model(self, journal, request_id, event):
+        output = [item for item in event['output'] if isinstance(item, dict) and item.get('type') in KEPT_ITEM_TYPES]
+        self._publish_output(output, journal=journal, request_id=request_id, response=event)
+
+    def _record_tool(self, done):
+        if self._active_step is None or self._active_ordinal is None or self._active_ordinal in self._settled:
+            return
+        output = cap_result(done.result, READ_BOUNDED_KEYS if done.name in {'read_file', 'read_history'} else BOUNDED_KEYS)
+        evidence_id = f'{self._active_step}:{self._active_ordinal}'
+        self.task_state.record(evidence_id, done.name, done.args, output)
+        if 'task_state' in self.tools.features:
+            output = {**output, 'evidence_id': evidence_id}
+        candidate = self.items + [{'type': 'function_call_output', 'call_id': done.call_id,
+                                   'output': json.dumps(output, ensure_ascii=False)}]
+        try:
+            self._journal().tool_finished(self._active_step, self._active_ordinal, output,
+                                          self._runtime_data(candidate), task_state=self.task_state.data)
+        except BaseException:
+            self.task_state.data = self._task_state_before
+            raise
+        self.items = candidate
+        done.result.clear(); done.result.update(output)
+        self._settled.add(self._active_ordinal)
+
+    def enqueue(self, text, images=(), *, delivery='steer', item_id=None):
+        packed = [{'number': number, 'data': image.data_url(), 'width': image.width, 'height': image.height}
+                  for number, image in images]
+        journal = self._journal()
+        if journal.read() is None:
+            journal.snapshot(self._runtime_data())
+        return journal.enqueue({'text': text, 'images': packed}, delivery, item_id)
+
+    def pending_input(self):
+        return self._journal().pending() if self._store is not None else []
+
+    def ack_control(self, text):
+        entries = [row for row in self.pending_input() if row['data']['text'].strip() == text]
+        if entries:
+            self._journal().deliver([entries[0]['id']], self._runtime_data())
+
+    def show_pending(self):
+        entries = self.pending_input()
+        if not entries:
+            self.ui.line('Không có tin đang chờ.', 'dim')
+            return
+        chosen = self.ui.choose('Tin đã lưu, chưa đưa vào hội thoại',
+                                [(row['data']['text'][:100], row['delivery']) for row in entries])
+        if chosen is None:
+            return
+        row = entries[chosen]
+        text = row['data']['text']
+        self.ui.line(text)
+        images = self._inbox_images(row['data'])
+        if images:
+            self.ui.line('Ảnh đính kèm: ' + ', '.join(f'[Ảnh {number}]' for number, _ in images), 'dim')
+        control = text.lstrip().startswith('/')
+        action = self.ui.choose('Xử lý tin đang chờ',
+                                [('Đưa vào ô nhập' if control else 'Gửi tin đã lưu',
+                                  'bấm Enter để chạy lệnh' if control else 'tiếp tục với đúng ảnh đính kèm'),
+                                 ('Xóa tin', 'không chạy')])
+        if action == 0:
+            if control:
+                self.ui.prefill(text)
+            else:
+                self.run_task(text, images)
+        elif action == 1:
+            self._journal().cancel_input(row['id'])
 
     def reset(self) -> None:
+        self._store = None
+        self._active_step = self._active_ordinal = None
+        self._published_output = None
+        self._logical_step = None
+        self.task_state = TaskState(self.ws)
+        self.tools.acceptance = self.task_state
         self.snapshot_marks = {}
         self.tools.skills.loaded.clear()
         self.tools.reset_task()
@@ -244,9 +366,15 @@ class Session:
         with self._save_lock:
             if self.session_id is None:
                 self.session_id = history.new_id()
-            return history.save(self.ws.root, self.client.server, self.items if items is None else items,
+            saved = history.save(self.ws.root, self.client.server, self.items if items is None else items,
                                 session_id=self.session_id, title=self.title or "", model=self.model,
-                                snapshots=self.snapshot_marks, **flags)
+                                snapshots=self.snapshot_marks, runtime_managed=True, **flags)
+            if saved:
+                try:
+                    self._journal().snapshot(self._runtime_data(**flags))
+                except DurabilityError:
+                    return False
+            return saved
 
     def _name_conversation(self) -> None:
         """Sau yêu cầu đầu của một hội thoại: nhờ model đặt tên cho danh sách /resume, ở luồng nền để người dùng gõ
@@ -260,6 +388,8 @@ class Session:
         if not first:
             return
         session_id = self.session_id
+        title_journal = self._journal()
+        title_client = RuntimeClient(self.client.client, lambda: title_journal, self._publish_model)
         prompt = (f"Tin đầu của người dùng:\n{first[:TITLE_SOURCE_CHARS[0]]}\n\n"
                   f"Đầu câu trả lời của Peto:\n{reply[:TITLE_SOURCE_CHARS[1]]}")
         body = {"input": [user_message(prompt)], "effort": "low", "model": "peto", "context": {"purpose": "title"}}
@@ -267,7 +397,7 @@ class Session:
 
         def run() -> None:
             try:
-                with contextlib.closing(self.client.stream("/api/agent/step", body)) as events:
+                with contextlib.closing(title_client.stream("/api/agent/step", body)) as events:
                     for event in events:
                         if event.get("type") != "done" or event.get("purpose") != "title":
                             continue
@@ -286,7 +416,7 @@ class Session:
                             with self._save_lock:
                                 history.rename(self.ws.root, self.client.server, session_id, title)
                         self._log("title", title=title)
-            except (ApiError, OSError, ValueError):
+            except (ApiError, OSError, ValueError, DurabilityError):
                 pass
             finally:
                 self._titling = False
@@ -351,6 +481,24 @@ class Session:
         self.tools.seen_guides.clear()
         self.tools.checkpoint = Checkpoint(self.ws)
         self.session_id, self.title = session_id, title
+        self._active_step = self._active_ordinal = self._published_output = self._logical_step = None
+        self.task_state = TaskState(self.ws)
+        self.tools.acceptance = self.task_state
+        self._store = None
+        if session_id:
+            journal = self._journal()
+            journal.claim()
+            try:
+                journal.recover()
+                durable = journal.read()
+                if durable:
+                    self.items = durable['items'] if model == self.model else portable(durable['items'])
+                    self.task_state = TaskState(self.ws, durable.get('task_state'))
+                    self.tools.acceptance = self.task_state
+                if entries := journal.pending():
+                    self.ui.notice(f'Đã khôi phục {len(entries)} tin đang chờ. /pending để xem; chưa tự chạy tin nào.', 'yellow')
+            finally:
+                journal.release()
         self._announce_title()
         notes = [history.raw_text(item) for item in self.items if history.is_note(item)]
         self._announced_mode = "build"
@@ -364,7 +512,7 @@ class Session:
         if self.log is not None:
             self.log.write(kind, **data)
 
-    def _inbox(self, *, steers: bool = True) -> bool:
+    def _inbox(self, *, steers: bool = True, exclude=None) -> bool:
         """Những gì tới trong lúc Peto làm, chèn vào hội thoại trước bước kế tiếp (theo opencode, CLI 0.20.0):
 
         - chế độ vừa đổi (Shift+Tab hay /plan) thì một tin nhắc chế độ;
@@ -391,28 +539,66 @@ class Session:
             self._log("job_finished", id=job["id"], exit_code=code)
         take = getattr(self.ui, "take_steers", None) if steers else None
         steered = False
+        # UI cũ cũng được hỗ trợ: nhận rồi lưu ngay; UI mới đã ghi trước khi xác nhận Enter.
         for text, images in take() if take else []:
+            self.enqueue(text, images)
+        pending = self.pending_input()
+        for entry in pending:
+            if entry['delivery'] != 'steer' or entry['id'] == exclude:
+                continue
+            text = entry['data']['text']
+            images = self._inbox_images(entry['data'])
             attached = mentions.attach(self.ws, self.tools, text)
             for step in attached.steps:
                 self.ui.step(step)
-            self.items.append(user_message(history.STEER_NOTE + attached.text, images))
+            message = user_message(history.STEER_NOTE + attached.text, images)
+            self._journal().deliver([entry['id']], self._runtime_data(self.items + [message]))
+            self.items.append(message)
             self.ui.link_user_entry(self.items[-1])
             drop_old_images(self.items)
             self._log("steer", text=text, images=len(images))
             steered = True
         return steered
 
+    @staticmethod
+    def _inbox_images(data):
+        import base64
+        from .images import Image
+        return [(row['number'], Image(base64.b64decode(row['data'].partition(',')[2]),
+                 row['data'].partition(';')[0].removeprefix('data:'), row['width'], row['height']))
+                for row in data.get('images', [])]
+
     def run_task(self, text: str, images=()) -> None:
         """Chạy một yêu cầu. ``images`` là các cặp (số ảnh, ảnh) dán kèm bằng Alt+V hay kéo thả."""
+        # Giữ lease suốt cả nhận yêu cầu, tool và finalization; mở hai CLI không được chạy trùng phiên.
+        journal = self._journal()
+        journal.claim()
+        try:
+            self._run_task(text, images)
+        finally:
+            journal.release()
+
+    def _run_task(self, text, images=()):
         self.tools.checkpoint = Checkpoint(self.ws)
+        image_keys = [(number, image.data_url()) for number, image in images]
+        existing = next((row for row in self.pending_input() if row['data']['text'].strip() == text.strip()
+                         and row['delivery'] in {'input', 'queue', 'steer'}
+                         and [(image['number'], image['data']) for image in row['data'].get('images', [])] == image_keys), None)
+        if existing:
+            item_id = existing['id']
+        else:
+            item_id = self.enqueue(text, images, delivery='input')
         attached = mentions.attach(self.ws, self.tools, text)
         for step in attached.steps:
             self.ui.step(step)
         for notice in attached.notices:
             self.ui.line(f"  {notice}", "yellow")
         # Đổi chế độ, lệnh nền dừng trong lúc rảnh: báo trước tin của người dùng, như opencode chèn lời nhắc chế độ.
-        self._inbox(steers=False)
-        self.items.append(user_message(attached.text, images))
+        self._inbox(steers=False, exclude=item_id)
+        message = user_message(attached.text, images)
+        self.task_state.data['goal'] = text[:8000]
+        self._journal().deliver([item_id], self._runtime_data(self.items + [message]))
+        self.items.append(message)
         self._mark_request(len(self.items) - 1)
         self.ui.link_user_entry(self.items[-1])
         drop_old_images(self.items)
@@ -737,6 +923,7 @@ class Session:
                 self._log("compaction_metrics", metrics=metrics.snapshot())
 
     def _compact(self, metrics, *, propagate_cancel=False):
+        self._compaction_step = uuid.uuid4().hex
         prefix, tail = compact_prefix(self.items)
         if not prefix:
             self.ui.line("  Hội thoại còn ngắn, chưa cần tóm tắt.", "dim")
@@ -831,12 +1018,20 @@ class Session:
         self._run(resuming=True)
 
     def _run(self, *, resuming=False) -> None:
+        journal = self._journal()
+        if journal.lease is None:
+            journal.claim()
+            try:
+                return self._run(resuming=resuming)
+            finally:
+                journal.release()
         # /retry là một lần tiếp tục do người dùng yêu cầu: không kế thừa quyền a từ lần trước.
         if not resuming:
             self.tools.reset_task()
             self.metrics = self.tools.metrics = Metrics()
             self.active_seconds = 0.0
         self._running = True
+        execution_id = journal.execution_started()
         self.ui.title(self.ui.tab_title("đang làm"))
         self.tools.approve_all = False
         self.can_retry = False
@@ -868,7 +1063,10 @@ class Session:
                 if reply:
                     # Nhật ký là bản xem nhanh; lời đầy đủ còn trong session hoặc archive trước tóm tắt.
                     self._log("reply", text=cap_text(reply, MAX_LOGGED_REPLY))
-                self.items.extend(output)
+                if self._published_output != output:
+                    self._publish_output(output)
+                self._published_output = None
+                self._logical_step = None
                 pending = [item for item in output if item.get("type") == "function_call"]
                 if not pending:
                     if self._inbox():
@@ -884,7 +1082,10 @@ class Session:
                 results = []
                 while pending:
                     call = pending[0]
+                    self._active_ordinal = len(self._settled)
+                    self._journal().tool_started(self._active_step, self._active_ordinal)
                     self.tools.call_id = str(call.get("call_id", ""))
+                    self._task_state_before = copy.deepcopy(self.task_state.data)
                     name = str(call.get("name", ""))
                     with self.metrics.measure("tools"):
                         result = cap_result(self.tools.call(name, str(call.get("arguments", ""))),
@@ -893,7 +1094,9 @@ class Session:
                     encoded = json.dumps(result, ensure_ascii=False)
                     self._log("tool", name=call.get("name"), arguments=cap_text(str(call.get("arguments", "")), 2000),
                               result=cap_text(encoded, 4000))
-                    self.items.append({"type": "function_call_output", "call_id": call.get("call_id", ""), "output": encoded})
+                    if self._active_ordinal not in self._settled:
+                        from .events import ToolDone
+                        self._record_tool(ToolDone(str(call.get('call_id', '')), name, {}, result))
                     pending.pop(0)
                     self._save_progress()
                 if self.tools.captured:
@@ -921,7 +1124,9 @@ class Session:
         except KeyboardInterrupt:
             outcome = "stopped"
             # Lệnh gọi công cụ nào cũng phải có kết quả, không thì bước sau bị mô hình từ chối.
-            for call in pending:
+            for offset, call in enumerate(pending):
+                if self._active_ordinal is not None and self._active_ordinal + offset in self._settled:
+                    continue
                 self.items.append({"type": "function_call_output", "call_id": call.get("call_id", ""),
                                    "output": json.dumps(STOPPED_RESULT, ensure_ascii=False)})
             self.ui.line()
@@ -933,6 +1138,7 @@ class Session:
             self._log("internal_error", error_type=type(err).__name__)
             raise
         finally:
+            self._active_ordinal = None
             self.tools.approve_all = False
             self.active_seconds += time.monotonic() - started
             self._running = False
@@ -945,6 +1151,7 @@ class Session:
             if not saved:
                 outcome = "error"
                 self.ui.failure("Không lưu được hội thoại. Giữ cửa sổ này và kiểm tra dung lượng/quyền ghi trước khi làm tiếp.")
+            journal.execution_finished(execution_id, outcome)
             self._summary(self.active_seconds, outcome)
             if outcome == "done":
                 self._name_conversation()
@@ -967,7 +1174,13 @@ class Session:
 
     def _remind_to_check(self) -> bool:
         """Peto định xong mà còn tệp sửa chưa kiểm tra: thêm lời nhắc "Kiểm tra sau sửa" để chạy thêm một bước."""
-        if not (self.tools.changes and self.tools.checked_revision < self.tools.revision):
+        rows = self.task_state.data['acceptance']
+        if rows and not self.task_state.accepted():
+            self.items.append(user_message('[Peto Agent] Recorded acceptance criteria are still failed, unverified '
+                              'or stale. Check the task state and resolve them if possible; otherwise explicitly '
+                              'state the remaining limitation. Do not repeat a successful check outside its scope.'))
+            return True
+        if self.task_state.accepted() or not (self.tools.changes and self.tools.checked_revision < self.tools.revision):
             return False
         self.items.append({"type": "message", "role": "assistant", "content": (
             "Kiểm tra sau sửa: xem hướng dẫn AGENTS.md và cấu hình dự án để chọn test/build/lint phù hợp. "
@@ -1005,6 +1218,8 @@ class Session:
         context = {"project": self.ws.root.name, "os": f"{platform.system()} {platform.release()}".strip(),
                    "project_guidance": guides(self.ws), "features": list(self.tools.features),
                    "skills": self.tools.skills.catalog(), "mcp_servers": self.tools.mcp.catalog()}
+        if 'task_state' in self.tools.features:
+            context['task_state'] = self.task_state.view()
         if "recall" in self.tools.features:
             context["check_observations"] = {"current_revision": self.tools.revision,
                 "observations": list(self.tools.checks),
@@ -1021,6 +1236,7 @@ class Session:
     def _step(self, *, purpose: str | None = None) -> list[dict] | None:
         """Một lượt gọi model. Lỗi tạm thời trước khi có phản hồi thì tự chờ rồi gửi lại (RETRY_WAITS); Ctrl+C lúc
         chờ thì dừng yêu cầu như mọi khi."""
+        self._logical_step = uuid.uuid4().hex
         for attempt in range(len(RETRY_WAITS) + 1):
             try:
                 return self._attempt(purpose, may_retry=attempt < len(RETRY_WAITS))
@@ -1104,6 +1320,8 @@ class Session:
                         self._log("error", message=message)
                         return None
         except ApiError as err:
+            if output is not None:
+                return output
             writer.finish()
             if err.status in RETRY_STATUSES and not received and may_retry:
                 raise _Retry("Mất kết nối tới máy chủ Peto") from err
@@ -1134,7 +1352,9 @@ class Session:
             background_jobs=len(self.tools.jobs.running()),
             plan_left=sum(1 for step in self.tools.plan if step.get("status") != "done"),
             context_tokens=self.context_tokens, model=self.model_label, context_share=self.context_share(),
-            command_files=len(self.tools.command_changes)))
+            command_files=len(self.tools.command_changes), acceptance=copy.deepcopy(self.task_state.data['acceptance'])))
+        if unresolved := [row for row in self.task_state.data['acceptance'] if row['status'] != 'passed']:
+            self.ui.notice(f'Còn {len(unresolved)} tiêu chí chưa đạt hoặc chưa xác minh.', 'yellow')
         self._log("summary", outcome=outcome, seconds=round(elapsed, 1), changes=self.tools.changes,
                   commands=self.tools.commands, metrics=self.metrics.snapshot())
 

@@ -64,3 +64,4 @@ class RequestEnd:
     context_share: float | None = None
     # Số tệp lệnh đã đổi trong yêu cầu, biết nhờ ảnh chụp dự án (CLI 0.26.0).
     command_files: int = 0
+    acceptance: list[dict] = field(default_factory=list)

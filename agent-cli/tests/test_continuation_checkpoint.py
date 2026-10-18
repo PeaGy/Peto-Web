@@ -50,7 +50,8 @@ def test_two_bad_summaries_leave_history_and_permissions_untouched(project):
     work.tools.approve_all = False
     assert not work.compact() and work.items == original
     assert len(client.bodies) == 2 and not work.tools.approve_all
-    assert work.session_id is None
+    assert work.session_id is not None  # Request nén cũng có định danh bền vững trước khi gọi model.
+    assert len([row for row in work._journal().events() if row['kind'] == 'model.completed']) == 2
 
 
 def test_save_failure_does_not_commit_compacted_context_or_clear_read_state(project, monkeypatch):

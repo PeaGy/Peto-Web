@@ -321,6 +321,8 @@ nào được chọn, nên Enter không tự chạy gì. Từ 0.20.0 tên lệnh
   sau từng bước, nên lỡ đóng cửa sổ hay tắt máy khi Peto đang làm thì lần mở sau dòng nhắc thành
   `/resume làm tiếp yêu cầu bị ngắt …`. Mở lại sẽ thấy danh sách việc còn dở; gõ "làm tiếp" để Peto làm nốt. Công cụ
   đang chạy dở lúc đóng được ghi là bị ngắt, nên Peto kiểm tra lại tệp trước khi làm tiếp.
+- `/pending` (từ 0.29.0): xem các tin đã lưu nhưng chưa đưa vào hội thoại. Có thể gửi lại đúng tin/ảnh hoặc xóa;
+  lệnh `/...` chỉ được điền vào ô nhập để bạn bấm Enter, không tự chạy sau khi mở lại phiên.
 - `/timeline` (từ 0.22.0, theo opencode): danh sách các tin bạn đã gửi trong hội thoại đang mở. Chọn một tin rồi
   "Nhảy tới" (cuộn màn hình tới đúng tin đó), "Chép" (chép chữ của tin vào clipboard) hoặc "Tách hội thoại từ đây".
   Từ 0.26.0 còn có "Khôi phục tệp về lúc trước tin này" (xem "Ảnh chụp dự án" bên dưới).
@@ -735,6 +737,19 @@ Peto nhận hướng dẫn dùng `shell="powershell"` với cú pháp PowerShell
 Lệnh một dòng và PowerShell nhiều dòng vẫn dùng bình thường. Lỗi này được tái hiện khi giám sát bài thử
 [20 bài/23 đài/ba chế độ](docs/peto-supervision-2026-10-17.md); bản sửa nằm ở CLI, cần phát hành để máy khác nhận được.
 
+### Nhật ký runtime và nghiệm thu (0.29.0)
+
+Theo ranh giới thực thi/lưu trữ/inbox của OpenCode, CLI ghi request và tool call trước khi chạy, lưu kết quả thật
+trước khi vẽ UI. Lỗi renderer không làm mất kết quả hoặc đổi thành lỗi tool; lỗi hỏi quyền thì không tự cấp quyền.
+TerminalUI lưu tin trước khi xác nhận Enter, giữ tin chờ qua `/resume` và nhận mỗi tin vào hội thoại một lần.
+Sau crash, Peto đánh dấu phần chưa rõ kết quả và không tự phát lại model/tool. Renderer vẫn đồng bộ và đóng terminal
+vẫn ngắt runtime; đây không phải daemon chạy nền độc lập.
+
+Trạng thái công việc, artifact/hash và bằng chứng kiểm tra được giữ qua tóm tắt/mở lại. Khi backend cũng hỗ trợ,
+`record_acceptance` ghi tiêu chí đạt/chưa đạt/chưa xác minh bằng ID kết quả thật; sửa tệp làm bằng chứng cũ hết hiệu lực.
+Mã thoát 0 chỉ là bằng chứng trong phạm vi đã kiểm, không tự chứng minh ứng dụng chạy đúng.
+Xem [cơ chế, giới hạn, tương thích và cách cập nhật](docs/durable-runtime-0.29.0.md).
+
 ### Bàn giao ngữ cảnh và công cụ Windows (0.28.6)
 
 Bản tóm tắt phải có đủ sáu mục: mục tiêu, ràng buộc/quyết định, việc đã làm/bằng chứng, tệp/trạng thái,
@@ -908,7 +923,9 @@ bình thường.
 
 Để `/resume` hoạt động, các hội thoại của mỗi thư mục (tối đa 50) được lưu trên chính máy bạn ở
 `%LOCALAPPDATA%\PetoAgent\sessions\` sau từng bước, gồm cả nội dung tệp Peto đã đọc, output lệnh và các ảnh còn giữ
-trong hội thoại. Tệp không dùng quá 30 ngày được tự xóa; gỡ Peto Agent cũng xóa thư mục này. Lệnh "luôn cho phép" nằm
+trong hội thoại. Từ 0.29.0 có SQLite journal trong thư mục `runtime` cạnh bản xuất JSON, chứa cả đầu vào đang chờ;
+sao lưu cả thư mục khi CLI đã đóng. Phiên có JSON quá 30 ngày được dọn nếu không chạy; tin chưa chạy chỉ có inbox
+được giữ để người dùng xử lý bằng `/pending`. Gỡ Peto Agent cũng xóa thư mục này. Lệnh "luôn cho phép" nằm
 ở `%APPDATA%\PetoAgent\permissions.json`, cạnh `config.json`.
 
 ## Thử trên máy

@@ -24,7 +24,7 @@ from __future__ import annotations
 # "user_guide" gửi kèm AGENTS.md chung của người dùng. CLI 0.27.0: "subagent" thêm explore, giao việc dò mã cho một
 # agent con chỉ đọc (purpose "explore").
 FEATURES = frozenset({"cwd", "browser", "browser_act", "browser_outside", "skills", "mcp", "explore_v2", "edit_v2",
-                      "question", "patch", "title", "steer", "jobs_notify", "plan_mode", "btw", "read_more",
+                      "question", "patch", "title", "steer", "jobs_notify", "plan_mode", "btw", "read_more", "task_state",
                       "output_files", "wrapup", "user_guide", "subagent", "recall", "python_exec"})
 # Công cụ của agent con explore: chỉ tìm và đọc trong dự án (theo agent "explore" của opencode).
 EXPLORE_TOOLS = ("list_files", "find_files", "search_files", "read_file")
@@ -533,5 +533,13 @@ def tool_schemas(features: frozenset[str] = frozenset(), *, patch_model: bool = 
                                                + ([_READ_OUTPUT] if "output_files" in key else [])
                                                + ([_EXPLORE] if "subagent" in key else [])
                                                + ([_READ_HISTORY] if "recall" in key else [])
-                                               + ([_PYTHON] if "python_exec" in key else []))
+                                               + ([_PYTHON] if "python_exec" in key else [])
+                                               + ([_tool('record_acceptance',
+                                                   'Ghi trạng thái một tiêu chí nghiệm thu với evidence_id thực do công cụ trả về. '
+                                                   'Mã thoát 0 chỉ chứng minh lệnh chạy thành công; ghi rõ phạm vi và phần chưa xác minh. '
+                                                   'Bằng chứng phải thuộc bản sửa hiện tại; không dùng kết quả cũ sau khi sửa tiếp.',
+                                                   {'criterion': {'type': 'string'},
+                                                    'status': {'type': 'string', 'enum': ['passed', 'failed', 'unverified']},
+                                                    'evidence_ids': {'type': 'array', 'items': {'type': 'string'}},
+                                                    'note': {'type': 'string'}})] if 'task_state' in key else []))
     return _SCHEMAS[(key, patch, patch_model)]
