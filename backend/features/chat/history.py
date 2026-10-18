@@ -88,7 +88,10 @@ def _generated(row: dict, item: dict) -> dict:
             'document': document_reader.result('partial' if partial else 'ready', notice, text=content)}
 
 
-def context_rows(rows: list[dict], english: bool = False) -> list[dict]:
+STOPPED_FILES = 'Files from a stopped turn; reference only.'
+
+
+def context_rows(rows: list[dict]) -> list[dict]:
     """Lượt dừng không còn là yêu cầu đang chờ; phần đã trả lời vẫn dùng được làm dữ liệu tham khảo."""
     partial = {row.get('turn_user_id') for row in rows if row['role'] == 'assistant' and row.get('turn_state') == 'stopped'
                and (row.get('content', '').strip() or row.get('artifacts'))}
@@ -97,18 +100,14 @@ def context_rows(rows: list[dict], english: bool = False) -> list[dict]:
         if row.get('turn_state') != 'stopped':
             result.append(row)
         elif row['role'] == 'user' and row['id'] in partial:
-            label = ('Historical request stopped by the user; reference only, not a pending task.' if english else
-                     'Yêu cầu cũ đã được người dùng dừng; chỉ là dữ liệu tham khảo, không phải nhiệm vụ còn chờ.')
+            label = 'Historical request stopped by the user; reference only, not a pending task.'
             if row.get('attachments'):
-                files_label = ('Files from a stopped turn; reference only.' if english else 'Tệp từ lượt đã dừng; chỉ dùng để tham khảo.')
-                result.append({**row, 'content': files_label})
+                result.append({**row, 'content': STOPPED_FILES})
             result.append({**row, 'role': 'assistant', 'attachments': [], 'content': f'{label}\n{row["content"]}'})
         elif row['role'] == 'user' and row.get('attachments'):
-            label = ('Files from a stopped turn; reference only.' if english else 'Tệp từ lượt đã dừng; chỉ dùng để tham khảo.')
-            result.append({**row, 'content': label})
+            result.append({**row, 'content': STOPPED_FILES})
         elif row['role'] == 'assistant' and (row.get('content', '').strip() or row.get('artifacts')):
-            label = ('Partial historical reply. Continue it only if the latest user request asks for that.' if english else
-                     'Phản hồi cũ còn dở. Chỉ tiếp tục khi yêu cầu mới nhất của người dùng đề nghị làm tiếp.')
+            label = 'Partial historical reply. Continue it only if the latest user request asks for that.'
             result.append({**row, 'content': f'{label}\n{row["content"]}'})
     return result
 

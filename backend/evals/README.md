@@ -1,7 +1,7 @@
 # Peto Brain Benchmark v1
 
-Công cụ nội bộ so sánh phản hồi Chat, Companion và nhập vai bằng dữ liệu giả. Không đổi model, prompt, routing hoặc
-database đang dùng; không có dashboard Web. Bản đầu có **30 tình huống, 37 lượt người dùng**. Một lượt có thể phát sinh
+Công cụ nội bộ so sánh phản hồi Chat và Companion bằng dữ liệu giả. Không đổi model, prompt, routing hoặc
+database đang dùng; không có dashboard Web. Hiện có **28 tình huống, 34 lượt người dùng** (bản đầu có 30 và 37; hai bài nhập vai bỏ cùng chế độ đó ngày 2026-10-18). Một lượt có thể phát sinh
 nhiều request nếu Claude yêu cầu tiếp tục; giới hạn tính từng request đó.
 
 ## Phạm vi và cách đọc kết quả
@@ -74,7 +74,7 @@ kể cả request tiếp tục của Claude. Lịch sử tăng qua các lượt 
 cấp ngừng tính phí ngay. Đây là giới hạn request/token/ký tự, **không phải trần USD tuyệt đối**. Giá và cách mã hóa
 token tùy nhà cung cấp; dùng bài nhỏ để kiểm tra trước. `Ctrl+C` giữ kết quả những lượt đã xong, `finished=false`.
 
-Chọn bài bằng `--cases ID ...`, `--persona chat|companion|roleplay`, `--group identity|conversation|memory|reasoning|truth|protocol`.
+Chọn bài bằng `--cases ID ...`, `--persona chat|companion`, `--group identity|conversation|memory|reasoning|truth|protocol`.
 Chọn dataset bằng `--dataset PATH`. Mã bài sai hoặc lựa chọn không còn bài nào bị từ chối. Mã thoát: 0 hoàn thành CLI;
 LIVE trả 1 nếu có lỗi lượt hoặc phép kiểm tra critical không đạt; 2 lỗi cấu hình; 130 bị người chạy ngắt. Mock trả 0
 khi công cụ hoàn thành, không dùng các phép kiểm tra nội dung mock làm tiêu chí chất lượng.

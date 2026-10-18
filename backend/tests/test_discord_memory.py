@@ -137,7 +137,7 @@ def test_khach_va_google_khong_cham_toi_tri_nho_cua_ai():
 
 def test_memory_context_without_memory_says_so():
     context = build_memory_context(display_name="Người Test")
-    assert "chưa có ký ức" in context.casefold()
+    assert "no memories are supplied" in context.casefold()
     assert "Người Test" in context
 
 
@@ -148,22 +148,20 @@ def test_memory_context_includes_rules():
     assert "Thích Limbus." in context
     assert "Đang ôn thi." in context
     # Luật bám theo MEMORY_PRIVACY_PROMPT của bot.
-    assert "tin lời hiện tại" in context
-    assert "trí nhớ của người khác" in context
+    assert "current corrections take precedence" in context
+    assert "another user's data" in context
 
 
 def test_memory_summary_lends_forms_of_address_but_not_the_character_voice():
-    """Bot viết tóm tắt bằng giọng nhập vai. Ngoài nhập vai, Peto lấy từ đó cách người dùng quen xưng hô (chủ web muốn
-    Peto đổi dần cách nói chuyện theo trí nhớ, 11/10/2026), nhưng không lấy giọng hay tính cách nhân vật."""
-    from prompts.context import VOICE_RULE_EN, VOICE_RULE_VI
+    """Bot viết tóm tắt bằng giọng nhập vai của nó. Peto lấy từ đó cách người dùng quen xưng hô (chủ web muốn Peto đổi
+    dần cách nói chuyện theo trí nhớ, 11/10/2026), nhưng không lấy giọng hay tính cách nhân vật."""
+    from prompts.context import VOICE_RULE
 
-    assert "chỉ lấy cách xưng hô" in VOICE_RULE_VI and "take only the forms of address" in VOICE_RULE_EN
+    assert "take only the forms of address" in VOICE_RULE
 
     memory = {"display_name": "Người Test", "summary": "Hay gọi Peto là ad.", "explicit": ("Đang ôn thi.",)}
-    assert VOICE_RULE_VI in build_memory_context(**memory)
-    assert VOICE_RULE_EN in build_memory_context(**memory, english=True)
-    assert VOICE_RULE_VI not in build_memory_context(**memory, roleplay=True)
-    assert VOICE_RULE_VI not in build_memory_context(display_name="Người Test")
+    assert VOICE_RULE in build_memory_context(**memory)
+    assert VOICE_RULE not in build_memory_context(display_name="Người Test")
 
 
 async def test_chat_still_works_when_gateway_is_down(client, patch_httpx, monkeypatch):

@@ -21,7 +21,7 @@ backend/
     docs/                # API hướng dẫn, tìm kiếm và ngữ cảnh cho Peto
     voice/               # API giọng nói và gọi dịch vụ tạo giọng
   storage/               # Schema và truy vấn SQLite theo nhóm dữ liệu
-  prompts/               # Trợ lý, nhập vai, Companion, Agent, sơ đồ, hồ sơ
+  prompts/               # Chỉ dẫn model bằng tiếng Anh: lõi, Trò chuyện, Agent, nhà cung cấp, Companion, sơ đồ, hồ sơ
   shared/                # Tệp, công cụ đọc/tìm tệp, thời gian, nguồn web, SSE
   evals/                 # Benchmark prompt/hội thoại giả, CLI mock hoặc API thật
   tests/                 # Kiểm tra với provider giả và dữ liệu tạm
@@ -48,8 +48,11 @@ nằm trong `ai/`. Không import `main.py` từ tính năng. Gắn router mới 
 `imagine`, `agent`, `usage`, `memory`, `connectors`; khởi tạo và nâng cấp bảng nằm trong `schema.py`. Kết nối dùng chung ở
 `storage/connection.py`. Mọi thao tác trên dữ liệu tài khoản phải giữ kiểm tra `owner`.
 
-Prompt chia theo ngữ cảnh trong `prompts/`. Phần nhập vai chỉ nằm trong `roleplay.py`; không đưa vào prompt trợ lý,
-Agent hay Companion. Cách ghép ngữ cảnh theo tài khoản nằm ở `features/chat/prompt_context.py`.
+Prompt chia theo vai trò trong `prompts/`, toàn bộ bằng tiếng Anh (2026-10-18): `core.py` là lõi Peto dùng chung,
+`chat.py` cho tab Trò chuyện, `agent.py` cho Peto Agent, `providers.py` là đoạn riêng theo nhà cung cấp ghép sau prompt
+chung (như opencode), `companion.py` là persona Companion, `context.py` đóng khung hồ sơ và trí nhớ. Peto vẫn trả lời
+theo ngôn ngữ người dùng, mặc định tiếng Việt. Chế độ nhập vai đã bỏ; hội thoại nhập vai cũ chỉ còn để xem. Cách ghép
+ngữ cảnh theo tài khoản nằm ở `features/chat/prompt_context.py`.
 
 Khi viết test, patch module sở hữu hàm: provider chat ở `features.chat.service`, ngân sách nội dung tài liệu ở
 `features.chat.history`, database cho test nâng cấp ở `storage.connection`. Patch lớp provider thay vì instance dùng chung.
@@ -70,7 +73,7 @@ gọi AI thật. Quy tắc chi tiết nằm trong `../CLAUDE.md`.
 
 ## Vận hành
 
-Benchmark Chat/Companion/nhập vai có dataset, phiếu chấm ẩn tên model và báo cáo riêng. Xem
+Benchmark Chat/Companion có dataset, phiếu chấm ẩn tên model và báo cáo riêng. Xem
 [Peto Brain Benchmark v1](evals/README.md); mặc định dùng mock, không cần khóa và không tính phí. Chạy API thật phải
 chọn chế độ và đồng ý billing rõ ràng. Công cụ không đổi prompt/model đang phục vụ Web hoặc ghi database người dùng.
 

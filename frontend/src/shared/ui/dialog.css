@@ -17,7 +17,6 @@
 @media (hover: hover) and (pointer: fine) { .dialog-close:hover { color: var(--text); background: var(--panel-2); } }
 .dialog-actions .danger-button { color: var(--danger); border-color: var(--danger); }
 .dialog-actions .primary-button { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
-.confirm-dialog .consent-error { color: var(--danger); }
 button:focus-visible, a:focus-visible, .table-scroll:focus-visible {
   outline: 2px solid var(--accent); outline-offset: 3px;
 }

@@ -8,7 +8,7 @@ from pathlib import Path
 import re
 
 GROUPS = ('identity', 'conversation', 'memory', 'reasoning', 'truth', 'protocol')
-PERSONAS = ('chat', 'companion', 'roleplay')
+PERSONAS = ('chat', 'companion')
 RUBRICS = {
     'accuracy': 'Đúng dữ kiện, phép tính và kết luận; phân biệt điều chưa xác minh.',
     'helpfulness': 'Đáp ứng việc người dùng cần, đủ chi tiết để dùng được và không dài thừa.',

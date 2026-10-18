@@ -97,7 +97,8 @@ export interface WorkLog {
   complete?: boolean;
 }
 
-/** Cách Peto trả lời trong một hội thoại: trợ lý AI (mặc định) hoặc nhập vai. Chọn lúc bắt đầu, giữ cả hội thoại. */
+/** Persona của một hội thoại: trợ lý AI, hoặc "roleplay" ở hội thoại nhập vai cũ. Chế độ nhập vai bỏ ngày 2026-10-18;
+ * hội thoại ấy chỉ còn để xem (máy chủ từ chối nhắn tiếp). */
 export type Persona = "assistant" | "roleplay";
 
 export interface Conversation {
@@ -172,8 +173,6 @@ export interface AccountUser {
   avatar_url: string;
   /** Tên tự đặt trong Cài đặt → Hồ sơ; rỗng nếu chưa đặt. */
   nickname?: string;
-  /** Đã xác nhận đủ 18 tuổi để bật chế độ nhập vai. */
-  roleplay_confirmed?: boolean;
   /** Model tài khoản này chọn được ở nút cạnh nút Gửi; chỉ một model thì ẩn nút. */
   models?: ModelOption[];
   /** Chủ web (PETO_OWNER_ACCOUNTS): hiện mục Quản trị. Chỉ để hiện giao diện, server vẫn tự kiểm quyền. */
@@ -262,11 +261,6 @@ export async function uploadAvatar(file: File): Promise<AvatarInfo> {
 
 export async function resetAvatar(): Promise<AvatarInfo> {
   return json(await fetch('/api/profile/avatar', { method: 'DELETE' }));
-}
-
-/** Lưu xác nhận đủ 18 tuổi cho tài khoản, để bật được chế độ nhập vai. */
-export async function confirmRoleplayAge(): Promise<void> {
-  await json(await fetch("/api/profile/roleplay-consent", { method: "POST" }));
 }
 
 export function browserTimezone(): string | undefined {
@@ -674,7 +668,6 @@ export async function sendMessage(
     webSearch?: WebSearchMode;
     attachments?: OutgoingAttachment[];
     mode?: ConversationMode;
-    persona?: Persona;
     /** Model cho tin này; máy chủ kiểm quyền, thiếu thì dùng Peto. */
     model?: string;
     /** Chỉ Companion: bộ não dùng khóa API riêng (features/companion/providers/brain.ts). Khóa đi trong header. */
@@ -704,7 +697,6 @@ export async function sendMessage(
       timezone: browserTimezone(),
       attachments: payload.attachments ?? [],
       mode: payload.mode ?? "chat",
-      persona: payload.persona ?? "assistant",
       model: payload.model ?? "peto",
       ...(payload.provider && payload.providerKey ? { provider: payload.provider } : {}),
     }),

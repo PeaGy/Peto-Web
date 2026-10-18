@@ -1,5 +1,51 @@
 # CLAUDE.md
 
+## English model instructions, provider overlays, no roleplay mode (2026-10-18)
+
+The owner asked for every system prompt in English to save tokens, including the Web Chat assistant and its examples,
+for a better structure than one `english.py`, for removing roleplay mode ("we have Companion now"), and to learn how
+OpenCode handles prompts per model.
+- **`backend/prompts/` is English only and split by role.** `core.py` (`CORE_PROMPT`: identity, address forms,
+  accuracy, safety; shared by Chat, Agent and /btw), `chat.py` (`WEB_PROMPT`, `chat_prompt(model)`, search, document
+  mode, tool-budget and Grok follow-up texts), `agent.py` (everything Agent), `providers.py` (overlays), `context.py`,
+  `diagrams.py`, `companion.py`/`companion_runtime.py` (unchanged). `assistant.py`, `english.py`, `roleplay.py` and
+  `routing.py` were deleted; there is no `uses_english` and no `english=` parameter anywhere any more.
+- **Every model gets the same base, like OpenCode** (`packages/core/src/session/runner/prompt/system.txt` plus
+  `plugin/optimize.ts`, which replaces the base for GPT/Kimi/Meta/Trinity families and appends a short block for Claude).
+  Peto chooses by `ai.models` service: `provider_prompt(model, chat=)` adds `OPENAI_PROMPT`/`ANTHROPIC_PROMPT` to every
+  turn and `XAI_CHAT_PROMPT` (the translated Web reply examples Grok was tuned with) to Chat only. GPT/Claude never had
+  the examples, so they do not pay for them. Tool curation per model already existed (apply_patch and no update_plan
+  for GPT).
+- **Peto/xAI Web Chat now uses the English prompt** (before: the Vietnamese `SYSTEM_PROMPT`, about twice the
+  characters). Rules only the Vietnamese prompt had (teasing limits, no `*action*` narration, story/practice
+  roleplay allowed but never sexual, one clarifying question, serious-topic handling) became the `## Conversation`
+  section of `WEB_PROMPT`, for every provider. Replies still follow the user's language, default Vietnamese.
+- **Other model instructions became English too** (the owner's pick): time/search/GitHub/finalizing blocks, the Agent
+  guide (now attached only when recent messages mention Agent/CLI/Peto, on every model; before, Grok and Companion got
+  the Vietnamese guide on every turn), docs/project/YouTube wrappers, stopped-turn labels, Companion memory
+  extraction/sort/tell/summary prompts (entry titles and details are still written in Vietnamese because the Memory page
+  shows them; the Companion thread summary is now written in English since only the model reads it), the title prompt
+  and Grok's Excel follow-up nudge. Markers and labels changed with them (`MEMORY_MARKER`, "User:", "Request:",
+  `<<< user preferences >>>`…); `ai/mock.py` follows. Tool schemas, tool results (e.g. the GitHub NOTE), attachment
+  notices inside user messages, validation errors and UI strings stay Vietnamese.
+- **Roleplay mode is gone.** No consent API (`/api/profile/roleplay-consent` removed, `roleplay_confirmed` dropped from
+  `/me`, `roleplay_consents` no longer created; old DBs keep the unused table), no `PETO_ROLEPLAY_MAX_HISTORY`, no
+  composer toggle/chip or 18+ dialog. `ChatRequest.persona` other than `assistant` gets 400 (`ROLEPLAY_REMOVED`).
+  Existing roleplay conversations (`persona='roleplay'`, the owner's pick "Giữ, chỉ xem") stay listed with "· Nhập vai"
+  and open read-only like archived chats ("Hội thoại nhập vai cũ chỉ còn để xem" + "Bắt đầu hội thoại mới"); sending,
+  branching and model changes return 409 (`conversation_actions.LEGACY_ROLEPLAY`), so their possibly 18+ history never
+  reaches any model. Rename, archive and delete still work. Memory never reads them (`MEMORY_SOURCE` unchanged). The
+  Discord memory `VOICE_RULE` now always applies. Drafts lost their persona dimension. Brain Benchmark: 28 cases, 34
+  turns (two roleplay cases removed); the adapter now also stubs `chat_memory_block` so it never touches a database.
+- **Measured** (characters, before per-user blocks): a Grok Chat turn went from the Vietnamese `SYSTEM_PROMPT` (23,836)
+  plus the always-attached Vietnamese Agent guide (3,497) to `chat_prompt('peto')` (15,468, examples included; the
+  3,002-character English guide only when asked). Luna 13,386, Haiku 13,471. Vietnamese also costs more tokens per
+  character, so the token saving is larger; real token counts were not measured and no paid call was made. Grok's live
+  answer quality under the English Chat prompt is untested.
+- **Tests:** backend 1366 pass; frontend 781/782 (the failing `keeps image generation alive…` expects "Peto đang tạo 1
+  ảnh…", text that was already gone at HEAD after the GenerationPreview change); build passes; a mock-stack browser run
+  checked the read-only old roleplay chat, the plus menu and a normal send.
+
 ## Post-GTA continuity improvements (2026-10-17–18; CLI 0.28.6 source)
 
 Owner authorized the post-test priorities and quicker Peto supervision. See `agent-cli/docs/harness-continuity-0.28.6.md`.
@@ -126,13 +172,13 @@ Peto Web is a private chat UI for Peto, an AI assistant. The name comes from a D
 its own database, its own xAI token file, its own persona prompt. The only link back to the
 bot is a read-only memory gateway (see below).
 
-On 2026-09-17 the owner made the default persona an honest, helpful AI assistant (`persona.SYSTEM_PROMPT`):
-it says it is Peto, an AI assistant, addresses users as "bạn", and refuses only genuinely harmful requests. By the
-owner's call it never names the model behind it (no Grok or xAI in any prompt), and `tests/test_persona.py` checks that.
-The bot's roleplay character, which the web used before, survives only as an opt-in per-conversation
-roleplay mode (`persona.ROLEPLAY_SYSTEM_PROMPT`, see "Roleplay mode" below). Peto Agent always uses the assistant
-core (`PERSONA_PROMPT`). Companion uses neither: it has its own persona, `COMPANION_SYSTEM_PROMPT` (see "Companion
-persona" under "Companion tab and voice relay").
+On 2026-09-17 the owner made the default persona an honest, helpful AI assistant (now `prompts/core.CORE_PROMPT`
+plus `prompts/chat.WEB_PROMPT`): it says it is Peto, an AI assistant, addresses users as "bạn", and refuses only
+genuinely harmful requests. By the owner's call it never names the model behind it (no Grok or xAI in any prompt), and
+`tests/test_persona.py` checks that. The bot's roleplay character survived as an opt-in roleplay mode until 2026-10-18,
+when the owner removed it (see the section at the top and "Roleplay mode (removed)"). Peto Agent uses the same core.
+Companion has its own persona, `COMPANION_SYSTEM_PROMPT` (see "Companion persona" under "Companion tab and voice
+relay").
 
 Stack: FastAPI + SQLite (aiosqlite) backend, React 19 + Vite frontend, xAI Grok via the
 Responses API, plus OpenAI's GPT-6 models as a user-selectable option (see "Model choice"). Registration is **open**:
@@ -163,25 +209,22 @@ codebase is written in Vietnamese.** Keep it that way when adding code — an En
 string would be visibly out of place in the UI. Identifiers, type names and this file stay
 in English.
 
-Provider-specific model instructions are an explicit exception: OpenAI and Claude receive compact English
-instructions from `backend/prompts/english.py`, composed through `prompts/routing.py` for normal Web Chat and
-`features/agent/api.py` for Agent (including compaction). Since 2026-10-15 Agent uses these English instructions for
-every model, Peto/xAI included (see "English Agent instructions" under Peto Agent). Peto/xAI Web Chat retains its
-Vietnamese prompt; roleplay and
-Companion retain their existing prompts. The shared English core keeps the Peto identity and replies in the
-user's language, defaulting to Vietnamese with full diacritics. Raw user messages, memory, preferences, project guidance, skill metadata and
-documentation are never translated. Fixed context wrappers/search/time/tool-budget instructions have English
-variants; tool schemas, validation, user-facing errors and logs retain Vietnamese. CLI help enters English Web
-prompts only for product/Agent questions (using recent turns for follow-ups); file-tool instructions remain always
-present to avoid fragile keyword-based routing. Grok's short Excel-announcement follow-up is restricted to xAI.
+Model instructions are the explicit exception: since 2026-10-18 every system prompt is English, for every model
+(Agent since 2026-10-15). `backend/prompts/` holds them by role (see the section at the top); `chat_prompt(model)` in
+`prompts/chat.py` builds Web Chat and `features/agent/api.py` builds Agent (including compaction), both adding the
+provider overlay from `prompts/providers.py`. Companion keeps its own English persona. The shared English core keeps the
+Peto identity and replies in the user's language, defaulting to Vietnamese with full diacritics. Raw user messages,
+memory, preferences, project guidance, skill metadata and documentation are never translated. Tool schemas,
+validation, user-facing errors and logs retain Vietnamese. The Agent guide enters Web prompts only for product/Agent
+questions (using recent turns for follow-ups); file-tool instructions remain always present to avoid fragile
+keyword-based routing. Grok's short Excel-announcement follow-up is restricted to xAI.
 Routing and context preservation are covered in `backend/tests/test_prompt_routing.py`; these mocked tests do not
 establish live model answer quality or billed token usage.
 
-On 2026-10-09 the owner requested fuller, more readable Web Chat analysis for all providers. Normal Peto Chat
-adds `ANALYSIS_PRESENTATION_PROMPT` from `prompts/assistant.py`; the English Web block mirrors that policy for
-OpenAI/Claude. Reviews use meaningful headings, real short blockquotes, code excerpts, impact and suggested changes.
+On 2026-10-09 the owner requested fuller, more readable Web Chat analysis for all providers. It is the
+"Explanation and evidence" part of `WEB_PROMPT` (the Vietnamese `ANALYSIS_PRESENTATION_PROMPT` was removed 2026-10-18). Reviews use meaningful headings, real short blockquotes, code excerpts, impact and suggested changes.
 Depth follows the task, not the question's length; simple questions and requested summaries stay concise. Numerical
-ratings require criteria, and quotations must be real. Agent work summaries, roleplay and spoken Companion are not
+ratings require criteria, and quotations must be real. Agent work summaries and spoken Companion are not
 forced into this Web presentation policy. The frontend already supports blockquotes and highlighted code blocks.
 After the owner's follow-up sample, reviews additionally require exact passages for consequential file-specific
 claims and short usable replacements when proposing edits. Overlapping findings are grouped. A prompt file alone
@@ -192,7 +235,8 @@ conditions and examples already present before recommending additions, distingui
 contradiction, preserve distinct constraints in proposed merges, and mark omissions or quote separate passages separately.
 On 2026-10-11 the owner asked why Peto's answers looked shorter than ChatGPT/Claude. The Vietnamese prompt's explanation
 examples (asyncio, race condition) were two-sentence answers placed last in `SYSTEM_PROMPT`, contradicting its own depth
-rules; they now show only the opening line plus a bracketed outline of the sections that follow. The owner's manual
+rules; they now show only the opening line plus a bracketed outline of the sections that follow (since 2026-10-18 in
+English, as the Grok-only `providers.XAI_CHAT_PROMPT`). The owner's manual
 test with Grok (one mRNA question at Tự động/Trung bình/Cao) gave similar, already structured answers, so effort routing
 was left unchanged. The Brain Benchmark caps output at 1024 tokens, so it cannot measure answer depth as it stands.
 
@@ -377,8 +421,7 @@ web's AI quota, and a per-guest counter could be dodged by clearing cookies. Git
   (`PETO_GITHUB_*`). No scope is requested (public profile only). The owner is `github:<numeric id>`; `login` can change,
   so it is only the username. GitHub reports a bad code with HTTP 200 and an `error` field, so the callback checks the
   body. The token is revoked right after reading `/user` (best effort), and nothing is stored.
-- GitHub accounts have the same rights as Google: Luna, Agent CLI, roleplay after the 18+ confirmation, the Giọng Peto
-  allowance. Only the Discord gateway check differs, since only `discord:` owners have a Discord ID.
+- GitHub accounts have the same rights as Google: Luna, Agent CLI, the Giọng Peto allowance. Only the Discord gateway check differs, since only `discord:` owners have a Discord ID.
 - `ops/purge_guests.py` deletes old guest data: a dry run by default, `--yes` to delete. Every table with an `owner`
   column, child rows through `ON DELETE CASCADE`, then upload and Imagine files inside `PETO_UPLOAD_DIR` (never outside).
   Tests sign a second account in with `conftest.sign_in` (a fresh `github:` owner) instead of the old guest endpoint.
@@ -419,11 +462,10 @@ and the access rules; the server checks them on every chat turn and agent step, 
   and sources shared by `XAIProvider` and `ai/gpt.py`'s `GPTProvider`; subclasses only set the client, model, output
   budget (`PETO_OPENAI_MAX_OUTPUT_TOKENS`, 16000, since reasoning tokens count) and Vietnamese error messages. OpenAI
   reasoning summaries are not requested, because they can require organization verification.
-- `POST /api/chat` takes `model` per message, so switching mid-conversation works (history is plain text). Companion and
-  roleplay conversations must stay on `peto` (400): the roleplay prompt can be 18+, and it must not reach the owner's
-  OpenAI account. Since 2026-10-13 Companion can instead use the user's own API key (`provider` field; see "Companion
+- `POST /api/chat` takes `model` per message, so switching mid-conversation works (history is plain text). Companion must
+  stay on `peto` (400). Old roleplay conversations cannot be continued at all (409, see "Roleplay mode (removed)"). Since 2026-10-13 Companion can instead use the user's own API key (`provider` field; see "Companion
   providers"), which never touches the owner's accounts. The title call uses the same model as the first message. `/api/auth/me` returns the account's web
-  `models`; `ModelMenu.tsx` sits left of the send button (hidden with fewer than two models or in roleplay), and
+  `models`; `ModelMenu.tsx` sits left of the send button (hidden with fewer than two models), and
   phones show the send button as an arrow only to keep the bar on
   one row.
 - The persona rule still holds: whatever model runs, Peto does not name the model behind it.
@@ -1048,7 +1090,7 @@ diagram large in a panel on the right (`DiagramPanel.tsx`), where the document p
     Edge on 2026-09-30.
 - **Prompt.** A `WEB_PLATFORM_PROMPT` line tells Peto that diagrams, unlike pictures, are drawn right in the reply, never
   in Tạo ảnh. The detailed `persona.DIAGRAM_PROMPT` (front-matter titles, IDs and quoting, class, sequence, activity, use
-  case, ERD) is appended only on Chat turns outside roleplay whose recent user messages mention diagrams
+  case, ERD) is appended only on Chat turns whose recent user messages mention diagrams
   (`build_diagram_guide`, unaccented keywords), so other turns pay nothing for it. Its rules come from real Mermaid 11
   errors: `<<choice>>`, `<<fork>>` and `<<join>>` states declared after their first use render as plain boxes, and
   parentheses in an unquoted `[ ]` label are a syntax error.
@@ -1572,14 +1614,15 @@ same way, preserving existing rows. Note that `PRAGMA foreign_keys=ON` is set pe
 where cascade deletes matter (SQLite has it off by default).
 
 Tables: `conversations`, `messages`, `attachments`, `users`, `user_profiles`, `user_avatars`,
-`imagine_jobs`, `imagine_images`, `imagine_requests`, `agent_devices`, `agent_usage`, `roleplay_consents`, `voice_usage`,
+`imagine_jobs`, `imagine_images`, `imagine_requests`, `agent_devices`, `agent_usage`, `voice_usage`,
 `companion_memory_entries`, `companion_memory_state` (`companion_memories`, the old one-line notes, stays empty after the
 startup migration; see "Memory (Brain)")
 (`features/voice/cloud.py` also creates its own `speech_budget` on first use). `users` is the only place mapping
 a web account to a Discord ID.
 `conversations.mode` (`chat` or `companion`) was added with the same manual migration; older rows
 default to `chat`. `conversations.persona` (`assistant` or `roleplay`) was added the same way; older rows default to
-`assistant`.
+`assistant`. Since 2026-10-18 only old conversations carry `roleplay` (read-only), and `roleplay_consents` is no longer
+created (old databases keep it, unused).
 
 ### User profile (Settings → Hồ sơ)
 
@@ -1665,22 +1708,18 @@ scrollspy list, and grouped cards with coloured icons.
     through the account row, the menu and the section; voice, hearing and web search through the gear in the Companion
     chat column, then Mô-đun, then the page.
 
-### Roleplay mode
+### Roleplay mode (removed 2026-10-18)
 
-A conversation's `persona` is `assistant` (default) or `roleplay`, chosen before its first message and stored on the
-row; the owner picked this design from mockups. `POST /api/chat` only honours `persona` when it creates the
-conversation. Later turns always use the stored value, so a history never mixes the two voices.
-`_check_roleplay_start` rejects roleplay for Companion (400) and accounts with no row in
-`roleplay_consents` (403). `POST /api/profile/roleplay-consent` records the self-declared 18+ confirmation, and
-`/api/auth/me` returns `roleplay_confirmed` so the dialog only shows once.
-
-Roleplay turns use `persona.ROLEPLAY_SYSTEM_PROMPT`: the bot's persona blocks verbatim, plus the continuity and web
-platform rules shared with the assistant. They send `PETO_ROLEPLAY_MAX_HISTORY` (default 100) past messages instead of
-`PETO_MAX_HISTORY` (20), for long stories. Memory, profile and the agent guide are appended as usual.
-
-In the UI, `ComposerMenu.tsx` shows "Chế độ nhập vai" only while the conversation has not started. `Composer.tsx` shows a "Nhập vai" chip whose × only exists before the first message, and the sidebar marks
-roleplay conversations with "· Nhập vai". `App.tsx` holds `persona`: a new conversation or sign-out resets it, and
-opening a conversation takes it from the list.
+From 2026-09 a conversation could be started in roleplay mode (`persona='roleplay'`, the Discord bot's persona,
+18+ self-confirmation in `roleplay_consents`, a longer history, Peto model only). The owner removed it on 2026-10-18
+because Companion covers that need. Now:
+- New chats are always the assistant; a request with another `persona` gets 400 `ROLEPLAY_REMOVED`.
+- Old roleplay conversations stay listed ("· Nhập vai") and readable. `App.tsx` treats them like archived chats
+  (`readOnly`): the composer is replaced by "Hội thoại nhập vai cũ chỉ còn để xem" and "Bắt đầu hội thoại mới", and
+  message actions are disabled. The server refuses sends, branches and model changes with 409 `LEGACY_ROLEPLAY`
+  (`features/chat/conversations.py`), so their history never reaches Grok, GPT or Claude. Rename, archive, delete work.
+- Memory never reads them (`storage/memory.MEMORY_SOURCE` keeps `persona = 'assistant'`).
+- Tests: `backend/tests/test_roleplay.py`, the "Hội thoại nhập vai cũ" group in `frontend/tests/App.test.tsx`.
 
 ### Discord memory gateway
 
@@ -1698,12 +1737,12 @@ The bot writes its summary in its roleplay voice. On 2026-10-11 the owner's Disc
 Google account (no gateway) did not. A first rule forbade taking any form of address from the summary; the owner found
 it too rigid the same day (they wrote "peto không nhớ ad hả" and Peto still answered with "bạn"). They want Peto to
 adapt the way Claude's memory does, and to follow changes asked for in chat or in Settings. Now:
-- The assistant core (`prompts/assistant.py`, English in `prompts/english.py`) mirrors the user: default "mình"/"bạn",
+- The assistant core (`prompts/core.py`) mirrors the user: default "mình"/"bạn",
   but when the user calls themselves or Peto something else ("ad", "anh"…; "Peto", "em"…), Peto answers with that pair.
   The latest request, in chat or in the profile, wins. Only forms of address change, never personality or character.
-- `VOICE_RULE_VI`/`VOICE_RULE_EN` (outside roleplay, only when there is a summary) let Peto use the forms of address the
-  summary shows when the current conversation and the profile say nothing else, and forbid the character's voice,
-  personality and actions. Roleplay turns keep the bot's voice and omit the rule.
+- `prompts/context.VOICE_RULE` (only when there is a summary) lets Peto use the forms of address the summary shows
+  when the current conversation and the profile say nothing else, and forbids the character's voice, personality and
+  actions.
 - Lasting changes come from the web's own memory, now shared by Chat and Companion (see "Memory (Brain)"): its
   extraction records how the user wants to be addressed, so a change said in chat carries over to later conversations,
   for every account type. Settings → Hồ sơ still works and the latest request wins.
@@ -1733,7 +1772,7 @@ exclusivity, jealousy, guilt and fostering dependency are forbidden. Real help c
 are always in English and written for the ear: no Markdown, lists, emoji or `*action*` stage directions. It never names
 the model behind it, and never claims capabilities Peto Web does not give it. The prompt also defines the EMOTION and
 PRIVATE NOTES markers (sections below). This persona is the owner's own Companion character, separate from the Discord
-bot's roleplay character, which stays only in `ROLEPLAY_SYSTEM_PROMPT`. `tests/test_persona.py` checks only that this
+bot's roleplay character (whose web roleplay mode was removed on 2026-10-18). `tests/test_persona.py` checks only that this
 prompt does not name Grok/xAI.
 
 On desktop the layout is a stage on the left and a ~380px chat column on the right. The stage holds
@@ -2157,7 +2196,8 @@ The first Brain feature, picked by the owner from mockups on 2026-09-27 for Comp
 Settings, "Trí nhớ", and is on by default.
 
 On 2026-10-11 the owner asked for Peto to adapt the way Claude's memory does (forms of address, preferences), and chose:
-one memory **shared** by Chat and Companion, roleplay Chat **never read or written**, **on by default**. The same day
+one memory **shared** by Chat and Companion, roleplay Chat **never read or written** (roleplay mode is gone since
+2026-10-18; old roleplay chats stay excluded), **on by default**. The same day
 they found Companion's "Peto vừa ghi nhớ: … · Xem" line under replies redundant, and it was removed (with its polling);
 memories are seen only in Settings → Trí nhớ. Table and API names keep their `companion_` prefix.
 
@@ -2180,7 +2220,7 @@ sections come from the owner's screenshots. Before this, memory was up to 50 one
   the entry's `updated_at` at read time (`_seen`) and `apply_memory_changes` skips entries changed since, so a manual edit
   made while the model was thinking is never overwritten.
 
-- **When it runs.** After a complete Companion turn, or a Chat turn outside roleplay (`remembers` in
+- **When it runs.** After a complete Companion or Chat turn (`remembers` in
   `features/chat/service.py`), the service marks the owner pending before `done`. It then runs
   `companion_memory.remember(owner)` in the response's background task, so the reply and voice are never delayed. Runs
   for the same owner are coalesced (`_running` / `_again`). Each run is one extra small `peto` call: `MEMORY_MARKER` in
@@ -2201,7 +2241,7 @@ sections come from the owner's screenshots. Before this, memory was up to 50 one
   - On first use the cursor starts at the latest user message, so history from before memory existed is never mined.
   - Turning memory back on moves it to the latest message, so what was said while it was off is never read.
   - Only the owner's own messages are read, filtered in SQL by `storage/memory.MEMORY_SOURCE` (Companion, plus Chat
-    with persona `assistant`; `memory_messages_after`). Roleplay never enters. It has nothing to do with the Discord
+    with persona `assistant`; `memory_messages_after`). Old roleplay chats never enter. It has nothing to do with the Discord
     bot's memory.
   - The startup migration that added `companion_memory_state.chat` moved every existing cursor past all current
     messages, so Chat history from before the change is never mined; `since` (the Companion summary floor) is
@@ -2224,9 +2264,10 @@ sections come from the owner's screenshots. Before this, memory was up to 50 one
   duplicates dropped; unknown ids and bad sections ignored. A new `you` entry must map to a slot (`slot_for`: "trả lời",
   "hồ sơ"…); a new entry whose slot or title already exists is merged into it; an entry whose details become empty is
   deleted. `apply_memory_changes` applies everything in one transaction.
-- **Prompt.** On Companion turns (`memory_block`) and Chat turns outside roleplay (`chat_memory_block`, with an English
-  variant for OpenAI/Claude), `_build_system_prompt` appends `build_companion_memory` after the profile block: one
-  `### Bạn · Hồ sơ: summary` heading per entry with its details, Bạn first, then the most recently updated. Past
+- **Prompt.** On Companion turns (`memory_block`) and Chat turns (`chat_memory_block`), `_build_system_prompt`
+  appends `build_companion_memory` after the profile block: one `### You · Hồ sơ: summary` heading per entry (section
+  names in English since 2026-10-18, titles and details as stored) with its details, You first, then the most recently
+  updated. Past
   `MEMORY_BLOCK_BUDGET` (9000) the remaining entries keep only their heading. Plain strings (the Brain Benchmark) still
   render as single lines. It is fenced by `COMPANION_MEMORY_START/END` (copies are stripped) and labelled as possibly
   outdated data, not instructions. Stored titles and details are never translated.
@@ -3384,8 +3425,8 @@ results in the next step. The server stores no conversation (`store=False`), and
   **Phase B: 0.23.0 (done 2026-10-14, needs the backend deployed).**
   - **`/btw`** (after opencode `feature-plugins/prompt/btw.tsx`; Claude Code has the same). Server: feature `btw` in
     `FEATURES`, `"btw"` in `SPECIAL_PURPOSES` (no tools, no web search, usage purpose `side`, normal step cost of the
-    model and effort). `_btw_instructions` is the persona core (`PERSONA_PROMPT`, or `CORE_PROMPT` +
-    `provider_prompt` for GPT/Claude) + `BTW_PROMPT` (vi/en) + time; not the Agent working prompt. CLI:
+    model and effort). `_btw_instructions` is `CORE_PROMPT` + `provider_prompt` + `BTW_PROMPT` + time (English for
+    every model since 2026-10-15); not the Agent working prompt. CLI:
     `Session.side_question` sends a snapshot (`efficient_input` of the items, pending calls given `PENDING_RESULT`, the
     question last) with the current model at `low`, reads `meta` for the step count, and never touches `items`, the
     session file or the log; `done` must carry `purpose: "btw"` or it reports an old server.
@@ -3569,7 +3610,8 @@ results in the next step. The server stores no conversation (`store=False`), and
   cut tokens, since Vietnamese costs more tokens per character and the instructions are resent at every step. Luna and
   Claude already used `prompts/english.py`; now Peto/xAI does too, for every purpose (steps, wrapup, explore, /btw,
   title, compaction) and every CLI version. `prompts/agent.py` (the Vietnamese copies) was removed, and the inbox lines
-  moved to `english.agent_inbox_prompt`. Replies still follow the user's language, defaulting to Vietnamese (the
+  moved to `english.agent_inbox_prompt` (since 2026-10-18 `english.py` is split, and the English Agent text lives in a
+  new `prompts/agent.py`; see the section at the top). Replies still follow the user's language, defaulting to Vietnamese (the
   English core says so), and the core still forbids naming the model behind Peto. Measured on the 0.27 feature set:
   Peto's instructions went from 15,786 characters (3,344 words, 3,109 non-ASCII characters) to 13,231 (2,047 words).
   Before the change, the first step of each eval task cost Peto about 11,450 input tokens and Luna (English, other
@@ -3684,8 +3726,8 @@ results in the next step. The server stores no conversation (`store=False`), and
   PATH through the registry without expanding existing `%VAR%` entries. It has no automated test: after editing it, run
   it against a local backend with `PETO_AGENT_INSTALL_DIR` and `PETO_AGENT_NO_MODIFY_PATH=1`, as in `agent-cli/README.md`.
 - **Peto in the web chat explains the agent**, because the install command is published nowhere else.
-  `persona.build_agent_guide` goes right after `SYSTEM_PROMPT` on every chat and Companion turn, before the per-user
-  blocks. Its install command comes from `agent_install.install_command(request)`, and it falls back to a
+  `build_agent_guide` goes right after the base prompt on chat and Companion turns whose recent user messages mention
+  Agent, CLI or Peto (every model; since 2026-10-18 no turn gets it unconditionally), before the per-user blocks. Its install command comes from `agent_install.install_command(request)`, and it falls back to a
   `<địa chỉ Peto>` placeholder when the origin is not https. Never hardcode the site's domain in `prompts/`: it would
   go stale across deployments, and `tests/test_persona.py` forbids member names a domain can contain. When the install
   or usage flow changes, update the guide too.
@@ -3740,7 +3782,7 @@ Since 2026-09-29 every `/docs` page also carries the `og.png` link preview, thro
 page (the bot avatar when no public https origin is known).
 
 **Peto answers from the docs.** `_build_system_prompt` appends `docs_api.context(...)` of the last 3 user messages on every
-Chat, Companion and roleplay turn (not the Agent CLI).
+Chat and Companion turn (not the Agent CLI).
 - It attaches at most 2 articles, whole, with their `/docs/<slug>/` links. It never copies the user's text.
 - An article counts only when the text contains its whole title, or one of its keywords as a whole phrase (unaccented,
   whole words). A one-word keyword counts only if it starts with `/` or is in `DISTINCT_WORDS`; other single words only
@@ -3973,10 +4015,10 @@ Chat, Companion and roleplay turn (not the Agent CLI).
   with the bot's production data.
 - `prompts/` must not contain real names or Discord IDs of members — `tests/test_persona.py`
   asserts this. Personal context is loaded per account at runtime, not baked into the prompt.
-- Peto on the web is an AI assistant by default, by the owner's decision. The Discord bot's roleplay persona
-  (age/identity, "don't always comply", insult-back, NSFW or pet roleplay, `*action*` narration) lives only in
-  `ROLEPLAY_SYSTEM_PROMPT` behind the roleplay mode's checks. Never mix it into `SYSTEM_PROMPT` or the Agent and
-  Companion prompts; `tests/test_persona.py` checks both prompts.
+- Peto on the web is an AI assistant, by the owner's decision. The Discord bot's roleplay persona (age/identity,
+  "don't always comply", insult-back, NSFW or pet roleplay, `*action*` narration) is not in any web prompt since
+  roleplay mode was removed on 2026-10-18. Never add it to the Chat, Agent or Companion prompts;
+  `tests/test_persona.py` checks them.
 - Nothing writes back to the bot's memory. The gateway is read-only and loopback-only; it
   must never sit behind Cloudflare Tunnel.
 - No AI credential of the server ever reaches the browser or the CLI, including `OPENAI_API_KEY` and the TTS keys,
@@ -3996,7 +4038,8 @@ Chat, Companion and roleplay turn (not the Agent CLI).
 
 ## Testing
 
-`backend/evals/README.md` documents Peto Brain Benchmark v1 (30 synthetic Chat/Companion/roleplay cases, 37 turns).
+`backend/evals/README.md` documents Peto Brain Benchmark v1 (28 synthetic Chat/Companion cases, 34 turns; two roleplay
+cases left with the mode on 2026-10-18).
 Run `python -m evals` from backend. Default mock ignores dotenv/credentials; live requires explicit `--mode live
 --allow-paid`, uses bounded requests/tokens and disables SDK retries/tools. It reuses prompt composition, providers
 and Companion filters with fake account/memory reads, never initializes the real database or modifies production

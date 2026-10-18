@@ -15,12 +15,16 @@ from ai import models as ai_models
 from storage.conversations import conversation_settings, set_chat_selection
 
 
+# Chế độ nhập vai bỏ ngày 2026-10-18 (đã có Companion). Hội thoại nhập vai cũ chỉ còn để xem: lịch sử có thể có nội dung
+# 18+, nên không gửi tiếp tới model nào, không đổi model, không tách phiên bản.
+LEGACY_ROLEPLAY = ("Hội thoại nhập vai cũ chỉ còn để xem vì chế độ nhập vai đã bỏ. Bắt đầu hội thoại mới, hoặc dùng tab "
+                   "Companion.")
+
+
 def validate_selection(owner, settings, model, effort):
-    """Kiểm tra cả model, quyền tài khoản, persona và mức suy nghĩ trước khi lưu."""
+    """Kiểm tra cả model, quyền tài khoản và mức suy nghĩ trước khi lưu."""
     if settings['mode'] != 'chat':
         raise HTTPException(400, 'Lựa chọn model chỉ dùng trong tab Trò chuyện.')
-    if settings['persona'] == 'roleplay' and model != ai_models.DEFAULT_MODEL:
-        raise HTTPException(400, 'Chế độ nhập vai chỉ dùng Peto.')
     try:
         ai_models.resolve(owner, model, 'web')
     except ai_models.ModelUnavailable as err:
@@ -39,7 +43,7 @@ def public_selection(owner, settings):
         validate_selection(owner, settings, model, effort)
     except HTTPException:
         allowed = {item.key for item in ai_models.usable(owner, 'web')}
-        if model not in allowed or (settings['persona'] == 'roleplay' and model != 'peto'):
+        if model not in allowed:
             model = 'peto'
             notice = 'Model đã lưu hiện không dùng được. Peto được chọn để tiếp tục.'
         if effort != 'auto' and effort not in ai_models.supported_efforts(model):
@@ -54,6 +58,8 @@ async def update_selection(owner, conversation_id, model, effort):
         raise HTTPException(404, 'Không tìm thấy hội thoại')
     if settings['archived']:
         raise HTTPException(409, 'Hãy khôi phục hội thoại đã lưu trữ trước khi đổi model.')
+    if settings['persona'] == 'roleplay':
+        raise HTTPException(409, LEGACY_ROLEPLAY)
     validate_selection(owner, settings, model, effort)
     await set_chat_selection(owner, conversation_id, model, effort)
 
@@ -147,6 +153,8 @@ async def fork(owner, conversation_id, message_id, text):
             source = await (await connection.execute("SELECT * FROM conversations WHERE id=? AND owner=? AND mode='chat'", (conversation_id, owner))).fetchone()
             if source and source['archived']:
                 raise HTTPException(409, 'Hãy khôi phục hội thoại đã lưu trữ trước khi sửa tin nhắn.')
+            if source and source['persona'] == 'roleplay':
+                raise HTTPException(409, LEGACY_ROLEPLAY)
             rows = await (await connection.execute('SELECT * FROM messages WHERE conversation_id=? AND id<=? ORDER BY id', (conversation_id, message_id))).fetchall() if source else []
             if not rows or rows[-1]['id'] != message_id or rows[-1]['role'] != 'user':
                 raise HTTPException(404, 'Không tìm thấy tin nhắn cần tạo phiên bản')

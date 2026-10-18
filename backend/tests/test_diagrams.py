@@ -7,7 +7,7 @@ import pytest
 from features.chat import service as chat_service
 from ai.mock import DIAGRAM_SAMPLE
 from conftest import TEST_OWNER, read_events
-from prompts import COMPANION_SYSTEM_PROMPT, DIAGRAM_PROMPT, SYSTEM_PROMPT, build_diagram_guide
+from prompts import COMPANION_SYSTEM_PROMPT, DIAGRAM_PROMPT, build_diagram_guide, chat_prompt
 
 
 @pytest.mark.parametrize("question", [
@@ -34,13 +34,13 @@ def test_other_questions_do_not_pay_for_the_guide(question):
 
 
 def test_prompts_send_diagrams_to_mermaid_not_to_the_image_tab():
-    assert "```mermaid" in SYSTEM_PROMPT
-    assert "Không bảo người dùng\n  sang tab Tạo ảnh để vẽ sơ đồ" in SYSTEM_PROMPT
+    for model in ("peto", "luna", "haiku"):
+        assert "render them\nin a fenced mermaid block in chat, not in the image tab" in chat_prompt(model)
     # Lỗi đã gặp khi thử thật: <<choice>> khai báo sau lần dùng đầu thì nút rẽ nhánh thành hình chữ nhật.
-    assert "ở ĐẦU sơ đồ, trước dòng đầu tiên dùng tới chúng" in DIAGRAM_PROMPT
+    assert "declare <<choice>>/<<fork>>/<<join>> states\nbefore their first use" in DIAGRAM_PROMPT
     # Làn thật bằng swimlane-beta; nút ngoài mọi làn sinh ra một làn trống không tên (cũng đã thử thật).
-    assert "dùng swimlane-beta" in DIAGRAM_PROMPT
-    assert "Mọi nút khai báo bên trong làn của nó" in DIAGRAM_PROMPT
+    assert "Activities with lanes use swimlane-beta" in DIAGRAM_PROMPT
+    assert "every node including start/end inside a lane" in DIAGRAM_PROMPT
     assert "mermaid" not in COMPANION_SYSTEM_PROMPT.lower()
 
 
@@ -50,7 +50,6 @@ async def test_guide_is_added_only_to_assistant_chat_turns(client):
     assert DIAGRAM_PROMPT in chat
     assert DIAGRAM_PROMPT not in await prompt_context._build_system_prompt(TEST_OWNER, "chat", agent_question="chào bạn")
     assert DIAGRAM_PROMPT not in await prompt_context._build_system_prompt(TEST_OWNER, "companion", agent_question=question)
-    assert DIAGRAM_PROMPT not in await prompt_context._build_system_prompt(TEST_OWNER, "chat", persona="roleplay", agent_question=question)
 
 
 async def test_mock_diagram_reply_streams_four_mermaid_blocks(client):

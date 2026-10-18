@@ -60,9 +60,11 @@ async def test_ownership_roleplay_companion_archived_and_provider_access(client,
     assert (await anon_client.get(f'/api/conversations/{cid}/messages')).status_code == 404
     assert (await anon_client.get(f'/api/conversations/{cid}/settings')).status_code == 404
     assert (await anon_client.patch(f'/api/conversations/{cid}', json={'model': 'haiku', 'effort': 'low'})).status_code == 404
-    for mode, persona in [('chat', 'roleplay'), ('companion', 'assistant')]:
-        special = await db.create_conversation(TEST_OWNER, mode=mode, persona=persona)
-        assert (await client.patch(f'/api/conversations/{special}', json={'model': 'haiku', 'effort': 'low'})).status_code == 400
+    companion = await db.create_conversation(TEST_OWNER, mode='companion')
+    assert (await client.patch(f'/api/conversations/{companion}', json={'model': 'haiku', 'effort': 'low'})).status_code == 400
+    # Hội thoại nhập vai cũ chỉ còn để xem (chế độ đó bỏ ngày 2026-10-18).
+    legacy = await db.create_conversation(TEST_OWNER, persona='roleplay')
+    assert (await client.patch(f'/api/conversations/{legacy}', json={'model': 'haiku', 'effort': 'low'})).status_code == 409
     await client.patch(f'/api/conversations/{cid}', json={'archived': True})
     assert (await client.patch(f'/api/conversations/{cid}', json={'model': 'peto', 'effort': 'low'})).status_code == 409
     await client.patch(f'/api/conversations/{cid}', json={'archived': False})

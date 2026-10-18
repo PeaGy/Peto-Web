@@ -1,29 +1,22 @@
-"""Prompt theo ngữ cảnh; không trộn phần nhập vai vào trợ lý hay Agent. Prompt của Peto Agent nằm trong english.py."""
+"""Chỉ dẫn gửi cho model, toàn bộ bằng tiếng Anh (chủ web chọn ngày 2026-10-18 để bớt token).
+
+- ``core``: lõi Peto dùng chung cho Chat, Agent và /btw.
+- ``chat``: tab Trò chuyện (``chat_prompt``), tìm web, công cụ tạo/sửa tệp.
+- ``agent``: Peto Agent (CLI).
+- ``providers``: đoạn riêng theo nhà cung cấp, ghép sau prompt chung như opencode.
+- ``companion``, ``companion_runtime``: Companion, persona riêng.
+- ``context``: khung hồ sơ, trí nhớ và tóm tắt của từng người dùng.
+- ``diagrams``: hướng dẫn Mermaid, chỉ khi câu hỏi nói tới sơ đồ.
+"""
 from features.agent.guide import build_agent_guide
-from .assistant import (
-    PERSONA_PROMPT,
-    SOCIAL_TONE_PROMPT,
-    CONVERSATION_STYLE_PROMPT,
-    CORE_TRUTH_AND_SAFETY_PROMPT,
-    HONESTY_AND_SAFETY_PROMPT,
-    EMOTIONAL_RESPONSE_PROMPT,
-    CONTINUITY_PROMPT,
-    WEB_PLATFORM_PROMPT,
-    CONVERSATION_EXAMPLES_PROMPT,
-    SYSTEM_PROMPT,
+from .core import CORE_PROMPT
+from .chat import (
+    WEB_PROMPT,
+    chat_prompt,
 )
 from .diagrams import (
     DIAGRAM_PROMPT,
     build_diagram_guide,
-)
-from .roleplay import (
-    ROLEPLAY_PERSONA_PROMPT,
-    ROLEPLAY_STYLE_PROMPT,
-    MATURE_TONE_PROMPT,
-    PRESENCE_AND_ROLEPLAY_PROMPT,
-    ROLEPLAY_EMOTION_PROMPT,
-    ROLEPLAY_EXAMPLES_PROMPT,
-    ROLEPLAY_SYSTEM_PROMPT,
 )
 from .context import (
     build_memory_context,

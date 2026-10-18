@@ -15,7 +15,6 @@ async def prepare_prompts(cases: list[Case], models: tuple[str, ...], clock: dat
     from features.chat import prompt_context
     from features.accounts.discord_memory import MemorySnapshot
     from prompts.context import build_companion_memory, build_companion_summary
-    from prompts.routing import uses_english
     from shared.time_tools import current_datetime, time_context
     prompts = {}
     # Ghép tuần tự trước khi chạy song song; không để ngữ cảnh bài này lẫn vào bài khác.
@@ -33,15 +32,16 @@ async def prepare_prompts(cases: list[Case], models: tuple[str, ...], clock: dat
                 stack.enter_context(patch.object(prompt_context.discord_memory, 'fetch', AsyncMock(
                     return_value=MemorySnapshot() if case.persona == 'companion' else snapshot)))
                 stack.enter_context(patch.object(prompt_context.companion_memory, 'memory_block', AsyncMock(return_value=companion)))
+                # Lượt Chat cũng đọc trí nhớ dùng chung: trả rỗng để bộ đánh giá không bao giờ chạm cơ sở dữ liệu.
+                stack.enter_context(patch.object(prompt_context.companion_memory, 'chat_memory_block', AsyncMock(return_value='')))
                 verified_clock = current_datetime('Asia/Ho_Chi_Minh', now=clock)
                 stack.enter_context(patch('shared.time_tools.current_datetime', return_value=verified_clock))
                 for index, turn in enumerate(case.turns):
                     question = '\n'.join(t['user'] for t in case.turns[max(0, index - 2):index + 1])
                     body = await prompt_context._build_system_prompt(
                         'discord:000000000000000000', mode='companion' if case.persona == 'companion' else 'chat',
-                        persona='roleplay' if case.persona == 'roleplay' else 'assistant',
                         model=model, agent_question=question)
-                    body += '\n\n' + time_context('Asia/Ho_Chi_Minh', english=uses_english(model))
+                    body += '\n\n' + time_context('Asia/Ho_Chi_Minh')
                     prompts[model, case.id, index] = {'text': body, 'sha256': hashlib.sha256(body.encode()).hexdigest()}
     return prompts
 

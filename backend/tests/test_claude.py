@@ -256,7 +256,7 @@ async def test_cache_reads_are_reported_like_responses_for_pricing(monkeypatch):
 def test_system_cache_point_sits_before_the_changing_clock():
     """Giờ hiện tại đổi mỗi lượt nên phải đứng sau điểm cache; phần chỉ dẫn ổn định mới đọc lại được."""
     from shared.time_tools import time_context
-    clock = time_context(english=True)
+    clock = time_context()
     system = claude.cached_system(f"Chỉ dẫn A\n\n{clock}\n\nChỉ dẫn B")
     assert system == [{"type": "text", "text": "Chỉ dẫn A\n\nChỉ dẫn B", "cache_control": {"type": "ephemeral"}},
                       {"type": "text", "text": clock}]

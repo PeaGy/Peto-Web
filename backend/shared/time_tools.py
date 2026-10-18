@@ -80,28 +80,18 @@ def current_datetime(timezone: str | None = None, *, now: datetime | None = None
     }
 
 
-def time_context(timezone: str | None = None, *, english: bool = False) -> str:
+def time_context(timezone: str | None = None) -> str:
     clock = current_datetime(timezone)
-    if english:
-        return (
-            f"{TIME_HEADER_EN}\n"
-            f"{clock['datetime']} ({clock['timezone']}, {clock['utc_offset']}).\n"
-            "Use this fresh time over historical timestamps for relative dates. The configured/browser timezone "
-            "does not prove the user's location. Do not add timestamps to every reply. For fresh time or another "
-            "timezone, use get_current_datetime; clarify ambiguous place names."
-        )
     return (
-        f"{TIME_HEADER_VI}\n"
-        f"{clock['weekday']}, {clock['date']}, {clock['time']} "
-        f"({clock['timezone']}, {clock['utc_offset']}).\n"
-        "Đây là mốc thời gian mới của lượt này, ưu tiên hơn ngày giờ trong lịch sử. "
-        "Múi giờ là lựa chọn của trình duyệt hoặc cấu hình web, không chứng minh vị trí người dùng. "
-        "Dùng mốc này cho hôm nay, hôm qua, ngày mai. Không tự chèn ngày giờ vào mọi câu trả lời. "
-        "Khi cần giờ mới nhất hoặc giờ ở nơi khác, gọi get_current_datetime; nếu địa danh mơ hồ thì hỏi rõ."
+        f"{TIME_HEADER_EN}\n"
+        f"{clock['datetime']} ({clock['timezone']}, {clock['utc_offset']}).\n"
+        "Use this fresh time over historical timestamps for relative dates. The configured/browser timezone "
+        "does not prove the user's location. Do not add timestamps to every reply. For fresh time or another "
+        "timezone, use get_current_datetime; clarify ambiguous place names."
     )
 
 
-def agent_time_context(timezone: str | None = None, *, english: bool = False) -> str:
+def agent_time_context(timezone: str | None = None) -> str:
     """Mốc thời gian cho Peto Agent, làm tròn xuống giờ.
 
     Agent gửi lại cả lịch sử ở mỗi bước. Giờ chính xác đến giây đổi system prompt ở mọi bước, nên prompt caching
@@ -110,25 +100,17 @@ def agent_time_context(timezone: str | None = None, *, english: bool = False) ->
     """
     clock = current_datetime(timezone)
     hour = clock["time"][:2]
-    if english:
-        return (
-            f"{TIME_HEADER_EN}\n"
-            f"{clock['date']}, between {hour}:00 and {hour}:59 ({clock['timezone']}, {clock['utc_offset']}).\n"
-            "Rounded to the hour; run a command on the machine when the exact time matters. Use this date over "
-            "historical timestamps for today, yesterday and tomorrow. The timezone does not prove the user's location."
-        )
     return (
-        f"{TIME_HEADER_VI}\n"
-        f"{clock['weekday']}, {clock['date']}, trong khoảng {hour}:00–{hour}:59 ({clock['timezone']}, {clock['utc_offset']}).\n"
-        "Giờ được làm tròn theo giờ; khi cần giờ chính xác, chạy lệnh xem đồng hồ trên máy. Dùng ngày này cho hôm nay, "
-        "hôm qua, ngày mai, ưu tiên hơn ngày giờ trong lịch sử. Múi giờ không chứng minh vị trí người dùng."
+        f"{TIME_HEADER_EN}\n"
+        f"{clock['date']}, between {hour}:00 and {hour}:59 ({clock['timezone']}, {clock['utc_offset']}).\n"
+        "Rounded to the hour; run a command on the machine when the exact time matters. Use this date over "
+        "historical timestamps for today, yesterday and tomorrow. The timezone does not prove the user's location."
     )
 
 
 TIME_HEADER_EN = "## Server-verified current time"
-TIME_HEADER_VI = "## Thời gian được máy chủ xác minh cho lượt hiện tại"
 # Khối thời gian luôn là đúng ba dòng: tiêu đề, mốc giờ, một dòng hướng dẫn (time_context, agent_time_context).
-_TIME_BLOCK = re.compile(rf"(?:\n\n)?((?:{re.escape(TIME_HEADER_EN)}|{re.escape(TIME_HEADER_VI)})\n[^\n]*\n[^\n]*)")
+_TIME_BLOCK = re.compile(rf"(?:\n\n)?({re.escape(TIME_HEADER_EN)}\n[^\n]*\n[^\n]*)")
 
 
 def split_time_context(text: str) -> tuple[str, str]:

@@ -19,7 +19,7 @@ def parser():
     for name in ('list', 'plan', 'run'):
         command = commands.add_parser(name, help={'list': 'Xem bài và model.', 'plan': 'Xem kế hoạch, không gọi API.', 'run': 'Chạy bộ bài.'}[name])
         command.add_argument('--dataset', type=Path, default=Path(__file__).with_name('cases.json'))
-        command.add_argument('--persona', choices=('all', 'chat', 'companion', 'roleplay'), default='all')
+        command.add_argument('--persona', choices=('all', 'chat', 'companion'), default='all')
         command.add_argument('--group', choices=('all', 'identity', 'conversation', 'memory', 'reasoning', 'truth', 'protocol'), default='all')
         command.add_argument('--cases', nargs='+')
         command.add_argument('--models', nargs='+', default=['peto'])

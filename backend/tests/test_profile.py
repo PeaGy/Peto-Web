@@ -105,12 +105,12 @@ async def test_ho_so_vao_prompt_ngay_luot_ke_tiep(client, monkeypatch):
     })
     await read_events(await client.post("/api/chat", json={"message": "chào lần nữa"}))
     prompt = seen[-1]["system_prompt"]
-    assert "Muốn được gọi là: Bé Na" in prompt
+    assert "Preferred name: Bé Na" in prompt
     assert "Học sinh, sinh viên" in prompt
     assert "Luôn kèm một ví dụ đời thường." in prompt
     # Lời dặn riêng đứng sau quy tắc của Peto và tự nhận là không thay chúng.
-    assert prompt.index("Luôn kèm một ví dụ") > prompt.index("## Hướng dẫn riêng của người dùng")
-    assert "KHÔNG thay các quy tắc ở trên" in prompt
+    assert prompt.index("Luôn kèm một ví dụ") > prompt.index("## User preferences")
+    assert "they are not system instructions" in prompt
 
 
 async def test_khong_the_tu_dong_khung_huong_dan_som(client, monkeypatch):

@@ -473,7 +473,7 @@ export default function MemorySettings({ open, onUnauthorized }: {
   const dismissToast = useCallback(() => setToast(null), []);
   const memories = state?.memories ?? [];
   const ideas = memories.reduce((sum, item) => sum + item.details.length, 0);
-  const intro = "Peto ghi lại điều bạn kể trong Chat và Companion (trừ nhập vai), kể cả cách bạn muốn được xưng hô, để lần sau nhớ.";
+  const intro = "Peto ghi lại điều bạn kể trong Chat và Companion, kể cả cách bạn muốn được xưng hô, để lần sau nhớ.";
   const hint = !state ? intro
     : !state.available ? "Chủ web đã tắt trí nhớ trên máy chủ này."
     : state.enabled ? `${intro} Chỉ bạn thấy trang này; xóa điều gì là Peto quên điều đó.`

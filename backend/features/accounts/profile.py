@@ -171,9 +171,3 @@ async def read_avatar(owner: str = Depends(current_owner)) -> Response:
         raise HTTPException(404, 'Chưa có ảnh đại diện riêng.')
     return Response(data, media_type='image/png', headers={'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff'})
 
-
-@router.post("/api/profile/roleplay-consent")
-async def confirm_roleplay_age(owner: str = Depends(current_owner)) -> dict:
-    """Người dùng tự xác nhận đủ 18 tuổi để bật chế độ nhập vai. Chỉ hỏi một lần cho mỗi tài khoản. Máy chủ còn kiểm lại lúc mở hội thoại nhập vai."""
-    await db.add_roleplay_consent(owner)
-    return {"roleplay_confirmed": True}

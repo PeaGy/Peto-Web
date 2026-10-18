@@ -1,23 +1,22 @@
-import type { Persona } from '../../shared/api/api';
 import type { DraftFile } from './files';
 
 export const CHAT_DRAFT_PREFIX = 'peto.chat-draft.v1:';
-export type NewChatContext = { ownerId: string; projectId: string | null; persona: Persona };
-export type DraftScope = { ownerId: string; conversationId: string | null; projectId: string | null; persona: Persona };
+export type NewChatContext = { ownerId: string; projectId: string | null };
+export type DraftScope = { ownerId: string; conversationId: string | null; projectId: string | null };
 type Draft = { text: string; files: DraftFile[]; revision: number };
 export type DraftSnapshot = { key: string; revision: number; fileIds: string[] };
 
 export function draftKey(scope: DraftScope): string {
   return CHAT_DRAFT_PREFIX + JSON.stringify(scope.conversationId
     ? [scope.ownerId, 'conversation', scope.conversationId]
-    : [scope.ownerId, 'new', scope.projectId, scope.persona]);
+    : [scope.ownerId, 'new', scope.projectId]);
 }
 
-export function newChatContext(state: unknown, ownerId: string, roleplayConfirmed: boolean): NewChatContext {
+export function newChatContext(state: unknown, ownerId: string): NewChatContext {
   const value = (state as { chatDraftContext?: NewChatContext } | null)?.chatDraftContext;
-  if (value?.ownerId === ownerId && (value.projectId === null || typeof value.projectId === 'string')
-    && (value.persona === 'assistant' || (value.persona === 'roleplay' && roleplayConfirmed))) return value;
-  return { ownerId, projectId: null, persona: 'assistant' };
+  if (value?.ownerId === ownerId && (value.projectId === null || typeof value.projectId === 'string'))
+    return { ownerId, projectId: value.projectId };
+  return { ownerId, projectId: null };
 }
 
 /** Chỉ lưu chữ; File và URL xem trước thuộc bộ nhớ của tab, không đi vào storage. */
@@ -79,7 +78,7 @@ export class ChatDraftStore {
     draft.files = draft.files.filter(file => !snapshot.fileIds.includes(file.id));
     const parts = this.parts(snapshot.key);
     if (conversationId && parts?.[1] === 'new' && typeof parts[0] === 'string') {
-      const targetKey = draftKey({ ownerId: parts[0], conversationId, projectId: null, persona: 'assistant' });
+      const targetKey = draftKey({ ownerId: parts[0], conversationId, projectId: null });
       const target = this.get(targetKey);
       // Chữ gõ sau lần gửi đầu đi theo ID vừa cấp; không đè một bản nháp đích đã có.
       if (!target.text && !target.files.length) {

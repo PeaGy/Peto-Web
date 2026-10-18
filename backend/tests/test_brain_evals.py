@@ -64,12 +64,13 @@ def short_prompts(monkeypatch):
 
 def test_curated_dataset_and_registry_budgets():
     cases = load_cases(DATASET)
-    assert len(cases) == 30 and sum(len(item.turns) for item in cases) == 37
-    assert {item.persona for item in cases} == {'chat', 'companion', 'roleplay'}
-    assert Settings().validate(cases) == 37
-    assert Settings(models=('peto', 'luna', 'haiku'), max_calls=150).validate(cases) == 111
+    # Hai bài nhập vai bỏ cùng chế độ đó ngày 2026-10-18 (bản đầu có 30 bài, 37 lượt).
+    assert len(cases) == 28 and sum(len(item.turns) for item in cases) == 34
+    assert {item.persona for item in cases} == {'chat', 'companion'}
+    assert Settings().validate(cases) == 34
+    assert Settings(models=('peto', 'luna', 'haiku'), max_calls=150).validate(cases) == 102
     for settings in (Settings(mode='live'), Settings(models=('sonnet',)), Settings(models=('peto',), effort='max'),
-                     Settings(max_calls=36), Settings(max_output_tokens=1025), Settings(timeout=True)):
+                     Settings(max_calls=33), Settings(max_output_tokens=1025), Settings(timeout=True)):
         with pytest.raises(EvalError):
             settings.validate(cases)
 
@@ -131,23 +132,22 @@ def test_mock_configuration_ignores_dotenv_and_credentials(tmp_path, monkeypatch
 
 async def test_actual_prompts_use_fake_context_without_database_or_gateway(monkeypatch):
     from features.chat import prompt_context
-    from prompts import COMPANION_SYSTEM_PROMPT, ROLEPLAY_SYSTEM_PROMPT, SYSTEM_PROMPT, english
+    from prompts import COMPANION_SYSTEM_PROMPT, chat_prompt
+    from prompts.core import CORE_PROMPT
     originals = [prompt_context.db.get_user, prompt_context.db.get_profile,
                  prompt_context.discord_memory.fetch, prompt_context.companion_memory.memory_block]
     monkeypatch.setattr(prompt_context.db, 'init_db', AsyncMock(side_effect=AssertionError('Không mở DB')))
     items = [case(turns=[turn('Đầu tiên'), turn('từ-bí-mật-tương-lai')], context={
         'profile': {'nickname': 'TênGiả'}, 'memory': ['Tôi thích trà hoa nhài.']}),
-        case('fake-companion', 'companion', context={'summary': 'Dự án ĐènGiấy'}),
-        case('fake-roleplay', 'roleplay')]
+        case('fake-companion', 'companion', context={'summary': 'Dự án ĐènGiấy'})]
     prompts = await adapter.prepare_prompts(items, ('peto', 'luna', 'haiku'), CLOCK)
-    assert prompts['peto', 'fake-one', 0]['text'].startswith(SYSTEM_PROMPT)
-    for model in ('luna', 'haiku'):
-        assert prompts[model, 'fake-one', 0]['text'].startswith(english.CORE_PROMPT)
+    assert prompts['peto', 'fake-one', 0]['text'].startswith(chat_prompt('peto'))
+    for model in ('peto', 'luna', 'haiku'):
+        assert prompts[model, 'fake-one', 0]['text'].startswith(CORE_PROMPT)
         assert 'TênGiả' in prompts[model, 'fake-one', 0]['text']
         assert 'trà hoa nhài' in prompts[model, 'fake-one', 0]['text']
     assert prompts['luna', 'fake-companion', 0]['text'].startswith(COMPANION_SYSTEM_PROMPT)
     assert 'ĐènGiấy' in prompts['luna', 'fake-companion', 0]['text']
-    assert prompts['haiku', 'fake-roleplay', 0]['text'].startswith(ROLEPLAY_SYSTEM_PROMPT)
     assert 'từ-bí-mật-tương-lai' not in prompts['peto', 'fake-one', 0]['text']
     assert '2026-10-09' in prompts['luna', 'fake-one', 0]['text']
     assert originals == [prompt_context.db.get_user, prompt_context.db.get_profile,

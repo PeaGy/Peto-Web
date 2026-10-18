@@ -5,15 +5,14 @@ import { CHAT_DRAFT_PREFIX, ChatDraftStore, draftKey, newChatContext, type Draft
 import { useChatDrafts } from '../src/features/chat/useChatDrafts';
 
 const scope = (conversationId: string | null = 'A', projectId: string | null = null, ownerId = 'account'): DraftScope =>
-  ({ ownerId, conversationId, projectId, persona: 'assistant' });
+  ({ ownerId, conversationId, projectId });
 const key = (id: string | null = 'A') => draftKey(scope(id));
 beforeEach(() => { sessionStorage.clear(); vi.useFakeTimers(); URL.revokeObjectURL = vi.fn(); });
 afterEach(() => vi.useRealTimers());
 
-it('tách tài khoản, hội thoại và chat mới theo dự án/chế độ; chuyển dự án không đổi khóa chat có ID', () => {
+it('tách tài khoản, hội thoại và chat mới theo dự án; chuyển dự án không đổi khóa chat có ID', () => {
   expect(draftKey(scope('A', 'P'))).toBe(key());
-  const scopes = [scope(), scope('B'), scope(null), scope(null, 'P'), scope(null, 'Q'),
-    { ...scope(null), persona: 'roleplay' as const }, scope('A', null, 'other')];
+  const scopes = [scope(), scope('B'), scope(null), scope(null, 'P'), scope(null, 'Q'), scope('A', null, 'other')];
   expect(new Set(scopes.map(draftKey)).size).toBe(scopes.length);
 });
 
@@ -161,12 +160,13 @@ it('StrictMode khôi phục nháp và không hồi sinh nháp khi phiên hết h
   expect(sessionStorage.getItem(key())).toBeNull();
 });
 
-it('ngữ cảnh history kiểm tra đúng tài khoản và quyền nhập vai, không chứa nội dung nháp', () => {
-  const context = { ownerId: 'account', projectId: 'P', persona: 'roleplay' as const };
-  expect(newChatContext({ chatDraftContext: context }, 'account', true)).toEqual(context);
+it('ngữ cảnh history kiểm tra đúng tài khoản, không chứa nội dung nháp', () => {
+  const context = { ownerId: 'account', projectId: 'P' };
+  expect(newChatContext({ chatDraftContext: context }, 'account')).toEqual(context);
   for (const state of [null, {}, { chatDraftContext: context }, { chatDraftContext: { ...context, projectId: 123 } }]) {
-    expect(newChatContext(state, 'other', false)).toEqual({ ownerId: 'other', projectId: null, persona: 'assistant' });
+    expect(newChatContext(state, 'other')).toEqual({ ownerId: 'other', projectId: null });
   }
-  expect(newChatContext({ chatDraftContext: context }, 'account', false).persona).toBe('assistant');
+  // Trang cũ còn lưu "persona" trong history: bỏ qua, không mang theo.
+  expect(newChatContext({ chatDraftContext: { ...context, persona: 'roleplay' } }, 'account')).toEqual(context);
   expect(CHAT_DRAFT_PREFIX).toContain('v1');
 });

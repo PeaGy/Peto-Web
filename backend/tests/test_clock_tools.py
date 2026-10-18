@@ -103,15 +103,15 @@ async def test_each_request_gets_own_timezone_and_fresh_clock(client, monkeypatc
         for zone in ['UTC', 'Asia/Barnaul']
     ])
     by_zone = {entry['timezone']:entry['system_prompt'] for entry in seen}
-    assert '2026-09-09, 18:05:06' in by_zone['UTC']
-    assert '2026-09-10, 01:05:06' in by_zone['Asia/Barnaul']
+    assert '2026-09-09T18:05:06+00:00' in by_zone['UTC']
+    assert '2026-09-10T01:05:06+07:00' in by_zone['Asia/Barnaul']
     class NextDay(datetime):
         @classmethod
         def now(cls, tz=None):
             return (FIXED + timedelta(days=1)).astimezone(tz or UTC)
     monkeypatch.setattr(chat_tools, 'datetime', NextDay)
     await client.post('/api/chat', json={'message':'Hôm nay?', 'timezone':'UTC'})
-    assert '2026-09-10, 18:05:06' in seen[-1]['system_prompt']
+    assert '2026-09-10T18:05:06+00:00' in seen[-1]['system_prompt']
 
 
 async def test_long_web_messages_and_replies_are_not_cut(client, monkeypatch):
@@ -229,7 +229,7 @@ async def test_round_limit_finishes_with_available_results(monkeypatch):
     chunks = [chunk async for chunk in provider.stream(system_prompt='Peto', messages=[], web_search='off')]
     assert ''.join(chunk for chunk in chunks if isinstance(chunk, str)).startswith('Đây là kết quả đã đọc')
     assert requests[-1]['tools'] == [] and 'tool_choice' not in requests[-1]
-    assert 'chưa xác minh' in requests[-1]['instructions']
+    assert 'unverified gaps' in requests[-1]['instructions']
     assert sum(item.get('type') == 'function_call_output' for item in requests[-1]['input']) == MAX_TOOL_ROUNDS
 
 

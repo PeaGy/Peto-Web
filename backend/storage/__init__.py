@@ -8,8 +8,6 @@ from .users import (
     get_profile,
     save_profile,
     get_user,
-    has_roleplay_consent,
-    add_roleplay_consent,
 )
 from .conversations import (
     create_conversation,

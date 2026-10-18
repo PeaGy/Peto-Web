@@ -44,7 +44,7 @@ async def init_db() -> None:
             # Tab Companion có mạch trò chuyện riêng; hội thoại có từ trước đều thuộc tab Trò chuyện.
             await db.execute("ALTER TABLE conversations ADD COLUMN mode TEXT NOT NULL DEFAULT 'chat'")
         if "persona" not in {column[1] for column in conversation_columns}:
-            # "assistant" hoặc "roleplay", chọn lúc bắt đầu hội thoại; hội thoại cũ đều là trợ lý.
+            # "assistant", hoặc "roleplay" ở hội thoại nhập vai cũ: chế độ đó bỏ ngày 2026-10-18, các hội thoại ấy chỉ còn để xem.
             await db.execute("ALTER TABLE conversations ADD COLUMN persona TEXT NOT NULL DEFAULT 'assistant'")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_conversations_archive ON conversations(owner, mode, archived, pinned DESC, updated_at DESC, id DESC)")
         await db.execute(
@@ -302,15 +302,8 @@ async def init_db() -> None:
             )
             """
         )
-        # Tài khoản đã xác nhận đủ 18 tuổi để bật chế độ nhập vai. Tách khỏi `users` (bị ghi đè mỗi lần đăng nhập).
-        await db.execute(
-            """
-            CREATE TABLE IF NOT EXISTS roleplay_consents (
-                owner TEXT PRIMARY KEY,
-                confirmed_at REAL NOT NULL
-            )
-            """
-        )
+        # Bảng roleplay_consents (xác nhận đủ 18 tuổi của chế độ nhập vai, bỏ ngày 2026-10-18) không tạo nữa. Cơ sở dữ
+        # liệu cũ vẫn giữ bảng đó, không đọc không ghi; ops/purge_guests vẫn xóa được hàng của tài khoản khách.
         # Trí nhớ Companion: điều Peto tự rút ra từ lời người dùng kể trong tab Companion (companion_memory.py). Tách khỏi
         # hồ sơ tự điền, và không liên quan trí nhớ của bot Discord (chỉ đọc, không bao giờ ghi ngược).
         await db.execute(

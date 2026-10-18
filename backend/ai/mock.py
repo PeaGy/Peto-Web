@@ -387,7 +387,7 @@ def _memory_entries(prompt: str) -> dict[int, dict]:
     entries: dict[int, dict] = {}
     current = None
     for line in prompt.splitlines():
-        head = re.match(r"\[(\d+)\] (\w+) · (.+?)( \(CHƯA XẾP MỤC\))? — ", line)
+        head = re.match(r"\[(\d+)\] (\w+) · (.+?)( \(UNSORTED\))? — ", line)
         if head:
             current = entries[int(head[1])] = {"section": head[2], "title": head[3], "legacy": bool(head[4]), "details": []}
         elif current is not None and line.startswith("  - "):
@@ -413,9 +413,9 @@ def _memory_changes(prompt: str) -> dict:
         return {"entries": [{"section": "you", "title": "Hồ sơ", "summary": "Ghi nhớ đã xếp", "details": notes}],
                 "remove": [legacy] if legacy else []}
     if TELL_MARKER in prompt:
-        found = re.search(r'^Yêu cầu: (".*")$', prompt, re.M)
+        found = re.search(r'^Request: (".*")$', prompt, re.M)
         request = json.loads(found[1]) if found else ""
-        about = re.search(r"nói về mục \[(\d+)\]", prompt)
+        about = re.search(r"concerns entry \[(\d+)\]", prompt)
         target = int(about[1]) if about else None
         if re.match(r"(bỏ|quên|xóa)\b", request.casefold()):
             words = [word for word in re.findall(r"\w+", request.casefold())[1:] if len(word) >= 3]
@@ -429,8 +429,8 @@ def _memory_changes(prompt: str) -> dict:
         if target is not None and target in entries:
             return {"entries": [{"id": target, "details": [*entries[target]["details"], request]}], "remove": []}
         return {"entries": [{"section": "you", "title": "Hồ sơ", "details": [request]}], "remove": []}
-    talk = prompt.split("Đoạn hội thoại mới:", 1)[-1]
-    said = "\n".join(line for line in talk.splitlines() if line.startswith("Người dùng:"))
+    talk = prompt.split("New conversation:", 1)[-1]
+    said = "\n".join(line for line in talk.splitlines() if line.startswith("User:"))
     changes = [{"section": "you", "title": "Hồ sơ", "details": [text.strip()]}
                for text in re.findall(r"__nho__:([^_\n]+)", said)]
     changes += [{"id": int(key), "details": [text.strip()]} for key, text in re.findall(r"__sua__:(\d+):([^_\n]+)", said)]
@@ -474,10 +474,10 @@ class MockProvider(ChatProvider):
 
         if SUMMARY_MARKER in system_prompt:
             # Tóm tắt giả: giữ bản cũ rồi nối lời người dùng trong đoạn vừa trôi ra, để test lần ra được từng tin.
-            old, _, talk = last_user.partition("Đoạn hội thoại vừa trôi khỏi lịch sử:")
-            old = old.replace("Bản tóm tắt hiện có:", "").strip()
-            said = [line.split(":", 1)[1].strip() for line in talk.splitlines() if line.startswith("Người dùng:")]
-            yield " ".join(part for part in ("" if old == "(chưa có)" else old, "Người dùng kể: " + "; ".join(said)) if part)
+            old, _, talk = last_user.partition("Conversation that just left the history:")
+            old = old.replace("Current summary:", "").strip()
+            said = [line.split(":", 1)[1].strip() for line in talk.splitlines() if line.startswith("User:")]
+            yield " ".join(part for part in ("" if old == "(none)" else old, "Người dùng kể: " + "; ".join(said)) if part)
             return
 
         if MEMORY_MARKER in system_prompt:

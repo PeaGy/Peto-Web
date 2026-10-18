@@ -1,88 +1,61 @@
-"""Chế độ nhập vai: bật lúc bắt đầu hội thoại, chỉ cho tài khoản Discord/Google đã xác nhận 18+, dùng persona cũ của
-bot và gửi nhiều tin cũ hơn chat thường."""
+"""Chế độ nhập vai đã bỏ ngày 2026-10-18 (chủ web: đã có Companion). Không mở được hội thoại nhập vai mới; hội thoại cũ
+chỉ còn để xem: không nhắn tiếp, không tách phiên bản, không đổi model, vì lịch sử có thể có nội dung 18+ và không được
+gửi tới model nào. Xem, đổi tên, lưu trữ và xóa vẫn được."""
 
 from __future__ import annotations
 
+import storage as db
+from conftest import TEST_OWNER, read_events
+from features.chat import conversations as conversation_actions
 from features.chat import service as chat_service
-from features.chat import titles
-from conftest import read_events
-
-ASSISTANT_MARKER = "## Trung thực và an toàn"
-ROLEPLAY_MARKER = "## Cảm giác hiện diện"
 
 
-async def send(client, message: str, *, persona: str | None = None, conversation_id: str | None = None,
-               mode: str | None = None):
-    payload: dict = {"message": message}
-    if persona is not None:
-        payload["persona"] = persona
-    if conversation_id:
-        payload["conversation_id"] = conversation_id
-    if mode is not None:
-        payload["mode"] = mode
-    return await client.post("/api/chat", json=payload)
+async def test_new_roleplay_chats_are_refused_with_a_clear_message(client):
+    for mode in ("chat", "companion"):
+        response = await client.post("/api/chat", json={"message": "chào", "persona": "roleplay", "mode": mode})
+        assert response.status_code == 400 and response.json()["detail"] == chat_service.ROLEPLAY_REMOVED
+    assert (await client.post("/api/profile/roleplay-consent")).status_code in {404, 405}
+    assert "roleplay_confirmed" not in (await client.get("/api/auth/me")).json()["user"]
+    # Trang cũ mặc định vẫn gửi persona "assistant": chat bình thường.
+    events = await read_events(await client.post("/api/chat", json={"message": "chào", "persona": "assistant"}))
+    assert events[-1]["type"] == "done"
 
 
-def spy_on_provider(monkeypatch) -> list[dict]:
-    calls: list[dict] = []
-    from ai.mock import MockProvider
-
-    original = MockProvider.stream
-
-    async def spy(self, *, system_prompt, messages, effort="low", timezone=None, web_search="auto"):
-        if titles.TITLE_MARKER not in system_prompt:
-            calls.append({"system_prompt": system_prompt, "messages": len(messages)})
-        async for chunk in original(
-            self, system_prompt=system_prompt, messages=messages, effort=effort, timezone=timezone, web_search=web_search
-        ):
-            yield chunk
-
-    monkeypatch.setattr(MockProvider, "stream", spy)
-    return calls
-
-
-async def test_roleplay_needs_a_real_account_and_an_adult_confirmation(client, anon_client):
-    before = await send(client, "chào", persona="roleplay")
-    assert before.status_code == 403 and "xác nhận đủ 18 tuổi" in before.json()["detail"]
-    assert (await client.get("/api/auth/me")).json()["user"]["roleplay_confirmed"] is False
-
-    assert (await client.post("/api/profile/roleplay-consent")).json() == {"roleplay_confirmed": True}
-    assert (await client.get("/api/auth/me")).json()["user"]["roleplay_confirmed"] is True
-    assert (await send(client, "chào", persona="roleplay")).status_code == 200
-
-    assert (await send(client, "chào", persona="roleplay", mode="companion")).status_code == 400
-    assert (await send(client, "chào", persona="phan-dien")).status_code == 400
-
-    # Tài khoản GitHub cũng phải tự xác nhận đủ 18 tuổi trước, như Discord và Google.
-    from conftest import sign_in
-    await sign_in(anon_client)
-    assert (await send(anon_client, "chào", persona="roleplay")).status_code == 403
-    assert (await anon_client.post("/api/profile/roleplay-consent")).status_code == 200
-    assert (await send(anon_client, "chào", persona="roleplay")).status_code == 200
-
-
-async def test_roleplay_conversation_keeps_its_persona_and_a_longer_history(client, monkeypatch):
-    calls = spy_on_provider(monkeypatch)
-    monkeypatch.setattr(chat_service, "MAX_HISTORY_MESSAGES", 2)
-    monkeypatch.setattr(chat_service, "ROLEPLAY_MAX_HISTORY", 4)
-    await client.post("/api/profile/roleplay-consent")
-
-    events = await read_events(await send(client, "*ngồi xuống cạnh Peto* hôm nay mệt ghê", persona="roleplay"))
-    roleplay_id = events[0]["conversation_id"]
-    assert ROLEPLAY_MARKER in calls[-1]["system_prompt"] and ASSISTANT_MARKER not in calls[-1]["system_prompt"]
-
-    # Lượt sau gửi nhầm persona khác vẫn theo chế độ đã chọn lúc bắt đầu.
-    for text in ("kể tiếp đi", "rồi sao nữa"):
-        await read_events(await send(client, text, persona="assistant", conversation_id=roleplay_id))
-    assert ROLEPLAY_MARKER in calls[-1]["system_prompt"]
-    assert calls[-1]["messages"] == 4, "nhập vai gửi tới ROLEPLAY_MAX_HISTORY tin"
-
-    events = await read_events(await send(client, "giải thích asyncio"))
-    assistant_id = events[0]["conversation_id"]
-    for text in ("ví dụ đi", "thêm một ví dụ"):
-        await read_events(await send(client, text, conversation_id=assistant_id))
-    assert ASSISTANT_MARKER in calls[-1]["system_prompt"] and ROLEPLAY_MARKER not in calls[-1]["system_prompt"]
-    assert calls[-1]["messages"] == 2, "trợ lý vẫn gửi MAX_HISTORY_MESSAGES tin"
+async def test_old_roleplay_chats_stay_readable_but_never_continue(client):
+    old = await db.create_conversation(TEST_OWNER, persona="roleplay")
+    question = await db.add_message(old, "user", "*ngồi xuống cạnh Peto* kể chuyện đi")
+    await db.add_message(old, "assistant", "Ngày xửa ngày xưa…")
 
     listed = {item["id"]: item["persona"] for item in (await client.get("/api/conversations")).json()["conversations"]}
-    assert listed[roleplay_id] == "roleplay" and listed[assistant_id] == "assistant"
+    assert listed[old] == "roleplay", "danh sách vẫn đánh dấu để trang hiện nhãn và khóa ô nhắn"
+    history = (await client.get(f"/api/conversations/{old}/messages")).json()
+    assert history["persona"] == "roleplay" and [row["content"] for row in history["messages"]] == [
+        "*ngồi xuống cạnh Peto* kể chuyện đi", "Ngày xửa ngày xưa…"]
+
+    for body in ({"message": "kể tiếp đi", "conversation_id": old},
+                 {"message": "kể lại", "conversation_id": old, "branch_message_id": question}):
+        response = await client.post("/api/chat", json=body)
+        assert response.status_code == 409 and response.json()["detail"] == conversation_actions.LEGACY_ROLEPLAY
+    assert (await client.patch(f"/api/conversations/{old}", json={"model": "peto", "effort": "low"})).status_code == 409
+    assert len((await db.get_messages(TEST_OWNER, old))) == 2, "không có tin nào được thêm"
+
+    assert (await client.patch(f"/api/conversations/{old}", json={"title": "Truyện cũ"})).status_code == 200
+    assert (await client.patch(f"/api/conversations/{old}", json={"archived": True})).status_code == 200
+    assert (await client.delete(f"/api/conversations/{old}")).status_code == 200
+    assert await db.conversation_settings(TEST_OWNER, old) is None
+
+
+async def test_chat_prompts_carry_no_roleplay_persona(client, monkeypatch):
+    seen: list[str] = []
+
+    class Spy:
+        async def stream(self, **kwargs):
+            seen.append(kwargs["system_prompt"])
+            yield "Chào bạn."
+
+    monkeypatch.setattr(chat_service, "get_provider", lambda model="peto": Spy())
+    await read_events(await client.post("/api/chat", json={"message": "*ngồi xuống cạnh Peto* hôm nay mệt ghê"}))
+    prompt = next(text for text in seen if "## Identity and communication" in text)
+    assert "never sexual roleplay" in prompt
+    for leftover in ("Cảm giác hiện diện", "20 tuổi", "18+", "*Peto nghiêng đầu"):
+        assert leftover not in prompt

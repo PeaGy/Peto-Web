@@ -34,7 +34,7 @@ class ChatRequest(BaseModel):
     web_search: Literal["auto", "on", "off"] = "auto"
     # "companion" khi nhắn từ tab Companion: persona trả lời ngắn bằng tiếng Anh, mạch trò chuyện riêng.
     mode: str = Field(default="chat", max_length=16)
-    # "roleplay" khi người dùng bật Chế độ nhập vai lúc bắt đầu; hội thoại đã có thì luôn theo persona đã lưu.
+    # Chỉ còn "assistant": chế độ nhập vai đã bỏ ngày 2026-10-18; giữ trường để trang cũ gửi lên nhận lời báo rõ ràng.
     persona: str = Field(default="assistant", max_length=16)
     document_mode: bool = False
     # Model chọn ở nút cạnh nút Gửi (ai_models.MODELS); mỗi tin một lựa chọn, đổi giữa chừng được.
@@ -61,5 +61,3 @@ ALLOWED_EFFORTS = {"auto", *ai_models.OPENAI_EFFORTS}
 
 CONVERSATION_MODES = {"chat", "companion"}
 
-
-CONVERSATION_PERSONAS = {"assistant", "roleplay"}

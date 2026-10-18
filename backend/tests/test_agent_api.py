@@ -11,7 +11,8 @@ import uuid
 import pytest
 
 from features.agent import api as agent_api
-from prompts import english as english_prompts
+from prompts import agent as agent_prompts
+from prompts.core import CORE_PROMPT
 from features.agent import install as agent_install
 from features.accounts import auth
 import storage as db
@@ -68,7 +69,7 @@ async def test_compaction_has_no_tools_and_uses_normal_auth_quota(anon_client, c
     assert events[0]["steps_used"] == 1
     assert events[-1]["purpose"] == "compact"
     assert seen[0]["tools"] == []
-    assert seen[0]["instructions"] == english_prompts.COMPACT_PROMPT
+    assert seen[0]["instructions"] == agent_prompts.COMPACT_PROMPT
     assert seen[0]["effort"] == "low"
 
 
@@ -90,13 +91,12 @@ async def test_a_title_call_has_no_tools_and_counts_as_a_side_call(anon_client, 
     events = events_of(await anon_client.post("/api/agent/step", headers=bearer(token), json=body))
     assert events[0]["steps_used"] == 1 and events[-1]["purpose"] == "title"
     assert seen[0]["tools"] == [] and seen[0]["web_search"] is False
-    assert seen[0]["instructions"] == english_prompts.TITLE_PROMPT
+    assert seen[0]["instructions"] == agent_prompts.TITLE_PROMPT
 
 
 async def test_a_side_question_has_no_tools_keeps_the_persona_and_costs_a_normal_step(anon_client, client, monkeypatch):
     """/btw (CLI 0.23.0, theo opencode): một lượt không công cụ, không tìm web, tính bước như lượt thường của model."""
     from ai.agent import AgentEvent
-    from prompts import english as english_prompts
 
     seen = []
 
@@ -115,14 +115,14 @@ async def test_a_side_question_has_no_tools_keeps_the_persona_and_costs_a_normal
     assert seen[0]["tools"] == [] and seen[0]["web_search"] is False
     instructions = seen[0]["instructions"]
     # Từ 2026-10-15 Agent dùng chỉ dẫn tiếng Anh với mọi model, kể cả Peto.
-    assert instructions.startswith(english_prompts.CORE_PROMPT) and english_prompts.BTW_PROMPT in instructions
+    assert instructions.startswith(CORE_PROMPT) and agent_prompts.BTW_PROMPT in instructions
     assert "## Peto Agent" not in instructions, "không phải chỉ dẫn làm việc của agent"
     assert "Grok" not in instructions and "xAI" not in instructions
 
     events = events_of(await anon_client.post("/api/agent/step", headers=bearer(token),
                                               json={**body, "model": "luna", "effort": "high"}))
     assert events[0]["steps_used"] == 1 + 2, "mức cao tính 2 bước như lượt thường"
-    assert english_prompts.BTW_PROMPT in seen[1]["instructions"]
+    assert agent_prompts.BTW_PROMPT in seen[1]["instructions"]
     assert "Grok" not in seen[1]["instructions"] and "xAI" not in seen[1]["instructions"]
 
 
@@ -652,7 +652,7 @@ async def test_outside_pages_only_reach_clis_that_declare_them(anon_client, clie
 
 def test_agent_prompt_explains_the_step_budget_and_the_new_tools():
     """Công cụ có mà chỉ dẫn không nói thì Peto không dùng; giữ hai thứ đi cùng nhau."""
-    text = english_prompts.AGENT_PROMPT
+    text = agent_prompts.AGENT_PROMPT
     assert "batch independent reads/searches in one turn" in text
     assert "update_plan" in text
     assert "start_command" in text and "stop_command" in text
@@ -665,13 +665,13 @@ def test_agent_reply_voice_is_concise():
     """Giọng trả lời theo OpenCode (2026-10-12): không báo kế hoạch, kết quả trước, không lời mời, dẫn tệp:dòng; câu
     hỏi và lời giải thích vẫn đủ ý. Bài thi 24/09 cho thấy lượt đầu nào cũng mở bằng "Mình sẽ xem…", và lời nhắc kiểm
     tra sau sửa làm Peto viết lại bản tóm tắt."""
-    text = english_prompts.AGENT_PROMPT
+    text = agent_prompts.AGENT_PROMPT
     assert "## Replies" in text
     for word in ("I'll look at", "1–4 lines", "No closing offers", "path/to/file.py:42", "Kiểm tra sau sửa",
                  "explanations are complete"):
         assert word in text, word
     # Các luật trung thực giữ nguyên.
-    assert "Claim an action succeeded only after a confirming tool result" in english_prompts.CORE_PROMPT
+    assert "Claim an action succeeded only after a confirming tool result" in CORE_PROMPT
     # Bài thi 2026-10-13: 6 Luna gọi update_plan thành lượt riêng ở 29/96 lượt, mỗi lượt một bước.
     assert "never as a turn of its own" in text
 
@@ -680,8 +680,8 @@ def test_peto_gets_the_english_agent_prompt():
     """Chủ web chọn ngày 2026-10-15: chỉ dẫn Agent bằng tiếng Anh với mọi model, vì tiếng Việt tốn nhiều token hơn ở
     mỗi bước. Câu trả lời vẫn theo ngôn ngữ người dùng, mặc định tiếng Việt."""
     text = agent_api._instructions({"features": ["explore_v2", "edit_v2", "read_more"], "project": "du-an"}, True)
-    assert text.startswith(english_prompts.CORE_PROMPT)
-    assert english_prompts.agent_prompt(read_more=True) in text, "Peto vẫn có update_plan"
+    assert text.startswith(CORE_PROMPT)
+    assert agent_prompts.agent_prompt(read_more=True) in text, "Peto vẫn có update_plan"
     assert "default to Vietnamese" in text
     assert "Grok" not in text and "xAI" not in text
 
@@ -690,7 +690,6 @@ async def test_wrapup_keeps_the_working_instructions_forbids_tools_and_costs_a_n
                                                                                          monkeypatch):
     """CLI 0.25.0 (theo MAX_STEPS_PROMPT của opencode): hết bước của một yêu cầu thì một lượt cuối chỉ tóm tắt."""
     from ai.agent import AgentEvent
-    from prompts import english as english_prompts
 
     seen = []
 
@@ -711,12 +710,12 @@ async def test_wrapup_keeps_the_working_instructions_forbids_tools_and_costs_a_n
     assert [tool["name"] for tool in call["tools"]][:2] == ["list_files", "read_file"], "công cụ vẫn khai báo"
     normal = agent_api._instructions({**context, "purpose": None}, True)
     instructions = call["instructions"]
-    assert english_prompts.WRAPUP_PROMPT in instructions
+    assert agent_prompts.WRAPUP_PROMPT in instructions
     head = normal[:normal.index("## Server-verified current time")]
     assert instructions.startswith(head), "phần đầu giống bước thường để prompt cache dùng lại"
 
     await anon_client.post("/api/agent/step", headers=bearer(token), json={**body, "model": "luna"})
-    assert english_prompts.WRAPUP_PROMPT in seen[1]["instructions"]
+    assert agent_prompts.WRAPUP_PROMPT in seen[1]["instructions"]
 
 
 async def test_mock_wrapup_answers_without_tools(anon_client, client):
@@ -783,12 +782,12 @@ async def test_an_explore_step_gets_read_only_tools_and_its_own_prompt(anon_clie
     assert [tool["name"] for tool in call["tools"]] == ["list_files", "read_file", "search_files", "find_files"]
     assert call["final"] is False and call["web_search"] is True
     instructions = call["instructions"]
-    assert english_prompts.EXPLORE_PROMPT in instructions and "## Peto Agent" not in instructions
+    assert agent_prompts.EXPLORE_PROMPT in instructions and "## Peto Agent" not in instructions
     assert "Dùng pytest." in instructions and "edit_file" not in instructions
 
     events = events_of(await anon_client.post("/api/agent/step", headers=bearer(token),
                                               json={**body, "context": {**context, "final": True}}))
-    assert seen[1]["final"] is True and english_prompts.EXPLORE_FINAL_PROMPT in seen[1]["instructions"]
+    assert seen[1]["final"] is True and agent_prompts.EXPLORE_FINAL_PROMPT in seen[1]["instructions"]
 
     old = {**context, "features": ["explore_v2"]}
     await anon_client.post("/api/agent/step", headers=bearer(token), json={**body, "context": old})

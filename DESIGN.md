@@ -120,7 +120,7 @@ Only these places may write hex directly. Any other new colour becomes a token.
 | 12px | Secondary lines, the note under the composer, the "Đã dừng" tag, copy buttons |
 | 12.5px | Settings hints, per-step times in the work log |
 | 13px | Sidebar section labels ("Gần đây"), Settings row descriptions, empty hints |
-| 13.5px | Chips (effort, roleplay), the work log, account name, the Save button |
+| 13.5px | Chips (effort), the work log, account name, the Save button |
 | 14px | Conversation rows, menu items, Dropdown fields, Settings inputs, tables inside answers |
 | 14.5px | Sidebar navigation items, Settings row labels and group titles |
 | 15px | Default UI text |
@@ -137,7 +137,7 @@ Rules:
 - **Numbers that change over time** (clocks, counters, numeric columns) use `font-variant-numeric: tabular-nums`.
 - **Displayed numbers** use Vietnamese formatting via `toLocaleString('vi-VN')` (for example `1.201`).
 - **Headings** may use `text-wrap: balance`. A long title in a row is cut with `text-overflow: ellipsis`, and a tag that
-  must stay visible next to it (such as "· Nhập vai") gets `flex-shrink: 0`.
+  must stay visible next to it (such as "· Nhập vai" on old roleplay chats) gets `flex-shrink: 0`.
 - **Chat bubbles** use `overflow-wrap: anywhere`; table cells do **not** (`overflow-wrap: normal`, `min-width: 7.5em`),
   or phone layouts break words into single letters.
 - **Answer rhythm** (`features/chat/chat.css`): paragraphs `0.8em` apart, `h1` `1.5em`, `h2` `1.32em`, `h3` `1.15em`,
@@ -162,7 +162,7 @@ padding inside cards and dialogs is 16–24px.
 | 16px | Composer option menus, file cards in messages, Admin cards |
 | 18px | Composer, Settings dialog, confirm dialogs, login card |
 | 20px | Text-edit dialog, history search dialog |
-| `999px` | Pills: Send button, effort chip, roleplay chip, sources pill |
+| `999px` | Pills: Send button, effort chip, sources pill |
 | `50%` | Avatars, the round "jump to latest" button |
 
 ### Control heights
@@ -173,7 +173,7 @@ padding inside cards and dialogs is 16–24px.
 | Small in-row buttons (edit message, conversation actions) | 32×32 (36×36 on touch) |
 | Close button `.dialog-close` / `.settings-close` | 32×32 / 34×34, radius 9 |
 | Sidebar navigation item | 42 high, radius 12 |
-| Effort chip, roleplay chip | 34 high, radius `999px` |
+| Effort chip | 34 high, radius `999px` |
 | Action-menu item / option-menu item / Dropdown option | 36 / 40 / 38 (action and option items are 44 on touch) |
 | Settings input, Save button | 36 |
 | Dropdown field | 42 (36 inside Settings) |

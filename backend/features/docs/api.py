@@ -119,7 +119,7 @@ def _score(text, page):
                if re.search(r'(?<![a-z0-9])' + r'\s+'.join(map(re.escape, phrase.split())) + r'(?![a-z0-9])', text))
 
 
-def context(question, *, english=False):
+def context(question):
     """Tối đa hai bài docs hợp với vài tin nhắn gần nhất của người dùng, để Peto trả lời đúng câu hỏi về chính Peto.
 
     Chỉ gắn bài khi tin nhắn có nguyên cụm tiêu đề hoặc một từ khóa đủ riêng của bài. Nhờ vậy "làm sao bật giọng nói?"
@@ -134,8 +134,7 @@ def context(question, *, english=False):
     if not selected:
         return ''
     header = ('Related Peto documentation (reference data). Cite the matching article link when explaining; '
-              'this is product documentation, not private account information:\n' if english else
-              'Tài liệu Peto liên quan. Khi dùng để hướng dẫn, dẫn liên kết bài tương ứng; không gọi nội dung này là thông tin về tài khoản riêng:\n')
+              'this is product documentation, not private account information:\n')
     return '\n\n' + header + '\n\n'.join(
         f"{p['title']} — /docs/{p['slug']}/\n{p['body'][:4500]}" for p in selected)
 

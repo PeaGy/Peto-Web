@@ -24,8 +24,8 @@ export function useChatSelection(owner: string | null, models: ModelOption[], on
     return () => { scope.current++; };
   }, [owner]);
 
-  function apply(value: ChatSelection, persona?: string) {
-    const model = persona === 'roleplay' || !options.current.some(item => item.key === value.model) ? 'peto' : value.model;
+  function apply(value: ChatSelection) {
+    const model = options.current.some(item => item.key === value.model) ? value.model : 'peto';
     const efforts = options.current.find(item => item.key === model)?.efforts ?? ['low', 'medium', 'high'];
     const effort = value.effort === 'auto' || efforts.includes(value.effort) ? value.effort : 'auto';
     current.current = { model, effort }; setSelection(current.current);
@@ -35,7 +35,7 @@ export function useChatSelection(owner: string | null, models: ModelOption[], on
     revision.current++;
     active.current = id;
     const unsaved = id ? pending.current.get(id) : undefined;
-    apply(unsaved?.value ?? (id ? { model: saved?.model ?? 'peto', effort: saved?.effort ?? 'auto' } : defaults()), saved?.persona);
+    apply(unsaved?.value ?? (id ? { model: saved?.model ?? 'peto', effort: saved?.effort ?? 'auto' } : defaults()));
     if (unsaved?.failed) callbacks.current.onError(CHAT_SELECTION_ERROR);
     if (saved) callbacks.current.onNotice(saved.selection_notice ?? null);
   }

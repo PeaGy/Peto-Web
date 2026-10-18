@@ -95,7 +95,7 @@ async def test_context_uses_only_selected_files_with_budget(client):
     assert 'Hướng dẫn của dự án' in no_files and 'chosen.txt' not in no_files
     prompt=await context(TEST_OWNER,project_id,[chosen,chosen])
     assert prompt.count('chosen.txt')==1 and 'KHONG_DUOC_GUI' not in prompt
-    assert prompt.count('X')==MAX_CONTEXT_CHARS and 'bị cắt' in prompt
+    assert prompt.count('X')==MAX_CONTEXT_CHARS and 'Content truncated' in prompt
 
 
 async def test_chat_project_context_and_branch_preserve_project(client,monkeypatch):

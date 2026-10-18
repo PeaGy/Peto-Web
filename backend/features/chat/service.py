@@ -38,7 +38,6 @@ from core.config import (
     MAX_HISTORY_MESSAGES,
     MAX_INPUT_CHARS,
     RESPONSE_TIMEOUTS,
-    ROLEPLAY_MAX_HISTORY,
     TURN_TIMEOUT_SECONDS,
     WEB_SEARCH_ENABLED,
 )
@@ -55,12 +54,10 @@ from features.chat.history import (
     context_rows,
 )
 from features.chat.prompt_context import _build_system_prompt
-from prompts.routing import uses_english
-from prompts.english import DOCUMENT_MODE_PROMPT
+from prompts.chat import DOCUMENT_MODE_PROMPT
 from features.chat.schemas import (
     ALLOWED_EFFORTS,
     CONVERSATION_MODES,
-    CONVERSATION_PERSONAS,
     ChatRequest,
 )
 from shared.events import sse
@@ -85,13 +82,7 @@ def _resolve_mode(requested: str) -> str:
     return requested
 
 
-async def _check_roleplay_start(owner: str, mode: str) -> None:
-    """Chỉ mở hội thoại nhập vai (có thể có nội dung 18+) cho tài khoản đã xác nhận đủ 18 tuổi. Kiểm ở máy chủ, không
-    tin giao diện."""
-    if mode != "chat":
-        raise HTTPException(status_code=400, detail="Tab Companion không dùng chế độ nhập vai.")
-    if not await db.has_roleplay_consent(owner):
-        raise HTTPException(status_code=403, detail="Bạn cần xác nhận đủ 18 tuổi trước khi bật chế độ nhập vai.")
+ROLEPLAY_REMOVED = "Chế độ nhập vai không còn nữa. Tải lại trang để trò chuyện bình thường, hoặc dùng tab Companion."
 
 
 def _as_chunk(item: str | StreamChunk) -> StreamChunk:
@@ -150,7 +141,7 @@ async def _stream_reply(
     try:
         async with asyncio.timeout_at(min(loop.time() + idle, hard)) as limit:
             async with aclosing(provider.stream(
-                system_prompt=f"{system_prompt}\n\n{time_context(timezone, english=uses_english(model))}",
+                system_prompt=f"{system_prompt}\n\n{time_context(timezone)}",
                 messages=history, effort=effort, timezone=timezone,
                 web_search=web_search,
             )) as stream:
@@ -235,9 +226,9 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
             web_search = "off"
     own_provider = own_key.info.id if own_key else ""
 
-    if request.persona not in CONVERSATION_PERSONAS:
-        raise HTTPException(status_code=400, detail="Chế độ trả lời không hợp lệ")
-    persona = request.persona
+    # Chế độ nhập vai đã bỏ ngày 2026-10-18 (đã có Companion); trang cũ còn gửi "roleplay" thì báo rõ.
+    if request.persona != "assistant":
+        raise HTTPException(status_code=400, detail=ROLEPLAY_REMOVED)
     if request.conversation_id:
         settings = await db.conversation_settings(owner, request.conversation_id)
         if settings is None:
@@ -246,14 +237,13 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
             raise HTTPException(409, 'Hãy khôi phục hội thoại đã lưu trữ trước khi gửi tin nhắn.')
         if settings["mode"] != mode:
             raise HTTPException(status_code=400, detail="Hội thoại này thuộc tab khác")
-        # Chế độ chọn lúc bắt đầu và giữ cả hội thoại, để lịch sử không trộn giọng trợ lý với giọng nhập vai.
-        persona = settings["persona"]
-    elif persona == "roleplay":
-        await _check_roleplay_start(owner, mode)
-    history_limit = ROLEPLAY_MAX_HISTORY if persona == "roleplay" else MAX_HISTORY_MESSAGES
-    # Trí nhớ dùng chung (companion_memory.py) đọc Companion và Chat thường, không đọc Chat nhập vai.
-    # Lượt dùng khóa riêng không ghi nhớ (chủ web chốt 13/10/2026).
-    remembers = (mode == "companion" or persona != "roleplay") and own_key is None
+        # Hội thoại nhập vai cũ chỉ còn để xem: lịch sử có thể có nội dung 18+, không được gửi tiếp tới model nào.
+        if settings["persona"] == "roleplay":
+            raise HTTPException(409, conversation_actions.LEGACY_ROLEPLAY)
+    history_limit = MAX_HISTORY_MESSAGES
+    # Trí nhớ dùng chung (companion_memory.py) đọc Companion và Chat. Lượt dùng khóa riêng không ghi nhớ (chủ web chốt
+    # 13/10/2026).
+    remembers = own_key is None
     from features.projects.context import context as project_context
     project_id = settings.get('project_id') if request.conversation_id else request.project_id
     if mode != 'chat' and (project_id or request.project_file_ids):
@@ -264,9 +254,6 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
     if request.model != ai_models.DEFAULT_MODEL:
         if mode == "companion":
             raise HTTPException(status_code=400, detail="Tab Companion chỉ dùng Peto.")
-        # Persona nhập vai có thể có nội dung 18+: không gửi sang tài khoản OpenAI của chủ web.
-        if persona == "roleplay":
-            raise HTTPException(status_code=400, detail="Chế độ nhập vai chỉ dùng Peto.")
     try:
         model = ai_models.resolve(owner, request.model, "web").key
     except ai_models.ModelUnavailable as err:
@@ -415,7 +402,7 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                         raise ProviderError('Hội thoại đã chuyển dự án hoặc bị xóa. Mở lại trước khi gửi nhé.')
                 project_documents: list[dict] = []
                 project_prompt = await project_context(owner, project_id, request.project_file_ids,
-                    english=uses_english(model), documents=project_documents)
+                    documents=project_documents)
                 # Từ chối cooldown/hàng chờ trước khi ghi bất kỳ tin nhắn nào.
                 if conversation_id and not await db.owns_conversation(owner, conversation_id):
                     raise ProviderError("Hội thoại đã bị xóa. Mở cuộc trò chuyện mới nhé.")
@@ -443,7 +430,7 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                 is_new_conversation = not conversation_id
                 with anyio.CancelScope(shield=True):
                     if not conversation_id:
-                        conversation_id = await db.create_conversation(owner, mode=mode, persona=persona, project_id=project_id)
+                        conversation_id = await db.create_conversation(owner, mode=mode, project_id=project_id)
                     saved_paths: list[Path] = []
                     try:
                         if request.branch_message_id:
@@ -489,10 +476,10 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                     await _read_legacy_documents(owner, rows, MAX_ATTACHMENTS - document_count)
                     step = log.read_done("Đã đọc lại tài liệu đã gửi trước đó") if log else ""
                     yield sse({"type": "reading", "text": ""}) + step
-                active_rows = context_rows(rows, english=uses_english(model))
+                active_rows = context_rows(rows)
                 history, system_prompt = await asyncio.gather(
                     anyio.to_thread.run_sync(_to_chat_messages, active_rows, project_documents),
-                    _build_system_prompt(owner, mode, install_command, persona, conversation_id,
+                    _build_system_prompt(owner, mode, install_command, conversation_id,
                         agent_question='\n'.join(str(row.get('content', ''))[:4000]
                             for row in [r for r in active_rows if r.get('role') == 'user' and r.get('turn_state') != 'stopped'][-3:]), model=model,
                         memory=own_key is None),
@@ -505,8 +492,7 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                 # Tệp trong lịch sử vừa đọc (đã lọc theo chủ tài khoản trong SQL): Peto tìm/đọc thêm được khi cần.
                 files_session = attachment_tools.AttachmentFiles(rows, owner) if mode == 'chat' else None
                 if request.document_mode and mode == 'chat':
-                    system_prompt += '\n\n' + (DOCUMENT_MODE_PROMPT if uses_english(model) else
-                        '[PETO_DOCUMENT_CREATE]\nNgười dùng chọn tạo tài liệu: hãy gọi create_document để tạo tệp theo yêu cầu, mặc định DOCX nếu chưa chọn định dạng. Trả lời ngắn sau khi có kết quả; nội dung dài đặt trong công cụ.')
+                    system_prompt += '\n\n' + DOCUMENT_MODE_PROMPT
                 prepared_at = perf_counter()
                 github_session = GitHubSession(owner) if mode == 'chat' and await connector_store.get_github(owner) else None
                 # A timeout may already have consumed provider tokens. Do not repeat the whole turn invisibly.

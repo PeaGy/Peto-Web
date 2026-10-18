@@ -1,10 +1,10 @@
 import type { RefObject } from "react";
-import ComposerMenu, { type RoleplayOption } from "./ComposerMenu";
+import ComposerMenu from "./ComposerMenu";
 import EffortMenu from "./EffortMenu";
 import { isSpreadsheetFile } from "./attachments";
 import { FileGlyph, formatSize, type DraftFile } from "./files";
 import ModelMenu from "./ModelMenu";
-import type { Effort, ModelOption, Persona, WebSearchMode } from "../../shared/api/api";
+import type { Effort, ModelOption, WebSearchMode } from "../../shared/api/api";
 
 const ACCEPT =
   "image/jpeg,image/png,image/webp,image/gif,.txt,.md,.csv,.json,.pdf,.docx,.xlsx,.xlsm,.py,.js,.ts,.tsx,.jsx,.css,.html,.xml,.yml,.yaml,.rs,.go,.java,.c,.cpp,.h,.sql,.log";
@@ -39,10 +39,6 @@ interface ComposerProps {
   onEffortChange: (value: Effort) => void;
   webSearch: WebSearchMode;
   onToggleWeb: () => void;
-  /** Chế độ của hội thoại đang mở; nhập vai thì hiện nhãn cạnh mức suy nghĩ. */
-  persona: Persona;
-  /** Mục bật/tắt nhập vai trong menu dấu cộng; chỉ có khi hội thoại chưa bắt đầu. */
-  roleplay?: RoleplayOption;
   /** Menu dấu cộng tắt khi đang trả lời hoặc khi người dùng đang ở tab khác. */
   menuDisabled: boolean;
   /** Model cho tin sắp gửi, chọn ở nút bên trái nút Gửi. Dưới hai model thì không hiện nút. */
@@ -66,7 +62,7 @@ interface ComposerProps {
 export default function Composer({
   draft, onDraftChange, files, onAddFiles, onRemoveFile,
   streaming, stopping, canSend, onSubmit, onStop,
-  effort, efforts, onEffortChange, webSearch, onToggleWeb, persona, roleplay, menuDisabled,
+  effort, efforts, onEffortChange, webSearch, onToggleWeb, menuDisabled,
   model, models, onModelChange, formRef, boxRef, textareaRef, fileRef,
 }: ComposerProps) {
   return (
@@ -142,19 +138,9 @@ export default function Composer({
               }}
             />
             <ComposerMenu disabled={menuDisabled} webDisabled={webSearch === "off"}
-              onAttach={() => fileRef.current?.click()} onToggleWeb={onToggleWeb} roleplay={roleplay} />
+              onAttach={() => fileRef.current?.click()} onToggleWeb={onToggleWeb} />
 
             <EffortMenu value={effort} options={efforts} disabled={streaming} onChange={onEffortChange} />
-
-            {persona === "roleplay" && (
-              <span className="persona-chip">
-                Nhập vai
-                {/* Hội thoại đã bắt đầu thì giữ chế độ, nên chỉ hội thoại mới có nút tắt. */}
-                {roleplay && (
-                  <button type="button" aria-label="Tắt chế độ nhập vai" disabled={streaming} onClick={roleplay.onToggle}>×</button>
-                )}
-              </span>
-            )}
           </div>
 
           <div className="composer-send">

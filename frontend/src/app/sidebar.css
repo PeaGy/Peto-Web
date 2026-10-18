@@ -245,7 +245,7 @@ html.sidebar-resizing, html.sidebar-resizing * { cursor: col-resize !important; 
   cursor: pointer;
 }
 
-/* Tiêu đề dài thì cắt bớt, nhãn chế độ nhập vai vẫn luôn hiện. */
+/* Tiêu đề dài thì cắt bớt, nhãn hội thoại nhập vai cũ vẫn luôn hiện. */
 .conv-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .conv-persona { flex-shrink: 0; color: var(--muted); font-size: 12px; }
 

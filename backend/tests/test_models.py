@@ -16,6 +16,7 @@ import ai
 from core import config
 import storage as db
 from features.chat import titles
+from features.chat import conversations as conversation_actions
 from ai.base import ChatMessage, ProviderError
 from ai.mock import MockProvider
 from conftest import TEST_OWNER, read_events
@@ -70,11 +71,13 @@ async def test_web_offers_luna_to_signed_in_accounts(client, anon_client, monkey
     assert (await client.post("/api/chat", json={"message": "chào", "model": "luna", "mode": "companion"})).status_code == 400
 
 
-async def test_roleplay_conversations_stay_on_peto(client):
+async def test_old_roleplay_conversations_never_reach_any_model(client):
+    """Chế độ nhập vai bỏ ngày 2026-10-18: hội thoại cũ chỉ còn để xem, lịch sử 18+ không đi tới Grok, GPT hay Claude."""
     conversation_id = await db.create_conversation(TEST_OWNER, persona="roleplay")
-    response = await client.post("/api/chat", json={"message": "chào", "conversation_id": conversation_id,
-                                                    "model": "luna"})
-    assert response.status_code == 400 and response.json()["detail"] == "Chế độ nhập vai chỉ dùng Peto."
+    for model in ("peto", "luna"):
+        response = await client.post("/api/chat", json={"message": "chào", "conversation_id": conversation_id,
+                                                        "model": model})
+        assert response.status_code == 409 and response.json()["detail"] == conversation_actions.LEGACY_ROLEPLAY
 
 
 async def test_openai_models_disappear_without_a_key(client, monkeypatch):

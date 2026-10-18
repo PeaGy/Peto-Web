@@ -203,14 +203,13 @@ async def test_fork_preserves_stopped_history_without_abandoning_new_target(clie
     assert rows[-1]['id'] == new_target and rows[-1]['content'] == 'Python mới'
 
 
-@pytest.mark.parametrize('english', [False, True])
-def test_partial_turn_images_keep_user_role(english):
+def test_partial_turn_images_keep_user_role():
     files = [{'id': 'photo', 'kind': 'image'}]
     rows = history.context_rows([
         {'id': 1, 'role': 'user', 'content': 'Yêu cầu cũ', 'turn_state': 'stopped', 'attachments': files},
         {'id': 2, 'role': 'assistant', 'content': 'Phần đã trả lời', 'turn_state': 'stopped', 'turn_user_id': 1},
         {'id': 3, 'role': 'user', 'content': 'Câu mới'},
-    ], english=english)
+    ])
     assert rows[0]['role'] == 'user' and rows[0]['attachments'] == files
     assert 'Yêu cầu cũ' not in rows[0]['content']
     assert all(not row.get('attachments') for row in rows if row['role'] == 'assistant')

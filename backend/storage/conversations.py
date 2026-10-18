@@ -38,7 +38,7 @@ async def owns_conversation(owner: str, conversation_id: str) -> bool:
 
 
 async def conversation_settings(owner: str, conversation_id: str) -> dict | None:
-    """Tab ("chat" hay "companion") và persona ("assistant" hay "roleplay") của một hội thoại; None nếu không phải
+    """Tab ("chat" hay "companion") và persona ("assistant", hay "roleplay" của hội thoại nhập vai cũ chỉ còn để xem) của một hội thoại; None nếu không phải
     của owner."""
     async with db_connection.connect() as db:
         cursor = await db.execute(

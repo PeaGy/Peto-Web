@@ -52,7 +52,6 @@ import { closeWork } from "../features/chat/WorkTimeline";
 import TooltipLayer from '../shared/ui/TooltipLayer';
 import {
   UnauthorizedError,
-  confirmRoleplayAge,
   deleteConversation,
   getAppInfo,
   getAuthState,
@@ -71,7 +70,6 @@ import {
   type ImagineJob,
   type Message,
   type OutgoingAttachment,
-  type Persona,
   type WebSearchMode,
   type WorkStep,
 } from "../shared/api/api";
@@ -107,7 +105,7 @@ const AgentSettings = agentSettings.View;
 const ArchivedConversations = archiveSettings.View;
 const ConnectorSettings = connectorSettings.View;
 type ChatRevision = { target: Message; text: string };
-type ActiveReply = { id: string | null; messages: Message[]; persona: Persona; projectId: string | null;
+type ActiveReply = { id: string | null; messages: Message[]; projectId: string | null;
   selection: ChatSelection; retry?: ChatRevision; error?: string };
 
 // Old messages keep their rendered Markdown while the draft or current reply changes.
@@ -201,22 +199,17 @@ function AppContent() {
   const [loadingList, setLoadingList] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Conversation | null>(null);
   const [deleting, setDeleting] = useState(false);
-  // Chế độ của hội thoại đang mở; hội thoại mới thì là lựa chọn trong menu dấu cộng, gửi tin đầu là chốt.
-  const [persona, setPersona] = useState<Persona>("assistant");
-  const personaRef = useRef(persona);
-  personaRef.current = persona;
+  // Hội thoại nhập vai cũ đang mở: chế độ nhập vai bỏ ngày 2026-10-18, các hội thoại ấy chỉ còn để xem.
+  const [legacyRoleplay, setLegacyRoleplay] = useState(false);
+  const readOnly = archived || legacyRoleplay;
   const replyVisible = streaming && Boolean(replyRef.current && isSelectedReply(replyRef.current));
-  const rootContext = newChatContext(location.state, auth?.user?.id ?? '', Boolean(auth?.user?.roleplay_confirmed));
+  const rootContext = newChatContext(location.state, auth?.user?.id ?? '');
   const draftConversationId = view === 'chat' ? routedConversationId : conversationId;
   const { draft, setDraft, draftFiles, setDraftFiles, snapshotDraft, acceptDraft, clearDrafts,
     removeConversationDraft, removeProjectDraft } = useChatDrafts(auth?.authenticated && auth.user ? {
       ownerId: auth.user.id, conversationId: draftConversationId,
       projectId: view === 'chat' && !routedConversationId ? rootContext.projectId : activeProjectId,
-      persona: view === 'chat' && !routedConversationId ? rootContext.persona : persona,
     } : null, authChecked.current ? auth?.authenticated : undefined);
-  const [consentOpen, setConsentOpen] = useState(false);
-  const [consentBusy, setConsentBusy] = useState(false);
-  const [consentError, setConsentError] = useState<string | null>(null);
   const [showJump, setShowJump] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [theme, setTheme] = useState<ThemeChoice>(readStoredTheme);
@@ -317,7 +310,6 @@ function AppContent() {
   const nearBottom = useRef(true);
   const messagesRef = useRef<HTMLDivElement>(null);
   const deleteDialogRef = useRef<HTMLDialogElement>(null);
-  const consentDialogRef = useRef<HTMLDialogElement>(null);
   const composerRef = useRef<HTMLFormElement>(null);
   const chatDockRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -407,8 +399,7 @@ function AppContent() {
     clearDrafts();
     setNotice(null);
     setWebSearch("auto");
-    setPersona("assistant");
-    setConsentOpen(false);
+    setLegacyRoleplay(false);
     setLoadingConversation(false);
     setLoadingList(false);
     // Rác của tài khoản trước. Máy chủ vẫn lọc theo owner nên không lộ nội dung
@@ -535,11 +526,6 @@ function AppContent() {
     else deleteDialogRef.current?.close();
   }, [deleteTarget]);
 
-  useEffect(() => {
-    if (consentOpen) consentDialogRef.current?.showModal();
-    else consentDialogRef.current?.close();
-  }, [consentOpen]);
-
   const addFiles = useCallback((list: FileList | File[]) => {
     if (abortRef.current) return;
     const incoming = Array.from(list);
@@ -592,8 +578,7 @@ function AppContent() {
   const diagramCodes = useMemo(() => messages.flatMap((message, index) =>
     message.role === 'assistant' && !(replyVisible && index === messages.length - 1) ? diagramBlocks(message.content) : []),
   [messages, replyVisible]);
-  // Chế độ nhập vai chỉ dùng Peto (máy chủ cũng chặn), nên không hiện nút chọn model.
-  const models = persona === "roleplay" ? [] : auth?.user?.models ?? [];
+  const models = auth?.user?.models ?? [];
   const chosenModel = models.some((item) => item.key === model) ? model : "peto";
   const supportedEfforts = models.find(item => item.key === chosenModel)?.efforts ?? ['low', 'medium', 'high'];
   const effortOptions = EFFORTS.filter(item => item.value === 'auto' || supportedEfforts.includes(item.value));
@@ -646,7 +631,7 @@ function AppContent() {
     if (routedConversationId) {
       if (routedConversationId !== conversationIdRef.current) void loadConversation(routedConversationId);
     }
-    else if (conversationIdRef.current !== null || activeProjectId !== rootContext.projectId || persona !== rootContext.persona) {
+    else if (conversationIdRef.current !== null || activeProjectId !== rootContext.projectId) {
       newConversation(true);
     }
   }, [auth?.authenticated, auth?.user?.id, view, routedConversationId, location.key]);
@@ -670,9 +655,9 @@ function AppContent() {
   }
 
   function restoreReply(live: ActiveReply) {
-    chatSelection.restore(live.id, { ...live.selection, persona: live.persona });
+    chatSelection.restore(live.id, live.selection);
     setMessages(live.messages);
-    setPersona(live.persona);
+    setLegacyRoleplay(false);
     setActiveProjectId(live.projectId);
     retryRevision.current = live.retry;
     setError(live.error ?? null);
@@ -680,8 +665,7 @@ function AppContent() {
   }
 
   function isSelectedReply(reply: ActiveReply) {
-    return conversationIdRef.current === reply.id && (reply.id !== null
-      || (activeProjectRef.current === reply.projectId && personaRef.current === reply.persona));
+    return conversationIdRef.current === reply.id && (reply.id !== null || activeProjectRef.current === reply.projectId);
   }
 
   async function loadConversation(id: string) {
@@ -701,7 +685,7 @@ function AppContent() {
 
     setActiveProjectId(allConversations.find(item => item.id === id)?.project_id ?? null);
     setEditTarget(null);
-    setPersona(allConversations.find((item) => item.id === id)?.persona ?? "assistant");
+    setLegacyRoleplay(allConversations.find((item) => item.id === id)?.persona === "roleplay");
     setMessages([]);
     setLoadingConversation(true);
     setLoadFailed(false);
@@ -719,7 +703,7 @@ function AppContent() {
       const loaded = await getMessages(id, controller.signal, settings => {
         if (version !== loadVersion.current) return;
         setActiveProjectId(settings.project_id ?? null);
-        setPersona(settings.persona ?? 'assistant');
+        setLegacyRoleplay(settings.persona === 'roleplay');
         setArchived(Boolean(settings.archived));
         chatSelection.restore(id, settings);
       });
@@ -738,14 +722,9 @@ function AppContent() {
     }
   }
 
-  function draftContextState(projectId: string | null, mode: Persona) {
-    const context: NewChatContext = { ownerId: auth?.user?.id ?? '', projectId, persona: mode };
+  function draftContextState(projectId: string | null) {
+    const context: NewChatContext = { ownerId: auth?.user?.id ?? '', projectId };
     return { ...location.state, chatDraftContext: context };
-  }
-
-  function rememberNewContext(mode: Persona) {
-    navigate({ pathname: window.location.pathname, search: window.location.search, hash: window.location.hash },
-      { replace: true, state: draftContextState(activeProjectId, mode) });
   }
 
   function newConversation(fromRoute = false, projectId: string | null = null) {
@@ -764,51 +743,19 @@ function AppContent() {
     conversationIdRef.current = null;
     chatSelection.restore(null);
     setArchived(false);
-    const context = fromRoute ? rootContext : { projectId, persona: 'assistant' as const };
+    const context = fromRoute ? rootContext : { projectId };
     setActiveProjectId(context.projectId);
-    setPersona(context.persona);
+    setLegacyRoleplay(false);
     setMessages([]);
     setError(null);
     setNotice(null);
     setSidebarOpen(false);
     const live = replyRef.current;
     if (fromRoute && abortRef.current && live?.id === null
-      && context.projectId === live.projectId && context.persona === live.persona) restoreReply(live);
+      && context.projectId === live.projectId) restoreReply(live);
     if (!fromRoute) navigate({ pathname: '/', search: window.location.search },
-      { replace: window.location.pathname === '/', state: draftContextState(projectId, 'assistant') });
+      { replace: window.location.pathname === '/', state: draftContextState(projectId) });
     textareaRef.current?.focus();
-  }
-
-  /** Bật/tắt chế độ nhập vai cho hội thoại chưa bắt đầu. Lần đầu bật thì hỏi xác nhận đủ 18 tuổi. */
-  function toggleRoleplay() {
-    if (conversationId || abortRef.current) return;
-    if (persona === "roleplay") {
-      setPersona("assistant");
-      rememberNewContext('assistant');
-    } else if (auth?.user?.roleplay_confirmed) {
-      setPersona("roleplay");
-      rememberNewContext('roleplay');
-    } else {
-      setConsentError(null);
-      setConsentOpen(true);
-    }
-  }
-
-  async function confirmRoleplay() {
-    setConsentBusy(true);
-    setConsentError(null);
-    try {
-      await confirmRoleplayAge();
-      setAuth((prev) => (prev?.user ? { ...prev, user: { ...prev.user, roleplay_confirmed: true } } : prev));
-      setPersona("roleplay");
-      rememberNewContext('roleplay');
-      setConsentOpen(false);
-    } catch (err) {
-      if (err instanceof UnauthorizedError) return handleUnauthorized();
-      setConsentError(err instanceof Error ? err.message : "Chưa lưu được xác nhận. Thử lại nhé.");
-    } finally {
-      setConsentBusy(false);
-    }
   }
 
   async function removeConversation(id: string) {
@@ -837,7 +784,7 @@ function AppContent() {
   async function submit(revision?: ChatRevision) {
     const text = revision ? revision.text.trim() : draft.trim();
     const hasAttachments = revision ? Boolean(revision.target.attachments?.length) : draftFiles.length > 0;
-    if ((!text && !hasAttachments) || archived || abortRef.current || loadingConversation || loadFailed || !recovery.online || recovery.pending) return;
+    if ((!text && !hasAttachments) || readOnly || abortRef.current || loadingConversation || loadFailed || !recovery.online || recovery.pending) return;
 
     const pending = revision ? [] : draftFiles;
     const sentDraft = revision ? null : snapshotDraft();
@@ -873,7 +820,7 @@ function AppContent() {
     }));
 
     const startedAt = performance.now();
-    const reply: ActiveReply = { id: conversationId, persona, projectId: activeProjectId,
+    const reply: ActiveReply = { id: conversationId, projectId: activeProjectId,
       selection: { model: chosenModel, effort: effectiveEffort }, retry: revision, messages: [
       ...prefix,
       { role: "user", content: text, attachments: revision?.target.attachments || optimistic },
@@ -966,7 +913,6 @@ function AppContent() {
           effort: effectiveEffort,
           webSearch,
           attachments,
-          persona,
           model: chosenModel,
         },
         {
@@ -1170,7 +1116,7 @@ function AppContent() {
       if(activeProjectId===id) {
         setActiveProjectId(null);
         if(!conversationId)navigate({pathname:window.location.pathname,search:window.location.search,hash:window.location.hash},
-          {replace:true,state:draftContextState(null,persona)});
+          {replace:true,state:draftContextState(null)});
       }
       setProjectDelete(null);await refreshConversations();
     }
@@ -1221,7 +1167,7 @@ function AppContent() {
     if (next === 'companion' && companionSettingsView) navigate(VIEW_PATHS.companion);
     else if (next !== view) navigate({ pathname: next === 'chat' && conversationIdRef.current
       ? chatRoute(conversationIdRef.current) : VIEW_PATHS[next], search: window.location.search },
-      { state: draftContextState(activeProjectId, persona) });
+      { state: draftContextState(activeProjectId) });
   }
 
   function toggleAccountMenu() {
@@ -1431,8 +1377,8 @@ function AppContent() {
       )}
       <DiagramContext.Provider value={diagramApi}>
       <ChatFileDropZone className={`chat-layout${documentPanelOpen || diagram ? ' documents-open' : ''}${documentPanelOpen && documentPanelExpanded ? ' documents-expanded' : ''}`} hidden={view !== 'chat'}
-        enabled={!streaming && !loadingConversation && !loadFailed && !archived && !deleting && !settingsOpen && !searchOpen && !consentOpen}
-        contextKey={JSON.stringify([auth.user?.id, draftConversationId, rootContext.projectId, rootContext.persona])}
+        enabled={!streaming && !loadingConversation && !loadFailed && !readOnly && !deleting && !settingsOpen && !searchOpen}
+        contextKey={JSON.stringify([auth.user?.id, draftConversationId, rootContext.projectId])}
         onFiles={addFiles}>
       <main className={emptyChat ? "chat empty-state" : "chat"}>
         <div className="chat-tools">
@@ -1450,7 +1396,7 @@ function AppContent() {
 
         <div className="messages" ref={messagesRef} onClick={e => {
           const button = (e.target as Element).closest<HTMLButtonElement>('button[data-revise]');
-          if (!button || archived || streaming || loadingConversation) return;
+          if (!button || readOnly || streaming || loadingConversation) return;
           const id = Number(button.dataset.revise);
           const target = messages.find(m => m.id === id && m.role === 'user');
           if (!target) return;
@@ -1475,7 +1421,7 @@ function AppContent() {
 
           {messages.map((message, index) => (
             <ChatMessage key={index} message={message}
-              actionsDisabled={archived || streaming || loadingConversation || loadFailed}
+              actionsDisabled={readOnly || streaming || loadingConversation || loadFailed}
               editor={editTarget?.id === message.id && editTarget ? <form className="inline-message-editor" onSubmit={e => {e.preventDefault(); void submit({target:editTarget,text:editText});}}>
                 <textarea autoFocus aria-label="Sửa tin nhắn" value={editText} onChange={e => setEditText(e.target.value)} rows={Math.min(12,Math.max(3,editText.split('\n').length))} onKeyDown={e => {if(e.key==='Escape') setEditTarget(null);}}/>
                 <div><button type="button" onClick={() => setEditTarget(null)}>Hủy</button><button type="submit" disabled={streaming || (!editText.trim() && !editTarget.attachments?.length)}>Gửi</button></div>
@@ -1517,6 +1463,9 @@ function AppContent() {
         {archived ? <div className="archived-chat-notice" role="status">
           <span>Hội thoại đã lưu trữ</span>
           <button type="button" disabled={metadataBusy || loadingConversation || loadFailed} onClick={() => conversationId && void changeConversation({id:conversationId, project_id:activeProjectId}, {archived:false})}>Khôi phục để tiếp tục</button>
+        </div> : legacyRoleplay ? <div className="archived-chat-notice" role="status">
+          <span>Hội thoại nhập vai cũ chỉ còn để xem</span>
+          <button type="button" disabled={streaming} onClick={() => newConversation()}>Bắt đầu hội thoại mới</button>
         </div> : <Composer
           draft={draft}
           onDraftChange={setDraft}
@@ -1533,13 +1482,7 @@ function AppContent() {
           onEffortChange={setEffort}
           webSearch={webSearch}
           onToggleWeb={() => setWebSearch((mode) => (mode === "off" ? "auto" : "off"))}
-          persona={persona}
-          roleplay={view === "chat" && !conversationId ? {
-            active: persona === "roleplay",
-            unavailable: null,
-            onToggle: toggleRoleplay,
-          } : undefined}
-          menuDisabled={streaming || loadingConversation || loadFailed || archived || view !== "chat"}
+          menuDisabled={streaming || loadingConversation || loadFailed || view !== "chat"}
           model={chosenModel}
           models={models}
           onModelChange={setModel}
@@ -1610,18 +1553,6 @@ function AppContent() {
         <div className="dialog-actions">
           <button autoFocus disabled={deleting} onClick={() => setDeleteTarget(null)}>Giữ lại</button>
           <button className="danger-button" disabled={deleting} onClick={() => deleteTarget && void removeConversation(deleteTarget.id)}>{deleting ? "Đang xóa…" : "Xóa hội thoại"}</button>
-        </div>
-      </dialog>
-      <dialog ref={consentDialogRef} className="confirm-dialog" aria-labelledby="roleplay-consent-title" onCancel={(event) => {
-        event.preventDefault();
-        if (!consentBusy) setConsentOpen(false);
-      }}>
-        <h2 id="roleplay-consent-title">Bật chế độ nhập vai?</h2>
-        <p>Ở chế độ này có thể có nội dung người lớn (18+). Chế độ gắn với hội thoại mới này; muốn quay lại thì mở hội thoại mới.</p>
-        {consentError && <p className="consent-error" role="alert">{consentError}</p>}
-        <div className="dialog-actions">
-          <button autoFocus disabled={consentBusy} onClick={() => setConsentOpen(false)}>Để sau</button>
-          <button className="primary-button" disabled={consentBusy} onClick={() => void confirmRoleplay()}>{consentBusy ? "Đang lưu…" : "Tôi đủ 18 tuổi"}</button>
         </div>
       </dialog>
       <TooltipLayer />

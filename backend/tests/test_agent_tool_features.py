@@ -12,6 +12,7 @@ import json
 import pytest
 
 from features.agent.tools import FEATURES, tool_schemas
+from prompts import agent as agent_prompts
 
 BASE = ("cwd", "browser", "browser_act", "browser_outside", "skills", "mcp")
 
@@ -208,7 +209,6 @@ def test_output_files_appends_read_output_last():
 
 def test_new_0_25_features_are_known_and_change_prompts_only_when_declared():
     from features.agent import api as agent_api
-    from prompts import english as english_prompts
 
     assert {"read_more", "output_files", "wrapup", "user_guide"} <= FEATURES
     for model in ("peto", "luna", "haiku"):
@@ -217,20 +217,19 @@ def test_new_0_25_features_are_known_and_change_prompts_only_when_declared():
                                         model=model)
         assert "targeted read_file ranges" in before and "targeted read_file ranges" not in after, model
         assert "whole in one read_file call" in after and "read_output" in after, model
-    assert english_prompts.agent_prompt(plan=False, read_more=True).count("update_plan") == 0
+    assert agent_prompts.agent_prompt(plan=False, read_more=True).count("update_plan") == 0
 
 
 def test_old_feature_sets_get_the_english_instructions_without_new_parts():
     """Từ 2026-10-15 mọi CLI, kể cả bản cũ, nhận chỉ dẫn tiếng Anh; phần của khả năng chưa khai báo vẫn không có."""
     from features.agent import api as agent_api
-    from prompts import english as english_prompts
 
     context = {"features": list(SHIPPED_0_21), "user_guidance": "Luôn dùng pnpm."}
     peto = agent_api._instructions(context, False)
     assert "Luôn dùng pnpm" not in peto, "chưa khai báo user_guide thì không gửi hướng dẫn chung"
-    assert english_prompts.AGENT_PROMPT in peto and "\n\n\n\n" not in peto
+    assert agent_prompts.AGENT_PROMPT in peto and "\n\n\n\n" not in peto
     luna = agent_api._instructions(context, False, model="luna")
-    assert english_prompts.AGENT_PROMPT_NO_PLAN in luna
+    assert agent_prompts.AGENT_PROMPT_NO_PLAN in luna
 
 
 def test_user_guidance_is_wrapped_apart_from_project_guidance_and_bounded():

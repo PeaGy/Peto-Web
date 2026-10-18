@@ -247,13 +247,15 @@ async def test_prompt_teaches_peto_agent_with_this_sites_install_command(client,
     for prompt in prompts:
         assert "`irm https://peto.example/install.ps1 | iex`" in prompt
     # Phần giống nhau với mọi người đứng trước phần riêng của từng người.
-    assert prompts[0].index("## Peto Agent") < prompts[0].index("## Người đang nói chuyện với bạn")
+    assert prompts[0].index("## Peto Agent") < prompts[0].index("## Current user")
 
     prompts.clear()
     await _send(client, "chào")
-    assert "`irm https://<địa chỉ Peto>/install.ps1 | iex`" in prompts[0], "không có HTTPS thì không đưa tên miền"
-    assert "http://test" not in prompts[0]
-    assert 'docs-mcp.json' not in prompts[0]
+    assert "## Peto Agent reference" not in prompts[0], "câu không nói tới Agent thì không tốn token cho hướng dẫn"
+    await _send(client, "cài Peto Agent sao vậy?")
+    assert "`irm https://<địa chỉ Peto>/install.ps1 | iex`" in prompts[1], "không có HTTPS thì không đưa tên miền"
+    assert "http://test" not in prompts[1]
+    assert 'docs-mcp.json' not in prompts[1]
     for mode in ('chat', 'companion'):
         events = await _send(client, 'Peto Agent thêm MCP như thế nào?', mode=mode)
         assert '/mcp add docs docs-mcp.json' in prompts[-1]

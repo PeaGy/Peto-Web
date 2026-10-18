@@ -27,9 +27,10 @@ from shared.attachment_tools import NAMES as FILE_TOOLS, current_files
 from shared.time_tools import TOOL_SCHEMAS, execute_tool
 from features.documents.tools import (current_session, SCHEMA as DOCUMENT_SCHEMA, EDIT_SCHEMA, PRESENTATION_SCHEMA,
                                       SPREADSHEET_SCHEMA, WORD_EDIT_SCHEMA)
-from features.connectors.tools import current_session as github_session_context, NAMES as GITHUB_TOOLS, NOTE as GITHUB_NOTE
+from features.connectors.tools import current_session as github_session_context, NAMES as GITHUB_TOOLS
 from shared.web_search import normalize_sources, search_context
-from prompts.english import FINALIZING_PROMPT, GITHUB_PROMPT, NO_GITHUB_PROMPT, SEARCH_FALLBACK_PROMPT
+from prompts.chat import (FINALIZING_PROMPT, FOLLOW_UP_PROMPT, GITHUB_PROMPT, NO_GITHUB_PROMPT,
+                          SEARCH_FALLBACK_PROMPT)
 
 from .base import ChatMessage, ChatProvider, ProviderError, StreamChunk
 
@@ -64,11 +65,7 @@ PULSE_SECONDS = 10.0
 # lần. Ngày 5/10/2026, ở mức Thấp, Grok suy nghĩ 46 giây, viết "Peto sửa lại từ file gốc, không đụng sheet Quy_dinh." rồi
 # kết thúc lượt, nên người dùng không nhận được tệp nào.
 FOLLOW_UP_CHARS = 300
-FOLLOW_UP = ('[Nhắc tự động của Peto, không phải lời người dùng] Câu trả lời vừa rồi chỉ báo sắp làm mà chưa gọi công cụ '
-             'nào, nên chưa có gì được sửa và người dùng chưa nhận được tệp. Làm tiếp ngay trong câu trả lời này: gọi '
-             'edit_spreadsheet hay edit_document (hay công cụ yêu cầu cần). Được nhờ liệt kê lỗi trước thì viết danh sách rồi gọi công cụ '
-             'luôn trong cùng câu trả lời, trừ khi người dùng dặn chờ họ đồng ý. Không lặp lại câu báo. Nếu yêu cầu thật sự '
-             'không cần công cụ nào, chỉ trả lời đúng một chữ: XONG.')
+FOLLOW_UP = FOLLOW_UP_PROMPT
 
 
 def _dump(item) -> dict:
@@ -185,8 +182,7 @@ class ResponsesProvider(ChatProvider):
 
         payload_input = build_input_payload(messages)
         search_enabled = tools_enabled and WEB_SEARCH_ENABLED and web_search != "off"
-        english = self.service in {"OpenAI", "Anthropic"}
-        instructions = f"{system_prompt}\n\n{search_context(web_search, search_enabled, english=english)}"
+        instructions = f"{system_prompt}\n\n{search_context(web_search, search_enabled)}"
         sources: list[dict] = []
         search_finished = False
         search_ids: set[str] = set()
@@ -225,12 +221,7 @@ class ResponsesProvider(ChatProvider):
         github_session = github_session_context.get()
         github_schemas = github_session.schemas() if github_session else []
         if tools_enabled:
-            if english:
-                instructions += '\n\n' + (GITHUB_PROMPT if github_schemas else NO_GITHUB_PROMPT)
-            else:
-                instructions += ('\n\nGitHub của người dùng đã kết nối. Dùng công cụ github_* khi cần dữ liệu repo hoặc GitHub Actions. '
-                                 'Các công cụ chỉ đọc; không được nói đã sửa, chạy lại hay ghi lên GitHub. ' + GITHUB_NOTE) if github_schemas else (
-                    '\n\nGitHub của người dùng chưa kết nối trong lượt này. Nếu cần đọc repo riêng hoặc log Actions, hướng dẫn mở Cài đặt → Kết nối. Không giả vờ đã truy cập tài khoản GitHub.')
+            instructions += '\n\n' + (GITHUB_PROMPT if github_schemas else NO_GITHUB_PROMPT)
         workbooks = bool(document_session and (getattr(document_session, 'workbooks', None)
                                                or getattr(document_session, 'word_files', None)))
         max_rounds = max(MAX_TOOL_ROUNDS, MAX_GITHUB_TOOL_ROUNDS if github_schemas else 0, MAX_WORKBOOK_TOOL_ROUNDS if workbooks else 0)
@@ -251,14 +242,8 @@ class ResponsesProvider(ChatProvider):
             usage: dict = {}
             create_kwargs: dict = {
                 "model": self.model,
-                "instructions": instructions + ('\n\n' + (SEARCH_FALLBACK_PROMPT if english else
-                    'Lượt tìm web bổ sung bị lỗi, nhưng các lượt tra trước đã có kết quả. Không gọi thêm công cụ. '
-                    'Trả lời yêu cầu bằng dữ liệu đã nhận; nói ngắn gọn rằng lượt tìm bổ sung bị lỗi và nêu rõ '
-                    'phần chưa đọc hoặc chưa xác minh. Chỉ có URL không chứng minh đã đọc nội dung trang. '
-                    'Không bịa lời bài hát, nội dung video, kết quả hoặc nguồn; không hứa tra tiếp trong lượt này.')
-                    if search_fallback else '\n\n' + (FINALIZING_PROMPT if english else
-                    'Lượt này đã chạm giới hạn tra cứu. Hãy trả lời bằng những kết quả đã nhận, không gọi thêm công cụ. '
-                    'Nếu dữ liệu chưa đủ, nêu rõ phần chưa đọc hoặc chưa xác minh; không bịa kết quả và không hứa tiếp tục tra cứu trong lượt này.') if finalizing else ''),
+                "instructions": instructions + ('\n\n' + SEARCH_FALLBACK_PROMPT if search_fallback else
+                                                 '\n\n' + FINALIZING_PROMPT if finalizing else ''),
                 "input": payload_input,
                 "max_output_tokens": self.max_output_tokens if tools_enabled else min(self.max_output_tokens, 1024),
                 "reasoning": {

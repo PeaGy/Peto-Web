@@ -39,8 +39,9 @@ from ai.base import ProviderError
 from shared.time_tools import agent_time_context, resolve_timezone
 from core import usage_events
 from core.config import AGENT_DAILY_STEPS, AGENT_MODEL, AGENT_MAX_CONCURRENT, AGENT_MAX_QUEUE, AGENT_MAX_REQUEST_BYTES, AGENT_REASONING, AGENT_SLOW_STEP_SECONDS, AGENT_STEP_TIMEOUT_SECONDS, AGENT_TOKEN_IDLE_DAYS, AGENT_WEB_SEARCH, provider_from_owner
-from prompts import english as english_prompts
-from prompts.routing import provider_prompt
+from prompts import agent as agent_prompts
+from prompts.core import CORE_PROMPT
+from prompts.providers import provider_prompt
 from core.rate_limit import Admission, AdmissionDenied
 
 logger = logging.getLogger("peto_web.agent")
@@ -411,19 +412,19 @@ def _explore_instructions(context: dict, web_search: bool, model: str, *, final:
     guide_text = _guide_text(context, scope=False)
     if len(guide_text) > 40000:
         guide_text = ""
-    parts = [english_prompts.CORE_PROMPT, provider_prompt(model), english_prompts.EXPLORE_PROMPT,
-             english_prompts.AGENT_EXPLORE_PROMPT if "explore_v2" in features else "",
-             english_prompts.AGENT_SEARCH_PROMPT if web_search else english_prompts.AGENT_NO_SEARCH_PROMPT,
+    parts = [CORE_PROMPT, provider_prompt(model), agent_prompts.EXPLORE_PROMPT,
+             agent_prompts.AGENT_EXPLORE_PROMPT if "explore_v2" in features else "",
+             agent_prompts.AGENT_SEARCH_PROMPT if web_search else agent_prompts.AGENT_NO_SEARCH_PROMPT,
              f"## User machine\nProject: {str(context.get('project') or '')[:80]}.", _user_guidance(context, features),
-             english_prompts.PROJECT_GUIDANCE_PROMPT + guide_text if guide_text else "",
-             english_prompts.EXPLORE_FINAL_PROMPT if final else "", agent_time_context(english=True)]
+             agent_prompts.PROJECT_GUIDANCE_PROMPT + guide_text if guide_text else "",
+             agent_prompts.EXPLORE_FINAL_PROMPT if final else "", agent_time_context()]
     return "\n\n".join(part for part in parts if part)
 
 
 def _btw_instructions(model: str) -> str:
     """/btw: vẫn là Peto (lõi trợ lý, không nêu model phía sau), cộng lời nhắc câu hỏi bên lề và giờ hiện tại."""
-    return "\n\n".join(part for part in (english_prompts.CORE_PROMPT, provider_prompt(model),
-                                           english_prompts.BTW_PROMPT, agent_time_context(english=True)) if part)
+    return "\n\n".join(part for part in (CORE_PROMPT, provider_prompt(model),
+                                           agent_prompts.BTW_PROMPT, agent_time_context()) if part)
 
 
 def _user_guidance(context: dict, features: frozenset[str]) -> str:
@@ -433,7 +434,7 @@ def _user_guidance(context: dict, features: frozenset[str]) -> str:
         return ""
     if len(text) > MAX_USER_GUIDANCE_CHARS:
         return "The user's general guidance is too long; ask them to shorten it."
-    return english_prompts.USER_GUIDANCE_PROMPT + text.strip()
+    return agent_prompts.USER_GUIDANCE_PROMPT + text.strip()
 
 
 def _check_observations(context: dict, features: frozenset[str]) -> str:
@@ -476,43 +477,43 @@ def _instructions(context: dict, web_search: bool, model: str = "peto", *, extra
             catalog = [{key: str(item.get(key, ""))[:limit] for key, limit in
                         (("name", 64), ("description", 400), ("path", 256))}
                        for item in catalog[:32] if isinstance(item, dict)]
-            skill_context = english_prompts.SKILLS_PROMPT.format(catalog=json.dumps(catalog, ensure_ascii=False))
+            skill_context = agent_prompts.SKILLS_PROMPT.format(catalog=json.dumps(catalog, ensure_ascii=False))
     mcp_context = ""
     if "mcp" in features and isinstance(context.get("mcp_servers"), list):
         servers = [{"name": str(item.get("name", ""))[:64]} for item in context["mcp_servers"][:16] if isinstance(item, dict)]
-        mcp_context = english_prompts.MCP_PROMPT.format(servers=json.dumps(servers, ensure_ascii=False))
+        mcp_context = agent_prompts.MCP_PROMPT.format(servers=json.dumps(servers, ensure_ascii=False))
     tooling = []
     if "explore_v2" in features:
-        tooling.append(english_prompts.AGENT_EXPLORE_PROMPT)
+        tooling.append(agent_prompts.AGENT_EXPLORE_PROMPT)
     if "edit_v2" in features:
-        tooling.append(english_prompts.AGENT_EDIT_PROMPT)
+        tooling.append(agent_prompts.AGENT_EDIT_PROMPT)
     if "patch" in features and _patch_model(model):
-        tooling.append(english_prompts.AGENT_PATCH_PROMPT)
+        tooling.append(agent_prompts.AGENT_PATCH_PROMPT)
     if "question" in features:
-        tooling.append(english_prompts.AGENT_QUESTION_PROMPT)
+        tooling.append(agent_prompts.AGENT_QUESTION_PROMPT)
     if "output_files" in features:
-        tooling.append(english_prompts.AGENT_OUTPUT_PROMPT)
+        tooling.append(agent_prompts.AGENT_OUTPUT_PROMPT)
     if "subagent" in features:
-        tooling.append(english_prompts.AGENT_SUBAGENT_PROMPT)
+        tooling.append(agent_prompts.AGENT_SUBAGENT_PROMPT)
     if "recall" in features:
-        tooling.append(english_prompts.AGENT_RECALL_PROMPT)
-    if inbox := english_prompts.agent_inbox_prompt(features):
+        tooling.append(agent_prompts.AGENT_RECALL_PROMPT)
+    if inbox := agent_prompts.agent_inbox_prompt(features):
         tooling.append(inbox)
     browsing = ""
     if "browser" in features:
-        browsing = english_prompts.browser_prompt(act="browser_act" in features, outside="browser_outside" in features)
+        browsing = agent_prompts.browser_prompt(act="browser_act" in features, outside="browser_outside" in features)
     # Mốc thời gian (làm tròn theo giờ) đứng cuối: phần trước nó giống hệt nhau giữa các bước, nên prompt caching đọc
     # lại được cả phần chỉ dẫn lẫn lịch sử hội thoại thay vì tính tiền đầy đủ mỗi bước.
     return "\n\n".join(part for part in (
-        english_prompts.CORE_PROMPT,
-        english_prompts.agent_prompt(plan=not _patch_model(model), read_more="read_more" in features),
+        CORE_PROMPT,
+        agent_prompts.agent_prompt(plan=not _patch_model(model), read_more="read_more" in features),
         provider_prompt(model), *tooling, browsing,
         skill_context, mcp_context,
-        english_prompts.AGENT_SEARCH_PROMPT if web_search else english_prompts.AGENT_NO_SEARCH_PROMPT,
+        agent_prompts.AGENT_SEARCH_PROMPT if web_search else agent_prompts.AGENT_NO_SEARCH_PROMPT,
         f"## User machine\nProject: {short(context.get('project'))}. OS: {short(context.get('os'))}.",
-        _user_guidance(context, features), english_prompts.PROJECT_GUIDANCE_PROMPT + guide_text,
+        _user_guidance(context, features), agent_prompts.PROJECT_GUIDANCE_PROMPT + guide_text,
         _check_observations(context, features), extra,
-        agent_time_context(english=True),
+        agent_time_context(),
     ) if part)
 
 
@@ -546,9 +547,9 @@ async def step(request: Request, device: dict = Depends(device_auth)):
     # Tóm tắt, đặt tên và /btw không cần công cụ nào, kể cả tìm web: chỉ đọc lại lịch sử rồi viết.
     searching = AGENT_WEB_SEARCH and special is None
     if special == "compact":
-        instructions = english_prompts.COMPACT_PROMPT
+        instructions = agent_prompts.COMPACT_PROMPT
     elif special == "title":
-        instructions = english_prompts.TITLE_PROMPT
+        instructions = agent_prompts.TITLE_PROMPT
     elif special == "btw":
         instructions = _btw_instructions(model.key)
     elif exploring:
@@ -557,7 +558,7 @@ async def step(request: Request, device: dict = Depends(device_auth)):
         # Giữ nguyên phần chỉ dẫn của các bước trước (cả câu về tìm web) để prompt cache dùng lại được; agent_step final
         # mới là chỗ cấm công cụ.
         instructions = _instructions(context, AGENT_WEB_SEARCH, model.key,
-                                     extra=english_prompts.WRAPUP_PROMPT)
+                                     extra=agent_prompts.WRAPUP_PROMPT)
     else:
         instructions = _instructions(context, searching, model.key)
     usage_purpose = {"compact": "compact", "title": "side", "btw": "side"}.get(special or "", "agent")

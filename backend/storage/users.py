@@ -85,17 +85,3 @@ async def get_user(owner: str) -> dict | None:
         row = await cursor.fetchone()
         return dict(row) if row else None
 
-
-async def has_roleplay_consent(owner: str) -> bool:
-    async with db_connection.connect() as db:
-        cursor = await db.execute("SELECT 1 FROM roleplay_consents WHERE owner = ?", (owner,))
-        return await cursor.fetchone() is not None
-
-
-async def add_roleplay_consent(owner: str) -> None:
-    async with db_connection.connect() as db:
-        await db.execute(
-            "INSERT INTO roleplay_consents (owner, confirmed_at) VALUES (?, ?) ON CONFLICT(owner) DO NOTHING",
-            (owner, time.time()),
-        )
-        await db.commit()

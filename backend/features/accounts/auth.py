@@ -494,8 +494,6 @@ async def me(request: Request) -> dict:
             # nó ngay lúc tải trang; gửi kèm ở đây thì khỏi tải hồ sơ riêng rồi
             # thấy tên nhảy từ tên Discord sang.
             "nickname": profile["nickname"],
-            # Đã xác nhận đủ 18 tuổi để bật chế độ nhập vai; giao diện chỉ hỏi lần đầu.
-            "roleplay_confirmed": await db.has_roleplay_consent(owner),
             # Model tài khoản này chọn được ở nút cạnh nút Gửi; chỉ một model thì giao diện ẩn nút.
             "models": ai_models.public(ai_models.usable(owner, "web")),
             # Chỉ để hiện mục "Quản trị" trong menu tài khoản; API /api/admin vẫn tự kiểm quyền.
