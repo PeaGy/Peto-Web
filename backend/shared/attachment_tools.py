@@ -138,7 +138,7 @@ class AttachmentFiles:
             if document["status"] not in ("ready", "partial"):
                 raise ToolError(f"Chưa đọc được tệp này: {document['notice']}")
             note = ""
-            if document["status"] == "partial" or document.get("ocr_pages"):
+            if document["status"] == "partial" or document.get("ocr_pages") or document.get('normalized_controls'):
                 note = " " + document["notice"]
             self._lines[item["id"]] = (document["text"].splitlines(), note)
         return self._lines[item["id"]]

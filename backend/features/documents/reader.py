@@ -18,6 +18,7 @@ PDF_MIME = "application/pdf"
 from features.documents.workbook_reader import (SHEET_FORMAT, SPREADSHEET_MIMES, XLSM_MIME, XLSX_MIME,  # noqa: E402
                                                 read_workbook)
 from features.documents import word_reader, word_images  # noqa: E402
+from features.documents.text_reader import TEXT_FORMAT, decode_text, read_text, normalization_notice  # noqa: E402
 # 2 (29/9/2026): tệp chữ dài giữ phần đầu, phần cuối và các đoạn có lỗi thay vì chỉ phần đầu. Đổi số này thì tệp cũ
 # được đọc lại ở lượt sau (features.chat.history._read_legacy_documents).
 # 3 (1/10/2026): thêm chữ OCR theo trang và số trang đã đọc.
@@ -36,7 +37,9 @@ FULL_TEXT_CHARS = 8_000_000
 # Tệp chữ dài (thường là log): lỗi mới nhất nằm ở cuối, nên phần đọc sẵn gồm phần đầu, các đoạn có dấu hiệu dưới đây ở
 # giữa, và phần cuối. Tỉ lệ là phần của giới hạn chữ; phần cuối nhận phần còn lại.
 SIGNAL = re.compile(r"error|exception|traceback|fatal|critical|panic|warn|fail|denied|refused|timed? ?out|lỗi|cảnh báo"
-                    r"|#(?:DIV/0!|N/A|VALUE!|REF!|NAME\?|NUM!|NULL!)", re.IGNORECASE)
+                    r"|caused by:|suppressed:|^description:|#(?:DIV/0!|N/A|VALUE!|REF!|NAME\?|NUM!|NULL!)", re.IGNORECASE)
+ROOT_SIGNAL = re.compile(r'caused by:|suppressed:|^description:|fatal|critical|panic|traceback', re.IGNORECASE)
+ERROR_SIGNAL = re.compile(r'error|exception|fail|denied|refused|timed? ?out|lỗi', re.IGNORECASE)
 HEAD_SHARE = 0.15
 SIGNAL_SHARE = 0.35
 # Số dòng lấy thêm trước và sau mỗi dòng có lỗi.
@@ -52,14 +55,6 @@ WORD_NAMESPACES = {
 def result(status: str, notice: str, text: str = "", **details) -> dict:
     return {"version": VERSION, "status": status, "notice": notice,
             "text": text, "characters": len(text), **details}
-
-
-def decode_text(data: bytes) -> str:
-    encoding = "utf-16" if data.startswith((b"\xff\xfe", b"\xfe\xff")) else "utf-8-sig"
-    text = data.decode(encoding)
-    if "\x00" in text:
-        raise ValueError("Tệp chứa dữ liệu nhị phân")
-    return text
 
 
 def number(value: int) -> str:
@@ -128,26 +123,31 @@ def condense_text(text: str, max_chars: int) -> tuple[str, str]:
         tail_start -= 1
         tail_used += cost[tail_start]
     seen = {unit[4] for unit in units[:head_end] + units[tail_start:] if unit[3]}
-    blocks: list[list[int]] = []
+    selected: set[int] = set()
     signal_used = 0
-    index = head_end
-    while index < tail_start:
+    # Nguyên nhân lồng sâu quan trọng hơn cảnh báo tới sớm; sau chọn vẫn xuất theo thứ tự dòng thật.
+    candidates = [index for index in range(head_end, tail_start) if units[index][3]]
+    candidates.sort(key=lambda index: (0 if ROOT_SIGNAL.search(units[index][2]) else
+                                      1 if ERROR_SIGNAL.search(units[index][2]) else 2, index))
+    for index in candidates:
         unit = units[index]
-        if not unit[3] or unit[4] in seen:
-            index += 1
+        if unit[4] in seen:
+            continue
+        start = max(index - SIGNAL_CONTEXT, head_end)
+        end = min(index + SIGNAL_CONTEXT + 1, tail_start)
+        fresh = set(range(start, end)) - selected
+        extra = sum(cost[position] for position in fresh) + 60
+        if signal_used + extra > budget * SIGNAL_SHARE:
             continue
         seen.add(unit[4])
-        start = max(index - SIGNAL_CONTEXT, blocks[-1][1] if blocks else head_end)
-        end = min(index + SIGNAL_CONTEXT + 1, tail_start)
-        extra = sum(cost[start:end]) + 60
-        if signal_used + extra > budget * SIGNAL_SHARE:
-            break
         signal_used += extra
-        if blocks and start == blocks[-1][1]:
-            blocks[-1][1] = end
+        selected.update(fresh)
+    blocks: list[list[int]] = []
+    for index in sorted(selected):
+        if blocks and index == blocks[-1][1]:
+            blocks[-1][1] += 1
         else:
-            blocks.append([start, end])
-        index = end
+            blocks.append([index, index + 1])
     # Chỗ còn thừa dành cho phần cuối: với log, đoạn mới nhất đáng đọc nhất.
     spare = budget - used - tail_used - signal_used
     limit = blocks[-1][1] if blocks else head_end
@@ -308,12 +308,16 @@ def extract_document(data: bytes, mime: str, max_chars: int, max_pages: int) -> 
             return _docx(data, max_chars)
         if mime in SPREADSHEET_MIMES:
             return read_workbook(data, max_chars)
-        text = decode_text(data)
-        if len(text.strip()) <= max_chars:
-            text = text.strip()
-            return result("ready" if text else "no_text", "Đã đọc tệp chữ." if text else "Tệp không có chữ.", text)
+        text, details = read_text(data)
+        normalized = normalization_notice(details)
+        if not text.strip():
+            return result('no_text', 'Tệp không có chữ.', '', **details)
+        if len(text) <= max_chars:
+            # Phần chữ và công cụ đọc chi tiết phải giữ cùng số dòng, kể cả dòng trống đầu tệp.
+            return result('ready', 'Đã đọc tệp chữ.' + normalized, text, **details)
         excerpt, notice = condense_text(text, max_chars)
-        return result("partial", notice, excerpt, total_characters=len(text), lines=len(text.splitlines()))
+        return result("partial", notice + normalized, excerpt, total_characters=len(text),
+                      lines=len(text.splitlines()), **details)
     except Exception:
         return result("unreadable", "Chưa đọc được tệp: định dạng không hợp lệ hoặc tệp bị lỗi. Thử xuất lại thành PDF có chữ hoặc DOCX nhé.")
 
@@ -343,12 +347,12 @@ async def read_full_document(data: bytes, mime: str, cached: dict | None = None)
 
     if mime not in (PDF_MIME, DOCX_MIME, *SPREADSHEET_MIMES):
         try:
-            text = await anyio.to_thread.run_sync(decode_text, data)
+            text, details = await anyio.to_thread.run_sync(read_text, data)
         except ValueError:
             return result("unreadable", "Tệp không phải chữ đọc được.")
         if not text.strip():
             return result("no_text", "Tệp không có chữ.")
-        return result("ready", "Đã đọc tệp chữ.", text)
+        return result("ready", "Đã đọc tệp chữ." + normalization_notice(details), text, **details)
     try:
         with anyio.fail_after(DOCUMENT_TIMEOUT):
             document = await to_process.run_sync(extract_document, data, mime, FULL_TEXT_CHARS, MAX_DOCUMENT_PAGES,
@@ -386,6 +390,9 @@ def cached_document(raw) -> dict | None:
     if value.get("sheets") is not None and value.get("sheet_format", 1) != SHEET_FORMAT:
         return None
     if _old_word(value):
+        return None
+    # Log dài trước bộ chọn mới được đọc lại một lần; không làm hết hạn cache PDF/Word/Excel/OCR.
+    if value.get('notice', '').startswith('Tệp dài ') and value.get('text_format') != TEXT_FORMAT:
         return None
     return value
 

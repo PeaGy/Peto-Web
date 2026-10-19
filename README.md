@@ -13,6 +13,11 @@ Giao diện chat riêng cho Peto, trợ lý AI trả lời trung thực và đi 
 
 Hướng dẫn dùng nằm ở `/docs/` trên site.
 
+Tệp chữ và log dùng chung bộ đọc trước khi gửi cho các model. Nhận UTF-8 và UTF-16/UTF-32 có BOM; log có ít ký tự
+điều khiển bất thường được biểu diễn bằng `[U+XXXX]` kèm thông báo, giữ nguyên tệp gốc và số dòng. Tệp có quá nhiều
+dữ liệu điều khiển hoặc sai bảng mã được báo rõ lỗi. Với log dài, phần đọc sẵn ưu tiên chuỗi nguyên nhân `Caused by`
+và lỗi nghiêm trọng trước cảnh báo; Peto vẫn có thể tìm và đọc tiếp những dòng chưa nằm trong phần trích xuất.
+
 ## Chạy thử
 
 Cần Python 3.12+ và Node 22.12+.

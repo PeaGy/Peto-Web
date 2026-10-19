@@ -110,14 +110,6 @@ def _looks_like_pdf(data: bytes) -> bool:
     return data.startswith(b"%PDF")
 
 
-def _is_probably_text(data: bytes) -> bool:
-    try:
-        decode_text(data)
-        return True
-    except (UnicodeDecodeError, ValueError):
-        return False
-
-
 def decode_base64_payload(raw: str) -> bytes:
     text = (raw or "").strip()
     if not text:
@@ -173,8 +165,13 @@ def classify(name: str, declared_mime: str, data: bytes) -> tuple[str, str]:
         raise AttachmentError(f"«{filename}» là định dạng Excel cũ (.xls). Mở bằng Excel rồi lưu thành .xlsx để Peto đọc nhé.")
 
     if mime in TEXT_MIMES or ext in EXT_MIME:
-        if not _is_probably_text(data):
-            raise AttachmentError(f"«{filename}» không phải tệp chữ đọc được")
+        try:
+            decode_text(data)
+        except UnicodeDecodeError as error:
+            raise AttachmentError(f'«{filename}» có bảng mã không đọc được. Lưu lại thành UTF-8 rồi gửi lại nhé.') from error
+        except ValueError as error:
+            raise AttachmentError(f'«{filename}» chứa quá nhiều dữ liệu nhị phân hoặc ký tự điều khiển; '
+                                  'chưa thể đọc như tệp chữ.') from error
         return "file", mime or "text/plain"
 
     raise AttachmentError(

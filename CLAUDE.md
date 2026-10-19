@@ -1,5 +1,27 @@
 # CLAUDE.md
 
+## Tolerant text/log reader (2026-10-19)
+
+The owner's Minecraft report was valid UTF-8 (75,168 bytes) but rejected before any model call because it contained
+seven NULs in nvspcap64.dll version metadata. `features/documents/text_reader.py` now supplies the shared decoder
+used by upload validation, excerpts and full attachment search/line reads. Strict UTF-8/BOM UTF-16/UTF-32 decoding;
+no Latin-1 fallback or lossy replacement. Sparse C0/C1 controls other than TAB/CR/LF become visible `[U+XXXX]`
+markers, with a notice/count. More than 1% controls or 4096 total is rejected. Preserve original uploaded bytes and
+line breaks; even short excerpts retain leading/trailing blank lines so line tools and context agree.
+`reader.py` keeps `decode_text` as a compatibility import. New text results carry text_format=1, encoding and
+normalized_controls. Global reader VERSION stays 3 to avoid invalidating PDF/Word/Excel/OCR caches. Old long-text
+excerpts (recognized by their existing "Tệp dài " notice) expire through Chat's bounded legacy re-read path.
+
+Long-log selection prioritizes Caused by/Suppressed/Description/fatal/critical/panic/Traceback, then errors, then
+warnings, retaining source order and true line numbers. Oversized candidates are skipped rather than stopping the
+search. This is deterministic excerpt selection, not semantic diagnosis; full search/read tools remain available.
+No model/provider prompt change, frontend change, new dependency or CLI update. User's actual file passed validation,
+process extraction (~366 ms locally, not AI latency), search and read at line 114; 608 lines and original SHA-256
+unchanged, all 12 unusual controls made visible. Synthetic fixtures avoid committing the private crash report.
+Validation: focused reader/document/attachment tests 67 pass; full backend 1408 pass, 1 skip. Changed Python modules
+compile and `git diff --check` passes. Provider tests are mocked; no paid calls, commit, deployment or original-file
+changes. Deploy/restart backend for the fix; the local parsing time does not measure model response latency.
+
 ## English Agent tool descriptions (2026-10-19; CLI 0.29.1, needs the backend deployed)
 
 The owner asked to translate the Agent tool descriptions, the largest Vietnamese part still resent at every step.
