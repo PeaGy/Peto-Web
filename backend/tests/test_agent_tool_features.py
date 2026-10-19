@@ -317,3 +317,73 @@ def test_check_observations_are_bounded_data_and_never_completion_claims():
     assert "x" * 1201 not in text
     old = agent_api._instructions({**context, "features": []}, False)
     assert "read_history" not in old and "Local check observations" not in old
+
+
+# CLI 0.29.0 (trước "english_tools"), ghim ngày 2026-10-19 trước khi thêm bản mô tả tiếng Anh.
+SHIPPED_0_29 = ("browser", "browser_act", "browser_outside", "btw", "cwd", "edit_v2", "explore_v2", "jobs_notify", "mcp",
+                "output_files", "patch", "plan_mode", "python_exec", "question", "read_more", "recall", "skills", "steer",
+                "subagent", "task_state", "title", "user_guide", "wrapup")
+ENGLISH_SETS = [(), BASE, SHIPPED_0_21, SHIPPED_0_29, ("cwd", "browser", "browser_outside"), ("explore_v2",),
+                ("explore_v2", "read_more", "subagent")]
+
+
+def _descriptions(node, found: list[str]) -> list[str]:
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key == "description" and isinstance(value, str):
+                found.append(value)
+            else:
+                _descriptions(value, found)
+    elif isinstance(node, list):
+        for value in node:
+            _descriptions(value, found)
+    return found
+
+
+def _without_descriptions(node):
+    if isinstance(node, dict):
+        return {key: "" if key == "description" and isinstance(value, str) else _without_descriptions(value)
+                for key, value in node.items()}
+    if isinstance(node, list):
+        return [_without_descriptions(value) for value in node]
+    return node
+
+
+def test_cli_0_29_0_keeps_its_exact_schemas():
+    data = json.dumps(tool_schemas(frozenset(SHIPPED_0_29), patch_model=True), ensure_ascii=False, sort_keys=True)
+    assert digest(SHIPPED_0_29) == "f2e7a0a9184a989c817f9c744ccfb32c0ed4a3b7b516ec77a82310dc5e0da44a"
+    assert hashlib.sha256(data.encode()).hexdigest() == "aebbb7e2000e0c864cc61f583c8205cdfe3369882d838eb181c4eb9a5e9a1120"
+
+
+def test_english_tools_ships_with_its_exact_schemas():
+    english = SHIPPED_0_29 + ("english_tools",)
+    data = json.dumps(tool_schemas(frozenset(english), patch_model=True), ensure_ascii=False, sort_keys=True)
+    assert digest(english) == "5222f35d85c8c07a62b8d2784fc56d3940e5a2a67d80788f80aa571f3554a2df"
+    assert hashlib.sha256(data.encode()).hexdigest() == "8bfd8c838cf63292acbf9c4d16bf1f366f8ab79d3deb0c51cc98aaaef8258d56"
+
+
+@pytest.mark.parametrize("patch_model", [False, True])
+@pytest.mark.parametrize("features", ENGLISH_SETS)
+def test_english_tools_only_changes_description_text(features, patch_model):
+    """CLI 0.29.1 (chủ web chọn ngày 2026-10-19): mô tả tiếng Anh cho bớt token; công cụ, tham số, enum, thứ tự giữ
+    nguyên, nên CLI chạy đúng như bản tiếng Việt. Không mô tả nào còn tiếng Việt, trừ nhãn "(nên chọn)" bài thi tìm."""
+    from features.agent.tools import explore_schemas
+
+    vietnamese = tool_schemas(frozenset(features), patch_model=patch_model)
+    english = tool_schemas(frozenset(features) | {"english_tools"}, patch_model=patch_model)
+    assert _without_descriptions(english) == _without_descriptions(vietnamese)
+    child = explore_schemas(frozenset(features) | {"english_tools"})
+    assert _without_descriptions(child) == _without_descriptions(explore_schemas(frozenset(features)))
+    for text in _descriptions(english, []) + _descriptions(child, []):
+        leftover = text.replace("(nên chọn)", "")
+        assert all(ord(char) < 128 or char in "×→…" for char in leftover), text
+    assert _descriptions(english, []) != _descriptions(vietnamese, [])
+
+
+def test_english_ask_user_keeps_the_marker_the_eval_policy_picks():
+    ask = schema(SHIPPED_0_21 + ("english_tools",), "ask_user")
+    assert "(nên chọn)" in ask["description"] and "Khác" not in ask["description"]
+
+
+def test_english_tools_is_understood_by_the_server():
+    assert "english_tools" in FEATURES

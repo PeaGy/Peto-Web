@@ -513,6 +513,29 @@ def test_tool_schemas_stay_strict_and_cover_the_new_abilities():
         assert parameters["required"] == list(parameters["properties"]), tool["name"]
 
 
+async def test_english_tool_descriptions_only_reach_clis_that_ask_for_them(anon_client, client, monkeypatch):
+    """CLI 0.29.1: "english_tools" đổi chữ mô tả sang tiếng Anh (bớt token mỗi bước); CLI cũ vẫn nhận bản tiếng Việt."""
+    seen = []
+
+    async def record(**kwargs):
+        seen.append(kwargs)
+        from ai.agent import AgentEvent
+        yield AgentEvent("done", output=(), usage={"input_tokens": 1, "output_tokens": 1})
+
+    monkeypatch.setattr(agent_api, "agent_step", record)
+    await login_as(client, "discord")
+    token = await connect(anon_client, client)
+    for features in (["cwd"], ["cwd", "english_tools"]):
+        response = await anon_client.post("/api/agent/step", headers=bearer(token),
+                                          json={"input": [DEMO_TASK], "effort": "low", "context": {"features": features}})
+        assert response.status_code == 200
+    vietnamese, english = ({tool["name"]: tool for tool in call["tools"]} for call in seen)
+    assert list(vietnamese) == list(english)
+    assert vietnamese["run_command"]["parameters"]["required"] == english["run_command"]["parameters"]["required"]
+    assert "Người dùng phải đồng ý" in vietnamese["run_command"]["description"]
+    assert english["run_command"]["description"].startswith("Run a command in the project root or the cwd subfolder")
+
+
 async def test_command_folder_is_only_offered_to_clis_that_understand_it(anon_client, client, monkeypatch):
     """Schema strict bắt model gửi đủ tham số, kể cả cwd: null. CLI 0.9.7 trở về trước gặp tham số lạ thì báo sai
     tham số ở mọi lần chạy lệnh, nên chỉ CLI khai báo "cwd" trong context.features mới nhận schema có cwd."""

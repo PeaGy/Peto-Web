@@ -945,7 +945,9 @@ it('keeps image generation alive while navigating to chat and back', async () =>
   await screen.findByRole('heading', { name: /Bạn tưởng tượng/ });
   fireEvent.change(screen.getByLabelText('Bức ảnh bạn muốn tạo'), { target: { value: 'Mèo tím' } });
   fireEvent.submit(screen.getByLabelText('Bức ảnh bạn muốn tạo').closest('form')!);
-  await screen.findByText('Peto đang tạo 1 ảnh…');
+  // Lúc yêu cầu còn đang gửi, ô ảnh chờ đã hiện sẵn với đúng số ảnh.
+  await screen.findByText('Đang gửi yêu cầu…');
+  expect(screen.getByRole('button', { name: 'Ảnh 1 đang tạo' })).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: 'Trò chuyện', exact: true }));
   const chat = screen.getByLabelText('Nhắn cho Peto');
   chat.focus();

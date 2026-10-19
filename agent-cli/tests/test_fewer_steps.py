@@ -63,6 +63,7 @@ def test_a_minified_line_is_cut_and_the_result_is_not_cut_again_in_the_middle(pr
 
 def test_new_features_are_offered_to_the_server():
     assert {"read_more", "output_files", "wrapup", "user_guide"} <= set(NEW_FEATURES)
+    assert "english_tools" in NEW_FEATURES, "0.29.1: xin mô tả công cụ tiếng Anh khi máy chủ có"
 
 
 # ---- Sửa tệp chưa đọc: từ chối kèm nội dung

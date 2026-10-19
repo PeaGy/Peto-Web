@@ -737,6 +737,12 @@ Peto nhận hướng dẫn dùng `shell="powershell"` với cú pháp PowerShell
 Lệnh một dòng và PowerShell nhiều dòng vẫn dùng bình thường. Lỗi này được tái hiện khi giám sát bài thử
 [20 bài/23 đài/ba chế độ](docs/peto-supervision-2026-10-17.md); bản sửa nằm ở CLI, cần phát hành để máy khác nhận được.
 
+### Mô tả công cụ bằng tiếng Anh (0.29.1)
+
+Mô tả công cụ được gửi kèm mỗi bước. Từ 0.29.1, khi máy chủ cũng hỗ trợ, CLI xin bản mô tả tiếng Anh (khả năng
+`english_tools`) vì tiếng Việt tốn nhiều token hơn. Tên công cụ, tham số và cách chạy không đổi; Peto vẫn trả lời
+bằng ngôn ngữ của bạn. Bản CLI cũ vẫn nhận đúng mô tả tiếng Việt như trước.
+
 ### Nhật ký runtime và nghiệm thu (0.29.0)
 
 Theo ranh giới thực thi/lưu trữ/inbox của OpenCode, CLI ghi request và tool call trước khi chạy, lưu kết quả thật

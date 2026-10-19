@@ -1,5 +1,23 @@
 # CLAUDE.md
 
+## English Agent tool descriptions (2026-10-19; CLI 0.29.1, needs the backend deployed)
+
+The owner asked to translate the Agent tool descriptions, the largest Vietnamese part still resent at every step.
+Feature `english_tools`: the server lists it in `/me agent_features`, CLI 0.29.1 declares it in `NEW_FEATURES`, and only
+then `tool_schemas`/`explore_schemas` return `_english(...)` copies. Every Vietnamese description in
+`backend/features/agent/tools.py` registers its English text beside it through `_en(vi, en)` (the `EN` map), so the
+Vietnamese schemas stay byte-identical: all 196,610 checked feature/model combinations matched the pre-change output,
+and the 0.29.0 set (Peto and GPT) is now pinned too. Names, parameters, enums, required lists and order are identical;
+only description text differs (`test_english_tools_only_changes_description_text`). The literal "(nên chọn)" stays in
+`ask_user`, because the eval `PolicyUI` picks the option carrying it. Tool results, CLI notes and Web Chat tool schemas
+(documents, attachments, GitHub) are still Vietnamese. Size on the full 0.29 set: descriptions 11,919 → 10,763
+characters and 2,520 → 1,788 words; whole schema JSON 22,367 → 21,211 characters (25,868 → 21,224 UTF-8 bytes).
+Token counts were not measured (no offline tokenizer, no paid call); the schemas sit in the cached prefix, so the money
+saved is smaller than the token count suggests. The translations kept the old "The user must approve" wording even
+though 0.28.5 made allow the default permission. Tests: backend `test_agent_tool_features.py` (pins, structure,
+coverage, marker) and `test_agent_api.py` (negotiation); CLI `test_fewer_steps.py` and the existing backend/CLI
+handler contract test, which now also runs with `english_tools`.
+
 ## Durable Agent runtime, inbox and acceptance (2026-10-19; CLI 0.29.0)
 
 Owner approved the three reliability upgrades based on OpenCode and explicitly excluded Execution isolation.
@@ -76,9 +94,9 @@ OpenCode handles prompts per model.
   3,002-character English guide only when asked). Luna 13,386, Haiku 13,471. Vietnamese also costs more tokens per
   character, so the token saving is larger; real token counts were not measured and no paid call was made. Grok's live
   answer quality under the English Chat prompt is untested.
-- **Tests:** backend 1366 pass; frontend 781/782 (the failing `keeps image generation alive…` expects "Peto đang tạo 1
-  ảnh…", text that was already gone at HEAD after the GenerationPreview change); build passes; a mock-stack browser run
-  checked the read-only old roleplay chat, the plus menu and a normal send.
+- **Tests:** backend 1366 pass; frontend 782/782 after 2026-10-19 (`keeps image generation alive…` had expected "Peto
+  đang tạo 1 ảnh…", removed by the GenerationPreview change; it now waits for "Đang gửi yêu cầu…" and the pending tile);
+  build passes; a mock-stack browser run checked the read-only old roleplay chat, the plus menu and a normal send.
 
 ## Post-GTA continuity improvements (2026-10-17–18; CLI 0.28.6 source)
 
@@ -249,7 +267,8 @@ Model instructions are the explicit exception: since 2026-10-18 every system pro
 provider overlay from `prompts/providers.py`. Companion keeps its own English persona. The shared English core keeps the
 Peto identity and replies in the user's language, defaulting to Vietnamese with full diacritics. Raw user messages,
 memory, preferences, project guidance, skill metadata and documentation are never translated. Tool schemas,
-validation, user-facing errors and logs retain Vietnamese. The Agent guide enters Web prompts only for product/Agent
+validation, user-facing errors and logs retain Vietnamese, except Agent tool descriptions for CLIs that declare
+`english_tools` (0.29.1, see the section at the top). The Agent guide enters Web prompts only for product/Agent
 questions (using recent turns for follow-ups); file-tool instructions remain always present to avoid fragile
 keyword-based routing. Grok's short Excel-announcement follow-up is restricted to xAI.
 Routing and context preservation are covered in `backend/tests/test_prompt_routing.py`; these mocked tests do not
@@ -3649,8 +3668,8 @@ results in the next step. The server stores no conversation (`store=False`), and
   English core says so), and the core still forbids naming the model behind Peto. Measured on the 0.27 feature set:
   Peto's instructions went from 15,786 characters (3,344 words, 3,109 non-ASCII characters) to 13,231 (2,047 words).
   Before the change, the first step of each eval task cost Peto about 11,450 input tokens and Luna (English, other
-  tokenizer) about 10,520. Tool schema descriptions stay Vietnamese (about 19,800 characters, the larger part of
-  each step) and so do CLI notes such as "[Người dùng nhắn thêm…]"; the prompts quote those markers verbatim. Grok's
+  tokenizer) about 10,520. Tool schema descriptions stayed Vietnamese (about 19,800 characters, the larger part of
+  each step) until CLI 0.29.1's `english_tools` (see the section at the top); CLI notes stay Vietnamese, such as "[Người dùng nhắn thêm…]"; the prompts quote those markers verbatim. Grok's
   reply voice under the English prompt has not been measured with evals yet.
 - **CLI display** (picked by the owner from mockups): tool steps stay as permanent lines; while waiting for the model
   there is one transient `… Peto đang nghĩ · Ns` status line (`UI.status`, redrawn with `\r\033[2K`, only when colors

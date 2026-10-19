@@ -54,9 +54,11 @@ FEATURES = ("cwd", "browser", "browser_act", "browser_outside", "skills", "mcp")
 # dựng phải khớp mô tả máy chủ gửi, nên CLI mới gặp máy chủ cũ vẫn chạy kiểu cũ. Từ 0.21.0 (theo opencode): ask_user,
 # apply_patch cho model GPT, đặt tên hội thoại, và lời nhắc giải thích các tin 0.20.0 chèn vào hội thoại. Từ 0.23.0:
 # câu hỏi bên lề /btw. Từ 0.25.0 (theo lõi opencode): đọc tới 1000 dòng, lưu đủ output dài (read_output), lượt tóm tắt
-# khi hết bước và AGENTS.md chung của người dùng. Từ 0.27.0: agent con chỉ đọc explore.
+# khi hết bước và AGENTS.md chung của người dùng. Từ 0.27.0: agent con chỉ đọc explore. Từ 0.29.1: mô tả công cụ
+# bằng tiếng Anh cho bớt token mỗi bước ("english_tools"; chỉ chữ mô tả đổi, tên và tham số giữ nguyên).
 NEW_FEATURES = ("explore_v2", "edit_v2", "question", "patch", "title", "steer", "jobs_notify", "plan_mode",
-                "btw", "read_more", "output_files", "wrapup", "user_guide", "subagent", "recall", "python_exec", "task_state")
+                "btw", "read_more", "output_files", "wrapup", "user_guide", "subagent", "recall", "python_exec", "task_state",
+                "english_tools")
 # Gọi y hệt một công cụ ngần này lần liền mà không tệp nào đổi thì hỏi người dùng có cho gọi tiếp không.
 LOOP_LIMIT = 3
 # Công cụ mà gọi lại y hệt là bình thường: chờ output lệnh nền, xem lại trang sau khi bấm, cập nhật danh sách việc.
