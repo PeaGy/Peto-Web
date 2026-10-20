@@ -57,13 +57,15 @@ def use_models(models: list[dict]) -> None:
                      for command in COMMANDS)
 
 
+EFFORT_CHOICES = {"none": "Không suy luận", "low": "Nhanh, suy nghĩ ít", "medium": "Cân bằng giữa nhanh và kỹ",
+                  "high": "Cao · nhân đôi số bước", "xhigh": "Rất cao · nhân đôi số bước",
+                  "max": "Tối đa · nhân đôi số bước"}
+
+
 def use_efforts(efforts: list[str]) -> None:
     """Chỉ gợi ý mức máy chủ hỗ trợ cho model đang chọn."""
     global COMMANDS
-    choices = {"none": ("none", "Không suy luận"), "low": ("low", "Nhanh, suy nghĩ ít"),
-               "medium": ("medium", "Cân bằng giữa nhanh và kỹ"), "high": ("high", "Cao · nhân đôi số bước"),
-               "xhigh": ("xhigh", "Rất cao · nhân đôi số bước"), "max": ("max", "Tối đa · nhân đôi số bước")}
-    options = tuple(choices[value] for value in efforts if value in choices)
+    options = tuple((value, EFFORT_CHOICES[value]) for value in efforts if value in EFFORT_CHOICES)
     COMMANDS = tuple(replace(command, options=options,
                              description="Xem hoặc đổi mức suy nghĩ: " + ", ".join(value for value, _ in options))
                      if command.name == "/effort" else command for command in COMMANDS)

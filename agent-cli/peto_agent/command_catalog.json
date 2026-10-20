@@ -172,7 +172,23 @@
       ],
       "usage": "/model [tên]",
       "since": "0.0.0",
-      "details": "/model hiển thị các model tài khoản được dùng. Danh sách và effort lấy từ máy chủ, không suy đoán quyền model của người đang hỏi. /usage hoặc peto status xem sử dụng thực tế."
+      "details": "/model không có tên mở bảng chọn như /models; /model tên đổi thẳng. Model Peto lấy từ máy chủ theo tài khoản, model khóa riêng theo kết nối trên máy này. Đổi model chỉ áp cho hội thoại đang mở; mặc định cho lần mở sau đặt bằng Ctrl+D trong /models hoặc peto models default <tên>. /usage hoặc peto status xem sử dụng thực tế."
+    },
+    {
+      "name": "/models",
+      "description": "Bảng chọn model: tìm, yêu thích, đặt mặc định",
+      "options": [],
+      "usage": "/models",
+      "since": "0.32.0",
+      "details": "Bảng nổi như OpenCode: gõ để tìm theo tên hay nguồn, nhóm Yêu thích và Gần đây, Ctrl+F yêu thích, Ctrl+D đặt mặc định cho các lần mở sau, Ctrl+A mở /connect. Chọn model chỉ đổi hội thoại đang mở. Không có màn hình chọn (ống dẫn, PETO_AGENT_UI=classic) thì in danh sách như /model."
+    },
+    {
+      "name": "/connect",
+      "description": "Kết nối nguồn model: tài khoản Peto, khóa OpenAI riêng",
+      "options": [],
+      "usage": "/connect",
+      "since": "0.32.0",
+      "details": "Bảng nổi như OpenCode: Peto và OpenAI, dấu ✓ cho nguồn đã kết nối. Thêm khóa OpenAI (khóa hiện thành chấm, được kiểm bằng danh sách model, lưu mã hóa DPAPI trên máy này), đổi tên bằng Ctrl+R, xóa bằng Ctrl+D hai lần; kết nối xong thì chọn model của khóa đó. Đăng nhập Peto vẫn bằng peto login. Không có màn hình chọn thì dùng peto connect openai, peto connections, peto disconnect."
     },
     {
       "name": "/effort",
@@ -197,11 +213,11 @@
     },
     {
       "name": "/usage",
-      "description": "Số bước và token đã dùng hôm nay",
+      "description": "Model đang dùng, bước Peto hôm nay, token của phiên",
       "options": [],
       "usage": "/usage",
       "since": "0.0.0",
-      "details": "Số bước và token đã dùng hôm nay."
+      "details": "Model và nguồn đang dùng, số bước Peto còn hôm nay, cỡ ngữ cảnh của hội thoại, token khóa riêng đã dùng trong phiên (số nhà cung cấp trả về, không phải hóa đơn), rồi thời gian và token của yêu cầu gần nhất."
     },
     {
       "name": "/update",

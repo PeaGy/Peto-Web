@@ -125,8 +125,13 @@ def frame(state: EditorState, theme, *, width: int, height: int, meta: list[str]
 
     meta_spans = []
     for index, part in enumerate(meta):
+        # Chế độ · model nguồn · mức: tên nguồn (khóa riêng, CLI 0.32.0) mờ ngay sau tên model như OpenCode.
+        source = 1 < index < len(meta) - 1
         if index:
-            meta_spans.append(S(" · ", theme.muted, bg))
+            meta_spans.append(S(" " if source else " · ", theme.muted, bg))
+        if source:
+            meta_spans.append(S(part, theme.muted, bg))
+            continue
         color = accent if index == 0 else theme.warning if index == len(meta) - 1 and index > 1 else theme.text
         meta_spans.append(S(part, color, bg, b=index == 0 or (index == len(meta) - 1 and index > 1)))
     cap = Line([S(" " * PAD), S("╹", accent), S("▀" * (panel_width - 1), bg)])

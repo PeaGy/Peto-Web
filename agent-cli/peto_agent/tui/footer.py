@@ -41,10 +41,15 @@ class Panel:
     ``on_interrupt``: Ctrl+C trả lời khung bằng giá trị này thay vì dừng Peto (hộp /btw chỉ đóng lại)."""
 
     def __init__(self, render_lines: Callable[[], list[Line]], handle: Callable[[Key], str | None],
-                 on_interrupt: str | None = None):
+                 on_interrupt: str | None = None, *, overlay: bool = False, guard: bool = True):
         self.render_lines = render_lines
         self.handle = handle
         self.on_interrupt = on_interrupt
+        # Khung nổi giữa màn hình (/models, /connect như OpenCode): màn hình toàn phần vẽ nó đè lên hội thoại đã tối
+        # đi; chân cố định vẫn vẽ nó ở chỗ ô nhập.
+        self.overlay = overlay
+        # Bỏ qua phím trong 0,3 giây đầu (câu hỏi quyền hiện lên đúng lúc đang gõ). Khung người dùng tự mở thì không.
+        self.guard = guard
         self.opened = time.monotonic()
         self.answer: str | None = None
         self.done = threading.Event()
@@ -301,10 +306,10 @@ class FooterEngine:
             return item
 
     def ask(self, render_lines: Callable[[], list[Line]], handle: Callable[[Key], str | None], *,
-            on_interrupt: str | None = None) -> str:
+            on_interrupt: str | None = None, overlay: bool = False, guard: bool = True) -> str:
         """Hiện một khung ở chỗ ô nhập rồi chờ trả lời. Khung khác đang mở (câu hỏi quyền, hộp /btw tới từ luồng
         khác) thì chờ nó đóng trước; phiên đã dừng thì trả chuỗi rỗng."""
-        panel = Panel(render_lines, handle, on_interrupt)
+        panel = Panel(render_lines, handle, on_interrupt, overlay=overlay, guard=guard)
         while True:
             with self.lock:
                 if self.panel is None and not self._suspended:
@@ -386,7 +391,7 @@ class FooterEngine:
                     return
                 self.interrupt()
                 return
-            if time.monotonic() - self.panel.opened < PANEL_GUARD:
+            if self.panel.guard and time.monotonic() - self.panel.opened < PANEL_GUARD:
                 return
             answer = self.panel.handle(key)
             if answer is not None:

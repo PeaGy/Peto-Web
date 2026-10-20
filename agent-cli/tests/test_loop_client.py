@@ -285,7 +285,9 @@ def test_commands_usage_and_update_notice(project, peto, monkeypatch):
     assert re.search(r"/effort\s+Xem hoặc đổi mức suy nghĩ: low, medium, high", ui.text)
     steps = [request["body"] for request in peto.requests if request["path"] == "/api/agent/step"]
     assert [step["input"][0]["content"] for step in steps] == ["/api/users lỗi 500"], "đường dẫn API không phải lệnh"
-    assert "  Hôm nay còn 190/200 bước · đã dùng 1.2k token · hội thoại này 1k token · Peto · mức vừa." in ui.text
+    assert "  Đang dùng: Peto · tài khoản Peto · mức vừa." in ui.text
+    assert "  Peto hôm nay: còn 190/200 bước · đã dùng 1.2k token (tính cả hội thoại gửi lại mỗi bước)." in ui.text
+    assert "  Hội thoại này: 1k token ngữ cảnh" in ui.text
     assert "Lệnh /new không nhận thêm gì phía sau." in ui.text and "Không có lệnh này" in ui.text
     assert ui.answers == ["/usage"], "/thoát gõ có dấu vẫn thoát"
 
@@ -328,7 +330,7 @@ LUNA = {"key": "luna", "label": "6 Luna", "description": "Nhanh, của OpenAI", 
 SOL = {"key": "sol", "label": "6.1 Sol", "description": "Mạnh nhất, của OpenAI", "step_cost": 4}
 
 
-def test_model_command_switches_models_and_remembers_the_choice(project, peto, monkeypatch):
+def test_model_command_switches_this_conversation_and_the_default_is_set_separately(project, peto, monkeypatch):
     me = {"account": "Bình", "device_name": "MAY-THU", "steps_used": 10, "steps_limit": 200, "tokens_used": 0,
           "default_effort": "medium", "models": [PETO, LUNA, SOL]}
 
@@ -350,12 +352,21 @@ def test_model_command_switches_models_and_remembers_the_choice(project, peto, m
     assert "  Model: Peto. Đổi bằng /model peto, /model luna, /model sol." in ui.text
     assert "    sol   6.1 Sol · Mạnh nhất, của OpenAI · tính 4 bước" in ui.text
     assert "Tài khoản này không dùng được model đó." in ui.text
-    assert "Đã chuyển sang 6 Luna." in ui.text and "Đã chuyển sang mức cao; mỗi bước tính 2 bước." in ui.text
-    assert "Đã chuyển sang 6.1 Sol; mỗi bước tính 8 bước." in ui.text
-    assert "· 6.1 Sol · mức cao, mỗi bước tính 8 bước." in ui.text
+    assert "Hội thoại này giờ dùng 6 Luna · mức vừa." in ui.text
+    assert "Đã chuyển sang mức cao; mỗi bước tính 2 bước." in ui.text
+    assert "Hội thoại này giờ dùng 6.1 Sol · mức cao; mỗi bước tính 8 bước." in ui.text
+    assert "  Đang dùng: 6.1 Sol · tài khoản Peto · mức cao, mỗi bước tính 8 bước." in ui.text
     steps = [request["body"] for request in peto.requests if request["path"] == "/api/agent/step"]
     assert [step["model"] for step in steps] == ["luna"]
-    assert config.load()["model"] == "sol"
+    settings = config.load()
+    assert "model" not in settings, "đổi model trong phiên không đổi mặc định (lộ trình M4)"
+    assert settings["recent_models"] == ["peto||sol", "peto||luna"]
+
+    # Đặt mặc định là thao tác riêng: peto models default (hay Ctrl+D trong /models).
+    chosen = FakeUI()
+    assert cli.models_command(chosen, default="6.1 sol") == 0 and config.load()["model"] == "sol"
+    listed = FakeUI()
+    assert cli.models_command(listed) == 0 and "  sol   6.1 Sol · tài khoản Peto · mặc định" in listed.text
 
     me["models"] = [PETO, LUNA]
     again = FakeUI(answers=["/thoat"])
@@ -390,7 +401,7 @@ def test_full_efforts_persist_forward_and_restrict_after_model_switch(project, p
     assert "chuyển sang mức vừa" in ui.text
     assert "Model hiện tại chỉ nhận" in ui.text
     assert peto.requests[-1]["body"]["effort"] == "medium"
-    assert cli._effort(me) == "low"
+    assert cli._effort(me) == "max", "/model trong phiên không đổi model mặc định (M4)"
     assert cli._supported_efforts(LUNA) == ["low", "medium", "high"]
     assert cli._supported_efforts({"efforts": ["unknown"]}) == ["low", "medium", "high"]
 
@@ -423,7 +434,7 @@ def test_claude_models_and_all_efforts_with_saved_session(project, peto, monkeyp
     assert native in requests[1]['input'], 'lượt sau giữ nguyên block của Claude'
     assert not any(i.get('type') in {'reasoning', 'web_search_call'} for i in requests[-1]['input'])
     assert 'Model hiện tại chỉ nhận' in ui.text
-    assert config.load()['model'] == 'sonnet' and config.load()['effort'] == 'max'
+    assert 'model' not in config.load() and config.load()['effort'] == 'max', '/model chỉ đổi hội thoại đang mở'
     saved = history.load(project, peto.url)
     assert saved is not None and saved.model == 'sonnet'
     assert search in saved.items, 'kết quả tìm web không làm hỏng /resume'

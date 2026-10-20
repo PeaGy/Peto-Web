@@ -200,11 +200,29 @@ peto connect openai
 - `peto connections`: các kết nối trên máy này. `peto disconnect <mã>`: xóa kết nối và khóa của nó trên máy này (khóa vẫn
   còn hiệu lực ở tài khoản OpenAI; thu hồi trên trang OpenAI nếu muốn).
 - Trong phiên, `/model` liệt kê cả model của Peto lẫn model qua khóa riêng (ví dụ `/model gpt-6.1-sol`); `/model peto`
-  quay lại Peto. Lựa chọn được nhớ cho lần mở sau. Đổi nguồn giữ nguyên hội thoại, kết quả công cụ và tiêu chí nghiệm thu.
+  quay lại Peto. Đổi nguồn giữ nguyên hội thoại, kết quả công cụ và tiêu chí nghiệm thu.
 - Lời nhắc và công cụ giống hệt khi đi qua máy chủ Peto (CLI mang bản chép của máy chủ), trừ tìm web: nguồn khóa riêng
   chưa có tìm web. Đặt tên hội thoại, `/btw`, tóm tắt và agent con khám phá cũng đi qua khóa riêng.
 - Máy chủ Peto tắt hay hết bước không chặn nguồn này; `/update` vẫn cần máy chủ Peto.
-- Bản này chưa có bảng `/connect`, `/models` kiểu OpenCode và chưa dùng được gói ChatGPT; đó là các mốc sau.
+- Chưa dùng được gói ChatGPT; đó là mốc sau.
+
+## Chọn model và nguồn: `/models`, `/connect` (từ 0.32.0)
+
+Hai bảng nổi giữa màn hình như OpenCode (nền phía sau tối đi, Esc hay bấm ra ngoài để đóng):
+
+- `/models` (hoặc `/model` không kèm tên): nhóm Yêu thích, Gần đây, rồi theo nguồn (Peto theo tài khoản, OpenAI theo
+  từng khóa). Gõ để tìm theo tên hay tên nguồn. `ctrl+f` yêu thích, `ctrl+d` đặt mặc định, `ctrl+a` mở `/connect`.
+- **Đổi model chỉ áp cho hội thoại đang mở.** Mặc định cho các lần mở peto sau đặt bằng `ctrl+d` trong `/models` hoặc
+  `peto models default <tên>` (trước 0.32.0, `/model` đổi luôn mặc định). `/resume` đi tiếp bằng model của hội thoại đó
+  nếu máy còn dùng được; không thì giữ model đang chọn và nói rõ. Model mặc định không còn (khóa đã xóa) thì peto báo
+  khi mở chứ không âm thầm đổi nguồn.
+- `/connect`: Peto và OpenAI, dấu ✓ cho nguồn đã kết nối. Thêm khóa OpenAI ngay trong bảng: khóa hiện thành chấm, được
+  kiểm bằng danh sách model (không tốn token) rồi mới lưu bằng DPAPI, sau đó chọn model của khóa đó. Đổi tên khóa
+  `ctrl+r`, xóa `ctrl+d` bấm hai lần. Đăng nhập Peto vẫn là `peto login` ngoài phiên.
+- Ô nhập ghi tên nguồn mờ cạnh tên model (`GPT-6.1 Sol OpenAI`). `/usage` tách model và nguồn, bước Peto hôm nay,
+  ngữ cảnh của hội thoại và token khóa riêng đã dùng trong phiên (số OpenAI trả về, không phải hóa đơn).
+- Không có màn hình chọn (ống dẫn, `PETO_AGENT_UI=classic`, máy chạy tự động): `peto models` (thêm `--json`),
+  `peto models default <tên>`, `peto connect openai`, `peto connections`, `peto disconnect <mã>`.
 
 ## Làm việc
 
@@ -420,7 +438,8 @@ nào được chọn, nên Enter không tự chạy gì. Từ 0.20.0 tên lệnh
   `none` không suy luận, `xhigh` rất cao, `max` tối đa.
   Các mức high/xhigh/max nhân đôi số bước của model; mức cao hơn có thể chờ lâu và dùng nhiều token hơn.
   Danh sách chỉ hiện mức model hỗ trợ. Khi đổi model không hỗ trợ mức đang dùng, CLI chuyển về vừa và thông báo.
-- `/model peto`, `/model luna`: đổi model, được nhớ trên máy này cho lần sau. Peto là mặc định; 6 Luna (của OpenAI)
+- `/model peto`, `/model luna`: đổi model của hội thoại đang mở (từ 0.32.0 không đổi mặc định cho lần sau; xem
+  `/models`). Peto là mặc định; 6 Luna (của OpenAI)
   dùng được với tài khoản Discord/Google. Chủ web còn chọn được `/model terra` (5.6 Terra) và `/model sol`. Gõ `/model` để xem model
   đang dùng và các model tài khoản của bạn được chọn; gõ `/model` kèm dấu cách thì chọn trong danh sách. Model đắt hơn
   tính nhiều bước hơn: Terra 2, Sol 4, nhân với mức suy nghĩ. Đổi model giữa hội thoại vẫn làm tiếp được; phần suy nghĩ

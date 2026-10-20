@@ -1434,6 +1434,44 @@ class TerminalUI(UI):
         answer = self.engine.ask(render_lines, handle)
         return int(answer) if answer else None
 
+    # ---- Khung nổi kiểu OpenCode (/models, /connect; CLI 0.32.0)
+
+    def dialog(self, dialog):
+        """Mở một khung của ``tui.dialog`` giữa màn hình (chân cố định thì ở chỗ ô nhập) rồi chờ kết quả. Esc, bấm ra
+        ngoài khung hay Ctrl+C đều là đóng."""
+        from .dialog import Result
+
+        self._flush_group()
+        self.clear_status()
+        dialog.result = None
+        self.engine.ask(lambda: dialog.render(self.theme, self.width - 2, self.height), dialog.handle,
+                        on_interrupt="", overlay=True, guard=False)
+        return dialog.result or Result("close")
+
+    @contextlib.contextmanager
+    def dialog_busy(self, dialog):
+        """Giữ khung trên màn hình trong lúc nơi gọi làm việc chậm (kiểm khóa API): phím bị bỏ qua, Ctrl+C ngắt việc
+        đó như ngắt một yêu cầu."""
+        from .footer import Panel
+
+        engine = self.engine
+        panel = Panel(lambda: dialog.render(self.theme, self.width - 2, self.height), lambda key: None,
+                      overlay=True, guard=False)
+        while True:
+            with engine.lock:
+                if engine.panel is None:
+                    engine.panel = panel
+                    engine._draw()
+                    break
+            time.sleep(0.05)
+        try:
+            yield
+        finally:
+            with engine.lock:
+                if engine.panel is panel:
+                    engine.panel = None
+                engine._draw()
+
     def _list_chooser(self, title: str, rows: list[tuple[str, str]], budget: int):
         state = {"selected": 0}
         theme = self.theme

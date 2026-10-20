@@ -52,6 +52,40 @@ journal, logs, export, request bodies or env; Ctrl+C; redirects; connect/disconn
 `backend/tests/test_agent_bundle.py`. Full CLI 725 passed in one run (242s); backend Agent/prompt/model/
 installer 197 passed. No real OpenAI key or paid call was used; live behaviour with a real key is unverified.
 
+## Multi-source models: M4 `/models`, `/connect`, `/usage` (2026-10-20; CLI 0.32.0 source)
+
+The owner tested `peto connect openai` with a real key, then asked for M4 and, after seeing three mockups, sent OpenCode
+2.0.29 screenshots: make it look like OpenCode. `tui/dialog.py` ports OpenCode's `dialog.tsx`, `dialog-select.tsx` and
+`dialog-prompt.tsx` (MIT): a centered 60-cell panel a quarter down the screen over the conversation dimmed with black at
+150/255, bold title with a clickable "esc", search line with a block cursor, accent-bold category headers, the selected
+row filled with primary, "●" on the current item, right-aligned footers, action hints at the bottom, "…" when the list
+scrolls, press-twice confirmation (`arm`). `SelectDialog` options marked `searchable=False` (Favorites/Recent copies)
+disappear while searching, where the source moves to the right like OpenCode. `ScreenEngine._float` composites a
+`Panel(overlay=True)` over the dimmed rows; a click outside is Esc; `guard=False` skips the 0.3 s permission key guard.
+`TerminalUI.dialog()` and `dialog_busy()` (slow work such as the key check keeps the panel up; Ctrl+C interrupts).
+`model_catalog.py` holds every model row (Peto rows from `/me` at session start, direct rows re-read from
+`connections.json` each time), display names (`gpt-6-luna` → "GPT-6 Luna"), categories, and `favorite_models`,
+`recent_models` (10), `set_default` in the user-profile `config.json`. `model_dialogs.py`: `/models` (Favorites, Recent 5,
+then per source; `ctrl+a` sources, `ctrl+f` favorite, `ctrl+d` set default; asks for an effort when the new model lacks
+the current one), `/connect` (Popular: Peto with account, OpenAI with key count; OpenAI with no key goes straight to the
+key prompt, else a key list with add, `ctrl+r` rename (`connections.rename`), `ctrl+d` twice delete; after connecting it
+opens that key's models), `add_key` (masked prompt, deviation from OpenCode, `secret_problem`, `/v1/models` check under
+`dialog_busy`, `connections.next_label`). Following roadmap M4, switching a model changes only the open conversation (it
+used to rewrite the default); `/resume` restores the conversation's own model when the catalog still has it; a lost
+default prints a yellow notice at start instead of silently switching; deleting the key in use switches with a notice.
+`ModelGateway` wraps every stream in `_Counted` (not a generator, so closing an unstarted stream still closes the inner
+one) and sums calls/input/output/cached tokens per (source, connection) for `/usage`, which now prints model and source,
+today's Peto steps, conversation context, and own-key tokens labelled as provider-reported, not an invoice. The prompt
+meta shows the source muted after the model ("GPT-6.1 Sol OpenAI"). New `peto models [--json]` and
+`peto models default <name>`; `/models` and `/connect` in `command_catalog.json` (since 0.32.0). ChatGPT stays hidden
+until M5. Without dialogs (pipes, classic UI) `/models` prints the list and `/connect` points to `peto connect openai`;
+keys never pass through slash commands, input history or session files. Tests: `tests/test_dialogs.py` (dialog render
+and keys, overlay on the fake screen, models flow, effort prompt, connect with a fake OpenAI server on 127.0.0.1 with the
+key absent from the screen and disk, rename and delete, resume model, lost default) plus updated `test_loop_client`,
+`test_direct_source`, `test_line_editor`, `test_mentions` for the new semantics. Final full CLI run: 735 passed in one
+run; backend installer/bundle tests 9 passed. Preview frames rendered from the real code: https://claude.ai/artifact/PVSuM2R7r9JJzmdxy7ZR1x. Not
+checked in a real Windows Terminal or VS Code, nor with a real key.
+
 ## Model-aware context and Sol 6.1 (2026-10-20; CLI 0.30.0 source)
 
 Owner explicitly requested OpenCode-style context budgeting and upgrading 6 Sol to 6.1 Sol. See

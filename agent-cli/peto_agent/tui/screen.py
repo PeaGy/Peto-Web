@@ -22,8 +22,9 @@ from collections.abc import Callable
 from .clipboard import copy_text
 from ..line_editor import Key
 from .footer import HIDE_CURSOR, SCAN_TICK_MS, SHOW_CURSOR, SYNC_OFF, SYNC_ON, TICK_MS, FooterEngine
-from .text import (Line, S, Target, cells, clickable, clip, crop, highlight, parse_ansi, render, target_at,
+from .text import (Line, S, Target, _split, cells, clickable, clip, crop, highlight, parse_ansi, render, target_at,
                    text_between, wrap)
+from .theme import blend
 
 ENTER_SCREEN, LEAVE_SCREEN = "\x1b[?1049h", "\x1b[?1049l"
 PAD = 2
@@ -238,14 +239,24 @@ class ScreenEngine(FooterEngine):
         ui = self.ui
         # Mọi khối vẽ theo bề ngang ui.width (= cột - 1, không bao giờ chạm cột cuối).
         ui._width, ui._height = columns, height
-        source, cursor = self._footer_source(columns, height)
+        overlay = self.panel if self._overlaid() else None
+        if overlay is not None:
+            # Khung nổi: phía sau vẫn là ô nhập như lúc chờ gõ, chỉ tối đi.
+            self.panel = None
+            try:
+                source, cursor = self._footer_source(columns, height)
+            finally:
+                self.panel = overlay
+        else:
+            source, cursor = self._footer_source(columns, height)
         if len(source) > height - 1:
             cut = len(source) - (height - 1)
             source = source[cut:]
             cursor = (max(0, cursor[0] - cut), cursor[1])
         footer = [render(self._paint(line), ui.colors) for line in source]
         width = columns - 1
-        head = self._title_rows(width) if height - len(footer) > 3 else []
+        head_lines = self._title_lines(width) if height - len(footer) > 3 else []
+        head = [render(line, ui.colors) for line in head_lines]
         view = height - len(footer) - len(head)
         lines, starts = self._layout(ui.width)
         total = len(lines)
@@ -264,14 +275,58 @@ class ScreenEngine(FooterEngine):
             if self.selection is not None:
                 line = self._highlight(line, number, width)
             rows.append(render(self._paint(line), ui.colors))
-        overlay = self._overlay(total, top, view, width)
-        if overlay is not None and view:
-            rows[-1] = render(self._paint(overlay), ui.colors)
-            hits[-1] = overlay
+        more = self._overlay(total, top, view, width)
+        if more is not None and view:
+            rows[-1] = render(self._paint(more), ui.colors)
+            hits[-1] = more
+        if overlay is not None:
+            return self._float(overlay, head_lines, hits[len(head):], source, columns, height)
         self._hits = hits + source
         return head + rows + footer, (len(head) + view + cursor[0], cursor[1])
 
+    def _float(self, panel, head: list[Line], view: list[Line | None], footer: list[Line], columns: int,
+               height: int) -> tuple[list[str], tuple[int, int]]:
+        """Khung nổi như OpenCode: mọi hàng phía sau tối đi dưới lớp đen độ đục 150/255, khung canh giữa, cách đỉnh
+        một phần tư màn hình. Bấm ra ngoài khung là đóng (Esc)."""
+        from .dialog import BACKDROP
+
+        ui = self.ui
+        theme = ui.theme
+        width = columns - 1
+        shade = 1 - BACKDROP
+        base = blend(theme.bg, "#000000", shade)
+        outside = Target(("dialog-backdrop", id(panel)), lambda: Key("escape"), look="")
+
+        def dim(line: Line | None) -> Line:
+            spans = []
+            for text, style in (line.spans if line is not None else []):
+                faded = {key: value for key, value in style.items() if key not in {"act", "c16", "d"}}
+                faded["fg"] = blend(style.get("fg") or theme.text, "#000000", shade)
+                faded["bg"] = blend(style["bg"], "#000000", shade) if style.get("bg") else base
+                faded["act"] = outside
+                spans.append((text, faded))
+            used = sum(cells(text) for text, _ in spans)
+            if used < width:
+                spans.append((" " * (width - used), {"bg": base, "act": outside}))
+            return crop(Line(spans), width)
+
+        rows = [dim(line) for line in head + list(view) + footer]
+        rows = (rows + [dim(None)] * height)[:height]
+        dialog = panel.render_lines()
+        size = max((line.width() for line in dialog), default=0)
+        left = max(0, (width - size) // 2)
+        top = max(0, min(height // 4, height - len(dialog)))
+        for offset, line in enumerate(dialog[:height]):
+            row = top + offset
+            before, _, after = _split(rows[row], [left, left + size])
+            rows[row] = Line(before + crop(line, width - left).spans + after)
+        self._hits = list(rows)
+        return [render(self._paint(line), ui.colors) for line in rows], (height - 1, 0)
+
     def _title_rows(self, width: int) -> list[str]:
+        return [render(line, self.ui.colors) for line in self._title_lines(width)]
+
+    def _title_lines(self, width: int) -> list[Line]:
         """Thanh trên cùng như opencode: tên hội thoại đậm bên trái, thư mục mờ bên phải; chưa có tên thì không có."""
         ui = self.ui
         title = getattr(ui, "session_title", None)
@@ -284,7 +339,7 @@ class ScreenEngine(FooterEngine):
                                                              theme.text, theme.panel, b=True)])
         gap = max(0, width - left.width() - len(right))
         row = Line(left.spans + [S(" " * gap, bg=theme.panel), S(right, theme.muted, theme.panel)])
-        return [render(crop(row, width), ui.colors)]
+        return [crop(row, width)]
 
     def _resolve_top(self, total: int, view: int, starts: list[int]) -> int:
         bottom = max(0, total - view)
@@ -360,16 +415,23 @@ class ScreenEngine(FooterEngine):
     def _submitted(self) -> None:
         self.follow = True
 
-    def ask(self, render_lines, handle, *, on_interrupt: str | None = None) -> str:
+    def ask(self, render_lines, handle, *, on_interrupt: str | None = None, overlay: bool = False,
+            guard: bool = True) -> str:
         # Câu hỏi quyền nằm ở đáy; hội thoại về cuối để thấy Peto vừa làm gì trước khi hỏi. Hộp /btw (Ctrl+C chỉ đóng
         # hộp) không kéo màn hình đi: người dùng có thể đang cuộn lên đọc.
         if on_interrupt is None:
             with self.lock:
                 self.follow = True
-        return super().ask(render_lines, handle, on_interrupt=on_interrupt)
+        return super().ask(render_lines, handle, on_interrupt=on_interrupt, overlay=overlay, guard=guard)
+
+    def _overlaid(self) -> bool:
+        return self.panel is not None and getattr(self.panel, "overlay", False)
 
     def _key(self, key) -> bool | None:
         name = key.name
+        if self._overlaid() and name == "wheel":
+            # Khung nổi đang mở: con lăn cuộn danh sách của khung, không cuộn hội thoại phía sau.
+            return super()._key(key)
         if name == "wheel":
             self._scroll(-WHEEL_LINES if key.text == "up" else WHEEL_LINES)
             # Hội thoại vừa trôi dưới con trỏ: chỗ đang tô không còn nằm dưới chuột nữa.
@@ -471,7 +533,8 @@ class ScreenEngine(FooterEngine):
         position = self._position(key)
         self.selection = None
         self._press_target, self._press_cell = self._hit(key.x, key.y), (key.x, key.y)
-        if position is None:
+        if position is None or self._overlaid():
+            # Khung nổi đang mở: chỉ bấm, không chọn chữ của hội thoại phía sau.
             self._drag = None
             return
         if key.ctrl and self._open_link(*position):

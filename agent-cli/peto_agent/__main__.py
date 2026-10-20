@@ -15,15 +15,15 @@ from datetime import datetime
 from pathlib import Path
 
 from . import (__version__, commands, config, connections, credentials, export, external_editor, history, line_editor,
-               mentions, transcript, outputs, snapshot, updater, user_guide)
-from .bundle import assembly
+               mentions, model_dialogs, transcript, outputs, snapshot, updater, user_guide)
+from . import model_catalog as catalog
 from .bundle.tool_schemas import FEATURES as BUNDLE_FEATURES
 from .client import ApiError, Client
 from .commands import fold
 from .events import ToolDone
 from .loop import Session, TaskLog, format_tokens
-from .providers import PETO, Selection
-from .providers.openai_key import EFFORTS as OPENAI_EFFORTS, OUTPUT_CAP as OPENAI_OUTPUT_CAP, OpenAIKeySource
+from .providers import PETO
+from .providers.openai_key import OpenAIKeySource
 from .providers.transport import ProviderHTTPError
 from .tools import FEATURES, NEW_FEATURES
 from .ui import UI, enable_vt
@@ -32,13 +32,11 @@ from .journal import DurabilityError
 
 # Lệnh không nhận gì phía sau; gõ thêm chữ thì nhắc chứ không gửi cả câu cho Peto.
 PLAIN_COMMANDS = {"/exit", "/new", "/help", "/usage", "/retry", "/diff", "/undo", "/compact", "/init", "/thinking", "/pending",
-                  "/plan", "/timeline", "/fork", "/update", "/export", "/guide"}
-EFFORT_LABELS = {"none": "không suy luận", "low": "thấp", "medium": "vừa", "high": "cao",
-                 "xhigh": "rất cao", "max": "tối đa"}
+                  "/plan", "/timeline", "/fork", "/update", "/export", "/guide", "/models", "/connect"}
+EFFORT_LABELS = catalog.EFFORT_LABELS
 # Giống STEP_COST của máy chủ: mức cao tính gấp đôi, nhân với số bước của model.
 EFFORT_COST = {"none": 1, "low": 1, "medium": 1, "high": 2, "xhigh": 2, "max": 2}
-# Máy chủ cũ chưa có /model thì chỉ có Peto.
-DEFAULT_MODELS = [{"key": "peto", "label": "Peto", "description": "Mặc định", "step_cost": 1}]
+DEFAULT_MODELS = catalog.DEFAULT_MODELS
 # Tên tiếng Anh như lệnh khác; tên tiếng Việt cũ, gõ có dấu hay không dấu, vẫn nhận.
 EFFORT_ALIASES = {"thap": "low", "thấp": "low", "low": "low", "vua": "medium", "vừa": "medium", "tb": "medium",
                   "medium": "medium", "cao": "high", "high": "high", "none": "none", "khong": "none",
@@ -76,9 +74,8 @@ def _saved_client(ui: UI, *, quiet: bool = False) -> Client | None:
 # Khóa lưu hội thoại khi máy chưa đăng nhập Peto mà dùng nguồn trực tiếp (M3): không có máy chủ nào được gọi bằng địa
 # chỉ này, nó chỉ để tách hội thoại theo nơi lưu như mọi hội thoại khác.
 LOCAL_SERVER = "http://localhost"
-# Model trực tiếp chọn sẵn sau peto connect: rẻ trước, vì tiền tính vào tài khoản của chính người dùng.
-DIRECT_PREFERENCE = ("gpt-6-luna", "gpt-5.6-terra", "gpt-6.1-sol")
-DIRECT_SOURCES = {OpenAIKeySource.id: OpenAIKeySource()}
+DIRECT_PREFERENCE = catalog.DIRECT_PREFERENCE
+DIRECT_SOURCES = catalog.DIRECT_SOURCES
 DIRECT_ME_TIMEOUT = 5.0
 
 
@@ -93,64 +90,19 @@ def _offline_client(settings: dict) -> Client:
     return Client(LOCAL_SERVER, None)
 
 
-def _direct_models() -> list[dict]:
-    """Model của các kết nối trực tiếp trên máy này, cùng dạng model máy chủ trả trong /me. ``key`` là tên gõ sau
-    /model: mã model thật, thêm @mã kết nối khi hai kết nối có cùng model."""
-    rows, seen = [], set()
-    for item in connections.load_all():
-        source = DIRECT_SOURCES.get(item.source)
-        if source is None:
-            continue
-        for slug in source.models(item):
-            key = slug if slug not in seen else f"{slug}@{item.id}"
-            seen.add(slug)
-            info = assembly.limits("openai", slug, OPENAI_OUTPUT_CAP)
-            rows.append({"key": key, "label": slug, "description": f"{item.label} · không tính bước Peto",
-                         "source": item.source, "connection": item.id, "model": slug, "step_cost": 0,
-                         "efforts": list(OPENAI_EFFORTS),
-                         "context_limits": {name: info[name] for name in ("identity", "context", "input", "output")}})
-    return rows
-
-
-def _entry_selection(entry: dict) -> tuple[str, str, str | None]:
-    """(nguồn, model, kết nối) của một dòng trong danh sách model; dòng của máy chủ Peto không có nguồn."""
-    return entry.get("source", PETO), entry.get("model", entry["key"]), entry.get("connection")
+# Tên cũ, giữ cho nơi gọi và test có sẵn; nội dung nằm ở model_catalog (M4).
+_direct_models = catalog.direct_models
+_entry_selection = catalog.entry_selection
+_saved_direct = catalog.saved_direct
+_remember_selection = catalog.remember_selection
+_budget_rows = catalog.budget_rows
+_supported_efforts = catalog.supported_efforts
+_check_problem = model_dialogs.check_problem
 
 
 def _current_entry(work: Session, models: list[dict]) -> dict | None:
     return next((entry for entry in models
                  if _entry_selection(entry) == (work.source, work.model, work.connection)), None)
-
-
-def _saved_direct(settings: dict, direct: list[dict]) -> dict | None:
-    """Nguồn trực tiếp đã chọn trên máy này (peto connect hay /model), nếu kết nối và model đó còn."""
-    chosen = settings.get("selection")
-    if not isinstance(chosen, dict) or chosen.get("source") in {None, PETO}:
-        return None
-    wanted = (chosen.get("source"), chosen.get("model"), chosen.get("connection"))
-    return next((entry for entry in direct if _entry_selection(entry) == wanted), None)
-
-
-def _remember_selection(entry: dict) -> None:
-    settings = config.load()
-    source, model, connection = _entry_selection(entry)
-    if source == PETO:
-        settings.pop("selection", None)
-        settings["model"] = model
-    else:
-        settings["selection"] = {"source": source, "connection": connection, "model": model}
-    config.save(settings)
-
-
-def _budget_rows(models: list[dict]) -> list[dict]:
-    """Giới hạn ngữ cảnh theo khóa ngân sách (Selection.budget_key): nguồn Peto theo mã model, nguồn trực tiếp theo
-    nguồn, kết nối và mã model, để cùng tên model ở hai nguồn không lẫn số."""
-    rows = []
-    for entry in models:
-        source, model, connection = _entry_selection(entry)
-        key = entry["key"] if source == PETO else Selection(source, model, "low", connection).budget_key
-        rows.append({**entry, "key": key})
-    return rows
 
 
 def _steps_text(work: Session) -> str:
@@ -225,12 +177,6 @@ def _cost_note(work: Session) -> str:
     return f"mỗi bước tính {cost} bước" if cost > 1 else ""
 
 
-def _supported_efforts(model: dict) -> list[str]:
-    values = model.get("efforts")
-    known = [value for value in EFFORT_LABELS if value in values] if isinstance(values, list) else []
-    return known or ["low", "medium", "high"]
-
-
 def _effort(me: dict) -> str:
     """Mức người dùng đã chọn bằng /effort trên máy này; chưa chọn thì theo mặc định của máy chủ."""
     supported = _supported_efforts(_model(_models(me)))
@@ -259,37 +205,47 @@ def _change_effort(ui: UI, work: Session, value: str) -> None:
     ui.success(f"Đã chuyển sang mức {EFFORT_LABELS[effort]}" + (f"; {note}." if note else "."))
 
 
-def _change_model(ui: UI, work: Session, value: str, models: list[dict]) -> None:
-    choices = ", ".join(f"/model {model['key']}" for model in models)
+def _change_model(ui: UI, work: Session, value: str, models: list[dict] | None = None) -> None:
+    """/model và /models. Không có tên: bảng chọn như OpenCode, hay danh sách chữ khi không có khung nổi. Đổi model chỉ
+    áp cho hội thoại đang mở; mặc định cho các lần mở sau đặt bằng Ctrl+D trong bảng hay peto models default (M4)."""
+    cat = getattr(work, "model_catalog", None)
+    if cat is not None:
+        models = cat.entries()
+    models = models or DEFAULT_MODELS
     if not value:
+        if cat is not None and model_dialogs.has_dialogs(ui):
+            model_dialogs.models(ui, work, cat)
+            return
+        choices = ", ".join(f"/model {model['key']}" for model in models)
         current = _current_entry(work, models) or models[0]
         ui.line(f"  Model: {current.get('label') or current['key']}. Đổi bằng {choices}.")
         width = max(len(model["key"]) for model in models)
         for key, description in map(commands.model_option, models):
             ui.line(f"    {key.ljust(width)}  {description}", "dim")
+        ui.line("  Đổi model chỉ áp cho hội thoại này. Mặc định cho các lần mở sau: peto models default <tên>.", "dim")
         return
     model = _find_model(value, models)
     if model is None:
+        choices = ", ".join(f"/model {model['key']}" for model in models)
         ui.line(f"  Tài khoản này không dùng được model đó. Chọn {choices}.", "yellow")
         return
-    label = model.get("label") or model["key"]
-    source, slug, connection = _entry_selection(model)
-    if (source, slug, connection) == (work.source, work.model, work.connection):
-        ui.line(f"  Đang dùng {label} rồi.", "dim")
+    if model_dialogs.switch(ui, work, model):
+        model_dialogs.fix_effort(ui, work)
+        model_dialogs.announce(ui, work, model)
+
+
+def _connect_command(ui: UI, work: Session) -> None:
+    """/connect: bảng "Kết nối nguồn" như OpenCode. Không có khung nổi thì chỉ cách làm bằng lệnh ngoài phiên, vì khóa
+    không được đi qua ô nhập hay lịch sử của nó."""
+    cat = getattr(work, "model_catalog", None)
+    if cat is not None and model_dialogs.has_dialogs(ui):
+        model_dialogs.sources(ui, work, cat)
         return
-    step_cost = int(model.get("step_cost") or 1) if source == PETO else 0
-    work.select(source, slug, connection=connection, step_cost=step_cost)
-    work.supported_efforts = _supported_efforts(model)
-    commands.use_efforts(work.supported_efforts)
-    if work.effort not in work.supported_efforts:
-        work.effort = "medium" if "medium" in work.supported_efforts else work.supported_efforts[0]
-        ui.line(f"  Model này không hỗ trợ mức trước đó; chuyển sang mức {EFFORT_LABELS[work.effort]}.", "dim")
-    _remember_selection(model)
-    if source != PETO:
-        ui.success(f"Đã chuyển sang {label} ({model.get('description')}); tiền tính vào tài khoản OpenAI của bạn.")
-        return
-    note = _cost_note(work)
-    ui.success(f"Đã chuyển sang {label}" + (f"; {note}." if note else "."))
+    for item in connections.load_all():
+        mark = " · đang dùng" if item.id == work.connection else ""
+        ui.line(f"  {item.id}  {item.label} · {', '.join(OpenAIKeySource().models(item)) or 'chưa có model'}{mark}")
+    ui.line("  Thêm khóa OpenAI: gõ /exit rồi chạy peto connect openai (khóa gõ không hiện, không vào lịch sử). Xóa: "
+            "peto disconnect <mã>. Đăng nhập Peto: peto login.", "dim")
 
 
 def _help(ui: UI) -> None:
@@ -302,6 +258,7 @@ def _help(ui: UI) -> None:
 
 
 def _usage(ui: UI, work: Session) -> None:
+    """/usage: model đang dùng, bước Peto hôm nay, ngữ cảnh của hội thoại và token khóa riêng trong phiên (M4)."""
     me = None
     if work.client.token:
         try:
@@ -311,17 +268,36 @@ def _usage(ui: UI, work: Session) -> None:
             if work.source == PETO:
                 ui.failure(err.message)
                 return
-    parts = _usage_parts(me) if me else []
-    if work.context_tokens:
-        parts.append(f"hội thoại này {format_tokens(work.context_tokens)} token")
+            ui.line(f"  Peto: chưa lấy được số bước hôm nay ({err.message}).", "dim")
     label = getattr(work, "model_label", "") or work.model
     if work.source == PETO:
         note = _cost_note(work)
-        parts.append(f"{label} · mức {EFFORT_LABELS[work.effort]}" + (f", {note}" if note else ""))
+        ui.line(f"  Đang dùng: {label} · tài khoản Peto · mức {EFFORT_LABELS[work.effort]}"
+                + (f", {note}." if note else "."))
     else:
-        parts.append(f"{label} · mức {EFFORT_LABELS[work.effort]}, khóa riêng nên không tính bước Peto")
-    summary = " · ".join(parts)
-    ui.line(f"  {summary[:1].upper()}{summary[1:]}.")
+        where = catalog.source_label(work.source, work.connection)
+        ui.line(f"  Đang dùng: {label} · {where} · mức {EFFORT_LABELS[work.effort]}, khóa riêng nên không tính bước "
+                "Peto.")
+    if me:
+        tokens = me.get("tokens_used")
+        ui.line(f"  Peto hôm nay: còn {_steps_left(me)} bước"
+                + (f" · đã dùng {format_tokens(tokens)} token (tính cả hội thoại gửi lại mỗi bước)."
+                   if isinstance(tokens, int) else "."))
+    if work.context_tokens:
+        share = work.context_share()
+        ui.line(f"  Hội thoại này: {format_tokens(work.context_tokens)} token ngữ cảnh"
+                + (f" · {min(100, round(share * 100))}% tới lúc tự tóm tắt." if share is not None else "."))
+    direct = [(key, row) for key, row in work.models.usage.items() if key[0] != PETO]
+    for (source, connection), row in direct:
+        parts = [f"{row['calls']} lượt gọi"]
+        if row["reported"]:
+            cached = f" ({format_tokens(row['cached_tokens'])} từ cache)" if row["cached_tokens"] else ""
+            parts += [f"{format_tokens(row['input_tokens'])} token vào{cached}",
+                      f"{format_tokens(row['output_tokens'])} token ra"]
+        ui.line(f"  Khóa riêng trong phiên này · {catalog.source_label(source, connection)}: {' · '.join(parts)}.")
+    if direct:
+        ui.line("    Số token là số OpenAI trả về, chưa phải hóa đơn; tiền tính ở tài khoản OpenAI của bạn "
+                "(platform.openai.com/usage).", "dim")
     # Thời gian từng phần và token của yêu cầu gần nhất: cuối mỗi yêu cầu chỉ in một dòng, chi tiết xem ở đây.
     if work.metrics.calls["model"]:
         work.show_metrics()
@@ -372,8 +348,16 @@ def _source_label(source: str, model: str) -> str:
 
 
 def _open_session(ui: UI, work: Session, saved: history.Saved) -> None:
-    """Mở một hội thoại đã lưu (/resume, peto --resume sau /update): màn hình toàn phần vẽ lại cả hội thoại."""
+    """Mở một hội thoại đã lưu (/resume, peto --resume sau /update): màn hình toàn phần vẽ lại cả hội thoại.
+
+    Hội thoại đi tiếp bằng model của nó, như OpenCode (M4), nếu model đó còn dùng được trên máy này; không thì giữ
+    model đang chọn và nói rõ."""
     connection = saved.connection or None
+    cat = getattr(work, "model_catalog", None)
+    if cat is not None and (saved.source, connection, saved.model) != (work.source, work.connection, work.model):
+        own = cat.find(saved.source, saved.model, connection)
+        if own is not None and model_dialogs.switch(ui, work, own):
+            model_dialogs.fix_effort(ui, work)
     switched = (saved.source, connection, saved.model) != (work.source, work.connection, work.model)
     work.resume(saved.items, retryable=saved.retryable, model=saved.model, session_id=saved.id, title=saved.title,
                 snapshots=saved.snapshots, model_identity=saved.model_identity, source=saved.source,
@@ -382,10 +366,10 @@ def _open_session(ui: UI, work: Session, saved: history.Saved) -> None:
     ui.replay(work.items)
     ui.success(f"Đã mở lại hội thoại {history.when(saved.saved_at)}: \"{saved.title}\"")
     if switched and saved.source != work.source:
-        # Không tự đổi nguồn: hội thoại đi tiếp bằng nguồn đang chọn, chỉ bỏ phần mờ nguồn cũ tạo ra.
+        # Model của hội thoại không còn trên máy này: đi tiếp bằng nguồn đang chọn, chỉ bỏ phần mờ nguồn cũ tạo ra.
         ui.line(f"  Hội thoại này chạy bằng {_source_label(saved.source, saved.model)}; giờ tiếp tục bằng "
-                f"{_source_label(work.source, work.model_label)}. Yêu cầu, kết quả công cụ và tiêu chí nghiệm thu "
-                "giữ nguyên.", "dim")
+                f"{_source_label(work.source, getattr(work, 'model_label', '') or work.model)}. Yêu cầu, kết quả công "
+                "cụ và tiêu chí nghiệm thu giữ nguyên. Gõ /models để chọn model khác.", "dim")
     if saved.interrupted:
         # Bản lưu giữa yêu cầu: Peto bị đóng khi đang làm. Danh sách việc cho biết đã tới đâu.
         plan = history.last_plan(saved.items)
@@ -788,8 +772,8 @@ def connect(ui: UI, provider: str, *, label: str = "", endpoint: str | None = No
         ui.line()
         ui.line("Đã hủy, chưa lưu gì.", "dim")
         return 130
-    if not 20 <= len(secret) <= credentials.MAX_SECRET_CHARS or any(not 33 <= ord(char) <= 126 for char in secret):
-        ui.failure("Đây không giống một khóa API OpenAI. Chưa lưu gì.")
+    if problem := model_dialogs.secret_problem(secret):
+        ui.failure(problem + " Chưa lưu gì.")
         return 1
     ui.line("Đang kiểm tra khóa (chỉ đọc danh sách model, không tốn token)…", "dim")
     try:
@@ -813,7 +797,7 @@ def connect(ui: UI, provider: str, *, label: str = "", endpoint: str | None = No
     _remember_selection(entry)
     ui.success(f"Đã kết nối “{item.label}” ({item.id}) · model dùng được: {', '.join(item.models)}.")
     ui.line(f"Từ giờ peto dùng {chosen} qua khóa này, không cần máy chủ Peto và không tính bước Peto; tiền tính vào "
-            "tài khoản OpenAI của bạn. Trong phiên, gõ /model để đổi model hay quay lại Peto.", "dim")
+            "tài khoản OpenAI của bạn. Trong phiên, gõ /models để đổi model hay quay lại Peto.", "dim")
     return 0
 
 
@@ -847,6 +831,50 @@ def disconnect(ui: UI, connection_id: str) -> int:
         config.save(settings)
     ui.success(f"Đã xóa kết nối {connection_id} và khóa của nó trên máy này. Khóa vẫn còn hiệu lực ở tài khoản OpenAI; "
                "muốn vô hiệu hẳn thì thu hồi trên trang OpenAI.")
+    return 0
+
+
+def models_command(ui: UI, *, as_json: bool = False, default: str | None = None) -> int:
+    """peto models: model dùng được trên máy này (Peto theo tài khoản đã đăng nhập, khóa riêng theo kết nối).
+    ``peto models default <tên>`` đặt model mở sẵn cho các lần chạy sau, cho cả lúc không có bảng chọn (M4)."""
+    settings = config.load()
+    peto_models, problem = [], ""
+    client = _saved_client(ui, quiet=True)
+    if client is not None:
+        try:
+            me = Client(client.server, client.token, timeout=DIRECT_ME_TIMEOUT).json("GET", "/api/agent/me")
+            peto_models = _models(me)
+        except ApiError as err:
+            problem = err.message
+    direct = _direct_models()
+    entries = [*peto_models, *direct]
+    if not entries:
+        ui.failure("Máy này chưa có nguồn model nào. Chạy peto login (tài khoản Peto) hoặc peto connect openai (khóa "
+                   "OpenAI riêng)." + (f" Máy chủ Peto: {problem}" if problem else ""))
+        return 1
+    if default is not None:
+        entry = _find_model(default, entries)
+        if entry is None:
+            ui.failure(f"Không có model “{default}” trên máy này. Xem danh sách bằng: peto models")
+            return 1
+        catalog.set_default(entry)
+        ui.success(f"Từ lần mở peto sau, hội thoại mới dùng {entry.get('label') or entry['key']}.")
+        return 0
+    chosen = _saved_direct(settings, direct) or (_model(peto_models) if peto_models else None)
+    rows = [{"key": entry["key"], "label": entry.get("label") or entry["key"],
+             "source": catalog.entry_selection(entry)[0], "connection": entry.get("connection"),
+             "model": catalog.entry_selection(entry)[1], "group": catalog.category(entry, entries),
+             "default": entry is chosen} for entry in entries]
+    if as_json:
+        print(json.dumps(rows, ensure_ascii=False, indent=2))
+        return 0
+    width = max(len(row["key"]) for row in rows)
+    for row in rows:
+        where = "tài khoản Peto" if row["source"] == PETO else row["group"]
+        ui.line(f"  {row['key'].ljust(width)}  {row['label']} · {where}" + (" · mặc định" if row["default"] else ""))
+    if problem:
+        ui.line(f"Model của Peto chưa hiện vì chưa lấy được tài khoản Peto ({problem}).", "yellow")
+    ui.line("Đặt mặc định cho các lần mở sau: peto models default <tên>. Trong phiên: /models.", "dim")
     return 0
 
 
@@ -939,6 +967,11 @@ def session(ui: UI, resume: str | None = None) -> int:
     elif peto_problem:
         ui.line(f"Chưa lấy được tài khoản Peto ({peto_problem}); {model['label']} qua khóa riêng vẫn làm việc bình "
                 "thường.", "dim")
+    chosen = settings.get("selection")
+    if direct is None and isinstance(chosen, dict) and chosen.get("source") not in {None, PETO}:
+        # Không âm thầm dùng nguồn khác (M4): kết nối mặc định đã bị xóa hay không còn model đó.
+        ui.line(f"Model mặc định {chosen.get('model')} (khóa riêng) không còn dùng được trên máy này nên peto dùng "
+                f"{model.get('label') or model['key']}. Gõ /models để chọn, hay /connect để thêm khóa.", "yellow")
     work = Session(client, workspace, ui, log=TaskLog(root.name), effort=effort,
                    model=model["key"] if direct is None else PETO,
                    model_step_cost=int(model.get("step_cost") or 1))
@@ -952,6 +985,11 @@ def session(ui: UI, resume: str | None = None) -> int:
     work.source_features = {PETO: peto_features, **{source: direct_features for source in DIRECT_SOURCES}}
     work.tools.features = peto_features
     work.configure_models(_budget_rows(models), me.get('context_transport'))
+    # Danh sách model của /models, /connect và /resume (M4): model Peto theo /me lúc mở phiên, model khóa riêng đọc lại
+    # mỗi lần để khóa vừa thêm hiện ngay.
+    work.model_catalog = catalog.Catalog(peto_models, account=str(me.get("account") or ""),
+                                         logged_in=bool(client.token), problem=peto_problem,
+                                         transport=me.get("context_transport"))
     if direct is not None:
         work.select(direct["source"], direct["model"], connection=direct["connection"], step_cost=0)
     work.supported_efforts = _supported_efforts(model)
@@ -981,8 +1019,10 @@ def session(ui: UI, resume: str | None = None) -> int:
     try:
         while True:
             try:
-                label = ((_current_entry(work, models) or {}).get("label")) or work.model
+                label = ((_current_entry(work, work.model_catalog.entries()) or {}).get("label")) or work.model
                 work.model_label = label
+                # Tên nguồn cạnh tên model như OpenCode ("GPT-6 Luna · OpenAI"); nguồn Peto không ghi thêm.
+                where = catalog.source_label(work.source, work.connection)
                 if work.items:
                     # Phiên đã có hội thoại (vừa hỏi, /init hay /resume): tệp lưu đã hoặc sẽ bị ghi đè, lời nhắc hết đúng.
                     resume_hint = ""
@@ -996,7 +1036,8 @@ def session(ui: UI, resume: str | None = None) -> int:
                 if resume_hint:
                     footer.append(resume_hint)
                 text = ui.prompt(footer=" · ".join(footer),
-                                 status=f"◉ {label} · {EFFORT_LABELS[work.effort]}").strip()
+                                 status=f"◉ {label}{f' · {where}' if where else ''} · "
+                                        f"{EFFORT_LABELS[work.effort]}").strip()
             except (EOFError, KeyboardInterrupt):
                 ui.line()
                 break
@@ -1122,8 +1163,11 @@ def session(ui: UI, resume: str | None = None) -> int:
             if name == "/effort":
                 _change_effort(ui, work, fold(value))
                 continue
-            if name == "/model":
-                _change_model(ui, work, value, models)
+            if name in {"/model", "/models"}:
+                _change_model(ui, work, value)
+                continue
+            if name == "/connect":
+                _connect_command(ui, work)
                 continue
             if name and not value:
                 ui.line("Không có lệnh này. Gõ /help để xem các lệnh.", "yellow")
@@ -1182,6 +1226,10 @@ def main(argv: list[str] | None = None) -> int:
     # Chỉ cho máy chủ thử trên chính máy này (127.0.0.1); địa chỉ khác địa chỉ chính thức bị từ chối.
     connect_parser.add_argument("--endpoint", help=argparse.SUPPRESS)
     commands.add_parser("connections", help="xem các kết nối khóa API riêng trên máy này")
+    models_parser = commands.add_parser("models", help="xem model dùng được trên máy này, hay đặt model mặc định")
+    models_parser.add_argument("--json", action="store_true", help="in dạng JSON")
+    models_parser.add_argument("action", nargs="?", choices=["default"], help="default <tên>: đặt model mặc định")
+    models_parser.add_argument("name", nargs="?", metavar="TÊN")
     disconnect_parser = commands.add_parser("disconnect", help="xóa một kết nối và khóa của nó trên máy này")
     disconnect_parser.add_argument("connection", metavar="MÃ")
     # /update mở lại bản mới bằng tham số này để tiếp tục đúng hội thoại; không phải lệnh người dùng gõ.
@@ -1199,6 +1247,11 @@ def main(argv: list[str] | None = None) -> int:
             return connect(ui, args.provider, label=args.label, endpoint=args.endpoint)
         if args.command == "connections":
             return list_connections(ui)
+        if args.command == "models":
+            if args.action == "default" and not args.name:
+                ui.failure("Gõ tên model: peto models default <tên>. Xem danh sách bằng: peto models")
+                return 2
+            return models_command(ui, as_json=args.json, default=args.name if args.action == "default" else None)
         if args.command == "disconnect":
             return disconnect(ui, args.connection)
         return session(ui, resume=args.resume)

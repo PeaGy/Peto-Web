@@ -111,6 +111,30 @@ def update_models(connection_id: str, models: tuple[str, ...]) -> None:
             for item in items])
 
 
+def rename(connection_id: str, label: str) -> Connection | None:
+    """Đổi tên dễ nhớ của kết nối (Ctrl+R trong /connect); trả kết nối mới, hay None khi không có kết nối này."""
+    label = " ".join(label.split())[:60]
+    items = load_all()
+    found = None
+    rows = []
+    for item in items:
+        if item.id == connection_id and label:
+            item = found = Connection(**{**asdict(item), "label": label})
+        rows.append(item)
+    if found is not None:
+        _write(rows)
+    return found
+
+
+def next_label(provider: str) -> str:
+    """Tên mặc định của kết nối mới: tên nhà cung cấp, thêm số khi đã có kết nối cùng nhà cung cấp."""
+    base = PROVIDERS[provider]["label"]
+    taken = {item.label for item in load_all() if item.provider == provider}
+    if base not in taken:
+        return base
+    return next(f"{base} {number}" for number in range(2, 1000) if f"{base} {number}" not in taken)
+
+
 def remove(connection_id: str) -> bool:
     """Bỏ hồ sơ và khóa của kết nối trên máy này (không thu hồi khóa ở phía nhà cung cấp)."""
     items = load_all()

@@ -222,6 +222,8 @@ def test_direct_workflow_needs_no_peto_login_and_spends_no_peto_steps(project, o
     assert "Đã sửa dòng đầu README và lệnh kiểm chạy được." in ui.text
     assert "peto login" not in ui.text and "chưa đăng nhập" not in ui.text
     assert "khóa riêng nên không tính bước Peto" in ui.text, "/usage chạy được khi không có máy chủ Peto"
+    assert "Khóa riêng trong phiên này · OpenAI: " in ui.text and "từ cache" in ui.text
+    assert "platform.openai.com/usage" in ui.text, "token khóa riêng là số OpenAI trả, không phải hóa đơn"
     work = responses(openai, "work")
     assert len(work) >= 4
     for request in work:
@@ -448,7 +450,7 @@ def test_connect_checks_the_key_saves_it_and_selects_the_cheapest_model(openai, 
     assert cli.list_connections(listed) == 0 and f"{item.id}" in listed.text and "đang dùng" in listed.text
     status = FakeUI()
     assert cli.status(status) == 0, "chưa đăng nhập Peto mà đã chọn khóa riêng thì status vẫn thành công"
-    assert "Nguồn đang chọn: gpt-6-luna" in status.text and "peto login" not in status.text
+    assert "Nguồn đang chọn: GPT-6 Luna" in status.text and "peto login" not in status.text
     gone = FakeUI()
     assert cli.disconnect(gone, item.id) == 0
     assert connections.load_all() == [] and "selection" not in config.load()
@@ -487,16 +489,21 @@ def test_model_command_moves_between_peto_and_the_direct_source(project, openai,
         config.save({"server": peto.url, "token": "peto_token_thu"})
         item = connections.add("openai", KEY, endpoint=f"{openai.url}/v1", models=("gpt-6-luna",))
         monkeypatch.chdir(project)
-        ui = FakeUI(answers=["/model", "/model gpt-6-luna", "Chào", "/model peto", "/exit"])
+        ui = FakeUI(answers=["/models", "/connect", "/model gpt-6-luna", "Chào", "/model peto", "/exit"])
         assert cli.session(ui) == 0
         assert "gpt-6-luna" in ui.text and "tiền tính vào tài khoản OpenAI của bạn" in ui.text
+        assert "    gpt-6-luna  GPT-6 Luna · OpenAI (khóa API riêng) · không tính bước Peto" in ui.text
+        assert "chạy peto connect openai" in ui.text and item.id in ui.text, "/connect không có khung nổi thì chỉ cách"
+        assert "Khóa riêng trong phiên này" not in ui.text
         assert responses(openai, "work") and not [r for r in peto.requests if r["path"] == "/api/agent/step"]
-        assert config.load().get("model") == "peto" and "selection" not in config.load()
+        settings = config.load()
+        assert "model" not in settings and "selection" not in settings, "đổi trong phiên không đổi mặc định (M4)"
+        assert settings["recent_models"] == ["peto||peto", f"openai-key|{item.id}|gpt-6-luna"]
         settings = config.load()
         settings["selection"] = {"source": "openai-key", "connection": item.id, "model": "gpt-6-luna"}
         config.save(settings)
         again = FakeUI(answers=["/exit"])
-        assert cli.session(again) == 0 and "gpt-6-luna" in again.text
+        assert cli.session(again) == 0 and "GPT-6 Luna" in again.text
     finally:
         peto.shutdown()
         peto.server_close()
