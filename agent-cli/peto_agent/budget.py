@@ -54,16 +54,18 @@ class Tracker:
     def reset(self):
         self.anchor = None
 
-    def observe(self, model, value, context=None):
+    def observe(self, model, value, context=None, *, key=None):
+        # key: khóa trong danh mục (Selection.budget_key); nguồn Peto dùng đúng khóa model của máy chủ.
+        key = key or model
         if not (info := clean(value)) or value.get("model") != model:
             return
-        if self.catalog.get(model) != info:
+        if self.catalog.get(key) != info:
             self.reset()
-        self.catalog[model] = info
-        self.context[model] = estimate(context or {})
+        self.catalog[key] = info
+        self.context[key] = estimate(context or {})
         overhead = value.get("overhead_tokens")
         if type(overhead) is int and 0 <= overhead <= 10_000_000:
-            self.overhead[model] = overhead
+            self.overhead[key] = overhead
         self.transport(value)
 
     def measured(self, model, items, usage):

@@ -7,8 +7,6 @@ cấp không có mục ở đây chỉ dùng prompt chung.
 
 from __future__ import annotations
 
-from ai.models import MODELS
-
 
 OPENAI_PROMPT = (
     "## Execution\nUse the supplied task goals and constraints to choose an approach. Explain results and relevant "
@@ -60,8 +58,8 @@ PROVIDER_PROMPTS = {"openai": OPENAI_PROMPT, "anthropic": ANTHROPIC_PROMPT}
 CHAT_PROVIDER_PROMPTS = {"xai": XAI_CHAT_PROMPT}
 
 
-def provider_prompt(model: str, *, chat: bool = False) -> str:
-    """Đoạn riêng của nhà cung cấp phục vụ ``model``; chuỗi rỗng khi không có."""
-    service = MODELS[model].service
+def provider_prompt(service: str, *, chat: bool = False) -> str:
+    """Đoạn riêng của nhà cung cấp ``service`` (``service`` trong ai/models.py: xai, openai, anthropic); chuỗi rỗng khi
+    không có. Nhận tên dịch vụ, không nhận khóa model, để module thuần và CLI dùng chung được (lộ trình nhiều nguồn)."""
     parts = (PROVIDER_PROMPTS.get(service, ""), CHAT_PROVIDER_PROMPTS.get(service, "") if chat else "")
     return "\n\n".join(part for part in parts if part)

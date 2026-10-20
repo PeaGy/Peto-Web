@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from ai.models import MODELS
+
 from .core import CORE_PROMPT
 from .providers import provider_prompt
 
@@ -113,7 +115,7 @@ Do not paste the whole artifact into the final answer. On failure, correct the r
 
 def chat_prompt(model: str) -> str:
     """Prompt gốc của tab Trò chuyện: lõi chung, phần web, rồi đoạn riêng của nhà cung cấp (như opencode)."""
-    return "\n\n".join(part for part in (CORE_PROMPT, WEB_PROMPT, provider_prompt(model, chat=True)) if part)
+    return "\n\n".join(part for part in (CORE_PROMPT, WEB_PROMPT, provider_prompt(MODELS[model].service, chat=True)) if part)
 
 
 DOCUMENT_MODE_PROMPT = (

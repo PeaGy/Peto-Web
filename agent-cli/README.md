@@ -182,6 +182,30 @@ Token được lưu ở `%APPDATA%\PetoAgent\config.json`. Đừng chia sẻ t�
 - `peto logout`: ngắt kết nối máy này.
 - Ngắt từ xa (ví dụ mất máy): trên web, **Cài đặt → Peto Agent → Ngắt kết nối**.
 
+## Dùng khóa OpenAI riêng (từ 0.31.0)
+
+Có khóa API OpenAI của riêng bạn thì Peto Agent gọi thẳng OpenAI bằng khóa đó: không qua máy chủ Peto, không cần
+`peto login`, không tính bước Peto trong ngày. Tiền tính vào tài khoản OpenAI của bạn.
+
+```powershell
+peto connect openai
+```
+
+- Dán khóa rồi nhấn Enter; khóa không hiện khi dán. CLI kiểm khóa bằng danh sách model của tài khoản (không tốn token),
+  rồi chọn sẵn model rẻ nhất Peto hỗ trợ (`gpt-6-luna`, rồi `gpt-5.6-terra`, `gpt-6.1-sol`).
+- Khóa được mã hóa bằng DPAPI của Windows (chỉ tài khoản Windows của bạn trên máy này mở được) ở
+  `%APPDATA%\PetoAgent\credentials\`, tách khỏi `config.json`. Khóa không bao giờ nằm trong hội thoại đã lưu, nhật ký,
+  `/export`, biến môi trường của lệnh Peto chạy, và chỉ được gửi tới `https://api.openai.com/v1`; CLI không theo chuyển
+  hướng.
+- `peto connections`: các kết nối trên máy này. `peto disconnect <mã>`: xóa kết nối và khóa của nó trên máy này (khóa vẫn
+  còn hiệu lực ở tài khoản OpenAI; thu hồi trên trang OpenAI nếu muốn).
+- Trong phiên, `/model` liệt kê cả model của Peto lẫn model qua khóa riêng (ví dụ `/model gpt-6.1-sol`); `/model peto`
+  quay lại Peto. Lựa chọn được nhớ cho lần mở sau. Đổi nguồn giữ nguyên hội thoại, kết quả công cụ và tiêu chí nghiệm thu.
+- Lời nhắc và công cụ giống hệt khi đi qua máy chủ Peto (CLI mang bản chép của máy chủ), trừ tìm web: nguồn khóa riêng
+  chưa có tìm web. Đặt tên hội thoại, `/btw`, tóm tắt và agent con khám phá cũng đi qua khóa riêng.
+- Máy chủ Peto tắt hay hết bước không chặn nguồn này; `/update` vẫn cần máy chủ Peto.
+- Bản này chưa có bảng `/connect`, `/models` kiểu OpenCode và chưa dùng được gói ChatGPT; đó là các mốc sau.
+
 ## Làm việc
 
 ```powershell
@@ -947,6 +971,10 @@ muốn gửi đi.
 Tên hội thoại (từ 0.21.0) do Peto đặt: tối đa 2.000 ký tự đầu tin đầu tiên của bạn và 1.000 ký tự đầu câu trả lời
 được gửi qua máy chủ tới xAI một lần cho mỗi hội thoại, kể cả khi bạn đang dùng model OpenAI hay Claude.
 
+Với khóa OpenAI riêng (từ 0.31.0), mọi thứ trên đi thẳng từ máy bạn tới OpenAI bằng khóa của bạn, không qua máy chủ
+Peto; tên hội thoại cũng do model đang chọn đặt qua khóa đó. Mở phiên vẫn hỏi máy chủ Peto số bước còn lại nếu máy đã
+đăng nhập (chờ tối đa 5 giây, lỗi thì bỏ qua), nhưng không gửi nội dung dự án nào tới đó.
+
 `/update` tải bộ cài và gói `peto` từ đúng máy chủ trong `config.json` (chỗ bạn đã đăng nhập), không gửi gì của dự án.
 
 `/btw` (từ 0.23.0) gửi hội thoại đang mở kèm câu hỏi đi như một bước bình thường, tới dịch vụ AI của model đang chọn.
@@ -996,3 +1024,8 @@ nhau). Không tăng thì máy đang cài bản cũ không được nhắc cập 
 .venv/Scripts/python.exe -m pytest agent-cli/tests
 cd backend && ../.venv/Scripts/python.exe -m pytest tests/test_agent_install.py   # gói wheel và script bộ cài
 ```
+
+## Giấy phép
+
+Peto Agent CLI phát hành theo [giấy phép MIT](LICENSE) (chủ dự án chọn ngày 20/10/2026). Phần chuyển từ
+opencode giữ thông báo license MIT của opencode, ghi trong cùng tệp LICENSE. Phần web và máy chủ Peto không thuộc giấy phép này.

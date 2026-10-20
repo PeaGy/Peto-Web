@@ -80,6 +80,15 @@ def test_wheel_is_reproducible_and_matches_its_record():
     assert not any("__pycache__" in name or name.startswith("tests/") for name in names)
     assert files["peto_agent/default_server.txt"].decode() == f"{ORIGIN}\n"
     assert "peto = peto_agent.__main__:main" in files[f"{dist_info}/entry_points.txt"].decode()
+    # CLI phát hành theo MIT (chủ dự án chọn ngày 2026-10-20), kèm thông báo license của phần chuyển từ opencode.
+    assert "License: MIT" in files[f"{dist_info}/METADATA"].decode().splitlines()
+    licence = files[f"{dist_info}/LICENSE"].decode()
+    assert licence.startswith("MIT License") and "Copyright (c) 2025 opencode" in licence
+    assert "peto_agent/providers/gateway.py" in files
+    # Nguồn trực tiếp (M3) dựng lời nhắc và schema trên máy từ bản chép của máy chủ: wheel phải mang đủ bản chép đó.
+    for name in ("__init__", "assembly", "agent_prompts", "core_prompt", "provider_prompts", "tool_schemas"):
+        assert f"peto_agent/bundle/{name}.py" in files
+    assert "peto_agent/providers/openai_key.py" in files and "peto_agent/credentials.py" in files
     for line in files[f"{dist_info}/RECORD"].decode().splitlines():
         path, digest, size = line.split(",")
         if path == f"{dist_info}/RECORD":
@@ -100,7 +109,10 @@ def test_pip_installs_the_wheel_and_the_cli_knows_its_server(tmp_path):
         check=True, capture_output=True,
     )
     assert any((target / "bin").glob("peto*"))
-    probe = "from peto_agent import config; import peto_agent.tui.view; print(config.default_server())"
+    probe = ("from peto_agent import config; import peto_agent.tui.view, peto_agent.providers.gateway; "
+             "from peto_agent.bundle import assembly; "
+             "assert assembly.prepare({'features': ['explore_v2']}, service='openai', web_search=False, "
+             "clock='').tools; print(config.default_server())")
     result = subprocess.run([sys.executable, "-c", probe], cwd=tmp_path, capture_output=True, text=True, check=True,
                             env={**os.environ, "PYTHONPATH": str(target)})
     assert result.stdout.strip() == ORIGIN

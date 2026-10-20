@@ -98,14 +98,11 @@ def agent_time_context(timezone: str | None = None) -> str:
     (Claude, và cache tự động của OpenAI/xAI) không bao giờ đọc lại được phần lịch sử phía sau. Làm tròn theo giờ thì
     các bước trong cùng một giờ dùng chung cache; giờ chính xác thì Agent chạy lệnh trên máy.
     """
+    # Định dạng nằm ở features/agent/assembly.py, dùng chung với CLI (nguồn trực tiếp tự lấy giờ trên máy).
+    from features.agent.assembly import time_text
+
     clock = current_datetime(timezone)
-    hour = clock["time"][:2]
-    return (
-        f"{TIME_HEADER_EN}\n"
-        f"{clock['date']}, between {hour}:00 and {hour}:59 ({clock['timezone']}, {clock['utc_offset']}).\n"
-        "Rounded to the hour; run a command on the machine when the exact time matters. Use this date over "
-        "historical timestamps for today, yesterday and tomorrow. The timezone does not prove the user's location."
-    )
+    return time_text(clock["date"], clock["time"][:2], clock["timezone"], clock["utc_offset"])
 
 
 TIME_HEADER_EN = "## Server-verified current time"

@@ -29,6 +29,9 @@ from .session_protocol import interrupted_items
 
 VERSION = 2
 LEGACY_VERSION = 1
+# Hội thoại chạy bằng nguồn model khác nguồn Peto (lộ trình nhiều nguồn, M2) lưu bằng bản 3: CLI cũ chỉ đọc bản 2 nên
+# bỏ qua tệp này, không mở nhầm nó bằng nguồn Peto. Hội thoại nguồn Peto vẫn là bản 2, CLI cũ mở được như trước.
+SOURCE_VERSION = 3
 MAX_AGE_SECONDS = 30 * 24 * 3600
 MAX_SESSIONS = 50
 TITLE_CHARS = 60
@@ -68,6 +71,9 @@ class Saved:
     # Ảnh chụp dự án lúc bắt đầu mỗi yêu cầu (CLI 0.26.0): dấu của tin người dùng (fingerprint) → mã cây trong kho ẩn.
     snapshots: dict = field(default_factory=dict)
     model_identity: str = ""
+    # Nguồn model và mã kết nối của lượt gọi cuối (M2); hội thoại cũ là nguồn Peto.
+    source: str = "peto"
+    connection: str = ""
 
     @property
     def message_count(self) -> int:
@@ -121,15 +127,18 @@ def first_title(items: list[dict]) -> str:
 
 def save(root: Path, server: str, items: list[dict], *, session_id: str, title: str = "", retryable: bool = False,
          model: str = "peto", interrupted: bool = False, saved_at: float | None = None,
-         snapshots: dict | None = None, runtime_managed: bool = False, model_identity: str = "") -> bool:
+         snapshots: dict | None = None, runtime_managed: bool = False, model_identity: str = "",
+         source: str = "peto", connection: str = "") -> bool:
     """Ghi nguyên tử một hội thoại; trả False khi lỗi để vòng làm việc dừng trước tác dụng phụ tiếp theo.
     ``saved_at`` giữ giờ lưu cũ (đổi tên không làm hội thoại nhảy lên đầu danh sách)."""
     if not items or not session_id:
         return False
     target = _folder(root) / f"{session_id}.json"
-    data = {"version": VERSION, "id": session_id, "title": title or first_title(items), "root": str(root),
-            "server": server, "saved_at": time.time() if saved_at is None else saved_at, "items": items,
-            "retryable": retryable, "model": model, "interrupted": interrupted,
+    sourced = source != "peto" or bool(connection)
+    data = {"version": SOURCE_VERSION if sourced else VERSION, "id": session_id, "title": title or first_title(items),
+            "root": str(root), "server": server, "saved_at": time.time() if saved_at is None else saved_at,
+            "items": items, "retryable": retryable, "model": model, "interrupted": interrupted,
+            **({"source": source, "connection": connection} if sourced else {}),
             **({"model_identity": model_identity} if model_identity else {}),
             **({'runtime_managed': True} if runtime_managed else {}),
             **({"snapshots": dict(snapshots)} if snapshots else {})}
@@ -151,7 +160,8 @@ def rename(root: Path, server: str, session_id: str, title: str) -> None:
     journal = Journal(root, server, session_id)
     save(root, server, saved.items, session_id=session_id, title=title.strip(), retryable=saved.retryable,
          model=saved.model, interrupted=saved.interrupted, saved_at=saved.saved_at, snapshots=saved.snapshots,
-         runtime_managed=journal.path.is_file(), model_identity=saved.model_identity)
+         runtime_managed=journal.path.is_file(), model_identity=saved.model_identity, source=saved.source,
+         connection=saved.connection)
     if journal.path.is_file():
         journal.rename(title.strip())
 
@@ -179,8 +189,15 @@ def delete(root: Path, server: str, session_id: str) -> bool:
 def _parse(data, root: Path, server: str, *, legacy: bool = False) -> Saved | None:
     if not isinstance(data, dict) or data.get("server") != server:
         return None
-    if data.get("version") != (LEGACY_VERSION if legacy else VERSION):
+    version = data.get("version")
+    if version not in ({LEGACY_VERSION} if legacy else {VERSION, SOURCE_VERSION}):
         return None
+    source, connection = "peto", ""
+    if version == SOURCE_VERSION:
+        source, connection = data.get("source"), data.get("connection") or ""
+        from .providers import valid_connection, valid_source
+        if not valid_source(source) or not valid_connection(connection or None):
+            return None
     if os.path.normcase(str(data.get("root") or "")) != os.path.normcase(str(root)):
         return None
     items = data.get("items")
@@ -200,7 +217,8 @@ def _parse(data, root: Path, server: str, *, legacy: bool = False) -> Saved | No
     return Saved(saved_at=saved_at, items=items, retryable=data.get("retryable") is True and not recovered,
                  model=data["model"] if isinstance(data.get("model"), str) and data["model"] else "peto",
                  model_identity=data.get("model_identity") if isinstance(data.get("model_identity"), str) else "",
-                 interrupted=data.get("interrupted") is True or bool(recovered), id=session_id, title=title, snapshots=snapshots)
+                 interrupted=data.get("interrupted") is True or bool(recovered), id=session_id, title=title, snapshots=snapshots,
+                 source=source, connection=connection)
 
 
 def _migrate(root: Path, server: str) -> None:
@@ -327,6 +345,25 @@ def _remove_archive(folder: Path, session_id: str) -> None:
         directory.rmdir()
     except OSError:
         pass
+
+
+def newer_sessions(root: Path, server: str) -> int:
+    """Số hội thoại của thư mục này do một bản peto mới hơn lưu (định dạng bản này chưa hiểu): /resume báo cho người
+    dùng biết chúng còn đó, cần cập nhật peto để mở; bản này không đọc, không ghi đè."""
+    count = 0
+    try:
+        for path in _folder(root).glob("*.json"):
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            if (isinstance(data, dict) and data.get("server") == server and type(data.get("version")) is int
+                    and data["version"] > SOURCE_VERSION
+                    and os.path.normcase(str(data.get("root") or "")) == os.path.normcase(str(root))):
+                count += 1
+    except OSError:
+        return count
+    return count
 
 
 def _prune(folder: Path, *, keep: Path) -> None:

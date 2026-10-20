@@ -120,6 +120,12 @@ def build_wheel(server: str) -> Wheel:
         metadata.append(f"Summary: {meta['description']}")
     if meta.get("requires-python"):
         metadata.append(f"Requires-Python: {meta['requires-python']}")
+    # License MIT của CLI (chủ dự án chọn ngày 2026-10-20): ghi vào METADATA và đóng kèm tệp LICENSE.
+    license_text = meta["license"].get("text") if isinstance(meta.get("license"), dict) else None
+    if license_text:
+        metadata.append(f"License: {license_text}")
+    if (CLI_DIR / "LICENSE").is_file():
+        files.append((f"{dist_info}/LICENSE", (CLI_DIR / "LICENSE").read_bytes()))
     scripts = "".join(f"{command} = {target}\n" for command, target in meta.get("scripts", {}).items())
     files += [
         (f"{dist_info}/METADATA", ("\n".join(metadata) + "\n").encode("utf-8")),

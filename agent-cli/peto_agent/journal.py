@@ -141,13 +141,14 @@ class Journal:
             self.lease.close()
             self.lease = None
 
-    def request_started(self, body, *, private=False, logical_step=None):
+    def request_started(self, body, *, private=False, logical_step=None, source=None):
         request_id = uuid.uuid4().hex
         purpose = str(body.get('context', {}).get('purpose') or 'work')
         with self.transaction() as db:
             db.execute('INSERT INTO requests VALUES(?,?,?)', (request_id, purpose, 'running'))
             self.event(db, 'model.started', request_id,
                        {'purpose': purpose, 'model': body.get('model'), 'effort': body.get('effort'),
+                        **({'source': source} if source else {}),
                         'logical_step': logical_step or uuid.uuid4().hex,
                         **({} if private else {'request': body})})
         return request_id

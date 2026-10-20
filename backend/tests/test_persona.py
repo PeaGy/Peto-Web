@@ -84,7 +84,7 @@ def test_reply_examples_are_a_grok_overlay():
     assert providers.XAI_CHAT_PROMPT not in chat.chat_prompt("luna") + chat.chat_prompt("haiku")
     assert providers.OPENAI_PROMPT in chat.chat_prompt("luna") and providers.ANTHROPIC_PROMPT in chat.chat_prompt("haiku")
     # Đoạn ví dụ chỉ thuộc tab Trò chuyện, không vào Peto Agent.
-    assert providers.provider_prompt("peto") == ""
+    assert providers.provider_prompt("xai") == ""
 
 
 def test_web_persona_is_an_assistant_not_the_discord_roleplay_character():

@@ -80,6 +80,8 @@ def run(session, task: str, depth: str, progress: Callable[[str], None]) -> dict
     tools._handlers = {name: handler for name, handler in tools._handlers.items() if name in ALLOWED}
     efforts = getattr(session, "supported_efforts", None)
     effort = "low" if not efforts or "low" in efforts else efforts[0]
+    # Cả lượt khám phá dùng một nguồn và model: chụp một lần lúc giao việc.
+    selection = session.selection(effort=effort)
     items: list[dict] = [user_message(task)]
     steps, summary, problem = 0, "", None
     try:
@@ -88,7 +90,7 @@ def run(session, task: str, depth: str, progress: Callable[[str], None]) -> dict
             # Dòng trạng thái lúc chờ model: bước mấy, và việc vừa làm (đọc, tìm xong ngay nên khó kịp thấy).
             progress(f"bước {step + 1}/{cap}" + (f" · vừa {ui.actions[-1][:1].lower() + ui.actions[-1][1:]}"
                                                  if ui.actions else ""))
-            output = _step(session, items, effort, final)
+            output = _step(session, items, selection, final)
             steps += 1
             items.extend(output)
             calls = [item for item in output if item.get("type") == "function_call"]
@@ -134,16 +136,17 @@ def run(session, task: str, depth: str, progress: Callable[[str], None]) -> dict
     return result
 
 
-def _step(session, items: list[dict], effort: str, final: bool) -> list[dict]:
+def _step(session, items: list[dict], selection, final: bool) -> list[dict]:
     context = session._step_context()
     context.update(purpose="explore", **({"final": True} if final else {}))
-    body = {"input": efficient_input(items), "effort": effort, "model": session.model, "context": context}
+    body = {"input": efficient_input(items), "effort": selection.effort, "model": selection.model, "context": context}
+    request = session.models.request("explore", body, selection)
     try:
-        with contextlib.closing(session.client.stream("/api/agent/step", body)) as events:
+        with contextlib.closing(session.models.stream(request)) as events:
             for event in events:
                 kind = event.get("type")
                 if kind == "meta":
-                    session.steps_used, session.steps_limit = event.get("steps_used"), event.get("steps_limit")
+                    session._observe_steps(event)
                 elif kind == "error":
                     raise SubagentError(str(event.get("message") or "Máy chủ báo lỗi."))
                 elif kind == "done":

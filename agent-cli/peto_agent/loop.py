@@ -15,6 +15,7 @@ from . import approvals, continuation, history, mentions, recall, subagent, user
 from .journal import Journal, DurabilityError
 from .observer import observe
 from .runtime_client import RuntimeClient
+from .providers import ModelGateway, Selection, classify
 from .task_state import TaskState
 from .checkpoint import Change, Checkpoint
 from .context import compact_prefix, compact_input, context_size, text_of, efficient_input
@@ -204,6 +205,13 @@ class Session:
         # Model chọn bằng /model, và số bước mỗi lần gọi model đó (trước khi nhân mức suy nghĩ).
         self.model = model
         self.model_step_cost = model_step_cost
+        # Nguồn model của phiên (lộ trình nhiều nguồn): "peto" gọi qua máy chủ Peto. connection là mã kết nối (tài khoản)
+        # của nguồn có nhiều kết nối; nguồn Peto không có.
+        self.source = "peto"
+        self.connection: str | None = None
+        # Khả năng khai báo theo nguồn (M3): nguồn Peto theo những gì máy chủ hiểu (/me), nguồn trực tiếp theo khả năng
+        # của chính CLI và bản chép lời nhắc/schema; select() áp đúng bộ của nguồn được chọn.
+        self.source_features: dict[str, list[str]] = {}
         # Tên model hiện cho người dùng ở dòng cuối yêu cầu; phiên đặt lại theo danh sách model của máy chủ.
         self.model_label = model
         self.items: list[dict] = []
@@ -235,10 +243,38 @@ class Session:
         self.client = RuntimeClient(client, self._journal, self._publish_model,
                                     lambda purpose: self._logical_step if purpose in {'work', 'wrapup'}
                                     else self._compaction_step if purpose == 'compact' else None)
+        # Mọi lượt gọi model đi qua cổng này; nguồn Peto chuyển tiếp qua transport ghi nhật ký ở trên.
+        self.models = ModelGateway(lambda: self.client)
         # UI chỉ giữ callback nhận đầu vào, không giữ quyền sở hữu transcript hay kết quả công cụ.
         bind = getattr(ui, 'bind_runtime', None)
         if bind:
             bind(self.enqueue, self.pending_input)
+
+    def selection(self, *, model: str | None = None, effort: str | None = None) -> Selection:
+        """Nguồn, model và mức suy nghĩ cho một lượt gọi, chụp tại lúc gọi."""
+        return Selection(self.source, self.model if model is None else model, self.effort if effort is None else effort,
+                         self.connection)
+
+    def _budget_key(self) -> str:
+        return self.selection().budget_key
+
+    def _observe_steps(self, event: dict) -> None:
+        """Số bước Peto đã dùng trong ngày: chỉ nguồn Peto báo, nguồn khác không làm mất con số đang hiện."""
+        if "steps_used" in event or "steps_limit" in event:
+            self.steps_used, self.steps_limit = event.get("steps_used"), event.get("steps_limit")
+
+    def _identity(self) -> str:
+        """Mã model thực của model đang chọn, nếu danh mục ngữ cảnh biết; chuỗi rỗng khi chưa biết."""
+        return self.context_budget.catalog.get(self._budget_key(), {}).get('identity', '')
+
+    def _compatible(self, source: str, connection: str | None, model: str, identity: str) -> bool:
+        """Phần mờ của hội thoại lưu (suy nghĩ mã hóa, chữ ký, lượt tìm web, mã item) dùng lại được với lựa chọn hiện
+        tại không: phải cùng nguồn, cùng kết nối, cùng model; danh mục biết mã model thực thì mã đó cũng phải khớp."""
+        current = self.selection()
+        if (source, connection or None, model) != (current.source, current.connection, current.model):
+            return False
+        known = self._identity()
+        return not known or known == identity
 
     def _journal(self):
         with self._save_lock:
@@ -249,8 +285,12 @@ class Session:
             return self._store
 
     def _runtime_data(self, items=None, **flags):
-        return {'version': history.VERSION, 'id': self.session_id, 'title': self.title or '', 'model': self.model,
-                'model_identity': self.context_budget.catalog.get(self.model, {}).get('identity', ''),
+        # Cùng quy tắc với history.save: nguồn khác Peto lưu bằng bản 3 để CLI cũ không mở nhầm bằng nguồn Peto.
+        sourced = self.source != 'peto' or self.connection is not None
+        return {'version': history.SOURCE_VERSION if sourced else history.VERSION, 'id': self.session_id,
+                'title': self.title or '', 'model': self.model,
+                **({'source': self.source, 'connection': self.connection or ''} if sourced else {}),
+                'model_identity': self._identity(),
                 'saved_at': time.time(), 'items': self.items if items is None else items,
                 'retryable': self.can_retry, 'interrupted': False, 'snapshots': self.snapshot_marks,
                 'task_state': self.task_state.data,
@@ -376,7 +416,7 @@ class Session:
                 self.session_id = history.new_id()
             saved = history.save(self.ws.root, self.client.server, self.items if items is None else items,
                                 session_id=self.session_id, title=self.title or "", model=self.model,
-                                model_identity=self.context_budget.catalog.get(self.model, {}).get('identity', ''),
+                                model_identity=self._identity(), source=self.source, connection=self.connection or "",
                                 snapshots=self.snapshot_marks, runtime_managed=True, **flags)
             if saved:
                 try:
@@ -401,12 +441,21 @@ class Session:
         title_client = RuntimeClient(self.client.client, lambda: title_journal, self._publish_model)
         prompt = (f"Tin đầu của người dùng:\n{first[:TITLE_SOURCE_CHARS[0]]}\n\n"
                   f"Đầu câu trả lời của Peto:\n{reply[:TITLE_SOURCE_CHARS[1]]}")
-        body = {"input": [user_message(prompt)], "effort": "low", "model": "peto", "context": {"purpose": "title"}}
+        # Nguồn Peto đặt tên bằng model peto (một bước, mức thấp), như từ CLI 0.21.0. Nguồn khác dùng chính model của
+        # phiên ở mức thấp, để lượt phụ không âm thầm gọi máy chủ Peto.
+        if self.source == "peto":
+            selection = Selection(self.source, "peto", "low")
+        else:
+            efforts = getattr(self, "supported_efforts", None) or ["low"]
+            selection = self.selection(effort="low" if "low" in efforts else efforts[0])
+        body = {"input": [user_message(prompt)], "effort": selection.effort, "model": selection.model,
+                "context": {"purpose": "title"}}
+        request = self.models.request("title", body, selection)
         self._titling = True
 
         def run() -> None:
             try:
-                with contextlib.closing(title_client.stream("/api/agent/step", body)) as events:
+                with contextlib.closing(self.models.stream(request, transport=title_client)) as events:
                     for event in events:
                         if event.get("type") != "done" or event.get("purpose") != "title":
                             continue
@@ -445,10 +494,11 @@ class Session:
         effort = "low" if "low" in getattr(self, "supported_efforts", ["low"]) else self.effort
         body = {"input": [*efficient_input(items), user_message(question)], "effort": effort, "model": self.model,
                 "context": {"purpose": "btw", "project": self.ws.root.name}}
-        with contextlib.closing(self.client.stream("/api/agent/step", body)) as events:
+        request = self.models.request("btw", body, self.selection(effort=effort))
+        with contextlib.closing(self.models.stream(request)) as events:
             for event in events:
                 if event.get("type") == "meta":
-                    self.steps_used, self.steps_limit = event.get("steps_used"), event.get("steps_limit")
+                    self._observe_steps(event)
                 if event.get("type") == "error":
                     raise ApiError(0, str(event.get("message") or "Không hỏi được câu này."))
                 if event.get("type") != "done":
@@ -459,24 +509,24 @@ class Session:
                                        if isinstance(item, dict) and item.get("role") == "assistant"
                                        and (text := text_of(item).strip()))
                 return answer or "(Peto không trả lời gì.)"
-        raise ApiError(0, "Kết nối tới máy chủ Peto bị ngắt trước khi có câu trả lời.")
+        raise ApiError(0, f"Kết nối tới {self._source_name()} bị ngắt trước khi có câu trả lời.")
 
     def context_share(self) -> float | None:
         """Mức dùng ngân sách token trước compact; máy chủ cũ dùng ngưỡng mục/ký tự của CLI."""
         if not self.items:
             return None
         if self._model_budget():
-            return self.context_budget.share(self.model, efficient_input(self.items), self._budget_extra())
+            return self.context_budget.share(self._budget_key(), efficient_input(self.items), self._budget_extra())
         return max(len(self.items) / COMPACT_ITEMS, context_size(self.items) / COMPACT_CHARS)
 
     def configure_models(self, models, transport=None):
         self.context_budget.configure(models, transport)
 
     def _model_budget(self):
-        return self.context_budget.catalog.get(self.model) if 'context_budget' in self.tools.features else None
+        return self.context_budget.catalog.get(self._budget_key()) if 'context_budget' in self.tools.features else None
 
     def _budget_extra(self):
-        return max(0, estimate(self._step_context()) - self.context_budget.context.get(self.model, 0))
+        return max(0, estimate(self._step_context()) - self.context_budget.context.get(self._budget_key(), 0))
 
     def _compact_due(self):
         if not self._model_budget():
@@ -488,24 +538,36 @@ class Session:
                 or request_size >= self.context_budget.max_request_bytes * .8)
 
     def set_model(self, model: str, step_cost: int = 1) -> None:
-        """Đổi model; hội thoại đang dở vẫn giữ, chỉ bỏ phần model cũ tạo ra mà model mới không đọc được."""
-        if model != self.model:
+        """Đổi model trong nguồn đang dùng."""
+        self.select(self.source, model, connection=self.connection, step_cost=step_cost)
+
+    def select(self, source: str, model: str, *, connection: str | None = None, step_cost: int = 1) -> None:
+        """Đổi nguồn hoặc model (M2). Hội thoại, kết quả công cụ, kế hoạch và tiêu chí nghiệm thu giữ nguyên, cùng mã
+        hội thoại; chỉ bỏ phần mờ mà lựa chọn mới không đọc được. Chỉ đổi ở ranh giới an toàn: giữa hai yêu cầu, khi
+        không còn lượt gọi hay công cụ nào đang chạy, để không lượt nào đổi nguồn giữa chừng hay chạy lại công cụ."""
+        if self._running:
+            raise RuntimeError("Đang làm một yêu cầu: đổi nguồn hoặc model sau khi yêu cầu này xong.")
+        Selection(source, model, self.effort, connection)  # kiểm định dạng trước khi đổi gì
+        if (source, connection, model) != (self.source, self.connection, self.model):
             if self.items:
                 self.items = portable(self.items)
             self.context_budget.reset()
             self.context_tokens = None
+        self.source, self.connection = source, connection
         self.model, self.model_step_cost = model, step_cost
+        if source in self.source_features:
+            self.tools.features = list(self.source_features[source])
 
     def resume(self, items: list[dict], *, retryable: bool = False, model: str = "peto", session_id: str | None = None,
-               title: str | None = None, snapshots: dict | None = None, model_identity: str = "") -> None:
+               title: str | None = None, snapshots: dict | None = None, model_identity: str = "",
+               source: str = "peto", connection: str | None = None) -> None:
         """Mở lại hội thoại đã lưu. Quên các tệp đã đọc, để Peto phải đọc lại trước khi sửa."""
         self.snapshot_marks = dict(snapshots or {})
         self.tools.skills.loaded.clear()
         self.tools.reset_task()
         self.metrics = self.tools.metrics = Metrics()
         self.active_seconds = 0.0
-        identity = self.context_budget.catalog.get(self.model, {}).get('identity')
-        compatible = model == self.model and (identity is None or identity == model_identity)
+        compatible = self._compatible(source, connection, model, model_identity)
         self.items = list(items) if compatible else portable(items)
         self.context_tokens = None
         self.context_budget.reset()
@@ -526,7 +588,8 @@ class Session:
                 journal.recover()
                 durable = journal.read()
                 if durable:
-                    compatible = model == self.model and (identity is None or identity == durable.get('model_identity'))
+                    compatible = self._compatible(durable.get('source') or 'peto', durable.get('connection') or None,
+                                                  durable.get('model') or model, durable.get('model_identity') or '')
                     self.items = durable['items'] if compatible else portable(durable['items'])
                     self.task_state = TaskState(self.ws, durable.get('task_state'))
                     self.tools.acceptance = self.task_state
@@ -960,7 +1023,7 @@ class Session:
     def _compact(self, metrics, *, propagate_cancel=False):
         self._compaction_step = uuid.uuid4().hex
         info = self._model_budget()
-        keep_tokens = min(15_000, max(0, (ceiling(info) - self.context_budget.overhead.get(self.model, 8000)) // 2)) if info else None
+        keep_tokens = min(15_000, max(0, (ceiling(info) - self.context_budget.overhead.get(self._budget_key(), 8000)) // 2)) if info else None
         prefix, tail = compact_prefix(self.items, keep_tokens=keep_tokens)
         if not prefix:
             self.ui.line("  Hội thoại còn ngắn, chưa cần tóm tắt.", "dim")
@@ -972,6 +1035,7 @@ class Session:
             self.ui.status(f"… Đang tóm tắt ngữ cảnh · {int(time.monotonic() - started)}s · Ctrl+C dừng")
         try:
             attempt, shrinks = 0, 0
+            model = self.model
             info = self._model_budget()
             target = int(ceiling(info) / 1.15) - min(12000, max(1024, ceiling(info) // 10)) if info else None
             rejected_size = None
@@ -983,16 +1047,17 @@ class Session:
                     source = compact_input(source, max(1, target - estimate(prompt)), force=bool(shrinks), max_bytes=room)
                 else:
                     source = efficient_input(source)
-                body = {"input": [*source, user_message(prompt)],
-                        "effort": "medium" if attempt else "low", "model": self.model,
+                effort = "medium" if attempt else "low"
+                body = {"input": [*source, user_message(prompt)], "effort": effort, "model": model,
                         "context": {"purpose": "compact", **({"features": ["context_budget"]} if info else {})}}
+                request = self.models.request("compact", body, self.selection(model=model, effort=effort))
                 metrics.calls["compact"] += 1
                 completed = None
                 try:
-                    with metrics.measure("compact"), contextlib.closing(self.client.stream("/api/agent/step", body, on_idle=waiting)) as events:
+                    with metrics.measure("compact"), contextlib.closing(self.models.stream(request, on_idle=waiting)) as events:
                         for event in events:
                             if event.get("type") == "meta":
-                                self.steps_used, self.steps_limit = event.get("steps_used"), event.get("steps_limit")
+                                self._observe_steps(event)
                             if event.get("type") == "error":
                                 if info and event.get("code") == "context_overflow":
                                     raise _ContextOverflow()
@@ -1297,16 +1362,18 @@ class Session:
         """Một lượt gọi model. Lỗi tạm thời trước khi có phản hồi thì tự chờ rồi gửi lại (RETRY_WAITS); Ctrl+C lúc
         chờ thì dừng yêu cầu như mọi khi."""
         self._logical_step = uuid.uuid4().hex
+        # Một nguồn cho cả lượt, kể cả các lần tự thử lại và lần gọi lại sau khi tóm tắt.
+        selection = self.selection()
         recovered_context = False
         for attempt in range(len(RETRY_WAITS) + 1):
             try:
-                return self._attempt(purpose, may_retry=attempt < len(RETRY_WAITS))
+                return self._attempt(purpose, selection, may_retry=attempt < len(RETRY_WAITS))
             except _ContextOverflow:
                 if recovered_context or not self.compact(propagate_cancel=True):
                     self.ui.failure('Không đủ chỗ trong ngữ cảnh sau tóm tắt; giữ lịch sử để bạn /compact hoặc /new.')
                     return None
                 recovered_context = True
-                return self._attempt_after_compact(purpose)
+                return self._attempt_after_compact(purpose, selection)
             except _Retry as retry:
                 wait = RETRY_WAITS[attempt]
                 self._log("retry_auto", attempt=attempt + 1, seconds=wait, message=retry.message)
@@ -1320,18 +1387,22 @@ class Session:
                     self.ui.clear_status()
         return None
 
-    def _attempt_after_compact(self, purpose):
+    def _attempt_after_compact(self, purpose, selection):
         try:
-            return self._attempt(purpose, may_retry=False)
+            return self._attempt(purpose, selection, may_retry=False)
         except _ContextOverflow:
             self.ui.failure('Model vẫn từ chối ngữ cảnh sau một lần tóm tắt. Đã giữ lịch sử; không tự thử lại.')
             return None
 
-    def _attempt(self, purpose: str | None, *, may_retry: bool) -> list[dict] | None:
+    def _attempt(self, purpose: str | None, selection: Selection | None = None, *,
+                 may_retry: bool) -> list[dict] | None:
+        selection = selection or self.selection()
         context = self._step_context()
         if purpose:
             context["purpose"] = purpose
-        body = {"input": efficient_input(self.items), "effort": self.effort, "model": self.model, "context": context}
+        body = {"input": efficient_input(self.items), "effort": selection.effort, "model": selection.model,
+                "context": context}
+        request = self.models.request(purpose or "work", body, selection)
         writer = self.ui.reply()
         received = False
         started = time.monotonic()
@@ -1348,15 +1419,16 @@ class Session:
         waiting()
         try:
             self.metrics.calls["model"] += 1
-            with self.metrics.measure("model"), contextlib.closing(self.client.stream("/api/agent/step", body, on_idle=waiting)) as events:
+            with self.metrics.measure("model"), contextlib.closing(self.models.stream(request, on_idle=waiting)) as events:
                 for event in events:
                     kind = event.get("type")
                     produced = produced or kind in {'delta', 'thinking', 'search'}
                     received = True
                     if kind == "meta":
                         if 'context_budget' in self.tools.features:
-                            self.context_budget.observe(self.model, event.get('context_budget'), context)
-                        self.steps_used, self.steps_limit = event.get("steps_used"), event.get("steps_limit")
+                            self.context_budget.observe(selection.model, event.get('context_budget'), context,
+                                                        key=selection.budget_key)
+                        self._observe_steps(event)
                     elif kind == "search":
                         # Tìm web chạy ở phía dịch vụ AI; ở đây chỉ báo cho người dùng biết bước này có tra web.
                         if event.get("text") == "searching" and not searching:
@@ -1386,7 +1458,7 @@ class Session:
                         if total:
                             self.context_tokens = total
                         observed = self.items if self._published_output == output else self.items + output
-                        self.context_budget.measured(self.model, efficient_input(observed), usage)
+                        self.context_budget.measured(selection.budget_key, efficient_input(observed), usage)
                         # done là ranh giới hoàn tất. Không để lỗi đóng socket sau đó làm mất bước đã nhận.
                         return output
                     elif kind == "error":
@@ -1400,16 +1472,17 @@ class Session:
                             raise _Retry(message.rstrip(". ") or "Lỗi tạm thời")
                         writer.finish()
                         self.ui.failure(message)
-                        self._log("error", message=message)
+                        self._log("error", message=message, category=classify(
+                            code=event.get("code"), retryable=event.get("retryable") is True))
                         return None
         except ApiError as err:
             if output is not None:
                 return output
             writer.finish()
             if err.status in RETRY_STATUSES and not received and may_retry:
-                raise _Retry("Mất kết nối tới máy chủ Peto") from err
+                raise _Retry(f"Mất kết nối tới {self._source_name()}") from err
             self.ui.failure(err.message)
-            self._log("error", message=err.message, status=err.status)
+            self._log("error", message=err.message, status=err.status, category=classify(status=err.status))
             if err.status in {0, 408, 502, 503, 504}:
                 self._interrupted()
             return None
@@ -1424,7 +1497,15 @@ class Session:
     def _interrupted(self) -> None:
         self.can_retry = True
         self.ui.line("  Đã giữ kết quả các bước hoàn tất. Khi có mạng, gõ /retry để thử lại bước này.", "yellow")
-        self.ui.line("  Phần trả lời đang nhận chưa hoàn tất. Thử lại có thể dùng thêm một bước trên máy chủ.", "dim")
+        if self.source == "peto":
+            self.ui.line("  Phần trả lời đang nhận chưa hoàn tất. Thử lại có thể dùng thêm một bước trên máy chủ.", "dim")
+        else:
+            self.ui.line("  Phần trả lời đang nhận chưa hoàn tất. Thử lại là một lượt gọi mới, tính vào tài khoản của "
+                         "khóa đang dùng.", "dim")
+
+    def _source_name(self) -> str:
+        """Nơi lượt gọi model đi tới, dùng trong lời báo mất kết nối."""
+        return "máy chủ Peto" if self.source == "peto" else "nhà cung cấp model"
 
     def _summary(self, elapsed: float, outcome: str) -> None:
         self.ui.title(self.ui.tab_title(TITLE_LABELS[outcome]))
