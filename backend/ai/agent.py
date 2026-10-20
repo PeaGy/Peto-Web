@@ -32,7 +32,7 @@ class AgentEvent:
 
 async def agent_step(
     *, instructions: str, input_items: list[dict], tools: list[dict], effort: str = AGENT_REASONING,
-    model: str = "peto", web_search: bool = False, final: bool = False,
+    model: str = "peto", web_search: bool = False, final: bool = False, max_output_tokens: int | None = None,
 ) -> AsyncIterator[AgentEvent]:
     """``model`` đã được ``ai_models.resolve`` kiểm quyền: chọn xAI, OpenAI hoặc Claude theo danh mục.
 
@@ -53,10 +53,10 @@ async def agent_step(
         from .models import MODELS
 
         if MODELS[model].service == "anthropic":
-            events = _claude_step(instructions, input_items, tools, effort, model, web_search, tool_choice)
+            events = _claude_step(instructions, input_items, tools, effort, model, web_search, tool_choice, max_output_tokens)
         else:
-            events = (_xai_step(instructions, input_items, tools, effort, web_search) if model == "peto"
-                      else _openai_step(instructions, input_items, tools, effort, model, web_search, tool_choice))
+            events = (_xai_step(instructions, input_items, tools, effort, web_search, max_output_tokens) if model == "peto"
+                      else _openai_step(instructions, input_items, tools, effort, model, web_search, tool_choice, max_output_tokens))
     else:
         raise ProviderError("Nhà cung cấp AI hiện tại chưa hỗ trợ Peto Agent.")
     async for event in events:
@@ -95,6 +95,17 @@ def _describe(error) -> str:
     return _clip(f"{getattr(error, 'code', '') or ''} {getattr(error, 'message', '') or ''}")
 
 
+def _context_overflow(error) -> bool:
+    body = getattr(error, "body", None)
+    if isinstance(body, dict):
+        body = body.get("error", body)
+    code = body.get("code") if isinstance(body, dict) else getattr(error, "code", None)
+    text = str(body.get("message", "") if isinstance(body, dict) else getattr(error, "message", "")).lower()
+    return (isinstance(code, str) and code in {"context_length_exceeded", "context_window_exceeded", "prompt_too_long"}) or any(
+        phrase in text for phrase in ("maximum context length", "context window exceeded", "prompt is too long",
+                                     "input token count exceeds", "exceeds the context window"))
+
+
 def _http_client():
     """Client HTTP riêng cho agent, có móc ghi lại mã lỗi.
 
@@ -112,7 +123,7 @@ def _http_client():
 
 
 async def _xai_step(instructions: str, items: list[dict], tools: list[dict], effort: str,
-                    web_search: bool = False) -> AsyncIterator[AgentEvent]:
+                    web_search: bool = False, max_output_tokens: int | None = None) -> AsyncIterator[AgentEvent]:
     # Import trễ như ai/__init__.py: chạy mock không cần SDK openai.
     from openai import AsyncOpenAI
 
@@ -127,7 +138,7 @@ async def _xai_step(instructions: str, items: list[dict], tools: list[dict], eff
     except XaiAuthError as err:
         raise ProviderError("Peto chưa được kết nối với dịch vụ AI. Người quản trị cần chạy lại lệnh đăng nhập.") from err
     async for event in _responses_step(
-        _client, "xAI", AGENT_MODEL, XAI_MAX_OUTPUT_TOKENS, instructions, items, tools, effort,
+        _client, "xAI", AGENT_MODEL, min(max_output_tokens or XAI_MAX_OUTPUT_TOKENS, XAI_MAX_OUTPUT_TOKENS), instructions, items, tools, effort,
         auth_message="Kết nối AI của Peto đã hết hạn. Người quản trị cần đăng nhập lại.",
         rate_message="Dịch vụ AI đang nhận nhiều yêu cầu quá. Đợi chút rồi thử lại nhé.",
         web_search=web_search,
@@ -137,7 +148,7 @@ async def _xai_step(instructions: str, items: list[dict], tools: list[dict], eff
 
 async def _openai_step(instructions: str, items: list[dict], tools: list[dict], effort: str,
                        model: str, web_search: bool = False,
-                       tool_choice: str | None = None) -> AsyncIterator[AgentEvent]:
+                       tool_choice: str | None = None, max_output_tokens: int | None = None) -> AsyncIterator[AgentEvent]:
     from openai import AsyncOpenAI
 
     from ai.models import MODELS
@@ -149,7 +160,7 @@ async def _openai_step(instructions: str, items: list[dict], tools: list[dict], 
         _openai_client = AsyncOpenAI(api_key=OPENAI_API_KEY, http_client=_http_client())
     info = MODELS[model]
     async for event in _responses_step(
-        _openai_client, "OpenAI", info.slug, OPENAI_MAX_OUTPUT_TOKENS, instructions, items, tools, effort,
+        _openai_client, "OpenAI", info.slug, min(max_output_tokens or OPENAI_MAX_OUTPUT_TOKENS, OPENAI_MAX_OUTPUT_TOKENS), instructions, items, tools, effort,
         auth_message="Khóa OpenAI của máy chủ Peto không dùng được. Gõ /model peto để làm tiếp nhé.",
         rate_message=f"{info.label} đang bị OpenAI giới hạn lượt hoặc đã hết hạn mức. Gõ /model peto để làm tiếp, "
                      "hoặc thử lại sau nhé.",
@@ -160,7 +171,7 @@ async def _openai_step(instructions: str, items: list[dict], tools: list[dict], 
 
 async def _claude_step(instructions: str, items: list[dict], tools: list[dict], effort: str,
                        model: str, web_search: bool = False,
-                       tool_choice: str | None = None) -> AsyncIterator[AgentEvent]:
+                       tool_choice: str | None = None, max_output_tokens: int | None = None) -> AsyncIterator[AgentEvent]:
     from core import config
     from ai import _load_claude
     from .models import MODELS
@@ -171,7 +182,7 @@ async def _claude_step(instructions: str, items: list[dict], tools: list[dict], 
     if _claude_client is None:
         _claude_client = _load_claude().ClaudeClient(cache_history="always")
     async for event in _responses_step(
-        _claude_client, "Anthropic", MODELS[model].slug, config.ANTHROPIC_AGENT_MAX_OUTPUT_TOKENS,
+        _claude_client, "Anthropic", MODELS[model].slug, min(max_output_tokens or config.ANTHROPIC_AGENT_MAX_OUTPUT_TOKENS, config.ANTHROPIC_AGENT_MAX_OUTPUT_TOKENS),
         instructions, items, tools, effort, auth_message="Khóa Claude không dùng được.",
         rate_message="Claude đang giới hạn lượt.", web_search=web_search, tool_choice=tool_choice,
     ):
@@ -251,6 +262,8 @@ async def _responses_step(client, service: str, model: str, max_output_tokens: i
             elif event_type in {"response.failed", "error"}:
                 error = getattr(getattr(event, "response", None), "error", None) if event_type == "response.failed" else event
                 logger.warning("%s báo lỗi trong bước agent: %s", service, _describe(error))
+                if _context_overflow(error):
+                    raise ProviderError("Ngữ cảnh vượt giới hạn model; cần tóm tắt trước khi tiếp tục.", code="context_overflow")
                 raise ProviderError("Mô hình gặp lỗi ở bước này. Thử lại nhé.", retryable=True)
         raise ProviderError("Kết nối tới AI bị ngắt trước khi xong bước này. Thử lại nhé.", retryable=True)
     except AuthenticationError as err:
@@ -266,12 +279,14 @@ async def _responses_step(client, service: str, model: str, max_output_tokens: i
                             retryable=True) from err
     except APIStatusError as err:
         logger.warning("%s trả lỗi HTTP %s ở bước agent: %s", service, err.status_code, _clip(err.message))
+        if err.status_code in {400, 413} and _context_overflow(err):
+            raise ProviderError("Ngữ cảnh vượt giới hạn model; cần tóm tắt trước khi tiếp tục.", code="context_overflow") from err
         # Dịch vụ không nhận công cụ tìm web thì làm tiếp không tìm web, thay vì hỏng cả bước.
         if web_search and not produced and err.status_code in {400, 403}:
             logger.warning("%s không nhận công cụ tìm web ở bước agent; gọi lại không kèm tìm web.", service)
             async for event in _responses_step(client, service, model, max_output_tokens, instructions, items, tools,
                                                effort, auth_message=auth_message, rate_message=rate_message,
-                                               web_search=False):
+                                               web_search=False, tool_choice=tool_choice):
                 yield event
             return
         if err.status_code == 400:

@@ -267,7 +267,7 @@ def _resume(ui: UI, work: Session, value: str = "") -> None:
 def _open_session(ui: UI, work: Session, saved: history.Saved) -> None:
     """Mở một hội thoại đã lưu (/resume, peto --resume sau /update): màn hình toàn phần vẽ lại cả hội thoại."""
     work.resume(saved.items, retryable=saved.retryable, model=saved.model, session_id=saved.id, title=saved.title,
-                snapshots=saved.snapshots)
+                snapshots=saved.snapshots, model_identity=saved.model_identity)
     ui.clear_conversation()
     ui.replay(work.items)
     ui.success(f"Đã mở lại hội thoại {history.when(saved.saved_at)}: \"{saved.title}\"")
@@ -699,6 +699,7 @@ def session(ui: UI, resume: str | None = None) -> int:
     # Khả năng mới (đọc có số dòng, find_files, sửa khớp gần đúng) chỉ bật khi máy chủ đã hiểu chúng.
     offered = me.get("agent_features") if isinstance(me.get("agent_features"), list) else []
     work.tools.features = [*FEATURES, *(feature for feature in NEW_FEATURES if feature in offered)]
+    work.configure_models(models, me.get('context_transport'))
     work.supported_efforts = _supported_efforts(model)
     # Output đầy đủ của lệnh dài (CLI 0.25.0) chỉ giữ 7 ngày; kho ảnh chụp dự án (0.26.0) dọn mỗi ngày một lần.
     outputs.prune()

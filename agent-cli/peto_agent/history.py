@@ -67,6 +67,7 @@ class Saved:
     title: str = ""
     # Ảnh chụp dự án lúc bắt đầu mỗi yêu cầu (CLI 0.26.0): dấu của tin người dùng (fingerprint) → mã cây trong kho ẩn.
     snapshots: dict = field(default_factory=dict)
+    model_identity: str = ""
 
     @property
     def message_count(self) -> int:
@@ -120,7 +121,7 @@ def first_title(items: list[dict]) -> str:
 
 def save(root: Path, server: str, items: list[dict], *, session_id: str, title: str = "", retryable: bool = False,
          model: str = "peto", interrupted: bool = False, saved_at: float | None = None,
-         snapshots: dict | None = None, runtime_managed: bool = False) -> bool:
+         snapshots: dict | None = None, runtime_managed: bool = False, model_identity: str = "") -> bool:
     """Ghi nguyên tử một hội thoại; trả False khi lỗi để vòng làm việc dừng trước tác dụng phụ tiếp theo.
     ``saved_at`` giữ giờ lưu cũ (đổi tên không làm hội thoại nhảy lên đầu danh sách)."""
     if not items or not session_id:
@@ -129,6 +130,7 @@ def save(root: Path, server: str, items: list[dict], *, session_id: str, title: 
     data = {"version": VERSION, "id": session_id, "title": title or first_title(items), "root": str(root),
             "server": server, "saved_at": time.time() if saved_at is None else saved_at, "items": items,
             "retryable": retryable, "model": model, "interrupted": interrupted,
+            **({"model_identity": model_identity} if model_identity else {}),
             **({'runtime_managed': True} if runtime_managed else {}),
             **({"snapshots": dict(snapshots)} if snapshots else {})}
     try:
@@ -149,7 +151,7 @@ def rename(root: Path, server: str, session_id: str, title: str) -> None:
     journal = Journal(root, server, session_id)
     save(root, server, saved.items, session_id=session_id, title=title.strip(), retryable=saved.retryable,
          model=saved.model, interrupted=saved.interrupted, saved_at=saved.saved_at, snapshots=saved.snapshots,
-         runtime_managed=journal.path.is_file())
+         runtime_managed=journal.path.is_file(), model_identity=saved.model_identity)
     if journal.path.is_file():
         journal.rename(title.strip())
 
@@ -197,6 +199,7 @@ def _parse(data, root: Path, server: str, *, legacy: bool = False) -> Saved | No
                  if isinstance(key, str) and isinstance(value, str) and re.fullmatch(r"[0-9a-f]{40}", value)}
     return Saved(saved_at=saved_at, items=items, retryable=data.get("retryable") is True and not recovered,
                  model=data["model"] if isinstance(data.get("model"), str) and data["model"] else "peto",
+                 model_identity=data.get("model_identity") if isinstance(data.get("model_identity"), str) else "",
                  interrupted=data.get("interrupted") is True or bool(recovered), id=session_id, title=title, snapshots=snapshots)
 
 

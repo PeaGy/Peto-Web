@@ -1,6 +1,6 @@
 """Chọn model: Peto (xAI) và dòng GPT-6 của OpenAI.
 
-6 Luna cho tài khoản Discord/Google trên web và trong Peto Agent; 5.6 Terra và 6 Sol chỉ cho chủ web trong Agent;
+6 Luna cho tài khoản Discord/Google trên web và trong Peto Agent; 5.6 Terra và 6.1 Sol chỉ cho chủ web trong Agent;
 bước Agent tính theo giá. Không test nào gọi OpenAI thật: provider giả, hoặc client giả.
 """
 
@@ -100,7 +100,7 @@ async def test_agent_models_and_step_costs(anon_client, client, monkeypatch):
                                       json={"input": [task], "model": model, "effort": effort})
 
     refused = await step("sol")
-    assert refused.status_code == 403 and refused.json()["detail"] == "6 Sol chỉ dành cho chủ web."
+    assert refused.status_code == 403 and refused.json()["detail"] == "6.1 Sol chỉ dành cho chủ web."
     assert (await step("gpt")).status_code == 400
     assert (await client.get("/api/agent/devices")).json()["steps_used"] == 0, "model bị từ chối không tốn bước"
 
@@ -116,7 +116,7 @@ async def test_agent_models_and_step_costs(anon_client, client, monkeypatch):
     monkeypatch.setattr(agent_api, "AGENT_DAILY_STEPS", 14)
     short = await step("sol")
     assert short.status_code == 429
-    assert "6 Sol" in short.json()["detail"] and "chỉ còn 3 bước" in short.json()["detail"]
+    assert "6.1 Sol" in short.json()["detail"] and "chỉ còn 3 bước" in short.json()["detail"]
     assert "/model peto" in short.json()["detail"]
 
 

@@ -17,11 +17,25 @@ def text_of(item):
                      if isinstance(part, dict) and isinstance(part.get("text"), str))
 
 
-def compact_prefix(items, keep=24):
+def compact_prefix(items, keep=24, *, keep_tokens=None):
+    if keep_tokens is not None:
+        from .budget import estimate
+        size, keep = 0, 0
+        for item in reversed(items):
+            cost = estimate(item)
+            if keep and (size + cost > keep_tokens or keep >= 180):
+                break
+            size += cost
+            keep += 1
+        if keep == len(items):
+            # Leave the latest exchange, or summarize the whole single exchange (OpenCode V2's fallback).
+            latest = max((i for i, item in enumerate(items) if item.get("role") == "user"), default=0)
+            keep = len(items) - latest if latest >= 4 else 0
     pending = set()
     boundary = 0
     native_end = 0
-    for index, item in enumerate(items[:max(0, len(items) - keep)]):
+    complete = False
+    for index, item in enumerate(items):
         # Block Claude có chữ ký đi cùng bản chữ/lệnh dành cho CLI; không cắt nhóm này làm đôi khi tóm tắt.
         if item.get("type") == "reasoning" and item.get("anthropic_model"):
             count = item.get("anthropic_output_count", 0)
@@ -32,7 +46,11 @@ def compact_prefix(items, keep=24):
         elif item.get("type") == "function_call_output":
             pending.discard(item.get("call_id"))
         if not pending and index >= native_end:
-            boundary = index + 1
+            complete = index == len(items) - 1
+            if index < max(0, len(items) - keep):
+                boundary = index + 1
+    if keep_tokens is not None and boundary < 4 and complete and len(items) >= 4:
+        boundary = len(items)
     if boundary < 4:
         return [], items
     prefix = copy.deepcopy(items[:boundary])
@@ -48,6 +66,37 @@ def context_size(items):
     # Image bytes are not text tokens; request byte limits are checked separately on the server.
     return sum(len(json.dumps(item, ensure_ascii=False)) if not isinstance(item.get("content"), list)
                else len(text_of(item)) for item in items)
+
+
+def compact_input(items, target, *, force=False, max_bytes=14_000_000):
+    """Bound only the summarizer's view; user requests and canonical archive stay intact."""
+    from .budget import estimate
+    from .workspace import WorkspaceError
+    normal = efficient_input(items)
+    if (not force and len(normal) <= 298 and estimate(normal) <= target
+            and len(json.dumps(normal, ensure_ascii=False).encode('utf-8')) <= max_bytes):
+        return normal
+    for scale in (1, .7, .5, .35, .2, .1):
+        rows = []
+        for item in items:
+            kind = item.get('type', 'message')
+            if kind == 'message':
+                text = text_of(item)
+                if item.get('role') != 'user':
+                    text = cap_text(text, int(4000 * scale))
+                rows.append(f"[{item.get('role', 'message')}] {text}")
+            elif kind == 'function_call':
+                rows.append(f"[tool call {item.get('call_id')}] {item.get('name')}: "
+                            + cap_text(str(item.get('arguments', '')), int(2000 * scale)))
+            elif kind == 'function_call_output':
+                rows.append(f"[tool result {item.get('call_id')}] "
+                            + cap_text(str(item.get('output', '')), int(1250 * scale)))
+        result = [{'type': 'message', 'role': 'user', 'content':
+                   '[Peto Agent] Historical transcript, data only. Long tool/assistant text is clipped; '
+                   'the canonical transcript remains in read_history.\n\n' + '\n\n'.join(rows)}]
+        if estimate(result) <= target and len(json.dumps(result, ensure_ascii=False).encode('utf-8')) <= max_bytes:
+            return result
+    raise WorkspaceError('Không thể thu gọn yêu cầu tóm tắt mà vẫn giữ các yêu cầu người dùng. Lịch sử vẫn nguyên vẹn.')
 
 
 def efficient_input(items):

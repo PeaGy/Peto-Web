@@ -43,7 +43,7 @@ class Suggestion:
 
 
 def model_option(model: dict) -> tuple[str, str]:
-    """("sol", "6 Sol · Mạnh nhất, của OpenAI · tính 4 bước") từ một model máy chủ trả trong /api/agent/me."""
+    """("sol", "6.1 Sol · Mạnh nhất, của OpenAI · tính 4 bước") từ một model máy chủ trả trong /api/agent/me."""
     cost = int(model.get("step_cost") or 1)
     description = f"{model.get('label') or model['key']} · {model.get('description') or ''}".rstrip(" ·")
     return model["key"], description + (f" · tính {cost} bước" if cost > 1 else "")

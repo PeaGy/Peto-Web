@@ -33,6 +33,7 @@ from features.accounts import auth
 import storage as db
 from features.agent.install import cli_version
 from features.agent.tools import FEATURES, explore_schemas, tool_schemas
+from features.agent import budget
 from ai.agent import agent_step
 from shared.attachments import sniff_image_mime
 from ai.base import ProviderError
@@ -266,10 +267,12 @@ async def me(device: dict = Depends(device_auth)) -> dict:
         # Bản peto máy chủ đang phát; CLI cũ hơn thì nhắc chạy lại lệnh cài.
         "cli_version": cli_version(),
         # Model tài khoản này chọn được bằng /model, kèm số bước mỗi lần gọi (trước khi nhân mức suy nghĩ).
-        "models": ai_models.public(ai_models.usable(owner, "agent")),
+        "models": [{**row, "context_limits": budget.limits(row["key"])}
+                   for row in ai_models.public(ai_models.usable(owner, "agent"))],
         # Khả năng máy chủ hiểu: CLI chỉ khai báo khả năng mới khi máy chủ có trong danh sách, để CLI mới gặp máy chủ
         # chưa cập nhật vẫn chạy như cũ (kết quả công cụ do CLI dựng phải khớp mô tả do máy chủ gửi).
         "agent_features": sorted(FEATURES),
+        "context_transport": {"max_items": MAX_ITEMS, "max_request_bytes": AGENT_MAX_REQUEST_BYTES},
     }
 
 
@@ -589,26 +592,34 @@ async def step(request: Request, device: dict = Depends(device_auth)):
     else:
         instructions = _instructions(context, searching, model.key)
     usage_purpose = {"compact": "compact", "title": "side", "btw": "side"}.get(special or "", "agent")
+    step_tools = ([] if no_tools else explore_schemas(_features(context)) if exploring else
+                  tool_schemas(_features(context), patch_model=_patch_model(model.key)))
+    budgeting = "context_budget" in _features(context)
 
     async def event_stream() -> AsyncIterator[str]:
         failure: str | None = None
         # Lỗi tạm thời mà bước chưa có phản hồi (đã được hoàn lại): CLI 0.25.0 tự thử lại, không tốn bước.
         retryable = False
+        error_code = None
         produced = False
         completed = False
         outcome = "cancelled"
         started = time.monotonic()
         first_at: float | None = None
         try:
-            yield _sse({"type": "meta", "steps_used": used, "steps_limit": AGENT_DAILY_STEPS})
+            window = budget.request_budget(model.key, instructions, step_tools, items, compact=special == "compact",
+                                           web_search=searching and not final) if budgeting else None
+            yield _sse({"type": "meta", "steps_used": used, "steps_limit": AGENT_DAILY_STEPS,
+                        **({"context_budget": window} if window else {})})
+            if window and (window["max_output_tokens"] < 1024 or
+                           (special is None and window["request_tokens"] >= window["ceiling"])):
+                raise ProviderError("Ngữ cảnh đã tới ngân sách model; cần tóm tắt trước khi tiếp tục.", code="context_overflow")
             async with admission.slot(f"agent:{owner}"):
                 async with asyncio.timeout(AGENT_STEP_TIMEOUT_SECONDS):
                     async for event in agent_step(instructions=instructions, input_items=items,
-                                                  tools=[] if no_tools else
-                                                  explore_schemas(_features(context)) if exploring else tool_schemas(
-                                                      _features(context), patch_model=_patch_model(model.key)),
+                                                  tools=step_tools,
                                                   effort=effort, model=model.key, web_search=searching,
-                                                  final=final):
+                                                  final=final, **({"max_output_tokens": window["max_output_tokens"]} if window else {})):
                         if not produced:
                             first_at = time.monotonic()
                         produced = True
@@ -642,6 +653,7 @@ async def step(request: Request, device: dict = Depends(device_auth)):
         except ProviderError as err:
             outcome = "provider_error"
             retryable = err.retryable
+            error_code = err.code
             logger.warning("Bước agent lỗi từ nhà cung cấp: %s", err)
             failure = str(err)
         except TimeoutError:
@@ -674,7 +686,8 @@ async def step(request: Request, device: dict = Depends(device_auth)):
                                (first_at - started) if first_at else elapsed, elapsed,
                                f" · kết thúc bằng lỗi: {failure}" if failure else "")
         if failure:
-            yield _sse({"type": "error", "message": failure, **({"retryable": True} if retryable and not produced else {})})
+            yield _sse({"type": "error", "message": failure, **({"retryable": True} if retryable and not produced else {}),
+                        **({"code": error_code} if budgeting and error_code and not produced else {})})
 
     return StreamingResponse(
         event_stream(),

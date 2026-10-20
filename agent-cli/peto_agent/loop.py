@@ -17,12 +17,13 @@ from .observer import observe
 from .runtime_client import RuntimeClient
 from .task_state import TaskState
 from .checkpoint import Change, Checkpoint
-from .context import compact_prefix, context_size, text_of, efficient_input
+from .context import compact_prefix, compact_input, context_size, text_of, efficient_input
 from .events import Permission, RequestEnd
 from .formats import format_duration, format_tokens  # noqa: F401 - evals/report.py và __main__ lấy từ đây
 from .project_guide import MAX_GUIDE_CHARS, MAX_NOTE_CHARS, add_note, guides
 from .metrics import Metrics
 from .client import ApiError, Client
+from .budget import Tracker, estimate, ceiling
 from .config import log_dir
 from .presentation import AgentUI
 from .runner import cap_text
@@ -93,6 +94,10 @@ def cap_result(value, bounded=BOUNDED_KEYS):
         # Guidance is already bounded by its reader; never truncate rules in the middle.
         return {key: item if key in bounded else cap_result(item) for key, item in value.items()}
     return value
+
+
+class _ContextOverflow(Exception):
+    pass
 
 
 class _Retry(Exception):
@@ -206,6 +211,7 @@ class Session:
         self.steps_limit: int | None = None
         # Độ dài hội thoại mô hình thấy ở bước gần nhất (token vào + ra): cho biết lúc nào nên /new.
         self.context_tokens: int | None = None
+        self.context_budget = Tracker()
         self.can_retry = False
         self.metrics = self.tools.metrics
         self._running = False
@@ -244,6 +250,7 @@ class Session:
 
     def _runtime_data(self, items=None, **flags):
         return {'version': history.VERSION, 'id': self.session_id, 'title': self.title or '', 'model': self.model,
+                'model_identity': self.context_budget.catalog.get(self.model, {}).get('identity', ''),
                 'saved_at': time.time(), 'items': self.items if items is None else items,
                 'retryable': self.can_retry, 'interrupted': False, 'snapshots': self.snapshot_marks,
                 'task_state': self.task_state.data,
@@ -341,6 +348,7 @@ class Session:
         self.active_seconds = 0.0
         self.items = []
         self.context_tokens = None
+        self.context_budget.reset()
         self.can_retry = False
         self.tools.command_grants.clear()
         self.tools.seen_guides.clear()
@@ -368,6 +376,7 @@ class Session:
                 self.session_id = history.new_id()
             saved = history.save(self.ws.root, self.client.server, self.items if items is None else items,
                                 session_id=self.session_id, title=self.title or "", model=self.model,
+                                model_identity=self.context_budget.catalog.get(self.model, {}).get('identity', ''),
                                 snapshots=self.snapshot_marks, runtime_managed=True, **flags)
             if saved:
                 try:
@@ -453,28 +462,53 @@ class Session:
         raise ApiError(0, "Kết nối tới máy chủ Peto bị ngắt trước khi có câu trả lời.")
 
     def context_share(self) -> float | None:
-        """Hội thoại đã tới đâu so với mức tự tóm tắt (0 tới 1), để người dùng biết lúc nào nên /compact (chủ web hỏi
-        ngày 2026-10-12). Tính theo mức của chính CLI chứ không theo cỡ ngữ cảnh của model: CLI tóm tắt sớm hơn nhiều."""
+        """Mức dùng ngân sách token trước compact; máy chủ cũ dùng ngưỡng mục/ký tự của CLI."""
         if not self.items:
             return None
+        if self._model_budget():
+            return self.context_budget.share(self.model, efficient_input(self.items), self._budget_extra())
         return max(len(self.items) / COMPACT_ITEMS, context_size(self.items) / COMPACT_CHARS)
+
+    def configure_models(self, models, transport=None):
+        self.context_budget.configure(models, transport)
+
+    def _model_budget(self):
+        return self.context_budget.catalog.get(self.model) if 'context_budget' in self.tools.features else None
+
+    def _budget_extra(self):
+        return max(0, estimate(self._step_context()) - self.context_budget.context.get(self.model, 0))
+
+    def _compact_due(self):
+        if not self._model_budget():
+            return len(self.items) >= COMPACT_ITEMS or context_size(self.items) > COMPACT_CHARS
+        # Transport ceiling is separate from the model window: the server accepts at most 300 items.
+        request_size = len(json.dumps({'input': efficient_input(self.items), 'context': self._step_context()},
+                                      ensure_ascii=False).encode('utf-8'))
+        return (len(self.items) >= 240 or (self.context_share() or 0) >= 1
+                or request_size >= self.context_budget.max_request_bytes * .8)
 
     def set_model(self, model: str, step_cost: int = 1) -> None:
         """Đổi model; hội thoại đang dở vẫn giữ, chỉ bỏ phần model cũ tạo ra mà model mới không đọc được."""
-        if model != self.model and self.items:
-            self.items = portable(self.items)
+        if model != self.model:
+            if self.items:
+                self.items = portable(self.items)
+            self.context_budget.reset()
+            self.context_tokens = None
         self.model, self.model_step_cost = model, step_cost
 
     def resume(self, items: list[dict], *, retryable: bool = False, model: str = "peto", session_id: str | None = None,
-               title: str | None = None, snapshots: dict | None = None) -> None:
+               title: str | None = None, snapshots: dict | None = None, model_identity: str = "") -> None:
         """Mở lại hội thoại đã lưu. Quên các tệp đã đọc, để Peto phải đọc lại trước khi sửa."""
         self.snapshot_marks = dict(snapshots or {})
         self.tools.skills.loaded.clear()
         self.tools.reset_task()
         self.metrics = self.tools.metrics = Metrics()
         self.active_seconds = 0.0
-        self.items = list(items) if model == self.model else portable(items)
+        identity = self.context_budget.catalog.get(self.model, {}).get('identity')
+        compatible = model == self.model and (identity is None or identity == model_identity)
+        self.items = list(items) if compatible else portable(items)
         self.context_tokens = None
+        self.context_budget.reset()
         self.can_retry = retryable
         self.ws.read_digests.clear()
         self.tools.command_grants.clear()
@@ -492,7 +526,8 @@ class Session:
                 journal.recover()
                 durable = journal.read()
                 if durable:
-                    self.items = durable['items'] if model == self.model else portable(durable['items'])
+                    compatible = model == self.model and (identity is None or identity == durable.get('model_identity'))
+                    self.items = durable['items'] if compatible else portable(durable['items'])
                     self.task_state = TaskState(self.ws, durable.get('task_state'))
                     self.tools.acceptance = self.task_state
                 if entries := journal.pending():
@@ -924,7 +959,9 @@ class Session:
 
     def _compact(self, metrics, *, propagate_cancel=False):
         self._compaction_step = uuid.uuid4().hex
-        prefix, tail = compact_prefix(self.items)
+        info = self._model_budget()
+        keep_tokens = min(15_000, max(0, (ceiling(info) - self.context_budget.overhead.get(self.model, 8000)) // 2)) if info else None
+        prefix, tail = compact_prefix(self.items, keep_tokens=keep_tokens)
         if not prefix:
             self.ui.line("  Hội thoại còn ngắn, chưa cần tóm tắt.", "dim")
             return False
@@ -934,21 +971,42 @@ class Session:
         def waiting():
             self.ui.status(f"… Đang tóm tắt ngữ cảnh · {int(time.monotonic() - started)}s · Ctrl+C dừng")
         try:
-            for attempt in range(2):
-                body = {"input": [*efficient_input(portable(prefix)),
-                                  user_message(continuation.request(checkpoint, retry=bool(attempt)))],
+            attempt, shrinks = 0, 0
+            info = self._model_budget()
+            target = int(ceiling(info) / 1.15) - min(12000, max(1024, ceiling(info) // 10)) if info else None
+            rejected_size = None
+            while attempt < 2:
+                prompt = continuation.request(checkpoint, retry=bool(attempt))
+                source = portable(prefix)
+                if target is not None:
+                    room = int(self.context_budget.max_request_bytes * .8) - len(prompt.encode('utf-8')) - 2000
+                    source = compact_input(source, max(1, target - estimate(prompt)), force=bool(shrinks), max_bytes=room)
+                else:
+                    source = efficient_input(source)
+                body = {"input": [*source, user_message(prompt)],
                         "effort": "medium" if attempt else "low", "model": self.model,
-                        "context": {"purpose": "compact"}}
+                        "context": {"purpose": "compact", **({"features": ["context_budget"]} if info else {})}}
                 metrics.calls["compact"] += 1
                 completed = None
-                with metrics.measure("compact"), contextlib.closing(self.client.stream("/api/agent/step", body, on_idle=waiting)) as events:
-                    for event in events:
-                        if event.get("type") == "meta":
-                            self.steps_used, self.steps_limit = event.get("steps_used"), event.get("steps_limit")
-                        if event.get("type") == "error":
-                            raise ApiError(0, str(event.get("message", "Không tóm tắt được.")))
-                        if event.get("type") == "done":
-                            completed = event
+                try:
+                    with metrics.measure("compact"), contextlib.closing(self.client.stream("/api/agent/step", body, on_idle=waiting)) as events:
+                        for event in events:
+                            if event.get("type") == "meta":
+                                self.steps_used, self.steps_limit = event.get("steps_used"), event.get("steps_limit")
+                            if event.get("type") == "error":
+                                if info and event.get("code") == "context_overflow":
+                                    raise _ContextOverflow()
+                                raise ApiError(0, str(event.get("message", "Không tóm tắt được.")))
+                            if event.get("type") == "done":
+                                completed = event
+                except _ContextOverflow:
+                    if shrinks >= 3:
+                        raise ApiError(0, "Model vẫn từ chối yêu cầu tóm tắt sau ba lần thu gọn; giữ nguyên lịch sử.")
+                    if rejected_size is None:
+                        rejected_size = estimate(body['input'])
+                    target = int(rejected_size * (.7, .5, .35)[shrinks])
+                    shrinks += 1
+                    continue
                 if completed is None:
                     raise ApiError(0, "Tóm tắt bị ngắt; giữ nguyên hội thoại.")
                 metrics.record_usage("compact", completed.get("usage"))
@@ -985,11 +1043,13 @@ class Session:
                               checkpoint_results=len(checkpoint["recent"]))
                     self.ws.read_digests.clear()
                     self.tools.seen_guides.clear()
+                    self.context_budget.reset()
                     self.ui.success("Đã tóm tắt phần cũ và giữ nguyên các bước gần nhất.")
                     return True
                 self._log("compaction_rejected", attempt=attempt + 1, reason=problem, summary_characters=len(summary))
                 if not attempt:
                     self.ui.notice("Bản bàn giao chưa đủ nội dung theo mẫu; thử tóm tắt lại một lần.", "yellow")
+                attempt += 1
             self.ui.failure(f"{problem} Giữ nguyên hội thoại; không tiếp tục thử tóm tắt tự động trong yêu cầu này.")
             return False
         except KeyboardInterrupt:
@@ -1048,7 +1108,7 @@ class Session:
             self._save_progress()
             while step_limit is None or steps < step_limit:
                 steps += 1
-                if not compact_failed and (len(self.items) >= COMPACT_ITEMS or context_size(self.items) > COMPACT_CHARS):
+                if not compact_failed and self._compact_due():
                     compact_failed = not self.compact(propagate_cancel=True)
                 if len(self.items) >= 270:
                     self.ui.failure("Hội thoại quá dài và chưa tóm tắt được. Gõ /compact để thử lại hoặc /new.")
@@ -1237,9 +1297,16 @@ class Session:
         """Một lượt gọi model. Lỗi tạm thời trước khi có phản hồi thì tự chờ rồi gửi lại (RETRY_WAITS); Ctrl+C lúc
         chờ thì dừng yêu cầu như mọi khi."""
         self._logical_step = uuid.uuid4().hex
+        recovered_context = False
         for attempt in range(len(RETRY_WAITS) + 1):
             try:
                 return self._attempt(purpose, may_retry=attempt < len(RETRY_WAITS))
+            except _ContextOverflow:
+                if recovered_context or not self.compact(propagate_cancel=True):
+                    self.ui.failure('Không đủ chỗ trong ngữ cảnh sau tóm tắt; giữ lịch sử để bạn /compact hoặc /new.')
+                    return None
+                recovered_context = True
+                return self._attempt_after_compact(purpose)
             except _Retry as retry:
                 wait = RETRY_WAITS[attempt]
                 self._log("retry_auto", attempt=attempt + 1, seconds=wait, message=retry.message)
@@ -1253,6 +1320,13 @@ class Session:
                     self.ui.clear_status()
         return None
 
+    def _attempt_after_compact(self, purpose):
+        try:
+            return self._attempt(purpose, may_retry=False)
+        except _ContextOverflow:
+            self.ui.failure('Model vẫn từ chối ngữ cảnh sau một lần tóm tắt. Đã giữ lịch sử; không tự thử lại.')
+            return None
+
     def _attempt(self, purpose: str | None, *, may_retry: bool) -> list[dict] | None:
         context = self._step_context()
         if purpose:
@@ -1264,6 +1338,7 @@ class Session:
         phase = "nghĩ"
         output = None
         searching = False
+        produced = False
 
         def waiting() -> None:
             # Dòng tạm chỉ hiện tới khi Peto in được dòng chữ đầu tiên của bước này.
@@ -1276,8 +1351,11 @@ class Session:
             with self.metrics.measure("model"), contextlib.closing(self.client.stream("/api/agent/step", body, on_idle=waiting)) as events:
                 for event in events:
                     kind = event.get("type")
+                    produced = produced or kind in {'delta', 'thinking', 'search'}
                     received = True
                     if kind == "meta":
+                        if 'context_budget' in self.tools.features:
+                            self.context_budget.observe(self.model, event.get('context_budget'), context)
                         self.steps_used, self.steps_limit = event.get("steps_used"), event.get("steps_limit")
                     elif kind == "search":
                         # Tìm web chạy ở phía dịch vụ AI; ở đây chỉ báo cho người dùng biết bước này có tra web.
@@ -1307,10 +1385,15 @@ class Session:
                                     if isinstance(value, int) and value > 0)
                         if total:
                             self.context_tokens = total
+                        observed = self.items if self._published_output == output else self.items + output
+                        self.context_budget.measured(self.model, efficient_input(observed), usage)
                         # done là ranh giới hoàn tất. Không để lỗi đóng socket sau đó làm mất bước đã nhận.
                         return output
                     elif kind == "error":
                         message = str(event.get("message") or "Máy chủ báo lỗi ở bước này.")
+                        if event.get('code') == 'context_overflow' and 'context_budget' in self.tools.features and not produced:
+                            writer.finish()
+                            raise _ContextOverflow()
                         # Máy chủ chỉ gắn retryable khi bước chưa có phản hồi và đã được hoàn lại.
                         if event.get("retryable") is True and may_retry and not writer.started:
                             writer.finish()

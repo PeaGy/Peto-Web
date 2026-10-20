@@ -25,7 +25,7 @@ from __future__ import annotations
 # agent con chỉ đọc (purpose "explore"). CLI 0.29.1: "english_tools" gửi mô tả công cụ bằng tiếng Anh (xem ``EN``).
 FEATURES = frozenset({"cwd", "browser", "browser_act", "browser_outside", "skills", "mcp", "explore_v2", "edit_v2",
                       "question", "patch", "title", "steer", "jobs_notify", "plan_mode", "btw", "read_more", "task_state",
-                      "output_files", "wrapup", "user_guide", "subagent", "recall", "python_exec", "english_tools"})
+                      "output_files", "wrapup", "user_guide", "subagent", "recall", "python_exec", "english_tools", "context_budget"})
 # Công cụ của agent con explore: chỉ tìm và đọc trong dự án (theo agent "explore" của opencode).
 EXPLORE_TOOLS = ("list_files", "find_files", "search_files", "read_file")
 # Số bước tối đa của agent con theo độ kỹ: nhanh, vừa, kỹ.

@@ -58,7 +58,7 @@ FEATURES = ("cwd", "browser", "browser_act", "browser_outside", "skills", "mcp")
 # bằng tiếng Anh cho bớt token mỗi bước ("english_tools"; chỉ chữ mô tả đổi, tên và tham số giữ nguyên).
 NEW_FEATURES = ("explore_v2", "edit_v2", "question", "patch", "title", "steer", "jobs_notify", "plan_mode",
                 "btw", "read_more", "output_files", "wrapup", "user_guide", "subagent", "recall", "python_exec", "task_state",
-                "english_tools")
+                "english_tools", "context_budget")
 # Gọi y hệt một công cụ ngần này lần liền mà không tệp nào đổi thì hỏi người dùng có cho gọi tiếp không.
 LOOP_LIMIT = 3
 # Công cụ mà gọi lại y hệt là bình thường: chờ output lệnh nền, xem lại trang sau khi bấm, cập nhật danh sách việc.

@@ -2,8 +2,8 @@
 
 Chủ web chốt:
 - Web có Peto, 6 Luna và Haiku 5.5 (nút chọn model cạnh nút Gửi). Peto Agent có thêm 5.6 Terra,
-  6 Sol và Sonnet 5.5 (lệnh /model).
-- 6 Luna dùng được với mọi tài khoản đã đăng nhập (Discord, Google, GitHub). 5.6 Terra và 6 Sol chỉ dành cho
+  6.1 Sol và Sonnet 5.5 (lệnh /model).
+- 6 Luna dùng được với mọi tài khoản đã đăng nhập (Discord, Google, GitHub). 5.6 Terra và 6.1 Sol chỉ dành cho
   tài khoản của chủ web, khai trong ``PETO_OWNER_ACCOUNTS``. Terra giữ slug 5.6 cho đến khi OpenAI có bản GPT-6.
 - Trong Peto Agent, bước tính theo giá: Luna 1, Terra 2, Sol 4, nhân với mức suy nghĩ (mức cao tính gấp đôi).
 - Haiku dùng được với mọi tài khoản đã đăng nhập; Sonnet chỉ dành cho chủ web trong Agent. Cả hai nhận năm mức
@@ -26,6 +26,8 @@ CLAUDE_EFFORTS = ("low", "medium", "high", "xhigh", "max")
 
 
 def supported_efforts(key: str) -> tuple[str, ...]:
+    if key == "sol":
+        return ("low", "medium", "high", "xhigh", "max")
     return {"openai": OPENAI_EFFORTS, "anthropic": CLAUDE_EFFORTS}.get(MODELS[key].service, PETO_EFFORTS)
 
 
@@ -49,7 +51,7 @@ MODELS: dict[str, Model] = {
     "luna": Model("luna", "6 Luna", "Nhanh, của OpenAI", "openai", "gpt-6-luna", 1, web=True, owner_only=False),
     "terra": Model("terra", "5.6 Terra", "Cân bằng, của OpenAI", "openai", "gpt-5.6-terra", 2, web=False,
                    owner_only=True),
-    "sol": Model("sol", "6 Sol", "Mạnh nhất, của OpenAI", "openai", "gpt-6-sol", 4, web=False, owner_only=True),
+    "sol": Model("sol", "6.1 Sol", "Mạnh nhất, của OpenAI", "openai", "gpt-6.1-sol", 4, web=False, owner_only=True),
     "haiku": Model("haiku", "Haiku 5.5", "Nhanh, của Claude", "anthropic", "claude-haiku-5-5", 1,
                    web=True, owner_only=False),
     "sonnet": Model("sonnet", "Sonnet 5.5", "Cân bằng, của Claude", "anthropic", "claude-sonnet-5-5", 2,

@@ -67,9 +67,10 @@ class StreamChunk:
 class ProviderError(RuntimeError):
     """Lỗi từ nhà cung cấp AI, đã được diễn đạt để hiển thị cho người dùng."""
 
-    def __init__(self, message: str, *, retryable: bool = False):
+    def __init__(self, message: str, *, retryable: bool = False, code: str | None = None):
         super().__init__(message)
         self.retryable = retryable
+        self.code = code
 
 
 class ChatProvider(ABC):

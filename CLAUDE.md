@@ -1,5 +1,36 @@
 # CLAUDE.md
 
+## Model-aware context and Sol 6.1 (2026-10-20; CLI 0.30.0 source)
+
+Owner explicitly requested OpenCode-style context budgeting and upgrading 6 Sol to 6.1 Sol. See
+`agent-cli/docs/context-budget-0.30.0.md`; reference remains offline OpenCode 2.0.32 commit
+`22e771f5893e255ea78fc10557ed3fb98d3a1072` (MIT), no upstream code/scripts executed.
+Backend features/agent/budget.py owns verified API-ID context/input/output catalog and deployment caps; /me returns
+allowed models' context_limits and context_transport. Negotiated context_budget adds meta budgets, instruction/tools
+overhead and fit max_output_tokens. CLI budget.py anchors provider-normalized input+output usage (cache/reasoning
+already included), estimates new content with UTF-8 bytes/4 + 15%, and invalidates anchors on model/reset/resume/compact.
+Default reserve is 10% or 16k for a sufficiently large window. Current catalog: Grok 4.7 500k; GPT Luna/Terra/Sol 1.05M;
+Claude Haiku/Sonnet 5.5 1M. Output deployment caps unchanged. Unknown API IDs use known=false, conservative 200k app
+budget; admin PETO_AGENT_CONTEXT_LIMITS JSON overrides context/input/output by actual API ID. Sources are in the doc.
+New mode keeps roughly 15k recent tokens (less for small windows), respects tool/signed Claude groups, and can compact
+a single exchange whole. Transport still caps 300 items/AGENT_MAX_REQUEST_BYTES, so compact at 240 items/80% bytes
+independently of token %. Old servers/clients retain old behavior and exact tool schemas.
+Classified context_overflow before any produced content triggers one compact-and-retry of a work request. Server
+preflight/provider rejection refunds unproduced steps under existing rules; partial output is not marked recoverable.
+Oversized compaction requests flatten only their transport view with explicit clipped-tool/assistant notes, then
+shrink at 70/50/35% of the first rejected request, at most three shrinks. User requests are never clipped; unfit fixed
+requirements stop rather than discard them. Canonical journal/archive and durable acceptance are preserved.
+Model key sol remains stable; label 6.1 Sol, slug gpt-6.1-sol, owner/agent-only and step_cost=4 unchanged. Supported
+efforts low/medium/high/xhigh/max (no none/minimal); CLI uses the supported list for saved settings. Provider stays
+Responses, other model roles/keys and BYOK/historical slugs unchanged. Optional model_identity in Saved/JSON/journal
+lets resume drop stale opaque reasoning when an alias now points to a different model (or old identity is unknown),
+while preserving visible conversation/tool results. Same identity retains reasoning; no automatic tool replay.
+Validation: final full CLI 673 pass, 237.41s; final estimator refinement 17 focused pass. Initial full had an old-label
+fixture failure and a Ctrl+C timing failure; final full passed without relaxing the timing assertion. Backend full
+1412 pass/1 skip/1 new fixture failure (wrong zero starting-balance assumption); fixed fixture then all 140 related
+API/model/prompt/schema/installer cases pass, final budget/provider-routing recheck 7 pass. No single full-green backend
+rerun claimed. Compile/diff checks pass. Tests are mocked, no paid calls, commit/deploy/installed update or game writes.
+
 ## Tolerant text/log reader (2026-10-19)
 
 The owner's Minecraft report was valid UTF-8 (75,168 bytes) but rejected before any model call because it contained

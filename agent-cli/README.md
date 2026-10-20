@@ -382,7 +382,8 @@ nào được chọn, nên Enter không tự chạy gì. Từ 0.20.0 tên lệnh
   bước nào; Peto đọc `AGENTS.md` ở mọi bước nên nhớ từ yêu cầu tiếp theo. Dòng này không nằm trong bản `/undo`: muốn bỏ
   thì sửa `AGENTS.md`.
 - `/compact`: tóm tắt phần hội thoại cũ, giữ các bước gần nhất và yêu cầu gần nhất nằm trong phần được tóm tắt.
-  Peto cũng tự tóm tắt giữa các bước khi lịch sử đạt 180 mục hoặc khoảng 200.000 ký tự chữ. Tóm tắt dùng một lượt
+  Từ 0.30.0, Peto tự tóm tắt theo giới hạn model và token đã dùng, chừa khoảng trống cho lượt tiếp theo. Máy chủ cũ
+  chưa hỗ trợ `context_budget` vẫn dùng ngưỡng 180 mục/200.000 ký tự. Tóm tắt dùng một lượt
   gọi model ở mức suy nghĩ thấp, vẫn tính bước theo model và token như bình thường. Từ 0.28.6, nếu thiếu mục bàn giao,
   CLI thử lại đúng một lần ở mức vừa (có tính thêm bước); vẫn lỗi thì giữ nguyên lịch sử. Cần cập nhật cả VPS và CLI.
   Không chạy công cụ khi tóm tắt, không tách cặp gọi công cụ/kết quả. Lỗi, hủy hoặc máy chủ cũ thì giữ nguyên lịch sử.
@@ -629,7 +630,7 @@ Từ bản 0.12.0 (cần cả VPS mới), Peto xem được cả trang ngoài m�
 
 - **Danh sách việc:** yêu cầu từ ba việc trở lên thì Peto liệt kê các việc định làm và cập nhật khi xong từng mục, hiện
   ngay trong terminal: `☑` đã xong, `▶` đang làm, `☐` chưa làm. Còn mục chưa xong thì dòng tóm tắt cuối yêu cầu nói rõ
-  còn bao nhiêu, để không ai tưởng đã xong hết. Với 6 Luna, 5.6 Terra và 6 Sol thì không có danh sách này (từ
+  còn bao nhiêu, để không ai tưởng đã xong hết. Với 6 Luna, 5.6 Terra và 6.1 Sol thì không có danh sách này (từ
   2026-10-14): các model GPT dành gần một phần ba số bước chỉ để cập nhật nó, nên câu trả lời cuối thay cho nó.
 - **Lệnh nền:** lệnh không tự kết thúc (dev server, `--watch`) được chạy nền và trả về ngay, thay vì chờ tới khi xong.
   Bạn vẫn duyệt trước khi chạy, và ô hỏi nói rõ lệnh sẽ sống tiếp sau khi yêu cầu xong. Tối đa 3 lệnh nền một lúc;
@@ -755,6 +756,36 @@ Trạng thái công việc, artifact/hash và bằng chứng kiểm tra được
 `record_acceptance` ghi tiêu chí đạt/chưa đạt/chưa xác minh bằng ID kết quả thật; sửa tệp làm bằng chứng cũ hết hiệu lực.
 Mã thoát 0 chỉ là bằng chứng trong phạm vi đã kiểm, không tự chứng minh ứng dụng chạy đúng.
 Xem [cơ chế, giới hạn, tương thích và cách cập nhật](docs/durable-runtime-0.29.0.md).
+
+### Ngân sách context theo model (0.30.0)
+
+Khi cả CLI và máy chủ hỗ trợ `context_budget`, `/me` trả giới hạn của từng model; mỗi bước cập nhật thêm ước tính
+phần hướng dẫn/công cụ do máy chủ dựng. Mặc định chừa 10% cửa sổ, tối thiểu 16.000 token với cửa sổ đủ lớn.
+Số token dịch vụ đã báo được dùng làm mốc; phần mới được ước tính theo UTF-8 và cộng biên sai số 15%. Token cache
+và token suy nghĩ không bị cộng hai lần. Đổi model hoặc mở lại phiên thì bỏ mốc cũ và tính lại; phần trăm trong
+footer là mức tới ngưỡng compact, không phải số bước còn lại hay phép đếm token chính xác.
+
+Compact giữ khoảng 15.000 token gần nhất thay vì cố định 24 mục; cửa sổ nhỏ giữ ít hơn để còn chỗ cho summary
+và hướng dẫn. Không cắt đôi nhóm lời gọi/kết quả công cụ hay nhóm Claude có chữ ký. Nếu chỉ có một exchange lớn,
+có thể tóm tắt cả exchange. Giới hạn truyền 300 mục và dung lượng request vẫn áp dụng riêng: CLI thu gọn trước
+khi chạm chúng, dù cửa sổ model còn nhiều chỗ. Máy chủ cũ dùng nguyên ngưỡng 180 mục/200.000 ký tự.
+
+Nếu máy chủ từ chối trước khi có nội dung vì quá context, CLI compact rồi thử lại lượt làm việc đúng một lần.
+Yêu cầu tóm tắt quá lớn được chuyển thành transcript chữ có ghi rõ phần công cụ/trả lời đã cắt; nếu tiếp tục bị
+từ chối thì thu nhỏ hữu hạn theo 70%/50%/35% kích thước ước tính của lần bị từ chối đầu tiên. Các yêu cầu người dùng
+không bị cắt khỏi bản gửi summary. Không còn cách thu gọn phù hợp thì dừng và giữ lịch sử; archive/journal gốc vẫn đầy đủ.
+
+Máy chủ có thể cấu hình giới hạn deployment qua `PETO_AGENT_CONTEXT_LIMITS`, JSON ánh xạ **mã API model** sang
+`context`, `input`, `output` (token). Output thực tế còn chịu giới hạn cấu hình provider hiện có. Model tùy chỉnh
+chưa có trong catalog dùng ngân sách ứng dụng bảo thủ 200.000 token và báo `known=false`; cần khai đúng giới hạn
+deployment, không coi con số fallback là thông số model. Không cần thêm `.env` để dùng mặc định đã có cho các model hiện tại.
+
+Lựa chọn `/model sol` từ bản này là **6.1 Sol**, API `gpt-6.1-sol`, hỗ trợ low/medium/high/xhigh/max. Giá bước vẫn 4
+trước hệ số effort và vẫn chỉ dành cho chủ web. `none` cũ chuyển về mức hợp lệ qua danh sách model máy chủ trả về.
+Session lưu thêm danh tính model thực tế: phiên từ 6 Sol cũ hoặc chưa có danh tính sẽ dựng lại lịch sử portable,
+giữ tin/lệnh/kết quả và bỏ dữ liệu suy luận riêng của model cũ; không tự chạy lại công cụ.
+
+Chi tiết đối chiếu OpenCode, nguồn giới hạn model và kiểm tra: [context-budget-0.30.0.md](docs/context-budget-0.30.0.md).
 
 ### Bàn giao ngữ cảnh và công cụ Windows (0.28.6)
 
@@ -887,7 +918,7 @@ không bao giờ bị đổi, và hội thoại gửi lại cho Peto vẫn là c
   dòng `!`; `.gitignore` của thư mục con và cấu hình git toàn máy thì không. Sửa `.gitignore` là có tác dụng ngay.
 - **Sửa tệp:** chỉ sửa tệp đã đọc và chưa bị đổi từ lúc đọc; đoạn cần thay phải khớp đúng một chỗ. Kiểu xuống dòng
   (CRLF/LF) và BOM được giữ nguyên.
-- **Bản patch cho model GPT** (từ 0.21.0, theo opencode): với 6 Luna, 5.6 Terra và 6 Sol, Peto sửa tệp bằng một bản
+- **Bản patch cho model GPT** (từ 0.21.0, theo opencode): với 6 Luna, 5.6 Terra và 6.1 Sol, Peto sửa tệp bằng một bản
   patch (`*** Begin Patch` … `*** End Patch`) có thể tạo, sửa, xóa và đổi tên nhiều tệp cùng lúc, vì các model này
   quen định dạng đó. Luật vẫn như trên: tệp sửa hay xóa phải đã đọc và chưa đổi, tệp tạo mới chưa có, đoạn sửa khớp
   đúng một chỗ (chỉ bỏ qua khoảng trắng đầu, cuối dòng). Bạn duyệt một lần cho cả bản, khung hiện diff từng tệp; một
@@ -904,12 +935,12 @@ không bao giờ bị đổi, và hội thoại gửi lại cho Peto vẫn là c
   nhưng bị dừng khi bạn đóng peto, kể cả khi đóng hẳn cửa sổ terminal. Chạy lệnh trong thư mục con cần VPS và CLI từ
   bản 0.9.8; CLI cũ hơn vẫn nhận công cụ như trước.
 - **Giới hạn bước:** phiên thông thường không có trần bước cho mỗi yêu cầu; mỗi tài khoản có số bước mỗi ngày do máy
-  chủ đặt (mặc định 200). Ở mức suy nghĩ cao, mỗi bước tính 2; với 5.6 Terra nhân thêm 2, với 6 Sol nhân thêm 4.
+  chủ đặt (mặc định 200). Ở mức suy nghĩ cao, mỗi bước tính 2; với 5.6 Terra nhân thêm 2, với 6.1 Sol nhân thêm 4.
 
 ## Dữ liệu gửi đi
 
 Nội dung tệp Peto đọc, kết quả tìm trong dự án, diff, output lệnh và ảnh bạn gửi kèm đi qua máy chủ Peto tới dịch vụ AI của
-model đang chọn (xAI với Peto, OpenAI với 6 Luna, 5.6 Terra hoặc 6 Sol) để Peto quyết định bước tiếp theo. Máy chủ không lưu hội
+model đang chọn (xAI với Peto, OpenAI với 6 Luna, 5.6 Terra hoặc 6.1 Sol) để Peto quyết định bước tiếp theo. Máy chủ không lưu hội
 thoại; nó chỉ lưu tên máy, mã băm của token và số bước đã dùng. Đừng mở Peto Agent trong thư mục có dữ liệu bạn không
 muốn gửi đi.
 
