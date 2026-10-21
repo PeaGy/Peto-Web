@@ -95,7 +95,7 @@ async def maybe_generate(owner: str, conversation_id: str, model: str = 'peto') 
             "UPDATE conversations SET title_state='pending', title_attempts=title_attempts+1 "
             "WHERE id=? AND owner=? AND mode='chat' AND title_state='temporary' AND title_attempts<3 "
             "AND EXISTS (SELECT 1 FROM messages m WHERE conversation_id=conversations.id AND role='assistant' "
-            "AND COALESCE((SELECT state FROM chat_turns WHERE assistant_message_id=m.id ORDER BY id DESC LIMIT 1),'')!='stopped')",
+            "AND m.status='complete' AND COALESCE((SELECT state FROM chat_turns WHERE assistant_message_id=m.id ORDER BY id DESC LIMIT 1),'complete')='complete')",
             (conversation_id, owner),
         )
         await connection.commit()
@@ -103,7 +103,7 @@ async def maybe_generate(owner: str, conversation_id: str, model: str = 'peto') 
             return
         rows = await (await connection.execute(
             "SELECT role, substr(content, 1, 2000) FROM messages m WHERE conversation_id=? AND role IN ('user','assistant') "
-            "AND COALESCE((SELECT state FROM chat_turns WHERE user_message_id=m.id OR assistant_message_id=m.id ORDER BY id DESC LIMIT 1),'')!='stopped' ORDER BY id LIMIT 4",
+            "AND m.status='complete' AND COALESCE((SELECT state FROM chat_turns WHERE user_message_id=m.id OR assistant_message_id=m.id ORDER BY id DESC LIMIT 1),'complete')='complete' ORDER BY id LIMIT 4",
             (conversation_id,),
         )).fetchall()
     title = ""

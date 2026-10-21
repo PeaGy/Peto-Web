@@ -386,6 +386,13 @@ async def init_db() -> None:
             """
         )
         state_columns = await (await db.execute("PRAGMA table_info(companion_memory_state)")).fetchall()
+        if 'revision' not in {column[1] for column in state_columns}:
+            await db.execute('ALTER TABLE companion_memory_state ADD COLUMN revision INTEGER NOT NULL DEFAULT 0')
+        # Mọi sửa tay/xóa hay ghi nền đều làm hết hạn snapshot đang được model ghi nhớ xử lý.
+        for event, ref in [('INSERT', 'NEW'), ('UPDATE', 'NEW'), ('DELETE', 'OLD')]:
+            await db.execute(f'''CREATE TRIGGER IF NOT EXISTS memory_revision_{event.lower()}
+                AFTER {event} ON companion_memory_entries BEGIN
+                UPDATE companion_memory_state SET revision=revision+1 WHERE owner={ref}.owner; END''')
         if "since" not in {column[1] for column in state_columns}:
             await db.execute("ALTER TABLE companion_memory_state ADD COLUMN since INTEGER NOT NULL DEFAULT 0")
             # Tin đã đọc để ghi nhớ thì coi như đã qua; không tóm tắt ngược lịch sử cũ.

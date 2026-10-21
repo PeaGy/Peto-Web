@@ -82,7 +82,9 @@ async def _metadata(owner, cid, boundary, state):
                                         (cid, owner))).fetchone()
         if scope is None:
             raise ProviderError('Hội thoại đã bị xóa hoặc lưu trữ; mở lại trước khi tiếp tục.')
-        first = await (await db.execute("SELECT id,substr(content,1,2000) AS excerpt,length(content)>2000 AS truncated FROM messages WHERE conversation_id=? AND role='user' ORDER BY id LIMIT 1", (cid,))).fetchone()
+        first = await (await db.execute('''SELECT id,substr(content,1,2000) AS excerpt,length(content)>2000 AS truncated,
+            COALESCE((SELECT state FROM chat_turns WHERE owner=? AND user_message_id=m.id ORDER BY id DESC LIMIT 1),'complete') AS turn_state
+            FROM messages m WHERE conversation_id=? AND role='user' ORDER BY id LIMIT 1''', (owner, cid))).fetchone()
         count = await (await db.execute('''SELECT COUNT(*) FROM messages WHERE conversation_id=? AND id<?
             AND (id>? OR (id=? AND length(content)>?))''', (cid, boundary, cursor_id, cursor_id, offset))).fetchone()
         return scope['project_id'], dict(first) if first else None, count[0]

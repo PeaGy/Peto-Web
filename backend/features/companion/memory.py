@@ -445,7 +445,8 @@ def _tell_prompt(existing: list[dict], text: str, entry: dict | None) -> str:
 
 
 async def _apply(owner: str, raw: str, existing: list[dict], *, max_new: int = MAX_NEW_PER_RUN,
-                 cursor: int | None = None, drop: tuple[int, ...] = ()) -> list[dict]:
+                 cursor: int | None = None, drop: tuple[int, ...] = (),
+                 expected_revision: int | None = None, source_rows: list[dict] = ()) -> list[dict]:
     """Đọc kết quả của model rồi ghi; mục người dùng vừa sửa tay sau lúc đọc thì không bị ghi đè."""
     upserts, remove = parse_changes(raw, existing, max_new)
     seen = {item["id"]: item["updated_at"] for item in existing}
@@ -453,7 +454,8 @@ async def _apply(owner: str, raw: str, existing: list[dict], *, max_new: int = M
         if "id" in patch:
             patch["_seen"] = seen.get(patch["id"])
     remove = list(dict.fromkeys([*remove, *drop]))
-    return await db.apply_memory_changes(owner, upserts=upserts, remove=remove, cursor=cursor, limit=MAX_ENTRIES)
+    return await db.apply_memory_changes(owner, upserts=upserts, remove=remove, cursor=cursor, limit=MAX_ENTRIES,
+        expected_revision=expected_revision, source_rows=source_rows)
 
 
 async def sort_legacy(owner: str) -> bool:
@@ -475,6 +477,7 @@ def sort_due(owner: str) -> bool:
 async def _sort_locked(owner: str) -> bool:
     if not await enabled_for(owner) or not sort_due(owner):
         return False
+    state = await db.ensure_memory_state(owner)
     existing = await db.list_memories(owner)
     legacy = next((item for item in existing if item.get("slot") == LEGACY), None)
     if not legacy:
@@ -494,7 +497,9 @@ async def _sort_locked(owner: str) -> bool:
     if not any(patch.get("details") for patch in upserts if patch.get("id") != legacy["id"]) or not await enabled_for(owner):
         _sort_failed_at[owner] = time.monotonic()
         return False
-    await _apply(owner, raw, existing, max_new=MAX_NEW_SORTING, drop=(legacy["id"],))
+    await _apply(owner, raw, existing, max_new=MAX_NEW_SORTING, drop=(legacy["id"],), expected_revision=state['revision'])
+    if any(item['id'] == legacy['id'] for item in await db.list_memories(owner)):
+        return False
     _sort_failed_at.pop(owner, None)
     logger.info("memory_sorted entries=%d", len(await db.list_memories(owner)))
     return True
@@ -513,6 +518,7 @@ async def tell(owner: str, text: str, entry_id: int | None = None) -> dict:
     async with _lock(owner):
         if not await enabled_for(owner):
             raise MemoryRequestError(409, "Trí nhớ đang tắt. Bật “Cho Peto ghi nhớ” rồi thử lại nha.")
+        state = await db.ensure_memory_state(owner)
         existing = await db.list_memories(owner)
         entry = next((item for item in existing if item["id"] == entry_id), None)
         if entry_id is not None and not entry:
@@ -525,7 +531,7 @@ async def tell(owner: str, text: str, entry_id: int | None = None) -> dict:
             raise MemoryRequestError(502, "Peto chưa cập nhật được trí nhớ. Thử lại sau nha.") from err
         finally:
             logger.info("memory_tell_timing total_ms=%d", round((perf_counter() - started) * 1000))
-        await _apply(owner, raw, existing)
+        await _apply(owner, raw, existing, expected_revision=state['revision'])
         after = await db.list_memories(owner)
     if _drops_something(existing, after):
         await db.forget_summaries(owner)
@@ -536,13 +542,15 @@ async def tell(owner: str, text: str, entry_id: int | None = None) -> dict:
 async def _remember_once(owner: str) -> None:
     if not await enabled_for(owner):
         return
-    state = await db.ensure_memory_state(owner)
-    rows = await db.memory_messages_after(owner, state["cursor"], CONTEXT_MESSAGES)
-    if sum(len(row["content"].strip()) for row in rows if row["role"] == "user") < MIN_NEW_CHARS:
-        return
     async with _lock(owner):
         if any(item.get("slot") == LEGACY for item in await db.list_memories(owner)):
             await _sort_locked(owner)
+        state = await db.ensure_memory_state(owner)
+        if not state['enabled']:
+            return
+        rows = await db.memory_messages_after(owner, state["cursor"], CONTEXT_MESSAGES)
+        if sum(len(row["content"].strip()) for row in rows if row["role"] == "user") < MIN_NEW_CHARS:
+            return
         existing = await db.list_memories(owner)
         started = perf_counter()
         try:
@@ -556,7 +564,8 @@ async def _remember_once(owner: str) -> None:
         # Người dùng vừa tắt trong lúc model đang nghĩ thì bỏ kết quả.
         if not await enabled_for(owner):
             return
-        changed = await _apply(owner, raw, existing, cursor=rows[-1]["id"])
+        changed = await _apply(owner, raw, existing, cursor=rows[-1]["id"],
+            expected_revision=state['revision'], source_rows=rows)
     if changed:
         logger.info("memory_changes entries=%d", len(changed))
 
@@ -613,6 +622,7 @@ async def _summarize_once(owner: str, window: int) -> None:
         return
     saved = await db.save_companion_summary(
         owner, conversation_id, text=text, upto=rows[-1]["id"], expected_upto=expected,
+        expected_revision=state['revision'], source_rows=rows,
     )
     if not saved:
         logger.info("Bỏ bản tóm tắt Companion vì người dùng vừa đổi trí nhớ trong lúc tóm tắt")

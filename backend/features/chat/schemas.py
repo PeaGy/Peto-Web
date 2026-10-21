@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 from typing import Literal, Annotated
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from ai import models as ai_models
 
 
@@ -22,6 +22,13 @@ class ProviderChoiceIn(BaseModel):
 
 
 class ChatRequest(BaseModel):
+    @model_validator(mode='before')
+    @classmethod
+    def reject_unsupported_privacy(cls, data):
+        if isinstance(data, dict) and set(data) & {'temporary', 'temporary_chat', 'retention', 'memory_scope'}:
+            raise ValueError('Chat tạm và chính sách lưu riêng chưa được hỗ trợ. Yêu cầu này chưa được gửi tới AI.')
+        return data
+
     request_id: str | None = Field(default=None, pattern=r'^[a-zA-Z0-9-]{16,64}$')
     project_id: str | None = Field(default=None, max_length=64)
     project_file_ids: list[Annotated[str, Field(max_length=64)]] = Field(default_factory=list, max_length=4)

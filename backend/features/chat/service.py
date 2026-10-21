@@ -297,6 +297,22 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
         # phần chữ đó là câu dẫn, chuyển sang nhật ký.
         round_start = 0
         last_artifact: dict | None = None
+        checkpoint_at = 0.0
+        checkpoint_size = 0
+
+        async def checkpoint(force=False):
+            nonlocal checkpoint_at, checkpoint_size
+            if mode != 'chat' or message_id is None:
+                return
+            now, size = perf_counter(), sum(map(len, collected))
+            if not force and now - checkpoint_at < 1 and abs(size - checkpoint_size) < 2048:
+                return
+            saved = await chat_turns.persist(owner, request_id, content=''.join(collected), sources=sources,
+                artifacts=document_session.created if document_session else [],
+                work=log.snapshot() if log else None, provider=own_provider)
+            if saved not in {'running', 'stopped'}:
+                raise ProviderError('Hội thoại đã thay đổi. Mở lại lịch sử trước khi gửi tiếp nhé.')
+            checkpoint_at, checkpoint_size = now, size
 
         def visible_events(text: str, final: bool = False) -> str | None:
             nonlocal turn_emotion
@@ -446,9 +462,9 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                             message_id = await conversation_actions.retry_in_place(owner, conversation_id, request.branch_message_id, text)
                             if message_id is None:
                                 conversation_id, message_id = await conversation_actions.fork(owner, conversation_id, request.branch_message_id, text)
+                            message_id = await chat_turns.bind(owner, request_id, conversation_id, message_id)
                         else:
-                            message_id = await db.add_message(conversation_id, "user", text, provider=own_provider)
-                        await chat_turns.bind(owner, request_id, conversation_id, message_id)
+                            message_id = await chat_turns.bind(owner, request_id, conversation_id, None, text, own_provider)
                         for item, document in zip(files, documents):
                             attachment_id, path = attachment_lib.write_file(conversation_id, item)
                             saved_paths.append(path)
@@ -475,6 +491,7 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                     # Không có tra web thì chữ Companion không bị thay bằng bản nháp sau tìm kiếm.
                     "voice_stream": mode == "companion" and web_search == "off",
                 })
+                await checkpoint(force=True)
                 if MAX_ATTACHMENTS > document_count and any(
                     item.get("kind") == "file" and not document_reader.cached_document(item.get("document"))
                     for row in rows for item in row.get("attachments") or []
@@ -537,6 +554,8 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                                                  snapshot=snapshot)) as stream:
                     async for chunk in stream:
                         event = chunk_event(chunk)
+                        # Lưu trước khi công bố tệp/kết quả công cụ; chữ lưu tối đa mỗi giây hoặc mỗi 2 KiB.
+                        await checkpoint(force=chunk.kind in {'artifact', 'tool_result', 'note', 'replace'})
                         if event:
                             yield event
                 if notes:
@@ -569,11 +588,36 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
             logger.exception("Lỗi không mong đợi khi gọi AI")
             failure = "Có lỗi ở phía máy chủ. Thử lại sau nha."
         finally:
+            # Reply, liên kết tệp và trạng thái cuối cùng phải cùng commit; không được báo hoàn tất trước khi lưu.
+            reply = "".join(collected).strip()
+            if turn_emotion and reply and emotion_tags.first(private_notes.strip(reply)) != turn_emotion:
+                reply = f"<|EMOTE_{turn_emotion.upper()}|> {reply}"
+            if mode == 'companion' and not _visible(reply, mode).strip():
+                reply = ''
+            artifacts = document_session.created if document_session else []
+            if artifacts and not reply:
+                reply = 'Tệp đã được tạo. Phản hồi bị ngắt; bạn vẫn có thể tải tài liệu bên dưới.'
+            work = log.close(complete) if log else None
             with anyio.CancelScope(shield=True):
-                state = await chat_turns.finish(owner, request_id, 'complete' if complete else
-                                               'timeout' if outcome == 'timeout' else 'interrupted' if outcome == 'cancelled' else 'error')
-            if state == 'stopped':
-                complete = False
+                try:
+                    state = await chat_turns.persist(owner, request_id, content=reply, sources=sources,
+                        artifacts=artifacts, work=work, provider=own_provider,
+                        state='complete' if complete else 'timeout' if outcome == 'timeout' else
+                              'interrupted' if outcome == 'cancelled' else 'error',
+                        outcome='stream_interrupted' if outcome == 'cancelled' else outcome, save_empty=mode == 'chat')
+                except Exception:
+                    logger.exception('Không lưu được câu trả lời của lượt chat')
+                    outcome = 'persistence_error'
+                    state = await chat_turns.finish(owner, request_id, 'interrupted', 'persistence_error')
+                    failure = 'Chưa lưu được toàn bộ câu trả lời. Kiểm tra lịch sử trước khi thử lại nhé.'
+                if state != 'complete':
+                    complete = False
+                    if outcome == 'complete':
+                        outcome = 'scope_changed' if state == 'interrupted' else state
+                    if work:
+                        work['complete'] = False
+                    if state != 'stopped' and not failure:
+                        failure = 'Lượt đã bị ngắt hoặc hội thoại đã thay đổi. Mở lại lịch sử trước khi thử lại nhé.'
             ended_at = perf_counter()
             logger.info(
                 "chat_timing model=%s effort=%s mode=%s queue_ms=%s prepare_ms=%s first_text_ms=%s total_ms=%d search=%s complete=%s outcome=%s",
@@ -590,28 +634,6 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                 elapsed_ms=round((ended_at - started) * 1000),
                 first_text_ms=round((first_text_at - started) * 1000) if first_text_at is not None else None,
             )
-            # Cả timeout/lỗi lẫn đóng tab đều giữ phần đã phát. Shield tránh
-            # cancel scope của StreamingResponse hủy luôn thao tác lưu SQLite.
-            reply = "".join(collected).strip()
-            # Câu chốt giữ cảm xúc đầu tiên của lượt, để nghe lại vẫn đúng mặt dù bản nháp đã bị thay sau tra web.
-            if turn_emotion and reply:
-                if emotion_tags.first(private_notes.strip(reply)) != turn_emotion:
-                    reply = f"<|EMOTE_{turn_emotion.upper()}|> {reply}"
-            artifacts = document_session.created if document_session else []
-            if artifacts and not reply: reply = 'Tệp đã được tạo. Phản hồi bị ngắt; bạn vẫn có thể tải tài liệu bên dưới.'
-            work = log.close(complete) if log else None
-            if conversation_id and ((reply and _visible(reply, mode)) or (state == 'stopped' and message_id)):
-                with anyio.CancelScope(shield=True):
-                    if await db.owns_conversation(owner, conversation_id):
-                        assistant_id = await db.add_message(
-                            conversation_id, "assistant", reply,
-                            status="complete" if complete else "incomplete",
-                            sources=sources,
-                            artifacts=artifacts,
-                            work=work,
-                            provider=own_provider,
-                        )
-                        await chat_turns.attach_reply(owner, request_id, assistant_id)
         if state == 'stopped':
             return
         if work is not None and admitted_at is not None:

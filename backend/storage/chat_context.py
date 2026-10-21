@@ -29,6 +29,16 @@ async def init_tables(db):
     await db.execute('''CREATE TRIGGER IF NOT EXISTS chat_context_project
         AFTER UPDATE OF project_id ON conversations WHEN OLD.project_id IS NOT NEW.project_id BEGIN
         DELETE FROM chat_contexts WHERE conversation_id=NEW.id; END''')
+    installed = await (await db.execute("SELECT 1 FROM sqlite_master WHERE type='trigger' AND name='chat_context_turn_state'")).fetchone()
+    if not installed:
+        # Migration một lần: cache cũ có thể đã xếp câu hỏi lỗi vào pending trước khi có quy tắc mới.
+        await db.execute('''DELETE FROM chat_contexts WHERE version=1 AND EXISTS (SELECT 1 FROM chat_turns t
+            WHERE t.owner=chat_contexts.owner AND t.conversation_id=chat_contexts.conversation_id
+            AND t.user_message_id<=chat_contexts.cursor_id AND t.state IN ('error','timeout','interrupted','running'))''')
+    await db.execute('''CREATE TRIGGER IF NOT EXISTS chat_context_turn_state
+        AFTER UPDATE OF state ON chat_turns WHEN OLD.state != NEW.state BEGIN
+        DELETE FROM chat_contexts WHERE conversation_id=NEW.conversation_id AND cursor_id>=NEW.user_message_id;
+        END''')
 
 
 async def state(owner, conversation_id):

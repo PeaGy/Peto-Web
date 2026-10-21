@@ -151,9 +151,13 @@ export const ChatMessage = memo(function ChatMessage({ message, live, writing, o
               {message.role === "assistant" && <WebSources sources={message.sources} />}
               {message.artifacts?.map(artifact => <DocumentArtifactCard key={`${artifact.id}-${artifact.version}`} artifact={artifact} onOpen={onPreview} onEdit={onEdit} />)}
               {message.stopped ? <p className="message-stopped">Đã dừng theo yêu cầu của bạn.</p>
-                : message.status === "incomplete" && <p className="message-status">Câu trả lời chưa hoàn tất</p>}
+                : message.status === "incomplete" && <p className="message-status">{message.turn_outcome === 'process_restarted'
+                  ? 'Lượt bị ngắt khi máy chủ khởi động lại.'
+                  : message.turn_state === 'timeout' ? 'Lượt đã hết thời gian chờ. Câu trả lời chưa hoàn tất.'
+                  : message.turn_state === 'running' ? 'Lượt này vẫn đang được xử lý.'
+                  : 'Câu trả lời chưa hoàn tất'}</p>}
               {/* Tin đang được viết thì chưa có gì trọn vẹn để chép. */}
-              {message.role === "assistant" && (message.content || message.stopped) && !(writing) && (
+              {message.role === "assistant" && (message.content || message.stopped || onRetry) && !(writing) && (
                 <MessageCopy text={message.content} stopped={message.stopped} onRetry={onRetry} disabled={actionsDisabled} />
               )}
               {!writing && !editor && message.role === 'user' && <span className="user-message-actions">

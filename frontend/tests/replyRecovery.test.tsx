@@ -16,6 +16,16 @@ const setup = () => {
 };
 const interrupt = (hook: ReturnType<typeof setup>) => act(() => hook.result.current.interrupt({ conversationId: 'C', userMessageId: 10 }));
 const advance = (ms: number) => act(async () => { await vi.advanceTimersByTimeAsync(ms); });
+
+it('không nhận checkpoint đang chạy là câu trả lời cuối và chỉ đọc lại, không phát lại yêu cầu', async () => {
+  vi.mocked(getMessages).mockResolvedValueOnce([saved[0], { ...saved[1], status: 'incomplete', turn_state: 'running' }]);
+  const hook = setup();
+  interrupt(hook);
+  await advance(250);
+  expect(hook.onRecovered).not.toHaveBeenCalled();
+  await advance(1000);
+  expect(hook.onRecovered).toHaveBeenCalledExactlyOnceWith(saved, true);
+});
 beforeEach(() => {
   vi.useFakeTimers();
   vi.mocked(getMessages).mockReset().mockResolvedValue(saved);

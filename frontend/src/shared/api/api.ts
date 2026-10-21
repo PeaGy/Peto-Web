@@ -69,6 +69,7 @@ export interface Message {
   /** Máy chủ đã xác nhận người dùng dừng lượt; giữ nhãn và Thử lại cả khi tải lại trang. */
   stopped?: boolean;
   turn_state?: 'running' | 'complete' | 'stopped' | 'interrupted' | 'timeout' | 'error';
+  turn_outcome?: string;
   /** Cảm xúc Peto tự chọn cho câu trả lời Companion (emotion_tags.py), để nghe lại tin cũ thì nhân vật làm đúng mặt. */
   emotion?: string | null;
   /** Cảm xúc của câu ở vị trí 0; tin cũ có thể còn nhiều mốc UTF-16, Companion chỉ dùng mặt đầu tiên. */

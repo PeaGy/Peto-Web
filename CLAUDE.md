@@ -1,9 +1,41 @@
 # CLAUDE.md
 
+## Web Chat recovery and data scope — stage 3 (2026-10-21)
+
+The owner approved continuing after committing stage 2. Contract, migration and deployment gates are in
+`backend/features/chat/docs/recovery-and-data-scope.md`. Stage 4 remains planned; no automatic deployment or paid test.
+
+- `chat_turns.bind` saves a new user message and request link atomically. `persist` commits assistant content/status,
+  verified owner/chat/version artifact links, sources, work and terminal state in one immediate SQLite transaction.
+  Complete is not announced until it commits. Stop wins if committed first; terminal complete is immutable.
+- Chat checkpoints are bounded at 200,000 characters, on chunks at 1 second/2,048 characters, forced for artifact,
+  tool result, note and replacement. `WorkLog.snapshot()` does not mutate live steps. Final normal replies retain
+  full content. Startup preserves checkpoints and marks running attempts interrupted/process_restarted without
+  replaying AI or tools; a superseded attempt cannot create a new recovered reply. No exactly-once tool guarantee.
+- Persist rechecks owner/chat/project/archive/source digest. Deleted chats are not recreated by late results.
+  Recovery only reads history; a running checkpoint is not accepted as a final reply. Running retries are rejected.
+  Failed historical requests/partial replies are reference, not pending tasks; this also applies to anchors,
+  summary prompts and native history lookup. Turn state changes invalidate covered summaries; old affected v1
+  caches are invalidated once during migration. Titles/memory skip failed Chat attempts.
+- Saved personal memory remains shared Chat/Companion under the existing account policy, including across projects;
+  deleting a chat does not delete already extracted personal entries. Memory OFF is not Temporary Chat: normal
+  history and per-chat rolling context persist. Unsupported privacy flags are rejected before model execution.
+- Memory revisions change on entry edits/deletes/settings/forget operations. Background writes validate enabled,
+  revision and source content/ownership/scope inside the same transaction. OFF→ON and deleted/moved/edited sources
+  reject stale results. Forget advances the extraction watermark past current messages, so an aborted background
+  result cannot learn the same deleted fact again on its next run. Concurrent running turns fence the cursor.
+  Companion summary/persona algorithms and Agent runtime are unchanged; only guarded storage is added.
+- SQLite additions/triggers migrate at startup; frontend rebuild required, no new environment variables/CLI update.
+  Fault-injection and privacy race tests use fake providers/temp SQLite. Production/live acceptance is pending.
+  Final validation: 1,518 backend tests passed, 1 skipped (350.00s); related recovery/memory/private-note group 91 passed;
+  frontend component tests 23 passed; Chromium desktop/mobile-emulation browser tests 6 passed; production build and
+  diff check passed. The first broad run caught an empty Companion private-note bubble; fixed while preserving its
+  prior behavior, then reran the full backend. No paid call, commit, deployment or physical-phone test was performed.
+
 ## Web Chat request context — stage 2 (2026-10-21)
 
 The owner approved stage 2 after deploying and live-testing stage 1. See
-`backend/features/chat/docs/request-context.md` and the four-stage roadmap. Stages 3–4 remain planned.
+`backend/features/chat/docs/request-context.md` and the four-stage roadmap. Stage 3 is documented above; stage 4 remains planned.
 
 - `features/chat/request_context.py` binds an immutable Web Chat snapshot only around the main reply, after account,
   conversation/project/model checks and context preparation. It carries request/conversation/project IDs with
@@ -47,7 +79,7 @@ Claude/request-context group 66 passed (includes a spoofed heading that must not
 
 The owner approved a four-stage Web Chat roadmap, starting with long context. The plan and gates are in
 `backend/features/chat/docs/roadmap-2026-10-20.md`; implementation details and production limits are in
-`backend/features/chat/docs/long-context.md`. Stage 2 is documented above; stages 3–4 remain planned.
+`backend/features/chat/docs/long-context.md`. Stages 2–3 are documented above; stage 4 remains planned.
 
 - `features/chat/context.py` prepares the exact recent messages under a model/deployment budget and adds a portable
   rolling summary, a bounded first-user anchor, file metadata and explicit unrepresented-message counts. Source

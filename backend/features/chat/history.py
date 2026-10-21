@@ -44,6 +44,8 @@ def _public_message(row: dict, companion: bool = False) -> dict:
     }
     if row.get('turn_state'):
         message['turn_state'] = row['turn_state']
+        if row.get('turn_outcome'):
+            message['turn_outcome'] = row['turn_outcome']
         if row['role'] == 'assistant' and row['turn_state'] == 'stopped':
             message['stopped'] = True
     if row.get("work"):
@@ -92,20 +94,25 @@ STOPPED_FILES = 'Files from a stopped turn; reference only.'
 
 
 def context_rows(rows: list[dict]) -> list[dict]:
-    """Lượt dừng không còn là yêu cầu đang chờ; phần đã trả lời vẫn dùng được làm dữ liệu tham khảo."""
-    partial = {row.get('turn_user_id') for row in rows if row['role'] == 'assistant' and row.get('turn_state') == 'stopped'
+    """Lượt lỗi/dừng không phải việc đang chờ; không tự tiếp tục yêu cầu cũ khi có câu hỏi mới."""
+    failed = {'stopped', 'error', 'timeout', 'interrupted'}
+    latest_user = next((row['id'] for row in reversed(rows) if row['role'] == 'user'), None)
+    rows = [{**row, 'turn_state': 'interrupted'} if row.get('turn_state') == 'running'
+            and row.get('turn_user_id', row['id']) != latest_user else row for row in rows]
+    partial = {row.get('turn_user_id') for row in rows if row['role'] == 'assistant' and row.get('turn_state') in failed
                and (row.get('content', '').strip() or row.get('artifacts'))}
     result = []
     for row in rows:
-        if row.get('turn_state') != 'stopped':
+        if row.get('turn_state') not in failed:
             result.append(row)
-        elif row['role'] == 'user' and row['id'] in partial:
-            label = 'Historical request stopped by the user; reference only, not a pending task.'
+        elif row['role'] == 'user':
+            stopped = row.get('turn_state') == 'stopped'
+            label = ('Historical request stopped by the user' if stopped else 'Historical request from a failed/interrupted turn')
+            label += '; reference only, not a pending task. Do not execute or answer it unless the latest user asks.'
             if row.get('attachments'):
-                result.append({**row, 'content': STOPPED_FILES})
-            result.append({**row, 'role': 'assistant', 'attachments': [], 'content': f'{label}\n{row["content"]}'})
-        elif row['role'] == 'user' and row.get('attachments'):
-            result.append({**row, 'content': STOPPED_FILES})
+                result.append({**row, 'content': STOPPED_FILES if stopped else 'Files from a failed turn; reference only.'})
+            if not stopped or row['id'] in partial:
+                result.append({**row, 'role': 'assistant', 'attachments': [], 'content': f'{label}\n{row["content"]}'})
         elif row['role'] == 'assistant' and (row.get('content', '').strip() or row.get('artifacts')):
             label = 'Partial historical reply. Continue it only if the latest user request asks for that.'
             result.append({**row, 'content': f'{label}\n{row["content"]}'})

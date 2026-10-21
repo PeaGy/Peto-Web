@@ -142,7 +142,7 @@ async def test_transport_disconnect_is_not_user_stop(client, monkeypatch):
     assert turn['state'] == 'interrupted'
     rows = await db.get_messages(TEST_OWNER, turn['conversation_id'])
     assert not history._public_message(rows[-1]).get('stopped')
-    assert history.context_rows(rows)[0]['content'] == 'Câu bị mất mạng'
+    assert not any(row['role'] == 'user' and row['content'] == 'Câu bị mất mạng' for row in history.context_rows(rows))
 
 
 def test_stopped_attachments_and_partial_reply_remain_reference_data():
@@ -160,9 +160,10 @@ async def test_stop_during_save_before_meta_returns_stored_message(client, monke
     saving, release = asyncio.Event(), asyncio.Event()
     original_bind = chat_turns.bind
     async def bind(*args):
-        await original_bind(*args)
+        result = await original_bind(*args)
         saving.set()
         await release.wait()
+        return result
     monkeypatch.setattr(chat_turns, 'bind', bind)
     monkeypatch.setattr(service, 'get_provider', lambda *args: pytest.fail('Lượt đã dừng không gọi AI'))
     request_id = uuid.uuid4().hex
@@ -281,5 +282,5 @@ async def test_failures_are_not_explicit_stops(client, monkeypatch, failure, sta
     turn = await chat_turns.get(TEST_OWNER, rid)
     assert turn['state'] == state
     rows = await db.get_messages(TEST_OWNER, turn['conversation_id'])
-    assert history.context_rows(rows)[0]['content'] == 'Câu còn cần trả lời'
+    assert not any(row['role'] == 'user' and row['content'] == 'Câu còn cần trả lời' for row in history.context_rows(rows))
     assert not history._public_message(rows[-1]).get('stopped')

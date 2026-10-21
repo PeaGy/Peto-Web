@@ -105,7 +105,7 @@ export function useReplyRecovery(options: Options) {
           const userIndex = stored.findIndex(row => row.id === ticket.userMessageId && row.role === 'user');
           const reply = userIndex < 0 ? undefined : stored[userIndex + 1];
           // Chưa có câu trả lời được lưu thì giữ phần chữ trên máy, không thay bằng lịch sử thiếu tin.
-          if (reply?.role === 'assistant') {
+          if (reply?.role === 'assistant' && reply.turn_state !== 'running') {
             const complete = reply.status !== 'incomplete';
             setTicket(null);
             setStatus(complete ? 'recovered' : 'partial');

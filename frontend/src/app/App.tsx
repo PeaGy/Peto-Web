@@ -1428,8 +1428,9 @@ function AppContent() {
               </form> : undefined}
               live={replyVisible && !stopping && index === messages.length - 1}
               writing={replyVisible && index === messages.length - 1}
-              // Lượt cuối bị dừng: "Thử lại" gửi lại câu hỏi ngay trong hội thoại này (máy chủ thay câu trả lời dở).
-              onRetry={message.stopped && index === messages.length - 1 && messages[index - 1]?.role === 'user' && messages[index - 1]?.id
+              // Lượt cuối đã dừng/hỏng và được lưu: chỉ thử lại khi người dùng bấm, bằng request ID mới.
+              onRetry={(message.stopped || (message.id && message.status === 'incomplete' && message.turn_state !== 'running'))
+                && index === messages.length - 1 && messages[index - 1]?.role === 'user' && messages[index - 1]?.id
                 ? () => void submit({ target: messages[index - 1], text: messages[index - 1].content }) : undefined}
               onPreview={previewDocument} onEdit={editDocument} />
           ))}

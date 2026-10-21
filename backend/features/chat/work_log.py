@@ -325,6 +325,10 @@ class WorkLog:
 
     # ---------- cuối lượt ----------
 
+    def snapshot(self) -> dict:
+        """Checkpoint không đóng bước đang chạy và không thay đổi nhật ký của luồng SSE."""
+        return {'ms': self.now(), 'steps': [step.public() for step in self.steps], 'complete': False}
+
     def close(self, complete: bool) -> dict:
         """Kết thúc các bước còn dở (xong, hoặc dừng nếu lượt hỏng/bị ngắt) và trả nhật ký để lưu cùng tin nhắn."""
         end = self.now()

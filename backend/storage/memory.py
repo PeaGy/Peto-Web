@@ -34,10 +34,10 @@ async def memory_state(owner: str) -> dict | None:
     """Bật/tắt, vị trí đã đọc và mốc tóm tắt; None khi người dùng chưa từng có (mặc định là bật)."""
     async with db_connection.connect() as db:
         cursor = await db.execute(
-            "SELECT enabled, cursor, since FROM companion_memory_state WHERE owner = ?", (owner,)
+            "SELECT enabled, cursor, since, revision FROM companion_memory_state WHERE owner = ?", (owner,)
         )
         row = await cursor.fetchone()
-    return {"enabled": bool(row[0]), "cursor": row[1], "since": row[2]} if row else None
+    return {"enabled": bool(row[0]), "cursor": row[1], "since": row[2], 'revision': row[3]} if row else None
 
 
 async def ensure_memory_state(owner: str) -> dict:
@@ -51,13 +51,35 @@ async def ensure_memory_state(owner: str) -> dict:
             (owner, start, start, time.time()),
         )
         await db.commit()
-    return await memory_state(owner) or {"enabled": True, "cursor": start, "since": start}
+    return await memory_state(owner) or {"enabled": True, "cursor": start, "since": start, 'revision': 0}
 
 
 # Tin nào được đọc để ghi nhớ: Companion và Chat thường. Chat nhập vai thì không (chủ web chốt 11/10/2026): lời thoại
 # nhân vật và nội dung 18+ không được lẫn vào trí nhớ của trợ lý. Tin của lượt Companion dùng khóa riêng (cột provider)
 # cũng không (13/10/2026); hai truy vấn đọc tin bên dưới lọc thêm ``m.provider = ''``.
 MEMORY_SOURCE = "(c.mode = 'companion' OR (c.mode = 'chat' AND c.persona = 'assistant'))"
+SOURCE_COLUMNS = '''m.id,m.role,m.content,m.conversation_id,m.status,m.provider,c.mode,c.persona,c.project_id,c.archived,
+    COALESCE((SELECT state FROM chat_turns WHERE owner=c.owner AND
+    (user_message_id=m.id OR assistant_message_id=m.id) ORDER BY id DESC LIMIT 1),'') AS turn_state'''
+
+
+async def _valid_snapshot(db, owner, revision, rows):
+    """Kiểm quyền, cờ bật và nguồn gốc dưới cùng write lock với lần ghi; không phục hồi nội dung đã xóa."""
+    state = await (await db.execute('SELECT enabled,revision FROM companion_memory_state WHERE owner=?', (owner,))).fetchone()
+    if not state or not state[0] or state[1] != revision:
+        return False
+    for expected in rows:
+        row = await (await db.execute(f'''SELECT {SOURCE_COLUMNS} FROM messages m JOIN conversations c ON c.id=m.conversation_id
+            WHERE m.id=? AND c.owner=? AND {MEMORY_SOURCE} AND m.provider='' ''', (expected['id'], owner))).fetchone()
+        if row is None:
+            return False
+        names = ('id', 'role', 'content', 'conversation_id', 'status', 'provider', 'mode', 'persona', 'project_id', 'archived', 'turn_state')
+        current = dict(zip(names, row))
+        if any(current.get(key) != value for key, value in expected.items() if key in current):
+            return False
+        if current['mode'] == 'chat' and (current['status'] != 'complete' or current['turn_state'] not in {'', 'complete'}):
+            return False
+    return True
 
 
 async def _last_memory_message_id(db: aiosqlite.Connection, owner: str, role: str | None = None) -> int:
@@ -76,6 +98,7 @@ async def _last_memory_message_id(db: aiosqlite.Connection, owner: str, role: st
 async def set_memory_enabled(owner: str, enabled: bool) -> None:
     """Bật lại thì bắt đầu đọc từ tin mới nhất: điều người dùng nói lúc đang tắt không bị ghi nhớ hay tóm tắt về sau."""
     async with db_connection.connect() as db:
+        await db.execute('BEGIN IMMEDIATE')
         latest = await _last_memory_message_id(db, owner)
         await db.execute(
             """
@@ -86,7 +109,7 @@ async def set_memory_enabled(owner: str, enabled: bool) -> None:
                               THEN excluded.cursor ELSE companion_memory_state.cursor END,
                 since = CASE WHEN excluded.enabled = 1 AND companion_memory_state.enabled = 0
                              THEN excluded.since ELSE companion_memory_state.since END,
-                updated_at = excluded.updated_at
+                updated_at = excluded.updated_at, revision = companion_memory_state.revision + 1
             """,
             (owner, int(enabled), latest, latest, time.time()),
         )
@@ -105,18 +128,23 @@ async def memory_messages_after(owner: str, after_id: int, limit: int) -> list[d
             after_id = max(await _last_memory_message_id(db, owner, "user") - 1, 0)
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
-            "SELECT m.id, m.role, m.content, m.conversation_id, c.mode FROM messages m "
+            f"SELECT {SOURCE_COLUMNS} FROM messages m "
             "JOIN conversations c ON c.id = m.conversation_id "
             f"WHERE c.owner = ? AND {MEMORY_SOURCE} AND m.id > ? AND m.role IN ('user', 'assistant') AND m.provider = '' "
+            "AND (c.mode!='chat' OR (m.status='complete' AND COALESCE((SELECT state FROM chat_turns WHERE owner=c.owner "
+            "AND (user_message_id=m.id OR assistant_message_id=m.id) ORDER BY id DESC LIMIT 1),'complete')='complete')) "
+            # Không dời cursor qua một lượt khác đang chạy: checkpoint có ID cũ nhưng chưa đủ nội dung để ghi nhớ.
+            "AND m.id < COALESCE((SELECT MIN(t.user_message_id) FROM chat_turns t WHERE t.owner=? AND t.state='running'),9223372036854775807) "
             "ORDER BY m.id DESC LIMIT ?",
-            (owner, after_id, limit),
+            (owner, after_id, owner, limit),
         )
         rows = [dict(row) for row in await cursor.fetchall()]
     return rows[::-1]
 
 
 async def apply_memory_changes(
-    owner: str, *, upserts: list[dict], remove: list[int], cursor: int | None = None, limit: int
+    owner: str, *, upserts: list[dict], remove: list[int], cursor: int | None = None, limit: int,
+    expected_revision: int | None = None, source_rows: list[dict] = ()
 ) -> list[dict]:
     """Ghi các thay đổi trong một giao dịch; trả về các mục vừa thêm hay vừa sửa (sau khi đổi).
 
@@ -129,6 +157,9 @@ async def apply_memory_changes(
     now = time.time()
     changed: list[int] = []
     async with db_connection.connect() as db:
+        await db.execute('BEGIN IMMEDIATE')
+        if expected_revision is not None and not await _valid_snapshot(db, owner, expected_revision, source_rows):
+            return []
         for memory_id in remove:
             await db.execute("DELETE FROM companion_memory_entries WHERE id = ? AND owner = ?", (memory_id, owner))
         for patch in upserts:
@@ -220,6 +251,12 @@ async def forget_summaries(owner: str) -> None:
 
 async def _forget_summaries(db: aiosqlite.Connection, owner: str) -> None:
     """Xóa trắng bản tóm tắt của mọi mạch Companion và bỏ qua mọi tin đang có: tóm tắt về sau chỉ từ tin mới hơn."""
+    # Lượt trích đang chờ bị hủy; lần sau cũng không được đọc lại cùng nguồn rồi học lại điều vừa quên.
+    latest = await _last_memory_message_id(db, owner)
+    await db.execute('''INSERT INTO companion_memory_state(owner,enabled,cursor,since,updated_at,revision)
+        VALUES(?,1,?,?,?,1) ON CONFLICT(owner) DO UPDATE SET
+        cursor=MAX(companion_memory_state.cursor,excluded.cursor),revision=companion_memory_state.revision+1,
+        updated_at=excluded.updated_at''', (owner, latest, latest, time.time()))
     await db.execute(
         """
         INSERT INTO companion_summaries (conversation_id, owner, text, upto, updated_at)
@@ -250,7 +287,7 @@ async def messages_before_window(
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
             """
-            SELECT m.id, m.role, m.content FROM messages m JOIN conversations c ON c.id = m.conversation_id
+            SELECT m.id, m.role, m.content, m.conversation_id, c.mode, c.project_id FROM messages m JOIN conversations c ON c.id = m.conversation_id
              WHERE c.id = ? AND c.owner = ? AND m.id > ? AND m.role IN ('user', 'assistant') AND m.provider = ''
                AND m.id < (SELECT MIN(id) FROM (
                      SELECT id FROM messages WHERE conversation_id = ? ORDER BY id DESC LIMIT ?))
@@ -263,12 +300,16 @@ async def messages_before_window(
 
 
 async def save_companion_summary(
-    owner: str, conversation_id: str, *, text: str, upto: int, expected_upto: int | None
+    owner: str, conversation_id: str, *, text: str, upto: int, expected_upto: int | None,
+    expected_revision: int | None = None, source_rows: list[dict] = ()
 ) -> bool:
     """Lưu bản tóm tắt mới nếu không ai đổi nó trong lúc model đang viết (``expected_upto`` là ``upto`` lúc đọc, None
     khi chưa có). Người dùng xóa ghi nhớ giữa chừng thì ``upto`` đã đổi: bỏ kết quả, không đem điều vừa xóa quay lại."""
     now = time.time()
     async with db_connection.connect() as db:
+        await db.execute('BEGIN IMMEDIATE')
+        if expected_revision is not None and not await _valid_snapshot(db, owner, expected_revision, source_rows):
+            return False
         if expected_upto is None:
             result = await db.execute(
                 "INSERT INTO companion_summaries (conversation_id, owner, text, upto, updated_at) "

@@ -13,6 +13,16 @@ function draw(message: Partial<Message> = {}, editor?: ReactNode) {
 }
 
 describe('đính kèm của tin nhắn Chat', () => {
+  it.each([
+    ['interrupted', 'process_restarted', 'Lượt bị ngắt khi máy chủ khởi động lại.'],
+    ['timeout', 'timeout', 'Lượt đã hết thời gian chờ. Câu trả lời chưa hoàn tất.'],
+    ['running', '', 'Lượt này vẫn đang được xử lý.'],
+    ['error', 'provider_error', 'Câu trả lời chưa hoàn tất'],
+  ] as const)('phục hồi hiển thị đúng trạng thái %s', (turn_state, turn_outcome, label) => {
+    draw({ role: 'assistant', status: 'incomplete', turn_state, turn_outcome });
+    expect(screen.getByText(label)).toBeTruthy();
+    expect(screen.queryByText('Đã dừng theo yêu cầu của bạn.')).toBeNull();
+  });
   it('đặt hai tệp phía trên lời nhắn, giữ tên, loại và liên kết tải', () => {
     const { container } = draw({ attachments: [document, { ...document, id: 'report', name: 'report.md', url: '/api/attachments/report' }] });
     const text = container.querySelector('.user-message-text')!;

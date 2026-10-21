@@ -116,6 +116,10 @@ async def retry_in_place(owner, conversation_id, message_id, text):
         if source is None or source['archived']:
             await connection.rollback()
             return None
+        running = await (await connection.execute("SELECT 1 FROM chat_turns WHERE owner=? AND conversation_id=? AND user_message_id=? AND state='running' LIMIT 1",
+                                                   (owner, conversation_id, message_id))).fetchone()
+        if running:
+            raise HTTPException(409, 'Lượt này vẫn đang chạy. Dừng hoặc kiểm tra lịch sử trước khi thử lại nhé.')
         rows = await (await connection.execute('SELECT id, role, status, artifacts FROM messages WHERE conversation_id=? AND id>=? ORDER BY id',
                                                (conversation_id, message_id))).fetchall()
         if not rows or rows[0]['id'] != message_id or rows[0]['role'] != 'user':
@@ -194,12 +198,12 @@ async def fork(owner, conversation_id, message_id, text):
             for old_user_id, new_user_id in message_ids.items():
                 if old_user_id == message_id:
                     continue
-                turn = await (await connection.execute('''SELECT state,assistant_message_id FROM chat_turns
+                turn = await (await connection.execute('''SELECT state,assistant_message_id,outcome FROM chat_turns
                     WHERE owner=? AND user_message_id=? ORDER BY id DESC LIMIT 1''', (owner, old_user_id))).fetchone()
                 if turn:
-                    await connection.execute('''INSERT INTO chat_turns(owner,request_id,state,conversation_id,user_message_id,assistant_message_id,created_at)
-                        VALUES(?,?,?,?,?,?,?)''', (owner, uuid.uuid4().hex, turn['state'], new_id, new_user_id,
-                                                  message_ids.get(turn['assistant_message_id']), now))
+                    await connection.execute('''INSERT INTO chat_turns(owner,request_id,state,conversation_id,user_message_id,assistant_message_id,created_at,outcome)
+                        VALUES(?,?,?,?,?,?,?,?)''', (owner, uuid.uuid4().hex, 'interrupted' if turn['state'] == 'running' else turn['state'], new_id, new_user_id,
+                                                  message_ids.get(turn['assistant_message_id']), now, turn['outcome']))
             for item in attachments:
                 aid = uuid.uuid4().hex
                 path = UPLOAD_DIR / new_id / (aid + Path(item['path']).suffix)

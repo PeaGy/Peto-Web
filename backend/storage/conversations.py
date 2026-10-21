@@ -106,7 +106,7 @@ async def get_messages(
             cursor = await db.execute(
                 """
                 SELECT m.id, m.role, m.content, m.created_at, m.status, m.sources, m.artifacts, m.work, m.provider,
-                       t.request_id AS turn_request_id, t.state AS turn_state, t.user_message_id AS turn_user_id
+                       t.request_id AS turn_request_id, t.state AS turn_state, t.user_message_id AS turn_user_id, t.outcome AS turn_outcome
                   FROM messages m
                   JOIN conversations c ON c.id = m.conversation_id
                   LEFT JOIN chat_turns t ON t.id=(SELECT MAX(id) FROM chat_turns
@@ -122,7 +122,7 @@ async def get_messages(
             cursor = await db.execute(
                 """
                 SELECT m.id, m.role, m.content, m.created_at, m.status, m.sources, m.artifacts, m.work, m.provider,
-                       t.request_id AS turn_request_id, t.state AS turn_state, t.user_message_id AS turn_user_id
+                       t.request_id AS turn_request_id, t.state AS turn_state, t.user_message_id AS turn_user_id, t.outcome AS turn_outcome
                   FROM messages m
                   JOIN conversations c ON c.id = m.conversation_id
                   LEFT JOIN chat_turns t ON t.id=(SELECT MAX(id) FROM chat_turns
