@@ -36,7 +36,12 @@ thinking signatures to the entire preceding system/tools/messages prefix; the pe
 `ClaudeClient.create` now disables replay of whole thinking/redacted_thinking blocks only when the Web Chat snapshot
 is present, retaining all other native blocks, function calls/results and history. No altered signatures, beta flags,
 or billed retry; Agent/Companion keep default replay. Tests simulate signature rejection on prefix change, including
-redacted thinking. This patch is not live-verified until the owner deploys it. Details in `request-context.md`.
+redacted thinking. The owner deployed patch `64c3797`; a fresh Haiku/low/web-OFF clock request completed in about
+6 seconds without the continuation error. Memory was already restored ON for this follow-up; model/effort/web were
+restored to Peto/auto/AUTO afterward. One Luna reply after the earlier failed turn followed that old request instead
+of the new file question; recorded for stage 3 recovery work, not diagnosed as a reader bug. Details in `request-context.md`.
+Validation of the patch: related tests 153 passed; full backend 1,489 passed, 1 skipped (284.44s); final
+Claude/request-context group 66 passed (includes a spoofed heading that must not enable the server-bound behavior).
 
 ## Web Chat long context — stage 1 (2026-10-20)
 

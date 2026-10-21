@@ -93,10 +93,16 @@ system/tools/messages prefix; snapshot chứa clock/round/manifest đổi giữa
 ghi HTTP, không có message gốc để khẳng định chính xác loại lỗi API; mã cũ có vi phạm quy tắc prefix này.
 
 Bản vá cục bộ: `ClaudeClient` nhận biết snapshot Web Chat và không replay block thinking/redacted_thinking cũ;
-giữ các block native còn lại, tool_use/tool_result và nội dung hội thoại. Không sửa chữ ký, không thêm beta hay retry
+giữ các block native còn lại, tool_use/tool_result và nội dung hội thoại. Việc nhận biết dựa vào ContextVar do server
+bind, không dựa vào tiêu đề có thể xuất hiện trong dữ liệu người dùng. Không sửa chữ ký, không thêm beta hay retry
 trả phí. Agent/Companion không có snapshot này nên tiếp tục đường replay mặc định. HTTP giả được bổ sung kiểm tra
-prefix binding, có trường hợp thinking và redacted_thinking; nhóm liên quan 153 đạt, nhóm Claude/context 65 đạt.
-Bản vá phải được commit/deploy và thử lại công cụ Haiku trước khi chốt nghiệm thu giai đoạn 2.
+prefix binding, có thinking và redacted_thinking; nhóm liên quan 153 đạt, nhóm Claude/context sau chỉnh sửa cuối
+66 đạt. Hồi quy backend 1.489 đạt, 1 bỏ qua (284,44 giây); `git diff --check` đạt.
+Chủ web đã commit/deploy bản vá `64c3797`. Lượt thử lại trong chat mới, Haiku/low/web OFF, gọi đồng hồ rồi trả lời
+hoàn tất trong khoảng 6 giây, không còn lỗi tiếp nối. Ngày giờ khớp mốc kiểm tra độc lập; cấu hình và giới hạn quyền
+đúng, browser/OS null. Ghi nhớ đã được khôi phục ON trước lượt thử lại và không thay đổi thêm; sau thử model/effort/
+web trả về Peto/Tự động/AUTO. Những ca cốt lõi đã kiểm tra thật trên cả ba model; không suy ra mọi ca biên đều đã thử
+trên production.
 
 Ngoài ra một lượt Luna sau lỗi Haiku trả lại yêu cầu đồng hồ trước đó thay vì câu hỏi trạng thái file mới; lượt kế
 tiếp nói rõ bỏ yêu cầu lỗi thì xử lý đúng. Ghi nhận để kiểm tra phục hồi/ngữ cảnh lượt lỗi trong giai đoạn 3; chưa coi
