@@ -318,6 +318,9 @@ def sign_in(attempt: Attempt, *, open_browser: Callable[[str], bool], cancelled:
 
 
 def _oauth_problem(err: ProviderHTTPError) -> str:
+    if err.status == 0 and err.code == "tls":
+        return ("Không xác minh được chứng chỉ HTTPS của OpenAI. Kiểm tra giờ trên máy và kho chứng chỉ Windows rồi thử "
+                "lại.")
     if err.status == 0:
         return "Không kết nối được OpenAI để hoàn tất đăng nhập. Kiểm tra mạng rồi thử lại."
     if err.code == "invalid_client":

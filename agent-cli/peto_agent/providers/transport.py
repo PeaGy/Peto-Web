@@ -10,11 +10,13 @@ from __future__ import annotations
 
 import http.client
 import json
+import os
 import queue
 import socket
 import ssl
 import threading
 from collections.abc import Iterator
+from datetime import datetime, timezone
 from urllib.parse import urlencode, urlsplit
 
 from .. import __version__
@@ -38,6 +40,98 @@ def _clip(value) -> str:
     return " ".join(str(value or "").split())[:300]
 
 
+def _tlv(data: bytes, offset: int) -> tuple[int, int, int]:
+    """(thẻ, đầu nội dung, cuối nội dung) của một phần tử DER."""
+    tag, length = data[offset], data[offset + 1]
+    offset += 2
+    if length & 0x80:
+        count = length & 0x7F
+        if not 1 <= count <= 4:
+            raise ValueError("độ dài DER không hợp lệ")
+        length = int.from_bytes(data[offset:offset + count], "big")
+        offset += count
+    if offset + length > len(data):
+        raise ValueError("DER bị cắt")
+    return tag, offset, offset + length
+
+
+def not_after(der: bytes) -> datetime | None:
+    """Hạn cuối (notAfter) của một chứng chỉ X.509 dạng DER; None khi không đọc được (giữ chứng chỉ như cũ)."""
+    try:
+        _, start, _ = _tlv(der, 0)  # Certificate
+        _, position, _ = _tlv(der, start)  # tbsCertificate
+        tag, _, end = _tlv(der, position)
+        if tag == 0xA0:  # version [0], có thể vắng
+            tag, _, end = _tlv(der, end)
+        for _ in range(2):  # signature, issuer (sau serialNumber)
+            tag, _, end = _tlv(der, end)
+        tag, start, _ = _tlv(der, end)  # validity
+        if tag != 0x30:
+            return None
+        _, _, after = _tlv(der, start)  # notBefore
+        tag, start, end = _tlv(der, after)  # notAfter
+        text = der[start:end].decode("ascii")
+        if tag == 0x17:  # UTCTime: năm 50–99 là 19xx (RFC 5280 mục 4.1.2.5.1)
+            moment = datetime.strptime(text, "%y%m%d%H%M%SZ")
+            if moment.year >= 2050:
+                moment = moment.replace(year=moment.year - 100)
+        elif tag == 0x18:
+            moment = datetime.strptime(text, "%Y%m%d%H%M%SZ")
+        else:
+            return None
+        return moment.replace(tzinfo=timezone.utc)
+    except (IndexError, ValueError, UnicodeDecodeError):
+        return None
+
+
+_TLS_CONTEXT: ssl.SSLContext | None = None
+_TLS_LOCK = threading.Lock()
+
+
+def tls_context() -> ssl.SSLContext:
+    """Ngữ cảnh TLS cho nhà cung cấp, kiểm chứng chỉ như mặc định của Python.
+
+    Trên Windows, Python nạp cả kho chứng chỉ trung gian (CA) làm chứng chỉ tin cậy. Máy có bản ISRG Root X2 cũ do X1 ký
+    (hết hạn 15/09/2025) trong kho đó thì OpenSSL chọn bản hết hạn trước bản còn hạn máy chủ gửi, và mọi trang dùng
+    chuỗi Let's Encrypt qua X2 (như auth.openai.com) báo "certificate has expired" dù trình duyệt vẫn mở được (gặp khi
+    đăng nhập ChatGPT, M5, 2026-10-21). Nên ở đây tự nạp kho ROOT và CA của Windows như Python làm, cùng quy tắc mục
+    đích dùng, nhưng bỏ các chứng chỉ đã hết hạn. Các cờ kiểm giữ đúng như ``ssl.create_default_context()``."""
+    global _TLS_CONTEXT
+    with _TLS_LOCK:
+        if _TLS_CONTEXT is None:
+            _TLS_CONTEXT = _windows_context() if os.name == "nt" and hasattr(ssl, "enum_certificates") else None
+            if _TLS_CONTEXT is None:
+                _TLS_CONTEXT = ssl.create_default_context()
+        return _TLS_CONTEXT
+
+
+def _windows_context() -> ssl.SSLContext | None:
+    default = ssl.create_default_context()
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    context.options = default.options
+    context.verify_flags = default.verify_flags
+    context.minimum_version = default.minimum_version
+    now = datetime.now(timezone.utc)
+    loaded = 0
+    for store in ("CA", "ROOT"):
+        try:
+            entries = ssl.enum_certificates(store)
+        except OSError:
+            continue
+        for der, encoding, trust in entries:
+            if encoding != "x509_asn" or not (trust is True or ssl.Purpose.SERVER_AUTH.oid in trust):
+                continue
+            expiry = not_after(der)
+            if expiry is not None and expiry < now:
+                continue
+            try:
+                context.load_verify_locations(cadata=der)
+                loaded += 1
+            except ssl.SSLError:
+                continue
+    return context if loaded else None
+
+
 class ProviderHTTP:
     def __init__(self, endpoint: str, headers: dict[str, str], *, timeout: float = 30.0):
         parts = urlsplit(endpoint)
@@ -52,8 +146,7 @@ class ProviderHTTP:
 
     def _connection(self, timeout: float):
         if self._secure:
-            return http.client.HTTPSConnection(self._host, self._port, timeout=timeout,
-                                               context=ssl.create_default_context())
+            return http.client.HTTPSConnection(self._host, self._port, timeout=timeout, context=tls_context())
         return http.client.HTTPConnection(self._host, self._port, timeout=timeout)
 
     def _send(self, method: str, path: str, body: dict | None, timeout: float, *, form: dict | None = None):

@@ -132,7 +132,7 @@ journal, logs, export, request bodies or env; Ctrl+C; redirects; connect/disconn
 `backend/tests/test_agent_bundle.py`. Full CLI 725 passed in one run (242s); backend Agent/prompt/model/
 installer 197 passed. No real OpenAI key or paid call was used; live behaviour with a real key is unverified.
 
-## Multi-source models: M5 Continue with ChatGPT (2026-10-21; CLI 0.33.1 source)
+## Multi-source models: M5 Continue with ChatGPT (2026-10-21; CLI 0.33.2 source)
 
 The owner approved M5 from an OpenCode "Connect OpenAI" screenshot. Rereading OpenAI's docs corrected M0: the open-source
 local path needs no requested client ID; each account registers dynamically (`client_id=dynamic_agent_client`, the
@@ -145,7 +145,14 @@ your ChatGPT plan"/"Got it") with Vietnamese around them.
 - `chatgpt_auth.py`: endpoints from `auth.openai.com/.well-known/openid-configuration`; persistent
   `ext_agent_host_id` as `urn:uuid:<UUIDv4>` in `config.json` (the first build sent "peto-…" and OpenAI answered
   `invalid_authorize_request` on that param; a malformed stored value is replaced once; the fix first shipped still
-  numbered 0.33.0, so installed copies never updated: always bump the version with a CLI fix, now 0.33.1); fresh PKCE S256/state/nonce; `Callback` on `127.0.0.1` (port 1455 else any) opened
+  numbered 0.33.0, so installed copies never updated: always bump the version with a CLI fix, now 0.33.1);
+  the owner's first real sign-in then reached the browser callback but the code exchange failed with TLS "certificate
+  has expired": their Windows intermediate (CA) store holds the old ISRG Root X2 cross-signed by X1 (expired
+  2025-09-15), Python loads that store as trust anchors and OpenSSL prefers it over the valid X2 auth.openai.com sends
+  (Let's Encrypt YE2 chain; api.openai.com uses Google Trust Services and was unaffected, Edge builds the chain itself).
+  `transport.tls_context()` now loads the Windows CA+ROOT stores like Python (same server-auth filter, same verify
+  flags) but skips expired certificates (`not_after` reads DER); an expired server certificate is still refused
+  (checked against expired.badssl.com). OAuth TLS failures get their own message. CLI 0.33.2; fresh PKCE S256/state/nonce; `Callback` on `127.0.0.1` (port 1455 else any) opened
   before the browser, ignoring other states; code exchange with the issued client ID and the same redirect URI; ID token
   checked against JWKS plus iss, aud, exp (120 s leeway), nonce; plan only with `chatgpt.tokens.use.direct`, otherwise an
   identity-only connection; reauth with client ID, `id_token_hint` (never shown), `login_hint`, rejecting another `sub` or
@@ -165,7 +172,7 @@ your ChatGPT plan"/"Got it") with Vietnamese around them.
   `peto disconnect` revokes. `catalog` and the gateway register `chatgpt-plan`.
 - Tests: `tests/test_chatgpt.py` (fake auth+API server on 127.0.0.1, fixed test RSA key signing ID tokens, browser stub
   that calls the callback; `webbrowser.open` is always stubbed). An early run before that stub may have opened one real
-  browser tab on the fake loopback URL. Full CLI run 745 passed in one run; backend installer/bundle 9 passed. Not yet
+  browser tab on the fake loopback URL. Full CLI run (0.33.2) 748 passed in one run; backend installer/bundle 9 passed. Not yet
   accepted with a real ChatGPT account, which is M5's completion criterion.
 
 ## Multi-source models: M4 `/models`, `/connect`, `/usage` (2026-10-20; CLI 0.32.0 source)

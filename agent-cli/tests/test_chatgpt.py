@@ -459,3 +459,48 @@ def test_an_old_malformed_host_id_is_replaced_once():
     config.save({"chatgpt_host_id": "peto-cu-sai-dang-0123456789abcdef"})
     first = chatgpt_auth.host_id()
     assert first.startswith("urn:uuid:") and chatgpt_auth.host_id() == first, "thay một lần rồi giữ nguyên"
+
+
+# ---- Chứng chỉ hết hạn trong kho Windows --------------------------------------------------------------------
+
+def der(tag: int, content: bytes) -> bytes:
+    size = len(content)
+    head = bytes([size]) if size < 0x80 else bytes([0x80 | 2]) + size.to_bytes(2, "big")
+    return bytes([tag]) + head + content
+
+
+def fake_cert(after: bytes, *, tag: int = 0x17, version: bool = True) -> bytes:
+    validity = der(0x30, der(0x17, b"200101000000Z") + der(tag, after))
+    tbs = (der(0xA0, der(0x02, b"\x02")) if version else b"") + der(0x02, b"\x01") + der(0x30, b"") + der(0x30, b"")
+    return der(0x30, der(0x30, tbs + validity + der(0x30, b"")) + der(0x30, b"") + der(0x03, b"\x00"))
+
+
+def test_certificate_expiry_is_read_from_der():
+    from peto_agent.providers.transport import not_after
+    assert not_after(fake_cert(b"250915160000Z")).isoformat() == "2025-09-15T16:00:00+00:00"
+    assert not_after(fake_cert(b"20350604110438Z", tag=0x18)).year == 2035
+    assert not_after(fake_cert(b"491231235959Z", version=False)).year == 2049
+    assert not_after(fake_cert(b"991231235959Z")).year == 1999, "UTCTime 50–99 là thế kỷ 20"
+    assert not_after(b"\x30\x05xyz") is None and not_after(b"") is None
+
+
+def test_expired_windows_store_certificates_are_not_trusted(monkeypatch):
+    from peto_agent.providers import transport
+
+    loaded = []
+
+    class Context:
+        def __init__(self, protocol):
+            self.options = self.verify_flags = self.minimum_version = None
+
+        def load_verify_locations(self, cadata):
+            loaded.append(cadata)
+
+    expired, valid, other = fake_cert(b"250915160000Z"), fake_cert(b"20350604110438Z", tag=0x18), fake_cert(b"300101000000Z")
+    stores = {"CA": [(expired, "x509_asn", True), (valid, "x509_asn", {"1.3.6.1.5.5.7.3.1"})],
+              "ROOT": [(other, "x509_asn", {"1.3.6.1.5.5.7.3.3"}), (b"pkcs", "pkcs_7_asn", True)]}
+    monkeypatch.setattr(transport.ssl, "enum_certificates", lambda store: stores[store], raising=False)
+    monkeypatch.setattr(transport.ssl, "SSLContext", Context)
+    monkeypatch.setattr(transport.ssl, "create_default_context", lambda: Context(None))
+    assert transport._windows_context() is not None
+    assert loaded == [valid], "bỏ chứng chỉ hết hạn và chứng chỉ không dùng cho xác thực máy chủ, như Python lọc"
