@@ -114,6 +114,17 @@ class AttachmentFiles:
     def schemas(self) -> list[dict]:
         return [SEARCH_SCHEMA, READ_SCHEMA] if self.files else []
 
+    def reader_states(self) -> dict[str, int]:
+        """Chỉ trạng thái cache, không đọc thêm byte hoặc suy diễn rằng công cụ đã đọc thành công."""
+        counts = {}
+        for item in {item.get('id') or (item.get('filename'), item.get('message_id')): item for item in self.files}.values():
+            cached = document_reader.cached_document(item.get('document'))
+            state = cached.get('status', 'unknown') if cached else 'not_parsed'
+            if state not in {'ready', 'partial', 'unreadable', 'no_text', 'not_parsed'}:
+                state = 'unknown'
+            counts[state] = counts.get(state, 0) + 1
+        return counts
+
     def _find(self, name: object) -> dict:
         wanted = str(name or "").strip()
         matches = [item for item in self.files if item["filename"] == wanted] or [

@@ -3,6 +3,7 @@ import asyncio
 import base64
 import hashlib
 import json
+import math
 import os
 import re
 import time
@@ -153,6 +154,21 @@ async def api_get(token, path, params=None, *, log=False):
         raise GitHubError('Chưa đọc được dữ liệu GitHub. Hãy thử lại.') from None
 
 
+def _needs_refresh(data):
+    return bool(data.get('expires_at') and data['expires_at'] <= time.time() + 60)
+
+
+def _needs_reconnect(data):
+    if not isinstance(data, dict) or not isinstance(data.get('access_token'), str) or not data['access_token']:
+        return True
+    for field in ('expires_at', 'refresh_expires_at'):
+        value = data.get(field)
+        if value is not None and (type(value) not in (int, float) or not math.isfinite(value)):
+            return True
+    return _needs_refresh(data) and (
+        not data.get('refresh_token') or (data.get('refresh_expires_at') and data['refresh_expires_at'] <= time.time()))
+
+
 async def access_token(owner):
     if not configured():
         raise GitHubError('Máy chủ chưa cấu hình kết nối GitHub.')
@@ -161,9 +177,9 @@ async def access_token(owner):
         if not account:
             raise GitHubError('Bạn chưa kết nối GitHub. Mở Cài đặt → Kết nối để bắt đầu.')
         data = decrypt(account['credentials'])
-        if data.get('expires_at') and data['expires_at'] <= time.time() + 60:
-            if not data.get('refresh_token') or (data.get('refresh_expires_at') and data['refresh_expires_at'] <= time.time()):
-                raise GitHubError('Quyền GitHub đã hết hạn. Hãy kết nối lại.')
+        if _needs_reconnect(data):
+            raise GitHubError('Quyền GitHub đã hết hạn. Hãy kết nối lại.')
+        if _needs_refresh(data):
             data = await exchange({'grant_type': 'refresh_token', 'refresh_token': data['refresh_token']})
             if not await store.refresh_github(owner, account['revision'], encrypt(data)):
                 raise GitHubError('Kết nối GitHub đã thay đổi. Hãy thử lại.')
@@ -177,8 +193,7 @@ async def status(owner):
         state = 'connected'
         try:
             data = decrypt(account['credentials'])
-            if data.get('expires_at') and data['expires_at'] <= time.time() and (
-                    not data.get('refresh_token') or (data.get('refresh_expires_at') and data['refresh_expires_at'] <= time.time())):
+            if _needs_reconnect(data):
                 state = 'reconnect'
         except GitHubError:
             state = 'reconnect'

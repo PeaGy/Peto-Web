@@ -24,13 +24,13 @@ from core import usage_events
 from core.config import MAX_HISTORY_IMAGES, XAI_API_BASE, XAI_MAX_OUTPUT_TOKENS, XAI_MODEL, WEB_SEARCH_ENABLED
 from ai.xai_auth import XaiAuth, XaiAuthError
 from shared.attachment_tools import NAMES as FILE_TOOLS, current_files
-from shared.time_tools import TOOL_SCHEMAS, execute_tool
-from features.documents.tools import (current_session, SCHEMA as DOCUMENT_SCHEMA, EDIT_SCHEMA, PRESENTATION_SCHEMA,
-                                      SPREADSHEET_SCHEMA, WORD_EDIT_SCHEMA)
+from shared.time_tools import execute_tool
+from features.documents.tools import current_session
 from features.connectors.tools import current_session as github_session_context, NAMES as GITHUB_TOOLS
 from shared.web_search import normalize_sources, search_context
 from shared import chat_history_tools
 from features.chat.context_budget import enforce as enforce_chat_budget, side_output_cap
+from features.chat import capabilities, request_context
 from prompts.chat import (FINALIZING_PROMPT, FOLLOW_UP_PROMPT, GITHUB_PROMPT, NO_GITHUB_PROMPT,
                           SEARCH_FALLBACK_PROMPT)
 
@@ -221,11 +221,12 @@ class ResponsesProvider(ChatProvider):
         files = current_files.get()
         file_schemas = files.schemas() if files else []
         chat_history = chat_history_tools.current.get()
-        history_schemas = [chat_history_tools.SCHEMA] if chat_history else []
         github_session = github_session_context.get()
-        github_schemas = github_session.schemas() if github_session else []
-        if tools_enabled:
-            instructions += '\n\n' + (GITHUB_PROMPT if github_schemas else NO_GITHUB_PROMPT)
+        snapshot = request_context.current.get()
+        github_state, github_reason = (await github_session.availability() if github_session else
+                                      (snapshot.github_state, snapshot.github_reason) if snapshot else
+                                      ('unauthorized', 'not_connected'))
+        github_schemas = github_session.schemas() if github_session and github_state == 'available' else []
         workbooks = bool(document_session and (getattr(document_session, 'workbooks', None)
                                                or getattr(document_session, 'word_files', None)))
         max_rounds = max(MAX_TOOL_ROUNDS, MAX_GITHUB_TOOL_ROUNDS if github_schemas else 0, MAX_WORKBOOK_TOOL_ROUNDS if workbooks else 0)
@@ -237,6 +238,13 @@ class ResponsesProvider(ChatProvider):
             follow_up, follow_up_next = follow_up_next, False
             # Dành lần gọi cuối để tổng hợp kết quả đã đọc, không mở thêm tra cứu khi hết ngân sách.
             finalizing = tools_enabled and (search_fallback or round_index == max_rounds or calls_used >= max_calls)
+            if round_index and github_session:
+                github_state, github_reason = await github_session.availability()
+            plan = capabilities.select(documents=document_session, files=files, history=chat_history,
+                github_state=github_state, github_reason=github_reason, search_enabled=search_enabled,
+                web_search=web_search, tools_enabled=tools_enabled, finalizing=finalizing,
+                required_search=search_enabled and web_search == 'on' and round_index == 0 and not finalizing,
+                search_fallback=search_fallback)
             round_started = perf_counter()
             if tools_enabled and not follow_up:
                 # Mốc cho nhật ký "Đang làm": từ đây tới chữ hay lệnh đầu tiên là lúc mô hình suy nghĩ. Lần gọi nhắc làm
@@ -246,7 +254,8 @@ class ResponsesProvider(ChatProvider):
             usage: dict = {}
             create_kwargs: dict = {
                 "model": self.model,
-                "instructions": instructions + ('\n\n' + SEARCH_FALLBACK_PROMPT if search_fallback else
+                "instructions": instructions + ('\n\n' + (GITHUB_PROMPT if github_state == 'available' else NO_GITHUB_PROMPT) if tools_enabled else '')
+                                             + ('\n\n' + SEARCH_FALLBACK_PROMPT if search_fallback else
                                                  '\n\n' + FINALIZING_PROMPT if finalizing else ''),
                 "input": payload_input,
                 "max_output_tokens": self.max_output_tokens if tools_enabled else side_output_cap(self.max_output_tokens),
@@ -254,10 +263,7 @@ class ResponsesProvider(ChatProvider):
                     "effort": effort if effort in self.supported_efforts else "low"
                 },
                 "stream": True,
-                "tools": [*TOOL_SCHEMAS, *([DOCUMENT_SCHEMA, PRESENTATION_SCHEMA, SPREADSHEET_SCHEMA, *([EDIT_SCHEMA] if document_session.workbooks else []),
-                                *([WORD_EDIT_SCHEMA] if getattr(document_session, 'word_files', None) else [])]
-                            if document_session else []), *file_schemas, *github_schemas, *history_schemas,
-                          *([{"type": "web_search"}] if search_enabled else [])] if tools_enabled and not finalizing else [],
+                "tools": plan.schemas,
                 "include": ["reasoning.encrypted_content"],
                 # Tự giữ các item trong lượt này, không cần lưu hội thoại ở dịch vụ AI.
                 "store": False,
@@ -274,8 +280,12 @@ class ResponsesProvider(ChatProvider):
                 create_kwargs["include"].append("web_search_call.action.sources")
                 if web_search == "on" and round_index == 0 and not finalizing:
                     # Chỉ đưa công cụ tìm web ở lần đầu để 'required' không bị thỏa bởi đồng hồ.
-                    create_kwargs["tools"] = [{"type": "web_search"}]
                     create_kwargs["tool_choice"] = "required"
+            if snapshot is not None:
+                create_kwargs['instructions'] += '\n\n' + snapshot.render(
+                    service=self.service, model=self.model,
+                    effort=create_kwargs.get('reasoning', {}).get('effort'),
+                    capabilities=plan.manifest(getattr(self._client, 'native_tools', None)), round_index=round_index)
             enforce_chat_budget(create_kwargs)
             stream = None
             output_items: list[dict] = []
@@ -484,7 +494,11 @@ class ResponsesProvider(ChatProvider):
                                           'output': json.dumps(result, ensure_ascii=False)})
                     continue
                 calls_used += 1
-                if call.get('name') in DOCUMENT_TOOLS and document_session:
+                if not plan.allows(call.get('name')):
+                    # Một model vẫn có thể bịa lời gọi dù schema không được gửi. Không thực thi ngoài kế hoạch vòng này.
+                    result = {'ok': False, 'error': 'Công cụ không được cấp trong vòng hiện tại; chưa được chạy.',
+                              'code': 'tool_not_available'}
+                elif call.get('name') in DOCUMENT_TOOLS and document_session:
                     watching = False        # Grok đã bắt tay sửa/tạo tệp: không cần nhắc nữa
                     status, run = DOCUMENT_TOOLS[call['name']]
                     yield StreamChunk('document_status', status)

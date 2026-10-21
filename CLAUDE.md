@@ -1,10 +1,40 @@
 # CLAUDE.md
 
+## Web Chat request context — stage 2 (2026-10-21)
+
+The owner approved stage 2 after deploying and live-testing stage 1. See
+`backend/features/chat/docs/request-context.md` and the four-stage roadmap. Stages 3–4 remain planned.
+
+- `features/chat/request_context.py` binds an immutable Web Chat snapshot only around the main reply, after account,
+  conversation/project/model checks and context preparation. It carries request/conversation/project IDs with
+  provenance, authorized model selection, actual provider/API model and effective effort, fresh server clock and
+  validated-browser/default/invalid-timezone provenance. No owner ID, credentials, raw UA, inferred device or billing.
+  Client IDs/preferences never grant permissions. Concurrent requests and cancellation reset the ContextVar.
+- `features/chat/capabilities.py` selects one `ToolPlan` per provider round. The exact plan supplies portable native
+  schemas, the snapshot's available/disabled/unavailable/unauthorized entries and a dispatch allowlist. Required-search
+  first rounds, finalization, side calls, missing file/history scope and GitHub readiness use this same selection.
+  A fabricated function call outside that round's plan returns an error without running a handler. Handler-specific
+  owner/input/current-connection checks remain mandatory; availability does not prove a tool succeeded.
+- GitHub readiness uses local encrypted connection state, not a network probe. Status and dispatch share the same
+  refresh/reconnect predicate, including the 60-second refresh window. Connected sessions recheck readiness each
+  round and access again before each tool. No repo permission is assumed from merely having a connection.
+- File-reading capability reports bounded cached reader states, including unparsed/unreadable; it does not open all
+  files or claim they were fully read. History lookup now describes nullable fields and pagination, accepts an empty
+  query as chronological reading, bounds SQLite integers and returns actionable validation feedback without arguments.
+- Claude's existing native-tool translation is reused for the manifest (including its real web_fetch tool), so it is
+  not a second feature table. Volatile snapshot/clock blocks sit after the stable system cache breakpoint. Request
+  budgets still validate the final instructions/tools/input every round. Agent/Companion receive no Chat snapshot;
+  saved personal memory stays shared under the existing account policy. No CLI version/bundle update is required.
+- Tests in `backend/tests/test_chat_request_context.py` use temporary SQLite and fake providers/streams. These verify
+  structure, scope, tool enforcement and provider translation, not semantic truthfulness of a deployed model.
+  Related regression: 163 passed; full backend: 1,483 passed, 1 skipped (274.90s). After the final malformed-credential
+  guard, request-context/GitHub tests: 64 passed. `git diff --check` passed. No commit, deployment or paid API call.
+
 ## Web Chat long context — stage 1 (2026-10-20)
 
 The owner approved a four-stage Web Chat roadmap, starting with long context. The plan and gates are in
 `backend/features/chat/docs/roadmap-2026-10-20.md`; implementation details and production limits are in
-`backend/features/chat/docs/long-context.md`. Stages 2–4 are planned, not implemented by this change.
+`backend/features/chat/docs/long-context.md`. Stage 2 is documented above; stages 3–4 remain planned.
 
 - `features/chat/context.py` prepares the exact recent messages under a model/deployment budget and adds a portable
   rolling summary, a bounded first-user anchor, file metadata and explicit unrepresented-message counts. Source

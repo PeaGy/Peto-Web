@@ -49,17 +49,22 @@ def resolve_browser_timezone(name: str | None) -> str:
     Công cụ ``get_current_datetime`` KHÔNG dùng hàm này: ở đó model đòi đúng một
     múi giờ cụ thể, đưa nhầm thì phải được báo lỗi chứ không được lặng lẽ đổi.
     """
+    return browser_timezone_selection(name)[0]
+
+
+def browser_timezone_selection(name: str | None) -> tuple[str, str]:
+    """Giữ nguồn lựa chọn múi giờ; hợp lệ về cú pháp không chứng minh vị trí thiết bị."""
     if name is None:
-        return resolve_timezone(None)
+        return resolve_timezone(None), 'server_default_missing'
     try:
-        return resolve_timezone(name)
+        return resolve_timezone(name), 'client_iana_validated'
     except ToolInputError:
         fallback = resolve_timezone(None)
         logger.warning(
             "Trình duyệt gửi múi giờ %r không nhận diện được — dùng %s cho lượt này.",
             name, fallback,
         )
-        return fallback
+        return fallback, 'server_default_invalid'
 
 
 def current_datetime(timezone: str | None = None, *, now: datetime | None = None) -> dict:

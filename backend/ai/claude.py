@@ -18,6 +18,7 @@ from .base import ProviderError
 from .models import CLAUDE_EFFORTS
 from .xai import ResponsesProvider
 from shared.time_tools import split_time_context
+from features.chat.request_context import split_context as split_request_context
 
 logger = logging.getLogger("peto_web.claude")
 MAX_SEARCH_PAUSES = 3
@@ -148,10 +149,13 @@ def cached_system(text: str) -> list[dict] | str:
 
     Cache của Anthropic khớp theo tiền tố: chỉ một byte khác ở giữa (giờ hiện tại) là mọi thứ sau nó phải tính lại.
     """
-    static, clock = split_time_context(text)
+    static, runtime = split_request_context(text)
+    static, clock = split_time_context(static)
     blocks = [{"type": "text", "text": static, "cache_control": CACHE}] if static.strip() else []
     if clock:
         blocks.append({"type": "text", "text": clock})
+    if runtime:
+        blocks.append({"type": "text", "text": runtime})
     return blocks or text
 
 
@@ -194,12 +198,10 @@ class ClaudeClient:
         # Khóa riêng của người dùng với Claude đời cũ (ai/byok.py): không gửi suy nghĩ tự điều chỉnh và mức suy nghĩ.
         self.adaptive = adaptive
 
-    async def create(self, **kwargs):
-        effort = kwargs.get("reasoning", {}).get("effort", "low")
-        if effort not in CLAUDE_EFFORTS:
-            raise ProviderError("Mức suy nghĩ này không được Claude hỗ trợ.")
+    def native_tools(self, portable):
+        """Cùng bản chuyển schema dùng khi gửi SDK và khi mô tả capability của Chat."""
         tools = []
-        for tool in kwargs.get("tools", []):
+        for tool in portable:
             if tool.get("type") == "web_search":
                 # Tìm trực tiếp, giới hạn phí công cụ; không mở thêm môi trường chạy mã ở Anthropic.
                 tools.append({"type": "web_search_20250305", "name": "web_search", "max_uses": 5})
@@ -208,6 +210,13 @@ class ClaudeClient:
             elif tool.get("type") == "function":
                 tools.append({"name": tool["name"], "description": tool.get("description", ""),
                               "input_schema": tool.get("parameters") or {"type": "object", "properties": {}}})
+        return tools
+
+    async def create(self, **kwargs):
+        effort = kwargs.get("reasoning", {}).get("effort", "low")
+        if effort not in CLAUDE_EFFORTS:
+            raise ProviderError("Mức suy nghĩ này không được Claude hỗ trợ.")
+        tools = self.native_tools(kwargs.get('tools', []))
         messages = build_messages(kwargs["input"], kwargs["model"])
         if self.cache_history == "always" or _in_tool_loop(messages):
             mark_history(messages)

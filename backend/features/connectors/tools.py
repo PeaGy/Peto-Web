@@ -59,12 +59,25 @@ def clean_text(text, token):
     return re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]', '', text)
 
 
+async def tool_access(owner):
+    """Kiểm trạng thái cục bộ, không refresh/gọi GitHub chỉ để mô tả khả năng."""
+    state = await github.status(owner)
+    if not state['configured']:
+        return 'unavailable', 'server_not_configured'
+    if state['status'] != 'connected':
+        return 'unauthorized', 'connection_expired' if state['status'] == 'reconnect' else 'not_connected'
+    return 'available', 'connection_present_repo_scope_checked_on_use'
+
+
 class GitHubSession:
     def __init__(self, owner):
         self.owner = owner
 
     def schemas(self):
         return SCHEMAS
+
+    async def availability(self):
+        return await tool_access(self.owner)
 
     async def run(self, name, arguments):
         try:

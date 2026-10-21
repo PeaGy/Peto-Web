@@ -87,5 +87,8 @@ gap, không khẳng định đã đọc toàn bộ. Cửa sổ recent, mốc đ�
 
 Kiểm thử tự động dùng dữ liệu giả, model giả/HTTP giả và SQLite tạm; không gọi API trả phí. Sau triển khai, kiểm tra
 một Chat trên 20 tin: đặt ràng buộc ở đầu, sửa ở cuối, nhắc lại tệp cũ, đổi model, tắt Trí nhớ và bấm Stop trong bước
-chuẩn bị. Theo dõi các dòng `chat_context` và usage side call. Chỉ sau khi kiểm tra thực tế đạt mới chuyển sang giai
-đoạn 2 trong lộ trình; chất lượng model thật chưa được xác minh bằng các test giả.
+chuẩn bị. Theo dõi các dòng `chat_context` và usage side call. Ngày 21/10 đã thử thật trên VPS sau khi chủ web xác nhận
+đã deploy: 20 user turns, đổi Peto/Luna/Haiku, Memory OFF, đối chiếu 9 dữ kiện/sửa đổi, Stop rồi hỏi lại và reload đều
+đạt trong chat thử đó. Summary ghi nhận 9–13 giây; một lần tham số đọc lịch sử lỗi rồi model gọi lại thành công.
+Chưa thử tệp cũ bằng API thật hoặc hủy ngay trong summary chưa hoàn tất. Đây là một mẫu, không phải bảo đảm chất
+lượng mọi hội thoại. Người dùng đã cho phép chuyển sang [giai đoạn 2](request-context.md).

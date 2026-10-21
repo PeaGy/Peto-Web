@@ -19,13 +19,12 @@ from features.companion import memory as companion_memory
 import storage as db
 from storage import chat_turns
 from features.chat import turn_control
-from features.chat import context as chat_context, context_budget
+from features.chat import context as chat_context, context_budget, request_context
 from shared import chat_history_tools
 from features.documents import reader as document_reader
 from features.companion import emotion_tags
 from features.documents.tools import DocumentSession, asks_edit, current_session as document_session_context
-from features.connectors.tools import GitHubSession, current_session as github_session_context
-from storage import connectors as connector_store
+from features.connectors.tools import GitHubSession, current_session as github_session_context, tool_access as github_access
 from features.companion import private_notes
 from features.chat import titles
 from features.chat.work_log import NOTE_LIMIT, WorkLog, read_detail
@@ -34,7 +33,7 @@ from ai import byok
 from ai.routing import choose_effort
 from shared.attachments import AttachmentError
 from features.accounts.auth import current_owner
-from shared.time_tools import resolve_browser_timezone, time_context
+from shared.time_tools import browser_timezone_selection, time_context
 from core.config import (
     MAX_ATTACHMENTS,
     MAX_HISTORY_MESSAGES,
@@ -122,7 +121,7 @@ async def _stream_reply(
     system_prompt: str, history: list[ChatMessage], effort: str, timezone: str | None = None, web_search: str = "auto",
     document_session=None, model: str = ai_models.DEFAULT_MODEL, spoken: bool = False,
     files: attachment_tools.AttachmentFiles | None = None, github_session=None, provider: ChatProvider | None = None,
-    budget=None, history_session=None,
+    budget=None, history_session=None, snapshot=None,
 ) -> AsyncIterator[StreamChunk]:
     """Gọi provider của model đã chọn một lần. Trả về từng mảnh stream. ``spoken`` là lượt
     Companion: câu trả lời được đọc thành tiếng, nên chỉ dẫn tra web dặn không chèn đường dẫn hay dấu trích dẫn.
@@ -142,6 +141,7 @@ async def _stream_reply(
     github_token = github_session_context.set(github_session)
     budget_token = context_budget.current.set(budget)
     history_token = chat_history_tools.current.set(history_session)
+    snapshot_token = request_context.current.set(snapshot)
     limit = None
     try:
         async with asyncio.timeout_at(min(loop.time() + idle, hard)) as limit:
@@ -159,6 +159,7 @@ async def _stream_reply(
             raise TurnTimeout("turn" if whole else "idle", TURN_TIMEOUT_SECONDS if whole else idle) from error
         raise
     finally:
+        request_context.current.reset(snapshot_token)
         chat_history_tools.current.reset(history_token)
         context_budget.current.reset(budget_token)
         github_session_context.reset(github_token)
@@ -173,7 +174,7 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
     install_command = agent_install.install_command(http_request) if http_request is not None else ""
     if request.web_search == "on" and not WEB_SEARCH_ENABLED:
         raise HTTPException(400, "Tìm kiếm web đang tắt trên máy chủ. Chọn Tự động hoặc Tắt để tiếp tục chat.")
-    timezone = resolve_browser_timezone(request.timezone)
+    timezone, timezone_source = browser_timezone_selection(request.timezone)
     text = request.message.strip()
     if len(text) > MAX_INPUT_CHARS:
         raise HTTPException(
@@ -521,13 +522,19 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                     if preparing:
                         yield sse({'type': 'reading', 'text': ''}) + (log.read_done('Đã chuẩn bị ngữ cảnh', prepared.detail) if log else '')
                 prepared_at = perf_counter()
-                github_session = GitHubSession(owner) if mode == 'chat' and await connector_store.get_github(owner) else None
+                github_state, github_reason = await github_access(owner) if mode == 'chat' else ('unavailable', 'chat_only')
+                github_session = GitHubSession(owner) if mode == 'chat' and github_state == 'available' else None
+                snapshot = request_context.RequestContext(
+                    request_id, request.request_id is not None, conversation_id, project_id, model,
+                    (request.effort or 'auto').strip().lower(), timezone, timezone_source,
+                    github_state, github_reason) if mode == 'chat' else None
                 # A timeout may already have consumed provider tokens. Do not repeat the whole turn invisibly.
                 async with aclosing(_stream_reply(system_prompt, history, effort, timezone, web_search, document_session,
                                                  model, spoken=mode == "companion", files=files_session, github_session=github_session,
                                                  provider=byok.build(own_key) if own_key else None,
                                                  budget=prepared.budget if prepared else None,
-                                                 history_session=prepared.history_tools if prepared else None)) as stream:
+                                                 history_session=prepared.history_tools if prepared else None,
+                                                 snapshot=snapshot)) as stream:
                     async for chunk in stream:
                         event = chunk_event(chunk)
                         if event:
