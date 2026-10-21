@@ -29,6 +29,8 @@ from features.documents.tools import (current_session, SCHEMA as DOCUMENT_SCHEMA
                                       SPREADSHEET_SCHEMA, WORD_EDIT_SCHEMA)
 from features.connectors.tools import current_session as github_session_context, NAMES as GITHUB_TOOLS
 from shared.web_search import normalize_sources, search_context
+from shared import chat_history_tools
+from features.chat.context_budget import enforce as enforce_chat_budget, side_output_cap
 from prompts.chat import (FINALIZING_PROMPT, FOLLOW_UP_PROMPT, GITHUB_PROMPT, NO_GITHUB_PROMPT,
                           SEARCH_FALLBACK_PROMPT)
 
@@ -218,6 +220,8 @@ class ResponsesProvider(ChatProvider):
         # Tệp đã gửi trong hội thoại: công cụ tìm/đọc chỉ có khi hội thoại có tệp chữ, PDF, Word hoặc Excel.
         files = current_files.get()
         file_schemas = files.schemas() if files else []
+        chat_history = chat_history_tools.current.get()
+        history_schemas = [chat_history_tools.SCHEMA] if chat_history else []
         github_session = github_session_context.get()
         github_schemas = github_session.schemas() if github_session else []
         if tools_enabled:
@@ -245,14 +249,14 @@ class ResponsesProvider(ChatProvider):
                 "instructions": instructions + ('\n\n' + SEARCH_FALLBACK_PROMPT if search_fallback else
                                                  '\n\n' + FINALIZING_PROMPT if finalizing else ''),
                 "input": payload_input,
-                "max_output_tokens": self.max_output_tokens if tools_enabled else min(self.max_output_tokens, 1024),
+                "max_output_tokens": self.max_output_tokens if tools_enabled else side_output_cap(self.max_output_tokens),
                 "reasoning": {
                     "effort": effort if effort in self.supported_efforts else "low"
                 },
                 "stream": True,
                 "tools": [*TOOL_SCHEMAS, *([DOCUMENT_SCHEMA, PRESENTATION_SCHEMA, SPREADSHEET_SCHEMA, *([EDIT_SCHEMA] if document_session.workbooks else []),
                                 *([WORD_EDIT_SCHEMA] if getattr(document_session, 'word_files', None) else [])]
-                            if document_session else []), *file_schemas, *github_schemas,
+                            if document_session else []), *file_schemas, *github_schemas, *history_schemas,
                           *([{"type": "web_search"}] if search_enabled else [])] if tools_enabled and not finalizing else [],
                 "include": ["reasoning.encrypted_content"],
                 # Tự giữ các item trong lượt này, không cần lưu hội thoại ở dịch vụ AI.
@@ -272,6 +276,7 @@ class ResponsesProvider(ChatProvider):
                     # Chỉ đưa công cụ tìm web ở lần đầu để 'required' không bị thỏa bởi đồng hồ.
                     create_kwargs["tools"] = [{"type": "web_search"}]
                     create_kwargs["tool_choice"] = "required"
+            enforce_chat_budget(create_kwargs)
             stream = None
             output_items: list[dict] = []
             completed = False
@@ -498,6 +503,10 @@ class ResponsesProvider(ChatProvider):
                     if result.get('sources'):
                         sources = normalize_sources([*sources, *result['sources']])
                         yield StreamChunk('sources', sources=tuple(sources))
+                elif call.get('name') == chat_history_tools.NAME and chat_history:
+                    yield StreamChunk('file_lookup', 'Đang đối chiếu lịch sử gốc…')
+                    result = await chat_history.run(call.get('arguments', ''))
+                    yield StreamChunk('file_lookup_done', 'Đã đối chiếu lịch sử' if not result.get('error') else result['error'])
                 elif call.get("name") in FILE_TOOLS and file_schemas:
                     arguments = call.get("arguments", "")
                     yield StreamChunk("file_lookup", files.label(call["name"], arguments))

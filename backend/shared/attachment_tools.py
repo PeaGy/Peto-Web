@@ -13,6 +13,7 @@ from contextvars import ContextVar
 from pathlib import Path
 
 import anyio
+from fastapi import HTTPException
 
 from features.documents import reader as document_reader
 from features.documents.reader import number
@@ -91,8 +92,9 @@ class AttachmentFiles:
     """Tệp chữ, PDF, Word và Excel của hội thoại cho một lượt chat, kể cả bản Excel Peto đã sửa (đọc từ kho tài liệu
     của chủ tài khoản). Nội dung đầy đủ được đọc lại khi Peto cần, nhớ tới hết lượt."""
 
-    def __init__(self, rows: list[dict], owner: str | None = None):
+    def __init__(self, rows: list[dict], owner: str | None = None, conversation_id: str | None = None):
         self.owner = owner
+        self.conversation_id = conversation_id
         self.files = []
         for row in rows:
             self.files.extend(item for item in row.get("attachments") or []
@@ -100,9 +102,11 @@ class AttachmentFiles:
             if owner is None:
                 continue
             for item in row.get("generated_documents") or []:
-                if item.get("style") == "workbook" and item.get("version"):
+                if item.get("version"):
                     self.files.append({"id": f"generated-{item['id']}-{item['version']}", "filename": item["filename"],
-                                       "kind": "file", "mime": XLSX_MIME, "document_id": item["id"],
+                                       "kind": "file", "mime": XLSX_MIME if item.get('style') == 'workbook' else 'text/markdown',
+                                       "document_id": item["id"], 'style': item.get('style'),
+                                       'message_id': item.get('message_id', row.get('id', 0)),
                                        "version": item["version"]})
         self._lines: dict[str, tuple[list[str], str]] = {}
         self._folded: dict[str, list[str]] = {}
@@ -115,7 +119,10 @@ class AttachmentFiles:
         matches = [item for item in self.files if item["filename"] == wanted] or [
             item for item in self.files if item["filename"].casefold() == wanted.casefold()]
         if not matches:
-            names = ", ".join(dict.fromkeys(f'"{item["filename"]}"' for item in self.files))
+            available = list(dict.fromkeys(item['filename'] for item in self.files))
+            names = ", ".join(f'"{name[:100]}"' for name in available[-16:])
+            if len(available) > 16:
+                names += f'… (còn {len(available)-16} tên; đối chiếu lịch sử để lấy tên chính xác)'
             raise ToolError(f'Không có tệp "{wanted[:80]}" trong hội thoại này. Tệp tra được: {names}.')
         # Lịch sử xếp từ cũ tới mới: trùng tên thì lấy tệp gửi sau cùng.
         return matches[-1]
@@ -124,6 +131,13 @@ class AttachmentFiles:
         if item["id"] not in self._lines:
             if item.get("document_id"):
                 from storage import documents as document_store
+                if item.get('style') != 'workbook':
+                    document = await document_store.get_document(self.owner, item['document_id'], item['version'])
+                    if self.conversation_id and document['conversation_id'] != self.conversation_id:
+                        raise ToolError('Tài liệu không thuộc hội thoại này.')
+                    self._lines[item['id']] = (document['content'].splitlines(),
+                        ' Đây là phần chữ nguồn đã lưu của tài liệu Peto tạo, không bao gồm việc nhìn lại ảnh hoặc kiểm tra bố cục.')
+                    return self._lines[item['id']]
                 assets = await document_store.get_assets(self.owner, item["document_id"], item["version"])
                 if not assets or not assets.get("xlsx"):
                     raise ToolError("Bản Excel Peto đã sửa không còn tệp.")
@@ -153,6 +167,22 @@ class AttachmentFiles:
             params = json.loads(arguments)
             if not isinstance(params, dict):
                 raise ToolError("Tham số công cụ không hợp lệ.")
+            if self.owner and self.conversation_id and isinstance(params.get('file'), str):
+                # Tệp cũ có thể nằm ngoài danh mục nhỏ/recent messages; tra đúng tên trong scope hiện tại.
+                from storage import connection
+                import aiosqlite
+                async with connection.connect() as db:
+                    db.row_factory = aiosqlite.Row
+                    row = await (await db.execute('''SELECT a.id,a.message_id,a.filename,a.kind,a.mime,a.path FROM attachments a
+                        JOIN conversations c ON c.id=a.conversation_id WHERE c.owner=? AND a.owner=? AND c.id=?
+                        AND c.mode='chat' AND a.kind='file' AND a.filename=? COLLATE NOCASE
+                        ORDER BY a.created_at DESC,a.rowid DESC LIMIT 1''',
+                        (self.owner, self.owner, self.conversation_id, params['file']))).fetchone()
+                    matching = [item.get('message_id') or 0 for item in self.files
+                                if item['filename'].casefold() == params['file'].casefold()]
+                    if (row and all(item['id'] != row['id'] for item in self.files)
+                            and (row['message_id'] or 0) >= max(matching, default=0)):
+                        self.files.append(dict(row))
             item = self._find(params.get("file"))
             lines, note = await self._content(item)
             if name == "search_attachment":
@@ -162,6 +192,8 @@ class AttachmentFiles:
             return {"error": "Tham số công cụ không phải JSON hợp lệ."}
         except ToolError as err:
             return {"error": str(err)}
+        except HTTPException:
+            return {'error': 'Không còn tài liệu hoặc phiên bản này trong hội thoại. Nhờ người dùng gửi lại tệp.'}
 
     async def _search(self, item: dict, lines: list[str], note: str, params: dict) -> dict:
         query = params.get("query")

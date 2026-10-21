@@ -19,6 +19,8 @@ from features.companion import memory as companion_memory
 import storage as db
 from storage import chat_turns
 from features.chat import turn_control
+from features.chat import context as chat_context, context_budget
+from shared import chat_history_tools
 from features.documents import reader as document_reader
 from features.companion import emotion_tags
 from features.documents.tools import DocumentSession, asks_edit, current_session as document_session_context
@@ -120,6 +122,7 @@ async def _stream_reply(
     system_prompt: str, history: list[ChatMessage], effort: str, timezone: str | None = None, web_search: str = "auto",
     document_session=None, model: str = ai_models.DEFAULT_MODEL, spoken: bool = False,
     files: attachment_tools.AttachmentFiles | None = None, github_session=None, provider: ChatProvider | None = None,
+    budget=None, history_session=None,
 ) -> AsyncIterator[StreamChunk]:
     """Gọi provider của model đã chọn một lần. Trả về từng mảnh stream. ``spoken`` là lượt
     Companion: câu trả lời được đọc thành tiếng, nên chỉ dẫn tra web dặn không chèn đường dẫn hay dấu trích dẫn.
@@ -137,6 +140,8 @@ async def _stream_reply(
     files_token = attachment_tools.current_files.set(files)
     spoken_token = spoken_reply.set(spoken)
     github_token = github_session_context.set(github_session)
+    budget_token = context_budget.current.set(budget)
+    history_token = chat_history_tools.current.set(history_session)
     limit = None
     try:
         async with asyncio.timeout_at(min(loop.time() + idle, hard)) as limit:
@@ -154,6 +159,8 @@ async def _stream_reply(
             raise TurnTimeout("turn" if whole else "idle", TURN_TIMEOUT_SECONDS if whole else idle) from error
         raise
     finally:
+        chat_history_tools.current.reset(history_token)
+        context_budget.current.reset(budget_token)
         github_session_context.reset(github_token)
         spoken_reply.reset(spoken_token)
         attachment_tools.current_files.reset(files_token)
@@ -477,28 +484,50 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                     step = log.read_done("Đã đọc lại tài liệu đã gửi trước đó") if log else ""
                     yield sse({"type": "reading", "text": ""}) + step
                 active_rows = context_rows(rows)
-                history, system_prompt = await asyncio.gather(
-                    anyio.to_thread.run_sync(_to_chat_messages, active_rows, project_documents),
-                    _build_system_prompt(owner, mode, install_command, conversation_id,
+                prompt_task = _build_system_prompt(owner, mode, install_command, conversation_id,
                         agent_question='\n'.join(str(row.get('content', ''))[:4000]
                             for row in [r for r in active_rows if r.get('role') == 'user' and r.get('turn_state') != 'stopped'][-3:]), model=model,
-                        memory=own_key is None),
-                )
-                document_session = DocumentSession(owner, conversation_id, rows) if mode == 'chat' else None
+                        memory=own_key is None)
+                if mode == 'chat':
+                    # Context Chat dựng history một lần theo ngân sách; không đọc/base64 ảnh hai lần.
+                    history, system_prompt = [], await prompt_task
+                else:
+                    history, system_prompt = await asyncio.gather(
+                        anyio.to_thread.run_sync(_to_chat_messages, active_rows, project_documents), prompt_task)
+                indexed = await chat_context.store.file_index(owner, conversation_id) if mode == 'chat' else []
+                generated = await chat_context.store.artifact_index(owner, conversation_id) if mode == 'chat' else []
+                inventory = sorted([*indexed, *generated], key=lambda item: item['message_id'])
+                tool_rows = [*({'artifacts': [item], 'generated_documents': [item]} if 'version' in item
+                              else {'attachments': [item]} for item in inventory), *rows]
+                document_session = DocumentSession(owner, conversation_id, tool_rows) if mode == 'chat' else None
                 if document_session:
                     document_session.edit_request = asks_edit(text)
                 if project_prompt:
                     system_prompt += '\n\n' + project_prompt
                 # Tệp trong lịch sử vừa đọc (đã lọc theo chủ tài khoản trong SQL): Peto tìm/đọc thêm được khi cần.
-                files_session = attachment_tools.AttachmentFiles(rows, owner) if mode == 'chat' else None
+                files_session = attachment_tools.AttachmentFiles(tool_rows, owner, conversation_id) if mode == 'chat' else None
                 if request.document_mode and mode == 'chat':
                     system_prompt += '\n\n' + DOCUMENT_MODE_PROMPT
+                prepared = None
+                if mode == 'chat':
+                    preparing = len(rows) >= history_limit
+                    if preparing:
+                        yield sse({'type': 'reading', 'text': 'Peto đang chuẩn bị ngữ cảnh hội thoại…'}) + (log.read_start('Đang chuẩn bị ngữ cảnh…') if log else '')
+                    prepared = await chat_context.prepare(owner, conversation_id, model, system_prompt, rows, project_documents, history_limit)
+                    latest_scope = await db.conversation_settings(owner, conversation_id)
+                    if not latest_scope or latest_scope['archived'] or latest_scope.get('project_id') != project_id:
+                        raise ProviderError('Hội thoại đã thay đổi trong lúc chuẩn bị ngữ cảnh; mở lại trước khi gửi nhé.')
+                    history, system_prompt = prepared.history, prepared.prompt
+                    if preparing:
+                        yield sse({'type': 'reading', 'text': ''}) + (log.read_done('Đã chuẩn bị ngữ cảnh', prepared.detail) if log else '')
                 prepared_at = perf_counter()
                 github_session = GitHubSession(owner) if mode == 'chat' and await connector_store.get_github(owner) else None
                 # A timeout may already have consumed provider tokens. Do not repeat the whole turn invisibly.
                 async with aclosing(_stream_reply(system_prompt, history, effort, timezone, web_search, document_session,
                                                  model, spoken=mode == "companion", files=files_session, github_session=github_session,
-                                                 provider=byok.build(own_key) if own_key else None)) as stream:
+                                                 provider=byok.build(own_key) if own_key else None,
+                                                 budget=prepared.budget if prepared else None,
+                                                 history_session=prepared.history_tools if prepared else None)) as stream:
                     async for chunk in stream:
                         event = chunk_event(chunk)
                         if event:

@@ -469,6 +469,16 @@ class MockProvider(ChatProvider):
             yield title[:1].upper() + title[1:]
             return
 
+        from prompts.chat_context import SUMMARY_MARKER as CHAT_SUMMARY_MARKER
+        if CHAT_SUMMARY_MARKER in system_prompt:
+            data = json.loads(last_user)
+            value = data.get('previous_summary') or {'version': 1, 'constraints': [], 'facts': [], 'decisions': [], 'pending': []}
+            facts = value['facts'] + [{'text': part['text'][:300] or '(tin trống)', 'source_ids': [part['id']]}
+                                      for part in data['fragments'] if part['role'] == 'user']
+            value['facts'] = facts[:2] + facts[-6:] if len(facts) > 8 else facts
+            yield json.dumps(value, ensure_ascii=False)
+            return
+
         # Lượt ghi nhớ và lượt tóm tắt: xem _memory_changes cho các từ khóa thử.
         from features.companion.memory import MEMORY_MARKER, SUMMARY_MARKER
 

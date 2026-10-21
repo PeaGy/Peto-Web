@@ -420,4 +420,6 @@ async def init_db() -> None:
             data BLOB NOT NULL, version TEXT NOT NULL, updated_at REAL NOT NULL)''')
         from storage.chat_turns import init_tables as init_chat_turns
         await init_chat_turns(db)
+        from storage.chat_context import init_tables as init_chat_context
+        await init_chat_context(db)
         await db.commit()

@@ -112,7 +112,7 @@ def context_rows(rows: list[dict]) -> list[dict]:
     return result
 
 
-def _to_chat_messages(rows: list[dict], project_documents: list[dict] | None = None) -> list[ChatMessage]:
+def _to_chat_messages(rows: list[dict], project_documents: list[dict] | None = None, *, document_budget: int | None = None) -> list[ChatMessage]:
     # Ưu tiên tệp mới; chia đều phần còn lại giữa các tệp cùng một tin nhắn.
     # Reuse the bounded document context for generated files, including follow-up requests.
     rows = [{**row, 'attachments': [*(row.get('attachments') or []), *[_generated(row, item)
@@ -126,7 +126,7 @@ def _to_chat_messages(rows: list[dict], project_documents: list[dict] | None = N
                 break
     excerpts: dict[str, str] = {}
     visuals: dict[str, list[dict]] = {}
-    remaining = MAX_DOCUMENT_CONTEXT_CHARS
+    remaining = MAX_DOCUMENT_CONTEXT_CHARS if document_budget is None else min(MAX_DOCUMENT_CONTEXT_CHARS, document_budget)
     for row in reversed(rows):
         files = [item for item in row.get("attachments") or [] if item.get("kind") == "file" and not item.get('visual_only')]
         documents = {item["id"]: document_reader.cached_document(item.get("document")) for item in files}

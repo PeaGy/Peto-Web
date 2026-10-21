@@ -3,11 +3,13 @@ chỉ còn để xem: không nhắn tiếp, không tách phiên bản, không đ
 gửi tới model nào. Xem, đổi tên, lưu trữ và xóa vẫn được."""
 
 from __future__ import annotations
+from datetime import UTC, datetime
 
 import storage as db
 from conftest import TEST_OWNER, read_events
 from features.chat import conversations as conversation_actions
 from features.chat import service as chat_service
+from shared import time_tools
 
 
 async def test_new_roleplay_chats_are_refused_with_a_clear_message(client):
@@ -47,6 +49,12 @@ async def test_old_roleplay_chats_stay_readable_but_never_continue(client):
 
 async def test_chat_prompts_carry_no_roleplay_persona(client, monkeypatch):
     seen: list[str] = []
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 10, 20, 0, 0, 18, tzinfo=UTC).astimezone(tz or UTC)
+
+    monkeypatch.setattr(time_tools, 'datetime', Clock)
 
     class Spy:
         async def stream(self, **kwargs):
@@ -56,6 +64,9 @@ async def test_chat_prompts_carry_no_roleplay_persona(client, monkeypatch):
     monkeypatch.setattr(chat_service, "get_provider", lambda model="peto": Spy())
     await read_events(await client.post("/api/chat", json={"message": "*ngồi xuống cạnh Peto* hôm nay mệt ghê"}))
     prompt = next(text for text in seen if "## Identity and communication" in text)
+    # Giây 18 trước offset +07:00 tạo chuỗi "18+", không phải một chỉ dẫn nhập vai.
+    prompt, clock = time_tools.split_time_context(prompt)
+    assert '18+' in clock
     assert "never sexual roleplay" in prompt
     for leftover in ("Cảm giác hiện diện", "20 tuổi", "18+", "*Peto nghiêng đầu"):
         assert leftover not in prompt

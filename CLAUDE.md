@@ -1,5 +1,42 @@
 # CLAUDE.md
 
+## Web Chat long context — stage 1 (2026-10-20)
+
+The owner approved a four-stage Web Chat roadmap, starting with long context. The plan and gates are in
+`backend/features/chat/docs/roadmap-2026-10-20.md`; implementation details and production limits are in
+`backend/features/chat/docs/long-context.md`. Stages 2–4 are planned, not implemented by this change.
+
+- `features/chat/context.py` prepares the exact recent messages under a model/deployment budget and adds a portable
+  rolling summary, a bounded first-user anchor, file metadata and explicit unrepresented-message counts. Source
+  messages are never replaced. Saved personal memory stays shared Chat/Companion by the existing product policy;
+  the Chat summary is independent of its toggle. Companion's summary and Agent's runtime are unchanged.
+- `storage/chat_context.py` stores one versioned projection per owner/chat/project, source spans, a character cursor,
+  model **service/API-ID**, timestamp and chained digests. Each update validates the read fragments and prior digest
+  again under an immediate SQLite transaction. Edits/deletes affecting the covered prefix and project moves
+  invalidate it; forks start their own context and conversation deletion cascades. Corrupt v1 caches are rebuilt;
+  future schemas are not overwritten. This is summary provenance, not an exactly-once tool journal.
+- At most one summary call per incoming turn, through the selected Web model, low effort, tools/web disabled,
+  no new retry layer, 16,000 source characters/32 messages per batch, 3,072 output tokens and a default 20-second
+  timeout. Structured JSON validation rejects invented source IDs, empty or malformed responses. Cancellation
+  propagates. Failure keeps the last good cursor; old chats can retain a backlog explicitly marked as unread.
+  Calls spend the provider's normal quota/billing; mock validation does not establish semantic model quality.
+- `features/chat/context_budget.py` owns Web limits, separate from Agent execution. Its small catalog snapshots
+  already verified API IDs (see CLI context-budget notes), with conservative fallback and JSON overrides by exact
+  API-ID. The application input cap defaults to 64,000 estimated tokens. Images are estimated separately from
+  base64, with a margin; reserves cover tools/summary/output. `ResponsesProvider` checks the actual portable request
+  before **every** provider round. Overflow is explicit and never slices tool call/result protocol. This estimator
+  is not provider tokenization or billing, especially for images/encrypted reasoning. Side-call output allowance is
+  raised only while the Chat summary budget is bound; existing other side calls keep their 1,024-token ceiling.
+- `shared/chat_history_tools.py` registers native `read_chat_history` only when old context is hidden. It is bound
+  server-side to owner/chat/current source boundary, returns source IDs, character pagination, original citations,
+  file refs and stopped/incomplete state. No cross-chat search or model-supplied ownership/path exists. History is
+  reference data, not live instructions. `AttachmentFiles` and document-edit sessions receive bounded metadata from
+  the conversation's older uploads and verified generated versions, without loading all old files into the prompt.
+- Tests in `tests/test_chat_context.py` use mocked providers/temporary SQLite, covering all three Web selections,
+  memory OFF, correction precedence, character cursors, CAS races, fork/edit/delete/project scope, cancellation,
+  corrupt cache/migrations, native tool continuation and per-round budgets. No paid/live API test or deployment
+  was authorized as part of this implementation. No CLI bundle/version update is needed.
+
 ## Multi-source models: M0–M3 (2026-10-20; CLI 0.31.0 source)
 
 Owner handed over Codex's roadmap `agent-cli/docs/provider-integrations-roadmap.md` (Peto source, own API keys, ChatGPT

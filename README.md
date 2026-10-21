@@ -18,6 +18,10 @@ Tệp chữ và log dùng chung bộ đọc trước khi gửi cho các model. N
 dữ liệu điều khiển hoặc sai bảng mã được báo rõ lỗi. Với log dài, phần đọc sẵn ưu tiên chuỗi nguyên nhân `Caused by`
 và lỗi nghiêm trọng trước cảnh báo; Peto vẫn có thể tìm và đọc tiếp những dòng chưa nằm trong phần trích xuất.
 
+Chat dài giữ tin gần đây nguyên văn, tóm tắt phần cũ riêng từng hội thoại và có công cụ tra lại tin/tệp gốc. Tóm tắt
+độc lập với Trí nhớ cá nhân; có thể tốn thêm một lượt API có giới hạn khi cần cập nhật. Xem [lộ trình bốn giai đoạn](backend/features/chat/docs/roadmap-2026-10-20.md)
+và [giới hạn ngữ cảnh dài](backend/features/chat/docs/long-context.md).
+
 ## Chạy thử
 
 Cần Python 3.12+ và Node 22.12+.
