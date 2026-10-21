@@ -203,6 +203,31 @@ phần chạy mã), nhưng đổi phiên bản sẽ đổi hành vi và cách t�
 - Giới hạn: chỉ kiểm cấu trúc, không kiểm nội dung đúng hay sai. Model có thực sự đối chiếu và báo phần thiếu hay không
   cần thử với model thật.
 
+## 4d. Script phép thử 3a (đã viết, chưa chạy thật)
+
+`backend/ops/code_execution_probe.py`. Mặc định chạy khô với phản hồi giả dựng theo tài liệu; bằng chứng ghi
+`mode: dry_run` nên không được coi là bằng chứng về nhà cung cấp. Chỉ `--allow-paid` mới gọi API thật.
+
+- **A `haiku`:** Messages API, model Haiku của registry, `code_execution_20260521`, suy nghĩ adaptive mức low giống Chat,
+  CSV giả 20 dòng. Nhờ tính trung bình, độ lệch chuẩn mẫu và lưu `chart.png` vào `$OUTPUT_DIR`. Tối đa 2 request
+  (1 lần tiếp `pause_turn`, gửi lại `container`). Sau đó lấy metadata, tải tệp (kiểm chữ ký PNG), xóa tệp và kiểm
+  lại phải ra 404.
+- **B `xai`:** Responses API, `XAI_MODEL`, `store:false`, `code_interpreter`; request 2 gửi lại item của request 1
+  kèm câu hỏi trung vị. Dùng token OAuth đã lưu hoặc `XAI_API_KEY` nhưng **không bao giờ refresh**: backend đang chạy
+  giữ refresh token trong bộ nhớ, refresh hộ có thể làm phiên của backend mất hiệu lực. Token hết hạn thì dừng và nhắc
+  gửi một tin Peto cho backend refresh trước.
+- **Bằng chứng** (JSON trong `.runtime/probes/`, đã gitignore): loại sự kiện/block và số lần, lệnh và stdout/stderr đã
+  cắt, câu trả lời, usage (kể cả `server_tool_use`/`server_side_tool_usage`), mã lỗi HTTP, container và mã tệp chỉ ở
+  dạng băm, trạng thái tải/xóa tệp, so khớp với con số tính sẵn. Không ghi khóa, token hay header; có bước xóa chuỗi khóa
+  khỏi tệp trước khi ghi.
+- **Nơi chạy:** máy phát triển hiện không có `ANTHROPIC_API_KEY`, và token xAI lưu ở đây đã hết hạn. Vì vậy cần chạy
+  trên VPS sau khi deploy script:
+  `cd /home/ubuntu/peto-web/backend && /home/ubuntu/peto-web/.venv/bin/python -m ops.code_execution_probe haiku --allow-paid`
+  (đổi `haiku` thành `xai` cho phép thử B). Chạy khô thì bỏ `--allow-paid`.
+- **Kiểm thử:** `tests/test_code_execution_probe.py` (8 ca), gồm: chạy khô hai bên; mặc định không gọi mạng; từ chối
+  trước request khi thiếu thông tin xác thực; khóa chỉ nằm trong header, không vào bằng chứng; lỗi HTTP dừng ngay; tiếp
+  `pause_turn` với cùng container; xAI không refresh token.
+
 ## 5. Mức kiểm chứng
 
 - **Đợt khảo sát này:** chỉ đọc code (có một lệnh Python cục bộ, không gọi mạng, để liệt kê tên tool của Agent) và

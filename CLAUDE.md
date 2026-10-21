@@ -36,6 +36,17 @@ notes. A readback failure only drops `check`. No UI, storage, tool schema or sys
 tools already return results/changes. Tests: `tests/test_document_readback.py` (7, including the provider tool loop).
 Structure only, not content correctness; real-model use of `check` is untested. Document test group 252 passed; full
 backend 1,585 passed, 1 skipped (381.64s); diff check passed. Deploy = restart the backend after commit.
+The owner committed and deployed P2 (`e33fa18`).
+
+Phase 3a prep (not run against any provider): `backend/ops/code_execution_probe.py haiku|xai` defaults to a dry run on
+fake responses shaped after the docs; only `--allow-paid` calls the real API with the machine's credentials (max 2
+requests, 2,048 output tokens each). Haiku: `code_execution_20260521` with Chat's adaptive/low thinking, synthetic CSV,
+chart in `$OUTPUT_DIR`, one `pause_turn` continuation with the same container, then download, delete and verify 404.
+xAI: `code_interpreter` with `store:false`, then resends the items to test acceptance; it uses the stored OAuth token
+or `XAI_API_KEY` and never refreshes (a refresh could invalidate the running backend's in-memory refresh token).
+Evidence JSON goes to `.runtime/probes/` with hashed container/file IDs and secrets scrubbed. This dev machine has no
+Anthropic key and an expired xAI token, so paid runs belong on the VPS after deploy, only on the owner's go-ahead.
+Tests: `tests/test_code_execution_probe.py` (8), with ops tests 36 passed.
 
 ## Web Chat automatic Runtime Device Context (2026-10-21)
 
