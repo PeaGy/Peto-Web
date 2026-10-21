@@ -1,5 +1,30 @@
 # CLAUDE.md
 
+## Web Chat automatic Runtime Device Context (2026-10-21)
+
+Separately approved after the four Chat stages; device data was not implemented by stage 2. Contract/privacy:
+`backend/features/chat/docs/client-environment.md`. Final owner decision replaces the uncommitted opt-in design:
+normalize existing HTTP headers automatically for every Web Chat turn, without a settings switch, localStorage
+permission or JSON flag. Production frontend code is unchanged from HEAD; existing deployed clients work as-is.
+
+- Backend normalizes existing bounded UA/low-entropy Client Hints into finite OS/browser families each Chat request.
+  No raw UA, versions, device model, architecture, high-entropy request or fingerprint reaches prompts/logs/DB.
+  Unsupported/missing/conflicting headers become unknown. Reports can be spoofed/reduced; not verified hardware.
+- Optional immutable `client_environment` carries fixed provenance and `best_effort`/`client_reported`, goes through
+  the existing final RequestContext assembly/budget/native adapters, outside Claude's stable cache prefix. Reset
+  on completion/error/cancel; no metadata cache or reuse of previous-device reports. Missing headers yield unknown;
+  Companion skips normalization. Agent unchanged.
+- No structural metadata storage, migration, .env, new provider params or memory policy. Ordinary assistant text
+  answering a device question remains normal saved chat and can enter later summaries. This feature is not
+  Temporary Chat. Prompt prohibits inferring the current device from prior observations when absent/unknown.
+- Tests use fake SDK/native HTTP and temporary SQLite; local browser mocks block external traffic. No paid LLM,
+  automatic commit/deploy or physical-device acceptance. Deploy the backend after owner commit; no new frontend
+  build is required relative to HEAD (rebuild locally if previewing a dist created from the discarded opt-in code).
+- Final automatic-design checks: client-environment/request-context/Claude group 101 passed, App/API component
+  group 143 passed, Chromium desktop/mobile-emulation 2 passed; production build and diff check passed. The earlier
+  opt-in test totals do not describe this final revision. All production frontend/schema edits for the switch were
+  removed, including the setting component, localStorage hook and flag-based tests.
+
 ## Web Chat UX, evidence and quality — stage 4 (2026-10-21)
 
 The owner approved the final stage after deploying/live-testing stage 3. Contract, metrics semantics, rubric and

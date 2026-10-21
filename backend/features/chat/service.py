@@ -19,7 +19,7 @@ from features.companion import memory as companion_memory
 import storage as db
 from storage import chat_turns
 from features.chat import turn_control
-from features.chat import context as chat_context, context_budget, request_context
+from features.chat import context as chat_context, context_budget, request_context, client_environment
 from shared import chat_history_tools
 from features.documents import reader as document_reader
 from features.companion import emotion_tags
@@ -551,7 +551,9 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                 snapshot = request_context.RequestContext(
                     request_id, request.request_id is not None, conversation_id, project_id, model,
                     (request.effort or 'auto').strip().lower(), timezone, timezone_source,
-                    github_state, github_reason) if mode == 'chat' else None
+                    github_state, github_reason,
+                    client_environment=client_environment.normalize(
+                        http_request.headers if http_request is not None else None)) if mode == 'chat' else None
                 # A timeout may already have consumed provider tokens. Do not repeat the whole turn invisibly.
                 async with aclosing(_stream_reply(system_prompt, history, effort, timezone, web_search, document_session,
                                                  model, spoken=mode == "companion", files=files_session, github_session=github_session,

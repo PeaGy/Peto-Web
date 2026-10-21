@@ -1,7 +1,9 @@
 # Context và capability theo request — giai đoạn 2
 
-Phạm vi: Web Chat, tiếp nối ngữ cảnh dài. Không thay persona/runtime của Companion hoặc Agent, không thay chính
-sách saved personal memory dùng chung Chat/Companion, không thêm truy xuất chat khác hoặc dữ liệu thiết bị.
+Phạm vi giai đoạn 2 ban đầu: Web Chat, tiếp nối ngữ cảnh dài. Không thay persona/runtime của Companion hoặc Agent,
+không thay chính sách saved personal memory dùng chung Chat/Companion, không thêm truy xuất chat khác hoặc dữ liệu
+thiết bị. Sau bốn giai đoạn, chủ web cho phép bổ sung [Runtime Device Context](client-environment.md) riêng:
+OS/browser chuẩn hóa tự động từ HTTP header mỗi lượt Chat; không phải tính năng đã có sẵn trong giai đoạn 2.
 
 ## Snapshot có nguồn gốc
 
@@ -16,8 +18,10 @@ Mỗi vòng của `ResponsesProvider` ghép snapshot mới vào cuối instructi
 - Đồng hồ thật của server, thời điểm UTC và múi giờ hiệu lực. Múi giờ phân biệt `client_iana_validated`,
   `server_default_missing`, `server_default_invalid`. Tên IANA hợp lệ chỉ là tùy chọn, không chứng minh vị trí.
 - Manifest công cụ của đúng vòng hiện tại, không suy ra từ lịch sử hoặc lời tự khai của người dùng.
+- Bổ sung sau giai đoạn 4: `client_environment` tự động lấy từ request hiện tại; OS/browser thuộc tập hữu
+  hạn, có nguồn và nhãn `client_reported`/`best_effort`. Không coi là dữ liệu thiết bị được server xác minh.
 
-Không đưa owner ID, khóa/token, credentials GitHub, raw User-Agent, fingerprint, tên trình duyệt tự đoán, gói thuê
+Không đưa owner ID, khóa/token, credentials GitHub, raw User-Agent, fingerprint, tên trình duyệt do model tự đoán, gói thuê
 bao hoặc billing vào snapshot. Không lưu riêng snapshot trong message hoặc thêm log chứa nội dung chat.
 
 Đồng hồ ba dòng hiện có được giữ để tương thích tool/cache. Khối snapshot cũng đứng sau phần system ổn định tại

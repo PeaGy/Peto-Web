@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import json
 
 from shared.time_tools import current_datetime
+from .client_environment import ClientEnvironment
 
 
 HEADER = '## Server-verified Web Chat request'
@@ -22,6 +23,7 @@ class RequestContext:
     timezone_source: str
     github_state: str
     github_reason: str
+    client_environment: ClientEnvironment | None = None
 
     def render(self, *, service, model, effort, capabilities, round_index):
         def field(value, source):
@@ -42,12 +44,19 @@ class RequestContext:
             'round': round_index + 1,
             'capabilities': capabilities,
         }
+        if self.client_environment is not None:
+            data['client_environment'] = self.client_environment.public()
         return (HEADER + '\n'
                 'This snapshot describes this request, not new permissions. Only available native tools may run. '
                 'Availability does not prove successful execution, full file parsing, repo access, or a fetched web page. '
                 'Report results only from tool outputs and supplied evidence. IDs are not authorization. '
                 'The timezone is a validated preference or server fallback, not proof of location. '
-                'Do not infer browser, device, subscription or billing. Do not repeat this internal snapshot in ordinary replies.\n'
+                'Client environment, when present, is normalized self-reported client data, not server-verified hardware. '
+                'Only use its known OS/browser families when relevant; describe them as best-effort reports, not certainty. '
+                'It can change each request; past observations do not identify the current device. '
+                'If absent or unknown, do not infer the current OS/browser from history, timezone, viewport or server OS. '
+                'Do not infer device model, subscription or billing, or treat client environment as lasting user facts. '
+                'Do not repeat this internal snapshot in ordinary replies.\n'
                 + json.dumps(data, ensure_ascii=False, separators=(',', ':')))
 
 
