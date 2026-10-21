@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import secrets
 import threading
 import time
@@ -251,6 +252,7 @@ def test_first_sign_in_registers_dynamically_verifies_the_id_token_and_stores_a_
     assert urlsplit(seen["redirect_uri"]).hostname == "127.0.0.1" and seen["redirect_uri"].endswith("/auth/callback")
     host = seen["ext_agent_host_id"]
     assert host == config.load()["chatgpt_host_id"] and EMAIL not in host and SUB not in host
+    assert re.fullmatch(r"urn:uuid:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}", host),         "OpenAI chỉ nhận urn:uuid (UUIDv4), dấu vân tay khóa hay did:key"
     exchange = next(entry[2] for entry in openai.log if entry[1] == "/api/accounts/oauth/token")
     assert exchange["client_id"] == openai.client_id, "đổi mã bằng client ID được cấp, không phải dynamic_agent_client"
     assert exchange["redirect_uri"] == seen["redirect_uri"] and "client_secret" not in exchange
@@ -451,3 +453,9 @@ def test_continue_with_chatgpt_from_the_connect_dialog(run, project, openai, mon
     thread.join(timeout=5)
     assert work.source == "chatgpt-plan" and work.model == "gpt-6.1-sol"
     assert "Using ChatGPT plan" in rows(screen) and config.load()["chatgpt_welcome_shown"] is True
+
+
+def test_an_old_malformed_host_id_is_replaced_once():
+    config.save({"chatgpt_host_id": "peto-cu-sai-dang-0123456789abcdef"})
+    first = chatgpt_auth.host_id()
+    assert first.startswith("urn:uuid:") and chatgpt_auth.host_id() == first, "thay một lần rồi giữ nguyên"

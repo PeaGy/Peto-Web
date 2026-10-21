@@ -142,8 +142,9 @@ English strings ("Continue with ChatGPT", "Use your ChatGPT plan", "Using ChatGP
 your ChatGPT plan"/"Got it") with Vietnamese around them.
 - `jwt_rs256.py`: verify-only RSASSA-PKCS1-v1_5/SHA-256; recomputes the full EMSA encoding and compares bytes, rejects
   keys under 2048 bits, even exponents, `alg` other than RS256.
-- `chatgpt_auth.py`: endpoints from `auth.openai.com/.well-known/openid-configuration`; persistent opaque
-  `ext_agent_host_id` (`config.json`); fresh PKCE S256/state/nonce; `Callback` on `127.0.0.1` (port 1455 else any) opened
+- `chatgpt_auth.py`: endpoints from `auth.openai.com/.well-known/openid-configuration`; persistent
+  `ext_agent_host_id` as `urn:uuid:<UUIDv4>` in `config.json` (the first build sent "peto-…" and OpenAI answered
+  `invalid_authorize_request` on that param; a malformed stored value is replaced once); fresh PKCE S256/state/nonce; `Callback` on `127.0.0.1` (port 1455 else any) opened
   before the browser, ignoring other states; code exchange with the issued client ID and the same redirect URI; ID token
   checked against JWKS plus iss, aud, exp (120 s leeway), nonce; plan only with `chatgpt.tokens.use.direct`, otherwise an
   identity-only connection; reauth with client ID, `id_token_hint` (never shown), `login_hint`, rejecting another `sub` or

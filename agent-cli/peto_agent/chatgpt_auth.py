@@ -20,8 +20,10 @@ import html
 import http.server
 import os
 import secrets
+import re
 import threading
 import time
+import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from urllib.parse import parse_qs, urlencode, urlsplit
@@ -70,13 +72,20 @@ def _auth_http() -> ProviderHTTP:
     return ProviderHTTP(ISSUER, {})
 
 
+# Dạng OpenAI nhận cho ext_agent_host_id (trang tổng quan "ChatGPT plan usage", đọc lại 2026-10-21): UUIDv4 sau
+# ``urn:uuid:`` (Peto dùng dạng này), dấu vân tay khóa ``urn:ietf:params:oauth:jwk-thumbprint:`` (RFC 9278) hay
+# ``did:key:``. Bản 0.33.0 đầu tiên tự đặt dạng "peto-…" và bị từ chối ("invalid_authorize_request").
+HOST_ID = re.compile(r"urn:uuid:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}")
+
+
 def host_id() -> str:
-    """``ext_agent_host_id`` của máy này: chọn một lần, giữ mãi, không phải email hay mã người dùng."""
+    """``ext_agent_host_id`` của máy này: một UUIDv4 dạng ``urn:uuid:…``, chọn một lần rồi giữ mãi, không phải email hay
+    mã người dùng. Giá trị đã lưu sai dạng (chưa từng được OpenAI nhận) được thay bằng giá trị đúng."""
     settings = config.load()
     value = settings.get("chatgpt_host_id")
-    if isinstance(value, str) and 16 <= len(value) <= 128 and value.isascii():
+    if isinstance(value, str) and HOST_ID.fullmatch(value):
         return value
-    settings["chatgpt_host_id"] = value = "peto-" + secrets.token_urlsafe(24)
+    settings["chatgpt_host_id"] = value = f"urn:uuid:{uuid.uuid4()}"
     config.save(settings)
     return value
 
