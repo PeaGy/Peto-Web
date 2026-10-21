@@ -79,3 +79,27 @@ Sau bổ sung xử lý credentials hỏng, chạy lại nhóm request context/Gi
 Đây là kiểm định luồng/quyền/cấu trúc, chưa chứng minh model thật luôn trả lời trung thực về khả năng. Sau khi deploy,
 thử Chat với web OFF, file chỉ đọc một phần, timezone fallback và chuyển model. Không cần đổi database, frontend,
 `.env` hoặc CLI. Không tự triển khai hay gọi API trả phí trong quá trình sửa mã.
+
+## Kiểm tra thật sau deploy — 21/10/2026
+
+Chủ web xác nhận đã commit/deploy `0f9ec2d` và cho phép thử trên tài khoản Peto đang đăng nhập. Chat thử riêng dùng
+dữ liệu giả; tạm tắt ghi nhớ. Peto/Luna nhận đúng ngày, múi giờ, effort đang chọn, web OFF và giới hạn chỉ đọc GitHub;
+không đoán browser/OS từ múi giờ. Khi bật web trở lại, Peto phân biệt đúng công cụ có sẵn với chưa thực sự tra cứu.
+Luna nhận đúng file dài partial và DOCX hỏng unreadable; tool tìm toàn văn trả đúng chuỗi ở dòng 1.734 ngoài excerpt.
+
+Phát hiện chưa đạt: Haiku gọi đồng hồ xong nhưng request tiếp nối bị HTTP 400. Log chủ web cung cấp cho thấy vòng 1
+complete=True, vòng 2 complete=False. Tài liệu Anthropic hiện tại ràng buộc thinking signature của Haiku 5.5 vào
+system/tools/messages prefix; snapshot chứa clock/round/manifest đổi giữa vòng làm prefix thay đổi. Log hiện tại chỉ
+ghi HTTP, không có message gốc để khẳng định chính xác loại lỗi API; mã cũ có vi phạm quy tắc prefix này.
+
+Bản vá cục bộ: `ClaudeClient` nhận biết snapshot Web Chat và không replay block thinking/redacted_thinking cũ;
+giữ các block native còn lại, tool_use/tool_result và nội dung hội thoại. Không sửa chữ ký, không thêm beta hay retry
+trả phí. Agent/Companion không có snapshot này nên tiếp tục đường replay mặc định. HTTP giả được bổ sung kiểm tra
+prefix binding, có trường hợp thinking và redacted_thinking; nhóm liên quan 153 đạt, nhóm Claude/context 65 đạt.
+Bản vá phải được commit/deploy và thử lại công cụ Haiku trước khi chốt nghiệm thu giai đoạn 2.
+
+Ngoài ra một lượt Luna sau lỗi Haiku trả lại yêu cầu đồng hồ trước đó thay vì câu hỏi trạng thái file mới; lượt kế
+tiếp nói rõ bỏ yêu cầu lỗi thì xử lý đúng. Ghi nhận để kiểm tra phục hồi/ngữ cảnh lượt lỗi trong giai đoạn 3; chưa coi
+một mẫu này là bằng chứng chắc chắn lỗi thứ tự payload hoặc nguyên nhân ở reader.
+
+Nguồn chính thức: [Anthropic — lỗi thinking signature và thay đổi prefix](https://platform.claude.com/docs/en/build-with-claude/thinking-troubleshooting).

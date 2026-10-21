@@ -19,6 +19,7 @@ from .models import CLAUDE_EFFORTS
 from .xai import ResponsesProvider
 from shared.time_tools import split_time_context
 from features.chat.request_context import split_context as split_request_context
+from features.chat.request_context import current as web_request_context
 
 logger = logging.getLogger("peto_web.claude")
 MAX_SEARCH_PAUSES = 3
@@ -67,7 +68,7 @@ def _portable_output(content: list[dict]) -> list[dict]:
     return output
 
 
-def build_messages(items: list[dict], model: str) -> list[dict]:
+def build_messages(items: list[dict], model: str, *, replay_thinking: bool = True) -> list[dict]:
     """Chỉ nhận vai user/assistant; khôi phục block gốc khi còn đủ nhóm item của cùng model."""
     messages: list[dict] = []
 
@@ -90,7 +91,10 @@ def build_messages(items: list[dict], model: str) -> list[dict]:
                     and all(isinstance(block, dict) and block.get("type") in NATIVE_BLOCK_TYPES for block in content)):
                 normalized = _portable_output(content)
                 if items[index:index + len(normalized)] == normalized:
-                    append("assistant", content)
+                    # Haiku 5.5 ràng buộc chữ ký vào prefix. Snapshot Chat đổi mỗi vòng nên không replay được
+                    # thinking cũ; bỏ cả block, không sửa chữ/chữ ký. Giữ nguyên các block công cụ và kết quả khác.
+                    append("assistant", content if replay_thinking else [block for block in content
+                           if block.get('type') not in {'thinking', 'redacted_thinking'}])
                     index += len(normalized)
             continue
         if kind == "function_call":
@@ -217,7 +221,10 @@ class ClaudeClient:
         if effort not in CLAUDE_EFFORTS:
             raise ProviderError("Mức suy nghĩ này không được Claude hỗ trợ.")
         tools = self.native_tools(kwargs.get('tools', []))
-        messages = build_messages(kwargs["input"], kwargs["model"])
+        # Snapshot của Web Chat chứa clock/round/manifest hiện tại, vì thế top-level system không còn append-only.
+        # Hướng dẫn chính thức: bỏ thinking/redacted_thinking khi prefix đổi; không retry request đã tính phí.
+        # Agent/Companion không có snapshot này nên giữ cơ chế replay gốc.
+        messages = build_messages(kwargs["input"], kwargs["model"], replay_thinking=web_request_context.get() is None)
         if self.cache_history == "always" or _in_tool_loop(messages):
             mark_history(messages)
         request = {"model": kwargs["model"], "system": cached_system(kwargs.get("instructions", "")),

@@ -30,6 +30,14 @@ The owner approved stage 2 after deploying and live-testing stage 1. See
   Related regression: 163 passed; full backend: 1,483 passed, 1 skipped (274.90s). After the final malformed-credential
   guard, request-context/GitHub tests: 64 passed. `git diff --check` passed. No commit, deployment or paid API call.
 
+Live check after the owner deployed `0f9ec2d`: Peto/Luna clock/effort/web toggle/capabilities and scoped file search
+worked. Haiku's clock completed round 1 but its continuation returned HTTP 400. Current Anthropic docs bind Haiku 5.5
+thinking signatures to the entire preceding system/tools/messages prefix; the per-round Chat snapshot changes it.
+`ClaudeClient.create` now disables replay of whole thinking/redacted_thinking blocks only when the Web Chat snapshot
+is present, retaining all other native blocks, function calls/results and history. No altered signatures, beta flags,
+or billed retry; Agent/Companion keep default replay. Tests simulate signature rejection on prefix change, including
+redacted thinking. This patch is not live-verified until the owner deploys it. Details in `request-context.md`.
+
 ## Web Chat long context — stage 1 (2026-10-20)
 
 The owner approved a four-stage Web Chat roadmap, starting with long context. The plan and gates are in
