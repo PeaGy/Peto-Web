@@ -447,7 +447,7 @@ def test_connect_checks_the_key_saves_it_and_selects_the_cheapest_model(openai, 
     assert config.load()["selection"] == {"source": "openai-key", "connection": item.id, "model": "gpt-6-luna"}
     assert credentials.load(item.id) == KEY and KEY not in ui.text and leaked(agent_home) == []
     listed = FakeUI()
-    assert cli.list_connections(listed) == 0 and f"{item.id}" in listed.text and "đang dùng" in listed.text
+    assert cli.list_connections(listed) == 0 and f"{item.id}" in listed.text and "mặc định" in listed.text
     status = FakeUI()
     assert cli.status(status) == 0, "chưa đăng nhập Peto mà đã chọn khóa riêng thì status vẫn thành công"
     assert "Nguồn đang chọn: GPT-6 Luna" in status.text and "peto login" not in status.text

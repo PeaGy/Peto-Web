@@ -14,8 +14,8 @@ import webbrowser
 from datetime import datetime
 from pathlib import Path
 
-from . import (__version__, commands, config, connections, credentials, export, external_editor, history, line_editor,
-               mentions, model_dialogs, transcript, outputs, snapshot, updater, user_guide)
+from . import (__version__, chatgpt_auth, commands, config, connections, credentials, export, external_editor, history,
+               line_editor, mentions, model_dialogs, transcript, outputs, snapshot, updater, user_guide)
 from . import model_catalog as catalog
 from .bundle.tool_schemas import FEATURES as BUNDLE_FEATURES
 from .client import ApiError, Client
@@ -23,6 +23,7 @@ from .commands import fold
 from .events import ToolDone
 from .loop import Session, TaskLog, format_tokens
 from .providers import PETO
+from .providers import chatgpt as chatgpt_provider
 from .providers.openai_key import OpenAIKeySource
 from .providers.transport import ProviderHTTPError
 from .tools import FEATURES, NEW_FEATURES
@@ -244,8 +245,9 @@ def _connect_command(ui: UI, work: Session) -> None:
     for item in connections.load_all():
         mark = " · đang dùng" if item.id == work.connection else ""
         ui.line(f"  {item.id}  {item.label} · {', '.join(OpenAIKeySource().models(item)) or 'chưa có model'}{mark}")
-    ui.line("  Thêm khóa OpenAI: gõ /exit rồi chạy peto connect openai (khóa gõ không hiện, không vào lịch sử). Xóa: "
-            "peto disconnect <mã>. Đăng nhập Peto: peto login.", "dim")
+    ui.line("  Thêm khóa OpenAI: gõ /exit rồi chạy peto connect openai (khóa gõ không hiện, không vào lịch sử). "
+            f"{catalog.CONTINUE} ({catalog.PLAN_FEATURE}): peto connect chatgpt. Xóa: peto disconnect <mã>. Đăng nhập "
+            "Peto: peto login.", "dim")
 
 
 def _help(ui: UI) -> None:
@@ -274,6 +276,9 @@ def _usage(ui: UI, work: Session) -> None:
         note = _cost_note(work)
         ui.line(f"  Đang dùng: {label} · tài khoản Peto · mức {EFFORT_LABELS[work.effort]}"
                 + (f", {note}." if note else "."))
+    elif work.source == chatgpt_provider.ChatGPTSource.id:
+        where = catalog.source_label(work.source, work.connection)
+        ui.line(f"  Đang dùng: {label} · {where} · mức {EFFORT_LABELS[work.effort]} · {catalog.PLAN_IN_USE}.")
     else:
         where = catalog.source_label(work.source, work.connection)
         ui.line(f"  Đang dùng: {label} · {where} · mức {EFFORT_LABELS[work.effort]}, khóa riêng nên không tính bước "
@@ -287,6 +292,7 @@ def _usage(ui: UI, work: Session) -> None:
         share = work.context_share()
         ui.line(f"  Hội thoại này: {format_tokens(work.context_tokens)} token ngữ cảnh"
                 + (f" · {min(100, round(share * 100))}% tới lúc tự tóm tắt." if share is not None else "."))
+    plan = chatgpt_provider.ChatGPTSource.id
     direct = [(key, row) for key, row in work.models.usage.items() if key[0] != PETO]
     for (source, connection), row in direct:
         parts = [f"{row['calls']} lượt gọi"]
@@ -294,10 +300,15 @@ def _usage(ui: UI, work: Session) -> None:
             cached = f" ({format_tokens(row['cached_tokens'])} từ cache)" if row["cached_tokens"] else ""
             parts += [f"{format_tokens(row['input_tokens'])} token vào{cached}",
                       f"{format_tokens(row['output_tokens'])} token ra"]
-        ui.line(f"  Khóa riêng trong phiên này · {catalog.source_label(source, connection)}: {' · '.join(parts)}.")
-    if direct:
+        kind = "Gói ChatGPT" if source == plan else "Khóa riêng"
+        ui.line(f"  {kind} trong phiên này · {catalog.source_label(source, connection)}: {' · '.join(parts)}.")
+    if any(source != plan for (source, _), _ in direct):
         ui.line("    Số token là số OpenAI trả về, chưa phải hóa đơn; tiền tính ở tài khoản OpenAI của bạn "
                 "(platform.openai.com/usage).", "dim")
+    if work.source == plan or any(source == plan for (source, _), _ in direct):
+        # UI/UX guidelines của OpenAI: "Manage usage" cạnh phần tóm tắt mức dùng, mở trang Usage của ChatGPT.
+        ui.line(f"  {chatgpt_provider.MANAGE_USAGE}. Hạn mức dùng chung với gói ChatGPT của bạn (có thể có giới hạn "
+                "riêng cho Peto Agent); Peto không biết còn bao nhiêu.", "dim")
     # Thời gian từng phần và token của yêu cầu gần nhất: cuối mỗi yêu cầu chỉ in một dòng, chi tiết xem ở đây.
     if work.metrics.calls["model"]:
         work.show_metrics()
@@ -801,6 +812,49 @@ def connect(ui: UI, provider: str, *, label: str = "", endpoint: str | None = No
     return 0
 
 
+def connect_chatgpt(ui: UI, *, open_browser=None) -> int:
+    """peto connect chatgpt: đăng nhập ChatGPT trong trình duyệt (OAuth, M5) để dùng hạn mức gói, rồi chọn model rẻ
+    nhất của tài khoản làm mặc định. Cho cả lúc không có bảng chọn; Ctrl+C để thôi."""
+    if not credentials.available():
+        ui.failure("Máy này không có kho khóa an toàn của Windows (DPAPI), nên peto không lưu đăng nhập. Nguồn trực tiếp "
+                   "hiện chỉ chạy trên Windows.")
+        return 1
+    ui.line(f"{catalog.CONTINUE}: Peto Agent mở trình duyệt để bạn đăng nhập ChatGPT. Chọn {catalog.PLAN_FEATURE} để "
+            "các yêu cầu tính vào hạn mức gói ChatGPT của bạn, không tính bước Peto.", "dim")
+
+    def on_url(url, opened) -> None:
+        if url and not opened:
+            ui.line("Không mở được trình duyệt. Mở địa chỉ này để đăng nhập:", "yellow")
+            ui.line(url, "cyan")
+        ui.line("Đang chờ đăng nhập trong trình duyệt (Ctrl+C để thôi)…", "dim")
+
+    try:
+        result = chatgpt_auth.sign_in(chatgpt_auth.Attempt(), open_browser=open_browser or webbrowser.open,
+                                      on_url=on_url)
+        item = chatgpt_auth.store(result)
+    except KeyboardInterrupt:
+        ui.line()
+        ui.line("Đã thôi, chưa lưu gì.", "dim")
+        return 130
+    except chatgpt_auth.AuthError as err:
+        ui.failure(str(err))
+        return 1
+    except (connections.ConnectionError_, credentials.CredentialError) as err:
+        ui.failure(str(err))
+        return 1
+    if not result.plan:
+        ui.line(f"Đã đăng nhập {result.email or 'ChatGPT'} nhưng chưa cho phép Peto Agent dùng gói. Chạy lại peto "
+                f"connect chatgpt và chọn {catalog.PLAN_FEATURE}, hoặc dùng khóa API riêng.", "yellow")
+        return 1
+    ui.success(f"Đã đăng nhập ChatGPT ({item.label}) · {len(item.models)} model dùng được.")
+    rows = [row for row in _direct_models() if row.get("connection") == item.id]
+    if rows:
+        _remember_selection(rows[0])
+        ui.line(f"Từ giờ peto dùng {rows[0]['label']} qua gói ChatGPT ({catalog.PLAN_IN_USE}), không tính bước Peto. "
+                f"{chatgpt_provider.MANAGE_USAGE}. Trong phiên, gõ /models để đổi.", "dim")
+    return 0
+
+
 def list_connections(ui: UI) -> int:
     items = connections.load_all()
     if not items:
@@ -809,13 +863,23 @@ def list_connections(ui: UI) -> int:
     chosen = config.load().get("selection")
     chosen = chosen.get("connection") if isinstance(chosen, dict) else None
     for item in items:
-        mark = " · đang dùng" if item.id == chosen else ""
-        ui.line(f"  {item.id}  {item.label} · {', '.join(item.models) or 'chưa có model'}{mark}")
+        mark = " · mặc định" if item.id == chosen else ""
+        kind = "gói ChatGPT" if item.provider == "chatgpt" else "khóa API"
+        if item.provider == "chatgpt" and item.extra.get("status") == "signed_out":
+            state = "cần đăng nhập lại"
+        elif item.provider == "chatgpt" and not item.extra.get("plan"):
+            state = "chưa bật dùng gói"
+        else:
+            state = ", ".join(item.models) or "chưa có model"
+        ui.line(f"  {item.id}  {item.label} · {kind} · {state}{mark}")
     return 0
 
 
 def disconnect(ui: UI, connection_id: str) -> int:
-    """Bỏ hồ sơ và khóa trên máy này (khóa vẫn còn ở tài khoản OpenAI; thu hồi trên trang OpenAI nếu muốn)."""
+    """Bỏ hồ sơ và khóa trên máy này (khóa vẫn còn ở tài khoản OpenAI; thu hồi trên trang OpenAI nếu muốn). Đăng nhập
+    ChatGPT thì thu hồi refresh token ở OpenAI trước."""
+    item = connections.get(connection_id)
+    revoked = chatgpt_auth.revoke(connection_id) if item is not None and item.provider == "chatgpt" else None
     try:
         removed = connections.remove(connection_id)
     except OSError:
@@ -829,8 +893,16 @@ def disconnect(ui: UI, connection_id: str) -> int:
     if isinstance(chosen, dict) and chosen.get("connection") == connection_id:
         settings.pop("selection", None)
         config.save(settings)
-    ui.success(f"Đã xóa kết nối {connection_id} và khóa của nó trên máy này. Khóa vẫn còn hiệu lực ở tài khoản OpenAI; "
-               "muốn vô hiệu hẳn thì thu hồi trên trang OpenAI.")
+    catalog.forget_connection(connection_id)
+    if revoked is True:
+        ui.success(f"Đã đăng xuất ChatGPT ({item.label}) và xóa trên máy này.")
+    elif revoked is False:
+        ui.success(f"Đã xóa đăng nhập ChatGPT ({item.label}) trên máy này.")
+        ui.line("Chưa xác nhận được việc thu hồi ở OpenAI. Ngắt Peto Agent trong ChatGPT → Settings → Security and "
+                "login → Login connections nếu cần.", "yellow")
+    else:
+        ui.success(f"Đã xóa kết nối {connection_id} và khóa của nó trên máy này. Khóa vẫn còn hiệu lực ở tài khoản "
+                   "OpenAI; muốn vô hiệu hẳn thì thu hồi trên trang OpenAI.")
     return 0
 
 
@@ -1028,6 +1100,9 @@ def session(ui: UI, resume: str | None = None) -> int:
                     resume_hint = ""
                 if work.source == PETO:
                     footer = [f"còn {_steps_text(work)} bước"] if work.steps_limit else []
+                elif work.source == chatgpt_provider.ChatGPTSource.id:
+                    # UI/UX guidelines của OpenAI: "Using ChatGPT plan" gần ô nhập, kèm đường tới Manage usage.
+                    footer = [catalog.PLAN_IN_USE, "Manage usage: /usage"]
                 else:
                     footer = ["khóa riêng · không tính bước Peto"]
                 if (share := work.context_share()) is not None:
@@ -1220,7 +1295,8 @@ def main(argv: list[str] | None = None) -> int:
     login_parser.add_argument("--server", help="địa chỉ Peto, ví dụ https://peto.example.com")
     commands.add_parser("logout", help="ngắt kết nối máy này")
     commands.add_parser("status", help="xem tài khoản và số bước còn lại hôm nay")
-    connect_parser = commands.add_parser("connect", help="dùng khóa API riêng (hiện có: openai), không qua máy chủ Peto")
+    connect_parser = commands.add_parser("connect", help="dùng khóa API riêng (openai) hay gói ChatGPT (chatgpt), "
+                                                         "không qua máy chủ Peto")
     connect_parser.add_argument("provider", choices=sorted(connections.PROVIDERS))
     connect_parser.add_argument("--label", default="", help="tên dễ nhớ của kết nối")
     # Chỉ cho máy chủ thử trên chính máy này (127.0.0.1); địa chỉ khác địa chỉ chính thức bị từ chối.
@@ -1244,6 +1320,8 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "status":
             return status(ui)
         if args.command == "connect":
+            if args.provider == "chatgpt":
+                return connect_chatgpt(ui)
             return connect(ui, args.provider, label=args.label, endpoint=args.endpoint)
         if args.command == "connections":
             return list_connections(ui)

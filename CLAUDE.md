@@ -132,6 +132,40 @@ journal, logs, export, request bodies or env; Ctrl+C; redirects; connect/disconn
 `backend/tests/test_agent_bundle.py`. Full CLI 725 passed in one run (242s); backend Agent/prompt/model/
 installer 197 passed. No real OpenAI key or paid call was used; live behaviour with a real key is unverified.
 
+## Multi-source models: M5 Continue with ChatGPT (2026-10-21; CLI 0.33.0 source)
+
+The owner approved M5 from an OpenCode "Connect OpenAI" screenshot. Rereading OpenAI's docs corrected M0: the open-source
+local path needs no requested client ID; each account registers dynamically (`client_id=dynamic_agent_client`, the
+callback returns the issued ID; no client secret). "Request a client ID" is the commercial-partner waitlist. Owner's
+picks: verify the RS256 ID token with the standard library instead of adding `cryptography`, and keep OpenAI's exact
+English strings ("Continue with ChatGPT", "Use your ChatGPT plan", "Using ChatGPT plan", "Manage usage", "You're using
+your ChatGPT plan"/"Got it") with Vietnamese around them.
+- `jwt_rs256.py`: verify-only RSASSA-PKCS1-v1_5/SHA-256; recomputes the full EMSA encoding and compares bytes, rejects
+  keys under 2048 bits, even exponents, `alg` other than RS256.
+- `chatgpt_auth.py`: endpoints from `auth.openai.com/.well-known/openid-configuration`; persistent opaque
+  `ext_agent_host_id` (`config.json`); fresh PKCE S256/state/nonce; `Callback` on `127.0.0.1` (port 1455 else any) opened
+  before the browser, ignoring other states; code exchange with the issued client ID and the same redirect URI; ID token
+  checked against JWKS plus iss, aud, exp (120 s leeway), nonce; plan only with `chatgpt.tokens.use.direct`, otherwise an
+  identity-only connection; reauth with client ID, `id_token_hint` (never shown), `login_hint`, rejecting another `sub` or
+  client ID; token record (`credentials.save_record`, DPAPI, 64 KB) refreshed serially under a file lock, rotating
+  refresh token saved atomically, terminal refresh errors mark `signed_out` and keep the client ID; `revoke` on delete;
+  `registrations()` keeps sub → client ID after deletion; `store()` saves or updates by `sub` and lists models
+  (`GET /v1/models`, `visibility == "list"`, server order). Tests monkeypatch `ISSUER`/`API_BASE`; no env override.
+- `providers/chatgpt.py` subclasses the OpenAI key source (`_payload`/`_failed` hooks added there): field allowlist, no
+  `max_output_tokens`, tools wrapped in namespace `peto`, old function calls given the namespace, system-role items
+  dropped; `loop.portable()` strips `namespace` when switching sources. Errors follow "Errors and recovery":
+  usage limit points to Manage usage (no OAuth loop, no switch to a paid key), 401 before output refreshes once and
+  retries. `transport` gained form posts and parses OAuth `error` strings, `detail` and `param`.
+- UI: `/connect` → OpenAI shows "Kết nối OpenAI" (Continue with ChatGPT, Khóa API; no Codex legacy rows, which borrow
+  Codex's client ID) or the account list (Gói ChatGPT, Khóa API, Đã đăng nhập trước đây); waiting dialog via
+  `dialog_busy(on_key=…)` (esc cancels, c copies the URL); one-time welcome; prompt footer "Using ChatGPT plan · Manage
+  usage: /usage"; `/usage` separates "Gói ChatGPT" from own keys. `peto connect chatgpt` for the text UI;
+  `peto disconnect` revokes. `catalog` and the gateway register `chatgpt-plan`.
+- Tests: `tests/test_chatgpt.py` (fake auth+API server on 127.0.0.1, fixed test RSA key signing ID tokens, browser stub
+  that calls the callback; `webbrowser.open` is always stubbed). An early run before that stub may have opened one real
+  browser tab on the fake loopback URL. Full CLI run 745 passed in one run; backend installer/bundle 9 passed. Not yet
+  accepted with a real ChatGPT account, which is M5's completion criterion.
+
 ## Multi-source models: M4 `/models`, `/connect`, `/usage` (2026-10-20; CLI 0.32.0 source)
 
 The owner tested `peto connect openai` with a real key, then asked for M4 and, after seeing three mockups, sent OpenCode

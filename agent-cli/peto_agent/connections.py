@@ -21,6 +21,8 @@ VERSION = 1
 # (127.0.0.1, localhost) được nhận thêm cho máy chủ thử và proxy cục bộ.
 PROVIDERS = {
     "openai": {"source": "openai-key", "label": "OpenAI (khóa API riêng)", "endpoint": "https://api.openai.com/v1"},
+    # Đăng nhập ChatGPT để dùng hạn mức gói (M5): khóa là bộ token OAuth, không phải khóa API.
+    "chatgpt": {"source": "chatgpt-plan", "label": "ChatGPT", "endpoint": "https://api.openai.com/v1"},
 }
 LOOPBACK = {"127.0.0.1", "localhost", "::1"}
 
@@ -37,6 +39,9 @@ class Connection:
     endpoint: str
     created_at: float
     models: tuple[str, ...] = field(default_factory=tuple)
+    # Thông tin không bí mật riêng của nhà cung cấp. ChatGPT: client_id được cấp, sub và email đã xác minh, plan (có
+    # quyền dùng gói), status ("signed_out" khi phải đăng nhập lại), model_names (tên hiển thị theo tài khoản).
+    extra: dict = field(default_factory=dict)
 
     @property
     def source(self) -> str:
@@ -68,7 +73,8 @@ def load_all() -> list[Connection]:
         try:
             item = Connection(id=row["id"], provider=row["provider"], label=str(row.get("label") or ""),
                               endpoint=row["endpoint"], created_at=float(row.get("created_at") or 0),
-                              models=tuple(str(model) for model in row.get("models") or ()))
+                              models=tuple(str(model) for model in row.get("models") or ()),
+                              extra=dict(row["extra"]) if isinstance(row.get("extra"), dict) else {})
         except (KeyError, TypeError, ValueError):
             continue
         if item.provider in PROVIDERS and endpoint_allowed(item.provider, item.endpoint):
@@ -85,9 +91,10 @@ def _write(items: list[Connection]) -> None:
     write_text(_path(), json.dumps({"version": VERSION, "connections": rows}, ensure_ascii=False, indent=2))
 
 
-def add(provider: str, secret: str, *, label: str = "", endpoint: str | None = None,
-        models: tuple[str, ...] = ()) -> Connection:
-    """Lưu khóa (DPAPI) rồi mới ghi hồ sơ; ghi hồ sơ lỗi thì xóa khóa vừa lưu."""
+def add(provider: str, secret: str | dict, *, label: str = "", endpoint: str | None = None,
+        models: tuple[str, ...] = (), extra: dict | None = None) -> Connection:
+    """Lưu khóa (DPAPI) rồi mới ghi hồ sơ; ghi hồ sơ lỗi thì xóa khóa vừa lưu. ``secret`` là dict khi đó là bộ token
+    đăng nhập (ChatGPT)."""
     if provider not in PROVIDERS:
         raise ConnectionError_("Chưa hỗ trợ nhà cung cấp này.")
     endpoint = (endpoint or PROVIDERS[provider]["endpoint"]).rstrip("/")
@@ -95,8 +102,11 @@ def add(provider: str, secret: str, *, label: str = "", endpoint: str | None = N
         raise ConnectionError_("Địa chỉ API không được phép: khóa chỉ đi tới địa chỉ chính thức của nhà cung cấp.")
     item = Connection(id=f"{provider}-{secrets.token_hex(4)}", provider=provider,
                       label=" ".join(label.split())[:60] or PROVIDERS[provider]["label"], endpoint=endpoint,
-                      created_at=time.time(), models=tuple(models))
-    credentials.save(item.id, secret)
+                      created_at=time.time(), models=tuple(models), extra=dict(extra or {}))
+    if isinstance(secret, dict):
+        credentials.save_record(item.id, secret)
+    else:
+        credentials.save(item.id, secret)
     try:
         _write([*load_all(), item])
     except OSError:
@@ -106,9 +116,25 @@ def add(provider: str, secret: str, *, label: str = "", endpoint: str | None = N
 
 
 def update_models(connection_id: str, models: tuple[str, ...]) -> None:
-    items = load_all()
-    _write([Connection(**{**asdict(item), "models": tuple(models)}) if item.id == connection_id else item
-            for item in items])
+    update(connection_id, models=tuple(models))
+
+
+def update(connection_id: str, *, models: tuple[str, ...] | None = None, extra: dict | None = None) -> Connection | None:
+    """Đổi danh sách model hay gộp thêm thông tin vào ``extra`` của một kết nối; trả kết nối mới."""
+    found = None
+    rows = []
+    for item in load_all():
+        if item.id == connection_id:
+            changes = {}
+            if models is not None:
+                changes["models"] = tuple(models)
+            if extra is not None:
+                changes["extra"] = {**item.extra, **extra}
+            item = found = Connection(**{**asdict(item), **changes, "models": changes.get("models", item.models)})
+        rows.append(item)
+    if found is not None:
+        _write(rows)
+    return found
 
 
 def rename(connection_id: str, label: str) -> Connection | None:

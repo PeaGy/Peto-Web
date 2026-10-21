@@ -9,6 +9,7 @@ Khóa không được in, ghi nhật ký, đưa vào hội thoại, lời nhắc
 from __future__ import annotations
 
 import ctypes
+import json
 import os
 import re
 from pathlib import Path
@@ -18,6 +19,8 @@ from . import config
 _ID = re.compile(r"[A-Za-z0-9_-]{1,64}")
 CRYPTPROTECT_UI_FORBIDDEN = 0x1
 MAX_SECRET_CHARS = 4096
+# Bộ token đăng nhập ChatGPT (M5): ID token, access token, refresh token và thông tin tài khoản, dạng JSON.
+MAX_RECORD_CHARS = 64 * 1024
 
 
 class CredentialError(Exception):
@@ -82,10 +85,10 @@ def _entropy(connection_id: str) -> bytes:
     return f"peto-agent:{connection_id}".encode("utf-8")
 
 
-def save(connection_id: str, secret: str) -> None:
+def save(connection_id: str, secret: str, *, limit: int = MAX_SECRET_CHARS) -> None:
     if not available():
         raise CredentialError("Máy này chưa có kho khóa an toàn mà Peto hỗ trợ (hiện chỉ Windows).")
-    if not isinstance(secret, str) or not secret or len(secret) > MAX_SECRET_CHARS or not secret.isprintable():
+    if not isinstance(secret, str) or not secret or len(secret) > limit or not secret.isprintable():
         raise CredentialError("Khóa không hợp lệ.")
     target = _path(connection_id)
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -119,3 +122,18 @@ def delete(connection_id: str) -> bool:
         return False
     except OSError:
         raise CredentialError("Không xóa được khóa đã lưu.") from None
+
+
+def save_record(connection_id: str, record: dict) -> None:
+    """Lưu một bộ token (JSON một dòng) như một khóa: cùng DPAPI, cùng ghi nguyên tử."""
+    save(connection_id, json.dumps(record, ensure_ascii=True, separators=(",", ":")), limit=MAX_RECORD_CHARS)
+
+
+def load_record(connection_id: str) -> dict:
+    try:
+        record = json.loads(load(connection_id))
+    except ValueError:
+        raise CredentialError("Thông tin đăng nhập đã lưu bị hỏng. Đăng nhập lại nhé.") from None
+    if not isinstance(record, dict):
+        raise CredentialError("Thông tin đăng nhập đã lưu bị hỏng. Đăng nhập lại nhé.")
+    return record

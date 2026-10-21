@@ -10,6 +10,7 @@ from __future__ import annotations
 import threading
 from collections.abc import Callable, Iterator
 
+from .chatgpt import ChatGPTSource
 from .contract import ModelRequest, ModelSourceError, Selection
 from .openai_key import OpenAIKeySource
 from .peto import PetoSource
@@ -19,7 +20,8 @@ class ModelGateway:
     def __init__(self, transport: Callable[[], object]):
         # Transport lấy lúc gọi (không giữ sẵn), để phiên đổi hay bọc lại transport vẫn có hiệu lực.
         self._transport = transport
-        self.sources = {PetoSource.id: PetoSource(), OpenAIKeySource.id: OpenAIKeySource()}
+        self.sources = {PetoSource.id: PetoSource(), OpenAIKeySource.id: OpenAIKeySource(),
+                        ChatGPTSource.id: ChatGPTSource()}
         # Token mỗi nguồn và kết nối đã dùng trong phiên, theo số nhà cung cấp trả về ở sự kiện done (cho /usage, M4).
         # Là số ước tính của phiên trên máy này, không phải hóa đơn hay hạn mức chính thức.
         self.usage: dict[tuple[str, str | None], dict[str, int]] = {}

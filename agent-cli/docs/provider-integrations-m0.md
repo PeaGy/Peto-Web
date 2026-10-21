@@ -79,7 +79,16 @@ gọi Responses với `store: false`, `stream: true`.
 Tình trạng của Peto: CLI chạy trên máy người dùng, nhưng kho `PeaGy/Peto-Web` công khai mà **không có license**, nên chưa
 là mã nguồn mở theo nghĩa thông thường. Peto còn có dịch vụ web chạy trên VPS. **Chủ dự án đã chọn ngày 20/10/2026: CLI theo giấy phép MIT** (`agent-cli/LICENSE`, kèm thông báo MIT của phần chuyển
 từ opencode; wheel ghi `License: MIT` và đóng kèm tệp). Web và máy chủ Peto không thuộc giấy phép này. OpenAI vẫn là bên
-quyết định ứng dụng có đủ điều kiện hay không; trước M5 cần xin client ID của Peto theo trang Request a client ID.
+quyết định ứng dụng có đủ điều kiện hay không.
+
+**Sửa ngày 21/10/2026 (đọc lại tài liệu khi làm M5):** câu trước đây “trước M5 cần xin client ID của Peto theo trang
+Request a client ID” là sai. Đường cho ứng dụng mã nguồn mở chạy cục bộ đăng ký động theo từng tài khoản: lần đầu gửi
+`client_id=dynamic_agent_client`, callback trả client ID được cấp, không có client secret hay khóa đối tác
+([Registration and sign-in](https://developers.openai.com/siwc/token-sharing-open-source/sign-in)). Trang
+[Request a client ID](https://developers.openai.com/siwc/request-client-id) là danh sách chờ cho đối tác thương mại của
+Sign in with ChatGPT. ID token ký RS256 (`id_token_signing_alg_values_supported` trong
+`https://auth.openai.com/.well-known/openid-configuration`) và tài liệu yêu cầu kiểm chữ ký bằng JWKS; chủ web chọn tự
+kiểm bằng thư viện chuẩn (`peto_agent/jwt_rs256.py`, chỉ kiểm, so khớp toàn bộ chuỗi EMSA) thay vì thêm `cryptography`.
 
 ## 5. Baseline kiểm thử
 

@@ -204,7 +204,29 @@ peto connect openai
 - Lời nhắc và công cụ giống hệt khi đi qua máy chủ Peto (CLI mang bản chép của máy chủ), trừ tìm web: nguồn khóa riêng
   chưa có tìm web. Đặt tên hội thoại, `/btw`, tóm tắt và agent con khám phá cũng đi qua khóa riêng.
 - Máy chủ Peto tắt hay hết bước không chặn nguồn này; `/update` vẫn cần máy chủ Peto.
-- Chưa dùng được gói ChatGPT; đó là mốc sau.
+- Muốn dùng hạn mức gói ChatGPT thay cho khóa tính tiền: xem mục ngay dưới.
+
+## Dùng gói ChatGPT: Continue with ChatGPT (từ 0.33.0)
+
+Có gói ChatGPT thì Peto Agent dùng được hạn mức của gói thay cho khóa API tính tiền: không qua máy chủ Peto, không tính
+bước Peto. Trong phiên gõ `/connect` → OpenAI → **Continue with ChatGPT**; ngoài phiên:
+
+```powershell
+peto connect chatgpt
+```
+
+- Peto mở trình duyệt để bạn đăng nhập ChatGPT; chọn **Use your ChatGPT plan** để cho phép dùng gói. Không mở được trình
+  duyệt thì bấm `c` trong khung chờ (hoặc chép địa chỉ peto in ra) rồi mở tay. Esc hay Ctrl+C để thôi.
+- Kết quả đăng nhập chỉ quay về `127.0.0.1` trên máy bạn. Peto kiểm chữ ký ID token bằng khóa công khai của OpenAI, lưu
+  token mã hóa DPAPI như khóa API, tự làm mới token khi gần hết hạn. Token không nằm trong hội thoại, nhật ký, `/export`
+  hay môi trường lệnh Peto chạy.
+- Danh sách model lấy theo tài khoản của bạn. Khi đang dùng gói, dòng dưới ô nhập ghi “Using ChatGPT plan”; `/usage`
+  có “Manage usage” (ChatGPT → Settings → Usage). Hạn mức dùng chung với gói ChatGPT (có thể có giới hạn riêng cho Peto
+  Agent); hết hạn mức thì Peto chỉ báo, không tự chuyển sang khóa tính tiền.
+- Đăng nhập nhưng không chọn Use your ChatGPT plan thì tài khoản chỉ ở trạng thái “chỉ đăng nhập”; chọn lại tài khoản
+  trong `/connect` để bật. Xóa tài khoản (`ctrl+d` hai lần, hoặc `peto disconnect <mã>`) sẽ thu hồi đăng nhập ở OpenAI.
+- Peto dùng đường OpenAI dành cho ứng dụng mã nguồn mở chạy trên máy người dùng (CLI theo giấy phép MIT); OpenAI quyết
+  định tài khoản nào đủ điều kiện.
 
 ## Chọn model và nguồn: `/models`, `/connect` (từ 0.32.0)
 

@@ -1449,14 +1449,20 @@ class TerminalUI(UI):
         return dialog.result or Result("close")
 
     @contextlib.contextmanager
-    def dialog_busy(self, dialog):
-        """Giữ khung trên màn hình trong lúc nơi gọi làm việc chậm (kiểm khóa API): phím bị bỏ qua, Ctrl+C ngắt việc
-        đó như ngắt một yêu cầu."""
+    def dialog_busy(self, dialog, on_key=None):
+        """Giữ khung trên màn hình trong lúc nơi gọi làm việc chậm (kiểm khóa API, chờ đăng nhập ChatGPT). Phím chỉ tới
+        ``on_key`` (chạy ở luồng đọc phím, không được chờ), khung không tự đóng; Ctrl+C ngắt việc đó như ngắt một yêu
+        cầu. Trả hàm vẽ lại, cho nơi gọi đổi chữ trong khung."""
         from .footer import Panel
 
         engine = self.engine
-        panel = Panel(lambda: dialog.render(self.theme, self.width - 2, self.height), lambda key: None,
-                      overlay=True, guard=False)
+
+        def handle(key):
+            if on_key is not None:
+                on_key(key)
+            return None
+
+        panel = Panel(lambda: dialog.render(self.theme, self.width - 2, self.height), handle, overlay=True, guard=False)
         while True:
             with engine.lock:
                 if engine.panel is None:
@@ -1464,8 +1470,13 @@ class TerminalUI(UI):
                     engine._draw()
                     break
             time.sleep(0.05)
+
+        def redraw() -> None:
+            with engine.lock:
+                engine._draw()
+
         try:
-            yield
+            yield redraw
         finally:
             with engine.lock:
                 if engine.panel is panel:

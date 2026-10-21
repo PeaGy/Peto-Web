@@ -15,7 +15,7 @@ import socket
 import ssl
 import threading
 from collections.abc import Iterator
-from urllib.parse import urlsplit
+from urllib.parse import urlencode, urlsplit
 
 from .. import __version__
 
@@ -29,9 +29,9 @@ LOOPBACK = {"127.0.0.1", "localhost", "::1"}
 class ProviderHTTPError(Exception):
     """Lỗi HTTP hay kết nối với nhà cung cấp. ``status`` 0 là không kết nối được hoặc luồng đứt."""
 
-    def __init__(self, status: int, code: str = "", message: str = "", kind: str = ""):
+    def __init__(self, status: int, code: str = "", message: str = "", kind: str = "", param: str = ""):
         super().__init__(f"HTTP {status} {code}".strip())
-        self.status, self.code, self.message, self.kind = status, code, message, kind
+        self.status, self.code, self.message, self.kind, self.param = status, code, message, kind, param
 
 
 def _clip(value) -> str:
@@ -56,12 +56,16 @@ class ProviderHTTP:
                                                context=ssl.create_default_context())
         return http.client.HTTPConnection(self._host, self._port, timeout=timeout)
 
-    def _send(self, method: str, path: str, body: dict | None, timeout: float):
+    def _send(self, method: str, path: str, body: dict | None, timeout: float, *, form: dict | None = None):
         headers = {"User-Agent": USER_AGENT, "Accept": "application/json, text/event-stream", **self._headers}
         data = None
         if body is not None:
             data = json.dumps(body, ensure_ascii=False).encode("utf-8")
             headers["Content-Type"] = "application/json"
+        elif form is not None:
+            # OAuth (đăng nhập ChatGPT, M5): biểu mẫu trong thân yêu cầu, không bao giờ trên địa chỉ.
+            data = urlencode(form).encode("ascii")
+            headers["Content-Type"] = "application/x-www-form-urlencoded"
         connection = self._connection(min(self.timeout, timeout))
         try:
             connection.request(method, self._base + path, body=data, headers=headers)
@@ -76,27 +80,35 @@ class ProviderHTTP:
             connection.close()
             raise ProviderHTTPError(0, "connection", "Không kết nối được nhà cung cấp.") from None
         if response.status >= 300:
-            code, kind, message = "", "", ""
+            code, kind, message, param = "", "", "", ""
             if 300 <= response.status < 400:
                 code, message = "redirect", "Nhà cung cấp trả về chuyển hướng; Peto không theo để giữ an toàn cho khóa."
             else:
                 try:
                     payload = json.loads(response.read(64 * 1024) or b"{}")
-                    error = payload.get("error") if isinstance(payload, dict) else None
+                    payload = payload if isinstance(payload, dict) else {}
+                    error = payload.get("error")
                     if isinstance(error, dict):
                         code = str(error.get("code") or "")
                         kind = str(error.get("type") or "")
                         message = _clip(error.get("message"))
+                        param = _clip(error.get("param"))
+                    elif isinstance(error, str):
+                        # Lỗi OAuth (RFC 6749 mục 5.2): {"error": "invalid_grant", "error_description": "..."}.
+                        code, message = _clip(error), _clip(payload.get("error_description"))
+                    elif isinstance(payload.get("detail"), str):
+                        # Lỗi chặn trước luồng của đường ChatGPT: {"detail": "..."}, chỉ để chẩn đoán.
+                        message = _clip(payload["detail"])
                 except (ValueError, OSError, http.client.HTTPException):
                     pass
             status = response.status
             response.close()
             connection.close()
-            raise ProviderHTTPError(status, code, message, kind)
+            raise ProviderHTTPError(status, code, message, kind, param)
         return connection, response, transport
 
-    def json(self, method: str, path: str, body: dict | None = None) -> dict:
-        connection, response, _ = self._send(method, path, body, self.timeout)
+    def json(self, method: str, path: str, body: dict | None = None, *, form: dict | None = None) -> dict:
+        connection, response, _ = self._send(method, path, body, self.timeout, form=form)
         try:
             raw = response.read(MAX_JSON_BYTES + 1)
         except (OSError, http.client.HTTPException):

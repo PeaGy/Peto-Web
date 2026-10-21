@@ -184,11 +184,11 @@
     },
     {
       "name": "/connect",
-      "description": "Kết nối nguồn model: tài khoản Peto, khóa OpenAI riêng",
+      "description": "Kết nối nguồn model: tài khoản Peto, gói ChatGPT, khóa OpenAI riêng",
       "options": [],
       "usage": "/connect",
       "since": "0.32.0",
-      "details": "Bảng nổi như OpenCode: Peto và OpenAI, dấu ✓ cho nguồn đã kết nối. Thêm khóa OpenAI (khóa hiện thành chấm, được kiểm bằng danh sách model, lưu mã hóa DPAPI trên máy này), đổi tên bằng Ctrl+R, xóa bằng Ctrl+D hai lần; kết nối xong thì chọn model của khóa đó. Đăng nhập Peto vẫn bằng peto login. Không có màn hình chọn thì dùng peto connect openai, peto connections, peto disconnect."
+      "details": "Bảng nổi như OpenCode: Peto và OpenAI, dấu ✓ cho nguồn đã kết nối. OpenAI có hai cách: Continue with ChatGPT (từ 0.33.0: đăng nhập ChatGPT trong trình duyệt để dùng hạn mức gói, Use your ChatGPT plan) và khóa API (khóa hiện thành chấm, được kiểm bằng danh sách model, lưu mã hóa DPAPI trên máy này). Đổi tên bằng Ctrl+R, xóa bằng Ctrl+D hai lần (tài khoản ChatGPT thì thu hồi đăng nhập ở OpenAI); kết nối xong thì chọn model. Đăng nhập Peto vẫn bằng peto login. Không có màn hình chọn thì dùng peto connect chatgpt, peto connect openai, peto connections, peto disconnect."
     },
     {
       "name": "/effort",

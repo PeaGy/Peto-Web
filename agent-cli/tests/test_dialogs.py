@@ -180,6 +180,10 @@ def test_connect_adds_a_masked_key_checks_it_then_picks_a_model_renames_and_dele
             assert settle(lambda: "Kết nối nguồn" in rows(screen))
             assert "Phổ biến" in rows(screen) and "✓ Peto" in rows(screen) and "Bình" in rows(screen)
             screen.press(Key("down"), Key("enter"))
+            # Chưa có kết nối OpenAI nào: hỏi cách kết nối như OpenCode, không có các dòng Codex (legacy).
+            assert settle(lambda: "Kết nối OpenAI" in rows(screen) and "Continue with ChatGPT" in rows(screen))
+            assert "Codex" not in rows(screen) and "Use your ChatGPT plan" in rows(screen)
+            screen.press(Key("down"), Key("enter"))
             assert settle(lambda: "Khóa API OpenAI" in rows(screen))
             screen.press(Key("paste", "ngắn"), Key("enter"))
             assert settle(lambda: "Đây không giống một khóa API OpenAI." in rows(screen))
@@ -201,10 +205,11 @@ def test_connect_adds_a_masked_key_checks_it_then_picks_a_model_renames_and_dele
 
         # Đổi tên rồi xóa (bấm ctrl+d hai lần): hội thoại đang dùng khóa đó quay về Peto, có báo.
         thread, done = in_thread(lambda: model_dialogs.accounts(screen.ui, work, cat))
-        assert settle(lambda: "Khóa đã kết nối" in rows(screen) and "Thêm khóa API" in rows(screen))
+        assert settle(lambda: "Khóa API" in rows(screen) and "Thêm khóa API" in rows(screen))
+        assert "Continue with ChatGPT" in rows(screen)
         assert "● OpenAI (khóa API riêng)" in rows(screen) and "2 model" in rows(screen)
         screen.press(Key("ctrl", "r"))  # dòng của khóa đang dùng được chọn sẵn
-        assert settle(lambda: "Đổi tên khóa" in rows(screen))
+        assert settle(lambda: "Đổi tên" in rows(screen) and "lưu" in rows(screen))
         screen.press(*[Key("backspace")] * 30, Key("paste", "Khóa công ty"), Key("enter"))
         assert settle(lambda: "Đã đổi tên thành “Khóa công ty”." in rows(screen))
         assert connections.load_all()[0].label == "Khóa công ty"

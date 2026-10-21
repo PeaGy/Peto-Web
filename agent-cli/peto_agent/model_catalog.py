@@ -1,4 +1,4 @@
-"""Model của mọi nguồn cho /models, /connect, /usage và ``peto models`` (lộ trình nhiều nguồn, M3–M4).
+"""Model của mọi nguồn cho /models, /connect, /usage và ``peto models`` (lộ trình nhiều nguồn, M3–M5).
 
 Mỗi model là một dict cùng dạng model máy chủ trả trong /me (``key``, ``label``, ``step_cost``, ``efforts``…); model của
 nguồn trực tiếp có thêm ``source``, ``connection`` và ``model`` (mã model thật). Yêu thích và gần đây lưu trong
@@ -11,14 +11,19 @@ from __future__ import annotations
 from . import config, connections
 from .bundle import assembly
 from .providers import PETO, Selection
+from .providers.chatgpt import ChatGPTSource
 from .providers.openai_key import EFFORTS as OPENAI_EFFORTS, OUTPUT_CAP as OPENAI_OUTPUT_CAP, OpenAIKeySource
 
 EFFORT_LABELS = {"none": "không suy luận", "low": "thấp", "medium": "vừa", "high": "cao",
                  "xhigh": "rất cao", "max": "tối đa"}
 # Máy chủ cũ chưa có /model thì chỉ có Peto.
 DEFAULT_MODELS = [{"key": "peto", "label": "Peto", "description": "Mặc định", "step_cost": 1}]
-DIRECT_SOURCES = {OpenAIKeySource.id: OpenAIKeySource()}
-SOURCE_NAMES = {PETO: "Peto", OpenAIKeySource.id: "OpenAI"}
+DIRECT_SOURCES = {OpenAIKeySource.id: OpenAIKeySource(), ChatGPTSource.id: ChatGPTSource()}
+SOURCE_NAMES = {PETO: "Peto", OpenAIKeySource.id: "OpenAI", ChatGPTSource.id: "ChatGPT"}
+# Chữ OpenAI yêu cầu cho chỗ hiện việc dùng gói (UI/UX guidelines); chủ web chọn giữ nguyên tiếng Anh (2026-10-21).
+PLAN_IN_USE = "Using ChatGPT plan"
+PLAN_FEATURE = "Use your ChatGPT plan"
+CONTINUE = "Continue with ChatGPT"
 # Tên hiện trong bảng chọn của các mã model thật; mã vẫn là thứ gõ sau /model.
 DISPLAY = {"gpt-6-luna": "GPT-6 Luna", "gpt-5.6-terra": "GPT-5.6 Terra", "gpt-6.1-sol": "GPT-6.1 Sol"}
 # Model trực tiếp chọn sẵn sau khi kết nối: rẻ trước, vì tiền tính vào tài khoản của chính người dùng.
@@ -40,11 +45,15 @@ def direct_models() -> list[dict]:
         source = DIRECT_SOURCES.get(item.source)
         if source is None:
             continue
+        names = item.extra.get("model_names") if isinstance(item.extra.get("model_names"), dict) else {}
+        plan = item.source == ChatGPTSource.id
         for slug in source.models(item):
             key = slug if slug not in seen else f"{slug}@{item.id}"
             seen.add(slug)
             info = assembly.limits("openai", slug, OPENAI_OUTPUT_CAP)
-            rows.append({"key": key, "label": DISPLAY.get(slug, slug), "description": f"{item.label} · không tính bước Peto",
+            label = str(names.get(slug) or DISPLAY.get(slug, slug))
+            note = PLAN_IN_USE if plan else "không tính bước Peto"
+            rows.append({"key": key, "label": label, "description": f"{item.label} · {note}",
                          "source": item.source, "connection": item.id, "connection_label": item.label,
                          "model": slug, "step_cost": 0, "efforts": list(OPENAI_EFFORTS),
                          "context_limits": {name: info[name] for name in ("identity", "context", "input", "output")}})

@@ -82,10 +82,7 @@ class OpenAIKeySource:
                 yield {"type": "error", "code": "context_overflow",
                        "message": "Ngữ cảnh đã tới ngân sách model; cần tóm tắt trước khi tiếp tục."}
                 return
-        payload = {"model": slug, "instructions": step.instructions, "input": items, "tools": step.tools,
-                   "max_output_tokens": budget["max_output_tokens"], "reasoning": {"effort": request.selection.effort},
-                   "include": ["reasoning.encrypted_content"], "store": False, "stream": True,
-                   **({"tool_choice": "none"} if step.final and step.tools else {})}
+        payload = self._payload(step, budget, items, request.selection)
         purpose = step.special or ("explore" if step.exploring else None)
         produced = False
         client = self.http(connection.endpoint, {"Authorization": f"Bearer {secret}"})
@@ -118,16 +115,24 @@ class OpenAIKeySource:
                     return
                 elif kind in {"response.failed", "error"}:
                     error = (event.get("response") or {}).get("error") if kind == "response.failed" else event
-                    error = error if isinstance(error, dict) else {}
-                    if _overflow(str(error.get("code") or ""), str(error.get("message") or "")) and not produced:
-                        yield {"type": "error", "code": "context_overflow",
-                               "message": "Ngữ cảnh vượt giới hạn model; cần tóm tắt trước khi tiếp tục."}
-                    else:
-                        yield self._error("OpenAI gặp lỗi ở bước này. Thử lại nhé.", retryable=not produced)
+                    yield self._failed(error if isinstance(error, dict) else {}, produced)
                     return
             yield self._error("Kết nối tới OpenAI bị ngắt trước khi xong bước này. Thử lại nhé.", retryable=not produced)
         except ProviderHTTPError as err:
             yield self._http_error(err, connection, slug, produced)
+
+    def _payload(self, step, budget: dict, items: list, selection) -> dict:
+        return {"model": selection.model, "instructions": step.instructions, "input": items, "tools": step.tools,
+                "max_output_tokens": budget["max_output_tokens"], "reasoning": {"effort": selection.effort},
+                "include": ["reasoning.encrypted_content"], "store": False, "stream": True,
+                **({"tool_choice": "none"} if step.final and step.tools else {})}
+
+    def _failed(self, error: dict, produced: bool) -> dict:
+        """Sự kiện response.failed hay error giữa luồng."""
+        if _overflow(str(error.get("code") or ""), str(error.get("message") or "")) and not produced:
+            return {"type": "error", "code": "context_overflow",
+                    "message": "Ngữ cảnh vượt giới hạn model; cần tóm tắt trước khi tiếp tục."}
+        return self._error("OpenAI gặp lỗi ở bước này. Thử lại nhé.", retryable=not produced)
 
     @staticmethod
     def _error(message: str, *, retryable: bool = False, code: str | None = None) -> dict:

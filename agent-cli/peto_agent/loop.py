@@ -111,8 +111,9 @@ class _Retry(Exception):
 
 def portable(items: list[dict]) -> list[dict]:
     """Hội thoại dùng tiếp được với model khác: bỏ suy nghĩ đã mã hóa, vì chỉ model tạo ra nó đọc được, bỏ lượt tìm
-    web của dịch vụ cũ, và bỏ mã item, vì mỗi dịch vụ đặt mã một kiểu."""
-    return [{key: value for key, value in item.items() if key != "id"}
+    web của dịch vụ cũ, bỏ mã item, vì mỗi dịch vụ đặt mã một kiểu, và bỏ namespace của lời gọi công cụ (đường gói
+    ChatGPT, M5), vì nguồn khác không xếp công cụ theo namespace."""
+    return [{key: value for key, value in item.items() if key not in {"id", "namespace"}}
             for item in items if item.get("type") not in {"reasoning", "web_search_call"}]
 
 
