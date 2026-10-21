@@ -25,6 +25,7 @@ from datetime import datetime
 import hashlib
 import json
 from pathlib import Path
+import re
 import statistics
 import sys
 from time import perf_counter
@@ -69,9 +70,11 @@ def _digest(value: str) -> str:
 
 
 def _seen(text: str, number: float) -> bool:
-    """Con số có trong chữ, viết dấu chấm hay dấu phẩy thập phân."""
-    plain = f'{number:.2f}'
-    return plain in text or plain.replace('.', ',') in text
+    """Con số có trong chữ, viết dấu chấm hay dấu phẩy thập phân, đủ hai chữ số lẻ hoặc gọn như Python in ("163.0").
+    Lần chạy thật ngày 21/10/2026, Grok trả "163.0" đúng mà bản chỉ tìm "163.00" báo là không thấy."""
+    forms = {f'{number:.2f}', f'{number:.1f}'} | ({str(int(number))} if number == int(number) else set())
+    pattern = '|'.join(re.escape(form).replace(r'\.', '[.,]') for form in sorted(forms, key=len, reverse=True))
+    return re.search(rf'(?<![\d.,])(?:{pattern})(?![\d]|[.,]\d)', text) is not None
 
 
 async def _events(response: httpx.Response):

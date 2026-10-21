@@ -660,6 +660,21 @@ class MockProvider(ChatProvider):
             yield (f"Tìm thấy {result['matches']} dòng khớp trong {result['file']}:\n\n```text\n{result['text']}\n```"
                    if "error" not in result else f"Chưa tìm được: {result['error']}")
             return
+        # Chạy mã (Peto/xAI, thí điểm 21/10/2026): "__chayma__" cho bản chạy thử thấy bước "Đã chạy mã" có mã và chữ in
+        # ra; "__chayma__:loi" là lần chạy lỗi. Không chạy mã nào thật.
+        if "__chayma__" in last_user:
+            failed = "__chayma__:loi" in last_user
+            yield StreamChunk("code", "running")
+            await asyncio.sleep(_CHUNK_DELAY * 5)
+            yield StreamChunk("code", "done", info={
+                "code": "import statistics\n\nx = [120, 135, 128, 142, 150]\n" + (
+                    "print(sum(x) / 0)" if failed else "print(round(statistics.mean(x), 2))"),
+                "stdout": "" if failed else "135.0\n",
+                "stderr": "ZeroDivisionError: division by zero\n" if failed else "",
+                "exit_code": 1 if failed else 0, "timed_out": False, "status": "completed", "images": 0})
+            yield ("Mã chạy lỗi (chia cho 0), nên mình chưa có kết quả để báo." if failed else
+                   "Trung bình là **135,00** (lấy từ kết quả mã đã chạy). Đây là phản hồi giả, chưa chạy mã thật.")
+            return
         search_requested = web_search == "on" or any(word in last_user.casefold() for word in ("tìm kiếm", "tìm web", "tra web", "tra cứu", "mới nhất", "search"))
         if search_requested:
             reply = (

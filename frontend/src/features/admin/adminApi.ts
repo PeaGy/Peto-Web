@@ -76,7 +76,7 @@ export interface AdminChatMetrics {
   legacy_turns: number;
   summary: { attempts: number; complete: number; source_changed: number; errors: number; cancelled: number;
     sdk_calls: number; usage_calls: number; latency_samples: number; p50_ms: number | null; p95_ms: number | null };
-  tools: { results: number; errors: number; web_errors: number };
+  tools: { results: number; errors: number; web_errors: number; code_runs?: number; code_errors?: number };
   context_overflows: number;
   recovery: { checks: number; complete: number; partial: number; pending: number; missing: number };
 }

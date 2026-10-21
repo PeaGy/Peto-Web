@@ -48,6 +48,39 @@ Evidence JSON goes to `.runtime/probes/` with hashed container/file IDs and secr
 Anthropic key and an expired xAI token, so paid runs belong on the VPS after deploy, only on the owner's go-ahead.
 Tests: `tests/test_code_execution_probe.py` (8), with ops tests 36 passed.
 
+The owner ran both paid probes once on the VPS (2026-10-21; survey section 4e has the details). Both passed:
+- Haiku: one request, 6.6 s; block order `server_tool_use(bash_code_execution)` → `bash_code_execution_tool_result`
+  → text; `container` only in `message_delta`; PNG downloaded (C2PA makes it larger than in the container), deleted,
+  then 404. `usage.server_tool_use` has no `code_execution_requests`, so Peto must count result blocks itself. About
+  6,400 input tokens are the tool's own declaration.
+- xAI: works over Peto's OAuth; events `response.code_interpreter_call.*` and `response.code_interpreter_call_code.*`;
+  items `{code, outputs: [{type: "logs", logs: "<JSON with stdout/stderr/exit_code/command_timed_out>"}]}`; resending
+  items with `store:false` is accepted; usage reports `server_side_tool_usage_details.code_interpreter_calls` and
+  `cost_in_usd_ticks` (1 USD = 10^10 ticks, about $0.007 per request); no output files.
+The probe's number check was too strict ("163.0" vs "163.00"); fixed with a test (9 passed). Recommended pilot order:
+Peto/xAI compute-only code execution first, Haiku with file artifacts only after a privacy/workspace decision, Luna
+later.
+
+Peto/xAI code execution pilot (owner approved, Haiku explicitly not enabled; implemented locally, not committed):
+- Only `XAIProvider.code_interpreter = True`, only in Web Chat (a request snapshot must exist), switch
+  `PETO_XAI_CODE_EXECUTION` (default true; false + restart turns it off). `capabilities.select(code_reason=)` adds
+  `run_code` (`{"type":"code_interpreter"}`); reasons `provider_unsupported`, `server_disabled`, `chat_only`; final and
+  required-web-first rounds disable it like other tools. `prompts/chat.CODE_PROMPT` is appended only when available.
+- `ai/xai.py`: the run's start event / added item opens a step and turns a lead-in into a note like web search;
+  `code_result` parses the nested `logs` JSON (plain strings, images, timeouts too); one step per item id even though
+  the item arrives twice. Stdout only, no files; nothing is executed by Peto itself.
+- `work_log.py` step `code` ("Đã chạy mã" / "Mã chạy lỗi" / "Mã chạy quá thời gian", detail "Python · N dòng · mã thoát
+  X") keeps code and output with newlines, 4,000 characters each, 24,000 per turn, persisted in `messages.work`. Each run
+  records a `chat_event` purpose `code`; the admin Chat metrics show runs and errors. `WorkTimeline.tsx` adds a prompt
+  icon and a "Xem mã và kết quả" disclosure with focusable scrolling `pre` blocks. Mock words `__chayma__`,
+  `__chayma__:loi`.
+- Tests: `tests/test_code_interpreter.py` (7, fake streams from the real event/item shapes), frontend WorkTimeline case;
+  frontend 797/797 (one earlier full run had one uncaptured failure that did not reproduce in two reruns); build passed.
+  Full backend: 1,600 passed, 1 skipped, 1 failed (`test_chat_stage4` pinned the admin `tools` dict without the new
+  `code_runs`/`code_errors`; expectation updated, then stage4/admin/code group 45 passed; no second full run).
+  Mock stack in the in-app Chromium: step, disclosure, F5 persistence, failed styling, 375 px without overflow, no
+  console errors. Real Grok tool choice, overuse, cost and latency after deploy are unverified.
+
 ## Web Chat automatic Runtime Device Context (2026-10-21)
 
 Separately approved after the four Chat stages; device data was not implemented by stage 2. Contract/privacy:

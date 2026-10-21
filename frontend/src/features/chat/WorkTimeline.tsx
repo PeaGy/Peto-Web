@@ -54,6 +54,8 @@ const ICONS = {
   lookup: svg(<><circle cx="11" cy="11" r="6" /><path d="m20 20-4.5-4.5" /></>),
   // Đọc trang từ link người dùng gửi (Claude web_fetch): biểu tượng mắt xích, khác quả cầu của tra web.
   page: svg(<><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1" /><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1" /></>),
+  // Peto chạy mã trong sandbox của dịch vụ AI (xAI): dấu nhắc dòng lệnh.
+  code: svg(<><path d="m5 7 5 5-5 5" /><path d="M12 18h7" /></>),
   done: svg(<path d="m5 12 4.5 4.5L19 7" />),
   failed: svg(<path d="M6 6l12 12M18 6 6 18" />),
   wait: svg(<><circle cx="12" cy="12" r="8" /><path d="M12 8v4l2.5 2" /></>),
@@ -63,6 +65,7 @@ function icon(step: WorkStep) {
   if (step.kind === 'github') return <GitHubIcon size={14} />;
   if (step.kind === 'search') return <GlobeIcon />;
   if (step.kind === 'tool' && (step.state === 'done' || step.state === 'failed')) return ICONS[step.state];
+  if (step.kind === 'code' && step.state === 'failed') return ICONS.failed;
   return ICONS[step.kind as keyof typeof ICONS] ?? ICONS.wait;
 }
 
@@ -125,6 +128,13 @@ function Step({ step, elapsed }: { step: WorkStep; elapsed: number }) {
     {step.problems?.length ? (step.kind === 'github'
       ? <details className="work-more"><summary>Xem mục chưa đọc được</summary><ul>{step.problems.map(item => <li key={item}>{item}</li>)}</ul></details>
       : <ul className="work-problems">{step.problems.map(item => <li key={item}>{item}</li>)}</ul>) : null}
+    {step.kind === 'code' && (step.code || step.output) ? <details className="work-more work-code">
+      <summary>Xem mã và kết quả</summary>
+      {/* Vùng cuộn được nên nhận Tab, như khối code và bảng trong câu trả lời. */}
+      {step.code && <pre tabIndex={0} aria-label="Mã đã chạy"><code>{step.code}</code></pre>}
+      <p className="work-code-label">Kết quả</p>
+      <pre tabIndex={0} aria-label="Kết quả in ra"><code>{step.output || '(không in gì)'}</code></pre>
+    </details> : null}
   </li>;
 }
 

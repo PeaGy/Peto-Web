@@ -21,6 +21,7 @@ from openai import (
 )
 
 from core import usage_events
+from core import config
 from core.config import MAX_HISTORY_IMAGES, XAI_API_BASE, XAI_MAX_OUTPUT_TOKENS, XAI_MODEL, WEB_SEARCH_ENABLED
 from ai.xai_auth import XaiAuth, XaiAuthError
 from shared.attachment_tools import NAMES as FILE_TOOLS, current_files
@@ -31,7 +32,7 @@ from shared.web_search import normalize_sources, search_context
 from shared import chat_history_tools
 from features.chat.context_budget import enforce as enforce_chat_budget, side_output_cap
 from features.chat import capabilities, request_context
-from prompts.chat import (FINALIZING_PROMPT, FOLLOW_UP_PROMPT, GITHUB_PROMPT, NO_GITHUB_PROMPT,
+from prompts.chat import (CODE_PROMPT, FINALIZING_PROMPT, FOLLOW_UP_PROMPT, GITHUB_PROMPT, NO_GITHUB_PROMPT,
                           SEARCH_FALLBACK_PROMPT)
 
 from .base import ChatMessage, ChatProvider, ProviderError, StreamChunk
@@ -157,6 +158,34 @@ def _recent_image_keys(messages: list[ChatMessage], limit: int) -> set[tuple[int
     return set(keys)
 
 
+def code_result(item: dict) -> dict:
+    """Kết quả một lần chạy mã của xAI (item ``code_interpreter_call``). Lần chạy thật ngày 21/10/2026: ``outputs`` là
+    ``[{"type": "logs", "logs": "<JSON>"}]`` và chuỗi ``logs`` lại là JSON gồm stdout, stderr, exit_code,
+    command_timed_out. Chuỗi không phải JSON thì coi cả chuỗi là chữ in ra (dạng của OpenAI)."""
+    stdout, stderr, exit_code, timed_out, images = [], [], None, False, 0
+    for output in item.get('outputs') or []:
+        if not isinstance(output, dict):
+            continue
+        if output.get('type') == 'logs':
+            raw = output.get('logs')
+            try:
+                data = json.loads(raw) if isinstance(raw, str) else None
+            except ValueError:
+                data = None
+            if isinstance(data, dict):
+                stdout.append(str(data.get('stdout') or ''))
+                stderr.append(str(data.get('stderr') or ''))
+                if isinstance(data.get('exit_code'), int) and not isinstance(data.get('exit_code'), bool):
+                    exit_code = data['exit_code']
+                timed_out = timed_out or data.get('command_timed_out') is True
+            elif raw:
+                stdout.append(str(raw))
+        elif output.get('type') == 'image':
+            images += 1
+    return {'code': str(item.get('code') or ''), 'stdout': ''.join(stdout), 'stderr': ''.join(stderr),
+            'exit_code': exit_code, 'timed_out': timed_out, 'status': item.get('status'), 'images': images}
+
+
 class _SearchFallback(Exception):
     """Ngắt lượt tra bị lỗi để dành một lượt tổng hợp từ kết quả đã nhận."""
 
@@ -168,6 +197,9 @@ class ResponsesProvider(ChatProvider):
     name = "responses"
     # Tên dịch vụ trong log máy chủ.
     service = "AI"
+    # Dịch vụ chạy mã Python phía mình (``code_interpreter``) đã được thử thật qua đúng đường kết nối của Peto. Chỉ xAI
+    # (phép thử 21/10/2026); OpenAI chưa thử, khóa riêng của người dùng chỉ ở Companion.
+    code_interpreter = False
     auth_error_message = "Kết nối AI của Peto đã hết hạn. Người quản trị cần đăng nhập lại."
     rate_limit_message = "Peto đang nhận nhiều yêu cầu quá. Đợi chút rồi thử lại nha."
     _client: AsyncOpenAI
@@ -197,11 +229,18 @@ class ResponsesProvider(ChatProvider):
         sources: list[dict] = []
         search_finished = False
         search_ids: set[str] = set()
+        # Lần chạy mã đã báo: item về hai lần (output_item.done rồi response.completed), mỗi lần chạy chỉ một bước.
+        code_ids: set[str] = set()
         usable_search_sources: list[dict] = []
         search_fallback = False
 
         def observe_item(item: dict):
             nonlocal sources, search_finished, usable_search_sources
+            if item.get("type") == "code_interpreter_call" and item.get("status") not in {None, "in_progress", "interpreting"}:
+                key = str(item.get("id") or f"code-{len(code_ids)}")
+                if key not in code_ids:
+                    code_ids.add(key)
+                    yield StreamChunk("code", "done", info=code_result(item))
             if item.get("type") == "web_search_call":
                 # Claude đọc trang từ link (action "fetch") không phải một lượt tra web tính phí theo lượt.
                 if item.get("id") and (item.get("action") or {}).get("type") != "fetch":
@@ -242,6 +281,10 @@ class ResponsesProvider(ChatProvider):
                                       (snapshot.github_state, snapshot.github_reason) if snapshot else
                                       ('unauthorized', 'not_connected'))
         github_schemas = github_session.schemas() if github_session and github_state == 'available' else []
+        # Chạy mã chỉ ở tab Trò chuyện (có snapshot), không ở Companion hay lượt đặt tên/tóm tắt.
+        code_reason = ('provider_unsupported' if not self.code_interpreter else
+                       'server_disabled' if not config.XAI_CODE_EXECUTION else
+                       'chat_only' if snapshot is None or not tools_enabled else None)
         workbooks = bool(document_session and (getattr(document_session, 'workbooks', None)
                                                or getattr(document_session, 'word_files', None)))
         max_rounds = max(MAX_TOOL_ROUNDS, MAX_GITHUB_TOOL_ROUNDS if github_schemas else 0, MAX_WORKBOOK_TOOL_ROUNDS if workbooks else 0)
@@ -259,7 +302,7 @@ class ResponsesProvider(ChatProvider):
                 github_state=github_state, github_reason=github_reason, search_enabled=search_enabled,
                 web_search=web_search, tools_enabled=tools_enabled, finalizing=finalizing,
                 required_search=search_enabled and web_search == 'on' and round_index == 0 and not finalizing,
-                search_fallback=search_fallback)
+                search_fallback=search_fallback, code_reason=code_reason)
             round_started = perf_counter()
             if tools_enabled and not follow_up:
                 # Mốc cho nhật ký "Đang làm": từ đây tới chữ hay lệnh đầu tiên là lúc mô hình suy nghĩ. Lần gọi nhắc làm
@@ -270,6 +313,7 @@ class ResponsesProvider(ChatProvider):
             create_kwargs: dict = {
                 "model": self.model,
                 "instructions": instructions + ('\n\n' + (GITHUB_PROMPT if github_state == 'available' else NO_GITHUB_PROMPT) if tools_enabled else '')
+                                             + ('\n\n' + CODE_PROMPT if code_reason is None else '')
                                              + ('\n\n' + SEARCH_FALLBACK_PROMPT if search_fallback else
                                                  '\n\n' + FINALIZING_PROMPT if finalizing else ''),
                 "input": payload_input,
@@ -341,6 +385,13 @@ class ResponsesProvider(ChatProvider):
                     elif event_type == "response.web_search_call.completed":
                         search_finished = True
                         yield StreamChunk("search", "completed")
+                    elif event_type == "response.code_interpreter_call.in_progress":
+                        # Câu dẫn viết trước lúc chạy mã xử lý như trước lúc tra web: vào nhật ký, không dính vào câu
+                        # trả lời viết sau khi có kết quả.
+                        draft = drop_pre_search_draft()
+                        if draft is not None:
+                            yield draft
+                        yield StreamChunk("code", "running")
                     elif event_type == "peto.page_fetch.started":
                         draft = drop_pre_search_draft()
                         if draft is not None:
@@ -355,6 +406,11 @@ class ResponsesProvider(ChatProvider):
                             if draft is not None:
                                 yield draft
                             yield StreamChunk("search", "searching")
+                        elif item_type == "code_interpreter_call":
+                            draft = drop_pre_search_draft()
+                            if draft is not None:
+                                yield draft
+                            yield StreamChunk("code", "running")
                         elif item_type == "function_call":
                             if held:
                                 yield "\n\n" + "".join(held)
@@ -425,12 +481,12 @@ class ResponsesProvider(ChatProvider):
                 raise ProviderError("Peto gặp lỗi kết nối với dịch vụ AI. Thử lại sau nha.", retryable=err.status_code >= 500) from err
             finally:
                 logger.info(
-                    "model_usage service=%s model=%s purpose=%s round=%d elapsed_ms=%d complete=%s input_tokens=%s output_tokens=%s cached_tokens=%s reasoning_tokens=%s search_calls_seen=%d",
+                    "model_usage service=%s model=%s purpose=%s round=%d elapsed_ms=%d complete=%s input_tokens=%s output_tokens=%s cached_tokens=%s reasoning_tokens=%s search_calls_seen=%d code_calls_seen=%d",
                     self.service, self.model, "chat" if tools_enabled else "title", round_index + 1,
                     round((perf_counter() - round_started) * 1000), completed,
                     usage.get("input_tokens"), usage.get("output_tokens"),
                     (usage.get("input_tokens_details") or {}).get("cached_tokens"),
-                    (usage.get("output_tokens_details") or {}).get("reasoning_tokens"), len(search_ids),
+                    (usage.get("output_tokens_details") or {}).get("reasoning_tokens"), len(search_ids), len(code_ids),
                 )
                 # Khóa riêng của người dùng ghi dịch vụ "byok" và slug "byok/…": trang Quản trị không tính vào chi phí chủ web.
                 usage_events.record(
@@ -558,6 +614,7 @@ class XAIProvider(ResponsesProvider):
 
     name = "xai"
     service = "xAI"
+    code_interpreter = True
 
     def __init__(self) -> None:
         self._auth = XaiAuth()

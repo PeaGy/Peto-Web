@@ -201,7 +201,8 @@ def test_admin_counts_events_without_double_counting_usage_or_mixing_configurati
     assert high['p95_ms'] is None and high['first_p50_ms'] == 200
     assert chat['summary'] == dict(attempts=2, complete=1, source_changed=0, errors=1, cancelled=0,
         sdk_calls=1, usage_calls=1, latency_samples=2, p50_ms=100, p95_ms=100)
-    assert chat['tools'] == dict(results=2, errors=1, web_errors=1)
+    # code_runs/code_errors: lần Peto/xAI chạy mã (thí điểm 21/10/2026), không có trong dữ liệu giả này.
+    assert chat['tools'] == dict(results=2, errors=1, web_errors=1, code_runs=0, code_errors=0)
     assert chat['context_overflows'] == 1 and chat['recovery']['checks'] == 2
     assert stats.summarize([], '24h', now, ZONE, {}, 'missing', None)['chat']['summary']['p50_ms'] is None
 

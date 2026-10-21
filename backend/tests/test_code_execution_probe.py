@@ -21,6 +21,13 @@ def refusing() -> httpx.MockTransport:
     return httpx.MockTransport(handler)
 
 
+def test_number_check_accepts_short_python_forms_but_not_other_numbers():
+    # Lần chạy thật: Grok in "163.0" cho trung vị 163; Haiku in "TB: 161.0" và viết "161.00".
+    assert probe._seen('163.0', 163.0) and probe._seen('trung vị 163', 163.0) and probe._seen('**161,00**', 161.0)
+    assert probe._seen('SD: 21.19', 21.19)
+    assert not probe._seen('1163.0', 163.0) and not probe._seen('163.05', 163.0) and not probe._seen('21.1', 21.19)
+
+
 async def test_dry_run_haiku_reads_blocks_downloads_and_deletes_the_file():
     evidence, _ = await probe.run('haiku', False)
     request = evidence['requests'][0]

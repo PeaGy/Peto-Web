@@ -13,7 +13,8 @@ export function ChatMetrics({ data }: { data?: AdminChatMetrics }) {
         <small>{num(data.summary.errors)} lỗi · {num(data.summary.source_changed)} nguồn đổi · {num(data.summary.cancelled)} bị ngắt</small>
         <small>{num(data.summary.sdk_calls)} request AI, {num(data.summary.usage_calls)} có usage · p50/p95 {secs(data.summary.p50_ms)} / {secs(data.summary.p95_ms)} (n={num(data.summary.latency_samples)})</small></div>
       <div><dt>Ngữ cảnh vượt hạn mức</dt><dd>{num(data.context_overflows)} lượt</dd></div>
-      <div><dt>Lỗi công cụ</dt><dd>{num(data.tools.errors)} / {num(data.tools.results)} kết quả</dd><small>{num(data.tools.web_errors)} lượt tìm hoặc mở trang lỗi</small></div>
+      <div><dt>Lỗi công cụ</dt><dd>{num(data.tools.errors)} / {num(data.tools.results)} kết quả</dd><small>{num(data.tools.web_errors)} lượt tìm hoặc mở trang lỗi</small>
+        <small>{num(data.tools.code_runs ?? 0)} lần Peto chạy mã · {num(data.tools.code_errors ?? 0)} lần lỗi</small></div>
       <div><dt>Đọc lịch sử để phục hồi</dt><dd>{num(data.recovery.checks)} lần</dd>
         <small>{num(data.recovery.complete)} đầy đủ · {num(data.recovery.partial)} một phần · {num(data.recovery.pending)} đang chạy · {num(data.recovery.missing)} chưa có reply</small></div>
     </dl>

@@ -83,7 +83,7 @@ export interface Message {
 /** Một bước trong nhật ký "Đang làm". ``start``/``end`` là mili giây tính từ đầu lượt, theo đồng hồ máy chủ. */
 export interface WorkStep {
   id: string;
-  kind: 'wait' | 'read' | 'think' | 'note' | 'compose' | 'tool' | 'lookup' | 'github' | 'search' | 'page';
+  kind: 'wait' | 'read' | 'think' | 'note' | 'compose' | 'tool' | 'lookup' | 'github' | 'search' | 'page' | 'code';
   label: string;
   state: 'live' | 'done' | 'failed' | 'stopped';
   start: number;
@@ -93,6 +93,9 @@ export interface WorkStep {
   summary?: string;
   /** Lỗi từng dòng (sửa tệp bị từ chối) hoặc mục chưa đọc được (GitHub). */
   problems?: string[];
+  /** Bước chạy mã (Peto/xAI): mã đã chạy và chữ in ra, máy chủ đã cắt. */
+  code?: string;
+  output?: string;
 }
 
 export interface WorkLog {

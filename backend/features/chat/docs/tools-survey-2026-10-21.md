@@ -228,13 +228,100 @@ phần chạy mã), nhưng đổi phiên bản sẽ đổi hành vi và cách t�
   trước request khi thiếu thông tin xác thực; khóa chỉ nằm trong header, không vào bằng chứng; lỗi HTTP dừng ngay; tiếp
   `pause_turn` với cùng container; xAI không refresh token.
 
+## 4e. Kết quả phép thử thật trên VPS (21/10/2026, chủ web chạy)
+
+Mỗi bên một lần chạy (`.runtime/probes/20261021-164101-haiku.json`, `20261021-164233-xai.json` trên VPS). Một lần
+chạy chứng minh đường kết nối và hình dạng dữ liệu, chưa chứng minh độ ổn định.
+
+**A — Haiku (`claude-haiku-5-5`, khóa máy chủ, `code_execution_20260521`, adaptive/low):** đạt.
+- Một request, `end_turn`, 6,6 giây; không có `pause_turn`, không có block thinking (`thinking_tokens` 0).
+- Thứ tự block: `server_tool_use` (`bash_code_execution`, có `command`) → `bash_code_execution_tool_result`
+  (`return_code` 0, `stdout`, `stderr`, `content[].file_id`) → `text`. Sự kiện có thêm `ping`; kết quả chạy mã đến
+  nguyên khối trong `content_block_start`.
+- `container` chỉ có ở `message_delta`. `expires_at` là mốc gia hạn khoảng 1 giờ, không phải giới hạn 30 ngày.
+- `chart.png` tải được, `expires_at: null` (Peto phải tự xóa), xóa xong kiểm lại ra 404. Tệp tải về 26.804 byte so với
+  21.034 byte trong container vì Anthropic gắn chứng nhận C2PA; không so checksum giữa hai bản.
+- **Khác tài liệu:** `usage.server_tool_use` chỉ có `web_search_requests`/`web_fetch_requests`, không có
+  `code_execution_requests`. Muốn ghi chi phí, Peto phải tự đếm số block kết quả.
+- **Chi phí ngữ cảnh:** 6.773 token đầu vào trong khi câu hỏi chỉ vài trăm token, nên riêng phần khai báo công cụ
+  khoảng 6.400 token. Cộng thêm tối thiểu 5 phút thời gian chạy mã mỗi request (trừ vào giờ miễn phí).
+- Câu trả lời nhắc `$OUTPUT_DIR` với người dùng; prompt thí điểm phải dặn chỉ nói về tệp đính kèm.
+
+**B — Peto (`grok-4.7`, OAuth của web, `code_interpreter`, `store:false`):** đạt.
+- `auth_mode: oauth`: đường đăng nhập Grok CLI của Peto dùng được công cụ phía xAI.
+- Sự kiện: `response.code_interpreter_call.in_progress|interpreting|completed`,
+  `response.code_interpreter_call_code.delta|done`, cộng các sự kiện reasoning và chữ thông thường.
+- Item `code_interpreter_call` gồm `id`, `status`, `code`, `outputs`. `outputs` là
+  `[{"type":"logs","logs":"<JSON>"}]`, trong đó `logs` là một chuỗi JSON chứa `stdout`, `stderr`, `exit_code`,
+  `command_timed_out`; phải parse thêm một lớp. Có item reasoning trước và sau lần chạy.
+- Request 2 gửi lại các item cũ (`store:false`) và được nhận; Grok chạy mã lần nữa, ra trung vị 163.0 đúng (bản đầu của
+  script chỉ tìm "163.00" nên báo sai là không thấy; đã sửa).
+- Usage có `num_server_side_tools_used`, `server_side_tool_usage_details.code_interpreter_calls` = 1, `context_details`
+  và `cost_in_usd_ticks` 69.754.000 / 70.658.400. Theo tài liệu cost tracking của xAI, 1 USD = 10^10 tick và đây là số
+  đã tính phí sau giảm giá, tức khoảng $0,0070 mỗi request (kể cả lượt chạy mã). Mỗi request 6,4 và 5,7 giây;
+  `input_tokens` 4.513 và 5.108, trong đó 3.200 và 3.456 token đọc từ cache.
+- Không có tệp đầu ra (đúng như tài liệu): chỉ có mã và stdout.
+- Ghi chú bên lề: `cost_in_usd_ticks` cho phép trang Quản trị ghi chi phí thật của Grok, hiện đang để "chưa có giá".
+  Đó là việc riêng, không thuộc công cụ.
+
+**Hệ quả cho tích hợp:** adapter hiện bỏ qua cả hai loại sự kiện và item này (`xai.py` `observe_item`, `claude.py`
+`NATIVE_BLOCK_TYPES`), nên bật công cụ mà không sửa adapter thì người dùng chỉ thấy câu trả lời, không thấy mã đã chạy.
+
+**Đề xuất cập nhật thứ tự thí điểm** (thay mục 3b cũ, chờ chủ web chọn):
+1. **Peto/xAI chạy mã tính toán, không có tệp.** Peto là model mặc định; dữ liệu vốn đã gửi xAI trong hội thoại; không
+   có Files API nên không có thêm chỗ lưu dữ liệu người dùng. Phạm vi sửa: thêm `{"type":"code_interpreter"}` vào kế
+   hoạch công cụ của xAI (capability `run_code`, Chat, không có ở Companion); ánh xạ sự kiện sang bước "Đã chạy mã"
+   trong nhật ký "Đang làm", kèm mã và stdout/exit code đã cắt; xử lý câu dẫn trước lần chạy như trước tìm web; ghi
+   `code_interpreter_calls` vào usage. Luna và Haiku hiện "unavailable" trong manifest. Nghiệm thu: test với stream
+   giả dựng từ đúng sự kiện thật ở trên, rồi chủ web thử trên app.
+2. **Haiku chạy mã có tệp biểu đồ/bảng.** Chỉ làm sau khi chủ web quyết định việc tệp ở workspace Anthropic tới 30 ngày
+   (không có ZDR; nên tách workspace riêng cho Peto). Cần thêm: ánh xạ block, giữ `container` trong lượt, tải tệp
+   thành artifact của Peto rồi xóa, cộng 6.400 token khai báo vào ngân sách ngữ cảnh, tự đếm lượt chạy.
+3. Luna: chưa thử, để sau.
+
+## 4f. Thí điểm Peto/xAI chạy mã tính toán (chủ web duyệt 21/10/2026; chưa commit/deploy)
+
+- **Phạm vi:** chỉ model Peto (xAI) ở tab Trò chuyện; không có ở Companion, lượt đặt tên/tóm tắt, Luna, Haiku (Haiku
+  chưa bật theo quyết định của chủ web). Chỉ có chữ in ra, không có tệp. Công tắc `PETO_XAI_CODE_EXECUTION` (mặc định
+  `true`, ghi trong `.env.example`): đặt `false` rồi khởi động lại backend là tắt cho mọi người.
+- **Capability:** `capabilities.select(code_reason=…)` thêm `run_code` với schema `{"type":"code_interpreter"}`. Chỉ
+  `XAIProvider.code_interpreter = True`. Lý do khi không có: `provider_unsupported` (Luna/Haiku), `server_disabled`,
+  `chat_only`. Vòng cuối và lượt bắt buộc tìm web trước tắt công cụ như các capability khác. `CODE_PROMPT` (tiếng
+  Anh) chỉ ghép khi công cụ có trong lượt: khi nào nên chạy mã, sandbox không có mạng và không mở được tệp đã gửi, chỉ
+  có chữ in ra, lấy số từ kết quả, báo lỗi/hết giờ, không nhắc đường dẫn sandbox.
+- **Provider** (`ai/xai.py`): `response.code_interpreter_call.in_progress` và `output_item.added` loại
+  `code_interpreter_call` mở bước, và đưa câu dẫn viết trước đó vào nhật ký như trước lúc tra web. Item hoàn tất được
+  `code_result` đọc (chuỗi `logs` JSON lồng, dạng chuỗi thường, hình, `command_timed_out`). Mỗi id chỉ báo một lần,
+  dù item về cả ở `output_item.done` lẫn `response.completed`. Log `model_usage` thêm `code_calls_seen`.
+- **Nhật ký** (`work_log.py`): bước `code` "Đang chạy mã…" → "Đã chạy mã" / "Mã chạy lỗi" / "Mã chạy quá thời gian",
+  `detail` "Python · N dòng · mã thoát X". Mã và chữ in ra (stderr có nhãn `[stderr]`) giữ nguyên dòng, mỗi thứ tối đa
+  4.000 ký tự, cả lượt 24.000. Lưu trong `messages.work`, nên tải lại trang vẫn thấy. Mỗi lần chạy ghi sự kiện
+  `chat_event` purpose `code` (ok/error); trang Quản trị hiện số lần chạy và số lần lỗi.
+- **Giao diện** (`WorkTimeline.tsx`): biểu tượng dấu nhắc lệnh (dấu × khi lỗi); "Xem mã và kết quả" mở mã và kết quả
+  trong khung viền trái như tóm tắt suy nghĩ. Khung cuộn được, nhận Tab, có vòng focus; giữ xuống dòng, không làm trang
+  cuộn ngang trên điện thoại.
+- **Mock:** `__chayma__` (chạy đúng) và `__chayma__:loi` (lỗi chia cho 0) trong `ai/mock.py`; không chạy mã thật.
+- **Kiểm thử:**
+  - Backend `tests/test_code_interpreter.py` (7 ca), stream giả dựng theo đúng sự kiện thật: trạng thái capability,
+    đọc `logs` JSON lồng và các dạng khác, đúng một bước mỗi lần chạy, câu dẫn thành bản nháp, không có công cụ khi
+    không có snapshot / công tắc tắt / dịch vụ khác, giới hạn kích thước, lượt chat qua API lưu bước và ghi usage.
+  - Frontend: `WorkTimeline.test.tsx` thêm 1 ca; toàn bộ frontend 797/797. Một lần chạy đầu có 1 test lỗi mà mình không
+    ghi được tên; hai lần chạy lại đều đạt hết. Build và typecheck đạt.
+  - Toàn bộ backend: 1.600 đạt, 1 bỏ qua, 1 lỗi. Lỗi ở `test_chat_stage4`: test so khớp chính xác dict `tools` của
+    trang Quản trị, chưa có hai khóa mới `code_runs`/`code_errors`. Đã cập nhật kỳ vọng; chạy lại nhóm stage 4,
+    Quản trị và chạy mã: 45 đạt. Chưa chạy lại toàn bộ lần hai.
+  - Trình duyệt (stack mock, Chromium trong app): bước hiện đúng, mở được mã/kết quả, tải lại trang vẫn còn, lần lỗi tô
+    đỏ, khung 375 px không tràn, không có lỗi console.
+- **Chưa kiểm:** Grok thật có chọn chạy mã đúng lúc không, có lạm dụng không, và chi phí/độ trễ thực tế sau khi deploy;
+  điện thoại thật và trình đọc màn hình. Phép thử B chỉ chứng minh đường kết nối.
+
 ## 5. Mức kiểm chứng
 
 - **Đợt khảo sát này:** chỉ đọc code (có một lệnh Python cục bộ, không gọi mạng, để liệt kê tên tool của Agent) và
   tài liệu. Không chạy test, không gọi model.
 - **Mock/unit sau này:** chứng minh cấu trúc, phạm vi, giao thức; không chứng minh chất lượng chẩn đoán.
 - **UI với API giả:** chứng minh hiển thị và luồng; không chứng minh nhà cung cấp chấp nhận request.
-- **Model thật/production:** chưa có gì cho các đề xuất này. Cần phép thử 3a, eval thật hoặc kiểm tra của chủ web.
+- **Model thật/production:** chỉ có hai phép thử 3a ở mục 4e (mỗi bên một lần). P1/P2 chưa được đo bằng eval thật.
 
 ## Nguồn
 

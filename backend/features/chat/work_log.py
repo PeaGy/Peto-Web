@@ -25,6 +25,9 @@ MAX_PROBLEM_CHARS = 300
 NOTE_LIMIT = 600
 # Bước suy nghĩ không có tóm tắt mà ngắn hơn chừng này (chỉ là thời gian chờ chữ đầu tiên) thì bỏ khi lưu.
 SHORT_THOUGHT_MS = 1_500
+# Chạy mã (Peto/xAI): mã và chữ in ra của mỗi lần chạy, giữ nguyên dòng; cả lượt có giới hạn để cột work không phình.
+MAX_CODE_CHARS = 4_000
+MAX_TOTAL_CODE = 24_000
 
 # Công cụ có tham số dài: Grok soạn lệnh mất thời gian thấy được, nên có bước "soạn" riêng.
 COMPOSE = {
@@ -45,6 +48,14 @@ def _done_label(label: str) -> str:
 def _clip(text: str, limit: int) -> str:
     text = ' '.join(str(text or '').split())
     return text if len(text) <= limit else text[:limit - 1] + '…'
+
+
+def _keep(text: str, limit: int) -> str:
+    """Cắt nhưng giữ xuống dòng và thụt lề (mã, chữ in ra), khác ``_clip`` gộp khoảng trắng."""
+    text = str(text or '').rstrip()
+    if limit <= 0:
+        return ''
+    return text if len(text) <= limit else text[:max(0, limit - 1)] + '…'
 
 
 def _number(value: int) -> str:
@@ -77,7 +88,7 @@ def read_detail(document: dict | None) -> str:
 @dataclass
 class Step:
     id: str
-    kind: str                  # read | think | note | compose | tool | lookup | github | search | page
+    kind: str                  # read | think | note | compose | tool | lookup | github | search | page | code
     label: str
     start: int
     state: str = 'live'        # live | done | failed | stopped
@@ -85,6 +96,9 @@ class Step:
     detail: str = ''
     summary: str = ''
     problems: list[str] = field(default_factory=list)
+    # Bước chạy mã: mã đã chạy và chữ in ra (stdout, stderr) đã cắt.
+    code: str = ''
+    output: str = ''
 
     def public(self) -> dict:
         data = {'id': self.id, 'kind': self.kind, 'label': self.label, 'state': self.state, 'start': self.start}
@@ -96,6 +110,10 @@ class Step:
             data['summary'] = self.summary
         if self.problems:
             data['problems'] = self.problems
+        if self.code:
+            data['code'] = self.code
+        if self.output:
+            data['output'] = self.output
         return data
 
 
@@ -112,6 +130,7 @@ class WorkLog:
         self.github_read = self.github_failed = 0
         self.searches = 0
         self.pages_read = self.pages_failed = 0
+        self.code_chars = 0
 
     def now(self) -> int:
         return max(0, round((self.clock() - self.started) * 1000))
@@ -314,6 +333,35 @@ class WorkLog:
             return 'Không đọc được trang' if self.pages_failed <= 1 else f'Không đọc được {self.pages_failed} trang'
         label = 'Đã đọc trang' if self.pages_read == 1 else f'Đã đọc {self.pages_read} trang'
         return label + (f' · {self.pages_failed} trang không đọc được' if self.pages_failed else '')
+
+    def code(self, status: str, info: dict | None = None) -> str:
+        """Peto chạy mã trong sandbox của xAI (thí điểm 21/10/2026): ``running`` mở bước, ``done`` ghi mã, chữ in ra và
+        mã thoát. Mỗi lần chạy một bước riêng; mã lỗi, hết giờ hay thoát khác 0 là bước lỗi, Peto không coi là kết quả."""
+        step = self._live('code')
+        if status == 'running':
+            return '' if step else self._begin('code', 'Đang chạy mã…')[1]
+        events = ''
+        if step is None:
+            step, events = self._begin('code', 'Đang chạy mã…')
+            if step is None:
+                return events
+        info = info or {}
+        code = _keep(info.get('code'), min(MAX_CODE_CHARS, MAX_TOTAL_CODE - self.code_chars))
+        self.code_chars += len(code)
+        printed = str(info.get('stdout') or '').rstrip()
+        if str(info.get('stderr') or '').strip():
+            printed += ('\n' if printed else '') + '[stderr]\n' + str(info['stderr']).rstrip()
+        output = _keep(printed, min(MAX_CODE_CHARS, MAX_TOTAL_CODE - self.code_chars))
+        self.code_chars += len(output)
+        exit_code, timed_out = info.get('exit_code'), info.get('timed_out') is True
+        failed = timed_out or info.get('status') not in (None, 'completed') or exit_code not in (None, 0)
+        lines = len(str(info.get('code') or '').splitlines())
+        detail = ' · '.join(part for part in (
+            'Python', f'{lines} dòng' if lines else '', f'mã thoát {exit_code}' if exit_code not in (None, 0) else '',
+            f'{info["images"]} hình không hiển thị' if info.get('images') else '') if part)
+        label = 'Mã chạy quá thời gian' if timed_out else 'Mã chạy lỗi' if failed else 'Đã chạy mã'
+        return events + self._finish(step, label, state='failed' if failed else 'done', detail=detail, code=code,
+                                     output=output)
 
     def sources(self, count: int) -> str:
         step = next((item for item in reversed(self.steps) if item.kind == 'search'), None)

@@ -43,6 +43,9 @@ XAI_API_BASE = os.getenv("XAI_BASE_URL", "https://api.x.ai/v1").strip()
 XAI_MAX_OUTPUT_TOKENS = _env_int("XAI_MAX_OUTPUT_TOKENS", 8192, 128, 32000)
 DEFAULT_TIMEZONE = os.getenv("PETO_DEFAULT_TIMEZONE", "Asia/Ho_Chi_Minh").strip()
 WEB_SEARCH_ENABLED = os.getenv("PETO_WEB_SEARCH_ENABLED", "true").strip().lower() in {"1", "true", "yes"}
+# Peto (xAI) chạy mã Python trong sandbox của xAI để tính toán ở tab Trò chuyện (thí điểm 21/10/2026, chỉ có chữ in ra,
+# không có tệp). Tính phí theo lượt chạy ở xAI. false: tắt cho mọi người mà không cần sửa code.
+XAI_CODE_EXECUTION = os.getenv("PETO_XAI_CODE_EXECUTION", "true").strip().lower() in {"1", "true", "yes"}
 # Trí nhớ Companion (companion_memory.py): sau mỗi lượt Companion, một lượt gọi model nhỏ chạy nền rút ra điều đáng
 # nhớ. Tắt ở đây thì cả web không ghi, không dùng ghi nhớ, dù người dùng bật trong Cài đặt.
 COMPANION_MEMORY_ENABLED = os.getenv("PETO_COMPANION_MEMORY", "true").strip().lower() in {"1", "true", "yes"}

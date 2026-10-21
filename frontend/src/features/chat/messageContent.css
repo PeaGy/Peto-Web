@@ -92,7 +92,7 @@
 @media (hover: hover) and (pointer: fine) { .work-head:hover { color: var(--text); } }
 .work-head.static { cursor: default; }
 @media (hover: hover) and (pointer: fine) { .work-head.static:hover { color: var(--muted); } }
-.work-head:focus-visible, .work-item summary:focus-visible, .work-more summary:focus-visible {
+.work-head:focus-visible, .work-item summary:focus-visible, .work-more summary:focus-visible, .work-code pre:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 3px;
   border-radius: 4px;
@@ -165,6 +165,18 @@
   line-height: 1.6;
   overscroll-behavior: contain;
 }
+/* Mã Peto đã chạy và chữ in ra: cùng kiểu viền trái như tóm tắt suy nghĩ, giữ dòng, cuộn ngang khi dài. */
+.work-code pre {
+  max-height: 240px;
+  overflow: auto;
+  margin: 6px 0 2px;
+  padding-left: 12px;
+  border-left: 2px solid var(--line);
+  white-space: pre;
+  overscroll-behavior: contain;
+}
+.work-code pre code { font-family: Consolas, "Cascadia Code", monospace; font-size: 12.5px; line-height: 1.55; color: var(--text); }
+.work-code-label { margin: 8px 0 0; }
 .work-thought p { margin: 0 0 8px; }
 .work-thought p:last-child { margin-bottom: 0; }
 .work-thought strong { display: block; color: var(--text); font-weight: 600; }

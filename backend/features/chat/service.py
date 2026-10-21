@@ -368,6 +368,15 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                 if log:
                     steps = log.github(chunk.text, chunk.kind == "connector_lookup")
                 return steps + sse({"type": "connector_lookup", "text": chunk.text, "live": chunk.kind == "connector_lookup"})
+            if chunk.kind == 'code':
+                # Mỗi lần chạy mã ghi một sự kiện không có nội dung cho trang Quản trị (lượt chạy, lượt lỗi).
+                if mode == 'chat' and chunk.text == 'done':
+                    info = chunk.info or {}
+                    failed = info.get('timed_out') is True or info.get('status') not in (None, 'completed') \
+                        or info.get('exit_code') not in (None, 0)
+                    usage_events.record('chat_event', service=ai_models.MODELS[model].service, model=model,
+                        surface='chat', effort=effort, purpose='code', outcome='error' if failed else 'ok')
+                return (log.code(chunk.text, chunk.info) if log else '') or None
             if chunk.kind == "search":
                 if mode == 'chat' and chunk.text == 'failed':
                     usage_events.record('chat_event', service=ai_models.MODELS[model].service, model=model,

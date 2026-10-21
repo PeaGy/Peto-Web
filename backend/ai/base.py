@@ -52,11 +52,13 @@ class StreamChunk:
     Các mốc cho nhật ký "Đang làm" (``features/chat/work_log.py``): ``round`` là một lần gọi mô hình bắt đầu; ``tool``
     là mô hình bắt đầu viết lệnh gọi công cụ (``text`` là tên công cụ); ``note`` là lượt gọi vừa xong có chữ rồi mới gọi
     công cụ (chữ đó là câu dẫn); ``tool_result`` là kết quả gọn của một công cụ tạo/sửa tệp trong ``info``.
+    ``code`` là dịch vụ AI chạy mã trong sandbox của nó (Peto/xAI): ``running``, rồi ``done`` với mã, chữ in ra và mã
+    thoát trong ``info`` (ai/xai.code_result).
     """
 
     # "text" | "thinking" | "search" | "sources" | "document_status" | "artifact" | "replace" | "file_lookup"
     # | "file_lookup_done" | "connector_lookup" | "connector_lookup_done" | "pulse" | "round" | "tool" | "note"
-    # | "tool_result" | "page"
+    # | "tool_result" | "page" | "code"
     kind: str
     text: str = ""
     sources: tuple[dict, ...] = field(default_factory=tuple)

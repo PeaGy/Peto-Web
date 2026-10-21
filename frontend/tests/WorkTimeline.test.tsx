@@ -104,3 +104,28 @@ it('xong lượt thì cả khối tự thu lại, kể cả khi đã mở lúc �
   expect(screen.getByRole('button', { name: 'Đã làm trong 5 giây' }).getAttribute('aria-expanded')).toBe('false');
   expect(document.querySelector('.work-timeline')).toBeNull();
 });
+
+it('chạy mã (Peto/xAI): bước có biểu tượng riêng, mở "Xem mã và kết quả" thấy đúng mã và chữ in ra, lần lỗi tô đỏ', () => {
+  const code: WorkStep[] = [
+    { id: 'code-1', kind: 'code', label: 'Đã chạy mã', state: 'done', start: 1000, end: 3000, detail: 'Python · 2 dòng',
+      code: 'import statistics\nprint(round(statistics.mean(x), 2))', output: '161.0' },
+    { id: 'code-2', kind: 'code', label: 'Mã chạy lỗi', state: 'failed', start: 3000, end: 4000,
+      detail: 'Python · 1 dòng · mã thoát 1', code: 'print(1 / 0)', output: '[stderr]\nZeroDivisionError: division by zero' },
+    { id: 'code-3', kind: 'code', label: 'Đã chạy mã', state: 'done', start: 4000, end: 4500, code: 'x = 1' },
+  ];
+  const { container } = render(<WorkTimeline work={{ ms: 5000, steps: code, complete: true }} live={false} answering />);
+  fireEvent.click(screen.getByRole('button', { name: 'Đã làm trong 5 giây' }));
+  expect(screen.getByText('Python · 2 dòng')).toBeTruthy();
+  expect(container.querySelector('.work-item.failed')?.textContent).toContain('Mã chạy lỗi');
+  const toggles = screen.getAllByText('Xem mã và kết quả');
+  expect(toggles).toHaveLength(3);
+  fireEvent.click(toggles[0]);
+  const shown = toggles[0].closest('details')!;
+  shown.open = true;
+  // Mã giữ nguyên xuống dòng; vùng cuộn nhận Tab.
+  const code0 = shown.querySelector('pre[aria-label="Mã đã chạy"]')!;
+  expect(code0.textContent).toBe('import statistics\nprint(round(statistics.mean(x), 2))');
+  expect(code0.getAttribute('tabindex')).toBe('0');
+  expect(shown.querySelector('pre[aria-label="Kết quả in ra"]')!.textContent).toBe('161.0');
+  expect(container.querySelectorAll('pre[aria-label="Kết quả in ra"]')[2].textContent).toBe('(không in gì)');
+});

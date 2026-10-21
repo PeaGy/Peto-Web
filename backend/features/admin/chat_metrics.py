@@ -11,6 +11,8 @@ def summarize(rows, percentile):
     summary_times = [row['elapsed_ms'] for row in summary if row.get('elapsed_ms') is not None]
     recoveries = Counter(row.get('outcome') for row in events if row.get('purpose') == 'recovery')
     tools = [row for row in events if row.get('purpose') == 'tool']
+    # Lần Peto chạy mã trong sandbox của xAI (thí điểm 21/10/2026), tính riêng với kết quả công cụ của Peto.
+    code = [row for row in events if row.get('purpose') == 'code']
     groups, legacy = {}, 0
     for row in rows:
         if row.get('kind') != 'turn' or row.get('surface') != 'chat':
@@ -42,6 +44,7 @@ def summarize(rows, percentile):
                 row.get('output_tokens') is not None for row in summary_calls), 'latency_samples': len(summary_times),
             'p50_ms': percentile(summary_times, .5), 'p95_ms': percentile(summary_times, .95)},
         'tools': {'results': len(tools), 'errors': sum(row.get('outcome') == 'error' for row in tools),
-                  'web_errors': sum(row.get('purpose') == 'web' and row.get('outcome') == 'error' for row in events)},
+                  'web_errors': sum(row.get('purpose') == 'web' and row.get('outcome') == 'error' for row in events),
+                  'code_runs': len(code), 'code_errors': sum(row.get('outcome') == 'error' for row in code)},
         'context_overflows': sum(row.get('purpose') == 'context' and row.get('outcome') == 'overflow' for row in events),
         'recovery': {'checks': sum(recoveries.values()), **{key: recoveries[key] for key in ('complete', 'partial', 'pending', 'missing')}}}
