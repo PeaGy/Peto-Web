@@ -54,7 +54,7 @@ from features.chat.history import (
     _visible,
     context_rows,
 )
-from features.chat.prompt_context import _build_system_prompt
+from features.chat.prompt_context import _build_system_prompt, has_text_files
 from prompts.chat import DOCUMENT_MODE_PROMPT
 from features.chat.schemas import (
     ALLOWED_EFFORTS,
@@ -509,17 +509,18 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                     step = log.read_done("Đã đọc lại tài liệu đã gửi trước đó") if log else ""
                     yield sse({"type": "reading", "text": ""}) + step
                 active_rows = context_rows(rows)
+                # Danh mục tệp của cả hội thoại (lọc theo chủ tài khoản): cũng quyết định có kèm cách đọc log hay không.
+                indexed = await chat_context.store.file_index(owner, conversation_id) if mode == 'chat' else []
                 prompt_task = _build_system_prompt(owner, mode, install_command, conversation_id,
                         agent_question='\n'.join(str(row.get('content', ''))[:4000]
                             for row in [r for r in active_rows if r.get('role') == 'user' and r.get('turn_state') != 'stopped'][-3:]), model=model,
-                        memory=own_key is None)
+                        memory=own_key is None, text_files=has_text_files(indexed))
                 if mode == 'chat':
                     # Context Chat dựng history một lần theo ngân sách; không đọc/base64 ảnh hai lần.
                     history, system_prompt = [], await prompt_task
                 else:
                     history, system_prompt = await asyncio.gather(
                         anyio.to_thread.run_sync(_to_chat_messages, active_rows, project_documents), prompt_task)
-                indexed = await chat_context.store.file_index(owner, conversation_id) if mode == 'chat' else []
                 generated = await chat_context.store.artifact_index(owner, conversation_id) if mode == 'chat' else []
                 inventory = sorted([*indexed, *generated], key=lambda item: item['message_id'])
                 tool_rows = [*({'artifacts': [item], 'generated_documents': [item]} if 'version' in item

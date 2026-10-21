@@ -1,7 +1,7 @@
 """Chỉ dẫn gửi cho model, toàn bộ bằng tiếng Anh (chủ web chọn ngày 2026-10-18 để bớt token).
 
 - ``core``: lõi Peto dùng chung cho Chat, Agent và /btw.
-- ``chat``: tab Trò chuyện (``chat_prompt``), tìm web, công cụ tạo/sửa tệp.
+- ``chat``: tab Trò chuyện (``chat_prompt``), tìm web, công cụ tạo/sửa tệp, cách đọc log khi có tệp chữ.
 - ``agent``: Peto Agent (CLI).
 - ``providers``: đoạn riêng theo nhà cung cấp, ghép sau prompt chung như opencode.
 - ``companion``, ``companion_runtime``: Companion, persona riêng.
@@ -11,6 +11,7 @@
 from features.agent.guide import build_agent_guide
 from .core import CORE_PROMPT
 from .chat import (
+    LOG_PROMPT,
     WEB_PROMPT,
     chat_prompt,
 )

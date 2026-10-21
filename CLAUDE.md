@@ -1,5 +1,31 @@
 # CLAUDE.md
 
+## Tools survey and log workflow (2026-10-21)
+
+Codex handed the tools research to Claude (`CLAUDE_TOOLS_HANDOFF.md`). The report and incremental plan are in
+`backend/features/chat/docs/tools-survey-2026-10-21.md`: code-backed inventory (Web Chat has no code execution;
+Agent runs commands on the user's machine), proposals P1 log workflow, P2 structured readback of created documents,
+P3 provider code execution. Code execution findings: Haiku 5.5 is documented for `code_execution_*` (Files API is
+workspace-scoped, no ZDR, minimum 5 minutes billed); xAI is unverified over Peto's Grok-CLI OAuth and documents no
+output files. Two paid probes are written up, not run. Proposals are approved one at a time.
+
+The owner approved P1 only (no paid eval). Implemented locally, not committed or deployed:
+- `prompts/chat.LOG_PROMPT` (English, ~1,900 chars): reading status first, one combined `search_attachment` before
+  firm conclusions, root failure, suspects ranked by evidence (named in the root error/failing config > top frame
+  owner > merely present), real line numbers, confidence labels, no private log data in web search.
+- Attached only in Chat when the conversation's stored files include a `TEXT_MIMES` file
+  (`prompt_context.has_text_files`, from `file_index` fetched before the prompt in `service.py`), never from user
+  wording. It sits before profile/memory blocks, so it stays in the cached prefix. Pasted logs, PDF/Word logs and
+  Companion do not get it.
+- `search_attachment` description adds a cause-chain query example. `reader.ROOT_SIGNAL` adds mixin failure patterns:
+  a synthetic modpack log with 100–400 distinct earlier errors dropped the only line naming the mod from the excerpt;
+  now kept. `TEXT_FORMAT` unchanged, so stored excerpts are not re-read.
+- Tests: `tests/test_log_workflow.py` (6, synthetic logs only; the excerpt case fails with the old pattern). Eval:
+  `evals/chat-log-cases.json` (3 cases); the eval prompt builder passes `text_files` like the app. Mock run for
+  Peto/Luna/Haiku completed 9/9 turns with the guide in every prompt; mock text cannot pass content checks and no LIVE
+  run was made. Related backend group: 264 passed; full backend 1,578 passed, 1 skipped (348.63s); diff check passed.
+  Deploy = restart the backend after the owner commits; no frontend, migration, `.env` or CLI change.
+
 ## Web Chat automatic Runtime Device Context (2026-10-21)
 
 Separately approved after the four Chat stages; device data was not implemented by stage 2. Contract/privacy:

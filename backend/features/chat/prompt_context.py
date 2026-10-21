@@ -8,6 +8,7 @@ from core.config import AGENT_DAILY_STEPS, discord_id_from_owner
 from features.accounts.discord_memory import discord_memory
 from prompts import (
     COMPANION_SYSTEM_PROMPT,
+    LOG_PROMPT,
     build_agent_guide,
     build_diagram_guide,
     build_memory_context,
@@ -16,6 +17,13 @@ from prompts import (
 )
 from features.docs import api as docs_api
 from shared import youtube
+from shared.attachments import TEXT_MIMES
+
+
+def has_text_files(items) -> bool:
+    """Hội thoại có tệp chữ người dùng gửi (log, crash report, code, ghi chú): xét loại tệp đã lưu, không đoán theo lời
+    người dùng. Tài liệu Peto tự tạo không tính."""
+    return any(item.get("kind") == "file" and item.get("mime") in TEXT_MIMES for item in items)
 
 
 async def _build_system_prompt(
@@ -23,6 +31,7 @@ async def _build_system_prompt(
     agent_question: str = '',
     model: str = 'peto',
     memory: bool = True,
+    text_files: bool = False,
 ) -> str:
     """Prompt gốc: trợ lý (tab Trò chuyện) hoặc Companion. Companion là persona riêng, không vá lên trợ lý. Sau đó ghép
     hướng dẫn Peto Agent, trí nhớ Discord và hồ sơ người dùng. Mọi phần chỉ dẫn đều bằng tiếng Anh (2026-10-18).
@@ -52,6 +61,9 @@ async def _build_system_prompt(
     agent_guide += await youtube.context(agent_question)
     if mode == "chat":
         agent_guide += build_diagram_guide(agent_question)
+        # Đứng trước hồ sơ và trí nhớ: hội thoại còn tệp chữ thì khối này giữ nguyên qua các lượt, không phá cache tiền tố.
+        if text_files:
+            agent_guide += "\n\n" + LOG_PROMPT
     user = await db.get_user(owner)
     if not user:
         return "\n\n".join(part for part in (base, agent_guide) if part)

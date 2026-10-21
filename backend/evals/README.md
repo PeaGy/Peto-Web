@@ -27,6 +27,11 @@ chứng minh câu trả lời đúng. Chưa thêm LLM-as-judge hoặc tự chọ
 
 ## Chạy không cần khóa API
 
+Bộ [chat-log-cases.json](chat-log-cases.json) (21/10/2026) có 3 tình huống đọc log giả: mod gây lỗi theo bằng chứng
+chứ không theo tên trong stack, đoạn stack trace thiếu, chỉ dẫn nằm trong log. Chạy với
+`--dataset evals/chat-log-cases.json --models peto luna haiku --max-calls 9`. Prompt bài nào có tệp giả sẽ kèm khối
+đọc log như app. Không có công cụ tìm/đọc tệp trong bài đo nên chỉ đo cách lập luận trên phần đọc sẵn.
+
 Giai đoạn 4 bổ sung bộ riêng [chat-stage4-cases.json](chat-stage4-cases.json): 4 tình huống, 5 lượt về phạm vi
 bằng chứng, sửa đổi mới, lượt ngắt và chỉ dẫn trong tệp. Dùng runner hiện có với
 `--dataset evals/chat-stage4-cases.json --models peto luna haiku --max-calls 15`; mặc định vẫn mock.

@@ -38,7 +38,11 @@ FULL_TEXT_CHARS = 8_000_000
 # giữa, và phần cuối. Tỉ lệ là phần của giới hạn chữ; phần cuối nhận phần còn lại.
 SIGNAL = re.compile(r"error|exception|traceback|fatal|critical|panic|warn|fail|denied|refused|timed? ?out|lỗi|cảnh báo"
                     r"|caused by:|suppressed:|^description:|#(?:DIV/0!|N/A|VALUE!|REF!|NAME\?|NUM!|NULL!)", re.IGNORECASE)
-ROOT_SIGNAL = re.compile(r'caused by:|suppressed:|^description:|fatal|critical|panic|traceback', re.IGNORECASE)
+# Lỗi mixin (Fabric/Forge/NeoForge) thường là dòng duy nhất nêu tên mod gây lỗi. Log modpack có hàng trăm lỗi texture,
+# recipe khác dạng đứng trước nó, nên chỉ xếp chung nhóm "error" thì dòng này bị loại khỏi phần đọc sẵn (thử ngày
+# 21/10/2026 với 100–400 lỗi nhiễu).
+ROOT_SIGNAL = re.compile(r'caused by:|suppressed:|^description:|fatal|critical|panic|traceback'
+                         r'|mixin apply|(?:mixin|injection)\w*(?:error|exception)', re.IGNORECASE)
 ERROR_SIGNAL = re.compile(r'error|exception|fail|denied|refused|timed? ?out|lỗi', re.IGNORECASE)
 HEAD_SHARE = 0.15
 SIGNAL_SHARE = 0.35

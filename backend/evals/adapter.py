@@ -38,9 +38,11 @@ async def prepare_prompts(cases: list[Case], models: tuple[str, ...], clock: dat
                 stack.enter_context(patch('shared.time_tools.current_datetime', return_value=verified_clock))
                 for index, turn in enumerate(case.turns):
                     question = '\n'.join(t['user'] for t in case.turns[max(0, index - 2):index + 1])
+                    # Tệp giả đều là chữ (text/plain, xem user_message): như app, đã có tệp chữ thì kèm cách đọc log.
                     body = await prompt_context._build_system_prompt(
                         'discord:000000000000000000', mode='companion' if case.persona == 'companion' else 'chat',
-                        model=model, agent_question=question)
+                        model=model, agent_question=question,
+                        text_files=any(t.get('attachments') for t in case.turns[:index + 1]))
                     body += '\n\n' + time_context('Asia/Ho_Chi_Minh')
                     prompts[model, case.id, index] = {'text': body, 'sha256': hashlib.sha256(body.encode()).hexdigest()}
     return prompts
