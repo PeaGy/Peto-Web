@@ -97,3 +97,29 @@ bubble đó và chạy lại toàn backend. Bản kiểm thử trình duyệt d�
 Sau deploy, thử giới hạn một chat mới: Stop rồi hỏi câu khác, reload sau gián đoạn, kiểm tra không có reply trùng;
 thử lại Haiku sau lỗi và câu hỏi mới. Hard restart chỉ thử trong môi trường giả có thể dừng được, không chủ động
 restart production đang có người dùng chỉ để tạo lỗi. Giai đoạn 4 chờ nghiệm thu giai đoạn 3.
+
+## Kiểm tra thực tế sau deploy `53c44e7`
+
+Ngày 21/10/2026, người dùng xác nhận đã commit/deploy và yêu cầu kiểm tra thật. Đã gửi **6 lượt** trong **2 chat
+kiểm thử** bằng Peto/Luna/Haiku qua trình duyệt in-app đã đăng nhập. Đây là số lần gửi từ UI; không đo được số API
+rounds, title calls, usage hay hóa đơn từ log server. Tắt saved memory khi thử, chỉ dùng nội dung tổng hợp.
+
+- [Chat A](https://peto.pearto.shop/chat/137d23f27dd6482c8318d8ad145c2111): Stop trước chữ đầu để lại một user và một
+  placeholder stopped. F5 giữ bản nháp và nút Thử lại. Bấm Thử lại, nhận phần chữ thật rồi Stop: vẫn một user/assistant,
+  F5 giữ phần trả lời dở và bản nháp. Luna sau đó trả đúng một dòng `REC3_NEW_58` theo yêu cầu mới.
+- [Chat B](https://peto.pearto.shop/chat/710d53122b404958ba8a4c73e707416f): F5 giữa khi Haiku đang trả lời giữ phần dở,
+  nhãn chưa hoàn tất, draft và nút Thử lại; không gắn nhãn Stop theo yêu cầu. F5 lần nữa không nhân đôi tin hoặc
+  tự tiếp tục bài viết. Hỏi `17 + 26 bằng bao nhiêu? Chỉ trả số.` thì Haiku trả đúng `43`, không cần nhắc bỏ việc cũ.
+- Cùng Chat B, Haiku tạo một tài liệu Word 1 trang. Sau F5, thẻ tài liệu và version 1 vẫn mở xem đúng mã
+  `REC3_DOC_71`; tải được DOCX và đọc ZIP/XML xác nhận đúng ba đoạn, không chỉ dựa vào lời model tự báo.
+- Memory OFF vẫn giữ 3 mục/10 ý và các tên mục cũ. Không mở chi tiết hoặc xóa mục thật. Đã bật lại ON, mở lại cài đặt
+  xác nhận lưu thành công và số mục/ý giữ nguyên. Khung chat mới trở về Peto/Tự động/web AUTO, bản nháp mới rỗng.
+
+Tìm web được tắt ở lượt đầu; F5 trả chế độ UI về AUTO. Prompt các lượt đều không yêu cầu web và không quan sát thấy
+bước tra web. Không coi việc F5 này là thử mạng offline vật lý hoặc hard crash server. Chưa thử live các race xóa/ghi
+trí nhớ, hai owner, di chuyển/xóa project hoặc cưỡng bức restart production; các phần đó có test giả ở trên.
+Không suy ra mọi nội dung trí nhớ giữ nguyên chỉ từ số mục/ý; phép kiểm UI này xác nhận không phát sinh mục/ý mới.
+
+Kết quả: các ca thực tế cốt lõi đạt, không phát hiện lỗi mới cần bản vá. Mã nguồn không đổi trong lượt nghiệm thu;
+chỉ cập nhật tài liệu. Chưa triển khai giai đoạn 4. Bằng chứng cục bộ nằm trong thư mục visualizations của phiên:
+`peto-stage3-live-2026-10-21.json` và ảnh Stop, phần dở, câu hỏi mới, tài liệu sau reload.

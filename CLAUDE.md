@@ -26,11 +26,20 @@ The owner approved continuing after committing stage 2. Contract, migration and 
   result cannot learn the same deleted fact again on its next run. Concurrent running turns fence the cursor.
   Companion summary/persona algorithms and Agent runtime are unchanged; only guarded storage is added.
 - SQLite additions/triggers migrate at startup; frontend rebuild required, no new environment variables/CLI update.
-  Fault-injection and privacy race tests use fake providers/temp SQLite. Production/live acceptance is pending.
+  Fault-injection and privacy race tests use fake providers/temp SQLite. The live follow-up is recorded below.
   Final validation: 1,518 backend tests passed, 1 skipped (350.00s); related recovery/memory/private-note group 91 passed;
   frontend component tests 23 passed; Chromium desktop/mobile-emulation browser tests 6 passed; production build and
   diff check passed. The first broad run caught an empty Companion private-note bubble; fixed while preserving its
   prior behavior, then reran the full backend. No paid call, commit, deployment or physical-phone test was performed.
+
+After the owner committed/deployed `53c44e7`, stage 3's core UI flows were live-tested on 2026-10-21: 6 submissions
+in 2 synthetic chats, Peto/Luna/Haiku. Stop before/after text, F5 preserving partial replies/drafts, explicit retry
+without duplicate source messages, and a new question after interruption passed. Haiku answered 43 to 17+26 without
+an instruction to ignore the old task. Its generated Word artifact survived F5 with the same ID/version; downloaded
+DOCX XML contained REC3_DOC_71 and the expected text. Memory OFF retained 3 entries/10 details; ON and Peto/auto/web AUTO
+were restored and verified through UI. No source-code patch was needed. Forced production crashes, in-flight memory
+deletion races, second-owner checks and project moves/deletes remain mock-tested only; no physical-phone/offline
+network test or server usage/billing audit. Full evidence and limitations: `recovery-and-data-scope.md`. Stage 4 not started.
 
 ## Web Chat request context — stage 2 (2026-10-21)
 
