@@ -9,6 +9,11 @@ import pytest
 from core.rate_limit import Admission, AdmissionDenied
 
 
+@pytest.mark.parametrize('seconds,shown', [(0, 1), (.01, 1), (1.01, 2), (2, 2)])
+def test_cooldown_never_claims_zero_seconds_while_blocking(seconds, shown):
+    assert f'{shown} giây' in AdmissionDenied('cooldown', seconds).message
+
+
 async def test_cooldown_blocks_second_request():
     gate = Admission(max_concurrent=2, max_queue=2, queue_timeout=1, cooldown=10)
     async with gate.slot("ai"):

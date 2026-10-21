@@ -290,6 +290,8 @@ async def init_db() -> None:
         usage_columns = {row[1] for row in await (await db.execute("PRAGMA table_info(usage_events)")).fetchall()}
         if "cache_write_tokens" not in usage_columns:
             await db.execute("ALTER TABLE usage_events ADD COLUMN cache_write_tokens INTEGER")
+        if 'effort' not in usage_columns:
+            await db.execute('ALTER TABLE usage_events ADD COLUMN effort TEXT')
         await db.execute("CREATE INDEX IF NOT EXISTS idx_usage_events_at ON usage_events(at)")
         # Số ký tự Giọng Peto (nguồn giọng chính thức) đã dùng theo tháng (giờ PETO_DEFAULT_TIMEZONE) cho mỗi tài khoản.
         await db.execute(

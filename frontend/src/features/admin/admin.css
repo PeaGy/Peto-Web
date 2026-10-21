@@ -34,6 +34,14 @@
 .adm-card { position: relative; padding: 18px 20px 20px; border: 1px solid var(--line); border-radius: 16px; background: var(--adm-card); }
 .adm-card > header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin-bottom: 14px; }
 .adm-card + .adm-split, .adm-split + .adm-card { margin-top: 12px; }
+.adm-chat-metrics { margin-top: 12px; }
+.adm-chat-metrics > summary { cursor: pointer; font-size: 14px; font-weight: 600; }
+.adm-chat-metrics > summary:focus-visible, .adm-chat-metrics .adm-table-wrap:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
+.adm-chat-counts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr)); gap: 16px; margin: 20px 0; }
+.adm-chat-counts dt { color: var(--muted); font-size: 13px; }
+.adm-chat-counts dd { margin: 3px 0; font-weight: 600; }
+.adm-chat-counts small { display: block; color: var(--muted); overflow-wrap: anywhere; }
+.adm-chat-metrics th small { display: block; font-weight: 400; color: var(--muted); }
 .adm-empty { margin: 8px 0; color: var(--muted); font-size: 13.5px; }
 
 .adm-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 12px; }

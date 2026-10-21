@@ -7,6 +7,7 @@ import { AdminForbiddenError, getAdminOverview, type AdminModel, type AdminOverv
 import { CostColumns, LatencyRanges, OutcomeStrip, SERVICE_COLOR, SERVICES, ServiceLegend, Sparkline } from './AdminCharts';
 import { NO_DATA, compact, day, num, pct, secs, surfaces, usd } from './format';
 import './admin.css';
+import { ChatMetrics } from './ChatMetrics';
 
 const RANGE_KEY = 'peto-admin-range';
 const RANGES: { value: AdminRange; label: string }[] = [
@@ -174,6 +175,7 @@ export default function AdminDashboard({ onUnauthorized, onForbidden, onOpenSide
       </Card>
     </div>
     <Card title="Theo model"><ModelTable models={data.models} /></Card>
+    <ChatMetrics data={data.chat} />
     <Caveats data={data} />
   </div></main>;
 }

@@ -15,6 +15,10 @@ CATALOG = {'grok-4.7': (500_000, 32_000), 'gpt-6-luna': (1_050_000, 128_000),
 current: ContextVar[dict | None] = ContextVar('web_chat_budget', default=None)
 
 
+class ContextOverflow(ProviderError):
+    """Ngữ cảnh thực sự vượt hạn mức; tách khỏi cấu hình sai hoặc lỗi provider."""
+
+
 def estimate(value) -> int:
     if is_dataclass(value):
         value = asdict(value)
@@ -62,7 +66,7 @@ def enforce(request: dict) -> None:
         return
     used = tokens(request.get('instructions', ''), request.get('input', []), request.get('tools', []))
     if used > info['input']:
-        raise ProviderError('Ngữ cảnh lượt này đã vượt ngân sách an toàn. Phần đã làm được giữ lại; '
+        raise ContextOverflow('Ngữ cảnh lượt này đã vượt ngân sách an toàn. Phần đã làm được giữ lại; '
                             'hãy hỏi tiếp về một phần cụ thể hoặc chia nhỏ tài liệu.')
     request['max_output_tokens'] = min(request['max_output_tokens'], info['output'], info['context'] - used - 2048)
 

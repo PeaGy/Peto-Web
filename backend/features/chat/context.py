@@ -5,12 +5,15 @@ from dataclasses import dataclass
 import json
 import logging
 import weakref
+from time import perf_counter
 
 import aiosqlite
 import anyio
 from ai import ChatMessage, ProviderError, StreamChunk, get_provider
 from core import config
-from features.chat.context_budget import policy, tokens, current as budget_context
+from core import usage_events
+from ai.models import MODELS
+from features.chat.context_budget import policy, tokens, current as budget_context, ContextOverflow
 from features.chat.history import _to_chat_messages, context_rows
 from prompts.chat_context import SUMMARY_PROMPT, CONTEXT_NOTE
 from shared.chat_history_tools import ChatHistory
@@ -57,18 +60,19 @@ def parse_summary(text, batch, previous):
 async def summarize(model, previous, batch, budget):
     text = json.dumps({'previous_summary': previous, 'fragments': batch}, ensure_ascii=False)
     if tokens(SUMMARY_PROMPT, text) > budget['input']:
-        raise ValueError('Lô tóm tắt vượt ngân sách.')
+        raise ContextOverflow('Lô tóm tắt vượt ngân sách.')
     pieces = []
     token = budget_context.set({**budget, 'summary_output': min(3072, budget['output'])})
     try:
-        async with asyncio.timeout(config.CHAT_SUMMARY_TIMEOUT):
-            async with aclosing(get_provider(model).stream(system_prompt=SUMMARY_PROMPT,
-                                messages=[ChatMessage('user', text)], effort='low', web_search='off', tools_enabled=False)) as stream:
-                async for chunk in stream:
-                    piece = chunk if isinstance(chunk, str) else chunk.text if isinstance(chunk, StreamChunk) and chunk.kind == 'text' else ''
-                    pieces.append(piece)
-                    if sum(map(len, pieces)) > 6000:
-                        raise ValueError('Bản tóm tắt vượt giới hạn.')
+        with usage_events.measurement(surface='chat', effort='low', purpose='summary'):
+            async with asyncio.timeout(config.CHAT_SUMMARY_TIMEOUT):
+                async with aclosing(get_provider(model).stream(system_prompt=SUMMARY_PROMPT,
+                                    messages=[ChatMessage('user', text)], effort='low', web_search='off', tools_enabled=False)) as stream:
+                    async for chunk in stream:
+                        piece = chunk if isinstance(chunk, str) else chunk.text if isinstance(chunk, StreamChunk) and chunk.kind == 'text' else ''
+                        pieces.append(piece)
+                        if sum(map(len, pieces)) > 6000:
+                            raise ValueError('Bản tóm tắt vượt giới hạn.')
     finally:
         budget_context.reset(token)
     return parse_summary(''.join(pieces), batch, previous)
@@ -105,7 +109,7 @@ async def _prepare(owner, cid, model, prompt, rows, project_documents, window):
     # Dành chỗ cho schema, tool kết quả, summary và mốc thời gian; adapter kiểm lại request thật ở từng vòng.
     free = info['input'] - tokens(prompt) - min(12_000, info['input'] // 3)
     if free < 1024:
-        raise ProviderError('Hướng dẫn và tài liệu dự án đã chiếm hết ngân sách Chat; hãy giảm phần tài liệu được chọn.')
+        raise ContextOverflow('Hướng dẫn và tài liệu dự án đã chiếm hết ngân sách Chat; hãy giảm phần tài liệu được chọn.')
     document_budget = max(256, min(config.MAX_DOCUMENT_CONTEXT_CHARS, int(free * .8)))
     recent = list(rows)
     async def convert(source):
@@ -118,7 +122,7 @@ async def _prepare(owner, cid, model, prompt, rows, project_documents, window):
             recent.pop(0)
         history = await convert(recent)
     if tokens(prompt, history) + 2048 > info['input']:
-        raise ProviderError('Tin nhắn và tài liệu hiện tại quá dài cho ngân sách Chat; hãy chia nhỏ nội dung.')
+        raise ContextOverflow('Tin nhắn và tài liệu hiện tại quá dài cho ngân sách Chat; hãy chia nhỏ nội dung.')
     boundary = recent[0]['id']
     try:
         saved = await store.state(owner, cid)
@@ -130,6 +134,7 @@ async def _prepare(owner, cid, model, prompt, rows, project_documents, window):
     batch = await store.spans(owner, cid, boundary, saved['cursor_id'] if saved else 0, saved['cursor_offset'] if saved else 0)
     if config.CHAT_SUMMARY_ENABLED and batch and (pending >= MIN_BATCH or batch[0]['start'] > 0
                                                 or sum(len(p['text']) for p in batch) >= 8000):
+        summary_started, summary_outcome = perf_counter(), 'cancelled'
         try:
             value = await summarize(model, summary, batch, info)
             if await store.save(owner, cid, project_id, saved, batch, boundary, value, info['identity']):
@@ -137,14 +142,21 @@ async def _prepare(owner, cid, model, prompt, rows, project_documents, window):
                 summary = json.loads(saved['data'])['summary'] if saved else None
                 detail = ('Đã cập nhật tóm tắt ngữ cảnh; lịch sử gốc vẫn được giữ.' if saved else
                           'Nguồn vừa thay đổi; chưa dùng bản tóm tắt mới.')
+                summary_outcome = 'complete' if saved else 'source_changed'
             else:
+                summary_outcome = 'source_changed'
                 detail = 'Nguồn vừa thay đổi; chưa dùng bản tóm tắt mới.'
                 # Bản cũ có thể đã bị trigger xóa; không đưa dữ kiện lỗi thời vào lượt này.
                 saved = await store.state(owner, cid)
                 summary = json.loads(saved['data'])['summary'] if saved else None
         except Exception as error:
+            summary_outcome = 'overflow' if isinstance(error, ContextOverflow) else 'timeout' if isinstance(error, TimeoutError) else 'error'
             detail = 'Chưa tóm tắt được phần cũ; giữ nguyên lịch sử để tra lại, không đánh dấu đã đọc phần đó.'
             logger.warning('Chưa cập nhật được context Chat (%s); giữ watermark cũ.', type(error).__name__)
+        finally:
+            usage_events.record('chat_event', service=MODELS[model].service, model=model, surface='chat', effort='low',
+                purpose='summary', outcome=summary_outcome, complete=summary_outcome == 'complete',
+                elapsed_ms=round((perf_counter() - summary_started) * 1000))
     # Trigger có thể vừa vô hiệu bản đã đọc trong lúc chờ model/I/O; lấy snapshot mới trước khi ghép prompt.
     try:
         saved = await store.state(owner, cid)
@@ -180,7 +192,7 @@ async def _prepare(owner, cid, model, prompt, rows, project_documents, window):
                     'file_index_is_bounded': True}
         prompt += '\n\n' + CONTEXT_NOTE + json.dumps(envelope, ensure_ascii=False)
     if tokens(prompt, history) + 2048 > info['input']:
-        raise ProviderError('Bản tóm tắt và ngữ cảnh hiện tại vượt ngân sách; hãy giảm tài liệu dự án hoặc chia nhỏ yêu cầu.')
+        raise ContextOverflow('Bản tóm tắt và ngữ cảnh hiện tại vượt ngân sách; hãy giảm tài liệu dự án hoặc chia nhỏ yêu cầu.')
     logger.info('chat_context model=%s estimated_tokens=%d input_limit=%d summary=%s gap=%d',
                 model, tokens(prompt, history), info['input'], bool(summary), gap)
     return Prepared(history, prompt, info, ChatHistory(owner, cid, rows[-1]['id'] + 1) if hidden else None, detail)

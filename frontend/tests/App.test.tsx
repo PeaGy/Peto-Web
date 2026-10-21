@@ -1116,7 +1116,7 @@ describe('Sending and stopping', () => {
     const file = new File(['Ghi chú'], 'drop.txt', { type: 'text/plain' });
     const dataTransfer = { files: [file], types: ['Files'] };
     fireEvent.dragEnter(target, { dataTransfer });
-    expect(screen.getByRole('status').textContent).toContain('Thêm ảnh và tệp');
+    expect(screen.getAllByRole('status').some(node => node.textContent?.includes('Thêm ảnh và tệp'))).toBe(true);
     fireEvent.drop(target, { dataTransfer });
     expect(await screen.findByRole('button', { name: 'Gỡ drop.txt' })).toBeTruthy();
     expect(screen.getAllByText('drop.txt')).toHaveLength(1);

@@ -27,6 +27,13 @@ chứng minh câu trả lời đúng. Chưa thêm LLM-as-judge hoặc tự chọ
 
 ## Chạy không cần khóa API
 
+Giai đoạn 4 bổ sung bộ riêng [chat-stage4-cases.json](chat-stage4-cases.json): 4 tình huống, 5 lượt về phạm vi
+bằng chứng, sửa đổi mới, lượt ngắt và chỉ dẫn trong tệp. Dùng runner hiện có với
+`--dataset evals/chat-stage4-cases.json --models peto luna haiku --max-calls 15`; mặc định vẫn mock.
+Các nhãn nguồn trong fixture là dữ liệu giả trong prompt, không phải native citation hoặc công cụ đang chạy.
+Chỉ LIVE mới cho phản hồi model để người chấm theo rubric; không suy chất lượng từ mock. Quy trình nghiệm thu
+app có công cụ và so sánh cùng cấu hình ở [tài liệu giai đoạn 4](../features/chat/docs/quality-and-ux.md).
+
 Cài thư viện backend theo `requirements.txt` trong venv hiện có. Chạy từ `backend/`; Windows dùng:
 
 ```powershell

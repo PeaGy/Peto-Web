@@ -5,6 +5,7 @@ from contextvars import ContextVar
 from urllib.parse import urlsplit
 
 MAX_SOURCES = 30
+ACCESS_RANK = {'search': 1, 'tool': 2, 'page': 3}
 
 # Lượt Companion: câu trả lời được đọc thành tiếng. features.chat.service._stream_reply đặt cho từng lượt (như
 # document_tools.current_session), provider đọc qua search_context mà không phải thêm tham số.
@@ -48,16 +49,28 @@ def normalize_sources(items: object) -> list[dict]:
         except ValueError:
             continue
         if url in seen:
+            existing = next(source for source in sources if source['url'] == url)
+            title = item.get('title')
+            if existing['title'] in (parsed.hostname, url) and isinstance(title, str) and title.strip() and not title.strip().isdecimal():
+                existing['title'] = ' '.join(title.split())[:200]
             if item.get("kind") == "citation":
-                next(source for source in sources if source["url"] == url)["kind"] = "citation"
+                existing['kind'] = 'citation'
+            if isinstance(item.get('access'), str) and ACCESS_RANK.get(item['access'], 0) > ACCESS_RANK.get(existing.get('access'), 0):
+                existing['access'] = item['access']
+            if item.get('partial') is True:
+                existing['partial'] = True
             continue
         title = item.get("title")
         title = " ".join(title.split())[:200] if isinstance(title, str) else ""
         if not title or title.isdecimal():
             title = parsed.hostname
         source = {"url": url, "title": title}
-        if item.get("kind") in {"citation", "result"}:
+        if item.get("kind") in ("citation", "result"):
             source["kind"] = item["kind"]
+        if isinstance(item.get('access'), str) and item['access'] in ACCESS_RANK:
+            source['access'] = item['access']
+        if item.get('partial') is True:
+            source['partial'] = True
         sources.append(source)
         seen.add(url)
     # Cited pages must not be crowded out by the search result list.

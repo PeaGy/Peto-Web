@@ -77,7 +77,7 @@ function CodeBlock({ language, children }: { language: string; children: ReactNo
           {copyText}
         </button>
       </div>
-      <pre ref={preRef}>{children}</pre>
+      <pre ref={preRef} tabIndex={0} role="region" aria-label={`Mã ${label}`}>{children}</pre>
     </div>
   );
 }
@@ -137,7 +137,7 @@ export const ChatMessage = memo(function ChatMessage({ message, live, writing, o
       return <CodeBlock language={tag ? tag.slice("language-".length) : ""}>{children}</CodeBlock>;
     },
   }), [writing]);
-  return (<article className={`bubble ${message.role}${hasUserAttachments ? ' chat-user-message' : ''}${editor ? ' editing' : ''}`}>
+  return (<article aria-label={message.role === 'user' ? 'Bạn' : 'Peto'} className={`bubble ${message.role}${hasUserAttachments ? ' chat-user-message' : ''}${editor ? ' editing' : ''}`}>
               {message.attachments && message.attachments.length > 0 && (
                 <MessageAttachments attachments={message.attachments} sent={message.role === 'user'} />
               )}

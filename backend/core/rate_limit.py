@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+import math
 from contextlib import asynccontextmanager
 
 from core.config import COOLDOWN_SECONDS, MAX_CONCURRENT, MAX_QUEUE, QUEUE_TIMEOUT_SECONDS
@@ -25,7 +26,7 @@ class AdmissionDenied(Exception):
     @property
     def message(self) -> str:
         if self.reason == "cooldown":
-            return f"Cậu gửi nhanh quá, đợi {self.retry_after:.0f}s rồi nhắn tiếp nha."
+            return f"Cậu gửi nhanh quá, đợi {max(1, math.ceil(self.retry_after))} giây rồi nhắn tiếp nha."
         if self.reason == "queue_full":
             return "Peto đang bận trả lời mấy người khác, thử lại sau chút nha."
         return "Đợi lâu quá nên Peto bỏ lượt này. Cậu gửi lại giúp nha."

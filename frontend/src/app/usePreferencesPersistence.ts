@@ -19,8 +19,9 @@ export function usePreferencesPersistence({ collapsed, theme, motion }: {
     } catch {}
     const media = lightMediaQuery();
     const apply = () => {
-      document.documentElement.dataset.theme =
-        theme === "system" ? (media?.matches ? "light" : "dark") : theme;
+      const actual = theme === "system" ? (media?.matches ? "light" : "dark") : theme;
+      document.documentElement.dataset.theme = actual;
+      document.querySelector('meta[name="theme-color"]')?.setAttribute('content', actual === 'light' ? '#ffffff' : '#141414');
     };
     apply();
     if (theme !== "system" || !media?.addEventListener) return;

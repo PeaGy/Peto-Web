@@ -17,6 +17,21 @@ const setup = () => {
 const interrupt = (hook: ReturnType<typeof setup>) => act(() => hook.result.current.interrupt({ conversationId: 'C', userMessageId: 10 }));
 const advance = (ms: number) => act(async () => { await vi.advanceTimersByTimeAsync(ms); });
 
+it('chọn reply có liên kết đúng dù tin xen nhau; không nhận reply của nguồn khác', async () => {
+  const correct = { ...saved[1], id: 14, reply_to: 10 };
+  const interleaved: Message[] = [saved[0], { ...saved[1], id: 12, reply_to: 9 }, correct];
+  vi.mocked(getMessages).mockResolvedValueOnce(interleaved);
+  const hook = setup(); interrupt(hook); await advance(250);
+  expect(hook.onRecovered).toHaveBeenCalledExactlyOnceWith(interleaved, true);
+  expect(getMessages).toHaveBeenCalledWith('C', expect.any(AbortSignal), undefined, 10);
+  vi.mocked(getMessages).mockResolvedValue([saved[0], { ...saved[1], reply_to: 9 }]);
+  hook.onRecovered.mockClear(); interrupt(hook); await advance(10000);
+  expect(hook.onRecovered).not.toHaveBeenCalled();
+  vi.mocked(getMessages).mockResolvedValue([{ ...saved[0], turn_state: 'interrupted' }, saved[1]]);
+  interrupt(hook); await advance(10000);
+  expect(hook.onRecovered).not.toHaveBeenCalled(); // Turn mới bắt buộc có liên kết; không đoán assistant legacy.
+});
+
 it('không nhận checkpoint đang chạy là câu trả lời cuối và chỉ đọc lại, không phát lại yêu cầu', async () => {
   vi.mocked(getMessages).mockResolvedValueOnce([saved[0], { ...saved[1], status: 'incomplete', turn_state: 'running' }]);
   const hook = setup();

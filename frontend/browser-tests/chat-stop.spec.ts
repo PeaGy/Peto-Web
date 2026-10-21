@@ -42,15 +42,15 @@ test('Dừng trước metadata, F5 giữ trạng thái, Thử lại cùng chat b
   await expect.poll(() => requestId).not.toBe('');
   await input.fill('Nháp tiếp theo');
   await page.getByRole('button', { name: 'Dừng', exact: true }).click();
-  await expect(page.getByText('Đã dừng theo yêu cầu của bạn.', { exact: true })).toBeVisible();
+  await expect(page.locator('.message-stopped')).toHaveText('Đã dừng theo yêu cầu của bạn.');
   await expect(input).toHaveValue('Nháp tiếp theo');
   await expect(page).toHaveURL(/\/chat\/A$/);
   await page.reload();
-  await expect(page.getByText('Đã dừng theo yêu cầu của bạn.', { exact: true })).toBeVisible();
+  await expect(page.locator('.message-stopped')).toHaveText('Đã dừng theo yêu cầu của bạn.');
   await expect(input).toHaveValue('Nháp tiếp theo');
   await page.getByRole('button', { name: 'Thử lại', exact: true }).click();
   await expect(page.getByText('Thử lại thành công', { exact: true })).toBeVisible();
-  await expect(page.getByText('Đã dừng theo yêu cầu của bạn.', { exact: true })).toHaveCount(0);
+  await expect(page.locator('.message-stopped')).toHaveCount(0);
   expect(posts).toBe(2);
   await expect(page.locator('.bubble.user').filter({ hasText: user.content })).toHaveCount(1);
   await expect(input).toHaveValue('Nháp tiếp theo');

@@ -2,7 +2,9 @@
 <html lang="vi">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-content" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
+    <meta name="theme-color" content="#141414" />
+    <meta name="color-scheme" content="dark light" />
     <title>Peto</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="description" content="Trò chuyện cùng Peto, Trợ lý AI số 1 cho bạn." />
@@ -27,6 +29,7 @@
           else if (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches) theme = "light";
         } catch (error) {}
         document.documentElement.dataset.theme = theme;
+        document.querySelector('meta[name="theme-color"]').content = theme === 'light' ? '#ffffff' : '#141414';
         // Chuyển động (Cài đặt → Giao diện): mặc định "full" kể cả khi máy bật giảm chuyển động; xem shared/motion.ts.
         var motion = "full";
         try {

@@ -151,7 +151,10 @@ body {
   }
 }
 
-.app { display: flex; height: 100dvh; }
+.app { display: flex; height: 100dvh;
+  /* Nền vẫn phủ toàn màn hình; nội dung nằm ngoài notch và thanh home của điện thoại. */
+  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+}
 
 /* Nút bị tắt trong cả app. Đứng sớm trong thứ tự CSS (trước đây ở đầu sidebar.css): quy tắc riêng của từng phần đứng
    sau vẫn được đặt lại con trỏ hay độ mờ của nút tắt nếu cần. */

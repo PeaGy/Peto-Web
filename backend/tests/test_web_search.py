@@ -57,7 +57,7 @@ async def test_native_search_sources_and_clock_share_one_turn(monkeypatch):
     assert any(item.get("type") == "web_search_call" for item in requests[1]["input"])
     assert requests[1]["input"][-1]["call_id"] == "call_1"
     assert [chunk.sources for chunk in chunks if isinstance(chunk, StreamChunk) and chunk.kind == "sources"] == [
-        ({**SOURCE, "kind": "result"},), ({**SOURCE, "kind": "citation"},),
+        ({**SOURCE, "kind": "result", "access": "search"},), ({**SOURCE, "kind": "citation", "access": "search"},),
     ]
     assert any(isinstance(chunk, StreamChunk) and chunk.kind == "search" for chunk in chunks)
     assert first.closed and second.closed
@@ -304,7 +304,7 @@ async def test_recovered_search_saves_complete_answer_sources_and_failed_step(cl
     assert len(requests) == 2
     saved = (await client.get(f"/api/conversations/{events[0]['conversation_id']}/messages")).json()['messages'][-1]
     assert saved['status'] == 'complete' and saved['content'] == answer
-    assert saved['sources'] == [{**SOURCE, 'kind': 'citation'}]
+    assert saved['sources'] == [{**SOURCE, 'kind': 'citation', 'access': 'search'}]
     assert any(step['kind'] == 'search' and step['state'] == 'failed' and step['problems']
                for step in saved['work']['steps'])
 

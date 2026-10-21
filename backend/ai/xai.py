@@ -85,7 +85,16 @@ def _item_sources(item: dict) -> list[dict]:
             if part.get("type") == "output_text":
                 candidates.extend({**annotation, "kind": "citation"} for annotation in part.get("annotations") or [] if annotation.get("type") == "url_citation")
     elif item.get("type") == "web_search_call":
-        candidates.extend({**source, "kind": "result"} for source in (item.get("action") or {}).get("sources") or [] if isinstance(source, dict))
+        action = item.get('action') or {}
+        if item.get('status') == 'failed':
+            return []
+        if action.get('type') in {'open_page', 'find_in_page'}:
+            if item.get('status') == 'completed' and action.get('url'):
+                candidates.append({'url': action['url'], 'kind': 'result', 'access': 'page'})
+        else:
+            access = 'page' if action.get('type') == 'fetch' and item.get('status') == 'completed' else 'search'
+            candidates.extend({**source, "kind": "result", 'access': access}
+                              for source in action.get("sources") or [] if isinstance(source, dict))
     return normalize_sources(candidates)
 
 
@@ -206,8 +215,8 @@ class ResponsesProvider(ChatProvider):
                 if item.get("status") == "completed":
                     usable_search_sources = normalize_sources([*usable_search_sources, *_item_sources(item)])
                 search_finished = search_finished or item.get("status") == "completed"
-                if (item.get("action") or {}).get("type") == "fetch":
-                    yield StreamChunk("page", "fetched")
+                if (item.get("action") or {}).get("type") in {'fetch', 'open_page', 'find_in_page'}:
+                    yield StreamChunk("page", "fetched" if item.get('status') == 'completed' else 'fetching')
                 else:
                     yield StreamChunk("search", "completed" if item.get("status") == "completed" else "searching")
             merged = normalize_sources([*sources, *_item_sources(item)])
@@ -223,6 +232,12 @@ class ResponsesProvider(ChatProvider):
         chat_history = chat_history_tools.current.get()
         github_session = github_session_context.get()
         snapshot = request_context.current.get()
+        def record_tool_result(result):
+            # Ghi một kết quả dispatch (kể cả từ chối), không ghi args/tên công cụ/nội dung hoặc ID.
+            if snapshot is not None:
+                usage_events.record('chat_event', service=getattr(self, 'usage_service', self.service),
+                    model=snapshot.model, surface='chat', effort=effort, purpose='tool',
+                    outcome='error' if result.get('error') or result.get('ok') is False else 'ok')
         github_state, github_reason = (await github_session.availability() if github_session else
                                       (snapshot.github_state, snapshot.github_reason) if snapshot else
                                       ('unauthorized', 'not_connected'))
@@ -490,6 +505,7 @@ class ResponsesProvider(ChatProvider):
                 if calls_used >= max_calls:
                     # Mỗi lời gọi vẫn có kết quả tương ứng; lời gọi vượt giới hạn không được thực thi.
                     result = {'ok': False, 'error': 'Đã chạm giới hạn tra cứu của lượt này. Công cụ này chưa được chạy; hãy tổng hợp dữ liệu đã có và nêu rõ phần còn thiếu.'}
+                    record_tool_result(result)
                     payload_input.append({'type': 'function_call_output', 'call_id': call['call_id'],
                                           'output': json.dumps(result, ensure_ascii=False)})
                     continue
@@ -515,7 +531,9 @@ class ResponsesProvider(ChatProvider):
                     result = await github_session.run(call['name'], call.get('arguments', ''))
                     yield StreamChunk('connector_lookup_done', 'Đã đọc GitHub' if result.get('ok') else result.get('error', 'Chưa đọc được GitHub'))
                     if result.get('sources'):
-                        sources = normalize_sources([*sources, *result['sources']])
+                        sources = normalize_sources([*sources, *({**source, 'kind': 'result', 'access': 'tool',
+                            **({'partial': True} if result.get('truncated') is True else {})}
+                            for source in result['sources'] if isinstance(source, dict))])
                         yield StreamChunk('sources', sources=tuple(sources))
                 elif call.get('name') == chat_history_tools.NAME and chat_history:
                     yield StreamChunk('file_lookup', 'Đang đối chiếu lịch sử gốc…')
@@ -528,6 +546,7 @@ class ResponsesProvider(ChatProvider):
                     yield StreamChunk("file_lookup_done", files.label(call["name"], arguments, result))
                 else:
                     result = execute_tool(call.get("name", ""), call.get("arguments", ""), timezone=timezone)
+                record_tool_result(result)
                 payload_input.append({
                     "type": "function_call_output", "call_id": call["call_id"],
                     "output": json.dumps(result, ensure_ascii=False),

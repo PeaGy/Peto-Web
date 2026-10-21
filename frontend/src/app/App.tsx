@@ -5,6 +5,8 @@ import { BrowserRouter, useLocation, useNavigate } from 'react-router';
 import { appPath, appView, chatId, chatRoute, companionProviderId, companionProviderRoute, companionSettingsPage, companionSettingsRoute, legacyPath, VIEW_PATHS } from './routes';
 import { EditIcon } from '../shared/ui/EditIcon';
 import Sidebar from './Sidebar';
+import { useSidebarKeyboard } from './useSidebarKeyboard';
+import { ChatReplyStatus, focusComposerIfOwned } from '../features/chat/ChatReplyStatus';
 import { useProjects } from '../features/projects/useProjects';
 import ProjectSidebar, { FolderIcon } from '../features/projects/ProjectSidebar';
 import { createProject, deleteProject, updateProject, type Project } from '../features/projects/projectApi';
@@ -192,6 +194,9 @@ function AppContent() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const sidebarRef = useRef<HTMLElement>(null);
+  const closeSidebar = useCallback(() => setSidebarOpen(false), []);
+  useSidebarKeyboard(sidebarOpen, sidebarRef, closeSidebar);
   const [collapsed, setCollapsed] = useState(readStoredCollapsed);
   const [loadingConversation, setLoadingConversation] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -309,6 +314,11 @@ function AppContent() {
   const listCount = useRef(50);
   const nearBottom = useRef(true);
   const messagesRef = useRef<HTMLDivElement>(null);
+  const cancelEdit = () => {
+    const id = editTarget?.id;
+    setEditTarget(null);
+    requestAnimationFrame(() => messagesRef.current?.querySelector<HTMLButtonElement>(`button[data-revise="${id}"]`)?.focus({ preventScroll: true }));
+  };
   const deleteDialogRef = useRef<HTMLDialogElement>(null);
   const composerRef = useRef<HTMLFormElement>(null);
   const chatDockRef = useRef<HTMLDivElement>(null);
@@ -1023,7 +1033,7 @@ function AppContent() {
       setStopping(false);
       abortRef.current = null;
       if (stopTicketRef.current === stopTicket) stopTicketRef.current = null;
-      if (viewRef.current === 'chat' && isSelectedReply(reply)) textareaRef.current?.focus();
+      if (viewRef.current === 'chat' && isSelectedReply(reply)) focusComposerIfOwned(textareaRef.current);
     }
   }
 
@@ -1285,6 +1295,7 @@ function AppContent() {
 
   return (
     <div className="app">
+      {view === 'chat' && !readOnly && <button className="chat-skip" type="button" onClick={() => textareaRef.current?.focus({ preventScroll: true })}>Đến ô nhắn</button>}
       {sidebarOpen && (
         <button
           className="sidebar-backdrop"
@@ -1297,7 +1308,7 @@ function AppContent() {
         projects={<ProjectSidebar key={auth.user?.id} state={projectState} activeId={activeProjectId} conversationId={conversationId} disabled={streaming || deleting || projectBusy}
           onCreate={() => {setProjectEdit('create');setProjectName('');setProjectError('');}} onNewChat={newProjectChat} onChat={id => void openConversation(id)}
           onMenu={(item,rect) => setProjectMenu({item,...menuPosition(rect)})} onConversationMenu={(item,rect) => setConversationMenu({item,...menuPosition(rect)})}/>}
-        sidebarOpen={sidebarOpen} collapsed={collapsed} streaming={streaming} deleting={deleting}
+        sidebarRef={sidebarRef} sidebarOpen={sidebarOpen} collapsed={collapsed} streaming={streaming} deleting={deleting}
         appInfo={appInfo} auth={auth} view={view} imagineJobs={imagineJobs}
         conversations={conversations.filter(item => !item.project_id)} conversationId={conversationId} loadingList={loadingList} hasMore={hasMore}
         accountRef={accountRef} accountMenu={accountMenu} setSearchOpen={setSearchOpen}
@@ -1380,12 +1391,14 @@ function AppContent() {
         enabled={!streaming && !loadingConversation && !loadFailed && !readOnly && !deleting && !settingsOpen && !searchOpen}
         contextKey={JSON.stringify([auth.user?.id, draftConversationId, rootContext.projectId])}
         onFiles={addFiles}>
-      <main className={emptyChat ? "chat empty-state" : "chat"}>
+      <main className={emptyChat ? "chat empty-state" : "chat"} aria-label="Trò chuyện với Peto">
+        <ChatReplyStatus busy={replyVisible} stopping={stopping} scope={JSON.stringify([auth.user?.id, conversationId])} last={messages.at(-1)} />
         <div className="chat-tools">
         <button
           type="button"
           className="menu-btn chat-menu"
           aria-label="Mở danh sách hội thoại"
+          aria-expanded={sidebarOpen} aria-controls="peto-sidebar"
           onClick={() => setSidebarOpen(true)}
         >
           <MenuIcon />
@@ -1394,7 +1407,7 @@ function AppContent() {
         <button type="button" className="artifact-icon document-panel-toggle" aria-label={documentPanelOpen ? 'Đóng bảng tài liệu' : 'Mở bảng tài liệu'} aria-expanded={documentPanelOpen} aria-controls="document-panel" data-tip="Tài liệu" data-tip-kbd="Ctrl+Alt+B" aria-keyshortcuts="Control+Alt+B" onClick={() => { setDocumentPanelOpen(value => !value); setDocumentPanelExpanded(false); setDiagram(null); }}><RightPanelIcon /></button>
         </div>
 
-        <div className="messages" ref={messagesRef} onClick={e => {
+        <div className="messages" role="region" aria-label="Nội dung hội thoại" tabIndex={0} ref={messagesRef} onClick={e => {
           const button = (e.target as Element).closest<HTMLButtonElement>('button[data-revise]');
           if (!button || readOnly || streaming || loadingConversation) return;
           const id = Number(button.dataset.revise);
@@ -1423,8 +1436,8 @@ function AppContent() {
             <ChatMessage key={index} message={message}
               actionsDisabled={readOnly || streaming || loadingConversation || loadFailed}
               editor={editTarget?.id === message.id && editTarget ? <form className="inline-message-editor" onSubmit={e => {e.preventDefault(); void submit({target:editTarget,text:editText});}}>
-                <textarea autoFocus aria-label="Sửa tin nhắn" value={editText} onChange={e => setEditText(e.target.value)} rows={Math.min(12,Math.max(3,editText.split('\n').length))} onKeyDown={e => {if(e.key==='Escape') setEditTarget(null);}}/>
-                <div><button type="button" onClick={() => setEditTarget(null)}>Hủy</button><button type="submit" disabled={streaming || (!editText.trim() && !editTarget.attachments?.length)}>Gửi</button></div>
+                <textarea autoFocus aria-label="Sửa tin nhắn" value={editText} onChange={e => setEditText(e.target.value)} rows={Math.min(12,Math.max(3,editText.split('\n').length))} onKeyDown={e => {if(e.key==='Escape') { e.preventDefault(); cancelEdit(); }}}/>
+                <div><button type="button" onClick={cancelEdit}>Hủy</button><button type="submit" disabled={streaming || (!editText.trim() && !editTarget.attachments?.length)}>Gửi</button></div>
               </form> : undefined}
               live={replyVisible && !stopping && index === messages.length - 1}
               writing={replyVisible && index === messages.length - 1}
@@ -1437,10 +1450,11 @@ function AppContent() {
           <div ref={bottomRef} />
         </div>
 
-        {showJump && <button type="button" className="jump-latest" aria-label="Tin mới nhất" data-tip onClick={() => {
+        {showJump && <button type="button" className="jump-latest" aria-label="Tin mới nhất" data-tip onClick={event => {
           nearBottom.current = true;
           setShowJump(false);
-          bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+          bottomRef.current?.scrollIntoView({ behavior: event.detail === 0 || isReducedMotion() ? 'instant' : 'smooth', block: "end" });
+          if (event.detail === 0) messagesRef.current?.focus({ preventScroll: true });
         }}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 4v16m-7-7 7 7 7-7" /></svg></button>}
 
         <div className="chat-dock" ref={chatDockRef}>

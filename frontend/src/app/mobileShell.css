@@ -9,6 +9,7 @@
     inset: 0 auto 0 0;
     z-index: 20;
     width: min(280px, 86vw);
+    padding: calc(12px + env(safe-area-inset-top, 0px)) calc(10px + env(safe-area-inset-right, 0px)) calc(6px + env(safe-area-inset-bottom, 0px)) calc(10px + env(safe-area-inset-left, 0px));
     box-shadow: var(--shadow-strong);
   }
   .sidebar.open { display: flex; }

@@ -91,7 +91,7 @@ export async function openChat(page: Page) {
   await expect(page.getByLabel('Nhắn cho Peto', { exact: true })).toBeVisible();
   await openSidebar(page);
   await page.getByRole('button', { name: title, exact: true }).click();
-  await expect(page.locator('.table-scroll')).toBeVisible();
+  await expect(page.locator('.table-scroll').first()).toBeVisible();
   await expect(page.locator('.katex')).toBeVisible();
 }
 export async function noPageOverflow(page: Page) {

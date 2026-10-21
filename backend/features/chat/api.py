@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 from pathlib import Path
+from time import perf_counter
+from core import usage_events
 from fastapi import Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 import storage as db
@@ -73,12 +75,30 @@ async def get_conversation_settings(conversation_id: str, owner: str = Depends(c
 
 @router.get("/api/conversations/{conversation_id}/messages")
 async def get_messages(
-    conversation_id: str, owner: str = Depends(current_owner)
+    conversation_id: str, owner: str = Depends(current_owner),
+    recovery_for: int | None = Query(default=None, gt=0, le=9223372036854775807),
 ) -> dict:
+    started = perf_counter()
     settings = await db.conversation_settings(owner, conversation_id)
     if not settings:
         raise HTTPException(status_code=404, detail="Không tìm thấy hội thoại")
     rows = await db.get_messages(owner, conversation_id)
+    if recovery_for is not None:
+        source = next((row for row in rows if row['id'] == recovery_for and row['role'] == 'user'), None)
+        if source is None:
+            raise HTTPException(404, 'Không tìm thấy lượt cần đồng bộ trong hội thoại này.')
+        reply = next((row for row in rows if row['role'] == 'assistant' and row.get('turn_user_id') == recovery_for), None)
+        # Chat legacy chưa có turn link: chỉ nhận assistant kế tiếp, không đoán reply của tin khác.
+        if not reply and not source.get('turn_state'):
+            index = rows.index(source)
+            candidate = rows[index + 1] if index + 1 < len(rows) else None
+            if candidate and candidate['role'] == 'assistant' and not candidate.get('turn_user_id'):
+                reply = candidate
+        outcome = 'pending' if source.get('turn_state') == 'running' else 'missing' if not reply else \
+                  'complete' if reply['status'] == 'complete' else 'partial'
+        if settings['mode'] == 'chat':
+            usage_events.record('chat_event', service='web', surface='chat', purpose='recovery', outcome=outcome,
+                elapsed_ms=round((perf_counter() - started) * 1000))
     companion = settings["mode"] == "companion"
     return {"messages": [_public_message(row, companion) for row in rows], 'project_id': settings.get('project_id'), 'persona': settings['persona'], 'archived': settings['archived'],
             **conversation_actions.public_selection(owner, settings)}

@@ -308,6 +308,7 @@ async def test_table_from_the_first_release_gains_the_cache_write_column():
     await db.init_db()
     rows = await stored_rows()
     assert len(rows) == 1 and "cache_write_tokens" in rows[0] and rows[0]["cache_write_tokens"] is None
+    assert rows[0]['effort'] is None
 
 
 def test_long_prompt_tier_prices_the_whole_call():

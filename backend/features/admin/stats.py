@@ -29,6 +29,7 @@ OUTCOME_GROUPS = {
     "complete": "complete",
     "stopped": "stopped", "cancelled": "stopped",
     "provider_error": "error", "internal_error": "error",
+    'context_overflow': 'error', 'persistence_error': 'error',
     "timeout": "timeout",
 }
 OUTCOME_ORDER = ("complete", "stopped", "error", "timeout", "other")
@@ -36,7 +37,7 @@ NOT_COUNTED = ("Tạo ảnh (tính theo ảnh)", "Phí tra web (tính theo lư�
 
 COLUMNS = ("at", "kind", "surface", "purpose", "service", "model", "slug", "outcome", "complete", "elapsed_ms",
            "first_text_ms", "input_tokens", "output_tokens", "cached_tokens", "reasoning_tokens", "search_calls",
-           "cache_write_tokens")
+           "cache_write_tokens", 'effort')
 # Anthropic tính token ghi cache 5 phút bằng 1,25 lần giá đầu vào; phần đầu vào thường đã có trong input_tokens.
 ANTHROPIC_CACHE_WRITE_PREMIUM = 0.25
 
@@ -123,6 +124,7 @@ def summarize(rows: list[dict], range_key: str, now: float, zone: ZoneInfo, rate
     totals_ms, firsts_ms = [], []
     previous = {"calls": 0, "cost": 0.0}
     searches = 0
+    current_rows = []
     for row in rows:
         at = row["at"]
         if at < previous_start or at >= window_end:
@@ -133,11 +135,14 @@ def summarize(rows: list[dict], range_key: str, now: float, zone: ZoneInfo, rate
                 previous["calls"] += 1
                 previous["cost"] += cost or 0.0
             continue
+        current_rows.append(row)
+        if row['kind'] not in {'call', 'turn'}:
+            continue
         key = _model_key(row)
         model = models.setdefault(key, _Model(key, row.get("service") or "unknown"))
         if row["kind"] == "call":
             model.calls += 1
-            model.side_calls += row.get("purpose") == "side"
+            model.side_calls += row.get("purpose") in {'side', 'summary'}
             if row.get("slug"):
                 model.slugs.add(row["slug"])
             searches += row.get("search_calls") or 0
@@ -210,7 +215,9 @@ def summarize(rows: list[dict], range_key: str, now: float, zone: ZoneInfo, rate
     full_previous = data_since is not None and data_since <= previous_start
     for bucket in buckets:
         bucket["cost"] = {service: round(value, 6) for service, value in bucket["cost"].items()}
+    from . import chat_metrics
     return {
+        'chat': chat_metrics.summarize(current_rows, percentile),
         "range": range_key,
         "timezone": zone.key,
         "generated_at": now,

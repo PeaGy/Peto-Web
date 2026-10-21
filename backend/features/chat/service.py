@@ -42,7 +42,7 @@ from core.config import (
     TURN_TIMEOUT_SECONDS,
     WEB_SEARCH_ENABLED,
 )
-from core import usage_events
+from core import config, usage_events
 from core.rate_limit import AdmissionDenied, admission
 from shared.web_search import normalize_sources, spoken_reply
 from features.chat import conversations as conversation_actions
@@ -144,15 +144,16 @@ async def _stream_reply(
     snapshot_token = request_context.current.set(snapshot)
     limit = None
     try:
-        async with asyncio.timeout_at(min(loop.time() + idle, hard)) as limit:
-            async with aclosing(provider.stream(
-                system_prompt=f"{system_prompt}\n\n{time_context(timezone)}",
-                messages=history, effort=effort, timezone=timezone,
-                web_search=web_search,
-            )) as stream:
-                async for chunk in stream:
-                    limit.reschedule(min(loop.time() + idle, hard))
-                    yield _as_chunk(chunk)
+        with usage_events.measurement(surface='chat' if snapshot else None, effort=effort):
+            async with asyncio.timeout_at(min(loop.time() + idle, hard)) as limit:
+                async with aclosing(provider.stream(
+                    system_prompt=f"{system_prompt}\n\n{time_context(timezone)}",
+                    messages=history, effort=effort, timezone=timezone,
+                    web_search=web_search,
+                )) as stream:
+                    async for chunk in stream:
+                        limit.reschedule(min(loop.time() + idle, hard))
+                        yield _as_chunk(chunk)
     except TimeoutError as error:
         if limit is not None and limit.expired():
             whole = limit.when() >= hard
@@ -368,11 +369,17 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                     steps = log.github(chunk.text, chunk.kind == "connector_lookup")
                 return steps + sse({"type": "connector_lookup", "text": chunk.text, "live": chunk.kind == "connector_lookup"})
             if chunk.kind == "search":
+                if mode == 'chat' and chunk.text == 'failed':
+                    usage_events.record('chat_event', service=ai_models.MODELS[model].service, model=model,
+                        surface='chat', effort=effort, purpose='web', outcome='error')
                 search_started = True
                 if log:
                     steps = log.search(chunk.text)
                 return steps + sse({"type": "search", "status": chunk.text})
             if chunk.kind == "page":
+                if mode == 'chat' and chunk.text == 'failed':
+                    usage_events.record('chat_event', service=ai_models.MODELS[model].service, model=model,
+                        surface='chat', effort=effort, purpose='web', outcome='error')
                 search_started = True
                 if log:
                     steps = log.page(chunk.text)
@@ -575,7 +582,10 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
             outcome = denied.reason
             failure = denied.message
         except ProviderError as err:
-            outcome = "provider_error"
+            outcome = 'context_overflow' if isinstance(err, context_budget.ContextOverflow) else 'provider_error'
+            if outcome == 'context_overflow':
+                usage_events.record('chat_event', service=ai_models.MODELS[model].service, model=model,
+                    surface='chat', effort=effort, purpose='context', outcome='overflow')
             logger.warning("Provider lỗi: %s", err)
             failure = str(err)
         except TimeoutError as error:
@@ -612,6 +622,8 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                     failure = 'Chưa lưu được toàn bộ câu trả lời. Kiểm tra lịch sử trước khi thử lại nhé.'
                 if state != 'complete':
                     complete = False
+                    if outcome == 'cancelled' and state != 'stopped':
+                        outcome = 'stream_interrupted'
                     if outcome == 'complete':
                         outcome = 'scope_changed' if state == 'interrupted' else state
                     if work:
@@ -630,7 +642,9 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
             usage_events.record(
                 "turn", service="byok" if own_key else ai_models.MODELS[model].service,
                 model=f"byok:{own_provider}" if own_key else model, surface=mode,
+                slug=None if own_key else config.XAI_MODEL if model == 'peto' else ai_models.MODELS[model].slug,
                 outcome="stopped" if state == "stopped" else outcome, complete=complete,
+                effort=effort,
                 elapsed_ms=round((ended_at - started) * 1000),
                 first_text_ms=round((first_text_at - started) * 1000) if first_text_at is not None else None,
             )

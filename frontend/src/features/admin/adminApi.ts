@@ -39,6 +39,7 @@ export interface AdminModel {
 }
 
 export interface AdminOverview {
+  chat?: AdminChatMetrics;
   range: AdminRange;
   timezone: string;
   generated_at: number;
@@ -66,6 +67,18 @@ export interface AdminOverview {
   searches: number;
   accounts: number | null;
   dropped_events: number;
+}
+
+export interface AdminChatMetrics {
+  configs: { model: string; slug: string | null; label: string; effort: string; turns: number; complete: number;
+    total_samples: number; first_samples: number; p50_ms: number | null; p95_ms: number | null;
+    first_p50_ms: number | null; first_p95_ms: number | null }[];
+  legacy_turns: number;
+  summary: { attempts: number; complete: number; source_changed: number; errors: number; cancelled: number;
+    sdk_calls: number; usage_calls: number; latency_samples: number; p50_ms: number | null; p95_ms: number | null };
+  tools: { results: number; errors: number; web_errors: number };
+  context_overflows: number;
+  recovery: { checks: number; complete: number; partial: number; pending: number; missing: number };
 }
 
 /** 404: tài khoản không phải chủ web (server cố ý không nói rõ hơn). */

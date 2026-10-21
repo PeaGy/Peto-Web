@@ -100,10 +100,12 @@ export function useReplyRecovery(options: Options) {
         controller.signal.addEventListener('abort', abortRead, { once: true });
         timeout = setTimeout(abortRead, 5000);
         try {
-          const stored = await getMessages(ticket.conversationId, read.signal);
+          const stored = await getMessages(ticket.conversationId, read.signal, undefined, ticket.userMessageId);
           if (!valid()) return;
           const userIndex = stored.findIndex(row => row.id === ticket.userMessageId && row.role === 'user');
-          const reply = userIndex < 0 ? undefined : stored[userIndex + 1];
+          const next = userIndex < 0 ? undefined : stored[userIndex + 1];
+          const reply = userIndex < 0 ? undefined : stored.find(row => row.role === 'assistant' && row.reply_to === ticket.userMessageId)
+            ?? (stored[userIndex]?.turn_state === undefined && next?.role === 'assistant' && next.reply_to === undefined ? next : undefined);
           // Chưa có câu trả lời được lưu thì giữ phần chữ trên máy, không thay bằng lịch sử thiếu tin.
           if (reply?.role === 'assistant' && reply.turn_state !== 'running') {
             const complete = reply.status !== 'incomplete';

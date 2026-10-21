@@ -1,9 +1,41 @@
 # CLAUDE.md
 
+## Web Chat UX, evidence and quality — stage 4 (2026-10-21)
+
+The owner approved the final stage after deploying/live-testing stage 3. Contract, metrics semantics, rubric and
+deployment/hardware gates: `backend/features/chat/docs/quality-and-ux.md`. Implemented locally; no auto commit,
+deployment or paid model call. Do not claim physical-phone, screen-reader or production acceptance from emulation.
+
+- Web Chat: composer focus only returns when still owned; code/table/message regions are keyboard accessible;
+  edit cancel/Escape returns to the source action, jump-to-latest keeps focus and honors reduced motion. A polite
+  live region announces milestones rather than tokens/history. IME Enter/229 does not submit. Mobile drawer traps
+  Tab, Escape restores focus without interfering with its own menus/dialogs. Keep browser zoom; app/drawer safe
+  areas and runtime theme-color follow app preferences. Cooldown rounds up to at least one second.
+- Sources retain whitelisted `access=search|page|tool` and `partial=true` across streaming/checkpoints/reload.
+  Completed native `open_page`/`find_in_page` and successful Claude fetch produce page evidence; only the actual
+  action URL is promoted. Search snippets and GitHub tool excerpts have separate labels. Citation alone does not
+  prove page fetch, full content or correct claims. Unknown/invalid metadata keeps safe Markdown fallback. No raw
+  model HTML/JSX/CSS/JS renderer, dynamic UI protocol, new segmentation model, voice or Agent runtime changes.
+- `usage_events.effort` migrates at startup. Task-local measurement labels summary SDK requests separately from
+  logical summary attempts. Admin adds collapsed Chat metrics: model/API ID/effective-effort sample counts and
+  p50/p95, summaries, typed context overflow, dispatch errors and recovery reads. Chat events never double-count
+  tokens/cost/turns; no owner/chat/request IDs, content, source URLs or raw tool errors in measurement records.
+  Completed-turn latency and all observed first-text latency have separate n. Missing/legacy labels stay unknown.
+- History exposes scoped `reply_to`; recovery reads include `recovery_for` and are owner/chat/user validated.
+  Prefer exact reply linkage; fallback only when both source/reply lack turn linkage (legacy). Recovery counters
+  count server reads, not unique repaired turns/client success/offline attempts. No automatic AI resubmission.
+- Separate `backend/evals/chat-stage4-cases.json` reuses the bounded runner: 4 cases/5 turns, mock smoke 15 turns
+  across Peto/Luna/Haiku. These are prompt fixtures without native tools, not quality/performance measurements.
+- Validation: full backend 1,537 passed/1 skipped (281.31s); full frontend 796 passed; browser desktop/mobile 34
+  passed, final source visibility/drawer checks 10 passed. Recovery/source/status group rerun 23 passed after a
+  final legacy-link guard. Build and diff checks passed. Browser snapshots stayed unchanged; actual mobile and
+  NVDA/VoiceOver/TalkBack and stage-4 model quality still require acceptance after owner commit/deploy. Rebuild
+  frontend and restart backend; no new .env or CLI installation.
+
 ## Web Chat recovery and data scope — stage 3 (2026-10-21)
 
 The owner approved continuing after committing stage 2. Contract, migration and deployment gates are in
-`backend/features/chat/docs/recovery-and-data-scope.md`. Stage 4 remains planned; no automatic deployment or paid test.
+`backend/features/chat/docs/recovery-and-data-scope.md`. Stage 4 is documented above; no automatic deployment or paid test.
 
 - `chat_turns.bind` saves a new user message and request link atomically. `persist` commits assistant content/status,
   verified owner/chat/version artifact links, sources, work and terminal state in one immediate SQLite transaction.
@@ -39,12 +71,12 @@ an instruction to ignore the old task. Its generated Word artifact survived F5 w
 DOCX XML contained REC3_DOC_71 and the expected text. Memory OFF retained 3 entries/10 details; ON and Peto/auto/web AUTO
 were restored and verified through UI. No source-code patch was needed. Forced production crashes, in-flight memory
 deletion races, second-owner checks and project moves/deletes remain mock-tested only; no physical-phone/offline
-network test or server usage/billing audit. Full evidence and limitations: `recovery-and-data-scope.md`. Stage 4 not started.
+network test or server usage/billing audit. Full evidence and limitations: `recovery-and-data-scope.md`. Stage 4 is documented above.
 
 ## Web Chat request context — stage 2 (2026-10-21)
 
 The owner approved stage 2 after deploying and live-testing stage 1. See
-`backend/features/chat/docs/request-context.md` and the four-stage roadmap. Stage 3 is documented above; stage 4 remains planned.
+`backend/features/chat/docs/request-context.md` and the four-stage roadmap. Stages 3–4 are documented above.
 
 - `features/chat/request_context.py` binds an immutable Web Chat snapshot only around the main reply, after account,
   conversation/project/model checks and context preparation. It carries request/conversation/project IDs with
@@ -88,7 +120,7 @@ Claude/request-context group 66 passed (includes a spoofed heading that must not
 
 The owner approved a four-stage Web Chat roadmap, starting with long context. The plan and gates are in
 `backend/features/chat/docs/roadmap-2026-10-20.md`; implementation details and production limits are in
-`backend/features/chat/docs/long-context.md`. Stages 2–3 are documented above; stage 4 remains planned.
+`backend/features/chat/docs/long-context.md`. Stages 2–4 are documented above.
 
 - `features/chat/context.py` prepares the exact recent messages under a model/deployment budget and adds a portable
   rolling summary, a bounded first-user anchor, file metadata and explicit unrepresented-message counts. Source

@@ -108,6 +108,7 @@ export default function Composer({
           rows={1}
           placeholder="Nhắn cho Peto…"
           aria-label="Nhắn cho Peto"
+          enterKeyHint="send"
           onChange={(event) => onDraftChange(event.target.value)}
           onPaste={(event) => {
             const pasted = Array.from(event.clipboardData.files);
@@ -117,7 +118,7 @@ export default function Composer({
             }
           }}
           onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+            if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing && event.keyCode !== 229) {
               event.preventDefault();
               if (!streaming && canSend) void onSubmit();
             }

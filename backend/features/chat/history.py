@@ -48,6 +48,8 @@ def _public_message(row: dict, companion: bool = False) -> dict:
             message['turn_outcome'] = row['turn_outcome']
         if row['role'] == 'assistant' and row['turn_state'] == 'stopped':
             message['stopped'] = True
+    if row['role'] == 'assistant' and row.get('turn_user_id'):
+        message['reply_to'] = row['turn_user_id']
     if row.get("work"):
         # Nhật ký "Đang làm" lưu cùng câu trả lời: tải lại trang vẫn thấy Peto đã làm gì, mất bao lâu.
         message["work"] = row["work"]

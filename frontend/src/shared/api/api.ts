@@ -3,7 +3,10 @@ export type Effort = "auto" | "none" | "low" | "medium" | "high" | "xhigh" | "ma
 export type WebSearchMode = "auto" | "on" | "off";
 /** Tab gửi tin: Companion có persona trả lời ngắn bằng tiếng Anh và mạch trò chuyện riêng. */
 export type ConversationMode = "chat" | "companion";
-export interface WebSource { url: string; title: string; kind?: 'citation' | 'result' }
+export interface WebSource {
+  url: string; title: string; kind?: 'citation' | 'result';
+  access?: 'search' | 'page' | 'tool'; partial?: boolean;
+}
 export interface DocumentArtifact {
   id: string; title: string; filename: string; version: number;
   format: 'docx' | 'pdf' | 'pptx' | 'xlsx'; style: 'report' | 'essay' | 'classic' | 'band' | 'minimal' | 'clean' | 'academic' | 'bold' | 'sheet' | 'workbook' | 'wordedit'; pages: number;
@@ -70,6 +73,7 @@ export interface Message {
   stopped?: boolean;
   turn_state?: 'running' | 'complete' | 'stopped' | 'interrupted' | 'timeout' | 'error';
   turn_outcome?: string;
+  reply_to?: number;
   /** Cảm xúc Peto tự chọn cho câu trả lời Companion (emotion_tags.py), để nghe lại tin cũ thì nhân vật làm đúng mặt. */
   emotion?: string | null;
   /** Cảm xúc của câu ở vị trí 0; tin cũ có thể còn nhiều mốc UTF-16, Companion chỉ dùng mặt đầu tiên. */
@@ -308,8 +312,9 @@ export async function conversationVersions(id: string): Promise<Conversation[]> 
   return data.versions;
 }
 
-export async function getMessages(conversationId: string, signal?: AbortSignal, onSettings?: (settings: ConversationSettings) => void): Promise<Message[]> {
-  const response = await fetch(`/api/conversations/${encodeURIComponent(conversationId)}/messages`, { signal });
+export async function getMessages(conversationId: string, signal?: AbortSignal, onSettings?: (settings: ConversationSettings) => void, recoveryFor?: number): Promise<Message[]> {
+  const query = recoveryFor === undefined ? '' : `?recovery_for=${encodeURIComponent(recoveryFor)}`;
+  const response = await fetch(`/api/conversations/${encodeURIComponent(conversationId)}/messages${query}`, { signal });
   const data = await json<ConversationSettings & { messages: Message[] }>(response);
   onSettings?.(data);
   return data.messages;

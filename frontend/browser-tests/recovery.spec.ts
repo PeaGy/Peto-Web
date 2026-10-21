@@ -39,12 +39,14 @@ for (const companion of [false, true]) {
   test(`đồng bộ ${companion ? 'Companion' : 'Trò chuyện'} sau khi luồng ngắt, không gửi trùng`, async ({ page, context }) => {
     const state = await mockPeto(page, { broken: true });
     if (companion) {
-      await page.goto('/#companion');
+      await page.goto('/companion');
       await expect(page.getByText('Hi! It is nice to see you today.', { exact: true })).toBeVisible();
+      await expect(page.locator('.companion-loading-screen')).toHaveCount(0);
     } else await openChat(page);
     const draft = page.getByLabel(companion ? 'Nhắn cho Peto trong Companion' : 'Nhắn cho Peto', { exact: true });
     const pane = page.locator(companion ? '.companion-panel' : '.chat');
     await draft.fill('Tin kiểm tra phục hồi');
+    await expect(draft).toHaveValue('Tin kiểm tra phục hồi');
     await page.getByRole('button', { name: 'Gửi', exact: true }).click();
     await expect(page.getByText('Phần đang nhận', { exact: true })).toBeVisible();
     // Yêu cầu đã giả lập vẫn được trả lời khi setOffline, nên lần hỏi máy chủ "có mạng chưa" phải hỏng như mạng thật.

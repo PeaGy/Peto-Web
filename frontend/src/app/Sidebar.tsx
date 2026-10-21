@@ -8,6 +8,7 @@ import { SearchIcon, SidebarIcon, ComposeIcon, ImageIcon, CompanionIcon } from '
 
 type SidebarProps = {
   projects: ReactNode;
+  sidebarRef?: Ref<HTMLElement>;
   sidebarOpen: boolean; collapsed: boolean; streaming: boolean; deleting: boolean;
   appInfo: AppInfo | null; auth: AuthState; view: AppView;
   imagineJobs: ImagineJob[]; conversations: Conversation[]; conversationId: string | null;
@@ -26,7 +27,7 @@ type SidebarProps = {
 };
 
 export default function Sidebar({
-  projects,
+  projects, sidebarRef,
   sidebarOpen, collapsed, streaming, deleting, appInfo, auth, view, imagineJobs,
   conversations, conversationId, loadingList, hasMore, accountRef, accountMenu,
   setSearchOpen, onToggleCollapsed, goChat, go, preloadImagine, preloadCompanion,
@@ -36,7 +37,8 @@ export default function Sidebar({
 }: SidebarProps) {
   const { width, expandedWidth, maxWidth, resizing, visualCollapsed, contentOpacity, handleProps } = useSidebarResize(collapsed, onCollapsedChange);
   return (
-      <aside className={["sidebar", sidebarOpen && "open", visualCollapsed && "collapsed", resizing && "resizing"].filter(Boolean).join(" ")}
+      <aside ref={sidebarRef} id="peto-sidebar" tabIndex={-1} aria-label="Điều hướng Peto"
+        className={["sidebar", sidebarOpen && "open", visualCollapsed && "collapsed", resizing && "resizing"].filter(Boolean).join(" ")}
         style={{ '--sidebar-width': `${expandedWidth}px`, '--sidebar-drag-width': `${width}px`, '--sidebar-content-opacity': contentOpacity } as CSSProperties}>
         <div className="sidebar-head">
           <div className="sidebar-brand">

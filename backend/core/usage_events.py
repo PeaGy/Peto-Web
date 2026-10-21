@@ -1,7 +1,7 @@
 """Số liệu vận hành cho trang Quản trị: không nội dung chat, không owner, không mã hội thoại.
 
-Ghi đúng tại ba chỗ đã log ``model_usage``, ``chat_timing`` và ``agent_timing``. ``record`` chỉ thêm một dòng vào
-hàng đợi trong bộ nhớ (đồng bộ, không I/O, không bao giờ báo lỗi ra ngoài), nên đường gửi tin nhắn không chờ
+Giữ số đo tại ``model_usage``, ``chat_timing`` và ``agent_timing``; sự kiện Chat bổ sung chỉ ghi trạng thái định trước.
+``record`` chỉ thêm một dòng vào hàng đợi trong bộ nhớ (đồng bộ, không I/O, không bao giờ báo lỗi ra ngoài), nên đường gửi tin nhắn không chờ
 database. Một tác vụ nền ghi cả lô vào SQLite vài giây một lần và ghi nốt khi tắt máy chủ. Ngoài máy chủ (test,
 benchmark, lệnh ops) hàng đợi tắt, nên số liệu thử nghiệm không lẫn vào. Cần chạy một tiến trình backend, như
 voice và Imagine đã yêu cầu.
@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import asyncio
 from collections import deque
+from contextlib import contextmanager
+from contextvars import ContextVar
 import logging
 import re
 import time
@@ -30,8 +32,20 @@ COLUMNS = (
     "at", "kind", "surface", "purpose", "service", "model", "slug", "outcome", "complete", "elapsed_ms",
     "first_text_ms", "input_tokens", "output_tokens", "cached_tokens", "reasoning_tokens", "search_calls",
     "cache_write_tokens",
+    'effort',
 )
-KINDS = {"call", "turn"}
+KINDS = {"call", "turn", 'chat_event'}
+_scope: ContextVar[dict | None] = ContextVar('usage_measurement_scope', default=None)
+
+
+@contextmanager
+def measurement(*, surface=None, effort=None, purpose=None):
+    """Nhãn đo do server bind; không nhận owner/request ID hoặc nội dung từ model/client."""
+    token = _scope.set({'surface': surface, 'effort': effort, 'purpose': purpose})
+    try:
+        yield
+    finally:
+        _scope.reset(token)
 # Nhãn kỹ thuật như trong log (tên model, kết quả…); chuỗi lạ bị bỏ thay vì lưu nguyên.
 LABEL = re.compile(r"[a-zA-Z0-9_.:-]{1,100}\Z")
 
@@ -55,17 +69,22 @@ def record(
     elapsed_ms: int | None = None, first_text_ms: int | None = None, input_tokens: int | None = None,
     output_tokens: int | None = None, cached_tokens: int | None = None, reasoning_tokens: int | None = None,
     search_calls: int | None = None, cache_write_tokens: int | None = None,
+    effort: str | None = None,
 ) -> None:
     """Thêm một sự kiện vào hàng đợi. Số liệu hỏng chỉ thành ô trống; không bao giờ làm hỏng lượt chat."""
     global _dropped
     if not _active or kind not in KINDS:
         return
     try:
+        scope = _scope.get() or {}
+        surface, effort = surface or scope.get('surface'), effort or scope.get('effort')
+        if kind == 'call' and scope.get('purpose'):
+            purpose = scope['purpose']
         row = (
             time.time(), kind, _label(surface), _label(purpose), _label(service) or "unknown", _label(model),
             _label(slug), _label(outcome), None if complete is None else int(bool(complete)), _count(elapsed_ms),
             _count(first_text_ms), _count(input_tokens), _count(output_tokens), _count(cached_tokens),
-            _count(reasoning_tokens), _count(search_calls), _count(cache_write_tokens),
+            _count(reasoning_tokens), _count(search_calls), _count(cache_write_tokens), _label(effort),
         )
         if len(_pending) == MAX_PENDING:
             _dropped += 1
