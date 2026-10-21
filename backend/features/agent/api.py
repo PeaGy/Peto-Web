@@ -39,7 +39,7 @@ from shared.attachments import sniff_image_mime
 from ai.base import ProviderError
 from shared.time_tools import agent_time_context, resolve_timezone
 from core import usage_events
-from core.config import AGENT_DAILY_STEPS, AGENT_MODEL, AGENT_MAX_CONCURRENT, AGENT_MAX_QUEUE, AGENT_MAX_REQUEST_BYTES, AGENT_REASONING, AGENT_SLOW_STEP_SECONDS, AGENT_STEP_TIMEOUT_SECONDS, AGENT_TOKEN_IDLE_DAYS, AGENT_WEB_SEARCH, provider_from_owner
+from core.config import AGENT_DAILY_STEPS, AGENT_DISABLED_SOURCES, AGENT_MODEL, AGENT_MAX_CONCURRENT, AGENT_MAX_QUEUE, AGENT_MAX_REQUEST_BYTES, AGENT_REASONING, AGENT_SLOW_STEP_SECONDS, AGENT_STEP_TIMEOUT_SECONDS, AGENT_TOKEN_IDLE_DAYS, AGENT_WEB_SEARCH, provider_from_owner
 from prompts import agent as agent_prompts  # noqa: F401 - test và module khác lấy qua đây
 from core.rate_limit import Admission, AdmissionDenied
 
@@ -271,6 +271,8 @@ async def me(device: dict = Depends(device_auth)) -> dict:
         # chưa cập nhật vẫn chạy như cũ (kết quả công cụ do CLI dựng phải khớp mô tả do máy chủ gửi).
         "agent_features": sorted(FEATURES),
         "context_transport": {"max_items": MAX_ITEMS, "max_request_bytes": AGENT_MAX_REQUEST_BYTES},
+        # Nguồn trực tiếp chủ web đang tạm tắt (PETO_AGENT_DISABLED_SOURCES); CLI ẩn model của chúng khi mở phiên.
+        "disabled_sources": list(AGENT_DISABLED_SOURCES),
     }
 
 

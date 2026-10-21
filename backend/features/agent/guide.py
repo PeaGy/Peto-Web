@@ -41,7 +41,8 @@ def build_agent_guide(*, install_command: str, daily_steps: int, question: str =
     """Hướng dẫn Peto Agent cho chat web, chỉ khi vài tin gần đây nói tới Agent/CLI/Peto: không chèn cả hướng dẫn CLI
     vào câu hỏi không liên quan. Danh mục lệnh thật giữ nguyên ngôn ngữ của nó."""
     folded = _fold(question[-12000:])
-    if not re.search(r'(?<!\w)(agent|cli|peto|/skill|/mcp|/model|/effort|/permissions|/compact|/resume|/usage)(?!\w)', folded):
+    if not re.search(r'(?<!\w)(agent|cli|peto|/skill|/mcp|/models?|/connect|/effort|/permissions|/compact|/resume|/usage)'
+                     r'(?!\w)', folded):
         return ''
     version, entries = catalog()
     install = install_command or 'irm https://<địa chỉ Peto>/install.ps1 | iex'
@@ -57,6 +58,11 @@ def build_agent_guide(*, install_command: str, daily_steps: int, question: str =
         'Ctrl+C stops work. Alt+V pastes images or drag an image file into the terminal. CLI announces available updates.',
         f'Configured daily allowance: {daily_steps} steps. Model base costs differ; high/xhigh/max double base cost. '
         'Use /usage, `peto status` or Cài đặt → Peto Agent for actual quota/devices; do not infer account rights or remaining quota.',
+        'Own sources skip Peto steps and the Peto server: `peto connect openai` (own OpenAI API key, billed to the '
+        'user\'s OpenAI account; CLI 0.31+) and `peto connect chatgpt` ("Continue with ChatGPT": sign in to use the '
+        'ChatGPT plan; CLI 0.33+). In a session: /connect and /models; changing a model affects only that conversation. '
+        'Keys and tokens stay encrypted on the user\'s Windows machine; never ask the user to paste a key or token into '
+        'web chat.',
         'File tools enforce project/secret boundaries; edits and commands follow user approvals. Shell and local MCP run '
         'as the OS user, not in a sandbox. Read content/results may reach the AI service; history is local. Never request API keys.',
         'Logout: `peto logout`. Uninstall: remove %LOCALAPPDATA%\\PetoAgent and %APPDATA%\\PetoAgent, optionally its bin PATH entry.',
@@ -68,6 +74,8 @@ def build_agent_guide(*, install_command: str, daily_steps: int, question: str =
             f"- `{item['name']}`: {item['description']}" for item in entries))
         aliases = {'/skill': ('skill', 'skills', 'ky nang'), '/mcp': ('mcp',),
                    '/effort': ('effort', 'suy nghi', 'reasoning'), '/model': ('model', 'mo hinh'),
+                   '/models': ('models', 'doi model', 'chon model'),
+                   '/connect': ('connect', 'ket noi', 'chatgpt', 'khoa api', 'api key'),
                    '/browser': ('trinh duyet', 'trinhduyet', 'browser'), '/plan': ('plan', 'lap ke hoach'),
                    '/remember': ('remember', 'ghi nho', 'nho'),
                    '/permissions': ('permissions', 'quyen'), '/compact': ('compact', 'chat dai', 'hoi thoai dai')}

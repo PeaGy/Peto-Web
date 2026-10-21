@@ -132,6 +132,30 @@ journal, logs, export, request bodies or env; Ctrl+C; redirects; connect/disconn
 `backend/tests/test_agent_bundle.py`. Full CLI 725 passed in one run (242s); backend Agent/prompt/model/
 installer 197 passed. No real OpenAI key or paid call was used; live behaviour with a real key is unverified.
 
+## Multi-source models: M6 release (2026-10-21; CLI 0.33.3 source)
+
+The owner confirmed a real ChatGPT sign-in on 0.33.2 and asked for the next step. M6 per the roadmap; user/ops guide in
+`agent-cli/docs/model-sources.md` (sources, quota, disconnect, disabling, backups/rollback, live-tested vs mock).
+- `tests/test_acceptance_sources.py`: roadmap §7 as a deterministic test for both `openai-key` and `chatgpt-plan`
+  (fake Peto and OpenAI on 127.0.0.1): Peto fixes `add`, the next `/step` is refused (out of steps), `/model gpt-6-luna`,
+  the direct source fixes `mul` and runs an independent check, `/compact` on the new source, reopen and `/resume`, check
+  again. Asserts no `/step` after the switch, the check ran exactly twice, saved source/connection, secret only in DPAPI.
+- `migration.py`: on a CLI version change `main()` copies `config.json`, `connections.json`, `permissions.json` and the
+  shared `AGENTS.md` to `<profile>/backups/<time>-<old>-to-<new>/` (keep 5; never credentials or sessions), then
+  writes `cli_version`/`config_schema` (2). Prints nothing (keeps `peto models --json` clean).
+- `connections._write` keeps rows it does not understand (newer providers) and refuses to overwrite a newer file
+  version; 0.31 and older still drop ChatGPT rows when they rewrite the file, which the backups cover.
+- Disable switch: backend `PETO_AGENT_DISABLED_SOURCES` (validated against `openai-key`, `chatgpt-plan`) → `/me`
+  `disabled_sources`; local `disabled_sources` in `config.json`. Catalog hides those models, a default on a disabled
+  source falls back to Peto with a notice, `/connect` and `peto connect` refuse with `OFF_MESSAGE`; connections, secrets
+  and sessions stay, and re-enabling restores the old default.
+- Web chat Agent guide mentions own sources (`peto connect openai|chatgpt`, `/connect`, `/models`) and never asks for
+  keys; `/connect`/`/models` trigger it. Installer test: every `peto_agent/**/*.py` is in the wheel; the clean install
+  imports every module and runs `peto models --json` without a traceback.
+- Full CLI 755 passed in one run (after `leaked()` in `test_direct_source.py` skips SQLite `-shm` files, which a
+  live journal locks; one earlier run failed there by timing); backend Agent/model/schema/prompt/installer 207 passed.
+- Not done: a real ChatGPT-plan model call (tools, compact, resume, refresh, revoke) and the real-account run of §7.
+
 ## Multi-source models: M5 Continue with ChatGPT (2026-10-21; CLI 0.33.2 source)
 
 The owner approved M5 from an OpenCode "Connect OpenAI" screenshot. Rereading OpenAI's docs corrected M0: the open-source

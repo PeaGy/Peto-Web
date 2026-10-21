@@ -206,9 +206,11 @@ def direct_session(project, openai, *, max_steps=None, ui=None):
 
 
 def leaked(root: Path) -> list[str]:
-    """Tệp dưới ``root`` có chứa khóa (dạng UTF-8 hay UTF-16 của Windows)."""
+    """Tệp dưới ``root`` có chứa khóa (dạng UTF-8 hay UTF-16 của Windows). Bỏ qua tệp -shm của SQLite: chỉ là chỉ mục
+    WAL, không chứa dữ liệu hàng, và bị khóa khi nhật ký còn mở (luồng đặt tên có thể còn giữ); WAL và tệp chính vẫn được
+    quét."""
     needles = (KEY.encode("utf-8"), KEY.encode("utf-16-le"))
-    return [str(path) for path in root.rglob("*") if path.is_file()
+    return [str(path) for path in root.rglob("*") if path.is_file() and not path.name.endswith("-shm")
             and any(needle in path.read_bytes() for needle in needles)]
 
 

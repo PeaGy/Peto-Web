@@ -23,6 +23,8 @@ from .tui.dialog import Action, Option, PromptDialog, SelectDialog
 
 RECENT_SHOWN = 5
 KEY_PAGE = "platform.openai.com/api-keys"
+OFF_MESSAGE = ("Nguồn này đang tạm tắt (do chủ máy chủ Peto, hay disabled_sources trong config.json của bạn). Kết nối "
+               "và hội thoại đã lưu vẫn còn; dùng Peto hay nguồn khác cho tới khi bật lại.")
 
 
 def has_dialogs(ui) -> bool:
@@ -233,7 +235,13 @@ def methods(ui, work, cat: catalog.Catalog) -> bool:
         if result.kind != "select":
             return False
         if result.option.value == "key":
+            if OpenAIKeySource.id in cat.off():
+                dialog.message, dialog.message_tone = OFF_MESSAGE, "warning"
+                continue
             return add_key(ui, work, cat)
+        if chatgpt_provider.ChatGPTSource.id in cat.off():
+            dialog.message, dialog.message_tone = OFF_MESSAGE, "warning"
+            continue
         done, problem = sign_in_chatgpt(ui, work, cat)
         if done or not problem:
             return done
@@ -298,7 +306,10 @@ def accounts(ui, work, cat: catalog.Catalog) -> bool:
         if result.action == "rename":
             prompt = PromptDialog("Đổi tên", value=item.label, placeholder="Tên dễ nhớ", submit="lưu")
             answer = ui.dialog(prompt)
-            renamed = connections.rename(item.id, answer.text) if answer.kind == "submit" else None
+            try:
+                renamed = connections.rename(item.id, answer.text) if answer.kind == "submit" else None
+            except (OSError, connections.ConnectionError_) as err:
+                renamed, dialog.message, dialog.message_tone = None, str(err), "warning"
             if renamed is not None:
                 refresh(work, cat)
                 dialog.message = f"Đã đổi tên thành “{renamed.label}”."
@@ -317,8 +328,16 @@ def accounts(ui, work, cat: catalog.Catalog) -> bool:
 
 
 def _open_account(ui, work, cat, value, item) -> tuple[bool, str]:
+    off = cat.off()
     if value == "+key":
+        if OpenAIKeySource.id in off:
+            return False, OFF_MESSAGE
         return add_key(ui, work, cat), ""
+    plan_source = chatgpt_provider.ChatGPTSource.id
+    if (value == "+chatgpt" or str(value).startswith("reg:") or (item is not None and item.provider == "chatgpt"))             and plan_source in off:
+        return False, OFF_MESSAGE
+    if item is not None and item.source in off:
+        return False, OFF_MESSAGE
     if value == "+chatgpt":
         return sign_in_chatgpt(ui, work, cat)
     if isinstance(value, str) and value.startswith("reg:"):
@@ -347,7 +366,10 @@ def _delete(ui, work, cat: catalog.Catalog, item: connections.Connection) -> str
     else:
         message = (f"Đã xóa {item.label} trên máy này. Khóa vẫn còn hiệu lực ở tài khoản OpenAI; muốn vô hiệu hẳn thì "
                    "thu hồi ở " + KEY_PAGE + ".")
-    connections.remove(item.id)
+    try:
+        connections.remove(item.id)
+    except (OSError, connections.ConnectionError_) as err:
+        return str(err) or "Không ghi được hồ sơ kết nối."
     catalog.forget_connection(item.id)
     entries = refresh(work, cat)
     if work.connection != item.id:

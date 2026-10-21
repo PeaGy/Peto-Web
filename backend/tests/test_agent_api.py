@@ -357,6 +357,15 @@ async def test_me_reports_steps_tokens_effort_and_cli_version(anon_client, clien
     assert me["default_effort"] == agent_api.AGENT_REASONING
     project = tomllib.loads((agent_install.CLI_DIR / "pyproject.toml").read_text(encoding="utf-8"))
     assert me["cli_version"] == project["project"]["version"], "peto so bản này để nhắc cập nhật"
+    assert me["disabled_sources"] == [], "mặc định không tắt nguồn trực tiếp nào"
+
+
+async def test_me_lists_direct_sources_the_owner_turned_off(anon_client, client, monkeypatch):
+    await login_as(client, "google")
+    token = await connect(anon_client, client)
+    monkeypatch.setattr(agent_api, "AGENT_DISABLED_SOURCES", ("chatgpt-plan",))
+    me = (await anon_client.get("/api/agent/me", headers=bearer(token))).json()
+    assert me["disabled_sources"] == ["chatgpt-plan"]
 
 
 async def test_step_rejects_bad_input_without_spending_steps(anon_client, client, monkeypatch):

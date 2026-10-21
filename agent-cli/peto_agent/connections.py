@@ -86,8 +86,25 @@ def get(connection_id: str | None) -> Connection | None:
     return next((item for item in load_all() if item.id == connection_id), None)
 
 
+def _file() -> dict | None:
+    try:
+        data = json.loads(_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
 def _write(items: list[Connection]) -> None:
-    rows = [{**asdict(item), "models": list(item.models)} for item in items]
+    """Ghi hồ sơ. Dòng bản này không hiểu (nhà cung cấp của bản peto mới hơn) được giữ nguyên chứ không bị xóa; tệp
+    do bản mới hơn ghi theo định dạng khác thì không ghi đè (M6: không ghi đè dữ liệu chưa hiểu)."""
+    current = _file()
+    if current is not None and isinstance(current.get("version"), int) and current["version"] > VERSION:
+        raise ConnectionError_("connections.json do bản peto mới hơn ghi; cập nhật peto (/update) rồi thử lại.")
+    known = {item.id for item in items}
+    understood = {item.id for item in load_all()}
+    kept = [row for row in (current or {}).get("connections") or []
+            if isinstance(row, dict) and row.get("id") not in known and row.get("id") not in understood]
+    rows = [{**asdict(item), "models": list(item.models)} for item in items] + kept
     write_text(_path(), json.dumps({"version": VERSION, "connections": rows}, ensure_ascii=False, indent=2))
 
 
@@ -109,9 +126,9 @@ def add(provider: str, secret: str | dict, *, label: str = "", endpoint: str | N
         credentials.save(item.id, secret)
     try:
         _write([*load_all(), item])
-    except OSError:
+    except (OSError, ConnectionError_) as err:
         credentials.delete(item.id)
-        raise ConnectionError_("Không lưu được hồ sơ kết nối.") from None
+        raise ConnectionError_(str(err) if isinstance(err, ConnectionError_) else "Không lưu được hồ sơ kết nối.")             from None
     return item
 
 

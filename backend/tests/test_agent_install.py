@@ -89,6 +89,10 @@ def test_wheel_is_reproducible_and_matches_its_record():
     for name in ("__init__", "assembly", "agent_prompts", "core_prompt", "provider_prompts", "tool_schemas"):
         assert f"peto_agent/bundle/{name}.py" in files
     assert "peto_agent/providers/openai_key.py" in files and "peto_agent/credentials.py" in files
+    # Phát hành nhiều nguồn (M6): mọi mô-đun của CLI đều vào wheel, kể cả mô-đun mới (đăng nhập ChatGPT, khung nổi…).
+    source = {path.relative_to(agent_install.CLI_DIR).as_posix()
+              for path in (agent_install.CLI_DIR / "peto_agent").rglob("*.py") if "__pycache__" not in path.parts}
+    assert source <= set(files), sorted(source - set(files))
     for line in files[f"{dist_info}/RECORD"].decode().splitlines():
         path, digest, size = line.split(",")
         if path == f"{dist_info}/RECORD":
@@ -120,3 +124,16 @@ def test_pip_installs_the_wheel_and_the_cli_knows_its_server(tmp_path):
     version = subprocess.run([sys.executable, "-m", "peto_agent", "--version"], cwd=tmp_path, capture_output=True,
                              text=True, check=True, env={**os.environ, "PYTHONPATH": str(target)})
     assert version.stdout.strip() == f"peto {wheel.filename.split('-')[1]}"
+    # Nạp mọi mô-đun của gói đã cài (thiếu tệp hay tài nguyên thì lỗi ở đây), rồi chạy một lệnh đọc cấu hình trong hồ sơ
+    # trống: không có nguồn nào thì báo lỗi bình thường, không văng traceback.
+    every = ("import importlib, pkgutil, peto_agent; "
+             "[importlib.import_module(m.name) for m in pkgutil.walk_packages(peto_agent.__path__, 'peto_agent.')]; "
+             "print('ok')")
+    loaded = subprocess.run([sys.executable, "-c", every], cwd=tmp_path, capture_output=True, text=True,
+                            env={**os.environ, "PYTHONPATH": str(target)})
+    assert loaded.returncode == 0 and loaded.stdout.strip() == "ok", loaded.stderr[-2000:]
+    home = tmp_path / "home"
+    listed = subprocess.run([sys.executable, "-m", "peto_agent", "models", "--json"], cwd=tmp_path, capture_output=True,
+                            text=True, encoding="utf-8",
+                            env={**os.environ, "PYTHONPATH": str(target), "PETO_AGENT_HOME": str(home)})
+    assert listed.returncode == 1 and "Traceback" not in listed.stderr, listed.stderr[-2000:]

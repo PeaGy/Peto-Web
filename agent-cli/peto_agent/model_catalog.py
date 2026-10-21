@@ -37,13 +37,22 @@ def supported_efforts(model: dict) -> list[str]:
     return known or ["low", "medium", "high"]
 
 
-def direct_models() -> list[dict]:
+def disabled_sources(server=()) -> set[str]:
+    """Nguồn trực tiếp đang tắt (M6): ``disabled_sources`` trong config.json của người dùng, cộng danh sách máy chủ Peto
+    báo trong /me. Kết nối và hội thoại của nguồn bị tắt vẫn còn; chỉ không chọn được model của nó."""
+    values = config.load().get("disabled_sources")
+    local = {value for value in values if isinstance(value, str)} if isinstance(values, list) else set()
+    return {value for value in local | set(server or ()) if value in DIRECT_SOURCES}
+
+
+def direct_models(disabled=()) -> list[dict]:
     """Model của các kết nối trực tiếp trên máy này. ``key`` là tên gõ sau /model: mã model thật, thêm @mã kết nối
-    khi hai kết nối có cùng model."""
+    khi hai kết nối có cùng model. Nguồn đang tắt (``disabled_sources``) không có model nào."""
     rows, seen = [], set()
+    off = disabled_sources(disabled)
     for item in connections.load_all():
         source = DIRECT_SOURCES.get(item.source)
-        if source is None:
+        if source is None or item.source in off:
             continue
         names = item.extra.get("model_names") if isinstance(item.extra.get("model_names"), dict) else {}
         plan = item.source == ChatGPTSource.id
@@ -99,7 +108,7 @@ class Catalog:
     lời) cộng model của các kết nối trực tiếp, đọc lại mỗi lần để kết nối vừa thêm hiện ngay."""
 
     def __init__(self, peto_models: list[dict], *, account: str = "", logged_in: bool = False, problem: str = "",
-                 transport: dict | None = None):
+                 transport: dict | None = None, disabled=()):
         self.peto = list(peto_models)
         self.account = account
         self.logged_in = logged_in
@@ -107,9 +116,14 @@ class Catalog:
         self.problem = problem
         # Giới hạn đường truyền máy chủ báo trong /me (context_transport), dùng lại khi danh sách model đổi.
         self.transport = transport
+        # Nguồn trực tiếp máy chủ Peto báo đang tắt (/me disabled_sources, M6).
+        self.disabled = tuple(disabled or ())
+
+    def off(self) -> set[str]:
+        return disabled_sources(self.disabled)
 
     def entries(self) -> list[dict]:
-        return [*self.peto, *direct_models()]
+        return [*self.peto, *direct_models(self.disabled)]
 
     def find(self, source: str, model: str, connection: str | None) -> dict | None:
         return next((entry for entry in self.entries() if entry_selection(entry) == (source, model, connection)), None)

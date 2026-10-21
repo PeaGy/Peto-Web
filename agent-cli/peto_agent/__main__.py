@@ -15,7 +15,7 @@ from datetime import datetime
 from pathlib import Path
 
 from . import (__version__, chatgpt_auth, commands, config, connections, credentials, export, external_editor, history,
-               line_editor, mentions, model_dialogs, transcript, outputs, snapshot, updater, user_guide)
+               line_editor, mentions, migration, model_dialogs, transcript, outputs, snapshot, updater, user_guide)
 from . import model_catalog as catalog
 from .bundle.tool_schemas import FEATURES as BUNDLE_FEATURES
 from .client import ApiError, Client
@@ -766,6 +766,9 @@ def connect(ui: UI, provider: str, *, label: str = "", endpoint: str | None = No
     if provider not in connections.PROVIDERS:
         ui.failure("Hiện chỉ kết nối được: " + ", ".join(connections.PROVIDERS) + ".")
         return 2
+    if connections.PROVIDERS[provider]["source"] in catalog.disabled_sources():
+        ui.failure(model_dialogs.OFF_MESSAGE)
+        return 1
     if not credentials.available():
         ui.failure("Máy này không có kho khóa an toàn của Windows (DPAPI), nên peto không lưu khóa. Nguồn trực tiếp "
                    "hiện chỉ chạy trên Windows.")
@@ -818,6 +821,9 @@ def connect_chatgpt(ui: UI, *, open_browser=None) -> int:
     if not credentials.available():
         ui.failure("Máy này không có kho khóa an toàn của Windows (DPAPI), nên peto không lưu đăng nhập. Nguồn trực tiếp "
                    "hiện chỉ chạy trên Windows.")
+        return 1
+    if chatgpt_provider.ChatGPTSource.id in catalog.disabled_sources():
+        ui.failure(model_dialogs.OFF_MESSAGE)
         return 1
     ui.line(f"{catalog.CONTINUE}: Peto Agent mở trình duyệt để bạn đăng nhập ChatGPT. Chọn {catalog.PLAN_FEATURE} để "
             "các yêu cầu tính vào hạn mức gói ChatGPT của bạn, không tính bước Peto.", "dim")
@@ -884,6 +890,9 @@ def disconnect(ui: UI, connection_id: str) -> int:
         removed = connections.remove(connection_id)
     except OSError:
         ui.failure("Không ghi được hồ sơ kết nối.")
+        return 1
+    except connections.ConnectionError_ as err:
+        ui.failure(str(err))
         return 1
     if not removed:
         ui.failure("Không có kết nối này. Xem danh sách bằng: peto connections")
@@ -1007,8 +1016,17 @@ def session(ui: UI, resume: str | None = None) -> int:
                 ui.failure(err.message)
                 return 1
             peto_problem = err.message
-    # Model của Peto chỉ chọn được khi máy chủ vừa trả lời; nguồn trực tiếp luôn có trong danh sách.
+    # Model của Peto chỉ chọn được khi máy chủ vừa trả lời; nguồn trực tiếp luôn có trong danh sách, trừ nguồn chủ máy
+    # chủ Peto đang tạm tắt (/me disabled_sources, M6).
     peto_models = _models(me) if me else []
+    server_off = catalog.disabled_sources(me.get("disabled_sources") if isinstance(me.get("disabled_sources"), list)
+                                          else ()) if me else set()
+    turned_off = ""
+    if direct is not None and direct["source"] in server_off:
+        turned_off = (f"Nguồn {catalog.SOURCE_NAMES.get(direct['source'], direct['source'])} đang tạm tắt từ máy chủ "
+                      "Peto nên phiên này dùng Peto; kết nối và hội thoại đã lưu vẫn còn.")
+        direct = None
+    direct_models = [row for row in direct_models if row["source"] not in server_off]
     models = [*peto_models, *direct_models]
     model = direct or _model(peto_models)
     if direct is None:
@@ -1039,11 +1057,16 @@ def session(ui: UI, resume: str | None = None) -> int:
     elif peto_problem:
         ui.line(f"Chưa lấy được tài khoản Peto ({peto_problem}); {model['label']} qua khóa riêng vẫn làm việc bình "
                 "thường.", "dim")
+    if turned_off:
+        ui.line(turned_off, "yellow")
     chosen = settings.get("selection")
-    if direct is None and isinstance(chosen, dict) and chosen.get("source") not in {None, PETO}:
-        # Không âm thầm dùng nguồn khác (M4): kết nối mặc định đã bị xóa hay không còn model đó.
-        ui.line(f"Model mặc định {chosen.get('model')} (khóa riêng) không còn dùng được trên máy này nên peto dùng "
-                f"{model.get('label') or model['key']}. Gõ /models để chọn, hay /connect để thêm khóa.", "yellow")
+    if direct is None and not turned_off and isinstance(chosen, dict) and chosen.get("source") not in {None, PETO}:
+        # Không âm thầm dùng nguồn khác (M4): kết nối mặc định đã bị xóa, không còn model đó, hay nguồn đang tắt.
+        why = ("đang tắt (disabled_sources trong config.json)" if chosen.get("source") in catalog.disabled_sources()
+               else "không còn dùng được trên máy này")
+        ui.line(f"Model mặc định {chosen.get('model')} ({catalog.SOURCE_NAMES.get(chosen.get('source'), 'nguồn riêng')}) "
+                f"{why} nên peto dùng {model.get('label') or model['key']}. Gõ /models để chọn, hay /connect để thêm "
+                "khóa.", "yellow")
     work = Session(client, workspace, ui, log=TaskLog(root.name), effort=effort,
                    model=model["key"] if direct is None else PETO,
                    model_step_cost=int(model.get("step_cost") or 1))
@@ -1061,7 +1084,7 @@ def session(ui: UI, resume: str | None = None) -> int:
     # mỗi lần để khóa vừa thêm hiện ngay.
     work.model_catalog = catalog.Catalog(peto_models, account=str(me.get("account") or ""),
                                          logged_in=bool(client.token), problem=peto_problem,
-                                         transport=me.get("context_transport"))
+                                         transport=me.get("context_transport"), disabled=tuple(server_off))
     if direct is not None:
         work.select(direct["source"], direct["model"], connection=direct["connection"], step_cost=0)
     work.supported_efforts = _supported_efforts(model)
@@ -1311,6 +1334,9 @@ def main(argv: list[str] | None = None) -> int:
     # /update mở lại bản mới bằng tham số này để tiếp tục đúng hội thoại; không phải lệnh người dùng gõ.
     parser.add_argument("--resume", metavar="MÃ", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
+    # Đổi bản peto: chép cấu hình sang backups/ trước khi bản này ghi gì vào đó (M6), để quay về bản cũ vẫn khôi phục
+    # được. Không in gì: peto models --json phải chỉ có JSON.
+    migration.backup_on_change(__version__)
     ui = create_ui()
     try:
         if args.command == "login":

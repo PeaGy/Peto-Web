@@ -275,7 +275,7 @@ def test_a_lost_default_key_is_reported_not_silently_replaced(project, monkeypat
         monkeypatch.chdir(project)
         ui = FakeUI(answers=["/exit"])
         assert cli.session(ui) == 0
-        assert "Model mặc định gpt-6-luna (khóa riêng) không còn dùng được trên máy này nên peto dùng Peto." in ui.text
+        assert "Model mặc định gpt-6-luna (OpenAI) không còn dùng được trên máy này nên peto dùng Peto." in ui.text
         assert "/models" in ui.text and "/connect" in ui.text
     finally:
         peto.shutdown()

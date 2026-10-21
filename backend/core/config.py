@@ -254,6 +254,12 @@ AGENT_STEP_TIMEOUT_SECONDS = _env_float("PETO_AGENT_STEP_TIMEOUT_SECONDS", 300.0
 AGENT_WEB_SEARCH = WEB_SEARCH_ENABLED and os.getenv("PETO_AGENT_WEB_SEARCH", "true").strip().lower() in {"1", "true", "yes"}
 # Bước chậm hơn ngần này thì ghi một dòng cảnh báo kèm thời gian, để biết chậm ở chỗ chờ dịch vụ AI hay lúc viết.
 AGENT_SLOW_STEP_SECONDS = _env_float("PETO_AGENT_SLOW_STEP_SECONDS", 20.0, 1.0, 600.0)
+# Tắt nguồn model trực tiếp của Peto Agent CLI cho mọi người (lộ trình nhiều nguồn M6): khóa API riêng (openai-key), gói
+# ChatGPT (chatgpt-plan). CLI 0.33.3 trở lên đọc danh sách này từ /me khi mở phiên; kết nối và hội thoại đã lưu vẫn còn.
+AGENT_DIRECT_SOURCES = ("openai-key", "chatgpt-plan")
+AGENT_DISABLED_SOURCES = tuple(
+    value for value in (part.strip() for part in os.getenv("PETO_AGENT_DISABLED_SOURCES", "").split(","))
+    if value in AGENT_DIRECT_SOURCES)
 
 # --- Phục vụ frontend đã build (production) ------------------------------
 # Khi thư mục này tồn tại, backend phục vụ luôn giao diện; VPS chỉ cần một

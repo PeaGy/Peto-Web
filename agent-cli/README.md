@@ -208,6 +208,9 @@ peto connect openai
 
 ## Dùng gói ChatGPT: Continue with ChatGPT (từ 0.33.0)
 
+Hướng dẫn đầy đủ về các nguồn (hạn mức, ngắt kết nối, tắt nguồn, sao lưu và quay về bản cũ, phần nào đã kiểm thật):
+[docs/model-sources.md](docs/model-sources.md).
+
 Có gói ChatGPT thì Peto Agent dùng được hạn mức của gói thay cho khóa API tính tiền: không qua máy chủ Peto, không tính
 bước Peto. Trong phiên gõ `/connect` → OpenAI → **Continue with ChatGPT**; ngoài phiên:
 
