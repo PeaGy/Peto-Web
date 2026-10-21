@@ -15,6 +15,7 @@ from features.documents.export import TOC_LEVELS, clean_text, image_numbers, MAX
 from features.documents.jobs import (TOOL_WAIT, RenderBusy, build_files, build_presentation, build_spreadsheet,
                                      document_filename, render_queue, sheet_today)
 from features.documents import images as document_images
+from features.documents.readback import deck_check, document_check
 from features.documents.sheets import spec as sheet_spec
 from features.documents.sheets.spec import SCHEMA as SPREADSHEET_SCHEMA
 from features.documents.sheets.view import summary as sheet_summary
@@ -61,6 +62,25 @@ def _looks_like_unaccented_vietnamese(title: str, content: str) -> bool:
         return False
     folded = unicodedata.normalize('NFD', text).encode('ascii', 'ignore').decode('ascii').casefold()
     return sum(marker in folded for marker in _VIETNAMESE_MARKERS) >= 2
+
+# Kèm trường "check" (readback.py) trong kết quả tạo tệp: Peto đối chiếu tệp vừa dựng với yêu cầu thay vì nói "đã xong".
+DOCUMENT_CHECK_NOTE = (
+    'check là bản đọc lại cấu trúc tệp vừa dựng (đề mục cấp 1–2, số chữ, bảng, công thức, ảnh, khung ảnh, mục lục, bìa). '
+    'Đối chiếu với yêu cầu của người dùng: thiếu mục, bảng, công thức, ảnh hay độ dài được yêu cầu thì nói rõ phần '
+    'thiếu, không nói là đã đủ. cover.blank là các dòng bìa còn để chấm: nhắc người dùng điền.')
+DECK_CHECK_NOTE = (
+    'check liệt kê từng slide (số, bố cục, tiêu đề): đối chiếu với yêu cầu, thiếu slide hay nội dung được yêu cầu thì '
+    'nói rõ phần thiếu.')
+
+
+def _readback(build, *args):
+    """Bản đọc lại cấu trúc; lỗi ở đây không được làm hỏng tệp đã dựng xong, chỉ bỏ trường check."""
+    try:
+        return build(*args)
+    except Exception:
+        logger.exception('Không đọc lại được cấu trúc tệp vừa tạo')
+        return None
+
 
 def _has_contents(blocks) -> bool:
     """Tài liệu có mục lục thật: có dòng [TOC] và có đề mục để đưa vào."""
@@ -152,6 +172,7 @@ class DocumentSession:
             try:
                 async with render_queue.slot(TOOL_WAIT):
                     files = await anyio.to_thread.run_sync(build_files, title, content, spec.style, spec.format, raw_images)
+                    check = _readback(document_check, title, content, files['pages'])
                     # Once rendering succeeds, commit the draft and all bytes atomically.
                     # A disconnect can recover this document from its conversation shelf.
                     with anyio.CancelScope(shield=True):
@@ -163,6 +184,9 @@ class DocumentSession:
                         if spec.format == 'docx' and _has_contents(blocks):
                             instruction += ' Tài liệu có mục lục: dặn ngắn rằng khi mở bằng Word, chọn Có (Yes) lúc Word hỏi cập nhật các trường thì mục lục mới có số trang.'
                         result = {'ok': True, 'artifact': artifact, 'instruction': instruction}
+                        if check:
+                            result['instruction'] += ' ' + DOCUMENT_CHECK_NOTE
+                            result['check'] = check
                         self._completed[key] = result
                         return result
             except RenderBusy:
@@ -193,6 +217,7 @@ class DocumentSession:
             try:
                 async with render_queue.slot(TOOL_WAIT):
                     files = await anyio.to_thread.run_sync(build_presentation, content, raw_images)
+                    check = _readback(deck_check, deck)
                     with anyio.CancelScope(shield=True):
                         draft = await document_store.save_document(self.owner, self.conversation_id, deck.title, content,
                                                                    style=deck.theme, assets=files)
@@ -201,8 +226,14 @@ class DocumentSession:
                         self.created.append(artifact)
                         result = {'ok': True, 'artifact': artifact, 'instruction': (
                             'Bài thuyết trình đã tạo và thẻ xem trước tự hiển thị. Trả lời ngắn: số slide, phong cách, ý chính; '
-                            'nói rằng mỗi slide có ghi chú cho người thuyết trình và tải được PPTX hoặc PDF. Không chép lại '
-                            'toàn bộ slide, không tự viết đường dẫn.')}
+                            'nói rằng tải được PPTX hoặc PDF. Không chép lại toàn bộ slide, không tự viết đường dẫn.')}
+                        if check:
+                            # Trước đây câu dặn luôn nói "mỗi slide có ghi chú", kể cả khi có slide để trống ghi chú.
+                            missing = check['without_notes']
+                            result['instruction'] += ' ' + DECK_CHECK_NOTE + (
+                                f" Slide {', '.join(map(str, missing))} chưa có ghi chú cho người thuyết trình; không nói mọi"
+                                " slide đều có." if missing else ' Mọi slide đều có ghi chú cho người thuyết trình.')
+                            result['check'] = check
                         self._completed[key] = result
                         return result
             except RenderBusy:

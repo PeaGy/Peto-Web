@@ -80,7 +80,7 @@ cho Java/Python/.NET, không biến Peto thành trình phân tích riêng cho Mi
 (`documents/tools.py:160-165`, `200-202`). Model không có gì để đối chiếu đầu ra với yêu cầu. Bìa còn ô chấm vì thiếu
 trường cũng không được báo lại.
 
-**Sau P2:** kết quả có thêm `check` gọn (dưới 1.500 ký tự):
+**Sau P2:** kết quả có thêm `check` gọn (dưới 2.000 ký tự, xem 4c):
 - tài liệu: các heading cấp 1–2 (tối đa 20), số bảng, công thức, ảnh, khung ảnh, có mục lục hay không, các trường bìa
   còn trống, số trang;
 - slide: tiêu đề và bố cục từng slide.
@@ -181,6 +181,27 @@ phần chạy mã), nhưng đổi phiên bản sẽ đổi hành vi và cách t�
   log. Mock trả câu mẫu nên trượt các phép `match` là bình thường; chưa chạy LIVE.
 - Giới hạn: khối hướng dẫn không bảo đảm model hết tự tin quá mức; điều đó cần eval LIVE hoặc thử thật. Log dán thẳng
   vào ô chat (không đính kèm) và log nằm trong PDF/Word không kích hoạt khối này.
+
+## 4c. P2 đã làm (21/10/2026, sau khi P1 được deploy; chưa commit)
+
+- `features/documents/readback.py` dựng trường `check` từ chính nội dung đã render:
+  - Tài liệu: tên in ở đầu (sau `body_blocks`, nên đề mục trùng tên không tính là chương), đề mục cấp 1–2 (tối đa 20,
+    mỗi đề mục 60 ký tự, kèm `headings_omitted`), số chữ đếm theo khoảng trắng như Word, số bảng, công thức (trong
+    dòng, trong ô và dòng riêng), ảnh, khung ảnh, mục lục, số trang. Khi có khối bìa thì kèm `cover.blank`: các dòng in
+    chấm vì thiếu (trường, khoa, giảng viên, thành viên).
+  - Slide: từng slide `[số, bố cục, tiêu đề ≤ 40 ký tự]`, `without_notes`, số ảnh, bảng, biểu đồ.
+  - Cả hai dưới 2.000 ký tự ở trường hợp lớn nhất (đã có test).
+- `create_document` và `create_presentation` trả thêm `check` và câu dặn đối chiếu với yêu cầu, nói rõ phần thiếu,
+  nhắc điền dòng bìa còn trống. Câu dặn slide cũ luôn bảo Peto nói "mỗi slide có ghi chú", kể cả khi có slide trống ghi
+  chú; giờ câu dặn nêu đúng slide chưa có ghi chú. Đọc lại lỗi thì chỉ bỏ `check`, tệp đã dựng vẫn lưu và báo thành công.
+  Kết quả lặp lại (cùng tham số trong lượt) vẫn trả đúng kết quả cũ.
+- Không đổi UI, lưu trữ, schema công cụ hay prompt hệ thống; `create_spreadsheet` và hai công cụ sửa tệp giữ nguyên vì
+  đã trả `results`/`changes`/`notes`.
+- Kiểm thử: `tests/test_document_readback.py` (7 ca), gồm cấu trúc, giới hạn kích thước, kết quả công cụ, lỗi đọc lại,
+  ghi chú slide và vòng công cụ thật với client giả (model nhận `check` trong `function_call_output`). Nhóm test tài
+  liệu 252 đạt; toàn bộ backend 1.585 đạt, 1 bỏ qua (381,64 giây); `git diff --check` đạt.
+- Giới hạn: chỉ kiểm cấu trúc, không kiểm nội dung đúng hay sai. Model có thực sự đối chiếu và báo phần thiếu hay không
+  cần thử với model thật.
 
 ## 5. Mức kiểm chứng
 

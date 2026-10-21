@@ -25,6 +25,17 @@ The owner approved P1 only (no paid eval). Implemented locally, not committed or
   Peto/Luna/Haiku completed 9/9 turns with the guide in every prompt; mock text cannot pass content checks and no LIVE
   run was made. Related backend group: 264 passed; full backend 1,578 passed, 1 skipped (348.63s); diff check passed.
   Deploy = restart the backend after the owner commits; no frontend, migration, `.env` or CLI change.
+  The owner committed and deployed P1 (`c10e717`).
+
+P2 approved after that deploy; implemented locally, not committed. `features/documents/readback.py` builds a bounded
+`check` (under 2,000 characters) from the rendered content, returned by `create_document` (title shown, level 1–2
+headings, words, tables, formulas, images, image slots, TOC, pages, `cover.blank` for dotted cover lines) and
+`create_presentation` (slide number/layout/title, `without_notes`, images, tables, charts). Tool instructions ask Peto to
+compare with the request and name missing parts. The deck instruction no longer always claims every slide has speaker
+notes. A readback failure only drops `check`. No UI, storage, tool schema or system prompt change; spreadsheet and edit
+tools already return results/changes. Tests: `tests/test_document_readback.py` (7, including the provider tool loop).
+Structure only, not content correctness; real-model use of `check` is untested. Document test group 252 passed; full
+backend 1,585 passed, 1 skipped (381.64s); diff check passed. Deploy = restart the backend after commit.
 
 ## Web Chat automatic Runtime Device Context (2026-10-21)
 
