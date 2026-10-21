@@ -132,7 +132,7 @@ journal, logs, export, request bodies or env; Ctrl+C; redirects; connect/disconn
 `backend/tests/test_agent_bundle.py`. Full CLI 725 passed in one run (242s); backend Agent/prompt/model/
 installer 197 passed. No real OpenAI key or paid call was used; live behaviour with a real key is unverified.
 
-## Multi-source models: M5 Continue with ChatGPT (2026-10-21; CLI 0.33.0 source)
+## Multi-source models: M5 Continue with ChatGPT (2026-10-21; CLI 0.33.1 source)
 
 The owner approved M5 from an OpenCode "Connect OpenAI" screenshot. Rereading OpenAI's docs corrected M0: the open-source
 local path needs no requested client ID; each account registers dynamically (`client_id=dynamic_agent_client`, the
@@ -144,7 +144,8 @@ your ChatGPT plan"/"Got it") with Vietnamese around them.
   keys under 2048 bits, even exponents, `alg` other than RS256.
 - `chatgpt_auth.py`: endpoints from `auth.openai.com/.well-known/openid-configuration`; persistent
   `ext_agent_host_id` as `urn:uuid:<UUIDv4>` in `config.json` (the first build sent "peto-…" and OpenAI answered
-  `invalid_authorize_request` on that param; a malformed stored value is replaced once); fresh PKCE S256/state/nonce; `Callback` on `127.0.0.1` (port 1455 else any) opened
+  `invalid_authorize_request` on that param; a malformed stored value is replaced once; the fix first shipped still
+  numbered 0.33.0, so installed copies never updated: always bump the version with a CLI fix, now 0.33.1); fresh PKCE S256/state/nonce; `Callback` on `127.0.0.1` (port 1455 else any) opened
   before the browser, ignoring other states; code exchange with the issued client ID and the same redirect URI; ID token
   checked against JWKS plus iss, aud, exp (120 s leeway), nonce; plan only with `chatgpt.tokens.use.direct`, otherwise an
   identity-only connection; reauth with client ID, `id_token_hint` (never shown), `login_hint`, rejecting another `sub` or
