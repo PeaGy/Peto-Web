@@ -499,6 +499,8 @@ class ResponsesProvider(ChatProvider):
                     cache_write_tokens=(usage.get("input_tokens_details") or {}).get("cache_write_tokens"),
                     reasoning_tokens=(usage.get("output_tokens_details") or {}).get("reasoning_tokens"),
                     search_calls=len(search_ids),
+                    # xAI tự báo số tiền đã tính cho lần gọi; dịch vụ khác không có trường này.
+                    cost_ticks=usage.get("cost_in_usd_ticks"),
                 )
                 if stream is not None:
                     with anyio.CancelScope(shield=True):

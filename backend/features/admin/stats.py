@@ -37,9 +37,11 @@ NOT_COUNTED = ("Tạo ảnh (tính theo ảnh)", "Phí tra web (tính theo lư�
 
 COLUMNS = ("at", "kind", "surface", "purpose", "service", "model", "slug", "outcome", "complete", "elapsed_ms",
            "first_text_ms", "input_tokens", "output_tokens", "cached_tokens", "reasoning_tokens", "search_calls",
-           "cache_write_tokens", 'effort')
+           "cache_write_tokens", 'effort', 'cost_ticks')
 # Anthropic tính token ghi cache 5 phút bằng 1,25 lần giá đầu vào; phần đầu vào thường đã có trong input_tokens.
 ANTHROPIC_CACHE_WRITE_PREMIUM = 0.25
+# xAI báo usage.cost_in_usd_ticks: 1 USD = 10^10 tick (docs.x.ai, cost tracking).
+XAI_TICKS_PER_USD = 10_000_000_000
 
 
 def percentile(values: list[int], share: float) -> int | None:
@@ -51,7 +53,13 @@ def percentile(values: list[int], share: float) -> int | None:
 
 
 def call_cost(row: dict, rates: dict) -> float | None:
-    """USD của một lần gọi; None khi thiếu đơn giá hoặc token. Thiếu token cache thì tính như không có cache."""
+    """USD của một lần gọi; None khi thiếu đơn giá hoặc token. Thiếu token cache thì tính như không có cache.
+
+    Lần gọi Grok có số tiền xAI tự báo (``cost_ticks``, đã trừ giảm giá cache, gồm cả lượt chạy mã) thì dùng số đó,
+    không dùng tệp giá. Đây là số nhà cung cấp báo, không phải hóa đơn; khóa riêng của người dùng (byok) không tính."""
+    ticks = row.get("cost_ticks")
+    if row.get("service") == "xai" and isinstance(ticks, int) and not isinstance(ticks, bool) and ticks >= 0:
+        return ticks / XAI_TICKS_PER_USD
     rate = rates.get(row.get("slug") or "")
     incoming, outgoing = row.get("input_tokens"), row.get("output_tokens")
     if not rate or incoming is None or outgoing is None:
@@ -239,6 +247,8 @@ def summarize(rows: list[dict], range_key: str, now: float, zone: ZoneInfo, rate
             "cache_unknown_models": [row["label"] for row in model_rows if row["cache_unknown_calls"] and row["cost_usd"] is not None],
             "previous_total_usd": round(previous["cost"], 6) if full_previous and priced_any else None,
             "not_counted": list(NOT_COUNTED),
+            # Model tính giá từ số tiền nhà cung cấp tự báo (Grok), không từ tệp giá.
+            "reported_models": [row["label"] for row in model_rows if row["service"] == "xai" and row["cost_usd"] is not None],
         },
         "previous_calls": previous["calls"] if full_previous else None,
         "models": model_rows,

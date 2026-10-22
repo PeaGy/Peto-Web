@@ -323,3 +323,60 @@ def test_long_prompt_tier_prices_the_whole_call():
     for bad in ({"threshold": 0, "input": 1, "cached_input": 1, "output": 1}, {"threshold": 10, "input": 1}):
         with pytest.raises(ValueError):
             validate_rates({"m": {"input": 1, "cached_input": 1, "output": 1, "long_context": bad}})
+
+
+# --- Chi phí xAI tự báo (2026-10-22) ------------------------------------------------------------------------------
+
+def test_grok_cost_comes_from_xai_reported_ticks():
+    # Phép thử thật trên VPS: 69.754.000 tick cho một request có một lần chạy mã, tức khoảng $0,007.
+    grok = row(0, service="xai", model="peto", slug="grok-4.7", input_tokens=4513, output_tokens=264, cost_ticks=69_754_000)
+    assert stats.call_cost(grok, {}) == pytest.approx(0.0069754)
+    # Có tệp giá cho grok cũng dùng số xAI báo, vì đó là số đã tính (đã trừ cache, gồm phí công cụ).
+    assert stats.call_cost(grok, {"grok-4.7": {"input": 100, "cached_input": 100, "output": 100}}) == pytest.approx(0.0069754)
+    # Lần gọi cũ chưa có số này vẫn chưa có giá; khóa riêng của người dùng và dịch vụ khác không đọc trường này.
+    assert stats.call_cost(row(0, service="xai", model="peto", slug="grok-4.7", input_tokens=10, output_tokens=5), {}) is None
+    assert stats.call_cost(row(0, service="byok", model="byok:xai", slug="byok/xai/grok-4.7", input_tokens=10,
+                               output_tokens=5, cost_ticks=10**10), {}) is None
+    assert stats.call_cost(row(0, input_tokens=10, output_tokens=5, cost_ticks=10**10), {}) is None
+
+
+def test_summary_prices_peto_without_a_rates_file_and_says_so():
+    now = local(2026, 10, 22, 15)
+    rows = [row(now - 600, service="xai", model="peto", slug="grok-4.7", input_tokens=500, output_tokens=50,
+                cost_ticks=70_000_000),
+            row(now - 300, service="xai", model="peto", slug="grok-4.7", input_tokens=500, output_tokens=50)]
+    data = stats.summarize(rows, "24h", now, ZONE, {}, "missing", data_since=now - 86400)
+    peto = data["models"][0]
+    assert peto["cost_usd"] == pytest.approx(0.007) and peto["unpriced_calls"] == 1
+    assert data["cost"]["total_usd"] == pytest.approx(0.007)
+    assert data["cost"]["by_service"]["xai"] == pytest.approx(0.007)
+    assert data["cost"]["reported_models"] == ["Peto"]
+
+
+async def test_reported_ticks_are_stored_from_chat_and_agent_but_not_sent_to_the_cli(anon_client, client, recorder,
+                                                                                   monkeypatch):
+    from types import SimpleNamespace
+    from ai import ChatMessage
+    from ai.agent import AgentEvent
+    from features.agent import api as agent_api
+    from test_agent_api import bearer, connect
+    from test_clock_tools import FakeStream, fake_provider
+    await clear_events()
+    # Chat: usage của response.completed có cost_in_usd_ticks như lần chạy thật.
+    completed = SimpleNamespace(type="response.completed", response=SimpleNamespace(
+        status="completed", output=[], usage={"input_tokens": 4513, "output_tokens": 264, "cost_in_usd_ticks": 69_754_000}))
+    provider, _ = fake_provider(monkeypatch, [FakeStream([SimpleNamespace(type="response.output_text.delta", delta="161"),
+                                                          completed])])
+    _ = [chunk async for chunk in provider.stream(system_prompt="Peto", messages=[ChatMessage("user", "Tính")])]
+
+    async def step(**kwargs):
+        yield AgentEvent("done", output=(), usage={"input_tokens": 10, "output_tokens": 2, "cost_ticks": 5_000_000})
+    monkeypatch.setattr(agent_api, "agent_step", step)
+    token = await connect(anon_client, client)
+    response = await anon_client.post("/api/agent/step", headers=bearer(token), json={
+        "input": [{"type": "message", "role": "user", "content": "chào"}], "context": {}, "effort": "low"})
+    done = next(event for event in await read_events(response) if event["type"] == "done")
+    assert "cost_ticks" not in done["usage"]
+    await recorder.flush()
+    calls = [item for item in await stored_rows() if item["kind"] == "call"]
+    assert [item["cost_ticks"] for item in calls] == [69_754_000, 5_000_000]

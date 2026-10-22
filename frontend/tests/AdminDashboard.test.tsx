@@ -73,6 +73,14 @@ describe('Trang Quản trị', () => {
     expect(vi.mocked(adminApi.getAdminOverview).mock.calls[0][0]).toBe('7d');
   });
 
+  it('Peto tính theo số tiền xAI tự báo thì ghi rõ nguồn của con số', async () => {
+    const base = overview();
+    vi.mocked(adminApi.getAdminOverview).mockResolvedValue(overview({ cost: { ...base.cost, unpriced_models: [], reported_models: ['Peto'] } }));
+    show();
+    expect(await screen.findByText(/Peto: tính theo số tiền xAI tự báo cho từng lần gọi/)).toBeTruthy();
+    expect(screen.queryByText(/Chưa có đơn giá hoặc thiếu token/)).toBeNull();
+  });
+
   it('không có dữ liệu thì nói rõ, không hiện số 0 giả', async () => {
     vi.mocked(adminApi.getAdminOverview).mockResolvedValue(overview({
       data_since: null, covered_buckets: 0, calls: 0, turns: 0, success_rate: null, models: [], searches: 0, accounts: 0,

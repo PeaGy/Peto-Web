@@ -80,6 +80,16 @@ Peto/xAI code execution pilot (owner approved, Haiku explicitly not enabled; imp
   `code_runs`/`code_errors`; expectation updated, then stage4/admin/code group 45 passed; no second full run).
   Mock stack in the in-app Chromium: step, disclosure, F5 persistence, failed styling, 375 px without overflow, no
   console errors. Real Grok tool choice, overuse, cost and latency after deploy are unverified.
+  The owner committed the pilot (`1679d14`).
+
+Follow-up advice (2026-10-22): of the deferred items, only recording Grok's reported cost was worth doing now; Haiku
+with files, Luna code execution, interactive results, tool discovery, X Search and Drive/mail/calendar wait for real
+demand. The owner approved the cost item: `ai/xai.py` (Chat) and `ai/agent.py` (Agent) record `cost_in_usd_ticks` as
+`usage_events.cost_ticks` (column added at startup); the Agent API pops it before sending usage to the CLI. Admin
+`call_cost` prefers it for `xai` rows even with a rates file, `cost.reported_models` lists such models and the page
+explains the source; `deploy/OPERATIONS.md` updated. It is xAI's reported figure, not an invoice; under the OAuth plan
+it may not be money actually charged. Tests: 3 new in `test_admin.py` (26 passed), 1 new admin frontend case (6
+passed), build passed; full backend 1,604 passed, 1 skipped (300.91s). Deploy: rebuild frontend, restart backend.
 
 ## Web Chat automatic Runtime Device Context (2026-10-21)
 
@@ -2095,8 +2105,10 @@ dense ledger and a narrative report. No per-account view, by the owner's call; A
   covers it. Missing tokens or prices are `null`, never 0; a provider with calls but no priced call gets `null` in
   `by_service`. Active accounts are one count from user messages plus Agent usage days.
 - **Prices.** `PETO_COST_RATES_FILE`, same JSON and validation as `ops.report --rates` (slug → input/cached_input/output
-  USD per million), reread on mtime/size change. Missing cached tokens price as uncached and are flagged. The owner's
-  xAI login is a subscription, so Grok is deliberately left unpriced ("chưa có giá"). An optional `long_context`
+  USD per million), reread on mtime/size change. Missing cached tokens price as uncached and are flagged. Grok is
+  not in the rates file: since 2026-10-22 each xAI call stores xAI's own `cost_in_usd_ticks` (`usage_events.cost_ticks`,
+  1 USD = 10^10 ticks, after cache discounts, tool calls included), which `stats.call_cost` uses for service `xai`
+  (never `byok`); older rows stay "chưa có giá". An optional `long_context`
   tier (`threshold` plus the three prices) prices a whole call whose prompt, cache tokens included, exceeds the threshold
   (OpenAI >272K, Haiku 5.5 >100,000; `ops.report.token_cost` is shared). Claude cache writes (`cache_write_tokens`
   column, added to existing tables at startup) add 0.25 × input price, Anthropic's 5-minute write premium. A dated

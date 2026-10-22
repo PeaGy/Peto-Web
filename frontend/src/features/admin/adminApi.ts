@@ -61,6 +61,8 @@ export interface AdminOverview {
     cache_unknown_models: string[];
     previous_total_usd: number | null;
     not_counted: string[];
+    /** Model tính giá từ số tiền nhà cung cấp tự báo (Grok qua xAI), không từ tệp giá. */
+    reported_models?: string[];
   };
   previous_calls: number | null;
   models: AdminModel[];

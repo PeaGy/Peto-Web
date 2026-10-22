@@ -32,7 +32,7 @@ COLUMNS = (
     "at", "kind", "surface", "purpose", "service", "model", "slug", "outcome", "complete", "elapsed_ms",
     "first_text_ms", "input_tokens", "output_tokens", "cached_tokens", "reasoning_tokens", "search_calls",
     "cache_write_tokens",
-    'effort',
+    'effort', 'cost_ticks',
 )
 KINDS = {"call", "turn", 'chat_event'}
 _scope: ContextVar[dict | None] = ContextVar('usage_measurement_scope', default=None)
@@ -69,7 +69,7 @@ def record(
     elapsed_ms: int | None = None, first_text_ms: int | None = None, input_tokens: int | None = None,
     output_tokens: int | None = None, cached_tokens: int | None = None, reasoning_tokens: int | None = None,
     search_calls: int | None = None, cache_write_tokens: int | None = None,
-    effort: str | None = None,
+    effort: str | None = None, cost_ticks: int | None = None,
 ) -> None:
     """Thêm một sự kiện vào hàng đợi. Số liệu hỏng chỉ thành ô trống; không bao giờ làm hỏng lượt chat."""
     global _dropped
@@ -85,6 +85,8 @@ def record(
             _label(slug), _label(outcome), None if complete is None else int(bool(complete)), _count(elapsed_ms),
             _count(first_text_ms), _count(input_tokens), _count(output_tokens), _count(cached_tokens),
             _count(reasoning_tokens), _count(search_calls), _count(cache_write_tokens), _label(effort),
+            # Số tiền nhà cung cấp tự báo đã tính cho lần gọi (xAI: cost_in_usd_ticks, 1 USD = 10^10 tick).
+            _count(cost_ticks),
         )
         if len(_pending) == MAX_PENDING:
             _dropped += 1

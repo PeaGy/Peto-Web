@@ -182,9 +182,11 @@ lần giá đầu vào (ghi cache 5 phút = 1,25 lần), không cần khai.
 }
 ```
 
-Chỉ cần khởi động lại lần đầu để nạp biến môi trường; sau đó sửa tệp giá là trang tự đọc lại. Peto đăng nhập xAI bằng
-gói thuê bao thì không khai giá Grok: trang hiện "chưa có giá" cho Peto, không ghi $0. Đây vẫn là ước tính từ token,
-không gồm tạo ảnh, phí tra web, giọng đọc hay thuế.
+Chỉ cần khởi động lại lần đầu để nạp biến môi trường; sau đó sửa tệp giá là trang tự đọc lại. Không cần khai giá Grok:
+từ 22/10/2026 mỗi lần gọi Grok lưu số tiền xAI tự báo (`cost_in_usd_ticks`, 1 USD = 10^10 tick, đã trừ giảm giá cache,
+gồm cả lượt chạy mã), và trang dùng số đó cho Peto kể cả khi không có tệp giá. Lượt gọi trước bản cập nhật không có số
+này nên vẫn "chưa có giá", không ghi $0. Với Peto đăng nhập bằng gói thuê bao, đó là số xAI báo, chưa chắc là tiền bị
+trừ. Các model khác vẫn là ước tính từ token theo tệp giá, không gồm tạo ảnh, phí tra web, giọng đọc hay thuế.
 
 ## Kiểm tra code
 

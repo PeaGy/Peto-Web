@@ -252,6 +252,9 @@ async def _responses_step(client, service: str, model: str, max_output_tokens: i
                         # Cho trang Quản trị tính giá; CLI chỉ đọc hai khóa trên nên khóa thêm không ảnh hưởng.
                         **({"cached_tokens": cached} if (cached := _cached_tokens(usage)) is not None else {}),
                         **({"cache_write_tokens": written} if (written := _cached_tokens(usage, "cache_write_tokens")) is not None else {}),
+                        # Tiền xAI tự báo, chỉ cho trang Quản trị: features/agent/api.py bỏ khóa này trước khi gửi CLI.
+                        **({"cost_ticks": ticks} if isinstance(ticks := getattr(usage, "cost_in_usd_ticks", None), int)
+                           and not isinstance(ticks, bool) else {}),
                     },
                 )
                 return

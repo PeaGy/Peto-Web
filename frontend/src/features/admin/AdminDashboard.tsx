@@ -76,6 +76,7 @@ function Caveats({ data }: { data: AdminOverview }) {
     <p><strong>Ước tính, không phải hóa đơn.</strong> Tính từ token mỗi lần gọi và tệp giá bạn khai (PETO_COST_RATES_FILE). Đối chiếu với trang thanh toán của từng nhà cung cấp.</p>
     {data.cost.rates === 'missing' && <p>Chưa khai tệp giá nên chưa tính được chi phí. Xem hướng dẫn trong .env.example.</p>}
     {data.cost.rates === 'invalid' && <p>Tệp giá không đọc được hoặc sai định dạng; sửa xong trang tự đọc lại.</p>}
+    {data.cost.reported_models?.length ? <p>{data.cost.reported_models.join(', ')}: tính theo số tiền xAI tự báo cho từng lần gọi (đã trừ giảm giá cache, gồm cả lượt chạy mã), không qua tệp giá. Lượt gọi trước bản cập nhật này không có số đó nên vẫn chưa có giá.</p> : null}
     <p>Chưa tính: {data.cost.not_counted.join(' · ')}. Lượt tra web trong kỳ: <b>{num(data.searches)}</b>.</p>
     {data.cost.rates === 'ok' && data.cost.unpriced_models.length > 0 && <p>Chưa có đơn giá hoặc thiếu token: {data.cost.unpriced_models.join(', ')} (không cộng vào tổng).</p>}
     {data.cost.cache_unknown_models.length > 0 && <p>Nhà cung cấp không báo token cache cho {data.cost.cache_unknown_models.join(', ')}, nên phần đó tính như không có cache (có thể cao hơn thực tế).</p>}
