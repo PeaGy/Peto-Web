@@ -5,6 +5,7 @@ import type { AccountMenuPlace } from './AccountMenu';
 import type { AppView } from './preferences';
 import { PetoAvatar, AccountAvatar, accountSubtitle } from './accountUi';
 import { SearchIcon, SidebarIcon, ComposeIcon, ImageIcon, CompanionIcon } from './navigationIcons';
+import { PlayerIcon } from '../shared/ui/PlayerIcon';
 
 type SidebarProps = {
   projects: ReactNode;
@@ -19,7 +20,7 @@ type SidebarProps = {
   goChat: () => void; go: (view: AppView) => void;
   preloadImagine: () => void; preloadCompanion: () => void; preloadSettings: () => void;
   setSidebarOpen: (open: boolean) => void; onOpenScenes: () => void;
-  onOpenCharacters: () => void; setFocusJobId: (id: string) => void;
+  onOpenCharacters: () => void; onOpenPlayer: () => void; setFocusJobId: (id: string) => void;
   openConversation: (id: string) => Promise<void>;
   setConversationMenu: (menu: {item: Conversation; left: number; top: number}) => void;
   onLoadMore: () => void; toggleAccountMenu: () => void;
@@ -31,7 +32,7 @@ export default function Sidebar({
   sidebarOpen, collapsed, streaming, deleting, appInfo, auth, view, imagineJobs,
   conversations, conversationId, loadingList, hasMore, accountRef, accountMenu,
   setSearchOpen, onToggleCollapsed, goChat, go, preloadImagine, preloadCompanion,
-  preloadSettings, setSidebarOpen, onOpenScenes, onOpenCharacters,
+  preloadSettings, setSidebarOpen, onOpenScenes, onOpenCharacters, onOpenPlayer,
   setFocusJobId, openConversation, setConversationMenu, onLoadMore, toggleAccountMenu,
   onOpenImagineLibrary, onCollapsedChange,
 }: SidebarProps) {
@@ -95,6 +96,7 @@ export default function Sidebar({
           {view === "companion" && <div className="mobile-companion-nav">
             <button type="button" className="nav-item" onClick={() => { setSidebarOpen(false); onOpenScenes(); }}><ImageIcon /><span>Bối cảnh</span></button>
             <button type="button" className="nav-item" onClick={() => { setSidebarOpen(false); onOpenCharacters(); }}><span aria-hidden="true">◇</span><span>Nhân vật</span></button>
+            <button type="button" className="nav-item" aria-controls="companion-player" onClick={() => { setSidebarOpen(false); onOpenPlayer(); }}><PlayerIcon /><span>Player</span></button>
           </div>}
         </nav>
         {view === "imagine" && (

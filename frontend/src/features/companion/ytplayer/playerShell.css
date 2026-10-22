@@ -1,0 +1,208 @@
+.yt-player {
+  --yt-cream: #efede3;
+  --yt-ink: #28221f;
+  --yt-red: #9e1521;
+  --yt-scroll-thumb: #ad6c72;
+  --yt-scroll-hover: #8e1722;
+  --yt-scroll-track: #d0d0c7;
+  position: absolute;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  width: min(var(--player-width, 640px), calc(100% - 32px));
+  height: var(--player-height, auto);
+  max-height: calc(100% - 32px);
+  pointer-events: auto;
+  color: var(--yt-ink);
+  background: #d0d0c7;
+  border: 2px solid #faf6ed;
+  border-radius: 4px;
+  box-shadow: 0 24px 64px #0007, 0 0 0 1px #3d0a0f;
+  outline: none;
+  isolation: isolate;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 14px;
+}
+.yt-player *, .yt-player *::before, .yt-player *::after { box-sizing: border-box; }
+.yt-player[hidden] { display: none; }
+.yt-player button, .yt-player input { font: inherit; }
+.yt-player button { cursor: pointer; touch-action: manipulation; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
+.yt-player button:active { transform: scale(.97); }
+.yt-player button:disabled { opacity: .45; cursor: default; transform: none; }
+.yt-player button:focus-visible, .yt-player input:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
+.yt-player[data-active="false"] { border-color: #b6b4aa; box-shadow: 0 16px 44px #0005; }
+.yt-player.is-maximized { inset: 16px !important; width: auto; height: calc(100% - 32px); }
+.yt-player.is-dragging, .yt-player.is-dragging * { cursor: grabbing; user-select: none; }
+.yt-player.is-resizing, .yt-player.is-resizing * { cursor: var(--resize-cursor); user-select: none; }
+.yt-resize-handle { position: absolute; z-index: 8; touch-action: none; }
+.yt-resize-n, .yt-resize-s { left: 9px; right: 9px; height: 7px; cursor: ns-resize; }
+.yt-resize-n { top: -4px; }
+.yt-resize-s { bottom: -4px; }
+.yt-resize-e, .yt-resize-w { top: 9px; bottom: 9px; width: 7px; cursor: ew-resize; }
+.yt-resize-e { right: -4px; }
+.yt-resize-w { left: -4px; }
+.yt-resize-ne, .yt-resize-nw, .yt-resize-se, .yt-resize-sw { width: 13px; height: 13px; }
+.yt-resize-ne, .yt-resize-nw { top: -4px; }
+.yt-resize-se, .yt-resize-sw { bottom: -4px; }
+.yt-resize-ne, .yt-resize-se { right: -4px; }
+.yt-resize-nw, .yt-resize-sw { left: -4px; }
+.yt-resize-ne, .yt-resize-sw { cursor: nesw-resize; }
+.yt-resize-nw, .yt-resize-se { cursor: nwse-resize; }
+.yt-resize-se::after { content: ''; position: absolute; right: 4px; bottom: 4px; width: 6px; height: 6px; border-right: 1px solid #7b6558; border-bottom: 1px solid #7b6558; }
+.yt-window-head { display: flex; align-items: center; gap: 7px; min-height: 36px; flex-shrink: 0; padding: 4px 4px 4px 9px; color: #fff7eb; background: linear-gradient(110deg, #6d070d, #aa1120); cursor: grab; touch-action: none; user-select: none; }
+.yt-player[data-active="false"] .yt-window-head { background: #601d24; color: #d4bfc1; }
+.yt-window-head img { flex-shrink: 0; object-fit: contain; image-rendering: pixelated; }
+.yt-window-head > strong { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 700 16px/1.15 'Lucida Console', 'Courier New', monospace; letter-spacing: -.5px; }
+.yt-window-actions { display: flex; gap: 3px; }
+.yt-window-actions button { display: grid; place-items: center; width: 28px; height: 26px; padding: 0; color: inherit; background: #70091155; border: 1px solid #f6ded4; border-radius: 1px; }
+.yt-minimize-icon { width: 14px; height: 3px; background: currentColor; margin-top: 12px; }
+.yt-maximize-icon { width: 17px; height: 16px; border: 1px solid currentColor; border-top-width: 3px; }
+.yt-restore-icon { width: 15px; height: 13px; border: 1px solid currentColor; box-shadow: 2px -2px 0 -1px #8d0d17, 2px -2px 0 0 currentColor; }
+.yt-mobile-head { display: none; }
+.yt-menu-bar { display: flex; align-items: center; gap: 2px; min-height: 30px; flex-shrink: 0; padding: 2px 10px; border-bottom: 1px solid #b8b7ad; background: var(--yt-cream); }
+.yt-menu-bar > button { min-height: 25px; padding: 2px 8px; color: #282321; border: 0; border-radius: 2px; background: transparent; font: 700 14px/1.2 'Lucida Console', 'Courier New', monospace; }
+.yt-menu-bar > button[aria-expanded="true"] { background: #d4cbbd; }
+.yt-menu-light { width: 6px; height: 6px; margin-left: auto; margin-right: 7px; border-radius: 50%; background: #a5313c; box-shadow: 0 0 0 3px #a5313c14; }
+.yt-player[data-active="false"] .yt-menu-light { background: #aaa59b; box-shadow: none; }
+.yt-player-body { min-height: 0; padding: 13px 13px 10px; overflow-y: auto; overscroll-behavior: contain; }
+.yt-command-panel { --yt-scroll-track: var(--yt-cream); position: absolute; z-index: 10; overflow-y: auto; overscroll-behavior: contain; padding: 15px 34px 15px 15px; color: #40342d; background: var(--yt-cream); border: 1px solid #b6aea0; border-radius: 3px; box-shadow: 0 8px 22px #24101340; }
+.yt-player :is(.yt-player-body, .yt-command-panel) { scrollbar-width: thin; scrollbar-color: var(--yt-scroll-thumb) var(--yt-scroll-track); }
+@supports selector(::-webkit-scrollbar) {
+  .yt-player :is(.yt-player-body, .yt-command-panel) { scrollbar-width: auto; scrollbar-color: auto; }
+  .yt-player :is(.yt-player-body, .yt-command-panel)::-webkit-scrollbar { width: 8px; height: 8px; }
+  .yt-player :is(.yt-player-body, .yt-command-panel)::-webkit-scrollbar-track { background: var(--yt-scroll-track); margin-block: 5px; border-radius: 8px; }
+  .yt-player :is(.yt-player-body, .yt-command-panel)::-webkit-scrollbar-thumb { min-height: 28px; background: var(--yt-scroll-thumb); border: 2px solid var(--yt-scroll-track); border-radius: 8px; }
+  .yt-player :is(.yt-player-body, .yt-command-panel)::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+  .yt-player :is(.yt-player-body, .yt-command-panel)::-webkit-scrollbar-corner { background: transparent; }
+  @media (hover: hover) and (pointer: fine) {
+    .yt-player :is(.yt-player-body, .yt-command-panel)::-webkit-scrollbar-thumb:hover { background: var(--yt-scroll-hover); }
+  }
+}
+.yt-command-panel > strong { display: block; font-size: 13px; margin-bottom: 8px; }
+.yt-command-panel p { margin: 6px 0; font-size: 12px; line-height: 1.55; }
+.yt-command-close { position: absolute; right: 3px; top: 3px; display: grid; place-items: center; width: 27px; height: 27px; padding: 0; border: 0; color: inherit; background: transparent; }
+.yt-command-row { display: flex; flex-direction: column; gap: 3px; }
+.yt-command-row button, .yt-source-form button { min-height: 32px; padding: 7px 12px; border: 1px solid #b5a18f; border-radius: 3px; background: #fffaf1; color: #3c2c26; font-size: 12px; }
+.yt-command-row button { text-align: left; border-color: transparent; background: transparent; }
+.yt-source-form label { display: block; font-weight: 600; font-size: 12px; margin-bottom: 7px; }
+.yt-source-form > div { display: flex; gap: 7px; }
+.yt-source-form input { width: 0; min-width: 0; flex: 1; padding: 7px 9px; border: 1px solid #b8aa99; border-radius: 3px; background: #fffdf8; color: #312b27; font-size: 14px; }
+.yt-source-form button { flex-shrink: 0; color: #fff9ed; background: #8e1722; border-color: #8e1722; }
+.yt-source-error { color: #a11223; }
+.yt-video { position: relative; width: 100%; min-height: 200px; aspect-ratio: 16/9; overflow: hidden; background: #30080e; border: 3px solid #251a18; border-radius: 2px; }
+.yt-player[data-mode="youtube"] .yt-video { border: 0; border-radius: 0; outline: 2px solid #251a18; }
+.yt-youtube-container { position: absolute; inset: 0; min-width: 200px; min-height: 200px; background: #111; }
+.yt-youtube-container iframe { display: block; width: 100%; height: 100%; border: 0; }
+@media (min-width: 721px) and (min-height: 521px), (min-width: 721px) and (pointer: fine) {
+  .yt-player:not(.is-mobile):is(.is-sized, .is-maximized) .yt-player-body { display: flex; flex: 1; flex-direction: column; }
+  .yt-player:not(.is-mobile):is(.is-sized, .is-maximized) .yt-video { flex: 1 0 200px; aspect-ratio: auto; }
+  .yt-player:not(.is-mobile):is(.is-sized, .is-maximized) :is(.yt-track-info, .yt-transport, .yt-player-notice, .yt-player-details) { flex-shrink: 0; }
+}
+.yt-track-info { display: flex; align-items: center; gap: 10px; margin: 14px 2px 11px; }
+.yt-track-info > div { flex: 1; min-width: 0; }
+.yt-track-info h1 { margin: 0 0 4px; font-size: 17px; line-height: 1.3; overflow-wrap: anywhere; font-weight: 700; }
+.yt-track-info p { margin: 0; font-size: 12px; color: #716055; }
+.yt-track-badge { flex-shrink: 0; padding: 4px 6px; color: #7e4a41; border: 1px solid #b8a393; font-size: 9px; font-weight: 700; letter-spacing: 1.1px; border-radius: 2px; }
+.yt-transport { display: grid; grid-template-columns: 1fr; gap: 6px; }
+.yt-timeline { grid-column: 1/-1; }
+.yt-player input[type="range"] { display: block; width: 100%; height: 14px; margin: 0; padding: 0; border: 0; accent-color: #8e1722; cursor: pointer; }
+.yt-timeline > div { display: flex; justify-content: space-between; margin-top: 2px; color: #726259; font-size: 11px; font-variant-numeric: tabular-nums; }
+.yt-playback-buttons { display: flex; align-items: center; gap: 13px; }
+.yt-icon-button { display: grid; place-items: center; width: 35px; height: 35px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: #4a2d29; }
+.yt-play-button { display: grid; place-items: center; flex-shrink: 0; width: 43px; height: 43px; border: 0; border-radius: 50%; color: #fff8e9; background: #8c1722; padding: 0; box-shadow: 0 3px 8px #6d15221a; }
+.yt-volume-control { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.yt-volume-control .yt-icon-button { flex-shrink: 0; }
+.yt-player input.yt-volume-slider { width: 80px; min-width: 0; }
+.yt-player-notice { margin: 10px 0 0; text-align: center; color: #7a695d; font-size: 10px; line-height: 1.5; }
+.yt-player-details { margin-top: 12px; font-size: 11px; line-height: 1.5; }
+.yt-player-error { margin: 8px 0; color: #a11223; }
+.yt-retry { min-height: 34px; padding: 5px 10px; color: inherit; background: transparent; border: 1px solid currentColor; border-radius: 4px; }
+@media (hover: hover) and (pointer: fine) {
+  .yt-window-actions button:hover { background: #ffffff20; }
+  .yt-window-actions button:last-child:hover { background: #d32635; }
+  .yt-menu-bar > button:hover { background: #ded6c9; }
+  .yt-command-row button:hover { background: #e5d8c7; }
+  .yt-icon-button:hover { background: #8c172215; }
+  .yt-play-button:hover, .yt-source-form button:hover { background: #a71a28; }
+}
+@media (max-width: 1000px) and (min-width: 721px) {
+  .yt-menu-bar { padding-inline: 6px; }
+  .yt-menu-bar > button { padding-inline: 7px; }
+}
+.yt-player.is-mobile, .yt-player.is-mobile.is-maximized {
+    --yt-scroll-thumb: #c17e89;
+    --yt-scroll-hover: #f1bac3;
+    --yt-scroll-track: #61212c;
+    position: fixed;
+    inset: 0 !important;
+    z-index: 20;
+    width: 100%;
+    height: 100dvh;
+    max-height: none;
+    padding-top: env(safe-area-inset-top, 0px);
+    border: 0;
+    border-radius: 0;
+    background: linear-gradient(170deg, #a51f2b 0%, #651b24 41%, #231519 100%);
+    color: #fff8f0;
+    box-shadow: none;
+  }
+.yt-player.is-mobile[data-active="false"] { box-shadow: none; }
+.yt-player.is-mobile .yt-window-head, .yt-player.is-mobile .yt-menu-bar, .yt-player.is-mobile .yt-resize-handle { display: none; }
+.yt-player.is-mobile .yt-mobile-head { display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; min-height: 76px; padding: 13px max(16px, env(safe-area-inset-right, 0px)) 13px max(16px, env(safe-area-inset-left, 0px)); }
+.yt-player.is-mobile .yt-mobile-head > div { display: grid; gap: 5px; text-align: center; }
+.yt-player.is-mobile .yt-mobile-head > .yt-mobile-actions { display: flex; gap: 2px; flex-shrink: 0; }
+.yt-player.is-mobile .yt-mobile-head span { font-size: 10px; letter-spacing: 2px; font-weight: 600; opacity: .74; }
+.yt-player.is-mobile .yt-mobile-head strong { font-size: 15px; }
+.yt-player.is-mobile .yt-mobile-head button { display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 50%; color: inherit; background: transparent; }
+.yt-player.is-mobile .yt-player-body { flex: 1; padding: 3px max(23px, env(safe-area-inset-right, 0px)) calc(25px + env(safe-area-inset-bottom, 0px)) max(23px, env(safe-area-inset-left, 0px)); }
+.yt-player.is-mobile .yt-video { min-height: 200px; aspect-ratio: 1; border: 1px solid #ffcbd122; border-radius: 11px; background: #460f19; box-shadow: 0 12px 30px #14090c33; }
+.yt-player.is-mobile .yt-track-info { gap: 8px; margin: 26px 0 24px; }
+.yt-player.is-mobile .yt-track-info h1 { margin-bottom: 7px; font-size: 26px; letter-spacing: -.7px; line-height: 1.15; }
+.yt-player.is-mobile .yt-track-info p { color: #e8c9cb; font-size: 15px; }
+.yt-player.is-mobile .yt-track-badge { padding: 4px 5px; border-color: #e6b9bd45; color: #e4b8be; font-size: 8px; }
+.yt-player.is-mobile .yt-transport { display: flex; flex-direction: column; gap: 0; }
+.yt-player.is-mobile .yt-timeline > div { margin-top: 6px; color: #dfc0c4; font-size: 12px; }
+.yt-player.is-mobile input[type="range"] { accent-color: #fff7ef; }
+.yt-player.is-mobile .yt-playback-buttons { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 0; margin-top: 19px; }
+.yt-player.is-mobile .yt-playback-buttons > .yt-icon-button { justify-self: end; }
+.yt-player.is-mobile .yt-icon-button { width: 48px; height: 48px; color: #fff8f0; }
+.yt-player.is-mobile .yt-play-button { width: 74px; height: 74px; color: #28191c; background: #fff8ef; box-shadow: 0 6px 20px #21080e26; }
+.yt-player.is-mobile .yt-play-button svg { width: 36px; height: 36px; }
+.yt-player.is-mobile input.yt-volume-slider { width: 64px; flex: 0 1 64px; }
+.yt-player.is-mobile .yt-player-notice { margin-top: 23px; color: #d1aeb5; font-size: 11px; }
+.yt-player.is-mobile .yt-command-panel { --yt-scroll-track: #3a121d; padding: 16px 39px 16px 13px; border-color: #efacb94d; border-radius: 10px; color: #fff5ec; background: #3a121d; }
+.yt-player.is-mobile .yt-command-close { width: 34px; height: 34px; }
+.yt-player.is-mobile .yt-source-form label { margin-bottom: 9px; }
+.yt-player.is-mobile .yt-source-form input { padding: 10px; font-size: 16px; border-color: #e2b6ba52; background: #210d1280; color: #fff3e8; border-radius: 6px; }
+.yt-player.is-mobile .yt-source-form button { padding-inline: 11px; min-height: 44px; border-radius: 6px; background: #fff0e6; color: #6f1420; border-color: transparent; }
+.yt-player.is-mobile .yt-command-row button { color: #fff5ec; }
+.yt-player.is-mobile .yt-source-error { color: #ffd2c7; }
+.yt-player.is-mobile .yt-player-error { color: #ffd2c7; }
+@media (pointer: coarse) {
+  .yt-player button { min-width: 44px; min-height: 44px; }
+  .yt-player input[type="range"] { height: 28px; }
+}
+@media (min-width: 721px) {
+  .yt-player.is-mobile .yt-video { aspect-ratio: 16/9; }
+}
+@media (max-height: 740px) {
+  .yt-player.is-mobile .yt-mobile-head { min-height: 60px; padding-block: 5px; }
+  .yt-player.is-mobile .yt-player-body { padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px)); }
+  .yt-player.is-mobile .yt-video { aspect-ratio: 16/9; }
+  .yt-player.is-mobile .yt-track-info { margin: 12px 0; }
+  .yt-player.is-mobile .yt-track-info h1 { margin-bottom: 5px; font-size: 22px; }
+  .yt-player.is-mobile .yt-track-info p { font-size: 13px; }
+  .yt-player.is-mobile .yt-playback-buttons { margin-top: 8px; }
+  .yt-player.is-mobile .yt-play-button { width: 56px; height: 56px; }
+  .yt-player.is-mobile .yt-play-button svg { width: 30px; height: 30px; }
+  .yt-player.is-mobile .yt-player-notice { margin-top: 10px; font-size: 10px; }
+}
+@media (min-width: 721px) and (max-height: 520px) {
+  .yt-player.is-mobile .yt-player-body { display: grid; grid-template-columns: minmax(200px, 1fr) minmax(220px, 1fr); align-content: start; align-items: start; gap: 12px 24px; }
+  .yt-player.is-mobile .yt-video { grid-column: 1; grid-row: span 3; }
+  .yt-player.is-mobile .yt-track-info { grid-column: 2; margin-top: 0; }
+  .yt-player.is-mobile .yt-transport, .yt-player.is-mobile .yt-player-notice { grid-column: 2; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .yt-player button { transition: background-color 130ms ease, transform 100ms ease-out; }
+}

@@ -226,6 +226,7 @@ function AppContent() {
   const [characterMotion, setCharacterMotion] = useState<CharacterMotion>(readCharacterMotion);
   const characters = useCharacters();
   const [sceneRequest, setSceneRequest] = useState(0);
+  const [playerRequest, setPlayerRequest] = useState(0);
   const changeCharacterMotion = useCallback((value: CharacterMotion) => {
     setCharacterMotion(value);
     writeCharacterMotion(value);
@@ -296,6 +297,10 @@ function AppContent() {
     if (companionSettingsView) navigate(companionSettingsRoute('scene'));
     else setSceneRequest(value => value + 1);
   }, [companionSettingsView, navigate]);
+  const openPlayer = useCallback(() => {
+    navigate(VIEW_PATHS.companion);
+    setPlayerRequest(value => value + 1);
+  }, [navigate]);
   useEffect(() => {
     if (settingsOpen || !settingsReturn.current) return;
     settingsReturn.current.focus({ preventScroll: true });
@@ -379,6 +384,7 @@ function AppContent() {
   /** Phiên hết hạn giữa chừng: quay về màn hình đăng nhập thay vì báo lỗi lạ. */
   const handleUnauthorized = useCallback(() => {
     authChecked.current = true;
+    setPlayerRequest(0);
     setDocumentRequest(null);
     setDocumentSelection(null);
     closeDocumentPanel(); setDocumentPreview(null); setDiagram(null);
@@ -1334,7 +1340,7 @@ function AppContent() {
         accountRef={accountRef} accountMenu={accountMenu} setSearchOpen={setSearchOpen}
         onToggleCollapsed={() => setCollapsed(value => !value)} onCollapsedChange={setCollapsed} goChat={goChat} go={go}
         preloadImagine={preload(loadImagine)} preloadCompanion={preload(loadCompanion)} preloadSettings={preload(loadSettings)}
-        setSidebarOpen={setSidebarOpen} onOpenScenes={openScenes} onOpenCharacters={openCharacters}
+        setSidebarOpen={setSidebarOpen} onOpenScenes={openScenes} onOpenCharacters={openCharacters} onOpenPlayer={openPlayer}
         setFocusJobId={setFocusJobId} openConversation={openConversation} setConversationMenu={setConversationMenu}
         onOpenImagineLibrary={() => { setSidebarOpen(false); setImagineLibraryRequest(value => value + 1); }}
         onLoadMore={() => { listCount.current = conversations.length + 50; void refreshConversations(); }}
@@ -1367,6 +1373,7 @@ function AppContent() {
           appInfo={appInfo}
           voice={localVoice}
           sceneRequest={sceneRequest}
+          playerRequest={playerRequest}
           characterMotion={characterMotion}
           character={characters.selected}
           characterLoading={characters.loading}

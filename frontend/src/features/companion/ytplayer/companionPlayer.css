@@ -1,0 +1,14 @@
+.companion-player-area { position: absolute; inset: 0 clamp(330px, 32%, 460px) 76px 0; z-index: 4; pointer-events: none; }
+.companion-player-layer { position: fixed; z-index: 8; pointer-events: none; }
+.companion-player-layer[data-mobile="true"] { inset: 0 !important; width: 100% !important; height: 100dvh !important; z-index: 25; }
+.companion-player-layer .yt-transport { margin-top: 14px; }
+.companion-scene-button.companion-player-button { width: auto; gap: 7px; padding-inline: 12px; font-size: 13px; }
+.companion-player-button[aria-expanded="true"] { background: var(--panel-2); }
+.companion-player-empty { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center; padding: 24px; color: var(--yt-ink); background: var(--yt-cream); }
+.companion-player-empty > div { display: flex; }
+.companion-player-empty .yt-source-error { margin-bottom: 0; font-size: 12px; }
+.companion-player-external { display: inline-block; margin-left: 12px; color: inherit; }
+@media (max-width: 720px), (max-height: 520px) and (pointer: coarse) {
+  .companion-player-area { inset: 0; z-index: 9; }
+  .companion-player-empty { padding: 18px; background: #47141e; color: #fff8f0; }
+}

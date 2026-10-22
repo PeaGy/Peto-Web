@@ -80,6 +80,7 @@ Declared on the area's root class, with their own light values. Never use these 
 | --- | --- | --- |
 | `.companion` | `--stage-*` | Mobile stage after AIRI: patterned background, translucent teal bubbles |
 | `.companion-settings` | `--cs-*` | Companion settings page after AIRI's Settings: cards on `--cs-card`, the allowed Companion teal for hover sweeps and on states |
+| `.yt-player` | `--yt-*` | Owner-approved Peto Media Player: retro burgundy/cream desktop window; burgundy full-screen mobile view (2026-10-22) |
 | `.adm` | `--adm-*` | Admin page; the three provider colours passed a colour-blindness check on both themes |
 | `.docs` | `--docs-*` | Public guides |
 | `.chat-image-viewer` | overrides `--text`, `--muted`, `--panel-2`, `--accent` | The image viewer is always dark, even on the light theme |
@@ -95,6 +96,7 @@ Only these places may write hex directly. Any other new colour becomes a token.
 - File-type icons: Word `#3299ed`, PDF `#ec6767`, spreadsheet `#40ac7a`, slides `#df9950`, code `#a18ee8`.
 - Loading logo: pink `#ee9dad`, rose `#d97591` (`shared/ui/loading.css`).
 - The always-dark image viewer's own palette (`chatImageViewer.css`).
+- Peto Media Player's own burgundy/cream palette (`companion/ytplayer/`), matching the owner's approved prototype.
 - Charts: a palette checked for colour blindness, never colours picked by eye (see `.adm` in `features/admin/admin.css`).
 
 ### Shadows
@@ -411,6 +413,8 @@ Keyboard (see `EffortMenu.tsx`, `AccountMenu.tsx`):
 ### Dialogs
 
 - Always a native `<dialog>` opened with `showModal()`, for the top layer, focus trapping and Esc without `z-index`.
+- Owner-approved Peto Media Player reuses its custom window as a full-screen mobile dialog: stable body portal,
+  `aria-modal`, keyboard focus loop and inert Companion content. Desktop remains a non-modal draggable window.
 - **Set `display` only on `[open]`.** Setting `display` on a closed `<dialog>` overrides the browser's
   `display: none` and shows it.
 - Close button: `.dialog-close`, top right. The Settings dialog has its own `.settings-close`. Do not delete
@@ -464,7 +468,8 @@ below their label while switches stay on the right.
 - Sidebar lists fade over their last 20px:
   `mask-image: linear-gradient(to bottom, #000 calc(100% - 20px), transparent)` with `padding-bottom: 20px`, so a
   half-cut row never sits on the account row.
-- Scrollbars have one global style in `base.css` (10px, rounded thumb). Do not add per-component scrollbar styles.
+- Scrollbars have one global style in `base.css` (10px, rounded thumb). Peto Media Player is the owner-approved
+  exception: scoped 8px rounded burgundy/cream scrollbars, including its floating menus (2026-10-22).
 
 ## 9. UI copy (Vietnamese)
 

@@ -1,0 +1,129 @@
+:root { font-family: Arial, Helvetica, sans-serif; color: #eee9e4; background: #161516; color-scheme: dark; font-synthesis: none; -webkit-font-smoothing: antialiased; }
+* { box-sizing: border-box; }
+html, body, #root { margin: 0; width: 100%; height: 100%; }
+html { -webkit-tap-highlight-color: transparent; -webkit-text-size-adjust: 100%; overscroll-behavior: none; }
+body { overflow: hidden; }
+button, textarea, input { font: inherit; }
+button { touch-action: manipulation; }
+button:focus-visible, textarea:focus-visible { outline: 2px solid #f1c4ba; outline-offset: 3px; }
+.yp-preview { display: flex; width: 100%; height: 100dvh; overflow: hidden; }
+.yp-rail { display: flex; flex-direction: column; align-items: center; width: 72px; flex-shrink: 0; padding: 23px 10px; gap: 27px; border-right: 1px solid #ffffff0e; background: #181718; }
+.yp-rail > img { width: 35px; height: 30px; object-fit: contain; }
+.yp-rail-mark { display: grid; place-items: center; width: 39px; height: 39px; border: 1px solid #ffffff16; border-radius: 12px; color: #efb7be; background: #7d27352b; font-weight: 700; }
+.yp-rail > span:not(.yp-rail-mark) { writing-mode: vertical-rl; font-size: 9px; letter-spacing: 3.5px; color: #797172; }
+.yp-rail > small { margin-top: auto; color: #60595a; font: 12px 'Courier New', monospace; }
+.yp-workspace { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.yp-preview-head { display: flex; align-items: center; justify-content: space-between; min-height: 61px; padding: 0 29px; gap: 12px; background: #191718; border-bottom: 1px solid #ffffff0b; }
+.yp-breadcrumb { color: #b6a8a4; font-size: 10px; letter-spacing: 2px; }
+.yp-breadcrumb > span { color: #635354; padding: 0 13px; }
+.yp-mobile-brand { display: none; }
+.yp-preview-tag { padding: 6px 8px 6px 10px; border: 1px solid #645149; border-radius: 4px; font-size: 10px; color: #ccbab1; }
+.yp-preview-tag > b { display: inline-block; margin-left: 8px; padding-left: 8px; border-left: 1px solid #645149; font-family: 'Courier New', monospace; color: #f5b3a5; }
+.yp-menu-trigger { display: none; }
+.yp-room { display: grid; grid-template-columns: minmax(0, 1fr) 340px; flex: 1; min-height: 0; }
+.yp-stage { position: relative; min-width: 0; min-height: 0; isolation: isolate; overflow: hidden; background: #272022; }
+.yp-player-area { position: absolute; inset: 0 0 81px; pointer-events: none; }
+.yp-stage::before { content: ''; position: absolute; inset: 0; z-index: -1; background: linear-gradient(#1e171b7a, #21171beb), url('/scenes/airi/cute-streaming-room-with-pastel-decor.avif') center / cover; }
+.yp-room-caption { position: absolute; left: 29px; top: 27px; }
+.yp-room-caption > span { color: #dbc4ba75; font-size: 8px; letter-spacing: 2px; }
+.yp-room-caption > p { margin: 9px 0 0; color: #f3ddd3b0; font-family: Georgia, serif; font-size: 27px; font-style: italic; }
+.yp-stage-character { position: absolute; z-index: -1; height: 81%; right: -40px; bottom: -28px; opacity: .76; filter: drop-shadow(0 5px 18px #1c091b); }
+.yp-stage-bottom { position: absolute; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 12px; left: 24px; right: 24px; bottom: 22px; }
+.yp-space-hint { display: flex; align-items: center; gap: 9px; font-size: 10px; color: #cdb6b2; }
+.yp-space-key { padding: 5px 7px; border: 1px solid #d7b4b23d; border-bottom-width: 2px; border-radius: 4px; font: 9px 'Courier New', monospace; letter-spacing: 1px; }
+.yp-space-hint.is-holding { color: #ffe3b6; }
+.yp-space-hint.is-holding .yp-space-key { color: #271a15; background: #eac7a6; }
+.yp-open-player { display: flex; align-items: center; gap: 8px; min-height: 43px; padding: 8px 14px; border: 1px solid #b49b9042; border-radius: 10px; background: #2d2024d9; color: #efded4; cursor: pointer; }
+.yp-open-player > span { font-size: 21px; }
+.yp-open-player[aria-expanded="true"] { background: #5b2d3a; border-color: #d69b995e; }
+.yp-open-player:active, .yp-chat-compose button:active { transform: scale(.97); }
+.yp-close-hint { position: absolute; bottom: 73px; right: 24px; max-width: calc(100% - 48px); margin: 0; padding: 10px 13px; background: #34222c; border: 1px solid #e0a7b52b; border-radius: 8px; color: #f4d1d0; font-size: 12px; }
+.yp-chat { display: flex; flex-direction: column; min-width: 0; min-height: 0; padding: 0 23px 23px; background: #1e1b1c; border-left: 1px solid #ffffff0b; }
+.yp-chat > header { display: flex; align-items: center; gap: 11px; min-height: 87px; border-bottom: 1px solid #ffffff0b; }
+.yp-chat > header img { width: 39px; height: 34px; object-fit: contain; }
+.yp-chat > header > div { display: grid; gap: 6px; }
+.yp-chat > header strong { font-size: 17px; }
+.yp-chat > header span { color: #968c8c; font-size: 11px; }
+.yp-chat > header i { width: 6px; height: 6px; margin-left: auto; border-radius: 50%; background: #b89a80; }
+.yp-chat-messages { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding-top: 25px; scrollbar-width: thin; }
+.yp-chat-day { display: block; margin-bottom: 27px; color: #766b6b; text-align: center; font-size: 9px; letter-spacing: 2px; }
+.yp-user-bubble { width: fit-content; max-width: 100%; margin: 12px 0 24px auto; padding: 12px 15px; color: #dfd5cf; background: #3c3033; border: 1px solid #8c737324; border-radius: 16px 16px 4px 16px; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.yp-peto-message > span { font-size: 9px; letter-spacing: 1.6px; color: #b9989e; }
+.yp-peto-message > p { color: #e7dbd4; font-size: 14px; line-height: 1.9; }
+.yp-chat-compose { padding: 13px 12px 9px; margin-top: 20px; border: 1px solid #ffffff15; border-radius: 15px; background: #282325; }
+.yp-chat-compose textarea { display: block; resize: none; min-height: 51px; width: 100%; padding: 0; border: 0; color: #f5e5da; background: transparent; font-size: 14px; line-height: 1.5; }
+.yp-chat-compose textarea::placeholder { color: #8d8082; }
+.yp-chat-compose > div { display: flex; align-items: center; justify-content: space-between; gap: 5px; padding-top: 5px; }
+.yp-chat-compose span { font-size: 9px; color: #938587; }
+.yp-chat-compose button { width: 30px; height: 30px; padding: 0; border: 0; border-radius: 50%; background: #e4d0c4; color: #40252c; font-size: 23px; cursor: pointer; }
+.yp-chat-compose button:disabled { opacity: .4; cursor: default; }
+.yp-sr-only { position: absolute; clip-path: inset(50%); width: 1px; height: 1px; overflow: hidden; }
+.yp-sample-choices { margin-top: 11px; }
+.yp-sample-choices > span { font-size: 8px; letter-spacing: 1px; color: #947566; }
+.yp-sample-choices > div { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+.yp-sample-choices button { min-height: 26px; padding: 4px 7px; border: 1px solid #baa795; border-radius: 3px; background: transparent; color: #715044; font-size: 10px; }
+.yp-sample-choices button[aria-pressed="true"] { background: #922330; color: #fff1de; border-color: #922330; }
+.yp-video-art { position: relative; height: 100%; min-height: 200px; overflow: hidden; background: #f3e2d6; color: #8a2638; }
+.yp-video-art::before { content: ''; position: absolute; inset: 0; opacity: .26; background-image: linear-gradient(#b5787a20 1px, transparent 1px), linear-gradient(90deg, #b5787a20 1px, transparent 1px); background-size: 27px 27px; }
+.yp-art-top { position: absolute; z-index: 2; top: 18px; left: 19px; right: 19px; display: flex; justify-content: space-between; font: 9px 'Courier New', monospace; letter-spacing: 2px; color: #8f5961; }
+.yp-art-top b { font-weight: 400; }
+.yp-video-art > img { position: absolute; height: 142%; right: -1%; bottom: -36%; width: auto; transform: rotate(-5deg); filter: drop-shadow(-6px 3px 0 #f7e8df); }
+.yp-art-type { position: absolute; z-index: 1; left: 20px; top: 35%; max-width: 53%; }
+.yp-art-type small { display: block; font-size: 10px; letter-spacing: 1px; text-transform: uppercase; }
+.yp-art-type strong { display: block; margin: 7px 0 12px; font: 900 clamp(26px, 4vw, 57px)/.92 'Courier New', monospace; letter-spacing: -3px; overflow-wrap: anywhere; }
+.yp-art-type > span { font-size: 7px; letter-spacing: 1.7px; color: #a26971; }
+.yp-art-note { position: absolute; z-index: 2; bottom: 13px; left: 19px; color: #8f5961; font-size: 8px; }
+.yp-art-bars { display: flex; align-items: flex-end; gap: 3px; position: absolute; right: 18px; bottom: 14px; height: 16px; }
+.yp-art-bars > i { display: block; width: 3px; height: calc(5px + var(--bar) * 2px); background: #852437; }
+.yp-video-art[data-playing="true"] .yp-art-bars > i { animation: yp-beat 700ms ease-in-out calc(var(--bar) * -95ms) infinite alternate; }
+.yp-mobile-menu { display: none; }
+@keyframes yp-beat { to { transform: scaleY(.3); transform-origin: bottom; } }
+@media (hover: hover) and (pointer: fine) {
+  .yp-open-player:hover { background: #4a303b; }
+  .yp-sample-choices button:hover { background: #b4867430; }
+}
+@media (min-width: 721px) and (max-width: 1000px) {
+  .yp-rail { width: 60px; }
+  .yp-room { grid-template-columns: minmax(0, 1fr) 280px; }
+  .yp-chat { padding-inline: 17px; }
+  .yp-stage-bottom { left: 16px; right: 16px; }
+  .yp-space-hint { max-width: 190px; font-size: 9px; }
+}
+@media (max-width: 720px), (max-height: 520px) and (pointer: coarse) {
+  .yp-rail, .yp-breadcrumb { display: none; }
+  .yp-preview-head { min-height: 65px; justify-content: flex-start; padding: env(safe-area-inset-top, 0px) 16px 0; gap: 10px; }
+  .yp-preview-tag { margin-left: auto; font-size: 9px; }
+  .yp-mobile-brand { display: block; font-size: 14px; }
+  .yp-menu-trigger { display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: #ead5cf; cursor: pointer; }
+  .yp-mobile-menu { position: absolute; z-index: 12; top: calc(65px + env(safe-area-inset-top, 0px)); left: 12px; right: 12px; display: grid; gap: 8px; padding: 17px; border: 1px solid #ffffff20; border-radius: 14px; background: #2d2229; box-shadow: 0 16px 40px #0008; }
+  .yp-mobile-menu > span { margin: 0 0 5px 10px; font-size: 9px; letter-spacing: 2px; color: #b69da4; }
+  .yp-mobile-menu button { display: flex; align-items: center; gap: 9px; min-height: 44px; padding: 10px 12px; border: 1px solid #ffffff16; border-radius: 8px; background: #56333f; color: #f7e5da; text-align: left; cursor: pointer; }
+  .yp-mobile-menu button:last-child { background: transparent; }
+  .yp-room { position: relative; display: block; }
+  .yp-stage { position: absolute; inset: 0; }
+  .yp-player-area { inset: 0; }
+  .yp-stage-player-open { z-index: 2; }
+  .yp-room-caption { top: 23px; left: 24px; }
+  .yp-room-caption > p { font-size: 26px; }
+  .yp-stage-character { height: 74%; right: -37%; bottom: 70px; opacity: .7; }
+  .yp-stage-bottom { display: none; }
+  .yp-chat { position: absolute; z-index: 1; inset: 110px 18px 16px; padding: 0; border: 0; background: transparent; pointer-events: none; }
+  .yp-chat > header { display: none; }
+  .yp-chat-messages { padding-top: 10px; pointer-events: auto; }
+  .yp-chat-day { display: none; }
+  .yp-peto-message { width: fit-content; padding: 12px 14px; background: #38252dbf; border: 1px solid #ffffff0c; border-radius: 14px; }
+  .yp-peto-message p { margin-bottom: 0; }
+  .yp-chat-compose { pointer-events: auto; margin-top: 12px; padding: 12px; background: #241b21ef; }
+  .yp-chat-compose textarea { font-size: 16px; }
+  .yp-chat-compose button { width: 40px; height: 40px; }
+  .yp-close-hint { bottom: 185px; }
+  .yp-sample-choices > span { color: #e9aeb8; }
+  .yp-sample-choices button { min-height: 36px; padding: 7px 8px; border-color: #e8acb53b; color: #f6d5d2; font-size: 11px; }
+  .yp-sample-choices button[aria-pressed="true"] { background: #c66573; border-color: #c66573; color: #fff6eb; }
+  .yp-art-type { top: 24%; left: 18px; max-width: 51%; }
+  .yp-art-type strong { font-size: clamp(30px, 10vw, 50px); letter-spacing: -2px; }
+  .yp-art-type small { font-size: 8px; line-height: 1.5; }
+  .yp-video-art > img { height: 113%; right: -17%; bottom: -9%; }
+  .yp-art-top { top: 15px; left: 16px; right: 16px; font-size: 7px; letter-spacing: 1.2px; }
+}
+@media (prefers-reduced-motion: reduce) { .yp-art-bars > i { animation: none !important; } }

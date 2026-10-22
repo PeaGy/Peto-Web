@@ -11,6 +11,9 @@ import {
 } from "../../shared/api/api";
 import { SendIcon } from "../chat/Composer";
 import { LoadingIndicator } from '../../shared/ui/LoadingIndicator';
+import { PlayerIcon } from '../../shared/ui/PlayerIcon';
+import { usePlayerLayout } from './ytplayer/playerLayout';
+import './ytplayer/companionPlayer.css';
 import { fileToBase64 } from '../chat/attachments';
 import { useCompanionImages } from './useCompanionImages';
 import { CompanionImageDrafts, CompanionImageIcon, CompanionMessageImages } from './CompanionImages';
@@ -48,6 +51,7 @@ import { beginCompanionTiming, clearCompanionTimings, type HearingTiming, type T
 const MUTED_KEY = "peto-companion-muted";
 const Live2DStage = lazy(() => import("./characters/Live2DStage"));
 const VRMStage = lazy(() => import('./characters/VRMStage'));
+const CompanionPlayer = lazy(() => import('./ytplayer/CompanionPlayer'));
 /** Khóa đọc của Companion có tiền tố riêng, để câu nghe thử trong Cài đặt không làm đổi trạng thái ở đây. */
 const SPEECH_PREFIX = "companion-";
 /** Tự gửi chờ thêm chừng này sau câu vừa nghe, để kịp nói tiếp nếu chưa xong ý. */
@@ -115,9 +119,10 @@ function RestartIcon() {
  * Được giữ mounted như Imagine (prop `active`) để câu trả lời đang về không bị cắt khi đổi tab;
  * rời tab thì Peto thôi đọc và giải phóng renderer nhân vật.
  */
-export default function Companion({ active, appInfo, voice, characterMotion, character = DEFAULT_CHARACTER, characterLoading = false, onCharacterPreview, onOpenCharacters, sceneRequest = 0, onUnauthorized, onOpenSidebar, onOpenHearingSettings, onOpenSettings }: {
+export default function Companion({ active, appInfo, voice, characterMotion, character = DEFAULT_CHARACTER, characterLoading = false, onCharacterPreview, onOpenCharacters, sceneRequest = 0, playerRequest = 0, onUnauthorized, onOpenSidebar, onOpenHearingSettings, onOpenSettings }: {
   active: boolean;
   sceneRequest?: number;
+  playerRequest?: number;
   appInfo: AppInfo | null;
   voice: LocalVoice;
   characterMotion: CharacterMotion;
@@ -174,6 +179,51 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
   useEffect(() => { if (sceneRequest > 0) setScenesOpen(true); }, [sceneRequest]);
   const [resetting, setResetting] = useState(false);
   const hearing = useHearing();
+  const [player, setPlayer] = useState({ visited: false, open: false, hidden: false });
+  // Sân khấu còn phải chừa thanh bên và cột chat: khung hẹp chuyển sang màn hình Player riêng.
+  const mobilePlayer = usePlayerLayout('(max-width: 900px), (max-height: 520px) and (pointer: coarse)');
+  const playerModal = active && player.open && !player.hidden && mobilePlayer;
+  const playerBounds = useRef<HTMLDivElement>(null);
+  const playerButton = useRef<HTMLButtonElement>(null);
+  const menuButton = useRef<HTMLButtonElement>(null);
+  const playerOwnsKey = useRef(false);
+  const playerFocusBack = useRef(false);
+  const handledPlayerRequest = useRef(0);
+  const updatePlayerFocus = useCallback((ownsKey: boolean) => {
+    playerOwnsKey.current = ownsKey;
+    if (ownsKey && getHearingState().holding) cancelHold();
+  }, []);
+  const togglePlayer = useCallback(() => {
+    if (getHearingState().holding) cancelHold();
+    setPlayer(value => ({ visited: true, open: !value.open || value.hidden, hidden: false }));
+  }, []);
+  const closePlayer = useCallback(() => {
+    playerOwnsKey.current = false;
+    playerFocusBack.current = true;
+    setPlayer(value => ({ ...value, open: false, hidden: false }));
+  }, []);
+  const hidePlayer = useCallback(() => {
+    playerOwnsKey.current = false;
+    playerFocusBack.current = true;
+    setPlayer(value => ({ ...value, hidden: true }));
+  }, []);
+  useEffect(() => {
+    if (playerRequest <= handledPlayerRequest.current) return;
+    handledPlayerRequest.current = playerRequest;
+    togglePlayer();
+  }, [playerRequest, togglePlayer]);
+  useEffect(() => {
+    if (active) return;
+    playerOwnsKey.current = false;
+    playerFocusBack.current = false;
+    setPlayer(value => value.open ? { ...value, open: false, hidden: false } : value);
+  }, [active]);
+  useEffect(() => {
+    if (!active || !playerFocusBack.current) return;
+    playerFocusBack.current = false;
+    const trigger = mobilePlayer && menuButton.current?.getClientRects().length ? menuButton.current : playerButton.current;
+    trigger?.focus({ preventScroll: true });
+  }, [active, player.open, player.hidden, mobilePlayer]);
   // Tên nhà cung cấp khi bộ não dùng khóa riêng, hiện dưới tên nhân vật; đổi trong Cài đặt thì cập nhật ngay.
   const brainChoice = useBrain();
   const providerModels = useModels();
@@ -656,7 +706,8 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
         cancelHold();
         return;
       }
-      if (event.code !== 'Space' || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+      if (event.code !== 'Space' || event.defaultPrevented || playerOwnsKey.current || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+      if (event.target instanceof Element && event.target.closest('.yt-player')) return;
       if (event.target instanceof Element && event.target.closest(SPACE_OWNERS)) return;
       if (document.querySelector('dialog[open]')) return;
       // Trang thuộc về phím này khi đã bật Giữ để nói; không chặn thì Space cuộn trang.
@@ -735,7 +786,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
       {opening && <div className="companion-loading-screen"><LoadingIndicator variant="screen" label="Loading" /></div>}
       {active && scenesOpen && <ScenePicker scene={scene} onClose={() => setScenesOpen(false)} />}
       <SceneBackdrop scene={scene} />
-      <section className="companion-stage" aria-label={name} inert={opening} aria-hidden={opening}>
+      <section className="companion-stage" aria-label={name} inert={opening || playerModal} aria-hidden={opening || playerModal}>
         {active && !characterLoading && <Suspense fallback={null}>
           {character.format === 'vrm'
             ? <VRMStage key={character.id} character={character} motion={characterMotion} onPreview={onCharacterPreview} onStatusChange={onStageStatus} activity={activity} emotion={stageEmotion} thinking={streaming && !stopping} attention={{ typing, input: composerInput }} />
@@ -743,9 +794,9 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
         </Suspense>}
       </section>
 
-      <section className="companion-panel" aria-label="Trò chuyện trong Companion" inert={opening} aria-hidden={opening}>
+      <section className="companion-panel" aria-label="Trò chuyện trong Companion" inert={opening || playerModal} aria-hidden={opening || playerModal}>
         <header className="companion-head">
-          <button type="button" className="menu-btn companion-menu" aria-label="Mở menu" onClick={onOpenSidebar}>
+          <button ref={menuButton} type="button" className="menu-btn companion-menu" aria-label="Mở menu" onClick={onOpenSidebar}>
             <MenuIcon />
           </button>
           <button
@@ -946,12 +997,22 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
         </form>
       </section>
 
-      <div className="companion-scene-tools" inert={opening} aria-hidden={opening}>
+      <div ref={playerBounds} className="companion-player-area">
+        {player.visited && <Suspense fallback={null}>
+          <CompanionPlayer active={active} open={player.open} hidden={player.hidden} mobileLayout={mobilePlayer} bounds={playerBounds}
+            onClose={closePlayer} onHide={hidePlayer} onFocusChange={updatePlayerFocus} />
+        </Suspense>}
+      </div>
+      <div className="companion-scene-tools" inert={opening || playerModal} aria-hidden={opening || playerModal}>
         <button type="button" className="companion-scene-button" aria-label="Bối cảnh" data-tip aria-haspopup="dialog" onClick={() => setScenesOpen(true)}>
           <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4" stroke="currentColor" strokeWidth="1.7" /><circle cx="9" cy="8" r="2" stroke="currentColor" strokeWidth="1.7" /><path d="m4 18 5-5 3 3 4-6 5 8" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" /></svg>
         </button>
         <button type="button" className="companion-scene-button" onClick={onOpenCharacters} aria-label="Nhân vật" data-tip>
           <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="8" r="4" stroke="currentColor" strokeWidth="1.7" /><path d="M4 21v-2a8 8 0 0 1 16 0v2" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" /></svg>
+        </button>
+        <button ref={playerButton} type="button" className="companion-scene-button companion-player-button" aria-label="Player"
+          aria-expanded={player.open && !player.hidden} aria-controls="companion-player" onClick={togglePlayer}>
+          <PlayerIcon /><span>Player</span>
         </button>
       </div>
       <dialog

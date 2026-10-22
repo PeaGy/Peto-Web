@@ -1,5 +1,16 @@
 # CLAUDE.md
 
+## Player YouTube trong Companion (2026-10-22)
+
+Giai đoạn 3 đã ghép Player vào Companion, chưa commit/deploy. Nút desktop cạnh Bối cảnh/Nhân vật và mục Player trong
+menu mobile; giữ giao diện retro đã được chủ web duyệt. Mũi tên mobile ẩn toàn bộ giao diện và tiếp tục phát trong
+cùng tab, không thêm mini player. X/đóng, rời Companion/Cài đặt, hết phiên, ẩn trang hoặc pagehide hủy iframe; quay lại
+không tự phát. Chỉ nạp API sau link hợp lệ. Module tải riêng, không import prototype/sáu mẫu vào app.
+
+Chi tiết vòng đời, portal, Space/micro, bố cục hẹp và kiểm chứng: `frontend/src/features/companion/ytplayer/README.md`.
+Giọng đọc, renderer và Nhún theo nhạc giữ cơ chế hiện có; không lấy audio iframe. Giai đoạn 4 mới nghiệm thu đầy đủ
+Chrome/Edge, tài nguyên, quảng cáo và điện thoại thật. Không tự commit/deploy hoặc chạy AI/TTS trả phí.
+
 ## Tools survey and log workflow (2026-10-21)
 
 Codex handed the tools research to Claude (`CLAUDE_TOOLS_HANDOFF.md`). The report and incremental plan are in
