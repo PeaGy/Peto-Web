@@ -1990,6 +1990,39 @@ it('loads conversations beyond the first 50', async () => {
   expect(api.listConversations).toHaveBeenCalledWith(50, 50, '', {unassigned:true});
 });
 
+describe('banner tải danh sách hội thoại', () => {
+  const LIST_ERROR = 'Không tải được danh sách hội thoại. Thử tải lại nhé.';
+  const page = { conversations: [conversation('A'), conversation('B')], has_more: false };
+  const unassigned = (filter?: { unassigned?: boolean }) => Boolean(filter?.unassigned);
+
+  it('một lần tải hỏng thoáng qua thì thử lại im lặng, không hiện banner', async () => {
+    let failures = 1;
+    vi.mocked(api.listConversations).mockImplementation(async (_offset, _limit, _query, filter) => {
+      if (unassigned(filter) && failures-- > 0) throw new TypeError('Failed to fetch');
+      return page;
+    });
+    render(<App />);
+    await screen.findByRole('button', { name: 'A', exact: true }, { timeout: 6000 });
+    expect(screen.queryByText(LIST_ERROR)).toBeNull();
+  }, 15000);
+
+  it('hỏng cả lần thử lại mới báo, và lần tải được sau đó tự tắt banner', async () => {
+    let failures = 2;
+    vi.mocked(api.listConversations).mockImplementation(async (_offset, _limit, _query, filter) => {
+      if (unassigned(filter) && failures-- > 0) throw new TypeError('Failed to fetch');
+      return page;
+    });
+    vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers) => { handlers.onDone?.(); });
+    render(<App />);
+    await screen.findByText(LIST_ERROR, undefined, { timeout: 6000 });
+    // Lượt chat xong làm mới danh sách; lần này tải được nên banner của chính lỗi đó biến mất.
+    fireEvent.change(screen.getByLabelText('Nhắn cho Peto'), { target: { value: 'Chào' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Gửi', exact: true }));
+    await screen.findByRole('button', { name: 'A', exact: true }, { timeout: 6000 });
+    await waitFor(() => expect(screen.queryByText(LIST_ERROR)).toBeNull());
+  }, 15000);
+});
+
 describe('Hội thoại nhập vai cũ', () => {
   it('menu dấu cộng không còn chế độ nhập vai, và tin gửi đi không kèm persona', async () => {
     vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers) => { handlers.onDone?.(); });

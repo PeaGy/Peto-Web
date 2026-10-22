@@ -90,6 +90,10 @@ const archiveSettings = preloadable(() => import("../features/settings/ArchivedC
 const connectorSettings = preloadable(() => import('../features/connectors/ConnectorSettings'));
 // Trang Quản trị chỉ chủ web mở; tải riêng nên người dùng thường không phải tải mã biểu đồ.
 const adminDashboard = preloadable(() => import('../features/admin/AdminDashboard'));
+// Tải danh sách hội thoại hỏng thì thử lại một lần sau chừng này mili giây rồi mới báo. Ngày 21/10/2026 một lần tải sau
+// lượt chat không tới được máy chủ (log VPS chỉ có 200 OK) mà banner đỏ vẫn hiện, và không tự tắt khi tải lại được.
+const LIST_ERROR = "Không tải được danh sách hội thoại. Thử tải lại nhé.";
+const LIST_RETRY_MS = 2000;
 const AdminDashboard = adminDashboard.View;
 const loadImagine = imagine.preload;
 const loadCompanion = companion.preload;
@@ -439,23 +443,39 @@ function AppContent() {
     const version = ++listVersion.current;
     setLoadingList(true);
     try {
-      const all: Conversation[] = [];
-      let more = true;
-      while (more && all.length < listCount.current) {
-        const page = await listConversations(all.length, 50, '', {unassigned:true});
+      const load = async () => {
+        const all: Conversation[] = [];
+        let more = true;
+        while (more && all.length < listCount.current) {
+          const page = await listConversations(all.length, 50, '', {unassigned:true});
+          if (version !== listVersion.current) return null;
+          all.push(...page.conversations);
+          more = page.has_more;
+          if (!page.conversations.length) break;
+        }
+        return { all, more };
+      };
+      let loaded;
+      try {
+        loaded = await load();
+      } catch (err) {
+        if (err instanceof UnauthorizedError || version !== listVersion.current) throw err;
+        // Trục trặc mạng thoáng qua: thử lại một lần, im lặng, trước khi báo lỗi.
+        await new Promise(resolve => window.setTimeout(resolve, LIST_RETRY_MS));
         if (version !== listVersion.current) return;
-        all.push(...page.conversations);
-        more = page.has_more;
-        if (!page.conversations.length) break;
+        loaded = await load();
       }
-      setConversations(all);
-      setHasMore(more);
+      if (!loaded) return;
+      setConversations(loaded.all);
+      setHasMore(loaded.more);
+      // Lần tải trước hỏng nhưng lần này được: tắt banner của chính lỗi đó, không đụng lỗi khác.
+      setError(previous => previous === LIST_ERROR ? null : previous);
       void refreshProjects();
       if (activeProjectRef.current) void refreshProjectChats(activeProjectRef.current);
     } catch (err) {
       if (version !== listVersion.current) return;
       if (err instanceof UnauthorizedError) handleUnauthorized();
-      else setError("Không tải được danh sách hội thoại. Thử tải lại nhé.");
+      else setError(LIST_ERROR);
     } finally {
       if (version === listVersion.current) setLoadingList(false);
     }
