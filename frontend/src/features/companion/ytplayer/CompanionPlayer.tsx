@@ -10,6 +10,7 @@ interface Props {
   open: boolean;
   hidden: boolean;
   mobileLayout: boolean;
+  allowBackground: boolean;
   bounds: RefObject<HTMLElement | null>;
   onClose: () => void;
   onHide: () => void;
@@ -17,12 +18,12 @@ interface Props {
 }
 
 /** Nguồn chỉ sống trong lần đăng nhập này; không lấy dữ liệu mẫu hay tự phát khi mở cửa sổ. */
-export default function CompanionPlayer({ active, open, hidden, mobileLayout, bounds, onClose, onHide, onFocusChange }: Props) {
+export default function CompanionPlayer({ active, open, hidden, mobileLayout, allowBackground, bounds, onClose, onHide, onFocusChange }: Props) {
   const [source, setSource] = useState<YouTubeSource | null>(null);
   const [draft, setDraft] = useState('');
   const [error, setError] = useState('');
   const [frame, setFrame] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
-  const youtube = useYouTubePlayer(source, active && open && source !== null);
+  const youtube = useYouTubePlayer(source, (active || allowBackground) && open && source !== null, allowBackground);
   const openLink = useCallback((value: string) => {
     const parsed = parseYouTubeUrl(value);
     if (!parsed) return 'Link YouTube chưa hợp lệ. Hãy kiểm tra lại đường dẫn video.';
@@ -54,7 +55,7 @@ export default function CompanionPlayer({ active, open, hidden, mobileLayout, bo
     };
   }, [active, open, bounds]);
 
-  if (!active || !open || !frame) return null;
+  if ((!active && !allowBackground) || !open || !frame) return null;
   return createPortal(<div className="companion-player-layer" data-mobile={mobileLayout} style={frame}>
     <PlayerShell id="companion-player" mode="youtube" mobileLayout={mobileLayout} bottomGap={0} bounds={bounds} hidden={hidden} onHide={onHide}
       track={{ title: '', artist: '', url: source?.url ?? '', duration: youtube.duration }}

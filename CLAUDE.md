@@ -6,12 +6,21 @@ Giai đoạn 3 đã ghép Player vào Companion và chủ web đã deploy. Nút 
 menu mobile; giữ giao diện retro đã được chủ web duyệt. Mũi tên mobile ẩn toàn bộ giao diện và tiếp tục phát trong
 cùng tab, không thêm mini player. Sau góp ý bản deploy: nút _ và icon desktop chỉ ẩn/hiện, giữ video đang phát; X đóng
 hẳn. Bỏ chữ trên nút icon và dải chừa 76 px dưới vùng kéo; cửa sổ chạm được đáy Companion, vẫn chừa cột chat.
-Rời Companion/Cài đặt, hết phiên, ẩn trang hoặc pagehide hủy iframe; quay lại
-không tự phát. Chỉ nạp API sau link hợp lệ. Module tải riêng, không import prototype/sáu mẫu vào app.
+Theo yêu cầu mới ở giai đoạn 4: desktop (`hover: hover` + `pointer: fine`, độc lập chiều rộng UI) giữ cùng iframe
+và phát khi đổi tab trình duyệt, thu nhỏ hoặc rời Companion sang Trò chuyện/Cài đặt; cửa sổ được ẩn, trả quyền phím.
+Mobile chỉ giữ phát khi ẩn UI trong cùng tab Companion; rời Companion/ẩn trang vẫn hủy phiên. X, hết phiên, unmount
+và pagehide luôn hủy iframe; sau khi hủy quay lại không tự phát. Không thể phát sau khi đóng tab/thoát hẳn trình duyệt.
+Đã bỏ dòng idle “Trả lời ngắn bằng tiếng Anh” cũ; giữ trạng thái đang xử lý và tên provider BYO.
+Chỉ nạp API sau link hợp lệ. Module tải riêng, không import prototype/sáu mẫu vào app. Không cue thừa nguồn ban đầu
+ngay onReady để tránh ghi đè lần bấm Phát đầu.
+Đổi nguồn chờ sự kiện cued/playing rồi mới bật Phát/seek, không báo sẵn sàng ngay khi gửi cue; timeout 20 giây.
 
 Chi tiết vòng đời, portal, Space/micro, bố cục hẹp và kiểm chứng: `frontend/src/features/companion/ytplayer/README.md`.
-Giọng đọc, renderer và Nhún theo nhạc giữ cơ chế hiện có; không lấy audio iframe. Giai đoạn 4 mới nghiệm thu đầy đủ
-Chrome/Edge, tài nguyên, quảng cáo và điện thoại thật. Không tự commit/deploy hoặc chạy AI/TTS trả phí.
+Giọng đọc, renderer và Nhún theo nhạc giữ cơ chế hiện có; không lấy audio iframe.
+Báo cáo giai đoạn 4: `frontend/src/features/companion/ytplayer/STAGE4_REPORT.md`. Thiết bị điện thoại chủ web chọn:
+Android/Chrome; phần máy thật còn chờ xác nhận, không đánh đồng với mô phỏng. Ca thu nhỏ cửa sổ Edge qua CDP chưa
+xác nhận được trạng thái minimized, cần thao tác bằng tay; chuyển tab Edge thật và thu nhỏ Chrome thật đã kiểm tra.
+Không tự commit/deploy hoặc chạy AI/TTS trả phí.
 
 ## Tools survey and log workflow (2026-10-21)
 

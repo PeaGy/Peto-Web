@@ -1,4 +1,4 @@
-# Player trong Companion — giai đoạn 3
+# Player trong Companion
 
 Đã ghép vào Companion và được chủ web triển khai. Dùng player YouTube chính thức; không thêm thư viện,
 backend, Data API key, tìm kiếm, playlist hoặc xử lý âm thanh iframe.
@@ -21,15 +21,32 @@ backend, Data API key, tìm kiếm, playlist hoặc xử lý âm thanh iframe.
 ## Các điểm gắn
 
 - `Companion.tsx`: nút desktop, trạng thái mở/ẩn, ref quyền phím và focus, biên vùng cửa sổ. Tải riêng
-  `CompanionPlayer.tsx` sau lần mở đầu. `active=false` đóng phiên Player, kể cả vào Cài đặt Companion.
+  `CompanionPlayer.tsx` sau lần mở đầu. Desktop giữ phiên khi `active=false` (Trò chuyện/Cài đặt), đồng thời ẩn
+  cửa sổ và trả quyền phím. Mobile rời Companion thì đóng phiên.
 - `App.tsx` và `Sidebar.tsx`: mục mobile phát yêu cầu mở Player; xóa yêu cầu khi hết phiên đăng nhập. Companion có
   key theo tài khoản và bị gỡ khi đăng xuất, nên nguồn/iframe không theo sang tài khoản khác.
 - `CompanionPlayer.tsx`: giữ link và nối `useYouTubePlayer`; portal ổn định ngoài container sân khấu để mobile
   thực sự phủ viewport khi xoay ngang. Biên desktop theo vị trí/kích thước sân khấu, có dọn observer/listener.
 - `PlayerShell.tsx` và `playerLayout.ts`: giao diện/vòng focus dùng chung với prototype, iframe không bị chuyển
   sang cây khác khi resize. Mobile đang mở làm sân khấu/chat inert; ẩn/đóng trả lại tương tác và focus.
-- `useYouTubePlayer.ts`: chưa có nguồn không tải API; đổi video chỉ cue. Đóng, rời Companion, unmount, đăng xuất,
-  `document.hidden` và `pagehide` dừng/hủy player, gỡ iframe và dọn timer. Quay lại không tự phát.
+- `useYouTubePlayer.ts`: chưa có nguồn không tải API; nguồn ban đầu do constructor chuẩn bị, đổi video mới cue.
+  Không cue lại ngay `onReady` để tránh ghi đè lần bấm Phát đầu. Đóng X, unmount, đăng xuất và `pagehide` luôn
+  dừng/hủy player, gỡ iframe và dọn timer. Quay lại sau khi hủy không tự phát.
+  Đổi nguồn chờ YouTube xác nhận cued/playing rồi mới bật Phát/seek; có timeout 20 giây. Âm lượng vẫn điều chỉnh được.
+
+## Phát nền
+
+Theo yêu cầu mới của chủ web, desktop có chuột chính xác (`hover: hover` và `pointer: fine`) được phép tiếp tục
+phát khi đổi tab trình duyệt, thu nhỏ hoặc chuyển sang Trò chuyện/Cài đặt trong Peto. Phân biệt thiết bị bằng khả
+năng con trỏ, độc lập với bố cục: thu hẹp cửa sổ desktop không biến nó thành điện thoại. Không tạo phiên phát mới
+khi đổi tab hoặc hiện lại cửa sổ; X và đăng xuất vẫn dừng hẳn.
+
+Mobile chỉ giữ phát khi ẩn giao diện Player **trong cùng tab Companion**, không có mini player. Rời Companion hoặc
+ẩn trang trình duyệt vẫn hủy phiên. Hành vi khóa màn hình/hệ điều hành chưa được cam kết.
+
+Đóng tab Peto, rời trang bằng điều hướng toàn phần hoặc thoát hẳn trình duyệt kết thúc trang và player. Một web app
+không thể giữ YouTube iframe chạy sau khi trình duyệt đã thoát. Không thêm service worker, tiến trình nền hoặc
+cửa sổ phụ để giả lập khả năng này. Khi quay lại sau `pagehide` chỉ chuẩn bị nguồn, không tự phát.
 
 ## Phím, micro, giọng đọc và nhân vật
 
@@ -50,19 +67,8 @@ có; không nối iframe vào bộ phân tích nhịp. Chưa tự giảm âm lư
 - `youtube-player-api.spec.ts`, `youtube-player-preview.spec.ts`: hồi quy module dùng chung, lỗi 101/150/153, retry,
   autoplay bị chặn, vòng đời, keyboard, menu, volume, kéo và resize. API giả chia sẻ ở `youtubeFixture.ts`.
 - Unit: App, Companion, Hearing, URL, loader và hook. Build frontend kiểm tra TypeScript và tạo chunk Player tải riêng.
-- Giai đoạn 4 còn ma trận sáu video trên Chrome/Edge, quảng cáo, CPU/RAM, lần mở đầu/đổi bài và điện thoại thật.
-  Mô phỏng mobile không thay thế thiết bị thật; không cam kết không quảng cáo hay hỗ trợ khóa màn hình.
+- Ma trận sáu video trên Chrome/Edge, thời gian phản hồi, mẫu quảng cáo/tài nguyên và phạm vi nghiệm thu được ghi
+  trong [STAGE4_REPORT.md](./STAGE4_REPORT.md). Mô phỏng mobile không thay thế Android/Chrome thật.
 
-Kết quả ngày 22/10/2026: 270 unit test đạt; 34 ca trình duyệt đạt, 10 tổ hợp bỏ qua vì dành cho bố cục còn lại;
-build và diff check đạt. Build có chunk `CompanionPlayer` tải riêng, không chứa trang prototype, API giả hay ID video mẫu.
-
-Kiểm tra bổ sung bằng Chromium, API/iframe YouTube và Live2D thật trong ứng dụng: Tetris phát, tạm dừng và đóng gỡ
-iframe trên desktop 1440×900 và mobile mô phỏng 390×844. Khi ẩn Player mobile rồi nhập chat, thời gian tăng từ 2 lên
-4 giây; diện tích chat trước khi nhập không đổi, mở lại giữ đúng iframe, mỗi màn hình vẫn có một canvas và không lỗi
-JavaScript. Tài khoản/backend của lượt này được giả lập, không gọi AI/TTS thật. Đây là smoke test ngắn, không thay
-thế ma trận sáu video, đo tài nguyên hoặc nghiệm thu điện thoại thật.
-
-Sau góp ý bản deploy: 35 ca trình duyệt đạt, 11 tổ hợp bỏ qua theo bố cục; build đạt. Ca desktop mới kiểm tra nút
-icon không còn chữ, thu nhỏ/ẩn bằng icon giữ cùng iframe và tiến độ, X hủy player, kéo/phóng lớn chạm đúng đáy
-Companion và khôi phục đúng vị trí. YouTube thật trên Chromium: cả nút _ desktop và mũi tên mobile giữ phát khi ẩn,
-tiến độ tăng từ 2 lên 4 giây; mở lại cùng iframe và X gỡ iframe. Bản sửa này chưa deploy lại.
+Giai đoạn 3 đã được chủ web deploy; bản thay đổi giai đoạn 4 trong báo cáo chưa commit/deploy.
+Không cam kết không quảng cáo, phát sau khi thoát hẳn trình duyệt hoặc hỗ trợ khóa màn hình điện thoại.

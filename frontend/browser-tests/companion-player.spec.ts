@@ -28,6 +28,7 @@ test('Companion thật: chỉ tải YouTube khi có link, đổi nguồn giữ i
   const requests = await installApi(page), mobile = info.project.name === 'mobile';
   const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
   await page.goto('/companion'); await expect(chat(page)).toBeVisible();
+  await expect(page.locator('.companion-title')).not.toContainText('Trả lời ngắn bằng tiếng Anh');
   expect(requests()).toBe(0);
   const chatBefore = await chat(page).boundingBox();
   await openPlayer(page, mobile);
@@ -143,7 +144,8 @@ test('desktop thu nhỏ giữ video, nút icon ẩn/hiện và cửa sổ kéo �
   expect((await stats(page)).destroyed).toBe(1);
 });
 
-test('Companion thật: ẩn trang, chuyển tab, mở Cài đặt và đăng xuất đều giải phóng iframe', async ({ page }, info) => {
+test('mobile: ẩn trang, chuyển tab, mở Cài đặt và đăng xuất đều giải phóng iframe', async ({ page }, info) => {
+  test.skip(info.project.name !== 'mobile', 'Desktop tiếp tục phát khi đổi tab.');
   await mockPeto(page); await installApi(page);
   await page.route('**/api/auth/logout', route => route.fulfill({ json: { ok: true } }));
   const mobile = info.project.name === 'mobile';
@@ -183,6 +185,53 @@ test('Companion thật: ẩn trang, chuyển tab, mở Cài đặt và đăng xu
   await page.getByRole('menuitem', { name: 'Đăng xuất', exact: true }).click();
   await expect(page.locator('.yt-player iframe')).toHaveCount(0);
   await expect(chat(page)).toHaveCount(0);
+  const result = await stats(page);
+  expect(result.destroyed).toBe(result.created);
+});
+
+test('desktop: chuyển tab/trang Cài đặt giữ phiên phát, pagehide và đăng xuất dọn iframe', async ({ page }, info) => {
+  test.skip(info.project.name !== 'pc', 'Mobile dừng khi rời Companion hoặc ẩn trang.');
+  await mockPeto(page); await installApi(page);
+  await page.route('**/api/auth/logout', route => route.fulfill({ json: { ok: true } }));
+  await page.goto('/companion'); await expect(chat(page)).toBeVisible();
+  await openPlayer(page, false); await chooseVideo(page);
+  const shell = page.locator('.yt-player');
+  const iframe = await shell.locator('iframe').elementHandle();
+  await shell.getByRole('button', { name: 'Phát video', exact: true }).click();
+  await page.evaluate(() => {
+    Object.defineProperty(document, 'hidden', { configurable: true, value: true });
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await expect(shell).toHaveAttribute('data-playing', 'true');
+  expect((await stats(page)).destroyed).toBe(0);
+  await page.evaluate(() => {
+    delete (document as unknown as { hidden?: boolean }).hidden;
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await page.getByRole('button', { name: 'Trò chuyện', exact: true }).click();
+  await expect(shell).toBeHidden();
+  await expect(shell).toHaveAttribute('inert', '');
+  await expect(shell).toHaveAttribute('data-active', 'false');
+  await expect(shell).toHaveAttribute('data-playing', 'true');
+  expect(await iframe!.evaluate(node => node.isConnected)).toBe(true);
+  await page.getByRole('textbox', { name: 'Nhắn cho Peto', exact: true }).fill('Chat khi đang nghe nhạc');
+  await page.getByRole('button', { name: 'Companion', exact: true }).click();
+  await expect(shell).toBeVisible();
+  await expect(shell).toHaveAttribute('data-playing', 'true');
+  await page.getByRole('button', { name: 'Cài đặt Companion', exact: true }).click();
+  await expect(shell).toBeHidden();
+  expect(await iframe!.evaluate(node => node.isConnected)).toBe(true);
+  await page.getByRole('button', { name: 'Quay lại Companion', exact: true }).click();
+  await expect(shell).toBeVisible();
+  expect((await stats(page)).created).toBe(1);
+  await page.evaluate(() => window.dispatchEvent(new Event('pagehide')));
+  await expect(shell.locator('iframe')).toHaveCount(0);
+  await page.evaluate(() => window.dispatchEvent(new Event('pageshow')));
+  await expect(shell).toHaveAttribute('data-status', 'ready');
+  await expect(shell).toHaveAttribute('data-playing', 'false');
+  await page.locator('.account').click();
+  await page.getByRole('menuitem', { name: 'Đăng xuất', exact: true }).click();
+  await expect(page.locator('.yt-player iframe')).toHaveCount(0);
   const result = await stats(page);
   expect(result.destroyed).toBe(result.created);
 });

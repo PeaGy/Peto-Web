@@ -118,7 +118,7 @@ it('Nhà cung cấp như AIRI: tab, lọc giá, nhập và kiểm tra khóa; B�
   expect(payload).toMatchObject({ mode: 'companion', provider: { id: 'deepseek', model: 'deepseek-reasoner' },
     providerKey: 'sk-deep-12345678', webSearch: 'off' });
   expect(payload.searchKey).toBeUndefined();
-  expect(screen.getByText('Trả lời ngắn bằng tiếng Anh · DeepSeek')).toBeTruthy();
+  expect(screen.getByText('DeepSeek', { selector: '.companion-title span' })).toBeTruthy();
 });
 
 it('khóa Tavily ở Tra web chỉ gửi kèm khi nhà cung cấp cần và Tra web đang bật', async () => {
@@ -139,7 +139,7 @@ it('khóa Tavily ở Tra web chỉ gửi kèm khi nhà cung cấp cần và Tra 
   // OpenAI có tìm kiếm riêng: không gửi khóa Tavily.
   localStorage.setItem('peto-companion-brain', JSON.stringify({ provider: 'openai', model: 'gpt-6-luna' }));
   window.dispatchEvent(new StorageEvent('storage', { key: 'peto-companion-brain' }));
-  await waitFor(() => expect(screen.getByText('Trả lời ngắn bằng tiếng Anh · OpenAI')).toBeTruthy());
+  await waitFor(() => expect(screen.getByText('OpenAI', { selector: '.companion-title span' })).toBeTruthy());
   payload = await sendInCompanion('more news?');
   expect(payload).toMatchObject({ provider: { id: 'openai', model: 'gpt-6-luna' }, providerKey: 'sk-open-12345678' });
   expect(payload.searchKey).toBeUndefined();

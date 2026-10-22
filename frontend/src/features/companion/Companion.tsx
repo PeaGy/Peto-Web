@@ -108,7 +108,7 @@ function RestartIcon() {
 }
 
 /**
- * Tab Companion: Peto trả lời một hai câu bằng tiếng Anh như bạn bè nhắn tin, rồi tự nói thành tiếng
+ * Tab Companion: Peto trò chuyện bằng chữ rồi tự nói thành tiếng
  * bằng âm thanh từ máy tạo giọng chuyển qua VPS. Chỉ có một mạch trò chuyện, tách khỏi danh sách Trò chuyện.
  *
  * Sân khấu bên trái hiển thị Live2D và ghi công model. Mọi thứ
@@ -182,6 +182,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
   const [player, setPlayer] = useState({ visited: false, open: false, hidden: false });
   // Sân khấu còn phải chừa thanh bên và cột chat: khung hẹp chuyển sang màn hình Player riêng.
   const mobilePlayer = usePlayerLayout('(max-width: 900px), (max-height: 520px) and (pointer: coarse)');
+  const desktopPlayback = usePlayerLayout('(hover: hover) and (pointer: fine)');
   const playerModal = active && player.open && !player.hidden && mobilePlayer;
   const playerBounds = useRef<HTMLDivElement>(null);
   const playerButton = useRef<HTMLButtonElement>(null);
@@ -216,8 +217,8 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
     if (active) return;
     playerOwnsKey.current = false;
     playerFocusBack.current = false;
-    setPlayer(value => value.open ? { ...value, open: false, hidden: false } : value);
-  }, [active]);
+    if (!desktopPlayback) setPlayer(value => value.open ? { ...value, open: false, hidden: false } : value);
+  }, [active, desktopPlayback]);
   useEffect(() => {
     if (!active || !playerFocusBack.current) return;
     playerFocusBack.current = false;
@@ -772,7 +773,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
     : speech?.phase === "buffering" ? "Đang chờ tiếng…"
       : speech?.phase === "loading" ? "Sắp nói…"
         : searching ? "Đang tra web…" : streaming ? "Đang nhắn…"
-          : brainLabel ? `Trả lời ngắn bằng tiếng Anh · ${brainLabel}` : "Trả lời ngắn bằng tiếng Anh";
+          : brainLabel;
   const canSend = (draft.trim().length > 0 || images.images.length > 0) && !images.pending && !interim && !streaming && !loading && !resetting && !loadFailed && recovery.online && !recovery.pending;
 
   function addImages(files: FileList | File[]) {
@@ -812,7 +813,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
                 <path d="m6 9 6 6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </strong>
-            <span aria-live="polite">{stateText}</span>
+            {stateText && <span aria-live="polite">{stateText}</span>}
           </button>
           <div className="companion-tools">
             {voice.status === "ready" && (
@@ -999,7 +1000,8 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
 
       <div ref={playerBounds} className="companion-player-area">
         {player.visited && <Suspense fallback={null}>
-          <CompanionPlayer active={active} open={player.open} hidden={player.hidden} mobileLayout={mobilePlayer} bounds={playerBounds}
+          <CompanionPlayer active={active} open={player.open} hidden={player.hidden || !active} mobileLayout={mobilePlayer}
+            allowBackground={desktopPlayback} bounds={playerBounds}
             onClose={closePlayer} onHide={hidePlayer} onFocusChange={updatePlayerFocus} />
         </Suspense>}
       </div>

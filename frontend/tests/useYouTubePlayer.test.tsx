@@ -33,8 +33,8 @@ class FakePlayer {
 let player: ReturnType<typeof useYouTubePlayer>;
 const first = parseYouTubeUrl('https://youtu.be/Soy4jGPHr3g')!;
 const second = parseYouTubeUrl('https://youtu.be/aircAruvnKk?t=20')!;
-function Harness({ source = first, enabled = true }: { source?: YouTubeSource | null; enabled?: boolean }) {
-  player = useYouTubePlayer(source, enabled);
+function Harness({ source = first, enabled = true, background = false }: { source?: YouTubeSource | null; enabled?: boolean; background?: boolean }) {
+  player = useYouTubePlayer(source, enabled, background);
   return <div ref={player.container} />;
 }
 async function mount() {
@@ -98,6 +98,61 @@ it('phát, seek, volume và controls native đều đồng bộ qua API', async 
   act(() => players[0].state(2));
   expect(player.playing).toBe(false);
 });
+it('lần Phát đầu không bị cue ban đầu hoàn thành muộn đẩy về trạng thái dừng', async () => {
+  class SlowCuePlayer extends FakePlayer {
+    cueVideoById = vi.fn((source: { startSeconds: number }) => {
+      setTimeout(() => { this.time = source.startSeconds; this.state(5); }, 500);
+    });
+  }
+  load.mockResolvedValue({ Player: SlowCuePlayer });
+  await mount();
+  act(() => player.setPlaying(true));
+  await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+  expect(player.playing).toBe(true);
+  expect(players[0].cueVideoById).not.toHaveBeenCalled();
+});
+it('đổi nguồn trước onReady vẫn cue nguồn mới, không tạo thêm iframe', async () => {
+  const view = render(<StrictMode><Harness /></StrictMode>);
+  await act(async () => {});
+  view.rerender(<StrictMode><Harness source={second} /></StrictMode>);
+  act(() => players[0].ready());
+  expect(players).toHaveLength(1);
+  expect(players[0].cueVideoById).toHaveBeenCalledExactlyOnceWith({ videoId: second.videoId, startSeconds: 20 });
+  expect(player.ready).toBe(true);
+  expect(player.position).toBe(20);
+  expect(players[0].playVideo).not.toHaveBeenCalled();
+});
+it('đổi bài chờ YouTube xác nhận đã cue rồi mới nhận Phát, bỏ qua trạng thái trung gian', async () => {
+  const view = await mount();
+  const instance = players[0];
+  instance.cueVideoById.mockImplementation(source => {
+    instance.state(-1);
+    setTimeout(() => { instance.time = source.startSeconds; instance.state(5); }, 500);
+  });
+  view.rerender(<StrictMode><Harness source={second} /></StrictMode>);
+  expect(player.ready).toBe(false);
+  expect(player.status).toBe('loading');
+  act(() => player.setPlaying(true));
+  expect(instance.playVideo).not.toHaveBeenCalled();
+  act(() => player.setVolume(35));
+  expect(instance.getVolume()).toBe(35);
+  await act(async () => { await vi.advanceTimersByTimeAsync(500); });
+  expect(player.ready).toBe(true);
+  act(() => player.setPlaying(true));
+  await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+  expect(player.playing).toBe(true);
+  expect(player.position).toBe(20);
+});
+it('đổi bài mà không nhận được xác nhận cue có lỗi hữu hạn, không tự phát', async () => {
+  const view = await mount();
+  players[0].cueVideoById.mockImplementation(() => {});
+  view.rerender(<StrictMode><Harness source={second} /></StrictMode>);
+  await act(async () => { await vi.advanceTimersByTimeAsync(20000); });
+  expect(player.status).toBe('error');
+  expect(player.error).toContain('quá lâu');
+  expect(player.ready).toBe(false);
+  expect(players[0].playVideo).not.toHaveBeenCalled();
+});
 it('tắt enabled khi host vẫn mounted hủy player và không nhận lệnh sau đó', async () => {
   const view = await mount();
   act(() => player.setPlaying(true));
@@ -142,6 +197,47 @@ it('đóng trong lúc nạp API không cho callback muộn tạo player', async 
   view.rerender(<StrictMode><Harness enabled={false} /></StrictMode>);
   await act(async () => { resolve({ Player: FakePlayer }); });
   expect(players).toHaveLength(0);
+});
+it('desktop giữ cùng player khi ẩn trang, vẫn đồng bộ; pagehide và unmount giải phóng', async () => {
+  const view = render(<StrictMode><Harness background /></StrictMode>);
+  await act(async () => {});
+  act(() => { players[0].ready(); player.setPlaying(true); });
+  const iframe = document.querySelector('iframe');
+  act(() => {
+    Object.defineProperty(document, 'hidden', { configurable: true, value: true });
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  players[0].time = 12;
+  await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+  expect(player.position).toBe(12);
+  expect(player.playing).toBe(true);
+  expect(players[0].destroy).not.toHaveBeenCalled();
+  expect(document.querySelector('iframe')).toBe(iframe);
+  act(() => {
+    Object.defineProperty(document, 'hidden', { configurable: true, value: false });
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  expect(players).toHaveLength(1);
+  act(() => window.dispatchEvent(new Event('pagehide')));
+  expect(players[0].destroy).toHaveBeenCalledOnce();
+  act(() => window.dispatchEvent(new Event('pageshow')));
+  await act(async () => {});
+  act(() => players[1].ready());
+  expect(players[1].playVideo).not.toHaveBeenCalled();
+  view.unmount();
+  expect(players[1].destroy).toHaveBeenCalledOnce();
+});
+it.each(['disabled', 'foreground'])('desktop đang ẩn vẫn hủy player khi chuyển sang %s', async mode => {
+  const view = render(<StrictMode><Harness background /></StrictMode>);
+  await act(async () => {});
+  act(() => players[0].ready());
+  act(() => {
+    Object.defineProperty(document, 'hidden', { configurable: true, value: true });
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  view.rerender(<StrictMode><Harness background={mode !== 'foreground'} enabled={mode !== 'disabled'} /></StrictMode>);
+  expect(players[0].destroy).toHaveBeenCalledOnce();
+  expect(document.querySelector('iframe')).toBeNull();
 });
 it.each([[100, 'riêng tư'], [101, 'không cho phép'], [150, 'không cho phép'], [153, 'nguồn nhúng'], [5, 'không phát được']])('báo lỗi %s và phục hồi khi đổi nguồn', async (code, message) => {
   const view = await mount();

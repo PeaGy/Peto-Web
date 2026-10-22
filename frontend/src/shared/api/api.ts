@@ -1,7 +1,7 @@
 export type Role = "user" | "assistant";
 export type Effort = "auto" | "none" | "low" | "medium" | "high" | "xhigh" | "max";
 export type WebSearchMode = "auto" | "on" | "off";
-/** Tab gửi tin: Companion có persona trả lời ngắn bằng tiếng Anh và mạch trò chuyện riêng. */
+/** Tab gửi tin: Companion có persona và mạch trò chuyện riêng. */
 export type ConversationMode = "chat" | "companion";
 export interface WebSource {
   url: string; title: string; kind?: 'citation' | 'result';
