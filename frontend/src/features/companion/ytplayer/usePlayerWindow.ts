@@ -23,8 +23,8 @@ interface Gesture {
   minHeight: number;
 }
 
-/** Kéo và đổi kích thước trực tiếp, giữ góc đối diện cố định và chừa vùng nút Player ở sân khấu. */
-export function usePlayerWindow(bounds: RefObject<HTMLElement | null>, windowRef: RefObject<HTMLElement | null>) {
+/** Kéo và đổi kích thước trực tiếp, giữ góc đối diện cố định trong vùng được cấp. */
+export function usePlayerWindow(bounds: RefObject<HTMLElement | null>, windowRef: RefObject<HTMLElement | null>, bottomGap = EDGE) {
   const [frame, setFrame] = useState<Frame>({ x: 32, y: 56, width: DEFAULT_WIDTH, height: null });
   const [maximized, setMaximized] = useState(false);
   const [interaction, setInteraction] = useState<Gesture['kind'] | null>(null);
@@ -36,9 +36,9 @@ export function usePlayerWindow(bounds: RefObject<HTMLElement | null>, windowRef
     if (!area || !node) return { x, y };
     return {
       x: Math.max(EDGE, Math.min(x, area.clientWidth - node.offsetWidth - EDGE)),
-      y: Math.max(EDGE, Math.min(y, area.clientHeight - node.offsetHeight - EDGE)),
+      y: Math.max(EDGE, Math.min(y, area.clientHeight - node.offsetHeight - bottomGap)),
     };
-  }, [bounds, windowRef]);
+  }, [bounds, windowRef, bottomGap]);
 
   useLayoutEffect(() => {
     const area = bounds.current;
@@ -81,7 +81,7 @@ export function usePlayerWindow(bounds: RefObject<HTMLElement | null>, windowRef
       id: event.pointerId, kind, pointerX: event.clientX, pointerY: event.clientY,
       x: node.offsetLeft, y: node.offsetTop, width: node.offsetWidth, height: node.offsetHeight,
       minWidth: Math.min(360, area.clientWidth - EDGE * 2),
-      minHeight: Math.min(area.clientHeight - EDGE * 2, node.offsetHeight - (video?.offsetHeight ?? 200) + 200),
+      minHeight: Math.min(area.clientHeight - EDGE - bottomGap, node.offsetHeight - (video?.offsetHeight ?? 200) + 200),
     };
     setInteraction(kind);
     if (kind !== 'move') setFrame(current => ({ ...current, width: node.offsetWidth, height: node.offsetHeight }));
@@ -102,7 +102,7 @@ export function usePlayerWindow(bounds: RefObject<HTMLElement | null>, windowRef
     if (current.kind.includes('w')) left = Math.max(EDGE, Math.min(current.x + dx, right - current.minWidth));
     if (current.kind.includes('e')) right = Math.min(area.clientWidth - EDGE, Math.max(left + current.minWidth, right + dx));
     if (current.kind.includes('n')) top = Math.max(EDGE, Math.min(current.y + dy, bottom - current.minHeight));
-    if (current.kind.includes('s')) bottom = Math.min(area.clientHeight - EDGE, Math.max(top + current.minHeight, bottom + dy));
+    if (current.kind.includes('s')) bottom = Math.min(area.clientHeight - bottomGap, Math.max(top + current.minHeight, bottom + dy));
     setFrame({ x: left, y: top, width: right - left, height: bottom - top });
   }
 
@@ -110,7 +110,7 @@ export function usePlayerWindow(bounds: RefObject<HTMLElement | null>, windowRef
   return {
     maximized, dragging: interaction === 'move', resizing: interaction !== null && interaction !== 'move',
     sized: frame.height !== null,
-    style: { left: frame.x, top: frame.y, '--player-width': `${frame.width}px`,
+    style: { left: frame.x, top: frame.y, '--player-width': `${frame.width}px`, '--player-bottom-gap': `${bottomGap}px`,
       '--resize-cursor': interaction && interaction !== 'move' ? RESIZE_CURSORS[interaction] : 'auto',
       '--player-height': frame.height === null ? 'auto' : `${frame.height}px` } as CSSProperties,
     toggleMaximized: () => { finish(); setMaximized(value => !value); },

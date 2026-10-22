@@ -11,7 +11,7 @@
   flex-direction: column;
   width: min(var(--player-width, 640px), calc(100% - 32px));
   height: var(--player-height, auto);
-  max-height: calc(100% - 32px);
+  max-height: calc(100% - 16px - var(--player-bottom-gap, 16px));
   pointer-events: auto;
   color: var(--yt-ink);
   background: #d0d0c7;
@@ -31,7 +31,7 @@
 .yt-player button:disabled { opacity: .45; cursor: default; transform: none; }
 .yt-player button:focus-visible, .yt-player input:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
 .yt-player[data-active="false"] { border-color: #b6b4aa; box-shadow: 0 16px 44px #0005; }
-.yt-player.is-maximized { inset: 16px !important; width: auto; height: calc(100% - 32px); }
+.yt-player.is-maximized { inset: 16px 16px var(--player-bottom-gap, 16px) !important; width: auto; height: calc(100% - 16px - var(--player-bottom-gap, 16px)); }
 .yt-player.is-dragging, .yt-player.is-dragging * { cursor: grabbing; user-select: none; }
 .yt-player.is-resizing, .yt-player.is-resizing * { cursor: var(--resize-cursor); user-select: none; }
 .yt-resize-handle { position: absolute; z-index: 8; touch-action: none; }

@@ -82,7 +82,7 @@ test('Companion thật: chỉ tải YouTube khi có link, đổi nguồn giữ i
     await noPageOverflow(page);
     await page.setViewportSize({ width: 390, height: 844 });
   }
-  await page.getByRole('button', { name: mobile ? 'Dừng và đóng Player' : 'Player', exact: true }).click();
+  await page.getByRole('button', { name: mobile ? 'Dừng và đóng Player' : 'Đóng Player', exact: true }).click();
   await expect(page.locator('.yt-player iframe')).toHaveCount(0);
   expect((await stats(page)).destroyed).toBe(1);
   await openPlayer(page, mobile);
@@ -91,6 +91,56 @@ test('Companion thật: chỉ tải YouTube khi có link, đổi nguồn giữ i
   expect(requests()).toBe(1);
   expect((await stats(page)).created).toBe(2);
   expect(errors).toEqual([]);
+});
+
+test('desktop thu nhỏ giữ video, nút icon ẩn/hiện và cửa sổ kéo được tới đáy Companion', async ({ page }, info) => {
+  test.skip(info.project.name !== 'pc', 'Mobile dùng mũi tên xuống.');
+  await mockPeto(page); await installApi(page);
+  await page.goto('/companion'); await expect(chat(page)).toBeVisible();
+  const trigger = page.getByRole('button', { name: 'Player', exact: true });
+  expect(await trigger.textContent()).toBe('');
+  expect((await trigger.boundingBox())!.width).toBe((await page.getByRole('button', { name: 'Bối cảnh', exact: true }).boundingBox())!.width);
+  await openPlayer(page, false); await chooseVideo(page);
+  const shell = page.locator('.yt-player');
+  const iframe = await shell.locator('iframe').elementHandle();
+  await shell.getByRole('button', { name: 'Phát video', exact: true }).click();
+  await shell.getByRole('slider', { name: 'Vị trí phát', exact: true }).press('ArrowRight');
+  await expect(shell.getByRole('slider', { name: 'Vị trí phát', exact: true })).toHaveValue('1');
+  await shell.getByRole('button', { name: 'File', exact: true }).click();
+  await shell.getByRole('button', { name: 'Thu nhỏ Player', exact: true }).click();
+  await expect(shell).toBeHidden();
+  await expect(shell).toHaveAttribute('inert', '');
+  await expect(shell).toHaveAttribute('data-playing', 'true');
+  await expect(page.locator('.yt-command-panel')).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+  await chat(page).fill('Tiếp tục trò chuyện');
+  expect(await iframe!.evaluate(node => node.isConnected)).toBe(true);
+  expect((await stats(page)).destroyed).toBe(0);
+  await trigger.click(); await expect(shell).toBeVisible();
+  await expect(shell).toHaveAttribute('data-playing', 'true');
+  await expect(shell.getByRole('slider', { name: 'Vị trí phát', exact: true })).toHaveValue('1');
+  await trigger.click(); await expect(shell).toBeHidden();
+  await trigger.click(); await expect(shell).toBeVisible();
+  expect(await iframe!.evaluate(node => node.isConnected)).toBe(true);
+  expect((await stats(page)).created).toBe(1);
+  const area = (await page.locator('.companion').boundingBox())!;
+  const head = (await page.locator('.yt-window-head').boundingBox())!;
+  await page.mouse.move(head.x + 120, head.y + 18); await page.mouse.down();
+  await page.mouse.move(head.x + 120, area.y + area.height + 500, { steps: 6 }); await page.mouse.up();
+  const moved = (await shell.boundingBox())!;
+  expect(moved.y + moved.height).toBeCloseTo(area.y + area.height, 0);
+  const panel = (await page.locator('.companion-panel').boundingBox())!;
+  expect(moved.x + moved.width).toBeLessThanOrEqual(panel.x);
+  await expect(trigger).toBeInViewport();
+  await page.screenshot({ path: info.outputPath('player-at-bottom.png') });
+  await shell.getByRole('button', { name: 'Phóng lớn Player', exact: true }).click();
+  const full = (await shell.boundingBox())!;
+  expect(full.y + full.height).toBeCloseTo(area.y + area.height, 0);
+  await shell.getByRole('button', { name: 'Khôi phục kích thước Player', exact: true }).click();
+  await expect.poll(() => shell.boundingBox()).toEqual(moved);
+  await shell.getByRole('button', { name: 'Đóng Player', exact: true }).click();
+  await expect(page.locator('.yt-player iframe')).toHaveCount(0);
+  expect((await stats(page)).destroyed).toBe(1);
 });
 
 test('Companion thật: ẩn trang, chuyển tab, mở Cài đặt và đăng xuất đều giải phóng iframe', async ({ page }, info) => {
@@ -227,7 +277,7 @@ test('Companion thật: renderer Live2D và tiếng đọc thật tiếp tục k
   if (mobile) await openPlayer(page, true);
   await expect(page.locator('.yt-player')).toHaveAttribute('data-playing', 'true');
   expect((await audioState()).paused).toBe(false);
-  await page.getByRole('button', { name: mobile ? 'Dừng và đóng Player' : 'Player', exact: true }).click();
+  await page.getByRole('button', { name: mobile ? 'Dừng và đóng Player' : 'Đóng Player', exact: true }).click();
   await expect(page.locator('.yt-player iframe')).toHaveCount(0);
   expect((await audioState()).paused).toBe(false);
   expect(await canvas!.evaluate(node => node.isConnected)).toBe(true);

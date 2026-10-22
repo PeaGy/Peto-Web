@@ -16,7 +16,8 @@ không nạp iframe, API, video hoặc âm thanh bên ngoài.
 - Rê chuột hoặc đưa focus vào loa để hiện thanh âm lượng trên cùng hàng, ngay bên phải loa. Bấm loa để tắt/bật tiếng
   và hiện thanh điều chỉnh; dùng một biểu tượng loa duy nhất, không có hộp nổi. Bấm ngoài hoặc Esc để thu thanh lại.
   Trên mobile dùng thao tác bấm; thanh vẫn nằm cùng hàng và vừa màn hình hẹp.
-- Nút Player bật/tắt cửa sổ desktop, kể cả khi phóng lớn. Thu nhỏ hoặc đóng trên desktop dừng phát và hủy player.
+- Với YouTube thật, nút Player ẩn/hiện cửa sổ desktop, kể cả khi phóng lớn. Nút **_** ẩn và tiếp tục phát; **X** dừng phát
+  và hủy player. Chế độ `mode=ui` giữ thao tác đóng/dừng đồng hồ mẫu.
 - Bấm vào cửa sổ rồi nhấn Space để phát/tạm dừng. Khi focus nằm trong iframe, YouTube tự xử lý Space; trang cha
   không bắt được sự kiện phím khác nguồn. Bấm nền bên ngoài để thử giữ Space cho Companion: ở trang POC thao tác này
   chỉ đổi nhãn trạng thái, không mở micro. Các ô nhập vẫn nhận khoảng trắng.

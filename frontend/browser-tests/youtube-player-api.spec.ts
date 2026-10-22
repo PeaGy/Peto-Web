@@ -16,7 +16,7 @@ async function reopen(page: Page, mobile: boolean) {
   await ready(page);
 }
 async function closePlayer(page: Page, mobile: boolean) {
-  await page.getByRole('button', { name: mobile ? 'Dừng và đóng Player' : 'Player', exact: true }).click();
+  await page.getByRole('button', { name: mobile ? 'Dừng và đóng Player' : 'Đóng Player', exact: true }).click();
 }
 
 test('API giả: Strict Mode và đổi nguồn/bố cục giữ một iframe, mở lại dùng cùng API', async ({ page }, info) => {

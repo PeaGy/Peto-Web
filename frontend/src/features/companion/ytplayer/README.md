@@ -1,18 +1,20 @@
 # Player trong Companion — giai đoạn 3
 
-Đã ghép vào Companion trong mã nguồn, chưa commit/deploy. Dùng player YouTube chính thức; không thêm thư viện,
+Đã ghép vào Companion và được chủ web triển khai. Dùng player YouTube chính thức; không thêm thư viện,
 backend, Data API key, tìm kiếm, playlist hoặc xử lý âm thanh iframe.
 
 ## Cách mở
 
-- Desktop: nút **Player** cạnh Bối cảnh/Nhân vật bật/tắt cửa sổ. Kéo, resize, phóng lớn và menu giữ giao diện đã duyệt.
-  Cửa sổ giới hạn trong vùng bên trái, chừa cột chat và hàng công cụ.
+- Desktop: nút icon cạnh Bối cảnh/Nhân vật ẩn/hiện cửa sổ; không có chữ Player trên nút. Nút **_** ẩn cửa sổ và tiếp tục
+  phát, **X** dừng/hủy player. Mở lại sau khi ẩn giữ iframe, tiến độ và trạng thái đang phát.
+  Kéo, resize, phóng lớn và menu giữ giao diện đã duyệt. Cửa sổ giới hạn bên trái cột chat và xuống được sát đáy Companion;
+  không dành dải 76 px bên dưới. Các nút công cụ nằm bên phải nên vẫn bấm được.
 - Mobile: menu → **Player**. Mũi tên xuống ẩn toàn bộ Player nhưng giữ iframe/phát trong cùng tab, không có khung
   hay controls phụ. Mở lại bằng menu để tạm dừng hoặc nhấn X để dừng hẳn. Ẩn giao diện không đồng nghĩa ẩn tab trình duyệt.
 - Companion còn thanh bên và cột chat nên cửa sổ hẹp (viewport ≤900 px) cũng dùng màn hình Player riêng; màn hình
   cảm ứng thấp dùng bố cục ngang. Đổi bố cục giữ nguyên iframe; vùng xem tối thiểu 200×200 khi hiển thị.
 - Lần đầu có ô **Link YouTube**; chỉ nạp API sau khi nhập link hợp lệ. Không tự chọn mẫu, tự phát hoặc lưu URL vào
-  localStorage. Đóng/mở giữ link trong lần đăng nhập hiện tại và chỉ chuẩn bị video ở trạng thái dừng.
+  localStorage. Đóng bằng X rồi mở lại giữ link trong lần đăng nhập hiện tại và chỉ chuẩn bị video ở trạng thái dừng.
 - Metadata nằm trong iframe chính thức, không bịa tên/kênh từ mã video. Không import sáu mẫu của prototype vào app.
   Chỉ hiện lỗi và hướng xử lý khi cần; link mở YouTube bên ngoài chỉ xuất hiện lúc có lỗi.
 
@@ -59,3 +61,8 @@ iframe trên desktop 1440×900 và mobile mô phỏng 390×844. Khi ẩn Player 
 4 giây; diện tích chat trước khi nhập không đổi, mở lại giữ đúng iframe, mỗi màn hình vẫn có một canvas và không lỗi
 JavaScript. Tài khoản/backend của lượt này được giả lập, không gọi AI/TTS thật. Đây là smoke test ngắn, không thay
 thế ma trận sáu video, đo tài nguyên hoặc nghiệm thu điện thoại thật.
+
+Sau góp ý bản deploy: 35 ca trình duyệt đạt, 11 tổ hợp bỏ qua theo bố cục; build đạt. Ca desktop mới kiểm tra nút
+icon không còn chữ, thu nhỏ/ẩn bằng icon giữ cùng iframe và tiến độ, X hủy player, kéo/phóng lớn chạm đúng đáy
+Companion và khôi phục đúng vị trí. YouTube thật trên Chromium: cả nút _ desktop và mũi tên mobile giữ phát khi ẩn,
+tiến độ tăng từ 2 lên 4 giây; mở lại cùng iframe và X gỡ iframe. Bản sửa này chưa deploy lại.

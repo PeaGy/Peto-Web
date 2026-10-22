@@ -56,7 +56,7 @@ export default function CompanionPlayer({ active, open, hidden, mobileLayout, bo
 
   if (!active || !open || !frame) return null;
   return createPortal(<div className="companion-player-layer" data-mobile={mobileLayout} style={frame}>
-    <PlayerShell id="companion-player" mode="youtube" mobileLayout={mobileLayout} bounds={bounds} hidden={hidden} onHide={onHide}
+    <PlayerShell id="companion-player" mode="youtube" mobileLayout={mobileLayout} bottomGap={0} bounds={bounds} hidden={hidden} onHide={onHide}
       track={{ title: '', artist: '', url: source?.url ?? '', duration: youtube.duration }}
       controlsReady={source !== null && youtube.ready} status={source ? youtube.status : 'empty'}
       playing={youtube.playing} position={youtube.position} volume={youtube.volume}

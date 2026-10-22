@@ -52,6 +52,7 @@ function Preview() {
     setMenuOpen(false);
     setHolding(false);
     if (open && playerHidden) setPlayerHidden(false);
+    else if (open && !MOCK) setPlayerHidden(true);
     else if (open) closePlayer('close');
     else { setHint(''); setOpen(true); }
   };

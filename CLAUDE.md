@@ -2,9 +2,11 @@
 
 ## Player YouTube trong Companion (2026-10-22)
 
-Giai đoạn 3 đã ghép Player vào Companion, chưa commit/deploy. Nút desktop cạnh Bối cảnh/Nhân vật và mục Player trong
+Giai đoạn 3 đã ghép Player vào Companion và chủ web đã deploy. Nút icon desktop cạnh Bối cảnh/Nhân vật và mục Player trong
 menu mobile; giữ giao diện retro đã được chủ web duyệt. Mũi tên mobile ẩn toàn bộ giao diện và tiếp tục phát trong
-cùng tab, không thêm mini player. X/đóng, rời Companion/Cài đặt, hết phiên, ẩn trang hoặc pagehide hủy iframe; quay lại
+cùng tab, không thêm mini player. Sau góp ý bản deploy: nút _ và icon desktop chỉ ẩn/hiện, giữ video đang phát; X đóng
+hẳn. Bỏ chữ trên nút icon và dải chừa 76 px dưới vùng kéo; cửa sổ chạm được đáy Companion, vẫn chừa cột chat.
+Rời Companion/Cài đặt, hết phiên, ẩn trang hoặc pagehide hủy iframe; quay lại
 không tự phát. Chỉ nạp API sau link hợp lệ. Module tải riêng, không import prototype/sáu mẫu vào app.
 
 Chi tiết vòng đời, portal, Space/micro, bố cục hẹp và kiểm chứng: `frontend/src/features/companion/ytplayer/README.md`.

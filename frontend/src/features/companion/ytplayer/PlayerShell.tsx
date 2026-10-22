@@ -31,6 +31,7 @@ interface Props {
   id?: string;
   mode?: 'mock' | 'youtube';
   mobileLayout?: boolean;
+  bottomGap?: number;
   controlsReady?: boolean;
   status?: string;
   details?: ReactNode;
@@ -53,7 +54,7 @@ interface Props {
 }
 
 /** Chỉ chứa giao diện và thao tác cửa sổ; nội dung phát được truyền vào để dùng chung trên desktop/mobile. */
-export function PlayerShell({ id, mode = 'mock', mobileLayout, controlsReady = true, status, details, hidden = false, onHide, bounds, track, playing, position, volume, onPlayingChange, onSeek, onVolumeChange,
+export function PlayerShell({ id, mode = 'mock', mobileLayout, bottomGap, controlsReady = true, status, details, hidden = false, onHide, bounds, track, playing, position, volume, onPlayingChange, onSeek, onVolumeChange,
   onOpenLink, onClose, onFocusChange, sourceChoices, notice, children }: Props) {
   const root = useRef<HTMLElement>(null);
   const sourceInput = useRef<HTMLInputElement>(null);
@@ -62,7 +63,7 @@ export function PlayerShell({ id, mode = 'mock', mobileLayout, controlsReady = t
   const volumeControl = useRef<HTMLDivElement>(null);
   const volumeButton = useRef<HTMLButtonElement>(null);
   const lastVolume = useRef(60);
-  const controls = usePlayerWindow(bounds, root);
+  const controls = usePlayerWindow(bounds, root, bottomGap);
   const [active, setActive] = useState(true);
   const activeRef = useRef(true);
   const hiddenRef = useRef(hidden);
@@ -193,6 +194,11 @@ export function PlayerShell({ id, mode = 'mock', mobileLayout, controlsReady = t
     setError(message ?? '');
     if (!message) { setMenu(null); root.current?.focus({ preventScroll: true }); }
   }
+  function hidePlayer() {
+    chooseOwner(false);
+    if (root.current?.contains(document.activeElement)) (document.activeElement as HTMLElement)?.blur();
+    onHide?.();
+  }
 
   return <section id={id} ref={root} tabIndex={-1} hidden={hidden} inert={hidden} aria-hidden={hidden || undefined}
     role={mobile ? 'dialog' : 'region'} aria-modal={mobile && !hidden || undefined} aria-label="Peto Media Player"
@@ -206,7 +212,7 @@ export function PlayerShell({ id, mode = 'mock', mobileLayout, controlsReady = t
       <img src="/docs-assets/logo.webp" alt="" width="24" height="20" draggable={false} />
       <strong>Peto Media Player</strong>
       <div className="yt-window-actions">
-        <button type="button" aria-label="Thu nhỏ Player" onClick={() => onClose('minimize')}><span className="yt-minimize-icon" /></button>
+        <button type="button" aria-label="Thu nhỏ Player" onClick={() => onHide ? hidePlayer() : onClose('minimize')}><span className="yt-minimize-icon" /></button>
         <button type="button" aria-label={controls.maximized ? 'Khôi phục kích thước Player' : 'Phóng lớn Player'} onClick={controls.toggleMaximized}><span className={controls.maximized ? 'yt-restore-icon' : 'yt-maximize-icon'} /></button>
         <button type="button" aria-label="Đóng Player" onClick={() => onClose('close')}><Icon name="close" size={20} /></button>
       </div>
@@ -214,9 +220,7 @@ export function PlayerShell({ id, mode = 'mock', mobileLayout, controlsReady = t
     <header className="yt-mobile-head">
       <button type="button" aria-label={onHide ? 'Ẩn Player' : 'Về Companion'} onClick={() => {
         if (!onHide) { onClose('close'); return; }
-        chooseOwner(false);
-        if (root.current?.contains(document.activeElement)) (document.activeElement as HTMLElement)?.blur();
-        onHide();
+        hidePlayer();
       }}><Icon name="down" size={29} /></button>
       <div><span>ĐANG PHÁT</span><strong>Peto Player</strong></div>
       <div className="yt-mobile-actions">

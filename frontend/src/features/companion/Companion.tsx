@@ -195,7 +195,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
   }, []);
   const togglePlayer = useCallback(() => {
     if (getHearingState().holding) cancelHold();
-    setPlayer(value => ({ visited: true, open: !value.open || value.hidden, hidden: false }));
+    setPlayer(value => value.open && !value.hidden ? { ...value, hidden: true } : { visited: true, open: true, hidden: false });
   }, []);
   const closePlayer = useCallback(() => {
     playerOwnsKey.current = false;
@@ -1010,9 +1010,9 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
         <button type="button" className="companion-scene-button" onClick={onOpenCharacters} aria-label="Nhân vật" data-tip>
           <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="8" r="4" stroke="currentColor" strokeWidth="1.7" /><path d="M4 21v-2a8 8 0 0 1 16 0v2" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" /></svg>
         </button>
-        <button ref={playerButton} type="button" className="companion-scene-button companion-player-button" aria-label="Player"
+        <button ref={playerButton} type="button" className="companion-scene-button companion-player-button" aria-label="Player" data-tip
           aria-expanded={player.open && !player.hidden} aria-controls="companion-player" onClick={togglePlayer}>
-          <PlayerIcon /><span>Player</span>
+          <PlayerIcon />
         </button>
       </div>
       <dialog
