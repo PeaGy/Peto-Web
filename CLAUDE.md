@@ -1,10 +1,26 @@
 # CLAUDE.md
 
+## Player — kiểm chứng đổi thứ tự sau báo lỗi (2026-10-23)
+
+Owner đã commit/deploy giai đoạn 2 ở `19706c2`. Báo Peto nhận chuyển bài thứ hai lên đầu nhưng nêu “Stay With Me”
+không có trong queue. Đã đọc lịch sử production bằng IAB có sẵn; không gửi chat/gọi AI/TTS hoặc sửa dữ liệu. Lịch sử
+không lưu trace tool nên chưa xác định lệnh trước có chạy hay không; không kết luận do cache hoặc lỗi người dùng.
+Không yêu cầu F5 trong phiên đang nghe: queue hiện chỉ ở RAM, F5 dừng nhạc/làm trống queue (favorites vẫn lưu).
+Đợt sửa chỉ backend: bắt buộc entry ID/revision từ list_queue trong cùng turn trước remove/move/play; xác nhận
+target phải khớp video ID đã đọc. Sau move tự đọc lại tối đa 5 mục quanh vị trí đích và so entry ID, video ID,
+position, revision; gửi tên/vị trí thực tế cho AI. Không khớp/timeout là chưa xác nhận, không tự lặp mutation.
+Dùng action list_queue sẵn của client v2, không cần F5/rebuild frontend; deploy restart backend khi không có lượt
+chat đang chạy. Tab v1 vẫn chỉ có playback. Prompt khả năng ngắn yêu cầu dùng kết quả tool, không coi lời “done”
+hoặc tên từ lịch sử là bằng chứng. Không thay persona/examples/UI/persistence/DB/key/dependency.
+Backend 118 ca đạt (AI/browser giả), bao gồm native provider → move → readback trước final, sai target/revision/order,
+phân trang và hủy readback. Không thêm lượt gọi model cho readback. Chưa test AI thật sau sửa, chưa commit/deploy.
+Chi tiết thêm trong `frontend/src/features/companion/ytplayer/CONTROL_STAGE2.md`.
+
 ## Companion điều khiển Player — giai đoạn 2 (2026-10-23)
 
 Owner đã deploy `0602baf` và xác nhận mở Player/đọc title với AI thật, yêu cầu bước tiếp theo. Đã ghép đọc/paginate
 yêu thích, thêm tất cả/riêng bài yêu thích, set tim idempotent, đọc queue, remove/move/play theo entry ID + revision,
-và báo next thực tế (tách auto với skip). Chưa commit/deploy. Client protocol v2; backend tiếp tục cấp schema/prompt
+và báo next thực tế (tách auto với skip). Owner đã commit/deploy ở `19706c2`; nội dung dưới ghi lần bàn giao. Client protocol v2; backend tiếp tục cấp schema/prompt
 v1 cho tab cũ. Đọc/append khi Player chưa mở mount controller kín, không iframe/UI; bulk bỏ trùng current/queue,
 điền tối đa 200 và trả counts rõ ràng; không oEmbed từng bài. Favorite read mới từ DB, lỗi không thành 0, chống read
 cũ ghi đè/write trùng. Shuffle + All chuẩn bị vòng kế sớm để queue[0]/preview khớp ENDED; lịch sử vòng tối đa 201

@@ -64,14 +64,14 @@ async def test_library_results_are_bounded_and_sent_back_to_provider(client):
 
 
 async def test_native_library_read_then_remove_preserves_identity_and_revision(client, monkeypatch):
-    read = call(pt.NAME, '{"action":"list_queue"}')
+    read = call(pt.NAME, '{"action":"list_queue","offset":2,"limit":1}')
     remove = call(pt.NAME, '{"action":"remove_queue_entry","entry_id":"queued-third","queue_revision":7}')
     streams = [FakeStream([SimpleNamespace(type='response.output_item.done', item=item), done(item)]) for item in (read, remove)]
     streams.append(FakeStream([SimpleNamespace(type='response.output_text.delta', delta='Removed the third queued song.'), done()]))
     provider, requests = fake_provider(monkeypatch, streams)
     monkeypatch.setattr(service, 'get_provider', lambda *args: provider)
     task = asyncio.create_task(client.post('/api/chat', json={'mode': 'companion', 'message': 'Remove third queued song.', 'player_control': 2, 'web_search': 'off'}))
-    responses = [dict(kind='queue', total=3, offset=0, queue_revision=7, items=[{**STATE['track'], 'index': 3, 'entry_id': 'queued-third'}]),
+    responses = [dict(kind='queue', total=3, offset=2, queue_revision=7, items=[{**STATE['track'], 'index': 3, 'entry_id': 'queued-third'}]),
                  dict(kind='mutation', target=STATE['track'], queue_revision=8)]
     try:
         seen = set()

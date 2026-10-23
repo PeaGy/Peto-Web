@@ -6,6 +6,7 @@ import json
 import secrets
 import time
 from copy import deepcopy
+from contextlib import aclosing
 from contextvars import ContextVar
 from typing import Literal
 
@@ -22,9 +23,10 @@ ACTIONS = (*BASE_ACTIONS, 'list_queue', 'list_favorites', 'next_track', 'remove_
 SCHEMA = {'type': 'function', 'name': NAME, 'strict': True, 'description': (
     'Read or control the existing Player in the browser sending this Companion conversation. '
     'Use status for what we are listening to. Use actions for a user request; an offer alone is not a request to play. '
-    'Wait for the result before claiming success. No video search or playlist import yet. '
+    'Execute the tool before claiming an action happened; conversation history is not execution evidence. No video search or playlist import yet. '
     'list_queue lists the numbered Upcoming queue, excluding the current song. For an ordinal such as third song, '
-    'read list_queue, then use the returned entry_id and queue_revision for remove/move/play; never guess IDs. '
+    'read list_queue in this turn, then use the returned entry_id and queue_revision for remove/move/play; never guess IDs. '
+    'A move includes a fresh readback: describe only the verified change and exact returned song, never a title from memory. '
     'next_track reports both the automatic next song (including loop one) and next on explicit skip. '
     'list_favorites returns a fresh account list and total; use limit 0 for count only, paginate to list more. '
     'set_favorite uses enabled and an optional video_id from supplied player data; null means the current song. '
@@ -148,6 +150,8 @@ class PlayerSession:
     def __init__(self, owner: str, version: int = 1):
         self.owner = owner
         self.version = version
+        self._queue_revision: int | None = None
+        self._queue_items: dict[str, LibraryItem] = {}
 
     @property
     def schema(self):
@@ -161,6 +165,81 @@ class PlayerSession:
         except (ValueError, TypeError, ValidationError):
             yield {'ok': False, 'error': 'Invalid Player action or arguments; nothing was executed.'}
             return
+
+        target = None
+        if command.action in ('remove_queue_entry', 'move_queue_entry', 'play_queue_entry'):
+            target = self._queue_items.get(command.entry_id)
+            if target is None or command.queue_revision != self._queue_revision:
+                yield {'ok': False, 'error': 'Read list_queue in this turn before editing that entry. Its ID and revision must come from that read; nothing was executed.'}
+                return
+
+        async with aclosing(self._request(command)) as request:
+            async for item in request:
+                if isinstance(item, StreamChunk):
+                    yield item
+                else:
+                    result = item
+
+        if command.action == 'list_queue':
+            if not result.get('ok') or not self._observe_queue(command, result):
+                self._queue_revision = None
+                self._queue_items.clear()
+                if result.get('ok'):
+                    result = {'ok': False, 'state': result.get('state'), 'error': 'Player returned an incomplete queue observation. Read list_queue again; do not infer song names or positions.'}
+        elif command.action not in ('status', 'list_favorites', 'next_track'):
+            # A failed/unknown action may still have changed the browser. Never reuse its old IDs/revision.
+            self._queue_revision = None
+            self._queue_items.clear()
+
+        if target is not None and result.get('ok'):
+            observed_target = (result.get('data') or {}).get('target') or {}
+            if observed_target.get('video_id') != target.video_id:
+                yield {'ok': False, 'state': result.get('state'), 'error': 'Player did not confirm the selected song. The action may have happened; do not repeat it automatically or claim a named song was changed. Read the queue again.'}
+                return
+            if command.action == 'move_queue_entry':
+                # Uses the existing v2 browser protocol, including tabs opened before this server fix.
+                readback = Command(action='list_queue', offset=max(0, command.position - 3), limit=5)
+                async with aclosing(self._request(readback)) as request:
+                    async for item in request:
+                        if isinstance(item, StreamChunk):
+                            yield item
+                        else:
+                            checked = item
+                valid = checked.get('ok') and self._observe_queue(readback, checked)
+                moved = self._queue_items.get(command.entry_id) if valid else None
+                revision = (result.get('data') or {}).get('queue_revision')
+                if moved is None or moved.video_id != target.video_id or moved.index != command.position or self._queue_revision != revision:
+                    yield {'ok': False, 'state': checked.get('state') or result.get('state'),
+                           'error': 'The move was acknowledged, but a fresh queue read did not verify the requested position. It may have changed again. Do not repeat the move automatically or claim the old result; read list_queue for the current order.'}
+                    return
+                data = {**checked['data'], 'kind': 'mutation', 'target': moved.model_dump(include={'video_id', 'title', 'artist'})}
+                result = {'ok': True, 'state': checked['state'], 'data': data,
+                          'change': {'action': command.action, 'entry_id': command.entry_id,
+                                     'from_position': target.index, 'to_position': moved.index}}
+        yield result
+
+    def _observe_queue(self, command: Command, result: dict) -> bool:
+        """Remember only entries actually returned in this turn, never assistant history."""
+        try:
+            data = LibraryData.model_validate(result.get('data'))
+            offset, limit = command.offset or 0, command.limit if command.limit is not None else 20
+            if (data.kind != 'queue' or data.queue_revision is None or data.total is None or data.total > 200
+                    or data.offset != offset or len(data.items) > limit
+                    or any(item.entry_id is None or item.index != offset + index + 1 or item.index > data.total
+                           for index, item in enumerate(data.items))
+                    or len({item.entry_id for item in data.items}) != len(data.items)):
+                raise ValueError('Invalid queue page')
+        except (ValueError, TypeError, ValidationError):
+            self._queue_revision = None
+            self._queue_items.clear()
+            return False
+        if self._queue_revision != data.queue_revision:
+            self._queue_items.clear()
+        self._queue_revision = data.queue_revision
+        self._queue_items.update((item.entry_id, item) for item in data.items)
+        return True
+
+    async def _request(self, command: Command):
         key = secrets.token_urlsafe(24)
         future = asyncio.get_running_loop().create_future()
         pending[key] = (self.owner, future)

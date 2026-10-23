@@ -1,7 +1,37 @@
 # Peto điều khiển Player — giai đoạn 2 (23/10/2026)
 
 Giai đoạn 1 đã được chủ web commit/deploy ở `0602baf`. Chủ web xác nhận AI thật mở được Player và đọc đúng title.
-Đợt này ghép quản lý hàng đợi/yêu thích vào Companion thật; chưa commit/deploy, không gọi AI/TTS trả phí.
+Đợt này ghép quản lý hàng đợi/yêu thích vào Companion thật; chủ web đã commit/deploy ở `19706c2`.
+Nội dung nghiệm thu ban đầu dưới đây dùng mock, không gọi AI/TTS trả phí.
+
+## Bổ sung sau báo lỗi tên bài khi di chuyển (23/10/2026)
+
+Chủ web báo yêu cầu đưa bài thứ hai trong phần Tiếp theo lên đầu; Peto nói đã chuyển và nêu “Stay With Me”,
+nhưng UI không có bài này. Đọc lịch sử trên production thấy đúng câu trả lời đó. Không có trace tool lưu từ lượt
+cũ nên chưa biết lệnh thực sự đã chạy hay model chỉ nói đã chạy; không quy nguyên nhân cho người dùng/tab cũ.
+Không gửi chat/gọi AI hoặc sửa hàng đợi/yêu thích production để điều tra. Không yêu cầu F5 khi đang nghe vì
+queue chỉ tồn tại trong RAM; tải lại mất phiên nghe, favorites vẫn lưu.
+
+Bản sửa chưa commit/deploy, chỉ thay backend và prompt khả năng:
+
+- Remove/move/play phải dùng entry ID + revision đã đọc trong chính turn đó; ID đoán hoặc từ turn trước bị từ chối
+  trước khi gửi lệnh xuống browser. Client vẫn kiểm revision lúc reducer thực thi.
+- Target trong phản hồi mutation phải khớp video ID đã chọn. Sau move, server tự gửi `list_queue` đọc lại tối đa
+  5 mục quanh đích. Chỉ xác nhận khi entry ID, video ID, vị trí và revision đều khớp. Trả `change` gồm vị trí
+  trước/sau cùng target và các mục xung quanh vừa đọc để AI có dữ liệu cụ thể khi trả lời.
+- Sai/lỗi đọc lại hoặc queue đã đổi tiếp thì báo chưa xác minh; không chạy lại mutation tự động. Khi hết kết nối/
+  hủy lượt, cả lệnh đọc lại cũng được dọn. Không thêm lượt gọi model chỉ để xác minh.
+- Prompt dùng tên từ kết quả tool, yêu cầu thực thi trước khi nói đã làm và không coi lời xác nhận cũ là bằng chứng.
+  Tab v1 được nói rõ không có quyền đọc/sửa queue. Không thay persona/examples, UI hoặc cách lưu queue.
+
+Kiểm chứng: **118 ca backend đạt**, gồm nhóm `test_player_tools`, `test_player_queue_readback`, `test_player`,
+`test_byok`, `test_clock_tools`, `test_prompt_routing`. Có provider giả đọc → move → server tự readback → final,
+ID lịch sử/giả, sai target/order/revision, phản hồi thiếu dữ liệu, trang cuối queue 200 và hủy đang chờ readback.
+Đây là AI/browser giả, chưa phải nghiệm thu AI thật; không bảo đảm model tuyệt đối không trả lời sai khi bỏ qua tool.
+
+Deploy chỉ cần restart backend sau khi commit, lúc không có lượt chat đang xử lý. Không cần rebuild frontend hoặc
+F5 tab **v2** đang phát: đọc lại dùng giao thức v2 sẵn có. Backend restart không tự xóa queue/iframe trong tab.
+Sau deploy có thể thử “move the second upcoming song to first”, so UI và tên Peto nói; không phải tắt nhạc để thử.
 
 ## Cách dùng sau khi cập nhật
 
