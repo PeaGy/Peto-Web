@@ -7,6 +7,8 @@ import { LibraryIcon } from './LibraryIcon';
 import { youtubeSourceKey } from './youtubeUrl';
 import { useYouTubePlayer } from './useYouTubePlayer';
 import './companionPlayer.css';
+import { usePlayerControl } from './usePlayerControl';
+import type { PlayerControlBridge } from './playerControl';
 
 interface Props {
   active: boolean;
@@ -18,10 +20,12 @@ interface Props {
   onClose: () => void;
   onHide: () => void;
   onFocusChange: (active: boolean) => void;
+  onShow: () => void;
+  control?: PlayerControlBridge;
 }
 
 /** Favorites live on the account; queue/source live in this login, and the portal keeps one iframe. */
-export default function CompanionPlayer({ active, open, hidden, mobileLayout, allowBackground, bounds, onClose, onHide, onFocusChange }: Props) {
+export default function CompanionPlayer({ active, open, hidden, mobileLayout, allowBackground, bounds, onClose, onHide, onFocusChange, onShow, control }: Props) {
   const library = usePlayerLibrary();
   const { source, ended, updateDuration } = library;
   const [draft, setDraft] = useState('');
@@ -36,6 +40,7 @@ export default function CompanionPlayer({ active, open, hidden, mobileLayout, al
     if (source && youtube.sourceKey === youtubeSourceKey(source) && youtube.duration > 0) updateDuration(source.videoId, youtube.duration);
   }, [source, youtube.sourceKey, youtube.duration, updateDuration]);
   const close = useCallback(() => { library.cancelDiscovery(); youtube.stop(); onClose(); }, [library.cancelDiscovery, youtube.stop, onClose]);
+  usePlayerControl({ library, youtube, open, hidden, active, onShow, onHide, onClose: close, bridge: control });
 
   // Portal giữ cùng cây iframe khi xoay màn hình, tránh container của sân khấu giới hạn position:fixed trên mobile.
   useLayoutEffect(() => {

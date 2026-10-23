@@ -1,3 +1,5 @@
+import type { PlayerCommand, PlayerResult } from '../../features/companion/ytplayer/playerControl';
+
 export type Role = "user" | "assistant";
 export type Effort = "auto" | "none" | "low" | "medium" | "high" | "xhigh" | "max";
 export type WebSearchMode = "auto" | "on" | "off";
@@ -125,6 +127,7 @@ export interface Conversation {
 }
 
 type ChatEvent =
+  | { type: 'player_command'; command: PlayerCommand }
   | { type: "meta"; conversation_id: string; effort: string; message?: Message; voice_stream?: boolean }
   | { type: "delta"; text: string }
   | { type: "emotion"; emotion: string; offset?: number }
@@ -144,6 +147,7 @@ type ChatEvent =
   | { type: "done" };
 
 interface ChatHandlers {
+  onPlayerCommand?: (command: PlayerCommand) => Promise<void>;
   onStopped?: () => void;
   onMeta?: (conversationId: string, effort: string, message?: Message, voiceStream?: boolean) => void;
   onDelta?: (text: string) => void;
@@ -684,6 +688,7 @@ export async function sendMessage(
     providerKey?: string;
     /** Khóa Tavily cho nhà cung cấp không có tìm kiếm riêng. */
     searchKey?: string;
+    playerControl?: boolean;
   },
   handlers: ChatHandlers,
   signal?: AbortSignal,
@@ -707,6 +712,7 @@ export async function sendMessage(
       attachments: payload.attachments ?? [],
       mode: payload.mode ?? "chat",
       model: payload.model ?? "peto",
+      ...(payload.mode === 'companion' && payload.playerControl ? { player_control: 1 } : {}),
       ...(payload.provider && payload.providerKey ? { provider: payload.provider } : {}),
     }),
     signal,
@@ -748,7 +754,9 @@ export async function sendMessage(
         if (!line) continue;
 
         const event = JSON.parse(line.slice(6)) as ChatEvent;
-        if (event.type === "meta") {
+        if (event.type === 'player_command') {
+          if (payload.mode === 'companion') await handlers.onPlayerCommand?.(event.command);
+        } else if (event.type === "meta") {
           handlers.onMeta?.(event.conversation_id, event.effort, event.message, event.voice_stream === true);
         } else if (event.type === "delta") {
           handlers.onDelta?.(event.text);
@@ -793,4 +801,13 @@ export async function sendMessage(
     await reader.cancel().catch(() => {});
     reader.releaseLock();
   }
+}
+
+export async function acknowledgePlayer(commandId: string, result: PlayerResult, signal: AbortSignal) {
+  const response = await fetch(`/api/companion/player/commands/${encodeURIComponent(commandId)}/result`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(result), signal,
+  });
+  if (response.status === 401) throw new UnauthorizedError();
+  // An expired/stopped turn is never replayed. Losing acknowledgement must not repeat playback actions.
+  if (!response.ok && response.status !== 404) throw new Error('Chưa gửi được kết quả điều khiển Player.');
 }

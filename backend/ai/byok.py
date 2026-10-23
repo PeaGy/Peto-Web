@@ -18,6 +18,8 @@ web dù trùng tên model.
 
 from __future__ import annotations
 
+from contextlib import aclosing
+
 import json
 import logging
 import re
@@ -29,6 +31,7 @@ import httpx
 
 from core import config, usage_events
 from shared.time_tools import TOOL_SCHEMAS, execute_tool
+from features.companion import player_tools
 from shared.web_search import normalize_sources, search_context
 
 from .base import ChatMessage, ChatProvider, ProviderError, StreamChunk
@@ -174,6 +177,9 @@ def _function_tools(search: bool) -> list[dict]:
             "parameters": {"type": "object", "properties": {"query": {"type": "string", "description": "Search query"}},
                            "required": ["query"], "additionalProperties": False},
         }})
+    if player_tools.current.get() is not None:
+        schema = player_tools.SCHEMA
+        tools.append({'type': 'function', 'function': {key: schema[key] for key in ('name', 'description', 'parameters')}})
     return tools
 
 
@@ -303,6 +309,13 @@ class _ToolLoopProvider(ChatProvider):
                             logger.warning("Tavily lỗi: %s", type(err).__name__)
                             result = {"ok": False, "error": "Web search failed. Say you could not look it up right now."}
                             yield StreamChunk("search", "failed")
+                    elif name == player_tools.NAME and player_tools.current.get():
+                        async with aclosing(player_tools.current.get().run(call.get('arguments') or '')) as action:
+                            async for item in action:
+                                if isinstance(item, StreamChunk):
+                                    yield item
+                                else:
+                                    result = item
                     else:
                         result = execute_tool(name or "", call.get("arguments") or "", timezone=timezone)
                     payload.append(self._tool_message(call, json.dumps(result, ensure_ascii=False)))

@@ -11,6 +11,15 @@ const end = (state: PlayerQueue, serial = state.endedSerial + 1) => reduce(state
 const keys = (state: PlayerQueue) => state.queue.map(entry => entry.key);
 
 describe('production queue', () => {
+  it('explicit repeat one/off never transiently enables repeat all or restores already-played tracks', () => {
+    const state = next(initial());
+    const one = reduce(state, { type: 'set-repeat', repeat: 'one', seed: 42 });
+    expect(keys(one)).toEqual(keys(state));
+    expect(one.repeat).toBe('one');
+    expect(reduce(one, { type: 'set-repeat', repeat: 'one', seed: 42 })).toBe(one);
+    const all = reduce(one, { type: 'set-repeat', repeat: 'all', seed: 42 });
+    expect(keys(all)).toContain('0');
+  });
   it('starts empty without a playback intent; a pasted video cues and an explicit next plays', () => {
     expect(emptyQueue().current).toBeNull();
     let state = initial(); expect(state.autoplay).toBe(false);

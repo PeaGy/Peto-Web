@@ -16,6 +16,7 @@ export function usePlayerLibrary(): PlayerLibrary & {
   openLink: (value: string) => string | undefined;
   ended: (request: number, serial: number) => void;
   restart: () => void;
+  setRepeat: (repeat: 'off' | 'all' | 'one') => void;
   updateDuration: (videoId: string, duration: number) => void;
 } {
   const [state, dispatch] = useReducer(playerQueueReducer, undefined, emptyQueue);
@@ -141,6 +142,7 @@ export function usePlayerLibrary(): PlayerLibrary & {
     loadingFavorites, favoritesBusy, error, select, openLink, appendLink, append, toggleFavorite, openPanel, closePanel, drop,
     discovery, openInput, importPlaylist, cancelDiscovery: discovery.cancel,
     next: () => dispatch({ type: 'next', seed: seed() }), restart: () => dispatch({ type: 'restart' }),
+    setRepeat: (repeat: 'off' | 'all' | 'one') => dispatch({ type: 'set-repeat', repeat, seed: seed() }),
     ended, updateDuration,
     move: (key, offset) => dispatch({ type: 'move', key, offset }), remove: key => dispatch({ type: 'remove', key }),
     playEntry: entry => dispatch({ type: 'play-entry', key: entry.key }),

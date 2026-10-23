@@ -8,6 +8,10 @@ Các tệp kiểm thử/báo cáo mới chưa commit. Xem [LIBRARY_STAGE3.md](./
 và cấu hình key máy chủ; [LIBRARY_STAGE2.md](./LIBRARY_STAGE2.md) cho API/lưu trữ yêu thích.
 Dùng player YouTube chính thức, không thêm dependency hoặc xử lý âm thanh iframe.
 
+Giai đoạn 1 điều khiển bằng chat (23/10/2026) đã được ghép, chưa commit/deploy: đọc trạng thái, cửa sổ,
+phát/dừng/tua/âm lượng, Next/restart và shuffle/loop qua tool có xác nhận. Xem [CONTROL_STAGE1.md](./CONTROL_STAGE1.md)
+cho phạm vi, các bộ não, kiểm chứng, giới hạn và checklist sau deploy. Yêu thích/hàng đợi/tìm nhạc qua chat để sau.
+
 ## Cách mở
 
 - Desktop: nút icon cạnh Bối cảnh/Nhân vật ẩn/hiện cửa sổ; không có chữ Player trên nút. Nút **_** ẩn cửa sổ và tiếp tục

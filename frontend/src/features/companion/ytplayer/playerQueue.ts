@@ -17,6 +17,7 @@ export type QueueAction =
   | { type: 'next' | 'shuffle' | 'repeat'; seed: number }
   | { type: 'ended'; seed: number; request: number; serial: number }
   | { type: 'restart' }
+  | { type: 'set-repeat'; repeat: RepeatMode; seed: number }
   | { type: 'append'; entries: QueueEntry[] }
   | { type: 'remove' | 'play-entry'; key: string }
   | { type: 'move'; key: string; offset: number }
@@ -78,8 +79,10 @@ export function playerQueueReducer(state: PlayerQueue, action: QueueAction): Pla
       return { ...state, queue, shuffle: false, order: [...(state.current ? [state.current] : []), ...queue, ...state.order.filter(item => !active.has(item.key))] };
     }
     case 'shuffle': return { ...state, shuffle: !state.shuffle, queue: state.shuffle ? restorePending(state) : shuffled(state.queue, action.seed), cyclePlayed: [] };
+    case 'set-repeat':
     case 'repeat': {
-      const repeat: RepeatMode = state.repeat === 'off' ? 'all' : state.repeat === 'all' ? 'one' : 'off';
+      const repeat: RepeatMode = action.type === 'set-repeat' ? action.repeat : state.repeat === 'off' ? 'all' : state.repeat === 'all' ? 'one' : 'off';
+      if (repeat === state.repeat) return state;
       if (repeat !== 'all') return { ...state, repeat };
       const pending = new Set(state.queue.map(entry => entry.key));
       const played = following(state).filter(entry => !pending.has(entry.key));

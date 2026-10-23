@@ -3,11 +3,18 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from features.accounts.auth import current_owner
-from features.companion import youtube_catalog
+from features.companion import youtube_catalog, player_tools
 from shared import youtube
 from storage import player as store
 
 router = APIRouter(prefix='/api/companion/player', tags=['companion-player'])
+
+
+@router.post('/commands/{command_id}/result')
+async def player_command_result(command_id: str, body: player_tools.Result, owner: str = Depends(current_owner)):
+    if not player_tools.acknowledge(owner, command_id, body):
+        raise HTTPException(404, 'Lệnh Player không còn chờ kết quả.')
+    return {'accepted': True}
 
 
 @router.get('/search')

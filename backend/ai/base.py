@@ -54,6 +54,8 @@ class StreamChunk:
     công cụ (chữ đó là câu dẫn); ``tool_result`` là kết quả gọn của một công cụ tạo/sửa tệp trong ``info``.
     ``code`` là dịch vụ AI chạy mã trong sandbox của nó (Peto/xAI): ``running``, rồi ``done`` với mã, chữ in ra và mã
     thoát trong ``info`` (ai/xai.code_result).
+    ``player_command`` là yêu cầu gửi riêng tới trình duyệt của lượt Companion; provider chờ kết quả đọc lại trước khi
+    tiếp tục. Không lưu sự kiện này trong lịch sử hoặc phát lại khi khôi phục lượt chat.
     """
 
     # "text" | "thinking" | "search" | "sources" | "document_status" | "artifact" | "replace" | "file_lookup"

@@ -5,6 +5,7 @@ import {
   getCompanion,
   getCompanionMemory,
   sendMessage,
+  acknowledgePlayer,
   type AppInfo,
   type Message,
   type EmotionCue,
@@ -13,6 +14,7 @@ import { SendIcon } from "../chat/Composer";
 import { LoadingIndicator } from '../../shared/ui/LoadingIndicator';
 import { PlayerIcon } from '../../shared/ui/PlayerIcon';
 import { usePlayerLayout } from './ytplayer/playerLayout';
+import { PlayerControlBridge } from './ytplayer/playerControl';
 import './ytplayer/companionPlayer.css';
 import { fileToBase64 } from '../chat/attachments';
 import { useCompanionImages } from './useCompanionImages';
@@ -198,6 +200,12 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
     if (getHearingState().holding) cancelHold();
     setPlayer(value => value.open && !value.hidden ? { ...value, hidden: true } : { visited: true, open: true, hidden: false });
   }, []);
+  const showPlayer = useCallback(() => {
+    if (getHearingState().holding) cancelHold();
+    setPlayer({ visited: true, open: true, hidden: false });
+  }, []);
+  const controlActive = useRef(active); controlActive.current = active;
+  const [playerControl] = useState(() => new PlayerControlBridge(showPlayer, () => controlActive.current && !document.hidden));
   const closePlayer = useCallback(() => {
     playerOwnsKey.current = false;
     playerFocusBack.current = true;
@@ -446,9 +454,14 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
         ? { ...message, attachments: optimisticImages.map((image, i) => ({ ...image, url: `data:${attachments[i].mime || 'image/png'};base64,${attachments[i].data}` })) }
         : message));
       await sendMessage(
-        { message: text, conversationId, attachments, effort: "low", webSearch: search ? "auto" : "off", mode: "companion",
+        { message: text, conversationId, attachments, effort: "low", webSearch: search ? "auto" : "off", mode: "companion", playerControl: true,
           ...(brain ? { provider: brain.provider, providerKey: brain.providerKey, searchKey: brain.searchKey } : {}) },
         {
+          onPlayerCommand: async command => {
+            if (!current()) return;
+            const result = await playerControl.run(command, controller.signal);
+            if (current()) await acknowledgePlayer(command.id, result, controller.signal);
+          },
           onMeta: (id, _effort, stored, voiceStream) => {
             if (!current()) return;
             earlyVoice = voiceStream === true;
@@ -1002,7 +1015,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
         {player.visited && <Suspense fallback={null}>
           <CompanionPlayer active={active} open={player.open} hidden={player.hidden || !active} mobileLayout={mobilePlayer}
             allowBackground={desktopPlayback} bounds={playerBounds}
-            onClose={closePlayer} onHide={hidePlayer} onFocusChange={updatePlayerFocus} />
+            onClose={closePlayer} onHide={hidePlayer} onFocusChange={updatePlayerFocus} onShow={showPlayer} control={playerControl} />
         </Suspense>}
       </div>
       <div className="companion-scene-tools" inert={opening || playerModal} aria-hidden={opening || playerModal}>

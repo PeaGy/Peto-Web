@@ -101,7 +101,7 @@ export function useYouTubePlayer(source: YouTubePlaybackSource | null, enabled: 
       if (current.key === sourceKey(next)) return;
       current.key = sourceKey(next);
       current.pendingCue = true;
-      publish({ status: 'loading', ready: false, playing: false, position: next.startSeconds, duration: 0, error: '' });
+      publish({ status: 'loading', ready: false, playing: false, position: next.startSeconds, duration: 0, error: '', sourceKey: current.key });
       window.clearTimeout(readyTimer);
       readyTimer = window.setTimeout(() => {
         if (alive() && current.pendingCue) publish({ status: 'error', ready: false, playing: false, error: 'YouTube phản hồi quá lâu. Hãy kiểm tra kết nối hoặc thử lại.' });
@@ -177,7 +177,7 @@ export function useYouTubePlayer(source: YouTubePlaybackSource | null, enabled: 
             if (!alive()) return;
             window.clearInterval(poll);
             window.clearTimeout(readyTimer);
-            publish({ status: 'error', ready: false, playing: false, error: `${ERROR_MESSAGES[event.data] ?? 'YouTube không phát được video này.'} (Mã ${event.data})` });
+            publish({ status: 'error', ready: false, playing: false, sourceKey: current.key, error: `${ERROR_MESSAGES[event.data] ?? 'YouTube không phát được video này.'} (Mã ${event.data})` });
           },
           onAutoplayBlocked: () => {
             current.pendingCue = false;
@@ -213,6 +213,14 @@ export function useYouTubePlayer(source: YouTubePlaybackSource | null, enabled: 
   }
   return {
     container, ...snapshot, stop,
+    observe: () => {
+      const current = session.current;
+      if (!current?.active || !current.ready || current.pendingCue || !current.player) return null;
+      try {
+        return { position: finite(current.player.getCurrentTime()), duration: finite(current.player.getDuration()),
+          volume: current.player.isMuted() ? 0 : Math.round(Math.min(100, finite(current.player.getVolume()))) };
+      } catch { return null; }
+    },
     setPlaying: (playing: boolean) => command(player => playing ? player.playVideo() : player.pauseVideo()),
     seek: (position: number) => command(player => player.seekTo(Math.min(finite(position), snapshot.duration || finite(position)), true)),
     setVolume: (next: number) => {

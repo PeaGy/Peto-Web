@@ -11,6 +11,7 @@ import json
 from time import perf_counter
 import anyio
 from collections.abc import AsyncIterator
+from contextlib import aclosing
 
 from openai import (
     APIConnectionError,
@@ -30,6 +31,7 @@ from features.documents.tools import current_session
 from features.connectors.tools import current_session as github_session_context, NAMES as GITHUB_TOOLS
 from shared.web_search import normalize_sources, search_context
 from shared import chat_history_tools
+from features.companion import player_tools
 from features.chat.context_budget import enforce as enforce_chat_budget, side_output_cap
 from features.chat import capabilities, request_context
 from prompts.chat import (CODE_PROMPT, FINALIZING_PROMPT, FOLLOW_UP_PROMPT, GITHUB_PROMPT, NO_GITHUB_PROMPT,
@@ -557,6 +559,11 @@ class ResponsesProvider(ChatProvider):
             if emitted_text and not noted:
                 # Dịch vụ không báo lúc bắt đầu viết lệnh: chữ trước đó vẫn là câu dẫn.
                 yield StreamChunk("note")
+            if player_tools.current.get() and any(call.get('name') == player_tools.NAME for call in tool_calls):
+                # A draft before a Player action is not a confirmed result. Replace it like a web-search draft.
+                draft = drop_pre_search_draft()
+                if draft is not None:
+                    yield draft
             for call in tool_calls:
                 if not call.get("call_id"):
                     raise ProviderError("AI trả về yêu cầu công cụ không hợp lệ. Thử lại nhé.")
@@ -572,6 +579,13 @@ class ResponsesProvider(ChatProvider):
                     # Một model vẫn có thể bịa lời gọi dù schema không được gửi. Không thực thi ngoài kế hoạch vòng này.
                     result = {'ok': False, 'error': 'Công cụ không được cấp trong vòng hiện tại; chưa được chạy.',
                               'code': 'tool_not_available'}
+                elif call.get('name') == player_tools.NAME and player_tools.current.get():
+                    async with aclosing(player_tools.current.get().run(call.get('arguments', ''))) as action:
+                        async for item in action:
+                            if isinstance(item, StreamChunk):
+                                yield item
+                            else:
+                                result = item
                 elif call.get('name') in DOCUMENT_TOOLS and document_session:
                     watching = False        # Grok đã bắt tay sửa/tạo tệp: không cần nhắc nữa
                     status, run = DOCUMENT_TOOLS[call['name']]

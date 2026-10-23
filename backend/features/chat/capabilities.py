@@ -7,6 +7,7 @@ from shared.chat_history_tools import SCHEMA as HISTORY_SCHEMA
 from features.documents.tools import (SCHEMA as DOCUMENT_SCHEMA, PRESENTATION_SCHEMA, SPREADSHEET_SCHEMA,
                                       EDIT_SCHEMA, WORD_EDIT_SCHEMA)
 from features.connectors.tools import SCHEMAS as GITHUB_SCHEMAS
+from features.companion import player_tools
 
 # Chạy mã phía xAI (thí điểm 21/10/2026): công cụ của dịch vụ, Peto không tự chạy mã nào. Chỉ có chữ in ra, không tệp.
 CODE_SCHEMA = {'type': 'code_interpreter'}
@@ -50,6 +51,7 @@ def select(*, documents, files, history, github_state, github_reason, search_ena
                           'request_scope' if enabled else reason)
     items = [
         entry('clock', TOOL_SCHEMAS, True),
+        entry('player', [player_tools.SCHEMA], player_tools.current.get() is not None, reason='companion_browser_only'),
         entry('create_files', [DOCUMENT_SCHEMA, PRESENTATION_SCHEMA, SPREADSHEET_SCHEMA], documents is not None),
         entry('edit_spreadsheet', [EDIT_SCHEMA], bool(documents and documents.workbooks)),
         entry('edit_document', [WORD_EDIT_SCHEMA], bool(documents and getattr(documents, 'word_files', None))),

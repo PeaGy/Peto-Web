@@ -26,6 +26,8 @@ from features.companion import emotion_tags
 from features.documents.tools import DocumentSession, asks_edit, current_session as document_session_context
 from features.connectors.tools import GitHubSession, current_session as github_session_context, tool_access as github_access
 from features.companion import private_notes
+from features.companion import player_tools
+from prompts.companion_player import PLAYER_PROMPT
 from features.chat import titles
 from features.chat.work_log import NOTE_LIMIT, WorkLog, read_detail
 from ai import ChatMessage, ChatProvider, ProviderError, StreamChunk, get_provider
@@ -121,7 +123,7 @@ async def _stream_reply(
     system_prompt: str, history: list[ChatMessage], effort: str, timezone: str | None = None, web_search: str = "auto",
     document_session=None, model: str = ai_models.DEFAULT_MODEL, spoken: bool = False,
     files: attachment_tools.AttachmentFiles | None = None, github_session=None, provider: ChatProvider | None = None,
-    budget=None, history_session=None, snapshot=None,
+    budget=None, history_session=None, snapshot=None, player_session=None,
 ) -> AsyncIterator[StreamChunk]:
     """Gọi provider của model đã chọn một lần. Trả về từng mảnh stream. ``spoken`` là lượt
     Companion: câu trả lời được đọc thành tiếng, nên chỉ dẫn tra web dặn không chèn đường dẫn hay dấu trích dẫn.
@@ -142,6 +144,7 @@ async def _stream_reply(
     budget_token = context_budget.current.set(budget)
     history_token = chat_history_tools.current.set(history_session)
     snapshot_token = request_context.current.set(snapshot)
+    player_token = player_tools.current.set(player_session)
     limit = None
     try:
         with usage_events.measurement(surface='chat' if snapshot else None, effort=effort):
@@ -160,6 +163,7 @@ async def _stream_reply(
             raise TurnTimeout("turn" if whole else "idle", TURN_TIMEOUT_SECONDS if whole else idle) from error
         raise
     finally:
+        player_tools.current.reset(player_token)
         request_context.current.reset(snapshot_token)
         chat_history_tools.current.reset(history_token)
         context_budget.current.reset(budget_token)
@@ -209,6 +213,8 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
 
     effort = _resolve_effort(request.effort, text)
     mode = _resolve_mode(request.mode)
+    if request.player_control is not None and mode != 'companion':
+        raise HTTPException(400, 'Player chỉ điều khiển từ Companion.')
     web_search = request.web_search
     if mode == "companion":
         if any(item.kind != 'image' for item in files):
@@ -331,6 +337,8 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
             # Dòng chú thích SSE: trình duyệt bỏ qua, nhưng giữ kết nối qua Cloudflare khi Grok soạn lệnh dài mà chưa
             # có chữ nào để gửi (luồng im quá 100 giây có thể bị cắt).
             if chunk.kind == 'pulse': return ': ping\n\n'
+            if chunk.kind == 'player_command' and mode == 'companion' and request.player_control == 1:
+                return sse({'type': 'player_command', 'command': chunk.info})
             # Các sự kiện cũ (document_status, file_lookup, search…) vẫn gửi cho trang mở từ trước khi cập nhật và cho
             # Companion; trang mới vẽ nhật ký từ sự kiện "step".
             steps = ''
@@ -564,13 +572,18 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                     github_state, github_reason,
                     client_environment=client_environment.normalize(
                         http_request.headers if http_request is not None else None)) if mode == 'chat' else None
+                player_session = player_tools.PlayerSession(owner) if mode == 'companion' and request.player_control == 1 and own_provider != 'gemini' else None
+                if player_session:
+                    system_prompt += '\n\n' + PLAYER_PROMPT
+                elif mode == 'companion' and request.player_control == 1:
+                    system_prompt += '\n\nPlayer control is unavailable with this Gemini connection. You can discuss music, but cannot read or change live playback with this provider.'
                 # A timeout may already have consumed provider tokens. Do not repeat the whole turn invisibly.
                 async with aclosing(_stream_reply(system_prompt, history, effort, timezone, web_search, document_session,
                                                  model, spoken=mode == "companion", files=files_session, github_session=github_session,
                                                  provider=byok.build(own_key) if own_key else None,
                                                  budget=prepared.budget if prepared else None,
                                                  history_session=prepared.history_tools if prepared else None,
-                                                 snapshot=snapshot)) as stream:
+                                                 snapshot=snapshot, player_session=player_session)) as stream:
                     async for chunk in stream:
                         event = chunk_event(chunk)
                         # Lưu trước khi công bố tệp/kết quả công cụ; chữ lưu tối đa mỗi giây hoặc mỗi 2 KiB.

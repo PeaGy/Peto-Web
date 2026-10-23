@@ -39,7 +39,7 @@ class ChatRequest(BaseModel):
     timezone: str | None = Field(default=None, max_length=100)
     attachments: list[AttachmentIn] = Field(default_factory=list)
     web_search: Literal["auto", "on", "off"] = "auto"
-    # "companion" khi nhắn từ tab Companion: persona trả lời ngắn bằng tiếng Anh, mạch trò chuyện riêng.
+    # "companion" khi nhắn từ tab Companion: persona và mạch trò chuyện riêng.
     mode: str = Field(default="chat", max_length=16)
     # Chỉ còn "assistant": chế độ nhập vai đã bỏ ngày 2026-10-18; giữ trường để trang cũ gửi lên nhận lời báo rõ ràng.
     persona: str = Field(default="assistant", max_length=16)
@@ -48,6 +48,8 @@ class ChatRequest(BaseModel):
     model: str = Field(default=ai_models.DEFAULT_MODEL, max_length=16)
     # Chỉ Companion: dùng khóa riêng của người dùng thay cho Grok của Peto.
     provider: ProviderChoiceIn | None = None
+    # Only the sending Companion browser implements the action/ack protocol. Older clients have no tools.
+    player_control: Literal[1] | None = None
 
 
 class StopRequest(BaseModel):

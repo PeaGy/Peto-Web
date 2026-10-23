@@ -1,5 +1,18 @@
 # CLAUDE.md
 
+## Companion điều khiển Player — giai đoạn 1 (2026-10-23)
+
+Owner duyệt bốn giai đoạn và yêu cầu làm bước đầu. Đã ghép tool `control_player` vào Companion thật, chưa commit/deploy.
+Đọc trạng thái, mở/ẩn/đóng, play/pause/seek/volume/mute, Next/restart, đặt shuffle/repeat. Không dò từ khóa, không thay
+persona/examples. Prompt khả năng tách riêng. Client gửi phiên bản, server chỉ cấp tool cho Companion; SSE command ID
+ngẫu nhiên → browser thực thi cùng player → POST owner-scoped/one-use → provider nhận kết quả rồi trả lời. Timeout 12s,
+chống lệnh trùng/hết hạn/hủy, không replay khi hồi phục lịch sử. Hỗ trợ vòng Responses/Claude và CC/Ollama; Gemini BYO
+chưa có function calling nên không cấp khả năng. Backend 93 ca trực tiếp và frontend 159 ca đạt; build đạt. Chrome
+desktop/mobile mô phỏng 26 đạt, 4 skip. Một lỗi thứ tự fixture trí nhớ ở nhóm mở rộng cũng tái hiện tại HEAD chưa sửa;
+ghi chi tiết trong báo cáo. Không gọi AI/TTS có phí, không coi Android nghiệm thu bản cũ là nghiệm thu thay đổi mới.
+Deploy cần rebuild frontend + restart backend; không migration/key/dependency mới. Tìm/chọn nhạc, yêu thích, thao tác
+chi tiết hàng đợi và hội thoại gợi ý nhạc là các bước sau. Chi tiết: `frontend/src/features/companion/ytplayer/CONTROL_STAGE1.md`.
+
 ## Player library — nghiệm thu giai đoạn 4 (2026-10-23)
 
 Chủ web đã deploy `645fe3b`, thêm key máy chủ và xác nhận tìm/chọn/playlist hoạt động. Yêu cầu làm nốt giai đoạn cuối.
