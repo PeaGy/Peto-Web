@@ -57,7 +57,7 @@ function ModelTable({ models }: { models: AdminModel[] }) {
         <i style={{ background: SERVICE_COLOR[row.service] ?? 'var(--muted)' }} aria-hidden="true" />{row.label}
         {row.surfaces.length > 0 && <small>{surfaces(row.surfaces)}</small>}
       </span></th>
-      <td>{num(row.calls)}{row.side_calls > 0 && <small title="Lần gọi phụ: đặt tiêu đề, trí nhớ, tóm tắt"> ({num(row.side_calls)} phụ)</small>}</td>
+      <td>{num(row.calls)}{row.side_calls > 0 && <small title="Lần gọi phụ: đặt tiêu đề, trí nhớ, tóm tắt, kiểm chứng Player"> ({num(row.side_calls)} phụ)</small>}</td>
       <td>{pct(row.success_rate)}</td>
       <td>{secs(row.p50_ms)} · {secs(row.p95_ms)}</td>
       <td className={row.input_tokens === null ? 'adm-missing' : ''}>{row.input_tokens === null ? NO_DATA : <>

@@ -150,7 +150,7 @@ def summarize(rows: list[dict], range_key: str, now: float, zone: ZoneInfo, rate
         model = models.setdefault(key, _Model(key, row.get("service") or "unknown"))
         if row["kind"] == "call":
             model.calls += 1
-            model.side_calls += row.get("purpose") in {'side', 'summary'}
+            model.side_calls += row.get("purpose") in {'side', 'summary', 'player_check', 'player_rephrase'}
             if row.get("slug"):
                 model.slugs.add(row["slug"])
             searches += row.get("search_calls") or 0

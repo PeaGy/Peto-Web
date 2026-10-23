@@ -148,7 +148,7 @@ async def _stream_reply(
     player_token = player_tools.current.set(player_session)
     limit = None
     try:
-        with usage_events.measurement(surface='chat' if snapshot else None, effort=effort):
+        with usage_events.measurement(surface='companion' if spoken else 'chat' if snapshot else None, effort=effort):
             async with asyncio.timeout_at(min(loop.time() + idle, hard)) as limit:
                 operation = player_reply.guarded_reply(provider, player_session,
                     system_prompt=f"{system_prompt}\n\n{time_context(timezone)}",

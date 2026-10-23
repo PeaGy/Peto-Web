@@ -2,7 +2,9 @@
 
 Bản đối chiếu `7b912f4`. Chủ web đã deploy bản kiểm chứng queue, xác nhận Peto chuyển đúng vị trí mà không cần
 F5, rồi yêu cầu giai đoạn tiếp theo. Đợt này thêm tìm/chọn nhạc, video URL, nhập playlist và hội thoại gợi ý → đồng ý.
-Chưa commit/deploy. Không gửi chat AI/TTS có phí hoặc gọi YouTube production để kiểm tra.
+Đã commit ở `8ed3642`, sau đó sửa xác nhận ở `f3e8c3b` và `9869571`; các nội dung dưới ghi lần bàn giao ban đầu.
+Nghiệm thu tiếp theo: [CONTROL_STAGE4.md](./CONTROL_STAGE4.md). Không gửi chat AI/TTS có phí hoặc gọi YouTube
+production để kiểm tra trong đợt triển khai này.
 
 ## Hành vi
 

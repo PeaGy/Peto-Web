@@ -1,9 +1,30 @@
 # CLAUDE.md
 
+## Companion điều khiển Player — nghiệm thu giai đoạn 4 (2026-10-23)
+
+Owner đã commit sửa lời đáp tự nhiên ở `9869571`, yêu cầu giai đoạn tiếp theo. Đợt này nghiệm thu cuối luồng đã có,
+không thêm tính năng Player/persona. Đã phát hiện và sửa hai nhãn thống kê: player_check/player_rephrase được tính
+vào side_calls (token/chi phí trước đó đã có trong tổng), và lời gọi chính spoken=True gắn surface companion.
+Chú thích quản trị kể cả kiểm chứng Player. Không đổi billing/routing/model, DB, key hoặc dependency.
+Thêm ca backend chặn text/đầu vào giọng đọc cho tới khi checker hoàn tất, kể cả ack đã thành công; hủy không phát
+bản nháp hoặc replay. Ca browser mới: X giữa swap chưa xác nhận dọn iframe/không mở lại, yêu cầu mới được phát;
+Dừng chat không gửi ack cho lệnh hủy, không retry ngầm. Không coi cancel là undo media đã gửi.
+
+Backend Player/BYO/clock/prompt/admin **249 ca đạt**, frontend **197 ca/10 tệp đạt**, build và browser TypeScript đạt.
+Chrome và Edge desktop/mobile mô phỏng **mỗi loại 38 đạt/4 skip theo thiết bị, không flaky**. Network/provider/
+YouTube giả, Audio dùng PCM tổng hợp; không gọi AI/TTS/catalogue/YouTube production, không đo latency/chi phí AI thật.
+Owner báo thử **bằng chat Peto trên Android/Chrome**: đổi bài, sửa queue, ẩn/mở Player và dừng đều ổn. Đây là báo cáo
+máy thật của owner, không phải agent điều khiển USB; chưa chấm câu trả lời tự nhiên trên nhiều trường hợp/model.
+Không suy mọi câu đều đúng từ test mock. Bộ Brain Benchmark cũ chưa phải eval Player native.
+
+Chưa commit/deploy. Deploy restart backend khi không có chat đang chạy; rebuild frontend cho chú thích quản trị.
+Không F5 tab đang nghe, queue RAM vẫn ở browser. Chi tiết/checklist/bằng chứng:
+`frontend/src/features/companion/ytplayer/CONTROL_STAGE4.md`; raw Git-ignored `.runtime/player-control-stage4/`.
+
 ## Player — lời đáp tự nhiên, đối chiếu biên nhận (2026-10-23)
 
 Owner đã deploy bản sửa `f3e8c3b`, xác nhận swap hoạt động nhưng không muốn câu “Playing…” bị cố định.
-Yêu cầu giữ giọng Peto tự nhiên, không máy móc và không xác nhận sai. Đợt này chỉ backend, chưa commit/deploy.
+Yêu cầu giữ giọng Peto tự nhiên, không máy móc và không xác nhận sai. Bản sửa backend đã commit ở `9869571`.
 Sau mutation, giữ nguyên lời model/cảm xúc nếu bước đối chiếu chỉ đọc xác nhận các thông tin Player khớp receipt.
 Prompt khả năng Player bỏ yêu cầu xác nhận ngắn/nhắc tên bắt buộc, không sửa persona/examples. Không ép độ dài,
 tên bài hay cách xưng hô. Sai thì viết lại đúng một lần bằng cùng persona/ngôn ngữ rồi kiểm lại;

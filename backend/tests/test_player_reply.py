@@ -338,3 +338,46 @@ async def test_cancelling_check_closes_side_stream_without_fallback_or_replay():
         assert closed.is_set() and pt.current.get() is session and not pt.pending
     finally:
         pt.current.reset(token)
+
+
+@pytest.mark.parametrize('cancel', [False, True])
+async def test_text_and_speech_input_wait_for_fact_check_even_after_browser_success(monkeypatch, cancel):
+    entered, release = asyncio.Event(), asyncio.Event()
+    natural = "There we go, Tetris is on. Take a breather."
+    provider, requests = fake_provider(monkeypatch, [tool_stream(dict(action='play')), text_stream(natural)])
+    create = provider._client.responses.create
+    async def checked_create(**kwargs):
+        if 'PLAYER REPLY FACT CHECK' in kwargs['instructions']:
+            assert pt.current.get() is None and not kwargs.get('tools')
+            entered.set()
+            await release.wait()
+            return text_stream(APPROVED)
+        return await create(**kwargs)
+    monkeypatch.setattr(provider._client.responses, 'create', checked_create)
+    session = pt.PlayerSession(TEST_OWNER, 3)
+    chunks = []
+    async def collect():
+        async for chunk in service._stream_reply('Peto', [ChatMessage('user', 'Play please.')], 'low',
+                provider=provider, player_session=session):
+            chunks.append(chunk)
+            if chunk.kind == 'player_command':
+                assert pt.acknowledge(TEST_OWNER, chunk.info['id'], pt.Result(ok=True, state=pt.Snapshot(**STATE)))
+    task = asyncio.create_task(collect())
+    try:
+        async with asyncio.timeout(5): await entered.wait()
+        assert session.receipts[0]['result']['ok'] is True
+        assert not [chunk for chunk in chunks if chunk.kind == 'text']
+        assert len([chunk for chunk in chunks if chunk.kind == 'player_command']) == 1
+        if cancel:
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError): await task
+            assert not [chunk for chunk in chunks if chunk.kind == 'text']
+        else:
+            release.set()
+            await task
+            assert ''.join(chunk.text for chunk in chunks if chunk.kind == 'text') == natural
+            assert session.reply_guard == 'natural_verified'
+        assert len(requests) == 2 and not pt.pending and pt.current.get() is None
+    finally:
+        if not task.done(): task.cancel()
+        await asyncio.gather(task, return_exceptions=True)

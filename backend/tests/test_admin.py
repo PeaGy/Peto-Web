@@ -225,6 +225,22 @@ def test_summary_marks_unpriced_and_cache_unknown_models():
     assert data["cost"]["cache_unknown_models"] == ["6 Luna"]
 
 
+def test_player_check_and_rephrase_are_side_calls_without_inflating_turns_or_dropping_cost():
+    now = local(2026, 10, 23, 15)
+    purposes = ['chat', 'chat', 'player_check', 'player_rephrase', 'player_check', 'side', 'summary']
+    rows = [row(now - 60, purpose=purpose, input_tokens=1000, output_tokens=100, cached_tokens=0)
+            for purpose in purposes]
+    rows.append(row(now - 30, 'turn', surface='companion', outcome='complete', complete=True,
+                    elapsed_ms=4000, first_text_ms=3900))
+    data = stats.summarize(rows, '24h', now, ZONE, RATES, 'ok', now - 86400)
+    model = data['models'][0]
+    assert model['calls'] == 7 and model['side_calls'] == 5 and model['turns'] == 1
+    assert data['calls'] == 7 and data['turns'] == 1
+    assert model['input_tokens'] == 7000 and model['output_tokens'] == 700
+    assert model['cost_usd'] == pytest.approx(7 * .003)
+    assert data['cost']['total_usd'] == model['cost_usd']
+
+
 def test_summary_without_rates_has_no_total():
     now = local(2026, 10, 11, 15)
     data = stats.summarize([row(now - 60, input_tokens=10, output_tokens=5)], "24h", now, ZONE, {}, "missing", now - 600)
@@ -380,3 +396,31 @@ async def test_reported_ticks_are_stored_from_chat_and_agent_but_not_sent_to_the
     await recorder.flush()
     calls = [item for item in await stored_rows() if item["kind"] == "call"]
     assert [item["cost_ticks"] for item in calls] == [69_754_000, 5_000_000]
+
+
+async def test_player_revision_usage_is_stored_and_aggregated_as_side_calls(client, recorder, monkeypatch):
+    import test_player_reply as reply_tests
+    from test_player_tools import STATE
+    await clear_events()
+    original = reply_tests.text_stream
+    def metered(text):
+        stream = original(text)
+        stream.events[-1].response.usage = dict(input_tokens=1000, output_tokens=100, cost_in_usd_ticks=10_000_000)
+        return stream
+    monkeypatch.setattr(reply_tests, 'text_stream', metered)
+    tool = reply_tests.tool_stream(dict(action='play'))
+    tool.events[-1].response.usage = dict(input_tokens=1000, output_tokens=100, cost_in_usd_ticks=10_000_000)
+    _, saved, _ = await reply_tests.dispatch(client, [tool, metered('Swapped. Invented title is playing.')],
+        monkeypatch, [dict(ok=True, state=STATE)], checks=[reply_tests.REJECTED, reply_tests.APPROVED],
+        rewrites=["Tetris is on now. Settle in!"])
+    assert saved['player_trace']['reply_guard'] == 'natural_rewritten'
+    await recorder.flush()
+    rows = await stored_rows()
+    calls = [item for item in rows if item['kind'] == 'call']
+    assert [item['purpose'] for item in calls] == ['chat', 'chat', 'player_check', 'player_rephrase', 'player_check']
+    assert all(item['surface'] == 'companion' and item['effort'] == 'low' for item in calls)
+    assert len([item for item in rows if item['kind'] == 'turn']) == 1
+    now = time.time() + 1
+    data = stats.summarize(rows, '24h', now, ZONE, {}, 'missing', now - 86400)
+    assert data['models'][0]['side_calls'] == 3 and data['models'][0]['calls'] == 5
+    assert data['turns'] == 1 and data['cost']['total_usd'] == pytest.approx(.005)

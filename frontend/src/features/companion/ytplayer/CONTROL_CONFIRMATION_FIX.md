@@ -3,7 +3,8 @@
 ## Cập nhật: giữ lời đáp tự nhiên sau xác nhận (23/10/2026)
 
 Chủ web đã commit/deploy bản sửa bên dưới ở `f3e8c3b` và xác nhận swap được, nhưng không muốn lời đáp luôn là
-“Playing…”. Đợt cập nhật này chỉ sửa backend, chưa commit/deploy. Phần mô tả dựng câu cố định và không thêm lần
+“Playing…”. Đợt cập nhật này chỉ sửa backend, đã commit ở `9869571`; nghiệm thu thêm ở [CONTROL_STAGE4.md](./CONTROL_STAGE4.md).
+Phần mô tả dựng câu cố định và không thêm lần
 gọi AI ở mục “Thay đổi” bên dưới ghi lại bản trước; hành vi hiện tại được thay thế như sau:
 
 - Peto vẫn tự viết lời đáp theo persona và hội thoại. Sau mutation, một bước chỉ đọc đối chiếu các thông tin Player

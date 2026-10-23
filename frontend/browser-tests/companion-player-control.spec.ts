@@ -28,17 +28,21 @@ async function setup(page: Page, mobile: boolean, favorites: { video_id: string;
   async function hide() {
     if (await shell(page).isVisible()) await page.getByRole('button', { name: mobile ? 'Ẩn Player' : 'Thu nhỏ Player', exact: true }).click();
   }
-  async function issue(action: PlayerCommand['action'], values: Partial<PlayerCommand> = {}, twice = false) {
+  async function send(action: PlayerCommand['action'], values: Partial<PlayerCommand> = {}, twice = false) {
     await hide();
     duplicate = twice; command = { id: `command-${++sequence}`, action, expires_at: Date.now() + 12000, ...values };
     const before = results.length;
     await composer(page).fill(`Control ${action} ${sequence}`);
     await page.getByRole('button', { name: 'Gửi', exact: true }).click();
+    return before;
+  }
+  async function issue(action: PlayerCommand['action'], values: Partial<PlayerCommand> = {}, twice = false) {
+    const before = await send(action, values, twice);
     await expect.poll(() => results.length, { timeout: 12000 }).toBe(before + (twice ? 2 : 1));
     await expect(page.locator('.companion-panel button[type="submit"]')).toHaveCount(1);
     return results.at(-1)!;
   }
-  return { issue, hide, apiRequests, state };
+  return { issue, send, hide, apiRequests, state, results };
 }
 
 const favorites = [
@@ -47,6 +51,49 @@ const favorites = [
   { video_id: 'aircAruvnKk', title: 'But what is a neural network?', artist: 'Test channel' },
   { video_id: 'HDz9dSuAI4s', title: 'Miku concert', artist: 'Test channel' },
 ];
+
+test('X during a pending replacement cancels its acknowledgement and never reopens; a new request works', async ({ page }, info) => {
+  test.setTimeout(60000);
+  const mobile = info.project.name === 'mobile';
+  const { issue, send, results, apiRequests } = await setup(page, mobile);
+  const tracks = favorites.map(item => ({ ...item, duration: 143, start_seconds: 0 }));
+  expect((await issue('play_video', { tracks: [tracks[0]], window_revision: 0 })).ok).toBe(true);
+  await page.evaluate(() => { (window as unknown as { __ytFake: FakeStats }).__ytFake.holdLoads = true; });
+  const before = await send('play_video', { tracks: [tracks[1]], window_revision: 0 });
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __ytFake: FakeStats }).__ytFake.heldLoads)).toBe(1);
+  if (mobile) await page.getByRole('button', { name: 'Mở menu', exact: true }).click();
+  await page.getByRole('button', { name: 'Player', exact: true }).click();
+  await shell(page).getByRole('button', { name: mobile ? 'Dừng và đóng Player' : 'Đóng Player', exact: true }).click();
+  await expect.poll(() => results.length).toBe(before + 1);
+  expect(results.at(-1)?.ok).toBe(false);
+  await expect(page.locator('.yt-youtube-container iframe')).toHaveCount(0);
+  expect((await stats(page)).created).toBe(1); expect((await stats(page)).destroyed).toBe(1);
+  const closed = await issue('status'); expect(closed.state?.window_revision).toBe(1);
+  await expect(shell(page)).toHaveCount(0);
+  await page.evaluate(() => { (window as unknown as { __ytFake: FakeStats }).__ytFake.holdLoads = false; });
+  expect((await issue('play_video', { tracks: [tracks[1]], window_revision: 1 })).ok).toBe(true);
+  expect((await stats(page)).created).toBe(2); expect(apiRequests()).toBe(1);
+  await noPageOverflow(page);
+});
+
+test('stopping chat cancels an unconfirmed swap without acknowledging or retrying it', async ({ page }, info) => {
+  test.setTimeout(60000);
+  const { issue, send, results } = await setup(page, info.project.name === 'mobile');
+  const tracks = favorites.map(item => ({ ...item, duration: 143, start_seconds: 0 }));
+  expect((await issue('play_video', { tracks: [tracks[0]], window_revision: 0 })).ok).toBe(true);
+  await page.evaluate(() => { (window as unknown as { __ytFake: FakeStats }).__ytFake.holdLoads = true; });
+  const before = await send('play_video', { tracks: [tracks[1]], window_revision: 0 });
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __ytFake: FakeStats }).__ytFake.heldLoads)).toBe(1);
+  await page.locator('.companion-panel').getByRole('button', { name: 'Dừng', exact: true }).click();
+  await expect(composer(page)).toBeEnabled();
+  await expect(page.locator('.companion-panel').getByRole('button', { name: 'Dừng', exact: true })).toHaveCount(0);
+  expect(results).toHaveLength(before);
+  expect(await page.evaluate(() => (window as unknown as { __ytFake: FakeStats }).__ytFake.heldLoads)).toBe(1);
+  await page.evaluate(() => { (window as unknown as { __ytFake: FakeStats }).__ytFake.holdLoads = false; });
+  const retry = await issue('play_video', { tracks: [tracks[1]], window_revision: 0 });
+  expect(retry).toMatchObject({ ok: true, state: { native_video_id: tracks[1].video_id, native_state: 1 } });
+  expect(results).toHaveLength(before + 1); expect((await stats(page)).created).toBe(1);
+});
 
 test('old native playing state cannot acknowledge a replacement; an explicit later retry can succeed', async ({ page }, info) => {
   test.setTimeout(60000);
