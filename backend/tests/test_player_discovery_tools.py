@@ -172,6 +172,7 @@ async def test_native_companion_v3_search_then_play_round_trip(client, monkeypat
              call(pt.NAME, '{"action":"play_video","video_id":"aircAruvnKk"}')]
     streams = [FakeStream([SimpleNamespace(type='response.output_item.done', item=item), done(item)]) for item in calls]
     streams.append(FakeStream([SimpleNamespace(type='response.output_text.delta', delta='Playing the selected video.'), done()]))
+    streams.append(FakeStream([SimpleNamespace(type='response.output_text.delta', delta='{"supported":true,"reason":""}'), done()]))
     provider, requests = fake_provider(monkeypatch, streams)
     monkeypatch.setattr(service, 'get_provider', lambda *args: provider)
     task = asyncio.create_task(client.post('/api/chat', json=dict(mode='companion', message='Sure, put on something relaxing.', player_control=3, web_search='off')))
@@ -199,7 +200,8 @@ async def test_native_companion_v3_search_then_play_round_trip(client, monkeypat
 async def test_native_companion_url_comes_from_user_history_and_never_imports_its_list(client, monkeypatch, catalog):
     tool = call(pt.NAME, json.dumps(dict(action='enqueue_video', url=URL)))
     provider, _ = fake_provider(monkeypatch, [FakeStream([SimpleNamespace(type='response.output_item.done', item=tool), done(tool)]),
-        FakeStream([SimpleNamespace(type='response.output_text.delta', delta='Added the video.'), done()])])
+        FakeStream([SimpleNamespace(type='response.output_text.delta', delta='Added the video.'), done()]),
+        FakeStream([SimpleNamespace(type='response.output_text.delta', delta='{"supported":true,"reason":""}'), done()])])
     monkeypatch.setattr(service, 'get_provider', lambda *args: provider)
     task = asyncio.create_task(client.post('/api/chat', json=dict(mode='companion', message=f'Add this please {URL}', player_control=3, web_search='off')))
     try:

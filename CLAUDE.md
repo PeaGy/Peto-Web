@@ -1,5 +1,27 @@
 # CLAUDE.md
 
+## Player — lời đáp tự nhiên, đối chiếu biên nhận (2026-10-23)
+
+Owner đã deploy bản sửa `f3e8c3b`, xác nhận swap hoạt động nhưng không muốn câu “Playing…” bị cố định.
+Yêu cầu giữ giọng Peto tự nhiên, không máy móc và không xác nhận sai. Đợt này chỉ backend, chưa commit/deploy.
+Sau mutation, giữ nguyên lời model/cảm xúc nếu bước đối chiếu chỉ đọc xác nhận các thông tin Player khớp receipt.
+Prompt khả năng Player bỏ yêu cầu xác nhận ngắn/nhắc tên bắt buộc, không sửa persona/examples. Không ép độ dài,
+tên bài hay cách xưng hô. Sai thì viết lại đúng một lần bằng cùng persona/ngôn ngữ rồi kiểm lại;
+không chạy lại thao tác. Chỉ khi kiểm tra lỗi/timeout/JSON sai hoặc câu sửa vẫn không được xác nhận mới dùng câu
+fallback từ receipt. Guard thiếu thực thi, chặn mutation lặp sau lỗi và native video ID/state vẫn giữ nguyên.
+
+Bước phụ dùng đúng provider/account của lượt chính, effort low, web off, tools disabled và Player ContextVar=None;
+không phát draft/JSON cho UI/TTS. Mỗi bước tối đa 15s/16.000 ký tự đầu ra; hủy stream khôi phục context. Lượt có
+mutation thêm một lần gọi AI; khi cần sửa thêm một lần viết lại + một lần kiểm lại, tối đa ba lần gọi phụ. Có tăng
+độ trễ/token; hội thoại thường và lượt chỉ đọc trạng thái không thêm lần gọi. Usage ghi purpose player_check và
+player_rephrase. Đây là đối chiếu ngữ nghĩa bằng model, không phải chứng minh tuyệt đối; chưa eval AI thật.
+Trace ghi natural_verified/natural_rewritten hoặc receipt_fallback_* để phân biệt lời giữ nguyên/sửa/fallback.
+Checker dùng kết quả tool đầy đủ đã có giới hạn (gồm lists/counts); trace lưu DB vẫn gọn như trước.
+
+Backend nhóm Player/BYO/clock/prompt **219 ca đạt** bằng provider/browser giả; không gọi AI/TTS/YouTube production.
+Không đổi frontend/DB/key/dependency. Deploy restart backend là đủ, không cần F5 và mất queue đang nghe.
+Chi tiết/cách thử thật trong `frontend/src/features/companion/ytplayer/CONTROL_CONFIRMATION_FIX.md`.
+
 ## Player — chặn xác nhận “Swapped” sai (2026-10-23)
 
 Owner đã commit giai đoạn 3 ở `8ed3642`, báo model nói đổi bài nhưng video cũ còn phát, nhắc lại mới đổi; yêu cầu

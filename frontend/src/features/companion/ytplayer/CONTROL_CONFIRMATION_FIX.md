@@ -1,5 +1,43 @@
 # Sửa xác nhận Player sai (23/10/2026)
 
+## Cập nhật: giữ lời đáp tự nhiên sau xác nhận (23/10/2026)
+
+Chủ web đã commit/deploy bản sửa bên dưới ở `f3e8c3b` và xác nhận swap được, nhưng không muốn lời đáp luôn là
+“Playing…”. Đợt cập nhật này chỉ sửa backend, chưa commit/deploy. Phần mô tả dựng câu cố định và không thêm lần
+gọi AI ở mục “Thay đổi” bên dưới ghi lại bản trước; hành vi hiện tại được thay thế như sau:
+
+- Peto vẫn tự viết lời đáp theo persona và hội thoại. Sau mutation, một bước chỉ đọc đối chiếu các thông tin Player
+  với kết quả thực thi: đúng thì giữ nguyên câu chữ/cảm xúc, không ép nhắc tên bài hay giới hạn độ dài.
+  Prompt khả năng Player cũng bỏ yêu cầu báo kết quả ngắn/luôn nhắc tên; persona và examples không sửa.
+- Nếu sai tên bài, vị trí, số lượng, bỏ qua lỗi đáng kể hoặc nói thành công khi thất bại, cho viết lại một lần trong
+  giọng Peto rồi kiểm lại. Không tự chạy lại lệnh để biến câu sai thành đúng. Lỗi/unknown vẫn là lỗi/chưa xác nhận;
+  không bịa nguyên nhân hoặc nói đã xem/nghe nội dung video.
+- Chỉ dùng câu từ receipt làm phương án cuối khi bước kiểm tra không khả dụng/timeout/JSON sai hoặc câu sửa vẫn
+  không được xác nhận. Guard thiếu lệnh, chặn mutation lặp sau lỗi, native video ID/state và history trace giữ nguyên.
+- Bước phụ dùng cùng provider/account đã chọn, effort low, web off, tools disabled và không có Player context.
+  Kết quả phụ không gửi ra UI/giọng đọc, không có quyền thực thi Player. Mỗi bước tối đa 15 giây/16.000 ký tự đầu ra;
+  cancellation đóng stream/khôi phục context, không chuyển thành retry.
+
+Chi phí: thêm **một lần gọi AI** mỗi lượt có mutation; nếu cần sửa thì thêm một lần viết lại và một lần kiểm lại
+(tối đa ba lần gọi phụ). Có tăng token/độ trễ; lượt chỉ đọc trạng thái và hội thoại thường không thêm bước này.
+Usage phân biệt `player_check` / `player_rephrase`. Trace lưu `natural_verified`, `natural_rewritten`,
+`receipt_fallback_unsupported` hoặc `receipt_fallback_check_unavailable`; không thêm UI/log nội dung công khai.
+Kết quả tool đầy đủ có giới hạn được gửi cho checker, gồm số bỏ trùng và các trang danh sách đã đọc; trace DB vẫn
+giữ giới hạn cũ. Đây là kiểm tra ngữ nghĩa bằng model, **không bảo đảm loại bỏ mọi hallucination**.
+
+Kiểm chứng đợt này: **219 ca backend đạt**, cùng nhóm chín tệp liệt kê bên dưới. Ca mới kiểm lời tự nhiên Anh/Việt,
+không bắt nhắc title, giữ cảm xúc, sửa tên sai, lỗi thật/unknown, thành công một phần, checker phê duyệt nhầm câu
+“Swapped” khi lệnh lỗi, JSON sai, timeout, mất kết nối, lệnh bất thường và hủy stream. Responses và adapter BYO
+đều qua guard; không lộ bản nháp sai và không replay mutation. Dữ liệu giả kiểm đường xử lý, chưa đo chất lượng
+câu chữ của model thật; không gọi AI/TTS/YouTube production. Không đổi frontend nên không chạy lại browser/build.
+
+Deploy **chỉ restart backend**, không F5 tab đang nghe; không migration/key/dependency mới. Sau deploy thử các
+yêu cầu đổi bài/mở Player bằng cách nói khác nhau và cả lỗi video: lời đáp có thể tự nhiên, ngắn/dài theo ngữ cảnh,
+nhưng title/trạng thái/kết quả phải khớp Player. Nếu thường xuyên ra câu mẫu, xem `reply_guard` để phân biệt checker
+không khả dụng với bản nháp không được xác nhận; không giảm bằng chứng thực thi hoặc bỏ guard để che lỗi.
+
+## Bản sửa nền tảng đã deploy ở f3e8c3b
+
 Bản đối chiếu `8ed3642`. Chủ web thử đổi bài qua chat: Peto nói “Swapped” nhưng video cũ vẫn phát; sau nhắc lại
 mới đổi được. Không có trace của lượt production cũ để xác định lần đầu đã gọi công cụ hay chưa. Đợt này sửa cả
 lỗi xác nhận bằng lời và lỗ hổng dùng trạng thái playing của nguồn cũ. Chưa commit/deploy; không gọi AI/TTS có phí,

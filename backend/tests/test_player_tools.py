@@ -68,6 +68,7 @@ async def test_native_library_read_then_remove_preserves_identity_and_revision(c
     remove = call(pt.NAME, '{"action":"remove_queue_entry","entry_id":"queued-third","queue_revision":7}')
     streams = [FakeStream([SimpleNamespace(type='response.output_item.done', item=item), done(item)]) for item in (read, remove)]
     streams.append(FakeStream([SimpleNamespace(type='response.output_text.delta', delta='Removed the third queued song.'), done()]))
+    streams.append(FakeStream([SimpleNamespace(type='response.output_text.delta', delta='{"supported":true,"reason":""}'), done()]))
     provider, requests = fake_provider(monkeypatch, streams)
     monkeypatch.setattr(service, 'get_provider', lambda *args: provider)
     task = asyncio.create_task(client.post('/api/chat', json={'mode': 'companion', 'message': 'Remove third queued song.', 'player_control': 2, 'web_search': 'off'}))
@@ -153,8 +154,10 @@ async def test_native_ai_waits_for_observed_result_before_final_text(client, mon
     tool = call(pt.NAME, '{"action":"pause"}')
     first = FakeStream([SimpleNamespace(type='response.output_text.delta', delta='Unconfirmed draft.'),
                         SimpleNamespace(type='response.output_item.done', item=tool), done(tool)])
-    second = FakeStream([SimpleNamespace(type='response.output_text.delta', delta='Observed result.'), done()])
-    provider, requests = fake_provider(monkeypatch, [first, second])
+    natural = 'Paused.' if ok else "I couldn't pause. Browser blocked playback."
+    second = FakeStream([SimpleNamespace(type='response.output_text.delta', delta=natural), done()])
+    check = FakeStream([SimpleNamespace(type='response.output_text.delta', delta='{"supported":true,"reason":""}'), done()])
+    provider, requests = fake_provider(monkeypatch, [first, second, check])
     monkeypatch.setattr(service, 'get_provider', lambda *args: provider)
     request = asyncio.create_task(client.post('/api/chat', json={
         'mode': 'companion', 'message': 'Pause please.', 'player_control': 1, 'web_search': 'off'}))
@@ -175,6 +178,7 @@ async def test_native_ai_waits_for_observed_result_before_final_text(client, mon
         assert 'PLAYER' in requests[0]['instructions']
         text = ''.join(e.get('text', '') for e in events if e['type'] == 'delta')
         assert 'Unconfirmed draft' not in text
+        assert text == natural and len(requests) == 3
         assert ('Browser blocked' in text) is not ok
         assert not pt.pending and pt.current.get() is None
     finally:

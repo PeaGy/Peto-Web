@@ -2,6 +2,7 @@
 import asyncio
 import json
 from contextlib import aclosing
+from copy import deepcopy
 from types import SimpleNamespace
 
 import pytest
@@ -38,8 +39,27 @@ def test_discussion_negation_and_song_names_are_not_change_claims(text):
     assert not guard.claims_change(text)
 
 
-async def dispatch(client, streams, monkeypatch, replies=(), message='Replace the current song.'):
+APPROVED = '{"supported":true,"reason":""}'
+REJECTED = '{"supported":false,"reason":"Draft contradicts the execution result."}'
+
+
+async def dispatch(client, streams, monkeypatch, replies=(), message='Replace the current song.', *, checks=(), rewrites=()):
     provider, requests = fake_provider(monkeypatch, streams)
+    create = provider._client.responses.create
+    pending = {'PLAYER REPLY FACT CHECK': list(checks), 'PLAYER REPLY REVISION': list(rewrites)}
+    unexpected = []
+    async def checked_create(**kwargs):
+        for marker, values in pending.items():
+            if marker in kwargs['instructions']:
+                requests.append(deepcopy(kwargs))
+                if pt.current.get() is not None or kwargs.get('tools'):
+                    unexpected.append('Side call has access to tools or Player context')
+                if not values:
+                    unexpected.append(f'Unexpected {marker} call')
+                    raise AssertionError(unexpected[-1])
+                return text_stream(values.pop(0))
+        return await create(**kwargs)
+    monkeypatch.setattr(provider._client.responses, 'create', checked_create)
     monkeypatch.setattr(service, 'get_provider', lambda *args: provider)
     task = asyncio.create_task(client.post('/api/chat', json=dict(mode='companion', message=message, player_control=3, web_search='off')))
     try:
@@ -53,6 +73,7 @@ async def dispatch(client, streams, monkeypatch, replies=(), message='Replace th
         events = await read_events(await task)
         assert events[-1]['type'] == 'done', events
         saved = (await client.get('/api/companion')).json()['messages'][-1]
+        assert not unexpected and not any(pending.values()), (unexpected, pending)
         return events, saved, requests
     finally:
         if not task.done(): task.cancel()
@@ -60,14 +81,16 @@ async def dispatch(client, streams, monkeypatch, replies=(), message='Replace th
 
 
 async def test_no_call_false_swap_is_repaired_once_and_only_confirmed_track_is_spoken(client, monkeypatch):
+    natural = 'There we go—Tetris is on now. Settle in.'
     events, saved, requests = await dispatch(client, [text_stream('Swapped. Hallucinated song is playing.'),
         tool_stream(dict(action='play')), text_stream('<|EMOTE_HAPPY|> Swapped. Another invented song.')], monkeypatch,
-        [dict(ok=True, state=STATE)])
+        [dict(ok=True, state=STATE)], checks=[REJECTED, APPROVED], rewrites=['<|EMOTE_HAPPY|> ' + natural])
     text = ''.join(event.get('text', '') for event in events if event['type'] == 'delta')
     assert 'Tetris' in text and 'Hallucinated' not in text and 'invented' not in text and 'Swapped' not in text
-    assert saved['content'] == text
+    assert saved['content'] == text == natural
     assert saved['emotion'] == 'happy'
-    assert len(requests) == 3 and 'PLAYER EXECUTION CHECK' in requests[1]['instructions']
+    assert len(requests) == 6 and 'PLAYER EXECUTION CHECK' in requests[1]['instructions']
+    assert saved['player_trace']['reply_guard'] == 'natural_rewritten'
     assert saved['player_trace']['commands'][0]['action'] == 'play'
     assert saved['player_trace']['commands'][0]['ok'] is True
     assert 'work' not in saved
@@ -77,10 +100,11 @@ async def test_no_call_false_swap_is_repaired_once_and_only_confirmed_track_is_s
                                   dict(ok=False, error='Acknowledgement lost; outcome unknown.')])
 async def test_failed_action_cannot_be_overridden_by_success_text_or_automatically_replayed(client, monkeypatch, reply):
     events, saved, requests = await dispatch(client, [tool_stream(dict(action='play')),
-        text_stream('Swapped. The requested song is playing now.')], monkeypatch, [reply])
+        text_stream('Swapped. The requested song is playing now.')], monkeypatch, [reply],
+        checks=[REJECTED, APPROVED], rewrites=["That didn't go through. Player reported: " + reply['error']])
     text = ''.join(event.get('text', '') for event in events if event['type'] == 'delta')
     assert 'Swapped' not in text and 'playing now' not in text and reply['error'] in text
-    assert len(requests) == 2
+    assert len(requests) == 5
     assert len([event for event in events if event['type'] == 'player_command']) == 1
     assert saved['player_trace']['commands'][0]['error'] == reply['error']
     assert saved['player_trace']['commands'][0]['sent'] is True
@@ -95,7 +119,8 @@ async def test_second_unexecuted_confirmation_is_blocked_without_infinite_ai_ret
 
 async def test_model_cannot_replay_a_failed_mutation_in_same_turn(client, monkeypatch):
     events, saved, _ = await dispatch(client, [tool_stream(dict(action='play')), tool_stream(dict(action='play')),
-        text_stream('Swapped.')], monkeypatch, [dict(ok=False, error='YouTube 150')])
+        text_stream('Swapped.')], monkeypatch, [dict(ok=False, error='YouTube 150')],
+        checks=[REJECTED, APPROVED], rewrites=["It didn't switch; Player reported YouTube 150."])
     commands = saved['player_trace']['commands']
     assert [item['sent'] for item in commands] == [True, False]
     assert not any(item['ok'] for item in commands)
@@ -105,7 +130,8 @@ async def test_model_cannot_replay_a_failed_mutation_in_same_turn(client, monkey
 
 async def test_native_video_mismatch_does_not_become_success_receipt(client, monkeypatch):
     result = dict(ok=True, state={**STATE, 'native_video_id': 'aircAruvnKk', 'native_state': 1})
-    _, saved, _ = await dispatch(client, [tool_stream(dict(action='play')), text_stream('Swapped.')], monkeypatch, [result])
+    _, saved, _ = await dispatch(client, [tool_stream(dict(action='play')), text_stream('Swapped.')], monkeypatch, [result],
+        checks=[REJECTED, APPROVED], rewrites=['Player does not confirm that the requested video started.'])
     assert saved['player_trace']['commands'][0]['ok'] is False
     assert 'does not confirm' in saved['content']
 
@@ -118,7 +144,7 @@ async def test_ordinary_companion_reply_needs_no_extra_ai_call(client, monkeypat
 
 async def test_receipt_history_is_available_for_followup_without_replaying_commands(client, monkeypatch):
     _, _, _ = await dispatch(client, [tool_stream(dict(action='play')), text_stream('Swapped.')], monkeypatch,
-        [dict(ok=False, error='YouTube 150')])
+        [dict(ok=False, error='YouTube 150')], checks=[REJECTED, APPROVED], rewrites=["It didn't switch. YouTube 150."])
     provider, requests = fake_provider(monkeypatch, [text_stream('The recorded play request failed with YouTube 150.')])
     monkeypatch.setattr(service, 'get_provider', lambda *args: provider)
     response = await client.post('/api/chat', json=dict(mode='companion', message='Why did that fail?', player_control=3,
@@ -158,11 +184,21 @@ async def test_status_answer_is_not_mistaken_for_an_unexecuted_pause(client, mon
 
 async def test_byo_adapter_also_uses_receipts_before_speech():
     class Fake(byok._ToolLoopProvider):
+        checks = 0
+        rewrites = 0
         def _history(self, messages): return []
         def _assistant_with_calls(self, text, calls): return {'role': 'assistant', 'calls': calls}
         def _tool_message(self, call, content): return {'role': 'tool', 'content': content}
         async def _round(self, client, messages, tools):
-            if messages[-1]['role'] == 'tool': yield 'text', 'Swapped. Playing now.'
+            if 'PLAYER REPLY FACT CHECK' in messages[0]['content']:
+                assert not tools and pt.current.get() is None
+                self.checks += 1
+                yield 'text', REJECTED if self.checks == 1 else APPROVED
+            elif 'PLAYER REPLY REVISION' in messages[0]['content']:
+                assert not tools and pt.current.get() is None
+                self.rewrites += 1
+                yield 'text', "No luck yet—Player reported Playback blocked. Want to try another one?"
+            elif messages[-1]['role'] == 'tool': yield 'text', 'Swapped. Playing now.'
             else: yield 'call', {'id': 'one', 'name': pt.NAME, 'arguments': '{"action":"play"}'}
     provider = Fake(byok.choose('deepseek', 'deepseek-chat', None, 'sk-test-key', None))
     session = pt.PlayerSession(TEST_OWNER, 3)
@@ -173,4 +209,132 @@ async def test_byo_adapter_also_uses_receipts_before_speech():
         result.append(item)
     text = ''.join(item.text for item in result if item.kind == 'text')
     assert 'Playback blocked.' in text and 'Swapped' not in text
+    assert text == 'No luck yet—Player reported Playback blocked. Want to try another one?'
+    assert provider.checks == 2 and provider.rewrites == 1
     assert pt.current.get() is None and not pt.pending
+
+
+@pytest.mark.parametrize('natural', [
+    '<|EMOTE_HAPPY|> There we go. Much better for winding down, huh?',
+    "All yours—Tetris is on. I'll keep you company.",
+    '<|EMOTE_HAPPY|> Xong rồi nè, cứ thả lỏng một chút nhé.',
+    'Đổi sang Tetris rồi nhé. Hôm nay mình nghe bài này cùng nhau đi.',
+])
+async def test_supported_natural_wording_is_preserved_without_rewrite(client, monkeypatch, natural):
+    events, saved, requests = await dispatch(client,
+        [tool_stream(dict(action='play')), text_stream(natural)], monkeypatch,
+        [dict(ok=True, state=STATE)], checks=[APPROVED])
+    assert saved['content'] == guard.visible(natural)
+    assert saved['player_trace']['reply_guard'] == 'natural_verified'
+    assert len(requests) == 3 and sum(e['type'] == 'player_command' for e in events) == 1
+    check_data = json.loads(requests[-1]['input'][0]['content'][0]['text'])
+    assert check_data['draft'] == guard.visible(natural)
+    assert check_data['execution'][0]['state']['track']['title'] == 'Tetris'
+
+
+async def test_honest_natural_failure_is_preserved(client, monkeypatch):
+    natural = "That one wouldn't start. Player reported YouTube 150; I don't know more than that yet."
+    _, saved, requests = await dispatch(client,
+        [tool_stream(dict(action='play')), text_stream(natural)], monkeypatch,
+        [dict(ok=False, error='YouTube 150')], checks=[APPROVED])
+    assert saved['content'] == natural and len(requests) == 3
+    assert saved['player_trace']['reply_guard'] == 'natural_verified'
+
+
+async def test_partial_success_is_corrected_without_replaying_either_action(client, monkeypatch):
+    natural = "Player's open, but the song didn't start—YouTube reported 150."
+    events, saved, requests = await dispatch(client,
+        [tool_stream(dict(action='open')), tool_stream(dict(action='play')), text_stream('All set, your song is playing!')],
+        monkeypatch, [dict(ok=True, state={**STATE, 'window': 'visible'}), dict(ok=False, error='YouTube 150')],
+        checks=[REJECTED, APPROVED], rewrites=[natural])
+    assert saved['content'] == natural and len(requests) == 6
+    assert [e['command']['action'] for e in events if e['type'] == 'player_command'] == ['open', 'play']
+
+
+@pytest.mark.parametrize('invalid', ['not JSON', '{"supported":"true"}', '{"supported":true,"extra":"bad"}'])
+async def test_invalid_checker_output_uses_receipt_fallback_without_executing_again(client, monkeypatch, invalid):
+    events, saved, requests = await dispatch(client,
+        [tool_stream(dict(action='play')), text_stream('Swapped. Made up title.')], monkeypatch,
+        [dict(ok=True, state=STATE)], checks=[invalid])
+    assert saved['content'] == 'Playing “Tetris”.' and len(requests) == 3
+    assert saved['player_trace']['reply_guard'] == 'receipt_fallback_check_unavailable'
+    assert sum(e['type'] == 'player_command' for e in events) == 1
+
+
+async def test_failed_action_brake_overrides_mistaken_checker_approval(client, monkeypatch):
+    natural = "It didn't switch. Player reported Playback blocked."
+    events, saved, requests = await dispatch(client,
+        [tool_stream(dict(action='play')), text_stream('Swapped.')], monkeypatch,
+        [dict(ok=False, error='Playback blocked.')], checks=[APPROVED, APPROVED], rewrites=[natural])
+    assert saved['content'] == natural and len(requests) == 5
+    assert sum(e['type'] == 'player_command' for e in events) == 1
+
+
+async def test_unsupported_rewrite_falls_back_once_and_never_loops(client, monkeypatch):
+    events, saved, requests = await dispatch(client,
+        [tool_stream(dict(action='play')), text_stream('Playing an invented song.')], monkeypatch,
+        [dict(ok=True, state=STATE)], checks=[REJECTED, REJECTED], rewrites=['Still an invented song.'])
+    assert saved['content'] == 'Playing “Tetris”.' and len(requests) == 5
+    assert saved['player_trace']['reply_guard'] == 'receipt_fallback_unsupported'
+    assert sum(e['type'] == 'player_command' for e in events) == 1
+
+
+def test_checker_gets_full_counts_and_observations_without_expanding_saved_trace():
+    session = pt.PlayerSession(TEST_OWNER, 3)
+    session.receipts = [dict(action='enqueue_favorites', sent=True, result=dict(ok=True,
+        data=dict(added=2, skipped_duplicates=3, not_added_capacity=1))),
+        dict(action='list_queue', sent=True, result=dict(ok=True, data=dict(items=[STATE['track']])))]
+    data = guard.check_data(session, [ChatMessage('user', 'Add favorites; what is next?')], 'Added all six!')
+    assert data['execution'][0]['data']['skipped_duplicates'] == 3
+    assert data['execution'][1]['data']['items'][0]['title'] == 'Tetris'
+    assert 'items' not in session.trace()['commands'][1]['data']
+
+
+@pytest.mark.parametrize('failure', ['timeout', 'network', 'command'])
+async def test_checker_failure_is_bounded_and_restores_context(monkeypatch, failure):
+    class FailedCheck:
+        calls = 0
+        closed = False
+        async def stream(self, **kwargs):
+            self.calls += 1
+            assert kwargs['tools_enabled'] is False and kwargs['web_search'] == 'off'
+            assert pt.current.get() is None
+            try:
+                if failure == 'timeout': await asyncio.Event().wait()
+                if failure == 'network': raise ConnectionError('private error details')
+                yield StreamChunk('player_command', info={'id': 'must-not-be-forwarded'})
+            finally:
+                self.closed = True
+    provider = FailedCheck()
+    monkeypatch.setattr(guard, 'CHECK_TIMEOUT', .01)
+    session = pt.PlayerSession(TEST_OWNER, 3)
+    session.receipts = [dict(action='play', sent=True, result=dict(ok=True, state=STATE))]
+    token = pt.current.set(session)
+    try:
+        text = await guard.natural_confirmation(provider, session, [], 'Swapped.', {'system_prompt': 'Peto'})
+        assert text == 'Playing “Tetris”.' and provider.calls == 1 and provider.closed
+        assert pt.current.get() is session and not pt.pending
+    finally:
+        pt.current.reset(token)
+
+
+async def test_cancelling_check_closes_side_stream_without_fallback_or_replay():
+    entered, closed = asyncio.Event(), asyncio.Event()
+    class Check:
+        async def stream(self, **kwargs):
+            try:
+                entered.set()
+                await asyncio.Event().wait()
+                yield APPROVED
+            finally:
+                closed.set()
+    session = pt.PlayerSession(TEST_OWNER, 3)
+    token = pt.current.set(session)
+    try:
+        task = asyncio.create_task(guard.side_reply(Check(), guard.CHECK_PROMPT, {}, 'player_check'))
+        await entered.wait()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError): await task
+        assert closed.is_set() and pt.current.get() is session and not pt.pending
+    finally:
+        pt.current.reset(token)

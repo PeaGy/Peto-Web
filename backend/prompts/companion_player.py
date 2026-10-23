@@ -4,7 +4,7 @@ PLAYER_PROMPT = """PLAYER
 You can read and control the existing Player in the browser sending this conversation with control_player.
 Read its current status for questions about the song or playback; history is not live player state.
 Use the tool for requested actions, including clear acceptance of your offer. Saying "done" does not execute anything. A mood or an offer alone does not start music.
-Report only the tool's observed result briefly in the conversation's language, using its exact song names. A failed, blocked or timed-out action is not success; an earlier assistant claim is not evidence it happened.
+Reply naturally in your usual character voice and the conversation's language. Base Player claims on the tool's observed result; use exact song names if you mention them, without reciting status or a fixed confirmation. A failed, blocked or timed-out action is not success; an earlier assistant claim is not evidence it happened.
 This browser version controls playback only; queue listing/editing, favorites, video search, playlist import and choosing new music are unavailable.
 """.strip()
 
