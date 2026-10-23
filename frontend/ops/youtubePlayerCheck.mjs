@@ -51,6 +51,7 @@ async function check(name, action) {
   console.log(JSON.stringify(report.checks.at(-1))); save();
 }
 async function mockBackend(page) {
+  const favorites = new Map();
   await page.addInitScript(() => {
     localStorage.setItem('peto-companion-muted', '1'); localStorage.setItem('peto-theme', 'dark');
     window.__playerCheckEvents = [];
@@ -72,6 +73,16 @@ async function mockBackend(page) {
   page.on('pageerror', error => report.javascriptErrors.push(error.message));
   await page.route(url => url.origin === base.origin && url.pathname.startsWith('/api/'), route => {
     const path = new URL(route.request().url()).pathname;
+    if (path.startsWith('/api/companion/player/')) {
+      const id = path.split('/').at(-1), item = videos.find(video => video.id === id);
+      const track = { video_id: id, title: item?.title ?? 'Video kiểm thử', artist: 'Metadata giả — YouTube phát thật' };
+      if (path.includes('/videos/')) return route.fulfill({ json: track });
+      if (path.includes('/favorites')) {
+        if (route.request().method() === 'POST') favorites.set(id, track);
+        if (route.request().method() === 'DELETE') favorites.delete(id);
+        return route.fulfill({ json: { favorites: [...favorites.values()] } });
+      }
+    }
     const data = path === '/api/auth/me' ? { authenticated: true, login_configured: true,
       user: { id: 'youtube-stage4-test', provider: 'discord', username: 'kiem-thu', display_name: 'Kiểm thử Player', avatar_url: '' } }
       : path === '/api/app-info' ? { name: 'Peto', avatar_url: null }
@@ -166,10 +177,10 @@ async function resource(label) {
   report.resources.push(result); console.log(JSON.stringify(result)); save();
 }
 async function selectVideo(video, cold = false) {
-  if (!await page.getByRole('textbox', { name: 'Link YouTube', exact: true }).isVisible()) await shell.getByRole('button', { name: 'File', exact: true }).click(clickOptions);
-  await page.getByRole('textbox', { name: 'Link YouTube', exact: true }).fill(`https://www.youtube.com/watch?v=${video.id}`);
+  if (!await page.getByRole('textbox', { name: 'Link hoặc tên video', exact: true }).isVisible()) await shell.getByRole('button', { name: 'File', exact: true }).click(clickOptions);
+  await page.getByRole('textbox', { name: 'Link hoặc tên video', exact: true }).fill(`https://www.youtube.com/watch?v=${video.id}`);
   const begin = performance.now();
-  await page.getByRole('button', { name: 'Mở video', exact: true }).click(clickOptions);
+  await page.getByRole('button', { name: 'Tìm hoặc mở', exact: true }).click(clickOptions);
   await sleep(150);
   await until(state, value => ['error', 'ready'].includes(value), 35000);
   const readyMs = performance.now() - begin;
@@ -199,7 +210,7 @@ async function selectVideo(video, cold = false) {
     return playing ? playing.time - click : null;
   }, clickIndex);
   const observations = playState === 'playing' ? await observe(page, seconds) : null;
-  const error = await shell.locator('.yt-player-error').textContent().catch(() => '');
+  const error = (await shell.locator('.yt-player-error').allTextContents()).join('\n');
   const samples = observations?.samples.filter(sample => sample.time !== null && sample.adShowing === false) ?? [];
   const progress = samples.length > 1 ? samples.at(-1).time - samples[0].time : null;
   const native = await nativeSample();
@@ -250,6 +261,7 @@ try {
     });
     if (!await shell.isVisible()) await page.getByRole('button', { name: 'Player', exact: true }).click(clickOptions);
     await check('desktop_browser_tab_background', async () => {
+      if (!values.headed) requireVisibility(false);
       const before = Number(await slider.inputValue()), other = await context.newPage();
       try { await other.goto('about:blank'); await other.bringToFront(); await sleep(6000);
         const hidden = await page.evaluate(() => document.hidden), after = Number(await slider.inputValue());
@@ -258,6 +270,7 @@ try {
       } finally { await other.close(); await page.bringToFront(); }
     });
     await check('desktop_browser_window_minimized', async () => {
+      if (!values.headed) requireVisibility(false);
       const session = await context.newCDPSession(page);
       const { windowId } = await session.send('Browser.getWindowForTarget');
       const before = Number(await slider.inputValue());
@@ -292,8 +305,8 @@ try {
       await mobile.goto(`${base.origin}/companion`, { waitUntil: 'domcontentloaded' });
       const chat = mobile.getByRole('textbox', { name: 'Nhắn cho Peto trong Companion', exact: true }); await chat.waitFor({ timeout: 40000 });
       await mobile.getByRole('button', { name: 'Mở menu', exact: true }).click(clickOptions); await mobile.getByRole('button', { name: 'Player', exact: true }).click(clickOptions);
-      await mobile.getByRole('textbox', { name: 'Link YouTube', exact: true }).fill('https://youtu.be/Soy4jGPHr3g');
-      await mobile.getByRole('button', { name: 'Mở video', exact: true }).click(clickOptions);
+      await mobile.getByRole('textbox', { name: 'Link hoặc tên video', exact: true }).fill('https://youtu.be/Soy4jGPHr3g');
+      await mobile.getByRole('button', { name: 'Tìm hoặc mở', exact: true }).click(clickOptions);
       const root = mobile.locator('.yt-player'); await until(() => root.getAttribute('data-status'), value => value === 'ready', 35000);
       await root.getByRole('button', { name: 'Phát video', exact: true }).click(clickOptions);
       await until(() => root.getAttribute('data-status'), value => value === 'playing', 15000);

@@ -1,9 +1,24 @@
 # CLAUDE.md
 
+## Player library — nghiệm thu giai đoạn 4 (2026-10-23)
+
+Chủ web đã deploy `645fe3b`, thêm key máy chủ và xác nhận tìm/chọn/playlist hoạt động. Yêu cầu làm nốt giai đoạn cuối.
+Đã nghiệm thu bản deploy bằng phiên sẵn có: 20 kết quả Tetris, phát/auto-next, nhập 10 bài playlist 3Blue1Brown,
+ẩn UI vẫn phát và gõ nháp, X gỡ iframe; không gửi chat/gọi AI/TTS/đổi cài đặt hoặc sửa yêu thích production.
+Backend 83 ca, frontend 318 ca đạt; browser Chrome và Edge cài trên máy mỗi loại 22 đạt, 4 skip theo thiết bị.
+Thêm `playwright.player.config.ts` và `player-library-acceptance.spec.ts`: 200 mục, từ chối 201, resize,
+10 vòng tạo/hủy player, loader một lần và tim ở giữa hit area. Không thay mã sản phẩm.
+`ops/youtubePlayerCheck.mjs` cập nhật tên controls/metadata/favorites giả cho bản thư viện. Hai lượt headless mạng thật
+đều exit 0: bốn video phát, Rick/Shape 150. Đo CPU/private RAM 5 giây từng trạng thái; không coi headless là ca OS hidden.
+Chủ web báo Xiaomi/Android 13/Chrome 155.0.8059.87 làm checklist chức năng đều ổn. Đây là nghiệm thu thủ công của
+chủ web, không phải agent truy cập điện thoại; chưa đo nhiệt/pin dài hạn hoặc micro loa thật.
+Chi tiết/số đo/cách chạy: `frontend/src/features/companion/ytplayer/LIBRARY_STAGE4.md`. Raw/ảnh ignored ở
+`.runtime/player-library-stage4/`. Tệp nghiệm thu chưa commit/deploy; không cần deploy tính năng mới từ đợt này.
+
 ## Player library — giai đoạn 3 (2026-10-23)
 
 Chủ web đã commit/deploy giai đoạn 2 và hai chỉnh sửa tim desktop/hover (HEAD trước lượt này: e347bb9).
-Yêu cầu tiếp tục giai đoạn 3: đã làm tìm tên và nhập playlist công khai, chưa commit/deploy.
+Giai đoạn 3 đã được chủ web commit/deploy ở `645fe3b`; các nội dung sau mô tả lần bàn giao giai đoạn 3.
 File và ô mở đầu dùng chung phân loại link/tên; tìm khi submit, không autocomplete hoặc tự phát kết quả đầu.
 Panel kết quả dùng lại vị trí queue/yêu thích, có chọn phát, dấu cộng và tải thêm. Link video kèm list vẫn mở
 riêng video, có nút Nhập playlist trong File. Playlist thêm cuối queue, không đổi bài đang nghe, giữ thứ tự/bản trùng;

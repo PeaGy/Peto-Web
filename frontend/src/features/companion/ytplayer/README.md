@@ -2,7 +2,9 @@
 
 Bản Player và giai đoạn 2 đã được chủ web commit/deploy: tim/yêu thích theo tài khoản, hàng đợi/phát tiếp,
 loop/shuffle và tim cạnh tên bài trên desktop/mobile. Giai đoạn 3 (23/10/2026) đã thêm tìm theo tên và nhập
-playlist công khai, chưa commit/deploy. Xem [LIBRARY_STAGE3.md](./LIBRARY_STAGE3.md) cho hành vi, kiểm chứng
+playlist công khai, đã được chủ web commit/deploy. Giai đoạn 4 nghiệm thu chức năng đã hoàn tất: xem
+[LIBRARY_STAGE4.md](./LIBRARY_STAGE4.md) cho Chrome/Edge, số đo và kết quả Xiaomi/Android do chủ web báo.
+Các tệp kiểm thử/báo cáo mới chưa commit. Xem [LIBRARY_STAGE3.md](./LIBRARY_STAGE3.md) cho hành vi, kiểm chứng
 và cấu hình key máy chủ; [LIBRARY_STAGE2.md](./LIBRARY_STAGE2.md) cho API/lưu trữ yêu thích.
 Dùng player YouTube chính thức, không thêm dependency hoặc xử lý âm thanh iframe.
 

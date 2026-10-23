@@ -1,6 +1,7 @@
 # Thư viện Player — giai đoạn 3 (23/10/2026)
 
-Đã ghép tìm theo tên và nhập playlist vào Companion thật. Chưa commit/deploy.
+Đã ghép tìm theo tên và nhập playlist vào Companion thật; chủ web đã commit/deploy `645fe3b` và cấu hình key máy chủ.
+Phần dưới ghi lại bàn giao giai đoạn 3; nghiệm thu cuối xem [LIBRARY_STAGE4.md](./LIBRARY_STAGE4.md).
 Giữ giao diện, vị trí tim và hành vi phát của giai đoạn 2; prototype vẫn là dữ liệu mẫu độc lập.
 
 ## Sử dụng
