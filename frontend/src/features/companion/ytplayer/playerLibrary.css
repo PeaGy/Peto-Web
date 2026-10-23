@@ -15,7 +15,7 @@
 .yl-main { display: flex; flex-direction: column; min-width: 0; flex: 1; }
 .yl-shell .yl-main .yt-video { flex: 1 0 200px; min-height: 200px; max-height: 430px; }
 .yl-main .yt-track-info { flex-shrink: 0; align-items: flex-start; gap: 12px; margin: 13px 2px 8px; min-height: 39px; }
-.yl-shell .yt-track-info > .yl-heart { flex-shrink: 0; align-self: center; width: 44px; height: 44px; justify-items: end; padding-inline-end: 3px; }
+.yl-shell .yt-track-info > .yl-heart { flex-shrink: 0; align-self: center; width: 44px; height: 44px; }
 .yl-main .yt-track-info h1 { font-size: 17px; }
 .yl-main .yt-track-info p { font-size: 12px; }
 .yl-sr-only { position: absolute; clip-path: inset(50%); width: 1px; height: 1px; overflow: hidden; }
