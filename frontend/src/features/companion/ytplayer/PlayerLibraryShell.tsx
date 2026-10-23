@@ -305,7 +305,7 @@ export function PlayerLibraryShell({ library, id, mode = 'youtube', mobileLayout
 
     <div className="yt-player-body yl-player-body"><div className="yl-layout"><div className="yl-main">
       <div className="yt-video" aria-label="Vùng xem video">{children}</div>
-      {(track.title || track.artist) && <div className="yt-track-info"><div>{track.title && <h1>{track.title}</h1>}{track.artist && <p>{track.artist}</p>}</div>{mobile && favoriteButton}</div>}
+      {(track.title || track.artist) && <div className="yt-track-info"><div>{track.title && <h1>{track.title}</h1>}{track.artist && <p>{track.artist}</p>}</div>{favoriteButton}</div>}
       <div className="yt-transport">
         <div className="yt-timeline">
           <input type="range" min="0" max={track.duration} step="1" value={Math.min(position, track.duration)}
@@ -331,7 +331,6 @@ export function PlayerLibraryShell({ library, id, mode = 'youtube', mobileLayout
             {volumeOpen && <input id={volumeId} className="yt-volume-slider" type="range" min="0" max="100" value={volume}
               aria-label="Âm lượng Player" aria-valuetext={`${volume}%`} onChange={event => onVolumeChange(Number(event.target.value))} />}
           </div>
-          {!mobile && favoriteButton}
           <button ref={library.queueButton} type="button" className="yt-icon-button yl-queue-toggle" aria-label="Hàng đợi" aria-expanded={library.panel === 'queue'} onClick={library.toggleQueue}>
             <LibraryIcon name="queue" /><i className="yl-new-dot" hidden={!library.newItems} />
           </button>
