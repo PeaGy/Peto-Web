@@ -3,6 +3,7 @@ import type { usePlayerLibrary } from './usePlayerLibrary';
 import type { useYouTubePlayer } from './useYouTubePlayer';
 import { youtubeSourceKey } from './youtubeUrl';
 import { waitForPlayer, type PlayerControlBridge, type PlayerSnapshot } from './playerControl';
+import { controlLibrary, controlTrack } from './playerLibraryControl';
 
 interface ControlProps {
   library: ReturnType<typeof usePlayerLibrary>; youtube: ReturnType<typeof useYouTubePlayer>;
@@ -13,15 +14,20 @@ interface ControlProps {
 /** Reads committed React state and native API observations; mutation acknowledgement never means only "button called". */
 export function usePlayerControl(props: ControlProps) {
   const latest = useRef(props); latest.current = props;
+  const windowLife = useRef({ open: props.open, closed: 0 });
+  if (windowLife.current.open && !props.open) windowLife.current.closed++;
+  windowLife.current.open = props.open;
   const lastVolume = useRef(60);
   if (props.youtube.volume > 0) lastVolume.current = props.youtube.volume;
   useEffect(() => props.bridge?.register(async (command, signal) => {
-    const available = () => latest.current.active && !document.hidden && command.expires_at > Date.now();
+    const closed = windowLife.current.closed;
+    const media = ['play_queue_entry', 'play', 'pause', 'next', 'restart', 'seek', 'set_volume', 'mute', 'unmute'].includes(command.action);
+    const available = () => latest.current.active && !document.hidden && command.expires_at > Date.now() && (!media || windowLife.current.closed === closed);
     const snapshot = (): PlayerSnapshot => {
       const { library: l, youtube: y, open, hidden } = latest.current;
       const native = y.observe();
       return { window: !open ? 'closed' : hidden ? 'hidden' : 'visible', status: !l.track ? 'empty' : !open ? 'suspended' : y.status,
-        track: l.track ? { video_id: l.track.videoId, title: l.track.title.slice(0, 300), artist: l.track.artist.slice(0, 200) } : null,
+        track: l.track ? controlTrack(l.track) : null,
         position: native?.position ?? y.position, duration: native?.duration ?? y.duration,
         volume: native?.volume ?? y.volume, shuffle: l.shuffle, repeat: l.repeat, queue_count: l.queue.length };
     };
@@ -35,6 +41,30 @@ export function usePlayerControl(props: ControlProps) {
     signal.throwIfAborted();
     if (!available()) throw new Error('Hãy quay lại Companion để điều khiển Player.');
     const p = latest.current;
+    const libraryResult = await controlLibrary(command, signal, {
+      library: () => latest.current.library, snapshot, available,
+      play: async (key, revision) => {
+        const before = latest.current, entry = before.library.queue.find(item => item.key === key);
+        if (!entry || before.library.queueRevision !== revision) throw new Error('Hàng đợi đã thay đổi; đọc lại trước khi phát.');
+        // Mount the window/host before creating a new autoplay intent. A pre-mount stop would consume that intent.
+        // Old sources remain stopped after X; the iframe constructor itself always uses autoplay: 0.
+        if (!before.open) before.onShow();
+        await waitForPlayer(() => latest.current.open && latest.current.youtube.container.current ? true : undefined, signal, available);
+        const expected = youtubeSourceKey({ ...entry.track, playbackId: String(Number(latest.current.library.source?.playbackId ?? 0) + 1) });
+        if (!latest.current.library.controlEntry('play', key, revision)) throw new Error('Không chọn được mục đã yêu cầu hoặc hàng đợi vừa đổi.');
+        await waitForPlayer(() => {
+          const value = latest.current;
+          if (!value.open) return undefined;
+          if (!value.library.source || youtubeSourceKey(value.library.source) !== expected || value.youtube.sourceKey !== expected) return undefined;
+          if (value.library.currentEntryKey !== key) throw new Error('Hàng đợi đã đổi sang một mục khác; chưa xác nhận lệnh cũ.');
+          if (value.youtube.status === 'blocked' || value.youtube.status === 'error') throw new Error(value.youtube.error);
+          return value.youtube.playing ? true : undefined;
+        }, signal, available);
+      },
+    });
+    if (libraryResult) return libraryResult;
+    signal.throwIfAborted();
+    if (!available()) throw new Error('Lệnh Player đã hết hiệu lực.');
     switch (command.action) {
       case 'status': return done();
       case 'open': p.onShow(); await waitForPlayer(() => latest.current.open && !latest.current.hidden ? true : undefined, signal, available); return done();

@@ -1,6 +1,7 @@
 # Peto điều khiển Player — giai đoạn 1 (23/10/2026)
 
-Đã ghép vào Companion thật, chưa commit/deploy. Bản đối chiếu lúc bắt đầu: `218c686`.
+Đã được chủ web commit/deploy ở `0602baf`; chủ web xác nhận mở Player và đọc title với AI thật. Các phần dưới ghi
+lần bàn giao giai đoạn 1; bước tiếp theo ở [CONTROL_STAGE2.md](./CONTROL_STAGE2.md). Bản đối chiếu lúc bắt đầu: `218c686`.
 
 ## Phạm vi đã làm
 

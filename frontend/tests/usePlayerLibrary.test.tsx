@@ -24,6 +24,51 @@ it('loads account favorites and saves only after server confirmation; rapid dupl
   await act(async () => { finish([saved]); });
   expect(view.result.current.favorite).toBe(true); expect(view.result.current.favoritesBusy).toBe(false);
 });
+
+it('chat sets a desired favorite instead of toggling and never treats a failed refresh as an empty account', async () => {
+  const view = renderHook(() => usePlayerLibrary());
+  await waitFor(() => expect(view.result.current.loadingFavorites).toBe(false));
+  await act(async () => { await view.result.current.setFavorite(saved, true); await view.result.current.setFavorite(saved, true); });
+  expect(api.save.mock.calls.map(call => call[1])).toEqual([true, true]);
+  expect(view.result.current.favorites).toEqual([saved]);
+  api.list.mockRejectedValueOnce(new Error('Offline favorites'));
+  await act(async () => { await expect(view.result.current.readFavorites(new AbortController().signal)).rejects.toThrow('Offline'); });
+  expect(view.result.current.favorites).toEqual([saved]); expect(view.result.current.loadingFavorites).toBe(false);
+});
+
+it('bulk favorites skip duplicate video IDs, fill remaining capacity, keep playback and avoid per-item metadata requests', async () => {
+  const view = renderHook(() => usePlayerLibrary());
+  await waitFor(() => expect(view.result.current.loadingFavorites).toBe(false));
+  const other = mediaFromId('e1xCOsgWG0M', 'Vampire');
+  act(() => { view.result.current.select(saved); view.result.current.append(Array.from({ length: 198 }, () => other)); });
+  const before = view.result.current.source;
+  const tracks = [saved, other, ...Array.from({ length: 5 }, (_, i) => mediaFromId(`item000000${i}`))];
+  api.info.mockClear();
+  let counts: ReturnType<typeof view.result.current.appendFavorites>;
+  act(() => { counts = view.result.current.appendFavorites(tracks); });
+  expect(counts!).toMatchObject({ added: 2, skipped_duplicates: 2, not_added_capacity: 3 });
+  expect(view.result.current.queue).toHaveLength(200); expect(view.result.current.source).toBe(before);
+  expect(api.info).not.toHaveBeenCalled();
+  act(() => { counts = view.result.current.appendFavorites(tracks); });
+  expect(counts!).toMatchObject({ added: 0, skipped_duplicates: 4, not_added_capacity: 3 });
+});
+
+it('aborting a chat favorites request clears busy flags and prevents a late response from replacing new data', async () => {
+  const view = renderHook(() => usePlayerLibrary());
+  await waitFor(() => expect(view.result.current.loadingFavorites).toBe(false));
+  let finish!: (items: typeof saved[]) => void;
+  api.list.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+  const controller = new AbortController();
+  let pending!: Promise<unknown>;
+  act(() => { pending = view.result.current.readFavorites(controller.signal).catch(error => error); });
+  controller.abort();
+  await act(async () => { finish([saved]); await pending; });
+  expect(view.result.current.loadingFavorites).toBe(false); expect(view.result.current.favorites).toEqual([]);
+  const other = mediaFromId('e1xCOsgWG0M', 'Vampire');
+  api.list.mockResolvedValueOnce([other]);
+  await act(async () => { await view.result.current.readFavorites(new AbortController().signal); });
+  expect(view.result.current.favorites).toEqual([other]);
+});
 it('save failure keeps the existing favorites, allows retry, and invalid URL never requests metadata', async () => {
   api.list.mockResolvedValue([saved]); api.save.mockRejectedValueOnce(new Error('Lỗi lưu thử'));
   const view = renderHook(() => usePlayerLibrary());

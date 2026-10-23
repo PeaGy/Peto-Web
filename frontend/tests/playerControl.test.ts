@@ -1,10 +1,18 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { PlayerControlBridge, emptyPlayer, type PlayerCommand } from '../src/features/companion/ytplayer/playerControl';
 import { sendMessage, acknowledgePlayer } from '../src/shared/api/api';
+import { controlTrack } from '../src/features/companion/ytplayer/playerLibraryControl';
+import { mediaFromId } from '../src/features/companion/ytplayer/playerApi';
 
 const cmd = (action: PlayerCommand['action'], id = 'command-one'): PlayerCommand => ({ id, action, expires_at: Date.now() + 12000 });
 const signal = () => new AbortController().signal;
 afterEach(() => vi.unstubAllGlobals());
+
+it('bounded tool metadata preserves complete Unicode characters', () => {
+  const track = controlTrack(mediaFromId('Soy4jGPHr3g', '🎵'.repeat(301), '🎤'.repeat(201)));
+  expect(Array.from(track.title)).toHaveLength(300); expect(Array.from(track.artist)).toHaveLength(200);
+  expect(JSON.parse(JSON.stringify(track)).title).toBe('🎵'.repeat(300));
+});
 
 it('status for an unopened player does not load the player, API or favorites', async () => {
   const show = vi.fn(), bridge = new PlayerControlBridge(show, () => true);

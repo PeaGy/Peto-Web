@@ -178,7 +178,7 @@ def _function_tools(search: bool) -> list[dict]:
                            "required": ["query"], "additionalProperties": False},
         }})
     if player_tools.current.get() is not None:
-        schema = player_tools.SCHEMA
+        schema = player_tools.current.get().schema
         tools.append({'type': 'function', 'function': {key: schema[key] for key in ('name', 'description', 'parameters')}})
     return tools
 

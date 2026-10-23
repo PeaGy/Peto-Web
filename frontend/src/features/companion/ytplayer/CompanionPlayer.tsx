@@ -31,7 +31,7 @@ export default function CompanionPlayer({ active, open, hidden, mobileLayout, al
   const [draft, setDraft] = useState('');
   const [error, setError] = useState('');
   const [frame, setFrame] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
-  const youtube = useYouTubePlayer(source, (active || allowBackground) && open && source !== null, allowBackground);
+  const youtube = useYouTubePlayer(source, (active || allowBackground) && open && source !== null && frame !== null, allowBackground);
   const openLink = library.openInput;
   useEffect(() => {
     if (source && youtube.sourceKey === youtubeSourceKey(source) && youtube.status === 'ended') ended(Number(source.playbackId), youtube.endedSerial);

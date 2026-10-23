@@ -1,8 +1,24 @@
 # CLAUDE.md
 
+## Companion điều khiển Player — giai đoạn 2 (2026-10-23)
+
+Owner đã deploy `0602baf` và xác nhận mở Player/đọc title với AI thật, yêu cầu bước tiếp theo. Đã ghép đọc/paginate
+yêu thích, thêm tất cả/riêng bài yêu thích, set tim idempotent, đọc queue, remove/move/play theo entry ID + revision,
+và báo next thực tế (tách auto với skip). Chưa commit/deploy. Client protocol v2; backend tiếp tục cấp schema/prompt
+v1 cho tab cũ. Đọc/append khi Player chưa mở mount controller kín, không iframe/UI; bulk bỏ trùng current/queue,
+điền tối đa 200 và trả counts rõ ràng; không oEmbed từng bài. Favorite read mới từ DB, lỗi không thành 0, chống read
+cũ ghi đè/write trùng. Shuffle + All chuẩn bị vòng kế sớm để queue[0]/preview khớp ENDED; lịch sử vòng tối đa 201
+để All không khôi phục quá 200. Sửa lần play từ queue chưa từng mở: chờ host rồi tạo intent; đóng X hủy media đang
+chờ. Không thay bố cục, DB/key/dependency. Backend 104, frontend 166 ca đạt; build đạt. Chrome desktop/mobile 30 đạt,
+4 skip theo thiết bị; chi tiết trong
+`frontend/src/features/companion/ytplayer/CONTROL_STAGE2.md`. Tìm tên/link/playlist qua chat, tự chọn gu nhạc và hội thoại
+gợi ý nhạc ở giai đoạn 3. Gemini BYO chưa có function calling. Không gọi AI/TTS có phí, chưa test thật Android cho
+thay đổi mới. Deploy rebuild frontend + restart backend; backend có thể lên trước để hỗ trợ tab v1 đang mở.
+
 ## Companion điều khiển Player — giai đoạn 1 (2026-10-23)
 
-Owner duyệt bốn giai đoạn và yêu cầu làm bước đầu. Đã ghép tool `control_player` vào Companion thật, chưa commit/deploy.
+Owner đã commit/deploy giai đoạn này ở `0602baf` và xác nhận mở/đọc title bằng AI thật. Các dòng sau ghi lần bàn giao
+giai đoạn 1: đã ghép tool `control_player` vào Companion thật.
 Đọc trạng thái, mở/ẩn/đóng, play/pause/seek/volume/mute, Next/restart, đặt shuffle/repeat. Không dò từ khóa, không thay
 persona/examples. Prompt khả năng tách riêng. Client gửi phiên bản, server chỉ cấp tool cho Companion; SSE command ID
 ngẫu nhiên → browser thực thi cùng player → POST owner-scoped/one-use → provider nhận kết quả rồi trả lời. Timeout 12s,

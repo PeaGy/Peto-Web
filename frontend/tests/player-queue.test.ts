@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { emptyQueue, playerQueueReducer as reduce, type PlayerQueue } from '../src/features/companion/ytplayer/playerQueue';
+import { emptyQueue, nextPlayerTracks, playerQueueReducer as reduce, type PlayerQueue } from '../src/features/companion/ytplayer/playerQueue';
 import { mediaFromId } from '../src/features/companion/ytplayer/playerApi';
 
 const entries = ['Soy4jGPHr3g', 'aircAruvnKk', 'e1xCOsgWG0M', 'HDz9dSuAI4s'].map((id, index) => ({ key: String(index), track: mediaFromId(id) }));
@@ -11,6 +11,47 @@ const end = (state: PlayerQueue, serial = state.endedSerial + 1) => reduce(state
 const keys = (state: PlayerQueue) => state.queue.map(entry => entry.key);
 
 describe('production queue', () => {
+  it('long listening sessions cannot restore an oversized queue when switching to loop all', () => {
+    let state = initial();
+    for (let i = 0; i < 260; i++) {
+      state = reduce(state, { type: 'append', entries: [{ key: `new-${i}`, track: entries[0].track }] });
+      state = next(state);
+    }
+    expect(state.order.length).toBeLessThanOrEqual(201);
+    state = loop(state);
+    expect(state.queue.length).toBeLessThanOrEqual(200);
+    expect(new Set([state.current?.key, ...keys(state)]).size).toBe(state.queue.length + 1);
+  });
+  it('the visible first item and reported next match actual playback across every all/shuffle boundary', () => {
+    let state = shuffle(loop(initial()));
+    for (let index = 0; index < 100; index++) {
+      const visible = state.queue[0].track.videoId;
+      expect(nextPlayerTracks(state).automatic?.videoId).toBe(visible);
+      state = reduce(state, { type: 'ended', request: state.request, serial: state.endedSerial + 1, seed: index * 9271 });
+      expect(state.current?.track.videoId).toBe(visible);
+    }
+    const one = reduce(state, { type: 'set-repeat', repeat: 'one', seed: 1 });
+    expect(nextPlayerTracks(one).automatic).toBe(one.current?.track);
+    expect(nextPlayerTracks(one).onSkip).toBe(one.queue[0].track);
+    let solo = initial(); for (const entry of solo.queue) solo = reduce(solo, { type: 'remove', key: entry.key });
+    solo = loop(solo);
+    expect(nextPlayerTracks(solo)).toMatchObject({ automatic: solo.current?.track, onSkip: null, reason: 'loop_all' });
+  });
+  it('ordinal mutations use entry identity plus queue revision, and metadata updates do not invalidate a selection', () => {
+    let state = reduce(initial(), { type: 'append', entries: [{ ...entries[1], key: 'duplicate' }] });
+    const revision = state.revision, key = state.queue[2].key, request = state.request;
+    state = reduce(state, { type: 'metadata', videoId: entries[1].track.videoId, title: 'Updated title' });
+    expect(state.revision).toBe(revision);
+    state = reduce(state, { type: 'control-entry', operation: 'remove', key, revision, seed: 42 });
+    expect(state.queue.some(entry => entry.key === key)).toBe(false);
+    expect(state.queue.some(entry => entry.key === 'duplicate')).toBe(true);
+    expect(state.request).toBe(request);
+    expect(reduce(state, { type: 'control-entry', operation: 'remove', key: state.queue[0].key, revision, seed: 42 })).toBe(state);
+    const moved = reduce(state, { type: 'control-entry', operation: 'move', key: 'duplicate', revision: state.revision, position: 1, seed: 42 });
+    expect(moved.queue[0].key).toBe('duplicate');
+    const selected = reduce(moved, { type: 'control-entry', operation: 'play', key: 'duplicate', revision: moved.revision, seed: 42 });
+    expect(selected.current?.key).toBe('duplicate'); expect(selected.autoplay).toBe(true);
+  });
   it('explicit repeat one/off never transiently enables repeat all or restores already-played tracks', () => {
     const state = next(initial());
     const one = reduce(state, { type: 'set-repeat', repeat: 'one', seed: 42 });

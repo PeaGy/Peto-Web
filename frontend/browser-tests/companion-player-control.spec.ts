@@ -5,8 +5,9 @@ import type { PlayerCommand, PlayerResult } from '../src/features/companion/ytpl
 
 const shell = (page: Page) => page.locator('#companion-player');
 const composer = (page: Page) => page.getByRole('textbox', { name: 'Nhắn cho Peto trong Companion', exact: true });
-async function setup(page: Page, mobile: boolean) {
-  await mockPeto(page); const apiRequests = await installApi(page);
+async function setup(page: Page, mobile: boolean, favorites: { video_id: string; title: string; artist: string }[] = []) {
+  const state = await mockPeto(page); const apiRequests = await installApi(page);
+  favorites.forEach(item => state.playerFavorites.set(item.video_id, item));
   let sequence = 0;
   let command: PlayerCommand;
   let duplicate = false;
@@ -16,7 +17,7 @@ async function setup(page: Page, mobile: boolean) {
     await route.fulfill({ json: { accepted: true } });
   });
   await page.route('**/api/chat', async route => {
-    expect(route.request().postDataJSON().player_control).toBe(1);
+    expect(route.request().postDataJSON().player_control).toBe(2);
     const event = (value: object) => `data: ${JSON.stringify(value)}\n\n`;
     await route.fulfill({ contentType: 'text/event-stream', body:
       event({ type: 'meta', conversation_id: 'A', effort: 'low' })
@@ -33,12 +34,83 @@ async function setup(page: Page, mobile: boolean) {
     const before = results.length;
     await composer(page).fill(`Control ${action} ${sequence}`);
     await page.getByRole('button', { name: 'Gửi', exact: true }).click();
-    await expect.poll(() => results.length).toBe(before + (twice ? 2 : 1));
+    await expect.poll(() => results.length, { timeout: 12000 }).toBe(before + (twice ? 2 : 1));
     await expect(page.locator('.companion-panel button[type="submit"]')).toHaveCount(1);
     return results.at(-1)!;
   }
-  return { issue, hide, apiRequests };
+  return { issue, hide, apiRequests, state };
 }
+
+const favorites = [
+  { video_id: 'Soy4jGPHr3g', title: 'Tetris', artist: 'Kasane Teto SV' },
+  { video_id: 'e1xCOsgWG0M', title: 'The Vampire', artist: 'Test channel' },
+  { video_id: 'aircAruvnKk', title: 'But what is a neural network?', artist: 'Test channel' },
+  { video_id: 'HDz9dSuAI4s', title: 'Miku concert', artist: 'Test channel' },
+];
+
+test('library chat reads fresh favorites without opening, edits stable queue entries and reports actual loop/shuffle next', async ({ page }, info) => {
+  test.setTimeout(90000);
+  const { issue, apiRequests, state } = await setup(page, info.project.name === 'mobile', favorites);
+  const count = await issue('list_favorites', { limit: 0 });
+  expect(count).toMatchObject({ ok: true, state: { window: 'closed' }, data: { total: 4, items: [] } });
+  const first = await issue('list_favorites', { limit: 2 });
+  expect(first.data?.items).toHaveLength(2); expect(first.data?.next_offset).toBe(2);
+  const tail = await issue('list_favorites', { offset: 2, limit: 2 });
+  expect(tail.data?.items?.[0].index).toBe(3); expect(tail.data?.next_offset).toBeNull();
+  expect((await issue('enqueue_favorites', {}, true)).data).toMatchObject({ added: 4, skipped_duplicates: 0, not_added_capacity: 0 });
+  expect((await issue('enqueue_favorites')).data).toMatchObject({ added: 0, skipped_duplicates: 4 });
+  expect(apiRequests()).toBe(0); await expect(shell(page)).toHaveCount(0);
+  let queue = await issue('list_queue');
+  expect(queue.data?.items?.map(item => item.index)).toEqual([1, 2, 3, 4]);
+  const target = queue.data!.items![0];
+  const played = await issue('play_queue_entry', { entry_id: target.entry_id, queue_revision: queue.data!.queue_revision });
+  expect(played.ok).toBe(true); expect(played.state?.track?.video_id).toBe(target.video_id); expect(played.state?.status).toBe('playing');
+  const playing = played.state!.track!.video_id;
+  expect((await issue('set_favorite', { enabled: false })).data?.favorite).toBe(false);
+  expect(state.playerFavorites.has(playing)).toBe(false);
+  for (let i = 0; i < 2; i++) expect((await issue('set_favorite', { enabled: true })).data?.favorite).toBe(true);
+  expect(state.playerFavorites.size).toBe(4);
+  queue = await issue('list_queue');
+  await issue('set_shuffle', { enabled: true });
+  const stale = await issue('remove_queue_entry', { entry_id: queue.data!.items![2].entry_id, queue_revision: queue.data!.queue_revision });
+  expect(stale.ok).toBe(false); expect(stale.state?.queue_count).toBe(3);
+  queue = await issue('list_queue');
+  const third = queue.data!.items![2];
+  expect((await issue('remove_queue_entry', { entry_id: third.entry_id, queue_revision: queue.data!.queue_revision })).data?.target?.video_id).toBe(third.video_id);
+  const remaining = await issue('list_queue'); expect(remaining.data?.total).toBe(2);
+  const moved = remaining.data!.items![1];
+  const reorder = await issue('move_queue_entry', { entry_id: moved.entry_id, queue_revision: remaining.data!.queue_revision, position: 1 });
+  expect(reorder.ok).toBe(true); expect(reorder.state?.shuffle).toBe(false);
+  await issue('set_repeat', { repeat: 'one' });
+  const loop = await issue('next_track');
+  expect(loop.data?.automatic?.video_id).toBe(playing); expect(loop.data?.on_skip?.video_id).toBe(moved.video_id);
+  await issue('set_repeat', { repeat: 'all' }); await issue('set_shuffle', { enabled: true });
+  for (let i = 0; i < 6; i++) {
+    const next = await issue('next_track'); const before = (await stats(page)).cues.length;
+    await page.evaluate(() => (window as unknown as { __ytFake: FakeStats }).__ytFake.end());
+    await expect.poll(async () => (await stats(page)).cues.length).toBe(before + 1);
+    expect((await issue('status')).state?.track?.video_id).toBe(next.data?.automatic?.video_id);
+  }
+  expect((await stats(page)).created).toBe(1); expect(apiRequests()).toBe(1);
+});
+
+test('favorites failure stays a failure; 500-item bulk reports partial capacity without playback or per-item lookups', async ({ page }, info) => {
+  test.setTimeout(60000);
+  let metadata = 0; page.on('request', request => { if (request.url().includes('/player/videos/')) metadata++; });
+  const items = Array.from({ length: 500 }, (_, i) => ({ video_id: `video${String(i).padStart(6, '0')}`, title: `Favorite ${i}`, artist: 'Account' }));
+  const { issue, apiRequests } = await setup(page, info.project.name === 'mobile', items);
+  await page.route('**/api/companion/player/favorites', route => route.fulfill({ status: 503, json: { detail: 'Offline favorites' } }));
+  const error = await issue('list_favorites'); expect(error.ok).toBe(false); expect(error.error).toContain('Offline');
+  expect(error.data?.total).toBeUndefined();
+  await page.unroute('**/api/companion/player/favorites');
+  expect((await issue('list_favorites', { limit: 0 })).data?.total).toBe(500);
+  const added = await issue('enqueue_favorites');
+  expect(added.data).toMatchObject({ added: 200, skipped_duplicates: 0, not_added_capacity: 300 });
+  expect(added.state).toMatchObject({ window: 'closed', status: 'empty', queue_count: 200 });
+  const full = await issue('enqueue_favorites');
+  expect(full.data).toMatchObject({ added: 0, skipped_duplicates: 200, not_added_capacity: 300 });
+  expect(apiRequests()).toBe(0); expect(metadata).toBe(0); await expect(shell(page)).toHaveCount(0);
+});
 
 test('chat controls the existing hidden player, acknowledges native state and deduplicates Next', async ({ page }, info) => {
   test.setTimeout(90000);

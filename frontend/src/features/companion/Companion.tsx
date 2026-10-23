@@ -205,7 +205,8 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
     setPlayer({ visited: true, open: true, hidden: false });
   }, []);
   const controlActive = useRef(active); controlActive.current = active;
-  const [playerControl] = useState(() => new PlayerControlBridge(showPlayer, () => controlActive.current && !document.hidden));
+  const [playerControl] = useState(() => new PlayerControlBridge(showPlayer, () => controlActive.current && !document.hidden,
+    () => setPlayer(value => ({ ...value, visited: true }))));
   const closePlayer = useCallback(() => {
     playerOwnsKey.current = false;
     playerFocusBack.current = true;
@@ -454,7 +455,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
         ? { ...message, attachments: optimisticImages.map((image, i) => ({ ...image, url: `data:${attachments[i].mime || 'image/png'};base64,${attachments[i].data}` })) }
         : message));
       await sendMessage(
-        { message: text, conversationId, attachments, effort: "low", webSearch: search ? "auto" : "off", mode: "companion", playerControl: true,
+        { message: text, conversationId, attachments, effort: "low", webSearch: search ? "auto" : "off", mode: "companion", playerControl: 2,
           ...(brain ? { provider: brain.provider, providerKey: brain.providerKey, searchKey: brain.searchKey } : {}) },
         {
           onPlayerCommand: async command => {

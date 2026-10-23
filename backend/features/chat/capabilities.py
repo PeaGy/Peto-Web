@@ -51,7 +51,7 @@ def select(*, documents, files, history, github_state, github_reason, search_ena
                           'request_scope' if enabled else reason)
     items = [
         entry('clock', TOOL_SCHEMAS, True),
-        entry('player', [player_tools.SCHEMA], player_tools.current.get() is not None, reason='companion_browser_only'),
+        entry('player', [player_tools.current.get().schema if player_tools.current.get() else player_tools.LEGACY_SCHEMA], player_tools.current.get() is not None, reason='companion_browser_only'),
         entry('create_files', [DOCUMENT_SCHEMA, PRESENTATION_SCHEMA, SPREADSHEET_SCHEMA], documents is not None),
         entry('edit_spreadsheet', [EDIT_SCHEMA], bool(documents and documents.workbooks)),
         entry('edit_document', [WORD_EDIT_SCHEMA], bool(documents and getattr(documents, 'word_files', None))),

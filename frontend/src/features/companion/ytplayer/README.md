@@ -4,13 +4,14 @@ Bản Player và giai đoạn 2 đã được chủ web commit/deploy: tim/yêu 
 loop/shuffle và tim cạnh tên bài trên desktop/mobile. Giai đoạn 3 (23/10/2026) đã thêm tìm theo tên và nhập
 playlist công khai, đã được chủ web commit/deploy. Giai đoạn 4 nghiệm thu chức năng đã hoàn tất: xem
 [LIBRARY_STAGE4.md](./LIBRARY_STAGE4.md) cho Chrome/Edge, số đo và kết quả Xiaomi/Android do chủ web báo.
-Các tệp kiểm thử/báo cáo mới chưa commit. Xem [LIBRARY_STAGE3.md](./LIBRARY_STAGE3.md) cho hành vi, kiểm chứng
+Các tệp nghiệm thu thư viện đã được commit ở `218c686`. Xem [LIBRARY_STAGE3.md](./LIBRARY_STAGE3.md) cho hành vi, kiểm chứng
 và cấu hình key máy chủ; [LIBRARY_STAGE2.md](./LIBRARY_STAGE2.md) cho API/lưu trữ yêu thích.
 Dùng player YouTube chính thức, không thêm dependency hoặc xử lý âm thanh iframe.
 
-Giai đoạn 1 điều khiển bằng chat (23/10/2026) đã được ghép, chưa commit/deploy: đọc trạng thái, cửa sổ,
+Giai đoạn 1 điều khiển bằng chat (23/10/2026) đã được chủ web deploy ở `0602baf`: đọc trạng thái, cửa sổ,
 phát/dừng/tua/âm lượng, Next/restart và shuffle/loop qua tool có xác nhận. Xem [CONTROL_STAGE1.md](./CONTROL_STAGE1.md)
-cho phạm vi, các bộ não, kiểm chứng, giới hạn và checklist sau deploy. Yêu thích/hàng đợi/tìm nhạc qua chat để sau.
+cho phạm vi, các bộ não, kiểm chứng và giới hạn. Giai đoạn 2 yêu thích/hàng đợi qua chat đã ghép, chưa commit/deploy;
+xem [CONTROL_STAGE2.md](./CONTROL_STAGE2.md). Tìm/chọn nhạc ngoài thư viện qua chat vẫn để giai đoạn 3.
 
 ## Cách mở
 

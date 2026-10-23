@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type DragEvent } from 'react';
 import { getVideoInfo, listFavorites, mediaFromId, saveFavorite } from './playerApi';
-import { emptyQueue, playerQueueReducer } from './playerQueue';
+import { emptyQueue, nextPlayerTracks, playerQueueReducer } from './playerQueue';
 import { parseYouTubePlaylistUrl, parseYouTubeUrl, type YouTubePlaybackSource } from './youtubeUrl';
 import { parsePlayerInput } from './playerInput';
 import { usePlayerDiscovery } from './usePlayerDiscovery';
@@ -18,6 +18,13 @@ export function usePlayerLibrary(): PlayerLibrary & {
   restart: () => void;
   setRepeat: (repeat: 'off' | 'all' | 'one') => void;
   updateDuration: (videoId: string, duration: number) => void;
+  queueRevision: number;
+  currentEntryKey: string | null;
+  nextTracks: ReturnType<typeof nextPlayerTracks>;
+  controlEntry: (operation: 'remove' | 'move' | 'play', key: string, revision: number, position?: number) => boolean;
+  readFavorites: (signal: AbortSignal) => Promise<MediaTrack[]>;
+  setFavorite: (item: MediaTrack, save: boolean, signal?: AbortSignal) => Promise<MediaTrack[]>;
+  appendFavorites: (items: MediaTrack[]) => { added: number; skipped_duplicates: number; not_added_capacity: number; keys: string[] };
 } {
   const [state, dispatch] = useReducer(playerQueueReducer, undefined, emptyQueue);
   const stateRef = useRef(state); stateRef.current = state;
@@ -34,24 +41,47 @@ export function usePlayerLibrary(): PlayerLibrary & {
   const sequence = useRef(0);
   const queueButton = useRef<HTMLButtonElement>(null);
   const pendingFavorite = useRef(false);
+  const favoriteEpoch = useRef(0);
   const requests = useRef(new Set<AbortController>());
+  const alive = useRef(true);
   const metadata = useRef(new Map<string, { title: string; artist: string }>());
   const track = state.current?.track ?? null;
   const source = useMemo<YouTubePlaybackSource | null>(() => track ? {
     videoId: track.videoId, startSeconds: track.startSeconds, url: track.url, playbackId: String(state.request), autoplay: state.autoplay,
   } : null, [track?.videoId, track?.startSeconds, track?.url, state.request, state.autoplay]);
 
-  useEffect(() => () => { requests.current.forEach(controller => controller.abort()); requests.current.clear(); }, []);
-  useEffect(() => {
-    const controller = new AbortController(); requests.current.add(controller); setLoadingFavorites(true);
-    void listFavorites(controller.signal).then(items => {
-      if (controller.signal.aborted) return;
+  useEffect(() => { alive.current = true; return () => { alive.current = false; requests.current.forEach(controller => controller.abort()); requests.current.clear(); }; }, []);
+  const request = useCallback((signal?: AbortSignal) => {
+    signal?.throwIfAborted();
+    const controller = new AbortController();
+    const abort = () => controller.abort(); signal?.addEventListener('abort', abort, { once: true });
+    requests.current.add(controller);
+    return { controller, finish: () => { requests.current.delete(controller); signal?.removeEventListener('abort', abort); } };
+  }, []);
+  const readFavorites = useCallback(async (signal: AbortSignal) => {
+    if (pendingFavorite.current) throw new Error('Đang lưu yêu thích; hãy đọc lại sau khi hoàn tất.');
+    const { controller, finish } = request(signal), epoch = ++favoriteEpoch.current;
+    setLoadingFavorites(true);
+    try {
+      const items = await listFavorites(controller.signal);
+      controller.signal.throwIfAborted();
+      if (epoch !== favoriteEpoch.current) throw new Error('Yêu thích vừa thay đổi; hãy đọc lại danh sách.');
       setFavorites(items); setError('');
+      if (metadata.current.size + items.length > 500) metadata.current.clear();
       items.forEach(item => { if (item.title) metadata.current.set(item.videoId, item); });
-    }).catch(reason => { if (!controller.signal.aborted) setError(message(reason)); })
-      .finally(() => { requests.current.delete(controller); if (!controller.signal.aborted) setLoadingFavorites(false); });
+      return items;
+    } catch (reason) {
+      if (!controller.signal.aborted && epoch === favoriteEpoch.current) setError(message(reason));
+      throw reason;
+    } finally {
+      finish(); if (alive.current && epoch === favoriteEpoch.current) setLoadingFavorites(false);
+    }
+  }, [request]);
+  useEffect(() => {
+    const controller = new AbortController();
+    void readFavorites(controller.signal).catch(() => { /* Error is exposed by readFavorites; never turn failure into an empty account. */ });
     return () => controller.abort();
-  }, [loadAttempt]);
+  }, [loadAttempt, readFavorites]);
 
   const readMetadata = useCallback((videoId: string) => {
     const saved = metadata.current.get(videoId);
@@ -80,12 +110,12 @@ export function usePlayerLibrary(): PlayerLibrary & {
     if (!parsed) return 'Link YouTube chưa hợp lệ. Hãy kiểm tra lại đường dẫn video.';
     select({ ...mediaFromId(parsed.videoId), ...parsed }, false); return undefined;
   }
-  function append(items: MediaTrack[]) {
+  function append(items: MediaTrack[], resolveMetadata = true) {
     if (stateRef.current.queue.length + items.length > 200) { setError('Hàng đợi tối đa 200 bài. Xóa bớt bài rồi thêm nhé.'); return false; }
     const action = { type: 'append' as const, entries: items.map(item => ({ key: `queued-${++sequence.current}`, track: item })) };
     stateRef.current = playerQueueReducer(stateRef.current, action); dispatch(action);
     if (metadata.current.size + items.length > 500) metadata.current.clear();
-    items.forEach(item => { if (item.title) metadata.current.set(item.videoId, item); else readMetadata(item.videoId); });
+    items.forEach(item => { if (item.title) metadata.current.set(item.videoId, item); else if (resolveMetadata) readMetadata(item.videoId); });
     if (panel !== 'queue') setNewItems(true);
     setAnnouncement(`Đã thêm ${items.length} bài vào hàng đợi.`); setError(''); return true;
   }
@@ -115,19 +145,39 @@ export function usePlayerLibrary(): PlayerLibrary & {
     if (input.kind === 'playlist') return importPlaylist(value);
     openPanel('search'); void discovery.search(input.query); return undefined;
   }
-  async function toggleFavorite(item = track ?? undefined) {
-    if (!item || pendingFavorite.current || loadingFavorites) return;
-    const save = !favorites.some(value => value.videoId === item.videoId);
-    const controller = new AbortController(); requests.current.add(controller);
+  async function setFavorite(item: MediaTrack, save: boolean, signal?: AbortSignal) {
+    if (pendingFavorite.current) throw new Error('Đang lưu một thay đổi yêu thích; hãy đợi hoàn tất.');
+    const { controller, finish } = request(signal); ++favoriteEpoch.current;
     pendingFavorite.current = true; setFavoritesBusy(true); setError('');
     try {
       const items = await saveFavorite(item.videoId, save, controller.signal);
-      if (!controller.signal.aborted) { setFavorites(items); setAnnouncement(save ? 'Đã lưu yêu thích.' : 'Đã bỏ yêu thích.'); }
-    } catch (reason) { if (!controller.signal.aborted) setError(message(reason)); }
+      controller.signal.throwIfAborted();
+      setFavorites(items); setAnnouncement(save ? 'Đã lưu yêu thích.' : 'Đã bỏ yêu thích.'); return items;
+    } catch (reason) { if (!controller.signal.aborted) setError(message(reason)); throw reason; }
     finally {
-      requests.current.delete(controller); pendingFavorite.current = false;
-      if (!controller.signal.aborted) setFavoritesBusy(false);
+      finish(); pendingFavorite.current = false;
+      if (alive.current) { setFavoritesBusy(false); setLoadingFavorites(false); }
     }
+  }
+  async function toggleFavorite(item = track ?? undefined) {
+    if (!item || pendingFavorite.current || loadingFavorites) return;
+    try { await setFavorite(item, !favorites.some(value => value.videoId === item.videoId)); } catch { /* UI uses error state. */ }
+  }
+  function appendFavorites(items: MediaTrack[]) {
+    const value = stateRef.current;
+    const seen = new Set([...(value.current ? [value.current.track.videoId] : []), ...value.queue.map(entry => entry.track.videoId)]);
+    const unique = items.filter(item => { if (seen.has(item.videoId)) return false; seen.add(item.videoId); return true; });
+    const selected = unique.slice(0, Math.max(0, 200 - value.queue.length));
+    const previous = new Set(value.queue.map(entry => entry.key));
+    if (selected.length) append(selected, false);
+    return { added: selected.length, skipped_duplicates: items.length - unique.length, not_added_capacity: unique.length - selected.length,
+      keys: stateRef.current.queue.filter(entry => !previous.has(entry.key)).map(entry => entry.key) };
+  }
+  function controlEntry(operation: 'remove' | 'move' | 'play', key: string, revision: number, position?: number) {
+    const action = { type: 'control-entry' as const, operation, key, revision, position, seed: seed() };
+    const before = stateRef.current, after = playerQueueReducer(before, action);
+    if (after === before) return false;
+    stateRef.current = after; dispatch(action); return true;
   }
   function openPanel(value: LibraryPanelKind) { discovery.cancel(); setPanel(value); if (value === 'queue') setNewItems(false); }
   function closePanel() { discovery.cancel(); setPanel(null); queueButton.current?.focus({ preventScroll: true }); }
@@ -144,6 +194,7 @@ export function usePlayerLibrary(): PlayerLibrary & {
     next: () => dispatch({ type: 'next', seed: seed() }), restart: () => dispatch({ type: 'restart' }),
     setRepeat: (repeat: 'off' | 'all' | 'one') => dispatch({ type: 'set-repeat', repeat, seed: seed() }),
     ended, updateDuration,
+    queueRevision: state.revision, currentEntryKey: state.current?.key ?? null, nextTracks: nextPlayerTracks(state), readFavorites, setFavorite, appendFavorites, controlEntry,
     move: (key, offset) => dispatch({ type: 'move', key, offset }), remove: key => dispatch({ type: 'remove', key }),
     playEntry: entry => dispatch({ type: 'play-entry', key: entry.key }),
     toggleShuffle: () => dispatch({ type: 'shuffle', seed: seed() }), cycleRepeat: () => dispatch({ type: 'repeat', seed: seed() }),

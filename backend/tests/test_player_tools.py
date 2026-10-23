@@ -23,6 +23,11 @@ STATE = dict(window='hidden', status='playing', track=dict(video_id='Soy4jGPHr3g
     {'action': 'seek', 'seconds': float('nan')}, {'action': 'seek', 'seconds': -1},
     {'action': 'set_shuffle', 'enabled': 'true'}, {'action': 'set_repeat', 'repeat': 'queue'},
     {'action': 'status', 'volume': 50}, {'action': 'search', 'query': 'Tetris'},
+    {'action': 'list_favorites', 'offset': -1}, {'action': 'list_queue', 'limit': 51},
+    {'action': 'remove_queue_entry', 'entry_id': 'q1'}, {'action': 'remove_queue_entry', 'entry_id': 'q1', 'queue_revision': True},
+    {'action': 'move_queue_entry', 'entry_id': 'q1', 'queue_revision': 1, 'position': 0},
+    {'action': 'set_favorite'}, {'action': 'enqueue_favorite', 'video_id': 'not a video'},
+    {'action': 'enqueue_favorites', 'entry_id': 'q1'},
 ])
 def test_rejects_invalid_or_future_stage_actions(value):
     with pytest.raises(ValidationError):
@@ -32,6 +37,59 @@ def test_rejects_invalid_or_future_stage_actions(value):
 async def test_invalid_arguments_never_send_browser_command():
     assert [item async for item in pt.PlayerSession(TEST_OWNER).run('{"action":"seek"}')][0]['ok'] is False
     assert not pt.pending
+
+
+async def test_legacy_browser_never_gets_library_actions_or_new_schema_fields():
+    old = pt.PlayerSession(TEST_OWNER)
+    new = pt.PlayerSession(TEST_OWNER, 2)
+    assert 'list_queue' not in old.schema['parameters']['properties']['action']['enum']
+    assert 'entry_id' not in old.schema['parameters']['properties']
+    assert 'list_queue' in new.schema['parameters']['properties']['action']['enum']
+    assert [item async for item in old.run('{"action":"list_favorites"}')][0]['ok'] is False
+    assert not pt.pending
+
+
+async def test_library_results_are_bounded_and_sent_back_to_provider(client):
+    stream = pt.PlayerSession(TEST_OWNER, 2).run('{"action":"list_queue","limit":50}')
+    key = (await anext(stream)).info['id']
+    item = dict(**STATE['track'], index=1, entry_id='queued-1')
+    endpoint = f'/api/companion/player/commands/{key}/result'
+    data = dict(kind='queue', total=200, offset=0, queue_revision=12, items=[item] * 51)
+    assert (await client.post(endpoint, json={'ok': True, 'state': STATE, 'data': data})).status_code == 422
+    data['items'] = [item]
+    assert (await client.post(endpoint, json={'ok': True, 'state': STATE, 'data': data})).status_code == 200
+    result = await anext(stream)
+    assert result['data']['queue_revision'] == 12 and result['data']['items'][0]['entry_id'] == 'queued-1'
+    await stream.aclose()
+
+
+async def test_native_library_read_then_remove_preserves_identity_and_revision(client, monkeypatch):
+    read = call(pt.NAME, '{"action":"list_queue"}')
+    remove = call(pt.NAME, '{"action":"remove_queue_entry","entry_id":"queued-third","queue_revision":7}')
+    streams = [FakeStream([SimpleNamespace(type='response.output_item.done', item=item), done(item)]) for item in (read, remove)]
+    streams.append(FakeStream([SimpleNamespace(type='response.output_text.delta', delta='Removed the third queued song.'), done()]))
+    provider, requests = fake_provider(monkeypatch, streams)
+    monkeypatch.setattr(service, 'get_provider', lambda *args: provider)
+    task = asyncio.create_task(client.post('/api/chat', json={'mode': 'companion', 'message': 'Remove third queued song.', 'player_control': 2, 'web_search': 'off'}))
+    responses = [dict(kind='queue', total=3, offset=0, queue_revision=7, items=[{**STATE['track'], 'index': 3, 'entry_id': 'queued-third'}]),
+                 dict(kind='mutation', target=STATE['track'], queue_revision=8)]
+    try:
+        seen = set()
+        for data in responses:
+            async with asyncio.timeout(5):
+                while not (keys := set(pt.pending) - seen): await asyncio.sleep(.01)
+            key = keys.pop(); seen.add(key)
+            assert (await client.post(f'/api/companion/player/commands/{key}/result', json={'ok': True, 'state': STATE, 'data': data})).status_code == 200
+        events = await read_events(await task)
+        assert events[-1]['type'] == 'done'
+        schema = next(schema for schema in requests[0]['tools'] if schema.get('name') == pt.NAME)
+        assert 'list_queue' in schema['parameters']['properties']['action']['enum']
+        assert 'entry_id/queue_revision' in requests[0]['instructions']
+        assert json.loads(requests[1]['input'][-1]['output'])['data']['items'][0]['entry_id'] == 'queued-third'
+        assert json.loads(requests[2]['input'][-1]['output'])['data']['queue_revision'] == 8
+    finally:
+        if not task.done(): task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
 
 
 def test_strict_native_schema_accepts_unused_nulls_and_validates_required_value():
