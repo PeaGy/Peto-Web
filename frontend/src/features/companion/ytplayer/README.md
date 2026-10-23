@@ -1,7 +1,9 @@
 # Player trong Companion
 
-Đã ghép vào Companion và được chủ web triển khai. Dùng player YouTube chính thức; không thêm thư viện,
-backend, Data API key, tìm kiếm, playlist hoặc xử lý âm thanh iframe.
+Bản Player trước đã được chủ web triển khai. Giai đoạn 2 của vòng mở rộng thư viện đã ghép vào Companion
+(23/10/2026), chưa commit/deploy: tim/yêu thích theo tài khoản, hàng đợi/phát tiếp và loop/shuffle.
+Xem [LIBRARY_STAGE2.md](./LIBRARY_STAGE2.md) cho API/lưu trữ và kiểm chứng. Dùng player YouTube chính thức,
+không thêm dependency, Data API key, tìm kiếm, playlist hoặc xử lý âm thanh iframe.
 
 ## Cách mở
 
@@ -14,8 +16,9 @@ backend, Data API key, tìm kiếm, playlist hoặc xử lý âm thanh iframe.
 - Companion còn thanh bên và cột chat nên cửa sổ hẹp (viewport ≤900 px) cũng dùng màn hình Player riêng; màn hình
   cảm ứng thấp dùng bố cục ngang. Đổi bố cục giữ nguyên iframe; vùng xem tối thiểu 200×200 khi hiển thị.
 - Lần đầu có ô **Link YouTube**; chỉ nạp API sau khi nhập link hợp lệ. Không tự chọn mẫu, tự phát hoặc lưu URL vào
-  localStorage. Đóng bằng X rồi mở lại giữ link trong lần đăng nhập hiện tại và chỉ chuẩn bị video ở trạng thái dừng.
-- Metadata nằm trong iframe chính thức, không bịa tên/kênh từ mã video. Không import sáu mẫu của prototype vào app.
+  localStorage. Đóng bằng X rồi mở lại giữ link/hàng đợi trong lần đăng nhập hiện tại và chỉ chuẩn bị video ở trạng thái dừng.
+- Tên/kênh ngoài iframe lấy qua oEmbed của máy chủ; thiếu metadata vẫn cho phát, không bịa tên từ mã video.
+  Yêu thích lưu theo tài khoản; hàng đợi/loop/shuffle trong phiên. Không import catalogue mẫu của prototype vào app.
   Chỉ hiện lỗi và hướng xử lý khi cần; link mở YouTube bên ngoài chỉ xuất hiện lúc có lỗi.
 
 ## Các điểm gắn
@@ -25,14 +28,15 @@ backend, Data API key, tìm kiếm, playlist hoặc xử lý âm thanh iframe.
   cửa sổ và trả quyền phím. Mobile rời Companion thì đóng phiên.
 - `App.tsx` và `Sidebar.tsx`: mục mobile phát yêu cầu mở Player; xóa yêu cầu khi hết phiên đăng nhập. Companion có
   key theo tài khoản và bị gỡ khi đăng xuất, nên nguồn/iframe không theo sang tài khoản khác.
-- `CompanionPlayer.tsx`: giữ link và nối `useYouTubePlayer`; portal ổn định ngoài container sân khấu để mobile
+- `CompanionPlayer.tsx`: nối `usePlayerLibrary`/`useYouTubePlayer`; portal ổn định ngoài container sân khấu để mobile
   thực sự phủ viewport khi xoay ngang. Biên desktop theo vị trí/kích thước sân khấu, có dọn observer/listener.
-- `PlayerShell.tsx` và `playerLayout.ts`: giao diện/vòng focus dùng chung với prototype, iframe không bị chuyển
+- `PlayerLibraryShell.tsx`, `PlayerLibraryPanel.tsx` và `playerLayout.ts`: giao diện/vòng focus đã duyệt; iframe không bị chuyển
   sang cây khác khi resize. Mobile đang mở làm sân khấu/chat inert; ẩn/đóng trả lại tương tác và focus.
 - `useYouTubePlayer.ts`: chưa có nguồn không tải API; nguồn ban đầu do constructor chuẩn bị, đổi video mới cue.
   Không cue lại ngay `onReady` để tránh ghi đè lần bấm Phát đầu. Đóng X, unmount, đăng xuất và `pagehide` luôn
   dừng/hủy player, gỡ iframe và dọn timer. Quay lại sau khi hủy không tự phát.
   Đổi nguồn chờ YouTube xác nhận cued/playing rồi mới bật Phát/seek; có timeout 20 giây. Âm lượng vẫn điều chỉnh được.
+  Yêu cầu phát tiếp dùng loadVideoById; token autoplay chỉ dùng một lần, không phát lại sau khi phiên bị hủy.
 
 ## Phát nền
 
@@ -70,5 +74,5 @@ có; không nối iframe vào bộ phân tích nhịp. Chưa tự giảm âm lư
 - Ma trận sáu video trên Chrome/Edge, thời gian phản hồi, mẫu quảng cáo/tài nguyên và phạm vi nghiệm thu được ghi
   trong [STAGE4_REPORT.md](./STAGE4_REPORT.md). Mô phỏng mobile không thay thế Android/Chrome thật.
 
-Giai đoạn 3 đã được chủ web deploy; bản thay đổi giai đoạn 4 trong báo cáo chưa commit/deploy.
+Bản Player trước đã được chủ web commit/deploy; bản mở rộng thư viện trong LIBRARY_STAGE2.md chưa commit/deploy.
 Không cam kết không quảng cáo, phát sau khi thoát hẳn trình duyệt hoặc hỗ trợ khóa màn hình điện thoại.

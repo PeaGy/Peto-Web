@@ -1,5 +1,41 @@
 # CLAUDE.md
 
+## Player library — giai đoạn 2 (2026-10-23)
+
+Chủ web yêu cầu giai đoạn tiếp theo sau duyệt UI. Đã ghép vào Companion thật, chưa commit/deploy:
+PlayerLibraryShell/Panel + CSS và icon riêng chuyển từ bản duyệt, không import prototype/catalogue vào app.
+Tim lưu ở SQLite theo session owner qua `/api/companion/player/favorites` (GET, POST/DELETE theo video ID),
+metadata qua `/videos/{id}` dùng oEmbed cũ. Bảng/index `player_favorites` được tạo bổ sung lúc init_db; không SQL tay.
+Hàng đợi và loop/shuffle chỉ trong phiên tài khoản; F5 trống, yêu thích vẫn còn. File nhận link video, mở ở trạng thái dừng
+hoặc thêm vào queue; chọn từ danh sách mới yêu cầu phát. UI giữ tất cả lựa chọn bố cục/heart và hai nơi bấm mode đã duyệt.
+playerQueue reducer độc lập media; ENDED của iframe mới đẩy bài, token chống sự kiện cũ/nhân đôi và lặp cùng ID.
+useYouTubePlayer hỗ trợ loadVideoById cho yêu cầu phát, không cue lại nguồn ban đầu và không phát lại token đã hủy sau X/suspend/pagehide.
+Giữ portal, phát nền desktop, ẩn mobile không mini, X/logout dừng và quyền Space/micro/giọng đọc/renderer.
+Chi tiết kiểm chứng, deploy và giới hạn: `frontend/src/features/companion/ytplayer/LIBRARY_STAGE2.md`.
+Tìm tên/playlist vẫn giai đoạn 3; nghiệm thu thật giai đoạn 4. Không tự commit/deploy hoặc chạy AI/TTS trả phí.
+
+## Player: mở rộng yêu thích và hàng đợi — giai đoạn 1 (2026-10-23)
+
+Chủ web đã commit/deploy vòng Player trước và duyệt kế hoạch mở rộng bốn giai đoạn. Đã yêu cầu triển giai đoạn 1:
+bản duyệt UI tương tác riêng tại `/prototypes/player-library/`, chưa ghép vào app, chưa commit/deploy.
+Tim desktop ở hàng điều khiển phụ; mobile ở mép phải khối tên bài/người trình bày dưới video, canh giữa hai dòng, trên timeline,
+thẳng cột với tổng thời lượng
+(chủ web sửa lại hướng trái thành phải ngày 23/10).
+File → Yêu thích (mobile menu ba chấm); hàng đợi bên phải khi frame đủ rộng, dưới khi hẹp/mobile,
+mặc định đóng. Dấu cộng giữ danh sách hiện tại và hiện chấm báo ở icon hàng đợi. Một vùng danh sách dùng chung cho
+hàng đợi/yêu thích/kết quả, không thêm tab cố định. Ô link/tên và playlist dùng dữ liệu mẫu; tìm tên không tự phát bài đầu.
+Chỉ state trong phiên, không persistence/API/iframe/audio thật. Production Player và backend chưa thay đổi.
+Bổ sung theo yêu cầu trước giai đoạn 2: hàng điều khiển chính desktop/mobile có Shuffle · Phát lại từ đầu · Phát/Tạm dừng
+· Bài tiếp theo · Loop canh giữa theo ảnh chủ web. Hai icon cạnh “Tiếp theo” trong hàng đợi dùng chung trạng thái;
+không cần mở hàng đợi để đổi mode. Âm lượng/tim desktop/icon hàng đợi ở hàng phụ; mode mặc định tắt.
+Loop chu kỳ off → all → one → off; lặp một bài chỉ khi hết bài, nút Tiếp theo vẫn bỏ qua. Shuffle giữ bài hiện tại,
+trộn bài chờ, tắt thì khôi phục thứ tự thường còn lại; đổi thứ tự bằng tay tắt shuffle. All giữ cả vòng phát, kể cả bài
+đã nghe trước lúc bật, bỏ hẳn mục đã xóa; all + shuffle trộn mỗi vòng, tránh lặp ngay tại ranh giới vòng.
+Các chế độ vẫn chỉ mô phỏng trong phiên. `queuePlayback.ts` reducer thuần dùng seed trong action để Strict Mode chạy lại ổn định.
+Chi tiết, đường dẫn mở và bước tiếp: `frontend/src/prototypes/player-library/README.md`.
+Giai đoạn 2 mới ghép yêu thích theo tài khoản, hàng đợi thật và loop/shuffle; giai đoạn 3 playlist công khai/tìm tên với Data API;
+giai đoạn 4 nghiệm thu browser/thiết bị/tài nguyên. Lệnh chat/voice để sau.
+
 ## Player YouTube trong Companion (2026-10-22)
 
 Giai đoạn 3 đã ghép Player vào Companion và chủ web đã deploy. Nút icon desktop cạnh Bối cảnh/Nhân vật và mục Player trong

@@ -1,4 +1,7 @@
 export interface YouTubeSource { videoId: string; startSeconds: number; url: string }
+/** Only the queue creates playback intents; URL parsing never enables autoplay. */
+export interface YouTubePlaybackSource extends YouTubeSource { playbackId?: string; autoplay?: boolean }
+export const youtubeSourceKey = (source: YouTubePlaybackSource) => `${source.videoId}:${source.startSeconds}${source.playbackId === undefined ? '' : `:${source.playbackId}`}`;
 
 // Cùng danh sách hostname và dạng đường dẫn với backend/shared/youtube.py.
 const HOSTS = new Set(['youtube.com', 'www.youtube.com', 'm.youtube.com', 'music.youtube.com',

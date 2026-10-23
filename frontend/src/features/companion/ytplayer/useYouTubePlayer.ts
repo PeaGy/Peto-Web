@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { loadYouTubeApi, type YouTubePlayer } from './youtubeApi';
-import type { YouTubeSource } from './youtubeUrl';
+import { parseYouTubeUrl, youtubeSourceKey, type YouTubePlaybackSource } from './youtubeUrl';
 
 export type PlayerStatus = 'loading' | 'ready' | 'playing' | 'paused' | 'buffering' | 'ended' | 'blocked' | 'suspended' | 'error';
-interface Snapshot { status: PlayerStatus; ready: boolean; playing: boolean; position: number; duration: number; volume: number; error: string }
+interface Snapshot { status: PlayerStatus; ready: boolean; playing: boolean; position: number; duration: number; volume: number; error: string; sourceKey: string; endedSerial: number }
 interface Session {
   active: boolean;
   ready: boolean;
@@ -13,7 +13,7 @@ interface Session {
   dispose: () => void;
   cue: () => void;
 }
-const sourceKey = (source: YouTubeSource) => `${source.videoId}:${source.startSeconds}`;
+const sourceKey = youtubeSourceKey;
 const finite = (value: number) => Number.isFinite(value) ? Math.max(0, value) : 0;
 const ERROR_MESSAGES: Record<number, string> = {
   2: 'YouTube không nhận được mã video hợp lệ.',
@@ -25,7 +25,7 @@ const ERROR_MESSAGES: Record<number, string> = {
 };
 
 /** Một iframe mỗi phiên. Desktop có thể giữ phát khi đổi tab/thu nhỏ; pagehide, đóng và unmount luôn giải phóng. */
-export function useYouTubePlayer(source: YouTubeSource | null, enabled: boolean, allowBackground = false) {
+export function useYouTubePlayer(source: YouTubePlaybackSource | null, enabled: boolean, allowBackground = false) {
   const hasSource = source !== null;
   const container = useRef<HTMLDivElement>(null);
   const latestSource = useRef(source);
@@ -35,14 +35,16 @@ export function useYouTubePlayer(source: YouTubeSource | null, enabled: boolean,
   const latestBackground = useRef(allowBackground);
   latestBackground.current = allowBackground;
   const session = useRef<Session | null>(null);
+  const handledAutoplay = useRef<string | null>(null);
   const volume = useRef(60);
   const [visible, setVisible] = useState(() => !document.hidden);
   const canRunInPage = visible || allowBackground;
   const [pageActive, setPageActive] = useState(true);
   const [attempt, setAttempt] = useState(0);
-  const [snapshot, setSnapshot] = useState<Snapshot>({ status: 'loading', ready: false, playing: false, position: source?.startSeconds ?? 0, duration: 0, volume: 60, error: '' });
+  const [snapshot, setSnapshot] = useState<Snapshot>({ status: 'loading', ready: false, playing: false, position: source?.startSeconds ?? 0, duration: 0, volume: 60, error: '', sourceKey: '', endedSerial: 0 });
 
   const stop = useCallback(() => {
+    if (latestSource.current) handledAutoplay.current = sourceKey(latestSource.current);
     session.current?.dispose();
     setSnapshot(value => ({ ...value, status: 'suspended', ready: false, playing: false }));
   }, []);
@@ -105,7 +107,10 @@ export function useYouTubePlayer(source: YouTubeSource | null, enabled: boolean,
         if (alive() && current.pendingCue) publish({ status: 'error', ready: false, playing: false, error: 'YouTube phản hồi quá lâu. Hãy kiểm tra kết nối hoặc thử lại.' });
       }, 20000);
       try {
-        current.player.cueVideoById({ videoId: next.videoId, startSeconds: next.startSeconds });
+        const play = next.autoplay && handledAutoplay.current !== current.key;
+        handledAutoplay.current = current.key;
+        if (play) current.player.loadVideoById({ videoId: next.videoId, startSeconds: next.startSeconds });
+        else current.player.cueVideoById({ videoId: next.videoId, startSeconds: next.startSeconds });
         window.clearInterval(poll);
         poll = window.setInterval(sync, 500);
       } catch {
@@ -134,17 +139,24 @@ export function useYouTubePlayer(source: YouTubeSource | null, enabled: boolean,
             current.ready = true;
             event.target.setVolume(volume.current);
             if (volume.current === 0) event.target.mute();
-            publish({ status: 'ready', ready: true, playing: false, position: next.startSeconds, duration: 0, error: '' });
+            publish({ status: 'ready', ready: true, playing: false, position: next.startSeconds, duration: 0, error: '', sourceKey: current.key });
             poll = window.setInterval(sync, 500);
             // Chỉ cue nếu người dùng đã đổi nguồn trong lúc iframe đang khởi tạo.
             cue();
             sync();
+            // A user-selected queue item may start on first mount. Never replay a consumed intent after suspend/close.
+            if (latestSource.current && current.key === sourceKey(next) && !current.pendingCue && next.autoplay && handledAutoplay.current !== current.key) {
+              handledAutoplay.current = current.key;
+              event.target.playVideo();
+            }
           },
           onStateChange: event => {
             if (!alive()) return;
             if (current.pendingCue) {
               // cue là bất đồng bộ: chưa bật controls khi nguồn cũ vẫn đang chuyển trạng thái.
               if (event.data !== 5 && event.data !== 1) return;
+              const url = current.player?.getVideoUrl?.();
+              if (url && parseYouTubeUrl(url)?.videoId !== latestSource.current?.videoId) return;
               current.pendingCue = false;
               window.clearTimeout(readyTimer);
             }
@@ -152,6 +164,7 @@ export function useYouTubePlayer(source: YouTubeSource | null, enabled: boolean,
             setSnapshot(value => {
               if ((value.status === 'error' || value.status === 'blocked') && event.data !== 1) return value;
               return { ...value, ready: current.ready, status: status[event.data] ?? 'ready', playing: event.data === 1,
+                sourceKey: current.key, endedSerial: value.endedSerial + (event.data === 0 ? 1 : 0),
                 ...(event.data === 1 ? { ready: current.ready, error: '' } : {}) };
             });
             if (event.data === 1) {
@@ -166,7 +179,11 @@ export function useYouTubePlayer(source: YouTubeSource | null, enabled: boolean,
             window.clearTimeout(readyTimer);
             publish({ status: 'error', ready: false, playing: false, error: `${ERROR_MESSAGES[event.data] ?? 'YouTube không phát được video này.'} (Mã ${event.data})` });
           },
-          onAutoplayBlocked: () => publish({ status: 'blocked', playing: false, error: 'Trình duyệt đã chặn phát. Hãy bấm nút Phát trực tiếp trong video YouTube.' }),
+          onAutoplayBlocked: () => {
+            current.pendingCue = false;
+            window.clearTimeout(readyTimer);
+            publish({ status: 'blocked', ready: current.ready, sourceKey: current.key, playing: false, error: 'Trình duyệt đã chặn phát. Hãy bấm nút Phát trực tiếp trong video YouTube.' });
+          },
         },
       });
       const iframe = current.player.getIframe();
@@ -187,7 +204,7 @@ export function useYouTubePlayer(source: YouTubeSource | null, enabled: boolean,
     // Nguồn được cập nhật bằng cue ở Effect riêng để không tạo lại iframe.
   }, [enabled, hasSource, canRunInPage, pageActive, attempt, stop]);
 
-  useEffect(() => { session.current?.cue(); }, [source?.videoId, source?.startSeconds]);
+  useEffect(() => { session.current?.cue(); }, [source?.videoId, source?.startSeconds, source?.playbackId]);
 
   function command(action: (player: YouTubePlayer) => void, allowPending = false) {
     const current = session.current;

@@ -18,6 +18,7 @@ export const companionMessages = [
 /** API giả chỉ nằm trong bộ kiểm thử; mọi yêu cầu ra ngoài đều bị chặn. */
 export async function mockPeto(page: Page, options: { long?: boolean; broken?: boolean; preservePreferences?: boolean } = {}) {
   const state = {
+    playerFavorites: new Map<string, { video_id: string; title: string; artist: string }>(),
     posts: 0,
     recoveryReady: !options.broken,
     messages: options.long ? Array.from({ length: 40 }, (_, i) => ({ id: i + 1, role: i % 2 ? 'assistant' : 'user', content: `Tin nhắn lịch sử ${i + 1}: Nội dung đủ dài để kiểm tra cuộn và nhập liệu.` })) : [...chatMessages],
@@ -46,6 +47,15 @@ export async function mockPeto(page: Page, options: { long?: boolean; broken?: b
     }
     if (!url.pathname.startsWith('/api/')) return route.continue();
     const json = (body: unknown) => route.fulfill({ json: body });
+    if (url.pathname.startsWith('/api/companion/player/')) {
+      const videoId = url.pathname.split('/').at(-1)!;
+      const title = ({ Soy4jGPHr3g: 'Tetris', aircAruvnKk: 'But what is a neural network?', e1xCOsgWG0M: 'The Vampire' } as Record<string, string>)[videoId] ?? `Video ${videoId}`;
+      const info = { video_id: videoId, title, artist: videoId === 'Soy4jGPHr3g' ? 'Kasane Teto SV' : 'Test channel' };
+      if (url.pathname.includes('/videos/')) return json(info);
+      if (route.request().method() === 'POST') state.playerFavorites.set(videoId, info);
+      if (route.request().method() === 'DELETE') state.playerFavorites.delete(videoId);
+      return json({ favorites: Array.from(state.playerFavorites.values()).reverse() });
+    }
     if (url.pathname === '/api/auth/me') return json({ authenticated: true, login_configured: true,
       user: { id: 'test-account', provider: 'discord', username: 'demo', display_name: 'Người kiểm thử', avatar_url: '' } });
     if (url.pathname === '/api/app-info') return json({ name: 'Peto', avatar_url: null });

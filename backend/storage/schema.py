@@ -434,4 +434,6 @@ async def init_db() -> None:
         await init_chat_turns(db)
         from storage.chat_context import init_tables as init_chat_context
         await init_chat_context(db)
+        from storage.player import init_tables as init_player_tables
+        await init_player_tables(db)
         await db.commit()

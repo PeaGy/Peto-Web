@@ -3,7 +3,7 @@ import { act, render } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { useYouTubePlayer } from '../src/features/companion/ytplayer/useYouTubePlayer';
 import type { YouTubeOptions } from '../src/features/companion/ytplayer/youtubeApi';
-import { parseYouTubeUrl, type YouTubeSource } from '../src/features/companion/ytplayer/youtubeUrl';
+import { parseYouTubeUrl, youtubeSourceKey, type YouTubePlaybackSource } from '../src/features/companion/ytplayer/youtubeUrl';
 
 const load = vi.hoisted(() => vi.fn());
 vi.mock('../src/features/companion/ytplayer/youtubeApi', () => ({ loadYouTubeApi: load }));
@@ -14,6 +14,7 @@ class FakePlayer {
   time = 0; duration = 240; volume = 60; muted = false;
   constructor(element: HTMLElement, options: YouTubeOptions) { this.options = options; element.replaceWith(this.iframe); players.push(this); }
   cueVideoById = vi.fn((source: { startSeconds: number }) => { this.time = source.startSeconds; this.state(5); });
+  loadVideoById = vi.fn((source: { startSeconds: number }) => { this.time = source.startSeconds; this.state(1); });
   playVideo = vi.fn(() => this.state(1));
   pauseVideo = vi.fn(() => this.state(2));
   stopVideo = vi.fn();
@@ -33,7 +34,7 @@ class FakePlayer {
 let player: ReturnType<typeof useYouTubePlayer>;
 const first = parseYouTubeUrl('https://youtu.be/Soy4jGPHr3g')!;
 const second = parseYouTubeUrl('https://youtu.be/aircAruvnKk?t=20')!;
-function Harness({ source = first, enabled = true, background = false }: { source?: YouTubeSource | null; enabled?: boolean; background?: boolean }) {
+function Harness({ source = first, enabled = true, background = false }: { source?: YouTubePlaybackSource | null; enabled?: boolean; background?: boolean }) {
   player = useYouTubePlayer(source, enabled, background);
   return <div ref={player.container} />;
 }
@@ -80,6 +81,36 @@ it('Strict Mode tạo một player, cue không tự phát và đổi video khôn
   expect(player.playing).toBe(false);
   view.unmount();
   expect(instance.destroy).toHaveBeenCalledTimes(1);
+});
+it('yêu cầu phát tiếp dùng loadVideoById trong cùng iframe, lặp cùng video vẫn nhận một yêu cầu mới', async () => {
+  const view = await mount(), instance = players[0], iframe = document.querySelector('iframe');
+  const queued = { ...second, playbackId: '2', autoplay: true };
+  view.rerender(<StrictMode><Harness source={queued} /></StrictMode>);
+  expect(instance.loadVideoById).toHaveBeenCalledExactlyOnceWith({ videoId: second.videoId, startSeconds: 20 });
+  expect(player.playing).toBe(true); expect(player.sourceKey).toBe(youtubeSourceKey(queued));
+  act(() => instance.state(0)); const serial = player.endedSerial;
+  view.rerender(<StrictMode><Harness source={{ ...queued, playbackId: '3' }} /></StrictMode>);
+  expect(instance.loadVideoById).toHaveBeenCalledTimes(2); expect(player.endedSerial).toBe(serial);
+  expect(document.querySelector('iframe')).toBe(iframe);
+});
+it('chọn bài yêu thích trước lúc ready phát một lần, suspend rồi quay lại không tự phát lại', async () => {
+  const source = { ...first, playbackId: '1', autoplay: true };
+  const view = render(<StrictMode><Harness source={source} /></StrictMode>);
+  await act(async () => {}); act(() => players[0].ready());
+  expect(players[0].playVideo).toHaveBeenCalledOnce();
+  view.rerender(<StrictMode><Harness source={source} enabled={false} /></StrictMode>);
+  view.rerender(<StrictMode><Harness source={source} enabled /></StrictMode>);
+  await act(async () => {}); act(() => players[1].ready());
+  expect(players[1].playVideo).not.toHaveBeenCalled(); expect(player.playing).toBe(false);
+});
+it('load bài mới bị chặn báo blocked hữu hạn, không lặp lại autoplay hoặc bị timeout ghi đè', async () => {
+  const view = await mount(), instance = players[0];
+  instance.loadVideoById.mockImplementation(() => instance.options.events.onAutoplayBlocked());
+  view.rerender(<StrictMode><Harness source={{ ...second, playbackId: '2', autoplay: true }} /></StrictMode>);
+  expect(player.status).toBe('blocked'); expect(player.ready).toBe(true);
+  await act(async () => { await vi.advanceTimersByTimeAsync(25000); });
+  expect(player.status).toBe('blocked'); expect(instance.loadVideoById).toHaveBeenCalledOnce();
+  act(() => player.setPlaying(true)); expect(player.playing).toBe(true);
 });
 it('phát, seek, volume và controls native đều đồng bộ qua API', async () => {
   await mount();
