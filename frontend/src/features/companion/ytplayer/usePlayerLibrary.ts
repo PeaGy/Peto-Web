@@ -25,6 +25,7 @@ export function usePlayerLibrary(): PlayerLibrary & {
   readFavorites: (signal: AbortSignal) => Promise<MediaTrack[]>;
   setFavorite: (item: MediaTrack, save: boolean, signal?: AbortSignal) => Promise<MediaTrack[]>;
   appendFavorites: (items: MediaTrack[]) => { added: number; skipped_duplicates: number; not_added_capacity: number; keys: string[] };
+  appendControlled: (items: MediaTrack[]) => { added: number; not_added_capacity: number; keys: string[] };
 } {
   const [state, dispatch] = useReducer(playerQueueReducer, undefined, emptyQueue);
   const stateRef = useRef(state); stateRef.current = state;
@@ -173,6 +174,13 @@ export function usePlayerLibrary(): PlayerLibrary & {
     return { added: selected.length, skipped_duplicates: items.length - unique.length, not_added_capacity: unique.length - selected.length,
       keys: stateRef.current.queue.filter(entry => !previous.has(entry.key)).map(entry => entry.key) };
   }
+  function appendControlled(items: MediaTrack[]) {
+    const value = stateRef.current, previous = new Set(value.queue.map(entry => entry.key));
+    const selected = items.slice(0, Math.max(0, 200 - value.queue.length));
+    if (selected.length) append(selected, false);
+    return { added: selected.length, not_added_capacity: items.length - selected.length,
+      keys: stateRef.current.queue.filter(entry => !previous.has(entry.key)).map(entry => entry.key) };
+  }
   function controlEntry(operation: 'remove' | 'move' | 'play', key: string, revision: number, position?: number) {
     const action = { type: 'control-entry' as const, operation, key, revision, position, seed: seed() };
     const before = stateRef.current, after = playerQueueReducer(before, action);
@@ -194,7 +202,7 @@ export function usePlayerLibrary(): PlayerLibrary & {
     next: () => dispatch({ type: 'next', seed: seed() }), restart: () => dispatch({ type: 'restart' }),
     setRepeat: (repeat: 'off' | 'all' | 'one') => dispatch({ type: 'set-repeat', repeat, seed: seed() }),
     ended, updateDuration,
-    queueRevision: state.revision, currentEntryKey: state.current?.key ?? null, nextTracks: nextPlayerTracks(state), readFavorites, setFavorite, appendFavorites, controlEntry,
+    queueRevision: state.revision, currentEntryKey: state.current?.key ?? null, nextTracks: nextPlayerTracks(state), readFavorites, setFavorite, appendFavorites, appendControlled, controlEntry,
     move: (key, offset) => dispatch({ type: 'move', key, offset }), remove: key => dispatch({ type: 'remove', key }),
     playEntry: entry => dispatch({ type: 'play-entry', key: entry.key }),
     toggleShuffle: () => dispatch({ type: 'shuffle', seed: seed() }), cycleRepeat: () => dispatch({ type: 'repeat', seed: seed() }),

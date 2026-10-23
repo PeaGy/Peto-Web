@@ -20,6 +20,7 @@ BASE_ACTIONS = ('status', 'open', 'hide', 'close', 'play', 'pause', 'next', 'res
            'seek', 'set_volume', 'mute', 'unmute', 'set_shuffle', 'set_repeat')
 ACTIONS = (*BASE_ACTIONS, 'list_queue', 'list_favorites', 'next_track', 'remove_queue_entry', 'move_queue_entry',
            'play_queue_entry', 'set_favorite', 'enqueue_favorite', 'enqueue_favorites')
+DISCOVERY_ACTIONS = ('search_videos', 'play_video', 'enqueue_video', 'enqueue_playlist')
 SCHEMA = {'type': 'function', 'name': NAME, 'strict': True, 'description': (
     'Read or control the existing Player in the browser sending this Companion conversation. '
     'Use status for what we are listening to. Use actions for a user request; an offer alone is not a request to play. '
@@ -59,10 +60,28 @@ LEGACY_SCHEMA['description'] = ('Read/control existing playback only. No queue/f
                                 'next skips to the next queued song; restart starts the current song again. '
                                 'set_repeat uses off/all/one, set_shuffle uses enabled. Use null for unused arguments.')
 
+DISCOVERY_SCHEMA = deepcopy(SCHEMA)
+DISCOVERY_SCHEMA['description'] = SCHEMA['description'].replace('No video search or playlist import yet. ', '') + (
+    ' search_videos returns actual YouTube results without playing; choose a matching result for a play request, '
+    'or offer choices if ambiguous. play_video plays a video_id observed this turn or a url supplied by the user. '
+    'enqueue_video appends one such video without playing. Never invent video IDs or URLs. '
+    'enqueue_playlist appends a user-supplied playlist url without changing playback; report added/skipped/capacity/truncated accurately. '
+    'A video url containing list still selects just that video, unless the user explicitly requests the playlist. '
+    'query/page_token are only for search_videos; url is only for play_video/enqueue_video/enqueue_playlist. '
+    'For play_video/enqueue_video supply exactly one of video_id or url. Null for unused fields.')
+DISCOVERY_SCHEMA['parameters']['properties'].update({
+    'action': {'type': 'string', 'enum': [*ACTIONS, *DISCOVERY_ACTIONS]},
+    'query': {'type': ['string', 'null'], 'minLength': 1, 'maxLength': 200},
+    'url': {'type': ['string', 'null'], 'maxLength': 4096},
+    'page_token': {'type': ['string', 'null'], 'maxLength': 512, 'pattern': r'^[A-Za-z0-9_+=/\-]*$'},
+})
+DISCOVERY_SCHEMA['parameters']['properties']['video_id']['description'] = 'Observed video for play_video/enqueue_video, or existing favorite actions; otherwise null.'
+DISCOVERY_SCHEMA['parameters']['required'] = list(DISCOVERY_SCHEMA['parameters']['properties'])
+
 
 class Command(BaseModel):
     model_config = ConfigDict(extra='forbid', strict=True, allow_inf_nan=False)
-    action: Literal[*ACTIONS]
+    action: Literal[*ACTIONS, *DISCOVERY_ACTIONS]
     volume: int | None = Field(default=None, ge=0, le=100)
     seconds: float | None = Field(default=None, ge=0, le=604800)
     enabled: bool | None = None
@@ -73,17 +92,23 @@ class Command(BaseModel):
     queue_revision: int | None = Field(default=None, ge=0)
     position: int | None = Field(default=None, ge=1, le=200)
     video_id: str | None = Field(default=None, pattern=r'^[A-Za-z0-9_-]{11}$')
+    query: str | None = Field(default=None, min_length=1, max_length=200)
+    url: str | None = Field(default=None, max_length=4096)
+    page_token: str | None = Field(default=None, max_length=512, pattern=r'^[A-Za-z0-9_+=/\-]*$')
 
     @model_validator(mode='after')
     def arguments(self):
         required = {'set_volume': {'volume'}, 'seek': {'seconds'}, 'set_shuffle': {'enabled'}, 'set_repeat': {'repeat'},
                     'remove_queue_entry': {'entry_id', 'queue_revision'}, 'move_queue_entry': {'entry_id', 'queue_revision', 'position'},
                     'play_queue_entry': {'entry_id', 'queue_revision'}, 'set_favorite': {'enabled'},
-                    'enqueue_favorite': {'video_id'}}.get(self.action, set())
-        optional = {'list_queue': {'offset', 'limit'}, 'list_favorites': {'offset', 'limit'}, 'set_favorite': {'video_id'}}.get(self.action, set())
+                    'enqueue_favorite': {'video_id'}, 'search_videos': {'query'}, 'enqueue_playlist': {'url'}}.get(self.action, set())
+        optional = {'list_queue': {'offset', 'limit'}, 'list_favorites': {'offset', 'limit'}, 'set_favorite': {'video_id'},
+                    'search_videos': {'page_token'}, 'play_video': {'video_id', 'url'}, 'enqueue_video': {'video_id', 'url'}}.get(self.action, set())
         supplied = {name for name in self.model_fields_set - {'action'} if getattr(self, name) is not None}
         if not required <= supplied or not supplied <= required | optional:
             raise ValueError('Supply only the argument required by this action.')
+        if self.action in ('play_video', 'enqueue_video') and len(supplied & {'video_id', 'url'}) != 1:
+            raise ValueError('Supply exactly one observed video ID or user URL.')
         return self
 
 
@@ -105,6 +130,7 @@ class Snapshot(BaseModel):
     shuffle: bool
     repeat: Literal['off', 'all', 'one']
     queue_count: int = Field(ge=0, le=200)
+    window_revision: int | None = Field(default=None, ge=0)
 
 
 class Result(BaseModel):
@@ -147,23 +173,35 @@ pending: dict[str, tuple[str, asyncio.Future]] = {}
 
 
 class PlayerSession:
-    def __init__(self, owner: str, version: int = 1):
+    def __init__(self, owner: str, version: int = 1, user_text: str = ''):
         self.owner = owner
         self.version = version
         self._queue_revision: int | None = None
         self._queue_items: dict[str, LibraryItem] = {}
+        from features.companion.player_discovery_tools import Discovery
+        self.discovery = Discovery(owner, user_text)
 
     @property
     def schema(self):
-        return SCHEMA if self.version >= 2 else LEGACY_SCHEMA
+        return DISCOVERY_SCHEMA if self.version >= 3 else SCHEMA if self.version >= 2 else LEGACY_SCHEMA
 
     async def run(self, arguments: str):
         try:
             command = Command.model_validate(json.loads(arguments))
             if self.version < 2 and command.action not in BASE_ACTIONS:
                 raise ValueError('Old browser')
+            if self.version < 3 and (command.action in DISCOVERY_ACTIONS or any(getattr(command, field) is not None for field in ('query', 'url', 'page_token'))):
+                raise ValueError('Old browser')
         except (ValueError, TypeError, ValidationError):
             yield {'ok': False, 'error': 'Invalid Player action or arguments; nothing was executed.'}
+            return
+
+        if command.action in DISCOVERY_ACTIONS:
+            self._queue_revision = None
+            self._queue_items.clear()
+            async with aclosing(self.discovery.run(command, self._request)) as operation:
+                async for item in operation:
+                    yield item
             return
 
         target = None
@@ -216,6 +254,8 @@ class PlayerSession:
                 result = {'ok': True, 'state': checked['state'], 'data': data,
                           'change': {'action': command.action, 'entry_id': command.entry_id,
                                      'from_position': target.index, 'to_position': moved.index}}
+        if self.version >= 3:
+            self.discovery.observe(result)
         yield result
 
     def _observe_queue(self, command: Command, result: dict) -> bool:
@@ -239,12 +279,12 @@ class PlayerSession:
         self._queue_items.update((item.entry_id, item) for item in data.items)
         return True
 
-    async def _request(self, command: Command):
+    async def _request(self, command: Command, **payload):
         key = secrets.token_urlsafe(24)
         future = asyncio.get_running_loop().create_future()
         pending[key] = (self.owner, future)
         try:
-            yield StreamChunk('player_command', info={'id': key, 'expires_at': round((time.time() + ACK_TIMEOUT) * 1000), **command.model_dump(exclude_none=True)})
+            yield StreamChunk('player_command', info={'id': key, 'expires_at': round((time.time() + ACK_TIMEOUT) * 1000), **command.model_dump(exclude_none=True), **payload})
             try:
                 result = await asyncio.wait_for(future, timeout=ACK_TIMEOUT)
             except TimeoutError:

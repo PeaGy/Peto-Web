@@ -50,7 +50,7 @@ it('open waits for the lazy player to register and does not toggle an already-vi
   expect(execute).toHaveBeenCalledOnce();
 });
 
-it('only Companion advertises and executes player SSE; acknowledgement finishes before final text', async () => {
+it.each([true, 2, 3] as const)('only Companion advertises protocol %s and acknowledges player SSE before final text', async version => {
   const command = cmd('pause');
   const event = (value: object) => `data: ${JSON.stringify(value)}\n\n`;
   const order: string[] = [];
@@ -60,10 +60,10 @@ it('only Companion advertises and executes player SSE; acknowledgement finishes 
   });
   vi.stubGlobal('fetch', fetchMock);
   const onPlayerCommand = vi.fn(async (c: PlayerCommand) => { order.push('action'); await acknowledgePlayer(c.id, { ok: true, state: emptyPlayer() }, signal()); });
-  const base = { message: 'Pause', conversationId: null, effort: 'low' as const, playerControl: true };
+  const base = { message: 'Pause', conversationId: null, effort: 'low' as const, playerControl: version };
   await sendMessage({ ...base, mode: 'companion' }, { onPlayerCommand, onDelta: () => { order.push('reply'); } });
   expect(order).toEqual(['action', 'ack', 'reply']);
-  expect(JSON.parse((fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].body as string).player_control).toBe(1);
+  expect(JSON.parse((fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].body as string).player_control).toBe(typeof version === 'number' ? version : 1);
   onPlayerCommand.mockClear();
   await sendMessage({ ...base, mode: 'chat' }, { onPlayerCommand });
   expect(onPlayerCommand).not.toHaveBeenCalled();

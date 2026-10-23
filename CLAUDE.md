@@ -1,5 +1,21 @@
 # CLAUDE.md
 
+## Companion điều khiển Player — giai đoạn 3 (2026-10-23)
+
+Owner đã deploy `7b912f4`, xác nhận queue đổi đúng không cần F5 rồi yêu cầu bước tiếp. Đã ghép native action v3
+search_videos/play_video/enqueue_video/enqueue_playlist; chưa commit/deploy. Discovery tách file, dùng lại catalogue
+với key/cache/admission cũ, link video dùng oEmbed. Search không tự phát; chọn ID đã quan sát trong turn hoặc URL
+người dùng đưa trong ngữ cảnh. Metadata/danh sách tracks do server tạo, model không tự điền title/artist.
+Video có list vẫn là riêng video; playlist chỉ nhập khi yêu cầu, append giữ nguồn/thứ tự/trùng và báo counts/cắt.
+Client kiểm source playing và entry keys sau append; window_revision bảo vệ X trong lúc tra cứu/chờ phát, không
+mở lại muộn. Prompt khả năng riêng có chọn theo nhân vật/hội thoại/favorites/search và đề nghị nhạc → đồng ý;
+không regex ý định, không đổi persona/examples/UI. Backend cấp đúng v1/v2/v3, Gemini BYO vẫn không function calling.
+Không DB/key/dependency/persistence mới. Deploy backend trước/cùng frontend, rebuild frontend + restart backend.
+Tab v2 cũ vẫn giữ phiên và chức năng cũ; nhận discovery cần bundle v3, tải lại sau khi kết thúc phiên nghe vì F5
+vẫn mất queue RAM. Không tự gửi chat/gọi AI/TTS hoặc catalogue production. Backend 171 ca đạt; frontend 169 ca,
+Chrome desktop/mobile mô phỏng 32 đạt/4 skip; build đạt. Kiểm chứng/tiêu chí thử thật
+trong `frontend/src/features/companion/ytplayer/CONTROL_STAGE3.md`.
+
 ## Player — kiểm chứng đổi thứ tự sau báo lỗi (2026-10-23)
 
 Owner đã commit/deploy giai đoạn 2 ở `19706c2`. Báo Peto nhận chuyển bài thứ hai lên đầu nhưng nêu “Stay With Me”
@@ -13,7 +29,8 @@ Dùng action list_queue sẵn của client v2, không cần F5/rebuild frontend;
 chat đang chạy. Tab v1 vẫn chỉ có playback. Prompt khả năng ngắn yêu cầu dùng kết quả tool, không coi lời “done”
 hoặc tên từ lịch sử là bằng chứng. Không thay persona/examples/UI/persistence/DB/key/dependency.
 Backend 118 ca đạt (AI/browser giả), bao gồm native provider → move → readback trước final, sai target/revision/order,
-phân trang và hủy readback. Không thêm lượt gọi model cho readback. Chưa test AI thật sau sửa, chưa commit/deploy.
+phân trang và hủy readback. Không thêm lượt gọi model cho readback. Owner đã commit/deploy `7b912f4` và xác nhận
+Peto đổi vị trí đúng mà không cần F5. Agent không tự gửi thêm chat AI thật.
 Chi tiết thêm trong `frontend/src/features/companion/ytplayer/CONTROL_STAGE2.md`.
 
 ## Companion điều khiển Player — giai đoạn 2 (2026-10-23)

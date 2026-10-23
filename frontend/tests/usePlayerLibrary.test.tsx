@@ -53,6 +53,19 @@ it('bulk favorites skip duplicate video IDs, fill remaining capacity, keep playb
   expect(counts!).toMatchObject({ added: 0, skipped_duplicates: 4, not_added_capacity: 3 });
 });
 
+it('chat playlist append preserves duplicates, applies remaining capacity atomically and keeps the current source', async () => {
+  const view = renderHook(() => usePlayerLibrary());
+  await waitFor(() => expect(view.result.current.loadingFavorites).toBe(false));
+  act(() => { view.result.current.select(saved); view.result.current.append(Array.from({ length: 198 }, () => saved)); });
+  const before = view.result.current.source;
+  let counts!: ReturnType<typeof view.result.current.appendControlled>;
+  act(() => { counts = view.result.current.appendControlled([saved, saved, saved]); });
+  expect(counts).toMatchObject({ added: 2, not_added_capacity: 1 });
+  expect(new Set(counts.keys).size).toBe(2);
+  expect(view.result.current.queue).toHaveLength(200); expect(view.result.current.source).toBe(before);
+  expect(view.result.current.queue.slice(-2).map(entry => entry.track.videoId)).toEqual([saved.videoId, saved.videoId]);
+});
+
 it('aborting a chat favorites request clears busy flags and prevents a late response from replacing new data', async () => {
   const view = renderHook(() => usePlayerLibrary());
   await waitFor(() => expect(view.result.current.loadingFavorites).toBe(false));

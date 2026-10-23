@@ -688,7 +688,7 @@ export async function sendMessage(
     providerKey?: string;
     /** Khóa Tavily cho nhà cung cấp không có tìm kiếm riêng. */
     searchKey?: string;
-    playerControl?: boolean | 1 | 2;
+    playerControl?: boolean | 1 | 2 | 3;
   },
   handlers: ChatHandlers,
   signal?: AbortSignal,
@@ -712,7 +712,7 @@ export async function sendMessage(
       attachments: payload.attachments ?? [],
       mode: payload.mode ?? "chat",
       model: payload.model ?? "peto",
-      ...(payload.mode === 'companion' && payload.playerControl ? { player_control: payload.playerControl === 2 ? 2 : 1 } : {}),
+      ...(payload.mode === 'companion' && payload.playerControl ? { player_control: typeof payload.playerControl === 'number' ? payload.playerControl : 1 } : {}),
       ...(payload.provider && payload.providerKey ? { provider: payload.provider } : {}),
     }),
     signal,

@@ -17,7 +17,7 @@ async function setup(page: Page, mobile: boolean, favorites: { video_id: string;
     await route.fulfill({ json: { accepted: true } });
   });
   await page.route('**/api/chat', async route => {
-    expect(route.request().postDataJSON().player_control).toBe(2);
+    expect(route.request().postDataJSON().player_control).toBe(3);
     const event = (value: object) => `data: ${JSON.stringify(value)}\n\n`;
     await route.fulfill({ contentType: 'text/event-stream', body:
       event({ type: 'meta', conversation_id: 'A', effort: 'low' })
@@ -47,6 +47,36 @@ const favorites = [
   { video_id: 'aircAruvnKk', title: 'But what is a neural network?', artist: 'Test channel' },
   { video_id: 'HDz9dSuAI4s', title: 'Miku concert', artist: 'Test channel' },
 ];
+
+test('chat discovery appends resolved tracks without opening, plays from cold/closed state and cancels stale lookups', async ({ page }, info) => {
+  test.setTimeout(90000);
+  const { issue, apiRequests } = await setup(page, info.project.name === 'mobile');
+  const tracks = favorites.map(item => ({ ...item, duration: 143, start_seconds: 0 }));
+  const added = await issue('enqueue_playlist', { tracks: [tracks[0], tracks[0], tracks[1]], window_revision: 0 }, true);
+  expect(added).toMatchObject({ ok: true, state: { window: 'closed', queue_count: 3 }, data: { added: 3 } });
+  expect(apiRequests()).toBe(0); await expect(shell(page)).toHaveCount(0);
+  const played = await issue('play_video', { tracks: [tracks[2]], window_revision: 0 });
+  expect(played).toMatchObject({ ok: true, state: { status: 'playing', track: { video_id: tracks[2].video_id }, queue_count: 3 } });
+  const before = (await stats(page)).cues.length;
+  expect((await issue('play_video', { tracks: [{ ...tracks[2], start_seconds: 40 }], window_revision: 0 })).ok).toBe(true);
+  expect((await stats(page)).cues.length).toBe(before + 1);
+  const append = await issue('enqueue_video', { tracks: [tracks[3]], window_revision: 0 });
+  expect(append).toMatchObject({ ok: true, state: { status: 'playing', track: { video_id: tracks[2].video_id }, queue_count: 4 } });
+  expect((await issue('close')).ok).toBe(true);
+  const stopped = await issue('status'); expect(stopped.state?.window_revision).toBe(1);
+  const stale = await issue('play_video', { tracks: [tracks[1]], window_revision: 0 });
+  expect(stale.ok).toBe(false);
+  expect((await issue('enqueue_playlist', { tracks, window_revision: 0 })).ok).toBe(false);
+  expect((await issue('status')).state?.queue_count).toBe(4);
+  await expect(page.locator('.yt-youtube-container iframe')).toHaveCount(0);
+  expect((await issue('play_video', { tracks: [tracks[1]], window_revision: 1 })).ok).toBe(true);
+  expect(apiRequests()).toBe(1); expect((await stats(page)).created).toBe(2);
+  const bad = await issue('enqueue_video', { tracks: [{ ...tracks[0], video_id: 'not valid' }], window_revision: 1 });
+  expect(bad.ok).toBe(false); expect((await issue('status')).state?.queue_count).toBe(4);
+  await page.evaluate(() => { (window as unknown as { __ytFake: FakeStats }).__ytFake.blocked = true; });
+  expect((await issue('play_video', { tracks: [tracks[0]], window_revision: 1 })).ok).toBe(false);
+  expect((await stats(page)).created).toBe(2);
+});
 
 test('library chat reads fresh favorites without opening, edits stable queue entries and reports actual loop/shuffle next', async ({ page }, info) => {
   test.setTimeout(90000);

@@ -12,7 +12,7 @@ cũ nên chưa biết lệnh thực sự đã chạy hay model chỉ nói đã c
 Không gửi chat/gọi AI hoặc sửa hàng đợi/yêu thích production để điều tra. Không yêu cầu F5 khi đang nghe vì
 queue chỉ tồn tại trong RAM; tải lại mất phiên nghe, favorites vẫn lưu.
 
-Bản sửa chưa commit/deploy, chỉ thay backend và prompt khả năng:
+Bản sửa đã được chủ web commit/deploy ở `7b912f4`, xác nhận chuyển queue đúng mà không cần F5. Chỉ thay backend và prompt khả năng:
 
 - Remove/move/play phải dùng entry ID + revision đã đọc trong chính turn đó; ID đoán hoặc từ turn trước bị từ chối
   trước khi gửi lệnh xuống browser. Client vẫn kiểm revision lúc reducer thực thi.

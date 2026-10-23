@@ -455,7 +455,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
         ? { ...message, attachments: optimisticImages.map((image, i) => ({ ...image, url: `data:${attachments[i].mime || 'image/png'};base64,${attachments[i].data}` })) }
         : message));
       await sendMessage(
-        { message: text, conversationId, attachments, effort: "low", webSearch: search ? "auto" : "off", mode: "companion", playerControl: 2,
+        { message: text, conversationId, attachments, effort: "low", webSearch: search ? "auto" : "off", mode: "companion", playerControl: 3,
           ...(brain ? { provider: brain.provider, providerKey: brain.providerKey, searchKey: brain.searchKey } : {}) },
         {
           onPlayerCommand: async command => {

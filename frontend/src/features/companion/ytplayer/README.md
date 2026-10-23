@@ -10,8 +10,10 @@ Dùng player YouTube chính thức, không thêm dependency hoặc xử lý âm 
 
 Giai đoạn 1 điều khiển bằng chat (23/10/2026) đã được chủ web deploy ở `0602baf`: đọc trạng thái, cửa sổ,
 phát/dừng/tua/âm lượng, Next/restart và shuffle/loop qua tool có xác nhận. Xem [CONTROL_STAGE1.md](./CONTROL_STAGE1.md)
-cho phạm vi, các bộ não, kiểm chứng và giới hạn. Giai đoạn 2 yêu thích/hàng đợi qua chat đã ghép, chưa commit/deploy;
-xem [CONTROL_STAGE2.md](./CONTROL_STAGE2.md). Tìm/chọn nhạc ngoài thư viện qua chat vẫn để giai đoạn 3.
+cho phạm vi, các bộ não, kiểm chứng và giới hạn. Giai đoạn 2 yêu thích/hàng đợi qua chat đã deploy cùng bản kiểm chứng
+đổi thứ tự `7b912f4`; chủ web xác nhận đổi đúng mà không cần F5. Xem [CONTROL_STAGE2.md](./CONTROL_STAGE2.md).
+Giai đoạn 3 tìm/chọn nhạc, thêm video/playlist và hội thoại gợi ý nhạc đã ghép, chưa commit/deploy;
+xem [CONTROL_STAGE3.md](./CONTROL_STAGE3.md). Cần frontend v3; tab v1/v2 đang nghe vẫn giữ công cụ cũ.
 
 ## Cách mở
 
@@ -83,5 +85,5 @@ có; không nối iframe vào bộ phân tích nhịp. Chưa tự giảm âm lư
 - Ma trận sáu video trên Chrome/Edge, thời gian phản hồi, mẫu quảng cáo/tài nguyên và phạm vi nghiệm thu được ghi
   trong [STAGE4_REPORT.md](./STAGE4_REPORT.md). Mô phỏng mobile không thay thế Android/Chrome thật.
 
-Bản Player trước đã được chủ web commit/deploy; bản mở rộng thư viện trong LIBRARY_STAGE2.md chưa commit/deploy.
+Bản Player và mở rộng thư viện đã được chủ web commit/deploy. Giai đoạn 3 điều khiển discovery qua chat đang chờ commit/deploy.
 Không cam kết không quảng cáo, phát sau khi thoát hẳn trình duyệt hoặc hỗ trợ khóa màn hình điện thoại.

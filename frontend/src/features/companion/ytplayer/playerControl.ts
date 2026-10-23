@@ -2,16 +2,19 @@
 export type PlayerAction = 'status' | 'open' | 'hide' | 'close' | 'play' | 'pause' | 'next' | 'restart'
   | 'seek' | 'set_volume' | 'mute' | 'unmute' | 'set_shuffle' | 'set_repeat'
   | 'list_queue' | 'list_favorites' | 'next_track' | 'remove_queue_entry' | 'move_queue_entry' | 'play_queue_entry'
-  | 'set_favorite' | 'enqueue_favorite' | 'enqueue_favorites';
+  | 'set_favorite' | 'enqueue_favorite' | 'enqueue_favorites' | 'play_video' | 'enqueue_video' | 'enqueue_playlist';
+export interface PlayerMediaTrack { video_id: string; title: string; artist: string; duration: number; start_seconds: number }
 export interface PlayerCommand {
   id: string; expires_at: number; action: PlayerAction; volume?: number; seconds?: number; enabled?: boolean; repeat?: 'off' | 'all' | 'one';
   offset?: number; limit?: number; entry_id?: string; queue_revision?: number; position?: number; video_id?: string;
+  tracks?: PlayerMediaTrack[]; window_revision?: number;
 }
 export interface PlayerSnapshot {
   window: 'closed' | 'visible' | 'hidden';
   status: 'empty' | 'loading' | 'ready' | 'playing' | 'paused' | 'buffering' | 'ended' | 'blocked' | 'suspended' | 'error';
   track: { video_id: string; title: string; artist: string } | null;
   position: number; duration: number; volume: number; shuffle: boolean; repeat: 'off' | 'all' | 'one'; queue_count: number;
+  window_revision?: number;
 }
 export type PlayerTrack = NonNullable<PlayerSnapshot['track']>;
 export interface PlayerLibraryData {
@@ -25,7 +28,7 @@ export interface PlayerLibraryData {
 export interface PlayerResult { ok: boolean; state?: PlayerSnapshot; error?: string; data?: PlayerLibraryData }
 export type PlayerExecutor = (command: PlayerCommand, signal: AbortSignal) => Promise<PlayerResult>;
 export const emptyPlayer = (): PlayerSnapshot => ({ window: 'closed', status: 'empty', track: null,
-  position: 0, duration: 0, volume: 60, shuffle: false, repeat: 'off', queue_count: 0 });
+  position: 0, duration: 0, volume: 60, shuffle: false, repeat: 'off', queue_count: 0, window_revision: 0 });
 
 export async function waitForPlayer<T>(read: () => T | undefined, signal: AbortSignal, available: () => boolean) {
   const until = performance.now() + 8000;
@@ -66,7 +69,7 @@ export class PlayerControlBridge {
       if (command.action === 'list_queue') return { ok: true, state: emptyPlayer(), data: { kind: 'queue', total: 0, offset: command.offset ?? 0, items: [], next_offset: null, queue_revision: 0 } };
       if (command.action === 'next_track') return { ok: true, state: emptyPlayer(), data: { kind: 'next', automatic: null, on_skip: null, reason: 'empty' } };
       if (command.action === 'open') this.show();
-      else if (['list_favorites', 'enqueue_favorites', 'enqueue_favorite', 'set_favorite'].includes(command.action) && this.prepare) this.prepare();
+      else if (['list_favorites', 'enqueue_favorites', 'enqueue_favorite', 'set_favorite', 'play_video', 'enqueue_video', 'enqueue_playlist'].includes(command.action) && this.prepare) this.prepare();
       else return { ok: false, state: emptyPlayer(), error: 'Player chưa có video. Mở và chọn một bài trước nhé.' };
       await waitForPlayer(() => this.target ?? undefined, signal, this.available);
     }
