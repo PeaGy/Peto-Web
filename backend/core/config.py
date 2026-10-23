@@ -68,6 +68,9 @@ ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "").strip()
 ANTHROPIC_MAX_OUTPUT_TOKENS = _env_int("PETO_ANTHROPIC_MAX_OUTPUT_TOKENS", 32768, 1024, 128000)
 ANTHROPIC_AGENT_MAX_OUTPUT_TOKENS = _env_int("PETO_ANTHROPIC_AGENT_MAX_OUTPUT_TOKENS", 128000, 1024, 128000)
 
+# Player: chỉ máy chủ dùng Data API để tìm video/đọc playlist. Link video và yêu thích không cần khóa này.
+YOUTUBE_API_KEY = os.getenv("PETO_YOUTUBE_API_KEY", "").strip()
+
 
 def parse_owner_accounts(raw: str) -> frozenset[str]:
     """``discord:1,google:2,3`` thành các khóa owner; chỉ ghi số thì hiểu là Discord ID."""

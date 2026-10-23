@@ -61,7 +61,8 @@ export function playerQueueReducer(state: PlayerQueue, action: QueueAction): Pla
     case 'restart': return state.current ? { ...state, request: state.request + 1, autoplay: true } : state;
     case 'ended': return action.request !== state.request || action.serial <= state.endedSerial ? state
       : advance({ ...state, endedSerial: action.serial }, true, action.seed);
-    case 'append': return { ...state, queue: [...state.queue, ...action.entries], order: [...state.order, ...action.entries] };
+    case 'append': return state.queue.length + action.entries.length > 200 ? state
+      : { ...state, queue: [...state.queue, ...action.entries], order: [...state.order, ...action.entries] };
     case 'play-entry': {
       const current = state.queue.find(entry => entry.key === action.key);
       if (!current) return state;

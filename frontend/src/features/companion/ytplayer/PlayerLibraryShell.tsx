@@ -7,6 +7,7 @@ import { LibraryIcon } from './LibraryIcon';
 import { LibraryPanel } from './PlayerLibraryPanel';
 import type { PlayerLibrary } from './playerLibraryTypes';
 import { RepeatButton, ShuffleButton } from './PlaybackModeButtons';
+import { parseYouTubePlaylistUrl, parseYouTubeUrl } from './youtubeUrl';
 
 export interface PlayerTrack {
   title: string;
@@ -274,14 +275,15 @@ export function PlayerLibraryShell({ library, id, mode = 'youtube', mobileLayout
             event.preventDefault();
             openSource(draft.trim());
           }}>
-            <label htmlFor={`${panelId}-source`}>Link YouTube</label>
-            <div><input ref={sourceInput} id={`${panelId}-source`} type="text" autoComplete="off" spellCheck={false} value={draft}
-              onChange={event => { setDraft(event.target.value); setError(''); }} required placeholder="https://www.youtube.com/watch?v=…" />
-              <button type="submit" aria-label="Mở video"><LibraryIcon name="search" size={19} /></button></div>
+            <label htmlFor={`${panelId}-source`}>Link hoặc tên video</label>
+            <div><input ref={sourceInput} id={`${panelId}-source`} type="text" enterKeyHint="search" autoComplete="off" spellCheck={false} value={draft}
+              onChange={event => { setDraft(event.target.value); setError(''); }} required placeholder="Tìm video hoặc dán link…" maxLength={4096} />
+              <button type="submit" aria-label="Tìm hoặc mở"><LibraryIcon name="search" size={19} /></button></div>
           </form>
           {error && <p className="yt-source-error" role="alert">{error}</p>}
           {sourceChoices?.(openSource)}
-          <button type="button" className="yl-add-link" onClick={() => { const message = library.appendLink(draft.trim()); setError(message ?? ''); if (!message) setMenu(null); }}><LibraryIcon name="plus" size={18} />Thêm vào hàng đợi</button>
+          {parseYouTubeUrl(draft) && <button type="button" className="yl-add-link" onClick={() => { const message = library.appendLink(draft.trim()); setError(message ?? ''); if (!message) setMenu(null); }}><LibraryIcon name="plus" size={18} />Thêm vào hàng đợi</button>}
+          {parseYouTubePlaylistUrl(draft) && parseYouTubeUrl(draft) && <button type="button" className="yl-add-link" onClick={() => { const message = library.importPlaylist(draft); setError(message ?? ''); if (!message) setMenu(null); }}><LibraryIcon name="queue" size={18} />Nhập playlist</button>}
           <button type="button" className="yl-favorites-menu" onClick={() => { library.openPanel('favorites'); setMenu(null); }}>
             <LibraryIcon name="heart" size={18} /><span>Yêu thích</span><small>{library.loadingFavorites ? '…' : library.favorites.length}</small>
           </button>

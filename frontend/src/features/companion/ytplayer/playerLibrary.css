@@ -90,6 +90,9 @@
 .yl-empty { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 20px 8px; color: var(--yl-muted); }
 .yl-empty p { font-size: 12px; margin: 10px 0; }
 .yl-empty button { border: 1px solid var(--yl-line); border-radius: 4px; padding: 7px 12px; background: transparent; color: inherit; cursor: pointer; }
+.yl-discovery-note { padding: 6px 5px 10px; margin: 0; color: var(--yl-muted); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+.yl-discovery-note button { padding: 0; border: 0; background: none; color: inherit; text-decoration: underline; cursor: pointer; }
+.yl-load-more { display: block; width: 100%; min-height: 36px; margin-top: 8px; border: 1px solid var(--yl-line); border-radius: 4px; background: transparent; color: inherit; cursor: pointer; }
 .yl-favorites-menu { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 44px; margin-top: 14px; padding: 10px 4px 0; border: 0; border-top: 1px solid var(--yl-line); background: transparent; color: var(--yt-ink); text-align: left; font-size: 13px; cursor: pointer; }
 .yl-favorites-menu small { margin-left: auto; color: var(--yl-muted); font-size: 11px; }
 .yl-source-choices { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
@@ -128,6 +131,7 @@
 .yl-shell.is-mobile .yl-row-menu-items button { min-height: 44px; font-size: 13px; }
 .yl-shell.is-mobile .yl-source-choices button { min-height: 44px; font-size: 12px; }
 .yl-shell.is-mobile .yl-favorites-menu { padding-bottom: 4px; }
+.yl-shell.is-mobile .yl-load-more, .yl-shell.is-mobile .yl-empty button, .yl-shell.is-mobile .yl-discovery-note button { min-height: 44px; }
 .yl-shell.is-mobile .yt-volume-slider { max-width: 62px; }
 @media (max-height: 740px) {
   .yl-shell.is-mobile .yl-main .yt-video { aspect-ratio: 16 / 9; }

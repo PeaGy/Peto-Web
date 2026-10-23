@@ -1,8 +1,22 @@
 # CLAUDE.md
 
+## Player library — giai đoạn 3 (2026-10-23)
+
+Chủ web đã commit/deploy giai đoạn 2 và hai chỉnh sửa tim desktop/hover (HEAD trước lượt này: e347bb9).
+Yêu cầu tiếp tục giai đoạn 3: đã làm tìm tên và nhập playlist công khai, chưa commit/deploy.
+File và ô mở đầu dùng chung phân loại link/tên; tìm khi submit, không autocomplete hoặc tự phát kết quả đầu.
+Panel kết quả dùng lại vị trí queue/yêu thích, có chọn phát, dấu cộng và tải thêm. Link video kèm list vẫn mở
+riêng video, có nút Nhập playlist trong File. Playlist thêm cuối queue, không đổi bài đang nghe, giữ thứ tự/bản trùng;
+bỏ video riêng tư/xóa/không nhúng được, thông báo khi bị cắt theo sức chứa 200 bài. X/hủy/unmount vô hiệu hóa request cũ.
+Máy chủ dùng YouTube Data API v3 qua `youtube_catalog.py`; key `PETO_YOUTUBE_API_KEY` chỉ ở backend, gửi trong header,
+không vào URL/frontend/log lỗi. Auth, cache 5 phút có giới hạn, rate/concurrency riêng không giữ slot chat.
+Không đổi DB/dependency. Link video/tim vẫn chạy nếu chưa có key. `.env` local chưa có key, chưa thử Data API thật.
+Kiểm chứng và cách bật: `frontend/src/features/companion/ytplayer/LIBRARY_STAGE3.md`.
+Giai đoạn 4 mới nghiệm thu YouTube thật/tài nguyên/Android Chrome thật. Không tự commit/deploy hoặc gọi AI/TTS trả phí.
+
 ## Player library — giai đoạn 2 (2026-10-23)
 
-Chủ web yêu cầu giai đoạn tiếp theo sau duyệt UI. Đã ghép vào Companion thật, chưa commit/deploy:
+Chủ web đã commit/deploy giai đoạn này (d898696); các nội dung sau mô tả lần bàn giao giai đoạn 2:
 PlayerLibraryShell/Panel + CSS và icon riêng chuyển từ bản duyệt, không import prototype/catalogue vào app.
 Tim lưu ở SQLite theo session owner qua `/api/companion/player/favorites` (GET, POST/DELETE theo video ID),
 metadata qua `/videos/{id}` dùng oEmbed cũ. Bảng/index `player_favorites` được tạo bổ sung lúc init_db; không SQL tay.

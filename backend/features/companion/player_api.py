@@ -1,12 +1,26 @@
-"""Thông tin video và tim yêu thích cho Player. Playlist/tìm kiếm chưa thuộc giai đoạn này."""
+"""Thông tin video, yêu thích và khám phá YouTube cho Player."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from features.accounts.auth import current_owner
+from features.companion import youtube_catalog
 from shared import youtube
 from storage import player as store
 
 router = APIRouter(prefix='/api/companion/player', tags=['companion-player'])
+
+
+@router.get('/search')
+async def search_videos(q: str = Query(min_length=1, max_length=200),
+                        page_token: str = Query(default='', max_length=512, pattern=r'^[A-Za-z0-9_+=/\-]*$'),
+                        owner: str = Depends(current_owner)) -> dict:
+    return await youtube_catalog.search(owner, q, page_token)
+
+
+@router.get('/playlists/{playlist_id}')
+async def import_playlist(playlist_id: str, limit: int = Query(default=200, ge=1, le=200),
+                          owner: str = Depends(current_owner)) -> dict:
+    return await youtube_catalog.playlist(owner, playlist_id, limit)
 
 
 def checked_id(video_id: str) -> str:

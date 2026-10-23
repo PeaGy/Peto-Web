@@ -1,6 +1,7 @@
 # Thư viện Player — giai đoạn 2 (23/10/2026)
 
-Đã ghép giao diện được duyệt ở `/prototypes/player-library/` vào Companion thật. Chưa commit/deploy.
+Đã ghép giao diện được duyệt ở `/prototypes/player-library/` vào Companion thật; chủ web đã commit/deploy (d898696).
+Nội dung dưới đây ghi lại lần bàn giao giai đoạn 2. Phần tìm kiếm/playlist mới xem `LIBRARY_STAGE3.md`.
 Prototype vẫn là bản duyệt độc lập, không phải màn hình để thử API thật.
 
 ## Hành vi

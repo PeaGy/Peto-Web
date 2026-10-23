@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { PlayerLibraryShell } from './PlayerLibraryShell';
 import { usePlayerLibrary } from './usePlayerLibrary';
 import { trackTitle } from './playerLibraryTypes';
+import { LibraryIcon } from './LibraryIcon';
 import { youtubeSourceKey } from './youtubeUrl';
 import { useYouTubePlayer } from './useYouTubePlayer';
 import './companionPlayer.css';
@@ -27,14 +28,14 @@ export default function CompanionPlayer({ active, open, hidden, mobileLayout, al
   const [error, setError] = useState('');
   const [frame, setFrame] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
   const youtube = useYouTubePlayer(source, (active || allowBackground) && open && source !== null, allowBackground);
-  const openLink = library.openLink;
+  const openLink = library.openInput;
   useEffect(() => {
     if (source && youtube.sourceKey === youtubeSourceKey(source) && youtube.status === 'ended') ended(Number(source.playbackId), youtube.endedSerial);
   }, [source, youtube.sourceKey, youtube.status, youtube.endedSerial, ended]);
   useEffect(() => {
     if (source && youtube.sourceKey === youtubeSourceKey(source) && youtube.duration > 0) updateDuration(source.videoId, youtube.duration);
   }, [source, youtube.sourceKey, youtube.duration, updateDuration]);
-  const close = useCallback(() => { youtube.stop(); onClose(); }, [youtube.stop, onClose]);
+  const close = useCallback(() => { library.cancelDiscovery(); youtube.stop(); onClose(); }, [library.cancelDiscovery, youtube.stop, onClose]);
 
   // Portal giữ cùng cây iframe khi xoay màn hình, tránh container của sân khấu giới hạn position:fixed trên mobile.
   useLayoutEffect(() => {
@@ -77,10 +78,10 @@ export default function CompanionPlayer({ active, open, hidden, mobileLayout, al
       {!source && <form className="yt-source-form companion-player-empty" onSubmit={event => {
         event.preventDefault(); setError(openLink(draft.trim()) ?? '');
       }}>
-        <label htmlFor="companion-player-source">Link YouTube</label>
-        <div><input id="companion-player-source" type="url" inputMode="url" placeholder="https://www.youtube.com/watch?v=…"
+        <label htmlFor="companion-player-source">Link hoặc tên video</label>
+        <div><input id="companion-player-source" type="text" enterKeyHint="search" placeholder="Tìm video hoặc dán link…" autoComplete="off" maxLength={4096}
           value={draft} required onChange={event => { setDraft(event.target.value); setError(''); }} />
-          <button type="submit">Mở video</button></div>
+          <button type="submit" aria-label="Tìm hoặc mở"><LibraryIcon name="search" size={19} /></button></div>
         {error && <p className="yt-source-error" role="alert">{error}</p>}
       </form>}
     </PlayerLibraryShell>

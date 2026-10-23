@@ -1,9 +1,10 @@
 # Player trong Companion
 
-Bản Player trước đã được chủ web triển khai. Giai đoạn 2 của vòng mở rộng thư viện đã ghép vào Companion
-(23/10/2026), chưa commit/deploy: tim/yêu thích theo tài khoản, hàng đợi/phát tiếp và loop/shuffle.
-Xem [LIBRARY_STAGE2.md](./LIBRARY_STAGE2.md) cho API/lưu trữ và kiểm chứng. Dùng player YouTube chính thức,
-không thêm dependency, Data API key, tìm kiếm, playlist hoặc xử lý âm thanh iframe.
+Bản Player và giai đoạn 2 đã được chủ web commit/deploy: tim/yêu thích theo tài khoản, hàng đợi/phát tiếp,
+loop/shuffle và tim cạnh tên bài trên desktop/mobile. Giai đoạn 3 (23/10/2026) đã thêm tìm theo tên và nhập
+playlist công khai, chưa commit/deploy. Xem [LIBRARY_STAGE3.md](./LIBRARY_STAGE3.md) cho hành vi, kiểm chứng
+và cấu hình key máy chủ; [LIBRARY_STAGE2.md](./LIBRARY_STAGE2.md) cho API/lưu trữ yêu thích.
+Dùng player YouTube chính thức, không thêm dependency hoặc xử lý âm thanh iframe.
 
 ## Cách mở
 
@@ -15,7 +16,8 @@ không thêm dependency, Data API key, tìm kiếm, playlist hoặc xử lý âm
   hay controls phụ. Mở lại bằng menu để tạm dừng hoặc nhấn X để dừng hẳn. Ẩn giao diện không đồng nghĩa ẩn tab trình duyệt.
 - Companion còn thanh bên và cột chat nên cửa sổ hẹp (viewport ≤900 px) cũng dùng màn hình Player riêng; màn hình
   cảm ứng thấp dùng bố cục ngang. Đổi bố cục giữ nguyên iframe; vùng xem tối thiểu 200×200 khi hiển thị.
-- Lần đầu có ô **Link YouTube**; chỉ nạp API sau khi nhập link hợp lệ. Không tự chọn mẫu, tự phát hoặc lưu URL vào
+- Lần đầu có ô **Link hoặc tên video**; IFrame API chỉ nạp sau khi chọn nguồn video hợp lệ. Tìm tên không tự phát.
+  Link playlist thêm bài vào hàng đợi; File có cùng ô nhập và danh sách Yêu thích. Không tự chọn mẫu hoặc lưu URL vào
   localStorage. Đóng bằng X rồi mở lại giữ link/hàng đợi trong lần đăng nhập hiện tại và chỉ chuẩn bị video ở trạng thái dừng.
 - Tên/kênh ngoài iframe lấy qua oEmbed của máy chủ; thiếu metadata vẫn cho phát, không bịa tên từ mã video.
   Yêu thích lưu theo tài khoản; hàng đợi/loop/shuffle trong phiên. Không import catalogue mẫu của prototype vào app.

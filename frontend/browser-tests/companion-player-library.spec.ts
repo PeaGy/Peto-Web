@@ -15,14 +15,14 @@ async function file(page: Page, mobile: boolean) {
   return page.getByRole('region', { name: 'Bảng File', exact: true });
 }
 async function firstVideo(page: Page) {
-  await page.getByRole('textbox', { name: 'Link YouTube', exact: true }).fill(url('Soy4jGPHr3g'));
-  await page.getByRole('button', { name: 'Mở video', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Link hoặc tên video', exact: true }).fill(url('Soy4jGPHr3g'));
+  await page.getByRole('button', { name: 'Tìm hoặc mở', exact: true }).click();
   await expect(shell(page)).toHaveAttribute('data-status', 'ready');
   await expect(shell(page).locator('.yt-track-info h1')).toHaveText('Tetris');
 }
 async function add(page: Page, mobile: boolean, id: string) {
   const menu = await file(page, mobile);
-  await menu.getByRole('textbox', { name: 'Link YouTube', exact: true }).fill(url(id));
+  await menu.getByRole('textbox', { name: 'Link hoặc tên video', exact: true }).fill(url(id));
   await menu.getByRole('button', { name: 'Thêm vào hàng đợi', exact: true }).click();
 }
 const end = (page: Page) => page.evaluate(() => (window as unknown as { __ytFake: FakeStats }).__ytFake.end());

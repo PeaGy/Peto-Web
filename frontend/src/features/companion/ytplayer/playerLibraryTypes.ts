@@ -10,7 +10,7 @@ export interface MediaTrack {
 }
 export interface QueueEntry { key: string; track: MediaTrack }
 export type RepeatMode = 'off' | 'all' | 'one';
-export type LibraryPanelKind = 'queue' | 'favorites';
+export type LibraryPanelKind = 'queue' | 'favorites' | 'search';
 export const trackTitle = (track: MediaTrack) => track.title || 'Video YouTube';
 export interface PlayerLibrary {
   track: MediaTrack | null;
@@ -27,6 +27,13 @@ export interface PlayerLibrary {
   loadingFavorites: boolean;
   favoritesBusy: boolean;
   error: string;
+  discovery: {
+    query: string; results: MediaTrack[]; nextPageToken: string; busy: boolean; error: string;
+    kind: 'search' | 'playlist' | null; playlistNote: string; loadMore: () => void; retry: () => void;
+  };
+  openInput: (value: string) => string | undefined;
+  importPlaylist: (value: string) => string | undefined;
+  cancelDiscovery: () => void;
   select: (track: MediaTrack) => void;
   next: () => void;
   append: (tracks: MediaTrack[]) => void;

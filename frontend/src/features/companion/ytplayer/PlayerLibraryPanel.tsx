@@ -25,16 +25,22 @@ function RowMenu({ entry, index, library }: { entry: QueueEntry; index: number; 
 }
 export function LibraryPanel({ library }: { library: PlayerLibrary }) {
   const heading = useRef<HTMLHeadingElement>(null);
-  useEffect(() => { if (library.panel) heading.current?.focus({ preventScroll: true }); }, [library.panel]);
+  useEffect(() => { if (library.panel) heading.current?.focus({ preventScroll: true }); }, [library.panel, library.discovery.query]);
   if (!library.panel) return null;
-  const { panel, queue, favorites, track } = library;
-  return <aside className="yl-panel" aria-label={panel === 'queue' ? 'Hàng đợi' : 'Yêu thích'}>
-    <header className="yl-panel-head"><div><h2 ref={heading} tabIndex={-1}>{panel === 'queue' ? 'Hàng đợi' : 'Yêu thích'}</h2>
-      <span>{panel === 'favorites' && library.loadingFavorites ? 'Đang tải…' : `${panel === 'queue' ? queue.length : favorites.length} bài`}</span></div>
+  const { panel, queue, favorites, track, discovery } = library;
+  const title = panel === 'queue' ? 'Hàng đợi' : panel === 'favorites' ? 'Yêu thích' : 'Kết quả tìm kiếm';
+  return <aside className="yl-panel" aria-label={title}>
+    <header className="yl-panel-head"><div><h2 ref={heading} tabIndex={-1}>{title}</h2>
+      <span>{panel === 'favorites' && library.loadingFavorites ? 'Đang tải…' : panel === 'search' ? discovery.query : `${panel === 'queue' ? queue.length : favorites.length} bài`}</span></div>
       <button type="button" className="yl-small-button" aria-label="Đóng danh sách" onClick={library.closePanel}><LibraryIcon name="close" size={18} /></button>
     </header>
     <div className="yl-panel-scroll yl-scroll">
       {panel === 'queue' && <>
+        {discovery.kind === 'playlist' && <>
+          {discovery.busy && <p className="yl-discovery-note" role="status">Đang nhập playlist…</p>}
+          {discovery.error && <p className="yl-discovery-note yt-source-error" role="alert">{discovery.error} <button type="button" onClick={library.requestSource}>Nhập lại</button></p>}
+          {discovery.playlistNote && <p className="yl-discovery-note">{discovery.playlistNote}</p>}
+        </>}
         {track && <div className="yl-now-playing"><span>ĐANG PHÁT</span><div><Cover track={track} /><span className="yl-track-copy"><strong>{trackTitle(track)}</strong><span>{track.artist || track.videoId}</span></span><LibraryIcon name="play" size={14} /></div></div>}
         <div className="yl-section-label"><span>Tiếp theo</span><div className="yl-queue-modes" role="group" aria-label="Chế độ hàng đợi">
           <ShuffleButton active={library.shuffle} onClick={library.toggleShuffle} className="yl-small-button" size={18} />
@@ -56,6 +62,16 @@ export function LibraryPanel({ library }: { library: PlayerLibrary }) {
         </div>
       </li>)}</ul> : <div className="yl-empty"><LibraryIcon name="heart" size={28} /><p>{library.error ? 'Chưa tải được yêu thích.' : 'Chưa có bài yêu thích.'}</p>
         {library.error && <button type="button" onClick={library.reloadFavorites}>Thử lại</button>}</div>)}
+      {panel === 'search' && <>
+        {discovery.results.length > 0 && <ul className="yl-track-list" aria-label="Các kết quả tìm kiếm">{discovery.results.map(item => <li key={item.videoId}>
+          <TrackChoice track={item} onPlay={() => library.select(item)} />
+          <button type="button" className="yl-small-button" aria-label={`Thêm ${trackTitle(item)} vào hàng đợi`} onClick={() => library.append([item])}><LibraryIcon name="plus" size={19} /></button>
+        </li>)}</ul>}
+        {discovery.busy && <div className="yl-empty" role="status">Đang tìm…</div>}
+        {discovery.error && <div className="yl-empty"><p role="alert">{discovery.error}</p><button type="button" onClick={discovery.retry}>Thử lại</button></div>}
+        {!discovery.busy && !discovery.error && !discovery.results.length && <div className="yl-empty"><LibraryIcon name="search" size={28} /><p>Không có kết quả.</p><button type="button" onClick={library.requestSource}>Tìm lại</button></div>}
+        {!discovery.busy && !discovery.error && discovery.nextPageToken && <button type="button" className="yl-load-more" onClick={discovery.loadMore}>Xem thêm</button>}
+      </>}
     </div>
   </aside>;
 }

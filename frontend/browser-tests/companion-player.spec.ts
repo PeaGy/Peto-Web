@@ -18,8 +18,8 @@ async function openPlayer(page: Page, mobile: boolean) {
   await expect(page.locator('.yt-player')).toBeVisible();
 }
 async function chooseVideo(page: Page) {
-  await page.getByRole('textbox', { name: 'Link YouTube', exact: true }).fill(video);
-  await page.getByRole('button', { name: 'Mở video', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Link hoặc tên video', exact: true }).fill(video);
+  await page.getByRole('button', { name: 'Tìm hoặc mở', exact: true }).click();
   await expect(page.locator('.yt-player')).toHaveAttribute('data-status', 'ready');
 }
 
@@ -33,8 +33,8 @@ test('Companion thật: chỉ tải YouTube khi có link, đổi nguồn giữ i
   const chatBefore = await chat(page).boundingBox();
   await openPlayer(page, mobile);
   expect(requests()).toBe(0);
-  await page.getByRole('textbox', { name: 'Link YouTube', exact: true }).fill('https://youtube.com.evil.example/watch?v=Soy4jGPHr3g');
-  await page.getByRole('button', { name: 'Mở video', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Link hoặc tên video', exact: true }).fill('https://youtube.com.evil.example/watch?v=Soy4jGPHr3g');
+  await page.getByRole('button', { name: 'Tìm hoặc mở', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('chưa hợp lệ');
   expect(requests()).toBe(0);
   await chooseVideo(page);
@@ -48,8 +48,8 @@ test('Companion thật: chỉ tải YouTube khi có link, đổi nguồn giữ i
     expect((await page.locator('.yt-menu-bar').boundingBox())!.height).toBeLessThan(title.height);
   }
   await page.getByRole('button', { name: mobile ? 'Tùy chọn Player' : 'File', exact: true }).click();
-  await page.getByRole('textbox', { name: 'Link YouTube', exact: true }).fill('https://youtu.be/aircAruvnKk?t=12');
-  await page.getByRole('button', { name: 'Mở video', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Link hoặc tên video', exact: true }).fill('https://youtu.be/aircAruvnKk?t=12');
+  await page.getByRole('button', { name: 'Tìm hoặc mở', exact: true }).click();
   expect((await stats(page)).cues.at(-1)).toEqual({ videoId: 'aircAruvnKk', startSeconds: 12 });
   expect(await iframe!.evaluate(node => node.isConnected)).toBe(true);
   await page.getByRole('button', { name: 'Phát video', exact: true }).click();
