@@ -48,6 +48,21 @@ const favorites = [
   { video_id: 'HDz9dSuAI4s', title: 'Miku concert', artist: 'Test channel' },
 ];
 
+test('old native playing state cannot acknowledge a replacement; an explicit later retry can succeed', async ({ page }, info) => {
+  test.setTimeout(60000);
+  const { issue } = await setup(page, info.project.name === 'mobile');
+  const tracks = favorites.map(item => ({ ...item, duration: 143, start_seconds: 0 }));
+  expect((await issue('play_video', { tracks: [tracks[0]], window_revision: 0 })).ok).toBe(true);
+  await page.evaluate(() => { (window as unknown as { __ytFake: FakeStats }).__ytFake.holdLoads = true; });
+  const failed = await issue('play_video', { tracks: [tracks[1]], window_revision: 0 });
+  expect(failed.ok).toBe(false); expect(failed.error).toContain('chưa xác nhận');
+  expect(await page.evaluate(() => (window as unknown as { __ytFake: FakeStats }).__ytFake.heldLoads)).toBe(1);
+  await page.evaluate(() => { (window as unknown as { __ytFake: FakeStats }).__ytFake.holdLoads = false; });
+  const played = await issue('play_video', { tracks: [tracks[1]], window_revision: 0 });
+  expect(played).toMatchObject({ ok: true, state: { native_video_id: tracks[1].video_id, native_state: 1, track: { video_id: tracks[1].video_id } } });
+  expect((await stats(page)).created).toBe(1);
+});
+
 test('chat discovery appends resolved tracks without opening, plays from cold/closed state and cancels stale lookups', async ({ page }, info) => {
   test.setTimeout(90000);
   const { issue, apiRequests } = await setup(page, info.project.name === 'mobile');

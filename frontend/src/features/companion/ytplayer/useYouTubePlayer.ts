@@ -85,14 +85,41 @@ export function useYouTubePlayer(source: YouTubePlaybackSource | null, enabled: 
       if (session.current === current) session.current = null;
     }
     function sync() {
-      if (!alive() || !current.ready || current.pendingCue || !current.player) return;
+      if (!alive() || !current.ready || !current.player) return;
       try {
+        if (current.pendingCue) {
+          const state = current.player.getPlayerState?.();
+          if (state === 1 || state === 5) reportState(state);
+          return;
+        }
         const nextVolume = current.player.isMuted() ? 0 : Math.min(100, finite(current.player.getVolume()));
         volume.current = nextVolume;
         const position = finite(current.player.getCurrentTime()), duration = finite(current.player.getDuration());
         setSnapshot(value => value.position === position && value.duration === duration && value.volume === nextVolume ? value
           : { ...value, position, duration, volume: nextVolume });
       } catch { /* Dữ liệu API có thể chưa có trong lúc đổi video. */ }
+    }
+    function reportState(data: number) {
+      if (!alive()) return;
+      if (current.pendingCue) {
+        if (data !== 5 && data !== 1) return;
+        const videoId = parseYouTubeUrl(current.player?.getVideoUrl?.() ?? '')?.videoId;
+        if (!videoId || videoId !== latestSource.current?.videoId) return;
+        current.pendingCue = false;
+        window.clearTimeout(readyTimer);
+      }
+      const status: Record<number, PlayerStatus> = { '-1': 'ready', 0: 'ended', 1: 'playing', 2: 'paused', 3: 'buffering', 5: 'ready' };
+      setSnapshot(value => {
+        if ((value.status === 'error' || value.status === 'blocked') && data !== 1) return value;
+        return { ...value, ready: current.ready, status: status[data] ?? 'ready', playing: data === 1,
+          sourceKey: current.key, endedSerial: value.endedSerial + (data === 0 ? 1 : 0),
+          ...(data === 1 ? { error: '' } : {}) };
+      });
+      if (data === 1) {
+        window.clearInterval(poll);
+        poll = window.setInterval(sync, 500);
+      }
+      sync();
     }
     function cue() {
       if (!alive() || !current.ready || !current.player) return;
@@ -150,29 +177,7 @@ export function useYouTubePlayer(source: YouTubePlaybackSource | null, enabled: 
               event.target.playVideo();
             }
           },
-          onStateChange: event => {
-            if (!alive()) return;
-            if (current.pendingCue) {
-              // cue là bất đồng bộ: chưa bật controls khi nguồn cũ vẫn đang chuyển trạng thái.
-              if (event.data !== 5 && event.data !== 1) return;
-              const url = current.player?.getVideoUrl?.();
-              if (url && parseYouTubeUrl(url)?.videoId !== latestSource.current?.videoId) return;
-              current.pendingCue = false;
-              window.clearTimeout(readyTimer);
-            }
-            const status: Record<number, PlayerStatus> = { '-1': 'ready', 0: 'ended', 1: 'playing', 2: 'paused', 3: 'buffering', 5: 'ready' };
-            setSnapshot(value => {
-              if ((value.status === 'error' || value.status === 'blocked') && event.data !== 1) return value;
-              return { ...value, ready: current.ready, status: status[event.data] ?? 'ready', playing: event.data === 1,
-                sourceKey: current.key, endedSerial: value.endedSerial + (event.data === 0 ? 1 : 0),
-                ...(event.data === 1 ? { ready: current.ready, error: '' } : {}) };
-            });
-            if (event.data === 1) {
-              window.clearInterval(poll);
-              poll = window.setInterval(sync, 500);
-            }
-            sync();
-          },
+          onStateChange: event => reportState(event.data),
           onError: event => {
             if (!alive()) return;
             window.clearInterval(poll);
@@ -217,7 +222,9 @@ export function useYouTubePlayer(source: YouTubePlaybackSource | null, enabled: 
       const current = session.current;
       if (!current?.active || !current.ready || current.pendingCue || !current.player) return null;
       try {
-        return { position: finite(current.player.getCurrentTime()), duration: finite(current.player.getDuration()),
+        return { videoId: parseYouTubeUrl(current.player.getVideoUrl?.() ?? '')?.videoId ?? null,
+          state: current.player.getPlayerState?.() ?? null,
+          position: finite(current.player.getCurrentTime()), duration: finite(current.player.getDuration()),
           volume: current.player.isMuted() ? 0 : Math.round(Math.min(100, finite(current.player.getVolume()))) };
       } catch { return null; }
     },

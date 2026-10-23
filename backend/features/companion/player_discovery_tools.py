@@ -144,7 +144,9 @@ class Discovery:
             if result.get('ok'):
                 if command.action == 'play_video':
                     observed = result.get('state') or {}
-                    if observed.get('status') != 'playing' or (observed.get('track') or {}).get('video_id') != tracks[0].video_id:
+                    native_mismatch = ('native_state' in observed or 'native_video_id' in observed) and (
+                        observed.get('native_state') != 1 or observed.get('native_video_id') != tracks[0].video_id)
+                    if observed.get('status') != 'playing' or (observed.get('track') or {}).get('video_id') != tracks[0].video_id or native_mismatch:
                         yield {'ok': False, 'state': observed, 'error': 'The selected video was not confirmed playing. Do not claim it started or retry automatically.'}
                         return
                 else:

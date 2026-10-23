@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test';
 
 // API giả khác nguồn, dùng chung cho prototype và Companion thật; không gọi YouTube.
-export interface FakeStats { created: number; destroyed: number; nativeSpace: number; cues: { videoId: string; startSeconds: number }[]; blocked: boolean; fail: (code: number) => void; nativeVolume: (value: number) => void; end: () => void }
+export interface FakeStats { created: number; destroyed: number; nativeSpace: number; cues: { videoId: string; startSeconds: number }[]; blocked: boolean; holdLoads?: boolean; heldLoads?: number; fail: (code: number) => void; nativeVolume: (value: number) => void; end: () => void }
 const fakeScript = String.raw`
 const stats=window.__ytFake={created:0,destroyed:0,nativeSpace:0,cues:[],blocked:false,active:null};
 class Player {
@@ -11,10 +11,11 @@ class Player {
   element.replaceWith(this.iframe);stats.active=this;stats.created++;
   setTimeout(()=>{if(!this.dead)options.events.onReady({target:this});},20);
  }
- state(data) {this.playing=data===1;this.options.events.onStateChange({target:this,data});}
+ state(data) {this.playerState=data;this.playing=data===1;this.options.events.onStateChange({target:this,data});}
  cueVideoById(source) {stats.cues.push(source);this.videoId=source.videoId;this.time=source.startSeconds;this.iframe.dataset.videoId=source.videoId;this.state(5);}
- loadVideoById(source) {this.cueVideoById(source);this.playVideo();}
+ loadVideoById(source) {if(stats.holdLoads){stats.heldLoads=(stats.heldLoads||0)+1;this.state(1);return;}this.cueVideoById(source);this.playVideo();}
  getVideoUrl() {return 'https://www.youtube.com/watch?v='+this.videoId;}
+ getPlayerState() {return this.playerState??-1;}
  playVideo() {if(stats.blocked)this.options.events.onAutoplayBlocked();else this.state(1);}
  pauseVideo() {this.state(2);}
  stopVideo() {this.playing=false;}

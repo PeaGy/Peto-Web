@@ -2,6 +2,7 @@ export interface YouTubePlayer {
   cueVideoById(source: { videoId: string; startSeconds: number }): void;
   loadVideoById(source: { videoId: string; startSeconds: number }): void;
   getVideoUrl?(): string;
+  getPlayerState?(): number;
   playVideo(): void;
   pauseVideo(): void;
   stopVideo(): void;

@@ -52,7 +52,10 @@ def _public_message(row: dict, companion: bool = False) -> dict:
         message['reply_to'] = row['turn_user_id']
     if row.get("work"):
         # Nhật ký "Đang làm" lưu cùng câu trả lời: tải lại trang vẫn thấy Peto đã làm gì, mất bao lâu.
-        message["work"] = row["work"]
+        if companion and isinstance(row['work'], dict) and 'player' in row['work']:
+            message['player_trace'] = row['work']['player']
+        else:
+            message["work"] = row["work"]
     if companion and row["role"] == "assistant":
         message["content"], message["emotion_cues"] = emotion_tags.timeline(private_notes.strip(content))
         message["emotion"] = emotion_tags.first(private_notes.strip(content))

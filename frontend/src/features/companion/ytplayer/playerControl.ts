@@ -15,6 +15,7 @@ export interface PlayerSnapshot {
   track: { video_id: string; title: string; artist: string } | null;
   position: number; duration: number; volume: number; shuffle: boolean; repeat: 'off' | 'all' | 'one'; queue_count: number;
   window_revision?: number;
+  native_video_id?: string | null; native_state?: number | null;
 }
 export type PlayerTrack = NonNullable<PlayerSnapshot['track']>;
 export interface PlayerLibraryData {

@@ -27,6 +27,7 @@ from features.documents.tools import DocumentSession, asks_edit, current_session
 from features.connectors.tools import GitHubSession, current_session as github_session_context, tool_access as github_access
 from features.companion import private_notes
 from features.companion import player_tools
+from features.companion import player_reply
 from prompts.companion_player import PLAYER_PROMPT, PLAYER_LIBRARY_PROMPT, PLAYER_DISCOVERY_PROMPT
 from features.chat import titles
 from features.chat.work_log import NOTE_LIMIT, WorkLog, read_detail
@@ -149,11 +150,15 @@ async def _stream_reply(
     try:
         with usage_events.measurement(surface='chat' if snapshot else None, effort=effort):
             async with asyncio.timeout_at(min(loop.time() + idle, hard)) as limit:
-                async with aclosing(provider.stream(
+                operation = player_reply.guarded_reply(provider, player_session,
+                    system_prompt=f"{system_prompt}\n\n{time_context(timezone)}",
+                    messages=history, effort=effort, timezone=timezone, web_search=web_search,
+                ) if player_session else provider.stream(
                     system_prompt=f"{system_prompt}\n\n{time_context(timezone)}",
                     messages=history, effort=effort, timezone=timezone,
                     web_search=web_search,
-                )) as stream:
+                )
+                async with aclosing(operation) as stream:
                     async for chunk in stream:
                         limit.reschedule(min(loop.time() + idle, hard))
                         yield _as_chunk(chunk)
@@ -299,6 +304,7 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
         # Nhật ký "Đang làm" của tab Trò chuyện (Companion có dòng trạng thái riêng): gửi từng bước, lưu cùng tin nhắn.
         log = WorkLog(started) if mode == "chat" else None
         work: dict | None = None
+        player_session = None
         message_id = None
         # Chữ của lần gọi mô hình hiện tại bắt đầu từ đâu trong ``collected``: lượt gọi kết thúc bằng lệnh công cụ thì
         # phần chữ đó là câu dẫn, chuyển sang nhật ký.
@@ -309,14 +315,14 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
 
         async def checkpoint(force=False):
             nonlocal checkpoint_at, checkpoint_size
-            if mode != 'chat' or message_id is None:
+            if message_id is None or (mode != 'chat' and not (player_session and player_session.receipts)):
                 return
             now, size = perf_counter(), sum(map(len, collected))
             if not force and now - checkpoint_at < 1 and abs(size - checkpoint_size) < 2048:
                 return
             saved = await chat_turns.persist(owner, request_id, content=''.join(collected), sources=sources,
                 artifacts=document_session.created if document_session else [],
-                work=log.snapshot() if log else None, provider=own_provider)
+                work=log.snapshot() if log else {'player': player_session.trace()} if player_session else None, provider=own_provider)
             if saved not in {'running', 'stopped'}:
                 raise ProviderError('Hội thoại đã thay đổi. Mở lại lịch sử trước khi gửi tiếp nhé.')
             checkpoint_at, checkpoint_size = now, size
@@ -577,6 +583,7 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                 ) if mode == 'companion' and request.player_control in (1, 2, 3) and own_provider != 'gemini' else None
                 if player_session:
                     system_prompt += '\n\n' + ({1: PLAYER_PROMPT, 2: PLAYER_LIBRARY_PROMPT, 3: PLAYER_DISCOVERY_PROMPT}[request.player_control])
+                    system_prompt += player_reply.past_evidence(active_rows)
                 elif mode == 'companion' and request.player_control in (1, 2, 3):
                     system_prompt += '\n\nPlayer control is unavailable with this Gemini connection. You can discuss music, but cannot read or change live playback with this provider.'
                 # A timeout may already have consumed provider tokens. Do not repeat the whole turn invisibly.
@@ -589,7 +596,8 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                     async for chunk in stream:
                         event = chunk_event(chunk)
                         # Lưu trước khi công bố tệp/kết quả công cụ; chữ lưu tối đa mỗi giây hoặc mỗi 2 KiB.
-                        await checkpoint(force=chunk.kind in {'artifact', 'tool_result', 'note', 'replace'})
+                        await checkpoint(force=chunk.kind in {'artifact', 'tool_result', 'note', 'replace'}
+                                         or bool(player_session and chunk.kind in {'player_command', 'round'}))
                         if event:
                             yield event
                 if notes:
@@ -634,7 +642,7 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
             artifacts = document_session.created if document_session else []
             if artifacts and not reply:
                 reply = 'Tệp đã được tạo. Phản hồi bị ngắt; bạn vẫn có thể tải tài liệu bên dưới.'
-            work = log.close(complete) if log else None
+            work = log.close(complete) if log else {'player': player_session.trace()} if player_session and (player_session.receipts or player_session.reply_guard) else None
             with anyio.CancelScope(shield=True):
                 try:
                     state = await chat_turns.persist(owner, request_id, content=reply, sources=sources,
@@ -677,7 +685,7 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
             )
         if state == 'stopped':
             return
-        if work is not None and admitted_at is not None:
+        if log and work is not None and admitted_at is not None:
             # Bản chốt của nhật ký (bước suy nghĩ quá ngắn đã bỏ, bước dở đã đóng), đúng như bản lưu cùng tin nhắn.
             yield sse({"type": "work", "work": work})
         if failure:

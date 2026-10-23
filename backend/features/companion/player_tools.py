@@ -21,6 +21,7 @@ BASE_ACTIONS = ('status', 'open', 'hide', 'close', 'play', 'pause', 'next', 'res
 ACTIONS = (*BASE_ACTIONS, 'list_queue', 'list_favorites', 'next_track', 'remove_queue_entry', 'move_queue_entry',
            'play_queue_entry', 'set_favorite', 'enqueue_favorite', 'enqueue_favorites')
 DISCOVERY_ACTIONS = ('search_videos', 'play_video', 'enqueue_video', 'enqueue_playlist')
+READ_ACTIONS = {'status', 'list_queue', 'list_favorites', 'next_track', 'search_videos', 'invalid'}
 SCHEMA = {'type': 'function', 'name': NAME, 'strict': True, 'description': (
     'Read or control the existing Player in the browser sending this Companion conversation. '
     'Use status for what we are listening to. Use actions for a user request; an offer alone is not a request to play. '
@@ -131,6 +132,8 @@ class Snapshot(BaseModel):
     repeat: Literal['off', 'all', 'one']
     queue_count: int = Field(ge=0, le=200)
     window_revision: int | None = Field(default=None, ge=0)
+    native_video_id: str | None = Field(default=None, pattern=r'^[A-Za-z0-9_-]{11}$')
+    native_state: Literal[-1, 0, 1, 2, 3, 5] | None = None
 
 
 class Result(BaseModel):
@@ -178,6 +181,8 @@ class PlayerSession:
         self.version = version
         self._queue_revision: int | None = None
         self._queue_items: dict[str, LibraryItem] = {}
+        self.receipts: list[dict] = []
+        self.reply_guard: str | None = None
         from features.companion.player_discovery_tools import Discovery
         self.discovery = Discovery(owner, user_text)
 
@@ -186,6 +191,44 @@ class PlayerSession:
         return DISCOVERY_SCHEMA if self.version >= 3 else SCHEMA if self.version >= 2 else LEGACY_SCHEMA
 
     async def run(self, arguments: str):
+        # Keep execution evidence separate from assistant prose, including interrupted/invalid actions.
+        try:
+            supplied = json.loads(arguments)
+            action = supplied.get('action') if isinstance(supplied, dict) else None
+        except (ValueError, TypeError):
+            action = None
+        receipt = {'action': action if action in (*ACTIONS, *DISCOVERY_ACTIONS) else 'invalid',
+                   'sent': False, 'result': {'ok': False, 'error': 'Turn interrupted before confirmation; outcome is unknown.'}}
+        failed_effect = any(item['action'] not in READ_ACTIONS and item['sent'] and not item['result'].get('ok') for item in self.receipts)
+        if len(self.receipts) < 24:
+            self.receipts.append(receipt)
+        if receipt['action'] not in READ_ACTIONS and failed_effect:
+            receipt['result'] = {'ok': False, 'error': 'An earlier Player mutation failed or was unconfirmed in this turn. No further mutation was sent; read status and ask for a new user request before trying again.'}
+            yield receipt['result']
+            return
+        async with aclosing(self._run(arguments)) as operation:
+            async for item in operation:
+                if isinstance(item, StreamChunk):
+                    if item.kind == 'player_command' and item.info.get('action') == action:
+                        receipt['sent'] = True
+                else:
+                    receipt['result'] = item
+                yield item
+
+    def trace(self):
+        """Bounded diagnostics saved with this owner's reply; no auth tokens, URLs or full lists."""
+        commands = []
+        for receipt in self.receipts:
+            result = receipt['result']
+            data = result.get('data') or {}
+            commands.append({'action': receipt['action'], 'sent': receipt['sent'], 'ok': result.get('ok') is True,
+                **({'error': result['error'][:500]} if result.get('error') else {}),
+                **({'state': result['state']} if result.get('state') else {}),
+                **({'data': {key: value for key, value in data.items() if key in ('kind', 'target', 'queue_revision', 'total', 'added', 'not_added_capacity', 'skipped_unavailable', 'truncated', 'favorite')}} if data else {}),
+                **({'change': result['change']} if result.get('change') else {})})
+        return {'version': 1, 'commands': commands, 'reply_guard': self.reply_guard}
+
+    async def _run(self, arguments: str):
         try:
             command = Command.model_validate(json.loads(arguments))
             if self.version < 2 and command.action not in BASE_ACTIONS:
@@ -305,5 +348,9 @@ def acknowledge(owner: str, key: str, result: Result) -> bool:
     data = result.model_dump(exclude_none=True)
     if result.ok and result.state is None:
         data = {'ok': False, 'error': 'Player returned no observed state; success is unconfirmed.'}
+    elif result.ok and result.state.status == 'playing' and (result.state.native_video_id is not None or result.state.native_state is not None):
+        state = result.state
+        if state.track is None or state.native_video_id != state.track.video_id or state.native_state != 1:
+            data = {'ok': False, 'state': data['state'], 'error': 'Native YouTube video ID/state does not confirm the selected video is playing. Outcome is unconfirmed; do not retry automatically.'}
     entry[1].set_result(data)
     return True

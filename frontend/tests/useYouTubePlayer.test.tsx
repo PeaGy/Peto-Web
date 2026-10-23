@@ -11,10 +11,12 @@ const players: FakePlayer[] = [];
 class FakePlayer {
   options: YouTubeOptions;
   iframe = document.createElement('iframe');
-  time = 0; duration = 240; volume = 60; muted = false;
-  constructor(element: HTMLElement, options: YouTubeOptions) { this.options = options; element.replaceWith(this.iframe); players.push(this); }
-  cueVideoById = vi.fn((source: { startSeconds: number }) => { this.time = source.startSeconds; this.state(5); });
-  loadVideoById = vi.fn((source: { startSeconds: number }) => { this.time = source.startSeconds; this.state(1); });
+  time = 0; duration = 240; volume = 60; muted = false; nativeState = -1; videoId: string;
+  constructor(element: HTMLElement, options: YouTubeOptions) { this.options = options; this.videoId = options.videoId; element.replaceWith(this.iframe); players.push(this); }
+  cueVideoById = vi.fn((source: { videoId: string; startSeconds: number }) => { this.videoId = source.videoId; this.time = source.startSeconds; this.state(5); });
+  loadVideoById = vi.fn((source: { videoId: string; startSeconds: number }) => { this.videoId = source.videoId; this.time = source.startSeconds; this.state(1); });
+  getVideoUrl = () => `https://www.youtube.com/watch?v=${this.videoId}`;
+  getPlayerState = () => this.nativeState;
   playVideo = vi.fn(() => this.state(1));
   pauseVideo = vi.fn(() => this.state(2));
   stopVideo = vi.fn();
@@ -28,7 +30,7 @@ class FakePlayer {
   getDuration = () => this.duration;
   getIframe = () => this.iframe;
   destroy = vi.fn(() => this.iframe.remove());
-  state(data: number) { this.options.events.onStateChange({ target: this, data }); }
+  state(data: number) { this.nativeState = data; this.options.events.onStateChange({ target: this, data }); }
   ready() { this.options.events.onReady({ target: this }); }
 }
 let player: ReturnType<typeof useYouTubePlayer>;
@@ -158,7 +160,7 @@ it('đổi bài chờ YouTube xác nhận đã cue rồi mới nhận Phát, b�
   const instance = players[0];
   instance.cueVideoById.mockImplementation(source => {
     instance.state(-1);
-    setTimeout(() => { instance.time = source.startSeconds; instance.state(5); }, 500);
+    setTimeout(() => { instance.videoId = source.videoId; instance.time = source.startSeconds; instance.state(5); }, 500);
   });
   view.rerender(<StrictMode><Harness source={second} /></StrictMode>);
   expect(player.ready).toBe(false);
@@ -173,6 +175,21 @@ it('đổi bài chờ YouTube xác nhận đã cue rồi mới nhận Phát, b�
   await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
   expect(player.playing).toBe(true);
   expect(player.position).toBe(20);
+});
+it('không nhận playing của bài cũ hoặc thiếu mã video làm xác nhận đổi bài, poll nhận đúng nguồn sau đó', async () => {
+  const view = await mount(), instance = players[0];
+  act(() => instance.state(1));
+  instance.loadVideoById.mockImplementation(() => { instance.state(1); });
+  view.rerender(<StrictMode><Harness source={{ ...second, playbackId: '9', autoplay: true }} /></StrictMode>);
+  expect(player.playing).toBe(false); expect(player.status).toBe('loading'); expect(player.observe()).toBeNull();
+  instance.videoId = '';
+  act(() => instance.state(1));
+  expect(player.playing).toBe(false);
+  instance.videoId = second.videoId;
+  await act(async () => { await vi.advanceTimersByTimeAsync(500); });
+  expect(player.playing).toBe(true);
+  expect(player.observe()).toMatchObject({ videoId: second.videoId, state: 1 });
+  expect(players).toHaveLength(1);
 });
 it('đổi bài mà không nhận được xác nhận cue có lỗi hữu hạn, không tự phát', async () => {
   const view = await mount();

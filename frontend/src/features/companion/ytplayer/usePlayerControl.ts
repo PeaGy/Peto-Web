@@ -32,7 +32,7 @@ export function usePlayerControl(props: ControlProps) {
         track: l.track ? controlTrack(l.track) : null,
         position: native?.position ?? y.position, duration: native?.duration ?? y.duration,
         volume: native?.volume ?? y.volume, shuffle: l.shuffle, repeat: l.repeat, queue_count: l.queue.length,
-        window_revision: windowLife.current.closed };
+        window_revision: windowLife.current.closed, native_video_id: native?.videoId ?? null, native_state: native?.state ?? null };
     };
     const done = () => ({ ok: true, state: snapshot() });
     const wait = (condition: () => boolean) => waitForPlayer(() => {
@@ -56,7 +56,8 @@ export function usePlayerControl(props: ControlProps) {
         if (!value.library.source || youtubeSourceKey(value.library.source) !== expected || value.youtube.sourceKey !== expected) return undefined;
         if (selected && !selected()) throw new Error('Bài đang nghe đã thay đổi; chưa xác nhận lệnh cũ.');
         if (value.youtube.status === 'blocked' || value.youtube.status === 'error') throw new Error(value.youtube.error);
-        return value.youtube.playing ? true : undefined;
+        const native = value.youtube.observe();
+        return value.youtube.playing && native?.videoId === track.videoId && native.state === 1 ? true : undefined;
       }, signal, available);
     };
     const discoveryResult = await controlDiscovery(command, signal, {
@@ -115,7 +116,8 @@ export function usePlayerControl(props: ControlProps) {
         if (!source || youtubeSourceKey(source) === oldKey || q.youtube.sourceKey !== youtubeSourceKey(source)) return undefined;
         if (youtubeSourceKey(source) !== expectedKey) throw new Error('Bài đang nghe đã thay đổi trong lúc thực hiện; chưa xác nhận lệnh cũ.');
         if (q.youtube.status === 'error' || q.youtube.status === 'blocked') throw new Error(q.youtube.error);
-        return q.youtube.playing ? true : undefined;
+        const native = q.youtube.observe();
+        return q.youtube.playing && native?.videoId === target.videoId && native.state === 1 ? true : undefined;
       }, signal, available);
       return done();
     }
@@ -125,7 +127,7 @@ export function usePlayerControl(props: ControlProps) {
     switch (command.action) {
       case 'play':
         y.setPlaying(true);
-        await wait(() => { same(); return latest.current.youtube.playing; }); break;
+        await wait(() => { same(); const native = latest.current.youtube.observe(); return latest.current.youtube.playing && native?.videoId === p.library.source!.videoId && native.state === 1; }); break;
       case 'pause': y.setPlaying(false); await wait(() => { same(); return latest.current.youtube.status === 'paused' || latest.current.youtube.status === 'ready'; }); break;
       case 'seek': {
         if (!Number.isFinite(command.seconds) || command.seconds! < 0) throw new Error('Thời điểm tua không hợp lệ.');

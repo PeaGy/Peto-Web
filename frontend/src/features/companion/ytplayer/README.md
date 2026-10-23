@@ -14,6 +14,8 @@ cho phạm vi, các bộ não, kiểm chứng và giới hạn. Giai đoạn 2 y
 đổi thứ tự `7b912f4`; chủ web xác nhận đổi đúng mà không cần F5. Xem [CONTROL_STAGE2.md](./CONTROL_STAGE2.md).
 Giai đoạn 3 tìm/chọn nhạc, thêm video/playlist và hội thoại gợi ý nhạc đã ghép, chưa commit/deploy;
 xem [CONTROL_STAGE3.md](./CONTROL_STAGE3.md). Cần frontend v3; tab v1/v2 đang nghe vẫn giữ công cụ cũ.
+Sau báo lỗi “Swapped” nhưng video chưa đổi, xem [CONTROL_CONFIRMATION_FIX.md](./CONTROL_CONFIRMATION_FIX.md):
+biên nhận thực thi, chặn bản nháp sai khỏi chữ/giọng đọc, native ID/state và trace theo lượt. Bản sửa đang chờ commit/deploy.
 
 ## Cách mở
 

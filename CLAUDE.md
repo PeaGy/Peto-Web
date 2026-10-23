@@ -1,5 +1,23 @@
 # CLAUDE.md
 
+## Player — chặn xác nhận “Swapped” sai (2026-10-23)
+
+Owner đã commit giai đoạn 3 ở `8ed3642`, báo model nói đổi bài nhưng video cũ còn phát, nhắc lại mới đổi; yêu cầu
+sửa. Chưa có trace production cũ để chốt root cause. Đợt này chưa commit/deploy. PlayerSession ghi receipt có
+sent/result; guard ở _stream_reply dùng chung providers giữ draft khỏi chữ/TTS và dựng xác nhận mutation từ receipt,
+không lấy lời AI làm success. Nhánh không mutation nhưng nói đã làm (mẫu Anh/Việt) sửa tối đa một lần; không phải
+router ý định và không bảo đảm phủ mọi cách nói. Mutation sent bị lỗi/unknown chặn mutation tiếp trong cùng turn,
+vẫn cho status; turn mới từ user được thử lại. Câu trả lời Player gọn theo mẫu; giữ emote, không đổi persona/examples/UI.
+Native proof đọc getVideoUrl/getPlayerState; đổi bài cần ID đúng + state 1, bỏ event cũ/thiếu ID, poll nhận cache muộn.
+Snapshot native fields optional cho tab cũ; backend từ chối success playing nếu bằng chứng đã cung cấp mâu thuẫn.
+Trace checkpoint/chốt vào work JSON sẵn có, /api/companion trả player_trace cùng owner, không thêm UI. Giữ action,
+sent/error/state/target/counts, không ID lệnh thực thi/URL/key/full lists. Lịch sử 3 turn trace gần nhất kèm cho AI
+giải thích, không replay. Không gọi AI/TTS/YouTube production. Frontend 170 ca đạt, Chrome desktop/mobile mô phỏng
+34 đạt/4 skip, build đạt. Backend nhóm Player/BYO/clock/prompt **203 ca đạt**.
+Deploy rebuild frontend + restart backend. Guard backend có hiệu lực cho tab cũ; native proof cần bundle mới,
+tải lại sau phiên nghe vì F5 vẫn xóa queue RAM. Không DB migration/key/dependency mới. Chi tiết và giới hạn:
+`frontend/src/features/companion/ytplayer/CONTROL_CONFIRMATION_FIX.md`.
+
 ## Companion điều khiển Player — giai đoạn 3 (2026-10-23)
 
 Owner đã deploy `7b912f4`, xác nhận queue đổi đúng không cần F5 rồi yêu cầu bước tiếp. Đã ghép native action v3

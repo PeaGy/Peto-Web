@@ -173,7 +173,9 @@ async def test_native_ai_waits_for_observed_result_before_final_text(client, mon
         assert json.loads(requests[1]['input'][-1]['output']) == result
         assert any(s.get('name') == pt.NAME for s in requests[0]['tools'])
         assert 'PLAYER' in requests[0]['instructions']
-        assert 'Browser blocked' not in ''.join(e.get('text', '') for e in events)
+        text = ''.join(e.get('text', '') for e in events if e['type'] == 'delta')
+        assert 'Unconfirmed draft' not in text
+        assert ('Browser blocked' in text) is not ok
         assert not pt.pending and pt.current.get() is None
     finally:
         if not request.done():
