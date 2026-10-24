@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import type { usePlayerLibrary } from './usePlayerLibrary';
+import type { SessionEdit, usePlayerLibrary } from './usePlayerLibrary';
 import type { useYouTubePlayer } from './useYouTubePlayer';
 import { youtubeSourceKey } from './youtubeUrl';
 import { waitForPlayer, type PlayerControlBridge, type PlayerSnapshot } from './playerControl';
@@ -11,6 +11,9 @@ interface ControlProps {
   library: ReturnType<typeof usePlayerLibrary>; youtube: ReturnType<typeof useYouTubePlayer>;
   open: boolean; hidden: boolean; active: boolean; onShow: () => void; onHide: () => void; onClose: () => void;
   bridge?: PlayerControlBridge;
+  clearQueue: (signal: AbortSignal) => SessionEdit;
+  clearAll: (signal: AbortSignal) => SessionEdit;
+  undo: (signal: AbortSignal) => SessionEdit | null;
 }
 
 /** Reads committed React state and native API observations; mutation acknowledgement never means only "button called". */
@@ -30,9 +33,10 @@ export function usePlayerControl(props: ControlProps) {
       const native = y.observe();
       return { window: !open ? 'closed' : hidden ? 'hidden' : 'visible', status: !l.track ? 'empty' : !open ? 'suspended' : y.status,
         track: l.track ? controlTrack(l.track) : null,
-        position: native?.position ?? y.position, duration: native?.duration ?? y.duration,
+        position: !l.track ? 0 : native?.position ?? y.position, duration: !l.track ? 0 : native?.duration ?? y.duration,
         volume: native?.volume ?? y.volume, shuffle: l.shuffle, repeat: l.repeat, queue_count: l.queue.length,
-        window_revision: windowLife.current.closed, native_video_id: native?.videoId ?? null, native_state: native?.state ?? null };
+        window_revision: windowLife.current.closed + l.resetRevision, native_video_id: native?.videoId ?? null, native_state: native?.state ?? null,
+        can_undo: l.canUndo };
     };
     const done = () => ({ ok: true, state: snapshot() });
     const wait = (condition: () => boolean) => waitForPlayer(() => {
@@ -44,10 +48,26 @@ export function usePlayerControl(props: ControlProps) {
     signal.throwIfAborted();
     if (!available()) throw new Error('Hãy quay lại Companion để điều khiển Player.');
     const p = latest.current;
+    if (['clear_queue', 'clear_all', 'undo_queue'].includes(command.action)) {
+      if (command.action === 'undo_queue' && (command.queue_revision !== p.library.queueRevision || !p.library.canUndo))
+        return { ok: false, state: snapshot(), error: 'Không còn bản hoàn tác phù hợp hoặc hàng đợi vừa đổi. Đọc lại list_queue.' };
+      const edit = command.action === 'clear_all' ? p.clearAll(signal) : command.action === 'clear_queue' ? p.clearQueue(signal) : p.undo(signal);
+      if (!edit) return { ok: false, state: snapshot(), error: 'Không có thay đổi hàng đợi để hoàn tác.' };
+      await waitForPlayer(() => {
+        const value = latest.current;
+        if (value.library.queueRevision < edit.revision) return undefined;
+        if (value.library.queueRevision !== edit.revision) throw new Error('Hàng đợi đã đổi tiếp; chưa xác nhận thao tác cũ.');
+        if (command.action === 'clear_all' && (value.library.track || value.library.queue.length || value.youtube.observe())) return undefined;
+        if (command.action === 'clear_queue' && value.library.queue.length) return undefined;
+        return true;
+      }, signal, available);
+      return { ...done(), data: { kind: 'mutation', queue_revision: edit.revision, removed: edit.removed, restored: edit.restored,
+        ...(edit.undoAction ? { undo_action: edit.undoAction } : {}) } };
+    }
     const playSelected = async (track: MediaTrack, select: () => void, selected?: () => boolean) => {
       if (!latest.current.open) latest.current.onShow();
       await waitForPlayer(() => latest.current.open && latest.current.youtube.container.current ? true : undefined, signal, available);
-      const expected = youtubeSourceKey({ ...track, playbackId: String(Number(latest.current.library.source?.playbackId ?? 0) + 1) });
+      const expected = youtubeSourceKey({ ...track, playbackId: latest.current.library.nextPlaybackId });
       signal.throwIfAborted();
       select();
       await waitForPlayer(() => {
@@ -61,7 +81,7 @@ export function usePlayerControl(props: ControlProps) {
       }, signal, available);
     };
     const discoveryResult = await controlDiscovery(command, signal, {
-      library: () => latest.current.library, snapshot, available, windowRevision: () => windowLife.current.closed,
+      library: () => latest.current.library, snapshot, available, windowRevision: () => windowLife.current.closed + latest.current.library.resetRevision,
       play: track => playSelected(track, () => latest.current.library.select(track)),
     });
     if (discoveryResult) return discoveryResult;

@@ -688,7 +688,7 @@ export async function sendMessage(
     providerKey?: string;
     /** Khóa Tavily cho nhà cung cấp không có tìm kiếm riêng. */
     searchKey?: string;
-    playerControl?: boolean | 1 | 2 | 3;
+    playerControl?: boolean | 1 | 2 | 3 | 4;
   },
   handlers: ChatHandlers,
   signal?: AbortSignal,

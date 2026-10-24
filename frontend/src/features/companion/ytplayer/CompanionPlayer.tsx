@@ -40,7 +40,13 @@ export default function CompanionPlayer({ active, open, hidden, mobileLayout, al
     if (source && youtube.sourceKey === youtubeSourceKey(source) && youtube.duration > 0) updateDuration(source.videoId, youtube.duration);
   }, [source, youtube.sourceKey, youtube.duration, updateDuration]);
   const close = useCallback(() => { library.cancelDiscovery(); youtube.stop(); onClose(); }, [library.cancelDiscovery, youtube.stop, onClose]);
-  usePlayerControl({ library, youtube, open, hidden, active, onShow, onHide, onClose: close, bridge: control });
+  const clearQueue = (signal?: AbortSignal) => { control?.invalidate(signal); return library.clearQueue(); };
+  const clearAll = (signal?: AbortSignal) => { control?.invalidate(signal); youtube.stop(); return library.clearAll(); };
+  const undo = (signal?: AbortSignal) => {
+    if (!library.canUndo) return null;
+    control?.invalidate(signal); return library.undo();
+  };
+  usePlayerControl({ library, youtube, open, hidden, active, onShow, onHide, onClose: close, bridge: control, clearQueue, clearAll, undo });
 
   // Portal giữ cùng cây iframe khi xoay màn hình, tránh container của sân khấu giới hạn position:fixed trên mobile.
   useLayoutEffect(() => {
@@ -66,6 +72,7 @@ export default function CompanionPlayer({ active, open, hidden, mobileLayout, al
   if ((!active && !allowBackground) || !open || !frame) return null;
   return createPortal(<div className="companion-player-layer" data-mobile={mobileLayout} style={frame}>
     <PlayerLibraryShell library={library} id="companion-player" mode="youtube" mobileLayout={mobileLayout} bottomGap={0} bounds={bounds} hidden={hidden} onHide={onHide}
+      sessionActions={{ canUndo: library.canUndo, clearQueue, clearAll, undo }}
       track={{ title: library.track ? trackTitle(library.track) : '', artist: library.track?.artist ?? '', url: source?.url ?? '', duration: youtube.duration }}
       controlsReady={source !== null && youtube.ready} status={source ? youtube.status : 'empty'}
       playing={youtube.playing} position={youtube.position} volume={youtube.volume}

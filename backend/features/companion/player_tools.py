@@ -21,6 +21,7 @@ BASE_ACTIONS = ('status', 'open', 'hide', 'close', 'play', 'pause', 'next', 'res
 ACTIONS = (*BASE_ACTIONS, 'list_queue', 'list_favorites', 'next_track', 'remove_queue_entry', 'move_queue_entry',
            'play_queue_entry', 'set_favorite', 'enqueue_favorite', 'enqueue_favorites')
 DISCOVERY_ACTIONS = ('search_videos', 'play_video', 'enqueue_video', 'enqueue_playlist')
+SESSION_ACTIONS = ('clear_queue', 'clear_all', 'undo_queue')
 READ_ACTIONS = {'status', 'list_queue', 'list_favorites', 'next_track', 'search_videos', 'invalid'}
 SCHEMA = {'type': 'function', 'name': NAME, 'strict': True, 'description': (
     'Read or control the existing Player in the browser sending this Companion conversation. '
@@ -79,10 +80,21 @@ DISCOVERY_SCHEMA['parameters']['properties'].update({
 DISCOVERY_SCHEMA['parameters']['properties']['video_id']['description'] = 'Observed video for play_video/enqueue_video, or existing favorite actions; otherwise null.'
 DISCOVERY_SCHEMA['parameters']['required'] = list(DISCOVERY_SCHEMA['parameters']['properties'])
 
+SESSION_SCHEMA = deepcopy(DISCOVERY_SCHEMA)
+SESSION_SCHEMA['parameters']['properties']['action']['enum'] += list(SESSION_ACTIONS)
+SESSION_SCHEMA['description'] += (
+    ' clear_queue atomically removes all Upcoming entries, keeping the current song and playback. '
+    'clear_all stops playback, releases the player and clears current/queue; neither action removes favorites. '
+    'Use these bulk actions once, never simulate clear-all by deleting entries individually. '
+    'undo_queue restores the latest queue edit (append/remove/move/clear), one level only; '
+    'read list_queue with limit 0 in this turn and supply its queue_revision first. '
+    'Undo of clear_all restores the session stopped, without autoplay. Next/source/mode changes invalidate undo.')
+SESSION_SCHEMA['parameters']['properties']['queue_revision']['description'] = 'Required for undo_queue or with entry_id; read list_queue in this turn. Re-read if stale.'
+
 
 class Command(BaseModel):
     model_config = ConfigDict(extra='forbid', strict=True, allow_inf_nan=False)
-    action: Literal[*ACTIONS, *DISCOVERY_ACTIONS]
+    action: Literal[*ACTIONS, *DISCOVERY_ACTIONS, *SESSION_ACTIONS]
     volume: int | None = Field(default=None, ge=0, le=100)
     seconds: float | None = Field(default=None, ge=0, le=604800)
     enabled: bool | None = None
@@ -102,7 +114,8 @@ class Command(BaseModel):
         required = {'set_volume': {'volume'}, 'seek': {'seconds'}, 'set_shuffle': {'enabled'}, 'set_repeat': {'repeat'},
                     'remove_queue_entry': {'entry_id', 'queue_revision'}, 'move_queue_entry': {'entry_id', 'queue_revision', 'position'},
                     'play_queue_entry': {'entry_id', 'queue_revision'}, 'set_favorite': {'enabled'},
-                    'enqueue_favorite': {'video_id'}, 'search_videos': {'query'}, 'enqueue_playlist': {'url'}}.get(self.action, set())
+                    'enqueue_favorite': {'video_id'}, 'search_videos': {'query'}, 'enqueue_playlist': {'url'},
+                    'undo_queue': {'queue_revision'}}.get(self.action, set())
         optional = {'list_queue': {'offset', 'limit'}, 'list_favorites': {'offset', 'limit'}, 'set_favorite': {'video_id'},
                     'search_videos': {'page_token'}, 'play_video': {'video_id', 'url'}, 'enqueue_video': {'video_id', 'url'}}.get(self.action, set())
         supplied = {name for name in self.model_fields_set - {'action'} if getattr(self, name) is not None}
@@ -134,6 +147,7 @@ class Snapshot(BaseModel):
     window_revision: int | None = Field(default=None, ge=0)
     native_video_id: str | None = Field(default=None, pattern=r'^[A-Za-z0-9_-]{11}$')
     native_state: Literal[-1, 0, 1, 2, 3, 5] | None = None
+    can_undo: bool | None = None
 
 
 class Result(BaseModel):
@@ -165,6 +179,9 @@ class LibraryData(BaseModel):
     added: int | None = Field(default=None, ge=0, le=200)
     skipped_duplicates: int | None = Field(default=None, ge=0, le=500)
     not_added_capacity: int | None = Field(default=None, ge=0, le=500)
+    removed: int | None = Field(default=None, ge=0, le=201)
+    restored: int | None = Field(default=None, ge=0, le=201)
+    undo_action: Literal['append', 'remove', 'move', 'clear_queue', 'clear_all'] | None = None
 
 
 Result.model_rebuild()
@@ -188,7 +205,7 @@ class PlayerSession:
 
     @property
     def schema(self):
-        return DISCOVERY_SCHEMA if self.version >= 3 else SCHEMA if self.version >= 2 else LEGACY_SCHEMA
+        return SESSION_SCHEMA if self.version >= 4 else DISCOVERY_SCHEMA if self.version >= 3 else SCHEMA if self.version >= 2 else LEGACY_SCHEMA
 
     async def run(self, arguments: str):
         # Keep execution evidence separate from assistant prose, including interrupted/invalid actions.
@@ -197,7 +214,7 @@ class PlayerSession:
             action = supplied.get('action') if isinstance(supplied, dict) else None
         except (ValueError, TypeError):
             action = None
-        receipt = {'action': action if action in (*ACTIONS, *DISCOVERY_ACTIONS) else 'invalid',
+        receipt = {'action': action if action in (*ACTIONS, *DISCOVERY_ACTIONS, *SESSION_ACTIONS) else 'invalid',
                    'sent': False, 'result': {'ok': False, 'error': 'Turn interrupted before confirmation; outcome is unknown.'}}
         failed_effect = any(item['action'] not in READ_ACTIONS and item['sent'] and not item['result'].get('ok') for item in self.receipts)
         if len(self.receipts) < 24:
@@ -224,7 +241,7 @@ class PlayerSession:
             commands.append({'action': receipt['action'], 'sent': receipt['sent'], 'ok': result.get('ok') is True,
                 **({'error': result['error'][:500]} if result.get('error') else {}),
                 **({'state': result['state']} if result.get('state') else {}),
-                **({'data': {key: value for key, value in data.items() if key in ('kind', 'target', 'queue_revision', 'total', 'added', 'not_added_capacity', 'skipped_unavailable', 'truncated', 'favorite')}} if data else {}),
+                **({'data': {key: value for key, value in data.items() if key in ('kind', 'target', 'queue_revision', 'total', 'added', 'not_added_capacity', 'skipped_unavailable', 'truncated', 'favorite', 'removed', 'restored', 'undo_action')}} if data else {}),
                 **({'change': result['change']} if result.get('change') else {})})
         return {'version': 1, 'commands': commands, 'reply_guard': self.reply_guard}
 
@@ -234,6 +251,8 @@ class PlayerSession:
             if self.version < 2 and command.action not in BASE_ACTIONS:
                 raise ValueError('Old browser')
             if self.version < 3 and (command.action in DISCOVERY_ACTIONS or any(getattr(command, field) is not None for field in ('query', 'url', 'page_token'))):
+                raise ValueError('Old browser')
+            if self.version < 4 and command.action in SESSION_ACTIONS:
                 raise ValueError('Old browser')
         except (ValueError, TypeError, ValidationError):
             yield {'ok': False, 'error': 'Invalid Player action or arguments; nothing was executed.'}
@@ -248,6 +267,9 @@ class PlayerSession:
             return
 
         target = None
+        if command.action == 'undo_queue' and (self._queue_revision is None or command.queue_revision != self._queue_revision):
+            yield {'ok': False, 'error': 'Read list_queue in this turn before undo, using its current queue_revision. Nothing was executed.'}
+            return
         if command.action in ('remove_queue_entry', 'move_queue_entry', 'play_queue_entry'):
             target = self._queue_items.get(command.entry_id)
             if target is None or command.queue_revision != self._queue_revision:
@@ -271,6 +293,24 @@ class PlayerSession:
             # A failed/unknown action may still have changed the browser. Never reuse its old IDs/revision.
             self._queue_revision = None
             self._queue_items.clear()
+
+        if command.action in SESSION_ACTIONS and result.get('ok'):
+            state, data = result.get('state') or {}, result.get('data') or {}
+            valid = (data.get('kind') == 'mutation' and data.get('queue_revision') is not None
+                     and data.get('removed') is not None and data.get('restored') is not None)
+            if command.action in ('clear_queue', 'clear_all'):
+                valid = valid and state.get('queue_count') == 0
+            if command.action == 'clear_all':
+                valid = valid and state.get('track') is None and state.get('status') == 'empty' and state.get('native_video_id') is None and state.get('native_state') != 1
+            if command.action == 'undo_queue':
+                valid = valid and data.get('undo_action') is not None and data['queue_revision'] > command.queue_revision and state.get('can_undo') is False
+                if data.get('undo_action') == 'clear_all':
+                    valid = valid and state.get('status') not in ('playing', 'buffering') and state.get('native_state') != 1
+            if not valid:
+                yield {'ok': False, 'state': result.get('state'), 'error': 'Player did not confirm the requested clear/undo result. Outcome is unconfirmed; do not retry automatically.'}
+                return
+            self.discovery.window_revision = None
+            self.discovery.tracks.clear()
 
         if target is not None and result.get('ok'):
             observed_target = (result.get('data') or {}).get('target') or {}

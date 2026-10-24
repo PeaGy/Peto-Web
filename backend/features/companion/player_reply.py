@@ -103,6 +103,14 @@ def confirmations(receipts: list[dict], vi: bool) -> str:
                 line = f'Đang phát “{name}”.' if vi else f'Playing “{name}”.'
             else:
                 line = 'Chưa xác nhận video đã phát.' if vi else 'Playback has not been confirmed.'
+        elif action == 'clear_all':
+            line = 'Đã dừng và dọn Player.' if vi else 'Playback stopped; Player cleared.'
+        elif action == 'clear_queue':
+            line = f'Đã xóa {data.get("removed", 0)} bài khỏi hàng đợi.' if vi else f'Cleared {data.get("removed", 0)} upcoming songs.'
+        elif action == 'undo_queue':
+            line = 'Đã hoàn tác hàng đợi.' if vi else 'Queue edit undone.'
+            if data.get('undo_action') == 'clear_all':
+                line += ' Phiên nghe được khôi phục ở trạng thái dừng.' if vi else ' The session was restored stopped.'
         elif action == 'pause':
             line = 'Đã tạm dừng.' if vi else 'Paused.'
         elif action in {'open', 'hide', 'close'}:

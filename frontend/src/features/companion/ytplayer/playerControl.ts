@@ -2,7 +2,8 @@
 export type PlayerAction = 'status' | 'open' | 'hide' | 'close' | 'play' | 'pause' | 'next' | 'restart'
   | 'seek' | 'set_volume' | 'mute' | 'unmute' | 'set_shuffle' | 'set_repeat'
   | 'list_queue' | 'list_favorites' | 'next_track' | 'remove_queue_entry' | 'move_queue_entry' | 'play_queue_entry'
-  | 'set_favorite' | 'enqueue_favorite' | 'enqueue_favorites' | 'play_video' | 'enqueue_video' | 'enqueue_playlist';
+  | 'set_favorite' | 'enqueue_favorite' | 'enqueue_favorites' | 'play_video' | 'enqueue_video' | 'enqueue_playlist'
+  | 'clear_queue' | 'clear_all' | 'undo_queue';
 export interface PlayerMediaTrack { video_id: string; title: string; artist: string; duration: number; start_seconds: number }
 export interface PlayerCommand {
   id: string; expires_at: number; action: PlayerAction; volume?: number; seconds?: number; enabled?: boolean; repeat?: 'off' | 'all' | 'one';
@@ -16,6 +17,7 @@ export interface PlayerSnapshot {
   position: number; duration: number; volume: number; shuffle: boolean; repeat: 'off' | 'all' | 'one'; queue_count: number;
   window_revision?: number;
   native_video_id?: string | null; native_state?: number | null;
+  can_undo?: boolean;
 }
 export type PlayerTrack = NonNullable<PlayerSnapshot['track']>;
 export interface PlayerLibraryData {
@@ -25,6 +27,7 @@ export interface PlayerLibraryData {
   queue_revision?: number; automatic?: PlayerTrack | null; on_skip?: PlayerTrack | null;
   reason?: 'queue' | 'loop_one' | 'loop_all' | 'empty'; target?: PlayerTrack; favorite?: boolean;
   added?: number; skipped_duplicates?: number; not_added_capacity?: number;
+  removed?: number; restored?: number; undo_action?: 'append' | 'remove' | 'move' | 'clear_queue' | 'clear_all';
 }
 export interface PlayerResult { ok: boolean; state?: PlayerSnapshot; error?: string; data?: PlayerLibraryData }
 export type PlayerExecutor = (command: PlayerCommand, signal: AbortSignal) => Promise<PlayerResult>;
@@ -46,17 +49,34 @@ export async function waitForPlayer<T>(read: () => T | undefined, signal: AbortS
 export class PlayerControlBridge {
   private target: PlayerExecutor | null = null;
   private results = new Map<string, Promise<PlayerResult>>();
+  private epoch = 0;
+  private turns = new WeakMap<AbortSignal, number>();
+  private running = new Set<{ owner: AbortSignal; signal: AbortSignal; cancel: AbortController }>();
+  bindTurn = (signal: AbortSignal) => { this.turns.set(signal, this.epoch); };
+  /** A user reset supersedes earlier chat commands, including commands not received yet. */
+  invalidate = (except?: AbortSignal) => {
+    const owner = [...this.running].find(item => item.signal === except)?.owner ?? except;
+    this.epoch++;
+    if (owner) this.turns.set(owner, this.epoch);
+    for (const item of this.running) if (item.owner !== owner) item.cancel.abort(new Error('Player vừa được dọn hoặc hoàn tác; lệnh cũ đã bị hủy.'));
+  };
   register = (target: PlayerExecutor) => {
     this.target = target;
     return () => { if (this.target === target) this.target = null; };
   };
   constructor(private show: () => void, private available: () => boolean, private prepare?: () => void) {}
   run = (command: PlayerCommand, signal: AbortSignal): Promise<PlayerResult> => {
+    if (!this.turns.has(signal)) this.bindTurn(signal);
+    if (this.turns.get(signal) !== this.epoch) return Promise.resolve({ ok: false, error: 'Phiên Player đã thay đổi; lệnh của lượt chat cũ chưa được thực hiện.' });
     // SSE duplication must not skip two tracks or restart twice.
     const existing = this.results.get(command.id);
     if (existing) return existing;
-    const operation = this.execute(command, signal).catch(reason => ({ ok: false,
-      error: reason instanceof Error ? reason.message.slice(0, 500) : 'Chưa điều khiển được Player.' }));
+    const cancel = new AbortController();
+    const running = { owner: signal, signal: AbortSignal.any([signal, cancel.signal]), cancel };
+    this.running.add(running);
+    const operation = this.execute(command, running.signal).catch(reason => ({ ok: false,
+      error: reason instanceof Error ? reason.message.slice(0, 500) : 'Chưa điều khiển được Player.' }))
+      .finally(() => this.running.delete(running));
     if (this.results.size >= 100) this.results.delete(this.results.keys().next().value!);
     this.results.set(command.id, operation);
     return operation;
@@ -70,7 +90,7 @@ export class PlayerControlBridge {
       if (command.action === 'list_queue') return { ok: true, state: emptyPlayer(), data: { kind: 'queue', total: 0, offset: command.offset ?? 0, items: [], next_offset: null, queue_revision: 0 } };
       if (command.action === 'next_track') return { ok: true, state: emptyPlayer(), data: { kind: 'next', automatic: null, on_skip: null, reason: 'empty' } };
       if (command.action === 'open') this.show();
-      else if (['list_favorites', 'enqueue_favorites', 'enqueue_favorite', 'set_favorite', 'play_video', 'enqueue_video', 'enqueue_playlist'].includes(command.action) && this.prepare) this.prepare();
+      else if (['list_favorites', 'enqueue_favorites', 'enqueue_favorite', 'set_favorite', 'play_video', 'enqueue_video', 'enqueue_playlist', 'clear_queue', 'clear_all', 'undo_queue'].includes(command.action) && this.prepare) this.prepare();
       else return { ok: false, state: emptyPlayer(), error: 'Player chưa có video. Mở và chọn một bài trước nhé.' };
       await waitForPlayer(() => this.target ?? undefined, signal, this.available);
     }

@@ -29,3 +29,9 @@ PLAYER_DISCOVERY_PROMPT = PLAYER_LIBRARY_PROMPT.replace(
     'You can offer relaxing music when someone is tired; start it after their clear acceptance, without asking the same question again. '
     'You know metadata and playback state, not what the audio sounds like. Report actual playback failures and partial imports; '
     'when Player is closed during a pending request, do not retry or reopen it automatically.')
+
+PLAYER_SESSION_PROMPT = PLAYER_DISCOVERY_PROMPT + '\n' + (
+    'Use clear_queue for all Upcoming songs while keeping current playback; clear_all for current plus queue, stopping the player. '
+    'Both keep favorites. Use one bulk action, never a loop of per-song removals. '
+    'undo_queue restores only the latest queue edit; first read list_queue (limit 0 suffices) for its queue_revision. '
+    'Undo after clear_all restores stopped, not playing. Report observed removed/restored counts and unavailable undo honestly.')

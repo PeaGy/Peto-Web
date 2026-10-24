@@ -8,6 +8,34 @@ const cmd = (action: PlayerCommand['action'], id = 'command-one'): PlayerCommand
 const signal = () => new AbortController().signal;
 afterEach(() => vi.unstubAllGlobals());
 
+it('manual reset aborts running work and rejects not-yet-received commands of older chat turns', async () => {
+  const bridge = new PlayerControlBridge(vi.fn(), () => true), turn = signal(), slow = signal();
+  bridge.bindTurn(turn); bridge.bindTurn(slow);
+  const execute = vi.fn(async (_c: PlayerCommand, s: AbortSignal) => {
+    await new Promise((_, reject) => s.addEventListener('abort', () => reject(s.reason), { once: true }));
+    return { ok: true, state: emptyPlayer() };
+  });
+  bridge.register(execute);
+  const pending = bridge.run(cmd('play_video'), turn);
+  bridge.invalidate();
+  expect((await pending).ok).toBe(false);
+  expect((await bridge.run(cmd('enqueue_playlist', 'late'), slow)).ok).toBe(false);
+  expect(execute).toHaveBeenCalledOnce();
+});
+
+it('an AI clear does not abort itself or execute a duplicate; its turn can read the new state', async () => {
+  const bridge = new PlayerControlBridge(vi.fn(), () => true), turn = signal();
+  const execute = vi.fn(async (c: PlayerCommand, s: AbortSignal) => {
+    if (c.action === 'clear_all') bridge.invalidate(s);
+    s.throwIfAborted(); return { ok: true, state: emptyPlayer() };
+  });
+  bridge.register(execute); bridge.bindTurn(turn);
+  const c = cmd('clear_all');
+  expect((await bridge.run(c, turn)).ok).toBe(true);
+  expect((await bridge.run(c, turn)).ok).toBe(true); expect(execute).toHaveBeenCalledOnce();
+  expect((await bridge.run(cmd('status', 'read'), turn)).ok).toBe(true);
+});
+
 it('bounded tool metadata preserves complete Unicode characters', () => {
   const track = controlTrack(mediaFromId('Soy4jGPHr3g', '🎵'.repeat(301), '🎤'.repeat(201)));
   expect(Array.from(track.title)).toHaveLength(300); expect(Array.from(track.artist)).toHaveLength(200);
@@ -50,7 +78,7 @@ it('open waits for the lazy player to register and does not toggle an already-vi
   expect(execute).toHaveBeenCalledOnce();
 });
 
-it.each([true, 2, 3] as const)('only Companion advertises protocol %s and acknowledges player SSE before final text', async version => {
+it.each([true, 2, 3, 4] as const)('only Companion advertises protocol %s and acknowledges player SSE before final text', async version => {
   const command = cmd('pause');
   const event = (value: object) => `data: ${JSON.stringify(value)}\n\n`;
   const order: string[] = [];

@@ -22,6 +22,8 @@
 .yl-shell .yl-add-link { display: flex; align-items: center; gap: 7px; min-height: 36px; margin-top: 10px; padding: 5px 8px; border: 1px solid var(--yl-line); border-radius: 4px; background: transparent; color: inherit; font-size: 12px; }
 .yl-shell:has(.yt-command-panel) .companion-player-empty { visibility: hidden; }
 .yl-shell.is-mobile .yl-add-link { min-height: 44px; }
+.yl-session-actions { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 12px; margin-top: 12px; border-top: 1px solid var(--yl-line); }
+.yl-shell.is-mobile .yl-session-actions button { min-height: 44px; }
 .yl-main .yt-transport { flex-shrink: 0; }
 .companion-player-layer .yl-main .yt-transport { margin-top: 0; }
 .yl-main .yt-playback-buttons { display: flex; flex-direction: column; align-items: stretch; gap: 8px; }

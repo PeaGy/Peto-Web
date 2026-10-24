@@ -13,6 +13,23 @@ const saved = mediaFromId('Soy4jGPHr3g', 'Tetris', 'Kasane Teto SV');
 beforeEach(() => { vi.clearAllMocks(); api.list.mockResolvedValue([]); api.save.mockResolvedValue([saved]); api.info.mockResolvedValue({ video_id: saved.videoId, title: saved.title, artist: saved.artist });
   api.search.mockResolvedValue({ tracks: [saved], nextPageToken: '' }); api.playlist.mockResolvedValue({ tracks: [saved], skipped: 0, truncated: false }); });
 
+it('clear all cancels a late playlist, keeps account favorites and undo restores stopped', async () => {
+  api.list.mockResolvedValue([saved]);
+  const view = renderHook(() => usePlayerLibrary());
+  await waitFor(() => expect(view.result.current.loadingFavorites).toBe(false));
+  act(() => { view.result.current.select(saved); view.result.current.append([saved, saved]); });
+  let resolve!: (value: { tracks: typeof saved[]; skipped: number; truncated: boolean }) => void;
+  api.playlist.mockReturnValue(new Promise(done => { resolve = done; }));
+  act(() => { view.result.current.importPlaylist('https://youtube.com/playlist?list=PLtest123456'); });
+  act(() => { view.result.current.clearAll(); });
+  await act(async () => { resolve({ tracks: [saved], skipped: 0, truncated: false }); });
+  expect(view.result.current.track).toBeNull(); expect(view.result.current.queue).toEqual([]);
+  expect(view.result.current.favorites).toEqual([saved]); expect(view.result.current.canUndo).toBe(true);
+  act(() => { view.result.current.undo(); });
+  expect(view.result.current.queue).toHaveLength(2); expect(view.result.current.source?.autoplay).toBe(false);
+  expect(view.result.current.canUndo).toBe(false); expect(api.save).not.toHaveBeenCalled();
+});
+
 it('loads account favorites and saves only after server confirmation; rapid duplicate clicks issue one request', async () => {
   const view = renderHook(() => usePlayerLibrary(), { wrapper: StrictMode });
   await waitFor(() => expect(view.result.current.loadingFavorites).toBe(false));

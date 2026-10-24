@@ -1,5 +1,26 @@
 # CLAUDE.md
 
+## Player — dọn phiên nghe và hoàn tác, giai đoạn 1 (2026-10-24)
+
+Owner đã commit/deploy đợt điều khiển trước, yêu cầu giai đoạn 1 của kế hoạch mới. Bản đối chiếu `b3b7fa8`.
+Đã thêm File → Hoàn tác / Clear Queue / Clear All; mobile dùng menu ba chấm. Clear Queue xóa Tiếp theo, giữ
+bài đang nghe; Clear All dừng/giải phóng iframe và xóa current/queue, giữ yêu thích. `_`/mũi tên vẫn ẩn phát nền,
+X vẫn dừng giữ queue. Undo một bước cho append/remove/move/clear; Undo Clear All khôi phục stopped, không autoplay.
+Next/nguồn/chế độ mới làm mất Undo cũ; metadata/no-op không ghi đè. Snapshot bounded trong RAM, chưa lưu phiên qua F5.
+Client quảng bá v4; backend cấp ba action clear_queue/clear_all/undo_queue chỉ cho v4, giữ v1/v2/v3 cho tab cũ.
+Undo cần revision từ list_queue trong cùng turn. Clear/Undo tăng thế hệ, hủy discovery/import/native command cũ,
+kể cả SSE chưa đến từ lượt chat bắt đầu trước thao tác; lượt dọn của chính Peto vẫn nhận receipt. Backend kiểm
+receipt rồi giữ lời đáp tự nhiên qua guard đã có. Không đổi persona/examples, billing, DB, key hoặc dependency.
+266 ca backend, 200 ca frontend và build/browser TypeScript đạt. Chrome desktop/mobile mô phỏng hồi quy 42 đạt/4
+skip theo thiết bị; Edge chạy 4 ca mới đều đạt, không chạy lại toàn bộ Edge. Không retry/flaky.
+Không gọi AI/TTS/YouTube production, chưa kiểm thử thay đổi mới trên Android thật. Chưa commit/deploy.
+Deploy rebuild frontend + restart backend (backend lên trước/cùng bundle); tab cũ giữ phiên và bộ lệnh cũ.
+Nhận lệnh mới cần bundle v4, tải lại sau phiên nghe vì F5 vẫn mất queue RAM. Bàn giao/checklist/bằng chứng:
+`frontend/src/features/companion/ytplayer/SESSION_STAGE1.md`; raw Git-ignored `.runtime/player-session-stage1/`.
+Kế hoạch tiếp: (2) lưu/khôi phục phiên stopped sau F5; (3) lịch sử/Previous thật; (4) giảm âm nhạc khi voicechat;
+(5) nghiệm thu tích hợp. Chưa triển các bước này, playlist cá nhân để sau. Nghe/xem video cùng Peto tạm gác,
+không bỏ, không tự triển vì chủ đề nghe/xem xuất hiện trong lịch sử.
+
 ## Companion điều khiển Player — nghiệm thu giai đoạn 4 (2026-10-23)
 
 Owner đã commit sửa lời đáp tự nhiên ở `9869571`, yêu cầu giai đoạn tiếp theo. Đợt này nghiệm thu cuối luồng đã có,

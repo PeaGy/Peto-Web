@@ -35,6 +35,7 @@ function Icon({ name, size = 22 }: { name: 'play' | 'pause' | 'back' | 'volume' 
 
 interface Props {
   library: PlayerLibrary;
+  sessionActions?: { canUndo: boolean; clearQueue: () => unknown; clearAll: () => unknown; undo: () => unknown };
   id?: string;
   mode?: 'mock' | 'youtube';
   mobileLayout?: boolean;
@@ -61,7 +62,7 @@ interface Props {
 }
 
 /** Giao diện Player đã duyệt, nhận trạng thái từ phiên YouTube và thư viện tài khoản. */
-export function PlayerLibraryShell({ library, id, mode = 'youtube', mobileLayout, bottomGap, controlsReady = true, status, details, hidden = false, onHide, bounds, track, playing, position, volume, onPlayingChange, onSeek, onVolumeChange,
+export function PlayerLibraryShell({ library, sessionActions, id, mode = 'youtube', mobileLayout, bottomGap, controlsReady = true, status, details, hidden = false, onHide, bounds, track, playing, position, volume, onPlayingChange, onSeek, onVolumeChange,
   onOpenLink, onClose, onFocusChange, sourceChoices, notice, children }: Props) {
   const root = useRef<HTMLElement>(null);
   const initialized = useRef(false);
@@ -287,6 +288,11 @@ export function PlayerLibraryShell({ library, id, mode = 'youtube', mobileLayout
           <button type="button" className="yl-favorites-menu" onClick={() => { library.openPanel('favorites'); setMenu(null); }}>
             <LibraryIcon name="heart" size={18} /><span>Yêu thích</span><small>{library.loadingFavorites ? '…' : library.favorites.length}</small>
           </button>
+          {sessionActions && <div className="yt-command-row yl-session-actions">
+            <button type="button" disabled={!sessionActions.canUndo} onClick={() => { sessionActions.undo(); setMenu(null); }}>Hoàn tác</button>
+            <button type="button" onClick={() => { sessionActions.clearQueue(); setMenu(null); }}>Clear Queue</button>
+            <button type="button" onClick={() => { sessionActions.clearAll(); setMenu(null); }}>Clear All</button>
+          </div>}
         </>}
         {menu === 'View' && <><strong>Kích thước cửa sổ</strong><div className="yt-command-row">
           <button type="button" onClick={() => { controls.resize(480); setMenu(null); }}>Nhỏ</button>

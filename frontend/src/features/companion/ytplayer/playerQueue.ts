@@ -1,5 +1,8 @@
 import type { QueueEntry, RepeatMode } from './playerLibraryTypes';
 
+export type UndoOperation = 'append' | 'remove' | 'move' | 'clear_queue' | 'clear_all';
+type QueueSnapshot = Pick<PlayerQueue, 'current' | 'queue' | 'order' | 'cyclePlayed' | 'repeat' | 'shuffle' | 'cyclePrepared'>;
+export interface QueueUndo { operation: UndoOperation; before: QueueSnapshot }
 export interface PlayerQueue {
   current: QueueEntry | null;
   queue: QueueEntry[];
@@ -12,14 +15,17 @@ export interface PlayerQueue {
   endedSerial: number;
   revision: number;
   cyclePrepared: boolean;
+  undo: QueueUndo | null;
+  resetRevision: number;
 }
-export const emptyQueue = (): PlayerQueue => ({ current: null, queue: [], order: [], cyclePlayed: [], repeat: 'off', shuffle: false, request: 0, autoplay: false, endedSerial: 0, revision: 0, cyclePrepared: false });
+export const emptyQueue = (): PlayerQueue => ({ current: null, queue: [], order: [], cyclePlayed: [], repeat: 'off', shuffle: false, request: 0, autoplay: false, endedSerial: 0, revision: 0, cyclePrepared: false, undo: null, resetRevision: 0 });
 export type QueueAction =
   | { type: 'select'; entry: QueueEntry; autoplay: boolean }
   | { type: 'next' | 'shuffle' | 'repeat'; seed: number }
   | { type: 'ended'; seed: number; request: number; serial: number }
   | { type: 'restart' }
   | { type: 'set-repeat'; repeat: RepeatMode; seed: number }
+  | { type: 'clear_queue' | 'clear_all' | 'undo' }
   | { type: 'append'; entries: QueueEntry[] }
   | { type: 'remove' | 'play-entry'; key: string }
   | { type: 'move'; key: string; offset: number }
@@ -78,10 +84,31 @@ export function playerQueueReducer(state: PlayerQueue, action: QueueAction): Pla
     history.slice(Math.max(0, history.length - Math.max(0, 201 - keep.size))).forEach(entry => keep.add(entry.key));
     order = order.filter(entry => keep.has(entry.key));
   }
-  return { ...result, order, revision: state.revision + (action.type === 'metadata' ? 0 : 1) };
+  const operation: UndoOperation | null = action.type === 'control-entry'
+    ? action.operation === 'play' ? null : action.operation
+    : ['append', 'remove', 'move', 'clear_queue', 'clear_all'].includes(action.type) ? action.type as UndoOperation : null;
+  const changed = state.current !== result.current || state.queue !== result.queue || state.order !== result.order;
+  const undo = operation && changed ? { operation, before: {
+    current: state.current, queue: state.queue, order: state.order, cyclePlayed: state.cyclePlayed,
+    repeat: state.repeat, shuffle: state.shuffle, cyclePrepared: state.cyclePrepared,
+  } } : action.type === 'metadata' || (operation && !changed) ? state.undo : null;
+  return { ...result, order, undo, revision: state.revision + (action.type === 'metadata' ? 0 : 1) };
 }
 function reduceQueue(state: PlayerQueue, action: QueueAction): PlayerQueue {
   switch (action.type) {
+    case 'clear_queue': return { ...state, queue: state.queue.length ? [] : state.queue,
+      order: state.order.length > (state.current ? 1 : 0) ? (state.current ? [state.current] : []) : state.order,
+      cyclePlayed: [], cyclePrepared: false, resetRevision: state.resetRevision + 1 };
+    case 'clear_all': return { ...state, current: null, queue: state.queue.length ? [] : state.queue,
+      order: state.order.length ? [] : state.order, cyclePlayed: [], cyclePrepared: false,
+      request: state.request + 1, autoplay: false, resetRevision: state.resetRevision + 1 };
+    case 'undo': {
+      if (!state.undo) return state;
+      const restoresCurrent = state.undo.operation === 'clear_all';
+      return { ...state, ...state.undo.before, undo: null,
+        request: state.request + (restoresCurrent ? 1 : 0), autoplay: restoresCurrent ? false : state.autoplay,
+        resetRevision: state.resetRevision + 1 };
+    }
     case 'select': return { ...state, current: action.entry, order: [action.entry, ...restorePending(state)], cyclePlayed: [], cyclePrepared: false, request: state.request + 1, autoplay: action.autoplay };
     case 'control-entry': {
       if (action.revision !== state.revision || !state.queue.some(entry => entry.key === action.key)) return state;
@@ -94,7 +121,7 @@ function reduceQueue(state: PlayerQueue, action: QueueAction): PlayerQueue {
     case 'restart': return state.current ? { ...state, request: state.request + 1, autoplay: true } : state;
     case 'ended': return action.request !== state.request || action.serial <= state.endedSerial ? state
       : advance({ ...state, endedSerial: action.serial }, true, action.seed);
-    case 'append': return state.queue.length + action.entries.length > 200 ? state
+    case 'append': return !action.entries.length || state.queue.length + action.entries.length > 200 ? state
       : { ...state, queue: [...state.queue, ...action.entries], order: [...state.order, ...action.entries] };
     case 'play-entry': {
       const current = state.queue.find(entry => entry.key === action.key);
@@ -102,7 +129,7 @@ function reduceQueue(state: PlayerQueue, action: QueueAction): PlayerQueue {
       const queue = [...state.queue.filter(entry => entry.key !== current.key), ...(state.repeat === 'all' && state.current ? [state.current] : [])];
       return { ...state, current, queue, cyclePrepared: false, cyclePlayed: [...new Set([...state.cyclePlayed, ...(state.current ? [state.current.key] : [])])], request: state.request + 1, autoplay: true };
     }
-    case 'remove': return { ...state, queue: state.queue.filter(entry => entry.key !== action.key), order: state.order.filter(entry => entry.key !== action.key), cyclePlayed: state.cyclePlayed.filter(key => key !== action.key) };
+    case 'remove': return !state.queue.some(entry => entry.key === action.key) ? state : { ...state, queue: state.queue.filter(entry => entry.key !== action.key), order: state.order.filter(entry => entry.key !== action.key), cyclePlayed: state.cyclePlayed.filter(key => key !== action.key) };
     case 'move': {
       const from = state.queue.findIndex(entry => entry.key === action.key), to = from + action.offset;
       if (from < 0 || to < 0 || to >= state.queue.length) return state;

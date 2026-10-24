@@ -43,7 +43,7 @@ APPROVED = '{"supported":true,"reason":""}'
 REJECTED = '{"supported":false,"reason":"Draft contradicts the execution result."}'
 
 
-async def dispatch(client, streams, monkeypatch, replies=(), message='Replace the current song.', *, checks=(), rewrites=()):
+async def dispatch(client, streams, monkeypatch, replies=(), message='Replace the current song.', *, checks=(), rewrites=(), version=3):
     provider, requests = fake_provider(monkeypatch, streams)
     create = provider._client.responses.create
     pending = {'PLAYER REPLY FACT CHECK': list(checks), 'PLAYER REPLY REVISION': list(rewrites)}
@@ -61,7 +61,7 @@ async def dispatch(client, streams, monkeypatch, replies=(), message='Replace th
         return await create(**kwargs)
     monkeypatch.setattr(provider._client.responses, 'create', checked_create)
     monkeypatch.setattr(service, 'get_provider', lambda *args: provider)
-    task = asyncio.create_task(client.post('/api/chat', json=dict(mode='companion', message=message, player_control=3, web_search='off')))
+    task = asyncio.create_task(client.post('/api/chat', json=dict(mode='companion', message=message, player_control=version, web_search='off')))
     try:
         seen = set()
         for reply in replies:

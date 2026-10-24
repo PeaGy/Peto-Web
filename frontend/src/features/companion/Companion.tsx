@@ -407,6 +407,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
     setStopping(false);
     const controller = new AbortController();
     abortRef.current = controller;
+    playerControl.bindTurn(controller.signal);
     const sentDraftVersion = draftVersion.current;
     const search = readCompanionSearch();
     // Bộ não dùng khóa riêng (Cài đặt Companion → Mô-đun → Bộ não); null là Peto.
@@ -455,7 +456,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
         ? { ...message, attachments: optimisticImages.map((image, i) => ({ ...image, url: `data:${attachments[i].mime || 'image/png'};base64,${attachments[i].data}` })) }
         : message));
       await sendMessage(
-        { message: text, conversationId, attachments, effort: "low", webSearch: search ? "auto" : "off", mode: "companion", playerControl: 3,
+        { message: text, conversationId, attachments, effort: "low", webSearch: search ? "auto" : "off", mode: "companion", playerControl: 4,
           ...(brain ? { provider: brain.provider, providerKey: brain.providerKey, searchKey: brain.searchKey } : {}) },
         {
           onPlayerCommand: async command => {

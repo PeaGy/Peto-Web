@@ -17,7 +17,7 @@ async function setup(page: Page, mobile: boolean, favorites: { video_id: string;
     await route.fulfill({ json: { accepted: true } });
   });
   await page.route('**/api/chat', async route => {
-    expect(route.request().postDataJSON().player_control).toBe(3);
+    expect(route.request().postDataJSON().player_control).toBe(4);
     const event = (value: object) => `data: ${JSON.stringify(value)}\n\n`;
     await route.fulfill({ contentType: 'text/event-stream', body:
       event({ type: 'meta', conversation_id: 'A', effort: 'low' })
@@ -51,6 +51,80 @@ const favorites = [
   { video_id: 'aircAruvnKk', title: 'But what is a neural network?', artist: 'Test channel' },
   { video_id: 'HDz9dSuAI4s', title: 'Miku concert', artist: 'Test channel' },
 ];
+
+async function showFile(page: Page, mobile: boolean) {
+  if (!await shell(page).isVisible()) {
+    if (mobile) await page.getByRole('button', { name: 'Mở menu', exact: true }).click();
+    await page.getByRole('button', { name: 'Player', exact: true }).click();
+  }
+  await shell(page).getByRole('button', { name: mobile ? 'Tùy chọn Player' : 'File', exact: true }).click();
+}
+
+test('bulk clear and one-step undo share UI/chat state, keep favorites and restore clear-all stopped', async ({ page }, info) => {
+  test.setTimeout(90000);
+  const mobile = info.project.name === 'mobile';
+  const { issue, state, apiRequests } = await setup(page, mobile, favorites);
+  const tracks = favorites.map(item => ({ ...item, duration: 143, start_seconds: 0 }));
+  expect((await issue('play_video', { tracks: [tracks[0]], window_revision: 0 })).ok).toBe(true);
+  const first = await shell(page).locator('iframe').elementHandle();
+  expect((await issue('enqueue_playlist', { tracks: Array.from({ length: 200 }, () => tracks[1]), window_revision: 0 })).data?.added).toBe(200);
+  await showFile(page, mobile);
+  await page.screenshot({ path: info.outputPath('session-file-menu.png') });
+  await page.getByRole('button', { name: 'Clear Queue', exact: true }).click();
+  const cleared = await issue('status'); expect(cleared.state).toMatchObject({ status: 'playing', queue_count: 0, can_undo: true });
+  expect(await first!.evaluate(node => node.isConnected)).toBe(true);
+  let queue = await issue('list_queue', { limit: 0 });
+  expect((await issue('undo_queue', { queue_revision: queue.data!.queue_revision }, true)).data).toMatchObject({ restored: 200, undo_action: 'clear_queue' });
+  expect((await issue('status')).state?.queue_count).toBe(200);
+  await showFile(page, mobile);
+  await page.getByRole('button', { name: 'Clear All', exact: true }).click();
+  await expect(shell(page).locator('iframe')).toHaveCount(0);
+  expect((await issue('status')).state).toMatchObject({ track: null, status: 'empty', queue_count: 0, can_undo: true });
+  expect(state.playerFavorites.size).toBe(4);
+  await showFile(page, mobile);
+  await page.getByRole('button', { name: 'Hoàn tác', exact: true }).click();
+  await expect(shell(page)).toHaveAttribute('data-status', 'ready');
+  await expect(shell(page)).toHaveAttribute('data-playing', 'false');
+  queue = await issue('list_queue', { limit: 0 }); expect(queue.data?.total).toBe(200);
+  expect((await issue('undo_queue', { queue_revision: queue.data!.queue_revision })).ok).toBe(false);
+  expect((await issue('clear_all', {}, true)).ok).toBe(true);
+  const revision = (await issue('status')).state!.window_revision!;
+  expect((await issue('play_video', { tracks: [tracks[2]], window_revision: revision })).ok).toBe(true);
+  await page.evaluate(() => (window as unknown as { __ytFake: FakeStats }).__ytFake.fail(150));
+  expect((await issue('clear_all')).state).toMatchObject({ status: 'empty', track: null, queue_count: 0 });
+  await expect(shell(page).locator('iframe')).toHaveCount(0);
+  expect(apiRequests()).toBe(1); await noPageOverflow(page);
+  await page.screenshot({ path: info.outputPath('session-after-clear-undo.png') });
+});
+
+test('manual clear-all supersedes a pending replacement and late commands from the same chat turn', async ({ page }, info) => {
+  test.setTimeout(60000);
+  const mobile = info.project.name === 'mobile';
+  const { issue, send, results } = await setup(page, mobile);
+  const tracks = favorites.map(item => ({ ...item, duration: 143, start_seconds: 0 }));
+  await issue('play_video', { tracks: [tracks[0]], window_revision: 0 });
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const delayedRoute = async (route: import('@playwright/test').Route) => {
+    await gate;
+    const event = (v: object) => `data: ${JSON.stringify(v)}\n\n`;
+    await route.fulfill({ contentType: 'text/event-stream', body:
+      event({ type: 'meta', conversation_id: 'A', effort: 'low' })
+      + event({ type: 'player_command', command: { id: 'late-play', action: 'play_video', tracks: [tracks[1]], window_revision: 0, expires_at: Date.now() + 12000 } })
+      + event({ type: 'delta', text: 'Unconfirmed playback.' }) + event({ type: 'done' }) });
+  };
+  await page.route('**/api/chat', delayedRoute);
+  const before = await send('play_video', { tracks: [tracks[1]], window_revision: 0 });
+  await showFile(page, mobile);
+  await page.getByRole('button', { name: 'Clear All', exact: true }).click();
+  release();
+  await expect.poll(() => results.length).toBe(before + 1);
+  expect(results.at(-1)?.ok).toBe(false);
+  await expect(shell(page).locator('iframe')).toHaveCount(0); expect((await stats(page)).created).toBe(1);
+  await page.unroute('**/api/chat', delayedRoute);
+  const snapshot = await issue('status'); expect(snapshot.state?.track).toBeNull();
+  expect((await issue('play_video', { tracks: [tracks[1]], window_revision: snapshot.state!.window_revision! })).ok).toBe(true);
+});
 
 test('X during a pending replacement cancels its acknowledgement and never reopens; a new request works', async ({ page }, info) => {
   test.setTimeout(60000);
