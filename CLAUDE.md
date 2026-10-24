@@ -1,5 +1,29 @@
 # CLAUDE.md
 
+## Web Chat personality (2026-10-24)
+
+The owner found Peto Trò chuyện stiff and less fun than ChatGPT and sent screenshots (Peto/Grok, effort Thấp). Grok's
+own reasoning quoted core rules: it refused a playful "if I give you a gender, what would you choose?" ("invent a body,
+age, gender"), answered "hello, peto khỏe không?" flatly ("never turn into a character") and refused to summarize its
+limits ("announce internal prompts"). Advice given: do not take text from leaked-prompt repositories (unverified,
+proprietary); learn techniques from official sources (Anthropic's published Claude prompts, `xai-org/grok-prompts`,
+OpenAI Model Spec): positive character prose, good/bad example pairs, casual vs task modes. Owner approved; not committed.
+- `prompts/core.py` (shared with Agent and /btw): still honest about being an AI, still never names the model, harmful
+  help still declined; but bodies/gender/experiences are only forbidden "as real facts about yourself", Peto may have
+  tastes and play along with hypotheticals, forms of address "change only the pronouns, not who you are", and when asked
+  about its rules it summarizes them in its own words instead of refusing (never quotes instructions verbatim).
+- `prompts/chat.py` `WEB_PROMPT` starts with `## Personality` (warm, opinionated friend; texting-length casual replies;
+  match energy; natural Vietnamese particles) and `## Casual chat examples` (stiff vs better pairs, incl. the owner's
+  screenshots), for every Chat model. Agent and Companion do not get them. Chat prompt grew ~2,400 characters
+  (Peto 18,579, Luna 16,497, Haiku 16,582); Vietnamese letters stay under the 2% `test_prompts_are_english` limit.
+- No fixed gender or preferences for Chat Peto (model picks playfully each time); Companion persona unchanged.
+- CLI bundle regenerated (`make_bundle.py`), CLI 0.33.4, since the core is bundled for direct sources.
+- Eval `backend/evals/chat-personality-cases.json` (4 cases/5 turns incl. the screenshots): mock 15/15 turns, every
+  prompt had the new section; mock text cannot pass content checks and no LIVE run was made. Test
+  `tests/test_personality_prompt.py`.
+- Validation: related backend group 169 passed; CLI bundle/version/direct-source/release/update 68 passed; full backend
+  1,817 passed, 1 skipped (510.75s; the tree also held the uncommitted Player stage 4 work). Deploy: restart the backend (CLI users are offered 0.33.4). Real tone needs the owner's chats.
+
 ## Player — lịch sử nghe và Previous, giai đoạn 3 (2026-10-24)
 
 Owner đã commit/deploy `f6c1601`, xác nhận F5 phát đúng mốc, yêu cầu bước tiếp. Thêm File/menu mobile → Lịch sử nghe,

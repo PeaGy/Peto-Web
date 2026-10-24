@@ -131,7 +131,8 @@ def test_huong_dan_trinh_bay_tren_web():
 
 def test_prompts_are_english():
     """Mọi chỉ dẫn gửi model bằng tiếng Anh để bớt token: chỉ còn vài từ tiếng Việt có chủ ý (cách xưng hô, tên tab,
-    nhãn trong tệp, tên mục trí nhớ cố định), không có câu tiếng Việt nào."""
+    nhãn trong tệp, tên mục trí nhớ cố định) và vài câu ví dụ tán gẫu tiếng Việt (thêm 24/10/2026 để Peto không nói như
+    bản dịch); không có câu chỉ dẫn tiếng Việt nào."""
     texts = (*chat_prompts(), agent.AGENT_PROMPT, agent.COMPACT_PROMPT, persona.COMPANION_SYSTEM_PROMPT)
     for text in texts:
         letters = [char for char in text if char.isalpha()]
