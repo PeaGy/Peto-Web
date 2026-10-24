@@ -288,6 +288,9 @@ export function PlayerLibraryShell({ library, sessionActions, id, mode = 'youtub
           <button type="button" className="yl-favorites-menu" onClick={() => { library.openPanel('favorites'); setMenu(null); }}>
             <LibraryIcon name="heart" size={18} /><span>Yêu thích</span><small>{library.loadingFavorites ? '…' : library.favorites.length}</small>
           </button>
+          {library.history && <button type="button" className="yl-history-menu" onClick={() => { library.openPanel('history'); setMenu(null); }}>
+            <LibraryIcon name="history" size={18} /><span>Lịch sử nghe</span><small>{library.history.length}</small>
+          </button>}
           {sessionActions && <div className="yt-command-row yl-session-actions">
             <button type="button" disabled={!sessionActions.canUndo} onClick={() => { sessionActions.undo(); setMenu(null); }}>Hoàn tác</button>
             <button type="button" onClick={() => { sessionActions.clearQueue(); setMenu(null); }}>Clear Queue</button>
@@ -323,7 +326,9 @@ export function PlayerLibraryShell({ library, sessionActions, id, mode = 'youtub
         <div className="yt-playback-buttons">
           <div className="yl-primary-controls" role="group" aria-label="Điều khiển phát">
           <ShuffleButton active={library.shuffle} onClick={library.toggleShuffle} className="yt-icon-button" />
-          <button type="button" className="yt-icon-button yl-back" aria-label="Phát lại từ đầu" disabled={!controlsReady || track.duration <= 0} onClick={() => onSeek(0)}><Icon name="back" size={27} /></button>
+          <button type="button" className="yt-icon-button yl-back" aria-label={library.previous ? 'Bài trước' : 'Phát lại từ đầu'}
+            disabled={library.previous ? !library.canPrevious || status === 'loading' : !controlsReady || track.duration <= 0}
+            onClick={() => library.previous ? library.previous() : onSeek(0)}><Icon name="back" size={27} /></button>
           <button type="button" className="yt-play-button yl-play" disabled={!controlsReady} aria-label={mode === 'mock' ? playing ? 'Tạm dừng bản mẫu' : 'Phát bản mẫu' : playing ? 'Tạm dừng video' : 'Phát video'} onClick={() => onPlayingChange(!playing)}><Icon name={playing ? 'pause' : 'play'} size={31} /></button>
           <button type="button" className="yt-icon-button yl-next" aria-label="Bài tiếp theo" disabled={!library.track || (!library.queue.length && library.repeat !== 'all')} onClick={library.next}><LibraryIcon name="next" size={26} /></button>
           <RepeatButton mode={library.repeat} onClick={library.cycleRepeat} className="yt-icon-button" />

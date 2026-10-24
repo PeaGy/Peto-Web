@@ -6,6 +6,7 @@ import { parsePlayerInput } from './playerInput';
 import { usePlayerDiscovery } from './usePlayerDiscovery';
 import type { LibraryPanelKind, MediaTrack, PlayerLibrary } from './playerLibraryTypes';
 import { PlayerSessionStore } from './playerSession';
+import { PlayerHistoryStore, previousChoice, type ListeningEntry } from './playerHistory';
 
 const seed = () => Math.floor(Math.random() * 0x100000000);
 const message = (error: unknown) => error instanceof TypeError ? 'Không kết nối được thư viện Player. Bạn thử lại nhé.'
@@ -29,6 +30,14 @@ export function usePlayerLibrary(ownerId?: string): PlayerLibrary & {
   undo: () => SessionEdit | null;
   currentEntryKey: string | null;
   nextPlaybackId: string;
+  history: ListeningEntry[];
+  historyRevision: number;
+  historySaved: boolean;
+  previousTrack: MediaTrack | null;
+  previous: () => boolean;
+  clearHistory: () => number;
+  recordPlaying: (request: number, videoId: string) => void;
+  playedRequest: number | null;
   initialVolume: number;
   rememberPlayback: (key: string | null, position: number | undefined, volume: number, immediate?: boolean) => void;
   nextTracks: ReturnType<typeof nextPlayerTracks>;
@@ -39,18 +48,36 @@ export function usePlayerLibrary(ownerId?: string): PlayerLibrary & {
   appendControlled: (items: MediaTrack[]) => { added: number; not_added_capacity: number; keys: string[] };
 } {
   const [session] = useState(() => new PlayerSessionStore(ownerId));
+  const [historyStore] = useState(() => new PlayerHistoryStore(ownerId));
+  const [historyError, setHistoryError] = useState(() => historyStore.failed ? 'Trình duyệt chưa đọc được lịch sử nghe.' : '');
   const [sessionError, setSessionError] = useState('');
   const persisted = useCallback((ok: boolean) => setSessionError(ok ? '' : 'Trình duyệt chưa lưu được phiên Player. Tải lại trang có thể mất thay đổi vừa rồi.'), []);
-  const [state, dispatch] = useReducer(playerQueueReducer, session.initial?.queue ?? emptyQueue());
+  const [state, dispatch] = useReducer(playerQueueReducer, { ...(session.initial?.queue ?? emptyQueue()), ...historyStore.initial });
   const stateRef = useRef(state); stateRef.current = state;
   const commit = useCallback((action: QueueAction) => {
+    if (action.type !== 'hydrate-history') {
+      const value = historyStore.refresh();
+      if (value) { const update: QueueAction = { type: 'hydrate-history', value }; stateRef.current = playerQueueReducer(stateRef.current, update); dispatch(update); setHistoryError(''); }
+      else if (historyStore.failed) setHistoryError('Trình duyệt chưa đọc hoặc lưu được lịch sử nghe.');
+    }
     const before = stateRef.current, after = playerQueueReducer(before, action);
     if (after !== before) {
       stateRef.current = after; dispatch(action);
-      persisted(session.saveQueue(after, action.type !== 'metadata' && action.type !== 'ended'));
+      if (!['played', 'hydrate-history', 'clear-history'].includes(action.type)) persisted(session.saveQueue(after, action.type !== 'metadata' && action.type !== 'ended'));
+      if (action.type !== 'hydrate-history' && (after.history !== before.history || after.trail !== before.trail || after.trailIndex !== before.trailIndex)) {
+        const saved = historyStore.save(after, action.type === 'clear-history');
+        setHistoryError(saved ? '' : 'Trình duyệt chưa lưu được lịch sử nghe.');
+      }
     }
     return after;
-  }, [session, persisted]);
+  }, [session, persisted, historyStore]);
+  useEffect(() => {
+    const refresh = (event: StorageEvent) => { if (event.storageArea === localStorage && (event.key === historyStore.key || event.key === null)) commit({ type: 'sync-history' }); };
+    window.addEventListener('storage', refresh); return () => window.removeEventListener('storage', refresh);
+  }, [historyStore, commit]);
+  const recordPlaying = useCallback((request: number, videoId: string) => {
+    if (stateRef.current.recordedRequest !== request) commit({ type: 'played', request, videoId, key: crypto.randomUUID(), playedAt: Date.now() });
+  }, [commit]);
   const discovery = usePlayerDiscovery();
   const [favorites, setFavorites] = useState<MediaTrack[]>([]);
   const [loadingFavorites, setLoadingFavorites] = useState(true);
@@ -233,12 +260,19 @@ export function usePlayerLibrary(ownerId?: string): PlayerLibrary & {
   return {
     track, source, queue: state.queue, favorites, favorite: !!track && favorites.some(item => item.videoId === track.videoId),
     repeat: state.repeat, shuffle: state.shuffle, panel, newItems, announcement, sourceRequest, queueButton,
-    loadingFavorites, favoritesBusy, error: sessionError || error, select, openLink, appendLink, append, toggleFavorite, openPanel, closePanel, drop,
+    loadingFavorites, favoritesBusy, error: sessionError || historyError || error, select, openLink, appendLink, append, toggleFavorite, openPanel, closePanel, drop,
     discovery, openInput, importPlaylist, cancelDiscovery: discovery.cancel,
     next: () => commit({ type: 'next', seed: seed() }), restart: () => commit({ type: 'restart' }),
     setRepeat: (repeat: 'off' | 'all' | 'one') => commit({ type: 'set-repeat', repeat, seed: seed() }),
     ended, updateDuration,
     resetRevision: state.resetRevision, canUndo: !!state.undo,
+    history: state.history, historyRevision: state.historyRevision, historySaved: !historyStore.failed, previousTrack: previousChoice(state)?.track ?? null, canPrevious: !!previousChoice(state), recordPlaying, playedRequest: state.recordedRequest,
+    previous: () => {
+      const before = stateRef.current, after = commit({ type: 'previous', key: `previous-${++sequence.current}` });
+      if (after.request === before.request) { setError(previousChoice(after) ? 'Hàng đợi đã đủ 200 bài. Xóa bớt một bài để giữ chỗ cho bài hiện tại khi quay lại.' : 'Chưa có bài trước trong lịch sử nghe.'); return false; }
+      setError(''); return true;
+    },
+    clearHistory: () => { commit({ type: 'sync-history' }); const removed = stateRef.current.history.length; commit({ type: 'clear-history' }); setAnnouncement('Đã xóa lịch sử nghe.'); return removed; },
     initialVolume: session.initial?.volume ?? 60,
     rememberPlayback: (key, position, volume, immediate = false) => persisted(session.remember(key, position, volume, immediate)),
     clearQueue: () => editSession('clear_queue')!, clearAll: () => editSession('clear_all')!, undo: () => editSession('undo'),

@@ -3,12 +3,13 @@ export type PlayerAction = 'status' | 'open' | 'hide' | 'close' | 'play' | 'paus
   | 'seek' | 'set_volume' | 'mute' | 'unmute' | 'set_shuffle' | 'set_repeat'
   | 'list_queue' | 'list_favorites' | 'next_track' | 'remove_queue_entry' | 'move_queue_entry' | 'play_queue_entry'
   | 'set_favorite' | 'enqueue_favorite' | 'enqueue_favorites' | 'play_video' | 'enqueue_video' | 'enqueue_playlist'
-  | 'clear_queue' | 'clear_all' | 'undo_queue';
+  | 'clear_queue' | 'clear_all' | 'undo_queue' | 'previous' | 'list_history' | 'play_history_entry' | 'clear_history';
 export interface PlayerMediaTrack { video_id: string; title: string; artist: string; duration: number; start_seconds: number }
 export interface PlayerCommand {
   id: string; expires_at: number; action: PlayerAction; volume?: number; seconds?: number; enabled?: boolean; repeat?: 'off' | 'all' | 'one';
   offset?: number; limit?: number; entry_id?: string; queue_revision?: number; position?: number; video_id?: string;
   tracks?: PlayerMediaTrack[]; window_revision?: number;
+  history_revision?: number;
 }
 export interface PlayerSnapshot {
   window: 'closed' | 'visible' | 'hidden';
@@ -18,12 +19,14 @@ export interface PlayerSnapshot {
   window_revision?: number;
   native_video_id?: string | null; native_state?: number | null;
   can_undo?: boolean;
+  history_count?: number; can_previous?: boolean; previous_track?: PlayerTrack | null;
 }
 export type PlayerTrack = NonNullable<PlayerSnapshot['track']>;
 export interface PlayerLibraryData {
-  kind: 'queue' | 'favorites' | 'next' | 'mutation';
+  kind: 'queue' | 'favorites' | 'history' | 'next' | 'mutation';
   total?: number; offset?: number; next_offset?: number | null;
-  items?: (PlayerTrack & { index: number; entry_id?: string })[];
+  items?: (PlayerTrack & { index: number; entry_id?: string; played_at?: number })[];
+  history_revision?: number;
   queue_revision?: number; automatic?: PlayerTrack | null; on_skip?: PlayerTrack | null;
   reason?: 'queue' | 'loop_one' | 'loop_all' | 'empty'; target?: PlayerTrack; favorite?: boolean;
   added?: number; skipped_duplicates?: number; not_added_capacity?: number;
@@ -94,7 +97,7 @@ export class PlayerControlBridge {
       if (command.action === 'list_queue') return { ok: true, state: emptyPlayer(), data: { kind: 'queue', total: 0, offset: command.offset ?? 0, items: [], next_offset: null, queue_revision: 0 } };
       if (command.action === 'next_track') return { ok: true, state: emptyPlayer(), data: { kind: 'next', automatic: null, on_skip: null, reason: 'empty' } };
       if (command.action === 'open') this.show();
-      else if (['list_favorites', 'enqueue_favorites', 'enqueue_favorite', 'set_favorite', 'play_video', 'enqueue_video', 'enqueue_playlist', 'clear_queue', 'clear_all', 'undo_queue'].includes(command.action) && this.prepare) this.prepare();
+      else if (['list_favorites', 'enqueue_favorites', 'enqueue_favorite', 'set_favorite', 'play_video', 'enqueue_video', 'enqueue_playlist', 'clear_queue', 'clear_all', 'undo_queue', 'list_history', 'clear_history', 'play_history_entry'].includes(command.action) && this.prepare) this.prepare();
       else return { ok: false, state: emptyPlayer(), error: 'Player chưa có video. Mở và chọn một bài trước nhé.' };
       await waitForPlayer(() => this.target ?? undefined, signal, this.available);
     }

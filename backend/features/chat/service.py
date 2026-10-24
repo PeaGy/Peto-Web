@@ -28,7 +28,7 @@ from features.connectors.tools import GitHubSession, current_session as github_s
 from features.companion import private_notes
 from features.companion import player_tools
 from features.companion import player_reply
-from prompts.companion_player import PLAYER_PROMPT, PLAYER_LIBRARY_PROMPT, PLAYER_DISCOVERY_PROMPT, PLAYER_SESSION_PROMPT
+from prompts.companion_player import PLAYER_PROMPT, PLAYER_LIBRARY_PROMPT, PLAYER_DISCOVERY_PROMPT, PLAYER_SESSION_PROMPT, PLAYER_HISTORY_PROMPT
 from features.chat import titles
 from features.chat.work_log import NOTE_LIMIT, WorkLog, read_detail
 from ai import ChatMessage, ChatProvider, ProviderError, StreamChunk, get_provider
@@ -343,7 +343,7 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
             # Dòng chú thích SSE: trình duyệt bỏ qua, nhưng giữ kết nối qua Cloudflare khi Grok soạn lệnh dài mà chưa
             # có chữ nào để gửi (luồng im quá 100 giây có thể bị cắt).
             if chunk.kind == 'pulse': return ': ping\n\n'
-            if chunk.kind == 'player_command' and mode == 'companion' and request.player_control in (1, 2, 3, 4):
+            if chunk.kind == 'player_command' and mode == 'companion' and request.player_control in (1, 2, 3, 4, 5):
                 return sse({'type': 'player_command', 'command': chunk.info})
             # Các sự kiện cũ (document_status, file_lookup, search…) vẫn gửi cho trang mở từ trước khi cập nhật và cho
             # Companion; trang mới vẽ nhật ký từ sự kiện "step".
@@ -580,11 +580,11 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                         http_request.headers if http_request is not None else None)) if mode == 'chat' else None
                 player_session = player_tools.PlayerSession(owner, request.player_control,
                     user_text='\n'.join(str(row.get('content', '')) for row in active_rows if row.get('role') == 'user')[-32000:]
-                ) if mode == 'companion' and request.player_control in (1, 2, 3, 4) and own_provider != 'gemini' else None
+                ) if mode == 'companion' and request.player_control in (1, 2, 3, 4, 5) and own_provider != 'gemini' else None
                 if player_session:
-                    system_prompt += '\n\n' + ({1: PLAYER_PROMPT, 2: PLAYER_LIBRARY_PROMPT, 3: PLAYER_DISCOVERY_PROMPT, 4: PLAYER_SESSION_PROMPT}[request.player_control])
+                    system_prompt += '\n\n' + ({1: PLAYER_PROMPT, 2: PLAYER_LIBRARY_PROMPT, 3: PLAYER_DISCOVERY_PROMPT, 4: PLAYER_SESSION_PROMPT, 5: PLAYER_HISTORY_PROMPT}[request.player_control])
                     system_prompt += player_reply.past_evidence(active_rows)
-                elif mode == 'companion' and request.player_control in (1, 2, 3, 4):
+                elif mode == 'companion' and request.player_control in (1, 2, 3, 4, 5):
                     system_prompt += '\n\nPlayer control is unavailable with this Gemini connection. You can discuss music, but cannot read or change live playback with this provider.'
                 # A timeout may already have consumed provider tokens. Do not repeat the whole turn invisibly.
                 async with aclosing(_stream_reply(system_prompt, history, effort, timezone, web_search, document_session,

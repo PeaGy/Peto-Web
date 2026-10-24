@@ -28,13 +28,21 @@ export function LibraryPanel({ library }: { library: PlayerLibrary }) {
   useEffect(() => { if (library.panel) heading.current?.focus({ preventScroll: true }); }, [library.panel, library.discovery.query]);
   if (!library.panel) return null;
   const { panel, queue, favorites, track, discovery } = library;
-  const title = panel === 'queue' ? 'Hàng đợi' : panel === 'favorites' ? 'Yêu thích' : 'Kết quả tìm kiếm';
+  const history = library.history ?? [];
+  const title = panel === 'queue' ? 'Hàng đợi' : panel === 'favorites' ? 'Yêu thích' : panel === 'history' ? 'Lịch sử nghe' : 'Kết quả tìm kiếm';
   return <aside className="yl-panel" aria-label={title}>
     <header className="yl-panel-head"><div><h2 ref={heading} tabIndex={-1}>{title}</h2>
-      <span>{panel === 'favorites' && library.loadingFavorites ? 'Đang tải…' : panel === 'search' ? discovery.query : `${panel === 'queue' ? queue.length : favorites.length} bài`}</span></div>
+      <span>{panel === 'favorites' && library.loadingFavorites ? 'Đang tải…' : panel === 'search' ? discovery.query : `${panel === 'queue' ? queue.length : panel === 'history' ? history.length : favorites.length} bài`}</span></div>
+      {panel === 'history' && <button type="button" className="yl-small-button" aria-label="Xóa lịch sử nghe" title="Xóa lịch sử nghe" disabled={!history.length} onClick={library.clearHistory}><LibraryIcon name="trash" size={18} /></button>}
       <button type="button" className="yl-small-button" aria-label="Đóng danh sách" onClick={library.closePanel}><LibraryIcon name="close" size={18} /></button>
     </header>
     <div className="yl-panel-scroll yl-scroll">
+      {panel === 'history' && (history.length ? <ul className="yl-track-list" aria-label="Các bài đã nghe">{history.map(item => <li key={item.key}>
+        <div className="yl-history-choice"><TrackChoice track={item.track} onPlay={() => library.select(item.track)} />
+          <time dateTime={new Date(item.playedAt).toISOString()}>{new Date(item.playedAt).toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</time>
+        </div>
+        <button type="button" className="yl-small-button" aria-label={`Thêm ${trackTitle(item.track)} vào hàng đợi`} onClick={() => library.append([item.track])}><LibraryIcon name="plus" size={18} /></button>
+      </li>)}</ul> : <div className="yl-empty"><LibraryIcon name="history" size={28} /><p>Chưa có lịch sử nghe.</p></div>)}
       {panel === 'queue' && <>
         {discovery.kind === 'playlist' && <>
           {discovery.busy && <p className="yl-discovery-note" role="status">Đang nhập playlist…</p>}

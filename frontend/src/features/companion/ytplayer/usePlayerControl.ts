@@ -26,7 +26,7 @@ export function usePlayerControl(props: ControlProps) {
   if (props.youtube.volume > 0) lastVolume.current = props.youtube.volume;
   useEffect(() => props.bridge?.register(async (command, signal) => {
     const closed = windowLife.current.closed;
-    const media = ['play_video', 'play_queue_entry', 'play', 'pause', 'next', 'restart', 'seek', 'set_volume', 'mute', 'unmute'].includes(command.action);
+    const media = ['play_video', 'play_queue_entry', 'play_history_entry', 'previous', 'play', 'pause', 'next', 'restart', 'seek', 'set_volume', 'mute', 'unmute'].includes(command.action);
     const available = () => latest.current.active && !document.hidden && command.expires_at > Date.now() && (!media || windowLife.current.closed === closed);
     const snapshot = (): PlayerSnapshot => {
       const { library: l, youtube: y, open, hidden } = latest.current;
@@ -36,7 +36,8 @@ export function usePlayerControl(props: ControlProps) {
         position: !l.track ? 0 : native?.position ?? y.position, duration: !l.track ? 0 : native?.duration ?? y.duration,
         volume: native?.volume ?? y.readVolume(), shuffle: l.shuffle, repeat: l.repeat, queue_count: l.queue.length,
         window_revision: windowLife.current.closed + l.resetRevision, native_video_id: native?.videoId ?? null, native_state: native?.state ?? null,
-        can_undo: l.canUndo };
+        can_undo: l.canUndo, history_count: l.historySaved ? l.history.length : undefined, can_previous: !!l.previousTrack,
+        previous_track: l.previousTrack ? controlTrack(l.previousTrack) : null };
     };
     const done = () => ({ ok: true, state: snapshot() });
     const wait = (condition: () => boolean) => waitForPlayer(() => {
@@ -77,9 +78,45 @@ export function usePlayerControl(props: ControlProps) {
         if (selected && !selected()) throw new Error('Bài đang nghe đã thay đổi; chưa xác nhận lệnh cũ.');
         if (value.youtube.status === 'blocked' || value.youtube.status === 'error') throw new Error(value.youtube.error);
         const native = value.youtube.observe();
-        return value.youtube.playing && native?.videoId === track.videoId && native.state === 1 ? true : undefined;
+        return value.youtube.playing && native?.videoId === track.videoId && native.state === 1 && value.library.playedRequest === Number(value.library.source.playbackId) ? true : undefined;
       }, signal, available);
     };
+    if (command.action === 'list_history') {
+      const offset = command.offset ?? 0, limit = command.limit ?? 20, l = latest.current.library;
+      if (!l.historySaved) throw new Error('Trình duyệt chưa đọc hoặc lưu được lịch sử nghe. Chưa xác nhận danh sách đã lưu.');
+      if (!Number.isInteger(offset) || offset < 0 || offset > 500 || !Number.isInteger(limit) || limit < 0 || limit > 50) throw new Error('Trang lịch sử không hợp lệ.');
+      return { ...done(), data: { kind: 'history', total: l.history.length, offset,
+        items: l.history.slice(offset, offset + limit).map((item, i) => ({ ...controlTrack(item.track), index: offset + i + 1, entry_id: item.key, played_at: item.playedAt })),
+        next_offset: limit > 0 && offset + limit < l.history.length ? offset + limit : null, history_revision: l.historyRevision } };
+    }
+    if (command.action === 'clear_history') {
+      const before = latest.current.library.historyRevision, removed = latest.current.library.clearHistory();
+      await waitForPlayer(() => {
+        if (latest.current.library.historyRevision <= before) return undefined;
+        if (!latest.current.library.historySaved) throw new Error('Chưa xóa được lịch sử đã lưu trong trình duyệt.');
+        return latest.current.library.history.length === 0 ? true : undefined;
+      }, signal, available);
+      return { ...done(), data: { kind: 'mutation', removed, total: 0, history_revision: latest.current.library.historyRevision } };
+    }
+    if (command.action === 'previous' || command.action === 'play_history_entry') {
+      const l = latest.current.library, item = l.history.find(entry => entry.key === command.entry_id);
+      if (command.action === 'play_history_entry' && (!item || command.history_revision !== l.historyRevision)) throw new Error('Lịch sử vừa thay đổi. Đọc lại list_history trước khi chọn bài.');
+      const target = command.action === 'previous' ? l.previousTrack : item!.track;
+      if (!target) throw new Error('Chưa có bài trước trong lịch sử nghe.');
+      await playSelected(target, () => {
+        const current = latest.current.library;
+        if (command.action === 'previous') {
+          if (!current.previousTrack || current.previousTrack.videoId !== target.videoId || current.previousTrack.startSeconds !== target.startSeconds) throw new Error('Bài trước vừa thay đổi; hãy đọc lại trạng thái.');
+          if (!current.previous()) throw new Error('Chưa quay được bài trước; hàng đợi có thể đã đủ 200 bài hoặc lịch sử vừa đổi.');
+        }
+        else {
+          const fresh = current.history.find(entry => entry.key === command.entry_id);
+          if (!fresh || current.historyRevision !== command.history_revision) throw new Error('Lịch sử vừa thay đổi; chưa phát mục cũ.');
+          current.select(fresh.track);
+        }
+      });
+      return { ...done(), data: { kind: 'mutation', target: controlTrack(target), history_revision: latest.current.library.historyRevision } };
+    }
     const discoveryResult = await controlDiscovery(command, signal, {
       library: () => latest.current.library, snapshot, available, windowRevision: () => windowLife.current.closed + latest.current.library.resetRevision,
       play: track => playSelected(track, () => latest.current.library.select(track)),
@@ -137,7 +174,7 @@ export function usePlayerControl(props: ControlProps) {
         if (youtubeSourceKey(source) !== expectedKey) throw new Error('Bài đang nghe đã thay đổi trong lúc thực hiện; chưa xác nhận lệnh cũ.');
         if (q.youtube.status === 'error' || q.youtube.status === 'blocked') throw new Error(q.youtube.error);
         const native = q.youtube.observe();
-        return q.youtube.playing && native?.videoId === target.videoId && native.state === 1 ? true : undefined;
+        return q.youtube.playing && native?.videoId === target.videoId && native.state === 1 && q.library.playedRequest === Number(source.playbackId) ? true : undefined;
       }, signal, available);
       return done();
     }
@@ -147,7 +184,7 @@ export function usePlayerControl(props: ControlProps) {
     switch (command.action) {
       case 'play':
         y.setPlaying(true);
-        await wait(() => { same(); const native = latest.current.youtube.observe(); return latest.current.youtube.playing && native?.videoId === p.library.source!.videoId && native.state === 1; }); break;
+        await wait(() => { same(); const q = latest.current, native = q.youtube.observe(); return q.youtube.playing && native?.videoId === p.library.source!.videoId && native.state === 1 && q.library.playedRequest === Number(q.library.source!.playbackId); }); break;
       case 'pause': y.setPlaying(false); await wait(() => { same(); return latest.current.youtube.status === 'paused' || latest.current.youtube.status === 'ready'; }); break;
       case 'seek': {
         if (!Number.isFinite(command.seconds) || command.seconds! < 0) throw new Error('Thời điểm tua không hợp lệ.');

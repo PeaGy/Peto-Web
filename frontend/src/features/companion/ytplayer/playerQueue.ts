@@ -1,9 +1,10 @@
 import type { QueueEntry, RepeatMode } from './playerLibraryTypes';
+import { emptyHistory, previousChoice, recordPlayed, sameSong, type HistorySnapshot } from './playerHistory';
 
 export type UndoOperation = 'append' | 'remove' | 'move' | 'clear_queue' | 'clear_all';
 type QueueSnapshot = Pick<PlayerQueue, 'current' | 'queue' | 'order' | 'cyclePlayed' | 'repeat' | 'shuffle' | 'cyclePrepared'>;
 export interface QueueUndo { operation: UndoOperation; before: QueueSnapshot }
-export interface PlayerQueue {
+export interface PlayerQueue extends HistorySnapshot {
   current: QueueEntry | null;
   queue: QueueEntry[];
   order: QueueEntry[];
@@ -17,13 +18,20 @@ export interface PlayerQueue {
   cyclePrepared: boolean;
   undo: QueueUndo | null;
   resetRevision: number;
+  historyRevision: number;
+  recordedRequest: number | null;
+  pendingTrailIndex: number | null;
 }
-export const emptyQueue = (): PlayerQueue => ({ current: null, queue: [], order: [], cyclePlayed: [], repeat: 'off', shuffle: false, request: 0, autoplay: false, endedSerial: 0, revision: 0, cyclePrepared: false, undo: null, resetRevision: 0 });
+export const emptyQueue = (): PlayerQueue => ({ ...emptyHistory(), current: null, queue: [], order: [], cyclePlayed: [], repeat: 'off', shuffle: false, request: 0, autoplay: false, endedSerial: 0, revision: 0, cyclePrepared: false, undo: null, resetRevision: 0, historyRevision: 0, recordedRequest: null, pendingTrailIndex: null });
 export type QueueAction =
   | { type: 'select'; entry: QueueEntry; autoplay: boolean }
   | { type: 'next' | 'shuffle' | 'repeat'; seed: number }
   | { type: 'ended'; seed: number; request: number; serial: number }
   | { type: 'restart' }
+  | { type: 'previous'; key: string }
+  | { type: 'played'; request: number; videoId: string; key: string; playedAt: number }
+  | { type: 'hydrate-history'; value: HistorySnapshot }
+  | { type: 'clear-history' | 'sync-history' }
   | { type: 'set-repeat'; repeat: RepeatMode; seed: number }
   | { type: 'clear_queue' | 'clear_all' | 'undo' }
   | { type: 'append'; entries: QueueEntry[] }
@@ -69,7 +77,7 @@ function advance(state: PlayerQueue, ended: boolean, seed: number): PlayerQueue 
   const queue = state.queue;
   const cyclePlayed = state.cyclePrepared ? [] : [...new Set([...state.cyclePlayed, state.current.key])];
   return prepareCycle({ ...state, current: queue[0], queue: [...queue.slice(1), ...(state.repeat === 'all' ? [state.current] : [])], cyclePlayed, cyclePrepared: false,
-    request: state.request + 1, autoplay: true }, seed);
+    request: state.request + 1, autoplay: true, pendingTrailIndex: null }, seed);
 }
 
 /** Queue order is independent of the iframe; only actual ENDED events advance it. */
@@ -91,17 +99,30 @@ export function playerQueueReducer(state: PlayerQueue, action: QueueAction): Pla
   const undo = operation && changed ? { operation, before: {
     current: state.current, queue: state.queue, order: state.order, cyclePlayed: state.cyclePlayed,
     repeat: state.repeat, shuffle: state.shuffle, cyclePrepared: state.cyclePrepared,
-  } } : action.type === 'metadata' || (operation && !changed) ? state.undo : null;
-  return { ...result, order, undo, revision: state.revision + (action.type === 'metadata' ? 0 : 1) };
+  } } : ['metadata', 'played', 'hydrate-history', 'clear-history'].includes(action.type) || (operation && !changed) ? state.undo : null;
+  return { ...result, order, undo, revision: state.revision + (['metadata', 'played', 'hydrate-history', 'clear-history'].includes(action.type) ? 0 : 1) };
 }
 function reduceQueue(state: PlayerQueue, action: QueueAction): PlayerQueue {
   switch (action.type) {
+    case 'sync-history': return state;
+    case 'hydrate-history': return { ...state, ...action.value, historyRevision: state.historyRevision + 1, pendingTrailIndex: null };
+    case 'clear-history': return { ...state, ...emptyHistory(), historyRevision: state.historyRevision + 1, pendingTrailIndex: null };
+    case 'played': return recordPlayed(state, action.request, action.videoId, action.key, action.playedAt);
+    case 'previous': {
+      const target = previousChoice(state); if (!target || !state.current) return state;
+      const index = state.queue.findIndex(entry => sameSong(entry.track, target.track));
+      if (index < 0 && state.queue.length >= 200) return state;
+      const queue = [state.current, ...state.queue.filter((_, i) => i !== index)];
+      const current = { key: action.key, track: target.track };
+      return { ...state, current, queue, order: [current, ...queue], cyclePlayed: [], cyclePrepared: false,
+        request: state.request + 1, autoplay: true, pendingTrailIndex: target.index };
+    }
     case 'clear_queue': return { ...state, queue: state.queue.length ? [] : state.queue,
       order: state.order.length > (state.current ? 1 : 0) ? (state.current ? [state.current] : []) : state.order,
       cyclePlayed: [], cyclePrepared: false, resetRevision: state.resetRevision + 1 };
     case 'clear_all': return { ...state, current: null, queue: state.queue.length ? [] : state.queue,
       order: state.order.length ? [] : state.order, cyclePlayed: [], cyclePrepared: false,
-      request: state.request + 1, autoplay: false, resetRevision: state.resetRevision + 1 };
+      request: state.request + 1, autoplay: false, pendingTrailIndex: null, resetRevision: state.resetRevision + 1 };
     case 'undo': {
       if (!state.undo) return state;
       const restoresCurrent = state.undo.operation === 'clear_all';
@@ -109,7 +130,7 @@ function reduceQueue(state: PlayerQueue, action: QueueAction): PlayerQueue {
         request: state.request + (restoresCurrent ? 1 : 0), autoplay: restoresCurrent ? false : state.autoplay,
         resetRevision: state.resetRevision + 1 };
     }
-    case 'select': return { ...state, current: action.entry, order: [action.entry, ...restorePending(state)], cyclePlayed: [], cyclePrepared: false, request: state.request + 1, autoplay: action.autoplay };
+    case 'select': return { ...state, current: action.entry, order: [action.entry, ...restorePending(state)], cyclePlayed: [], cyclePrepared: false, request: state.request + 1, autoplay: action.autoplay, pendingTrailIndex: null };
     case 'control-entry': {
       if (action.revision !== state.revision || !state.queue.some(entry => entry.key === action.key)) return state;
       if (action.operation === 'remove') return reduceQueue(state, { type: 'remove', key: action.key });
@@ -118,7 +139,7 @@ function reduceQueue(state: PlayerQueue, action: QueueAction): PlayerQueue {
       return reduceQueue(state, { type: 'move', key: action.key, offset: action.position - 1 - state.queue.findIndex(entry => entry.key === action.key) });
     }
     case 'next': return advance(state, false, action.seed);
-    case 'restart': return state.current ? { ...state, request: state.request + 1, autoplay: true } : state;
+    case 'restart': return state.current ? { ...state, request: state.request + 1, autoplay: true, pendingTrailIndex: null } : state;
     case 'ended': return action.request !== state.request || action.serial <= state.endedSerial ? state
       : advance({ ...state, endedSerial: action.serial }, true, action.seed);
     case 'append': return !action.entries.length || state.queue.length + action.entries.length > 200 ? state
@@ -127,7 +148,7 @@ function reduceQueue(state: PlayerQueue, action: QueueAction): PlayerQueue {
       const current = state.queue.find(entry => entry.key === action.key);
       if (!current) return state;
       const queue = [...state.queue.filter(entry => entry.key !== current.key), ...(state.repeat === 'all' && state.current ? [state.current] : [])];
-      return { ...state, current, queue, cyclePrepared: false, cyclePlayed: [...new Set([...state.cyclePlayed, ...(state.current ? [state.current.key] : [])])], request: state.request + 1, autoplay: true };
+      return { ...state, current, queue, cyclePrepared: false, cyclePlayed: [...new Set([...state.cyclePlayed, ...(state.current ? [state.current.key] : [])])], request: state.request + 1, autoplay: true, pendingTrailIndex: null };
     }
     case 'remove': return !state.queue.some(entry => entry.key === action.key) ? state : { ...state, queue: state.queue.filter(entry => entry.key !== action.key), order: state.order.filter(entry => entry.key !== action.key), cyclePlayed: state.cyclePlayed.filter(key => key !== action.key) };
     case 'move': {
@@ -150,7 +171,9 @@ function reduceQueue(state: PlayerQueue, action: QueueAction): PlayerQueue {
     case 'metadata': {
       const update = (entry: QueueEntry): QueueEntry => entry.track.videoId !== action.videoId ? entry : { ...entry, track: { ...entry.track,
         ...(action.title ? { title: action.title } : {}), ...(action.artist ? { artist: action.artist } : {}), ...(action.duration && action.duration > 0 ? { duration: action.duration } : {}) } };
-      return { ...state, current: state.current ? update(state.current) : null, queue: state.queue.map(update), order: state.order.map(update) };
+      return { ...state, current: state.current ? update(state.current) : null, queue: state.queue.map(update), order: state.order.map(update),
+        history: state.history.map(item => ({ ...item, track: update({ key: item.key, track: item.track }).track })),
+        trail: state.trail.map(track => update({ key: '', track }).track) };
     }
   }
 }

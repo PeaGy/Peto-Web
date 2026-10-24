@@ -17,7 +17,7 @@ async function setup(page: Page, mobile: boolean, favorites: { video_id: string;
     await route.fulfill({ json: { accepted: true } });
   });
   await page.route('**/api/chat', async route => {
-    expect(route.request().postDataJSON().player_control).toBe(4);
+    expect(route.request().postDataJSON().player_control).toBe(5);
     const event = (value: object) => `data: ${JSON.stringify(value)}\n\n`;
     await route.fulfill({ contentType: 'text/event-stream', body:
       event({ type: 'meta', conversation_id: 'A', effort: 'low' })
@@ -59,6 +59,63 @@ async function showFile(page: Page, mobile: boolean) {
   }
   await shell(page).getByRole('button', { name: mobile ? 'Tùy chọn Player' : 'File', exact: true }).click();
 }
+
+test('listening history records actual starts, Previous follows shuffle history, UI and chat share it across F5', async ({ page }, info) => {
+  test.setTimeout(120000);
+  const mobile = info.project.name === 'mobile', { issue, apiRequests } = await setup(page, mobile, favorites, true);
+  const tracks = favorites.map(item => ({ ...item, duration: 240, start_seconds: 0 }));
+  await issue('play_video', { tracks: [tracks[0]], window_revision: 0 });
+  await issue('enqueue_playlist', { tracks: [tracks[1], tracks[2]], window_revision: 0 });
+  await issue('next'); await issue('set_repeat', { repeat: 'one' }); await issue('set_shuffle', { enabled: true }); await issue('next');
+  let history = await issue('list_history');
+  expect(history.data?.items?.map(item => item.video_id)).toEqual([tracks[2].video_id, tracks[1].video_id, tracks[0].video_id]);
+  expect((await issue('previous', {}, true)).state).toMatchObject({ track: { video_id: tracks[1].video_id }, repeat: 'one', shuffle: true });
+  expect((await issue('previous')).state?.track?.video_id).toBe(tracks[0].video_id);
+  let queue = await issue('list_queue'); expect(queue.data?.items?.map(item => item.video_id)).toEqual([tracks[1].video_id, tracks[2].video_id]);
+  expect((await issue('next')).state?.track?.video_id).toBe(tracks[1].video_id);
+  await showFile(page, mobile); await page.getByRole('button', { name: /Lịch sử nghe/, exact: false }).click();
+  const list = page.getByRole('list', { name: 'Các bài đã nghe', exact: true }); await expect(list.getByRole('listitem')).toHaveCount(6);
+  await page.screenshot({ path: info.outputPath('listening-history.png') }); await noPageOverflow(page);
+  await list.getByRole('button', { name: 'Phát Tetris', exact: true }).first().click();
+  await expect(shell(page)).toHaveAttribute('data-playing', 'true'); await expect(shell(page).locator('.yt-track-info h1')).toHaveText('Tetris');
+  await issue('pause'); const total = (await issue('list_history')).data!.total;
+  await page.reload(); await expect(composer(page)).toBeVisible();
+  expect((await issue('list_history')).data?.total).toBe(total); expect((await issue('status')).state?.status).toBe('suspended');
+  expect((await issue('previous')).state?.track?.video_id).toBe(tracks[1].video_id);
+  const iframe = await shell(page).locator('iframe').elementHandle();
+  queue = await issue('list_queue'); const queueIds = queue.data?.items?.map(item => item.video_id);
+  await showFile(page, mobile); await page.getByRole('button', { name: /Lịch sử nghe/ }).click();
+  await page.getByRole('button', { name: 'Xóa lịch sử nghe', exact: true }).click();
+  expect((await issue('status')).state).toMatchObject({ status: 'playing', history_count: 0, can_previous: false });
+  expect((await issue('list_queue')).data?.items?.map(item => item.video_id)).toEqual(queueIds);
+  expect(await iframe!.evaluate(node => node.isConnected)).toBe(true); expect(apiRequests()).toBe(2);
+});
+
+test('unplayed and failed replacements are not history; Clear All keeps history and stale history IDs cannot replay', async ({ page }, info) => {
+  test.setTimeout(90000);
+  const mobile = info.project.name === 'mobile', { issue, send, results } = await setup(page, mobile, favorites, true);
+  await showFile(page, mobile);
+  await page.getByRole('textbox', { name: 'Link hoặc tên video', exact: true }).fill('https://youtube.com/watch?v=Soy4jGPHr3g');
+  await page.getByRole('button', { name: 'Tìm hoặc mở', exact: true }).click();
+  await expect(shell(page)).toHaveAttribute('data-status', 'ready'); expect((await issue('list_history')).data?.total).toBe(0);
+  await page.evaluate(() => (window as unknown as { __ytFake: FakeStats }).__ytFake.fail(150));
+  expect((await issue('list_history')).data?.total).toBe(0);
+  await issue('play');
+  // An error state cannot be acknowledged as a successful play; use an explicit new source request.
+  const tracks = favorites.map(item => ({ ...item, duration: 240, start_seconds: 0 }));
+  await issue('play_video', { tracks: [tracks[0]], window_revision: 0 });
+  await page.evaluate(() => { (window as unknown as { __ytFake: FakeStats }).__ytFake.holdLoads = true; });
+  const before = await send('play_video', { tracks: [tracks[1]], window_revision: 0 });
+  await expect.poll(() => results.length, { timeout: 12000 }).toBe(before + 1); expect(results.at(-1)?.ok).toBe(false);
+  const history = await issue('list_history'); expect(history.data?.items?.map(item => item.video_id)).toEqual([tracks[0].video_id]);
+  await page.evaluate(() => { (window as unknown as { __ytFake: FakeStats }).__ytFake.holdLoads = false; });
+  await issue('clear_all'); await page.reload(); await expect(composer(page)).toBeVisible();
+  expect((await issue('status')).state).toMatchObject({ track: null, history_count: 1 }); await expect(shell(page)).toHaveCount(0);
+  const observed = await issue('list_history'); const item = observed.data!.items![0];
+  expect((await issue('play_history_entry', { entry_id: item.entry_id, history_revision: observed.data!.history_revision })).ok).toBe(true);
+  expect((await issue('clear_history')).state?.history_count).toBe(0);
+  expect((await issue('play_history_entry', { entry_id: item.entry_id, history_revision: observed.data!.history_revision })).ok).toBe(false);
+});
 
 test('F5 restores 200 queue entries, native progress/volume and modes stopped, without fetching YouTube until opened', async ({ page }, info) => {
   test.setTimeout(90000);

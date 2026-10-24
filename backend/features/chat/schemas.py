@@ -49,7 +49,7 @@ class ChatRequest(BaseModel):
     # Chỉ Companion: dùng khóa riêng của người dùng thay cho Grok của Peto.
     provider: ProviderChoiceIn | None = None
     # Only the sending Companion browser implements the action/ack protocol. Older clients have no tools.
-    player_control: Literal[1, 2, 3, 4] | None = None
+    player_control: Literal[1, 2, 3, 4, 5] | None = None
 
 
 class StopRequest(BaseModel):

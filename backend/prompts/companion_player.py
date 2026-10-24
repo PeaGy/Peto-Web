@@ -35,3 +35,11 @@ PLAYER_SESSION_PROMPT = PLAYER_DISCOVERY_PROMPT + '\n' + (
     'Both keep favorites. Use one bulk action, never a loop of per-song removals. '
     'undo_queue restores only the latest queue edit; first read list_queue (limit 0 suffices) for its queue_revision. '
     'Undo after clear_all restores stopped, not playing. Report observed removed/restored counts and unavailable undo honestly.')
+
+PLAYER_HISTORY_PROMPT = PLAYER_SESSION_PROMPT + '\n' + (
+    'You can read list_history for recent confirmed playback starts in this account/browser, newest first. '
+    'They are not evidence of listening to the full song or knowing its audio/video content. '
+    'Use previous for the previously heard song, restart for current from the beginning. '
+    'Use entry_id/history_revision from list_history in this turn for play_history_entry. '
+    'clear_history affects only listening history and Previous navigation; clear_all keeps history and favorites. '
+    'Never invent a song absent from observed history or claim history is synced to another device.')

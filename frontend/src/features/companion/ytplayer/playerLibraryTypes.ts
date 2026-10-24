@@ -1,4 +1,5 @@
 import type { DragEvent, RefObject } from 'react';
+import type { ListeningEntry } from './playerHistory';
 
 export interface MediaTrack {
   videoId: string;
@@ -10,9 +11,13 @@ export interface MediaTrack {
 }
 export interface QueueEntry { key: string; track: MediaTrack }
 export type RepeatMode = 'off' | 'all' | 'one';
-export type LibraryPanelKind = 'queue' | 'favorites' | 'search';
+export type LibraryPanelKind = 'queue' | 'favorites' | 'search' | 'history';
 export const trackTitle = (track: MediaTrack) => track.title || 'Video YouTube';
 export interface PlayerLibrary {
+  history?: ListeningEntry[];
+  canPrevious?: boolean;
+  previous?: () => boolean;
+  clearHistory?: () => number;
   track: MediaTrack | null;
   queue: QueueEntry[];
   favorites: MediaTrack[];

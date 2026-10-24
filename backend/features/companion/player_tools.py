@@ -22,7 +22,8 @@ ACTIONS = (*BASE_ACTIONS, 'list_queue', 'list_favorites', 'next_track', 'remove_
            'play_queue_entry', 'set_favorite', 'enqueue_favorite', 'enqueue_favorites')
 DISCOVERY_ACTIONS = ('search_videos', 'play_video', 'enqueue_video', 'enqueue_playlist')
 SESSION_ACTIONS = ('clear_queue', 'clear_all', 'undo_queue')
-READ_ACTIONS = {'status', 'list_queue', 'list_favorites', 'next_track', 'search_videos', 'invalid'}
+HISTORY_ACTIONS = ('previous', 'list_history', 'play_history_entry', 'clear_history')
+READ_ACTIONS = {'status', 'list_queue', 'list_favorites', 'list_history', 'next_track', 'search_videos', 'invalid'}
 SCHEMA = {'type': 'function', 'name': NAME, 'strict': True, 'description': (
     'Read or control the existing Player in the browser sending this Companion conversation. '
     'Use status for what we are listening to. Use actions for a user request; an offer alone is not a request to play. '
@@ -91,10 +92,25 @@ SESSION_SCHEMA['description'] += (
     'Undo of clear_all restores the session stopped, without autoplay. Next/source/mode changes invalidate undo.')
 SESSION_SCHEMA['parameters']['properties']['queue_revision']['description'] = 'Required for undo_queue or with entry_id; read list_queue in this turn. Re-read if stale.'
 
+HISTORY_SCHEMA = deepcopy(SESSION_SCHEMA)
+HISTORY_SCHEMA['parameters']['properties']['action']['enum'] += list(HISTORY_ACTIONS)
+HISTORY_SCHEMA['parameters']['properties']['history_revision'] = {'type': ['integer', 'null'], 'minimum': 0,
+    'description': 'For play_history_entry only; read list_history in this turn and use its revision and entry_id.'}
+HISTORY_SCHEMA['parameters']['properties']['entry_id']['description'] = 'Observed ID from list_queue for queue entry actions, or list_history for play_history_entry; otherwise null.'
+HISTORY_SCHEMA['parameters']['properties']['queue_revision']['description'] = 'For queue entry actions and undo_queue only, from list_queue. Null for play_history_entry, which uses history_revision.'
+HISTORY_SCHEMA['parameters']['properties']['offset']['description'] = 'Only list_queue/list_favorites/list_history; default 0.'
+HISTORY_SCHEMA['parameters']['required'] = list(HISTORY_SCHEMA['parameters']['properties'])
+HISTORY_SCHEMA['description'] += (
+    ' list_history reads up to 100 recently played local-browser entries, newest first, with played_at milliseconds. '
+    'Only confirmed starts count, not full listens or understanding video content. Use its entry_id/history_revision for play_history_entry. '
+    'previous goes to the actually heard prior song, preserving shuffle and putting the departing song first in Upcoming; '
+    'restart still restarts current. clear_history clears only local listening history and Previous navigation, keeping playback/queue/favorites. '
+    'clear_all keeps listening history. History is browser/account-local, not synced across devices.')
+
 
 class Command(BaseModel):
     model_config = ConfigDict(extra='forbid', strict=True, allow_inf_nan=False)
-    action: Literal[*ACTIONS, *DISCOVERY_ACTIONS, *SESSION_ACTIONS]
+    action: Literal[*ACTIONS, *DISCOVERY_ACTIONS, *SESSION_ACTIONS, *HISTORY_ACTIONS]
     volume: int | None = Field(default=None, ge=0, le=100)
     seconds: float | None = Field(default=None, ge=0, le=604800)
     enabled: bool | None = None
@@ -103,6 +119,7 @@ class Command(BaseModel):
     limit: int | None = Field(default=None, ge=0, le=50)
     entry_id: str | None = Field(default=None, min_length=1, max_length=64)
     queue_revision: int | None = Field(default=None, ge=0)
+    history_revision: int | None = Field(default=None, ge=0)
     position: int | None = Field(default=None, ge=1, le=200)
     video_id: str | None = Field(default=None, pattern=r'^[A-Za-z0-9_-]{11}$')
     query: str | None = Field(default=None, min_length=1, max_length=200)
@@ -115,8 +132,8 @@ class Command(BaseModel):
                     'remove_queue_entry': {'entry_id', 'queue_revision'}, 'move_queue_entry': {'entry_id', 'queue_revision', 'position'},
                     'play_queue_entry': {'entry_id', 'queue_revision'}, 'set_favorite': {'enabled'},
                     'enqueue_favorite': {'video_id'}, 'search_videos': {'query'}, 'enqueue_playlist': {'url'},
-                    'undo_queue': {'queue_revision'}}.get(self.action, set())
-        optional = {'list_queue': {'offset', 'limit'}, 'list_favorites': {'offset', 'limit'}, 'set_favorite': {'video_id'},
+                    'undo_queue': {'queue_revision'}, 'play_history_entry': {'entry_id', 'history_revision'}}.get(self.action, set())
+        optional = {'list_queue': {'offset', 'limit'}, 'list_favorites': {'offset', 'limit'}, 'list_history': {'offset', 'limit'}, 'set_favorite': {'video_id'},
                     'search_videos': {'page_token'}, 'play_video': {'video_id', 'url'}, 'enqueue_video': {'video_id', 'url'}}.get(self.action, set())
         supplied = {name for name in self.model_fields_set - {'action'} if getattr(self, name) is not None}
         if not required <= supplied or not supplied <= required | optional:
@@ -148,6 +165,9 @@ class Snapshot(BaseModel):
     native_video_id: str | None = Field(default=None, pattern=r'^[A-Za-z0-9_-]{11}$')
     native_state: Literal[-1, 0, 1, 2, 3, 5] | None = None
     can_undo: bool | None = None
+    history_count: int | None = Field(default=None, ge=0, le=100)
+    can_previous: bool | None = None
+    previous_track: Track | None = None
 
 
 class Result(BaseModel):
@@ -161,16 +181,18 @@ class Result(BaseModel):
 class LibraryItem(Track):
     index: int = Field(ge=1, le=500)
     entry_id: str | None = Field(default=None, min_length=1, max_length=64)
+    played_at: int | None = Field(default=None, ge=0, le=8640000000000000)
 
 
 class LibraryData(BaseModel):
     model_config = ConfigDict(extra='forbid', strict=True)
-    kind: Literal['queue', 'favorites', 'next', 'mutation']
+    kind: Literal['queue', 'favorites', 'history', 'next', 'mutation']
     total: int | None = Field(default=None, ge=0, le=500)
     offset: int | None = Field(default=None, ge=0, le=500)
     next_offset: int | None = Field(default=None, ge=0, le=500)
     items: list[LibraryItem] = Field(default_factory=list, max_length=50)
     queue_revision: int | None = Field(default=None, ge=0)
+    history_revision: int | None = Field(default=None, ge=0)
     automatic: Track | None = None
     on_skip: Track | None = None
     reason: Literal['queue', 'loop_one', 'loop_all', 'empty'] | None = None
@@ -198,6 +220,8 @@ class PlayerSession:
         self.version = version
         self._queue_revision: int | None = None
         self._queue_items: dict[str, LibraryItem] = {}
+        self._history_revision: int | None = None
+        self._history_items: dict[str, LibraryItem] = {}
         self.receipts: list[dict] = []
         self.reply_guard: str | None = None
         from features.companion.player_discovery_tools import Discovery
@@ -205,7 +229,7 @@ class PlayerSession:
 
     @property
     def schema(self):
-        return SESSION_SCHEMA if self.version >= 4 else DISCOVERY_SCHEMA if self.version >= 3 else SCHEMA if self.version >= 2 else LEGACY_SCHEMA
+        return HISTORY_SCHEMA if self.version >= 5 else SESSION_SCHEMA if self.version >= 4 else DISCOVERY_SCHEMA if self.version >= 3 else SCHEMA if self.version >= 2 else LEGACY_SCHEMA
 
     async def run(self, arguments: str):
         # Keep execution evidence separate from assistant prose, including interrupted/invalid actions.
@@ -214,7 +238,7 @@ class PlayerSession:
             action = supplied.get('action') if isinstance(supplied, dict) else None
         except (ValueError, TypeError):
             action = None
-        receipt = {'action': action if action in (*ACTIONS, *DISCOVERY_ACTIONS, *SESSION_ACTIONS) else 'invalid',
+        receipt = {'action': action if action in (*ACTIONS, *DISCOVERY_ACTIONS, *SESSION_ACTIONS, *HISTORY_ACTIONS) else 'invalid',
                    'sent': False, 'result': {'ok': False, 'error': 'Turn interrupted before confirmation; outcome is unknown.'}}
         failed_effect = any(item['action'] not in READ_ACTIONS and item['sent'] and not item['result'].get('ok') for item in self.receipts)
         if len(self.receipts) < 24:
@@ -241,7 +265,7 @@ class PlayerSession:
             commands.append({'action': receipt['action'], 'sent': receipt['sent'], 'ok': result.get('ok') is True,
                 **({'error': result['error'][:500]} if result.get('error') else {}),
                 **({'state': result['state']} if result.get('state') else {}),
-                **({'data': {key: value for key, value in data.items() if key in ('kind', 'target', 'queue_revision', 'total', 'added', 'not_added_capacity', 'skipped_unavailable', 'truncated', 'favorite', 'removed', 'restored', 'undo_action')}} if data else {}),
+                **({'data': {key: value for key, value in data.items() if key in ('kind', 'target', 'queue_revision', 'history_revision', 'total', 'added', 'not_added_capacity', 'skipped_unavailable', 'truncated', 'favorite', 'removed', 'restored', 'undo_action')}} if data else {}),
                 **({'change': result['change']} if result.get('change') else {})})
         return {'version': 1, 'commands': commands, 'reply_guard': self.reply_guard}
 
@@ -254,11 +278,15 @@ class PlayerSession:
                 raise ValueError('Old browser')
             if self.version < 4 and command.action in SESSION_ACTIONS:
                 raise ValueError('Old browser')
+            if self.version < 5 and command.action in HISTORY_ACTIONS:
+                raise ValueError('Old browser')
         except (ValueError, TypeError, ValidationError):
             yield {'ok': False, 'error': 'Invalid Player action or arguments; nothing was executed.'}
             return
 
         if command.action in DISCOVERY_ACTIONS:
+            self._history_revision = None
+            self._history_items.clear()
             self._queue_revision = None
             self._queue_items.clear()
             async with aclosing(self.discovery.run(command, self._request)) as operation:
@@ -267,6 +295,12 @@ class PlayerSession:
             return
 
         target = None
+        history_target = None
+        if command.action == 'play_history_entry':
+            history_target = self._history_items.get(command.entry_id)
+            if history_target is None or command.history_revision != self._history_revision:
+                yield {'ok': False, 'error': 'Read list_history in this turn and use its entry_id/history_revision. Nothing was executed.'}
+                return
         if command.action == 'undo_queue' and (self._queue_revision is None or command.queue_revision != self._queue_revision):
             yield {'ok': False, 'error': 'Read list_queue in this turn before undo, using its current queue_revision. Nothing was executed.'}
             return
@@ -289,10 +323,34 @@ class PlayerSession:
                 self._queue_items.clear()
                 if result.get('ok'):
                     result = {'ok': False, 'state': result.get('state'), 'error': 'Player returned an incomplete queue observation. Read list_queue again; do not infer song names or positions.'}
-        elif command.action not in ('status', 'list_favorites', 'next_track'):
+        elif command.action not in ('status', 'list_favorites', 'list_history', 'next_track'):
             # A failed/unknown action may still have changed the browser. Never reuse its old IDs/revision.
             self._queue_revision = None
             self._queue_items.clear()
+
+        if command.action == 'list_history':
+            if not result.get('ok') or not self._observe_history(command, result):
+                self._history_revision = None
+                self._history_items.clear()
+                if result.get('ok'):
+                    result = {'ok': False, 'state': result.get('state'), 'error': 'Incomplete listening history observation; read list_history again.'}
+        elif command.action not in READ_ACTIONS:
+            self._history_revision = None
+            self._history_items.clear()
+        if command.action in ('previous', 'play_history_entry') and result.get('ok'):
+            state, data = result.get('state') or {}, result.get('data') or {}
+            video_id = (data.get('target') or {}).get('video_id')
+            if (not video_id or (history_target is not None and video_id != history_target.video_id)
+                    or (state.get('track') or {}).get('video_id') != video_id or state.get('status') != 'playing'
+                    or state.get('native_video_id') != video_id or state.get('native_state') != 1):
+                yield {'ok': False, 'state': result.get('state'), 'error': 'Native Player did not confirm the requested history song playing. Do not retry automatically.'}
+                return
+        if command.action == 'clear_history' and result.get('ok'):
+            state, data = result.get('state') or {}, result.get('data') or {}
+            if (state.get('history_count') != 0 or data.get('kind') != 'mutation' or data.get('total') != 0
+                    or data.get('removed') is None or data.get('history_revision') is None):
+                yield {'ok': False, 'state': result.get('state'), 'error': 'Player did not confirm listening history was cleared. Do not retry automatically.'}
+                return
 
         if command.action in SESSION_ACTIONS and result.get('ok'):
             state, data = result.get('state') or {}, result.get('data') or {}
@@ -340,6 +398,23 @@ class PlayerSession:
         if self.version >= 3:
             self.discovery.observe(result)
         yield result
+
+    def _observe_history(self, command: Command, result: dict) -> bool:
+        try:
+            data = LibraryData.model_validate(result.get('data'))
+            offset, limit = command.offset or 0, command.limit if command.limit is not None else 20
+            if (data.kind != 'history' or data.history_revision is None or data.total is None or data.total > 100 or data.offset != offset
+                    or len(data.items) > limit or any(item.entry_id is None or item.played_at is None
+                        or item.index != offset + index + 1 or item.index > data.total for index, item in enumerate(data.items))
+                    or len({item.entry_id for item in data.items}) != len(data.items)):
+                return False
+            if self._history_revision != data.history_revision:
+                self._history_items.clear()
+            self._history_revision = data.history_revision
+            self._history_items.update((item.entry_id, item) for item in data.items)
+            return True
+        except (ValueError, TypeError, ValidationError):
+            return False
 
     def _observe_queue(self, command: Command, result: dict) -> bool:
         """Remember only entries actually returned in this turn, never assistant history."""

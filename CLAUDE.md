@@ -1,5 +1,25 @@
 # CLAUDE.md
 
+## Player — lịch sử nghe và Previous, giai đoạn 3 (2026-10-24)
+
+Owner đã commit/deploy `f6c1601`, xác nhận F5 phát đúng mốc, yêu cầu bước tiếp. Thêm File/menu mobile → Lịch sử nghe,
+panel cũ với replay/append/giờ-ngày và nút xóa riêng. Back thành Bài trước; restart vẫn trong Play. Chỉ ghi sau proof
+source/request/native ID/state1 đúng; chưa phát/lỗi/event cũ không ghi. Max100 log +100 đường Previous, liên tiếp
+cùng nguồn gộp và cập nhật giờ; pause/resume không spam. Previous theo thực nghe, đẩy current đầu queue, giữ tail/
+loop/shuffle. Queue đủ200 không có mục phù hợp thì báo cần chừa1chỗ, không bỏ bài. F5 giữ history/Previous stopped.
+History key riêng `peto-player-history-v1:<public-account-id>`; Clear All/queue Undo giữ history, xóa history giữ media/
+queue/favorites và không lập tức re-add current. Storage event/read-before-write tránh hồi sinh log đã xóa từ tab khác.
+Chưa sync máy/trình duyệt; không dựng lịch sử cũ từ order/queue/chat. Chỉ ghi các lần phát từ bundle mới.
+Client v5/native previous/list_history/play_history_entry/clear_history; v1–v4 schema/prompt giữ nguyên. Play entry
+cần ID/history_revision đọc cùng turn; proof playing chờ cả React/history commit, backend kiểm native ID/state.
+Giữ guard lời tự nhiên, không đổi persona/examples/billing/provider/DB/key/dependency. Không AI/TTS/Data API/YouTube
+production đợt này, chưa Android thật. 291 backend/12 tệp, 234 frontend/12 tệp, build + browser TypeScript đạt.
+Chrome lượt đầy đủ 50 đạt/2 lỗi selector menu/4 skip; đã tách class history khỏi favorites, kiểm lại 6/6 ca liên quan
+trên Chrome và 6/6 Edge đạt. Không gọi lượt đầu là hoàn toàn xanh; 52 ca Chrome khác nhau đạt qua hồi quy + kiểm lại.
+25/25 backend history kiểm lại sau chỉnh mô tả schema cũng đạt. Chi tiết `frontend/src/features/companion/ytplayer/SESSION_STAGE3.md`. Raw ignored
+`.runtime/player-session-stage3/`. Chưa commit/deploy; backend trước/cùng frontend v5, rebuild frontend + restart backend.
+Chưa triển giai đoạn 4 giảm nhạc khi voicechat hoặc 5 nghiệm thu; nghe/xem video cùng Peto vẫn tạm gác.
+
 ## Player — sửa phát tiếp sau F5 (2026-10-24)
 
 Owner đã commit/deploy giai đoạn 2 ở `03a184f`, báo thanh thời lượng đúng nhưng Phát vẫn chạy từ đầu. Đã tìm

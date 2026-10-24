@@ -16,6 +16,7 @@ import { PlayerIcon } from '../../shared/ui/PlayerIcon';
 import { usePlayerLayout } from './ytplayer/playerLayout';
 import { PlayerControlBridge } from './ytplayer/playerControl';
 import { hasPlayerSession } from './ytplayer/playerSession';
+import { hasPlayerHistory } from './ytplayer/playerHistory';
 import './ytplayer/companionPlayer.css';
 import { fileToBase64 } from '../chat/attachments';
 import { useCompanionImages } from './useCompanionImages';
@@ -183,7 +184,7 @@ export default function Companion({ ownerId, active, appInfo, voice, characterMo
   useEffect(() => { if (sceneRequest > 0) setScenesOpen(true); }, [sceneRequest]);
   const [resetting, setResetting] = useState(false);
   const hearing = useHearing();
-  const [player, setPlayer] = useState(() => ({ visited: hasPlayerSession(ownerId), open: false, hidden: false }));
+  const [player, setPlayer] = useState(() => ({ visited: hasPlayerSession(ownerId) || hasPlayerHistory(ownerId), open: false, hidden: false }));
   // Sân khấu còn phải chừa thanh bên và cột chat: khung hẹp chuyển sang màn hình Player riêng.
   const mobilePlayer = usePlayerLayout('(max-width: 900px), (max-height: 520px) and (pointer: coarse)');
   const desktopPlayback = usePlayerLayout('(hover: hover) and (pointer: fine)');
@@ -208,7 +209,7 @@ export default function Companion({ ownerId, active, appInfo, voice, characterMo
   }, []);
   const controlActive = useRef(active); controlActive.current = active;
   const [playerControl] = useState(() => new PlayerControlBridge(showPlayer, () => controlActive.current && !document.hidden,
-    () => setPlayer(value => ({ ...value, visited: true })), () => hasPlayerSession(ownerId)));
+    () => setPlayer(value => ({ ...value, visited: true })), () => hasPlayerSession(ownerId) || hasPlayerHistory(ownerId)));
   const closePlayer = useCallback(() => {
     playerOwnsKey.current = false;
     playerFocusBack.current = true;
@@ -458,7 +459,7 @@ export default function Companion({ ownerId, active, appInfo, voice, characterMo
         ? { ...message, attachments: optimisticImages.map((image, i) => ({ ...image, url: `data:${attachments[i].mime || 'image/png'};base64,${attachments[i].data}` })) }
         : message));
       await sendMessage(
-        { message: text, conversationId, attachments, effort: "low", webSearch: search ? "auto" : "off", mode: "companion", playerControl: 4,
+        { message: text, conversationId, attachments, effort: "low", webSearch: search ? "auto" : "off", mode: "companion", playerControl: 5,
           ...(brain ? { provider: brain.provider, providerKey: brain.providerKey, searchKey: brain.searchKey } : {}) },
         {
           onPlayerCommand: async command => {

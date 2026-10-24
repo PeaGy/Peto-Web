@@ -1,4 +1,4 @@
-type Glyph = 'heart' | 'queue' | 'next' | 'search' | 'plus' | 'close' | 'play' | 'grip' | 'more' | 'up' | 'down' | 'shuffle' | 'repeat' | 'repeat-one';
+type Glyph = 'heart' | 'queue' | 'next' | 'search' | 'plus' | 'close' | 'play' | 'grip' | 'more' | 'up' | 'down' | 'shuffle' | 'repeat' | 'repeat-one' | 'history' | 'trash';
 
 export function LibraryIcon({ name, filled = false, size = 21 }: { name: Glyph; filled?: boolean; size?: number }) {
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -7,6 +7,8 @@ export function LibraryIcon({ name, filled = false, size = 21 }: { name: Glyph; 
     {name === 'next' && <><path fill="currentColor" stroke="none" d="m5 5 12 7-12 7z" /><path d="M19 5v14" /></>}
     {name === 'search' && <><circle cx="10.5" cy="10.5" r="6.5" /><path d="m15.5 15.5 5 5" /></>}
     {name === 'plus' && <path d="M12 5v14M5 12h14" />}
+    {name === 'history' && <><path d="M3 11a9 9 0 1 1 2.6 7M3 4v7h7M12 7v5l3 2" /></>}
+    {name === 'trash' && <><path d="M4 6h16M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7M14 10v7" /></>}
     {name === 'close' && <path d="m6 6 12 12M18 6 6 18" />}
     {name === 'play' && <path fill="currentColor" stroke="none" d="m7 4 13 8-13 8z" />}
     {name === 'grip' && <>{[7, 12, 17].map(y => <g key={y}><circle cx="9" cy={y} r=".8" fill="currentColor" /><circle cx="15" cy={y} r=".8" fill="currentColor" /></g>)}</>}

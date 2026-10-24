@@ -98,7 +98,7 @@ def confirmations(receipts: list[dict], vi: bool) -> str:
         track = state.get('track') or {}
         name = track.get('title') or track.get('video_id') or ''
         target = (data.get('target') or {}).get('title') or (data.get('target') or {}).get('video_id') or ''
-        if action in {'play', 'play_video', 'play_queue_entry', 'next', 'restart'}:
+        if action in {'play', 'play_video', 'play_queue_entry', 'play_history_entry', 'previous', 'next', 'restart'}:
             if state.get('status') == 'playing' and name:
                 line = f'Đang phát “{name}”.' if vi else f'Playing “{name}”.'
             else:
@@ -107,6 +107,8 @@ def confirmations(receipts: list[dict], vi: bool) -> str:
             line = 'Đã dừng và dọn Player.' if vi else 'Playback stopped; Player cleared.'
         elif action == 'clear_queue':
             line = f'Đã xóa {data.get("removed", 0)} bài khỏi hàng đợi.' if vi else f'Cleared {data.get("removed", 0)} upcoming songs.'
+        elif action == 'clear_history':
+            line = 'Đã xóa lịch sử nghe.' if vi else 'Listening history cleared.'
         elif action == 'undo_queue':
             line = 'Đã hoàn tác hàng đợi.' if vi else 'Queue edit undone.'
             if data.get('undo_action') == 'clear_all':

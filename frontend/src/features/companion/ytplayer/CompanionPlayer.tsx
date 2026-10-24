@@ -52,6 +52,11 @@ export default function CompanionPlayer({ ownerId, active, open, hidden, mobileL
   }, [checkpoint]);
   const openLink = library.openInput;
   useEffect(() => {
+    const native = youtube.observe();
+    if (source && youtube.sourceKey === youtubeSourceKey(source) && youtube.playing && native?.state === 1 && native.videoId === source.videoId)
+      library.recordPlaying(Number(source.playbackId), source.videoId);
+  }, [source, youtube.sourceKey, youtube.playing, youtube.position, library.recordPlaying]);
+  useEffect(() => {
     if (source && youtube.sourceKey === youtubeSourceKey(source) && youtube.status === 'ended') ended(Number(source.playbackId), youtube.endedSerial);
   }, [source, youtube.sourceKey, youtube.status, youtube.endedSerial, ended]);
   useEffect(() => {

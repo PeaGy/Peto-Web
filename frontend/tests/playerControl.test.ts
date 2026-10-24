@@ -87,7 +87,7 @@ it('open waits for the lazy player to register and does not toggle an already-vi
   expect(execute).toHaveBeenCalledOnce();
 });
 
-it.each([true, 2, 3, 4] as const)('only Companion advertises protocol %s and acknowledges player SSE before final text', async version => {
+it.each([true, 2, 3, 4, 5] as const)('only Companion advertises protocol %s and acknowledges player SSE before final text', async version => {
   const command = cmd('pause');
   const event = (value: object) => `data: ${JSON.stringify(value)}\n\n`;
   const order: string[] = [];

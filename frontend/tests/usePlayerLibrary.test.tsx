@@ -3,6 +3,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { usePlayerLibrary } from '../src/features/companion/ytplayer/usePlayerLibrary';
 import { mediaFromId } from '../src/features/companion/ytplayer/playerApi';
+import { emptyHistory, PlayerHistoryStore } from '../src/features/companion/ytplayer/playerHistory';
 
 const api = vi.hoisted(() => ({ list: vi.fn(), save: vi.fn(), info: vi.fn(), search: vi.fn(), playlist: vi.fn() }));
 vi.mock('../src/features/companion/ytplayer/playerApi', async original => ({ ...(await original<object>()),
@@ -28,6 +29,64 @@ it('clear all cancels a late playlist, keeps account favorites and undo restores
   act(() => { view.result.current.undo(); });
   expect(view.result.current.queue).toHaveLength(2); expect(view.result.current.source?.autoplay).toBe(false);
   expect(view.result.current.canUndo).toBe(false); expect(api.save).not.toHaveBeenCalled();
+});
+
+it('persists only confirmed listens and Previous navigation separately from a cleared listening session', async () => {
+  const first = renderHook(() => usePlayerLibrary('history-A'));
+  await waitFor(() => expect(first.result.current.loadingFavorites).toBe(false));
+  const confirm = () => act(() => first.result.current.recordPlaying(Number(first.result.current.source!.playbackId), first.result.current.track!.videoId));
+  act(() => first.result.current.select(saved)); expect(first.result.current.history).toEqual([]); confirm();
+  const other = mediaFromId('e1xCOsgWG0M', 'Vampire');
+  act(() => first.result.current.select(other)); confirm();
+  expect(first.result.current.previousTrack?.videoId).toBe(saved.videoId);
+  first.unmount();
+  const restored = renderHook(() => usePlayerLibrary('history-A'));
+  expect(restored.result.current.history).toHaveLength(2); expect(restored.result.current.source?.autoplay).toBe(false);
+  expect(restored.result.current.previousTrack?.videoId).toBe(saved.videoId);
+  act(() => restored.result.current.clearAll()); restored.unmount();
+  const empty = renderHook(() => usePlayerLibrary('history-A'));
+  expect(empty.result.current.source).toBeNull(); expect(empty.result.current.history).toHaveLength(2);
+  const different = renderHook(() => usePlayerLibrary('history-B')); expect(different.result.current.history).toEqual([]);
+});
+
+it('clearing history keeps current and queue, does not re-add active playback and survives a remount', async () => {
+  const view = renderHook(() => usePlayerLibrary('history-A'));
+  await waitFor(() => expect(view.result.current.loadingFavorites).toBe(false));
+  act(() => { view.result.current.select(saved); view.result.current.append([saved]); });
+  const token = Number(view.result.current.source!.playbackId);
+  act(() => view.result.current.recordPlaying(token, saved.videoId));
+  const source = view.result.current.source;
+  act(() => { view.result.current.clearHistory(); view.result.current.recordPlaying(token, saved.videoId); });
+  expect(view.result.current.source).toBe(source); expect(view.result.current.queue).toHaveLength(1); expect(view.result.current.history).toEqual([]);
+  view.unmount(); const next = renderHook(() => usePlayerLibrary('history-A'));
+  expect(next.result.current.history).toEqual([]); expect(next.result.current.source?.autoplay).toBe(false);
+});
+
+it('a history clear from another tab is adopted before a new listen, without resurrecting deleted entries', async () => {
+  const view = renderHook(() => usePlayerLibrary('history-A'));
+  await waitFor(() => expect(view.result.current.loadingFavorites).toBe(false));
+  act(() => view.result.current.select(saved));
+  act(() => view.result.current.recordPlaying(Number(view.result.current.source!.playbackId), saved.videoId));
+  const otherTab = new PlayerHistoryStore('history-A'); otherTab.save(emptyHistory(), true);
+  act(() => window.dispatchEvent(new StorageEvent('storage', { key: otherTab.key, storageArea: localStorage, newValue: null })));
+  expect(view.result.current.history).toEqual([]);
+  const next = mediaFromId('e1xCOsgWG0M'); act(() => view.result.current.select(next));
+  act(() => view.result.current.recordPlaying(Number(view.result.current.source!.playbackId), next.videoId));
+  expect(view.result.current.history.map(item => item.track.videoId)).toEqual([next.videoId]);
+});
+
+it('history storage errors stay explicit and do not turn an unconfirmed persistent clear into success', async () => {
+  const view = renderHook(() => usePlayerLibrary('history-A'));
+  await waitFor(() => expect(view.result.current.loadingFavorites).toBe(false));
+  act(() => view.result.current.select(saved));
+  act(() => view.result.current.recordPlaying(Number(view.result.current.source!.playbackId), saved.videoId));
+  const remove = vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => { throw new Error('blocked'); });
+  try {
+    act(() => view.result.current.clearHistory());
+    expect(view.result.current.historySaved).toBe(false); expect(view.result.current.error).toContain('chưa lưu');
+    remove.mockRestore(); act(() => view.result.current.clearHistory());
+    expect(view.result.current.historySaved).toBe(true); expect(view.result.current.error).toBe('');
+  } finally { remove.mockRestore(); }
 });
 
 it('remount restores this account stopped, with position, modes, duplicate entries and no Undo; restart uses the original start', async () => {
