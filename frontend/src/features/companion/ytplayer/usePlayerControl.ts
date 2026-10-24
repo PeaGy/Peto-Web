@@ -34,7 +34,7 @@ export function usePlayerControl(props: ControlProps) {
       return { window: !open ? 'closed' : hidden ? 'hidden' : 'visible', status: !l.track ? 'empty' : !open ? 'suspended' : y.status,
         track: l.track ? controlTrack(l.track) : null,
         position: !l.track ? 0 : native?.position ?? y.position, duration: !l.track ? 0 : native?.duration ?? y.duration,
-        volume: native?.volume ?? y.volume, shuffle: l.shuffle, repeat: l.repeat, queue_count: l.queue.length,
+        volume: native?.volume ?? y.readVolume(), shuffle: l.shuffle, repeat: l.repeat, queue_count: l.queue.length,
         window_revision: windowLife.current.closed + l.resetRevision, native_video_id: native?.videoId ?? null, native_state: native?.state ?? null,
         can_undo: l.canUndo };
     };
@@ -127,7 +127,7 @@ export function usePlayerControl(props: ControlProps) {
       if (!source || youtubeSourceKey(source) !== oldKey) throw new Error('Bài đang nghe đã thay đổi; chưa xác nhận thao tác cho bài cũ.');
     };
     if (command.action === 'next' || command.action === 'restart' || (command.action === 'play' && p.youtube.status === 'ended')) {
-      const target = command.action === 'next' ? p.library.queue[0].track : p.library.source;
+      const target = command.action === 'next' ? p.library.queue[0].track : p.library.track!;
       const expectedKey = youtubeSourceKey({ ...target, playbackId: String(Number(p.library.source.playbackId) + 1) });
       if (command.action === 'next') latest.current.library.next(); else latest.current.library.restart();
       await waitForPlayer(() => {

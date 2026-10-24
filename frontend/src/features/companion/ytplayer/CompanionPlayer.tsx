@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useState, type RefObject } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { PlayerLibraryShell } from './PlayerLibraryShell';
 import { usePlayerLibrary } from './usePlayerLibrary';
@@ -11,6 +11,7 @@ import { usePlayerControl } from './usePlayerControl';
 import type { PlayerControlBridge } from './playerControl';
 
 interface Props {
+  ownerId?: string;
   active: boolean;
   open: boolean;
   hidden: boolean;
@@ -24,14 +25,31 @@ interface Props {
   control?: PlayerControlBridge;
 }
 
-/** Favorites live on the account; queue/source live in this login, and the portal keeps one iframe. */
-export default function CompanionPlayer({ active, open, hidden, mobileLayout, allowBackground, bounds, onClose, onHide, onFocusChange, onShow, control }: Props) {
-  const library = usePlayerLibrary();
+/** Favorites live on the account; the local listening session restores stopped, and the portal keeps one iframe. */
+export default function CompanionPlayer({ ownerId, active, open, hidden, mobileLayout, allowBackground, bounds, onClose, onHide, onFocusChange, onShow, control }: Props) {
+  const library = usePlayerLibrary(ownerId);
   const { source, ended, updateDuration } = library;
   const [draft, setDraft] = useState('');
   const [error, setError] = useState('');
   const [frame, setFrame] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
-  const youtube = useYouTubePlayer(source, (active || allowBackground) && open && source !== null && frame !== null, allowBackground);
+  const youtube = useYouTubePlayer(source, (active || allowBackground) && open && source !== null && frame !== null, allowBackground, library.initialVolume);
+  const latest = useRef({ library, youtube }); latest.current = { library, youtube };
+  const checkpoint = useCallback((immediate = false) => {
+    const { library: l, youtube: y } = latest.current;
+    const native = y.observe();
+    const matches = l.source && y.sourceKey === youtubeSourceKey(l.source) && native?.videoId === l.source.videoId;
+    l.rememberPlayback(l.currentEntryKey, matches ? (y.status === 'ended' ? l.track!.startSeconds : native.position) : undefined, matches ? native.volume : y.readVolume(), immediate);
+  }, []);
+  useEffect(() => { checkpoint(!youtube.playing); }, [youtube.sourceKey, youtube.position, youtube.volume, youtube.playing, youtube.status, checkpoint]);
+  useLayoutEffect(() => {
+    const flush = () => checkpoint(true);
+    // Capture before the YouTube lifecycle disposes the native player, including mobile visibility changes.
+    window.addEventListener('pagehide', flush, true);
+    document.addEventListener('visibilitychange', flush, true);
+    return () => {
+      flush(); window.removeEventListener('pagehide', flush, true); document.removeEventListener('visibilitychange', flush, true);
+    };
+  }, [checkpoint]);
   const openLink = library.openInput;
   useEffect(() => {
     if (source && youtube.sourceKey === youtubeSourceKey(source) && youtube.status === 'ended') ended(Number(source.playbackId), youtube.endedSerial);
@@ -39,7 +57,7 @@ export default function CompanionPlayer({ active, open, hidden, mobileLayout, al
   useEffect(() => {
     if (source && youtube.sourceKey === youtubeSourceKey(source) && youtube.duration > 0) updateDuration(source.videoId, youtube.duration);
   }, [source, youtube.sourceKey, youtube.duration, updateDuration]);
-  const close = useCallback(() => { library.cancelDiscovery(); youtube.stop(); onClose(); }, [library.cancelDiscovery, youtube.stop, onClose]);
+  const close = useCallback(() => { checkpoint(true); library.cancelDiscovery(); youtube.stop(); onClose(); }, [checkpoint, library.cancelDiscovery, youtube.stop, onClose]);
   const clearQueue = (signal?: AbortSignal) => { control?.invalidate(signal); return library.clearQueue(); };
   const clearAll = (signal?: AbortSignal) => { control?.invalidate(signal); youtube.stop(); return library.clearAll(); };
   const undo = (signal?: AbortSignal) => {

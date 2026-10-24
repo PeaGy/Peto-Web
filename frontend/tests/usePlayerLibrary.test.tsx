@@ -10,7 +10,7 @@ vi.mock('../src/features/companion/ytplayer/playerApi', async original => ({ ...
   searchVideos: api.search, getPlaylist: api.playlist,
 }));
 const saved = mediaFromId('Soy4jGPHr3g', 'Tetris', 'Kasane Teto SV');
-beforeEach(() => { vi.clearAllMocks(); api.list.mockResolvedValue([]); api.save.mockResolvedValue([saved]); api.info.mockResolvedValue({ video_id: saved.videoId, title: saved.title, artist: saved.artist });
+beforeEach(() => { localStorage.clear(); vi.clearAllMocks(); api.list.mockResolvedValue([]); api.save.mockResolvedValue([saved]); api.info.mockResolvedValue({ video_id: saved.videoId, title: saved.title, artist: saved.artist });
   api.search.mockResolvedValue({ tracks: [saved], nextPageToken: '' }); api.playlist.mockResolvedValue({ tracks: [saved], skipped: 0, truncated: false }); });
 
 it('clear all cancels a late playlist, keeps account favorites and undo restores stopped', async () => {
@@ -28,6 +28,67 @@ it('clear all cancels a late playlist, keeps account favorites and undo restores
   act(() => { view.result.current.undo(); });
   expect(view.result.current.queue).toHaveLength(2); expect(view.result.current.source?.autoplay).toBe(false);
   expect(view.result.current.canUndo).toBe(false); expect(api.save).not.toHaveBeenCalled();
+});
+
+it('remount restores this account stopped, with position, modes, duplicate entries and no Undo; restart uses the original start', async () => {
+  const first = renderHook(() => usePlayerLibrary('account-A'), { wrapper: StrictMode });
+  await waitFor(() => expect(first.result.current.loadingFavorites).toBe(false));
+  act(() => {
+    first.result.current.select({ ...saved, startSeconds: 5 }); first.result.current.append([saved, saved]);
+    first.result.current.setRepeat('all'); first.result.current.toggleShuffle();
+  });
+  act(() => { first.result.current.rememberPlayback(first.result.current.currentEntryKey, 42, 27, true); });
+  const oldOrder = first.result.current.queue.map(e => e.track.videoId); first.unmount();
+  const next = renderHook(() => usePlayerLibrary('account-A'), { wrapper: StrictMode });
+  await waitFor(() => expect(next.result.current.loadingFavorites).toBe(false));
+  expect(next.result.current.source).toMatchObject({ videoId: saved.videoId, startSeconds: 42, autoplay: false });
+  expect(next.result.current.queue.map(e => e.track.videoId)).toEqual(oldOrder);
+  expect(next.result.current).toMatchObject({ initialVolume: 27, repeat: 'all', shuffle: true, canUndo: false });
+  const currentKey = next.result.current.currentEntryKey;
+  act(() => { next.result.current.append([saved]); });
+  expect(new Set([currentKey, ...next.result.current.queue.map(e => e.key)]).size).toBe(4);
+  act(() => { next.result.current.restart(); });
+  expect(next.result.current.source).toMatchObject({ startSeconds: 5, autoplay: true });
+  next.unmount();
+  const other = renderHook(() => usePlayerLibrary('account-B'));
+  expect(other.result.current.source).toBeNull(); expect(other.result.current.queue).toEqual([]);
+});
+
+it('Clear All is persisted immediately, ignores a late old checkpoint, and an explicit Undo may save it again', async () => {
+  const first = renderHook(() => usePlayerLibrary('account-A'));
+  await waitFor(() => expect(first.result.current.loadingFavorites).toBe(false));
+  act(() => { first.result.current.select(saved); first.result.current.append([saved]); });
+  const oldKey = first.result.current.currentEntryKey;
+  act(() => { first.result.current.clearAll(); first.result.current.rememberPlayback(oldKey, 80, 50, true); });
+  const empty = renderHook(() => usePlayerLibrary('account-A'));
+  expect(empty.result.current.track).toBeNull(); expect(empty.result.current.queue).toEqual([]); empty.unmount();
+  act(() => { first.result.current.undo(); }); first.unmount();
+  const restored = renderHook(() => usePlayerLibrary('account-A'));
+  expect(restored.result.current.source?.autoplay).toBe(false); expect(restored.result.current.queue).toHaveLength(1);
+});
+
+it('Clear Queue stays cleared after remount without losing the current track', async () => {
+  const first = renderHook(() => usePlayerLibrary('account-A'));
+  await waitFor(() => expect(first.result.current.loadingFavorites).toBe(false));
+  act(() => { first.result.current.select(saved); first.result.current.append([saved]); first.result.current.clearQueue(); }); first.unmount();
+  const next = renderHook(() => usePlayerLibrary('account-A'));
+  expect(next.result.current.track?.videoId).toBe(saved.videoId); expect(next.result.current.queue).toEqual([]);
+});
+
+it('keeps the unsaved-session error visible across throttled checkpoints until a real write succeeds', async () => {
+  const view = renderHook(() => usePlayerLibrary('account-A'));
+  await waitFor(() => expect(view.result.current.loadingFavorites).toBe(false));
+  act(() => { view.result.current.select(saved); });
+  const write = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('full'); });
+  try {
+    act(() => { view.result.current.append([saved]); });
+    expect(view.result.current.error).toContain('chưa lưu được');
+    act(() => { view.result.current.rememberPlayback(view.result.current.currentEntryKey, 10, 23); });
+    expect(view.result.current.error).toContain('chưa lưu được');
+    write.mockRestore();
+    act(() => { view.result.current.rememberPlayback(view.result.current.currentEntryKey, 10, 23, true); });
+    expect(view.result.current.error).toBe('');
+  } finally { write.mockRestore(); }
 });
 
 it('loads account favorites and saves only after server confirmation; rapid duplicate clicks issue one request', async () => {

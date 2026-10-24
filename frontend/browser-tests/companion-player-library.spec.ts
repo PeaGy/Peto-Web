@@ -29,7 +29,7 @@ const end = (page: Page) => page.evaluate(() => (window as unknown as { __ytFake
 
 test('yêu thích thật qua API, F5 giữ danh sách, không có mẫu trong app và chọn bài giữ một iframe', async ({ page }, info) => {
   const mobile = info.project.name === 'mobile';
-  const state = await mockPeto(page); await installApi(page);
+  const state = await mockPeto(page, { preservePreferences: true }); await installApi(page);
   await page.goto('/companion'); await openPlayer(page, mobile);
   await expect(page.getByText('Playlist mẫu', { exact: true })).toHaveCount(0);
   await firstVideo(page);
@@ -41,7 +41,7 @@ test('yêu thích thật qua API, F5 giữ danh sách, không có mẫu trong ap
   await list.getByRole('button', { name: 'Phát Tetris', exact: true }).click();
   await expect(shell(page)).toHaveAttribute('data-playing', 'true'); expect((await stats(page)).created).toBe(1);
   await page.reload(); await openPlayer(page, mobile);
-  await expect(shell(page)).toHaveAttribute('data-status', 'empty');
+  await expect(shell(page)).toHaveAttribute('data-status', 'ready'); await expect(shell(page)).toHaveAttribute('data-playing', 'false');
   const loaded = await file(page, mobile); await loaded.locator('.yl-favorites-menu').click();
   await expect(list.getByRole('listitem')).toHaveCount(1);
   await list.getByRole('button', { name: 'Phát Tetris', exact: true }).click();

@@ -15,6 +15,11 @@ interface Session {
 }
 const sourceKey = youtubeSourceKey;
 const finite = (value: number) => Number.isFinite(value) ? Math.max(0, value) : 0;
+function positionOf(player: YouTubePlayer, source: YouTubePlaybackSource | null) {
+  const position = finite(player.getCurrentTime()), state = player.getPlayerState?.();
+  // An unstarted/cued video may report zero before playback reaches its requested start.
+  return position === 0 && (state === -1 || state === 5) ? source?.startSeconds ?? 0 : position;
+}
 const ERROR_MESSAGES: Record<number, string> = {
   2: 'YouTube không nhận được mã video hợp lệ.',
   5: 'Trình duyệt không phát được video này. Bạn có thể thử lại hoặc mở trên YouTube.',
@@ -25,7 +30,7 @@ const ERROR_MESSAGES: Record<number, string> = {
 };
 
 /** Một iframe mỗi phiên. Desktop có thể giữ phát khi đổi tab/thu nhỏ; pagehide, đóng và unmount luôn giải phóng. */
-export function useYouTubePlayer(source: YouTubePlaybackSource | null, enabled: boolean, allowBackground = false) {
+export function useYouTubePlayer(source: YouTubePlaybackSource | null, enabled: boolean, allowBackground = false, initialVolume = 60) {
   const hasSource = source !== null;
   const container = useRef<HTMLDivElement>(null);
   const latestSource = useRef(source);
@@ -36,17 +41,25 @@ export function useYouTubePlayer(source: YouTubePlaybackSource | null, enabled: 
   latestBackground.current = allowBackground;
   const session = useRef<Session | null>(null);
   const handledAutoplay = useRef<string | null>(null);
-  const volume = useRef(60);
+  const volume = useRef(Math.round(Math.min(100, finite(initialVolume))));
   const [visible, setVisible] = useState(() => !document.hidden);
   const canRunInPage = visible || allowBackground;
   const [pageActive, setPageActive] = useState(true);
   const [attempt, setAttempt] = useState(0);
-  const [snapshot, setSnapshot] = useState<Snapshot>({ status: 'loading', ready: false, playing: false, position: source?.startSeconds ?? 0, duration: 0, volume: 60, error: '', sourceKey: '', endedSerial: 0 });
+  const [snapshot, setSnapshot] = useState<Snapshot>({ status: 'loading', ready: false, playing: false, position: source?.startSeconds ?? 0, duration: 0, volume: volume.current, error: '', sourceKey: '', endedSerial: 0 });
 
   const stop = useCallback(() => {
     if (latestSource.current) handledAutoplay.current = sourceKey(latestSource.current);
+    let final: Partial<Snapshot> = {};
+    const current = session.current;
+    if (current?.ready && !current.pendingCue && current.player) {
+      try {
+        volume.current = current.player.isMuted() ? 0 : Math.min(100, finite(current.player.getVolume()));
+        final = { position: positionOf(current.player, latestSource.current), duration: finite(current.player.getDuration()), volume: volume.current };
+      } catch { /* Retain the latest polled values if native state is no longer available. */ }
+    }
     session.current?.dispose();
-    setSnapshot(value => ({ ...value, status: 'suspended', ready: false, playing: false }));
+    setSnapshot(value => ({ ...value, ...final, status: 'suspended', ready: false, playing: false }));
   }, []);
 
   useEffect(() => {
@@ -94,7 +107,7 @@ export function useYouTubePlayer(source: YouTubePlaybackSource | null, enabled: 
         }
         const nextVolume = current.player.isMuted() ? 0 : Math.min(100, finite(current.player.getVolume()));
         volume.current = nextVolume;
-        const position = finite(current.player.getCurrentTime()), duration = finite(current.player.getDuration());
+        const position = positionOf(current.player, latestSource.current), duration = finite(current.player.getDuration());
         setSnapshot(value => value.position === position && value.duration === duration && value.volume === nextVolume ? value
           : { ...value, position, duration, volume: nextVolume });
       } catch { /* Dữ liệu API có thể chưa có trong lúc đổi video. */ }
@@ -217,14 +230,14 @@ export function useYouTubePlayer(source: YouTubePlaybackSource | null, enabled: 
     try { action(current.player); } catch { setSnapshot(value => ({ ...value, status: 'error', ready: false, playing: false, error: 'Player chưa phản hồi. Hãy thử lại.' })); }
   }
   return {
-    container, ...snapshot, stop,
+    container, ...snapshot, stop, readVolume: () => volume.current,
     observe: () => {
       const current = session.current;
       if (!current?.active || !current.ready || current.pendingCue || !current.player) return null;
       try {
         return { videoId: parseYouTubeUrl(current.player.getVideoUrl?.() ?? '')?.videoId ?? null,
           state: current.player.getPlayerState?.() ?? null,
-          position: finite(current.player.getCurrentTime()), duration: finite(current.player.getDuration()),
+          position: positionOf(current.player, latestSource.current), duration: finite(current.player.getDuration()),
           volume: current.player.isMuted() ? 0 : Math.round(Math.min(100, finite(current.player.getVolume()))) };
       } catch { return null; }
     },

@@ -49,6 +49,15 @@ it('status for an unopened player does not load the player, API or favorites', a
   expect(show).not.toHaveBeenCalled();
 });
 
+it('a saved session prepares the lazy controller for status/list reads without showing a window or returning empty', async () => {
+  const show = vi.fn();
+  const execute = vi.fn(async () => ({ ok: true, state: { ...emptyPlayer(), queue_count: 2 } }));
+  const prepare = vi.fn(() => { bridge.register(execute); });
+  const bridge = new PlayerControlBridge(show, () => true, prepare, () => true);
+  expect((await bridge.run(cmd('status'), signal())).state?.queue_count).toBe(2);
+  expect(prepare).toHaveBeenCalledOnce(); expect(show).not.toHaveBeenCalled();
+});
+
 it('duplicate command ids share a result and cannot advance the queue twice', async () => {
   const bridge = new PlayerControlBridge(vi.fn(), () => true);
   const execute = vi.fn(async () => ({ ok: true, state: emptyPlayer() }));

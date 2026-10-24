@@ -5,8 +5,8 @@ import type { PlayerCommand, PlayerResult } from '../src/features/companion/ytpl
 
 const shell = (page: Page) => page.locator('#companion-player');
 const composer = (page: Page) => page.getByRole('textbox', { name: 'Nhắn cho Peto trong Companion', exact: true });
-async function setup(page: Page, mobile: boolean, favorites: { video_id: string; title: string; artist: string }[] = []) {
-  const state = await mockPeto(page); const apiRequests = await installApi(page);
+async function setup(page: Page, mobile: boolean, favorites: { video_id: string; title: string; artist: string }[] = [], preserveSession = false) {
+  const state = await mockPeto(page, { preservePreferences: preserveSession }); const apiRequests = await installApi(page);
   favorites.forEach(item => state.playerFavorites.set(item.video_id, item));
   let sequence = 0;
   let command: PlayerCommand;
@@ -59,6 +59,85 @@ async function showFile(page: Page, mobile: boolean) {
   }
   await shell(page).getByRole('button', { name: mobile ? 'Tùy chọn Player' : 'File', exact: true }).click();
 }
+
+test('F5 restores 200 queue entries, native progress/volume and modes stopped, without fetching YouTube until opened', async ({ page }, info) => {
+  test.setTimeout(90000);
+  const { issue, apiRequests } = await setup(page, info.project.name === 'mobile', favorites, true);
+  const tracks = favorites.map(item => ({ ...item, duration: 240, start_seconds: 0 }));
+  await issue('play_video', { tracks: [tracks[0]], window_revision: 0 });
+  await issue('enqueue_playlist', { tracks: Array.from({ length: 200 }, (_, i) => tracks[1 + i % 3]), window_revision: 0 });
+  await issue('set_repeat', { repeat: 'all' }); await issue('set_shuffle', { enabled: true });
+  const before = await issue('list_queue', { limit: 50 });
+  // No render/poll between this native change and the real pagehide: the lifecycle flush must capture it.
+  await page.evaluate(() => {
+    const native = (window as unknown as { __ytFake: { active: { time: number; volume: number } } }).__ytFake.active;
+    native.time = 47.5; native.volume = 23;
+  });
+  await page.reload(); await expect(composer(page)).toBeVisible();
+  await expect(shell(page)).toHaveCount(0); expect(apiRequests()).toBe(1);
+  const restored = await issue('status');
+  expect(restored.state).toMatchObject({ window: 'closed', status: 'suspended', queue_count: 200, volume: 23, position: 47.5,
+    repeat: 'all', shuffle: true, can_undo: false, track: { video_id: tracks[0].video_id } });
+  const after = await issue('list_queue', { limit: 50 });
+  expect(after.data?.items?.map(item => item.video_id)).toEqual(before.data?.items?.map(item => item.video_id));
+  expect(after.data?.items?.[0].entry_id).not.toBe(before.data?.items?.[0].entry_id);
+  expect(apiRequests()).toBe(1);
+  await issue('open'); await expect(shell(page)).toHaveAttribute('data-status', 'ready');
+  await expect(shell(page)).toHaveAttribute('data-playing', 'false'); await expect(shell(page).locator('iframe')).toHaveCount(1);
+  await page.screenshot({ path: info.outputPath('restored-player-stopped.png') });
+  expect((await issue('status')).state).toMatchObject({ position: 47.5, volume: 23 });
+  expect((await issue('play')).ok).toBe(true);
+  expect((await issue('restart')).ok).toBe(true); expect((await issue('status')).state?.position).toBe(0);
+  expect((await issue('next')).state?.track?.video_id).toBe(after.data?.items?.[0].video_id);
+  expect((await stats(page)).created).toBe(1); expect(apiRequests()).toBe(2); await noPageOverflow(page);
+  await issue('mute'); await page.reload(); await expect(composer(page)).toBeVisible();
+  expect((await issue('status')).state?.volume).toBe(0);
+  await issue('open'); await expect(shell(page)).toHaveAttribute('data-status', 'ready');
+  expect((await issue('status')).state).toMatchObject({ volume: 0, status: 'ready' });
+});
+
+test('saved Clear Queue/Clear All survive reload, Undo does not, and queue-only sessions restore without creating an iframe', async ({ page }, info) => {
+  test.setTimeout(90000);
+  const mobile = info.project.name === 'mobile';
+  const { issue, state, apiRequests } = await setup(page, mobile, favorites, true);
+  const tracks = favorites.map(item => ({ ...item, duration: 240, start_seconds: 0 }));
+  await issue('play_video', { tracks: [tracks[0]], window_revision: 0 });
+  await issue('enqueue_playlist', { tracks: [tracks[1], tracks[1]], window_revision: 0 });
+  await showFile(page, mobile); await page.getByRole('button', { name: 'Clear Queue', exact: true }).click();
+  await page.reload(); await expect(composer(page)).toBeVisible();
+  expect((await issue('status')).state).toMatchObject({ track: { video_id: tracks[0].video_id }, queue_count: 0, can_undo: false });
+  await showFile(page, mobile); await page.getByRole('button', { name: 'Clear All', exact: true }).click();
+  await page.reload(); await expect(composer(page)).toBeVisible();
+  expect((await issue('status')).state).toMatchObject({ track: null, queue_count: 0 });
+  expect((await issue('undo_queue', { queue_revision: 0 })).ok).toBe(false);
+  await expect(page.locator('.yt-youtube-container iframe')).toHaveCount(0); expect(state.playerFavorites.size).toBe(4);
+  const count = apiRequests();
+  expect((await issue('enqueue_playlist', { tracks: [tracks[1], tracks[1]], window_revision: 0 })).ok).toBe(true);
+  await page.reload(); await expect(composer(page)).toBeVisible();
+  expect((await issue('status')).state).toMatchObject({ track: null, queue_count: 2, can_undo: false });
+  expect(apiRequests()).toBe(count);
+  const queue = await issue('list_queue');
+  expect(new Set(queue.data!.items!.map(item => item.entry_id)).size).toBe(2);
+  expect((await issue('play_queue_entry', { entry_id: queue.data!.items![0].entry_id, queue_revision: queue.data!.queue_revision })).ok).toBe(true);
+  await noPageOverflow(page);
+});
+
+test('listening snapshots stay isolated when the authenticated account changes and restore only for their owner', async ({ page }, info) => {
+  test.setTimeout(90000);
+  const { issue, apiRequests } = await setup(page, info.project.name === 'mobile', [], true);
+  let account = 'test-account';
+  await page.route('**/api/auth/me', route => route.fulfill({ json: { authenticated: true, login_configured: true,
+    user: { id: account, provider: 'discord', username: 'demo', display_name: 'Test', avatar_url: '' } } }));
+  const tracks = favorites.map(item => ({ ...item, duration: 240, start_seconds: 0 }));
+  await issue('play_video', { tracks: [tracks[0]], window_revision: 0 });
+  await issue('enqueue_playlist', { tracks: [tracks[1]], window_revision: 0 });
+  account = 'different-account'; await page.reload(); await expect(composer(page)).toBeVisible();
+  expect((await issue('status')).state).toMatchObject({ track: null, queue_count: 0 }); expect(apiRequests()).toBe(1);
+  await issue('play_video', { tracks: [tracks[2]], window_revision: 0 });
+  account = 'test-account'; await page.reload(); await expect(composer(page)).toBeVisible();
+  expect((await issue('status')).state).toMatchObject({ status: 'suspended', track: { video_id: tracks[0].video_id }, queue_count: 1 });
+  expect(apiRequests()).toBe(2); await expect(shell(page)).toHaveCount(0);
+});
 
 test('bulk clear and one-step undo share UI/chat state, keep favorites and restore clear-all stopped', async ({ page }, info) => {
   test.setTimeout(90000);

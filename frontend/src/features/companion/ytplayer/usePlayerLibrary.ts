@@ -5,6 +5,7 @@ import { parseYouTubePlaylistUrl, parseYouTubeUrl, type YouTubePlaybackSource } 
 import { parsePlayerInput } from './playerInput';
 import { usePlayerDiscovery } from './usePlayerDiscovery';
 import type { LibraryPanelKind, MediaTrack, PlayerLibrary } from './playerLibraryTypes';
+import { PlayerSessionStore } from './playerSession';
 
 const seed = () => Math.floor(Math.random() * 0x100000000);
 const message = (error: unknown) => error instanceof TypeError ? 'Không kết nối được thư viện Player. Bạn thử lại nhé.'
@@ -12,8 +13,8 @@ const message = (error: unknown) => error instanceof TypeError ? 'Không kết n
 
 export interface SessionEdit { revision: number; removed: number; restored: number; undoAction?: UndoOperation }
 
-/** Owned by the account-keyed Companion; no browser storage or sample catalogue. */
-export function usePlayerLibrary(): PlayerLibrary & {
+/** Favorites use the account API; the listening session stays in this account's browser storage. */
+export function usePlayerLibrary(ownerId?: string): PlayerLibrary & {
   source: YouTubePlaybackSource | null;
   openLink: (value: string) => string | undefined;
   ended: (request: number, serial: number) => void;
@@ -28,6 +29,8 @@ export function usePlayerLibrary(): PlayerLibrary & {
   undo: () => SessionEdit | null;
   currentEntryKey: string | null;
   nextPlaybackId: string;
+  initialVolume: number;
+  rememberPlayback: (key: string | null, position: number | undefined, volume: number, immediate?: boolean) => void;
   nextTracks: ReturnType<typeof nextPlayerTracks>;
   controlEntry: (operation: 'remove' | 'move' | 'play', key: string, revision: number, position?: number) => boolean;
   readFavorites: (signal: AbortSignal) => Promise<MediaTrack[]>;
@@ -35,13 +38,19 @@ export function usePlayerLibrary(): PlayerLibrary & {
   appendFavorites: (items: MediaTrack[]) => { added: number; skipped_duplicates: number; not_added_capacity: number; keys: string[] };
   appendControlled: (items: MediaTrack[]) => { added: number; not_added_capacity: number; keys: string[] };
 } {
-  const [state, dispatch] = useReducer(playerQueueReducer, undefined, emptyQueue);
+  const [session] = useState(() => new PlayerSessionStore(ownerId));
+  const [sessionError, setSessionError] = useState('');
+  const persisted = useCallback((ok: boolean) => setSessionError(ok ? '' : 'Trình duyệt chưa lưu được phiên Player. Tải lại trang có thể mất thay đổi vừa rồi.'), []);
+  const [state, dispatch] = useReducer(playerQueueReducer, session.initial?.queue ?? emptyQueue());
   const stateRef = useRef(state); stateRef.current = state;
   const commit = useCallback((action: QueueAction) => {
     const before = stateRef.current, after = playerQueueReducer(before, action);
-    if (after !== before) { stateRef.current = after; dispatch(action); }
+    if (after !== before) {
+      stateRef.current = after; dispatch(action);
+      persisted(session.saveQueue(after, action.type !== 'metadata' && action.type !== 'ended'));
+    }
     return after;
-  }, []);
+  }, [session, persisted]);
   const discovery = usePlayerDiscovery();
   const [favorites, setFavorites] = useState<MediaTrack[]>([]);
   const [loadingFavorites, setLoadingFavorites] = useState(true);
@@ -61,7 +70,8 @@ export function usePlayerLibrary(): PlayerLibrary & {
   const metadata = useRef(new Map<string, { title: string; artist: string }>());
   const track = state.current?.track ?? null;
   const source = useMemo<YouTubePlaybackSource | null>(() => track ? {
-    videoId: track.videoId, startSeconds: track.startSeconds, url: track.url, playbackId: String(state.request), autoplay: state.autoplay,
+    videoId: track.videoId, startSeconds: state.request === 0 && session.initial && session.initial.queue.current?.key === state.current?.key ? session.initial.position : track.startSeconds,
+    url: track.url, playbackId: String(state.request), autoplay: state.autoplay,
   } : null, [track?.videoId, track?.startSeconds, track?.url, state.request, state.autoplay]);
 
   useEffect(() => { alive.current = true; return () => { alive.current = false; requests.current.forEach(controller => controller.abort()); requests.current.clear(); }; }, []);
@@ -223,12 +233,14 @@ export function usePlayerLibrary(): PlayerLibrary & {
   return {
     track, source, queue: state.queue, favorites, favorite: !!track && favorites.some(item => item.videoId === track.videoId),
     repeat: state.repeat, shuffle: state.shuffle, panel, newItems, announcement, sourceRequest, queueButton,
-    loadingFavorites, favoritesBusy, error, select, openLink, appendLink, append, toggleFavorite, openPanel, closePanel, drop,
+    loadingFavorites, favoritesBusy, error: sessionError || error, select, openLink, appendLink, append, toggleFavorite, openPanel, closePanel, drop,
     discovery, openInput, importPlaylist, cancelDiscovery: discovery.cancel,
     next: () => commit({ type: 'next', seed: seed() }), restart: () => commit({ type: 'restart' }),
     setRepeat: (repeat: 'off' | 'all' | 'one') => commit({ type: 'set-repeat', repeat, seed: seed() }),
     ended, updateDuration,
     resetRevision: state.resetRevision, canUndo: !!state.undo,
+    initialVolume: session.initial?.volume ?? 60,
+    rememberPlayback: (key, position, volume, immediate = false) => persisted(session.remember(key, position, volume, immediate)),
     clearQueue: () => editSession('clear_queue')!, clearAll: () => editSession('clear_all')!, undo: () => editSession('undo'),
     queueRevision: state.revision, currentEntryKey: state.current?.key ?? null, nextPlaybackId: String(state.request + 1), nextTracks: nextPlayerTracks(state), readFavorites, setFavorite, appendFavorites, appendControlled, controlEntry,
     move: (key, offset) => commit({ type: 'move', key, offset }), remove: key => commit({ type: 'remove', key }),

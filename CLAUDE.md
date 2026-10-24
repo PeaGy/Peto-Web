@@ -1,5 +1,28 @@
 # CLAUDE.md
 
+## Player — lưu/khôi phục phiên nghe, giai đoạn 2 (2026-10-24)
+
+Owner đã commit/deploy giai đoạn 1 ở `7811606`, báo Clear Queue/Clear All/Hoàn tác thử thành công, yêu cầu bước tiếp.
+Đợt này lưu phiên theo ID tài khoản công khai trong localStorage của trình duyệt/origin: current, position, queue
+tối đa 200 (giữ trùng/thứ tự), volume/mute, loop/shuffle/thứ tự vòng. F5 phục hồi stopped, cửa sổ đóng, không iframe/
+IFrame API trước khi mở; Peto đọc được trạng thái/queue mà không mở cửa sổ. Mở thì cue ở vị trí đã lưu, Phát mới chạy.
+Restart/loop dùng start gốc. Clear Queue ghi ngay; Clear All xóa snapshot ngay; Undo trong RAM có thể lưu lại phiên
+stopped, không giữ Undo qua F5. X/minimize/mobile visibility/logout vẫn theo lifecycle cũ. Không phát khi đóng hẳn browser.
+Codec kiểm kích thước/kiểu/ID, giới hạn Unicode, dựng URL từ ID, tái tạo entry key/revision và bỏ autoplay/intent/
+command/receipt/Undo. Queue chỉnh ghi đồng bộ, progress throttle 5s + flush pause/X/ẩn trang/pagehide/unmount. Native
+time/volume được đọc trước dispose; volume ref tránh snapshot React cũ ghi đè khi visibility tới sau pagehide.
+Tab cũ không tự lưu đè snapshot mới hoặc Clear All của tab khác; chỉnh queue/nguồn chủ động mới có thể ghi lại.
+Các tab chưa sync UI; snapshot chưa sync qua máy/trình duyệt. Storage lỗi thì dùng RAM và báo lỗi sẵn có.
+Chỉ frontend, giữ protocol v4/backend/persona/DB/key/dependency. Chưa commit/deploy. 217 ca frontend/11 tệp đạt;
+Chrome hồi quy desktop/mobile mô phỏng 48 đạt/4 skip theo thiết bị, Edge 8 ca lưu/khôi phục mới đạt, không retry/flaky.
+Hai ca F5 Chrome kiểm lại, build/TypeScript đều đạt sau chốt biên cuối; lỗi ghi storage giữ tới lần ghi thành công.
+Chi tiết kết quả trong
+`frontend/src/features/companion/ytplayer/SESSION_STAGE2.md`.
+Không gọi AI/TTS/catalogue/YouTube production; chưa test Android thật đợt mới. Backend không đổi, không chạy lại 266 ca
+cũ. Chỉ build/deploy frontend. Tab bundle cũ vẫn RAM, tải lại sau phiên nghe để nhận bundle mới; bản cũ chưa lưu thì
+không cứu được queue ở lần F5 đầu. Chi tiết/bằng chứng/checklist trong SESSION_STAGE2.md; raw ignored
+`.runtime/player-session-stage2/`. Kế tiếp giai đoạn 3 lịch sử/Previous, chưa triển. Nghe/xem video vẫn tạm gác.
+
 ## Player — dọn phiên nghe và hoàn tác, giai đoạn 1 (2026-10-24)
 
 Owner đã commit/deploy đợt điều khiển trước, yêu cầu giai đoạn 1 của kế hoạch mới. Bản đối chiếu `b3b7fa8`.

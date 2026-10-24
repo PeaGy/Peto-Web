@@ -64,7 +64,7 @@ export class PlayerControlBridge {
     this.target = target;
     return () => { if (this.target === target) this.target = null; };
   };
-  constructor(private show: () => void, private available: () => boolean, private prepare?: () => void) {}
+  constructor(private show: () => void, private available: () => boolean, private prepare?: () => void, private hasSession?: () => boolean) {}
   run = (command: PlayerCommand, signal: AbortSignal): Promise<PlayerResult> => {
     if (!this.turns.has(signal)) this.bindTurn(signal);
     if (this.turns.get(signal) !== this.epoch) return Promise.resolve({ ok: false, error: 'Phiên Player đã thay đổi; lệnh của lượt chat cũ chưa được thực hiện.' });
@@ -85,6 +85,10 @@ export class PlayerControlBridge {
     signal.throwIfAborted();
     if (!Number.isFinite(command.expires_at) || command.expires_at <= Date.now()) return { ok: false, error: 'Lệnh Player đã hết hạn; chưa thực hiện.' };
     if (!this.available()) return { ok: false, error: 'Hãy quay lại Companion để điều khiển Player.' };
+    if (!this.target && this.hasSession?.() && this.prepare) {
+      this.prepare();
+      await waitForPlayer(() => this.target ?? undefined, signal, this.available);
+    }
     if (!this.target) {
       if (['status', 'hide', 'close'].includes(command.action)) return { ok: true, state: emptyPlayer() };
       if (command.action === 'list_queue') return { ok: true, state: emptyPlayer(), data: { kind: 'queue', total: 0, offset: command.offset ?? 0, items: [], next_offset: null, queue_revision: 0 } };

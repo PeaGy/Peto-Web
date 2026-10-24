@@ -1369,6 +1369,7 @@ function AppContent() {
         <Suspense fallback={view === "companion" ? <LoadingIndicator variant="screen" label="Loading" /> : null}>
         <Companion
           key={`companion-${auth.user?.id}`}
+          ownerId={auth.user?.id}
           active={view === "companion" && !companionSettingsView}
           appInfo={appInfo}
           voice={localVoice}

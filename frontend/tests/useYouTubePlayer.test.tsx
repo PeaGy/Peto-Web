@@ -216,6 +216,23 @@ it('tắt enabled khi host vẫn mounted hủy player và không nhận lệnh s
   expect(player.playing).toBe(false);
   expect(players[1].playVideo).not.toHaveBeenCalled();
 });
+it('stop retains native time and volume changed just before pagehide, without waiting for the next poll', async () => {
+  await mount(); const instance = players[0];
+  instance.time = 47.5; instance.volume = 23;
+  act(() => window.dispatchEvent(new Event('pagehide')));
+  expect(player).toMatchObject({ position: 47.5, volume: 23, status: 'suspended', playing: false });
+  expect(instance.destroy).toHaveBeenCalledOnce();
+});
+
+it('a restored unstarted cue reporting zero retains its requested position until native playback or a user seek', async () => {
+  render(<Harness source={{ ...second, startSeconds: 47.5, autoplay: false }} />);
+  await act(async () => {}); act(() => players[0].ready());
+  expect(player.position).toBe(47.5); expect(player.observe()?.position).toBe(47.5);
+  expect(players[0].playVideo).not.toHaveBeenCalled();
+  act(() => players[0].state(2));
+  expect(player.position).toBe(0); expect(player.observe()?.position).toBe(0);
+});
+
 it('ẩn trang và pagehide giải phóng ngay, quay lại chỉ cue ở trạng thái dừng', async () => {
   await mount();
   act(() => {

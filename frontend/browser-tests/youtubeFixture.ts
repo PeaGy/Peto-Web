@@ -6,7 +6,7 @@ const fakeScript = String.raw`
 const stats=window.__ytFake={created:0,destroyed:0,nativeSpace:0,cues:[],blocked:false,active:null};
 class Player {
  constructor(element,options) {
-  this.options=options; this.volume=60; this.muted=false; this.time=0; this.duration=240; this.playing=false; this.dead=false;this.videoId=options.videoId;
+  this.options=options; this.volume=60; this.muted=false; this.time=options.playerVars?.start??0; this.duration=240; this.playing=false; this.dead=false;this.videoId=options.videoId;
   this.iframe=document.createElement('iframe');this.iframe.src='https://www.youtube.com/embed/'+options.videoId;
   element.replaceWith(this.iframe);stats.active=this;stats.created++;
   setTimeout(()=>{if(!this.dead)options.events.onReady({target:this});},20);

@@ -15,6 +15,7 @@ import { LoadingIndicator } from '../../shared/ui/LoadingIndicator';
 import { PlayerIcon } from '../../shared/ui/PlayerIcon';
 import { usePlayerLayout } from './ytplayer/playerLayout';
 import { PlayerControlBridge } from './ytplayer/playerControl';
+import { hasPlayerSession } from './ytplayer/playerSession';
 import './ytplayer/companionPlayer.css';
 import { fileToBase64 } from '../chat/attachments';
 import { useCompanionImages } from './useCompanionImages';
@@ -121,7 +122,8 @@ function RestartIcon() {
  * Được giữ mounted như Imagine (prop `active`) để câu trả lời đang về không bị cắt khi đổi tab;
  * rời tab thì Peto thôi đọc và giải phóng renderer nhân vật.
  */
-export default function Companion({ active, appInfo, voice, characterMotion, character = DEFAULT_CHARACTER, characterLoading = false, onCharacterPreview, onOpenCharacters, sceneRequest = 0, playerRequest = 0, onUnauthorized, onOpenSidebar, onOpenHearingSettings, onOpenSettings }: {
+export default function Companion({ ownerId, active, appInfo, voice, characterMotion, character = DEFAULT_CHARACTER, characterLoading = false, onCharacterPreview, onOpenCharacters, sceneRequest = 0, playerRequest = 0, onUnauthorized, onOpenSidebar, onOpenHearingSettings, onOpenSettings }: {
+  ownerId?: string;
   active: boolean;
   sceneRequest?: number;
   playerRequest?: number;
@@ -181,7 +183,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
   useEffect(() => { if (sceneRequest > 0) setScenesOpen(true); }, [sceneRequest]);
   const [resetting, setResetting] = useState(false);
   const hearing = useHearing();
-  const [player, setPlayer] = useState({ visited: false, open: false, hidden: false });
+  const [player, setPlayer] = useState(() => ({ visited: hasPlayerSession(ownerId), open: false, hidden: false }));
   // Sân khấu còn phải chừa thanh bên và cột chat: khung hẹp chuyển sang màn hình Player riêng.
   const mobilePlayer = usePlayerLayout('(max-width: 900px), (max-height: 520px) and (pointer: coarse)');
   const desktopPlayback = usePlayerLayout('(hover: hover) and (pointer: fine)');
@@ -206,7 +208,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
   }, []);
   const controlActive = useRef(active); controlActive.current = active;
   const [playerControl] = useState(() => new PlayerControlBridge(showPlayer, () => controlActive.current && !document.hidden,
-    () => setPlayer(value => ({ ...value, visited: true }))));
+    () => setPlayer(value => ({ ...value, visited: true })), () => hasPlayerSession(ownerId)));
   const closePlayer = useCallback(() => {
     playerOwnsKey.current = false;
     playerFocusBack.current = true;
@@ -1015,7 +1017,7 @@ export default function Companion({ active, appInfo, voice, characterMotion, cha
 
       <div ref={playerBounds} className="companion-player-area">
         {player.visited && <Suspense fallback={null}>
-          <CompanionPlayer active={active} open={player.open} hidden={player.hidden || !active} mobileLayout={mobilePlayer}
+          <CompanionPlayer ownerId={ownerId} active={active} open={player.open} hidden={player.hidden || !active} mobileLayout={mobilePlayer}
             allowBackground={desktopPlayback} bounds={playerBounds}
             onClose={closePlayer} onHide={hidePlayer} onFocusChange={updatePlayerFocus} onShow={showPlayer} control={playerControl} />
         </Suspense>}
