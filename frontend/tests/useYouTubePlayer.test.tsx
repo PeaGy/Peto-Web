@@ -229,8 +229,27 @@ it('a restored unstarted cue reporting zero retains its requested position until
   await act(async () => {}); act(() => players[0].ready());
   expect(player.position).toBe(47.5); expect(player.observe()?.position).toBe(47.5);
   expect(players[0].playVideo).not.toHaveBeenCalled();
-  act(() => players[0].state(2));
+  players[0].time = 0; act(() => players[0].state(2));
   expect(player.position).toBe(0); expect(player.observe()?.position).toBe(0);
+});
+
+it('a fractional restored position uses integer embed start and explicit API cue, then Play actually starts there', async () => {
+  render(<Harness source={{ ...second, startSeconds: 110.75, autoplay: false }} />);
+  await act(async () => {}); const instance = players[0]; act(() => instance.ready());
+  expect(instance.options.playerVars.start).toBe(110);
+  expect(instance.cueVideoById).toHaveBeenCalledExactlyOnceWith({ videoId: second.videoId, startSeconds: 110.75 });
+  expect(instance.playVideo).not.toHaveBeenCalled(); expect(player.playing).toBe(false);
+  act(() => player.setPlaying(true));
+  expect(instance.time).toBe(110.75); expect(player.observe()).toMatchObject({ state: 1, position: 110.75 });
+});
+
+it('native Play after a restored cue starts at the saved position without another cue overriding later seeks', async () => {
+  render(<Harness source={{ ...second, startSeconds: 110.75, autoplay: false }} />);
+  await act(async () => {}); const instance = players[0]; act(() => instance.ready());
+  act(() => instance.playVideo());
+  expect(player.observe()).toMatchObject({ state: 1, position: 110.75 });
+  act(() => player.seek(0)); act(() => instance.pauseVideo()); act(() => instance.playVideo());
+  expect(player.observe()).toMatchObject({ state: 1, position: 0 }); expect(instance.cueVideoById).toHaveBeenCalledOnce();
 });
 
 it('ẩn trang và pagehide giải phóng ngay, quay lại chỉ cue ở trạng thái dừng', async () => {

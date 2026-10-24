@@ -1,5 +1,20 @@
 # CLAUDE.md
 
+## Player — sửa phát tiếp sau F5 (2026-10-24)
+
+Owner đã commit/deploy giai đoạn 2 ở `03a184f`, báo thanh thời lượng đúng nhưng Phát vẫn chạy từ đầu. Đã tìm
+`playerVars.start` nhận số nguyên mà code truyền vị trí thập phân; mock cũ cũng nhận float nên bỏ sót. Sửa constructor
+floor start và cueVideoById(startSeconds float) rõ mốc khi nguồn dừng có start>0, không autoplay/seek hoặc tạo iframe
+thêm. Nguồn autoplay không đổi; seek 0/pause/play sau đó không bị kéo lại mốc cũ. Mock chỉ nhận embed start nguyên,
+ca F5 kiểm actual playing position qua cả nút native và Peto. Không chuyển giai đoạn 3 trong đợt sửa này.
+Đã kiểm iframe/video YouTube thật trên Chrome desktop, account/backend Peto giả/profile riêng/volume0. Đối chứng
+cách gọi cũ với mốc45.75 chạy từ0; bản sửa nút Peto và nút YouTube đều chạy quanh46 (slider bước1s), ba phép kiểm đạt.
+Không AI/TTS/Data API, chưa Android thật; không suy mọi video đều đạt. Unit57/3tệp, Chrome/Edge mỗi loại2caF5
+desktop/mobile mô phỏng, build và TypeScript browser tests đều đạt, không retry/flaky. Chi tiết ở
+`frontend/src/features/companion/ytplayer/SESSION_RESUME_FIX.md`. Raw ignored `.runtime/player-resume-*`.
+Chỉ frontend, không đổi session schema/backend/DB/key/dependency/persona. Chưa commit/deploy; chỉ build/deploy frontend,
+tải lại bundle để nhận sửa. Session cũ đọc được; mốc đã bị bản cũ ghi gần0 sau khi phát lại không tự lấy lại mốc xa cũ.
+
 ## Player — lưu/khôi phục phiên nghe, giai đoạn 2 (2026-10-24)
 
 Owner đã commit/deploy giai đoạn 1 ở `7811606`, báo Clear Queue/Clear All/Hoàn tác thử thành công, yêu cầu bước tiếp.

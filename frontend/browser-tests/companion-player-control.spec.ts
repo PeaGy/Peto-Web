@@ -86,10 +86,15 @@ test('F5 restores 200 queue entries, native progress/volume and modes stopped, w
   await expect(shell(page)).toHaveAttribute('data-playing', 'false'); await expect(shell(page).locator('iframe')).toHaveCount(1);
   await page.screenshot({ path: info.outputPath('restored-player-stopped.png') });
   expect((await issue('status')).state).toMatchObject({ position: 47.5, volume: 23 });
-  expect((await issue('play')).ok).toBe(true);
+  await issue('open');
+  await shell(page).frameLocator('iframe').getByRole('button', { name: 'Phát trong YouTube giả', exact: true }).click();
+  await expect(shell(page)).toHaveAttribute('data-playing', 'true');
+  expect((await issue('status')).state?.position).toBe(47.5);
+  await issue('pause'); await page.reload(); await expect(composer(page)).toBeVisible();
+  const resumed = await issue('play'); expect(resumed.ok).toBe(true); expect(resumed.state?.position).toBe(47.5);
   expect((await issue('restart')).ok).toBe(true); expect((await issue('status')).state?.position).toBe(0);
   expect((await issue('next')).state?.track?.video_id).toBe(after.data?.items?.[0].video_id);
-  expect((await stats(page)).created).toBe(1); expect(apiRequests()).toBe(2); await noPageOverflow(page);
+  expect((await stats(page)).created).toBe(1); expect(apiRequests()).toBe(3); await noPageOverflow(page);
   await issue('mute'); await page.reload(); await expect(composer(page)).toBeVisible();
   expect((await issue('status')).state?.volume).toBe(0);
   await issue('open'); await expect(shell(page)).toHaveAttribute('data-status', 'ready');

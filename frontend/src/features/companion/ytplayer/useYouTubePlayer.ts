@@ -170,7 +170,8 @@ export function useYouTubePlayer(source: YouTubePlaybackSource | null, enabled: 
       current.key = sourceKey(next);
       current.player = new api.Player(placeholder, {
         videoId: next.videoId, width: '100%', height: '100%',
-        playerVars: { autoplay: 0, controls: 1, playsinline: 1, enablejsapi: 1, origin: window.location.origin, hl: 'vi', start: next.startSeconds },
+        // Embed `start` accepts integers; API cueVideoById.startSeconds also accepts fractional resume positions.
+        playerVars: { autoplay: 0, controls: 1, playsinline: 1, enablejsapi: 1, origin: window.location.origin, hl: 'vi', start: Math.floor(finite(next.startSeconds)) },
         events: {
           onReady: event => {
             if (!alive()) return;
@@ -181,7 +182,9 @@ export function useYouTubePlayer(source: YouTubePlaybackSource | null, enabled: 
             if (volume.current === 0) event.target.mute();
             publish({ status: 'ready', ready: true, playing: false, position: next.startSeconds, duration: 0, error: '', sourceKey: current.key });
             poll = window.setInterval(sync, 500);
-            // Chỉ cue nếu người dùng đã đổi nguồn trong lúc iframe đang khởi tạo.
+            // Explicitly cue a stopped nonzero start so both native Play and Peto Play use the saved position.
+            // Do not rely only on the integer embed parameter for fractional resume times.
+            if (!next.autoplay && next.startSeconds > 0 && latestSource.current && current.key === sourceKey(latestSource.current)) current.key = '';
             cue();
             sync();
             // A user-selected queue item may start on first mount. Never replay a consumed intent after suspend/close.
