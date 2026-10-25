@@ -504,6 +504,21 @@ export async function updateCompanionCard(cardId: string, fields: CompanionCardF
   }));
 }
 
+/** Xóa thẻ tự tạo cùng mọi hội thoại của nó; máy chủ trả thẻ đang dùng sau khi xóa. */
+export async function deleteCompanionCard(cardId: string): Promise<{ conversations_deleted: number; active_card: string }> {
+  return json(await fetch(`/api/companion/cards/${encodeURIComponent(cardId)}`, { method: "DELETE" }));
+}
+
+/** Thẻ Peto mặc định về bản gốc của máy chủ. */
+export async function resetCompanionCard(): Promise<CompanionCard> {
+  return json(await fetch("/api/companion/cards/peto/reset", { method: "POST" }));
+}
+
+/** Toàn bộ system prompt máy chủ sẽ gửi ở lượt kế tiếp của thẻ, và thẻ có dùng trí nhớ chung không. */
+export async function getCompanionCardPrompt(cardId: string, signal?: AbortSignal): Promise<{ prompt: string; memory: boolean }> {
+  return json(await fetch(`/api/companion/cards/${encodeURIComponent(cardId)}/prompt`, { signal }));
+}
+
 export type ImagineQuality = "low" | "medium";
 export type ImagineResolution = "1k" | "2k";
 

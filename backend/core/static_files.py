@@ -42,11 +42,13 @@ _BANNER_NAME = "og.png"
 _PNG_SIG = b"\x89PNG\r\n\x1a\n"
 # Chỉ fallback cho các trang thật; không nuốt API, Docs hay file tĩnh bị thiếu.
 # Trang cài đặt Companion (từ 13/10/2026): chỉ các trang có thật, khớp COMPANION_SETTINGS_PATHS của frontend/src/app/routes.ts.
-# Trang cài đặt Companion, khớp app/routes.ts (COMPANION_SETTINGS_PATHS, COMPANION_PROVIDER_IDS).
+# Trang cài đặt Companion, khớp app/routes.ts (COMPANION_SETTINGS_PATHS, COMPANION_PROVIDER_IDS, CARD_PATH).
 _COMPANION_PROVIDERS = (r"xai|anthropic|openai|gemini|deepseek|mistral|azure-openai|ollama|elevenlabs|azure|minimax|qwen|stepfun"
                         r"|compat|groq|deepgram")
+# Trang thẻ nhân vật (25/10/2026): danh sách, thẻ mới, một thẻ ("peto" hay mã 32 chữ hex) và trình sửa của nó.
+_COMPANION_CARDS = r"cards(?:/(?:new|(?:peto|[0-9a-f]{32})(?:/edit)?))?"
 _COMPANION_SETTINGS = (r"companion/settings(?:/(?:modules(?:/(?:brain|voice|hearing|web-search|beat-sync))?"
-                       r"|providers(?:/(?:%s))?|character|scene|memory|diagnostics))?" % _COMPANION_PROVIDERS)
+                       r"|providers(?:/(?:%s))?|%s|character|scene|memory|diagnostics))?" % (_COMPANION_PROVIDERS, _COMPANION_CARDS))
 _APP_PATH = re.compile(r"(?:chat/[^/.]+|companion|%s|admin|imagine(?:/[^/.]+/[^/.]+)?)/?\Z" % _COMPANION_SETTINGS)
 
 

@@ -66,8 +66,9 @@ export default function VoiceSettings({ voice, open, onOpenProvider }: {
       return;
     }
     setError(null);
-    // Nghe thử chỉ dùng nguồn đang chọn: chuyển sang giọng dự phòng sẽ che mất lỗi của khóa vừa nhập.
-    voice.speak(SAMPLE_KEY, sampleText.trim() || SAMPLE_TEXT, { fallback: false }).catch((err: unknown) => {
+    // Nghe thử chỉ dùng nguồn đang chọn: chuyển sang giọng dự phòng sẽ che mất lỗi của khóa vừa nhập. Trang này đặt giọng
+    // chung, nên đọc bằng giọng chung kể cả khi thẻ đang dùng có giọng riêng.
+    voice.speak(SAMPLE_KEY, sampleText.trim() || SAMPLE_TEXT, { fallback: false, global: true }).catch((err: unknown) => {
       setError(err instanceof Error ? err.message : "Chưa đọc được câu mẫu.");
     });
   }
@@ -101,7 +102,7 @@ export default function VoiceSettings({ voice, open, onOpenProvider }: {
       : undefined,
   }));
 
-  const sampleReady = !voice.problem;
+  const sampleReady = !voice.globalProblem;
   const detail = (card: Card) => (
     <div className="voice-detail" role="group" aria-label={card.name} key={`${card.id}-detail`}>
       <strong className="voice-detail-title">{card.name}</strong>
@@ -152,6 +153,10 @@ export default function VoiceSettings({ voice, open, onOpenProvider }: {
             onChange={(value) => { setError(null); voice.setEnabled(value); }}
           />
         </SettingsRow>
+        {voice.enabled && voice.cardVoice && (
+          <p className="voice-note">Thẻ nhân vật đang dùng có giọng riêng (đặt trong Thẻ nhân vật → Sửa thẻ → Mô-đun). Trang này đặt
+            giọng chung cho các thẻ để trống.</p>
+        )}
       </SettingsGroup>
 
       {voice.enabled && (

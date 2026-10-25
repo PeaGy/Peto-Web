@@ -37,9 +37,9 @@ export function appPath(location: Pick<Location, 'pathname' | 'hash'>) {
  */
 export type CompanionSettingsPage =
   | 'home' | 'character' | 'modules' | 'brain' | 'voice' | 'hearing' | 'web-search' | 'beat-sync' | 'providers' | 'provider'
-  | 'scene' | 'memory' | 'diagnostics';
-/** Trang có đường dẫn cố định; trang một nhà cung cấp ('provider') có thêm mã ở cuối. */
-export type FixedCompanionSettingsPage = Exclude<CompanionSettingsPage, 'provider'>;
+  | 'scene' | 'memory' | 'diagnostics' | 'cards' | 'card-new' | 'card' | 'card-edit';
+/** Trang có đường dẫn cố định; trang một nhà cung cấp ('provider') và một thẻ ('card', 'card-edit') có thêm mã ở cuối. */
+export type FixedCompanionSettingsPage = Exclude<CompanionSettingsPage, 'provider' | 'card' | 'card-edit'>;
 
 const COMPANION_SETTINGS_PATHS: Record<FixedCompanionSettingsPage, string> = {
   home: '/companion/settings/',
@@ -54,6 +54,8 @@ const COMPANION_SETTINGS_PATHS: Record<FixedCompanionSettingsPage, string> = {
   scene: '/companion/settings/scene',
   memory: '/companion/settings/memory',
   diagnostics: '/companion/settings/diagnostics',
+  cards: '/companion/settings/cards',
+  'card-new': '/companion/settings/cards/new',
 };
 
 export function companionSettingsRoute(page: FixedCompanionSettingsPage) { return COMPANION_SETTINGS_PATHS[page]; }
@@ -74,9 +76,26 @@ export function companionProviderId(pathname: string): string | null {
   return id && COMPANION_PROVIDER_IDS.includes(id) ? id : null;
 }
 
+/**
+ * Trang một thẻ nhân vật như AIRI (/settings/airi-card/:id và /:id/edit): /companion/settings/cards/<mã> và …/<mã>/edit.
+ * Mã là "peto" (thẻ mặc định) hay 32 chữ hex máy chủ cấp; khớp CARD_ID của backend/features/companion/cards.py.
+ */
+const CARD_PATH = /^\/companion\/settings\/cards\/(peto|[0-9a-f]{32})(\/edit)?\/?$/;
+
+export function companionCardRoute(id: string, edit = false) {
+  return `/companion/settings/cards/${encodeURIComponent(id)}${edit ? '/edit' : ''}`;
+}
+
+/** Mã thẻ trong đường dẫn trang thẻ (chi tiết hay trình sửa); null nếu không phải trang đó. */
+export function companionCardId(pathname: string): string | null {
+  return CARD_PATH.exec(pathname)?.[1] ?? null;
+}
+
 /** Trang cài đặt Companion của đường dẫn, có hay không có dấu "/" cuối; null nếu không phải trang đó. */
 export function companionSettingsPage(pathname: string): CompanionSettingsPage | null {
   if (companionProviderId(pathname)) return 'provider';
+  const card = CARD_PATH.exec(pathname);
+  if (card) return card[2] ? 'card-edit' : 'card';
   const path = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
   for (const [page, route] of Object.entries(COMPANION_SETTINGS_PATHS) as [FixedCompanionSettingsPage, string][]) {
     if (path === route.replace(/\/+$/, '')) return page;

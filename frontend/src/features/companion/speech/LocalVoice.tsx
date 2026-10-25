@@ -70,6 +70,16 @@ interface Speaking {
   phase: SpeakPhase;
 }
 
+/**
+ * Giọng thẻ nhân vật đang dùng chọn (Mô-đun của thẻ, như Modules → Speech của thẻ AIRI): nguồn, và model/giọng của nguồn đó.
+ * Không có thì theo giọng chung trong Cài đặt Companion → Giọng nói.
+ */
+export interface CardVoice {
+  source: string;
+  model?: string;
+  voice?: string;
+}
+
 export interface LocalVoice {
   notice?: string;
   enabled: boolean;
@@ -80,8 +90,15 @@ export interface LocalVoice {
   problem: string;
   health: VoiceHealth | null;
   checking: boolean;
+  /** Nguồn chung (trang Giọng nói đặt). */
   source: VoiceSourceId;
   setSource: (value: VoiceSourceId) => void;
+  /** Nguồn đang đọc thật: nguồn thẻ đang dùng chọn nếu máy này dùng được, không thì nguồn chung. */
+  speakSource: VoiceSourceId;
+  /** Thẻ đang dùng có giọng riêng và máy này dùng được giọng đó. */
+  cardVoice: boolean;
+  /** Vì sao nguồn chung chưa nói được (trang Giọng nói, Nghe thử); ``problem`` là của nguồn đang đọc thật. */
+  globalProblem: string;
   officialVoice: string;
   setOfficialVoice: (value: string) => void;
   homeVoice: string;
@@ -95,12 +112,15 @@ export interface LocalVoice {
   speaking: Speaking | null;
   /**
    * Đọc một đoạn. Lỗi thì Promise bị từ chối kèm câu báo tiếng Việt; bị dừng hay bị lượt đọc khác thay
-   * chỗ thì kết thúc êm, không báo lỗi. ``fallback: false`` (Nghe thử) chỉ dùng nguồn đang chọn.
+   * chỗ thì kết thúc êm, không báo lỗi. ``fallback: false`` (Nghe thử) chỉ dùng nguồn đang chọn; ``global`` (Nghe thử ở
+   * trang Giọng nói) đọc bằng giọng chung, bỏ qua giọng riêng của thẻ.
    */
-  speak: (key: string, text: string, options?: { fallback?: boolean; timing?: SpeechTimingHooks; expressions?: SpeechExpressions }) => Promise<void>;
+  speak: (key: string, text: string, options?: SpeakOptions) => Promise<void>;
   stream: (key: string, timing?: SpeechTimingHooks, expressions?: SpeechExpressions) => VoiceStream;
   stop: () => void;
 }
+
+interface SpeakOptions { fallback?: boolean; global?: boolean; timing?: SpeechTimingHooks; expressions?: SpeechExpressions }
 
 function read(key: string): string {
   try {
@@ -182,7 +202,7 @@ function pick(saved: string, voices: string[], fallback: string): string {
  *
  * Chỉ dò máy chủ khi người dùng đã bật và `active` đúng (Companion hoặc Cài đặt đang mở).
  */
-export function useLocalVoice(active: boolean): LocalVoice {
+export function useLocalVoice(active: boolean, card?: CardVoice | null): LocalVoice {
   const [notice, setNotice] = useState('');
   const [enabled, setEnabled] = useState(() => read(LOCAL_VOICE_ENABLED_KEY) === "1");
   const [source, setSourceState] = useState<VoiceSourceId>(readSource);
@@ -203,8 +223,19 @@ export function useLocalVoice(active: boolean): LocalVoice {
 
   const officialVoice = pick(officialChoice, health?.official.voices ?? [], "");
   const homeVoice = pick(homeChoice, health?.home.voices ?? [], "playful-1");
-  const state = sourceState(source, health, keys);
-  const backupSource: FallbackChoice = fallback !== source ? fallback : "";
+  // Giọng riêng của thẻ: nguồn của máy chủ Peto luôn thử được (hỏng thì dự phòng như giọng chung); nhà cung cấp dùng khóa
+  // thì máy này phải có khóa đó (thẻ đồng bộ giữa các máy, khóa thì không), không có thì theo giọng chung.
+  const cardProvider = card ? keyProvider(card.source) : undefined;
+  const cardUsable = !!card && (card.source === "official" || card.source === "home"
+    || (!!cardProvider && keyReady(cardProvider, keys[cardProvider.id])));
+  const speakSource: VoiceSourceId = cardUsable ? card!.source as VoiceSourceId : source;
+  const cardModel = cardUsable ? card!.model : undefined;
+  const cardVoiceId = cardUsable ? card!.voice : undefined;
+  const speakOfficial = speakSource === "official" && cardVoiceId ? pick(cardVoiceId, health?.official.voices ?? [], "") : officialVoice;
+  const speakHome = speakSource === "home" && cardVoiceId ? pick(cardVoiceId, health?.home.voices ?? [], "playful-1") : homeVoice;
+  const globalState = sourceState(source, health, keys);
+  const state = cardUsable ? sourceState(speakSource, health, keys) : globalState;
+  const backupSource: FallbackChoice = fallback !== speakSource ? fallback : "";
   const backupReady = backupSource !== "" && sourceState(backupSource, health, keys).ready;
   const backupVoice = !backupReady ? "" : backupSource === "home" ? homeVoice : officialVoice;
   const status: LocalVoiceStatus = !enabled ? "off"
@@ -270,11 +301,11 @@ export function useLocalVoice(active: boolean): LocalVoice {
 
   // Người dùng hay bật máy nhà rồi mới quay lại trang: dò lại khi cửa sổ được chọn lại.
   useEffect(() => {
-    if (status !== "missing" || !active || keyProvider(source)) return;
+    if (status !== "missing" || !active || keyProvider(speakSource)) return;
     const again = () => setProbe((count) => count + 1);
     window.addEventListener("focus", again);
     return () => window.removeEventListener("focus", again);
-  }, [status, active, source]);
+  }, [status, active, speakSource]);
 
   useEffect(() => () => {
     speakVersion.current += 1;
@@ -300,32 +331,36 @@ export function useLocalVoice(active: boolean): LocalVoice {
     updateKeyConfig(id, null);
   }, [stop]);
 
-  const synth = useCallback((useBackup: boolean): Synthesize => {
+  const synth = useCallback((useBackup: boolean, global = false): Synthesize => {
     const backup = useBackup ? backupVoice : "";
-    if (!state.ready) {
-      if (backup) return fallbackOnly(backup, state.problem);
-      throw new Error(state.problem || "Giọng nói chưa sẵn sàng.");
+    const current = global ? globalState : state;
+    const from = global ? source : speakSource;
+    if (!current.ready) {
+      if (backup) return fallbackOnly(backup, current.problem);
+      throw new Error(current.problem || "Giọng nói chưa sẵn sàng.");
     }
-    if (source === "official") {
-      return serverSynth(officialVoice, {
+    if (from === "official") {
+      return serverSynth(global ? officialVoice : speakOfficial, {
         fallback: backup || undefined,
-        onUsed: (used) => setHealth((current) => current && { ...current, official: { ...current.official, used } }),
+        onUsed: (used) => setHealth((value) => value && { ...value, official: { ...value.official, used } }),
       });
     }
-    if (source === "home") return serverSynth(homeVoice, { fallback: backup || undefined });
-    const provider = keyProvider(source)!;
-    const config = keys[provider.id] ?? {};
+    if (from === "home") return serverSynth(global ? homeVoice : speakHome, { fallback: backup || undefined });
+    const provider = keyProvider(from)!;
+    const config: KeyConfig = { ...keys[provider.id] };
+    if (!global && cardModel) config.model = cardModel;
+    if (!global && cardVoiceId) config.voice = cardVoiceId;
     const primary: Synthesize = (text, signal) => speakWithKey(provider, config, text, signal);
     return backup ? withFallback(primary, backup) : primary;
-  }, [backupVoice, state.ready, state.problem, source, officialVoice, homeVoice, keys]);
+  }, [backupVoice, state, globalState, source, speakSource, officialVoice, homeVoice, speakOfficial, speakHome, keys, cardModel, cardVoiceId]);
 
-  const speak = useCallback(async (key: string, text: string, options: { fallback?: boolean; timing?: SpeechTimingHooks; expressions?: SpeechExpressions } = {}) => {
+  const speak = useCallback(async (key: string, text: string, options: SpeakOptions = {}) => {
     setNotice('');
     if (!player.current) player.current = new LocalVoicePlayer();
     const version = ++speakVersion.current;
     setSpeaking({ key, phase: "loading" });
     try {
-      const generate = synth(options.fallback !== false);
+      const generate = synth(options.fallback !== false, options.global);
       if (speakableText(text)) options.timing?.onTextReady?.();
       const generateChunk: Synthesize = (chunk, signal) => {
         if (version === speakVersion.current) options.timing?.onSynthesisStart?.();
@@ -402,7 +437,8 @@ export function useLocalVoice(active: boolean): LocalVoice {
 
   return {
     enabled, setEnabled, status, problem: enabled && !state.ready ? state.problem : "", health, checking: probing,
-    source, setSource, officialVoice, setOfficialVoice, homeVoice, setHomeVoice, fallback, setFallback,
+    source, setSource, speakSource, cardVoice: cardUsable, globalProblem: enabled && !globalState.ready ? globalState.problem : "",
+    officialVoice, setOfficialVoice, homeVoice, setHomeVoice, fallback, setFallback,
     keys, setKeyConfig, forgetKey, recheck, speaking, speak, stream, stop, notice,
   };
 }

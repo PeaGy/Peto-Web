@@ -34,6 +34,35 @@ raw web markers; no live payload from that exact GTA5 turn was captured. Never m
   citation/source/API rerun 33 passed; related stage-4 browser 10 passed, citation desktop/mobile-emulation 2 passed
   with long-URL tooltip bounds, keyboard, mocked source click and F5. Build/diff checks passed; inspected both screenshots.
 
+## Companion character cards, stage (d): card pages (2026-10-25)
+
+The owner picked prototype variant 1 "Như AIRI" (over a stage-beside editor and a prompt-first master/detail). Built from
+AIRI source (commit `74ddd90`): `settings/airi-card/index.vue`, `components/card-list-item.vue`, `card-model-preview.vue`,
+`card-detail.vue`, `CardEditor.vue`. Not committed. Prototype deleted.
+- Routes (`app/routes.ts`, `core/static_files.py` `_COMPANION_CARDS`): `/companion/settings/cards`, `/cards/new`,
+  `/cards/<id>`, `/cards/<id>/edit` (`?section=behavior|modules|prompt`); ids are `peto` or 32 hex (`CARD_PATH`, same as
+  `cards.CARD_ID`). New `CompanionSettingsPage` values `cards`, `card-new`, `card`, `card-edit`; `onNavigate(page, id)`
+  takes a provider or card id. Home page gets a "Thẻ nhân vật" card first; Profile menu "Quản lý Profile" opens the list.
+- `cards/CardPages.tsx` + `cardPages.css`: list (search ignoring accents, sort Mới thêm/A–Z/Z–A, 3:4 grid with "Đang dùng"
+  outline), detail (hero, Dùng thẻ này, Sửa thẻ, Prompt đầy đủ from `GET /cards/{id}/prompt`, Xóa with the card's
+  conversation count / Khôi phục bản gốc for a modified `peto`), editor (hero Tên/Biệt danh/Model hiển thị/Phiên bản +
+  side nav Danh tính, Hành vi, Mô-đun, Prompt; AIRI's new-card defaults; Lưu / Lưu và dùng in the settings header through
+  a portal slot; PATCH sends only changed fields so `peto` keeps following the built-in; unsaved changes ask on the header
+  back button and `beforeunload`, not on browser Back/sidebar). Toasts live in a module store so they survive navigation.
+- Card modules now apply (server only stores them): `brainRequest(search, card.modules.brain)` (`peto` forces Peto; a
+  provider not connected in this browser falls back to the global brain) and `useLocalVoice(active, cardVoice)` from App
+  (`speakSource`, `cardVoice`, `globalProblem`; a key source without a key here falls back to the global voice; Nghe thử
+  on the Giọng nói page uses `global: true`). Brain and Giọng nói pages note when the active card overrides them.
+- Companion follows card changes made on these pages (`threadCard` vs `cards.active` effect: activate or delete the
+  active card, then return). Activating/saving the active card selects its display model if this browser has it.
+- `GET /api/companion` for a card with no conversation now returns the card's first greeting as an unsaved preview
+  message; the first turn persists the same greeting (`open_conversation`).
+- `public/characters/hiyori-preview.webp` (Peto's own 256×320 render of Hiyori) is the card image until this browser has
+  drawn Hiyori once (`CHARACTER.md`). Docs: Companion article "## Thẻ nhân vật" (keywords need "companion").
+- Tests: `Companion.test.tsx` (3 card cases), `routes.test.ts`, `test_static_files.py`, `test_companion_cards.py` (greeting
+  preview), `test_docs_api.py`, Playwright `routing.spec.ts` (deep link to the editor, F5, back, 404s). Real model output
+  with user cards, physical phones and real provider keys are untested.
+
 ## Companion character cards, stage (a): server (2026-10-25)
 
 The owner chose AIRI-style character cards (AIRI commit `74ddd90`: `stores/modules/airi-card.ts`, `stores/chat.ts`,

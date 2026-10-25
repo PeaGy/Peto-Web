@@ -47,6 +47,9 @@ def _attached(question):
     ('làm sao đăng nhập bằng Google', 'tai-khoan'),
     ('nút đăng xuất ở đâu vậy', 'tai-khoan'),
     ('đổi nhân vật ở đâu vậy', 'nhan-vat'),
+    ('tạo thẻ nhân vật Companion thế nào', 'companion'),
+    ('sửa system prompt Companion ở đâu', 'companion'),
+    ('quản lý profile ở đâu', 'companion'),
     ('đính kèm file pdf được không', 'tro-chuyen'),
     ('làm sao tải sơ đồ về máy', 'tro-chuyen'),
     ('tải slide về máy thế nào', 'lam-slide'),
@@ -72,6 +75,8 @@ def test_context_finds_the_article_by_title_or_keyword(question, slug):
     'Peto có nhớ được điều mình nói không?',
     # Câu hỏi thường ngày có chữ trùng với docs: bài tập văn, lý, sử, lập trình, game.
     'Phân tích nhân vật Chí Phèo trong truyện ngắn của Nam Cao',
+    # Thẻ nhân vật cũng là việc viết truyện, nhập vai: chỉ gắn bài khi có nhắc Companion.
+    'Viết thẻ nhân vật cho truyện ngắn của mình',
     'Giải bài tập chuyển động thẳng đều lớp 10',
     'Viết đoạn văn về bối cảnh lịch sử năm 1945',
     'Cách khắc phục lỗi màn hình xanh trên Windows',

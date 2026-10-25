@@ -7,10 +7,13 @@ import { useSyncExternalStore } from 'react';
 import {
   UnauthorizedError,
   createCompanionCard,
+  deleteCompanionCard,
   listCompanionCards,
+  resetCompanionCard,
   setActiveCompanionCard,
   updateCompanionCard,
   type CompanionCard,
+  type CompanionCardFields,
 } from '../../../shared/api/api';
 
 export interface CardsState {
@@ -105,6 +108,39 @@ export async function setActiveCardModel(modelId: string): Promise<void> {
   if (!current || current.display_model === modelId) return;
   const card = await updateCompanionCard(current.id, { display_model: modelId });
   set({ ...state, cards: state.cards.map(item => item.id === card.id ? card : item) });
+}
+
+function upsert(card: CompanionCard) {
+  const exists = state.cards.some(item => item.id === card.id);
+  set({ ...state, cards: exists ? state.cards.map(item => item.id === card.id ? card : item) : [...state.cards, card] });
+}
+
+/** Trang Thẻ nhân vật → Tạo thẻ mới. */
+export async function createCard(fields: CompanionCardFields): Promise<CompanionCard> {
+  const card = await createCompanionCard(fields);
+  upsert(card);
+  return card;
+}
+
+/** Trình sửa thẻ: chỉ gửi các trường đã đổi. */
+export async function saveCard(cardId: string, fields: CompanionCardFields): Promise<CompanionCard> {
+  const card = await updateCompanionCard(cardId, fields);
+  upsert(card);
+  return card;
+}
+
+/** Xóa thẻ tự tạo (máy chủ xóa luôn hội thoại của nó); thẻ đang dùng bị xóa thì máy chủ trả về thẻ Peto. */
+export async function removeCard(cardId: string): Promise<number> {
+  const result = await deleteCompanionCard(cardId);
+  set({ ...state, active: result.active_card, cards: state.cards.filter(item => item.id !== cardId) });
+  return result.conversations_deleted;
+}
+
+/** "Khôi phục bản gốc" của thẻ Peto mặc định. */
+export async function resetDefaultCard(): Promise<CompanionCard> {
+  const card = await resetCompanionCard();
+  upsert(card);
+  return card;
 }
 
 /** Chỉ cho test: về trạng thái ban đầu. */

@@ -154,7 +154,10 @@ async def test_unknown_api_path_is_404_not_html(site_client):
     '/companion/settings/scene', '/companion/settings/memory', '/companion/settings/diagnostics',
     '/companion/settings/character', '/companion/settings/character/',
     '/companion/settings/modules/brain', '/companion/settings/providers', '/companion/settings/providers/',
-    '/companion/settings/providers/deepseek', '/companion/settings/providers/azure-openai/', '/companion/settings/providers/groq'])
+    '/companion/settings/providers/deepseek', '/companion/settings/providers/azure-openai/', '/companion/settings/providers/groq',
+    '/companion/settings/cards', '/companion/settings/cards/', '/companion/settings/cards/new', '/companion/settings/cards/peto',
+    '/companion/settings/cards/peto/edit', '/companion/settings/cards/0123456789abcdef0123456789abcdef/',
+    '/companion/settings/cards/0123456789abcdef0123456789abcdef/edit'])
 @pytest.mark.parametrize('method', ['get', 'head'])
 async def test_app_deep_links_have_spa_fallback(site_client, path, method):
     """F5 và mở tab mới nhận SPA; HEAD cũng dùng được cho kiểm tra deploy."""
@@ -172,6 +175,8 @@ async def test_app_deep_links_have_spa_fallback(site_client, path, method):
     '/companion/settings/missing', '/companion/settings/modules/missing', '/companion/settings/voice', '/companion/settings/scene/extra',
     '/companion/settings/providers/evil', '/companion/settings/providers/deepseek/extra', '/companion/settings/brain',
     '/companion/settings/character/extra', '/companion/settings/models',
+    '/companion/settings/cards/evil', '/companion/settings/cards/new/edit', '/companion/settings/cards/peto/extra',
+    '/companion/settings/cards/0123456789ABCDEF0123456789ABCDEF', '/companion/settings/cards/peto/edit/more',
     '/imagine/missing.js/asset.png', '/redoc', '/openapi.json', '/install-missing.ps1',
     '/chat', '/chat/thread/extra', '/chat/missing.js', '/admin/overview', '/admin/x.js',
 ])

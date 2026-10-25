@@ -118,9 +118,18 @@ export interface BrainRequest {
   label: string;
 }
 
-/** Phần gửi kèm một lượt Companion; null là dùng Peto (chưa chọn, hay khóa đã bị xóa). */
-export function brainRequest(search: boolean): BrainRequest | null {
-  const brain = readBrain();
+/** Lựa chọn bộ não lưu trong thẻ nhân vật (Mô-đun của thẻ): {provider, model}; "peto" là Peto. */
+export type CardBrain = Record<string, string> | undefined;
+
+/** Bộ não thẻ chọn, nếu dùng được trên máy này; null khi thẻ để trống hay nhà đó chưa kết nối ở đây. */
+export function cardBrainChoice(card: CardBrain): Brain | null {
+  const provider = card?.provider;
+  if (!provider) return null;
+  if (provider === 'peto') return PETO;
+  return chatProvider(provider) ? { provider: provider as ChatProviderId, model: card?.model ?? '' } : null;
+}
+
+function requestFor(brain: Brain, search: boolean): BrainRequest | null {
   if (brain.provider === 'peto') return null;
   const info = chatProvider(brain.provider);
   const keys = getKeyConfigs();
@@ -136,4 +145,15 @@ export function brainRequest(search: boolean): BrainRequest | null {
     ...(info.search === 'tavily' && search && tavily ? { searchKey: tavily } : {}),
     label: info.name,
   };
+}
+
+/**
+ * Phần gửi kèm một lượt Companion; null là dùng Peto (chưa chọn, hay khóa đã bị xóa). ``card`` là bộ não thẻ đang dùng
+ * chọn (như Modules → Chat của thẻ AIRI): thẻ chọn Peto thì dùng Peto; thẻ chọn một nhà chưa kết nối trên máy này (thẻ
+ * đồng bộ từ máy khác, khóa nằm ở trình duyệt kia) thì theo bộ não chung.
+ */
+export function brainRequest(search: boolean, card?: CardBrain): BrainRequest | null {
+  const own = cardBrainChoice(card);
+  if (own?.provider === 'peto') return null;
+  return (own && requestFor(own, search)) ?? requestFor(readBrain(), search);
 }

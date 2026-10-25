@@ -14,7 +14,7 @@ import {
   type Message,
   type EmotionCue,
 } from "../../shared/api/api";
-import { activeCard, loadCompanionCards, markActiveCard, pickCompanionCard, saveCompanionCardAs, setActiveCardModel, useCompanionCards } from './cards/companionCards';
+import { activeCard, getCompanionCards, loadCompanionCards, markActiveCard, pickCompanionCard, saveCompanionCardAs, setActiveCardModel, useCompanionCards } from './cards/companionCards';
 import { CardAvatar, ChevronIcon, CompanionPopover, ConversationIcon, ConversationList, ProfileList } from './cards/CompanionMenus';
 import './cards/companionCards.css';
 import { SendIcon } from "../chat/Composer";
@@ -137,7 +137,7 @@ function useCompactScreen() {
  * Được giữ mounted như Imagine (prop `active`) để câu trả lời đang về không bị cắt khi đổi tab;
  * rời tab thì Peto thôi đọc và giải phóng renderer nhân vật.
  */
-export default function Companion({ ownerId, active, appInfo, voice, characterMotion, character = DEFAULT_CHARACTER, characterLoading = false, characterIds, onSelectCharacter, onCharacterPreview, onOpenCharacters, sceneRequest = 0, playerRequest = 0, onUnauthorized, onOpenSidebar, onOpenHearingSettings, onOpenSettings }: {
+export default function Companion({ ownerId, active, appInfo, voice, characterMotion, character = DEFAULT_CHARACTER, characterLoading = false, characterIds, onSelectCharacter, onCharacterPreview, onOpenCharacters, sceneRequest = 0, playerRequest = 0, onUnauthorized, onOpenSidebar, onOpenHearingSettings, onOpenSettings, onOpenCards }: {
   ownerId?: string;
   active: boolean;
   sceneRequest?: number;
@@ -159,6 +159,8 @@ export default function Companion({ ownerId, active, appInfo, voice, characterMo
   onOpenHearingSettings?: () => void;
   /** Mở trang Cài đặt Companion (nút bánh răng ở đầu cột chat). */
   onOpenSettings?: () => void;
+  /** "Quản lý Profile": trang Thẻ nhân vật trong Cài đặt Companion. */
+  onOpenCards?: () => void;
 }) {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -177,6 +179,8 @@ export default function Companion({ ownerId, active, appInfo, voice, characterMo
   useEffect(() => () => clearTimeout(releaseTimer.current), []);
   /** Tiêu đề mạch đang mở (tin đầu tiên của người dùng, máy chủ cắt ngắn). */
   const [threadTitle, setThreadTitle] = useState('');
+  /** Thẻ của mạch đang mở; khác thẻ đang dùng (đổi ở trang Thẻ nhân vật, hay thẻ vừa bị xóa) thì mở mạch của thẻ mới. */
+  const [threadCard, setThreadCard] = useState<string | null>(null);
   const cards = useCompanionCards();
   const card = activeCard(cards);
   const compact = useCompactScreen();
@@ -267,8 +271,10 @@ export default function Companion({ ownerId, active, appInfo, voice, characterMo
   const brainChoice = useBrain();
   const providerModels = useModels();
   const providerKeys = useKeyConfigs();
-  const brainLabel = useMemo(() => (brainChoice.provider === 'peto' ? '' : brainRequest(false)?.label ?? ''),
-    [brainChoice, providerModels, providerKeys]);
+  // Thẻ đang dùng có thể chọn bộ não riêng (Mô-đun của thẻ); nhãn theo bộ não thật sự trả lời.
+  const cardBrain = card?.modules.brain;
+  const brainLabel = useMemo(() => brainRequest(false, cardBrain)?.label ?? '',
+    [brainChoice, providerModels, providerKeys, cardBrain]);
   const [micOpen, setMicOpen] = useState(false);
   /** Lúc câu nghe được cuối cùng vào ô nhắn; tự gửi chỉ gửi chữ nghe được, không gửi chữ người dùng tự gõ. */
   const [heardAt, setHeardAt] = useState(0);
@@ -342,6 +348,7 @@ export default function Companion({ ownerId, active, appInfo, voice, characterMo
       setConversationId(thread.conversation_id);
       setThreadTitle(thread.title ?? '');
       setMessages(thread.messages);
+      setThreadCard(thread.card_id ?? null);
       if (thread.card_id) markActiveCard(thread.card_id);
     } catch (err) {
       if (version !== loadVersion.current || controller.signal.aborted) return;
@@ -462,12 +469,12 @@ export default function Companion({ ownerId, active, appInfo, voice, characterMo
     playerControl.bindTurn(controller.signal);
     const sentDraftVersion = draftVersion.current;
     const search = readCompanionSearch();
-    // Bộ não dùng khóa riêng (Cài đặt Companion → Mô-đun → Bộ não); null là Peto.
-    const brain = brainRequest(search);
+    // Bộ não dùng khóa riêng (Mô-đun → Bộ não, hay bộ não riêng của thẻ đang dùng); null là Peto.
+    const brain = brainRequest(search, activeCard(getCompanionCards())?.modules.brain);
     const heard = draftTiming.current;
     draftTiming.current = null;
     const timing = beginCompanionTiming({ input: heard ? 'voice' : 'text', hearing: heard?.hearing,
-      hearingSource: heard?.source, voiceSource: voice.source, search });
+      hearingSource: heard?.source, voiceSource: voice.speakSource, search });
     let speechEpoch = 0;
     const speechTiming = () => {
       const epoch = speechEpoch;
@@ -692,11 +699,12 @@ export default function Companion({ ownerId, active, appInfo, voice, characterMo
     }
   }
 
-  function showThread(thread: { conversation_id: string | null; title?: string; messages: Message[] }) {
+  function showThread(thread: { conversation_id: string | null; card_id?: string; title?: string; messages: Message[] }) {
     loadVersion.current += 1;
     loadRef.current?.abort();
     setLoading(false);
     setLoadFailed(false);
+    setThreadCard(thread.card_id ?? null);
     setConversationId(thread.conversation_id);
     setThreadTitle(thread.title ?? '');
     setMessages(thread.messages);
@@ -747,6 +755,19 @@ export default function Companion({ ownerId, active, appInfo, voice, characterMo
     setProfilesOpen(false);
     await switchThread(() => load(undefined, true), 'Chưa mở được Profile mới.');
   }
+
+  // Thẻ đang dùng đổi ở trang Thẻ nhân vật (Dùng thẻ này, xóa thẻ đang dùng) lúc Companion ẩn: quay lại thì mở mạch của
+  // thẻ đó, như khi chọn ở menu Profile. Đang trả lời hay đang đổi mạch thì đợi xong.
+  useEffect(() => {
+    if (!active || cards.status !== 'ready' || !threadCard || threadCard === cards.active || loading || resetting || streaming) return;
+    const target = cards.cards.find(item => item.id === cards.active);
+    void switchThread(async () => {
+      linkModel(target);
+      await load(undefined, true);
+    }, 'Chưa mở được Profile này.');
+    // switchThread đọc trạng thái mới nhất của lần vẽ này; chỉ chạy lại khi thẻ hay trạng thái chờ đổi.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, cards, threadCard, loading, resetting, streaming, linkModel, load]);
 
   const name = card ? card.nickname || card.name : appInfo?.name ?? "Peto";
   const title = threadTitle || 'Hội thoại mới';
@@ -911,7 +932,8 @@ export default function Companion({ ownerId, active, appInfo, voice, characterMo
         <ChevronIcon />
       </button>
       <CompanionPopover open={profilesOpen && active} onClose={() => setProfilesOpen(false)} anchor={profileButton} align="end" title="Profile">
-        <ProfileList cards={cards.cards} activeId={cards.active} busy={streaming || resetting} onPick={pickCard} onSaveAs={saveCardAs} />
+        <ProfileList cards={cards.cards} activeId={cards.active} busy={streaming || resetting} onPick={pickCard} onSaveAs={saveCardAs}
+          onManage={onOpenCards ? () => { setProfilesOpen(false); onOpenCards(); } : undefined} />
       </CompanionPopover>
     </>
   ) : null;
@@ -991,7 +1013,7 @@ export default function Companion({ ownerId, active, appInfo, voice, characterMo
           <div className="companion-notice">
             <span>{voice.problem || "Chưa thấy máy chủ giọng nói."} Peto chỉ nhắn chữ.</span>
             {/* Thiếu khóa thì dò lại cũng vậy: phải vào Cài đặt Companion → Giọng nói. */}
-            {(voice.source === "official" || voice.source === "home") && (
+            {(voice.speakSource === "official" || voice.speakSource === "home") && (
               <button type="button" onClick={voice.recheck}>Kiểm tra lại</button>
             )}
           </div>

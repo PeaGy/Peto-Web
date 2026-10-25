@@ -17,6 +17,7 @@ import { CHAT_PROVIDERS, chatProvider, providerName, providerUses, type ChatProv
 import { connected, useBrain, useModels, writeBrain, writeModels } from '../providers/brain';
 import { SettingsGroup, SettingsRow } from '../../settings/settingsUi';
 import { useCompanionSearch } from '../companionSearch';
+import { useCompanionCards } from '../cards/companionCards';
 
 type Tab = 'chat' | 'voice' | 'hearing';
 type Price = 'all' | 'free' | 'paid';
@@ -298,8 +299,14 @@ export function BrainPage({ onOpenProviders }: { onOpenProviders: () => void }) 
   const current = brain.provider === 'peto' ? undefined : available.find(item => item.id === brain.provider);
   const list = current ? current.id === 'azure-openai' ? [keys[current.id]?.deployment?.trim() ?? ''] : models[current.id] ?? [] : [];
   const model = current ? (current.id === 'azure-openai' ? list[0] : list.includes(brain.model) ? brain.model : list[0] ?? '') : '';
+  const cards = useCompanionCards();
+  const cardBrain = cards.cards.find(item => item.id === cards.active)?.modules.brain;
   return (
     <div className="companion-settings-groups">
+      {cardBrain?.provider && (
+        <p className="companion-settings-note">Thẻ nhân vật đang dùng có bộ não riêng (đặt trong Thẻ nhân vật → Sửa thẻ → Mô-đun). Trang
+          này đặt bộ não chung cho các thẻ để trống.</p>
+      )}
       <SettingsGroup title="Ai trả lời trong Companion">
         <SettingsRow label="Nhà cung cấp" htmlFor={providerId} labelId={`${providerId}-label`}
           desc={available.length ? undefined : 'Chưa có nhà cung cấp nào đã kết nối, nên chỉ có Peto.'}>

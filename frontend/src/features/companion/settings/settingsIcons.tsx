@@ -13,6 +13,7 @@ const PATHS = {
   key: <><circle cx="8" cy="15" r="4" /><path d="m10.8 12.2 9.2-9.2M16.5 6.5l3 3M13.5 9.5l2 2" /></>,
   spark: <path d="M12 3c.5 4.5 1.5 6 6 6.5-4.5.5-5.5 2-6 6.5-.5-4.5-1.5-6-6-6.5 4.5-.5 5.5-2 6-6.5ZM18.5 15c.2 1.8.7 2.3 2.5 2.5-1.8.2-2.3.7-2.5 2.5-.2-1.8-.7-2.3-2.5-2.5 1.8-.2 2.3-.7 2.5-2.5Z" />,
   chevronLeft: <path d="m15 5-7 7 7 7" />,
+  cards: <><rect x="7.5" y="3.5" width="12" height="16" rx="2.5" /><path d="M4.5 7v11.5a2 2 0 0 0 2 2H15" /><circle cx="13.5" cy="9.5" r="2.2" /><path d="M10.5 15.5a3 3 0 0 1 6 0" /></>,
 };
 
 export type SettingsIconName = keyof typeof PATHS;

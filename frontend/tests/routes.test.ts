@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { appPath, appView, chatId, chatRoute, companionSettingsPage, companionSettingsRoute, imageMatch, imageRoute, legacyPath } from '../src/app/routes';
+import { appPath, appView, chatId, chatRoute, companionCardId, companionCardRoute, companionSettingsPage, companionSettingsRoute, imageMatch, imageRoute, legacyPath } from '../src/app/routes';
 
 it.each([
   ['#companion', '/companion'], ['#imagine', '/imagine'],
@@ -49,4 +49,23 @@ it('trang Cài đặt Companion: mỗi trang một đường dẫn, có hay khô
     expect(companionSettingsPage(path)).toBeNull();
   }
   expect(appView('/companion/settings/missing')).toBe('chat');
+});
+
+it('trang Thẻ nhân vật như AIRI: danh sách, thẻ mới, một thẻ và trình sửa của nó; mã thẻ lạ không phải trang', () => {
+  const id = '0123456789abcdef0123456789abcdef';
+  expect(companionSettingsRoute('cards')).toBe('/companion/settings/cards');
+  expect(companionSettingsRoute('card-new')).toBe('/companion/settings/cards/new');
+  expect(companionCardRoute(id)).toBe(`/companion/settings/cards/${id}`);
+  expect(companionCardRoute('peto', true)).toBe('/companion/settings/cards/peto/edit');
+  expect(companionSettingsPage('/companion/settings/cards/')).toBe('cards');
+  expect(companionSettingsPage('/companion/settings/cards/new')).toBe('card-new');
+  expect(companionSettingsPage(`/companion/settings/cards/${id}/`)).toBe('card');
+  expect(companionSettingsPage('/companion/settings/cards/peto/edit')).toBe('card-edit');
+  expect(companionCardId(`/companion/settings/cards/${id}/edit`)).toBe(id);
+  expect(companionCardId('/companion/settings/cards/new')).toBeNull();
+  expect(appView('/companion/settings/cards/peto')).toBe('companion');
+  for (const path of ['/companion/settings/cards/evil', '/companion/settings/cards/new/edit', '/companion/settings/cards/peto/extra',
+    `/companion/settings/cards/${id.toUpperCase()}`, '/companion/settings/cards/peto/edit/more']) {
+    expect(companionSettingsPage(path)).toBeNull();
+  }
 });

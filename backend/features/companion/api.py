@@ -1,6 +1,7 @@
 """Mạch trò chuyện Companion: mạch đang mở, danh sách mạch, mạch mới (theo thẻ nhân vật như AIRI)."""
 
 from __future__ import annotations
+import time
 from fastapi import Depends, HTTPException
 from pydantic import BaseModel, Field
 import storage as db
@@ -25,7 +26,13 @@ async def _thread(owner: str, conversation_id: str | None, card_id: str) -> dict
     """Mạch kèm ``title`` (tin đầu tiên, cắt ngắn) cho tiêu đề khung chat."""
     found = await card_store.companion_conversation(owner, conversation_id) if conversation_id else None
     if not found:
-        return {"conversation_id": None, "card_id": card_id, "title": "", "messages": []}
+        # Thẻ chưa có mạch nào: hiện trước câu chào của thẻ (chưa lưu). Lượt nhắn đầu tạo mạch, máy chủ lưu câu chào này
+        # làm tin đầu (``open_conversation``), nên lịch sử khớp với những gì người dùng đã thấy.
+        card = companion_cards.effective(await card_store.get_card(owner, card_id) or {"id": card_id})
+        text = companion_cards.greeting(card, await companion_cards.user_name(owner)) if card.get("greetings") else ""
+        preview = {"id": "", "role": "assistant", "content": text, "created_at": time.time()}
+        return {"conversation_id": None, "card_id": card_id, "title": "",
+                "messages": [_public_message(preview, True)] if text else []}
     rows = await db.get_messages(owner, conversation_id, limit=MAX_HISTORY_MESSAGES)
     return {"conversation_id": conversation_id, "card_id": found["card_id"], "title": found["title"],
             "messages": [_public_message(row, True) for row in rows]}

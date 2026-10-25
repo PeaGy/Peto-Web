@@ -1,0 +1,217 @@
+/* Cài đặt Companion → Thẻ nhân vật (chủ web chọn bản "Như AIRI", 25/10/2026): lưới thẻ dọc như airi-card/index.vue, trang
+   một thẻ như card-detail.vue, trình sửa như CardEditor.vue. Dùng màu của trang cài đặt Companion (--cs-*). */
+.card-lead { margin: -6px 0 20px; max-width: 64ch; color: var(--muted); font-size: 14.5px; line-height: 1.6; }
+.card-note { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.6; }
+.card-muted { color: var(--muted); }
+.card-mono { font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace; font-size: 12.5px; white-space: pre-wrap; }
+.card-link { margin-left: 6px; padding: 0; border: 0; background: none; color: var(--cs-accent-text); font: inherit; font-size: 13px; cursor: pointer; }
+.card-loading { display: grid; place-items: center; min-height: 280px; }
+.card-loading.small { min-height: 160px; }
+.card-empty { display: grid; justify-items: center; gap: 8px; padding: 56px 16px; color: var(--muted); font-size: 14px; text-align: center; }
+.card-empty strong { color: var(--text); font-size: 16px; font-weight: 500; }
+.card-error { margin: 12px 0 0; color: var(--danger); font-size: 13.5px; }
+.card-error.banner {
+  margin: 0 0 16px; padding: 10px 14px; border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent); border-radius: 12px;
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+}
+
+.card-button {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 40px; padding: 0 15px; border: 1px solid var(--line);
+  border-radius: 10px; background: var(--panel-2); color: var(--text); font: inherit; font-size: 14px; font-weight: 500; white-space: nowrap;
+  cursor: pointer; transition: transform 160ms var(--ease-out), background-color 150ms var(--ease-out);
+}
+.card-button:active:not(:disabled) { transform: scale(0.97); }
+.card-button:disabled { opacity: 0.55; cursor: default; }
+.card-button:focus-visible, .card-icon-button:focus-visible, .card-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.card-button.primary { border-color: transparent; background: var(--accent); color: var(--on-accent); font-weight: 600; }
+/* "Đang dùng" là nút chính đã tắt: hiện màu xanh Companion thay vì mờ đi. */
+.card-button.primary:disabled { opacity: 1; background: color-mix(in srgb, var(--cs-accent) 22%, var(--panel-2)); color: var(--cs-accent-text); }
+.card-button.danger {
+  border-color: color-mix(in srgb, var(--danger) 40%, transparent); background: color-mix(in srgb, var(--danger) 16%, var(--panel-2));
+  color: var(--danger); font-weight: 600;
+}
+.card-button.danger-text { color: var(--danger); }
+.card-button.small { min-height: 30px; padding: 0 10px; font-size: 13px; }
+.card-icon-button { display: grid; place-items: center; width: 40px; height: 40px; flex: none; border: 0; border-radius: 10px; background: transparent; color: var(--muted); cursor: pointer; }
+.card-badge {
+  display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 8px; border-radius: 999px; background: var(--panel-2);
+  color: var(--muted); font-size: 12px; font-weight: 600; white-space: nowrap;
+}
+.card-badge.active { background: var(--cs-accent); color: #ffffff; }
+.card-badge.warn { background: color-mix(in srgb, #e3a33b 20%, transparent); color: #e3b25c; }
+:root[data-theme="light"] .card-badge.warn { color: #9a6400; }
+@media (hover: hover) and (pointer: fine) {
+  .card-button:hover:not(:disabled):not(.primary):not(.danger) { background: var(--panel-3); }
+  .card-icon-button:hover { background: var(--panel-2); color: var(--text); }
+  .card-link:hover { text-decoration: underline; }
+}
+
+/* Danh sách */
+.card-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 22px; }
+.card-search {
+  display: flex; align-items: center; gap: 8px; flex: 1; min-width: 180px; height: 40px; padding: 0 12px; border: 1px solid var(--line);
+  border-radius: 10px; background: var(--panel-2); color: var(--muted);
+}
+.card-search:focus-within { border-color: color-mix(in srgb, var(--text) 30%, var(--line)); }
+.card-search input { flex: 1; min-width: 0; border: 0; outline: none; background: none; color: var(--text); font: inherit; font-size: 14px; }
+.card-sort { width: 150px; }
+.card-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 22px 18px; margin: 0; padding: 0; list-style: none; }
+.card-grid > li { min-width: 0; animation: companion-settings-rise 260ms var(--ease-out) both; animation-delay: var(--delay, 0ms); }
+.card-grid-item { display: grid; gap: 10px; width: 100%; padding: 0; border: 0; border-radius: 16px; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.card-grid-item:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+.card-grid-preview { aspect-ratio: 3 / 4; border-radius: 16px; transition: transform 350ms var(--ease-out), box-shadow 350ms var(--ease-out); }
+.card-grid-preview.active { outline: 2px solid var(--cs-accent); outline-offset: 3px; }
+.card-grid-name { overflow: hidden; padding: 0 2px; font-size: 17px; font-weight: 700; white-space: nowrap; text-overflow: ellipsis; }
+.card-grid-meta {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: -6px; padding: 0 2px; color: var(--muted);
+  font-size: 12.5px; font-variant-numeric: tabular-nums;
+}
+@media (hover: hover) and (pointer: fine) {
+  .card-grid-item:hover .card-grid-preview { transform: translateY(-4px); box-shadow: 0 14px 28px -12px #0009; }
+}
+
+/* Ảnh model (card-model-preview.vue): nền màu nhạt, ảnh phủ kín canh trên, không có thì hình ma. */
+.card-preview { position: relative; overflow: hidden; background: color-mix(in srgb, var(--cs-accent) 14%, var(--panel)); }
+.card-preview img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: top; }
+.card-preview img.contain { object-fit: contain; object-position: center bottom; }
+.card-preview-empty {
+  position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 10px; padding: 12px;
+  color: color-mix(in srgb, var(--cs-accent) 45%, var(--panel)); text-align: center;
+}
+.card-preview-empty span { max-width: 22ch; color: var(--muted); font-size: 12.5px; line-height: 1.45; }
+.card-preview-badge { position: absolute; top: 10px; left: 10px; }
+
+/* Một thẻ */
+.card-hero {
+  display: grid; grid-template-columns: minmax(0, 1fr) 240px; gap: 32px; align-items: center; margin-bottom: 28px; padding: 24px 28px;
+  border: 1px solid var(--cs-card-line); border-radius: 18px;
+  background: radial-gradient(120% 90% at 85% 50%, color-mix(in srgb, var(--cs-accent) 14%, transparent), transparent 60%), var(--cs-card);
+}
+.card-hero-badges { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; }
+.card-hero-desc {
+  display: -webkit-box; margin: 14px 0 20px; max-width: 60ch; overflow: hidden; color: var(--muted); font-size: 15px; line-height: 1.65;
+  -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+}
+.card-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.card-hero-preview { aspect-ratio: 3 / 4; border-radius: 18px; }
+.card-detail-body { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 20px; align-items: start; }
+.card-block { padding: 18px 20px; border: 1px solid var(--cs-card-line); border-radius: 14px; background: var(--cs-card); }
+.card-block + .card-block { margin-top: 16px; }
+.card-block h2 { margin: 0 0 10px; color: var(--muted); font-size: 15px; font-weight: 500; }
+.card-block > p { margin: 0; font-size: 14.5px; line-height: 1.65; white-space: pre-line; overflow-wrap: anywhere; }
+.card-dl { margin: 0; }
+.card-dl-row { display: grid; grid-template-columns: 170px minmax(0, 1fr); gap: 4px 16px; padding: 11px 0; border-top: 1px solid var(--cs-card-line); font-size: 14px; }
+.card-dl-row:first-child { border-top: 0; padding-top: 2px; }
+.card-dl-row dt { color: var(--muted); }
+.card-dl-row dd { margin: 0; min-width: 0; line-height: 1.6; white-space: pre-line; overflow-wrap: anywhere; }
+.card-dl.compact .card-dl-row { grid-template-columns: 1fr; gap: 2px; }
+
+/* Hộp hỏi lại và hộp prompt đầy đủ */
+.card-dialog {
+  width: min(440px, calc(100vw - 32px)); padding: 22px; border: 1px solid var(--line); border-radius: 16px; background: var(--panel); color: var(--text);
+  box-shadow: 0 24px 60px #0008;
+}
+.card-dialog[open] { animation: card-dialog 200ms var(--ease-out) both; }
+@keyframes card-dialog { from { opacity: 0; transform: scale(0.97); } }
+.card-dialog::backdrop { background: #0009; }
+.card-dialog h2 { margin: 0 0 8px; font-size: 18px; font-weight: 600; }
+.card-dialog > p { margin: 0 0 20px; color: var(--muted); font-size: 14px; line-height: 1.6; }
+.card-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.card-dialog.wide { width: min(860px, calc(100vw - 32px)); max-height: min(88dvh, 940px); }
+.card-dialog-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 6px; }
+.card-dialog-head h2 { margin: 0; }
+.card-dialog.wide > .card-note { margin-bottom: 14px; }
+.card-prompt-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; color: var(--muted); font-size: 12.5px; }
+.card-prompt {
+  margin: 0; max-height: 60dvh; overflow: auto; padding: 14px 16px; border: 1px solid var(--cs-card-line, var(--line)); border-radius: 12px;
+  background: var(--cs-card, var(--panel-2)); font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace; font-size: 12.5px; line-height: 1.6;
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.card-prompt:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.card-toast {
+  position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); z-index: 80; max-width: calc(100vw - 32px); padding: 10px 16px;
+  border: 1px solid var(--menu-line, var(--line)); border-radius: 12px; background: var(--menu-bg, var(--panel)); box-shadow: var(--menu-shadow);
+  color: var(--text); font-size: 14px; transform: translateX(-50%); animation: card-toast 220ms var(--ease-out) both;
+}
+@keyframes card-toast { from { opacity: 0; transform: translate(-50%, 8px); } }
+
+/* Trình sửa */
+.card-editor-hero {
+  display: grid; grid-template-columns: minmax(0, 1fr) 150px; gap: 22px; align-items: start; margin-bottom: 22px; padding: 20px;
+  border: 1px solid var(--cs-card-line); border-radius: 14px; background: var(--cs-card);
+}
+.card-editor-preview { aspect-ratio: 3 / 4; border-radius: 12px; }
+.card-editor-preview .card-preview-empty svg { width: 40px; height: 40px; }
+.card-editor-body { display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 22px; align-items: start; }
+.card-editor-nav { position: sticky; top: 120px; display: grid; gap: 2px; }
+.card-editor-nav button {
+  display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 0 12px; border: 0; border-radius: 10px; background: none; color: var(--muted);
+  font: inherit; font-size: 14px; text-align: left; cursor: pointer;
+}
+.card-editor-nav button.on { background: color-mix(in srgb, var(--cs-accent) 16%, transparent); color: var(--cs-accent-text); font-weight: 500; }
+.card-editor-nav button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.card-editor-section {
+  min-width: 0; padding: 20px; border: 1px solid var(--cs-card-line); border-radius: 14px; background: var(--cs-card);
+  animation: companion-settings-fade 160ms var(--ease-out) both;
+}
+.card-editor-section > .card-note:first-child { margin-bottom: 16px; }
+.card-subhead { margin: 20px 0 10px; font-size: 15px; font-weight: 500; }
+.card-note + .card-subhead { margin-top: 18px; }
+@media (hover: hover) and (pointer: fine) { .card-editor-nav button:hover:not(.on) { background: var(--panel-2); color: var(--text); } }
+
+.card-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.card-field + .card-field, .card-field-row + .card-field, .card-field + .card-field-row, .card-field-row + .card-field-row { margin-top: 16px; }
+.card-field > label { font-size: 14px; font-weight: 500; }
+.card-field > small { margin-top: -3px; color: var(--muted); font-size: 12.5px; line-height: 1.5; }
+.card-field > .dropdown + small { margin-top: 0; }
+.card-field textarea { resize: vertical; min-height: 64px; line-height: 1.55; }
+.card-field textarea.mono { font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace; font-size: 13px; }
+.card-field.invalid .text-field { border-color: var(--danger); }
+.card-field .dropdown-trigger { min-height: 42px; background: var(--panel-2); }
+.card-required, .card-error-text { color: var(--danger); }
+.card-error-text { font-size: 12.5px; }
+.card-field-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.card-field-row > .card-field + .card-field { margin-top: 0; }
+.card-count { margin: 14px 0 0; color: var(--muted); font-size: 12.5px; }
+.card-count.over { color: var(--danger); }
+.card-rule {
+  display: grid; gap: 4px; margin-top: 16px; padding: 14px 16px; border: 1px dashed color-mix(in srgb, var(--text) 22%, var(--line));
+  border-radius: 12px; background: color-mix(in srgb, var(--text) 3%, transparent); font-size: 13px; line-height: 1.55;
+}
+.card-rule strong { display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 500; }
+.card-rule span { color: var(--muted); }
+
+/* Nút Lưu nằm trong hàng tiêu đề của trang cài đặt, như CardEditor.vue. */
+.companion-settings-head-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-left: auto; }
+.companion-settings-head-actions:empty { display: none; }
+
+:root[data-motion="reduced"] .card-grid-preview { transition: none; }
+:root[data-motion="reduced"] .card-grid > li { animation-name: companion-settings-fade; }
+
+@media (max-width: 1180px) { .card-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 900px) {
+  .card-detail-body, .card-editor-body { grid-template-columns: 1fr; }
+  .card-editor-nav { position: static; display: flex; overflow-x: auto; scrollbar-width: none; }
+  .card-editor-nav button { flex: none; }
+}
+@media (max-width: 720px) {
+  .card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 12px; }
+  .card-hero { grid-template-columns: 1fr; gap: 18px; padding: 18px; }
+  .card-hero-preview { order: -1; justify-self: center; width: min(240px, 70%); }
+  .card-dl-row { grid-template-columns: 1fr; gap: 2px; }
+  .card-editor-hero { grid-template-columns: 1fr; padding: 16px; }
+  .card-editor-preview { display: none; }
+  .card-editor-section { padding: 16px; }
+  .card-field-row { grid-template-columns: 1fr; }
+  .card-toolbar .card-sort { width: 130px; }
+  .card-toolbar .card-button.primary { width: 100%; }
+  .companion-settings-head { flex-wrap: wrap; }
+  .companion-settings-head-actions { width: 100%; margin: 10px 0 0; }
+  .companion-settings-head-actions .card-button { flex: 1; }
+}
+@media (pointer: coarse) {
+  .card-button, .card-search, .card-icon-button { min-height: 44px; }
+  .card-icon-button { width: 44px; }
+  .card-search input, .card-field .text-field { font-size: 16px; }
+}

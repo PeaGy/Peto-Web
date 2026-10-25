@@ -24,6 +24,7 @@ vi.mock('../src/shared/api/api', async (original) => ({
   getCompanionMemory: vi.fn(),
   listCompanionCards: vi.fn(), setActiveCompanionCard: vi.fn(), createCompanionCard: vi.fn(), updateCompanionCard: vi.fn(),
   listCompanionConversations: vi.fn(), newCompanionConversation: vi.fn(), openCompanionConversation: vi.fn(),
+  deleteCompanionCard: vi.fn(), resetCompanionCard: vi.fn(), getCompanionCardPrompt: vi.fn(),
 }));
 // Sân khấu giả: chỉ để đọc cảm xúc Companion truyền xuống (Live2D thật cần WebGL).
 const stageMock = vi.hoisted(() => ({ hold: false, notify: undefined as undefined | ((status: 'loading' | 'ready' | 'error') => void) }));
@@ -1125,6 +1126,148 @@ it('Profile như AIRI: đổi thẻ mở mạch của thẻ đó, lưu thẻ đa
   expect(vi.mocked(api.createCompanionCard).mock.calls[0][0]).not.toHaveProperty('id');
   await waitFor(() => expect(api.setActiveCompanionCard).toHaveBeenCalledWith('c3'));
   expect(await screen.findByRole('button', { name: 'Profile: Mika học bài' })).toBeTruthy();
+});
+
+const MIKA = '0123456789abcdef0123456789abcdef';
+const HANA = 'fedcba9876543210fedcba9876543210';
+
+it('Thẻ nhân vật như AIRI: lưới thẻ, tìm, trang một thẻ, prompt đầy đủ, dùng thẻ, tạo thẻ mới', async () => {
+  const mika = card(MIKA, 'Mika', { description: 'Cáo tinh trông tiệm trà.', greetings: ['Ngồi đi.'], created_at: 5 });
+  vi.mocked(api.listCompanionCards).mockResolvedValue({ active_card: 'peto', limit: 50, cards: [PETO_CARD, mika] });
+  vi.mocked(api.getCompanionCardPrompt).mockResolvedValue({ prompt: 'You are Mika.\n\nFIXED RULE', memory: false });
+  window.history.replaceState(null, '', '/companion/settings/');
+  render(<App />);
+  const home = within(await screen.findByRole('main', { name: 'Cài đặt' }));
+  fireEvent.click(await home.findByRole('button', { name: /^Thẻ nhân vật/ }));
+  expect(window.location.pathname).toBe('/companion/settings/cards');
+  let page = within(await screen.findByRole('main', { name: 'Thẻ nhân vật' }));
+  expect(await page.findByRole('button', { name: 'Xem thẻ: Peto' })).toBeTruthy();
+  // Tìm không phân biệt dấu, cả trong mô tả.
+  fireEvent.change(page.getByRole('searchbox', { name: 'Tìm thẻ' }), { target: { value: 'tra' } });
+  expect(page.queryByRole('button', { name: 'Xem thẻ: Peto' })).toBeNull();
+  fireEvent.click(page.getByRole('button', { name: 'Xem thẻ: Mika' }));
+  expect(window.location.pathname).toBe(`/companion/settings/cards/${MIKA}`);
+
+  page = within(await screen.findByRole('main', { name: 'Mika' }));
+  expect(page.getAllByText('Cáo tinh trông tiệm trà.').length).toBeGreaterThan(0);
+  expect(page.getByText('Ngồi đi.')).toBeTruthy();
+  expect(page.getByText('Chưa có (chỉ thẻ Peto dùng trí nhớ)')).toBeTruthy();
+  fireEvent.click(page.getByRole('button', { name: 'Prompt đầy đủ' }));
+  const prompt = within(await screen.findByRole('dialog', { name: 'Prompt đầy đủ · Mika' }));
+  expect(await prompt.findByText(/FIXED RULE/)).toBeTruthy();
+  expect(api.getCompanionCardPrompt).toHaveBeenCalledWith(MIKA, expect.anything());
+  fireEvent.click(prompt.getByRole('button', { name: 'Đóng' }));
+
+  fireEvent.click(page.getByRole('button', { name: 'Dùng thẻ này' }));
+  await waitFor(() => expect(api.setActiveCompanionCard).toHaveBeenCalledWith(MIKA));
+  expect(await page.findByRole('button', { name: 'Đang dùng' })).toHaveProperty('disabled', true);
+
+  fireEvent.click(screen.getByRole('button', { name: 'Quay lại Thẻ nhân vật' }));
+  page = within(await screen.findByRole('main', { name: 'Thẻ nhân vật' }));
+  fireEvent.click(page.getByRole('button', { name: 'Tạo thẻ mới' }));
+  expect(window.location.pathname).toBe('/companion/settings/cards/new');
+  page = within(await screen.findByRole('main', { name: 'Thẻ mới' }));
+  fireEvent.click(page.getByRole('button', { name: 'Tạo thẻ' }));
+  expect(await page.findByText('Cần đặt tên cho thẻ.')).toBeTruthy();
+  expect(api.createCompanionCard).not.toHaveBeenCalled();
+  fireEvent.change(page.getByRole('textbox', { name: /^Tên/ }), { target: { value: 'mika' } });
+  fireEvent.click(page.getByRole('button', { name: 'Tạo thẻ' }));
+  expect(await page.findByText('Đã có thẻ tên "mika".')).toBeTruthy();
+  fireEvent.change(page.getByRole('textbox', { name: /^Tên/ }), { target: { value: 'Hana' } });
+  fireEvent.click(page.getByRole('button', { name: 'Hành vi' }));
+  expect(window.location.search).toBe('?section=behavior');
+  fireEvent.change(page.getByRole('textbox', { name: 'Câu chào' }), { target: { value: 'Chào cậu!\n\nĐi chơi không?' } });
+  vi.mocked(api.createCompanionCard).mockResolvedValue(card(HANA, 'Hana', { is_default: false, greetings: ['Chào cậu!'] }));
+  fireEvent.click(page.getByRole('button', { name: 'Tạo và dùng' }));
+  await waitFor(() => expect(api.createCompanionCard).toHaveBeenCalled());
+  expect(vi.mocked(api.createCompanionCard).mock.calls[0][0]).toMatchObject({
+    name: 'Hana', version: '1.0.0', greetings: ['Chào cậu!', 'Đi chơi không?'], modules: {},
+    personality: 'You are a regular human, curious about everything.', display_model: 'hiyori',
+  });
+  await waitFor(() => expect(api.setActiveCompanionCard).toHaveBeenCalledWith(HANA));
+  await waitFor(() => expect(window.location.pathname).toBe(`/companion/settings/cards/${HANA}`));
+  expect(await screen.findByRole('main', { name: 'Hana' })).toBeTruthy();
+});
+
+it('sửa thẻ chỉ gửi ô đã đổi, hỏi trước khi bỏ chỗ chưa lưu; khôi phục thẻ Peto; xóa thẻ cùng hội thoại của nó', async () => {
+  vi.mocked(api.listCompanionCards).mockResolvedValue({ active_card: 'peto', limit: 50, cards: [PETO_CARD, card(MIKA, 'Mika')] });
+  vi.mocked(api.listCompanionConversations).mockResolvedValue({ active_card: 'peto', conversations: [
+    { ...ROWS[1], card_id: MIKA },
+  ] });
+  window.history.replaceState(null, '', '/companion/settings/cards/peto/edit');
+  render(<App />);
+  let page = within(await screen.findByRole('main', { name: 'Sửa thẻ' }));
+  fireEvent.change(await page.findByRole('textbox', { name: /^Biệt danh/ }), { target: { value: 'Pe' } });
+  expect(page.getByText('Chưa lưu')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Quay lại Peto' }));
+  const leave = within(await screen.findByRole('dialog', { name: 'Bỏ thay đổi?' }));
+  fireEvent.click(leave.getByRole('button', { name: 'Sửa tiếp' }));
+  expect(window.location.pathname).toBe('/companion/settings/cards/peto/edit');
+  vi.mocked(api.updateCompanionCard).mockResolvedValue({ ...PETO_CARD, nickname: 'Pe', modified: true });
+  fireEvent.click(page.getByRole('button', { name: 'Lưu' }));
+  await waitFor(() => expect(api.updateCompanionCard).toHaveBeenCalledWith('peto', { nickname: 'Pe' }));
+  await waitFor(() => expect(window.location.pathname).toBe('/companion/settings/cards/peto'));
+
+  page = within(await screen.findByRole('main', { name: 'Peto' }));
+  expect(page.queryByRole('button', { name: 'Xóa' })).toBeNull();
+  vi.mocked(api.resetCompanionCard).mockResolvedValue(PETO_CARD);
+  fireEvent.click(page.getByRole('button', { name: 'Khôi phục bản gốc' }));
+  fireEvent.click(within(await screen.findByRole('dialog', { name: 'Khôi phục thẻ Peto?' })).getByRole('button', { name: 'Khôi phục' }));
+  await waitFor(() => expect(api.resetCompanionCard).toHaveBeenCalled());
+  await waitFor(() => expect(page.queryByRole('button', { name: 'Khôi phục bản gốc' })).toBeNull());
+
+  fireEvent.click(screen.getByRole('button', { name: 'Quay lại Thẻ nhân vật' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Xem thẻ: Mika' }));
+  page = within(await screen.findByRole('main', { name: 'Mika' }));
+  fireEvent.click(page.getByRole('button', { name: 'Xóa' }));
+  const confirm = within(await screen.findByRole('dialog', { name: 'Xóa thẻ Mika?' }));
+  expect(await confirm.findByText(/Xóa luôn 1 hội thoại của thẻ này/)).toBeTruthy();
+  vi.mocked(api.deleteCompanionCard).mockResolvedValue({ conversations_deleted: 1, active_card: 'peto' });
+  fireEvent.click(confirm.getByRole('button', { name: 'Xóa thẻ' }));
+  await waitFor(() => expect(api.deleteCompanionCard).toHaveBeenCalledWith(MIKA));
+  await waitFor(() => expect(window.location.pathname).toBe('/companion/settings/cards'));
+  expect(await screen.findByText('Đã xóa thẻ Mika và 1 hội thoại.')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Xem thẻ: Mika' })).toBeNull();
+});
+
+it('đổi thẻ ở trang Thẻ nhân vật thì Companion mở mạch của thẻ đó; bộ não và giọng riêng của thẻ được dùng', async () => {
+  localStorage.setItem('peto-local-voice', '1');
+  localStorage.setItem('peto-voice-keys', JSON.stringify({ deepseek: { key: 'sk-deep-12345678' } }));
+  localStorage.setItem('peto-provider-models', JSON.stringify({ deepseek: ['deepseek-chat'] }));
+  const mika = card(MIKA, 'Mika', { modules: { brain: { provider: 'deepseek', model: 'deepseek-chat' },
+    voice: { source: 'official', voice: 'stepfun:lively-girl' } } });
+  vi.mocked(api.listCompanionCards).mockResolvedValue({ active_card: 'peto', limit: 50, cards: [PETO_CARD, mika] });
+  vi.mocked(api.getCompanion).mockResolvedValue({ conversation_id: 'C1', card_id: 'peto', title: 'hi', messages: [{ role: 'assistant', content: 'Hey there.' }] });
+  await openCompanion();
+  await screen.findByText('Hey there.');
+
+  const settings = await openCompanionSettings();
+  fireEvent.click(await settings.findByRole('button', { name: /^Thẻ nhân vật/ }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Xem thẻ: Mika' }));
+  const page = within(await screen.findByRole('main', { name: 'Mika' }));
+  expect(page.getByText('DeepSeek · deepseek-chat')).toBeTruthy();
+  expect(page.getByText('Giọng Peto · Lively Girl')).toBeTruthy();
+  vi.mocked(api.getCompanion).mockResolvedValue({ conversation_id: 'C2', card_id: MIKA, title: 'Trà gì?', messages: [{ role: 'assistant', content: 'Trà hoa nhài.' }] });
+  fireEvent.click(page.getByRole('button', { name: 'Dùng thẻ này' }));
+  await waitFor(() => expect(api.setActiveCompanionCard).toHaveBeenCalledWith(MIKA));
+
+  await leaveSettings();
+  expect(await screen.findByText('Trà hoa nhài.')).toBeTruthy();
+  expect(await screen.findByRole('button', { name: 'Profile: Mika' })).toBeTruthy();
+  expect(chatColumn().getByText(/DeepSeek/)).toBeTruthy();
+
+  vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers) => {
+    handlers.onMeta?.('C2', 'low');
+    handlers.onDelta?.('Jasmine, of course.');
+    handlers.onDone?.();
+  });
+  fireEvent.change(screen.getByRole('textbox', { name: 'Nhắn cho Mika trong Companion' }), { target: { value: 'Trà gì?' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Gửi' }));
+  await waitFor(() => expect(api.sendMessage).toHaveBeenCalled());
+  expect(vi.mocked(api.sendMessage).mock.calls[0][0]).toMatchObject({ provider: { id: 'deepseek', model: 'deepseek-chat' },
+    providerKey: 'sk-deep-12345678' });
+  await waitFor(() => expect(played).toHaveLength(1));
+  expect(speakBodies()[0]).toMatchObject({ text: 'Jasmine, of course.', voice: 'stepfun:lively-girl' });
 });
 
 it('chưa tải được thẻ nhân vật thì vẫn trò chuyện được, chỉ không có nút Profile', async () => {

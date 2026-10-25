@@ -399,10 +399,24 @@ test('trang Cài đặt Companion: link sâu, F5, Back/Forward theo từng trang
   await noPageOverflow(page);
   await settings.getByRole('button', { name: 'Quay lại Cài đặt', exact: true }).click();
   await expect(page).toHaveURL(/\/companion\/settings\/$/);
+  // Thẻ nhân vật (25/10/2026): link sâu tới trình sửa giữ mục đang mở qua F5; quay lại về trang thẻ rồi danh sách thẻ.
+  await page.goto('/companion/settings/cards/peto/edit?section=prompt');
+  await expect(settings.getByRole('heading', { level: 1, name: 'Sửa thẻ' })).toBeVisible();
+  await expect(settings.getByRole('textbox', { name: /^System prompt/ })).toBeVisible();
+  await page.reload();
+  await expect(settings.getByRole('textbox', { name: /^System prompt/ })).toBeVisible();
+  await noPageOverflow(page);
+  await settings.getByRole('button', { name: 'Quay lại Peto', exact: true }).click();
+  await expect(page).toHaveURL(/\/companion\/settings\/cards\/peto$/);
+  await expect(settings.getByRole('heading', { level: 1, name: 'Peto' })).toBeVisible();
+  await settings.getByRole('button', { name: 'Quay lại Thẻ nhân vật', exact: true }).click();
+  await expect(page).toHaveURL(/\/companion\/settings\/cards$/);
+  await expect(settings.getByRole('button', { name: 'Xem thẻ: Peto' })).toBeVisible();
+  await noPageOverflow(page);
   // Chỉ backend phục vụ bản build mới trả 404; máy chủ Vite trả trang cho mọi đường dẫn.
   if (testInfo.config.configFile?.endsWith('playwright.routing.config.ts')) {
     for (const path of ['/companion/settings/missing', '/companion/settings/voice', '/companion/settings/providers/evil',
-      '/companion/settings/character/extra']) {
+      '/companion/settings/character/extra', '/companion/settings/cards/evil', '/companion/settings/cards/peto/extra']) {
       expect((await page.request.get(path)).status()).toBe(404);
     }
   }

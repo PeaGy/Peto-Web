@@ -2,7 +2,7 @@ import { usePreferencesPersistence } from './usePreferencesPersistence';
 import LoginScreen from './LoginScreen';
 import { forgetChatLogin, rememberChatLogin, takeChatLogin } from './chatLoginReturn';
 import { BrowserRouter, useLocation, useNavigate } from 'react-router';
-import { appPath, appView, chatId, chatRoute, companionProviderId, companionProviderRoute, companionSettingsPage, companionSettingsRoute, legacyPath, VIEW_PATHS } from './routes';
+import { appPath, appView, chatId, chatRoute, companionCardId, companionCardRoute, companionProviderId, companionProviderRoute, companionSettingsPage, companionSettingsRoute, legacyPath, VIEW_PATHS } from './routes';
 import { EditIcon } from '../shared/ui/EditIcon';
 import Sidebar from './Sidebar';
 import { useSidebarKeyboard } from './useSidebarKeyboard';
@@ -37,7 +37,7 @@ import AccountMenu, { placeAccountMenu, type AccountMenuPlace } from "./AccountM
 import SettingsDialog, { CLOSED_SETTINGS, type SettingsSection, type SettingsView } from "../features/settings/SettingsDialog";
 import { Segmented, SettingsGroup, SettingsIcon, SettingsRow } from "../features/settings/settingsUi";
 import { useCharacters } from '../features/companion/characters/useCharacters';
-import { setActiveCardModel } from '../features/companion/cards/companionCards';
+import { activeCard, setActiveCardModel, useCompanionCards } from '../features/companion/cards/companionCards';
 import { readCharacterMotion, writeCharacterMotion, type CharacterMotion } from "../features/companion/characters/characterView";
 import Composer from "../features/chat/Composer";
 import ChatFileDropZone from '../features/chat/ChatFileDropZone';
@@ -300,10 +300,18 @@ function AppContent() {
   // Giọng nói dùng chung cho Companion và mục Giọng nói trong Cài đặt. Chỉ dò 127.0.0.1 sau khi đã mở
   // Companion hoặc lúc Cài đặt đang mở, để tab Trò chuyện không gọi gì ra máy.
   // Giọng nói dùng ở Companion và trang cài đặt của nó (cũng là tab Companion), nên chỉ dò sau khi đã mở Companion.
-  const localVoice = useLocalVoice(companionVisited);
+  // Thẻ nhân vật đang dùng có giọng riêng (Mô-đun của thẻ) thì Companion đọc bằng giọng đó.
+  const companionCards = useCompanionCards();
+  const cardVoiceChoice = activeCard(companionCards)?.modules.voice;
+  const cardVoice = useMemo(() => (cardVoiceChoice?.source
+    ? { source: cardVoiceChoice.source, model: cardVoiceChoice.model, voice: cardVoiceChoice.voice } : null),
+  [cardVoiceChoice?.source, cardVoiceChoice?.model, cardVoiceChoice?.voice]);
+  const localVoice = useLocalVoice(companionVisited, cardVoice);
   // Nút cài đặt trong bảng Micro mở thẳng trang Nghe của Cài đặt Companion.
   const openHearingSettings = useCallback(() => navigate(companionSettingsRoute('hearing')), [navigate]);
   const openCompanionSettings = useCallback(() => navigate(companionSettingsRoute('home')), [navigate]);
+  // "Quản lý Profile" trong menu Profile: trang Thẻ nhân vật.
+  const openCompanionCards = useCallback(() => navigate(companionSettingsRoute('cards')), [navigate]);
   // Đổi nhân vật (tên nhân vật, nút người cạnh sân khấu, mục Nhân vật trên thanh bên điện thoại): trang Cài đặt → Nhân vật.
   const openCharacters = useCallback(() => navigate(companionSettingsRoute('character')), [navigate]);
   // Mục Bối cảnh trên thanh bên điện thoại: ở sân khấu thì mở hộp Bối cảnh, ở trang cài đặt thì sang trang Bối cảnh.
@@ -1400,6 +1408,7 @@ function AppContent() {
           onOpenSidebar={() => setSidebarOpen(true)}
           onOpenHearingSettings={openHearingSettings}
           onOpenSettings={openCompanionSettings}
+          onOpenCards={openCompanionCards}
         />
         </Suspense>
         </LazyBoundary>
@@ -1411,7 +1420,11 @@ function AppContent() {
           key={`companion-settings-${auth.user?.id}`}
           page={companionSettingsView}
           providerId={companionProviderId(appPath(location))}
-          onNavigate={(page, id) => navigate(page === 'provider' ? companionProviderRoute(id ?? '') : companionSettingsRoute(page))}
+          cardId={companionCardId(appPath(location))}
+          ownerId={auth.user?.id}
+          onNavigate={(page, id) => navigate(page === 'provider' ? companionProviderRoute(id ?? '')
+            : page === 'card' || page === 'card-edit' ? companionCardRoute(id ?? '', page === 'card-edit')
+            : companionSettingsRoute(page))}
           onExit={() => navigate(VIEW_PATHS.companion)}
           voice={localVoice}
           library={characters}

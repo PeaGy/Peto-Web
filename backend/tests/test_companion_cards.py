@@ -111,6 +111,24 @@ async def test_new_conversation_opens_with_the_card_greeting_and_becomes_active(
     assert (item["card_name"], item["active"], listed["active_card"]) == ("Mika", True, card["id"])
 
 
+async def test_a_card_without_conversations_shows_its_greeting_before_the_first_message(client, owner):
+    """Thẻ vừa dùng chưa có mạch: trang Companion thấy câu chào ngay (chưa lưu); lượt đầu lưu đúng câu đó làm tin đầu."""
+    card = await create(client, greetings=["Hi {{user}}, I'm {{char}}! <|EMOTE_HAPPY|>"])
+    assert (await client.put("/api/companion/cards/active", json={"card_id": card["id"]})).status_code == 200
+    preview = (await client.get("/api/companion")).json()
+    assert (preview["conversation_id"], preview["card_id"]) == (None, card["id"])
+    [greeting] = preview["messages"]
+    assert (greeting["role"], greeting["content"], greeting["emotion"]) == ("assistant", "Hi Người Mới, I'm Mika!", "happy")
+    await send(client, "chào bạn")
+    thread = (await client.get("/api/companion")).json()
+    assert thread["conversation_id"]
+    assert [message["content"] for message in thread["messages"]][:2] == ["Hi Người Mới, I'm Mika!", "chào bạn"]
+    # Thẻ không có câu chào thì mạch trống như trước.
+    plain = await create(client, name="Kaito")
+    await client.put("/api/companion/cards/active", json={"card_id": plain["id"]})
+    assert (await client.get("/api/companion")).json()["messages"] == []
+
+
 async def test_opening_an_old_conversation_switches_to_its_card(client, owner):
     card = await create(client)
     peto_thread = (await client.post("/api/companion/conversations", json={})).json()

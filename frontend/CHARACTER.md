@@ -79,6 +79,8 @@ Model tải nguyên trạng từ Live2D/CubismWebSamples, revision
 `b1de66b0b1f1cb881d95fb6158622aeb6a2827bd`, thư mục Samples/Resources/Hiyori.
 Core tải từ https://cubism.live2d.com/sdk-web/cubismcore/live2dcubismcore.min.js,
 giữ nguyên header giấy phép. Hash file có trong `public/characters/assets-manifest.json`.
+`public/characters/hiyori-preview.webp` (256×320) là ảnh Peto tự chụp Hiyori đang hiển thị, dùng làm ảnh thẻ ở
+Cài đặt Companion → Thẻ nhân vật khi trình duyệt chưa vẽ Hiyori lần nào; không phải tệp của gói mẫu.
 
 Hiyori không thuộc MIT của AIRI. Không sửa thiết kế; giữ thông báo ghi công và liên kết giấy phép
 ở `public/characters/NOTICE.html`. Điều kiện SDK và từng model áp dụng riêng.
