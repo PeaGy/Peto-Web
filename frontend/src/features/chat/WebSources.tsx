@@ -1,32 +1,8 @@
 import type { WebSource } from '../../shared/api/api';
 import { GitHubIcon } from '../../shared/ui/GitHubIcon';
 import { YouTubeIcon } from '../../shared/ui/YouTubeIcon';
-
-export function safeSources(sources: WebSource[] | undefined): WebSource[] {
-  const seen = new Map<string, WebSource>();
-  const rank = { search: 1, tool: 2, page: 3 };
-  for (const source of (Array.isArray(sources) ? sources : []).slice(0, 300)) {
-    if (!source || typeof source.url !== 'string' || source.url.length > 2048 || /[\s\x00-\x1f]/.test(source.url)) continue;
-    try {
-      const url = new URL(source.url);
-      if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password) continue;
-      const item: WebSource = { url: source.url, title: typeof source.title === 'string' && source.title.trim()
-        ? source.title.trim().slice(0, 200) : url.hostname };
-      if (source.kind === 'citation' || source.kind === 'result') item.kind = source.kind;
-      if (source.access === 'search' || source.access === 'page' || source.access === 'tool') item.access = source.access;
-      if (source.partial === true) item.partial = true;
-      const old = seen.get(item.url);
-      if (!old) seen.set(item.url, item);
-      else {
-        if (old.title === url.hostname || old.title === item.url) old.title = item.title;
-        if (item.kind === 'citation') old.kind = 'citation';
-        if (item.access && rank[item.access] > (old.access ? rank[old.access] : 0)) old.access = item.access;
-        if (item.partial) old.partial = true;
-      }
-    } catch { /* Nguồn sai schema không làm mất phần chữ của câu trả lời. */ }
-  }
-  return [...seen.values()].sort((a, b) => Number(b.kind === 'citation') - Number(a.kind === 'citation')).slice(0, 30);
-}
+import { safeSources } from './sourceData';
+export { safeSources } from './sourceData';
 
 export function GlobeIcon() {
   return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.6" /><path d="M3 12h18M12 3c5 5 5 13 0 18-5-5-5-13 0-18Z" stroke="currentColor" strokeWidth="1.6" /></svg>;

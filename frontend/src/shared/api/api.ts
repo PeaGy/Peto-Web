@@ -8,6 +8,8 @@ export type ConversationMode = "chat" | "companion";
 export interface WebSource {
   url: string; title: string; kind?: 'citation' | 'result';
   access?: 'search' | 'page' | 'tool'; partial?: boolean;
+  /** Explicit provider IDs; unrelated to source-array order. Absent in legacy history. */
+  citation_ids?: string[];
 }
 export interface DocumentArtifact {
   id: string; title: string; filename: string; version: number;

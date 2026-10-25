@@ -8,7 +8,8 @@ import { hastText } from '../diagrams/diagrams';
 import DocumentArtifactCard from '../documents/DocumentArtifactCard';
 import MessageAttachments from './MessageAttachments';
 import { MessageLink } from './LinkChip';
-import WebSources from './WebSources';
+import WebSources, { safeSources } from './WebSources';
+import { CitationGroup, remarkCitations } from './Citations';
 import WorkTimeline from './WorkTimeline';
 import type { Message } from '../../shared/api/api';
 
@@ -120,14 +121,24 @@ export const ChatMessage = memo(function ChatMessage({ message, live, writing, o
 }) {
   const hasUserAttachments = message.role === 'user' && Boolean(message.attachments?.length);
   const user = message.role === 'user';
+  const sources = useMemo(() => safeSources(message.sources), [message.sources]);
   const text = message.content ? normalizeMath(message.content) : "";
   const { remarkPlugins, rehypePlugins } = useMarkdownPlugins(text);
+  const citationPlugins = useMemo<NonNullable<import('react-markdown').Options['remarkPlugins']>>(
+    () => user ? remarkPlugins : [...remarkPlugins, [remarkCitations, { sources, writing }]],
+    [remarkPlugins, sources, writing, user]);
   // Giữ nguyên các hàm dựng thẻ giữa các lần vẽ lại. Hàm mới mỗi lần thì React coi là loại thẻ mới, gỡ ra dựng lại cả khối:
   // thẻ sơ đồ phải vẽ lại từ đầu, nút Sao chép của khối code mất trạng thái.
   const components = useMemo<Components>(() => ({
     table: ({children}) => <div className="table-scroll" tabIndex={0} role="region" aria-label="Bảng nội dung"><table>{children}</table></div>,
     // Ô chữ dài (ghi chú, mô tả) rộng hơn hẳn các ô số, như bảng của Claude; không thì cột ghi chú hẹp làm hàng rất cao.
     td: ({node, children}) => <td className={hastText(node).length > 30 ? "wide" : undefined}>{children}</td>,
+    cite: ({node, children}) => {
+      const refs = node?.properties?.['dataCitationRefs'] ?? node?.properties?.['data-citation-refs'];
+      if (typeof refs !== 'string') return <cite>{children}</cite>;
+      try { return <CitationGroup refs={JSON.parse(refs)} sources={sources} writing={writing} />; }
+      catch { return <cite>{children}</cite>; }
+    },
     // Link trơn người dùng gửi (chữ của link chính là địa chỉ) hiện thành nhãn ngắn như thẻ trong ô nhắn.
     a: ({node, children, href}) => user && href && hastText(node) === href && /^https?:\/\//i.test(href)
       ? <MessageLink href={href} />
@@ -141,7 +152,7 @@ export const ChatMessage = memo(function ChatMessage({ message, live, writing, o
       if (tag === "language-mermaid") return <DiagramCard source={hastText(code)} pending={writing} />;
       return <CodeBlock language={tag ? tag.slice("language-".length) : ""}>{children}</CodeBlock>;
     },
-  }), [writing, user]);
+  }), [writing, user, sources]);
   return (<article aria-label={message.role === 'user' ? 'Bạn' : 'Peto'} className={`bubble ${message.role}${hasUserAttachments ? ' chat-user-message' : ''}${editor ? ' editing' : ''}`}>
               {message.attachments && message.attachments.length > 0 && (
                 <MessageAttachments attachments={message.attachments} sent={message.role === 'user'} />
@@ -150,8 +161,8 @@ export const ChatMessage = memo(function ChatMessage({ message, live, writing, o
                 <WorkTimeline work={message.work} live={live} startedAt={message.workStartedAt} answering={Boolean(message.content)} />
               ) : null}
               {editor || (message.content ? (hasUserAttachments
-                ? <div className="user-message-text"><Markdown remarkPlugins={remarkPlugins} rehypePlugins={rehypePlugins} components={components}>{text}</Markdown></div>
-                : <Markdown remarkPlugins={remarkPlugins} rehypePlugins={rehypePlugins} components={components}>{text}</Markdown>
+                ? <div className="user-message-text"><Markdown remarkPlugins={citationPlugins} rehypePlugins={rehypePlugins} components={components}>{text}</Markdown></div>
+                : <Markdown remarkPlugins={citationPlugins} rehypePlugins={rehypePlugins} components={components}>{text}</Markdown>
               ) : null)}
               {message.role === "assistant" && <WebSources sources={message.sources} />}
               {message.artifacts?.map(artifact => <DocumentArtifactCard key={`${artifact.id}-${artifact.version}`} artifact={artifact} onOpen={onPreview} onEdit={onEdit} />)}

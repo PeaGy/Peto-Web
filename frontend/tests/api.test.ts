@@ -4,6 +4,20 @@ import { createImagineJob, sendMessage, stopChat } from '../src/shared/api/api';
 afterEach(() => vi.unstubAllGlobals());
 const event = (value: object) => `data: ${JSON.stringify(value)}\n\n`;
 
+it('giữ citation ID và chữ Unicode khi SSE bị chia ở từng byte', async () => {
+  const sources = [{ url: 'https://example.com/source', title: 'Nguồn tiếng Việt', citation_ids: ['web:21'] }];
+  const wire = new TextEncoder().encode(event({ type: 'delta', text: 'Đã đọc [' })
+    + event({ type: 'delta', text: 'web:21]' }) + event({ type: 'sources', sources }) + event({ type: 'done' }));
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(new ReadableStream({
+    start(controller) { for (const byte of wire) controller.enqueue(new Uint8Array([byte])); controller.close(); },
+  }))));
+  const onSources = vi.fn(), onDelta = vi.fn(), onDone = vi.fn();
+  await sendMessage({ message: 'Fixture', conversationId: null, effort: 'low' }, { onSources, onDelta, onDone });
+  expect(onSources).toHaveBeenCalledExactlyOnceWith(sources);
+  expect(onDelta.mock.calls.map(([text]) => text).join('')).toBe('Đã đọc [web:21]');
+  expect(onDone).toHaveBeenCalledOnce();
+});
+
 it('gửi mã lượt và đọc xác nhận stopped riêng, không coi là trả lời hoàn tất', async () => {
   const fetchMock = vi.fn(async () => new Response(event({ type: 'stopped' })));
   vi.stubGlobal('fetch', fetchMock);

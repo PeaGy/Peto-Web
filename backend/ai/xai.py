@@ -29,7 +29,7 @@ from shared.attachment_tools import NAMES as FILE_TOOLS, current_files
 from shared.time_tools import execute_tool
 from features.documents.tools import current_session
 from features.connectors.tools import current_session as github_session_context, NAMES as GITHUB_TOOLS
-from shared.web_search import normalize_sources, search_context
+from shared.web_search import normalize_sources, search_context, citation_ids
 from shared import chat_history_tools
 from features.companion import player_tools
 from features.chat.context_budget import enforce as enforce_chat_budget, side_output_cap
@@ -86,7 +86,9 @@ def _item_sources(item: dict) -> list[dict]:
     if item.get("type") == "message":
         for part in item.get("content") or []:
             if part.get("type") == "output_text":
-                candidates.extend({**annotation, "kind": "citation"} for annotation in part.get("annotations") or [] if annotation.get("type") == "url_citation")
+                candidates.extend({**annotation, "kind": "citation", 'citation_ids': citation_ids(annotation, part.get('text') or '')}
+                                  for annotation in part.get("annotations") or []
+                                  if isinstance(annotation, dict) and annotation.get("type") == "url_citation")
     elif item.get("type") == "web_search_call":
         action = item.get('action') or {}
         if item.get('status') == 'failed':
@@ -427,7 +429,8 @@ class ResponsesProvider(ChatProvider):
                     elif event_type == "response.output_text.annotation.added":
                         annotation = _dump(event.annotation)
                         if annotation.get("type") == "url_citation":
-                            merged = normalize_sources([*sources, {**annotation, "kind": "citation"}])
+                            merged = normalize_sources([*sources, {**annotation, "kind": "citation",
+                                                                 'citation_ids': citation_ids(annotation, ''.join(written))}])
                             if merged != sources:
                                 sources = merged
                                 yield StreamChunk("sources", sources=tuple(sources))
@@ -435,7 +438,7 @@ class ResponsesProvider(ChatProvider):
                         delta = getattr(event, "delta", "")
                         if delta:
                             yield StreamChunk("thinking", delta)
-                    elif event_type == "response.output_text.delta":
+                    elif event_type in {"response.output_text.delta", "peto.citation"}:
                         delta = getattr(event, "delta", "")
                         if delta:
                             emitted_text = True

@@ -20,6 +20,7 @@ from .xai import ResponsesProvider
 from shared.time_tools import split_time_context
 from features.chat.request_context import split_context as split_request_context
 from features.chat.request_context import current as web_request_context
+from shared.web_search import normalize_sources, source_reference
 
 logger = logging.getLogger("peto_web.claude")
 MAX_SEARCH_PAUSES = 3
@@ -32,7 +33,13 @@ WEB_FETCH_TOOL = {"type": "web_fetch_20250910", "name": "web_fetch", "max_uses":
 
 def _citation(value: dict) -> dict | None:
     if value.get("type") == "web_search_result_location" and value.get("url"):
-        return {"type": "url_citation", "url": value["url"], "title": value.get("title") or value["url"]}
+        sources = normalize_sources([value])
+        if not sources:
+            return None
+        source = sources[0]
+        if web_request_context.get() is not None:
+            source['citation_id'] = source_reference(source['url'])
+        return {"type": "url_citation", **source}
     return None
 
 
@@ -42,9 +49,10 @@ def _portable_output(content: list[dict]) -> list[dict]:
     for block in content:
         kind = block.get("type")
         if kind == "text" and block.get("text"):
+            annotations = [citation for raw in block.get('citations') or [] if (citation := _citation(raw))]
+            markers = ''.join(f" [{citation['citation_id']}]" for citation in annotations if citation.get('citation_id'))
             output.append({"type": "message", "role": "assistant", "content": [{"type": "output_text",
-                "text": block["text"], "annotations": [citation for raw in block.get("citations") or []
-                                                       if (citation := _citation(raw))]}]})
+                "text": block["text"] + markers, "annotations": annotations}]})
         elif kind == "tool_use":
             output.append({"type": "function_call", "call_id": block["id"], "name": block["name"],
                            "arguments": json.dumps(block["input"], ensure_ascii=False)})
@@ -297,6 +305,8 @@ class ClaudeStream:
                                 citation = _citation(delta.citation.model_dump(mode="json", exclude_none=True))
                                 if citation:
                                     yield SimpleNamespace(type="response.output_text.annotation.added", annotation=citation)
+                                    if citation.get('citation_id'):
+                                        yield SimpleNamespace(type='peto.citation', delta=f" [{citation['citation_id']}]")
                             else:
                                 # Dấu hiệu stream còn chạy khi Claude đang soạn JSON công cụ dài.
                                 yield SimpleNamespace(type="peto.pulse")

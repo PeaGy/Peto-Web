@@ -1,5 +1,28 @@
 # CLAUDE.md
 
+## Web Chat citation rendering (2026-10-25)
+
+Owner reported raw `[web:21]`/`[web:26]` in answers. Audit/contract/deployment:
+`backend/features/chat/docs/citation-rendering.md`. Sources already carried URL/title through SSE/history, but
+normalizers dropped IDs/annotation spans and Markdown had no inline citation renderer. No repo code generated the
+raw web markers; no live payload from that exact GTA5 turn was captured. Never map marker numbers to array indices.
+- `shared/web_search.citation_ids` keeps bounded explicit aliases and IDs proven by a native annotation's exact
+  marker span. Optional `citation_ids` survives provider/SSE/JSON persistence/read/frontend normalization; old rows
+  remain valid. URL dedup unions aliases. Unsupported/missing/ambiguous mapping remains unlinked; old lost IDs cannot
+  be reconstructed from URL order. Source limit remains 30, 24 aliases/URL; cited sources keep priority.
+- Claude Web Chat emits URL-hash `src:` markers at native citation deltas. Original Anthropic native content/signature
+  handling is preserved; calls without Web Chat snapshot (Agent/Companion/standalone) keep plain-text behavior.
+- Assistant-only remark AST plugin renders grouped inline badges, supports existing native Markdown citation links
+  and mapped OpenAI markers, hides incomplete streaming syntax, keeps code/user/link text literal. Unknown references
+  show pending/unknown, never guessed links. Existing expandable source footer and access evidence stay intact.
+- Use React text, bounded HTTP(S) URLs without credentials/control/backslash, no raw HTML/eval. Inline badges reuse
+  TooltipLayer for title/URL and keyboard focus; long tooltip wraps. No new provider params, dependency or DB migration.
+- Tests use synthetic providers/native HTTP, temporary SQLite and local browser mocks; no paid call/commit/deploy.
+  Rebuild frontend and restart backend; reload existing tabs. Physical-phone and model-quality acceptance remain separate.
+- Validation: full backend 1,841 passed/1 skipped (497.42s); full frontend 1,009 passed (153.06s); final bounded-group
+  citation/source/API rerun 33 passed; related stage-4 browser 10 passed, citation desktop/mobile-emulation 2 passed
+  with long-URL tooltip bounds, keyboard, mocked source click and F5. Build/diff checks passed; inspected both screenshots.
+
 ## Companion character cards, stage (a): server (2026-10-25)
 
 The owner chose AIRI-style character cards (AIRI commit `74ddd90`: `stores/modules/airi-card.ts`, `stores/chat.ts`,

@@ -27,7 +27,8 @@ scroll trong app; không tự kéo refresh khi chạm hết danh sách.
 
 ## Bằng chứng nguồn
 
-Schema nguồn giữ `url`, `title`, `kind` cũ và chỉ nhận thêm `access: search | page | tool`, `partial: true`.
+Schema nguồn giữ `url`, `title`, `kind` cũ và nhận thêm `access: search | page | tool`, `partial: true`.
+Ngày 25/10 bổ sung alias ID tùy chọn và renderer inline: [citation-rendering.md](citation-rendering.md).
 HTTP(S) hợp lệ, không credentials, giới hạn URL/tiêu đề và 30 nguồn; metadata sai bị bỏ, câu trả lời vẫn là Markdown.
 Duplicate không hạ mức bằng chứng; native citation nâng `kind`, không tự biến snippet thành trang đã mở.
 Nguồn cũ thiếu `access` giữ nhãn tham khảo/chưa biết, không suy ngược là đã đọc trang.
