@@ -1,5 +1,23 @@
 # CLAUDE.md
 
+## Web Chat link chips (2026-10-25)
+
+The owner showed Claude's composer turning a pasted YouTube link into its title and a GitHub link into "owner/repo",
+and approved chips above the textarea plus short labels in sent messages. Frontend only; not committed.
+- Pasting exactly one http(s) URL (no spaces, no credentials, at most 2048 characters) becomes a chip in the attachment
+  row (`Composer.tsx` onPaste); mixed text pastes normally, duplicates are ignored, at most `MAX_DRAFT_LINKS` (8).
+- `features/chat/draftLinks.ts`: links live in the draft string after the private-use `LINK_MARK` (U+E000), so
+  `useChatDrafts`, sessionStorage, F5 and `accept()` need no change. The textarea shows only the typed text;
+  `messageText` sends the typed text then each full link on its own line, so the model and history get real URLs.
+- Labels come from the real hostname only (`describeLink`): YouTube (`parseYouTubeUrl`) with its title from the existing
+  `/api/companion/player/videos/{id}` oEmbed endpoint (client cache, failures not cached), GitHub `owner/repo`
+  (`#N` for issues/PRs, `· file` for blob/tree), else `host › last segment`. Lookalike domains stay "web".
+- `LinkChip.tsx`: `ComposerLinkChip` (remove button, full URL in the tooltip) and `MessageLink`, used by
+  `ChatMessage`'s `a` override only in user messages whose link text equals its href (bare pasted links).
+- Tests: `tests/draftLinks.test.ts`, two `App.test.tsx` cases; frontend 998/998, build passed. Checked on the mock stack
+  in the in-app browser: GitHub and YouTube chips (real oEmbed title), F5 keeps them, sent bubble shows both labels.
+  Deploy: rebuild frontend.
+
 ## Web Chat personality (2026-10-24)
 
 The owner found Peto Trò chuyện stiff and less fun than ChatGPT and sent screenshots (Peto/Grok, effort Thấp). Grok's

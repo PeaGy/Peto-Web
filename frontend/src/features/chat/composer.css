@@ -144,3 +144,8 @@
   border: 1px solid var(--line);
 }
 
+
+/* Link dán vào ô nhắn (draftLinks.ts): thẻ cạnh tệp đính kèm, nhãn ngắn thay cho cả đường dẫn. */
+.link-chip { max-width: 280px; }
+.link-chip-icon { display: inline-flex; flex: 0 0 auto; color: var(--muted); }
+.link-chip.github .link-chip-icon { color: var(--text); }

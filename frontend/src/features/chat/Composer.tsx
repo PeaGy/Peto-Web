@@ -4,6 +4,8 @@ import EffortMenu from "./EffortMenu";
 import { isSpreadsheetFile } from "./attachments";
 import { FileGlyph, formatSize, type DraftFile } from "./files";
 import ModelMenu from "./ModelMenu";
+import { joinDraft, MAX_DRAFT_LINKS, pastedLink, splitDraft } from "./draftLinks";
+import { ComposerLinkChip } from "./LinkChip";
 import type { Effort, ModelOption, WebSearchMode } from "../../shared/api/api";
 
 const ACCEPT =
@@ -65,6 +67,8 @@ export default function Composer({
   effort, efforts, onEffortChange, webSearch, onToggleWeb, menuDisabled,
   model, models, onModelChange, formRef, boxRef, textareaRef, fileRef,
 }: ComposerProps) {
+  // Nháp gồm chữ đang gõ và các link đã dán (draftLinks.ts); ô chữ chỉ hiện phần chữ, link hiện thành thẻ.
+  const { text, links } = splitDraft(draft);
   return (
     <form
       ref={formRef}
@@ -75,8 +79,12 @@ export default function Composer({
       }}
     >
       <div className="composer" ref={boxRef}>
-        {files.length > 0 && (
+        {(files.length > 0 || links.length > 0) && (
           <ul className="attach-list">
+            {links.map((url) => (
+              <ComposerLinkChip key={url} url={url}
+                onRemove={() => onDraftChange(joinDraft(text, links.filter((item) => item !== url)))} />
+            ))}
             {files.map((item) => (
               <li key={item.id} className="attach-chip">
                 {item.previewUrl ? (
@@ -104,18 +112,24 @@ export default function Composer({
 
         <textarea
           ref={textareaRef}
-          value={draft}
+          value={text}
           rows={1}
           placeholder="Nhắn cho Peto…"
           aria-label="Nhắn cho Peto"
           enterKeyHint="send"
-          onChange={(event) => onDraftChange(event.target.value)}
+          onChange={(event) => onDraftChange(joinDraft(event.target.value, links))}
           onPaste={(event) => {
             const pasted = Array.from(event.clipboardData.files);
             if (pasted.length) {
               event.preventDefault();
               onAddFiles(pasted);
+              return;
             }
+            // Dán đúng một link thì nó thành thẻ; dán link lẫn với chữ thì vẫn dán chữ như thường.
+            const url = pastedLink(event.clipboardData.getData("text"));
+            if (!url || links.length >= MAX_DRAFT_LINKS) return;
+            event.preventDefault();
+            if (!links.includes(url)) onDraftChange(joinDraft(text, [...links, url]));
           }}
           onKeyDown={(event) => {
             if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing && event.keyCode !== 229) {

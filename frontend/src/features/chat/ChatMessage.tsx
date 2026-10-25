@@ -7,6 +7,7 @@ import { DiagramCard } from '../diagrams/DiagramCard';
 import { hastText } from '../diagrams/diagrams';
 import DocumentArtifactCard from '../documents/DocumentArtifactCard';
 import MessageAttachments from './MessageAttachments';
+import { MessageLink } from './LinkChip';
 import WebSources from './WebSources';
 import WorkTimeline from './WorkTimeline';
 import type { Message } from '../../shared/api/api';
@@ -118,6 +119,7 @@ export const ChatMessage = memo(function ChatMessage({ message, live, writing, o
   onEdit: (item: { id: string; version: number }) => void;
 }) {
   const hasUserAttachments = message.role === 'user' && Boolean(message.attachments?.length);
+  const user = message.role === 'user';
   const text = message.content ? normalizeMath(message.content) : "";
   const { remarkPlugins, rehypePlugins } = useMarkdownPlugins(text);
   // Giữ nguyên các hàm dựng thẻ giữa các lần vẽ lại. Hàm mới mỗi lần thì React coi là loại thẻ mới, gỡ ra dựng lại cả khối:
@@ -126,7 +128,10 @@ export const ChatMessage = memo(function ChatMessage({ message, live, writing, o
     table: ({children}) => <div className="table-scroll" tabIndex={0} role="region" aria-label="Bảng nội dung"><table>{children}</table></div>,
     // Ô chữ dài (ghi chú, mô tả) rộng hơn hẳn các ô số, như bảng của Claude; không thì cột ghi chú hẹp làm hàng rất cao.
     td: ({node, children}) => <td className={hastText(node).length > 30 ? "wide" : undefined}>{children}</td>,
-    a: ({children, href}) => <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>,
+    // Link trơn người dùng gửi (chữ của link chính là địa chỉ) hiện thành nhãn ngắn như thẻ trong ô nhắn.
+    a: ({node, children, href}) => user && href && hastText(node) === href && /^https?:\/\//i.test(href)
+      ? <MessageLink href={href} />
+      : <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>,
     pre: ({node, children}) => {
       const code = node?.children?.[0];
       const names = code?.type === "element" && Array.isArray(code.properties?.className)
@@ -136,7 +141,7 @@ export const ChatMessage = memo(function ChatMessage({ message, live, writing, o
       if (tag === "language-mermaid") return <DiagramCard source={hastText(code)} pending={writing} />;
       return <CodeBlock language={tag ? tag.slice("language-".length) : ""}>{children}</CodeBlock>;
     },
-  }), [writing]);
+  }), [writing, user]);
   return (<article aria-label={message.role === 'user' ? 'Bạn' : 'Peto'} className={`bubble ${message.role}${hasUserAttachments ? ' chat-user-message' : ''}${editor ? ' editing' : ''}`}>
               {message.attachments && message.attachments.length > 0 && (
                 <MessageAttachments attachments={message.attachments} sent={message.role === 'user'} />

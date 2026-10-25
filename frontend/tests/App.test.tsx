@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, createEvent, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { preloadLazyParts } from './lazyParts';
@@ -1988,6 +1988,53 @@ it('loads conversations beyond the first 50', async () => {
   fireEvent.click(screen.getByRole('button', {name:'Xem hội thoại cũ hơn'}));
   await screen.findByRole('button', {name:'Hội thoại cũ', exact:true});
   expect(api.listConversations).toHaveBeenCalledWith(50, 50, '', {unassigned:true});
+});
+
+describe('link dán vào ô nhắn', () => {
+  const REPO = 'https://github.com/PeaGy/Peto-Web';
+  const SONG = 'https://www.youtube.com/watch?v=sqK-jh4TDXo&list=RDsqK-jh4TDXo';
+  const paste = (text: string) => fireEvent.paste(screen.getByLabelText('Nhắn cho Peto'),
+    { clipboardData: { files: [], getData: () => text } });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('thành thẻ ngắn, gửi đi vẫn có link đầy đủ, tin đã gửi hiện nhãn', async () => {
+    const reply = deferred<void>();
+    vi.mocked(api.sendMessage).mockImplementation(async (payload, handlers) => {
+      handlers.onMeta?.('C', 'medium', row(payload.message)); await reply.promise;
+    });
+    await openApp();
+    const input = screen.getByLabelText('Nhắn cho Peto') as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: 'phân tích repo này giúp tôi' } });
+    paste(REPO);
+    expect(input.value).toBe('phân tích repo này giúp tôi');
+    expect(screen.getByText('PeaGy/Peto-Web')).toBeTruthy();
+    // Dán lại cùng link không thêm thẻ thứ hai; gõ tiếp không làm mất thẻ.
+    paste(REPO);
+    fireEvent.change(input, { target: { value: 'phân tích repo này giúp tôi nhé' } });
+    expect(screen.getAllByText('PeaGy/Peto-Web')).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Gửi', exact: true }));
+    await waitFor(() => expect(api.sendMessage).toHaveBeenCalled());
+    expect(vi.mocked(api.sendMessage).mock.calls[0][0].message).toBe(`phân tích repo này giúp tôi nhé\n${REPO}`);
+    const label = await screen.findByRole('link', { name: 'PeaGy/Peto-Web' });
+    expect(label.getAttribute('href')).toBe(REPO);
+    expect(screen.queryByRole('button', { name: 'Gỡ link PeaGy/Peto-Web' })).toBeNull();
+    await act(async () => reply.resolve());
+  });
+
+  it('link YouTube lấy tiêu đề video; gỡ thẻ thì link không còn trong nháp; dán chữ kèm link vẫn dán chữ', async () => {
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({ video_id: 'sqK-jh4TDXo', title: 'Machine Love (feat. Kasane Teto)', artist: 'Jamie Paige' })));
+    vi.stubGlobal('fetch', fetcher);
+    await openApp();
+    paste(SONG);
+    expect(await screen.findByText('Machine Love (feat. Kasane Teto)')).toBeTruthy();
+    expect(fetcher).toHaveBeenCalledWith('/api/companion/player/videos/sqK-jh4TDXo');
+    fireEvent.click(screen.getByRole('button', { name: 'Gỡ link Machine Love (feat. Kasane Teto)' }));
+    expect(screen.queryByText('Machine Love (feat. Kasane Teto)')).toBeNull();
+    // Link lẫn với chữ: ô nhắn để trình duyệt dán như thường (sự kiện không bị chặn).
+    const event = createEvent.paste(screen.getByLabelText('Nhắn cho Peto'), { clipboardData: { files: [], getData: () => `xem ${REPO}` } });
+    fireEvent(screen.getByLabelText('Nhắn cho Peto'), event);
+    expect(event.defaultPrevented).toBe(false);
+  });
 });
 
 describe('banner tải danh sách hội thoại', () => {

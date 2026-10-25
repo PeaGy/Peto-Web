@@ -14,6 +14,7 @@ import { ProjectConfirm } from '../features/projects/ProjectControls';
 import MoveConversationDialog from '../features/projects/MoveConversationDialog';
 import ProjectChatHeader from '../features/projects/ProjectChatHeader';
 import { ChatMessage } from '../features/chat/ChatMessage';
+import { messageText } from '../features/chat/draftLinks';
 import { disconnectStream, networkInterrupted, useReplyRecovery } from '../features/chat/useReplyRecovery';
 import { ReplyRecoveryNotice } from '../features/chat/ReplyRecoveryNotice';
 import { Greeting } from '../features/chat/Greeting';
@@ -818,7 +819,7 @@ function AppContent() {
   }
 
   async function submit(revision?: ChatRevision) {
-    const text = revision ? revision.text.trim() : draft.trim();
+    const text = revision ? revision.text.trim() : messageText(draft);
     const hasAttachments = revision ? Boolean(revision.target.attachments?.length) : draftFiles.length > 0;
     if ((!text && !hasAttachments) || readOnly || abortRef.current || loadingConversation || loadFailed || !recovery.online || recovery.pending) return;
 
