@@ -37,6 +37,7 @@ import AccountMenu, { placeAccountMenu, type AccountMenuPlace } from "./AccountM
 import SettingsDialog, { CLOSED_SETTINGS, type SettingsSection, type SettingsView } from "../features/settings/SettingsDialog";
 import { Segmented, SettingsGroup, SettingsIcon, SettingsRow } from "../features/settings/settingsUi";
 import { useCharacters } from '../features/companion/characters/useCharacters';
+import { setActiveCardModel } from '../features/companion/cards/companionCards';
 import { readCharacterMotion, writeCharacterMotion, type CharacterMotion } from "../features/companion/characters/characterView";
 import Composer from "../features/chat/Composer";
 import ChatFileDropZone from '../features/chat/ChatFileDropZone';
@@ -226,6 +227,18 @@ function AppContent() {
   const [motion, setMotion] = useState<MotionChoice>(readMotionChoice);
   const [characterMotion, setCharacterMotion] = useState<CharacterMotion>(readCharacterMotion);
   const characters = useCharacters();
+  const characterIds = useMemo(() => characters.models.map(model => model.id), [characters.models]);
+  // Model hiển thị thuộc thẻ nhân vật đang dùng ("Body / Display Model" của thẻ AIRI): người dùng đổi nhân vật (trang
+  // Nhân vật, nhập model mới) thì ghi vào thẻ. Bỏ qua giá trị đầu tiên, để model của máy này không đè thẻ từ máy khác.
+  const selectedCharacter = characters.selected.id;
+  const lastCharacter = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (characters.loading) return;
+    if (lastCharacter.current !== undefined && lastCharacter.current !== selectedCharacter) {
+      void setActiveCardModel(selectedCharacter).catch(() => {});
+    }
+    lastCharacter.current = selectedCharacter;
+  }, [selectedCharacter, characters.loading]);
   const [sceneRequest, setSceneRequest] = useState(0);
   const [playerRequest, setPlayerRequest] = useState(0);
   const changeCharacterMotion = useCallback((value: CharacterMotion) => {
@@ -1379,6 +1392,8 @@ function AppContent() {
           characterMotion={characterMotion}
           character={characters.selected}
           characterLoading={characters.loading}
+          characterIds={characterIds}
+          onSelectCharacter={characters.select}
           onCharacterPreview={characters.savePreview}
           onOpenCharacters={openCharacters}
           onUnauthorized={handleUnauthorized}

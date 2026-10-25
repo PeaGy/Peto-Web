@@ -68,7 +68,13 @@ export async function mockPeto(page: Page, options: { long?: boolean; broken?: b
       // Giữ tình huống lưu chậm ổn định cả khi máy chạy kiểm thử phản hồi chậm.
       return json({ messages: state.posts && !state.recoveryReady ? state.messages.slice(0, -1) : state.messages });
     }
-    if (url.pathname === '/api/companion') return json({ conversation_id: 'A', messages: state.companion });
+    if (url.pathname === '/api/companion') return json({ conversation_id: 'A', card_id: 'peto', title: 'Ôn bài', messages: state.companion });
+    if (url.pathname === '/api/companion/cards') return json({ active_card: 'peto', limit: 50, cards: [{
+      id: 'peto', name: 'Peto', nickname: '', version: '1.0.0', description: '', notes: '', personality: '', scenario: '',
+      system_prompt: 'You are Peto.', post_history: '', display_model: 'hiyori', greetings: [], modules: {},
+      is_default: true, modified: false, created_at: 1, updated_at: 1 }] });
+    if (url.pathname === '/api/companion/conversations') return json({ active_card: 'peto', conversations: [
+      { id: 'A', card_id: 'peto', card_name: 'Peto', preview: 'Ôn bài', message_count: state.companion.length, created_at: 1, updated_at: 2, active: true }] });
     if (url.pathname === '/api/companion/memory') return json({ available: false, enabled: false, pending: false, limit: 50, memories: [] });
     if (url.pathname === '/api/voice/health') return json({ ok: false, voices: [], home: { online: false, voices: [] }, official: { allowed: false, voices: [], used: 0, limit: 0 } });
     if (url.pathname === '/api/chat') {

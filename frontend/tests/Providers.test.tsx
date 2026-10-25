@@ -16,6 +16,7 @@ vi.mock('../src/shared/api/api', async (original) => ({
   getAuthState: vi.fn(), listConversations: vi.fn(), getMessages: vi.fn(), sendMessage: vi.fn(),
   listImagineJobs: vi.fn(), getProfile: vi.fn(), getAppInfo: vi.fn(), getCompanion: vi.fn(),
   getCompanionMemory: vi.fn(), checkProvider: vi.fn(),
+  listCompanionCards: vi.fn(),
 }));
 vi.mock('../src/features/companion/characters/Live2DStage', () => ({
   default: ({ onStatusChange }: { onStatusChange?: (status: 'loading' | 'ready' | 'error') => void }) => {
@@ -37,6 +38,8 @@ beforeEach(() => {
   vi.mocked(api.getMessages).mockResolvedValue([]);
   vi.mocked(api.listImagineJobs).mockResolvedValue([]);
   vi.mocked(api.getAppInfo).mockRejectedValue(new Error('offline'));
+  // Thẻ nhân vật không phải việc của các test này: không tải được thì Companion vẫn chạy như cũ.
+  vi.mocked(api.listCompanionCards).mockRejectedValue(new Error('offline'));
   vi.mocked(api.getProfile).mockResolvedValue({ profile: { full_name: '', nickname: '', occupation: '', instructions: '' },
     occupations: [], limits: { full_name: 80, nickname: 40, instructions: 1500 } });
   vi.mocked(api.getCompanion).mockResolvedValue({ conversation_id: null, messages: [] });
@@ -118,7 +121,7 @@ it('Nhà cung cấp như AIRI: tab, lọc giá, nhập và kiểm tra khóa; B�
   expect(payload).toMatchObject({ mode: 'companion', provider: { id: 'deepseek', model: 'deepseek-reasoner' },
     providerKey: 'sk-deep-12345678', webSearch: 'off' });
   expect(payload.searchKey).toBeUndefined();
-  expect(screen.getByText('DeepSeek', { selector: '.companion-title span' })).toBeTruthy();
+  expect(screen.getByText('DeepSeek', { selector: '.companion-title .companion-state' })).toBeTruthy();
 });
 
 it('khóa Tavily ở Tra web chỉ gửi kèm khi nhà cung cấp cần và Tra web đang bật', async () => {
@@ -139,7 +142,7 @@ it('khóa Tavily ở Tra web chỉ gửi kèm khi nhà cung cấp cần và Tra 
   // OpenAI có tìm kiếm riêng: không gửi khóa Tavily.
   localStorage.setItem('peto-companion-brain', JSON.stringify({ provider: 'openai', model: 'gpt-6-luna' }));
   window.dispatchEvent(new StorageEvent('storage', { key: 'peto-companion-brain' }));
-  await waitFor(() => expect(screen.getByText('OpenAI', { selector: '.companion-title span' })).toBeTruthy());
+  await waitFor(() => expect(screen.getByText('OpenAI', { selector: '.companion-title .companion-state' })).toBeTruthy());
   payload = await sendInCompanion('more news?');
   expect(payload).toMatchObject({ provider: { id: 'openai', model: 'gpt-6-luna' }, providerKey: 'sk-open-12345678' });
   expect(payload.searchKey).toBeUndefined();

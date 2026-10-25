@@ -1,4 +1,5 @@
-.companion-player-area { position: absolute; inset: 0 clamp(330px, 32%, 460px) 0 0; z-index: 4; pointer-events: none; }
+/* Chừa cột khung chat (cỡ AIRI, companionCards.css): cửa sổ Player không đè lên khung chat. */
+.companion-player-area { position: absolute; inset: 0 var(--companion-chat-width) 0 0; z-index: 4; pointer-events: none; }
 .companion-player-layer { position: fixed; z-index: 8; pointer-events: none; }
 .companion-player-layer[data-mobile="true"] { inset: 0 !important; width: 100% !important; height: 100dvh !important; z-index: 25; }
 .companion-player-layer .yt-transport { margin-top: 14px; }

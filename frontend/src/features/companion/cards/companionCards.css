@@ -1,0 +1,133 @@
+/* Thẻ nhân vật trong Companion: danh sách hội thoại, nút Profile và menu của chúng (chủ web chọn bản "Như AIRI",
+   25/10/2026). Menu nằm ngoài .companion (portal) nên khai báo lại màu chọn xanh mòng két của Companion. */
+:root { --companion-pick: #5cc3db; --companion-pick-soft: rgba(18, 112, 137, 0.28); }
+:root[data-theme="light"] { --companion-pick: #1f7f96; --companion-pick-soft: rgba(47, 142, 165, 0.16); }
+
+/* Khung chat cỡ AIRI (InteractiveArea: rộng tới 500px, tối thiểu 30%, cách mép phải 16px), chừa một hàng trên cùng
+   cho nút Profile như Header của AIRI, và hàng nút Bối cảnh/Nhân vật/Player bên dưới. */
+.companion { --companion-chat-width: clamp(360px, 42%, 500px); }
+@media (min-width: 721px) {
+  .companion { grid-template-columns: minmax(0, 1fr) var(--companion-chat-width); }
+  .companion-panel { margin: 72px 16px 76px 0; }
+  .companion-scene-tools { right: 16px; }
+}
+.companion-profile-slot { position: absolute; top: 16px; right: 16px; z-index: 3; }
+
+.companion-profile-button {
+  display: inline-flex; align-items: center; gap: 8px; max-width: 12rem; height: 40px; padding: 0 10px 0 6px;
+  border: 1px solid var(--stage-line); border-radius: 999px; background: var(--stage-surface); color: var(--stage-text);
+  font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; box-shadow: 0 4px 18px #0003;
+  -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px); transition: transform 160ms var(--ease-out);
+}
+.companion-profile-button:active:not(:disabled) { transform: scale(0.97); }
+.companion-profile-button:disabled { opacity: 0.6; cursor: default; }
+.companion-profile-button[aria-expanded="true"] { box-shadow: 0 0 0 3px var(--companion-pick-soft); }
+.companion-profile-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.companion-profile-name { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.companion-card-avatar {
+  display: grid; place-items: center; width: 28px; height: 28px; flex-shrink: 0; border-radius: 50%;
+  background: var(--companion-pick-soft); color: var(--companion-pick); font-size: 13px; font-weight: 700;
+}
+
+.companion-session-title strong { max-width: 100%; }
+.companion-session-title strong > svg:first-child { flex-shrink: 0; color: var(--stage-muted); }
+.companion-session-title em { min-width: 0; overflow: hidden; font-style: normal; white-space: nowrap; text-overflow: ellipsis; }
+.companion-session-title:disabled { cursor: default; }
+@media (hover: hover) and (pointer: fine) {
+  .companion-profile-button:hover:not(:disabled) { background: var(--stage-bubble-b); }
+}
+
+/* Menu thả xuống (máy tính) và tấm dưới đáy (điện thoại). */
+.companion-popover {
+  position: fixed; z-index: 60; width: min(20rem, calc(100vw - 2rem)); max-height: min(28rem, 70dvh); overflow: auto;
+  padding: 6px; border: 1px solid var(--menu-line); border-radius: 12px; background: var(--menu-bg); color: var(--text);
+  box-shadow: var(--menu-shadow); transform-origin: top left; animation: companion-pop 150ms var(--ease-out) both;
+}
+.companion-popover[data-align="end"] { transform-origin: top right; }
+@keyframes companion-pop { from { opacity: 0; transform: scale(0.96); } }
+.companion-sheet-layer { position: fixed; inset: 0; z-index: 60; }
+.companion-sheet-backdrop { position: absolute; inset: 0; background: #0008; animation: companion-fade 200ms var(--ease-out) both; }
+.companion-sheet {
+  position: absolute; left: 0; right: 0; bottom: 0; max-height: 75dvh; overflow: auto;
+  padding: 8px 12px calc(16px + env(safe-area-inset-bottom)); border-radius: 20px 20px 0 0;
+  background: var(--panel); color: var(--text); animation: companion-sheet 260ms cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+.companion-sheet-handle { width: 40px; height: 4px; margin: 2px auto 10px; border-radius: 99px; background: var(--line); }
+.companion-sheet-title { margin: 0 4px 10px; font-size: 17px; }
+@keyframes companion-sheet { from { transform: translateY(100%); } }
+@keyframes companion-fade { from { opacity: 0; } }
+:root[data-motion="reduced"] .companion-popover,
+:root[data-motion="reduced"] .companion-sheet,
+:root[data-motion="reduced"] .companion-sheet-backdrop { animation: none; }
+:root[data-motion="reduced"] .companion-profile-button { transition: none; }
+
+.companion-menu-divider { height: 1px; margin: 4px 0; background: var(--menu-line, var(--line)); }
+.companion-menu-new, .companion-menu-action, .companion-profile, .companion-session-select {
+  display: flex; align-items: center; gap: 10px; width: 100%; min-height: 36px; padding: 6px 8px; border: 0; border-radius: 8px;
+  background: none; color: inherit; font: inherit; font-size: 14px; text-align: left; cursor: pointer;
+}
+.companion-menu-new { color: var(--companion-pick); }
+.companion-menu-new svg, .companion-menu-action svg, .companion-profile svg { flex-shrink: 0; }
+.companion-menu-action svg { color: var(--muted); }
+.companion-menu-action:disabled, .companion-profile:disabled, .companion-menu-new:disabled,
+.companion-session-select:disabled, .companion-session-delete:disabled { opacity: 0.55; cursor: default; }
+@media (hover: hover) and (pointer: fine) {
+  .companion-menu-new:hover, .companion-menu-action:hover:not(:disabled), .companion-profile:hover:not(:disabled),
+  .companion-session:hover { background: var(--menu-hover); }
+}
+.companion-menu-new:focus-visible, .companion-menu-action:focus-visible, .companion-profile:focus-visible,
+.companion-session-select:focus-visible, .companion-session-delete:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.companion-menu-empty { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 80px; margin: 0; color: var(--muted); font-size: 13px; }
+.companion-menu-empty button { border: 0; background: none; color: var(--companion-pick); font: inherit; cursor: pointer; }
+
+.companion-session-list, .companion-profile-list { margin: 0; padding: 0; list-style: none; }
+.companion-session { display: flex; align-items: center; overflow: hidden; border-radius: 8px; }
+.companion-session.current { background: var(--companion-pick-soft); }
+.companion-session-select { flex: 1; width: auto; min-width: 0; min-height: 48px; }
+.companion-session-bar { width: 2px; height: 20px; flex-shrink: 0; border-radius: 99px; }
+.companion-session.current .companion-session-bar { background: var(--companion-pick); }
+.companion-session-text { display: grid; min-width: 0; gap: 2px; }
+.companion-session-text strong { overflow: hidden; font-size: 14px; font-weight: 600; white-space: nowrap; text-overflow: ellipsis; }
+.companion-session-text small { overflow: hidden; color: var(--muted); font-size: 12px; white-space: nowrap; text-overflow: ellipsis; }
+.companion-session-delete {
+  display: flex; align-items: center; justify-content: center; gap: 4px; flex-shrink: 0; min-width: 32px; height: 32px;
+  margin-right: 2px; padding: 0 6px; border: 0; border-radius: 6px; background: none; color: var(--danger);
+  font: inherit; font-size: 12px; cursor: pointer; opacity: 0;
+}
+.companion-session:hover .companion-session-delete, .companion-session-delete:focus-visible,
+.companion-session-delete.confirm { opacity: 1; }
+.companion-session-delete.confirm { background: color-mix(in srgb, var(--danger) 14%, transparent); }
+@media (hover: none) { .companion-session-delete { opacity: 1; } }
+
+.companion-profile.current, .companion-profile.current svg { color: var(--companion-pick); }
+.companion-profile svg { color: var(--muted); }
+.companion-profile span { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.companion-profile small { color: var(--muted); font-size: 11px; }
+.companion-profile-create { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 4px; }
+.companion-profile-create input {
+  flex: 1; min-width: 0; height: 34px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--bg); color: var(--text); font: inherit; font-size: 14px; outline: none;
+}
+.companion-profile-create input:focus { border-color: var(--companion-pick); }
+.companion-profile-create input[aria-invalid="true"] { border-color: var(--danger); }
+.companion-profile-create button { display: grid; place-items: center; width: 32px; height: 32px; border: 0; border-radius: 8px; background: none; cursor: pointer; }
+.companion-profile-ok { color: var(--companion-pick); }
+.companion-profile-ok:disabled { opacity: 0.35; cursor: default; }
+.companion-profile-cancel { color: var(--muted); }
+.companion-profile-error { flex-basis: 100%; margin: 0 6px; color: var(--danger); font-size: 12px; }
+
+/* Điện thoại: nút Profile là một nút tròn trong hàng nút ở đầu trang; tên mạch canh giữa như tên nhân vật trước đây. */
+@media (max-width: 720px) {
+  .companion-head .companion-profile-button {
+    width: 42px; height: 42px; padding: 0; justify-content: center; border: 0; box-shadow: none;
+    background: var(--stage-button); -webkit-backdrop-filter: none; backdrop-filter: none;
+  }
+  .companion-head .companion-profile-name, .companion-head .companion-profile-button > svg { display: none; }
+  .companion-session-title { justify-items: center; }
+  .companion-session-title strong { color: var(--stage-text); }
+  .companion-menu-new, .companion-menu-action, .companion-profile, .companion-session-select { min-height: 44px; font-size: 15px; }
+  .companion-session-select { min-height: 52px; }
+  .companion-session-delete { min-width: 44px; height: 44px; }
+  .companion-profile-create input { height: 44px; font-size: 16px; }
+  .companion-profile-create button { width: 44px; height: 44px; }
+}

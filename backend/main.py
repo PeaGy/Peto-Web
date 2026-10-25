@@ -10,6 +10,7 @@ from features.imagine import api as imagine_api
 from features.companion import memory_api
 from features.companion import providers_api
 from features.companion import player_api
+from features.companion import cards_api
 from features.accounts import profile as profile_api
 from features.voice import api as voice_api
 from core import static_files
@@ -41,6 +42,7 @@ app.include_router(profile_api.router)
 app.include_router(memory_api.router)
 app.include_router(providers_api.router)
 app.include_router(player_api.router)
+app.include_router(cards_api.router)
 app.include_router(voice_api.router)
 app.include_router(document_api.router)
 app.include_router(agent_api.router)

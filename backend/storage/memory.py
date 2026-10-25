@@ -57,7 +57,9 @@ async def ensure_memory_state(owner: str) -> dict:
 # Tin nào được đọc để ghi nhớ: Companion và Chat thường. Chat nhập vai thì không (chủ web chốt 11/10/2026): lời thoại
 # nhân vật và nội dung 18+ không được lẫn vào trí nhớ của trợ lý. Tin của lượt Companion dùng khóa riêng (cột provider)
 # cũng không (13/10/2026); hai truy vấn đọc tin bên dưới lọc thêm ``m.provider = ''``.
-MEMORY_SOURCE = "(c.mode = 'companion' OR (c.mode = 'chat' AND c.persona = 'assistant'))"
+# Companion chỉ tính mạch của thẻ Peto mặc định: thẻ nhân vật người dùng tự viết chưa đọc, chưa ghi trí nhớ chung
+# (25/10/2026), để chuyện của một nhân vật nhập vai không lọt sang tab Trò chuyện.
+MEMORY_SOURCE = "((c.mode = 'companion' AND COALESCE(c.card_id, 'peto') = 'peto') OR (c.mode = 'chat' AND c.persona = 'assistant'))"
 SOURCE_COLUMNS = '''m.id,m.role,m.content,m.conversation_id,m.status,m.provider,c.mode,c.persona,c.project_id,c.archived,
     COALESCE((SELECT state FROM chat_turns WHERE owner=c.owner AND
     (user_message_id=m.id OR assistant_message_id=m.id) ORDER BY id DESC LIMIT 1),'') AS turn_state'''

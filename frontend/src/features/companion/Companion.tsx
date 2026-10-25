@@ -3,13 +3,20 @@ import {
   UnauthorizedError,
   deleteConversation,
   getCompanion,
-  getCompanionMemory,
+  listCompanionConversations,
+  newCompanionConversation,
+  openCompanionConversation,
   sendMessage,
   acknowledgePlayer,
   type AppInfo,
+  type CompanionCard,
+  type CompanionConversation,
   type Message,
   type EmotionCue,
 } from "../../shared/api/api";
+import { activeCard, loadCompanionCards, markActiveCard, pickCompanionCard, saveCompanionCardAs, setActiveCardModel, useCompanionCards } from './cards/companionCards';
+import { CardAvatar, ChevronIcon, CompanionPopover, ConversationIcon, ConversationList, ProfileList } from './cards/CompanionMenus';
+import './cards/companionCards.css';
 import { SendIcon } from "../chat/Composer";
 import { LoadingIndicator } from '../../shared/ui/LoadingIndicator';
 import { PlayerIcon } from '../../shared/ui/PlayerIcon';
@@ -103,18 +110,24 @@ function SettingsGearIcon() {
   );
 }
 
-function RestartIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M3 3v5h5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
+/** Điện thoại (≤720px): nút Profile nằm trong hàng nút ở đầu trang thay vì nổi trên khung chat. */
+function useCompactScreen() {
+  const query = '(max-width: 720px)';
+  const [compact, setCompact] = useState(() => typeof window.matchMedia === 'function' && window.matchMedia(query).matches);
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return;
+    const media = window.matchMedia(query);
+    const update = () => setCompact(media.matches);
+    media.addEventListener('change', update);
+    return () => media.removeEventListener('change', update);
+  }, []);
+  return compact;
 }
 
 /**
  * Tab Companion: Peto trò chuyện bằng chữ rồi tự nói thành tiếng
- * bằng âm thanh từ máy tạo giọng chuyển qua VPS. Chỉ có một mạch trò chuyện, tách khỏi danh sách Trò chuyện.
+ * bằng âm thanh từ máy tạo giọng chuyển qua VPS. Nhiều mạch trò chuyện, mỗi mạch thuộc một thẻ nhân vật (như AIRI,
+ * 25/10/2026): tên mạch ở đầu khung chat mở danh sách hội thoại, nút Profile ở góc trên đổi thẻ. Tách khỏi Trò chuyện.
  *
  * Sân khấu bên trái hiển thị Live2D và ghi công model. Mọi thứ
  * để nhắn và nghe nằm ở cột chat; bật giọng nói, chọn giọng, nguồn nghe, tra web… nằm ở trang Cài đặt Companion
@@ -124,7 +137,7 @@ function RestartIcon() {
  * Được giữ mounted như Imagine (prop `active`) để câu trả lời đang về không bị cắt khi đổi tab;
  * rời tab thì Peto thôi đọc và giải phóng renderer nhân vật.
  */
-export default function Companion({ ownerId, active, appInfo, voice, characterMotion, character = DEFAULT_CHARACTER, characterLoading = false, onCharacterPreview, onOpenCharacters, sceneRequest = 0, playerRequest = 0, onUnauthorized, onOpenSidebar, onOpenHearingSettings, onOpenSettings }: {
+export default function Companion({ ownerId, active, appInfo, voice, characterMotion, character = DEFAULT_CHARACTER, characterLoading = false, characterIds, onSelectCharacter, onCharacterPreview, onOpenCharacters, sceneRequest = 0, playerRequest = 0, onUnauthorized, onOpenSidebar, onOpenHearingSettings, onOpenSettings }: {
   ownerId?: string;
   active: boolean;
   sceneRequest?: number;
@@ -134,6 +147,10 @@ export default function Companion({ ownerId, active, appInfo, voice, characterMo
   characterMotion: CharacterMotion;
   character?: CharacterModel;
   characterLoading?: boolean;
+  /** Model có trong thư viện của trình duyệt này: đổi thẻ thì chỉ đổi model khi model của thẻ có ở đây. */
+  characterIds?: string[];
+  /** Đổi model đang hiện (thẻ mang "Body / Display Model" của nó, như AIRI). */
+  onSelectCharacter?: (id: string) => void;
   onCharacterPreview?: (id: string, image: string) => void;
   onOpenCharacters?: () => void;
   onUnauthorized: () => void;
@@ -158,8 +175,16 @@ export default function Companion({ ownerId, active, appInfo, voice, characterMo
     releaseTimer.current = setTimeout(() => setStageEmotion(null), delay);
   }, []);
   useEffect(() => () => clearTimeout(releaseTimer.current), []);
-  /** Số ghi nhớ đang có, hỏi lại lúc mở hộp "Bắt đầu lại": xóa mạch không xóa ghi nhớ, nên hộp nói rõ điều đó. */
-  const [keptMemories, setKeptMemories] = useState(0);
+  /** Tiêu đề mạch đang mở (tin đầu tiên của người dùng, máy chủ cắt ngắn). */
+  const [threadTitle, setThreadTitle] = useState('');
+  const cards = useCompanionCards();
+  const card = activeCard(cards);
+  const compact = useCompactScreen();
+  const [sessionsOpen, setSessionsOpen] = useState(false);
+  const [profilesOpen, setProfilesOpen] = useState(false);
+  const [rows, setRows] = useState<{ items: CompanionConversation[]; loading: boolean; failed: boolean }>({ items: [], loading: false, failed: false });
+  const sessionsButton = useRef<HTMLButtonElement>(null);
+  const profileButton = useRef<HTMLButtonElement>(null);
   const [loading, setLoading] = useState(true);
   const [stageState, setStageState] = useState<{ id: string; status: 'loading' | 'ready' | 'error' } | null>(null);
   const onStageStatus = useCallback((status: 'loading' | 'ready' | 'error') => {
@@ -179,10 +204,10 @@ export default function Companion({ ownerId, active, appInfo, voice, characterMo
   const imageInput = useRef<HTMLInputElement>(null);
   const composerInput = useRef<HTMLTextAreaElement>(null);
   const [muted, setMuted] = useState(readMuted);
-  const [confirmReset, setConfirmReset] = useState(false);
   const [scenesOpen, setScenesOpen] = useState(false);
   const scene = useCompanionScene(character.id);
   useEffect(() => { if (sceneRequest > 0) setScenesOpen(true); }, [sceneRequest]);
+  /** Đang mở mạch khác, tạo mạch mới, xóa mạch hay đổi thẻ: khóa ô nhắn trong lúc đó. */
   const [resetting, setResetting] = useState(false);
   const hearing = useHearing();
   const [player, setPlayer] = useState(() => ({ visited: hasPlayerSession(ownerId) || hasPlayerHistory(ownerId), open: false, hidden: false }));
@@ -266,7 +291,6 @@ export default function Companion({ ownerId, active, appInfo, voice, characterMo
   const bottomRef = useRef<HTMLDivElement>(null);
   /** Khung tin có đang ở cuối không, cập nhật mỗi lần cuộn. */
   const atBottom = useRef(true);
-  const resetRef = useRef<HTMLDialogElement>(null);
   // Luồng chữ và tiếng đều đọc lựa chọn mới nhất, không dùng trạng thái cũ của lúc gửi.
   const foreground = useRef(document.visibilityState !== 'hidden');
   const latest = useRef({ active, muted, voice, foreground: foreground.current });
@@ -304,18 +328,21 @@ export default function Companion({ ownerId, active, appInfo, voice, characterMo
     };
   }, [haltSpeech, cue]);
 
-  const load = useCallback(async () => {
+  /** Mở một mạch (``id``) hoặc mạch đang mở của thẻ đang dùng. ``quiet``: đổi mạch tại chỗ, không hiện màn hình chờ. */
+  const load = useCallback(async (id?: string, quiet = false) => {
     loadRef.current?.abort();
     const controller = new AbortController();
     loadRef.current = controller;
     const version = ++loadVersion.current;
-    setLoading(true);
+    if (!quiet) setLoading(true);
     setLoadFailed(false);
     try {
-      const thread = await getCompanion(controller.signal);
+      const thread = await getCompanion(controller.signal, id);
       if (version !== loadVersion.current) return;
       setConversationId(thread.conversation_id);
+      setThreadTitle(thread.title ?? '');
       setMessages(thread.messages);
+      if (thread.card_id) markActiveCard(thread.card_id);
     } catch (err) {
       if (version !== loadVersion.current || controller.signal.aborted) return;
       if (err instanceof UnauthorizedError) return onUnauthorized();
@@ -356,17 +383,38 @@ export default function Companion({ ownerId, active, appInfo, voice, characterMo
     if (muted) haltSpeech();
   }, [muted, haltSpeech]);
 
+  // Thẻ nhân vật của tài khoản (nút Profile, tên nhân vật). Lỗi tải thì vẫn trò chuyện được, chỉ không có nút Profile.
   useEffect(() => {
-    if (active && confirmReset) resetRef.current?.showModal();
-    else resetRef.current?.close();
-  }, [active, confirmReset]);
+    loadCompanionCards(ownerId).catch(err => { if (err instanceof UnauthorizedError) onUnauthorized(); });
+  }, [ownerId, onUnauthorized]);
 
+  // Lần đầu có thẻ: model của thẻ đang dùng là model hiện trên sân khấu. Thẻ Peto chưa từng sửa thì nhận model người
+  // dùng đã chọn từ trước khi có thẻ; còn lại thì theo thẻ, nếu model đó có trên máy này.
+  const modelSynced = useRef(false);
+  const linkModel = useCallback((target: CompanionCard | undefined) => {
+    if (target?.display_model && target.display_model !== character.id && characterIds?.includes(target.display_model)) {
+      onSelectCharacter?.(target.display_model);
+    }
+  }, [character.id, characterIds, onSelectCharacter]);
   useEffect(() => {
-    if (!confirmReset) return;
-    const controller = new AbortController();
-    getCompanionMemory(controller.signal).then((state) => setKeptMemories(state.memories.length), () => setKeptMemories(0));
-    return () => controller.abort();
-  }, [confirmReset]);
+    if (cards.status !== 'ready' || characterLoading || modelSynced.current || !card) return;
+    modelSynced.current = true;
+    if (card.is_default && !card.modified && card.display_model !== character.id) void setActiveCardModel(character.id).catch(() => {});
+    else linkModel(card);
+  }, [cards.status, characterLoading, card, character.id, linkModel]);
+
+  const refreshRows = useCallback(async () => {
+    setRows(value => ({ ...value, loading: true, failed: false }));
+    try {
+      const body = await listCompanionConversations();
+      setRows({ items: body.conversations, loading: false, failed: false });
+    } catch (err) {
+      if (err instanceof UnauthorizedError) return onUnauthorized();
+      setRows(value => ({ ...value, loading: false, failed: true }));
+    }
+  }, [onUnauthorized]);
+  useEffect(() => { if (sessionsOpen) void refreshRows(); }, [sessionsOpen, refreshRows]);
+  useEffect(() => { if (!active) { setSessionsOpen(false); setProfilesOpen(false); } }, [active]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: "end" });
@@ -475,6 +523,8 @@ export default function Companion({ ownerId, active, appInfo, voice, characterMo
             activeId = id;
             storedUserId = stored?.id;
             setConversationId(id);
+            // Máy chủ đặt tên mạch bằng tin đầu tiên; hiện ngay ở đầu khung chat.
+            if (text) setThreadTitle(title => title || text.replace(/\s+/g, ' ').slice(0, 60));
             if (draftVersion.current === sentDraftVersion) setDraft("");
             images.remove(pendingImages.map(image => image.id));
             if (stored) setMessages((prev) => [...prev.slice(0, -2), stored, prev[prev.length - 1]]);
@@ -624,29 +674,82 @@ export default function Companion({ ownerId, active, appInfo, voice, characterMo
     cue(null);
   }
 
-  async function reset() {
-    if (!conversationId || resetting) return;
+  /** Chạy một thao tác đổi mạch (mở, tạo, xóa, đổi thẻ): dừng lời đang đọc, khóa ô nhắn trong lúc chờ, báo lỗi nếu có. */
+  async function switchThread(action: () => Promise<void>, failure: string) {
+    if (resetting || abortRef.current) return;
     recovery.cancel();
+    haltSpeech();
+    cue(null);
     setResetting(true);
+    setError(null);
     try {
-      await deleteConversation(conversationId);
-      haltSpeech();
-      loadVersion.current += 1;
-      setConversationId(null);
-      setMessages([]);
-      cue(null);
-      images.clear();
-      setConfirmReset(false);
+      await action();
     } catch (err) {
       if (err instanceof UnauthorizedError) return onUnauthorized();
-      setError(err instanceof Error ? err.message : "Chưa bắt đầu lại được");
-      setConfirmReset(false);
+      setError(err instanceof Error ? err.message : failure);
     } finally {
       setResetting(false);
     }
   }
 
-  const name = appInfo?.name ?? "Peto";
+  function showThread(thread: { conversation_id: string | null; title?: string; messages: Message[] }) {
+    loadVersion.current += 1;
+    loadRef.current?.abort();
+    setLoading(false);
+    setLoadFailed(false);
+    setConversationId(thread.conversation_id);
+    setThreadTitle(thread.title ?? '');
+    setMessages(thread.messages);
+  }
+
+  function openConversation(row: CompanionConversation) {
+    setSessionsOpen(false);
+    if (row.id === conversationId) return;
+    void switchThread(async () => {
+      const opened = await openCompanionConversation(row.id);
+      markActiveCard(opened.card_id);
+      linkModel(cards.cards.find(item => item.id === opened.card_id));
+      await load(row.id, true);
+    }, 'Chưa mở được hội thoại này.');
+  }
+
+  function startConversation() {
+    setSessionsOpen(false);
+    void switchThread(async () => {
+      const thread = await newCompanionConversation(cards.active);
+      if (thread.card_id) markActiveCard(thread.card_id);
+      showThread(thread);
+    }, 'Chưa tạo được hội thoại mới.');
+  }
+
+  function removeConversation(row: CompanionConversation) {
+    void switchThread(async () => {
+      await deleteConversation(row.id);
+      setRows(value => ({ ...value, items: value.items.filter(item => item.id !== row.id) }));
+      // Xóa mạch đang mở: máy chủ chọn mạch khác của thẻ (hoặc chưa có mạch nào).
+      if (row.id === conversationId) await load(undefined, true);
+    }, 'Chưa xóa được hội thoại này.');
+  }
+
+  function pickCard(target: CompanionCard) {
+    setProfilesOpen(false);
+    if (target.id === cards.active) return;
+    void switchThread(async () => {
+      await pickCompanionCard(target.id);
+      linkModel(target);
+      await load(undefined, true);
+    }, 'Chưa đổi được Profile.');
+  }
+
+  async function saveCardAs(cardName: string) {
+    if (resetting || abortRef.current) throw new Error('Đợi Peto trả lời xong rồi lưu Profile nhé.');
+    await saveCompanionCardAs(cardName);
+    setProfilesOpen(false);
+    await switchThread(() => load(undefined, true), 'Chưa mở được Profile mới.');
+  }
+
+  const name = card ? card.nickname || card.name : appInfo?.name ?? "Peto";
+  const title = threadTitle || 'Hội thoại mới';
   const speech = voice.speaking?.key.startsWith(SPEECH_PREFIX) ? voice.speaking : null;
   const playerDucked = usePlayerDucking(active, speech?.phase ?? null, hearing);
   const expressionSpeechKey = useRef<string | null>(null);
@@ -796,6 +899,23 @@ export default function Companion({ ownerId, active, appInfo, voice, characterMo
           : brainLabel;
   const canSend = (draft.trim().length > 0 || images.images.length > 0) && !images.pending && !interim && !streaming && !loading && !resetting && !loadFailed && recovery.online && !recovery.pending;
 
+  // Nút Profile (profile-switcher-popover của AIRI): đổi thẻ nhân vật, hay lưu thẻ đang dùng thành Profile mới.
+  // Chỉ có khi đã tải được thẻ; lúc đang trả lời thì không đổi được (thẻ quyết persona của lượt kế tiếp).
+  const profileSwitcher = cards.status === 'ready' && card ? (
+    <>
+      <button ref={profileButton} type="button" className="companion-profile-button" aria-label={`Profile: ${card.name}`}
+        aria-haspopup="dialog" aria-expanded={profilesOpen} data-tip={compact ? 'Profile' : undefined}
+        disabled={streaming || resetting} onClick={() => setProfilesOpen(value => !value)}>
+        <CardAvatar name={card.name} />
+        <span className="companion-profile-name">{card.name}</span>
+        <ChevronIcon />
+      </button>
+      <CompanionPopover open={profilesOpen && active} onClose={() => setProfilesOpen(false)} anchor={profileButton} align="end" title="Profile">
+        <ProfileList cards={cards.cards} activeId={cards.active} busy={streaming || resetting} onPick={pickCard} onSaveAs={saveCardAs} />
+      </CompanionPopover>
+    </>
+  ) : null;
+
   function addImages(files: FileList | File[]) {
     if (loading || resetting) return;
     setHeardAt(0);
@@ -820,22 +940,26 @@ export default function Companion({ ownerId, active, appInfo, voice, characterMo
           <button ref={menuButton} type="button" className="menu-btn companion-menu" aria-label="Mở menu" onClick={onOpenSidebar}>
             <MenuIcon />
           </button>
+          {/* Tên mạch mở danh sách hội thoại, như chat-panel-header của AIRI; dòng dưới là nhân vật và trạng thái. */}
           <button
+            ref={sessionsButton}
             type="button"
-            className="companion-title"
-            aria-label={`Đổi nhân vật ${name}`}
-            data-tip="Đổi nhân vật"
-            onClick={onOpenCharacters}
+            className="companion-title companion-session-title"
+            aria-label={`Hội thoại: ${title}`}
+            aria-haspopup="dialog"
+            aria-expanded={sessionsOpen}
+            disabled={loadFailed}
+            onClick={() => setSessionsOpen(value => !value)}
           >
-            <strong>
-              {name}
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="m6 9 6 6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </strong>
-            {stateText && <span aria-live="polite">{stateText}</span>}
+            <strong><ConversationIcon /><em>{title}</em><ChevronIcon /></strong>
+            <span aria-live="polite">{name}{stateText && <> · <span className="companion-state">{stateText}</span></>}</span>
           </button>
+          <CompanionPopover open={sessionsOpen && active} onClose={() => setSessionsOpen(false)} anchor={sessionsButton} title="Hội thoại">
+            <ConversationList rows={rows.items} loading={rows.loading} failed={rows.failed} currentId={conversationId} busy={resetting || streaming}
+              onSelect={openConversation} onNew={startConversation} onDelete={removeConversation} onRetry={() => void refreshRows()} />
+          </CompanionPopover>
           <div className="companion-tools">
+            {compact && profileSwitcher}
             {voice.status === "ready" && (
               <button
                 type="button"
@@ -853,16 +977,6 @@ export default function Companion({ ownerId, active, appInfo, voice, characterMo
                 <SettingsGearIcon />
               </button>
             )}
-            <button
-              type="button"
-              className="companion-tool"
-              aria-label="Bắt đầu lại"
-              data-tip
-              disabled={!conversationId || streaming || resetting}
-              onClick={() => setConfirmReset(true)}
-            >
-              <RestartIcon />
-            </button>
           </div>
         </header>
 
@@ -972,8 +1086,8 @@ export default function Companion({ ownerId, active, appInfo, voice, characterMo
               ref={composerInput}
               value={interim ? joinSpeech(draft, interim) : draft}
               rows={1}
-              placeholder={hearingPlaceholder(hearing) ?? "Nhắn cho Peto…"}
-              aria-label="Nhắn cho Peto trong Companion"
+              placeholder={hearingPlaceholder(hearing) ?? `Nhắn cho ${name}…`}
+              aria-label={`Nhắn cho ${name} trong Companion`}
               disabled={loading || resetting}
               readOnly={Boolean(interim)}
               onBlur={() => noteTyping(false)}
@@ -1037,27 +1151,12 @@ export default function Companion({ ownerId, active, appInfo, voice, characterMo
           <PlayerIcon />
         </button>
       </div>
-      <dialog
-        ref={resetRef}
-        className="confirm-dialog"
-        aria-labelledby="companion-reset-title"
-        onCancel={(event) => {
-          event.preventDefault();
-          if (!resetting) setConfirmReset(false);
-        }}
-      >
-        <h2 id="companion-reset-title">Bắt đầu lại với Peto?</h2>
-        <p>Toàn bộ mạch trò chuyện trong Companion sẽ bị xóa. Không thể hoàn tác.</p>
-        {keptMemories > 0 && (
-          <p>Những điều Peto ghi nhớ về bạn vẫn được giữ; muốn xóa thì vào Cài đặt → Trí nhớ.</p>
-        )}
-        <div className="dialog-actions">
-          <button type="button" disabled={resetting} onClick={() => setConfirmReset(false)}>Giữ lại</button>
-          <button type="button" className="danger-button" disabled={resetting} onClick={() => void reset()}>
-            {resetting ? "Đang xóa…" : "Xóa và bắt đầu lại"}
-          </button>
+      {/* Máy tính: nút Profile ở hàng trên cùng, ngay trên khung chat (như Header của AIRI). */}
+      {!compact && profileSwitcher && (
+        <div className="companion-profile-slot" inert={opening || playerModal} aria-hidden={opening || playerModal}>
+          {profileSwitcher}
         </div>
-      </dialog>
+      )}
     </main>
   );
 }

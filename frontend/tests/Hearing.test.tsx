@@ -20,6 +20,7 @@ vi.mock('../src/shared/api/api', async (original) => ({
   listImagineJobs: vi.fn(), getProfile: vi.fn(), getAppInfo: vi.fn(), getCompanion: vi.fn(),
   deleteConversation: vi.fn(),
   getCompanionMemory: vi.fn(),
+  listCompanionCards: vi.fn(),
 }));
 
 // jsdom không dựng được Live2D thật; bộ kiểm tra micro vẫn phải chờ sân khấu sẵn sàng.
@@ -99,6 +100,8 @@ beforeEach(() => {
   vi.mocked(api.getMessages).mockResolvedValue([]);
   vi.mocked(api.listImagineJobs).mockResolvedValue([]);
   vi.mocked(api.getAppInfo).mockRejectedValue(new Error('offline'));
+  // Thẻ nhân vật không phải việc của các test này: không tải được thì Companion vẫn chạy như cũ.
+  vi.mocked(api.listCompanionCards).mockRejectedValue(new Error('offline'));
   vi.mocked(api.getProfile).mockResolvedValue({ profile: { full_name: '', nickname: '', occupation: '', instructions: '' },
     occupations: [], limits: { full_name: 80, nickname: 40, instructions: 1500 } });
   vi.mocked(api.getCompanion).mockResolvedValue({ conversation_id: null, messages: [] });

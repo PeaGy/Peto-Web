@@ -439,11 +439,67 @@ export async function clearCompanionMemory(): Promise<void> {
   await json(await fetch("/api/companion/memory", { method: "DELETE" }));
 }
 
-/** Mạch trò chuyện của tab Companion; chưa nhắn lần nào thì conversation_id là null. */
-export async function getCompanion(signal?: AbortSignal): Promise<{
-  conversation_id: string | null; messages: Message[];
-}> {
-  return json(await fetch("/api/companion", { signal }));
+/** Một mạch Companion: mạch được hỏi, hoặc mạch đang mở của thẻ đang dùng; chưa có mạch thì conversation_id là null. */
+export interface CompanionThread { conversation_id: string | null; card_id?: string; title?: string; messages: Message[] }
+
+export async function getCompanion(signal?: AbortSignal, conversationId?: string): Promise<CompanionThread> {
+  const query = conversationId ? `?conversation_id=${encodeURIComponent(conversationId)}` : "";
+  return json(await fetch(`/api/companion${query}`, { signal }));
+}
+
+/** Một dòng của danh sách hội thoại Companion (như sessions-list của AIRI): mọi thẻ, hoạt động gần nhất trước. */
+export interface CompanionConversation {
+  id: string; card_id: string; card_name: string; preview: string; message_count: number;
+  created_at: number; updated_at: number; active: boolean;
+}
+
+export async function listCompanionConversations(signal?: AbortSignal): Promise<{ active_card: string; conversations: CompanionConversation[] }> {
+  return json(await fetch("/api/companion/conversations", { signal }));
+}
+
+/** "Hội thoại mới" cho thẻ (mặc định thẻ đang dùng); mạch mở bằng câu chào của thẻ nếu có. */
+export async function newCompanionConversation(cardId?: string): Promise<CompanionThread> {
+  return json(await fetch("/api/companion/conversations", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ card_id: cardId ?? null }),
+  }));
+}
+
+/** Mở một mạch cũ: thẻ của mạch thành thẻ đang dùng. */
+export async function openCompanionConversation(conversationId: string): Promise<{ conversation_id: string; card_id: string }> {
+  return json(await fetch("/api/companion/active", {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ conversation_id: conversationId }),
+  }));
+}
+
+/** Thẻ nhân vật Companion (chuẩn Character Card v3 như thẻ AIRI). Thẻ ``peto`` là thẻ mặc định, công khai prompt gốc. */
+export interface CompanionCard {
+  id: string; name: string; nickname: string; version: string; description: string; notes: string;
+  personality: string; scenario: string; system_prompt: string; post_history: string; display_model: string;
+  greetings: string[]; modules: { brain?: Record<string, string>; voice?: Record<string, string> };
+  is_default: boolean; modified: boolean; created_at: number; updated_at: number;
+}
+export type CompanionCardFields = Partial<Omit<CompanionCard, "id" | "is_default" | "modified" | "created_at" | "updated_at">>;
+
+export async function listCompanionCards(signal?: AbortSignal): Promise<{ active_card: string; limit: number; cards: CompanionCard[] }> {
+  return json(await fetch("/api/companion/cards", { signal }));
+}
+
+export async function setActiveCompanionCard(cardId: string): Promise<void> {
+  await json(await fetch("/api/companion/cards/active", {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ card_id: cardId }),
+  }));
+}
+
+export async function createCompanionCard(fields: CompanionCardFields): Promise<CompanionCard> {
+  return json(await fetch("/api/companion/cards", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(fields),
+  }));
+}
+
+export async function updateCompanionCard(cardId: string, fields: CompanionCardFields): Promise<CompanionCard> {
+  return json(await fetch(`/api/companion/cards/${encodeURIComponent(cardId)}`, {
+    method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(fields),
+  }));
 }
 
 export type ImagineQuality = "low" | "medium";

@@ -35,3 +35,4 @@ from .companion import (
     COMPANION_SYSTEM_PROMPT,
     COMPANION_PROMPT,
 )
+from .companion_runtime import COMPANION_CARD_RULE

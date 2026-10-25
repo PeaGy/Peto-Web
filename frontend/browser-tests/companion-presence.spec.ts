@@ -98,7 +98,13 @@ test('công tắc nhìn ô chat mặc định bật và nhớ lựa chọn qua F
   await page.goto('/#companion');
   const input = page.getByRole('textbox', { name: 'Nhắn cho Peto trong Companion' });
   await expect(input).toBeVisible();
-  await page.getByRole('button', { name: 'Đổi nhân vật Peto' }).click();
+  // Nút Nhân vật cạnh sân khấu (máy tính) hoặc mục Nhân vật trong menu (điện thoại) mở trang Nhân vật.
+  const stageButton = page.locator('.companion-scene-tools').getByRole('button', { name: 'Nhân vật' });
+  if (await stageButton.isVisible()) await stageButton.click();
+  else {
+    await page.getByRole('button', { name: 'Mở menu' }).click();
+    await page.locator('.mobile-companion-nav').getByRole('button', { name: 'Nhân vật' }).click();
+  }
   await expect(page).toHaveURL(/\/companion\/settings\/character$/);
   const motion = page.getByRole('button', { name: 'Chuyển động', exact: true });
   await motion.click();

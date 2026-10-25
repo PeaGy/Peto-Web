@@ -1,5 +1,57 @@
 # CLAUDE.md
 
+## Companion character cards, stage (a): server (2026-10-25)
+
+The owner chose AIRI-style character cards (AIRI commit `74ddd90`: `stores/modules/airi-card.ts`, `stores/chat.ts`,
+`stores/chat/session-store.ts`). Users write the persona; NSFW is not banned and there is no 18+ gate (owner accepts the
+xAI-account and cost risk, billing like AIRI's Flux later). One server rule is always appended and not editable:
+`prompts/companion_runtime.COMPANION_CARD_RULE` (no sexual content involving anyone under 18). Plan and the remaining
+stages (b) conversation list, (c) Profile switcher, (d) card pages, (e) import/export: `PETO_COMPANION_PLAN.md` §3.
+Backend only so far; the current frontend keeps working unchanged. Not committed.
+- `storage/cards.py`: `companion_cards` (PK owner+id; CCv3-like fields, `greetings`/`modules` JSON,
+  `active_conversation`), `companion_card_state` (active card), `conversations.card_id` (startup migration sets old
+  Companion threads to `peto`). The default card `peto` is created lazily; its NULL columns mean the server's built-in
+  values (`features/companion/cards.BUILTIN`: name Peto, `system_prompt` = `COMPANION_SYSTEM_PROMPT`, model hiyori), so
+  later edits of the built-in prompt reach users who never edited it; sending a value equal to the built-in stores NULL.
+- Prompt (`cards.prompt_parts`, used by `_build_system_prompt(card=)`): system prompt, description, personality,
+  scenario (AIRI order), `{{char}}`/`{{user}}` replaced, then the usual server blocks, then post-history instructions and
+  the fixed rule; the time block still comes last. Emotion/`<private>` filters run on every card.
+- Each Companion conversation keeps the card it was created with; a new one uses `ChatRequest.card_id` or the active
+  card and starts with the card's first greeting (`open_conversation`). Opening a conversation of another card makes that
+  card active (AIRI keeps the active card; Peto switches so stage and persona match).
+- Shared memory (Chat + Companion) and the thread summary apply only to the `peto` card: `storage/memory.MEMORY_SOURCE`
+  excludes other cards, `remembers` and `memory=` are false for them. Per-card memory (AIRI `memory.indexFor(persona)`)
+  is not built.
+- API: `GET/POST /api/companion/cards`, `PUT /cards/active`, `GET/PATCH/DELETE /cards/{id}`, `POST /cards/peto/reset`,
+  `GET /cards/{id}/prompt` (the whole assembled prompt, owner's choice to make it public; per-turn Player/search parts
+  not included); `GET /api/companion?conversation_id=`, `GET/POST /api/companion/conversations`,
+  `PUT /api/companion/active`. Limits: 50 own cards, field caps in `cards.LIMITS`, 40,000 prompt characters, 10
+  greetings, unique names (409). Deleting a card deletes its conversations; `peto` can only be reset.
+- Tests: `tests/test_companion_cards.py` (13). Real model behaviour with user cards is untested.
+
+## Companion character cards, stages (b) conversation list and (c) Profile (2026-10-25)
+
+The owner picked prototype variant "Như AIRI" and asked for AIRI's chat-panel size so the Profile button sits above it.
+Built from AIRI source (commit `74ddd90`): `apps/stage-web/src/pages/index.vue` (`InteractiveArea` absolute right-4,
+max 500px, min 30%, 85dvh, Header row above), `chat-panel-header.vue`, `sessions-dialog.vue`/`sessions-list.vue`,
+`profile-switcher-popover.vue`. Not committed.
+- Desktop (`cards/companionCards.css`): `.companion` second column `clamp(360px, 42%, 500px)`, panel margin
+  `72px 16px 76px 0`; `.companion-profile-slot` (Profile pill) at top 16px / right 16px. Phones: the Profile button is a
+  round avatar in the header tools; menus become bottom sheets (`CompanionPopover`, portal to body).
+- Header title = current thread title (`GET /api/companion` now returns `title`), line below = card name · state
+  (`.companion-state`). It opens `ConversationList`: "Hội thoại mới" (POST, card greeting), every thread of every card
+  with relative time and card name, delete needs two clicks. "Bắt đầu lại" and its dialog were removed.
+- `cards/companionCards.ts` is a module store of the account's cards (loaded once per owner by Companion; a bad or
+  failed response leaves Companion working without the Profile button). Profile lists cards, "Lưu thành Profile mới"
+  duplicates the active card under a new unique name and switches to it. "Quản lý Profile" comes with stage (d).
+- Model link: switching card or opening a thread of another card selects the card's `display_model` when this browser
+  has it; App writes a user's character choice into the active card (skipping the first value, so one device does not
+  overwrite another's); an unmodified default card adopts the model chosen before cards existed.
+- Switching threads/cards loads quietly (`load(id, true)`, no full-screen loading), stops speech, and is blocked while
+  a reply streams; menu actions are disabled meanwhile.
+- Tests: `Companion.test.tsx` (thread list, Profile, cards unavailable), Hearing/Providers mock `listCompanionCards`,
+  Playwright fixtures serve cards/conversations; companion specs updated for the new header.
+
 ## Web Chat link chips (2026-10-25)
 
 The owner showed Claude's composer turning a pasted YouTube link into its title and a GitHub link into "owner/repo",
@@ -2663,7 +2715,8 @@ Since 2026-10-13 the web comes first (AIRI's `apps/stage-web` and the shared `pa
 desktop-only features). The next steps and the AIRI comparison live in `PETO_COMPANION_PLAN.md`.
 
 `Companion.tsx` is mounted alongside Chat like `Imagine.tsx` (an `active` prop, kept alive once
-visited) and owns one continuous thread from `GET /api/companion`; "Bắt đầu lại" deletes it. It
+visited) and shows one thread at a time from `GET /api/companion` (since 2026-10-25 several threads, one per character
+card each; see the section at the top). It
 sends `mode: "companion"`, speaks stable sentences as they arrive unless muted, and stops speaking when the
 tab is left.
 
@@ -2678,9 +2731,11 @@ PRIVATE NOTES markers (sections below). This persona is the owner's own Companio
 bot's roleplay character (whose web roleplay mode was removed on 2026-10-18). `tests/test_persona.py` checks only that this
 prompt does not name Grok/xAI.
 
-On desktop the layout is a stage on the left and a ~380px chat column on the right. The stage holds
+On desktop the layout is a stage on the left and a ~380px chat column on the right (since 2026-10-25 AIRI's size: up
+to 500px, below a top row holding the Profile button). The stage holds
 the character and the model's credit line. The owner added an animated three-dot thinking bubble on
-2026-10-02; other text and controls remain in the chat column. The chat column carries the speaking status, the mute toggle, "Bắt đầu lại", a notice when
+2026-10-02; other text and controls remain in the chat column. The chat column carries the speaking status, the mute toggle, the conversation list (it replaced "Bắt đầu lại" on
+2026-10-25), a notice when
 voice is on but the chosen source cannot speak (`voice.problem`), the mic button and its panel (see "Hearing" below), and
 the Chat tab's composer styles. Enabling
 voice, choosing a source and a voice, and "Nghe thử" live on the Giọng nói page of the Companion settings page, in
@@ -3162,7 +3217,7 @@ sections come from the owner's screenshots. Before this, memory was up to 50 one
     single fact cannot be cut out of a summary, and Settings promises that a deleted line is forgotten. The cost is lost
     context, never a deleted fact coming back. Background model edits do not blank it.
   - `save_companion_summary` saves only if `upto` is unchanged since it was read, so a delete that lands while the model
-    is writing drops the result. `delete_conversation` removes the row, so "Bắt đầu lại" deletes it too.
+    is writing drops the result. `delete_conversation` removes the row, so deleting a thread deletes it too.
 - **Validation** (`parse_changes`, `new_entry`). Lists only; details cut at 150 characters, case-insensitive
   duplicates dropped; unknown ids and bad sections ignored. A new `you` entry must map to a slot (`slot_for`: "trả lời",
   "hồ sơ"…); a new entry whose slot or title already exists is merged into it; an entry whose details become empty is
@@ -3201,8 +3256,8 @@ sections come from the owner's screenshots. Before this, memory was up to 50 one
     `LoadingIndicator` ("Đang tải trí nhớ") in place of the whole section, as Kết nối does; while old notes are being
     sorted, a bordered line with the icon variant says "Peto đang xếp các ghi nhớ cũ vào từng mục…". A bare "Đang tải…"
     line was there before and the owner found it unprofessional (2026-10-15).
-  - "Bắt đầu lại" deletes the thread, never the memories. Its dialog re-fetches the list when it opens and, when
-    memories exist, says they are kept and where to delete them.
+  - Deleting a Companion thread (conversation list, since 2026-10-25; "Bắt đầu lại" and its dialog saying memories
+    are kept were removed) never deletes memories.
 - **Tests.**
   - `backend/tests/test_companion_memory.py`. In a conversation the mock (`ai/mock._memory_changes`) answers
     `__nho__:text` (adds to Hồ sơ), `__sua__:id:text` (replaces an entry's details), `__quen__:id` (deletes) and
@@ -4921,7 +4976,9 @@ Chat and Companion turn (not the Agent CLI).
 - Peto on the web is an AI assistant, by the owner's decision. The Discord bot's roleplay persona (age/identity,
   "don't always comply", insult-back, NSFW or pet roleplay, `*action*` narration) is not in any web prompt since
   roleplay mode was removed on 2026-10-18. Never add it to the Chat, Agent or Companion prompts;
-  `tests/test_persona.py` checks them.
+  `tests/test_persona.py` checks them. Since 2026-10-25 users may write their own Companion persona in a character
+  card (see the section at the top); that is their text, the built-in prompts stay as they are, and the fixed under-18
+  rule is always appended.
 - Nothing writes back to the bot's memory. The gateway is read-only and loopback-only; it
   must never sit behind Cloudflare Tunnel.
 - No AI credential of the server ever reaches the browser or the CLI, including `OPENAI_API_KEY` and the TTS keys,

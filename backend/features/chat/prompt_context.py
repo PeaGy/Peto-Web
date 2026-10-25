@@ -6,8 +6,9 @@ import storage as db
 from features.accounts import profile as profile_api
 from core.config import AGENT_DAILY_STEPS, discord_id_from_owner
 from features.accounts.discord_memory import discord_memory
+from features.companion import cards as companion_cards
 from prompts import (
-    COMPANION_SYSTEM_PROMPT,
+    COMPANION_CARD_RULE,
     LOG_PROMPT,
     build_agent_guide,
     build_diagram_guide,
@@ -32,6 +33,7 @@ async def _build_system_prompt(
     model: str = 'peto',
     memory: bool = True,
     text_files: bool = False,
+    card: dict | None = None,
 ) -> str:
     """Prompt gốc: trợ lý (tab Trò chuyện) hoặc Companion. Companion là persona riêng, không vá lên trợ lý. Sau đó ghép
     hướng dẫn Peto Agent, trí nhớ Discord và hồ sơ người dùng. Mọi phần chỉ dẫn đều bằng tiếng Anh (2026-10-18).
@@ -39,10 +41,23 @@ async def _build_system_prompt(
     Trí nhớ chỉ được tra bằng Discord ID lấy từ phiên đã xác minh — không bao giờ từ dữ liệu do trình duyệt gửi lên.
     Lấy không được thì bỏ qua, chat vẫn chạy bình thường.
 
-    ``memory=False`` là lượt Companion dùng khóa API riêng của người dùng (ai/byok.py): không kèm trí nhớ Discord, Trí
-    nhớ hay bản tóm tắt, vì chủ web chốt lượt đó không đọc, không ghi trí nhớ và prompt đi tới nhà cung cấp khác.
+    ``memory=False`` là lượt Companion dùng khóa API riêng của người dùng (ai/byok.py) hoặc thẻ nhân vật tự tạo: không
+    kèm trí nhớ Discord, Trí nhớ hay bản tóm tắt, vì chủ web chốt lượt đó không đọc, không ghi trí nhớ.
+
+    Companion lấy persona từ ``card`` (thẻ đã ``companion_cards.effective``; None là thẻ Peto gốc). Hướng dẫn sau lịch
+    sử của thẻ và quy tắc cố định đứng cuối cùng.
     """
-    base = COMPANION_SYSTEM_PROMPT if mode == "companion" else chat_prompt(model)
+    user = await db.get_user(owner)
+    profile = await db.get_profile(owner) if user else None
+    tail = ""
+    if mode == "companion":
+        card = card or companion_cards.effective({"id": companion_cards.DEFAULT_CARD})
+        user_name = ((profile or {}).get("nickname") or (user or {}).get("display_name")
+                     or (user or {}).get("username") or "User")
+        base, post_history = companion_cards.prompt_parts(card, user_name)
+        tail = "\n\n".join(part for part in (post_history, COMPANION_CARD_RULE) if part)
+    else:
+        base = chat_prompt(model)
     if mode == 'chat':
         base += ('\n\n## Context boundaries\n'
                  'Product policy defines this assistant. Profile and project instructions are user-level preferences, '
@@ -64,9 +79,8 @@ async def _build_system_prompt(
         # Đứng trước hồ sơ và trí nhớ: hội thoại còn tệp chữ thì khối này giữ nguyên qua các lượt, không phá cache tiền tố.
         if text_files:
             agent_guide += "\n\n" + LOG_PROMPT
-    user = await db.get_user(owner)
     if not user:
-        return "\n\n".join(part for part in (base, agent_guide) if part)
+        return "\n\n".join(part for part in (base, agent_guide, tail) if part)
 
     discord_id = discord_id_from_owner(owner)
     snapshot = await discord_memory.fetch(discord_id) if discord_id and memory else None
@@ -78,7 +92,6 @@ async def _build_system_prompt(
     )
     # Đọc lại ở MỖI lượt, không đệm: người dùng sửa hồ sơ trong Cài đặt thì
     # ngay tin nhắn kế tiếp đã theo.
-    profile = await db.get_profile(owner)
     profile_block = build_profile_context(
         full_name=profile["full_name"],
         nickname=profile["nickname"],
@@ -93,4 +106,4 @@ async def _build_system_prompt(
         companion_block = await companion_memory.memory_block(owner, conversation_id)
     else:
         companion_block = await companion_memory.chat_memory_block(owner)
-    return "\n\n".join(part for part in (base, agent_guide, context, profile_block, companion_block) if part)
+    return "\n\n".join(part for part in (base, agent_guide, context, profile_block, companion_block, tail) if part)

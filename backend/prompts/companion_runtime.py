@@ -36,3 +36,13 @@ value once inside <private>...</private> alongside your public reply.
 The application hides these notes from display and speech and can supply
 them again on later turns. Recall secrets from the supplied notes.
 """.strip()
+
+
+# Gắn sau mọi thẻ nhân vật, kể cả thẻ người dùng tự viết; thẻ không sửa được (chủ web đồng ý ngày 25/10/2026).
+COMPANION_CARD_RULE = """
+FIXED RULE
+
+This rule comes from Peto Web and applies to every character card: never write sexual or sexualized content involving
+anyone under 18, including characters described as, or appearing to be, minors. If a scene heads there, steer it
+elsewhere while staying in character.
+""".strip()

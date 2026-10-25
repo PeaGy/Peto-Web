@@ -16,6 +16,7 @@ from ai import models as ai_models
 from shared import attachment_tools
 from shared import attachments as attachment_lib
 from features.companion import memory as companion_memory
+from features.companion import cards as companion_cards
 import storage as db
 from storage import chat_turns
 from features.chat import turn_control
@@ -261,9 +262,16 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
         if settings["persona"] == "roleplay":
             raise HTTPException(409, conversation_actions.LEGACY_ROLEPLAY)
     history_limit = MAX_HISTORY_MESSAGES
+    # Thẻ nhân vật của lượt Companion: mạch đã có giữ thẻ lúc tạo (như AIRI), mạch mới theo thẻ gửi lên hoặc thẻ đang dùng.
+    card = None
+    if mode == "companion":
+        card = await companion_cards.resolve(owner, (settings.get("card_id") or companion_cards.DEFAULT_CARD)
+                                             if request.conversation_id else request.card_id)
+    elif request.card_id is not None:
+        raise HTTPException(400, 'Thẻ nhân vật chỉ dùng cho Companion.')
     # Trí nhớ dùng chung (companion_memory.py) đọc Companion và Chat. Lượt dùng khóa riêng không ghi nhớ (chủ web chốt
-    # 13/10/2026).
-    remembers = own_key is None
+    # 13/10/2026), thẻ nhân vật tự tạo cũng không (25/10/2026).
+    remembers = own_key is None and (card is None or companion_cards.remembers(card["id"]))
     from features.projects.context import context as project_context
     project_id = settings.get('project_id') if request.conversation_id else request.project_id
     if mode != 'chat' and (project_id or request.project_file_ids):
@@ -484,7 +492,10 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                 is_new_conversation = not conversation_id
                 with anyio.CancelScope(shield=True):
                     if not conversation_id:
-                        conversation_id = await db.create_conversation(owner, mode=mode, project_id=project_id)
+                        conversation_id = await db.create_conversation(owner, mode=mode, project_id=project_id,
+                                                                       card_id=card["id"] if card else None)
+                        if card:
+                            await companion_cards.open_conversation(owner, card, conversation_id)
                     saved_paths: list[Path] = []
                     try:
                         if request.branch_message_id:
@@ -537,7 +548,7 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                 prompt_task = _build_system_prompt(owner, mode, install_command, conversation_id,
                         agent_question='\n'.join(str(row.get('content', ''))[:4000]
                             for row in [r for r in active_rows if r.get('role') == 'user' and r.get('turn_state') != 'stopped'][-3:]), model=model,
-                        memory=own_key is None, text_files=has_text_files(indexed))
+                        memory=remembers, text_files=has_text_files(indexed), card=card)
                 if mode == 'chat':
                     # Context Chat dựng history một lần theo ngân sách; không đọc/base64 ảnh hai lần.
                     history, system_prompt = [], await prompt_task

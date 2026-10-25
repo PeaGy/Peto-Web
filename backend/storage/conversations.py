@@ -11,17 +11,28 @@ from storage import connection as db_connection
 from shared.web_search import normalize_sources
 from storage.attachments import _attach_files, list_attachment_paths
 
-async def create_conversation(owner: str, title: str = "", mode: str = "chat", persona: str = "assistant", project_id: str | None = None) -> str:
+async def create_conversation(owner: str, title: str = "", mode: str = "chat", persona: str = "assistant", project_id: str | None = None,
+                              card_id: str | None = None) -> str:
+    """``card_id``: thẻ nhân vật của mạch Companion (storage/cards.py); mạch giữ thẻ đó dù sau này đổi thẻ đang dùng."""
     conversation_id = uuid.uuid4().hex
     now = time.time()
     async with db_connection.connect() as db:
         await db.execute('BEGIN IMMEDIATE')
         if project_id and (mode != 'chat' or not await (await db.execute('SELECT 1 FROM projects WHERE id=? AND owner=?', (project_id, owner))).fetchone()):
             raise HTTPException(404, 'Không tìm thấy dự án')
+        if mode == 'companion':
+            card_id = card_id or 'peto'
+            if not await (await db.execute('SELECT 1 FROM companion_cards WHERE owner=? AND id=?', (owner, card_id))).fetchone():
+                if card_id != 'peto':
+                    raise HTTPException(404, 'Không tìm thấy thẻ nhân vật')
+                await db.execute('INSERT OR IGNORE INTO companion_cards (owner, id, created_at, updated_at) VALUES (?,?,?,?)',
+                                 (owner, card_id, now, now))
+        else:
+            card_id = None
         await db.execute(
-            "INSERT INTO conversations (id, owner, title, created_at, updated_at, mode, persona, title_state, project_id) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, 'temporary', ?)",
-            (conversation_id, owner, title[:120], now, now, mode, persona, project_id),
+            "INSERT INTO conversations (id, owner, title, created_at, updated_at, mode, persona, title_state, project_id, card_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, 'temporary', ?, ?)",
+            (conversation_id, owner, title[:120], now, now, mode, persona, project_id, card_id),
         )
         await db.commit()
     return conversation_id
@@ -42,11 +53,12 @@ async def conversation_settings(owner: str, conversation_id: str) -> dict | None
     của owner."""
     async with db_connection.connect() as db:
         cursor = await db.execute(
-            "SELECT mode, persona, project_id, archived, model, effort FROM conversations WHERE id = ? AND owner = ?",
+            "SELECT mode, persona, project_id, archived, model, effort, card_id FROM conversations WHERE id = ? AND owner = ?",
             (conversation_id, owner),
         )
         row = await cursor.fetchone()
-        return {"mode": row[0], "persona": row[1], "project_id": row[2], "archived": bool(row[3]), "model": row[4], "effort": row[5]} if row else None
+        return {"mode": row[0], "persona": row[1], "project_id": row[2], "archived": bool(row[3]), "model": row[4], "effort": row[5],
+                "card_id": row[6]} if row else None
 
 
 async def set_chat_selection(owner: str, conversation_id: str, model: str, effort: str) -> None:

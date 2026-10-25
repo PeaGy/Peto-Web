@@ -48,6 +48,8 @@ class ChatRequest(BaseModel):
     model: str = Field(default=ai_models.DEFAULT_MODEL, max_length=16)
     # Chỉ Companion: dùng khóa riêng của người dùng thay cho Grok của Peto.
     provider: ProviderChoiceIn | None = None
+    # Chỉ Companion: thẻ nhân vật cho mạch mới (None là thẻ đang dùng). Mạch đã có luôn giữ thẻ lúc tạo.
+    card_id: str | None = Field(default=None, max_length=32)
     # Only the sending Companion browser implements the action/ack protocol. Older clients have no tools.
     player_control: Literal[1, 2, 3, 4, 5] | None = None
 

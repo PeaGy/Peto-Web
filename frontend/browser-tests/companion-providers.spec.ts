@@ -44,7 +44,7 @@ test('nhập khóa ở Nhà cung cấp, chọn ở Bộ não, Companion gửi kh
   await page.goto('/companion');
   const composer = page.getByRole('textbox', { name: 'Nhắn cho Peto trong Companion' });
   await expect(composer).toBeVisible();
-  await expect(page.locator('.companion-title span')).toHaveText('DeepSeek');
+  await expect(page.locator('.companion-title .companion-state')).toHaveText('DeepSeek');
   await composer.fill('hello with my own key');
   await composer.press('Enter');
   await expect(page.getByText('Câu trả lời đã được lưu đầy đủ.').last()).toBeVisible();

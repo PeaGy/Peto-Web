@@ -595,10 +595,13 @@ async def _ask(prompt: str, system_prompt: str = SYSTEM_PROMPT) -> str:
 
 
 async def _summarize_once(owner: str, window: int) -> None:
-    """Gộp các tin vừa trôi khỏi ``window`` tin gửi kèm vào bản tóm tắt của mạch Companion mới nhất."""
+    """Gộp các tin vừa trôi khỏi ``window`` tin gửi kèm vào bản tóm tắt của mạch Companion mới nhất của thẻ Peto mặc
+    định (thẻ tự tạo chưa có trí nhớ hay tóm tắt)."""
     if not await enabled_for(owner):
         return
-    conversation_id = await db.latest_conversation(owner, "companion")
+    from storage import cards as card_store
+
+    conversation_id = await card_store.latest_card_conversation(owner, card_store.DEFAULT_CARD)
     if not conversation_id:
         return
     state = await db.ensure_memory_state(owner)
