@@ -1,5 +1,16 @@
 # CLAUDE.md
 
+## User-message copy action (2026-10-25)
+
+Web Chat user bubbles now have an icon-only copy button immediately after Edit. It copies the original message
+content (including real URLs/Markdown), reuses the existing clipboard hook, and shows only a checkmark on success
+for 2.2 seconds. Accessible state labels remain; no visible label, tooltip or toast on this button. Empty text and
+the active editor show no copy action. Copy remains available while branching/edit actions are disabled.
+Frontend-only; rebuild frontend for deployment.
+Validation: existing clipboard component cases 3 passed, build/diff check passed. Inspected mocked-app desktop/mobile
+emulation: original raw text/URLs copied, no visible text/tooltip, success reset, blocked clipboard does not show
+success, keyboard Space retries. Clipboard and APIs were mocked; no real-phone or production acceptance claimed.
+
 ## Web Chat citation rendering (2026-10-25)
 
 Owner reported raw `[web:21]`/`[web:26]` in answers. Audit/contract/deployment:

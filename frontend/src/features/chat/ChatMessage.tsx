@@ -112,6 +112,14 @@ function RetryIcon() {
     strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7" /><path d="M3 4v5h5" /></svg>;
 }
 
+function UserMessageCopy({ text }: { text: string }) {
+  const { state, label, copy } = useCopy();
+  return <button type="button" className={`user-message-copy${state === 'done' ? ' done' : ''}`}
+    aria-label={`${label} tin nhắn`} onClick={() => void copy(text)}>
+    {state === 'done' ? <CheckIcon /> : <CopyIcon />}
+  </button>;
+}
+
 
 export const ChatMessage = memo(function ChatMessage({ message, live, writing, onPreview, onEdit, onRetry, actionsDisabled, editor }: {
   message: Message; live: boolean; writing: boolean;
@@ -178,6 +186,7 @@ export const ChatMessage = memo(function ChatMessage({ message, live, writing, o
               )}
               {!writing && !editor && message.role === 'user' && <span className="user-message-actions">
                 {message.id && <button type="button" aria-label="Sửa tin nhắn" data-tip disabled={actionsDisabled} data-revise={message.id}><EditIcon /></button>}
+                {message.content.trim() && <UserMessageCopy text={message.content} />}
               </span>}
             </article>);
 });

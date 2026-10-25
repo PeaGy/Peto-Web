@@ -1471,7 +1471,7 @@ describe('Khối code trong chat', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Sao chép câu trả lời' }));
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(answer));
     await screen.findByRole('button', { name: 'Đã chép câu trả lời' });
-    // Chỉ câu trả lời của Peto có nút, tin của người dùng thì không.
+    // Nút chép tin của người dùng có nhãn riêng, không bị lẫn với nút chép câu trả lời.
     expect(screen.getAllByRole('button', { name: /câu trả lời$/ })).toHaveLength(1);
   });
 });
