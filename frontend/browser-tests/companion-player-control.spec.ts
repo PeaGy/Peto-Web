@@ -1,11 +1,13 @@
 import { expect, test, type Page } from '@playwright/test';
 import { mockPeto, noPageOverflow } from './fixtures';
-import { installApi, stats, type FakeStats } from './youtubeFixture';
+import { installApi, stats, nativeVolume, type FakeStats } from './youtubeFixture';
 import type { PlayerCommand, PlayerResult } from '../src/features/companion/ytplayer/playerControl';
+
+test.use({ permissions: ['microphone'], launchOptions: { args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] } });
 
 const shell = (page: Page) => page.locator('#companion-player');
 const composer = (page: Page) => page.getByRole('textbox', { name: 'Nhắn cho Peto trong Companion', exact: true });
-async function setup(page: Page, mobile: boolean, favorites: { video_id: string; title: string; artist: string }[] = [], preserveSession = false) {
+async function setup(page: Page, mobile: boolean, favorites: { video_id: string; title: string; artist: string }[] = [], preserveSession = false, beforeNavigate?: () => Promise<unknown>) {
   const state = await mockPeto(page, { preservePreferences: preserveSession }); const apiRequests = await installApi(page);
   favorites.forEach(item => state.playerFavorites.set(item.video_id, item));
   let sequence = 0;
@@ -24,6 +26,7 @@ async function setup(page: Page, mobile: boolean, favorites: { video_id: string;
       + event({ type: 'player_command', command }) + (duplicate ? event({ type: 'player_command', command }) : '')
       + event({ type: 'delta', text: 'Đã nhận kết quả Player.' }) + event({ type: 'done' }) });
   });
+  await beforeNavigate?.();
   await page.goto('/companion'); await expect(composer(page)).toBeVisible({ timeout: 20000 });
   async function hide() {
     if (await shell(page).isVisible()) await page.getByRole('button', { name: mobile ? 'Ẩn Player' : 'Thu nhỏ Player', exact: true }).click();
@@ -51,6 +54,54 @@ const favorites = [
   { video_id: 'aircAruvnKk', title: 'But what is a neural network?', artist: 'Test channel' },
   { video_id: 'HDz9dSuAI4s', title: 'Miku concert', artist: 'Test channel' },
 ];
+
+test.describe('voice ducking', () => {
+  test('chat volume receipts observe attenuation, mute stays muted, and F5 saves the chosen level', async ({ page }, info) => {
+    test.setTimeout(90000);
+    const mobile = info.project.name === 'mobile';
+    const { issue, apiRequests } = await setup(page, mobile, favorites, true, () => page.addInitScript(() => {
+      localStorage.setItem('peto-hearing-pause', '0');
+      class Recognition {
+        onstart: (() => void) | null = null;
+        onend: (() => void) | null = null;
+        onspeechstart: (() => void) | null = null;
+        onspeechend: (() => void) | null = null;
+        constructor() { Object.assign(window, { testRecognition: this }); }
+        start() { setTimeout(() => this.onstart?.(), 10); }
+        stop() { setTimeout(() => this.onend?.(), 10); }
+        abort() {}
+      }
+      Object.assign(window, { SpeechRecognition: Recognition });
+    }));
+    const tracks = favorites.map(item => ({ ...item, duration: 240, start_seconds: 0 }));
+    await issue('play_video', { tracks: [tracks[0]], window_revision: 0 });
+    await issue('hide');
+    await composer(page).fill('Typing alone keeps the chosen level'); expect(await nativeVolume(page)).toBe(60);
+    await page.getByRole('button', { name: 'Bật nghe', exact: true }).click();
+    await expect(page.locator('.hearing-mic')).toHaveClass(/waiting/); expect(await nativeVolume(page)).toBe(60);
+    const speech = (start: boolean) => page.evaluate(start => {
+      const recognition = (window as unknown as { testRecognition: { onspeechstart(): void; onspeechend(): void } }).testRecognition;
+      if (start) recognition.onspeechstart(); else recognition.onspeechend();
+    }, start);
+    await speech(true); await expect.poll(() => nativeVolume(page)).toBe(12);
+    expect((await issue('status')).state).toMatchObject({ volume: 60, effective_volume: 12, ducked: true, status: 'playing' });
+    const changed = await issue('set_volume', { volume: 45 });
+    expect(changed.ok).toBe(true); expect(changed.state).toMatchObject({ volume: 45, effective_volume: 9, ducked: true });
+    expect((await issue('mute')).state).toMatchObject({ volume: 0, effective_volume: 0 });
+    await speech(false); await expect.poll(() => nativeVolume(page)).toBe(0);
+    await expect.poll(async () => (await issue('status')).state?.ducked).toBe(false);
+    expect((await issue('status')).state).toMatchObject({ volume: 0, effective_volume: 0, ducked: false });
+    expect((await issue('unmute')).state).toMatchObject({ volume: 45, effective_volume: 45 });
+    await speech(true); await expect.poll(() => nativeVolume(page)).toBe(9);
+    expect((await issue('play_video', { tracks: [tracks[1]], window_revision: 0 })).state).toMatchObject({ volume: 45, effective_volume: 9, status: 'playing' });
+    const before = apiRequests();
+    await page.reload(); await expect(composer(page)).toBeVisible();
+    expect((await issue('status')).state).toMatchObject({ volume: 45, status: 'suspended', track: { video_id: tracks[1].video_id } });
+    expect(apiRequests()).toBe(before); await expect(shell(page)).toHaveCount(0);
+    await issue('open'); await expect(shell(page)).toHaveAttribute('data-status', 'ready');
+    expect(await nativeVolume(page)).toBe(45); expect((await issue('status')).state).toMatchObject({ ducked: false, effective_volume: 45 });
+  });
+});
 
 async function showFile(page: Page, mobile: boolean) {
   if (!await shell(page).isVisible()) {

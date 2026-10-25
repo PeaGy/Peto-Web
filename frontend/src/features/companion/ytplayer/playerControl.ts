@@ -16,6 +16,7 @@ export interface PlayerSnapshot {
   status: 'empty' | 'loading' | 'ready' | 'playing' | 'paused' | 'buffering' | 'ended' | 'blocked' | 'suspended' | 'error';
   track: { video_id: string; title: string; artist: string } | null;
   position: number; duration: number; volume: number; shuffle: boolean; repeat: 'off' | 'all' | 'one'; queue_count: number;
+  effective_volume?: number; ducked?: boolean;
   window_revision?: number;
   native_video_id?: string | null; native_state?: number | null;
   can_undo?: boolean;

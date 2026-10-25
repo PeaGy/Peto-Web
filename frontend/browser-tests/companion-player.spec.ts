@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { Buffer } from 'node:buffer';
 import { mockPeto, noPageOverflow } from './fixtures';
-import { installApi, stats } from './youtubeFixture';
+import { installApi, stats, nativeVolume } from './youtubeFixture';
 
 const video = 'https://www.youtube.com/watch?v=Soy4jGPHr3g';
 const chat = (page: Page) => page.getByRole('textbox', { name: 'Nhắn cho Peto trong Companion', exact: true });
@@ -256,7 +256,7 @@ test('Companion thật: micro Giữ để nói nhường Space cho Player và nh
     }
     Object.assign(window, { SpeechRecognition: Recognition });
   });
-  await page.goto('/companion'); await expect(chat(page)).toBeVisible();
+  await page.goto('/companion'); await expect(chat(page)).toBeVisible({ timeout: 30000 });
   await page.getByRole('button', { name: 'Bật Giữ để nói', exact: true }).click();
   await expect(page.locator('.hearing-mic')).toHaveClass(/ready/);
   await openPlayer(page, false); await chooseVideo(page);
@@ -272,12 +272,14 @@ test('Companion thật: micro Giữ để nói nhường Space cho Player và nh
   await page.locator('.companion-stage').click({ position: { x: 25, y: 700 } });
   await page.keyboard.down('Space');
   await expect(page.locator('.hearing-mic')).toHaveClass(/holding/);
+  await expect.poll(() => nativeVolume(page)).toBe(12);
   await expect.poll(() => page.evaluate(() => (window as unknown as { liveTracks(): number }).liveTracks())).toBeGreaterThan(0);
   // Chọn Player khi còn giữ phải bỏ lượt thu; thả phím sau đó không gửi câu nghe nhầm.
   await page.locator('.yt-window-head > strong').click();
   await expect(page.locator('.hearing-mic')).toHaveClass(/ready/);
   await page.keyboard.up('Space');
   await expect(page.locator('.hearing-mic')).toHaveClass(/ready/);
+  await expect.poll(() => nativeVolume(page)).toBe(60);
   await expect.poll(() => page.evaluate(() => (window as unknown as { liveTracks(): number }).liveTracks())).toBe(0);
   await chat(page).fill('xin chào');
   await chat(page).press('End'); await page.keyboard.press('Space');
@@ -323,9 +325,26 @@ test('Companion thật: renderer Live2D và tiếng đọc thật tiếp tục k
     return { paused: audio?.paused, time: audio?.currentTime ?? 0 };
   });
   await expect.poll(async () => (await audioState()).time).toBeGreaterThan(0);
+  await expect.poll(() => nativeVolume(page)).toBe(12);
   if (mobile) await openPlayer(page, true);
   await expect(page.locator('.yt-player')).toHaveAttribute('data-playing', 'true');
   expect((await audioState()).paused).toBe(false);
+  // UI keeps the user's level while native output is attenuated; changing it restores the new level.
+  await page.locator('.yt-volume-control button').focus();
+  const slider = page.getByRole('slider', { name: 'Âm lượng Player', exact: true });
+  await expect(slider).toHaveValue('60'); await slider.fill('45');
+  await expect.poll(() => nativeVolume(page)).toBe(9);
+  await page.getByRole('button', { name: mobile ? 'Ẩn Player' : 'Thu nhỏ Player', exact: true }).click();
+  await page.locator('.companion-panel').getByRole('button', { name: 'Dừng', exact: true }).click();
+  await expect.poll(() => nativeVolume(page)).toBe(45);
+  await openPlayer(page, mobile);
+  // A second real audio read still survives closing the YouTube frame.
+  await page.getByRole('button', { name: mobile ? 'Ẩn Player' : 'Thu nhỏ Player', exact: true }).click();
+  await chat(page).fill('Read one more reply');
+  await page.locator('.companion-panel').getByRole('button', { name: 'Gửi', exact: true }).click();
+  await expect(page.locator('.companion-title')).toContainText('Đang nói');
+  await expect.poll(() => nativeVolume(page)).toBe(9);
+  await openPlayer(page, mobile);
   await page.getByRole('button', { name: mobile ? 'Dừng và đóng Player' : 'Đóng Player', exact: true }).click();
   await expect(page.locator('.yt-player iframe')).toHaveCount(0);
   expect((await audioState()).paused).toBe(false);

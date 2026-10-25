@@ -58,3 +58,8 @@ export const stats = (page: Page) => page.evaluate(() => {
   const value = (window as unknown as { __ytFake: FakeStats }).__ytFake;
   return { created: value.created, destroyed: value.destroyed, nativeSpace: value.nativeSpace, cues: value.cues };
 });
+
+export const nativeVolume = (page: Page) => page.evaluate(() => {
+  const player = (window as unknown as { __ytFake: { active: { volume: number; muted: boolean } } }).__ytFake.active;
+  return player.muted ? 0 : player.volume;
+});

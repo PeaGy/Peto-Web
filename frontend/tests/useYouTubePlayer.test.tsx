@@ -36,8 +36,8 @@ class FakePlayer {
 let player: ReturnType<typeof useYouTubePlayer>;
 const first = parseYouTubeUrl('https://youtu.be/Soy4jGPHr3g')!;
 const second = parseYouTubeUrl('https://youtu.be/aircAruvnKk?t=20')!;
-function Harness({ source = first, enabled = true, background = false }: { source?: YouTubePlaybackSource | null; enabled?: boolean; background?: boolean }) {
-  player = useYouTubePlayer(source, enabled, background);
+function Harness({ source = first, enabled = true, background = false, ducked = false }: { source?: YouTubePlaybackSource | null; enabled?: boolean; background?: boolean; ducked?: boolean }) {
+  player = useYouTubePlayer(source, enabled, background, 60, ducked);
   return <div ref={player.container} />;
 }
 async function mount() {
@@ -130,6 +130,61 @@ it('phát, seek, volume và controls native đều đồng bộ qua API', async 
   expect(players[0].unMute).toHaveBeenCalled();
   act(() => players[0].state(2));
   expect(player.playing).toBe(false);
+});
+
+it('ducks one existing iframe without changing chosen volume, playback, source or position; restores the latest setting', async () => {
+  const view = await mount(), native = players[0];
+  act(() => { player.setPlaying(true); player.seek(42); });
+  view.rerender(<StrictMode><Harness ducked /></StrictMode>);
+  await act(async () => { await vi.advanceTimersByTimeAsync(500); });
+  expect(player).toMatchObject({ volume: 60, playing: true, position: 42, ducked: true });
+  expect(player.observe()?.volume).toBe(12); expect(player.readEffectiveVolume()).toBe(12);
+  act(() => player.setVolume(35));
+  expect(native.volume).toBe(7); expect(player.readVolume()).toBe(35);
+  view.rerender(<StrictMode><Harness /></StrictMode>);
+  expect(native.volume).toBe(35); expect(players).toHaveLength(1);
+  expect(native.playVideo).toHaveBeenCalledOnce(); expect(native.seekTo).toHaveBeenCalledOnce();
+});
+
+it('ducking adopts native edits, preserves mute and initializes a replacement iframe attenuated before autoplay', async () => {
+  const view = await mount(), native = players[0];
+  view.rerender(<StrictMode><Harness ducked /></StrictMode>);
+  native.volume = 45;
+  await act(async () => { await vi.advanceTimersByTimeAsync(500); });
+  expect(player.volume).toBe(45); expect(native.volume).toBe(9);
+  act(() => player.setVolume(0));
+  view.rerender(<StrictMode><Harness /></StrictMode>);
+  expect(native.isMuted()).toBe(true); expect(player.readVolume()).toBe(0);
+  act(() => player.setVolume(80));
+  view.rerender(<StrictMode><Harness enabled={false} /></StrictMode>);
+  view.rerender(<StrictMode><Harness ducked source={{ ...second, playbackId: 'ducked-next', autoplay: true }} /></StrictMode>);
+  await act(async () => {}); const next = players[1];
+  next.playVideo.mockImplementation(() => { expect(next.volume).toBe(16); next.state(1); });
+  act(() => next.ready());
+  expect(player.readVolume()).toBe(80); expect(player.playing).toBe(true);
+});
+
+it('pagehide during ducking saves the chosen level and no release writes to a destroyed player', async () => {
+  const view = await mount(), native = players[0];
+  view.rerender(<StrictMode><Harness ducked /></StrictMode>);
+  native.time = 47.5;
+  act(() => window.dispatchEvent(new Event('pagehide')));
+  expect(player).toMatchObject({ volume: 60, position: 47.5, status: 'suspended' });
+  expect(player.readVolume()).toBe(60); expect(native.destroy).toHaveBeenCalledOnce();
+  const writes = native.setVolume.mock.calls.length;
+  view.rerender(<StrictMode><Harness /></StrictMode>);
+  act(() => player.setVolume(30));
+  expect(native.setVolume).toHaveBeenCalledTimes(writes); expect(players).toHaveLength(1);
+});
+
+it('a temporarily incomplete native volume cache cannot supply playback proof or overwrite the saved setting', async () => {
+  await mount(); const instance = players[0];
+  const readMute = vi.spyOn(instance, 'isMuted').mockReturnValue(undefined as unknown as boolean);
+  instance.volume = 0;
+  await act(async () => { await vi.advanceTimersByTimeAsync(2500); });
+  expect(player.observe()).toBeNull(); expect(player.readVolume()).toBe(60); expect(player.volume).toBe(60);
+  readMute.mockRestore(); instance.volume = 60;
+  expect(player.observe()?.volume).toBe(60); expect(instance.mute).not.toHaveBeenCalled();
 });
 it('lần Phát đầu không bị cue ban đầu hoàn thành muộn đẩy về trạng thái dừng', async () => {
   class SlowCuePlayer extends FakePlayer {

@@ -24,6 +24,31 @@ OpenAI Model Spec): positive character prose, good/bad example pairs, casual vs 
 - Validation: related backend group 169 passed; CLI bundle/version/direct-source/release/update 68 passed; full backend
   1,817 passed, 1 skipped (510.75s; the tree also held the uncommitted Player stage 4 work). Deploy: restart the backend (CLI users are offered 0.33.4). Real tone needs the owner's chats.
 
+## Player — giảm nhạc khi trò chuyện, giai đoạn 4 (2026-10-24)
+
+Owner đã kiểm chứng và commit/deploy giai đoạn 3 ở `ed499ba`, yêu cầu bước tiếp. Thêm ducking 20% mức chọn khi
+Companion foreground và TTS playing / giữ để nói / hearing speaking. Chờ 350ms sau hết tiếng; buffer dài trở về
+thường, không giảm chỉ vì gõ, chờ AI, tải tiếng hoặc bật mic chờ. Loại giọng/mic test Cài đặt. Rời/ẩn Companion
+release, desktop giữ playback, mobile lifecycle cũ. X/Clear All/unmount hủy, tín hiệu muộn không tạo/phát lại iframe.
+Tách `usePlayerDucking` (tín hiệu) và `PlayerVolume` (mức chọn/native). UI/session giữ mức chọn; thay volume/mute
+qua UI/native/chat khi đang nói vẫn nhận, trả mức mới và không tự unmute. Iframe mới áp mức hạ trước autoplay.
+Pending native ack cũ không ghi ngược lựa chọn. IFrame thật tạm trả undefined isMuted/getVolume khi cue dù đã
+onReady: coi unknown, không ép0/mute hoặc cấp native proof; đã thêm kiểm kiểu và ca regression. F5 giữ mức chọn,
+không lưu ducking, restore stopped. Không đổi renderer/ASR/TTS/Space/UI, không analyser/nghe/xem video.
+Receipt v5 thêm optional effective_volume (native thật) và ducked; volume là mức chọn. Backend nhận optional và
+tab cũ vẫn hợp lệ; prompt khả năng giải thích hai mức, không đổi persona/examples/guard câu tự nhiên. set_volume/
+mute/unmute chờ mức chọn và native phù hợp hệ số, không coi gọi hàm là thành công. Không DB/key/dependency mới.
+276 frontend/14 tệp và 296 backend/12 tệp đạt, build và browser TypeScript đạt (chunk warning cũ). Chrome hồi quy
+đầy đủ 53 đạt/1 test chờ release sai/4 skip; sửa và nhóm voice kiểm lại 5 đạt/1 skip. Có một lượt kiểm lại khác
+timeout tải lạnh 8s, chỉnh phần tải lên30s và chạy tuần tự đạt; không giấu lượt lỗi. Edge nhóm voice 5 đạt/1 skip.
+Iframe YouTube thật Chrome/Tetris đạt30→6, native chỉnh50→10, release50 và F5 cue stopped50. Profile riêng, browser
+tắt tiếng đầu ra, account/backend/ASR giả; không dùng AI/TTS/Data API tính phí hoặc account production. Không lấy
+đây làm bằng chứng nghe tại loa/Android hoặc AI hiểu nhạc. Unit mới giữ tình huống cache thiếu thật; mock cũ bỏ sót.
+Chi tiết/checklist và mức phủ sau sửa: `frontend/src/features/companion/ytplayer/SESSION_STAGE4.md`; raw ignored
+`.runtime/player-session-stage4/`. Chưa commit/deploy. Rebuild frontend + restart backend, backend trước/cùng
+frontend vì receipt mới. Owner cần thử micro/loa/Xiaomi Android13 Chrome sau deploy. Giai đoạn5 nghiệm thu tích
+hợp vẫn là bước tiếp theo; Peto nghe/xem video vẫn tạm gác.
+
 ## Player — lịch sử nghe và Previous, giai đoạn 3 (2026-10-24)
 
 Owner đã commit/deploy `f6c1601`, xác nhận F5 phát đúng mốc, yêu cầu bước tiếp. Thêm File/menu mobile → Lịch sử nghe,

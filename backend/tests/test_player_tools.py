@@ -17,6 +17,19 @@ STATE = dict(window='hidden', status='playing', track=dict(video_id='Soy4jGPHr3g
              position=12, duration=143, volume=30, shuffle=False, repeat='off', queue_count=2)
 
 
+def test_optional_ducking_observation_keeps_user_setting_separate_and_accepts_old_clients():
+    assert pt.Snapshot.model_validate(STATE).effective_volume is None
+    result = pt.Result.model_validate({'ok': True, 'state': {**STATE, 'effective_volume': 6, 'ducked': True}})
+    assert result.state.volume == 30
+    assert result.state.effective_volume == 6 and result.state.ducked is True
+
+
+@pytest.mark.parametrize('extra', [{'effective_volume': -1}, {'effective_volume': 101}, {'effective_volume': True}, {'ducked': 'true'}])
+def test_ducking_fields_are_strict_bounded_observations(extra):
+    with pytest.raises(ValidationError):
+        pt.Snapshot.model_validate({**STATE, **extra})
+
+
 @pytest.mark.parametrize('value', [
     {'action': 'set_volume', 'volume': -1}, {'action': 'set_volume', 'volume': 101},
     {'action': 'set_volume', 'volume': True}, {'action': 'set_volume'},

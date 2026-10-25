@@ -17,6 +17,7 @@ import { usePlayerLayout } from './ytplayer/playerLayout';
 import { PlayerControlBridge } from './ytplayer/playerControl';
 import { hasPlayerSession } from './ytplayer/playerSession';
 import { hasPlayerHistory } from './ytplayer/playerHistory';
+import { usePlayerDucking } from './ytplayer/usePlayerDucking';
 import './ytplayer/companionPlayer.css';
 import { fileToBase64 } from '../chat/attachments';
 import { useCompanionImages } from './useCompanionImages';
@@ -647,6 +648,7 @@ export default function Companion({ ownerId, active, appInfo, voice, characterMo
 
   const name = appInfo?.name ?? "Peto";
   const speech = voice.speaking?.key.startsWith(SPEECH_PREFIX) ? voice.speaking : null;
+  const playerDucked = usePlayerDucking(active, speech?.phase ?? null, hearing);
   const expressionSpeechKey = useRef<string | null>(null);
   // Giữ nét mặt của câu đang đọc suốt lúc Peto nói, nói xong thì về bình thường sau một chút.
   useEffect(() => {
@@ -1019,7 +1021,7 @@ export default function Companion({ ownerId, active, appInfo, voice, characterMo
       <div ref={playerBounds} className="companion-player-area">
         {player.visited && <Suspense fallback={null}>
           <CompanionPlayer ownerId={ownerId} active={active} open={player.open} hidden={player.hidden || !active} mobileLayout={mobilePlayer}
-            allowBackground={desktopPlayback} bounds={playerBounds}
+            allowBackground={desktopPlayback} ducked={playerDucked} bounds={playerBounds}
             onClose={closePlayer} onHide={hidePlayer} onFocusChange={updatePlayerFocus} onShow={showPlayer} control={playerControl} />
         </Suspense>}
       </div>

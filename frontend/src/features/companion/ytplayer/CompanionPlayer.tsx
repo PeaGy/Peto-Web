@@ -17,6 +17,7 @@ interface Props {
   hidden: boolean;
   mobileLayout: boolean;
   allowBackground: boolean;
+  ducked?: boolean;
   bounds: RefObject<HTMLElement | null>;
   onClose: () => void;
   onHide: () => void;
@@ -26,19 +27,19 @@ interface Props {
 }
 
 /** Favorites live on the account; the local listening session restores stopped, and the portal keeps one iframe. */
-export default function CompanionPlayer({ ownerId, active, open, hidden, mobileLayout, allowBackground, bounds, onClose, onHide, onFocusChange, onShow, control }: Props) {
+export default function CompanionPlayer({ ownerId, active, open, hidden, mobileLayout, allowBackground, ducked = false, bounds, onClose, onHide, onFocusChange, onShow, control }: Props) {
   const library = usePlayerLibrary(ownerId);
   const { source, ended, updateDuration } = library;
   const [draft, setDraft] = useState('');
   const [error, setError] = useState('');
   const [frame, setFrame] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
-  const youtube = useYouTubePlayer(source, (active || allowBackground) && open && source !== null && frame !== null, allowBackground, library.initialVolume);
+  const youtube = useYouTubePlayer(source, (active || allowBackground) && open && source !== null && frame !== null, allowBackground, library.initialVolume, ducked);
   const latest = useRef({ library, youtube }); latest.current = { library, youtube };
   const checkpoint = useCallback((immediate = false) => {
     const { library: l, youtube: y } = latest.current;
     const native = y.observe();
     const matches = l.source && y.sourceKey === youtubeSourceKey(l.source) && native?.videoId === l.source.videoId;
-    l.rememberPlayback(l.currentEntryKey, matches ? (y.status === 'ended' ? l.track!.startSeconds : native.position) : undefined, matches ? native.volume : y.readVolume(), immediate);
+    l.rememberPlayback(l.currentEntryKey, matches ? (y.status === 'ended' ? l.track!.startSeconds : native.position) : undefined, y.readVolume(), immediate);
   }, []);
   useEffect(() => { checkpoint(!youtube.playing); }, [youtube.sourceKey, youtube.position, youtube.volume, youtube.playing, youtube.status, checkpoint]);
   useLayoutEffect(() => {

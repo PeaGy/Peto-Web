@@ -158,6 +158,8 @@ class Snapshot(BaseModel):
     position: float = Field(ge=0)
     duration: float = Field(ge=0)
     volume: int = Field(ge=0, le=100)
+    effective_volume: int | None = Field(default=None, ge=0, le=100)
+    ducked: bool | None = None
     shuffle: bool
     repeat: Literal['off', 'all', 'one']
     queue_count: int = Field(ge=0, le=200)

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { loadYouTubeApi, type YouTubePlayer } from './youtubeApi';
 import { parseYouTubeUrl, youtubeSourceKey, type YouTubePlaybackSource } from './youtubeUrl';
+import { PlayerVolume } from './playerVolume';
 
 export type PlayerStatus = 'loading' | 'ready' | 'playing' | 'paused' | 'buffering' | 'ended' | 'blocked' | 'suspended' | 'error';
 interface Snapshot { status: PlayerStatus; ready: boolean; playing: boolean; position: number; duration: number; volume: number; error: string; sourceKey: string; endedSerial: number }
@@ -30,7 +31,7 @@ const ERROR_MESSAGES: Record<number, string> = {
 };
 
 /** Một iframe mỗi phiên. Desktop có thể giữ phát khi đổi tab/thu nhỏ; pagehide, đóng và unmount luôn giải phóng. */
-export function useYouTubePlayer(source: YouTubePlaybackSource | null, enabled: boolean, allowBackground = false, initialVolume = 60) {
+export function useYouTubePlayer(source: YouTubePlaybackSource | null, enabled: boolean, allowBackground = false, initialVolume = 60, ducked = false) {
   const hasSource = source !== null;
   const container = useRef<HTMLDivElement>(null);
   const latestSource = useRef(source);
@@ -41,12 +42,16 @@ export function useYouTubePlayer(source: YouTubePlaybackSource | null, enabled: 
   latestBackground.current = allowBackground;
   const session = useRef<Session | null>(null);
   const handledAutoplay = useRef<string | null>(null);
-  const volume = useRef(Math.round(Math.min(100, finite(initialVolume))));
+  const volumeRef = useRef<PlayerVolume | null>(null);
+  if (!volumeRef.current) volumeRef.current = new PlayerVolume(initialVolume);
+  const volume = volumeRef.current;
   const [visible, setVisible] = useState(() => !document.hidden);
   const canRunInPage = visible || allowBackground;
   const [pageActive, setPageActive] = useState(true);
   const [attempt, setAttempt] = useState(0);
-  const [snapshot, setSnapshot] = useState<Snapshot>({ status: 'loading', ready: false, playing: false, position: source?.startSeconds ?? 0, duration: 0, volume: volume.current, error: '', sourceKey: '', endedSerial: 0 });
+  const [snapshot, setSnapshot] = useState<Snapshot>(() => ({ status: 'loading', ready: false, playing: false, position: source?.startSeconds ?? 0, duration: 0, volume: volume.read(), error: '', sourceKey: '', endedSerial: 0 }));
+
+  useEffect(() => { volume.duck(ducked); }, [volume, ducked]);
 
   const stop = useCallback(() => {
     if (latestSource.current) handledAutoplay.current = sourceKey(latestSource.current);
@@ -54,8 +59,7 @@ export function useYouTubePlayer(source: YouTubePlaybackSource | null, enabled: 
     const current = session.current;
     if (current?.ready && !current.pendingCue && current.player) {
       try {
-        volume.current = current.player.isMuted() ? 0 : Math.min(100, finite(current.player.getVolume()));
-        final = { position: positionOf(current.player, latestSource.current), duration: finite(current.player.getDuration()), volume: volume.current };
+        final = { position: positionOf(current.player, latestSource.current), duration: finite(current.player.getDuration()), volume: volume.read() };
       } catch { /* Retain the latest polled values if native state is no longer available. */ }
     }
     session.current?.dispose();
@@ -88,6 +92,7 @@ export function useYouTubePlayer(source: YouTubePlaybackSource | null, enabled: 
       if (!current.active) return;
       current.active = false;
       current.ready = false;
+      volume.detach();
       window.clearInterval(poll);
       window.clearTimeout(readyTimer);
       // Mỗi thao tác riêng: lỗi pause trước onReady không ngăn destroy.
@@ -105,8 +110,7 @@ export function useYouTubePlayer(source: YouTubePlaybackSource | null, enabled: 
           if (state === 1 || state === 5) reportState(state);
           return;
         }
-        const nextVolume = current.player.isMuted() ? 0 : Math.min(100, finite(current.player.getVolume()));
-        volume.current = nextVolume;
+        const nextVolume = volume.read();
         const position = positionOf(current.player, latestSource.current), duration = finite(current.player.getDuration());
         setSnapshot(value => value.position === position && value.duration === duration && value.volume === nextVolume ? value
           : { ...value, position, duration, volume: nextVolume });
@@ -178,8 +182,7 @@ export function useYouTubePlayer(source: YouTubePlaybackSource | null, enabled: 
             window.clearTimeout(readyTimer);
             current.player = event.target;
             current.ready = true;
-            event.target.setVolume(volume.current);
-            if (volume.current === 0) event.target.mute();
+            volume.attach(event.target);
             publish({ status: 'ready', ready: true, playing: false, position: next.startSeconds, duration: 0, error: '', sourceKey: current.key });
             poll = window.setInterval(sync, 500);
             // Explicitly cue a stopped nonzero start so both native Play and Peto Play use the saved position.
@@ -233,23 +236,25 @@ export function useYouTubePlayer(source: YouTubePlaybackSource | null, enabled: 
     try { action(current.player); } catch { setSnapshot(value => ({ ...value, status: 'error', ready: false, playing: false, error: 'Player chưa phản hồi. Hãy thử lại.' })); }
   }
   return {
-    container, ...snapshot, stop, readVolume: () => volume.current,
+    container, ...snapshot, stop, readVolume: () => volume.read(),
+    readEffectiveVolume: () => volume.effective, ducked,
     observe: () => {
       const current = session.current;
       if (!current?.active || !current.ready || current.pendingCue || !current.player) return null;
       try {
+        const nativeVolume = current.player.getVolume(), muted = current.player.isMuted();
+        if (typeof nativeVolume !== 'number' || !Number.isFinite(nativeVolume) || typeof muted !== 'boolean') return null;
         return { videoId: parseYouTubeUrl(current.player.getVideoUrl?.() ?? '')?.videoId ?? null,
           state: current.player.getPlayerState?.() ?? null,
           position: positionOf(current.player, latestSource.current), duration: finite(current.player.getDuration()),
-          volume: current.player.isMuted() ? 0 : Math.round(Math.min(100, finite(current.player.getVolume()))) };
+          volume: muted ? 0 : Math.round(Math.min(100, finite(nativeVolume))) };
       } catch { return null; }
     },
     setPlaying: (playing: boolean) => command(player => playing ? player.playVideo() : player.pauseVideo()),
     seek: (position: number) => command(player => player.seekTo(Math.min(finite(position), snapshot.duration || finite(position)), true)),
     setVolume: (next: number) => {
-      volume.current = Math.round(Math.min(100, finite(next)));
-      setSnapshot(value => ({ ...value, volume: volume.current }));
-      command(player => { player.setVolume(volume.current); if (volume.current === 0) player.mute(); else player.unMute(); }, true);
+      volume.set(next);
+      setSnapshot(value => ({ ...value, volume: volume.read() }));
     },
     retry: () => { stop(); setAttempt(value => value + 1); },
   };

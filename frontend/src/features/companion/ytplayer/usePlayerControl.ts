@@ -34,7 +34,8 @@ export function usePlayerControl(props: ControlProps) {
       return { window: !open ? 'closed' : hidden ? 'hidden' : 'visible', status: !l.track ? 'empty' : !open ? 'suspended' : y.status,
         track: l.track ? controlTrack(l.track) : null,
         position: !l.track ? 0 : native?.position ?? y.position, duration: !l.track ? 0 : native?.duration ?? y.duration,
-        volume: native?.volume ?? y.readVolume(), shuffle: l.shuffle, repeat: l.repeat, queue_count: l.queue.length,
+        volume: y.readVolume(), ...(native ? { effective_volume: native.volume, ducked: y.ducked } : {}),
+        shuffle: l.shuffle, repeat: l.repeat, queue_count: l.queue.length,
         window_revision: windowLife.current.closed + l.resetRevision, native_video_id: native?.videoId ?? null, native_state: native?.state ?? null,
         can_undo: l.canUndo, history_count: l.historySaved ? l.history.length : undefined, can_previous: !!l.previousTrack,
         previous_track: l.previousTrack ? controlTrack(l.previousTrack) : null };
@@ -198,7 +199,8 @@ export function usePlayerControl(props: ControlProps) {
         const volume = command.action === 'mute' ? 0 : command.action === 'unmute' ? lastVolume.current : command.volume;
         if (!Number.isInteger(volume) || volume! < 0 || volume! > 100) throw new Error('Âm lượng phải từ 0 đến 100.');
         y.setVolume(volume!);
-        await wait(() => { same(); return latest.current.youtube.observe()?.volume === volume; }); break;
+        await wait(() => { same(); const player = latest.current.youtube;
+          return player.readVolume() === volume && player.observe()?.volume === player.readEffectiveVolume(); }); break;
       }
       default: throw new Error('Thao tác Player chưa được hỗ trợ.');
     }
