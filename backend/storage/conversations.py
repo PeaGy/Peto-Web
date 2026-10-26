@@ -10,6 +10,7 @@ from fastapi import HTTPException
 from storage import connection as db_connection
 from shared.web_search import normalize_sources
 from storage.attachments import _attach_files, list_attachment_paths
+from storage import chat_quotes
 
 async def create_conversation(owner: str, title: str = "", mode: str = "chat", persona: str = "assistant", project_id: str | None = None,
                               card_id: str | None = None) -> str:
@@ -117,7 +118,7 @@ async def get_messages(
         if limit is None:
             cursor = await db.execute(
                 """
-                SELECT m.id, m.role, m.content, m.created_at, m.status, m.sources, m.artifacts, m.work, m.provider, m.quote_id,
+                SELECT m.id, m.role, m.content, m.created_at, m.status, m.sources, m.artifacts, m.work, m.provider, m.quote_id, m.quoted_source,
                        t.request_id AS turn_request_id, t.state AS turn_state, t.user_message_id AS turn_user_id, t.outcome AS turn_outcome
                   FROM messages m
                   JOIN conversations c ON c.id = m.conversation_id
@@ -133,7 +134,7 @@ async def get_messages(
             # Lấy N tin gần nhất rồi đảo lại, tránh đọc toàn bộ hội thoại dài.
             cursor = await db.execute(
                 """
-                SELECT m.id, m.role, m.content, m.created_at, m.status, m.sources, m.artifacts, m.work, m.provider, m.quote_id,
+                SELECT m.id, m.role, m.content, m.created_at, m.status, m.sources, m.artifacts, m.work, m.provider, m.quote_id, m.quoted_source,
                        t.request_id AS turn_request_id, t.state AS turn_state, t.user_message_id AS turn_user_id, t.outcome AS turn_outcome
                   FROM messages m
                   JOIN conversations c ON c.id = m.conversation_id
@@ -147,7 +148,23 @@ async def get_messages(
             )
             rows = [dict(row) for row in await cursor.fetchall()]
             rows.reverse()
+        quotes = {}
         for row in rows:
+            raw_quote = row.pop('quoted_source', None)
+            if row['role'] == 'user' and (quote := chat_quotes.normalize(raw_quote)):
+                quotes[row['id']] = quote
+        targets = sorted({quote['message_id'] for quote in quotes.values() if quote['message_id'] is not None})
+        reachable = set()
+        for offset in range(0, len(targets), 500):
+            batch = targets[offset:offset + 500]
+            marks = ','.join('?' * len(batch))
+            found = await (await db.execute(f'''SELECT m.id FROM messages m JOIN conversations c ON c.id=m.conversation_id
+                WHERE c.owner=? AND c.id=? AND c.mode='chat' AND m.id IN ({marks}) AND m.role='assistant' ''',
+                (owner, conversation_id, *batch))).fetchall()
+            reachable.update(row[0] for row in found)
+        for row in rows:
+            if quote := quotes.get(row['id']):
+                row['quoted_source'] = quote if quote['message_id'] in reachable else {**quote, 'message_id': None}
             try:
                 row["sources"] = normalize_sources(json.loads(row["sources"]))
             except (ValueError, TypeError):

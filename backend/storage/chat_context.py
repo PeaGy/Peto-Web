@@ -6,6 +6,7 @@ import logging
 
 import aiosqlite
 from storage import connection
+from storage import chat_quotes
 
 logger = logging.getLogger('peto_web.chat_context')
 
@@ -26,6 +27,9 @@ async def init_tables(db):
             AFTER {operation} ON messages BEGIN
             DELETE FROM chat_contexts WHERE conversation_id={ref}.conversation_id AND cursor_id>={ref}.id;
             END''')
+    await db.execute('''CREATE TRIGGER IF NOT EXISTS chat_context_quote
+        AFTER UPDATE OF quoted_source ON messages WHEN OLD.quoted_source IS NOT NEW.quoted_source BEGIN
+        DELETE FROM chat_contexts WHERE conversation_id=NEW.conversation_id AND cursor_id>=NEW.id; END''')
     await db.execute('''CREATE TRIGGER IF NOT EXISTS chat_context_project
         AFTER UPDATE OF project_id ON conversations WHEN OLD.project_id IS NOT NEW.project_id BEGIN
         DELETE FROM chat_contexts WHERE conversation_id=NEW.id; END''')
@@ -82,7 +86,7 @@ async def spans(owner, conversation_id, before, cursor_id=0, cursor_offset=0, *,
     result, left = [], max_chars
     async with connection.connect() as db:
         db.row_factory = aiosqlite.Row
-        rows = await (await db.execute('''SELECT m.id,m.role,m.status,length(m.content) AS total,
+        rows = await (await db.execute('''SELECT m.id,m.role,m.status,m.quoted_source,length(m.content) AS total,
             substr(m.content,CASE WHEN m.id=? THEN ?+1 ELSE 1 END,?) AS text,
             COALESCE((SELECT state FROM chat_turns WHERE owner=c.owner AND (user_message_id=m.id OR assistant_message_id=m.id) ORDER BY id DESC LIMIT 1),'') AS turn_state
             FROM messages m JOIN conversations c ON c.id=m.conversation_id
@@ -93,10 +97,17 @@ async def spans(owner, conversation_id, before, cursor_id=0, cursor_offset=0, *,
             offset = cursor_offset if row['id'] == cursor_id else 0
             if row['id'] == cursor_id and offset >= row['total']:
                 continue
-            text = row['text'][:left]
-            result.append({'id': row['id'], 'role': row['role'], 'status': row['status'], 'turn_state': row['turn_state'],
-                           'start': offset, 'end': offset + len(text), 'total': row['total'], 'text': text})
-            left -= len(text)
+            quote = chat_quotes.normalize(row['quoted_source']) if row['role'] == 'user' else None
+            cost = len(quote['text']) if quote else 0
+            if left <= cost:
+                break
+            text = row['text'][:left - cost]
+            part = {'id': row['id'], 'role': row['role'], 'status': row['status'], 'turn_state': row['turn_state'],
+                    'start': offset, 'end': offset + len(text), 'total': row['total'], 'text': text}
+            if quote:
+                part['quoted_source'] = quote
+            result.append(part)
+            left -= len(text) + cost
             if left <= 0:
                 break
     return result
@@ -124,9 +135,10 @@ async def save(owner, conversation_id, project_id, previous, batch, before, data
         for part in batch:
             row = await (await db.execute('''SELECT substr(content,?+1,?),length(content),role,status,
                 COALESCE((SELECT state FROM chat_turns WHERE owner=? AND (user_message_id=messages.id OR assistant_message_id=messages.id) ORDER BY id DESC LIMIT 1),'')
-                FROM messages WHERE id=? AND conversation_id=?''',
+                ,quoted_source FROM messages WHERE id=? AND conversation_id=?''',
                                           (part['start'], len(part['text']), owner, part['id'], conversation_id))).fetchone()
-            if not row or tuple(row) != (part['text'], part['total'], part['role'], part['status'], part['turn_state']):
+            if (not row or tuple(row[:5]) != (part['text'], part['total'], part['role'], part['status'], part['turn_state'])
+                    or (chat_quotes.normalize(row[5]) if part['role'] == 'user' else None) != part.get('quoted_source')):
                 return False
         cursor = batch[-1]
         envelope = {'summary': data, 'sources': [{'message_id': p['id'], 'start': p['start'], 'end': p['end']} for p in batch],

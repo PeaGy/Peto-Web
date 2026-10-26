@@ -170,3 +170,62 @@ it('ngữ cảnh history kiểm tra đúng tài khoản, không chứa nội dun
   expect(newChatContext({ chatDraftContext: { ...context, persona: 'roleplay' } }, 'account')).toEqual(context);
   expect(CHAT_DRAFT_PREFIX).toContain('v1');
 });
+
+it('lưu quote riêng với chữ, phục hồi qua reload và giữ scope hội thoại/tài khoản', () => {
+  const store = new ChatDraftStore(), quote = { message_id: 7, text: 'Đoạn đã chọn 👋' };
+  store.setText(key(), 'Câu hỏi của tôi'); store.setQuote(key(), quote); store.flush();
+  expect(JSON.parse(sessionStorage.getItem(key())!)).toEqual({ text: 'Câu hỏi của tôi', quoted_source: quote });
+  const restored = new ChatDraftStore();
+  expect(restored.get(key())).toMatchObject({ text: 'Câu hỏi của tôi', quote });
+  expect(restored.get(key('B')).quote).toBeUndefined();
+  expect(restored.get(draftKey(scope('A', null, 'other'))).quote).toBeUndefined();
+  restored.setQuote(key(), null); restored.flush();
+  expect(JSON.parse(sessionStorage.getItem(key())!)).toEqual({ text: 'Câu hỏi của tôi' });
+});
+
+it('nháp chỉ có quote cũng được lưu; không hồi sinh ID/đoạn trích lỗi từ storage', () => {
+  const store = new ChatDraftStore(), quote = { message_id: 7, text: 'Chỉ quote' };
+  store.setQuote(key(), quote); store.flush();
+  expect(new ChatDraftStore().get(key()).quote).toEqual(quote);
+  for (const invalid of [{ message_id: null, text: 'mất nguồn' }, { message_id: -1, text: 'x' },
+    { message_id: 1, text: 'x'.repeat(2001) }, { message_id: 1, text: '' }, { message_id: true, text: 'x' }]) {
+    sessionStorage.setItem(key(), JSON.stringify({ text: 'Giữ chữ', quoted_source: invalid }));
+    expect(new ChatDraftStore().get(key())).toMatchObject({ text: 'Giữ chữ', files: [] });
+    expect(new ChatDraftStore().get(key()).quote).toBeUndefined();
+  }
+});
+
+it('snapshot nhận chỉ xóa quote đã gửi và giữ chữ/quote mới hơn', () => {
+  const store = new ChatDraftStore(), sentQuote = { message_id: 7, text: 'Đã gửi' }, newer = { message_id: 8, text: 'Đoạn khác' };
+  store.setText(key(), 'Tin trước'); store.setQuote(key(), sentQuote);
+  const sent = store.snapshot(key());
+  store.setText(key(), 'Tin sau'); store.accept(sent);
+  expect(store.get(key())).toMatchObject({ text: 'Tin sau', quote: undefined });
+  store.setQuote(key(), sentQuote); const again = store.snapshot(key()); store.setQuote(key(), newer);
+  store.accept(again);
+  expect(store.get(key())).toMatchObject({ text: 'Tin sau', quote: newer });
+  expect(again.quote).toEqual(sentQuote);
+});
+
+it('quote chọn sau lần gửi đầu đi theo chat mới; quote đã gửi không đi theo nháp', () => {
+  const store = new ChatDraftStore(); store.setText(key(null), 'Tin đầu');
+  const first = store.snapshot(key(null)), quote = { message_id: 9, text: 'Nháp sau khi gửi' };
+  store.setText(key(null), 'Câu hỏi kế'); store.setQuote(key(null), quote); store.accept(first, 'C');
+  expect(store.get(key('C'))).toMatchObject({ text: 'Câu hỏi kế', quote });
+  expect(store.get(key(null))).toMatchObject({ text: '', quote: undefined });
+  const next = store.snapshot(key('C')); store.accept(next);
+  expect(store.get(key('C'))).toMatchObject({ text: '', quote: undefined }); expect(sessionStorage.getItem(key('C'))).toBeNull();
+});
+
+it('hook đổi hội thoại/đăng xuất không dùng nhầm quote hoặc hồi sinh callback đã đóng', () => {
+  const quote = { message_id: 7, text: 'Quote tài khoản cũ' };
+  const { result, rerender } = renderHook(({ current, loggedIn }) => useChatDrafts(current, loggedIn),
+    { initialProps: { current: scope() as DraftScope | null, loggedIn: true } });
+  act(() => result.current.setDraftQuote(quote)); expect(result.current.draftQuote).toEqual(quote);
+  const snapshot = result.current.snapshotDraft()!;
+  rerender({ current: scope('B'), loggedIn: true }); expect(result.current.draftQuote).toBeUndefined();
+  rerender({ current: scope(), loggedIn: true }); expect(result.current.draftQuote).toEqual(quote);
+  rerender({ current: null, loggedIn: false });
+  act(() => result.current.acceptDraft(snapshot)); vi.runAllTimers();
+  expect(sessionStorage.getItem(key())).toBeNull(); expect(result.current.draftQuote).toBeUndefined();
+});

@@ -1,4 +1,4 @@
-import type { RefObject } from "react";
+import { useEffect, useState, type RefObject } from "react";
 import ComposerMenu from "./ComposerMenu";
 import EffortMenu from "./EffortMenu";
 import { isSpreadsheetFile } from "./attachments";
@@ -6,7 +6,10 @@ import { FileGlyph, formatSize, type DraftFile } from "./files";
 import ModelMenu from "./ModelMenu";
 import { joinDraft, MAX_DRAFT_LINKS, pastedLink, splitDraft } from "./draftLinks";
 import { ComposerLinkChip } from "./LinkChip";
-import type { Effort, ModelOption, WebSearchMode } from "../../shared/api/api";
+import type { Effort, ModelOption, WebSearchMode, QuotedSource } from "../../shared/api/api";
+import { QuoteExcerpt } from './QuotedFollowup';
+import { isPastedTextFile, LONG_PASTE_CHARS, pasteAtSelection, pastedTextFile } from './longPaste';
+import PastedTextPreview from './PastedTextPreview';
 
 const ACCEPT =
   "image/jpeg,image/png,image/webp,image/gif,.txt,.md,.csv,.json,.pdf,.docx,.xlsx,.xlsm,.py,.js,.ts,.tsx,.jsx,.css,.html,.xml,.yml,.yaml,.rs,.go,.java,.c,.cpp,.h,.sql,.log";
@@ -29,7 +32,7 @@ interface ComposerProps {
   draft: string;
   onDraftChange: (value: string) => void;
   files: DraftFile[];
-  onAddFiles: (files: FileList | File[]) => void;
+  onAddFiles: (files: FileList | File[]) => boolean | void;
   onRemoveFile: (id: string) => void;
   streaming: boolean;
   stopping: boolean;
@@ -52,6 +55,10 @@ interface ComposerProps {
   boxRef: RefObject<HTMLDivElement | null>;
   textareaRef: RefObject<HTMLTextAreaElement | null>;
   fileRef: RefObject<HTMLInputElement | null>;
+  contextKey?: string;
+  quote?: QuotedSource;
+  onRemoveQuote?: () => void;
+  onJumpQuote?: (messageId: number) => void;
 }
 
 /**
@@ -65,10 +72,14 @@ export default function Composer({
   draft, onDraftChange, files, onAddFiles, onRemoveFile,
   streaming, stopping, canSend, onSubmit, onStop,
   effort, efforts, onEffortChange, webSearch, onToggleWeb, menuDisabled,
-  model, models, onModelChange, formRef, boxRef, textareaRef, fileRef,
+  model, models, onModelChange, formRef, boxRef, textareaRef, fileRef, contextKey, quote, onRemoveQuote, onJumpQuote,
 }: ComposerProps) {
   // Nháp gồm chữ đang gõ và các link đã dán (draftLinks.ts); ô chữ chỉ hiện phần chữ, link hiện thành thẻ.
   const { text, links } = splitDraft(draft);
+  const [converted, setConverted] = useState<{ file: File; expected: string; restored: string; caret: number } | null>(null);
+  const [preview, setPreview] = useState<File | null>(null);
+  useEffect(() => { setConverted(null); setPreview(null); }, [contextKey]);
+  useEffect(() => { if (converted && (streaming || !files.some(item => item.file === converted.file))) setConverted(null); }, [files, streaming, converted]);
   return (
     <form
       ref={formRef}
@@ -79,6 +90,7 @@ export default function Composer({
       }}
     >
       <div className="composer" ref={boxRef}>
+        {quote && <QuoteExcerpt quote={quote} onJump={onJumpQuote} onRemove={onRemoveQuote} />}
         {(files.length > 0 || links.length > 0) && (
           <ul className="attach-list">
             {links.map((url) => (
@@ -87,7 +99,9 @@ export default function Composer({
             ))}
             {files.map((item) => (
               <li key={item.id} className="attach-chip">
-                {item.previewUrl ? (
+                {isPastedTextFile(item.file) ? <button type="button" className="attach-pasted-preview" aria-label={`Xem ${item.file.name}`} onClick={() => setPreview(item.file)}>
+                  <FileGlyph name={item.file.name} kind="file" /><span><strong>{item.file.name}</strong><em>{formatSize(item.file.size)}</em></span>
+                </button> : <>{item.previewUrl ? (
                   <img src={item.previewUrl} alt="" />
                 ) : (
                   <FileGlyph name={item.file.name} kind="file" />
@@ -95,7 +109,7 @@ export default function Composer({
                 <span>
                   <strong>{item.file.name}</strong>
                   <em>{formatSize(item.file.size)}</em>
-                </span>
+                </span></>}
                 <button
                   type="button"
                   disabled={streaming}
@@ -109,6 +123,17 @@ export default function Composer({
             ))}
           </ul>
         )}
+        {converted && <p className="paste-conversion" role="status">Đã thêm nội dung dán thành tệp
+          <button type="button" disabled={draft !== converted.expected || streaming} title={draft !== converted.expected ? 'Bản nháp đã được sửa; tệp vẫn giữ nội dung đã dán' : undefined} onClick={() => {
+            if (draft !== converted.expected || streaming) return;
+            const item = files.find(item => item.file === converted.file);
+            if (item) onRemoveFile(item.id);
+            onDraftChange(converted.restored);
+            const caret = converted.caret;
+            setConverted(null);
+            requestAnimationFrame(() => { textareaRef.current?.focus(); textareaRef.current?.setSelectionRange(caret, caret); });
+          }}>Hoàn tác</button>
+        </p>}
 
         <textarea
           ref={textareaRef}
@@ -124,6 +149,23 @@ export default function Composer({
               event.preventDefault();
               onAddFiles(pasted);
               return;
+            }
+            const incoming = event.clipboardData.getData('text/plain') || event.clipboardData.getData('text');
+            if (!streaming && incoming.length > LONG_PASTE_CHARS) {
+              const file = pastedTextFile(incoming, files.map(item => item.file.name));
+              // Rejected attachments fall back to the browser's normal text paste; never drop the clipboard text.
+              if (onAddFiles([file]) !== false) {
+                event.preventDefault();
+                const inserted = pasteAtSelection(text, incoming, event.currentTarget.selectionStart, event.currentTarget.selectionEnd);
+                const expected = joinDraft(inserted.remaining, links);
+                onDraftChange(expected);
+                setConverted({ file, expected, restored: joinDraft(inserted.restored, links), caret: inserted.caret });
+                const caret = Math.min(event.currentTarget.selectionStart, inserted.remaining.length);
+                requestAnimationFrame(() => {
+                  if (document.activeElement === textareaRef.current) textareaRef.current?.setSelectionRange(caret, caret);
+                });
+                return;
+              }
             }
             // Dán đúng một link thì nó thành thẻ; dán link lẫn với chữ thì vẫn dán chữ như thường.
             const url = pastedLink(event.clipboardData.getData("text"));
@@ -178,6 +220,7 @@ export default function Composer({
         <p className="composer-note">Peto đọc chữ và dẫn số trang trong PDF, nhận dạng cả trang scan khi máy chủ có OCR. Chữ từ ảnh có thể nhận sai; kết quả đọc sẽ hiện dưới tệp.</p>}
       {files.some((item) => isSpreadsheetFile(item.file)) &&
         <p className="composer-note">Peto đọc dữ liệu, công thức, ghi chú, biểu đồ và bảng tổng hợp trong tệp Excel, và sửa thẳng được trên tệp mà giữ định dạng; chưa xem được hình ảnh và màu ô.</p>}
+      {preview && <PastedTextPreview file={preview} onClose={() => setPreview(null)} />}
     </form>
   );
 }

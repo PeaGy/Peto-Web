@@ -59,6 +59,11 @@ export interface OutgoingAttachment {
 
 export interface EmotionCue { emotion: string; offset: number }
 
+/** A bounded user-selected excerpt; source IDs are scoped and validated by the server. */
+export interface QuotedSource { message_id: number | null; text: string; unavailable?: boolean }
+export interface ReplyVariant { conversation_id: string; message_id: number; model?: string; effort?: string }
+export interface ReplyVariants { index: number; choices: ReplyVariant[] }
+
 export interface Message {
   id?: number;
   role: Role;
@@ -81,6 +86,8 @@ export interface Message {
   reply_to?: number;
   /** Tin Companion này trả lời tin có mã đó (Reply như AIRI); trang tự tìm tin đó trong mạch để hiện trích dẫn. */
   quote_id?: number;
+  quoted_source?: QuotedSource | null;
+  reply_variants?: ReplyVariants;
   /** Cảm xúc Peto tự chọn cho câu trả lời Companion (emotion_tags.py), để nghe lại tin cũ thì nhân vật làm đúng mặt. */
   emotion?: string | null;
   /** Cảm xúc của câu ở vị trí 0; tin cũ có thể còn nhiều mốc UTF-16, Companion chỉ dùng mặt đầu tiên. */
@@ -335,6 +342,11 @@ export async function getMessages(conversationId: string, signal?: AbortSignal, 
   const data = await json<ConversationSettings & { messages: Message[] }>(response);
   onSettings?.(data);
   return data.messages;
+}
+
+/** A bounded read-only excerpt, rather than fetching every message/document for each search preview. */
+export async function getConversationPreview(id: string, signal?: AbortSignal): Promise<{ messages: Message[]; truncated: boolean }> {
+  return json(await fetch(`/api/conversations/${encodeURIComponent(id)}/preview`, { signal }));
 }
 
 export async function deleteConversation(conversationId: string): Promise<void> {
@@ -777,6 +789,7 @@ export async function sendMessage(
     playerControl?: boolean | 1 | 2 | 3 | 4 | 5;
     /** Chỉ Companion: tin trong mạch mà tin này trả lời (Reply như AIRI). */
     quoteId?: number;
+    quotedSource?: { message_id: number; text: string } | null;
   },
   handlers: ChatHandlers,
   signal?: AbortSignal,
@@ -803,6 +816,7 @@ export async function sendMessage(
       ...(payload.mode === 'companion' && payload.playerControl ? { player_control: typeof payload.playerControl === 'number' ? payload.playerControl : 1 } : {}),
       ...(payload.provider && payload.providerKey ? { provider: payload.provider } : {}),
       ...(payload.mode === 'companion' && payload.quoteId ? { quote_id: payload.quoteId } : {}),
+      ...((payload.mode ?? 'chat') === 'chat' && payload.quotedSource !== undefined ? { quoted_source: payload.quotedSource } : {}),
     }),
     signal,
   });

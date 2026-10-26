@@ -4,6 +4,7 @@ import json
 
 import aiosqlite
 from storage import connection
+from storage import chat_quotes
 from shared.web_search import normalize_sources
 
 current: ContextVar['ChatHistory | None'] = ContextVar('current_chat_history', default=None)
@@ -44,7 +45,7 @@ class ChatHistory:
                     'hint': 'Dùng query=null hoặc chuỗi tối đa 200 ký tự; start_id/start_character=null khi bắt đầu, hoặc số nguyên không âm từ next_id/next_character. Không truyền ID hội thoại hoặc tham số khác.'}
         async with connection.connect() as db:
             db.row_factory = aiosqlite.Row
-            rows = await (await db.execute('''WITH scoped AS (SELECT m.id,m.role,m.status,m.content,m.sources,m.artifacts,
+            rows = await (await db.execute('''WITH scoped AS (SELECT m.id,m.role,m.status,m.content,m.sources,m.artifacts,m.quoted_source,
                 CASE WHEN m.id=? AND ?>0 THEN ? WHEN ? IS NOT NULL
                      THEN max(0,instr(lower(m.content),lower(?))-201) ELSE 0 END AS began,
                 COALESCE((SELECT state FROM chat_turns WHERE owner=c.owner AND (user_message_id=m.id OR assistant_message_id=m.id)
@@ -54,7 +55,7 @@ class ChatHistory:
                 AND m.id>=? AND m.id<? AND (? IS NULL OR instr(lower(m.content),lower(?))>0)
                 ORDER BY m.id LIMIT 4)
                 SELECT id,role,status,turn_state,began,substr(content,began+1,4001) AS content,
-                       length(content) AS total,sources,artifacts FROM scoped ORDER BY id''',
+                       length(content) AS total,sources,artifacts,quoted_source FROM scoped ORDER BY id''',
                 (start, offset, offset, query, query, self.owner, self.conversation_id, start, self.before, query, query))).fetchall()
             result, room, next_id, next_character = [], 12_000, None, 0
             for row in rows:
@@ -79,6 +80,8 @@ class ChatHistory:
                                'files': [{'name': f['filename'][:250], 'kind': f['kind']} for f in files],
                                'artifacts': [{'name': a['filename'][:250]} for a in artifacts[:4]
                                              if isinstance(a, dict) and isinstance(a.get('filename'), str)]})
+                if row['role'] == 'user' and (quote := chat_quotes.normalize(row['quoted_source'])):
+                    result[-1]['quoted_source'] = quote
                 room -= len(text)
                 next_id, next_character = (row['id'], began + len(text)) if began + len(text) < row['total'] else (row['id'] + 1, 0)
                 if next_character or room <= 0:

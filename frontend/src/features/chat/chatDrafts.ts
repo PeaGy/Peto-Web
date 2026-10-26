@@ -3,8 +3,16 @@ import type { DraftFile } from './files';
 export const CHAT_DRAFT_PREFIX = 'peto.chat-draft.v1:';
 export type NewChatContext = { ownerId: string; projectId: string | null };
 export type DraftScope = { ownerId: string; conversationId: string | null; projectId: string | null };
-type Draft = { text: string; files: DraftFile[]; revision: number };
-export type DraftSnapshot = { key: string; revision: number; fileIds: string[] };
+export type DraftQuote = { message_id: number; text: string };
+type Draft = { text: string; files: DraftFile[]; revision: number; quote?: DraftQuote };
+export type DraftSnapshot = { key: string; revision: number; fileIds: string[]; quote?: DraftQuote };
+
+function safeQuote(value: unknown): DraftQuote | undefined {
+  if (!value || typeof value !== 'object') return;
+  const quote = value as Partial<DraftQuote>;
+  if (Number.isSafeInteger(quote.message_id) && quote.message_id! > 0 && typeof quote.text === 'string'
+    && quote.text.trim() && quote.text.length <= 2000) return { message_id: quote.message_id!, text: quote.text };
+}
 
 export function draftKey(scope: DraftScope): string {
   return CHAT_DRAFT_PREFIX + JSON.stringify(scope.conversationId
@@ -31,11 +39,13 @@ export class ChatDraftStore {
     let draft = this.drafts.get(key);
     if (!draft) {
       let text = '';
+      let quote: DraftQuote | undefined;
       try {
         const saved: unknown = JSON.parse(this.storage().getItem(key) ?? 'null');
         if (saved && typeof saved === 'object' && 'text' in saved && typeof saved.text === 'string') text = saved.text;
+        if (saved && typeof saved === 'object' && 'quoted_source' in saved) quote = safeQuote(saved.quoted_source);
       } catch { /* Storage bị chặn hoặc dữ liệu hỏng: vẫn dùng được ô soạn. */ }
-      draft = { text, files: [], revision: 0 };
+      draft = { text, files: [], revision: 0, ...(quote ? { quote } : {}) };
       this.drafts.set(key, draft);
     }
     return draft;
@@ -61,9 +71,18 @@ export class ChatDraftStore {
     draft.files = typeof update === 'function' ? update(draft.files) : update;
   }
 
+  setQuote(key: string, value: DraftQuote | null) {
+    const quote = safeQuote(value), draft = this.get(key);
+    if (draft.quote?.message_id === quote?.message_id && draft.quote?.text === quote?.text) return;
+    draft.quote = quote;
+    draft.revision++;
+    this.dirty.add(key);
+    if (this.timer === undefined) this.timer = setTimeout(() => this.flush(), 250);
+  }
+
   snapshot(key: string): DraftSnapshot {
     const draft = this.get(key);
-    return { key, revision: draft.revision, fileIds: draft.files.map(file => file.id) };
+    return { key, revision: draft.revision, fileIds: draft.files.map(file => file.id), ...(draft.quote ? { quote: { ...draft.quote } } : {}) };
   }
 
   accept(snapshot: DraftSnapshot, conversationId?: string) {
@@ -75,18 +94,24 @@ export class ChatDraftStore {
       draft.revision++;
       this.dirty.add(snapshot.key);
     }
+    if (snapshot.quote && draft.quote?.message_id === snapshot.quote.message_id && draft.quote.text === snapshot.quote.text) {
+      draft.quote = undefined;
+      this.dirty.add(snapshot.key);
+    }
     draft.files = draft.files.filter(file => !snapshot.fileIds.includes(file.id));
     const parts = this.parts(snapshot.key);
     if (conversationId && parts?.[1] === 'new' && typeof parts[0] === 'string') {
       const targetKey = draftKey({ ownerId: parts[0], conversationId, projectId: null });
       const target = this.get(targetKey);
       // Chữ gõ sau lần gửi đầu đi theo ID vừa cấp; không đè một bản nháp đích đã có.
-      if (!target.text && !target.files.length) {
+      if (!target.text && !target.files.length && !target.quote) {
         target.text = draft.text;
         target.files = draft.files;
+        target.quote = draft.quote;
         target.revision++;
         draft.text = '';
         draft.files = [];
+        draft.quote = undefined;
         draft.revision++;
         this.dirty.add(targetKey);
         this.dirty.add(snapshot.key);
@@ -106,7 +131,7 @@ export class ChatDraftStore {
     for (const key of this.dirty) {
       const draft = this.drafts.get(key);
       try {
-        if (draft?.text) this.storage().setItem(key, JSON.stringify({ text: draft.text }));
+        if (draft?.text || draft?.quote) this.storage().setItem(key, JSON.stringify({ text: draft.text, ...(draft.quote ? { quoted_source: draft.quote } : {}) }));
         else this.storage().removeItem(key);
       } catch { /* Hết dung lượng hoặc storage bị chặn: giữ nháp trong bộ nhớ. */ }
     }

@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 from typing import Literal, Annotated
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+from fastapi import HTTPException
 from ai import models as ai_models
 
 
@@ -19,6 +20,26 @@ class ProviderChoiceIn(BaseModel):
     model: str = Field(default="", max_length=100)
     # Chỉ Azure OpenAI: địa chỉ tài nguyên https://<tên>.openai.azure.com.
     endpoint: str | None = Field(default=None, max_length=200)
+
+
+class QuotedSourceIn(BaseModel):
+    message_id: int = Field(gt=0, le=9223372036854775807, strict=True)
+    text: str = Field(min_length=1, max_length=2000, strict=True)
+
+    @field_validator('text', mode='before')
+    @classmethod
+    def valid_unicode(cls, value):
+        if isinstance(value, str) and any(0xD800 <= ord(c) <= 0xDFFF for c in value):
+            # FastAPI's default validation response echoes invalid input, which itself cannot encode to UTF-8.
+            raise HTTPException(400, 'Đoạn trích chứa ký tự không hợp lệ.')
+        return value
+
+    @field_validator('text')
+    @classmethod
+    def valid_excerpt(cls, value):
+        if not value.strip() or '\x00' in value or any(0xD800 <= ord(c) <= 0xDFFF for c in value):
+            raise ValueError('Đoạn trích không hợp lệ.')
+        return value
 
 
 class ChatRequest(BaseModel):
@@ -52,6 +73,8 @@ class ChatRequest(BaseModel):
     card_id: str | None = Field(default=None, max_length=32)
     # Chỉ Companion: tin trong mạch mà tin mới trả lời (Reply của AIRI). Tin đó không còn thì lượt vẫn gửi, không trích.
     quote_id: int | None = Field(default=None, gt=0)
+    # Web Chat only: user-selected text, not a system instruction or a verified transcription.
+    quoted_source: QuotedSourceIn | None = None
     # Only the sending Companion browser implements the action/ack protocol. Older clients have no tools.
     player_control: Literal[1, 2, 3, 4, 5] | None = None
 

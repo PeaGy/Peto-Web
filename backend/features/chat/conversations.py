@@ -13,6 +13,7 @@ from storage import connection as db_connection
 from core.config import UPLOAD_DIR
 from ai import models as ai_models
 from storage.conversations import conversation_settings, set_chat_selection
+from storage import chat_quotes, chat_lineage
 
 
 # Chế độ nhập vai bỏ ngày 2026-10-18 (đã có Companion). Hội thoại nhập vai cũ chỉ còn để xem: lịch sử có thể có nội dung
@@ -100,16 +101,18 @@ async def versions(owner, conversation_id):
         return [dict(item) for item in result]
 
 
-async def retry_in_place(owner, conversation_id, message_id, text):
+async def retry_in_place(owner, conversation_id, message_id, text, quoted_source=chat_quotes.UNSET):
     """Gửi lại câu hỏi cuối ngay trong hội thoại khi câu trả lời của nó bị dừng hay hỏng giữa chừng.
 
     Trước đây mọi lần sửa hay "Thử lại" đều tạo phiên bản mới, nên bấm Dừng rồi gửi lại câu hỏi để lại hai hội thoại
     trùng tên (chủ dự án báo 8/10/2026). Chỉ áp dụng khi ``message_id`` là tin người dùng cuối và sau nó chỉ có câu trả lời
-    chưa hoàn tất, không kèm tệp đã tạo: câu trả lời dở bị xóa, câu hỏi được thay chữ, ảnh và tệp đính kèm giữ nguyên.
+    chưa hoàn tất, không kèm tệp đã tạo, và cả chữ lẫn đoạn trích của câu hỏi không đổi. Câu trả lời dở bị xóa, ảnh và
+    tệp đính kèm giữ nguyên. Sửa câu hỏi luôn tạo nhánh mới để các câu trả lời cũ giữ đúng nguồn gốc.
     Trả về ``message_id`` khi làm được, ``None`` thì nơi gọi tạo phiên bản như cũ.
     """
     async with db_connection.connect() as connection:
         connection.row_factory = aiosqlite.Row
+        await connection.execute('PRAGMA foreign_keys=ON')
         await connection.execute('BEGIN IMMEDIATE')
         source = await (await connection.execute("SELECT archived FROM conversations WHERE id=? AND owner=? AND mode='chat'",
                                                   (conversation_id, owner))).fetchone()
@@ -120,7 +123,7 @@ async def retry_in_place(owner, conversation_id, message_id, text):
                                                    (owner, conversation_id, message_id))).fetchone()
         if running:
             raise HTTPException(409, 'Lượt này vẫn đang chạy. Dừng hoặc kiểm tra lịch sử trước khi thử lại nhé.')
-        rows = await (await connection.execute('SELECT id, role, status, artifacts FROM messages WHERE conversation_id=? AND id>=? ORDER BY id',
+        rows = await (await connection.execute('SELECT id, role, content, status, artifacts, quoted_source FROM messages WHERE conversation_id=? AND id>=? ORDER BY id',
                                                (conversation_id, message_id))).fetchall()
         if not rows or rows[0]['id'] != message_id or rows[0]['role'] != 'user':
             await connection.rollback()
@@ -135,14 +138,24 @@ async def retry_in_place(owner, conversation_id, message_id, text):
             if not has_files:
                 await connection.rollback()
                 raise HTTPException(400, 'Tin nhắn trống')
+        old_quote = chat_quotes.normalize(rows[0]['quoted_source'])
+        quote = old_quote if quoted_source is chat_quotes.UNSET else (
+            await chat_quotes.validate(connection, owner, conversation_id, quoted_source) if quoted_source is not None else None)
+        # A changed question needs a new message/origin. Even an unsuccessful original may already have successful
+        # siblings elsewhere; reusing its ID for different text would merge those unrelated response families.
+        if text != rows[0]['content'] or quote != old_quote:
+            await connection.rollback()
+            return None
         for row in later:
             await connection.execute('DELETE FROM messages WHERE id=? AND conversation_id=?', (row['id'], conversation_id))
-        await connection.execute('UPDATE messages SET content=? WHERE id=? AND conversation_id=?', (text, message_id, conversation_id))
+        await chat_lineage.user(connection, message_id)
+        await connection.execute('UPDATE messages SET content=?,quoted_source=? WHERE id=? AND conversation_id=?',
+                                 (text, chat_quotes.encode(quote), message_id, conversation_id))
         await connection.commit()
         return message_id
 
 
-async def fork(owner, conversation_id, message_id, text):
+async def fork(owner, conversation_id, message_id, text, quoted_source=chat_quotes.UNSET):
     """Copy only the selected prefix, including independent attachments and document versions.
 
     The original remains untouched. SQL rollback and copied-file cleanup cover a failed fork.
@@ -166,13 +179,25 @@ async def fork(owner, conversation_id, message_id, text):
             attachments = await (await connection.execute('SELECT * FROM attachments WHERE owner=? AND conversation_id=? AND message_id<=? ORDER BY created_at, rowid', (owner, conversation_id, message_id))).fetchall()
             if not text.strip() and not any(a['message_id'] == message_id for a in attachments):
                 raise HTTPException(400, 'Tin nhắn trống')
+            old_quote = chat_quotes.normalize(rows[-1]['quoted_source'])
+            target_quote = old_quote if quoted_source is chat_quotes.UNSET else (
+                await chat_quotes.validate(connection, owner, conversation_id, quoted_source) if quoted_source is not None else None)
+            changed = text != rows[-1]['content'] or target_quote != old_quote
             group = source['branch_group'] or conversation_id
             now = time.time()
             await connection.execute('UPDATE conversations SET branch_group=? WHERE id=?', (group, conversation_id))
             await connection.execute("""INSERT INTO conversations(id,owner,title,created_at,updated_at,mode,persona,title_state,branch_group,project_id,model,effort)
                 VALUES(?,?,?,?,?,'chat',?,'locked',?,?,?,?)""", (new_id,owner,source['title'],now,now,source['persona'],group,source['project_id'],source['model'],source['effort']))
             document_ids, message_ids = {}, {}
+            last_user = None
             for row in rows:
+                if row['role'] == 'user':
+                    last_user = row['id']
+                    await chat_lineage.user(connection, row['id'])
+                elif row['role'] == 'assistant' and last_user is not None:
+                    # Legacy originals gain explicit provenance only when copied, never from text equality.
+                    await chat_lineage.reply(connection, row['id'], last_user)
+                lineage = await (await connection.execute('SELECT * FROM chat_message_lineage WHERE message_id=?', (row['id'],))).fetchone()
                 artifacts = json.loads(row['artifacts'] or '[]')
                 for artifact in artifacts:
                     old_id = artifact['id']
@@ -191,19 +216,24 @@ async def fork(owner, conversation_id, message_id, text):
                             SELECT ?,version,format,pages,docx,pdf,preview,pptx,xlsx
                             FROM document_assets WHERE document_id=? AND version<=?''', (new_doc,old_id,artifact['version']))
                         artifact['id'] = new_doc
-                cursor = await connection.execute('''INSERT INTO messages(conversation_id,role,content,created_at,status,sources,artifacts,work)
-                    VALUES(?,?,?,?,?,?,?,?)''', (new_id,row['role'],text if row['id']==message_id else row['content'],row['created_at'],row['status'],row['sources'],json.dumps(artifacts),row['work']))
+                quote = chat_quotes.rebind(target_quote if row['id'] == message_id else row['quoted_source'], message_ids)
+                cursor = await connection.execute('''INSERT INTO messages(conversation_id,role,content,created_at,status,sources,artifacts,work,provider,quote_id,quoted_source)
+                    VALUES(?,?,?,?,?,?,?,?,?,?,?)''', (new_id,row['role'],text if row['id']==message_id else row['content'],row['created_at'],row['status'],row['sources'],json.dumps(artifacts),row['work'],row['provider'],message_ids.get(row['quote_id']),chat_quotes.encode(quote)))
                 message_ids[row['id']] = cursor.lastrowid
+                origin = cursor.lastrowid if row['id'] == message_id and changed else lineage['origin_id'] if lineage else row['id']
+                await connection.execute('''INSERT INTO chat_message_lineage(message_id,origin_id,question_origin_id,model,effort)
+                    VALUES(?,?,?,?,?)''', (cursor.lastrowid, origin, lineage['question_origin_id'] if lineage else None,
+                                          lineage['model'] if lineage else '', lineage['effort'] if lineage else ''))
             # Lượt dừng ở phần lịch sử chép sang không được sống lại thành yêu cầu đang chờ.
             for old_user_id, new_user_id in message_ids.items():
                 if old_user_id == message_id:
                     continue
-                turn = await (await connection.execute('''SELECT state,assistant_message_id,outcome FROM chat_turns
+                turn = await (await connection.execute('''SELECT state,assistant_message_id,outcome,model,effort FROM chat_turns
                     WHERE owner=? AND user_message_id=? ORDER BY id DESC LIMIT 1''', (owner, old_user_id))).fetchone()
                 if turn:
-                    await connection.execute('''INSERT INTO chat_turns(owner,request_id,state,conversation_id,user_message_id,assistant_message_id,created_at,outcome)
-                        VALUES(?,?,?,?,?,?,?,?)''', (owner, uuid.uuid4().hex, 'interrupted' if turn['state'] == 'running' else turn['state'], new_id, new_user_id,
-                                                  message_ids.get(turn['assistant_message_id']), now, turn['outcome']))
+                    await connection.execute('''INSERT INTO chat_turns(owner,request_id,state,conversation_id,user_message_id,assistant_message_id,created_at,outcome,model,effort)
+                        VALUES(?,?,?,?,?,?,?,?,?,?)''', (owner, uuid.uuid4().hex, 'interrupted' if turn['state'] == 'running' else turn['state'], new_id, new_user_id,
+                                                  message_ids.get(turn['assistant_message_id']), now, turn['outcome'],turn['model'],turn['effort']))
             for item in attachments:
                 aid = uuid.uuid4().hex
                 path = UPLOAD_DIR / new_id / (aid + Path(item['path']).suffix)

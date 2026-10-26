@@ -55,6 +55,9 @@ import { safeSources } from "../features/chat/WebSources";
 import SourcesPanel from '../features/chat/SourcesPanel';
 import { normalizeWeb } from '../features/chat/sourceActivity';
 import { closeWork } from "../features/chat/WorkTimeline";
+import { QuoteSelection } from '../features/chat/QuotedFollowup';
+import { validReplyVariants } from '../features/chat/replyVariants';
+import type { DraftQuote } from '../features/chat/chatDrafts';
 import TooltipLayer from '../shared/ui/TooltipLayer';
 import {
   UnauthorizedError,
@@ -76,6 +79,8 @@ import {
   type ImagineJob,
   type Message,
   type OutgoingAttachment,
+  type ReplyVariant,
+  type ReplyVariants,
   type WebSearchMode,
   type WorkStep,
 } from "../shared/api/api";
@@ -171,6 +176,9 @@ function AppContent() {
   conversationIdRef.current = conversationId;
   const [archived, setArchived] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
+  const messageRowsRef = useRef(messages);
+  messageRowsRef.current = messages;
+  const submitRevisionRef = useRef<((revision: ChatRevision) => Promise<void>) | null>(null);
   const [sourcesIndex, setSourcesIndex] = useState<number | null>(null);
   const closeSources = useCallback(() => setSourcesIndex(null), []);
   const [documentRequest, setDocumentRequest] = useState<DocumentDraftRequest | null>(null);
@@ -225,7 +233,7 @@ function AppContent() {
   const replyVisible = streaming && Boolean(replyRef.current && isSelectedReply(replyRef.current));
   const rootContext = newChatContext(location.state, auth?.user?.id ?? '');
   const draftConversationId = view === 'chat' ? routedConversationId : conversationId;
-  const { draft, setDraft, draftFiles, setDraftFiles, snapshotDraft, acceptDraft, clearDrafts,
+  const { draft, setDraft, draftFiles, setDraftFiles, draftQuote, setDraftQuote, snapshotDraft, acceptDraft, clearDrafts,
     removeConversationDraft, removeProjectDraft } = useChatDrafts(auth?.authenticated && auth.user ? {
       ownerId: auth.user.id, conversationId: draftConversationId,
       projectId: view === 'chat' && !routedConversationId ? rootContext.projectId : activeProjectId,
@@ -356,6 +364,46 @@ function AppContent() {
   const listCount = useRef(50);
   const nearBottom = useRef(true);
   const messagesRef = useRef<HTMLDivElement>(null);
+  const pendingMessageFocus = useRef<{ conversationId: string; messageId: number } | null>(null);
+  const messageFocusTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const jumpToMessage = useCallback((id: number) => {
+    if (!Number.isSafeInteger(id) || id <= 0) return;
+    const target = messagesRef.current?.querySelector<HTMLElement>(`article[data-message-id="${id}"]`);
+    if (!target) return;
+    nearBottom.current = false;
+    setShowJump(true); setSourcesIndex(null);
+    target.scrollIntoView({ block: 'center', behavior: isReducedMotion() ? 'instant' : 'smooth' });
+    target.tabIndex = -1; target.focus({ preventScroll: true });
+    messagesRef.current?.querySelectorAll('.quote-target-highlight').forEach(node => node.classList.remove('quote-target-highlight'));
+    target.classList.add('quote-target-highlight');
+    clearTimeout(messageFocusTimer.current);
+    messageFocusTimer.current = setTimeout(() => target.classList.remove('quote-target-highlight'), 1400);
+  }, []);
+  useEffect(() => () => clearTimeout(messageFocusTimer.current), []);
+  const navigationBusy = useRef(false);
+  navigationBusy.current = readOnly || streaming || loadingConversation || loadFailed || deleting;
+  const openReplyVariant = useCallback((choice: ReplyVariant | undefined) => {
+    if (!choice || navigationBusy.current) return;
+    pendingMessageFocus.current = { conversationId: choice.conversation_id, messageId: choice.message_id };
+    setSourcesIndex(null);
+    navigate({ pathname: chatRoute(choice.conversation_id), search: window.location.search });
+  }, [navigate]);
+  const regenerateAnswer = useCallback((id: number) => {
+    if (navigationBusy.current) return;
+    const rows = messageRowsRef.current, index = rows.findIndex(row => row.id === id && row.role === 'assistant');
+    const user = rows[index - 1];
+    const answer = rows[index];
+    if (index < 1 || !answer || answer.local || answer.stopped || answer.status === 'incomplete'
+      || (answer.turn_state && answer.turn_state !== 'complete') || user?.role !== 'user' || !user.id) return;
+    void submitRevisionRef.current?.({ target: user, text: user.content });
+  }, []);
+  const variantControls = useRef(new WeakMap<ReplyVariants, { index: number; count: number; onPrevious: () => void; onNext: () => void }>());
+  const selectQuotedText = useCallback((quote: DraftQuote) => {
+    if (navigationBusy.current || !messageRowsRef.current.some(row => row.id === quote.message_id && row.role === 'assistant'
+      && !row.local && !row.stopped && row.status !== 'incomplete' && (!row.turn_state || row.turn_state === 'complete'))) return;
+    setDraftQuote(quote);
+    textareaRef.current?.focus({ preventScroll: true });
+  }, [setDraftQuote]);
   const cancelEdit = () => {
     const id = editTarget?.id;
     setEditTarget(null);
@@ -590,6 +638,14 @@ function AppContent() {
     if (nearBottom.current) bottomRef.current?.scrollIntoView({ behavior: "instant", block: "end" });
     else setShowJump(true);
   }, [messages, streaming]);
+  useLayoutEffect(() => {
+    const pending = pendingMessageFocus.current;
+    if (!pending || loadingConversation || pending.conversationId !== conversationId) return;
+    if (messages.some(message => message.id === pending.messageId)) {
+      pendingMessageFocus.current = null;
+      jumpToMessage(pending.messageId);
+    }
+  }, [messages, loadingConversation, conversationId, jumpToMessage]);
 
   useEffect(() => {
     if (deleteTarget) deleteDialogRef.current?.showModal();
@@ -597,8 +653,9 @@ function AppContent() {
   }, [deleteTarget]);
 
   const addFiles = useCallback((list: FileList | File[]) => {
-    if (abortRef.current) return;
+    if (abortRef.current) return false;
     const incoming = Array.from(list);
+    let accepted = false;
     setError(null);
     setDraftFiles((prev) => {
       const next = [...prev];
@@ -628,9 +685,11 @@ function AppContent() {
           file,
           previewUrl: isImageFile(file) ? URL.createObjectURL(file) : null,
         });
+        accepted = true;
       }
       return next;
     });
+    return accepted;
   }, [setDraftFiles]);
 
   function removeDraftFile(id: string) {
@@ -739,6 +798,7 @@ function AppContent() {
   }
 
   async function loadConversation(id: string) {
+    if (pendingMessageFocus.current?.conversationId !== id) pendingMessageFocus.current = null;
     setSourcesIndex(null);
     recovery.cancel();
     loadRef.current?.abort();
@@ -859,6 +919,7 @@ function AppContent() {
 
     const pending = revision ? [] : draftFiles;
     const sentDraft = revision ? null : snapshotDraft();
+    const sentQuote = revision ? undefined : sentDraft?.quote;
     const previousMessages = messages;
     const revisionIndex = revision ? messages.findIndex(m => m.id === revision.target.id) : -1;
     if (revision && revisionIndex < 0) {
@@ -896,7 +957,8 @@ function AppContent() {
     const reply: ActiveReply = { id: conversationId, projectId: activeProjectId,
       selection: { model: chosenModel, effort: effectiveEffort }, retry: revision, messages: [
       ...prefix,
-      { role: "user", content: text, attachments: revision?.target.attachments || optimistic },
+      { role: "user", content: text, attachments: revision?.target.attachments || optimistic,
+        ...((revision?.target.quoted_source ?? sentQuote) ? { quoted_source: revision?.target.quoted_source ?? sentQuote } : {}) },
       // Bước "chờ" chỉ có ở trình duyệt: bước đầu tiên máy chủ gửi thay nó.
       { role: "assistant", content: "", workStartedAt: startedAt,
         work: { ms: 0, steps: [{ id: 'wait', kind: 'wait', label: 'Đang gửi và chờ máy chủ…', state: 'live', start: 0 }] } },
@@ -987,6 +1049,7 @@ function AppContent() {
           webSearch,
           attachments,
           model: chosenModel,
+          quotedSource: sentQuote,
         },
         {
           onMeta: acceptMessage,
@@ -1034,8 +1097,9 @@ function AppContent() {
             setError(message);
             setRetryAvailable(true);
           },
-          onDone: () => {
+          onDone: (messageId) => {
             completed = true;
+            if (Number.isSafeInteger(messageId) && messageId! > 0) updateReply(last => ({ ...last, id: messageId }));
           },
         },
         controller.signal,
@@ -1081,16 +1145,21 @@ function AppContent() {
         // Dừng sau khi máy chủ đã nhận tin thì bong bóng tự ghi "Đã dừng"; chỉ lượt chưa kịp gửi mới cần dòng báo.
         if (stoppedByUser && !accepted && isSelectedReply(reply)) setNotice("Đã dừng gửi. Bản nháp vẫn được giữ lại.");
         if (activeId || !accepted) void refreshConversations();
-        if (revision && accepted && activeId) {
+        if (accepted && activeId && (revision || (completed && !reply.messages.at(-1)?.id))) {
           // Fetch stable IDs for edit/regenerate; preserve the local progress log.
           try {
             const stored = await getMessages(activeId);
             // Bong bóng chỉ có ở trình duyệt (lượt hỏng) không có trong danh sách đã lưu: bỏ qua khi khớp thứ tự.
             if (session === authVersion.current) writeReply(current => {
               let index = 0;
-              return current.map(row => row.local ? row : { ...row, id: stored[index++]?.id });
+              return current.map(row => {
+                if (row.local) return row;
+                const saved = stored[index++];
+                if (!saved || saved.role !== row.role || saved.content !== row.content) return revision ? { ...row, id: undefined } : row;
+                return { ...row, id: saved.id, reply_variants: saved.reply_variants, quoted_source: saved.quoted_source };
+              });
             });
-          } catch { writeReply(current => current.map(row => ({...row,id:undefined}))); }
+          } catch { if (revision) writeReply(current => current.map(row => ({ ...row, id: undefined }))); }
         }
         if (!stoppedByUser && (interrupted || networkInterrupted(controller)) && accepted && activeId && storedUserId !== undefined) {
           recovery.interrupt({ conversationId: activeId, userMessageId: storedUserId });
@@ -1162,6 +1231,21 @@ function AppContent() {
     }
   }
 
+  submitRevisionRef.current = submit;
+  function replyControls(message: Message) {
+    const family = validReplyVariants(message.reply_variants, conversationId, message.id);
+    if (!family) return undefined;
+    let controls = variantControls.current.get(family);
+    if (!controls) {
+      controls = {
+        index: family.index, count: family.choices.length,
+        onPrevious: () => openReplyVariant(family.choices[family.index - 1]),
+        onNext: () => openReplyVariant(family.choices[family.index + 1]),
+      };
+      variantControls.current.set(family, controls);
+    }
+    return controls;
+  }
   const canSend = (draft.trim().length > 0 || draftFiles.length > 0) && !streaming && !loadingConversation && !loadFailed && recovery.online && !recovery.pending;
 
   // Chừa đủ chỗ cho menu rộng 196px và cao tối đa ~250px (mục 44px trên màn cảm ứng), cách mép 8px.
@@ -1511,6 +1595,7 @@ function AppContent() {
 
           {messages.map((message, index) => (
             <ChatMessage key={index} message={message}
+              onRegenerate={regenerateAnswer} variants={replyControls(message)} onJumpQuote={jumpToMessage}
               sourcesExpanded={sourcesIndex === index} onOpenSources={openSources} sourceIndex={index}
               actionsDisabled={readOnly || streaming || loadingConversation || loadFailed}
               editor={editTarget?.id === message.id && editTarget ? <form className="inline-message-editor" onSubmit={e => {e.preventDefault(); void submit({target:editTarget,text:editText});}}>
@@ -1526,6 +1611,9 @@ function AppContent() {
               onPreview={previewDocument} onEdit={editDocument} />
           ))}
           <div ref={bottomRef} />
+          <QuoteSelection key={`${auth.user?.id}:${conversationId}`} containerRef={messagesRef}
+            disabled={view !== 'chat' || readOnly || streaming || loadingConversation || loadFailed || settingsOpen || searchOpen || Boolean(editTarget) || !recovery.online || recovery.pending}
+            onQuote={selectQuotedText} />
         </div>
 
         {showJump && <button type="button" className="jump-latest" aria-label="Tin mới nhất" data-tip onClick={event => {
@@ -1560,6 +1648,8 @@ function AppContent() {
           <span>Hội thoại nhập vai cũ chỉ còn để xem</span>
           <button type="button" disabled={streaming} onClick={() => newConversation()}>Bắt đầu hội thoại mới</button>
         </div> : <Composer
+          contextKey={JSON.stringify([auth.user?.id, draftConversationId, rootContext.projectId])}
+          quote={draftQuote} onRemoveQuote={() => setDraftQuote(null)} onJumpQuote={jumpToMessage}
           draft={draft}
           onDraftChange={setDraft}
           files={draftFiles}
@@ -1624,7 +1714,7 @@ function AppContent() {
       {agentCode && <AgentConnectDialog code={agentCode}
         onClose={() => { forgetAgentCode(); setAgentCode(null); }} onUnauthorized={handleUnauthorized} />}
       {renameTarget && <TextEditDialog title="Đổi tên hội thoại" value={renameText} onChange={setRenameText} busy={metadataBusy} onClose={() => setRenameTarget(null)} onSave={() => void changeConversation(renameTarget, {title:renameText})}/>}
-      {searchOpen && <HistorySearch onClose={() => setSearchOpen(false)} onUnauthorized={handleUnauthorized} onSelect={id => {setSearchOpen(false); void openConversation(id);}}/>}
+      {searchOpen && <HistorySearch key={`history-search:${auth.user?.id ?? 'anonymous'}`} onClose={() => setSearchOpen(false)} onUnauthorized={handleUnauthorized} onSelect={id => {setSearchOpen(false); void openConversation(id);}}/>}
       {conversationMenu && <ConversationMenu left={conversationMenu.left} top={conversationMenu.top} onClose={() => setConversationMenu(null)}>
         <button onClick={() => {setRenameTarget(conversationMenu.item);setRenameText(conversationMenu.item.title);setConversationMenu(null);}}><EditIcon />Đổi tên</button>
         <button disabled={metadataBusy} onClick={() => {void changeConversation(conversationMenu.item,{pinned:!conversationMenu.item.pinned});setConversationMenu(null);}}><PinIcon />{conversationMenu.item.pinned ? 'Bỏ ghim' : 'Ghim'}</button>

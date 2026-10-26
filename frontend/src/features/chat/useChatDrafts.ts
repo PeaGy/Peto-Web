@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useReducer, useState } from 'react';
-import { ChatDraftStore, draftKey, type DraftScope, type DraftSnapshot } from './chatDrafts';
+import { ChatDraftStore, draftKey, type DraftScope, type DraftSnapshot, type DraftQuote } from './chatDrafts';
 import type { DraftFile } from './files';
 
 export function useChatDrafts(scope: DraftScope | null, authenticated: boolean | undefined) {
@@ -29,12 +29,13 @@ export function useChatDrafts(scope: DraftScope | null, authenticated: boolean |
   const setDraftFiles = useCallback((update: DraftFile[] | ((files: DraftFile[]) => DraftFile[])) => {
     if (key) { store.setFiles(key, update); changed(); }
   }, [store, key]);
+  const setDraftQuote = useCallback((quote: DraftQuote | null) => { if (key) { store.setQuote(key, quote); changed(); } }, [store, key]);
   const clearDrafts = useCallback(() => { store.clear(); changed(); }, [store]);
   const acceptDraft = useCallback((snapshot: DraftSnapshot, conversationId?: string) => { store.accept(snapshot, conversationId); changed(); }, [store]);
   const removeConversationDraft = useCallback((id: string) => { store.removeConversation(id); changed(); }, [store]);
   const removeProjectDraft = useCallback((id: string) => { store.removeProject(id); changed(); }, [store]);
   const draft = key ? store.get(key) : null;
-  return { draft: draft?.text ?? '', draftFiles: draft?.files ?? [], setDraft, setDraftFiles,
+  return { draft: draft?.text ?? '', draftFiles: draft?.files ?? [], draftQuote: draft?.quote, setDraft, setDraftFiles, setDraftQuote,
     snapshotDraft: () => key ? store.snapshot(key) : null,
     clearDrafts, acceptDraft, removeConversationDraft, removeProjectDraft };
 }

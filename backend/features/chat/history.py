@@ -12,6 +12,7 @@ from ai import ChatAttachment, ChatMessage
 from core.config import MAX_DOCUMENT_CONTEXT_CHARS, MAX_HISTORY_IMAGES
 from shared.web_search import normalize_sources
 from shared.source_activity import normalize_web
+from storage import chat_quotes
 
 import logging
 
@@ -54,6 +55,10 @@ def _public_message(row: dict, companion: bool = False) -> dict:
     if row.get('quote_id'):
         # Tin Companion trả lời tin này (Reply); trang tự tìm tin đó trong mạch để hiện trích dẫn như AIRI.
         message['quote_id'] = row['quote_id']
+    if not companion and row['role'] == 'user' and (quote := chat_quotes.normalize(row.get('quoted_source'))):
+        message['quoted_source'] = quote
+    if not companion and row['role'] == 'assistant' and row.get('reply_variants'):
+        message['reply_variants'] = row['reply_variants']
     if row.get("work"):
         # Nhật ký "Đang làm" lưu cùng câu trả lời: tải lại trang vẫn thấy Peto đã làm gì, mất bao lâu.
         if companion and isinstance(row['work'], dict) and 'player' in row['work']:
@@ -127,7 +132,8 @@ def context_rows(rows: list[dict]) -> list[dict]:
             if row.get('attachments'):
                 result.append({**row, 'content': STOPPED_FILES if stopped else 'Files from a failed turn; reference only.'})
             if not stopped or row['id'] in partial:
-                result.append({**row, 'role': 'assistant', 'attachments': [], 'content': f'{label}\n{row["content"]}'})
+                reference = chat_quotes.model_content(row['content'], row.get('quoted_source'))
+                result.append({**row, 'role': 'assistant', 'attachments': [], 'content': f'{label}\n{reference}'})
         elif row['role'] == 'assistant' and (row.get('content', '').strip() or row.get('artifacts')):
             label = 'Partial historical reply. Continue it only if the latest user request asks for that.'
             result.append({**row, 'content': f'{label}\n{row["content"]}'})
@@ -230,7 +236,7 @@ def _to_chat_messages(rows: list[dict], project_documents: list[dict] | None = N
         out.append(
             ChatMessage(
                 role=row["role"],
-                content=row["content"],
+                content=chat_quotes.model_content(row["content"], row.get('quoted_source')) if row['role'] == 'user' else row["content"],
                 attachments=tuple(attached),
                 sources=tuple(normalize_sources(row.get("sources"))),
             )

@@ -13,7 +13,7 @@ from features.chat.history import _public_message
 from features.chat.schemas import ConversationUpdate, StopRequest
 from fastapi import APIRouter
 from features.chat import service
-from storage import projects
+from storage import projects, chat_lineage
 router = APIRouter()
 router.add_api_route("/api/chat", service.chat, methods=["POST"])
 
@@ -73,6 +73,12 @@ async def get_conversation_settings(conversation_id: str, owner: str = Depends(c
     return {'persona': settings['persona'], **conversation_actions.public_selection(owner, settings)}
 
 
+@router.get('/api/conversations/{conversation_id}/preview')
+async def conversation_preview(conversation_id: str, owner: str = Depends(current_owner)):
+    from features.chat import preview
+    return await preview.read(owner, conversation_id)
+
+
 @router.get("/api/conversations/{conversation_id}/messages")
 async def get_messages(
     conversation_id: str, owner: str = Depends(current_owner),
@@ -100,6 +106,8 @@ async def get_messages(
             usage_events.record('chat_event', service='web', surface='chat', purpose='recovery', outcome=outcome,
                 elapsed_ms=round((perf_counter() - started) * 1000))
     companion = settings["mode"] == "companion"
+    if not companion:
+        rows = await chat_lineage.decorate(owner, conversation_id, rows)
     return {"messages": [_public_message(row, companion) for row in rows], 'project_id': settings.get('project_id'), 'persona': settings['persona'], 'archived': settings['archived'],
             **conversation_actions.public_selection(owner, settings)}
 

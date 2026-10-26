@@ -15,7 +15,7 @@ vi.mock('../src/features/documents/documentApi', async original => ({ ...await o
 
 vi.mock('../src/shared/api/api', async (original) => ({
   ...await original<typeof import('../src/shared/api/api')>(),
-  getAuthState: vi.fn(), listConversations: vi.fn(), getMessages: vi.fn(),
+  getAuthState: vi.fn(), listConversations: vi.fn(), getMessages: vi.fn(), getConversationPreview: vi.fn(),
   conversationVersions: vi.fn(), updateConversation: vi.fn(),
   sendMessage: vi.fn(), stopChat: vi.fn(), deleteConversation: vi.fn(), logout: vi.fn(),
   listImagineJobs: vi.fn(), createImagineJob: vi.fn(),
@@ -51,6 +51,7 @@ beforeEach(() => {
     user: { id: 'acc-111', provider: 'discord', username: 'demo', display_name: 'Demo', avatar_url: '' } });
   vi.mocked(api.listConversations).mockResolvedValue({ conversations: [conversation('A'), conversation('B')], has_more: false });
   vi.mocked(api.getMessages).mockResolvedValue([]);
+  vi.mocked(api.getConversationPreview).mockResolvedValue({ messages: [], truncated: false });
   vi.mocked(api.deleteConversation).mockResolvedValue();
   vi.mocked(api.listImagineJobs).mockResolvedValue([]);
   vi.mocked(api.listAgentDevices).mockResolvedValue({ devices: [], steps_used: 0, steps_limit: 200 });
@@ -366,7 +367,7 @@ it('tin đầu gắn URL trên entry hiện tại, không đọc lại lịch s�
   vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers) => {
     handlers.onMeta?.('A', 'low', { id: 10, role: 'user', content: 'Tin đầu' });
     handlers.onDelta?.('Câu trả lời đầu tiên');
-    handlers.onDone?.();
+    handlers.onDone?.(11);
   });
   await openApp();
   const length = history.length;
@@ -2237,7 +2238,7 @@ it('tìm nội dung lịch sử qua máy chủ, đổi tên và ghim', async () 
   await openApp();
   fireEvent.click(screen.getByRole('button',{name:'Tìm kiếm hội thoại'}));
   fireEvent.change(screen.getByRole('searchbox', {name:'Tìm trong lịch sử chat'}), {target:{value:'nội dung cũ'}});
-  await waitFor(() => expect(api.listConversations).toHaveBeenCalledWith(0,50,'nội dung cũ'));
+  await waitFor(() => expect(api.listConversations).toHaveBeenCalledWith(0,50,'nội dung cũ',undefined,expect.any(AbortSignal)));
   fireEvent.click(screen.getByRole('button',{name:'Đóng tìm kiếm'}));
   fireEvent.click(screen.getByLabelText('Tùy chọn A'));
   fireEvent.click(screen.getAllByRole('button',{name:'Đổi tên'})[0]);
@@ -2274,4 +2275,67 @@ it('lỗi sau khi nhận tin có thể thử lại từ tin đã lưu', async ()
   await waitFor(() => expect((retry as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(retry);
   await waitFor(() => expect(api.sendMessage).toHaveBeenLastCalledWith(expect.objectContaining({branchMessageId:50,message:'Chào',conversationId:'A'}),expect.anything(),expect.anything()));
+});
+
+describe('Grok UX integration — local model mocks only', () => {
+  const choices = [{ conversation_id: 'A', message_id: 20 }, { conversation_id: 'B', message_id: 40 }];
+  const original: api.Message[] = [{ id: 10, role: 'user', content: 'Cùng một câu hỏi' },
+    { id: 20, role: 'assistant', content: 'Bản thứ nhất', status: 'complete', reply_variants: { index: 0, choices } }];
+  const variant: api.Message[] = [{ id: 30, role: 'user', content: 'Cùng một câu hỏi' },
+    { id: 40, role: 'assistant', content: 'Bản thứ hai', status: 'complete', reply_variants: { index: 1, choices } }];
+
+  it('regenerate branches a completed turn; both versions navigate without extra model calls', async () => {
+    vi.mocked(api.getMessages).mockImplementation(async id => id === 'A' ? original : variant);
+    vi.mocked(api.sendMessage).mockImplementation(async (payload, handlers) => {
+      expect(payload).toMatchObject({ conversationId: 'A', branchMessageId: 10, message: 'Cùng một câu hỏi', model: 'peto' });
+      handlers.onMeta?.('B', 'low', variant[0]); handlers.onDelta?.('Bản thứ hai'); handlers.onDone?.(40);
+    });
+    await openApp();
+    fireEvent.click(screen.getByRole('button', { name: 'A', exact: true }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Tạo lại câu trả lời' }));
+    await waitFor(() => expect(window.location.pathname).toBe('/chat/B'));
+    expect(await screen.findByText('2/2')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Câu trả lời trước' }));
+    expect(await screen.findByText('Bản thứ nhất')).toBeTruthy();
+    await waitFor(() => expect(window.location.pathname).toBe('/chat/A'));
+    expect(document.activeElement?.getAttribute('data-message-id')).toBe('20');
+    fireEvent.click(screen.getByRole('button', { name: 'Câu trả lời sau' }));
+    expect(await screen.findByText('Bản thứ hai')).toBeTruthy();
+    expect(api.sendMessage).toHaveBeenCalledOnce();
+    expect(api.deleteConversation).not.toHaveBeenCalled();
+  });
+
+  it('preserves a scoped draft excerpt and sends it separately, then retains the stored quote after acceptance', async () => {
+    sessionStorage.setItem(draftKey({ ownerId: 'acc-111', conversationId: 'A', projectId: null }), JSON.stringify({
+      text: 'Giải thích thêm', quoted_source: { message_id: 20, text: 'Bản thứ nhất' },
+    }));
+    vi.mocked(api.getMessages).mockResolvedValue(original);
+    vi.mocked(api.sendMessage).mockImplementation(async (payload, handlers) => {
+      expect(payload).toMatchObject({ message: 'Giải thích thêm', conversationId: 'A', quotedSource: { message_id: 20, text: 'Bản thứ nhất' } });
+      handlers.onMeta?.('A', 'low', { id: 50, role: 'user', content: payload.message, quoted_source: payload.quotedSource });
+      handlers.onDelta?.('Giải thích tổng hợp'); handlers.onDone?.(60);
+    });
+    await openApp();
+    fireEvent.click(screen.getByRole('button', { name: 'A', exact: true }));
+    const input = await screen.findByRole('textbox', { name: 'Nhắn cho Peto' });
+    await waitFor(() => expect((input as HTMLTextAreaElement).value).toBe('Giải thích thêm'));
+    fireEvent.click(screen.getByRole('button', { name: 'Về tin nhắn được trích dẫn' }));
+    expect(document.activeElement?.getAttribute('data-message-id')).toBe('20');
+    fireEvent.click(screen.getByRole('button', { name: 'Gửi', exact: true }));
+    expect(await screen.findByText('Giải thích tổng hợp')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Gỡ đoạn trích' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Về tin nhắn được trích dẫn' }).closest('article')?.getAttribute('data-message-id')).toBe('50');
+    expect(screen.getAllByRole('button', { name: 'Tạo lại câu trả lời' })).toHaveLength(2);
+    expect(api.sendMessage).toHaveBeenCalledOnce();
+  });
+
+  it('accepts a legacy completed answer without status', async () => {
+    vi.mocked(api.getMessages).mockResolvedValue(original.map(({ reply_variants: _, status: __, ...rest }) => rest));
+    vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers) => handlers.onError?.('Mock refusal keeps original'));
+    await openApp();
+    fireEvent.click(screen.getByRole('button', { name: 'A', exact: true }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Tạo lại câu trả lời' }));
+    await waitFor(() => expect(api.sendMessage).toHaveBeenCalledOnce());
+    expect(vi.mocked(api.sendMessage).mock.calls[0][0]).toMatchObject({ branchMessageId: 10, conversationId: 'A' });
+  });
 });

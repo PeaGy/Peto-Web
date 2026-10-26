@@ -1,0 +1,54 @@
+/* One quiet, circular action family for answers, code and tables. */
+.message-utility-button {
+  display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto;
+  width: 32px; height: 32px; padding: 0; gap: 0; border: 0; border-radius: 50%;
+  background: transparent; color: var(--muted); font: inherit; cursor: pointer;
+  touch-action: manipulation; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent;
+}
+.message-utility-button svg { flex: none; }
+.message-utility-button.done { color: var(--text); }
+.message-utility-button:disabled { opacity: .4; cursor: default; }
+.message-utility-button:active:not(:disabled), .response-more-menu button:active { transform: scale(.97); }
+.message-utility-button:focus-visible, .code-collapsed-summary:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .message-utility-button:hover:not(:disabled) { background: var(--panel-2); color: var(--text); }
+  .response-more-menu button:hover { background: var(--panel-2); }
+  .code-collapsed-summary:hover { color: var(--text); }
+}
+.response-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 2px; margin-top: 8px; }
+/* Higher specificity keeps the previous text-button style out of the icon row. */
+.response-actions .message-copy { width: 32px; height: 32px; padding: 0; border: 0; border-radius: 50%; font-size: inherit; }
+.response-variants { display: inline-flex; align-items: center; gap: 0; }
+.response-variant-count { min-width: 24px; color: var(--muted); font-size: 12px; text-align: center; font-variant-numeric: tabular-nums; }
+.message-utility-error { flex-basis: 100%; color: var(--danger); font-size: 12px; line-height: 1.5; padding: 4px; }
+.response-more-menu {
+  position: fixed; z-index: 60; width: min(220px, calc(100vw - 16px)); padding: 5px;
+  border: 1px solid var(--line); border-radius: 12px; background: var(--panel); color: var(--text);
+  box-shadow: var(--dialog-shadow); overscroll-behavior: contain;
+}
+.response-more-menu button {
+  display: flex; align-items: center; gap: 10px; width: 100%; min-height: 38px; padding: 8px 10px;
+  border: 0; border-radius: 8px; background: transparent; color: inherit; font: inherit; font-size: 14px; text-align: left;
+  cursor: pointer; touch-action: manipulation; user-select: none; -webkit-user-select: none;
+}
+.response-more-menu button svg { flex: none; }
+.response-more-menu button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; background: var(--panel-2); }
+.markdown-table { min-width: 0; max-width: 100%; margin: 12px 0; }
+.markdown-table > .table-scroll { margin: 0; }
+.table-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; margin-top: 3px; }
+.message-code .code-head { gap: 8px; padding: 4px 6px 4px 16px; min-height: 40px; }
+.code-actions { display: flex; align-items: center; flex: 0 0 auto; gap: 2px; }
+.message-code .code-copy { width: 32px; height: 32px; padding: 0; border: 0; border-radius: 50%; }
+.bubble .message-code.wrapped pre, .bubble .message-code.wrapped pre code { white-space: pre-wrap; overflow-wrap: anywhere; word-break: normal; }
+.code-collapsed-summary {
+  display: block; width: 100%; padding: 12px 16px; border: 0; background: transparent; color: var(--muted);
+  font: inherit; font-size: 12px; font-style: italic; text-align: left; cursor: pointer; touch-action: manipulation; user-select: none;
+}
+.code-collapsed-summary:focus-visible { outline-offset: -3px; }
+@media (pointer: coarse) {
+  .message-utility-button, .response-actions .message-copy, .message-code .code-copy { width: 44px; height: 44px; }
+  .message-code .code-head { padding-left: 12px; }
+  .response-more-menu button { min-height: 44px; }
+}

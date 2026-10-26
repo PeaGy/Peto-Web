@@ -19,7 +19,7 @@ from features.companion import memory as companion_memory
 from features.companion import cards as companion_cards
 from features.companion import quotes as companion_quotes
 import storage as db
-from storage import chat_turns
+from storage import chat_turns, chat_quotes, connection as db_connection
 from features.chat import turn_control
 from features.chat import context as chat_context, context_budget, request_context, client_environment
 from shared import chat_history_tools
@@ -224,6 +224,11 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
         raise HTTPException(400, 'Player chỉ điều khiển từ Companion.')
     if request.quote_id is not None and (mode != 'companion' or request.branch_message_id):
         raise HTTPException(400, 'Chỉ Companion trả lời một tin nhắn cũ được.')
+    if request.quoted_source is not None:
+        if mode != 'chat' or not request.conversation_id:
+            raise HTTPException(400, 'Chỉ trích câu trả lời đã lưu trong cuộc Trò chuyện hiện tại.')
+        async with db_connection.connect() as connection:
+            await chat_quotes.validate(connection, owner, request.conversation_id, request.quoted_source.model_dump())
     web_search = request.web_search
     if mode == "companion":
         if any(item.kind != 'image' for item in files):
@@ -504,14 +509,18 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                     saved_paths: list[Path] = []
                     try:
                         if request.branch_message_id:
+                            quote_change = (request.quoted_source.model_dump() if request.quoted_source is not None else None) \
+                                if 'quoted_source' in request.model_fields_set else chat_quotes.UNSET
                             # Câu hỏi cuối vừa bị dừng/hỏng: gửi lại ngay tại chỗ; còn lại tạo phiên bản như trước.
-                            message_id = await conversation_actions.retry_in_place(owner, conversation_id, request.branch_message_id, text)
+                            message_id = await conversation_actions.retry_in_place(owner, conversation_id, request.branch_message_id, text, quote_change)
                             if message_id is None:
-                                conversation_id, message_id = await conversation_actions.fork(owner, conversation_id, request.branch_message_id, text)
-                            message_id = await chat_turns.bind(owner, request_id, conversation_id, message_id)
+                                conversation_id, message_id = await conversation_actions.fork(owner, conversation_id, request.branch_message_id, text, quote_change)
+                            message_id = await chat_turns.bind(owner, request_id, conversation_id, message_id, model=model, effort=effort)
                         else:
                             message_id = await chat_turns.bind(owner, request_id, conversation_id, None, text, own_provider,
-                                                               quote_id=request.quote_id)
+                                quote_id=request.quote_id,
+                                quoted_source=request.quoted_source.model_dump() if request.quoted_source is not None else None,
+                                model=model, effort=effort)
                         for item, document in zip(files, documents):
                             attachment_id, path = attachment_lib.write_file(conversation_id, item)
                             saved_paths.append(path)

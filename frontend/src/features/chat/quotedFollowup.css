@@ -1,0 +1,15 @@
+.quoted-source { display:flex; align-items:center; gap:6px; min-width:0; margin:2px 2px 6px; border-left:2px solid var(--line); color:var(--muted); }
+.quoted-source-jump { display:flex; gap:8px; align-items:flex-start; min-width:0; flex:1; padding:7px 10px; border:0; border-radius:8px; background:transparent; color:inherit; font:inherit; font-size:12px; line-height:1.5; text-align:left; cursor:pointer; touch-action:manipulation; }
+.quoted-source-jump > svg { flex:0 0 auto; margin-top:2px; }
+.quoted-source-jump > span { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; overflow-wrap:anywhere; min-width:0; }
+.quoted-source-jump.unavailable { cursor:default; }
+.quoted-source-remove { display:grid; place-items:center; flex:0 0 30px; width:30px; height:30px; padding:0; border:0; border-radius:50%; background:transparent; color:var(--muted); cursor:pointer; touch-action:manipulation; }
+.quote-selection-action { position:fixed; z-index:80; display:inline-flex; justify-content:center; align-items:center; gap:7px; min-height:34px; padding:7px 10px; border:1px solid var(--line); border-radius:999px; background:var(--panel); color:var(--text); box-shadow:var(--shadow); font:inherit; font-size:12px; line-height:18px; cursor:pointer; touch-action:manipulation; user-select:none; }
+.quote-selection-action:disabled { color:var(--muted); cursor:default; }
+.quoted-source-jump:focus-visible, .quoted-source-remove:focus-visible, .quote-selection-action:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.quoted-source-jump:active, .quoted-source-remove:active, .quote-selection-action:active { background:var(--panel-2); }
+article.quote-target-highlight { outline:1px solid var(--line); outline-offset:6px; border-radius:14px; }
+@media (hover:hover) and (pointer:fine) {
+  button.quoted-source-jump:hover, .quoted-source-remove:hover, .quote-selection-action:not(:disabled):hover { background:var(--panel-2); color:var(--text); }
+}
+@media (pointer:coarse) { .quoted-source-remove { width:40px; height:40px; flex-basis:40px; } .quote-selection-action { min-height:40px; } }

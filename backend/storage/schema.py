@@ -84,6 +84,9 @@ async def init_db() -> None:
         if 'quote_id' not in {column[1] for column in columns}:
             # Tin Companion trả lời một tin trước đó (Reply của AIRI, replyToMessageId). Tin đó bị xóa thì thôi trích.
             await db.execute("ALTER TABLE messages ADD COLUMN quote_id INTEGER")
+        if 'quoted_source' not in {column[1] for column in columns}:
+            # Web Chat selected excerpt; separate from raw content and Companion's quote_id.
+            await db.execute("ALTER TABLE messages ADD COLUMN quoted_source TEXT NOT NULL DEFAULT ''")
         await db.execute(
             """
             CREATE TABLE IF NOT EXISTS attachments (
@@ -435,6 +438,8 @@ async def init_db() -> None:
             data BLOB NOT NULL, version TEXT NOT NULL, updated_at REAL NOT NULL)''')
         from storage.chat_turns import init_tables as init_chat_turns
         await init_chat_turns(db)
+        from storage.chat_lineage import init_tables as init_chat_lineage
+        await init_chat_lineage(db)
         from storage.chat_context import init_tables as init_chat_context
         await init_chat_context(db)
         from storage.player import init_tables as init_player_tables

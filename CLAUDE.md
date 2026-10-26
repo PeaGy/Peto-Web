@@ -1,5 +1,39 @@
 # CLAUDE.md
 
+## Seven Grok-inspired Web Chat UX improvements (2026-10-27, complete locally, not committed/deployed)
+
+Owner authorized all seven, staged in `backend/features/chat/docs/grok-chat-ux-plan.md`, from clean HEAD `3695600`.
+That HEAD already includes the Sources work below; do not roll back committed Companion/Imagine changes.
+Research reused observed Grok UI and public JS with REA, not guessed backend behavior; no paid calls during implementation.
+- Table icon copy (HTML + plain CSV) and UTF-8 CSV download, formula-safe cells; copy omits rendered citation badges
+  but preserves literal markers in code/links/user text. Code Collapse/Expand (>5 lines), Wrap/Unwrap (>90 desktop,
+  >50 narrow); full code copy; stable Markdown component identities preserve state on final metadata/stream completion.
+- Assistant actions: circular icons for Copy/Regenerate/real variant navigation/More. More has local Markdown export
+  with sources and honest "In / lưu PDF" browser print; safe rebuilt print document, no app chrome or remote images.
+- Select complete stored assistant prose → "Thêm vào câu hỏi", draft quote strip/remove/jump. Reject user/live/
+  incomplete/cross-message/control selections; cap 2,000 UTF-16 chars in UI. Backend `quoted_source {message_id,text}`
+  validates owner/same Web Chat, keeps raw question separate, injects quoted reference only in user history, invalidates
+  covered summaries on quote mutation, remaps IDs on fork. Companion `quote_id` stays independent.
+- Search has desktop list+preview, Arrow/Enter/Escape and mobile preview/Open/Back focus. New scoped read-only
+  `/api/conversations/{id}/preview` returns last12/tot24k chars (SQL bounded), no files/work/provider/LLM calls;
+  frontend abort/stale guards, cache8/dialog, remount by account, escaped Markdown/no image fetching.
+- Completed Regenerate uses existing branch protocol, preserves original. Additive `chat_message_lineage` records
+  explicit question/response origins, dedups inherited prefix copies, prefers current copy, scoped owner/mode/project/
+  archive/branch_group. Public-only `reply_variants {index,choices}` (latest200 questions/max20 variants), ID-based
+  navigation and scroll/focus; no content-equality heuristics for legacy. Different text or quote always forks.
+- Plaintext paste >50,000 UTF-16 chars becomes a local unique `pasted-text.txt`; uses ordinary attachment limits,
+  bounded escaped preview, remove, Undo preserving selection/caret and refusing to overwrite later edits. Rejected
+  attachments fall back to native paste. Draft text/quote persist per session scope; File objects still memory-only.
+- Additive startup schema: `messages.quoted_source`, `chat_message_lineage`, `chat_turns.model/effort` and quote
+  summary invalidation trigger. Prefix copies preserve provider/source/work/artifact state. No new dependencies/env.
+- Validation final runs: backend26 + regression165 passed (distinct); frontend App131 + other13files218 passed
+  (distinct); browser44 passed (Chromium desktop + phone emulation, dark/light, Sources/citations, branches/F5,
+  keyboard/IME/focus, attachments/draft/stop; external requests blocked). Production build/typecheck passed,
+  whitespace check clean. No claim of whole-repo run, physical phone, screen reader, Safari or live provider/VPS test.
+- Screenshot evidence outside repo: `grok-chat-ux-implementation/` in the current visualization artifact root.
+  Full plan documents exact tests, reconstruction limits and Before/After review. Owner will commit/deploy;
+  rebuild frontend + restart backend (startup migration), no `.env` changes.
+
 ## Web Chat sources panel from Grok (2026-10-26, not committed/deployed)
 
 Owner authorized all four stages; make it as close to Grok as possible. Started clean at `e96fd91`, preserving

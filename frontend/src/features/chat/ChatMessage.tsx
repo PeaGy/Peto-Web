@@ -1,5 +1,5 @@
 import { EditIcon } from '../../shared/ui/EditIcon';
-import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createContext, memo, useContext, useMemo, useRef, type ReactNode } from 'react';
 import Markdown, { type Components } from 'react-markdown';
 import { normalizeMath } from '../../shared/markdown/mathMarkdown';
 import { useMarkdownPlugins } from '../../shared/markdown/markdownExtras';
@@ -11,109 +11,50 @@ import { MessageLink } from './LinkChip';
 import WebSources, { safeSources } from './WebSources';
 import { CitationGroup, remarkCitations } from './Citations';
 import WorkTimeline from './WorkTimeline';
-import type { Message } from '../../shared/api/api';
+import type { Message, WebSource } from '../../shared/api/api';
+import CodeBlock from './CodeBlock';
+import MarkdownTable from './MarkdownTable';
+import ResponseActions, { type ResponseVariants } from './ResponseActions';
+import { CheckIcon, CopyIcon } from './messageUtilityIcons';
+import { useMessageCopy } from './useMessageCopy';
+import { mergeDisplaySources } from './sourceActivity';
+import { QuoteExcerpt } from './QuotedFollowup';
 
-// Nhãn đầu khối code. Ngôn ngữ được tô màu nằm ở markdownCode.ts: thêm ngôn ngữ ở đó thì thêm nhãn ở đây.
-const CODE_LABELS: Record<string, string> = {
-  bash: "Bash", c: "C", "c#": "C#", "c++": "C++", cc: "C++", console: "Bash", cpp: "C++",
-  cs: "C#", csharp: "C#", css: "CSS", dart: "Dart", diff: "Diff", docker: "Dockerfile",
-  dockerfile: "Dockerfile", go: "Go", golang: "Go", h: "C", html: "HTML", ini: "INI",
-  java: "Java", javascript: "JavaScript", js: "JavaScript", json: "JSON", jsx: "JSX",
-  kotlin: "Kotlin", kt: "Kotlin", lua: "Lua", markdown: "Markdown", md: "Markdown",
-  php: "PHP", plaintext: "Văn bản", powershell: "PowerShell", ps1: "PowerShell",
-  pwsh: "PowerShell", python: "Python", rb: "Ruby", rs: "Rust", ruby: "Ruby",
-  rust: "Rust", sh: "Bash", shell: "Bash", sql: "SQL", text: "Văn bản", toml: "TOML",
-  ts: "TypeScript", tsx: "TSX", txt: "Văn bản", typescript: "TypeScript", xml: "HTML",
-  yaml: "YAML", yml: "YAML", zsh: "Bash",
+const MarkdownRuntime = createContext<{ sources: WebSource[]; writing: boolean; user: boolean }>({ sources: [], writing: false, user: false });
+
+// Stable component identities preserve code collapse/wrap/copy state when a stream ends or sources arrive.
+const MARKDOWN_COMPONENTS: Components = {
+  table: function Table({ children }) {
+    const { writing } = useContext(MarkdownRuntime);
+    return <MarkdownTable pending={writing}>{children}</MarkdownTable>;
+  },
+  td: ({ node, children }) => <td className={hastText(node).length > 30 ? 'wide' : undefined}>{children}</td>,
+  cite: function Cite({ node, children }) {
+    const { sources, writing } = useContext(MarkdownRuntime);
+    const refs = node?.properties?.['dataCitationRefs'] ?? node?.properties?.['data-citation-refs'];
+    if (typeof refs !== 'string') return <cite>{children}</cite>;
+    try { return <CitationGroup refs={JSON.parse(refs)} sources={sources} writing={writing} />; }
+    catch { return <cite>{children}</cite>; }
+  },
+  a: function Link({ node, children, href }) {
+    const { user } = useContext(MarkdownRuntime);
+    return user && href && hastText(node) === href && /^https?:\/\//i.test(href)
+      ? <MessageLink href={href} />
+      : <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>;
+  },
+  pre: function Pre({ node, children }) {
+    const { writing } = useContext(MarkdownRuntime);
+    const code = node?.children?.[0];
+    const names = code?.type === 'element' && Array.isArray(code.properties?.className)
+      ? code.properties.className.map(String) : [];
+    const tag = names.find(name => name.startsWith('language-'));
+    if (tag === 'language-mermaid') return <DiagramCard source={hastText(code)} pending={writing} />;
+    return <CodeBlock language={tag ? tag.slice('language-'.length) : ''} source={hastText(code)}>{children}</CodeBlock>;
+  },
 };
 
-function CopyIcon() {
-  return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-    <rect x="9" y="9" width="11" height="11" rx="2.5" stroke="currentColor" strokeWidth="1.7" />
-    <path d="M15 5.5A2.5 2.5 0 0 0 12.5 3h-7A2.5 2.5 0 0 0 3 5.5v7A2.5 2.5 0 0 0 5.5 15" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-  </svg>;
-}
-
-function CheckIcon() {
-  return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-    <path d="m5 12.5 4.5 4.5L19 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-  </svg>;
-}
-
-/** Chép chữ vào clipboard rồi giữ kết quả 2,2 giây, để nút đổi thành "Đã chép" hay "Chưa chép được". */
-function useCopy() {
-  const [state, setState] = useState<"idle" | "done" | "fail">("idle");
-  const resetTimer = useRef<number | undefined>(undefined);
-
-  useEffect(() => () => window.clearTimeout(resetTimer.current), []);
-
-  async function copy(text: string) {
-    if (!text) return;
-    try {
-      await navigator.clipboard.writeText(text);
-      setState("done");
-    } catch {
-      setState("fail");
-    }
-    window.clearTimeout(resetTimer.current);
-    resetTimer.current = window.setTimeout(() => setState("idle"), 2200);
-  }
-
-  const label = state === "done" ? "Đã chép" : state === "fail" ? "Chưa chép được" : "Sao chép";
-  return { state, label, copy };
-}
-
-function CodeBlock({ language, children }: { language: string; children: ReactNode }) {
-  const preRef = useRef<HTMLPreElement>(null);
-  const { state, label: copyText, copy } = useCopy();
-  const label = CODE_LABELS[language] ?? (language ? language.toUpperCase() : "Mã");
-
-  return (
-    <div className="code-block">
-      <div className="code-head">
-        <span className="code-lang">{label}</span>
-        {/* Lấy chữ từ DOM chứ không dựng lại từ cây hast: sau khi tô màu, code bị cắt thành hàng chục thẻ con,
-            còn textContent thì luôn đúng nguyên bản. */}
-        <button type="button" className="code-copy" onClick={() => void copy(preRef.current?.textContent ?? "")}>
-          {state === "done" ? <CheckIcon /> : <CopyIcon />}
-          {copyText}
-        </button>
-      </div>
-      <pre ref={preRef} tabIndex={0} role="region" aria-label={`Mã ${label}`}>{children}</pre>
-    </div>
-  );
-}
-
-/**
- * Nút chép cả câu trả lời. Chép chữ gốc Markdown chứ không phải chữ đã hiển thị, nên công thức LaTeX, bảng hay khối
- * code còn nguyên; đó cũng là cách xem model thật sự viết gì khi web hiển thị sai (như vụ dấu ~ bị KaTeX nuốt).
- */
-function MessageCopy({ text, stopped, onRetry, disabled }: {
-  text: string; stopped?: boolean; onRetry?: () => void; disabled?: boolean;
-}) {
-  const { state, label, copy } = useCopy();
-  return (
-    <div className="message-actions">
-      {text && <button type="button" className={state === "done" ? "message-copy done" : "message-copy"}
-        aria-label={`${label} câu trả lời`} onClick={() => void copy(text)}>
-        {state === "done" ? <CheckIcon /> : <CopyIcon />}
-        {label}
-      </button>}
-      {onRetry && <button type="button" className="message-copy" onClick={onRetry} disabled={disabled}>
-        <RetryIcon />Thử lại
-      </button>}
-      {stopped && <span className="message-stopped-tag">Đã dừng</span>}
-    </div>
-  );
-}
-
-function RetryIcon() {
-  return <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2"
-    strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7" /><path d="M3 4v5h5" /></svg>;
-}
-
 function UserMessageCopy({ text }: { text: string }) {
-  const { state, label, copy } = useCopy();
+  const { state, label, copy } = useMessageCopy();
   return <button type="button" className={`user-message-copy${state === 'done' ? ' done' : ''}`}
     aria-label={`${label} tin nhắn`} onClick={() => void copy(text)}>
     {state === 'done' ? <CheckIcon /> : <CopyIcon />}
@@ -121,58 +62,39 @@ function UserMessageCopy({ text }: { text: string }) {
 }
 
 
-export const ChatMessage = memo(function ChatMessage({ message, live, writing, onPreview, onEdit, onRetry, onOpenSources, sourceIndex = 0, sourcesExpanded, actionsDisabled, editor }: {
+export const ChatMessage = memo(function ChatMessage({ message, live, writing, onPreview, onEdit, onRetry, onRegenerate, variants, onJumpQuote, onOpenSources, sourceIndex = 0, sourcesExpanded, actionsDisabled, editor }: {
   message: Message; live: boolean; writing: boolean;
   actionsDisabled?: boolean; editor?: ReactNode; onRetry?: () => void;
+  onRegenerate?: (messageId: number) => void; variants?: ResponseVariants;
+  onJumpQuote?: (messageId: number) => void;
   onOpenSources?: (index: number) => void; sourceIndex?: number; sourcesExpanded?: boolean;
   onPreview: (item: { id: string; version: number }) => void;
   onEdit: (item: { id: string; version: number }) => void;
 }) {
   const hasUserAttachments = message.role === 'user' && Boolean(message.attachments?.length);
   const user = message.role === 'user';
+  const contentRef = useRef<HTMLDivElement>(null);
   const sources = useMemo(() => safeSources(message.sources), [message.sources]);
+  const exportSources = useMemo(() => mergeDisplaySources(message.sources, message.work?.web), [message.sources, message.work?.web]);
+  const complete = message.id !== undefined && !message.local && !message.stopped && message.status !== 'incomplete'
+    && (!message.turn_state || message.turn_state === 'complete');
   const text = message.content ? normalizeMath(message.content) : "";
   const { remarkPlugins, rehypePlugins } = useMarkdownPlugins(text);
   const citationPlugins = useMemo<NonNullable<import('react-markdown').Options['remarkPlugins']>>(
     () => user ? remarkPlugins : [...remarkPlugins, [remarkCitations, { sources, writing }]],
     [remarkPlugins, sources, writing, user]);
-  // Giữ nguyên các hàm dựng thẻ giữa các lần vẽ lại. Hàm mới mỗi lần thì React coi là loại thẻ mới, gỡ ra dựng lại cả khối:
-  // thẻ sơ đồ phải vẽ lại từ đầu, nút Sao chép của khối code mất trạng thái.
-  const components = useMemo<Components>(() => ({
-    table: ({children}) => <div className="table-scroll" tabIndex={0} role="region" aria-label="Bảng nội dung"><table>{children}</table></div>,
-    // Ô chữ dài (ghi chú, mô tả) rộng hơn hẳn các ô số, như bảng của Claude; không thì cột ghi chú hẹp làm hàng rất cao.
-    td: ({node, children}) => <td className={hastText(node).length > 30 ? "wide" : undefined}>{children}</td>,
-    cite: ({node, children}) => {
-      const refs = node?.properties?.['dataCitationRefs'] ?? node?.properties?.['data-citation-refs'];
-      if (typeof refs !== 'string') return <cite>{children}</cite>;
-      try { return <CitationGroup refs={JSON.parse(refs)} sources={sources} writing={writing} />; }
-      catch { return <cite>{children}</cite>; }
-    },
-    // Link trơn người dùng gửi (chữ của link chính là địa chỉ) hiện thành nhãn ngắn như thẻ trong ô nhắn.
-    a: ({node, children, href}) => user && href && hastText(node) === href && /^https?:\/\//i.test(href)
-      ? <MessageLink href={href} />
-      : <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>,
-    pre: ({node, children}) => {
-      const code = node?.children?.[0];
-      const names = code?.type === "element" && Array.isArray(code.properties?.className)
-        ? code.properties.className.map(String) : [];
-      const tag = names.find((name) => name.startsWith("language-"));
-      // Khối ```mermaid thành thẻ sơ đồ; tin còn đang viết thì thẻ chỉ báo đang vẽ (mã có thể dở dang).
-      if (tag === "language-mermaid") return <DiagramCard source={hastText(code)} pending={writing} />;
-      return <CodeBlock language={tag ? tag.slice("language-".length) : ""}>{children}</CodeBlock>;
-    },
-  }), [writing, user, sources]);
-  return (<article aria-label={message.role === 'user' ? 'Bạn' : 'Peto'} className={`bubble ${message.role}${hasUserAttachments ? ' chat-user-message' : ''}${editor ? ' editing' : ''}`}>
+  const runtime = useMemo(() => ({ sources, writing, user }), [sources, writing, user]);
+  return (<article aria-label={message.role === 'user' ? 'Bạn' : 'Peto'} data-message-id={message.id} data-role={message.role} data-streaming={writing || live || undefined} data-quoteable={user ? undefined : complete} className={`bubble ${message.role}${hasUserAttachments ? ' chat-user-message' : ''}${editor ? ' editing' : ''}`}>
               {message.attachments && message.attachments.length > 0 && (
                 <MessageAttachments attachments={message.attachments} sent={message.role === 'user'} />
               )}
               {message.role === "assistant" && message.work ? (
                 <WorkTimeline work={message.work} live={live} startedAt={message.workStartedAt} answering={Boolean(message.content)} />
               ) : null}
-              {editor || (message.content ? (hasUserAttachments
-                ? <div className="user-message-text"><Markdown remarkPlugins={citationPlugins} rehypePlugins={rehypePlugins} components={components}>{text}</Markdown></div>
-                : <Markdown remarkPlugins={citationPlugins} rehypePlugins={rehypePlugins} components={components}>{text}</Markdown>
-              ) : null)}
+              {user && message.quoted_source && <QuoteExcerpt quote={message.quoted_source} onJump={onJumpQuote} />}
+              {editor || (message.content ? <div ref={contentRef} className={`message-markdown${hasUserAttachments ? ' user-message-text' : ''}`} data-message-content>
+                <MarkdownRuntime.Provider value={runtime}><Markdown remarkPlugins={citationPlugins} rehypePlugins={rehypePlugins} components={MARKDOWN_COMPONENTS}>{text}</Markdown></MarkdownRuntime.Provider>
+              </div> : null)}
               {message.role === "assistant" && <WebSources sources={message.sources} web={message.work?.web}
                 onOpen={() => onOpenSources?.(sourceIndex)} expanded={sourcesExpanded} />}
               {message.artifacts?.map(artifact => <DocumentArtifactCard key={`${artifact.id}-${artifact.version}`} artifact={artifact} onOpen={onPreview} onEdit={onEdit} />)}
@@ -182,9 +104,10 @@ export const ChatMessage = memo(function ChatMessage({ message, live, writing, o
                   : message.turn_state === 'timeout' ? 'Lượt đã hết thời gian chờ. Câu trả lời chưa hoàn tất.'
                   : message.turn_state === 'running' ? 'Lượt này vẫn đang được xử lý.'
                   : 'Câu trả lời chưa hoàn tất'}</p>}
-              {/* Tin đang được viết thì chưa có gì trọn vẹn để chép. */}
-              {message.role === "assistant" && (message.content || message.stopped || onRetry) && !(writing) && (
-                <MessageCopy text={message.content} stopped={message.stopped} onRetry={onRetry} disabled={actionsDisabled} />
+              {message.role === "assistant" && (message.content || message.stopped || onRetry || variants) && (
+                <ResponseActions text={message.content} sources={exportSources} messageId={message.id} contentRef={contentRef}
+                  stopped={message.stopped} onRetry={onRetry} onRegenerate={complete ? onRegenerate : undefined} variants={variants}
+                  disabled={actionsDisabled || live || writing} />
               )}
               {!writing && !editor && message.role === 'user' && <span className="user-message-actions">
                 {message.id && <button type="button" aria-label="Sửa tin nhắn" data-tip disabled={actionsDisabled} data-revise={message.id}><EditIcon /></button>}
