@@ -7,7 +7,7 @@
  * "Prompt đầy đủ" (máy chủ ghép, gồm phần máy chủ tự thêm và luật cố định) vì chủ web muốn công khai hết. Model hiển thị
  * vẫn nằm trong trình duyệt, nên thẻ trỏ tới một model máy này chưa có thì báo như AIRI (avatar-model-missing).
  */
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type MutableRefObject, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type DragEvent, type MutableRefObject, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router';
 import {
@@ -16,7 +16,7 @@ import {
 import { Dropdown, type DropdownOption } from '../../../shared/ui/Dropdown';
 import { LoadingIndicator } from '../../../shared/ui/LoadingIndicator';
 import type { CompanionSettingsPage } from '../../../app/routes';
-import type { CharacterModel } from '../characters/characterLibrary';
+import { getCharacterAssets, type CharacterModel } from '../characters/characterLibrary';
 import type { CharacterLibrary } from '../characters/useCharacters';
 import { CHAT_PROVIDERS, chatProvider } from '../providers/catalog';
 import { connected, useModels } from '../providers/brain';
@@ -79,7 +79,21 @@ const ICON = {
   lock: <><rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></>,
   copy: <><rect x="8" y="8" width="12" height="12" rx="2" /><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3" /></>,
   close: <path d="M6 6l12 12M18 6 6 18" />,
+  upload: <><path d="M12 15V4M7.5 8.5 12 4l4.5 4.5" /><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" /></>,
+  download: <><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5" /><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" /></>,
 };
+
+/** Tải một tệp trình duyệt đã tạo (gói thẻ), như useDownload của AIRI. */
+function download(blob: Blob, name: string) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = name;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
+}
 
 function fold(text: string) {
   return text.normalize('NFD').replace(/\p{M}/gu, '').replace(/đ/g, 'd').toLowerCase();
@@ -209,7 +223,8 @@ export default function CardPages({ page, cardId, ownerId, library, voice, actio
       <button type="button" className="card-button" onClick={() => onNavigate('cards')}>Về danh sách thẻ</button></div>;
   }
   return <>
-    {page === 'cards' && <CardList cards={cards.cards} active={cards.active} library={library} onNavigate={onNavigate} />}
+    {page === 'cards' && <CardList cards={cards.cards} active={cards.active} library={library} toast={toast.show}
+      onNavigate={onNavigate} onFailed={failed} />}
     {page === 'card' && card && <CardDetail key={card.id} card={card} active={cards.active === card.id} library={library}
       toast={toast.show} onNavigate={onNavigate} onFailed={failed} />}
     {(page === 'card-edit' || page === 'card-new') && <CardEditor key={card?.id ?? 'new'} card={card ?? null}
@@ -223,11 +238,54 @@ function modelFor(library: CharacterLibrary, id: string) {
   return library.models.find(model => model.id === id);
 }
 
-function CardList({ cards, active, library, onNavigate }: {
-  cards: CompanionCard[]; active: string; library: CharacterLibrary; onNavigate: CardPagesNavigate;
+function CardList({ cards, active, library, toast, onNavigate, onFailed }: {
+  cards: CompanionCard[]; active: string; library: CharacterLibrary; toast: (text: string) => void;
+  onNavigate: CardPagesNavigate; onFailed: (error: unknown) => void;
 }) {
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState('recent');
+  const upload = useRef<HTMLInputElement>(null);
+  const [importing, setImporting] = useState(false);
+  const [notice, setNotice] = useState<{ error: boolean; lines: string[] } | null>(null);
+  const [dragDepth, setDragDepth] = useState(0);
+  const fileDrag = (event: DragEvent) => event.dataTransfer?.types.includes('Files') ?? false;
+
+  // Nhập gói thẻ như airi-card/index.vue: đọc gói, nhập model kèm theo vào thư viện (không đổi nhân vật đang hiện), rồi
+  // tạo thẻ. Tên trùng thì thêm số; model không nhập được thì vẫn nhập thẻ và báo lý do.
+  const importPackage = async (file: File | undefined) => {
+    if (!file || importing) return;
+    setImporting(true);
+    setNotice(null);
+    let modelId: string | null = null;
+    try {
+      const { readCardPackage, uniqueName } = await import('./cardPackage');
+      const parsed = await readCardPackage(file);
+      const warnings = [...parsed.warnings];
+      let displayModel = parsed.fields.display_model ?? '';
+      if (parsed.model) {
+        try {
+          const { importCharacter } = await import('../characters/characterImport');
+          const prepared = await importCharacter([parsed.model.file], parsed.model.format);
+          await library.addPrepared(prepared, false);
+          modelId = prepared.model.id;
+          displayModel = modelId;
+        } catch (reason) {
+          warnings.push(`Không nhập được model kèm thẻ: ${errorText(reason, 'model không hợp lệ.')} Thẻ được nhập không kèm model.`);
+        }
+      }
+      const card = await createCard({ ...parsed.fields, name: uniqueName(parsed.fields.name, cards.map(item => item.name)), display_model: displayModel });
+      modelId = null;
+      toast(`Đã nhập thẻ ${card.name}.`);
+      if (warnings.length) setNotice({ error: false, lines: warnings });
+    } catch (reason) {
+      onFailed(reason);
+      setNotice({ error: true, lines: [errorText(reason, 'Chưa nhập được gói thẻ.')] });
+      // Thẻ không tạo được (đủ 50 thẻ, trường quá dài…): bỏ model vừa nhập cho nó, khỏi để model mồ côi trong thư viện.
+      if (modelId) await library.remove(modelId).catch(() => {});
+    } finally {
+      setImporting(false);
+    }
+  };
   const shown = useMemo(() => {
     const words = fold(query.trim());
     const list = cards.filter(card => !words || fold(`${card.name} ${card.nickname} ${card.description}`).includes(words));
@@ -245,8 +303,31 @@ function CardList({ cards, active, library, onNavigate }: {
         <input type="search" placeholder="Tìm thẻ…" aria-label="Tìm thẻ" value={query} onChange={event => setQuery(event.target.value)} />
       </label>
       <Dropdown id="card-sort" ariaLabel="Sắp xếp thẻ" className="compact card-sort" value={sort} options={SORTS} onChange={setSort} />
-      <button type="button" className="card-button primary" onClick={() => onNavigate('card-new')}><Icon>{ICON.plus}</Icon>Tạo thẻ mới</button>
+      <div className="card-toolbar-actions">
+        <button type="button" className="card-button" disabled={importing} onClick={() => upload.current?.click()}>
+          <Icon>{ICON.upload}</Icon>{importing ? 'Đang nhập…' : 'Nhập thẻ'}</button>
+        <button type="button" className="card-button primary" onClick={() => onNavigate('card-new')}><Icon>{ICON.plus}</Icon>Tạo thẻ mới</button>
+      </div>
+      <input ref={upload} type="file" accept=".zip,application/zip" hidden aria-hidden="true" tabIndex={-1}
+        aria-label="Chọn gói thẻ nhân vật (.zip)"
+        onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; void importPackage(file); }} />
     </div>
+    {notice && (
+      <div className={notice.error ? 'card-notice error' : 'card-notice'} role={notice.error ? 'alert' : 'status'}>
+        {notice.lines.map(line => <p key={line}>{line}</p>)}
+        <button type="button" className="card-icon-button" aria-label="Đóng thông báo" onClick={() => setNotice(null)}><Icon size={16}>{ICON.close}</Icon></button>
+      </div>
+    )}
+    <div className="card-drop-zone"
+      onDragEnter={event => { if (!fileDrag(event)) return; event.preventDefault(); setDragDepth(depth => depth + 1); }}
+      onDragOver={event => { if (fileDrag(event)) event.preventDefault(); }}
+      onDragLeave={event => { if (fileDrag(event)) setDragDepth(depth => Math.max(0, depth - 1)); }}
+      onDrop={event => {
+        if (!fileDrag(event)) return;
+        event.preventDefault();
+        setDragDepth(0);
+        void importPackage(event.dataTransfer.files[0]);
+      }}>
     {shown.length ? (
       <ul className="card-grid" aria-label="Thẻ nhân vật">
         {shown.map((card, index) => {
@@ -270,6 +351,10 @@ function CardList({ cards, active, library, onNavigate }: {
     ) : (
       <div className="card-empty"><strong>Không có thẻ nào khớp</strong><span>Thử một từ khác.</span></div>
     )}
+    {dragDepth > 0 && (
+      <div className="card-drop-overlay" aria-hidden="true"><Icon size={36}>{ICON.upload}</Icon><span>Thả gói thẻ (.zip) để nhập</span></div>
+    )}
+    </div>
   </>;
 }
 type CardPagesNavigate = (page: CompanionSettingsPage, id?: string) => void;
@@ -283,6 +368,7 @@ function CardDetail({ card, active, library, toast, onNavigate, onFailed }: {
   const [error, setError] = useState('');
   const [prompt, setPrompt] = useState(false);
   const [conversations, setConversations] = useState<number | null>(null);
+  const [exporting, setExporting] = useState(false);
   const model = modelFor(library, card.display_model);
   const keys = useKeyConfigs();
 
@@ -324,6 +410,25 @@ function CardDetail({ card, active, library, toast, onNavigate, onFailed }: {
     setConfirm(null);
     toast('Thẻ Peto đã về bản gốc.');
   }, 'Chưa khôi phục được thẻ.');
+  // Xuất gói như card-detail.vue của AIRI: thẻ cùng model tự nhập của máy này; model có sẵn (Hiyori) chỉ ghi tên.
+  const exportPackage = () => run(async () => {
+    setExporting(true);
+    try {
+      const { buildCardPackage, packageFileName } = await import('./cardPackage');
+      let missing = false;
+      let source: import('./cardPackage').PackageModel = { kind: 'none' };
+      if (model?.builtin) source = { kind: 'builtin', id: model.id };
+      else if (model) {
+        const assets = await getCharacterAssets(model.id);
+        if (assets) source = { kind: 'file', name: model.name, format: model.format, assets };
+        else missing = true;
+      } else missing = !!card.display_model;
+      download(await buildCardPackage(card, source), packageFileName(card.name));
+      toast(missing ? `Đã xuất thẻ ${card.name}, không kèm model vì trình duyệt này chưa có model đó.` : `Đã xuất thẻ ${card.name}.`);
+    } finally {
+      setExporting(false);
+    }
+  }, 'Chưa xuất được thẻ.');
 
   const brain = card.modules.brain;
   const voiceChoice = card.modules.voice;
@@ -344,6 +449,8 @@ function CardDetail({ card, active, library, toast, onNavigate, onFailed }: {
               {active ? <><Icon size={16}>{ICON.check}</Icon>Đang dùng</> : 'Dùng thẻ này'}
             </button>
             <button type="button" className="card-button" onClick={() => onNavigate('card-edit', card.id)}><Icon size={16}>{ICON.edit}</Icon>Sửa thẻ</button>
+            <button type="button" className="card-button" disabled={busy} onClick={() => void exportPackage()}>
+              <Icon size={16}>{ICON.download}</Icon>{exporting ? 'Đang xuất…' : 'Xuất thẻ'}</button>
             <button type="button" className="card-button" onClick={() => setPrompt(true)}><Icon size={16}>{ICON.code}</Icon>Prompt đầy đủ</button>
             {card.is_default
               ? card.modified && <button type="button" className="card-button" disabled={busy} onClick={() => setConfirm('reset')}>

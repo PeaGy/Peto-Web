@@ -50,6 +50,8 @@ def _attached(question):
     ('tạo thẻ nhân vật Companion thế nào', 'companion'),
     ('sửa system prompt Companion ở đâu', 'companion'),
     ('quản lý profile ở đâu', 'companion'),
+    ('nhập gói thẻ nhân vật thế nào', 'companion'),
+    ('dùng thẻ nhân vật AIRI được không', 'companion'),
     ('đính kèm file pdf được không', 'tro-chuyen'),
     ('làm sao tải sơ đồ về máy', 'tro-chuyen'),
     ('tải slide về máy thế nào', 'lam-slide'),

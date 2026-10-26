@@ -10,6 +10,7 @@ import { DEFAULT_CHARACTER, type CharacterModel } from '../src/features/companio
 import { clearCompanionTimings, getCompanionTimings } from '../src/features/companion/speech/companionTiming';
 import { prepareCompanionImage } from '../src/features/companion/prepareCompanionImage';
 import { resetCompanionCards } from '../src/features/companion/cards/companionCards';
+import { buildCardPackage } from '../src/features/companion/cards/cardPackage';
 // Kiểm thử thu nhỏ ảnh thật nằm trong prepareCompanionImage và bài kiểm tra trình duyệt.
 vi.mock('../src/features/companion/prepareCompanionImage', async original => ({
   ...await original<typeof import('../src/features/companion/prepareCompanionImage')>(),
@@ -1187,6 +1188,61 @@ it('Thẻ nhân vật như AIRI: lưới thẻ, tìm, trang một thẻ, prompt 
   await waitFor(() => expect(api.setActiveCompanionCard).toHaveBeenCalledWith(HANA));
   await waitFor(() => expect(window.location.pathname).toBe(`/companion/settings/cards/${HANA}`));
   expect(await screen.findByRole('main', { name: 'Hana' })).toBeTruthy();
+});
+
+it('nhập gói thẻ AIRI ở trang Thẻ nhân vật: tên trùng thêm số, báo phần bỏ qua; gói hỏng thì báo lỗi, không tạo thẻ', async () => {
+  vi.mocked(api.listCompanionCards).mockResolvedValue({ active_card: 'peto', limit: 50, cards: [PETO_CARD, card(MIKA, 'Mika')] });
+  window.history.replaceState(null, '', '/companion/settings/cards');
+  render(<App />);
+  const page = within(await screen.findByRole('main', { name: 'Thẻ nhân vật' }));
+  await page.findByRole('button', { name: 'Xem thẻ: Mika' });
+  const upload = page.getByLabelText('Chọn gói thẻ nhân vật (.zip)') as HTMLInputElement;
+  expect(upload.accept).toContain('.zip');
+
+  const shared = card(HANA, 'Mika', { is_default: false, greetings: ['Ngồi đi.'], description: 'Cáo tinh.', display_model: 'hiyori',
+    system_prompt: 'You are {{char}}.', modules: { brain: { provider: 'peto' } } });
+  const packageFile = new File([await buildCardPackage({ ...shared, greetings: Array.from({ length: 12 }, (_, index) => `Câu ${index}`) },
+    { kind: 'builtin', id: 'hiyori' })], 'Mika.zip', { type: 'application/zip' });
+  vi.mocked(api.createCompanionCard).mockResolvedValue(card(HANA, 'Mika (2)', { is_default: false }));
+  fireEvent.change(upload, { target: { files: [packageFile] } });
+  await waitFor(() => expect(api.createCompanionCard).toHaveBeenCalled());
+  expect(vi.mocked(api.createCompanionCard).mock.calls[0][0]).toMatchObject({
+    name: 'Mika (2)', description: 'Cáo tinh.', system_prompt: 'You are {{char}}.', display_model: 'hiyori',
+    modules: { brain: { provider: 'peto' } },
+  });
+  expect(vi.mocked(api.createCompanionCard).mock.calls[0][0].greetings).toHaveLength(10);
+  expect(await screen.findByText('Đã nhập thẻ Mika (2).')).toBeTruthy();
+  expect(await page.findByText('Thẻ có 12 câu chào; Peto giữ 10 câu đầu.')).toBeTruthy();
+  expect(await page.findByRole('button', { name: 'Xem thẻ: Mika (2)' })).toBeTruthy();
+
+  vi.mocked(api.createCompanionCard).mockClear();
+  fireEvent.change(upload, { target: { files: [new File([new Uint8Array([1, 2, 3])], 'hong.zip')] } });
+  expect(await page.findByText('Tệp này không phải gói thẻ nhân vật hợp lệ.')).toBeTruthy();
+  expect(api.createCompanionCard).not.toHaveBeenCalled();
+});
+
+it('xuất thẻ thành gói .zip theo tên thẻ, model có sẵn không đóng vào gói', async () => {
+  vi.mocked(api.listCompanionCards).mockResolvedValue({ active_card: 'peto', limit: 50, cards: [PETO_CARD] });
+  const downloads: { name: string; blob: Blob }[] = [];
+  let made: Blob | undefined;
+  URL.createObjectURL = vi.fn((blob: Blob) => { made = blob; return 'blob:card'; });
+  const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+    if (made) downloads.push({ name: this.download, blob: made });
+  });
+  window.history.replaceState(null, '', '/companion/settings/cards/peto');
+  render(<App />);
+  const page = within(await screen.findByRole('main', { name: 'Peto' }));
+  fireEvent.click(await page.findByRole('button', { name: 'Xuất thẻ' }));
+  await waitFor(() => expect(downloads).toHaveLength(1));
+  expect(downloads[0].name).toBe('Peto.zip');
+  expect(await screen.findByText('Đã xuất thẻ Peto.')).toBeTruthy();
+  const { unzipSync, strFromU8 } = await import('fflate');
+  const entries = unzipSync(new Uint8Array(await downloads[0].blob.arrayBuffer()));
+  expect(Object.keys(entries).sort()).toEqual(['card.json', 'manifest.json']);
+  const exported = JSON.parse(strFromU8(entries['card.json']));
+  expect(exported.data).toMatchObject({ name: 'Peto', system_prompt: 'You are Peto.' });
+  expect(exported.data.extensions.peto.display_model).toBe('hiyori');
+  click.mockRestore();
 });
 
 it('sửa thẻ chỉ gửi ô đã đổi, hỏi trước khi bỏ chỗ chưa lưu; khôi phục thẻ Peto; xóa thẻ cùng hội thoại của nó', async () => {

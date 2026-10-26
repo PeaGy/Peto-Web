@@ -1,5 +1,41 @@
 # CLAUDE.md
 
+## Companion character cards, stage (e): import/export (2026-10-26)
+
+Last of the five card stages. The layout the owner picked for (d) already placed Upload on the list and Export on the
+detail page. Built from AIRI `stage-ui/src/services/airi-card-import-export.ts` and ccc `exportToJSON` (commit `74ddd90`).
+Frontend only, not committed.
+- Format (`cards/cardPackage.ts`, its own lazy chunk): a ZIP with `manifest.json` (`format: 'airi-character-card'`,
+  `version: 1`, `card: {path: 'card.json', spec: 'chara_card_v3'}`, optional `resources.displayModel {path, format, name}`),
+  `card.json` in CCv3 (`spec_version` '3.0') and `models/body-model.zip` (`live2d-zip`: the library's normalized files
+  re-zipped) or `models/body-model.vrm`. Written with fflate `zipSync` (model stored, JSON deflated): the streaming `Zip`
+  writes data descriptors, which Peto's own streaming reader cannot read for stored entries.
+- Export ("Xuất thẻ", detail page): fields mapped as AIRI does (first greeting → `first_mes`, others
+  `alternate_greetings`), `extensions.airi.modules` empty (provider ids differ), Peto's modules in `extensions.peto`
+  (`version`, `display_model`, `modules`). Built-in Hiyori is not packaged (AIRI skips presets too), only
+  `display_model: 'hiyori'`. A model this browser lacks exports the card alone, and the toast says so. File name = card
+  name minus Windows-forbidden characters. No keys or conversations are ever included.
+- Import ("Nhập thẻ" on the list, or a `.zip` dropped on the grid; Files drags only): `readCardPackage` checks manifest
+  format/version, card spec and name. It reads through `characterImport.readZip`, now taking `ZipLimits` (packages: 64
+  files, model up to `MAX_IMPORT_BYTES`, total +16 MB, JSON 4 MB), and resolves paths with `modelPath` (no traversal).
+  The model goes through `importCharacter` and `library.addPrepared(prepared, false)` (new `choose` flag), so neither
+  the stage character nor the active card changes. A model failure imports the card alone with a warning; a card
+  failure shows the error and removes the model just added. Taken names get " (2)", " (3)" (the server 409s duplicates).
+- Warnings (dismissible `card-notice`): greetings past 10 dropped, a non-empty `mes_example` dropped (Peto has no such
+  field), names cut to 60, unsupported model formats (Spine, PMX, tachie…) skipped. `extensions.peto.modules` is restored
+  when present; an AIRI package keeps only `consciousness`/`speech` providers Peto also has (`BRAIN_IDS`/`VOICE_IDS`,
+  tested against the catalogs), never Peto's own sources. Longer fields hit the server's `cards.LIMITS` and fail the
+  import with its message.
+- Docs: Companion article bullets and keywords `goi the nhan vat`, `the nhan vat airi` (two `test_docs_api.py` pins).
+- Tests: `tests/cardPackage.test.ts` (9: AIRI structure, VRM and Live2D round trips, built-in, AIRI-made package,
+  unknown providers, errors, names) and two `Companion.test.tsx` cases (import with rename/warnings and a broken zip;
+  export download). Real app on the mock stack in Edge: export, re-import as "Mika (2)", an AIRI package with a Live2D
+  model (stage unchanged, re-export carries the model), drag-drop, broken zip, 390 px layout, no console errors. Full
+  frontend 1,025 passed, build passed, docs tests 47 passed.
+- Not done: SillyTavern PNG/JSON cards, Live2D control mappings (`live2dControls`) and AIRI `controls`, a check against
+  real AIRI, physical phones. `zipSync` holds the model in memory a few times over, so near-limit models are heavy on
+  phones. Deploy: rebuild frontend; restart the backend for the docs article.
+
 ## User-message copy action (2026-10-25)
 
 Web Chat user bubbles now have an icon-only copy button immediately after Edit. It copies the original message
@@ -38,7 +74,7 @@ raw web markers; no live payload from that exact GTA5 turn was captured. Never m
 
 The owner picked prototype variant 1 "Như AIRI" (over a stage-beside editor and a prompt-first master/detail). Built from
 AIRI source (commit `74ddd90`): `settings/airi-card/index.vue`, `components/card-list-item.vue`, `card-model-preview.vue`,
-`card-detail.vue`, `CardEditor.vue`. Not committed. Prototype deleted.
+`card-detail.vue`, `CardEditor.vue`. The owner committed it (`43baada`). Prototype deleted.
 - Routes (`app/routes.ts`, `core/static_files.py` `_COMPANION_CARDS`): `/companion/settings/cards`, `/cards/new`,
   `/cards/<id>`, `/cards/<id>/edit` (`?section=behavior|modules|prompt`); ids are `peto` or 32 hex (`CARD_PATH`, same as
   `cards.CARD_ID`). New `CompanionSettingsPage` values `cards`, `card-new`, `card`, `card-edit`; `onNavigate(page, id)`
@@ -70,7 +106,7 @@ The owner chose AIRI-style character cards (AIRI commit `74ddd90`: `stores/modul
 xAI-account and cost risk, billing like AIRI's Flux later). One server rule is always appended and not editable:
 `prompts/companion_runtime.COMPANION_CARD_RULE` (no sexual content involving anyone under 18). Plan and the remaining
 stages (b) conversation list, (c) Profile switcher, (d) card pages, (e) import/export: `PETO_COMPANION_PLAN.md` §3.
-Backend only so far; the current frontend keeps working unchanged. Not committed.
+The owner committed it with stages (b) and (c) (`6733e1a`).
 - `storage/cards.py`: `companion_cards` (PK owner+id; CCv3-like fields, `greetings`/`modules` JSON,
   `active_conversation`), `companion_card_state` (active card), `conversations.card_id` (startup migration sets old
   Companion threads to `peto`). The default card `peto` is created lazily; its NULL columns mean the server's built-in
@@ -97,7 +133,7 @@ Backend only so far; the current frontend keeps working unchanged. Not committed
 The owner picked prototype variant "Như AIRI" and asked for AIRI's chat-panel size so the Profile button sits above it.
 Built from AIRI source (commit `74ddd90`): `apps/stage-web/src/pages/index.vue` (`InteractiveArea` absolute right-4,
 max 500px, min 30%, 85dvh, Header row above), `chat-panel-header.vue`, `sessions-dialog.vue`/`sessions-list.vue`,
-`profile-switcher-popover.vue`. Not committed.
+`profile-switcher-popover.vue`. Committed with (a) (`6733e1a`).
 - Desktop (`cards/companionCards.css`): `.companion` second column `clamp(360px, 42%, 500px)`, panel margin
   `72px 16px 76px 0`; `.companion-profile-slot` (Profile pill) at top 16px / right 16px. Phones: the Profile button is a
   round avatar in the header tools; menus become bottom sheets (`CompanionPopover`, portal to body).

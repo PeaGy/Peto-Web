@@ -55,6 +55,22 @@
 .card-search:focus-within { border-color: color-mix(in srgb, var(--text) 30%, var(--line)); }
 .card-search input { flex: 1; min-width: 0; border: 0; outline: none; background: none; color: var(--text); font: inherit; font-size: 14px; }
 .card-sort { width: 150px; }
+.card-toolbar-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; }
+/* Nhập gói thẻ (giai đoạn e): kéo thả lên lưới như airi-card/index.vue; thông báo sau khi nhập nằm trên lưới. */
+.card-drop-zone { position: relative; }
+.card-drop-overlay {
+  position: absolute; inset: -8px; z-index: 2; display: grid; place-content: center; justify-items: center; gap: 8px;
+  border: 2px dashed var(--cs-accent); border-radius: 18px; background: color-mix(in srgb, var(--cs-accent) 12%, var(--bg));
+  color: var(--cs-accent-text); font-size: 14px; font-weight: 500; pointer-events: none;
+  animation: companion-settings-fade 150ms var(--ease-out) both;
+}
+.card-notice {
+  position: relative; display: grid; gap: 4px; margin: -8px 0 18px; padding: 10px 44px 10px 14px; border: 1px solid var(--cs-card-line);
+  border-radius: 12px; background: var(--cs-card); color: var(--muted); font-size: 13.5px; line-height: 1.55;
+}
+.card-notice p { margin: 0; }
+.card-notice.error { border-color: color-mix(in srgb, var(--danger) 40%, transparent); background: color-mix(in srgb, var(--danger) 10%, transparent); color: var(--danger); }
+.card-notice .card-icon-button { position: absolute; top: 4px; right: 4px; width: 32px; height: 32px; }
 .card-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 22px 18px; margin: 0; padding: 0; list-style: none; }
 .card-grid > li { min-width: 0; animation: companion-settings-rise 260ms var(--ease-out) both; animation-delay: var(--delay, 0ms); }
 .card-grid-item { display: grid; gap: 10px; width: 100%; padding: 0; border: 0; border-radius: 16px; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
@@ -205,7 +221,8 @@
   .card-editor-section { padding: 16px; }
   .card-field-row { grid-template-columns: 1fr; }
   .card-toolbar .card-sort { width: 130px; }
-  .card-toolbar .card-button.primary { width: 100%; }
+  .card-toolbar-actions { width: 100%; }
+  .card-toolbar-actions .card-button { flex: 1; }
   .companion-settings-head { flex-wrap: wrap; }
   .companion-settings-head-actions { width: 100%; margin: 10px 0 0; }
   .companion-settings-head-actions .card-button { flex: 1; }

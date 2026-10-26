@@ -33,27 +33,36 @@ export function modelPath(path: string, base = ''): string {
   return parts.join('/');
 }
 
-async function readZip(file: File): Promise<CharacterFile[]> {
+/** Giới hạn và câu báo khi đọc một ZIP (gói model, hay gói thẻ nhân vật trong cardPackage.ts). */
+export interface ZipLimits {
+  files: number; fileBytes: number; totalBytes: number;
+  tooMany: string; duplicate: string; tooBigFile: string; tooBigTotal: string;
+}
+const MODEL_ZIP: ZipLimits = {
+  files: MAX_FILES, fileBytes: MAX_FILE_BYTES, totalBytes: MAX_EXPANDED_BYTES,
+  tooMany: 'Gói model có quá nhiều tệp (tối đa 512).', duplicate: 'Gói model có đường dẫn tệp trùng nhau.', tooBigFile: TOO_BIG_FILE,
+  tooBigTotal: `Model sau giải nén quá lớn (tối đa ${megabytes(MAX_EXPANDED_BYTES)}, ${megabytes(MAX_FILE_BYTES)} mỗi tệp).`,
+};
+
+export async function readZip(file: File, limits: ZipLimits = MODEL_ZIP): Promise<CharacterFile[]> {
   const { Unzip, UnzipInflate } = await import('fflate');
   const files: CharacterFile[] = [];
   let total = 0, count = 0, pending = 0;
   const seen = new Set<string>();
   const archive = new Unzip(entry => {
-    if (++count > MAX_FILES) throw new Error('Gói model có quá nhiều tệp (tối đa 512).');
+    if (++count > limits.files) throw new Error(limits.tooMany);
     const path = modelPath(entry.name);
     if (entry.name.endsWith('/') || path.startsWith('__MACOSX/') || path.split('/').some(part => part.startsWith('.'))) return;
-    if (seen.has(path.toLowerCase())) throw new Error('Gói model có đường dẫn tệp trùng nhau.');
+    if (seen.has(path.toLowerCase())) throw new Error(limits.duplicate);
     seen.add(path.toLowerCase());
-    if ((entry.originalSize ?? 0) > MAX_FILE_BYTES) throw new Error(TOO_BIG_FILE);
+    if ((entry.originalSize ?? 0) > limits.fileBytes) throw new Error(limits.tooBigFile);
     let size = 0;
     const chunks: Uint8Array<ArrayBuffer>[] = [];
     pending++;
     entry.ondata = (error, data, final) => {
       if (error) throw new Error('Không giải nén được ZIP. Hãy dùng gói ZIP không có mật khẩu.');
       size += data.length; total += data.length;
-      if (size > MAX_FILE_BYTES || total > MAX_EXPANDED_BYTES) {
-        throw new Error(`Model sau giải nén quá lớn (tối đa ${megabytes(MAX_EXPANDED_BYTES)}, ${megabytes(MAX_FILE_BYTES)} mỗi tệp).`);
-      }
+      if (size > limits.fileBytes || total > limits.totalBytes) throw new Error(limits.tooBigTotal);
       chunks.push(new Uint8Array(data));
       if (final) { files.push({ path, blob: new Blob(chunks) }); pending--; }
     };

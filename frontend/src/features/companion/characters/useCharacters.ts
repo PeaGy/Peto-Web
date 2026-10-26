@@ -37,11 +37,12 @@ export function useCharacters() {
   const select = useCallback((id: string) => {
     writeSelectedCharacter(id); setSelectedId(id);
   }, []);
-  const addPrepared = async (data: CharacterImport) => {
+  /** ``choose: false`` (model đi kèm thẻ vừa nhập): chỉ thêm vào thư viện, không đổi nhân vật đang hiện trên sân khấu. */
+  const addPrepared = async (data: CharacterImport, choose = true) => {
     if (modelsRef.current.length >= 21) throw new Error('Bạn có thể giữ tối đa 20 model riêng. Hãy xóa bớt trước khi thêm.');
     await saveCharacter(data); // Chỉ chọn sau khi cả metadata và tài nguyên đã lưu thành công.
     await refresh();
-    select(data.model.id);
+    if (choose) select(data.model.id);
     setError('');
   };
   const add = async (files: File[], format: CharacterFormat) => {
