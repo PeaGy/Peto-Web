@@ -121,9 +121,10 @@ function UserMessageCopy({ text }: { text: string }) {
 }
 
 
-export const ChatMessage = memo(function ChatMessage({ message, live, writing, onPreview, onEdit, onRetry, actionsDisabled, editor }: {
+export const ChatMessage = memo(function ChatMessage({ message, live, writing, onPreview, onEdit, onRetry, onOpenSources, sourceIndex = 0, sourcesExpanded, actionsDisabled, editor }: {
   message: Message; live: boolean; writing: boolean;
   actionsDisabled?: boolean; editor?: ReactNode; onRetry?: () => void;
+  onOpenSources?: (index: number) => void; sourceIndex?: number; sourcesExpanded?: boolean;
   onPreview: (item: { id: string; version: number }) => void;
   onEdit: (item: { id: string; version: number }) => void;
 }) {
@@ -172,7 +173,8 @@ export const ChatMessage = memo(function ChatMessage({ message, live, writing, o
                 ? <div className="user-message-text"><Markdown remarkPlugins={citationPlugins} rehypePlugins={rehypePlugins} components={components}>{text}</Markdown></div>
                 : <Markdown remarkPlugins={citationPlugins} rehypePlugins={rehypePlugins} components={components}>{text}</Markdown>
               ) : null)}
-              {message.role === "assistant" && <WebSources sources={message.sources} />}
+              {message.role === "assistant" && <WebSources sources={message.sources} web={message.work?.web}
+                onOpen={() => onOpenSources?.(sourceIndex)} expanded={sourcesExpanded} />}
               {message.artifacts?.map(artifact => <DocumentArtifactCard key={`${artifact.id}-${artifact.version}`} artifact={artifact} onOpen={onPreview} onEdit={onEdit} />)}
               {message.stopped ? <p className="message-stopped">Đã dừng theo yêu cầu của bạn.</p>
                 : message.status === "incomplete" && <p className="message-status">{message.turn_outcome === 'process_restarted'

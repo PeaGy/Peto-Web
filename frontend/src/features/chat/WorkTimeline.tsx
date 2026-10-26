@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { GitHubIcon } from '../../shared/ui/GitHubIcon';
 import { GlobeIcon } from './WebSources';
 import type { WorkLog, WorkStep } from '../../shared/api/api';
+import { normalizeWeb } from './sourceActivity';
 
 // Khối "Đang làm" kiểu Dòng thời gian (chủ dự án chọn ngày 5/10/2026 từ ba mẫu chạy được): đồng hồ chạy cạnh chữ, mỗi
 // bước một dòng có thời gian riêng, tóm tắt suy nghĩ của Grok mở ra được, câu dẫn Peto nói giữa các bước nằm xen trong
@@ -29,7 +30,11 @@ export function closeWork(work: WorkLog | undefined, complete: boolean, ms: numb
   const steps = work.steps.filter(step => step.kind !== 'wait').map(step => step.state !== 'live' ? step : complete
     ? { ...step, state: 'done' as const, end: Math.max(step.start, ms), label: doneLabel(step.label) }
     : { ...step, state: 'stopped' as const, end: Math.max(step.start, ms) });
-  return { ms, steps, complete };
+  const { web: rawWeb, ...rest } = work;
+  const activity = normalizeWeb(rawWeb);
+  const web = activity ? { ...activity, calls: activity.calls.map(call => call.state !== 'live' ? call
+    : { ...call, state: complete ? 'done' as const : 'stopped' as const }) } : undefined;
+  return { ...rest, ms, steps, complete, ...(web ? { web } : {}) };
 }
 
 /** Mili giây từ lúc gửi, cập nhật mỗi giây khi lượt còn chạy. */

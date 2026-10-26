@@ -4,7 +4,8 @@ import { expect, it, vi } from 'vitest';
 import { ChatReplyStatus, focusComposerIfOwned } from '../src/features/chat/ChatReplyStatus';
 import { ChatMessage } from '../src/features/chat/ChatMessage';
 import Composer from '../src/features/chat/Composer';
-import WebSources, { safeSources } from '../src/features/chat/WebSources';
+import { safeSources } from '../src/features/chat/WebSources';
+import SourcesPanel from '../src/features/chat/SourcesPanel';
 import { ChatMetrics } from '../src/features/admin/ChatMetrics';
 import { usePreferencesPersistence } from '../src/app/usePreferencesPersistence';
 import type { Message, WebSource } from '../src/shared/api/api';
@@ -56,13 +57,13 @@ it('IME, Enter 229 và Shift+Enter không gửi tin khi đang soạn', () => {
 });
 
 it('nguồn phân biệt snippet, trang mở và công cụ kể cả khi được trích dẫn', () => {
-  render(<WebSources sources={[
+  render(<SourcesPanel onClose={() => {}} sources={[
     { url: 'https://example.com/s', title: 'Snippet', kind: 'citation', access: 'search' },
     { url: 'https://example.com/p', title: 'Page', kind: 'result', access: 'page' },
     { url: 'https://github.com/test/repo', title: 'Repo', kind: 'result', access: 'tool', partial: true },
   ]} />);
   expect(screen.getByText('Snippet').closest('a')?.textContent).toContain('Kết quả tìm kiếm');
-  expect(screen.getByText('Page').closest('section')?.querySelector('h3')?.textContent).toBe('Trang đã mở');
+  expect(screen.getByText('Page').closest('section')?.querySelector('h3')?.textContent).toContain('Trang đã mở');
   expect(screen.getByText('Repo').closest('a')?.textContent).toContain('Công cụ · một phần');
   expect(screen.queryByText(/Kết quả tìm kiếm khác/)).toBeNull();
 });

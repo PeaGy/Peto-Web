@@ -45,6 +45,8 @@ class StreamChunk:
     ``text`` là câu trả lời sẽ lưu. ``thinking`` là tóm tắt suy nghĩ của Grok,
     chỉ hiện lúc đang trả lời, không trộn vào tin nhắn.
     ``search`` là tiến trình tra web; ``sources`` là nguồn tham khảo để lưu và hiển thị riêng.
+    ``source_activity`` là metadata call/query/source chỉ dành cho bảng nguồn Web Chat, nằm trong ``info``;
+    không thêm metadata này vào prompt hoặc giao thức Companion/Agent.
     ``page`` là Claude mở một link có trong hội thoại (web_fetch): ``fetching``, rồi ``fetched`` hoặc ``failed``.
     ``file_lookup`` / ``file_lookup_done`` là lúc Peto bắt đầu và xong một lần tìm/đọc trong tệp đã gửi.
     ``connector_lookup`` / ``connector_lookup_done`` là tiến trình đọc dịch vụ đã kết nối.

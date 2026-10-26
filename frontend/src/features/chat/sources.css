@@ -1,0 +1,57 @@
+/* Source controls use Peto colors; sizes and grouping follow the observed Grok source panel. */
+.web-sources { margin-top: 12px; }
+.web-sources-trigger { display: inline-flex; align-items: center; gap: 4px; min-height: 31px; max-width: 100%; padding: 4px 8px 4px 4px; border: 1px solid var(--line); border-radius: 999px; background: transparent; color: var(--text); font: inherit; font-size: 14px; font-weight: 500; line-height: 20px; cursor: pointer; touch-action: manipulation; user-select: none; }
+.source-favicons { display: flex; align-items: center; flex-shrink: 0; padding-right: 4px; }
+.source-favicon { display: grid; place-items: center; width: 20px; height: 20px; flex: 0 0 20px; border: 2px solid var(--bg); border-radius: 50%; background: var(--panel-2); color: var(--muted); overflow: hidden; }
+.source-favicon + .source-favicon { margin-left: -12px; }
+.source-favicon img, .source-favicon svg { width: 16px; height: 16px; object-fit: contain; }
+.source-trigger-globe { display: grid; place-items: center; width: 20px; height: 20px; color: var(--muted); }
+.sources-panel { display: none; position: static; flex: 0 0 min(33.333vw, 480px); align-self: stretch; width: min(33.333vw, 480px); min-width: 320px; max-width: none; max-height: none; height: auto; margin: 0; padding: 0; border: 0; border-left: 1px solid var(--line); color: var(--text); background: var(--bg); overflow: hidden; font-size: 15px; line-height: 1.5; }
+.sources-panel[open] { display: flex; flex-direction: column; }
+.chat-layout.sources-open > .chat { min-width: 0; }
+.sources-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-shrink: 0; min-height: 60px; padding: 12px 14px 12px 20px; }
+.sources-panel-head h2 { margin: 0; font-size: 16px; font-weight: 600; line-height: 24px; }
+.sources-panel-close { display: grid; place-items: center; width: 36px; height: 36px; padding: 0; flex-shrink: 0; border: 0; border-radius: 50%; background: transparent; color: var(--muted); cursor: pointer; touch-action: manipulation; user-select: none; }
+.sources-panel-scroll { flex: 1; min-height: 0; padding: 4px 6px 24px 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.source-query-group h3 { margin: 0; }
+.source-query-toggle { display: flex; align-items: flex-start; gap: 12px; width: 100%; min-height: 65px; padding: 12px 24px; border: 0; border-radius: 0; color: var(--text); background: transparent; text-align: left; font: inherit; font-size: 14px; font-weight: 500; line-height: 21px; cursor: pointer; touch-action: manipulation; user-select: none; }
+.source-query-glyph { display: grid; place-items: center; flex: 0 0 16px; height: 21px; color: var(--muted); }
+.source-query-copy { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.source-query-label { color: var(--muted); font-weight: 400; }
+.source-query-copy strong { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 14px; font-weight: 600; }
+.source-query-count { flex-shrink: 0; align-self: flex-start; min-width: 22px; margin-left: 4px; padding: 0 4px; border: 1px solid var(--line); border-radius: 4px; color: var(--muted); font-size: 11px; font-weight: 400; line-height: 20px; text-align: center; font-variant-numeric: tabular-nums; }
+.source-query-group.failed .source-query-label { color: var(--danger); }
+.source-query-group > [role="region"][hidden] { display: none; }
+.web-source-list { display: flex; flex-direction: column; padding: 4px 16px 12px 24px; }
+.web-source-card { display: block; min-width: 0; margin: 0; padding: 12px 16px; border: 0; border-radius: 12px; color: var(--text); background: transparent; text-decoration: none; touch-action: manipulation; }
+.web-source-text { display: block; min-width: 0; }
+.web-source-text strong { display: block; overflow-wrap: anywhere; font-size: 14px; font-weight: 600; line-height: 21px; }
+.web-source-snippet { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; margin-top: 2px; overflow: hidden; overflow-wrap: anywhere; color: var(--text); font-size: 14px; line-height: 21px; }
+.web-source-site { display: flex; align-items: center; gap: 6px; min-width: 0; margin-top: 6px; color: var(--muted); font-size: 12px; line-height: 18px; }
+.web-source-site > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.web-source-icon { display: grid; place-items: center; flex: 0 0 16px; width: 16px; height: 16px; border-radius: 50%; color: var(--muted); overflow: hidden; }
+.web-source-icon img, .web-source-icon svg { width: 16px; height: 16px; object-fit: contain; }
+.web-source-evidence { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; line-height: 16px; }
+.source-ungrouped { margin-top: 8px; }
+.source-ungrouped > h3 { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0; padding: 10px 24px 2px; color: var(--muted); font-size: 12px; font-weight: 500; }
+.source-ungrouped > h3 > span { font-variant-numeric: tabular-nums; }
+.source-query-empty, .source-limit-note { margin: 0; padding: 12px 24px; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.source-limit-note { border-top: 1px solid var(--line); margin-top: 12px; }
+.web-sources-trigger:focus-visible, .sources-panel-close:focus-visible, .sources-panel-scroll:focus-visible, .source-query-toggle:focus-visible, .web-source-card:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.web-sources-trigger:active, .sources-panel-close:active, .source-query-toggle:active { background: var(--panel-2); }
+@media (hover: hover) and (pointer: fine) {
+  .web-sources-trigger:hover, .sources-panel-close:hover, .source-query-toggle:hover, .web-source-card:hover { background: var(--panel); }
+  .sources-panel-close:hover { color: var(--text); }
+}
+@media (max-width: 1100px) {
+  /* A sheet preserves the conversation context above it and accommodates browser chrome/safe areas. */
+  .sources-panel { position: fixed; inset: auto 0 0; width: 100%; min-width: 0; height: min(85dvh, 900px); max-height: 85dvh; margin: 0; padding-bottom: env(safe-area-inset-bottom); border: 1px solid var(--line); border-bottom: 0; border-radius: 18px 18px 0 0; box-sizing: border-box; }
+  .sources-panel::backdrop { background: #0009; }
+  .sources-panel-head { min-height: 58px; padding: 7px 8px 7px 16px; }
+  .sources-panel-close { width: 44px; height: 44px; }
+  .sources-panel-scroll { padding-bottom: 16px; }
+  .source-query-toggle { padding-inline: 20px; }
+  .web-source-list { padding-inline: 16px 8px; }
+  .web-source-card { padding-inline: 16px; }
+  .web-sources-trigger { min-height: 36px; }
+}

@@ -1,6 +1,7 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { expect, it } from 'vitest';
 import { ChatMessage } from '../src/features/chat/ChatMessage';
+import SourcesPanel from '../src/features/chat/SourcesPanel';
 import { citationIndex, safeSources } from '../src/features/chat/sourceData';
 import type { Message, WebSource } from '../src/shared/api/api';
 
@@ -12,7 +13,7 @@ function view(content: string, items = sources, writing = false, role: Message['
   return <ChatMessage message={{ role, content, sources: items }} live={writing} writing={writing} onPreview={() => {}} onEdit={() => {}} />;
 }
 
-it('ánh xạ bằng ID, nhóm citation cạnh nhau và giữ danh sách nguồn mở rộng', () => {
+it('ánh xạ bằng ID, nhóm citation cạnh nhau và giữ nút mở bảng nguồn', () => {
   const { container } = render(view('Còn liên lạc. [web:21] [web:26] [web:21]'));
   expect(container.querySelectorAll('.citation-group')).toHaveLength(1);
   expect(container.querySelectorAll('.citation-badge')).toHaveLength(2);
@@ -21,9 +22,8 @@ it('ánh xạ bằng ID, nhóm citation cạnh nhau và giữ danh sách nguồn
   expect(link.getAttribute('rel')).toBe('noopener noreferrer');
   expect(link.getAttribute('data-tip')).toContain('Nguồn A\nhttps://example.com/a');
   expect(container.textContent).not.toContain('[web:');
-  const footer = screen.getByText('Nguồn · 2').closest('details')!;
-  expect(footer.open).toBe(false);
-  expect(within(footer).getAllByRole('link', { hidden: true })).toHaveLength(2);
+  expect(screen.getByRole('button', { name: 'Mở 2 nguồn tham khảo' }).getAttribute('aria-expanded')).toBe('false');
+  expect(container.querySelector('.web-source-card')).toBeNull();
 });
 
 it('mọi điểm chia chunk đều giữ marker kín; metadata về muộn cập nhật đúng nguồn', () => {
@@ -64,7 +64,8 @@ it('marker sai ID cũng được giữ kín trong lúc đang nhận từng ký t
 });
 
 it('tải lại dữ liệu cũ không có ID vẫn hiện nguồn và không đoán số trong mảng', () => {
-  const { container } = render(view('Theo nguồn [web:1]', [{ url: sources[0].url, title: 'Legacy' }]));
+  const legacy = [{ url: sources[0].url, title: 'Legacy' }];
+  const { container } = render(<>{view('Theo nguồn [web:1]', legacy)}<SourcesPanel sources={legacy} onClose={() => {}} /></>);
   expect(container.querySelector('a.citation-badge')).toBeNull();
   expect(screen.getByText('Legacy')).toBeTruthy();
   expect(container.querySelector('.citation-unavailable')).toBeTruthy();
@@ -112,7 +113,7 @@ it('lọc URL/metadata độc hại, escape tiêu đề và bảo toàn alias kh
   expect(items[0].citation_ids).toEqual(['web:26', 'web:22']);
   expect(citationIndex(items).get('web:22')?.url).toBe(sources[0].url);
   const { container } = render(view('Nguồn [web:22]', items));
-  expect(container.querySelector('img')).toBeNull();
+  expect(container.querySelector('img[src="x"], img[onerror]')).toBeNull();
   expect(container.querySelector('script')).toBeNull();
   expect(container.querySelector('a.citation-badge')?.getAttribute('data-tip')).toContain('<img');
 });

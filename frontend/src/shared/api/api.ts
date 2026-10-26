@@ -1,4 +1,5 @@
 import type { PlayerCommand, PlayerResult } from '../../features/companion/ytplayer/playerControl';
+import { normalizeWeb, type WebActivity } from '../../features/chat/sourceActivity';
 
 export type Role = "user" | "assistant";
 export type Effort = "auto" | "none" | "low" | "medium" | "high" | "xhigh" | "max";
@@ -109,6 +110,8 @@ export interface WorkLog {
   steps: WorkStep[];
   /** false khi lượt dừng giữa chừng (lỗi, hết giờ, bấm Dừng). */
   complete?: boolean;
+  /** Display-only native search calls and result membership, never added to the model prompt. */
+  web?: WebActivity;
 }
 
 /** Persona của một hội thoại: trợ lý AI, hoặc "roleplay" ở hội thoại nhập vai cũ. Chế độ nhập vai bỏ ngày 2026-10-18;
@@ -142,6 +145,7 @@ type ChatEvent =
   | { type: "reading"; text: string }
   | { type: "search"; status: "searching" | "completed" }
   | { type: "sources"; sources: WebSource[] }
+  | { type: 'source_activity'; web: WebActivity }
   | { type: 'artifact'; artifact: DocumentArtifact }
   | { type: 'document_status'; text: string }
   | { type: "file_lookup"; text: string; live: boolean }
@@ -168,6 +172,7 @@ interface ChatHandlers {
   onReading?: (text: string) => void;
   onSearch?: (status: "searching" | "completed" | "failed") => void;
   onSources?: (sources: WebSource[]) => void;
+  onSourceActivity?: (web: WebActivity) => void;
   onArtifact?: (artifact: DocumentArtifact) => void;
   onDocumentStatus?: (text: string) => void;
   /** Peto tìm hoặc đọc thêm trong tệp đã gửi: live khi đang làm, rồi một lần nữa với kết quả. */
@@ -860,6 +865,9 @@ export async function sendMessage(
           handlers.onSearch?.(event.status);
         } else if (event.type === "sources") {
           handlers.onSources?.(event.sources);
+        } else if (event.type === 'source_activity') {
+          const web = normalizeWeb(event.web);
+          if (web) handlers.onSourceActivity?.(web);
         } else if (event.type === 'artifact') {
           handlers.onArtifact?.(event.artifact);
         } else if (event.type === 'document_status') {

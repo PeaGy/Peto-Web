@@ -52,6 +52,8 @@ import DocumentPanel, { RightPanelIcon, type DocumentPanelSelection } from '../f
 import type { DocumentDraftRequest } from '../features/documents/documentApi';
 import { takeConnectorResult } from '../features/connectors/connectorApi';
 import { safeSources } from "../features/chat/WebSources";
+import SourcesPanel from '../features/chat/SourcesPanel';
+import { normalizeWeb } from '../features/chat/sourceActivity';
 import { closeWork } from "../features/chat/WorkTimeline";
 import TooltipLayer from '../shared/ui/TooltipLayer';
 import {
@@ -169,6 +171,8 @@ function AppContent() {
   conversationIdRef.current = conversationId;
   const [archived, setArchived] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [sourcesIndex, setSourcesIndex] = useState<number | null>(null);
+  const closeSources = useCallback(() => setSourcesIndex(null), []);
   const [documentRequest, setDocumentRequest] = useState<DocumentDraftRequest | null>(null);
   const [documentSelection, setDocumentSelection] = useState<{ id: string; version: number; key: number } | null>(null);
   const [documentRefresh, setDocumentRefresh] = useState(0);
@@ -180,11 +184,16 @@ function AppContent() {
   // bảng này thì đóng bảng kia.
   const [diagram, setDiagram] = useState<string | null>(null);
   const closeDiagram = useCallback(() => setDiagram(null), []);
+  const openSources = useCallback((index: number) => {
+    setDocumentPanelOpen(false); setDocumentPanelExpanded(false); setDiagram(null);
+    setSourcesIndex(current => current === index ? null : index);
+  }, []);
   const diagramApi = useMemo(() => ({
     current: diagram,
-    open: (code: string) => { setDocumentPanelOpen(false); setDocumentPanelExpanded(false); setDiagram(code); },
+    open: (code: string) => { setSourcesIndex(null); setDocumentPanelOpen(false); setDocumentPanelExpanded(false); setDiagram(code); },
   }), [diagram]);
   const previewDocument = useCallback((item: { id: string; version: number }) => {
+    setSourcesIndex(null);
     setDocumentPreview({ id: item.id, version: item.version, key: Date.now() });
     setDiagram(null);
     setDocumentPanelOpen(true);
@@ -268,15 +277,17 @@ function AppContent() {
     if (view === 'companion') setCompanionVisited(true);
     setSidebarOpen(false);
   }, [view]);
+  useEffect(() => setSourcesIndex(null), [view]);
   useEffect(() => {
     setDocumentPanelOpen(false); setDocumentPanelExpanded(false); setDocumentPreview(null); setDocumentSelection(null);
     setDiagram(null);
+    setSourcesIndex(null);
   }, [conversationId]);
   useEffect(() => {
     if (view !== 'chat') return;
     const shortcut = (event: KeyboardEvent) => {
       if (event.ctrlKey && event.altKey && event.code === 'KeyB' && !document.querySelector('.document-workspace[open], .settings-dialog[open]')) {
-        event.preventDefault(); setDocumentPanelOpen(value => !value); setDocumentPanelExpanded(false); setDiagram(null);
+        event.preventDefault(); setSourcesIndex(null); setDocumentPanelOpen(value => !value); setDocumentPanelExpanded(false); setDiagram(null);
       }
     };
     window.addEventListener('keydown', shortcut);
@@ -410,6 +421,7 @@ function AppContent() {
     setDocumentRequest(null);
     setDocumentSelection(null);
     closeDocumentPanel(); setDocumentPreview(null); setDiagram(null);
+    setSourcesIndex(null);
     authVersion.current += 1;
     loadVersion.current += 1;
     listVersion.current += 1;
@@ -727,6 +739,7 @@ function AppContent() {
   }
 
   async function loadConversation(id: string) {
+    setSourcesIndex(null);
     recovery.cancel();
     loadRef.current?.abort();
     const controller = new AbortController();
@@ -854,6 +867,8 @@ function AppContent() {
       return;
     }
     const prefix = revision ? messages.slice(0, revisionIndex) : messages;
+    // A revised reply replaces the selected message; its source panel must not attach to the new reply by index.
+    if (revision) setSourcesIndex(null);
     recovery.cancel();
     setRetryAvailable(false);
     retryRevision.current = revision;
@@ -990,10 +1005,15 @@ function AppContent() {
           onWork: (work) => {
             if (controller.signal.aborted) return;
             finalWork = true;
-            updateReply(last => ({ ...last, work }));
+            const { web: rawWeb, ...rest } = work;
+            const web = normalizeWeb(rawWeb);
+            updateReply(last => ({ ...last, work: { ...rest, ...(web ? { web } : {}) } }));
           },
           onSources: (sources) => {
             if (!controller.signal.aborted) updateReply(last => ({ ...last, sources: safeSources(sources) }));
+          },
+          onSourceActivity: (web) => {
+            if (!controller.signal.aborted) updateReply(last => ({ ...last, work: { ms: 0, steps: [], ...last.work, web } }));
           },
           onArtifact: (artifact) => {
             if (controller.signal.aborted) return;
@@ -1444,7 +1464,7 @@ function AppContent() {
         </LazyBoundary>
       )}
       <DiagramContext.Provider value={diagramApi}>
-      <ChatFileDropZone className={`chat-layout${documentPanelOpen || diagram ? ' documents-open' : ''}${documentPanelOpen && documentPanelExpanded ? ' documents-expanded' : ''}`} hidden={view !== 'chat'}
+      <ChatFileDropZone className={`chat-layout${documentPanelOpen || diagram ? ' documents-open' : ''}${documentPanelOpen && documentPanelExpanded ? ' documents-expanded' : ''}${sourcesIndex !== null ? ' sources-open' : ''}`} hidden={view !== 'chat'}
         enabled={!streaming && !loadingConversation && !loadFailed && !readOnly && !deleting && !settingsOpen && !searchOpen}
         contextKey={JSON.stringify([auth.user?.id, draftConversationId, rootContext.projectId])}
         onFiles={addFiles}>
@@ -1461,7 +1481,7 @@ function AppContent() {
           <MenuIcon />
         </button>
         {activeProjectId && <ProjectChatHeader name={projectState.projects.find(project=>project.id===activeProjectId)?.name}/>}
-        <button type="button" className="artifact-icon document-panel-toggle" aria-label={documentPanelOpen ? 'Đóng bảng tài liệu' : 'Mở bảng tài liệu'} aria-expanded={documentPanelOpen} aria-controls="document-panel" data-tip="Tài liệu" data-tip-kbd="Ctrl+Alt+B" aria-keyshortcuts="Control+Alt+B" onClick={() => { setDocumentPanelOpen(value => !value); setDocumentPanelExpanded(false); setDiagram(null); }}><RightPanelIcon /></button>
+        <button type="button" className="artifact-icon document-panel-toggle" aria-label={documentPanelOpen ? 'Đóng bảng tài liệu' : 'Mở bảng tài liệu'} aria-expanded={documentPanelOpen} aria-controls="document-panel" data-tip="Tài liệu" data-tip-kbd="Ctrl+Alt+B" aria-keyshortcuts="Control+Alt+B" onClick={() => { setSourcesIndex(null); setDocumentPanelOpen(value => !value); setDocumentPanelExpanded(false); setDiagram(null); }}><RightPanelIcon /></button>
         </div>
 
         <div className="messages" role="region" aria-label="Nội dung hội thoại" tabIndex={0} ref={messagesRef} onClick={e => {
@@ -1491,6 +1511,7 @@ function AppContent() {
 
           {messages.map((message, index) => (
             <ChatMessage key={index} message={message}
+              sourcesExpanded={sourcesIndex === index} onOpenSources={openSources} sourceIndex={index}
               actionsDisabled={readOnly || streaming || loadingConversation || loadFailed}
               editor={editTarget?.id === message.id && editTarget ? <form className="inline-message-editor" onSubmit={e => {e.preventDefault(); void submit({target:editTarget,text:editText});}}>
                 <textarea autoFocus aria-label="Sửa tin nhắn" value={editText} onChange={e => setEditText(e.target.value)} rows={Math.min(12,Math.max(3,editText.split('\n').length))} onKeyDown={e => {if(e.key==='Escape') { e.preventDefault(); cancelEdit(); }}}/>
@@ -1565,6 +1586,10 @@ function AppContent() {
         />}
         </div>
       </main>
+      {sourcesIndex !== null && messages[sourcesIndex]?.role === 'assistant' && view === 'chat' ? (
+        <SourcesPanel key={`${conversationId}-${sourcesIndex}`} sources={messages[sourcesIndex].sources}
+          web={messages[sourcesIndex].work?.web} onClose={closeSources} />
+      ) : null}
       <DocumentPanel key={`${auth.user?.id}-${conversationId}`} conversationId={conversationId} open={documentPanelOpen && view === 'chat'} expanded={documentPanelExpanded} selection={documentPreview} refreshKey={documentRefresh} onClose={closeDocumentPanel} onExpand={() => setDocumentPanelExpanded(value => !value)} onEdit={item => setDocumentSelection({ ...item, key: Date.now() })} onUnauthorized={handleUnauthorized} />
       {diagram && view === 'chat' && (
         <LazyBoundary><Suspense fallback={null}>

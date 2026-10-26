@@ -418,6 +418,8 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                 if log:
                     steps = log.page(chunk.text)
                 return steps + sse({"type": "search", "status": "searching" if chunk.text == "fetching" else "completed"})
+            if chunk.kind == 'source_activity':
+                return log.source_activity(chunk.info) if log else None
             if chunk.kind == "sources":
                 sources = normalize_sources([*sources, *chunk.sources])
                 search_started = True

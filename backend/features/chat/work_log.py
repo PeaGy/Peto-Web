@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from time import perf_counter
 
 from shared.events import sse
+from shared.source_activity import SourceActivity
 
 MAX_STEPS = 80
 MAX_SUMMARY_CHARS = 4_000       # mỗi bước suy nghĩ
@@ -124,6 +125,7 @@ class WorkLog:
         self.clock = clock
         self.started = clock() if started is None else started
         self.steps: list[Step] = []
+        self.web = SourceActivity()
         self.count = 0
         self.summary_chars = 0
         self.text_at: int | None = None
@@ -373,9 +375,17 @@ class WorkLog:
 
     # ---------- cuối lượt ----------
 
+    def source_activity(self, info: dict | None) -> str:
+        """Display-only native search calls; separate from the compact timeline and model context."""
+        web = self.web.update(info)
+        return sse({'type': 'source_activity', 'web': web}) if web else ''
+
     def snapshot(self) -> dict:
         """Checkpoint không đóng bước đang chạy và không thay đổi nhật ký của luồng SSE."""
-        return {'ms': self.now(), 'steps': [step.public() for step in self.steps], 'complete': False}
+        data = {'ms': self.now(), 'steps': [step.public() for step in self.steps], 'complete': False}
+        if web := self.web.snapshot():
+            data['web'] = web
+        return data
 
     def close(self, complete: bool) -> dict:
         """Kết thúc các bước còn dở (xong, hoặc dừng nếu lượt hỏng/bị ngắt) và trả nhật ký để lưu cùng tin nhắn."""
@@ -393,4 +403,7 @@ class WorkLog:
         kept = [step for step in self.steps if not (
             step.kind == 'think' and not step.summary and step.state == 'done'
             and (step.end or 0) - step.start < SHORT_THOUGHT_MS)]
-        return {'ms': end, 'steps': [step.public() for step in kept], 'complete': complete}
+        data = {'ms': end, 'steps': [step.public() for step in kept], 'complete': complete}
+        if web := self.web.close(complete):
+            data['web'] = web
+        return data

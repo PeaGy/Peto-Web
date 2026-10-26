@@ -30,6 +30,7 @@ from shared.time_tools import execute_tool
 from features.documents.tools import current_session
 from features.connectors.tools import current_session as github_session_context, NAMES as GITHUB_TOOLS
 from shared.web_search import normalize_sources, search_context, citation_ids
+from shared.source_activity import display_sources
 from shared import chat_history_tools
 from features.companion import player_tools
 from features.chat.context_budget import enforce as enforce_chat_budget, side_output_cap
@@ -81,7 +82,7 @@ def _clip(value) -> str:
     return " ".join(str(value or "").split())[:500] or "không rõ lý do"
 
 
-def _item_sources(item: dict) -> list[dict]:
+def _item_source_candidates(item: dict) -> list[dict]:
     candidates = []
     if item.get("type") == "message":
         for part in item.get("content") or []:
@@ -100,7 +101,35 @@ def _item_sources(item: dict) -> list[dict]:
             access = 'page' if action.get('type') == 'fetch' and item.get('status') == 'completed' else 'search'
             candidates.extend({**source, "kind": "result", 'access': access}
                               for source in action.get("sources") or [] if isinstance(source, dict))
-    return normalize_sources(candidates)
+    return candidates
+
+
+def _item_sources(item: dict) -> list[dict]:
+    return normalize_sources(_item_source_candidates(item))
+
+
+def _source_activity(item: dict, provider: str, round_index: int) -> dict | None:
+    """Keep native provenance before the compatibility source list is flattened/capped."""
+    kind = item.get('type')
+    completed = item.get('status') == 'completed'
+    sources = display_sources(_item_source_candidates(item)) if kind == 'message' or completed else []
+    info = {'sources': sources}
+    if kind == 'web_search_call':
+        action = item.get('action') if isinstance(item.get('action'), dict) else {}
+        operation = action.get('type')
+        native_id = item.get('id')
+        if isinstance(operation, str) and operation in {'search', 'fetch', 'open_page', 'find_in_page'} and isinstance(native_id, str) and native_id:
+            queries = [action['query']] if isinstance(action.get('query'), str) else []
+            if isinstance(action.get('queries'), list):
+                queries.extend(query for query in action['queries'] if isinstance(query, str))
+            call = {'id': f'{provider}:{round_index}:{native_id}',
+                    'kind': 'search' if operation == 'search' else 'page', 'operation': operation,
+                    'queries': queries, 'state': 'done' if completed else 'failed' if item.get('status') in ('failed', 'incomplete') else 'live',
+                    'source_urls': [source['url'] for source in sources]}
+            if isinstance(action.get('url'), str):
+                call['url'] = action['url']
+            info['call'] = call
+    return info if sources or 'call' in info else None
 
 
 def build_input_payload(messages: list[ChatMessage]) -> list[dict]:
@@ -237,9 +266,13 @@ class ResponsesProvider(ChatProvider):
         code_ids: set[str] = set()
         usable_search_sources: list[dict] = []
         search_fallback = False
+        # Only Web Chat owns a display catalogue. Companion/Agent keep their existing protocol.
+        activity_enabled = request_context.current.get() is not None
 
         def observe_item(item: dict):
             nonlocal sources, search_finished, usable_search_sources
+            if activity_enabled and (activity := _source_activity(item, self.name, round_index)):
+                yield StreamChunk('source_activity', info=activity)
             if item.get("type") == "code_interpreter_call" and item.get("status") not in {None, "in_progress", "interpreting"}:
                 key = str(item.get("id") or f"code-{len(code_ids)}")
                 if key not in code_ids:
@@ -406,6 +439,8 @@ class ResponsesProvider(ChatProvider):
                     elif event_type == "response.output_item.added":
                         item_type = getattr(event.item, "type", "")
                         if item_type == "web_search_call":
+                            if activity_enabled and (activity := _source_activity(_dump(event.item), self.name, round_index)):
+                                yield StreamChunk('source_activity', info=activity)
                             draft = drop_pre_search_draft()
                             if draft is not None:
                                 yield draft
@@ -429,11 +464,19 @@ class ResponsesProvider(ChatProvider):
                     elif event_type == "response.output_text.annotation.added":
                         annotation = _dump(event.annotation)
                         if annotation.get("type") == "url_citation":
+                            if activity_enabled:
+                                display = display_sources([{**annotation, 'kind': 'citation',
+                                    'citation_ids': citation_ids(annotation, ''.join(written))}])
+                                if display:
+                                    yield StreamChunk('source_activity', info={'sources': display})
                             merged = normalize_sources([*sources, {**annotation, "kind": "citation",
                                                                  'citation_ids': citation_ids(annotation, ''.join(written))}])
                             if merged != sources:
                                 sources = merged
                                 yield StreamChunk("sources", sources=tuple(sources))
+                    elif event_type == 'peto.source_activity':
+                        if activity_enabled and (activity := _source_activity(_dump(event.item), self.name, round_index)):
+                            yield StreamChunk('source_activity', info=activity)
                     elif event_type in _REASONING_DELTA_TYPES:
                         delta = getattr(event, "delta", "")
                         if delta:
@@ -606,9 +649,12 @@ class ResponsesProvider(ChatProvider):
                     result = await github_session.run(call['name'], call.get('arguments', ''))
                     yield StreamChunk('connector_lookup_done', 'Đã đọc GitHub' if result.get('ok') else result.get('error', 'Chưa đọc được GitHub'))
                     if result.get('sources'):
-                        sources = normalize_sources([*sources, *({**source, 'kind': 'result', 'access': 'tool',
+                        tool_sources = [{**source, 'kind': 'result', 'access': 'tool',
                             **({'partial': True} if result.get('truncated') is True else {})}
-                            for source in result['sources'] if isinstance(source, dict))])
+                            for source in result['sources'] if isinstance(source, dict)]
+                        if activity_enabled and (display := display_sources(tool_sources)):
+                            yield StreamChunk('source_activity', info={'sources': display})
+                        sources = normalize_sources([*sources, *tool_sources])
                         yield StreamChunk('sources', sources=tuple(sources))
                 elif call.get('name') == chat_history_tools.NAME and chat_history:
                     yield StreamChunk('file_lookup', 'Đang đối chiếu lịch sử gốc…')

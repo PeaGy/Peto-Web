@@ -44,10 +44,10 @@ test('code, bảng và nguồn dùng được bằng bàn phím; metadata và HT
   const table = page.locator('.table-scroll').last();
   await table.focus(); await page.keyboard.press('ArrowRight');
   await expect.poll(() => table.evaluate(node => node.scrollLeft)).toBeGreaterThan(0);
-  const sources = page.locator('.web-sources > summary');
+  const sources = page.getByRole('button', { name: 'Mở 3 nguồn tham khảo' });
   await sources.focus(); await page.keyboard.press('Enter');
   await expect(page.getByText('Kết quả tìm kiếm', { exact: true })).toBeVisible();
-  await expect(page.getByText('Đã mở trang', { exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /Trang đã mở/ })).toBeVisible();
   await expect(page.getByText('Công cụ · một phần', { exact: true })).toBeVisible();
   await expect(page.getByRole('link', { name: /Video — mới tìm thấy/ }).locator('.youtube-icon')).toBeVisible();
   await expect(page.getByText('Unsafe', { exact: true })).toHaveCount(0);
@@ -57,7 +57,7 @@ test('code, bảng và nguồn dùng được bằng bàn phím; metadata và HT
   await lastSource.focus();
   await expect(lastSource).toBeInViewport();
   expect((await lastSource.boundingBox())!.y + (await lastSource.boundingBox())!.height)
-    .toBeLessThanOrEqual((await page.locator('.chat-dock').boundingBox())!.y);
+    .toBeLessThanOrEqual(page.viewportSize()!.height);
   await page.screenshot({ path: test.info().outputPath('sources-and-keyboard.png'), fullPage: true });
   await noPageOverflow(page);
 });

@@ -11,6 +11,7 @@ from features.companion import private_notes
 from ai import ChatAttachment, ChatMessage
 from core.config import MAX_DOCUMENT_CONTEXT_CHARS, MAX_HISTORY_IMAGES
 from shared.web_search import normalize_sources
+from shared.source_activity import normalize_web
 
 import logging
 
@@ -58,7 +59,13 @@ def _public_message(row: dict, companion: bool = False) -> dict:
         if companion and isinstance(row['work'], dict) and 'player' in row['work']:
             message['player_trace'] = row['work']['player']
         else:
-            message["work"] = row["work"]
+            work = row["work"]
+            if isinstance(work, dict) and 'web' in work:
+                work = dict(work)
+                web = normalize_web(work.pop('web'))
+                if web:
+                    work['web'] = web
+            message["work"] = work
     if companion and row["role"] == "assistant":
         message["content"], message["emotion_cues"] = emotion_tags.timeline(private_notes.strip(content))
         message["emotion"] = emotion_tags.first(private_notes.strip(content))

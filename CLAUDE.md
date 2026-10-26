@@ -1,5 +1,26 @@
 # CLAUDE.md
 
+## Web Chat sources panel from Grok (2026-10-26, not committed/deployed)
+
+Owner authorized all four stages; make it as close to Grok as possible. Started clean at `e96fd91`, preserving
+the committed Companion changes below. Reopened the logged-in Grok chat, inspected Sources UI/DOM, and statically
+analyzed three observed public JS bundles with REA (partial scope, no claim about Grok backend). No paid model calls.
+- `work.web` v1 stores a display-only source registry (200 URL/40 native calls/256 KiB), query membership and optional
+  producer plaintext snippets. `source_activity` SSE upserts by native provider/round/call ID. Existing 30-source
+  context/citation list stays unchanged; this catalogue never goes into model input. Missing query/ID uses truthful
+  ungrouped fallback. Claude enrichment is separate from `_portable_output`, preserving native replay equality.
+- Web Chat only: backend `shared/source_activity.py`, xai/Claude adapters, WorkLog/service, chat_turns/history;
+  frontend `sourceActivity.ts`, `SourceIcon`, `WebSources`, `SourcesPanel`, `sources.css`, App/API/closeWork integration.
+  Desktop right panel, narrow-screen 85dvh sheet; query groups collapsed, favicon pill, optional snippet, dark/light,
+  keyboard/focus, exclusive document/diagram panels, close on chat/view change and question revision.
+- Related backend runs 108 passed + 43 passed (overlapping), final owned hardening30/pipeline5 passed; frontend
+  19 + 148 passed, final UI/API/stage4 rerun31 and trigger13 passed; final browser run24 passed; production build passed.
+  No whole-repository rerun claim, new live provider acceptance, physical phone or screen-reader verification.
+- Favicon Google S2 gets public hostname only/no-referrer, local YouTube/GitHub SVG and globe fallback. No raw HTML.
+  Keep neighboring control shape/hover/focus/touch styling consistent, as the owner explicitly requested.
+- Plan/reference/contract/test notes: `backend/features/chat/docs/sources-panel-plan.md`, `source-activity.md`.
+  Deploy requires backend restart + frontend build/reload; no env or DB migration. Owner will commit/deploy.
+
 ## Companion chat UI from AIRI (2026-10-26, in progress, not committed)
 
 The owner asked to port AIRI's chat UI/UX "nguyên bản" (commit `74ddd90`: history.vue, user/assistant-item, action-menu,

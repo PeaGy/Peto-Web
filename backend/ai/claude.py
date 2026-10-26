@@ -76,6 +76,23 @@ def _portable_output(content: list[dict]) -> list[dict]:
     return output
 
 
+def _activity_item(item: dict, inputs: dict[str, dict]) -> dict:
+    """Display-only enrichment; never change native replay's portable output equality."""
+    action = dict(item.get('action') or {})
+    entry = inputs.get(item.get('id'), {})
+    data = entry.get('input') if isinstance(entry.get('input'), dict) else {}
+    if isinstance(data.get('query'), str):
+        action['query'] = data['query']
+    if isinstance(data.get('url'), str):
+        action['url'] = data['url']
+    return {**item, 'action': action}
+
+
+def _server_activity(block: dict) -> dict:
+    return {'type': 'web_search_call', 'id': block.get('id'), 'status': 'in_progress',
+            'action': {'type': 'search' if block.get('name') == 'web_search' else 'fetch'}}
+
+
 def build_messages(items: list[dict], model: str, *, replay_thinking: bool = True) -> list[dict]:
     """Chỉ nhận vai user/assistant; khôi phục block gốc khi còn đủ nhóm item của cùng model."""
     messages: list[dict] = []
@@ -273,6 +290,8 @@ class ClaudeStream:
         output: list[dict] = []
         usage = {"input_tokens": 0, "output_tokens": 0}
         cache_read = cache_write = 0
+        web_inputs: dict[str, dict] = {}
+        activity_enabled = web_request_context.get() is not None
         try:
             for pause in range(MAX_SEARCH_PAUSES + 1):
                 if self.closed:
@@ -291,8 +310,16 @@ class ClaudeStream:
                                 yield SimpleNamespace(type="response.output_item.added",
                                     item=SimpleNamespace(type="function_call", name=block.name))
                             elif block.type == "server_tool_use" and block.name == "web_search":
+                                if activity_enabled:
+                                    raw = block.model_dump(mode='json', exclude_none=True)
+                                    web_inputs[block.id] = raw
+                                    yield SimpleNamespace(type='peto.source_activity', item=_activity_item(_server_activity(raw), web_inputs))
                                 yield SimpleNamespace(type="response.web_search_call.searching")
                             elif block.type == "server_tool_use" and block.name == "web_fetch":
+                                if activity_enabled:
+                                    raw = block.model_dump(mode='json', exclude_none=True)
+                                    web_inputs[block.id] = raw
+                                    yield SimpleNamespace(type='peto.source_activity', item=_activity_item(_server_activity(raw), web_inputs))
                                 # Đọc trang từ link, không phải tra web: nhật ký "Đang làm" ghi "Đang đọc trang…".
                                 yield SimpleNamespace(type="peto.page_fetch.started")
                         elif kind == "content_block_delta":
@@ -302,8 +329,12 @@ class ClaudeStream:
                             elif delta.type == "thinking_delta":
                                 yield SimpleNamespace(type="response.reasoning_summary_text.delta", delta=delta.thinking)
                             elif delta.type == "citations_delta":
-                                citation = _citation(delta.citation.model_dump(mode="json", exclude_none=True))
+                                raw_citation = delta.citation.model_dump(mode="json", exclude_none=True)
+                                citation = _citation(raw_citation)
                                 if citation:
+                                    if activity_enabled and isinstance(raw_citation.get('cited_text'), str):
+                                        yield SimpleNamespace(type='peto.source_activity', item={'type': 'message', 'content': [
+                                            {'type': 'output_text', 'text': '', 'annotations': [{**citation, 'snippet': raw_citation['cited_text']}]}]})
                                     yield SimpleNamespace(type="response.output_text.annotation.added", annotation=citation)
                                     if citation.get('citation_id'):
                                         yield SimpleNamespace(type='peto.citation', delta=f" [{citation['citation_id']}]")
@@ -312,13 +343,23 @@ class ClaudeStream:
                                 yield SimpleNamespace(type="peto.pulse")
                         elif kind == "content_block_stop":
                             block = stream.current_message_snapshot.content[event.index]
+                            if activity_enabled and block.type == 'server_tool_use' and block.name in {'web_search', 'web_fetch'}:
+                                raw = block.model_dump(mode='json', exclude_none=True)
+                                web_inputs[block.id] = raw
+                                yield SimpleNamespace(type='peto.source_activity', item=_activity_item(_server_activity(raw), web_inputs))
                             if block.type in {"web_search_tool_result", "web_fetch_tool_result"}:
                                 items = _portable_output([block.model_dump(mode="json", exclude_none=True)])
                                 for item in items:
+                                    if activity_enabled:
+                                        yield SimpleNamespace(type='peto.source_activity', item=_activity_item(item, web_inputs))
                                     yield SimpleNamespace(type="response.output_item.done", item=item)
                                 # Trang không đọc được (chặn, cần JavaScript…) không thành nguồn nào; vẫn báo để nhật
                                 # ký không để bước "Đang đọc trang…" treo tới hết lượt.
                                 if block.type == "web_fetch_tool_result" and not items:
+                                    if activity_enabled:
+                                        item = {'type': 'web_search_call', 'id': block.tool_use_id, 'status': 'failed',
+                                                'action': {'type': 'fetch'}}
+                                        yield SimpleNamespace(type='peto.source_activity', item=_activity_item(item, web_inputs))
                                     yield SimpleNamespace(type="peto.page_fetch.failed")
                     if not stopped:
                         raise ProviderError("Kết nối Claude bị ngắt trước khi trả lời xong. Thử lại nhé.", retryable=True)

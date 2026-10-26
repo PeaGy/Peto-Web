@@ -29,7 +29,7 @@ bằng chứng rằng URL thứ 21 trong mảng là nguồn tương ứng: mản
 | Persistence | `storage/chat_turns.py` checkpoint/final save JSON nguồn; `storage/conversations.py` và `features/chat/history.py` normalize khi đọc. ID còn nguyên sau lưu/tải lại; không cần migrate DB. |
 | Browser streaming | `shared/api/api.ts` đọc events; `App.tsx::onSources` gọi `safeSources`. `sourceData.ts` giữ ID, lọc URL, gộp alias của cùng URL và phát hiện một ID có nhiều URL. |
 | Rendering | `Citations.tsx` là remark AST plugin cho assistant: chuyển token thành node cite và component React có kiểm soát. Không replace bằng HTML và không bật rehype-raw. |
-| Footer | Giữ `WebSources` với details mở rộng, phân biệt nguồn trích dẫn/search/page/tool/legacy và icon miền thật hiện có. |
+| Footer | Từ 26/10, `WebSources` là pill favicon mở `SourcesPanel` bên phải/sheet. Nhóm native query dùng `work.web`, dữ liệu cũ giữ fallback citation/search/page/tool/legacy. Xem [source-activity.md](source-activity.md). |
 
 Hợp đồng nguồn thêm trường **tùy chọn**, ví dụ:
 
@@ -65,7 +65,9 @@ này; cần payload provider có cấu trúc để xác minh thêm, không lấy
 ## An toàn và UX
 
 Chỉ HTTP(S), không credentials, control characters, DEL, backslash hoặc URL quá 2.048 ký tự. Frontend kiểm lại metadata
-độc lập với backend. Title là text React đã escape; không dùng dangerouslySetInnerHTML/eval hoặc remote favicon fetch.
+độc lập với backend. Title là text React đã escape; không dùng dangerouslySetInnerHTML/eval. Từ 26/10, bảng nguồn dùng
+favicon Google S2 với hostname công khai và no-referrer, local YouTube/GitHub SVG hoặc globe khi lỗi/host private;
+không gửi URL đầy đủ hay nội dung chat để lấy icon. Chi tiết trong [source-activity.md](source-activity.md).
 Metadata không hợp lệ không làm hỏng câu trả lời. Một ID trỏ hai URL khác nhau không tạo liên kết bừa.
 
 Keyboard có focus ring và tooltip; hover chỉ áp dụng thiết bị có hover/pointer fine. Touch mở link trực tiếp, có

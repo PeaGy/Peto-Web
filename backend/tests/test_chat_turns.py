@@ -159,8 +159,8 @@ def test_stopped_attachments_and_partial_reply_remain_reference_data():
 async def test_stop_during_save_before_meta_returns_stored_message(client, monkeypatch):
     saving, release = asyncio.Event(), asyncio.Event()
     original_bind = chat_turns.bind
-    async def bind(*args):
-        result = await original_bind(*args)
+    async def bind(*args, **kwargs):
+        result = await original_bind(*args, **kwargs)
         saving.set()
         await release.wait()
         return result

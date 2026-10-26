@@ -31,9 +31,10 @@ test('citation badges, tooltip, nguồn và F5 giữ đúng ánh xạ', async ({
   await expect(answer.locator('a.citation-badge')).toHaveCount(2);
   await expect(answer.locator('.citation-unavailable')).toHaveCount(1);
   await expect(answer).not.toContainText('[web:');
-  await expect(answer.locator('img')).toHaveCount(0);
-  await answer.getByText('Nguồn · 2', { exact: true }).click();
-  await expect(answer.locator('.web-source-card').filter({ hasText: 'Ending C — nguồn gốc' })).toBeVisible();
+  await expect(answer.locator('img[src="x"], img[onerror]')).toHaveCount(0);
+  await answer.getByRole('button', { name: 'Mở 2 nguồn tham khảo' }).click();
+  await expect(page.locator('.sources-panel .web-source-card').filter({ hasText: 'Ending C — nguồn gốc' })).toBeVisible();
+  await page.getByRole('button', { name: 'Đóng bảng nguồn' }).click();
   await badge.scrollIntoViewIfNeeded();
   await badge.focus();
   await badge.press('Tab');

@@ -5,6 +5,7 @@ import json
 import aiosqlite
 from fastapi import HTTPException
 from storage import connection
+from shared.source_activity import normalize_web, stop_web
 
 
 async def init_tables(db):
@@ -134,6 +135,12 @@ async def interrupt_running():
                         work = None
                     if isinstance(work, dict):
                         work['complete'] = False
+                        if 'web' in work:
+                            web = stop_web(work['web'])
+                            if web:
+                                work['web'] = web
+                            else:
+                                work.pop('web', None)
                         for step in work.get('steps', []):
                             if isinstance(step, dict) and step.get('state') == 'live':
                                 step.update(state='stopped', end=work.get('ms', 0))
@@ -150,6 +157,11 @@ CHECKPOINT_CHARS = 200_000
 async def _write_reply(db, turn, content, sources, artifacts, work, provider, complete):
     """Dùng kết nối giao dịch của caller; là ranh giới fault-injection trong test."""
     from shared.web_search import normalize_sources
+    if isinstance(work, dict) and 'web' in work:
+        work = dict(work)
+        web = normalize_web(work.pop('web'))
+        if web:
+            work['web'] = web
     verified = []
     for artifact in artifacts[:16]:
         if not isinstance(artifact, dict):
@@ -213,6 +225,12 @@ async def persist(owner, request_id, *, content, sources=(), artifacts=(), work=
             content = content[:CHECKPOINT_CHARS] + '\n[Checkpoint bị giới hạn; phần cuối chưa được lưu trước khi ngắt.]'
         if work and result_state != 'complete':
             work = {**work, 'complete': False}
+            if result_state != 'running' and 'web' in work:
+                web = stop_web(work['web'])
+                if web:
+                    work['web'] = web
+                else:
+                    work.pop('web', None)
         mid = turn['assistant_message_id']
         if save_empty or content.strip() or artifacts or mid or result_state == 'stopped':
             mid = await _write_reply(db, turn, content, sources, artifacts, work, provider, result_state == 'complete')

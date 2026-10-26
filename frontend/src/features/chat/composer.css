@@ -101,25 +101,6 @@
 @media (hover: hover) and (pointer: fine) { .composer-options > button:disabled:hover { background: transparent; } }
 .web-search-status { display: flex; align-items: center; gap: 8px; color: var(--accent); font-size: 13px; padding: 7px 0; }
 .web-search-status svg { flex-shrink: 0; }
-.web-sources { margin-top: 12px; font-size: 13px; }
-.web-sources summary { display: flex; align-items: center; gap: 8px; width: fit-content; cursor: pointer; color: var(--muted); font-weight: 500; list-style: none; }
-.web-sources summary::-webkit-details-marker { display: none; }
-.web-sources > summary { padding: 7px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); }
-@media (hover: hover) and (pointer: fine) { .web-sources summary:hover { color: var(--text); }
-  .web-sources > summary:hover { background: var(--panel-2); } }
-.web-sources summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
-.web-sources summary::after { content: '+'; margin-left: 3px; }
-.web-sources[open] > summary::after, .web-source-results[open] > summary::after { content: '−'; }
-.web-sources-panel { margin-top: 10px; padding: 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); display: grid; gap: 16px; max-height: min(480px, 55dvh); overflow-y: auto; overscroll-behavior: contain; }
-.web-sources-panel h3 { margin: 0 0 10px; font-size: 13px; font-weight: 600; }
-.web-sources-panel p { color: var(--muted); font-size: 12px; margin: 8px 0 10px; }
-.web-source-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: 8px; }
-.web-source-card { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-2); color: var(--text); text-decoration: none; min-width: 0; }
-@media (hover: hover) and (pointer: fine) { .web-source-card:hover { border-color: var(--accent); } }
-.web-source-icon { display: grid; place-items: center; flex: 0 0 20px; color: var(--muted); }
-.web-source-text { flex: 1; min-width: 0; display: grid; gap: 3px; }
-.web-source-card strong { font-size: 12px; font-weight: 500; overflow-wrap: anywhere; }
-.web-source-card small { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .composer-bar > .send, .composer-bar > .stop { flex-shrink: 0; }
 /* Bên phải thanh: nút chọn model (khi tài khoản có hơn một model) rồi tới nút Gửi. */
 .composer-send { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
