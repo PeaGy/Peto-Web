@@ -225,53 +225,10 @@
 }
 @media (hover: hover) and (pointer: fine) { .companion-notice button:hover { background: var(--panel-3); } }
 .companion-notice button:active { transform: scale(0.97); }
-.companion-messages {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding: 18px 18px 8px;
-}
-.companion-messages .bubble p { margin: 0; white-space: pre-wrap; }
-.companion-messages .bubble.user { max-width: 85%; }
-.companion-reply { display: grid; justify-items: start; gap: 2px; }
-.companion-reply .message-status { margin-top: 2px; padding-top: 0; border-top: 0; }
-.companion-typing { color: var(--muted); letter-spacing: 0.1em; }
-.companion-typing.companion-searching { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; letter-spacing: 0; }
-.message-speak {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  margin-left: -6px;
-  border: 0;
-  border-radius: 8px;
-  background: none;
-  color: var(--muted);
-  cursor: pointer;
-  transition: transform 160ms var(--ease-out);
-}
-.message-speak.playing { background: var(--panel-2); color: var(--text); }
-@media (hover: hover) and (pointer: fine) { .message-speak:hover { background: var(--panel-2); color: var(--text); } }
-.message-speak:active { transform: scale(0.97); }
-.message-speak.loading svg { animation: speak-wait 1s ease-in-out infinite; }
-@keyframes speak-wait { 50% { opacity: 0.3; } }
+/* Lịch sử và ô nhắn: chat/companionChat.css (theo AIRI, 26/10/2026). */
 .companion-panel .error { margin: 0 14px 8px; }
-.companion-composer { position: relative; padding: 6px 14px 16px; }
-.companion-composer .composer { gap: 4px; padding: 8px 10px; }
-.companion-composer .composer textarea { min-height: 40px; max-height: 140px; }
-.companion-composer .composer-bar { justify-content: space-between; }
-.companion-composer .composer.listening { border-color: var(--stage-mic-edge); }
-.companion-compose-tools { display: flex; align-items: center; gap: 4px; margin-right: auto; }
+.companion-composer { position: relative; }
 .companion-image-status { margin: 0 0 6px; font-size: 12px; color: var(--stage-muted); text-align: center; }
-.companion-image-button {
-  flex: none; display: grid; place-items: center; width: 36px; height: 36px; padding: 0;
-  border: 1px solid transparent; border-radius: 10px; background: transparent; color: var(--stage-muted); cursor: pointer;
-}
-@media (hover: hover) and (pointer: fine) { .companion-image-button:hover:not(:disabled) { color: var(--stage-text); background: var(--stage-surface); } }
-.companion-image-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .companion-image-drafts {
   display: flex; gap: 8px; overflow-x: auto; margin: 0; padding: 4px 0 8px; list-style: none; max-width: 100%;
 }
@@ -284,11 +241,9 @@
 .companion-message-images { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
 .companion-message-images a { display: block; max-width: 100%; }
 .companion-message-images img { display: block; width: auto; max-width: 100%; max-height: 220px; object-fit: contain; border-radius: 12px; }
-.companion-messages .bubble.user:has(.companion-message-images) { min-width: 0; }
 
 :root[data-motion="reduced"] .companion-portrait.speaking::after { animation: none; opacity: 1; }
-:root[data-motion="reduced"] .message-speak.loading svg { animation: none; }
-:root[data-motion="reduced"] .companion-tool, :root[data-motion="reduced"] .companion-notice button, :root[data-motion="reduced"] .message-speak { transition: none; }
+:root[data-motion="reduced"] .companion-tool, :root[data-motion="reduced"] .companion-notice button { transition: none; }
 @media (max-width: 720px) {
   /* Điện thoại: bố cục kiểu AIRI theo yêu cầu của chủ web. Nhân vật khóa khung, to và phủ gần hết màn hình;
      nút, tin nhắn và ô nhắn nổi trong suốt bên trên. Giữ ngón tay trên màn hình thì nhân vật nhìn theo. */
@@ -347,72 +302,8 @@
     backdrop-filter: blur(10px);
   }
 
-  /* Khung tin nhắn thấp, chữ nhỏ như AIRI để nhân vật chiếm phần lớn màn hình; tin cũ mờ dần ở mép trên. */
-  .companion-messages {
-    flex: 0 1 auto;
-    max-height: 34dvh;
-    margin-top: auto;
-    padding: 36px 8px 6px;
-    gap: 6px;
-    -webkit-mask-image: linear-gradient(to bottom, transparent, #000 56px);
-    mask-image: linear-gradient(to bottom, transparent, #000 56px);
-  }
-  .companion-messages .bubble,
-  .companion-messages .loading-chat {
-    margin: 0;
-    padding: 8px 12px;
-    border-radius: 14px;
-    color: var(--stage-text);
-    font-size: 14px;
-    line-height: 1.45;
-    text-align: left;
-    -webkit-backdrop-filter: blur(10px);
-    backdrop-filter: blur(10px);
-  }
-  .companion-messages .bubble.user { align-self: flex-start; max-width: 85%; background: var(--stage-surface); }
-  .companion-messages .bubble.assistant { background: linear-gradient(120deg, var(--stage-bubble-a), var(--stage-bubble-b)); }
-  /* Nút nghe lại nằm cuối dòng chữ chứ không chiếm một hàng riêng, cho bóng chat thấp hơn. */
-  .companion-messages .companion-reply { display: flex; flex-wrap: wrap; align-items: flex-end; column-gap: 4px; }
-  .companion-messages .companion-reply > p { flex: 1 1 0; min-width: 0; }
-  .companion-messages .companion-reply .message-status { flex-basis: 100%; }
-  .companion-messages .loading-chat { background: var(--stage-surface); }
-  .companion-messages .message-speak { width: 24px; height: 24px; margin: 0 -6px -3px 0; color: var(--stage-muted); }
-  .companion-typing { color: var(--stage-muted); }
-  .companion-messages .message-speak.playing { background: var(--stage-button); color: var(--stage-text); }
-  @media (hover: hover) and (pointer: fine) { .companion-messages .message-speak:hover { background: var(--stage-button); color: var(--stage-text); } }
-
+  /* Tin nhắn và ô nhắn điện thoại: chat/companionChat.css. */
   .companion-panel .error { margin: 0 8px 6px; }
-  .companion-composer { display: flex; justify-content: center; padding: 4px 8px calc(18px + env(safe-area-inset-bottom)); }
-  .companion-composer .composer {
-    flex-direction: row;
-    align-items: center;
-    gap: 4px;
-    width: min(74%, 320px);
-    padding: 3px 3px 3px 16px;
-    border: 1px solid var(--stage-line);
-    border-radius: 999px;
-    background: var(--stage-input);
-    box-shadow: none;
-    -webkit-backdrop-filter: blur(12px);
-    backdrop-filter: blur(12px);
-  }
-  .companion-composer .composer:focus-within { border-color: var(--stage-accent-strong); }
-  .companion-composer .composer textarea { min-height: 34px; max-height: 80px; padding: 6px 0; line-height: 1.4; color: var(--stage-text); }
-  .companion-composer .composer textarea::placeholder { color: var(--stage-muted); }
-  .companion-composer .send { width: 34px; height: 34px; padding: 0; justify-content: center; background: var(--stage-accent-strong); color: #fff; }
-  .companion-composer .send-text { display: none; }
-  .companion-composer .stop { padding: 7px 12px; font-size: 13px; }
-  /* Như AIRI: nút ảnh tách nhỏ ở bên trái, micro giữ trong viên thuốc. Có ảnh thì mở phần xem trước phía trên. */
-  .companion-composer .composer { position: relative; }
-  .companion-compose-tools { display: contents; }
-  .companion-image-button {
-    position: absolute; left: -44px; bottom: 3px; width: 36px; height: 36px;
-    border: 1px solid var(--stage-line); border-radius: 50%; background: var(--stage-input); color: var(--stage-muted);
-    -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
-  }
-  .companion-composer .composer.has-images { flex-wrap: wrap; border-radius: 22px; }
-  .companion-image-drafts { order: -2; flex: 1 0 100%; padding: 6px 6px 2px; }
-  .companion-image-drafts li { width: 64px; height: 64px; }
   .companion-message-images img { max-height: 150px; }
 }
 

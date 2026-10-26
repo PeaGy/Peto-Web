@@ -110,7 +110,8 @@ Only these places may write hex directly. Any other new colour becomes a token.
 ## 3. Type
 
 - **UI font:** `15px/1.6 "Segoe UI", system-ui, -apple-system, sans-serif` on `body`. The app loads no web fonts (Docs
-  and exported documents have their own).
+  and exported documents have their own), except the Companion chat: self-hosted Nunito (AIRI's `font-cute`, OFL,
+  `features/companion/chat/fonts/`), loaded only when Companion opens (owner's call, 2026-10-26).
 - **Code font:** `Consolas, "Cascadia Code", monospace`.
 - **Buttons and inputs do not inherit the font by themselves:** always write `font: inherit`, then set `font-size`.
 

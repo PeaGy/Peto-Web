@@ -85,3 +85,17 @@ async def open_conversation(body: OpenConversation, owner: str = Depends(current
         raise HTTPException(404, "Không tìm thấy hội thoại")
     await card_store.set_active_card(owner, found["card_id"], found["id"])
     return {"conversation_id": found["id"], "card_id": found["card_id"]}
+
+
+@router.delete("/api/companion/messages/{message_id}")
+async def delete_message(message_id: int, owner: str = Depends(current_owner)) -> dict:
+    """Xóa một tin trong mạch Companion (Delete trong menu tin nhắn của AIRI). Đang có lượt trả lời thì đợi xong."""
+    try:
+        deleted = await card_store.delete_companion_message(owner, message_id)
+    except card_store.MessageBusy:
+        raise HTTPException(409, "Peto đang trả lời trong hội thoại này. Đợi xong rồi xóa nhé.") from None
+    if deleted is None:
+        raise HTTPException(404, "Không tìm thấy tin nhắn")
+    from shared.attachments import delete_files
+    delete_files(deleted["paths"])
+    return {"deleted": True, "conversation_id": deleted["conversation_id"]}

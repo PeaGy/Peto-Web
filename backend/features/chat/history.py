@@ -50,6 +50,9 @@ def _public_message(row: dict, companion: bool = False) -> dict:
             message['stopped'] = True
     if row['role'] == 'assistant' and row.get('turn_user_id'):
         message['reply_to'] = row['turn_user_id']
+    if row.get('quote_id'):
+        # Tin Companion trả lời tin này (Reply); trang tự tìm tin đó trong mạch để hiện trích dẫn như AIRI.
+        message['quote_id'] = row['quote_id']
     if row.get("work"):
         # Nhật ký "Đang làm" lưu cùng câu trả lời: tải lại trang vẫn thấy Peto đã làm gì, mất bao lâu.
         if companion and isinstance(row['work'], dict) and 'player' in row['work']:

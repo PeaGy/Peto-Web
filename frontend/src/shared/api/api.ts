@@ -78,6 +78,8 @@ export interface Message {
   turn_state?: 'running' | 'complete' | 'stopped' | 'interrupted' | 'timeout' | 'error';
   turn_outcome?: string;
   reply_to?: number;
+  /** Tin Companion này trả lời tin có mã đó (Reply như AIRI); trang tự tìm tin đó trong mạch để hiện trích dẫn. */
+  quote_id?: number;
   /** Cảm xúc Peto tự chọn cho câu trả lời Companion (emotion_tags.py), để nghe lại tin cũ thì nhân vật làm đúng mặt. */
   emotion?: string | null;
   /** Cảm xúc của câu ở vị trí 0; tin cũ có thể còn nhiều mốc UTF-16, Companion chỉ dùng mặt đầu tiên. */
@@ -146,7 +148,7 @@ type ChatEvent =
   | { type: "connector_lookup"; text: string; live: boolean }
   | { type: "error"; message: string }
   | { type: "stopped" }
-  | { type: "done" };
+  | { type: "done"; message_id?: number | null };
 
 interface ChatHandlers {
   onPlayerCommand?: (command: PlayerCommand) => Promise<void>;
@@ -172,7 +174,8 @@ interface ChatHandlers {
   onFileLookup?: (text: string, live: boolean) => void;
   onConnectorLookup?: (text: string, live: boolean) => void;
   onError?: (message: string) => void;
-  onDone?: () => void;
+  /** ``messageId``: mã câu trả lời vừa lưu (máy chủ cũ không gửi). */
+  onDone?: (messageId?: number) => void;
 }
 
 export type AuthProvider = "discord" | "google" | "github";
@@ -467,6 +470,11 @@ export async function newCompanionConversation(cardId?: string): Promise<Compani
 }
 
 /** Mở một mạch cũ: thẻ của mạch thành thẻ đang dùng. */
+/** Xóa một tin trong mạch Companion (Xóa trong menu tin nhắn, như AIRI). */
+export async function deleteCompanionMessage(messageId: number): Promise<void> {
+  await json<{ deleted: boolean }>(await fetch(`/api/companion/messages/${messageId}`, { method: "DELETE" }));
+}
+
 export async function openCompanionConversation(conversationId: string): Promise<{ conversation_id: string; card_id: string }> {
   return json(await fetch("/api/companion/active", {
     method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ conversation_id: conversationId }),
@@ -762,6 +770,8 @@ export async function sendMessage(
     /** Khóa Tavily cho nhà cung cấp không có tìm kiếm riêng. */
     searchKey?: string;
     playerControl?: boolean | 1 | 2 | 3 | 4 | 5;
+    /** Chỉ Companion: tin trong mạch mà tin này trả lời (Reply như AIRI). */
+    quoteId?: number;
   },
   handlers: ChatHandlers,
   signal?: AbortSignal,
@@ -787,6 +797,7 @@ export async function sendMessage(
       model: payload.model ?? "peto",
       ...(payload.mode === 'companion' && payload.playerControl ? { player_control: typeof payload.playerControl === 'number' ? payload.playerControl : 1 } : {}),
       ...(payload.provider && payload.providerKey ? { provider: payload.provider } : {}),
+      ...(payload.mode === 'companion' && payload.quoteId ? { quote_id: payload.quoteId } : {}),
     }),
     signal,
   });
@@ -864,7 +875,7 @@ export async function sendMessage(
           handlers.onStopped?.();
           ended = true;
         } else if (event.type === "done") {
-          handlers.onDone?.();
+          handlers.onDone?.(typeof event.message_id === 'number' ? event.message_id : undefined);
           ended = true;
         }
         if (ended) break;

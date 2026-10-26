@@ -117,7 +117,7 @@ async def get_messages(
         if limit is None:
             cursor = await db.execute(
                 """
-                SELECT m.id, m.role, m.content, m.created_at, m.status, m.sources, m.artifacts, m.work, m.provider,
+                SELECT m.id, m.role, m.content, m.created_at, m.status, m.sources, m.artifacts, m.work, m.provider, m.quote_id,
                        t.request_id AS turn_request_id, t.state AS turn_state, t.user_message_id AS turn_user_id, t.outcome AS turn_outcome
                   FROM messages m
                   JOIN conversations c ON c.id = m.conversation_id
@@ -133,7 +133,7 @@ async def get_messages(
             # Lấy N tin gần nhất rồi đảo lại, tránh đọc toàn bộ hội thoại dài.
             cursor = await db.execute(
                 """
-                SELECT m.id, m.role, m.content, m.created_at, m.status, m.sources, m.artifacts, m.work, m.provider,
+                SELECT m.id, m.role, m.content, m.created_at, m.status, m.sources, m.artifacts, m.work, m.provider, m.quote_id,
                        t.request_id AS turn_request_id, t.state AS turn_state, t.user_message_id AS turn_user_id, t.outcome AS turn_outcome
                   FROM messages m
                   JOIN conversations c ON c.id = m.conversation_id

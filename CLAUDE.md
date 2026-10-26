@@ -1,5 +1,25 @@
 # CLAUDE.md
 
+## Companion chat UI from AIRI (2026-10-26, in progress, not committed)
+
+The owner asked to port AIRI's chat UI/UX "nguyên bản" (commit `74ddd90`: history.vue, user/assistant-item, action-menu,
+reply-*, send-button, ChatArea, chat-panel-header, MobileInteractiveArea). Owner's picks: no reasoning line (it could leak
+`<private>` game secrets); self-hosted Nunito for the Companion chat. Code: `features/companion/chat/` (CompanionHistory,
+ChatActionMenu, Reply, SendButton, sendMode, chatTime, useSwipeReply, CompanionMarkdown, companionChat.css, fonts/).
+- Time separators (5 min gap), "…" menu (Nghe lại, Trả lời, Sao chép, Xóa; right-click; 250 ms long-press on phones,
+  no "…" there), swipe left to reply, reply strip + quote, Markdown in bubbles, follow-tail scroll rules, phone top fade,
+  AIRI composer (desktop block; phone: paperclip, soundwave → Nghe sheet, pill, Dừng/Gửi/mic), send-key menu
+  (Enter / Ctrl+Enter / double Enter, `peto-companion-send-mode`), typing during a reply turns Dừng into Gửi which stops
+  then sends. Header is one line (title + mute); status only for screen readers; gear moved beside the Profile pill.
+  `SpeakButton` removed (replay is "Nghe lại" in the menu).
+- Backend: `messages.quote_id` (startup migration), `ChatRequest.quote_id` (Companion only), model input gets
+  `[Replying to: …]` (480 chars, `features/companion/quotes.py`); `DELETE /api/companion/messages/{id}` (409 while a turn
+  runs, deletes images, resets a summary that covered it); `done` carries `message_id`.
+- Verified: backend `tests/test_companion_messages.py` 10 passed; frontend Companion/Hearing/Providers 99 passed plus
+  `tests/companionChat.test.ts` 6; build type-check passed; real-app Edge flows desktop/phone, dark/light, 20/20 checks.
+  Not yet done: full frontend/backend runs, Playwright companion/layout specs (were running; `companion.png` baseline will
+  need an update after review), docs article, plan and memory notes.
+
 ## Companion character cards, stage (e): import/export (2026-10-26)
 
 Last of the five card stages. The layout the owner picked for (d) already placed Upload on the list and Export on the

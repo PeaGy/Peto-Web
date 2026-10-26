@@ -246,11 +246,15 @@ export function MicrophoneSelect({ id, microphones }: { id: string; microphones:
   );
 }
 
-/** Bảng Micro trên máy tính, bật lên ngay trên ô nhắn khi bấm micro. Bấm ra ngoài hay Esc thì đóng, vẫn nghe tiếp. */
-export function HearingPopover({ anchorRef, onClose, onOpenSettings }: {
+/**
+ * Bảng Micro trên máy tính, bật lên ngay trên ô nhắn khi bấm micro. Bấm ra ngoài hay Esc thì đóng, vẫn nghe tiếp.
+ * ``sheet``: cùng nội dung trong tấm dưới đáy điện thoại, mở từ nút sóng âm (HearingConfig trong drawer của AIRI).
+ */
+export function HearingPopover({ anchorRef, onClose, onOpenSettings, sheet = false }: {
   anchorRef: RefObject<HTMLElement | null>;
   onClose: () => void;
   onOpenSettings?: () => void;
+  sheet?: boolean;
 }) {
   const hearing = useHearing();
   const ref = useRef<HTMLDivElement>(null);
@@ -276,7 +280,8 @@ export function HearingPopover({ anchorRef, onClose, onOpenSettings }: {
   }, [anchorRef, onClose]);
 
   return (
-    <div ref={ref} className="hearing-popover" role="dialog" aria-label="Micro">
+    <div ref={ref} className={sheet ? "hearing-popover hearing-popover-sheet" : "hearing-popover"} role={sheet ? undefined : "dialog"}
+      aria-label={sheet ? undefined : "Micro"}>
       <div className="hearing-popover-head">
         <button
           type="button"

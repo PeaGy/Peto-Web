@@ -81,6 +81,9 @@ async def init_db() -> None:
             # Nhà cung cấp khi lượt Companion dùng khóa API của người dùng (ai/byok.py); trống là Peto. Trí nhớ và bản
             # tóm tắt bỏ qua những tin này (chủ web chốt 13/10/2026).
             await db.execute("ALTER TABLE messages ADD COLUMN provider TEXT NOT NULL DEFAULT ''")
+        if 'quote_id' not in {column[1] for column in columns}:
+            # Tin Companion trả lời một tin trước đó (Reply của AIRI, replyToMessageId). Tin đó bị xóa thì thôi trích.
+            await db.execute("ALTER TABLE messages ADD COLUMN quote_id INTEGER")
         await db.execute(
             """
             CREATE TABLE IF NOT EXISTS attachments (

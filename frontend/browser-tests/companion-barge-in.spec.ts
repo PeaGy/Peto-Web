@@ -72,8 +72,8 @@ test('bật nói chen trong Cài đặt rồi ngắt SSE và tiếng; giữ micr
   const composer = page.getByRole('textbox', { name: 'Nhắn cho Peto trong Companion' });
   const panel = page.getByRole('region', { name: 'Trò chuyện trong Companion' });
   await expect(page.getByRole('button', { name: 'Tắt tiếng', exact: true })).toBeVisible();
-  // Cài đặt Companion (/companion/settings/, từ 13/10/2026): bánh răng ở đầu cột chat → Mô-đun → Nghe.
-  await panel.getByRole('button', { name: 'Cài đặt Companion' }).click();
+  // Cài đặt Companion (/companion/settings/, từ 13/10/2026): bánh răng (cạnh nút Profile từ 26/10/2026) → Mô-đun → Nghe.
+  await page.getByRole('button', { name: 'Cài đặt Companion' }).click();
   const settings = page.locator('main.companion-settings');
   await settings.getByRole('button', { name: /^Mô-đun/ }).click();
   await settings.getByRole('button', { name: /^Nghe/ }).click();

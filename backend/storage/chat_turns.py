@@ -58,8 +58,11 @@ def _digest(text):
     return hashlib.sha256(text.encode('utf-8')).hexdigest()
 
 
-async def bind(owner, request_id, conversation_id, message_id=None, content=None, provider=''):
-    """Tin người dùng mới và liên kết request cùng giao dịch; retry/fork truyền ID đã có."""
+async def bind(owner, request_id, conversation_id, message_id=None, content=None, provider='', quote_id=None):
+    """Tin người dùng mới và liên kết request cùng giao dịch; retry/fork truyền ID đã có.
+
+    ``quote_id`` là tin Companion được trả lời (Reply). Chỉ giữ khi tin đó còn trong đúng hội thoại này, như
+    resolveReplyTargetId của AIRI: tin vừa bị xóa thì lượt vẫn gửi, chỉ không trích."""
     async with connection.connect() as db:
         await db.execute('PRAGMA foreign_keys=ON')
         await db.execute('BEGIN IMMEDIATE')
@@ -73,8 +76,12 @@ async def bind(owner, request_id, conversation_id, message_id=None, content=None
         if message_id is None:
             if not isinstance(content, str):
                 raise ValueError('Thiếu nội dung tin nhắn.')
-            row = await db.execute('INSERT INTO messages(conversation_id,role,content,created_at,provider) VALUES(?,?,?,?,?)',
-                                   (conversation_id, 'user', content, now, provider))
+            if quote_id is not None and not await (await db.execute(
+                    "SELECT 1 FROM messages WHERE id=? AND conversation_id=? AND role IN ('user','assistant')",
+                    (quote_id, conversation_id))).fetchone():
+                quote_id = None
+            row = await db.execute('INSERT INTO messages(conversation_id,role,content,created_at,provider,quote_id) VALUES(?,?,?,?,?,?)',
+                                   (conversation_id, 'user', content, now, provider, quote_id))
             message_id = row.lastrowid
             await db.execute('UPDATE conversations SET updated_at=? WHERE id=?', (now, conversation_id))
         source = await (await db.execute("SELECT content FROM messages WHERE id=? AND conversation_id=? AND role='user'",

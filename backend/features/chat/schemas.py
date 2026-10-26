@@ -50,6 +50,8 @@ class ChatRequest(BaseModel):
     provider: ProviderChoiceIn | None = None
     # Chỉ Companion: thẻ nhân vật cho mạch mới (None là thẻ đang dùng). Mạch đã có luôn giữ thẻ lúc tạo.
     card_id: str | None = Field(default=None, max_length=32)
+    # Chỉ Companion: tin trong mạch mà tin mới trả lời (Reply của AIRI). Tin đó không còn thì lượt vẫn gửi, không trích.
+    quote_id: int | None = Field(default=None, gt=0)
     # Only the sending Companion browser implements the action/ack protocol. Older clients have no tools.
     player_control: Literal[1, 2, 3, 4, 5] | None = None
 

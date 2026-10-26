@@ -183,3 +183,42 @@ async def list_companion_conversations(owner: str, limit: int = 100) -> list[dic
                  FROM conversations c WHERE c.owner=? AND c.mode='companion'
                 ORDER BY c.updated_at DESC, c.id DESC LIMIT ?""", (owner, limit))).fetchall()
     return [dict(row) for row in rows]
+
+
+class MessageBusy(Exception):
+    """Mạch đang có lượt trả lời chạy: tin của mạch chưa xóa được."""
+
+
+async def delete_companion_message(owner: str, message_id: int) -> dict | None:
+    """Xóa một tin của mạch Companion (Delete trong menu tin nhắn của AIRI), kèm ảnh đính kèm của nó.
+
+    Trả về ``{'conversation_id', 'paths'}`` (tệp ảnh để xóa sau khi commit), ``None`` khi không thấy tin của tài khoản.
+    Bản tóm tắt mạch đã gộp tin này thì xóa trắng và bỏ qua mọi tin đang có, như khi quên một ý trong Trí nhớ: thà mất
+    ngữ cảnh cũ còn hơn để điều vừa xóa quay lại. Ý đã ghi vào Trí nhớ không bị xóa theo, như khi xóa cả mạch.
+    """
+    async with connect() as db:
+        await db.execute('BEGIN IMMEDIATE')
+        row = await (await db.execute(
+            """SELECT m.conversation_id FROM messages m JOIN conversations c ON c.id = m.conversation_id
+               WHERE m.id = ? AND c.owner = ? AND c.mode = 'companion'""", (message_id, owner))).fetchone()
+        if row is None:
+            await db.rollback()
+            return None
+        conversation_id = row[0]
+        if await (await db.execute("SELECT 1 FROM chat_turns WHERE owner=? AND conversation_id=? AND state='running' LIMIT 1",
+                                   (owner, conversation_id))).fetchone():
+            await db.rollback()
+            raise MessageBusy
+        paths = [item[0] for item in await (await db.execute(
+            'SELECT path FROM attachments WHERE owner=? AND conversation_id=? AND message_id=?',
+            (owner, conversation_id, message_id))).fetchall()]
+        await db.execute('DELETE FROM attachments WHERE owner=? AND conversation_id=? AND message_id=?',
+                         (owner, conversation_id, message_id))
+        await db.execute('DELETE FROM messages WHERE id=? AND conversation_id=?', (message_id, conversation_id))
+        await db.execute(
+            """UPDATE companion_summaries SET text='', updated_at=?,
+                      upto=(SELECT COALESCE(MAX(id), 0) FROM messages WHERE conversation_id=?)
+               WHERE conversation_id=? AND owner=? AND upto >= ?""",
+            (time.time(), conversation_id, conversation_id, owner, message_id))
+        await db.commit()
+    return {'conversation_id': conversation_id, 'paths': paths}

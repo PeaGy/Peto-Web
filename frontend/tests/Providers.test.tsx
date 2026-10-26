@@ -55,8 +55,9 @@ afterEach(() => { vi.unstubAllGlobals(); });
 async function openCompanionSettings() {
   render(<App />);
   fireEvent.click(await screen.findByRole('button', { name: 'Companion', exact: true }));
-  const column = within(await screen.findByRole('region', { name: 'Trò chuyện trong Companion' }));
-  fireEvent.click(await column.findByRole('button', { name: 'Cài đặt Companion' }));
+  await screen.findByRole('region', { name: 'Trò chuyện trong Companion' });
+  // Bánh răng ở hàng trên cùng cạnh nút Profile (Header của AIRI, từ 26/10/2026).
+  fireEvent.click(await screen.findByRole('button', { name: 'Cài đặt Companion' }));
   return within(await screen.findByRole('main', { name: 'Cài đặt' }));
 }
 
@@ -121,7 +122,8 @@ it('Nhà cung cấp như AIRI: tab, lọc giá, nhập và kiểm tra khóa; B�
   expect(payload).toMatchObject({ mode: 'companion', provider: { id: 'deepseek', model: 'deepseek-reasoner' },
     providerKey: 'sk-deep-12345678', webSearch: 'off' });
   expect(payload.searchKey).toBeUndefined();
-  expect(screen.getByText('DeepSeek', { selector: '.companion-title .companion-state' })).toBeTruthy();
+  // Khung chat như AIRI không còn dòng trạng thái; tên nhà cung cấp còn trong dòng đọc cho trình đọc màn hình.
+  expect(document.querySelector('.companion-head .sr-only')?.textContent).toContain('DeepSeek');
 });
 
 it('khóa Tavily ở Tra web chỉ gửi kèm khi nhà cung cấp cần và Tra web đang bật', async () => {
@@ -142,7 +144,7 @@ it('khóa Tavily ở Tra web chỉ gửi kèm khi nhà cung cấp cần và Tra 
   // OpenAI có tìm kiếm riêng: không gửi khóa Tavily.
   localStorage.setItem('peto-companion-brain', JSON.stringify({ provider: 'openai', model: 'gpt-6-luna' }));
   window.dispatchEvent(new StorageEvent('storage', { key: 'peto-companion-brain' }));
-  await waitFor(() => expect(screen.getByText('OpenAI', { selector: '.companion-title .companion-state' })).toBeTruthy());
+  await waitFor(() => expect(document.querySelector('.companion-head .sr-only')?.textContent).toContain('OpenAI'));
   payload = await sendInCompanion('more news?');
   expect(payload).toMatchObject({ provider: { id: 'openai', model: 'gpt-6-luna' }, providerKey: 'sk-open-12345678' });
   expect(payload.searchKey).toBeUndefined();

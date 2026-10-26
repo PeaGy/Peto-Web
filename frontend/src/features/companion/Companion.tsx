@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   UnauthorizedError,
+  deleteCompanionMessage,
   deleteConversation,
   getCompanion,
   listCompanionConversations,
@@ -17,7 +18,6 @@ import {
 import { activeCard, getCompanionCards, loadCompanionCards, markActiveCard, pickCompanionCard, saveCompanionCardAs, setActiveCardModel, useCompanionCards } from './cards/companionCards';
 import { CardAvatar, ChevronIcon, CompanionPopover, ConversationIcon, ConversationList, ProfileList } from './cards/CompanionMenus';
 import './cards/companionCards.css';
-import { SendIcon } from "../chat/Composer";
 import { LoadingIndicator } from '../../shared/ui/LoadingIndicator';
 import { PlayerIcon } from '../../shared/ui/PlayerIcon';
 import { usePlayerLayout } from './ytplayer/playerLayout';
@@ -28,7 +28,13 @@ import { usePlayerDucking } from './ytplayer/usePlayerDucking';
 import './ytplayer/companionPlayer.css';
 import { fileToBase64 } from '../chat/attachments';
 import { useCompanionImages } from './useCompanionImages';
-import { CompanionImageDrafts, CompanionImageIcon, CompanionMessageImages } from './CompanionImages';
+import { CompanionImageDrafts } from './CompanionImages';
+import { CompanionHistory, USER_LABEL, type HistoryAction } from './chat/CompanionHistory';
+import { ReplyPreview, type ReplyTarget } from './chat/Reply';
+import { SendButton } from './chat/SendButton';
+import { sendsOnEnter, useSendMode } from './chat/sendMode';
+import { GalleryIcon, PaperclipIcon, SoundwaveIcon, StopSquareIcon } from './chat/chatIcons';
+import './chat/companionChat.css';
 import { disconnectStream, networkInterrupted, useReplyRecovery } from '../chat/useReplyRecovery';
 import { ReplyRecoveryNotice } from '../chat/ReplyRecoveryNotice';
 import {
@@ -47,13 +53,12 @@ import {
   useHearing,
 } from "./speech/hearingEngine";
 import { HearingBar, HearingPopover, hearingPlaceholder, HoldControls, MicButton } from "./speech/HearingControls";
-import { SpeakButton, SpeakerIcon, SpeakerOffIcon, type LocalVoice } from "./speech/LocalVoice";
+import { SpeakerIcon, SpeakerOffIcon, type LocalVoice } from "./speech/LocalVoice";
 import type { CharacterMotion } from "./characters/characterView";
 import { DEFAULT_CHARACTER, type CharacterModel } from './characters/characterLibrary';
 import { useCompanionActivity } from './characters/useCompanionActivity';
 import { asStageEmotion, replyEmotion, type StageCue, type StageEmotion } from './characters/characterExpressions';
 import { SceneBackdrop, ScenePicker, useCompanionScene } from './CompanionScenes';
-import { GlobeIcon } from '../chat/WebSources';
 import { readCompanionSearch } from './companionSearch';
 import { brainRequest, useBrain, useModels } from './providers/brain';
 import { useKeyConfigs } from './speech/voiceProviders';
@@ -276,6 +281,19 @@ export default function Companion({ ownerId, active, appInfo, voice, characterMo
   const brainLabel = useMemo(() => brainRequest(false, cardBrain)?.label ?? '',
     [brainChoice, providerModels, providerKeys, cardBrain]);
   const [micOpen, setMicOpen] = useState(false);
+  /** Điện thoại: tấm Nghe mở từ nút sóng âm (HearingConfig trong drawer của AIRI). */
+  const [micSheet, setMicSheet] = useState(false);
+  const micSheetButton = useRef<HTMLButtonElement>(null);
+  /** Tin đang được trả lời (Reply như AIRI); gửi được thì bỏ, gửi hỏng thì giữ như bản nháp. */
+  const [replyTarget, setReplyTarget] = useState<ReplyTarget | undefined>();
+  const replyVersion = useRef(0);
+  /** Tin vừa gửi còn nằm trong ô nhắn tới khi máy chủ nhận (giữ bản nháp như tab Trò chuyện): chưa phải tin mới. */
+  const [accepting, setAccepting] = useState(false);
+  /** Tăng mỗi lần gửi: lịch sử cuộn về cuối để thấy tin vừa gửi. */
+  const [followKey, setFollowKey] = useState(0);
+  const sendMode = useSendMode();
+  const lastEnter = useRef(0);
+  const historyList = useRef<HTMLDivElement>(null);
   /** Lúc câu nghe được cuối cùng vào ô nhắn; tự gửi chỉ gửi chữ nghe được, không gửi chữ người dùng tự gõ. */
   const [heardAt, setHeardAt] = useState(0);
   const [hearingNeedsReview, setHearingNeedsReview] = useState(false);
@@ -294,9 +312,6 @@ export default function Companion({ ownerId, active, appInfo, voice, characterMo
   const loadVersion = useRef(0);
   const loadRef = useRef<AbortController | null>(null);
   const abortRef = useRef<AbortController | null>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
-  /** Khung tin có đang ở cuối không, cập nhật mỗi lần cuộn. */
-  const atBottom = useRef(true);
   // Luồng chữ và tiếng đều đọc lựa chọn mới nhất, không dùng trạng thái cũ của lúc gửi.
   const foreground = useRef(document.visibilityState !== 'hidden');
   const latest = useRef({ active, muted, voice, foreground: foreground.current });
@@ -423,24 +438,9 @@ export default function Companion({ ownerId, active, appInfo, voice, characterMo
   useEffect(() => { if (sessionsOpen) void refreshRows(); }, [sessionsOpen, refreshRows]);
   useEffect(() => { if (!active) { setSessionsOpen(false); setProfilesOpen(false); } }, [active]);
 
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ block: "end" });
-  }, [messages]);
-
-  // Bàn phím điện thoại mở ra làm khung tin thấp lại mà vị trí cuộn giữ nguyên, nên tin mới nhất bị che và người dùng
-  // thấy đoạn giữa hội thoại. Khung đang ở cuối thì bám lại cuối mỗi khi đổi cỡ; đã cuộn lên đọc tin cũ thì để yên.
-  useEffect(() => {
-    const list = bottomRef.current?.parentElement;
-    if (!list || typeof ResizeObserver === "undefined") return;
-    const track = () => { atBottom.current = list.scrollHeight - list.scrollTop - list.clientHeight < 48; };
-    const observer = new ResizeObserver(() => { if (atBottom.current) list.scrollTop = list.scrollHeight; });
-    list.addEventListener("scroll", track, { passive: true });
-    observer.observe(list);
-    return () => {
-      list.removeEventListener("scroll", track);
-      observer.disconnect();
-    };
-  }, []);
+  // Cuộn theo tin mới (cả khi bàn phím điện thoại làm khung thấp lại) nằm trong CompanionHistory, theo AIRI.
+  // Đổi mạch hay thẻ thì bỏ tin đang được trả lời: nó thuộc mạch cũ.
+  useEffect(() => { replyVersion.current++; setReplyTarget(undefined); }, [conversationId]);
 
   function reportSpeechError(err: unknown) {
     setError(err instanceof Error ? err.message : "Chưa đọc được tin này.");
@@ -461,7 +461,13 @@ export default function Companion({ ownerId, active, appInfo, voice, characterMo
     const replyIndex = previous.length + 1;
     const optimisticImages = pendingImages.map(image => ({ id: image.id, name: image.file.name,
       mime: image.file.type, kind: 'image' as const, size: image.file.size, url: image.previewUrl ?? '' }));
-    setMessages([...previous, { role: "user", content: text, attachments: optimisticImages }, { role: "assistant", content: "" }]);
+    const quoted = replyTarget?.message.id;
+    const sentReply = replyVersion.current;
+    const sentAt = Date.now() / 1000;
+    setMessages([...previous, { role: "user", content: text, attachments: optimisticImages, created_at: sentAt, ...(quoted ? { quote_id: quoted } : {}) },
+      { role: "assistant", content: "", created_at: sentAt }]);
+    setFollowKey(value => value + 1);
+    setAccepting(true);
     setStreaming(true);
     setStopping(false);
     const controller = new AbortController();
@@ -516,6 +522,7 @@ export default function Companion({ ownerId, active, appInfo, voice, characterMo
         : message));
       await sendMessage(
         { message: text, conversationId, attachments, effort: "low", webSearch: search ? "auto" : "off", mode: "companion", playerControl: 5,
+          quoteId: quoted,
           ...(brain ? { provider: brain.provider, providerKey: brain.providerKey, searchKey: brain.searchKey } : {}) },
         {
           onPlayerCommand: async command => {
@@ -527,12 +534,15 @@ export default function Companion({ ownerId, active, appInfo, voice, characterMo
             if (!current()) return;
             earlyVoice = voiceStream === true;
             accepted = true;
+            setAccepting(false);
             activeId = id;
             storedUserId = stored?.id;
             setConversationId(id);
             // Máy chủ đặt tên mạch bằng tin đầu tiên; hiện ngay ở đầu khung chat.
             if (text) setThreadTitle(title => title || text.replace(/\s+/g, ' ').slice(0, 60));
             if (draftVersion.current === sentDraftVersion) setDraft("");
+            // Như bản nháp: tin trả lời đã được nhận thì bỏ dải "Đang trả lời"; người dùng chọn tin khác giữa chừng thì giữ.
+            if (replyVersion.current === sentReply) { replyVersion.current++; setReplyTarget(undefined); }
             images.remove(pendingImages.map(image => image.id));
             if (stored) setMessages((prev) => [...prev.slice(0, -2), stored, prev[prev.length - 1]]);
           },
@@ -608,10 +618,12 @@ export default function Companion({ ownerId, active, appInfo, voice, characterMo
             });
           },
           onError: (message) => { if (current()) { timing.finish('error'); setError(message); } },
-          onDone: () => {
+          onDone: (messageId) => {
             if (!current()) return;
             completed = true;
             timing.mark('replyDone');
+            // Mã của câu trả lời vừa lưu: Trả lời và Xóa dùng được ngay, không cần tải lại mạch.
+            if (messageId) setMessages(prev => prev.map((message, index) => index === replyIndex ? { ...message, id: messageId } : message));
           },
         },
         controller.signal,
@@ -641,6 +653,7 @@ export default function Companion({ ownerId, active, appInfo, voice, characterMo
         });
       }
       setStreaming(false);
+      setAccepting(false);
       setSearching(false);
       setStopping(false);
       abortRef.current = null;
@@ -679,6 +692,73 @@ export default function Companion({ ownerId, active, appInfo, voice, characterMo
     haltSpeech();
     abortRef.current?.abort();
     cue(null);
+  }
+
+  /**
+   * Gửi từ ô nhắn, như useChatInterruption của AIRI: Peto đang trả lời mà người dùng đã gõ tin mới thì dừng câu đang
+   * viết rồi mới gửi. Chờ lượt cũ khép lại hẳn (trạng thái đã vẽ lại) để lượt mới đọc đúng danh sách tin.
+   */
+  async function submit() {
+    if (replacing) return;
+    if (!abortRef.current) {
+      void send();
+      return;
+    }
+    setReplacing(true);
+    const settled = new Promise<void>(resolve => settleWaiters.current.push(resolve));
+    stop();
+    await settled;
+    setReplacing(false);
+    void latestSend.current();
+  }
+
+  function speakMessage(message: Message, index: number) {
+    const key = `${SPEECH_PREFIX}${index}`;
+    if (voice.speaking?.key === key) {
+      stop();
+      return;
+    }
+    haltSpeech();
+    // Tin cũ có nhiều mốc vẫn chỉ dùng mặt đầu tiên cho toàn bộ lời đọc.
+    const emotion = messageEmotion(message);
+    const cues = message.emotion_cues?.length && emotion ? [{ emotion, offset: 0 }] : undefined;
+    cue(cues?.length ? null : messageEmotion(message));
+    void voice.speak(key, message.content, { expressions: cues?.length ? {
+      cues, onEmotion: value => { if (latest.current.active) cue(asStageEmotion(value)); },
+    } : undefined }).catch(reportSpeechError);
+  }
+
+  /** Xóa một tin (Xóa trong menu, như AIRI): bỏ ngay khỏi khung, máy chủ từ chối thì đặt lại chỗ cũ và báo lỗi. */
+  async function removeMessage(message: Message, index: number) {
+    const id = message.id;
+    if (!id || abortRef.current || resetting) return;
+    // Khóa đọc theo vị trí tin: xóa làm lệch vị trí nên thôi đọc trước.
+    haltSpeech();
+    setMessages(prev => prev.filter(item => item.id !== id));
+    if (replyTarget?.message.id === id) { replyVersion.current++; setReplyTarget(undefined); }
+    try {
+      await deleteCompanionMessage(id);
+    } catch (err) {
+      if (err instanceof UnauthorizedError) return onUnauthorized();
+      setMessages(prev => prev.some(item => item.id === id) ? prev : [...prev.slice(0, index), message, ...prev.slice(index)]);
+      setError(err instanceof Error ? err.message : 'Chưa xóa được tin nhắn này.');
+    }
+  }
+
+  function onHistoryAction({ action, message, index }: HistoryAction) {
+    if (action === 'listen') return speakMessage(message, index);
+    if (action === 'delete') return void removeMessage(message, index);
+    if (action === 'reply') {
+      replyVersion.current++;
+      setReplyTarget({ message, label: message.role === 'user' ? USER_LABEL : name });
+      requestAnimationFrame(() => composerInput.current?.focus({ preventScroll: true }));
+    }
+  }
+
+  function cancelReply() {
+    replyVersion.current++;
+    setReplyTarget(undefined);
+    composerInput.current?.focus({ preventScroll: true });
   }
 
   /** Chạy một thao tác đổi mạch (mở, tạo, xóa, đổi thẻ): dừng lời đang đọc, khóa ô nhắn trong lúc chờ, báo lỗi nếu có. */
@@ -877,6 +957,13 @@ export default function Companion({ ownerId, active, appInfo, voice, characterMo
   useEffect(() => {
     latestSend.current = send;
   });
+  // Khai báo sau latestSend: lúc lượt cũ khép lại, latestSend đã là bản của lần vẽ mới.
+  const settleWaiters = useRef<(() => void)[]>([]);
+  const [replacing, setReplacing] = useState(false);
+  useEffect(() => {
+    if (streaming) return;
+    settleWaiters.current.splice(0).forEach(resolve => resolve());
+  }, [streaming]);
   // Giữ để nói: thả ra là đã nói xong, nên gửi ngay khi chữ đã chốt, không chờ thêm.
   useEffect(() => {
     if (!heardAt || hearingNeedsReview || !hearing.autoSend || !hearing.listening || hearing.testing) return;
@@ -918,7 +1005,44 @@ export default function Companion({ ownerId, active, appInfo, voice, characterMo
       : speech?.phase === "loading" ? "Sắp nói…"
         : searching ? "Đang tra web…" : streaming ? "Đang nhắn…"
           : brainLabel;
-  const canSend = (draft.trim().length > 0 || images.images.length > 0) && !images.pending && !interim && !streaming && !loading && !resetting && !loadFailed && recovery.online && !recovery.pending;
+  const hasSubmission = !accepting && (draft.trim().length > 0 || images.images.length > 0);
+  // Đang trả lời mà đã có tin mới thì nút Gửi thay nút Dừng: gửi là dừng câu đang viết rồi gửi (như AIRI).
+  const canSend = hasSubmission && !images.pending && !interim && !loading && !resetting && !loadFailed && recovery.online && !recovery.pending && !replacing;
+  const showStop = (streaming || Boolean(speech)) && !hasSubmission && !replacing;
+  const settingsButton = onOpenSettings ? (
+    <button type="button" className="companion-tool companion-settings-button" aria-label="Cài đặt Companion" data-tip onClick={onOpenSettings}>
+      <SettingsGearIcon />
+    </button>
+  ) : null;
+  const composerTextarea = (
+    <textarea
+      ref={composerInput}
+      value={interim ? joinSpeech(draft, interim) : draft}
+      rows={1}
+      placeholder={hearingPlaceholder(hearing) ?? 'Nói gì đó…'}
+      aria-label={`Nhắn cho ${name} trong Companion`}
+      disabled={loading || resetting}
+      readOnly={Boolean(interim)}
+      onBlur={() => noteTyping(false)}
+      onPaste={event => {
+        if (event.clipboardData.files.length) { event.preventDefault(); addImages(event.clipboardData.files); }
+      }}
+      onChange={(event) => {
+        setDraft(event.target.value);
+        draftVersion.current++;
+        draftTiming.current = null;
+        noteTyping(Boolean(event.target.value.trim()));
+        setHeardAt(0);
+        setHearingNeedsReview(false);
+      }}
+      onKeyDown={(event) => {
+        if (!sendsOnEnter({ key: event.key, shiftKey: event.shiftKey, ctrlKey: event.ctrlKey, metaKey: event.metaKey,
+          isComposing: event.nativeEvent.isComposing }, sendMode, lastEnter)) return;
+        event.preventDefault();
+        if (!interim && canSend) void submit();
+      }}
+    />
+  );
 
   // Nút Profile (profile-switcher-popover của AIRI): đổi thẻ nhân vật, hay lưu thẻ đang dùng thành Profile mới.
   // Chỉ có khi đã tải được thẻ; lúc đang trả lời thì không đổi được (thẻ quyết persona của lượt kế tiếp).
@@ -958,11 +1082,12 @@ export default function Companion({ ownerId, active, appInfo, voice, characterMo
       </section>
 
       <section className="companion-panel" aria-label="Trò chuyện trong Companion" inert={opening || playerModal} aria-hidden={opening || playerModal}>
-        <header className="companion-head">
+        {/* Như chat-panel-header của AIRI: tên mạch mở danh sách hội thoại, bên phải là nút tắt tiếng. Trạng thái (đang
+            nhắn, đang nói, bộ não dùng khóa riêng) không còn hiện thành chữ, chỉ còn cho trình đọc màn hình. */}
+        <header className="companion-head cchat-head">
           <button ref={menuButton} type="button" className="menu-btn companion-menu" aria-label="Mở menu" onClick={onOpenSidebar}>
             <MenuIcon />
           </button>
-          {/* Tên mạch mở danh sách hội thoại, như chat-panel-header của AIRI; dòng dưới là nhân vật và trạng thái. */}
           <button
             ref={sessionsButton}
             type="button"
@@ -974,8 +1099,8 @@ export default function Companion({ ownerId, active, appInfo, voice, characterMo
             onClick={() => setSessionsOpen(value => !value)}
           >
             <strong><ConversationIcon /><em>{title}</em><ChevronIcon /></strong>
-            <span aria-live="polite">{name}{stateText && <> · <span className="companion-state">{stateText}</span></>}</span>
           </button>
+          <span className="sr-only" aria-live="polite">{name}{stateText ? ` · ${stateText}` : ''}</span>
           <CompanionPopover open={sessionsOpen && active} onClose={() => setSessionsOpen(false)} anchor={sessionsButton} title="Hội thoại">
             <ConversationList rows={rows.items} loading={rows.loading} failed={rows.failed} currentId={conversationId} busy={resetting || streaming}
               onSelect={openConversation} onNew={startConversation} onDelete={removeConversation} onRetry={() => void refreshRows()} />
@@ -994,11 +1119,7 @@ export default function Companion({ ownerId, active, appInfo, voice, characterMo
                 {muted ? <SpeakerOffIcon /> : <SpeakerIcon />}
               </button>
             )}
-            {onOpenSettings && (
-              <button type="button" className="companion-tool" aria-label="Cài đặt Companion" data-tip onClick={onOpenSettings}>
-                <SettingsGearIcon />
-              </button>
-            )}
+            {compact && settingsButton}
           </div>
         </header>
 
@@ -1019,54 +1140,29 @@ export default function Companion({ ownerId, active, appInfo, voice, characterMo
           </div>
         )}
 
-        <div className="companion-messages">
-          {loading && <div className="loading-chat"><LoadingIndicator label="Đang mở Companion" /></div>}
-          {loadFailed && (
-            <div className="loading-chat" role="alert">
-              <p>Chưa tải được cuộc trò chuyện.</p>
-              <button type="button" className="load-more" onClick={() => void load()}>Thử lại</button>
-            </div>
-          )}
-          {messages.map((message, index) => {
-            if (message.role === "user") {
-              return (
-                <article key={index} className="bubble user">
-                  <CompanionMessageImages attachments={message.attachments} />
-                  {message.content && <p>{message.content}</p>}
-                </article>
-              );
-            }
-            const live = streaming && index === messages.length - 1;
-            const key = `${SPEECH_PREFIX}${index}`;
-            return (
-              <article key={index} className="bubble assistant companion-reply">
-                {message.content
-                  ? <p>{message.content}</p>
-                  : live && (searching
-                    ? <p className="companion-typing companion-searching" aria-hidden="true"><GlobeIcon /> Đang tra web…</p>
-                    : <p className="companion-typing" aria-hidden="true">…</p>)}
-                {message.content && !live && voice.status === "ready" && (
-                  <SpeakButton
-                    phase={voice.speaking?.key === key ? voice.speaking.phase : null}
-                    onSpeak={() => {
-                      haltSpeech();
-                      // Tin cũ có nhiều mốc vẫn chỉ dùng mặt đầu tiên cho toàn bộ lời đọc.
-                      const emotion = messageEmotion(message);
-                      const cues = message.emotion_cues?.length && emotion ? [{ emotion, offset: 0 }] : undefined;
-                      cue(cues?.length ? null : messageEmotion(message));
-                      void voice.speak(key, message.content, { expressions: cues?.length ? {
-                        cues, onEmotion: value => { if (latest.current.active) cue(asStageEmotion(value)); },
-                      } : undefined }).catch(reportSpeechError);
-                    }}
-                    onStop={stop}
-                  />
-                )}
-                {message.status === "incomplete" && <span className="message-status">Chưa trả lời xong</span>}
-              </article>
-            );
-          })}
-          <div ref={bottomRef} />
-        </div>
+        <CompanionHistory
+          messages={messages}
+          name={name}
+          compact={compact}
+          streaming={streaming}
+          searching={searching}
+          threadKey={conversationId ?? ''}
+          followKey={followKey}
+          listRef={historyList}
+          canListen={voice.status === "ready"}
+          speakingIndex={speech ? Number(speech.key.slice(SPEECH_PREFIX.length)) : null}
+          busy={streaming || resetting || loading}
+          onAction={onHistoryAction}
+          top={<>
+            {loading && <div className="loading-chat"><LoadingIndicator label="Đang mở Companion" /></div>}
+            {loadFailed && (
+              <div className="loading-chat" role="alert">
+                <p>Chưa tải được cuộc trò chuyện.</p>
+                <button type="button" className="load-more" onClick={() => void load()}>Thử lại</button>
+              </div>
+            )}
+          </>}
+        />
 
         <ReplyRecoveryNotice recovery={recovery} />
         {error && !recovery.pending && recovery.status !== 'failed' && (
@@ -1077,17 +1173,17 @@ export default function Companion({ ownerId, active, appInfo, voice, characterMo
         )}
 
         <form
-          className="companion-composer"
+          className={`companion-composer cchat-composer${compact ? ' compact' : ''}`}
           onDragOver={event => { if (event.dataTransfer.types.includes('Files')) event.preventDefault(); }}
           onDrop={event => {
             if (event.dataTransfer.files.length) { event.preventDefault(); addImages(event.dataTransfer.files); }
           }}
           onSubmit={(event) => {
             event.preventDefault();
-            void send();
+            if (canSend) void submit();
           }}
         >
-          {micOpen && active && (
+          {micOpen && active && !compact && (
             <HearingPopover
               anchorRef={micRef}
               onClose={closeMic}
@@ -1097,60 +1193,60 @@ export default function Companion({ ownerId, active, appInfo, voice, characterMo
           <HearingBar />
           {active && <HoldControls />}
           {images.pending > 0 && <p className="companion-image-status" role="status">Đang chuẩn bị ảnh…</p>}
-          <div className={`composer${hearingLive ? ' listening' : ''}${images.images.length ? ' has-images' : ''}`}>
-            <CompanionImageDrafts images={images.images} onRemove={id => { setHeardAt(0); images.remove([id]); }} />
-            <input ref={imageInput} type="file" hidden multiple accept="image/jpeg,image/png,image/webp,image/gif"
-              aria-label="Chọn ảnh cho Companion" onChange={event => {
-                if (event.target.files) addImages(event.target.files);
-                event.target.value = '';
-              }} />
-            <textarea
-              ref={composerInput}
-              value={interim ? joinSpeech(draft, interim) : draft}
-              rows={1}
-              placeholder={hearingPlaceholder(hearing) ?? `Nhắn cho ${name}…`}
-              aria-label={`Nhắn cho ${name} trong Companion`}
-              disabled={loading || resetting}
-              readOnly={Boolean(interim)}
-              onBlur={() => noteTyping(false)}
-              onPaste={event => {
-                if (event.clipboardData.files.length) { event.preventDefault(); addImages(event.clipboardData.files); }
-              }}
-              onChange={(event) => {
-                setDraft(event.target.value);
-                draftVersion.current++;
-                draftTiming.current = null;
-                noteTyping(Boolean(event.target.value.trim()));
-                setHeardAt(0);
-                setHearingNeedsReview(false);
-              }}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-                  event.preventDefault();
-                  if (!interim) void send();
-                }
-              }}
-            />
-            <div className="composer-bar">
-              <div className="companion-compose-tools">
-                <button type="button" className="companion-image-button" aria-label="Đính kèm ảnh" data-tip
-                  disabled={loading || resetting} onClick={() => imageInput.current?.click()}>
-                  <CompanionImageIcon />
-                </button>
-                <MicButton onClick={toggleMic} buttonRef={micRef} />
+          <input ref={imageInput} type="file" hidden multiple accept="image/jpeg,image/png,image/webp,image/gif"
+            aria-label="Chọn ảnh cho Companion" onChange={event => {
+              if (event.target.files) addImages(event.target.files);
+              event.target.value = '';
+            }} />
+          {compact ? (
+            /* Điện thoại, như MobileInteractiveArea của AIRI: kẹp giấy, sóng âm (tấm Nghe), ô nhắn tròn, rồi Dừng / Gửi /
+               micro tùy lúc. */
+            <div className="cchat-mobile-row">
+              <button type="button" className="cchat-round" aria-label="Đính kèm ảnh" data-tip
+                disabled={loading || resetting} onClick={() => imageInput.current?.click()}>
+                <PaperclipIcon />
+              </button>
+              <button ref={micSheetButton} type="button" className={hearingOn ? 'cchat-round on' : 'cchat-round'} aria-label="Nghe"
+                data-tip aria-haspopup="dialog" aria-expanded={micSheet} onClick={() => setMicSheet(value => !value)}>
+                <SoundwaveIcon on={hearingOn} />
+              </button>
+              <div className={`cchat-pill${hearingLive ? ' listening' : ''}`}>
+                <ReplyPreview target={replyTarget} onCancel={cancelReply} />
+                <CompanionImageDrafts images={images.images} onRemove={id => { setHeardAt(0); images.remove([id]); }} />
+                {composerTextarea}
               </div>
-              {replying && (
-                <button type="button" className="stop" disabled={stopping} onClick={stop}>
-                  {stopping ? "Đang dừng…" : "Dừng"}
-                </button>
-              )}
-              {!streaming && (
-                <button type="submit" className="send" disabled={!canSend} aria-label="Gửi">
-                  <span className="send-text">Gửi</span> <SendIcon />
-                </button>
-              )}
+              <div className="cchat-mobile-action">
+                {showStop
+                  ? <button type="button" className="cchat-round cchat-stop" aria-label={stopping ? 'Đang dừng…' : 'Dừng'} disabled={stopping} onClick={stop}><StopSquareIcon /></button>
+                  : hasSubmission
+                    ? <SendButton className="cchat-round primary" disabled={!canSend} onSend={() => void submit()} />
+                    : <MicButton onClick={toggleMic} buttonRef={micRef} />}
+              </div>
+              <CompanionPopover open={micSheet && active} onClose={() => setMicSheet(false)} anchor={micSheetButton} title="Nghe">
+                <HearingPopover anchorRef={micSheetButton} onClose={() => setMicSheet(false)} sheet
+                  onOpenSettings={onOpenHearingSettings ? () => { setMicSheet(false); onOpenHearingSettings(); } : undefined} />
+              </CompanionPopover>
             </div>
-          </div>
+          ) : (
+            /* Máy tính, như ChatArea của AIRI: một khối liền đáy khung chat, thanh nút nằm đè ở dưới ô chữ. */
+            <div className={`cchat-input${hearingLive ? ' listening' : ''}`}>
+              <ReplyPreview target={replyTarget} onCancel={cancelReply} />
+              <CompanionImageDrafts images={images.images} onRemove={id => { setHeardAt(0); images.remove([id]); }} />
+              {composerTextarea}
+              <div className="cchat-input-bar">
+                <button type="button" className="cchat-tool" aria-label="Đính kèm ảnh" data-tip
+                  disabled={loading || resetting} onClick={() => imageInput.current?.click()}>
+                  <GalleryIcon />
+                </button>
+                <span className="cchat-input-status" />
+                <MicButton onClick={toggleMic} buttonRef={micRef} />
+                {showStop
+                  ? <button type="button" className="cchat-action-button cchat-stop" aria-label={stopping ? 'Đang dừng…' : 'Dừng'} data-tip
+                      disabled={stopping} onClick={stop}><StopSquareIcon /></button>
+                  : <SendButton className="cchat-action-button primary" disabled={!canSend} onSend={() => void submit()} />}
+              </div>
+            </div>
+          )}
         </form>
       </section>
 
@@ -1173,10 +1269,12 @@ export default function Companion({ ownerId, active, appInfo, voice, characterMo
           <PlayerIcon />
         </button>
       </div>
-      {/* Máy tính: nút Profile ở hàng trên cùng, ngay trên khung chat (như Header của AIRI). */}
-      {!compact && profileSwitcher && (
+      {/* Máy tính: nút Profile và bánh răng Cài đặt Companion ở hàng trên cùng, ngay trên khung chat (như Header của AIRI:
+          ProfileSwitcherPopover và HeaderAvatar). */}
+      {!compact && (profileSwitcher || settingsButton) && (
         <div className="companion-profile-slot" inert={opening || playerModal} aria-hidden={opening || playerModal}>
           {profileSwitcher}
+          {settingsButton}
         </div>
       )}
     </main>

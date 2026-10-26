@@ -84,7 +84,7 @@ test('đọc sớm qua luồng SSE thật, giữ nháp mới và Dừng hủy ti
   expect(spoken).toEqual(['Hi there.', 'How are you?', 'A fresh reply.']);
   await noPageOverflow(page);
   // Bảng đo nằm ở trang Chẩn đoán của Cài đặt Companion, không thêm chữ hoặc bảng vào sân khấu.
-  await panel.getByRole('button', { name: 'Cài đặt Companion' }).click();
+  await page.getByRole('button', { name: 'Cài đặt Companion' }).click();
   const settings = page.locator('main.companion-settings');
   await settings.getByRole('button', { name: /^Chẩn đoán/ }).click();
   await expect(settings.getByRole('heading', { level: 1, name: 'Chẩn đoán' })).toBeVisible();

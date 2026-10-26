@@ -1,0 +1,355 @@
+/* ---------- Khung chat Companion theo AIRI ----------
+   Chủ web chọn đưa nguyên phần chat của AIRI về (26/10/2026), commit 74ddd90: ChatContainer, chat-panel-header, ChatArea,
+   history.vue, user-item.vue, assistant-item.vue, action-menu, reply-*, send-button, MobileInteractiveArea. Kích thước và
+   độ trong suốt lấy theo lớp UnoCSS của AIRI; màu "primary" của AIRI đổi sang xanh mòng két của Companion. Phông Nunito
+   (font-cute của AIRI) tự lưu, chỉ tải khi mở Companion. */
+
+@font-face {
+  font-family: 'Nunito Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 200 1000;
+  src: url('./fonts/nunito-vietnamese-wght-normal.woff2') format('woff2-variations');
+  unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
+}
+@font-face {
+  font-family: 'Nunito Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 200 1000;
+  src: url('./fonts/nunito-latin-ext-wght-normal.woff2') format('woff2-variations');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Nunito Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 200 1000;
+  src: url('./fonts/nunito-latin-wght-normal.woff2') format('woff2-variations');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+.companion {
+  --cchat-font: 'Nunito Variable', 'Nunito', 'Segoe UI', system-ui, sans-serif;
+  /* ChatContainer: primary-950/70, viền 4px primary-400/20. */
+  --cchat-panel: rgba(3, 30, 37, 0.7);
+  --cchat-panel-edge: rgba(73, 186, 210, 0.2);
+  --cchat-divider: rgba(73, 186, 210, 0.15);
+  /* Bóng chat: người dùng neutral-800/80, nhân vật primary-950/75. */
+  --cchat-user: rgba(38, 38, 38, 0.8);
+  --cchat-user-text: #f5f5f5;
+  --cchat-airi: rgba(6, 40, 49, 0.75);
+  --cchat-airi-text: #d2f1f7;
+  --cchat-label: rgba(255, 255, 255, 0.65);
+  --cchat-muted: rgba(212, 212, 212, 0.62);
+  --cchat-quote: rgba(255, 255, 255, 0.08);
+  --cchat-strong: #7fd5e8;
+  /* ChatArea: primary-900/70; chữ primary-100, gợi ý primary-200. */
+  --cchat-input: rgba(9, 61, 74, 0.7);
+  --cchat-input-text: #d2f1f7;
+  --cchat-placeholder: rgba(167, 226, 239, 0.85);
+  --cchat-hover: rgba(9, 61, 74, 0.45);
+  --cchat-primary: #1d93af;
+  --cchat-primary-hover: #187a92;
+  --cchat-trigger: rgba(23, 23, 23, 0.85);
+  --cchat-success: #6ee7b7;
+  --cchat-swipe: rgba(9, 61, 74, 0.8);
+  --cchat-swipe-icon: #a7e2ef;
+  /* Điện thoại: bóng neutral-800/60 và primary-950/60 làm mờ nền 24px; nút tròn neutral-950/80 viền neutral-700/60. */
+  --cchat-m-user: rgba(38, 38, 38, 0.6);
+  --cchat-m-airi: rgba(6, 40, 49, 0.6);
+  --cchat-m-bg: rgba(10, 10, 10, 0.8);
+  --cchat-m-edge: rgba(64, 64, 64, 0.6);
+  --cchat-m-icon: #7fd5e8;
+}
+:root[data-theme="light"] .companion {
+  --cchat-panel: rgba(236, 248, 251, 0.5);
+  --cchat-panel-edge: rgba(150, 214, 229, 0.2);
+  --cchat-divider: rgba(150, 214, 229, 0.3);
+  --cchat-user: rgba(245, 245, 245, 0.8);
+  --cchat-user-text: #262626;
+  --cchat-airi: rgba(236, 248, 251, 0.8);
+  --cchat-airi-text: #145f71;
+  --cchat-label: rgba(0, 0, 0, 0.6);
+  --cchat-muted: #737373;
+  --cchat-quote: rgba(0, 0, 0, 0.05);
+  --cchat-strong: #187a92;
+  --cchat-input: rgba(209, 240, 247, 0.5);
+  --cchat-input-text: #187a92;
+  --cchat-placeholder: #1d93af;
+  --cchat-hover: rgba(209, 240, 247, 0.6);
+  --cchat-trigger: rgba(255, 255, 255, 0.85);
+  --cchat-success: #059669;
+  --cchat-swipe: rgba(209, 240, 247, 0.85);
+  --cchat-swipe-icon: #187a92;
+  --cchat-m-user: rgba(245, 245, 245, 0.6);
+  --cchat-m-airi: rgba(236, 248, 251, 0.6);
+  --cchat-m-bg: rgba(245, 245, 245, 0.8);
+  --cchat-m-edge: rgba(229, 229, 229, 0.6);
+  --cchat-m-icon: #187a92;
+}
+
+.companion-panel { font-family: var(--cchat-font); }
+.companion-panel :is(button, textarea, input) { font-family: inherit; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
+
+/* chat-panel-header: cao 44px, một dòng. */
+@media (min-width: 721px) {
+  .cchat-head { min-height: 44px; height: 44px; gap: 12px; padding: 0 12px; border-color: var(--cchat-divider); }
+  .cchat-head .companion-session-title {
+    flex: 0 1 auto; display: flex; align-items: center; max-width: 70%; min-height: 32px; padding: 6px 8px; border-radius: 8px;
+    color: var(--stage-text); transition: background-color 160ms ease, color 160ms ease;
+  }
+  .cchat-head .companion-session-title strong { gap: 8px; font-size: 14px; font-weight: 600; }
+  .cchat-head .companion-tools { margin-left: auto; }
+  .cchat-head .companion-tool { width: 32px; height: 32px; border-radius: 8px; color: var(--cchat-muted); }
+  .cchat-head .companion-tool[aria-pressed="true"] { border-color: transparent; background: var(--cchat-hover); color: var(--cchat-strong); }
+}
+.cchat-head .companion-session-title:focus-visible { outline: 2px solid var(--cchat-primary); outline-offset: 1px; }
+@media (min-width: 721px) and (hover: hover) and (pointer: fine) {
+  .cchat-head .companion-session-title:hover:not(:disabled),
+  .cchat-head .companion-tool:hover:not(:disabled) { background: var(--cchat-hover); color: var(--cchat-strong); }
+}
+
+/* Bánh răng Cài đặt Companion cạnh nút Profile (HeaderAvatar của AIRI). */
+.companion-profile-slot { display: flex; align-items: center; gap: 8px; }
+.companion-profile-slot .companion-settings-button {
+  width: 40px; height: 40px; border: 1px solid var(--stage-line); border-radius: 50%; background: var(--stage-surface); color: var(--stage-text);
+  box-shadow: 0 4px 18px #0003; -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px);
+}
+
+/* ---------- Lịch sử ---------- */
+.companion-messages.cchat-list { display: block; flex: 1; min-height: 0; overflow-y: auto; padding: 16px 8px; overscroll-behavior: contain; }
+.cchat-list > .loading-chat { margin: 0 0 12px; }
+.cchat-item { position: relative; padding-bottom: 8px; }
+.cchat-swipe { position: relative; z-index: 1; transition: transform 220ms cubic-bezier(0.25, 1, 0.5, 1); }
+.cchat-swipe[data-swipe-active] { transition: none; -webkit-user-select: none; user-select: none; will-change: transform; }
+.cchat-swipe-icon {
+  position: absolute; top: 50%; right: 4px; z-index: 0; display: grid; place-items: center; width: 32px; height: 32px;
+  border-radius: 50%; background: var(--cchat-swipe); color: var(--cchat-swipe-icon); pointer-events: none;
+  -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
+}
+
+.cchat-time { padding: 12px 0; text-align: center; color: var(--cchat-muted); font-size: 12px; }
+.cchat-time button {
+  padding: 4px 8px; border: 0; border-radius: 4px; background: none; color: inherit; font: inherit; font-variant-numeric: tabular-nums; cursor: pointer;
+}
+.cchat-time button:focus-visible { outline: 2px solid var(--cchat-primary); }
+@media (hover: hover) and (pointer: fine) { .cchat-time button:hover { color: var(--stage-text); } }
+
+.cchat-row { display: flex; min-width: 0; }
+.cchat-row.user { justify-content: flex-end; margin-left: 48px; }
+.cchat-row.assistant { margin-right: 48px; }
+.cchat-action { position: relative; width: fit-content; min-width: 0; max-width: 100%; }
+.cchat-action-target { min-width: 0; transition: transform 220ms cubic-bezier(0.65, 0, 0.35, 1); }
+.cchat-action[data-pressing] .cchat-action-target { transform: scale(0.95); transition: transform 250ms linear; }
+
+.cchat-bubble {
+  display: flex; flex-direction: column; gap: 8px; min-width: 80px; border-radius: 12px; overflow-wrap: anywhere;
+  font-size: 15px; line-height: 1.5;
+}
+.cchat-bubble.user { padding: 8px 12px; background: var(--cchat-user); color: var(--cchat-user-text); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08); }
+.cchat-bubble.assistant { padding: 12px; background: var(--cchat-airi); color: var(--cchat-airi-text); box-shadow: 0 1px 2px rgba(9, 61, 74, 0.12); }
+.cchat-label { color: var(--cchat-label); font-size: 14px; line-height: 1.3; }
+.cchat-status { color: var(--cchat-muted); font-size: 12px; }
+.cchat-bubble .companion-message-images { margin: 0; }
+
+.cchat-text > :first-child { margin-top: 0; }
+.cchat-text > :last-child { margin-bottom: 0; }
+.cchat-text :is(p, li) { white-space: pre-line; }
+.cchat-text p { margin: 0 0 0.6em; }
+.cchat-text :is(ul, ol) { margin: 0 0 0.6em; padding-left: 1.3em; }
+.cchat-text a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+.cchat-text code { padding: 1px 5px; border-radius: 5px; background: var(--cchat-quote); font-family: Consolas, 'Cascadia Code', monospace; font-size: 0.9em; }
+.cchat-text pre { overflow-x: auto; padding: 8px 10px; border-radius: 8px; background: var(--cchat-quote); white-space: pre; }
+.cchat-text pre code { padding: 0; background: none; }
+.cchat-text blockquote { margin: 0 0 0.6em; padding-left: 10px; border-left: 3px solid var(--cchat-divider); }
+
+/* Chờ chữ đầu tiên (three-dots-loading của AIRI). */
+.cchat-dots { display: inline-flex; align-items: center; gap: 5px; height: 22px; }
+.cchat-dots i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: 0.35; animation: cchat-dot 1.2s ease-in-out infinite; }
+.cchat-dots i:nth-child(2) { animation-delay: 0.15s; }
+.cchat-dots i:nth-child(3) { animation-delay: 0.3s; }
+@keyframes cchat-dot { 0%, 80%, 100% { opacity: 0.35; transform: scale(0.85); } 40% { opacity: 1; transform: scale(1); } }
+.cchat-placeholder { display: inline-flex; align-items: center; gap: 6px; margin: 0; color: var(--cchat-muted); font-size: 13px; }
+
+/* Nút "…": ngoài bóng chat, cách 8px; hiện khi rê chuột hay có tiêu điểm. ::before nối khoảng hở để rê sang không mất. */
+.cchat-action-trigger {
+  position: absolute; top: 0; z-index: 2; display: grid; place-items: center; width: 32px; height: 32px; padding: 0;
+  border: 0; border-radius: 8px; background: var(--cchat-trigger); color: var(--cchat-muted); cursor: pointer; opacity: 0;
+  -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); transition: opacity 200ms ease, color 160ms ease;
+}
+.cchat-action-trigger::before { content: ''; position: absolute; inset: 0 -8px; }
+.cchat-action.left > .cchat-action-trigger { left: 0; transform: translateX(calc(-100% - 8px)); }
+.cchat-action.right > .cchat-action-trigger { right: 0; transform: translateX(calc(100% + 8px)); }
+.cchat-action:focus-within > .cchat-action-trigger, .cchat-action[data-open] > .cchat-action-trigger,
+.cchat-action-trigger[data-copied] { opacity: 1; }
+.cchat-action-trigger[data-copied] { color: var(--cchat-success); }
+.cchat-action-trigger:focus-visible { outline: 2px solid var(--cchat-primary); outline-offset: 1px; }
+@media (hover: hover) and (pointer: fine) {
+  .cchat-action:hover > .cchat-action-trigger { opacity: 1; }
+  .cchat-action-trigger:hover { color: var(--cchat-strong); }
+}
+
+/* Menu tin nhắn: nảy 220ms khi mở, thu 120ms khi đóng (chat-action-menu-elastic-in của AIRI). */
+.cchat-menu {
+  position: fixed; z-index: 10000; min-width: 144px; padding: 4px;
+  font-family: 'Nunito Variable', 'Nunito', 'Segoe UI', system-ui, sans-serif;
+  -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); will-change: opacity, transform;
+}
+.cchat-menu > button { gap: 8px; min-height: 34px; padding: 0 12px; font-size: 14px; }
+.cchat-menu > button > svg { width: 16px; height: 16px; }
+.cchat-menu[data-state="open"] { animation: cchat-menu-in 220ms linear both; }
+.cchat-menu[data-state="closed"] { animation: cchat-menu-out 120ms ease-in both; pointer-events: none; }
+@keyframes cchat-menu-in {
+  0% { opacity: 0; transform: scale(0.72); }
+  42% { opacity: 1; transform: scale(1.035); }
+  64% { transform: scale(0.985); }
+  82% { transform: scale(1.006); }
+  100% { opacity: 1; transform: scale(1); }
+}
+@keyframes cchat-menu-out { from { opacity: 1; transform: scale(1); } to { opacity: 0; transform: scale(0.96); } }
+
+/* Trích dẫn trong bóng chat và dải "Đang trả lời" trên ô nhắn. */
+.cchat-quote { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 6px 8px; border-radius: 8px; background: var(--cchat-quote); text-align: left; }
+.cchat-quote > svg, .cchat-reply-preview-body > svg { flex: none; color: var(--cchat-strong); }
+.cchat-reply-lines { display: flex; flex: 1; flex-direction: column; min-width: 0; line-height: 1.3; }
+.cchat-reply-lines > * { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 12px; }
+.cchat-reply-lines strong { color: var(--cchat-strong); font-weight: 600; }
+.cchat-reply-lines span { color: var(--cchat-muted); }
+.cchat-reply-preview { overflow: hidden; opacity: 1; transition: max-height 200ms ease-out, opacity 200ms ease-out; }
+.cchat-reply-preview[data-open="false"] { opacity: 0; pointer-events: none; }
+.cchat-reply-preview-body { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 8px 12px; border-bottom: 1px solid var(--cchat-divider); }
+.cchat-reply-cancel {
+  flex: none; display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 6px;
+  background: none; color: var(--cchat-muted); cursor: pointer; transition: background-color 160ms ease, color 160ms ease;
+}
+.cchat-reply-cancel:focus-visible { outline: 2px solid var(--cchat-primary); }
+@media (hover: hover) and (pointer: fine) { .cchat-reply-cancel:hover { background: var(--cchat-hover); color: var(--stage-text); } }
+
+/* ---------- Ô nhắn máy tính (ChatArea của AIRI) ---------- */
+/* Trên lịch sử (bóng chat có z-index 1 cho vuốt trả lời): menu phím gửi và bảng Micro bật lên đè lên tin nhắn. */
+.cchat-composer { position: relative; z-index: 2; padding: 0; }
+.cchat-input {
+  /* Không cắt phần tràn: menu phím gửi bật lên trên ô nhắn. */
+  position: relative; border-top: 2px solid var(--cchat-panel-edge); border-radius: 12px 12px 0 0;
+  background: var(--cchat-input); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+  transition: border-color 200ms ease;
+}
+.cchat-input.listening { border-top-color: var(--stage-mic-edge); }
+.cchat-input .companion-image-drafts { padding: 8px 8px 0; }
+.cchat-input textarea {
+  display: block; box-sizing: border-box; width: 100%; min-height: 82px; max-height: 300px; padding: 10px 12px 48px;
+  border: 0; outline: none; resize: none; field-sizing: content; overflow-y: auto; background: transparent;
+  color: var(--cchat-input-text); font: inherit; font-size: 16px; font-weight: 500; line-height: 1.5;
+}
+.cchat-input textarea::placeholder { color: var(--cchat-placeholder); transition: color 250ms ease; }
+.cchat-input-bar { position: absolute; right: 6px; bottom: 6px; left: 6px; z-index: 1; display: flex; align-items: center; gap: 8px; }
+.cchat-input-status { flex: 1; min-width: 0; }
+.cchat-tool {
+  display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 6px; background: none;
+  color: var(--cchat-muted); cursor: pointer; transition: background-color 200ms ease, color 200ms ease;
+}
+.cchat-tool:active:not(:disabled) { background: var(--cchat-hover); }
+.cchat-tool:focus-visible { outline: 2px solid var(--cchat-primary); }
+@media (hover: hover) and (pointer: fine) { .cchat-tool:hover:not(:disabled) { background: var(--cchat-hover); color: var(--cchat-strong); } }
+.cchat-input .hearing-mic { width: 36px; height: 36px; border-radius: 50%; background: var(--cchat-hover); color: var(--cchat-input-text); }
+.cchat-input .hearing-mic.on { background: var(--stage-accent-strong); color: #fff; }
+
+.cchat-action-button {
+  display: grid; place-items: center; width: 36px; height: 36px; padding: 0; border: 0; border-radius: 50%; cursor: pointer;
+  transition: background-color 200ms ease, opacity 200ms ease, transform 160ms var(--ease-out);
+}
+.cchat-action-button:active:not(:disabled) { transform: scale(0.97); }
+.cchat-action-button:focus-visible, .cchat-round:focus-visible { outline: 2px solid var(--cchat-primary); outline-offset: 2px; }
+.cchat-action-button.primary, .cchat-round.primary { background: var(--cchat-primary); color: #fff; }
+.cchat-action-button.primary:disabled, .cchat-round.primary:disabled { opacity: 0.4; cursor: default; }
+.cchat-stop { background: rgba(115, 115, 115, 0.15); color: var(--cchat-muted); }
+@media (hover: hover) and (pointer: fine) {
+  .cchat-action-button.primary:hover:not(:disabled), .cchat-round.primary:hover:not(:disabled) { background: var(--cchat-primary-hover); }
+  .cchat-stop:hover:not(:disabled) { background: rgba(115, 115, 115, 0.25); }
+}
+
+/* Nút Gửi và menu phím gửi (send-button.vue). */
+.cchat-send-wrap { position: relative; flex: none; }
+.cchat-send-menu { position: absolute; right: 0; bottom: calc(100% + 8px); z-index: 20; min-width: 200px; padding: 4px; animation: companion-pop 150ms var(--ease-out) both; transform-origin: bottom right; }
+.cchat-send-menu-title { margin: 0; padding: 8px 12px 4px; color: var(--muted); font-size: 12px; }
+.cchat-send-menu > button { justify-content: space-between; min-height: 34px; padding: 0 12px; font-size: 14px; }
+.cchat-send-menu > button[aria-checked="true"] { color: var(--companion-pick); }
+.cchat-send-menu > button > svg { color: inherit; }
+
+/* ---------- Điện thoại (MobileInteractiveArea của AIRI) ---------- */
+@media (max-width: 720px) {
+  .companion-panel { font-family: inherit; }
+  .companion-messages.cchat-list[data-compact] {
+    flex: 0 1 auto; max-height: 35dvh; margin-top: auto; padding: 8px 12px 12px; -webkit-mask-image: none; mask-image: none;
+  }
+  .cchat-list[data-compact] .cchat-item { padding-bottom: 4px; }
+  .cchat-list[data-compact] .cchat-row.user { justify-content: flex-start; margin-left: 0; }
+  .cchat-list[data-compact] .cchat-row.assistant { margin-right: 0; }
+  .cchat-list[data-compact] .cchat-bubble {
+    gap: 4px; font-family: var(--cchat-font); font-size: 14px; line-height: 1.45; box-shadow: none;
+    -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+    -webkit-backdrop-filter: blur(24px); backdrop-filter: blur(24px);
+    /* Mờ ở mép trên khung: điểm dừng do CompanionHistory đặt theo vị trí của từng bóng. */
+    -webkit-mask-image: linear-gradient(to bottom, transparent var(--cchat-fade-clear, -1px), #000 var(--cchat-fade-solid, 0px));
+    mask-image: linear-gradient(to bottom, transparent var(--cchat-fade-clear, -1px), #000 var(--cchat-fade-solid, 0px));
+    -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+  }
+  .cchat-list[data-compact] .cchat-bubble.user { padding: 6px 8px; background: var(--cchat-m-user); }
+  .cchat-list[data-compact] .cchat-bubble.assistant { padding: 8px; background: var(--cchat-m-airi); }
+  .cchat-list[data-compact] .cchat-time { padding: 8px 0; color: var(--stage-muted); text-shadow: 0 1px 6px var(--stage-bg); }
+
+  .cchat-composer.compact { display: flex; flex-direction: column; align-items: stretch; padding: 8px 12px calc(12px + env(safe-area-inset-bottom)); }
+  .cchat-composer.compact .hearing-bar, .cchat-composer.compact .hearing-pad-wrap { align-self: center; }
+  .cchat-mobile-row { display: flex; align-items: flex-end; gap: 8px; width: 100%; }
+  .cchat-round {
+    flex: none; display: grid; place-items: center; width: 40px; height: 40px; padding: 0; border: 2px solid var(--cchat-m-edge);
+    border-radius: 50%; background: var(--cchat-m-bg); color: var(--cchat-m-icon); cursor: pointer;
+    -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); transition: background-color 200ms ease, transform 160ms var(--ease-out);
+  }
+  .cchat-round:active:not(:disabled) { transform: scale(0.95); }
+  .cchat-round.on { border-color: transparent; background: var(--stage-accent-strong); color: #fff; }
+  .cchat-round.primary { border-color: transparent; }
+  .cchat-round.cchat-stop { color: var(--cchat-muted); }
+  .cchat-pill {
+    position: relative; display: flex; flex: 1; flex-direction: column; justify-content: center; min-width: 0; min-height: 40px;
+    overflow: hidden; border: 2px solid var(--cchat-m-edge); border-radius: 20px; background: var(--cchat-m-bg);
+    -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); transition: border-color 200ms ease;
+  }
+  .cchat-pill:focus-within { border-color: var(--stage-accent-strong); }
+  .cchat-pill.listening { border-color: var(--stage-mic-edge); }
+  .cchat-pill .companion-image-drafts { padding: 6px 6px 0; }
+  .cchat-pill .companion-image-drafts li { width: 56px; height: 56px; }
+  .cchat-pill textarea {
+    display: block; box-sizing: border-box; width: 100%; min-height: 36px; max-height: 240px; padding: 6px 14px;
+    border: 0; outline: none; resize: none; field-sizing: content; overflow-y: auto; background: transparent;
+    color: var(--stage-text); font-family: var(--cchat-font); font-size: 16px; line-height: 24px;
+  }
+  .cchat-pill textarea::placeholder { color: var(--stage-muted); font-size: 14px; }
+  .cchat-mobile-action { flex: none; display: flex; align-items: flex-end; min-width: 40px; }
+  .cchat-mobile-action .hearing-mic { width: 40px; height: 40px; border-radius: 50%; background: var(--cchat-primary); color: #fff; }
+  .cchat-mobile-action .hearing-mic.on { background: var(--stage-accent-strong); }
+  .cchat-send-menu { right: 0; }
+}
+@media (max-width: 639px) {
+  .cchat-label { display: none; }
+}
+
+/* Tấm Nghe trên điện thoại: cùng nội dung bảng Micro, nằm trong tấm dưới đáy. */
+.hearing-popover.hearing-popover-sheet {
+  /* Tấm nằm ngoài .companion (portal), nên khai báo lại các màu sân khấu mà bảng Micro dùng. */
+  --stage-text: var(--text); --stage-muted: var(--muted); --stage-line: var(--line); --stage-input: var(--panel-2);
+  --stage-popover: var(--panel); --stage-surface: var(--panel-2); --stage-accent-strong: #127089;
+  --stage-mic-ring: rgba(18, 112, 137, 0.35); --stage-mic-edge: rgba(143, 216, 234, 0.55); --stage-level: #8fd8ea;
+  position: static; display: flex; padding: 4px 4px 0; border: 0; border-radius: 0; background: none; color: inherit; box-shadow: none;
+}
+:root[data-theme="light"] .hearing-popover.hearing-popover-sheet {
+  --stage-accent-strong: #2f8ea5; --stage-mic-ring: rgba(47, 142, 165, 0.28); --stage-mic-edge: rgba(47, 142, 165, 0.6); --stage-level: #2f8ea5;
+}
+.hearing-popover.hearing-popover-sheet .hearing-popover-text span, .hearing-popover.hearing-popover-sheet .voice-field small { color: var(--muted); }
+
+:root[data-motion="reduced"] :is(.cchat-swipe, .cchat-action-target, .cchat-reply-preview, .cchat-action-trigger, .cchat-tool,
+  .cchat-action-button, .cchat-round, .cchat-input, .cchat-pill) { transition: none; }
+:root[data-motion="reduced"] .cchat-dots i { animation: none; opacity: 0.7; }
+:root[data-motion="reduced"] :is(.cchat-menu, .cchat-send-menu) { animation: none; }

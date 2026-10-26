@@ -37,7 +37,7 @@ test('Companion chèn ảnh cạnh micro, mobile tách ở góc trái; gửi và
   const mic = await panel.getByRole('button', { name: 'Bật nghe', exact: true }).boundingBox();
   expect(photo!.x + photo!.width).toBeLessThanOrEqual(mic!.x + 1);
   if (info.project.name === 'mobile') {
-    const pill = await page.locator('.companion-composer .composer').boundingBox();
+    const pill = await page.locator('.companion-composer .cchat-pill').boundingBox();
     expect(photo!.x + photo!.width).toBeLessThanOrEqual(pill!.x);
     expect(photo!.x).toBeGreaterThanOrEqual(0);
     expect(photo!.width).toBeLessThanOrEqual(40);

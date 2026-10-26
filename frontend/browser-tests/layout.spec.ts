@@ -64,7 +64,7 @@ test('Companion giữ khoảng cách bóng chat khi khung điện thoại thấp
   await mockPeto(page);
   await page.goto('/#companion');
   await expect(page.getByText('Make yourself comfortable.', { exact: false })).toBeVisible();
-  const bubbles = page.locator('.companion-messages .bubble');
+  const bubbles = page.locator('.companion-messages .cchat-bubble');
   await expect(bubbles).toHaveCount(4);
   if (info.project.name === 'mobile') {
     const boxes = await bubbles.evaluateAll(nodes => nodes.map(node => ({ top: node.getBoundingClientRect().top, bottom: node.getBoundingClientRect().bottom })));

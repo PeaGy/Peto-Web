@@ -388,8 +388,9 @@ async function openHearingSettings() {
   if (!screen.queryByRole('region', { name: 'Trò chuyện trong Companion' })) {
     fireEvent.click(await screen.findByRole('button', { name: 'Companion', exact: true }));
   }
-  const column = within(await screen.findByRole('region', { name: 'Trò chuyện trong Companion' }));
-  fireEvent.click(await column.findByRole('button', { name: 'Cài đặt Companion' }));
+  await screen.findByRole('region', { name: 'Trò chuyện trong Companion' });
+  // Bánh răng ở hàng trên cùng cạnh nút Profile (Header của AIRI, từ 26/10/2026).
+  fireEvent.click(await screen.findByRole('button', { name: 'Cài đặt Companion' }));
   const page = await screen.findByRole('main', { name: 'Cài đặt' });
   fireEvent.click(within(page).getByRole('button', { name: /^Mô-đun/ }));
   fireEvent.click(await within(page).findByRole('button', { name: /^Nghe/ }));

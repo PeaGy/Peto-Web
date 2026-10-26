@@ -29,7 +29,7 @@
   background: var(--companion-pick-soft); color: var(--companion-pick); font-size: 13px; font-weight: 700;
 }
 
-.companion-session-title strong { max-width: 100%; }
+.companion-session-title strong { min-width: 0; max-width: 100%; }
 .companion-session-title strong > svg:first-child { flex-shrink: 0; color: var(--stage-muted); }
 .companion-session-title em { min-width: 0; overflow: hidden; font-style: normal; white-space: nowrap; text-overflow: ellipsis; }
 .companion-session-title:disabled { cursor: default; }

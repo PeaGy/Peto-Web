@@ -17,6 +17,7 @@ from shared import attachment_tools
 from shared import attachments as attachment_lib
 from features.companion import memory as companion_memory
 from features.companion import cards as companion_cards
+from features.companion import quotes as companion_quotes
 import storage as db
 from storage import chat_turns
 from features.chat import turn_control
@@ -221,6 +222,8 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
     mode = _resolve_mode(request.mode)
     if request.player_control is not None and mode != 'companion':
         raise HTTPException(400, 'Player chỉ điều khiển từ Companion.')
+    if request.quote_id is not None and (mode != 'companion' or request.branch_message_id):
+        raise HTTPException(400, 'Chỉ Companion trả lời một tin nhắn cũ được.')
     web_search = request.web_search
     if mode == "companion":
         if any(item.kind != 'image' for item in files):
@@ -505,7 +508,8 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                                 conversation_id, message_id = await conversation_actions.fork(owner, conversation_id, request.branch_message_id, text)
                             message_id = await chat_turns.bind(owner, request_id, conversation_id, message_id)
                         else:
-                            message_id = await chat_turns.bind(owner, request_id, conversation_id, None, text, own_provider)
+                            message_id = await chat_turns.bind(owner, request_id, conversation_id, None, text, own_provider,
+                                                               quote_id=request.quote_id)
                         for item, document in zip(files, documents):
                             attachment_id, path = attachment_lib.write_file(conversation_id, item)
                             saved_paths.append(path)
@@ -553,8 +557,10 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                     # Context Chat dựng history một lần theo ngân sách; không đọc/base64 ảnh hai lần.
                     history, system_prompt = [], await prompt_task
                 else:
+                    # Tin trả lời một tin cũ mang dòng "[Replying to: …]" như AIRI; chỉ trong phần gửi model, không lưu.
+                    model_rows = await companion_quotes.with_quotes(owner, conversation_id, active_rows)
                     history, system_prompt = await asyncio.gather(
-                        anyio.to_thread.run_sync(_to_chat_messages, active_rows, project_documents), prompt_task)
+                        anyio.to_thread.run_sync(_to_chat_messages, model_rows, project_documents), prompt_task)
                 generated = await chat_context.store.artifact_index(owner, conversation_id) if mode == 'chat' else []
                 inventory = sorted([*indexed, *generated], key=lambda item: item['message_id'])
                 tool_rows = [*({'artifacts': [item], 'generated_documents': [item]} if 'version' in item
@@ -707,7 +713,9 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
             # ghi nhớ" từng đọc trường này đã bỏ ngày 11/10/2026; hiện trang không đọc nó nữa.
             if complete and remembers and await companion_memory.enabled_for(owner):
                 companion_memory.mark_pending(owner)
-            yield sse({"type": "done"})
+            # Mã câu trả lời vừa lưu: Companion cần nó để Trả lời hay Xóa tin này mà không tải lại mạch.
+            saved_turn = await chat_turns.get(owner, request_id)
+            yield sse({"type": "done", "message_id": saved_turn['assistant_message_id'] if saved_turn else None})
 
     async def controlled_stream():
         key = (owner, request_id)

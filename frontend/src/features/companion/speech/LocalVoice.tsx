@@ -460,33 +460,3 @@ export function SpeakerOffIcon({ size = 16 }: { size?: number }) {
     </svg>
   );
 }
-
-function StopIcon() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <rect x="5" y="5" width="14" height="14" rx="2" fill="currentColor" />
-    </svg>
-  );
-}
-
-/** Nút nghe lại dưới tin của Peto: chỉ một icon nhỏ, còn nhãn đọc màn hình nói rõ đang ở bước nào. */
-export function SpeakButton({ phase, onSpeak, onStop }: {
-  phase: SpeakPhase | null;
-  onSpeak: () => void;
-  onStop: () => void;
-}) {
-  const label = phase === "loading" ? "Đang chuẩn bị giọng đọc, bấm để dừng"
-    : phase === "buffering" ? "Đang chờ đoạn tiếng tiếp theo, bấm để dừng"
-      : phase === "playing" ? "Dừng đọc" : "Nghe Peto đọc tin này";
-  return (
-    <button
-      type="button"
-      className={phase ? `message-speak ${phase}` : "message-speak"}
-      aria-label={label}
-      data-tip
-      onClick={phase ? onStop : onSpeak}
-    >
-      {phase === "playing" || phase === "buffering" ? <StopIcon /> : <SpeakerIcon size={15} />}
-    </button>
-  );
-}

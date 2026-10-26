@@ -11,6 +11,7 @@ import { clearCompanionTimings, getCompanionTimings } from '../src/features/comp
 import { prepareCompanionImage } from '../src/features/companion/prepareCompanionImage';
 import { resetCompanionCards } from '../src/features/companion/cards/companionCards';
 import { buildCardPackage } from '../src/features/companion/cards/cardPackage';
+import { setSendMode } from '../src/features/companion/chat/sendMode';
 // Kiểm thử thu nhỏ ảnh thật nằm trong prepareCompanionImage và bài kiểm tra trình duyệt.
 vi.mock('../src/features/companion/prepareCompanionImage', async original => ({
   ...await original<typeof import('../src/features/companion/prepareCompanionImage')>(),
@@ -21,7 +22,7 @@ vi.mock('../src/shared/api/api', async (original) => ({
   ...await original<typeof import('../src/shared/api/api')>(),
   getAuthState: vi.fn(), listConversations: vi.fn(), getMessages: vi.fn(), sendMessage: vi.fn(),
   listImagineJobs: vi.fn(), getProfile: vi.fn(), getAppInfo: vi.fn(), getCompanion: vi.fn(),
-  deleteConversation: vi.fn(),
+  deleteConversation: vi.fn(), deleteCompanionMessage: vi.fn(),
   getCompanionMemory: vi.fn(),
   listCompanionCards: vi.fn(), setActiveCompanionCard: vi.fn(), createCompanionCard: vi.fn(), updateCompanionCard: vi.fn(),
   listCompanionConversations: vi.fn(), newCompanionConversation: vi.fn(), openCompanionConversation: vi.fn(),
@@ -248,7 +249,7 @@ it('nghe lại tin cũ có nhiều mốc giữ một mặt qua nhiều đoạn t
     play() { return new Promise<void>(resolve => { this.ready = resolve; }); } pause() {}
   });
   await openCompanion();
-  fireEvent.click(await screen.findByRole('button', { name: /Nghe Peto/ }));
+  await listenAgain();
   await waitFor(() => expect(audios).toHaveLength(1));
   expect(screen.getByTestId('stage').dataset.emotion).toBe('');
   await act(async () => audios[0].ready());
@@ -318,7 +319,9 @@ it('đọc câu đầu trước khi trả lời xong, giữ chữ gõ mới và 
   act(() => { handlers.onMeta?.('C1', 'low', undefined, true); handlers.onDelta?.('Good to see you. '); });
   await waitFor(() => expect(played).toHaveLength(1));
   expect(composer).toHaveProperty('value', 'Next message');
-  expect(chatColumn().getByRole('button', { name: 'Dừng', exact: true })).toBeTruthy();
+  // Như AIRI: đã có tin mới trong ô thì nút Gửi (dừng câu đang viết rồi gửi) thay chỗ nút Dừng.
+  expect(chatColumn().getByRole('button', { name: 'Gửi', exact: true })).toHaveProperty('disabled', false);
+  expect(chatColumn().queryByRole('button', { name: 'Dừng', exact: true })).toBeNull();
   act(() => handlers.onDelta?.('How was your day?'));
   await act(async () => finish());
   await waitFor(() => expect(played).toHaveLength(2));
@@ -327,7 +330,7 @@ it('đọc câu đầu trước khi trả lời xong, giữ chữ gõ mới và 
   expect(composer).toHaveProperty('value', 'Next message');
 });
 
-it('Dừng hủy cả chữ và tiếng; kết quả cũ không chen vào lượt mới', async () => {
+it('gửi tin mới lúc Peto đang trả lời thì dừng cả chữ và tiếng của câu cũ rồi mới gửi; kết quả cũ không chen vào', async () => {
   localStorage.setItem('peto-local-voice', '1');
   const audios: { pause: ReturnType<typeof vi.fn> }[] = [];
   vi.stubGlobal('Audio', class {
@@ -349,10 +352,11 @@ it('Dừng hủy cả chữ và tiếng; kết quả cũ không chen vào lượ
   await sendInCompanion('Hello');
   await waitFor(() => expect(audios).toHaveLength(1));
   fireEvent.change(screen.getByRole('textbox', { name: 'Nhắn cho Peto trong Companion' }), { target: { value: 'Next message' } });
-  fireEvent.click(chatColumn().getByRole('button', { name: 'Dừng', exact: true }));
+  // useChatInterruption của AIRI: một lần bấm Gửi là dừng câu cũ, chờ lượt cũ khép lại, rồi gửi tin mới.
+  expect(chatColumn().queryByRole('button', { name: 'Dừng', exact: true })).toBeNull();
+  fireEvent.click(chatColumn().getByRole('button', { name: 'Gửi', exact: true }));
   expect(signal.aborted).toBe(true);
   expect(audios[0].pause).toHaveBeenCalled();
-  fireEvent.click(await chatColumn().findByRole('button', { name: 'Gửi', exact: true }));
   await waitFor(() => expect(audios).toHaveLength(2));
   act(() => { old.onDelta?.('Late old reply. '); old.onError?.('Old error'); old.onDone?.(); });
   expect(chatColumn().queryByText(/Late old reply/)).toBeNull();
@@ -463,7 +467,7 @@ it('đổi nhân vật dừng tiếng và nét mặt cũ; tín hiệu phát mu�
       onUnauthorized={callback} onOpenSidebar={callback} />;
   }
   const view = render(<Harness character={DEFAULT_CHARACTER} />);
-  fireEvent.click(await screen.findByRole('button', { name: 'Nghe Peto đọc tin này' }));
+  await listenAgain();
   await waitFor(() => expect(ready).toBeTypeOf('function'));
   expect(screen.getByTestId('stage').dataset.emotion).toBe('sad');
   const latePlaying = audio.onplaying;
@@ -490,6 +494,14 @@ const speakBodies = () => fetchMock.mock.calls
   .filter(([url]) => String(url).endsWith('/speak'))
   .map(([, init]) => JSON.parse(String(init?.body)));
 const chatColumn = () => within(screen.getByRole('region', { name: 'Trò chuyện trong Companion' }));
+
+/** Nghe lại câu trả lời thứ ``index``: nút "…" của tin rồi mục Nghe lại (menu tin nhắn như AIRI, từ 26/10/2026). */
+async function listenAgain(index = 0) {
+  await waitFor(() => expect(document.querySelectorAll('.cchat-row.assistant').length).toBeGreaterThan(index));
+  const row = document.querySelectorAll<HTMLElement>('.cchat-row.assistant')[index];
+  fireEvent.click(within(row).getByRole('button', { name: 'Thao tác tin nhắn' }));
+  fireEvent.click(await screen.findByRole('menuitem', { name: 'Nghe lại' }));
+}
 
 it.each(['hidden', 'pagehide', 'offline'])('trang %s dừng tiếng ngay, giữ bản nháp và không tự đọc phần chữ tới sau', async event => {
   localStorage.setItem('peto-local-voice', '1');
@@ -618,7 +630,8 @@ async function openCompanionSettings() {
     fireEvent.click(await screen.findByRole('button', { name: 'Companion', exact: true }));
   }
   const column = within(await screen.findByRole('region', { name: 'Trò chuyện trong Companion' }));
-  fireEvent.click(await column.findByRole('button', { name: 'Cài đặt Companion' }));
+  // Bánh răng ở hàng trên cùng, cạnh nút Profile (Header của AIRI), không còn trong cột chat.
+  fireEvent.click(await screen.findByRole('button', { name: 'Cài đặt Companion' }));
   return within(await screen.findByRole('main', { name: 'Cài đặt' }));
 }
 
@@ -702,10 +715,10 @@ it('tắt tiếng ở cột chat thì Peto không tự nói, bấm nghe vẫn ng
   await sendInCompanion('ok');
   expect(vi.mocked(api.sendMessage).mock.calls[0][0]).toMatchObject({ conversationId: 'C1' });
   await screen.findByText('Sure thing.');
-  await waitFor(() => expect(screen.getAllByRole('button', { name: /Nghe Peto/ })).toHaveLength(2));
+  await waitFor(() => expect(document.querySelectorAll('.cchat-row.assistant')).toHaveLength(2));
   expect(played).toHaveLength(0);
 
-  fireEvent.click(screen.getAllByRole('button', { name: /Nghe Peto/ })[0]);
+  await listenAgain(0);
   await waitFor(() => expect(played).toHaveLength(1));
 });
 
@@ -793,7 +806,7 @@ it('hết lượt Giọng Peto thì không cho nghe thử, còn Companion đọc
   ] });
   await openCompanion();
   await screen.findByText('Hey there.');
-  fireEvent.click(await screen.findByRole('button', { name: /Nghe Peto/ }));
+  await listenAgain();
   await waitFor(() => expect(played).toHaveLength(1));
   expect(speakBodies()).toEqual([{ text: 'Hey there.', voice: 'playful-1' }]);
   expect(await chatColumn().findByText(
@@ -949,7 +962,7 @@ it('khóa riêng bị từ chối: Nghe thử báo lỗi, còn Companion chuyể
   ] });
   await openCompanion();
   await screen.findByText('Hey there.');
-  fireEvent.click(await screen.findByRole('button', { name: /Nghe Peto/ }));
+  await listenAgain();
   await waitFor(() => expect(played).toHaveLength(1));
   expect(speakBodies()).toEqual([{ text: 'Hey there.', voice: 'playful-1' }]);
   expect(await chatColumn().findByText(/Khóa OpenAI không đúng.*Đã chuyển sang giọng dự phòng: Local Voice của Peto/)).toBeTruthy();
@@ -1365,8 +1378,9 @@ it('bàn phím điện thoại làm khung tin thấp lại thì vẫn thấy tin
   resized();
   expect(scrollTop).toBe(1000);
 
-  // Đã cuộn lên đọc tin cũ thì khung đổi cỡ cũng không kéo xuống.
+  // Đã cuộn lên đọc tin cũ (người dùng tự cuộn: lăn chuột) thì khung đổi cỡ cũng không kéo xuống.
   scrollTop = 100;
+  fireEvent.wheel(list);
   fireEvent.scroll(list);
   clientHeight = 400;
   resized();
@@ -1465,7 +1479,7 @@ it('nghe lại tin cũ thì nhân vật làm lại đúng mặt đã chọn cho 
   await openCompanion();
   await screen.findByText('Oh no, I hope she gets better soon.');
   expect(screen.getByTestId('stage').dataset.emotion).toBe('');
-  fireEvent.click(await screen.findByRole('button', { name: /Nghe Peto/ }));
+  await listenAgain();
   await waitFor(() => expect(screen.getByTestId('stage').dataset.emotion).toBe('sad'));
 });
 
@@ -1524,4 +1538,121 @@ it('tra web trong Companion mặc định tắt như AIRI; bật ở Cài đặt
   await sendInCompanion('What is the weather today?');
   await waitFor(() => expect(api.sendMessage).toHaveBeenCalledTimes(2));
   expect(vi.mocked(api.sendMessage).mock.calls[1][0]).toMatchObject({ mode: 'companion', webSearch: 'auto' });
+});
+
+/** Hàng tin thứ ``index`` của người dùng hay nhân vật trong lịch sử Companion. */
+const chatRow = (role: 'user' | 'assistant', index = 0) => document.querySelectorAll<HTMLElement>(`.cchat-row.${role}`)[index];
+
+async function openMessageMenu(role: 'user' | 'assistant', index = 0) {
+  await waitFor(() => expect(chatRow(role, index)).toBeTruthy());
+  fireEvent.click(within(chatRow(role, index)).getByRole('button', { name: 'Thao tác tin nhắn' }));
+  return screen.findByRole('menu', { name: 'Thao tác tin nhắn' });
+}
+
+it('Trả lời như AIRI: dải "Đang trả lời" trên ô nhắn, gửi kèm mã tin được trích, tin đã gửi có trích dẫn; Hủy trả lời bỏ dải', async () => {
+  vi.mocked(api.getCompanion).mockResolvedValue({ conversation_id: 'C1', messages: [
+    { id: 11, role: 'user', content: 'hi', created_at: 1_790_000_000 },
+    { id: 12, role: 'assistant', content: 'Pick a number,\n  any number.', created_at: 1_790_000_005 },
+  ] });
+  vi.mocked(api.sendMessage).mockImplementation(async (payload, handlers) => {
+    handlers.onMeta?.('C1', 'low', { id: 13, role: 'user', content: payload.message, created_at: 1_790_000_100, quote_id: payload.quoteId });
+    handlers.onDelta?.('Seven!');
+    handlers.onDone?.(14);
+  });
+  await openCompanion();
+  const box = screen.getByRole('textbox', { name: 'Nhắn cho Peto trong Companion' });
+  const menu = await openMessageMenu('assistant');
+  expect(within(menu).getAllByRole('menuitem').map(item => item.textContent)).toEqual(['Trả lời', 'Sao chép', 'Xóa']);
+  fireEvent.click(within(menu).getByRole('menuitem', { name: 'Trả lời' }));
+  const preview = document.querySelector('.cchat-reply-preview')!;
+  expect(preview.getAttribute('data-open')).toBe('true');
+  expect(preview.textContent).toContain('Đang trả lời Peto');
+  expect(preview.textContent).toContain('Pick a number, any number.');
+  await waitFor(() => expect(document.activeElement).toBe(box));
+
+  fireEvent.click(screen.getByRole('button', { name: 'Hủy trả lời' }));
+  expect(preview.getAttribute('data-open')).toBe('false');
+  fireEvent.click(within(await openMessageMenu('assistant')).getByRole('menuitem', { name: 'Trả lời' }));
+  await sendInCompanion('which one?');
+  expect(vi.mocked(api.sendMessage).mock.calls[0][0]).toMatchObject({ message: 'which one?', quoteId: 12 });
+  await screen.findByText('Seven!');
+  expect(preview.getAttribute('data-open')).toBe('false');
+  expect(chatRow('user', 1).querySelector('.cchat-quote')?.textContent).toContain('Đang trả lời Peto');
+  // Câu trả lời mới có mã từ "done": trả lời và xóa được ngay, không cần tải lại mạch.
+  expect(within(await openMessageMenu('assistant', 1)).getAllByRole('menuitem').map(item => item.textContent))
+    .toEqual(['Trả lời', 'Sao chép', 'Xóa']);
+});
+
+it('Xóa một tin: bỏ ngay khỏi khung rồi gọi máy chủ; máy chủ từ chối thì đặt lại chỗ cũ và báo lỗi', async () => {
+  vi.mocked(api.getCompanion).mockResolvedValue({ conversation_id: 'C1', messages: [
+    { id: 21, role: 'user', content: 'first', created_at: 1_790_000_000 },
+    { id: 22, role: 'assistant', content: 'reply one', created_at: 1_790_000_001 },
+    { id: 23, role: 'user', content: 'second', created_at: 1_790_000_002 },
+  ] });
+  vi.mocked(api.deleteCompanionMessage).mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('Không tìm thấy tin nhắn'));
+  await openCompanion();
+  fireEvent.click(within(await openMessageMenu('user')).getByRole('menuitem', { name: 'Xóa' }));
+  expect(api.deleteCompanionMessage).toHaveBeenCalledWith(21);
+  await waitFor(() => expect(chatColumn().queryByText('first')).toBeNull());
+
+  fireEvent.click(within(await openMessageMenu('assistant')).getByRole('menuitem', { name: 'Xóa' }));
+  expect(api.deleteCompanionMessage).toHaveBeenLastCalledWith(22);
+  expect(await chatColumn().findByText('Không tìm thấy tin nhắn')).toBeTruthy();
+  expect([...document.querySelectorAll('.cchat-bubble')].map(item => item.textContent)).toEqual(['Petoreply one', 'second']);
+});
+
+it('tin chưa lưu (câu chào xem trước) chỉ sao chép được; Esc đóng menu và trả tiêu điểm về nút …', async () => {
+  vi.mocked(api.getCompanion).mockResolvedValue({ conversation_id: null, messages: [{ role: 'assistant', content: 'Hello there!' }] });
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+  await openCompanion();
+  await waitFor(() => expect(chatRow('assistant')).toBeTruthy());
+  const trigger = within(chatRow('assistant')).getByRole('button', { name: 'Thao tác tin nhắn' });
+  fireEvent.keyDown(trigger, { key: 'Enter' });
+  const menu = await screen.findByRole('menu', { name: 'Thao tác tin nhắn' });
+  expect(within(menu).getAllByRole('menuitem').map(item => item.textContent)).toEqual(['Sao chép']);
+  await waitFor(() => expect(document.activeElement).toBe(within(menu).getByRole('menuitem', { name: 'Sao chép' })));
+  fireEvent.keyDown(menu, { key: 'Escape' });
+  await waitFor(() => expect(screen.queryByRole('menu', { name: 'Thao tác tin nhắn' })).toBeNull());
+  expect(document.activeElement).toBe(trigger);
+
+  fireEvent.click(trigger);
+  fireEvent.click(await screen.findByRole('menuitem', { name: 'Sao chép' }));
+  await waitFor(() => expect(writeText).toHaveBeenCalledWith('Hello there!'));
+  await waitFor(() => expect(trigger.hasAttribute('data-copied')).toBe(true));
+});
+
+it('nhãn giờ hiện ở tin đầu và khi hai tin cách nhau từ 5 phút; bấm nhãn thì hiện ngày giờ đầy đủ', async () => {
+  const start = Math.floor(Date.now() / 1000) - 3600;
+  vi.mocked(api.getCompanion).mockResolvedValue({ conversation_id: 'C1', messages: [
+    { id: 1, role: 'user', content: 'a', created_at: start },
+    { id: 2, role: 'assistant', content: 'b', created_at: start + 60 },
+    { id: 3, role: 'user', content: 'c', created_at: start + 60 + 5 * 60 },
+  ] });
+  await openCompanion();
+  await waitFor(() => expect(document.querySelectorAll('.cchat-time')).toHaveLength(2));
+  const label = document.querySelector<HTMLButtonElement>('.cchat-time button')!;
+  const short = label.textContent;
+  fireEvent.click(label);
+  expect(label.getAttribute('aria-pressed')).toBe('true');
+  expect(label.textContent).not.toBe(short);
+  expect(label.querySelector('time')?.getAttribute('dateTime')).toBe(new Date(start * 1000).toISOString());
+});
+
+it('phím gửi: chọn Ctrl + Enter ở menu của nút Gửi thì Enter xuống dòng, Ctrl + Enter mới gửi', async () => {
+  vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers) => { handlers.onMeta?.('C1', 'low'); handlers.onDone?.(); });
+  try {
+    await openCompanion();
+    fireEvent.contextMenu(chatColumn().getByRole('button', { name: 'Gửi', exact: true }));
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: 'Ctrl + Enter' }));
+    expect(localStorage.getItem('peto-companion-send-mode')).toBe('ctrl-enter');
+    const box = screen.getByRole('textbox', { name: 'Nhắn cho Peto trong Companion' });
+    fireEvent.change(box, { target: { value: 'hello' } });
+    fireEvent.keyDown(box, { key: 'Enter' });
+    expect(api.sendMessage).not.toHaveBeenCalled();
+    fireEvent.keyDown(box, { key: 'Enter', ctrlKey: true });
+    await waitFor(() => expect(api.sendMessage).toHaveBeenCalled());
+  } finally {
+    setSendMode('enter');
+  }
 });

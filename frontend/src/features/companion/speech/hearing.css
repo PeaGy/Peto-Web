@@ -96,10 +96,6 @@
 @media (max-width: 720px) {
   .hearing-popover { display: none; }
   .companion-composer { flex-direction: column; align-items: center; }
-  .companion-composer .composer { padding-left: 3px; }
-  /* Nút micro vào đầu viên thuốc, nút gửi ở cuối. */
-  .companion-composer .composer-bar { display: contents; }
-  .companion-composer .hearing-mic { order: -1; width: 34px; height: 34px; border-radius: 999px; }
   .hearing-bar {
     display: flex;
     align-items: center;
