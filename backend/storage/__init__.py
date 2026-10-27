@@ -66,6 +66,7 @@ from .memory import (
     ensure_memory_state,
     set_memory_enabled,
     memory_messages_after,
+    memory_context_before,
     apply_memory_changes,
     delete_memory,
     clear_memories,

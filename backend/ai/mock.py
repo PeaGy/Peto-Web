@@ -429,6 +429,29 @@ def _memory_changes(prompt: str) -> dict:
         if target is not None and target in entries:
             return {"entries": [{"id": target, "details": [*entries[target]["details"], request]}], "remove": []}
         return {"entries": [{"section": "you", "title": "Hồ sơ", "details": [request]}], "remove": []}
+    marker = 'New conversation JSON (reference data):\n'
+    if marker in prompt:
+        # Emit the real automatic extraction contract; no production bypass for synthetic test markers.
+        data = json.loads(prompt.split(marker, 1)[1])
+        changes, remove = [], []
+        for row in data['new_messages']:
+            if row['role'] != 'user':
+                continue
+            said = row['text']
+            proof = {'message_id': row['message_id'], 'quote': said}
+            def fact(text):
+                return {'text': text.strip(), 'subject': 'user', 'certainty': 'explicit', 'retention': 'lasting', 'evidence': proof}
+            additions = re.findall(r'__nho__:([^_\n]+)', said)
+            if additions:
+                changes.append({'section': 'you', 'title': 'Hồ sơ', 'details': [fact(text) for text in additions]})
+            for key, text in re.findall(r'__sua__:(\d+):([^_\n]+)', said):
+                old = entries.get(int(key), {}).get('details', [])
+                changes.append({'id': int(key), 'details': [fact(text)],
+                                'forget': [{'text': value, 'reason': 'correction', 'evidence': proof} for value in old]})
+            changes += [{'section': section, 'title': title.strip(), 'details': [fact(text)]}
+                        for section, title, text in re.findall(r'__muc__:(you|topic|area):([^:_\n]+):([^_\n]+)', said)]
+            remove += [{'id': int(key), 'reason': 'user_request', 'evidence': proof} for key in re.findall(r'__quen__:(\d+)', said)]
+        return {'entries': changes, 'remove': remove}
     talk = prompt.split("New conversation:", 1)[-1]
     said = "\n".join(line for line in talk.splitlines() if line.startswith("User:"))
     changes = [{"section": "you", "title": "Hồ sơ", "details": [text.strip()]}

@@ -144,9 +144,37 @@ async def memory_messages_after(owner: str, after_id: int, limit: int) -> list[d
     return rows[::-1]
 
 
+async def memory_context_before(owner: str, rows: list[dict], *, since: int, limit: int = 4) -> list[dict]:
+    """A few preceding messages in each represented thread resolve referents, without authorizing new memories.
+
+    Never read across an off/delete boundary. Read at most 4 preceding rows per thread, return at most 12 in total.
+    Returned snapshots are revalidated under the write lock along with new rows.
+    """
+    before = {}
+    for row in rows:
+        cid = row.get('conversation_id')
+        if cid:
+            before[cid] = min(before.get(cid, row['id']), row['id'])
+    context = []
+    async with db_connection.connect() as db:
+        db.row_factory = aiosqlite.Row
+        for cid, first in list(before.items())[:12]:
+            found = await (await db.execute(f'''SELECT {SOURCE_COLUMNS} FROM messages m
+                JOIN conversations c ON c.id=m.conversation_id
+                WHERE c.owner=? AND c.id=? AND {MEMORY_SOURCE} AND m.provider=''
+                    AND m.id>? AND m.id<? AND m.role IN ('user','assistant')
+                    AND (c.mode!='chat' OR (m.status='complete' AND COALESCE((SELECT state FROM chat_turns
+                        WHERE owner=c.owner AND (user_message_id=m.id OR assistant_message_id=m.id)
+                        ORDER BY id DESC LIMIT 1),'complete')='complete'))
+                ORDER BY m.id DESC LIMIT ?''', (owner, cid, since, first, min(4, max(0, limit))))).fetchall()
+            context.extend(dict(row) for row in found)
+    return sorted(context, key=lambda row: row['id'])[-12:]
+
+
 async def apply_memory_changes(
     owner: str, *, upserts: list[dict], remove: list[int], cursor: int | None = None, limit: int,
-    expected_revision: int | None = None, source_rows: list[dict] = ()
+    expected_revision: int | None = None, source_rows: list[dict] = (),
+    invalidate_summaries: bool = False, remove_seen: dict | None = None,
 ) -> list[dict]:
     """Ghi các thay đổi trong một giao dịch; trả về các mục vừa thêm hay vừa sửa (sau khi đổi).
 
@@ -158,20 +186,24 @@ async def apply_memory_changes(
     """
     now = time.time()
     changed: list[int] = []
+    dropped = False
     async with db_connection.connect() as db:
         await db.execute('BEGIN IMMEDIATE')
         if expected_revision is not None and not await _valid_snapshot(db, owner, expected_revision, source_rows):
             return []
         for memory_id in remove:
-            await db.execute("DELETE FROM companion_memory_entries WHERE id = ? AND owner = ?", (memory_id, owner))
+            guard, params = ("", ()) if remove_seen is None else (" AND updated_at=?", (remove_seen.get(memory_id),))
+            result = await db.execute(f"DELETE FROM companion_memory_entries WHERE id = ? AND owner = ?{guard}", (memory_id, owner, *params))
+            dropped = dropped or result.rowcount > 0
         for patch in upserts:
             if "id" not in patch:
                 continue
             guard, params = ("", ()) if patch.get("_seen") is None else (" AND updated_at = ?", (patch["_seen"],))
             if "details" in patch and not patch["details"]:
-                await db.execute(
+                result = await db.execute(
                     f"DELETE FROM companion_memory_entries WHERE id = ? AND owner = ?{guard}", (patch["id"], owner, *params)
                 )
+                dropped = dropped or result.rowcount > 0
                 continue
             fields = {key: patch[key] for key in ("title", "summary") if patch.get(key)}
             if "details" in patch:
@@ -180,6 +212,10 @@ async def apply_memory_changes(
                 continue
             sets = ", ".join(f"{key} = ?" for key in fields)
             differs = " OR ".join(f"{key} != ?" for key in fields)
+            previous = None
+            if invalidate_summaries and 'details' in patch:
+                previous = await (await db.execute('SELECT details FROM companion_memory_entries WHERE id=? AND owner=?',
+                                                   (patch['id'], owner))).fetchone()
             result = await db.execute(
                 f"UPDATE companion_memory_entries SET {sets}, updated_at = ? "
                 f"WHERE id = ? AND owner = ?{guard} AND ({differs})",
@@ -187,6 +223,8 @@ async def apply_memory_changes(
             )
             if result.rowcount:
                 changed.append(patch["id"])
+                if previous:
+                    dropped = dropped or bool(set(json.loads(previous[0])) - set(patch['details']))
         count = (await (await db.execute(
             "SELECT COUNT(*) FROM companion_memory_entries WHERE owner = ?", (owner,)
         )).fetchone())[0]
@@ -202,6 +240,9 @@ async def apply_memory_changes(
             if result.rowcount:
                 changed.append(result.lastrowid)
                 count += 1
+        if invalidate_summaries and dropped:
+            # Same transaction as the accepted correction: a stale/rejected proposal cannot wipe summaries or cursors.
+            await _forget_summaries(db, owner)
         if cursor is not None:
             await db.execute(
                 """
@@ -258,7 +299,7 @@ async def _forget_summaries(db: aiosqlite.Connection, owner: str) -> None:
     await db.execute('''INSERT INTO companion_memory_state(owner,enabled,cursor,since,updated_at,revision)
         VALUES(?,1,?,?,?,1) ON CONFLICT(owner) DO UPDATE SET
         cursor=MAX(companion_memory_state.cursor,excluded.cursor),revision=companion_memory_state.revision+1,
-        updated_at=excluded.updated_at''', (owner, latest, latest, time.time()))
+        since=MAX(companion_memory_state.since,excluded.since),updated_at=excluded.updated_at''', (owner, latest, latest, time.time()))
     await db.execute(
         """
         INSERT INTO companion_summaries (conversation_id, owner, text, upto, updated_at)

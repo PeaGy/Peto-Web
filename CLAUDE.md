@@ -1,5 +1,31 @@
 # CLAUDE.md
 
+## Conservative automatic memory attribution (2026-10-27, not committed/deployed)
+
+Owner reported another person's cat Blue became their pet in Profile, and authorized implementing clearer attribution,
+no uncertain guesses and durable-only automatic retention. No original chat/extractor trace was available; identified
+code weaknesses, not a proven single incident cause: subjectless-writing instruction, no preceding referent context,
+and free-form model changes without source evidence. Details: `backend/features/companion/memory-grounding.md`.
+- Auxiliary memory prompt now preserves subjects/ownership and rejects third-party anecdotes, assistant claims,
+  quotations/fiction/inferences and transient problems as personal facts. Summary/legacy/manual prompts also preserve
+  attribution. Automatic extraction uses a separate typed contract; manual Memory-page APIs keep string details.
+- `memory_grounding.py`: new facts require subject=user/certainty=explicit/retention=lasting, a new user message ID
+  and its entire normalized nontruncated utterance. Existing strings are retained, not newly authorized. Vetoes for
+  common VI/EN third-party/uncertain/temporary/negated-ownership signals are conservative, not semantic truth proofs.
+- Extraction JSON has role/ID/conversation and context_only/new_messages. At most4 preceding rows/thread and12 total,
+  plus existing12 new rows; text1500max. Prior context cannot authorize new facts; all source snapshots revalidated
+  under write lock; no reads before off/forget boundary. New DB helper `memory_context_before` is owner/card/provider
+  scoped. No extra LLM request; input/output tokens can increase due to evidence and context.
+- Automatic changes retain omitted facts, reject unsupported title/summary rewrites; explicit grounded `forget` handles
+  correction/removal. Real removals reset entry summary and invalidate Companion summaries atomically. Revision/
+  updated_at guard covers whole-entry removal too; rejected proposals do not wipe summaries. Forget moves context
+  boundary forward. MockProvider emits the real contract; no production test bypass or Blue-specific exception.
+- No bulk repair of stored memories or live VPS data edits. User can correct Blue in chat after deployment or edit
+  Settings; interpretation still depends on model labels, with conservative omissions possible. No frontend/env/
+  dependency/SQLite schema changes; backend restart only. Tests use fake model/gateway; no paid API calls.
+- Final verification:149 passed across `test_memory_grounding`, `test_companion_memory`, `test_memory_scope`,
+  `test_discord_memory`, `test_discord_memory_settings`, `test_companion_cards`, `test_byok`; `git diff --check` clean.
+
 ## Discord bot memory import switch (2026-10-27, complete locally, not committed/deployed)
 
 Account settings now has one existing-style SettingsSwitch, "Trí nhớ từ bot Discord", visible only for Discord logins.
