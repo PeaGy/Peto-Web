@@ -83,7 +83,8 @@ async def _build_system_prompt(
         return "\n\n".join(part for part in (base, agent_guide, tail) if part)
 
     discord_id = discord_id_from_owner(owner)
-    snapshot = await discord_memory.fetch(discord_id) if discord_id and memory else None
+    snapshot = (await discord_memory.fetch(discord_id)
+                if discord_id and memory and user.get('discord_memory_enabled', True) else None)
 
     context = build_memory_context(
         display_name=user.get("display_name") or user.get("username") or "",

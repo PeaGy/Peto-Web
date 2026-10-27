@@ -78,10 +78,18 @@ async def get_user(owner: str) -> dict | None:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
             "SELECT u.owner, u.provider, u.discord_id, u.username, u.display_name, "
-            "u.avatar_url, u.first_login_at, u.last_login_at, a.version AS avatar_version FROM users u "
+            "u.avatar_url, u.first_login_at, u.last_login_at, u.discord_memory_enabled, a.version AS avatar_version FROM users u "
             "LEFT JOIN user_avatars a ON a.owner=u.owner WHERE u.owner = ?",
             (owner,),
         )
         row = await cursor.fetchone()
         return dict(row) if row else None
+
+
+async def set_discord_memory_enabled(owner: str, enabled: bool) -> None:
+    """Only the web's read preference; never modifies Discord bot memory or the web's personal memories."""
+    async with db_connection.connect() as db:
+        await db.execute("UPDATE users SET discord_memory_enabled=? WHERE owner=? AND provider='discord'",
+                         (int(enabled), owner))
+        await db.commit()
 

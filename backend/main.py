@@ -12,6 +12,7 @@ from features.companion import providers_api
 from features.companion import player_api
 from features.companion import cards_api
 from features.accounts import profile as profile_api
+from features.accounts import discord_memory_api
 from features.voice import api as voice_api
 from core import static_files
 from ai import get_provider
@@ -39,6 +40,7 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(imagine_api.router)
 app.include_router(profile_api.router)
+app.include_router(discord_memory_api.router)
 app.include_router(memory_api.router)
 app.include_router(providers_api.router)
 app.include_router(player_api.router)

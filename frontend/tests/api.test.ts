@@ -1,8 +1,20 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { createImagineJob, sendMessage, stopChat } from '../src/shared/api/api';
+import { createImagineJob, sendMessage, stopChat, getDiscordMemorySettings, setDiscordMemorySettings } from '../src/shared/api/api';
 
 afterEach(() => vi.unstubAllGlobals());
 const event = (value: object) => `data: ${JSON.stringify(value)}\n\n`;
+
+it('Discord memory reads bypass cache and writes only the boolean, never an account ID', async () => {
+  const fetchMock = vi.fn(async () => new Response(JSON.stringify({ enabled: false, available: true }), { headers: { 'Content-Type': 'application/json' } }));
+  vi.stubGlobal('fetch', fetchMock);
+  const controller = new AbortController();
+  expect(await getDiscordMemorySettings(controller.signal)).toEqual({ enabled: false, available: true });
+  expect(fetchMock).toHaveBeenLastCalledWith('/api/account/discord-memory', { cache: 'no-store', signal: controller.signal });
+  await setDiscordMemorySettings(false);
+  expect(fetchMock).toHaveBeenLastCalledWith('/api/account/discord-memory', {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: '{"enabled":false}',
+  });
+});
 
 it('giữ citation ID và chữ Unicode khi SSE bị chia ở từng byte', async () => {
   const sources = [{ url: 'https://example.com/source', title: 'Nguồn tiếng Việt', citation_ids: ['web:21'] }];

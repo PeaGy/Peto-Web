@@ -169,6 +169,9 @@ async def init_db() -> None:
             )
             await db.execute("DROP TABLE users")
             await db.execute("ALTER TABLE users_moi RENAME TO users")
+        if "discord_memory_enabled" not in {column[1] for column in user_columns}:
+            # Account preference survives OAuth profile refresh; existing accounts retain their current behavior.
+            await db.execute("ALTER TABLE users ADD COLUMN discord_memory_enabled INTEGER NOT NULL DEFAULT 1")
         await db.execute(
             """
             CREATE TABLE IF NOT EXISTS imagine_jobs (

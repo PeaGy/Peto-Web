@@ -192,6 +192,22 @@ interface ChatHandlers {
 
 export type AuthProvider = "discord" | "google" | "github";
 
+export interface DiscordMemorySettings {
+  enabled: boolean;
+  /** Server configuration only; this does not assert that the bot is reachable or contains memories. */
+  available: boolean;
+}
+
+export async function getDiscordMemorySettings(signal?: AbortSignal): Promise<DiscordMemorySettings> {
+  return json(await fetch('/api/account/discord-memory', { signal, cache: 'no-store' }));
+}
+
+export async function setDiscordMemorySettings(enabled: boolean): Promise<DiscordMemorySettings> {
+  return json(await fetch('/api/account/discord-memory', {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled }),
+  }));
+}
+
 export interface AccountUser {
   custom_avatar?: boolean;
   /** Mã băm ổn định do server sinh. KHÔNG phải khóa owner. */

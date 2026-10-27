@@ -1,5 +1,28 @@
 # CLAUDE.md
 
+## Discord bot memory import switch (2026-10-27, complete locally, not committed/deployed)
+
+Account settings now has one existing-style SettingsSwitch, "Trí nhớ từ bot Discord", visible only for Discord logins.
+Defaults on to preserve current behavior. Choice is stored server-side in additive `users.discord_memory_enabled`
+(default1), not reset by OAuth upsert. No bot writes, deletion, new env/dependency or changes to Peto's own memory toggle.
+- GET/PUT `/api/account/discord-memory`: strict boolean only; identity from verified session, Discord numeric owner
+  only (403 for other providers), no-store. Can save even if gateway unconfigured/offline. Settings never fetch memories.
+- Shared `prompt_context._build_system_prompt` checks the stored flag before gateway fetch; applies to Web Chat and
+  normal eligible Companion turns. Existing `memory=False` exclusion for BYOK/custom cards remains. Off stops new
+  bot reads; it does not erase earlier answers, summaries or personal memories already saved from past interactions.
+- UI loads on opening Account, re-reads when reopened, aborts stale reads, remounts per owner. Optimistic switch with
+  save lock/rollback; reopening during a save waits before re-reading. Uses existing SettingsRow/Switch styling.
+- Tests: backend `test_discord_memory_settings`, `test_discord_memory`, `test_auth`: 64 passed; frontend
+  `DiscordMemorySettings.test.tsx` + `api.test.ts`:27 passed; browser `discord-memory.spec.ts`:4 passed on PC/mobile
+  emulation (reload, second context/device, failed-save rollback, other providers hidden, dark/light, no overflow).
+  Production build passed; docs tests47 passed. Fake gateway/model only, no paid calls. Article docs updated.
+- Deploy: backend restart for additive migration + frontend build; no `.env` edits. Owner commits/deploys.
+
+| Before | After | Why |
+| --- | --- | --- |
+| Discord bot memory is always imported for eligible Discord users | One compact account switch using the shared toggle | Clear per-account control, consistent with other settings |
+| Choice has no saved account state | Server persistence and fresh read when Account reopens | Same preference across devices |
+
 ## Seven Grok-inspired Web Chat UX improvements (2026-10-27, complete locally, not committed/deployed)
 
 Owner authorized all seven, staged in `backend/features/chat/docs/grok-chat-ux-plan.md`, from clean HEAD `3695600`.

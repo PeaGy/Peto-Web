@@ -35,6 +35,7 @@ import { useLocalVoice } from "../features/companion/speech/LocalVoice";
 import AgentConnectDialog, { forgetAgentCode, takeAgentCode } from "../features/settings/AgentConnectDialog";
 import AccountMenu, { placeAccountMenu, type AccountMenuPlace } from "./AccountMenu";
 import SettingsDialog, { CLOSED_SETTINGS, type SettingsSection, type SettingsView } from "../features/settings/SettingsDialog";
+import DiscordMemorySettings from '../features/settings/DiscordMemorySettings';
 import { Segmented, SettingsGroup, SettingsIcon, SettingsRow } from "../features/settings/settingsUi";
 import { useCharacters } from '../features/companion/characters/useCharacters';
 import { activeCard, setActiveCardModel, useCompanionCards } from '../features/companion/cards/companionCards';
@@ -1407,6 +1408,7 @@ function AppContent() {
                 <span>{accountLine(auth.user)}</span>
               </div>
             </div>
+            {auth.user?.provider === 'discord' && <DiscordMemorySettings key={`discord-memory:${auth.user.id}`} open={active} onUnauthorized={handleUnauthorized} />}
             <SettingsRow label="Hướng dẫn Peto" desc="Cách dùng Trò chuyện, Companion và Peto Agent.">
               <a className="settings-button settings-link" href="/docs/" target="_blank" rel="noreferrer">
                 Mở hướng dẫn <SettingsIcon name="external" size={14} />
