@@ -1,5 +1,34 @@
 # CLAUDE.md
 
+## Agent gateway for Peto Harness (2026-11-05, not committed/deployed)
+
+The owner forked DeepSeek Harness as the desktop app for Peto Agent ("ph", `~/Downloads/peto-harness`, private repo
+PeaGy/peto-harness, branch `peto`; its `PETO.md` holds the fork's scope). ph writes its own system prompt and tools, so
+`/api/agent/step` (server-owned prompt and schemas for the Python CLI) cannot serve it. Owner's decisions: OpenAI
+Responses protocol, no Peto prompt injected, steps charged like the CLI, open to every account (no owner-only gate).
+- `features/agent/gateway.py`, router `/api/agent/v1`: `GET /models` (account's Agent models, `id` = catalog key,
+  `display_name`, `context_window`, `max_output_tokens`) and `POST /responses` (stream only). Auth is the CLI's
+  `device_auth` (Bearer `peto_…` from the device flow); quota is `STEP_COST[effort] × step_cost` on the same daily cap,
+  refunded when nothing was produced. Calls `ai.agent.agent_step` with the app's instructions/tools, web search off.
+  `agent_step` gained an optional `tool_choice` (auto/none/required; Claude only honours none).
+- Input: leading `system`/`developer` messages (pi-ai's form) become `instructions`; later ones become a user message
+  prefixed `System update:`. Item types message/function_call/function_call_output/reasoning only; function tools only;
+  user images checked like `/step`. Efforts clamp to the nearest the model supports (pi-ai has `minimal`).
+- Output: the gateway synthesizes standard Responses SSE (`response.created`, `output_item.added/done`,
+  `output_text.delta`, `reasoning_summary_text.delta`, `function_call_arguments.*`, `response.completed` with usage)
+  from `agent_step` events, identical for xAI, OpenAI and the Claude translator. Live slots open in arrival order, so a
+  reasoning item only present in the final output can land after text in the app's history; `_reasoning_first` moves
+  reasoning to the front of each model turn on input. Empty slots are closed with `rs_peto_…`/empty items, which the
+  gateway drops when sent back.
+- Errors are OpenAI-shaped `{"error": {...}}` with `x-should-retry`: quota 429 `insufficient_quota` (no retry),
+  queue 429, retryable provider errors 503, context overflow 400 `context_length_exceeded` (DSH compacts on it). The
+  handler waits up to 15 s for the first event so early failures get real HTTP statuses, then streams with `: ping`
+  comments every 15 s (Cloudflare drops silent connections). Failures after output end in `response.failed`.
+- Tests: `tests/test_agent_gateway.py` (18); with agent_api, models, agent_tool_features, agent_bundle, claude and
+  admin 194 passed. Checked end to end with pi-ai 1.3.0's own `openai-responses` client against a mock backend: text,
+  thinking, a tool call and its result round-tripped, replay accepted. No real provider call, no ph app run, no
+  deploy. Deploy = restart backend; no migration, env or frontend change.
+
 ## Conservative automatic memory attribution (2026-10-27, not committed/deployed)
 
 Owner reported another person's cat Blue became their pet in Profile, and authorized implementing clearer attribution,
