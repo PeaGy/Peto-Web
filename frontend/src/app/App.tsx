@@ -35,6 +35,7 @@ import { useLocalVoice } from "../features/companion/speech/LocalVoice";
 import AgentConnectDialog, { forgetAgentCode, takeAgentCode } from "../features/settings/AgentConnectDialog";
 import AccountMenu, { placeAccountMenu, type AccountMenuPlace } from "./AccountMenu";
 import SettingsDialog, { CLOSED_SETTINGS, type SettingsSection, type SettingsView } from "../features/settings/SettingsDialog";
+import { forgetSettingsLink, takeSettingsLink } from "../features/settings/settingsLink";
 import DiscordMemorySettings from '../features/settings/DiscordMemorySettings';
 import { Segmented, SettingsGroup, SettingsIcon, SettingsRow } from "../features/settings/settingsUi";
 import { useCharacters } from '../features/companion/characters/useCharacters';
@@ -151,6 +152,8 @@ function AppContent() {
   // Liên kết do peto login in ra mang ?agent_code=; mã được giữ qua lúc đăng nhập chuyển hướng.
   const [agentCode, setAgentCode] = useState<string | null>(takeAgentCode);
   const [connectorResult] = useState<string | null>(takeConnectorResult);
+  // Liên kết ?settings=<mục> (Peto Agent bản desktop mở ?settings=agent): mở Cài đặt ở mục đó sau khi vào app.
+  const [settingsLink, setSettingsLink] = useState<SettingsSection | null>(takeSettingsLink);
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeProjectId, setActiveProjectId] = useState<string|null>(null);
@@ -269,6 +272,12 @@ function AppContent() {
   useEffect(() => {
     if (auth?.authenticated && connectorResult) setSettings({ open: true, section: 'ket-noi', page: true });
   }, [auth?.authenticated, connectorResult]);
+  useEffect(() => {
+    if (!auth?.authenticated || !settingsLink) return;
+    forgetSettingsLink();
+    setSettingsLink(null);
+    setSettings({ open: true, section: settingsLink, page: true });
+  }, [auth?.authenticated, settingsLink]);
   const closeSettings = useCallback(() => setSettings((current) => ({ ...current, open: false })), []);
   // Menu của ô tài khoản (như ChatGPT). Nó nằm ngoài thanh bên, vì thanh bên cắt phần tràn khi thu gọn còn 64px.
   const [accountMenu, setAccountMenu] = useState<AccountMenuPlace | null>(null);

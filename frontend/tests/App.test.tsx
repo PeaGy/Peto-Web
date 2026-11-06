@@ -691,6 +691,24 @@ it('liên kết của peto login mở hộp cho phép kết nối sau khi vào a
   expect(sessionStorage.getItem('peto-agent-code')).toBeNull();
 });
 
+it('liên kết ?settings=agent của Peto Agent bản desktop mở thẳng Cài đặt → Peto Agent', async () => {
+  window.history.replaceState(null, '', '/?settings=agent&x=1');
+  await openApp();
+  const dialog = within(await screen.findByRole('dialog', { name: 'Cài đặt' }));
+  expect(dialog.getByRole('button', { name: 'Peto Agent' }).getAttribute('aria-current')).toBe('page');
+  expect(await dialog.findByRole('heading', { name: 'Peto Agent' })).toBeTruthy();
+  expect(window.location.search).toBe('?x=1');
+  expect(sessionStorage.getItem('peto-settings-link')).toBeNull();
+  window.history.replaceState(null, '', '/');
+});
+
+it('liên kết ?settings= lạ bị bỏ qua', async () => {
+  window.history.replaceState(null, '', '/?settings=khong-co');
+  await openApp();
+  expect(window.location.search).toBe('');
+  expect(screen.queryByRole('dialog', { name: 'Cài đặt' })).toBeNull();
+});
+
 it('yêu cầu file bằng chat thường nhận thẻ xem trước, không mở trình sửa hay bắt bấm tạo lại', async () => {
   const artifact: api.DocumentArtifact = { id: 'D1', title: 'Bài văn', filename: 'Bài văn.docx', format: 'docx', style: 'essay', pages: 2, version: 1 };
   const saved = { ...artifact, conversation_id: 'C', created_at: 1, content: '# Bài văn\nNội dung mẫu', versions: [{ version: 1, title: 'Bài văn', created_at: 1 }] };

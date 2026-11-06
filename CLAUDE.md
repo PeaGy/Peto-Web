@@ -1,5 +1,17 @@
 # CLAUDE.md
 
+## Peto Agent account card support (2026-11-06, not committed/deployed)
+
+The owner picked card "B · Thanh hạn mức" (https://claude.ai/artifact/4XMy3XBePSop8KJUthSj1g) for ph's Settings →
+Account; the card itself lives in ph (`PETO.md` "Account card"). Peto Web side:
+- `GET /api/agent/me` adds `steps_reset_at`: next midnight in `resolve_timezone()` as ISO 8601 with offset
+  (`api._steps_reset_at`). The CLI ignores it; ph shows it in the viewer's zone. Test in `test_agent_api.py`.
+- `/?settings=<section>` opens Settings at that section after sign-in (`features/settings/settingsLink.ts`, kept in
+  sessionStorage across OAuth like `?agent_code=`; unknown sections are dropped). ph's "Manage on Peto Web" opens
+  `?settings=agent`. Two `App.test.tsx` cases.
+- Deploy: restart backend and rebuild frontend. ph builds before this deploy show no reset time and land on the home
+  page from "Manage".
+
 ## Peto Agent download page (2026-11-06, not committed/deployed)
 
 Owner picked the "Trưng bày" mockup (https://claude.ai/artifact/2mJz9cfrNXKv55LuQ6sYDQ) for a ph download page like

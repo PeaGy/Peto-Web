@@ -7,6 +7,7 @@ import json
 import re
 import tomllib
 import uuid
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -191,6 +192,10 @@ async def test_device_flow_issues_token_once(client, anon_client):
     me = await anon_client.get("/api/agent/me", headers=bearer(token))
     assert me.status_code == 200
     assert me.json()["device_name"] == "DESKTOP-BINH" and me.json()["steps_limit"] == AGENT_DAILY_STEPS
+    # Giờ có bước mới: nửa đêm sắp tới theo múi giờ máy chủ, có độ lệch để app tự đổi sang giờ của máy.
+    reset = datetime.fromisoformat(me.json()["steps_reset_at"])
+    assert reset.utcoffset() is not None and (reset.hour, reset.minute, reset.second) == (0, 0, 0)
+    assert timedelta(0) < reset - datetime.now(timezone.utc) <= timedelta(days=1, hours=1)
     listed = (await client.get("/api/agent/devices")).json()
     assert [device["name"] for device in listed["devices"]].count("DESKTOP-BINH") >= 1
     assert all(set(device) == {"id", "name", "created_at", "last_used_at"} for device in listed["devices"])

@@ -20,7 +20,7 @@ import logging
 import secrets
 import time
 from collections.abc import AsyncIterator
-from datetime import datetime
+from datetime import datetime, time as clock, timedelta
 from zoneinfo import ZoneInfo
 
 import anyio
@@ -75,6 +75,13 @@ def _hash(token: str) -> str:
 
 def _today() -> str:
     return datetime.now(ZoneInfo(resolve_timezone())).date().isoformat()
+
+
+def _steps_reset_at() -> str:
+    """Lúc số bước trong ngày về 0: nửa đêm sắp tới theo múi giờ máy chủ, dạng ISO 8601 có độ lệch."""
+    zone = ZoneInfo(resolve_timezone())
+    tomorrow = datetime.now(zone).date() + timedelta(days=1)
+    return datetime.combine(tomorrow, clock(0), zone).isoformat()
 
 
 def _sse(payload: dict) -> str:
@@ -258,6 +265,8 @@ async def me(device: dict = Depends(device_auth)) -> dict:
         "device_name": device["name"],
         "steps_used": usage["steps"],
         "steps_limit": AGENT_DAILY_STEPS,
+        # Peto Agent bản desktop hiện giờ có bước mới trên thẻ tài khoản.
+        "steps_reset_at": _steps_reset_at(),
         # Tổng token cả ngày, tính cả phần hội thoại gửi lại ở mỗi bước: đúng lượng dịch vụ AI tính.
         "tokens_used": usage["input_tokens"] + usage["output_tokens"],
         # CLI dùng mức này khi người dùng chưa chọn bằng /effort.
