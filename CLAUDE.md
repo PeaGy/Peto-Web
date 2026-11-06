@@ -26,6 +26,9 @@ motion were measured on deepseek.com/en/harness with REA and live scroll reading
   Any failure → `{"available": false}` and the page offers the CLI. Config default `PeaGy/peto-harness` (public since
   2026-11-06, no release yet); invalid names count as empty. Release steps: `deploy/OPERATIONS.md` "Phát hành bản Peto Agent".
 - Copy claims checked against ph: no auto-update (unsigned builds have no feed), so the page never promises one.
+- `GET /api/v0/check_client_update` (`desktop_release.policy_router`) answers ph's mandatory-update check with
+  "no forced update" (`code 0`, `biz_code 0`, `biz_data null`); ph builds name Peto Web as that origin. Without it the
+  app only records an error and retries with backoff. Code 40005 with `show_content` would force an update.
 - Tests: backend `test_desktop_release.py` (10) and 4 new `test_static_files.py` cases; frontend `Download.test.tsx` (9).
   Checked on a mock stack (fake GitHub through `httpx.MockTransport`) in headless Chromium at 1440 and 390 px, dark and
   light, release present and absent: no console errors, every block revealed, no horizontal overflow. No real GitHub
@@ -61,7 +64,8 @@ Responses protocol, no Peto prompt injected, steps charged like the CLI, open to
   admin 194 passed. Checked end to end with pi-ai 1.3.0's own `openai-responses` client against a mock backend: text,
   thinking, a tool call and its result round-tripped, replay accepted. Deploy = restart backend; no migration, env or
   frontend change. After deploying, the owner signed in from ph's Welcome (dsh-peto-account) and chatted with `peto`
-  through the gateway on 2026-11-05; tool calls from the app are not yet confirmed.
+  through the gateway on 2026-11-05. Tool calls confirmed on 2026-11-06 with the installed app (0.2.2-rc.1.20261106.2):
+  model `peto` read two files, edited one and ran a test command in one turn (4 steps, 47.2K tokens, 54% cache hit).
 
 ## Conservative automatic memory attribution (2026-10-27, not committed/deployed)
 

@@ -201,13 +201,33 @@ macOS thay cho dòng "Sắp có".
 
 Mỗi lần phát hành:
 
-1. Dựng bộ cài trong peto-harness (Windows, chưa ký): `corepack pnpm run package:desktop:win:x64:unsigned`. Bản chưa ký
-   vẫn cần hai biến `DSH_DESKTOP_MANDATORY_UPDATE_TEST_ORIGIN` và `DSH_DESKTOP_MANDATORY_UPDATE_PROD_ORIGIN`;
-   `DSH_DESKTOP_BUILD_VERSION` đặt số phiên bản, ví dụ `0.2.2-peto.1`.
-2. Tạo bản phát hành với thẻ `v<phiên bản>` và đính kèm tệp `.exe`:
+1. Dựng bộ cài trong peto-harness (Windows, chưa ký). Lệnh đọc `apps/desktop/.env.windows` (Git bỏ qua, không chứa
+   khóa nào), lần dựng đầu tiên ngày 6/11/2026 dùng:
+
+   ```text
+   DSH_DESKTOP_APP_ID=shop.pearto.peto.agent
+   DSH_DESKTOP_AUTO_UPDATE_ENV=production
+   DSH_DESKTOP_MANDATORY_UPDATE_PROD_ORIGIN=https://peto.pearto.shop
+   ```
+
+   App ID riêng để Peto Agent cài song song chứ không đè lên DeepSeek Harness. Máy chủ "cập nhật bắt buộc" là Peto Web
+   (`GET /api/v0/check_client_update`, hiện luôn trả "không bắt buộc"). Số phiên bản phải nối dài phiên bản sản phẩm
+   trong `apps/desktop/package.json`, dạng `<sản phẩm>.<ngày>.<thứ tự>`:
 
    ```powershell
-   gh release create v0.2.2-peto.1 "<đường dẫn tới tệp .exe>" --repo PeaGy/peto-harness --title "Peto Agent 0.2.2-peto.1" --notes "Có gì mới…"
+   corepack pnpm run package:desktop:win:x64:unsigned --check --build-version 0.2.2-rc.1.20261106.1
+   corepack pnpm run package:desktop:win:x64:unsigned --build-version 0.2.2-rc.1.20261106.1
+   ```
+
+   Bộ cài nằm ở `apps/desktop/.desktop-build/targets/win-x64/unsigned-artifacts/`. Lệnh tự chạy kiểm tra runtime của
+   bản đã đóng gói; nên cài thử một lần trước khi phát hành.
+2. Tạo bản phát hành với thẻ `v<phiên bản>`, đánh dấu pre-release, và đính kèm tệp `.exe` (đặt lại tên cho dễ nhận,
+   ví dụ `Peto-Agent-Setup-<phiên bản>-x64.exe`; trang nhận ra bản Windows 64-bit nhờ đuôi `.exe` và chữ `x64`). Trên web:
+   Releases → Draft a new release → chọn thẻ mới, nhánh `peto` → kéo tệp vào → Set as a pre-release → Publish. Hoặc
+   với GitHub CLI:
+
+   ```powershell
+   gh release create v0.2.2-rc.1.20261106.1 "<tệp .exe>" --repo PeaGy/peto-harness --target peto --prerelease --title "Peto Agent 0.2.2-rc.1.20261106.1" --notes "Có gì mới…"
    ```
 
 3. Trong 10 phút, trang `/download/` hiện bản mới: nút tải trỏ thẳng tới tệp trên GitHub, kèm số phiên bản, ngày, cỡ

@@ -52,6 +52,7 @@ app.include_router(document_api.router)
 app.include_router(agent_api.router)
 app.include_router(agent_gateway.router)
 app.include_router(desktop_release.router)
+app.include_router(desktop_release.policy_router)
 # /install.ps1 nằm ngoài /api: phải đăng ký trước static_files.mount ở cuối tệp.
 app.include_router(agent_install.router)
 app.include_router(docs_api.router)

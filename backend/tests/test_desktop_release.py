@@ -120,3 +120,12 @@ async def test_no_repo_configured_never_calls_github(github, monkeypatch):
     monkeypatch.setattr(config, "DESKTOP_RELEASES_REPO", "")
     assert await desktop_release.latest() == {"available": False, "releases_url": None}
     assert github["calls"] == []
+
+
+async def test_desktop_app_update_check_says_no_forced_update(anon_client):
+    """Ứng dụng chỉ coi là "không bắt buộc" khi code 0, biz_code 0 và biz_data null (mandatory-update-policy.ts)."""
+    response = await anon_client.get("/api/v0/check_client_update", params={"scenario": "startup"})
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    body = response.json()
+    assert body["code"] == 0 and body["data"]["biz_code"] == 0 and body["data"]["biz_data"] is None

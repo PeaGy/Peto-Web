@@ -159,3 +159,18 @@ async def latest() -> dict:
 async def release() -> JSONResponse:
     """Công khai, không cần đăng nhập: trang /download/ đọc khi mở."""
     return JSONResponse(await latest(), headers={"Cache-Control": "public, max-age=60"})
+
+
+# Ứng dụng Peto Agent (bản dựng từ DeepSeek Harness) hỏi định kỳ máy chủ "cập nhật bắt buộc" đã ghi lúc dựng, ở đây là
+# Peto Web: GET /api/v0/check_client_update. Câu trả lời dưới là "không bắt buộc", đúng dạng ứng dụng chờ
+# (apps/desktop/src/mandatory-update-policy.ts trong peto-harness). Thiếu route này thì ứng dụng vẫn chạy bình thường, chỉ
+# ghi nhận lỗi và hỏi lại thưa dần. Muốn buộc mọi máy cập nhật thì trả code 40005 kèm data.show_content và
+# data.desktop_app_link trỏ về /download/.
+policy_router = APIRouter()
+NO_FORCED_UPDATE = {"code": 0, "msg": "", "data": {"biz_code": 0, "biz_msg": "", "biz_data": None}}
+
+
+@policy_router.get("/api/v0/check_client_update")
+async def check_client_update() -> JSONResponse:
+    """Công khai, không đọc gì từ yêu cầu (kể cả các header nhận dạng máy ứng dụng gửi kèm)."""
+    return JSONResponse(NO_FORCED_UPDATE, headers={"Cache-Control": "no-store"})
