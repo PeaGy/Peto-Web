@@ -60,7 +60,14 @@ Responses protocol, no Peto prompt injected, steps charged like the CLI, open to
   queue 429, retryable provider errors 503, context overflow 400 `context_length_exceeded` (DSH compacts on it). The
   handler waits up to 15 s for the first event so early failures get real HTTP statuses, then streams with `: ping`
   comments every 15 s (Cloudflare drops silent connections). Failures after output end in `response.failed`.
-- Tests: `tests/test_agent_gateway.py` (18); with agent_api, models, agent_tool_features, agent_bundle, claude and
+- Item cap (2026-11-06, not committed/deployed): the gateway has its own `MAX_ITEMS` of 10,000; `/step` keeps 300.
+  The owner's long ph session failed on 300 items: each tool call adds about 3 items, DSH compacts only at 80% of the
+  token window (400K for `peto`), and its overflow-recovery summary resends nearly the whole region, so it hit the same
+  cap and the session stayed stuck. Anthropic documents 100,000 messages per request; OpenAI and xAI document no item
+  cap, only tokens. Over the cap it is still `context_length_exceeded`, now saying to open a new session. The byte cap
+  (16 MB) is unchanged. Possibly the same trap, unverified: if ph resends every past image, a session with more than
+  `MAX_STEP_IMAGES` (8) user images gets a plain 400 on every turn.
+- Tests: `tests/test_agent_gateway.py` (20); with agent_api, models, agent_tool_features, agent_bundle, claude and
   admin 194 passed. Checked end to end with pi-ai 1.3.0's own `openai-responses` client against a mock backend: text,
   thinking, a tool call and its result round-tripped, replay accepted. Deploy = restart backend; no migration, env or
   frontend change. After deploying, the owner signed in from ph's Welcome (dsh-peto-account) and chatted with `peto`

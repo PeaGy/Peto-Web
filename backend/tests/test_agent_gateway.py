@@ -183,6 +183,39 @@ async def test_the_gateways_own_empty_items_are_not_sent_back_to_the_model(anon_
     assert seen["input_items"] == [real, user]
 
 
+async def test_long_sessions_go_past_the_clis_300_item_limit(anon_client, client, monkeypatch):
+    """Bản desktop tự tóm tắt theo token chứ không theo số mục, nên cổng không được chặn phiên ở mốc 300 của CLI."""
+    seen = {}
+
+    async def model(**kwargs):
+        seen.update(kwargs)
+        yield AgentEvent("done", output=(), usage={})
+
+    monkeypatch.setattr(gateway, "agent_step", model)
+    token = await signed_in(anon_client, client)
+    calls = []
+    for n in range(400):
+        calls += [{"type": "function_call", "call_id": f"call_{n}", "name": "read", "arguments": "{}"},
+                  {"type": "function_call_output", "call_id": f"call_{n}", "output": "ok"}]
+    body = {"model": "peto", "stream": True, "input": [{"role": "user", "content": "Làm bài"}, *calls]}
+    response = await anon_client.post("/api/agent/v1/responses", headers=bearer(token), json=body)
+    assert response.status_code == 200
+    assert len(seen["input_items"]) == 801 > agent_api.MAX_ITEMS
+
+
+async def test_too_many_items_asks_for_a_new_session_without_taking_a_step(anon_client, client, monkeypatch):
+    monkeypatch.setattr(gateway, "MAX_ITEMS", 2)
+    token = await signed_in(anon_client, client)
+    turns = [{"role": "user", "content": f"Tin {n}"} for n in range(3)]
+    refused = await anon_client.post("/api/agent/v1/responses", headers=bearer(token),
+                                     json={"model": "peto", "stream": True, "input": turns})
+    assert refused.status_code == 400
+    error = refused.json()["error"]
+    assert error["code"] == "context_length_exceeded"
+    assert "mở phiên mới" in error["message"]
+    assert await steps_used(client) == 0
+
+
 async def test_daily_quota_answers_429_insufficient_quota_without_retry(anon_client, client, monkeypatch):
     monkeypatch.setattr(gateway, "AGENT_DAILY_STEPS", 1)
     token = await signed_in(anon_client, client)

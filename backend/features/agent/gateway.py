@@ -38,7 +38,7 @@ from core.config import AGENT_DAILY_STEPS, AGENT_MODEL, AGENT_REASONING, AGENT_S
 from core.rate_limit import AdmissionDenied
 from features.agent import budget
 from features.agent.api import (
-    MAX_ITEMS, MAX_STEP_IMAGES, STEP_COST, _count_images, _read_body, _today, admission, device_auth,
+    MAX_STEP_IMAGES, STEP_COST, _count_images, _read_body, _today, admission, device_auth,
 )
 
 logger = logging.getLogger("peto_web.agent")
@@ -48,6 +48,10 @@ INSTRUCTION_ROLES = {"system", "developer"}
 ITEM_TYPES = {"message", "function_call", "function_call_output", "reasoning"}
 TOOL_CHOICES = {"auto", "none", "required"}
 MAX_TOOLS = 128
+# Trần 300 mục của /step hợp với Peto Agent CLI, vốn tự tóm tắt ở 240 mục. Peto Agent bản desktop chỉ tự tóm tắt khi gần
+# đầy khung ngữ cảnh tính theo token (80%), và yêu cầu tóm tắt của nó gửi lại gần hết hội thoại, nên trần thấp làm phiên
+# dài kẹt hẳn. Ở cổng, trần này chỉ chặn yêu cầu bất thường; dung lượng đã có trần byte, độ dài thật do token quyết định.
+MAX_ITEMS = 10_000
 EFFORT_ORDER = ("none", "minimal", "low", "medium", "high", "xhigh", "max")
 # Chờ sự kiện đầu tiên tối đa chừng này trước khi gửi header: lỗi xảy ra ngay (hết bước, khóa hỏng, giới hạn lượt)
 # trả về đúng mã HTTP để SDK tự thử lại hoặc dừng. Quá lâu thì mở stream luôn, vì Cloudflare cắt kết nối chưa có
@@ -214,8 +218,8 @@ def _parse(raw: bytes) -> Parsed:
     if not items:
         raise GatewayError(400, "Yêu cầu chưa có tin nào ngoài chỉ dẫn hệ thống.")
     if len(items) > MAX_ITEMS:
-        raise GatewayError(400, f"Hội thoại đã quá {MAX_ITEMS} mục. Hãy tóm tắt hoặc mở phiên mới.",
-                           code="context_length_exceeded")
+        limit = f"{MAX_ITEMS:,}".replace(",", ".")
+        raise GatewayError(400, f"Phiên đã quá {limit} mục. Hãy mở phiên mới.", code="context_length_exceeded")
     if images > MAX_STEP_IMAGES:
         raise GatewayError(400, f"Mỗi lần gọi gửi kèm tối đa {MAX_STEP_IMAGES} ảnh.")
 
