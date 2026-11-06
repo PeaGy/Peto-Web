@@ -23,7 +23,7 @@ import secrets
 import time
 from collections.abc import AsyncIterator
 from contextlib import suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import anyio
 from fastapi import APIRouter, HTTPException, Request
@@ -36,9 +36,9 @@ from ai.base import ProviderError
 from core import usage_events
 from core.config import AGENT_DAILY_STEPS, AGENT_MODEL, AGENT_REASONING, AGENT_STEP_TIMEOUT_SECONDS
 from core.rate_limit import AdmissionDenied
-from features.agent import budget
+from features.agent import budget, gateway_images
 from features.agent.api import (
-    MAX_STEP_IMAGES, STEP_COST, _count_images, _read_body, _today, admission, device_auth,
+    STEP_COST, _check_image, _count_images, _read_body, _today, admission, device_auth,
 )
 
 logger = logging.getLogger("peto_web.agent")
@@ -52,6 +52,12 @@ MAX_TOOLS = 128
 # đầy khung ngữ cảnh tính theo token (80%), và yêu cầu tóm tắt của nó gửi lại gần hết hội thoại, nên trần thấp làm phiên
 # dài kẹt hẳn. Ở cổng, trần này chỉ chặn yêu cầu bất thường; dung lượng đã có trần byte, độ dài thật do token quyết định.
 MAX_ITEMS = 10_000
+# Peto Agent bản desktop tự thay ảnh cũ nhất bằng chữ khi một yêu cầu quá 50 ảnh hay quá 20 MB ảnh (mặc định của nó),
+# nên cổng nhận đúng chừng đó, cộng chỗ cho chữ. Các dịch vụ nhận nhiều hơn: xAI không giới hạn số ảnh, OpenAI 500,
+# Claude 100 trở lên. Trần 8 ảnh và 16 MB của /step vẫn dành cho CLI, vốn chỉ giữ 4 ảnh gần nhất.
+MAX_IMAGES = 50
+MAX_REQUEST_BYTES = 32 * 1024 * 1024
+TOO_LARGE = "Yêu cầu quá 32 MB. Hãy mở phiên mới hoặc gửi ít ảnh hơn."
 EFFORT_ORDER = ("none", "minimal", "low", "medium", "high", "xhigh", "max")
 # Chờ sự kiện đầu tiên tối đa chừng này trước khi gửi header: lỗi xảy ra ngay (hết bước, khóa hỏng, giới hạn lượt)
 # trả về đúng mã HTTP để SDK tự thử lại hoặc dừng. Quá lâu thì mở stream luôn, vì Cloudflare cắt kết nối chưa có
@@ -214,14 +220,16 @@ def _parse(raw: bytes) -> Parsed:
                     images += _count_images(item.get("content"))
                 except HTTPException as err:
                     raise _from_http(err) from None
+        elif kind == "function_call_output":
+            images += _tool_images(item.get("output"))
         items.append({key: value for key, value in item.items() if value is not None})
     if not items:
         raise GatewayError(400, "Yêu cầu chưa có tin nào ngoài chỉ dẫn hệ thống.")
     if len(items) > MAX_ITEMS:
         limit = f"{MAX_ITEMS:,}".replace(",", ".")
         raise GatewayError(400, f"Phiên đã quá {limit} mục. Hãy mở phiên mới.", code="context_length_exceeded")
-    if images > MAX_STEP_IMAGES:
-        raise GatewayError(400, f"Mỗi lần gọi gửi kèm tối đa {MAX_STEP_IMAGES} ảnh.")
+    if images > MAX_IMAGES:
+        raise GatewayError(400, f"Mỗi lần gọi gửi kèm tối đa {MAX_IMAGES} ảnh.")
 
     tools = payload.get("tools") or []
     if not isinstance(tools, list) or len(tools) > MAX_TOOLS:
@@ -245,6 +253,27 @@ def _parse(raw: bytes) -> Parsed:
         raise GatewayError(400, "max_output_tokens phải là số nguyên dương.")
     return Parsed(model, _reasoning_first(items), "\n\n".join(part for part in parts if part), clean_tools,
                   tool_choice, effort, max_output)
+
+
+def _tool_images(output) -> int:
+    """Kiểm kết quả công cụ: chữ, hoặc danh sách phần chữ và ảnh (ảnh chụp màn hình, ảnh đọc từ tệp). Trả số ảnh."""
+    if output is None or isinstance(output, str):
+        return 0
+    if not isinstance(output, list):
+        raise GatewayError(400, "Kết quả công cụ không đúng định dạng.")
+    images = 0
+    for part in output:
+        kind = part.get("type") if isinstance(part, dict) else None
+        if kind == "input_text" and isinstance(part.get("text"), str):
+            continue
+        if kind != "input_image":
+            raise GatewayError(400, "Kết quả công cụ chỉ được có chữ và ảnh.")
+        try:
+            _check_image(part)
+        except HTTPException as err:
+            raise _from_http(err) from None
+        images += 1
+    return images
 
 
 def _effort(requested: str | None, model_key: str) -> str:
@@ -396,7 +425,7 @@ async def create_response(request: Request):
     try:
         device = await _device(request)
         try:
-            raw = await _read_body(request)
+            raw = await _read_body(request, MAX_REQUEST_BYTES, TOO_LARGE)
         except HTTPException as err:
             raise _from_http(err) from None
         parsed = _parse(raw)
@@ -406,6 +435,8 @@ async def create_response(request: Request):
         except ai_models.ModelUnavailable as err:
             raise GatewayError(err.status if err.status != 400 else 404, err.message, code="model_not_found") from None
         effort = _effort(parsed.effort, model.key)
+        items = await anyio.to_thread.run_sync(gateway_images.prepare, parsed.items, model.service)
+        parsed = replace(parsed, items=items)
         day = _today()
         cost = STEP_COST[effort] * model.step_cost
         if await db.take_agent_step(owner, day, AGENT_DAILY_STEPS, cost) is None:

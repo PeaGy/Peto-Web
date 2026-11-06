@@ -282,18 +282,20 @@ async def logout(device: dict = Depends(device_auth)) -> dict:
     return {"revoked": True}
 
 
-async def _read_body(request: Request) -> bytes:
-    too_large = HTTPException(
-        status_code=413,
-        detail="Bước gửi lên quá lớn. Gõ /new (bản cũ: /moi) để bắt đầu hội thoại mới, hoặc đọc ít tệp và gửi ít ảnh hơn mỗi lần.",
-    )
+TOO_LARGE = "Bước gửi lên quá lớn. Gõ /new (bản cũ: /moi) để bắt đầu hội thoại mới, hoặc đọc ít tệp và gửi ít ảnh hơn mỗi lần."
+
+
+async def _read_body(request: Request, limit: int | None = None, message: str = TOO_LARGE) -> bytes:
+    """Đọc thân yêu cầu, dừng ngay khi quá ``limit`` byte (mặc định trần của /step)."""
+    limit = AGENT_MAX_REQUEST_BYTES if limit is None else limit
+    too_large = HTTPException(status_code=413, detail=message)
     declared = request.headers.get("content-length", "")
-    if declared.isdigit() and int(declared) > AGENT_MAX_REQUEST_BYTES:
+    if declared.isdigit() and int(declared) > limit:
         raise too_large
     body = bytearray()
     async for chunk in request.stream():
         body.extend(chunk)
-        if len(body) > AGENT_MAX_REQUEST_BYTES:
+        if len(body) > limit:
             raise too_large
     return bytes(body)
 

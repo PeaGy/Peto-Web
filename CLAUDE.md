@@ -60,14 +60,28 @@ Responses protocol, no Peto prompt injected, steps charged like the CLI, open to
   queue 429, retryable provider errors 503, context overflow 400 `context_length_exceeded` (DSH compacts on it). The
   handler waits up to 15 s for the first event so early failures get real HTTP statuses, then streams with `: ping`
   comments every 15 s (Cloudflare drops silent connections). Failures after output end in `response.failed`.
-- Item cap (2026-11-06, not committed/deployed): the gateway has its own `MAX_ITEMS` of 10,000; `/step` keeps 300.
-  The owner's long ph session failed on 300 items: each tool call adds about 3 items, DSH compacts only at 80% of the
-  token window (400K for `peto`), and its overflow-recovery summary resends nearly the whole region, so it hit the same
-  cap and the session stayed stuck. Anthropic documents 100,000 messages per request; OpenAI and xAI document no item
-  cap, only tokens. Over the cap it is still `context_length_exceeded`, now saying to open a new session. The byte cap
-  (16 MB) is unchanged. Possibly the same trap, unverified: if ph resends every past image, a session with more than
-  `MAX_STEP_IMAGES` (8) user images gets a plain 400 on every turn.
-- Tests: `tests/test_agent_gateway.py` (20); with agent_api, models, agent_tool_features, agent_bundle, claude and
+- Item cap (2026-11-06, owner committed `55a2d1e` and deployed it): the gateway has its own `MAX_ITEMS` of 10,000;
+  `/step` keeps 300. The owner's long ph session failed on 300 items: each tool call adds about 3 items, DSH compacts
+  only at 80% of the token window (400K for `peto`), and its overflow-recovery summary resends nearly the whole region,
+  so it hit the same cap and the session stayed stuck. Anthropic documents 100,000 messages per request; OpenAI and xAI
+  document no item cap, only tokens. Over the cap it is still `context_length_exceeded`, now saying to open a new
+  session.
+- Images (2026-11-06, not committed/deployed; owner picked matching ph over lowering it): ph resends every past image
+  and offloads the oldest only past its own defaults, 50 images or 20 MB of base64 per request (`llm-pi-ai`
+  `DEFAULT_MAX_REQUEST_IMAGES`, `compaction-image-offload`), so the gateway's old 8 (shared with `/step`) stuck any
+  session from the 9th pasted image on. The gateway now has `MAX_IMAGES` 50 and `MAX_REQUEST_BYTES` 32 MB
+  (`_read_body` takes a limit; `/step` keeps 8 images and `PETO_AGENT_MAX_REQUEST_BYTES`). Providers allow more: xAI no
+  image count limit, OpenAI 500, Claude 100 or 600. Images in tool results (pi-ai sends `function_call_output.output` as
+  input_text/input_image parts) are now checked like pasted ones (data URL, magic bytes, 3 MB) and counted; before they
+  were neither, and `ai/claude.py` passed the parts raw into `tool_result`, which Claude rejects.
+  `features/agent/gateway_images.prepare` (run in a worker thread before the step is charged) turns such outputs into
+  text and puts their images in one user message right after the run of outputs (the CLI's `tool_images` shape, which
+  all three services take), then per service: xAI documents only JPG/PNG, so WebP/GIF become PNG; Claude limits each
+  image to 2000×2000 px once a request has more than 20 images, so larger ones are shrunk then. Images Pillow cannot
+  read pass unchanged; conversions are cached by hash (24 entries). Web Chat and the CLI still send WebP/GIF to Grok
+  unchanged; whether Grok really refuses them is unverified (no live call). More image tokens per step: Luna and Haiku
+  bill the owner's API accounts.
+- Tests: `tests/test_agent_gateway.py` (26), `tests/test_gateway_images.py` (6); with agent_api, models, agent_tool_features, agent_bundle, claude and
   admin 194 passed. Checked end to end with pi-ai 1.3.0's own `openai-responses` client against a mock backend: text,
   thinking, a tool call and its result round-tripped, replay accepted. Deploy = restart backend; no migration, env or
   frontend change. After deploying, the owner signed in from ph's Welcome (dsh-peto-account) and chatted with `peto`

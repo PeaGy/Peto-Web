@@ -3,17 +3,20 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import io
 import json
 import uuid
 
 import pytest
+from PIL import Image
 
 from ai.agent import AgentEvent
 from ai.base import ProviderError
 from core.config import SESSION_COOKIE, owner_key
 from features.accounts import auth
 from features.agent import api as agent_api
-from features.agent import gateway
+from features.agent import gateway, gateway_images
 import storage as db
 
 
@@ -201,6 +204,105 @@ async def test_long_sessions_go_past_the_clis_300_item_limit(anon_client, client
     response = await anon_client.post("/api/agent/v1/responses", headers=bearer(token), json=body)
     assert response.status_code == 200
     assert len(seen["input_items"]) == 801 > agent_api.MAX_ITEMS
+
+
+def png_url() -> str:
+    buffer = io.BytesIO()
+    Image.new("RGB", (4, 4), "red").save(buffer, "PNG")
+    return "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode("ascii")
+
+
+def screenshots(count: int, url: str) -> list[dict]:
+    """Một tin người dùng rồi ``count`` lần gọi công cụ, mỗi kết quả là một ảnh, như ảnh chụp màn hình của Peto Agent."""
+    items = [{"role": "user", "content": "Chụp màn hình giúp mình"}]
+    for n in range(count):
+        items += [{"type": "function_call", "call_id": f"call_{n}", "name": "screenshot", "arguments": "{}"},
+                  {"type": "function_call_output", "call_id": f"call_{n}",
+                   "output": [{"type": "input_image", "detail": "auto", "image_url": url}]}]
+    return items
+
+
+async def test_tool_result_images_reach_the_model_after_the_results(anon_client, client, monkeypatch):
+    seen = {}
+
+    async def model(**kwargs):
+        seen.update(kwargs)
+        yield AgentEvent("done", output=(), usage={})
+
+    monkeypatch.setattr(gateway, "agent_step", model)
+    token = await signed_in(anon_client, client)
+    shot = png_url()
+    body = {"model": "peto", "stream": True, "input": screenshots(1, shot)}
+    assert (await anon_client.post("/api/agent/v1/responses", headers=bearer(token), json=body)).status_code == 200
+    items = seen["input_items"]
+    assert items[2] == {"type": "function_call_output", "call_id": "call_0", "output": gateway_images.IMAGE_ONLY_OUTPUT}
+    assert items[3]["role"] == "user"
+    assert items[3]["content"][-1]["image_url"] == shot
+
+
+async def test_up_to_fifty_images_count_tool_results_too_and_no_step_is_taken_beyond(anon_client, client, monkeypatch):
+    async def model(**kwargs):
+        yield AgentEvent("done", output=(), usage={})
+
+    monkeypatch.setattr(gateway, "agent_step", model)
+    token = await signed_in(anon_client, client)
+    shot = png_url()
+    fifty = {"model": "peto", "stream": True, "input": screenshots(gateway.MAX_IMAGES, shot)}
+    assert (await anon_client.post("/api/agent/v1/responses", headers=bearer(token), json=fifty)).status_code == 200
+    used = await steps_used(client)
+    more = {"model": "peto", "stream": True, "input": screenshots(gateway.MAX_IMAGES + 1, shot)}
+    refused = await anon_client.post("/api/agent/v1/responses", headers=bearer(token), json=more)
+    assert refused.status_code == 400
+    assert str(gateway.MAX_IMAGES) in refused.json()["error"]["message"]
+    assert await steps_used(client) == used
+
+
+@pytest.mark.parametrize("part", [
+    {"type": "input_image", "image_url": "https://example.com/a.png"},
+    {"type": "input_file", "file_data": "abc"},
+])
+async def test_tool_results_carry_only_text_and_data_url_images(anon_client, client, part):
+    token = await signed_in(anon_client, client)
+    items = screenshots(1, png_url())
+    items[2]["output"] = [part]
+    refused = await anon_client.post("/api/agent/v1/responses", headers=bearer(token),
+                                     json={"model": "peto", "stream": True, "input": items})
+    assert refused.status_code == 400
+    assert await steps_used(client) == 0
+
+
+async def test_webp_images_reach_peto_as_png(anon_client, client, monkeypatch):
+    seen = {}
+
+    async def model(**kwargs):
+        seen.update(kwargs)
+        yield AgentEvent("done", output=(), usage={})
+
+    monkeypatch.setattr(gateway, "agent_step", model)
+    token = await signed_in(anon_client, client)
+    buffer = io.BytesIO()
+    Image.new("RGB", (4, 4), "blue").save(buffer, "WEBP")
+    webp = "data:image/webp;base64," + base64.b64encode(buffer.getvalue()).decode("ascii")
+    user = {"role": "user", "content": [{"type": "input_image", "image_url": webp}]}
+    await anon_client.post("/api/agent/v1/responses", headers=bearer(token),
+                           json={"model": "peto", "stream": True, "input": [user]})
+    assert seen["input_items"][0]["content"][0]["image_url"].startswith("data:image/png;base64,")
+
+
+async def test_the_gateway_takes_bigger_requests_than_the_clis_step(anon_client, client, monkeypatch):
+    async def model(**kwargs):
+        yield AgentEvent("done", output=(), usage={})
+
+    monkeypatch.setattr(gateway, "agent_step", model)
+    monkeypatch.setattr(agent_api, "AGENT_MAX_REQUEST_BYTES", 2048)
+    token = await signed_in(anon_client, client)
+    body = request()
+    body["input"][1]["content"][0]["text"] = "x" * 4096
+    assert (await anon_client.post("/api/agent/v1/responses", headers=bearer(token), json=body)).status_code == 200
+    monkeypatch.setattr(gateway, "MAX_REQUEST_BYTES", 2048)
+    refused = await anon_client.post("/api/agent/v1/responses", headers=bearer(token), json=body)
+    assert refused.status_code == 413
+    assert refused.json()["error"]["message"] == gateway.TOO_LARGE
 
 
 async def test_too_many_items_asks_for_a_new_session_without_taking_a_step(anon_client, client, monkeypatch):
