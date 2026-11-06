@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-## Peto Agent web search (2026-11-06, not committed/deployed)
+## Peto Agent web search (2026-11-06; owner committed `9f7fd98` and deployed it; first ph build with it: 0.2.2-rc.1.20261106.5)
 
 ph's `web_search` tool only had DeepSeek's providers (DeepSeek sign-in or key), so Peto accounts had no search. The
 owner picked "Peto Web searches for it" and asked for it as close to DeepSeek as possible; ph's half is `PETO.md`
