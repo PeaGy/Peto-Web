@@ -125,9 +125,8 @@ def _http_client():
                              event_hooks={"response": [log_status]})
 
 
-async def _xai_step(instructions: str, items: list[dict], tools: list[dict], effort: str,
-                    web_search: bool = False, max_output_tokens: int | None = None,
-                    tool_choice: str | None = None) -> AsyncIterator[AgentEvent]:
+async def xai_client():
+    """Client xAI dùng chung của Agent (bước agent và tra web), mang token OAuth còn hạn."""
     # Import trễ như ai/__init__.py: chạy mock không cần SDK openai.
     from openai import AsyncOpenAI
 
@@ -141,8 +140,15 @@ async def _xai_step(instructions: str, items: list[dict], tools: list[dict], eff
         _client.api_key = await _auth.get_access_token()
     except XaiAuthError as err:
         raise ProviderError("Peto chưa được kết nối với dịch vụ AI. Người quản trị cần chạy lại lệnh đăng nhập.") from err
+    return _client
+
+
+async def _xai_step(instructions: str, items: list[dict], tools: list[dict], effort: str,
+                    web_search: bool = False, max_output_tokens: int | None = None,
+                    tool_choice: str | None = None) -> AsyncIterator[AgentEvent]:
+    client = await xai_client()
     async for event in _responses_step(
-        _client, "xAI", AGENT_MODEL, min(max_output_tokens or XAI_MAX_OUTPUT_TOKENS, XAI_MAX_OUTPUT_TOKENS), instructions, items, tools, effort,
+        client, "xAI", AGENT_MODEL, min(max_output_tokens or XAI_MAX_OUTPUT_TOKENS, XAI_MAX_OUTPUT_TOKENS), instructions, items, tools, effort,
         auth_message="Kết nối AI của Peto đã hết hạn. Người quản trị cần đăng nhập lại.",
         rate_message="Dịch vụ AI đang nhận nhiều yêu cầu quá. Đợi chút rồi thử lại nhé.",
         web_search=web_search, tool_choice=tool_choice,

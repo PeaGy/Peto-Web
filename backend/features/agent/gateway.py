@@ -32,9 +32,10 @@ from fastapi.responses import JSONResponse, StreamingResponse
 import storage as db
 from ai import models as ai_models
 from ai.agent import AgentEvent, agent_step
+from ai.web_lookup import web_lookup
 from ai.base import ProviderError
 from core import usage_events
-from core.config import AGENT_DAILY_STEPS, AGENT_MODEL, AGENT_REASONING, AGENT_STEP_TIMEOUT_SECONDS
+from core.config import AGENT_DAILY_STEPS, AGENT_MODEL, AGENT_REASONING, AGENT_STEP_TIMEOUT_SECONDS, AGENT_WEB_SEARCH
 from core.rate_limit import AdmissionDenied
 from features.agent import budget, gateway_images
 from features.agent.api import (
@@ -401,6 +402,99 @@ def _provider_failure(err: ProviderError) -> GatewayError:
     if err.retryable:
         return GatewayError(503, str(err), code="server_error", kind="server_error", retry=True)
     return GatewayError(502, str(err), code="provider_error", kind="server_error", retry=False)
+
+
+# Tra web cho công cụ web_search của bản desktop (nhà cung cấp tìm kiếm "Peto"), theo dạng API tìm kiếm của DeepSeek:
+# nhận query, count, ori_question; trả {"results": [{url, title, snippet, summary, date}]}. Mỗi lần tìm là một lần gọi
+# Grok ở mức thấp, nên tính như một bước Peto mức thấp.
+SEARCH_COUNT = 10
+MAX_SEARCH_COUNT = 20
+MAX_QUERY_CHARS = 500
+MAX_QUESTION_CHARS = 128
+MAX_SEARCH_BODY = 64 * 1024
+SEARCH_TIMEOUT_SECONDS = 60.0
+
+
+def _parse_search(raw: bytes) -> tuple[str, int, str | None]:
+    try:
+        payload = json.loads(raw)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        raise GatewayError(400, "Yêu cầu tìm kiếm không phải JSON hợp lệ.") from None
+    if not isinstance(payload, dict):
+        raise GatewayError(400, "Yêu cầu tìm kiếm không hợp lệ.")
+    query = payload.get("query")
+    if not isinstance(query, str) or not query.strip() or len(query) > MAX_QUERY_CHARS:
+        raise GatewayError(400, f"Từ khóa tìm kiếm phải có chữ và dài tối đa {MAX_QUERY_CHARS} ký tự.")
+    count = payload.get("count", SEARCH_COUNT)
+    if not isinstance(count, int) or isinstance(count, bool) or not 1 <= count <= MAX_SEARCH_COUNT:
+        raise GatewayError(400, f"Số kết quả phải từ 1 đến {MAX_SEARCH_COUNT}.")
+    question = payload.get("ori_question")
+    if question is not None and not isinstance(question, str):
+        raise GatewayError(400, "ori_question phải là chuỗi.")
+    question = " ".join(question.split())[:MAX_QUESTION_CHARS] if question else None
+    return " ".join(query.split()), count, question or None
+
+
+@router.post("/search")
+async def search(request: Request):
+    try:
+        device = await _device(request)
+        try:
+            raw = await _read_body(request, MAX_SEARCH_BODY, "Yêu cầu tìm kiếm quá lớn.")
+        except HTTPException as err:
+            raise _from_http(err) from None
+        query, count, question = _parse_search(raw)
+        if not AGENT_WEB_SEARCH:
+            raise GatewayError(503, "Máy chủ Peto đang tắt tra web.", code="search_disabled", kind="server_error",
+                               retry=False)
+        owner = device["owner"]
+        model = ai_models.MODELS["peto"]
+        day = _today()
+        cost = STEP_COST["low"] * model.step_cost
+        if await db.take_agent_step(owner, day, AGENT_DAILY_STEPS, cost) is None:
+            raise GatewayError(429, f"Hôm nay tài khoản đã dùng hết {AGENT_DAILY_STEPS} bước Peto Agent. Lượt mới bắt đầu "
+                               "lúc 0 giờ.", code="insufficient_quota", kind="insufficient_quota", retry=False)
+    except GatewayError as err:
+        return _error_response(err)
+
+    started = time.monotonic()
+    outcome = "complete"
+    try:
+        async with admission.slot(f"agent:{owner}"):
+            async with asyncio.timeout(SEARCH_TIMEOUT_SECONDS):
+                results, usage = await web_lookup(query, count, question)
+    except (AdmissionDenied, ProviderError, TimeoutError) as err:
+        with anyio.CancelScope(shield=True):
+            await db.refund_agent_step(owner, day, cost)
+        if isinstance(err, AdmissionDenied):
+            outcome = err.reason
+            failure = GatewayError(429, "Peto Agent đang bận với nhiều người, thử lại sau chút nhé.",
+                                   code="rate_limit_exceeded", kind="rate_limit_error", retry=True)
+        elif isinstance(err, ProviderError):
+            outcome = "provider_error"
+            logger.warning("Cổng agent tra web lỗi từ nhà cung cấp: %s", err)
+            failure = GatewayError(503 if err.retryable else 502, str(err), code="server_error", kind="server_error",
+                                   retry=err.retryable)
+        else:
+            outcome = "timeout"
+            failure = GatewayError(504, "Tra web chạy quá lâu nên Peto dừng lại.", code="timeout", kind="server_error",
+                                   retry=False)
+        usage_events.record("call", service=model.service, model=model.key, slug=AGENT_MODEL, surface="agent",
+                            purpose="search", complete=False, outcome=outcome,
+                            elapsed_ms=round((time.monotonic() - started) * 1000))
+        return _error_response(failure)
+    except asyncio.CancelledError:
+        with anyio.CancelScope(shield=True):
+            await db.refund_agent_step(owner, day, cost)
+        raise
+    with anyio.CancelScope(shield=True):
+        await db.add_agent_tokens(owner, day, usage.get("input_tokens", 0), usage.get("output_tokens", 0))
+    usage_events.record("call", service=model.service, model=model.key, slug=AGENT_MODEL, surface="agent",
+                        purpose="search", complete=True, outcome=outcome,
+                        elapsed_ms=round((time.monotonic() - started) * 1000),
+                        input_tokens=usage.get("input_tokens"), output_tokens=usage.get("output_tokens"),
+                        search_calls=1, cost_ticks=usage.get("cost_ticks"))
+    return JSONResponse({"results": results}, headers={"Cache-Control": "no-store"})
 
 
 @router.get("/models")

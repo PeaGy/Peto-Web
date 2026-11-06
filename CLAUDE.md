@@ -1,6 +1,27 @@
 # CLAUDE.md
 
-## Peto Agent account card support (2026-11-06, not committed/deployed)
+## Peto Agent web search (2026-11-06, not committed/deployed)
+
+ph's `web_search` tool only had DeepSeek's providers (DeepSeek sign-in or key), so Peto accounts had no search. The
+owner picked "Peto Web searches for it" and asked for it as close to DeepSeek as possible; ph's half is `PETO.md`
+"Web search".
+- `POST /api/agent/v1/search` (`gateway.search`): device token; body as the DeepSeek Search API (`query` ≤ 500,
+  `count` 1–20 default 10, optional `ori_question` cut to 128, `need_content` ignored); reply `{"results": [{url,
+  title, snippet, summary?, date}]}` in that API's shape, `no-store`. Costs `STEP_COST["low"] × peto.step_cost` (1)
+  of the daily Agent steps, refunded on any failure; admission slot `agent:<owner>`, 60 s timeout; errors OpenAI-shaped
+  like the rest of the gateway. Off with `PETO_AGENT_WEB_SEARCH` / `PETO_WEB_SEARCH_ENABLED` false (503
+  `search_disabled`). Usage events: purpose `search`, `search_calls` 1, xAI's reported cost.
+- `ai/web_lookup.py`: one xAI Responses call (`AGENT_MODEL`, reasoning low, `tools=[web_search]`,
+  `tool_choice="required"`, `include=["web_search_call.action.sources"]`, `store=False`) with a JSON-only prompt.
+  Results are only URLs the search returned (`action.sources` plus `url_citation`, normalized, matched ignoring `#…`
+  and a trailing `/`); Grok's summary (600 chars) and date (40) are kept, snippet = summary cut to 200; pages the
+  search returned but Grok did not list follow with title only. No search call at all is an error. `ai/agent.py`
+  `xai_client()` is now shared with `_xai_step`. Mock: two sample results plus an invented URL that must be dropped;
+  `__error__` fails.
+- Tests: `tests/test_agent_search.py` (14). Real Grok output (whether it lists sources and keeps to JSON) is
+  unverified until deploy. Deploy: restart backend; no migration, env or frontend change.
+
+## Peto Agent account card support (2026-11-06; owner committed `8c5fb97` and deployed it)
 
 The owner picked card "B · Thanh hạn mức" (https://claude.ai/artifact/4XMy3XBePSop8KJUthSj1g) for ph's Settings →
 Account; the card itself lives in ph (`PETO.md` "Account card"). Peto Web side:
@@ -9,8 +30,8 @@ Account; the card itself lives in ph (`PETO.md` "Account card"). Peto Web side:
 - `/?settings=<section>` opens Settings at that section after sign-in (`features/settings/settingsLink.ts`, kept in
   sessionStorage across OAuth like `?agent_code=`; unknown sections are dropped). ph's "Manage on Peto Web" opens
   `?settings=agent`. Two `App.test.tsx` cases.
-- Deploy: restart backend and rebuild frontend. ph builds before this deploy show no reset time and land on the home
-  page from "Manage".
+- ph builds before 0.2.2-rc.1.20261106.4 have no account card; ph against an older Peto Web shows no reset time and
+  "Manage" lands on the home page.
 
 ## Peto Agent download page (2026-11-06, not committed/deployed)
 
@@ -78,7 +99,7 @@ Responses protocol, no Peto prompt injected, steps charged like the CLI, open to
   so it hit the same cap and the session stayed stuck. Anthropic documents 100,000 messages per request; OpenAI and xAI
   document no item cap, only tokens. Over the cap it is still `context_length_exceeded`, now saying to open a new
   session.
-- Images (2026-11-06, not committed/deployed; owner picked matching ph over lowering it): ph resends every past image
+- Images (2026-11-06, owner committed `968f600` and deployed it; owner picked matching ph over lowering it): ph resends every past image
   and offloads the oldest only past its own defaults, 50 images or 20 MB of base64 per request (`llm-pi-ai`
   `DEFAULT_MAX_REQUEST_IMAGES`, `compaction-image-offload`), so the gateway's old 8 (shared with `/step`) stuck any
   session from the 9th pasted image on. The gateway now has `MAX_IMAGES` 50 and `MAX_REQUEST_BYTES` 32 MB
