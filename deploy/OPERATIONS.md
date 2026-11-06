@@ -188,6 +188,35 @@ gồm cả lượt chạy mã), và trang dùng số đó cho Peto kể cả khi
 này nên vẫn "chưa có giá", không ghi $0. Với Peto đăng nhập bằng gói thuê bao, đó là số xAI báo, chưa chắc là tiền bị
 trừ. Các model khác vẫn là ước tính từ token theo tệp giá, không gồm tạo ảnh, phí tra web, giọng đọc hay thuế.
 
+## Phát hành bản Peto Agent (trang `/download/`)
+
+Trang `/download/` là trang công khai, không cần đăng nhập. Bộ cài ứng dụng máy tính Peto Agent nằm ở GitHub Releases
+của repo công khai `PETO_DESKTOP_RELEASES_REPO`, không nằm trên VPS. Mặc định là `PeaGy/peto-harness`, chính repo mã
+nguồn của ứng dụng (công khai từ 6/11/2026), nên bộ cài nằm ngay cạnh mã đã dựng ra nó.
+
+Máy chủ đọc `https://api.github.com/repos/<repo>/releases` (không token) và nhớ kết quả 10 phút, lỗi thì 2 phút. Bản
+được chọn là bản mới nhất, không tính bản nháp, có ít nhất một tệp `.exe`, `.msi` hay `.dmg`; bản đánh dấu pre-release
+vẫn được tính. Tệp `.blockmap`, `.yml` hay `.zip` đi kèm không hiện trên trang. Có tệp `.dmg` thì menu tải tự hiện bản
+macOS thay cho dòng "Sắp có".
+
+Mỗi lần phát hành:
+
+1. Dựng bộ cài trong peto-harness (Windows, chưa ký): `corepack pnpm run package:desktop:win:x64:unsigned`. Bản chưa ký
+   vẫn cần hai biến `DSH_DESKTOP_MANDATORY_UPDATE_TEST_ORIGIN` và `DSH_DESKTOP_MANDATORY_UPDATE_PROD_ORIGIN`;
+   `DSH_DESKTOP_BUILD_VERSION` đặt số phiên bản, ví dụ `0.2.2-peto.1`.
+2. Tạo bản phát hành với thẻ `v<phiên bản>` và đính kèm tệp `.exe`:
+
+   ```powershell
+   gh release create v0.2.2-peto.1 "<đường dẫn tới tệp .exe>" --repo PeaGy/peto-harness --title "Peto Agent 0.2.2-peto.1" --notes "Có gì mới…"
+   ```
+
+3. Trong 10 phút, trang `/download/` hiện bản mới: nút tải trỏ thẳng tới tệp trên GitHub, kèm số phiên bản, ngày, cỡ
+   tệp và link "Có gì mới" (trang phát hành trên GitHub). Không cần khởi động lại backend.
+
+Chưa có bản phát hành nào (hoặc GitHub lỗi) thì trang vẫn mở được, nút chính đổi thành "Cài bản dòng lệnh". Ứng dụng
+chưa tự cập nhật: người dùng tải bộ cài mới ở trang này rồi cài đè; thư mục Harness của họ (phiên làm việc, cài đặt)
+không bị bộ cài đụng tới.
+
 ## Kiểm tra code
 
 ```powershell

@@ -1,73 +1,19 @@
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
-import { motionEnabled, readCharacterMotion } from '../companion/characters/characterView';
-import { useReducedMotion } from '../../shared/motion';
 import DocsHome from './DocsHome';
 import DocsReader from './DocsReader';
-import { DISCORD, GITHUB, GROUP_ICONS, Icon, SUGGESTED, pageHref, searchPages, type DocsData, type Hit, type Page } from './docsShared';
+import { DISCORD, GITHUB, GROUP_ICONS, Icon, SUGGESTED, Switch, pageHref, readLight, saveLight, searchPages, useMotion, useScrolled,
+  type DocsData, type Hit, type Page } from './docsShared';
 import './docs.css';
 
 /**
  * Peto Docs tại /docs/: trang đầu (nhân vật và họa tiết theo chuột) và trang bài ba cột, theo hướng "Bàn làm việc" mà
  * chủ dự án chọn, pha giao diện docs của AIRI. Đây là khung chung: tải dữ liệu, đường dẫn, header, tìm kiếm và hai công tắc.
  */
-const THEME_KEY = 'peto-docs-theme';
-const MOTION_KEY = 'peto-docs-motion';
 const HOME_TITLE = 'Peto Docs · Cùng Peto, bắt đầu điều mới';
-
-function readLight() {
-  try { return localStorage.getItem(THEME_KEY) === 'light'; } catch { return false; }
-}
-
-function readMotionChoice(): 'on' | 'off' | null {
-  try {
-    const value = localStorage.getItem(MOTION_KEY);
-    return value === 'on' || value === 'off' ? value : null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Hiệu ứng động (nhân vật theo chuột, họa tiết trôi). Đã bấm công tắc trên header thì theo công tắc. Chưa bấm thì theo
- * "Nhân vật cử động" của Peto (cùng localStorage vì cùng tên miền), mà mặc định của nó theo Cài đặt → Giao diện →
- * Chuyển động của web (index.html gắn data-motion cả ở /docs), không hỏi thẳng thiết bị (từ 13/10/2026).
- */
-function useMotion() {
-  const [choice, setChoice] = useState(readMotionChoice);
-  const webReduces = useReducedMotion();
-  const enabled = choice ? choice === 'on' : motionEnabled(readCharacterMotion(), webReduces);
-  const toggle = () => {
-    const next = enabled ? 'off' : 'on';
-    setChoice(next);
-    try { localStorage.setItem(MOTION_KEY, next); } catch { /* chỉ là lựa chọn hiển thị */ }
-  };
-  return [enabled, toggle] as const;
-}
-
-/** Như header của AIRI: ở đầu trang thì trong suốt để thấy nền, cuộn xuống thì phủ nền mờ. */
-function useScrolled() {
-  const [scrolled, setScrolled] = useState(() => window.scrollY > 0);
-  useEffect(() => {
-    const update = () => setScrolled(window.scrollY > 0);
-    update();
-    window.addEventListener('scroll', update, { passive: true });
-    return () => window.removeEventListener('scroll', update);
-  }, []);
-  return scrolled;
-}
 
 function scrollToHash(hash: string) {
   if (!hash) return;
   requestAnimationFrame(() => document.getElementById(decodeURIComponent(hash.slice(1)))?.scrollIntoView());
-}
-
-function Switch({ label, on, icon, onToggle, className = '' }: {
-  label: string; on: boolean; icon: string; onToggle: () => void; className?: string;
-}) {
-  return <button type="button" role="switch" aria-checked={on} aria-label={label} title={label}
-    className={`docs-switch ${className}`} onClick={onToggle}>
-    <span className="docs-switch-knob"><Icon name={icon} size={13} /></span>
-  </button>;
 }
 
 /** Ô tìm ngay trên header (combobox): gõ không dấu cũng được, ↑↓ để chọn, Enter để mở, Esc để thoát, Ctrl K để tới ô. */
@@ -196,7 +142,7 @@ export default function Docs() {
 
   function toggleTheme() {
     setLight(!light);
-    try { localStorage.setItem(THEME_KEY, light ? 'dark' : 'light'); } catch { /* chỉ là lựa chọn hiển thị */ }
+    saveLight(!light);
   }
 
   // Trang đầu luôn phủ nền cho header như AIRI; trang bài để header trong suốt khi còn ở đầu trang.

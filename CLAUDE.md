@@ -1,13 +1,46 @@
 # CLAUDE.md
 
-## Agent gateway for Peto Harness (2026-11-05, not committed/deployed)
+## Peto Agent download page (2026-11-06, not committed/deployed)
+
+Owner picked the "Trưng bày" mockup (https://claude.ai/artifact/2mJz9cfrNXKv55LuQ6sYDQ) for a ph download page like
+DeepSeek's /harness/, and GitHub Releases for the installers; on 2026-11-06 they made ph's own repo public to host them. Layout and
+motion were measured on deepseek.com/en/harness with REA and live scroll readings; no DeepSeek assets or text copied.
+- Public `/download/` (`main.tsx` mounts `features/download/Download.tsx`, its own chunk; `core/static_files.py` serves
+  index with its own title/description, no `/api/auth/me` preload, a `<noscript>` text with cached release links only,
+  so the HTML never waits for GitHub; `/download/x` stays 404). Uses Docs tokens, fonts, header and the shared theme and
+  motion switches (moved from `Docs.tsx` into `docsShared.tsx`: `readLight`, `saveLight`, `useMotion`, `useScrolled`,
+  `Switch`).
+- Sections: hero with split download button + menu (every installer, macOS "Sắp có" when no .dmg, CLI), meta line
+  (version, date, label, size, GitHub notes link), HTML replica of the app (`Showcase.tsx`, `--u` container units, dark
+  in both themes), 4 cards with pausable looping demos (files, terminal, Peto account models, Read Only / Workspace
+  Write / Full access), 3 install steps with a SmartScreen sketch ("More info" → "Run anyway"; unsigned), CLI card with
+  the real `irm <origin>/install.ps1 | iex`, "Có bản mới thì sao?" (reinstall; the installer never touches the Harness
+  home, per ph `installer/uninstall.nsh`), closing CTA, footer credit "Dựng trên DeepSeek Harness · MIT".
+- Motion (`scrollMotion.ts`, only under `.docs-motion`): blocks with `data-reveal` fade/rise once in view (20/30/40 px,
+  closing block blur 10 px, grid rows stagger 90 ms), app window tilts to 5°/0.985 over the first 900 px with a soft
+  follow, closing glow grows from 0.85. Motion off shows everything static. No smooth-scroll library (DeepSeek has none).
+- Backend `features/agent/desktop_release.py`, `GET /api/agent/desktop/release` (public, `max-age=60`): reads
+  `api.github.com/repos/<PETO_DESKTOP_RELEASES_REPO>/releases?per_page=10` without a token, no redirects, 5 s, 2 MB cap,
+  cache 10 min (2 min on failure, single-flight). Picks the newest non-draft release (pre-releases count) with an .exe/
+  .msi/.dmg; download URLs must be under `https://github.com/<repo>/releases/download/`; sha256 from GitHub's `digest`.
+  Any failure → `{"available": false}` and the page offers the CLI. Config default `PeaGy/peto-harness` (public since
+  2026-11-06, no release yet); invalid names count as empty. Release steps: `deploy/OPERATIONS.md` "Phát hành bản Peto Agent".
+- Copy claims checked against ph: no auto-update (unsigned builds have no feed), so the page never promises one.
+- Tests: backend `test_desktop_release.py` (10) and 4 new `test_static_files.py` cases; frontend `Download.test.tsx` (9).
+  Checked on a mock stack (fake GitHub through `httpx.MockTransport`) in headless Chromium at 1440 and 390 px, dark and
+  light, release present and absent: no console errors, every block revealed, no horizontal overflow. No real GitHub
+  call, no real installer build. Deploy: rebuild frontend + restart backend; no migration.
+
+## Agent gateway for Peto Harness (2026-11-05; owner committed `e29858f` and deployed it)
 
 The owner forked DeepSeek Harness as the desktop app for Peto Agent ("ph", `~/Downloads/peto-harness`, private repo
 PeaGy/peto-harness, branch `peto`; its `PETO.md` holds the fork's scope). ph writes its own system prompt and tools, so
 `/api/agent/step` (server-owned prompt and schemas for the Python CLI) cannot serve it. Owner's decisions: OpenAI
 Responses protocol, no Peto prompt injected, steps charged like the CLI, open to every account (no owner-only gate).
 - `features/agent/gateway.py`, router `/api/agent/v1`: `GET /models` (account's Agent models, `id` = catalog key,
-  `display_name`, `context_window`, `max_output_tokens`) and `POST /responses` (stream only). Auth is the CLI's
+  `display_name`, `context_window`, `max_output_tokens`, plus Peto's own `reasoning_efforts`, the model's
+  `supported_efforts`, added after `e29858f` so ph offers only real levels; not deployed yet) and `POST /responses`
+  (stream only). Auth is the CLI's
   `device_auth` (Bearer `peto_…` from the device flow); quota is `STEP_COST[effort] × step_cost` on the same daily cap,
   refunded when nothing was produced. Calls `ai.agent.agent_step` with the app's instructions/tools, web search off.
   `agent_step` gained an optional `tool_choice` (auto/none/required; Claude only honours none).
@@ -26,8 +59,9 @@ Responses protocol, no Peto prompt injected, steps charged like the CLI, open to
   comments every 15 s (Cloudflare drops silent connections). Failures after output end in `response.failed`.
 - Tests: `tests/test_agent_gateway.py` (18); with agent_api, models, agent_tool_features, agent_bundle, claude and
   admin 194 passed. Checked end to end with pi-ai 1.3.0's own `openai-responses` client against a mock backend: text,
-  thinking, a tool call and its result round-tripped, replay accepted. No real provider call, no ph app run, no
-  deploy. Deploy = restart backend; no migration, env or frontend change.
+  thinking, a tool call and its result round-tripped, replay accepted. Deploy = restart backend; no migration, env or
+  frontend change. After deploying, the owner signed in from ph's Welcome (dsh-peto-account) and chatted with `peto`
+  through the gateway on 2026-11-05; tool calls from the app are not yet confirmed.
 
 ## Conservative automatic memory attribution (2026-10-27, not committed/deployed)
 

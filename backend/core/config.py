@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -266,6 +267,12 @@ AGENT_DIRECT_SOURCES = ("openai-key", "chatgpt-plan")
 AGENT_DISABLED_SOURCES = tuple(
     value for value in (part.strip() for part in os.getenv("PETO_AGENT_DISABLED_SOURCES", "").split(","))
     if value in AGENT_DIRECT_SOURCES)
+# Trang tải Peto Agent (/download/, từ 5/11/2026): bộ cài ứng dụng máy tính nằm ở GitHub Releases của repo công khai
+# "chủ/tên", mặc định chính repo mã nguồn của ứng dụng (chủ dự án chuyển nó sang công khai ngày 6/11/2026). Để trống thì
+# trang chỉ còn hướng dẫn CLI; tên không hợp lệ cũng coi như trống.
+_DESKTOP_RELEASES_REPO = os.getenv("PETO_DESKTOP_RELEASES_REPO", "PeaGy/peto-harness").strip()
+DESKTOP_RELEASES_REPO = (_DESKTOP_RELEASES_REPO if re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})/[A-Za-z0-9._-]{1,100}",
+                                                                   _DESKTOP_RELEASES_REPO) else "")
 
 # --- Phục vụ frontend đã build (production) ------------------------------
 # Khi thư mục này tồn tại, backend phục vụ luôn giao diện; VPS chỉ cần một

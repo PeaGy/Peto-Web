@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { motionEnabled, readCharacterMotion } from '../companion/characters/characterView';
+import { useReducedMotion } from '../../shared/motion';
 
 /** Dữ liệu, tiện ích và biểu tượng dùng chung cho Peto Docs (Docs.tsx, DocsHome.tsx, DocsReader.tsx). */
 export type Page = { slug: string; title: string; group: string; description: string; body: string; keywords: string[] };
@@ -71,9 +73,74 @@ const PATHS: Record<string, ReactNode> = {
   help: <><circle cx="12" cy="12" r="9" /><path d="M9.6 9.3a2.5 2.5 0 1 1 3.4 2.3c-.6.3-1 .8-1 1.5v.4m0 3v.01" /></>,
   file: <><path d="M6 3h8l4 4v14H6Z" /><path d="M14 3v4h4" /></>,
   code: <path d="m8 8-4 4 4 4m8-8 4 4-4 4m-6 3 4-14" />,
+  download: <path d="M12 4v11m-5-5 5 5 5-5M5 20h14" />,
+  pause: <path d="M9 5.5v13M15 5.5v13" />,
+  play: <path d="M8 5.5v13l10-6.5Z" />,
+  chevron: <path d="m6 9 6 6 6-6" />,
 };
 
 export function Icon({ name, size = 18 }: { name: string; size?: number }) {
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"
     strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">{PATHS[name] ?? PATHS.file}</svg>;
+}
+
+/* Khung chung của Peto Docs và trang tải: nền sáng/tối, hiệu ứng động, header phủ nền khi cuộn, công tắc. */
+
+export const THEME_KEY = 'peto-docs-theme';
+export const MOTION_KEY = 'peto-docs-motion';
+
+export function readLight() {
+  try { return localStorage.getItem(THEME_KEY) === 'light'; } catch { return false; }
+}
+
+function readMotionChoice(): 'on' | 'off' | null {
+  try {
+    const value = localStorage.getItem(MOTION_KEY);
+    return value === 'on' || value === 'off' ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Hiệu ứng động (nhân vật theo chuột, họa tiết trôi). Đã bấm công tắc trên header thì theo công tắc. Chưa bấm thì theo
+ * "Nhân vật cử động" của Peto (cùng localStorage vì cùng tên miền), mà mặc định của nó theo Cài đặt → Giao diện →
+ * Chuyển động của web (index.html gắn data-motion cả ở /docs), không hỏi thẳng thiết bị (từ 13/10/2026).
+ */
+export function useMotion() {
+  const [choice, setChoice] = useState(readMotionChoice);
+  const webReduces = useReducedMotion();
+  const enabled = choice ? choice === 'on' : motionEnabled(readCharacterMotion(), webReduces);
+  const toggle = () => {
+    const next = enabled ? 'off' : 'on';
+    setChoice(next);
+    try { localStorage.setItem(MOTION_KEY, next); } catch { /* chỉ là lựa chọn hiển thị */ }
+  };
+  return [enabled, toggle] as const;
+}
+
+/** Như header của AIRI: ở đầu trang thì trong suốt để thấy nền, cuộn xuống thì phủ nền mờ. */
+export function useScrolled() {
+  const [scrolled, setScrolled] = useState(() => window.scrollY > 0);
+  useEffect(() => {
+    const update = () => setScrolled(window.scrollY > 0);
+    update();
+    window.addEventListener('scroll', update, { passive: true });
+    return () => window.removeEventListener('scroll', update);
+  }, []);
+  return scrolled;
+}
+
+/** Ghi lựa chọn nền sáng/tối của Peto Docs (dùng chung với trang tải /download/). */
+export function saveLight(light: boolean) {
+  try { localStorage.setItem(THEME_KEY, light ? 'light' : 'dark'); } catch { /* chỉ là lựa chọn hiển thị */ }
+}
+
+export function Switch({ label, on, icon, onToggle, className = '' }: {
+  label: string; on: boolean; icon: string; onToggle: () => void; className?: string;
+}) {
+  return <button type="button" role="switch" aria-checked={on} aria-label={label} title={label}
+    className={`docs-switch ${className}`} onClick={onToggle}>
+    <span className="docs-switch-knob"><Icon name={icon} size={13} /></span>
+  </button>;
 }

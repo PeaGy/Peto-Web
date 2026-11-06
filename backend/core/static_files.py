@@ -52,6 +52,41 @@ _COMPANION_SETTINGS = (r"companion/settings(?:/(?:modules(?:/(?:brain|voice|hear
 _APP_PATH = re.compile(r"(?:chat/[^/.]+|companion|%s|admin|imagine(?:/[^/.]+/[^/.]+)?)/?\Z" % _COMPANION_SETTINGS)
 
 
+_DOWNLOAD_TITLE = "Tải Peto Agent · Peto"
+_DOWNLOAD_DESCRIPTION = ("Tải Peto Agent cho Windows: trợ lý đọc, sửa tệp và chạy lệnh ngay trong thư mục dự án của bạn. "
+                         "Đăng nhập bằng tài khoản Peto, không cần khóa API.")
+
+
+def _public_page(page: str, title: str, description: str) -> str:
+    """Trang công khai (Docs, trang tải): tiêu đề và mô tả riêng cho thẻ trình duyệt và ảnh xem trước link, bỏ tải sẵn
+    /api/auth/me vì trang không cần đăng nhập."""
+    page = re.sub(r"<title>.*?</title>", "<title>" + html.escape(title) + "</title>", page)
+    for name in ("description", "og:description"):
+        page = re.sub(r'(<meta (?:name|property)="' + name + r'" content=")[^"]*',
+                      lambda m: m[1] + html.escape(description, quote=True), page)
+    page = re.sub(r'(<meta property="og:title" content=")[^"]*', lambda m: m[1] + html.escape(title, quote=True), page)
+    return page.replace('<link rel="preload" href="/api/auth/me" as="fetch" crossorigin />', "")
+
+
+def _download_noscript(origin: str | None) -> str:
+    """Chữ của trang tải cho máy đọc không chạy JavaScript (tra web). Chỉ dùng bản phát hành đã nhớ sẵn: không bắt trang
+    chờ GitHub."""
+    from features.agent import desktop_release
+    release = desktop_release.peek()
+    parts = ["<noscript><main><h1>Peto Agent</h1>",
+             "<p>" + html.escape(_DOWNLOAD_DESCRIPTION) + "</p>"]
+    if release and release.get("available"):
+        for item in release["installers"]:
+            parts.append(f'<p><a href="{html.escape(item["url"], quote=True)}">Tải {html.escape(item["name"])}</a> '
+                         f'(bản {html.escape(release["version"])})</p>')
+    if release and release.get("releases_url"):
+        parts.append(f'<p><a href="{html.escape(release["releases_url"], quote=True)}">Mọi bản phát hành</a></p>')
+    if origin:
+        parts.append("<p>Bản dòng lệnh: mở PowerShell rồi chạy <code>irm "
+                     + html.escape(origin) + "/install.ps1 | iex</code></p>")
+    return "".join(parts) + "</main></noscript>"
+
+
 def _safe_path(static_dir: Path, relative: str) -> Path | None:
     """Chặn path traversal: kết quả phải nằm trong ``static_dir``."""
     candidate = (static_dir / relative).resolve()
@@ -183,12 +218,7 @@ def mount(app: FastAPI, static_dir: Path) -> bool:
                 raise HTTPException(404, 'Không tìm thấy bài hướng dẫn.')
             title = article['title'] + ' · Peto Docs' if article else 'Peto Docs · Cùng Peto, bắt đầu điều mới'
             description = article['description'] if article else 'Hướng dẫn tiếng Việt cho Peto Web, Companion và Agent CLI.'
-            page = await anyio.Path(index).read_text(encoding='utf-8')
-            page = re.sub(r'<title>.*?</title>', '<title>' + html.escape(title) + '</title>', page)
-            for name in ('description', 'og:description'):
-                page = re.sub(r'(<meta (?:name|property)="' + name + r'" content=")[^"]*', lambda m: m[1] + html.escape(description, quote=True), page)
-            page = re.sub(r'(<meta property="og:title" content=")[^"]*', lambda m: m[1] + html.escape(title, quote=True), page)
-            page = page.replace('<link rel="preload" href="/api/auth/me" as="fetch" crossorigin />', '')
+            page = _public_page(await anyio.Path(index).read_text(encoding='utf-8'), title, description)
             # Máy đọc không chạy JavaScript (tra web, Google) thấy chữ của bài; trình duyệt bỏ qua <noscript>.
             from features.docs import snapshot
             page = page.replace('</body>', snapshot.noscript(article, docs_api.pages()[1]) + '</body>', 1)
@@ -196,6 +226,12 @@ def mount(app: FastAPI, static_dir: Path) -> bool:
                 page = page.replace('</head>', f'<link rel="alternate" type="text/markdown" '
                                     f'href="/api/docs/{html.escape(article["slug"], quote=True)}.md" />\n</head>', 1)
             # Link /docs dán vào Discord hay Messenger cũng hiện banner og.png như trang chủ.
+            page = await with_preview(page, request)
+            return HTMLResponse(page, headers={'Cache-Control': 'no-cache'})
+
+        if full_path in ('download', 'download/'):
+            page = _public_page(await anyio.Path(index).read_text(encoding='utf-8'), _DOWNLOAD_TITLE, _DOWNLOAD_DESCRIPTION)
+            page = page.replace('</body>', _download_noscript(public_origin(request)) + '</body>', 1)
             page = await with_preview(page, request)
             return HTMLResponse(page, headers={'Cache-Control': 'no-cache'})
 

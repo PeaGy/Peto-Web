@@ -64,6 +64,7 @@ async def test_models_need_a_device_token_and_list_the_accounts_models(anon_clie
     peto = next(model for model in listing["data"] if model["id"] == "peto")
     assert peto["owned_by"] == "peto" and peto["display_name"]
     assert peto["context_window"] > 0 and peto["max_output_tokens"] > 0
+    assert peto["reasoning_efforts"] and set(peto["reasoning_efforts"]) <= {"none", "low", "medium", "high", "xhigh", "max"}
 
 
 async def test_a_reply_streams_as_openai_responses_events_and_costs_a_step(anon_client, client):

@@ -92,6 +92,31 @@ async def test_docs_pages_carry_their_text_for_readers_without_javascript(site_c
     assert home.count('<a href="/docs/') == len(docs_api.pages()[1]) and 'text/markdown' not in home
 
 
+@pytest.mark.parametrize('path', ['/download', '/download/'])
+async def test_download_page_has_its_title_and_text_without_javascript(site_client, monkeypatch, path):
+    from features.agent import desktop_release
+    url = 'https://github.com/PeaGy/peto-harness/releases/download/v1/peto-x64.exe'
+    monkeypatch.setattr(desktop_release, 'peek', lambda: {
+        'available': True, 'version': '1.0.0', 'releases_url': 'https://github.com/PeaGy/peto-harness/releases',
+        'installers': [{'name': 'peto-x64.exe', 'url': url}]})
+    response = await site_client.get(path)
+    assert response.status_code == 200
+    assert '<title>Tải Peto Agent · Peto</title>' in response.text
+    noscript = response.text.split('<noscript>', 1)[1]
+    assert '<h1>Peto Agent</h1>' in noscript and f'<a href="{url}">Tải peto-x64.exe</a>' in noscript
+
+
+async def test_download_page_never_waits_for_github(site_client, monkeypatch):
+    from features.agent import desktop_release
+
+    async def fail():
+        raise AssertionError('trang không được chờ GitHub')
+    monkeypatch.setattr(desktop_release, 'latest', fail)
+    monkeypatch.setattr(desktop_release, 'peek', lambda: None)
+    page = (await site_client.get('/download/')).text
+    assert '<noscript><main><h1>Peto Agent</h1>' in page and 'Tải ' not in page.split('<noscript>', 1)[1].split('</p>', 1)[1]
+
+
 def test_snapshot_escapes_text_and_drops_unsafe_links():
     from features.docs.snapshot import markdown_html
     out = markdown_html('## Tiêu <b>đề</b>\n- [x](javascript:alert(1)) và [y](//evil.test) và [z](/docs/a/)\n'
@@ -179,6 +204,7 @@ async def test_app_deep_links_have_spa_fallback(site_client, path, method):
     '/companion/settings/cards/0123456789ABCDEF0123456789ABCDEF', '/companion/settings/cards/peto/edit/more',
     '/imagine/missing.js/asset.png', '/redoc', '/openapi.json', '/install-missing.ps1',
     '/chat', '/chat/thread/extra', '/chat/missing.js', '/admin/overview', '/admin/x.js',
+    '/download/windows', '/download/x/', '/downloads',
 ])
 async def test_fallback_does_not_hide_missing_endpoints_or_assets(site_client, path):
     response = await site_client.get(path)

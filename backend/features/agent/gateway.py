@@ -381,7 +381,9 @@ async def list_models(request: Request):
         limits = budget.limits(model.key)
         data.append({"id": model.key, "object": "model", "created": 0, "owned_by": "peto",
                      "display_name": model.label, "context_window": limits["context"],
-                     "max_output_tokens": limits["output"]})
+                     "max_output_tokens": limits["output"],
+                     # Ngoài chuẩn OpenAI: để app chỉ hiện các mức suy nghĩ model này thật sự nhận.
+                     "reasoning_efforts": list(ai_models.supported_efforts(model.key))})
     return JSONResponse({"object": "list", "data": data}, headers={"Cache-Control": "no-store"})
 
 
