@@ -42,6 +42,9 @@ class QuotedSourceIn(BaseModel):
         return value
 
 
+REQUEST_ID_PATTERN = r'^[a-zA-Z0-9-]{16,64}$'
+
+
 class ChatRequest(BaseModel):
     @model_validator(mode='before')
     @classmethod
@@ -50,7 +53,7 @@ class ChatRequest(BaseModel):
             raise ValueError('Chat tạm và chính sách lưu riêng chưa được hỗ trợ. Yêu cầu này chưa được gửi tới AI.')
         return data
 
-    request_id: str | None = Field(default=None, pattern=r'^[a-zA-Z0-9-]{16,64}$')
+    request_id: str | None = Field(default=None, pattern=REQUEST_ID_PATTERN)
     project_id: str | None = Field(default=None, max_length=64)
     project_file_ids: list[Annotated[str, Field(max_length=64)]] = Field(default_factory=list, max_length=4)
     branch_message_id: int | None = Field(default=None, gt=0)
@@ -80,7 +83,7 @@ class ChatRequest(BaseModel):
 
 
 class StopRequest(BaseModel):
-    request_id: str = Field(pattern=r'^[a-zA-Z0-9-]{16,64}$')
+    request_id: str = Field(pattern=REQUEST_ID_PATTERN)
 
 
 class ConversationUpdate(BaseModel):

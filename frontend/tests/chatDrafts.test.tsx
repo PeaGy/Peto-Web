@@ -29,6 +29,24 @@ it('lưu chữ nguyên vẹn nhưng không lưu tệp hay URL xem trước; xóa
   expect(sessionStorage.getItem(key())).toBeNull();
 });
 
+it('giữ bản sửa cũ qua nâng cấp và chỉ dọn đúng bản được xác nhận', () => {
+  sessionStorage.setItem(key(), JSON.stringify({ text: 'Nháp soạn', rejected_edit: { messageId: 1, text: 'Bản sửa từ tab cũ' } }));
+  const store = new ChatDraftStore();
+  const earlier = { messageId: 2, text: 'Bản trước', requestId: '0123456789abcdef' };
+  const latest = { ...earlier, text: 'Bản mới hơn' };
+  store.saveEdit(key(), earlier);
+  store.saveEdit(key(), latest);
+  expect(store.resolveEdit(key(), earlier)).toBe(false);
+  expect(new ChatDraftStore().get(key()).edits).toEqual([
+    expect.objectContaining({ messageId: 1, text: 'Bản sửa từ tab cũ', conflict: true }),
+    expect.objectContaining(latest),
+  ]);
+  expect(store.resolveEdit(key(), latest)).toBe(true);
+  expect(new ChatDraftStore().get(key())).toMatchObject({
+    text: 'Nháp soạn', edits: [expect.objectContaining({ messageId: 1, text: 'Bản sửa từ tab cũ' })],
+  });
+});
+
 it('xác nhận gửi xóa đúng nháp cũ, không xóa chat đang mở hoặc chữ/tệp thêm sau khi gửi', () => {
   const store = new ChatDraftStore();
   store.setText(key(), 'Đã gửi');

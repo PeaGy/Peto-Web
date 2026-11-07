@@ -4,16 +4,16 @@ from __future__ import annotations
 from pathlib import Path
 from time import perf_counter
 from core import usage_events
-from fastapi import Depends, HTTPException, Query
+from fastapi import Depends, HTTPException, Query, Response
 from fastapi.responses import FileResponse
 import storage as db
 from features.accounts.auth import current_owner
 from features.chat import conversations as conversation_actions
 from features.chat.history import _public_message
-from features.chat.schemas import ConversationUpdate, StopRequest
+from features.chat.schemas import ConversationUpdate, REQUEST_ID_PATTERN, StopRequest
 from fastapi import APIRouter
 from features.chat import service
-from storage import projects, chat_lineage
+from storage import projects, chat_lineage, chat_turns
 router = APIRouter()
 router.add_api_route("/api/chat", service.chat, methods=["POST"])
 
@@ -28,6 +28,13 @@ async def stop_chat(body: StopRequest, owner: str = Depends(current_owner)):
         message = next((_public_message(item) for item in rows if item['id'] == row['user_message_id']), None)
     return {'stopped': row['state'] == 'stopped', 'state': row['state'],
             'conversation_id': row['conversation_id'], 'message': message}
+
+
+@router.get('/api/chat/turn')
+async def chat_turn_receipt(response: Response, request_id: str = Query(pattern=REQUEST_ID_PATTERN),
+                            owner: str = Depends(current_owner)):
+    response.headers['Cache-Control'] = 'private, no-store'
+    return await chat_turns.web_receipt(owner, request_id)
 
 @router.get("/api/conversations")
 async def list_conversations(

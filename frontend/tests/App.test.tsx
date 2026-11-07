@@ -15,7 +15,7 @@ vi.mock('../src/features/documents/documentApi', async original => ({ ...await o
 
 vi.mock('../src/shared/api/api', async (original) => ({
   ...await original<typeof import('../src/shared/api/api')>(),
-  getAuthState: vi.fn(), listConversations: vi.fn(), getMessages: vi.fn(), getConversationPreview: vi.fn(),
+  getAuthState: vi.fn(), listConversations: vi.fn(), getMessages: vi.fn(), getConversationPreview: vi.fn(), getChatTurnReceipt: vi.fn(),
   conversationVersions: vi.fn(), updateConversation: vi.fn(),
   sendMessage: vi.fn(), stopChat: vi.fn(), deleteConversation: vi.fn(), logout: vi.fn(),
   listImagineJobs: vi.fn(), createImagineJob: vi.fn(),
@@ -51,6 +51,7 @@ beforeEach(() => {
     user: { id: 'acc-111', provider: 'discord', username: 'demo', display_name: 'Demo', avatar_url: '' } });
   vi.mocked(api.listConversations).mockResolvedValue({ conversations: [conversation('A'), conversation('B')], has_more: false });
   vi.mocked(api.getMessages).mockResolvedValue([]);
+  vi.mocked(api.getChatTurnReceipt).mockResolvedValue({ state: 'missing' });
   vi.mocked(api.getConversationPreview).mockResolvedValue({ messages: [], truncated: false });
   vi.mocked(api.deleteConversation).mockResolvedValue();
   vi.mocked(api.listImagineJobs).mockResolvedValue([]);
@@ -2318,6 +2319,82 @@ it('giữ phần sửa từ tab cũ qua tải lại mà không đè nháp soạn
   fireEvent.click(screen.getByRole('button', { name: 'Bỏ bản sửa' }));
   expect(screen.queryByRole('textbox', { name: 'Bản sửa chưa gửi' })).toBeNull();
   expect(screen.getByRole('textbox', { name: 'Nhắn cho Peto' })).toHaveProperty('value', 'Nháp soạn tin riêng');
+});
+
+describe('khôi phục bản sửa khi luồng ngắt trước xác nhận', () => {
+  const original: api.Message = { id: 12, role: 'user', content: 'Câu hỏi cũ trước khi sửa' };
+  const edited = 'Bản sửa khi mất mạng\nGiữ nguyên dòng này';
+  const stored: api.Message = { id: 14, role: 'user', content: edited };
+  const response: api.Message = { id: 15, role: 'assistant', content: 'Đáp án của bản sửa', status: 'complete' };
+
+  async function submitEdit() {
+    fireEvent.click(await screen.findByRole('button', { name: 'Sửa tin nhắn', exact: true }));
+    const editor = screen.getByRole('textbox', { name: 'Sửa tin nhắn' });
+    fireEvent.change(editor, { target: { value: edited } });
+    fireEvent.submit(editor.closest('form')!);
+    await waitFor(() => expect(api.sendMessage).toHaveBeenCalledOnce());
+    return vi.mocked(api.sendMessage).mock.calls[0][0].requestId;
+  }
+
+  it('mất mạng trước khi lưu vẫn mở lại đúng chữ sau F5 và dùng lại mã lượt khi chủ động gửi', async () => {
+    window.history.replaceState(null, '', '/chat/A');
+    vi.mocked(api.getMessages).mockResolvedValue([original]);
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('Mất mạng'));
+    vi.mocked(api.sendMessage).mockImplementationOnce(async (_payload, _handlers, signal) => {
+      await new Promise<void>((_resolve, reject) => signal?.addEventListener('abort', () => reject(signal.reason), { once: true }));
+    });
+    const app = render(<App />);
+    const composer = await screen.findByRole('textbox', { name: 'Nhắn cho Peto' });
+    fireEvent.change(composer, { target: { value: 'Nháp soạn tin riêng' } });
+    const requestId = await submitEdit();
+    const key = draftKey({ ownerId: 'acc-111', conversationId: 'A', projectId: null });
+    expect(JSON.parse(sessionStorage.getItem(key)!).edit_drafts).toEqual([{ messageId: 12, requestId, text: edited }]);
+    act(() => window.dispatchEvent(new Event('offline')));
+    expect(await screen.findByRole('textbox', { name: 'Bản sửa chưa gửi' })).toHaveProperty('value', edited);
+    expect(api.getChatTurnReceipt).not.toHaveBeenCalled();
+    act(() => window.dispatchEvent(new Event('online')));
+    await screen.findByRole('button', { name: 'Mở lại bản sửa' });
+    expect(api.sendMessage).toHaveBeenCalledOnce();
+
+    app.unmount();
+    render(<App />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Mở lại bản sửa' }));
+    const editor = screen.getByRole('textbox', { name: 'Sửa tin nhắn' });
+    expect(editor).toHaveProperty('value', edited);
+    vi.mocked(api.sendMessage).mockImplementationOnce(async (_payload, handlers) => {
+      vi.mocked(api.getMessages).mockResolvedValue([stored, response]);
+      handlers.onMeta?.('A', 'low', stored);
+      handlers.onDelta?.(response.content);
+      handlers.onDone?.(response.id);
+    });
+    fireEvent.submit(editor.closest('form')!);
+    await screen.findByText(response.content);
+    expect(api.sendMessage).toHaveBeenCalledTimes(2);
+    expect(api.sendMessage).toHaveBeenLastCalledWith(expect.objectContaining({
+      requestId, conversationId: 'A', branchMessageId: 12, message: edited,
+    }), expect.anything(), expect.anything());
+    expect(JSON.parse(sessionStorage.getItem(key)!)).toEqual({ text: 'Nháp soạn tin riêng' });
+  });
+
+  it.each(['A', 'branch-id'])('đối chiếu đúng lượt đã lưu khi mất xác nhận (%s)', async destination => {
+    window.history.replaceState(null, '', '/chat/A');
+    vi.mocked(api.getMessages).mockResolvedValue([original]);
+    vi.mocked(api.sendMessage).mockImplementationOnce(async () => {
+      vi.mocked(api.getChatTurnReceipt).mockResolvedValue({
+        state: 'saved', conversation_id: destination, message_id: 14, content: edited,
+      });
+      vi.mocked(api.getMessages).mockImplementation(async id => id === destination ? [stored, response] : [original]);
+      throw new TypeError('Mất xác nhận');
+    });
+    render(<App />);
+    const requestId = await submitEdit();
+    await screen.findByText(response.content);
+    expect(api.getChatTurnReceipt).toHaveBeenCalledWith(requestId, expect.any(AbortSignal));
+    expect(api.sendMessage).toHaveBeenCalledOnce();
+    expect(window.location.pathname).toBe(`/chat/${destination}`);
+    expect(screen.queryByRole('textbox', { name: 'Bản sửa chưa gửi' })).toBeNull();
+    expect(sessionStorage.getItem(draftKey({ ownerId: 'acc-111', conversationId: 'A', projectId: null }))).toBeNull();
+  });
 });
 
 it('lỗi sau khi nhận tin có thể thử lại từ tin đã lưu', async () => {

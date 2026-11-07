@@ -16,17 +16,15 @@ export function ReplyRecoveryNotice({ recovery }: { recovery: ReturnType<typeof 
   </div>;
 }
 
-export function RejectedEditNotice({ text, onReload, onDiscard, busy }: {
-  text: string; onReload?: () => void; onDiscard: () => void; busy: boolean;
+export function EditDraftNotice({ text, message, action, onDiscard }: {
+  text: string; message: string; action?: { label: string; run: () => void; disabled?: boolean }; onDiscard: () => void;
 }) {
   const copy = useMessageCopy();
   return <div className="reply-recovery rejected-edit">
-    <span role="status">{onReload
-      ? 'Tin nhắn gốc đã thay đổi. Hãy tải bản mới nhất. Phần bạn vừa sửa được giữ bên dưới.'
-      : 'Phần chỉnh sửa này chưa được gửi.'}</span>
+    <span role="status">{message}</span>
     {text && <textarea aria-label="Bản sửa chưa gửi" value={text} rows={2} readOnly />}
     <div className="rejected-edit-actions">
-      {onReload && <button type="button" disabled={busy} onClick={onReload}>Tải bản mới nhất</button>}
+      {action && <button type="button" disabled={action.disabled} onClick={action.run}>{action.label}</button>}
       {text && <button type="button" onClick={() => void copy.copy(text)}>{copy.label}</button>}
       <button type="button" onClick={onDiscard}>Bỏ bản sửa</button>
     </div>

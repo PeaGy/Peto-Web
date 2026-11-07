@@ -4,8 +4,8 @@ export const CHAT_DRAFT_PREFIX = 'peto.chat-draft.v1:';
 export type NewChatContext = { ownerId: string; projectId: string | null };
 export type DraftScope = { ownerId: string; conversationId: string | null; projectId: string | null };
 export type DraftQuote = { message_id: number; text: string };
-export type RejectedEdit = { messageId: number; text: string };
-type Draft = { text: string; files: DraftFile[]; revision: number; quote?: DraftQuote; rejectedEdit?: RejectedEdit };
+export type EditDraft = { messageId: number; text: string; requestId?: string; conflict?: true };
+type Draft = { text: string; files: DraftFile[]; revision: number; quote?: DraftQuote; edits: EditDraft[] };
 export type DraftSnapshot = { key: string; revision: number; fileIds: string[]; quote?: DraftQuote };
 
 function safeQuote(value: unknown): DraftQuote | undefined {
@@ -13,6 +13,14 @@ function safeQuote(value: unknown): DraftQuote | undefined {
   const quote = value as Partial<DraftQuote>;
   if (Number.isSafeInteger(quote.message_id) && quote.message_id! > 0 && typeof quote.text === 'string'
     && quote.text.trim() && quote.text.length <= 2000) return { message_id: quote.message_id!, text: quote.text };
+}
+
+function safeEdit(value: unknown): EditDraft | undefined {
+  if (!value || typeof value !== 'object') return;
+  const { messageId, text, requestId, conflict } = value as Partial<EditDraft>;
+  if (typeof messageId !== 'number' || !Number.isSafeInteger(messageId) || messageId <= 0 || typeof text !== 'string') return;
+  if (requestId !== undefined && (typeof requestId !== 'string' || !/^[a-zA-Z0-9-]{16,64}$/.test(requestId))) return;
+  return { messageId, text, requestId, conflict: conflict === true ? true : undefined };
 }
 
 export function draftKey(scope: DraftScope): string {
@@ -41,21 +49,21 @@ export class ChatDraftStore {
     if (!draft) {
       let text = '';
       let quote: DraftQuote | undefined;
-      let rejectedEdit: RejectedEdit | undefined;
+      let edits: EditDraft[] = [];
       try {
         const saved: unknown = JSON.parse(this.storage().getItem(key) ?? 'null');
         if (saved && typeof saved === 'object') {
           if ('text' in saved && typeof saved.text === 'string') text = saved.text;
           if ('quoted_source' in saved) quote = safeQuote(saved.quoted_source);
-          if ('rejected_edit' in saved && saved.rejected_edit && typeof saved.rejected_edit === 'object') {
-            const { messageId, text } = saved.rejected_edit as Partial<RejectedEdit>;
-            if (typeof messageId === 'number' && Number.isSafeInteger(messageId) && messageId > 0 && typeof text === 'string') {
-              rejectedEdit = { messageId, text };
-            }
+          if ('edit_drafts' in saved && Array.isArray(saved.edit_drafts)) {
+            edits = saved.edit_drafts.map(safeEdit).filter(edit => edit !== undefined);
+          } else if ('rejected_edit' in saved) {
+            const legacy = safeEdit(saved.rejected_edit);
+            if (legacy) edits = [{ ...legacy, conflict: true }];
           }
         }
       } catch { /* Storage bị chặn hoặc dữ liệu hỏng: vẫn dùng được ô soạn. */ }
-      draft = { text, files: [], revision: 0, quote, rejectedEdit };
+      draft = { text, files: [], revision: 0, quote, edits };
       this.drafts.set(key, draft);
     }
     return draft;
@@ -90,10 +98,20 @@ export class ChatDraftStore {
     if (this.timer === undefined) this.timer = setTimeout(() => this.flush(), 250);
   }
 
-  setRejectedEdit(key: string, edit: RejectedEdit | undefined) {
-    this.get(key).rejectedEdit = edit;
+  saveEdit(key: string, edit: EditDraft) {
+    const draft = this.get(key);
+    draft.edits = [...draft.edits.filter(previous => previous.messageId !== edit.messageId), edit];
     this.dirty.add(key);
     this.flush();
+  }
+
+  resolveEdit(key: string, edit: EditDraft, replacement?: EditDraft) {
+    const draft = this.drafts.get(key);
+    if (!draft?.edits.includes(edit)) return false;
+    draft.edits = draft.edits.flatMap(previous => previous !== edit ? [previous] : replacement ? [replacement] : []);
+    this.dirty.add(key);
+    this.flush();
+    return true;
   }
 
   snapshot(key: string): DraftSnapshot {
@@ -147,9 +165,9 @@ export class ChatDraftStore {
     for (const key of this.dirty) {
       const draft = this.drafts.get(key);
       try {
-        if (draft?.text || draft?.quote || draft?.rejectedEdit) {
+        if (draft && (draft.text || draft.quote || draft.edits.length)) {
           this.storage().setItem(key, JSON.stringify({
-            text: draft.text, quoted_source: draft.quote, rejected_edit: draft.rejectedEdit,
+            text: draft.text, quoted_source: draft.quote, edit_drafts: draft.edits.length ? draft.edits : undefined,
           }));
         }
         else this.storage().removeItem(key);

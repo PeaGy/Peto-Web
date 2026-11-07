@@ -34,6 +34,30 @@ async def get(owner, request_id):
         return dict(row) if row else None
 
 
+async def web_receipt(owner, request_id):
+    """Verify that the exact turn still has a user message in owned Web Chat history."""
+    async with connection.connect() as db:
+        db.row_factory = aiosqlite.Row
+        row = await (await db.execute("""SELECT t.state,t.outcome,t.conversation_id,t.user_message_id,t.user_digest,m.content
+            FROM chat_turns t
+            LEFT JOIN conversations c ON c.id=t.conversation_id AND c.owner=t.owner AND c.mode='chat'
+            LEFT JOIN messages m ON m.conversation_id=c.id AND m.id=t.user_message_id AND m.role='user'
+            WHERE t.owner=? AND t.request_id=?""", (owner, request_id))).fetchone()
+    if not row:
+        return {'state': 'missing'}
+    if row['user_message_id'] is not None:
+        if row['content'] is None or _digest(row['content']) != row['user_digest']:
+            return {'state': 'unavailable'}
+        return {'state': 'saved', 'conversation_id': row['conversation_id'],
+                'message_id': row['user_message_id'], 'content': row['content']}
+    if row['state'] == 'running':
+        return {'state': 'pending'}
+    # A bare stop can race binding in the admission transaction. Keep the request ID until the turn settles.
+    if row['state'] == 'stopped' and not row['outcome']:
+        return {'state': 'missing'}
+    return {'state': 'unsaved'}
+
+
 async def reserve(owner, request_id):
     async with connection.connect() as db:
         await db.execute('BEGIN IMMEDIATE')

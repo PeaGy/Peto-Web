@@ -7,7 +7,7 @@ from fastapi import HTTPException
 import storage as db
 from storage import chat_turns, connection, projects, chat_context
 from features.chat import service, schemas, conversations, work_log
-from conftest import TEST_OWNER, read_events
+from conftest import TEST_OWNER, read_events, sign_in
 from shared.chat_history_tools import ChatHistory
 from ai import StreamChunk
 from storage import documents
@@ -19,6 +19,30 @@ async def bound(owner=TEST_OWNER, project=None):
     await chat_turns.reserve(owner, rid)
     uid = await chat_turns.bind(owner, rid, cid, None, 'Câu hỏi thử')
     return cid, rid, uid
+
+
+async def test_web_receipt_checks_exact_request_and_current_owned_message(client):
+    request = uuid.uuid4().hex
+    params = {'request_id': request}
+    assert (await client.get('/api/chat/turn', params=params)).json() == {'state': 'missing'}
+    await chat_turns.reserve(TEST_OWNER, request)
+    assert (await client.get('/api/chat/turn', params=params)).json() == {'state': 'pending'}
+    await chat_turns.finish(TEST_OWNER, request, 'error')
+    assert (await client.get('/api/chat/turn', params=params)).json() == {'state': 'unsaved'}
+
+    cid, saved, uid = await bound()
+    result = await client.get('/api/chat/turn', params={'request_id': saved})
+    assert result.headers['cache-control'] == 'private, no-store'
+    assert result.json() == {'state': 'saved', 'conversation_id': cid, 'message_id': uid, 'content': 'Câu hỏi thử'}
+    await chat_turns.stop(TEST_OWNER, saved)
+    revision = uuid.uuid4().hex
+    await chat_turns.reserve(TEST_OWNER, revision)
+    new_uid = await conversations.retry_in_place(TEST_OWNER, cid, uid, 'Câu đã sửa', request_id=revision)
+    assert (await client.get('/api/chat/turn', params={'request_id': saved})).json() == {'state': 'unavailable'}
+    assert (await client.get('/api/chat/turn', params={'request_id': revision})).json() == {
+        'state': 'saved', 'conversation_id': cid, 'message_id': new_uid, 'content': 'Câu đã sửa'}
+    await sign_in(client)
+    assert (await client.get('/api/chat/turn', params={'request_id': revision})).json() == {'state': 'missing'}
 
 
 async def test_bind_rolls_back_user_insert_if_link_fails(client):

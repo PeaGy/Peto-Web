@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useReducer, useState } from 'react';
-import { ChatDraftStore, draftKey, type DraftScope, type DraftSnapshot, type DraftQuote, type RejectedEdit } from './chatDrafts';
+import { ChatDraftStore, draftKey, type DraftScope, type DraftSnapshot, type DraftQuote, type EditDraft } from './chatDrafts';
 import type { DraftFile } from './files';
 
 export function useChatDrafts(scope: DraftScope | null, authenticated: boolean | undefined) {
@@ -30,14 +30,19 @@ export function useChatDrafts(scope: DraftScope | null, authenticated: boolean |
     if (key) { store.setFiles(key, update); changed(); }
   }, [store, key]);
   const setDraftQuote = useCallback((quote: DraftQuote | null) => { if (key) { store.setQuote(key, quote); changed(); } }, [store, key]);
-  const setRejectedEdit = useCallback((edit: RejectedEdit | undefined) => { if (key) { store.setRejectedEdit(key, edit); changed(); } }, [store, key]);
+  const saveEdit = useCallback((edit: EditDraft) => { if (key) { store.saveEdit(key, edit); changed(); } }, [store, key]);
+  const resolveEdit = useCallback((edit: EditDraft, replacement?: EditDraft) => {
+    if (!key || !store.resolveEdit(key, edit, replacement)) return false;
+    changed();
+    return true;
+  }, [store, key]);
   const clearDrafts = useCallback(() => { store.clear(); changed(); }, [store]);
   const acceptDraft = useCallback((snapshot: DraftSnapshot, conversationId?: string) => { store.accept(snapshot, conversationId); changed(); }, [store]);
   const removeConversationDraft = useCallback((id: string) => { store.removeConversation(id); changed(); }, [store]);
   const removeProjectDraft = useCallback((id: string) => { store.removeProject(id); changed(); }, [store]);
   const draft = key ? store.get(key) : null;
-  return { draft: draft?.text ?? '', draftFiles: draft?.files ?? [], draftQuote: draft?.quote, rejectedEdit: draft?.rejectedEdit,
-    setDraft, setDraftFiles, setDraftQuote, setRejectedEdit,
+  return { draft: draft?.text ?? '', draftFiles: draft?.files ?? [], draftQuote: draft?.quote, editDrafts: draft?.edits ?? [],
+    setDraft, setDraftFiles, setDraftQuote, saveEdit, resolveEdit,
     snapshotDraft: () => key ? store.snapshot(key) : null,
     clearDrafts, acceptDraft, removeConversationDraft, removeProjectDraft };
 }

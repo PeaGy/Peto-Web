@@ -16,7 +16,7 @@ import ProjectChatHeader from '../features/projects/ProjectChatHeader';
 import { ChatMessage } from '../features/chat/ChatMessage';
 import { messageText } from '../features/chat/draftLinks';
 import { disconnectStream, networkInterrupted, useReplyRecovery } from '../features/chat/useReplyRecovery';
-import { RejectedEditNotice, ReplyRecoveryNotice } from '../features/chat/ReplyRecoveryNotice';
+import { EditDraftNotice, ReplyRecoveryNotice } from '../features/chat/ReplyRecoveryNotice';
 import { Greeting } from '../features/chat/Greeting';
 import { LoadingIndicator } from '../shared/ui/LoadingIndicator';
 import { MenuIcon, PinIcon } from './navigationIcons';
@@ -45,7 +45,7 @@ import Composer from "../features/chat/Composer";
 import ChatFileDropZone from '../features/chat/ChatFileDropZone';
 import { useChatDrafts } from '../features/chat/useChatDrafts';
 import { CHAT_SELECTION_ERROR, useChatSelection } from '../features/chat/useChatSelection';
-import { newChatContext, type NewChatContext } from '../features/chat/chatDrafts';
+import { newChatContext, type EditDraft, type NewChatContext } from '../features/chat/chatDrafts';
 import TextEditDialog from '../shared/ui/TextEditDialog';
 import HistorySearch from './HistorySearch';
 import ConversationMenu from './ConversationMenu';
@@ -66,6 +66,7 @@ import {
   deleteConversation,
   getAppInfo,
   getAuthState,
+  getChatTurnReceipt,
   getMessages,
   listConversations,
   updateConversation,
@@ -172,6 +173,8 @@ function AppContent() {
   const [renameText, setRenameText] = useState('');
   const [editTarget, setEditTarget] = useState<Message | null>(null);
   const [editText, setEditText] = useState('');
+  const [editCheck, setEditCheck] = useState<{ edit: EditDraft; state: 'checking' | 'ready' | 'unconfirmed' } | null>(null);
+  const [editCheckAttempt, setEditCheckAttempt] = useState(0);
   const [retryAvailable, setRetryAvailable] = useState(false);
   const retryRevision = useRef<ChatRevision | undefined>(undefined);
   const [metadataBusy, setMetadataBusy] = useState(false);
@@ -237,12 +240,13 @@ function AppContent() {
   const replyVisible = streaming && Boolean(replyRef.current && isSelectedReply(replyRef.current));
   const rootContext = newChatContext(location.state, auth?.user?.id ?? '');
   const draftConversationId = view === 'chat' ? routedConversationId : conversationId;
-  const { draft, setDraft, draftFiles, setDraftFiles, draftQuote, setDraftQuote, rejectedEdit, setRejectedEdit,
+  const { draft, setDraft, draftFiles, setDraftFiles, draftQuote, setDraftQuote, editDrafts, saveEdit, resolveEdit,
     snapshotDraft, acceptDraft, clearDrafts,
     removeConversationDraft, removeProjectDraft } = useChatDrafts(auth?.authenticated && auth.user ? {
       ownerId: auth.user.id, conversationId: draftConversationId,
       projectId: view === 'chat' && !routedConversationId ? rootContext.projectId : activeProjectId,
     } : null, authChecked.current ? auth?.authenticated : undefined);
+  const latestEdit = editDrafts.at(-1);
   const [showJump, setShowJump] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [theme, setTheme] = useState<ThemeChoice>(readStoredTheme);
@@ -594,6 +598,63 @@ function AppContent() {
     },
   });
 
+  useEffect(() => {
+    const requestId = latestEdit?.requestId;
+    if (!requestId || !latestEdit || !routedConversationId || routedConversationId !== conversationId
+      || view !== 'chat' || !auth?.authenticated || !recovery.online || recovery.pending || streaming || loadingConversation || editTarget) return;
+    const edit = latestEdit;
+    const controller = new AbortController();
+    const session = authVersion.current;
+    const current = () => !controller.signal.aborted && session === authVersion.current
+      && conversationIdRef.current === routedConversationId && viewRef.current === 'chat';
+    setEditCheck({ edit, state: 'checking' });
+    const timeout = window.setTimeout(() => {
+      if (!current()) return;
+      controller.abort();
+      setEditCheck({ edit, state: 'unconfirmed' });
+    }, 8000);
+    void (async () => {
+      try {
+        const receipt = await getChatTurnReceipt(requestId, controller.signal);
+        if (!current()) return;
+        if (receipt.state === 'saved' && receipt.content === edit.text.trim()) {
+          if (receipt.conversation_id !== conversationId) {
+            if (!resolveEdit(edit)) return;
+            navigate({ pathname: chatRoute(receipt.conversation_id), search: window.location.search });
+          } else {
+            const stored = await getMessages(conversationId, controller.signal, settings => {
+              if (!current()) return;
+              setArchived(Boolean(settings.archived));
+              setActiveProjectId(settings.project_id ?? null);
+              setLegacyRoleplay(settings.persona === 'roleplay');
+            });
+            if (!current()) return;
+            const found = stored.some(row => row.id === receipt.message_id && row.role === 'user' && row.content === receipt.content);
+            if (!resolveEdit(edit, found ? undefined : { messageId: edit.messageId, text: edit.text, conflict: true })) return;
+            setMessages(stored);
+            setLoadFailed(false);
+            setError(null);
+          }
+          void refreshConversations();
+        } else if (receipt.state === 'unsaved' || receipt.state === 'unavailable' || receipt.state === 'saved'
+          || (receipt.state === 'missing' && edit.conflict)) {
+          resolveEdit(edit, { messageId: edit.messageId, text: edit.text,
+            conflict: edit.conflict || receipt.state === 'saved' || receipt.state === 'unavailable' ? true : undefined });
+        } else {
+          setEditCheck({ edit, state: receipt.state === 'missing' ? 'ready' : 'unconfirmed' });
+        }
+      } catch (err) {
+        if (!current()) return;
+        if (err instanceof UnauthorizedError) handleUnauthorized();
+        else setEditCheck({ edit, state: 'unconfirmed' });
+      } finally {
+        window.clearTimeout(timeout);
+      }
+    })();
+    return () => { window.clearTimeout(timeout); controller.abort(); };
+  }, [latestEdit, editCheckAttempt, routedConversationId, conversationId, view, auth?.authenticated, recovery.online,
+    recovery.pending, streaming, loadingConversation, editTarget, resolveEdit, navigate, refreshConversations, handleUnauthorized]);
+
   const allConversations = [...conversations,...projectState.projects.flatMap(project => projectState.chats[project.id]?.items ?? [])];
   const waitingForTitle = allConversations.some(item =>
     item.id === conversationId && (item.title_state === 'pending' ||
@@ -923,6 +984,45 @@ function AppContent() {
     }
   }
 
+  function canResumeEdit(edit: EditDraft) {
+    return !edit.conflict && (!edit.requestId || (editCheck?.edit === edit && editCheck.state === 'ready'));
+  }
+
+  function openEditor(target: Message) {
+    const saved = editDrafts.find(edit => edit.messageId === target.id);
+    if (saved && !canResumeEdit(saved)) {
+      if (saved !== latestEdit) saveEdit(saved);
+      return;
+    }
+    setEditTarget(target);
+    setEditText(saved?.text ?? target.content);
+  }
+
+  function editDraftNotice(edit: EditDraft, id: string) {
+    const target = messages.find(row => row.id === edit.messageId && row.role === 'user');
+    const busy = loadingConversation || deleting || !recovery.online;
+    let message = 'Phần chỉnh sửa này chưa được gửi.';
+    let action: { label: string; run: () => void; disabled?: boolean } | undefined;
+    if (edit.conflict) {
+      if (target || loadingConversation || loadFailed) {
+        message = 'Tin nhắn gốc đã thay đổi. Hãy tải bản mới nhất. Phần bạn vừa sửa được giữ bên dưới.';
+        action = { label: 'Tải bản mới nhất', run: () => void loadConversation(id), disabled: busy };
+      }
+    } else if (!recovery.online) {
+      message = 'Bản sửa được giữ trong tab này. Peto sẽ đối chiếu khi có mạng.';
+    } else if (canResumeEdit(edit)) {
+      if (target && !readOnly) action = { label: 'Mở lại bản sửa', run: () => openEditor(target), disabled: busy };
+      else if (loadFailed) action = { label: 'Tải bản mới nhất', run: () => void loadConversation(id), disabled: busy };
+    } else if (editCheck?.edit === edit && editCheck.state === 'unconfirmed') {
+      message = 'Chưa xác nhận được bản sửa đã lưu hay chưa. Phần bạn vừa sửa được giữ bên dưới.';
+      action = { label: 'Kiểm tra lại', run: () => setEditCheckAttempt(attempt => attempt + 1), disabled: busy };
+    } else {
+      message = 'Đang đối chiếu bản sửa với lịch sử…';
+    }
+    return <EditDraftNotice key={JSON.stringify([id, edit.messageId])} text={edit.text}
+      message={message} action={action} onDiscard={() => resolveEdit(edit)} />;
+  }
+
   async function submit(revision?: ChatRevision) {
     const text = revision ? revision.text.trim() : messageText(draft);
     const hasAttachments = revision ? Boolean(revision.target.attachments?.length) : draftFiles.length > 0;
@@ -938,6 +1038,12 @@ function AppContent() {
       setError("Hãy mở lại cuộc trò chuyện trước khi sửa hoặc tạo lại câu trả lời này.");
       return;
     }
+    const previousEdit = revision?.inlineEdit ? editDrafts.find(edit => edit.messageId === revision.target.id) : undefined;
+    if (previousEdit && !canResumeEdit(previousEdit)) return;
+    const requestId = previousEdit?.requestId ?? crypto.randomUUID();
+    const pendingEdit = revision?.inlineEdit && revision.target.id
+      ? { messageId: revision.target.id, text: revision.text, requestId } : undefined;
+    if (pendingEdit) saveEdit(pendingEdit);
     const prefix = revision ? messages.slice(0, revisionIndex) : messages;
     // A revised reply replaces the selected message; its source panel must not attach to the new reply by index.
     if (revision) setSourcesIndex(null);
@@ -979,7 +1085,7 @@ function AppContent() {
 
     const controller = new AbortController();
     abortRef.current = controller;
-    const stopTicket = { requestId: crypto.randomUUID(), dispatched: false } as NonNullable<typeof stopTicketRef.current>;
+    const stopTicket = { requestId, dispatched: false } as NonNullable<typeof stopTicketRef.current>;
     stopTicketRef.current = stopTicket;
     let activeId = conversationId;
     let accepted = false;
@@ -1030,6 +1136,7 @@ function AppContent() {
         }
       }
       if (sentDraft) acceptDraft(sentDraft, selected ? id : undefined);
+      if (pendingEdit && storedMessage?.id && storedMessage.content === text) resolveEdit(pendingEdit);
       if (storedMessage) reply.retry = { target: storedMessage, text: storedMessage.content };
       if (selected) retryRevision.current = reply.retry;
       if (storedMessage) writeReply(prev => [...prev.slice(0, -2), storedMessage, prev[prev.length - 1]]);
@@ -1103,14 +1210,14 @@ function AppContent() {
           },
           onError: (message, status) => {
             if (session !== authVersion.current) return;
-            if (!accepted && status === 404 && revision?.inlineEdit && revision.target.id) {
-              setRejectedEdit({ messageId: revision.target.id, text: revision.text });
+            if (!accepted && status === 404 && pendingEdit) {
+              resolveEdit(pendingEdit, { ...pendingEdit, requestId: previousEdit?.requestId, conflict: true });
               return;
             }
             reply.error = message;
             if (!isSelectedReply(reply)) return;
             setError(message);
-            setRetryAvailable(true);
+            setRetryAvailable(accepted || !pendingEdit);
           },
           onDone: (messageId) => {
             completed = true;
@@ -1128,7 +1235,7 @@ function AppContent() {
         reply.error = accepted ? message : `${message} Bản nháp được giữ lại; kiểm tra lịch sử trước khi gửi lại nếu kết nối bị ngắt.`;
         if (session === authVersion.current && isSelectedReply(reply)) {
           setError(reply.error);
-          setRetryAvailable(true);
+          setRetryAvailable(accepted || !pendingEdit);
         }
       }
     } finally {
@@ -1138,6 +1245,9 @@ function AppContent() {
       const stoppedByUser = !completed && (serverStopped || stopResult?.stopped === true ||
         (!stopTicket.dispatched && controller.signal.aborted && !networkInterrupted(controller)));
       if (session === authVersion.current) {
+        if (!accepted && pendingEdit && !previousEdit?.requestId && (!stopTicket.dispatched || serverStopped || stopResult?.stopped)) {
+          resolveEdit(pendingEdit, { messageId: pendingEdit.messageId, text: pendingEdit.text });
+        }
         if (stoppedByUser && isSelectedReply(reply)) {
           reply.error = undefined;
           setError(null);
@@ -1590,7 +1700,7 @@ function AppContent() {
           const id = Number(button.dataset.revise);
           const target = messages.find(m => m.id === id && m.role === 'user');
           if (!target) return;
-          setEditTarget(target); setEditText(target.content);
+          openEditor(target);
         }} onScroll={() => {
           const element = messagesRef.current;
           if (!element) return;
@@ -1641,13 +1751,8 @@ function AppContent() {
 
         <div className="chat-dock" ref={chatDockRef}>
         <ReplyRecoveryNotice recovery={recovery} />
-        {rejectedEdit && draftConversationId && (
-          <RejectedEditNotice key={JSON.stringify([draftConversationId, rejectedEdit.messageId])}
-            text={rejectedEdit.text} busy={streaming || loadingConversation || deleting}
-            onReload={loadingConversation || loadFailed || messages.some(row => row.id === rejectedEdit.messageId)
-              ? () => void loadConversation(draftConversationId) : undefined}
-            onDiscard={() => setRejectedEdit(undefined)} />
-        )}
+        {latestEdit && draftConversationId && !streaming && editTarget?.id !== latestEdit.messageId
+          && editDraftNotice(latestEdit, draftConversationId)}
         {error && !recovery.pending && recovery.status !== 'failed' && (
           <div className="error chat-error" role="alert">
             <span className="chat-error-message">{error}</span>

@@ -360,6 +360,15 @@ export async function getMessages(conversationId: string, signal?: AbortSignal, 
   return data.messages;
 }
 
+export type ChatTurnReceipt =
+  | { state: 'missing' | 'pending' | 'unsaved' | 'unavailable' }
+  | { state: 'saved'; conversation_id: string; message_id: number; content: string };
+
+export async function getChatTurnReceipt(requestId: string, signal?: AbortSignal): Promise<ChatTurnReceipt> {
+  const response = await fetch(`/api/chat/turn?request_id=${encodeURIComponent(requestId)}`, { signal, cache: 'no-store' });
+  return json(response);
+}
+
 /** A bounded read-only excerpt, rather than fetching every message/document for each search preview. */
 export async function getConversationPreview(id: string, signal?: AbortSignal): Promise<{ messages: Message[]; truncated: boolean }> {
   return json(await fetch(`/api/conversations/${encodeURIComponent(id)}/preview`, { signal }));
