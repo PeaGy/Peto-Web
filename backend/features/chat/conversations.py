@@ -13,7 +13,7 @@ from storage import connection as db_connection
 from core.config import UPLOAD_DIR
 from ai import models as ai_models
 from storage.conversations import conversation_settings, set_chat_selection
-from storage import chat_quotes, chat_lineage
+from storage import chat_quotes, chat_lineage, chat_turns
 
 
 # Chế độ nhập vai bỏ ngày 2026-10-18 (đã có Companion). Hội thoại nhập vai cũ chỉ còn để xem: lịch sử có thể có nội dung
@@ -101,14 +101,12 @@ async def versions(owner, conversation_id):
         return [dict(item) for item in result]
 
 
-async def retry_in_place(owner, conversation_id, message_id, text, quoted_source=chat_quotes.UNSET):
-    """Gửi lại câu hỏi cuối ngay trong hội thoại khi câu trả lời của nó bị dừng hay hỏng giữa chừng.
+async def retry_in_place(owner, conversation_id, message_id, text, quoted_source=chat_quotes.UNSET, *, request_id,
+                         model='', effort=''):
+    """Bind a retry of the last unfinished turn in the same chat, or return None to fork.
 
-    Trước đây mọi lần sửa hay "Thử lại" đều tạo phiên bản mới, nên bấm Dừng rồi gửi lại câu hỏi để lại hai hội thoại
-    trùng tên (chủ dự án báo 8/10/2026). Chỉ áp dụng khi ``message_id`` là tin người dùng cuối và sau nó chỉ có câu trả lời
-    chưa hoàn tất, không kèm tệp đã tạo, và cả chữ lẫn đoạn trích của câu hỏi không đổi. Câu trả lời dở bị xóa, ảnh và
-    tệp đính kèm giữ nguyên. Sửa câu hỏi luôn tạo nhánh mới để các câu trả lời cũ giữ đúng nguồn gốc.
-    Trả về ``message_id`` khi làm được, ``None`` thì nơi gọi tạo phiên bản như cũ.
+    A user-stopped question can also be edited if its unfinished reply has no generated files.
+    The edit replaces the question with a fresh ID and retains its input attachments.
     """
     async with db_connection.connect() as connection:
         connection.row_factory = aiosqlite.Row
@@ -119,9 +117,10 @@ async def retry_in_place(owner, conversation_id, message_id, text, quoted_source
         if source is None or source['archived']:
             await connection.rollback()
             return None
-        running = await (await connection.execute("SELECT 1 FROM chat_turns WHERE owner=? AND conversation_id=? AND user_message_id=? AND state='running' LIMIT 1",
-                                                   (owner, conversation_id, message_id))).fetchone()
-        if running:
+        turn = await (await connection.execute("""SELECT state FROM chat_turns
+            WHERE owner=? AND conversation_id=? AND user_message_id=?
+            ORDER BY (state='running') DESC, id DESC LIMIT 1""", (owner, conversation_id, message_id))).fetchone()
+        if turn and turn['state'] == 'running':
             raise HTTPException(409, 'Lượt này vẫn đang chạy. Dừng hoặc kiểm tra lịch sử trước khi thử lại nhé.')
         rows = await (await connection.execute('SELECT id, role, content, status, artifacts, quoted_source FROM messages WHERE conversation_id=? AND id>=? ORDER BY id',
                                                (conversation_id, message_id))).fetchall()
@@ -141,16 +140,26 @@ async def retry_in_place(owner, conversation_id, message_id, text, quoted_source
         old_quote = chat_quotes.normalize(rows[0]['quoted_source'])
         quote = old_quote if quoted_source is chat_quotes.UNSET else (
             await chat_quotes.validate(connection, owner, conversation_id, quoted_source) if quoted_source is not None else None)
-        # A changed question needs a new message/origin. Even an unsuccessful original may already have successful
-        # siblings elsewhere; reusing its ID for different text would merge those unrelated response families.
-        if text != rows[0]['content'] or quote != old_quote:
+        changed = text != rows[0]['content'] or quote != old_quote
+        if changed and (not turn or turn['state'] != 'stopped'):
             await connection.rollback()
             return None
         for row in later:
             await connection.execute('DELETE FROM messages WHERE id=? AND conversation_id=?', (row['id'], conversation_id))
-        await chat_lineage.user(connection, message_id)
-        await connection.execute('UPDATE messages SET content=?,quoted_source=? WHERE id=? AND conversation_id=?',
-                                 (text, chat_quotes.encode(quote), message_id, conversation_id))
+        if changed:
+            # A fresh ID keeps earlier response families separate and prevents late writes from the stopped turn.
+            if quote and any(row['id'] == quote['message_id'] for row in later):
+                quote = {**quote, 'message_id': None}
+            now = time.time()
+            cursor = await connection.execute("""INSERT INTO messages(conversation_id,role,content,created_at,quoted_source)
+                VALUES(?,'user',?,?,?)""", (conversation_id, text, now, chat_quotes.encode(quote)))
+            await connection.execute('UPDATE attachments SET message_id=? WHERE owner=? AND conversation_id=? AND message_id=?',
+                                     (cursor.lastrowid, owner, conversation_id, message_id))
+            await connection.execute('DELETE FROM messages WHERE id=? AND conversation_id=?', (message_id, conversation_id))
+            await connection.execute('UPDATE conversations SET updated_at=? WHERE id=?', (now, conversation_id))
+            message_id = cursor.lastrowid
+        await chat_turns.bind_in_transaction(connection, owner, request_id, conversation_id, message_id,
+                                             model=model, effort=effort)
         await connection.commit()
         return message_id
 

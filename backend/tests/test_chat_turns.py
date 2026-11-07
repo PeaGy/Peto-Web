@@ -76,36 +76,44 @@ async def test_stop_arrives_before_post_and_repeated_post_never_runs_ai(client, 
     assert (await chat_turns.get(TEST_OWNER, request_id))['user_message_id'] is None
 
 
-async def test_retry_uses_new_attempt_old_stop_cannot_cancel_it(client, monkeypatch):
+@pytest.mark.parametrize('question', ['Câu hỏi cũ', 'Câu đã sửa'])
+async def test_retry_uses_new_attempt_old_stop_cannot_cancel_it(client, monkeypatch, question):
     cid = await db.create_conversation(TEST_OWNER)
     user_id = await db.add_message(cid, 'user', 'Câu hỏi cũ')
     old_id = uuid.uuid4().hex
     await chat_turns.reserve(TEST_OWNER, old_id)
     await chat_turns.bind(TEST_OWNER, old_id, cid, user_id)
-    await chat_turns.stop(TEST_OWNER, old_id)
-    assistant_id = await db.add_message(cid, 'assistant', '', status='incomplete')
-    await chat_turns.attach_reply(TEST_OWNER, old_id, assistant_id)
+    assert (await client.post('/api/chat/stop', json={'request_id': old_id})).json()['stopped']
+    await chat_turns.persist(TEST_OWNER, old_id, content='Phần trả lời dở', state='interrupted')
     ready, release = asyncio.Event(), asyncio.Event()
     class Provider:
         async def stream(self, **kwargs):
-            assert kwargs['messages'][-1].content == 'Câu hỏi cũ'
+            assert kwargs['messages'][-1].content == question
             ready.set()
             await release.wait()
             yield 'Trả lời lần thử mới'
     monkeypatch.setattr(service, 'get_provider', lambda *args: Provider())
     new_id = uuid.uuid4().hex
-    response = await service.chat(schemas.ChatRequest(message='Câu hỏi cũ', conversation_id=cid, branch_message_id=user_id, request_id=new_id), owner=TEST_OWNER)
+    response = await service.chat(schemas.ChatRequest(message=question, conversation_id=cid, branch_message_id=user_id, request_id=new_id), owner=TEST_OWNER)
     events = []
     task = asyncio.create_task(consume(response, events))
     await asyncio.wait_for(ready.wait(), 3)
     await client.post('/api/chat/stop', json={'request_id': old_id})
     assert (await chat_turns.get(TEST_OWNER, new_id))['state'] == 'running'
+    if question != 'Câu hỏi cũ':
+        assert await chat_turns.persist(TEST_OWNER, old_id, content='Phản hồi muộn', state='complete') == 'interrupted'
     release.set()
     await asyncio.wait_for(task, 3)
     rows = await db.get_messages(TEST_OWNER, cid)
-    assert len(rows) == 2 and rows[-1]['turn_state'] == 'complete'
+    meta = next(event for event in events if event['type'] == 'meta')
+    assert meta['conversation_id'] == cid and meta['message']['id'] == rows[0]['id']
+    assert (rows[0]['id'] == user_id) == (question == 'Câu hỏi cũ')
+    assert [row['content'] for row in rows] == [question, 'Trả lời lần thử mới']
+    assert rows[-1]['turn_state'] == 'complete'
     assert not history._public_message(rows[-1]).get('stopped')
-    assert history.context_rows(rows)[0]['content'] == 'Câu hỏi cũ'
+    assert history.context_rows(rows)[0]['content'] == question
+    versions = (await client.get(f'/api/conversations/{cid}/versions')).json()['versions']
+    assert [version['id'] for version in versions] == [cid]
 
 
 async def test_stop_is_scoped_to_owner_and_duplicate_completed_request_is_rejected(client):

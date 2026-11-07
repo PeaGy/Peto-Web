@@ -511,11 +511,12 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                         if request.branch_message_id:
                             quote_change = (request.quoted_source.model_dump() if request.quoted_source is not None else None) \
                                 if 'quoted_source' in request.model_fields_set else chat_quotes.UNSET
-                            # Câu hỏi cuối vừa bị dừng/hỏng: gửi lại ngay tại chỗ; còn lại tạo phiên bản như trước.
-                            message_id = await conversation_actions.retry_in_place(owner, conversation_id, request.branch_message_id, text, quote_change)
+                            message_id = await conversation_actions.retry_in_place(
+                                owner, conversation_id, request.branch_message_id, text, quote_change,
+                                request_id=request_id, model=model, effort=effort)
                             if message_id is None:
                                 conversation_id, message_id = await conversation_actions.fork(owner, conversation_id, request.branch_message_id, text, quote_change)
-                            message_id = await chat_turns.bind(owner, request_id, conversation_id, message_id, model=model, effort=effort)
+                                message_id = await chat_turns.bind(owner, request_id, conversation_id, message_id, model=model, effort=effort)
                         else:
                             message_id = await chat_turns.bind(owner, request_id, conversation_id, None, text, own_provider,
                                 quote_id=request.quote_id,

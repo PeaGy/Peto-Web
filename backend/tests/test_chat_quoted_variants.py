@@ -305,22 +305,45 @@ async def test_upgrade_of_populated_legacy_database_preserves_messages_and_is_re
     assert [row['content'] for row in await db.get_messages(TEST_OWNER, fork)] == ['Original question']
 
 
-async def test_edit_of_failed_question_cannot_reuse_an_origin_with_successful_siblings(client, model_spy):
+@pytest.mark.parametrize('state', ['error', 'stopped'])
+async def test_edit_of_unfinished_question_does_not_join_successful_siblings(client, model_spy, tmp_path, state):
     cid = await db.create_conversation(TEST_OWNER, 'Failed with sibling')
+    source = await db.add_message(cid, 'assistant', 'Source excerpt')
+    quote = {'message_id': source, 'text': 'Source excerpt'}
     request = uuid.uuid4().hex
     await chat_turns.reserve(TEST_OWNER, request)
-    uid = await chat_turns.bind(TEST_OWNER, request, cid, content='Original question', model='peto', effort='low')
-    await chat_turns.persist(TEST_OWNER, request, content='Incomplete original', state='error')
+    uid = await chat_turns.bind(TEST_OWNER, request, cid, content='Original question', quoted_source=quote,
+                                model='peto', effort='low')
+    path = tmp_path / 'input.txt'
+    path.write_text('User attachment', encoding='utf-8')
+    attachment_id = uuid.uuid4().hex
+    await db.add_attachment(attachment_id=attachment_id, owner=TEST_OWNER, conversation_id=cid,
+                            message_id=uid, filename=path.name, mime='text/plain', kind='file',
+                            size=path.stat().st_size, path=str(path))
+    if state == 'stopped':
+        await chat_turns.stop(TEST_OWNER, request)
+    await chat_turns.persist(TEST_OWNER, request, content='Incomplete original', state=state)
     sibling, copied_uid = await conversations.fork(TEST_OWNER, cid, uid, 'Original question')
-    # Give the copied question a real answer family without changing the failed original.
+    # Give the copied question a real answer family without changing the unfinished original.
     async with connection.connect() as sql:
         aid = await sql.execute("INSERT INTO messages(conversation_id,role,content,created_at) VALUES(?,'assistant','Sibling answer',0)", (sibling,))
         await chat_lineage.reply(sql, aid.lastrowid, copied_uid, 'peto', 'low')
         await sql.commit()
     edited, _ = await send(client, cid, 'Different question', branch=uid)
-    assert edited['conversation_id'] != cid
-    assert (await history(client, cid))[0]['content'] == 'Original question'
-    assert 'reply_variants' not in (await history(client, edited['conversation_id']))[-1]
+    edited_cid = edited['conversation_id']
+    assert (edited_cid == cid) == (state == 'stopped')
+    saved = await history(client, edited_cid)
+    assert saved[-2]['id'] != uid and saved[-2]['content'] == 'Different question'
+    assert saved[-2]['quoted_source']['message_id'] == saved[0]['id']
+    assert saved[-2]['attachments'][0]['name'] == path.name
+    assert 'reply_variants' not in saved[-1]
+    assert (await history(client, sibling))[-2]['content'] == 'Original question'
+    if state == 'stopped':
+        assert saved[0]['id'] == source
+        assert saved[-2]['attachments'][0]['id'] == attachment_id
+        assert all(row['id'] != uid for row in saved)
+    else:
+        assert (await history(client, cid))[-2]['content'] == 'Original question'
 
 
 async def test_search_preview_is_bounded_private_and_does_not_hydrate_files(client):

@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-## Peto Agent auto-update (2026-11-07, not committed/deployed)
+## Peto Agent auto-update (2026-11-07; owner committed `e7f43eb`, deployed it and published v0.2.2-rc.1.20261107.1)
 
 Peto Agent (ph) builds are unsigned, which upstream DSH treats as local builds without an update feed, so installs never
 updated. The owner picked "like DSH, unsigned": keep DSH's electron-updater flow (lower-left indicator, download, safe
@@ -23,6 +23,9 @@ restart) and serve the feed from Peto Web. ph's half is `PETO.md` "Auto-update" 
   at a loopback stand-in found a newer version, downloaded through GitHub-style redirects, passed SHA-512 and reached
   "ready to install"; install/relaunch not run (would overwrite the owner's install). Real check: after deploy and the
   .1 release, the next release should show Update in the installed app.
+- Production checked after deploy: the feed returns that release with GitHub URLs (`nightly.yml` too, mac 404); the
+  GitHub installer's sha256 equals the build; blockmap downloads, ranges answer 206. The owner installed .1 by hand
+  (installed `app-update.yml` = the feed, updater cache holds the .1 installer). Install/relaunch still unverified.
   Deploy: restart backend + rebuild frontend; no migration.
 
 ## Peto Agent web search (2026-11-06; owner committed `9f7fd98` and deployed it; first ph build with it: 0.2.2-rc.1.20261106.5)

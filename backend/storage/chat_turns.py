@@ -70,37 +70,45 @@ async def bind(owner, request_id, conversation_id, message_id=None, content=None
     async with connection.connect() as db:
         await db.execute('PRAGMA foreign_keys=ON')
         await db.execute('BEGIN IMMEDIATE')
-        scope = await (await db.execute('SELECT project_id,mode FROM conversations WHERE owner=? AND id=? AND archived=0',
-                                       (owner, conversation_id))).fetchone()
-        turn = await (await db.execute('SELECT state,user_message_id FROM chat_turns WHERE owner=? AND request_id=?',
-                                      (owner, request_id))).fetchone()
-        if not scope or not turn or turn[0] not in {'running', 'stopped'} or turn[1] is not None:
-            raise HTTPException(409, 'Lượt hoặc hội thoại đã thay đổi. Mở lại trước khi gửi nhé.')
-        now = time.time()
-        if message_id is None:
-            if not isinstance(content, str):
-                raise ValueError('Thiếu nội dung tin nhắn.')
-            if quote_id is not None and not await (await db.execute(
-                    "SELECT 1 FROM messages WHERE id=? AND conversation_id=? AND role IN ('user','assistant')",
-                    (quote_id, conversation_id))).fetchone():
-                quote_id = None
-            quote = await chat_quotes.validate(db, owner, conversation_id, quoted_source) if quoted_source is not None and scope[1] == 'chat' else None
-            row = await db.execute('INSERT INTO messages(conversation_id,role,content,created_at,provider,quote_id,quoted_source) VALUES(?,?,?,?,?,?,?)',
-                                   (conversation_id, 'user', content, now, provider, quote_id, chat_quotes.encode(quote)))
-            message_id = row.lastrowid
-            await db.execute('UPDATE conversations SET updated_at=? WHERE id=?', (now, conversation_id))
-        source = await (await db.execute("SELECT content FROM messages WHERE id=? AND conversation_id=? AND role='user'",
-                                        (message_id, conversation_id))).fetchone()
-        if not source:
-            raise HTTPException(409, 'Tin nhắn nguồn không còn trong hội thoại.')
-        if scope[1] == 'chat':
-            await chat_lineage.user(db, message_id)
-        await db.execute('''UPDATE chat_turns SET conversation_id=?,user_message_id=?,project_id=?,scope_bound=1,
-            user_digest=?,updated_at=?,model=?,effort=? WHERE owner=? AND request_id=?''',
-                         (conversation_id, message_id, scope[0], _digest(source[0]), now,
-                          model if scope[1] == 'chat' else '', effort if scope[1] == 'chat' else '', owner, request_id))
+        message_id = await bind_in_transaction(db, owner, request_id, conversation_id, message_id,
+                                               content, provider, quote_id, quoted_source, model, effort)
         await db.commit()
         return message_id
+
+
+async def bind_in_transaction(db, owner, request_id, conversation_id, message_id=None, content=None, provider='',
+                              quote_id=None, quoted_source=None, model='', effort=''):
+    """Bind the reserved turn under the caller's write transaction."""
+    scope = await (await db.execute('SELECT project_id,mode FROM conversations WHERE owner=? AND id=? AND archived=0',
+                                   (owner, conversation_id))).fetchone()
+    turn = await (await db.execute('SELECT state,user_message_id FROM chat_turns WHERE owner=? AND request_id=?',
+                                  (owner, request_id))).fetchone()
+    if not scope or not turn or turn[0] not in {'running', 'stopped'} or turn[1] is not None:
+        raise HTTPException(409, 'Lượt hoặc hội thoại đã thay đổi. Mở lại trước khi gửi nhé.')
+    now = time.time()
+    if message_id is None:
+        if not isinstance(content, str):
+            raise ValueError('Thiếu nội dung tin nhắn.')
+        if quote_id is not None and not await (await db.execute(
+                "SELECT 1 FROM messages WHERE id=? AND conversation_id=? AND role IN ('user','assistant')",
+                (quote_id, conversation_id))).fetchone():
+            quote_id = None
+        quote = await chat_quotes.validate(db, owner, conversation_id, quoted_source) if quoted_source is not None and scope[1] == 'chat' else None
+        row = await db.execute('INSERT INTO messages(conversation_id,role,content,created_at,provider,quote_id,quoted_source) VALUES(?,?,?,?,?,?,?)',
+                               (conversation_id, 'user', content, now, provider, quote_id, chat_quotes.encode(quote)))
+        message_id = row.lastrowid
+        await db.execute('UPDATE conversations SET updated_at=? WHERE id=?', (now, conversation_id))
+    source = await (await db.execute("SELECT content FROM messages WHERE id=? AND conversation_id=? AND role='user'",
+                                    (message_id, conversation_id))).fetchone()
+    if not source:
+        raise HTTPException(409, 'Tin nhắn nguồn không còn trong hội thoại.')
+    if scope[1] == 'chat':
+        await chat_lineage.user(db, message_id)
+    await db.execute('''UPDATE chat_turns SET conversation_id=?,user_message_id=?,project_id=?,scope_bound=1,
+        user_digest=?,updated_at=?,model=?,effort=? WHERE owner=? AND request_id=?''',
+                     (conversation_id, message_id, scope[0], _digest(source[0]), now,
+                      model if scope[1] == 'chat' else '', effort if scope[1] == 'chat' else '', owner, request_id))
+    return message_id
 
 
 async def finish(owner, request_id, state, outcome=''):

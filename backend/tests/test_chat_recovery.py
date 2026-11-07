@@ -39,6 +39,27 @@ async def test_bind_rolls_back_user_insert_if_link_fails(client):
             await sql.commit()
 
 
+async def test_stopped_edit_rolls_back_if_link_fails(client):
+    cid, old_request, uid = await bound()
+    await chat_turns.stop(TEST_OWNER, old_request)
+    await chat_turns.persist(TEST_OWNER, old_request, content='Câu trả lời dở', state='interrupted')
+    request = uuid.uuid4().hex
+    await chat_turns.reserve(TEST_OWNER, request)
+    before = await db.get_messages(TEST_OWNER, cid)
+    async with connection.connect() as sql:
+        await sql.execute("CREATE TRIGGER fail_edit_bind BEFORE UPDATE OF user_message_id ON chat_turns BEGIN SELECT RAISE(ABORT,'fault-edit-bind'); END")
+        await sql.commit()
+    try:
+        with pytest.raises(Exception, match='fault-edit-bind'):
+            await conversations.retry_in_place(TEST_OWNER, cid, uid, 'Câu đã sửa', request_id=request)
+        assert await db.get_messages(TEST_OWNER, cid) == before
+        assert (await chat_turns.get(TEST_OWNER, request))['user_message_id'] is None
+    finally:
+        async with connection.connect() as sql:
+            await sql.execute('DROP TRIGGER fail_edit_bind')
+            await sql.commit()
+
+
 async def test_failure_between_reply_and_terminal_state_rolls_back_then_one_retry_commits(client):
     cid, rid, _ = await bound()
     async with connection.connect() as sql:
@@ -138,7 +159,7 @@ async def test_other_owner_cannot_checkpoint_or_read_and_running_retry_is_reject
     assert await chat_turns.persist('discord:other', rid, content='Ghi đè', state='complete') == 'interrupted'
     assert await db.get_messages('discord:other', cid) == []
     with pytest.raises(HTTPException) as err:
-        await conversations.retry_in_place(TEST_OWNER, cid, uid, 'Câu mới')
+        await conversations.retry_in_place(TEST_OWNER, cid, uid, 'Câu mới', request_id=uuid.uuid4().hex)
     assert err.value.status_code == 409
     assert (await db.get_messages(TEST_OWNER, cid))[-1]['content'] == 'Checkpoint'
 
