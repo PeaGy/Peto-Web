@@ -24,6 +24,28 @@
   font: inherit;
   cursor: pointer;
 }
+.reply-recovery button:disabled { opacity: .5; cursor: default; }
+.rejected-edit {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  width: min(900px, calc(100% - 24px));
+  box-sizing: border-box;
+  align-self: center;
+}
+.rejected-edit textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  resize: vertical;
+  max-height: 25dvh;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-2);
+  color: var(--text);
+  font: inherit;
+}
+.rejected-edit-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.rejected-edit-actions button:last-child { margin-inline-start: auto; }
 .companion-panel .reply-recovery { margin: 0 14px 8px; }
 @media (max-width: 720px) {
   .companion-panel .reply-recovery { background: var(--stage-surface); color: var(--stage-text); }

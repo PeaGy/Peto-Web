@@ -157,7 +157,7 @@ type ChatEvent =
   | { type: 'document_status'; text: string }
   | { type: "file_lookup"; text: string; live: boolean }
   | { type: "connector_lookup"; text: string; live: boolean }
-  | { type: "error"; message: string }
+  | { type: "error"; message: string; status?: number }
   | { type: "stopped" }
   | { type: "done"; message_id?: number | null };
 
@@ -185,7 +185,7 @@ interface ChatHandlers {
   /** Peto tìm hoặc đọc thêm trong tệp đã gửi: live khi đang làm, rồi một lần nữa với kết quả. */
   onFileLookup?: (text: string, live: boolean) => void;
   onConnectorLookup?: (text: string, live: boolean) => void;
-  onError?: (message: string) => void;
+  onError?: (message: string, status?: number) => void;
   /** ``messageId``: mã câu trả lời vừa lưu (máy chủ cũ không gửi). */
   onDone?: (messageId?: number) => void;
 }
@@ -840,7 +840,7 @@ export async function sendMessage(
   if (response.status === 401) throw new UnauthorizedError();
   if (!response.ok) {
     const detail = await response.json().catch(() => null);
-    handlers.onError?.(typeof detail?.detail === "string" ? detail.detail : `Yêu cầu không hợp lệ (${response.status}).`);
+    handlers.onError?.(typeof detail?.detail === "string" ? detail.detail : `Yêu cầu không hợp lệ (${response.status}).`, response.status);
     return;
   }
   if (!response.body) {
@@ -907,7 +907,7 @@ export async function sendMessage(
         } else if (event.type === "connector_lookup") {
           handlers.onConnectorLookup?.(event.text, event.live);
         } else if (event.type === "error") {
-          handlers.onError?.(event.message);
+          handlers.onError?.(event.message, event.status);
           ended = true;
         } else if (event.type === 'stopped') {
           handlers.onStopped?.();

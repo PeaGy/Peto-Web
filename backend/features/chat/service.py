@@ -212,7 +212,7 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
         original = await db.get_messages(owner, request.conversation_id)
         target = next((row for row in original if row['id'] == request.branch_message_id and row['role'] == 'user'), None)
         if target is None:
-            raise HTTPException(404, 'Không tìm thấy tin nhắn')
+            raise conversation_actions.RevisionTargetMissing()
         if not text and not target.get('attachments'):
             raise HTTPException(400, 'Tin nhắn trống')
     if not text and not files and not request.branch_message_id:
@@ -463,6 +463,7 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
         complete = False
         outcome = "cancelled"
         failure: str | None = None
+        failure_status: int | None = None
         try:
             async with admission.slot(owner):
                 admitted_at = perf_counter()
@@ -645,6 +646,9 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
         except AdmissionDenied as denied:
             outcome = denied.reason
             failure = denied.message
+        except conversation_actions.RevisionTargetMissing as err:
+            outcome = 'revision_target_missing'
+            failure, failure_status = err.detail, err.status_code
         except ProviderError as err:
             outcome = 'context_overflow' if isinstance(err, context_budget.ContextOverflow) else 'provider_error'
             if outcome == 'context_overflow':
@@ -718,7 +722,10 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
             # Bản chốt của nhật ký (bước suy nghĩ quá ngắn đã bỏ, bước dở đã đóng), đúng như bản lưu cùng tin nhắn.
             yield sse({"type": "work", "work": work})
         if failure:
-            yield sse({"type": "error", "message": failure})
+            event: dict[str, str | int] = {"type": "error", "message": failure}
+            if failure_status is not None:
+                event["status"] = failure_status
+            yield sse(event)
         else:
             turn_complete = complete
             # Đánh dấu "đang ghi nhớ" trước "done" cho trường ``pending`` của GET /api/companion/memory. Dòng "Peto vừa

@@ -2281,6 +2281,45 @@ it('sửa trực tiếp gửi ID lượt gốc, không xóa lịch sử và khô
   expect(api.deleteConversation).not.toHaveBeenCalled();
 });
 
+it('giữ phần sửa từ tab cũ qua tải lại mà không đè nháp soạn tin hoặc gửi lại', async () => {
+  window.history.replaceState(null, '', '/chat/A');
+  vi.mocked(api.getMessages)
+    .mockResolvedValueOnce([{ id: 12, role: 'user', content: 'Câu cũ ở tab này' },
+      { id: 13, role: 'assistant', content: '', status: 'incomplete', stopped: true }])
+    .mockResolvedValue([{ id: 14, role: 'user', content: 'Câu mới từ tab kia' },
+      { id: 15, role: 'assistant', content: 'Phản hồi mới', status: 'complete' }]);
+  vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers) => {
+    handlers.onError?.('Không tìm thấy tin nhắn', 404);
+  });
+  const app = render(<App />);
+  await screen.findByText('Câu cũ ở tab này');
+  fireEvent.change(screen.getByRole('textbox', { name: 'Nhắn cho Peto' }), { target: { value: 'Nháp soạn tin riêng' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Sửa tin nhắn', exact: true }));
+  const editor = screen.getByRole('textbox', { name: 'Sửa tin nhắn', exact: true });
+  const rejected = 'Phần vừa sửa\nDòng thứ hai';
+  fireEvent.change(editor, { target: { value: rejected } });
+  fireEvent.submit(editor.closest('form')!);
+
+  expect(await screen.findByRole('textbox', { name: 'Bản sửa chưa gửi' })).toHaveProperty('value', rejected);
+  expect(screen.queryByText('Không tìm thấy tin nhắn')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Tải bản mới nhất' }));
+  await screen.findByText('Câu mới từ tab kia');
+  expect(screen.queryByText('Câu cũ ở tab này')).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Tải bản mới nhất' })).toBeNull();
+  expect(window.location.pathname).toBe('/chat/A');
+  expect(api.sendMessage).toHaveBeenCalledOnce();
+  expect(screen.getByRole('textbox', { name: 'Bản sửa chưa gửi' })).toHaveProperty('value', rejected);
+  expect(screen.getByRole('textbox', { name: 'Nhắn cho Peto' })).toHaveProperty('value', 'Nháp soạn tin riêng');
+
+  app.unmount();
+  render(<App />);
+  await screen.findByText('Câu mới từ tab kia');
+  expect(screen.getByRole('textbox', { name: 'Bản sửa chưa gửi' })).toHaveProperty('value', rejected);
+  fireEvent.click(screen.getByRole('button', { name: 'Bỏ bản sửa' }));
+  expect(screen.queryByRole('textbox', { name: 'Bản sửa chưa gửi' })).toBeNull();
+  expect(screen.getByRole('textbox', { name: 'Nhắn cho Peto' })).toHaveProperty('value', 'Nháp soạn tin riêng');
+});
+
 it('lỗi sau khi nhận tin có thể thử lại từ tin đã lưu', async () => {
   await openApp();
   vi.mocked(api.sendMessage).mockImplementationOnce(async (_payload, handlers) => {

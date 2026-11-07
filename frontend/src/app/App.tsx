@@ -16,7 +16,7 @@ import ProjectChatHeader from '../features/projects/ProjectChatHeader';
 import { ChatMessage } from '../features/chat/ChatMessage';
 import { messageText } from '../features/chat/draftLinks';
 import { disconnectStream, networkInterrupted, useReplyRecovery } from '../features/chat/useReplyRecovery';
-import { ReplyRecoveryNotice } from '../features/chat/ReplyRecoveryNotice';
+import { RejectedEditNotice, ReplyRecoveryNotice } from '../features/chat/ReplyRecoveryNotice';
 import { Greeting } from '../features/chat/Greeting';
 import { LoadingIndicator } from '../shared/ui/LoadingIndicator';
 import { MenuIcon, PinIcon } from './navigationIcons';
@@ -121,7 +121,7 @@ const MemorySettings = memorySettings.View;
 const AgentSettings = agentSettings.View;
 const ArchivedConversations = archiveSettings.View;
 const ConnectorSettings = connectorSettings.View;
-type ChatRevision = { target: Message; text: string };
+type ChatRevision = { target: Message; text: string; inlineEdit?: boolean };
 type ActiveReply = { id: string | null; messages: Message[]; projectId: string | null;
   selection: ChatSelection; retry?: ChatRevision; error?: string };
 
@@ -237,7 +237,8 @@ function AppContent() {
   const replyVisible = streaming && Boolean(replyRef.current && isSelectedReply(replyRef.current));
   const rootContext = newChatContext(location.state, auth?.user?.id ?? '');
   const draftConversationId = view === 'chat' ? routedConversationId : conversationId;
-  const { draft, setDraft, draftFiles, setDraftFiles, draftQuote, setDraftQuote, snapshotDraft, acceptDraft, clearDrafts,
+  const { draft, setDraft, draftFiles, setDraftFiles, draftQuote, setDraftQuote, rejectedEdit, setRejectedEdit,
+    snapshotDraft, acceptDraft, clearDrafts,
     removeConversationDraft, removeProjectDraft } = useChatDrafts(auth?.authenticated && auth.user ? {
       ownerId: auth.user.id, conversationId: draftConversationId,
       projectId: view === 'chat' && !routedConversationId ? rootContext.projectId : activeProjectId,
@@ -1100,8 +1101,12 @@ function AppContent() {
             });
             if (isSelectedReply(reply)) setDocumentRefresh(value => value + 1);
           },
-          onError: (message) => {
+          onError: (message, status) => {
             if (session !== authVersion.current) return;
+            if (!accepted && status === 404 && revision?.inlineEdit && revision.target.id) {
+              setRejectedEdit({ messageId: revision.target.id, text: revision.text });
+              return;
+            }
             reply.error = message;
             if (!isSelectedReply(reply)) return;
             setError(message);
@@ -1609,7 +1614,7 @@ function AppContent() {
               onRegenerate={regenerateAnswer} variants={replyControls(message)} onJumpQuote={jumpToMessage}
               sourcesExpanded={sourcesIndex === index} onOpenSources={openSources} sourceIndex={index}
               actionsDisabled={readOnly || streaming || loadingConversation || loadFailed}
-              editor={editTarget?.id === message.id && editTarget ? <form className="inline-message-editor" onSubmit={e => {e.preventDefault(); void submit({target:editTarget,text:editText});}}>
+              editor={editTarget?.id === message.id && editTarget ? <form className="inline-message-editor" onSubmit={e => {e.preventDefault(); void submit({target:editTarget,text:editText,inlineEdit:true});}}>
                 <textarea autoFocus aria-label="Sửa tin nhắn" value={editText} onChange={e => setEditText(e.target.value)} rows={Math.min(12,Math.max(3,editText.split('\n').length))} onKeyDown={e => {if(e.key==='Escape') { e.preventDefault(); cancelEdit(); }}}/>
                 <div><button type="button" onClick={cancelEdit}>Hủy</button><button type="submit" disabled={streaming || (!editText.trim() && !editTarget.attachments?.length)}>Gửi</button></div>
               </form> : undefined}
@@ -1636,6 +1641,13 @@ function AppContent() {
 
         <div className="chat-dock" ref={chatDockRef}>
         <ReplyRecoveryNotice recovery={recovery} />
+        {rejectedEdit && draftConversationId && (
+          <RejectedEditNotice key={JSON.stringify([draftConversationId, rejectedEdit.messageId])}
+            text={rejectedEdit.text} busy={streaming || loadingConversation || deleting}
+            onReload={loadingConversation || loadFailed || messages.some(row => row.id === rejectedEdit.messageId)
+              ? () => void loadConversation(draftConversationId) : undefined}
+            onDiscard={() => setRejectedEdit(undefined)} />
+        )}
         {error && !recovery.pending && recovery.status !== 'failed' && (
           <div className="error chat-error" role="alert">
             <span className="chat-error-message">{error}</span>

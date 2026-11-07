@@ -1,8 +1,11 @@
 import sqlite3
+import uuid
+from contextlib import asynccontextmanager
 
 import storage as db
-from storage import connection as db_connection
+from storage import chat_turns, connection as db_connection
 from features.chat import conversations as conversation_actions
+from features.chat import service
 from conftest import TEST_OWNER, read_events
 
 
@@ -65,6 +68,32 @@ async def test_resending_a_stopped_last_question_stays_in_the_same_conversation(
     events = await read_events(await client.post('/api/chat', json={'conversation_id': cid, 'branch_message_id': stopped,
                                                                     'message': 'hỏi khác'}))
     assert next(e for e in events if e['type'] == 'meta')['conversation_id'] != cid
+
+
+async def test_edit_of_question_replaced_while_queued_reports_missing_target(client, monkeypatch):
+    cid = await db.create_conversation(TEST_OWNER, 'Sửa từ hai tab')
+    original = uuid.uuid4().hex
+    await chat_turns.reserve(TEST_OWNER, original)
+    uid = await chat_turns.bind(TEST_OWNER, original, cid, content='Câu hỏi gốc')
+    await chat_turns.stop(TEST_OWNER, original)
+    await chat_turns.persist(TEST_OWNER, original, content='', state='stopped')
+
+    @asynccontextmanager
+    async def slot(owner):
+        other_request = uuid.uuid4().hex
+        await chat_turns.reserve(owner, other_request)
+        assert await conversation_actions.retry_in_place(owner, cid, uid, 'Đã sửa từ tab kia', request_id=other_request)
+        yield
+
+    monkeypatch.setattr(service.admission, 'slot', slot)
+    payload = {'conversation_id': cid, 'branch_message_id': uid, 'message': 'Bản sửa từ tab cũ'}
+    events = await read_events(await client.post('/api/chat', json=payload))
+    assert not any(event['type'] == 'meta' for event in events)
+    assert events[-1] == {'type': 'error', 'message': 'Không tìm thấy tin nhắn', 'status': 404}
+    assert (await client.post('/api/chat', json=payload)).status_code == 404
+    assert [row['content'] for row in await db.get_messages(TEST_OWNER, cid)] == ['Đã sửa từ tab kia']
+    versions = (await client.get(f'/api/conversations/{cid}/versions')).json()['versions']
+    assert [version['id'] for version in versions] == [cid]
 
 
 async def test_branch_copies_files_and_documents_independently(client, tmp_path):

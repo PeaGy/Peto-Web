@@ -22,6 +22,11 @@ LEGACY_ROLEPLAY = ("Hội thoại nhập vai cũ chỉ còn để xem vì chế 
                    "Companion.")
 
 
+class RevisionTargetMissing(HTTPException):
+    def __init__(self):
+        super().__init__(404, 'Không tìm thấy tin nhắn')
+
+
 def validate_selection(owner, settings, model, effort):
     """Kiểm tra cả model, quyền tài khoản và mức suy nghĩ trước khi lưu."""
     if settings['mode'] != 'chat':
@@ -183,7 +188,7 @@ async def fork(owner, conversation_id, message_id, text, quoted_source=chat_quot
                 raise HTTPException(409, LEGACY_ROLEPLAY)
             rows = await (await connection.execute('SELECT * FROM messages WHERE conversation_id=? AND id<=? ORDER BY id', (conversation_id, message_id))).fetchall() if source else []
             if not rows or rows[-1]['id'] != message_id or rows[-1]['role'] != 'user':
-                raise HTTPException(404, 'Không tìm thấy tin nhắn cần tạo phiên bản')
+                raise RevisionTargetMissing()
             # Chép theo thứ tự gửi để "Ảnh N" trong bản mới trỏ đúng ảnh cũ (tài liệu chép sang dùng số này).
             attachments = await (await connection.execute('SELECT * FROM attachments WHERE owner=? AND conversation_id=? AND message_id<=? ORDER BY created_at, rowid', (owner, conversation_id, message_id))).fetchall()
             if not text.strip() and not any(a['message_id'] == message_id for a in attachments):

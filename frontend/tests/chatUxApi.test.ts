@@ -22,6 +22,17 @@ it('omitting a Web Chat quote preserves branch semantics, while null explicitly 
   expect(bodies[1].quoted_source).toBeNull();
 });
 
+it.each([false, true])('forwards the missing revision status before or during streaming (stream: %s)', async streamed => {
+  const message = 'Không tìm thấy tin nhắn';
+  const response = streamed
+    ? new Response(`data: ${JSON.stringify({ type: 'error', message, status: 404 })}\n\n`)
+    : new Response(JSON.stringify({ detail: message }), { status: 404 });
+  vi.stubGlobal('fetch', vi.fn(async () => response));
+  const onError = vi.fn();
+  await sendMessage({ message: 'Bản sửa', conversationId: 'A', branchMessageId: 1, effort: 'low' }, { onError });
+  expect(onError).toHaveBeenCalledExactlyOnceWith(message, 404);
+});
+
 it('keeps Companion quote_id and never forwards Web Chat quoted_source to Companion', async () => {
   const fetchMock = vi.fn(async () => new Response(done)); vi.stubGlobal('fetch', fetchMock);
   await sendMessage({ message: 'Chào', conversationId: 'C', effort: 'low', mode: 'companion', quoteId: 7,
