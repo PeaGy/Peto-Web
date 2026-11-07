@@ -1,5 +1,30 @@
 # CLAUDE.md
 
+## Peto Agent auto-update (2026-11-07, not committed/deployed)
+
+Peto Agent (ph) builds are unsigned, which upstream DSH treats as local builds without an update feed, so installs never
+updated. The owner picked "like DSH, unsigned": keep DSH's electron-updater flow (lower-left indicator, download, safe
+restart) and serve the feed from Peto Web. ph's half is `PETO.md` "Auto-update" (`01a92ee30c`, `85383837c9`, pushed).
+- ph: an unsigned Windows build gets the generic feed `<mandatory-policy origin>/api/agent/desktop/update/win-x64/`,
+  channel `stable`; `app-update.yml` has no publisher, so only the installer's SHA-512 is checked.
+  `apps/desktop/scripts/peto-release-assets.ts <version>` renames installer + blockmap to
+  `Peto-Agent-Setup-<version>-x64.exe` and rewrites `stable.yml`; the owner uploads all three to the GitHub Release.
+- Peto Web `features/agent/desktop_update.py`, `GET /api/agent/desktop/update/{target}/{channel}` (public, only
+  `win-x64` and `stable.yml`/`nightly.yml`, else 404): reads `stable.yml` of the newest non-draft release that has one
+  (download via github.com, redirects only to GitHub's asset hosts, 64 KB cap; up to 3 candidates), requires version ==
+  tag, one `.exe` file present in the release with equal size, base64 SHA-512; returns a rebuilt YAML (version, files,
+  path, sha512, releaseDate) with absolute GitHub URLs, `public, max-age=60`, cached 10 min (2 on none). PyYAML comes
+  with `uvicorn[standard]`. `desktop_release.fetch_releases` is now shared. `PETO_DESKTOP_UPDATES=false` → 404.
+  Drafting a bad release stops offering it within 10 minutes; installs never downgrade.
+- `/download/` "Có bản mới thì sao?" now says Windows updates itself and builds before 7/11/2026 need one manual
+  reinstall. `deploy/OPERATIONS.md` release steps and a "Cập nhật tự động" section updated.
+- Tests: `tests/test_desktop_update.py` (12); related backend group 203 passed; `Download.test.tsx` 9 passed.
+- Built 0.2.2-rc.1.20261107.1 (feed baked in); its real `stable.yml` passes `_feed`. A copy of the packaged app pointed
+  at a loopback stand-in found a newer version, downloaded through GitHub-style redirects, passed SHA-512 and reached
+  "ready to install"; install/relaunch not run (would overwrite the owner's install). Real check: after deploy and the
+  .1 release, the next release should show Update in the installed app.
+  Deploy: restart backend + rebuild frontend; no migration.
+
 ## Peto Agent web search (2026-11-06; owner committed `9f7fd98` and deployed it; first ph build with it: 0.2.2-rc.1.20261106.5)
 
 ph's `web_search` tool only had DeepSeek's providers (DeepSeek sign-in or key), so Peto accounts had no search. The
@@ -58,7 +83,7 @@ motion were measured on deepseek.com/en/harness with REA and live scroll reading
   .msi/.dmg; download URLs must be under `https://github.com/<repo>/releases/download/`; sha256 from GitHub's `digest`.
   Any failure → `{"available": false}` and the page offers the CLI. Config default `PeaGy/peto-harness` (public since
   2026-11-06, no release yet); invalid names count as empty. Release steps: `deploy/OPERATIONS.md` "Phát hành bản Peto Agent".
-- Copy claims checked against ph: no auto-update (unsigned builds have no feed), so the page never promises one.
+- Copy claims checked against ph. Since 2026-11-07 Windows builds update from Peto Web ("Peto Agent auto-update").
 - `GET /api/v0/check_client_update` (`desktop_release.policy_router`) answers ph's mandatory-update check with
   "no forced update" (`code 0`, `biz_code 0`, `biz_data null`); ph builds name Peto Web as that origin. Without it the
   app only records an error and retries with backoff. Code 40005 with `show_content` would force an update.

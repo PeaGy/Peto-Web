@@ -273,6 +273,9 @@ AGENT_DISABLED_SOURCES = tuple(
 _DESKTOP_RELEASES_REPO = os.getenv("PETO_DESKTOP_RELEASES_REPO", "PeaGy/peto-harness").strip()
 DESKTOP_RELEASES_REPO = (_DESKTOP_RELEASES_REPO if re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})/[A-Za-z0-9._-]{1,100}",
                                                                    _DESKTOP_RELEASES_REPO) else "")
+# Nguồn cập nhật tự động của ứng dụng Peto Agent (từ 7/11/2026, features/agent/desktop_update.py): đọc stable.yml của bản
+# phát hành mới nhất trong repo trên. false thì máy chủ trả 404, ứng dụng không được báo bản mới nào.
+DESKTOP_UPDATES = os.getenv("PETO_DESKTOP_UPDATES", "true").strip().lower() in {"1", "true", "yes"}
 
 # --- Phục vụ frontend đã build (production) ------------------------------
 # Khi thư mục này tồn tại, backend phục vụ luôn giao diện; VPS chỉ cần một

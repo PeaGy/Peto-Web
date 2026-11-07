@@ -220,22 +220,46 @@ Mỗi lần phát hành:
    ```
 
    Bộ cài nằm ở `apps/desktop/.desktop-build/targets/win-x64/unsigned-artifacts/`. Lệnh tự chạy kiểm tra runtime của
-   bản đã đóng gói; nên cài thử một lần trước khi phát hành.
-2. Tạo bản phát hành với thẻ `v<phiên bản>`, đánh dấu pre-release, và đính kèm tệp `.exe` (đặt lại tên cho dễ nhận,
-   ví dụ `Peto-Agent-Setup-<phiên bản>-x64.exe`; trang nhận ra bản Windows 64-bit nhờ đuôi `.exe` và chữ `x64`). Trên web:
-   Releases → Draft a new release → chọn thẻ mới, nhánh `peto` → kéo tệp vào → Set as a pre-release → Publish. Hoặc
-   với GitHub CLI:
+   bản đã đóng gói; nên cài thử một lần trước khi phát hành. Từ 7/11/2026 bản dựng còn ghi nguồn cập nhật
+   `<máy chủ cập nhật bắt buộc>/api/agent/desktop/update/win-x64/` (kênh `stable`) và viết `stable.yml` cạnh bộ cài.
+   Gom tệp phát hành (đổi tên bộ cài, kèm `.blockmap` và `stable.yml` trỏ đúng tên mới; không ghi đè tệp có sẵn):
 
    ```powershell
-   gh release create v0.2.2-rc.1.20261106.1 "<tệp .exe>" --repo PeaGy/peto-harness --target peto --prerelease --title "Peto Agent 0.2.2-rc.1.20261106.1" --notes "Có gì mới…"
+   node --import tsx apps/desktop/scripts/peto-release-assets.ts 0.2.2-rc.1.20261107.1
+   ```
+
+   Ba tệp nằm ở `apps/desktop/.desktop-build/targets/win-x64/peto-release/<phiên bản>/`.
+2. Tạo bản phát hành với thẻ `v<phiên bản>` (đúng phiên bản trong `stable.yml`), đánh dấu pre-release, và đính kèm cả
+   ba tệp: `Peto-Agent-Setup-<phiên bản>-x64.exe`, tệp `.blockmap` cùng tên và `stable.yml` (trang nhận ra bản Windows
+   64-bit nhờ đuôi `.exe` và chữ `x64`). Trên web: Releases → Draft a new release → chọn thẻ mới, nhánh `peto` → kéo
+   tệp vào → Set as a pre-release → Publish. Hoặc với GitHub CLI:
+
+   ```powershell
+   gh release create v0.2.2-rc.1.20261107.1 "<thư mục>\Peto-Agent-Setup-0.2.2-rc.1.20261107.1-x64.exe" "<thư mục>\Peto-Agent-Setup-0.2.2-rc.1.20261107.1-x64.exe.blockmap" "<thư mục>\stable.yml" --repo PeaGy/peto-harness --target peto --prerelease --title "Peto Agent 0.2.2-rc.1.20261107.1" --notes "Có gì mới…"
    ```
 
 3. Trong 10 phút, trang `/download/` hiện bản mới: nút tải trỏ thẳng tới tệp trên GitHub, kèm số phiên bản, ngày, cỡ
-   tệp và link "Có gì mới" (trang phát hành trên GitHub). Không cần khởi động lại backend.
+   tệp và link "Có gì mới" (trang phát hành trên GitHub). Cùng lúc, ứng dụng đã cài (từ bản 7/11/2026) báo có bản mới ở
+   góc dưới bên trái. Không cần khởi động lại backend.
 
-Chưa có bản phát hành nào (hoặc GitHub lỗi) thì trang vẫn mở được, nút chính đổi thành "Cài bản dòng lệnh". Ứng dụng
-chưa tự cập nhật: người dùng tải bộ cài mới ở trang này rồi cài đè; thư mục Harness của họ (phiên làm việc, cài đặt)
-không bị bộ cài đụng tới.
+Chưa có bản phát hành nào (hoặc GitHub lỗi) thì trang vẫn mở được, nút chính đổi thành "Cài bản dòng lệnh".
+
+### Cập nhật tự động
+
+Ứng dụng Windows hỏi `GET /api/agent/desktop/update/win-x64/stable.yml` khoảng 10 phút một lần (thêm lúc mở và khi
+người dùng chọn Check for Updates). Máy chủ đọc `stable.yml` của bản phát hành mới nhất có tệp đó (bỏ bản nháp), kiểm
+phiên bản khớp thẻ và bộ cài có thật với đúng kích thước, rồi trả lại với link tải tuyệt đối trên GitHub; nhớ 10 phút
+như trang tải. Ứng dụng tự tải bộ cài từ GitHub và đối chiếu SHA-512 trong tệp; bản chưa ký nên không có bước kiểm
+chữ ký số. Tải xong, người dùng xác nhận khởi động lại; thư mục Harness (phiên làm việc, cài đặt) không bị đụng tới.
+
+- Bản phát hành thiếu `stable.yml` vẫn hiện trên trang tải, nhưng ứng dụng chỉ được báo bản mới nhất có `stable.yml`.
+- Ngừng phát một bản hỏng: chuyển bản đó về nháp trên GitHub (hoặc xóa `stable.yml` của nó). Tối đa 10 phút sau máy
+  chủ quay về bản trước. Máy đã lên bản hỏng vẫn giữ bản đó (ứng dụng không hạ phiên bản): phát hành bản sửa mới hơn.
+- Tắt hẳn: `PETO_DESKTOP_UPDATES=false` rồi khởi động lại backend; nguồn cập nhật trả 404, ứng dụng chỉ coi như lần
+  kiểm tra lỗi (tự kiểm tra thì không hiện gì).
+- Bảo mật: ai nắm được tài khoản GitHub giữ repo là phát được bản cập nhật tới mọi máy. Bật xác thực hai bước cho tài
+  khoản đó.
+- Bản cài trước ngày 7/11/2026 chưa biết hỏi nguồn này; người dùng cài đè một lần bằng bộ cài mới.
 
 ## Kiểm tra code
 

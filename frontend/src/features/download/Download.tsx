@@ -196,7 +196,9 @@ export default function Download() {
             </article>
             <article className="dl-card dl-card-flat" data-reveal="30">
               <h3>Có bản mới thì sao?</h3>
-              <p>Tải bộ cài mới ở trang này rồi cài như lần đầu. Các phiên làm việc và cài đặt của bạn vẫn giữ nguyên.</p>
+              <p>Trên Windows, Peto Agent tự kiểm tra bản mới. Khi có, góc dưới bên trái của ứng dụng sẽ báo: bấm để
+                tải, tải xong thì xác nhận khởi động lại. Bản cài trước ngày 7/11/2026 chưa có tính năng này, nên cần
+                tải bộ cài mới ở đây và cài đè một lần. Các phiên làm việc và cài đặt của bạn vẫn giữ nguyên.</p>
               {releases && <a className="dl-link" href={releases} target="_blank" rel="noreferrer">
                 Xem mọi bản phát hành<Icon name="external" size={14} /></a>}
             </article>

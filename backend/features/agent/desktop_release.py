@@ -109,13 +109,15 @@ def _release(item: object, repo: str) -> dict | None:
             "releases_url": f"https://github.com/{repo}/releases", "installers": installers}
 
 
-async def _fetch(repo: str) -> dict | None:
+async def fetch_releases(repo: str) -> list | None:
+    """Danh sách phát hành mới nhất trước (tối đa PER_PAGE), hoặc None khi GitHub trả lỗi. Lỗi mạng, phản hồi quá lớn
+    hay JSON hỏng thì raise httpx.HTTPError / ValueError. Dùng chung với nguồn cập nhật (desktop_update.py)."""
     headers = {"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "peto-web"}
     async with httpx.AsyncClient(timeout=TIMEOUT_SECONDS, follow_redirects=False, transport=_TRANSPORT) as client:
         async with client.stream("GET", API_URL.format(repo=repo), params={"per_page": PER_PAGE},
                                  headers=headers) as response:
             if response.status_code != 200:
-                logger.warning("GitHub Releases trả HTTP %s cho trang tải Peto Agent", response.status_code)
+                logger.warning("GitHub Releases trả HTTP %s cho Peto Agent", response.status_code)
                 return None
             body = bytearray()
             async for chunk in response.aiter_bytes():
@@ -123,7 +125,12 @@ async def _fetch(repo: str) -> dict | None:
                 if len(body) > MAX_RESPONSE_BYTES:
                     raise ValueError("phản hồi quá lớn")
     data = json.loads(bytes(body))
-    if not isinstance(data, list):
+    return data if isinstance(data, list) else None
+
+
+async def _fetch(repo: str) -> dict | None:
+    data = await fetch_releases(repo)
+    if data is None:
         return None
     return next((found for found in (_release(item, repo) for item in data) if found), None)
 

@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from features.agent import api as agent_api
 from features.agent import gateway as agent_gateway
 from features.agent import desktop_release
+from features.agent import desktop_update
 from features.agent import install as agent_install
 from features.accounts import auth
 from features.documents import api as document_api
@@ -53,6 +54,7 @@ app.include_router(agent_api.router)
 app.include_router(agent_gateway.router)
 app.include_router(desktop_release.router)
 app.include_router(desktop_release.policy_router)
+app.include_router(desktop_update.router)
 # /install.ps1 nằm ngoài /api: phải đăng ký trước static_files.mount ở cuối tệp.
 app.include_router(agent_install.router)
 app.include_router(docs_api.router)
