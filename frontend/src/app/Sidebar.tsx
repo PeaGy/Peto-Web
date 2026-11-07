@@ -147,11 +147,11 @@ export default function Sidebar({
               <button
                 className="conv-open"
                 aria-current={conversation.id === conversationId ? "page" : undefined}
-                title={conversation.title}
+                data-tip data-tip-side="right"
                 onClick={() => void openConversation(conversation.id)}
                 disabled={streaming || deleting}
               >
-                <span className="conv-title">{conversation.title || "Chưa có tiêu đề"}</span>
+                <span className="conv-title" data-tip-overflow>{conversation.title || "Chưa có tiêu đề"}</span>
                 {conversation.persona === "roleplay" && <span className="conv-persona">· Nhập vai</span>}
               </button>
               <div className="conv-hover-actions">

@@ -54,3 +54,30 @@ it('không hiện khi chạm, và không che menu đang mở của chính nút',
   act(() => { vi.advanceTimersByTime(1000); });
   expect(tip().hidden).toBe(true);
 });
+
+it('chỉ hiện tiêu đề hội thoại khi nhãn bị cắt', () => {
+  const title = 'Liệt kê công cụ khả dụng trong phiên chat hiện tại';
+  render(<>
+    <button type="button" data-tip data-tip-side="right"><span data-tip-overflow>{title}</span></button>
+    <TooltipLayer />
+  </>);
+  const button = screen.getByRole('button', { name: title });
+  const label = screen.getByText(title);
+  const tip = screen.getByRole('tooltip', { hidden: true });
+  let availableWidth = 240;
+  Object.defineProperties(label, {
+    clientWidth: { get: () => availableWidth },
+    scrollWidth: { get: () => 240 },
+  });
+
+  fireEvent.pointerOver(button, { pointerType: 'mouse' });
+  act(() => { vi.advanceTimersByTime(450); });
+  expect(tip.hidden).toBe(true);
+
+  fireEvent.pointerOut(button, { pointerType: 'mouse' });
+  availableWidth = 160;
+  fireEvent.pointerOver(button, { pointerType: 'mouse' });
+  act(() => { vi.advanceTimersByTime(450); });
+  expect(tip.hidden).toBe(false);
+  expect(tip.textContent).toBe(title);
+});

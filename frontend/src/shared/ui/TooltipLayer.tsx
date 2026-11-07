@@ -8,6 +8,7 @@ import './tooltip.css';
  * Cách dùng: đặt `data-tip` lên nút. Không có giá trị (React ghi thành "true") thì dùng aria-label của nút; có chữ thì
  * dùng chữ đó.
  * `data-tip-kbd="Ctrl+K"` thêm phím tắt; `data-tip-side="right"` chọn phía (mặc định bên dưới, tự lật khi hết chỗ).
+ * Đặt `data-tip-overflow` lên nhãn con để chỉ hiện toàn bộ nhãn khi chữ bị cắt.
  * Chỉ hiện khi rê chuột hoặc bút (không hiện khi chạm), hoặc khi focus bằng bàn phím. Bấm, cuộn, Esc thì ẩn.
  * Một lớp duy nhất gắn ở App nghe sự kiện cho cả trang, nên nút mới chỉ cần thuộc tính, không cần bọc component.
  */
@@ -29,9 +30,11 @@ function tipTarget(node: EventTarget | null): HTMLElement | null {
 }
 
 function readTip(target: HTMLElement, instant: boolean): Tip | null {
-  // `data-tip` không có giá trị trong JSX thành "true": khi đó, hay khi để trống, dùng aria-label của nút.
+  const label = target.querySelector<HTMLElement>('[data-tip-overflow]');
+  if (label && label.scrollWidth <= label.clientWidth) return null;
+  // `data-tip` không có giá trị trong JSX thành "true": dùng nhãn bị cắt hoặc aria-label của nút.
   const own = target.dataset.tip;
-  const text = (own && own !== 'true' ? own : target.getAttribute('aria-label') ?? '').trim();
+  const text = (own && own !== 'true' ? own : label?.textContent ?? target.getAttribute('aria-label') ?? '').trim();
   if (!text) return null;
   const side = target.dataset.tipSide as Side | undefined;
   const kbd = (target.dataset.tipKbd ?? '').replace(/Ctrl\+/g, MAC ? '⌘' : 'Ctrl+');

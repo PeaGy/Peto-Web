@@ -51,7 +51,17 @@ export default function ProjectSidebar({state, activeId, conversationId, disable
           </div>
         </div>
         {open && <div className="project-chats" id={`project-chats-${item.id}`}>
-          {page?.items.map(chat => <div className={`conv${conversationId === chat.id ? ' active' : ''}`} key={chat.id}><button className="conv-open" disabled={disabled} title={chat.title} onClick={() => onChat(chat.id)}><span className="conv-title">{chat.title || 'Chưa có tiêu đề'}</span></button><div className="conv-hover-actions"><button aria-label={`Tùy chọn ${chat.title}`} disabled={disabled} onClick={e => onConversationMenu(chat,e.currentTarget.getBoundingClientRect())}>⋯</button></div></div>)}
+          {page?.items.map(chat => (
+            <div className={`conv${conversationId === chat.id ? ' active' : ''}`} key={chat.id}>
+              <button className="conv-open" disabled={disabled} data-tip data-tip-side="right" onClick={() => onChat(chat.id)}>
+                <span className="conv-title" data-tip-overflow>{chat.title || 'Chưa có tiêu đề'}</span>
+              </button>
+              <div className="conv-hover-actions">
+                <button aria-label={`Tùy chọn ${chat.title}`} data-tip="Tùy chọn hội thoại" disabled={disabled}
+                  onClick={e => onConversationMenu(chat, e.currentTarget.getBoundingClientRect())}>⋯</button>
+              </div>
+            </div>
+          ))}
           {page?.error ? <button className="project-retry" onClick={() => void state.refreshChats(item.id)}>{page.error} Thử lại</button> : !page?.items.length && (page?.loading && !page.loaded || !page ? <ProjectLoading label="Đang tải hội thoại dự án"/> : <p className="empty-hint">Chưa có hội thoại.</p>)}
           {page?.more && <button className="project-retry" disabled={disabled || page.loading} onClick={() => void state.refreshChats(item.id,true)}>Xem thêm hội thoại</button>}
         </div>}

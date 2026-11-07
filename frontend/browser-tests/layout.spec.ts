@@ -16,6 +16,37 @@ test('sidebar và menu hội thoại gọn, chỉ hiện nút tùy chọn', asyn
   await expect(page).toHaveScreenshot('sidebar-menu.png', {maxDiffPixelRatio:0});
 });
 
+test('tiêu đề dài mờ ở cuối khi rê chuột và tooltip hiện đủ chữ', async ({ page }, info) => {
+  await mockPeto(page);
+  const longTitle = 'Liệt kê công cụ khả dụng trong phiên chat hiện tại và giải thích công dụng';
+  await page.route(/\/api\/conversations(?:\?|$)/, route => route.fulfill({ json: { has_more: false, conversations: [
+    { id: 'A', title: longTitle, created_at: 1, updated_at: 2, message_count: 2 },
+    { id: 'B', title: 'Chat ngắn', created_at: 1, updated_at: 1, message_count: 2 },
+  ] } }));
+  await page.goto('/');
+  await expect(page.getByLabel('Nhắn cho Peto', { exact: true })).toBeVisible();
+  await openSidebar(page);
+  const opener = page.getByRole('button', { name: longTitle, exact: true });
+  const label = opener.locator('.conv-title');
+  const actions = page.getByRole('button', { name: `Tùy chọn ${longTitle}`, exact: true });
+  await expect(opener).not.toHaveAttribute('title', /.+/);
+  await expect(label).toHaveCSS('text-overflow', 'ellipsis');
+  expect(await label.evaluate(node => node.scrollWidth > node.clientWidth)).toBe(true);
+  if (info.project.name === 'pc') {
+    await opener.hover();
+    await expect(label).toHaveCSS('text-overflow', 'clip');
+    await expect(label).toHaveCSS('mask-image', /linear-gradient/);
+    await expect(page.getByRole('tooltip')).toHaveText(longTitle);
+    await expect(page.getByRole('tooltip')).toHaveAttribute('data-side', 'right');
+  } else {
+    await expect(label).toHaveCSS('mask-image', 'none');
+    await expect(page.getByRole('tooltip')).toBeHidden();
+  }
+  await actions.click();
+  await expect(page.getByRole('button', { name: 'Đổi tên', exact: true })).toBeVisible();
+  await noPageOverflow(page);
+});
+
 test('giá tiền, bảng, công thức và sửa tin nhắn không phá bố cục', async ({ page }) => {
   await mockPeto(page);
   await openChat(page);

@@ -20,9 +20,23 @@
 .conv { position:relative; }
 .conv-hover-actions { position:absolute; right:4px; display:flex; opacity:0; pointer-events:none; border-radius:8px; background:inherit; }
 @media (hover: hover) and (pointer: fine) { .conv-hover-actions button:hover { background:transparent; } }
-.conv:hover .conv-hover-actions,.conv:focus-within .conv-hover-actions { opacity:1; pointer-events:auto; }
+.conv:focus-within .conv-hover-actions { opacity:1; pointer-events:auto; }
 .conv:focus-within .conv-open { padding-right:44px; }
-@media (hover: hover) and (pointer: fine) { .conv:hover .conv-open { padding-right:44px; } }
+@media (hover: hover) and (pointer: fine) {
+  .conv:hover .conv-hover-actions { opacity:1; pointer-events:auto; }
+  .conv:hover .conv-open { padding-right:44px; }
+  .conv:is(:hover,:focus-within) .conv-title {
+    --conv-title-fade:16px;
+    text-overflow:clip;
+    mask-image:linear-gradient(to right, #000 calc(100% - var(--conv-title-fade)), transparent);
+  }
+  /* Chừa đuôi mờ trong phép đo tràn để chữ chạm vào vùng này vẫn có tooltip. */
+  .conv:is(:hover,:focus-within) .conv-title::after {
+    content:"";
+    display:inline-block;
+    width:var(--conv-title-fade);
+  }
+}
 /* Nền, viền, bóng và mục lấy từ .popup-menu (shared/ui/menu.css). */
 .conversation-menu-popup { position:fixed; margin:0; width:196px; box-sizing:border-box; }
 .conversation-menu-popup::backdrop { background:transparent; }
