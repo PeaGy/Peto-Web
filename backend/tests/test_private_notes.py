@@ -1,4 +1,6 @@
 """Ghi chú riêng của Peto trong Companion: model nhớ được bí mật trò chơi, người dùng không thấy và không nghe."""
+import json
+
 import pytest
 
 from features.companion import memory as companion_memory
@@ -74,11 +76,15 @@ async def test_memory_never_reads_the_secret(client, monkeypatch):
 
     monkeypatch.setattr(MockProvider, "stream", spy)
     await turn(client, "Chọn một số từ 1 tới 9 rồi nhớ nha __bimat__:số 7")
-    assert seen and "Peto: Mình chọn xong rồi. Đoán đi!" in seen[-1] and "<private>" not in seen[-1]
+    assert seen and "<private>" not in seen[-1]
+    conversation = json.loads(seen[-1].split("New conversation JSON (reference data):\n", 1)[1])
+    replies = [record["text"] for record in conversation["new_messages"] if record["role"] == "assistant"]
+    assert "Mình chọn xong rồi. Đoán đi!" in replies
 
 
 def test_summaries_keep_the_note_so_a_long_game_survives_the_history_window():
-    rows = [{"role": "user", "content": "Chọn một số"}, {"role": "assistant", "content": "Xong. <private>7</private> Đoán đi!"}]
+    rows = [{"id": 1, "role": "user", "content": "Chọn một số"},
+            {"id": 2, "role": "assistant", "content": "Xong. <private>7</private> Đoán đi!"}]
     assert "<private>7</private>" in companion_memory._summary_prompt("", rows)
     assert "<private>" not in companion_memory._prompt([], rows)
 

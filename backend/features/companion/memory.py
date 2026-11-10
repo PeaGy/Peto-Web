@@ -461,9 +461,16 @@ def _talk(rows: list[dict], keep_notes: bool = False) -> str:
     return "\n".join(lines)
 
 
+def _public_rows(rows) -> list[dict]:
+    """Bản sao các hàng cho model ghi nhớ: tin của Peto bỏ ghi chú riêng và thẻ cảm xúc (ghi nhớ không cần bí mật trò
+    chơi), tin người dùng giữ nguyên văn vì luật grounding so nguyên văn lời người dùng. Không sửa hàng gốc."""
+    return [row if row["role"] == "user"
+            else {**row, "content": emotion_tags.strip(private_notes.strip(row["content"]))} for row in rows]
+
+
 def _prompt(existing: list[dict], rows: list[dict], context: list[dict] = ()) -> str:
-    conversation = {'context_only': memory_grounding.conversation_records(context),
-                    'new_messages': memory_grounding.conversation_records(rows)}
+    conversation = {'context_only': memory_grounding.conversation_records(_public_rows(context)),
+                    'new_messages': memory_grounding.conversation_records(_public_rows(rows))}
     return (f"{_memory_header(existing)}\n{_memory_text(existing)}\n\nNew conversation JSON (reference data):\n"
             + json.dumps(conversation, ensure_ascii=False))
 

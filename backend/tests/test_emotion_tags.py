@@ -88,7 +88,8 @@ def test_the_companion_prompt_lists_the_nine_airi_emotions():
 
 
 def test_memory_and_summaries_never_see_markers():
-    rows = [{"role": "user", "content": "Mình đậu rồi"}, {"role": "assistant", "content": "<|EMOTE_HAPPY|> Tuyệt quá!"}]
+    rows = [{"id": 1, "role": "user", "content": "Mình đậu rồi"},
+            {"id": 2, "role": "assistant", "content": "<|EMOTE_HAPPY|> Tuyệt quá!"}]
     assert "<|" not in companion_memory._prompt([], rows)
     assert "<|" not in companion_memory._summary_prompt("", rows)
 

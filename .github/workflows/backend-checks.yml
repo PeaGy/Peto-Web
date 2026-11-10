@@ -1,0 +1,42 @@
+name: Kiểm tra backend và Peto Agent CLI
+on:
+  push:
+    paths: ['backend/**', 'agent-cli/**', '.github/workflows/backend-checks.yml']
+  pull_request:
+    paths: ['backend/**', 'agent-cli/**', '.github/workflows/backend-checks.yml']
+permissions:
+  contents: read
+jobs:
+  backend:
+    # Cùng hệ điều hành với VPS. Test OCR thật tự bỏ qua khi máy không có Tesseract.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements.lock
+      - name: Cài thư viện
+        run: python -m pip install -r requirements.lock
+      - name: Kiểm tra backend
+        run: python -m pytest -q
+  agent-cli:
+    # CLI dùng API của Windows (bảng điều khiển, DPAPI, GDI+), nên chạy trên Windows.
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements.lock
+      - name: Cài thư viện
+        run: python -m pip install -r backend/requirements.lock
+      - name: Kiểm tra Peto Agent CLI
+        run: python -m pytest -q agent-cli/tests

@@ -1,6 +1,8 @@
 fastapi
 uvicorn[standard]
 websockets>=14
+# đọc feed cập nhật Peto Agent (features/agent/desktop_update.py); trước chỉ có nhờ uvicorn[standard]
+PyYAML
 aiosqlite
 anyio
 tzdata

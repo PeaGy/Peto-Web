@@ -28,10 +28,14 @@ Cần Python 3.12+ và Node 22.12+.
 
 ```bash
 python -m venv .venv
-.venv/Scripts/python.exe -m pip install -r backend/requirements.txt
+.venv/Scripts/python.exe -m pip install -r backend/requirements.lock
 cd frontend && npm install && cd ..
 cp .env.example .env    # điền các biến cần dùng, xem bên dưới
 ```
+
+`backend/requirements.lock` ghim đúng phiên bản từng thư viện; VPS cũng cài từ tệp này
+(`.venv/bin/python -m pip install -r backend/requirements.lock`). Thêm hay nâng thư viện thì sửa
+`backend/requirements.txt`, cài thử rồi sinh lại tệp khóa theo hướng dẫn ở đầu tệp đó.
 
 Hai terminal:
 
@@ -73,6 +77,9 @@ Kiểm tra giao diện PC/mobile bằng trình duyệt: từ `frontend`, chạy 
 rồi `npm run test:browser`. Bộ kiểm tra so sánh ảnh chuẩn và thử phục hồi sau mất mạng, không dùng lượt AI.
 Xem [hướng dẫn và giới hạn](frontend/browser-tests/README.md). Workflow frontend chạy các kiểm tra khi push/PR,
 không tự triển khai web.
+
+Workflow backend chạy test backend (Linux, Python 3.12) và test Peto Agent CLI (Windows) khi push/PR đổi `backend/`
+hay `agent-cli/`, cài thư viện từ `backend/requirements.lock`.
 
 ## Tài liệu khác
 

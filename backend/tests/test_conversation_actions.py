@@ -83,7 +83,11 @@ async def test_edit_of_question_replaced_while_queued_reports_missing_target(cli
         other_request = uuid.uuid4().hex
         await chat_turns.reserve(owner, other_request)
         assert await conversation_actions.retry_in_place(owner, cid, uid, 'Đã sửa từ tab kia', request_id=other_request)
-        yield
+        try:
+            yield
+        finally:
+            # Kết thúc lượt của tab kia: DB test dùng chung, lượt còn 'running' sẽ chặn trí nhớ đọc tin ở test sau.
+            await chat_turns.finish(owner, other_request, 'stopped')
 
     monkeypatch.setattr(service.admission, 'slot', slot)
     payload = {'conversation_id': cid, 'branch_message_id': uid, 'message': 'Bản sửa từ tab cũ'}
