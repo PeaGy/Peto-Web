@@ -11,7 +11,9 @@ from storage import connection as db_connection
 
 async def init_db() -> None:
     db_connection.DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    async with db_connection.connect() as db:
+    # Kết nối nâng cấp schema tắt khóa ngoại, như quy trình đổi bảng của SQLite: bước dựng lại bảng users
+    # (DROP TABLE users) khi khóa ngoại bật sẽ xóa dây chuyền ảnh đại diện và bài yêu thích của mọi tài khoản.
+    async with db_connection.connect(foreign_keys=False) as db:
         await db.execute("PRAGMA journal_mode=WAL")
         await db.execute(
             """

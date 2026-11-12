@@ -9,10 +9,10 @@ import uuid
 from datetime import datetime, timezone
 from urllib.parse import urlsplit, urlunsplit
 
-import aiosqlite
 import httpx
 from fastapi import HTTPException
 from core.config import DB_PATH
+from storage import connection
 
 MAX_AUDIO = 8 * 1024 * 1024
 OPENAI_VOICES = ('nova', 'shimmer', 'coral', 'sage', 'alloy', 'ash', 'echo', 'fable', 'onyx')
@@ -86,7 +86,7 @@ async def reserve(provider, characters):
     if not math.isfinite(limit) or limit < 0:
         raise HTTPException(503, 'Cấu hình ngân sách giọng nói không hợp lệ.')
     month = datetime.now(timezone.utc).strftime('%Y-%m')
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with connection.connect(path=DB_PATH) as db:
         await db.execute('CREATE TABLE IF NOT EXISTS speech_budget (month TEXT PRIMARY KEY, micros INTEGER NOT NULL)')
         await db.execute('BEGIN IMMEDIATE')
         row = await (await db.execute('SELECT micros FROM speech_budget WHERE month=?', (month,))).fetchone()

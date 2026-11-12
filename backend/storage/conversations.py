@@ -197,7 +197,6 @@ async def add_message(
     Companion dùng khóa riêng của người dùng; trí nhớ bỏ qua các tin đó."""
     now = time.time()
     async with db_connection.connect() as db:
-        await db.execute("PRAGMA foreign_keys=ON")
         cursor = await db.execute(
             "INSERT INTO messages (conversation_id, role, content, created_at, status, sources, artifacts, work, provider) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -241,7 +240,6 @@ async def set_title(owner: str, conversation_id: str, title: str) -> None:
 async def delete_conversation(owner: str, conversation_id: str) -> bool:
     paths = await list_attachment_paths(conversation_id)
     async with db_connection.connect() as db:
-        await db.execute("PRAGMA foreign_keys=ON")
         cursor = await db.execute(
             "DELETE FROM conversations WHERE id = ? AND owner = ?",
             (conversation_id, owner),

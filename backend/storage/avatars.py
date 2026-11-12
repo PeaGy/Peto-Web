@@ -12,7 +12,6 @@ def info(user: dict) -> dict:
 
 async def save(owner: str, data: bytes) -> None:
     async with connection.connect() as db:
-        await db.execute('PRAGMA foreign_keys=ON')
         await db.execute('''INSERT INTO user_avatars(owner,data,version,updated_at) VALUES(?,?,?,?)
             ON CONFLICT(owner) DO UPDATE SET data=excluded.data,version=excluded.version,updated_at=excluded.updated_at''',
                          (owner, data, uuid.uuid4().hex, time.time()))

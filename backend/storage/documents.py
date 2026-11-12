@@ -87,7 +87,6 @@ async def get_document(owner, document_id, version=None):
 
 async def save_document(owner, conversation_id, title, content, document_id=None, base_version=None, *, style='report', assets=None):
     async with db_connection.connect() as connection:
-        await connection.execute("PRAGMA foreign_keys=ON")
         await connection.execute("BEGIN IMMEDIATE")
         if document_id:
             row = await (await connection.execute("""
@@ -143,7 +142,6 @@ async def get_assets(owner, document_id, version):
 
 async def delete_document(owner, document_id):
     async with db_connection.connect() as connection:
-        await connection.execute("PRAGMA foreign_keys=ON")
         cursor = await connection.execute("DELETE FROM chat_documents WHERE id=? AND owner=?", (document_id, owner))
         await connection.commit()
         if not cursor.rowcount:

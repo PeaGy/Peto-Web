@@ -12,6 +12,10 @@ line once it has been tried, and record the result in the area's note file. Paid
 - [ ] `/download/` against real GitHub Releases and a real installer build (only a mock GitHub was used) — `agent-gateway.md`, "Peto Agent download page".
 - [ ] Whether Grok really refuses WebP/GIF images (the gateway converts them to PNG) — `agent-gateway.md`, "Agent gateway for Peto Harness".
 
+## Admin and operations (`admin-ops.md`)
+
+- [ ] G3.1: run `PRAGMA foreign_key_check` on a copy of the VPS database to list orphan rows left from when foreign keys were off, and decide whether to delete them — `admin-ops.md`, "One SQLite connection helper (G3.1)".
+
 ## Accounts and memory (`accounts-memory.md`)
 
 - [ ] How well a real model sorts and routes memory notes into entries (only the mock has run) — `accounts-memory.md`, "Memory (Brain)".

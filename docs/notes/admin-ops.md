@@ -77,8 +77,13 @@ and falls back to `XAI_API_KEY` if refresh fails or no token file exists.
 aiosqlite, WAL mode, connection per operation. `init_db()` creates tables with
 `CREATE TABLE IF NOT EXISTS` and does schema upgrades **manually** via `PRAGMA table_info`
 plus `ALTER TABLE` — there is no migration framework and no version table. Add a column the
-same way, preserving existing rows. Note that `PRAGMA foreign_keys=ON` is set per connection
-where cascade deletes matter (SQLite has it off by default).
+same way, preserving existing rows. Every backend connection is opened by `storage.connection.connect()`, which turns
+on `PRAGMA foreign_keys` when the connection opens (SQLite has it off by default, per connection, and ignores it inside
+a transaction) and sets a 5-second busy timeout. Never open `aiosqlite.connect` elsewhere or toggle the pragma by hand;
+`tests/test_sqlite_connection.py` scans for both. The one exception is `init_db()`, which opens
+`connect(foreign_keys=False)`: rebuilding a table with `DROP TABLE` while foreign keys are on cascades into every child
+row (the `users` rebuild would wipe `user_avatars` and `player_favorites`). The sync `ops/` tools use `sqlite3`
+directly; `ops/purge_guests.py` turns foreign keys on itself.
 
 Tables: `conversations`, `messages`, `attachments`, `users`, `user_profiles`, `user_avatars`,
 `imagine_jobs`, `imagine_images`, `imagine_requests`, `agent_devices`, `agent_usage`, `voice_usage`,
@@ -90,3 +95,36 @@ a web account to a Discord ID.
 default to `chat`. `conversations.persona` (`assistant` or `roleplay`) was added the same way; older rows default to
 `assistant`. Since 2026-10-18 only old conversations carry `roleplay` (read-only), and `roleplay_consents` is no longer
 created (old databases keep it, unused).
+
+# Dated log (newest first)
+
+## One SQLite connection helper (G3.1) (2026-11-12, committed on branch `g3.1-sqlite-connect`, not deployed)
+
+Audit package G3.1. `storage.connection.connect()` passes a `sqlite3.Connection` subclass as `factory` to
+`aiosqlite.connect`, so `PRAGMA foreign_keys=ON` runs before any transaction, plus `timeout=5.0` (the sqlite3
+default, now explicit: `busy_timeout` 5000 ms). The ten hand-written `PRAGMA foreign_keys=ON` lines in async code are
+gone (`features/chat/conversations.py` ×2, `storage/avatars.py`, `storage/chat_turns.py` ×2, `storage/conversations.py`
+×2, `storage/documents.py` ×2, `storage/imagine.py`); `features/voice/cloud.py` now opens through `connect(path=DB_PATH)`
+(the parameter keeps its tests' separate speech-budget file working). `ops/purge_guests.py` keeps its own pragma.
+
+Every `DELETE` on a parent table, checked before the change:
+- `conversations` (`storage/conversations.delete_conversation`) and `chat_documents` (`storage/documents.delete_document`),
+  and `messages` in `features/chat/conversations.py`: foreign keys were already on there; unchanged.
+- `messages` in `storage/cards.py` (deleting one Companion message): foreign keys were off, so its `chat_lineage` row
+  stayed behind; it is now removed with the message, which is what the lineage table is for.
+- `imagine_jobs` (`storage/imagine.py`, three delete paths): the old pragma came after `BEGIN IMMEDIATE`, where SQLite
+  ignores it, so it never took effect. Each path already deletes `imagine_images` by hand, so the result is the same.
+- `projects` (`storage/projects.delete_project`): foreign keys were off; the explicit `DELETE FROM project_files` stays,
+  and the cascade now does the same.
+- `users`: only `ops/purge_guests.py` (already on) and the schema rebuild in `init_db` (kept off, see above).
+- No `INSERT OR REPLACE` touches a parent table (the only one is `chat_contexts`, a child). Inserts of child rows whose
+  parent is missing now fail with `IntegrityError` instead of leaving orphans. Checked: project files, Chat messages and
+  Companion summaries check the parent in the same transaction; generated images are saved while their job is
+  `queued`/`running`/`saving`, which `delete_imagine_job` refuses to delete (a failed insert also removes the file);
+  avatars and favourites belong to an owner that `upsert_user` created at sign-in.
+- Existing orphan rows in a production database are not checked or removed by this change (`PRAGMA foreign_key_check`
+  on the VPS would list them).
+
+Tests: `tests/test_sqlite_connection.py` (5): pragmas on every connection, still on inside `BEGIN IMMEDIATE`, an orphan
+favourite is rejected, a source scan for stray `aiosqlite.connect` / `PRAGMA foreign_keys`, the old-`users` rebuild
+keeps avatar and favourite rows (fails if `init_db` opens with foreign keys on), and a project delete cascades its files.
