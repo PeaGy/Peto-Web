@@ -10,19 +10,19 @@ of its area, never into this file. Keep this file under 400 lines: only what eve
 Peto Web is a private chat UI for Peto, an AI assistant. The name comes from a Discord bot
 (`Tracen Jukebox`) in a **separate repository**. This web app is deliberately independent:
 its own database, its own xAI token file, its own persona prompt. The only link back to the
-bot is a read-only memory gateway (see below).
+bot is a read-only memory gateway (see "Discord memory gateway" in `docs/notes/accounts-memory.md`).
 
 On 2026-09-17 the owner made the default persona an honest, helpful AI assistant (now `prompts/core.CORE_PROMPT`
 plus `prompts/chat.WEB_PROMPT`): it says it is Peto, an AI assistant, addresses users as "bạn", and refuses only
 genuinely harmful requests. By the owner's call it never names the model behind it (no Grok or xAI in any prompt), and
 `tests/test_persona.py` checks that. The bot's roleplay character survived as an opt-in roleplay mode until 2026-10-18,
-when the owner removed it (see the section at the top and "Roleplay mode (removed)"). Peto Agent uses the same core.
-Companion has its own persona, `COMPANION_SYSTEM_PROMPT` (see "Companion persona" under "Companion tab and voice
-relay").
+when the owner removed it (see "English model instructions, provider overlays, no roleplay mode" and "Roleplay mode
+(removed)" in `docs/notes/chat.md`). Peto Agent uses the same core. Companion has its own persona,
+`COMPANION_SYSTEM_PROMPT` (see "Companion persona" under "Companion tab and voice relay" in `docs/notes/companion.md`).
 
 Stack: FastAPI + SQLite (aiosqlite) backend, React 19 + Vite frontend, xAI Grok via the
-Responses API, plus OpenAI's GPT-6 models as a user-selectable option (see "Model choice"). Registration is **open**:
-Discord, Google or GitHub — there is no allowlist.
+Responses API, plus OpenAI's GPT-6 models as a user-selectable option (see "Model choice" in `docs/notes/chat.md`).
+Registration is **open**: Discord, Google or GitHub — there is no allowlist.
 
 ## Where to read before working on an area
 
@@ -129,8 +129,9 @@ Short map; the full sections are in the note files named in each line.
   voice relay queue and the Agent device codes are process-local, so the backend runs as a single process. Details:
   `docs/notes/chat.md` ("Chat request lifecycle").
 - **Configuration and database.** Environment variables are read in `core/config.py` (numbers clamped) and documented
-  in `.env.example`; the two exceptions are listed in `docs/notes/admin-ops.md`. SQLite via aiosqlite in WAL mode; schema upgrades are manual `PRAGMA table_info` + `ALTER TABLE` at
-  startup, with no migration framework. Details: `docs/notes/admin-ops.md`.
+  in `.env.example`; the two exceptions are listed in `docs/notes/admin-ops.md`. SQLite via aiosqlite in WAL mode;
+  schema upgrades are manual `PRAGMA table_info` + `ALTER TABLE` at startup, with no migration framework. Details:
+  `docs/notes/admin-ops.md`.
 
 ## Invariants — do not break these
 
@@ -187,7 +188,7 @@ Never run paid benchmarks or evals without the owner's go-ahead.
 
 ## Related documents
 
-- `DESIGN.md` — frontend visual and copy conventions (see "Frontend conventions").
+- `DESIGN.md` — frontend visual and copy conventions (see "Frontend conventions" in `docs/notes/frontend.md`).
 - `README.md` — deliberately short (rewritten 2026-09-30 at the owner's request, from 674 lines): what the project is,
   how to run, configure, test and deploy it, and links. Do not grow it back into a manual: behaviour belongs in this
   file and in `/docs/`.
