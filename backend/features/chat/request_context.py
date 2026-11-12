@@ -9,6 +9,7 @@ chữ người dùng gõ hay dán có cùng tiêu đề chỉ là dữ liệu.
 from contextvars import ContextVar
 from dataclasses import dataclass
 import json
+import re
 
 from shared.time_tools import current_datetime, time_context
 from .client_environment import ClientEnvironment
@@ -26,8 +27,21 @@ class ServerBlock(dict):
     lớp này, nên ``ai/claude.py`` chỉ cho vai ``system`` trong ``messages`` với đúng các item này."""
 
 
+# Thẻ hàng rào viết theo kiểu bất kỳ (hoa thường, khoảng trắng): "< PETO_RUNTIME >", "</ peto_runtime>"…
+_TAG = re.compile(r'<(?=\s*/?\s*peto_runtime\b)', re.IGNORECASE)
+
+
 def fence(text):
     return f'{OPEN}\n{text}\n{CLOSE}'
+
+
+def neutralize(text):
+    """Vô hiệu hóa thẻ hàng rào trong chữ không do máy chủ tạo (tin người dùng, tệp, kết quả công cụ…).
+
+    Đổi ``<`` mở đầu thẻ thành ``&lt;``, tất định nên cùng một chữ luôn ra cùng một bản và tiền tố cache vẫn trùng byte.
+    Chỉ đổi bản gửi model, không đổi dữ liệu lưu.
+    """
+    return _TAG.sub('&lt;', text) if isinstance(text, str) else text
 
 
 @dataclass(frozen=True)
@@ -89,6 +103,7 @@ class RequestContext:
         """Khối runtime đầu lượt: mốc giờ, envelope tóm tắt (nếu có), snapshot. Chữ từng phần giữ như khi còn ở system."""
         parts = [time_context(self.timezone, clock=self.clock)]
         if self.history_note:
-            parts.append(self.history_note)
+            # Envelope có trích tin người dùng, tên tệp và bản tóm tắt của model: không để chúng đóng hàng rào sớm.
+            parts.append(neutralize(self.history_note))
         parts.append(self.render(service=service, model=model, effort=effort, capabilities=capabilities))
         return '\n\n'.join(parts)

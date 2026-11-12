@@ -274,6 +274,20 @@ class ResponsesProvider(ChatProvider):
         await self._prepare()
 
         payload_input = build_input_payload(messages)
+        # Lượt Chat: chữ không do máy chủ tạo (hồ sơ, trí nhớ, tài liệu dự án trong system prompt; tin, nhãn và trích
+        # đoạn tệp trong lịch sử; kết quả công cụ) không được mang thẻ <peto_runtime> thật, để không giả được khối runtime.
+        # Lượt khác không có khối runtime nên giữ nguyên byte.
+        chat_turn = request_context.current.get() is not None
+        if chat_turn:
+            system_prompt = request_context.neutralize(system_prompt)
+            for item in payload_input:
+                for part in item["content"]:
+                    if "text" in part:
+                        part["text"] = request_context.neutralize(part["text"])
+
+        def tool_output(result: dict) -> str:
+            text = json.dumps(result, ensure_ascii=False)
+            return request_context.neutralize(text) if chat_turn else text
         search_enabled = tools_enabled and WEB_SEARCH_ENABLED and web_search != "off"
         instructions = f"{system_prompt}\n\n{search_context(web_search, search_enabled)}"
         sources: list[dict] = []
@@ -655,7 +669,7 @@ class ResponsesProvider(ChatProvider):
                     result = {'ok': False, 'error': 'Đã chạm giới hạn tra cứu của lượt này. Công cụ này chưa được chạy; hãy tổng hợp dữ liệu đã có và nêu rõ phần còn thiếu.'}
                     record_tool_result(result)
                     payload_input.append({'type': 'function_call_output', 'call_id': call['call_id'],
-                                          'output': json.dumps(result, ensure_ascii=False)})
+                                          'output': tool_output(result)})
                     continue
                 calls_used += 1
                 if not plan.allows(call.get('name')):
@@ -707,7 +721,7 @@ class ResponsesProvider(ChatProvider):
                 record_tool_result(result)
                 payload_input.append({
                     "type": "function_call_output", "call_id": call["call_id"],
-                    "output": json.dumps(result, ensure_ascii=False),
+                    "output": tool_output(result),
                 })
 
 

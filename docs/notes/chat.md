@@ -492,6 +492,18 @@ note), so no Chat turn could read the cached history or attachments. Now, for Ch
 - Server blocks are recognised by position and by the server-made `ServerBlock` type, never by heading:
   `request_context.split_context` is gone, `claude.cached_system` no longer splits on the snapshot heading, and Claude
   accepts `role: "system"` only from a `ServerBlock`.
+- Follow-up fix the same day: on xAI the genuine block is only a part of a user-role message, so roles alone do not
+  prove origin. In Chat turns `request_context.neutralize` turns the `<` of any `peto_runtime` tag (any case, any
+  spacing) into `&lt;` in all text not made by the server: the system prompt part with profile, memory and project
+  documents, every text part of history (user and assistant messages, attachment labels and excerpts, cited sources),
+  the summary envelope inside the runtime block, and every `function_call_output` the server builds. It is
+  deterministic, so prefixes stay byte-identical; stored data is unchanged; non-Chat requests are untouched. Tests:
+  lookalike tags in a message, an attached text file and a round-two tool result for all three models, plus a stable
+  prefix with a tagged history message (12 tests; backend 2,103 passed, 1 skipped).
+- Known limits: xAI's native web search results (and Claude's server-side search/fetch blocks) are produced inside
+  the service and replayed as returned, so they cannot be filtered; only the prompt sentence covers them. The model's
+  own output items replayed within a turn are not filtered either. There is no automatic fallback if a service rejects
+  the new placement in production: the way back is to revert the G1.1 commits and restart the backend.
 - Claude: `cache_control` on the last block of the old history even in one-round turns (plus the stable system block and,
   in a tool loop, the last block). Haiku thinking is replayed again, but only when the system, tools and earlier
   messages match the request that produced it (`anthropic_prefix` digest, ignoring `cache_control` as the
