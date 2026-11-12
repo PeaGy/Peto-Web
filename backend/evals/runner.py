@@ -14,13 +14,18 @@ from time import perf_counter
 import uuid
 
 from .adapter import (BudgetExceeded, CallBudget, Capture, close_provider, ensure_credentials, input_chars,
-                      make_provider, prepare_prompts, user_message, VisibleStream)
+                      make_provider, output_caps, prepare_prompts, user_message, VisibleStream)
 from .checks import evaluate
 from .schema import Case, EvalError, Settings
 
 
-def manifest(dataset: Path, clock: datetime) -> dict:
+def manifest(dataset: Path | list[Path], clock: datetime) -> dict:
     root = Path(__file__).resolve().parents[2]
+    datasets = dataset if isinstance(dataset, list) else [dataset]
+    hashes = [{'name': path.name, 'sha256': hashlib.sha256(path.read_bytes()).hexdigest()} for path in datasets]
+    # Một dataset giữ hash của tệp như v1; bộ bài nhiều tệp dùng hash của danh sách tên và hash từng tệp.
+    combined = hashes[0]['sha256'] if len(hashes) == 1 else hashlib.sha256(
+        '\n'.join(f"{row['name']}:{row['sha256']}" for row in hashes).encode()).hexdigest()
     def git(*args):
         try:
             result = subprocess.run(['git', *args], cwd=root, capture_output=True, timeout=10)
@@ -37,10 +42,11 @@ def manifest(dataset: Path, clock: datetime) -> dict:
     sources = [path for folder in ('backend/prompts', 'backend/evals', 'backend/ai')
                for path in (root / folder).glob('*.py')]
     sources += [root / path for path in ('backend/features/chat/prompt_context.py', 'backend/features/chat/history.py',
+                                        'backend/features/chat/context_budget.py',
                                         'backend/features/companion/private_notes.py', 'backend/features/companion/emotion_tags.py',
                                         'backend/shared/time_tools.py', 'backend/shared/web_search.py')]
     return {'commit': git('rev-parse', 'HEAD'), 'dirty': bool(status) if status is not None else None,
-            'dataset_sha256': hashlib.sha256(dataset.read_bytes()).hexdigest(), 'clock': clock.isoformat(),
+            'dataset_sha256': combined, 'datasets': hashes, 'clock': clock.isoformat(),
             'code_sha256': {str(path.relative_to(root)).replace('\\', '/'): hashlib.sha256(path.read_bytes()).hexdigest()
                             for path in sorted(sources)},
             'sdk_versions': versions}
@@ -67,8 +73,8 @@ def redact(value):
     return value
 
 
-async def run(cases: list[Case], settings: Settings, dataset: Path, output: Path, *,
-              clock: datetime | None = None, factory=make_provider, progress=None) -> dict:
+async def run(cases: list[Case], settings: Settings, dataset: Path | list[Path], output: Path, *,
+              clock: datetime | None = None, factory=make_provider, progress=None, estimate: dict | None = None) -> dict:
     from ai.base import ChatMessage, ProviderError, StreamChunk
     planned = settings.validate(cases)
     if settings.mode == 'live':
@@ -86,6 +92,7 @@ async def run(cases: list[Case], settings: Settings, dataset: Path, output: Path
     output.mkdir(parents=True, exist_ok=False)
     result = {'version': 1, 'run_id': uuid.uuid4().hex, 'started_at': datetime.now(UTC).isoformat(),
               'mode': settings.mode, 'settings': asdict(settings), 'manifest': manifest(dataset, clock),
+              'suite': settings.suite, 'estimate': estimate,
               'planned_turns': planned, 'request_count': 0, 'finished': False,
               'scope': 'Prompt và hội thoại có ngữ cảnh giả; không chạy API Web, ghi nhớ nền, công cụ, TTS hoặc Agent.',
               'prompts': [{'model': model, 'case_id': case_id, 'turn': index + 1, **body}
@@ -98,6 +105,7 @@ async def run(cases: list[Case], settings: Settings, dataset: Path, output: Path
             sample = {'model': model, 'case_id': case.id, 'title': case.title, 'persona': case.persona,
                       'group': case.group, 'context': case.context, 'repeat': repeat, 'turns': []}
             history = []
+            keep = settings.output_chars(model)
             provider, capture = None, Capture('')
             try:
                 provider, capture = factory(model, settings, budget)
@@ -123,7 +131,7 @@ async def run(cases: list[Case], settings: Settings, dataset: Path, output: Path
                             raise BudgetExceeded('Lịch sử vượt giới hạn đầu vào.')
                         if settings.mode == 'mock':
                             budget.claim({'instructions': prompt['text'], 'input': [asdict(message) for message in history],
-                                          'max_output_tokens': settings.max_output_tokens})
+                                          'max_output_tokens': settings.output_cap(model)}, settings.output_cap(model))
                         from shared.web_search import spoken_reply
                         token = spoken_reply.set(case.persona == 'companion')
                         try:
@@ -143,7 +151,7 @@ async def run(cases: list[Case], settings: Settings, dataset: Path, output: Path
                                     visible.append(public)
                                     if public.strip() and row['first_visible_ms'] is None:
                                         row['first_visible_ms'] = elapsed
-                                    if output_chars > 32_768:
+                                    if output_chars > keep:
                                         row['status'] = 'output_limit'
                                         break
                         finally:
@@ -164,8 +172,8 @@ async def run(cases: list[Case], settings: Settings, dataset: Path, output: Path
                         # Không ghi str(exception) hoặc traceback: SDK có thể kèm credential/body.
                         row['status'] = 'internal_error'
                     row['elapsed_ms'] = round((perf_counter() - started) * 1000, 3)
-                    row['raw_response'] = ''.join(pieces)[:32_768]
-                    row['visible_response'] = ''.join(visible)[:32_768]
+                    row['raw_response'] = ''.join(pieces)[:keep]
+                    row['visible_response'] = ''.join(visible)[:keep]
                     row['calls'] = capture.records[call_start:]
                     if row['status'] == 'complete' and not row['visible_response'].strip():
                         row['status'] = 'empty'
@@ -195,7 +203,8 @@ async def run(cases: list[Case], settings: Settings, dataset: Path, output: Path
     tasks = [asyncio.create_task(one(model, case, repeat)) for model in settings.models for case in cases
              for repeat in range(1, settings.repeat + 1)]
     try:
-        await asyncio.gather(*tasks)
+        with output_caps(settings):
+            await asyncio.gather(*tasks)
         result['finished'] = True
     except BaseException:
         for task in tasks:

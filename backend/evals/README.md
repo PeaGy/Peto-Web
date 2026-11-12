@@ -55,6 +55,39 @@ Model và effort lấy trực tiếp từ registry đang cài. V1 nhận các mo
 Agent bị từ chối. Tên effort phải được mọi model đã chọn hỗ trợ. Muốn so sánh các effort khác nhau, chạy riêng rồi
 dùng `compare`. Cùng tên effort giữa hai hãng không có nghĩa cùng lượng tính toán.
 
+## Bộ `chat-core` (G2.1, 12/11/2026)
+
+`--suite chat-core` gom bốn bộ Chat đã có: [tính cách](chat-personality-cases.json),
+[tự xét lại](chat-reassess-cases.json), [đọc log](chat-log-cases.json) và [giai đoạn 4](chat-stage4-cases.json):
+13 tình huống, 16 lượt mỗi model, mặc định chạy Peto, Luna, Haiku (48 lượt). Không dùng cùng `--dataset`.
+
+- **Bỏ trần 1.024 token của v1.** Mỗi model dùng đúng trần đầu ra của tab Trò chuyện
+  (`features/chat/context_budget.policy`): mặc định Peto 8.192, Luna 16.000, Haiku 32.768. `--max-output-tokens N`
+  hạ trần chung xuống N (128–128.000). Provider tự chặn lượt không công cụ ở 1.024 (`side_output_cap`); bộ bài gỡ
+  chặn đó trong tiến trình CLI lúc chạy, và bộ kiểm request vẫn từ chối request nào vượt trần của model.
+- Mặc định 300 giây mỗi lượt (v1: 90), vì câu trả lời dài hơn; mỗi lượt giữ tối đa 8 ký tự cho mỗi token của trần.
+- **Ước tính in trước khi chạy**, ở cả `plan` lẫn `run`: số lượt và trần request; theo từng model, trần token đầu ra
+  mỗi request, tổng đầu ra tối đa, đầu vào ước lượng (từ phần đã biết tới mức giả định mọi câu trả lời trước dài hết
+  trần); trần tuyệt đối khi dùng hết `--max-calls`. Có `--rates` thì in thêm USD tối đa (chưa trừ cache). Token đầu
+  vào đếm bằng bộ ước lượng của Chat, không phải số của nhà cung cấp. Ước tính được ghi vào `results.json`
+  (`estimate`) và `report.md`.
+- `report.md` và `summary.json` có thêm bảng **theo model**: thời gian tới mảnh chữ đầu (p50/p95), token đầu vào, đầu
+  ra, cache đọc/ghi và tỉ lệ cache. Nhà cung cấp không báo thì ghi "chưa có dữ liệu", không coi là 0.
+- Giới hạn: bài đo vẫn gửi prompt như v1 (mốc giờ nằm trong system, không có khối `<peto_runtime>` của G1.1, không có
+  `prompt_cache_key`), tắt công cụ. Tỉ lệ cache ở đây là của hội thoại giả nhiều lượt, không phải số của app.
+
+```powershell
+../.venv/Scripts/python.exe -X utf8 -m evals plan --suite chat-core
+../.venv/Scripts/python.exe -X utf8 -m evals plan --suite chat-core --rates ../benchmark-output/gia.json
+../.venv/Scripts/python.exe -X utf8 -m evals run --suite chat-core --concurrency 3
+```
+
+Lệnh dưới **gọi API trả phí**; chỉ chạy khi chủ máy đồng ý chi, đọc kỹ ước tính của `plan` trước:
+
+```powershell
+../.venv/Scripts/python.exe -X utf8 -m evals run --suite chat-core --mode live --allow-paid --concurrency 3
+```
+
 ## Chạy thật sau khi chủ máy quyết định dùng billing
 
 LIVE đọc `.env` ở gốc repo hoặc biến môi trường của **máy đang chạy lệnh**, giống backend. Cần `OPENAI_API_KEY` cho
@@ -76,9 +109,9 @@ Ví dụ dưới đây **sẽ gọi API trả phí khi thực thi**, chỉ chọ
 |---|---:|---:|
 | `--repeat` | 1 | 1–5 |
 | `--concurrency` | 1 | 1–4 |
-| `--timeout` (giây/lượt) | 90 | lớn hơn 0, tối đa 600 |
+| `--timeout` (giây/lượt) | 90 (bộ bài: 300) | lớn hơn 0, tối đa 600 |
 | `--max-calls` (request toàn lần chạy) | 60 | 1–500 |
-| `--max-output-tokens` (mỗi request) | 1024 | 128–1024 |
+| `--max-output-tokens` (mỗi request) | 1024 (bộ bài: trần của app theo model) | 128–1024 (bộ bài: 128–128000) |
 | `--max-input-chars` (mỗi request) | 60000 | 1000–120000 |
 
 Kế hoạch vượt số request bị từ chối trước khi chạy. Mỗi request SDK kiểm lại số lượt, ký tự payload và token đầu ra,

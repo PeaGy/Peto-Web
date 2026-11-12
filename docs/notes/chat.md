@@ -470,7 +470,32 @@ prompts/model defaults. Tests in `tests/test_brain_evals.py` use only fixtures a
 harness checks, not model-quality measurements. Results and blind human grading live in gitignored `benchmark-output/`.
 Agent continues to use its existing CLI eval suite; do not silently run paid benchmarks during tests or CI.
 
+`--suite chat-core` (G2.1) runs the personality, reassess, log and stage-4 datasets together (13 cases, 16 turns per
+model) on Peto, Luna and Haiku with each model's Chat output cap instead of 1024 tokens, prints a request/token (and,
+with `--rates`, USD) ceiling before running, and adds per-model time-to-first-text and cache columns. Details in
+`backend/evals/README.md`, "Bộ `chat-core`".
+
 # Dated log (newest first)
+
+## LIVE eval suite `chat-core` (G2.1) (2026-11-12, committed on branch `g2.1-live-eval-suite`, not run live)
+
+Audit package G2.1. `python -m evals {plan,run} --suite chat-core` (`evals/schema.SUITES`): the four existing Chat
+datasets, default models `peto luna haiku`, 48 turns, default `--max-calls 60`, `--timeout 300`.
+- Output cap: `Settings.output_cap(model)` is `context_budget.policy(model)['output']` (8,192 / 16,000 / 32,768 by
+  default), lowered by `--max-output-tokens`. Without tools the Responses provider still clamps output to
+  `side_output_cap` (1,024); `adapter.output_caps` patches that name in `ai.xai` for the duration of a suite run in the
+  CLI process only, and `CallBudget.claim` checks each request against the model's cap. Runs without `--suite` are
+  unchanged (128–1,024, 90 s, 32,768 kept characters).
+- `adapter.estimate` (printed by `plan` and `run`, stored as `results.json` `estimate`): per model, turns × cap for
+  output, Chat's byte/3 × 1.15 estimator for the known input and a ceiling that assumes every earlier reply hits the
+  cap, clipped to `--max-input-chars`; the hard output bound is `max_calls` × the largest cap; USD only with `--rates`
+  and without cache discounts.
+- `report.summarize` adds `first_text` per group, `cache_read_ratio`, and `models` (per-model first text, tokens, cache,
+  USD); `report.md` gains "Theo model" and the stored estimate. The manifest lists every dataset with its SHA-256.
+- Not the app's request: the clock stays in the system prompt, no `<peto_runtime>` block or `prompt_cache_key`, tools
+  off. Nobody has run it live; the owner runs `--mode live --allow-paid` on the VPS after approving the spend.
+- Tests: 5 new in `tests/test_brain_evals.py` (suite load and caps, estimate maths, lifted cap reaching the fake OpenAI
+  and Anthropic SDKs while a plain run still sends 1,024, CLI plan + mock run of all 48 turns, cache ratio unknowns).
 
 ## Web Chat stable prefix (G1.1) (2026-11-12, committed on the worktree branch, not deployed)
 

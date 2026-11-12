@@ -17,6 +17,18 @@ RUBRICS = {
     'memory': 'Dùng đúng dữ kiện được cung cấp, ưu tiên sửa đổi mới và không bịa ký ức.',
 }
 CHECK_KINDS = ('match', 'avoid', 'max_chars', 'emotion', 'private_hidden', 'spoken_plain')
+# Bộ bài đặt tên: gom nhiều dataset đã có, chạy cùng model và bỏ trần 1.024 token đầu ra của v1. Mỗi model dùng
+# đúng trần đầu ra của tab Trò chuyện (features/chat/context_budget.policy), để đo được câu trả lời dài như trong app.
+SUITES = {
+    'chat-core': {
+        'datasets': ('chat-personality-cases.json', 'chat-reassess-cases.json', 'chat-log-cases.json',
+                     'chat-stage4-cases.json'),
+        'models': ('peto', 'luna', 'haiku'),
+        'title': 'Trò chuyện cốt lõi: tính cách, tự xét lại, đọc log, bằng chứng (giai đoạn 4)',
+    },
+}
+# Trần tuyệt đối khi bộ bài bỏ trần v1; trần thật của từng model là mức của app, nhỏ hơn hoặc bằng số này.
+SUITE_OUTPUT_LIMIT = 128_000
 
 
 class EvalError(ValueError):
@@ -126,6 +138,25 @@ def load_cases(path: Path) -> list[Case]:
     return cases
 
 
+def suite_datasets(name: str) -> list[Path]:
+    if name not in SUITES:
+        raise EvalError('Không có bộ bài này; xem danh sách trong evals/README.md.')
+    folder = Path(__file__).parent
+    return [folder / dataset for dataset in SUITES[name]['datasets']]
+
+
+def load_many(paths: list[Path]) -> list[Case]:
+    """Ghép nhiều dataset; mã bài phải duy nhất trên toàn bộ, vì kết quả và phiếu chấm khóa theo mã bài."""
+    cases, seen = [], set()
+    for path in paths:
+        for case in load_cases(path):
+            if case.id in seen:
+                raise EvalError(f'Mã bài {case.id} trùng giữa các dataset của bộ bài.')
+            seen.add(case.id)
+            cases.append(case)
+    return cases
+
+
 @dataclass(frozen=True)
 class Settings:
     mode: str = 'mock'
@@ -135,9 +166,23 @@ class Settings:
     concurrency: int = 1
     timeout: float = 90
     max_calls: int = 60
-    max_output_tokens: int = 1024
+    # None chỉ hợp lệ khi có bộ bài: dùng trần đầu ra của app cho từng model.
+    max_output_tokens: int | None = 1024
     max_input_chars: int = 60_000
     allow_paid: bool = False
+    suite: str | None = None
+
+    def output_cap(self, model: str) -> int:
+        """Trần token đầu ra của một request cho model này; bộ kiểm request và provider dùng cùng số."""
+        if self.suite is None:
+            return self.max_output_tokens
+        from features.chat.context_budget import policy
+        app = policy(model)['output']
+        return app if self.max_output_tokens is None else min(self.max_output_tokens, app)
+
+    def output_chars(self, model: str) -> int:
+        """Số ký tự tối đa giữ lại cho một lượt. v1 giữ 32.768; bộ bài cho chỗ ứng với trần token của app."""
+        return 32_768 if self.suite is None else max(32_768, self.output_cap(model) * 8)
 
     def validate(self, cases: list[Case]) -> int:
         from ai.models import MODELS, supported_efforts
@@ -150,9 +195,16 @@ class Settings:
                 raise EvalError('Model hoặc mức suy nghĩ không được registry Peto hỗ trợ.')
             if not MODELS[model].web:
                 raise EvalError('Bản đầu chỉ đo model trên Web; model chỉ dành cho Agent dùng bộ thi Agent hiện có.')
-        for value, low, high, label in ((self.repeat, 1, 5, 'Số lần lặp'), (self.concurrency, 1, 4, 'Concurrency'),
-                                      (self.max_calls, 1, 500, 'Số request'), (self.max_output_tokens, 128, 1024, 'Token đầu ra'),
-                                      (self.max_input_chars, 1000, 120_000, 'Ký tự đầu vào')):
+        if self.suite is not None and self.suite not in SUITES:
+            raise EvalError('Không có bộ bài này; xem danh sách trong evals/README.md.')
+        output_limit = 1024 if self.suite is None else SUITE_OUTPUT_LIMIT
+        if self.suite is not None and self.max_output_tokens is None:
+            output = None
+        else:
+            output = (self.max_output_tokens, 128, output_limit, 'Token đầu ra')
+        for value, low, high, label in filter(None, ((self.repeat, 1, 5, 'Số lần lặp'), (self.concurrency, 1, 4, 'Concurrency'),
+                                      (self.max_calls, 1, 500, 'Số request'), output,
+                                      (self.max_input_chars, 1000, 120_000, 'Ký tự đầu vào'))):
             if type(value) is not int or not low <= value <= high:
                 raise EvalError(f'{label} cần nằm trong khoảng {low}–{high}.')
         if type(self.timeout) not in {int, float} or not math.isfinite(self.timeout) or not 0 < self.timeout <= 600:
