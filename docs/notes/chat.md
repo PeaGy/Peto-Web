@@ -502,7 +502,8 @@ note), so no Chat turn could read the cached history or attachments. Now, for Ch
   recorded from `62f7b3b`, except that Claude system text containing the snapshot heading is no longer split out.
 - Tests: `tests/test_chat_prefix_stability.py` (byte-stable prefix over three turns and three rounds with a moving fake
   clock, envelope placement, spoofing, `cached_tokens` still recorded), the fake Anthropic service in `test_claude.py`
-  now applies the documented prefix check, and 15 existing assertions were moved to the new location. The 20-message
+  now applies the documented prefix check, and 14 existing tests had assertions moved to the new location (two test
+  helpers now read the newest runtime block instead of `instructions`). Backend: 2,091 passed, 1 skipped. The 20-message
   window and summary timing are unchanged (G1.2, G1.3). Real-model checks are in `unverified.md`.
 
 ## Seven Grok-inspired Web Chat UX improvements (2026-10-27, complete locally, committed `348d7ca`, not deployed)
