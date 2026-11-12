@@ -25,7 +25,10 @@ async def test_changing_web_model_selects_prompt_without_translating_history(cli
 
     class Spy:
         async def stream(self, **kwargs):
-            seen.append(kwargs)
+            # G1.1: mốc giờ của tab Trò chuyện nằm trong khối runtime (snapshot), không trong system prompt.
+            from features.chat import request_context
+            seen.append({**kwargs, 'runtime': request_context.current.get().runtime(
+                service='test', model='test', effort='low', capabilities=[])})
             yield "Mình đã nhận tin."
 
     monkeypatch.setattr(chat_service, "get_provider", lambda model="peto": Spy())
@@ -38,7 +41,8 @@ async def test_changing_web_model_selects_prompt_without_translating_history(cli
     for index in (0, 1, 2, 3):
         prompt = seen[index]['system_prompt']
         assert prompt.startswith(CORE_PROMPT)
-        assert "default to Vietnamese" in prompt and "Server-verified current time" in prompt
+        assert "default to Vietnamese" in prompt and "Server-verified current time" not in prompt
+        assert "Server-verified current time" in seen[index]['runtime']
         assert 'Peto Agent reference' not in prompt
         assert seen[index]['messages'][0].content == 'Chào bạn, giải thích asyncio.'
     # Peto (Grok) nhận thêm đoạn ví dụ giọng trả lời; GPT và Claude nhận đoạn riêng của mình.

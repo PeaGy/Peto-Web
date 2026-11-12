@@ -94,7 +94,11 @@ async def test_each_request_gets_own_timezone_and_fresh_clock(client, monkeypatc
     seen = []
     class Spy:
         async def stream(self, **kwargs):
-            seen.append(kwargs)
+            # G1.1: tab Trò chuyện đóng băng mốc giờ trong khối runtime của snapshot, không nối vào system prompt.
+            from features.chat import request_context
+            snapshot = request_context.current.get()
+            assert chat_tools.TIME_HEADER_EN not in kwargs['system_prompt']
+            seen.append({**kwargs, 'system_prompt': snapshot.runtime(service='xAI', model='grok', effort='low', capabilities=[])})
             await asyncio.sleep(0)
             yield 'OK'
     monkeypatch.setattr(chat_service, 'get_provider', lambda model="peto": Spy())

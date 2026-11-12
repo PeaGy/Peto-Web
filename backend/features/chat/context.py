@@ -32,6 +32,9 @@ class Prepared:
     budget: dict
     history_tools: ChatHistory | None
     detail: str = ''
+    # Envelope tóm tắt (CONTEXT_NOTE + JSON). Từ G1.1 không ghép vào prompt: nó đổi theo lượt nên đi trong khối runtime
+    # ở đuôi đầu vào (features/chat/request_context.py).
+    note: str = ''
 
 
 def parse_summary(text, batch, previous):
@@ -190,9 +193,13 @@ async def _prepare(owner, cid, model, prompt, rows, project_documents, window):
                                'origin': 'generated' if 'version' in f else 'upload'}
                               for f in sorted([*old_files, *generated], key=lambda item: item['message_id'])][-64:],
                     'file_index_is_bounded': True}
-        prompt += '\n\n' + CONTEXT_NOTE + json.dumps(envelope, ensure_ascii=False)
-    if tokens(prompt, history) + 2048 > info['input']:
+        note = CONTEXT_NOTE + json.dumps(envelope, ensure_ascii=False)
+    else:
+        note = ''
+    # Ngân sách tính envelope như khi nó còn nằm trong prompt (cùng ký tự, chỉ đổi chỗ).
+    counted = prompt + '\n\n' + note if note else prompt
+    if tokens(counted, history) + 2048 > info['input']:
         raise ContextOverflow('Bản tóm tắt và ngữ cảnh hiện tại vượt ngân sách; hãy giảm tài liệu dự án hoặc chia nhỏ yêu cầu.')
     logger.info('chat_context model=%s estimated_tokens=%d input_limit=%d summary=%s gap=%d',
-                model, tokens(prompt, history), info['input'], bool(summary), gap)
-    return Prepared(history, prompt, info, ChatHistory(owner, cid, rows[-1]['id'] + 1) if hidden else None, detail)
+                model, tokens(counted, history), info['input'], bool(summary), gap)
+    return Prepared(history, prompt, info, ChatHistory(owner, cid, rows[-1]['id'] + 1) if hidden else None, detail, note)

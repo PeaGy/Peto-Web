@@ -149,14 +149,17 @@ async def _stream_reply(
     snapshot_token = request_context.current.set(snapshot)
     player_token = player_tools.current.set(player_session)
     limit = None
+    # Tab Trò chuyện (có snapshot): mốc giờ đã đóng băng trong khối runtime ở đuôi đầu vào (request_context.py), để
+    # system prompt giữ nguyên giữa các lượt. Companion và các lượt khác vẫn nối giờ vào system prompt như trước.
+    full_prompt = system_prompt if snapshot is not None else f"{system_prompt}\n\n{time_context(timezone)}"
     try:
         with usage_events.measurement(surface='companion' if spoken else 'chat' if snapshot else None, effort=effort):
             async with asyncio.timeout_at(min(loop.time() + idle, hard)) as limit:
                 operation = player_reply.guarded_reply(provider, player_session,
-                    system_prompt=f"{system_prompt}\n\n{time_context(timezone)}",
+                    system_prompt=full_prompt,
                     messages=history, effort=effort, timezone=timezone, web_search=web_search,
                 ) if player_session else provider.stream(
-                    system_prompt=f"{system_prompt}\n\n{time_context(timezone)}",
+                    system_prompt=full_prompt,
                     messages=history, effort=effort, timezone=timezone,
                     web_search=web_search,
                 )
@@ -607,7 +610,8 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                     (request.effort or 'auto').strip().lower(), timezone, timezone_source,
                     github_state, github_reason,
                     client_environment=client_environment.normalize(
-                        http_request.headers if http_request is not None else None)) if mode == 'chat' else None
+                        http_request.headers if http_request is not None else None),
+                    history_note=prepared.note if prepared else '') if mode == 'chat' else None
                 player_session = player_tools.PlayerSession(owner, request.player_control,
                     user_text='\n'.join(str(row.get('content', '')) for row in active_rows if row.get('role') == 'user')[-32000:]
                 ) if mode == 'companion' and request.player_control in (1, 2, 3, 4, 5) and own_provider != 'gemini' else None

@@ -58,7 +58,10 @@ async def test_chat_prompts_carry_no_roleplay_persona(client, monkeypatch):
 
     class Spy:
         async def stream(self, **kwargs):
-            seen.append(kwargs["system_prompt"])
+            # G1.1: mốc giờ của tab Trò chuyện nằm trong khối runtime của snapshot, ghép lại như trước để kiểm.
+            from features.chat import request_context
+            snapshot = request_context.current.get()
+            seen.append(kwargs["system_prompt"] + "\n\n" + time_tools.time_context(snapshot.timezone, clock=snapshot.clock))
             yield "Chào bạn."
 
     monkeypatch.setattr(chat_service, "get_provider", lambda model="peto": Spy())

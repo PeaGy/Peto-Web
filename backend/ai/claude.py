@@ -6,6 +6,7 @@ block suy nghĩ có chữ ký, lời gọi công cụ và kết quả tìm web c
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from types import SimpleNamespace
@@ -18,7 +19,7 @@ from .base import ProviderError
 from .models import CLAUDE_EFFORTS
 from .xai import ResponsesProvider
 from shared.time_tools import split_time_context
-from features.chat.request_context import split_context as split_request_context
+from features.chat.request_context import ServerBlock
 from features.chat.request_context import current as web_request_context
 from shared.web_search import normalize_sources, source_reference
 
@@ -93,8 +94,31 @@ def _server_activity(block: dict) -> dict:
             'action': {'type': 'search' if block.get('name') == 'web_search' else 'fetch'}}
 
 
-def build_messages(items: list[dict], model: str, *, replay_thinking: bool = True) -> list[dict]:
-    """Chỉ nhận vai user/assistant; khôi phục block gốc khi còn đủ nhóm item của cùng model."""
+def _without_cache_marks(value):
+    if isinstance(value, dict):
+        return {key: _without_cache_marks(item) for key, item in value.items() if key != "cache_control"}
+    if isinstance(value, list):
+        return [_without_cache_marks(item) for item in value]
+    return value
+
+
+def prefix_digest(system, tools, messages) -> str:
+    """Dấu của phần đứng trước một block suy nghĩ: system, tools và các tin trước nó, như Anthropic kiểm chữ ký.
+
+    Tài liệu "Preserved thinking": thêm, dời hay bỏ điểm ``cache_control`` không tính là sửa prefix, nên bỏ chúng ra.
+    """
+    data = _without_cache_marks([system, tools or [], messages])
+    return hashlib.sha256(json.dumps(data, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+
+
+def build_messages(items: list[dict], model: str, *, replay_thinking: bool = True,
+                   prefix: tuple | None = None) -> list[dict]:
+    """Chỉ nhận vai user/assistant (và system cho khối runtime do máy chủ tạo); khôi phục block gốc khi còn đủ nhóm item
+    của cùng model.
+
+    ``prefix`` = (system, tools) của request sắp gửi: chỉ replay khối suy nghĩ khi phần đứng trước nó trùng đúng phần
+    lúc nó được tạo (dấu ``anthropic_prefix``); không thì bỏ khối suy nghĩ, giữ các block khác.
+    """
     messages: list[dict] = []
 
     def append(role: str, blocks: list[dict]):
@@ -116,9 +140,11 @@ def build_messages(items: list[dict], model: str, *, replay_thinking: bool = Tru
                     and all(isinstance(block, dict) and block.get("type") in NATIVE_BLOCK_TYPES for block in content)):
                 normalized = _portable_output(content)
                 if items[index:index + len(normalized)] == normalized:
-                    # Haiku 5.5 ràng buộc chữ ký vào prefix. Snapshot Chat đổi mỗi vòng nên không replay được
-                    # thinking cũ; bỏ cả block, không sửa chữ/chữ ký. Giữ nguyên các block công cụ và kết quả khác.
-                    append("assistant", content if replay_thinking else [block for block in content
+                    # Haiku 5.5 ràng buộc chữ ký vào prefix (system, tools, tin phía trước). Prefix đã đổi thì bỏ cả
+                    # block suy nghĩ, không sửa chữ/chữ ký. Giữ nguyên các block công cụ và kết quả khác.
+                    replay = replay_thinking if prefix is None else (
+                        item.get("anthropic_prefix") == prefix_digest(prefix[0], prefix[1], messages))
+                    append("assistant", content if replay else [block for block in content
                            if block.get('type') not in {'thinking', 'redacted_thinking'}])
                     index += len(normalized)
             continue
@@ -132,7 +158,9 @@ def build_messages(items: list[dict], model: str, *, replay_thinking: bool = Tru
             append("user", [{"type": "tool_result", "tool_use_id": item["call_id"], "content": item.get("output") or ""}])
         elif kind == "message":
             role = item.get("role")
-            if role not in {"user", "assistant"}:
+            # Vai system chỉ dành cho khối runtime máy chủ tự tạo (ServerBlock): lịch sử từ DB hay từ CLI là dict thường,
+            # nên không ai đưa được một tin system vào bằng cách gõ hay gửi item có vai đó.
+            if role not in {"user", "assistant"} and not (role == "system" and isinstance(item, ServerBlock)):
                 raise ProviderError("Lịch sử Claude chỉ được có tin của bạn và Peto.")
             content = item.get("content", "")
             if isinstance(content, str):
@@ -174,33 +202,33 @@ CACHEABLE_BLOCKS = {"text", "image", "tool_result"}
 
 
 def cached_system(text: str) -> list[dict] | str:
-    """System prompt thành hai khối: phần ổn định có điểm cache, mốc thời gian (đổi mỗi lượt) đứng sau, không cache.
+    """System prompt thành hai khối: phần ổn định có điểm cache, mốc thời gian (Agent, làm tròn theo giờ) đứng sau.
 
     Cache của Anthropic khớp theo tiền tố: chỉ một byte khác ở giữa (giờ hiện tại) là mọi thứ sau nó phải tính lại.
+    Snapshot của tab Trò chuyện không còn ở đây (gói G1.1): nó là tin system ở đuôi ``messages``, nên không còn tách
+    theo tiêu đề, và chữ người dùng có cùng tiêu đề nằm trong system chỉ là chữ.
     """
-    static, runtime = split_request_context(text)
-    static, clock = split_time_context(static)
+    static, clock = split_time_context(text)
     blocks = [{"type": "text", "text": static, "cache_control": CACHE}] if static.strip() else []
     if clock:
         blocks.append({"type": "text", "text": clock})
-    if runtime:
-        blocks.append({"type": "text", "text": runtime})
     return blocks or text
 
 
-def mark_history(messages: list[dict]) -> None:
-    """Điểm cache thứ hai ở block cuối của tin cuối, để lần gọi sau đọc lại cả lịch sử phía trước.
+def mark_history(messages: list[dict], position: int = -1, limit: int | None = None) -> None:
+    """Điểm cache ở block cuối (đọc được cache) của tin ``position``, để lần gọi sau đọc lại cả lịch sử phía trước.
 
-    Gắn trên bản sao: danh sách block có thể là của lịch sử người gọi (khối gốc khôi phục từ nhóm reasoning).
+    ``limit``: chỉ xét các block trước vị trí này của tin đó. Gắn trên bản sao: danh sách block có thể là của lịch sử
+    người gọi (khối gốc khôi phục từ nhóm reasoning).
     """
     if not messages:
         return
-    last = messages[-1]
+    last = messages[position]
     content = list(last["content"])
-    for index in range(len(content) - 1, -1, -1):
+    for index in range((len(content) if limit is None else limit) - 1, -1, -1):
         if content[index].get("type") in CACHEABLE_BLOCKS:
             content[index] = {**content[index], "cache_control": CACHE}
-            messages[-1] = {**last, "content": content}
+            messages[position] = {**last, "content": content}
             return
 
 
@@ -246,13 +274,27 @@ class ClaudeClient:
         if effort not in CLAUDE_EFFORTS:
             raise ProviderError("Mức suy nghĩ này không được Claude hỗ trợ.")
         tools = self.native_tools(kwargs.get('tools', []))
-        # Snapshot của Web Chat chứa clock/round/manifest hiện tại, vì thế top-level system không còn append-only.
+        items = kwargs["input"]
+        system = cached_system(kwargs.get("instructions", ""))
+        # Lượt Chat có khối runtime (ServerBlock, tin system ở đuôi): system và tools đóng băng cả lượt, input chỉ nối
+        # thêm, nên khối suy nghĩ cũ replay được khi phần đứng trước nó còn y nguyên (kiểm bằng dấu prefix). Lượt Chat
+        # không có khối runtime (test gọi thẳng) giữ cách cũ: bỏ suy nghĩ. Agent/Companion giữ cơ chế replay gốc.
         # Hướng dẫn chính thức: bỏ thinking/redacted_thinking khi prefix đổi; không retry request đã tính phí.
-        # Agent/Companion không có snapshot này nên giữ cơ chế replay gốc.
-        messages = build_messages(kwargs["input"], kwargs["model"], replay_thinking=web_request_context.get() is None)
-        if self.cache_history == "always" or _in_tool_loop(messages):
-            mark_history(messages)
-        request = {"model": kwargs["model"], "system": cached_system(kwargs.get("instructions", "")),
+        runtime_at = next((index for index, item in enumerate(items) if isinstance(item, ServerBlock)), None)
+        if runtime_at is not None:
+            messages = build_messages(items, kwargs["model"], prefix=(system, tools))
+            # Điểm cache ở block cuối của lịch sử cũ (trước tin người dùng hiện tại), cả ở lượt một vòng: lượt sau
+            # đọc lại được, còn tin hiện tại và khối runtime đứng sau điểm đó.
+            old = build_messages(items[:max(runtime_at - 1, 0)], kwargs["model"], replay_thinking=False)
+            if old:
+                mark_history(messages, len(old) - 1, len(old[-1]["content"]))
+            if any(item.get("type") == "function_call_output" for item in items[runtime_at:]):
+                mark_history(messages)
+        else:
+            messages = build_messages(items, kwargs["model"], replay_thinking=web_request_context.get() is None)
+            if self.cache_history == "always" or _in_tool_loop(messages):
+                mark_history(messages)
+        request = {"model": kwargs["model"], "system": system,
                    "messages": messages,
                    "max_tokens": kwargs["max_output_tokens"]}
         if self.adaptive:
@@ -266,15 +308,17 @@ class ClaudeClient:
             # Suy nghĩ tự điều chỉnh chỉ nhận tool_choice auto hoặc none, nên none dùng được cùng nó.
             if kwargs.get("tool_choice") == "none":
                 request["tool_choice"] = {"type": "none"}
-        return ClaudeStream(self.sdk, request)
+        return ClaudeStream(self.sdk, request, bind_prefix=runtime_at is not None)
 
 
 class ClaudeStream:
-    def __init__(self, sdk, request):
+    def __init__(self, sdk, request, *, bind_prefix=False):
         self.sdk = sdk
         self.request = request
         self.stream = None
         self.closed = False
+        # Lượt Chat: ghi dấu prefix của request vào nhóm reasoning, để vòng sau biết replay khối suy nghĩ được không.
+        self.bind_prefix = bind_prefix
 
     def __aiter__(self):
         return self._events()
@@ -296,6 +340,8 @@ class ClaudeStream:
             for pause in range(MAX_SEARCH_PAUSES + 1):
                 if self.closed:
                     return
+                binding = ({"anthropic_prefix": prefix_digest(self.request["system"], self.request.get("tools"),
+                                                               self.request["messages"])} if self.bind_prefix else {})
                 manager = self.sdk.messages.stream(**self.request)
                 async with manager as stream:
                     self.stream = stream
@@ -368,7 +414,8 @@ class ClaudeStream:
                 content = [block.model_dump(mode="json", exclude_none=True) for block in message.content]
                 normalized = _portable_output(content)
                 output.extend([{"type": "reasoning", "anthropic_model": self.request["model"],
-                                "anthropic_content": content, "anthropic_output_count": len(normalized), "summary": []},
+                                "anthropic_content": content, "anthropic_output_count": len(normalized), "summary": [],
+                                **binding},
                                *normalized])
                 # Tiếp tục pause_turn là một request mới, tính đủ token của mọi request.
                 usage["input_tokens"] += (message.usage.input_tokens + (message.usage.cache_read_input_tokens or 0)
@@ -409,6 +456,9 @@ class ClaudeProvider(ResponsesProvider):
     supported_efforts = CLAUDE_EFFORTS
     name = "anthropic"
     service = "Anthropic"
+    # Tài liệu "Mid-conversation system messages": Haiku 5.5 nhận tin vai system trong messages, ngay sau một lượt user,
+    # không cần header beta; phần đứng trước giữ nguyên nên cache và chữ ký suy nghĩ còn dùng được.
+    runtime_role = "system"
 
     def __init__(self, slug: str, label: str):
         self.model = slug

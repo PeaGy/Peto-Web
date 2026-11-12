@@ -20,6 +20,9 @@ class GPTProvider(ResponsesProvider):
     name = "openai"
     service = "OpenAI"
     auth_error_message = "Khóa OpenAI của máy chủ Peto không dùng được. Chọn Peto để chat tiếp nhé."
+    # Responses API của OpenAI nhận item vai developer trong input; hướng dẫn prompt caching khuyên dời phần đổi theo
+    # lượt sang tin nhắn sau. Không gửi prompt_cache_key: từ GPT-5.6 OpenAI tự định tuyến cache, khóa không cần thiết.
+    runtime_role = "developer"
 
     def __init__(self, slug: str, label: str) -> None:
         self.model = slug

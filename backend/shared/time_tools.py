@@ -85,8 +85,9 @@ def current_datetime(timezone: str | None = None, *, now: datetime | None = None
     }
 
 
-def time_context(timezone: str | None = None) -> str:
-    clock = current_datetime(timezone)
+def time_context(timezone: str | None = None, *, clock: dict | None = None) -> str:
+    """Khối thời gian ba dòng. ``clock`` là mốc đã chụp sẵn (tab Trò chuyện đóng băng một lần mỗi lượt)."""
+    clock = clock or current_datetime(timezone)
     return (
         f"{TIME_HEADER_EN}\n"
         f"{clock['datetime']} ({clock['timezone']}, {clock['utc_offset']}).\n"

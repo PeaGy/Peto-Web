@@ -60,18 +60,37 @@ def sdk_with_responses(*responses, enforce_bindings=False):
         async def aclose(self):
             closed.append(True)
 
+    # Luật kiểm prefix của Haiku 5.5 theo tài liệu "Preserved thinking": một khối suy nghĩ chỉ hợp lệ khi system,
+    # tools và các tin đứng trước nó y như request đã tạo ra nó; điểm cache_control không tính.
+    produced = {}
+
+    def unmarked(value):
+        if isinstance(value, dict):
+            return {key: unmarked(item) for key, item in value.items() if key != 'cache_control'}
+        return [unmarked(item) for item in value] if isinstance(value, list) else value
+
     async def handler(request):
         assert request.url.path == "/v1/messages"
         assert request.headers["x-api-key"] == "khoa-gia"
-        calls.append(json.loads(request.content))
-        if enforce_bindings and len(calls) > 1:
-            current, prior = calls[-1], calls[-2]
-            bound_thinking = any(block.get('type') in {'thinking', 'redacted_thinking'}
-                                 for message in current['messages'] for block in message['content'])
-            if bound_thinking and (current['system'] != prior['system'] or current.get('tools') != prior.get('tools')):
-                return httpx2.Response(400, json={'type': 'error', 'error': {'type': 'invalid_request_error',
-                    'message': 'Invalid `signature` in `thinking` block. The block is bound to a different conversation.'}})
+        body = json.loads(request.content)
+        calls.append(body)
+        if enforce_bindings:
+            for index, message in enumerate(body['messages']):
+                for block in message['content']:
+                    if block.get('type') in {'thinking', 'redacted_thinking'} and produced.get(
+                            block.get('signature') or block.get('data')) != unmarked(
+                            [body['system'], body.get('tools'), body['messages'][:index]]):
+                        return httpx2.Response(400, json={'type': 'error', 'error': {'type': 'invalid_request_error',
+                            'message': 'Invalid `signature` in `thinking` block. The block is bound to a different conversation.'}})
         response = responses[len(calls) - 1]
+        if enforce_bindings and not isinstance(response, int):
+            origin = unmarked([body['system'], body.get('tools'), body['messages']])
+            for event in response:
+                block = event.get('content_block') or {}
+                if block.get('type') == 'redacted_thinking':
+                    produced[block['data']] = origin
+                if (event.get('delta') or {}).get('type') == 'signature_delta':
+                    produced[event['delta']['signature']] = origin
         if isinstance(response, int):
             return httpx2.Response(response, json={"type": "error", "error": {
                 "type": "authentication_error" if response == 401 else "rate_limit_error",
@@ -165,31 +184,75 @@ async def test_web_uses_shared_tool_loop_and_image_payload(monkeypatch):
     assert calls[1]["messages"][1]["content"] == [THINKING, clock]
 
 
-@pytest.mark.parametrize('thinking', [THINKING, {'type': 'redacted_thinking', 'data': 'opaque-test-only'}])
-async def test_web_request_snapshot_changes_drop_bound_thinking_but_keep_tool_roundtrip(monkeypatch, thinking):
-    """Haiku 5.5 kiểm chữ ký theo system/tools/prefix; HTTP giả cũ chưa mô phỏng ràng buộc này."""
-    from features.chat.request_context import RequestContext, current
-    clock = {'type': 'tool_use', 'id': 'toolu_time', 'name': 'get_current_datetime', 'input': {'timezone': 'UTC'}}
-    sdk, calls, _ = sdk_with_responses(message_events([thinking, clock], 'tool_use'), message_events([TEXT]),
-                                      enforce_bindings=True)
+def web_snapshot():
+    from features.chat.request_context import RequestContext
+    return RequestContext('synthetic-request-12345', False, 'synthetic-chat', None, 'haiku', 'low',
+                          'UTC', 'client_iana_validated', 'unauthorized', 'not_connected')
+
+
+async def run_web_chat(monkeypatch, responses, web_search='off'):
+    from features.chat.request_context import current
+    sdk, calls, _ = sdk_with_responses(*responses, enforce_bindings=True)
     monkeypatch.setattr(config, 'ANTHROPIC_API_KEY', 'khoa-gia')
     provider = claude.ClaudeProvider('claude-haiku-5-5', 'Haiku 5.5')
-    provider._client = claude.ClaudeClient(sdk)
-    snapshot = RequestContext('synthetic-request-12345', False, 'synthetic-chat', None, 'haiku', 'low',
-                              'UTC', 'client_iana_validated', 'unauthorized', 'not_connected')
-    token = current.set(snapshot)
+    provider._client = claude.ClaudeClient(sdk, web_fetch=True)
+    token = current.set(web_snapshot())
     try:
         async with sdk:
             chunks = [chunk async for chunk in provider.stream(system_prompt='Stable policy',
-                       messages=[ChatMessage('user', 'Check the clock')], effort='low', web_search='off')]
+                       messages=[ChatMessage('user', 'Check the clock')], effort='low', web_search=web_search)]
     finally:
         current.reset(token)
-    assert len(calls) == 2 and calls[0]['system'] != calls[1]['system']
-    assert calls[1]['messages'][1] == {'role': 'assistant', 'content': [clock]}
-    result = calls[1]['messages'][2]['content'][0]
-    assert result['type'] == 'tool_result' and result['tool_use_id'] == 'toolu_time'
+    return calls, chunks
+
+
+def clock_call(index):
+    return {'type': 'tool_use', 'id': f'toolu_time{index}', 'name': 'get_current_datetime', 'input': {'timezone': 'UTC'}}
+
+
+def thoughts(call):
+    return [block.get('signature') or block.get('data') for message in call['messages'] for block in message['content']
+            if block.get('type') in {'thinking', 'redacted_thinking'}]
+
+
+@pytest.mark.parametrize('kind', ['thinking', 'redacted_thinking'])
+async def test_web_chat_replays_bound_thinking_while_the_prefix_is_unchanged(monkeypatch, kind):
+    """G1.1: system, tools và tin phía trước không đổi giữa các vòng, nên khối suy nghĩ cũ được gửi lại nguyên vẹn và
+    dịch vụ giả (áp đúng luật kiểm prefix) chấp nhận. Trước G1.1 snapshot đổi system mỗi vòng nên phải bỏ suy nghĩ."""
+    def thought(index):
+        return ({'type': 'thinking', 'thinking': 'Đang cân nhắc', 'signature': f'chu-ky-{index}'} if kind == 'thinking'
+                else {'type': 'redacted_thinking', 'data': f'chu-ky-{index}'})
+    calls, chunks = await run_web_chat(monkeypatch, [
+        message_events([thought(0), clock_call(0)], 'tool_use'), message_events([thought(1), clock_call(1)], 'tool_use'),
+        message_events([TEXT])])
+    assert len(calls) == 3 and calls[0]['system'] == calls[1]['system'] == calls[2]['system']
+    assert thoughts(calls[1]) == ['chu-ky-0'] and thoughts(calls[2]) == ['chu-ky-0', 'chu-ky-1']
+    assert calls[1]['messages'][2]['content'] == [thought(0), clock_call(0)]
+    result = calls[1]['messages'][3]['content'][0]
+    assert result['type'] == 'tool_result' and result['tool_use_id'] == 'toolu_time0'
     assert json.loads(result['content'])['timezone'] == 'UTC'
     assert [chunk for chunk in chunks if isinstance(chunk, str)] == ['Xong']
+
+
+async def test_web_chat_drops_thinking_whose_prefix_changed_and_keeps_the_rest(monkeypatch):
+    """Vòng đầu bắt buộc tra web chỉ gửi công cụ web; vòng sau đủ công cụ nên prefix của suy nghĩ vòng đầu đã đổi:
+    bỏ khối đó (giữ kết quả tra và lời gọi công cụ). Suy nghĩ của vòng 2 vẫn replay ở vòng 3 vì tools không đổi nữa."""
+    first = [{'type': 'thinking', 'thinking': 'a', 'signature': 'chu-ky-0'}, SEARCH, RESULT, clock_call(0)]
+    second = [{'type': 'thinking', 'thinking': 'b', 'signature': 'chu-ky-1'}, clock_call(1)]
+    calls, chunks = await run_web_chat(monkeypatch, [message_events(first, 'tool_use'),
+        message_events(second, 'tool_use'), message_events([TEXT])], web_search='on')
+    assert len(calls) == 3 and calls[0]['tools'] != calls[1]['tools'] == calls[2]['tools']
+    assert thoughts(calls[1]) == [] and thoughts(calls[2]) == ['chu-ky-1']
+    assert calls[1]['messages'][2]['content'] == [SEARCH, RESULT, clock_call(0)]
+    assert [chunk for chunk in chunks if isinstance(chunk, str)] == ['Xong']
+
+
+async def test_signature_check_simulation_rejects_replay_after_a_prefix_change(monkeypatch):
+    """Đối chứng: ép replay dù tools đã đổi thì dịch vụ giả trả 400 như dịch vụ thật, nên hai test trên có ý nghĩa."""
+    monkeypatch.setattr(claude, 'prefix_digest', lambda *args: 'luon-khop')
+    first = [{'type': 'thinking', 'thinking': 'a', 'signature': 'chu-ky-0'}, SEARCH, RESULT, clock_call(0)]
+    with pytest.raises(ProviderError, match='chưa nhận'):
+        await run_web_chat(monkeypatch, [message_events(first, 'tool_use'), message_events([TEXT])], web_search='on')
 
 
 def test_dropping_bound_thinking_keeps_native_server_results_and_original_input():

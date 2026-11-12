@@ -19,6 +19,8 @@ from features.documents.reader import result as reader_result
 from conftest import TEST_OWNER, read_events
 from test_clock_tools import FakeStream, call, done, fake_provider
 from test_connectors import configured, saved, clean_connections, TOKEN
+from test_chat_prefix_stability import latest_snapshot, server_blocks, snapshot_count, snapshot_data
+from prompts.chat import FINALIZING_PROMPT
 
 
 def snapshot():
@@ -31,7 +33,8 @@ def answer():
 
 
 def data(request):
-    return json.loads(request['instructions'].split(request_context.HEADER + '\n')[-1].split('\n', 1)[1])
+    # Từ G1.1 snapshot là khối runtime ở đuôi input (theo vị trí, không theo tiêu đề); bản nối thêm mới nhất là hiện hành.
+    return latest_snapshot(request)
 
 
 def cap(request, name):
@@ -96,14 +99,24 @@ async def test_required_web_first_and_final_round_publish_exact_tools_and_refuse
         request_context.current.reset(token)
     assert requests[0]['tools'] == [{'type': 'web_search'}]
     assert cap(requests[0], 'clock')['reason'] == 'required_web_first'
-    assert json.loads(requests[1]['input'][-1]['output'])['code'] == 'tool_not_available'
+    outputs = [item for item in requests[1]['input'] if item.get('type') == 'function_call_output']
+    assert json.loads(outputs[-1]['output'])['code'] == 'tool_not_available'
     assert clock.call_count == 2
     assert cap(requests[1], 'clock')['state'] == 'available'
     assert requests[-1]['tools'] == [] and 'tool_choice' not in requests[-1]
     assert cap(requests[-1], 'clock')['reason'] == 'finalizing'
-    for index, request in enumerate(requests):
-        assert data(request)['round'] == index + 1
+    # G1.1: không còn trường 'round'. Snapshot chỉ được nối thêm ở vòng có manifest khác (vòng 2: hết bắt buộc tra web,
+    # vòng cuối: finalizing); vòng 3 giữ nguyên manifest nên không thêm. Ghi chú finalizing đứng sau snapshot cuối.
+    assert [snapshot_count(request) for request in requests] == [1, 2, 2, 3]
+    assert server_blocks(requests[-1])[-1][1] == FINALIZING_PROMPT
+    assert all(FINALIZING_PROMPT not in request['instructions'] for request in requests)
+    assert len({request['instructions'] for request in requests}) == 1
+    for request in requests:
+        assert 'round' not in data(request)
         assert_schema_parity(request)
+    # Bản nối thêm giữ đúng mốc giờ đã đóng băng đầu lượt.
+    assert len({json.dumps(snapshot_data(text)['clock']) for request in requests
+                for _, text in server_blocks(request) if request_context.HEADER in text}) == 1
 
 
 async def test_nonadvertised_document_edit_never_runs(monkeypatch):
@@ -152,6 +165,10 @@ async def test_github_revocation_between_rounds_updates_manifest_and_denies_next
     assert cap(requests[1], 'github')['state'] == 'unauthorized'
     assert json.loads(requests[2]['input'][-1]['output'])['code'] == 'tool_not_available'
     assert_schema_parity(requests[1])
+    # G1.1: manifest đổi ở vòng 2 nên có đúng một bản snapshot nối thêm; vòng 3 không đổi nên không thêm nữa, và
+    # instructions vẫn giữ nguyên (trạng thái GitHub lúc bắt đầu lượt) để không phá cache.
+    assert [snapshot_count(request) for request in requests] == [1, 2, 2]
+    assert len({request['instructions'] for request in requests}) == 1
 
 
 def test_unparsed_and_failed_files_are_evidence_states_not_claims_of_reading():
@@ -185,13 +202,20 @@ async def test_snapshot_scope_does_not_leak_between_concurrent_chat_and_companio
     assert request_context.current.get() is None
 
 
-def test_claude_cache_keeps_volatile_snapshot_after_stable_prefix():
-    runtime = snapshot().render(service='Anthropic', model='claude-haiku-5-5', effort='low', capabilities=[], round_index=0)
-    prompt = 'Stable policy\n\n' + time_tools.time_context('UTC') + '\n\n' + runtime
-    blocks = cached_system(prompt)
-    assert blocks[0]['text'] == 'Stable policy' and 'cache_control' in blocks[0]
-    assert blocks[-1]['text'] == runtime and 'cache_control' not in blocks[-1]
-    assert time_tools.TIME_HEADER_EN in blocks[-2]['text']
+async def test_claude_cache_keeps_volatile_snapshot_after_stable_prefix():
+    """G1.1: system chỉ còn phần ổn định (một khối có điểm cache); giờ và snapshot là tin system ở đuôi messages,
+    sau điểm cache của lịch sử cũ, không mang điểm cache ở lượt một vòng."""
+    runtime = snapshot().runtime(service='Anthropic', model='claude-haiku-5-5', effort='low', capabilities=[])
+    block = request_context.ServerBlock(role='system', content=[{'type': 'input_text', 'text': request_context.fence(runtime)}])
+    history = [{'type': 'message', 'role': 'user', 'content': 'Câu cũ'}, {'type': 'message', 'role': 'assistant', 'content': 'Đáp cũ'}]
+    stream = await ClaudeClient().create(model='claude-haiku-5-5', instructions='Stable policy', max_output_tokens=512,
+        input=[*history, {'type': 'message', 'role': 'user', 'content': 'Câu mới'}, block], reasoning={'effort': 'low'})
+    request = stream.request
+    assert request['system'] == cached_system('Stable policy') == [
+        {'type': 'text', 'text': 'Stable policy', 'cache_control': {'type': 'ephemeral'}}]
+    assert request['messages'][1]['content'][-1]['cache_control'] == {'type': 'ephemeral'}
+    assert request['messages'][-1] == {'role': 'system', 'content': [{'type': 'text', 'text': request_context.fence(runtime)}]}
+    assert runtime.startswith(time_tools.TIME_HEADER_EN) and request_context.HEADER in runtime
 
 
 async def test_claude_manifest_uses_the_same_native_translation_as_sdk():
@@ -199,9 +223,11 @@ async def test_claude_manifest_uses_the_same_native_translation_as_sdk():
     plan = capabilities.select(documents=None, files=None, history=None, github_state='unavailable', github_reason='server_not_configured',
         search_enabled=True, web_search='auto', tools_enabled=True, finalizing=False, required_search=False)
     runtime = snapshot().render(service='Anthropic', model='claude-haiku-5-5', effort='low',
-                                capabilities=plan.manifest(client.native_tools), round_index=0)
-    portable = {'instructions': 'Peto\n\n' + runtime, 'tools': plan.schemas, 'model': 'claude-haiku-5-5',
-                'input': [], 'max_output_tokens': 512, 'reasoning': {'effort': 'low'}}
+                                capabilities=plan.manifest(client.native_tools))
+    block = request_context.ServerBlock(role='system', content=[{'type': 'input_text', 'text': request_context.fence(runtime)}])
+    portable = {'instructions': 'Peto', 'tools': plan.schemas, 'model': 'claude-haiku-5-5',
+                'input': [{'type': 'message', 'role': 'user', 'content': 'Chào'}, block],
+                'max_output_tokens': 512, 'reasoning': {'effort': 'low'}}
     stream = await client.create(**portable)
     assert_schema_parity(portable, client.native_tools)
     names = {tool['name'] for tool in stream.request['tools']}

@@ -154,6 +154,8 @@ premium, since the chat clock still changes every turn). Agent instructions end 
 the hour, so steps within an hour reuse the whole cached history; this also helps OpenAI/xAI automatic caching. Cache
 reads and writes are reported in `input_tokens_details` (`cached_tokens`, `cache_write_tokens`) and summed over
 `pause_turn`. Real cache hit rates still need checking on the admin page after deployment.
+Since 2026-11-12 Chat turns follow "Web Chat stable prefix (G1.1)" in the dated log instead: no clock or snapshot in
+system, a history breakpoint even in one-round turns, and Haiku thinking replayed while its prefix is unchanged.
 On 2026-10-08 the owner's VPS logs showed `ModuleNotFoundError: No module named 'anthropic'` after adding the key:
 the service's venv had not installed the new backend requirements. Web and Agent now share a lazy Claude loader
 that converts dependency import failures to an actionable Vietnamese provider error. DEPLOY.md gives the exact
@@ -405,6 +407,8 @@ so a bad name must surface as a tool error rather than silently becoming Vietnam
 model call, including when an old conversation is reopened or a queued request finally
 runs, so "today" is always current. The `tzdata` dependency is what makes this behave
 identically on Windows and Linux.
+Since 2026-11-12 (G1.1) a Chat turn freezes this time block once per turn into the runtime block after the user's
+message instead of the system prompt; Companion and other turns still append it to the system prompt.
 
 ### Roleplay mode (removed 2026-10-18)
 
@@ -467,6 +471,39 @@ harness checks, not model-quality measurements. Results and blind human grading 
 Agent continues to use its existing CLI eval suite; do not silently run paid benchmarks during tests or CI.
 
 # Dated log (newest first)
+
+## Web Chat stable prefix (G1.1) (2026-11-12, committed on the worktree branch, not deployed)
+
+Audit package G1.1, approved by the owner. Before it, every per-turn value sat in `instructions`/system ahead of the
+history (second-resolution clock, the request snapshot with clock and `round`, the summary envelope, the finalizing
+note), so no Chat turn could read the cached history or attachments. Now, for Chat turns only (`request_context.current`):
+- `instructions`/system and `tools` are identical across turns and tool rounds: the system prompt, search rules, the
+  GitHub prompt from the turn's start, the code prompt and one new sentence, `prompts/chat.RUNTIME_PLACEMENT_PROMPT`.
+- The clock, the summary envelope (`Prepared.note`, no longer added to the prompt) and the snapshot are frozen once per
+  turn (`RequestContext.clock`, `history_note`; `round` removed) into one runtime block wrapped in `<peto_runtime>`
+  tags, placed after the current user message. Placement follows each service's docs: OpenAI, a `developer` item (Responses
+  input roles; the caching guide moves dynamic content to later messages); Anthropic, a mid-conversation `role: "system"`
+  message (documented for Haiku 5.5, no beta header, must follow a user turn); xAI, whose docs do not say a trailing
+  system/developer item is supported, a separate fenced part of the current user message (as in xAI's prompt-caching
+  cookbook). Input is append-only: a round whose manifest differs (required-web first round over, GitHub revoked,
+  finalizing, search fallback) appends a re-rendered snapshot (same text, same frozen clock), then the finalizing or
+  search-fallback note; xAI appends those as user items. The newest block is current; three rounds with an unchanged
+  manifest carry exactly one snapshot.
+- Server blocks are recognised by position and by the server-made `ServerBlock` type, never by heading:
+  `request_context.split_context` is gone, `claude.cached_system` no longer splits on the snapshot heading, and Claude
+  accepts `role: "system"` only from a `ServerBlock`.
+- Claude: `cache_control` on the last block of the old history even in one-round turns (plus the stable system block and,
+  in a tool loop, the last block). Haiku thinking is replayed again, but only when the system, tools and earlier
+  messages match the request that produced it (`anthropic_prefix` digest, ignoring `cache_control` as the
+  preserved-thinking docs allow); a changed prefix (for example the required-web round's tool list) still drops it.
+- xAI receives `prompt_cache_key` = `peto-chat-` + SHA-256 of the conversation ID (documented for Responses as
+  `x-grok-conv-id`); OpenAI gets none, because its docs say GPT-5.6+ routes the cache without one.
+- Companion, Agent, BYOK and side calls are unchanged: `tests/test_unchanged_requests.py` compares them with requests
+  recorded from `62f7b3b`, except that Claude system text containing the snapshot heading is no longer split out.
+- Tests: `tests/test_chat_prefix_stability.py` (byte-stable prefix over three turns and three rounds with a moving fake
+  clock, envelope placement, spoofing, `cached_tokens` still recorded), the fake Anthropic service in `test_claude.py`
+  now applies the documented prefix check, and 15 existing assertions were moved to the new location. The 20-message
+  window and summary timing are unchanged (G1.2, G1.3). Real-model checks are in `unverified.md`.
 
 ## Seven Grok-inspired Web Chat UX improvements (2026-10-27, complete locally, committed `348d7ca`, not deployed)
 

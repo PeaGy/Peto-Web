@@ -5,6 +5,7 @@ import uuid
 from types import SimpleNamespace
 
 import pytest
+from features.chat import request_context
 from conftest import TEST_OWNER, OTHER_DISCORD_ID, read_events
 from features.chat import context, context_budget, service
 from shared import attachment_tools
@@ -49,7 +50,8 @@ async def test_chat_uses_its_own_summary_with_saved_memory_off_and_portable_mode
     seen = []
     class Provider:
         async def stream(self, **kwargs):
-            seen.append(kwargs)
+            # G1.1: envelope tóm tắt đi trong khối runtime của snapshot, không còn trong system prompt.
+            seen.append({**kwargs, 'note': request_context.current.get().history_note})
             yield 'Đã nhận yêu cầu mới.'
     monkeypatch.setattr(service, 'get_provider', lambda _: Provider())
     monkeypatch.setattr(service, 'MAX_HISTORY_MESSAGES', 4)
@@ -58,9 +60,10 @@ async def test_chat_uses_its_own_summary_with_saved_memory_off_and_portable_mode
     assert result[-1]['type'] == 'done', result
     saved = await store.state(TEST_OWNER, cid)
     assert saved and saved['model'] == context_budget.policy(model)['identity']
-    assert summarizer[0][0] == model and 'alpha phải bằng 7' in seen[0]['system_prompt']
+    assert summarizer[0][0] == model and 'alpha phải bằng 7' in seen[0]['note']
+    assert 'alpha phải bằng 7' not in seen[0]['system_prompt']
     assert seen[0]['messages'][-1].content == 'Sửa lại: alpha phải bằng 8.'
-    assert 'current user corrections win' in seen[0]['system_prompt']
+    assert 'current user corrections win' in seen[0]['note']
     assert len(await db.get_messages(TEST_OWNER, cid)) == 16
     assert (await db.memory_state(TEST_OWNER))['enabled'] == 0
 
@@ -92,7 +95,7 @@ async def test_summary_failure_preserves_the_good_projection_and_watermark(monke
     result = await context.prepare(TEST_OWNER, cid, 'luna', 'Peto', await db.get_messages(TEST_OWNER, cid, limit=4), [], 4)
     assert (await store.state(TEST_OWNER, cid))['digest'] == before['digest']
     assert 'Chưa tóm tắt' in result.detail and result.history_tools is not None
-    assert 'unrepresented_messages' in result.prompt
+    assert 'unrepresented_messages' in result.note
 
 
 async def test_source_edit_during_summary_cannot_publish_a_stale_result(monkeypatch, summarizer):
@@ -106,7 +109,7 @@ async def test_source_edit_during_summary_cannot_publish_a_stale_result(monkeypa
     result = await context.prepare(TEST_OWNER, cid, 'peto', 'Peto', await db.get_messages(TEST_OWNER, cid, limit=4), [], 4)
     assert await store.state(TEST_OWNER, cid) is None
     assert 'Nguồn vừa thay đổi' in result.detail
-    assert '"summary": null' in result.prompt
+    assert '"summary": null' in result.note
 
 
 async def test_edit_delete_and_project_move_invalidate_only_their_own_context(summarizer):
@@ -353,7 +356,7 @@ async def test_summary_disabled_keeps_raw_history_lookup_and_latest_message(monk
     prepared = await context.prepare(TEST_OWNER, cid, 'peto', 'Peto', rows, [], 4)
     assert not summarizer and await store.state(TEST_OWNER, cid) is None
     assert prepared.history[-1].content == rows[-1]['content']
-    assert prepared.history_tools is not None and '"unrepresented_messages": 10' in prepared.prompt
+    assert prepared.history_tools is not None and '"unrepresented_messages": 10' in prepared.note
 
 
 @pytest.mark.parametrize('raw', ['{broken', '[]', '{"grok-4.7":{"input":true}}', '{"grok-4.7":{"bad":10000}}'])
@@ -392,7 +395,7 @@ async def test_source_edit_immediately_after_commit_does_not_leak_the_invalidate
     monkeypatch.setattr(store, 'save', race)
     prepared = await context.prepare(TEST_OWNER, cid, 'peto', 'Peto', await db.get_messages(TEST_OWNER, cid, limit=4), [], 4)
     assert await store.state(TEST_OWNER, cid) is None
-    assert 'alpha phải bằng 7' not in prepared.prompt and 'NEW_CONSTRAINT beta=9' in prepared.prompt
+    assert 'alpha phải bằng 7' not in prepared.note and 'NEW_CONSTRAINT beta=9' in prepared.note
 
 
 async def test_summary_timeout_closes_stream_and_restores_request_context(monkeypatch):

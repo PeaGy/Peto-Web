@@ -17,6 +17,7 @@ from ai.claude import ClaudeProvider
 from conftest import TEST_OWNER, read_events
 from test_clock_tools import FakeStream, done
 from test_claude import sdk_with_responses, message_events
+from test_chat_prefix_stability import latest_snapshot
 
 WIN_EDGE = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0'
 ANDROID = 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 Chrome/130.0.0.0 Mobile Safari/537.36'
@@ -94,8 +95,8 @@ def provider_for(monkeypatch, model, count=1):
 
 
 def snapshot(call):
-    prompt = call.get('instructions') or '\n\n'.join(block['text'] for block in call['system'])
-    return json.loads(prompt.rsplit(request_context.HEADER+'\n', 1)[1].split('\n', 1)[1])
+    # Từ G1.1 snapshot là khối runtime ở đuôi input/messages, không còn trong instructions/system.
+    return latest_snapshot(call)
 
 
 @pytest.mark.parametrize('model', ['peto', 'luna', 'haiku'])
@@ -112,8 +113,11 @@ async def test_normal_chat_automatically_reaches_native_request_only_as_coarse_s
                          'reliability':'best_effort','trust':'client_reported'}
         assert WIN_EDGE not in json.dumps(calls) and 'INJECTED_FROM_JSON' not in json.dumps(calls)
         if model == 'haiku':
-            runtime = next(block for block in calls[0]['system'] if block['text'].startswith(request_context.HEADER))
-            assert 'cache_control' not in runtime
+            # G1.1: khối runtime là tin system ở cuối messages, sau điểm cache, không mang điểm cache.
+            runtime = calls[0]['messages'][-1]
+            assert runtime['role'] == 'system' and request_context.HEADER in runtime['content'][0]['text']
+            assert 'cache_control' not in json.dumps(runtime)
+            assert request_context.HEADER not in json.dumps(calls[0]['system'])
         assert request_context.current.get() is None
     finally:
         await close()

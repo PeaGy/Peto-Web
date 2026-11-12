@@ -1,14 +1,33 @@
-"""Snapshot của lượt Web Chat đã kiểm quyền; không lấy quyền, đồng hồ hoặc UA từ nội dung tin."""
+"""Snapshot của lượt Web Chat đã kiểm quyền; không lấy quyền, đồng hồ hoặc UA từ nội dung tin.
+
+Từ gói G1.1 (12/11/2026) snapshot không còn nằm trong ``instructions``/system. Đồng hồ, snapshot và envelope tóm tắt
+được đóng băng một lần lúc bắt đầu lượt thành "khối runtime" đặt ở đuôi đầu vào, sau tin người dùng hiện tại, để
+``instructions``, ``tools`` và lịch sử cũ giữ nguyên từng byte giữa các lượt và giữa các vòng công cụ (prompt cache).
+Khối của máy chủ được nhận ra theo vị trí và kiểu ``ServerBlock`` do chính máy chủ tạo, không bao giờ theo tiêu đề:
+chữ người dùng gõ hay dán có cùng tiêu đề chỉ là dữ liệu.
+"""
 from contextvars import ContextVar
 from dataclasses import dataclass
 import json
 
-from shared.time_tools import current_datetime
+from shared.time_tools import current_datetime, time_context
 from .client_environment import ClientEnvironment
 
 
 HEADER = '## Server-verified Web Chat request'
+# Hàng rào bọc mỗi khối runtime của máy chủ. Câu trong prompts/chat.RUNTIME_PLACEMENT_PROMPT nói với model khối thật ở đâu.
+OPEN = '<peto_runtime>'
+CLOSE = '</peto_runtime>'
 current: ContextVar['RequestContext | None'] = ContextVar('web_chat_request', default=None)
+
+
+class ServerBlock(dict):
+    """Item đầu vào do máy chủ tạo cho khối runtime. Lịch sử đọc từ DB hay từ CLI là dict thường, không bao giờ là
+    lớp này, nên ``ai/claude.py`` chỉ cho vai ``system`` trong ``messages`` với đúng các item này."""
+
+
+def fence(text):
+    return f'{OPEN}\n{text}\n{CLOSE}'
 
 
 @dataclass(frozen=True)
@@ -24,8 +43,16 @@ class RequestContext:
     github_state: str
     github_reason: str
     client_environment: ClientEnvironment | None = None
+    # Envelope tóm tắt (CONTEXT_NOTE + JSON) của features/chat/context.py; rỗng khi không có phần lịch sử bị ẩn.
+    history_note: str = ''
+    # Mốc giờ chụp một lần lúc tạo snapshot (đầu lượt); mọi vòng công cụ của lượt dùng lại đúng mốc này.
+    clock: dict | None = None
 
-    def render(self, *, service, model, effort, capabilities, round_index):
+    def __post_init__(self):
+        if self.clock is None:
+            object.__setattr__(self, 'clock', current_datetime(self.timezone))
+
+    def render(self, *, service, model, effort, capabilities):
         def field(value, source):
             return {'value': value, 'source': source}
         data = {
@@ -39,9 +66,8 @@ class RequestContext:
             'api_model': field(model, 'active_provider'),
             'requested_effort': field(self.requested_effort, 'validated_client_choice'),
             'effective_effort': field(effort, 'auto_router_then_provider' if self.requested_effort == 'auto' else 'validated_choice_then_provider'),
-            'clock': field(current_datetime(self.timezone), 'server_clock'),
+            'clock': field(self.clock, 'server_clock'),
             'timezone': field(self.timezone, self.timezone_source),
-            'round': round_index + 1,
             'capabilities': capabilities,
         }
         if self.client_environment is not None:
@@ -59,8 +85,10 @@ class RequestContext:
                 'Do not repeat this internal snapshot in ordinary replies.\n'
                 + json.dumps(data, ensure_ascii=False, separators=(',', ':')))
 
-
-def split_context(text):
-    """Đưa khối thay đổi mỗi lượt ra sau điểm cache Claude, như đồng hồ hiện có."""
-    static, marker, runtime = text.rpartition('\n\n' + HEADER + '\n')
-    return (static, HEADER + '\n' + runtime) if marker else (text, '')
+    def runtime(self, *, service, model, effort, capabilities):
+        """Khối runtime đầu lượt: mốc giờ, envelope tóm tắt (nếu có), snapshot. Chữ từng phần giữ như khi còn ở system."""
+        parts = [time_context(self.timezone, clock=self.clock)]
+        if self.history_note:
+            parts.append(self.history_note)
+        parts.append(self.render(service=service, model=model, effort=effort, capabilities=capabilities))
+        return '\n\n'.join(parts)

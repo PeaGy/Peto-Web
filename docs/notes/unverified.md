@@ -35,6 +35,10 @@ line once it has been tried, and record the result in the area's note file. Paid
 - [ ] Seven Grok UX improvements on a physical phone, a screen reader, Safari and a live provider/VPS — `chat.md`, "Seven Grok-inspired Web Chat UX improvements".
 - [ ] Citation rendering on a physical phone and with real model output — `chat.md`, "Web Chat citation rendering".
 - [ ] User-message copy on a real phone and in production — `chat.md`, "User-message copy action".
+- [ ] G1.1 real cache hit rates per provider (`cached_tokens` on the admin page: Grok with `prompt_cache_key`, Luna, Haiku) on a second turn and inside a tool loop — `chat.md`, "Web Chat stable prefix (G1.1)".
+- [ ] G1.1: do Grok, Luna and Haiku still answer the time correctly and use the right tools when the runtime block sits after the user's message (developer item for Luna, mid-conversation system message for Haiku, fenced part of the user message for Grok) — `chat.md`, "Web Chat stable prefix (G1.1)".
+- [ ] G1.1: real xAI and OpenAI acceptance of the trailing user/developer runtime items after `function_call_output`, and real Anthropic acceptance of system messages after `tool_result` and of replayed Haiku thinking across tool rounds (only fake services that apply the documented rules) — `chat.md`, "Web Chat stable prefix (G1.1)".
+- [ ] G1.1: does a real model resist a user-typed `<peto_runtime>` lookalike and use the newest appended snapshot after a mid-turn manifest change — `chat.md`, "Web Chat stable prefix (G1.1)".
 
 ## Documents (`documents.md`)
 

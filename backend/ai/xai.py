@@ -6,6 +6,7 @@ vòng công cụ, tìm web và nguồn tham khảo; mỗi dịch vụ chỉ khá
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import json
 from time import perf_counter
@@ -36,7 +37,7 @@ from features.companion import player_tools
 from features.chat.context_budget import enforce as enforce_chat_budget, side_output_cap
 from features.chat import capabilities, request_context
 from prompts.chat import (CODE_PROMPT, FINALIZING_PROMPT, FOLLOW_UP_PROMPT, GITHUB_PROMPT, NO_GITHUB_PROMPT,
-                          SEARCH_FALLBACK_PROMPT)
+                          RUNTIME_PLACEMENT_PROMPT, SEARCH_FALLBACK_PROMPT)
 
 from .base import ChatMessage, ChatProvider, ProviderError, StreamChunk
 
@@ -238,9 +239,25 @@ class ResponsesProvider(ChatProvider):
     _client: AsyncOpenAI
     model: str
     max_output_tokens: int
+    # Vai của item chứa khối runtime của lượt Chat ở đuôi ``input`` (gói G1.1). None: tài liệu của dịch vụ không nói rõ
+    # một item system/developer ở cuối được hỗ trợ (xAI), nên khối đầu lượt là một phần nội dung riêng, có hàng rào,
+    # gắn vào tin người dùng hiện tại; khối nối thêm ở vòng sau là một tin vai user riêng.
+    runtime_role: str | None = None
+    # Gửi ``prompt_cache_key`` (băm từ mã hội thoại) cho lượt Chat: chỉ dịch vụ có tài liệu xác nhận khóa giúp cache.
+    prompt_cache_key = False
 
     async def _prepare(self) -> None:
         """Lấy khóa trước mỗi lượt gọi."""
+
+    def _place_runtime(self, payload: list[dict], text: str, *, first: bool = False) -> None:
+        """Nối một khối runtime của máy chủ vào đuôi ``payload``; chỉ nối thêm, không sửa item nào phía trước."""
+        part = {"type": "input_text", "text": request_context.fence(text)}
+        if self.runtime_role:
+            payload.append(request_context.ServerBlock(role=self.runtime_role, content=[part]))
+        elif first and payload and payload[-1].get("role") == "user" and isinstance(payload[-1].get("content"), list):
+            payload[-1]["content"].append(part)
+        else:
+            payload.append(request_context.ServerBlock(role="user", content=[part]))
 
     async def stream(
         self,
@@ -322,6 +339,13 @@ class ResponsesProvider(ChatProvider):
         code_reason = ('provider_unsupported' if not self.code_interpreter else
                        'server_disabled' if not config.XAI_CODE_EXECUTION else
                        'chat_only' if snapshot is None or not tools_enabled else None)
+        # Tab Trò chuyện: instructions đóng băng một lần cho cả lượt (trạng thái GitHub lúc bắt đầu lượt); mọi thứ đổi
+        # theo lượt hay theo vòng nằm trong khối runtime ở đuôi input. Lượt khác (Companion, đặt tên, tóm tắt) giữ nguyên.
+        chat_instructions = (instructions + ('\n\n' + (GITHUB_PROMPT if github_state == 'available' else NO_GITHUB_PROMPT) if tools_enabled else '')
+                             + ('\n\n' + CODE_PROMPT if code_reason is None else '')
+                             + '\n\n' + RUNTIME_PLACEMENT_PROMPT) if snapshot is not None else None
+        # Manifest công cụ đã báo trong khối runtime gần nhất: vòng nào khác thì nối thêm một bản snapshot mới.
+        shown_manifest = None
         workbooks = bool(document_session and (getattr(document_session, 'workbooks', None)
                                                or getattr(document_session, 'word_files', None)))
         max_rounds = max(MAX_TOOL_ROUNDS, MAX_GITHUB_TOOL_ROUNDS if github_schemas else 0, MAX_WORKBOOK_TOOL_ROUNDS if workbooks else 0)
@@ -349,7 +373,8 @@ class ResponsesProvider(ChatProvider):
             usage: dict = {}
             create_kwargs: dict = {
                 "model": self.model,
-                "instructions": instructions + ('\n\n' + (GITHUB_PROMPT if github_state == 'available' else NO_GITHUB_PROMPT) if tools_enabled else '')
+                "instructions": chat_instructions if chat_instructions is not None else
+                                instructions + ('\n\n' + (GITHUB_PROMPT if github_state == 'available' else NO_GITHUB_PROMPT) if tools_enabled else '')
                                              + ('\n\n' + CODE_PROMPT if code_reason is None else '')
                                              + ('\n\n' + SEARCH_FALLBACK_PROMPT if search_fallback else
                                                  '\n\n' + FINALIZING_PROMPT if finalizing else ''),
@@ -378,10 +403,22 @@ class ResponsesProvider(ChatProvider):
                     # Chỉ đưa công cụ tìm web ở lần đầu để 'required' không bị thỏa bởi đồng hồ.
                     create_kwargs["tool_choice"] = "required"
             if snapshot is not None:
-                create_kwargs['instructions'] += '\n\n' + snapshot.render(
-                    service=self.service, model=self.model,
-                    effort=create_kwargs.get('reasoning', {}).get('effort'),
-                    capabilities=plan.manifest(getattr(self._client, 'native_tools', None)), round_index=round_index)
+                # Khối runtime ở đuôi input, chỉ nối thêm: đầu lượt một khối đóng băng (giờ, envelope, snapshot); vòng
+                # có manifest khác lần báo trước thì thêm một bản snapshot mới (cùng mốc giờ); vòng cuối thêm ghi chú.
+                manifest = plan.manifest(getattr(self._client, 'native_tools', None))
+                details = dict(service=self.service, model=self.model, capabilities=manifest,
+                               effort=create_kwargs.get('reasoning', {}).get('effort'))
+                if shown_manifest is None:
+                    self._place_runtime(payload_input, snapshot.runtime(**details), first=True)
+                elif manifest != shown_manifest:
+                    self._place_runtime(payload_input, snapshot.render(**details))
+                shown_manifest = manifest
+                if search_fallback or finalizing:
+                    self._place_runtime(payload_input, SEARCH_FALLBACK_PROMPT if search_fallback else FINALIZING_PROMPT)
+                if self.prompt_cache_key:
+                    # Định tuyến tới máy chủ đang giữ cache của hội thoại; chỉ mã hội thoại đã băm, không có owner.
+                    create_kwargs["prompt_cache_key"] = "peto-chat-" + hashlib.sha256(
+                        snapshot.conversation_id.encode()).hexdigest()[:32]
             enforce_chat_budget(create_kwargs)
             stream = None
             output_items: list[dict] = []
@@ -680,6 +717,8 @@ class XAIProvider(ResponsesProvider):
     name = "xai"
     service = "xAI"
     code_interpreter = True
+    # Tài liệu xAI (Responses API): prompt_cache_key được chuyển thành x-grok-conv-id, định tuyến về máy chủ có cache.
+    prompt_cache_key = True
 
     def __init__(self) -> None:
         self._auth = XaiAuth()
