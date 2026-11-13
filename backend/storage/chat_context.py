@@ -33,6 +33,11 @@ async def init_tables(db):
     await db.execute('''CREATE TRIGGER IF NOT EXISTS chat_context_project
         AFTER UPDATE OF project_id ON conversations WHEN OLD.project_id IS NOT NEW.project_id BEGIN
         DELETE FROM chat_contexts WHERE conversation_id=NEW.id; END''')
+    # Mốc đầu cửa sổ lịch sử của tab Trò chuyện (G1.2): tin cũ nhất còn gửi nguyên văn. Giữ qua nhiều lượt để tiền tố
+    # request không trượt theo từng tin; chỉ dời một khối lớn khi vượt ngân sách hay trần số tin.
+    await db.execute('''CREATE TABLE IF NOT EXISTS chat_windows (
+        conversation_id TEXT PRIMARY KEY REFERENCES conversations(id) ON DELETE CASCADE,
+        owner TEXT NOT NULL, start_id INTEGER NOT NULL, updated_at REAL NOT NULL)''')
     installed = await (await db.execute("SELECT 1 FROM sqlite_master WHERE type='trigger' AND name='chat_context_turn_state'")).fetchone()
     if not installed:
         # Migration một lần: cache cũ có thể đã xếp câu hỏi lỗi vào pending trước khi có quy tắc mới.
@@ -43,6 +48,27 @@ async def init_tables(db):
         AFTER UPDATE OF state ON chat_turns WHEN OLD.state != NEW.state BEGIN
         DELETE FROM chat_contexts WHERE conversation_id=NEW.conversation_id AND cursor_id>=NEW.user_message_id;
         END''')
+
+
+async def window_start(owner, conversation_id):
+    """Mốc đầu cửa sổ đã lưu (id tin), 0 khi chưa có. Chỉ của hội thoại thuộc ``owner``."""
+    async with connection.connect() as db:
+        row = await (await db.execute('''SELECT w.start_id FROM chat_windows w JOIN conversations c
+            ON c.id=w.conversation_id WHERE c.owner=? AND w.owner=? AND c.id=?''',
+            (owner, owner, conversation_id))).fetchone()
+    return int(row[0]) if row else 0
+
+
+async def set_window_start(owner, conversation_id, start_id):
+    async with connection.connect() as db:
+        owned = await (await db.execute('SELECT 1 FROM conversations WHERE id=? AND owner=?',
+                                        (conversation_id, owner))).fetchone()
+        if owned is None:
+            return
+        await db.execute('''INSERT INTO chat_windows (conversation_id, owner, start_id, updated_at) VALUES (?,?,?,?)
+            ON CONFLICT(conversation_id) DO UPDATE SET start_id=excluded.start_id, updated_at=excluded.updated_at''',
+            (conversation_id, owner, int(start_id), time.time()))
+        await db.commit()
 
 
 async def state(owner, conversation_id):

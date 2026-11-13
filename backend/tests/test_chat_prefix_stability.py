@@ -224,6 +224,8 @@ async def test_summary_envelope_moves_to_runtime_block_and_instructions_stay_put
     for index in range(30):
         await db.add_message(cid, 'user' if index % 2 == 0 else 'assistant', f'Tin cũ số {index}.')
     calls, close = capture(monkeypatch, model, moving_clock, script=['text', 'text'])
+    # Trần 20 tin để 30 tin cũ vượt cửa sổ và có envelope (từ G1.2 trần mặc định là 200).
+    monkeypatch.setattr(service, 'CHAT_MAX_HISTORY', 20)
     try:
         await run_turns(client, model, moving_clock, turns=['Tiếp nhé', 'Còn gì nữa?'], cid=cid)
     finally:

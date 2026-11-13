@@ -477,6 +477,29 @@ with `--rates`, USD) ceiling before running, and adds per-model time-to-first-te
 
 # Dated log (newest first)
 
+## Budget-based history window with a kept cut (G1.2) (2026-11-13, committed on branch `g1.2-budget-window`, not deployed)
+
+Audit package G1.2. Before it, Chat sent the 20 most recent messages verbatim (`PETO_MAX_HISTORY`), so every turn past
+20 messages pushed the oldest one out and the request prefix changed on every turn: no long conversation could read the
+prompt cache, and only 10 exchanges were ever sent verbatim while the budget allows 64,000 tokens.
+- Chat now loads up to `PETO_CHAT_MAX_HISTORY` messages (default 200, 20–1000; Companion keeps `PETO_MAX_HISTORY` = 20,
+  and the Companion summary window called after Chat turns still gets 20). `context._window` sends every message from the
+  saved cut (`chat_windows.start_id`, one row per conversation, owner-scoped, cascades with the conversation) if it fits
+  the budget (`policy(model)['input']` minus the existing reserve) and the cap.
+- When either is exceeded it cuts the front in one block, at the start of a user message, to at most half of the budget
+  left for history and half the cap (binary search over user-message starts), and saves the new cut. Later turns keep it,
+  so the earlier request stays a prefix, until the next overflow. The first time the cap is reached without a cut it saves
+  the current first message as the cut, so the window does not slide with "the newest N".
+- A saved cut newer than the latest message (after a retry or a branch shortened the conversation) is ignored. The rolling
+  summary, the anchor, the small-gap expansion (fewer than `MIN_BATCH` messages kept verbatim instead of summarized) and
+  the unrepresented counts work as before on the new boundary; the summary now runs only when the cut moves.
+- Tests: `tests/test_chat_window.py` (60 short messages all sent with no summary; an over-budget conversation cuts once and
+  keeps the same cut, with each turn's history a prefix of the next, for five turns; the message cap cuts to half and
+  keeps it; a stale cut is ignored; owner scope). `test_chat_context.py` and the envelope test in
+  `test_chat_prefix_stability.py` now shrink `CHAT_MAX_HISTORY`. Backend: 2,133 passed, 1 skipped.
+- Cost: conversations of 21–200 short messages now send all of them (was 20), mostly from the cache after G1.1.
+  The summary still runs before the reply when the cut moves (G1.3 moves it after the reply).
+
 ## Grok replays its runtime blocks (G1.1c) (2026-11-13, committed on branch `g1.1c-grok-runtime-replay`, not deployed)
 
 Real-app check of G1.1b on 2026-11-13: Haiku and Luna read 87–93% of each later turn from the cache with a stable

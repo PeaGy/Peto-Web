@@ -54,7 +54,7 @@ async def test_chat_uses_its_own_summary_with_saved_memory_off_and_portable_mode
             seen.append({**kwargs, 'note': request_context.current.get().history_note})
             yield 'Đã nhận yêu cầu mới.'
     monkeypatch.setattr(service, 'get_provider', lambda _: Provider())
-    monkeypatch.setattr(service, 'MAX_HISTORY_MESSAGES', 4)
+    monkeypatch.setattr(service, 'CHAT_MAX_HISTORY', 4)
     result = await read_events(await client.post('/api/chat', json={
         'conversation_id': cid, 'message': 'Sửa lại: alpha phải bằng 8.', 'model': model, 'effort': 'low'}))
     assert result[-1]['type'] == 'done', result
@@ -335,7 +335,7 @@ async def test_stop_during_compaction_never_starts_the_main_reply_or_advances_cu
         ready.set()
         await asyncio.Event().wait()
     monkeypatch.setattr(context, 'summarize', wait)
-    monkeypatch.setattr(service, 'MAX_HISTORY_MESSAGES', 4)
+    monkeypatch.setattr(service, 'CHAT_MAX_HISTORY', 4)
     monkeypatch.setattr(service, 'get_provider', lambda *args: pytest.fail('Lượt đã dừng không gọi trả lời.'))
     request_id = uuid.uuid4().hex
     response = await service.chat(schemas.ChatRequest(message='tiếp tục', conversation_id=cid, request_id=request_id), owner=TEST_OWNER)

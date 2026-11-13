@@ -199,6 +199,9 @@ RESPONSE_TIMEOUTS = {
 
 # --- Ngữ cảnh ------------------------------------------------------------
 MAX_HISTORY_MESSAGES = _env_int("PETO_MAX_HISTORY", 20, 2, 100)
+# Tab Trò chuyện (G1.2, 13/11/2026): trần số tin gửi kèm; ngân sách token (context_budget.policy) mới là giới hạn chính.
+# Companion vẫn dùng PETO_MAX_HISTORY.
+CHAT_MAX_HISTORY = _env_int('PETO_CHAT_MAX_HISTORY', 200, 20, 1000)
 CHAT_CONTEXT_TOKENS = _env_int('PETO_CHAT_CONTEXT_TOKENS', 64_000, 8192, 400_000)
 CHAT_SUMMARY_ENABLED = os.getenv('PETO_CHAT_SUMMARY_ENABLED', '1').strip().lower() not in {'0', 'false', 'off'}
 CHAT_SUMMARY_TIMEOUT = _env_float('PETO_CHAT_SUMMARY_TIMEOUT_SECONDS', 20, 1, 60)
