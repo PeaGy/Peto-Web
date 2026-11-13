@@ -387,6 +387,18 @@ it('tin đầu gắn URL trên entry hiện tại, không đọc lại lịch s�
   expect((composer as HTMLTextAreaElement).value).toBe('Nháp tiếp theo');
 });
 
+it('Peto im lặng có chủ đích: dòng mờ hiện ngay khi lượt xong, không cần tải lại', async () => {
+  vi.mocked(api.sendMessage).mockImplementation(async (_payload, handlers) => {
+    handlers.onMeta?.('S', 'low', { id: 20, role: 'user', content: 'intelligent test: do not reply' });
+    handlers.onDone?.(21);
+  });
+  await openApp();
+  fireEvent.change(screen.getByLabelText('Nhắn cho Peto'), { target: { value: 'intelligent test: do not reply' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Gửi', exact: true }));
+  expect(await screen.findByText('Peto không viết gì cho lượt này.')).toBeTruthy();
+  expect(screen.queryByText(/chưa hoàn tất/)).toBeNull();
+});
+
 it('ID đến muộn ở Imagine không kéo về Chat; quay lại tiếp tục cùng luồng', async () => {
   const meta = deferred<void>(), done = deferred<void>();
   let signal: AbortSignal | undefined;

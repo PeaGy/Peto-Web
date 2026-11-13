@@ -1261,7 +1261,8 @@ function AppContent() {
             if (last?.role !== "assistant") return prev;
             const work = finalWork ? last.work : closeWork(last.work, completed, elapsed);
             // Lượt hỏng trước khi có chữ giữ nhật ký ở trình duyệt. Lượt chủ động dừng được máy chủ lưu cả khi trống.
-            const stored = Boolean(last.content || last.artifacts?.length);
+            // Lượt hoàn tất có mã tin của máy chủ cũng đã lưu dù rỗng: Peto im lặng có chủ đích (dòng mờ hiện ngay).
+            const stored = Boolean(last.content || last.artifacts?.length || (completed && last.id));
             if (!stored && !work?.steps.length && !stoppedByUser) return prev.slice(0, -1);
             return [...prev.slice(0, -1), { ...last, work, workStartedAt: undefined, local: stored || stoppedByUser ? undefined : true,
               status: completed ? "complete" : "incomplete", stopped: stoppedByUser || undefined }];
