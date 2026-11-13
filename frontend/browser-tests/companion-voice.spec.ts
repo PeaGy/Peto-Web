@@ -107,7 +107,8 @@ test('Companion gõ/nghĩ/nói/chờ/dừng và rời tab giữ giao diện gọ
   await expect(stage).toHaveAttribute('data-activity', 'idle');
   await expect(composer).toHaveValue('Hello Peto');
   await page.getByRole('button', { name: 'Gửi', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Đang chuẩn bị giọng đọc, bấm để dừng' })).toBeVisible();
+  // Từ e96fd91 nút trạng thái giọng đọc ("Đang chuẩn bị giọng đọc, bấm để dừng") gộp vào nút Dừng chung.
+  await expect(page.getByRole('region', { name: 'Trò chuyện trong Companion' }).getByRole('button', { name: 'Dừng', exact: true })).toBeVisible();
   await expect(stage).toHaveAttribute('data-activity', 'thinking');
   const signalVoice = (action: 'start' | 'wait' | 'end') => page.evaluate(action => {
     (window as unknown as { testVoice: Record<string, () => void> }).testVoice[action]();
@@ -118,10 +119,14 @@ test('Companion gõ/nghĩ/nói/chờ/dừng và rời tab giữ giao diện gọ
   await expect(stage).toHaveAttribute('data-activity', 'thinking');
   await signalVoice('start');
   await expect(stage).toHaveAttribute('data-activity', 'speaking');
-  await page.getByRole('button', { name: 'Dừng đọc', exact: true }).click();
+  await page.getByRole('region', { name: 'Trò chuyện trong Companion' }).getByRole('button', { name: 'Dừng', exact: true }).click();
   await expect(stage).toHaveAttribute('data-activity', 'idle');
   await noPageOverflow(page);
-  await page.getByRole('button', { name: 'Nghe Peto đọc tin này' }).last().click();
+  // Nghe lại một tin nằm trong menu thao tác của tin (từ e96fd91): chuột phải trên máy tính, nhấn giữ trên điện thoại.
+  await page.locator('.cchat-action.right').last().click({ button: 'right' });
+  // Menu mở bằng chạm bỏ qua cú bấm ngay sau đó (TOUCH_CLICK_GUARD_MS trong ChatActionMenu), để lúc nhấc tay không chọn nhầm.
+  if (test.info().project.name === 'mobile') await page.waitForTimeout(500);
+  await page.getByRole('menuitem', { name: 'Nghe lại', exact: true }).click();
   await signalVoice('start');
   await expect(stage).toHaveAttribute('data-activity', 'speaking');
   if (!await page.locator('.sidebar').isVisible()) await page.getByRole('button', { name: 'Mở menu', exact: true }).click();
