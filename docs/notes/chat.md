@@ -477,6 +477,18 @@ with `--rates`, USD) ceiling before running, and adds per-model time-to-first-te
 
 # Dated log (newest first)
 
+## Plain-text user messages (G4.1) (2026-11-13, committed on branch `g4.1-plain-user-text`, not deployed)
+
+Audit package G4.1; the owner left the choice to Claude, which picked option (a), as ChatGPT does. The user's own Chat
+messages no longer go through Markdown: `features/chat/UserPlainText.tsx` shows them as typed (`white-space: pre-wrap`),
+so `*`, `#`, `1.`, `|` tables or `$x$` show those characters instead of italics, headings, lists, tables or formulas.
+Two things stay rich: http(s) links become the same `MessageLink` chips as before (trailing punctuation and an unmatched
+closing bracket are left out of the link), and fenced blocks (``` or ~~~, longer fences may wrap shorter ones; an unclosed
+fence runs to the end) render through `CodeBlock` with its copy, wrap and collapse buttons. A user-pasted Mermaid block is
+shown as code, not drawn. Peto's replies are unchanged (Markdown, math, citations, diagrams).
+- Tests: `frontend/tests/userPlainText.test.tsx` (literal Markdown characters and spacing, fences, links, replies still
+  Markdown); `MessageAttachments.test.tsx` and `messageUtilities.test.tsx` now expect literal text for user messages.
+
 ## Intentional empty replies are not errors (2026-11-13, committed on branch `silent-reply`, not deployed)
 
 The owner sent "intelligent test: do not reply"; sometimes Chat showed "Peto chưa trả lời được lượt này". Reproduced on

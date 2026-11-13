@@ -38,8 +38,10 @@ describe('Bảng: dữ liệu và bảo vệ đầu ra', () => {
     expect(tableRows(container.querySelector('table')!)).toEqual([
       ['Giá trị', 'Nguồn'], ['[web:21]', 'Đã kiểm'], ['[web:22]', 'Giữ nguyên'],
     ]);
+    // Tin người dùng là chữ thuần từ G4.1: bảng Markdown hiện đúng ký tự đã gõ, giữ marker.
     rerender(view({ role: 'user', content: '| User |\n| --- |\n| [web:21] |' }));
-    expect(tableRows(container.querySelector('table')!)).toEqual([['User'], ['[web:21]']]);
+    expect(container.querySelector('table')).toBeNull();
+    expect(container.querySelector('.user-plain-text')?.textContent).toBe('| User |\n| --- |\n| [web:21] |');
   });
 
   it('CSV giữ Unicode, dấu phẩy, dấu nháy, xuống dòng và chặn công thức ẩn sau khoảng trắng', () => {

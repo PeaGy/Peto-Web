@@ -343,3 +343,6 @@
 @media (hover: hover) and (pointer: fine) { .code-copy:hover { background: var(--panel-2); color: var(--text); } }
 .code-copy svg { flex: none; }
 
+/* Tin của người dùng là chữ thuần (G4.1): giữ đúng xuống dòng và khoảng trắng đã gõ. */
+.user-plain-text { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
+.user-plain-text + .user-plain-text, .user-plain-text + .code-block, .code-block + .user-plain-text { margin-top: 8px; }
