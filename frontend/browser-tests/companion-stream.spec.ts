@@ -48,6 +48,8 @@ test('đọc sớm qua luồng SSE thật, giữ nháp mới và Dừng hủy ti
   await page.getByRole('button', { name: 'Companion', exact: true }).click();
   const composer = page.getByRole('textbox', { name: 'Nhắn cho Peto trong Companion' });
   const panel = page.getByRole('region', { name: 'Trò chuyện trong Companion' });
+  // Trạng thái (đang nói, bộ não…) không còn hiện thành chữ, chỉ còn trong vùng đọc màn hình ở đầu khung chat.
+  const status = panel.locator('.cchat-head > [aria-live="polite"]');
   await expect(page.getByRole('button', { name: 'Tắt tiếng', exact: true })).toBeVisible();
   const emit = (index: number, value: object) => page.evaluate(({ index, value }) => {
     (window as unknown as { testTurns: { emit(value: object): void }[] }).testTurns[index].emit(value);
@@ -57,7 +59,7 @@ test('đọc sớm qua luồng SSE thật, giữ nháp mới và Dừng hủy ti
   await emit(0, { type: 'meta', conversation_id: 'A', effort: 'low', voice_stream: true });
   await emit(0, { type: 'emotion', emotion: 'surprised', offset: 0 });
   await emit(0, { type: 'delta', text: 'Hi there. ' });
-  await expect(panel.getByText('Đang nói…', { exact: true })).toBeVisible();
+  await expect(status).toContainText('Đang nói…');
   expect(spoken).toEqual(['Hi there.']);
   await expect(panel.getByRole('button', { name: 'Dừng', exact: true })).toBeVisible();
   await composer.fill('My next message');
@@ -67,14 +69,16 @@ test('đọc sớm qua luồng SSE thật, giữ nháp mới và Dừng hủy ti
   await expect(composer).toHaveValue('My next message');
   await expect.poll(() => spoken).toEqual(['Hi there.', 'How are you?']);
   await noPageOverflow(page);
-  await panel.getByRole('button', { name: 'Dừng', exact: true }).click();
+  // Có tin mới thì nút Gửi thay chỗ nút Dừng (như AIRI, từ e96fd91): gửi là dừng tiếng đang đọc rồi gửi luôn.
+  await expect(panel.getByRole('button', { name: 'Dừng', exact: true })).toHaveCount(0);
   await panel.getByRole('button', { name: 'Gửi', exact: true }).click();
   await expect.poll(() => page.evaluate(() => (window as unknown as { testTurns: unknown[] }).testTurns.length)).toBe(2);
   await emit(1, { type: 'meta', conversation_id: 'A', effort: 'low', voice_stream: true });
   await emit(1, { type: 'delta', text: 'A fresh reply. ' });
-  await expect(panel.getByText('Đang nói…', { exact: true })).toBeVisible();
-  await composer.fill('Draft after stopping');
+  await expect(status).toContainText('Đang nói…');
+  // Ô nhắn trống thì nút Dừng còn đó; dừng xong mới viết nháp mới.
   await panel.getByRole('button', { name: 'Dừng', exact: true }).click();
+  await composer.fill('Draft after stopping');
   await expect(panel.getByRole('button', { name: 'Gửi', exact: true })).toBeEnabled();
   await expect.poll(() => page.evaluate(() => (window as unknown as { testTurns: { aborted: boolean }[] }).testTurns[1].aborted)).toBe(true);
   await emit(1, { type: 'delta', text: 'Late old words. ' });

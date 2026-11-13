@@ -34,7 +34,8 @@ test('Companion chèn ảnh cạnh micro, mobile tách ở góc trái; gửi và
   await (await chooserEvent).setFiles({ name: 'nhan-vat.png', mimeType: 'image/png', buffer: png });
   await expect(panel.getByRole('img', { name: 'Ảnh chờ gửi: nhan-vat.png' })).toBeVisible();
   const photo = await panel.getByRole('button', { name: 'Đính kèm ảnh', exact: true }).boundingBox();
-  const mic = await panel.getByRole('button', { name: 'Bật nghe', exact: true }).boundingBox();
+  // Điện thoại: có ảnh chờ gửi thì nút Gửi đứng chỗ micro (từ e96fd91).
+  const mic = await panel.getByRole('button', { name: info.project.name === 'mobile' ? 'Gửi' : 'Bật nghe', exact: true }).boundingBox();
   expect(photo!.x + photo!.width).toBeLessThanOrEqual(mic!.x + 1);
   if (info.project.name === 'mobile') {
     const pill = await page.locator('.companion-composer .cchat-pill').boundingBox();

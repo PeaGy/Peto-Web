@@ -89,7 +89,8 @@ export async function mockPeto(page: Page, options: { long?: boolean; broken?: b
       return route.fulfill({ contentType: 'text/event-stream', body:
         event({ type: 'meta', conversation_id: 'A', effort: 'low', message: user })
         + event({ type: 'delta', text: options.broken ? 'Phần đang nhận' : reply.content })
-        + (options.broken ? '' : event({ type: 'done' })) });
+        // Như máy chủ thật (features/chat/service.py): "done" mang mã tin đã lưu, nên trình duyệt không phải tải lại tin.
+        + (options.broken ? '' : event({ type: 'done', message_id: reply.id })) });
     }
     if (url.pathname.startsWith('/api/documents')) return json({ documents: [] });
     if (url.pathname === '/api/imagine') return json({ jobs: [] });

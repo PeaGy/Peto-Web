@@ -16,7 +16,7 @@ line once it has been tried, and record the result in the area's note file. Paid
 
 - [x] G3.1: run `PRAGMA foreign_key_check` on a copy of the VPS database to list orphan rows left from when foreign keys were off, and decide whether to delete them (2026-11-13: the owner ran it on a backup copy; 0 orphan rows, nothing to delete) — `admin-ops.md`, "One SQLite connection helper (G3.1)".
 
-- [ ] G3.3: the Playwright PC/mobile suite on CI (windows-latest) after the App.tsx split. Locally it fails on `main` as well (68 failures in the full run, screenshot diffs included), so a local run proved nothing either way — `frontend.md`, "Lint and App.tsx split (G3.3)".
+- [ ] G3.3: the Playwright PC/mobile suite on CI (windows-latest) after the App.tsx split. It had been cancelled at 15 minutes since run #129; branch `ci-browser-tests` splits it into four jobs and fixes the stale specs and screenshots (local: 320 passed, 5 load-related failures that pass on rerun). Confirm the first CI run after merging — `frontend.md`, "Lint and App.tsx split (G3.3)".
 - [x] G3.4 (checked 2026-11-13 on `144ee85`: signed in, Chat with web search and Stop, Companion with Live2D, a reply and the YouTube player, Imagine library; 0 `csp_violation`, 0 errors): after deploying, browse the real site (Chat, Companion with Live2D and the player, Imagine, Docs, phone too) and run `sudo journalctl -u peto-web --since today | grep csp_violation`; expect nothing before enforcing the CSP (signed-out pages checked 2026-11-13: only Cloudflare's injected beacon, now allowed; signed-in Chat, Companion and Imagine still to browse) — `admin-ops.md`, "Security headers, CSP report-only (G3.4)".
 
 ## Accounts and memory (`accounts-memory.md`)

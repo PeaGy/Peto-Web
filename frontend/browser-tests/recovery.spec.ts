@@ -73,7 +73,8 @@ for (const companion of [false, true]) {
     await expect(pane.getByText('Đã đồng bộ câu trả lời từ máy chủ.', { exact: true })).toBeVisible();
     await expect(draft).toHaveValue('Bản nháp tiếp theo');
     expect(state.posts).toBe(1);
-    await expect(page.locator('.bubble').filter({ hasText: 'Tin kiểm tra phục hồi' })).toHaveCount(1);
+    // Bóng chat của Companion là .cchat-bubble (giao diện kiểu AIRI), của Trò chuyện vẫn là .bubble.
+    await expect(page.locator(companion ? '.cchat-bubble' : '.bubble').filter({ hasText: 'Tin kiểm tra phục hồi' })).toHaveCount(1);
   });
 }
 

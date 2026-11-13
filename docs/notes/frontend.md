@@ -293,6 +293,31 @@ dislike it reduce it here, like Claude's Appearance → Motion.
 
 # Dated log (newest first)
 
+## Browser tests back in CI (2026-11-13, branch `ci-browser-tests`, not merged)
+
+Every "Kiểm tra frontend" run from #129 to #147 was cancelled at the job's 15-minute limit while Playwright ran (one,
+#134, failed early). On CI the suite runs with one worker and one retry, so each broken test cost two timeouts; #146
+reached 131 passed, about 15 PC tests failing and 208 not run before the cut. Nobody saw the failures, and they piled up
+as the UI changed. The workflow now runs lint, unit tests, the build and a type check of `browser-tests/` in one job,
+and Playwright in a 2×2 matrix (`pc`/`mobile` × `--shard=1/2`, `2/2`), 20 minutes each, with one artifact per job.
+
+What was broken was the specs, not the app. Each fix follows a deliberate UI change:
+- e96fd91 (send mode, 2026-10-26): the Companion Send button is `type="button"`; with a draft, Send replaces Stop
+  ("send stops the reply and sends", like AIRI); phones hide the round mic while the composer has text (Send stands
+  there), so mobile steps go through the "Nghe" sheet; the voice-preparing button merged into Stop; replaying a
+  message moved into the message action menu ("Nghe lại", whose touch-opened menu ignores clicks for 400 ms).
+- The Companion header no longer shows state as text ("Đang nói…", the brain name); it is only in the
+  screen-reader live region `.cchat-head > [aria-live="polite"]`, which the specs now read.
+- Companion bubbles are `.cchat-bubble`.
+- The shared `/api/chat` mock now ends with `done` carrying `message_id`, like `features/chat/service.py`; without it
+  the app correctly re-reads the messages for stable ids and `routing.spec.ts:217` saw one read.
+- Stale screenshots (archive, layout, projects, recovery; PC and mobile) were regenerated after reviewing the diffs:
+  they showed the current icon-only copy actions, the message action row and the AIRI-style Companion panel.
+
+Local result after the fixes: 320 passed, 5 failed, 45 skipped (two workers). The five failed on the first page load
+under load and passed when rerun; `routing.spec.ts:364` fails at varying steps after reloads with two workers and
+passes 3/3 with one (CI's setting).
+
 ## Lint and App.tsx split (G3.3) (2026-11-13, committed on branch `g3.3-eslint-app-split`, not merged)
 
 Audit package G3.3. oxlint 1.90.0 (pinned) replaces the planned ESLint, for the TypeScript 7 reason under "Lint"; it

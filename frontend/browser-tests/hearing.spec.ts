@@ -43,6 +43,20 @@ async function installRecognition(page: Page) {
   });
 }
 
+// Điện thoại (như AIRI, từ e96fd91): ô nhắn có chữ thì nút Gửi đứng chỗ micro tròn, nên phải bật/tắt nghe trong tấm Nghe.
+// Máy tính và ô nhắn trống vẫn dùng micro tròn như cũ.
+async function mic(page: Page) {
+  const round = page.locator('.hearing-mic');
+  if (await round.isVisible()) return round;
+  if (!await page.locator('.hearing-big').isVisible()) await page.getByRole('button', { name: 'Nghe', exact: true }).click();
+  return page.locator('.hearing-big');
+}
+async function expectListening(page: Page) {
+  const button = await mic(page);
+  if (await button.evaluate(el => el.classList.contains('hearing-mic'))) await expect(button).toHaveClass(/waiting/);
+  else await expect(button).toHaveAttribute('aria-pressed', 'true');
+}
+
 test('Companion nhận chữ, giữ câu dở khi tắt, chặn phiên cũ và tiếp tục nghe', async ({ page }) => {
   const state = await mockPeto(page);
   await installRecognition(page);
@@ -73,35 +87,35 @@ test('Companion nhận chữ, giữ câu dở khi tắt, chặn phiên cũ và t
   await say('Hello Peto, can you hear me?', true);
   await expect(composer).toHaveValue('Hello Peto, can you hear me?');
   expect(state.posts).toBe(0);
-  await page.locator('.hearing-mic').click();
+  await (await mic(page)).click();
   await noPageOverflow(page);
 
   // Bật/tắt nhiều phiên rồi xuống nền: micro thật phải được đóng, chữ dở vẫn sửa được.
   for (let cycle = 0; cycle < 8; cycle++) {
-    await page.getByRole('button', { name: 'Bật nghe', exact: true }).click();
-    await expect(page.locator('.hearing-mic')).toHaveClass(/waiting/);
-    await page.locator('.hearing-mic').click();
+    await (await mic(page)).click();
+    await expectListening(page);
+    await (await mic(page)).click();
   }
-  await page.getByRole('button', { name: 'Bật nghe', exact: true }).click();
-  await expect(page.locator('.hearing-mic')).toHaveClass(/waiting/);
+  await (await mic(page)).click();
+  await expectListening(page);
   await say('Keep this unfinished draft', false);
   await page.evaluate(() => {
     Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
     document.dispatchEvent(new Event('visibilitychange'));
   });
-  await expect(page.getByRole('button', { name: 'Bật nghe', exact: true })).toBeVisible();
+  await expect(await mic(page)).toHaveAttribute('aria-label', 'Bật nghe');
   await expect(composer).toHaveValue('Hello Peto, can you hear me? Keep this unfinished draft');
   await expect(composer).toHaveJSProperty('readOnly', false);
   await page.evaluate(() => {
     delete (document as unknown as { visibilityState?: string }).visibilityState;
     document.dispatchEvent(new Event('visibilitychange'));
   });
-  await expect(page.getByRole('button', { name: 'Bật nghe', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Bật nghe', exact: true }).click();
-  await expect(page.locator('.hearing-mic')).toHaveClass(/waiting/);
+  await expect(await mic(page)).toHaveAttribute('aria-label', 'Bật nghe');
+  await (await mic(page)).click();
+  await expectListening(page);
   await say('New speech', true);
   await expect(composer).toHaveValue('Hello Peto, can you hear me? Keep this unfinished draft New speech');
-  await page.locator('.hearing-mic').click();
+  await (await mic(page)).click();
   expect(state.posts).toBe(0);
 });
 
@@ -187,7 +201,9 @@ test('Giữ để nói: micro thật chỉ mở trong lúc giữ; máy tính gi�
   await page.waitForTimeout(350);
   if (compact) await page.mouse.up();
   else await page.keyboard.up('Space');
-  await expect(page.locator('.hearing-mic')).toHaveClass(/ready/);
+  // Điện thoại: thả tay xong ô nhắn có chữ, nên nút Gửi đứng chỗ micro (từ e96fd91).
+  if (compact) await expect(page.getByRole('region', { name: 'Trò chuyện trong Companion' }).getByRole('button', { name: 'Gửi', exact: true })).toBeVisible();
+  else await expect(page.locator('.hearing-mic')).toHaveClass(/ready/);
   await expect(composer).toHaveValue('Hello from a hold');
   await expect(composer).toHaveJSProperty('readOnly', false);
   await expect.poll(liveTracks).toBe(0);

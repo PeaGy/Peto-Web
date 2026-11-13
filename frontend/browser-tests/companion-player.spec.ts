@@ -319,7 +319,7 @@ test('Companion thật: renderer Live2D và tiếng đọc thật tiếp tục k
   if (mobile) await page.getByRole('button', { name: 'Ẩn Player', exact: true }).click();
   await chat(page).fill('Hello while the video is playing');
   await page.locator('.companion-panel').getByRole('button', { name: 'Gửi', exact: true }).click();
-  await expect(page.locator('.companion-title')).toContainText('Đang nói');
+  await expect(page.locator('.companion-panel .cchat-head > [aria-live="polite"]')).toContainText('Đang nói');
   const audioState = () => page.evaluate(() => {
     const audio = (window as unknown as { playerSpeech: HTMLMediaElement[] }).playerSpeech.at(-1);
     return { paused: audio?.paused, time: audio?.currentTime ?? 0 };
@@ -342,7 +342,7 @@ test('Companion thật: renderer Live2D và tiếng đọc thật tiếp tục k
   await page.getByRole('button', { name: mobile ? 'Ẩn Player' : 'Thu nhỏ Player', exact: true }).click();
   await chat(page).fill('Read one more reply');
   await page.locator('.companion-panel').getByRole('button', { name: 'Gửi', exact: true }).click();
-  await expect(page.locator('.companion-title')).toContainText('Đang nói');
+  await expect(page.locator('.companion-panel .cchat-head > [aria-live="polite"]')).toContainText('Đang nói');
   await expect.poll(() => nativeVolume(page)).toBe(9);
   await openPlayer(page, mobile);
   await page.getByRole('button', { name: mobile ? 'Dừng và đóng Player' : 'Đóng Player', exact: true }).click();
