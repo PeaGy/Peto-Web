@@ -283,466 +283,545 @@ class ResponsesProvider(ChatProvider):
         if web_search == "on" and not WEB_SEARCH_ENABLED:
             raise ProviderError("Tìm kiếm web đang tắt trên máy chủ. Chọn Tự động hoặc Tắt để tiếp tục chat.")
         await self._prepare()
+        run = _ResponsesRun(self, system_prompt, messages, effort, timezone, web_search, tools_enabled)
+        await run.setup()
+        # aclosing ở mọi tầng: đóng luồng này (trình duyệt ngắt, lượt dừng) phải đóng ngay các bước bên trong, như khi
+        # tất cả còn nằm trong một hàm (lệnh Player đang chờ được dọn ngay, stream của dịch vụ được đóng).
+        async with aclosing(run.rounds()) as chunks:
+            async for chunk in chunks:
+                yield chunk
 
-        payload_input = build_input_payload(messages)
+
+class _ResponsesRun:
+    """Một lần ``ResponsesProvider.stream`` (gói G3.2, 13/11/2026: tách từ hàm 472 dòng, không đổi hành vi).
+
+    Mỗi vòng: chọn công cụ (``capabilities.select``) → dựng request (khối runtime ở đuôi, ngân sách) → gọi dịch vụ và đổi
+    sự kiện thành mảnh stream → quyết định dừng, nhắc làm tiếp, tổng hợp sau lượt tra lỗi, hay chạy công cụ rồi gọi tiếp.
+    Trạng thái dùng chung giữa các vòng nằm trên ``self``; thứ tự mảnh stream giữ nguyên như trước khi tách.
+    """
+
+    def __init__(self, provider: 'ResponsesProvider', system_prompt: str, messages: list[ChatMessage], effort: str,
+                 timezone: str | None, web_search: str, tools_enabled: bool):
+        self.p = provider
+        self.system_prompt = system_prompt
+        self.messages = messages
+        self.effort = effort
+        self.timezone = timezone
+        self.web_search = web_search
+        self.tools_enabled = tools_enabled
+        self.sources: list[dict] = []
+        self.search_finished = False
+        self.search_ids: set[str] = set()
+        # Lần chạy mã đã báo: item về hai lần (output_item.done rồi response.completed), mỗi lần chạy chỉ một bước.
+        self.code_ids: set[str] = set()
+        self.usable_search_sources: list[dict] = []
+        self.search_fallback = False
+        self.calls_used = 0
+        # Manifest công cụ đã báo trong khối runtime gần nhất: vòng nào khác thì nối thêm một bản snapshot mới.
+        self.shown_manifest = None
+        self.follow_up_next = False
+        self.round_index = 0
+        self.finalizing = False
+
+    async def setup(self) -> None:
+        """Input (lịch sử, vô hiệu thẻ runtime giả, khối runtime đã gửi Grok), các phiên công cụ và instructions."""
+        p = self.p
+        self.payload_input = build_input_payload(self.messages)
         # Lượt Chat: chữ không do máy chủ tạo (hồ sơ, trí nhớ, tài liệu dự án trong system prompt; tin, nhãn và trích
         # đoạn tệp trong lịch sử; kết quả công cụ) không được mang thẻ <peto_runtime> thật, để không giả được khối runtime.
         # Lượt khác không có khối runtime nên giữ nguyên byte.
-        chat_turn = request_context.current.get() is not None
-        if chat_turn:
+        self.chat_turn = request_context.current.get() is not None
+        system_prompt = self.system_prompt
+        if self.chat_turn:
             system_prompt = request_context.neutralize(system_prompt)
-            for item in payload_input:
+            for item in self.payload_input:
                 for part in item["content"]:
                     if "text" in part:
                         part["text"] = request_context.neutralize(part["text"])
-            if not self.runtime_role:
+            if not p.runtime_role:
                 # G1.1c: Grok chỉ đọc lại cache khi cả request lượt trước là phần đầu của lượt sau (đo trên VPS 13/11/2026:
                 # bỏ khối này khỏi lịch sử thì chỉ còn 1.152 token cache). Gắn lại nguyên văn khối runtime đã gửi vào đúng
                 # tin người dùng, sau bước vô hiệu thẻ: đây là chữ của máy chủ lưu riêng, người dùng không ghi được.
-                for item, message in zip(payload_input, messages):
+                for item, message in zip(self.payload_input, self.messages):
                     if message.role == "user" and message.runtime:
                         item["content"].append({"type": "input_text", "text": message.runtime})
-
-        def tool_output(result: dict) -> str:
-            text = json.dumps(result, ensure_ascii=False)
-            return request_context.neutralize(text) if chat_turn else text
-        search_enabled = tools_enabled and WEB_SEARCH_ENABLED and web_search != "off"
-        instructions = f"{system_prompt}\n\n{search_context(web_search, search_enabled)}"
-        sources: list[dict] = []
-        search_finished = False
-        search_ids: set[str] = set()
-        # Lần chạy mã đã báo: item về hai lần (output_item.done rồi response.completed), mỗi lần chạy chỉ một bước.
-        code_ids: set[str] = set()
-        usable_search_sources: list[dict] = []
-        search_fallback = False
+        self.search_enabled = self.tools_enabled and WEB_SEARCH_ENABLED and self.web_search != "off"
+        self.instructions = f"{system_prompt}\n\n{search_context(self.web_search, self.search_enabled)}"
         # Only Web Chat owns a display catalogue. Companion/Agent keep their existing protocol.
-        activity_enabled = request_context.current.get() is not None
-
-        def observe_item(item: dict):
-            nonlocal sources, search_finished, usable_search_sources
-            if activity_enabled and (activity := _source_activity(item, self.name, round_index)):
-                yield StreamChunk('source_activity', info=activity)
-            if item.get("type") == "code_interpreter_call" and item.get("status") not in {None, "in_progress", "interpreting"}:
-                key = str(item.get("id") or f"code-{len(code_ids)}")
-                if key not in code_ids:
-                    code_ids.add(key)
-                    yield StreamChunk("code", "done", info=code_result(item))
-            if item.get("type") == "web_search_call":
-                # Claude đọc trang từ link (action "fetch") không phải một lượt tra web tính phí theo lượt.
-                if item.get("id") and (item.get("action") or {}).get("type") != "fetch":
-                    search_ids.add(str(item["id"]))
-                if item.get("status") == "failed":
-                    # Chỉ kết quả tra thành công trong lượt này mới cho phép tổng hợp; nguồn cũ hoặc nguồn
-                    # nằm trong chính item bị lỗi không chứng minh đã tra được.
-                    if usable_search_sources and not search_fallback and not finalizing:
-                        raise _SearchFallback()
-                    raise ProviderError("Peto chưa tra cứu web được lượt này. Bạn thử lại nhé.")
-                if item.get("status") == "completed":
-                    usable_search_sources = normalize_sources([*usable_search_sources, *_item_sources(item)])
-                search_finished = search_finished or item.get("status") == "completed"
-                if (item.get("action") or {}).get("type") in {'fetch', 'open_page', 'find_in_page'}:
-                    yield StreamChunk("page", "fetched" if item.get('status') == 'completed' else 'fetching')
-                else:
-                    yield StreamChunk("search", "completed" if item.get("status") == "completed" else "searching")
-            merged = normalize_sources([*sources, *_item_sources(item)])
-            if merged != sources:
-                sources = merged
-                yield StreamChunk("sources", sources=tuple(sources))
-
-        calls_used = 0
-        document_session = current_session.get()
+        self.activity_enabled = request_context.current.get() is not None
+        self.document_session = current_session.get()
         # Tệp đã gửi trong hội thoại: công cụ tìm/đọc chỉ có khi hội thoại có tệp chữ, PDF, Word hoặc Excel.
-        files = current_files.get()
-        file_schemas = files.schemas() if files else []
-        chat_history = chat_history_tools.current.get()
-        github_session = github_session_context.get()
-        snapshot = request_context.current.get()
-        def record_tool_result(result):
-            # Ghi một kết quả dispatch (kể cả từ chối), không ghi args/tên công cụ/nội dung hoặc ID.
-            if snapshot is not None:
-                usage_events.record('chat_event', service=getattr(self, 'usage_service', self.service),
-                    model=snapshot.model, surface='chat', effort=effort, purpose='tool',
-                    outcome='error' if result.get('error') or result.get('ok') is False else 'ok')
-        github_state, github_reason = (await github_session.availability() if github_session else
-                                      (snapshot.github_state, snapshot.github_reason) if snapshot else
-                                      ('unauthorized', 'not_connected'))
-        github_schemas = github_session.schemas() if github_session and github_state == 'available' else []
+        self.files = current_files.get()
+        self.file_schemas = self.files.schemas() if self.files else []
+        self.chat_history = chat_history_tools.current.get()
+        self.github_session = github_session_context.get()
+        self.snapshot = snapshot = request_context.current.get()
+        self.github_state, self.github_reason = (await self.github_session.availability() if self.github_session else
+                                                 (snapshot.github_state, snapshot.github_reason) if snapshot else
+                                                 ('unauthorized', 'not_connected'))
+        self.github_schemas = self.github_session.schemas() if self.github_session and self.github_state == 'available' else []
         # Chạy mã chỉ ở tab Trò chuyện (có snapshot), không ở Companion hay lượt đặt tên/tóm tắt.
-        code_reason = ('provider_unsupported' if not self.code_interpreter else
-                       'server_disabled' if not config.XAI_CODE_EXECUTION else
-                       'chat_only' if snapshot is None or not tools_enabled else None)
+        self.code_reason = ('provider_unsupported' if not p.code_interpreter else
+                            'server_disabled' if not config.XAI_CODE_EXECUTION else
+                            'chat_only' if snapshot is None or not self.tools_enabled else None)
         # Tab Trò chuyện: instructions đóng băng một lần cho cả lượt (trạng thái GitHub lúc bắt đầu lượt); mọi thứ đổi
         # theo lượt hay theo vòng nằm trong khối runtime ở đuôi input. Lượt khác (Companion, đặt tên, tóm tắt) giữ nguyên.
-        chat_instructions = (instructions + ('\n\n' + (GITHUB_PROMPT if github_state == 'available' else NO_GITHUB_PROMPT) if tools_enabled else '')
-                             + ('\n\n' + CODE_PROMPT if code_reason is None else '')
-                             + '\n\n' + RUNTIME_PLACEMENT_PROMPT) if snapshot is not None else None
-        # Manifest công cụ đã báo trong khối runtime gần nhất: vòng nào khác thì nối thêm một bản snapshot mới.
-        shown_manifest = None
+        self.chat_instructions = (self.instructions + ('\n\n' + (GITHUB_PROMPT if self.github_state == 'available' else NO_GITHUB_PROMPT) if self.tools_enabled else '')
+                                  + ('\n\n' + CODE_PROMPT if self.code_reason is None else '')
+                                  + '\n\n' + RUNTIME_PLACEMENT_PROMPT) if snapshot is not None else None
+        document_session = self.document_session
         workbooks = bool(document_session and (getattr(document_session, 'workbooks', None)
                                                or getattr(document_session, 'word_files', None)))
-        max_rounds = max(MAX_TOOL_ROUNDS, MAX_GITHUB_TOOL_ROUNDS if github_schemas else 0, MAX_WORKBOOK_TOOL_ROUNDS if workbooks else 0)
-        max_calls = max(MAX_TOOL_CALLS, MAX_GITHUB_TOOL_CALLS if github_schemas else 0, MAX_WORKBOOK_TOOL_CALLS if workbooks else 0)
+        self.max_rounds = max(MAX_TOOL_ROUNDS, MAX_GITHUB_TOOL_ROUNDS if self.github_schemas else 0, MAX_WORKBOOK_TOOL_ROUNDS if workbooks else 0)
+        self.max_calls = max(MAX_TOOL_CALLS, MAX_GITHUB_TOOL_CALLS if self.github_schemas else 0, MAX_WORKBOOK_TOOL_CALLS if workbooks else 0)
         # Lượt nhờ sửa tệp Excel hay Word còn có thể nhắc làm tiếp: chưa sửa hay tạo tệp nào, và chưa nhắc lần nào.
-        watching = bool(self.service == "xAI" and tools_enabled and workbooks and getattr(document_session, "edit_request", False))
-        follow_up_next = False
-        for round_index in range(max_rounds + 1):
-            follow_up, follow_up_next = follow_up_next, False
+        self.watching = bool(p.service == "xAI" and self.tools_enabled and workbooks and getattr(document_session, "edit_request", False))
+
+    def tool_output(self, result: dict) -> str:
+        text = json.dumps(result, ensure_ascii=False)
+        return request_context.neutralize(text) if self.chat_turn else text
+
+    def record_tool_result(self, result):
+        # Ghi một kết quả dispatch (kể cả từ chối), không ghi args/tên công cụ/nội dung hoặc ID.
+        if self.snapshot is not None:
+            usage_events.record('chat_event', service=getattr(self.p, 'usage_service', self.p.service),
+                model=self.snapshot.model, surface='chat', effort=self.effort, purpose='tool',
+                outcome='error' if result.get('error') or result.get('ok') is False else 'ok')
+
+    def observe_item(self, item: dict):
+        if self.activity_enabled and (activity := _source_activity(item, self.p.name, self.round_index)):
+            yield StreamChunk('source_activity', info=activity)
+        if item.get("type") == "code_interpreter_call" and item.get("status") not in {None, "in_progress", "interpreting"}:
+            key = str(item.get("id") or f"code-{len(self.code_ids)}")
+            if key not in self.code_ids:
+                self.code_ids.add(key)
+                yield StreamChunk("code", "done", info=code_result(item))
+        if item.get("type") == "web_search_call":
+            # Claude đọc trang từ link (action "fetch") không phải một lượt tra web tính phí theo lượt.
+            if item.get("id") and (item.get("action") or {}).get("type") != "fetch":
+                self.search_ids.add(str(item["id"]))
+            if item.get("status") == "failed":
+                # Chỉ kết quả tra thành công trong lượt này mới cho phép tổng hợp; nguồn cũ hoặc nguồn
+                # nằm trong chính item bị lỗi không chứng minh đã tra được.
+                if self.usable_search_sources and not self.search_fallback and not self.finalizing:
+                    raise _SearchFallback()
+                raise ProviderError("Peto chưa tra cứu web được lượt này. Bạn thử lại nhé.")
+            if item.get("status") == "completed":
+                self.usable_search_sources = normalize_sources([*self.usable_search_sources, *_item_sources(item)])
+            self.search_finished = self.search_finished or item.get("status") == "completed"
+            if (item.get("action") or {}).get("type") in {'fetch', 'open_page', 'find_in_page'}:
+                yield StreamChunk("page", "fetched" if item.get('status') == 'completed' else 'fetching')
+            else:
+                yield StreamChunk("search", "completed" if item.get("status") == "completed" else "searching")
+        merged = normalize_sources([*self.sources, *_item_sources(item)])
+        if merged != self.sources:
+            self.sources = merged
+            yield StreamChunk("sources", sources=tuple(self.sources))
+
+    def drop_pre_search_draft(self) -> StreamChunk | None:
+        """Grok hay viết móc câu hay câu dẫn rồi search rồi viết tiếp. Mỗi lần tra, chữ viết từ lần tra trước tới giờ
+        là bản nháp: tab Trò chuyện đưa câu ngắn vào nhật ký "Đang làm", Companion bỏ đi. Trước đây chỉ lần tra đầu
+        được xử lý, nên câu dẫn trước lần tra thứ hai ở lại và dính liền vào câu trả lời ("phân tích.Ad gửi…")."""
+        self.written.clear()
+        self.held.clear()
+        if self.emitted_text:
+            self.emitted_text = False
+            return StreamChunk("replace")
+        return None
+
+    async def rounds(self) -> AsyncIterator[str | StreamChunk]:
+        for round_index in range(self.max_rounds + 1):
+            self.round_index = round_index
+            self.follow_up, self.follow_up_next = self.follow_up_next, False
             # Dành lần gọi cuối để tổng hợp kết quả đã đọc, không mở thêm tra cứu khi hết ngân sách.
-            finalizing = tools_enabled and (search_fallback or round_index == max_rounds or calls_used >= max_calls)
-            if round_index and github_session:
-                github_state, github_reason = await github_session.availability()
-            plan = capabilities.select(documents=document_session, files=files, history=chat_history,
-                github_state=github_state, github_reason=github_reason, search_enabled=search_enabled,
-                web_search=web_search, tools_enabled=tools_enabled, finalizing=finalizing,
-                required_search=search_enabled and web_search == 'on' and round_index == 0 and not finalizing,
-                search_fallback=search_fallback, code_reason=code_reason)
-            round_started = perf_counter()
-            if tools_enabled and not follow_up:
+            self.finalizing = self.tools_enabled and (self.search_fallback or round_index == self.max_rounds
+                                                      or self.calls_used >= self.max_calls)
+            if round_index and self.github_session:
+                self.github_state, self.github_reason = await self.github_session.availability()
+            self.plan = capabilities.select(documents=self.document_session, files=self.files, history=self.chat_history,
+                github_state=self.github_state, github_reason=self.github_reason, search_enabled=self.search_enabled,
+                web_search=self.web_search, tools_enabled=self.tools_enabled, finalizing=self.finalizing,
+                required_search=self.search_enabled and self.web_search == 'on' and round_index == 0 and not self.finalizing,
+                search_fallback=self.search_fallback, code_reason=self.code_reason)
+            self.round_started = perf_counter()
+            if self.tools_enabled and not self.follow_up:
                 # Mốc cho nhật ký "Đang làm": từ đây tới chữ hay lệnh đầu tiên là lúc mô hình suy nghĩ. Lần gọi nhắc làm
                 # tiếp không có mốc riêng: phía chat coi câu báo lần trước vẫn là bản nháp của lần gọi này, để khi Grok gọi
                 # công cụ thì câu báo thành câu dẫn trong nhật ký.
                 yield StreamChunk("round")
-            usage: dict = {}
-            create_kwargs: dict = {
-                "model": self.model,
-                "instructions": chat_instructions if chat_instructions is not None else
-                                instructions + ('\n\n' + (GITHUB_PROMPT if github_state == 'available' else NO_GITHUB_PROMPT) if tools_enabled else '')
-                                             + ('\n\n' + CODE_PROMPT if code_reason is None else '')
-                                             + ('\n\n' + SEARCH_FALLBACK_PROMPT if search_fallback else
-                                                 '\n\n' + FINALIZING_PROMPT if finalizing else ''),
-                "input": payload_input,
-                "max_output_tokens": self.max_output_tokens if tools_enabled else side_output_cap(self.max_output_tokens),
-                "reasoning": {
-                    "effort": effort if effort in self.supported_efforts else "low"
-                },
-                "stream": True,
-                "tools": plan.schemas,
-                "include": ["reasoning.encrypted_content"],
-                # Tự giữ các item trong lượt này, không cần lưu hội thoại ở dịch vụ AI.
-                "store": False,
-            }
-            if not getattr(self, "send_reasoning", True):
-                # Khóa riêng của người dùng với model không chỉnh được mức suy nghĩ (ai/byok.py): gửi tham số này thì cả
-                # lượt bị từ chối.
-                create_kwargs.pop("reasoning")
-                create_kwargs["include"] = []
-            if finalizing:
-                # Danh sách công cụ đã rỗng: không gửi tool_choice, kể cả "none", vì xAI từ chối cặp này.
-                logger.info("Kết thúc tra cứu: vòng=%d công_cụ_đã_gọi=%d github=%s", round_index, calls_used, bool(github_schemas))
-            if search_enabled:
-                create_kwargs["include"].append("web_search_call.action.sources")
-                if web_search == "on" and round_index == 0 and not finalizing:
-                    # Chỉ đưa công cụ tìm web ở lần đầu để 'required' không bị thỏa bởi đồng hồ.
-                    create_kwargs["tool_choice"] = "required"
-            if snapshot is not None:
-                # Khối runtime ở đuôi input, chỉ nối thêm: đầu lượt một khối đóng băng (giờ, envelope, snapshot); vòng
-                # có manifest khác lần báo trước thì thêm một bản snapshot mới (cùng mốc giờ); vòng cuối thêm ghi chú.
-                manifest = plan.manifest(getattr(self._client, 'native_tools', None))
-                details = dict(service=self.service, model=self.model, capabilities=manifest,
-                               effort=create_kwargs.get('reasoning', {}).get('effort'))
-                if shown_manifest is None:
-                    self._place_runtime(payload_input, snapshot.runtime(**details), first=True)
-                elif manifest != shown_manifest:
-                    self._place_runtime(payload_input, snapshot.render(**details))
-                shown_manifest = manifest
-                if search_fallback or finalizing:
-                    self._place_runtime(payload_input, SEARCH_FALLBACK_PROMPT if search_fallback else FINALIZING_PROMPT)
-                if self.prompt_cache_key:
-                    # Định tuyến tới máy chủ đang giữ cache của hội thoại; chỉ mã hội thoại đã băm, không có owner.
-                    create_kwargs["prompt_cache_key"] = "peto-chat-" + hashlib.sha256(
-                        snapshot.conversation_id.encode()).hexdigest()[:32]
-            enforce_chat_budget(create_kwargs)
-            stream = None
-            output_items: list[dict] = []
-            completed = False
-            recovering_search = False
-            emitted_text = follow_up       # lần gọi nhắc: câu báo lần trước vẫn đang hiện
-            noted = False
-            written: list[str] = []     # chữ lần gọi này đã phát
-            # Chữ của lần gọi nhắc được giữ lại: Grok gọi công cụ thì phát (thành câu dẫn cùng câu báo), không gọi thì đó
-            # chỉ là "XONG" hay lời đệm, bỏ đi.
-            held: list[str] = []
-
-            def drop_pre_search_draft() -> StreamChunk | None:
-                """Grok hay viết móc câu hay câu dẫn rồi search rồi viết tiếp. Mỗi lần tra, chữ viết từ lần tra trước tới giờ
-                là bản nháp: tab Trò chuyện đưa câu ngắn vào nhật ký "Đang làm", Companion bỏ đi. Trước đây chỉ lần tra đầu
-                được xử lý, nên câu dẫn trước lần tra thứ hai ở lại và dính liền vào câu trả lời ("phân tích.Ad gửi…")."""
-                nonlocal emitted_text
-                written.clear()
-                held.clear()
-                if emitted_text:
-                    emitted_text = False
-                    return StreamChunk("replace")
-                return None
-
-            try:
-                stream = await self._client.responses.create(**create_kwargs)
-                pulse_at = perf_counter() + PULSE_SECONDS
-                async for event in stream:
-                    event_type = getattr(event, "type", "")
-                    if perf_counter() >= pulse_at:
-                        pulse_at = perf_counter() + PULSE_SECONDS
-                        yield StreamChunk("pulse")
-                    if event_type in {"response.web_search_call.in_progress", "response.web_search_call.searching"}:
-                        draft = drop_pre_search_draft()
-                        if draft is not None:
-                            yield draft
-                        yield StreamChunk("search", "searching")
-                    elif event_type == "response.web_search_call.completed":
-                        search_finished = True
-                        yield StreamChunk("search", "completed")
-                    elif event_type == "response.code_interpreter_call.in_progress":
-                        # Câu dẫn viết trước lúc chạy mã xử lý như trước lúc tra web: vào nhật ký, không dính vào câu
-                        # trả lời viết sau khi có kết quả.
-                        draft = drop_pre_search_draft()
-                        if draft is not None:
-                            yield draft
-                        yield StreamChunk("code", "running")
-                    elif event_type == "peto.page_fetch.started":
-                        draft = drop_pre_search_draft()
-                        if draft is not None:
-                            yield draft
-                        yield StreamChunk("page", "fetching")
-                    elif event_type == "peto.page_fetch.failed":
-                        yield StreamChunk("page", "failed")
-                    elif event_type == "response.output_item.added":
-                        item_type = getattr(event.item, "type", "")
-                        if item_type == "web_search_call":
-                            if activity_enabled and (activity := _source_activity(_dump(event.item), self.name, round_index)):
-                                yield StreamChunk('source_activity', info=activity)
-                            draft = drop_pre_search_draft()
-                            if draft is not None:
-                                yield draft
-                            yield StreamChunk("search", "searching")
-                        elif item_type == "code_interpreter_call":
-                            draft = drop_pre_search_draft()
-                            if draft is not None:
-                                yield draft
-                            yield StreamChunk("code", "running")
-                        elif item_type == "function_call":
-                            if held:
-                                yield "\n\n" + "".join(held)
-                                held.clear()
-                            # Chữ viết trước lệnh gọi công cụ thường là câu dẫn: phía chat đưa nó vào nhật ký "Đang làm"
-                            # (hoặc giữ trong câu trả lời nếu dài). Báo ngay lúc này để các bước tới đúng thứ tự.
-                            if emitted_text and not noted:
-                                noted = True
-                                yield StreamChunk("note")
-                            # Bắt đầu viết lệnh gọi công cụ: lệnh sửa Excel dài có thể mất cả phút.
-                            yield StreamChunk("tool", str(getattr(event.item, "name", "") or ""))
-                    elif event_type == "response.output_text.annotation.added":
-                        annotation = _dump(event.annotation)
-                        if annotation.get("type") == "url_citation":
-                            if activity_enabled:
-                                display = display_sources([{**annotation, 'kind': 'citation',
-                                    'citation_ids': citation_ids(annotation, ''.join(written))}])
-                                if display:
-                                    yield StreamChunk('source_activity', info={'sources': display})
-                            merged = normalize_sources([*sources, {**annotation, "kind": "citation",
-                                                                 'citation_ids': citation_ids(annotation, ''.join(written))}])
-                            if merged != sources:
-                                sources = merged
-                                yield StreamChunk("sources", sources=tuple(sources))
-                    elif event_type == 'peto.source_activity':
-                        if activity_enabled and (activity := _source_activity(_dump(event.item), self.name, round_index)):
-                            yield StreamChunk('source_activity', info=activity)
-                    elif event_type in _REASONING_DELTA_TYPES:
-                        delta = getattr(event, "delta", "")
-                        if delta:
-                            yield StreamChunk("thinking", delta)
-                    elif event_type in {"response.output_text.delta", "peto.citation"}:
-                        delta = getattr(event, "delta", "")
-                        if delta:
-                            emitted_text = True
-                            if follow_up:
-                                held.append(delta)
-                            else:
-                                written.append(delta)
-                                yield delta
-                    elif event_type == "response.output_item.done":
-                        item = _dump(event.item)
-                        output_items.append(item)
-                        for chunk in observe_item(item):
-                            yield chunk
-                    elif event_type == "response.completed":
-                        raw_usage = getattr(event.response, "usage", None)
-                        usage = _dump(raw_usage) if raw_usage is not None else {}
-                        if getattr(event.response, "status", "completed") != "completed":
-                            raise ProviderError("Peto chưa trả lời xong. Phần đã viết được giữ lại; bạn có thể yêu cầu tiếp tục.")
-                        completed = True
-                        if getattr(event.response, "output", None):
-                            output_items = [_dump(item) for item in event.response.output]
-                            for item in output_items:
-                                for chunk in observe_item(item):
-                                    yield chunk
-                    elif event_type == "response.incomplete":
-                        raise ProviderError("Câu trả lời chạm giới hạn của lượt AI. Phần đã viết được giữ lại; bạn có thể yêu cầu tiếp tục.")
-                    elif event_type in {"response.failed", "error"}:
-                        raise ProviderError("Peto gặp lỗi khi đang trả lời. Thử lại nha.", retryable=True)
-            except _SearchFallback:
-                recovering_search = True
-                logger.warning("%s: lượt tìm bổ sung bị lỗi; tổng hợp từ %d nguồn đã tra thành công",
-                               self.service, len(usable_search_sources))
-            except AuthenticationError as err:
-                raise ProviderError(self.auth_error_message) from err
-            except RateLimitError as err:
-                # Lời báo giới hạn lượt/hết hạn mức không chứa nội dung hội thoại hay khóa; ghi để biết là hết tiền hay chỉ quá tải.
-                logger.warning("%s giới hạn lượt: %s", self.service, _clip(err.message))
-                raise ProviderError(self.rate_limit_message, retryable=True) from err
-            except APIConnectionError as err:
-                raise ProviderError("Peto chưa kết nối được với dịch vụ AI. Thử lại sau chút nhé.", retryable=True) from err
-            except APIStatusError as err:
-                logger.warning("%s HTTP %s: %s", self.service, err.status_code, _clip(err.message))
-                if search_enabled and err.status_code in {400, 403}:
-                    raise ProviderError("Peto chưa dùng được tìm web với kết nối AI hiện tại. Mở menu + rồi chọn Tắt tìm kiếm web để chat tiếp, hoặc nhờ người quản trị kiểm tra quyền tìm kiếm của dịch vụ.") from err
-                raise ProviderError("Peto gặp lỗi kết nối với dịch vụ AI. Thử lại sau nha.", retryable=err.status_code >= 500) from err
-            finally:
-                logger.info(
-                    "model_usage service=%s model=%s purpose=%s round=%d elapsed_ms=%d complete=%s input_tokens=%s output_tokens=%s cached_tokens=%s reasoning_tokens=%s search_calls_seen=%d code_calls_seen=%d",
-                    self.service, self.model, "chat" if tools_enabled else "title", round_index + 1,
-                    round((perf_counter() - round_started) * 1000), completed,
-                    usage.get("input_tokens"), usage.get("output_tokens"),
-                    (usage.get("input_tokens_details") or {}).get("cached_tokens"),
-                    (usage.get("output_tokens_details") or {}).get("reasoning_tokens"), len(search_ids), len(code_ids),
-                )
-                # Khóa riêng của người dùng ghi dịch vụ "byok" và slug "byok/…": trang Quản trị không tính vào chi phí chủ web.
-                usage_events.record(
-                    "call", service=getattr(self, "usage_service", self.service), model=getattr(self, "catalog_key", None),
-                    slug=getattr(self, "usage_slug", self.model),
-                    purpose="chat" if tools_enabled else "side", complete=completed,
-                    elapsed_ms=round((perf_counter() - round_started) * 1000),
-                    input_tokens=usage.get("input_tokens"), output_tokens=usage.get("output_tokens"),
-                    cached_tokens=(usage.get("input_tokens_details") or {}).get("cached_tokens"),
-                    cache_write_tokens=(usage.get("input_tokens_details") or {}).get("cache_write_tokens"),
-                    reasoning_tokens=(usage.get("output_tokens_details") or {}).get("reasoning_tokens"),
-                    search_calls=len(search_ids),
-                    # xAI tự báo số tiền đã tính cho lần gọi; dịch vụ khác không có trường này.
-                    cost_ticks=usage.get("cost_in_usd_ticks"),
-                    prefix_hash=prefix_hash(create_kwargs),
-                )
-                if stream is not None:
-                    with anyio.CancelScope(shield=True):
-                        await stream.close()
-
-            if recovering_search:
-                # Bỏ bản nháp của lần gọi vừa ngắt trước khi mở mốc suy nghĩ mới. Không chạy lệnh công cụ
-                # chưa thực thi, không gửi item tra bị lỗi hoặc item đang viết dở sang lượt tổng hợp.
-                yield StreamChunk("search", "failed")
-                yield StreamChunk("replace")
-                payload_input.extend(item for item in output_items
-                                     if item.get("status") in {None, "completed"}
-                                     and item.get("type") in {"message", "reasoning", "web_search_call"}
-                                     and (item.get("type") != "web_search_call" or item.get("status") == "completed"))
-                search_fallback = True
-                search_enabled = False
-                watching = False
-                follow_up_next = False
+            self.create_kwargs = self._request()
+            async with aclosing(self._call()) as chunks:
+                async for chunk in chunks:
+                    yield chunk
+            self.decision = 'tools'
+            async with aclosing(self._finish_round()) as chunks:
+                async for chunk in chunks:
+                    yield chunk
+            if self.decision == 'continue':
                 continue
-
-            if not completed:
-                raise ProviderError("Kết nối tới AI bị ngắt trước khi trả lời xong.", retryable=True)
-            tool_calls = [item for item in output_items if item.get("type") == "function_call"]
-            if tool_calls and not tools_enabled:
-                raise ProviderError("Tác vụ đặt tên không được gọi công cụ.")
-            if not tool_calls:
-                if web_search == "on" and not search_finished and not sources:
-                    raise ProviderError("Dịch vụ chưa xác nhận đã tra web. Peto chưa thể xem câu trả lời này là đã kiểm chứng; bạn thử lại nhé.")
-                if follow_up:
-                    # Nhắc rồi vẫn không gọi công cụ: câu báo giữ nguyên làm câu trả lời. Chữ ngắn thêm vào (như "XONG")
-                    # bỏ đi; chữ dài là nội dung thật (danh sách lỗi khi người dùng dặn chờ đồng ý) thì giữ.
-                    extra = "".join(held).strip()
-                    logger.info("Nhắc làm tiếp: vẫn không gọi công cụ, chữ thêm %d ký tự", len(extra))
-                    if len(extra) > FOLLOW_UP_CHARS:
-                        yield "\n\n" + extra
-                    return
-                written_text = "".join(written).strip()
-                if watching and not finalizing and round_index + 1 < max_rounds and calls_used < max_calls \
-                        and 0 < len(written_text) <= FOLLOW_UP_CHARS:
-                    watching = False
-                    follow_up_next = True
-                    payload_input.extend(output_items)
-                    payload_input.append({"role": "user", "content": [{"type": "input_text", "text": FOLLOW_UP}]})
-                    logger.info("Nhắc làm tiếp: lần gọi %d chỉ viết %d ký tự, chưa gọi công cụ", round_index + 1,
-                                len(written_text))
-                    continue
+            if self.decision == 'return':
                 return
-            if finalizing:
-                raise ProviderError("Dịch vụ AI vẫn yêu cầu tra cứu sau khi được yêu cầu kết thúc. Phần đã trả lời được giữ lại; bạn có thể hỏi tiếp về một tệp cụ thể.")
-            payload_input.extend(output_items)
-            if held:
-                yield "\n\n" + "".join(held)
-                held.clear()
-            if emitted_text and not noted:
-                # Dịch vụ không báo lúc bắt đầu viết lệnh: chữ trước đó vẫn là câu dẫn.
-                yield StreamChunk("note")
-            if player_tools.current.get() and any(call.get('name') == player_tools.NAME for call in tool_calls):
-                # A draft before a Player action is not a confirmed result. Replace it like a web-search draft.
-                draft = drop_pre_search_draft()
-                if draft is not None:
-                    yield draft
-            for call in tool_calls:
-                if not call.get("call_id"):
-                    raise ProviderError("AI trả về yêu cầu công cụ không hợp lệ. Thử lại nhé.")
-                if calls_used >= max_calls:
-                    # Mỗi lời gọi vẫn có kết quả tương ứng; lời gọi vượt giới hạn không được thực thi.
-                    result = {'ok': False, 'error': 'Đã chạm giới hạn tra cứu của lượt này. Công cụ này chưa được chạy; hãy tổng hợp dữ liệu đã có và nêu rõ phần còn thiếu.'}
-                    record_tool_result(result)
-                    payload_input.append({'type': 'function_call_output', 'call_id': call['call_id'],
-                                          'output': tool_output(result)})
-                    continue
-                calls_used += 1
-                if not plan.allows(call.get('name')):
-                    # Một model vẫn có thể bịa lời gọi dù schema không được gửi. Không thực thi ngoài kế hoạch vòng này.
-                    result = {'ok': False, 'error': 'Công cụ không được cấp trong vòng hiện tại; chưa được chạy.',
-                              'code': 'tool_not_available'}
-                elif call.get('name') == player_tools.NAME and player_tools.current.get():
-                    async with aclosing(player_tools.current.get().run(call.get('arguments', ''))) as action:
-                        async for item in action:
-                            if isinstance(item, StreamChunk):
-                                yield item
-                            else:
-                                result = item
-                elif call.get('name') in DOCUMENT_TOOLS and document_session:
-                    watching = False        # Grok đã bắt tay sửa/tạo tệp: không cần nhắc nữa
-                    status, run = DOCUMENT_TOOLS[call['name']]
-                    yield StreamChunk('document_status', status)
-                    result = await getattr(document_session, run)(call.get('arguments', ''))
-                    # "_ui" là chữ cho nhật ký "Đang làm" (kết quả gọn, các lỗi từng dòng), không gửi cho mô hình.
-                    ui = result.pop('_ui', None) or {}
-                    if result.get('ok'):
-                        yield StreamChunk('artifact', artifact=result['artifact'])
-                    yield StreamChunk('tool_result', info={'tool': call['name'], 'ok': bool(result.get('ok')),
-                                                           'error': result.get('error'), **ui})
-                    yield StreamChunk('document_status', '')
-                elif call.get('name') in GITHUB_TOOLS and github_schemas:
-                    yield StreamChunk('connector_lookup', 'Đang đọc GitHub…')
-                    result = await github_session.run(call['name'], call.get('arguments', ''))
-                    yield StreamChunk('connector_lookup_done', 'Đã đọc GitHub' if result.get('ok') else result.get('error', 'Chưa đọc được GitHub'))
-                    if result.get('sources'):
-                        tool_sources = [{**source, 'kind': 'result', 'access': 'tool',
-                            **({'partial': True} if result.get('truncated') is True else {})}
-                            for source in result['sources'] if isinstance(source, dict)]
-                        if activity_enabled and (display := display_sources(tool_sources)):
-                            yield StreamChunk('source_activity', info={'sources': display})
-                        sources = normalize_sources([*sources, *tool_sources])
-                        yield StreamChunk('sources', sources=tuple(sources))
-                elif call.get('name') == chat_history_tools.NAME and chat_history:
-                    yield StreamChunk('file_lookup', 'Đang đối chiếu lịch sử gốc…')
-                    result = await chat_history.run(call.get('arguments', ''))
-                    yield StreamChunk('file_lookup_done', 'Đã đối chiếu lịch sử' if not result.get('error') else result['error'])
-                elif call.get("name") in FILE_TOOLS and file_schemas:
-                    arguments = call.get("arguments", "")
-                    yield StreamChunk("file_lookup", files.label(call["name"], arguments))
-                    result = await files.run(call["name"], arguments)
-                    yield StreamChunk("file_lookup_done", files.label(call["name"], arguments, result))
-                else:
-                    result = execute_tool(call.get("name", ""), call.get("arguments", ""), timezone=timezone)
-                record_tool_result(result)
-                payload_input.append({
-                    "type": "function_call_output", "call_id": call["call_id"],
-                    "output": tool_output(result),
-                })
+            async with aclosing(self._run_tools()) as chunks:
+                async for chunk in chunks:
+                    yield chunk
 
+    def _request(self) -> dict:
+        """Tham số gọi Responses của vòng này; khối runtime nối vào đuôi input, kiểm ngân sách request thật."""
+        p, snapshot, finalizing = self.p, self.snapshot, self.finalizing
+        create_kwargs: dict = {
+            "model": p.model,
+            "instructions": self.chat_instructions if self.chat_instructions is not None else
+                            self.instructions + ('\n\n' + (GITHUB_PROMPT if self.github_state == 'available' else NO_GITHUB_PROMPT) if self.tools_enabled else '')
+                                              + ('\n\n' + CODE_PROMPT if self.code_reason is None else '')
+                                              + ('\n\n' + SEARCH_FALLBACK_PROMPT if self.search_fallback else
+                                                  '\n\n' + FINALIZING_PROMPT if finalizing else ''),
+            "input": self.payload_input,
+            "max_output_tokens": p.max_output_tokens if self.tools_enabled else side_output_cap(p.max_output_tokens),
+            "reasoning": {
+                "effort": self.effort if self.effort in p.supported_efforts else "low"
+            },
+            "stream": True,
+            "tools": self.plan.schemas,
+            "include": ["reasoning.encrypted_content"],
+            # Tự giữ các item trong lượt này, không cần lưu hội thoại ở dịch vụ AI.
+            "store": False,
+        }
+        if not getattr(p, "send_reasoning", True):
+            # Khóa riêng của người dùng với model không chỉnh được mức suy nghĩ (ai/byok.py): gửi tham số này thì cả
+            # lượt bị từ chối.
+            create_kwargs.pop("reasoning")
+            create_kwargs["include"] = []
+        if finalizing:
+            # Danh sách công cụ đã rỗng: không gửi tool_choice, kể cả "none", vì xAI từ chối cặp này.
+            logger.info("Kết thúc tra cứu: vòng=%d công_cụ_đã_gọi=%d github=%s", self.round_index, self.calls_used, bool(self.github_schemas))
+        if self.search_enabled:
+            create_kwargs["include"].append("web_search_call.action.sources")
+            if self.web_search == "on" and self.round_index == 0 and not finalizing:
+                # Chỉ đưa công cụ tìm web ở lần đầu để 'required' không bị thỏa bởi đồng hồ.
+                create_kwargs["tool_choice"] = "required"
+        if snapshot is not None:
+            # Khối runtime ở đuôi input, chỉ nối thêm: đầu lượt một khối đóng băng (giờ, envelope, snapshot); vòng
+            # có manifest khác lần báo trước thì thêm một bản snapshot mới (cùng mốc giờ); vòng cuối thêm ghi chú.
+            manifest = self.plan.manifest(getattr(p._client, 'native_tools', None))
+            details = dict(service=p.service, model=p.model, capabilities=manifest,
+                           effort=create_kwargs.get('reasoning', {}).get('effort'))
+            if self.shown_manifest is None:
+                p._place_runtime(self.payload_input, snapshot.runtime(**details), first=True)
+            elif manifest != self.shown_manifest:
+                p._place_runtime(self.payload_input, snapshot.render(**details))
+            self.shown_manifest = manifest
+            if self.search_fallback or finalizing:
+                p._place_runtime(self.payload_input, SEARCH_FALLBACK_PROMPT if self.search_fallback else FINALIZING_PROMPT)
+            if p.prompt_cache_key:
+                # Định tuyến tới máy chủ đang giữ cache của hội thoại; chỉ mã hội thoại đã băm, không có owner.
+                create_kwargs["prompt_cache_key"] = "peto-chat-" + hashlib.sha256(
+                    snapshot.conversation_id.encode()).hexdigest()[:32]
+        enforce_chat_budget(create_kwargs)
+        return create_kwargs
+
+    async def _call(self) -> AsyncIterator[str | StreamChunk]:
+        """Một lần gọi dịch vụ; đổi lỗi SDK thành ProviderError tiếng Việt, luôn ghi số đo và đóng stream."""
+        p = self.p
+        self.usage: dict = {}
+        self.output_items: list[dict] = []
+        self.completed = False
+        self.recovering_search = False
+        self.emitted_text = self.follow_up       # lần gọi nhắc: câu báo lần trước vẫn đang hiện
+        self.noted = False
+        self.written: list[str] = []     # chữ lần gọi này đã phát
+        # Chữ của lần gọi nhắc được giữ lại: Grok gọi công cụ thì phát (thành câu dẫn cùng câu báo), không gọi thì đó
+        # chỉ là "XONG" hay lời đệm, bỏ đi.
+        self.held: list[str] = []
+        stream = None
+        try:
+            stream = await p._client.responses.create(**self.create_kwargs)
+            pulse_at = perf_counter() + PULSE_SECONDS
+            async for event in stream:
+                if perf_counter() >= pulse_at:
+                    pulse_at = perf_counter() + PULSE_SECONDS
+                    yield StreamChunk("pulse")
+                for chunk in self._event_chunks(event):
+                    yield chunk
+        except _SearchFallback:
+            self.recovering_search = True
+            logger.warning("%s: lượt tìm bổ sung bị lỗi; tổng hợp từ %d nguồn đã tra thành công",
+                           p.service, len(self.usable_search_sources))
+        except AuthenticationError as err:
+            raise ProviderError(p.auth_error_message) from err
+        except RateLimitError as err:
+            # Lời báo giới hạn lượt/hết hạn mức không chứa nội dung hội thoại hay khóa; ghi để biết là hết tiền hay chỉ quá tải.
+            logger.warning("%s giới hạn lượt: %s", p.service, _clip(err.message))
+            raise ProviderError(p.rate_limit_message, retryable=True) from err
+        except APIConnectionError as err:
+            raise ProviderError("Peto chưa kết nối được với dịch vụ AI. Thử lại sau chút nhé.", retryable=True) from err
+        except APIStatusError as err:
+            logger.warning("%s HTTP %s: %s", p.service, err.status_code, _clip(err.message))
+            if self.search_enabled and err.status_code in {400, 403}:
+                raise ProviderError("Peto chưa dùng được tìm web với kết nối AI hiện tại. Mở menu + rồi chọn Tắt tìm kiếm web để chat tiếp, hoặc nhờ người quản trị kiểm tra quyền tìm kiếm của dịch vụ.") from err
+            raise ProviderError("Peto gặp lỗi kết nối với dịch vụ AI. Thử lại sau nha.", retryable=err.status_code >= 500) from err
+        finally:
+            self._record_call()
+            if stream is not None:
+                with anyio.CancelScope(shield=True):
+                    await stream.close()
+
+    def _record_call(self) -> None:
+        p, usage = self.p, self.usage
+        logger.info(
+            "model_usage service=%s model=%s purpose=%s round=%d elapsed_ms=%d complete=%s input_tokens=%s output_tokens=%s cached_tokens=%s reasoning_tokens=%s search_calls_seen=%d code_calls_seen=%d",
+            p.service, p.model, "chat" if self.tools_enabled else "title", self.round_index + 1,
+            round((perf_counter() - self.round_started) * 1000), self.completed,
+            usage.get("input_tokens"), usage.get("output_tokens"),
+            (usage.get("input_tokens_details") or {}).get("cached_tokens"),
+            (usage.get("output_tokens_details") or {}).get("reasoning_tokens"), len(self.search_ids), len(self.code_ids),
+        )
+        # Khóa riêng của người dùng ghi dịch vụ "byok" và slug "byok/…": trang Quản trị không tính vào chi phí chủ web.
+        usage_events.record(
+            "call", service=getattr(p, "usage_service", p.service), model=getattr(p, "catalog_key", None),
+            slug=getattr(p, "usage_slug", p.model),
+            purpose="chat" if self.tools_enabled else "side", complete=self.completed,
+            elapsed_ms=round((perf_counter() - self.round_started) * 1000),
+            input_tokens=usage.get("input_tokens"), output_tokens=usage.get("output_tokens"),
+            cached_tokens=(usage.get("input_tokens_details") or {}).get("cached_tokens"),
+            cache_write_tokens=(usage.get("input_tokens_details") or {}).get("cache_write_tokens"),
+            reasoning_tokens=(usage.get("output_tokens_details") or {}).get("reasoning_tokens"),
+            search_calls=len(self.search_ids),
+            # xAI tự báo số tiền đã tính cho lần gọi; dịch vụ khác không có trường này.
+            cost_ticks=usage.get("cost_in_usd_ticks"),
+            prefix_hash=prefix_hash(self.create_kwargs),
+        )
+
+    def _event_chunks(self, event):
+        """Mảnh stream cho một sự kiện của dịch vụ (tra web, chạy mã, đọc trang, gọi công cụ, chữ, kết thúc)."""
+        event_type = getattr(event, "type", "")
+        if event_type in {"response.web_search_call.in_progress", "response.web_search_call.searching",
+                          "response.code_interpreter_call.in_progress", "peto.page_fetch.started"}:
+            # Câu dẫn viết trước lúc tra web, chạy mã hay đọc trang: vào nhật ký, không dính vào câu trả lời viết sau.
+            draft = self.drop_pre_search_draft()
+            if draft is not None:
+                yield draft
+            yield (StreamChunk("code", "running") if event_type == "response.code_interpreter_call.in_progress" else
+                   StreamChunk("page", "fetching") if event_type == "peto.page_fetch.started" else
+                   StreamChunk("search", "searching"))
+        elif event_type == "response.web_search_call.completed":
+            self.search_finished = True
+            yield StreamChunk("search", "completed")
+        elif event_type == "peto.page_fetch.failed":
+            yield StreamChunk("page", "failed")
+        elif event_type == "response.output_item.added":
+            yield from self._item_added(event.item)
+        elif event_type == "response.output_text.annotation.added":
+            annotation = _dump(event.annotation)
+            if annotation.get("type") == "url_citation":
+                if self.activity_enabled:
+                    display = display_sources([{**annotation, 'kind': 'citation',
+                        'citation_ids': citation_ids(annotation, ''.join(self.written))}])
+                    if display:
+                        yield StreamChunk('source_activity', info={'sources': display})
+                merged = normalize_sources([*self.sources, {**annotation, "kind": "citation",
+                                                          'citation_ids': citation_ids(annotation, ''.join(self.written))}])
+                if merged != self.sources:
+                    self.sources = merged
+                    yield StreamChunk("sources", sources=tuple(self.sources))
+        elif event_type == 'peto.source_activity':
+            if self.activity_enabled and (activity := _source_activity(_dump(event.item), self.p.name, self.round_index)):
+                yield StreamChunk('source_activity', info=activity)
+        elif event_type in _REASONING_DELTA_TYPES:
+            delta = getattr(event, "delta", "")
+            if delta:
+                yield StreamChunk("thinking", delta)
+        elif event_type in {"response.output_text.delta", "peto.citation"}:
+            delta = getattr(event, "delta", "")
+            if delta:
+                self.emitted_text = True
+                if self.follow_up:
+                    self.held.append(delta)
+                else:
+                    self.written.append(delta)
+                    yield delta
+        elif event_type == "response.output_item.done":
+            item = _dump(event.item)
+            self.output_items.append(item)
+            yield from self.observe_item(item)
+        elif event_type == "response.completed":
+            raw_usage = getattr(event.response, "usage", None)
+            self.usage = _dump(raw_usage) if raw_usage is not None else {}
+            if getattr(event.response, "status", "completed") != "completed":
+                raise ProviderError("Peto chưa trả lời xong. Phần đã viết được giữ lại; bạn có thể yêu cầu tiếp tục.")
+            self.completed = True
+            if getattr(event.response, "output", None):
+                self.output_items = [_dump(item) for item in event.response.output]
+                for item in self.output_items:
+                    yield from self.observe_item(item)
+        elif event_type == "response.incomplete":
+            raise ProviderError("Câu trả lời chạm giới hạn của lượt AI. Phần đã viết được giữ lại; bạn có thể yêu cầu tiếp tục.")
+        elif event_type in {"response.failed", "error"}:
+            raise ProviderError("Peto gặp lỗi khi đang trả lời. Thử lại nha.", retryable=True)
+
+    def _item_added(self, item):
+        item_type = getattr(item, "type", "")
+        if item_type == "web_search_call":
+            if self.activity_enabled and (activity := _source_activity(_dump(item), self.p.name, self.round_index)):
+                yield StreamChunk('source_activity', info=activity)
+            draft = self.drop_pre_search_draft()
+            if draft is not None:
+                yield draft
+            yield StreamChunk("search", "searching")
+        elif item_type == "code_interpreter_call":
+            draft = self.drop_pre_search_draft()
+            if draft is not None:
+                yield draft
+            yield StreamChunk("code", "running")
+        elif item_type == "function_call":
+            if self.held:
+                yield "\n\n" + "".join(self.held)
+                self.held.clear()
+            # Chữ viết trước lệnh gọi công cụ thường là câu dẫn: phía chat đưa nó vào nhật ký "Đang làm"
+            # (hoặc giữ trong câu trả lời nếu dài). Báo ngay lúc này để các bước tới đúng thứ tự.
+            if self.emitted_text and not self.noted:
+                self.noted = True
+                yield StreamChunk("note")
+            # Bắt đầu viết lệnh gọi công cụ: lệnh sửa Excel dài có thể mất cả phút.
+            yield StreamChunk("tool", str(getattr(item, "name", "") or ""))
+
+    async def _finish_round(self) -> AsyncIterator[str | StreamChunk]:
+        """Sau một lần gọi: tổng hợp sau lượt tra lỗi, dừng, hay nhắc làm tiếp. Đặt ``self.decision``."""
+        if self.recovering_search:
+            # Bỏ bản nháp của lần gọi vừa ngắt trước khi mở mốc suy nghĩ mới. Không chạy lệnh công cụ
+            # chưa thực thi, không gửi item tra bị lỗi hoặc item đang viết dở sang lượt tổng hợp.
+            yield StreamChunk("search", "failed")
+            yield StreamChunk("replace")
+            self.payload_input.extend(item for item in self.output_items
+                                      if item.get("status") in {None, "completed"}
+                                      and item.get("type") in {"message", "reasoning", "web_search_call"}
+                                      and (item.get("type") != "web_search_call" or item.get("status") == "completed"))
+            self.search_fallback = True
+            self.search_enabled = False
+            self.watching = False
+            self.follow_up_next = False
+            self.decision = 'continue'
+            return
+        if not self.completed:
+            raise ProviderError("Kết nối tới AI bị ngắt trước khi trả lời xong.", retryable=True)
+        self.tool_calls = [item for item in self.output_items if item.get("type") == "function_call"]
+        if self.tool_calls and not self.tools_enabled:
+            raise ProviderError("Tác vụ đặt tên không được gọi công cụ.")
+        if not self.tool_calls:
+            if self.web_search == "on" and not self.search_finished and not self.sources:
+                raise ProviderError("Dịch vụ chưa xác nhận đã tra web. Peto chưa thể xem câu trả lời này là đã kiểm chứng; bạn thử lại nhé.")
+            self.decision = 'return'
+            if self.follow_up:
+                # Nhắc rồi vẫn không gọi công cụ: câu báo giữ nguyên làm câu trả lời. Chữ ngắn thêm vào (như "XONG")
+                # bỏ đi; chữ dài là nội dung thật (danh sách lỗi khi người dùng dặn chờ đồng ý) thì giữ.
+                extra = "".join(self.held).strip()
+                logger.info("Nhắc làm tiếp: vẫn không gọi công cụ, chữ thêm %d ký tự", len(extra))
+                if len(extra) > FOLLOW_UP_CHARS:
+                    yield "\n\n" + extra
+                return
+            written_text = "".join(self.written).strip()
+            if self.watching and not self.finalizing and self.round_index + 1 < self.max_rounds \
+                    and self.calls_used < self.max_calls and 0 < len(written_text) <= FOLLOW_UP_CHARS:
+                self.watching = False
+                self.follow_up_next = True
+                self.payload_input.extend(self.output_items)
+                self.payload_input.append({"role": "user", "content": [{"type": "input_text", "text": FOLLOW_UP}]})
+                logger.info("Nhắc làm tiếp: lần gọi %d chỉ viết %d ký tự, chưa gọi công cụ", self.round_index + 1,
+                            len(written_text))
+                self.decision = 'continue'
+            return
+        if self.finalizing:
+            raise ProviderError("Dịch vụ AI vẫn yêu cầu tra cứu sau khi được yêu cầu kết thúc. Phần đã trả lời được giữ lại; bạn có thể hỏi tiếp về một tệp cụ thể.")
+
+    async def _run_tools(self) -> AsyncIterator[str | StreamChunk]:
+        """Chạy các lệnh công cụ của lần gọi vừa xong; mỗi lệnh có đúng một kết quả gửi lại cho mô hình."""
+        tool_calls = self.tool_calls
+        self.payload_input.extend(self.output_items)
+        if self.held:
+            yield "\n\n" + "".join(self.held)
+            self.held.clear()
+        if self.emitted_text and not self.noted:
+            # Dịch vụ không báo lúc bắt đầu viết lệnh: chữ trước đó vẫn là câu dẫn.
+            yield StreamChunk("note")
+        if player_tools.current.get() and any(call.get('name') == player_tools.NAME for call in tool_calls):
+            # A draft before a Player action is not a confirmed result. Replace it like a web-search draft.
+            draft = self.drop_pre_search_draft()
+            if draft is not None:
+                yield draft
+        for call in tool_calls:
+            if not call.get("call_id"):
+                raise ProviderError("AI trả về yêu cầu công cụ không hợp lệ. Thử lại nhé.")
+            if self.calls_used >= self.max_calls:
+                # Mỗi lời gọi vẫn có kết quả tương ứng; lời gọi vượt giới hạn không được thực thi.
+                result = {'ok': False, 'error': 'Đã chạm giới hạn tra cứu của lượt này. Công cụ này chưa được chạy; hãy tổng hợp dữ liệu đã có và nêu rõ phần còn thiếu.'}
+                self.record_tool_result(result)
+                self.payload_input.append({'type': 'function_call_output', 'call_id': call['call_id'],
+                                           'output': self.tool_output(result)})
+                continue
+            self.calls_used += 1
+            self.result = None
+            async with aclosing(self._dispatch(call)) as chunks:
+                async for chunk in chunks:
+                    yield chunk
+            result = self.result
+            self.record_tool_result(result)
+            self.payload_input.append({
+                "type": "function_call_output", "call_id": call["call_id"],
+                "output": self.tool_output(result),
+            })
+
+    async def _dispatch(self, call: dict) -> AsyncIterator[StreamChunk]:
+        """Chạy một lệnh công cụ đã được phép; đặt ``self.result``."""
+        document_session, files = self.document_session, self.files
+        if not self.plan.allows(call.get('name')):
+            # Một model vẫn có thể bịa lời gọi dù schema không được gửi. Không thực thi ngoài kế hoạch vòng này.
+            self.result = {'ok': False, 'error': 'Công cụ không được cấp trong vòng hiện tại; chưa được chạy.',
+                           'code': 'tool_not_available'}
+        elif call.get('name') == player_tools.NAME and player_tools.current.get():
+            async with aclosing(player_tools.current.get().run(call.get('arguments', ''))) as action:
+                async for item in action:
+                    if isinstance(item, StreamChunk):
+                        yield item
+                    else:
+                        self.result = item
+        elif call.get('name') in DOCUMENT_TOOLS and document_session:
+            self.watching = False        # Grok đã bắt tay sửa/tạo tệp: không cần nhắc nữa
+            status, run = DOCUMENT_TOOLS[call['name']]
+            yield StreamChunk('document_status', status)
+            result = await getattr(document_session, run)(call.get('arguments', ''))
+            # "_ui" là chữ cho nhật ký "Đang làm" (kết quả gọn, các lỗi từng dòng), không gửi cho mô hình.
+            ui = result.pop('_ui', None) or {}
+            if result.get('ok'):
+                yield StreamChunk('artifact', artifact=result['artifact'])
+            yield StreamChunk('tool_result', info={'tool': call['name'], 'ok': bool(result.get('ok')),
+                                                   'error': result.get('error'), **ui})
+            yield StreamChunk('document_status', '')
+            self.result = result
+        elif call.get('name') in GITHUB_TOOLS and self.github_schemas:
+            yield StreamChunk('connector_lookup', 'Đang đọc GitHub…')
+            result = await self.github_session.run(call['name'], call.get('arguments', ''))
+            yield StreamChunk('connector_lookup_done', 'Đã đọc GitHub' if result.get('ok') else result.get('error', 'Chưa đọc được GitHub'))
+            if result.get('sources'):
+                tool_sources = [{**source, 'kind': 'result', 'access': 'tool',
+                    **({'partial': True} if result.get('truncated') is True else {})}
+                    for source in result['sources'] if isinstance(source, dict)]
+                if self.activity_enabled and (display := display_sources(tool_sources)):
+                    yield StreamChunk('source_activity', info={'sources': display})
+                self.sources = normalize_sources([*self.sources, *tool_sources])
+                yield StreamChunk('sources', sources=tuple(self.sources))
+            self.result = result
+        elif call.get('name') == chat_history_tools.NAME and self.chat_history:
+            yield StreamChunk('file_lookup', 'Đang đối chiếu lịch sử gốc…')
+            result = await self.chat_history.run(call.get('arguments', ''))
+            yield StreamChunk('file_lookup_done', 'Đã đối chiếu lịch sử' if not result.get('error') else result['error'])
+            self.result = result
+        elif call.get("name") in FILE_TOOLS and self.file_schemas:
+            arguments = call.get("arguments", "")
+            yield StreamChunk("file_lookup", files.label(call["name"], arguments))
+            result = await files.run(call["name"], arguments)
+            yield StreamChunk("file_lookup_done", files.label(call["name"], arguments, result))
+            self.result = result
+        else:
+            self.result = execute_tool(call.get("name", ""), call.get("arguments", ""), timezone=self.timezone)
 
 class XAIProvider(ResponsesProvider):
     """Peto: Grok qua tài khoản xAI riêng của web (OAuth, hoặc XAI_API_KEY dự phòng)."""
