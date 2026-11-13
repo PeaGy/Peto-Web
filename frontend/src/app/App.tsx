@@ -27,10 +27,12 @@ import { diagramPanel } from "../features/diagrams/diagramPanelLazy";
 import LazyBoundary from "../shared/ui/LazyBoundary";
 import { loadCompanion, loadImagine, loadSettings, preload, usePreloadWhenIdle } from './lazyViews';
 import AgentConnectDialog, { forgetAgentCode, takeAgentCode } from "../features/settings/AgentConnectDialog";
-import AccountMenu, { placeAccountMenu, type AccountMenuPlace } from "./AccountMenu";
-import SettingsDialog, { CLOSED_SETTINGS, type SettingsSection, type SettingsView } from "../features/settings/SettingsDialog";
-import { forgetSettingsLink, takeSettingsLink } from "../features/settings/settingsLink";
+import AccountMenu from "./AccountMenu";
+import SettingsDialog, { CLOSED_SETTINGS, type SettingsSection } from "../features/settings/SettingsDialog";
+import { takeSettingsLink } from "../features/settings/settingsLink";
 import { useCompanionShell } from './useCompanionShell';
+import { useSearchShortcut } from './useSearchShortcut';
+import { useSettingsMenu } from './useSettingsMenu';
 import Composer from "../features/chat/Composer";
 import ChatFileDropZone from '../features/chat/ChatFileDropZone';
 import { useChatDrafts } from '../features/chat/useChatDrafts';
@@ -165,54 +167,16 @@ function AppContent() {
   const { characterMotion, changeCharacterMotion, characters, characterIds, sceneRequest, playerRequest, setPlayerRequest,
     companionVisited, setCompanionVisited, localVoice, openHearingSettings, openCompanionSettings, openCompanionCards, openCharacters,
     openScenes, openPlayer } = useCompanionShell(view, navigate, companionSettingsView);
-  // Hộp Cài đặt: mở hay đóng, mục đang xem, và trên điện thoại đang ở danh sách mục hay trang của mục.
-  const [settings, setSettings] = useState<SettingsView>(CLOSED_SETTINGS);
-  const settingsOpen = settings.open;
-  useEffect(() => {
-    if (auth?.authenticated && connectorResult) setSettings({ open: true, section: 'ket-noi', page: true });
-  }, [auth?.authenticated, connectorResult]);
-  useEffect(() => {
-    if (!auth?.authenticated || !settingsLink) return;
-    forgetSettingsLink();
-    setSettingsLink(null);
-    setSettings({ open: true, section: settingsLink, page: true });
-  }, [auth?.authenticated, settingsLink]);
-  const closeSettings = useCallback(() => setSettings((current) => ({ ...current, open: false })), []);
-  // Menu của ô tài khoản (như ChatGPT). Nó nằm ngoài thanh bên, vì thanh bên cắt phần tràn khi thu gọn còn 64px.
-  const [accountMenu, setAccountMenu] = useState<AccountMenuPlace | null>(null);
-  const accountRef = useRef<HTMLButtonElement>(null);
-  // Mở Cài đặt từ menu thì đóng xong trả tiêu điểm về ô tài khoản: mục trong menu đã gỡ nên hộp thoại không tự trả được.
-  const settingsReturn = useRef<HTMLElement | null>(null);
-  const closeAccountMenu = useCallback((focusBack: boolean) => {
-    setAccountMenu((current) => current && { ...current, closing: true });
-    if (focusBack) accountRef.current?.focus();
-  }, []);
-  const dropAccountMenu = useCallback(() => setAccountMenu(null), []);
+  const { settings, setSettings, settingsOpen, closeSettings, accountMenu, setAccountMenu, accountRef, closeAccountMenu, dropAccountMenu,
+    toggleAccountMenu, openFromAccountMenu } = useSettingsMenu(auth?.authenticated, connectorResult, settingsLink, setSettingsLink,
+    setSidebarOpen);
   const [imageVisited, setImageVisited] = useState(view === "imagine");
   useEffect(() => {
     if (view === 'imagine') setImageVisited(true);
     if (view === 'companion') setCompanionVisited(true);
     setSidebarOpen(false);
   }, [view]);
-  // Ctrl+K (⌘K trên Mac) mở tìm hội thoại như Grok và ChatGPT, ở mọi tab; tooltip của nút tìm ghi phím này.
-  // Không mở khi đang trả lời (nút tìm cũng tắt lúc đó) hay khi một hộp thoại modal khác đang mở.
-  useEffect(() => {
-    const openSearch = (event: KeyboardEvent) => {
-      if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey || event.key.toLowerCase() !== 'k') return;
-      let modal = false;
-      try { modal = Boolean(document.querySelector('dialog:modal')); } catch { /* trình duyệt cũ không có :modal */ }
-      if (streaming || modal) return;
-      event.preventDefault();
-      setSearchOpen(true);
-    };
-    window.addEventListener('keydown', openSearch);
-    return () => window.removeEventListener('keydown', openSearch);
-  }, [streaming]);
-  useEffect(() => {
-    if (settingsOpen || !settingsReturn.current) return;
-    settingsReturn.current.focus({ preventScroll: true });
-    settingsReturn.current = null;
-  }, [settingsOpen]);
+  useSearchShortcut(streaming, setSearchOpen);
   // Bản sao chỉ để vẽ cột trái; Imagine.tsx mới là nơi tạo, xóa và giữ danh sách.
   const [imagineJobs, setImagineJobs] = useState<ImagineJob[]>([]);
   const [imagineLibraryRequest, setImagineLibraryRequest] = useState(0);
@@ -711,18 +675,6 @@ function AppContent() {
     else if (next !== view) navigate({ pathname: next === 'chat' && conversationIdRef.current
       ? chatRoute(conversationIdRef.current) : VIEW_PATHS[next], search: window.location.search },
       { state: draftContextState(activeProjectId) });
-  }
-
-  function toggleAccountMenu() {
-    if (accountMenu && !accountMenu.closing) closeAccountMenu(false);
-    else if (accountRef.current) setAccountMenu(placeAccountMenu(accountRef.current));
-  }
-
-  function openFromAccountMenu(section: SettingsSection, page: boolean) {
-    settingsReturn.current = accountRef.current;
-    closeAccountMenu(false);
-    setSidebarOpen(false);
-    setSettings({ open: true, section, page });
   }
 
   const settingsContext: AppSettingsContext = {
