@@ -13,7 +13,7 @@ import { projectActions, renderProjectDialogs, useProjectDialogs, type ProjectAc
 import ProjectChatHeader from '../features/projects/ProjectChatHeader';
 import { ChatMessage } from '../features/chat/ChatMessage';
 import { disconnectStream, useReplyRecovery } from '../features/chat/useReplyRecovery';
-import { EditDraftNotice, ReplyRecoveryNotice } from '../features/chat/ReplyRecoveryNotice';
+import { ReplyRecoveryNotice } from '../features/chat/ReplyRecoveryNotice';
 import { Greeting } from '../features/chat/Greeting';
 import { LoadingIndicator } from '../shared/ui/LoadingIndicator';
 import { MenuIcon, PinIcon } from './navigationIcons';
@@ -40,15 +40,16 @@ import { readCharacterMotion, writeCharacterMotion, type CharacterMotion } from 
 import Composer from "../features/chat/Composer";
 import ChatFileDropZone from '../features/chat/ChatFileDropZone';
 import { useChatDrafts } from '../features/chat/useChatDrafts';
+import { useChatPanels } from '../features/chat/useChatPanels';
+import { editDraftNotice, useEditDraftCheck, type EditDraftNoticeContext } from '../features/chat/useEditDraftCheck';
 import { CHAT_SELECTION_ERROR, useChatSelection } from '../features/chat/useChatSelection';
-import { newChatContext, type EditDraft, type NewChatContext } from '../features/chat/chatDrafts';
+import { newChatContext, type NewChatContext } from '../features/chat/chatDrafts';
 import TextEditDialog from '../shared/ui/TextEditDialog';
 import HistorySearch from './HistorySearch';
 import { renderAppSettings, type AppSettingsContext } from './appSettings';
 import ConversationMenu from './ConversationMenu';
 import DocumentWorkspace from '../features/documents/DocumentWorkspace';
-import DocumentPanel, { RightPanelIcon, type DocumentPanelSelection } from '../features/documents/DocumentPanel';
-import type { DocumentDraftRequest } from '../features/documents/documentApi';
+import DocumentPanel, { RightPanelIcon } from '../features/documents/DocumentPanel';
 import { takeConnectorResult } from '../features/connectors/connectorApi';
 import SourcesPanel from '../features/chat/SourcesPanel';
 import { sendChatTurn, stopChatTurn, type ActiveReply, type ChatRevision, type ChatTurnContext, type StopTicket } from '../features/chat/chatTurn';
@@ -61,7 +62,6 @@ import {
   deleteConversation,
   getAppInfo,
   getAuthState,
-  getChatTurnReceipt,
   getMessages,
   listConversations,
   updateConversation,
@@ -123,8 +123,6 @@ function AppContent() {
   const [renameText, setRenameText] = useState('');
   const [editTarget, setEditTarget] = useState<Message | null>(null);
   const [editText, setEditText] = useState('');
-  const [editCheck, setEditCheck] = useState<{ edit: EditDraft; state: 'checking' | 'ready' | 'unconfirmed' } | null>(null);
-  const [editCheckAttempt, setEditCheckAttempt] = useState(0);
   const [retryAvailable, setRetryAvailable] = useState(false);
   const retryRevision = useRef<ChatRevision | undefined>(undefined);
   const [metadataBusy, setMetadataBusy] = useState(false);
@@ -136,36 +134,10 @@ function AppContent() {
   const messageRowsRef = useRef(messages);
   messageRowsRef.current = messages;
   const submitRevisionRef = useRef<((revision: ChatRevision) => Promise<void>) | null>(null);
-  const [sourcesIndex, setSourcesIndex] = useState<number | null>(null);
-  const closeSources = useCallback(() => setSourcesIndex(null), []);
-  const [documentRequest, setDocumentRequest] = useState<DocumentDraftRequest | null>(null);
-  const [documentSelection, setDocumentSelection] = useState<{ id: string; version: number; key: number } | null>(null);
-  const [documentRefresh, setDocumentRefresh] = useState(0);
-  const [documentPanelOpen, setDocumentPanelOpen] = useState(false);
-  const [documentPanelExpanded, setDocumentPanelExpanded] = useState(false);
-  const [documentPreview, setDocumentPreview] = useState<DocumentPanelSelection | null>(null);
-  const closeDocumentPanel = useCallback(() => { setDocumentPanelOpen(false); setDocumentPanelExpanded(false); }, []);
-  // Sơ đồ đang mở ở bảng bên phải (mã Mermaid đã chuẩn hóa). Bảng sơ đồ và bảng tài liệu dùng chung chỗ bên phải, nên mở
-  // bảng này thì đóng bảng kia.
-  const [diagram, setDiagram] = useState<string | null>(null);
-  const closeDiagram = useCallback(() => setDiagram(null), []);
-  const openSources = useCallback((index: number) => {
-    setDocumentPanelOpen(false); setDocumentPanelExpanded(false); setDiagram(null);
-    setSourcesIndex(current => current === index ? null : index);
-  }, []);
-  const diagramApi = useMemo(() => ({
-    current: diagram,
-    open: (code: string) => { setSourcesIndex(null); setDocumentPanelOpen(false); setDocumentPanelExpanded(false); setDiagram(code); },
-  }), [diagram]);
-  const previewDocument = useCallback((item: { id: string; version: number }) => {
-    setSourcesIndex(null);
-    setDocumentPreview({ id: item.id, version: item.version, key: Date.now() });
-    setDiagram(null);
-    setDocumentPanelOpen(true);
-  }, []);
-  const editDocument = useCallback((item: { id: string; version: number }) => {
-    setDocumentSelection({ id: item.id, version: item.version, key: Date.now() });
-  }, []);
+  const { sourcesIndex, setSourcesIndex, closeSources, openSources, documentRequest, documentSelection, setDocumentSelection,
+    documentRefresh, setDocumentRefresh, documentPanelOpen, documentPanelExpanded, setDocumentPanelExpanded, documentPreview,
+    setDocumentPreview, closeDocumentPanel, toggleDocumentPanel, diagram, setDiagram, closeDiagram, diagramApi, previewDocument,
+    editDocument, resetPanels } = useChatPanels(view, conversationId);
   const [webSearch, setWebSearch] = useState<WebSearchMode>("auto");
 
   const [streaming, setStreaming] = useState(false);
@@ -249,22 +221,6 @@ function AppContent() {
     if (view === 'imagine') setImageVisited(true);
     if (view === 'companion') setCompanionVisited(true);
     setSidebarOpen(false);
-  }, [view]);
-  useEffect(() => setSourcesIndex(null), [view]);
-  useEffect(() => {
-    setDocumentPanelOpen(false); setDocumentPanelExpanded(false); setDocumentPreview(null); setDocumentSelection(null);
-    setDiagram(null);
-    setSourcesIndex(null);
-  }, [conversationId]);
-  useEffect(() => {
-    if (view !== 'chat') return;
-    const shortcut = (event: KeyboardEvent) => {
-      if (event.ctrlKey && event.altKey && event.code === 'KeyB' && !document.querySelector('.document-workspace[open], .settings-dialog[open]')) {
-        event.preventDefault(); setSourcesIndex(null); setDocumentPanelOpen(value => !value); setDocumentPanelExpanded(false); setDiagram(null);
-      }
-    };
-    window.addEventListener('keydown', shortcut);
-    return () => window.removeEventListener('keydown', shortcut);
   }, [view]);
   // Ctrl+K (⌘K trên Mac) mở tìm hội thoại như Grok và ChatGPT, ở mọi tab; tooltip của nút tìm ghi phím này.
   // Không mở khi đang trả lời (nút tìm cũng tắt lúc đó) hay khi một hộp thoại modal khác đang mở.
@@ -431,10 +387,7 @@ function AppContent() {
   const handleUnauthorized = useCallback(() => {
     authChecked.current = true;
     setPlayerRequest(0);
-    setDocumentRequest(null);
-    setDocumentSelection(null);
-    closeDocumentPanel(); setDocumentPreview(null); setDiagram(null);
-    setSourcesIndex(null);
+    resetPanels();
     authVersion.current += 1;
     loadVersion.current += 1;
     listVersion.current += 1;
@@ -482,7 +435,7 @@ function AppContent() {
     setHasMore(false);
     listCount.current = 50;
     setAuthError("Phiên đăng nhập đã hết hạn hoặc tài khoản không còn được cho phép.");
-  }, [clearDrafts, resetProjectDialogs]);
+  }, [clearDrafts, resetProjectDialogs, resetPanels]);
 
   const chatSelection = useChatSelection(auth?.authenticated ? auth.user?.id ?? 'authenticated' : null,
     auth?.user?.models ?? [], handleUnauthorized,
@@ -548,62 +501,9 @@ function AppContent() {
     },
   });
 
-  useEffect(() => {
-    const requestId = latestEdit?.requestId;
-    if (!requestId || !latestEdit || !routedConversationId || routedConversationId !== conversationId
-      || view !== 'chat' || !auth?.authenticated || !recovery.online || recovery.pending || streaming || loadingConversation || editTarget) return;
-    const edit = latestEdit;
-    const controller = new AbortController();
-    const session = authVersion.current;
-    const current = () => !controller.signal.aborted && session === authVersion.current
-      && conversationIdRef.current === routedConversationId && viewRef.current === 'chat';
-    setEditCheck({ edit, state: 'checking' });
-    const timeout = window.setTimeout(() => {
-      if (!current()) return;
-      controller.abort();
-      setEditCheck({ edit, state: 'unconfirmed' });
-    }, 8000);
-    void (async () => {
-      try {
-        const receipt = await getChatTurnReceipt(requestId, controller.signal);
-        if (!current()) return;
-        if (receipt.state === 'saved' && receipt.content === edit.text.trim()) {
-          if (receipt.conversation_id !== conversationId) {
-            if (!resolveEdit(edit)) return;
-            navigate({ pathname: chatRoute(receipt.conversation_id), search: window.location.search });
-          } else {
-            const stored = await getMessages(conversationId, controller.signal, settings => {
-              if (!current()) return;
-              setArchived(Boolean(settings.archived));
-              setActiveProjectId(settings.project_id ?? null);
-              setLegacyRoleplay(settings.persona === 'roleplay');
-            });
-            if (!current()) return;
-            const found = stored.some(row => row.id === receipt.message_id && row.role === 'user' && row.content === receipt.content);
-            if (!resolveEdit(edit, found ? undefined : { messageId: edit.messageId, text: edit.text, conflict: true })) return;
-            setMessages(stored);
-            setLoadFailed(false);
-            setError(null);
-          }
-          void refreshConversations();
-        } else if (receipt.state === 'unsaved' || receipt.state === 'unavailable' || receipt.state === 'saved'
-          || (receipt.state === 'missing' && edit.conflict)) {
-          resolveEdit(edit, { messageId: edit.messageId, text: edit.text,
-            conflict: edit.conflict || receipt.state === 'saved' || receipt.state === 'unavailable' ? true : undefined });
-        } else {
-          setEditCheck({ edit, state: receipt.state === 'missing' ? 'ready' : 'unconfirmed' });
-        }
-      } catch (err) {
-        if (!current()) return;
-        if (err instanceof UnauthorizedError) handleUnauthorized();
-        else setEditCheck({ edit, state: 'unconfirmed' });
-      } finally {
-        window.clearTimeout(timeout);
-      }
-    })();
-    return () => { window.clearTimeout(timeout); controller.abort(); };
-  }, [latestEdit, editCheckAttempt, routedConversationId, conversationId, view, auth?.authenticated, recovery.online,
-    recovery.pending, streaming, loadingConversation, editTarget, resolveEdit, navigate, refreshConversations, handleUnauthorized]);
+  const { editCheck, canResumeEdit, checkAgain } = useEditDraftCheck({ latestEdit, routedConversationId, conversationId, view, auth,
+    recovery, streaming, loadingConversation, editTarget, resolveEdit, navigate, refreshConversations, handleUnauthorized, authVersion,
+    conversationIdRef, viewRef, setArchived, setActiveProjectId, setLegacyRoleplay, setMessages, setLoadFailed, setError });
 
   const allConversations = [...conversations,...projectState.projects.flatMap(project => projectState.chats[project.id]?.items ?? [])];
   const waitingForTitle = allConversations.some(item =>
@@ -914,9 +814,6 @@ function AppContent() {
     }
   }
 
-  function canResumeEdit(edit: EditDraft) {
-    return !edit.conflict && (!edit.requestId || (editCheck?.edit === edit && editCheck.state === 'ready'));
-  }
 
   function openEditor(target: Message) {
     const saved = editDrafts.find(edit => edit.messageId === target.id);
@@ -928,30 +825,8 @@ function AppContent() {
     setEditText(saved?.text ?? target.content);
   }
 
-  function editDraftNotice(edit: EditDraft, id: string) {
-    const target = messages.find(row => row.id === edit.messageId && row.role === 'user');
-    const busy = loadingConversation || deleting || !recovery.online;
-    let message = 'Phần chỉnh sửa này chưa được gửi.';
-    let action: { label: string; run: () => void; disabled?: boolean } | undefined;
-    if (edit.conflict) {
-      if (target || loadingConversation || loadFailed) {
-        message = 'Tin nhắn gốc đã thay đổi. Hãy tải bản mới nhất. Phần bạn vừa sửa được giữ bên dưới.';
-        action = { label: 'Tải bản mới nhất', run: () => void loadConversation(id), disabled: busy };
-      }
-    } else if (!recovery.online) {
-      message = 'Bản sửa được giữ trong tab này. Peto sẽ đối chiếu khi có mạng.';
-    } else if (canResumeEdit(edit)) {
-      if (target && !readOnly) action = { label: 'Mở lại bản sửa', run: () => openEditor(target), disabled: busy };
-      else if (loadFailed) action = { label: 'Tải bản mới nhất', run: () => void loadConversation(id), disabled: busy };
-    } else if (editCheck?.edit === edit && editCheck.state === 'unconfirmed') {
-      message = 'Chưa xác nhận được bản sửa đã lưu hay chưa. Phần bạn vừa sửa được giữ bên dưới.';
-      action = { label: 'Kiểm tra lại', run: () => setEditCheckAttempt(attempt => attempt + 1), disabled: busy };
-    } else {
-      message = 'Đang đối chiếu bản sửa với lịch sử…';
-    }
-    return <EditDraftNotice key={JSON.stringify([id, edit.messageId])} text={edit.text}
-      message={message} action={action} onDiscard={() => resolveEdit(edit)} />;
-  }
+  const noticeContext: EditDraftNoticeContext = { messages, loadingConversation, deleting, recovery, loadFailed, readOnly,
+    loadConversation, openEditor, resolveEdit, canResumeEdit, editCheck, checkAgain };
 
   const turn: ChatTurnContext = {
     abortRef, acceptDraft, activeProjectId, authVersion, canResumeEdit, chatSelection, chosenModel,
@@ -1187,7 +1062,7 @@ function AppContent() {
           <MenuIcon />
         </button>
         {activeProjectId && <ProjectChatHeader name={projectState.projects.find(project=>project.id===activeProjectId)?.name}/>}
-        <button type="button" className="artifact-icon document-panel-toggle" aria-label={documentPanelOpen ? 'Đóng bảng tài liệu' : 'Mở bảng tài liệu'} aria-expanded={documentPanelOpen} aria-controls="document-panel" data-tip="Tài liệu" data-tip-kbd="Ctrl+Alt+B" aria-keyshortcuts="Control+Alt+B" onClick={() => { setSourcesIndex(null); setDocumentPanelOpen(value => !value); setDocumentPanelExpanded(false); setDiagram(null); }}><RightPanelIcon /></button>
+        <button type="button" className="artifact-icon document-panel-toggle" aria-label={documentPanelOpen ? 'Đóng bảng tài liệu' : 'Mở bảng tài liệu'} aria-expanded={documentPanelOpen} aria-controls="document-panel" data-tip="Tài liệu" data-tip-kbd="Ctrl+Alt+B" aria-keyshortcuts="Control+Alt+B" onClick={toggleDocumentPanel}><RightPanelIcon /></button>
         </div>
 
         <div className="messages" role="region" aria-label="Nội dung hội thoại" tabIndex={0} ref={messagesRef} onClick={e => {
@@ -1248,7 +1123,7 @@ function AppContent() {
         <div className="chat-dock" ref={chatDockRef}>
         <ReplyRecoveryNotice recovery={recovery} />
         {latestEdit && draftConversationId && !streaming && editTarget?.id !== latestEdit.messageId
-          && editDraftNotice(latestEdit, draftConversationId)}
+          && editDraftNotice(latestEdit, draftConversationId, noticeContext)}
         {error && !recovery.pending && recovery.status !== 'failed' && (
           <div className="error chat-error" role="alert">
             <span className="chat-error-message">{error}</span>
