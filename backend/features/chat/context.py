@@ -97,6 +97,44 @@ async def _metadata(owner, cid, boundary, state):
         return scope['project_id'], dict(first) if first else None, count[0]
 
 
+async def _window(owner, cid, prompt, rows, cap, info, convert):
+    """Cửa sổ lịch sử gửi nguyên văn (G1.2): bắt đầu từ mốc đã lưu, chỉ dời mốc một khối lớn.
+
+    Trước đây cửa sổ là 20 tin mới nhất nên mỗi lượt mới đẩy tin cũ nhất ra và tiền tố request đổi ở mọi lượt (prompt
+    cache không đọc lại được). Giờ: tin từ mốc trở đi được gửi hết nếu vừa ngân sách (``info['input']`` trừ phần dành
+    sẵn) và không quá ``cap`` tin. Vượt một trong hai thì cắt phần đầu tới khi còn tối đa nửa phần ngân sách dành cho lịch
+    sử và nửa ``cap``, ở đầu một tin người dùng, rồi lưu mốc mới; các lượt sau giữ mốc đó tới lần vượt kế tiếp.
+    ``rows`` là tối đa ``cap`` tin mới nhất (cũ trước); tin đầu tiên của ``rows`` mới hơn mốc nghĩa là từ mốc tới nay
+    đã quá ``cap`` tin."""
+    reserve = min(12_000, info['input'] // 3)
+    start = await store.window_start(owner, cid)
+    if start and (not rows or start > rows[-1]['id']):
+        start = 0          # Hội thoại đã bị cắt bớt (thử lại, rẽ nhánh): mốc cũ không còn dùng được.
+    recent = [row for row in rows if row['id'] >= start] if start else list(rows)
+    history = await convert(recent)
+    over_cap = bool(start) and len(rows) >= cap and rows[0]['id'] > start
+    if over_cap or tokens(prompt, history) + reserve > info['input']:
+        target = tokens(prompt) + max(0, info['input'] - reserve - tokens(prompt)) // 2
+        keep = max(2, cap // 2)
+        cuts = [index for index, row in enumerate(recent) if row['role'] == 'user'] or [len(recent) - 1]
+        low, high, best = 0, len(cuts) - 1, None
+        # Tìm mốc sớm nhất còn vừa (càng cắt nhiều càng ít token, nên tìm nhị phân được).
+        while low <= high:
+            middle = (low + high) // 2
+            candidate = recent[cuts[middle]:]
+            converted = await convert(candidate)
+            if len(candidate) <= keep and tokens(prompt, converted) <= target:
+                best, high = (candidate, converted), middle - 1
+            else:
+                low = middle + 1
+        recent, history = best if best else (recent[cuts[-1]:], await convert(recent[cuts[-1]:]))
+        await store.set_window_start(owner, cid, recent[0]['id'])
+    elif not start and len(rows) >= cap and recent:
+        # Lần đầu đầy trần: ghi mốc để lượt sau không trượt theo "cap tin mới nhất".
+        await store.set_window_start(owner, cid, recent[0]['id'])
+    return recent, history
+
+
 async def prepare(owner, cid, model, prompt, rows, project_documents, window):
     key = (owner, cid)
     lock = _locks.get(key)
@@ -118,12 +156,7 @@ async def _prepare(owner, cid, model, prompt, rows, project_documents, window):
     async def convert(source):
         return await anyio.to_thread.run_sync(lambda: _to_chat_messages(context_rows(source), project_documents,
                                                                        document_budget=document_budget))
-    history = await convert(recent)
-    while len(recent) > 1 and tokens(prompt, history) + min(12_000, info['input'] // 3) > info['input']:
-        recent.pop(0)
-        while len(recent) > 1 and recent[0]['role'] != 'user':
-            recent.pop(0)
-        history = await convert(recent)
+    recent, history = await _window(owner, cid, prompt, recent, window, info, convert)
     if tokens(prompt, history) + 2048 > info['input']:
         raise ContextOverflow('Tin nhắn và tài liệu hiện tại quá dài cho ngân sách Chat; hãy chia nhỏ nội dung.')
     boundary = recent[0]['id']

@@ -42,6 +42,7 @@ from shared.time_tools import browser_timezone_selection, time_context
 from core.config import (
     MAX_ATTACHMENTS,
     MAX_HISTORY_MESSAGES,
+    CHAT_MAX_HISTORY,
     MAX_INPUT_CHARS,
     RESPONSE_TIMEOUTS,
     TURN_TIMEOUT_SECONDS,
@@ -272,7 +273,8 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
         # Hội thoại nhập vai cũ chỉ còn để xem: lịch sử có thể có nội dung 18+, không được gửi tiếp tới model nào.
         if settings["persona"] == "roleplay":
             raise HTTPException(409, conversation_actions.LEGACY_ROLEPLAY)
-    history_limit = MAX_HISTORY_MESSAGES
+    # Tab Trò chuyện: trần số tin (G1.2); cửa sổ thật do ngân sách token và mốc đã lưu quyết định (context.py).
+    history_limit = CHAT_MAX_HISTORY if mode == 'chat' else MAX_HISTORY_MESSAGES
     # Thẻ nhân vật của lượt Companion: mạch đã có giữ thẻ lúc tạo (như AIRI), mạch mới theo thẻ gửi lên hoặc thẻ đang dùng.
     card = None
     if mode == "companion":
@@ -793,7 +795,7 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
             await titles.maybe_generate(owner, conversation_id, model)
         # Ghi nhớ chạy sau khi trả lời xong, như đặt tiêu đề: câu trả lời và giọng đọc không phải chờ.
         if conversation_id and remembers and turn_complete:
-            await companion_memory.remember(owner, history_limit)
+            await companion_memory.remember(owner, MAX_HISTORY_MESSAGES)
 
     return StreamingResponse(
         controlled_stream(),
