@@ -64,3 +64,37 @@ def test_only_grok_is_told_to_stay_silent_without_narrating():
     rule = '## Requests for no reply'
     assert rule in chat_prompt('peto')
     assert rule not in chat_prompt('luna') and rule not in chat_prompt('haiku')
+
+
+async def test_closing_the_turn_stream_closes_the_provider_stream_at_once(client, monkeypatch):
+    """G3.2: lượt chat tách thành nhiều bước; đóng luồng ngoài (trình duyệt ngắt) vẫn phải đóng ngay luồng của provider,
+    như khi mọi thứ còn nằm trong một hàm."""
+    import asyncio
+    from features.chat import schemas
+    from test_chat_turns import consume
+    closed = asyncio.Event()
+
+    class Provider:
+        async def stream(self, **kwargs):
+            try:
+                yield 'Đang viết'
+                await asyncio.Event().wait()
+            finally:
+                closed.set()
+    monkeypatch.setattr(service, 'get_provider', lambda _: Provider())
+    original = chat_turns.persist
+    seen = []
+
+    async def persist(*args, **kwargs):
+        # Lần lưu chốt (có state) phải xảy ra sau khi provider đã đóng, không chờ bộ thu gom rác của Python.
+        if kwargs.get('state') is not None:
+            seen.append(closed.is_set())
+        return await original(*args, **kwargs)
+    monkeypatch.setattr(chat_turns, 'persist', persist)
+    response = await service.chat(schemas.ChatRequest(message='chào', effort='low', web_search='off'), owner=TEST_OWNER)
+    body = response.body_iterator
+    async for chunk in body:
+        if 'Đang viết' in chunk:
+            break
+    await body.aclose()
+    assert closed.is_set() and seen == [True]

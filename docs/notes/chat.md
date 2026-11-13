@@ -477,6 +477,25 @@ with `--rates`, USD) ceiling before running, and adds per-model time-to-first-te
 
 # Dated log (newest first)
 
+## Chat turn and provider stream split into named steps (G3.2) (2026-11-13, committed on branch `g3.2-split-streams`, not deployed)
+
+Audit package G3.2, a refactor with no intended behaviour change. `features/chat/service.chat` was 640 lines with a nested
+466-line `event_stream`; `ai/xai.ResponsesProvider.stream` was 472 lines. Now no function in either module is over 80 lines.
+- `service.py`: `_resolve_turn` (plus `_own_key`, `_conversation_scope`) checks the request and returns a `_TurnSetup`;
+  `_ChatTurn` holds the turn's state and runs `events()`: `_read_new_files` → `_save_user_message` → `meta` →
+  `_reread_old_files` → `_build_prompt` → `_prepare_history` → `_open_sessions` → `_reply` → `_persist` (`_record_failure`
+  keeps the old exception order). `chunk_event` delegates web/code/sources/thinking to `_activity_event` and replace to
+  `_replace_event`. The background task reads `turn.conversation_id`, `turn.turn_complete` and `turn.compaction`.
+- `xai.py`: `stream` builds a `_ResponsesRun` (`setup`, then `rounds()` per round: `_request` → `_call` with
+  `_event_chunks`/`_item_added` and `_record_call` → `_finish_round` sets `decision` → `_run_tools`/`_dispatch`). Both
+  modules keep their code in place so tests that patch module names (`service.get_provider`, `xai.execute_tool`,
+  `xai.MAX_TOOL_ROUNDS`…) still reach it.
+- Every hand-off to a nested async generator is wrapped in `aclosing`: closing the outer stream (browser disconnect, stop)
+  must close the inner step at once, as when it was one function. Without it, `test_player_tools` caught a pending Player
+  command left behind, and the new `test_closing_the_turn_stream_closes_the_provider_stream_at_once` shows the final
+  persist running before the provider stream closed (both fail without `aclosing`, checked).
+- No existing test assertion changed.
+
 ## Plain-text user messages (G4.1) (2026-11-13, committed on branch `g4.1-plain-user-text`, not deployed)
 
 Audit package G4.1; the owner left the choice to Claude, which picked option (a), as ChatGPT does. The user's own Chat
