@@ -371,3 +371,146 @@ async def test_usage_totals_and_error_rates_exclude_skipped_turns(tmp_path, shor
     assert group['input_tokens'] == 100 and group['output_tokens'] == 40
     assert group['cache_read_tokens'] == 25 and group['cache_write_tokens'] == 0
     assert group['reasoning_tokens'] is None and group['estimated_usd'] is None
+
+
+# --- G2.1: bộ chat-core, trần đầu ra của app, ước tính in trước khi chạy ---
+
+from evals.schema import load_many, suite_datasets, SUITES
+
+
+def suite_settings(**kwargs):
+    return Settings(models=('peto', 'luna', 'haiku'), max_output_tokens=None, suite='chat-core', **kwargs)
+
+
+def test_chat_core_suite_uses_existing_datasets_and_app_output_caps(tmp_path):
+    from features.chat.context_budget import policy
+    cases = load_many(suite_datasets('chat-core'))
+    names = [path.name for path in suite_datasets('chat-core')]
+    assert names == ['chat-personality-cases.json', 'chat-reassess-cases.json', 'chat-log-cases.json',
+                     'chat-stage4-cases.json']
+    assert len(cases) == 13 and sum(len(item.turns) for item in cases) == 16
+    assert {item.persona for item in cases} == {'chat'} and SUITES['chat-core']['models'] == ('peto', 'luna', 'haiku')
+    settings = suite_settings()
+    assert settings.validate(cases) == 48
+    for model in settings.models:
+        # Trần của tab Trò chuyện, không phải 1.024 của v1.
+        assert settings.output_cap(model) == policy(model)['output'] > 1024
+        assert settings.output_chars(model) >= settings.output_cap(model) * 8
+    assert replace(settings, max_output_tokens=4096).output_cap('haiku') == 4096
+    assert Settings().output_cap('haiku') == 1024 and Settings().output_chars('haiku') == 32_768
+    for bad in (replace(settings, suite='khong-co'), replace(settings, max_output_tokens=200_000),
+                replace(settings, max_output_tokens=127), Settings(max_output_tokens=None),
+                Settings(max_output_tokens=4096)):
+        with pytest.raises(EvalError):
+            bad.validate(cases)
+    raw = json.loads(suite_datasets('chat-core')[0].read_text(encoding='utf-8'))
+    with pytest.raises(EvalError, match='trùng'):
+        load_many([write_json(tmp_path / 'a.json', raw), write_json(tmp_path / 'b.json', raw)])
+
+
+def test_estimate_prints_request_token_and_usd_ceilings():
+    items = [case('one', turns=[turn('chào'), turn('tiếp')]), case('two')]
+    settings = Settings(models=('luna', 'haiku'), max_output_tokens=2000, suite='chat-core', repeat=2)
+    prompts = {(model, item.id, index): {'text': 'x' * 300} for model in settings.models
+               for item in items for index in range(len(item.turns))}
+    rates = {'gpt-6-luna': {'input': 2, 'output': 10, 'cached_input': 0.2}}
+    value = adapter.estimate(items, settings, prompts, rates)
+    luna, haiku = value['models']['luna'], value['models']['haiku']
+    assert value['planned_turns'] == 12 and value['max_calls'] == 60
+    assert luna['turns'] == 6 and luna['output_cap'] == 2000 and luna['output_tokens_max'] == 12_000
+    # Lượt hai được tính thêm một câu trả lời dài hết trần đầu ra.
+    assert luna['input_tokens_max'] == luna['input_tokens_known'] + 2 * 2000
+    assert luna['usd_max'] == round((luna['input_tokens_max'] * 2 + 12_000 * 10) / 1_000_000, 4)
+    assert haiku['usd_max'] is None and value['usd_max'] is None and value['unpriced'] == ['claude-haiku-5-5']
+    assert value['output_tokens_hard'] == 60 * 2000
+    lines = adapter.describe_estimate(value)
+    assert lines[0].startswith('Ước tính: 12 lượt, tối đa 60 request')
+    assert any('thiếu giá cho claude-haiku-5-5' in line for line in lines)
+    # Ký tự đầu vào mỗi request chặn trần đầu vào ước tính.
+    tight = adapter.estimate(items, replace(settings, max_input_chars=1000), prompts)
+    assert tight['models']['luna']['input_tokens_max'] <= 6 * 1150
+
+
+async def test_suite_lifts_the_side_call_output_cap_for_openai_and_claude(monkeypatch):
+    from ai import claude, gpt
+    from core import config
+    from test_claude import message_events, sdk_with_responses
+    from test_clock_tools import FakeStream
+    settings = replace(suite_settings(), mode='live', allow_paid=True)
+    kwargs = dict(system_prompt='Chỉ dẫn', messages=[ChatMessage('user', 'chào')], effort='low', web_search='off',
+                  tools_enabled=False)
+
+    def openai_sdk():
+        stream = FakeStream([SimpleNamespace(type='response.output_text.delta', delta='Đã hiểu.'),
+            SimpleNamespace(type='response.completed', response=SimpleNamespace(model='gpt-6-luna', usage=None,
+                output=[], status='completed'))])
+        return SimpleNamespace(responses=SimpleNamespace(create=AsyncMock(return_value=stream)), close=AsyncMock(),
+                               max_retries=2, timeout=600)
+    monkeypatch.setattr(gpt, 'OPENAI_API_KEY', 'khoa-gia')
+    for lifted in (False, True):
+        sdk = openai_sdk()
+        create = sdk.responses.create
+        monkeypatch.setattr(gpt, 'AsyncOpenAI', lambda **_: sdk)
+        provider, _ = adapter.make_provider('luna', settings, adapter.CallBudget(settings))
+        with adapter.output_caps(settings if lifted else Settings()):
+            _ = [chunk async for chunk in provider.stream(**kwargs)]
+        sent = create.call_args.kwargs['max_output_tokens']
+        # Không có bộ bài thì provider vẫn tự chặn lượt không công cụ ở 1.024 như cũ.
+        assert sent == (settings.output_cap('luna') if lifted else 1024)
+        await adapter.close_provider(provider)
+
+    sdk, calls, _ = sdk_with_responses(message_events([{'type': 'text', 'text': 'Xong.'}]))
+    monkeypatch.setattr(config, 'ANTHROPIC_API_KEY', 'khoa-gia')
+    monkeypatch.setattr(claude, 'AsyncAnthropic', lambda **_: sdk)
+    provider, _ = adapter.make_provider('haiku', settings, adapter.CallBudget(settings))
+    try:
+        with adapter.output_caps(settings):
+            assert 'Xong.' in [chunk async for chunk in provider.stream(**kwargs)]
+        assert calls[0]['max_tokens'] == settings.output_cap('haiku') > 1024
+    finally:
+        await adapter.close_provider(provider)
+    budget = adapter.CallBudget(settings)
+    with pytest.raises(adapter.BudgetExceeded):
+        budget.claim({'max_output_tokens': settings.output_cap('haiku') + 1}, settings.output_cap('haiku'))
+    assert budget.used == 0
+
+
+def test_cli_mock_chat_core_prints_estimate_and_writes_results(tmp_path, monkeypatch, capsys):
+    import evals.__main__ as cli
+    from ai import mock
+    # configure() đổi biến môi trường của tiến trình; conftest đã đặt mock và DB tạm.
+    monkeypatch.setattr(cli, 'configure', lambda *args: None)
+    monkeypatch.setattr(mock, '_CHUNK_DELAY', 0)
+    assert main(['plan', '--suite', 'chat-core', '--clock', '2026-11-12T00:00:00+00:00']) == 0
+    planned = capsys.readouterr().out
+    assert 'Kế hoạch: 13 bài, 48 lượt (bộ chat-core' in planned and 'Ước tính: 48 lượt, tối đa 60 request' in planned
+    assert 'Chưa gọi API' in planned
+    assert main(['run', '--suite', 'chat-core', '--dataset', str(DATASET)]) == 2
+    assert 'không dùng cả hai' in capsys.readouterr().err
+    out = tmp_path / 'chay'
+    assert main(['run', '--suite', 'chat-core', '--concurrency', '4', '--clock', '2026-11-12T00:00:00+00:00',
+                 '--output', str(out)]) == 0
+    printed = capsys.readouterr().out
+    # Cùng mốc giờ thì ước tính in ở plan và ở run trùng nhau.
+    estimate_lines = [line for line in planned.splitlines() if line.startswith(('Ước tính', '- ', 'Tổng'))]
+    assert estimate_lines and all(line in printed for line in estimate_lines)
+    result = json.loads((out / 'results.json').read_text(encoding='utf-8'))
+    assert result['suite'] == 'chat-core' and result['finished'] and result['request_count'] == 48
+    assert [row['name'] for row in result['manifest']['datasets']] == [path.name for path in suite_datasets('chat-core')]
+    assert result['settings']['max_output_tokens'] is None and result['settings']['timeout'] == 300
+    assert result['estimate']['planned_turns'] == 48
+    turns = [row for sample in result['samples'] for row in sample['turns']]
+    assert len(turns) == 48 and all(row['status'] == 'complete' and row['first_text_ms'] is not None for row in turns)
+    summary = json.loads((out / 'summary.json').read_text(encoding='utf-8'))
+    assert [row['model'] for row in summary['models']] == ['haiku', 'luna', 'peto']
+    assert all(row['first_text']['samples'] == 16 and row['cache_read_ratio'] is None for row in summary['models'])
+    text = (out / 'report.md').read_text(encoding='utf-8')
+    assert '## Theo model' in text and '## Ước tính in trước khi chạy' in text and 'bộ `chat-core`' in text
+    review = json.loads((out / 'review.json').read_text(encoding='utf-8'))
+    assert len(review['samples']) == 48
+
+
+def test_cache_ratio_reports_unknown_instead_of_zero():
+    assert report.cache_ratio({'input_tokens': None, 'cache_read_tokens': 5}) is None
+    assert report.cache_ratio({'input_tokens': 200, 'cache_read_tokens': None}) is None
+    assert report.cache_ratio({'input_tokens': 200, 'cache_read_tokens': 50}) == 0.25

@@ -18,24 +18,26 @@ def parser():
     commands = cli.add_subparsers(dest='command', required=True)
     for name in ('list', 'plan', 'run'):
         command = commands.add_parser(name, help={'list': 'Xem bài và model.', 'plan': 'Xem kế hoạch, không gọi API.', 'run': 'Chạy bộ bài.'}[name])
-        command.add_argument('--dataset', type=Path, default=Path(__file__).with_name('cases.json'))
+        command.add_argument('--dataset', type=Path, help='Mặc định evals/cases.json; không dùng cùng --suite.')
+        command.add_argument('--suite', help='Bộ bài đặt tên, ví dụ chat-core: gom nhiều dataset, dùng trần đầu ra của app.')
         command.add_argument('--persona', choices=('all', 'chat', 'companion'), default='all')
         command.add_argument('--group', choices=('all', 'identity', 'conversation', 'memory', 'reasoning', 'truth', 'protocol'), default='all')
         command.add_argument('--cases', nargs='+')
-        command.add_argument('--models', nargs='+', default=['peto'])
+        command.add_argument('--models', nargs='+', help='Mặc định peto; với --suite là model của bộ bài.')
         command.add_argument('--effort', default='low')
         command.add_argument('--mode', choices=('mock', 'live'), default='mock')
         command.add_argument('--allow-paid', action='store_true', help='Chấp nhận API trả phí cho đúng lần run này.')
         command.add_argument('--repeat', type=int, default=1)
         command.add_argument('--concurrency', type=int, default=1)
-        command.add_argument('--timeout', type=float, default=90)
+        command.add_argument('--timeout', type=float, help='Giây mỗi lượt; mặc định 90, với --suite là 300 vì câu trả lời dài hơn.')
         command.add_argument('--max-calls', type=int, default=60)
-        command.add_argument('--max-output-tokens', type=int, default=1024)
+        command.add_argument('--max-output-tokens', type=int,
+                             help='Mặc định 1024 (128–1024); với --suite là trần của app cho từng model.')
         command.add_argument('--max-input-chars', type=int, default=60_000)
         command.add_argument('--clock', help='Mốc ISO có múi giờ để so sánh prompt giữa các lần chạy.')
+        command.add_argument('--rates', type=Path, help='Bảng giá USD/1 triệu token theo slug, để ước tính chi phí.')
         if name == 'run':
             command.add_argument('--output', type=Path)
-            command.add_argument('--rates', type=Path)
     report = commands.add_parser('report', help='Xuất lại báo cáo và nhận điểm người chấm.')
     report.add_argument('directory', type=Path)
     report.add_argument('--rates', type=Path)
@@ -63,7 +65,7 @@ def configure(mode: str, temporary: str):
 
 
 def execute(args) -> int:
-    from .schema import EvalError, load_cases, read_json, Settings
+    from .schema import EvalError, read_json, Settings
     from .report import compare, load_rates, load_ratings, write_report
     if args.command == 'report':
         result = read_json(args.directory / 'results.json', limit=100_000_000)
@@ -85,7 +87,11 @@ def execute(args) -> int:
         print(f'Đã xuất so sánh: {args.output}')
         return 0
     from ai.models import MODELS, supported_efforts
-    all_cases = load_cases(args.dataset)
+    from .schema import load_many, SUITES, suite_datasets
+    if args.suite and args.dataset:
+        raise EvalError('Chọn --suite hoặc --dataset, không dùng cả hai.')
+    datasets = suite_datasets(args.suite) if args.suite else [args.dataset or Path(__file__).with_name('cases.json')]
+    all_cases = load_many(datasets)
     if args.cases and set(args.cases) - {case.id for case in all_cases}:
         raise EvalError('Có mã bài không tồn tại trong dataset.')
     cases = [case for case in all_cases if (args.persona == 'all' or case.persona == args.persona)
@@ -97,22 +103,32 @@ def execute(args) -> int:
         for case in cases:
             print(f'{case.id}: {case.persona}/{case.group}, {len(case.turns)} lượt — {case.title}')
         return 0
-    settings = Settings(args.mode, tuple(args.models), args.effort, args.repeat, args.concurrency,
-                        args.timeout, args.max_calls, args.max_output_tokens, args.max_input_chars, args.allow_paid)
+    models = tuple(args.models or (SUITES[args.suite]['models'] if args.suite else ('peto',)))
+    output = args.max_output_tokens if args.max_output_tokens is not None else (None if args.suite else 1024)
+    timeout = args.timeout if args.timeout is not None else (300 if args.suite else 90)
+    settings = Settings(args.mode, models, args.effort, args.repeat, args.concurrency,
+                        timeout, args.max_calls, output, args.max_input_chars, args.allow_paid, args.suite)
     # plan chỉ đọc: không đòi đồng ý trả phí và không kiểm/gọi credential.
     planned = replace(settings, allow_paid=True).validate(cases) if args.command == 'plan' else settings.validate(cases)
-    print(f'Kế hoạch: {len(cases)} bài, {planned} lượt, model {", ".join(settings.models)}, effort {settings.effort}.')
-    print(f'Giới hạn: {settings.max_calls} request, {settings.max_output_tokens} token đầu ra/request, '
+    rates = load_rates(args.rates)
+    clock = datetime.fromisoformat(args.clock) if args.clock else datetime.now(UTC).replace(microsecond=0)
+    if clock.tzinfo is None:
+        raise EvalError('--clock cần có múi giờ, ví dụ 2026-10-09T00:00:00+00:00.')
+    from .adapter import describe_estimate, estimate, prepare_prompts
+    # Prompt ghép bằng fixture trong tiến trình, không gọi API; runner ghép lại đúng như vậy với cùng mốc giờ.
+    forecast = estimate(cases, settings, asyncio.run(prepare_prompts(cases, settings.models, clock)), rates)
+    suite = f" (bộ {args.suite}: {SUITES[args.suite]['title']})" if args.suite else ''
+    print(f'Kế hoạch: {len(cases)} bài, {planned} lượt{suite}, model {", ".join(settings.models)}, effort {settings.effort}.')
+    caps = ', '.join(f'{model} {settings.output_cap(model)}' for model in settings.models)
+    print(f'Giới hạn: {settings.max_calls} request, token đầu ra/request: {caps}, '
           f'{settings.max_input_chars} ký tự đầu vào/request, {settings.timeout:g} giây/lượt, '
           f'{settings.concurrency} hội thoại đồng thời.')
     print('Tắt công cụ/tìm web, không retry SDK, không ghi nhớ nền hoặc tạo tiêu đề.')
+    for line in describe_estimate(forecast):
+        print(line)
     if args.command == 'plan':
         print('Chưa gọi API. Khi chạy LIVE, phí thuộc billing của khóa trên máy chạy lệnh; không có trần USD tuyệt đối.')
         return 0
-    rates = load_rates(args.rates)
-    clock = datetime.fromisoformat(args.clock) if args.clock else None
-    if clock is not None and clock.tzinfo is None:
-        raise EvalError('--clock cần có múi giờ, ví dụ 2026-10-09T00:00:00+00:00.')
     if settings.mode == 'live':
         from .adapter import ensure_credentials
         ensure_credentials(settings.models)
@@ -122,7 +138,8 @@ def execute(args) -> int:
     directory = args.output or Path(__file__).resolve().parents[2] / 'benchmark-output' / (
         datetime.now(UTC).strftime('%Y%m%d-%H%M%S') + '-' + settings.mode + '-' + uuid.uuid4().hex[:8])
     from .runner import run, save_json
-    result = asyncio.run(run(cases, settings, args.dataset, directory, clock=clock,
+    result = asyncio.run(run(cases, settings, datasets if args.suite else datasets[0], directory, clock=clock,
+                            estimate=forecast,
                             progress=lambda model, case_id, repeat: print(f'Đã chạy {model}/{case_id}, lần {repeat}.')))
     result['rates'] = rates
     save_json(directory / 'results.json', result)

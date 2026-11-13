@@ -100,7 +100,7 @@ def summarize(result: dict, rates: dict | None = None, ratings: dict | None = No
         key = sample['model'], sample['persona'], sample['group']
         group = groups.setdefault(key, {'model': key[0], 'persona': key[1], 'group': key[2], 'turns': 0,
                                        'outcomes': defaultdict(int), 'check_passed': 0, 'check_total': 0,
-                                       'critical_failed_turns': 0, 'latency': [], 'first_visible': [], 'calls': [],
+                                       'critical_failed_turns': 0, 'latency': [], 'first_visible': [], 'first_text': [], 'calls': [],
                                        'quality': defaultdict(list), 'quality_pending': 0})
         for turn in sample['turns']:
             group['turns'] += 1
@@ -110,6 +110,8 @@ def summarize(result: dict, rates: dict | None = None, ratings: dict | None = No
                 group['latency'].append(turn['elapsed_ms'])
                 if turn['first_visible_ms'] is not None:
                     group['first_visible'].append(turn['first_visible_ms'])
+                if turn.get('first_text_ms') is not None:
+                    group['first_text'].append(turn['first_text_ms'])
             group['calls'].extend(turn['calls'])
             group['check_total'] += len(turn['checks'])
             group['check_passed'] += sum(check['passed'] for check in turn['checks'])
@@ -138,13 +140,55 @@ def summarize(result: dict, rates: dict | None = None, ratings: dict | None = No
         group['timeout_rate'] = group['outcomes'].get('timeout', 0) / attempted if attempted else None
         group['estimated_usd'] = sum(costs) if costs and all(cost is not None for cost in costs) else None
         group['priced_calls'] = sum(cost is not None for cost in costs)
+        group['cache_read_ratio'] = cache_ratio(group)
         group['latency'] = distribution(group['latency'])
         group['first_visible'] = distribution(group['first_visible'])
+        group['first_text'] = distribution(group['first_text'])
         group['outcomes'] = dict(group['outcomes'])
         group['quality'] = {name: {'mean': round(sum(values) / len(values), 2), 'samples': len(values)}
                             for name, values in group['quality'].items()}
         rows.append(group)
-    return {'run_id': result['run_id'], 'mode': result['mode'], 'finished': result['finished'], 'groups': rows}
+    return {'run_id': result['run_id'], 'mode': result['mode'], 'finished': result['finished'], 'groups': rows,
+            'models': by_model(result, rates)}
+
+
+def cache_ratio(row: dict) -> float | None:
+    """Phần token đầu vào đọc từ cache; None khi nhà cung cấp không báo đủ, không coi là 0."""
+    if not row.get('input_tokens') or row.get('cache_read_tokens') is None:
+        return None
+    return round(row['cache_read_tokens'] / row['input_tokens'], 4)
+
+
+def by_model(result: dict, rates: dict) -> list[dict]:
+    """Gộp theo model cho bộ bài: chữ đầu tiên, token cache và chi phí, để so ba model trên cùng một bảng."""
+    from ops.report import distribution
+    rows = {}
+    for sample in result['samples']:
+        row = rows.setdefault(sample['model'], {'model': sample['model'], 'turns': 0, 'complete': 0,
+                                               'first_text': [], 'latency': [], 'calls': []})
+        for turn in sample['turns']:
+            row['turns'] += 1
+            row['calls'].extend(turn['calls'])
+            if turn['status'] == 'complete':
+                row['complete'] += 1
+                row['latency'].append(turn['elapsed_ms'])
+                if turn.get('first_text_ms') is not None:
+                    row['first_text'].append(turn['first_text_ms'])
+    output = []
+    for key in sorted(rows):
+        row = rows[key]
+        calls = row.pop('calls')
+        usage = [call['usage'] for call in calls if call.get('usage') is not None]
+        costs = [call_cost(call, rates) for call in calls]
+        row['request_count'], row['usage_reported_calls'] = len(calls), len(usage)
+        for field in ('input_tokens', 'output_tokens', 'cache_read_tokens', 'cache_write_tokens', 'reasoning_tokens'):
+            row[field] = sum(u[field] for u in usage) if calls and len(usage) == len(calls) and all(u.get(field) is not None for u in usage) else None
+        row['cache_read_ratio'] = cache_ratio(row)
+        row['estimated_usd'] = sum(costs) if costs and all(cost is not None for cost in costs) else None
+        row['first_text'] = distribution(row['first_text'])
+        row['latency'] = distribution(row['latency'])
+        output.append(row)
+    return output
 
 
 def markdown(result: dict, summary: dict) -> str:
@@ -154,12 +198,27 @@ def markdown(result: dict, summary: dict) -> str:
              '**MOCK — chỉ kiểm tra công cụ, không dùng để xếp hạng model.**' if result['mode'] == 'mock' else '**LIVE — phản hồi API thật, chất lượng cần người chấm.**', '',
              f"Lần chạy: `{result['run_id']}`. Hoàn tất: {result['finished']}.",
              f"Commit: `{result['manifest']['commit']}`; mã chưa commit: {result['manifest']['dirty']}.",
-             f"Dataset: `{result['manifest']['dataset_sha256']}`.", '', result['scope'], '',
+             f"Dataset: `{result['manifest']['dataset_sha256']}`"
+             + (f" (bộ `{result['suite']}`: " + ', '.join(row['name'] for row in result['manifest'].get('datasets', [])) + ')'
+                if result.get('suite') else '') + '.', '', result['scope'], '',
              '| Model / persona / nhóm | Hoàn tất / lượt | Phép kiểm tra đạt | Lượt lỗi nghiêm trọng | Chữ hiện đầu p50 / p95 (ms) | Tổng p50 / p95 (ms) | USD ước tính |',
              '|---|---:|---:|---:|---|---|---|']
     for row in summary['groups']:
         first, total = row['first_visible'], row['latency']
         lines.append(f"| {row['model']} / {row['persona']} / {row['group']} | {row['outcomes'].get('complete', 0)}/{row['turns']} | {row['check_passed']}/{row['check_total']} | {row['critical_failed_turns']} | {shown(first['p50_ms'])} / {shown(first['p95_ms'])} | {shown(total['p50_ms'])} / {shown(total['p95_ms'])} | {shown(row['estimated_usd'])} |")
+    lines += ['', '## Theo model', '',
+              'Chữ đầu tiên tính từ lúc gửi tới mảnh chữ đầu (chưa lọc), chỉ các lượt hoàn tất. Tỉ lệ cache là token đầu '
+              'vào đọc từ cache chia tổng token đầu vào nhà cung cấp báo.', '',
+              '| Model | Hoàn tất / lượt | Chữ đầu p50 / p95 (ms) | Tổng p50 / p95 (ms) | Input / output token | Cache đọc / ghi token | Tỉ lệ cache | USD ước tính |',
+              '|---|---:|---|---|---|---|---:|---|']
+    for row in summary.get('models', []):
+        first, total = row['first_text'], row['latency']
+        ratio = 'chưa có dữ liệu' if row['cache_read_ratio'] is None else f"{row['cache_read_ratio']:.1%}"
+        lines.append(f"| {row['model']} | {row['complete']}/{row['turns']} | {shown(first['p50_ms'])} / {shown(first['p95_ms'])} | {shown(total['p50_ms'])} / {shown(total['p95_ms'])} | {shown(row['input_tokens'])} / {shown(row['output_tokens'])} | {shown(row['cache_read_tokens'])} / {shown(row['cache_write_tokens'])} | {ratio} | {shown(row['estimated_usd'])} |")
+    if result.get('estimate'):
+        from .adapter import describe_estimate
+        lines += ['', '## Ước tính in trước khi chạy', ''] + [line if line.startswith('- ') else f'- {line}'
+                                                                for line in describe_estimate(result['estimate'])]
     lines += ['', '## Usage và lỗi lượt', '',
               '| Model / persona / nhóm | Usage / request SDK | Input / output token | Cache đọc / ghi token | Lỗi / timeout |',
               '|---|---:|---|---|---|']
@@ -216,5 +275,5 @@ def compare(results: list[dict], summaries: list[dict] | None = None) -> str:
             quality = '; '.join(f"{key}: {value['mean']}/5 ({value['samples']})" for key, value in sorted(row['quality'].items())) or 'chưa chấm'
             cost = row['estimated_usd'] if row['estimated_usd'] is not None else 'chưa có dữ liệu'
             first = row['first_visible']['p50_ms']
-            lines.append(f"| {result['run_id'][:8]} | {result['mode']} | {result['settings']['effort']} / {result['settings']['max_output_tokens']} | {result['manifest']['dataset_sha256'][:12]} | {row['model']} / {row['persona']} / {row['group']} | {row['outcomes'].get('complete', 0)}/{row['turns']} | {row['critical_failed_turns']} | {first if first is not None else 'chưa có dữ liệu'} | {cost} | {quality} |")
+            lines.append(f"| {result['run_id'][:8]} | {result['mode']} | {result['settings']['effort']} / {result['settings']['max_output_tokens'] or 'mức app'} | {result['manifest']['dataset_sha256'][:12]} | {row['model']} / {row['persona']} / {row['group']} | {row['outcomes'].get('complete', 0)}/{row['turns']} | {row['critical_failed_turns']} | {first if first is not None else 'chưa có dữ liệu'} | {cost} | {quality} |")
     return '\n'.join(lines) + '\n'

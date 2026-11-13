@@ -21,6 +21,7 @@ line once it has been tried, and record the result in the area's note file. Paid
 
 - [ ] Real Claude prompt-cache hit rates on the admin page after deployment — `chat.md`, "Model choice (Peto and GPT-6)".
 - [ ] Grok answer quality and real token counts under the English Chat prompt — `chat.md`, "English model instructions, provider overlays, no roleplay mode".
+- [ ] G2.1: first LIVE run of `python -m evals run --suite chat-core --mode live --allow-paid` (covers the personality, log, reassess and stage-4 lines below); check the printed estimate against the real bill, and whether Haiku/Luna answers at the full Chat output cap fit in 300 s — `chat.md`, "LIVE eval suite `chat-core` (G2.1)".
 - [ ] LIVE run of `evals/chat-personality-cases.json`; real tone from the owner's chats — `chat.md`, "Web Chat personality".
 - [ ] LIVE run of `evals/chat-log-cases.json` (log workflow) — `chat.md`, "Tools survey and log workflow".
 - [ ] Real-model use of the document readback `check` — `chat.md`, "Tools survey and log workflow".
