@@ -498,6 +498,12 @@ muted line "Peto không viết gì cho lượt này." (`.message-silent`), with 
   muted line only appeared after a reload. Cause: `App.tsx` treated a finished reply with no text as browser-only
   (`local`), so `ChatMessage` did not consider it complete. Fix (branch `silent-reply-live`): a completed reply that has a
   server message id counts as stored even when empty; `App.test.tsx` covers it (fails without the fix, checked).
+- The two narrated lines were real reply text, not leaked reasoning: the logs show 24 and 13 output tokens beyond the
+  reasoning tokens. Only Grok does this, so only the Grok Chat overlay (`prompts/providers.XAI_CHAT_PROMPT`) gained a
+  "Requests for no reply" section: write no reply text and never a sentence about deciding not to reply (branch
+  `grok-silent-prompt`). Luna and Haiku prompts, and their caches, are unchanged; Peto's cache resets once on deploy.
+  The Agent CLI bundles `providers.py` (`agent-cli/tools/make_bundle.py`), so the bundle was regenerated; the Agent
+  does not use the Chat overlay, so no CLI version bump. Backend 2,141 passed, 1 skipped; agent-cli 755 passed.
 
 ## Real-app check of G1.2/G1.3, and turns no longer wait for the summary lock (G1.3b) (2026-11-13, committed on branch `g1.3b-no-lock-wait`, not deployed)
 

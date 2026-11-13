@@ -3,4 +3,4 @@
 Sinh tự động bởi agent-cli/tools/make_bundle.py; đừng sửa tay.
 """
 
-SOURCE_DIGEST = "0c46b98c425f593434f04ddc0847f19407cbd931c2ab3cfdd933b961e5300f43"
+SOURCE_DIGEST = "090ef0bbf89c3cb0825d8636a08c74cbb405f2363a1cbdc9129db675bc6a9289"
