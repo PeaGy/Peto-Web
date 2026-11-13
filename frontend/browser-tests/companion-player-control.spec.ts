@@ -42,7 +42,9 @@ async function setup(page: Page, mobile: boolean, favorites: { video_id: string;
   async function issue(action: PlayerCommand['action'], values: Partial<PlayerCommand> = {}, twice = false) {
     const before = await send(action, values, twice);
     await expect.poll(() => results.length, { timeout: 12000 }).toBe(before + (twice ? 2 : 1));
-    await expect(page.locator('.companion-panel button[type="submit"]')).toHaveCount(1);
+    // Lượt đã xong: nút Dừng biến mất. (Nút Gửi là type="button" từ khi có chọn phím gửi, và điện thoại hiện micro khi
+    // ô nhắn trống, nên không đếm nút Gửi được nữa.)
+    await expect(page.locator('.companion-panel .cchat-stop')).toHaveCount(0);
     return results.at(-1)!;
   }
   return { issue, send, hide, apiRequests, state, results };
@@ -77,6 +79,8 @@ test.describe('voice ducking', () => {
     await issue('play_video', { tracks: [tracks[0]], window_revision: 0 });
     await issue('hide');
     await composer(page).fill('Typing alone keeps the chosen level'); expect(await nativeVolume(page)).toBe(60);
+    // Điện thoại chỉ hiện micro khi ô nhắn trống (nút Gửi đứng chỗ đó khi có chữ, từ e96fd91).
+    await composer(page).fill('');
     await page.getByRole('button', { name: 'Bật nghe', exact: true }).click();
     await expect(page.locator('.hearing-mic')).toHaveClass(/waiting/); expect(await nativeVolume(page)).toBe(60);
     const speech = (start: boolean) => page.evaluate(start => {

@@ -71,6 +71,8 @@ test('bật nói chen trong Cài đặt rồi ngắt SSE và tiếng; giữ micr
   await page.getByRole('button', { name: 'Companion', exact: true }).click();
   const composer = page.getByRole('textbox', { name: 'Nhắn cho Peto trong Companion' });
   const panel = page.getByRole('region', { name: 'Trò chuyện trong Companion' });
+  // Trạng thái (đang nói, bộ não…) không còn hiện thành chữ, chỉ còn trong vùng đọc màn hình ở đầu khung chat.
+  const status = panel.locator('.cchat-head > [aria-live="polite"]');
   await expect(page.getByRole('button', { name: 'Tắt tiếng', exact: true })).toBeVisible();
   // Cài đặt Companion (/companion/settings/, từ 13/10/2026): bánh răng (cạnh nút Profile từ 26/10/2026) → Mô-đun → Nghe.
   await page.getByRole('button', { name: 'Cài đặt Companion' }).click();
@@ -110,7 +112,7 @@ test('bật nói chen trong Cài đặt rồi ngắt SSE và tiếng; giữ micr
   await expect.poll(async () => (await state()).turns.length).toBe(1);
   await emit(0, { type: 'meta', conversation_id: 'A', effort: 'low', voice_stream: true });
   await emit(0, { type: 'delta', text: 'Let me explain. ' });
-  await expect(panel.getByText('Đang nói…', { exact: true })).toBeVisible();
+  await expect(status).toContainText('Đang nói…');
   expect((await state()).recognitions).toEqual([false]);
   await composer.fill('Actually,');
   await say('wait please', false);
@@ -121,19 +123,21 @@ test('bật nói chen trong Cài đặt rồi ngắt SSE và tiếng; giữ micr
   await expect(panel.getByText(/Late old words/)).toHaveCount(0);
   await say('wait please, I meant something else', true);
   await expect(composer).toHaveValue('Actually, wait please, I meant something else');
-  await expect(page.locator('.hearing-mic')).toHaveClass(/waiting/);
+  // Điện thoại (như AIRI, từ e96fd91): ô nhắn có chữ thì nút Gửi đứng chỗ micro, nên chỉ máy tính còn thấy micro.
+  if (test.info().project.name === 'mobile') await expect(panel.getByRole('button', { name: 'Gửi', exact: true })).toBeVisible();
+  else await expect(page.locator('.hearing-mic')).toHaveClass(/waiting/);
   expect((await state()).recognitions).toEqual([false]);
   await panel.getByRole('button', { name: 'Gửi', exact: true }).click();
   await expect.poll(async () => (await state()).turns.length).toBe(2);
   await emit(1, { type: 'meta', conversation_id: 'A', effort: 'low', voice_stream: true });
   await emit(1, { type: 'delta', text: 'A fresh reply. ' });
   await emit(1, { type: 'done' });
-  await expect(panel.getByText('Đang nói…', { exact: true })).toBeVisible();
+  await expect(status).toContainText('Đang nói…');
   // Đã nhận hết chữ nhưng tiếng vẫn đang đọc cũng ngắt được, không tạo lại bộ nghe.
   await say('One more thing', true);
   await expect(composer).toHaveValue('One more thing');
   await expect.poll(async () => (await state()).audios.at(-1)).toBe(true);
-  await expect(panel.getByText('Đang nói…', { exact: true })).toHaveCount(0);
+  await expect(status).not.toContainText('Đang nói…');
   expect((await state()).recognitions).toEqual([false]);
   expect((await state()).turns).toHaveLength(2);
   await noPageOverflow(page);

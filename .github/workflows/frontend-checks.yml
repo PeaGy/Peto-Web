@@ -22,21 +22,51 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - name: Cài thư viện
         run: npm ci
-      - name: Cài trình duyệt kiểm thử
-        run: npx playwright install chromium
       - name: Kiểm tra quy tắc mã (hook React)
         run: npm run lint
       - name: Kiểm tra logic
         run: npm test
       - name: Build giao diện
         run: npm run build
-      - name: Kiểm tra PC và mobile
-        run: npm run test:browser
+      - name: Kiểm tra kiểu của bộ test trình duyệt
+        run: npx tsc -p browser-tests/tsconfig.json
+
+  # Bộ test trình duyệt chạy riêng, chia theo PC/điện thoại và hai nửa. Chạy chung một job thì vượt giới hạn 15 phút và
+  # bị hủy giữa chừng (mọi lượt từ #129 tới #147, tháng 11/2026), nên không ai thấy test nào hỏng.
+  browser:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [pc, mobile]
+        shard: ['1/2', '2/2']
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Cài thư viện
+        run: npm ci
+      - name: Cài trình duyệt kiểm thử
+        run: npx playwright install chromium
+      - name: Kiểm tra ${{ matrix.project }} (phần ${{ matrix.shard }})
+        run: npx playwright test --project=${{ matrix.project }} --shard=${{ matrix.shard }}
+      - name: Đặt tên tệp kết quả
+        if: always()
+        id: name
+        shell: bash
+        run: echo "value=ket-qua-${{ matrix.project }}-$(echo '${{ matrix.shard }}' | tr '/' '-')" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v4
         # Giữ cả báo cáo flaky khi lần thử lại đã qua, để lỗi tạm thời vẫn có dấu vết.
         if: always()
         with:
-          name: ket-qua-frontend
+          name: ${{ steps.name.outputs.value }}
           path: |
             frontend/test-results/
             frontend/playwright-report/
