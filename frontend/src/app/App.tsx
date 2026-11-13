@@ -28,15 +28,12 @@ import { diagramBlocks } from "../features/diagrams/diagrams";
 import { diagramPanel } from "../features/diagrams/diagramPanelLazy";
 import LazyBoundary from "../shared/ui/LazyBoundary";
 import { AdminDashboard, Companion, CompanionSettings, Imagine, loadCompanion, loadImagine, loadSettings, preload, usePreloadWhenIdle } from './lazyViews';
-import { useLocalVoice } from "../features/companion/speech/LocalVoice";
 import AgentConnectDialog, { forgetAgentCode, takeAgentCode } from "../features/settings/AgentConnectDialog";
 import AccountMenu, { placeAccountMenu, type AccountMenuPlace } from "./AccountMenu";
 import SettingsDialog, { CLOSED_SETTINGS, type SettingsSection, type SettingsView } from "../features/settings/SettingsDialog";
 import { forgetSettingsLink, takeSettingsLink } from "../features/settings/settingsLink";
 import { SettingsIcon } from "../features/settings/settingsUi";
-import { useCharacters } from '../features/companion/characters/useCharacters';
-import { activeCard, setActiveCardModel, useCompanionCards } from '../features/companion/cards/companionCards';
-import { readCharacterMotion, writeCharacterMotion, type CharacterMotion } from "../features/companion/characters/characterView";
+import { useCompanionShell } from './useCompanionShell';
 import Composer from "../features/chat/Composer";
 import ChatFileDropZone from '../features/chat/ChatFileDropZone';
 import { useChatDrafts } from '../features/chat/useChatDrafts';
@@ -46,6 +43,7 @@ import { CHAT_SELECTION_ERROR, useChatSelection } from '../features/chat/useChat
 import { newChatContext, type NewChatContext } from '../features/chat/chatDrafts';
 import TextEditDialog from '../shared/ui/TextEditDialog';
 import HistorySearch from './HistorySearch';
+import { useConversationList, useRefreshConversations, useTitlePolling } from './useConversationList';
 import { renderAppSettings, type AppSettingsContext } from './appSettings';
 import ConversationMenu from './ConversationMenu';
 import DocumentWorkspace from '../features/documents/DocumentWorkspace';
@@ -63,7 +61,6 @@ import {
   getAppInfo,
   getAuthState,
   getMessages,
-  listConversations,
   updateConversation,
   logout,
   type AppInfo,
@@ -76,10 +73,6 @@ import {
   type WebSearchMode,
 } from "../shared/api/api";
 
-// Tải danh sách hội thoại hỏng thì thử lại một lần sau chừng này mili giây rồi mới báo. Ngày 21/10/2026 một lần tải sau
-// lượt chat không tới được máy chủ (log VPS chỉ có 200 OK) mà banner đỏ vẫn hiện, và không tự tắt khi tải lại được.
-const LIST_ERROR = "Không tải được danh sách hội thoại. Thử tải lại nhé.";
-const LIST_RETRY_MS = 2000;
 
 // Old messages keep their rendered Markdown while the draft or current reply changes.
 export default function App() {
@@ -111,7 +104,8 @@ function AppContent() {
   // Liên kết ?settings=<mục> (Peto Agent bản desktop mở ?settings=agent): mở Cài đặt ở mục đó sau khi vào app.
   const [settingsLink, setSettingsLink] = useState<SettingsSection | null>(takeSettingsLink);
 
-  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const conversationList = useConversationList();
+  const { conversations, hasMore, loadingList, listCount, resetList } = conversationList;
   const [activeProjectId, setActiveProjectId] = useState<string|null>(null);
   const activeProjectRef = useRef(activeProjectId);
   activeProjectRef.current = activeProjectId;
@@ -152,8 +146,6 @@ function AppContent() {
   const [collapsed, setCollapsed] = useState(readStoredCollapsed);
   const [loadingConversation, setLoadingConversation] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
-  const [hasMore, setHasMore] = useState(false);
-  const [loadingList, setLoadingList] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Conversation | null>(null);
   const [deleting, setDeleting] = useState(false);
   // Hội thoại nhập vai cũ đang mở: chế độ nhập vai bỏ ngày 2026-10-18, các hội thoại ấy chỉ còn để xem.
@@ -173,26 +165,9 @@ function AppContent() {
   const [stopping, setStopping] = useState(false);
   const [theme, setTheme] = useState<ThemeChoice>(readStoredTheme);
   const [motion, setMotion] = useState<MotionChoice>(readMotionChoice);
-  const [characterMotion, setCharacterMotion] = useState<CharacterMotion>(readCharacterMotion);
-  const characters = useCharacters();
-  const characterIds = useMemo(() => characters.models.map(model => model.id), [characters.models]);
-  // Model hiển thị thuộc thẻ nhân vật đang dùng ("Body / Display Model" của thẻ AIRI): người dùng đổi nhân vật (trang
-  // Nhân vật, nhập model mới) thì ghi vào thẻ. Bỏ qua giá trị đầu tiên, để model của máy này không đè thẻ từ máy khác.
-  const selectedCharacter = characters.selected.id;
-  const lastCharacter = useRef<string | undefined>(undefined);
-  useEffect(() => {
-    if (characters.loading) return;
-    if (lastCharacter.current !== undefined && lastCharacter.current !== selectedCharacter) {
-      void setActiveCardModel(selectedCharacter).catch(() => {});
-    }
-    lastCharacter.current = selectedCharacter;
-  }, [selectedCharacter, characters.loading]);
-  const [sceneRequest, setSceneRequest] = useState(0);
-  const [playerRequest, setPlayerRequest] = useState(0);
-  const changeCharacterMotion = useCallback((value: CharacterMotion) => {
-    setCharacterMotion(value);
-    writeCharacterMotion(value);
-  }, []);
+  const { characterMotion, changeCharacterMotion, characters, characterIds, sceneRequest, playerRequest, setPlayerRequest,
+    companionVisited, setCompanionVisited, localVoice, openHearingSettings, openCompanionSettings, openCompanionCards, openCharacters,
+    openScenes, openPlayer } = useCompanionShell(view, navigate, companionSettingsView);
   // Hộp Cài đặt: mở hay đóng, mục đang xem, và trên điện thoại đang ở danh sách mục hay trang của mục.
   const [settings, setSettings] = useState<SettingsView>(CLOSED_SETTINGS);
   const settingsOpen = settings.open;
@@ -236,33 +211,6 @@ function AppContent() {
     window.addEventListener('keydown', openSearch);
     return () => window.removeEventListener('keydown', openSearch);
   }, [streaming]);
-  const [companionVisited, setCompanionVisited] = useState(view === "companion");
-  // Giọng nói dùng chung cho Companion và mục Giọng nói trong Cài đặt. Chỉ dò 127.0.0.1 sau khi đã mở
-  // Companion hoặc lúc Cài đặt đang mở, để tab Trò chuyện không gọi gì ra máy.
-  // Giọng nói dùng ở Companion và trang cài đặt của nó (cũng là tab Companion), nên chỉ dò sau khi đã mở Companion.
-  // Thẻ nhân vật đang dùng có giọng riêng (Mô-đun của thẻ) thì Companion đọc bằng giọng đó.
-  const companionCards = useCompanionCards();
-  const cardVoiceChoice = activeCard(companionCards)?.modules.voice;
-  const cardVoice = useMemo(() => (cardVoiceChoice?.source
-    ? { source: cardVoiceChoice.source, model: cardVoiceChoice.model, voice: cardVoiceChoice.voice } : null),
-  [cardVoiceChoice?.source, cardVoiceChoice?.model, cardVoiceChoice?.voice]);
-  const localVoice = useLocalVoice(companionVisited, cardVoice);
-  // Nút cài đặt trong bảng Micro mở thẳng trang Nghe của Cài đặt Companion.
-  const openHearingSettings = useCallback(() => navigate(companionSettingsRoute('hearing')), [navigate]);
-  const openCompanionSettings = useCallback(() => navigate(companionSettingsRoute('home')), [navigate]);
-  // "Quản lý Profile" trong menu Profile: trang Thẻ nhân vật.
-  const openCompanionCards = useCallback(() => navigate(companionSettingsRoute('cards')), [navigate]);
-  // Đổi nhân vật (tên nhân vật, nút người cạnh sân khấu, mục Nhân vật trên thanh bên điện thoại): trang Cài đặt → Nhân vật.
-  const openCharacters = useCallback(() => navigate(companionSettingsRoute('character')), [navigate]);
-  // Mục Bối cảnh trên thanh bên điện thoại: ở sân khấu thì mở hộp Bối cảnh, ở trang cài đặt thì sang trang Bối cảnh.
-  const openScenes = useCallback(() => {
-    if (companionSettingsView) navigate(companionSettingsRoute('scene'));
-    else setSceneRequest(value => value + 1);
-  }, [companionSettingsView, navigate]);
-  const openPlayer = useCallback(() => {
-    navigate(VIEW_PATHS.companion);
-    setPlayerRequest(value => value + 1);
-  }, [navigate]);
   useEffect(() => {
     if (settingsOpen || !settingsReturn.current) return;
     settingsReturn.current.focus({ preventScroll: true });
@@ -281,8 +229,6 @@ function AppContent() {
   const fileRef = useRef<HTMLInputElement>(null);
   const loadRef = useRef<AbortController | null>(null);
   const loadVersion = useRef(0);
-  const listVersion = useRef(0);
-  const listCount = useRef(50);
   const nearBottom = useRef(true);
   const messagesRef = useRef<HTMLDivElement>(null);
   const pendingMessageFocus = useRef<{ conversationId: string; messageId: number } | null>(null);
@@ -390,7 +336,6 @@ function AppContent() {
     resetPanels();
     authVersion.current += 1;
     loadVersion.current += 1;
-    listVersion.current += 1;
     loadRef.current?.abort();
     abortRef.current?.abort();
     // Giữ lại danh sách cách đăng nhập đã biết. Dựng state mới toanh ở đây làm
@@ -402,7 +347,7 @@ function AppContent() {
       providers: prev?.providers,
     }));
     setMessages([]);
-    setConversations([]);
+    resetList();
     setActiveProjectId(null); resetProjectDialogs(); setMetadataBusy(false);
     setSearchOpen(false);
     setConversationMenu(null);
@@ -421,7 +366,6 @@ function AppContent() {
     setWebSearch("auto");
     setLegacyRoleplay(false);
     setLoadingConversation(false);
-    setLoadingList(false);
     // Rác của tài khoản trước. Máy chủ vẫn lọc theo owner nên không lộ nội dung
     // của ai, nhưng người kế tiếp không có lý do gì phải thấy danh sách ảnh cũ
     // nhấp nháy, hay ô soạn bị khóa vì một lần tải hỏng của người trước.
@@ -432,10 +376,8 @@ function AppContent() {
     setDeleteTarget(null);
     setSettings(CLOSED_SETTINGS);
     setAccountMenu(null);
-    setHasMore(false);
-    listCount.current = 50;
     setAuthError("Phiên đăng nhập đã hết hạn hoặc tài khoản không còn được cho phép.");
-  }, [clearDrafts, resetProjectDialogs, resetPanels]);
+  }, [clearDrafts, resetProjectDialogs, resetPanels, resetList]);
 
   const chatSelection = useChatSelection(auth?.authenticated ? auth.user?.id ?? 'authenticated' : null,
     auth?.user?.models ?? [], handleUnauthorized,
@@ -445,47 +387,8 @@ function AppContent() {
   const projectState = useProjects(auth?.authenticated ? auth.user?.id ?? 'authenticated' : null, handleUnauthorized);
   const refreshProjects = projectState.refresh;
   const refreshProjectChats = projectState.refreshChats;
-  const refreshConversations = useCallback(async () => {
-    const version = ++listVersion.current;
-    setLoadingList(true);
-    try {
-      const load = async () => {
-        const all: Conversation[] = [];
-        let more = true;
-        while (more && all.length < listCount.current) {
-          const page = await listConversations(all.length, 50, '', {unassigned:true});
-          if (version !== listVersion.current) return null;
-          all.push(...page.conversations);
-          more = page.has_more;
-          if (!page.conversations.length) break;
-        }
-        return { all, more };
-      };
-      let loaded;
-      try {
-        loaded = await load();
-      } catch (err) {
-        if (err instanceof UnauthorizedError || version !== listVersion.current) throw err;
-        // Trục trặc mạng thoáng qua: thử lại một lần, im lặng, trước khi báo lỗi.
-        await new Promise(resolve => window.setTimeout(resolve, LIST_RETRY_MS));
-        if (version !== listVersion.current) return;
-        loaded = await load();
-      }
-      if (!loaded) return;
-      setConversations(loaded.all);
-      setHasMore(loaded.more);
-      // Lần tải trước hỏng nhưng lần này được: tắt banner của chính lỗi đó, không đụng lỗi khác.
-      setError(previous => previous === LIST_ERROR ? null : previous);
-      void refreshProjects();
-      if (activeProjectRef.current) void refreshProjectChats(activeProjectRef.current);
-    } catch (err) {
-      if (version !== listVersion.current) return;
-      if (err instanceof UnauthorizedError) handleUnauthorized();
-      else setError(LIST_ERROR);
-    } finally {
-      if (version === listVersion.current) setLoadingList(false);
-    }
-  }, [handleUnauthorized,refreshProjects,refreshProjectChats]);
+  const refreshConversations = useRefreshConversations(conversationList, { handleUnauthorized, refreshProjects, refreshProjectChats,
+    activeProjectRef, setError });
 
   const recovery = useReplyRecovery({
     scope: auth?.authenticated ? auth.user?.id ?? 'authenticated' : null,
@@ -509,30 +412,8 @@ function AppContent() {
   const waitingForTitle = allConversations.some(item =>
     item.id === conversationId && (item.title_state === 'pending' ||
       (item.title_state === 'temporary' && (item.title_attempts || 0) < 3)));
-  useEffect(() => {
-    if (!auth?.authenticated || view !== 'chat' || streaming || !waitingForTitle) return;
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout>;
-    let attempts = 0;
-    const poll = async () => {
-      try {
-        const page = await listConversations(0,50,'',activeProjectId ? {projectId:activeProjectId} : {unassigned:true});
-        if (cancelled) return;
-        setConversations(current => current.map(item => {
-          const fresh = page.conversations.find(row => row.id === item.id);
-          return fresh ? { ...item, title: fresh.title, title_state: fresh.title_state, title_attempts: fresh.title_attempts } : item;
-        }));
-        if (activeProjectId) void refreshProjectChats(activeProjectId);
-      } catch { /* A later refresh can recover; do not interrupt typing. */ }
-      if (!cancelled && ++attempts < 12) timer = setTimeout(poll, 2500);
-    };
-    timer = setTimeout(poll, 1500);
-    return () => { cancelled = true; clearTimeout(timer); };
-  }, [auth?.user?.id, auth?.authenticated, view, conversationId, streaming, waitingForTitle,activeProjectId,refreshProjectChats]);
-
-  useEffect(() => {
-    if (auth?.authenticated) void refreshConversations();
-  }, [auth?.authenticated, refreshConversations]);
+  useTitlePolling(conversationList, { authenticated: auth?.authenticated, userId: auth?.user?.id, view, conversationId, streaming,
+    waitingForTitle, activeProjectId, refreshProjectChats, refreshConversations });
 
   usePreloadWhenIdle(auth?.authenticated);
 
