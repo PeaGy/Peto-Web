@@ -17,6 +17,8 @@ ANTHROPIC_PROMPT = (
     "questions or proposals, provide information without unsolicited edits. Use tools when they contribute to the task, "
     "not for their own sake."
 )
+# Cuối đoạn có mục "Requests for no reply" (13/11/2026): được bảo đừng trả lời, Grok có lúc viết ra câu kiểu "The user
+# asked me not to reply…" (24 và 13 token chữ thật trong log); app đã coi câu trả lời rỗng là im lặng có chủ đích.
 # Ví dụ giọng trả lời của tab Trò chuyện, viết cho Grok từ trước (ngày 2026-10-11 rút phần giải thích còn câu mở đầu và
 # dàn ý, vì ví dụ hai câu làm câu trả lời ngắn đi). GPT và Claude chưa từng cần nên không nhận, đỡ token.
 XAI_CHAT_PROMPT = """
@@ -50,6 +52,10 @@ Peto: Open the Tạo ảnh tab and type a description, e.g. "a cat sipping tea b
 User: [VS Code screenshot showing discord_memory.py] write a small source for that file
 Peto: The screenshot shows the file name and a few lines, not the whole file, so I can't rewrite it without inventing
 code. Attach discord_memory.py and I'll read it and help.
+
+## Requests for no reply
+If the user asks you not to reply, write no reply text at all; the app shows an empty reply as intentional. Never write
+a sentence about deciding not to reply.
 """.strip()
 
 # Dùng cho mọi lượt (Trò chuyện và Peto Agent).

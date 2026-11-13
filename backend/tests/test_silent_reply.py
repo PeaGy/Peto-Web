@@ -56,3 +56,11 @@ async def test_a_provider_error_with_no_text_is_still_an_error(client, monkeypat
     assert request['type'] == 'meta'
     turn = await chat_turns.latest(TEST_OWNER, request['conversation_id']) if hasattr(chat_turns, 'latest') else None
     assert turn is None or turn['state'] != 'complete'
+
+
+def test_only_grok_is_told_to_stay_silent_without_narrating():
+    """Thử thật 13/11/2026: chỉ Grok viết câu thuật lại quyết định không trả lời; Luna và Haiku không cần câu này."""
+    from prompts.chat import chat_prompt
+    rule = '## Requests for no reply'
+    assert rule in chat_prompt('peto')
+    assert rule not in chat_prompt('luna') and rule not in chat_prompt('haiku')
