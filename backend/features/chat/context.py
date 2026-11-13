@@ -100,7 +100,7 @@ async def _metadata(owner, cid, boundary, state):
         return scope['project_id'], dict(first) if first else None, count[0]
 
 
-async def _window(owner, cid, prompt, rows, cap, info, convert):
+async def _window(owner, cid, prompt, rows, cap, info, convert, save=True):
     """Cửa sổ lịch sử gửi nguyên văn (G1.2): bắt đầu từ mốc đã lưu, chỉ dời mốc một khối lớn.
 
     Trước đây cửa sổ là 20 tin mới nhất nên mỗi lượt mới đẩy tin cũ nhất ra và tiền tố request đổi ở mọi lượt (prompt
@@ -108,7 +108,7 @@ async def _window(owner, cid, prompt, rows, cap, info, convert):
     sẵn) và không quá ``cap`` tin. Vượt một trong hai thì cắt phần đầu tới khi còn tối đa nửa phần ngân sách dành cho lịch
     sử và nửa ``cap``, ở đầu một tin người dùng, rồi lưu mốc mới; các lượt sau giữ mốc đó tới lần vượt kế tiếp.
     ``rows`` là tối đa ``cap`` tin mới nhất (cũ trước); tin đầu tiên của ``rows`` mới hơn mốc nghĩa là từ mốc tới nay
-    đã quá ``cap`` tin."""
+    đã quá ``cap`` tin. ``save=False`` (tóm tắt nền): tính mốc như thường nhưng không lưu; chỉ lượt Chat dời mốc."""
     reserve = min(12_000, info['input'] // 3)
     start = await store.window_start(owner, cid)
     if start and (not rows or start > rows[-1]['id']):
@@ -131,22 +131,29 @@ async def _window(owner, cid, prompt, rows, cap, info, convert):
             else:
                 low = middle + 1
         recent, history = best if best else (recent[cuts[-1]:], await convert(recent[cuts[-1]:]))
-        await store.set_window_start(owner, cid, recent[0]['id'])
-    elif not start and len(rows) >= cap and recent:
+        if save:
+            await store.set_window_start(owner, cid, recent[0]['id'])
+    elif save and not start and len(rows) >= cap and recent:
         # Lần đầu đầy trần: ghi mốc để lượt sau không trượt theo "cap tin mới nhất".
         await store.set_window_start(owner, cid, recent[0]['id'])
     return recent, history
 
 
-async def prepare(owner, cid, model, prompt, rows, project_documents, window, *, summarize_now=True):
+async def prepare(owner, cid, model, prompt, rows, project_documents, window, *, summarize_now=True, save_window=True):
     """``summarize_now=False`` (lượt Chat, G1.3): không gọi model tóm tắt trước câu trả lời; dùng bản tóm tắt đã có, phần
-    chưa tóm tắt ghi là chưa đại diện trong envelope, và báo ``summary_due`` để chạy ``compact`` sau lượt."""
+    chưa tóm tắt ghi là chưa đại diện trong envelope, và báo ``summary_due`` để chạy ``compact`` sau lượt.
+
+    Khóa theo hội thoại chỉ dành cho lần chạy có tóm tắt (ghi bản tóm tắt). Lượt Chat không lấy khóa: chỉ đọc bản đã lưu
+    nên không phải chờ một lần tóm tắt nền của lượt trước còn đang chạy (đo trên app thật 13/11/2026: lượt gửi ngay sau
+    chờ thêm 1,9 giây ở bước chuẩn bị). ``save_window=False``: không dời mốc cửa sổ (tóm tắt nền)."""
+    if not summarize_now:
+        return await _prepare(owner, cid, model, prompt, rows, project_documents, window, summarize_now, save_window)
     key = (owner, cid)
     lock = _locks.get(key)
     if lock is None:
         lock = _locks[key] = asyncio.Lock()
     async with lock:
-        return await _prepare(owner, cid, model, prompt, rows, project_documents, window, summarize_now)
+        return await _prepare(owner, cid, model, prompt, rows, project_documents, window, summarize_now, save_window)
 
 
 async def compact(owner, cid, model, prompt, window, project_documents=()):
@@ -159,12 +166,13 @@ async def compact(owner, cid, model, prompt, window, project_documents=()):
     try:
         rows = await get_messages(owner, cid, limit=window)
         if rows:
-            await prepare(owner, cid, model, prompt, rows, list(project_documents), window)
+            # Không dời mốc cửa sổ: lượt Chat (không giữ khóa) là nơi duy nhất ghi mốc, nên hai bên không ghi đè nhau.
+            await prepare(owner, cid, model, prompt, rows, list(project_documents), window, save_window=False)
     except Exception as error:
         logger.warning('Chưa tóm tắt được context Chat sau lượt (%s).', type(error).__name__)
 
 
-async def _prepare(owner, cid, model, prompt, rows, project_documents, window, summarize_now=True):
+async def _prepare(owner, cid, model, prompt, rows, project_documents, window, summarize_now=True, save_window=True):
     from storage.conversations import get_messages
     info = policy(model)
     # Dành chỗ cho schema, tool kết quả, summary và mốc thời gian; adapter kiểm lại request thật ở từng vòng.
@@ -176,7 +184,7 @@ async def _prepare(owner, cid, model, prompt, rows, project_documents, window, s
     async def convert(source):
         return await anyio.to_thread.run_sync(lambda: _to_chat_messages(context_rows(source), project_documents,
                                                                        document_budget=document_budget))
-    recent, history = await _window(owner, cid, prompt, recent, window, info, convert)
+    recent, history = await _window(owner, cid, prompt, recent, window, info, convert, save=save_window)
     if tokens(prompt, history) + 2048 > info['input']:
         raise ContextOverflow('Tin nhắn và tài liệu hiện tại quá dài cho ngân sách Chat; hãy chia nhỏ nội dung.')
     boundary = recent[0]['id']
