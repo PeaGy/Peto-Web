@@ -477,6 +477,23 @@ with `--rates`, USD) ceiling before running, and adds per-model time-to-first-te
 
 # Dated log (newest first)
 
+## Real-app check of G1.2/G1.3, and turns no longer wait for the summary lock (G1.3b) (2026-11-13, committed on branch `g1.3b-no-lock-wait`, not deployed)
+
+Checked on the real app (`5afb4af`, Grok, low effort, web off) with a conversation of ~9,400-character messages:
+- Turns 1–7 read 78–89% from the cache. Turn 8 crossed the 64,000-token budget (estimated 50,745 the turn before):
+  the window cut once (real input 40,212 → 24,620, `chat_windows.start_id` saved) and that turn read 5% because the
+  history reader tool joined `tools` when older messages became hidden. Turns 9–11 kept the same cut and fingerprint
+  and read 81%, 84%, 86%.
+- G1.3: every turn's first text came after 2.8–4.1 s, including the cut turn; the summary ran after the reply (11.8–13.1 s
+  each, one 16,000-character batch per turn) and its cursor reached the cut after two turns.
+- Found: the per-conversation lock was shared, so a turn sent right after a reply waited for that reply's background
+  summary (`prepare_ms` 1,876 instead of ~150). Fix: the Chat turn (`summarize_now=False`) no longer takes the lock, since
+  it only reads the saved summary; only summary runs take it. `compact` runs `prepare(..., save_window=False)`: it computes
+  the cut the same way but never saves it, so the turn is the only writer of `chat_windows` and the two cannot overwrite
+  each other; the next turn (one more message) cuts at the same place or later, so the summary cursor stays before it.
+- Tests (`test_chat_window.py`): a turn completes while another task holds the conversation lock (fails with the old
+  locking, checked); a background summary never moves the window and stays before the next turn's cut.
+
 ## Chat summary after the reply (G1.3) (2026-11-13, committed on branch `g1.3-background-summary`, not deployed)
 
 Audit package G1.3. Before it, `context.prepare` called the summary model inside the turn, before the first text, when

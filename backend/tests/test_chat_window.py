@@ -116,3 +116,39 @@ async def test_window_start_is_owner_scoped(summarizer):
     await store.set_window_start(TEST_OWNER, cid, 5)
     assert await store.window_start('discord:someone-else', cid) == 0
     assert await store.window_start(TEST_OWNER, cid) == 5
+
+
+async def test_a_turn_does_not_wait_for_a_background_summary_holding_the_lock(summarizer):
+    """G1.3b: trên app thật, lượt gửi ngay sau lượt trước chờ thêm 1,9 giây vì tóm tắt nền giữ khóa hội thoại. Lượt Chat
+    chỉ đọc bản tóm tắt đã lưu nên không lấy khóa đó."""
+    import asyncio
+    await db.init_db()
+    cid = await db.create_conversation(TEST_OWNER)
+    await add_turns(cid, 4)
+    lock = context._locks.setdefault((TEST_OWNER, cid), asyncio.Lock())
+    await lock.acquire()
+    try:
+        rows = await db.get_messages(TEST_OWNER, cid, limit=200)
+        result = await asyncio.wait_for(context.prepare(TEST_OWNER, cid, 'peto', 'Peto', rows, [], 200,
+                                                        summarize_now=False), 2)
+        assert len(result.history) == 8
+    finally:
+        lock.release()
+
+
+async def test_background_summary_never_moves_the_window(monkeypatch, summarizer):
+    await db.init_db()
+    cid = await db.create_conversation(TEST_OWNER)
+    small_budget(monkeypatch)
+    await add_turns(cid, 14, size=600)
+    await context.compact(TEST_OWNER, cid, 'peto', 'Peto', 200)
+    assert await store.window_start(TEST_OWNER, cid) == 0
+    # Vẫn tóm tắt tới mốc mà lượt sau sẽ cắt, không vượt quá nó.
+    assert summarizer
+    rows = await db.get_messages(TEST_OWNER, cid, limit=200)
+    await db.add_message(cid, 'user', 'Lượt mới: ' + 'c' * 600)
+    rows = await db.get_messages(TEST_OWNER, cid, limit=200)
+    result = await context.prepare(TEST_OWNER, cid, 'peto', 'Peto', rows, [], 200, summarize_now=False)
+    start = await store.window_start(TEST_OWNER, cid)
+    assert start and (await store.state(TEST_OWNER, cid))['cursor_id'] < start
+    assert result.history[0].content.startswith('Câu hỏi')
