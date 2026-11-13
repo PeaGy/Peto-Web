@@ -629,7 +629,7 @@ async function openCompanionSettings() {
   if (!screen.queryByRole('region', { name: 'Trò chuyện trong Companion' })) {
     fireEvent.click(await screen.findByRole('button', { name: 'Companion', exact: true }));
   }
-  const column = within(await screen.findByRole('region', { name: 'Trò chuyện trong Companion' }));
+  await screen.findByRole('region', { name: 'Trò chuyện trong Companion' });
   // Bánh răng ở hàng trên cùng, cạnh nút Profile (Header của AIRI), không còn trong cột chat.
   fireEvent.click(await screen.findByRole('button', { name: 'Cài đặt Companion' }));
   return within(await screen.findByRole('main', { name: 'Cài đặt' }));

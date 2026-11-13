@@ -24,6 +24,8 @@ jobs:
         run: npm ci
       - name: Cài trình duyệt kiểm thử
         run: npx playwright install chromium
+      - name: Kiểm tra quy tắc mã (hook React)
+        run: npm run lint
       - name: Kiểm tra logic
         run: npm test
       - name: Build giao diện
