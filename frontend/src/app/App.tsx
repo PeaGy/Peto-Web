@@ -2,13 +2,12 @@ import { usePreferencesPersistence } from './usePreferencesPersistence';
 import LoginScreen from './LoginScreen';
 import { forgetChatLogin, rememberChatLogin, takeChatLogin } from './chatLoginReturn';
 import { BrowserRouter, useLocation, useNavigate } from 'react-router';
-import { appPath, appView, chatId, chatRoute, companionCardId, companionCardRoute, companionProviderId, companionProviderRoute, companionSettingsPage, companionSettingsRoute, legacyPath, VIEW_PATHS } from './routes';
-import { EditIcon } from '../shared/ui/EditIcon';
+import { appPath, appView, chatId, chatRoute, companionSettingsPage, legacyPath, VIEW_PATHS } from './routes';
 import Sidebar from './Sidebar';
 import { useSidebarKeyboard } from './useSidebarKeyboard';
 import { ChatReplyStatus } from '../features/chat/ChatReplyStatus';
 import { useProjects } from '../features/projects/useProjects';
-import ProjectSidebar, { FolderIcon } from '../features/projects/ProjectSidebar';
+import ProjectSidebar from '../features/projects/ProjectSidebar';
 import { projectActions, renderProjectDialogs, useProjectDialogs, type ProjectActionsContext } from '../features/projects/projectDialogs';
 import ProjectChatHeader from '../features/projects/ProjectChatHeader';
 import { ChatMessage } from '../features/chat/ChatMessage';
@@ -16,36 +15,34 @@ import { disconnectStream, useReplyRecovery } from '../features/chat/useReplyRec
 import { ReplyRecoveryNotice } from '../features/chat/ReplyRecoveryNotice';
 import { Greeting } from '../features/chat/Greeting';
 import { LoadingIndicator } from '../shared/ui/LoadingIndicator';
-import { MenuIcon, PinIcon } from './navigationIcons';
+import { MenuIcon } from './navigationIcons';
 import { PetoAvatar, AccountAvatar, accountSubtitle } from './accountUi';
 import { EFFORTS, readStoredTheme, readStoredCollapsed, type ThemeChoice, type AppView } from './preferences';
 import { isReducedMotion, readMotionChoice, type MotionChoice } from '../shared/motion';
-import { MAX_FILES, MAX_MEDIA_FILES, MAX_FILE_BYTES, MAX_TOTAL_BYTES, isImageFile, isMediaFile } from '../features/chat/attachments';
 import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import '../shared/styles/styles.css';
 import { DiagramContext } from "../features/diagrams/DiagramCard";
 import { diagramBlocks } from "../features/diagrams/diagrams";
 import { diagramPanel } from "../features/diagrams/diagramPanelLazy";
 import LazyBoundary from "../shared/ui/LazyBoundary";
-import { AdminDashboard, Companion, CompanionSettings, Imagine, loadCompanion, loadImagine, loadSettings, preload, usePreloadWhenIdle } from './lazyViews';
+import { loadCompanion, loadImagine, loadSettings, preload, usePreloadWhenIdle } from './lazyViews';
 import AgentConnectDialog, { forgetAgentCode, takeAgentCode } from "../features/settings/AgentConnectDialog";
 import AccountMenu, { placeAccountMenu, type AccountMenuPlace } from "./AccountMenu";
 import SettingsDialog, { CLOSED_SETTINGS, type SettingsSection, type SettingsView } from "../features/settings/SettingsDialog";
 import { forgetSettingsLink, takeSettingsLink } from "../features/settings/settingsLink";
-import { SettingsIcon } from "../features/settings/settingsUi";
 import { useCompanionShell } from './useCompanionShell';
 import Composer from "../features/chat/Composer";
 import ChatFileDropZone from '../features/chat/ChatFileDropZone';
 import { useChatDrafts } from '../features/chat/useChatDrafts';
 import { useChatPanels } from '../features/chat/useChatPanels';
+import { useComposerDock } from '../features/chat/useComposerDock';
+import { useDraftFileActions } from '../features/chat/useDraftFileActions';
 import { editDraftNotice, useEditDraftCheck, type EditDraftNoticeContext } from '../features/chat/useEditDraftCheck';
 import { CHAT_SELECTION_ERROR, useChatSelection } from '../features/chat/useChatSelection';
 import { newChatContext, type NewChatContext } from '../features/chat/chatDrafts';
-import TextEditDialog from '../shared/ui/TextEditDialog';
-import HistorySearch from './HistorySearch';
+import { renderConversationDialogs, renderFeatureViews } from './appViews';
 import { useConversationList, useRefreshConversations, useTitlePolling } from './useConversationList';
 import { renderAppSettings, type AppSettingsContext } from './appSettings';
-import ConversationMenu from './ConversationMenu';
 import DocumentWorkspace from '../features/documents/DocumentWorkspace';
 import DocumentPanel, { RightPanelIcon } from '../features/documents/DocumentPanel';
 import { takeConnectorResult } from '../features/connectors/connectorApi';
@@ -277,22 +274,6 @@ function AppContent() {
     requestAnimationFrame(() => messagesRef.current?.querySelector<HTMLButtonElement>(`button[data-revise="${id}"]`)?.focus({ preventScroll: true }));
   };
   const deleteDialogRef = useRef<HTMLDialogElement>(null);
-  const composerRef = useRef<HTMLFormElement>(null);
-  const chatDockRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const dock = chatDockRef.current;
-    const chat = dock?.parentElement;
-    if (!dock || !chat || typeof ResizeObserver === 'undefined') return;
-    const measure = () => chat.style.setProperty('--chat-dock-height', `${dock.getBoundingClientRect().height}px`);
-    const observer = new ResizeObserver(measure);
-    observer.observe(dock);
-    measure();
-    return () => observer.disconnect();
-  }, [auth?.authenticated, view]);
-  const composerBoxRef = useRef<HTMLDivElement>(null);
-  // Chỗ ô nhắn đứng lúc còn ở giữa màn hình, đo ngay trước khi gửi tin đầu.
-  const composerFrom = useRef<number | null>(null);
-  const composerMove = useRef<Animation | null>(null);
   const authVersion = useRef(0);
 
   useEffect(() => {
@@ -435,53 +416,7 @@ function AppContent() {
     else deleteDialogRef.current?.close();
   }, [deleteTarget]);
 
-  const addFiles = useCallback((list: FileList | File[]) => {
-    if (abortRef.current) return false;
-    const incoming = Array.from(list);
-    let accepted = false;
-    setError(null);
-    setDraftFiles((prev) => {
-      const next = [...prev];
-      for (const file of incoming) {
-        if (next.length >= MAX_FILES) {
-          setError(`Mỗi tin chỉ gửi tối đa ${MAX_FILES} tệp`);
-          break;
-        }
-        if (isMediaFile(file) && next.filter((item) => isMediaFile(item.file)).length >= MAX_MEDIA_FILES) {
-          setError(`Mỗi tin chỉ gửi tối đa ${MAX_MEDIA_FILES} ảnh, PDF, Word hoặc Excel`);
-          continue;
-        }
-        if (file.size > MAX_FILE_BYTES) {
-          setError(`«${file.name}» quá nặng (tối đa 8 MB)`);
-          continue;
-        }
-        const duplicate = next.some(
-          (item) => item.file.name === file.name && item.file.size === file.size,
-        );
-        if (duplicate) continue;
-        if (next.reduce((total, item) => total + item.file.size, 0) + file.size > MAX_TOTAL_BYTES) {
-          setError("Tổng tệp đính kèm tối đa 16 MB mỗi tin.");
-          continue;
-        }
-        next.push({
-          id: crypto.randomUUID(),
-          file,
-          previewUrl: isImageFile(file) ? URL.createObjectURL(file) : null,
-        });
-        accepted = true;
-      }
-      return next;
-    });
-    return accepted;
-  }, [setDraftFiles]);
-
-  function removeDraftFile(id: string) {
-    setDraftFiles((prev) => {
-      const target = prev.find((item) => item.id === id);
-      if (target?.previewUrl) URL.revokeObjectURL(target.previewUrl);
-      return prev.filter((item) => item.id !== id);
-    });
-  }
+  const { addFiles, removeDraftFile } = useDraftFileActions(setDraftFiles, abortRef, setError);
 
   // Cuộc trò chuyện còn trống thì lời chào và ô nhắn đứng chung giữa màn hình như
   // Claude; có tin nhắn là ô nhắn về đáy (CSS .chat.empty-state).
@@ -496,33 +431,7 @@ function AppContent() {
   const effortOptions = EFFORTS.filter(item => item.value === 'auto' || supportedEfforts.includes(item.value));
   const effectiveEffort = effortOptions.some(item => item.value === effort) ? effort : 'auto';
 
-  // Chỉ lần gửi tin đầu mới trượt ô nhắn xuống (FLIP): mắt người dùng đang ở đúng
-  // ô đó, để nó nhảy cóc là mất dấu. Mở hội thoại hay tạo cuộc mới là điều hướng,
-  // làm nhiều lần trong ngày, nên đổi ngay không hiệu ứng.
-  useLayoutEffect(() => {
-    const from = composerFrom.current;
-    composerFrom.current = null;
-    if (emptyChat) {
-      composerMove.current?.cancel();
-      return;
-    }
-    const form = composerRef.current;
-    const box = composerBoxRef.current;
-    if (from === null || !form || !box || typeof form.animate !== "function") return;
-    const distance = from - box.getBoundingClientRect().top;
-    // Điện thoại giữ ô nhắn ở đáy cả hai lúc, nên không có gì để trượt.
-    if (Math.abs(distance) < 1) return;
-    if (isReducedMotion()) {
-      // Giảm chuyển động: bỏ quãng trượt, chỉ để ô nhắn hiện dần ở chỗ mới.
-      composerMove.current = form.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 200, easing: "ease" });
-      return;
-    }
-    const easing = getComputedStyle(document.documentElement).getPropertyValue("--ease-in-out").trim();
-    composerMove.current = form.animate(
-      [{ transform: `translateY(${distance}px)` }, { transform: "none" }],
-      { duration: 300, easing: easing || "ease-in-out" },
-    );
-  }, [emptyChat]);
+  const { composerRef, chatDockRef, composerBoxRef, composerFrom } = useComposerDock(emptyChat, auth?.authenticated, view);
 
   // /admin chỉ dành cho chủ web; tài khoản khác gõ thẳng địa chỉ thì về trang chủ (API cũng trả 404 cho họ).
   useEffect(() => {
@@ -852,79 +761,10 @@ function AppContent() {
       />
 
       {/* Key nằm ở lớp bọc ngoài cùng để thêm một tab đã ghé không khiến tab bên cạnh bị dựng lại. */}
-      {(imageVisited || view === 'imagine') && (
-        <LazyBoundary key={`imagine-${auth.user?.id}`}>
-        <Suspense fallback={view === "imagine" ? <LoadingIndicator variant="screen" label="Loading" /> : null}>
-        <Imagine
-          key={`imagine-${auth.user?.id}`}
-          active={view === "imagine"}
-          onUnauthorized={handleUnauthorized}
-          onOpenSidebar={() => setSidebarOpen(true)}
-          onJobsChange={setImagineJobs}
-          libraryRequest={imagineLibraryRequest}
-          focusJobId={focusJobId}
-          onFocusHandled={clearFocusJob}
-        />
-        </Suspense>
-        </LazyBoundary>
-      )}
-      {(companionVisited || view === 'companion') && (
-        <LazyBoundary key={`companion-${auth.user?.id}`}>
-        <Suspense fallback={view === "companion" ? <LoadingIndicator variant="screen" label="Loading" /> : null}>
-        <Companion
-          key={`companion-${auth.user?.id}`}
-          ownerId={auth.user?.id}
-          active={view === "companion" && !companionSettingsView}
-          appInfo={appInfo}
-          voice={localVoice}
-          sceneRequest={sceneRequest}
-          playerRequest={playerRequest}
-          characterMotion={characterMotion}
-          character={characters.selected}
-          characterLoading={characters.loading}
-          characterIds={characterIds}
-          onSelectCharacter={characters.select}
-          onCharacterPreview={characters.savePreview}
-          onOpenCharacters={openCharacters}
-          onUnauthorized={handleUnauthorized}
-          onOpenSidebar={() => setSidebarOpen(true)}
-          onOpenHearingSettings={openHearingSettings}
-          onOpenSettings={openCompanionSettings}
-          onOpenCards={openCompanionCards}
-        />
-        </Suspense>
-        </LazyBoundary>
-      )}
-      {companionSettingsView && (
-        <LazyBoundary key={`companion-settings-${auth.user?.id}`}>
-        <Suspense fallback={<LoadingIndicator variant="screen" label="Loading" />}>
-        <CompanionSettings
-          key={`companion-settings-${auth.user?.id}`}
-          page={companionSettingsView}
-          providerId={companionProviderId(appPath(location))}
-          cardId={companionCardId(appPath(location))}
-          ownerId={auth.user?.id}
-          onNavigate={(page, id) => navigate(page === 'provider' ? companionProviderRoute(id ?? '')
-            : page === 'card' || page === 'card-edit' ? companionCardRoute(id ?? '', page === 'card-edit')
-            : companionSettingsRoute(page))}
-          onExit={() => navigate(VIEW_PATHS.companion)}
-          voice={localVoice}
-          library={characters}
-          motion={characterMotion}
-          onMotionChange={changeCharacterMotion}
-          fallbackUrl={appInfo?.avatar_url ?? undefined}
-          onUnauthorized={handleUnauthorized}
-        />
-        </Suspense>
-        </LazyBoundary>
-      )}
-      {view === 'admin' && auth.user?.is_owner && (
-        <LazyBoundary key={`admin-${auth.user?.id}`}>
-        <Suspense fallback={<LoadingIndicator variant="screen" label="Loading" />}>
-        <AdminDashboard onUnauthorized={handleUnauthorized} onForbidden={leaveAdmin} onOpenSidebar={() => setSidebarOpen(true)} />
-        </Suspense>
-        </LazyBoundary>
-      )}
+      {renderFeatureViews({ imageVisited, view, auth, handleUnauthorized, setSidebarOpen, setImagineJobs, imagineLibraryRequest, focusJobId,
+        clearFocusJob, companionVisited, companionSettingsView, appInfo, localVoice, sceneRequest, playerRequest, characterMotion,
+        characters, characterIds, openCharacters, openHearingSettings, openCompanionSettings, openCompanionCards, location, navigate,
+        changeCharacterMotion, leaveAdmin })}
       <DiagramContext.Provider value={diagramApi}>
       <ChatFileDropZone className={`chat-layout${documentPanelOpen || diagram ? ' documents-open' : ''}${documentPanelOpen && documentPanelExpanded ? ' documents-expanded' : ''}${sourcesIndex !== null ? ' sources-open' : ''}`} hidden={view !== 'chat'}
         enabled={!streaming && !loadingConversation && !loadFailed && !readOnly && !deleting && !settingsOpen && !searchOpen}
@@ -1093,28 +933,10 @@ function AppContent() {
       <SettingsDialog view={settings} onView={setSettings} onClose={closeSettings} render={renderSettings} />
       {agentCode && <AgentConnectDialog code={agentCode}
         onClose={() => { forgetAgentCode(); setAgentCode(null); }} onUnauthorized={handleUnauthorized} />}
-      {renameTarget && <TextEditDialog title="Đổi tên hội thoại" value={renameText} onChange={setRenameText} busy={metadataBusy} onClose={() => setRenameTarget(null)} onSave={() => void changeConversation(renameTarget, {title:renameText})}/>}
-      {searchOpen && <HistorySearch key={`history-search:${auth.user?.id ?? 'anonymous'}`} onClose={() => setSearchOpen(false)} onUnauthorized={handleUnauthorized} onSelect={id => {setSearchOpen(false); void openConversation(id);}}/>}
-      {conversationMenu && <ConversationMenu left={conversationMenu.left} top={conversationMenu.top} onClose={() => setConversationMenu(null)}>
-        <button onClick={() => {setRenameTarget(conversationMenu.item);setRenameText(conversationMenu.item.title);setConversationMenu(null);}}><EditIcon />Đổi tên</button>
-        <button disabled={metadataBusy} onClick={() => {void changeConversation(conversationMenu.item,{pinned:!conversationMenu.item.pinned});setConversationMenu(null);}}><PinIcon />{conversationMenu.item.pinned ? 'Bỏ ghim' : 'Ghim'}</button>
-        <button disabled={metadataBusy} onClick={()=>{setMoveTarget(conversationMenu.item);setProjectError('');setConversationMenu(null);void refreshProjects();}}><FolderIcon/>Chuyển vào dự án</button>
-        <button disabled={metadataBusy || streaming || deleting} onClick={() => {void changeConversation(conversationMenu.item, {archived:true}); setConversationMenu(null);}}><SettingsIcon name="archive"/>Lưu trữ</button>
-        <div className="popup-menu-sep" role="separator" />
-        <button className="danger-button" onClick={() => {setDeleteTarget(conversationMenu.item);setConversationMenu(null);}}><SettingsIcon name="trash"/>Xóa hội thoại</button>
-      </ConversationMenu>}
-      {renderProjectDialogs(projectContext, projectHandlers, { projectState })}
-      <dialog ref={deleteDialogRef} className="confirm-dialog" aria-labelledby="delete-title" onCancel={(event) => {
-        event.preventDefault();
-        if (!deleting) setDeleteTarget(null);
-      }}>
-        <h2 id="delete-title">Xóa hội thoại này?</h2>
-        <p>“{deleteTarget?.title || "Chưa có tiêu đề"}” và các tệp đính kèm sẽ bị xóa. Không thể hoàn tác.</p>
-        <div className="dialog-actions">
-          <button autoFocus disabled={deleting} onClick={() => setDeleteTarget(null)}>Giữ lại</button>
-          <button className="danger-button" disabled={deleting} onClick={() => deleteTarget && void removeConversation(deleteTarget.id)}>{deleting ? "Đang xóa…" : "Xóa hội thoại"}</button>
-        </div>
-      </dialog>
+      {renderConversationDialogs({ renameTarget, renameText, setRenameText, metadataBusy, setRenameTarget, changeConversation, searchOpen,
+        auth, setSearchOpen, handleUnauthorized, openConversation, conversationMenu, setConversationMenu, setMoveTarget, setProjectError,
+        refreshProjects, streaming, deleting, setDeleteTarget, deleteDialogRef, deleteTarget, removeConversation },
+        renderProjectDialogs(projectContext, projectHandlers, { projectState }))}
       <TooltipLayer />
     </div>
   );
