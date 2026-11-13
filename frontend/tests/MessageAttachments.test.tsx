@@ -79,9 +79,10 @@ describe('đính kèm của tin nhắn Chat', () => {
     expect(container.querySelector('.user-message-text')).toBeNull();
   });
 
-  it('tin văn bản và câu trả lời Peto giữ nội dung Markdown, không có nhóm đính kèm rỗng', () => {
+  it('tin văn bản hiện đúng chữ đã gõ (G4.1), câu trả lời Peto giữ Markdown, không có nhóm đính kèm rỗng', () => {
     const { container, rerender } = draw({ content: '**Lời nhắn**' });
-    expect(container.querySelector('.bubble.user strong')?.textContent).toBe('Lời nhắn');
+    expect(container.querySelector('.bubble.user strong')).toBeNull();
+    expect(container.querySelector('.bubble.user .user-plain-text')?.textContent).toBe('**Lời nhắn**');
     expect(container.querySelector('.user-message-text')).toBeNull();
     expect(screen.queryByRole('group')).toBeNull();
     rerender(<ChatMessage message={{ role: 'assistant', content: '**Câu trả lời**' }} live={false} writing={false} onEdit={() => {}} onPreview={() => {}} />);

@@ -19,6 +19,7 @@ import { CheckIcon, CopyIcon } from './messageUtilityIcons';
 import { useMessageCopy } from './useMessageCopy';
 import { mergeDisplaySources } from './sourceActivity';
 import { QuoteExcerpt } from './QuotedFollowup';
+import UserPlainText from './UserPlainText';
 
 const MarkdownRuntime = createContext<{ sources: WebSource[]; writing: boolean; user: boolean }>({ sources: [], writing: false, user: false });
 
@@ -96,7 +97,8 @@ export const ChatMessage = memo(function ChatMessage({ message, live, writing, o
               ) : null}
               {user && message.quoted_source && <QuoteExcerpt quote={message.quoted_source} onJump={onJumpQuote} />}
               {editor || (message.content ? <div ref={contentRef} className={`message-markdown${hasUserAttachments ? ' user-message-text' : ''}`} data-message-content>
-                <MarkdownRuntime.Provider value={runtime}><Markdown remarkPlugins={citationPlugins} rehypePlugins={rehypePlugins} components={MARKDOWN_COMPONENTS}>{text}</Markdown></MarkdownRuntime.Provider>
+                {user ? <UserPlainText text={message.content} />
+                  : <MarkdownRuntime.Provider value={runtime}><Markdown remarkPlugins={citationPlugins} rehypePlugins={rehypePlugins} components={MARKDOWN_COMPONENTS}>{text}</Markdown></MarkdownRuntime.Provider>}
               </div> : null)}
               {message.role === "assistant" && <WebSources sources={message.sources} web={message.work?.web}
                 onOpen={() => onOpenSources?.(sourceIndex)} expanded={sourcesExpanded} />}
