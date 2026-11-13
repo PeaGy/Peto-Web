@@ -7,7 +7,7 @@ Khối của máy chủ được nhận ra theo vị trí và kiểu ``ServerBlo
 chữ người dùng gõ hay dán có cùng tiêu đề chỉ là dữ liệu.
 """
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import json
 import re
 
@@ -64,6 +64,8 @@ class RequestContext:
     # Khối chỉ dẫn bật theo từ khóa của vài tin gần đây (prompt_context.keyword_guides): hướng dẫn Peto Agent, trang
     # /docs/, link YouTube, cách vẽ sơ đồ. Từ G1.1b nằm ở đây thay vì system, vì chúng bật tắt theo cửa sổ ba tin.
     guides: str = ''
+    # Khối runtime (đã bọc thẻ) provider vừa gắn vào tin người dùng hiện tại; service lưu để lượt sau gửi lại (G1.1c).
+    sent: list = field(default_factory=list, compare=False, repr=False)
 
     def __post_init__(self):
         if self.clock is None:

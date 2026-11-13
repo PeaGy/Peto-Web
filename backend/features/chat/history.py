@@ -239,6 +239,7 @@ def _to_chat_messages(rows: list[dict], project_documents: list[dict] | None = N
                 content=chat_quotes.model_content(row["content"], row.get('quoted_source')) if row['role'] == 'user' else row["content"],
                 attachments=tuple(attached),
                 sources=tuple(normalize_sources(row.get("sources"))),
+                runtime=row.get('runtime') or '' if row['role'] == 'user' else '',
             )
         )
     return out

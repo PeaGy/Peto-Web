@@ -211,6 +211,26 @@ async def add_message(
         return int(cursor.lastrowid or 0)
 
 
+async def message_runtimes(owner: str, conversation_id: str) -> dict[int, str]:
+    """Khối runtime đã gửi Grok, theo id tin người dùng, của một hội thoại thuộc ``owner`` (G1.1c)."""
+    async with db_connection.connect() as db:
+        rows = await (await db.execute(
+            "SELECT m.id, m.runtime FROM messages m JOIN conversations c ON c.id = m.conversation_id "
+            "WHERE c.owner = ? AND m.conversation_id = ? AND m.role = 'user' AND m.runtime != ''",
+            (owner, conversation_id))).fetchall()
+    return {int(row[0]): row[1] for row in rows}
+
+
+async def set_message_runtime(owner: str, conversation_id: str, message_id: int, runtime: str) -> None:
+    """Ghi khối runtime vừa gửi Grok cho tin người dùng của lượt; ghi đè khi gửi lại cùng tin (thử lại, tạo lại)."""
+    async with db_connection.connect() as db:
+        await db.execute(
+            "UPDATE messages SET runtime = ? WHERE id = ? AND role = 'user' AND conversation_id = "
+            "(SELECT id FROM conversations WHERE id = ? AND owner = ?)",
+            (runtime, message_id, conversation_id, owner))
+        await db.commit()
+
+
 async def set_title_if_empty(conversation_id: str, title: str) -> None:
     """Đặt tiêu đề từ tin nhắn đầu tiên, chỉ khi chưa có tiêu đề."""
     cleaned = " ".join(title.split())[:60]

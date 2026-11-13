@@ -89,6 +89,10 @@ async def init_db() -> None:
         if 'quoted_source' not in {column[1] for column in columns}:
             # Web Chat selected excerpt; separate from raw content and Companion's quote_id.
             await db.execute("ALTER TABLE messages ADD COLUMN quoted_source TEXT NOT NULL DEFAULT ''")
+        if 'runtime' not in {column[1] for column in columns}:
+            # Khối runtime (đã bọc thẻ) máy chủ gắn vào tin người dùng khi gửi Grok (G1.1c). Grok chỉ dùng lại prompt cache
+            # khi cả request lượt trước là phần đầu của lượt sau, nên lượt sau gửi lại nguyên văn khối này. Chỉ máy chủ ghi.
+            await db.execute("ALTER TABLE messages ADD COLUMN runtime TEXT NOT NULL DEFAULT ''")
         await db.execute(
             """
             CREATE TABLE IF NOT EXISTS attachments (

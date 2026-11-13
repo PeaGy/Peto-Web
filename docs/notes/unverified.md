@@ -41,14 +41,15 @@ line once it has been tried, and record the result in the area's note file. Paid
 - [ ] Citation rendering on a physical phone and with real model output — `chat.md`, "Web Chat citation rendering".
 - [ ] User-message copy on a real phone and in production — `chat.md`, "User-message copy action".
 - [ ] G1.1 real cache hit rates per provider (`cached_tokens` on the admin page: Grok with `prompt_cache_key`, Luna, Haiku) on a second turn and inside a tool loop — `chat.md`, "Web Chat stable prefix (G1.1)". 2026-11-13: Luna and Haiku confirmed on turns 2–3 (about 90% read); Grok and tool loops not checked.
-- [ ] G1.1b: after deploying, a Luna and a Haiku conversation whose later messages say "peto" or ask for a diagram keep reading the cache (`python -m ops.cache_check --hours 1` shows no "phần đầu đổi" inside one conversation), and the Agent guide still reaches a real "Peto Agent" question — `chat.md`, "Keyword blocks out of the cached prefix (G1.1b)".
+- [ ] G1.1c: after deploying, a new Grok conversation reads most of turns 2–4 from the cache (`python -m ops.cache_check --hours 1`, not 1,152 each turn) — `chat.md`, "Grok replays its runtime blocks (G1.1c)".
+- [x] G1.1b (2026-11-13: Luna and Haiku confirmed at 87–93% with a stable fingerprint; the real Agent-guide answer was not tried): after deploying, a Luna and a Haiku conversation whose later messages say "peto" or ask for a diagram keep reading the cache (`python -m ops.cache_check --hours 1` shows no "phần đầu đổi" inside one conversation), and the Agent guide still reaches a real "Peto Agent" question — `chat.md`, "Keyword blocks out of the cached prefix (G1.1b)".
 - [ ] G1.1: do Grok, Luna and Haiku still answer the time correctly and use the right tools when the runtime block sits after the user's message (developer item for Luna, mid-conversation system message for Haiku, fenced part of the user message for Grok) — `chat.md`, "Web Chat stable prefix (G1.1)".
 - [ ] G1.1: real xAI and OpenAI acceptance of the trailing user/developer runtime items after `function_call_output`, and real Anthropic acceptance of system messages after `tool_result` and of replayed Haiku thinking across tool rounds (only fake services that apply the documented rules) — `chat.md`, "Web Chat stable prefix (G1.1)".
 - [ ] G1.1: does a real model resist a user-typed `<peto_runtime>` lookalike and use the newest appended snapshot after a mid-turn manifest change — `chat.md`, "Web Chat stable prefix (G1.1)".
 
 ## Documents (`documents.md`)
 
-- [ ] Diagram titles with a colon: after deploying, the earlier Haiku diagram "Sơ đồ hoạt động: Quy trình đăng nhập" (and a new one) render in the chat card and the side panel, and PNG/PDF download still works — `documents.md`, "Diagram titles with a colon".
+- [x] Diagram titles with a colon (2026-11-13: owner confirmed the earlier Haiku diagram now renders): after deploying, the earlier Haiku diagram "Sơ đồ hoạt động: Quy trình đăng nhập" (and a new one) render in the chat card and the side panel, and PNG/PDF download still works — `documents.md`, "Diagram titles with a colon".
 - [ ] Word cover pages in real Word: band rectangle, first-page border, cover heights, pre-filled contents — `documents.md`, "Documents in chat (`create_document`)".
 - [ ] Alignment marks inside `m:eqArr` in real Word (currently avoided) — `documents.md`, "Documents in chat (`create_document`)".
 - [ ] Generated decks in real PowerPoint — `documents.md`, "Presentations in chat (`create_presentation`)".

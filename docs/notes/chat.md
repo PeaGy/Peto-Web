@@ -477,6 +477,34 @@ with `--rates`, USD) ceiling before running, and adds per-model time-to-first-te
 
 # Dated log (newest first)
 
+## Grok replays its runtime blocks (G1.1c) (2026-11-13, committed on branch `g1.1c-grok-runtime-replay`, not deployed)
+
+Real-app check of G1.1b on 2026-11-13: Haiku and Luna read 87–93% of each later turn from the cache with a stable
+fingerprint, but Grok read exactly 1,152 tokens on every turn, also with web search off, while Peto Agent on Grok reads
+about 83%. Probed with real xAI requests from the VPS (the owner allowed xAI usage): sending the app's exact request
+twice read about 5,900 tokens 4/4 times, so no parameter is at fault, and 1,152 is xAI's own shared preamble. What
+breaks it: Grok reuses the cache only when the whole previous request is a prefix of the next one. The runtime block
+was a part of the current user message (xAI has no documented trailing system item, see G1.1) and was gone from that
+message in the next turn's history: 3/3 trials read 1,152. Keeping the block verbatim in the history read about 6,000
+in 8/9 trials. OpenAI and Anthropic match partial prefixes, so they were not affected.
+- `messages.runtime` (TEXT, added at startup, written only by the server) holds the fenced runtime block that `ai/xai.py`
+  appended to that user message. `_place_runtime(first=True)` records it in `RequestContext.sent`; the chat service saves
+  it after the turn (`set_message_runtime`, owner-scoped, overwritten when the same message is sent again).
+- For Grok Chat turns the service loads the blocks (`message_runtimes`) into the history rows, except for the current
+  message, and `build_input_payload`'s caller re-appends each one to its user message after `neutralize`, so the
+  replayed text is byte-identical. `context.prepare` does the same for older rows it reloads. Luna and Haiku keep their
+  runtime as a separate item and never replay. The history `ChatMessage` carries it as `runtime`, which the context budget
+  counts.
+- `RUNTIME_PLACEMENT_PROMPT` now says earlier blocks, including ones kept with earlier user messages, are outdated.
+- Stored with each user message from then on: the clock, request/conversation ids, model and effort, the self-reported
+  OS/browser family, any keyword guides and the summary envelope of that turn. Deleted with the conversation; not shown
+  by the conversation API.
+- Tests: `test_grok_turn_request_is_a_whole_prefix_of_the_next` (all three models; fails for Grok without the replay,
+  checked), `test_grok_retry_of_the_same_message_sends_one_fresh_block`, and the spoofing test now accepts replayed
+  genuine blocks from earlier turns.
+- Not covered: the history window and summary still move the prefix when they shift (G1.2, G1.3); messages from before
+  this change have no stored block, so an existing conversation catches up after its next turn.
+
 ## Keyword blocks out of the cached prefix (G1.1b) (2026-11-13, committed on branch `g1.1b-keyword-blocks`, not deployed)
 
 Found by the owner's real-app check of G1.1 on 2026-11-13 (`b588d2c` deployed). Turns 2 and 3 of a Luna and a Haiku

@@ -263,6 +263,10 @@ class ResponsesProvider(ChatProvider):
             payload.append(request_context.ServerBlock(role=self.runtime_role, content=[part]))
         elif first and payload and payload[-1].get("role") == "user" and isinstance(payload[-1].get("content"), list):
             payload[-1]["content"].append(part)
+            snapshot = request_context.current.get()
+            if snapshot is not None:
+                # Lưu nguyên văn để lượt sau gửi lại đúng chỗ này (G1.1c).
+                snapshot.sent.append(part["text"])
         else:
             payload.append(request_context.ServerBlock(role="user", content=[part]))
 
@@ -291,6 +295,13 @@ class ResponsesProvider(ChatProvider):
                 for part in item["content"]:
                     if "text" in part:
                         part["text"] = request_context.neutralize(part["text"])
+            if not self.runtime_role:
+                # G1.1c: Grok chỉ đọc lại cache khi cả request lượt trước là phần đầu của lượt sau (đo trên VPS 13/11/2026:
+                # bỏ khối này khỏi lịch sử thì chỉ còn 1.152 token cache). Gắn lại nguyên văn khối runtime đã gửi vào đúng
+                # tin người dùng, sau bước vô hiệu thẻ: đây là chữ của máy chủ lưu riêng, người dùng không ghi được.
+                for item, message in zip(payload_input, messages):
+                    if message.role == "user" and message.runtime:
+                        item["content"].append({"type": "input_text", "text": message.runtime})
 
         def tool_output(result: dict) -> str:
             text = json.dumps(result, ensure_ascii=False)
