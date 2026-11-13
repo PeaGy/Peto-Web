@@ -311,7 +311,10 @@ pass, and the build passes. The local Playwright PC/mobile run is not usable as 
 `main` (`144ee85`, built in a temporary worktree) fails the same way. On the five failing spec files, main failed 48 and
 the branch 52; the branch-only names were all PC tests whose mobile twins pass, and a 3× rerun of them failed 5/15 on
 main and 3/15 on the branch. The screenshot diffs (for example `sidebar-menu.png`) show up on main too. CI on a clean
-runner has to confirm the suite.
+runner has to confirm the suite. Checked by hand on the built app (backend serving `dist`, mock provider): send and
+the URL change, Stop on a `__slow__` reply (kept after reload), the conversation menu and rename dialog, Tạo dự án,
+Ctrl+K search, Settings from the account menu with a lazy section, Companion and back to Chat with the same `.messages`
+element (no remount); no console errors.
 
 ## One KaTeX version (G4.2) (2026-11-12, committed on branch `g4.2-one-katex`, not deployed)
 
