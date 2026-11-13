@@ -493,6 +493,11 @@ muted line "Peto không viết gì cho lượt này." (`.message-silent`), with 
 - No prompt change, so no cache reset.
 - Tests: `tests/test_silent_reply.py` (empty normal reply completes and is left out of the next turn's history;
   Companion still errors; a provider error is still an error), `frontend/tests/silentReply.test.tsx`.
+- Real-app check after deploying `35e24ac` (Grok, three tries): twice Grok wrote a short English line narrating its
+  decision ("The user asked me not to reply. I will respect that."), once it wrote nothing: no error any more, but the
+  muted line only appeared after a reload. Cause: `App.tsx` treated a finished reply with no text as browser-only
+  (`local`), so `ChatMessage` did not consider it complete. Fix (branch `silent-reply-live`): a completed reply that has a
+  server message id counts as stored even when empty; `App.test.tsx` covers it (fails without the fix, checked).
 
 ## Real-app check of G1.2/G1.3, and turns no longer wait for the summary lock (G1.3b) (2026-11-13, committed on branch `g1.3b-no-lock-wait`, not deployed)
 
