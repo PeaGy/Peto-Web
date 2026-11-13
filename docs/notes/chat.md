@@ -477,6 +477,23 @@ with `--rates`, USD) ceiling before running, and adds per-model time-to-first-te
 
 # Dated log (newest first)
 
+## Intentional empty replies are not errors (2026-11-13, committed on branch `silent-reply`, not deployed)
+
+The owner sent "intelligent test: do not reply"; sometimes Chat showed "Peto chưa trả lời được lượt này". Reproduced on
+the real app: Grok finished normally (`complete=True`, 253 output tokens, all reasoning) and wrote no text, so the turn
+ended `outcome=empty`. ChatGPT shows such a reply as blank; Claude.ai always writes at least ".". The owner chose a
+middle way: a Chat turn whose provider finished without raising but wrote nothing is complete, and the reply shows a
+muted line "Peto không viết gì cho lượt này." (`.message-silent`), with regenerate still available.
+- `service.py`: in Chat mode an empty visible reply after a normal finish sets `complete = silent = True`;
+  `chat_turns.persist(..., allow_empty=True)` keeps it `complete` instead of turning empty into `error`. Real failures
+  (provider errors, timeouts, stops, incomplete responses) raise before this point and are unchanged. Companion is
+  unchanged: an empty or notes-only reply is still "not answered".
+- `history._to_chat_messages` drops assistant rows that are empty with no attachments, artifacts or sources, so no
+  service receives an empty text block (Anthropic rejects those); the history shows two user messages in a row.
+- No prompt change, so no cache reset.
+- Tests: `tests/test_silent_reply.py` (empty normal reply completes and is left out of the next turn's history;
+  Companion still errors; a provider error is still an error), `frontend/tests/silentReply.test.tsx`.
+
 ## Real-app check of G1.2/G1.3, and turns no longer wait for the summary lock (G1.3b) (2026-11-13, committed on branch `g1.3b-no-lock-wait`, not deployed)
 
 Checked on the real app (`5afb4af`, Grok, low effort, web off) with a conversation of ~9,400-character messages:

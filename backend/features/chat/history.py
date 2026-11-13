@@ -146,6 +146,10 @@ def _to_chat_messages(rows: list[dict], project_documents: list[dict] | None = N
     rows = [{**row, 'attachments': [*(row.get('attachments') or []), *[_generated(row, item)
                                                                     for item in row.get('generated_documents', [])]]}
             for row in rows]
+    # Lượt Peto im lặng (câu trả lời hoàn tất nhưng rỗng): không gửi một tin trợ lý rỗng cho model, vì một số dịch vụ
+    # từ chối khối chữ rỗng; hai tin người dùng liền nhau là đúng điều đã xảy ra.
+    rows = [row for row in rows if row['role'] != 'assistant' or (row.get('content') or '').strip()
+            or row.get('attachments') or row.get('artifacts') or row.get('sources')]
     if project_documents:
         # Tài liệu chung chỉ đi theo lượt người dùng mới nhất và chỉ khi đã chọn trong đúng dự án.
         for row in reversed(rows):

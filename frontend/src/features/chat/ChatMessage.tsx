@@ -79,6 +79,9 @@ export const ChatMessage = memo(function ChatMessage({ message, live, writing, o
   const complete = message.id !== undefined && !message.local && !message.stopped && message.status !== 'incomplete'
     && (!message.turn_state || message.turn_state === 'complete');
   const text = message.content ? normalizeMath(message.content) : "";
+  // Peto chạy xong mà không viết gì (ví dụ được bảo "đừng trả lời"): lượt hoàn tất, chỉ ghi một dòng mờ.
+  const silent = message.role === 'assistant' && complete && !live && !writing && !message.content.trim()
+    && !message.artifacts?.length;
   const { remarkPlugins, rehypePlugins } = useMarkdownPlugins(text);
   const citationPlugins = useMemo<NonNullable<import('react-markdown').Options['remarkPlugins']>>(
     () => user ? remarkPlugins : [...remarkPlugins, [remarkCitations, { sources, writing }]],
@@ -98,13 +101,14 @@ export const ChatMessage = memo(function ChatMessage({ message, live, writing, o
               {message.role === "assistant" && <WebSources sources={message.sources} web={message.work?.web}
                 onOpen={() => onOpenSources?.(sourceIndex)} expanded={sourcesExpanded} />}
               {message.artifacts?.map(artifact => <DocumentArtifactCard key={`${artifact.id}-${artifact.version}`} artifact={artifact} onOpen={onPreview} onEdit={onEdit} />)}
+              {silent && <p className="message-status message-silent">Peto không viết gì cho lượt này.</p>}
               {message.stopped ? <p className="message-stopped">Đã dừng theo yêu cầu của bạn.</p>
                 : message.status === "incomplete" && <p className="message-status">{message.turn_outcome === 'process_restarted'
                   ? 'Lượt bị ngắt khi máy chủ khởi động lại.'
                   : message.turn_state === 'timeout' ? 'Lượt đã hết thời gian chờ. Câu trả lời chưa hoàn tất.'
                   : message.turn_state === 'running' ? 'Lượt này vẫn đang được xử lý.'
                   : 'Câu trả lời chưa hoàn tất'}</p>}
-              {message.role === "assistant" && (message.content || message.stopped || onRetry || variants) && (
+              {message.role === "assistant" && (message.content || message.stopped || onRetry || variants || silent) && (
                 <ResponseActions text={message.content} sources={exportSources} messageId={message.id} contentRef={contentRef}
                   stopped={message.stopped} onRetry={onRetry} onRegenerate={complete ? onRegenerate : undefined} variants={variants}
                   disabled={actionsDisabled || live || writing} />

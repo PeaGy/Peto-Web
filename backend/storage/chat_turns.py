@@ -228,10 +228,12 @@ async def _write_reply(db, turn, content, sources, artifacts, work, provider, co
     return mid
 
 
-async def persist(owner, request_id, *, content, sources=(), artifacts=(), work=None, provider='', state=None, outcome='', save_empty=True):
+async def persist(owner, request_id, *, content, sources=(), artifacts=(), work=None, provider='', state=None, outcome='', save_empty=True,
+                  allow_empty=False):
     """Checkpoint (state=None) hoặc chốt reply/link/state nguyên tử. Stop thắng nếu đã lấy write lock trước.
 
     Giao dịch không gọi model hoặc thực thi lại công cụ. Tệp đã xuất chỉ được liên kết nếu còn đúng owner/chat.
+    ``allow_empty``: lượt Chat Peto im lặng có chủ đích (dịch vụ AI chạy xong, 0 chữ) được chốt hoàn tất dù rỗng.
     """
     async with connection.connect() as db:
         db.row_factory = aiosqlite.Row
@@ -258,7 +260,7 @@ async def persist(owner, request_id, *, content, sources=(), artifacts=(), work=
             await db.commit()
             return 'interrupted'
         result_state = 'stopped' if turn['state'] == 'stopped' else state or 'running'
-        if result_state == 'complete' and not content.strip():
+        if result_state == 'complete' and not content.strip() and not allow_empty:
             result_state, outcome = 'error', 'empty'
         truncated = state is None and len(content) > CHECKPOINT_CHARS
         if truncated:
