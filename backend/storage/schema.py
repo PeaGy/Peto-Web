@@ -306,6 +306,9 @@ async def init_db() -> None:
         # Tiền xAI tự báo cho từng lần gọi Grok (2026-10-22): trang Quản trị tính giá Peto từ đây thay vì để trống.
         if 'cost_ticks' not in usage_columns:
             await db.execute('ALTER TABLE usage_events ADD COLUMN cost_ticks INTEGER')
+        # Dấu vân tay phần đầu cố định của request (G1.1b, 13/11/2026), để tìm lượt làm mất prompt cache.
+        if 'prefix_hash' not in usage_columns:
+            await db.execute('ALTER TABLE usage_events ADD COLUMN prefix_hash TEXT')
         await db.execute("CREATE INDEX IF NOT EXISTS idx_usage_events_at ON usage_events(at)")
         # Số ký tự Giọng Peto (nguồn giọng chính thức) đã dùng theo tháng (giờ PETO_DEFAULT_TIMEZONE) cho mỗi tài khoản.
         await db.execute(

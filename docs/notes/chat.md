@@ -477,6 +477,34 @@ with `--rates`, USD) ceiling before running, and adds per-model time-to-first-te
 
 # Dated log (newest first)
 
+## Keyword blocks out of the cached prefix (G1.1b) (2026-11-13, committed on branch `g1.1b-keyword-blocks`, not deployed)
+
+Found by the owner's real-app check of G1.1 on 2026-11-13 (`b588d2c` deployed). Turns 2 and 3 of a Luna and a Haiku
+conversation read the cache (Luna 15,365 and 15,577 tokens, Haiku 19,181 and 24,600, about 90% of the input), so G1.1
+works. Turn 4 of both read 0. Not effort (the owner kept one level per conversation) and not memory (no
+`memory_changes` in the journal). Replaying the owner's own messages through the builders showed the cause: the
+Peto Agent guide (`features/agent/guide.py`) matched the bare word "peto" in the last three user messages, so
+"peto sẽ tạo bao nhiêu form?" added about 4,000 characters to the system prompt, which changes the whole prefix.
+The diagram guide, the `/docs/` context and the YouTube link titles were switched the same way. A first attachment in a
+conversation also changes the prefix once (three attachment tools join `tools`); that is left as it is.
+- `prompt_context.keyword_guides(question, mode, install_command)` builds those four blocks. Chat turns call
+  `_build_system_prompt(..., guides=False)` and pass the blocks to `RequestContext.guides`; `runtime()` puts them after
+  the clock, before the summary envelope and the snapshot, with `neutralize` applied (YouTube titles are outside text).
+  Companion, the evals adapter and direct callers keep the default `guides=True` (unchanged requests). The context
+  budget still counts the guides (`prepare` gets the system prompt plus the guides; the system prompt sent is without
+  them).
+- The Agent trigger no longer matches "peto" alone: `agent`, `cli`, `harness`, `peto login|logout|status|update|--version`
+  and the slash commands do.
+- `usage_events.prefix_hash` (column added at startup): 8 hex characters of SHA-256 over `instructions` + `tools` of each
+  Responses call, recorded by `ai/xai.py` for every provider. No text. `python -m ops.cache_check [--hours N] [--db PATH]`
+  prints recent Chat calls (time, model, effort, input, cache read/write, ratio, fingerprint) read-only and marks
+  "phần đầu đổi" when a model's fingerprint changes from its previous call.
+- Tests: `test_keyword_guides_ride_in_the_runtime_block_not_the_prefix` (all three models; fails on the old placement,
+  checked), `test_prefix_fingerprint_is_recorded_per_call`, trigger cases in `test_agent_guide.py`,
+  `tests/test_ops_cache_check.py`; `test_chat.py` and `test_youtube.py` now read the guides from the runtime block.
+- Known limits: other per-request toggles still live in the system prompt (document mode, a project's instructions, the
+  log-reading prompt when the first text file arrives), and `/admin` does not show the fingerprint.
+
 ## LIVE eval suite `chat-core` (G2.1) (2026-11-12, committed on branch `g2.1-live-eval-suite`, not run live)
 
 Audit package G2.1. `python -m evals {plan,run} --suite chat-core` (`evals/schema.SUITES`): the four existing Chat

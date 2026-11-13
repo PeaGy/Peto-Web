@@ -123,7 +123,7 @@ Every `DELETE` on a parent table, checked before the change:
   `queued`/`running`/`saving`, which `delete_imagine_job` refuses to delete (a failed insert also removes the file);
   avatars and favourites belong to an owner that `upsert_user` created at sign-in.
 - Existing orphan rows in a production database are not checked or removed by this change (`PRAGMA foreign_key_check`
-  on the VPS would list them).
+  on the VPS would list them). 2026-11-13: the owner ran it on a backup copy of the VPS database: 0 orphan rows.
 
 Tests: `tests/test_sqlite_connection.py` (5): pragmas on every connection, still on inside `BEGIN IMMEDIATE`, an orphan
 favourite is rejected, a source scan for stray `aiosqlite.connect` / `PRAGMA foreign_keys`, the old-`users` rebuild

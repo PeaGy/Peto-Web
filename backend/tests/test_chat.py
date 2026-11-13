@@ -223,15 +223,22 @@ async def test_companion_mode_uses_its_persona_and_runtime(client, monkeypatch):
 
 
 async def test_prompt_teaches_peto_agent_with_this_sites_install_command(client, monkeypatch):
-    """Lệnh cài Peto Agent không công bố ở đâu khác: Peto phải biết đúng lệnh của trang đang mở, cả ở tab Companion."""
+    """Lệnh cài Peto Agent không công bố ở đâu khác: Peto phải biết đúng lệnh của trang đang mở, cả ở tab Companion.
+
+    Từ G1.1b, tab Trò chuyện đưa hướng dẫn vào khối runtime (``RequestContext.guides``), không vào system; ``prompts``
+    ghép cả hai để kiểm nội dung, ``systems`` giữ riêng system."""
     prompts: list[str] = []
+    systems: list[str] = []
     from ai.mock import MockProvider
+    from features.chat import request_context
 
     original = MockProvider.stream
 
     async def spy(self, *, system_prompt, messages, effort="low", timezone=None, web_search="auto"):
         if titles.TITLE_MARKER not in system_prompt:
-            prompts.append(system_prompt)
+            snapshot = request_context.current.get()
+            systems.append(system_prompt)
+            prompts.append(system_prompt + ("\n\n" + snapshot.guides if snapshot and snapshot.guides else ""))
         async for chunk in original(
             self, system_prompt=system_prompt, messages=messages, effort=effort, timezone=timezone, web_search=web_search
         ):
@@ -246,8 +253,10 @@ async def test_prompt_teaches_peto_agent_with_this_sites_install_command(client,
     assert len(prompts) == 2
     for prompt in prompts:
         assert "`irm https://peto.example/install.ps1 | iex`" in prompt
-    # Phần giống nhau với mọi người đứng trước phần riêng của từng người.
-    assert prompts[0].index("## Peto Agent") < prompts[0].index("## Current user")
+    # Tab Trò chuyện: hướng dẫn bật theo từ khóa không nằm trong system, để system giữ nguyên giữa các lượt.
+    assert "## Peto Agent" not in systems[0]
+    # Companion vẫn ghép vào system: phần giống nhau với mọi người đứng trước phần riêng của từng người.
+    assert systems[1].index("## Peto Agent") < systems[1].index("## Current user")
 
     prompts.clear()
     await _send(client, "chào")

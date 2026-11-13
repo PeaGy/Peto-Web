@@ -59,7 +59,7 @@ from features.chat.history import (
     _visible,
     context_rows,
 )
-from features.chat.prompt_context import _build_system_prompt, has_text_files
+from features.chat.prompt_context import _build_system_prompt, has_text_files, keyword_guides
 from prompts.chat import DOCUMENT_MODE_PROMPT
 from features.chat.schemas import (
     ALLOWED_EFFORTS,
@@ -565,13 +565,19 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                 active_rows = context_rows(rows)
                 # Danh mục tệp của cả hội thoại (lọc theo chủ tài khoản): cũng quyết định có kèm cách đọc log hay không.
                 indexed = await chat_context.store.file_index(owner, conversation_id) if mode == 'chat' else []
+                agent_question = '\n'.join(str(row.get('content', ''))[:4000]
+                    for row in [r for r in active_rows if r.get('role') == 'user' and r.get('turn_state') != 'stopped'][-3:])
+                # Tab Trò chuyện (G1.1b): khối chỉ dẫn theo từ khóa đi trong khối runtime ở đuôi, không ở system, để system
+                # giữ nguyên từng byte giữa các lượt (prompt cache). Companion giữ chúng trong system như trước.
                 prompt_task = _build_system_prompt(owner, mode, install_command, conversation_id,
-                        agent_question='\n'.join(str(row.get('content', ''))[:4000]
-                            for row in [r for r in active_rows if r.get('role') == 'user' and r.get('turn_state') != 'stopped'][-3:]), model=model,
-                        memory=remembers, text_files=has_text_files(indexed), card=card)
+                        agent_question=agent_question, model=model,
+                        memory=remembers, text_files=has_text_files(indexed), card=card, guides=mode != 'chat')
+                runtime_guides = ''
                 if mode == 'chat':
                     # Context Chat dựng history một lần theo ngân sách; không đọc/base64 ảnh hai lần.
-                    history, system_prompt = [], await prompt_task
+                    system_prompt, runtime_guides = await asyncio.gather(
+                        prompt_task, keyword_guides(agent_question, 'chat', install_command))
+                    history = []
                 else:
                     # Tin trả lời một tin cũ mang dòng "[Replying to: …]" như AIRI; chỉ trong phần gửi model, không lưu.
                     model_rows = await companion_quotes.with_quotes(owner, conversation_id, active_rows)
@@ -595,11 +601,13 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                     preparing = len(rows) >= history_limit
                     if preparing:
                         yield sse({'type': 'reading', 'text': 'Peto đang chuẩn bị ngữ cảnh hội thoại…'}) + (log.read_start('Đang chuẩn bị ngữ cảnh…') if log else '')
-                    prepared = await chat_context.prepare(owner, conversation_id, model, system_prompt, rows, project_documents, history_limit)
+                    # Ngân sách tính cả khối chỉ dẫn ở đuôi; system gửi đi vẫn là bản không có chúng.
+                    budget_prompt = system_prompt + ('\n\n' + runtime_guides.strip() if runtime_guides.strip() else '')
+                    prepared = await chat_context.prepare(owner, conversation_id, model, budget_prompt, rows, project_documents, history_limit)
                     latest_scope = await db.conversation_settings(owner, conversation_id)
                     if not latest_scope or latest_scope['archived'] or latest_scope.get('project_id') != project_id:
                         raise ProviderError('Hội thoại đã thay đổi trong lúc chuẩn bị ngữ cảnh; mở lại trước khi gửi nhé.')
-                    history, system_prompt = prepared.history, prepared.prompt
+                    history = prepared.history
                     if preparing:
                         yield sse({'type': 'reading', 'text': ''}) + (log.read_done('Đã chuẩn bị ngữ cảnh', prepared.detail) if log else '')
                 prepared_at = perf_counter()
@@ -611,7 +619,7 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                     github_state, github_reason,
                     client_environment=client_environment.normalize(
                         http_request.headers if http_request is not None else None),
-                    history_note=prepared.note if prepared else '') if mode == 'chat' else None
+                    history_note=prepared.note if prepared else '', guides=runtime_guides) if mode == 'chat' else None
                 player_session = player_tools.PlayerSession(owner, request.player_control,
                     user_text='\n'.join(str(row.get('content', '')) for row in active_rows if row.get('role') == 'user')[-32000:]
                 ) if mode == 'companion' and request.player_control in (1, 2, 3, 4, 5) and own_provider != 'gemini' else None

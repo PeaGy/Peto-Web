@@ -147,6 +147,19 @@ Phí tìm web, tạo ảnh, giọng nói, tác vụ Agent không có usage theo 
 nằm trong ước tính token này. Đối chiếu billing của nhà cung cấp khi cần số tiền thực tế. Không cộng khoản dự trù TTS
 vào tổng token. Riêng `ops.report` chỉ đọc log, không ghi gì vào database.
 
+### Kiểm prompt cache của Chat
+
+`ops.cache_check` đọc bảng `usage_events` ở chế độ chỉ đọc và in các lần gọi Chat gần đây: giờ, model, mức suy nghĩ,
+token đầu vào, token đọc và ghi cache, tỉ lệ đọc, và dấu vân tay 8 ký tự của phần đầu cố định (không chứa chữ nào).
+Cột ghi chú báo "phần đầu đổi" khi dấu của một model khác lần gọi trước; lần gọi đó không đọc lại được cache.
+
+```bash
+cd /home/ubuntu/peto-web/backend
+../.venv/bin/python -m ops.cache_check --hours 1
+```
+
+Lần gọi cũ hơn bản G1.1b không có dấu (`?`). Các lần gọi của nhiều hội thoại xen nhau theo thời gian.
+
 ## Trang Quản trị (`/admin`)
 
 Từ bản có trang Quản trị, máy chủ ghi thêm số liệu vào bảng `usage_events` tại đúng ba chỗ đang log

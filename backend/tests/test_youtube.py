@@ -4,7 +4,7 @@ import httpx
 import pytest
 
 from conftest import read_events
-from features.chat import service as chat_service
+from features.chat import request_context, service as chat_service
 from shared import youtube
 
 VIDEO = "xxFkW3PCT5M"
@@ -104,12 +104,15 @@ async def test_chat_turn_gives_every_model_the_video_title(client, oembed, monke
 
     class Provider:
         async def stream(self, **kwargs):
-            seen.append(kwargs)
+            snapshot = request_context.current.get()
+            seen.append({**kwargs, "guides": snapshot.guides if snapshot else ""})
             yield "Đây là からくりピエロ."
 
     monkeypatch.setattr(chat_service, "get_provider", lambda model="peto": Provider())
     events = await read_events(await client.post("/api/chat", json={
         "message": f"phân tích bài https://www.youtube.com/watch?v={VIDEO}&list=RD{VIDEO}", "web_search": "off"}))
     assert events[-1]["type"] == "done"
-    prompts = [call["system_prompt"] for call in seen if "からくりピエロ" in call["system_prompt"]]
+    # Từ G1.1b tiêu đề đi trong khối runtime của lượt (mọi provider đặt khối đó ở đuôi), không trong system.
+    prompts = [call["guides"] for call in seen if "からくりピエロ" in call["guides"]]
     assert prompts and f'https://youtu.be/{VIDEO}: "からくりピエロ" (channel "40mP")' in prompts[0]
+    assert not any("からくりピエロ" in call["system_prompt"] for call in seen)
