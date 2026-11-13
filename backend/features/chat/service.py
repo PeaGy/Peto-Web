@@ -325,6 +325,8 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
         work: dict | None = None
         player_session = None
         message_id = None
+        # Snapshot của lượt Chat; khối finally đọc nó để lưu khối runtime đã gửi Grok (G1.1c).
+        snapshot = None
         # Chữ của lần gọi mô hình hiện tại bắt đầu từ đâu trong ``collected``: lượt gọi kết thúc bằng lệnh công cụ thì
         # phần chữ đó là câu dẫn, chuyển sang nhật ký.
         round_start = 0
@@ -545,6 +547,13 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                         from storage.conversations import set_chat_selection
                         await set_chat_selection(owner, conversation_id, model, (request.effort or 'auto').strip().lower())
                     rows = await db.get_messages(owner, conversation_id, limit=history_limit)
+                    if mode == 'chat' and ai_models.MODELS[model].service == 'xai':
+                        # G1.1c: Grok cần lại nguyên văn khối runtime của các lượt trước. Tin hiện tại thì không: lượt này
+                        # gắn khối mới (thử lại hay tạo lại cùng tin sẽ ghi đè khối cũ).
+                        runtimes = await db.message_runtimes(owner, conversation_id)
+                        for row in rows:
+                            if row['id'] != message_id and row['id'] in runtimes:
+                                row['runtime'] = runtimes[row['id']]
                 stored_user = next(row for row in rows if row["id"] == message_id)
                 yield sse({
                     "type": "meta", "conversation_id": conversation_id, "effort": effort,
@@ -700,6 +709,12 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                     outcome = 'persistence_error'
                     state = await chat_turns.finish(owner, request_id, 'interrupted', 'persistence_error')
                     failure = 'Chưa lưu được toàn bộ câu trả lời. Kiểm tra lịch sử trước khi thử lại nhé.'
+                if snapshot is not None and snapshot.sent and message_id:
+                    # G1.1c: khối runtime đã gửi Grok cho tin này; lượt sau gửi lại nguyên văn để giữ prompt cache.
+                    try:
+                        await db.set_message_runtime(owner, conversation_id, message_id, snapshot.sent[0])
+                    except Exception:
+                        logger.exception('Không lưu được khối runtime của lượt chat')
                 if state != 'complete':
                     complete = False
                     if outcome == 'cancelled' and state != 'stopped':

@@ -351,9 +351,10 @@ def strings(value):
             yield from strings(item)
 
 
-def assert_raw_tags_only_in_server_blocks(call, after):
-    """Trong toàn bộ request, thẻ nguyên dạng chỉ có ở hàng rào của khối máy chủ và trong RUNTIME_PLACEMENT_PROMPT."""
-    genuine = {request_context.fence(text) for _, text in server_blocks(call, after)}
+def assert_raw_tags_only_in_server_blocks(call, after, earlier=()):
+    """Trong toàn bộ request, thẻ nguyên dạng chỉ có ở hàng rào của khối máy chủ và trong RUNTIME_PLACEMENT_PROMPT.
+    ``earlier``: khối thật của các lượt trước mà Grok được gửi lại nguyên văn trong lịch sử (G1.1c)."""
+    genuine = {request_context.fence(text) for _, text in server_blocks(call, after)} | set(earlier)
     assert genuine
     for text in strings(call):
         if text in genuine:
@@ -407,8 +408,10 @@ async def test_neutralized_history_keeps_the_prefix_byte_stable(client, monkeypa
     old = items(calls[1])[:2]
     assert unmarked(items(calls[2])[:2]) == unmarked(old)
     assert '&lt;/peto_runtime>' in json.dumps(old, ensure_ascii=False)
+    sent = set()
     for index, call in enumerate(calls):
-        assert_raw_tags_only_in_server_blocks(call, 2 * index)
+        assert_raw_tags_only_in_server_blocks(call, 2 * index, sent if model == 'peto' else ())
+        sent |= {request_context.fence(text) for _, text in server_blocks(call, 2 * index)}
 
 
 @pytest.mark.parametrize('model', MODELS)
@@ -439,3 +442,52 @@ async def test_keyword_guides_ride_in_the_runtime_block_not_the_prefix(client, m
     for earlier, later in ((0, 1), (1, 2), (2, 3)):
         old = items(calls[earlier])[:current[earlier]]
         assert unmarked(items(calls[later])[:len(old)]) == unmarked(old)
+
+
+@pytest.mark.parametrize('model', MODELS)
+async def test_grok_turn_request_is_a_whole_prefix_of_the_next(client, monkeypatch, moving_clock, model):
+    """G1.1c: Grok chỉ đọc lại cache khi cả request lượt trước là phần đầu của lượt sau (đo trên VPS 13/11/2026). Khối
+    runtime gắn vào tin người dùng được lưu và gửi lại nguyên văn; Luna, Haiku để khối ở item riêng nên không cần."""
+    calls, close = capture(monkeypatch, model, moving_clock, script=['text'] * 3)
+    try:
+        cid = await run_turns(client, model, moving_clock, turns=['Chào Peto', 'Mấy giờ rồi?', 'Cảm ơn'])
+    finally:
+        await close()
+    assert len(calls) == 3
+    if model == 'peto':
+        for earlier, later in ((0, 1), (1, 2)):
+            whole = items(calls[earlier])
+            assert unmarked(items(calls[later])[:len(whole)]) == unmarked(whole)
+        # Mỗi tin cũ mang đúng một khối, của chính lượt đó; tin hiện tại mang khối mới.
+        assert [len(server_blocks(calls[2], 0))] == [3]
+    else:
+        assert not any(isinstance(part, dict) and RAW_TAG.search(part.get('text', ''))
+                       for item in items(calls[2])[:4] for part in (item.get('content') or [])
+                       if isinstance(item.get('content'), list))
+    async with connection.connect() as sql:
+        stored = [row[0] for row in await (await sql.execute(
+            "SELECT runtime FROM messages WHERE conversation_id=? AND role='user' ORDER BY id", (cid,))).fetchall()]
+    if model == 'peto':
+        assert len(stored) == 3 and all(text.startswith(request_context.OPEN) for text in stored)
+        assert items(calls[1])[0]['content'][-1]['text'] == stored[0]
+    else:
+        assert stored == ['', '', '']
+
+
+async def test_grok_retry_of_the_same_message_sends_one_fresh_block(client, monkeypatch, moving_clock):
+    """Tạo lại câu trả lời cho cùng tin: không gửi khối cũ của tin đó, chỉ khối mới, rồi lưu đè."""
+    calls, close = capture(monkeypatch, 'peto', moving_clock, script=['text'] * 3)
+    try:
+        cid = await run_turns(client, 'peto', moving_clock, turns=['Chào Peto'])
+        async with connection.connect() as sql:
+            first = (await (await sql.execute(
+                "SELECT id, runtime FROM messages WHERE conversation_id=? AND role='user'", (cid,))).fetchone())
+        events = await read_events(await client.post('/api/chat', json={
+            'message': 'Chào Peto', 'model': 'peto', 'effort': 'low', 'web_search': 'off', 'timezone': 'UTC',
+            'conversation_id': cid, 'branch_message_id': first[0]}))
+        assert events[-1]['type'] == 'done', events
+    finally:
+        await close()
+    retry = calls[-1]
+    assert len(server_blocks(retry, 0)) == 1
+    assert first[1] and first[1] not in strings(retry)

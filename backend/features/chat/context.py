@@ -172,6 +172,11 @@ async def _prepare(owner, cid, model, prompt, rows, project_documents, window):
         expanded = await get_messages(owner, cid, limit=max(window, len(recent)) + MIN_BATCH)
         cursor_id = saved['cursor_id'] if saved else 0
         prefix = [row for row in expanded if cursor_id <= row['id'] < boundary]
+        if MODELS[model].service == 'xai' and prefix:
+            # G1.1c: tin cũ nạp lại cũng mang khối runtime đã gửi Grok, như các tin service đã nạp.
+            from storage.conversations import message_runtimes
+            runtimes = await message_runtimes(owner, cid)
+            prefix = [{**row, 'runtime': runtimes[row['id']]} if row['id'] in runtimes else row for row in prefix]
         candidate = prefix + recent
         candidate_history = await convert(candidate)
         if tokens(prompt, candidate_history) + min(12_000, info['input'] // 3) <= info['input']:

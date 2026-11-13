@@ -36,6 +36,9 @@ class ChatMessage:
     content: str
     attachments: tuple[ChatAttachment, ...] = field(default_factory=tuple)
     sources: tuple[dict, ...] = field(default_factory=tuple)
+    # Khối runtime nguyên văn máy chủ đã gắn vào tin người dùng này khi gửi Grok (G1.1c); chỉ provider gắn khối vào tin
+    # người dùng (xAI) gửi lại, để request lượt trước vẫn là phần đầu của lượt sau. Không phải chữ của người dùng.
+    runtime: str = ''
 
 
 @dataclass(frozen=True)
