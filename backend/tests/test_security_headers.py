@@ -61,6 +61,8 @@ async def test_every_response_gets_the_enforced_headers_and_report_only_csp(web,
     assert expected_hash(THEME) in report_only
     assert "'unsafe-inline'" not in report_only.split('script-src', 1)[1].split(';', 1)[0]
     assert 'frame-src https://www.youtube.com' in report_only and 'report-uri /api/csp-report' in report_only
+    # Cloudflare Web Analytics tự chèn script này khi trang đi qua proxy (báo cáo thật 13/11/2026).
+    assert 'https://static.cloudflareinsights.com' in report_only.split('script-src', 1)[1].split(';', 1)[0]
 
 
 async def test_streams_still_arrive_in_pieces(web):

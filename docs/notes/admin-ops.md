@@ -70,7 +70,9 @@ blocked, browsers report to `POST /api/csp-report`, which logs only `csp_violati
 page=/<first path segment> mode=…` (no full URL, query, ids or samples; 16 KB body cap; at most 120 lines a minute per
 process). Inline scripts in `index.html`/`404.html` are allowed by SHA-256 hashes computed from the served files and
 refreshed when they change, never `'unsafe-inline'`. `'unsafe-eval'` is allowed because PixiJS 6 (Live2D) throws without
-it; dropping it needs `@pixi/unsafe-eval` before the CSP is enforced. `connect-src` allows any `https:` because own-key
+it; dropping it needs `@pixi/unsafe-eval` before the CSP is enforced. `script-src` also allows
+`https://static.cloudflareinsights.com`: Cloudflare injects its Web Analytics beacon into every page served through
+the proxy (its data goes to `cloudflareinsights.com`, covered by `connect-src https:`). `connect-src` allows any `https:` because own-key
 voice and hearing providers are called from the browser, custom base URLs included. Middleware is pure ASGI (headers only,
 bodies stream untouched).
 
@@ -110,6 +112,14 @@ default to `chat`. `conversations.persona` (`assistant` or `roleplay`) was added
 created (old databases keep it, unused).
 
 # Dated log (newest first)
+
+## CSP: Cloudflare Web Analytics beacon (2026-11-13, branch `csp-cloudflare-insights`)
+
+First production read after deploying G3.4 and G3.2 (`8838767`): enforced headers present through Cloudflare on `/`,
+`/chat/…`, `/docs/` and `/api/health`; the only `csp_violation` lines were `script-src-elem
+blocked=https://static.cloudflareinsights.com` on `/`, `/docs`, `/download` and the 404 page. Cloudflare injects that
+script at the edge, so the local stack never saw it; it is now allowed in `script-src`. No errors in the journal since
+the deploy. Not yet browsed live while signed in: Chat, Companion (Live2D, player), Imagine.
 
 ## Security headers, CSP report-only (G3.4) (2026-11-13, committed on branch `g3.4-security-headers`, not deployed)
 

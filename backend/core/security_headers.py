@@ -56,7 +56,10 @@ def policy(hashes: list[str]) -> str:
         # 'unsafe-eval': PixiJS 6 (Live2D của Companion) thử Function(...) lúc khởi động và báo lỗi "does not allow
         # unsafe-eval" nếu bị chặn thật (thử ngày 13/11/2026). Muốn bỏ thì phải thêm gói @pixi/unsafe-eval trước khi
         # chuyển CSP sang chế độ chặn. Script nhúng vẫn chỉ được phép bằng mã băm, không có 'unsafe-inline'.
-        'script-src': ["'self'", *hashes, "'unsafe-eval'", 'https://www.youtube.com', 'https://s.ytimg.com'],
+        # static.cloudflareinsights.com: Cloudflare tự chèn script Web Analytics vào trang khi đi qua proxy (báo cáo thật
+        # trên mọi trang ngày 13/11/2026); dữ liệu nó gửi về đã nằm trong connect-src https:.
+        'script-src': ["'self'", *hashes, "'unsafe-eval'", 'https://www.youtube.com', 'https://s.ytimg.com',
+                       'https://static.cloudflareinsights.com'],
         'style-src': ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
         'img-src': ["'self'", 'data:', 'blob:', 'https://cdn.discordapp.com', 'https://*.googleusercontent.com',
                     'https://avatars.githubusercontent.com', 'https://www.google.com', 'https://*.gstatic.com',
