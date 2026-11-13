@@ -48,6 +48,7 @@ line once it has been tried, and record the result in the area's note file. Paid
 
 ## Documents (`documents.md`)
 
+- [ ] Diagram titles with a colon: after deploying, the earlier Haiku diagram "Sơ đồ hoạt động: Quy trình đăng nhập" (and a new one) render in the chat card and the side panel, and PNG/PDF download still works — `documents.md`, "Diagram titles with a colon".
 - [ ] Word cover pages in real Word: band rectangle, first-page border, cover heights, pre-filled contents — `documents.md`, "Documents in chat (`create_document`)".
 - [ ] Alignment marks inside `m:eqArr` in real Word (currently avoided) — `documents.md`, "Documents in chat (`create_document`)".
 - [ ] Generated decks in real PowerPoint — `documents.md`, "Presentations in chat (`create_presentation`)".

@@ -583,6 +583,21 @@ chat answer into Word, which broke overlines into "xˉ".
 
 # Dated log (newest first)
 
+## Diagram titles with a colon (2026-11-13, committed on branch `diagram-title-quotes`, not deployed)
+
+Found during the G1.1b real-app check: Haiku wrote `title: Sơ đồ hoạt động: Quy trình đăng nhập` and the chat card said
+"Mã sơ đồ không hợp lệ". The second ": " makes the YAML frontmatter invalid (Mermaid's parser: "bad indentation of a
+mapping entry", reproduced with the deployed Mermaid build), and `persona.DIAGRAM_PROMPT` itself asked for titles that
+start with "Sơ đồ hoạt động: " without asking for quotes, so any model could hit it.
+- `diagrams.quoteTitle` puts double quotes (escaping `\` and `"`) around an unquoted `title:` value inside the leading
+  `---` block; quoted values, block scalars (`|`, `>`) and code without frontmatter are left alone. `renderDiagram` applies
+  it to the copy handed to Mermaid only, so the source shown, copied or downloaded and the diagram identity
+  (`normalizeDiagram`) are unchanged, and old messages render again.
+- `DIAGRAM_PROMPT` now says `title: "..."` with the title in double quotes.
+- Tests: `frontend/tests/diagramTitle.test.ts` (4, including the real Mermaid parser rejecting the original and accepting
+  the quoted copy). The quoted copy of the real failing diagram also rendered to SVG (title and 10 nodes) in the in-app
+  browser.
+
 ## Tolerant text/log reader (2026-10-19)
 
 The owner's Minecraft report was valid UTF-8 (75,168 bytes) but rejected before any model call because it contained

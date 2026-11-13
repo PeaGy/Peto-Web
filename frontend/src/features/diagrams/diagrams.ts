@@ -44,6 +44,18 @@ function diagramBody(code: string): string {
   return code.replace(/^---\s*\n[\s\S]*?\n---\s*/, "").replace(/^\s*%%.*$/gm, "").trim();
 }
 
+/**
+ * Đặt ngoặc kép cho giá trị ``title:`` chưa có ngoặc trong phần đầu ``---``. Model hay viết ``title: Sơ đồ hoạt động: …``
+ * (đúng như lời dặn đặt tên trong persona.DIAGRAM_PROMPT); dấu ": " thứ hai làm YAML hỏng và Mermaid từ chối cả sơ đồ
+ * ("bad indentation of a mapping entry", thử trên app thật ngày 13/11/2026). Chỉ đổi bản đưa vào Mermaid, không đổi
+ * mã gốc hiển thị hay tải về.
+ */
+export function quoteTitle(code: string): string {
+  return code.replace(/^(---[ \t]*\n)([\s\S]*?)(\n---[ \t]*(?:\n|$))/, (_whole, open: string, front: string, close: string) =>
+    open + front.replace(/^([ \t]*title:[ \t]*)(\S.*?)[ \t]*$/m, (line: string, key: string, value: string) =>
+      /^["'|>]/.test(value) ? line : `${key}"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`) + close);
+}
+
 // Sơ đồ phân làn (swimlane-beta, bản thử của Mermaid 11) vẽ hàng tên làn đúng chỗ Mermaid đặt tên sơ đồ, nên với lề
 // mặc định 25px tên sơ đồ đè lên tên làn (thử ngày 2026-09-30).
 const LANE_TITLE_MARGIN = 56;
@@ -75,7 +87,7 @@ export function renderDiagram(code: string, theme: DiagramTheme): Promise<string
       themeCSS: `.node .state-start { fill: ${line}; stroke: ${line}; }
         .node:not(:has(text)) .outer-path > g > path { fill: ${line}; stroke: ${line}; }`,
     });
-    const { svg } = await mermaid.render(`peto-diagram-${++counter}`, code);
+    const { svg } = await mermaid.render(`peto-diagram-${++counter}`, quoteTitle(code.replace(/\r\n?/g, "\n")));
     return svg;
   });
   queue = job.catch(() => undefined);

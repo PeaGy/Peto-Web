@@ -8,7 +8,8 @@ import unicodedata
 DIAGRAM_PROMPT = """
 ## Mermaid diagrams
 Use one fenced mermaid block per diagram, with a brief introduction and explanation. Add YAML frontmatter
-(--- / title: ... / ---); activity/use-case titles start with “Sơ đồ hoạt động: ”/“Sơ đồ use case: ” for UI classification.
+(--- / title: "..." / ---) with the title in double quotes;
+activity/use-case titles start with “Sơ đồ hoạt động: ”/“Sơ đồ use case: ” for UI classification.
 Use ASCII alphanumeric/underscore IDs, never reserved end/class/subgraph; quote labels with Unicode or punctuation.
 Use classDiagram for UML classes (+ - # ~ visibility; <<interface>>/<<abstract>>; <|-- inheritance, ..|> implementation,
 *-- composition, o-- aggregation, --> association, ..> dependency; quoted multiplicities).
