@@ -38,10 +38,13 @@ def _fold(text):
 
 
 def build_agent_guide(*, install_command: str, daily_steps: int, question: str = '') -> str:
-    """Hướng dẫn Peto Agent cho chat web, chỉ khi vài tin gần đây nói tới Agent/CLI/Peto: không chèn cả hướng dẫn CLI
+    """Hướng dẫn Peto Agent cho chat web, chỉ khi vài tin gần đây nói tới Agent/CLI hay một lệnh `peto …`: không chèn cả hướng dẫn CLI
     vào câu hỏi không liên quan. Danh mục lệnh thật giữ nguyên ngôn ngữ của nó."""
     folded = _fold(question[-12000:])
-    if not re.search(r'(?<!\w)(agent|cli|peto|/skill|/mcp|/models?|/connect|/effort|/permissions|/compact|/resume|/usage)'
+    # "peto" đứng một mình không tính (G1.1b, 13/11/2026): người dùng hay gọi tên trợ lý ("mấy giờ rồi peto?"), và mỗi
+    # lần chữ đó vào hay ra khỏi cửa sổ ba tin, hướng dẫn này bật tắt. Chỉ tính khi đi với một lệnh CLI có thật.
+    if not re.search(r'(?<!\w)(agent|cli|harness|peto\s+(?:login|logout|status|update|--version)'
+                     r'|/skill|/mcp|/models?|/connect|/effort|/permissions|/compact|/resume|/usage)'
                      r'(?!\w)', folded):
         return ''
     version, entries = catalog()

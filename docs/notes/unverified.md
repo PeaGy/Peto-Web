@@ -14,7 +14,7 @@ line once it has been tried, and record the result in the area's note file. Paid
 
 ## Admin and operations (`admin-ops.md`)
 
-- [ ] G3.1: run `PRAGMA foreign_key_check` on a copy of the VPS database to list orphan rows left from when foreign keys were off, and decide whether to delete them — `admin-ops.md`, "One SQLite connection helper (G3.1)".
+- [x] G3.1: run `PRAGMA foreign_key_check` on a copy of the VPS database to list orphan rows left from when foreign keys were off, and decide whether to delete them (2026-11-13: the owner ran it on a backup copy; 0 orphan rows, nothing to delete) — `admin-ops.md`, "One SQLite connection helper (G3.1)".
 
 ## Accounts and memory (`accounts-memory.md`)
 
@@ -40,7 +40,8 @@ line once it has been tried, and record the result in the area's note file. Paid
 - [ ] Seven Grok UX improvements on a physical phone, a screen reader, Safari and a live provider/VPS — `chat.md`, "Seven Grok-inspired Web Chat UX improvements".
 - [ ] Citation rendering on a physical phone and with real model output — `chat.md`, "Web Chat citation rendering".
 - [ ] User-message copy on a real phone and in production — `chat.md`, "User-message copy action".
-- [ ] G1.1 real cache hit rates per provider (`cached_tokens` on the admin page: Grok with `prompt_cache_key`, Luna, Haiku) on a second turn and inside a tool loop — `chat.md`, "Web Chat stable prefix (G1.1)".
+- [ ] G1.1 real cache hit rates per provider (`cached_tokens` on the admin page: Grok with `prompt_cache_key`, Luna, Haiku) on a second turn and inside a tool loop — `chat.md`, "Web Chat stable prefix (G1.1)". 2026-11-13: Luna and Haiku confirmed on turns 2–3 (about 90% read); Grok and tool loops not checked.
+- [ ] G1.1b: after deploying, a Luna and a Haiku conversation whose later messages say "peto" or ask for a diagram keep reading the cache (`python -m ops.cache_check --hours 1` shows no "phần đầu đổi" inside one conversation), and the Agent guide still reaches a real "Peto Agent" question — `chat.md`, "Keyword blocks out of the cached prefix (G1.1b)".
 - [ ] G1.1: do Grok, Luna and Haiku still answer the time correctly and use the right tools when the runtime block sits after the user's message (developer item for Luna, mid-conversation system message for Haiku, fenced part of the user message for Grok) — `chat.md`, "Web Chat stable prefix (G1.1)".
 - [ ] G1.1: real xAI and OpenAI acceptance of the trailing user/developer runtime items after `function_call_output`, and real Anthropic acceptance of system messages after `tool_result` and of replayed Haiku thinking across tool rounds (only fake services that apply the documented rules) — `chat.md`, "Web Chat stable prefix (G1.1)".
 - [ ] G1.1: does a real model resist a user-typed `<peto_runtime>` lookalike and use the newest appended snapshot after a mid-turn manifest change — `chat.md`, "Web Chat stable prefix (G1.1)".

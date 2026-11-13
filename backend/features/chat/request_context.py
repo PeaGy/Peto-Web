@@ -61,6 +61,9 @@ class RequestContext:
     history_note: str = ''
     # Mốc giờ chụp một lần lúc tạo snapshot (đầu lượt); mọi vòng công cụ của lượt dùng lại đúng mốc này.
     clock: dict | None = None
+    # Khối chỉ dẫn bật theo từ khóa của vài tin gần đây (prompt_context.keyword_guides): hướng dẫn Peto Agent, trang
+    # /docs/, link YouTube, cách vẽ sơ đồ. Từ G1.1b nằm ở đây thay vì system, vì chúng bật tắt theo cửa sổ ba tin.
+    guides: str = ''
 
     def __post_init__(self):
         if self.clock is None:
@@ -100,8 +103,12 @@ class RequestContext:
                 + json.dumps(data, ensure_ascii=False, separators=(',', ':')))
 
     def runtime(self, *, service, model, effort, capabilities):
-        """Khối runtime đầu lượt: mốc giờ, envelope tóm tắt (nếu có), snapshot. Chữ từng phần giữ như khi còn ở system."""
+        """Khối runtime đầu lượt: mốc giờ, khối chỉ dẫn theo từ khóa (nếu có), envelope tóm tắt (nếu có), snapshot. Chữ
+        từng phần giữ như khi còn ở system."""
         parts = [time_context(self.timezone, clock=self.clock)]
+        if self.guides.strip():
+            # Có tiêu đề video YouTube (chữ bên ngoài) và trích tin người dùng: vô hiệu thẻ hàng rào như mọi chữ khác.
+            parts.append(neutralize(self.guides.strip()))
         if self.history_note:
             # Envelope có trích tin người dùng, tên tệp và bản tóm tắt của model: không để chúng đóng hàng rào sớm.
             parts.append(neutralize(self.history_note))

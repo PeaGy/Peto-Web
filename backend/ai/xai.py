@@ -220,6 +220,13 @@ def code_result(item: dict) -> dict:
             'exit_code': exit_code, 'timed_out': timed_out, 'status': item.get('status'), 'images': images}
 
 
+def prefix_hash(request: dict) -> str:
+    """Dấu vân tay phần đầu cố định của một request Responses: 8 ký tự hex SHA-256 của ``instructions`` và ``tools``.
+    Không chứa chữ nào của người dùng; chỉ để so hai lần gọi liền nhau có cùng phần đầu (prompt cache) hay không."""
+    head = json.dumps([request.get('instructions'), request.get('tools')], ensure_ascii=False, sort_keys=True, default=str)
+    return hashlib.sha256(head.encode('utf-8')).hexdigest()[:8]
+
+
 class _SearchFallback(Exception):
     """Ngắt lượt tra bị lỗi để dành một lượt tổng hợp từ kết quả đã nhận."""
 
@@ -600,6 +607,7 @@ class ResponsesProvider(ChatProvider):
                     search_calls=len(search_ids),
                     # xAI tự báo số tiền đã tính cho lần gọi; dịch vụ khác không có trường này.
                     cost_ticks=usage.get("cost_in_usd_ticks"),
+                    prefix_hash=prefix_hash(create_kwargs),
                 )
                 if stream is not None:
                     with anyio.CancelScope(shield=True):

@@ -22,10 +22,15 @@ def test_the_guide_is_only_added_when_the_question_mentions_agent():
     # Câu hỏi không nói tới Agent/CLI/Peto thì không tốn token cho cả hướng dẫn CLI (cả Peto lẫn GPT, Claude).
     assert guide('giải thích asyncio') == ''
     assert guide('Peto Agent cài sao?').startswith('## Peto Agent reference')
+    # Gọi tên trợ lý không phải hỏi về Agent (G1.1b): khối này bật tắt theo cửa sổ ba tin là mất prompt cache.
+    for text in ('chào Peto', 'mấy giờ rồi peto?', 'tệp này là gì á peto?', 'peto sẽ tạo bao nhiêu form?', 'Peto ơi'):
+        assert guide(text) == '', text
+    for text in ('peto login báo lỗi', 'gõ peto status thấy gì', 'peto --version ra 0.33', 'Peto CLI', 'Peto Harness'):
+        assert guide(text).startswith('## Peto Agent reference'), text
 
 
 def test_details_are_selected_without_copying_user_text_into_system_prompt():
-    generic = guide('chào Peto')
+    generic = guide('cài Peto Agent')
     assert 'docs-mcp.json' not in generic and '24.000' not in generic
     mcp = guide('Peto Agent thêm MCP sao?\nTiếp theo làm gì? USER_INJECTION_MARKER')
     assert '/mcp add docs docs-mcp.json' in mcp and 'chưa hỗ trợ OAuth' in mcp

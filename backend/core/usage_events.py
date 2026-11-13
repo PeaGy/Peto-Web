@@ -32,7 +32,7 @@ COLUMNS = (
     "at", "kind", "surface", "purpose", "service", "model", "slug", "outcome", "complete", "elapsed_ms",
     "first_text_ms", "input_tokens", "output_tokens", "cached_tokens", "reasoning_tokens", "search_calls",
     "cache_write_tokens",
-    'effort', 'cost_ticks',
+    'effort', 'cost_ticks', 'prefix_hash',
 )
 KINDS = {"call", "turn", 'chat_event'}
 _scope: ContextVar[dict | None] = ContextVar('usage_measurement_scope', default=None)
@@ -59,6 +59,10 @@ def _label(value: object) -> str | None:
     return value.lower() if isinstance(value, str) and LABEL.fullmatch(value) else None
 
 
+def _hash(value: object) -> str | None:
+    return value if isinstance(value, str) and len(value) == 8 and all(c in '0123456789abcdef' for c in value) else None
+
+
 def _count(value: object) -> int | None:
     return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
 
@@ -69,7 +73,7 @@ def record(
     elapsed_ms: int | None = None, first_text_ms: int | None = None, input_tokens: int | None = None,
     output_tokens: int | None = None, cached_tokens: int | None = None, reasoning_tokens: int | None = None,
     search_calls: int | None = None, cache_write_tokens: int | None = None,
-    effort: str | None = None, cost_ticks: int | None = None,
+    effort: str | None = None, cost_ticks: int | None = None, prefix_hash: str | None = None,
 ) -> None:
     """Thêm một sự kiện vào hàng đợi. Số liệu hỏng chỉ thành ô trống; không bao giờ làm hỏng lượt chat."""
     global _dropped
@@ -87,6 +91,9 @@ def record(
             _count(reasoning_tokens), _count(search_calls), _count(cache_write_tokens), _label(effort),
             # Số tiền nhà cung cấp tự báo đã tính cho lần gọi (xAI: cost_in_usd_ticks, 1 USD = 10^10 tick).
             _count(cost_ticks),
+            # 8 ký tự hex của SHA-256 phần đầu cố định (instructions + tools), không chứa chữ nào: hai lần gọi liền nhau
+            # khác giá trị là phần đầu đã đổi nên prompt cache không đọc được (G1.1b).
+            _hash(prefix_hash),
         )
         if len(_pending) == MAX_PENDING:
             _dropped += 1
