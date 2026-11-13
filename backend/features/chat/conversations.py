@@ -115,7 +115,6 @@ async def retry_in_place(owner, conversation_id, message_id, text, quoted_source
     """
     async with db_connection.connect() as connection:
         connection.row_factory = aiosqlite.Row
-        await connection.execute('PRAGMA foreign_keys=ON')
         await connection.execute('BEGIN IMMEDIATE')
         source = await (await connection.execute("SELECT archived FROM conversations WHERE id=? AND owner=? AND mode='chat'",
                                                   (conversation_id, owner))).fetchone()
@@ -179,7 +178,6 @@ async def fork(owner, conversation_id, message_id, text, quoted_source=chat_quot
     try:
         async with db_connection.connect() as connection:
             connection.row_factory = aiosqlite.Row
-            await connection.execute('PRAGMA foreign_keys=ON')
             await connection.execute('BEGIN IMMEDIATE')
             source = await (await connection.execute("SELECT * FROM conversations WHERE id=? AND owner=? AND mode='chat'", (conversation_id, owner))).fetchone()
             if source and source['archived']:

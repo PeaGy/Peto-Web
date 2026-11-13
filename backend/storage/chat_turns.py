@@ -92,7 +92,6 @@ async def bind(owner, request_id, conversation_id, message_id=None, content=None
     ``quote_id`` là tin Companion được trả lời (Reply). Chỉ giữ khi tin đó còn trong đúng hội thoại này, như
     resolveReplyTargetId của AIRI: tin vừa bị xóa thì lượt vẫn gửi, chỉ không trích."""
     async with connection.connect() as db:
-        await db.execute('PRAGMA foreign_keys=ON')
         await db.execute('BEGIN IMMEDIATE')
         message_id = await bind_in_transaction(db, owner, request_id, conversation_id, message_id,
                                                content, provider, quote_id, quoted_source, model, effort)
@@ -236,7 +235,6 @@ async def persist(owner, request_id, *, content, sources=(), artifacts=(), work=
     """
     async with connection.connect() as db:
         db.row_factory = aiosqlite.Row
-        await db.execute('PRAGMA foreign_keys=ON')
         await db.execute('BEGIN IMMEDIATE')
         turn = await (await db.execute('SELECT * FROM chat_turns WHERE owner=? AND request_id=?', (owner, request_id))).fetchone()
         if not turn:

@@ -185,7 +185,6 @@ async def delete_imagine_job(owner: str, job_id: str) -> bool:
             (job_id, owner),
         )
         paths += [str(row["path"]) for row in await cursor.fetchall()]
-        await db.execute("PRAGMA foreign_keys=ON")
         cursor = await db.execute(
             "DELETE FROM imagine_jobs WHERE id = ? AND owner = ?",
             (job_id, owner),
