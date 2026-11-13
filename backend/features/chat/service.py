@@ -307,6 +307,8 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
     request_id = request.request_id or uuid.uuid4().hex
     await chat_turns.reserve(owner, request_id)
     turn_complete = False
+    # Tóm tắt phần cũ chạy sau khi trả lời xong (G1.3): lượt ghi lại tham số ở đây, tác vụ nền đọc.
+    compaction: dict = {}
 
     async def event_stream() -> AsyncIterator[str]:
         nonlocal conversation_id
@@ -614,7 +616,11 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                         yield sse({'type': 'reading', 'text': 'Peto đang chuẩn bị ngữ cảnh hội thoại…'}) + (log.read_start('Đang chuẩn bị ngữ cảnh…') if log else '')
                     # Ngân sách tính cả khối chỉ dẫn ở đuôi; system gửi đi vẫn là bản không có chúng.
                     budget_prompt = system_prompt + ('\n\n' + runtime_guides.strip() if runtime_guides.strip() else '')
-                    prepared = await chat_context.prepare(owner, conversation_id, model, budget_prompt, rows, project_documents, history_limit)
+                    prepared = await chat_context.prepare(owner, conversation_id, model, budget_prompt, rows, project_documents,
+                                                          history_limit, summarize_now=False)
+                    if prepared.summary_due:
+                        compaction.update(model=model, prompt=budget_prompt, window=history_limit,
+                                          project_documents=tuple(project_documents or ()))
                     latest_scope = await db.conversation_settings(owner, conversation_id)
                     if not latest_scope or latest_scope['archived'] or latest_scope.get('project_id') != project_id:
                         raise ProviderError('Hội thoại đã thay đổi trong lúc chuẩn bị ngữ cảnh; mở lại trước khi gửi nhé.')
@@ -793,6 +799,9 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
     async def name_after_response():
         if conversation_id and mode == "chat":
             await titles.maybe_generate(owner, conversation_id, model)
+        # Tóm tắt phần cũ sau câu trả lời (G1.3), chỉ khi lượt hoàn tất: lượt dừng hay lỗi không tốn thêm lần gọi nào.
+        if conversation_id and mode == "chat" and turn_complete and compaction:
+            await chat_context.compact(owner, conversation_id, **compaction)
         # Ghi nhớ chạy sau khi trả lời xong, như đặt tiêu đề: câu trả lời và giọng đọc không phải chờ.
         if conversation_id and remembers and turn_complete:
             await companion_memory.remember(owner, MAX_HISTORY_MESSAGES)

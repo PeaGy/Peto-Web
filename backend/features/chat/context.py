@@ -35,6 +35,9 @@ class Prepared:
     # Envelope tóm tắt (CONTEXT_NOTE + JSON). Từ G1.1 không ghép vào prompt: nó đổi theo lượt nên đi trong khối runtime
     # ở đuôi đầu vào (features/chat/request_context.py).
     note: str = ''
+    # Lượt Chat chuẩn bị với ``summarize_now=False`` (G1.3): có phần cũ đủ để tóm tắt nhưng chưa tóm tắt; service gọi
+    # ``compact`` sau khi trả lời xong.
+    summary_due: bool = False
 
 
 def parse_summary(text, batch, previous):
@@ -135,16 +138,33 @@ async def _window(owner, cid, prompt, rows, cap, info, convert):
     return recent, history
 
 
-async def prepare(owner, cid, model, prompt, rows, project_documents, window):
+async def prepare(owner, cid, model, prompt, rows, project_documents, window, *, summarize_now=True):
+    """``summarize_now=False`` (lượt Chat, G1.3): không gọi model tóm tắt trước câu trả lời; dùng bản tóm tắt đã có, phần
+    chưa tóm tắt ghi là chưa đại diện trong envelope, và báo ``summary_due`` để chạy ``compact`` sau lượt."""
     key = (owner, cid)
     lock = _locks.get(key)
     if lock is None:
         lock = _locks[key] = asyncio.Lock()
     async with lock:
-        return await _prepare(owner, cid, model, prompt, rows, project_documents, window)
+        return await _prepare(owner, cid, model, prompt, rows, project_documents, window, summarize_now)
 
 
-async def _prepare(owner, cid, model, prompt, rows, project_documents, window):
+async def compact(owner, cid, model, prompt, window, project_documents=()):
+    """Tóm tắt phần cũ của hội thoại sau khi lượt đã trả lời xong (G1.3), cùng chỗ với đặt tên và ghi nhớ.
+
+    Trước đây việc này chạy trong lượt, trước chữ đầu tiên (có thể chờ tới ``PETO_CHAT_SUMMARY_TIMEOUT_SECONDS``). Đọc lại
+    tin mới nhất, rồi chạy đúng bước chuẩn bị có tóm tắt (cùng khóa theo hội thoại, cùng kiểm CAS khi lưu). Không bao giờ
+    raise: lỗi chỉ để lại watermark cũ, lượt sau ghi phần đó là chưa đại diện như mọi khi."""
+    from storage.conversations import get_messages
+    try:
+        rows = await get_messages(owner, cid, limit=window)
+        if rows:
+            await prepare(owner, cid, model, prompt, rows, list(project_documents), window)
+    except Exception as error:
+        logger.warning('Chưa tóm tắt được context Chat sau lượt (%s).', type(error).__name__)
+
+
+async def _prepare(owner, cid, model, prompt, rows, project_documents, window, summarize_now=True):
     from storage.conversations import get_messages
     info = policy(model)
     # Dành chỗ cho schema, tool kết quả, summary và mốc thời gian; adapter kiểm lại request thật ở từng vòng.
@@ -168,8 +188,9 @@ async def _prepare(owner, cid, model, prompt, rows, project_documents, window):
     project_id, anchor, pending = await _metadata(owner, cid, boundary, saved)
     detail = ''
     batch = await store.spans(owner, cid, boundary, saved['cursor_id'] if saved else 0, saved['cursor_offset'] if saved else 0)
-    if config.CHAT_SUMMARY_ENABLED and batch and (pending >= MIN_BATCH or batch[0]['start'] > 0
-                                                or sum(len(p['text']) for p in batch) >= 8000):
+    due = bool(config.CHAT_SUMMARY_ENABLED and batch and (pending >= MIN_BATCH or batch[0]['start'] > 0
+                                                         or sum(len(p['text']) for p in batch) >= 8000))
+    if due and summarize_now:
         summary_started, summary_outcome = perf_counter(), 'cancelled'
         try:
             value = await summarize(model, summary, batch, info)
@@ -240,4 +261,5 @@ async def _prepare(owner, cid, model, prompt, rows, project_documents, window):
         raise ContextOverflow('Bản tóm tắt và ngữ cảnh hiện tại vượt ngân sách; hãy giảm tài liệu dự án hoặc chia nhỏ yêu cầu.')
     logger.info('chat_context model=%s estimated_tokens=%d input_limit=%d summary=%s gap=%d',
                 model, tokens(counted, history), info['input'], bool(summary), gap)
-    return Prepared(history, prompt, info, ChatHistory(owner, cid, rows[-1]['id'] + 1) if hidden else None, detail, note)
+    return Prepared(history, prompt, info, ChatHistory(owner, cid, rows[-1]['id'] + 1) if hidden else None, detail, note,
+                    summary_due=due and not summarize_now)
