@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import AgentConnectDialog, { forgetAgentCode, takeAgentCode } from '../src/features/settings/AgentConnectDialog';
 import * as api from '../src/shared/api/api';

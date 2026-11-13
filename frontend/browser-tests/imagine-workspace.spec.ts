@@ -156,7 +156,7 @@ test('mobile: menu trượt lên, kéo xuống đóng và bàn phím chuyển tr
   const frames = await more.evaluate(async element => {
     const sheet = document.querySelector<HTMLElement>('.mobile-image-sheet')!;
     // Đo khung chuyển động thực tế sau click, không chỉ kiểm tra giá trị CSS khai báo.
-    getComputedStyle(sheet).transform; (element as HTMLButtonElement).click();
+    void getComputedStyle(sheet).transform; (element as HTMLButtonElement).click();
     const samples: number[] = [];
     for (let i = 0; i < 10; i++) {
       await new Promise(requestAnimationFrame);

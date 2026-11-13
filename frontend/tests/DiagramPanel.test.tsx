@@ -147,7 +147,7 @@ it('đổi nền sáng tối thì vẽ lại sơ đồ theo màu mới', async (
 });
 
 it('sơ đồ phân làn đẩy tên sơ đồ lên trên hàng tên làn, lưu đồ thường giữ lề mặc định', async () => {
-  const margin = () => (mermaid.initialize.mock.lastCall?.[0] as { flowchart?: { titleTopMargin?: number } }).flowchart?.titleTopMargin;
+  const margin = () => (mermaid.initialize.mock.lastCall?.[0] as { flowchart?: { titleTopMargin?: number } } | undefined)?.flowchart?.titleTopMargin;
   const { unmount } = render(<DiagramCard source={'swimlane-beta\n  subgraph DG["Độc giả"]\n    A(Chọn sách)\n  end'} pending={false} />);
   await screen.findByRole('button', { name: /Sơ đồ phân làn/ });
   await waitFor(() => expect(margin()).toBeGreaterThan(25));

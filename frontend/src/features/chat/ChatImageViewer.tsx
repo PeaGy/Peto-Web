@@ -155,7 +155,7 @@ export default function ChatImageViewer({ images, index, onIndexChange, onClose 
     <div ref={stageRef} className={`chat-image-stage${ready ? ' ready' : ''}`} onPointerDown={pointerDown} onPointerMove={pointerMove}
       onPointerUp={pointerEnd} onPointerCancel={pointerEnd} onLostPointerCapture={event => { pointers.current.delete(event.pointerId); }}
       onClick={event => { if (event.target === event.currentTarget && press.current?.background && !press.current.moved) onClose(); }}
-      onDoubleClick={event => { event.preventDefault(); if (ready) view.scale > fitImageScale(imageSize.current, viewportSize.current) + 0.01 ? fit() : zoom(1, pointAt(event.clientX, event.clientY)); }}>
+      onDoubleClick={event => { event.preventDefault(); if (!ready) return; if (view.scale > fitImageScale(imageSize.current, viewportSize.current) + 0.01) fit(); else zoom(1, pointAt(event.clientX, event.clientY)); }}>
       <img key={`${index}-${retry}`} src={file.url} alt={file.name} draggable={false} className="chat-image-original"
         style={{ visibility: ready ? 'visible' : 'hidden', width: imageSize.current.width || undefined, height: imageSize.current.height || undefined,
           transform: `translate3d(calc(-50% + ${view.x}px), calc(-50% + ${view.y}px), 0) scale(${view.scale})` }}

@@ -147,7 +147,7 @@ it('tệp Word Peto đã sửa: danh sách thay đổi trỏ đúng chỗ theo m
     { type: 'p', number: 2, label: 'a)', parts: [{ text: 'Lập bảng giá trị của F.' }] },
     // Lời giải của lần sửa trước (mã 1–2) và của lần này (mã 4–6): dòng thay đổi của lần này phải tới khối sau.
     { type: 'p', number: 3, parts: [{ text: 'Lời giải cũ', state: 'ins' }], state: 'ins', revs: [1, 2] },
-    { type: 'p', number: 4, parts: [{ text: 'Ta có ', state: 'ins' }, { math: '\overline{x}', display: false, state: 'ins' }], state: 'ins', revs: [4, 5] },
+    { type: 'p', number: 4, parts: [{ text: 'Ta có ', state: 'ins' }, { math: '\\overline{x}', display: false, state: 'ins' }], state: 'ins', revs: [4, 5] },
     { type: 'table', rows: [{ state: 'ins', cells: [{ parts: [{ text: 'x', state: 'ins' }] }, { parts: [{ text: 'F', state: 'ins' }] }] }], revs: [6] },
   ], changes: [{ text: 'Xóa Đoạn 1', revs: [3, 3] }, { text: 'Chèn sau Đoạn 2: 1 đoạn, 1 bảng', revs: [4, 6] }, { text: 'Xóa Đoạn 9', revs: [] }] });
   render(<DocumentPanel {...props} selection={{ id: 'W1', version: 2, key: 3 }} />);

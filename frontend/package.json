@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "test": "vitest run",
+    "lint": "oxlint src tests browser-tests",
     "test:browser": "tsc -p browser-tests/tsconfig.json && playwright test",
     "test:browser:update": "playwright test --update-snapshots",
     "preview": "vite preview"
@@ -41,6 +42,7 @@
     "@vitejs/plugin-react": "^6.1.1",
     "fake-indexeddb": "^6.2.5",
     "jsdom": "^29.1.1",
+    "oxlint": "1.90.0",
     "typescript": "^7.0.2",
     "vite": "^8.2.2",
     "vitest": "^5.0.0"

@@ -6,7 +6,7 @@ import './citations.css';
 // Transform Markdown nodes, not HTML strings: code, link labels, images and user messages stay literal.
 const MARKER = /\[(?:web|x|src):[^\]\r\n]{0,128}\]|\ue200cite(?:\ue202[^\ue201\r\n]{1,100})+\ue201/g;
 const TAIL = /\[(?:w(?:e(?:b(?::[^\]\r\n]{0,128})?)?)?|x(?::[^\]\r\n]{0,128})?|s(?:r(?:c(?::[^\]\r\n]{0,128})?)?)?)?$|\ue200(?:c(?:i(?:t(?:e(?:\ue202[^\ue201\r\n]*)?)?)?)?)?$/;
-const PARTIAL_LINK = /\[\[[0-9]{0,9}(?:\](?:\](?:\([^\)\r\n]*)?)?)?$/;
+const PARTIAL_LINK = /\[\[[0-9]{0,9}(?:\](?:\](?:\([^)\r\n]*)?)?)?$/;
 
 function citeNode(refs: string[]): RootContent {
   return { type: 'emphasis', children: [], data: { hName: 'cite', hProperties: { 'data-citation-refs': JSON.stringify(refs.slice(0, 128)) } } };

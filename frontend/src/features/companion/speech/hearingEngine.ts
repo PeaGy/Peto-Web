@@ -374,6 +374,9 @@ async function keyEngine(token: number, source: HearingProviderId): Promise<Engi
         if (error instanceof HearingError && !error.fatal) publish({ message: error.message });
         else fail(error);
       } finally {
+        // Cố ý: return trong finally nuốt lỗi lọt ra từ catch (fail), để hàng đợi `queue` không thành promise bị từ chối
+        // làm hỏng mọi lượt chép lời sau.
+        // oxlint-disable-next-line no-unsafe-finally
         if (!valid()) return;
         pending -= 1;
         if (token === generation && pending === 0 && state.phase === "transcribing") {
