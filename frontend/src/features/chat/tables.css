@@ -19,6 +19,7 @@
 .table-scroll tr:last-child td { border-bottom: 0; }
 .message-status, .composer-note { color: var(--muted); font-size: 12px; }
 .message-status { border-top: 1px solid var(--line); padding-top: 8px; margin-top: 10px; }
+.message-status.message-silent { border-top: 0; padding-top: 0; margin-top: 2px; font-style: italic; }
 .composer-note { margin: 8px 4px 0; line-height: 1.5; }
 .loading-chat { color: var(--muted); text-align: center; margin: auto; }
 .load-more, .dialog-actions button {

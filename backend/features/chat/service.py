@@ -309,6 +309,8 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
     turn_complete = False
     # Tóm tắt phần cũ chạy sau khi trả lời xong (G1.3): lượt ghi lại tham số ở đây, tác vụ nền đọc.
     compaction: dict = {}
+    # Lượt Chat dịch vụ AI chạy xong mà không viết gì (Peto im lặng có chủ đích): vẫn chốt hoàn tất.
+    silent = False
 
     async def event_stream() -> AsyncIterator[str]:
         nonlocal conversation_id
@@ -468,7 +470,7 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
             collected.append(chunk.text)
             return (steps + (visible_events(chunk.text) or '')) or None
 
-        nonlocal turn_complete
+        nonlocal turn_complete, silent
         complete = False
         outcome = "cancelled"
         failure: str | None = None
@@ -667,6 +669,11 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                     yield chunk_event(StreamChunk('text', 'Đã tạo xong tài liệu. Bạn xem trước hoặc tải tệp bên dưới nhé.'))
                 # Một câu trả lời Companion chỉ có ghi chú riêng thì người dùng không thấy gì: coi như chưa trả lời.
                 complete = bool(_visible("".join(collected), mode).strip())
+                # Tab Trò chuyện: dịch vụ AI chạy xong bình thường (lỗi thật đều đã raise ở trên) mà không viết chữ nào là
+                # Peto im lặng có chủ đích, ví dụ khi được bảo "đừng trả lời" (thử thật 13/11/2026: Grok chỉ suy nghĩ,
+                # 0 chữ). Chủ web chọn coi là lượt hoàn tất, giao diện ghi một dòng mờ; không báo lỗi.
+                if not complete and mode == 'chat':
+                    complete = silent = True
                 if not complete:
                     outcome = "empty"
                     failure = "Peto chưa trả lời được lượt này. Nhắn lại giúp nha."
@@ -711,7 +718,8 @@ async def chat(request: ChatRequest, owner: str = Depends(current_owner), http_r
                         artifacts=artifacts, work=work, provider=own_provider,
                         state='complete' if complete else 'timeout' if outcome == 'timeout' else
                               'interrupted' if outcome == 'cancelled' else 'error',
-                        outcome='stream_interrupted' if outcome == 'cancelled' else outcome, save_empty=mode == 'chat')
+                        outcome='stream_interrupted' if outcome == 'cancelled' else outcome, save_empty=mode == 'chat',
+                        allow_empty=silent)
                 except Exception:
                     logger.exception('Không lưu được câu trả lời của lượt chat')
                     outcome = 'persistence_error'
