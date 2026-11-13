@@ -6,7 +6,7 @@ import { appPath, appView, chatId, chatRoute, companionCardId, companionCardRout
 import { EditIcon } from '../shared/ui/EditIcon';
 import Sidebar from './Sidebar';
 import { useSidebarKeyboard } from './useSidebarKeyboard';
-import { ChatReplyStatus, focusComposerIfOwned } from '../features/chat/ChatReplyStatus';
+import { ChatReplyStatus } from '../features/chat/ChatReplyStatus';
 import { useProjects } from '../features/projects/useProjects';
 import ProjectSidebar, { FolderIcon } from '../features/projects/ProjectSidebar';
 import { createProject, deleteProject, updateProject, type Project } from '../features/projects/projectApi';
@@ -14,8 +14,7 @@ import { ProjectConfirm } from '../features/projects/ProjectControls';
 import MoveConversationDialog from '../features/projects/MoveConversationDialog';
 import ProjectChatHeader from '../features/projects/ProjectChatHeader';
 import { ChatMessage } from '../features/chat/ChatMessage';
-import { messageText } from '../features/chat/draftLinks';
-import { disconnectStream, networkInterrupted, useReplyRecovery } from '../features/chat/useReplyRecovery';
+import { disconnectStream, useReplyRecovery } from '../features/chat/useReplyRecovery';
 import { EditDraftNotice, ReplyRecoveryNotice } from '../features/chat/ReplyRecoveryNotice';
 import { Greeting } from '../features/chat/Greeting';
 import { LoadingIndicator } from '../shared/ui/LoadingIndicator';
@@ -23,14 +22,15 @@ import { MenuIcon, PinIcon } from './navigationIcons';
 import { PetoAvatar, AccountAvatar, accountLine, accountSubtitle } from './accountUi';
 import { EFFORTS, MOTIONS, THEMES, readStoredTheme, readStoredCollapsed, type ThemeChoice, type AppView } from './preferences';
 import { isReducedMotion, readMotionChoice, type MotionChoice } from '../shared/motion';
-import { MAX_FILES, MAX_MEDIA_FILES, MAX_FILE_BYTES, MAX_TOTAL_BYTES, isImageFile, isMediaFile, fileToBase64 } from '../features/chat/attachments';
-import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type SetStateAction } from "react";
+import { MAX_FILES, MAX_MEDIA_FILES, MAX_FILE_BYTES, MAX_TOTAL_BYTES, isImageFile, isMediaFile } from '../features/chat/attachments';
+import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import '../shared/styles/styles.css';
 import { DiagramContext } from "../features/diagrams/DiagramCard";
 import { diagramBlocks } from "../features/diagrams/diagrams";
 import { diagramPanel } from "../features/diagrams/diagramPanelLazy";
 import LazyBoundary from "../shared/ui/LazyBoundary";
-import { preloadable } from "../shared/ui/preloadable";
+import { AdminDashboard, AgentSettings, ArchivedConversations, Companion, CompanionSettings, ConnectorSettings, Imagine, loadCompanion,
+  loadImagine, loadSettings, MemorySettings, preload, ProfileSettings, usePreloadWhenIdle } from './lazyViews';
 import { useLocalVoice } from "../features/companion/speech/LocalVoice";
 import AgentConnectDialog, { forgetAgentCode, takeAgentCode } from "../features/settings/AgentConnectDialog";
 import AccountMenu, { placeAccountMenu, type AccountMenuPlace } from "./AccountMenu";
@@ -53,10 +53,8 @@ import DocumentWorkspace from '../features/documents/DocumentWorkspace';
 import DocumentPanel, { RightPanelIcon, type DocumentPanelSelection } from '../features/documents/DocumentPanel';
 import type { DocumentDraftRequest } from '../features/documents/documentApi';
 import { takeConnectorResult } from '../features/connectors/connectorApi';
-import { safeSources } from "../features/chat/WebSources";
 import SourcesPanel from '../features/chat/SourcesPanel';
-import { normalizeWeb } from '../features/chat/sourceActivity';
-import { closeWork } from "../features/chat/WorkTimeline";
+import { sendChatTurn, stopChatTurn, type ActiveReply, type ChatRevision, type ChatTurnContext, type StopTicket } from '../features/chat/chatTurn';
 import { QuoteSelection } from '../features/chat/QuotedFollowup';
 import { validReplyVariants } from '../features/chat/replyVariants';
 import type { DraftQuote } from '../features/chat/chatDrafts';
@@ -71,60 +69,20 @@ import {
   listConversations,
   updateConversation,
   logout,
-  sendMessage,
-  stopChat,
-  type StopChatResult,
   type AppInfo,
   type AuthState,
-  type ChatAttachment,
   type Conversation,
-  type ChatSelection,
   type ImagineJob,
   type Message,
-  type OutgoingAttachment,
   type ReplyVariant,
   type ReplyVariants,
   type WebSearchMode,
-  type WorkStep,
 } from "../shared/api/api";
 
-// Tạo ảnh, Companion và nội dung Cài đặt tải riêng lúc mở lần đầu: phần lớn lượt vào chỉ để chat, và tệp JS chính càng
-// nhỏ thì điện thoại càng sớm thấy ô chat (đo ngày 2026-09-27). preload* gọi lúc rê chuột hay chạm vào nút mở.
-const imagine = preloadable(() => import("../features/imagine/Imagine"));
-const companion = preloadable(() => import("../features/companion/Companion"));
-// Trang cài đặt riêng của Companion (/companion/settings/, chủ web chốt ngày 13/10/2026); hộp Cài đặt chung không còn
-// nhóm Companion.
-const companionSettings = preloadable(() => import("../features/companion/settings/CompanionSettings"));
-const profileSettings = preloadable(() => import("../features/settings/ProfileSettings"));
-const memorySettings = preloadable(() => import("../features/settings/MemorySettings"));
-const agentSettings = preloadable(() => import("../features/settings/AgentSettings"));
-const archiveSettings = preloadable(() => import("../features/settings/ArchivedConversations"));
-const connectorSettings = preloadable(() => import('../features/connectors/ConnectorSettings'));
-// Trang Quản trị chỉ chủ web mở; tải riêng nên người dùng thường không phải tải mã biểu đồ.
-const adminDashboard = preloadable(() => import('../features/admin/AdminDashboard'));
 // Tải danh sách hội thoại hỏng thì thử lại một lần sau chừng này mili giây rồi mới báo. Ngày 21/10/2026 một lần tải sau
 // lượt chat không tới được máy chủ (log VPS chỉ có 200 OK) mà banner đỏ vẫn hiện, và không tự tắt khi tải lại được.
 const LIST_ERROR = "Không tải được danh sách hội thoại. Thử tải lại nhé.";
 const LIST_RETRY_MS = 2000;
-const AdminDashboard = adminDashboard.View;
-const loadImagine = imagine.preload;
-const loadCompanion = companion.preload;
-const loadSettings = () => Promise.all([
-  profileSettings.preload(), memorySettings.preload(), agentSettings.preload(), archiveSettings.preload(), connectorSettings.preload(),
-]);
-// Tải trước: lỗi ở đây bỏ qua, lần mở thật sẽ tải lại và LazyBoundary lo phần báo lỗi.
-const preload = (load: () => Promise<unknown>) => () => void load().catch(() => {});
-const Imagine = imagine.View;
-const Companion = companion.View;
-const CompanionSettings = companionSettings.View;
-const ProfileSettings = profileSettings.View;
-const MemorySettings = memorySettings.View;
-const AgentSettings = agentSettings.View;
-const ArchivedConversations = archiveSettings.View;
-const ConnectorSettings = connectorSettings.View;
-type ChatRevision = { target: Message; text: string; inlineEdit?: boolean };
-type ActiveReply = { id: string | null; messages: Message[]; projectId: string | null;
-  selection: ChatSelection; retry?: ChatRevision; error?: string };
 
 // Old messages keep their rendered Markdown while the draft or current reply changes.
 export default function App() {
@@ -369,7 +327,7 @@ function AppContent() {
   const clearFocusJob = useCallback(() => setFocusJobId(null), []);
 
   const abortRef = useRef<AbortController | null>(null);
-  const stopTicketRef = useRef<{ requestId: string; dispatched: boolean; promise?: Promise<StopChatResult | null> } | null>(null);
+  const stopTicketRef = useRef<StopTicket | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -684,27 +642,7 @@ function AppContent() {
     if (auth?.authenticated) void refreshConversations();
   }, [auth?.authenticated, refreshConversations]);
 
-  // Ô chat đã hiện thì lúc rảnh tải sẵn Tạo ảnh, Companion và Cài đặt: lần mở đầu khỏi chờ tệp (khoảng 0,3 giây trên 4G
-  // chậm, đo ngày 2026-09-27). Bỏ qua khi người dùng bật tiết kiệm dữ liệu hay mạng chỉ 2G.
-  useEffect(() => {
-    if (!auth?.authenticated) return;
-    const connection = (navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string } }).connection;
-    if (connection?.saveData || /2g/.test(connection?.effectiveType ?? "")) return;
-    let idle = 0;
-    const warm = () => {
-      preload(loadSettings)();
-      preload(loadImagine)();
-      preload(loadCompanion)();
-    };
-    const timer = window.setTimeout(() => {
-      idle = window.requestIdleCallback ? window.requestIdleCallback(warm, { timeout: 5000 }) : window.setTimeout(warm, 0);
-    }, 4000);
-    return () => {
-      window.clearTimeout(timer);
-      if (window.cancelIdleCallback) window.cancelIdleCallback(idle);
-      else window.clearTimeout(idle);
-    };
-  }, [auth?.authenticated]);
+  usePreloadWhenIdle(auth?.authenticated);
 
   useEffect(() => {
     if (nearBottom.current) bottomRef.current?.scrollIntoView({ behavior: "instant", block: "end" });
@@ -1023,303 +961,16 @@ function AppContent() {
       message={message} action={action} onDiscard={() => resolveEdit(edit)} />;
   }
 
-  async function submit(revision?: ChatRevision) {
-    const text = revision ? revision.text.trim() : messageText(draft);
-    const hasAttachments = revision ? Boolean(revision.target.attachments?.length) : draftFiles.length > 0;
-    if ((!text && !hasAttachments) || readOnly || abortRef.current || loadingConversation || loadFailed || !recovery.online || recovery.pending) return;
-
-    const pending = revision ? [] : draftFiles;
-    const sentDraft = revision ? null : snapshotDraft();
-    const sentQuote = revision ? undefined : sentDraft?.quote;
-    const previousMessages = messages;
-    const revisionIndex = revision ? messages.findIndex(m => m.id === revision.target.id) : -1;
-    if (revision && revisionIndex < 0) {
-      setRetryAvailable(false);
-      setError("Hãy mở lại cuộc trò chuyện trước khi sửa hoặc tạo lại câu trả lời này.");
-      return;
-    }
-    const previousEdit = revision?.inlineEdit ? editDrafts.find(edit => edit.messageId === revision.target.id) : undefined;
-    if (previousEdit && !canResumeEdit(previousEdit)) return;
-    const requestId = previousEdit?.requestId ?? crypto.randomUUID();
-    const pendingEdit = revision?.inlineEdit && revision.target.id
-      ? { messageId: revision.target.id, text: revision.text, requestId } : undefined;
-    if (pendingEdit) saveEdit(pendingEdit);
-    const prefix = revision ? messages.slice(0, revisionIndex) : messages;
-    // A revised reply replaces the selected message; its source panel must not attach to the new reply by index.
-    if (revision) setSourcesIndex(null);
-    recovery.cancel();
-    setRetryAvailable(false);
-    retryRevision.current = revision;
-    setEditTarget(null);
-    setError(null);
-    setNotice(null);
-    // Tin đầu của cuộc mới: nhớ chỗ ô nhắn đang đứng để trượt nó xuống đáy.
-    if (emptyChat) composerFrom.current = composerBoxRef.current?.getBoundingClientRect().top ?? null;
-    setStreaming(true);
-    setStopping(false);
-    nearBottom.current = true;
-    setShowJump(false);
-
-
-    const optimistic: ChatAttachment[] = pending.map((item) => ({
-      id: item.id,
-      name: item.file.name,
-      mime: item.file.type || "application/octet-stream",
-      kind: isImageFile(item.file) ? "image" : "file",
-      size: item.file.size,
-      url: item.previewUrl || "",
-    }));
-
-    const startedAt = performance.now();
-    const reply: ActiveReply = { id: conversationId, projectId: activeProjectId,
-      selection: { model: chosenModel, effort: effectiveEffort }, retry: revision, messages: [
-      ...prefix,
-      { role: "user", content: text, attachments: revision?.target.attachments || optimistic,
-        ...((revision?.target.quoted_source ?? sentQuote) ? { quoted_source: revision?.target.quoted_source ?? sentQuote } : {}) },
-      // Bước "chờ" chỉ có ở trình duyệt: bước đầu tiên máy chủ gửi thay nó.
-      { role: "assistant", content: "", workStartedAt: startedAt,
-        work: { ms: 0, steps: [{ id: 'wait', kind: 'wait', label: 'Đang gửi và chờ máy chủ…', state: 'live', start: 0 }] } },
-    ] };
-    replyRef.current = reply;
-    setMessages(reply.messages);
-
-    const controller = new AbortController();
-    abortRef.current = controller;
-    const stopTicket = { requestId, dispatched: false } as NonNullable<typeof stopTicketRef.current>;
-    stopTicketRef.current = stopTicket;
-    let activeId = conversationId;
-    let accepted = false;
-    let completed = false;
-    let interrupted = false;
-    let serverStopped = false;
-    // Máy chủ đã gửi bản chốt của nhật ký "Đang làm" (sự kiện "work").
-    let finalWork = false;
-    let storedUserId: number | undefined;
-    const session = authVersion.current;
-
-    const writeReply = (change: SetStateAction<Message[]>) => {
-      if (session !== authVersion.current) return;
-      reply.messages = typeof change === 'function' ? change(reply.messages) : change;
-      if (isSelectedReply(reply)) setMessages(reply.messages);
-    };
-
-    // Câu trả lời đang viết luôn là tin cuối.
-    const updateReply = (change: (last: Message) => Message) => {
-      if (session !== authVersion.current) return;
-      writeReply((prev) => {
-        const last = prev[prev.length - 1];
-        return last?.role === "assistant" ? [...prev.slice(0, -1), change(last)] : prev;
-      });
-    };
-    // Bước tới sau khi bấm Dừng thì bỏ: nhật ký đã chốt ở lúc dừng.
-    const updateSteps = (change: (steps: WorkStep[]) => WorkStep[]) => {
-      if (controller.signal.aborted) return;
-      updateReply(last => ({
-        ...last, work: { ms: 0, ...last.work, steps: change((last.work?.steps ?? []).filter(step => step.kind !== 'wait')) },
-      }));
-    };
-
-    const acceptMessage = (id: string, _usedEffort: string, storedMessage?: Message) => {
-      if (session !== authVersion.current || (accepted && activeId === id)) return;
-      accepted = true;
-      storedUserId = storedMessage?.id;
-      activeId = id;
-      const selected = isSelectedReply(reply);
-      reply.id = id;
-      if (selected) {
-        chatSelection.accepted(id, reply.selection);
-        conversationIdRef.current = id;
-        setConversationId(id);
-        const path = chatRoute(id);
-        if (viewRef.current === 'chat' && window.location.pathname !== path) {
-          navigate({ pathname: path, search: window.location.search }, { replace: !revision });
-        }
-      }
-      if (sentDraft) acceptDraft(sentDraft, selected ? id : undefined);
-      if (pendingEdit && storedMessage?.id && storedMessage.content === text) resolveEdit(pendingEdit);
-      if (storedMessage) reply.retry = { target: storedMessage, text: storedMessage.content };
-      if (selected) retryRevision.current = reply.retry;
-      if (storedMessage) writeReply(prev => [...prev.slice(0, -2), storedMessage, prev[prev.length - 1]]);
-      updateReply(last => last.work ? { ...last, work: { ...last.work, steps: last.work.steps.map(step =>
-        step.kind === 'wait' ? { ...step, label: 'Đang chuẩn bị câu trả lời…' } : step) } } : last);
-    };
-
-    try {
-      const attachments: OutgoingAttachment[] = await Promise.all(
-        pending.map(async (item) => ({
-          name: item.file.name,
-          mime: item.file.type,
-          data: await fileToBase64(item.file),
-        })),
-      );
-
-      await chatSelection.waitForSave(conversationId);
-      if (session !== authVersion.current || controller.signal.aborted) return;
-      stopTicket.dispatched = true;
-      await sendMessage(
-        {
-          requestId: stopTicket.requestId,
-          message: text,
-          projectId:activeProjectId,
-          conversationId,
-          branchMessageId: revision?.target.id,
-          effort: effectiveEffort,
-          webSearch,
-          attachments,
-          model: chosenModel,
-          quotedSource: sentQuote,
-        },
-        {
-          onMeta: acceptMessage,
-          onStopped: () => { serverStopped = true; },
-          onDelta: (chunk) => updateReply(last => ({ ...last, content: last.content + chunk })),
-          onReplace: (rest) => updateReply(last => ({ ...last, content: rest })),
-          // Nhật ký "Đang làm" do máy chủ dựng (features/chat/work_log.py): mỗi bước tới là thêm hoặc thay theo id.
-          onStep: (step) => updateSteps(steps => {
-            const index = steps.findIndex(item => item.id === step.id);
-            if (index < 0) return [...steps, step];
-            const next = [...steps];
-            next[index] = { ...step, summary: step.summary ?? steps[index].summary };
-            return next;
-          }),
-          onThinking: (piece, id) => updateSteps(steps => steps.map(step => step.id === id ? { ...step, summary: (step.summary ?? '') + piece } : step)),
-          onWork: (work) => {
-            if (controller.signal.aborted) return;
-            finalWork = true;
-            const { web: rawWeb, ...rest } = work;
-            const web = normalizeWeb(rawWeb);
-            updateReply(last => ({ ...last, work: { ...rest, ...(web ? { web } : {}) } }));
-          },
-          onSources: (sources) => {
-            if (!controller.signal.aborted) updateReply(last => ({ ...last, sources: safeSources(sources) }));
-          },
-          onSourceActivity: (web) => {
-            if (!controller.signal.aborted) updateReply(last => ({ ...last, work: { ms: 0, steps: [], ...last.work, web } }));
-          },
-          onArtifact: (artifact) => {
-            if (controller.signal.aborted) return;
-            // Peto sửa cùng một tệp vài lần trong một lượt: bản mới thay thẻ của bản trước ngay tại chỗ, như máy chủ lưu.
-            updateReply(last => {
-              const artifacts = [...(last.artifacts || [])];
-              const index = artifacts.findIndex(item => item.id === artifact.id);
-              if (index >= 0) artifacts[index] = artifact;
-              else artifacts.push(artifact);
-              return { ...last, artifacts };
-            });
-            if (isSelectedReply(reply)) setDocumentRefresh(value => value + 1);
-          },
-          onError: (message, status) => {
-            if (session !== authVersion.current) return;
-            if (!accepted && status === 404 && pendingEdit) {
-              resolveEdit(pendingEdit, { ...pendingEdit, requestId: previousEdit?.requestId, conflict: true });
-              return;
-            }
-            reply.error = message;
-            if (!isSelectedReply(reply)) return;
-            setError(message);
-            setRetryAvailable(accepted || !pendingEdit);
-          },
-          onDone: (messageId) => {
-            completed = true;
-            if (Number.isSafeInteger(messageId) && messageId! > 0) updateReply(last => ({ ...last, id: messageId }));
-          },
-        },
-        controller.signal,
-      );
-    } catch (err) {
-      if (err instanceof UnauthorizedError) {
-        handleUnauthorized();
-      } else if (!controller.signal.aborted) {
-        interrupted = true;
-        const message = err instanceof Error ? err.message : "Mất kết nối tới máy chủ";
-        reply.error = accepted ? message : `${message} Bản nháp được giữ lại; kiểm tra lịch sử trước khi gửi lại nếu kết nối bị ngắt.`;
-        if (session === authVersion.current && isSelectedReply(reply)) {
-          setError(reply.error);
-          setRetryAvailable(accepted || !pendingEdit);
-        }
-      }
-    } finally {
-      const stopResult = stopTicket.promise ? await stopTicket.promise : null;
-      if (!accepted && stopResult?.conversation_id && stopResult.message) acceptMessage(stopResult.conversation_id, effectiveEffort, stopResult.message);
-      if (stopResult?.state === 'complete') completed = true;
-      const stoppedByUser = !completed && (serverStopped || stopResult?.stopped === true ||
-        (!stopTicket.dispatched && controller.signal.aborted && !networkInterrupted(controller)));
-      if (session === authVersion.current) {
-        if (!accepted && pendingEdit && !previousEdit?.requestId && (!stopTicket.dispatched || serverStopped || stopResult?.stopped)) {
-          resolveEdit(pendingEdit, { messageId: pendingEdit.messageId, text: pendingEdit.text });
-        }
-        if (stoppedByUser && isSelectedReply(reply)) {
-          reply.error = undefined;
-          setError(null);
-          setRetryAvailable(false);
-        }
-        if (!accepted) writeReply(previousMessages);
-        else {
-          const elapsed = Math.round(performance.now() - startedAt);
-          writeReply((prev) => {
-            const last = prev[prev.length - 1];
-            if (last?.role !== "assistant") return prev;
-            const work = finalWork ? last.work : closeWork(last.work, completed, elapsed);
-            // Lượt hỏng trước khi có chữ giữ nhật ký ở trình duyệt. Lượt chủ động dừng được máy chủ lưu cả khi trống.
-            // Lượt hoàn tất có mã tin của máy chủ cũng đã lưu dù rỗng: Peto im lặng có chủ đích (dòng mờ hiện ngay).
-            const stored = Boolean(last.content || last.artifacts?.length || (completed && last.id));
-            if (!stored && !work?.steps.length && !stoppedByUser) return prev.slice(0, -1);
-            return [...prev.slice(0, -1), { ...last, work, workStartedAt: undefined, local: stored || stoppedByUser ? undefined : true,
-              status: completed ? "complete" : "incomplete", stopped: stoppedByUser || undefined }];
-          });
-        }
-        // Dừng sau khi máy chủ đã nhận tin thì bong bóng tự ghi "Đã dừng"; chỉ lượt chưa kịp gửi mới cần dòng báo.
-        if (stoppedByUser && !accepted && isSelectedReply(reply)) setNotice("Đã dừng gửi. Bản nháp vẫn được giữ lại.");
-        if (activeId || !accepted) void refreshConversations();
-        if (accepted && activeId && (revision || (completed && !reply.messages.at(-1)?.id))) {
-          // Fetch stable IDs for edit/regenerate; preserve the local progress log.
-          try {
-            const stored = await getMessages(activeId);
-            // Bong bóng chỉ có ở trình duyệt (lượt hỏng) không có trong danh sách đã lưu: bỏ qua khi khớp thứ tự.
-            if (session === authVersion.current) writeReply(current => {
-              let index = 0;
-              return current.map(row => {
-                if (row.local) return row;
-                const saved = stored[index++];
-                if (!saved || saved.role !== row.role || saved.content !== row.content) return revision ? { ...row, id: undefined } : row;
-                return { ...row, id: saved.id, reply_variants: saved.reply_variants, quoted_source: saved.quoted_source };
-              });
-            });
-          } catch { if (revision) writeReply(current => current.map(row => ({ ...row, id: undefined }))); }
-        }
-        if (!stoppedByUser && (interrupted || networkInterrupted(controller)) && accepted && activeId && storedUserId !== undefined) {
-          recovery.interrupt({ conversationId: activeId, userMessageId: storedUserId });
-        }
-      }
-      if (accepted) for (const item of pending) if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
-      setStreaming(false);
-      setStopping(false);
-      abortRef.current = null;
-      if (stopTicketRef.current === stopTicket) stopTicketRef.current = null;
-      if (viewRef.current === 'chat' && isSelectedReply(reply)) focusComposerIfOwned(textareaRef.current);
-    }
-  }
-
-  function stop() {
-    const ticket = stopTicketRef.current;
-    const controller = abortRef.current;
-    if (!controller || ticket?.promise) return;
-    setStopping(true);
-    if (!ticket?.dispatched) { controller.abort(); return; }
-    const session = authVersion.current;
-    ticket.promise = stopChat(ticket.requestId).then(result => {
-      if (result.stopped) controller.abort();
-      else if (session === authVersion.current) setStopping(false);
-      return result;
-    }).catch(() => {
-      ticket.promise = undefined;
-      if (session === authVersion.current) {
-        setStopping(false);
-        setError('Chưa xác nhận được Dừng trên máy chủ. Bạn bấm Dừng lại nhé.');
-      }
-      return null;
-    });
-  }
+  const turn: ChatTurnContext = {
+    abortRef, acceptDraft, activeProjectId, authVersion, canResumeEdit, chatSelection, chosenModel,
+    composerBoxRef, composerFrom, conversationId, conversationIdRef, draft, draftFiles, editDrafts, effectiveEffort,
+    emptyChat, handleUnauthorized, isSelectedReply, loadFailed, loadingConversation, messages, navigate, nearBottom,
+    readOnly, recovery, refreshConversations, replyRef, resolveEdit, retryRevision, saveEdit, setConversationId,
+    setDocumentRefresh, setEditTarget, setError, setMessages, setNotice, setRetryAvailable, setShowJump,
+    setSourcesIndex, setStopping, setStreaming, snapshotDraft, stopTicketRef, textareaRef, viewRef, webSearch,
+  };
+  const submit = (revision?: ChatRevision) => sendChatTurn(turn, revision);
+  const stop = () => stopChatTurn(turn);
 
   async function changeConversation(item: Pick<Conversation, 'id' | 'project_id'>, change: {title?: string; pinned?: boolean; archived?: boolean}) {
     if (metadataBusy || (change.archived !== undefined && abortRef.current)) return;
