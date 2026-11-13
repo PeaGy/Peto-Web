@@ -165,6 +165,9 @@ dislike it reduce it here, like Claude's Appearance → Motion.
   text, so a render problem can be diagnosed from what the model actually wrote. It is hidden while that message is
   still streaming. Code blocks keep their own button; both share `useCopy`. Their accessible names differ ("Sao chép"
   vs "Sao chép câu trả lời"), so tests match the code button's name exactly.
+- One KaTeX for the whole app: `package.json` `overrides` pins `katex` to the direct dependency (`"$katex"`), so Chat
+  (`rehype-katex`), the Word viewer, Mermaid and `micromark-extension-math` share one copy and one CSS file;
+  `tests/katexSingleVersion.test.ts` fails if a second copy comes back (see the G4.2 log entry).
 - Math renders with `remark-math` + `rehype-katex` (`trust: false`, `strict: "ignore"`, in `markdownMath.ts`) after
   `mathMarkdown.normalizeMath` turns `\(…\)` / `\[…\]` into dollar delimiters, skipping code. It also runs
   `tildeNegation`: in LaTeX `~` is a non-breaking space, so a model writing negation as `~p` (common in discrete-math
@@ -279,3 +282,27 @@ dislike it reduce it here, like Claude's Appearance → Motion.
   double-click restores 260px. Mobile keeps its existing fixed drawer size.
   Chat/Imagine scroll containers extend 6px toward the edge while preserving content padding, leaving a gap
   between the native scrollbar and the separator. Resizing does not touch chat state, drafts, routes or history.
+
+# Dated log (newest first)
+
+## One KaTeX version (G4.2) (2026-11-12, committed on branch `g4.2-one-katex`, not deployed)
+
+Audit package G4.2. Before it, `katex@0.18.7` (direct dependency, used by `WordView.tsx`) sat next to three nested
+`katex@0.16.47` copies under `rehype-katex`, `mermaid` and `micromark-extension-math`, so the build shipped three chunks
+of about 260 KB. It also hid a Chat bug: `markdownMath.ts` imports `katex/dist/katex.min.css`, which resolves to 0.18.7,
+while `rehype-katex` rendered with 0.16.47. KaTeX 0.18.0 prefixed its internal CSS classes (changelog:
+https://github.com/KaTeX/KaTeX/blob/main/CHANGELOG.md, read 2026-11-12), so Chat formulas carried `.base`/`.strut` with no
+matching rule: measured in Chromium, both were `display: inline` and `white-space: normal` instead of `inline-block` /
+`nowrap` (strut heights ignored, formulas could wrap mid-line).
+- Fix: `"overrides": {"katex": "$katex"}` and the lockfile keeps 0.18.7 (npm first picked 0.18.10; pinned back so this
+  package changes no version). The lockfile only loses the three nested katex 0.16.47 and their `commander` 8.3.0.
+  0.17.0's only breaking change is the internal `__defineFunction`; `rehype-katex` and Mermaid call `renderToString`.
+- Build: one `katex-*.js` (259 KB); `markdownMath-*.js` is now 14.7 KB and `WordView-*.js` 4.5 KB; no chunk contains
+  `0.16.47`.
+- Checked on a temporary Vite page using the app's modules (deleted before commit): Chat and the Word viewer render with
+  `.katex-base`/`.katex-strut` at `inline-block`/`nowrap`, no `katex-error`. Mermaid draws the diagram but leaves `$$…$$`
+  labels as text, before and after: the app sets `htmlLabels: false` (`docs/notes/documents.md`) and Mermaid only uses
+  KaTeX for HTML labels.
+- Tests: `tests/katexSingleVersion.test.ts` (2: one copy for the three dependents; the HTML Chat renders uses classes the
+  loaded CSS defines). Both fail on `main`'s lockfile. Vitest 1,164 passed before the new file. The Playwright
+  screenshots contain no formulas, so they were not rerun.

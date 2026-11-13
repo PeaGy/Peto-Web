@@ -101,5 +101,6 @@ line once it has been tried, and record the result in the area's note file. Paid
 
 ## Frontend (`frontend.md`)
 
+- [ ] G4.2: look at a real Chat answer with inline and display formulas (fractions, roots, sums) on desktop and phone after deploy; only a temporary Vite page was checked — `frontend.md`, "One KaTeX version (G4.2)".
 - [ ] Chat image viewer touch feel on physical Android/iOS — `frontend.md`, "Frontend conventions".
 - [ ] A live GitHub connection once the GitHub App and secrets are set up — `frontend.md`, "Frontend conventions".
