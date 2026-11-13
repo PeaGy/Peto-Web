@@ -81,6 +81,7 @@ cd backend && ../.venv/Scripts/python.exe -m pytest -k "imagine and not delete"
 
 # Frontend tests and build
 cd frontend && npm test                          # vitest run
+cd frontend && npm run lint                      # oxlint: React hook rules are errors, exhaustive-deps warnings
 cd frontend && npx vitest run tests/App.test.tsx
 cd frontend && npx vitest run tests/App.test.tsx -t "partial test name"
 cd frontend && npm run build                     # tsc -b && vite build -> frontend/dist

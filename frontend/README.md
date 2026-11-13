@@ -29,7 +29,8 @@ src/
 
 - Mã chỉ phục vụ một tính năng nằm trong thư mục tính năng đó, cạnh CSS liên quan. Ví dụ giới hạn tệp của chat nằm ở `features/chat/attachments.ts`; preset biểu cảm nằm ở `features/companion/characters/`.
 - Chỉ chuyển vào `shared/` khi nhiều phần thực sự dùng cùng một chức năng. Feature không import từ `app/`; khung ứng dụng truyền dữ liệu và callback xuống.
-- `app/App.tsx` điều phối đăng nhập, phiên chat, gửi/dừng, điều hướng và các bảng. `app/Sidebar.tsx` dựng thanh bên; `features/chat/ChatMessage.tsx` dựng tin nhắn và giữ memoization; `app/LoginScreen.tsx` dựng màn đăng nhập.
+- `app/App.tsx` điều phối đăng nhập, phiên chat, điều hướng và các bảng (dưới 900 dòng từ G3.3). Phần tách ra: gửi/Dừng ở `features/chat/chatTurn.ts`, bảng bên phải ở `useChatPanels`, đối chiếu bản sửa ở `useEditDraftCheck`, ô nhắn ở `useComposerDock`, tệp nháp ở `useDraftFileActions`, danh sách hội thoại ở `app/useConversationList.ts`, Companion ở `app/useCompanionShell.ts`, Cài đặt và menu tài khoản ở `app/useSettingsMenu.ts` và `app/appSettings.tsx`, các tab tải lười ở `app/lazyViews.ts` và `app/appViews.tsx`, hộp thoại dự án ở `features/projects/projectDialogs.tsx`.
+- `npm run lint` chạy oxlint (`.oxlintrc.json`): vi phạm quy tắc hook React là lỗi, thiếu phụ thuộc trong effect là cảnh báo. CI chạy lệnh này trước test. `app/Sidebar.tsx` dựng thanh bên; `features/chat/ChatMessage.tsx` dựng tin nhắn và giữ memoization; `app/LoginScreen.tsx` dựng màn đăng nhập.
 - Import trực tiếp module cần dùng. Tránh một `index.ts` xuất toàn bộ các feature: nó dễ kéo cả Live2D, VRM hoặc Mermaid vào lần mở chat đầu tiên.
 
 ## CSS và tải riêng

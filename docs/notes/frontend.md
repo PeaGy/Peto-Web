@@ -147,11 +147,17 @@ dislike it reduce it here, like Claude's Appearance → Motion.
   mocked routes under `setOffline`, so `recovery.spec.ts` aborts that route while offline.
 - **Draft preservation.** The composer keeps text and files until the server acknowledges
   the message (the `meta` event). Stop, error and disconnect all keep the draft.
+- **Lint.** `npm run lint` runs oxlint with `.oxlintrc.json`, and CI runs it before the tests. `react/rules-of-hooks`
+  is an error, `react/exhaustive-deps` a warning (52 at the start, left as they were). ESLint with typescript-eslint
+  cannot run here: the project uses TypeScript 7, which has no JavaScript API, and typescript-eslint supports TS
+  below 6.1. The React Compiler rules (`set-state-in-effect`, `refs`, …) are off because the app does not use the
+  compiler; turning them on reports about 160 places. `no-control-regex` is off (the sanitizers strip control
+  characters on purpose), and so is `unicorn/no-new-array`.
 - Modals are native `<dialog>` with `showModal()`; `tests/setup.ts` polyfills those methods
   for jsdom.
 - An empty chat puts greeting + composer together mid-screen on desktop
   (`.chat.empty-state`); phones keep the composer docked. Only the **first send** slides
-  the composer down (FLIP via `element.animate` in `App.tsx`); opening a conversation or
+  the composer down (FLIP via `element.animate` in `features/chat/useComposerDock.ts`); opening a conversation or
   starting a new one switches instantly on purpose — those are frequent navigation.
 - Code blocks only colour the grammars registered in `markdownCode.ts` (with their aliases), and `CODE_LABELS` in
   `features/chat/ChatMessage.tsx` holds the display names. Anything else renders as plain text under an uppercased tag, so a new language
@@ -181,7 +187,8 @@ dislike it reduce it here, like Claude's Appearance → Motion.
   `localStorage` behind try/catch helpers. In-flight Imagine state lives in component state,
   so it survives switching tabs but not a page reload.
 - Frontend code is grouped under `src/app`, `src/features` and `src/shared`; see `frontend/README.md` for ownership,
-  CSS order and import rules. `app/App.tsx` owns chat state and the app shell; `app/Sidebar.tsx`, `app/LoginScreen.tsx`
+  CSS order and import rules. `app/App.tsx` owns chat state and the app shell (split under 900 lines in G3.3; see that
+  log entry for where each part went); `app/Sidebar.tsx`, `app/LoginScreen.tsx`
   and `features/chat/ChatMessage.tsx` own their presentation. `Imagine.tsx` and `Companion.tsx` are mounted alongside
   it and receive an `active` prop rather than being unmounted — that is what keeps a running generation
   alive when the user switches back to Chat.
@@ -248,8 +255,9 @@ dislike it reduce it here, like Claude's Appearance → Motion.
     inside a test's timeout. Tests look for lazily rendered content with `findBy…`. `vitest.config.ts` raises
     `testTimeout` to 15 s, and `tests/setup.ts` raises testing-library's `asyncUtilTimeout` to 3 s: under a fully
     parallel run, a few heavy tests passed 5 s without being wrong.
-- The composer is `Composer.tsx`, presentational only: draft text, the file list and the send
-  flow stay in `App.tsx` because they hang off the draft-preservation rule; just the drag
+- The composer is `Composer.tsx`, presentational only: draft text and the file list stay in `App.tsx` (the send flow is
+  `features/chat/chatTurn.ts`, called with a context App builds on every render) because they hang off the
+  draft-preservation rule; just the drag
   state is local to it. `files.tsx` holds what the composer and the message bubbles share
   (`DraftFile`, `formatSize`, `FileGlyph`) so `Composer.tsx` never imports from `App.tsx`
   and no import cycle can form.
@@ -284,6 +292,26 @@ dislike it reduce it here, like Claude's Appearance → Motion.
   between the native scrollbar and the separator. Resizing does not touch chat state, drafts, routes or history.
 
 # Dated log (newest first)
+
+## Lint and App.tsx split (G3.3) (2026-11-13, committed on branch `g3.3-eslint-app-split`, not merged)
+
+Audit package G3.3. oxlint 1.90.0 (pinned) replaces the planned ESLint, for the TypeScript 7 reason under "Lint"; it
+found no hook-order violation in app code (three in test mocks, rule off for tests) and a few small issues that were
+fixed (a ternary used as a statement, needless escapes, `'\overline'` missing a backslash in a test, unused imports).
+`App.tsx` went from 1,877 to 895 lines in steps, each committed with the App tests green. Bodies were moved, not
+rewritten: functions that read many render values (`sendChatTurn`, `projectActions`, `renderAppSettings`,
+`renderFeatureViews`, `renderConversationDialogs`, `editDraftNotice`) take a context object App builds on every
+render and destructure it, so they see the same values as the old closures; render helpers are plain functions, not
+components, so the React tree is unchanged. Hooks: `useChatPanels`, `useEditDraftCheck`, `useComposerDock`,
+`useDraftFileActions` (`features/chat/`), `useConversationList` / `useRefreshConversations` / `useTitlePolling`,
+`useCompanionShell`, `useSettingsMenu`, `useSearchShortcut`, `usePreloadWhenIdle` (`app/`), `useProjectDialogs`
+(`features/projects/projectDialogs.tsx`). Cost: the eager App chunk grew 2.8 KB gzipped (108.4 → 111.2 KB, App plus
+the former `characterLibrary` chunk it now absorbs), mostly property names of the context objects. Tests: 1,177 vitest
+pass, and the build passes. The local Playwright PC/mobile run is not usable as proof: the full run had 68 failures, but
+`main` (`144ee85`, built in a temporary worktree) fails the same way. On the five failing spec files, main failed 48 and
+the branch 52; the branch-only names were all PC tests whose mobile twins pass, and a 3× rerun of them failed 5/15 on
+main and 3/15 on the branch. The screenshot diffs (for example `sidebar-menu.png`) show up on main too. CI on a clean
+runner has to confirm the suite.
 
 ## One KaTeX version (G4.2) (2026-11-12, committed on branch `g4.2-one-katex`, not deployed)
 
