@@ -18,6 +18,7 @@ from features.accounts import profile as profile_api
 from features.accounts import discord_memory_api
 from features.voice import api as voice_api
 from core import static_files
+from core import security_headers
 from ai import get_provider
 from core.identity import get_app_identity
 from core.config import ALLOWED_ORIGINS, STATIC_DIR
@@ -55,6 +56,10 @@ app.include_router(agent_gateway.router)
 app.include_router(desktop_release.router)
 app.include_router(desktop_release.policy_router)
 app.include_router(desktop_update.router)
+# Header bảo mật cho mọi phản hồi, kể cả trang tĩnh và SSE (G3.4): bắt buộc nosniff, referrer, chống nhúng khung; CSP
+# đầy đủ mới ở chế độ chỉ báo cáo, báo cáo về /api/csp-report.
+app.add_middleware(security_headers.SecurityHeaders, static_dir=STATIC_DIR)
+app.include_router(security_headers.router)
 # /install.ps1 nằm ngoài /api: phải đăng ký trước static_files.mount ở cuối tệp.
 app.include_router(agent_install.router)
 app.include_router(docs_api.router)

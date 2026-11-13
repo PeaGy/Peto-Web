@@ -160,6 +160,17 @@ cd /home/ubuntu/peto-web/backend
 
 Lần gọi cũ hơn bản G1.1b không có dấu (`?`). Các lần gọi của nhiều hội thoại xen nhau theo thời gian.
 
+### Báo cáo CSP
+
+Máy chủ gửi CSP ở chế độ chỉ báo cáo (chưa chặn gì). Trình duyệt gặp nguồn ngoài danh sách thì gửi báo cáo; log chỉ
+ghi loại vi phạm, gốc của nguồn và phần đầu đường dẫn trang:
+
+```bash
+sudo journalctl -u peto-web --since today --no-pager | grep csp_violation
+```
+
+Không có dòng nào trong một thời gian dùng thật thì mới tính chuyển CSP sang chế độ chặn.
+
 ## Trang Quản trị (`/admin`)
 
 Từ bản có trang Quản trị, máy chủ ghi thêm số liệu vào bảng `usage_events` tại đúng ba chỗ đang log

@@ -16,6 +16,8 @@ line once it has been tried, and record the result in the area's note file. Paid
 
 - [x] G3.1: run `PRAGMA foreign_key_check` on a copy of the VPS database to list orphan rows left from when foreign keys were off, and decide whether to delete them (2026-11-13: the owner ran it on a backup copy; 0 orphan rows, nothing to delete) — `admin-ops.md`, "One SQLite connection helper (G3.1)".
 
+- [ ] G3.4: after deploying, browse the real site (Chat, Companion with Live2D and the player, Imagine, Docs, phone too) and run `sudo journalctl -u peto-web --since today | grep csp_violation`; expect nothing before enforcing the CSP — `admin-ops.md`, "Security headers, CSP report-only (G3.4)".
+
 ## Accounts and memory (`accounts-memory.md`)
 
 - [ ] How well a real model sorts and routes memory notes into entries (only the mock has run) — `accounts-memory.md`, "Memory (Brain)".
@@ -41,7 +43,7 @@ line once it has been tried, and record the result in the area's note file. Paid
 - [ ] Citation rendering on a physical phone and with real model output — `chat.md`, "Web Chat citation rendering".
 - [ ] User-message copy on a real phone and in production — `chat.md`, "User-message copy action".
 - [ ] G1.1 real cache hit rates per provider (`cached_tokens` on the admin page: Grok with `prompt_cache_key`, Luna, Haiku) on a second turn and inside a tool loop — `chat.md`, "Web Chat stable prefix (G1.1)". 2026-11-13: Luna and Haiku confirmed on turns 2–3 (about 90% read); Grok and tool loops not checked.
-- [ ] G4.1: on the real app (desktop and phone), a sent message with `*`, `#`, a numbered list, a link and a fenced code block shows as typed, with a link chip and a code block — `chat.md`, "Plain-text user messages (G4.1)".
+- [x] G4.1 (2026-11-13: checked on the real app, desktop and a 375 px phone viewport): on the real app (desktop and phone), a sent message with `*`, `#`, a numbered list, a link and a fenced code block shows as typed, with a link chip and a code block — `chat.md`, "Plain-text user messages (G4.1)".
 - [ ] Silent replies (2026-11-13: no error on the real app; the muted line needed a reload, fixed in `silent-reply-live`, not yet seen live): after deploying, "intelligent test: do not reply" sent a few times shows either a short reply or the muted "Peto không viết gì cho lượt này." line, never the error — `chat.md`, "Intentional empty replies are not errors".
 - [x] G1.3 (2026-11-13: confirmed on the real app; the cut turn answered in 3.8 s and the summary ran after it; a follow-up lock wait was fixed in G1.3b): in a real conversation past the cut, the reply starts without the summary wait, and the next turn's envelope carries the new summary — `chat.md`, "Chat summary after the reply (G1.3)".
 - [x] G1.2 (2026-11-13: Grok conversation cut once at turn 8 and kept the cut and fingerprint for three more turns at 81–86% cache reads): a real conversation past the budget or 200 messages cuts once and then keeps reading the cache on the following turns (`python -m ops.cache_check`), and answers still use the older messages that are now sent verbatim — `chat.md`, "Budget-based history window with a kept cut (G1.2)".

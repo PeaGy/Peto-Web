@@ -61,6 +61,19 @@ dense ledger and a narrative report. No per-account view, by the owner's call; A
   checked menu entry, F5/Back, tooltip, 90-day coverage, a new chat turn appearing after the flush, phone layout and
   the regular-account redirect.
 
+### Security headers (`core/security_headers.py`)
+
+Every response, including static pages and SSE, gets `X-Content-Type-Options: nosniff`, `Referrer-Policy:
+strict-origin-when-cross-origin`, `X-Frame-Options: DENY` and `Content-Security-Policy: frame-ancestors 'none'` (enforced;
+the app never frames itself, printing uses a popup). The full CSP is `Content-Security-Policy-Report-Only`: nothing is
+blocked, browsers report to `POST /api/csp-report`, which logs only `csp_violation directive=… blocked=<origin or keyword>
+page=/<first path segment> mode=…` (no full URL, query, ids or samples; 16 KB body cap; at most 120 lines a minute per
+process). Inline scripts in `index.html`/`404.html` are allowed by SHA-256 hashes computed from the served files and
+refreshed when they change, never `'unsafe-inline'`. `'unsafe-eval'` is allowed because PixiJS 6 (Live2D) throws without
+it; dropping it needs `@pixi/unsafe-eval` before the CSP is enforced. `connect-src` allows any `https:` because own-key
+voice and hearing providers are called from the browser, custom base URLs included. Middleware is pure ASGI (headers only,
+bodies stream untouched).
+
 ### Configuration
 
 `core/config.py` is where environment variables are read. Every numeric knob goes through
@@ -97,6 +110,18 @@ default to `chat`. `conversations.persona` (`assistant` or `roleplay`) was added
 created (old databases keep it, unused).
 
 # Dated log (newest first)
+
+## Security headers, CSP report-only (G3.4) (2026-11-13, committed on branch `g3.4-security-headers`, not deployed)
+
+Audit package G3.4; current behaviour is under "Security headers" above. Checked with a local production-like stack
+(the backend serving `frontend/dist`, mock provider, temp data, a seeded test account): Chat (link chips, the `__sodo__`
+diagrams, a table, Word and slide previews), Companion (Live2D stage, settings, a message, the YouTube player playing a
+pasted link with `iframe_api` and the embed), Imagine (a mock image), Docs (index and an article), Download and the 404
+page produced no report after `'unsafe-eval'` was added for PixiJS; a deliberate image from `example.org` produced the
+expected `csp_violation directive=img-src blocked=https://example.org page=/chat mode=report` line. Before enforcing:
+read the production journal for `csp_violation` for a while, then decide on `@pixi/unsafe-eval` and on narrowing
+`connect-src`. Tests: `tests/test_security_headers.py` (headers on pages, API and SSE; streaming intact; hashes follow a
+new build; content-free report logging for both report formats; size, parse and rate caps; the real app).
 
 ## One SQLite connection helper (G3.1) (2026-11-12, committed on branch `g3.1-sqlite-connect`, not deployed)
 
