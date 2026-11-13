@@ -19,7 +19,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import secrets
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 
 import httpx
 from fastapi import APIRouter, Cookie, HTTPException, Request, Response
@@ -161,8 +161,25 @@ def _avatar_url(user: dict) -> str:
     return f"https://cdn.discordapp.com/embed/avatars/{index}.png"
 
 
+def _select_callback(request: Request, value: str) -> str:
+    """Chọn callback OAuth đã cấu hình cho origin đang truy cập."""
+    callbacks = [url.strip() for url in value.split(",") if url.strip()]
+    if len(callbacks) <= 1:
+        # Giữ cấu hình một callback cho các bản cài có frontend riêng hoặc dev proxy.
+        return next(iter(callbacks), "")
+
+    host = request.headers.get("host", "").lower()
+    scheme = request.scope["scheme"]
+    for callback in callbacks:
+        target = urlsplit(callback)
+        if target.netloc.lower() == host and target.scheme == scheme:
+            return callback
+
+    raise HTTPException(400, "Tên miền này chưa được cấu hình callback OAuth.")
+
+
 @router.get("/discord/login")
-async def discord_login() -> RedirectResponse:
+async def discord_login(request: Request) -> RedirectResponse:
     if not is_configured():
         raise HTTPException(
             status_code=503,
@@ -175,7 +192,7 @@ async def discord_login() -> RedirectResponse:
     # application này — mà lần đầu thì ai cũng chưa.
     params = {
         "client_id": DISCORD_CLIENT_ID,
-        "redirect_uri": DISCORD_REDIRECT_URI,
+        "redirect_uri": _select_callback(request, DISCORD_REDIRECT_URI),
         "response_type": "code",
         "scope": DISCORD_SCOPE,
         "state": state,
@@ -208,6 +225,7 @@ def _fail(message: str) -> RedirectResponse:
 
 @router.get("/discord/callback")
 async def discord_callback(
+    request: Request,
     code: str | None = None,
     state: str | None = None,
     error: str | None = None,
@@ -220,6 +238,7 @@ async def discord_callback(
     if not peto_oauth_state or not secrets.compare_digest(state, peto_oauth_state):
         return _fail("Phiên đăng nhập không khớp. Thử lại nhé.")
 
+    redirect_uri = _select_callback(request, DISCORD_REDIRECT_URI)
     async with httpx.AsyncClient(timeout=20) as client:
         token_response = await client.post(
             DISCORD_TOKEN_URL,
@@ -228,7 +247,7 @@ async def discord_callback(
                 "client_secret": DISCORD_CLIENT_SECRET,
                 "grant_type": "authorization_code",
                 "code": code,
-                "redirect_uri": DISCORD_REDIRECT_URI,
+                "redirect_uri": redirect_uri,
             },
             headers={"Content-Type": "application/x-www-form-urlencoded"},
         )
@@ -270,7 +289,7 @@ async def discord_callback(
 
 
 @router.get("/google/login")
-async def google_login() -> RedirectResponse:
+async def google_login(request: Request) -> RedirectResponse:
     if not google_configured():
         raise HTTPException(
             status_code=503,
@@ -280,7 +299,7 @@ async def google_login() -> RedirectResponse:
     state = secrets.token_urlsafe(24)
     params = {
         "client_id": GOOGLE_CLIENT_ID,
-        "redirect_uri": GOOGLE_REDIRECT_URI,
+        "redirect_uri": _select_callback(request, GOOGLE_REDIRECT_URI),
         "response_type": "code",
         "scope": GOOGLE_SCOPE,
         "state": state,
@@ -299,6 +318,7 @@ async def google_login() -> RedirectResponse:
 
 @router.get("/google/callback")
 async def google_callback(
+    request: Request,
     code: str | None = None,
     state: str | None = None,
     error: str | None = None,
@@ -313,6 +333,7 @@ async def google_callback(
     ):
         return _fail("Phiên đăng nhập không khớp. Thử lại nhé.")
 
+    redirect_uri = _select_callback(request, GOOGLE_REDIRECT_URI)
     async with httpx.AsyncClient(timeout=20) as client:
         token_response = await client.post(
             GOOGLE_TOKEN_URL,
@@ -321,7 +342,7 @@ async def google_callback(
                 "client_secret": GOOGLE_CLIENT_SECRET,
                 "grant_type": "authorization_code",
                 "code": code,
-                "redirect_uri": GOOGLE_REDIRECT_URI,
+                "redirect_uri": redirect_uri,
             },
             headers={"Content-Type": "application/x-www-form-urlencoded"},
         )
@@ -365,7 +386,7 @@ async def google_callback(
 
 
 @router.get("/github/login")
-async def github_login() -> RedirectResponse:
+async def github_login(request: Request) -> RedirectResponse:
     if not github_configured():
         raise HTTPException(
             status_code=503,
@@ -374,7 +395,7 @@ async def github_login() -> RedirectResponse:
     state = secrets.token_urlsafe(24)
     params = {
         "client_id": GITHUB_LOGIN_CLIENT_ID,
-        "redirect_uri": GITHUB_LOGIN_REDIRECT_URI,
+        "redirect_uri": _select_callback(request, GITHUB_LOGIN_REDIRECT_URI),
         # Không xin scope nào: chỉ đọc hồ sơ công khai (mã số, tên, ảnh), không email, không repo.
         "scope": "",
         "state": state,
@@ -389,6 +410,7 @@ async def github_login() -> RedirectResponse:
 
 @router.get("/github/callback")
 async def github_callback(
+    request: Request,
     code: str | None = None,
     state: str | None = None,
     error: str | None = None,
@@ -401,6 +423,7 @@ async def github_callback(
     if not peto_oauth_state_github or not secrets.compare_digest(state, peto_oauth_state_github):
         return _fail("Phiên đăng nhập không khớp. Thử lại nhé.")
 
+    redirect_uri = _select_callback(request, GITHUB_LOGIN_REDIRECT_URI)
     headers = {"Accept": "application/json", "User-Agent": "Peto-Web"}
     async with httpx.AsyncClient(timeout=20) as client:
         token_response = await client.post(
@@ -409,7 +432,7 @@ async def github_callback(
                 "client_id": GITHUB_LOGIN_CLIENT_ID,
                 "client_secret": GITHUB_LOGIN_CLIENT_SECRET,
                 "code": code,
-                "redirect_uri": GITHUB_LOGIN_REDIRECT_URI,
+                "redirect_uri": redirect_uri,
             },
             headers=headers,
         )

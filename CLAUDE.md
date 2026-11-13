@@ -8,7 +8,7 @@ of its area, never into this file. Keep this file under 400 lines: only what eve
 ## What this is
 
 Peto Web is a private chat UI for Peto, an AI assistant. The name comes from a Discord bot
-(`Tracen Jukebox`) in a **separate repository**. This web app is deliberately independent:
+(`Peto bot`) in a **separate repository**. This web app is deliberately independent:
 its own database, its own xAI token file, its own persona prompt. The only link back to the
 bot is a read-only memory gateway (see "Discord memory gateway" in `docs/notes/accounts-memory.md`).
 

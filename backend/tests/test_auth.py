@@ -6,6 +6,8 @@ bằng cách thay lớp HTTP client, còn phần chống CSRF kiểm tra trực 
 
 from __future__ import annotations
 
+from urllib.parse import parse_qs
+
 from features.accounts import auth
 import httpx
 import pytest
@@ -113,6 +115,56 @@ async def test_login_redirects_to_github(anon_client):
     assert "scope=&" in location or location.endswith("scope=")
     assert "test-github-client-secret" not in location
     assert response.cookies.get(auth.GITHUB_STATE_COOKIE)
+
+
+@pytest.mark.parametrize("provider,setting,profile", [
+    ("discord", "DISCORD_REDIRECT_URI", {"id": "6363", "username": "pear"}),
+    ("google", "GOOGLE_REDIRECT_URI", {"sub": "6363", "name": "Pear"}),
+    ("github", "GITHUB_LOGIN_REDIRECT_URI", {"id": 6363, "login": "pear"}),
+])
+async def test_login_stays_on_each_domain(anon_client, monkeypatch, provider, setting, profile):
+    old_origin = "https://peto-old.test"
+    new_origin = "https://peto-new.test"
+    auth_path = f"/api/auth/{provider}"
+    monkeypatch.setattr(auth, setting, f"{old_origin}{auth_path}/callback, {new_origin}{auth_path}/callback")
+    monkeypatch.setattr(auth, "FRONTEND_URL", "")
+    monkeypatch.setattr(auth, "SESSION_COOKIE_SECURE", True)
+    token_callbacks = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST":
+            token_callbacks.append(parse_qs(request.content.decode())["redirect_uri"][0])
+            return httpx.Response(200, json={"access_token": "test-token"})
+        return httpx.Response(200, json=profile)
+
+    real_client = httpx.AsyncClient
+    monkeypatch.setattr(auth.httpx, "AsyncClient", lambda **kwargs: real_client(
+        transport=httpx.MockTransport(handle), **kwargs,
+    ))
+
+    unknown = await anon_client.get(f"https://other.test{auth_path}/login", headers={
+        "X-Forwarded-Host": "peto-new.test",
+    })
+    assert unknown.status_code == 400
+    user_ids = []
+    for origin, other_origin in ((old_origin, new_origin), (new_origin, old_origin)):
+        login = await anon_client.get(f"{origin}{auth_path}/login")
+        params = httpx.URL(login.headers["location"]).params
+        expected_callback = f"{origin}{auth_path}/callback"
+        assert params["redirect_uri"] == expected_callback
+
+        query = {"code": "test-code", "state": params["state"]}
+        wrong = await anon_client.get(f"{other_origin}{auth_path}/callback", params=query)
+        assert "auth_error" in wrong.headers["location"]
+        completed = await anon_client.get(expected_callback, params=query)
+        assert completed.headers["location"] == "/"
+        assert token_callbacks[-1] == expected_callback
+        me = (await anon_client.get(f"{origin}/api/auth/me")).json()
+        assert me["authenticated"] is True
+        user_ids.append(me["user"]["id"])
+
+    assert user_ids[0] == user_ids[1]
+    assert len(token_callbacks) == 2
 
 
 def fake_github(monkeypatch, *, token_body=None, user=None):
