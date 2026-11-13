@@ -325,18 +325,42 @@ async def test_context_deleted_with_chat_and_migration_does_not_change_original_
         assert (await (await sql.execute('SELECT COUNT(*) FROM chat_contexts WHERE conversation_id=?', (cid,))).fetchone())[0] == 0
 
 
-async def test_stop_during_compaction_never_starts_the_main_reply_or_advances_cursor(client, monkeypatch, summarizer):
+async def test_no_summary_runs_before_the_first_reply_text_then_it_runs_after(client, monkeypatch, summarizer):
+    """G1.3: lượt dùng bản tóm tắt đã có (phần cũ ghi là chưa đại diện), trả lời ngay; tóm tắt chạy sau, ở tác vụ nền."""
+    cid, _ = await conversation()
+    seen = []
+
+    class Provider:
+        async def stream(self, **kwargs):
+            seen.append({'summaries_before_text': len(summarizer), 'note': request_context.current.get().history_note})
+            yield 'Đã nhận.'
+    monkeypatch.setattr(service, 'get_provider', lambda _: Provider())
+    monkeypatch.setattr(service, 'CHAT_MAX_HISTORY', 4)
+    result = await read_events(await client.post('/api/chat', json={
+        'conversation_id': cid, 'message': 'tiếp tục', 'model': 'peto', 'effort': 'low'}))
+    assert result[-1]['type'] == 'done', result
+    assert seen[0]['summaries_before_text'] == 0
+    assert '"summary": null' in seen[0]['note'] and 'unrepresented_messages' in seen[0]['note']
+    # Sau lượt: đúng một lần tóm tắt, bằng model của lượt, và đã lưu (lượt sau dùng được).
+    assert len(summarizer) == 1 and summarizer[0][0] == 'peto'
+    assert await store.state(TEST_OWNER, cid)
+
+
+async def test_stopped_turn_runs_no_summary_and_keeps_the_cursor(client, monkeypatch, summarizer):
+    """Lượt bị dừng: không gọi tóm tắt cả trước lẫn sau, watermark không đổi."""
     from features.chat import schemas, turn_control
     from storage import chat_turns
     from test_chat_turns import consume
     cid, _ = await conversation()
     ready = asyncio.Event()
-    async def wait(*args):
-        ready.set()
-        await asyncio.Event().wait()
-    monkeypatch.setattr(context, 'summarize', wait)
+
+    class Provider:
+        async def stream(self, **kwargs):
+            ready.set()
+            await asyncio.Event().wait()
+            yield ''
+    monkeypatch.setattr(service, 'get_provider', lambda *args: Provider())
     monkeypatch.setattr(service, 'CHAT_MAX_HISTORY', 4)
-    monkeypatch.setattr(service, 'get_provider', lambda *args: pytest.fail('Lượt đã dừng không gọi trả lời.'))
     request_id = uuid.uuid4().hex
     response = await service.chat(schemas.ChatRequest(message='tiếp tục', conversation_id=cid, request_id=request_id), owner=TEST_OWNER)
     events = []
@@ -344,9 +368,20 @@ async def test_stop_during_compaction_never_starts_the_main_reply_or_advances_cu
     await asyncio.wait_for(ready.wait(), 3)
     await turn_control.stop(TEST_OWNER, request_id)
     await asyncio.wait_for(task, 3)
+    await response.background()
     assert (await chat_turns.get(TEST_OWNER, request_id))['state'] == 'stopped'
+    assert not summarizer
     assert await store.state(TEST_OWNER, cid) is None
     assert (TEST_OWNER, request_id) not in turn_control.running
+
+
+async def test_background_compaction_never_raises(monkeypatch, summarizer):
+    cid, _ = await conversation()
+    async def broken(*args, **kwargs):
+        raise RuntimeError('hỏng')
+    monkeypatch.setattr(context, '_prepare', broken)
+    await context.compact(TEST_OWNER, cid, 'peto', 'Peto', 4)
+    assert await store.state(TEST_OWNER, cid) is None
 
 
 async def test_summary_disabled_keeps_raw_history_lookup_and_latest_message(monkeypatch, summarizer):

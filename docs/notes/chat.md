@@ -477,6 +477,23 @@ with `--rates`, USD) ceiling before running, and adds per-model time-to-first-te
 
 # Dated log (newest first)
 
+## Chat summary after the reply (G1.3) (2026-11-13, committed on branch `g1.3-background-summary`, not deployed)
+
+Audit package G1.3. Before it, `context.prepare` called the summary model inside the turn, before the first text, when
+older messages had piled up; a long conversation could wait up to `PETO_CHAT_SUMMARY_TIMEOUT_SECONDS` (20) first.
+- The chat service now calls `prepare(..., summarize_now=False)`: the turn uses the summary already saved, and the part
+  not yet summarized is reported as unrepresented in the envelope, as it already was after a failed summary.
+  `Prepared.summary_due` says a summary would have run.
+- After a completed turn, the response's background task (with titles and memory) calls `context.compact`, which reloads
+  the latest messages and runs the same `prepare` with the summary (same per-conversation lock, same CAS save). It never
+  raises. Stopped or failed turns run no summary. Direct callers of `prepare` keep the old default (`summarize_now=True`).
+- With G1.2 the cut moves rarely, so this runs rarely; the turn that moves the cut answers without the newest summary
+  and the next turn has it.
+- Tests (`test_chat_context.py`): no summary before the first reply text and exactly one after (fails with the old
+  in-turn call, checked); a stopped turn runs no summary before or after and keeps the cursor (replaces the old "stop
+  during compaction" test, since the turn no longer compacts); `compact` never raises. The CAS, cursor, failure and
+  timeout tests are unchanged and pass.
+
 ## Budget-based history window with a kept cut (G1.2) (2026-11-13, committed on branch `g1.2-budget-window`, not deployed)
 
 Audit package G1.2. Before it, Chat sent the 20 most recent messages verbatim (`PETO_MAX_HISTORY`), so every turn past
@@ -498,7 +515,7 @@ prompt cache, and only 10 exchanges were ever sent verbatim while the budget all
   keeps it; a stale cut is ignored; owner scope). `test_chat_context.py` and the envelope test in
   `test_chat_prefix_stability.py` now shrink `CHAT_MAX_HISTORY`. Backend: 2,133 passed, 1 skipped.
 - Cost: conversations of 21–200 short messages now send all of them (was 20), mostly from the cache after G1.1.
-  The summary still runs before the reply when the cut moves (G1.3 moves it after the reply).
+  The summary still runs before the reply when the cut moves (moved after the reply by G1.3, same day).
 
 ## Grok replays its runtime blocks (G1.1c) (2026-11-13, committed on branch `g1.1c-grok-runtime-replay`, not deployed)
 
@@ -1017,7 +1034,7 @@ The owner approved a four-stage Web Chat roadmap, starting with long context. Th
   again under an immediate SQLite transaction. Edits/deletes affecting the covered prefix and project moves
   invalidate it; forks start their own context and conversation deletion cascades. Corrupt v1 caches are rebuilt;
   future schemas are not overwritten. This is summary provenance, not an exactly-once tool journal.
-- At most one summary call per incoming turn, through the selected Web model, low effort, tools/web disabled,
+- At most one summary call per turn (since G1.3, after the reply), through the selected Web model, low effort, tools/web disabled,
   no new retry layer, 16,000 source characters/32 messages per batch, 3,072 output tokens and a default 20-second
   timeout. Structured JSON validation rejects invented source IDs, empty or malformed responses. Cancellation
   propagates. Failure keeps the last good cursor; old chats can retain a backlog explicitly marked as unread.
