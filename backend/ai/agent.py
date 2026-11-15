@@ -16,7 +16,7 @@ from time import perf_counter
 
 import anyio
 
-from core.config import AGENT_MODEL, AGENT_REASONING, AGENT_STEP_TIMEOUT_SECONDS, AI_PROVIDER, OPENAI_API_KEY, OPENAI_AGENT_MAX_OUTPUT_TOKENS, XAI_API_BASE, XAI_AGENT_MAX_OUTPUT_TOKENS
+from core.config import AGENT_MODEL, AGENT_REASONING, AGENT_STEP_TIMEOUT_SECONDS, AGENT_XAI_SILENCE_SECONDS, AI_PROVIDER, OPENAI_API_KEY, OPENAI_AGENT_MAX_OUTPUT_TOKENS, XAI_API_BASE, XAI_AGENT_MAX_OUTPUT_TOKENS
 
 from .base import ProviderError
 
@@ -124,7 +124,7 @@ def _context_overflow(error) -> bool:
                                      "input token count exceeds", "exceeds the context window"))
 
 
-def _http_client():
+def _http_client(read_seconds: float = AGENT_STEP_TIMEOUT_SECONDS):
     """Client HTTP riêng cho agent, có móc ghi lại mã lỗi.
 
     SDK openai tự chờ rồi gửi lại sau 429 hay lỗi 5xx mà không báo gì, nên một bước chậm bất thường trông y hệt một
@@ -136,7 +136,7 @@ def _http_client():
         if response.status_code >= 400:
             logger.warning("Dịch vụ AI trả HTTP %s ở bước agent; SDK có thể tự chờ rồi gửi lại.", response.status_code)
 
-    return httpx.AsyncClient(timeout=httpx.Timeout(AGENT_STEP_TIMEOUT_SECONDS, connect=10.0),
+    return httpx.AsyncClient(timeout=httpx.Timeout(read_seconds, connect=10.0),
                              event_hooks={"response": [log_status]})
 
 
@@ -150,7 +150,10 @@ async def xai_client():
     global _client, _auth
     if _client is None:
         _auth = XaiAuth()
-        _client = AsyncOpenAI(api_key="pending", base_url=XAI_API_BASE, http_client=_http_client())
+        # xAI im hẳn trong lúc Grok viết một lời gọi công cụ dài, nên chờ đọc lâu như khoảng im lặng của Grok; giới hạn
+        # thật nằm ở features/agent/step_limits.py.
+        _client = AsyncOpenAI(api_key="pending", base_url=XAI_API_BASE,
+                              http_client=_http_client(max(AGENT_STEP_TIMEOUT_SECONDS, AGENT_XAI_SILENCE_SECONDS)))
     try:
         _client.api_key = await _auth.get_access_token()
     except XaiAuthError as err:
@@ -353,6 +356,7 @@ async def _responses_step(client, service: str, model: str, max_output_tokens: i
 
 _MOCK_DELAY = 0.01
 _MOCK_LONG_WRITE_DELAY = 0.25  # __viettep__: 60 đoạn, khoảng 15 giây
+_MOCK_SILENT_WRITE_SECONDS = 20.0  # __viettepim__: im hẳn như xAI khi viết lời gọi công cụ
 
 
 def _message(text: str) -> dict:
@@ -436,7 +440,7 @@ async def _mock_step(items: list[dict], web_search: bool = False, *, final: bool
     def speak(text: str, calls: list[dict]) -> AsyncIterator[AgentEvent]:
         return _speak(text, calls, items)
 
-    if "__viettep__" in task:
+    if "__viettep__" in task or "__viettepim__" in task:
         # Viết một tệp dài qua lời gọi công cụ, từng đoạn đối số như dịch vụ thật (thử cổng agent: lần viết đều kéo dài
         # hơn khoảng im lặng cho phép vẫn không bị cắt, ứng dụng thấy tệp đang được viết).
         if results:
@@ -446,6 +450,13 @@ async def _mock_step(items: list[dict], web_search: bool = False, *, final: bool
         content = "".join(f"## Mục {index}\n\nNội dung giả lập của mục {index}, đủ dài để thấy tiến độ.\n\n"
                           for index in range(1, 61))
         call = {**_call(9, "write", {"path": "bao-cao.md", "content": content}), "id": "fc_demo_9"}
+        if "__viettepim__" in task:
+            # Như xAI: câu dẫn, rồi im hẳn trong lúc viết, rồi trả nguyên lời gọi công cụ một lần.
+            yield AgentEvent("delta", "Mình viết lại báo cáo (giả lập).")
+            await asyncio.sleep(_MOCK_SILENT_WRITE_SECONDS)
+            yield AgentEvent("done", output=(_message("Mình viết lại báo cáo (giả lập)."), call),
+                             usage={"input_tokens": 40, "output_tokens": len(call["arguments"]) // 4})
+            return
         yield AgentEvent("tool_start", item={"call_id": call["call_id"], "id": call["id"], "name": call["name"]})
         arguments = call["arguments"]
         size = -(-len(arguments) // 60)

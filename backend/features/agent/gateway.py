@@ -67,6 +67,8 @@ EFFORT_ORDER = ("none", "minimal", "low", "medium", "high", "xhigh", "max")
 FIRST_EVENT_SECONDS = 15.0
 # Dòng chú thích SSE giữ kết nối qua Cloudflare khi model nghĩ lâu; SDK OpenAI bỏ qua dòng bắt đầu bằng ":".
 PING_SECONDS = 15.0
+# pi-ai trong ứng dụng tự cắt luồng sau 300 giây không có nội dung; gửi một đoạn chữ rỗng trước mốc đó.
+KEEPALIVE_SECONDS = 60.0
 SYSTEM_UPDATE = "System update:\n"
 # Ô suy nghĩ cổng tự mở khi model gửi tóm tắt suy nghĩ; nếu kết quả cuối không có item suy luận, ô được đóng bằng
 # item rỗng mang mã này. pi-ai gửi lại nguyên item đó ở lần sau, nên cổng bỏ nó (và tin assistant rỗng) khi nhận vào.
@@ -419,6 +421,20 @@ class ResponseWriter:
                                  "response": self.response("completed", final, _usage(usage))}))
         return chunks
 
+    def keepalive(self) -> list[str]:
+        """Một đoạn chữ rỗng vào ô đang mở (mở ô tin nhắn nếu chưa có): pi-ai coi là có nội dung nên không tự cắt luồng,
+        người dùng không thấy gì. Ô tin nhắn rỗng, nếu model không viết chữ, được đóng bằng item rỗng và cổng bỏ khi
+        ứng dụng gửi lại (``_placeholder``)."""
+        if "message" not in self.open and "reasoning" in self.open:
+            index = self.open["reasoning"]
+            return [self._sse({"type": "response.reasoning_summary_text.delta", "item_id": self.item_ids[index],
+                               "output_index": index, "summary_index": 0, "delta": ""})]
+        index, chunks = self._open("message", {"type": "message", "id": "msg_" + secrets.token_hex(12),
+                                               "role": "assistant", "status": "in_progress", "content": []})
+        chunks.append(self._sse({"type": "response.output_text.delta", "item_id": self.item_ids[index],
+                                 "output_index": index, "content_index": 0, "delta": ""}))
+        return chunks
+
     def failed(self, err: GatewayError) -> str:
         return self._sse({"type": "response.failed", "response": self.response(
             "failed", error={"code": err.code or err.kind, "message": err.message})})
@@ -590,6 +606,8 @@ async def create_response(request: Request):
 
 
 async def _body(writer: ResponseWriter, queue: asyncio.Queue, task: asyncio.Task, first) -> AsyncIterator[str]:
+    loop = asyncio.get_running_loop()
+    shown = loop.time()  # lần cuối ứng dụng nhận một sự kiện mà pi-ai đọc thành nội dung
     try:
         for chunk in writer.created():
             yield chunk
@@ -600,6 +618,12 @@ async def _body(writer: ResponseWriter, queue: asyncio.Queue, task: asyncio.Task
                     pending = await asyncio.wait_for(queue.get(), PING_SECONDS)
                 except TimeoutError:
                     yield ": ping\n\n"
+                    if loop.time() - shown >= KEEPALIVE_SECONDS:
+                        # Dòng ping không đặt lại đồng hồ im lặng 300 giây của pi-ai trong ứng dụng; một đoạn chữ rỗng
+                        # thì có. Cần khi Grok đang viết lời gọi công cụ dài (xAI im hẳn tới lúc xong).
+                        for chunk in writer.keepalive():
+                            yield chunk
+                        shown = loop.time()
                     continue
             kind, value = pending
             pending = None
@@ -608,6 +632,8 @@ async def _body(writer: ResponseWriter, queue: asyncio.Queue, task: asyncio.Task
                           else writer.feed(value))
                 for chunk in chunks:
                     yield chunk
+                if chunks:
+                    shown = loop.time()
             elif kind == "error":
                 yield writer.failed(value)
                 return
@@ -637,7 +663,7 @@ async def _pump(queue: asyncio.Queue, *, owner: str, day: str, cost: int, model,
     try:
         async with admission.slot(f"agent:{owner}"):
             # Đếm giờ từ lúc có suất chạy: dừng khi dịch vụ AI im lặng quá lâu, không cắt lần đang viết đều.
-            limits = StepLimits()
+            limits = StepLimits(model.service)
             async with asyncio.timeout_at(limits.next()) as scope:
                 async for event in agent_step(instructions=parsed.instructions, input_items=parsed.items,
                                               tools=parsed.tools, effort=effort, model=model.key, web_search=False,

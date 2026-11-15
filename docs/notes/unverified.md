@@ -11,7 +11,7 @@ line once it has been tried, and record the result in the area's note file. Paid
 - [ ] Real Grok output for Agent web search: does it list sources and keep to JSON — `agent-gateway.md`, "Peto Agent web search".
 - [ ] `/download/` against real GitHub Releases and a real installer build (only a mock GitHub was used) — `agent-gateway.md`, "Peto Agent download page".
 - [ ] Whether Grok really refuses WebP/GIF images (the gateway converts them to PNG) — `agent-gateway.md`, "Agent gateway for Peto Harness".
-- [ ] A long file write in the installed ph app with real Grok/GPT/Claude: tool-call pieces show while writing, no cut at 5 minutes, and a 128K output really completes (xAI and OpenAI streams, Cloudflare in front) — `agent-gateway.md`, "Agent call time limits, live tool calls and big output caps".
+- [ ] A long file write in the installed ph app with real Grok/GPT/Claude: no cut at 5 minutes (Grok is silent while writing; empty keepalive deltas every 60 s keep ph waiting), GPT/Claude show tool-call pieces while writing, and a long output really completes behind Cloudflare. First try on `dc25fa0` with Grok: `stalled` after 300 s of silence — `agent-gateway.md`, "Grok goes silent while writing tool calls".
 
 ## Admin and operations (`admin-ops.md`)
 

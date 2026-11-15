@@ -41,6 +41,7 @@ def pi_ai_retries(error: dict) -> bool:
 @pytest.fixture
 def short_limits(monkeypatch):
     monkeypatch.setattr(config, "AGENT_STEP_TIMEOUT_SECONDS", 0.2)
+    monkeypatch.setattr(config, "AGENT_XAI_SILENCE_SECONDS", 0.2)
     monkeypatch.setattr(config, "AGENT_STEP_MAX_SECONDS", 30.0)
 
 
@@ -287,3 +288,94 @@ async def test_agent_calls_ask_for_the_big_output_cap_and_the_app_sees_it(anon_c
     token = await signed_in(anon_client, client)
     listing = (await anon_client.get("/api/agent/v1/models", headers=bearer(token))).json()
     assert next(model for model in listing["data"] if model["id"] == "peto")["max_output_tokens"] == 128000
+
+
+# --- Grok im hẳn khi viết lời gọi công cụ (15/11/2026, lần thử sau khi deploy) ------------------------------------------
+# xAI trả nguyên lời gọi công cụ một lần khi viết xong (docs.x.ai, function calling), nên lần thử thật im đúng 300 giây
+# sau câu dẫn rồi bị cổng dừng với "stalled".
+
+async def test_grok_may_stay_silent_longer_than_the_general_silence_limit(anon_client, client, monkeypatch):
+    monkeypatch.setattr(config, "AGENT_STEP_TIMEOUT_SECONDS", 0.1)
+    monkeypatch.setattr(config, "AGENT_XAI_SILENCE_SECONDS", 5.0)
+
+    async def model(**kwargs):
+        yield AgentEvent("delta", "Mình viết lại báo cáo.")
+        await asyncio.sleep(0.5)  # xAI đang viết lời gọi công cụ, không gửi gì
+        yield AgentEvent("done", output=(MESSAGE, CALL), usage={})
+
+    monkeypatch.setattr(gateway, "agent_step", model)
+    token = await signed_in(anon_client, client)
+    events = sse_events(await anon_client.post("/api/agent/v1/responses", headers=bearer(token), json=request()))
+    assert events[-1]["type"] == "response.completed"
+
+
+async def test_models_that_stream_tool_calls_keep_the_short_silence_limit(anon_client, client, monkeypatch):
+    monkeypatch.setattr(config, "AGENT_STEP_TIMEOUT_SECONDS", 0.1)
+    monkeypatch.setattr(config, "AGENT_XAI_SILENCE_SECONDS", 5.0)
+
+    async def model(**kwargs):
+        yield AgentEvent("delta", "Đang làm")
+        await asyncio.sleep(0.5)
+        yield AgentEvent("done", output=(MESSAGE,), usage={})
+
+    monkeypatch.setattr(gateway, "agent_step", model)
+    token = await signed_in(anon_client, client)
+    events = sse_events(await anon_client.post("/api/agent/v1/responses", headers=bearer(token),
+                                               json=request(model="luna")))
+    assert events[-1]["type"] == "response.failed"
+    assert events[-1]["response"]["error"]["code"] == "stalled"
+
+
+async def test_long_silences_send_empty_text_so_the_apps_own_timer_keeps_waiting(anon_client, client, monkeypatch):
+    # pi-ai trong ứng dụng cắt luồng sau 300 giây không có nội dung; dòng ": ping" không tính, đoạn chữ rỗng thì có.
+    monkeypatch.setattr(gateway, "PING_SECONDS", 0.05)
+    monkeypatch.setattr(gateway, "KEEPALIVE_SECONDS", 0.1)
+    monkeypatch.setattr(gateway, "FIRST_EVENT_SECONDS", 0.05)
+
+    async def model(**kwargs):
+        yield AgentEvent("delta", "Mình viết lại báo cáo.")
+        await asyncio.sleep(0.6)
+        yield AgentEvent("done", output=(MESSAGE, CALL), usage={})
+
+    monkeypatch.setattr(gateway, "agent_step", model)
+    token = await signed_in(anon_client, client)
+    events = sse_events(await anon_client.post("/api/agent/v1/responses", headers=bearer(token), json=request()))
+    empty = [event for event in events if event["type"] == "response.output_text.delta" and event["delta"] == ""]
+    assert len(empty) >= 2
+    assert {event["output_index"] for event in empty} == {0}  # vào đúng ô tin nhắn đang mở, không mở ô mới
+    assert events[-1]["type"] == "response.completed" and events[-1]["response"]["output"] == [MESSAGE, CALL]
+
+
+async def test_a_keepalive_before_any_output_opens_a_message_the_gateway_drops_later(anon_client, client, monkeypatch):
+    monkeypatch.setattr(gateway, "PING_SECONDS", 0.05)
+    monkeypatch.setattr(gateway, "KEEPALIVE_SECONDS", 0.1)
+    monkeypatch.setattr(gateway, "FIRST_EVENT_SECONDS", 0.05)
+
+    async def model(**kwargs):
+        await asyncio.sleep(0.4)
+        yield AgentEvent("done", output=(CALL,), usage={})
+
+    monkeypatch.setattr(gateway, "agent_step", model)
+    token = await signed_in(anon_client, client)
+    events = sse_events(await anon_client.post("/api/agent/v1/responses", headers=bearer(token), json=request()))
+    added = [event["item"]["type"] for event in events if event["type"] == "response.output_item.added"]
+    assert added == ["message", "function_call"]
+    closed = next(event["item"] for event in events if event["type"] == "response.output_item.done"
+                  and event["item"]["type"] == "message")
+    assert gateway._placeholder(closed)  # ứng dụng gửi lại item rỗng này thì cổng bỏ đi
+    assert events[-1]["response"]["output"] == [CALL]
+
+
+async def test_cli_gets_clock_pings_that_do_not_extend_the_silence_limit(anon_client, client, monkeypatch, short_limits):
+    monkeypatch.setattr(agent_api, "STEP_PING_SECONDS", 0.05)
+
+    async def model(**kwargs):
+        yield AgentEvent("delta", "Đang làm")
+        await asyncio.sleep(1.0)
+        yield AgentEvent("done", output=(MESSAGE,), usage={})
+
+    monkeypatch.setattr(agent_api, "agent_step", model)
+    token = await connect(anon_client, client)
+    response = await anon_client.post("/api/agent/step", headers=bearer(token), json={"input": [DEMO_TASK]})
+    assert response.text.count(": ping") >= 2
+    assert events_of(response)[-1]["type"] == "error"  # im 1 giây vượt giới hạn 0,2 giây dù vẫn có ping

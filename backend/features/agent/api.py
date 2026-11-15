@@ -34,7 +34,7 @@ import storage as db
 from features.agent.install import cli_version
 from features.agent.tools import FEATURES, explore_schemas, tool_schemas
 from features.agent import assembly, budget
-from features.agent.step_limits import StepLimits
+from features.agent.step_limits import StepLimits, ticking
 from ai.agent import agent_step
 from shared.attachments import sniff_image_mime
 from ai.base import ProviderError
@@ -66,6 +66,8 @@ CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
 # Hàng chờ riêng: một tác vụ agent nhiều bước không được chiếm suất chạy của chat.
 admission = Admission(max_concurrent=AGENT_MAX_CONCURRENT, max_queue=AGENT_MAX_QUEUE, cooldown=0)
+# Dòng giữ kết nối khi dịch vụ AI im (Cloudflare cắt luồng im khoảng 100 giây; xAI im suốt lúc viết lời gọi công cụ).
+STEP_PING_SECONDS = 15.0
 # device_code -> {user_code, name, expires_at, status: pending|approved|denied, owner}
 pending_codes: dict[str, dict] = {}
 
@@ -470,12 +472,17 @@ async def step(request: Request, device: dict = Depends(device_auth)):
                 raise ProviderError("Ngữ cảnh đã tới ngân sách model; cần tóm tắt trước khi tiếp tục.", code="context_overflow")
             async with admission.slot(f"agent:{owner}"):
                 # Dừng khi dịch vụ AI im lặng quá lâu, không cắt lần đang viết đều (features/agent/step_limits.py).
-                limits = StepLimits()
+                limits = StepLimits(model.service)
                 async with asyncio.timeout_at(limits.next()) as scope:
-                    async for event in agent_step(instructions=instructions, input_items=items,
-                                                  tools=step_tools,
-                                                  effort=effort, model=model.key, web_search=searching,
-                                                  final=final, **({"max_output_tokens": window["max_output_tokens"]} if window else {})):
+                    async for event in ticking(agent_step(instructions=instructions, input_items=items,
+                                                          tools=step_tools,
+                                                          effort=effort, model=model.key, web_search=searching,
+                                                          final=final, **({"max_output_tokens": window["max_output_tokens"]} if window else {})),
+                                               STEP_PING_SECONDS):
+                        if event.kind == "tick":
+                            # Đồng hồ máy chủ, không phải dấu hiệu dịch vụ AI còn sống: chỉ giữ kết nối, không gia hạn.
+                            yield ": ping\n\n"
+                            continue
                         scope.reschedule(limits.next())
                         if event.kind == "pulse":
                             # Giữ kết nối (Cloudflare cắt luồng im lặng); CLI bỏ qua dòng chú thích SSE.

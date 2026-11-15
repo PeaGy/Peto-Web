@@ -258,7 +258,9 @@ if AGENT_REASONING not in {"low", "medium", "high"}:
 # Mỗi lần gọi mô hình là một bước. Chủ web yêu cầu giới hạn này riêng cho agent;
 # chat vẫn không giới hạn lượt.
 AGENT_DAILY_STEPS = _env_int("PETO_AGENT_DAILY_STEPS", 200, 1, 10000)
-AGENT_MAX_CONCURRENT = _env_int("PETO_AGENT_MAX_CONCURRENT", 2, 1, 10)
+# Số lần gọi model của Agent chạy cùng lúc, chung cho mọi tài khoản. 6 từ 15/11/2026 (trước là 2): một lần gọi giờ có
+# thể kéo dài nhiều phút (viết tệp dài), mà lần gọi chủ yếu là chờ dịch vụ AI nên ít tốn tài nguyên máy chủ.
+AGENT_MAX_CONCURRENT = _env_int("PETO_AGENT_MAX_CONCURRENT", 6, 1, 10)
 AGENT_MAX_QUEUE = _env_int("PETO_AGENT_MAX_QUEUE", 4, 0, 50)
 # Cả hội thoại gửi lại mỗi bước, kể cả tới 4 ảnh CLI giữ lại (mỗi ảnh dưới 2 MB, thêm một phần ba khi mã hóa base64).
 AGENT_MAX_REQUEST_BYTES = _env_int("PETO_AGENT_MAX_REQUEST_BYTES", 16 * 1024 * 1024, 64 * 1024, 32 * 1024 * 1024)
@@ -267,6 +269,9 @@ AGENT_TOKEN_IDLE_DAYS = _env_int("PETO_AGENT_TOKEN_IDLE_DAYS", 30, 1, 365)
 # là tổng thời gian và cắt cả lần đang viết tệp dài), và không bao giờ kéo dài quá AGENT_STEP_MAX_SECONDS.
 AGENT_STEP_TIMEOUT_SECONDS = _env_float("PETO_AGENT_STEP_TIMEOUT_SECONDS", 300.0, 10.0, 600.0)
 AGENT_STEP_MAX_SECONDS = _env_float("PETO_AGENT_STEP_MAX_SECONDS", 3600.0, 60.0, 14400.0)
+# xAI không gửi dần lời gọi công cụ (docs.x.ai, function calling: "returned in whole in a single chunk"): Grok viết một
+# tệp dài thì dịch vụ im hẳn tới lúc xong. Nên với Grok, khoảng im lặng mặc định bằng trần tổng.
+AGENT_XAI_SILENCE_SECONDS = _env_float("PETO_AGENT_XAI_SILENCE_SECONDS", 3600.0, 10.0, 14400.0)
 # Tìm web cho agent chạy ở phía dịch vụ AI và tính phí theo lượt tìm, nên tắt được riêng, không cần tắt tìm web của chat.
 AGENT_WEB_SEARCH = WEB_SEARCH_ENABLED and os.getenv("PETO_AGENT_WEB_SEARCH", "true").strip().lower() in {"1", "true", "yes"}
 # Bước chậm hơn ngần này thì ghi một dòng cảnh báo kèm thời gian, để biết chậm ở chỗ chờ dịch vụ AI hay lúc viết.

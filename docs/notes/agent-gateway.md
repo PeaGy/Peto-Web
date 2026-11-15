@@ -6,7 +6,34 @@ Moved out of `CLAUDE.md` on 2026-11-12 (G0.2). Write new notes for this area her
 
 # Dated log (newest first)
 
-## Agent call time limits, live tool calls and big output caps (2026-11-15, not committed/deployed)
+## Grok goes silent while writing tool calls (2026-11-15, after deploying `dc25fa0`; not committed/deployed)
+
+The owner's first try after deploying `dc25fa0` (same request, model `peto`) ended with `stalled`: the session log shows
+reasoning until 64 s, the lead-in sentence, then no event at all for exactly 300 s. Pulses would have fired had xAI sent
+anything, so xAI itself was silent. xAI's function-calling docs: "With streaming, the function call is returned in whole
+in a single chunk, not streamed across chunks." So Grok writing a long tool call is minutes of total silence, and two
+timers cut it at 300 s: the gateway's silence limit, and pi-ai's own idle watchdog in ph (`llm-pi-ai` adapter
+`streamIdleTimeoutMs`, default 300,000 ms, reset only by content events, not `: ping`; a cut there is TIMEOUT and resent).
+- `PETO_AGENT_XAI_SILENCE_SECONDS` (default 3,600 = the overall cap, 10–14,400): `StepLimits(service)` uses it for xAI;
+  OpenAI and Claude stream arguments and keep `AGENT_STEP_TIMEOUT_SECONDS` (300). The xAI agent HTTP client's read
+  timeout follows it (`_http_client(read_seconds)`), else httpx would end the read at 300 s of no bytes.
+- Gateway keepalive: `_body` sends, after `KEEPALIVE_SECONDS` (60) without a content event, an empty
+  `output_text.delta` into the open message slot (or an empty `reasoning_summary_text.delta` when only reasoning is
+  open; else it opens a message slot). pi-ai pushes an event even for an empty delta, so ph's 300 s watchdog keeps
+  waiting, invisible to the user; an unused message slot closes as an empty item that `_placeholder` drops on replay.
+  Works for installed ph builds without a new release.
+- `/api/agent/step`: `step_limits.ticking` wraps `agent_step` and yields `tick` every `STEP_PING_SECONDS` (15) of quiet;
+  the CLI gets `: ping` (Cloudflare drops silent streams around 100 s) without the tick extending the silence limit.
+- Mock `__viettepim__`: lead-in text, 20 s of silence, then the whole call at once (xAI style).
+- Tests: `tests/test_agent_step_limits.py` 19 (Grok silence vs Luna `stalled`, keepalive into the open slot, keepalive
+  before any output, CLI ticks not extending silence). pi-ai 1.3.0 against the mock backend (general silence 10 s,
+  keepalive scaled to 2 s): `__viettepim__` not cut, pi-ai events at most 2.1 s apart during the 20 s silence, the call
+  arrived whole at 20.1 s; `__viettep__` unchanged (60 deltas, max gap 0.3 s). Not checked with real Grok yet.
+- Agent admission is one global semaphore (`PETO_AGENT_MAX_CONCURRENT`, queue `PETO_AGENT_MAX_QUEUE` 4); calls can now
+  hold a slot for many minutes, so the owner raised the default from 2 to 6 ("Raise to 6"). A value set in the VPS
+  `.env` still wins.
+
+## Agent call time limits, live tool calls and big output caps (2026-11-15, owner committed `dc25fa0` and deployed it)
 
 The owner's ph session "Tạo Word từ bài thuyết trình" (model `peto`, Medium) retried 9 times over 45 minutes. Session
 log (`~/.peto-agent/sessions/…/session.v4.jsonl.zstd`, concatenated zstd frames): every attempt thought, wrote one
@@ -37,7 +64,7 @@ owner asked for the gateway fix and "output caps like the big providers; no inte
   `json.dumps`). A live slot missing from the final output is left open on purpose: pi-ai then refuses the unfinished
   call instead of running a tool with `{}`.
 - Mock `__viettep__` (agent mock): a `write` call streamed in 60 pieces over ~15 s.
-- Tests: `tests/test_agent_step_limits.py` (14), `test_agent_budget.py` caps. Checked with pi-ai 1.3.0's own
+- Tests: `tests/test_agent_step_limits.py` (14 then), `test_agent_budget.py` caps. Checked with pi-ai 1.3.0's own
   openai-responses client against a mock backend (silence limit 10 s): tool call started at 0.1 s with id
   `call_demo_9|fc_demo_9`, 60 deltas over 15.6 s (max gap 0.3 s), not cut at 15.7 s, full arguments at the end. Not
   checked: real Grok/GPT/Claude streams, the installed ph app, Cloudflare in front of a 20-minute call.
