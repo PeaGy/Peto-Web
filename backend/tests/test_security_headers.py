@@ -120,13 +120,13 @@ async def test_the_real_app_sends_the_headers_and_accepts_reports(anon_client):
 
 AIRI_THEME = "\n      ;(function () { document.documentElement.classList.toggle('dark', true) })()\n    "
 AIRI_INDEX = (f"<!doctype html><html><head><script>{AIRI_THEME}</script>"
-              "<script type=\"module\" crossorigin src=\"/airi/assets/index-x.js\"></script></head><body>"
+              "<script type=\"module\" crossorigin src=\"/companion/assets/index-x.js\"></script></head><body>"
               "<div id=\"app\"></div><button type=\"button\" onclick=\"location.reload()\">Retry</button></body></html>")
 
 
 @pytest.fixture
 async def airi_web(tmp_path, monkeypatch):
-    """Như main.py khi đặt PETO_AIRI_DIR: /airi/ có chính sách riêng, phần còn lại giữ chính sách của trang chính."""
+    """Như main.py khi đặt PETO_AIRI_DIR: /companion/ (Companion bản AIRI) có chính sách riêng, phần còn lại giữ chính sách của trang chính."""
     from core import airi_static
 
     async def identity():
@@ -150,7 +150,7 @@ def directive(header: str, name: str) -> str:
     return next(part.strip() for part in header.split(';') if part.strip().startswith(name + ' '))
 
 
-@pytest.mark.parametrize('path', ['/airi/', '/airi/settings/modules', '/airi/assets/index-x.js'])
+@pytest.mark.parametrize('path', ['/companion/', '/companion/settings/modules', '/companion/settings/modules/voice', '/companion/assets/index-x.js'])
 async def test_airi_pages_get_their_own_report_only_policy(airi_web, path):
     web, _ = airi_web
     response = await web.get(path)
@@ -175,15 +175,36 @@ async def test_rest_of_the_site_keeps_its_policy(airi_web):
     header = (await web.get('/')).headers['content-security-policy-report-only']
     assert expected_hash(THEME) in header and expected_hash(AIRI_THEME) not in header
     assert "connect-src 'self' https:" in header and 'frame-src https://www.youtube.com' in header
-    # Đường dẫn chỉ trông giống /airi thì không đổi chính sách.
-    other = (await web.get('/airikhac')).headers['content-security-policy-report-only']
+    # Đường dẫn chỉ trông giống /companion, và cổng /api/companion/v1, thì không đổi chính sách.
+    other = (await web.get('/companionkhac')).headers['content-security-policy-report-only']
     assert other == header
+    api = (await web.get('/api/companion/v1/models')).headers['content-security-policy-report-only']
+    assert expected_hash(AIRI_THEME) not in api and "connect-src 'self' https:" in api
 
 
 async def test_airi_hashes_follow_a_new_build(airi_web):
     web, folder = airi_web
     new = "document.title = 'Peto';"
     (folder / 'index.html').write_text(f'<html><head><script>{new}</script></head></html>', encoding='utf-8')
-    header = (await web.get('/airi/')).headers['content-security-policy-report-only']
+    header = (await web.get('/companion/')).headers['content-security-policy-report-only']
     assert expected_hash(new) in header and expected_hash(AIRI_THEME) not in header
     assert "'unsafe-hashes'" not in header
+
+
+async def test_react_companion_keeps_the_site_policy_without_airi(tmp_path, monkeypatch):
+    """Không đặt PETO_AIRI_DIR (hoặc thư mục không có index.html): /companion là Companion React, giữ chính sách chung."""
+    async def identity():
+        return {'name': 'Peto', 'avatar_url': None}
+    monkeypatch.setattr(static_files, 'get_app_identity', identity)
+    site = tmp_path / 'site'
+    site.mkdir()
+    (site / 'index.html').write_text(INDEX, encoding='utf-8')
+    for airi_dir in (None, tmp_path / 'khong-co'):
+        app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+        app.add_middleware(security_headers.SecurityHeaders, static_dir=site, airi_dir=airi_dir)
+        assert static_files.mount(app, site)
+        async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test') as web:
+            response = await web.get('/companion/settings/modules/voice')
+            assert response.status_code == 200
+            header = response.headers['content-security-policy-report-only']
+            assert expected_hash(THEME) in header and 'frame-src https://www.youtube.com' in header

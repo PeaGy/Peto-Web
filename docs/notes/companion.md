@@ -908,16 +908,58 @@ page per company). Their calls the same day:
 - **Not checked:** none of the eight providers or Tavily has been called with a real key; request shapes follow each
   provider's docs as of 2026-10-13.
 
-### AIRI gateway and `/airi/` serving
+### AIRI Companion: `/companion/` serving and gateway
 
 Part of the 2026-11-15 direction (Companion moves to a fork of AIRI's Vue stage-web; plan in `PETO_COMPANION_PLAN.md`,
 "Hướng mới từ 15/11/2026"). AIRI's brain runs in the browser (prompt assembly, sessions, character cards, tool
 execution); the Peto server is only the model endpoint. The fork is at `C:\Users\binhb\Downloads\peto-airi`, branch
 `peto`, documented in its `PETO.md`.
 
-- **Serving** (`core/airi_static.py`): only when `PETO_AIRI_DIR` points at a stage-web build made with `--base=/airi/`.
-  Real files are served (hashed `assets/` cached for a year), extensionless paths get `index.html` (AIRI's router),
-  missing assets are a real 404. Mounted before the SPA catch-all in `main.py`.
+**One switch: `PETO_AIRI_DIR`** (since package 5a, 2026-11-15). Set to a fork build that has an `index.html`, the
+product path `/companion/` IS the AIRI app and the React Companion is never mounted. Unset (or pointing at a folder
+without `index.html`), everything is as before: `/companion` and `/companion/settings/…` are the React Companion, and the
+gateway answers 404. Nothing of the React Companion (code, backend Companion/voice APIs, data, tests) was removed; the
+switch is reversed by unsetting the variable and restarting. The YouTube Player and Peto's own voice sources are not in
+the AIRI build (postponed by the owner).
+
+- **Serving** (`core/airi_static.py`): only when `PETO_AIRI_DIR` points at a stage-web build made with
+  `--base=/companion/` (the fork's `apps/stage-web/peto/build.sh` default). `/companion` is a 308 to `/companion/`. Real
+  files are served (hashed `assets/` cached for a year), extensionless paths get AIRI's `index.html` (AIRI's own client
+  routes such as `/companion/settings/modules`, and every old React deep link such as
+  `/companion/settings/modules/voice`, which AIRI answers with its Vietnamese not-found page: "Không tìm thấy trang
+  này", a button back to the stage and a link to Peto Web). Missing assets are a real 404. Mounted before the SPA
+  catch-all in `main.py`. As a second guard, `core/static_files.py` refuses `/companion…` (404) whenever
+  `airi_static.active()` is true, so it can never answer those paths with the React `index.html`. `/airi/` no longer
+  exists (it was never deployed).
+- **Flag for the React app**: `GET /api/auth/me` carries `companion_airi` (boolean, signed in or not; no path, no
+  secret), from `airi_static.active()` (`config.AIRI_DIR` set and its `index.html` present). With the flag on, the React
+  app (`App.tsx`):
+  - the sidebar Companion item (desktop and the phone drawer) does `location.assign('/companion/')`;
+  - any React route that resolves to the Companion view (`/companion`, `/companion/settings/…`, legacy `/#companion`, a
+    `navigate()` from anywhere) is replaced at once with `location.replace('/companion/')` and a "Đang mở Companion"
+    loading screen, so Back returns to the page before it;
+  - the lazy React Companion and Companion settings chunks are never loaded (no hover/focus preload, no idle preload),
+    `companionVisited` stays false so `useLocalVoice` never probes `127.0.0.1`;
+  - Settings → Trí nhớ says Peto remembers what you tell it "trong Chat" (the AIRI build does not use the server memory);
+  - if React itself is running at exactly `/companion/` (only in dev, where Vite serves every path but `/api`), it shows
+    "Companion mới chỉ mở được qua máy chủ Peto…" instead of reloading forever.
+  Left as is: the Companion-related hooks that live in the main bundle (`useCompanionShell`: character list, cards
+  store, local voice state) still initialise but make no Companion request; the Docs pages and the Settings "Hướng dẫn
+  Peto" line still mention Companion; the `/api/companion/player` chip in Chat (YouTube link chips) still works.
+- **Deploy** (the fork's `dist` is about 370 MB; never build on the VPS):
+  1. On the owner's machine (or CI), in the fork: `sh apps/stage-web/peto/build.sh` (base `/companion/` by default).
+  2. Copy `apps/stage-web/dist/` to the VPS, for example
+     `rsync -a --delete apps/stage-web/dist/ <vps>:/home/ubuntu/peto-airi-dist/` (any folder outside the repository that
+     the service user can read; `deploy/peto-web.service` has `ProtectSystem=strict`, which still allows reading). To
+     keep an instant rollback to the previous build, copy into a new dated folder and point the variable at it.
+  3. Set `PETO_AIRI_DIR=/home/ubuntu/peto-airi-dist` in the repository-root `.env` that `config.py` loads, then
+     `sudo systemctl restart peto-web`. Check `curl -sI https://<site>/companion` (308 to `/companion/`) and that
+     `/api/auth/me` shows `"companion_airi":true`. The startup log says "Companion là bản AIRI từ …"; a folder without
+     `index.html` logs a warning and keeps the React Companion.
+  4. Rollback: remove or comment out `PETO_AIRI_DIR` and restart. `/companion` is the React Companion again and
+     `/api/companion/v1` answers 404. Visitors' AIRI data stays in their browsers (localStorage/IndexedDB under the
+     site origin); the server's Companion data was never touched.
+  This recipe lives here and not in `DEPLOY.md`.
 - **Gateway** (`features/companion/airi_gateway.py`, request parsing in `airi_request.py`): OpenAI Chat Completions at
   `/api/companion/v1` (`GET /models`, `POST /chat/completions`), the shape `@xsai/stream-text` 0.5 sends. It only
   answers when `PETO_AIRI_DIR` is set: otherwise every path is a 404 (`code: "not_found"`, "Cổng Companion AIRI chưa
@@ -972,14 +1014,30 @@ execution); the Peto server is only the model endpoint. The fork is at `C:\Users
     calls.
 - **Mock**: the Agent mock (`ai/agent.py`) answers `__congcu__` by calling the first declared tool with sample
   arguments (one value per required property), then, once a tool result comes back, replies with that result.
-- **CSP**: `/airi/` responses get their own report-only policy (`core/security_headers.airi_policy`, see
-  `admin-ops.md`, "Security headers").
+- **CSP**: with the AIRI build on, `/companion` and `/companion/…` responses get their own report-only policy
+  (`core/security_headers.airi_policy`, see `admin-ops.md`, "Security headers"); `/api/companion/…` keeps the site
+  policy. With it off, the React Companion keeps the site policy (it needs YouTube and the rest).
 - **Tests**: `tests/test_airi_gateway.py` (auth, text, card rule, tool round trip, tool and request validation, images,
   errors before and after the first byte, context overflow, pings, timeouts, 404 when off, no cooldown, text caps, disconnect before and after the
-  first byte via raw ASGI, usage rows), `tests/test_airi_static.py`, the `/airi/` cases in
-  `tests/test_security_headers.py`.
+  first byte via raw ASGI, usage rows), `tests/test_airi_static.py` (both states, old React deep links, path traversal,
+  the `static_files` guard, the `companion_airi` flag of `/api/auth/me`), the `/companion/` cases in
+  `tests/test_security_headers.py`; frontend `tests/AiriCompanion.test.tsx` (both states, Companion chunk never loaded
+  with the flag on).
 
 # Dated log (newest first)
+
+## Companion switches to the AIRI build at `/companion/`, package 5a (2026-11-15)
+
+The owner decided to finish the switch now and to postpone the Peto-only features (YouTube Player, Peto's own voice
+sources). `PETO_AIRI_DIR` now makes `/companion/` the AIRI app; `/airi/` is gone (never deployed). The fork builds for
+`/companion/` (`PETO_BASE` in `build.sh`) and has a Vietnamese not-found page for old React links. The React app gets
+`companion_airi` from `/api/auth/me` and sends every way into Companion to `/companion/` with a real navigation. Nothing
+was deleted. Current behaviour and the deploy/rollback recipe are in "AIRI Companion: `/companion/` serving and gateway"
+above.
+- Checked end to end on one origin (mock provider, temp DB, both builds served by the backend, headless Chromium with
+  SwiftShader): see the package 5a report for the step list, network and CSP numbers.
+- Not checked: the deployed site behind Cloudflare, a real phone, real Grok, a browser that has data of the React
+  Companion (nothing migrates; the old server-side Companion threads, cards and memory simply stop being shown).
 
 ## AIRI gateway, package 1 review follow-ups (2026-11-15)
 
@@ -993,8 +1051,8 @@ Chat message wait; it now records only when the cooldown applies.
 
 Turned the spike gateway (`64115d7`) into the real one: tools forwarded and streamed back as `tool_calls`, data-URL
 images, usage rows with `surface="airi"`, cancellation on disconnect, OpenAI-shaped errors before the first byte and
-error chunks after it, `: ping` keep-alives, and a report-only CSP for `/airi/`. Current behaviour is in "AIRI gateway and
-`/airi/` serving" above.
+error chunks after it, `: ping` keep-alives, and a report-only CSP for `/airi/`. Current behaviour is in "AIRI Companion:
+`/companion/` serving and gateway" above (it was "AIRI gateway and `/airi/` serving" until package 5a).
 - Checked against a running mock server (port 8767, temp DB, dev cookie): text turn with usage chunk, tool-call turn then
   the immediate tool-result turn (cooldown skipped), image turn ("đã nhận 1 ảnh (PNG 1 KB)"), remote image refused with
   400, 401 signed out, a second new message within 3 s refused with 429 cooldown, and a request aborted after the first

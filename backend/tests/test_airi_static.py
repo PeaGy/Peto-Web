@@ -1,4 +1,4 @@
-"""Phục vụ bản build AIRI dưới /airi/ khi PETO_AIRI_DIR được đặt; không đặt thì không có route nào."""
+"""Companion bản AIRI dưới /companion/ khi PETO_AIRI_DIR được đặt; không đặt thì /companion vẫn là Companion React."""
 
 from __future__ import annotations
 
@@ -6,10 +6,14 @@ import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
-from core import airi_static, static_files
+from core import airi_static, config, static_files
 
 AIRI_INDEX = "<!doctype html><html><head><title>AIRI</title></head><body><div id=app></div></body></html>"
 SITE_INDEX = "<!doctype html><html><head><title>Peto</title></head><body></body></html>"
+SITE_404 = "<!doctype html><title>Không tìm thấy</title>"
+# Đường dẫn cũ của Companion React mà người dùng có thể đã lưu.
+REACT_PATHS = ("/companion", "/companion/", "/companion/settings/", "/companion/settings/modules/voice",
+               "/companion/settings/providers/openai", "/companion/settings/cards/peto/edit")
 
 
 @pytest.fixture(autouse=True)
@@ -27,10 +31,12 @@ def _build(tmp_path):
     (airi / "assets" / "index-abc.js").write_text("console.log(1)", encoding="utf-8")
     (airi / "assets" / "duckdb-xyz.wasm").write_bytes(b"\0asm")
     (airi / "favicon.svg").write_text("<svg/>", encoding="utf-8")
+    (airi / "manifest.webmanifest").write_text("{}", encoding="utf-8")
     (tmp_path / "bi-mat.txt").write_text("TOKEN_THAT", encoding="utf-8")
     site = tmp_path / "site"
     site.mkdir()
     (site / "index.html").write_text(SITE_INDEX, encoding="utf-8")
+    (site / "404.html").write_text(SITE_404, encoding="utf-8")
     return airi, site
 
 
@@ -39,8 +45,9 @@ async def _client(app):
 
 
 @pytest.fixture
-async def airi_client(tmp_path):
+async def airi_client(tmp_path, monkeypatch):
     airi, site = _build(tmp_path)
+    monkeypatch.setattr(config, "AIRI_DIR", airi)
     app = FastAPI()
     assert airi_static.mount(app, airi)
     # Như main.py: trang chính bắt mọi đường dẫn còn lại, gắn sau cùng.
@@ -50,56 +57,117 @@ async def airi_client(tmp_path):
 
 
 async def test_index_and_redirect(airi_client):
-    response = await airi_client.get("/airi")
-    assert response.status_code == 308 and response.headers["location"] == "/airi/"
-    response = await airi_client.get("/airi/")
+    response = await airi_client.get("/companion")
+    assert response.status_code == 308 and response.headers["location"] == "/companion/"
+    response = await airi_client.head("/companion")
+    assert response.status_code == 308
+    response = await airi_client.get("/companion/")
     assert response.status_code == 200 and "<title>AIRI</title>" in response.text
     assert response.headers["cache-control"] == "no-cache"
 
 
 async def test_client_routes_get_index(airi_client):
-    for path in ("/airi/settings", "/airi/settings/modules/consciousness", "/airi/chat/"):
+    for path in ("/companion/settings", "/companion/settings/modules", "/companion/settings/modules/consciousness",
+                 "/companion/chat/"):
         response = await airi_client.get(path)
         assert response.status_code == 200, path
         assert "<title>AIRI</title>" in response.text
 
 
+async def test_old_react_deep_links_open_airi(airi_client):
+    """Trang của Companion React không còn: AIRI nhận và tự hiện trang "Không tìm thấy" có lối về."""
+    for path in REACT_PATHS[1:]:
+        response = await airi_client.get(path)
+        assert response.status_code == 200, path
+        assert "<title>AIRI</title>" in response.text and "<title>Peto</title>" not in response.text
+
+
 async def test_files_and_types(airi_client):
-    response = await airi_client.get("/airi/assets/index-abc.js")
+    response = await airi_client.get("/companion/assets/index-abc.js")
     assert response.status_code == 200
     assert "immutable" in response.headers["cache-control"]
-    response = await airi_client.get("/airi/assets/duckdb-xyz.wasm")
+    response = await airi_client.get("/companion/assets/duckdb-xyz.wasm")
     assert response.headers["content-type"] == "application/wasm"
-    response = await airi_client.head("/airi/favicon.svg")
+    response = await airi_client.get("/companion/manifest.webmanifest")
+    assert response.headers["content-type"] == "application/manifest+json"
+    response = await airi_client.head("/companion/favicon.svg")
     assert response.status_code == 200 and response.headers["cache-control"] == "no-cache"
 
 
 async def test_missing_asset_is_404_not_page(airi_client):
-    response = await airi_client.get("/airi/assets/missing-123.js")
-    assert response.status_code == 404
-    assert "AIRI" not in response.text
+    for path in ("/companion/assets/missing-123.js", "/companion/sw-cu.js"):
+        response = await airi_client.get(path)
+        assert response.status_code == 404, path
+        assert "AIRI" not in response.text and "Peto" not in response.text
 
 
 async def test_path_traversal_blocked(airi_client):
-    for path in ("/airi/../bi-mat.txt", "/airi/%2e%2e/bi-mat.txt", "/airi/..%2fbi-mat.txt"):
+    for path in ("/companion/../bi-mat.txt", "/companion/%2e%2e/bi-mat.txt", "/companion/..%2fbi-mat.txt",
+                 "/companion/assets/..%2f..%2fbi-mat.txt", "/companion/%2e%2e%2fsite/index.html"):
         response = await airi_client.get(path)
         assert "TOKEN_THAT" not in response.text, path
+        assert "<title>Peto</title>" not in response.text, path
 
 
 async def test_peto_pages_unchanged(airi_client):
-    response = await airi_client.get("/")
-    assert "<title>Peto</title>" in response.text
-    response = await airi_client.get("/companion")
-    assert "<title>Peto</title>" in response.text
+    for path in ("/", "/chat/abc", "/imagine"):
+        response = await airi_client.get(path)
+        assert response.status_code == 200 and "<title>Peto</title>" in response.text, path
+    # /airi không còn là đường dẫn nào (chưa từng triển khai).
+    response = await airi_client.get("/airi/")
+    assert response.status_code == 404 and "AIRI" not in response.text
 
 
-async def test_disabled_without_dir(tmp_path):
-    _, site = _build(tmp_path)
+async def test_static_files_never_serves_react_companion_when_airi_is_on(tmp_path, monkeypatch):
+    """Lớp phòng thủ thứ hai: dù route AIRI không có (bản build hỏng sau khi khởi động), trang chính không trả
+    index.html của Companion React cho /companion… khi cờ đang bật."""
+    airi, site = _build(tmp_path)
+    monkeypatch.setattr(config, "AIRI_DIR", airi)
     app = FastAPI()
-    assert airi_static.mount(app, None) is False
-    assert airi_static.mount(app, tmp_path / "khong-co") is False
-    static_files.mount(app, site)
+    assert static_files.mount(app, site)
     async with await _client(app) as client:
-        response = await client.get("/airi/")
-        assert response.status_code == 404
-        assert "AIRI" not in response.text
+        for path in REACT_PATHS:
+            response = await client.get(path)
+            assert response.status_code == 404, path
+            assert "<title>Peto</title>" not in response.text
+
+
+async def test_disabled_without_dir(tmp_path, monkeypatch):
+    """Không đặt PETO_AIRI_DIR (hay thư mục không có index.html): Companion React như cũ, /airi cũng không có."""
+    _, site = _build(tmp_path)
+    for airi_dir in (None, tmp_path / "khong-co"):
+        monkeypatch.setattr(config, "AIRI_DIR", airi_dir)
+        assert airi_static.active() is False
+        app = FastAPI()
+        assert airi_static.mount(app, airi_dir) is False
+        static_files.mount(app, site)
+        async with await _client(app) as client:
+            for path in REACT_PATHS:
+                response = await client.get(path)
+                assert response.status_code == 200, path
+                assert "<title>Peto</title>" in response.text and "AIRI" not in response.text
+            for path in ("/companion/settings/khong-co-trang", "/companion/assets/index-abc.js", "/airi/"):
+                response = await client.get(path)
+                assert response.status_code == 404, path
+                assert "AIRI" not in response.text
+
+
+async def test_active_flag_follows_config(tmp_path, monkeypatch):
+    airi, _ = _build(tmp_path)
+    monkeypatch.setattr(config, "AIRI_DIR", airi)
+    assert airi_static.active() is True
+    (airi / "index.html").unlink()
+    assert airi_static.active() is False
+    monkeypatch.setattr(config, "AIRI_DIR", None)
+    assert airi_static.active() is False
+
+
+async def test_auth_me_reports_the_flag(anon_client, client, tmp_path, monkeypatch):
+    """/api/auth/me mang đúng một cờ companion_airi, cho cả khách và người đã đăng nhập; không lộ đường dẫn."""
+    airi, _ = _build(tmp_path)
+    for value, expected in ((None, False), (airi, True)):
+        monkeypatch.setattr(config, "AIRI_DIR", value)
+        for web in (anon_client, client):
+            body = (await web.get("/api/auth/me")).json()
+            assert body["companion_airi"] is expected
+            assert str(tmp_path) not in str(body) and "airi" not in str(body).replace("companion_airi", "")

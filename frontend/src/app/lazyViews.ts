@@ -35,7 +35,7 @@ export const ConnectorSettings = connectorSettings.View;
 
 /** Ô chat đã hiện thì lúc rảnh tải sẵn Tạo ảnh, Companion và Cài đặt: lần mở đầu khỏi chờ tệp (khoảng 0,3 giây trên 4G
  * chậm, đo ngày 2026-09-27). Bỏ qua khi người dùng bật tiết kiệm dữ liệu hay mạng chỉ 2G. */
-export function usePreloadWhenIdle(authenticated: boolean | undefined) {
+export function usePreloadWhenIdle(authenticated: boolean | undefined, reactCompanion = true) {
   useEffect(() => {
     if (!authenticated) return;
     const connection = (navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string } }).connection;
@@ -44,7 +44,8 @@ export function usePreloadWhenIdle(authenticated: boolean | undefined) {
     const warm = () => {
       preload(loadSettings)();
       preload(loadImagine)();
-      preload(loadCompanion)();
+      // Companion bản AIRI (reactCompanion = false) là trang riêng: không tải mã Companion React.
+      if (reactCompanion) preload(loadCompanion)();
     };
     const timer = window.setTimeout(() => {
       idle = window.requestIdleCallback ? window.requestIdleCallback(warm, { timeout: 5000 }) : window.setTimeout(warm, 0);
@@ -54,5 +55,5 @@ export function usePreloadWhenIdle(authenticated: boolean | undefined) {
       if (window.cancelIdleCallback) window.cancelIdleCallback(idle);
       else window.clearTimeout(idle);
     };
-  }, [authenticated]);
+  }, [authenticated, reactCompanion]);
 }

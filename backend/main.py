@@ -71,8 +71,9 @@ app.include_router(project_api.router)
 app.include_router(connector_api.router)
 app.include_router(companion_api.router)
 app.include_router(admin_api.router)
-# Thử nghiệm AIRI (15/11/2026): cổng Chat Completions cho bộ não AIRI trong trình duyệt, và bản build AIRI ở /airi/ khi
-# PETO_AIRI_DIR được đặt. /airi/ phải gắn trước static_files.mount ở cuối tệp.
+# Companion bản AIRI (15/11/2026): cổng Chat Completions cho bộ não AIRI trong trình duyệt, và bản build AIRI làm
+# Companion ở /companion/ khi PETO_AIRI_DIR được đặt (không đặt thì /companion vẫn là Companion React). /companion/ của
+# AIRI phải gắn trước static_files.mount ở cuối tệp.
 app.include_router(airi_gateway.router)
 airi_static.mount(app, AIRI_DIR)
 

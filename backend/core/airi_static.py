@@ -1,11 +1,14 @@
-"""Phục vụ bản build AIRI stage-web dưới ``/airi/`` (thử nghiệm, 15/11/2026).
+"""Phục vụ bản build AIRI stage-web (bản fork của Peto) làm Companion, dưới ``/companion/`` (từ 15/11/2026).
 
-Chỉ bật khi ``PETO_AIRI_DIR`` trỏ tới một thư mục build có ``index.html``; không đặt thì không đăng ký route nào.
-Phải gắn TRƯỚC ``static_files.mount`` trong ``main.py``, vì route bắt mọi đường dẫn của trang chính nằm cuối cùng.
+Chỉ bật khi ``PETO_AIRI_DIR`` trỏ tới một thư mục build có ``index.html`` (build với ``--base=/companion/``); không đặt
+thì không đăng ký route nào và ``/companion`` vẫn là Companion React như cũ. Bỏ biến rồi khởi động lại là quay về bản
+React. Phải gắn TRƯỚC ``static_files.mount`` trong ``main.py``, vì route bắt mọi đường dẫn của trang chính nằm cuối cùng;
+khi bật, ``static_files`` cũng không trả ``index.html`` của React cho ``/companion…`` nữa (xem ``active``).
 
 Tệp có thật thì trả tệp (``assets/`` có hash trong tên nên cache lâu). Đường dẫn không phải tệp mà đoạn cuối không có
-dấu chấm là một trang của router AIRI (``/airi/settings/modules``…): trả ``index.html`` để mở thẳng hay F5 vẫn được.
-Tài nguyên thiếu (có phần mở rộng) là 404 thật, không biến thành trang.
+dấu chấm là một trang của router AIRI (``/companion/settings/modules``…): trả ``index.html`` để mở thẳng hay F5 vẫn
+được. Đường dẫn cũ của Companion React (``/companion/settings/modules/voice``…) cũng nhận ``index.html``; AIRI tự hiện
+trang "Không tìm thấy trang này" với lối về. Tài nguyên thiếu (có phần mở rộng) là 404 thật, không biến thành trang.
 """
 
 from __future__ import annotations
@@ -17,9 +20,11 @@ import anyio
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 
+from core import config
+
 logger = logging.getLogger("peto_web.airi")
 
-PREFIX = "/airi"
+PREFIX = "/companion"
 # Kiểu MIME mà bảng của hệ điều hành có thể thiếu (Windows): WebAssembly phải đúng application/wasm thì trình duyệt mới
 # biên dịch theo luồng; mô hình Live2D/VRM là nhị phân.
 _TYPES = {
@@ -34,6 +39,22 @@ _TYPES = {
 }
 
 
+def usable(airi_dir: Path | None) -> bool:
+    """Thư mục build dùng được: có đặt và có ``index.html``."""
+    return airi_dir is not None and (airi_dir / "index.html").is_file()
+
+
+def active() -> bool:
+    """Companion có phải là bản AIRI không (đọc ``config.AIRI_DIR`` lúc gọi). Frontend React nhận cờ này qua
+    ``/api/auth/me`` (``companion_airi``) và ``static_files`` dùng nó để nhường ``/companion…``."""
+    return usable(config.AIRI_DIR)
+
+
+def is_companion_path(path: str) -> bool:
+    """``companion`` hoặc ``companion/…`` (đường dẫn không có dấu "/" đầu, như route bắt mọi đường dẫn nhận)."""
+    return path == PREFIX[1:] or path.startswith(PREFIX[1:] + "/")
+
+
 def _safe_file(root: Path, relative: str) -> Path | None:
     """Chặn path traversal: tệp phải nằm trong ``root``."""
     candidate = (root / relative).resolve()
@@ -45,13 +66,13 @@ def _safe_file(root: Path, relative: str) -> Path | None:
 
 
 def mount(app: FastAPI, airi_dir: Path | None) -> bool:
-    """Gắn ``/airi/``. Trả về True nếu đã bật."""
+    """Gắn ``/companion/`` cho bản AIRI. Trả về True nếu đã bật."""
     if airi_dir is None:
         return False
     root = airi_dir.resolve()
     index = root / "index.html"
     if not index.is_file():
-        logger.warning("PETO_AIRI_DIR=%s không có index.html — bỏ qua /airi/.", root)
+        logger.warning("PETO_AIRI_DIR=%s không có index.html — Companion giữ bản React.", root)
         return False
 
     async def index_page() -> HTMLResponse:
@@ -79,5 +100,5 @@ def mount(app: FastAPI, airi_dir: Path | None) -> bool:
             return await index_page()
         raise HTTPException(status_code=404, detail="Không tìm thấy tệp")
 
-    logger.info("Phục vụ AIRI từ %s tại %s/", root, PREFIX)
+    logger.info("Companion là bản AIRI từ %s tại %s/", root, PREFIX)
     return True

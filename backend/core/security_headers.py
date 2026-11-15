@@ -11,7 +11,7 @@ từ trình duyệt, kể cả địa chỉ tùy chỉnh nên ``connect-src`` ch
 Script nhúng sẵn trong ``index.html`` và ``404.html`` (gắn giao diện sáng/tối) được cho phép bằng mã băm SHA-256 tính từ
 đúng tệp đang phục vụ, không bằng ``'unsafe-inline'``.
 
-Trang AIRI ở ``/airi/`` (từ 15/11/2026, khi đặt ``PETO_AIRI_DIR``) có chính sách chỉ báo cáo riêng (``airi_policy``),
+Companion bản AIRI ở ``/companion/`` (từ 15/11/2026, khi đặt ``PETO_AIRI_DIR``) có chính sách chỉ báo cáo riêng (``airi_policy``),
 viết theo đúng những gì bản build AIRI dùng: script nhúng và ``onclick`` của ``index.html`` AIRI theo mã băm,
 WebAssembly, worker từ blob, kết nối data/blob. Không cho phép máy chủ đám mây nào của AIRI, không cho phép CDN font
 (font sẽ tự phục vụ). Phần còn lại của trang giữ chính sách cũ.
@@ -48,7 +48,7 @@ ENFORCED = (
 
 _SCRIPT = re.compile(r'<script(?![^>]*\bsrc\s*=)[^>]*>(.*?)</script>', re.IGNORECASE | re.DOTALL)
 _HANDLER = re.compile(r'\son[a-z]+\s*=\s*"([^"]*)"', re.IGNORECASE)
-AIRI_PREFIX = '/airi'
+AIRI_PREFIX = '/companion'
 
 
 def inline_script_hashes(page: str) -> list[str]:
@@ -69,7 +69,7 @@ def _join(sources: dict) -> str:
 
 
 def airi_policy(hashes: list[str], handlers: list[str]) -> str:
-    """Chính sách chỉ báo cáo của ``/airi/``, theo những gì bản build AIRI stage-web dùng (bản thử 15/11/2026 chạy chung
+    """Chính sách chỉ báo cáo của Companion bản AIRI (``/companion/``), theo những gì bản build AIRI stage-web dùng (bản thử 15/11/2026 chạy chung
     chính sách của trang chính và gửi khoảng 360 báo cáo vi phạm mỗi lần mở)."""
     sources = {
         'default-src': ["'self'"],
@@ -171,8 +171,9 @@ class SecurityHeaders:
     def __init__(self, app, static_dir: Path, airi_dir: Path | None = None):
         self.app = app
         self.pages = _Pages(static_dir)
-        # Chỉ khi /airi/ được phục vụ (PETO_AIRI_DIR); không đặt thì /airi/... vẫn theo chính sách của trang chính.
-        self.airi = _AiriPage(airi_dir) if airi_dir is not None else None
+        # Chỉ khi Companion là bản AIRI (PETO_AIRI_DIR có index.html); không thì /companion… (Companion React) vẫn theo
+        # chính sách của trang chính, vì nó cần YouTube và các nguồn khác của trang chính.
+        self.airi = _AiriPage(airi_dir) if airi_dir is not None and (airi_dir / 'index.html').is_file() else None
 
     async def __call__(self, scope, receive, send):
         if scope['type'] != 'http':

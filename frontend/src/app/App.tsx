@@ -2,7 +2,7 @@ import { usePreferencesPersistence } from './usePreferencesPersistence';
 import LoginScreen from './LoginScreen';
 import { forgetChatLogin, rememberChatLogin, takeChatLogin } from './chatLoginReturn';
 import { BrowserRouter, useLocation, useNavigate } from 'react-router';
-import { appPath, appView, chatId, chatRoute, companionSettingsPage, legacyPath, VIEW_PATHS } from './routes';
+import { AIRI_COMPANION_URL, appPath, appView, chatId, chatRoute, companionSettingsPage, legacyPath, openAiriCompanion, VIEW_PATHS } from './routes';
 import Sidebar from './Sidebar';
 import { useSidebarKeyboard } from './useSidebarKeyboard';
 import { ChatReplyStatus } from '../features/chat/ChatReplyStatus';
@@ -73,6 +73,9 @@ import {
 } from "../shared/api/api";
 
 
+// Rê chuột lên mục Companion khi Companion là bản AIRI: không có gì của React để tải trước.
+const noPreload = () => {};
+
 // Old messages keep their rendered Markdown while the draft or current reply changes.
 export default function App() {
   // Đồng bộ URL cùng state của tab; các animation hiện có vẫn do component quản lý.
@@ -94,6 +97,9 @@ function AppContent() {
     if (path) navigate({ pathname: path, search: window.location.search }, { replace: true, state: location.state });
   }, [location, navigate]);
   const [auth, setAuth] = useState<AuthState | null>(null);
+  // Companion bản AIRI (cờ của máy chủ, từ 15/11/2026): Companion là trang riêng ở /companion/, Companion React không
+  // được dựng và mã của nó không được tải. Cờ tắt thì mọi thứ như cũ.
+  const airiCompanion = auth?.companion_airi === true;
   const authChecked = useRef(false);
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
@@ -173,9 +179,9 @@ function AppContent() {
   const [imageVisited, setImageVisited] = useState(view === "imagine");
   useEffect(() => {
     if (view === 'imagine') setImageVisited(true);
-    if (view === 'companion') setCompanionVisited(true);
+    if (view === 'companion' && !airiCompanion) setCompanionVisited(true);
     setSidebarOpen(false);
-  }, [view]);
+  }, [view, airiCompanion]);
   useSearchShortcut(streaming, setSearchOpen);
   // Bản sao chỉ để vẽ cột trái; Imagine.tsx mới là nơi tạo, xóa và giữ danh sách.
   const [imagineJobs, setImagineJobs] = useState<ImagineJob[]>([]);
@@ -360,7 +366,17 @@ function AppContent() {
   useTitlePolling(conversationList, { authenticated: auth?.authenticated, userId: auth?.user?.id, view, conversationId, streaming,
     waitingForTitle, activeProjectId, refreshProjectChats, refreshConversations });
 
-  usePreloadWhenIdle(auth?.authenticated);
+  usePreloadWhenIdle(auth?.authenticated, !airiCompanion);
+
+  // Mọi đường vào /companion… trong ứng dụng React (thanh bên, liên kết, hash #companion cũ, chuyển hướng) khi Companion
+  // là bản AIRI: thay mục lịch sử vừa đẩy bằng trang /companion/ thật, để Back về đúng trang trước đó.
+  const leavingForAiri = airiCompanion && view === 'companion';
+  // React đang chạy ngay ở /companion/ nghĩa là trang đó không phải bản AIRI (chỉ gặp lúc dev: Vite phục vụ mọi đường
+  // dẫn trừ /api). Không chuyển nữa, kẻo trang tự tải lại mãi.
+  const airiUnreachable = leavingForAiri && location.pathname === AIRI_COMPANION_URL;
+  useLayoutEffect(() => {
+    if (leavingForAiri && !airiUnreachable) openAiriCompanion(true);
+  }, [leavingForAiri, airiUnreachable]);
 
   useEffect(() => {
     if (nearBottom.current) bottomRef.current?.scrollIntoView({ behavior: "instant", block: "end" });
@@ -423,6 +439,17 @@ function AppContent() {
 
   if (auth === null) {
     return <LoadingIndicator variant="screen" label="Loading" />;
+  }
+
+  if (airiUnreachable) {
+    return <div className="loading-chat" role="alert">
+      <p>Companion mới chỉ mở được qua máy chủ Peto (địa chỉ /companion/ của backend).</p>
+      <a className="load-more" href="/">Về Peto Web</a>
+    </div>;
+  }
+
+  if (leavingForAiri) {
+    return <LoadingIndicator variant="screen" label="Đang mở Companion" />;
   }
 
   if (!auth.authenticated) {
@@ -667,6 +694,12 @@ function AppContent() {
   }
 
   function go(next: AppView) {
+    // Companion bản AIRI là trang riêng: điều hướng thật, không qua router của React.
+    if (next === 'companion' && airiCompanion) {
+      setSidebarOpen(false);
+      openAiriCompanion();
+      return;
+    }
     if (next === "imagine") setImageVisited(true);
     if (next === "companion") setCompanionVisited(true);
     setSidebarOpen(false);
@@ -704,7 +737,8 @@ function AppContent() {
         conversations={conversations.filter(item => !item.project_id)} conversationId={conversationId} loadingList={loadingList} hasMore={hasMore}
         accountRef={accountRef} accountMenu={accountMenu} setSearchOpen={setSearchOpen}
         onToggleCollapsed={() => setCollapsed(value => !value)} onCollapsedChange={setCollapsed} goChat={goChat} go={go}
-        preloadImagine={preload(loadImagine)} preloadCompanion={preload(loadCompanion)} preloadSettings={preload(loadSettings)}
+        preloadImagine={preload(loadImagine)} preloadCompanion={airiCompanion ? noPreload : preload(loadCompanion)}
+        preloadSettings={preload(loadSettings)}
         setSidebarOpen={setSidebarOpen} onOpenScenes={openScenes} onOpenCharacters={openCharacters} onOpenPlayer={openPlayer}
         setFocusJobId={setFocusJobId} openConversation={openConversation} setConversationMenu={setConversationMenu}
         onOpenImagineLibrary={() => { setSidebarOpen(false); setImagineLibraryRequest(value => value + 1); }}
@@ -714,7 +748,8 @@ function AppContent() {
 
       {/* Key nằm ở lớp bọc ngoài cùng để thêm một tab đã ghé không khiến tab bên cạnh bị dựng lại. */}
       {renderFeatureViews({ imageVisited, view, auth, handleUnauthorized, setSidebarOpen, setImagineJobs, imagineLibraryRequest, focusJobId,
-        clearFocusJob, companionVisited, companionSettingsView, appInfo, localVoice, sceneRequest, playerRequest, characterMotion,
+        clearFocusJob, companionVisited: companionVisited && !airiCompanion,
+        companionSettingsView: airiCompanion ? null : companionSettingsView, appInfo, localVoice, sceneRequest, playerRequest, characterMotion,
         characters, characterIds, openCharacters, openHearingSettings, openCompanionSettings, openCompanionCards, location, navigate,
         changeCharacterMotion, leaveAdmin })}
       <DiagramContext.Provider value={diagramApi}>
