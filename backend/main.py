@@ -18,10 +18,12 @@ from features.accounts import profile as profile_api
 from features.accounts import discord_memory_api
 from features.voice import api as voice_api
 from core import static_files
+from core import airi_static
 from core import security_headers
+from features.companion import airi_gateway
 from ai import get_provider
 from core.identity import get_app_identity
-from core.config import ALLOWED_ORIGINS, STATIC_DIR
+from core.config import AIRI_DIR, ALLOWED_ORIGINS, STATIC_DIR
 from features.docs import api as docs_api
 from core.lifespan import lifespan
 from features.chat import api as chat_api
@@ -69,6 +71,10 @@ app.include_router(project_api.router)
 app.include_router(connector_api.router)
 app.include_router(companion_api.router)
 app.include_router(admin_api.router)
+# Thử nghiệm AIRI (15/11/2026): cổng Chat Completions cho bộ não AIRI trong trình duyệt, và bản build AIRI ở /airi/ khi
+# PETO_AIRI_DIR được đặt. /airi/ phải gắn trước static_files.mount ở cuối tệp.
+app.include_router(airi_gateway.router)
+airi_static.mount(app, AIRI_DIR)
 
 @app.api_route("/api/health", methods=["GET", "HEAD"])
 async def health() -> dict:
