@@ -116,3 +116,74 @@ async def test_the_real_app_sends_the_headers_and_accepts_reports(anon_client):
     health = await anon_client.get('/api/health')
     assert health.headers['content-security-policy'] == "frame-ancestors 'none'"
     assert 'report-uri /api/csp-report' in health.headers['content-security-policy-report-only']
+
+
+AIRI_THEME = "\n      ;(function () { document.documentElement.classList.toggle('dark', true) })()\n    "
+AIRI_INDEX = (f"<!doctype html><html><head><script>{AIRI_THEME}</script>"
+              "<script type=\"module\" crossorigin src=\"/airi/assets/index-x.js\"></script></head><body>"
+              "<div id=\"app\"></div><button type=\"button\" onclick=\"location.reload()\">Retry</button></body></html>")
+
+
+@pytest.fixture
+async def airi_web(tmp_path, monkeypatch):
+    """Như main.py khi đặt PETO_AIRI_DIR: /airi/ có chính sách riêng, phần còn lại giữ chính sách của trang chính."""
+    from core import airi_static
+
+    async def identity():
+        return {'name': 'Peto', 'avatar_url': None}
+    monkeypatch.setattr(static_files, 'get_app_identity', identity)
+    site, airi = tmp_path / 'site', tmp_path / 'airi'
+    (site / 'assets').mkdir(parents=True)
+    (airi / 'assets').mkdir(parents=True)
+    (site / 'index.html').write_text(INDEX, encoding='utf-8')
+    (airi / 'index.html').write_text(AIRI_INDEX, encoding='utf-8')
+    (airi / 'assets' / 'index-x.js').write_text('console.log(1)', encoding='utf-8')
+    app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+    app.add_middleware(security_headers.SecurityHeaders, static_dir=site, airi_dir=airi)
+    assert airi_static.mount(app, airi)
+    assert static_files.mount(app, site)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test') as client:
+        yield client, airi
+
+
+def directive(header: str, name: str) -> str:
+    return next(part.strip() for part in header.split(';') if part.strip().startswith(name + ' '))
+
+
+@pytest.mark.parametrize('path', ['/airi/', '/airi/settings/modules', '/airi/assets/index-x.js'])
+async def test_airi_pages_get_their_own_report_only_policy(airi_web, path):
+    web, _ = airi_web
+    response = await web.get(path)
+    assert response.status_code == 200
+    assert response.headers['x-frame-options'] == 'DENY'
+    header = response.headers['content-security-policy-report-only']
+    script = directive(header, 'script-src')
+    assert expected_hash(AIRI_THEME) in script and expected_hash(THEME) not in script
+    assert f"'unsafe-hashes' {expected_hash('location.reload()')}" in script
+    assert "'wasm-unsafe-eval'" in script and "'unsafe-inline'" not in script
+    assert directive(header, 'connect-src') == "connect-src 'self' data: blob:"
+    assert directive(header, 'worker-src') == "worker-src 'self' blob:"
+    assert directive(header, 'font-src') == "font-src 'self' data:"
+    # Không máy chủ đám mây nào của AIRI, không CDN font, không https: chung, không YouTube của trang chính.
+    for host in ('airi', 'jsdelivr', 'https:', 'youtube', 'fonts.g'):
+        assert host not in header.replace('https://static.cloudflareinsights.com', '')
+    assert 'report-uri /api/csp-report' in header
+
+
+async def test_rest_of_the_site_keeps_its_policy(airi_web):
+    web, _ = airi_web
+    header = (await web.get('/')).headers['content-security-policy-report-only']
+    assert expected_hash(THEME) in header and expected_hash(AIRI_THEME) not in header
+    assert "connect-src 'self' https:" in header and 'frame-src https://www.youtube.com' in header
+    # Đường dẫn chỉ trông giống /airi thì không đổi chính sách.
+    other = (await web.get('/airikhac')).headers['content-security-policy-report-only']
+    assert other == header
+
+
+async def test_airi_hashes_follow_a_new_build(airi_web):
+    web, folder = airi_web
+    new = "document.title = 'Peto';"
+    (folder / 'index.html').write_text(f'<html><head><script>{new}</script></head></html>', encoding='utf-8')
+    header = (await web.get('/airi/')).headers['content-security-policy-report-only']
+    assert expected_hash(new) in header and expected_hash(AIRI_THEME) not in header
+    assert "'unsafe-hashes'" not in header

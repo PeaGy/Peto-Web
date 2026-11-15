@@ -49,9 +49,11 @@ class Admission:
         self._last_accepted: dict[str, float] = {}
 
     @asynccontextmanager
-    async def slot(self, user_key: str):
+    async def slot(self, user_key: str, *, cooldown: bool = True):
+        """``cooldown=False``: lượt tiếp nối của cùng một câu trả lời (cổng AIRI gửi lại kết quả công cụ ngay khi
+        trình duyệt chạy xong), không phải tin mới của người dùng; vẫn chịu giới hạn đồng thời và hàng chờ."""
         now = time.monotonic()
-        if self._cooldown > 0:
+        if cooldown and self._cooldown > 0:
             elapsed = now - self._last_accepted.get(user_key, -1e9)
             if elapsed < self._cooldown:
                 raise AdmissionDenied("cooldown", self._cooldown - elapsed)

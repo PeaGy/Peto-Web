@@ -78,6 +78,10 @@ line once it has been tried, and record the result in the area's note file. Paid
 - [ ] Real model behaviour with user-written character cards, on physical phones and with real provider keys — `companion.md`, "Companion character cards, stage (a): server (2026-10-25)" and "stage (d)".
 - [ ] Card packages against real AIRI, on physical phones — `companion.md`, "Companion character cards, stage (e): import/export (2026-10-26)".
 - [ ] Full frontend/backend runs and the Playwright companion/layout specs for the AIRI chat UI (`companion.png` baseline) — `companion.md`, "Companion chat UI from AIRI".
+- [ ] AIRI gateway with real Grok: a text turn, whether Grok accepts AIRI's 10 tool schemas and a forced `tool_choice` object, a real tool round trip, `cost_ticks` on `/admin` — `companion.md`, "AIRI gateway and `/airi/` serving".
+- [ ] AIRI gateway with a real image from AIRI's chat (only a generated 8×8 PNG and the mock were used) — `companion.md`, "AIRI gateway and `/airi/` serving".
+- [ ] AIRI's stop button during a real streamed reply behind Cloudflare: provider stream closed and slot freed (checked only with httpx closing the stream and raw ASGI disconnects in tests) — `companion.md`, "AIRI gateway and `/airi/` serving".
+- [ ] `/airi/` CSP reports on the deployed site after the fork's package 2 build (self-hosted fonts, no `localhost:6121`), phone included — `admin-ops.md`, "Security headers".
 
 ## Player (`player.md`)
 

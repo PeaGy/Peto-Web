@@ -60,7 +60,7 @@ app.include_router(desktop_release.policy_router)
 app.include_router(desktop_update.router)
 # Header bảo mật cho mọi phản hồi, kể cả trang tĩnh và SSE (G3.4): bắt buộc nosniff, referrer, chống nhúng khung; CSP
 # đầy đủ mới ở chế độ chỉ báo cáo, báo cáo về /api/csp-report.
-app.add_middleware(security_headers.SecurityHeaders, static_dir=STATIC_DIR)
+app.add_middleware(security_headers.SecurityHeaders, static_dir=STATIC_DIR, airi_dir=AIRI_DIR)
 app.include_router(security_headers.router)
 # /install.ps1 nằm ngoài /api: phải đăng ký trước static_files.mount ở cuối tệp.
 app.include_router(agent_install.router)

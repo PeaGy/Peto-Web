@@ -66,7 +66,7 @@ async def agent_step(
         else:
             tool_choice = "none"
     if AI_PROVIDER == "mock":
-        events = _mock_step(input_items, web_search, final=final)
+        events = _mock_step(input_items, web_search, final=final, tools=tools)
     elif AI_PROVIDER == "xai":
         from .models import MODELS
 
@@ -352,7 +352,8 @@ async def _responses_step(client, service: str, model: str, max_output_tokens: i
 
 # --- Giả lập -------------------------------------------------------------
 # Không gọi mạng. Yêu cầu có "__demo__" chạy một vòng đọc README.md → sửa dòng đầu → chạy lệnh → tóm tắt, dựa trên
-# kết quả công cụ CLI gửi lên; "__error__" giả lập lỗi nhà cung cấp.
+# kết quả công cụ CLI gửi lên; "__error__" giả lập lỗi nhà cung cấp; "__congcu__" (15/11/2026, cho cổng AIRI) gọi công
+# cụ đầu tiên mà nơi gọi khai báo, rồi trả lời bằng kết quả công cụ được gửi lại.
 
 _MOCK_DELAY = 0.01
 _MOCK_LONG_WRITE_DELAY = 0.25  # __viettep__: 60 đoạn, khoảng 15 giây
@@ -411,7 +412,42 @@ async def _speak(text: str, calls: list[dict], items: list[dict]) -> AsyncIterat
     yield AgentEvent("done", output=(_message(text), *calls), usage=usage)
 
 
-async def _mock_step(items: list[dict], web_search: bool = False, *, final: bool = False) -> AsyncIterator[AgentEvent]:
+def _sample_arguments(tool: dict) -> dict:
+    """Đối số giả cho công cụ: mỗi trường bắt buộc một giá trị đúng kiểu đơn giản."""
+    schema = tool.get("parameters") if isinstance(tool.get("parameters"), dict) else {}
+    properties = schema.get("properties") if isinstance(schema.get("properties"), dict) else {}
+    samples = {"string": "thử", "integer": 1, "number": 1, "boolean": True, "array": [], "object": {}}
+    result = {}
+    for name in schema.get("required") or []:
+        kind = (properties.get(name) or {}).get("type") if isinstance(properties.get(name), dict) else None
+        result[name] = samples.get(kind if isinstance(kind, str) else "", None)
+    return result
+
+
+async def _mock_tool_round(task_items: list[dict], results: list[dict], tools: list[dict]) -> AsyncIterator[AgentEvent]:
+    """``__congcu__``: lượt đầu gọi công cụ đầu tiên được khai báo; có kết quả rồi thì trả lời bằng kết quả đó."""
+    if results:
+        output = results[-1].get("output")
+        text = output if isinstance(output, str) else " ".join(
+            part.get("text", "") for part in output or [] if isinstance(part, dict))
+        async for event in _speak(f"Peto đã nhận kết quả công cụ (giả lập): {text[:200]}", [], task_items):
+            yield event
+        return
+    if not tools:
+        async for event in _speak("Không có công cụ nào để gọi (giả lập).", [], task_items):
+            yield event
+        return
+    tool = tools[0]
+    call = {**_call(7, str(tool.get("name") or ""), _sample_arguments(tool)), "id": "fc_demo_7"}
+    yield AgentEvent("delta", "Để Peto dùng công cụ nhé (giả lập).")
+    yield AgentEvent("tool_start", item={"call_id": call["call_id"], "id": call["id"], "name": call["name"]})
+    yield AgentEvent("tool_delta", call["arguments"], item={"call_id": call["call_id"]})
+    yield AgentEvent("done", output=(_message("Để Peto dùng công cụ nhé (giả lập)."), call),
+                     usage={"input_tokens": len(json.dumps(task_items, ensure_ascii=False)) // 4, "output_tokens": 12})
+
+
+async def _mock_step(items: list[dict], web_search: bool = False, *, final: bool = False,
+                     tools: list[dict] | None = None) -> AsyncIterator[AgentEvent]:
     last_user = max((index for index, item in enumerate(items) if item.get("role") == "user"), default=-1)
     task = _text_of(items[last_user]) if last_user >= 0 else ""
     if "__error__" in task:
@@ -427,6 +463,10 @@ async def _mock_step(items: list[dict], web_search: bool = False, *, final: bool
     results = [item for item in items[last_user + 1:] if item.get("type") == "function_call_output"]
     last = _result(results[-1]) if results else {}
     yield AgentEvent("thinking", "Đang xem bước tiếp theo…")
+    if "__congcu__" in task:
+        async for event in _mock_tool_round(items, results, tools or []):
+            yield event
+        return
     if "__search__" in task and not results:
         # Tìm web chạy ở phía dịch vụ AI, nên bản giả chỉ phát đúng hai sự kiện đó rồi trả lời.
         yield AgentEvent("search", "searching")

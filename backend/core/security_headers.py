@@ -11,6 +11,11 @@ từ trình duyệt, kể cả địa chỉ tùy chỉnh nên ``connect-src`` ch
 Script nhúng sẵn trong ``index.html`` và ``404.html`` (gắn giao diện sáng/tối) được cho phép bằng mã băm SHA-256 tính từ
 đúng tệp đang phục vụ, không bằng ``'unsafe-inline'``.
 
+Trang AIRI ở ``/airi/`` (từ 15/11/2026, khi đặt ``PETO_AIRI_DIR``) có chính sách chỉ báo cáo riêng (``airi_policy``),
+viết theo đúng những gì bản build AIRI dùng: script nhúng và ``onclick`` của ``index.html`` AIRI theo mã băm,
+WebAssembly, worker từ blob, kết nối data/blob. Không cho phép máy chủ đám mây nào của AIRI, không cho phép CDN font
+(font sẽ tự phục vụ). Phần còn lại của trang giữ chính sách cũ.
+
 Báo cáo vi phạm chỉ ghi loại vi phạm, gốc của nguồn bị chặn và đoạn đầu đường dẫn trang; không ghi đường dẫn đầy đủ,
 tham số, mã hội thoại hay đoạn mã. Có trần số dòng log mỗi phút vì endpoint này không cần đăng nhập.
 """
@@ -42,12 +47,53 @@ ENFORCED = (
 )
 
 _SCRIPT = re.compile(r'<script(?![^>]*\bsrc\s*=)[^>]*>(.*?)</script>', re.IGNORECASE | re.DOTALL)
+_HANDLER = re.compile(r'\son[a-z]+\s*=\s*"([^"]*)"', re.IGNORECASE)
+AIRI_PREFIX = '/airi'
 
 
 def inline_script_hashes(page: str) -> list[str]:
     """Mã băm CSP của từng script nhúng (không có ``src``) trong một trang HTML."""
     return [f"'sha256-{base64.b64encode(hashlib.sha256(body.encode('utf-8')).digest()).decode()}'"
             for body in _SCRIPT.findall(page) if body.strip()]
+
+
+def handler_hashes(page: str) -> list[str]:
+    """Mã băm CSP của thuộc tính sự kiện nhúng (``onclick="..."``), dùng cùng ``'unsafe-hashes'``."""
+    return list(dict.fromkeys(
+        f"'sha256-{base64.b64encode(hashlib.sha256(body.encode('utf-8')).digest()).decode()}'"
+        for body in _HANDLER.findall(page) if body.strip()))
+
+
+def _join(sources: dict) -> str:
+    return '; '.join(f"{name} {' '.join(values)}" for name, values in sources.items())
+
+
+def airi_policy(hashes: list[str], handlers: list[str]) -> str:
+    """Chính sách chỉ báo cáo của ``/airi/``, theo những gì bản build AIRI stage-web dùng (bản thử 15/11/2026 chạy chung
+    chính sách của trang chính và gửi khoảng 360 báo cáo vi phạm mỗi lần mở)."""
+    sources = {
+        'default-src': ["'self'"],
+        # Script nhúng của index.html AIRI (giao diện sáng/tối, màn hình khởi động) theo mã băm; nút "Thử lại" của màn
+        # hình khởi động là onclick nhúng, cho phép bằng 'unsafe-hashes' kèm đúng mã băm của nó. 'wasm-unsafe-eval':
+        # onnxruntime, Silero VAD chạy WebAssembly. 'unsafe-eval': bản build có new Function(...) (PixiJS của Live2D,
+        # onnxruntime), như trang chính. Cloudflare tự chèn script Web Analytics như ở trang chính.
+        'script-src': ["'self'", *hashes, *(["'unsafe-hashes'", *handlers] if handlers else []), "'wasm-unsafe-eval'",
+                       "'unsafe-eval'", 'https://static.cloudflareinsights.com'],
+        # Vue và UnoCSS gắn style nhúng. Font của AIRI sẽ tự phục vụ nên không có CDN font nào.
+        'style-src': ["'self'", "'unsafe-inline'"],
+        'img-src': ["'self'", 'data:', 'blob:'],
+        'font-src': ["'self'", 'data:'],
+        # Bộ não AIRI chỉ gọi máy chủ Peto cùng gốc; data:/blob: là mô hình, âm thanh, ảnh nạp ngay trong trình duyệt.
+        # Không có máy chủ đám mây nào của AIRI và không có https: chung như trang chính.
+        'connect-src': ["'self'", 'data:', 'blob:'],
+        'media-src': ["'self'", 'blob:', 'data:'],
+        'worker-src': ["'self'", 'blob:'],
+        'object-src': ["'none'"],
+        'base-uri': ["'self'"],
+        'form-action': ["'self'"],
+        'report-uri': [REPORT_PATH],
+    }
+    return _join(sources)
 
 
 def policy(hashes: list[str]) -> str:
@@ -74,7 +120,7 @@ def policy(hashes: list[str]) -> str:
         'form-action': ["'self'"],
         'report-uri': [REPORT_PATH],
     }
-    return '; '.join(f"{name} {' '.join(values)}" for name, values in sources.items())
+    return _join(sources)
 
 
 class _Pages:
@@ -98,13 +144,35 @@ class _Pages:
         return self.value
 
 
+class _AiriPage:
+    """Như ``_Pages``, cho ``index.html`` của bản build AIRI; đọc lại khi bản build đổi."""
+
+    def __init__(self, airi_dir: Path):
+        self.file = airi_dir / 'index.html'
+        self.stamp: tuple | None = None
+        self.value = airi_policy([], [])
+
+    def current(self) -> str:
+        stamp = (self.file.stat().st_mtime_ns, self.file.stat().st_size) if self.file.is_file() else None
+        if stamp != self.stamp:
+            page = self.file.read_text(encoding='utf-8') if stamp is not None else ''
+            self.value, self.stamp = airi_policy(inline_script_hashes(page), handler_hashes(page)), stamp
+        return self.value
+
+
+def _is_airi(path: str) -> bool:
+    return path == AIRI_PREFIX or path.startswith(AIRI_PREFIX + '/')
+
+
 class SecurityHeaders:
     """Middleware ASGI thuần: chỉ thêm header vào ``http.response.start``, không đọc hay giữ thân phản hồi (SSE vẫn
     chảy từng mảnh). Header mà route đã tự đặt thì giữ nguyên."""
 
-    def __init__(self, app, static_dir: Path):
+    def __init__(self, app, static_dir: Path, airi_dir: Path | None = None):
         self.app = app
         self.pages = _Pages(static_dir)
+        # Chỉ khi /airi/ được phục vụ (PETO_AIRI_DIR); không đặt thì /airi/... vẫn theo chính sách của trang chính.
+        self.airi = _AiriPage(airi_dir) if airi_dir is not None else None
 
     async def __call__(self, scope, receive, send):
         if scope['type'] != 'http':
@@ -118,10 +186,11 @@ class SecurityHeaders:
                     if name not in present:
                         headers.append((name, value))
                 if b'content-security-policy-report-only' not in present:
+                    airi = self.airi is not None and _is_airi(scope.get('path', ''))
                     try:
-                        report_only = self.pages.current()
+                        report_only = self.airi.current() if airi else self.pages.current()
                     except OSError:
-                        report_only = policy([])
+                        report_only = airi_policy([], []) if airi else policy([])
                     headers.append((b'content-security-policy-report-only', report_only.encode('latin-1')))
                 message = {**message, 'headers': headers}
             await send(message)

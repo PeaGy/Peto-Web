@@ -908,7 +908,97 @@ page per company). Their calls the same day:
 - **Not checked:** none of the eight providers or Tavily has been called with a real key; request shapes follow each
   provider's docs as of 2026-10-13.
 
+### AIRI gateway and `/airi/` serving
+
+Part of the 2026-11-15 direction (Companion moves to a fork of AIRI's Vue stage-web; plan in `PETO_COMPANION_PLAN.md`,
+"Hướng mới từ 15/11/2026"). AIRI's brain runs in the browser (prompt assembly, sessions, character cards, tool
+execution); the Peto server is only the model endpoint. The fork is at `C:\Users\binhb\Downloads\peto-airi`, branch
+`peto`, documented in its `PETO.md`.
+
+- **Serving** (`core/airi_static.py`): only when `PETO_AIRI_DIR` points at a stage-web build made with `--base=/airi/`.
+  Real files are served (hashed `assets/` cached for a year), extensionless paths get `index.html` (AIRI's router),
+  missing assets are a real 404. Mounted before the SPA catch-all in `main.py`.
+- **Gateway** (`features/companion/airi_gateway.py`, request parsing in `airi_request.py`): OpenAI Chat Completions at
+  `/api/companion/v1` (`GET /models`, `POST /chat/completions`), the shape `@xsai/stream-text` 0.5 sends. It is always
+  registered, with or without `PETO_AIRI_DIR`.
+  - Auth is the Peto session cookie (same check as Chat); no cookie is a 401 with an OpenAI-shaped Vietnamese body. No
+    Agent device token, no Agent daily step budget, no Agent model catalogue, no per-account quota.
+  - Model: always Peto. `GET /models` lists only `peto`; the request's `model` is ignored. The call goes through
+    `ai.agent.agent_step(model="peto", effort="low", web_search=False)`, the Responses path with caller-declared tools
+    that Peto Agent uses, so it bills as Grok with `AGENT_MODEL` (`PETO_AGENT_MODEL`, default `XAI_MODEL`). Chat's
+    `ChatProvider.stream` was not used because its tool loop runs server tools only.
+  - System prompt: the caller's `system`/`developer` messages joined, then `COMPANION_CARD_RULE` always appended by the
+    server. Nothing is stored; logs carry only counts and timings (`airi_turn outcome=… continuation=… tools=… images=…
+    items=… first_text_ms=… total_ms=…`).
+  - Tools: the caller's `tools` (function schemas) and `tool_choice` (`auto`/`none`/`required` or a named function,
+    converted to the Responses form) are forwarded; the server never runs them. Caps: 128 tools (Agent gateway), names
+    `[A-Za-z0-9_-]{1,64}`, no duplicates, 32 KB per declaration, 256 KB in total. The model's calls come back as
+    `tool_calls` deltas: the first delta for a call carries `index`, `id`, `type: "function"`, the name and empty
+    arguments; the arguments follow in one delta taken from the final item (Responses argument pieces can be written
+    differently from the final JSON, and xsai concatenates every piece), then `finish_reason: "tool_calls"`. History
+    accepts assistant messages with `tool_calls` and `role: "tool"` results (text, or text and image parts) and
+    converts them to `function_call` / `function_call_output` items. A result with no matching earlier call is a 400; a
+    call that never got a result (the browser stopped mid-turn) is dropped before the model call.
+  - Images: `image_url` parts in user messages and tool results, data URLs only, checked by the Agent's `_check_image`
+    (PNG/JPEG/GIF/WebP, 3 MB each, real type sniffed). At most 50 images and a 32 MB body, the Agent desktop gateway's
+    limits. `http(s)` image URLs are refused with "Peto chỉ nhận ảnh gửi kèm dạng data URL…": the server fetches
+    nothing for the browser. Audio and file parts are refused. Images in tool results are lifted into a user message
+    and WebP/GIF become PNG for Grok (`features/agent/gateway_images.prepare`, as for the Agent gateway). Text caps from
+    the spike stay: 200 messages and 200,000 characters per request.
+  - Admission: the whole call runs in Chat's `admission.slot(owner)` (same concurrency, queue and cooldown as Chat). A
+    request whose last message is a tool result is a continuation of the same answer (xsai sends it as soon as the
+    browser ran the tool) and skips the cooldown (`Admission.slot(…, cooldown=False)`); it still waits for a slot.
+  - Streaming: the gateway waits up to 15 s for the first event, so errors before any output are real HTTP statuses
+    with `{"error": {...}}` (401, 400/413 validation, 429 cooldown with `Retry-After` or queue full, 503 queue timeout
+    or retryable provider error, 502 provider error, 504 silence, 500). AIRI retries 408/429/5xx up to three times
+    before the stream starts. After that, an error is one `data: {"error": …}` line, which xsai turns into a
+    `RemoteAPIError`, and no `[DONE]`. `: ping` comments every 15 s of silence keep Cloudflare from closing the
+    connection (xsai ignores comments). Timeouts are Chat's: `RESPONSE_TIMEOUTS["low"]` of silence (any event,
+    reasoning included, resets it) and `TURN_TIMEOUT_SECONDS` overall. `stream_options.include_usage` adds a final
+    chunk with `choices: []` and `usage`. Reasoning is never sent to the browser. `stream: false` returns one
+    `chat.completion`.
+  - Cancellation: when the browser disconnects or aborts (AIRI's stop button), the model call task is cancelled, the
+    provider stream closed and the admission slot released. After the headers Starlette notices the disconnect (uvicorn
+    reports ASGI spec 2.3, so Starlette listens for `http.disconnect`); before the headers the gateway polls
+    `request.is_disconnected()` every 0.5 s.
+  - Usage on `/admin`: every turn writes a `turn` row and, when the model finished, a `call` row with tokens, cached
+    tokens and xAI's `cost_ticks`, all with `surface="airi"`, `purpose="airi"`, `service="xai"`, `model="peto"`,
+    `effort="low"`. The dashboard lists `airi` among the Peto row's surfaces. A tool round trip is two turns and two
+    calls.
+- **Mock**: the Agent mock (`ai/agent.py`) answers `__congcu__` by calling the first declared tool with sample
+  arguments (one value per required property), then, once a tool result comes back, replies with that result.
+- **CSP**: `/airi/` responses get their own report-only policy (`core/security_headers.airi_policy`, see
+  `admin-ops.md`, "Security headers").
+- **Tests**: `tests/test_airi_gateway.py` (auth, text, card rule, tool round trip, tool and request validation, images,
+  errors before and after the first byte, pings, timeouts, cooldown vs continuation, disconnect before and after the
+  first byte via raw ASGI, usage rows), `tests/test_airi_static.py`, the `/airi/` cases in
+  `tests/test_security_headers.py`.
+
 # Dated log (newest first)
+
+## AIRI gateway, package 1 (2026-11-15, branch from `companion-airi`)
+
+Turned the spike gateway (`64115d7`) into the real one: tools forwarded and streamed back as `tool_calls`, data-URL
+images, usage rows with `surface="airi"`, cancellation on disconnect, OpenAI-shaped errors before the first byte and
+error chunks after it, `: ping` keep-alives, and a report-only CSP for `/airi/`. Current behaviour is in "AIRI gateway and
+`/airi/` serving" above.
+- Checked against a running mock server (port 8767, temp DB, dev cookie): text turn with usage chunk, tool-call turn then
+  the immediate tool-result turn (cooldown skipped), image turn ("đã nhận 1 ảnh (PNG 1 KB)"), remote image refused with
+  400, 401 signed out, a second new message within 3 s refused with 429 cooldown, and a request aborted after the first
+  chunk (`outcome=cancelled total_ms=2`, the next turn ran normally).
+- Real AIRI page (the fork's spike `dist` of 16:56, headless Chromium): typing "Thử công cụ __congcu__" made the mock call
+  AIRI's first tool, `builtIn_debugRandomNumber`; AIRI ran it in the browser, sent the `role: "tool"` result at once
+  (200, continuation) and showed "Peto đã nhận kết quả công cụ (giả lập): 0.58…" under a "Debug random number" tool
+  card. AIRI sends 10 tools on every turn (`builtIn_debugRandomNumber`, `builtIn_emitSparkCommand`,
+  `configure_wake_words`, `builtIn_readMemory`, `builtIn_writeMemory`, `builtIn_forgetMemory`, `builtIn_useRecipe`,
+  `builtIn_proposeRecipe`, `builtIn_drawCard`, `builtIn_searchIcons`).
+- Finding: right after a turn AIRI makes a side call of its own (its tool-card renderer: two system messages, one user
+  message, one tool). It is a new request, so Chat's 3 s cooldown refused it three times; AIRI retried after
+  `Retry-After` and the fourth try succeeded. Whether AIRI's side calls should skip the cooldown is an open question for
+  the owner.
+- CSP: one visit to `/airi/` with the new policy produced 68 reports, all expected: 67 `font-src cdn.jsdelivr.net` (fonts
+  are being self-hosted in the fork, package 2) and 1 `connect-src ws://localhost` (the mods channel package 2 removes).
+  The spike's inline-script, `data:`/`blob:` connect and inline-handler reports are gone.
 
 ## Companion chat UI from AIRI (2026-10-26, in progress, committed `e96fd91`)
 
