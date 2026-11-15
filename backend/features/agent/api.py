@@ -34,12 +34,13 @@ import storage as db
 from features.agent.install import cli_version
 from features.agent.tools import FEATURES, explore_schemas, tool_schemas
 from features.agent import assembly, budget
+from features.agent.step_limits import StepLimits
 from ai.agent import agent_step
 from shared.attachments import sniff_image_mime
 from ai.base import ProviderError
 from shared.time_tools import agent_time_context, resolve_timezone
 from core import usage_events
-from core.config import AGENT_DAILY_STEPS, AGENT_DISABLED_SOURCES, AGENT_MODEL, AGENT_MAX_CONCURRENT, AGENT_MAX_QUEUE, AGENT_MAX_REQUEST_BYTES, AGENT_REASONING, AGENT_SLOW_STEP_SECONDS, AGENT_STEP_TIMEOUT_SECONDS, AGENT_TOKEN_IDLE_DAYS, AGENT_WEB_SEARCH, provider_from_owner
+from core.config import AGENT_DAILY_STEPS, AGENT_DISABLED_SOURCES, AGENT_MODEL, AGENT_MAX_CONCURRENT, AGENT_MAX_QUEUE, AGENT_MAX_REQUEST_BYTES, AGENT_REASONING, AGENT_SLOW_STEP_SECONDS, AGENT_TOKEN_IDLE_DAYS, AGENT_WEB_SEARCH, provider_from_owner
 from prompts import agent as agent_prompts  # noqa: F401 - test và module khác lấy qua đây
 from core.rate_limit import Admission, AdmissionDenied
 
@@ -458,6 +459,7 @@ async def step(request: Request, device: dict = Depends(device_auth)):
         outcome = "cancelled"
         started = time.monotonic()
         first_at: float | None = None
+        limits: StepLimits | None = None
         try:
             window = budget.request_budget(model.key, instructions, step_tools, items, compact=special == "compact",
                                            web_search=searching and not final) if budgeting else None
@@ -467,11 +469,25 @@ async def step(request: Request, device: dict = Depends(device_auth)):
                            (special is None and window["request_tokens"] >= window["ceiling"])):
                 raise ProviderError("Ngữ cảnh đã tới ngân sách model; cần tóm tắt trước khi tiếp tục.", code="context_overflow")
             async with admission.slot(f"agent:{owner}"):
-                async with asyncio.timeout(AGENT_STEP_TIMEOUT_SECONDS):
+                # Dừng khi dịch vụ AI im lặng quá lâu, không cắt lần đang viết đều (features/agent/step_limits.py).
+                limits = StepLimits()
+                async with asyncio.timeout_at(limits.next()) as scope:
                     async for event in agent_step(instructions=instructions, input_items=items,
                                                   tools=step_tools,
                                                   effort=effort, model=model.key, web_search=searching,
                                                   final=final, **({"max_output_tokens": window["max_output_tokens"]} if window else {})):
+                        scope.reschedule(limits.next())
+                        if event.kind == "pulse":
+                            # Giữ kết nối (Cloudflare cắt luồng im lặng); CLI bỏ qua dòng chú thích SSE.
+                            yield ": ping\n\n"
+                            continue
+                        if event.kind in {"tool_start", "tool_delta"}:
+                            # CLI chỉ đọc lời gọi công cụ trong "done"; đoạn đang viết chỉ cho ứng dụng máy tính. Model
+                            # đã bắt đầu viết nên bước đã có phản hồi (không hoàn, không tự thử lại), như ở cổng.
+                            if not produced:
+                                first_at = time.monotonic()
+                            produced = True
+                            continue
                         if not produced:
                             first_at = time.monotonic()
                         produced = True
@@ -511,8 +527,10 @@ async def step(request: Request, device: dict = Depends(device_auth)):
             logger.warning("Bước agent lỗi từ nhà cung cấp: %s", err)
             failure = str(err)
         except TimeoutError:
-            outcome = "timeout"
-            failure = "Bước này chạy quá lâu nên Peto dừng lại. Thử lại nhé."
+            code, failure = (limits.failure(produced) if limits is not None else
+                             ("timeout", "Dịch vụ AI im lặng quá lâu nên Peto dừng bước này."))
+            outcome = "too_long" if code == "step_too_long" else "timeout"
+            retryable = code == "timeout"
         except Exception:
             outcome = "internal_error"
             logger.exception("Lỗi không mong đợi ở bước agent")

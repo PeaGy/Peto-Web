@@ -17,7 +17,10 @@ def test_catalog_limits_are_per_actual_model_and_deployment_cap(monkeypatch):
     assert budget.limits('peto')['context'] == 500000
     assert budget.limits('sol')['context'] == 1050000
     assert budget.limits('sol')['identity'] == 'openai/gpt-6.1-sol'
-    assert budget.limits('sol')['output'] == config.OPENAI_MAX_OUTPUT_TOKENS
+    assert budget.limits('sol')['output'] == config.OPENAI_AGENT_MAX_OUTPUT_TOKENS == 128000
+    # Agent có trần riêng như các model lớn (15/11/2026), không bị trần đầu ra của Chat (8192 với Grok) chặn.
+    assert budget.limits('peto')['output'] == config.XAI_AGENT_MAX_OUTPUT_TOKENS == 128000
+    assert budget.limits('luna')['output'] == 128000
     assert budget.limits('haiku')['output'] == config.ANTHROPIC_AGENT_MAX_OUTPUT_TOKENS
     monkeypatch.setattr(config, 'AGENT_MODEL', 'my-custom-model')
     assert budget.limits('peto')['known'] is False

@@ -35,9 +35,10 @@ from ai.agent import AgentEvent, agent_step
 from ai.web_lookup import web_lookup
 from ai.base import ProviderError
 from core import usage_events
-from core.config import AGENT_DAILY_STEPS, AGENT_MODEL, AGENT_REASONING, AGENT_STEP_TIMEOUT_SECONDS, AGENT_WEB_SEARCH
+from core.config import AGENT_DAILY_STEPS, AGENT_MODEL, AGENT_REASONING, AGENT_WEB_SEARCH
 from core.rate_limit import AdmissionDenied
 from features.agent import budget, gateway_images
+from features.agent.step_limits import StepLimits
 from features.agent.api import (
     STEP_COST, _check_image, _count_images, _read_body, _today, admission, device_auth,
 )
@@ -304,6 +305,10 @@ class ResponseWriter:
 
     Suy nghĩ và chữ mở một ô (output_index) khi tới lần đầu; khi xong bước, mỗi item cuối khớp ô cùng loại đã mở theo
     thứ tự, item khác mở ô mới. pi-ai lấy nội dung cuối từ ``response.output_item.done``.
+
+    Lời gọi công cụ (từ 15/11/2026) mở ô ngay khi model bắt đầu viết, với đúng ``call_id``/``id`` của item cuối (pi-ai
+    đặt mã lời gọi lúc mở ô), và từng đoạn đối số đi ngay về ứng dụng để hiện tiến độ: trước đó cả lời gọi chỉ tới khi
+    xong, nên một tệp dài khiến ứng dụng im lặng nhiều phút. Đối số đúng vẫn là của item cuối.
     """
 
     def __init__(self, model: str):
@@ -314,6 +319,7 @@ class ResponseWriter:
         self.next_index = 0
         self.open: dict[str, int] = {}
         self.item_ids: dict[int, str] = {}
+        self.calls: dict[str, int] = {}  # call_id -> ô của lời gọi công cụ đang viết
 
     def _sse(self, payload: dict) -> str:
         payload = {**payload, "sequence_number": self.sequence}
@@ -352,17 +358,35 @@ class ResponseWriter:
             chunks.append(self._sse({"type": "response.output_text.delta", "item_id": self.item_ids[index],
                                      "output_index": index, "content_index": 0, "delta": event.text}))
             return chunks
+        call_id = event.item.get("call_id")
+        if event.kind == "tool_start" and isinstance(call_id, str) and call_id and call_id not in self.calls:
+            index = self.next_index
+            self.next_index += 1
+            self.calls[call_id] = index
+            item_id = event.item.get("id")
+            self.item_ids[index] = item_id or call_id
+            skeleton = {"type": "function_call", **({"id": item_id} if item_id else {}), "call_id": call_id,
+                        "name": event.item.get("name") or "", "arguments": ""}
+            return [self._sse({"type": "response.output_item.added", "output_index": index, "item": skeleton})]
+        if event.kind == "tool_delta" and event.text and call_id in self.calls:
+            index = self.calls[call_id]
+            return [self._sse({"type": "response.function_call_arguments.delta", "item_id": self.item_ids[index],
+                               "output_index": index, "delta": event.text})]
         return []
 
     def finish(self, output: list[dict], usage: dict) -> list[str]:
         chunks: list[str] = []
         unused = dict(self.open)
         placed: list[tuple[int, dict]] = []
+        live_calls = dict(self.calls)
         for item in output:
             kind = item.get("type")
             slot = "reasoning" if kind == "reasoning" else "message" if kind == "message" else None
+            live = live_calls.pop(item.get("call_id"), None) if kind == "function_call" else None
             if slot is not None and slot in unused:
                 index = unused.pop(slot)
+            elif live is not None:
+                index = live
             else:
                 index = self.next_index
                 self.next_index += 1
@@ -373,13 +397,17 @@ class ResponseWriter:
             if kind == "function_call":
                 arguments = str(item.get("arguments") or "")
                 item_id = item.get("id") or item.get("call_id")
-                if arguments:
+                if arguments and live is None:
                     chunks.append(self._sse({"type": "response.function_call_arguments.delta", "item_id": item_id,
                                              "output_index": index, "delta": arguments}))
                 chunks.append(self._sse({"type": "response.function_call_arguments.done", "item_id": item_id,
                                          "output_index": index, "arguments": arguments}))
             chunks.append(self._sse({"type": "response.output_item.done", "output_index": index, "item": item}))
             placed.append((index, item))
+        if live_calls:
+            # Lời gọi đã mở mà kết quả cuối không có: không đóng bằng đối số rỗng (ứng dụng sẽ chạy công cụ với {}).
+            # pi-ai tự báo lỗi lời gọi dở dang.
+            logger.warning("Cổng agent: %d lời gọi công cụ đang viết không có trong kết quả cuối", len(live_calls))
         # Ô đã mở mà kết quả cuối không có item cùng loại (hiếm): đóng bằng item rỗng để pi-ai không giữ ô dở.
         for kind, index in unused.items():
             empty = ({"type": "reasoning", "id": self.item_ids[index], "summary": []} if kind == "reasoning" else
@@ -605,14 +633,18 @@ async def _pump(queue: asyncio.Queue, *, owner: str, day: str, cost: int, model,
     started = time.monotonic()
     first_at: float | None = None
     slug = model.slug or AGENT_MODEL
+    limits: StepLimits | None = None
     try:
         async with admission.slot(f"agent:{owner}"):
-            async with asyncio.timeout(AGENT_STEP_TIMEOUT_SECONDS):
+            # Đếm giờ từ lúc có suất chạy: dừng khi dịch vụ AI im lặng quá lâu, không cắt lần đang viết đều.
+            limits = StepLimits()
+            async with asyncio.timeout_at(limits.next()) as scope:
                 async for event in agent_step(instructions=parsed.instructions, input_items=parsed.items,
                                               tools=parsed.tools, effort=effort, model=model.key, web_search=False,
                                               max_output_tokens=parsed.max_output_tokens,
                                               tool_choice=parsed.tool_choice):
-                    if event.kind == "search":
+                    scope.reschedule(limits.next())
+                    if event.kind in {"search", "pulse"}:
                         continue
                     if not produced:
                         first_at = time.monotonic()
@@ -651,9 +683,10 @@ async def _pump(queue: asyncio.Queue, *, owner: str, day: str, cost: int, model,
         logger.warning("Cổng agent lỗi từ nhà cung cấp: %s", err)
         failure = _provider_failure(err)
     except TimeoutError:
-        outcome = "timeout"
-        failure = GatewayError(504, "Lần gọi này chạy quá lâu nên Peto dừng lại.", code="timeout",
-                               kind="server_error", retry=False)
+        code, message = (limits.failure(produced) if limits is not None else
+                         ("timeout", "Dịch vụ AI im lặng quá lâu nên Peto dừng lần gọi này."))
+        outcome = "too_long" if code == "step_too_long" else "timeout"
+        failure = GatewayError(504, message, code=code, kind="server_error", retry=code == "timeout")
     except asyncio.CancelledError:
         raise
     except Exception:

@@ -42,6 +42,9 @@ XAI_MODEL = os.getenv("XAI_MODEL", "grok-4.7").strip()
 XAI_API_BASE = os.getenv("XAI_BASE_URL", "https://api.x.ai/v1").strip()
 # Ngân sách phản hồi dành cho web, không gắn với độ dài tin nhắn Discord.
 XAI_MAX_OUTPUT_TOKENS = _env_int("XAI_MAX_OUTPUT_TOKENS", 8192, 128, 32000)
+# Peto Agent (CLI và ứng dụng máy tính) viết cả tệp dài trong một lần gọi công cụ, nên trần riêng rộng như các model lớn
+# (từ 15/11/2026). xAI không công bố trần đầu ra cho grok-4.7, chỉ ngữ cảnh 500.000 token; 128.000 bằng GPT và Claude.
+XAI_AGENT_MAX_OUTPUT_TOKENS = _env_int("PETO_XAI_AGENT_MAX_OUTPUT_TOKENS", 128000, 1024, 500000)
 DEFAULT_TIMEZONE = os.getenv("PETO_DEFAULT_TIMEZONE", "Asia/Ho_Chi_Minh").strip()
 WEB_SEARCH_ENABLED = os.getenv("PETO_WEB_SEARCH_ENABLED", "true").strip().lower() in {"1", "true", "yes"}
 # Peto (xAI) chạy mã Python trong sandbox của xAI để tính toán ở tab Trò chuyện (thí điểm 21/10/2026, chỉ có chữ in ra,
@@ -62,6 +65,7 @@ XAI_TOKEN_PATH = Path(
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
 # Model suy luận tính cả token suy nghĩ vào giới hạn này, nên để rộng hơn của Grok.
 OPENAI_MAX_OUTPUT_TOKENS = _env_int("PETO_OPENAI_MAX_OUTPUT_TOKENS", 16000, 1024, 128000)
+OPENAI_AGENT_MAX_OUTPUT_TOKENS = _env_int("PETO_OPENAI_AGENT_MAX_OUTPUT_TOKENS", 128000, 1024, 128000)
 
 # Claude dùng khóa của máy chủ, chung cho web và Agent; không gửi khóa xuống thiết bị người dùng.
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "").strip()
@@ -259,7 +263,10 @@ AGENT_MAX_QUEUE = _env_int("PETO_AGENT_MAX_QUEUE", 4, 0, 50)
 # Cả hội thoại gửi lại mỗi bước, kể cả tới 4 ảnh CLI giữ lại (mỗi ảnh dưới 2 MB, thêm một phần ba khi mã hóa base64).
 AGENT_MAX_REQUEST_BYTES = _env_int("PETO_AGENT_MAX_REQUEST_BYTES", 16 * 1024 * 1024, 64 * 1024, 32 * 1024 * 1024)
 AGENT_TOKEN_IDLE_DAYS = _env_int("PETO_AGENT_TOKEN_IDLE_DAYS", 30, 1, 365)
+# Một lần gọi model của Agent: dừng khi dịch vụ AI im lặng quá ngần này giây (từ 15/11/2026 là thời gian im lặng, trước đó
+# là tổng thời gian và cắt cả lần đang viết tệp dài), và không bao giờ kéo dài quá AGENT_STEP_MAX_SECONDS.
 AGENT_STEP_TIMEOUT_SECONDS = _env_float("PETO_AGENT_STEP_TIMEOUT_SECONDS", 300.0, 10.0, 600.0)
+AGENT_STEP_MAX_SECONDS = _env_float("PETO_AGENT_STEP_MAX_SECONDS", 3600.0, 60.0, 14400.0)
 # Tìm web cho agent chạy ở phía dịch vụ AI và tính phí theo lượt tìm, nên tắt được riêng, không cần tắt tìm web của chat.
 AGENT_WEB_SEARCH = WEB_SEARCH_ENABLED and os.getenv("PETO_AGENT_WEB_SEARCH", "true").strip().lower() in {"1", "true", "yes"}
 # Bước chậm hơn ngần này thì ghi một dòng cảnh báo kèm thời gian, để biết chậm ở chỗ chờ dịch vụ AI hay lúc viết.

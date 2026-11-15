@@ -17,8 +17,9 @@ from features.agent.assembly import CATALOG, ceiling, estimate  # noqa: F401 - n
 def limits(key: str) -> dict:
     model = MODELS[key]
     slug = config.AGENT_MODEL if key == "peto" else model.slug
-    cap = {"openai": config.OPENAI_MAX_OUTPUT_TOKENS,
-           "anthropic": config.ANTHROPIC_AGENT_MAX_OUTPUT_TOKENS}.get(model.service, config.XAI_MAX_OUTPUT_TOKENS)
+    # Trần riêng của Agent (từ 15/11/2026), không phải trần của Chat: Agent viết cả tệp dài trong một lời gọi công cụ.
+    cap = {"openai": config.OPENAI_AGENT_MAX_OUTPUT_TOKENS,
+           "anthropic": config.ANTHROPIC_AGENT_MAX_OUTPUT_TOKENS}.get(model.service, config.XAI_AGENT_MAX_OUTPUT_TOKENS)
     override = json.loads(os.environ.get("PETO_AGENT_CONTEXT_LIMITS", "{}"))
     return assembly.limits(model.service, slug, cap, override)
 

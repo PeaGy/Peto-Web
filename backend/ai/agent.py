@@ -12,22 +12,37 @@ import json
 import logging
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
+from time import perf_counter
 
 import anyio
 
-from core.config import AGENT_MODEL, AGENT_REASONING, AGENT_STEP_TIMEOUT_SECONDS, AI_PROVIDER, OPENAI_API_KEY, OPENAI_MAX_OUTPUT_TOKENS, XAI_API_BASE, XAI_MAX_OUTPUT_TOKENS
+from core.config import AGENT_MODEL, AGENT_REASONING, AGENT_STEP_TIMEOUT_SECONDS, AI_PROVIDER, OPENAI_API_KEY, OPENAI_AGENT_MAX_OUTPUT_TOKENS, XAI_API_BASE, XAI_AGENT_MAX_OUTPUT_TOKENS
 
 from .base import ProviderError
 
 logger = logging.getLogger("peto_web.agent")
 
 
+# Dịch vụ AI vẫn gửi dữ liệu mà chưa có gì để hiện (đang soạn lời gọi công cụ dài, suy nghĩ ẩn): cứ ngần này giây phát
+# một sự kiện "pulse" để nơi gọi biết lần gọi còn sống mà tính thời gian im lặng cho đúng.
+PULSE_SECONDS = 10.0
+
+
 @dataclass(frozen=True)
 class AgentEvent:
-    kind: str  # "thinking" | "delta" | "search" | "done"
+    """Một sự kiện của bước agent.
+
+    ``kind``: "thinking" | "delta" | "search" | "done", và từ 15/11/2026 thêm "tool_start" (bắt đầu một lời gọi công cụ,
+    ``item`` có ``call_id``, ``name`` và ``id`` nếu dịch vụ có), "tool_delta" (một đoạn đối số JSON đang viết, ``text``;
+    ``item`` có ``call_id``) và "pulse" (còn sống, không có nội dung). Đối số đúng là ở item cuối của "done"; các đoạn chỉ
+    để hiện tiến độ, có thể khác cách viết JSON của bản cuối.
+    """
+
+    kind: str
     text: str = ""
     output: tuple[dict, ...] = ()
     usage: dict = field(default_factory=dict)
+    item: dict = field(default_factory=dict)
 
 
 async def agent_step(
@@ -148,7 +163,7 @@ async def _xai_step(instructions: str, items: list[dict], tools: list[dict], eff
                     tool_choice: str | None = None) -> AsyncIterator[AgentEvent]:
     client = await xai_client()
     async for event in _responses_step(
-        client, "xAI", AGENT_MODEL, min(max_output_tokens or XAI_MAX_OUTPUT_TOKENS, XAI_MAX_OUTPUT_TOKENS), instructions, items, tools, effort,
+        client, "xAI", AGENT_MODEL, min(max_output_tokens or XAI_AGENT_MAX_OUTPUT_TOKENS, XAI_AGENT_MAX_OUTPUT_TOKENS), instructions, items, tools, effort,
         auth_message="Kết nối AI của Peto đã hết hạn. Người quản trị cần đăng nhập lại.",
         rate_message="Dịch vụ AI đang nhận nhiều yêu cầu quá. Đợi chút rồi thử lại nhé.",
         web_search=web_search, tool_choice=tool_choice,
@@ -170,7 +185,7 @@ async def _openai_step(instructions: str, items: list[dict], tools: list[dict], 
         _openai_client = AsyncOpenAI(api_key=OPENAI_API_KEY, http_client=_http_client())
     info = MODELS[model]
     async for event in _responses_step(
-        _openai_client, "OpenAI", info.slug, min(max_output_tokens or OPENAI_MAX_OUTPUT_TOKENS, OPENAI_MAX_OUTPUT_TOKENS), instructions, items, tools, effort,
+        _openai_client, "OpenAI", info.slug, min(max_output_tokens or OPENAI_AGENT_MAX_OUTPUT_TOKENS, OPENAI_AGENT_MAX_OUTPUT_TOKENS), instructions, items, tools, effort,
         auth_message="Khóa OpenAI của máy chủ Peto không dùng được. Gõ /model peto để làm tiếp nhé.",
         rate_message=f"{info.label} đang bị OpenAI giới hạn lượt hoặc đã hết hạn mức. Gõ /model peto để làm tiếp, "
                      "hoặc thử lại sau nhé.",
@@ -212,6 +227,7 @@ async def _responses_step(client, service: str, model: str, max_output_tokens: i
 
     stream = None
     produced = False
+    calls: dict[str, str] = {}  # id item (hoặc call_id) -> call_id của lời gọi công cụ đang viết
     try:
         stream = await client.responses.create(
             model=model,
@@ -226,15 +242,26 @@ async def _responses_step(client, service: str, model: str, max_output_tokens: i
             stream=True,
             **({"tool_choice": tool_choice} if tool_choice and tools else {}),
         )
+        signal_at = perf_counter()
         async for event in stream:
             event_type = getattr(event, "type", "")
-            if event_type == "response.reasoning_summary_text.delta":
+            if perf_counter() - signal_at >= PULSE_SECONDS:
+                signal_at = perf_counter()
+                yield AgentEvent("pulse")
+            if event_type == "response.function_call_arguments.delta":
+                call_id = calls.get(getattr(event, "item_id", None) or "")
+                if call_id and (delta := getattr(event, "delta", "")):
+                    signal_at = perf_counter()
+                    yield AgentEvent("tool_delta", delta, item={"call_id": call_id})
+            elif event_type == "response.reasoning_summary_text.delta":
                 if delta := getattr(event, "delta", ""):
                     produced = True
+                    signal_at = perf_counter()
                     yield AgentEvent("thinking", delta)
             elif event_type == "response.output_text.delta":
                 if delta := getattr(event, "delta", ""):
                     produced = True
+                    signal_at = perf_counter()
                     yield AgentEvent("delta", delta)
             elif event_type in {"response.web_search_call.in_progress", "response.web_search_call.searching"}:
                 produced = True
@@ -243,9 +270,17 @@ async def _responses_step(client, service: str, model: str, max_output_tokens: i
                 produced = True
                 yield AgentEvent("search", "completed")
             elif event_type == "response.output_item.added":
-                if getattr(getattr(event, "item", None), "type", "") == "web_search_call":
+                added = getattr(event, "item", None)
+                if getattr(added, "type", "") == "web_search_call":
                     produced = True
                     yield AgentEvent("search", "searching")
+                elif getattr(added, "type", "") == "function_call" and (call_id := getattr(added, "call_id", None)):
+                    item_id = getattr(added, "id", None)
+                    calls[item_id or call_id] = call_id
+                    produced = True
+                    signal_at = perf_counter()
+                    yield AgentEvent("tool_start", item={"call_id": call_id, "name": getattr(added, "name", "") or "",
+                                                         **({"id": item_id} if item_id else {})})
             elif event_type == "response.completed":
                 response = event.response
                 status = getattr(response, "status", "completed")
@@ -317,6 +352,7 @@ async def _responses_step(client, service: str, model: str, max_output_tokens: i
 # kết quả công cụ CLI gửi lên; "__error__" giả lập lỗi nhà cung cấp.
 
 _MOCK_DELAY = 0.01
+_MOCK_LONG_WRITE_DELAY = 0.25  # __viettep__: 60 đoạn, khoảng 15 giây
 
 
 def _message(text: str) -> dict:
@@ -399,6 +435,25 @@ async def _mock_step(items: list[dict], web_search: bool = False, *, final: bool
 
     def speak(text: str, calls: list[dict]) -> AsyncIterator[AgentEvent]:
         return _speak(text, calls, items)
+
+    if "__viettep__" in task:
+        # Viết một tệp dài qua lời gọi công cụ, từng đoạn đối số như dịch vụ thật (thử cổng agent: lần viết đều kéo dài
+        # hơn khoảng im lặng cho phép vẫn không bị cắt, ứng dụng thấy tệp đang được viết).
+        if results:
+            async for event in speak("Đã viết xong bao-cao.md (giả lập).", []):
+                yield event
+            return
+        content = "".join(f"## Mục {index}\n\nNội dung giả lập của mục {index}, đủ dài để thấy tiến độ.\n\n"
+                          for index in range(1, 61))
+        call = {**_call(9, "write", {"path": "bao-cao.md", "content": content}), "id": "fc_demo_9"}
+        yield AgentEvent("tool_start", item={"call_id": call["call_id"], "id": call["id"], "name": call["name"]})
+        arguments = call["arguments"]
+        size = -(-len(arguments) // 60)
+        for start in range(0, len(arguments), size):
+            await asyncio.sleep(_MOCK_LONG_WRITE_DELAY)
+            yield AgentEvent("tool_delta", arguments[start:start + size], item={"call_id": call["call_id"]})
+        yield AgentEvent("done", output=(call,), usage={"input_tokens": 40, "output_tokens": len(arguments) // 4})
+        return
 
     if "__demo__" not in task:
         reply = ("Peto đang chạy bằng phản hồi giả nên chưa làm việc thật được. Gõ một yêu cầu có __demo__ để xem "

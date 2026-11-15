@@ -6,6 +6,43 @@ Moved out of `CLAUDE.md` on 2026-11-12 (G0.2). Write new notes for this area her
 
 # Dated log (newest first)
 
+## Agent call time limits, live tool calls and big output caps (2026-11-15, not committed/deployed)
+
+The owner's ph session "Tạo Word từ bài thuyết trình" (model `peto`, Medium) retried 9 times over 45 minutes. Session
+log (`~/.peto-agent/sessions/…/session.v4.jsonl.zstd`, concatenated zstd frames): every attempt thought, wrote one
+lead-in sentence, then streamed one tool call holding the whole 30-page report as a Python script; the gateway sent tool
+calls only at the end, so the app saw ~4 minutes of pings, and `asyncio.timeout(AGENT_STEP_TIMEOUT_SECONDS)` cut the
+whole call at 300 s. The failure `timeout: …` matched pi-ai's TIMEOUT class (llm-pi-ai `stream.ts`
+`classifyPiAiError` reads the message text), so DSH resent the identical request up to 5 times; each attempt was charged
+(output produced). Even uncut, Grok's agent output cap was 8,192 tokens (`XAI_MAX_OUTPUT_TOKENS`, shared with Chat). The
+owner asked for the gateway fix and "output caps like the big providers; no interruptions to save money".
+- **Output caps (Agent only; Chat keeps its own):** `PETO_XAI_AGENT_MAX_OUTPUT_TOKENS` 128,000 (1,024–500,000; xAI
+  publishes no output limit for grok-4.7, only 500K context), `PETO_OPENAI_AGENT_MAX_OUTPUT_TOKENS` 128,000 (catalog
+  max), Claude's existing 128,000. `budget.limits` and `_xai_step`/`_openai_step` use them, so `/models` and the CLI's
+  context budget report 128,000; requests still clamp to the room left in the context window.
+- **Silence, not total time** (`features/agent/step_limits.py`, used by the gateway `_pump` and `/api/agent/step`):
+  `asyncio.timeout_at` rescheduled on every `agent_step` event; `AGENT_STEP_TIMEOUT_SECONDS` (300) now means silence,
+  `PETO_AGENT_STEP_MAX_SECONDS` (3,600, 60–14,400) caps the whole call. `_responses_step` yields `pulse` every
+  `PULSE_SECONDS` (10) while raw provider events flow with nothing to show; the Claude translator's `peto.pulse` counts.
+  Failure codes: nothing produced → `timeout` (pi-ai retries, step refunded); output then silence → `stalled`;
+  overall cap → `step_too_long` (asks to split the work). The last two messages avoid the word "timeout" so DSH does not
+  resend a charged call. `/step` sends `: ping` comments for pulses (the CLI never had keepalives) and drops tool events.
+- **Live tool calls:** `AgentEvent` gained `item`; kinds `tool_start` (call_id, name, id if any), `tool_delta`
+  (argument JSON piece) and `pulse`. `_responses_step` maps `response.output_item.added` function_call and
+  `response.function_call_arguments.delta`; the Claude translator now emits `call_id` on tool_use and
+  `input_json_delta` as `response.function_call_arguments.delta` (Chat ignores both). `ResponseWriter` opens the
+  function_call slot at `tool_start` with the final item's exact `call_id`/`id` (pi-ai fixes the tool-call id at
+  `output_item.added`), streams deltas, and at `finish` reuses that slot and sends only `arguments.done` plus
+  `output_item.done` (pi-ai takes the final item's arguments; Claude's streamed JSON differs in spacing from
+  `json.dumps`). A live slot missing from the final output is left open on purpose: pi-ai then refuses the unfinished
+  call instead of running a tool with `{}`.
+- Mock `__viettep__` (agent mock): a `write` call streamed in 60 pieces over ~15 s.
+- Tests: `tests/test_agent_step_limits.py` (14), `test_agent_budget.py` caps. Checked with pi-ai 1.3.0's own
+  openai-responses client against a mock backend (silence limit 10 s): tool call started at 0.1 s with id
+  `call_demo_9|fc_demo_9`, 60 deltas over 15.6 s (max gap 0.3 s), not cut at 15.7 s, full arguments at the end. Not
+  checked: real Grok/GPT/Claude streams, the installed ph app, Cloudflare in front of a 20-minute call.
+- Deploy: restart backend; no migration, frontend or ph change. Envs optional.
+
 ## Peto Agent auto-update (2026-11-07; owner committed `e7f43eb`, deployed it and published v0.2.2-rc.1.20261107.1)
 
 Peto Agent (ph) builds are unsigned, which upstream DSH treats as local builds without an update feed, so installs never

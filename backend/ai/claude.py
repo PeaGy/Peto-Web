@@ -346,6 +346,7 @@ class ClaudeStream:
                 async with manager as stream:
                     self.stream = stream
                     stopped = False
+                    tool_blocks: dict[int, str] = {}  # vị trí block -> id của tool_use đang viết
                     async for event in stream:
                         kind = event.type
                         if kind == "message_stop":
@@ -353,8 +354,11 @@ class ClaudeStream:
                         elif kind == "content_block_start":
                             block = event.content_block
                             if block.type == "tool_use":
+                                # call_id trùng item cuối (_portable_output), để cổng agent mở ô lời gọi đúng mã.
+                                tool_blocks[event.index] = block.id
                                 yield SimpleNamespace(type="response.output_item.added",
-                                    item=SimpleNamespace(type="function_call", name=block.name))
+                                    item=SimpleNamespace(type="function_call", name=block.name, call_id=block.id,
+                                                         id=None))
                             elif block.type == "server_tool_use" and block.name == "web_search":
                                 if activity_enabled:
                                     raw = block.model_dump(mode='json', exclude_none=True)
@@ -384,6 +388,11 @@ class ClaudeStream:
                                     yield SimpleNamespace(type="response.output_text.annotation.added", annotation=citation)
                                     if citation.get('citation_id'):
                                         yield SimpleNamespace(type='peto.citation', delta=f" [{citation['citation_id']}]")
+                            elif delta.type == "input_json_delta" and event.index in tool_blocks:
+                                # Đoạn JSON đối số công cụ đang viết (công cụ dài có thể mất vài phút). Chat bỏ qua
+                                # sự kiện này; cổng agent chuyển ngay cho ứng dụng để hiện tiến độ.
+                                yield SimpleNamespace(type="response.function_call_arguments.delta",
+                                                      item_id=tool_blocks[event.index], delta=delta.partial_json)
                             else:
                                 # Dấu hiệu stream còn chạy khi Claude đang soạn JSON công cụ dài.
                                 yield SimpleNamespace(type="peto.pulse")
