@@ -3,10 +3,13 @@
 Bản AIRI stage-web phục vụ ở ``/airi/`` tự dựng prompt, phiên, thẻ nhân vật và tự chạy công cụ ngay trong trình duyệt;
 máy chủ chỉ là điểm gọi model. Cổng này nhận đúng hình dạng Chat Completions mà ``@xsai/stream-text`` của AIRI gửi.
 
+- Chỉ bật khi đặt ``PETO_AIRI_DIR`` (trang AIRI thật sự được phục vụ); không đặt thì mọi đường dẫn của cổng trả 404,
+  để không ai tiêu model của máy chủ qua cổng trước khi trang AIRI được triển khai. Kiểm lúc chạy (``config.AIRI_DIR``).
 - Xác thực bằng cookie phiên Peto như ``POST /api/chat``: chưa đăng nhập là 401 theo dạng lỗi của OpenAI. Không có mã
   thiết bị, không tính hạn mức bước của Peto Agent, không có danh mục model của Agent: luôn là model Peto.
-- Cả lượt chạy trong ``admission.slot(owner)`` của Chat. Lượt tiếp nối (tin cuối là kết quả công cụ do trình duyệt
-  vừa chạy) bỏ qua thời gian chờ giữa hai tin, vì nó là phần sau của cùng một câu trả lời.
+- Cả lượt chạy trong ``admission.slot(owner, cooldown=False)`` của Chat: cùng giới hạn đồng thời và hàng chờ, nhưng
+  không có thời gian chờ giữa hai lần gọi, vì bộ não AIRI tự gửi nhiều lần liền nhau (kết quả công cụ, lần gọi phụ sau
+  mỗi lượt). Lượt của cổng cũng không làm tin Chat kế tiếp của cùng người phải chờ.
 - Gọi model qua ``ai.agent.agent_step`` (đường Responses có công cụ do nơi gọi khai báo, như Peto Agent), không tra web.
   Model gọi công cụ thì cổng trả ``tool_calls`` với ``finish_reason: "tool_calls"``; trình duyệt chạy rồi gửi lại.
 - System prompt là của AIRI gửi lên; máy chủ luôn nối thêm ``COMPANION_CARD_RULE`` (luật cố định dưới 18 tuổi).
@@ -35,7 +38,7 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 from ai import models as ai_models
 from ai.agent import AgentEvent, agent_step
 from ai.base import ProviderError
-from core import usage_events
+from core import config, usage_events
 from core.config import AGENT_MODEL, RESPONSE_TIMEOUTS, SESSION_COOKIE, TURN_TIMEOUT_SECONDS
 from core.rate_limit import AdmissionDenied, admission
 from features.accounts.auth import session_owner
@@ -82,6 +85,10 @@ def _error_response(err: GatewayError) -> JSONResponse:
 
 
 def _owner(request: Request) -> str:
+    if config.AIRI_DIR is None:
+        # Trang AIRI chưa được phục vụ: cổng coi như không có.
+        raise GatewayError(404, "Cổng Companion AIRI chưa được bật trên máy chủ này.", kind="invalid_request_error",
+                           code="not_found")
     owner = session_owner(request.cookies.get(SESSION_COOKIE))
     if not owner:
         raise GatewayError(401, "Chưa đăng nhập Peto. Đăng nhập rồi mở lại trang này nhé.", kind="authentication_error",
@@ -194,7 +201,9 @@ async def _pump(queue: asyncio.Queue, owner: str, parsed: Parsed) -> None:
     completed = False
     failure: GatewayError | None = None
     try:
-        async with admission.slot(owner, cooldown=not parsed.continuation):
+        # Không có thời gian chờ giữa hai lần gọi: bộ não AIRI tự gửi liền nhau (kết quả công cụ, lần gọi phụ sau mỗi
+        # lượt); chỉ giới hạn đồng thời và hàng chờ của Chat.
+        async with admission.slot(owner, cooldown=False):
             loop = asyncio.get_running_loop()
             idle = RESPONSE_TIMEOUTS.get(EFFORT, 180.0)
             hard = loop.time() + TURN_TIMEOUT_SECONDS

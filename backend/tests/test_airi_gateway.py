@@ -15,7 +15,7 @@ import storage as db
 from ai import agent as ai_agent
 from ai.base import ProviderError
 from conftest import TEST_OWNER
-from core import usage_events
+from core import config, usage_events
 from core.config import SESSION_COOKIE
 from core.rate_limit import Admission, AdmissionDenied
 from features.accounts import auth
@@ -85,6 +85,12 @@ def _assemble(items: list) -> dict:
     return {"text": text, "tool_calls": calls, "finish": finish, "usage": usage}
 
 
+@pytest.fixture(autouse=True)
+def airi_enabled(tmp_path, monkeypatch):
+    """Cổng chỉ bật khi đặt PETO_AIRI_DIR; các test ở đây coi như trang AIRI đã được phục vụ."""
+    monkeypatch.setattr(config, "AIRI_DIR", tmp_path)
+
+
 @pytest.fixture
 def spy(monkeypatch):
     """Ghi lại đối số gọi ``agent_step`` (vá tên trong module cổng, gọi tiếp bản thật với provider giả)."""
@@ -117,7 +123,24 @@ def recorder():
     usage_events.disable()
 
 
-# --- Xác thực, model ------------------------------------------------------------------------------------------------
+# --- Bật/tắt, xác thực, model ---------------------------------------------------------------------------------------
+
+@pytest.mark.parametrize("method, path", [("GET", "/api/companion/v1/models"), ("POST", URL)])
+async def test_gateway_is_404_without_airi_dir(client, anon_client, monkeypatch, spy, method, path):
+    monkeypatch.setattr(config, "AIRI_DIR", None)
+    for who in (client, anon_client):
+        response = await who.request(method, path, json={"messages": MESSAGES, "stream": True})
+        assert response.status_code == 404
+        error = response.json()["error"]
+        assert error["code"] == "not_found" and "chưa được bật" in error["message"]
+    assert spy == []  # Không gọi model nào.
+
+
+async def test_gateway_answers_when_airi_dir_is_set(client, tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "AIRI_DIR", tmp_path)
+    assert (await client.get("/api/companion/v1/models")).status_code == 200
+    assert (await client.post(URL, json={"messages": MESSAGES})).status_code == 200
+
 
 async def test_models_requires_session(anon_client):
     response = await anon_client.get("/api/companion/v1/models")
@@ -402,20 +425,57 @@ async def test_admission_denial_is_429(client, monkeypatch):
     assert response.json()["error"]["message"] == AdmissionDenied("queue_full").message
 
 
-async def test_cooldown_applies_to_new_messages_not_tool_continuations(client, monkeypatch):
-    monkeypatch.setattr(airi_gateway, "admission", Admission(max_concurrent=2, max_queue=2, cooldown=60))
-    status, items = await _stream(client, {"messages": [{"role": "user", "content": "__congcu__"}], "tools": [WEATHER]})
-    assert status == 200
-    call = _assemble(items)["tool_calls"][0]
-    # Tin mới của người dùng ngay sau đó: chờ như Chat.
-    response = await client.post(URL, json={"messages": MESSAGES})
-    assert response.status_code == 429 and int(response.headers["retry-after"]) > 0
-    # Kết quả công cụ trình duyệt vừa chạy xong: phần sau của cùng câu trả lời, không phải chờ.
-    messages = [{"role": "user", "content": "__congcu__"},
-                {"role": "assistant", "content": "", "tool_calls": [call]},
-                {"role": "tool", "tool_call_id": call["id"], "content": "ok"}]
-    status, _ = await _stream(client, {"messages": messages, "tools": [WEATHER]})
-    assert status == 200
+async def test_no_cooldown_on_the_gateway_and_none_left_for_chat(client, monkeypatch):
+    gate = Admission(max_concurrent=2, max_queue=2, cooldown=60)
+    monkeypatch.setattr(airi_gateway, "admission", gate)
+    # Bộ não AIRI gửi liền nhau: lượt chính, lần gọi phụ, tin mới; không lần nào phải chờ.
+    for _ in range(3):
+        status, _ = await _stream(client, {"messages": MESSAGES})
+        assert status == 200
+    # Lượt của cổng không ghi mốc chờ, nên tin Chat kế tiếp của cùng người (cùng suất, cùng khóa owner) không bị chặn.
+    async with gate.slot(TEST_OWNER):
+        pass
+    # Còn Chat thì vẫn chờ giữa hai tin như trước.
+    with pytest.raises(AdmissionDenied) as denied:
+        async with gate.slot(TEST_OWNER):
+            pass
+    assert denied.value.reason == "cooldown"
+
+
+async def test_gateway_still_respects_concurrency_and_queue(client, monkeypatch):
+    gate = Admission(max_concurrent=1, max_queue=0, cooldown=0)
+    monkeypatch.setattr(airi_gateway, "admission", gate)
+    async with gate.slot("someone-else"):
+        response = await client.post(URL, json={"messages": MESSAGES})
+    assert response.status_code == 429 and response.json()["error"]["code"] == "queue_full"
+
+
+async def test_long_sessions_fit_under_the_text_caps(client, spy):
+    turns = []
+    for index in range(airi_request.MAX_MESSAGES // 2 - 1):
+        turns += [{"role": "user", "content": f"câu {index}"}, {"role": "assistant", "content": "ừ"}]
+    messages = [{"role": "system", "content": "x" * 400_000}, *turns, {"role": "user", "content": "tiếp"}]
+    assert len(messages) == airi_request.MAX_MESSAGES
+    response = await client.post(URL, json={"messages": messages})
+    assert response.status_code == 200
+    too_many = await client.post(URL, json={"messages": [*messages, {"role": "user", "content": "nữa"}]})
+    assert too_many.status_code == 400 and "2.000" in too_many.json()["error"]["message"]
+    too_long = await client.post(URL, json={"messages": [{"role": "user", "content": "x" * 1_000_001}]})
+    assert too_long.status_code == 400 and "1.000.000" in too_long.json()["error"]["message"]
+
+
+async def test_context_overflow_is_400_before_the_first_byte(client, fake_step):
+    async def events():
+        raise ProviderError("Ngữ cảnh vượt giới hạn model; cần tóm tắt trước khi tiếp tục.", code="context_overflow")
+        yield  # pragma: no cover - để đây là hàm sinh
+
+    fake_step(events)
+    async with client.stream("POST", URL, json={"messages": MESSAGES, "stream": True}) as response:
+        await response.aread()
+    assert response.status_code == 400
+    error = response.json()["error"]
+    assert error["code"] == "context_length_exceeded" and error["type"] == "invalid_request_error"
+    assert "Ngữ cảnh vượt giới hạn" in error["message"]
 
 
 # --- Hủy khi trình duyệt ngắt ----------------------------------------------------------------------------------------

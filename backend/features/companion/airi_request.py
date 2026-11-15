@@ -21,9 +21,11 @@ from features.agent import gateway as agent_gateway
 from features.agent.api import _check_image
 from prompts import COMPANION_CARD_RULE
 
-# Trần đầu vào chữ của một lượt (giữ như bản thử đã rà soát): AIRI gửi cả lịch sử cùng system prompt dài mỗi lượt.
-MAX_MESSAGES = 200
-MAX_TOTAL_CHARS = 200_000
+# Trần đầu vào chữ của một lượt, chỉ chặn yêu cầu bất thường: AIRI gửi cả lịch sử cùng system prompt dài mỗi lượt, và
+# mỗi vòng công cụ thêm hai tin. Giới hạn thật là trần 32 MB của thân yêu cầu và khung ngữ cảnh của model (vượt thì
+# trình duyệt nhận HTTP 400 context_length_exceeded).
+MAX_MESSAGES = 2_000
+MAX_TOTAL_CHARS = 1_000_000
 # Ảnh và thân yêu cầu: như cổng Peto Agent bản desktop.
 MAX_IMAGES = agent_gateway.MAX_IMAGES
 MAX_REQUEST_BYTES = agent_gateway.MAX_REQUEST_BYTES
@@ -146,7 +148,7 @@ def _messages(raw: object) -> tuple[str, list[dict], int, bool]:
     if not isinstance(raw, list) or not raw:
         raise RequestError("Thiếu danh sách tin nhắn.")
     if len(raw) > MAX_MESSAGES:
-        raise RequestError(f"Quá nhiều tin nhắn trong một lượt (tối đa {MAX_MESSAGES}).")
+        raise RequestError(f"Quá nhiều tin nhắn trong một lượt (tối đa {MAX_MESSAGES:,}).".replace(",", "."))
     system: list[str] = []
     items: list[dict] = []
     total = images = 0
@@ -196,7 +198,7 @@ def _messages(raw: object) -> tuple[str, list[dict], int, bool]:
             raise RequestError("Vai trò tin nhắn không hợp lệ.")
         last_role = role
     if total > MAX_TOTAL_CHARS:
-        raise RequestError(f"Lượt này quá dài (tối đa {MAX_TOTAL_CHARS} ký tự).")
+        raise RequestError(f"Lượt này quá dài (tối đa {MAX_TOTAL_CHARS:,} ký tự).".replace(",", "."))
     if images > MAX_IMAGES:
         raise RequestError(f"Mỗi lượt gửi kèm tối đa {MAX_IMAGES} ảnh.")
     if last_role not in {"user", "tool"} or not items:

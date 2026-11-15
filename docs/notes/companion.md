@@ -919,8 +919,10 @@ execution); the Peto server is only the model endpoint. The fork is at `C:\Users
   Real files are served (hashed `assets/` cached for a year), extensionless paths get `index.html` (AIRI's router),
   missing assets are a real 404. Mounted before the SPA catch-all in `main.py`.
 - **Gateway** (`features/companion/airi_gateway.py`, request parsing in `airi_request.py`): OpenAI Chat Completions at
-  `/api/companion/v1` (`GET /models`, `POST /chat/completions`), the shape `@xsai/stream-text` 0.5 sends. It is always
-  registered, with or without `PETO_AIRI_DIR`.
+  `/api/companion/v1` (`GET /models`, `POST /chat/completions`), the shape `@xsai/stream-text` 0.5 sends. It only
+  answers when `PETO_AIRI_DIR` is set: otherwise every path is a 404 (`code: "not_found"`, "Cổng Companion AIRI chưa
+  được bật…"), checked at request time (`config.AIRI_DIR`), so nobody can spend the server's model through it before
+  the AIRI page is deployed.
   - Auth is the Peto session cookie (same check as Chat); no cookie is a 401 with an OpenAI-shaped Vietnamese body. No
     Agent device token, no Agent daily step budget, no Agent model catalogue, no per-account quota.
   - Model: always Peto. `GET /models` lists only `peto`; the request's `model` is ignored. The call goes through
@@ -943,13 +945,16 @@ execution); the Peto server is only the model endpoint. The fork is at `C:\Users
     (PNG/JPEG/GIF/WebP, 3 MB each, real type sniffed). At most 50 images and a 32 MB body, the Agent desktop gateway's
     limits. `http(s)` image URLs are refused with "Peto chỉ nhận ảnh gửi kèm dạng data URL…": the server fetches
     nothing for the browser. Audio and file parts are refused. Images in tool results are lifted into a user message
-    and WebP/GIF become PNG for Grok (`features/agent/gateway_images.prepare`, as for the Agent gateway). Text caps from
-    the spike stay: 200 messages and 200,000 characters per request.
-  - Admission: the whole call runs in Chat's `admission.slot(owner)` (same concurrency, queue and cooldown as Chat). A
-    request whose last message is a tool result is a continuation of the same answer (xsai sends it as soon as the
-    browser ran the tool) and skips the cooldown (`Admission.slot(…, cooldown=False)`); it still waits for a slot.
+    and WebP/GIF become PNG for Grok (`features/agent/gateway_images.prepare`, as for the Agent gateway). Text caps only
+    stop abnormal requests: 2,000 messages and 1,000,000 characters per request. The real bounds are the 32 MB body
+    and the model's context window; a provider `context_overflow` reaches the browser before the first byte as HTTP
+    400 `context_length_exceeded`.
+  - Admission: the whole call runs in Chat's `admission.slot(owner, cooldown=False)`: Chat's concurrency and queue, no
+    cooldown. AIRI's brain issues back-to-back calls on its own (tool continuations, its tool-card side call after a
+    turn, later voice helpers). `Admission.slot` with `cooldown=False` neither checks the cooldown nor records the
+    turn as the owner's last accepted request, so a gateway turn never makes the same owner's next Chat message wait.
   - Streaming: the gateway waits up to 15 s for the first event, so errors before any output are real HTTP statuses
-    with `{"error": {...}}` (401, 400/413 validation, 429 cooldown with `Retry-After` or queue full, 503 queue timeout
+    with `{"error": {...}}` (404 when off, 401, 400/413 validation, 429 queue full, 503 queue timeout
     or retryable provider error, 502 provider error, 504 silence, 500). AIRI retries 408/429/5xx up to three times
     before the stream starts. After that, an error is one `data: {"error": …}` line, which xsai turns into a
     `RemoteAPIError`, and no `[DONE]`. `: ping` comments every 15 s of silence keep Cloudflare from closing the
@@ -970,11 +975,19 @@ execution); the Peto server is only the model endpoint. The fork is at `C:\Users
 - **CSP**: `/airi/` responses get their own report-only policy (`core/security_headers.airi_policy`, see
   `admin-ops.md`, "Security headers").
 - **Tests**: `tests/test_airi_gateway.py` (auth, text, card rule, tool round trip, tool and request validation, images,
-  errors before and after the first byte, pings, timeouts, cooldown vs continuation, disconnect before and after the
+  errors before and after the first byte, context overflow, pings, timeouts, 404 when off, no cooldown, text caps, disconnect before and after the
   first byte via raw ASGI, usage rows), `tests/test_airi_static.py`, the `/airi/` cases in
   `tests/test_security_headers.py`.
 
 # Dated log (newest first)
+
+## AIRI gateway, package 1 review follow-ups (2026-11-15)
+
+After review of `b0656a1`: the gateway answers 404 unless `PETO_AIRI_DIR` is set; it no longer has a cooldown at all
+(the continuation exception is gone, which also closes the hole where a crafted request ending in a tool message
+skipped the cooldown); text caps raised to 2,000 messages and 1,000,000 characters. Finding: before this change
+`Admission.slot` recorded `_last_accepted` even with `cooldown=False`, so a gateway turn would have made the owner's next
+Chat message wait; it now records only when the cooldown applies.
 
 ## AIRI gateway, package 1 (2026-11-15, branch from `companion-airi`)
 
